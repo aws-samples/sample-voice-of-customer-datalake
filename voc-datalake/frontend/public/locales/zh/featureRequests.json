@@ -163,7 +163,9 @@
     "slugTaken": "另一个看板已使用此链接名称。",
     "boardNotEmpty": "此看板仍有需求。请连同其需求一起删除，或将其归档。",
     "statusInUse": "仍有需求使用此状态。请先将其移到其他状态。",
-    "alreadySupported": "你已支持此请求。请改为编辑你的 +1。"
+    "alreadySupported": "你已支持此请求。请改为编辑你的 +1。",
+    "boardPaused": "此看板已暂停：暂时不接受新的请求和投票。",
+    "boardArchived": "此看板已归档，不再接受新的请求。"
   },
   "auth": {
     "title": "登录功能请求看板",
@@ -265,6 +267,22 @@
     "deleteIncomplete": "看板尚未完全删除。",
     "deleteResumeHint": "再次点击“删除”即可从中断处继续。",
     "archived": "已归档",
+    "paused": "已暂停",
+    "pausedNotice": "已暂停：暂时不接受新的请求和投票。",
+    "lifecycle": {
+      "pause": "暂停",
+      "resume": "继续",
+      "pauseBoard": "暂停 {{name}}",
+      "resumeBoard": "继续 {{name}}",
+      "pauseTitle": "暂停此看板？",
+      "pauseMessage": "“{{name}}”仍对共享对象可见，他们仍可登录并查看。在你继续之前，任何人都不能提交请求、添加 +1 或编辑。",
+      "archive": "归档",
+      "archiveBoard": "归档 {{name}}",
+      "archiveTitle": "归档此看板？",
+      "archiveMessage": "归档是删除前的一步。“{{name}}”将从共享对象的视图中消失，仅管理员可见。其请求会保留。之后你可以恢复或删除它。",
+      "restore": "恢复",
+      "restoreBoard": "恢复 {{name}}"
+    },
     "configure": "配置看板",
     "emptyTitle": "还没有看板",
     "empty": "还没有与你共享的看板。",

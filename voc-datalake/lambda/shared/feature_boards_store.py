@@ -5,6 +5,11 @@
 META on create and rename. Every save, archive and delete also rewrites the boards' derived
 sign-up row in the participants table (``shared.feature_boards_audience``).
 
+``paused`` (+ ``paused_at`` / ``paused_by`` while it is) is the TEMPORARY stop: the board stays
+visible to its audience and in the sign-up row, but takes no new request, +1 or edit
+(``shared.feature_requests_routes``). ``archived`` is the PERMANENT step before delete: hidden from
+everyone but admins and from the sign-up row.
+
 The seeded board ``brd_sales`` (slug ``sales-feature-requests``, template ``sales``, audience
 ``company``) is created ONCE, by the first read that finds no board at all, so the requests filed
 before boards (no ``board_id``) have a home: a request without ``board_id`` is that board's. The
@@ -57,7 +62,9 @@ BOARD_LIMIT: Final = 'board_limit'
 _SLUG: Final = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*\Z')
 _BOARD_ID: Final = re.compile(r'^brd_(?:[0-9a-f]{8}|sales)\Z')
 _SLUG_SUFFIX: Final = 9  # '-' + the 8 hex digits of the board id
-_EDITABLE: Final = ('name', 'slug', 'description', 'fields', 'statuses', 'audience', 'archived')
+_EDITABLE: Final = ('name', 'slug', 'description', 'fields', 'statuses', 'audience', 'archived', 'paused')
+# Who paused the board and when: only while it is paused, and ``paused_by`` (a Cognito sub) for admins only.
+_PAUSE_STAMP: Final = ('paused_at', 'paused_by')
 
 
 def board_key(board_id: str) -> dict[str, str]:
@@ -95,11 +102,21 @@ def board_view(board: Mapping[str, Any], *, admin: bool, frontend_url: str) -> d
     view['share_url'] = f'{frontend_url}/board/{board.get("slug", "")}' if frontend_url else ''
     view['request_count'] = max(int(board.get('request_count') or 0), 0)
     view['archived'] = board.get('archived') is True
+    view['paused'] = is_paused(board)
     audience = audience_of(board)
     view['audience'] = audience if admin else {'mode': audience['mode']}
+    if not view['paused']:
+        for key in _PAUSE_STAMP:
+            view.pop(key, None)
     if not admin:
         view.pop('created_by', None)
+        view.pop('paused_by', None)
     return view
+
+
+def is_paused(board: Mapping[str, Any]) -> bool:
+    """A paused board is read as before, but takes no new request, +1 or edit until it is resumed."""
+    return board.get('paused') is True
 
 
 # ── Reads ─────────────────────────────────────────────────────────────────────
@@ -162,7 +179,7 @@ def _new_board(board_id: str, slug: str, values: Mapping[str, Any], created_by: 
             'description': values.get('description', ''), 'template': template,
             'fields': values.get('fields') or template_fields(template),
             'statuses': values.get('statuses') or template_statuses(template),
-            'audience': values.get('audience') or dict(DEFAULT_AUDIENCE), 'archived': False,
+            'audience': values.get('audience') or dict(DEFAULT_AUDIENCE), 'archived': False, 'paused': False,
             'request_count': int(values.get('request_count', 0)), 'created_at': now, 'created_by': created_by,
             'updated_at': now, 'gsi1pk': BOARDS_PARTITION, 'gsi1sk': name.lower()}
 
@@ -231,7 +248,7 @@ def validate_update(body: Mapping[str, Any]) -> dict[str, Any]:
     checks = {'name': lambda raw: required_text({'name': raw}, 'name', MAX_NAME), 'slug': validate_slug,
               'description': lambda raw: optional_text({'d': raw}, 'd', MAX_DESCRIPTION),
               'fields': validate_fields_config, 'statuses': validate_statuses, 'audience': validate_audience,
-              'archived': _archived}
+              'archived': lambda raw: _flag(raw, 'archived'), 'paused': lambda raw: _flag(raw, 'paused')}
     changes = {key: checks[key](body[key]) for key in _EDITABLE if key in body}
     if not changes:
         raise ValidationError(f'Nothing to update: send any of {", ".join(_EDITABLE)}')
@@ -240,10 +257,20 @@ def validate_update(body: Mapping[str, Any]) -> dict[str, Any]:
     return changes
 
 
-def _archived(raw: object) -> bool:
+def _flag(raw: object, name: str) -> bool:
     if not isinstance(raw, bool):
-        raise ValidationError('archived must be true or false')
+        raise ValidationError(f'{name} must be true or false')
     return raw
+
+
+def with_pause_stamp(board: Mapping[str, Any], changes: Mapping[str, Any], by: str) -> dict[str, Any]:
+    """``changes`` plus who paused the board and when, set when it pauses and cleared when it resumes
+    (a ``paused`` equal to the stored one changes nothing, so the first pause keeps its stamp)."""
+    if 'paused' not in changes or changes['paused'] == is_paused(board):
+        return dict(changes)
+    stamp: dict[str, Any] = ({'paused_at': now_iso(), 'paused_by': by} if changes['paused']
+                             else dict.fromkeys(_PAUSE_STAMP))
+    return {**changes, **stamp}
 
 
 def _rename(table: Any, board: Mapping[str, Any], changes: Mapping[str, Any]) -> dict[str, Any]:

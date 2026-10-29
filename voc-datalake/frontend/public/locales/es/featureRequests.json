@@ -166,7 +166,9 @@
     "slugTaken": "Otro tablero ya usa este nombre de enlace.",
     "boardNotEmpty": "Este tablero aún tiene solicitudes. Elimínalo junto con sus solicitudes o archívalo.",
     "statusInUse": "Hay solicitudes con este estado. Muévelas antes a otro estado.",
-    "alreadySupported": "Ya apoyas esta solicitud. Edita tu +1."
+    "alreadySupported": "Ya apoyas esta solicitud. Edita tu +1.",
+    "boardPaused": "Este tablero está en pausa: las nuevas solicitudes y los votos están cerrados por ahora.",
+    "boardArchived": "Este tablero está archivado y no admite nuevas solicitudes."
   },
   "auth": {
     "title": "Inicia sesión en el tablero de solicitudes",
@@ -270,6 +272,22 @@
     "deleteIncomplete": "El tablero aún no se ha eliminado por completo.",
     "deleteResumeHint": "Pulsa Eliminar de nuevo para continuar donde se detuvo.",
     "archived": "Archivado",
+    "paused": "En pausa",
+    "pausedNotice": "En pausa: las nuevas solicitudes y los votos están cerrados por ahora.",
+    "lifecycle": {
+      "pause": "Pausar",
+      "resume": "Reanudar",
+      "pauseBoard": "Pausar {{name}}",
+      "resumeBoard": "Reanudar {{name}}",
+      "pauseTitle": "¿Pausar este tablero?",
+      "pauseMessage": "«{{name}}» sigue visible para las personas con quienes se comparte, que pueden seguir iniciando sesión y leyéndolo. Nadie puede publicar una solicitud, añadir un +1 ni editar hasta que lo reanudes.",
+      "archive": "Archivar",
+      "archiveBoard": "Archivar {{name}}",
+      "archiveTitle": "¿Archivar este tablero?",
+      "archiveMessage": "Archivar es el paso previo a eliminar. «{{name}}» deja de verse para las personas con quienes se comparte; solo los administradores lo siguen viendo. Sus solicitudes se conservan. Después puedes restaurarlo o eliminarlo.",
+      "restore": "Restaurar",
+      "restoreBoard": "Restaurar {{name}}"
+    },
     "configure": "Configurar tableros",
     "emptyTitle": "Aún no hay tableros",
     "empty": "Todavía no se ha compartido ningún tablero contigo.",

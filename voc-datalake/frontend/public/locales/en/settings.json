@@ -558,6 +558,9 @@
       "onlyGuidelines": "Guidelines only",
       "logoCandidate": "Logo found on this reference",
       "logoRendered": "Rendered from the site's SVG logo",
+      "downloadSvg": "Download SVG",
+      "icons": "Site icons",
+      "iconAlt": "Site icon",
       "apply": "Use as design system",
       "useLogo": "Use this logo",
       "logoFailed": "Could not use this logo. Try again."
@@ -823,6 +826,7 @@
       "empty": "No boards yet. Create one from a template.",
       "loadFailed": "The boards could not be loaded.",
       "archived": "Archived",
+      "paused": "Paused",
       "edit": "Edit",
       "editLabel": "Edit {{name}}",
       "requests_one": "{{count, number}} request",
@@ -915,13 +919,10 @@
       "full": "A board has at most {{max, number}} statuses."
     },
     "lifecycle": {
-      "title": "Archive or delete",
-      "hint_one": "This board has {{count, number}} request. Archiving hides it from everyone but admins and keeps its requests; deleting removes the board and its requests.",
-      "hint_other": "This board has {{count, number}} requests. Archiving hides it from everyone but admins and keeps its requests; deleting removes the board and its requests.",
-      "saveFirst": "Save or discard your changes first.",
-      "archive": "Archive",
-      "restore": "Restore",
-      "delete": "Delete board"
+      "title": "Pause, archive or delete",
+      "hint_one": "This board has {{count, number}} request. Pausing is temporary: the board stays readable, but nobody can post, add a +1 or edit until you resume it. Archiving is the step before deleting: it hides the board from everyone but admins and keeps its requests. Delete is offered once the board is archived.",
+      "hint_other": "This board has {{count, number}} requests. Pausing is temporary: the board stays readable, but nobody can post, add a +1 or edit until you resume it. Archiving is the step before deleting: it hides the board from everyone but admins and keeps its requests. Delete is offered once the board is archived.",
+      "saveFirst": "Save or discard your changes first."
     },
     "problems": {
       "nameRequired": "The board needs a name.",

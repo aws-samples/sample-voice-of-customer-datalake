@@ -27,6 +27,8 @@ describe('writeErrorText', () => {
     [409, 'slug_taken', 't:featureRequests:errors.slugTaken'],
     [409, 'status_in_use', 't:featureRequests:errors.statusInUse'],
     [409, 'already_supported', 't:featureRequests:errors.alreadySupported'],
+    [409, 'board_paused', 't:featureRequests:errors.boardPaused'],
+    [409, 'board_archived', 't:featureRequests:errors.boardArchived'],
   ])('%i {error: %s} names the board limit or conflict in words', async (status, error, expected) => {
     expect(writeErrorText(await apiErrorFor(backendRefusal(status, error)), t)).toBe(expected)
   })

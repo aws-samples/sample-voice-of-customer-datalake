@@ -69,9 +69,16 @@ const TokensSchema = z.object({
 }).catch({ colors: [], typography: [], spacing: [], radius: [] })
 export type DesignTokens = z.output<typeof TokensSchema>
 
-/** An https link or a same-origin path ("/…", never "//…"): what an <img> may load. */
-const SAFE_IMAGE_SRC_RE = /^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/|\/(?!\/))/
-const imageSrc = z.string().regex(SAFE_IMAGE_SRC_RE).optional().catch(undefined)
+/**
+ * An https link, a local dev-server link or a same-origin path ("/…", never "//…"). It is the only URL shape
+ * the reference views use, for an <img src> AND for a download <a href>: neither sink can take `data:`,
+ * `javascript:` or a protocol-relative link (designSystemApi.extract.test.ts pins both sinks).
+ */
+const SAFE_ASSET_URL_RE = /^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/|\/(?!\/))/
+/** What an <img> may load. */
+const imageSrc = z.string().regex(SAFE_ASSET_URL_RE).optional().catch(undefined)
+/** What a download link may point at (the server's signed, attachment-only SVG copies): the same shapes. */
+const downloadHref = imageSrc
 
 /**
  * A logo the reference points at — a candidate only; the logo route fetches and stores it.
@@ -80,15 +87,38 @@ const imageSrc = z.string().regex(SAFE_IMAGE_SRC_RE).optional().catch(undefined)
  *
  * `rendered` (5.39) is true when the capture browser drew the site's SVG logo to a PNG; anything
  * but a boolean reads as absent.
+ *
+ * `svg_preview_url` (5.48) is the SANITISED SVG the server kept beside that PNG: a signed S3 URL whose
+ * answer is `Content-Disposition: attachment`, offered ONLY as a download link (never loaded into the page).
  */
 const LogoCandidateSchema = z.object({
   source_url: z.url(),
   content_type: optionalText,
   preview_url: imageSrc,
+  svg_preview_url: downloadHref,
   rendered: z.boolean().optional().catch(undefined),
 })
 export type LogoCandidate = z.output<typeof LogoCandidateSchema>
 const nullableLogo = LogoCandidateSchema.nullable().optional().transform((logo) => logo ?? null).catch(null)
+
+/**
+ * A website reference's icon, copied into the app's bucket when the page was read (5.48): `url` is a signed
+ * copy (shown like `preview_url`), `svg_url` a download-only sanitised SVG, `source_url` provenance only.
+ */
+const DesignIconSchema = z.object({
+  kind: optionalText,
+  sizes: optionalText,
+  content_type: optionalText,
+  url: z.string().regex(SAFE_ASSET_URL_RE),
+  svg_url: downloadHref,
+  source_url: optionalText,
+})
+export type DesignIcon = z.output<typeof DesignIconSchema>
+/** Every row that parses as an icon; a missing or malformed list reads as none. */
+const iconList = z.array(z.unknown()).catch([]).transform((rows) => rows.flatMap((row) => {
+  const icon = DesignIconSchema.safeParse(row)
+  return icon.success ? [icon.data] : []
+}))
 
 /** `extracted_design` on a reference (THE CONTRACT, wave 12): every value already validated server-side. */
 const ExtractedDesignSchema = z.object({
@@ -99,6 +129,7 @@ const ExtractedDesignSchema = z.object({
   guidelines_md: text,
   components: componentList,
   logo: nullableLogo,
+  icons: iconList,
   source: optionalText,
 })
 export type ExtractedDesign = z.output<typeof ExtractedDesignSchema>

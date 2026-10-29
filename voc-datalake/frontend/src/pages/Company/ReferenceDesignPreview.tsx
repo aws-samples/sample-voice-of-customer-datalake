@@ -12,7 +12,6 @@
  *
  * @module pages/Company/ReferenceDesignPreview
  */
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Image, Loader2, Wand2 } from 'lucide-react'
 import { isPaintableColor } from '../../api/designSystemApi'
@@ -21,7 +20,7 @@ import type { ComponentVariant, DesignComponent } from '../../api/designComponen
 import { MiniPreview } from './ComponentPreview'
 import { designCounts, fontFamilies, urlHost } from './designDraftSummary'
 import type { DesignCounts } from './designDraftSummary'
-import { useInlineImage } from '../../hooks/useInlineImage'
+import { IconStrip, StoredImageThumbnail, SvgDownloadLink } from './ReferenceAssets'
 
 const MAX_SWATCHES = 12
 const MAX_COMPONENT_PREVIEWS = 6
@@ -101,6 +100,8 @@ export default function ReferenceDesignPreview({ design, actions }: Readonly<{
           ) : null}
           <p className="text-xs text-muted">{countsLine(designCounts(design), t)}</p>
           {design.logo?.rendered === true ? <p className="text-xs text-muted">{t('designSystem.preview.logoRendered')}</p> : null}
+          <SvgDownloadLink url={design.logo?.svg_preview_url} />
+          <IconStrip icons={design.icons} />
         </div>
       </div>
       {actions ? <PreviewButtons hasLogo={design.logo !== null} actions={actions} /> : null}
@@ -123,32 +124,10 @@ function countsLine(counts: DesignCounts, t: Translate): string {
   return parts.length > 0 ? parts.join(' · ') : t('designSystem.preview.onlyGuidelines')
 }
 
-/**
- * The candidate, from the copy the server downloaded (`preview_url`, a presigned S3 URL,
- * read through `useInlineImage` so the app's CSP `img-src 'self' data:` allows it). Without one — or when it fails to
- * load — a neutral glyph with the file's host; the remote original is never loaded.
- */
+/** The candidate, from the copy the server downloaded (`preview_url`); its title is the file's host. */
 function LogoThumbnail({ logo }: Readonly<{ logo: LogoCandidate }>) {
   const { t } = useTranslation('settings')
-  const [failed, setFailed] = useState(false)
-  // The server's copy is a presigned S3 URL: shown as a data: URL so the CSP's img-src allows it.
-  const inline = useInlineImage(logo.preview_url)
-  const src = failed ? undefined : inline
-  return (
-    <div className="w-14 h-14 rounded-md border border-border bg-bg-elevated flex items-center justify-center overflow-hidden flex-shrink-0" title={urlHost(logo.source_url)}>
-      {src === undefined ? (
-        <Image size={18} className="text-muted" role="img" aria-label={t('designSystem.preview.logoCandidate')} />
-      ) : (
-        <img
-          src={src}
-          alt={t('designSystem.preview.logoCandidate')}
-          referrerPolicy="no-referrer"
-          className="max-w-full max-h-full object-contain"
-          onError={() => setFailed(true)}
-        />
-      )}
-    </div>
-  )
+  return <StoredImageThumbnail size="logo" url={logo.preview_url} alt={t('designSystem.preview.logoCandidate')} title={urlHost(logo.source_url)} />
 }
 
 function PreviewButtons({ hasLogo, actions }: Readonly<{ hasLogo: boolean; actions: PreviewActions }>) {

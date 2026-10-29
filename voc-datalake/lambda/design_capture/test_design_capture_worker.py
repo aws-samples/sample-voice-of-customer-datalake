@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import boto3
 import capture_handler
 import capture_worker as cw
+import page_shots
 import page_styles as ps
 import pytest
 from moto import mock_aws
@@ -59,11 +60,13 @@ class FakeCdp:
     """
 
     def __init__(self, styles: str, final_url: str = 'https://kirocrew.dev/', navigate: dict | None = None,
-                 render_answer: object = None, logo_png: bytes = b''):
+                 render_answer: object = None, logo_png: bytes = b'', regions: list[dict] | None = None):
         self.calls: list[tuple[str, dict]] = []
         self.routed: list[tuple[str | None, float]] = []
         self.styles, self.final_url, self.navigate = styles, final_url, navigate or {}
         self.render_answer, self.logo_png = render_answer, logo_png
+        #: Successive answers to ``page_shots.REGIONS_JS`` (before / after the footer scroll); none = unreadable.
+        self.regions = list(regions or [])
         self.browser_session_id = ''
         self._targets = 0
 
@@ -94,6 +97,10 @@ class FakeCdp:
             return json.dumps(['complete', 5000])
         if expression == 'location.href':
             return self.final_url
+        if expression == page_shots.REGIONS_JS:
+            return json.dumps(self.regions.pop(0)) if self.regions else 'unreadable'
+        if expression.startswith('window.scrollTo('):
+            return ''
         return self.styles
 
     def methods(self) -> list[str]:
@@ -124,11 +131,14 @@ def table():
         yield table
 
 
-def _run(table, cdp: FakeCdp, answer: str = ANSWER, public: bool = True):
+def _run(table, cdp: FakeCdp, answer: str = ANSWER, public: bool = True, *,
+         s3=None, fetch=None, now=lambda: '2026-10-21T00:00:00+00:00'):
+    """One capture with fakes → ``(result, stored row, vision mock, sessions)``; ``s3`` given = bucket ``raw``."""
     sessions: list[int] = []
     vision = MagicMock(return_value=answer)
-    deps = cw.CaptureDeps(table=table, kit=_kit(cdp, sessions), summarise_image=vision, sleep=lambda _s: None,
-                          clock=iter(range(1000)).__next__, now=lambda: '2026-10-21T00:00:00+00:00')
+    deps = cw.CaptureDeps(table=table, kit=_kit(cdp, sessions), summarise_images=vision, sleep=lambda _s: None,
+                          clock=iter(range(1000)).__next__, now=now, s3=s3, bucket='raw' if s3 else '',
+                          logo_fetch=fetch)
     with patch.object(cw, 'validate_url', return_value=(True, '') if public else (False, 'private address')), \
             patch.object(ps, 'validate_url', return_value=(True, '')):
         result = cw.run_capture({'action': 'design_capture', 'ref_id': REF_ID}, deps)
@@ -138,7 +148,7 @@ def _run(table, cdp: FakeCdp, answer: str = ANSWER, public: bool = True):
 
 
 class TestCapture:
-    def test_one_evaluate_one_screenshot_one_vision_call(self, table):
+    def test_one_evaluate_one_vision_call_with_the_fold_when_the_regions_are_unreadable(self, table):
         cdp = FakeCdp(_styles())
         result, stored, vision, sessions = _run(table, cdp)
         assert result == {'status': 'ready'}
@@ -150,8 +160,10 @@ class TestCapture:
         assert [m for (m, _), (s, _) in zip(cdp.calls, cdp.routed, strict=True) if s is None] == [
             'Target.createTarget', 'Target.attachToTarget',              # except opening it,
             'Target.createTarget', 'Target.attachToTarget', 'Target.closeTarget']   # and the logo render tab
-        image, image_format, facts = vision.call_args.args
-        assert (image, image_format) == (JPEG, 'jpeg')
+        vision.assert_called_once()
+        (fold,), facts = vision.call_args.args
+        assert (fold.region, fold.image, fold.image_format) == ('fold', JPEG, 'png')
+        assert (fold.width, fold.height) == (1321, 870)   # the viewport fitted to the model's no-resize size
         assert '"--color-primary": "#7c3aed"' in facts
         design = stored['extracted_design']
         assert design['source'] == 'computed_styles'
@@ -163,7 +175,7 @@ class TestCapture:
     def test_final_url_on_a_private_address_is_refused_before_reading(self, table):
         cdp = FakeCdp(_styles(), final_url='http://169.254.169.254/latest/meta-data')
         with patch.object(cw, 'validate_url', side_effect=[(True, ''), (False, 'private')]):
-            deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_image=MagicMock(), sleep=lambda _s: None,
+            deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(), sleep=lambda _s: None,
                                   clock=iter(range(1000)).__next__)
             cw.run_capture({'ref_id': REF_ID}, deps)
         stored = get_reference(table, REF_ID)
@@ -298,8 +310,8 @@ class TestComponents:
     def test_without_model_components_the_measured_ones_are_stored(self, table):
         answer = json.dumps({'summary': 'Purple.', 'colors': [{'name': 'accent', 'value': '#a78bfa'}]})
         _, stored, vision, _ = _run(table, FakeCdp(_styles(components=SAMPLES, rules=RULES)), answer=answer)
-        assert '"measured_component_styles"' in vision.call_args.args[2]
-        assert 'onclick' not in vision.call_args.args[2]
+        assert '"measured_component_styles"' in vision.call_args.args[1]
+        assert 'onclick' not in vision.call_args.args[1]
         button, field = stored['extracted_design']['components']
         assert [v['name'] for v in button['variants']] == ['primary', 'outline']
         assert button['variants'][0]['styles'] == {
@@ -336,18 +348,14 @@ class TestPreviewAndFetchedAt:
         response = MagicMock(status_code=200, content=png)
         times = iter(['2026-10-22T10:00:00+00:00', '2026-10-22T10:01:30+00:00'])
         logo_fetch = MagicMock(return_value=response)
-        deps = cw.CaptureDeps(table=table, kit=_kit(FakeCdp(_styles()), []), summarise_image=MagicMock(return_value=ANSWER),
-                              sleep=lambda _s: None, clock=iter(range(1000)).__next__, now=lambda: next(times),
-                              s3=s3, bucket='raw', logo_fetch=logo_fetch)
-        with patch.object(cw, 'validate_url', return_value=(True, '')), patch.object(ps, 'validate_url', return_value=(True, '')):
-            cw.run_capture({'action': 'design_capture', 'ref_id': REF_ID}, deps)
-        stored = get_reference(table, REF_ID)
-        assert stored is not None
+        _, stored, _, _ = _run(table, FakeCdp(_styles()), s3=s3, fetch=logo_fetch, now=lambda: next(times))
         key = f'company-context/design/logo_preview_{REF_ID}.png'
         assert stored['extracted_design']['logo']['preview_key'] == key
         assert s3.get_object(Bucket='raw', Key=key)['Body'].read() == png
         assert stored['fetched_at'] == '2026-10-22T10:00:00+00:00'
-        logo_fetch.assert_called_once()
+        # the candidate once; the other download is the icon copy's /favicon.ico (no icon link on this page)
+        assert [c.args[0] for c in logo_fetch.call_args_list] == [
+            'https://kirocrew.dev/favicon.ico', 'https://kirocrew.dev/apple-touch-icon.png']
 
     def test_an_error_is_stamped_when_the_read_ends(self, table):
         _, stored, _, _ = _run(table, FakeCdp(_styles(), navigate={'errorText': 'net::ERR_NAME_NOT_RESOLVED'}))

@@ -44,12 +44,14 @@ MAX_ROOT_VARS: Final = 400
 MAX_ELEMENTS: Final = 40
 MAX_RANKED: Final = 30
 MAX_LOGOS: Final = 8
+MAX_ICON_LINKS: Final = 16
 MAX_VALUE_CHARS: Final = 300
 
 MAX_SCANNED_ELEMENTS: Final = 1_500
 #: The caps the page applies itself; ``styles_expression`` hands them over, so they live here only.
 PAGE_LIMITS: Final = {'vars': MAX_ROOT_VARS, 'els': MAX_SCANNED_ELEMENTS, 'ranked': MAX_RANKED,
                       'text': MAX_TEXT_CHARS, 'html': MAX_HTML_CHARS, 'logos': MAX_LOGOS, 'value': MAX_VALUE_CHARS,
+                      'icons': MAX_ICON_LINKS,
                       'candidates': MAX_KIND_CANDIDATES, 'samples': MAX_SAMPLES,
                       'snippet': MAX_SNIPPET_CHARS, 'rules': MAX_RULES}
 
@@ -57,7 +59,7 @@ STYLES_JS: Final = with_consent_check(r"""
 ((L) => {
   const cut = (s, n) => String(s == null ? '' : s).slice(0, n);
   const out = { url: location.href, title: cut(document.title, 300), vars: {}, elements: [],
-                colors: [], lengths: [], fonts: [], logos: [], status: 0, text: '', html: '',
+                colors: [], lengths: [], fonts: [], logos: [], icons: [], manifest: '', status: 0, text: '', html: '',
                 components: {}, rules: [], auto_margins: [] };
   try {
     const nav = performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null;
@@ -120,6 +122,15 @@ STYLES_JS: Final = with_consent_check(r"""
     }
     const og = document.querySelector('meta[property="og:image"][content]');
     if (og) logo(og.getAttribute('content'), 'og-image');
+    // Icons to copy locally (design_icons): every icon link with its sizes, and the web manifest.
+    for (const link of Array.from(document.querySelectorAll('link[rel][href]'))) {
+      const rel = cut(link.getAttribute('rel'), 60).toLowerCase();
+      if (out.icons.length >= L.icons || !/(^|\s)(icon|apple-touch-icon(-precomposed)?|mask-icon)(\s|$)/.test(rel)) continue;
+      const u = abs(link.getAttribute('href'));
+      if (u) out.icons.push({ url: u, rel, sizes: cut(link.getAttribute('sizes'), 60) });
+    }
+    const manifest = document.querySelector('link[rel~="manifest"][href]');
+    out.manifest = manifest ? (abs(manifest.getAttribute('href')) || '') : '';
     const KEEP = /^(class|type|placeholder|role|aria-[a-z]+)$/;
     const DROP = /^(script|style|iframe|object|embed|template|noscript|svg|canvas|video|audio|form|link|meta)$/i;
     const trim = (node) => {
@@ -233,6 +244,9 @@ class PageStyles:
     lengths: list[dict] = field(default_factory=list)
     fonts: list[dict] = field(default_factory=list)
     logos: list[dict] = field(default_factory=list)
+    #: ``[{url, rel, sizes}]`` icon links and the web manifest's URL, for the local icon copies (page_icons).
+    icons: list[dict] = field(default_factory=list)
+    manifest: str = ''
     #: ``{kind: [sample]}`` measured component styles (page_components); ``rules``: hover / focus rules.
     components: dict[str, list[dict[str, str]]] = field(default_factory=dict)
     rules: list[dict[str, Any]] = field(default_factory=list)
@@ -285,6 +299,7 @@ def parse_page_styles(raw: object, fallback_url: str) -> PageStyles | None:
         root_vars=root_vars, elements=_dicts(data.get('elements'), MAX_ELEMENTS),
         colors=_dicts(data.get('colors'), MAX_RANKED), lengths=_dicts(data.get('lengths'), MAX_RANKED),
         fonts=_dicts(data.get('fonts'), MAX_RANKED), logos=_dicts(data.get('logos'), MAX_LOGOS),
+        icons=_dicts(data.get('icons'), MAX_ICON_LINKS), manifest=_str(data.get('manifest'), 2_048),
         components=parse_components(data.get('components')), rules=parse_rules(data.get('rules')),
         auto_margins=[_str(m, 40) for m in margins[:MAX_RANKED]] if isinstance(margins, list) else [],
     )

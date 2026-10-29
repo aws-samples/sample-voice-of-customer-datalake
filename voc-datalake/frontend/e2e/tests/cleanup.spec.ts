@@ -19,7 +19,7 @@ import { expect } from '@playwright/test'
 import { test } from '../lib/test'
 import { apiCall, listOf, stringField } from '../lib/api'
 import { isRecord } from '../lib/guards'
-import { E2E_PREFIX, OUT_DIR, RUN_ID, SUITE_NAME, type Role } from '../lib/env'
+import { E2E_PREFIX, OUT_DIR, RUN_ID, SUITE_NAME, removeAuthDir, type Role } from '../lib/env'
 import { runLedger, type Created, type EntityKind } from '../lib/ledger'
 import { deleteConversations, runConversations } from '../lib/runCleanup'
 
@@ -101,6 +101,9 @@ async function listed(role: Role, c: Collection): Promise<Array<{ id: string; na
     .map((item) => ({ id: stringField(item, ...c.idKeys) ?? '', name: stringField(item, 'name') ?? '' }))
     .filter((item) => item.id !== '')
 }
+
+// The run's saved sessions hold Cognito tokens: gone once cleanup ends, pass or fail (E2E_KEEP_AUTH=1 keeps them).
+test.afterAll(() => removeAuthDir())
 
 // Soft assertions throughout: one kind that fails to clean up must not keep the
 // others (or the proof file) from being done; the test still fails.

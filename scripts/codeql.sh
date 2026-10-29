@@ -75,6 +75,10 @@ done
 
 sarifs=()
 for lang in $LANGS; do sarifs+=("$OUT/$lang.sarif"); done
-strict=()
-[ "${CODEQL_STRICT:-0}" = 1 ] && strict=(--strict)
-node scripts/codeql-summary.mjs "${strict[@]}" "${sarifs[@]}"
+# No optional-flag array: bash 3.2 (the macOS /bin/bash) calls an EMPTY array unbound under `set -u`, so
+# an unguarded "${strict[@]}" stopped the run there (5.48.01). Two plain calls cannot regress that way.
+if [ "${CODEQL_STRICT:-0}" = 1 ]; then
+  node scripts/codeql-summary.mjs --strict "${sarifs[@]}"
+else
+  node scripts/codeql-summary.mjs "${sarifs[@]}"
+fi

@@ -378,6 +378,7 @@ describe('memory + agents APIs (VocApiStack)', () => {
       .filter((st) => st.actions.some((a) => a.startsWith('s3:Delete')));
     expect(deletes.map((st) => st.actions)).toStrictEqual([['s3:DeleteObject']]);
     expect(itemAt(deletes, 0).resource).toContain('/company-context/design/logo_preview_*');
+    expect(itemAt(deletes, 0).resource).toContain('/company-context/design/icons_*');
   });
 
   it('hands the stream assistant the memory and agents function names', () => {

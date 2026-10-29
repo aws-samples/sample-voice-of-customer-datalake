@@ -14,6 +14,8 @@ markup is rebuilt here, deny-by-default, before it becomes an ``<img src="data:i
   gone; ``href`` / ``xlink:href`` only as a same-document ``#id``; a value carrying ``url(`` must be
   ``url(#id)``; a ``style`` attribute keeps only allowed properties with such values (no ``\\``, ``@``,
   ``expression``, ``javascript:``);
+- the file's own ``<style>`` sheet is read first (``shared.design_svg_style``): its simple class / element
+  rules become presentation attributes, checked like the others, so a tool-exported logo keeps its colours;
 - the result is at most ``MAX_SVG_CHARS`` characters, and the root gets ``width`` / ``height`` when it
   has none (the box the page measured, else the ``viewBox``), so the browser can size the image.
 
@@ -27,6 +29,8 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Final
 from xml.parsers import expat
+
+from shared.design_svg_style import inline_style_sheets, local_name
 
 SVG_NS: Final = 'http://www.w3.org/2000/svg'
 XLINK_NS: Final = 'http://www.w3.org/1999/xlink'
@@ -78,11 +82,6 @@ class SvgRefused(ValueError):
     """A short reason code the SVG could not be sanitised (logged, never shown)."""
 
 
-def _local(tag: str) -> str:
-    """The element / attribute name without its namespace, lower-cased."""
-    return tag.rsplit('}', 1)[-1].lower()
-
-
 def _safe_value(value: str) -> bool:
     if _UNSAFE_VALUE_RE.search(value):
         return False
@@ -117,7 +116,7 @@ class _Rebuilder:
         self.count = 0
 
     def element(self, source: ET.Element, depth: int) -> ET.Element | None:
-        name = _local(source.tag)
+        name = local_name(source.tag)
         if name not in ALLOWED_ELEMENTS or depth > MAX_DEPTH:
             return None
         self.count += 1
@@ -125,7 +124,7 @@ class _Rebuilder:
             raise SvgRefused('too_many_elements')
         copy = ET.Element(f'{{{SVG_NS}}}{name}')
         for raw_name, raw_value in source.attrib.items():
-            attribute = _local(raw_name)
+            attribute = local_name(raw_name)
             if raw_name.startswith('{') and not raw_name.startswith((f'{{{XLINK_NS}}}', f'{{{SVG_NS}}}')):
                 continue
             kept = _clean_attribute(attribute, raw_value)
@@ -156,7 +155,7 @@ def _canonical_attribute(name: str) -> str:
 
 def _restore_element_case(root: ET.Element) -> None:
     for element in root.iter():
-        name = _local(element.tag)
+        name = local_name(element.tag)
         if name in _CAMEL_ELEMENTS:
             element.tag = f'{{{SVG_NS}}}{_CAMEL_ELEMENTS[name]}'
 
@@ -251,8 +250,9 @@ def sanitize_svg(markup: object, box: tuple[object, object] | None = None) -> st
     if _REFUSED_MARKUP_RE.search(markup):
         raise SvgRefused('doctype_or_entity')
     parsed = _parse(markup.strip().lstrip('\ufeff'))
-    if _local(parsed.tag) != 'svg':
+    if local_name(parsed.tag) != 'svg':
         raise SvgRefused('not_svg')
+    inline_style_sheets(parsed)
     root = _Rebuilder().element(parsed, 0)
     if root is None or len(root) == 0:
         raise SvgRefused('nothing_drawn')

@@ -558,6 +558,9 @@
       "onlyGuidelines": "仅有规范",
       "logoCandidate": "在此参考资料中找到的徽标",
       "logoRendered": "由网站的 SVG 徽标渲染",
+      "downloadSvg": "下载 SVG",
+      "icons": "网站图标",
+      "iconAlt": "网站图标",
       "apply": "用作设计系统",
       "useLogo": "使用此徽标",
       "logoFailed": "无法使用此徽标，请重试。"
@@ -823,6 +826,7 @@
       "empty": "尚无看板。从模板创建一个。",
       "loadFailed": "无法加载看板。",
       "archived": "已归档",
+      "paused": "已暂停",
       "edit": "编辑",
       "editLabel": "编辑 {{name}}",
       "requests_one": "{{count, number}} 个请求",
@@ -915,13 +919,10 @@
       "full": "一个看板最多有 {{max, number}} 个状态。"
     },
     "lifecycle": {
-      "title": "归档或删除",
-      "hint_one": "此看板有 {{count, number}} 个请求。归档后仅管理员可见，请求会保留；删除会移除看板及其请求。",
-      "hint_other": "此看板有 {{count, number}} 个请求。归档后仅管理员可见，请求会保留；删除会移除看板及其请求。",
-      "saveFirst": "请先保存或放弃您的更改。",
-      "archive": "归档",
-      "restore": "恢复",
-      "delete": "删除看板"
+      "title": "暂停、归档或删除",
+      "hint_one": "此看板有 {{count, number}} 个请求。暂停是临时的：看板仍可查看，但在你继续之前，任何人都不能提交、添加 +1 或编辑。归档是删除前的一步：除管理员外所有人都看不到该看板，请求会保留。看板归档后才能删除。",
+      "hint_other": "此看板有 {{count, number}} 个请求。暂停是临时的：看板仍可查看，但在你继续之前，任何人都不能提交、添加 +1 或编辑。归档是删除前的一步：除管理员外所有人都看不到该看板，请求会保留。看板归档后才能删除。",
+      "saveFirst": "请先保存或放弃您的更改。"
     },
     "problems": {
       "nameRequired": "看板需要名称。",

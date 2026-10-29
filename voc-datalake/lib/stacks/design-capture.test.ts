@@ -12,7 +12,7 @@ import { itemAt } from '../test-support/guards';
 import { SYNTH_REGION, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { PY_LAMBDA_ASSET_EXCLUDES, rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
 import {
-  DESIGN_CAPTURE_MEMORY_MB, DESIGN_CAPTURE_TIMEOUT, DESIGN_SYSTEM_PARTITION, LOGO_PREVIEW_PREFIX,
+  DESIGN_CAPTURE_MEMORY_MB, DESIGN_CAPTURE_TIMEOUT, DESIGN_ICONS_PREFIX, DESIGN_SYSTEM_PARTITION, LOGO_PREVIEW_PREFIX,
   MODEL_SETTINGS_PARTITION,
 } from './design-capture';
 import { BROWSER_SESSION_ACTIONS, BROWSER_STREAM_ACTION } from './ingestion-roles';
@@ -94,10 +94,15 @@ describe('voc-design-capture in VocIngestionStack', () => {
     expect(actions.filter((a) => /^(secretsmanager|sqs|lambda):/.test(a))).toStrictEqual([]);
   });
 
-  it('may only PUT the logo-candidate preview objects in S3 (no read, no delete, no other prefix)', () => {
+  it('may only PUT the logo-preview and copied-icon objects in S3 (no read, no delete, no other prefix)', () => {
     const s3Statements = statements().filter((s) => s.actions.some((a) => a.startsWith('s3:')));
     expect(s3Statements.map((s) => s.actions)).toStrictEqual([['s3:PutObject']]);
     expect(itemAt(s3Statements, 0).resource).toContain(`/${LOGO_PREVIEW_PREFIX}*`);
+    expect(itemAt(s3Statements, 0).resource).toContain(`/${DESIGN_ICONS_PREFIX}*`);
+    expect(itemAt(s3Statements, 0).resource).not.toContain('/company-context/*');
+  });
+
+  it('is told the raw bucket it writes to', () => {
     expect(serviceEnvironmentOf(template).RAW_DATA_BUCKET).toBeDefined();
   });
 

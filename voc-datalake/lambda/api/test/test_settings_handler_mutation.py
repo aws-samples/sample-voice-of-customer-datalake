@@ -1383,10 +1383,13 @@ class TestReferenceWrites:
             ExpressionAttributeNames={'#st': 'status', '#u': 'updated_at'},
             ExpressionAttributeValues={':archived': 'archived', ':u': FIXED_NOW_ISO},
         )
-        # 5.47.00: the logo preview objects go with the archive (all three possible types, one call).
+        # 5.47.00: the logo preview objects go with the archive (every possible type, one call); 5.48.00: the
+        # sanitised SVG beside it too, and every object listed under the reference's icon folder (none here).
         s3.delete_objects.assert_called_once_with(Bucket=settings_handler.RAW_DATA_BUCKET, Delete={'Objects': [
-            {'Key': f'company-context/design/logo_preview_{REF_ID}.{ext}'} for ext in ('png', 'jpg', 'webp')],
+            {'Key': f'company-context/design/logo_preview_{REF_ID}.{ext}'} for ext in ('png', 'jpg', 'webp', 'svg')],
             'Quiet': True})
+        s3.list_objects_v2.assert_called_once_with(Bucket=settings_handler.RAW_DATA_BUCKET,
+                                                   Prefix=f'company-context/design/icons_{REF_ID}/', MaxKeys=1000)
         assert payload['reference']['id'] == REF_ID
 
     @pytest.mark.usefixtures('fixed_now')
@@ -1398,9 +1401,25 @@ class TestReferenceWrites:
         with patch.object(settings_handler, 'get_s3_client', return_value=s3):
             route('DELETE', f'/settings/design-system/references/{REF_ID}')
         kwargs = table.update_item.call_args.kwargs
-        assert kwargs['UpdateExpression'] == 'SET #st = :archived, #u = :u REMOVE #d.#l.#p'
+        assert kwargs['UpdateExpression'] == 'SET #st = :archived, #u = :u REMOVE #d.#l.#preview_key'
         assert kwargs['ExpressionAttributeNames'] == {'#st': 'status', '#u': 'updated_at', '#d': 'extracted_design',
-                                                      '#l': 'logo', '#p': 'preview_key'}
+                                                      '#l': 'logo', '#preview_key': 'preview_key'}
+
+    @pytest.mark.usefixtures('fixed_now')
+    def test_the_archive_write_drops_the_svg_copy_and_the_icons_too(self, route, table):
+        table.get_item.return_value = {'Item': {'id': REF_ID, 'kind': 'website', 'status': 'ready', 'extracted_design': {
+            'logo': {'source_url': 'https://x.example/l.svg', 'preview_key': 'k', 'svg_preview_key': 's'},
+            'icons': [{'key': 'i'}]}}}
+        s3 = MagicMock()
+        s3.delete_objects.return_value = {}
+        s3.list_objects_v2.return_value = {'Contents': [{'Key': f'company-context/design/icons_{REF_ID}/a.png'}]}
+        with patch.object(settings_handler, 'get_s3_client', return_value=s3):
+            route('DELETE', f'/settings/design-system/references/{REF_ID}')
+        kwargs = table.update_item.call_args.kwargs
+        assert kwargs['UpdateExpression'] == ('SET #st = :archived, #u = :u REMOVE #d.#l.#preview_key, '
+                                              '#d.#l.#svg_preview_key, #d.#icons')
+        deleted = [o['Key'] for o in s3.delete_objects.call_args.kwargs['Delete']['Objects']]
+        assert deleted[-1] == f'company-context/design/icons_{REF_ID}/a.png'
 
     @pytest.mark.parametrize(('method', 'path'), [
         ('POST', '/settings/design-system/references'),

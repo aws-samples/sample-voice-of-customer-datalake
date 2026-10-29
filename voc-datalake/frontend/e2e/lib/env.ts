@@ -99,6 +99,20 @@ export function storageStatePath(role: Role): string {
   return path.join(AUTH_DIR, `${role}.json`)
 }
 
+/**
+ * Whether the run's saved sessions are deleted when its cleanup finishes: yes for the default folders
+ * (`<E2E_OUT>/.auth`, `e2e/.auth`), which belong to this run alone. Not when `E2E_AUTH_DIR` names a
+ * folder (the caller owns it, e.g. shards sharing one) or `E2E_KEEP_AUTH=1` (re-running specs by hand).
+ */
+export function removesAuthAfterRun(env: Readonly<Record<string, string | undefined>>): boolean {
+  return (env['E2E_AUTH_DIR'] ?? '').trim() === '' && env['E2E_KEEP_AUTH'] !== '1'
+}
+
+/** Deletes the run's saved sessions (Cognito tokens): nothing secret stays on disk after a run. */
+export function removeAuthDir(): void {
+  if (removesAuthAfterRun(process.env)) fs.rmSync(AUTH_DIR, { recursive: true, force: true })
+}
+
 /** Prefix of every entity this suite creates; cleanup only ever touches these. */
 export const E2E_PREFIX = 'e2e-'
 

@@ -1,6 +1,6 @@
 /**
  * @fileoverview The board editor: basics + share link, audience validation and the `anyone`
- * warning, field switches, status limits / reorder, the 409 explanations, archive / delete, and
+ * warning, field switches, status limits / reorder, the 409 explanations, pause / archive / delete, and
  * read-only for a non-admin.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -183,36 +183,66 @@ describe('statuses', () => {
   })
 })
 
-describe('archive and delete', () => {
-  it('waits for a saved draft before archiving', async () => {
+describe('pause, archive and delete', () => {
+  it('waits for a saved draft before pausing or archiving', async () => {
     const user = userEvent.setup()
     renderEditor()
     await user.type(await screen.findByRole('textbox', { name: 'Description' }), 'x')
-    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Archive Sales feature requests' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pause Sales feature requests' })).toBeDisabled()
     expect(screen.getByText(/Save or discard your changes first\./)).toBeInTheDocument()
   })
 
-  it('archives a board and restores an archived one', async () => {
+  it('pauses a board after a confirm, and resumes it without one', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+    await user.click(await screen.findByRole('button', { name: 'Pause Sales feature requests' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText(/Nobody can post a request, add a \+1 or edit until you resume it\./)).toBeInTheDocument()
+    expect(puts()).toHaveLength(0)
+    await user.click(dialog.getByRole('button', { name: 'Pause' }))
+    await waitFor(() => expect(lastPutBody()).toStrictEqual({ paused: true }))
+    await user.click(await screen.findByRole('button', { name: 'Resume Sales feature requests' }))
+    await waitFor(() => expect(puts().map(([, options]) => asRecord(JSON.parse(String(options?.body)))))
+      .toStrictEqual([{ paused: true }, { paused: false }]))
+  })
+
+  it('archives a board after a confirm that calls it the step before deletion', async () => {
+    const user = userEvent.setup()
+    renderEditor()
+    await user.click(await screen.findByRole('button', { name: 'Archive Sales feature requests' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText(/Archiving is the step before deleting\..*leaves the view of the people it is shared with/))
+      .toBeInTheDocument()
+    await user.click(dialog.getByRole('button', { name: 'Archive' }))
+    await waitFor(() => expect(lastPutBody()).toStrictEqual({ archived: true }))
+    expect(await screen.findByRole('button', { name: 'Delete Sales feature requests' })).toBeInTheDocument()
+  })
+
+  it('restores an archived board', async () => {
     const user = userEvent.setup()
     routeFetchApi(boardRoutes({ 'PUT /feature-requests/boards/brd_00000001': echoPut(BETA_BOARD) }))
     renderEditor('brd_00000001')
-    await user.click(await screen.findByRole('button', { name: 'Restore' }))
+    await user.click(await screen.findByRole('button', { name: 'Restore Beta feedback' }))
     await waitFor(() => expect(lastPutBody()).toStrictEqual({ archived: false }))
-    expect(await screen.findByRole('button', { name: 'Archive' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Archive Beta feedback' })).toBeInTheDocument()
   })
 
-  it('says deleting removes the board and its requests', async () => {
+  it('offers Delete only on an archived board, and says so', async () => {
     renderEditor()
-    expect(await screen.findByText(/deleting removes the board and its requests\./)).toBeInTheDocument()
-    expect(screen.queryByText(/only an empty board/i)).not.toBeInTheDocument()
+    expect(await screen.findByText(/Delete is offered once the board is archived\./)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
   })
 
-  it('deletes a board with its requests once its name is typed, and leaves the editor', async () => {
+  it('deletes an archived board with its requests once its name is typed, and leaves the editor', async () => {
     const user = userEvent.setup()
     const steps = [{ success: true, done: false, deleted: 1, remaining: 1 }, { success: true, done: true, deleted: 1, remaining: 0 }]
-    routeFetchApi(boardRoutes({ [`DELETE ${SALES_PATH}?with_requests=true`]: () => steps.shift() }))
+    routeFetchApi(boardRoutes({
+      [`GET ${SALES_PATH}`]: () => ({ board: { ...SALES_BOARD, archived: true } }),
+      [`DELETE ${SALES_PATH}?with_requests=true`]: () => steps.shift(),
+    }))
     renderEditor()
-    await user.click(await screen.findByRole('button', { name: 'Delete board' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete Sales feature requests' }))
     const dialog = within(screen.getByRole('dialog'))
     expect(dialog.getByText(/its 2 requests and every \+1 on them are deleted permanently/)).toBeInTheDocument()
     await user.type(dialog.getByRole('textbox', { name: 'Type the board name to confirm' }), 'Sales feature requests')
@@ -225,18 +255,18 @@ describe('archive and delete', () => {
     const user = userEvent.setup()
     routeFetchApi(boardRoutes({ 'DELETE /feature-requests/boards/brd_00000001': () => ({ success: true }) }))
     renderEditor('brd_00000001')
-    await user.click(await screen.findByRole('button', { name: 'Delete board' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete Beta feedback' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 })
 
 describe('a non-admin', () => {
-  it('sees the configuration read-only, with no save, archive or delete', async () => {
+  it('sees the configuration read-only, with no save, pause, archive or delete', async () => {
     adminFlag.isAdmin = false
     renderEditor()
     expect(await screen.findByRole('textbox', { name: 'Name' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Save board' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Delete board' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^(Delete|Pause|Archive)/ })).not.toBeInTheDocument()
   })
 })

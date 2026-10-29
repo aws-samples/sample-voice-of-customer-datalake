@@ -9,6 +9,10 @@ edit or remove any support, and promote a request into a project. Field values a
 against the board's enabled fields (``shared.feature_board_fields``); ``anyone`` boards are
 rate-limited (``shared.feature_boards_limits``). No ``board`` = the seeded board, so a client
 from before boards keeps working.
+
+A PAUSED board (``paused``) is read as before but answers 409 ``board_paused`` to every new request,
++1 and edit, admins' included; admins still triage it (status, delete a request or a +1, promote).
+A request never changes board: an edit that names ``board`` / ``board_id`` is a 400.
 """
 from __future__ import annotations
 
@@ -24,7 +28,7 @@ from shared.exceptions import AuthorizationError, ConflictError, NotFoundError, 
 from shared.feature_board_fields import description_required, field_values, fields_of, statuses_of, validate_status
 from shared.feature_boards_access import BoardScope, scope_for, scope_from_event
 from shared.feature_boards_limits import charge_request, charge_support
-from shared.feature_boards_store import board_view
+from shared.feature_boards_store import board_view, is_paused
 from shared.feature_requests_promote import promote
 from shared.feature_requests_store import (
     REQUEST_NOT_FOUND,
@@ -54,6 +58,8 @@ from shared.request_body import json_object_body
 
 app = Router()
 BOARD_ARCHIVED: Final = 'board_archived'
+BOARD_PAUSED: Final = 'board_paused'
+BOARD_FIXED: Final = 'A request cannot be moved to another board'
 ALREADY_SUPPORTED: Final = 'already_supported'
 
 
@@ -75,10 +81,29 @@ def _scoped(scope: BoardScope, request_id: str) -> tuple[dict[str, Any], dict[st
     return request, scope.board_of(request)
 
 
+def _not_paused(board: Mapping[str, Any]) -> None:
+    """A paused board is read-only for everyone (admins included) until an admin resumes it."""
+    if is_paused(board):
+        raise ConflictError(BOARD_PAUSED)
+
+
 def _open(board: Mapping[str, Any]) -> None:
-    """Nothing new is posted on an archived board (only an admin still sees it)."""
+    """Nothing new is posted on an archived board (only an admin still sees it) or a paused one."""
     if board.get('archived') is True:
         raise ConflictError(BOARD_ARCHIVED)
+    _not_paused(board)
+
+
+def _unpaused_unless_admin(viewer: BoardViewer, board: Mapping[str, Any]) -> None:
+    """Triage stays open to admins on a paused board (removing a +1); everyone else waits for the resume."""
+    if not viewer.is_admin:
+        _not_paused(board)
+
+
+def _same_board(body: Mapping[str, Any]) -> None:
+    """A request never moves to another board: an edit naming one is refused, not ignored."""
+    if 'board' in body or 'board_id' in body:
+        raise ValidationError(BOARD_FIXED)
 
 
 def _not_yet_supporting(table: Any, request_id: str, email: str) -> None:
@@ -180,7 +205,9 @@ def put_request(request_id: str):
     scope = scope_from_event(app.current_event.raw_event)
     request, board = _scoped(scope, request_id)
     _own_or_admin(scope.viewer, request.get('reporter_email'))
+    _not_paused(board)
     body = json_object_body(app)
+    _same_board(body)
     changes = request_text(body, partial=True, description_required=description_required(board))
     if 'fields' in body:
         changes['fields'] = field_values(board, 'request', body)
@@ -239,6 +266,7 @@ def put_support_route(request_id: str, support_id: str):
     _, board = _scoped(scope, request_id)
     current = get_support(scope.table, request_id, _support_id(support_id))
     _own_or_admin(scope.viewer, current.get('email'))
+    _not_paused(board)
     body = json_object_body(app)
     fields = {**field_values(board, 'support', body), 'name': poster_name(body) or str(current.get('name') or '')}
     keep = {key: current[key] for key in ('pk', 'sk', 'support_id', 'request_id', 'email', 'is_reporter',
@@ -254,6 +282,7 @@ def delete_support_route(request_id: str, support_id: str):
     _, board = _scoped(scope, request_id)
     current = get_support(scope.table, request_id, _support_id(support_id))
     _own_or_admin(scope.viewer, current.get('email'))
+    _unpaused_unless_admin(scope.viewer, board)
     delete_support(scope.table, request_id, support_id)
     return {'request': _recomputed(scope, request_id, board)}
 

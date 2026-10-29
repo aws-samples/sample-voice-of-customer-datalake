@@ -7,7 +7,7 @@
  *
  * @module pages/FeatureRequests/FeatureBoard
  */
-import { Plus } from 'lucide-react'
+import { PauseCircle, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
@@ -52,6 +52,34 @@ function ListFailure({ error, retry, retrying, notFound }: Readonly<{
   return <LoadFailed message={t('list.loadFailed')} onRetry={retry} retrying={retrying} />
 }
 
+/** A paused board: readable as before, but closed to new requests, +1s and edits until an admin resumes it. */
+function PausedNotice() {
+  const { t } = useTranslation('featureRequests')
+  return (
+    <p role="status" className="card p-3 flex items-center gap-2 text-sm text-text-strong" data-testid="board-paused-notice">
+      <PauseCircle size={16} className="text-warn shrink-0" aria-hidden="true" />{t('boards.pausedNotice')}
+    </p>
+  )
+}
+
+/** The intro and "New request"; on a paused board the notice instead of "New request". */
+function BoardToolbar({ paused, onNew }: Readonly<{ paused: boolean; onNew: () => void }>) {
+  const { t } = useTranslation('featureRequests')
+  return (
+    <>
+      {paused ? <PausedNotice /> : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted">{t('list.intro')}</p>
+        {paused ? null : (
+          <button type="button" className="btn btn-primary" onClick={onNew}>
+            <Plus size={16} aria-hidden="true" />{t('new.open')}
+          </button>
+        )}
+      </div>
+    </>
+  )
+}
+
 /**
  * `boardRef` = the board's slug or id from the URL. `notFound` is shown when the board does not
  * exist for this person (a 404 never says which).
@@ -79,12 +107,7 @@ export default function FeatureBoard({ boardRef, notFound, header }: Readonly<{
       <div className="space-y-4">
         {header?.(board)}
         <BoardSummary requests={requests} />
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted">{t('list.intro')}</p>
-          <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-            <Plus size={16} aria-hidden="true" />{t('new.open')}
-          </button>
-        </div>
+        <BoardToolbar paused={board.paused} onNew={() => setCreating(true)} />
         <RequestList requests={requests} onOpen={setOpenId} />
         {creating ? (
           <NewRequestModal initialName={initialName} onClose={() => setCreating(false)}

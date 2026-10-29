@@ -36,6 +36,9 @@ paths = [
   '''(^|/)reports/''',
   '''(^|/)test-results/''',
   '''(^|/)playwright-report/''',
+  # e2e saved sessions (Cognito tokens, gitignored by e2e/.gitignore and a unit test). The run's cleanup
+  # deletes them (e2e/lib/env.ts removeAuthDir); this keeps a kept or interrupted run's tokens out of the report.
+  '''(^|/)\.auth/''',
   '''voc-datalake/lambda/layers/[^/]+/python/''',
 ]
 

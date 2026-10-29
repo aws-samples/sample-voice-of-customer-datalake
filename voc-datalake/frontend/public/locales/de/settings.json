@@ -558,6 +558,9 @@
       "onlyGuidelines": "Nur Richtlinien",
       "logoCandidate": "In dieser Referenz gefundenes Logo",
       "logoRendered": "Aus dem SVG-Logo der Website gerendert",
+      "downloadSvg": "SVG herunterladen",
+      "icons": "Website-Symbole",
+      "iconAlt": "Website-Symbol",
       "apply": "Als Designsystem verwenden",
       "useLogo": "Dieses Logo verwenden",
       "logoFailed": "Dieses Logo konnte nicht verwendet werden. Bitte erneut versuchen."
@@ -823,6 +826,7 @@
       "empty": "Noch keine Boards. Erstellen Sie eines aus einer Vorlage.",
       "loadFailed": "Die Boards konnten nicht geladen werden.",
       "archived": "Archiviert",
+      "paused": "Pausiert",
       "edit": "Bearbeiten",
       "editLabel": "{{name}} bearbeiten",
       "requests_one": "{{count, number}} Anfrage",
@@ -915,13 +919,10 @@
       "full": "Ein Board hat höchstens {{max, number}} Status."
     },
     "lifecycle": {
-      "title": "Archivieren oder löschen",
-      "hint_one": "Dieses Board hat {{count, number}} Anfrage. Archivieren blendet es für alle außer Admins aus und behält seine Anfragen; Löschen entfernt das Board und seine Anfragen.",
-      "hint_other": "Dieses Board hat {{count, number}} Anfragen. Archivieren blendet es für alle außer Admins aus und behält seine Anfragen; Löschen entfernt das Board und seine Anfragen.",
-      "saveFirst": "Speichern oder verwerfen Sie zuerst Ihre Änderungen.",
-      "archive": "Archivieren",
-      "restore": "Wiederherstellen",
-      "delete": "Board löschen"
+      "title": "Pausieren, archivieren oder löschen",
+      "hint_one": "Dieses Board hat {{count, number}} Anfrage. Pausieren ist vorübergehend: Das Board bleibt lesbar, aber niemand kann etwas posten, ein +1 hinzufügen oder bearbeiten, bis Sie es fortsetzen. Archivieren ist der Schritt vor dem Löschen: Es blendet das Board für alle außer Admins aus und behält seine Anfragen. Löschen ist möglich, sobald das Board archiviert ist.",
+      "hint_other": "Dieses Board hat {{count, number}} Anfragen. Pausieren ist vorübergehend: Das Board bleibt lesbar, aber niemand kann etwas posten, ein +1 hinzufügen oder bearbeiten, bis Sie es fortsetzen. Archivieren ist der Schritt vor dem Löschen: Es blendet das Board für alle außer Admins aus und behält seine Anfragen. Löschen ist möglich, sobald das Board archiviert ist.",
+      "saveFirst": "Speichern oder verwerfen Sie zuerst Ihre Änderungen."
     },
     "problems": {
       "nameRequired": "Das Board braucht einen Namen.",

@@ -13,23 +13,25 @@ a live website on ``voc-design-capture``) and keeps the image under
 candidate from the private bucket (``logo.preview_url``, signed like the company logo) without
 the browser ever fetching a third-party address. Any failure leaves the preview absent.
 
-An SVG logo is never downloaded or stored: ``voc-design-capture`` renders it to a PNG in the managed
-browser (``lambda/design_capture/logo_render.py``) and ``store_rendered`` keeps only that PNG, under the
-same preview key, with ``rendered: True``; "Use this logo" then copies the stored PNG
+An SVG logo is never downloaded here: ``voc-design-capture`` renders it to a PNG in the managed
+browser (``lambda/design_capture/logo_render.py``) and ``store_rendered`` keeps that PNG under the same
+preview key, with ``rendered: True``, plus the SANITISED SVG beside it (``logo_preview_<ref id>.svg``,
+download-only: ``shared.design_assets``); "Use this logo" then copies the stored PNG
 (``read_rendered_preview``) instead of downloading the candidate.
 
 Archiving a reference (``DELETE /settings/design-system/references/{id}``) deletes its preview objects
-(``delete_previews``; the settings role's only S3 delete, scoped to ``logo_preview_*``).
+(``delete_previews``; the settings role's only S3 delete, scoped to ``logo_preview_*`` and ``icons_*``).
 """
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import requests
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared import design_assets
 from shared.extracted_design import LOGO_PREVIEW_PREFIX
 from shared.http_utils import UnsafeURLError, fetch_public_url
 from shared.logging import logger
@@ -41,6 +43,8 @@ HTTP_OK = 200
 PNG_TYPE = 'image/png'
 LOGO_EXTENSIONS = {PNG_TYPE: 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp'}
 REF_ID_RE = re.compile(r'^ref_[0-9a-f]{12}\Z')
+#: S3 DeleteObjects takes at most this many keys in one call.
+MAX_DELETE_KEYS = 1_000
 
 
 class LogoFetchError(ValueError):
@@ -98,11 +102,19 @@ def is_rendered(logo: dict, ref_id: str) -> bool:
             and logo.get('preview_key') == preview_key(ref_id, PNG_TYPE))
 
 
-def store_rendered(source_url: str, png: bytes, ref_id: str, s3: Any, bucket: str) -> dict | None:
-    """Store a browser-rendered SVG logo (PNG bytes) as the reference's preview → the logo to record
-    ``{source_url, content_type: 'image/png', rendered: True, preview_key}``, or None (nothing stored).
+def svg_preview_key(ref_id: str) -> str:
+    """Where the SANITISED SVG of a rendered logo is kept, beside its PNG (download-only, shared.design_assets)."""
+    return f'{LOGO_PREVIEW_PREFIX}{ref_id}.svg'
 
-    The bytes are checked again here: a PNG by its magic bytes, at most 2 MB. Never raises.
+
+def store_rendered(source_url: str, png: bytes, ref_id: str, s3: Any, bucket: str,
+                   svg: str | None = None) -> dict | None:
+    """Store a browser-rendered SVG logo (PNG bytes) as the reference's preview → the logo to record
+    ``{source_url, content_type: 'image/png', rendered: True, preview_key, svg_preview_key?}``, or None.
+
+    The bytes are checked again here: a PNG by its magic bytes, at most 2 MB. ``svg`` is the sanitised
+    markup (``shared.design_svg`` output) the PNG was drawn from, when there is one: it is stored too, as a
+    download-only object (``design_assets.put_svg``); when that fails the PNG is still recorded. Never raises.
     """
     if (not bucket or not REF_ID_RE.fullmatch(ref_id) or not source_url.startswith('https://')
             or sniff_image_type(png) != PNG_TYPE or len(png) > MAX_LOGO_BYTES):
@@ -113,7 +125,10 @@ def store_rendered(source_url: str, png: bytes, ref_id: str, s3: Any, bucket: st
     except (BotoCoreError, ClientError) as exc:
         logger.warning(f'Rendered logo preview not stored: {type(exc).__name__}')
         return None
-    return {'source_url': source_url, 'content_type': PNG_TYPE, 'rendered': True, 'preview_key': key}
+    logo = {'source_url': source_url, 'content_type': PNG_TYPE, 'rendered': True, 'preview_key': key}
+    if svg and design_assets.put_svg(s3, bucket, svg_preview_key(ref_id), svg):
+        logo['svg_preview_key'] = svg_preview_key(ref_id)
+    return logo
 
 
 def read_rendered_preview(s3: Any, bucket: str, key: object) -> bytes:
@@ -138,25 +153,28 @@ def read_rendered_preview(s3: Any, bucket: str, key: object) -> bytes:
 
 
 def preview_keys(ref_id: str) -> list[str]:
-    """Every key a reference's logo preview can have (one per stored type), [] for a malformed id."""
+    """Every key a reference's logo preview can have (one per stored type, and the sanitised SVG), [] for a
+    malformed id."""
     if not REF_ID_RE.fullmatch(ref_id):
         return []
-    return [preview_key(ref_id, content_type) for content_type in LOGO_EXTENSIONS]
+    return [*(preview_key(ref_id, content_type) for content_type in LOGO_EXTENSIONS), svg_preview_key(ref_id)]
 
 
 class LogoPreviewDeleteError(RuntimeError):
     """S3 did not delete every preview object of a reference (the key count is logged, never the keys)."""
 
 
-def delete_previews(s3: Any, bucket: str, ref_id: str) -> int:
-    """Delete the reference's logo preview objects (``logo_preview_<ref id>.png|jpg|webp``) → keys asked for.
+def delete_previews(s3: Any, bucket: str, ref_id: str, extra_keys: Sequence[str] = ()) -> int:
+    """Delete the reference's logo preview objects (``logo_preview_<ref id>.png|jpg|webp|svg``) and
+    ``extra_keys`` (its copied icons, ``shared.design_icons.stored_icon_keys``) → keys asked for.
 
-    ONE ``DeleteObjects`` call over the three possible keys: a key that does not exist is not an error
+    ONE ``DeleteObjects`` call (at most 1,000 keys): a key that does not exist is not an error
     (S3 answers it as deleted), so the call is idempotent and safe to repeat. LogoPreviewDeleteError when
     S3 reports a key it could not delete or the call itself fails; nothing for an empty bucket name or a
     malformed id.
     """
-    keys = preview_keys(ref_id)
+    own = preview_keys(ref_id)
+    keys = [*own, *extra_keys][:MAX_DELETE_KEYS] if own else []
     if not bucket or not keys:
         return 0
     try:
@@ -186,7 +204,7 @@ def store_preview(design: dict | None, ref_id: str, s3: Any, bucket: str,
         return design
     if is_rendered(logo, ref_id):
         return design
-    logo = {k: v for k, v in logo.items() if k not in ('preview_key', 'rendered')}
+    logo = {k: v for k, v in logo.items() if k not in ('preview_key', 'svg_preview_key', 'rendered')}
     without = {**design, 'logo': logo}
     url = logo.get('source_url')
     if not bucket or not isinstance(url, str) or not REF_ID_RE.fullmatch(ref_id):

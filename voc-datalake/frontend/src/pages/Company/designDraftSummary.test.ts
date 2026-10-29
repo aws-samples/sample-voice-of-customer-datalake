@@ -23,7 +23,7 @@ const SAVED = {
 
 const NO_COMPONENT_CHANGE = { added: 0, replaced: 0 }
 
-const EMPTY_DESIGN: ExtractedDesign = { colors: [], typography: [], spacing: [], radius: [], guidelines_md: '', components: [], logo: null }
+const EMPTY_DESIGN: ExtractedDesign = { colors: [], typography: [], spacing: [], radius: [], guidelines_md: '', components: [], logo: null, icons: [] }
 
 describe('summarizeDraft', () => {
   it('counts new and replaced tokens per group and notices the guidelines', () => {

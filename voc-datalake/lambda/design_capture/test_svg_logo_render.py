@@ -1,4 +1,4 @@
-"""An SVG-only logo on a live website is drawn by the managed browser and kept ONLY as a PNG.
+"""An SVG-only logo on a live website is drawn by the managed browser to a PNG, and kept as a sanitised SVG beside it.
 
 Fake CDP (``test_design_capture_worker.FakeCdp``: the page tab is ``s1``, the render tab ``s2``), moto S3.
 Pins: which logo is rendered (a header SVG beats a touch icon / favicon, a header raster beats a header SVG,
@@ -25,6 +25,7 @@ SVG = 'https://kirocrew.dev/brand/logo.svg'
 TOUCH = 'https://kirocrew.dev/apple-touch-icon.png'
 FAVICON = 'https://kirocrew.dev/favicon.png'
 PREVIEW_KEY = f'company-context/design/logo_preview_{REF_ID}.png'
+SVG_KEY = f'company-context/design/logo_preview_{REF_ID}.svg'
 BOX = {'x': 0, 'y': 0, 'width': 240, 'height': 64}
 
 
@@ -55,9 +56,27 @@ def s3(table):  # noqa: F811 - the fixture imported above opens mock_aws
     return client
 
 
-def _capture(table, s3, cdp: FakeCdp, *, svg_allowed: bool = True, answer: str = ANSWER):  # noqa: F811
-    raster = MagicMock(return_value=MagicMock(status_code=200, content=png_bytes(32, 32)))
-    deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_image=MagicMock(return_value=answer),
+#: What the site serves for its SVG logo URL (an Illustrator-style sheet the sanitiser carries over).
+SITE_SVG = (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 32"><style>.a{fill:#7c3aed}</style>'
+            b'<script>steal()</script><path class="a" d="M0 0h120v32H0z"/></svg>')
+
+
+def _server(svg_body: bytes):
+    """The fetch fake: ``svg_body`` for an ``.svg`` URL, a small PNG for anything else."""
+    def served(url: str, **_kwargs) -> MagicMock:
+        return MagicMock(status_code=200, content=svg_body if url.endswith('.svg') else png_bytes(32, 32))
+    return served
+
+
+def logo_downloads(fetch: MagicMock) -> list[str]:
+    """The URLs fetched for the LOGO (the candidate preview, the SVG copy): not the icon copies' favicon."""
+    return [c.args[0] for c in fetch.call_args_list if not c.args[0].endswith('/favicon.ico')]
+
+
+def _capture(table, s3, cdp: FakeCdp, *, svg_allowed: bool = True, answer: str = ANSWER,  # noqa: F811
+             svg_body: bytes = SITE_SVG):
+    raster = MagicMock(side_effect=_server(svg_body))
+    deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(return_value=answer),
                           sleep=lambda _s: None, clock=iter(range(1000)).__next__, now=lambda: '2026-10-27T00:00:00+00:00',
                           s3=s3, bucket='raw', logo_fetch=raster)
 
@@ -90,16 +109,29 @@ class _FailingDrawCdp(FakeCdp):
 
 
 class TestTheSvgLogoIsRendered:
-    def test_a_header_svg_beats_the_favicon_and_only_its_png_is_stored(self, table, s3):  # noqa: F811
+    def test_a_header_svg_beats_the_favicon_its_png_is_the_preview_and_its_sanitised_svg_a_download(
+            self, table, s3):  # noqa: F811
         cdp = FakeCdp(_page((SVG, 'header'), (FAVICON, 'icon')), render_answer=BOX, logo_png=LOGO_PNG)
         result, stored, raster = _capture(table, s3, cdp)
         assert result == {'status': 'ready'}
         assert stored['extracted_design']['logo'] == {
-            'source_url': SVG, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY}
+            'source_url': SVG, 'content_type': 'image/png', 'rendered': True, 'preview_key': PREVIEW_KEY,
+            'svg_preview_key': SVG_KEY}
         obj = s3.get_object(Bucket='raw', Key=PREVIEW_KEY)
         assert (obj['ContentType'], obj['Body'].read()) == ('image/png', LOGO_PNG)
-        assert [o['Key'] for o in s3.list_objects_v2(Bucket='raw')['Contents']] == [PREVIEW_KEY]
-        raster.assert_not_called()   # the SVG is never downloaded, nor the favicon
+        svg = s3.get_object(Bucket='raw', Key=SVG_KEY)
+        assert (svg['ContentType'], svg['ContentDisposition']) == ('image/svg+xml', 'attachment; filename="logo.svg"')
+        markup = svg['Body'].read().decode()
+        assert 'fill="#7c3aed"' in markup   # the file's own sheet carried over as an attribute
+        assert 'script' not in markup
+        assert '<style' not in markup
+        assert logo_downloads(raster) == [SVG]   # once, for the copy; the PNG is still drawn from the URL
+
+    def test_an_svg_url_that_serves_no_svg_keeps_only_the_png(self, table, s3):  # noqa: F811
+        cdp = FakeCdp(_page((SVG, 'header')), render_answer=BOX, logo_png=LOGO_PNG)
+        _, stored, _ = _capture(table, s3, cdp, svg_body=b'<!doctype html><html>blocked</html>')
+        assert 'svg_preview_key' not in stored['extracted_design']['logo']
+        assert stored['extracted_design']['logo']['rendered'] is True
 
     def test_the_render_runs_in_its_own_transparent_tab_and_photographs_the_image_box(self, table, s3):  # noqa: F811
         cdp = FakeCdp(_page((SVG, 'header'), (TOUCH, 'touch-icon')), render_answer=BOX, logo_png=LOGO_PNG)
@@ -140,7 +172,7 @@ class TestTheRasterStillWins:
         assert stored['extracted_design']['logo']['source_url'] == 'https://kirocrew.dev/logo.png'
         assert 'rendered' not in stored['extracted_design']['logo']
         assert cdp.methods().count('Target.createTarget') == 1
-        raster.assert_called_once()
+        assert logo_downloads(raster) == ['https://kirocrew.dev/logo.png']
 
     @pytest.mark.parametrize('svg', ['http://kirocrew.dev/logo.svg', SVG])
     def test_a_non_https_or_policy_refused_svg_is_never_rendered(self, table, s3, svg):  # noqa: F811
@@ -165,8 +197,8 @@ class TestTheRasterStillWins:
         assert result == {'status': 'ready'}
         logo = stored['extracted_design']['logo']
         assert logo == {'source_url': TOUCH, 'content_type': 'image/png', 'preview_key': PREVIEW_KEY}
-        raster.assert_called_once()
-        assert log.info.call_args.args[0] == 'SVG logo not rendered'
+        assert logo_downloads(raster) == [TOUCH]   # no rendered logo, so no SVG copy is fetched
+        assert any(c.args[0] == 'SVG logo not rendered' for c in log.info.call_args_list)
         assert SVG not in str(log.mock_calls)
         assert cdp.calls[-1][0] == 'Target.closeTarget'
 
@@ -182,7 +214,8 @@ class TestTheRasterStillWins:
         cdp = FakeCdp(_page(('https://kirocrew.dev/logo.png', 'header')))
         _, stored, raster = _capture(table, s3, cdp, answer=answer)
         assert 'rendered' not in stored['extracted_design']['logo']
-        raster.assert_called_once()   # downloaded like any candidate (and an SVG there would be refused)
+        # the model's proposal is downloaded like any candidate (an SVG there is refused by its bytes)
+        assert logo_downloads(raster) == [SVG]
 
 
 class TestPngCheck:

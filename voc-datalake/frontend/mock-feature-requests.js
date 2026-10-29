@@ -8,7 +8,7 @@
 // The viewer is the mock's admin app user. Send `x-mock-board-viewer: board` to act as a board-pool
 // user (never an admin), which is how the 403 paths of status / delete / promote are reached.
 import {
-  Refusal, SEEDED_BOARD_ID, SUPPORT_KEYS, boardFor, boardWire, fieldValues, handleBoardRoutes, refuse, registerRequestQueries, templateOfBoard,
+  Refusal, SEEDED_BOARD_ID, SUPPORT_KEYS, boardFor, boardWire, fieldValues, handleBoardRoutes, refuse, refuseWhenPaused, registerRequestQueries, templateOfBoard,
 } from './mock-boards.js';
 
 const PATH = /^\/feature-requests(?:\/([^/]+)(?:\/(status|promote|supports)(?:\/([^/]+))?)?)?$/;
@@ -198,6 +198,7 @@ const descriptionOf = (body, template) =>
 
 function createRequest(body, viewer) {
   const target = boardFor(typeof body.board === 'string' && body.board !== '' ? body.board : SEEDED_BOARD_ID, viewer);
+  refuseWhenPaused(target);
   const title = text(body, 'title', { max: 160, required: true });
   // Required on sales/service boards, else optional (absent or blank is ''), like the API.
   const description = descriptionOf(body, target.template);
@@ -215,8 +216,11 @@ function createRequest(body, viewer) {
   return [201, detail(entry)];
 }
 
-function updateRequest(entry, body, viewer) {
+function updateRequest({ entry, board }, body, viewer) {
   if (!viewer.is_admin && entry.meta.reporter_email !== viewer.email) refuse(403, 'Only the reporter or an admin can edit this request');
+  refuseWhenPaused(board);
+  // A request never moves to another board (feature_requests_routes.py `_same_board`).
+  if (body.board !== undefined || body.board_id !== undefined) refuse(400, 'A request cannot be moved to another board');
   if (body.title === undefined && body.description === undefined) refuse(400, 'Nothing to update: send title or description');
   if (body.title !== undefined) entry.meta.title = text(body, 'title', { max: 160, required: true });
   if (body.description !== undefined) entry.meta.description = descriptionOf(body, templateOfBoard(entry.meta.board_id ?? SEEDED_BOARD_ID));
@@ -239,6 +243,7 @@ function setStatus({ entry, board }, body, viewer) {
 
 function addSupport({ entry, board }, body, viewer) {
   // One +1 per person per request, the reporter's own included (feature_requests_routes.py).
+  refuseWhenPaused(board);
   const email = viewer.email.toLowerCase();
   if (entry.supports.some((row) => row.email.toLowerCase() === email)) refuse(409, 'already_supported');
   const now = new Date().toISOString();
@@ -251,6 +256,8 @@ function addSupport({ entry, board }, body, viewer) {
 function changeSupport({ entry, board }, supportId, body, viewer, method) {
   const row = entry.supports.find((candidate) => candidate.support_id === supportId) ?? refuse(404, 'Support not found');
   if (!viewer.is_admin && row.email !== viewer.email) refuse(403, 'Only its author or an admin can change this support');
+  // An admin may still remove a +1 on a paused board (triage); nobody edits one.
+  if (method !== 'DELETE' || !viewer.is_admin) refuseWhenPaused(board);
   if (method === 'DELETE') entry.supports = entry.supports.filter((candidate) => candidate !== row);
   else {
     for (const key of SUPPORT_KEYS) delete row[key];
@@ -291,9 +298,10 @@ function listRequests(viewer, boardRef) {
   return [200, { requests, board: boardWire(target, viewer), viewer }];
 }
 
-function requestRoute(req, { entry }, body, viewer) {
+function requestRoute(req, scoped, body, viewer) {
+  const { entry } = scoped;
   if (req.method === 'GET') return [200, detail(entry)];
-  if (req.method === 'PUT') return updateRequest(entry, body, viewer);
+  if (req.method === 'PUT') return updateRequest(scoped, body, viewer);
   if (req.method === 'DELETE') {
     requireAdmin(viewer);
     store.delete(entry.meta.request_id);

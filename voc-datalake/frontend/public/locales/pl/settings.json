@@ -606,6 +606,9 @@
       "onlyGuidelines": "Tylko wytyczne",
       "logoCandidate": "Logo znalezione w tej referencji",
       "logoRendered": "Wyrenderowano z logo SVG strony",
+      "downloadSvg": "Pobierz SVG",
+      "icons": "Ikony strony",
+      "iconAlt": "Ikona strony",
       "apply": "Użyj jako systemu projektowego",
       "useLogo": "Użyj tego logo",
       "logoFailed": "Nie udało się użyć tego logo. Spróbuj ponownie."
@@ -873,6 +876,7 @@
       "empty": "Brak tablic. Utwórz pierwszą z szablonu.",
       "loadFailed": "Nie udało się wczytać tablic.",
       "archived": "Zarchiwizowana",
+      "paused": "Wstrzymana",
       "edit": "Edytuj",
       "editLabel": "Edytuj {{name}}",
       "requests_one": "{{count, number}} zgłoszenie",
@@ -969,15 +973,12 @@
       "full": "Tablica może mieć najwyżej {{max, number}} statusów."
     },
     "lifecycle": {
-      "title": "Archiwizuj lub usuń",
-      "hint_one": "Ta tablica ma {{count, number}} zgłoszenie. Archiwizacja ukrywa ją przed wszystkimi poza administratorami i zachowuje zgłoszenia; usunięcie kasuje tablicę i jej zgłoszenia.",
-      "hint_few": "Ta tablica ma {{count, number}} zgłoszenia. Archiwizacja ukrywa ją przed wszystkimi poza administratorami i zachowuje zgłoszenia; usunięcie kasuje tablicę i jej zgłoszenia.",
-      "hint_many": "Ta tablica ma {{count, number}} zgłoszeń. Archiwizacja ukrywa ją przed wszystkimi poza administratorami i zachowuje zgłoszenia; usunięcie kasuje tablicę i jej zgłoszenia.",
-      "hint_other": "Ta tablica ma {{count, number}} zgłoszenia. Archiwizacja ukrywa ją przed wszystkimi poza administratorami i zachowuje zgłoszenia; usunięcie kasuje tablicę i jej zgłoszenia.",
-      "saveFirst": "Najpierw zapisz lub odrzuć zmiany.",
-      "archive": "Archiwizuj",
-      "restore": "Przywróć",
-      "delete": "Usuń tablicę"
+      "title": "Wstrzymaj, archiwizuj lub usuń",
+      "hint_one": "Ta tablica ma {{count, number}} zgłoszenie. Wstrzymanie jest tymczasowe: tablicę nadal można czytać, ale nikt nie może dodawać zgłoszeń, dawać +1 ani edytować, dopóki jej nie wznowisz. Archiwizacja to krok przed usunięciem: ukrywa tablicę przed wszystkimi poza administratorami i zachowuje zgłoszenia. Usunięcie jest dostępne po zarchiwizowaniu tablicy.",
+      "hint_few": "Ta tablica ma {{count, number}} zgłoszenia. Wstrzymanie jest tymczasowe: tablicę nadal można czytać, ale nikt nie może dodawać zgłoszeń, dawać +1 ani edytować, dopóki jej nie wznowisz. Archiwizacja to krok przed usunięciem: ukrywa tablicę przed wszystkimi poza administratorami i zachowuje zgłoszenia. Usunięcie jest dostępne po zarchiwizowaniu tablicy.",
+      "hint_many": "Ta tablica ma {{count, number}} zgłoszeń. Wstrzymanie jest tymczasowe: tablicę nadal można czytać, ale nikt nie może dodawać zgłoszeń, dawać +1 ani edytować, dopóki jej nie wznowisz. Archiwizacja to krok przed usunięciem: ukrywa tablicę przed wszystkimi poza administratorami i zachowuje zgłoszenia. Usunięcie jest dostępne po zarchiwizowaniu tablicy.",
+      "hint_other": "Ta tablica ma {{count, number}} zgłoszenia. Wstrzymanie jest tymczasowe: tablicę nadal można czytać, ale nikt nie może dodawać zgłoszeń, dawać +1 ani edytować, dopóki jej nie wznowisz. Archiwizacja to krok przed usunięciem: ukrywa tablicę przed wszystkimi poza administratorami i zachowuje zgłoszenia. Usunięcie jest dostępne po zarchiwizowaniu tablicy.",
+      "saveFirst": "Najpierw zapisz lub odrzuć zmiany."
     },
     "problems": {
       "nameRequired": "Tablica potrzebuje nazwy.",

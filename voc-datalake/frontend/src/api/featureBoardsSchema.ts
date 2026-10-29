@@ -89,6 +89,8 @@ const boardWireSchema = z.object({
   statuses: z.unknown(),
   audience: audienceSchema,
   archived: z.boolean().catch(false),
+  /** Temporary: still readable by its audience, but no new request, +1 or edit until an admin resumes it. */
+  paused: z.boolean().catch(false),
   request_count: count,
   share_url: lenientText,
   created_at: lenientText,
@@ -117,6 +119,7 @@ export const SEEDED_BOARD: FeatureBoard = {
   statuses: TEMPLATE_DEFAULTS.sales.statuses,
   audience: { mode: 'company', domains: undefined, emails: undefined },
   archived: false,
+  paused: false,
   request_count: 0,
   share_url: '',
   created_at: '',
@@ -153,4 +156,5 @@ export interface BoardPatch {
   readonly statuses?: readonly BoardStatus[]
   readonly audience?: NewBoardInput['audience']
   readonly archived?: boolean
+  readonly paused?: boolean
 }

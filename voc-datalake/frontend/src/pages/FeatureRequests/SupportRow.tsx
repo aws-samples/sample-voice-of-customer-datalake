@@ -100,23 +100,31 @@ export default function SupportRow({ requestId, support, viewer, editing, onEdit
   const setEditing = onEditingChange
   const [confirming, setConfirming] = useState(false)
   const remove = useBoardWrite((api, supportId: string) => api.deleteSupport(requestId, supportId), () => setConfirming(false))
-  const canChange = viewer.is_admin || (viewer.email !== '' && support.email === viewer.email)
+  const isOwner = viewer.email !== '' && support.email === viewer.email
+  // A paused board takes no edit from anyone; an admin may still remove a +1 (triage), its author may not.
+  const paused = useCurrentBoard().paused
+  const canEditRow = !paused && (viewer.is_admin || isOwner)
+  const canRemove = viewer.is_admin || (!paused && isOwner)
   if (editing) {
     return <li className="card p-3"><EditSupport requestId={requestId} support={support} onDone={() => setEditing(false)} /></li>
   }
   return (
     <li className="card p-3 flex flex-wrap items-start justify-between gap-2">
       <SupportFacts support={support} />
-      {canChange ? (
+      {canEditRow || canRemove ? (
         <div className="flex gap-1">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}
-            aria-label={t('detail.editSupport', { customer: supportSubject(support) })}>
-            <Pencil size={14} aria-hidden="true" />
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirming(true)}
-            aria-label={t('detail.deleteSupport', { customer: supportSubject(support) })}>
-            <Trash2 size={14} aria-hidden="true" />
-          </button>
+          {canEditRow ? (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}
+              aria-label={t('detail.editSupport', { customer: supportSubject(support) })}>
+              <Pencil size={14} aria-hidden="true" />
+            </button>
+          ) : null}
+          {canRemove ? (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirming(true)}
+              aria-label={t('detail.deleteSupport', { customer: supportSubject(support) })}>
+              <Trash2 size={14} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       ) : null}
       <ConfirmModal isOpen={confirming} title={t('detail.deleteSupportTitle')} message={t('detail.deleteSupportMessage', { customer: supportSubject(support) })}

@@ -78,13 +78,29 @@ One function decides, `board_access` in `lambda/shared/feature_boards_access.py`
 A board someone may not use is invisible: every board and request route answers **404**, never 403, so its
 existence does not leak. Non-admins see a board's audience mode only, never its lists.
 
-Only admins create, configure, archive and delete boards. Archiving hides a board from everyone but admins,
-keeps its requests and stops new posts (`409 board_archived`). Deleting an empty board is one confirm; a
-board with requests is deleted together with its requests and every +1 on them, after the admin types the
-board's name (the card's Delete on Feedback boards, or Administration → Privacy & access → Boards → the
-editor's Delete board). The dialog shows how many requests are gone so far; if it stops, pressing Delete
+Only admins create, configure, pause, archive and delete boards.
+
+**Pause** is the temporary stop: a paused board stays visible to its audience exactly as before (they still
+sign in, it still counts in the sign-up audience, its requests and +1s stay readable), but nobody can post a
+request, add or change a +1, or edit a request until an admin resumes it. Every such write answers
+**409 `board_paused`**, admins' own included. Admins can still triage a paused board: change a status, delete a
+request or a +1, promote a request. The board, its cards and its request dialogs say "Paused: new requests and
+votes are closed for now". Pause asks for a confirm; Resume does not. The board records `paused`, `paused_at`
+and `paused_by` (the admin; shown to admins only).
+
+**Archive** is the permanent step before delete: it hides a board from everyone but admins and from the
+sign-up audience, keeps its requests and stops new posts (`409 board_archived`). The archive confirm says so.
+An admin can restore (unarchive) it. In the app, **Delete is offered only on an archived board** (the API
+still deletes an empty board, and `?with_requests=true` archives first, below). Deleting an empty board is one
+confirm; a board with requests is deleted together with its requests and every +1 on them, after the admin
+types the board's name (the card's Delete on Feedback boards, or Administration → Privacy & access → Boards →
+the editor's Delete). The dialog shows how many requests are gone so far; if it stops, pressing Delete
 again continues (the API: `?with_requests=true`, below). Projects already created from its requests are kept. Admins can delete any request or
 support.
+
+**A request never moves to another board.** No route or tool changes a request's `board_id`: an edit
+(`PUT /feature-requests/{id}`) that names `board` or `board_id` is refused with 400 `A request cannot be moved
+to another board`. To move one, file it again on the other board.
 
 ## Rate limits (`anyone` boards)
 
@@ -137,28 +153,28 @@ Behind the board authorizer (app pool + board pool), all on the engagement Lambd
 `/feature-requests` and its `{proxy+}`. The caller is the token's verified, lower-cased `email` claim (no email or
 an unverified one: 403); `name` comes from the token when there is one, else from the body. Errors are
 `{success: false, error}`; the stable codes are `slug_taken`, `board_limit`, `status_in_use`, `board_not_empty`,
-`already_supported`, `board_archived` (409) and `rate_limited` (429).
+`already_supported`, `board_archived`, `board_paused` (409) and `rate_limited` (429).
 
 | Method | Path | Access | Body → answer |
 |---|---|---|---|
 | GET | `/feature-requests/boards` | any | `{boards: [Board], viewer}`, by name. The first call on a table that was never seeded creates the Sales board (once: see below); with zero boards the list is `[]` |
 | POST | `/feature-requests/boards` | **admin** | `{name (≤ 80), template, slug?, description? (≤ 1000), audience?}` → 201 `{board}` (slug from the name when absent; a taken one gets a short suffix; an explicit taken slug is 409 `slug_taken`; at most 100 boards) |
 | GET | `/feature-requests/boards/{slug_or_id}` | a user of the board | `{board}` |
-| PUT | `/feature-requests/boards/{slug_or_id}` | **admin** | any of `name`, `slug`, `description`, `fields`, `statuses`, `audience`, `archived` → `{board}`; dropping a status some request is in: 409 `status_in_use` |
+| PUT | `/feature-requests/boards/{slug_or_id}` | **admin** | any of `name`, `slug`, `description`, `fields`, `statuses`, `audience`, `archived`, `paused` (booleans) → `{board}`; pausing stamps `paused_at` / `paused_by`, resuming clears them; dropping a status some request is in: 409 `status_in_use` |
 | DELETE | `/feature-requests/boards/{slug_or_id}[?with_requests=true]` | **admin** | `{success, done, deleted, remaining}`. Without `with_requests` (or `false` / `0`): an empty board only (409 `board_not_empty`) → `{done: true, deleted: 0, remaining: 0}`. With `true` / `1` (any case): the board and its requests, resumably (below); any other value is a 400 |
 | GET | `/feature-requests?board={slug_or_id}` | a user of the board | `{requests, board, viewer: {email, name, is_admin, pool}}` (≤ 1000 of THIS board's, newest first); no `board` = the seeded board (404 once it was deleted) |
 | POST | `/feature-requests` | a user of the board | `{board?, title (≤ 160), description (≤ 4000; required on sales and service boards), fields, name?}` → 201 `{request, supports}` (the reporter's +1 is created with it and carries the request values its board's +1s ask for) |
 | GET | `/feature-requests/{id}` | a user of its board | `{request, supports}` |
-| PUT | `/feature-requests/{id}` | reporter or admin | `{title?, description?, fields?}` (`fields` replaces all request values) → `{request}` |
+| PUT | `/feature-requests/{id}` | reporter or admin | `{title?, description?, fields?}` (`fields` replaces all request values) → `{request}`; `board` / `board_id` in the body: 400 (a request never changes board) |
 | PUT | `/feature-requests/{id}/status` | **admin** | `{status}`: one of the board's status keys → `{request}` |
 | DELETE | `/feature-requests/{id}` | **admin** | the request and every support |
 | POST | `/feature-requests/{id}/supports` | a user of its board who does not support it yet | `{fields, name?}` → 201 `{support, request}`; one +1 per person per request (the reporter's own included, emails compared case-insensitively): a second answers 409 `already_supported`, and the board offers "Edit my +1" instead of "+1" |
 | PUT, DELETE | `/feature-requests/{id}/supports/{support_id}` | its owner or admin | PUT replaces the support's fields → `{request}` |
 | POST | `/feature-requests/{id}/promote` | **admin** with edit on the project | `{project_id}` → `{request, list, added, skipped: [{email, reason}]}` |
 
-**Board** = `{board_id, slug, name, description, template, fields, statuses, audience, archived, request_count,
-share_url ({FRONTEND_URL}/board/{slug}), created_at, updated_at}` (+ `created_by` and the full audience for
-admins; others get `audience: {mode}`). **Request** carries `board_id`, `status`, `fields` (values by key) and
+**Board** = `{board_id, slug, name, description, template, fields, statuses, audience, archived, paused,
+request_count, share_url ({FRONTEND_URL}/board/{slug}), created_at, updated_at}` (+ `paused_at` while paused;
++ `created_by`, `paused_by` and the full audience for admins; others get `audience: {mode}`). **Request** carries `board_id`, `status`, `fields` (values by key) and
 `totals` (the template's keys). **Support** carries its values both as `fields` and at the top level.
 
 `fields` is checked against the board's enabled fields: an unknown or switched-off key, a missing required one or a
@@ -195,7 +211,7 @@ Table `voc-feature-requests-<suffix>` (pk/sk, index `gsi1`, the Core KMS key, po
 
 | pk | sk | Item |
 |---|---|---|
-| `BOARD#{id}` | `META` | `brd_` + 8 hex (the seeded board: `brd_sales`), slug, name, description, template, fields, statuses, audience, archived, request_count, created/updated; gsi1pk `BOARDS`, gsi1sk the lower-cased name |
+| `BOARD#{id}` | `META` | `brd_` + 8 hex (the seeded board: `brd_sales`), slug, name, description, template, fields, statuses, audience, archived, paused (+ paused_at, paused_by while paused; absent on boards from before 5.48 = not paused), request_count, created/updated; gsi1pk `BOARDS`, gsi1sk the lower-cased name |
 | `SLUG#{slug}` | `BOARD` | board_id: the slug's uniqueness guard, written in one transaction with META |
 | `BOARDS#SEEDED` | `META` | nothing but the key: the Sales board was seeded (no gsi1pk, never listed); never seed again |
 | `FR#{id}` | `META` | title, description, status, `board_id` (absent = the seeded board), `fields`, reporter email and name, totals, project_id?, list_id?, `version` (conditional writes); gsi1pk `FRS` |

@@ -9,11 +9,18 @@ Wire shape (stored on the ``REF#`` row, returned per reference by ``GET /setting
      radius:     [{name, value}],                  ≤ 40
      guidelines_md: str,                           ≤ 20,000
      components: [Component],                      ≤ 30 (shared/design_components.py: variants + styles)
-     logo: {source_url, content_type, preview_key?, rendered?} | None,  a CANDIDATE only (png / jpeg / webp);
+     logo: {source_url, content_type, preview_key?, svg_preview_key?, rendered?} | None,  a CANDIDATE only (png / jpeg / webp);
            preview_key: the copy downloaded at read time (company-context/design/logo_preview_*),
            served as ``logo.preview_url`` by GET /settings/design-system; rendered: True = an SVG logo
-           rendered to that PNG preview in the managed browser (source_url is the SVG's)
+           rendered to that PNG preview in the managed browser (source_url is the SVG's);
+           svg_preview_key: the SANITISED SVG beside it (``logo_preview_<ref id>.svg``, download-only,
+           served as ``logo.svg_preview_url``)
+     icons: [{kind, sizes, content_type, key, source_url, svg_key?}]   a website's copied icons (≤ 12 files,
+           shared/design_icons.py), added after cleaning; GET swaps key / svg_key for url / svg_url
      source: 'computed_styles' | 'repo_files' | 'figma' | 'html' | 'screenshot'}
+
+Remote images are dropped from ``guidelines_md`` (``without_remote_images``): the stored design names a web
+address only as provenance (``source_url``), never as something a viewer would load.
 
 Every value goes through the token editor's own predicates (``shared.company_context.is_*``)
 and every name through its injection check, but LENIENTLY: an invalid entry (or an invalid
@@ -46,9 +53,14 @@ SOURCES = ('computed_styles', 'repo_files', 'figma', 'html', 'screenshot')
 LOGO_CONTENT_TYPES = ('image/png', 'image/jpeg', 'image/webp')
 #: Where a logo candidate's preview copy is stored (the settings and capture roles may put here only).
 LOGO_PREVIEW_PREFIX = 'company-context/design/logo_preview_'
+#: Where a website reference's copied icons are stored (``icons_<ref id>/<digest>.<ext>``, shared/design_icons.py).
+ICONS_PREFIX = 'company-context/design/icons_'
 VALUE_GROUPS = {'colors': is_css_color, 'spacing': is_css_length, 'radius': is_css_length}
 _SECTION_TITLE_CHARS = 120
 _WS_RE = re.compile(r'\s+')
+#: A remote image in the guidelines (markdown or an HTML tag) would be hotlinked wherever they are shown.
+_REMOTE_MD_IMAGE_RE = re.compile(r'!\[([^\]\n]{0,300})\]\(\s*(?:https?:)?//[^)\n]*\)', re.IGNORECASE)
+_HTML_IMAGE_RE = re.compile(r'<(?:img|picture|source|image)\b[^>]*>', re.IGNORECASE)
 
 
 # ── Cleaning ────────────────────────────────────────────────────────────────
@@ -98,10 +110,16 @@ def _typography_row(entry: dict) -> dict | None:
     return row
 
 
+def without_remote_images(text: str) -> str:
+    """``text`` with every remote image dropped: a markdown image keeps only its alt text, an HTML image tag
+    goes. The stored design keeps no web address a viewer would fetch (links stay: nothing loads them)."""
+    return _HTML_IMAGE_RE.sub('', _REMOTE_MD_IMAGE_RE.sub(r'\1', text))
+
+
 def _guidelines(raw: object) -> str:
     if not isinstance(raw, str):
         return ''
-    text = raw.strip()[:MAX_GUIDELINES_CHARS].strip()
+    text = without_remote_images(raw.strip()[:MAX_GUIDELINES_CHARS]).strip()
     return '' if injection_findings(text) else neutralise_tags(text)
 
 
@@ -124,6 +142,9 @@ def clean_logo(raw: object) -> dict | None:
     preview = raw.get('preview_key')
     if isinstance(preview, str) and preview.startswith(LOGO_PREVIEW_PREFIX) and '..' not in preview:
         logo['preview_key'] = preview
+    svg = raw.get('svg_preview_key')
+    if isinstance(svg, str) and svg.startswith(LOGO_PREVIEW_PREFIX) and svg.endswith('.svg') and '..' not in svg:
+        logo['svg_preview_key'] = svg
     if raw.get('rendered') is True:
         logo['rendered'] = True
     return logo
@@ -195,9 +216,9 @@ def merged_guidelines(current: str, design: dict, title: object) -> str:
 
 
 def _candidate_without_preview(raw: object) -> dict | None:
-    """The draft's logo candidate: the URL and type only (the preview copy is served by GET, never keyed)."""
+    """The draft's logo candidate: the URL and type only (the preview copies are served by GET, never keyed)."""
     logo = clean_logo(raw)
-    return {k: v for k, v in logo.items() if k != 'preview_key'} if logo else None
+    return {k: v for k, v in logo.items() if k not in ('preview_key', 'svg_preview_key')} if logo else None
 
 
 def apply_to_draft(current: dict, design: dict, title: object) -> dict:

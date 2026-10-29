@@ -9,9 +9,10 @@
  * - bedrock:InvokeModel on the curated allowlist (the vision call on the utility surface);
  * - voc-aggregates GetItem on the design-system and model-settings partitions only, UpdateItem on the
  *   design-system partition only (`dynamodb:LeadingKeys`), and KMS for the table;
- * - s3:PutObject on the raw bucket's `company-context/design/logo_preview_*` keys only (the logo
- *   candidate's preview, downloaded through the SSRF-guarded fetch, or the PNG the browser rendered from an
- *   SVG logo; no read, no delete, no other prefix);
+ * - s3:PutObject on the raw bucket's `company-context/design/logo_preview_*` keys (the logo candidate's
+ *   preview, downloaded through the SSRF-guarded fetch, or the PNG the browser rendered from an SVG logo and
+ *   its sanitised SVG) and `company-context/design/icons_*` (the page's icons, copied locally); no read, no
+ *   delete, no other prefix;
  * - nothing else: no secrets, no queue.
  *
  * The bundle is the worker (lambda/design_capture), the three web_reviews browser modules flat beside
@@ -36,8 +37,10 @@ import { BROWSER_STREAM_SUPPRESSION, managedBrowserStatements } from './ingestio
 /** The aggregates partitions the worker reads (shared/company_context.py, shared/model_config.py). */
 export const DESIGN_SYSTEM_PARTITION = 'SETTINGS#design_system';
 export const MODEL_SETTINGS_PARTITION = 'SETTINGS#model';
-/** Where a logo candidate's preview is stored (shared/extracted_design.py LOGO_PREVIEW_PREFIX). */
+/** Where a logo candidate's preview is stored (shared/extracted_design.py LOGO_PREVIEW_PREFIX), its sanitised SVG too. */
 export const LOGO_PREVIEW_PREFIX = 'company-context/design/logo_preview_';
+/** Where a website reference's copied icons are stored (shared/extracted_design.py ICONS_PREFIX). */
+export const DESIGN_ICONS_PREFIX = 'company-context/design/icons_';
 /** One page and one vision call; the browser session itself is capped at 120 s in the worker. */
 export const DESIGN_CAPTURE_TIMEOUT = cdk.Duration.minutes(5);
 export const DESIGN_CAPTURE_MEMORY_MB = 512;
@@ -94,7 +97,7 @@ function designCaptureRole(stack: cdk.Stack, props: DesignCaptureProps): iam.Rol
   role.addToPolicy(new iam.PolicyStatement({
     sid: 'StoreLogoCandidatePreview',
     actions: ['s3:PutObject'],
-    resources: [rawDataBucket.arnForObjects(`${LOGO_PREVIEW_PREFIX}*`)],
+    resources: [rawDataBucket.arnForObjects(`${LOGO_PREVIEW_PREFIX}*`), rawDataBucket.arnForObjects(`${DESIGN_ICONS_PREFIX}*`)],
   }));
   kmsKey.grantEncryptDecrypt(role);
   NagSuppressions.addResourceSuppressions(role, [BROWSER_STREAM_SUPPRESSION, ...bedrockModelSuppressions], true);

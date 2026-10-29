@@ -27,7 +27,7 @@ import type { ApiStackContext } from './api-context';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { briefingApiWiring } from './briefing-worker';
 import { grantImageModelProbe } from './api-marketplace';
-import { LOGO_PREVIEW_PREFIX } from './design-capture';
+import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailSettingsEnv } from '../utils/inbound-email';
 
 export interface DataLambdas {
@@ -363,12 +363,12 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // the uploaded object (keep-all) — only its logo preview is deleted (below).
   rawDataBucket.grantRead(settingsRole, 'company-context/*');
   rawDataBucket.grantPut(settingsRole, 'company-context/*');
-  // The ONE delete: archiving a reference removes its logo PREVIEW (a copy made when the reference was
-  // read, shared/design_logo.py delete_previews). Exactly s3:DeleteObject, on the preview keys only.
+  // The ONE delete: archiving a reference removes the copies made when it was read (its logo PREVIEW and
+  // sanitised SVG, and its copied icons; shared/design_logo.py delete_previews). Exactly s3:DeleteObject.
   settingsRole.addToPolicy(new iam.PolicyStatement({
     sid: 'DeleteLogoPreviewOnArchive',
     actions: ['s3:DeleteObject'],
-    resources: [rawDataBucket.arnForObjects(`${LOGO_PREVIEW_PREFIX}*`)],
+    resources: [rawDataBucket.arnForObjects(`${LOGO_PREVIEW_PREFIX}*`), rawDataBucket.arnForObjects(`${DESIGN_ICONS_PREFIX}*`)],
   }));
   // The morning brief (docs/briefing.md): Refresh queues, the caller's own email subscription.
   const briefing = briefingApiWiring(stack, ctx.uniqueName, kmsKey, ctx.props.userPool);

@@ -169,7 +169,9 @@
     "slugTaken": "Inna tablica używa już tej nazwy linku.",
     "boardNotEmpty": "Ta tablica nadal ma zgłoszenia. Usuń ją razem ze zgłoszeniami albo zarchiwizuj.",
     "statusInUse": "Zgłoszenia nadal mają ten status. Najpierw przenieś je do innego.",
-    "alreadySupported": "Już popierasz to zgłoszenie. Zamiast tego edytuj swoje +1."
+    "alreadySupported": "Już popierasz to zgłoszenie. Zamiast tego edytuj swoje +1.",
+    "boardPaused": "Ta tablica jest wstrzymana: nowe zgłoszenia i głosy są na razie zamknięte.",
+    "boardArchived": "Ta tablica jest zarchiwizowana i nie przyjmuje nowych zgłoszeń."
   },
   "auth": {
     "title": "Zaloguj się do tablicy próśb o funkcje",
@@ -275,6 +277,22 @@
     "deleteIncomplete": "Tablica nie została jeszcze całkowicie usunięta.",
     "deleteResumeHint": "Naciśnij Usuń ponownie, aby kontynuować od miejsca przerwania.",
     "archived": "Zarchiwizowana",
+    "paused": "Wstrzymana",
+    "pausedNotice": "Wstrzymana: nowe zgłoszenia i głosy są na razie zamknięte.",
+    "lifecycle": {
+      "pause": "Wstrzymaj",
+      "resume": "Wznów",
+      "pauseBoard": "Wstrzymaj {{name}}",
+      "resumeBoard": "Wznów {{name}}",
+      "pauseTitle": "Wstrzymać tę tablicę?",
+      "pauseMessage": "„{{name}}” pozostaje widoczna dla osób, którym ją udostępniono; nadal mogą się logować i ją czytać. Nikt nie może dodać zgłoszenia, dać +1 ani niczego edytować, dopóki jej nie wznowisz.",
+      "archive": "Archiwizuj",
+      "archiveBoard": "Archiwizuj {{name}}",
+      "archiveTitle": "Zarchiwizować tę tablicę?",
+      "archiveMessage": "Archiwizacja to krok przed usunięciem. „{{name}}” znika z widoku osób, którym ją udostępniono; widzą ją już tylko administratorzy. Jej zgłoszenia zostają zachowane. Później możesz ją przywrócić albo usunąć.",
+      "restore": "Przywróć",
+      "restoreBoard": "Przywróć {{name}}"
+    },
     "configure": "Konfiguruj tablice",
     "emptyTitle": "Brak tablic",
     "empty": "Nie udostępniono Ci jeszcze żadnej tablicy.",

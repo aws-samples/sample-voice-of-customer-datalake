@@ -39,6 +39,7 @@ from shared.component_overlay import overlay_components
 from shared.css_component_rules import components_from_css
 from shared.css_theme_modes import modes_markdown, theme_modes
 from shared.css_tokens import custom_properties, tokens_from_css, tokens_from_properties
+from shared.design_assets import DESIGN_PREFIX as UPLOAD_PREFIX
 from shared.design_components import MAX_VARIANTS, clean_components
 from shared.extracted_design import clean_extracted_design, combine
 from shared.image_limits import MAX_IMAGE_BYTES
@@ -83,7 +84,6 @@ UPLOAD_TYPES: dict[str, dict[str, tuple[str, int]]] = {
         'image/webp': ('webp', 5_000_000),
     },
 }
-UPLOAD_PREFIX = 'company-context/design/'
 # The ``action`` of the async event Settings sends the ``voc-design-capture`` worker (lambda/design_capture).
 DESIGN_CAPTURE_ACTION: Final = 'design_capture'
 _IMAGE_FORMATS = {'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp'}

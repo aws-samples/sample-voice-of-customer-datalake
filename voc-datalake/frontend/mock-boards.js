@@ -76,7 +76,7 @@ const newBoardId = () => `brd_${(0xa0000000 + counter.next++).toString(16)}`;
 function board(boardId, slug, name, template, audience, description = '') {
   const created = now();
   return {
-    board_id: boardId, slug, name, description, template, archived: false, audience,
+    board_id: boardId, slug, name, description, template, archived: false, paused: false, audience,
     fields: structuredClone(TEMPLATES[template].fields), statuses: structuredClone(TEMPLATES[template].statuses),
     created_at: created, created_by: 'admin@example.com', updated_at: created,
   };
@@ -113,10 +113,32 @@ export function templateOfBoard(boardId) {
 
 export function boardWire(target, viewer) {
   const audience = viewer.is_admin ? structuredClone(target.audience) : { mode: target.audience.mode };
-  return {
+  const wire = {
     ...structuredClone(target), audience, share_url: `${FRONTEND}/board/${target.slug}`,
     request_count: requests.count(target.board_id),
   };
+  // Who created or paused it (Cognito subs in the API) is for admins only (feature_boards_store.board_view).
+  if (!viewer.is_admin) {
+    delete wire.created_by;
+    delete wire.paused_by;
+  }
+  return wire;
+}
+
+/** `paused` set by an admin: pausing stamps who and when, resuming clears them (feature_boards_store.with_pause_stamp). */
+function applyPaused(target, raw, viewer) {
+  if (raw === undefined || raw === target.paused) return;
+  target.paused = raw;
+  if (raw) Object.assign(target, { paused_at: now(), paused_by: viewer.email });
+  else {
+    delete target.paused_at;
+    delete target.paused_by;
+  }
+}
+
+/** A paused board takes no new request, +1 or edit (409 `board_paused`, feature_requests_routes.py). */
+export function refuseWhenPaused(target) {
+  if (target.paused === true) refuse(409, 'board_paused');
 }
 
 /** The board `ref` (slug or id) names, as `viewer` may see it; 404 otherwise (no existence leak). */
@@ -236,6 +258,7 @@ function readFieldsConfig(raw) {
 function updateBoard(target, body, viewer, inUse) {
   requireAdmin(viewer);
   if (body.name !== undefined && !validName(body.name)) refuse(400, 'name is required (at most 80 characters)');
+  if (body.paused !== undefined && typeof body.paused !== 'boolean') refuse(400, 'paused must be true or false');
   if (body.slug !== undefined) claimSlug(String(body.slug), target.board_id);
   const next = {
     fields: body.fields === undefined ? target.fields : readFieldsConfig(body.fields),
@@ -247,6 +270,7 @@ function updateBoard(target, body, viewer, inUse) {
   if (body.description !== undefined) target.description = String(body.description).slice(0, 1000);
   Object.assign(target, next);
   if (body.archived !== undefined) target.archived = body.archived === true;
+  applyPaused(target, body.paused, viewer);
   target.updated_at = now();
   return [200, { board: boardWire(target, viewer) }];
 }

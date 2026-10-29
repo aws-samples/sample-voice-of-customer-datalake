@@ -21,6 +21,7 @@ function BoardRow({ board, onOpen }: Readonly<{ board: FeatureBoard; onOpen: (bo
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-text-strong break-words">{board.name}</span>
           {board.archived ? <span className="badge badge-muted">{t('boards.list.archived')}</span> : null}
+          {board.paused && !board.archived ? <span className="badge badge-warn">{t('boards.list.paused')}</span> : null}
         </div>
         <p className="text-xs text-muted">
           {t(TEMPLATE_COPY[board.template].labelKey)} · {t(AUDIENCE_COPY[board.audience.mode].labelKey)} ·{' '}
