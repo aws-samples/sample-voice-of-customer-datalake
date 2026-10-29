@@ -12,7 +12,6 @@ import os
 import urllib.parse
 from collections.abc import Generator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 
 import boto3
 
@@ -254,7 +253,7 @@ class S3ImportIngestor(BaseIngestor):
         if not parser:
             logger.warning(f"Unsupported file type: {key}")
             return 0
-        started_at = datetime.now(UTC).isoformat()
+        started_at = now_iso()
 
         # Validate file size
         head = s3_client.head_object(Bucket=bucket, Key=key)
