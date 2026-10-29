@@ -12,8 +12,7 @@
  */
 import { QueryCommand, type QueryCommandOutput } from '@aws-sdk/lib-dynamodb';
 import { z } from 'zod';
-import { FEEDBACK_BY_ID_INDEX } from '../indexes.js';
-import { feedbackByDateQuery } from '../feedback-by-date-query.js';
+import { FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_ID_INDEX } from '../indexes.js';
 import { PERSISTENT_QUERY_ERRORS } from '../context/query-errors.js';
 
 /** The page of a Query the scan reads: its rows and whether there is another page. */
@@ -234,7 +233,7 @@ interface DayRead extends DayReadOutcome {
   items: FeedbackItem[];
 }
 
-/** Did this day return any row (parseable or not)? Python's `_walk_dates` counts the same. */
+/** Did this day return any row (parseable or not)? Python's `read_pool` (`max_dated`) counts the same. */
 function dayHadData(read: DayRead): boolean {
   return read.items.length + read.dropped > 0;
 }
@@ -325,9 +324,15 @@ async function readDayPage(
   errorName?: string;
 }> {
   try {
-    const resp = await docClient.send(
-      feedbackByDateQuery(feedbackTable, dateStr, { ExclusiveStartKey: startKey }),
-    );
+    // The processor writes `gsi1pk = 'DATE#YYYY-MM-DD'`: one day's partition, newest first.
+    const resp = await docClient.send(new QueryCommand({
+      TableName: feedbackTable,
+      IndexName: FEEDBACK_BY_DATE_INDEX,
+      KeyConditionExpression: 'gsi1pk = :pk',
+      ExpressionAttributeValues: { ':pk': `DATE#${dateStr}` },
+      ScanIndexForward: false,
+      ExclusiveStartKey: startKey,
+    }));
     return { items: resp.Items ?? [], lastKey: resp.LastEvaluatedKey };
   } catch (error) {
     return { items: [], errorName: error instanceof Error ? error.name : 'UnknownError' };
@@ -491,7 +496,7 @@ async function scanWaves(
 /**
  * Collect candidates day by day, newest first, over up to `days` partitions,
  * stopping after `maxDatedDays` days that returned rows (0 = never) — the same
- * rule as `_walk_dates` in lambda/shared/feedback.py.
+ * rule as `read_pool`'s `max_dated` in lambda/shared/feedback_sampling.py.
  *
  * `days` must already be clamped to MAX_SAMPLE_WALK_DAYS — `resolveSearchParams`
  * is the single place that does it, so the scan bound is the same number the

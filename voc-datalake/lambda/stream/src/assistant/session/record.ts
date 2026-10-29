@@ -12,8 +12,9 @@
  *
  * What is stored mirrors the SPA's own save (`frontend/src/assistant/sessions/serialize.ts`):
  * attachment parts lose their data (name + mimeType survive in `metadata`),
- * tool contents are trimmed to MAX_STORED_TOOL_CHARS, the title is the first
- * user message (≤ 60 chars), the list keeps the newest whole turns within
+ * tool contents are trimmed to MAX_STORED_TOOL_CHARS (a persona-cards result keeps valid JSON
+ * within its own cap, persona-result.ts), the title is the first
+ * user message (≤ 120 chars), the list keeps the newest whole turns within
  * MAX_STORED_MESSAGES, and an item over MAX_ITEM_BYTES drops its oldest turns
  * (then shrinks tool contents) the way the SPA's 413 retry does.
  *
@@ -21,6 +22,7 @@
  */
 import type { ContentPart, Message } from '@ag-ui/core';
 import type { PageContext, SESSION_RUN_STATUSES } from '../contract.js';
+import { MAX_RETRY_PERSONA_CHARS, MAX_STORED_PERSONA_CHARS, storedPersonaResult } from './persona-result.js';
 
 export type RunStatus = (typeof SESSION_RUN_STATUSES)[number];
 
@@ -28,7 +30,8 @@ export type RunStatus = (typeof SESSION_RUN_STATUSES)[number];
 const MAX_STORED_TOOL_CHARS = 4000;
 /** Same as the SPA's MAX_RETRY_TOOL_CHARS: the shrink step for a one-turn record over the cap. */
 const MAX_RETRY_TOOL_CHARS = 1000;
-const MAX_TITLE_CHARS = 60;
+/** Same as the SPA's MAX_TITLE_CHARS (sessions/serialize.ts) = chat_handler.MAX_TITLE_CHARS. */
+const MAX_TITLE_CHARS = 120;
 /** chat_handler.MAX_MESSAGES: the route refuses more, so the server never stores more. */
 const MAX_STORED_MESSAGES = 300;
 /** chat_handler.MAX_ITEM_BYTES (DynamoDB's 400 KB item limit, with a margin). */
@@ -47,6 +50,14 @@ export function callerPartition(callerSub: string): string {
 
 export function sessionKey(callerSub: string, threadId: string): { pk: string; sk: string } {
   return { pk: callerPartition(callerSub), sk: `CONV#${threadId}` };
+}
+
+/** LOCKSTEP with chat_handler.CANCEL_SK_PREFIX: the Stop marker of a thread's run. */
+const CANCEL_SK_PREFIX = 'RUNCANCEL#';
+
+/** The key of the Stop marker chat_handler writes for this thread (`POST .../cancel`). */
+export function cancelKey(callerSub: string, threadId: string): { pk: string; sk: string } {
+  return { pk: callerPartition(callerSub), sk: `${CANCEL_SK_PREFIX}${threadId}` };
 }
 
 export interface SessionSnapshot {
@@ -95,16 +106,30 @@ function textOf(content: unknown): string {
     .join('');
 }
 
+/** Character caps for stored tool contents: any result, and a persona-cards result (persona-result.ts). */
+interface ToolCaps {
+  tool: number;
+  persona: number;
+}
+
+const STORED_CAPS: ToolCaps = { tool: MAX_STORED_TOOL_CHARS, persona: MAX_STORED_PERSONA_CHARS };
+const RETRY_CAPS: ToolCaps = { tool: MAX_RETRY_TOOL_CHARS, persona: MAX_RETRY_PERSONA_CHARS };
+
+/** A tool content within its cap: a persona result keeps valid JSON, anything else is cut. */
+function storedToolText(text: string, caps: ToolCaps): string {
+  return storedPersonaResult(text, caps.persona) ?? text.slice(0, caps.tool);
+}
+
 /** One message as it is stored: no attachment data, tool content trimmed. */
-function storedMessage(message: Message, maxToolChars: number = MAX_STORED_TOOL_CHARS): Message {
-  if (message.role === 'tool') return { ...message, content: textOf(message.content).slice(0, maxToolChars) };
+function storedMessage(message: Message, caps: ToolCaps = STORED_CAPS): Message {
+  if (message.role === 'tool') return { ...message, content: storedToolText(textOf(message.content), caps) };
   if (message.role === 'user' && typeof message.content !== 'string') {
     return { ...message, content: message.content.map(stripPart) };
   }
   return message;
 }
 
-/** First user message as plain text, ≤ 60 chars (the SPA's `sessionTitle`). */
+/** First user message as plain text, ≤ MAX_TITLE_CHARS (the SPA's `sessionTitle`). */
 function sessionTitle(messages: readonly Message[]): string {
   const first = messages.find((m) => m.role === 'user');
   const text = first ? textOf(first.content).replaceAll(/\s+/g, ' ').trim() : '';
@@ -127,8 +152,8 @@ function keepNewestTurns(messages: readonly Message[], max: number): Message[] {
 function shrinkOnce(messages: readonly Message[]): Message[] | null {
   const starts = userIndexes(messages);
   if (starts.length > 1) return messages.slice(starts[Math.floor(starts.length / 2)]);
-  const shrinks = messages.some((m) => m.role === 'tool' && textOf(m.content).length > MAX_RETRY_TOOL_CHARS);
-  return shrinks ? messages.map((m) => storedMessage(m, MAX_RETRY_TOOL_CHARS)) : null;
+  const shrinks = messages.some((m) => m.role === 'tool' && storedToolText(textOf(m.content), RETRY_CAPS) !== textOf(m.content));
+  return shrinks ? messages.map((m) => storedMessage(m, RETRY_CAPS)) : null;
 }
 
 /** Upper-bound size estimate (UTF-8 bytes), as chat_handler's `_estimated_item_bytes`. */

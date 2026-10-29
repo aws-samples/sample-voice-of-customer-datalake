@@ -93,6 +93,8 @@ class CdpConnection:
         self._socket = socket
         self._clock = clock
         self._next_id = 0
+        #: The managed browser session this connection drives (set by agentcore_browser; '' when unknown), for logs.
+        self.browser_session_id = ''
 
     def call(
         self,

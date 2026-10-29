@@ -27,7 +27,7 @@ const AUDIT_OUTCOMES = ['ok', 'error', 'denied', 'failed'] as const
 export type AuditOutcome = (typeof AUDIT_OUTCOMES)[number]
 
 /** Lifetimes the mint form offers; the backend accepts any 1–90 (MAX_EXPIRY_DAYS in shared/mcp_global_tokens.py). */
-export const EXPIRY_CHOICES = [7, 30, 90] as const
+export const EXPIRY_CHOICES = [1, 7, 30, 90] as const
 export const DEFAULT_EXPIRY_DAYS = 30
 const MAX_EXPIRY_DAYS = 90
 /** Mirrors MAX_TOKEN_NAME_LENGTH in shared/mcp_global_tokens.py. */

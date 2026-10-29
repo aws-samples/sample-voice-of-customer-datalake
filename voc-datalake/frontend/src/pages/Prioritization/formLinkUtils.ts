@@ -93,7 +93,7 @@ type DetailWithDocuments = Pick<Partial<ProjectDetail>, 'documents'>
  * Needed to tell a project-wide link apart from a stale one: a form pointing at
  * a document that is still present belongs to that document alone, while a form
  * pointing at a document that is gone (regenerated) falls back to the project.
- * Details are aligned with `projects` by index, the same way `collectPRFAQs`
+ * Details are aligned with `projects` by index, the same way `collectRows`
  * aligns them.
  */
 export function collectProjectDocumentIds(

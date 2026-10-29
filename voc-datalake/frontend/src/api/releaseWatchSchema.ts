@@ -5,6 +5,7 @@
  * @module api/releaseWatchSchema
  */
 import { z } from 'zod'
+import { isPresent } from '../lib/typeGuards'
 import { readPartialWindow, type PartialWindow } from './partialWindow'
 
 const count = z.number().int().nonnegative().catch(0)
@@ -49,10 +50,6 @@ const ReleaseWatchSchema = z.looseObject({
 
 type RawRelease = z.infer<typeof ReleaseSchema>
 type RawSide = z.infer<typeof SideSchema>
-
-function isPresent<T>(value: T | null): value is T {
-  return value !== null
-}
 
 export interface ReleaseSide extends Omit<RawSide, 'top_categories'> {
   top_categories: z.infer<typeof RankedSchema>[]

@@ -73,6 +73,20 @@ export interface AttributeFilters {
 }
 
 /**
+ * {@link AttributeFilters} plus the other item filters the same routes take
+ * (`shared/item_filters.py`): whole-star bounds and "urgent only". The metrics
+ * routes count only matching items with them, so the Categories page's
+ * breakdowns follow its rating and urgent filters like its list does.
+ */
+export interface ItemFilterParams extends AttributeFilters {
+  /** Whole stars (1-5), inclusive; an unrated item is excluded once either bound is set. */
+  rating_min?: number
+  rating_max?: number
+  /** `1`: only `urgency: 'high'` items. */
+  urgent?: 1
+}
+
+/**
  * Which date the `days` window applies to on time-filtered endpoints.
  *
  * - 'imported': when the item entered the data lake (historical default)
@@ -88,15 +102,12 @@ export type DateBasis = 'imported' | 'review'
  * Used by `/feedback`, `/feedback/urgent`, and `/feedback/search`. Each filter
  * narrows the result set independently; combine them via AND on the server.
  */
-export interface FeedbackFilters extends AttributeFilters {
+export interface FeedbackFilters extends Omit<ItemFilterParams, 'urgent'> {
   days?: number
   date_basis?: DateBasis
   source?: string
   category?: string
   sentiment?: string
-  /** Whole stars (1-5), inclusive; an unrated item is excluded once either bound is set. */
-  rating_min?: number
-  rating_max?: number
 }
 
 /** Query parameters of the cursor-paged `/feedback/urgent` and `/feedback/search`. */

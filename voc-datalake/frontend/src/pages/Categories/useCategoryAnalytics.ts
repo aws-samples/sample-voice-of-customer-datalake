@@ -11,7 +11,7 @@ import { api } from '../../api/client'
 import { useCategoryAdmits } from '../../hooks/useCategories'
 import type { DateRangeParams } from '../../api/client'
 import { normalizeEntityExtras, rankedNames } from '../../api/dimensionsSchema'
-import type { AttributeFilters } from '../../api/types'
+import type { ItemFilterParams } from '../../api/types'
 import { rankEntityKeys } from './entityCounts'
 import { NEUTRAL_CHART_STEP, categoryChartSteps, chartStepPrintHex } from './types'
 import { toSentimentData, useGaugeSentiment, type GaugeSentiment } from './useGaugeSentiment'
@@ -19,6 +19,7 @@ import type { CategoryData, SentimentData, WordCloudItem } from './types'
 import { failedReads, type FailedReads } from '../../utils/failedReads'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { rankCategoryEntries } from '../../utils/categoryOrder'
+import { metricsKeys } from '../../api/queryKeys'
 
 /**
  * Words that say nothing on their own in a review keyword cloud: English
@@ -118,7 +119,7 @@ function allSourcesEntitiesKey(dateParams: DateRangeParams): readonly unknown[] 
 }
 
 /**
- * `attributes` (channel / dims / tag) narrow the category, sentiment and
+ * `attributes` (channel / dims / tag, stars, urgent only) narrow the category, sentiment and
  * entities reads like `source` does; the all-sources entities read stays
  * unfiltered because it supplies the filter OPTIONS.
  */
@@ -126,7 +127,7 @@ export function useCategoryAnalytics(
   dateParams: DateRangeParams,
   selectedSource: string | null,
   apiEndpoint: string,
-  attributes: AttributeFilters = {},
+  attributes: ItemFilterParams = {},
   selectedCategories?: readonly string[],
 ): CategoryAnalytics {
   const enabled = !!apiEndpoint
@@ -134,14 +135,14 @@ export function useCategoryAnalytics(
   const unfiltered = source === undefined && Object.keys(attributes).length === 0
 
   const categoriesQuery = useQuery({
-    queryKey: ['categories', dateParams, selectedSource, attributes],
+    queryKey: metricsKeys.categories(dateParams, selectedSource, attributes),
     queryFn: () => api.getCategories(dateParams, source, attributes),
     enabled,
   })
   const categories = categoriesQuery.data
 
   const sentimentQuery = useQuery({
-    queryKey: ['sentiment', dateParams, selectedSource, attributes],
+    queryKey: metricsKeys.sentiment(dateParams, selectedSource, attributes),
     queryFn: () => api.getSentiment(dateParams, source, attributes),
     enabled,
   })

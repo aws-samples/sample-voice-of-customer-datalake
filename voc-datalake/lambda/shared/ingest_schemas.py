@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_valid
 
 # Imports nothing else from shared/, so the processor bundle's import graph stays the same.
 from shared.dimension_config import validate_tags
+from shared.timestamps import now_iso
 
 # ============================================
 # Constants
@@ -132,7 +133,20 @@ class MessageValidationError(Exception):
 
 # Keys whose values are declared, typed containers below and are therefore
 # exempt from the flat-primitive rule.
-_STRUCTURED_METADATA_KEYS = frozenset({"custom_fields"})
+_STRUCTURED_METADATA_KEYS = frozenset({"custom_fields", "participant"})
+
+
+class ParticipantRef(BaseModel):
+    """Who answered: the participant ask a feedback-form answer came from (docs/participants.md).
+
+    Set only by the feedback-form submit route, from a response token it resolved itself;
+    ids only, never an address.
+    """
+    model_config = {"extra": "forbid"}
+
+    person_id: str = Field(max_length=32)
+    ask_id: str = Field(max_length=32)
+    project_id: str | None = Field(None, max_length=64)
 
 
 def _primitive_value_error(key: str, value: object) -> str | None:
@@ -168,6 +182,7 @@ class MessageMetadata(BaseModel):
     custom_fields: dict[str, str | int | float | bool | None] | None = Field(
         None, max_length=MAX_CUSTOM_FIELDS,
     )
+    participant: ParticipantRef | None = None
 
     # Validators take `cls` without `@classmethod`: pydantic wraps a `cls`-first
     # validator in `classmethod` itself (ensure_classmethod_based_on_signature),
@@ -410,7 +425,7 @@ class IngestMessage(BaseModel):
         if not isinstance(values, dict) or _parses_as_datetime(values.get("created_at")):
             return values
         ingested_at = values.get("ingested_at")
-        fallback = ingested_at if _parses_as_datetime(ingested_at) else datetime.now(UTC).isoformat()
+        fallback = ingested_at if _parses_as_datetime(ingested_at) else now_iso()
         return {**values, "created_at": fallback}
 
     @model_validator(mode="after")

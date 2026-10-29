@@ -50,12 +50,12 @@ Signals (read-only, two single-item reads):
 
 Data-layer only; the routes live in ``settings_handler.py``.
 """
-import re
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 from boto3.dynamodb.conditions import Key
 
+from shared.agents_store import is_run_id
 from shared.company_context import user_context_pk
 from shared.earliest_date import EARLIEST_DATE_KEY, earliest_date_from_item
 from shared.exceptions import ValidationError
@@ -75,8 +75,6 @@ FEEDBACK_FORM_PK: Final = 'FEEDBACK_FORM'
 _CHOICES: Final = {'state': STATES, 'start_page': START_PAGES, 'guide': GUIDES, 'subscribe_prompt': SUBSCRIBE_PROMPTS}
 _DISMISS_RUN: Final = 'dismiss_decision_run'
 _FIELDS: Final = (*_CHOICES, _DISMISS_RUN)
-# The agents runtime's run ids (``_RUN_ID_RE`` in shared/agents_store.py).
-_RUN_ID_RE: Final = re.compile(r'ar_[0-9a-f]{12,20}')
 
 
 def _choice(body: dict, name: str, allowed: tuple[str, ...]) -> str:
@@ -96,7 +94,7 @@ def validate_preference(body: dict) -> dict[str, str]:
     changes = {name: _choice(body, name, allowed) for name, allowed in _CHOICES.items() if name in body}
     if _DISMISS_RUN in body:
         run_id = body[_DISMISS_RUN]
-        if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
+        if not is_run_id(run_id):
             raise ValidationError(f'{_DISMISS_RUN} must be an agent run id')
         changes[_DISMISS_RUN] = run_id
     return changes
@@ -107,7 +105,7 @@ def _stored_runs(row: dict) -> list[str]:
     raw = row.get('dismissed_decision_runs')
     if not isinstance(raw, list):
         return []
-    return [run for run in raw if isinstance(run, str) and _RUN_ID_RE.fullmatch(run)]
+    return [run for run in raw if is_run_id(run)]
 
 
 def merged_dismissed_runs(stored: dict | None, run_id: str) -> list[str]:

@@ -21,6 +21,10 @@
     "evidence": "Bewertungen hinter dieser Karte: {{count, number}}",
     "quotes": "In ihren Worten",
     "dismiss": "Ausblenden",
+    "dismissed": "Ausgeblendet: {{title}}",
+    "undo": "Rückgängig",
+    "undoLabel": "Ausblenden von {{title}} rückgängig machen",
+    "closeNotice": "Hinweis schließen",
     "sources": "Quellen",
     "newTab": "öffnet in einem neuen Tab",
     "type": {

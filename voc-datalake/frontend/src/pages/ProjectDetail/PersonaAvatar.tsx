@@ -36,6 +36,7 @@ export default function PersonaAvatar({
         <img
           src={avatarUrl}
           alt={persona.name}
+          data-testid="persona-avatar"
           className={clsx(sizeClass, 'rounded-full object-cover border-2 border-accent/30 flex-shrink-0')}
           onError={() => setFailedUrl(avatarUrl)}
         />

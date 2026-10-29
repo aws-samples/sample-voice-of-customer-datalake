@@ -268,7 +268,7 @@ p95 over calls ≥ 100 ms at the old size unless noted (each function's comment 
 | Over 60 % | research-step 1,536 → 1,769 (66.2), users-api 256 → 512 (63.2; peak memory 57.0 %) |
 | Power Tuning pin superseded | metrics-api 1,024 → 1,536 (83.1), projects-api 1,024 → 1,536 (82.1), agents-api 1,024 → 1,769 (94.6), ballots-api 1,024 → 1,769 (90.9), memory-api 1,024 → 1,536 (73.7), settings-api 512 → 1,024 (96.4) |
 | Insufficient data, over 60 % | manual-import-api 512 → 1,024 (77.0), s3-import-api 512 → 1,024 (72.0), scrapers-api 1,024 → 1,536 (78.2), webhook-github_issues 256 → 512 (84.8) |
-| Peak memory near 60 % | mcp-token-authorizer 128 → 256 (57.8 % peak; inline Node authorizer, CPU not measured) |
+| Peak memory near 60 % | mcp-token-authorizer 128 → 256 (57.8 % peak; inline Node authorizer, CPU not measured; since retired: the `/mcp/global` authorizer is now voc-mcp-global-api itself) |
 
 - **Not changed:** the three assist twins (`voc-projects-assist`, `voc-settings-assist`, `voc-scrapers-assist`) keep
   their sizes. They were measured separately from the REST path and now pin their own `memorySize`
@@ -317,7 +317,9 @@ are the owner's numbers, not rungs of `MEMORY_STEPS_MB`.
 ## Back to one vCPU (owner, 2026-10-23)
 
 **Owner decision:** no single-threaded Python function sits above 1,769 MB (one vCPU). Every Python handler
-runs on one core (the GIL; `shared/concurrency.py` threads only overlap network waits), so the 2026-10-20
+runs on one core (the GIL; `shared/concurrency.py` threads only overlap network waits; the shared DynamoDB
+client pools `MAX_IN_FLIGHT_READS` = 32 connections, every read one request's nested fan-out can have in flight,
+since botocore's default 10 logged "Connection pool is full" on `/metrics/*`), so the 2026-10-20
 doubling lowered the measured share without making a call faster. The CPU behind the breaches was made cheaper
 instead, and the eight doubled functions went back to 1,769 MB (`CAPPED_AT_ONE_VCPU_2026_10_23` in `policy.ts`;
 `lib/lambda-memory.test.ts` fails on any Python function above one vCPU).
@@ -402,6 +404,50 @@ relative. Lambda runs 3.14 on Graviton.
 
 The bundles already ship only `api/<handler>.py` + `shared/` + prompts and static (`createApiLambdaCode`).
 No API bundle ships or imports `plugins/` or another handler.
+
+### Dependency layers
+
+Every function also unzips its layers into `/opt` on a cold start. Until 5.31, one 39 MB layer went to all 43
+API and processing functions, and a 37 MB layer to all 9 ingestion functions. `scripts/audit/py_layers.py`
+(docs/code-audit.md) compared each layer with what the live code of its functions imports. It found:
+
+- cryptography + cffi + pycparser (17 MB), reached by 5 of the 29 API functions and none of the 14 processing
+  ones;
+- lxml (12 MB), reached only by the opt-in inbound-email intake;
+- the layers' own urllib3, jmespath, python-dateutil and six, which shadowed the runtime's copies, so the
+  runtime's botocore ran on them.
+
+What ships now (`lib/utils/dependency-layers.ts`, Docker builds of 2026-10-24, arm64):
+
+| Layer | Stack | Functions | Before: unzipped / zipped | After: unzipped / zipped |
+|---|---|---|---|---|
+| `ApiDepsLayer`, `ProcessingDepsLayer` (`processing-deps`) | Api, Processing | 29 + 14 | 39.4 / 13.7 MB | 20.5 / 7.3 MB |
+| `IngestionDepsLayer` (`ingestion-deps`) | Ingestion | 9 | 37.2 / 14.1 MB | 22.2 / 7.9 MB |
+| `SigningDepsLayer` (`signing-deps`, new) | Api | 5: projects API + its assist worker, the persona generator and importer, the document generator | — | 16.8 / 5.6 MB |
+| `EmailIntakeDepsLayer` (`email-intake-deps`, new) | Ingestion, only with `-c inboundEmailDomain` | 1: the email intake | — | 12.4 / 5.2 MB |
+
+- **Who gets the signing layer.** `SIGNING_LAYER_FUNCTION_IDS` lists them. `py_layers` fails the gate when a
+  function's live code imports a library none of its layers ships (`missing-distribution`). It also fails when a
+  function gets a layer it reaches nothing of (`unused-layer`). So the list follows the code: a function that
+  starts signing, or stops, fails the gate until the list matches. `dependency-layers.test.ts` pins the
+  templates to the list.
+- **What the bundling strips.** `LAYER_STRIP` in `lib/utils/python-layer-bundling.ts`, in lockstep with
+  `scripts/build-layers.sh`:
+  - the SDK closure the Python 3.14 runtime already ships: boto3, botocore, s3transfer, jmespath,
+    python-dateutil, six, urllib3. Every dependent's version range accepts the runtime's versions; `py_layers`
+    reports a `runtime-conflict` the day one does not;
+  - files that never run in Lambda: `bin/`, `*.pyi`, `*-stubs`, and the `tests/` some wheels ship.
+  - `.pyc` (compiled for 3.14 by the same image) and `*.dist-info` stay.
+- **What was kept.** websocket-client (0.4 MB, 2 of 9 ingestion functions) is under the 2 MB size where
+  `py_layers` calls a library a split candidate. The requests stack (requests, charset-normalizer, idna, certifi:
+  1.8 MB together) is reached by 2 of 29 API functions and 1 of 14 processing ones. Each library is under that
+  size.
+
+Checked, 2026-10-24: every one of the 52 functions with a changed layer imports its handler module in
+`public.ecr.aws/lambda/python:3.14`. Each ran from its replayed bundle with the new layers mounted at `/opt`.
+urllib3, jmespath and dateutil resolved to `/var/lang/lib/python3.14/site-packages`. The five signing
+functions signed with RSA-SHA1 (cryptography 50.0.2). The email intake parsed HTML with lxml. The webscraper's
+`html.parser` works without lxml.
 
 ### SnapStart: on for the four slow APIs
 

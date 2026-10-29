@@ -38,6 +38,7 @@ import { activeAxes } from '../../api/prioritizationAxes'
 import { ScoringFramework } from './ScoringFramework'
 import { ScoringSetupButton } from './ScoringSetupButton'
 import { SCORING_CONFIG_KEY } from '../../api/prioritizationConfigApi'
+import { PRIORITIZATION_SCORES_KEY } from './prioritizationKeys'
 import type { Project, PrioritizationRow } from '../../api/projectTypes'
 import { axesOfRead, selectPrioritization, rowCountSettled } from './prioritizationRead'
 import { StatsCards } from './StatsCards'
@@ -56,18 +57,6 @@ import { PrioritizationHeader } from './PrioritizationHeader'
  * working and the prototype links quietly stop being refreshed.
  */
 const ALL_PROJECT_DETAILS_KEY = ALL_PROJECT_DETAILS_ROOT
-
-/**
- * Query key for the prioritization read: rows, the caller's ballots, the team aggregates.
- *
- * A constant for the same reason as `ALL_PROJECT_DETAILS_KEY`, and more urgently: it is
- * fetched once and invalidated from THREE places (after a save, after the prototype
- * re-sign, and after the row-ensure effect below). Spelled four times, a rename would
- * leave the invalidations matching nothing and the page would show stale rows after a
- * save with nothing failing. Stays private to this page per the rule in
- * api/projectQueryKeys.
- */
-const PRIORITIZATION_SCORES_KEY = ['prioritization-scores'] as const
 
 export default function Prioritization() {
   const { t } = useTranslation('prioritization')
@@ -738,7 +727,7 @@ export default function Prioritization() {
 
       <ScoringFramework axes={active} />
 
-      <StatsCards rows={allRows} aggregates={aggregates} />
+      <StatsCards rows={allRows} aggregates={aggregates} rowsLoading={isLoading} />
       <SortControls
         axes={active}
         sortField={effectiveSort}
@@ -756,6 +745,7 @@ export default function Prioritization() {
           rows={sortedRows}
           axes={active}
           scores={scores}
+          savedScores={ownBallots.ballots}
           aggregates={aggregates}
           linkedFormsByDocument={linkedFormsByDocument}
           apiEndpoint={config.apiEndpoint}

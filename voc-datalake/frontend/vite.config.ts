@@ -5,6 +5,14 @@ import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { changelogPlugin } from './changelogPlugin'
+/**
+ * Rollup `manualChunks`: which vendor packages share a chunk. A package the app imports directly that is
+ * ALSO a dependency of a listed package lands in that package's chunk unless it is listed itself: `clsx`
+ * (every page's class helper) is a recharts dependency, so the app shell imported 389 KB of charts on every
+ * first load until it was listed beside React. `src/build/vendorChunks.test.ts` fails when another shared
+ * dependency is left out (docs/caching.md, "First load").
+ */
+import VENDOR_CHUNKS from './vendorChunks.json' with { type: 'json' }
 
 /**
  * Build id for cache-busting runtime-fetched locale JSONs (issue #191).
@@ -141,14 +149,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-recharts': ['recharts'],
-          'vendor-icons': ['lucide-react'],
-          'vendor-query': ['@tanstack/react-query'],
-          'vendor-i18n': ['i18next', 'react-i18next', 'i18next-browser-languagedetector', 'i18next-http-backend'],
-          'vendor-markdown': ['react-markdown', 'remark-gfm'],
-        },
+        // vendorChunks.json (see its import above): clsx sits beside React, not in the recharts chunk.
+        manualChunks: VENDOR_CHUNKS,
       },
     },
   },

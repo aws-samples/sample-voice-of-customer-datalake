@@ -21,10 +21,12 @@ import { routes } from './routes'
 /** Route path in `routes.tsx` → the page module that renders it (relative to src/). */
 const PARAM_PAGES: Record<string, string> = {
   '/vote/:sessionId': 'pages/Vote/Vote.tsx',
+  '/review/:shareId': 'pages/Review/Review.tsx',
   'feedback/:id': 'pages/FeedbackDetail/FeedbackDetail.tsx',
   'projects/:id': 'pages/ProjectDetail/ProjectDetail.tsx',
   'agents/:id': 'pages/Agents/AgentDetail.tsx',
   'agents/workflows/:workflowId': 'pages/Agents/WorkflowPage.tsx',
+  'feature-requests/:slug': 'pages/FeatureRequests/BoardPage.tsx',
 }
 
 const read = (file: string) => readFileSync(join(__dirname, file), 'utf8')

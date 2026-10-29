@@ -82,7 +82,7 @@ function PRFAQRowHeader({
 }) {
   const { t, i18n } = useTranslation('prioritization')
   return (
-    <button type="button" aria-expanded={isExpanded} className="w-full p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 cursor-pointer hover:bg-bg-hover text-left focus-ring" onClick={onToggle}>
+    <button type="button" aria-expanded={isExpanded} data-testid="prioritization-row-toggle" className="w-full p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 cursor-pointer hover:bg-bg-hover text-left focus-ring" onClick={onToggle}>
       <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
         <div className="text-muted font-mono text-sm w-6 hidden sm:block">#{index + 1}</div>
         <div className="flex-1 min-w-0">
@@ -183,11 +183,13 @@ function RowDocument({
 }
 
 function PRFAQRowExpanded({
-  row, axes, score, team, linkedFormsByDocument, apiEndpoint, composition, onUpdateScore,
+  row, axes, score, unscoredOnSave, team, linkedFormsByDocument, apiEndpoint, composition, onUpdateScore,
 }: {
   readonly row: PrioritizationRowView
   readonly axes: readonly ScoringAxis[]
   readonly score: PrioritizationScore
+  /** Axes the SAVED ballot leaves unscored — the only ones a slider may return to "Not scored". */
+  readonly unscoredOnSave: ReadonlySet<string>
   readonly team: TeamView
   /** Per DOCUMENT, not per row — see `RowDocument`. */
   readonly linkedFormsByDocument: ReadonlyMap<string, readonly LinkedForm[]>
@@ -234,6 +236,7 @@ function PRFAQRowExpanded({
                 label={text.name}
                 value={axisValue(score, axis.id)}
                 onChange={(value) => onUpdateScore({ field: 'axis', axisId: axis.id, value })}
+                canBeUnscored={unscoredOnSave.has(axis.id)}
                 description={text.description}
                 lowLabel={text.lowLabel}
                 highLabel={text.highLabel}
@@ -300,7 +303,7 @@ function PRFAQRowExpanded({
 const NO_LINKED_FORMS: readonly LinkedForm[] = []
 
 export default function PRFAQRow({
-  row, index, axes, score, team, linkedFormsByDocument, apiEndpoint, composition, isExpanded, onToggle, onUpdateScore,
+  row, index, axes, score, savedScore, team, linkedFormsByDocument, apiEndpoint, composition, isExpanded, onToggle, onUpdateScore,
 }: {
   readonly row: PrioritizationRowView
   readonly index: number
@@ -311,6 +314,8 @@ export default function PRFAQRow({
    * Not what the resting row shows — see `team`.
    */
   readonly score: PrioritizationScore
+  /** The same ballot AS SAVED (no unsaved edits): which axes it leaves unscored. */
+  readonly savedScore: PrioritizationScore
   /**
    * What every reviewer together said — the row's resting state, and the same numbers
    * the list is ordered by.
@@ -354,11 +359,12 @@ export default function PRFAQRow({
   // one bands "Not Scored", and a failed read bands as neither. The band also reads
   // the same rounded value the row prints, so label and number cannot disagree.
   const priority = getPriorityLabel(team, t)
+  const unscoredOnSave = new Set(axes.filter((axis) => axisValue(savedScore, axis.id) === 0).map((axis) => axis.id))
 
   return (
     <div className="bg-card rounded-lg border border-border shadow-sm">
       <PRFAQRowHeader row={row} index={index} axes={axes} priority={priority} team={team} isExpanded={isExpanded} onToggle={onToggle} />
-      {isExpanded ? <PRFAQRowExpanded row={row} axes={axes} score={score} team={team} linkedFormsByDocument={linkedFormsByDocument} apiEndpoint={apiEndpoint} composition={composition} onUpdateScore={onUpdateScore} /> : null}
+      {isExpanded ? <PRFAQRowExpanded row={row} axes={axes} score={score} unscoredOnSave={unscoredOnSave} team={team} linkedFormsByDocument={linkedFormsByDocument} apiEndpoint={apiEndpoint} composition={composition} onUpdateScore={onUpdateScore} /> : null}
     </div>
   )
 }

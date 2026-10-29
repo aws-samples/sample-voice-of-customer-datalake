@@ -36,6 +36,17 @@ const UNAUTHORIZED_CODE = -32001
 const tokenRow = (page: Page, name: string): Locator =>
   page.getByRole('region', { name: 'My tokens' }).getByRole('listitem').filter({ hasText: name })
 
+/**
+ * Revoked tokens move under a collapsed "Revoked (N)" group (TokenList.tsx
+ * TokenGroups); a closed <details> keeps its rows out of the accessibility tree,
+ * so the group is opened before a revoked row is looked up by role.
+ */
+async function openRevokedGroup(page: Page): Promise<void> {
+  const group = page.getByRole('region', { name: 'My tokens' }).locator('details').filter({ has: page.getByText(/^Revoked \(\d+\)$/) })
+  await expect(group).toBeVisible()
+  if (await group.getAttribute('open') === null) await group.locator('summary').click()
+}
+
 /** The token works: `tools/list` answers 200 with at least one tool. */
 function expectWorks(answer: McpAnswer): void {
   expect(answer.status, 'tools/list with a live token').toBe(200)
@@ -43,15 +54,15 @@ function expectWorks(answer: McpAnswer): void {
 }
 
 /**
- * The token is dead: 401 and the JSON-RPC unauthorized code. The Bearer challenge
- * is a SOFT check: API Gateway (REST, Lambda proxy) renames the handler's
- * `WWW-Authenticate` to `x-amzn-Remapped-WWW-Authenticate`, so on production an MCP
- * client never sees it (finding, 2.14.00). It stays red until that is fixed.
+ * The token is dead: 401, the JSON-RPC unauthorized code and the Bearer challenge.
+ * The refusal is the token authorizer's Deny (the ACCESS_DENIED gateway response,
+ * lib/stacks/api-mcp.ts): a Lambda proxy 401 would have `WWW-Authenticate` remapped
+ * to `x-amzn-Remapped-WWW-Authenticate` (finding 2.14.00, fixed after 5.35.00).
  */
 function expectRefused(answer: McpAnswer): void {
   expect(answer.status, 'tools/list with a revoked token').toBe(401)
   expect(answer.errorCode).toBe(UNAUTHORIZED_CODE)
-  expect.soft(answer.wwwAuthenticate ?? '', 'WWW-Authenticate reaches the client (API Gateway remaps it)').toMatch(/^Bearer /)
+  expect(answer.wwwAuthenticate ?? '', 'WWW-Authenticate reaches the client').toMatch(/^Bearer realm="voc-mcp-global"/)
 }
 
 test.describe('connect: global MCP tokens', () => {
@@ -94,6 +105,7 @@ test.describe('connect: global MCP tokens', () => {
         const revokedStatus = (await revoked).status()
         r.note(`DELETE /connect/tokens/{id} -> ${revokedStatus}`)
         expect(revokedStatus).toBe(200)
+        await openRevokedGroup(page)
         await expect(tokenRow(page, name)).toContainText('Revoked')
         await expect(tokenRow(page, name).getByRole('button', { name: 'Revoke' })).toHaveCount(0)
 

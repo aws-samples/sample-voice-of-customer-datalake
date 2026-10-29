@@ -18,7 +18,7 @@ import type { AssistantRunContext, ClientToolDefinition } from '../../types.js';
 import type { ToolDeps } from '../deps.js';
 import { recordsAt } from '../server/feedback-shape.js';
 import { defineClientTool } from './define.js';
-import { RADAR_BRAND_LIMITS, radarBrandKey, runRadarScanArgsSchema, saveRadarBrandsArgsSchema } from './radar-schemas.js';
+import { RADAR_BRAND_LANGUAGES, RADAR_BRAND_LIMITS, radarBrandKey, runRadarScanArgsSchema, saveRadarBrandsArgsSchema } from './radar-schemas.js';
 
 /** The tracked brands' keys (list + legacy source-profile brands), as the caller sees them. */
 async function radarBrandKeys(deps: ToolDeps, ctx: AssistantRunContext): Promise<Set<string>> {
@@ -46,7 +46,13 @@ function saveRadarBrands(): ClientToolDefinition {
       + 'Send the COMPLETE list: read get_radar view "brands" first and keep every brand with origin "list" the user did not '
       + 'ask to remove (origin "profile" brands come from source profiles and stay without being listed). Each brand: '
       + `label (1-${RADAR_BRAND_LIMITS.maxLabelChars} characters) and domains (up to ${RADAR_BRAND_LIMITS.maxDomains} of its own `
-      + 'sites, e.g. example-air.example, which the release search prefers). Its key is the label lower-cased with every run of other '
+      + 'sites, e.g. example-air.example, which the news scan searches), language (optional, a two-letter code such as pl or cs; '
+      + `omit for auto = from the first domain), feed_urls (optional, up to ${RADAR_BRAND_LIMITS.maxFeedUrls} https RSS / Atom `
+      + 'feed URLs of its news), search_terms (optional, up to '
+      + `${RADAR_BRAND_LIMITS.maxTerms} words or phrases of ${RADAR_BRAND_LIMITS.maxTermChars} characters at most, such as its legal name `
+      + 'or product names, added to its news searches: use them when the brand name is also a common word) and exclude_terms '
+      + '(optional, same bounds: a search result whose title or snippet contains one is dropped). Keep the language, feed_urls, '
+      + 'search_terms and exclude_terms a listed brand already has. Its key is the label lower-cased with every run of other '
       + 'characters as "-" ("Acme Air" → acme-air). Removing a brand stops its scans and its review routing; stored reviews '
       + 'and releases are kept. To set up Radar for a brand: this, then create_scraper or create_app_connector with '
       + 'radar_brand = its key, then run it (run_scraper / run_source), then run_radar_scan {brand}.',
@@ -60,6 +66,13 @@ function saveRadarBrands(): ClientToolDefinition {
           properties: {
             label: { type: 'string', maxLength: RADAR_BRAND_LIMITS.maxLabelChars, description: 'Brand name as shown.' },
             domains: { type: 'array', items: { type: 'string' }, maxItems: RADAR_BRAND_LIMITS.maxDomains, description: 'Its own domains.' },
+            language: { type: 'string', enum: [...RADAR_BRAND_LANGUAGES], description: 'The language it publishes in; omit for auto.' },
+            feed_urls: {
+              type: 'array', items: { type: 'string', maxLength: RADAR_BRAND_LIMITS.maxFeedUrlChars },
+              maxItems: RADAR_BRAND_LIMITS.maxFeedUrls, description: 'https RSS / Atom feeds of its news.',
+            },
+            search_terms: termsProperty('Words or phrases added to its news searches (legal name, product names).'),
+            exclude_terms: termsProperty('Words or phrases that drop a search result containing them.'),
           },
           required: ['label'],
           additionalProperties: false,
@@ -74,6 +87,14 @@ function saveRadarBrands(): ClientToolDefinition {
   });
 }
 
+/** The JSON schema of a search_terms / exclude_terms list. */
+function termsProperty(description: string) {
+  return {
+    type: 'array', items: { type: 'string', maxLength: RADAR_BRAND_LIMITS.maxTermChars },
+    maxItems: RADAR_BRAND_LIMITS.maxTerms, description,
+  };
+}
+
 /** "Acme Air (acme-air)" in a summary. */
 function brandWithKey(label: string): string {
   return `${label} (${radarBrandKey(label)})`;
@@ -83,9 +104,10 @@ function runRadarScan(deps: ToolDeps): ClientToolDefinition {
   return defineClientTool({
     name: 'run_radar_scan',
     pack: 'scrapers',
-    description: 'Start a Radar release scan now (admin), ignoring the cadence: web search for what the brand shipped (every '
-      + 'tracked brand without `brand`). It runs in the background for a few minutes and spends web searches; afterwards '
-      + 'get_radar view "releases" lists what it found.',
+    description: 'Start the Radar news scan now (admin), ignoring the cadence: it files each brand\u2019s news (releases, '
+      + 'announcements, promotions, partnerships, company news) from web search, Exa and its feeds (every tracked brand without `brand`). Use it when the '
+      + 'user asks to scan, refresh or look for a brand\u2019s news, releases, launches or announcements. It runs in the '
+      + 'background for a few minutes and spends web searches; afterwards get_radar view "releases" lists what it found.',
     properties: { brand: { type: 'string', maxLength: RADAR_BRAND_LIMITS.maxLabelChars, description: 'Brand key (get_radar view "brands"); omit for every brand.' } },
     required: [],
     schema: runRadarScanArgsSchema,
@@ -94,7 +116,7 @@ function runRadarScan(deps: ToolDeps): ClientToolDefinition {
       if (keys.size === 0) return 'no Radar brand is tracked yet. Propose save_radar_brands first.';
       return args.brand === undefined || keys.has(args.brand) ? undefined : unknownBrand(args.brand);
     },
-    summarize: (args) => (args.brand === undefined ? 'Scan every Radar brand for releases now.' : `Scan Radar brand ${args.brand} for releases now.`),
+    summarize: (args) => (args.brand === undefined ? 'Scan every Radar brand for news now.' : `Scan Radar brand ${args.brand} for news now.`),
   });
 }
 

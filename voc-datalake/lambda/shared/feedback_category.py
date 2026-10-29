@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any, Literal, overload
 
 from boto3.dynamodb.conditions import Attr, ConditionBase
@@ -28,6 +27,7 @@ from shared.category_gate import read_categories_config
 from shared.exceptions import ApiError, ConflictError, ServiceError, ValidationError
 from shared.logging import logger
 from shared.project_access import Caller
+from shared.timestamps import now_iso
 
 CATEGORY_SOURCE_MANUAL = 'manual'
 MAX_LABEL_CHARS = 64
@@ -99,7 +99,7 @@ def override_record(item: Mapping[str, Any], caller: Caller) -> dict:
         'previous_subcategory': item.get('subcategory'),
         'by_sub': caller.subject,
         'by_username': caller.username,
-        'at': datetime.now(UTC).isoformat(),
+        'at': now_iso(),
     }
 
 

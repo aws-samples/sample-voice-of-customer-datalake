@@ -33,6 +33,16 @@
     "status": "Status filter"
   },
   "forget": "Forget",
+  "edit": "Edit",
+  "editLabel": "Edit memory: {{statement}}",
+  "editField": "Memory statement",
+  "save": "Save",
+  "editFailed": "Could not save the memory. Try again.",
+  "confirmPersonal": "Still true",
+  "confirmPersonalHint": "Confirm this is still true, so it is not archived after 90 unused days",
+  "confirmPersonalLabel": "Still true: {{statement}}",
+  "confirmLabel": "+1: {{statement}}",
+  "confirmedPersonal": "Confirmed as still true.",
   "forgetMessage": "\"{{statement}}\" is archived and never re-learned automatically. You can restore it later.",
   "forgetTitle": "Forget this memory?",
   "imports": {

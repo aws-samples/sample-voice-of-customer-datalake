@@ -22,6 +22,7 @@
       "capReached": "本次投票收集的票数已达上限。请主持人另开一场投票。",
       "closed": "主持人已结束本次投票，不再接受新的选票。",
       "expired": "本次投票已过期，不再接受新的选票。",
+      "gone": "此投票所针对的提案已被删除，投票已结束。",
       "invalid": "无法读取此投票，因此未记录任何内容。请检查评分和备注后重新提交。",
       "notFound": "此链接无法打开任何投票。请确认你扫描的是当前屏幕上的二维码。",
       "title": "该投票未开放",
@@ -92,7 +93,8 @@
     "avgRating": "平均评分",
     "noLinkedForm": "没有反馈表单与此文档关联。",
     "noRatings": "未收集到评分",
-    "submissions": "提交数",
+    "submissions_one": "提交数",
+    "submissions_other": "提交数",
     "title": "已收集的反馈",
     "unavailable": "评分不可用"
   },
@@ -204,7 +206,9 @@
     "title": "优先级排序评分",
     "wholeRow": "一张选票覆盖本行的全部 {{documents, number}} 个文档。",
     "yoursOnly": "这是你自己的评分。保存时只会写入你的分数。",
-    "valueOfMax": "{{value}} / {{max, number}}"
+    "valueOfMax": "{{value}} / {{max, number}}",
+    "clear": "清除",
+    "clearAxis": "清除 {{name}} 的评分"
   },
   "scoresUnavailable": {
     "description": "当前无法获取已保存的评分，因此下方显示的是默认值，而非任何人输入的数值。请在保存前重新加载页面。",
@@ -309,6 +313,7 @@
     "mediumPriority": "中优先级",
     "notScored": "未评分",
     "totalRows": "提案总数",
+    "loading": "正在统计提案...",
     "unreadable_one": "无法读取 {{count, number}} 个提案的团队评分，因此它只计入总数，不计入其他任何统计。请重新加载页面以查看。",
     "unreadable_other": "无法读取 {{count, number}} 个提案的团队评分，因此它们只计入总数，不计入其他任何统计。请重新加载页面以查看。"
   },

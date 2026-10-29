@@ -98,7 +98,8 @@ class Shape {
   }
 }
 
-const shapeOf = (nodes) => { const s = new Shape(); for (const n of nodes) s.visit(n); return s }
+/** The renamed-token shape of `nodes` (`{nodes, digest(), shingles()}`); ts_name_twins.mjs reuses it. */
+export const shapeOf = (nodes) => { const s = new Shape(); for (const n of nodes) s.visit(n); return s }
 const lineOf = (sf, pos) => sf.getLineAndCharacterOfPosition(pos).line + 1
 const copyOf = (sf, rel, first, last, name = '') => ({ path: rel, start: lineOf(sf, first.getStart(sf)), end: lineOf(sf, last.end), name })
 
@@ -168,7 +169,7 @@ function windowGroups(index, sameFile) {
   return groups
 }
 
-function jaccard(a, b) {
+export function jaccard(a, b) {
   let shared = 0
   for (const x of a) if (b.has(x)) shared += 1
   return shared / (a.size + b.size - shared || 1)

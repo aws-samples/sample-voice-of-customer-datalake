@@ -6,11 +6,11 @@
  * @module assistant/approvals/previews/useRadarBrands
  */
 import { useQuery } from '@tanstack/react-query'
-import { fetchRadarBrands } from '../radarExecutors'
+import { radarApi } from '../../../api/radarApi'
 
 /** Read fresh for the card (a card-local key, never the Radar page's cache). */
 export function useRadarBrandsPreview() {
-  return useQuery({ queryKey: ['assistant', 'radar-brands-preview'], queryFn: fetchRadarBrands, retry: false, staleTime: 0 })
+  return useQuery({ queryKey: ['assistant', 'radar-brands-preview'], queryFn: radarApi.getBrands, retry: false, staleTime: 0 })
 }
 
 /** Brand key → label. */

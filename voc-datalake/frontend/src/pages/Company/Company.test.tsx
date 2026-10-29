@@ -56,6 +56,32 @@ describe('Company — vision & objectives', () => {
     }))
   })
 
+  it('Discard changes restores the saved objective and vision without saving', async () => {
+    const save = vi.fn(() => COMPANY)
+    route({ 'GET /settings/company-context': () => COMPANY, 'PUT /settings/company-context': save })
+    const user = userEvent.setup()
+    renderAt()
+    const title = await screen.findByRole('textbox', { name: 'Objective title' })
+    expect(screen.queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
+    await user.clear(title)
+    await user.type(title, 'Draft title')
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }))
+    expect(screen.getByRole('textbox', { name: 'Objective title' })).toHaveValue('Halve late deliveries')
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled()
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('Discard on a context started from "Not set yet" closes the editor again', async () => {
+    route({ 'GET /settings/company-context': () => ({ vision: '', objectives: [] }) })
+    const user = userEvent.setup()
+    renderAt()
+    await user.click(await screen.findByRole('button', { name: 'Write the vision and objectives' }))
+    await user.click(screen.getByRole('button', { name: 'Add objective' }))
+    await user.type(screen.getByRole('textbox', { name: 'Objective title' }), 'Grow')
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }))
+    expect(await screen.findByText('Not set yet')).toBeInTheDocument()
+  })
+
   it('is read-only for everyone else', async () => {
     adminFlag.isAdmin = false
     route({ 'GET /settings/company-context': () => COMPANY })

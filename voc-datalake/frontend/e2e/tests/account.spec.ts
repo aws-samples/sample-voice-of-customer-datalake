@@ -2,7 +2,7 @@
  * P3 — Account / Company "My objectives & KPIs" (`/settings/my-context`), both roles.
  *
  * The caller's OWN context only: it is read first, an e2e-named objective with a
- * KPI is added and saved through the UI on `/account?section=objectives` ("Saved!"),
+ * KPI is added and saved through the UI on `/account?tab=objectives` ("Saved!"),
  * the API and a reload show it, and then the ORIGINAL objectives are put back
  * (PUT of exactly what was read) and proven equal. The restore also runs in
  * `afterAll`, so a failure half-way never leaves the e2e objective behind.
@@ -64,7 +64,7 @@ test.describe('my objectives & KPIs (my-context)', () => {
     const { record, problems } = await runStep({
       page, role, theme: 'dark', step: 'p3-account-my-context',
       action: async (recorder) => {
-        await page.goto(site('/account?section=objectives'), { waitUntil: 'domcontentloaded' })
+        await page.goto(site('/account?tab=objectives'), { waitUntil: 'domcontentloaded' })
         await settle(page, 600)
         await expect(page.getByRole('heading', { name: 'My objectives & KPIs' })).toBeVisible()
         const save = page.getByRole('button', { name: 'Save Changes' })
@@ -96,7 +96,7 @@ test.describe('my objectives & KPIs (my-context)', () => {
 
   test('/company?tab=mine opens the same section on Account', async ({ page }) => {
     await page.goto(site('/company?tab=mine'), { waitUntil: 'domcontentloaded' })
-    await expect(page).toHaveURL(/\/account\?section=objectives/)
+    await expect(page).toHaveURL(/\/account\?tab=objectives/)
     await expect(page.getByRole('heading', { name: 'My objectives & KPIs' })).toBeVisible()
     await page.goto(site('/company?tab=vision'), { waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('tab', { name: 'Vision & objectives' })).toHaveAttribute('aria-selected', 'true')

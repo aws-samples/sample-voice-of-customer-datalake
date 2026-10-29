@@ -30,6 +30,7 @@ import pytest
 from _shared import audit
 from _shared.audit import AuditAction, AuditEvent, emit_audit_event
 from _shared.test.fresh_import import assert_loading_puts_root_first, load_fresh
+from shared.test.clock import frozen_clock
 
 MODULE_PATH = Path(audit.__file__).resolve()
 PLUGINS_ROOT = str(MODULE_PATH.parents[1])
@@ -67,7 +68,7 @@ def restored_sys_path() -> Iterator[list[str]]:
 
 @pytest.fixture
 def fixed_clock() -> Iterator[MagicMock]:
-    with patch('_shared.audit.datetime') as clock:
+    with frozen_clock('_shared.audit') as clock:
         clock.now.return_value.isoformat.return_value = FIXED_TIMESTAMP
         yield clock
 

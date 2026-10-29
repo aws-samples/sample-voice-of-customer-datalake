@@ -1,5 +1,6 @@
 // Projects API - extracted from client.ts to reduce file size
 // Uses shared fetchApi from client.ts for consistent 401 retry + token refresh
+import { del, post, put } from './requestKit'
 import { fetchApi } from './client'
 import { getDateBasisBodyParams } from './baseUrl'
 import {
@@ -11,7 +12,7 @@ import type { DocumentVersion } from './projectDetailSchema'
 import { asRecord } from './wireRecord'
 import { isAssistJobType, runAssistJob } from './assistJobs'
 import {
-  parseDocumentBrief, parseInterviewTurn, parsePrfaqAnswers, parseRegeneratedAvatar, parseResearchSuggestions,
+  parseDocumentBrief, parsePrfaqAnswers, parseRegeneratedAvatar, parseResearchSuggestions,
 } from './assistResults'
 import { normalizeAddPersonaNoteResponse } from './personaNoteSchema'
 import type { AddPersonaNoteResponse } from './personaNoteSchema'
@@ -31,7 +32,6 @@ import type {
   ProjectJob,
   ProductContext,
   ProductDoc,
-  ProductInterviewTurnResponse,
   ProjectVisibility,
   ProjectMemberRole,
   ProjectMembersResponse,
@@ -43,7 +43,6 @@ import type {
 export const MAX_PROJECT_DETAIL_BATCH = 200
 
 /** A JSON POST's request init (`post(...)` is what check-mock-coverage reads as POST). */
-const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) })
 
 /**
  * A project assist job (api/assistJobs): `start` POSTs and gets 202 + a job id,
@@ -69,10 +68,7 @@ export const projectsApi = {
   },
 
   createProject: async (data: CreateProjectBody): Promise<{ success: boolean; project: Project | null }> => {
-    const raw = await fetchApi<unknown>('/projects', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
+    const raw = await fetchApi<unknown>('/projects', post(data))
     const record = asRecord(raw)
     return { success: record?.success === true, project: normalizeProject(record?.project) }
   },
@@ -100,20 +96,14 @@ export const projectsApi = {
   },
 
   updateProject: (id: string, data: Partial<Project>) =>
-    fetchApi<{ success: boolean }>(`/projects/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ success: boolean }>(`/projects/${id}`, put(data)),
 
   deleteProject: (id: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/projects/${id}`, del()),
 
   // ── Sharing (see the HTTP contract in lambda/shared/project_access.py) ──
   setVisibility: (id: string, visibility: ProjectVisibility) =>
-    fetchApi<{ success: boolean; visibility: ProjectVisibility }>(`/projects/${id}/visibility`, {
-      method: 'PUT',
-      body: JSON.stringify({ visibility }),
-    }),
+    fetchApi<{ success: boolean; visibility: ProjectVisibility }>(`/projects/${id}/visibility`, put({ visibility })),
 
   getMembers: async (id: string): Promise<ProjectMembersResponse> => {
     const raw = await fetchApi<unknown>(`/projects/${id}/members`)
@@ -126,29 +116,20 @@ export const projectsApi = {
   },
 
   addMember: async (id: string, sub: string, role: ProjectMemberRole) => {
-    const raw = await fetchApi<unknown>(`/projects/${id}/members`, {
-      method: 'POST',
-      body: JSON.stringify({ sub, role }),
-    })
+    const raw = await fetchApi<unknown>(`/projects/${id}/members`, post({ sub, role }))
     return { member: normalizeProjectMember(asRecord(raw)?.member) }
   },
 
   updateMemberRole: async (id: string, sub: string, role: ProjectMemberRole) => {
-    const raw = await fetchApi<unknown>(`/projects/${id}/members/${encodeURIComponent(sub)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ role }),
-    })
+    const raw = await fetchApi<unknown>(`/projects/${id}/members/${encodeURIComponent(sub)}`, put({ role }))
     return { member: normalizeProjectMember(asRecord(raw)?.member) }
   },
 
   removeMember: (id: string, sub: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${id}/members/${encodeURIComponent(sub)}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/projects/${id}/members/${encodeURIComponent(sub)}`, del()),
 
   transferOwnership: (id: string, sub: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${id}/owner`, {
-      method: 'POST',
-      body: JSON.stringify({ sub }),
-    }),
+    fetchApi<{ success: boolean }>(`/projects/${id}/owner`, post({ sub })),
 
   generatePersonas: (projectId: string, filters?: {
     sources?: string[]
@@ -168,19 +149,13 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string;
-    }>(`/projects/${projectId}/personas/generate`, {
-      method: 'POST',
-      body: JSON.stringify({ ...getDateBasisBodyParams(), ...filters }),
-    }),
+    }>(`/projects/${projectId}/personas/generate`, post({ ...getDateBasisBodyParams(), ...filters })),
 
   updatePersona: (projectId: string, personaId: string, data: Partial<Omit<ProjectPersona, 'persona_id' | 'created_at'>>) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, put(data)),
 
   deletePersona: (projectId: string, personaId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, del()),
 
   /**
    * A new avatar image for one persona (an assist job: the image model can take
@@ -189,13 +164,10 @@ export const projectsApi = {
    * when the answer carries none (signing unavailable).
    */
   regeneratePersonaAvatar: (projectId: string, personaId: string): Promise<{ avatar_url: string | null }> =>
-    projectAssist(projectId, () => fetchApi<unknown>(`/projects/${projectId}/personas/${personaId}/regenerate-avatar`, { method: 'POST' }), parseRegeneratedAvatar),
+    projectAssist(projectId, () => fetchApi<unknown>(`/projects/${projectId}/personas/${personaId}/regenerate-avatar`, post()), parseRegeneratedAvatar),
 
   addPersonaNote: async (projectId: string, personaId: string, body: { text: string; author?: string }): Promise<AddPersonaNoteResponse> => {
-    const raw = await fetchApi<unknown>(`/projects/${projectId}/personas/${personaId}/notes`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    })
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/personas/${personaId}/notes`, post(body))
     return normalizeAddPersonaNoteResponse(raw)
   },
 
@@ -211,10 +183,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/personas/import`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    }>(`/projects/${projectId}/personas/import`, post(data)),
 
   runResearch: (projectId: string, data: {
     question: string
@@ -233,10 +202,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/research`, {
-      method: 'POST',
-      body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
-    }),
+    }>(`/projects/${projectId}/research`, post({ ...getDateBasisBodyParams(), ...data })),
 
   // Keep this signature on ONE line, and keep `data` taking the shared type by name:
   // test_doc_type_lockstep.py matches it as exact text, and requires EVERY declaration
@@ -251,14 +217,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/document`, {
-      method: 'POST',
-      // `data` is only spread into the body — nothing here constrains its type. What
-      // stops the annotation above being widened is
-      // `GenerateDocumentTakesTheSharedBody` at the foot of this file; see there for
-      // why it is a type-level comparison and not a clause on this object (#381).
-      body: JSON.stringify({ ...getDateBasisBodyParams(), ...data }),
-    }),
+    }>(`/projects/${projectId}/document`, post({ ...getDateBasisBodyParams(), ...data })),
 
   mergeDocuments: (projectId: string, data: {
     output_type: 'prd' | 'prfaq' | 'custom'
@@ -277,10 +236,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/documents/merge`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    }>(`/projects/${projectId}/documents/merge`, post(data)),
 
   getJobStatus: (projectId: string, jobId: string) =>
     fetchApi<ProjectJob>(`/projects/${projectId}/jobs/${jobId}`),
@@ -292,7 +248,7 @@ export const projectsApi = {
     }>(`/projects/${projectId}/jobs`).then(withoutAssistJobs),
 
   dismissJob: (projectId: string, jobId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/jobs/${jobId}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/jobs/${jobId}`, del()),
 
   createDocument: (projectId: string, data: {
     title: string;
@@ -302,10 +258,22 @@ export const projectsApi = {
     fetchApi<{
       success: boolean;
       document: ProjectDocument
-    }>(`/projects/${projectId}/documents`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    }>(`/projects/${projectId}/documents`, post(data)),
+
+  /**
+   * A PR/FAQ or PRD written by hand: the next version of its series, `origin: human`
+   * (docs/ways-of-working.md). No `content` = the server's blank template; `create_id`
+   * makes a retried click one document.
+   */
+  startHandWrittenDocument: (projectId: string, data: {
+    document_type: 'prfaq' | 'prd';
+    title: string;
+    create_id: string;
+  }) =>
+    fetchApi<{
+      success: boolean;
+      document: ProjectDocument
+    }>(`/projects/${projectId}/documents`, post(data)),
 
   /**
    * Save an edit. It is a NEW version (a PRD / PR-FAQ edit is the next version of
@@ -320,10 +288,7 @@ export const projectsApi = {
     edit_id?: string;
     expected_revision?: number
   }): Promise<{ success: boolean; document: ProjectDocument | null }> => {
-    const raw = await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    })
+    const raw = await fetchApi<unknown>(`/projects/${projectId}/documents/${documentId}`, put(data))
     const record = asRecord(raw)
     return { success: record?.success === true, document: normalizeProjectDocument(record?.document) }
   },
@@ -336,13 +301,13 @@ export const projectsApi = {
   restoreDocumentVersion: async (projectId: string, documentId: string, versionId: string, editId: string): Promise<ProjectDocument | null> => {
     const raw = await fetchApi<unknown>(
       `/projects/${projectId}/documents/${documentId}/versions/${encodeURIComponent(versionId)}/restore`,
-      { method: 'POST', body: JSON.stringify({ edit_id: editId }) },
+      post({ edit_id: editId }),
     )
     return normalizeProjectDocument(asRecord(raw)?.document)
   },
 
   deleteDocument: (projectId: string, documentId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/documents/${documentId}`, del()),
 
   // ── Product/Service description input ──
 
@@ -350,17 +315,7 @@ export const projectsApi = {
     fetchApi<{ context: ProductContext }>(`/projects/${projectId}/product-context`),
 
   updateProductContext: (projectId: string, patch: Partial<ProductContext>) =>
-    fetchApi<{ context: ProductContext }>(`/projects/${projectId}/product-context`, {
-      method: 'PUT',
-      body: JSON.stringify(patch),
-    }),
-
-  productContextInterview: (projectId: string, body: {
-    message: string;
-    history?: { role: 'user' | 'assistant'; content: string }[]
-    response_language?: string
-  }): Promise<ProductInterviewTurnResponse> =>
-    projectAssist(projectId, () => fetchApi<unknown>(`/projects/${projectId}/product-context/interview`, post(body)), parseInterviewTurn),
+    fetchApi<{ context: ProductContext }>(`/projects/${projectId}/product-context`, put(patch)),
 
   // An assist job like the helpers below: the route answers 202 with a job id and
   // this polls the project job read until the answers (the job's `result`) are in.
@@ -449,10 +404,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/build-prototype`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    }>(`/projects/${projectId}/build-prototype`, post(body)),
 
   generateProductReport: (projectId: string, body: { response_language?: string; title?: string }) =>
     fetchApi<{
@@ -460,10 +412,7 @@ export const projectsApi = {
       job_id: string;
       status: string;
       message: string
-    }>(`/projects/${projectId}/product-report`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    }>(`/projects/${projectId}/product-report`, post(body)),
 
   listProductDocs: (projectId: string) =>
     fetchApi<{ docs: ProductDoc[] }>(`/projects/${projectId}/product-docs`),
@@ -477,13 +426,10 @@ export const projectsApi = {
       doc_id: string;
       presigned_url: string;
       headers: Record<string, string>
-    }>(`/projects/${projectId}/product-docs/upload-url`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    }>(`/projects/${projectId}/product-docs/upload-url`, post(body)),
 
   deleteProductDoc: (projectId: string, docId: string) =>
-    fetchApi<{ success: boolean }>(`/projects/${projectId}/product-docs/${docId}`, { method: 'DELETE' }),
+    fetchApi<{ success: boolean }>(`/projects/${projectId}/product-docs/${docId}`, del()),
 }
 
 // 🔑 The pin on `generateDocument`'s request-body parameter: it must admit EXACTLY

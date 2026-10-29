@@ -81,8 +81,7 @@ _ROLE_LEVEL: Final = {
 
 MAX_PROJECT_MEMBERS: Final = 100
 
-# Must equal shared.mcp_delegate.SYNTHETIC_SUBJECT_PREFIX (pinned by a test).
-# Duplicated rather than imported so this module stays dependency-free.
+# The subject namespace of an MCP-token principal; shared.mcp_delegate mints subjects with it.
 DELEGATED_SUBJECT_PREFIX: Final = 'mcp:'
 # Claim the MCP Lambda sets to the minting user's sub. Honoured ONLY when the
 # subject carries the delegated prefix, which a Cognito sub (a UUID) never does,
@@ -200,7 +199,8 @@ class ProjectAccess:
         }
 
 
-def _claim(claims: Mapping[str, Any], key: str) -> str:
+def claim_text(claims: Mapping[str, Any], key: str) -> str:
+    """The trimmed string claim ``key``, or ``''`` for an absent or non-string one."""
     value = claims.get(key)
     return value.strip() if isinstance(value, str) else ''
 
@@ -222,21 +222,21 @@ def caller_from_claims(
     into their own fail-closed error (the API layer already refused a blank sub
     before reaching here).
     """
-    sub = _claim(claims, 'sub')
+    sub = claim_text(claims, 'sub')
     if not sub:
         raise ValueError('caller has no subject')
     if sub.startswith(AGENT_SUBJECT_PREFIX):
         return _agent_caller(claims, sub[len(AGENT_SUBJECT_PREFIX):])
     if sub.startswith(DELEGATED_SUBJECT_PREFIX):
-        acting = _claim(claims, ACTING_SUBJECT_CLAIM)
+        acting = claim_text(claims, ACTING_SUBJECT_CLAIM)
         if is_synthetic_subject(acting):
             acting = ''  # a credential can never act as another credential
         return Caller(subject=acting, is_admin=False, delegated=True)
     return Caller(
         subject=sub,
         is_admin=ADMIN_GROUP in groups,
-        username=_claim(claims, 'cognito:username') or _claim(claims, 'username'),
-        email=_claim(claims, 'email'),
+        username=claim_text(claims, 'cognito:username') or claim_text(claims, 'username'),
+        email=claim_text(claims, 'email'),
     )
 
 
@@ -254,9 +254,9 @@ def delegated_agent_run_allowed(claims: Mapping[str, Any]) -> bool:
     adds it from the stored token row after its own per-call admin check.
     """
     return (
-        _claim(claims, 'sub').startswith(DELEGATED_SUBJECT_PREFIX)
-        and _claim(claims, MCP_AGENT_RUN_CLAIM) == 'true'
-        and bool(_human_sub(_claim(claims, ACTING_SUBJECT_CLAIM)))
+        claim_text(claims, 'sub').startswith(DELEGATED_SUBJECT_PREFIX)
+        and claim_text(claims, MCP_AGENT_RUN_CLAIM) == 'true'
+        and bool(_human_sub(claim_text(claims, ACTING_SUBJECT_CLAIM)))
     )
 
 
@@ -270,16 +270,16 @@ def _agent_caller(claims: Mapping[str, Any], agent_id: str) -> Caller:
     if not agent_id or len(agent_id) > _MAX_AGENT_ID_LENGTH or ',' in agent_id:
         raise ValueError('agent principal has no usable agent id')
     editors: list[str] = []
-    for raw in _claim(claims, AGENT_EDITORS_CLAIM).split(','):
+    for raw in claim_text(claims, AGENT_EDITORS_CLAIM).split(','):
         sub = _human_sub(raw.strip())
         if sub and sub not in editors:
             editors.append(sub)
     return Caller(
-        subject=_human_sub(_claim(claims, ACTING_SUBJECT_CLAIM)),
+        subject=_human_sub(claim_text(claims, ACTING_SUBJECT_CLAIM)),
         is_admin=False,
         delegated=True,
         agent_id=agent_id,
-        agent_owner_sub=_human_sub(_claim(claims, AGENT_OWNER_CLAIM)),
+        agent_owner_sub=_human_sub(claim_text(claims, AGENT_OWNER_CLAIM)),
         agent_editor_subs=tuple(editors[:MAX_AGENT_EDITORS]),
     )
 
@@ -437,6 +437,13 @@ _ROUTE_OVERRIDES: Final = (
     # Removing a member is manage, EXCEPT a member leaving on their own; the
     # route enforces that distinction, so the gate only requires view here.
     ('DELETE', ('members', '*'), LEVEL_VIEW),
+    # Document comments (shared/document_review_routes.py): a viewer may comment, reply, resolve and
+    # reopen; deleting a thread needs view here and its author (or edit) in the route.
+    ('POST', ('documents', '*', 'comments'), LEVEL_VIEW),
+    ('POST', ('documents', '*', 'comments', '*', 'replies'), LEVEL_VIEW),
+    ('POST', ('documents', '*', 'comments', '*', 'resolve'), LEVEL_VIEW),
+    ('POST', ('documents', '*', 'comments', '*', 'reopen'), LEVEL_VIEW),
+    ('DELETE', ('documents', '*', 'comments', '*'), LEVEL_VIEW),
 )
 
 

@@ -480,7 +480,7 @@ class TestReprocessItemOutcomes:
         raw = MagicMock(return_value=dict(self.NEW))
         with patch.object(handler, 'processed_attributes', processed), \
                 patch.object(handler, 'raw_attributes', raw), \
-                patch.object(jobs, 'now_iso', return_value=self.NOW):
+                patch.object(handler, 'now_iso', return_value=self.NOW):
             yield table, processed, raw
 
     @staticmethod

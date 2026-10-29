@@ -327,9 +327,11 @@ export interface CollectOptions {
   startSec: number;
   endSec: number;
   sleep?: (ms: number) => Promise<void>;
-  /** Poll limit per query (default 90 × 2 s). */
-  maxPolls?: number;
 }
+
+/** Polls per Insights query before giving up, one every POLL_INTERVAL_MS (3 minutes in all). */
+const MAX_POLLS = 90;
+const POLL_INTERVAL_MS = 2000;
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -352,8 +354,8 @@ const TERMINAL_FAILURES = new Set(['Failed', 'Cancelled', 'Timeout']);
 /** Poll one started query until it completes; its result rows. */
 async function waitForQuery(run: AwsRunner, queryId: string, options: CollectOptions): Promise<unknown[]> {
   const sleep = options.sleep ?? defaultSleep;
-  for (let poll = 0; poll < (options.maxPolls ?? 90); poll += 1) {
-    await sleep(2000);
+  for (let poll = 0; poll < MAX_POLLS; poll += 1) {
+    await sleep(POLL_INTERVAL_MS);
     const result = run(['logs', 'get-query-results', '--query-id', queryId]);
     const status = isRecord(result) ? stringAt(result, 'status') : undefined;
     if (status === 'Complete') return arrayAt(result, 'results');

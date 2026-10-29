@@ -11,10 +11,14 @@
  * - **Small samples are flagged.** A compare row whose Radar side has fewer
  *   than `SMALL_SAMPLE` reviews carries `small_sample: true`, and every compare
  *   result says how to read it.
+ * - **Brand sources are named for what they are.** The brand list's `sources`
+ *   (source-profile ids only) becomes `profile_sources`, with a note: a model
+ *   read an empty `sources` as "the new connectors are not linked yet".
  *
  * Pure functions; anything unexpected passes through unchanged.
  */
-import { clip, isRecord } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
+import { clip } from '../format.js';
 
 /** Fewer reviews than this in a category and a comparison is only indicative. */
 const SMALL_SAMPLE = 10;
@@ -58,7 +62,7 @@ function pageKey(url: string): string {
   return `${hostOf(url)}${withoutTrailingSlashes(parsed.pathname)}${parsed.search}`;
 }
 
-/** "Jun 11" (this year), "Jun 11, 2025" (another year); "about …" when the date is approximate. */
+/** "Jun 11" (this year), "Jun 11, 2025" (another year); "first found …" when the release published no date (the day the scan found it). */
 export function shortDate(isoDate: unknown, approximate: unknown, thisYear: number): string | undefined {
   if (typeof isoDate !== 'string') return undefined;
   const match = /^(\d{4})-(\d{2})-(\d{2})/u.exec(isoDate);
@@ -67,7 +71,7 @@ export function shortDate(isoDate: unknown, approximate: unknown, thisYear: numb
   const name = MONTHS[Number(month) - 1];
   if (name === undefined) return undefined;
   const label = Number(year) === thisYear ? `${name} ${Number(day)}` : `${name} ${Number(day)}, ${year}`;
-  return approximate === true ? `about ${label}` : label;
+  return approximate === true ? `first found ${label}` : label;
 }
 
 /** Link text: no brackets (they would end the link), no line breaks, short. */
@@ -156,4 +160,27 @@ export function shapeReviews(body: unknown): unknown {
   if (!isRecord(body)) return body;
   if (Array.isArray(body.reviews)) return { ...body, reviews: body.reviews.map(shapeReview) };
   return 'review' in body ? { ...body, review: shapeReview(body.review) } : body;
+}
+
+export const BRANDS_NOTE = 'profile_sources lists only older source profiles that name the brand. Scrapers, review pages '
+  + 'and app connectors created with radar_brand never appear there, so an empty list does not mean a brand has no '
+  + 'source; list_scrapers lists every scraper, app connector and review page with the radar_brand it feeds. '
+  + 'To see whether reviews arrived, call get_radar without a brand (each brand\u2019s review total) or '
+  + 'get_source_run for an import.';
+
+/** One brand of the list: `sources` (source-profile ids only) renamed so the model cannot read it as "connectors". */
+function shapeBrand(brand: unknown): unknown {
+  if (!isRecord(brand) || !('sources' in brand)) return brand;
+  const { sources, ...rest } = brand;
+  return { ...rest, profile_sources: sources };
+}
+
+/**
+ * A brand list (view "brands", or the tracked brands without a brand) with each brand's source-profile ids
+ * renamed and a note on reading them; unchanged when no brand carries `sources`.
+ */
+export function shapeBrands(body: unknown): unknown {
+  if (!isRecord(body) || !Array.isArray(body.brands)) return body;
+  if (!body.brands.some((brand) => isRecord(brand) && 'sources' in brand)) return body;
+  return { ...body, brands: body.brands.map(shapeBrand), note: BRANDS_NOTE };
 }

@@ -143,10 +143,10 @@ def _text(value: object, label: str, max_chars: int, out: _Collector, *, require
     return text
 
 
-def _identifier(value: object, label: str, out: _Collector, node_id: str | None = None) -> str | None:
+def _identifier(value: object, label: str, out: _Collector) -> str | None:
     if isinstance(value, str) and _ID_RE.fullmatch(value):
         return value
-    out.add(f'{label} must be 1-64 letters, digits, "_" or "-"', node_id)
+    out.add(f'{label} must be 1-64 letters, digits, "_" or "-"')
     return None
 
 

@@ -1,0 +1,12 @@
+{
+  "$comment": "Same-named helpers of scripts/audit/ts_name_twins.mjs that mean different things. Triaged 5.34 (docs/code-audit.md).",
+  "entries": [
+    { "key": "frontend:displayName", "reason": "five domain label rules, not one: a category's description-else-humanised-id, and user/person/supporter name-else-email fallbacks that differ on trimming and on a username fallback" },
+    { "key": "frontend:draftOf", "reason": "each draft module's own constructor (composer text, agent config, scoring row) over a different record" },
+    { "key": "frontend:draftProblem", "reason": "the dimensions and the source-profiles editors each validate their own draft shape" },
+    { "key": "frontend:toDraft", "reason": "per-editor wire -> draft converters (dimensions, source profiles, inbox caps, Radar brands), each over its own type" },
+    { "key": "frontend:toWire", "reason": "per-editor draft -> wire converters (dimensions, source profiles), each over its own type" },
+    { "key": "frontend:runAgent", "reason": "the AG-UI client's run of the assistant (agui/client.ts) vs the approval executor of the run_agent tool (agentExecutors.ts)" },
+    { "key": "frontend:parseTab", "reason": "the same one-line idiom over two different tab lists and fallbacks (agent detail: settings; project detail: overview)" }
+  ]
+}

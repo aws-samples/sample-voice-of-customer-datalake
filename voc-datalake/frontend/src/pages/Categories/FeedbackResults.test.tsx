@@ -59,7 +59,7 @@ describe('FeedbackResults', () => {
 
     it('shows selected source in subtitle', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} selectedSource="webscraper" />)
-      expect(screen.getByText(/Source: Webscraper/)).toBeInTheDocument()
+      expect(screen.getByText(/Source: Web scraper/)).toBeInTheDocument()
     })
 
     it('shows the localized sentiment filter in the subtitle', () => {

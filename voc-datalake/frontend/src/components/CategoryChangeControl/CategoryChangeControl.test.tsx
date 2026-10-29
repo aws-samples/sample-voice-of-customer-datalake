@@ -55,6 +55,16 @@ describe('CategoryChangeControl', () => {
     expect(select).toHaveValue('delivery')
   })
 
+  it('shows a stored subcategory the configuration does not list as itself, not as "None"', async () => {
+    const user = userEvent.setup()
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <CategoryChangeControl feedback={{ ...feedback, category: 'pricing', subcategory: 'refund_speed' }} />
+    </QueryClientProvider>)
+    await user.click(screen.getByRole('button', { name: 'Change category' }))
+    expect(await screen.findByLabelText('Subcategory')).toHaveValue('refund_speed')
+    expect(screen.getByRole('option', { name: 'Refund speed' })).toBeInTheDocument()
+  })
+
   it('names a category without a configured label by its humanised id, never blank', async () => {
     const user = userEvent.setup()
     renderControl()

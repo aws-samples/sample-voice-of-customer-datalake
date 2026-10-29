@@ -54,6 +54,21 @@ describe('reading components', () => {
   })
 })
 
+describe('the width and the focus ring survive an applied reference and Save', () => {
+  it('reads them and sends them back unchanged', () => {
+    const [switchComponent] = componentList.parse([{ name: 'Switch', description: '', variants: [{
+      name: 'default', styles: { width: '36px', height: '20px' },
+      focus: { outline: '1px solid #8e48ff', border_color: '#8e48ff', shadow: '0 0 0 3px rgba(178, 127, 255, .16)' },
+    }] }])
+    expect(switchComponent).toBeDefined()
+    expect(toWireComponents(switchComponent ? [switchComponent] : [])).toStrictEqual([{ name: 'Switch', description: '', variants: [{
+      name: 'default', styles: { height: '20px', width: '36px' },
+      focus: { outline: '1px solid #8e48ff', border_color: '#8e48ff', shadow: '0 0 0 3px rgba(178, 127, 255, .16)' },
+    }] }])
+    expect(componentsInvalid(switchComponent ? [switchComponent] : [])).toBe(false)
+  })
+})
+
 describe('the wire shape', () => {
   it('trims values and drops empty styles, hover, focus and example', () => {
     const wire = toWireComponents([button({ name: ' Button ', variants: [{ name: 'primary', styles: { background: ' #000 ', radius: '' }, hover: { color: ' ' }, focus: {} }], example_html: '  ' })])
@@ -73,10 +88,21 @@ describe('componentsInvalid', () => {
     expect([...duplicateNames(['Tabs', 'tabs', 'Card'])]).toStrictEqual(['tabs'])
   })
 
-  it('flags an empty name, a bad style value and more than six variants', () => {
+  it('flags an empty name, a bad style value and more than eight variants', () => {
     expect(componentsInvalid([button({ name: ' ' })])).toBe(true)
     expect(componentsInvalid([button({ variants: [variant({ radius: 'big' })] })])).toBe(true)
-    expect(componentsInvalid([button({ variants: Array.from({ length: 7 }, (_, i) => ({ ...variant(), name: `v${i}` })) })])).toBe(true)
+    expect(componentsInvalid([button({ variants: Array.from({ length: 9 }, (_, i) => ({ ...variant(), name: `v${i}` })) })])).toBe(true)
+  })
+
+  it('saves a seven-tone Badge read from a repository (up to eight variants, as the server allows)', () => {
+    const tones = ['ok', 'danger', 'warn', 'muted', 'accent', 'info', 'aim']
+    expect(componentsInvalid([button({ name: 'Badge', variants: tones.map((name) => ({ ...variant(), name })) })])).toBe(false)
+    expect(componentsInvalid([button({ variants: Array.from({ length: 8 }, (_, i) => ({ ...variant(), name: `v${i}` })) })])).toBe(false)
+  })
+
+  it('flags a focus ring border colour or glow the server would refuse', () => {
+    expect(componentsInvalid([button({ variants: [{ ...variant(), focus: { border_color: 'url(x)' } }] })])).toBe(true)
+    expect(componentsInvalid([button({ variants: [{ ...variant(), focus: { shadow: 'expression(alert(1))' } }] })])).toBe(true)
   })
 
   it('flags more than 30 components', () => {

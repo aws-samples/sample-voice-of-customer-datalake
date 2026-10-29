@@ -25,7 +25,6 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
-import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { embeddingModelArn, stackModelArns } from '../utils/model-allowlist';
@@ -79,10 +78,6 @@ function createBriefingQueue(worker: Construct, props: BriefingWorkerProps): sqs
   const dlq = briefingQueueWith(worker, kmsKey, 'DLQ', {
     queueName: uniqueName(BRIEFING_DLQ_BASE_NAME), retentionPeriod: cdk.Duration.days(14),
   });
-  NagSuppressions.addResourceSuppressions(dlq, [{
-    id: 'AwsSolutions-SQS3',
-    reason: 'This queue IS the dead-letter queue of voc-briefing; a DLQ has no DLQ of its own',
-  }]);
   return briefingQueueWith(worker, kmsKey, 'Queue', {
     queueName: uniqueName(BRIEFING_BASE_NAME),
     // >= 6x the function timeout (AWS guidance for an SQS event source).

@@ -392,7 +392,7 @@ class TestConductorTables:
     def test_card_only_write_tools(self):
         assert frozenset({
             'save_brand_settings', 'create_user', 'create_users', 'update_user', 'set_user_access', 'import_reviews',
-            'save_radar_brands', 'run_radar_scan',
+            'save_radar_brands', 'run_radar_scan', 'create_participant_list', 'add_participants',
         }) == CARD_ONLY_WRITE_TOOLS
 
     def test_admin_read_packs(self):

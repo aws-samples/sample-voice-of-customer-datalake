@@ -1,0 +1,278 @@
+{
+  "page": {
+    "title": "反馈看板",
+    "subtitle": "团队和客户用来提交需求、问题和反馈的看板。",
+    "boardSubtitle": "需求，以及每条需求背后的人。"
+  },
+  "loading": "正在加载…",
+  "actions": {
+    "cancel": "取消",
+    "close": "关闭",
+    "delete": "删除",
+    "save": "保存"
+  },
+  "status": {
+    "new": "新建",
+    "under_review": "审核中",
+    "planned": "已计划",
+    "declined": "已拒绝",
+    "shipped": "已发布",
+    "confirmed": "已确认",
+    "fixed": "已修复",
+    "wont_fix": "不予修复",
+    "seen": "已查看",
+    "done": "已完成"
+  },
+  "impact": {
+    "committed": "承诺付费",
+    "at_risk": "交易有风险",
+    "none": "无收入影响"
+  },
+  "totals": {
+    "supporters": "支持者",
+    "customers": "客户",
+    "committed": "已承诺",
+    "atRisk": "有风险",
+    "peopleAffected": "受影响人数",
+    "avgRating": "平均评分",
+    "rating": "{{value}} / 5",
+    "notRated": "尚未评分",
+    "boardSummary": "看板合计"
+  },
+  "list": {
+    "label": "需求",
+    "intro": "添加一条需求，或为你同样关心的需求 +1。",
+    "search": "搜索",
+    "searchPlaceholder": "标题、描述或提交人",
+    "statusFilter": "状态",
+    "allStatuses": "所有状态",
+    "sortBy": "排序方式",
+    "sort": {
+      "newest": "最新",
+      "committed": "已承诺收入",
+      "at_risk": "有风险的收入",
+      "supporters": "支持者",
+      "people_affected": "受影响人数",
+      "rating": "评分"
+    },
+    "reportedBy": "提交人：{{name}}",
+    "empty": "还没有需求。添加第一条吧。",
+    "noMatch": "没有符合这些筛选条件的请求。",
+    "loadFailed": "无法加载需求。",
+    "notAccepted": "看板不接受此登录。请使用看板接受的已验证邮箱登录。"
+  },
+  "new": {
+    "open": "新建请求",
+    "title": "新需求",
+    "description": "所有能使用 {{board}} 的人都能看到它，以及你的姓名和邮箱。",
+    "impactHeading": "你的客户和收入影响",
+    "submit": "添加需求"
+  },
+  "form": {
+    "title": "标题",
+    "description": "描述",
+    "amountHint": "整数美元",
+    "noAmount": "没有收入影响时无需填写金额。",
+    "name": "你的姓名",
+    "errors": {
+      "titleRequired": "请为请求填写标题。",
+      "descriptionRequired": "请描述客户的需求。",
+      "customerRequired": "请填写客户。",
+      "nameRequired": "请填写你的姓名。",
+      "amountRequired": "请输入以美元计的金额。",
+      "amountTooLarge": "该金额超出看板允许的上限。",
+      "contactEmail": "请输入有效的邮箱地址，或留空。",
+      "descriptionRequiredService": "请描述发生了什么以及客户看到了什么。"
+    },
+    "requiredLabel": "{{label}}（必填）",
+    "optionalLabel": "{{label}}（选填）",
+    "choose": "请选择...",
+    "notSet": "未设置",
+    "fieldErrors": {
+      "required": "此项为必填项。",
+      "too_long": "超出了看板允许的长度。",
+      "invalid_choice": "请选择其中一个选项。",
+      "invalid_number": "请输入整数。",
+      "out_of_range": "该数字超出允许范围。",
+      "invalid_email": "请输入有效的邮箱地址。",
+      "invalid_url": "请输入完整的 https:// 链接。"
+    },
+    "descriptionHint": {
+      "sales": "客户需要什么，以及原因。",
+      "service": "发生了什么，客户看到了什么。",
+      "beta": "你尝试了什么，发生了什么。",
+      "blank": "任何有助于他人理解的内容。"
+    }
+  },
+  "detail": {
+    "reported": "提交人：{{name}}（{{email}}）",
+    "reporter": "提交人",
+    "copyLink": "复制链接",
+    "copied": "链接已复制",
+    "edit": "编辑",
+    "supports": "支持",
+    "plusOne": "以我的客户 +1",
+    "addSupport": "添加我的 +1",
+    "contact": "联系人：{{email}}",
+    "editSupport": "编辑 {{customer}} 的支持",
+    "deleteSupport": "删除 {{customer}} 的支持",
+    "deleteSupportTitle": "删除这条支持？",
+    "deleteSupportMessage": "{{customer}} 的支持及其金额将不再计入请求合计。",
+    "loadFailed": "无法加载此请求。",
+    "supportsCount_other": "{{count, number}} 条支持",
+    "supportsCount_one": "{{count, number}} 条支持",
+    "plusOneService": "我也受影响",
+    "plusOneOther": "+1",
+    "alreadySupporting": "你支持此请求。",
+    "editMySupport": "编辑我的 +1"
+  },
+  "admin": {
+    "title": "管理",
+    "status": "状态",
+    "delete": "删除请求",
+    "deleteTitle": "删除这个请求？",
+    "deleteMessage": "“{{title}}”及其所有支持将对所有人删除。"
+  },
+  "promote": {
+    "title": "提升为项目",
+    "hint": "所有支持者和客户联系人都会加入与项目关联的参与者列表，方便你通过邮件征求反馈。",
+    "project": "项目",
+    "pickProject": "选择项目",
+    "loadingProjects": "正在加载项目…",
+    "newProject": "新建项目…",
+    "newProjectName": "新项目名称",
+    "submit": "提升",
+    "skippedRow": "{{email}}：{{reason}}",
+    "reasons": {
+      "external_not_allowed": "不在公司域名内，且不允许外部人员",
+      "invalid_email": "邮箱地址无效",
+      "unsubscribed": "已退订参与者邮件"
+    },
+    "done_other": "已将 {{count, number}} 人添加到“{{list}}”。",
+    "done_one": "已将 {{count, number}} 人添加到“{{list}}”。",
+    "skipped_other": "已跳过 {{count, number}} 个邮箱：",
+    "skipped_one": "已跳过 {{count, number}} 个邮箱："
+  },
+  "errors": {
+    "generic": "操作未成功，请重试。",
+    "forbidden": "你无权执行此操作。",
+    "notFound": "此需求已不存在。",
+    "conflict": "有人同时进行了修改，请重试。",
+    "throttled": "当前请求过多。请稍候再试。",
+    "rateLimited": "你今天在此看板的发布次数已达上限。请明天再试。",
+    "slugTaken": "另一个看板已使用此链接名称。",
+    "boardNotEmpty": "此看板仍有需求。请连同其需求一起删除，或将其归档。",
+    "statusInUse": "仍有需求使用此状态。请先将其移到其他状态。",
+    "alreadySupported": "你已支持此请求。请改为编辑你的 +1。"
+  },
+  "auth": {
+    "title": "登录功能请求看板",
+    "intro": "输入你的工作邮箱。我们会发送一个链接和一次性验证码。",
+    "email": "工作邮箱",
+    "sendLink": "给我发送登录链接",
+    "checkEmail": "请查收 {{email}}：打开链接，或在此输入邮件中的验证码。",
+    "secondCode": "你的邮箱已确认。我们又向 {{email}} 发送了一个验证码以完成登录。",
+    "code": "邮件中的验证码",
+    "signIn": "登录",
+    "useAnotherEmail": "使用其他邮箱",
+    "otherBrowser": "此链接是在与申请时不同的浏览器中打开的。请在原浏览器中输入验证码，或在此重新发送链接。",
+    "errors": {
+      "domain_not_allowed": "该邮箱的域名不允许访问看板。请使用公司邮箱。",
+      "wrong_code": "验证码不正确。请检查邮件后重试。",
+      "expired": "此次登录已过期。请重新发送链接。",
+      "tooManyAttempts": "尝试次数过多。请稍等几分钟后重试。",
+      "no_session": "此浏览器中没有待完成的登录。请在申请时的浏览器中输入验证码，或重新发送链接。",
+      "invalid_email": "请输入有效的邮箱地址。",
+      "unknown": "登录未成功。请稍后重试。"
+    }
+  },
+  "board": {
+    "title": "反馈看板",
+    "titleWithBrand": "{{brand}} 反馈看板",
+    "signOut": "退出登录",
+    "notEnabledTitle": "反馈看板未启用",
+    "notEnabled": "此部署没有看板登录。如果你使用该应用，请在应用中登录并打开“反馈看板”。",
+    "notEnabledDev": "没有看板用户池的本地开发：mock 无法让任何人登录 Cognito。请在 public/config.json 中添加 board 配置以试用真实用户池，或在 mock 下使用应用内的“反馈看板”页面。"
+  },
+  "fields": {
+    "customer": "客户",
+    "deal": "商机",
+    "impact": "收入影响",
+    "amount_usd": "金额（美元）",
+    "contact_email": "客户联系人邮箱",
+    "kind": "类型",
+    "severity": "严重程度",
+    "reference": "预订或订单编号",
+    "steps": "复现步骤",
+    "affected_count": "受影响人数",
+    "area": "区域",
+    "outcome": "结果",
+    "rating": "评分（1-5）",
+    "link": "链接（https）",
+    "note": "备注"
+  },
+  "choices": {
+    "kind": {
+      "bug": "缺陷",
+      "complaint": "投诉",
+      "missing_feature": "缺少的功能",
+      "question": "问题咨询"
+    },
+    "severity": {
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "critical": "严重"
+    },
+    "outcome": {
+      "works": "正常",
+      "broken": "无法使用",
+      "confusing": "令人困惑"
+    }
+  },
+  "templates": {
+    "sales": "销售功能需求",
+    "service": "客户服务问题",
+    "beta": "Beta 反馈",
+    "blank": "空白"
+  },
+  "boards": {
+    "listLabel": "看板",
+    "audienceLabel": "谁可以使用",
+    "requestsLabel": "需求",
+    "audience": {
+      "company": "公司内部人员",
+      "list": "受邀的域名和人员",
+      "listCounts": "{{domains}} 个域名，{{people}} 人",
+      "anyone": "任何拥有已验证邮箱的人"
+    },
+    "open": "打开",
+    "openBoard": "打开 {{name}}",
+    "copyBoardLink": "复制 {{name}} 的链接",
+    "linkCopied": "已复制链接",
+    "copyFailed": "无法复制链接。",
+    "edit": "编辑",
+    "editBoard": "编辑 {{name}}",
+    "deleteBoard": "删除 {{name}}",
+    "deleteTitle": "删除此看板？",
+    "deleteMessage": "“{{name}}”将对所有人删除。此操作无法撤销。",
+    "deleteWithRequestsMessage_one": "“{{name}}”及其 {{count, number}} 个需求和其上的每个 +1 将被永久删除。此操作无法撤销。已根据其需求创建的项目会保留。",
+    "deleteWithRequestsMessage_other": "“{{name}}”及其 {{count, number}} 个需求和其上的每个 +1 将被永久删除。此操作无法撤销。已根据其需求创建的项目会保留。",
+    "deleteWithRequestsMessageStale": "“{{name}}”现在已有需求。看板、其所有需求以及其上的每个 +1 将被永久删除。此操作无法撤销。已根据其需求创建的项目会保留。",
+    "deleteConfirmNameLabel": "输入看板名称以确认",
+    "deleteProgress_one": "已删除 {{deleted, number}} / {{count, number}} 个需求…",
+    "deleteProgress_other": "已删除 {{deleted, number}} / {{count, number}} 个需求…",
+    "deleteIncomplete": "看板尚未完全删除。",
+    "deleteResumeHint": "再次点击“删除”即可从中断处继续。",
+    "archived": "已归档",
+    "configure": "配置看板",
+    "emptyTitle": "还没有看板",
+    "empty": "还没有与你共享的看板。",
+    "emptyAdmin": "请在<admin>“管理”的“隐私与访问”中的“看板”</admin>里创建看板。",
+    "loadFailed": "无法加载看板。",
+    "notFoundTitle": "未找到看板",
+    "notFound": "此看板不存在，或未与你共享。",
+    "backToBoards": "返回看板列表",
+    "standaloneIntro": "你可以使用的看板。打开一个来添加需求或 +1。"
+  }
+}

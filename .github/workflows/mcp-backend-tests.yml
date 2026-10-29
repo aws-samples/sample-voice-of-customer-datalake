@@ -81,13 +81,17 @@ jobs:
           cache-dependency-path: |
             voc-datalake/requirements-dev.txt
             voc-datalake/lambda/layers/processing-deps/requirements.txt
+            voc-datalake/lambda/layers/signing-deps/requirements.txt
 
       # Two files, both needed:
       #
       # requirements-dev.txt supplies pytest and moto.
       #
       # processing-deps/requirements.txt supplies the tracer extra
-      # (`aws-lambda-powertools[tracer]`, hence aws_xray_sdk) and pydantic.
+      # (`aws-lambda-powertools[tracer]`, hence aws_xray_sdk) and pydantic;
+      # signing-deps/requirements.txt supplies cryptography, which the projects
+      # domain module reaches through shared/cloudfront_signing.py (it moved out
+      # of processing-deps into its own layer in 5.31).
       # The global MCP handler and the domain API modules it delegates to decorate
       # helpers with `@tracer.capture_method` at import time, so without this
       # file collection fails on ModuleNotFoundError before a single
@@ -129,6 +133,7 @@ jobs:
           python -m pip install --disable-pip-version-check
           -r voc-datalake/requirements-dev.txt
           -r voc-datalake/lambda/layers/processing-deps/requirements.txt
+          -r voc-datalake/lambda/layers/signing-deps/requirements.txt
 
       # -o addopts="": pytest.ini's addopts turn every run into a
       # whole-repository coverage run (`--cov=lambda --cov=plugins`) that also

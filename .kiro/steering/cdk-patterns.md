@@ -146,14 +146,13 @@ const api = new apigateway.RestApi(this, 'Api', {
     loggingLevel: apigateway.MethodLoggingLevel.INFO,
     metricsEnabled: true,
   },
-  defaultCorsPreflightOptions: {
-    allowOrigins: apigateway.Cors.ALL_ORIGINS,
-    allowMethods: apigateway.Cors.ALL_METHODS,
-  },
+  // No defaultCorsPreflightOptions: it puts a MOCK OPTIONS on every path-only parent too.
+  // Add a preflight only where a browser method lives (addBrowserPreflight in api-gateway.ts).
 });
 
 const integration = new apigateway.LambdaIntegration(apiLambda);
-api.root.addResource('items').addMethod('GET', integration);
+const items = addBrowserPreflight(api.root.addResource('items'));
+items.addMethod('GET', integration);
 ```
 
 ## IAM Best Practices

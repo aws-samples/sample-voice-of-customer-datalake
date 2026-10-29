@@ -121,7 +121,6 @@ const SETTINGS_CASES: EndpointCase[] = [
   // generateCategories is an assist job (start + poll): assistApiFunctions.test.ts.
   { name: 'getIntegrationStatus', call: () => api.getIntegrationStatus(), response: { webscraper: { configured: true, credentials_set: ['api_key'] } }, url: `${API}/integrations/status`, returnsResponse: true },
   { name: 'updateIntegrationCredentials', call: () => api.updateIntegrationCredentials('webscraper', CREDENTIALS), response: { success: true, message: 'Updated' }, url: `${API}/integrations/webscraper/credentials`, init: put(CREDENTIALS) },
-  { name: 'testIntegration', call: () => api.testIntegration('webscraper'), response: { success: true, message: 'Connection successful' }, url: `${API}/integrations/webscraper/test`, init: post() },
   { name: 'getSourcesStatus', call: () => api.getSourcesStatus(), response: { sources: { webscraper: { enabled: true, schedule: 'rate(5 minutes)', circuit: { tripped: true, tripped_at: '2026-10-08T09:15:00+00:00', failure_count: 5, last_error: 'HTTPError' } } } }, url: `${API}/sources/status`, returnsResponse: true },
   { name: 'enableSource', call: () => api.enableSource('webscraper'), response: { success: true, source: 'webscraper', enabled: true }, url: `${API}/sources/webscraper/enable`, init: put() },
   { name: 'disableSource', call: () => api.disableSource('webscraper'), response: { success: true, source: 'webscraper', enabled: false }, url: `${API}/sources/webscraper/disable`, init: put() },
@@ -185,6 +184,40 @@ const LOGS_CASES: EndpointCase[] = [
     returnsResponse: true,
   },
   { name: 'clearValidationLogs', call: () => api.clearValidationLogs('webscraper'), response: { success: true, deleted: 5 }, url: `${API}/logs/validation/webscraper`, init: DELETE, returnsResponse: true },
+  {
+    name: 'getSystemLogs (fresh search)',
+    call: () => api.getSystemLogs({ days: 1, level: 'error' }),
+    response: { status: 'running', query_id: 'q-1', log_groups: 54, truncated: false, count: 0, groups: [] },
+    url: `${API}/logs/system?days=1&level=error`,
+    returnsResponse: true,
+  },
+  {
+    name: 'getSystemLogs (poll)',
+    call: () => api.getSystemLogs({ days: 7, level: 'warning', query_id: 'q-1,q-2' }),
+    response: {
+      status: 'complete', log_groups: 54, truncated: false, count: 1,
+      groups: [{ function: 'processor', source: 'lambda', level: 'ERROR', message: 'boom', sample: 'boom', count: 2, first_seen: '2026-10-27T08:00:00Z', last_seen: '2026-10-27T09:00:00Z', request_id: null }],
+    },
+    url: `${API}/logs/system?days=7&level=warning&query_id=q-1%2Cq-2`,
+    returnsResponse: true,
+  },
+  {
+    name: 'getSystemRequest (poll)',
+    call: () => api.getSystemRequest({
+      function: 'projects-assist', request_id: '7f3c2a10-4b8e-4d1a-9c55-0e2b6d9a1f37', at: '2026-10-27T08:44:43Z', query_id: 'q-9',
+    }),
+    response: { status: 'complete', lines: [{ timestamp: '2026-10-27T08:44:40Z', level: 'INFO', message: 'START' }], truncated: false },
+    url: `${API}/logs/system/request?function=projects-assist&request_id=7f3c2a10-4b8e-4d1a-9c55-0e2b6d9a1f37&at=2026-10-27T08%3A44%3A43Z&query_id=q-9`,
+    returnsResponse: true,
+  },
+  {
+    name: 'getSystemFailureQueues',
+    call: () => api.getSystemFailureQueues(),
+    response: { queues: [{ name: 'voc-processing-dlq', messages: 2, oldest_age_seconds: 60, sample: ['{"id":"rev_1"}'] }] },
+    url: `${API}/logs/system/queues`,
+    returnsResponse: true,
+  },
+  { name: 'getSystemEnvironment', call: () => api.getSystemEnvironment(), response: { region: 'us-west-2' }, url: `${API}/logs/system/environment` },
 ]
 
 beforeEach(() => {

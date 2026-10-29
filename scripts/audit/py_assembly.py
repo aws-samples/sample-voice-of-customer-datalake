@@ -10,7 +10,8 @@ records each asset's bundling command, and :func:`emulate_bundle` replays its ``
 ``find -prune`` steps over the source tree. The result is, per function, the exact file set that ships
 (bundle-relative path -> source file), which is what import resolution must run against: each Lambda
 has its own ``sys.path`` root, and ``api/projects.py`` is ``projects`` in one bundle and ``api.projects``
-in another.
+in another. Each ``LayerVersion`` is recorded too (:class:`LayerAsset`: its source dir and bundling command), for
+``py_layers``.
 
 A second synth with every context-gated feature switched on (verification fixture provider, model pin,
 inbound email, Bedrock model access) adds the functions the default deploy does not create; their
@@ -44,6 +45,7 @@ GATED_CONTEXT: dict[str, object] = {
     'enableVerificationFixtureProvider': True,
     'defaultModelId': 'global.anthropic.claude-sonnet-5-5',
     'inboundEmailDomain': 'voc.example.com',
+    'emailFrom': 'noreply@voc.example.com',  # participant email + the board pool and its triggers
     'inferenceScope': 'eu',          # BEDROCK_INFERENCE_SCOPE / AVATARS_ENABLED on every Lambda
     'enableWebSearch': False,        # the one default-ON feature: its env must look optional too
     'anthropicUseCase': {
@@ -84,9 +86,20 @@ class Function:
 
 
 @dataclass
+class LayerAsset:
+    """One ``AWS::Lambda::LayerVersion`` of the synthesized app and the asset its content is bundled from."""
+
+    lid: str                      # "<stack>/<logicalId>", stack without the deployment prefix
+    asset_source: str | None = None   # bundling source dir, relative to voc-datalake
+    asset_command: list[str] | None = None
+    external: bool = False        # CDK's own layer (the AWS CLI layer of BucketDeployment): never analysed
+
+
+@dataclass
 class Assembly:
     templates: dict[str, dict]            # stack -> template (default synth, gated-only resources merged)
     functions: dict[str, Function]
+    layers: dict[str, LayerAsset] = field(default_factory=dict)
     _exports: dict[str, str] | None = field(default=None, repr=False)
 
     def resource(self, rid: str) -> dict:
@@ -168,37 +181,56 @@ def _synth(cdk_dir: Path, extra: dict[str, object]) -> tuple[dict[str, dict], li
     return templates, records
 
 
-def _functions(templates: dict[str, dict], records: list[dict], cdk_dir: Path, prefix: str = '') -> dict[str, Function]:
-    by_hash = {r['assetHash']: r for r in records}
-    found: dict[str, Function] = {}
+def _resources(templates: dict[str, dict], kind: str, prefix: str) -> Iterator[tuple[str, str, dict]]:
+    """(stack without the prefix, logical id, properties) of every resource of ``kind``."""
     for stack_id, template in templates.items():
         stack = stack_id.removeprefix(f'{prefix}-') if prefix else stack_id
         for logical, resource in template.get('Resources', {}).items():
-            if resource.get('Type') != 'AWS::Lambda::Function':
-                continue
-            props = resource.get('Properties', {})
-            code = props.get('Code', {})
-            role = next(refs(props.get('Role'), stack, {}), None)
-            fn = Function(fid=f'{stack}/{logical}', runtime=str(props.get('Runtime', '')),
-                          handler=str(props.get('Handler', '')),
-                          env=dict(props.get('Environment', {}).get('Variables', {})), role=role)
-            key = code.get('S3Key')
-            record = by_hash.get(key.split('.')[0]) if isinstance(key, str) else None
-            if record:
-                source = Path(record['sourcePath'])
-                # CDK's own handlers (BucketDeployment, AwsCustomResource, ...) are staged from
-                # voc-datalake/node_modules: inside the CDK dir, but not repo code to judge.
-                if source.is_relative_to(cdk_dir) and 'node_modules' not in source.relative_to(cdk_dir).parts:
-                    fn.asset_source = source.relative_to(cdk_dir).as_posix() if source != cdk_dir else ''
-                    fn.asset_command = record['command']
-                else:
-                    fn.external = True
-            elif 'S3Key' in code:
-                fn.external = True
-            if 'ZipFile' in code:   # a plain string, or an Fn::Join around a rendered value
-                fn.inline = ''.join(literal_strings(code['ZipFile'])) if not isinstance(code['ZipFile'], str) \
-                    else code['ZipFile']
-            found[fn.fid] = fn
+            if resource.get('Type') == kind:
+                yield stack, logical, resource.get('Properties', {})
+
+
+def _stage(target: Function | LayerAsset, code: dict, by_hash: dict[str, dict], cdk_dir: Path) -> None:
+    """Point ``target`` at the repo directory and bundling command its S3 asset was staged from."""
+    key = code.get('S3Key')
+    record = by_hash.get(key.split('.')[0]) if isinstance(key, str) else None
+    if record:
+        source = Path(record['sourcePath'])
+        # CDK's own handlers and layers (BucketDeployment, AwsCustomResource, ...) are staged from
+        # voc-datalake/node_modules: inside the CDK dir, but not repo code to judge.
+        if source.is_relative_to(cdk_dir) and 'node_modules' not in source.relative_to(cdk_dir).parts:
+            target.asset_source = source.relative_to(cdk_dir).as_posix() if source != cdk_dir else ''
+            target.asset_command = record['command']
+        else:
+            target.external = True
+    elif 'S3Key' in code:
+        target.external = True
+
+
+def _layers(templates: dict[str, dict], records: list[dict], cdk_dir: Path, prefix: str = '') -> dict[str, LayerAsset]:
+    by_hash = {r['assetHash']: r for r in records}
+    found: dict[str, LayerAsset] = {}
+    for stack, logical, props in _resources(templates, 'AWS::Lambda::LayerVersion', prefix):
+        layer = LayerAsset(f'{stack}/{logical}')
+        _stage(layer, props.get('Content', {}), by_hash, cdk_dir)
+        found[layer.lid] = layer
+    return found
+
+
+def _functions(templates: dict[str, dict], records: list[dict], cdk_dir: Path, prefix: str = '') -> dict[str, Function]:
+    by_hash = {r['assetHash']: r for r in records}
+    found: dict[str, Function] = {}
+    for stack, logical, props in _resources(templates, 'AWS::Lambda::Function', prefix):
+        code = props.get('Code', {})
+        role = next(refs(props.get('Role'), stack, {}), None)
+        fn = Function(fid=f'{stack}/{logical}', runtime=str(props.get('Runtime', '')),
+                      handler=str(props.get('Handler', '')),
+                      env=dict(props.get('Environment', {}).get('Variables', {})), role=role)
+        _stage(fn, code, by_hash, cdk_dir)
+        if 'ZipFile' in code:   # a plain string, or an Fn::Join around a rendered value
+            fn.inline = ''.join(literal_strings(code['ZipFile'])) if not isinstance(code['ZipFile'], str) \
+                else code['ZipFile']
+        found[fn.fid] = fn
     return found
 
 
@@ -231,6 +263,7 @@ def load_assembly(cdk_dir: Path = CDK_DIR, *, refresh: bool = False, cache_dir: 
     functions = _functions(templates, records, cdk_dir)
     gated_templates, gated_records = _synth(cdk_dir, GATED_CONTEXT)
     gated = _functions(gated_templates, gated_records, cdk_dir, GATED_PREFIX)
+    layers = {**_layers(gated_templates, gated_records, cdk_dir, GATED_PREFIX), **_layers(templates, records, cdk_dir)}
     for fn in functions.values():
         fn.default_env = set(fn.env)
     for fid, fn in gated.items():
@@ -246,7 +279,7 @@ def load_assembly(cdk_dir: Path = CDK_DIR, *, refresh: bool = False, cache_dir: 
         for section in ('Resources', 'Outputs'):
             for logical, body in template.get(section, {}).items():
                 merged.setdefault(section, {}).setdefault(logical, body)
-    assembly = Assembly(templates, functions)
+    assembly = Assembly(templates, functions, layers)
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(json.dumps(_encode(assembly, key, cdk_dir)), encoding='utf-8')
     return assembly
@@ -255,7 +288,8 @@ def load_assembly(cdk_dir: Path = CDK_DIR, *, refresh: bool = False, cache_dir: 
 def _encode(assembly: Assembly, key: str, cdk_dir: Path) -> dict:
     fns = [{**fn.__dict__, 'default_env': sorted(fn.default_env),
             'gated_env': None if fn.gated_env is None else sorted(fn.gated_env)} for fn in assembly.functions.values()]
-    return {'key': key, 'cdk_dir': str(cdk_dir), 'templates': assembly.templates, 'functions': fns}
+    return {'key': key, 'cdk_dir': str(cdk_dir), 'templates': assembly.templates, 'functions': fns,
+            'layers': [layer.__dict__ for layer in assembly.layers.values()]}
 
 
 def _decode(cached: dict) -> Assembly:
@@ -264,7 +298,8 @@ def _decode(cached: dict) -> Assembly:
         gated = raw['gated_env']
         fn = Function(**{**raw, 'default_env': set(raw['default_env']), 'gated_env': None if gated is None else set(gated)})
         functions[fn.fid] = fn
-    return Assembly(cached['templates'], functions)
+    layers = {raw['lid']: LayerAsset(**raw) for raw in cached.get('layers', [])}
+    return Assembly(cached['templates'], functions, layers)
 
 
 # --- bundle emulation -------------------------------------------------------------------------

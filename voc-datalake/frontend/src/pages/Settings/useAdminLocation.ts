@@ -6,8 +6,10 @@
  *   previous place and a copied link opens where the user was.
  * - `redirectTo` is the canonical query when the loaded link was not canonical;
  *   the page renders it as a replacing `<Navigate>` (no history entry).
- * - Only `tab` / `section` are rewritten: any other param (the review modal's
- *   `?review=`) survives a switch or a canonical redirect.
+ * - Only `tab` / `section` / `board` are rewritten: any other param (the review
+ *   modal's `?review=`) survives a switch or a canonical redirect. `board` (the
+ *   Boards section's open editor, `&board=<id>`) lives only inside that section:
+ *   a switch drops it, a canonical redirect keeps it when it still lands there.
  * - The brand draft lives at page level, so the page's unsaved-changes guard
  *   blocks only a path change ({@link isLeavingAdmin}), never these switches.
  *
@@ -19,15 +21,18 @@ import type { Location } from 'react-router-dom'
 import { canonicalSearch, resolveAdminLocation, visibleSections } from './adminTabs'
 import type { AdminLocation, AdminSectionId, AdminTabId } from './adminTabs'
 
-const OWNED_PARAMS: readonly string[] = ['tab', 'section']
+const OWNED_PARAMS: readonly string[] = ['tab', 'section', 'board']
 
 /** `?<canonical>` (other params kept) when `tab` / `section` are not the canonical form of where they lead, else null. */
 function redirectFor(current: URLSearchParams, isAdmin: boolean): string | null {
   const tab = current.get('tab')
   const section = current.get('section')
   if (tab === null) return null
-  const canonical = new URLSearchParams(canonicalSearch(resolveAdminLocation(tab, section, isAdmin)))
+  const resolved = resolveAdminLocation(tab, section, isAdmin)
+  const canonical = new URLSearchParams(canonicalSearch(resolved))
   if (canonical.get('tab') === tab && canonical.get('section') === section) return null
+  const board = current.get('board')
+  if (board !== null && resolved.section === 'boards') canonical.set('board', board)
   return `?${withOwnedParams(current, OWNED_PARAMS, canonical).toString()}`
 }
 

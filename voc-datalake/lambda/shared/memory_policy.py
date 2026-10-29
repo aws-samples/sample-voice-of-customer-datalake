@@ -22,6 +22,8 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
+from shared.pii_redaction import is_payment_card
+
 # ── Vocabulary ───────────────────────────────────────────────────────────────
 SCOPE_COMPANY: Final = 'company'
 SCOPE_PERSONAL: Final = 'personal'
@@ -141,7 +143,7 @@ def judges_a_person(text: str) -> bool:
 
 
 def redact_personal_data(text: str) -> str:
-    """Replace emails, phone numbers and credential-shaped tokens with ``[redacted]``."""
+    """Replace emails, phone numbers, payment card numbers and credential-shaped tokens with ``[redacted]``."""
     text = _EMAIL_RE.sub(_REDACTED, text)
     text = _SECRETISH_RE.sub(_REDACTED, text)
     return _PHONE_CANDIDATE_RE.sub(_redact_phone, text)
@@ -149,8 +151,12 @@ def redact_personal_data(text: str) -> str:
 
 def _redact_phone(match: re.Match) -> str:
     candidate = match.group(0)
+    if is_payment_card(candidate):
+        return _REDACTED
     digits = sum(ch.isdigit() for ch in candidate)
-    if digits < _PHONE_MIN_DIGITS or _ISO_DATE_RE.search(candidate):
+    # A bare digit run (no "+", no separators) is an id, a timestamp or an
+    # amount, not a phone number; it is personal data only as a card number.
+    if digits < _PHONE_MIN_DIGITS or candidate.isdigit() or _ISO_DATE_RE.search(candidate):
         return candidate
     return _REDACTED
 

@@ -11,7 +11,7 @@ import boto3
 import pytest
 from botocore.stub import Stubber
 
-from shared import model_capacity
+from shared import model_capacity, model_quota_store
 from shared.model_config import scope_bedrock_client
 
 OPUS55 = 'global.anthropic.claude-opus-5-5'
@@ -44,7 +44,9 @@ class World:
             response: dict = {'Quotas': page}
             if index + 1 < len(pages):
                 response['NextToken'] = f'page-{index + 1}'
-            expected = {'ServiceCode': 'bedrock'} if index == 0 else {'ServiceCode': 'bedrock', 'NextToken': f'page-{index}'}
+            expected: dict = {'ServiceCode': 'bedrock', 'MaxResults': 100}
+            if index > 0:
+                expected['NextToken'] = f'page-{index}'
             self.quotas_stub.add_response('list_service_quotas', response, expected)
 
     def converse_ok(self, expected: dict | None = None) -> None:
@@ -60,6 +62,8 @@ def stubbed_world(monkeypatch: pytest.MonkeyPatch) -> Iterator[World]:
     """A World installed in the module (no inference scope, empty quota cache); every stub consumed."""
     monkeypatch.delenv('BEDROCK_INFERENCE_SCOPE', raising=False)
     model_capacity.clear_quota_cache()
+    # No stored copy unless a test installs one (model_quota_store's own suite does).
+    monkeypatch.setattr(model_quota_store, '_table', lambda: None)
     created = World()
     monkeypatch.setattr(model_capacity, '_clients', {'bedrock-runtime': created.bedrock,
                                                      'service-quotas': created.quotas})

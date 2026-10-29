@@ -192,6 +192,8 @@ class TestGroundingMetadataReachesTheStoredJob:
 
         projects_table = MagicMock()
         projects_table.query.return_value = {'Items': []}
+        # A live project: the avatar batch first checks its META is still writable.
+        projects_table.get_item.return_value = {'Item': {'pk': 'PROJECT#proj', 'sk': 'META'}}
         batch_writer = MagicMock()
         batch_writer.__enter__ = MagicMock(return_value=MagicMock())
         batch_writer.__exit__.return_value = False

@@ -30,8 +30,6 @@ interface FilterBarProps {
   readonly onRatingFilterChange: (filter: RatingFilter) => void
   readonly hasActiveFilters: boolean
   readonly onClearFilters: () => void
-  /** Optional content pinned to the far right of the bar (e.g. Export PDF). */
-  readonly trailing?: React.ReactNode
   /** A second row of filters (channel, dimensions, tag). */
   readonly children?: React.ReactNode
 }
@@ -48,7 +46,6 @@ export function FilterBar({
   onRatingFilterChange,
   hasActiveFilters,
   onClearFilters,
-  trailing,
   children,
 }: FilterBarProps) {
   const { t } = useTranslation('categories')
@@ -99,14 +96,6 @@ export function FilterBar({
             </button>
           )}
         </div>
-        {trailing && (
-          <div
-            data-testid="filter-bar-trailing"
-            className="flex items-center lg:ml-auto lg:border-l lg:border-border lg:pl-4"
-          >
-            {trailing}
-          </div>
-        )}
       </div>
       {children}
     </div>

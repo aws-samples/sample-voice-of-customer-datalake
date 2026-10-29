@@ -45,8 +45,17 @@ describe('parseProblemTree', () => {
   it('degrades a malformed body to an empty tree instead of throwing', () => {
     expect(parseProblemTree('nope')).toStrictEqual({
       categories: [], subcategories: [], feedbackCount: 0, problemCount: 0,
-      problemsTruncated: false, isPartial: false, scannedThrough: null,
+      problemsTruncated: false, isPartial: false, scannedThrough: null, typeCounts: {},
     })
+  })
+
+  it('ignores the window description an older server sends, keeping the rest of the tree', () => {
+    const tree = parseProblemTree({ window: { kind: 'latest', n: 2000, count: 2000 }, feedback_count: 3 })
+    expect([tree.feedbackCount, Object.hasOwn(tree, 'window')]).toStrictEqual([3, false])
+  })
+
+  it('reads the review-type counts, untyped included', () => {
+    expect(parseProblemTree({ type_counts: { bug: 4, untyped: '2' } }).typeCounts).toStrictEqual({ bug: 4, untyped: 2 })
   })
 
   it('never reports fewer similar wordings or problems than it lists', () => {
@@ -64,5 +73,18 @@ describe('problemTreeSearch', () => {
       .toBe('days=30&category=delivery')
     expect(problemTreeSearch({ days: 7, date_basis: 'review', source: 'web', subcategory: 'shipping', urgentOnly: true, similarity: 'off' }))
       .toBe('days=7&date_basis=review&source=web&subcategory=shipping&urgent=1&similarity=off')
+  })
+
+  it('sends the header period as days, all time as days=0, with its date basis', () => {
+    expect(problemTreeSearch({ days: 0, date_basis: 'imported' })).toBe('days=0&date_basis=imported')
+  })
+
+  it('sends the review-type filter as one dims pair with |-joined values', () => {
+    expect(new URLSearchParams(problemTreeSearch({ days: 90, dims: 'feedback_type:bug|performance' })).get('dims'))
+      .toBe('feedback_type:bug|performance')
+  })
+
+  it('leaves an empty dims filter out', () => {
+    expect(problemTreeSearch({ days: 7, dims: '' })).toBe('days=7')
   })
 })

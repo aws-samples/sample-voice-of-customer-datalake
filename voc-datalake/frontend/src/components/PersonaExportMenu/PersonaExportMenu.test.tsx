@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { openExportMenu, openThenClickOutside, renderExportMenu } from '../../test/export-menu'
 import PersonaExportMenu from './PersonaExportMenu'
+import * as pdfGenerator from './pdfGenerator'
 import { ariaExpandedAcrossClick } from '../ExportMenuShell/exportMenu-fixtures'
 import type { ProjectPersona } from '../../api/projectTypes'
 
@@ -79,12 +80,21 @@ describe('PersonaExportMenu', () => {
     it.each([
       'Copy as Markdown',
       'Download as Markdown',
-      'Download as PDF',
+      'Print or save as PDF',
       'Download as TXT',
     ])('displays the %s option', async (label) => {
       await openMenu()
 
       expect(screen.getByText(label)).toBeInTheDocument()
+    })
+
+    it('the PDF item is named for what it does: it opens printing, where the browser saves the PDF', async () => {
+      const print = vi.spyOn(pdfGenerator, 'generatePersonaPDF').mockReturnValue(undefined)
+      const user = await openMenu()
+      expect(screen.queryByText(/Download as PDF/)).not.toBeInTheDocument()
+      await user.click(screen.getByRole('menuitem', { name: 'Print or save as PDF' }))
+      expect(print).toHaveBeenCalledWith(mockPersona)
+      print.mockRestore()
     })
   })
 

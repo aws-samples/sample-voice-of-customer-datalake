@@ -11,7 +11,7 @@ import requests
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
-from shared import design_logo
+from shared import design_logo, timestamps
 from shared import design_references as dr
 from shared.http_utils import UnsafeURLError
 
@@ -76,12 +76,68 @@ class TestStorePreview:
         fetch.assert_not_called()
 
 
+RENDERED_KEY = f'company-context/design/logo_preview_{REF_ID}.png'
+RENDERED = {'colors': [], 'logo': {'source_url': 'https://kiro.dev/brand/logo.svg', 'content_type': 'image/png',
+                                   'rendered': True, 'preview_key': RENDERED_KEY}}
+
+
+class TestRenderedLogo:
+    def test_store_preview_leaves_a_rendered_logo_untouched_and_never_downloads_the_svg(self):
+        fetch, s3 = MagicMock(), MagicMock()
+        assert design_logo.store_preview(RENDERED, REF_ID, s3, 'raw', fetch) is RENDERED
+        fetch.assert_not_called()
+        s3.put_object.assert_not_called()
+
+    @pytest.mark.parametrize('logo', [
+        {**RENDERED['logo'], 'preview_key': 'company-context/design/logo_preview_ref_ffffffffffff.png'},
+        {**RENDERED['logo'], 'rendered': 'yes'},
+    ])
+    def test_a_rendered_flag_for_another_key_is_dropped_and_the_candidate_downloaded(self, logo):
+        fetch = MagicMock(return_value=_response(200, b'<svg onload="alert(1)"/>'))
+        design = design_logo.store_preview({'logo': logo}, REF_ID, MagicMock(), 'raw', fetch)
+        assert design == {'logo': {'source_url': 'https://kiro.dev/brand/logo.svg', 'content_type': 'image/png'}}
+        fetch.assert_called_once()   # and refused: an SVG is never stored
+
+    def test_store_rendered_puts_only_a_png_under_the_reference_preview_key(self, bucket):
+        logo = design_logo.store_rendered('https://kiro.dev/brand/logo.svg', PNG, REF_ID, bucket, 'raw')
+        assert logo == RENDERED['logo']
+        stored = bucket.get_object(Bucket='raw', Key=RENDERED_KEY)
+        assert (stored['ContentType'], stored['Body'].read()) == ('image/png', PNG)
+
+    @pytest.mark.parametrize(('data', 'ref_id', 'url'), [
+        (WEBP, REF_ID, 'https://kiro.dev/l.svg'), (PNG + b'0' * 2_000_000, REF_ID, 'https://kiro.dev/l.svg'),
+        (PNG, '../x', 'https://kiro.dev/l.svg'), (PNG, REF_ID, 'http://kiro.dev/l.svg'),
+    ])
+    def test_store_rendered_refuses_anything_but_a_small_png(self, bucket, data, ref_id, url):
+        assert design_logo.store_rendered(url, data, ref_id, bucket, 'raw') is None
+        assert bucket.list_objects_v2(Bucket='raw').get('KeyCount') == 0
+
+    def test_store_rendered_survives_an_s3_failure(self):
+        s3 = MagicMock()
+        s3.put_object.side_effect = ClientError({'Error': {'Code': 'AccessDenied'}}, 'PutObject')
+        assert design_logo.store_rendered('https://kiro.dev/l.svg', PNG, REF_ID, s3, 'raw') is None
+
+    def test_read_rendered_preview(self, bucket):
+        bucket.put_object(Bucket='raw', Key=RENDERED_KEY, Body=PNG)
+        assert design_logo.read_rendered_preview(bucket, 'raw', RENDERED_KEY) == PNG
+        bucket.put_object(Bucket='raw', Key=RENDERED_KEY, Body=b'<svg/>')
+        with pytest.raises(design_logo.LogoFetchError, match='not a PNG'):
+            design_logo.read_rendered_preview(bucket, 'raw', RENDERED_KEY)
+
+    @pytest.mark.parametrize('key', [RENDERED_KEY, None, 'company-context/design/logo_abc.png',
+                                     'company-context/design/logo_preview_../x.png',
+                                     f'company-context/design/logo_preview_{REF_ID}.webp'])
+    def test_read_rendered_preview_missing_or_foreign_key(self, bucket, key):
+        with pytest.raises(design_logo.LogoPreviewMissing):
+            design_logo.read_rendered_preview(bucket, 'raw', key)
+
+
 class TestFetchedAt:
     def test_it_is_the_time_the_read_finished(self, monkeypatch):
         times = iter(['2026-10-22T10:00:00+00:00', '2026-10-22T10:00:42+00:00'])
         clock = MagicMock()
         clock.now.return_value.isoformat.side_effect = lambda: next(times)
-        monkeypatch.setattr(dr, 'datetime', clock)
+        monkeypatch.setattr(timestamps, 'datetime', clock)
         table = MagicMock()
 
         def slow_summary(_digest: str) -> str:
@@ -130,7 +186,8 @@ class TestGithubComponents:
         summarise = MagicMock(return_value='{"summary": "Purple."}')
         deps = self._deps(logo_fetch=MagicMock(return_value=_response(200, PNG)))
         deps.summarise = summarise
-        summary, design = dr.extract_reference(deps, {'kind': 'github', 'url': 'https://github.com/acme/ui'})
+        extraction = dr.extract(deps, {'kind': 'github', 'url': 'https://github.com/acme/ui'})
+        summary, design = extraction.summary, extraction.design
         assert summary == 'Purple.'
         assert design is not None
         button = design['components'][0]
@@ -141,12 +198,13 @@ class TestGithubComponents:
         assert '(UI component source)' in prompt
         assert '"background": "#7c3aed"' in prompt
 
-    def test_the_models_components_win_when_it_gives_some(self):
+    def test_the_models_components_stay_and_the_parsed_styles_are_added(self):
         answer = json.dumps({'summary': 'S', 'components': [{'name': 'Card', 'variants': [
             {'name': 'default', 'styles': {'radius': '12px'}}]}]})
-        _, design = dr.extract_reference(self._deps(answer), {'kind': 'github', 'url': 'https://github.com/acme/ui'})
+        design = dr.extract(self._deps(answer), {'kind': 'github', 'url': 'https://github.com/acme/ui'}).design
         assert design is not None
-        assert [c['name'] for c in design['components']] == ['Card']
+        assert [c['name'] for c in design['components']] == ['Card', 'Button']
+        assert design['components'][0]['variants'] == [{'name': 'default', 'styles': {'radius': '12px'}}]
 
     def test_process_stores_the_logo_preview(self):
         logo_fetch = MagicMock(return_value=_response(200, PNG))

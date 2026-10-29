@@ -61,8 +61,6 @@ def _counter(env, pk, day, count):
 
 class TestThresholdRule:
     def test_bucket_partitions_match_the_aggregator(self):
-        from aggregator.handler import SUBCATEGORY_PREFIX
-        assert hb.SUBCATEGORY_METRIC_PREFIX == SUBCATEGORY_PREFIX
         assert hb.bucket_pk('shipping#late') == 'METRIC#daily_subcategory#shipping#late'
         assert hb.bucket_pk('shipping') == 'METRIC#daily_category#shipping'
 

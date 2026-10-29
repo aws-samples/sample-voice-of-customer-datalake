@@ -34,8 +34,8 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared.exceptions import ConflictError, ValidationError
+from shared.prioritization_keys import PRIORITIZATION_PK
 
-PRIORITIZATION_PK: Final = 'PRIORITIZATION'
 CONFIG_SK: Final = 'CONFIG'
 
 # The 1-5 scale is fixed; only names, weights and directions are configurable.

@@ -29,7 +29,7 @@ def saved() -> Iterator[MagicMock]:
     """The item create_counted_project_child is asked to write."""
     with patch('research_step_handler._get_projects_table', return_value=MagicMock()), \
             patch('research_step_handler.create_counted_project_child',
-                  side_effect=lambda _t, _p, _k, build, _c: build('research_1')) as create:
+                  side_effect=lambda _t, _p, _k, build: build('research_1')) as create:
         yield create
 
 

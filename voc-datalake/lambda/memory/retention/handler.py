@@ -27,6 +27,7 @@ from shared import memory_store as store
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
+from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
 
 SWEPT_STATUSES: Final = (policy.STATUS_ACTIVE, policy.STATUS_PROPOSED, policy.STATUS_CONFLICT)
@@ -37,15 +38,11 @@ DECISION_ATTRIBUTES: Final = (
 )
 
 
-def get_memory_table():
-    return store.get_memory_table()
-
-
 def archive(table, item: Mapping[str, Any], reason: str, now: datetime) -> bool:
     """Archive one memory; False when it vanished meanwhile."""
     try:
         store.set_fields(table, item, {'status': policy.STATUS_ARCHIVED, 'archived_reason': reason,
-                                       'archived_at': store.now_iso(now)}, now=now)
+                                       'archived_at': now_iso(now)}, now=now)
     except Exception as exc:
         if is_conditional_check_failure(exc):
             return False
@@ -76,7 +73,7 @@ warm_at_init(get_dynamodb_resource)
 
 @instrumented_handler
 def lambda_handler(_event: dict, context: Any) -> dict:
-    table = get_memory_table()
+    table = store.get_memory_table()
     if table is None:
         raise RuntimeError('MEMORY_TABLE is not configured')
     result = sweep(table, datetime.now(UTC), context.get_remaining_time_in_millis)

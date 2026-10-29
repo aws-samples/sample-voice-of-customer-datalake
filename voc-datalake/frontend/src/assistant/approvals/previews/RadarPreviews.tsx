@@ -13,32 +13,62 @@
  */
 import { useContext, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { brandKeyOf, radarListFingerprint } from '../radarSchemas'
+import { brandKeyOf, radarListFingerprint, savedNewsFields } from '../radarSchemas'
 import { ShownContext, recordRadarBrandsBase } from '../shown'
 import { CardNote, FieldDiff, FieldTable, NothingSavedNote } from './FieldDiff'
 import { Lines, Muted } from './ScraperValues'
 import { useRadarBrandLabels, useRadarBrandsPreview } from './useRadarBrands'
 import type { RunRadarScanArgs, SaveRadarBrandsArgs } from '../radarSchemas'
 import type { RadarBrandEntry } from '../../../api/radarSchema'
+import type { RadarLanguage } from '../../../api/radarNewsFields'
 import type { FieldRow } from './FieldDiff'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
 
 const K = 'preview.radar'
 
-interface BrandSide { label: string; domains: readonly string[] }
+interface BrandSide {
+  label: string; domains: readonly string[]; language: RadarLanguage | null; feeds: readonly string[]
+  searchTerms: readonly string[]; excludeTerms: readonly string[]
+}
+
+/** A brand's domains, then its search language, news feeds and search / exclude terms when set. */
+function sideLines(side: BrandSide, t: Translate): string[] {
+  const domains = side.domains.length === 0 ? [t(`${K}.noDomains`)] : [...side.domains]
+  const language = side.language === null ? [] : [t(`${K}.language`, { language: side.language })]
+  const search = side.searchTerms.length === 0 ? [] : [t(`${K}.searchTerms`, { list: side.searchTerms.join(', ') })]
+  const exclude = side.excludeTerms.length === 0 ? [] : [t(`${K}.excludeTerms`, { list: side.excludeTerms.join(', ') })]
+  return [...domains, ...language, ...side.feeds.map((feed) => t(`${K}.feed`, { feed })), ...search, ...exclude]
+}
 
 function domainsRow(key: string, side: BrandSide | undefined, fallbackLabel: string, missing: string, t: Translate): FieldRow {
-  const value = side === undefined
-    ? <Muted text={missing} />
-    : <Lines items={side.domains} empty={t(`${K}.noDomains`)} />
-  return { key, label: side?.label ?? fallbackLabel, value, compare: side === undefined ? '' : JSON.stringify([side.label, side.domains]) }
+  const value = side === undefined ? <Muted text={missing} /> : <Lines items={sideLines(side, t)} empty={t(`${K}.noDomains`)} />
+  const compare = side === undefined ? '' : JSON.stringify([side.label, side.domains, side.language, side.feeds, side.searchTerms, side.excludeTerms])
+  return { key, label: side?.label ?? fallbackLabel, value, compare }
+}
+
+/** The stored brand as the card compares it. */
+const storedSide = (entry: RadarBrandEntry): BrandSide =>
+  ({ label: entry.label, domains: entry.domains, language: entry.language, feeds: entry.feed_urls,
+    searchTerms: entry.search_terms, excludeTerms: entry.exclude_terms })
+
+/** The proposed brand, saved with the language, feeds and terms `savedNewsFields` gives it (as the executor saves it). */
+function proposedSide(brand: SaveRadarBrandsArgs['brands'][number], was: RadarBrandEntry | undefined): BrandSide {
+  const saved = savedNewsFields(brand, was)
+  return {
+    label: brand.label, domains: brand.domains ?? [], language: saved.language, feeds: saved.feed_urls,
+    searchTerms: saved.search_terms, excludeTerms: saved.exclude_terms,
+  }
 }
 
 /** Aligned before / after rows over every brand key of either list (stored order first, then the new ones). */
 function brandRows(stored: readonly RadarBrandEntry[], args: SaveRadarBrandsArgs, t: Translate) {
-  const before = new Map(stored.filter((entry) => entry.origin === 'list').map((entry): [string, BrandSide] => [entry.key, entry]))
-  const after = new Map(args.brands.map((brand): [string, BrandSide] => [brandKeyOf(brand.label), { label: brand.label, domains: brand.domains ?? [] }]))
+  const listed = new Map(stored.filter((entry) => entry.origin === 'list').map((entry) => [entry.key, entry]))
+  const before = new Map([...listed].map(([key, entry]): [string, BrandSide] => [key, storedSide(entry)]))
+  const after = new Map(args.brands.map((brand): [string, BrandSide] => {
+    const key = brandKeyOf(brand.label)
+    return [key, proposedSide(brand, listed.get(key))]
+  }))
   const keys = [...new Set([...before.keys(), ...after.keys()])]
   const labelOf = (key: string) => after.get(key)?.label ?? before.get(key)?.label ?? key
   return {

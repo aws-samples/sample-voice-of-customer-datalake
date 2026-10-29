@@ -13,6 +13,29 @@ The Projects workspace turns customer feedback into research artifacts, lets tea
 
 Long-running research, persona, document, merge, and prototype operations run as background jobs. Their status appears in the project. The `list_jobs` MCP tool returns only the newest 50 jobs and has no continuation token or partial-result flag.
 
+## Product tab
+
+The **Product** tab (`/projects/<id>?tab=product`) holds the project's product description, which PRD, PR/FAQ,
+product-report and prototype generation read as context. It shows one header (what the tab is for, how many of the
+11 fields are filled, when it was last saved), the company context it inherits (read-only, edited in Knowledge →
+Company), the description in five sections (the product · customers and problem · offering · goals and boundaries
+· notes; every field saves on its own when you leave it), and two side cards: internal documents (images and text,
+extracted for the generators) and **Generate report**. A viewer sees the fields and documents read-only, without
+the assistant button, uploads or the report.
+
+**Fill with AI assistant** (editors) opens the AI assistant on a new conversation with the request "Interview me to
+fill in this project's product description." drafted; nothing is sent until you press send. The assistant then reads
+the current description (`get_product_context`) and asks about the fields that are still empty, one question per
+message, in this order: product name, one-liner, target users, problem solved, current state (idea, MVP, beta,
+generally available, mature), key features, competitors/alternatives and differentiators, goals and success
+metrics, constraints and known limitations, non-goals, anything else. After the last answer it proposes ONE
+`update_product_context` approval card with every answer; nothing is saved until you approve it, and the form shows
+the approved values at once. The questions live in one place, the assistant's guidance
+(`lambda/stream/src/assistant/tools/product-interview.ts`), offered only when the caller may edit the project.
+
+The embedded interview chat this tab had before (and its route `POST /projects/{id}/product-context/interview`)
+was removed: the assistant bubble does the same job, with its approval cards.
+
 ## Which feedback a generation reads
 
 A persona, research or document job can put only a few hundred reviews in front of the model (the limit follows the model's context window), while the chosen window often matches tens of thousands. The job therefore reads EVERY review the window and filters match — sources, categories, sentiments, channel, dimensions, tag, the date basis and your category/source access — and takes an **even sample** across them, so each day (and source, category, …) is represented in proportion to how much of the match it holds. The sample is deterministic: the same filters over the same data pick the same reviews. Previously the read took the newest reviews only, so one big import day could become the whole corpus.
@@ -94,6 +117,8 @@ Project objects returned by list, get, and create carry computed `visibility`, `
 **Signed media URLs outlive a removal until they expire.** Persona avatars (`/avatars/*`) and prototypes (`/prototypes/*`) are served through CloudFront signed URLs minted at read time by `lambda/shared/cloudfront_signing.py` (and `lambda/stream/src/lib/cloudfront-signing.ts` for the assistant). Their TTL is `CDN_SIGNED_URL_TTL_SECONDS`, which no stack sets, so the fallback of **3600 s (1 hour)** applies — matched to the 1-hour Cognito ID/access token lifetime. A member who is removed, or a project made private, loses API access immediately, but any signed URL they already hold keeps working until its `Expires`, at most an hour later. Shortening the TTL is possible but of limited value: it only narrows that window for media the user has already been shown, while the frontend never re-signs a URL on expiry and relies on the 30 s query `staleTime` plus refetch-on-focus to pick up fresh ones. Keep it well above 30 s; lower it (for example to 15 minutes) only if prototypes carry content sensitive enough that a one-hour tail after revocation matters.
 
 **Each avatar image has its own key.** An avatar is stored at `avatars/{persona_id}/{sha256-prefix}.{ext}` (older ones at the flat `avatars/{persona_id}.{ext}`), stamped with its project as S3 metadata. Objects are cached `immutable` and the `/avatars/*` cache key ignores the query string, so a regeneration must never reuse a key: **Regenerate avatar** (the refresh button on a persona's detail, `POST /projects/{id}/personas/{persona_id}/regenerate-avatar`, edit level) writes a new key, saves it on the persona, answers the new signed URL, then removes the images it superseded. Persona delete, persona regeneration and project delete sweep both layouts, and only ever objects stamped with their own project (persona ids are not unique across projects).
+
+**A failed avatar says why.** Generation never fails the persona (it is saved without an avatar), but every failure writes ONE ERROR line, `[PERSONA_AVATAR] Avatar generation failed (<reason>, <AWS error code>): <plain words>`, with `persona_id`, `avatar_failure_reason`, `error_code`, `model_id`, `region`, `stage` (`config` / `invoke` / `upload`) and the AWS error text (≤ 500 chars) — never the persona's name, bio or image prompt — so Administration → System → Logs shows the cause without AWS access. Reasons (`lambda/shared/avatar_failure.py`): `no_access` (AccessDenied, or the Marketplace subscription a Stability model needs on first use), `model_not_found` (retired / legacy / invalid model id), `throttled` (throttling or quota), `content_filtered` (the model's filter, also a 200 answer with no image), `validation`, `region_unavailable`, `not_configured` (no `RAW_DATA_BUCKET`), `disabled` (`AVATARS_ENABLED=false`; INFO, not an error) and `error`. An S3 failure while storing the image is reported as the bucket's (`stage: upload`), never as a model access problem. **Regenerate avatar** shows the same reason as its job error, e.g. "Avatar generation failed: the image model stability.stable-image-core-v1:1 is not enabled in us-west-2 for this account, or the role may not invoke it (AccessDeniedException). …".
 
 **The AI assistant acts as the calling user.** Streaming chat forwards the caller's own Cognito claims to the Projects API, so it can never read or change more than the person chatting with it:
 

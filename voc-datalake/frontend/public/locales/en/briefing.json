@@ -21,6 +21,10 @@
     "evidence": "Reviews behind this card: {{count, number}}",
     "quotes": "In their words",
     "dismiss": "Dismiss",
+    "dismissed": "Dismissed: {{title}}",
+    "undo": "Undo",
+    "undoLabel": "Undo dismissing {{title}}",
+    "closeNotice": "Close this notice",
     "sources": "Sources",
     "newTab": "opens in a new tab",
     "type": {

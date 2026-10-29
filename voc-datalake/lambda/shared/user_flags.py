@@ -18,13 +18,14 @@ Readers: the agents runtime (handoff owner when a category has none) reads
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from botocore.exceptions import ClientError
 
 from shared.exceptions import ConflictError
+from shared.timestamps import now_iso
 
+USERFLAGS_PREFIX = 'USERFLAGS#'
 FALLBACK_OWNER_PK = 'SETTINGS#fallback_owner'
 CONFIG_SK = 'config'
 FLAG_NAMES = ('fallback_owner', 'memory_reviewer')
@@ -33,7 +34,7 @@ _BATCH_GET_ROUNDS = 5
 
 
 def flags_key(sub: str) -> dict[str, str]:
-    return {'pk': f'USERFLAGS#{sub}', 'sk': CONFIG_SK}
+    return {'pk': f'{USERFLAGS_PREFIX}{sub}', 'sk': CONFIG_SK}
 
 
 def _flags_of(item: dict | None) -> dict[str, bool]:
@@ -58,6 +59,27 @@ def get_fallback_owner(table: Any) -> dict | None:
     return {'sub': item['sub'], 'username': item.get('username') or ''}
 
 
+def batch_rows_by_sub(dynamodb: Any, table_name: str, keys: list[dict[str, str]]) -> dict[str, dict]:
+    """``{sub: item}`` for ``USERFLAGS#{sub}`` keys, read in BatchGetItem pages.
+
+    Bounded: a throttled table keeps returning UnprocessedKeys, and a user list
+    must not spin; an unread user is simply absent (callers read that as unset).
+    Shared by the flags row and the ways-of-working row (shared/ai_mode.py). Results are keyed
+    by sub alone, so one call must ask for ONE sort key per user.
+    """
+    found: dict[str, dict] = {}
+    for start in range(0, len(keys), _BATCH_GET_LIMIT):
+        request = {table_name: {'Keys': keys[start:start + _BATCH_GET_LIMIT]}}
+        for _ in range(_BATCH_GET_ROUNDS):
+            response = dynamodb.batch_get_item(RequestItems=request)
+            for item in response.get('Responses', {}).get(table_name, []):
+                found[str(item.get('pk', '')).removeprefix(USERFLAGS_PREFIX)] = item
+            request = response.get('UnprocessedKeys') or {}
+            if not request:
+                break
+    return found
+
+
 def flags_for_subs(dynamodb: Any, table_name: str, subs: list[str]) -> dict[str, dict[str, bool]]:
     """Flags for many users in BatchGetItem pages; unknown subs get all-False.
 
@@ -65,29 +87,16 @@ def flags_for_subs(dynamodb: Any, table_name: str, subs: list[str]) -> dict[str,
     list can never show two fallback owners even mid-way through a transaction.
     """
     unique = [s for s in dict.fromkeys(subs) if s]
-    found: dict[str, dict[str, bool]] = {}
-    for start in range(0, len(unique), _BATCH_GET_LIMIT):
-        request = {table_name: {'Keys': [flags_key(s) for s in unique[start:start + _BATCH_GET_LIMIT]]}}
-        # Bounded: a throttled table keeps returning UnprocessedKeys, and a
-        # user list must not spin; unread users show all-False flags.
-        for _ in range(_BATCH_GET_ROUNDS):
-            response = dynamodb.batch_get_item(RequestItems=request)
-            for item in response.get('Responses', {}).get(table_name, []):
-                sub = str(item.get('pk', '')).removeprefix('USERFLAGS#')
-                found[sub] = _flags_of(item)
-            request = response.get('UnprocessedKeys') or {}
-            if not request:
-                break
+    found = {
+        sub: _flags_of(item)
+        for sub, item in batch_rows_by_sub(dynamodb, table_name, [flags_key(s) for s in unique]).items()
+    }
     owner = get_fallback_owner(dynamodb.Table(table_name))
     owner_sub = owner['sub'] if owner else None
     return {
         sub: {**found.get(sub, _flags_of(None)), 'fallback_owner': sub == owner_sub}
         for sub in unique
     }
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _put(table_name: str, item: dict, condition: dict | None = None) -> dict:
@@ -103,7 +112,7 @@ def _put(table_name: str, item: dict, condition: dict | None = None) -> dict:
 
 
 def _flags_row(sub: str, flags: dict[str, bool], actor_sub: str) -> dict:
-    return {**flags_key(sub), **flags, 'updated_at': _now(), 'updated_by': actor_sub}
+    return {**flags_key(sub), **flags, 'updated_at': now_iso(), 'updated_by': actor_sub}
 
 
 def _pointer_condition(previous_sub: str | None) -> dict:
@@ -149,10 +158,10 @@ def set_flags(
     previous_sub = owner['sub'] if owner else None
     pointer_key = {'pk': FALLBACK_OWNER_PK, 'sk': CONFIG_SK}
     if updated['fallback_owner']:
-        pointer = {**pointer_key, 'sub': sub, 'username': username, 'updated_at': _now()}
+        pointer = {**pointer_key, 'sub': sub, 'username': username, 'updated_at': now_iso()}
     else:
         # Cleared: the pointer row stays, with no sub (an empty pointer reads as "nobody").
-        pointer = {**pointer_key, 'updated_at': _now()}
+        pointer = {**pointer_key, 'updated_at': now_iso()}
     items = [
         _put(table_name, pointer, _pointer_condition(previous_sub)),
         _put(table_name, _flags_row(sub, updated, actor_sub)),

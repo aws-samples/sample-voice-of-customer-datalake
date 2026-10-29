@@ -373,6 +373,13 @@ describe('memory + agents APIs (VocApiStack)', () => {
     );
   });
 
+  it('settings API: its one S3 delete is s3:DeleteObject on the logo preview keys (5.47.00, archive)', () => {
+    const deletes = statementsOfRole(template, 'SettingsLambdaRole')
+      .filter((st) => st.actions.some((a) => a.startsWith('s3:Delete')));
+    expect(deletes.map((st) => st.actions)).toStrictEqual([['s3:DeleteObject']]);
+    expect(itemAt(deletes, 0).resource).toContain('/company-context/design/logo_preview_*');
+  });
+
   it('hands the stream assistant the memory and agents function names', () => {
     const vars = functionProps(template, 'ChatStreamApi').Environment.Variables;
     expect(vars).toHaveProperty('MEMORY_FUNCTION');

@@ -14,6 +14,17 @@ from typing import TYPE_CHECKING
 
 import boto3
 
+from shared.avatar_failure import (
+    CONTENT_FILTERED,
+    DISABLED,
+    ERROR,
+    NOT_CONFIGURED,
+    AvatarFailure,
+    avatar_failure,
+    aws_error_message,
+    failure_from_exception,
+    log_avatar_failure,
+)
 from shared.logging import logger, tracer
 from shared.prompts import format_prompt, get_avatar_prompt_config
 
@@ -28,18 +39,16 @@ if TYPE_CHECKING:
 # do not use. Same reasoning as shared/prototypes.py.
 
 
-# Image-model defaults, used only if avatar-generation.json omits the field.
-# The authoritative values live in that config's "image_model" block, kept in
-# lockstep with lib/utils/model-allowlist.ts (which builds the IAM grant) by
-# test_avatar_image_model_lockstep.py.
+# The image model, its region and aspect ratio live in ONE place: the "image_model"
+# block of avatar-generation.json (bundled with this code, so every key is always
+# there), kept in lockstep with lib/utils/model-allowlist.ts (which builds the IAM
+# grant) by test_avatar_image_model_lockstep.py.
 #
 # The region is deliberately NOT the platform's us-east-1: no active
 # text-to-image model is offered there (Nova Canvas was the only one and went
 # legacy), so this calls us-west-2 cross-region. See model-allowlist.ts.
-DEFAULT_IMAGE_MODEL_REGION = 'us-west-2'
-DEFAULT_IMAGE_MODEL_ID = 'stability.stable-image-core-v1:1'
-DEFAULT_ASPECT_RATIO = '1:1'
-# JPEG, not PNG: the model emits 1536x1536 and these render at 32-128 CSS px
+#
+# The output format an unsupported configured value is coerced to. JPEG, not PNG: the model emits 1536x1536 and these render at 32-128 CSS px
 # (w-8 in chat bubbles, up to max-w-[128px] for the large variant, 80px in the
 # PDF export). Measured on the same seed/prompt: PNG 2,677,833 bytes vs JPEG
 # 401,603 — 6.7x smaller for photographic content that is downscaled anyway.
@@ -66,13 +75,6 @@ _HISTORICAL_EXTENSIONS = ('png', 'jpeg', 'jpg', 'webp')
 # text model through. 'utility' is the picker's bucket for small helper calls; the
 # persona text itself runs on 'documents'.
 AVATAR_PROMPT_SURFACE = 'utility'
-
-# Used when the LLM call fails or answers empty and avatar-generation.json has no
-# fallback_prompt_template of its own.
-_DEFAULT_FALLBACK_PROMPT_TEMPLATE = (
-    'Professional headshot of a {occupation}, friendly expression, soft studio '
-    'lighting, neutral background, photorealistic'
-)
 
 # S3 user-metadata key recording which project an avatar object belongs to.
 #
@@ -158,13 +160,11 @@ def get_image_model_client(region: str) -> BedrockRuntimeClient:
 def get_image_model_config() -> dict:
     """Resolve the avatar image model settings from the prompt config.
 
-    Reads the "image_model" block of avatar-generation.json. That block existed
-    for a long time while this module ignored it in favour of hardcoded
-    constants, so editing the config had no effect — the same decoy-config trap
-    the research prompts had. Defaults above apply only to absent keys.
+    Reads the "image_model" block of avatar-generation.json, the one source of
+    these values (it is bundled with this code, so the keys are always there).
     """
-    image_model = get_avatar_prompt_config().get('image_model', {})
-    output_format = image_model.get('output_format', DEFAULT_OUTPUT_FORMAT)
+    image_model = get_avatar_prompt_config()['image_model']
+    output_format = image_model['output_format']
     if output_format not in _SUPPORTED_OUTPUT_FORMATS:
         # Validate here rather than discovering it as a Bedrock ValidationException
         # mid-generation: the format also names the S3 object, so a bad value would
@@ -176,9 +176,9 @@ def get_image_model_config() -> dict:
         )
         output_format = DEFAULT_OUTPUT_FORMAT
     return {
-        'model_id': image_model.get('model_id', DEFAULT_IMAGE_MODEL_ID),
-        'region': image_model.get('region', DEFAULT_IMAGE_MODEL_REGION),
-        'aspect_ratio': image_model.get('aspect_ratio', DEFAULT_ASPECT_RATIO),
+        'model_id': image_model['model_id'],
+        'region': image_model['region'],
+        'aspect_ratio': image_model['aspect_ratio'],
         'output_format': output_format,
     }
 
@@ -338,8 +338,8 @@ def generate_avatar_prompt_with_llm(persona_data: dict) -> str:
 
     # Load prompt config from external file
     config = get_avatar_prompt_config()
-    system_prompt = config.get('system_prompt', '')
-    user_template = config.get('user_prompt_template', '')
+    system_prompt = config['system_prompt']
+    user_template = config['user_prompt_template']
 
     user_msg = format_prompt(
         user_template,
@@ -352,14 +352,14 @@ def generate_avatar_prompt_with_llm(persona_data: dict) -> str:
     )
 
     fallback_prompt = format_prompt(
-        config.get('fallback_prompt_template', _DEFAULT_FALLBACK_PROMPT_TEMPLATE),
+        config['fallback_prompt_template'],
         occupation=occupation or 'professional',
     )
     try:
         prompt = converse(
             prompt=user_msg,
             system_prompt=system_prompt,
-            max_tokens=with_thinking_headroom(config.get('max_tokens', 200)),
+            max_tokens=with_thinking_headroom(config['max_tokens']),
             # The raw invoke this replaced sent no temperature; keep that rather
             # than imposing converse()'s 0.1 on a creative one-liner.
             temperature=None,
@@ -406,7 +406,10 @@ def generate_persona_avatar(
             a project delete declines to remove it (the safe direction).
 
     Returns:
-        dict with 'avatar_url' (S3 URI or None) and 'avatar_prompt' (the prompt used)
+        dict with 'avatar_url' (S3 URI or None) and 'avatar_prompt' (the prompt used);
+        a failed one also carries 'failure' (``shared.avatar_failure.AvatarFailure``:
+        reason, plain-words message, model id, region, AWS error code), and every
+        failure writes exactly one ERROR line with the same fields (no persona PII).
     """
     import base64
 
@@ -415,8 +418,9 @@ def generate_persona_avatar(
 
     if not avatars_enabled():
         # Before the prompt model call too: nothing is spent on an avatar that will not exist.
+        # A deliberate switch, not a failure: INFO, but the reason still reaches the caller.
         logger.info("[PERSONA_AVATAR] Avatars disabled for this deployment (AVATARS_ENABLED=false); skipping")
-        return {'avatar_url': None, 'avatar_prompt': None}
+        return _no_avatar(None, avatar_failure(DISABLED))
 
     logger.info(f"[PERSONA_AVATAR] Starting avatar generation for {persona_name}", extra={
         "persona_id": persona_id
@@ -426,8 +430,9 @@ def generate_persona_avatar(
         s3_bucket = os.environ.get('RAW_DATA_BUCKET', '')
 
     if not s3_bucket:
-        logger.warning("[PERSONA_AVATAR] No S3 bucket configured - RAW_DATA_BUCKET env var is empty")
-        return {'avatar_url': None, 'avatar_prompt': None}
+        failure = avatar_failure(NOT_CONFIGURED)
+        log_avatar_failure(failure, persona_id=persona_id, stage='config')
+        return _no_avatar(None, failure)
 
     # Use Claude to generate an intelligent image prompt from persona data
     logger.info(f"[PERSONA_AVATAR] Generating image prompt with Claude for {persona_name}")
@@ -438,132 +443,116 @@ def generate_persona_avatar(
     model_id = image_model['model_id']
     model_region = image_model['region']
 
+    # Which half failed decides the reason: an S3 AccessDenied on the upload must
+    # never read as "the image model is not enabled".
+    stage = 'invoke'
     try:
-        # The image model is region-pinned; the IAM grant is built from the same
-        # values via imageModelArn() in lib/utils/model-allowlist.ts. The client
-        # is cached per region for the execution environment, so a batch of
-        # personas builds it once instead of once each.
-        bedrock_runtime = get_image_model_client(model_region)
-
-        # Stability text-to-image request format (shared by stable-image-core,
-        # stable-image-ultra and sd3-5-large). Note this is NOT interchangeable
-        # with the Nova Canvas taskType/textToImageParams body it replaced — a
-        # model from another vendor needs its own builder here.
-        request_body = {
-            "prompt": avatar_prompt,
-            "mode": "text-to-image",
-            "aspect_ratio": image_model['aspect_ratio'],
-            "output_format": image_model['output_format'],
-            "seed": _stable_seed(persona_id),
-        }
-
-        logger.info(f"[PERSONA_AVATAR] Invoking image model: {model_id}")
-
-        response = bedrock_runtime.invoke_model(
-            modelId=model_id,
-            body=json.dumps(request_body)
-        )
-
-        result = json.loads(response['body'].read())
-        images = result.get('images', [])
-
+        result = _invoke_image_model(image_model, avatar_prompt, persona_id)
+        images = result.get('images') or []
         if not images:
-            # finish_reasons explains a content-filtered or failed generation,
-            # which returns 200 with no image rather than raising.
-            logger.warning(
-                f"[PERSONA_AVATAR] {model_id} returned no images "
-                f"(finish_reasons={result.get('finish_reasons')})"
-            )
-            return {'avatar_url': None, 'avatar_prompt': avatar_prompt}
-
+            return _no_image(result, image_model, persona_id, avatar_prompt)
         logger.info(f"[PERSONA_AVATAR] {model_id} generated {len(images)} image(s)")
-
-        # Decode base64 image and upload to S3. Extension and content type follow
-        # the configured output_format so they cannot disagree with the bytes.
+        # Extension and content type follow the configured output_format so they
+        # cannot disagree with the bytes.
         image_data = base64.b64decode(images[0])
-        image_format = image_model['output_format']
-        s3_key = avatar_object_key(persona_id, image_data, image_format)
-
-        logger.info(f"[PERSONA_AVATAR] Uploading avatar to S3: s3://{s3_bucket}/{s3_key}")
-
-        # The shared accessor, not boto3.client('s3'), for two reasons that both arrived
-        # with the concurrent avatar loop:
-        #  1. This function now runs on several threads at once. boto3 clients are
-        #     thread-safe to USE but building one is not (aws/boto3#1592) — the same
-        #     hazard the region-pinned client above is cached to avoid. get_s3_client()
-        #     is module-cached, so the construction happens once.
-        #  2. It pins signature_version='s3v4', which RAW_DATA_BUCKET needs because it is
-        #     KMS-encrypted. Constructing the client here inherited botocore's default
-        #     signer instead.
-        # Imported inside the function to keep this module's import graph narrow.
-        from shared.aws import get_s3_client
-        s3_client = get_s3_client()
-        # Owner stamped by the same put that writes the bytes, so it cannot be
-        # present on a half-failed upload. No key at all without a project (an
-        # empty map writes no metadata), so "unowned" never reads as an owner.
-        owner_metadata = {AVATAR_OWNER_METADATA_KEY: project_id} if project_id else {}
-        s3_client.put_object(
-            Bucket=s3_bucket,
-            Key=s3_key,
-            Body=image_data,
-            # No jpg/jpeg special case needed: get_image_model_config() has already
-            # constrained the format to _SUPPORTED_OUTPUT_FORMATS.
-            ContentType=f"image/{image_format}",
-            CacheControl='public, max-age=31536000, immutable',
-            Metadata=owner_metadata,
+        stage = 'upload'
+        avatar_url = _store_avatar_image(
+            image_data, image_model['output_format'], persona_id, s3_bucket, project_id,
         )
-        # Earlier images are NOT removed here: the persona row still names one of
-        # them until the caller saves this URL. A regeneration sweeps them after
-        # its update (delete_superseded_avatars); a new persona has none.
+    except Exception as e:  # noqa: BLE001 - every failure degrades to "no avatar", with its reason
+        failure = failure_from_exception(e, model_id=model_id, region=model_region, stage=stage)
+        log_avatar_failure(failure, persona_id=persona_id, stage=stage,
+                           aws_message=aws_error_message(e), exc_info=True)
+        return _no_avatar(avatar_prompt, failure)
+    logger.info(f"[PERSONA_AVATAR] SUCCESS - Avatar generated for {persona_name}: {avatar_url}")
+    return {'avatar_url': avatar_url, 'avatar_prompt': avatar_prompt}
 
-        avatar_url = f"s3://{s3_bucket}/{s3_key}"
-        logger.info(f"[PERSONA_AVATAR] SUCCESS - Avatar generated for {persona_name}: {avatar_url}")
 
-    except Exception as e:
-        error_type = type(e).__name__
-        if 'AccessDenied' in error_type or 'AccessDenied' in str(e):
-            # Two grants can cause this, and the second is the one a fresh account
-            # hits (issue #274): a Marketplace-listed model (Stability) is invoked
-            # only by a role that may also view/accept its subscription.
-            logger.error(
-                f"[PERSONA_AVATAR] ACCESS DENIED - Check the role's IAM policy grants "
-                f"bedrock:InvokeModel on arn:aws:bedrock:{model_region}::foundation-model/{model_id} "
-                "AND aws-marketplace:ViewSubscriptions + aws-marketplace:Subscribe "
-                "(Marketplace models such as Stability need these on first use in an account)",
-                extra={"error": str(e)},
-                exc_info=True,
-            )
-        elif 'ResourceNotFound' in error_type or 'ResourceNotFound' in str(e):
-            # A legacy model reports itself as "not found" once the account loses
-            # access (15+ days idle during the legacy window, or past EOL). Name
-            # the cause explicitly: the generic branch below made a past outage
-            # look like a transient error for far too long.
-            logger.error(
-                f"[PERSONA_AVATAR] MODEL NOT AVAILABLE - {model_id} was not found in "
-                f"{model_region}. A LEGACY model returns this once the account loses "
-                "access (idle 15+ days) or after its EOL date. Check its lifecycle "
-                "state and migrate: aws bedrock list-foundation-models "
-                "--by-output-modality IMAGE",
-                extra={"error": str(e), "model_id": model_id, "region": model_region},
-                exc_info=True,
-            )
-        elif 'ValidationException' in error_type or 'ValidationException' in str(e):
-            logger.error(
-                f"[PERSONA_AVATAR] VALIDATION ERROR - Check the request format for {model_id}. "
-                "Stability models take prompt/mode/aspect_ratio/output_format; a model "
-                "from another vendor needs its own request body, not this one",
-                extra={"error": str(e)},
-                exc_info=True,
-            )
-        else:
-            logger.error(f"[PERSONA_AVATAR] FAILED - Avatar generation error: {error_type}: {e}", extra={
-                "persona_id": persona_id,
-                "error_type": error_type,
-                "error": str(e)
-            }, exc_info=True)
-        return {'avatar_url': None, 'avatar_prompt': avatar_prompt}
-    else:
-        return {'avatar_url': avatar_url, 'avatar_prompt': avatar_prompt}
+def _no_avatar(avatar_prompt: str | None, failure: AvatarFailure) -> dict:
+    """A failed answer: no URL, the prompt used (if any) and WHY (``failure``)."""
+    return {'avatar_url': None, 'avatar_prompt': avatar_prompt, 'failure': failure}
+
+
+def _invoke_image_model(image_model: dict, avatar_prompt: str, persona_id: str) -> dict:
+    """One text-to-image call; the decoded JSON answer (``images``, ``finish_reasons``)."""
+    model_id = image_model['model_id']
+    # The image model is region-pinned; the IAM grant is built from the same
+    # values via imageModelArn() in lib/utils/model-allowlist.ts. The client
+    # is cached per region for the execution environment, so a batch of
+    # personas builds it once instead of once each.
+    bedrock_runtime = get_image_model_client(image_model['region'])
+
+    # Stability text-to-image request format (shared by stable-image-core,
+    # stable-image-ultra and sd3-5-large). Note this is NOT interchangeable
+    # with the Nova Canvas taskType/textToImageParams body it replaced — a
+    # model from another vendor needs its own builder here.
+    request_body = {
+        "prompt": avatar_prompt,
+        "mode": "text-to-image",
+        "aspect_ratio": image_model['aspect_ratio'],
+        "output_format": image_model['output_format'],
+        "seed": _stable_seed(persona_id),
+    }
+
+    logger.info(f"[PERSONA_AVATAR] Invoking image model: {model_id}")
+
+    response = bedrock_runtime.invoke_model(
+        modelId=model_id,
+        body=json.dumps(request_body)
+    )
+    result = json.loads(response['body'].read())
+    return result if isinstance(result, dict) else {}
+
+
+def _no_image(result: dict, image_model: dict, persona_id: str, avatar_prompt: str) -> dict:
+    """A 200 answer without an image: finish_reasons says why (a content filter, mostly)."""
+    finish_reasons = str(result.get('finish_reasons'))
+    reason = CONTENT_FILTERED if 'filter' in finish_reasons.lower() else ERROR
+    failure = avatar_failure(reason, model_id=image_model['model_id'], region=image_model['region'],
+                             error_code='NoImageReturned')
+    log_avatar_failure(failure, persona_id=persona_id, stage='invoke',
+                       aws_message=f'finish_reasons={finish_reasons}')
+    return _no_avatar(avatar_prompt, failure)
+
+
+def _store_avatar_image(
+    image_data: bytes, image_format: str, persona_id: str, s3_bucket: str, project_id: str | None,
+) -> str:
+    """Upload one generated image; its ``s3://`` URI."""
+    s3_key = avatar_object_key(persona_id, image_data, image_format)
+
+    logger.info(f"[PERSONA_AVATAR] Uploading avatar to S3: s3://{s3_bucket}/{s3_key}")
+
+    # The shared accessor, not boto3.client('s3'), for two reasons that both arrived
+    # with the concurrent avatar loop:
+    #  1. This function now runs on several threads at once. boto3 clients are
+    #     thread-safe to USE but building one is not (aws/boto3#1592) — the same
+    #     hazard the region-pinned client above is cached to avoid. get_s3_client()
+    #     is module-cached, so the construction happens once.
+    #  2. It pins signature_version='s3v4', which RAW_DATA_BUCKET needs because it is
+    #     KMS-encrypted. Constructing the client here inherited botocore's default
+    #     signer instead.
+    # Imported inside the function to keep this module's import graph narrow.
+    from shared.aws import get_s3_client
+    s3_client = get_s3_client()
+    # Owner stamped by the same put that writes the bytes, so it cannot be
+    # present on a half-failed upload. No key at all without a project (an
+    # empty map writes no metadata), so "unowned" never reads as an owner.
+    owner_metadata = {AVATAR_OWNER_METADATA_KEY: project_id} if project_id else {}
+    s3_client.put_object(
+        Bucket=s3_bucket,
+        Key=s3_key,
+        Body=image_data,
+        # No jpg/jpeg special case needed: get_image_model_config() has already
+        # constrained the format to _SUPPORTED_OUTPUT_FORMATS.
+        ContentType=f"image/{image_format}",
+        CacheControl='public, max-age=31536000, immutable',
+        Metadata=owner_metadata,
+    )
+    # Earlier images are NOT removed here: the persona row still names one of
+    # them until the caller saves this URL. A regeneration sweeps them after
+    # its update (delete_superseded_avatars); a new persona has none.
+    return f"s3://{s3_bucket}/{s3_key}"
 
 
 def get_avatar_cdn_url(s3_uri: str | None, cdn_url: str | None = None) -> str | None:

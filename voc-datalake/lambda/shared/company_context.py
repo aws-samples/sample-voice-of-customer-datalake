@@ -43,7 +43,9 @@ from shared.dynamo_paging import query_all
 from shared.exceptions import ValidationError
 from shared.logging import logger
 from shared.prompt_safety import data_block, injection_findings
+from shared.request_body import validated_text
 from shared.scope_names import HiddenNames, scoped_company_context, scoped_design_system
+from shared.timestamps import ISO_DAY_RE
 
 COMPANY_CONTEXT_PK = 'SETTINGS#company_context'
 DESIGN_SYSTEM_PK = 'SETTINGS#design_system'
@@ -83,7 +85,6 @@ UPLOAD_KINDS = ('screenshot', 'html')
 LINK_KINDS = ('figma', 'github', 'website')
 
 _ID_RE = re.compile(r'^[a-z]{2,4}_[0-9a-f]{12}\Z')
-_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}\Z')
 
 
 def new_id(prefix: str) -> str:
@@ -94,14 +95,7 @@ def new_id(prefix: str) -> str:
 # ── Field validators ─────────────────────────────────────────────────────────
 
 def _text(value: object, field: str, limit: int, *, required: bool = False) -> str:
-    raw = '' if value is None else value
-    if not isinstance(raw, str):
-        raise ValidationError(f'{field} must be a string')
-    text = raw.strip()
-    if required and not text:
-        raise ValidationError(f'{field} is required')
-    if len(text) > limit:
-        raise ValidationError(f'{field} must be at most {limit} characters')
+    text = validated_text(value, field, limit, required=required)
     findings = injection_findings(text)
     if findings:
         raise ValidationError(
@@ -130,7 +124,7 @@ def _object(value: object, field: str) -> dict:
 def _due(value: object, field: str) -> str | None:
     if value in (None, ''):
         return None
-    if not isinstance(value, str) or not _DATE_RE.fullmatch(value):
+    if not isinstance(value, str) or not ISO_DAY_RE.fullmatch(value):
         raise ValidationError(f'{field} must be a date (YYYY-MM-DD)')
     try:
         date.fromisoformat(value)
@@ -146,10 +140,10 @@ def _item_id(value: object, prefix: str) -> str:
     return new_id(prefix)
 
 
-def _unique_ids(items: list[dict], field: str) -> None:
-    ids = [i['id'] for i in items]
+def _unique_objective_ids(objectives: list[dict]) -> None:
+    ids = [i['id'] for i in objectives]
     if len(ids) != len(set(ids)):
-        raise ValidationError(f'{field} ids must be unique')
+        raise ValidationError('objectives ids must be unique')
 
 
 def https_url(value: object, field: str) -> str | None:
@@ -160,8 +154,16 @@ def https_url(value: object, field: str) -> str | None:
         raise ValidationError(f'{field} must be a URL of at most {MAX_URL_CHARS} characters')
     url = value.strip()
     if not re.fullmatch(r'https://[^\s/$.?#][^\s]*', url, re.IGNORECASE):
-        raise ValidationError(f'{field} must be an https:// URL')
+        raise ValidationError(f'{field} must be an https:// URL{_scheme_note(url)}')
     return url
+
+
+def _scheme_note(url: str) -> str:
+    """'; ftp:// addresses are not read' when ``url`` names another scheme, else ''."""
+    scheme = re.match(r'([a-z][a-z\d+.-]*)://', url, re.IGNORECASE)
+    if scheme is None or scheme.group(1).lower() == 'https':
+        return ''
+    return f'; {scheme.group(1).lower()}:// addresses are not read'
 
 
 # ── Company context ──────────────────────────────────────────────────────────
@@ -192,7 +194,7 @@ def validate_company_context(body: dict) -> dict:
         _company_objective(o, i)
         for i, o in enumerate(_list(body.get('objectives'), 'objectives', MAX_COMPANY_OBJECTIVES))
     ]
-    _unique_ids(objectives, 'objectives')
+    _unique_objective_ids(objectives)
     return {
         'vision': _text(body.get('vision'), 'vision', MAX_VISION_CHARS),
         'objectives': objectives,
@@ -240,7 +242,7 @@ def validate_my_context(body: dict) -> dict:
         _personal_objective(o, i)
         for i, o in enumerate(_list(body.get('objectives'), 'objectives', MAX_PERSONAL_OBJECTIVES))
     ]
-    _unique_ids(objectives, 'objectives')
+    _unique_objective_ids(objectives)
     return {'objectives': objectives}
 
 
@@ -332,7 +334,8 @@ def _get(table: Any, pk: str, sk: str = CONFIG_SK) -> dict:
     return item if isinstance(item, dict) else {}
 
 
-def _clean_list(value: object) -> list:
+def dict_entries(value: object) -> list:
+    """The dict members of a stored list (anything else, or a non-list, is dropped)."""
     return [v for v in value if isinstance(v, dict)] if isinstance(value, list) else []
 
 
@@ -341,7 +344,7 @@ def get_company_context(table: Any) -> dict:
     item = _get(table, COMPANY_CONTEXT_PK)
     return {
         'vision': item.get('vision') if isinstance(item.get('vision'), str) else '',
-        'objectives': _clean_list(item.get('objectives')),
+        'objectives': dict_entries(item.get('objectives')),
         'updated_at': item.get('updated_at'),
         'updated_by_username': item.get('updated_by_username'),
     }
@@ -350,7 +353,7 @@ def get_company_context(table: Any) -> dict:
 def get_my_context(table: Any, sub: str) -> dict:
     """One user's ``{objectives, updated_at}`` (the row is keyed by their sub)."""
     item = _get(table, user_context_pk(sub))
-    return {'objectives': _clean_list(item.get('objectives')), 'updated_at': item.get('updated_at')}
+    return {'objectives': dict_entries(item.get('objectives')), 'updated_at': item.get('updated_at')}
 
 
 def reference_view(item: dict) -> dict:
@@ -398,12 +401,12 @@ def get_design_system(table: Any, *, include_archived: bool = False) -> dict:
     tokens = raw_tokens if isinstance(raw_tokens, dict) else {}
     view: dict[str, Any] = {
         'tokens': {
-            'colors': _clean_list(tokens.get('colors')),
-            'typography': _clean_list(tokens.get('typography')),
-            **{k: _clean_list(tokens.get(k)) for k in ('spacing', 'radius') if k in tokens},
+            'colors': dict_entries(tokens.get('colors')),
+            'typography': dict_entries(tokens.get('typography')),
+            **{k: dict_entries(tokens.get(k)) for k in ('spacing', 'radius') if k in tokens},
         },
         'guidelines': item.get('guidelines') if isinstance(item.get('guidelines'), str) else '',
-        'components': _clean_list(item.get('components')),
+        'components': dict_entries(item.get('components')),
         'references': list_references(table, include_archived=include_archived),
         'updated_at': item.get('updated_at'),
     }
@@ -440,25 +443,25 @@ def company_context_text(company: dict, personal: dict | None = None) -> str:
     vision = str(company.get('vision') or '').strip()
     if vision:
         parts.append(f'Company vision:\n{vision}')
-    objectives = _clean_list(company.get('objectives'))
+    objectives = dict_entries(company.get('objectives'))
     if objectives:
         parts.append('Company objectives:\n' + '\n'.join(_objective_line(o) for o in objectives))
-    own = _clean_list((personal or {}).get('objectives'))
+    own = dict_entries((personal or {}).get('objectives'))
     if own:
         lines = []
         for obj in own:
             lines.append(_objective_line(obj))
-            lines.extend(_kpi_line(k) for k in _clean_list(obj.get('kpis')))
+            lines.extend(_kpi_line(k) for k in dict_entries(obj.get('kpis')))
         parts.append("The requesting user's own objectives:\n" + '\n'.join(lines))
     return '\n\n'.join(parts)[:COMPANY_BLOCK_CAP]
 
 
 def _token_lines(tokens: dict) -> list[str]:
     lines: list[str] = []
-    colors = _clean_list(tokens.get('colors'))
+    colors = dict_entries(tokens.get('colors'))
     if colors:
         lines.append('Colours: ' + '; '.join(f'{c.get("name")} = {c.get("value")}' for c in colors))
-    typography = _clean_list(tokens.get('typography'))
+    typography = dict_entries(tokens.get('typography'))
     if typography:
         rows = []
         for t in typography:
@@ -466,7 +469,7 @@ def _token_lines(tokens: dict) -> list[str]:
             rows.append(f'{t.get("role")} = {t.get("family")}' + (f' ({extras})' if extras else ''))
         lines.append('Typography: ' + '; '.join(rows))
     for key, label in (('spacing', 'Spacing'), ('radius', 'Corner radius')):
-        entries = _clean_list(tokens.get(key))
+        entries = dict_entries(tokens.get(key))
         if entries:
             lines.append(f'{label}: ' + '; '.join(f'{e.get("name")} = {e.get("value")}' for e in entries))
     return lines
@@ -491,7 +494,7 @@ def design_system_text(design: dict) -> str:
         guidelines = guidelines[:max(room, 0)].rstrip()
     summaries = [
         f'- {r.get("title")} ({r.get("kind")}): {str(r.get("extracted_summary")).strip()[:MAX_SUMMARY_CHARS]}'
-        for r in _clean_list(design.get('references'))
+        for r in dict_entries(design.get('references'))
         if r.get('status') == 'ready' and r.get('extracted_summary')
     ]
     parts = [

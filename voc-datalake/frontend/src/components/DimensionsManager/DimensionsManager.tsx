@@ -3,6 +3,10 @@
  * tagged with (product, module, user type …), each with a closed list of
  * values, an optional parent, and whether the model may infer it.
  *
+ * Built-in dimensions (`feedback_type`, defined in code) come first, read-only
+ * ({@link BuiltinDimensionCard}); the draft holds only the admin-defined ones, so a
+ * save never sends a built-in back and the `MAX_DIMENSIONS` bound counts only those.
+ *
  * Edits stay in a local draft until Save (one PUT of the whole list, validated
  * server-side); Discard returns to what is stored. A refused save leaves the
  * draft in place with the server's reason.
@@ -18,6 +22,7 @@ import { Plus } from 'lucide-react'
 import { dimensionsApi, dimensionsConfigKey } from '../../api/dimensionsApi'
 import { MAX_DIMENSIONS } from '../../api/dimensionsSchema'
 import { useDimensionsConfig } from '../../hooks/useDimensions'
+import BuiltinDimensionCard from './BuiltinDimensionCard'
 import DimensionEditor from './DimensionEditor'
 import { draftProblem, newDimension, removeDimension, replaceDimension, toDraft, toWire } from './dimensionDraft'
 import type { Dimension } from '../../api/dimensionsSchema'
@@ -63,10 +68,16 @@ function DimensionsEditor({ stored }: Readonly<{ stored: readonly Dimension[] }>
 export default function DimensionsManager() {
   const { t } = useTranslation('components', { keyPrefix: 'dimensionsManager' })
   const { data, isLoading, isError } = useDimensionsConfig()
+  const dimensions = data?.dimensions ?? []
+  const builtin = dimensions.filter((d) => d.builtin === true)
+  const custom = dimensions.filter((d) => d.builtin !== true)
   return (
     <DraftLoadGate isLoading={isLoading} isError={isError} errorText={t('loadError')}>
-      {/* Remounted when the stored config changes, so the draft restarts from it. */}
-      <DimensionsEditor key={data?.updatedAt ?? 'none'} stored={data?.dimensions ?? []} />
+      <div className="space-y-4">
+        {builtin.map((dimension) => <BuiltinDimensionCard key={dimension.key} dimension={dimension} />)}
+        {/* Remounted when the stored config changes, so the draft restarts from it. */}
+        <DimensionsEditor key={data?.updatedAt ?? 'none'} stored={custom} />
+      </div>
     </DraftLoadGate>
   )
 }

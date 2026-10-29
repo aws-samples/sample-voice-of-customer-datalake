@@ -46,20 +46,18 @@ function signedOut() {
 
 /**
  * Mount the guard at /admin around a marker child, beside every page it can
- * send a visitor to: the dashboard (default for non-admins), the login page,
- * and a custom `redirectTo` target.
+ * send a visitor to: the dashboard (non-admins) and the login page.
  */
-function renderAdminContent(guardProps: { redirectTo?: string } = {}) {
+function renderAdminContent() {
   return render(
     <MemoryRouter initialEntries={['/admin']}>
       <Routes>
         <Route path="/" element={<div>Dashboard</div>} />
         <Route path="/login" element={<div>Login Page</div>} />
-        <Route path="/custom" element={<div>Custom Page</div>} />
         <Route
           path="/admin"
           element={
-            <AdminRoute {...guardProps}>
+            <AdminRoute>
               <div>Admin Content</div>
             </AdminRoute>
           }
@@ -100,14 +98,6 @@ describe('AdminRoute', () => {
 
       expect(screen.getByText('Dashboard')).toBeInTheDocument()
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument()
-    })
-
-    it('redirects to custom path when specified', () => {
-      signedIn(false)
-
-      renderAdminContent({ redirectTo: '/custom' })
-
-      expect(screen.getByText('Custom Page')).toBeInTheDocument()
     })
   })
 

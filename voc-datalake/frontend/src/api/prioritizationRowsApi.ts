@@ -28,6 +28,7 @@
  *
  * @module api/prioritizationRowsApi
  */
+import { del, patch, post } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import type { PrioritizationRow } from './projectTypes'
@@ -93,10 +94,7 @@ export const prioritizationRowsApi = {
    * hold or that is not scorable, a 409 for a project already at the bound.
    */
   composePrioritizationRow: (input: RowComposition) =>
-    fetchApi<RowWriteResponse>('/projects/prioritization/rows/compose', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
+    fetchApi<RowWriteResponse>('/projects/prioritization/rows/compose', post(input)),
 
   /**
    * Change which documents an UN-BALLOTED row holds.
@@ -109,10 +107,7 @@ export const prioritizationRowsApi = {
    * the current rows) is identical.
    */
   recomposePrioritizationRow: (rowId: string, input: RowComposition) =>
-    fetchApi<RowWriteResponse>(rowPath(rowId), {
-      method: 'PATCH',
-      body: JSON.stringify(input),
-    }),
+    fetchApi<RowWriteResponse>(rowPath(rowId), patch(input)),
 
   /**
    * Delete one row TOGETHER WITH ITS BALLOTS. Admin only, server-enforced.
@@ -123,7 +118,7 @@ export const prioritizationRowsApi = {
    * that a courtesy rather than the protection.
    */
   deletePrioritizationRow: async (rowId: string): Promise<RowDeletion> => {
-    const raw = await fetchApi<unknown>(rowPath(rowId), { method: 'DELETE' })
+    const raw = await fetchApi<unknown>(rowPath(rowId), del())
     // `safeParse`, so a body that is not an object at all — a `null`, an API Gateway
     // page — cannot turn a delete the server COMPLETED into a rejected mutation the
     // page reports as a failure. The row is already gone; the only thing lost is the

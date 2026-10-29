@@ -33,6 +33,16 @@
     "status": "状态筛选"
   },
   "forget": "忘记",
+  "edit": "编辑",
+  "editLabel": "编辑记忆：{{statement}}",
+  "editField": "记忆内容",
+  "save": "保存",
+  "editFailed": "无法保存记忆，请重试。",
+  "confirmPersonal": "仍然成立",
+  "confirmPersonalHint": "确认仍然成立，这样它不会在 90 天未使用后被归档",
+  "confirmPersonalLabel": "仍然成立：{{statement}}",
+  "confirmLabel": "+1：{{statement}}",
+  "confirmedPersonal": "已确认仍然成立。",
   "forgetMessage": "“{{statement}}”将被归档，且不会被自动重新学习。之后可以恢复。",
   "forgetTitle": "要忘记这条记忆吗？",
   "imports": {

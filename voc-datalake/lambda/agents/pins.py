@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from agents import context_blocks, principal
-from agents.fields import dict_field, list_field
+from agents.fields import clipped_text, dict_field, list_field
 from shared.logging import logger
 from shared.mcp_delegate import DelegationUnavailable
 
@@ -41,21 +41,17 @@ def _path_parameters(project_id: str, document_id: str) -> dict[str, str]:
     return {'project_id': project_id, 'document_id': document_id}
 
 
-def _text(value: Any, limit: int) -> str:
-    return value.strip()[:limit] if isinstance(value, str) else ''
-
-
 def compact_pin(pin: dict) -> dict:
     """The fields a revision needs, capped so the run context stays small."""
     anchor = dict_field(pin, 'anchor')
-    console = [_text(e.get('message'), MAX_CONSOLE_CHARS) for e in list_field(pin, 'console')[-MAX_CONSOLE_LINES:]
+    console = [clipped_text(e.get('message'), MAX_CONSOLE_CHARS) for e in list_field(pin, 'console')[-MAX_CONSOLE_LINES:]
                if isinstance(e, dict)]
     return {
-        'pin_id': _text(pin.get('pin_id'), 60),
-        'comment': _text(pin.get('comment'), MAX_COMMENT_CHARS),
-        'selector': _text(anchor.get('selector'), 300),
-        'text_snippet': _text(anchor.get('text_snippet'), 200),
-        'route': _text(anchor.get('route'), 200),
+        'pin_id': clipped_text(pin.get('pin_id'), 60),
+        'comment': clipped_text(pin.get('comment'), MAX_COMMENT_CHARS),
+        'selector': clipped_text(anchor.get('selector'), 300),
+        'text_snippet': clipped_text(anchor.get('text_snippet'), 200),
+        'route': clipped_text(anchor.get('route'), 200),
         'console': [message for message in console if message],
     }
 

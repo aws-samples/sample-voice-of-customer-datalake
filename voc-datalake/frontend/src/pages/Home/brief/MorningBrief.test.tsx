@@ -3,7 +3,7 @@
  * conversation, never send), dismiss, "Things to do", seen marking, and Refresh.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
 import { createTestQueryClient, renderWithQueryClient } from '@test/query-client'
@@ -25,6 +25,7 @@ vi.mock('../../../api/client', () => ({
 const { default: MorningBrief } = await import('./MorningBrief')
 const { RefreshButton } = await import('./BriefHeader')
 const { default: MetricTiles } = await import('./MetricTiles')
+const { UNDO_TIMEOUT_MS } = await import('./UndoNotice')
 
 function card(id: string, kind: string, extra: Partial<BriefCard> = {}): BriefCard {
   return { id, kind, layer: 'org', severity: 'info', title: `${id} title`, body: `${id} body`, facts: {}, actions: [],
@@ -110,6 +111,33 @@ describe('brief cards', () => {
     unmount()
     renderBrief(result({ card_state: { [NOTE.id]: 'dismissed' } }))
     expect(screen.queryByRole('heading', { name: NOTE.title })).toBeNull()
+  })
+
+  it('offers Undo after a dismissal, which puts the card back in its previous state', async () => {
+    const setCardStates = vi.fn()
+    renderBrief(result({ card_state: { [NOTE.id]: 'acted', [TRENDING.id]: 'seen', [TODO.id]: 'seen' } }, setCardStates))
+    await userEvent.click(screen.getByRole('button', { name: `Dismiss: ${NOTE.title}` }))
+    expect(screen.getByRole('status')).toHaveTextContent(`Dismissed: ${NOTE.title}`)
+    await userEvent.click(screen.getByRole('button', { name: `Undo dismissing ${NOTE.title}` }))
+    expect(setCardStates).toHaveBeenLastCalledWith({ [NOTE.id]: 'acted' })
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
+  })
+
+  it('closes the Undo notice by itself after a while, unless it is hovered', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) })
+      renderBrief(result({ card_state: { [NOTE.id]: 'seen', [TRENDING.id]: 'seen', [TODO.id]: 'seen' } }))
+      await user.click(screen.getByRole('button', { name: `Dismiss: ${NOTE.title}` }))
+      await user.hover(screen.getByRole('button', { name: `Undo dismissing ${NOTE.title}` }))
+      await act(() => vi.advanceTimersByTimeAsync(UNDO_TIMEOUT_MS + 1000))
+      expect(screen.getByRole('status')).toHaveTextContent('Dismissed')
+      await user.unhover(screen.getByRole('button', { name: `Undo dismissing ${NOTE.title}` }))
+      await act(() => vi.advanceTimersByTimeAsync(UNDO_TIMEOUT_MS + 1000))
+      expect(screen.getByRole('status')).toBeEmptyDOMElement()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('marks the cards nobody has marked yet as seen, once', async () => {

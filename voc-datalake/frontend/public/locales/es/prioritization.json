@@ -22,6 +22,7 @@
       "capReached": "Esta votación ya ha recogido todos los votos que acepta. Pide al facilitador que abra otra sesión.",
       "closed": "El facilitador ha cerrado esta votación, por lo que no se aceptan más votos.",
       "expired": "Esta votación ha caducado, por lo que no se aceptan más votos.",
+      "gone": "La propuesta de esta votación se ha eliminado, así que la votación ha terminado.",
       "invalid": "No se ha podido leer este voto, por lo que no se ha registrado nada. Revisa los números y la nota, y envíalo de nuevo.",
       "notFound": "Este enlace no abre ninguna votación. Comprueba que has escaneado el código que está en pantalla ahora.",
       "title": "Esta votación no está abierta",
@@ -92,7 +93,9 @@
     "avgRating": "Valoración media",
     "noLinkedForm": "Ningún formulario de comentarios está vinculado a este documento.",
     "noRatings": "Sin valoraciones recopiladas",
-    "submissions": "Respuestas",
+    "submissions_one": "Respuesta",
+    "submissions_other": "Respuestas",
+    "submissions_many": "Respuestas",
     "title": "Comentarios recopilados",
     "unavailable": "Valoraciones no disponibles"
   },
@@ -204,7 +207,9 @@
     "title": "Puntuaciones de priorización",
     "wholeRow": "Una sola papeleta para los {{documents, number}} documentos de esta fila.",
     "yoursOnly": "Tu propia puntuación. Al guardar solo se escriben tus valores.",
-    "valueOfMax": "{{value}} de {{max, number}}"
+    "valueOfMax": "{{value}} de {{max, number}}",
+    "clear": "Borrar",
+    "clearAxis": "Borrar la puntuación de {{name}}"
   },
   "scoresUnavailable": {
     "description": "Sus puntuaciones guardadas no están disponibles en este momento, por lo que los números que se muestran a continuación son valores predeterminados y no los que alguien introdujo. Vuelva a cargar la página antes de guardar.",
@@ -309,6 +314,7 @@
     "mediumPriority": "Prioridad media",
     "notScored": "Sin puntuar",
     "totalRows": "Propuestas totales",
+    "loading": "Contando propuestas...",
     "unreadable_one": "No se ha podido leer la puntuación del equipo de {{count, number}} propuesta, así que solo cuenta en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verla.",
     "unreadable_other": "No se han podido leer las puntuaciones del equipo de {{count, number}} propuestas, así que solo cuentan en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verlas."
   },

@@ -77,7 +77,7 @@ npm run check        # lint && typecheck:all && test && check:mock && check:i18n
 | `npm run typecheck` | Frontend only |
 | `npm run typecheck:all` | Frontend + CDK (`typecheck:cdk`) + stream |
 | `npm run test` | Frontend Vitest |
-| `npm run check:mock` | Every `fetchApi` call site is listed in `frontend/mock-coverage.json` and its probes reach a real mock route |
+| `npm run check:mock` | Every `fetchApi` call site (and every raw `fetch` of the API base, `` fetch(`${getBaseUrl()}…`) ``) is listed in `frontend/mock-coverage.json` and its probes reach a real mock route |
 | `npm run check:i18n` | The i18n audit (`frontend/scripts/i18n-check.mjs`, after its own regression tests): every key the source uses exists in English, and no locale has missing, extra or empty keys (untranslated values and unused keys only warn). It never writes files. The frontend's `i18n:validate` / `i18n:extract` run `i18next-parser`, which REWRITES the locale files (re-sorted, new keys empty), so they are an authoring tool, not a gate |
 | `npm run test:cdk` / `test:stream` / `test:backend` | CDK Vitest / stream Vitest / pytest via `.venv/bin/python` |
 | `npm run check` | All of the above, chained with `&&`; it runs `npm run build` (the SPA) before `test:cdk`, whose synth needs `frontend/dist` |

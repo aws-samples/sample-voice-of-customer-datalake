@@ -29,7 +29,7 @@ const config = {
 };
 
 /** The axes people see, score and count, in the configured order. */
-export const activeAxes = () => config.axes.filter((axis) => !axis.archived);
+const activeAxes = () => config.axes.filter((axis) => !axis.archived);
 export const activeAxisIds = () => activeAxes().map((axis) => axis.id);
 
 /** `{axes, config_version}` for GET /projects/prioritization. */

@@ -21,6 +21,7 @@ import type { PluginManifest } from '../../plugins/types'
 import { supportsAppConfigs, WEB_REVIEWS_PLUGIN_ID } from '../Scrapers/scraper-helpers'
 import { formatTimestamp } from './logsFormat'
 import { LogsEmptyState, LogsLoadingState } from './SourceLogList'
+import { scrapersKey, sourceRunStatusKey } from '../../api/queryKeys'
 
 /** The deployed connectors whose runs are per source, not per scraper. */
 function connectorPlugins(): PluginManifest[] {
@@ -36,7 +37,7 @@ const CONNECTOR_KEYS: Readonly<Record<string, string>> = {
 export default function ScraperLogsPanel({ days }: { readonly days: number }) {
   const { t } = useTranslation('settings')
   const { data: scrapersData, isLoading: loadingScrapers } = useQuery({
-    queryKey: ['scrapers'],
+    queryKey: scrapersKey(),
     queryFn: () => api.getScrapers(),
   })
 
@@ -70,7 +71,7 @@ export default function ScraperLogsPanel({ days }: { readonly days: number }) {
 function ConnectorRunCard({ plugin }: Readonly<{ plugin: PluginManifest }>) {
   const { t } = useTranslation('settings')
   const { data, isLoading } = useQuery({
-    queryKey: ['source-run-status', plugin.id],
+    queryKey: sourceRunStatusKey(plugin.id),
     queryFn: () => api.getSourceRunStatus(plugin.id),
   })
   const key = CONNECTOR_KEYS[plugin.id]

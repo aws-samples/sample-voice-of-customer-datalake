@@ -24,23 +24,49 @@ export function isMemberRole(value: string): value is ProjectMemberRole {
   return MEMBER_ROLES.some((role) => role === value)
 }
 
-/** The best human label a row has: username, then email, then the raw sub. */
-export function personLabel(person: { username: string; email: string; sub: string }): string {
-  if (person.username !== '') return person.username
+/**
+ * A Cognito username that is a machine id, not a name: a pool that signs in by email
+ * gives every user a UUID username (often the sub itself). Shown as a name it reads
+ * "aff8498b-61ed-…" in the picker, so the labels below skip it.
+ */
+const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+interface PersonRef {
+  readonly username: string
+  readonly email: string
+  readonly sub: string
+  /** The Cognito `name` attribute, when the wire shape carries one (member candidates). */
+  readonly name?: string
+}
+
+/** The name, else a human username; '' when the row has neither (an empty, sub-equal or UUID-shaped username). */
+function humanName(person: Pick<PersonRef, 'username' | 'sub' | 'name'>): string {
+  const name = person.name?.trim() ?? ''
+  if (name !== '') return name
+  const username = person.username.trim()
+  return username === '' || username === person.sub || MACHINE_ID.test(username) ? '' : username
+}
+
+/** The best human label a row has: name, then a human username, then email, then the raw sub. */
+export function personLabel(person: PersonRef): string {
+  const name = humanName(person)
+  if (name !== '') return name
   return person.email !== '' ? person.email : person.sub
 }
 
 /**
- * The label a NON-manager may see: username, else the raw sub — never the email.
+ * The label a NON-manager may see: name, then a human username, else the raw sub —
+ * never the email.
  *
  * On a public project every signed-in user can open the sharing dialog, and the
- * member list is not the place for them to harvest addresses. A username-less
- * member therefore shows as their sub to a non-manager — unlovely, but not a
- * disclosure. (The server still returns every email; narrowing that is a
- * separate owner decision — Agent 2's handover item 5.)
+ * member list is not the place for them to harvest addresses. A member without a
+ * name or a human username therefore shows as their sub to a non-manager —
+ * unlovely, but not a disclosure. (The server still returns every email; narrowing
+ * that is a separate owner decision — Agent 2's handover item 5.)
  */
-export function publicPersonLabel(person: { username: string; sub: string }): string {
-  return person.username !== '' ? person.username : person.sub
+export function publicPersonLabel(person: Pick<PersonRef, 'username' | 'sub' | 'name'>): string {
+  const name = humanName(person)
+  return name !== '' ? name : person.sub
 }
 
 /** The candidates endpoint caps `q` at this length. */

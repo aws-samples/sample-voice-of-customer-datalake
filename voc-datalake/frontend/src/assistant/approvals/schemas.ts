@@ -28,6 +28,8 @@ export const idSchema = z.string().trim().min(1).max(MAX_ID_LENGTH).regex(/^[\w.
 
 const idList = z.array(idSchema).max(20)
 export const nonEmpty = (max: number) => z.string().trim().min(1).max(max)
+/** Optional, but non-blank when given (the stream tools' `optionalNonEmpty`, client/text-schemas.ts). */
+export const optionalNonEmpty = (max: number) => nonEmpty(max).optional()
 
 export function hasAnyKey(value: object): boolean {
   return Object.values(value).some((v) => v !== undefined)

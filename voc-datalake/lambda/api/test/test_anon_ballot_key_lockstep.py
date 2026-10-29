@@ -5,8 +5,9 @@ three files that must agree.
 PRIORITIZATION partition. `lambda/api/projects_handler.py` owns that partition:
 it writes a signed-in reviewer's ballot and it is the only reader, splitting every
 sort key back apart to compute the team's combined score. The two are packaged as
-SEPARATE Lambda bundles, so neither may import the other — the key constants are
-duplicated by necessity, and this file is what keeps the copies honest. The
+SEPARATE Lambda bundles, so neither may import the other; both take the partition and
+prefixes from `shared.prioritization_keys`, and this file pins that and everything the
+two still spell themselves (the kind namespaces, the key shape). The
 frontend's `pages/Vote/ballotBounds.ts` holds the two input bounds the public
 ballot page enforces before it submits.
 
@@ -61,6 +62,7 @@ import re
 import tokenize
 
 from lockstep_fixtures import (
+    assert_imported_not_defined,
     py_int_const,
     py_str_const,
     read_source,
@@ -116,36 +118,13 @@ class TestTheAnonymousKindCanNeverCollideWithASignedInReviewer:
 class TestBothWritersAgreeOnWhereABallotLives:
     """Same partition, same sort-key prefix — or the aggregate never sees it."""
 
-    def test_the_partition_key_matches(self):
-        ballots = py_str_const(read_source(BALLOTS_SOURCE), 'PRIORITIZATION_PK', BALLOTS_SOURCE)
-        projects = py_str_const(read_source(PROJECTS_SOURCE), 'PRIORITIZATION_PK', PROJECTS_SOURCE)
-        assert ballots == projects, (
-            f'PRIORITIZATION_PK differs: {ballots!r} in {BALLOTS_SOURCE} vs '
-            f'{projects!r} in {PROJECTS_SOURCE}. Anonymous ballots would be written '
-            f'to a partition the team score never reads — the room votes and the '
-            f'number does not move.'
-        )
-
-    def test_the_ballot_sort_key_prefix_matches(self):
-        ballots = py_str_const(read_source(BALLOTS_SOURCE), 'BALLOT_SK_PREFIX', BALLOTS_SOURCE)
-        projects = py_str_const(read_source(PROJECTS_SOURCE), 'BALLOT_SK_PREFIX', PROJECTS_SOURCE)
-        assert ballots == projects, (
-            f'BALLOT_SK_PREFIX differs: {ballots!r} vs {projects!r}. '
-            f'`_parse_ballot_sk` skips anything without the prefix it knows, so '
-            f'anonymous ballots would be silently ignored by the aggregate.'
-        )
-
-    def test_the_row_record_prefix_matches(self):
-        # ballots_handler READS row records it never writes: the session-open
-        # existence check (#342) looks a row up under the prefix projects_handler
-        # writes it under. If the two drift, the check answers "no such row" for
-        # every row, and no session can be opened at all.
-        ballots = py_str_const(read_source(BALLOTS_SOURCE), 'ROW_SK_PREFIX', BALLOTS_SOURCE)
-        projects = py_str_const(read_source(PROJECTS_SOURCE), 'ROW_SK_PREFIX', PROJECTS_SOURCE)
-        assert ballots == projects, (
-            f'ROW_SK_PREFIX differs: {ballots!r} vs {projects!r}. The existence '
-            f'check would look rows up under a key nothing writes.'
-        )
+    def test_both_writers_take_the_keys_from_their_one_home(self):
+        # Anonymous ballots under another partition or prefix would be written where the
+        # aggregate never reads (`_parse_ballot_sk` skips an unknown prefix), and the session-open
+        # existence check (#342) would look rows up under a key nothing writes.
+        names = ('PRIORITIZATION_PK', 'BALLOT_SK_PREFIX', 'ROW_SK_PREFIX')
+        for where in (BALLOTS_SOURCE, PROJECTS_SOURCE):
+            assert_imported_not_defined(read_source(where), 'shared.prioritization_keys', names, where)
 
     def test_both_build_the_sort_key_in_the_same_shape(self):
         # The reader splits on the LAST '#', so the shape — prefix, ROW id, '#',

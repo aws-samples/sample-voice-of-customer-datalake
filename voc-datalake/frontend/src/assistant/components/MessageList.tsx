@@ -13,7 +13,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, FilePlus2, Loader2, Paperclip } from 'lucide-react'
+import { Check, CircleStop, Copy, FilePlus2, Loader2, Paperclip, RotateCcw } from 'lucide-react'
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
@@ -84,18 +84,40 @@ function useSaveAsDocument(projectId: string | undefined) {
   return { state, save }
 }
 
-function AnswerActions({ text, page }: Readonly<{ text: string; page: PageContext }>) {
+/** The Stopped marker of an answer the user stopped (also after a reload: `metadata.voc.stopped`). */
+function StoppedMarker() {
+  const { t } = useTranslation('assistant')
+  return (
+    <p className="mt-1 flex items-center gap-1 text-[12px] text-muted">
+      <CircleStop size={12} aria-hidden />
+      {t('message.stopped')}
+    </p>
+  )
+}
+
+function RegenerateButton({ onRegenerate }: Readonly<{ onRegenerate: () => void }>) {
+  const { t } = useTranslation('assistant')
+  return (
+    <button type="button" onClick={onRegenerate} className="btn btn-ghost btn-sm">
+      <RotateCcw size={12} aria-hidden />
+      {t('message.regenerate')}
+    </button>
+  )
+}
+
+function AnswerActions({ text, page, onRegenerate }: Readonly<{ text: string; page: PageContext; onRegenerate?: () => void }>) {
   const { t } = useTranslation('assistant')
   const { copy, copiedKey } = useCopyToClipboard()
   const projectId = page.kind === 'project' ? page.projectId : undefined
   const { state, save } = useSaveAsDocument(projectId)
-  if (text.trim() === '') return null
+  if (text.trim() === '') return onRegenerate === undefined ? null : <div className="mt-1 flex items-center gap-1"><RegenerateButton onRegenerate={onRegenerate} /></div>
   return (
     <div className="mt-1 flex items-center gap-1">
       <button type="button" onClick={() => copy(text)} className="btn btn-ghost btn-sm">
         {copiedKey === null ? <Copy size={12} aria-hidden /> : <Check size={12} aria-hidden />}
         {copiedKey === null ? t('message.copy') : t('message.copied')}
       </button>
+      {onRegenerate !== undefined && <RegenerateButton onRegenerate={onRegenerate} />}
       {projectId !== undefined && (
         <button
           type="button"
@@ -138,8 +160,10 @@ function nothingToShow(texts: readonly string[], lists: readonly (readonly unkno
   return texts.every((value) => value === '') && lists.every((list) => list.length === 0) && blocks.every((block) => block === undefined)
 }
 
-function AssistantBubble({ message, thread, page, isStreaming, navigation, toolCalls }: Readonly<{
+function AssistantBubble({ message, thread, page, isStreaming, navigation, toolCalls, onRegenerate }: Readonly<{
   message: AssistantMessage
+  /** Present on the last answer of a settled thread: answer the question again. */
+  onRegenerate?: () => void
   /** The tool steps to show above this message (groupedToolCalls). */
   toolCalls: readonly ToolCall[]
   thread: ThreadState
@@ -153,8 +177,9 @@ function AssistantBubble({ message, thread, page, isStreaming, navigation, toolC
   const sources = ownEntry(thread.sources, message.id)
   const personas = personaResponsesFor(message, thread)
   const plans = approvedPlanIds(message.toolCalls ?? [], thread)
+  const stopped = ownEntry(thread.stopped, message.id) === true ? true : undefined
   // A tool-only turn whose steps show on the group's first message renders nothing (no empty gap).
-  if (nothingToShow([text, reasoning], [toolCalls, personas, plans], [sources, navigation])) return null
+  if (nothingToShow([text, reasoning], [toolCalls, personas, plans], [sources, navigation, stopped, onRegenerate])) return null
   return (
     <div className="flex justify-start">
       <div className="w-full max-w-[95%] min-w-0">
@@ -169,7 +194,8 @@ function AssistantBubble({ message, thread, page, isStreaming, navigation, toolC
         )}
         {sources !== undefined && <SourcesBlock sources={sources} />}
         {navigation !== undefined && <NavigationChips items={navigation} />}
-        {!isStreaming && <AnswerActions text={text} page={page} />}
+        {stopped && <StoppedMarker />}
+        {!isStreaming && <AnswerActions text={text} page={page} onRegenerate={onRegenerate} />}
       </div>
     </div>
   )
@@ -206,22 +232,51 @@ function addToRun(shown: Map<string, ToolCall[]>, run: { lead: string | null }, 
   if ((message.content ?? '') !== '') run.lead = null
 }
 
-function MessageRow({ message, thread, page, isStreaming, navigation, toolCalls }: Readonly<{
+function MessageRow({ message, thread, page, isStreaming, navigation, toolCalls, onRegenerate }: Readonly<{
   message: Message
   thread: ThreadState
   page: PageContext
   isStreaming: boolean
   navigation: readonly NavigationSuggestion[] | undefined
   toolCalls: readonly ToolCall[]
+  onRegenerate?: () => void
 }>) {
   if (message.role === 'user') return <UserBubble message={message} />
   if (message.role === 'assistant') {
-    return <AssistantBubble message={message} thread={thread} page={page} isStreaming={isStreaming} navigation={navigation} toolCalls={toolCalls} />
+    return (
+      <AssistantBubble
+        message={message} thread={thread} page={page} isStreaming={isStreaming} navigation={navigation} toolCalls={toolCalls}
+        onRegenerate={onRegenerate}
+      />
+    )
   }
   return null
 }
 
-export default function MessageList({ thread, page }: Readonly<{ thread: ThreadState; page: PageContext }>) {
+/**
+ * The answer Regenerate sits on: the last assistant message with text in the last turn (else its
+ * last assistant message), once the thread has settled (idle or failed, no approval open).
+ * Regenerate is offered for the last answer only, as chat UIs do: an earlier one would orphan
+ * every turn after it. The turn may END on a tool message (5.35.03, e2e 5.35.02: an answer that
+ * closed with a suggest_navigation call had Copy but no Regenerate), so the thread's last message
+ * is not necessarily the answer.
+ */
+function regenerableAnswerId(thread: ThreadState): string | undefined {
+  if (thread.status !== 'idle' && thread.status !== 'error') return undefined
+  if (thread.pendingInterrupts.length > 0) return undefined
+  const newestFirst = [...thread.messages].reverse()
+  const turn = newestFirst.slice(0, Math.max(0, newestFirst.findIndex((m) => m.role === 'user')))
+  const answers = turn.filter((m): m is AssistantMessage => m.role === 'assistant')
+  const withText = answers.find((m) => (m.content ?? '') !== '')
+  return (withText ?? answers.at(0))?.id
+}
+
+export default function MessageList({ thread, page, onRegenerate }: Readonly<{
+  thread: ThreadState
+  page: PageContext
+  /** Answer the last question again (runtime `regenerate`); absent = not offered. */
+  onRegenerate?: () => void
+}>) {
   const { t } = useTranslation('assistant')
   const endRef = useRef<HTMLDivElement>(null)
   const streaming = thread.status === 'streaming'
@@ -229,6 +284,7 @@ export default function MessageList({ thread, page }: Readonly<{ thread: ThreadS
   const last = thread.messages.at(-1)
   const chips = useMemo(() => navigationAtTurnEnd(thread.messages, thread.navigation), [thread.messages, thread.navigation])
   const toolCalls = useMemo(() => groupedToolCalls(thread.messages), [thread.messages])
+  const regenerateId = onRegenerate === undefined ? undefined : regenerableAnswerId(thread)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
@@ -245,6 +301,7 @@ export default function MessageList({ thread, page }: Readonly<{ thread: ThreadS
           isStreaming={streaming && m.id === thread.lastAssistantId}
           navigation={ownEntry(chips, m.id)}
           toolCalls={toolCalls.get(m.id) ?? []}
+          onRegenerate={m.id === regenerateId ? onRegenerate : undefined}
         />
       ))}
       {streaming && last?.role !== 'assistant' && (

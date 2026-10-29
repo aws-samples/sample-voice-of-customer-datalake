@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from shared.ids import write_with_fresh_id
+from shared.timestamps import now_iso
 
 PROJECT_DELETION_ATTRIBUTE = 'deletion_started_at'
 PROJECT_DELETING_STATUS = 'deleting'
@@ -137,7 +138,7 @@ def put_project_item_and_increment(
 ) -> None:
     """Atomically create one child and increment its project META count."""
     table_name = projects_table_name(table)
-    now = str(item.get('created_at') or datetime.now(UTC).isoformat())
+    now = str(item.get('created_at') or now_iso())
     table.meta.client.transact_write_items(TransactItems=[
         {
             'Put': {
@@ -177,11 +178,10 @@ def create_counted_project_child(
     project_id: str,
     prefix: str,
     build_item: Callable[[str], dict[str, Any]],
-    count_attribute: str,
     *,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Mint a ``prefix`` id, build the child from it, put it and bump the count.
+    """Mint a ``prefix`` id, build the document from it, put it and bump the project's ``document_count``.
 
     A same-id row already in the partition (a same-second create) is retried
     once with a fresh id; a refused project-writable check is not. ``now`` is the
@@ -189,7 +189,7 @@ def create_counted_project_child(
     """
     def write(child_id: str) -> dict[str, Any]:
         item = build_item(child_id)
-        put_project_item_and_increment(table, project_id, item, count_attribute)
+        put_project_item_and_increment(table, project_id, item, 'document_count')
         return item
 
     return write_with_fresh_id(prefix, write, put_index=PUT_AND_INCREMENT_PUT_INDEX, now=now)

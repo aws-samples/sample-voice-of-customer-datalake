@@ -66,6 +66,10 @@ run (see [Backfill across runs](#backfill-across-runs)).
    line, so a reply cut off at the output cap keeps every complete line; the chunks' reviews are merged and a
    review read twice (same text and date) is kept once. Every review is validated (text 1-5,000 characters,
    rating 1-5 or none, an ISO date or none); lines that fail are dropped. At most 400 reviews per page.
+   Text and title are queued as plain text: markdown escapes (`situation\.On`) and `**` markers are removed and an
+   escaped full stop that glued two sentences gets its space back (`review_text.py`; the same rules display older
+   stored reviews cleanly in the app and the assistant, `schemas/review-text-cleanup-cases.json`; stored data is
+   not rewritten).
 4. **Items.** `id` = `web_` + sha256(host, text, date): the same review read again gets the same id, so the
    processor deduplicates it. `created_at` is the review's date (else the import time), `url` the page it was
    read on, `channel` the target's name, `author` / `title` when the page has them, `metadata` = the target name

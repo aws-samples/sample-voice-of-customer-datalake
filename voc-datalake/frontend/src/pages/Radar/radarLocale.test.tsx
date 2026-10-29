@@ -14,20 +14,21 @@ import radarPl from '../../../public/locales/pl/radar.json'
 import dashboardPl from '../../../public/locales/pl/dashboard.json'
 import BrandSentiment from './BrandSentiment'
 import CompareTable from './CompareTable'
-import { normalizeRadarCompare, normalizeRadarDetail } from '../../api/radarSchema'
+import { normalizeRadarPage } from '../../api/radarSchema'
 
 const side = (volume: number) => ({ volume, positive_share: 0.5, negative_share: 0.2 })
 const row = (category: string, theirs: number, ours: number) => ({ category, theirs: side(theirs), ours: side(ours), verdict: 'similar' })
 
 /** Polish needs four forms: 1 opinia · 2–4, 22–24 opinie · 5–21, 25… opinii. */
-const COMPARE = normalizeRadarCompare({ ours_available: true, categories: [
-  row('delivery', 4, 23), row('pricing', 2, 5), row('support', 1, 22),
-] })
-
-const DETAIL = defined(normalizeRadarDetail({
-  brand: { key: 'acme', label: 'Acme', domains: ['acme.example'] }, total: 3, avg_sentiment: 0.08,
-  trend: [], love: [], hate: [],
-}) ?? undefined, 'radar detail fixture')
+const PAGE = normalizeRadarPage({
+  compare: { ours_available: true, categories: [row('delivery', 4, 23), row('pricing', 2, 5), row('support', 1, 22)] },
+  detail: {
+    brand: { key: 'acme', label: 'Acme', domains: ['acme.example'] }, total: 3, avg_sentiment: 0.08,
+    trend: [], love: [], hate: [],
+  },
+})
+const COMPARE = PAGE.compare
+const DETAIL = defined(PAGE.detail ?? undefined, 'radar detail fixture')
 
 describe('Radar in Polish', () => {
   useLocale('pl', { radar: radarPl, dashboard: dashboardPl })

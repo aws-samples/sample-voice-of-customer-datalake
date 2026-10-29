@@ -65,7 +65,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── prompts.py            # Prompt management utilities
     │   │   ├── scraper_run_errors.py # Read-time redaction of stored scraper-run errors
     │   │   └── url_policy.py         # Outbound URL policy for scraper fetches (SSRF guard, #244)
-    │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 15 handlers
+    │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 20 handlers
     │   │   ├── metrics_handler.py        # /feedback/*, /metrics/* (read-only queries)
     │   │   ├── feedback_edit_handler.py  # PUT /feedback/{id}/category (the only feedback write route)
     │   │   ├── memory_handler.py         # /memory/* (company + personal memory)
@@ -83,6 +83,9 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── logs_handler.py           # /logs/* (system logs)
     │   │   ├── manual_import_handler.py  # /scrapers/manual/* (admin-only paste/CSV/JSON import)
     │   │   ├── s3_import_handler.py      # /s3-import/* (admin-only S3 import bucket explorer)
+    │   │   ├── engagement_handler.py     # /participants/*, /feature-requests/* (feedback boards), POST /unsubscribe (routers in shared/*_routes.py)
+    │   │   ├── ballots_handler.py        # /voting-sessions/* (room votes on a Prioritization row; config + submit are public)
+    │   │   ├── radar_handler.py          # /radar/* (other brands' reviews, docs/radar.md)
     │   │   ├── manual_import_processor.py # Manual import processing logic
     │   │   ├── projects.py               # Projects business logic (shared)
     │   │   └── prompts/                  # LLM prompt templates (6 templates)
@@ -94,8 +97,10 @@ voice-of-customer-datalake/       # Root repository
     │   │       └── research-analysis.json
     │   ├── stream/                   # Unified AI assistant Lambda (TypeScript, esbuild) — AG-UI 1.0 SSE at /chat/stream via API Gateway
     │   └── layers/
-    │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4
-    │       └── processing-deps/      # Layer: aws-lambda-powertools
+    │       ├── ingestion-deps/       # Layer: requests, aws-lambda-powertools, beautifulsoup4, app-review scrapers
+    │       ├── processing-deps/      # Layer (ApiDepsLayer + ProcessingDepsLayer): aws-lambda-powertools, pydantic, requests
+    │       ├── signing-deps/         # Layer: cryptography, only for the 5 functions that sign CloudFront URLs
+    │       └── email-intake-deps/    # Layer: lxml, only for the (opt-in) inbound-email intake
     ├── plugins/                      # Data source plugins
     │   ├── _shared/                  # Shared plugin utilities
     │   ├── _template/                # Template for new plugins
@@ -111,7 +116,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   └── projectQueryKeys.ts # Query keys shared across features
     │   │   ├── assistant/            # Unified AI assistant (AG-UI client, thread reducer, sessions, approvals, panel UI)
     │   │   ├── services/auth.ts      # Cognito authentication service
-    │   │   ├── components/           # Each component in its own folder with index.tsx (23 total)
+    │   │   ├── components/           # Each component in its own folder (58 folders; a selection below)
     │   │   │   ├── AdminRoute/           # Admin-only route wrapper
     │   │   │   ├── Breadcrumbs/          # Navigation breadcrumbs
     │   │   │   ├── CategoriesManager/    # Category management UI
@@ -130,7 +135,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   ├── TimeRangeSelector/    # Date range picker
     │   │   │   ├── UserAdmin/            # User administration
     │   │   │   └── UserProfileModal/     # User profile modal
-    │   │   ├── pages/                # Each page in its own folder (14 total)
+    │   │   ├── pages/                # Each page in its own folder (25 folders; a selection below)
     │   │   │   ├── Categories/       # Category breakdown and analysis
     │   │   │   ├── Chat/             # Full-page view of the unified AI assistant
     │   │   │   ├── Dashboard/        # Overview with charts and social feed
@@ -198,6 +203,8 @@ voice-of-customer-datalake/       # Root repository
 | `voc-memory` | `MEM#company\|MEM#user#{sub}`, `MEMEVT#{id}`, `MEMCURSOR`, `MEMIMPORT` | `MEM#{id}`, `{iso}#{n}`, `SESSION#{id}`, `{import_id}` | Memories (index `gsi1-by-memory-status`), audit, extraction cursors, imports — kept while the platform runs (no TTL), deleted with the stack (docs/memory.md) |
 | `voc-agents` | `AGENT#{id}`, `WORKFLOW#{id}`, `RUN#{run_id}`, `PLAN#{plan_id}` | `META\|RUN#{run_id}`, `REV#{n}\|CURRENT`, `EVT#{seq}\|MATE#{role}#{seq}`, `META\|STEP#{id}\|EVT#{seq}` | Agents, versioned workflows, runs + journal, approved assistant plans + steps (index `gsi1-by-agents-listing`, plans under `PLANS#{approver_sub}`) — kept while the platform runs (no TTL), deleted with the stack (docs/autonomous-agents.md) |
 | `voc-radar` | `SETTINGS#radar`, `RELEASE#{brand}`, `RADAR#{brand}#…` | `brands` (the brand list `{brands: [{label, domains}]}`), `config` (scan settings), … | OTHER brands' reviews, counters and releases, kept out of our numbers (layout `lambda/shared/radar_store.py`, docs/radar.md) |
+| `voc-participants` | `PERSON#{id}`, `EMAIL#{sha}`, `LIST#{id}`, `PROJECT#{id}`, `ASK#{id}`, `TOKEN#{sha}`, `SETTINGS`, `SENDCOUNT#{day}` | `META`, `LIST#…`, `MEMBER#…`, `RCPT#…`, `RESPONSE\|UNSUB`, `engagement`, `COUNT` | People to ask for feedback, lists, project links, asks + recipients, email tokens (sha256 only), engagement settings (company domains) — layout `lambda/shared/participants_*.py`, docs/participants.md |
+| `voc-feature-requests` | `BOARD#{id}`, `SLUG#{slug}`, `FR#{id}`, `RATE#{board}#{hash}#{day}` | `META`, `BOARD`, `META\|SUP#{id}`, `COUNT` | Feedback boards (template, fields, statuses, audience; gsi1pk `BOARDS`), slug guards, requests (`board_id` absent = seeded `brd_sales`; `fields`, totals per template, status, promoted project; gsi1pk `FRS`) and supports (+1 field values), `anyone`-board rate counters (`ttl`) — docs/feature-requests.md |
 
 ## API Endpoints
 
@@ -209,6 +216,7 @@ voice-of-customer-datalake/       # Root repository
 | GET | `/feedback/{id}/similar` | Get similar feedback items |
 | GET | `/feedback/access` | The caller's scope `{all, categories, sources_all, sources, source_rule: all\|allow\|deny, sources_denied}` |
 | GET | `/feedback/urgent` | Get high-urgency items |
+| GET | `/feedback/problems` | The Problem Analysis tree over the whole window (docs/problem-analysis.md): the header's `days` + `date_basis` like every route; ≤ 100,000 slim rows, ≤ 1,000 problems listed (`problems_truncated`); answers `window` + `type_counts` |
 | GET | `/feedback/entities` | Keywords, categories, issues, `channels`, `tags`, `dimensions` for filters |
 | GET | `/metrics/summary` | Dashboard summary metrics |
 | GET | `/metrics/sentiment` | Sentiment breakdown |
@@ -218,8 +226,10 @@ voice-of-customer-datalake/       # Root repository
 | GET | `/metrics/dimensions` | `?key=<dim>`: per-value counts + sentiment split, `unassigned` (docs/dimensions.md) |
 | GET | `/metrics/github` | GitHub Issues per release and per label (counts, 👍 weight, sentiment, top complaints, new since the last release); `/feedback` also takes `version` and `label` filters |
 
-`days` is 0–9999 everywhere; `0` = all time. Every route that takes `source` also
-takes `channel`, `dims=key:value,…` (400 when malformed) and `tag`. Every route enforces the caller's
+`days` is 0–9999 everywhere; `0` = all time. A review-date window's cutoff is the REQUESTED window
+(none for all time), never the import history the walk is clamped to. Every route that takes `source` also
+takes `channel`, `dims=key:value,…` (400 when malformed; `key:a|b` = either value, `~unset` = no value), `tag`, `rating_min`/`rating_max` and `urgent=1`
+(only high-urgency items; the Categories page's breakdowns send its rating and urgent filters). Every route enforces the caller's
 category access (no `CATEGORY_ACCESS` row = all; admins and a category's owners
 always see it) AND source access (no `sources` = every non-`restricted` source;
 a hidden source forces the item path); `/feedback/{id}` and `/similar` answer 404 when forbidden.
@@ -240,6 +250,7 @@ Per-day walks stop on a time budget and say so (`is_partial`, `partial_reason:
 | POST | `/chat/conversations/{id}` | Save session; body `kind:'assistant'` (+ `baseRevision`) → validated JSON blobs, 400 on bad/mismatched id, 409 while the server run is live or its revision is newer, 413 over ~350 KB (no `kind` = legacy save) |
 | DELETE | `/chat/conversations/{id}` | Delete conversation |
 | PUT | `/chat/conversations/{id}/title` | Rename (title only; `custom_title` survives later saves and runs; 409 while a run is live) |
+| POST | `/chat/conversations/{id}/cancel` | Stop `{runId}`: writes the `RUNCANCEL#{id}` marker (TTL 1 day) the running stream Lambda polls; it stops generating and saves the partial answer as `stopped` |
 
 Every route is scoped to `USER#{cognito sub}`. The assistant itself streams at
 `POST /chat/stream` (`voc-chat-stream`, TypeScript): AG-UI `RunAgentInput` in,
@@ -249,7 +260,7 @@ AG-UI events out; read-only server tools, human-approved client-tool writes.
 conversation (user turn + the in-progress answer, tool calls/results trimmed) to the
 SAME assistant item, in the caller's own `USER#{verified sub}` partition (enforced in
 code: `lambda/stream/src/assistant/session/`), adding `run_id`, `run_status`
-(`running|finished|failed|interrupted`) and `revision` (grows only). Writes are
+(`running|finished|failed|interrupted|stopped`) and `revision` (grows only). Writes are
 throttled (every 2 s / 2,000 chars, at tool boundaries, at the end), ordered,
 fire-and-forget, capped at ~350 KB, and the run completes without a client. GET/list
 return `runStatus`/`runId`/`revision`; a `running` record older than
@@ -257,14 +268,28 @@ return `runStatus`/`runId`/`revision`; a `running` record older than
 "still generating" and polls GET until it ends. The server owns the answer: a POST
 carries `baseRevision` (from the stream's `assistant.session` event or a GET) and is
 refused **409** while the run is live or when the stored revision is newer; the SPA
-then adopts the server copy.
+then adopts the server copy. **Stop** (5.35): the browser's abort does not end the stream Lambda, so Stop
+also calls `POST .../cancel {runId}`; the run polls that marker (`session/cancel.ts`, every 1.5 s),
+aborts its Bedrock stream, starts no further turn and saves `stopped` with `metadata.voc.stopped` on
+the answer (the SPA shows a Stopped marker, also after a reload). The last answer of a settled thread
+has **Regenerate** (drops it and re-runs the question), also when the turn ends on a tool call; after Stop
+the SPA sends no save of its own (it would be refused 409) and adopts the server's `stopped` copy. Every
+user turn's `<context>` block names the page it was sent from. The assistant's page context carries the
+Categories / Problem Analysis URL filters as `page.filters` (`PAGE_FILTER_KEYS`; values in the
+`<context>` data block), and `search_feedback` takes an explicit `days`.
+**Mentions** (5.46, docs/assistant-mentions.md): on a project page the composer's `@` / `#` lists put
+`forwardedProps.mentions = {personas?: [ids] | 'all', documents?: [{document_id, version?}]}` (≤ 6 / ≤ 3,
+`mentionsSchema`, lockstepped; refused off a project page). Before the model's turn the stream runs a persona
+round (`runtime/persona-round.ts`): one `consult_personas` call per persona (ids `mention_…`, one assistant
+message, review only, grounded on the tagged documents), then a `<mentions>` data block for a short synthesis.
+`consult_personas` takes `document_ids` (≤ 3). Persona results are stored JSON-safe (32,000 chars,
+`session/persona-result.ts` = SPA `sessions/personaResult.ts`), so the cards survive a reload.
 
 ### Integrations (integrations_handler.py)
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/integrations/status` | Integration status |
 | PUT | `/integrations/{source}/credentials` | Update credentials |
-| POST | `/integrations/{source}/test` | Test integration |
 | GET | `/sources/status` | Source schedule status |
 | PUT | `/sources/{source}/enable` | Enable source (also closes a tripped circuit breaker) |
 | PUT | `/sources/{source}/disable` | Disable source |
@@ -280,6 +305,7 @@ breaker's state lives in voc-aggregates (`CIRCUIT#<plugin>` / `TRIPPED`).
 | POST | `/scrapers` | Save scraper config (admin); optional `radar_brand` (a Radar brand key) makes it a Radar source |
 | DELETE | `/scrapers/{id}` | Delete scraper (admin) |
 | GET | `/scrapers/templates` | Get scraper templates |
+| GET | `/scrapers/connectors` | iOS / Android app connectors and Web Reviews pages with their `radar_brand` (read-only, any signed-in user; the assistant's `list_scrapers` reads it, docs/radar.md) |
 | POST | `/scrapers/{id}/run` | Trigger scraper run (admin) |
 | GET | `/scrapers/{id}/status` | Latest run (errors redacted) |
 | POST | `/scrapers/analyze-url` | AI selector detection (admin) → 202 `{success, job_id, status:'pending'}` (assist job, below) |
@@ -289,14 +315,14 @@ Every scraper write and analyze-url is admin-only (owner decision 2026-10-08: th
 shared API-credentials secret, drive scheduled scraping and spend Bedrock); the reads stay open to
 every signed-in user. MCP tokens and agents are never admin. See `docs/scrapers.md`.
 
-**Assist jobs (4.00.00).** No model call sits on a 29 s REST path. Seven routes do their 4xx checks
+**Assist jobs (4.00.00).** No model call sits on a 29 s REST path. Six routes do their 4xx checks
 synchronously, then write a pending row in voc-jobs (`lambda/shared/assist_jobs.py`, TTL 1 day),
 async-invoke their API Lambda's 15-minute twin (`voc-projects-assist`, `voc-settings-assist`,
 `voc-scrapers-assist`: same code and role, `lib/stacks/api-assist-workers.ts`) and answer **202**
 `{success, job_id, status:'pending'}`. Poll until `status` is `completed` (`result`) or `failed` (`error`):
 `POST /settings/categories/generate` → `GET /settings/jobs/{job_id}`; `POST /scrapers/analyze-url` →
 `GET /scrapers/jobs/{job_id}` (both owner-only, pk `ASSIST#{sub}`); and `POST /projects/{id}/prfaq-autofill`,
-`/documents/suggest-brief`, `/research/suggest-questions`, `/product-context/interview`,
+`/documents/suggest-brief`, `/research/suggest-questions`,
 `/personas/{pid}/regenerate-avatar` → `GET /projects/{id}/jobs/{job_id}` (pk `PROJECT#{id}`, view access;
 `GET /projects/{id}/jobs` hides `assist_*`). The SPA polls via `frontend/src/api/assistJobs.ts`.
 
@@ -320,9 +346,9 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 |--------|------|-------------|
 | GET | `/settings/brand` | Get brand configuration (any signed-in user) |
 | PUT | `/settings/brand` | Save brand configuration — admin-only (owner decision 2026-10-08, #242); the Admin page's brand form is read-only for non-admins |
-| GET | `/settings/model` | Per-surface model overrides + allowlist (any signed-in user — the agent detail Models tab reads it; NOT admin-gated, pending an owner decision on that caller) |
-| POST | `/settings/model/test` | Test one model `{model_id}` (admin; 400 unless allowlisted): ONE minimal Converse to exactly that model, no fallback → `{model_id, invoked_id, status: available\|no_access\|not_in_region\|no_capacity\|throttled\|not_ready\|unavailable\|error, ok, latency_ms, message, quota, checked_at}` (`shared/model_capacity.py`) |
-| GET | `/settings/model/capacity` | Every allowlisted model's tokens-per-minute quota from Service Quotas `{models: [{model_id, label, quota}]}` (admin; no model call, cached 10 min) |
+| GET | `/settings/model` | Per-surface model overrides + allowlist + `image_model: {id, label, region, avatars_enabled}` (the fixed persona-avatar model, `shared/image_model_status.py`) (any signed-in user — the agent detail Models tab reads it; NOT admin-gated, pending an owner decision on that caller) |
+| POST | `/settings/model/test` | Test one model `{model_id}` (admin; 400 unless allowlisted or the image model): ONE minimal Converse to exactly that model, no fallback (the image model: ONE small image, nothing stored, a few cents) → `{model_id, invoked_id, status: available\|no_access\|not_in_region\|no_capacity\|throttled\|not_ready\|unavailable\|error, ok, latency_ms, message, quota, checked_at}` (`shared/model_capacity.py`) |
+| GET | `/settings/model/capacity` | Every allowlisted model's tokens-per-minute quota from Service Quotas `{models: [{model_id, label, quota}], image: {…image_model, access: {status: available\|no_access\|not_subscribed\|not_in_region\|unknown, …}, quota: {name, value, unit: 'requests_per_minute'}\|null, quota_state: fresh\|stale\|pending\|unknown}}` (admin; no model call; stored in aggregates `SETTINGS#model_quotas`, 10 min in memory; older than 1 h it answers at once with `quota.stale: true` while the `voc-settings-assist` twin re-reads it by quota code (async `model_quota_refresh`); also stale on a Service Quotas throttle; the image quota lives in `SETTINGS#image_model_quota`, refreshed by the twin via `image_model_quota_refresh` — docs/deployment.md) |
 | GET | `/settings/categories` | Get category configuration |
 | PUT | `/settings/categories` | Save category configuration — admin-only; categories carry `product` + `owners` |
 | POST | `/settings/categories/generate` | AI-generate categories — admin-only (Bedrock spend; owner decision 2026-10-08, #242); the AI panel is hidden for non-admins. 202 + assist job (see Scrapers → Assist jobs) |
@@ -330,7 +356,7 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 | POST | `/settings/categories/reprocess` | Start a reprocess job `{mode: processed\|raw\|dimensions, days, include_manual?}` (admin) → 202 `{job}`, 409 if one is active |
 | GET | `/settings/categories/reprocess` | Latest reprocess job |
 | POST | `/settings/categories/reprocess/{job_id}/cancel` | Cancel a reprocess job |
-| GET/PUT | `/settings/dimensions` | Dimensions config (GET any user, PUT admin) — docs/dimensions.md |
+| GET/PUT | `/settings/dimensions` | Dimensions config (GET any user, PUT admin); the built-in `feedback_type` (`shared/feedback_types.py`) is listed first with `builtin: true` and never stored — docs/dimensions.md |
 | GET/PUT | `/settings/sources` | Source profiles (admin full; others `{id, label, restricted}`; PUT admin) — docs/source-policies.md |
 | POST/GET | `/settings/erasure` | Start an erasure `{field, value, source?}` → 202 `{job}` (async `voc-retention`; value only hashed) / list jobs (admin) |
 | GET | `/settings/my-onboarding` | The caller's onboarding-buddy preference `{state, hidden_until, visible, start_page, guide, subscribe_prompt, dismissed_decision_runs}` + first-run `signals` (self only) |
@@ -350,6 +376,8 @@ Every mutating route in `lambda/api/*_handler.py` is listed as ADMIN_ONLY (struc
 | POST | `/users/{username}/reset-password` | Reset password |
 | GET | `/users/{username}/category-access` | A user's category access (admin) |
 | PUT | `/users/{username}/category-access` | Set it: `{categories: ['*'] \| [names], sources?: ['*'] \| [ids] \| null}` (admin; omitted = unchanged, null = default rule) |
+| PUT | `/users/{username}/flags` | `{fallback_owner?, memory_reviewer?, ai_mode?: human_driven\|ai_assisted\|ai_driven, ai_writing_prfaq?, ai_writing_prd?}` (admin; the way of working is its own row `USERFLAGS#{sub}`/`ai_mode`, docs/ways-of-working.md) |
+| GET | `/users/me/ai-mode` | The caller's own way of working `{mode, ai_writing_prfaq, ai_writing_prd}` (any signed-in user, no-store; no row = `ai_driven`) |
 
 AI assistant on `/settings` (page kind `settings`, pack `settings` — an ADMIN-ONLY pack, dropped for
 non-admins; every tool below is also on the per-tool admin lists and refused before any card): reads
@@ -456,6 +484,13 @@ tools and refuses a project write aimed at it before any approval card; REST
 re-checks edit on approval. Sharing/visibility/membership/ownership are never
 assistant tools.
 
+PR/FAQ and PRD AI writing also follows the person's way of working with AI
+(Human-driven / AI-assisted / AI-driven, `shared/ai_writing.py`, docs/ways-of-working.md):
+generate, pursue, merge into prfaq/prd, prfaq-autofill and suggest-brief are 403 unless
+allowed; an agent / plan step / MCP token (autonomous) also needs AI-driven for the
+project owner, and for PUT/restore of a PR/FAQ / PRD. The assistant coaches instead of
+writing for a Human-driven person.
+
 Owner and member `email` (and `owner_email`) appear in project list/get and
 `GET /projects/{id}/members` only for `can_manage` callers (owner/admin).
 
@@ -468,6 +503,7 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | DELETE | `/projects/{id}` | Delete project (manage) |
 | POST | `/projects/{id}/personas/generate` | Generate personas from feedback |
 | POST | `/projects/{id}/research` | Run research job (Step Functions) |
+| POST | `/projects/{id}/documents` | Create a custom document, or a hand-written PR/FAQ / PRD from a blank template (`document_type: prfaq\|prd`, `{title, content?, create_id?}`, `origin: human`) |
 | — | (project chat) | Now the unified AI assistant at `POST /chat/stream` with `forwardedProps.page.projectId` |
 | PUT | `/projects/{id}/visibility` | Set public/private (manage) |
 | GET | `/projects/{id}/members` | Owner, members, caller's access (view) |
@@ -480,15 +516,49 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | POST | `/projects/{id}/prototypes/{document_id}/pins/{pin_id}/replies\|resolve\|reopen` | Pin thread reply / resolve / reopen (edit) |
 | POST | `/projects/{id}/prototypes/{document_id}/pins/addressed\|resolve` | Batch: mark pins addressed by a revision / resolve addressed pins (edit; used by agents) |
 
+### Document comments and review links (`shared/document_review_routes.py`, included by projects_handler.py) — docs/document-review.md
+| Method | Path | Description |
+|--------|------|-------------|
+| GET/POST | `/projects/{id}/documents/{doc}/comments` | A PR/FAQ / PRD series' threads + its review link + `can_edit` / new thread `{text, anchor?}` (view: a viewer may comment) |
+| POST/DELETE | `/projects/{id}/documents/{doc}/comments/{cid}[/replies\|/resolve\|/reopen]` | Reply (≤ 50), resolve, reopen (view); delete (author or edit) |
+| GET/POST/DELETE | `/projects/{id}/documents/{doc}/share` | The series' review link (view) / create `{audience?, expires_in_days?}` (edit; one active per series) / turn off (edit) |
+| POST | `/projects/{id}/documents/{doc}/persona-review` | `{persona_ids?: ≤6}` → 202 assist job `assist_persona_review` (edit; every way of working; one `documents` model call per persona; only verbatim quotes are filed) |
+| GET | `/review/{share_id}` | BOARD authorizer, throttled 10 rps / 20: the newest version + the caller's own threads |
+| POST | `/review/{share_id}/comments[/{cid}/replies]` | BOARD authorizer, throttled 10 rps / 20: a comment / reply (40 writes a day per reviewer and link, 429 `rate_limited`) |
+
+Rows (projects table): `DCOMMENTS#{project}#{series}` / `C#{id}` (threads) and `SHARE`, `DOCSHARE#{share_id}` / `META`
+(the link, `ttl`), `DCRATE#{share_id}#{email digest}` / `{day}`. Page `/review/:shareId` (outside `ProtectedRoute`).
+
+### Ballots (ballots_handler.py, `voc-ballots-api`) — room votes on one Prioritization row
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/voting-sessions` | Cognito | Open a vote for a row (edit on its project; an open vote of that row is returned instead) |
+| GET | `/voting-sessions` | Cognito | `?row_id=`: the row's open vote, or null |
+| GET | `/voting-sessions/{session_id}` | Cognito | Facilitator status (open, ballot count) |
+| POST | `/voting-sessions/{session_id}/close` | Cognito | Close the vote (revokes the ballot link) |
+| GET | `/voting-sessions/{session_id}/config` | **public** | What the ballot page shows (20 rps / 40); 410 `gone` once its row or project is deleted |
+| POST | `/voting-sessions/{session_id}/submit` | **public** | One anonymous ballot (20 rps / 40); 410 `gone` once its row or project is deleted |
+
 ### Radar (radar_handler.py, `voc-radar-api`) — all under `/radar/{proxy+}`, see docs/radar.md
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/radar/brands` | Effective brands `{brands: [{key, label, domains, origin: list\|profile, sources}]}` (the list ∪ legacy profile brands, by key) |
-| PUT | `/radar/brands` | Replace the brand list `{brands: [{label, domains?}]}` (admin; ≤ 25, ≤ 10 domains each; never deletes reviews) |
+| GET | `/radar/brands` | Effective brands `{brands: [{key, label, domains, origin: list\|profile, sources, language, effective_language, feed_urls, search_terms, exclude_terms}]}` (the list ∪ legacy profile brands, by key) |
+| PUT | `/radar/brands` | Replace the brand list `{brands: [{label, domains?, language?, feed_urls?, search_terms?, exclude_terms?}]}` (admin; ≤ 25, ≤ 10 domains, ≤ 3 feeds, ≤ 8 search / exclude terms of ≤ 60 chars each; never deletes reviews) |
 | GET | `/radar/brands/{brand}/reviews/{feedback_id}` | One Radar review for the review modal `{brand: {key, label}, review}` (404 when absent / hidden) |
 
 Scrapers, Web Reviews targets, app connectors and CSV / JSON uploads take `radar_brand: <brand key>`; their
 reviews go to `voc-radar`, never `voc-feedback`.
+
+### Participants + feedback boards (`engagement_handler.py`, `voc-engagement-api`; routers in `lambda/shared/*_routes.py`)
+| Method | Path | Description |
+|--------|------|-------------|
+| ANY | `/participants/{proxy+}` | Lists, people, project participants, asks (email via SES, async self-invoked sends), settings (Cognito app pool; list/person delete and settings PUT admin) — docs/participants.md |
+| POST | `/unsubscribe` | PUBLIC, always 200; the emailed token is the control (own stage throttle, `api-gateway.ts`) |
+| GET/POST, ANY | `/feature-requests`, `/feature-requests/{proxy+}` | Feedback boards (5.36, `shared/feature_boards_routes.py` included before `feature_requests_routes.py`): `GET/POST /feature-requests/boards` (list, seeds `brd_sales` / `sales-feature-requests` when none; create admin, 409 `slug_taken`), `GET/PUT/DELETE /feature-requests/boards/{slug_or_id}` (PUT/DELETE admin; 409 `status_in_use` / `board_not_empty`); `GET /feature-requests?board=` + `POST /feature-requests {board?, fields}` (no board = the seeded one), request/support/status/promote routes check the request's board (`board_access`, `shared/feature_boards_access.py`: app users every non-archived board, board-pool users per audience `company`/`list`/`anyone`; invisible = 404), statuses per board, fields per template (`shared/feature_board_fields.py`), `anyone` boards 429 `rate_limited`. BOARD authorizer = app pool + the board's own pool (`voc-board-user-pool`, on every deployment since 5.45.00: SES + email OTP with `-c emailFrom`, else Cognito's default email + confirmation / reset codes; never auto-confirms; PreSignUp admits an email some non-archived board would admit, from `SETTINGS`/`board_audience` + company domains in voc-participants, or an active review link `DOCSHARE#{id}`) — docs/feature-requests.md |
+
+Errors are `{success: false, error}`. A board-pool token is accepted by NO other route (the main authorizer knows only
+the app pool). Assistant tools on `/participants` (pack `participants`, card-only writes): `list_participant_lists`,
+`create_participant_list`, `add_participants` (≤ 200 rows).
 
 ### Webhooks
 | Method | Path | Description |
@@ -501,8 +571,15 @@ reviews go to `voc-radar`, never `voc-feedback`.
 ### Logs (logs_handler.py)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/logs` | Get system logs |
-| GET | `/logs/errors` | Get error logs |
+| GET | `/logs/validation` | Validation failures |
+| DELETE | `/logs/validation/{source}` | Clear one source's validation failures (admin) |
+| GET | `/logs/processing` | Processing errors |
+| GET | `/logs/scraper/{scraper_id}` | One scraper's run log |
+| GET | `/logs/summary` | Counts per source and log type |
+| GET | `/logs/system` | System errors: this deployment's Lambda ERROR/CRITICAL (`level=warning`: + WARNING) and platform lines, Step Functions failure events and API 5xx (+ telling 4xx) via Logs Insights, grouped by `source` (`lambda`/`workflow`/`api`), redacted; `days` 1–30; `running` + `query_id` to poll (admin, no-store; docs/deployment.md → System errors) |
+| GET | `/logs/system/request` | `?function=&request_id=&at=`: every line (any level) of one invocation, `at` ± 20 min, ≤ 500, oldest first; 404 for `api` / unknown; `running` + `query_id` (admin, no-store) |
+| GET | `/logs/system/queues` | Every failure queue (`OPS_ALERTS_QUEUES`): count, oldest age, ≤ 3 redacted bodies peeked with `VisibilityTimeout=0`, never deleted (admin, no-store) |
+| GET | `/logs/system/environment` | Region, account last 4, prefix, sources, web search, inference scope, image model, models per surface, alerting + alarm states, open circuits, log coverage — nothing secret (admin, no-store) |
 | GET / PUT | `/logs/alerts` | Alerting status / turn the runtime CloudWatch alarms on or off (admin) |
 | POST | `/logs/alerts/recipients` | Add an SNS email recipient (admin; pending until confirmed) |
 | POST | `/logs/alerts/recipients/remove` | Remove an email recipient (admin) |
@@ -560,8 +637,8 @@ reviews go to `voc-radar`, never `voc-feedback`.
 ### Data Explorer (data_explorer_handler.py)
 
 Admin-only on every route. Customer data is never deleted: there is **no**
-`DELETE /data-explorer/s3` or `DELETE /data-explorer/feedback` (explicit routes in
-`api-routes.ts`, no `{proxy+}`; the role holds no delete permission).
+`DELETE /data-explorer/s3` or `DELETE /data-explorer/feedback` (`/data-explorer/{proxy+}` in
+`api-routes.ts` carries GET and PUT only, no ANY or DELETE; the role holds no delete permission).
 
 | Method | Path | Description |
 |--------|------|-------------|

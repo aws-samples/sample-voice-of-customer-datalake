@@ -16,12 +16,11 @@ interface DimensionValueSelectProps {
   onChange: (value: string | undefined) => void
   /** Label of the empty option ("Any" in a filter, "None" in an editor). */
   emptyLabel: string
-  disabled?: boolean
   className?: string
 }
 
 export default function DimensionValueSelect({
-  dimension, value, parentValue, onChange, emptyLabel, disabled = false, className = 'select',
+  dimension, value, parentValue, onChange, emptyLabel, className = 'select',
 }: Readonly<DimensionValueSelectProps>) {
   const id = useId()
   return (
@@ -30,7 +29,6 @@ export default function DimensionValueSelect({
       <select
         id={id}
         value={value ?? ''}
-        disabled={disabled}
         onChange={(event) => onChange(event.target.value === '' ? undefined : event.target.value)}
         className={className}
       >

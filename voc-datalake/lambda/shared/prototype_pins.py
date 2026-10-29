@@ -44,6 +44,7 @@ from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
 from shared.exceptions import ValidationError
 from shared.prompt_safety import injection_findings
+from shared.timestamps import now_iso
 
 FORM_TYPE_PROTOTYPE_PIN = 'prototype_pin'
 
@@ -153,7 +154,7 @@ def ensure_pin_form(table: Any, project_id: str, document_id: str, title: str) -
     Conditional put, so a replayed build (same document id) neither duplicates
     nor overwrites the record — and nothing here ever deletes one.
     """
-    item = pin_form_item(project_id, document_id, title, datetime.now(UTC).isoformat())
+    item = pin_form_item(project_id, document_id, title, now_iso())
     try:
         table.put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
     except ClientError as error:
@@ -423,7 +424,7 @@ def set_status(table: Any, form_id: str, pin_id: str, status: str, *, actor: str
     Raises the ConditionalCheckFailedException when the pin is missing or in a
     state it may not move from — callers map it to 404/409.
     """
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     sets = {'status': status, 'updated_at': now, 'status_by': actor[:200], **(extra or {})}
     names = {f'#{k}': k for k in sets}
     values = {f':{k}': v for k, v in sets.items()}

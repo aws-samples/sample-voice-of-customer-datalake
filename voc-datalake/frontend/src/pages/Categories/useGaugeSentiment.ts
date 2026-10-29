@@ -9,9 +9,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { DateRangeParams } from '../../api/client'
-import type { AttributeFilters, SentimentBreakdown } from '../../api/types'
+import type { ItemFilterParams, SentimentBreakdown } from '../../api/types'
 import { sentimentHexColor } from '../../lib/sentiment'
 import type { SentimentData } from './types'
+import { metricsKeys } from '../../api/queryKeys'
 
 /** One gauge slice per label the breakdown reported. */
 export function toSentimentData(sentiment: SentimentBreakdown | undefined): SentimentData[] {
@@ -32,7 +33,7 @@ export function gaugeScopeCategory(selectedCategories: readonly string[] | undef
 interface GaugeSentimentArgs {
   readonly dateParams: DateRangeParams
   readonly source: string | undefined
-  readonly attributes: AttributeFilters
+  readonly attributes: ItemFilterParams
   /** Absent = none selected. */
   readonly selectedCategories: readonly string[] | undefined
   readonly enabled: boolean
@@ -54,7 +55,7 @@ export function useGaugeSentiment({
 }: GaugeSentimentArgs): GaugeSentiment {
   const requested = gaugeScopeCategory(selectedCategories)
   const scopedQuery = useQuery({
-    queryKey: ['sentiment', dateParams, source ?? null, attributes, { category: requested }],
+    queryKey: metricsKeys.sentiment(dateParams, source ?? null, attributes, { category: requested }),
     queryFn: () => api.getSentiment(dateParams, source, attributes, requested ?? undefined),
     enabled: enabled && requested !== null,
   })

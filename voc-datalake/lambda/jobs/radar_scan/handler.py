@@ -1,4 +1,4 @@
-"""voc-radar-scan: the Radar release scan (docs/radar.md).
+"""voc-radar-scan: the Radar news scan (docs/radar.md).
 
 Two ways in:
 
@@ -11,46 +11,53 @@ Two ways in:
 
 One scan at a time (a lock row with an expiry). Brands are scanned in
 effective order (the brand list, then legacy profile brands), at most ``max_brands``, each with an equal share of the
-``query_cap``; the scan stops early when the Lambda's time runs short. Each
-brand remembers when it was last scanned, so the next scan's date filter only
-asks for what is new.
+``query_cap``; the scan stops early when the Lambda's time runs short. Each of a
+brand's searches remembers the day it last ran, so its next date filter asks only
+for what is new to THAT search, never more than 90 days back (``windows.py``).
 
 Rows (``voc-radar``): ``RADARSCAN/LOCK``, ``RADARSCAN/LAST`` (the latest scan's
-outcome, read by the Radar page), ``RADARSCAN#{brand}/STATE``.
+outcome, read by the Radar page), ``RADARSCAN#{brand}/STATE`` (``last_scan_at``,
+``query_cursor``, where the brand's rotated query plan resumes, ``scan.py``, and
+``since_by_step``, the day each search last ran, ``windows.py``).
 
-Env: ``RADAR_TABLE``, ``AGGREGATES_TABLE``, ``WEB_SEARCH_GATEWAY_URL`` (optional).
+Sources: the AgentCore web-search gateway, Exa when an admin stored its key
+(``shared.radar_exa_key``, read once per scan) and each brand's feeds. With none of the three
+available the scan records ``web_search_unavailable`` and does nothing.
+
+Env: ``RADAR_TABLE``, ``AGGREGATES_TABLE``, ``RADAR_EXA_PARAMETER``, ``WEB_SEARCH_GATEWAY_URL`` (optional).
 """
 
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
 from jobs.radar_scan.extract import Budget, ExtractContext
-from jobs.radar_scan.scan import scan_brand
+from jobs.radar_scan.scan import ScanSources, scan_brand
+from jobs.radar_scan.windows import BrandWindow, brand_window, next_state
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 from shared.data_version import bump_radar_version
 from shared.http_utils import fetch_public_url
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger
 from shared.radar_brands import RadarBrand, effective_brands, load_brand_list
+from shared.radar_exa_key import load_exa_key
 from shared.radar_settings import cadence_interval, load_settings, per_brand_queries
+from shared.radar_store import LAST_SCAN_KEY
 from shared.source_profiles import load_source_profiles
+from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
-from shared.web_search import is_web_search_configured
+from shared.web_search import is_web_search_configured, search_web
 
 RADAR_TABLE, AGGREGATES_TABLE = (os.environ.get(name, '') for name in ('RADAR_TABLE', 'AGGREGATES_TABLE'))
 LOCK_KEY: Final = {'pk': 'RADARSCAN', 'sk': 'LOCK'}
-LAST_KEY: Final = {'pk': 'RADARSCAN', 'sk': 'LAST'}
-FIRST_SCAN_DAYS: Final = 90
 LOCK_SECONDS: Final = 16 * 60
 # Stop starting brands when less than this is left of the 15-minute budget.
 MIN_REMAINING_MS: Final = 90_000
 MAX_PAGE_FETCHES: Final = 5
-BRAND_SETTINGS_KEY: Final = {'pk': 'SETTINGS#brand', 'sk': 'config'}
 
 
 def _tables() -> tuple[Any, Any]:
@@ -73,7 +80,7 @@ def _claim_lock(table: Any, now: datetime) -> bool:
 
 
 def _due(table: Any, cadence: str, now: datetime) -> bool:
-    last = table.get_item(Key=LAST_KEY).get('Item') or {}
+    last = table.get_item(Key=LAST_SCAN_KEY).get('Item') or {}
     finished = str(last.get('finished_at') or '')
     if not finished:
         return True
@@ -84,22 +91,15 @@ def _state_key(brand: RadarBrand) -> dict[str, str]:
     return {'pk': f'RADARSCAN#{brand.key}', 'sk': 'STATE'}
 
 
-def _since(table: Any, brand: RadarBrand, now: datetime) -> str:
-    state = table.get_item(Key=_state_key(brand)).get('Item') or {}
-    last = str(state.get('last_scan_at') or '')
-    return last[:10] if last else (now - timedelta(days=FIRST_SCAN_DAYS)).date().isoformat()
-
-
-def _our_brand(aggregates: Any) -> str:
-    item = aggregates.get_item(Key=BRAND_SETTINGS_KEY).get('Item') or {}
-    name = item.get('brand_name')
-    return name.strip()[:64] if isinstance(name, str) else ''
+def _window(table: Any, brand: RadarBrand, now: datetime) -> BrandWindow:
+    """How far back each of the brand's searches looks and where its plan resumes (``windows.py``)."""
+    return brand_window(table.get_item(Key=_state_key(brand)).get('Item') or {}, now.date())
 
 
 def _record(table: Any, outcome: dict[str, Any]) -> dict[str, Any]:
     """Store the scan's outcome, then bump the Radar version once: its releases and the
     page's "last scan" line are new to the cached Radar reads (docs/caching.md)."""
-    table.put_item(Item={**LAST_KEY, **outcome})
+    table.put_item(Item={**LAST_SCAN_KEY, **outcome})
     bump_radar_version(table)
     return outcome
 
@@ -110,14 +110,13 @@ def _selected(brands: list[RadarBrand], event: dict[str, Any], max_brands: int) 
     return picked[:max_brands]
 
 
-def _scan(event: dict[str, Any], context: Any, table: Any, aggregates: Any,
-          brands: list[RadarBrand], settings: dict[str, Any]) -> dict[str, Any]:
+def _scan(event: dict[str, Any], context: Any, table: Any, brands: list[RadarBrand], settings: dict[str, Any],
+          sources: ScanSources) -> dict[str, Any]:
     now = datetime.now(UTC)
     now_iso = now.isoformat()
     selected = _selected(brands, event, settings['max_brands'])
     share = per_brand_queries(settings['query_cap'], len(selected))
     pages = Budget(MAX_PAGE_FETCHES)
-    our_brand = _our_brand(aggregates)
     totals = {'queries': 0, 'added': 0, 'merged': 0, 'brands': 0}
     for brand in selected:
         if context.get_remaining_time_in_millis() < MIN_REMAINING_MS:
@@ -125,13 +124,24 @@ def _scan(event: dict[str, Any], context: Any, table: Any, aggregates: Any,
             break
         ctx = ExtractContext(brand=brand.key, brand_label=brand.label, domains=brand.domains,
                              today=now.date(), pages=pages, fetch=fetch_public_url)
-        stats = scan_brand(brand, our_brand=our_brand, since=_since(table, brand, now), budget=Budget(share),
-                           ctx=ctx, table=table, now_iso=now_iso)
-        table.put_item(Item={**_state_key(brand), 'last_scan_at': now_iso})
+        window = _window(table, brand, now)
+        stats = scan_brand(brand, window=window, budget=Budget(share), ctx=ctx, table=table,
+                           now_iso=now_iso, sources=sources)
+        table.put_item(Item={**_state_key(brand), 'last_scan_at': now_iso, 'query_cursor': stats.cursor,
+                             'since_by_step': next_state(window, stats.ran_steps, now.date())})
         for key in ('queries', 'added', 'merged'):
             totals[key] += getattr(stats, key)
         totals['brands'] += 1
     return totals
+
+
+def _sources(brands: list[RadarBrand]) -> ScanSources | None:
+    """Web search when the gateway is deployed, Exa when a key is stored, feeds; None when none is available."""
+    search = search_web if is_web_search_configured() else None
+    exa_key = load_exa_key()
+    if search is None and not exa_key and not any(brand.feed_urls for brand in brands):
+        return None
+    return ScanSources(search=search, exa_key=exa_key)
 
 
 def handle_event(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -146,17 +156,18 @@ def handle_event(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if mode == 'scheduled' and not _due(table, settings['cadence'], now):
         return {'status': 'skipped', 'reason': 'not_due'}
     started = {'mode': mode, 'started_at': now.isoformat(), 'requested_by': str(event.get('requested_by') or '')}
-    if not is_web_search_configured():
+    sources = _sources(brands)
+    if sources is None:
         return _record(table, {**started, 'status': 'skipped', 'reason': 'web_search_unavailable',
                                'finished_at': now.isoformat()})
     if not _claim_lock(table, now):
         return {'status': 'skipped', 'reason': 'already_running'}
     try:
-        totals = _scan(event, context, table, aggregates, brands, settings)
-        return _record(table, {**started, **totals, 'status': 'completed', 'finished_at': datetime.now(UTC).isoformat()})
+        totals = _scan(event, context, table, brands, settings, sources)
+        return _record(table, {**started, **totals, 'status': 'completed', 'finished_at': now_iso()})
     except Exception:
         logger.exception('Radar scan failed')
-        _record(table, {**started, 'status': 'failed', 'finished_at': datetime.now(UTC).isoformat()})
+        _record(table, {**started, 'status': 'failed', 'finished_at': now_iso()})
         raise
     finally:
         # Released by expiring it (no DeleteItem grant on the table).

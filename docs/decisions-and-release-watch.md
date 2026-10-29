@@ -36,7 +36,7 @@ A decision is listed by `GET /projects/{id}` like any document. It is deleted wi
 (`PUT .../documents/{id}`) and version restore refuse a decision with a 400.
 
 Access follows `shared/project_access.py`: viewers see decisions; editors, the owner and admins
-create and edit them. A viewer gets no write controls in the UI.
+create, edit and delete them. A viewer gets no write controls in the UI.
 
 ### "Pursue" seeds the PR/FAQ chain
 
@@ -50,7 +50,10 @@ It is a user action and never automatic. The decision records the job as `seeded
 
 Project → **Decisions** tab (`?tab=decisions`): the list (verdict badge in a status tone,
 measures, dates, evidence links), New decision, Edit, Draft PR/FAQ, Revisit (a new decision
-prefilled from this one's title and evidence) and, for a launched decision, its release watch.
+prefilled from this one's title and evidence), Delete (after a confirm dialog; the generic document
+delete above, so a PR/FAQ it seeded is kept) and, for a launched decision, its release watch. A save
+or a delete updates the card from the write's own answer at once and then refreshes the project in
+the background, so the card never waits on (or loses to) a slower whole-project refetch.
 
 ### Opening a prefilled decision from elsewhere
 
@@ -95,7 +98,7 @@ after side is shorter.
 
 ### Route (metrics Lambda, read-only)
 
-`GET /metrics/release-watch` is an explicit Cognito resource next to `/metrics/{proxy+}`.
+`GET /metrics/release-watch` is served by the Cognito `/metrics/{proxy+}` (since 5.47.00; it had its own resource before).
 
 | Parameter | Meaning |
 |---|---|

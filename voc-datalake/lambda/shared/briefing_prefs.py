@@ -179,7 +179,7 @@ def _stored_hour(value: object) -> int:
     return hour if 0 <= hour <= 23 else DEFAULT_HOUR
 
 
-def stored_preferences(item: Mapping[str, Any] | None, default_language: str = 'en') -> dict[str, Any]:
+def stored_preferences(item: Mapping[str, Any] | None) -> dict[str, Any]:
     """The seven preference fields read leniently from a stored row (defaults when absent)."""
     row = item if isinstance(item, Mapping) else {}
     language = row.get('language')
@@ -189,8 +189,7 @@ def stored_preferences(item: Mapping[str, Any] | None, default_language: str = '
         'enabled': row.get('enabled') is True,
         'hour': _stored_hour(row.get('hour', DEFAULT_HOUR)),
         'time_zone': zone if isinstance(zone, str) and zone else DEFAULT_TIME_ZONE,
-        'language': language if language in LANGUAGES else (
-            default_language if default_language in LANGUAGES else 'en'),
+        'language': language if language in LANGUAGES else 'en',
         'language_source': language_source(row),
         'instructions': instructions if isinstance(instructions, str) else '',
         'email': row.get('email') is True,

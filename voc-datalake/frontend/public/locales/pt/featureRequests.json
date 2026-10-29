@@ -1,0 +1,283 @@
+{
+  "page": {
+    "title": "Quadros de feedback",
+    "subtitle": "Quadros que suas equipes e clientes usam para pedidos, problemas e feedback.",
+    "boardSubtitle": "Pedidos, com as pessoas por trás de cada um."
+  },
+  "loading": "Carregando…",
+  "actions": {
+    "cancel": "Cancelar",
+    "close": "Fechar",
+    "delete": "Excluir",
+    "save": "Salvar"
+  },
+  "status": {
+    "new": "Novo",
+    "under_review": "Em análise",
+    "planned": "Planejado",
+    "declined": "Recusado",
+    "shipped": "Entregue",
+    "confirmed": "Confirmado",
+    "fixed": "Corrigido",
+    "wont_fix": "Não será corrigido",
+    "seen": "Visto",
+    "done": "Concluído"
+  },
+  "impact": {
+    "committed": "Compromisso de pagamento",
+    "at_risk": "Negócio em risco",
+    "none": "Sem impacto na receita"
+  },
+  "totals": {
+    "supporters": "Apoiadores",
+    "customers": "Clientes",
+    "committed": "Comprometido",
+    "atRisk": "Em risco",
+    "peopleAffected": "Pessoas afetadas",
+    "avgRating": "Avaliação média",
+    "rating": "{{value}} / 5",
+    "notRated": "Ainda sem avaliação",
+    "boardSummary": "Totais do quadro"
+  },
+  "list": {
+    "label": "Pedidos",
+    "intro": "Adicione um pedido ou dê +1 em um que também importa para você.",
+    "search": "Pesquisar",
+    "searchPlaceholder": "Título, descrição ou autor",
+    "statusFilter": "Status",
+    "allStatuses": "Todos os status",
+    "sortBy": "Ordenar por",
+    "sort": {
+      "newest": "Mais recentes",
+      "committed": "Receita comprometida",
+      "at_risk": "Receita em risco",
+      "supporters": "Apoiadores",
+      "people_affected": "Pessoas afetadas",
+      "rating": "Avaliação"
+    },
+    "reportedBy": "Criado por {{name}}",
+    "empty": "Ainda não há pedidos. Adicione o primeiro.",
+    "noMatch": "Nenhum pedido corresponde a esses filtros.",
+    "loadFailed": "Não foi possível carregar os pedidos.",
+    "notAccepted": "Este login não é aceito no quadro. Entre com um e-mail verificado que o quadro aceite."
+  },
+  "new": {
+    "open": "Novo pedido",
+    "title": "Novo pedido",
+    "description": "Todos que podem usar {{board}} o veem, com seu nome e e-mail.",
+    "impactHeading": "Seu cliente e o impacto na receita",
+    "submit": "Adicionar pedido"
+  },
+  "form": {
+    "title": "Título",
+    "description": "Descrição",
+    "amountHint": "Dólares americanos inteiros",
+    "noAmount": "Sem impacto na receita, não é preciso informar valor.",
+    "name": "Seu nome",
+    "errors": {
+      "titleRequired": "Dê um título ao pedido.",
+      "descriptionRequired": "Descreva o que o cliente precisa.",
+      "customerRequired": "Informe o cliente.",
+      "nameRequired": "Informe seu nome.",
+      "amountRequired": "Informe o valor em dólares americanos.",
+      "amountTooLarge": "Esse valor é maior do que o quadro aceita.",
+      "contactEmail": "Informe um e-mail válido ou deixe em branco.",
+      "descriptionRequiredService": "Descreva o que aconteceu e o que o cliente viu."
+    },
+    "requiredLabel": "{{label}} (obrigatório)",
+    "optionalLabel": "{{label}} (opcional)",
+    "choose": "Escolha...",
+    "notSet": "Não informado",
+    "fieldErrors": {
+      "required": "Este campo é obrigatório.",
+      "too_long": "É mais longo do que o quadro aceita.",
+      "invalid_choice": "Escolha uma das opções.",
+      "invalid_number": "Informe um número inteiro.",
+      "out_of_range": "Esse número está fora do intervalo permitido.",
+      "invalid_email": "Informe um e-mail válido.",
+      "invalid_url": "Informe um link https:// completo."
+    },
+    "descriptionHint": {
+      "sales": "Do que o cliente precisa e por quê.",
+      "service": "O que aconteceu e o que o cliente viu.",
+      "beta": "O que você tentou e o que aconteceu.",
+      "blank": "Qualquer coisa que ajude os outros a entender."
+    }
+  },
+  "detail": {
+    "reported": "Criado por {{name}} ({{email}})",
+    "reporter": "Autor",
+    "copyLink": "Copiar link",
+    "copied": "Link copiado",
+    "edit": "Editar",
+    "supports": "Apoiadores",
+    "plusOne": "+1 com meu cliente",
+    "addSupport": "Adicionar meu +1",
+    "contact": "Contato: {{email}}",
+    "editSupport": "Editar o apoio de {{customer}}",
+    "deleteSupport": "Excluir o apoio de {{customer}}",
+    "deleteSupportTitle": "Excluir este apoio?",
+    "deleteSupportMessage": "O apoio de {{customer}} e seu valor deixam de contar nos totais do pedido.",
+    "loadFailed": "Não foi possível carregar este pedido.",
+    "supportsCount_one": "{{count, number}} apoio",
+    "supportsCount_many": "{{count, number}} apoios",
+    "supportsCount_other": "{{count, number}} apoios",
+    "plusOneService": "Também sou afetado",
+    "plusOneOther": "+1",
+    "alreadySupporting": "Você apoia esta solicitação.",
+    "editMySupport": "Editar meu +1"
+  },
+  "admin": {
+    "title": "Administração",
+    "status": "Status",
+    "delete": "Excluir pedido",
+    "deleteTitle": "Excluir este pedido?",
+    "deleteMessage": "“{{title}}” e todos os apoios serão excluídos para todos."
+  },
+  "promote": {
+    "title": "Promover a projeto",
+    "hint": "Cada apoiador e contato de cliente entra numa lista de participantes ligada ao projeto, para que você possa pedir feedback por e-mail.",
+    "project": "Projeto",
+    "pickProject": "Escolha um projeto",
+    "loadingProjects": "Carregando projetos…",
+    "newProject": "Novo projeto…",
+    "newProjectName": "Nome do novo projeto",
+    "submit": "Promover",
+    "skippedRow": "{{email}}: {{reason}}",
+    "reasons": {
+      "external_not_allowed": "fora dos domínios da empresa, e pessoas externas não são permitidas",
+      "invalid_email": "e-mail inválido",
+      "unsubscribed": "cancelou a inscrição nos e-mails de participantes"
+    },
+    "done_one": "{{count, number}} pessoa adicionada a “{{list}}”.",
+    "done_many": "{{count, number}} pessoas adicionadas a “{{list}}”.",
+    "done_other": "{{count, number}} pessoas adicionadas a “{{list}}”.",
+    "skipped_one": "{{count, number}} e-mail foi ignorado:",
+    "skipped_many": "{{count, number}} e-mails foram ignorados:",
+    "skipped_other": "{{count, number}} e-mails foram ignorados:"
+  },
+  "errors": {
+    "generic": "Não funcionou. Tente novamente.",
+    "forbidden": "Você não tem permissão para isso.",
+    "notFound": "Este pedido não existe mais.",
+    "conflict": "Alguém alterou isto ao mesmo tempo. Tente novamente.",
+    "throttled": "Muitas solicitações agora. Aguarde um momento e tente de novo.",
+    "rateLimited": "Você atingiu o limite de publicações de hoje neste quadro. Tente novamente amanhã.",
+    "slugTaken": "Outro quadro já usa este nome de link.",
+    "boardNotEmpty": "Este quadro ainda tem pedidos. Exclua-o junto com os pedidos ou arquive-o.",
+    "statusInUse": "Ainda há pedidos com este status. Mova-os antes para outro status.",
+    "alreadySupported": "Você já apoia esta solicitação. Edite o seu +1."
+  },
+  "auth": {
+    "title": "Entre no quadro de pedidos",
+    "intro": "Informe seu e-mail de trabalho. Enviaremos um link e um código de uso único.",
+    "email": "E-mail de trabalho",
+    "sendLink": "Enviar link de acesso",
+    "checkEmail": "Verifique {{email}}: abra o link ou digite aqui o código do e-mail.",
+    "secondCode": "Seu e-mail foi confirmado. Enviamos outro código para {{email}} para você entrar.",
+    "code": "Código do e-mail",
+    "signIn": "Entrar",
+    "useAnotherEmail": "Usar outro e-mail",
+    "otherBrowser": "Este link foi aberto em um navegador diferente do que o pediu. Digite o código naquele navegador ou envie um novo link daqui.",
+    "errors": {
+      "domain_not_allowed": "O domínio deste e-mail não é permitido no quadro. Use o e-mail da empresa.",
+      "wrong_code": "O código está incorreto. Verifique o e-mail e tente novamente.",
+      "expired": "Este acesso expirou. Envie um novo link.",
+      "tooManyAttempts": "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
+      "no_session": "Não há acesso pendente neste navegador. Digite o código onde você o pediu ou envie um novo link.",
+      "invalid_email": "Informe um e-mail válido.",
+      "unknown": "Não foi possível entrar. Tente novamente em instantes."
+    }
+  },
+  "board": {
+    "title": "Quadros de feedback",
+    "titleWithBrand": "Quadros de feedback da {{brand}}",
+    "signOut": "Sair",
+    "notEnabledTitle": "Os quadros de feedback não estão ativados",
+    "notEnabled": "Esta implantação não tem login de quadros. Se você usa o aplicativo, entre nele e abra Quadros de feedback.",
+    "notEnabledDev": "Desenvolvimento local sem pool de quadros: o mock não consegue autenticar ninguém no Cognito. Adicione um bloco board ao public/config.json para testar um pool real, ou use a página Quadros de feedback do app com o mock."
+  },
+  "fields": {
+    "customer": "Cliente",
+    "deal": "Negócio",
+    "impact": "Impacto na receita",
+    "amount_usd": "Valor (USD)",
+    "contact_email": "E-mail de contato do cliente",
+    "kind": "Tipo",
+    "severity": "Gravidade",
+    "reference": "Referência da reserva ou do pedido",
+    "steps": "Passos para reproduzir",
+    "affected_count": "Pessoas afetadas",
+    "area": "Área",
+    "outcome": "O que aconteceu",
+    "rating": "Avaliação (1-5)",
+    "link": "Link (https)",
+    "note": "Observação"
+  },
+  "choices": {
+    "kind": {
+      "bug": "Bug",
+      "complaint": "Reclamação",
+      "missing_feature": "Recurso ausente",
+      "question": "Pergunta"
+    },
+    "severity": {
+      "low": "Baixa",
+      "medium": "Média",
+      "high": "Alta",
+      "critical": "Crítica"
+    },
+    "outcome": {
+      "works": "Funciona",
+      "broken": "Não funciona",
+      "confusing": "É confuso"
+    }
+  },
+  "templates": {
+    "sales": "Pedidos de recursos de vendas",
+    "service": "Problemas de atendimento ao cliente",
+    "beta": "Feedback do beta",
+    "blank": "Em branco"
+  },
+  "boards": {
+    "listLabel": "Quadros",
+    "audienceLabel": "Quem pode usar",
+    "requestsLabel": "Pedidos",
+    "audience": {
+      "company": "Pessoas da sua empresa",
+      "list": "Domínios e pessoas convidados",
+      "listCounts": "{{domains}} domínios, {{people}} pessoas",
+      "anyone": "Qualquer pessoa com e-mail verificado"
+    },
+    "open": "Abrir",
+    "openBoard": "Abrir {{name}}",
+    "copyBoardLink": "Copiar link de {{name}}",
+    "linkCopied": "Link copiado",
+    "copyFailed": "Não foi possível copiar o link.",
+    "edit": "Editar",
+    "editBoard": "Editar {{name}}",
+    "deleteBoard": "Excluir {{name}}",
+    "deleteTitle": "Excluir este quadro?",
+    "deleteMessage": "“{{name}}” será excluído para todos. Isso não pode ser desfeito.",
+    "deleteWithRequestsMessage_one": "“{{name}}”, seu {{count, number}} pedido e cada +1 nele serão excluídos permanentemente. Isso não pode ser desfeito. Os projetos já criados a partir dos pedidos são mantidos.",
+    "deleteWithRequestsMessage_many": "“{{name}}”, seus {{count, number}} pedidos e cada +1 neles serão excluídos permanentemente. Isso não pode ser desfeito. Os projetos já criados a partir dos pedidos são mantidos.",
+    "deleteWithRequestsMessage_other": "“{{name}}”, seus {{count, number}} pedidos e cada +1 neles serão excluídos permanentemente. Isso não pode ser desfeito. Os projetos já criados a partir dos pedidos são mantidos.",
+    "deleteWithRequestsMessageStale": "“{{name}}” agora tem pedidos. O quadro, todos os seus pedidos e cada +1 neles serão excluídos permanentemente. Isso não pode ser desfeito. Os projetos já criados a partir dos pedidos são mantidos.",
+    "deleteConfirmNameLabel": "Digite o nome do quadro para confirmar",
+    "deleteProgress_one": "{{deleted, number}} de {{count, number}} pedido excluído…",
+    "deleteProgress_many": "{{deleted, number}} de {{count, number}} pedidos excluídos…",
+    "deleteProgress_other": "{{deleted, number}} de {{count, number}} pedidos excluídos…",
+    "deleteIncomplete": "O quadro ainda não foi totalmente excluído.",
+    "deleteResumeHint": "Clique em Excluir novamente para continuar de onde parou.",
+    "archived": "Arquivado",
+    "configure": "Configurar quadros",
+    "emptyTitle": "Ainda não há quadros",
+    "empty": "Nenhum quadro foi compartilhado com você ainda.",
+    "emptyAdmin": "Crie um quadro em <admin>Administração, Privacidade e acesso, Quadros</admin>.",
+    "loadFailed": "Não foi possível carregar os quadros.",
+    "notFoundTitle": "Quadro não encontrado",
+    "notFound": "Este quadro não existe ou não foi compartilhado com você.",
+    "backToBoards": "Voltar aos quadros",
+    "standaloneIntro": "Os quadros que você pode usar. Abra um para adicionar um pedido ou dar +1."
+  }
+}

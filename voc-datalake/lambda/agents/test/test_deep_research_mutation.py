@@ -203,13 +203,25 @@ class TestTheTitleComesFromTheAggregate:
 
         assert posted_body(ctx)['title'] == 'Research: 12'
 
-    @pytest.mark.parametrize(('length', 'kept'), [(79, 79), (80, 80), (81, 80), (300, 80)])
-    def test_the_title_is_cut_at_eighty_characters_after_the_prefix(self, length, kept):
+    @pytest.mark.parametrize(('length', 'expected'), [(79, 't' * 79), (80, 't' * 80), (81, 't' * 79 + '…'),
+                                                      (300, 't' * 79 + '…')])
+    def test_the_title_is_cut_at_eighty_characters_after_the_prefix(self, length, expected):
         ctx = node_ctx(aggregate={'title': 't' * length})
 
         deep_research.start(ctx)
 
-        assert posted_body(ctx)['title'] == 'Research: ' + 't' * kept
+        assert posted_body(ctx)['title'] == 'Research: ' + expected
+
+    def test_a_long_title_ends_on_a_whole_word_with_an_ellipsis(self):
+        # 5.35.02 live: "Research: …baggage and unpaid refun — 2026-10-25 19:51 UTC".
+        title = 'Support Quality complaints: stranded after disruptions, baggage and unpaid refunds dominate'
+        ctx = node_ctx(aggregate={'title': title})
+
+        deep_research.start(ctx)
+
+        assert posted_body(ctx)['title'] == (
+            'Research: Support Quality complaints: stranded after disruptions, baggage and unpaid…'
+        )
 
     @pytest.mark.parametrize('length', [81, 2500])
     def test_a_question_used_as_title_is_cut_at_eighty_too(self, length):
@@ -218,7 +230,7 @@ class TestTheTitleComesFromTheAggregate:
         deep_research.start(ctx)
 
         body = posted_body(ctx)
-        assert body['title'] == 'Research: ' + 'x' * 80
+        assert body['title'] == 'Research: ' + 'x' * 79 + '…'
         assert body['question'] == 'x' * min(length, 2000)
 
 

@@ -22,9 +22,16 @@ well-formed id naming no row is a 404 about the world.
 from __future__ import annotations
 
 import math
-from typing import Any
+import re
+from typing import Any, Final
 
 from shared.exceptions import ValidationError
+
+#: An opaque id a route takes in its path or body (conversation, scraper, edit, target, project
+#: ids): 1-64 letters, digits, '_' or '-'. Never a '#', so it is safe as half of a sort key.
+OPAQUE_ID_RE: Final = re.compile(r'^[A-Za-z0-9_-]{1,64}\Z')
+#: The same alphabet up to 128 characters (project and job ids in batch reads, MCP path ids).
+LONG_OPAQUE_ID_RE: Final = re.compile(r'^[A-Za-z0-9_-]{1,128}\Z')
 
 # A DynamoDB sort key is capped at 1024 bytes. Bounding an id that reaches one
 # well under that makes an absurd value a 400 naming the field rather than a

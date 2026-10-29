@@ -17,11 +17,12 @@ from shared.ingest_schemas import MAX_TEXT_LENGTH
 
 __all__ = ['EmailItem', 'attachments_section', 'build_message', 'channel_and_type', 'item_text']
 
-#: Subject tags -> ``feedback_type`` values. A tag beats the alias (it is the sender's own label).
+#: Subject tags -> values of the built-in ``feedback_type`` (shared.feedback_types). A tag beats the
+#: alias (it is the sender's own label); an unknown tag such as ``[review]`` leaves the alias or the model to decide.
 SUBJECT_TAG_TYPES: Final = {
     'bug': 'bug', 'bugs': 'bug', 'idea': 'feature_request', 'ideas': 'feature_request',
     'feature': 'feature_request', 'feature request': 'feature_request', 'request': 'feature_request',
-    'question': 'question', 'praise': 'praise', 'kudos': 'praise', 'review': 'review',
+    'question': 'question', 'praise': 'praise', 'kudos': 'praise',
 }
 DEFAULT_CHANNEL: Final = 'feedback'
 _SECTION_HEADER: Final = 'Attachments:'

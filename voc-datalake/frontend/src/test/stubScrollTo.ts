@@ -1,46 +1,21 @@
 /**
- * Give jsdom an `Element.prototype.scrollTo`, and take it away again afterwards.
+ * Give jsdom an `Element.prototype.scrollIntoView`, and take it away again afterwards.
  *
- * jsdom does not implement it, so any component that scrolls a container in an
- * effect throws on mount — and React renders the whole subtree as an empty div,
- * which quietly turns "the API was not called" style assertions into vacuous
- * passes. Several ProjectDetail tests need the stub for that reason.
+ * jsdom does not implement it, so a component that scrolls a message list into view
+ * in an effect throws on mount — and React renders the whole subtree as an empty div,
+ * which quietly turns "the API was not called" style assertions into vacuous passes.
  *
  * Teardown restores the *absence* of the property rather than assigning the
- * original back: `Element.prototype.scrollTo` is `undefined` in jsdom, so
- * assigning it leaves an own `scrollTo: undefined` on the prototype. Harmless in
- * practice, but a test that checks for the method's presence would then see a
- * property that was never there.
- */
-import { vi } from 'vitest'
-
-export function stubElementScrollTo(): () => void {
-  const existed = 'scrollTo' in Element.prototype
-  const original = Element.prototype.scrollTo
-
-  Element.prototype.scrollTo = vi.fn()
-
-  return () => {
-    if (existed) {
-      Element.prototype.scrollTo = original
-    } else {
-      // `Reflect.deleteProperty` rather than `delete (… as { scrollTo?: unknown })`:
-      // TS types the method as required, so a plain delete needs an assertion, and
-      // an assertion here would claim something about the type rather than do the
-      // one thing intended.
-      Reflect.deleteProperty(Element.prototype, 'scrollTo')
-    }
-  }
-}
-
-/**
- * The same treatment for `Element.prototype.scrollIntoView`, which jsdom also
- * omits — components that scroll a message list into view in an effect need it.
+ * original back: the method is `undefined` in jsdom, so assigning it would leave an
+ * own `scrollIntoView: undefined` on the prototype. `Reflect.deleteProperty` rather
+ * than a `delete` with a type assertion: TS types the method as required.
  *
  * Prefer this over patching the prototype at module scope: the stub would then
  * outlive the file that installed it, which only goes unnoticed because Vitest
  * isolates per file by default.
  */
+import { vi } from 'vitest'
+
 export function stubElementScrollIntoView(): () => void {
   const existed = 'scrollIntoView' in Element.prototype
   const original = Element.prototype.scrollIntoView

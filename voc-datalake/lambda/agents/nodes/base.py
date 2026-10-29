@@ -24,6 +24,8 @@ from agents.graph import Node
 from shared.display_labels import humanize_id
 
 MAX_SUMMARY_CHARS = 500
+#: The review window every step reads unless its ``days`` param says otherwise.
+DEFAULT_REVIEW_DAYS = 30
 
 
 @dataclass
@@ -87,6 +89,28 @@ class NodeContext:
             if isinstance(problem, dict)
         )
         return '\n'.join(line for line in lines if line)[:limit]
+
+    def evidence_text(self, limit: int = 5000) -> str:
+        """The aggregate as a writer's evidence: the scope's review count and window first
+        (so a clip never loses it), then the problems, then the quotes of their reviews."""
+        aggregate = self.context.get('aggregate')
+        if not isinstance(aggregate, dict):
+            return ''
+        lines = [_review_count_line(aggregate), self.aggregate_text()]
+        quotes = [q for q in aggregate.get('quotes') or [] if isinstance(q, dict) and isinstance(q.get('text'), str)]
+        if quotes:
+            lines.append('Quotes from the reviews:')
+            lines.extend(f"- ({q.get('problem') or '-'}) \"{q['text']}\"" for q in quotes)
+        return '\n'.join(line for line in lines if line)[:limit]
+
+
+def _review_count_line(aggregate: dict) -> str:
+    """'108 customer reviews in scope from the last 30 days; …' ('' without a count)."""
+    count, days = aggregate.get('review_count'), aggregate.get('days')
+    if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+        return ''
+    window = f' from the last {days} days' if isinstance(days, int) and not isinstance(days, bool) and days > 0 else ''
+    return f'{count} customer reviews in scope{window}; each problem below counts the reviews that back it.'
 
 
 def _problem_category(problem: dict) -> str:

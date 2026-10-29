@@ -6,7 +6,7 @@ the SAME context through the same writer and differ only in the document type
 the node passes and the summaries it answers. What is common lives here: the
 aggregate and personas on the run, the node the conductor dispatches, the
 `projects` fake that records the one POST, the context-block stubs that make the
-POSTed `feature_idea` a literal, and the body the writer builds from all of it.
+POSTed `writer_context` a literal, and the body the writer builds from all of it.
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def projects_fake(ctx: NodeContext) -> Mock:
 
 @contextmanager
 def stubbed_context_blocks() -> Iterator[None]:
-    """The context blocks stubbed so the POSTed ``feature_idea`` is a literal."""
+    """The context blocks stubbed so the POSTed ``writer_context`` is a literal."""
     with (
         patch.object(context_blocks, 'memories', return_value='<memory>M</memory>'),
         patch.object(context_blocks, 'wrap', side_effect=lambda tag, _text, limit: f'<{tag}>{limit}</{tag}>'),
@@ -82,8 +82,9 @@ def document_post_body(doc_type: str) -> dict:
     return {
         'doc_type': doc_type,
         'title': 'Checkout is slow',
-        'feature_idea': '<reviews>4000</reviews>\n\n<memory>M</memory>\n\n'
-                        '<conductor_message>6000</conductor_message>',
+        'feature_idea': 'Checkout is slow\nUsers wait at payment.\n- Slow payment (Checkout): 3 reviews',
+        'writer_context': '<reviews>5000</reviews>\n\n<memory>M</memory>\n\n'
+                          '<conductor_message>6000</conductor_message>',
         'data_sources': {'feedback': True, 'personas': True, 'research': True, 'documents': True},
         'feedback_categories': ['checkout'],
         'days': 30,

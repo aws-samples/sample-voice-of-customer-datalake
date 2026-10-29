@@ -158,10 +158,17 @@ describe('ParsedReviewCard', () => {
       const user = userEvent.setup()
       renderCard({}, 2)
 
-      const deleteButton = screen.getByTitle('Delete review')
-      await user.click(deleteButton)
+      // Named for its row (the third review): a list of identical icon buttons is unusable by ear.
+      await user.click(screen.getByRole('button', { name: 'Delete review 3' }))
 
       expect(mockOnDelete).toHaveBeenCalledWith(2)
+    })
+
+    it('names every field of the row after its review', () => {
+      renderCard({}, 1)
+      for (const name of ['Rating of review 2', 'Author of review 2', 'Title of review 2', 'Text of review 2']) {
+        expect(screen.getByRole(name.startsWith('Rating') ? 'combobox' : 'textbox', { name })).toBeInTheDocument()
+      }
     })
   })
 

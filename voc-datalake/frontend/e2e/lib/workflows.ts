@@ -1,6 +1,6 @@
 /**
- * Archiving workflows the way an admin does it: the Workflow library on /agents
- * (WorkflowLibrary.tsx) — "Archive <name>" → "Archive this workflow?" → Archive,
+ * Archiving workflows the way an admin does it: the Workflow library on
+ * /agents?tab=workflows (WorkflowLibrary.tsx; 5.x moved it to its own admin tab) — "Archive <name>" → "Archive this workflow?" → Archive,
  * which sends `DELETE /workflows/{id}` (an archive: revisions are kept). The
  * built-in template has no Archive button, and the API refuses it with a 409.
  *
@@ -40,7 +40,7 @@ export async function archiveWorkflowsInLibrary(page: Page, ids: readonly string
   const listed = await listedWorkflows()
   const nameCounts = new Map<string, number>()
   for (const name of listed.values()) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1)
-  await page.goto(site('/agents'), { waitUntil: 'domcontentloaded' })
+  await page.goto(site('/agents?tab=workflows'), { waitUntil: 'domcontentloaded' })
   await settle(page, 500)
   await expect(library(page)).toBeVisible()
   const proof: ArchiveProof[] = []

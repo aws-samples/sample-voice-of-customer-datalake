@@ -54,7 +54,7 @@ describe('TimeRangeSelector', () => {
   })
 
   describe('preset ranges', () => {
-    it.each(['24h', '48h', '7d', '30d', 'Custom'])('renders the %s preset button on desktop', (name) => {
+    it.each(['24h', '48h', '7d', '14d', '30d', 'Custom'])('renders the %s preset button on desktop', (name) => {
       render(<TimeRangeSelector />)
 
       // Desktop buttons use short labels; there may be multiple buttons
@@ -80,6 +80,27 @@ describe('TimeRangeSelector', () => {
       await renderAndClick('30d')
 
       expect(mockSetTimeRange).toHaveBeenCalledWith('30d')
+    })
+
+    it('offers the 14-day preset between 7 and 30 days', () => {
+      render(<TimeRangeSelector />)
+
+      const names = screen.getAllByRole('button').filter(b => b.classList.contains('tab')).map(b => b.textContent)
+      expect(names.slice(names.indexOf('7d'), names.indexOf('30d') + 1)).toStrictEqual(['7d', '14d', '30d'])
+    })
+
+    it('selects the 14-day preset', async () => {
+      await renderAndClick('14d')
+
+      expect(mockSetTimeRange).toHaveBeenCalledWith('14d')
+    })
+
+    it('shows the 14-day default label when the store holds an unknown token', () => {
+      mockStore({ timeRange: 'stale-token' })
+
+      render(<TimeRangeSelector />)
+
+      expect(screen.getByTestId('time-range-trigger-label')).toHaveTextContent('14d')
     })
 
     it('clears custom days when preset is selected', async () => {
@@ -148,6 +169,20 @@ describe('TimeRangeSelector', () => {
       await user.click(screen.getByRole('button', { name }))
 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('clearing a custom range', () => {
+    it('returns to the 14-day default, not 7 days', async () => {
+      mockStore({ timeRange: 'custom', customDays: 15 })
+      const user = userEvent.setup()
+      render(<TimeRangeSelector />)
+      await user.click(desktopButton('Last 15 days'))
+
+      await user.click(screen.getByRole('button', { name: 'Clear' }))
+
+      expect(mockSetCustomDays).toHaveBeenCalledWith(null)
+      expect(mockSetTimeRange).toHaveBeenCalledWith('14d')
     })
   })
 

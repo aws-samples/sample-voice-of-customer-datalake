@@ -70,7 +70,7 @@ def _reply(text: str, tier: str | None = None, fallback: bool = False) -> store.
 def seams(monkeypatch) -> SimpleNamespace:
     """Every collaborator of the extraction path as a mock; the memory table is a sentinel."""
     memory_table, aggregates = MagicMock(name='memory'), MagicMock(name='aggregates')
-    monkeypatch.setattr(extractor, 'get_memory_table', lambda: memory_table)
+    monkeypatch.setattr(store, 'get_memory_table', lambda: memory_table)
     monkeypatch.setattr(extractor, 'get_aggregates_table', lambda: aggregates)
     monkeypatch.setattr(extractor, 'categories_config', tuple)
     model = MagicMock(return_value=_reply(model_reply([])))
@@ -136,12 +136,6 @@ class TestTheConstantsAreTheContract:
         monkeypatch.setattr(extractor, setting, '')
         assert binder() is None
         resource.Table.assert_called_once()
-
-    def test_the_memory_table_is_the_stores(self, monkeypatch):
-        sentinel = object()
-        monkeypatch.setattr(store, 'get_memory_table', lambda: sentinel)
-        assert extractor.get_memory_table() is sentinel
-
 
 # ============================================
 # Prompt and origin

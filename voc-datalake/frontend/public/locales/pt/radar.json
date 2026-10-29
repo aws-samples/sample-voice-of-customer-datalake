@@ -34,14 +34,26 @@
     "sampled": "Lido das avaliações mais recentes deste período."
   },
   "releases": {
-    "title": "Lançamentos",
-    "empty": "Nenhum lançamento encontrado ainda. Os lançamentos vêm da varredura programada ou de Varrer agora.",
+    "title": "Notícias e lançamentos",
+    "empty": "Nenhuma notícia encontrada ainda. Notícias e lançamentos vêm da varredura agendada ou de “Verificar agora”.",
     "official": "Oficial",
     "thirdParty": "Imprensa e avaliações",
-    "approximate": "Data aproximada",
+    "undated": "Data não publicada, encontrada pela primeira vez em",
     "mentions_one": "{{count, number}} menção",
     "mentions_other": "{{count, number}} menções",
-    "sources": "Fontes"
+    "sources": "Fontes",
+    "kinds": {
+      "release": "Lançamento",
+      "announcement": "Anúncio",
+      "promotion": "Promoção",
+      "partnership": "Parceria",
+      "news": "Notícias da empresa"
+    },
+    "filterLabel": "Filtrar por tipo",
+    "kindAll": "Tudo",
+    "kindEmpty": "Nada do tipo “{{kind}}” nesta lista. Escolha “Tudo” para ver todos os itens.",
+    "viaExa": "via Exa",
+    "viaFeed": "via feed"
   },
   "compare": {
     "title": "Comparado conosco",
@@ -64,13 +76,12 @@
     "openOurs_many": "Abrir as nossas {{count, number}} avaliações de {{category}} em Categorias"
   },
   "brands": {
-    "hint": "As marcas que o Radar acompanha: a verificação de lançamentos procura cada uma na web, e as fontes que marcar como fonte do Radar na página Fontes de dados trazem as avaliações dela.",
+    "hint": "As marcas que o Radar acompanha: a varredura de notícias pesquisa cada uma na web (no idioma dela, e nos feeds de notícias, se houver), e as fontes que você marca como fonte do Radar na página Fontes de dados trazem as avaliações.",
     "addTitle": "Adicionar uma marca",
     "nameLabel": "Nome da marca",
     "domainsLabel": "Domínios do site",
     "domainsHint": "Separados por vírgulas, no máximo {{max, number}} (por exemplo, o site e o blog). Usados para encontrar as notas de versão.",
     "add": "Adicionar marca",
-    "editDomains": "Editar domínios",
     "editDomainsLabel": "Domínios do site de {{brand}}",
     "doneEditing": "Concluído",
     "remove": "Remover",
@@ -87,7 +98,31 @@
     "duplicate": "{{brand}} já está na lista.",
     "invalidName": "Use de 1 a 64 letras, dígitos, espaços ou . & ' + -",
     "tooMany": "No máximo {{max, number}} marcas.",
-    "loadFailed": "Não foi possível carregar a lista de marcas."
+    "loadFailed": "Não foi possível carregar a lista de marcas.",
+    "edit": "Editar",
+    "editLabel": "Editar {{brand}}",
+    "languageLabel": "Idioma da pesquisa",
+    "languageAuto": "Automático (pelo domínio: {{language}})",
+    "languageAutoNew": "Automático (pelo domínio)",
+    "languageSummary": "Idioma: {{language}}",
+    "feedsLabel": "Feeds de notícias",
+    "feedsHint": "Feeds RSS ou Atom opcionais com as notícias da marca. Lidos a cada varredura. No máximo {{max, number}}, um por linha ou separados por vírgulas.",
+    "feedsTooMany": "No máximo {{max, number}} feeds de notícias.",
+    "feedsHttps": "Cada feed de notícias deve ser um link https://.",
+    "feedsSummary": "Feeds de notícias: {{list}}",
+    "noFeeds": "nenhum",
+    "moreOptions": "Mais opções",
+    "fixFeeds": "Corrija os feeds de notícias antes de salvar.",
+    "searchTermsLabel": "Termos de pesquisa",
+    "searchTermsHint": "Palavras ou frases opcionais adicionadas às pesquisas de notícias, como a razão social ou nomes de produtos. Útil quando o nome da marca também é uma palavra comum. No máximo {{max, number}}, um por linha, com {{chars, number}} caracteres cada.",
+    "excludeTermsLabel": "Termos excluídos",
+    "excludeTermsHint": "Palavras ou frases opcionais: um resultado de pesquisa cujo título ou trecho contenha uma delas é ignorado. No máximo {{max, number}}, um por linha, com {{chars, number}} caracteres cada.",
+    "termsTooMany": "No máximo {{max, number}} termos.",
+    "termsTooLong": "Cada termo pode ter no máximo {{chars, number}} caracteres.",
+    "termsInvalid": "Um termo não pode conter aspas duplas nem começar com -.",
+    "searchTermsSummary": "Termos de pesquisa: {{list}}",
+    "excludeTermsSummary": "Termos excluídos: {{list}}",
+    "fixTerms": "Corrija os termos de pesquisa ou excluídos antes de salvar."
   },
   "setup": {
     "brandsTitle": "Marcas acompanhadas",
@@ -99,16 +134,16 @@
     "sources": "Alimentada por:",
     "howTitle": "Como o Radar funciona",
     "step1Title": "Adicionar uma marca",
-    "step1": "Adicione-a abaixo, com os domínios do próprio site para encontrar as notas de versão.",
+    "step1": "Adicione-a abaixo, com os domínios do próprio site para encontrar as notícias; opcionalmente, o idioma da pesquisa e os feeds de notícias.",
     "step2Title": "Trazer as avaliações",
     "step2": "Na página Fontes de dados, marque \"Fonte do Radar\" num scraper, numa página do Web Reviews, num conector de apps ou numa importação CSV/JSON, e escolha a marca. As avaliações vão só para o Radar, nunca para os seus painéis.",
-    "step3Title": "Lançamentos",
-    "step3": "Uma pesquisa na web roda automaticamente na frequência abaixo (verificada diariamente), ou agora com Varrer agora. A primeira varredura olha 90 dias para trás.",
+    "step3Title": "Notícias e lançamentos",
+    "step3": "Uma pesquisa na web das notícias de cada marca (lançamentos, novos recursos, promoções, parcerias, notícias da empresa), no idioma da marca e pelos feeds de notícias, roda automaticamente na frequência abaixo (verificada diariamente) ou agora com “Verificar agora”. A primeira varredura olha os últimos 90 dias.",
     "configure": "Configurar"
   },
   "settings": {
     "title": "Radar",
-    "description": "A verificação de lançamentos procura na web o que cada marca do Radar lança. Nada é executado até que uma marca seja adicionada.",
+    "description": "A varredura de notícias pesquisa na web o que cada marca do Radar lança e anuncia. Nada roda até que uma marca seja adicionada.",
     "cadence": "Frequência da varredura",
     "cadences": {
       "daily": "Diária",
@@ -139,7 +174,8 @@
       "completed": "concluída",
       "failed": "com falha",
       "skipped": "ignorada"
-    }
+    },
+    "scanNowHint": "Pesquisa agora na web e nos domínios próprios de cada marca os seus lançamentos e novidades, sem esperar pelo agendamento. Demora alguns minutos e usa pesquisas na web."
   },
   "nav": {
     "label": "Radar"
@@ -185,5 +221,39 @@
     "readTheirs_one": "Ler a avaliação deles em {{category}}",
     "readTheirs_other": "Ler as {{count, number}} avaliações deles em {{category}}",
     "noSubcategoryChip": "Sem subcategoria"
+  },
+  "all": {
+    "option": "Todas as marcas",
+    "brandsTitle": "Marcas",
+    "brandsCaption": "Cada marca acompanhada neste período: avaliações, sentimento, lançamentos e última notícia",
+    "noBrands": "Nenhuma marca é acompanhada ainda.",
+    "colBrand": "Marca",
+    "colReviews": "Avaliações",
+    "colSentiment": "Sentimento",
+    "colReleases": "Lançamentos no período",
+    "colLatest": "Última notícia",
+    "shares": "{{positive}} positivas · {{negative}} negativas",
+    "noRelease": "Ainda sem notícias",
+    "openBrand": "Abrir {{brand}}",
+    "newsTitle": "Últimas notícias de todas as marcas",
+    "capped": "A mostrar os {{shown, number}} mais recentes de {{total, number}}"
+  },
+  "exa": {
+    "title": "Exa (segundo índice de pesquisa)",
+    "description": "Quando a pesquisa na web do Radar não encontra notícias datadas de uma marca, o Exa também é pesquisado. Só nomes de marca, termos de pesquisa e domínios são enviados ao Exa. Cerca de US$ 5 por 1.000 pesquisas, cobrados pelo Exa.",
+    "configured": "Configurado",
+    "notConfigured": "Não configurado",
+    "keyLabel": "Chave de API do Exa",
+    "placeholder": "Cole sua chave de API do Exa",
+    "replacePlaceholder": "Há uma chave salva. Cole uma nova para substituí-la",
+    "save": "Salvar chave",
+    "remove": "Remover chave",
+    "saved": "Chave do Exa salva.",
+    "removed": "Chave do Exa removida.",
+    "saveFailed": "Não foi possível salvar a chave do Exa.",
+    "removeFailed": "Não foi possível remover a chave do Exa.",
+    "invalidKey": "Use de 8 a 200 letras, dígitos, - ou _.",
+    "removeTitle": "Remover a chave do Exa?",
+    "removeMessage": "O Radar para de pesquisar no Exa. A pesquisa na web própria continua, e as notícias já encontradas são mantidas."
   }
 }

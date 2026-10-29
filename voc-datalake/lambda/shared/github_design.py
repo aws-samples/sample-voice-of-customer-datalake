@@ -8,7 +8,9 @@ in ``website/src/styles/`` is read as well as a design-system repo. The README i
 when nothing better exists. ``component_names`` lists ``components/ui/**`` (names only),
 ``component_files`` the UI sources worth reading for their styles (button, input, card, badge,
 tabs, dialog, select … under ``components/ui/``, or a ``components/ui.tsx`` of primitives) and
-``logo_path`` the best raster ``*logo*`` image.
+``logo_path`` the best raster ``*logo*`` image. ``svg_logo_path`` names an SVG logo (``*logo*.svg``, or
+the one SVG in a ``public/`` directory, the usual favicon/brand mark) only so the reference can SAY it
+was not read: an SVG is never downloaded (docs/company-context.md → "Logo candidates").
 """
 from __future__ import annotations
 
@@ -80,13 +82,13 @@ def _under(path: str, base: str) -> bool:
     return not base or path == base or path.startswith(base.rstrip('/') + '/')
 
 
-def rank_design_files(paths: list[str], base: str = '', limit: int = MAX_DESIGN_FILES) -> list[str]:
+def rank_design_files(paths: list[str], base: str = '') -> list[str]:
     """The design files to read, best first (rank, then shallower, then by path); README only as a last resort."""
     candidates = [p for p in paths if _under(p, base) and not _skipped(p)]
     ranked = sorted(
         (rank, p.count('/'), p) for p in candidates if (rank := _rank(p)) is not None
     )
-    chosen = [p for _, _, p in ranked[:limit]]
+    chosen = [p for _, _, p in ranked[:MAX_DESIGN_FILES]]
     if chosen:
         return chosen
     readmes = sorted((p.count('/'), p) for p in candidates if _README_RE.match(p.lower().rsplit('/', 1)[-1]))
@@ -145,6 +147,20 @@ def logo_path(paths: list[str]) -> str | None:
         return in_assets, not_png, len(path), path
     logos = [p for p in paths if _LOGO_RE.search(p) and not _skipped(p)]
     return min(logos, key=score) if logos else None
+
+
+_SVG_LOGO_RE = re.compile(r'(^|/)[^/]*logo[^/]*\.svg\Z', re.IGNORECASE)
+_PUBLIC_SVG_RE = re.compile(r'(^|/)public/[^/]+\.svg\Z', re.IGNORECASE)
+
+
+def svg_logo_path(paths: list[str]) -> str | None:
+    """The repository's SVG logo: the shortest ``*logo*.svg``, else the only SVG directly in a ``public/``."""
+    usable = [p for p in paths if not _skipped(p)]
+    named = sorted((len(p), p) for p in usable if _SVG_LOGO_RE.search(p))
+    if named:
+        return named[0][1]
+    public = [p for p in usable if _PUBLIC_SVG_RE.search(p)]
+    return public[0] if len(public) == 1 else None
 
 
 def logo_content_type(path: str) -> str | None:

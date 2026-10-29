@@ -11,6 +11,7 @@ import { AXIS_LINE, AXIS_TICK, CHART_CONTAINER_PROPS, GRID_STROKE, TOOLTIP_PROPS
 import { NUMBER_AXIS_WIDTH } from '../Dashboard/axisLabel'
 import { formatDecimal } from '../../utils/numberFormat'
 import { useCompactTick } from '../Dashboard/useCompactTick'
+import { tooltipFormatter } from '../Dashboard/chartTooltip'
 import SectionTitle from './SectionTitle'
 import { formatCalendarDay } from '../../utils/dateUtils'
 import type { RadarDetail } from '../../api/radarSchema'
@@ -61,7 +62,7 @@ export default function TrendChart({ trend, onDay }: TrendProps) {
                 <XAxis dataKey="date" tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={AXIS_LINE} minTickGap={16} interval="preserveStartEnd" tickFormatter={tick} />
                 <YAxis yAxisId="count" tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={AXIS_LINE} allowDecimals={false} width={NUMBER_AXIS_WIDTH} tickFormatter={countTick} />
                 <YAxis yAxisId="score" orientation="right" domain={[-1, 1]} tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={AXIS_LINE} tickFormatter={scoreTick} />
-                <Tooltip {...TOOLTIP_PROPS} labelFormatter={tooltipDay} />
+                <Tooltip {...TOOLTIP_PROPS} labelFormatter={tooltipDay} formatter={tooltipFormatter(i18n.language, [t('trend.sentiment')])} />
                 <Bar yAxisId="count" dataKey={t('trend.reviews')} fill="var(--chart-3)" radius={[4, 4, 0, 0]}
                   cursor="pointer" onClick={openBar} />
                 <Line yAxisId="score" type="monotone" dataKey={t('trend.sentiment')} stroke="var(--chart-1)" dot={false} />

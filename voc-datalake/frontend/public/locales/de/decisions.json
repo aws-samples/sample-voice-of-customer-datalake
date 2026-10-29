@@ -37,7 +37,11 @@
     "prfaqFailed": "Der PR/FAQ aus dieser Entscheidung konnte nicht erstellt werden. Entwerfen Sie ihn erneut, um es noch einmal zu versuchen.",
     "revisit": "Neu bewerten",
     "releaseWatch": "Release-Beobachtung",
-    "hideReleaseWatch": "Release-Beobachtung ausblenden"
+    "hideReleaseWatch": "Release-Beobachtung ausblenden",
+    "delete": "Löschen",
+    "deleteConfirmTitle": "Diese Entscheidung löschen?",
+    "deleteConfirmMessage": "„{{title}}“ wird für alle aus dem Projekt entfernt. Daraus erstellte Dokumente bleiben erhalten.",
+    "deleteConfirm": "Entscheidung löschen"
   },
   "picker": {
     "label": "Belegende Bewertungen",
@@ -57,7 +61,8 @@
   "errors": {
     "save": "Die Entscheidung konnte nicht gespeichert werden.",
     "conflict": "Diese Entscheidung wurde geändert, seit Sie sie geöffnet haben. Laden Sie die Seite neu und versuchen Sie es erneut.",
-    "pursue": "Das PR/FAQ konnte nicht gestartet werden."
+    "pursue": "Das PR/FAQ konnte nicht gestartet werden.",
+    "delete": "Die Entscheidung konnte nicht gelöscht werden."
   },
   "releaseWatch": {
     "title": "Release-Beobachtung",

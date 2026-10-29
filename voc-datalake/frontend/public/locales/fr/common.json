@@ -16,6 +16,7 @@
     "prioritization": "Priorisation",
     "problems": "Analyse des problèmes",
     "project": "Projet",
+    "board": "Tableau",
     "projects": "Projets",
     "scrapers": "Sources de données",
     "memory": "Mémoire",
@@ -27,7 +28,9 @@
     "account": "Compte",
     "workflows": "Workflows",
     "workflow": "Workflow",
-    "radar": "Radar"
+    "radar": "Radar",
+    "featureRequests": "Tableaux de retours",
+    "participants": "Participants"
   },
   "cancel": "Annuler",
   "configureBrand": "Configurer la marque",
@@ -88,7 +91,9 @@
     "memory": "Mémoire",
     "company": "Entreprise",
     "admin": "Administration",
-    "connect": "MCP et compétences"
+    "connect": "MCP et compétences",
+    "featureRequests": "Tableaux de retours",
+    "participants": "Participants"
   },
   "partialCountsHint": "Approximatif : la période complète n'a pas pu être lue, les décomptes sont une borne inférieure",
   "problemAnalysisPage": {
@@ -115,7 +120,8 @@
     "collapseSidebar": "Réduire la barre latérale",
     "expandSidebar": "Développer la barre latérale",
     "openMenu": "Ouvrir le menu",
-    "label": "Barre latérale principale"
+    "label": "Barre latérale principale",
+    "mainNav": "Principale"
   },
   "profileMenu": {
     "trigger": "Menu du compte de {{name}}",
@@ -132,6 +138,8 @@
     "48hFull": "48 Heures",
     "7d": "7j",
     "7dFull": "7 Jours",
+    "14d": "14j",
+    "14dFull": "14 Jours",
     "apply": "Appliquer",
     "cancel": "Annuler",
     "clear": "Effacer",
@@ -305,6 +313,7 @@
     "revokedGroup": "Révoqués ({{count, number}})",
     "revokeBody": "« {{name}} » cesse immédiatement de fonctionner pour tous les assistants qui l'utilisent. Cette action est irréversible.",
     "revoke": "Révoquer",
+    "revokeNamed": "Révoquer le jeton « {{name}} »",
     "toggleAudit": "Afficher l'activité de {{name}}",
     "status": {
       "active": "Actif",
@@ -336,5 +345,46 @@
   "header": {
     "title": "Voix du client",
     "subtitle": "Plateforme unifiée d'analyse des retours clients"
+  },
+  "builtInSources": {
+    "webscraper": "Extracteur web",
+    "manual_import": "Import manuel",
+    "s3_import": "Import S3",
+    "feedback_form": "Formulaire d'avis",
+    "prototype_feedback": "Avis sur le prototype",
+    "github_issues": "Tickets GitHub",
+    "app_reviews_ios": "Avis de l'app iOS",
+    "app_reviews_android": "Avis de l'app Android",
+    "synthetic_reviews": "Avis synthétiques",
+    "web_reviews": "Avis web",
+    "email_intake": "Boîte de réception"
+  },
+  "feedbackDimension": {
+    "label": "Type de retour",
+    "description": "Le type de retour d’un avis : un type principal, attribué par le modèle pour chaque source."
+  },
+  "feedbackTypes": {
+    "bug": "Bogue",
+    "service_failure": "Défaillance du service",
+    "feature_request": "Demande de fonctionnalité",
+    "usability": "Ergonomie",
+    "performance": "Performance",
+    "pricing_billing": "Prix et facturation",
+    "support_experience": "Expérience du support",
+    "praise": "Éloge",
+    "question": "Question",
+    "other": "Autre"
+  },
+  "feedbackTypeDescriptions": {
+    "bug": "Quelque chose est cassé ou faux : une erreur, un plantage, des données erronées",
+    "service_failure": "Le service n’a pas été rendu : une panne, une livraison ou un paiement échoué, connexion impossible",
+    "feature_request": "Demande quelque chose de nouveau ou un changement",
+    "usability": "Fonctionne, mais est déroutant ou difficile à utiliser",
+    "performance": "Fonctionne, mais est lent (un plantage est un bogue)",
+    "pricing_billing": "Prix, frais, débits, remboursements, factures",
+    "support_experience": "La façon dont le support ou le personnel a traité le client",
+    "praise": "Retour positif sans problème à corriger",
+    "question": "Demande comment quelque chose fonctionne",
+    "other": "Aucun des types ci-dessus"
   }
 }

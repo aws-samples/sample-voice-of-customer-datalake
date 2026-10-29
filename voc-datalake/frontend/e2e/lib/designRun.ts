@@ -5,7 +5,7 @@
  */
 import { test, type Page, type TestInfo } from '@playwright/test'
 import { apiCall, listOf, stringField } from './api'
-import type { Role } from './env'
+import { BUILTIN_WORKFLOW_ID, type Role } from './env'
 import { pinAllTime, roleOf } from './fixtures'
 import type { Screen } from './inventory'
 import type { StepRecorder } from './recorder'
@@ -33,6 +33,8 @@ export async function resolveIds(role: Role): Promise<Ids> {
     project: stringField(listOf(projects, 'projects')[0], 'project_id', 'id'),
     agent: stringField(listOf(agents, 'items')[0] ?? listOf(agents, 'agents')[0], 'agent_id', 'id'),
     feedback: stringField(listOf(feedback, 'items')[0], 'feedback_id', 'id'),
+    // The built-in: every deployment and the mock have it, every role may open it, and opening writes nothing.
+    workflow: BUILTIN_WORKFLOW_ID,
   }
 }
 

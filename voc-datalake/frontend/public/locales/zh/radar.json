@@ -34,14 +34,26 @@
     "sampled": "根据此时间范围内最新的评论得出。"
   },
   "releases": {
-    "title": "发布",
-    "empty": "尚未找到发布信息。发布信息来自定期扫描或\"立即扫描\"。",
+    "title": "新闻与发布",
+    "empty": "尚未找到新闻。新闻与发布来自定时扫描或“立即扫描”。",
     "official": "官方",
     "thirdParty": "媒体与评论",
-    "approximate": "日期为估计",
+    "undated": "未公布日期，首次发现于",
     "mentions_one": "{{count, number}} 次提及",
     "mentions_other": "{{count, number}} 次提及",
-    "sources": "出处"
+    "sources": "出处",
+    "kinds": {
+      "release": "发布",
+      "announcement": "公告",
+      "promotion": "促销",
+      "partnership": "合作",
+      "news": "公司新闻"
+    },
+    "filterLabel": "按类型筛选",
+    "kindAll": "全部",
+    "kindEmpty": "此列表中没有“{{kind}}”类型的内容。选择“全部”查看所有条目。",
+    "viaExa": "来自 Exa",
+    "viaFeed": "来自订阅源"
   },
   "compare": {
     "title": "与我们对比",
@@ -63,13 +75,12 @@
     "openOurs_other": "在“类别”中打开 {{category}} 的 {{count, number}} 条我方评论"
   },
   "brands": {
-    "hint": "雷达跟踪的品牌:发布扫描会在网上搜索每个品牌,而您在数据源页面标记为雷达来源的来源会导入其评论。",
+    "hint": "Radar 跟踪的品牌：新闻扫描会在网上搜索每个品牌（使用其语言，并读取已设置的新闻订阅源），您在“数据源”页面标记为 Radar 来源的数据源会导入其评论。",
     "addTitle": "添加品牌",
     "nameLabel": "品牌名称",
     "domainsLabel": "网站域名",
     "domainsHint": "用逗号分隔,最多 {{max, number}} 个(例如官网和博客)。用于查找其发布说明。",
     "add": "添加品牌",
-    "editDomains": "编辑域名",
     "editDomainsLabel": "{{brand}} 的网站域名",
     "doneEditing": "完成",
     "remove": "移除",
@@ -86,7 +97,31 @@
     "duplicate": "{{brand}} 已在列表中。",
     "invalidName": "请使用 1-64 个字母、数字、空格或 . & ' + -",
     "tooMany": "最多 {{max, number}} 个品牌。",
-    "loadFailed": "无法加载品牌列表。"
+    "loadFailed": "无法加载品牌列表。",
+    "edit": "编辑",
+    "editLabel": "编辑 {{brand}}",
+    "languageLabel": "搜索语言",
+    "languageAuto": "自动（根据域名：{{language}}）",
+    "languageAutoNew": "自动（根据域名）",
+    "languageSummary": "语言：{{language}}",
+    "feedsLabel": "新闻订阅源",
+    "feedsHint": "可选的品牌新闻 RSS 或 Atom 订阅源。每次扫描时读取。最多 {{max, number}} 个，每行一个或以逗号分隔。",
+    "feedsTooMany": "最多 {{max, number}} 个新闻订阅源。",
+    "feedsHttps": "每个新闻订阅源都必须是 https:// 链接。",
+    "feedsSummary": "新闻订阅源：{{list}}",
+    "noFeeds": "无",
+    "moreOptions": "更多选项",
+    "fixFeeds": "保存前请修正新闻订阅源。",
+    "searchTermsLabel": "搜索词",
+    "searchTermsHint": "可选，添加到新闻搜索中的词语或短语，例如公司法定名称或产品名称。当品牌名称同时也是常用词时很有用。最多 {{max, number}} 个，每行一个，每个最多 {{chars, number}} 个字符。",
+    "excludeTermsLabel": "排除词",
+    "excludeTermsHint": "可选词语或短语：标题或摘要中包含其中任意一个的搜索结果将被跳过。最多 {{max, number}} 个，每行一个，每个最多 {{chars, number}} 个字符。",
+    "termsTooMany": "最多 {{max, number}} 个词。",
+    "termsTooLong": "每个词最多 {{chars, number}} 个字符。",
+    "termsInvalid": "词语不能包含双引号，也不能以 - 开头。",
+    "searchTermsSummary": "搜索词：{{list}}",
+    "excludeTermsSummary": "排除词：{{list}}",
+    "fixTerms": "保存前请修正搜索词或排除词。"
   },
   "setup": {
     "brandsTitle": "跟踪的品牌",
@@ -98,16 +133,16 @@
     "sources": "数据来源：",
     "howTitle": "雷达如何工作",
     "step1Title": "添加品牌",
-    "step1": "在下方添加,并填写其官网域名以查找发布说明。",
+    "step1": "在下方添加，并填写其官网域名以查找其新闻；可选填写搜索语言和新闻订阅源。",
     "step2Title": "导入其评价",
     "step2": "在数据源页面,为爬虫、Web Reviews 页面、应用连接器或 CSV/JSON 导入勾选\"雷达来源\"并选择品牌。其评论只进入雷达,绝不进入您的仪表板。",
-    "step3Title": "发布",
-    "step3": "网络搜索会按下方的频率自动运行（每天检查），也可以用\"立即扫描\"马上运行。首次扫描回溯 90 天。",
+    "step3Title": "新闻与发布",
+    "step3": "按下方的频率（每天检查）自动对每个品牌的新闻（发布、新功能、促销、合作、公司新闻）进行网络搜索，使用品牌的语言并读取其新闻订阅源；也可通过“立即扫描”马上运行。首次扫描回溯 90 天。",
     "configure": "配置"
   },
   "settings": {
     "title": "雷达",
-    "description": "发布扫描会在网上搜索每个雷达品牌发布的内容。添加品牌之前不会运行任何操作。",
+    "description": "新闻扫描会在网上搜索每个 Radar 品牌发布和宣布的内容。添加品牌之前不会运行任何扫描。",
     "cadence": "扫描频率",
     "cadences": {
       "daily": "每天",
@@ -138,7 +173,8 @@
       "completed": "已完成",
       "failed": "失败",
       "skipped": "已跳过"
-    }
+    },
+    "scanNowHint": "立即在网络和每个品牌自己的域名中搜索其发布和新闻，无需等待计划。需要几分钟，并会使用网络搜索。"
   },
   "nav": {
     "label": "雷达"
@@ -184,5 +220,39 @@
     "readTheirs_one": "阅读其在 {{category}} 的评价",
     "readTheirs_other": "阅读其在 {{category}} 的 {{count, number}} 条评价",
     "noSubcategoryChip": "无子类别"
+  },
+  "all": {
+    "option": "所有品牌",
+    "brandsTitle": "品牌",
+    "brandsCaption": "此时间段内跟踪的每个品牌：评论、情绪、发布和最新新闻",
+    "noBrands": "尚未跟踪任何品牌。",
+    "colBrand": "品牌",
+    "colReviews": "评论",
+    "colSentiment": "情绪",
+    "colReleases": "时间段内的发布",
+    "colLatest": "最新新闻",
+    "shares": "正面 {{positive}} · 负面 {{negative}}",
+    "noRelease": "暂无新闻",
+    "openBrand": "打开 {{brand}}",
+    "newsTitle": "所有品牌的最新动态",
+    "capped": "显示 {{total, number}} 条中最新的 {{shown, number}} 条"
+  },
+  "exa": {
+    "title": "Exa（第二搜索索引）",
+    "description": "当 Radar 的网络搜索找不到某个品牌带日期的新闻时，也会搜索 Exa。发送给 Exa 的只有品牌名称、搜索词和域名。约每 1,000 次搜索 5 美元，由 Exa 计费。",
+    "configured": "已配置",
+    "notConfigured": "未配置",
+    "keyLabel": "Exa API 密钥",
+    "placeholder": "粘贴您的 Exa API 密钥",
+    "replacePlaceholder": "已保存密钥。粘贴新密钥即可替换",
+    "save": "保存密钥",
+    "remove": "移除密钥",
+    "saved": "已保存 Exa 密钥。",
+    "removed": "已移除 Exa 密钥。",
+    "saveFailed": "无法保存 Exa 密钥。",
+    "removeFailed": "无法移除 Exa 密钥。",
+    "invalidKey": "请使用 8-200 个字母、数字、- 或 _。",
+    "removeTitle": "移除 Exa 密钥？",
+    "removeMessage": "Radar 将停止搜索 Exa。其自身的网络搜索继续运行，已找到的新闻会保留。"
   }
 }

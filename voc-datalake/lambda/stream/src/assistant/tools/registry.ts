@@ -66,6 +66,17 @@ export function withoutProjectWrites(toolset: AssistantToolset): AssistantToolse
 }
 
 /**
+ * The toolset without `generate_document` when the AI may write neither a PR/FAQ nor a PRD
+ * with this person (runtime/ai-writing.ts): its only outputs are those two types. Merge and
+ * update stay (they also serve custom / research documents) and are refused per call.
+ */
+export function withoutDocumentGeneration(toolset: AssistantToolset): AssistantToolset {
+  const tools = toolset.tools.filter((tool) => tool.name !== 'generate_document');
+  if (tools.length === toolset.tools.length) return toolset;
+  return toolsetOf(toolset.packs, tools);
+}
+
+/**
  * Stable guidance text for the system prompt describing how to use the
  * toolset's packs (which tool for which question, write tools need approval).
  * Deterministic for a given toolset so it can sit inside the cached prefix.

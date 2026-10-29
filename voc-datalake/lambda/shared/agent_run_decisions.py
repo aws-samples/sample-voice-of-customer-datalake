@@ -53,7 +53,7 @@ MAX_OBJECTION_CHARS: Final = 400
 MAX_VERDICT_NAME_CHARS: Final = 120
 MAX_TITLE_CHARS: Final = 200
 
-_RUN_NEEDS_HUMAN: Final = 'needs_human'
+RUN_NEEDS_HUMAN: Final = 'needs_human'
 
 
 def max_calls_per_run(agent: Mapping[str, Any]) -> int:
@@ -112,7 +112,7 @@ def needs_human_payload(reason: str, node_id: str, node_title: str, *, loop_inde
 def needs_human_view(run: Mapping[str, Any]) -> dict[str, Any] | None:
     """The run's ``needs_human`` payload while it waits for a human, else None."""
     payload = run.get('needs_human')
-    if run.get('status') != _RUN_NEEDS_HUMAN or not isinstance(payload, Mapping):
+    if run.get('status') != RUN_NEEDS_HUMAN or not isinstance(payload, Mapping):
         return None
     return dict(payload)
 
@@ -133,7 +133,7 @@ def allowed_actions(run: Mapping[str, Any]) -> list[str]:
     including a run that ended as needs_human before payloads existed — can only
     be closed. ``run`` is a ``plain`` row (ints, not DynamoDB Decimals).
     """
-    if run.get('status') != _RUN_NEEDS_HUMAN or isinstance(run.get('decision'), Mapping):
+    if run.get('status') != RUN_NEEDS_HUMAN or isinstance(run.get('decision'), Mapping):
         return []
     payload = run.get('needs_human')
     if not isinstance(payload, Mapping) or payload.get('reason') not in GATE_REASONS:

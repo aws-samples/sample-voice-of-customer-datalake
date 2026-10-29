@@ -79,9 +79,12 @@ export function CategoryDistribution({
     )
   }
 
+  // "Other" is the remainder, not a category of its own: the header and the
+  // "Show all N categories" toggle count the same rows (5.34.00: "8 categories"
+  // beside "Show all 9 categories").
+  const categoryCount = categoryData.filter((category) => category.name !== OTHER_CATEGORY).length
   const headerMeta = [
-    // "Other" is the remainder, not a category of its own.
-    t('categories', { count: categoryData.filter((category) => category.name !== OTHER_CATEGORY).length }),
+    t('categories', { count: categoryCount }),
     t('reviewTotal', { count: totalIssues, formatted: formatCount(totalIssues, i18n.language) }),
     ...(periodDays ? [t('lastDays', { count: periodDays })] : []),
   ].join(' • ')
@@ -132,7 +135,7 @@ export function CategoryDistribution({
           ) : (
             <>
               <ChevronDown size={14} />
-              {t('showAllCategories', { count: categoryData.length })}
+              {t('showAllCategories', { count: categoryCount })}
             </>
           )}
         </button>

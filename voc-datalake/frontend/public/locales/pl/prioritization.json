@@ -21,6 +21,7 @@
       "capReached": "To głosowanie zebrało już maksymalną liczbę kart, które przyjmuje. Poproś moderatora o otwarcie kolejnej sesji.",
       "closed": "Moderator zamknął to głosowanie, więc nie są przyjmowane kolejne karty.",
       "expired": "To głosowanie wygasło, więc nie są przyjmowane kolejne karty.",
+      "gone": "Propozycja, której dotyczyło to głosowanie, została usunięta, więc głosowanie się zakończyło.",
       "invalid": "Nie udało się odczytać tej karty, więc nic nie zapisano. Sprawdź liczby i notatkę, a następnie wyślij ponownie.",
       "notFound": "Ten link nie otwiera głosowania. Sprawdź, czy zeskanowałeś kod, który jest teraz na ekranie.",
       "title": "To głosowanie nie jest otwarte",
@@ -91,7 +92,10 @@
     "avgRating": "Średnia ocena",
     "noLinkedForm": "Z tym dokumentem nie jest powiązany żaden formularz opinii.",
     "noRatings": "Nie zebrano ocen",
-    "submissions": "Zgłoszenia",
+    "submissions_one": "Zgłoszenie",
+    "submissions_few": "Zgłoszenia",
+    "submissions_many": "Zgłoszeń",
+    "submissions_other": "Zgłoszenia",
     "title": "Zebrane opinie",
     "unavailable": "Oceny niedostępne"
   },
@@ -202,7 +206,9 @@
     "title": "Wyniki priorytetyzacji",
     "wholeRow": "Jeden głos dla wszystkich {{documents, number}} dokumentów w tym wierszu.",
     "yoursOnly": "Twój własny głos. Zapis obejmuje wyłącznie Twoje oceny.",
-    "valueOfMax": "{{value}} z {{max, number}}"
+    "valueOfMax": "{{value}} z {{max, number}}",
+    "clear": "Wyczyść",
+    "clearAxis": "Wyczyść ocenę: {{name}}"
   },
   "scoresUnavailable": {
     "description": "Zapisane oceny są teraz niedostępne, więc poniższe wartości są domyślne, a nie to, co ktokolwiek wprowadził. Przed zapisaniem odśwież stronę.",
@@ -307,6 +313,7 @@
     "mediumPriority": "Średni priorytet",
     "notScored": "Bez oceny",
     "totalRows": "Łącznie propozycji",
+    "loading": "Liczenie propozycji...",
     "unreadable_one": "Wyniku zespołu dla {{count, number}} propozycji nie udało się odczytać, dlatego jest wliczona do sumy, ale do żadnego z pozostałych zliczeń. Odśwież stronę, aby ją zobaczyć.",
     "unreadable_other": "Wyników zespołu dla {{count, number}} propozycji nie udało się odczytać, dlatego są wliczone do sumy, ale do żadnego z pozostałych zliczeń. Odśwież stronę, aby je zobaczyć.",
     "unreadable_few": "Wyniki oceny zespołu dla {{count, number}} propozycji nie mogły zostać odczytane, dlatego są uwzględnione w sumie, ale nie w pozostałych licznikach. Przeładuj stronę, aby je zobaczyć.",

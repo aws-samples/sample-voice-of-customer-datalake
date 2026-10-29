@@ -3,7 +3,7 @@
  *
  * Displays a single metric with optional trend indicator:
  * - Title and large value display (a number is grouped in the app language: "26,622" / "26.622")
- * - Optional icon with color theming
+ * - Decorative icon with color theming
  * - Trend arrow (up/down/neutral) with percentage change, in the app language
  * - Mobile-responsive with adaptive sizing
  *
@@ -28,8 +28,8 @@ interface MetricCardProps {
   value: string | number
   /** Percentage change from previous period */
   change?: number
-  /** Icon element to display */
-  icon?: ReactNode
+  /** Decorative icon element */
+  icon: ReactNode
   /** Trend direction for styling */
   trend?: TrendDirection
   /** Color theme for icon background */
@@ -122,17 +122,15 @@ export default function MetricCard({ title, value: raw, change, icon, trend, col
             <TrendIndicator trend={trend} change={change} />
           )}
         </div>
-        {icon && (
-          <div 
-            className={clsx(
-              'hidden @[12rem]:block p-2 sm:p-2.5 rounded-lg flex-shrink-0',
-              COLOR_CLASSES[color]
-            )}
-            aria-hidden="true"
-          >
-            {icon}
-          </div>
-        )}
+        <div
+          className={clsx(
+            'hidden @[12rem]:block p-2 sm:p-2.5 rounded-lg flex-shrink-0',
+            COLOR_CLASSES[color]
+          )}
+          aria-hidden="true"
+        >
+          {icon}
+        </div>
       </div>
     </div>
   )

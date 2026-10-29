@@ -9,10 +9,11 @@
  *
  * @module api/plansApi
  */
+import { del, post } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
-import { isObject as isRecord } from './workflowsApi'
-import { lenientList } from '../assistant/lenient'
+import { isRecord } from '../lib/typeGuards'
+import { parseEach } from './lenientFields'
 import { TOOL_PACKS } from '../assistant/contract'
 import { PLAN_STATUSES, PLAN_STEP_KINDS, PLAN_STEP_STATUSES } from '../assistant/plan/schema'
 import type { VocPlan } from '../assistant/plan/schema'
@@ -73,7 +74,7 @@ const PlanViewSchema = z.object({
   started_at: optionalString,
   finished_at: optionalString,
   conversation_id: optionalString,
-  steps: z.unknown().transform((raw) => lenientList(PlanStepViewSchema, raw)),
+  steps: z.unknown().transform((raw) => parseEach(PlanStepViewSchema, raw)),
   summary: optionalString,
 })
 export type PlanView = z.output<typeof PlanViewSchema>
@@ -90,7 +91,7 @@ export function normalizePlanView(raw: unknown): PlanView | null {
 }
 
 function normalizePlanList(raw: unknown): PlanSummary[] {
-  return lenientList(PlanSummarySchema, isRecord(raw) ? raw.plans : undefined)
+  return parseEach(PlanSummarySchema, isRecord(raw) ? raw.plans : undefined)
 }
 
 function requirePlan(raw: unknown): PlanView {
@@ -117,7 +118,6 @@ const PLAN_LIST_LIMIT = 20
 const planPath = (planId: string, suffix = '') => `/agents/plans/${encodeURIComponent(planId)}${suffix}`
 const stepPath = (planId: string, stepId: string, action: 'approve' | 'decline') =>
   planPath(planId, `/steps/${encodeURIComponent(stepId)}/${action}`)
-const post = (body?: unknown): RequestInit => ({ method: 'POST', ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
 
 export const plansApi = {
   /** Approve and start a plan; the caller is the approver. 400 lists the plan's errors. */
@@ -130,7 +130,7 @@ export const plansApi = {
     normalizePlanList(await fetchApi<unknown>(`/agents/plans?limit=${limit}`)),
   cancel: async (planId: string): Promise<PlanView> => requirePlan(await fetchApi<unknown>(planPath(planId, '/cancel'), post())),
   /** Take a finished plan off the caller's list (it is kept, never deleted); 409 while it is still active. */
-  remove: async (planId: string): Promise<PlanView> => requirePlan(await fetchApi<unknown>(planPath(planId), { method: 'DELETE' })),
+  remove: async (planId: string): Promise<PlanView> => requirePlan(await fetchApi<unknown>(planPath(planId), del())),
   /** Approve the paused write the caller reviewed (`fingerprint` of the `pending` shown); 409 when it changed since. */
   approveStep: async (planId: string, stepId: string, fingerprint: string): Promise<PlanView> =>
     requirePlan(await fetchApi<unknown>(stepPath(planId, stepId, 'approve'), post({ fingerprint }))),

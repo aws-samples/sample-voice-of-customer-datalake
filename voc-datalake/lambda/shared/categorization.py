@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from shared.category_access import FALLBACK_CATEGORY
 from shared.converse import BedrockThrottlingError, converse, with_thinking_headroom
 from shared.feedback_dimensions import inferable_dimensions
 from shared.llm_json import first_json_object
@@ -507,7 +508,6 @@ class Enrichment:
         return isinstance(metadata, dict) and bool(metadata.get('error'))
 
 
-FALLBACK_CATEGORY = 'other'
 
 
 def _model_category(

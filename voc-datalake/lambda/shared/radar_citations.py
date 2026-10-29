@@ -29,11 +29,12 @@ from collections.abc import Iterable
 from typing import Final
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-__all__ = ['clean_citations']
+from shared.http_utils import DEFAULT_PORTS
+
+__all__ = ['clean_citations', 'page_key']
 
 MAX_CITATIONS: Final = 20
 _SCHEMES: Final = frozenset({'http', 'https'})
-_DEFAULT_PORTS: Final = {'http': 80, 'https': 443}
 _TRACKING_PARAMS: Final = frozenset({'gclid', 'fbclid', 'msclkid', 'mc_cid', 'mc_eid', 'igshid', '_hsenc', '_hsmi'})
 _FEED_SUFFIXES: Final = ('.json', '.xml', '.rss', '.atom')
 _FEED_SEGMENTS: Final = frozenset({'rss', 'feed', 'feeds', 'atom'})
@@ -46,7 +47,7 @@ def _tracking(name: str) -> bool:
 
 def _netloc(scheme: str, host: str, port: int | None) -> str:
     shown = f'[{host}]' if ':' in host else host
-    return shown if port is None or port == _DEFAULT_PORTS[scheme] else f'{shown}:{port}'
+    return shown if port is None or port == DEFAULT_PORTS[scheme] else f'{shown}:{port}'
 
 
 def normalise_url(url: object) -> str | None:
@@ -81,6 +82,12 @@ def _page_key(url: str) -> str:
     host = parts.netloc.removeprefix('www.')
     query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True)))
     return f'{host}{parts.path.rstrip("/")}?{query}'
+
+
+def page_key(url: object) -> str | None:
+    """The page ``url`` is (two spellings of one page share it, see "one per page"); None when it is not a web URL."""
+    normalised = normalise_url(url)
+    return _page_key(normalised) if normalised is not None else None
 
 
 def _host(url: str) -> str:

@@ -31,6 +31,7 @@ import { roleOf } from '../lib/fixtures'
 import { readLedger, recordCreated } from '../lib/ledger'
 import { idTokenFor } from '../lib/session'
 import { isRecord } from '../lib/guards'
+import { nodeUserAgent } from '../lib/trafficTag'
 
 const FORM_NAME = `${RUN_PREFIX}security-probe-form`
 
@@ -117,12 +118,40 @@ async function someFormId(): Promise<{ id: string; created: boolean }> {
   return { id, created: true }
 }
 
+/** How long an analyze-url assist job may take to settle (one fetch, at most a model call). */
+const ASSIST_JOB_TIMEOUT_MS = 120_000
+
+function jsonBody(res: Probe): Record<string, unknown> | undefined {
+  try {
+    const parsed: unknown = JSON.parse(res.text)
+    return isRecord(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Polls `GET /scrapers/jobs/{id}` (its starter: the admin) until the job is completed or failed. */
+async function finishedAssistJob(jobId: string): Promise<{ status: string; error: string; text: string }> {
+  const deadline = Date.now() + ASSIST_JOB_TIMEOUT_MS
+  for (;;) {
+    const poll = await apiCall('admin', 'GET', `/scrapers/jobs/${encodeURIComponent(jobId)}`)
+    expect(poll.status, 'GET /scrapers/jobs/{id}').toBe(200)
+    // The poll answer IS the job view (assist_jobs.view: job_id, status, error, result…).
+    const job = isRecord(poll.body) ? poll.body : undefined
+    const status = stringField(job, 'status') ?? ''
+    if (status === 'completed' || status === 'failed' || Date.now() > deadline) {
+      return { status, error: stringField(job, 'error') ?? '', text: JSON.stringify(poll.body) }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
+  }
+}
+
 test.describe('security probes (API level)', () => {
   let api: APIRequestContext
 
   test.beforeAll(async () => {
     // A bare context: no saved session, no cookies; each probe sets its own headers.
-    api = await playwrightRequest.newContext()
+    api = await playwrightRequest.newContext({ userAgent: nodeUserAgent() })
   })
 
   test.afterAll(async () => {
@@ -195,13 +224,18 @@ test.describe('security probes (API level)', () => {
 
   test('scraper analyze-url refuses a public URL that redirects to the metadata IP (#244)', async ({}, testInfo) => {
     test.skip(roleOf(testInfo) !== 'admin', 'one outbound fetch per run')
+    test.setTimeout(ASSIST_JOB_TIMEOUT_MS + 30_000)
     const res = await probe(api, 'analyze-url redirect', 'POST', '/scrapers/analyze-url', { role: 'admin', body: { url: SSRF_REDIRECT_URL } })
-    testInfo.annotations.push({ type: 'redirect', description: `${SSRF_REDIRECT_URL} -> ${res.status} ${errorText(res)}` })
-    // Refused either way. Production (2.14.00/2.15.00) answers 500 "Failed to analyze
-    // URL": the redirect handler's HTTPError is caught by the generic except. The
-    // contract worth pinning here is "never fetched"; the status is annotated.
-    expect(res.status, 'never analysed: the redirect hop is refused').toBeGreaterThanOrEqual(400)
-    expect(res.text).not.toMatch(/ami-id|instance-id|security-credentials|selectors/)
+    // An assist job (4.00.00): the first hop is public, so the start is a 202 and the
+    // worker's fetch refuses the redirect; the job ends `failed` with that refusal.
+    expect(res.status, 'analyze-url starts an assist job').toBe(202)
+    const jobId = stringField(jsonBody(res), 'job_id') ?? ''
+    expect(jobId, 'the 202 names its job').not.toBe('')
+    const job = await finishedAssistJob(jobId)
+    testInfo.annotations.push({ type: 'redirect', description: `${SSRF_REDIRECT_URL} -> job ${job.status}: ${job.error}` })
+    expect(job.status, 'never analysed: the redirect hop is refused').toBe('failed')
+    expect(job.error).toMatch(/^Redirect refused/)
+    expect(`${job.error} ${job.text}`).not.toMatch(/ami-id|instance-id|security-credentials|selectors/)
   })
 
   test('scraper analyze-url answers a malformed body with a 4xx, not a gateway 502', async ({}, testInfo) => {

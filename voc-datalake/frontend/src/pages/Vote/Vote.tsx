@@ -83,6 +83,7 @@ function refusalMessage(failure: BallotFailure, t: (key: string) => string): str
     case 'closed': return t('ballot.closed.closed')
     case 'expired': return t('ballot.closed.expired')
     case 'cap_reached': return t('ballot.closed.capReached')
+    case 'gone': return t('ballot.closed.gone')
     // A ballot the API could not read — an axis that is not a number, a note past
     // the bound. PERMANENT, which is why it is not folded into `unknown`: the
     // generic sentence says "try again in a moment", and trying again in a moment
@@ -109,6 +110,7 @@ function refusalTitle(failure: BallotFailure, t: (key: string) => string): strin
     case 'closed':
     case 'expired':
     case 'cap_reached':
+    case 'gone':
       return t('ballot.closed.title')
     case 'invalid':
     case 'unknown':

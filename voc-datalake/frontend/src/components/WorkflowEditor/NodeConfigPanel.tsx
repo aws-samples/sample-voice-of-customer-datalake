@@ -10,6 +10,7 @@
  */
 import { ArrowLeft, Repeat, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { workflowIssueText } from './workflowIssueText'
 import { API_WORKFLOW_LIMITS, WORKFLOW_NODE_ROLES } from '../../api/workflowsApi'
 import { createLoop, removeNodes, updateNode } from './model'
 import { EdgeForm, StepArrows } from './ArrowSettings'
@@ -68,7 +69,7 @@ function StepForm({ node, definition, issues, readOnly, onChange }: Readonly<{
       <p className="text-[12px] text-muted">{t(`nodeTypes.${node.type}.description`)}</p>
       {issues.length > 0 && (
         <ul className="rounded-md border border-danger/30 bg-danger-subtle px-3 py-2 text-[12px] text-danger space-y-0.5" aria-live="polite">
-          {issues.map((message) => <li key={message}>{message}</li>)}
+          {issues.map((message) => <li key={message}>{workflowIssueText(t, message)}</li>)}
         </ul>
       )}
       <LabeledField label={t('editor.fields.title')}>

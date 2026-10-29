@@ -118,12 +118,6 @@ class TestConstants:
         assert store.MAX_MATE_TEXT_CHARS == 8000
 
 
-class TestNowIso:
-    def test_is_an_aware_utc_timestamp_of_now(self):
-        before = datetime.now(UTC)
-        stamp = _parse_iso(store.now_iso())
-        assert stamp.utcoffset() == timedelta(0)
-        assert timedelta(0) <= stamp - before < timedelta(seconds=5)
 
 
 class TestPlain:
@@ -177,11 +171,6 @@ class TestTable:
     def test_opens_the_configured_table(self, monkeypatch):
         monkeypatch.setenv('AGENTS_TABLE', 'test-agents')
         assert store._table().name == 'test-agents'
-
-
-class TestRunKey:
-    def test_shape(self):
-        assert store._run_key('ag_9', 'ar_7') == {'pk': 'AGENT#ag_9', 'sk': 'RUN#ar_7'}
 
 
 class TestConsistentReads:
@@ -340,6 +329,32 @@ class TestStartRun:
     def test_other_errors_propagate(self):
         with _update_item_raising_boom():
             store.start_run(AGENT_ID, RUN_ID, 1)
+
+
+class TestStartRunMovesTheAgentsLastRunStatus:
+    """5.34.00 live: the agents list said "Queued" for a run that was running (it reads the agent row)."""
+
+    def _agent_row(self, agents) -> dict:
+        return agents.get_item(Key={'pk': f'AGENT#{AGENT_ID}', 'sk': 'META'})['Item']
+
+    def test_the_agent_row_says_running_once_the_run_starts(self, agents):
+        seed_agent(agents, last_run_id=RUN_ID, last_run_status='queued')
+        seed_run(agents)
+        store.start_run(AGENT_ID, RUN_ID, 1)
+        assert self._agent_row(agents)['last_run_status'] == 'running'
+
+    @pytest.mark.parametrize(('last_run_id', 'last_status'), [('ar_newer', 'queued'), (RUN_ID, 'cancelled')])
+    def test_a_newer_run_or_a_finish_is_never_overwritten(self, agents, last_run_id, last_status):
+        seed_agent(agents, last_run_id=last_run_id, last_run_status=last_status)
+        seed_run(agents)
+        store.start_run(AGENT_ID, RUN_ID, 1)
+        assert self._agent_row(agents)['last_run_status'] == last_status
+
+    def test_an_agent_row_without_a_last_run_is_left_alone(self, agents):
+        seed_agent(agents)
+        seed_run(agents)
+        store.start_run(AGENT_ID, RUN_ID, 1)
+        assert 'last_run_status' not in self._agent_row(agents)
 
 
 class TestUpdateRunning:

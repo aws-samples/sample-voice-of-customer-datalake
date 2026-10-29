@@ -6,6 +6,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { FeedbackItem } from '../../api/types'
+import { dataExplorerKeys } from './useDataExplorerQueries'
 
 /**
  * Save-only by design: customer data is never deleted, so the explorer has no
@@ -23,8 +24,8 @@ export function useDataExplorerMutations(selectedBucket: string, callbacks: Muta
     mutationFn: (params: { key: string; content: string; syncToDynamo?: boolean }) =>
       api.saveDataExplorerS3(params.key, params.content, params.syncToDynamo, selectedBucket),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['data-explorer-s3'] })
-      void queryClient.invalidateQueries({ queryKey: ['data-explorer-feedback'] })
+      void queryClient.invalidateQueries({ queryKey: dataExplorerKeys.s3() })
+      void queryClient.invalidateQueries({ queryKey: dataExplorerKeys.feedback() })
       callbacks.onS3SaveSuccess()
     },
   })
@@ -33,7 +34,7 @@ export function useDataExplorerMutations(selectedBucket: string, callbacks: Muta
     mutationFn: (params: { feedbackId: string; data: Partial<FeedbackItem> }) =>
       api.saveDataExplorerFeedback(params.feedbackId, params.data),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['data-explorer-feedback'] })
+      void queryClient.invalidateQueries({ queryKey: dataExplorerKeys.feedback() })
       callbacks.onFeedbackSaveSuccess()
     },
   })

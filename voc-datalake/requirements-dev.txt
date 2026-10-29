@@ -3,6 +3,10 @@
 # To run tests, also install production dependencies:
 #   pip install -r lambda/layers/ingestion-deps/requirements.txt
 #   pip install -r lambda/layers/processing-deps/requirements.txt
+#   pip install -r lambda/layers/signing-deps/requirements.txt
+#   pip install -r lambda/layers/email-intake-deps/requirements.txt
+# (scripts/audit/py_layers.py resolves every layer against this venv: a missing or
+# differently-pinned one is a `version-mismatch` finding.)
 #
 pytest>=8.0.0
 pytest-cov>=6.0.0

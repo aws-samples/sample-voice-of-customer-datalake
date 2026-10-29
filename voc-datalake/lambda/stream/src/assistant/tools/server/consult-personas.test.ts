@@ -5,8 +5,8 @@ import { ServiceError } from '../../../lib/errors.js';
 import { nth } from '../../../lib/nth-fixtures.js';
 import { buildCatalogue } from '../catalogue.js';
 import type { ToolDeps } from '../deps.js';
-import { fakeContext, fakeDeps } from '../test-fixtures.js';
-import { normalizeLanguage } from './consult-personas.js';
+import { converseAnswer, fakeContext, fakeDeps } from '../test-fixtures.js';
+import { documentLabel, normalizeLanguage } from './persona-consult.js';
 
 const CONTEXT_ROUTE = 'POST /projects/proj_1/chat-context';
 
@@ -21,18 +21,20 @@ const CHAT_CONTEXT = {
 };
 
 function answer(text: string): ConverseCommandOutput {
-  return {
-    output: { message: { role: 'assistant', content: [{ reasoningContent: { reasoningText: { text: 'hmm' } } }, { text }] } },
-    stopReason: 'end_turn',
-    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-    metrics: { latencyMs: 1 },
-    $metadata: {},
-  };
+  return converseAnswer(text, 'hmm');
 }
 
-function setup(converse: ToolDeps['converse']) {
+const CHAT_CONTEXT_WITH_DOCUMENTS = {
+  ...CHAT_CONTEXT,
+  documents: [
+    { sk: 'PRFAQ#d1', document_id: 'd1', document_type: 'prfaq', title: 'Fast checkout', version: 2, content: 'PRESS RELEASE: checkout in one tap.' },
+    { sk: 'PRD#d2', document_id: 'd2', document_type: 'prd', title: 'Wallet PRD' },
+  ],
+};
+
+function setup(converse: ToolDeps['converse'], context: unknown = CHAT_CONTEXT) {
   const commands: ConverseCommand[] = [];
-  const deps = fakeDeps({ [CONTEXT_ROUTE]: CHAT_CONTEXT }, {
+  const deps = fakeDeps({ [CONTEXT_ROUTE]: context }, {
     converse: (command) => {
       commands.push(command);
       return converse(command);
@@ -41,7 +43,7 @@ function setup(converse: ToolDeps['converse']) {
   });
   const tool = buildCatalogue(deps).find((candidate) => candidate.name === 'consult_personas');
   if (tool?.kind !== 'server') throw new TypeError('consult_personas missing');
-  return { tool, commands };
+  return { tool, commands, deps };
 }
 
 function systemText(command: ConverseCommand | undefined): string {
@@ -65,7 +67,9 @@ describe('consult_personas', () => {
     });
     expect(commands).toHaveLength(2);
     expect(systemText(commands[0])).toContain('Save time');
-    expect(commands[0]?.input.messages).toStrictEqual([{ role: 'user', content: [{ text: 'One-click checkout?' }] }]);
+    const asked = commands[0]?.input.messages?.[0]?.content?.[0]?.text ?? '';
+    expect({ question: asked.startsWith('One-click checkout?'), reviewOnly: asked.includes('You only review and comment') })
+      .toStrictEqual({ question: true, reviewOnly: true });
   });
 
   it('uses the run model, sends no tools and no temperature, and omits thinking for adaptive models', async () => {
@@ -131,6 +135,22 @@ describe('consult_personas', () => {
     await expect(tool.execute({ question: 'q' }, fakeContext())).rejects.toMatchObject({ code: 'invalid_input' });
   });
 
+  it('grounds every persona on the tagged documents and only names the others', async () => {
+    const { tool, commands, deps } = setup(() => Promise.resolve(answer('ok')), CHAT_CONTEXT_WITH_DOCUMENTS);
+    await tool.execute({ question: 'Review it', document_ids: ['d1', 'd1'] }, fakeContext('project', { projectId: 'proj_1' }));
+    expect(deps.calls.map(({ call }) => call.body)).toStrictEqual([{ selected_document_ids: ['d1'] }]);
+    const expected = ['REFERENCED DOCUMENTS', 'Fast checkout (v2)', 'PRESS RELEASE: checkout in one tap.', '- Wallet PRD'];
+    expect(commands.map((command) => expected.filter((part) => !systemText(command).includes(part))))
+      .toStrictEqual([[], []]);
+  });
+
+  it('refuses a document id the project does not have', async () => {
+    const { tool, commands } = setup(() => Promise.resolve(answer('ok')), CHAT_CONTEXT_WITH_DOCUMENTS);
+    await expect(tool.execute({ question: 'q', document_ids: ['gone'] }, fakeContext('project', { projectId: 'proj_1' })))
+      .rejects.toMatchObject({ code: 'not_found' });
+    expect(commands).toHaveLength(0);
+  });
+
   it('adds the language instruction for the UI language', async () => {
     const { tool, commands } = setup(() => Promise.resolve(answer('ok')));
     const page = { kind: 'project' as const, path: '/projects/proj_1', projectId: 'proj_1' };
@@ -142,5 +162,16 @@ describe('consult_personas', () => {
 describe('normalizeLanguage', () => {
   it.each([['pt-BR', 'pt'], ['KO', 'ko'], ['xx', undefined], [undefined, undefined]])('%s → %s', (input, expected) => {
     expect(normalizeLanguage(input)).toBe(expected);
+  });
+});
+
+describe('documentLabel', () => {
+  it.each([
+    [{ title: 'Plan', version: 3 }, 'Plan (v3)'],
+    [{ title: 'Plan (v3)', version: 3 }, 'Plan (v3)'],
+    [{ title: '  ', version: undefined }, 'Untitled'],
+    [{ title: 'Notes', version: undefined }, 'Notes'],
+  ])('%o → %s', (document, expected) => {
+    expect(documentLabel(document)).toBe(expected);
   });
 });

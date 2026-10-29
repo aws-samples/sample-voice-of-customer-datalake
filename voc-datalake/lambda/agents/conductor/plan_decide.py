@@ -24,7 +24,8 @@ from agents.conductor import plan_state
 from agents.conductor.plan_state import PlanState
 from shared import agents_store
 from shared import plans_store as ps
-from shared.agents_store import iso, parse_iso
+from shared.agents_store import iso
+from shared.timestamps import parse_iso
 
 MAX_PARALLEL_STEPS: Final = 3          # the state machine's Map concurrency
 MAX_SETTLE_PASSES: Final = 25          # > the 20-step plan limit: one change per pass at worst

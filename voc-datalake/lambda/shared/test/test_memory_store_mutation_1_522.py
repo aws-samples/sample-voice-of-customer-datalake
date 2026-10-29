@@ -135,12 +135,6 @@ class TestKeysAreTheStorageContract:
         assert store.supporter_hash('sub-1') == expected
         assert len(store.supporter_hash('sub-1')) == 32
 
-    def test_now_iso(self):
-        assert store.now_iso(NOW) == STAMP
-        before = datetime.now(UTC)
-        parsed = datetime.fromisoformat(store.now_iso())
-        assert parsed.tzinfo is not None
-        assert timedelta(0) <= parsed - before < timedelta(seconds=5)
 
 
 class TestMemoryTableEnv:

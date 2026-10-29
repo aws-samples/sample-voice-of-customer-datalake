@@ -11,6 +11,7 @@
 import { useQueries } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { FeedbackItem } from '../../api/types'
+import { metricsKeys } from '../../api/queryKeys'
 
 /** Example reviews a row shows at most. */
 const MAX_EXAMPLE_REVIEWS = 10
@@ -25,7 +26,7 @@ export interface ExampleReviews {
 export function useExampleReviews(ids: readonly string[]): ExampleReviews {
   return useQueries({
     queries: ids.slice(0, MAX_EXAMPLE_REVIEWS).map((id) => ({
-      queryKey: ['feedback', id],
+      queryKey: metricsKeys.feedback(id),
       queryFn: () => api.getFeedbackById(id),
       retry: false,
     })),

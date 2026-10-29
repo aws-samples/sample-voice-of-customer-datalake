@@ -11,7 +11,8 @@
  */
 import { z } from 'zod'
 import { INTERRUPT_REASON_TOOL_APPROVAL } from '../contract'
-import { lenientList } from '../lenient'
+import { parseEach } from '../../api/lenientFields'
+import { asRecord } from '../../api/wireRecord'
 import type { ApprovalInterrupt } from '../types'
 import type {
   FeedbackSourceRef, MessageSources, NavigationSuggestion, WebSourceRef,
@@ -33,17 +34,6 @@ const webSourceSchema = z.object({
   url: z.url(),
 })
 
-function lenientArray<T>(schema: z.ZodType<T>, value: unknown): T[] {
-  return lenientList(schema, value)
-}
-
-const objectSchema = z.record(z.string(), z.unknown())
-
-function asRecord(value: unknown): Record<string, unknown> {
-  const parsed = objectSchema.safeParse(value)
-  return parsed.success ? parsed.data : {}
-}
-
 function toFeedbackRef(raw: z.infer<typeof feedbackSourceSchema>): FeedbackSourceRef {
   return {
     feedback_id: raw.feedback_id,
@@ -60,10 +50,10 @@ function isSafeWebSource(source: WebSourceRef): boolean {
 }
 
 export function parseSources(value: unknown): MessageSources {
-  const record = asRecord(value)
+  const record = asRecord(value) ?? {}
   return {
-    feedback: lenientArray(feedbackSourceSchema, record.feedback).map(toFeedbackRef),
-    web: lenientArray(webSourceSchema, record.web).filter(isSafeWebSource),
+    feedback: parseEach(feedbackSourceSchema, record.feedback).map(toFeedbackRef),
+    web: parseEach(webSourceSchema, record.web).filter(isSafeWebSource),
   }
 }
 
@@ -96,7 +86,7 @@ const interruptSchema = z.object({
 
 /** The tool-approval interrupts in a RUN_FINISHED outcome; others are ignored. */
 export function parseApprovalInterrupts(value: unknown): ApprovalInterrupt[] {
-  return lenientArray(interruptSchema, value)
+  return parseEach(interruptSchema, value)
     .filter((entry) => entry.reason === INTERRUPT_REASON_TOOL_APPROVAL)
     .map((entry) => {
       const metadata = interruptMetadataSchema.safeParse(entry.metadata ?? {})

@@ -3,7 +3,7 @@
  * explorer and the admin Data Explorer. Spread into `api` by `./client`; see
  * `./requestKit` for why these are factories.
  */
-import type { FetchApi } from './requestKit'
+import { del, post, put, type FetchApi } from './requestKit'
 import type { FeedbackItem, S3ImportFile, S3ImportSource } from './types'
 
 const DEFAULT_UPLOAD_CONTENT_TYPE = 'application/octet-stream'
@@ -14,10 +14,7 @@ export function s3ImportEndpoints(fetchApi: FetchApi) {
     getS3ImportSources: () => fetchApi<{ sources: S3ImportSource[]; bucket: string | null }>('/s3-import/sources'),
 
     createS3ImportSource: (name: string) =>
-      fetchApi<{ success: boolean; source?: S3ImportSource; message?: string }>('/s3-import/sources', {
-        method: 'POST',
-        body: JSON.stringify({ name }),
-      }),
+      fetchApi<{ success: boolean; source?: S3ImportSource; message?: string }>('/s3-import/sources', post({ name })),
 
     getS3ImportFiles: (params?: { source?: string; include_processed?: boolean }) => {
       const searchParams = new URLSearchParams()
@@ -29,20 +26,15 @@ export function s3ImportEndpoints(fetchApi: FetchApi) {
     /** Create-only: 409 when the key already holds a file. The PUT must send `upload_headers` exactly
      *  (they are signed into the URL; `If-None-Match: *` makes S3 refuse an overwrite). */
     getS3UploadUrl: (filename: string, source: string, contentType?: string) =>
-      fetchApi<{ success: boolean; upload_url?: string; key?: string; error?: string; upload_headers?: Record<string, string> }>('/s3-import/upload-url', {
-        method: 'POST',
-        body: JSON.stringify({
+      fetchApi<{ success: boolean; upload_url?: string; key?: string; error?: string; upload_headers?: Record<string, string> }>('/s3-import/upload-url', post({
           filename,
           source,
           // An empty string is "not given" too, so this is not `??`.
           content_type: contentType === undefined || contentType === '' ? DEFAULT_UPLOAD_CONTENT_TYPE : contentType,
-        }),
-      }),
+        })),
 
     deleteS3ImportFile: (key: string) =>
-      fetchApi<{ success: boolean; message?: string }>(`/s3-import/file/${encodeURIComponent(key)}`, {
-        method: 'DELETE',
-      }),
+      fetchApi<{ success: boolean; message?: string }>(`/s3-import/file/${encodeURIComponent(key)}`, del()),
   }
 }
 
@@ -77,16 +69,10 @@ export function dataExplorerEndpoints(fetchApi: FetchApi) {
     },
 
     saveDataExplorerS3: (key: string, content: string, syncToDynamo?: boolean, bucket?: string) =>
-      fetchApi<{ success: boolean; message?: string; synced?: boolean }>('/data-explorer/s3', {
-        method: 'PUT',
-        body: JSON.stringify({ key, content, sync_to_dynamo: syncToDynamo, bucket }),
-      }),
+      fetchApi<{ success: boolean; message?: string; synced?: boolean }>('/data-explorer/s3', put({ key, content, sync_to_dynamo: syncToDynamo, bucket })),
 
     // DynamoDB processed-record edits: no S3 sync and no delete route.
     saveDataExplorerFeedback: (feedbackId: string, data: Partial<FeedbackItem>) =>
-      fetchApi<{ success: boolean; message?: string }>('/data-explorer/feedback', {
-        method: 'PUT',
-        body: JSON.stringify({ feedback_id: feedbackId, data }),
-      }),
+      fetchApi<{ success: boolean; message?: string }>('/data-explorer/feedback', put({ feedback_id: feedbackId, data })),
   }
 }

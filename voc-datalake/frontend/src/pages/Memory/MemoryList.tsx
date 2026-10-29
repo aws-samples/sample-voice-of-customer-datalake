@@ -1,14 +1,15 @@
 /**
  * @fileoverview Company or personal memories: search, status/kind filters,
- * cursor paging, +1, forget (ConfirmModal), restore, multi-select merge and the
- * "Add memory" dialog.
+ * cursor paging, +1, inline edit, forget (ConfirmModal), restore, multi-select
+ * merge and the "Add memory" dialog.
  *
  * Who may do what (the server enforces every rule; the UI only offers what
  * will succeed):
- * - personal — the owner (the list only ever holds the caller's own): add, forget,
- *   restore, merge — never "+1", which on your own memory would be yourself;
+ * - personal — the owner (the list only ever holds the caller's own): add, edit,
+ *   "Still true" (the confirm route: it refreshes the memory against decay, never a
+ *   +1, which on your own memory would be yourself), forget, restore, merge;
  * - company — anyone adds (a non-curator's goes to review) and +1s; curators
- *   forget, restore and merge.
+ *   edit, forget, restore and merge.
  *
  * Search is debounced (one request per typed query). A search page can come
  * back empty while the server still has more to read (it filters page by page),
@@ -26,6 +27,7 @@ import { isMemoryKind as isKind, isMemoryStatus as isStatus, MEMORY_KINDS, MEMOR
 import type { MemoryItem, MemoryKind, MemoryListParams, MemoryPage, MemoryScope, MemoryStatus } from '../../api/memoryApi'
 import MemoryCard from './MemoryCard'
 import type { MemoryActions } from './MemoryCard'
+import type { MemoryEditing } from './MemoryEditor'
 import AddMemoryDialog from './AddMemoryDialog'
 import MergeModal from './MergeModal'
 import { useMemoryOverlay } from './memoryOverlay'
@@ -156,6 +158,7 @@ export default function MemoryList({ scope, canCurate }: Readonly<{ scope: Memor
   const { items, record } = useMemoryOverlay(listed, filters)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [forgetting, setForgetting] = useState<MemoryItem | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [merging, setMerging] = useState(false)
   const [adding, setAdding] = useState(false)
   const [lastAdded, setLastAdded] = useState<MemoryItem | null | undefined>(undefined)
@@ -172,9 +175,19 @@ export default function MemoryList({ scope, canCurate }: Readonly<{ scope: Memor
     if (!next.delete(id)) next.add(id)
     return next
   })
+  const startEdit = (id: string) => { mutations.update.reset(); setEditingId(id) }
+  const editingFor = (memory: MemoryItem): MemoryEditing | undefined => (memory.memory_id !== editingId ? undefined : {
+    pending: mutations.update.isPending,
+    failed: mutations.update.isError,
+    onSave: (statement) => mutations.update.mutate({ id: memory.memory_id, statement }, { onSuccess: () => setEditingId(null) }),
+    onCancel: () => setEditingId(null),
+  })
   const actionsFor = (memory: MemoryItem): MemoryActions => ({
-    ...(scope === 'company' ? { onConfirm: () => mutations.confirm.mutate(memory.memory_id), alreadyBacked: backed.has(memory.memory_id) } : {}),
+    onConfirm: () => mutations.confirm.mutate(memory.memory_id),
+    alreadyBacked: backed.has(memory.memory_id),
+    personal: scope === 'personal',
     ...(canManage ? {
+      onEdit: () => startEdit(memory.memory_id),
       onForget: () => setForgetting(memory),
       onRestore: () => mutations.restore.mutate(memory.memory_id),
       onToggleSelect: () => toggle(memory.memory_id),
@@ -203,6 +216,7 @@ export default function MemoryList({ scope, canCurate }: Readonly<{ scope: Memor
         query={q}
         selected={selected}
         actionsFor={actionsFor}
+        editingFor={editingFor}
         onAdd={() => setAdding(true)}
       />
       {pages.hasNextPage && items.length > 0 ? (
@@ -238,13 +252,14 @@ export default function MemoryList({ scope, canCurate }: Readonly<{ scope: Memor
   )
 }
 
-function ListBody({ items, isLoading, isError, query, selected, actionsFor, onAdd }: Readonly<{
+function ListBody({ items, isLoading, isError, query, selected, actionsFor, editingFor, onAdd }: Readonly<{
   items: readonly MemoryItem[]
   isLoading: boolean
   isError: boolean
   query: string
   selected: ReadonlySet<string>
   actionsFor: (memory: MemoryItem) => MemoryActions
+  editingFor: (memory: MemoryItem) => MemoryEditing | undefined
   onAdd: () => void
 }>) {
   const { t } = useTranslation('memory')
@@ -266,7 +281,8 @@ function ListBody({ items, isLoading, isError, query, selected, actionsFor, onAd
   return (
     <ul className="space-y-3">
       {items.map((memory) => (
-        <MemoryCard key={memory.memory_id} memory={memory} selected={selected.has(memory.memory_id)} actions={actionsFor(memory)} />
+        <MemoryCard key={memory.memory_id} memory={memory} selected={selected.has(memory.memory_id)} actions={actionsFor(memory)}
+          editing={editingFor(memory)} />
       ))}
     </ul>
   )

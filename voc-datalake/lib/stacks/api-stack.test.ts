@@ -48,12 +48,12 @@ const COGNITO = { authorizationType: 'COGNITO_USER_POOLS', hasAuthorizerId: true
 describe('VocApiStack authorization invariant', () => {
   it('leaves only the allowlisted widget and ballot routes unauthenticated', () => {
     // The COUNT as well as the contents, and here rather than in one of the
-    // per-feature describes below: five is the number a change to either public
+    // per-feature describes below: six is the number a change to either public
     // set has to argue past, so it belongs with the invariant itself instead of
     // being restated once per feature that touches those routes. A throttle, a
     // CORS value or a rewired resource tree is not an authorization change — this
     // is the single guard that says so for all of them.
-    expect(INTENTIONALLY_PUBLIC_ROUTES).toHaveLength(5);
+    expect(INTENTIONALLY_PUBLIC_ROUTES).toHaveLength(6);
     expect(unauthenticatedRoutes(apiTemplate())).toStrictEqual(INTENTIONALLY_PUBLIC_ROUTES);
   });
 
@@ -433,11 +433,13 @@ describe('stack and callers stay in step', () => {
     // composes), with a positive control: routes moving between files must not
     // turn this into a scan over a file with no proxies in it.
     const stacksDir = __dirname;
+    // Since 5.47.00 api-routes.ts builds its proxies through two helpers (`proxyOf`, `proxyServing`) and
+    // global-mcp.ts wires `/connect/{proxy+}`, so the positive control counts those call sites.
     const source = readdirSync(stacksDir)
-      .filter((file) => file.startsWith('api-') && file.endsWith('.ts') && !file.endsWith('.test.ts'))
+      .filter((file) => (file.startsWith('api-') || file === 'global-mcp.ts') && file.endsWith('.ts') && !file.endsWith('.test.ts'))
       .map((file) => readFileSync(join(stacksDir, file), 'utf8'))
       .join('\n');
-    expect(source.match(/addProxy\(/g)?.length ?? 0, 'no addProxy call found in the api-*.ts modules').toBeGreaterThan(5);
+    expect(source.match(/addProxy\(/g)?.length ?? 0, 'no addProxy call found in the api-*.ts modules').toBeGreaterThanOrEqual(3);
     const bareProxies = [...source.matchAll(/addProxy\(/g)]
       .map((match) => {
         const open = match.index + match[0].length - 1;
@@ -479,9 +481,10 @@ describe('skipFeedbackFormItemRoutes (transitional upgrade flag)', () => {
     // one old {proxy+}, and taking a prioritization meeting's voting down with it
     // would be an unrelated outage. Asserted as an exact list rather than by
     // filtering the forms out, so a future public route cannot join this window
-    // unremarked.
+    // unremarked. The public unsubscribe route is likewise outside the flag's scope.
     expect(unauthenticatedRoutes(flagged())).toStrictEqual([
       'GET /voting-sessions/{session_id}/config',
+      'POST /unsubscribe',
       'POST /voting-sessions/{session_id}/submit',
     ]);
   });

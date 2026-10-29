@@ -28,6 +28,7 @@ import { useConfigStore } from '../../../store/configStore'
 import { deriveSteps, needsScraperList } from './onboardingSteps'
 import type { OnboardingPreference } from '../../../api/onboardingApi'
 import type { OnboardingStep } from './onboardingSteps'
+import { scrapersKey } from '../../../api/queryKeys'
 
 /** The query's data, the `fallback` once it failed, or undefined while it is loading. */
 function settled<T>(query: { data: T | undefined; isError: boolean }, fallback: T): T | undefined {
@@ -43,7 +44,7 @@ export function useOnboardingSteps(signals: OnboardingPreference['signals'] | un
   const projects = useQuery({ queryKey: projectsKey(), queryFn: projectsApi.getProjects, enabled })
   // Only the source step (an administrator's) needs the scraper list.
   const scrapers = useQuery({
-    queryKey: ['scrapers'],
+    queryKey: scrapersKey(),
     queryFn: scrapersApi.getScrapers,
     enabled: enabled && canSetUp && needsScraperList(signals),
   })

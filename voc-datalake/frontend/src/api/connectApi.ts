@@ -5,6 +5,7 @@
  *
  * @module api/connectApi
  */
+import { del, post } from './requestKit'
 import { fetchApi } from './client'
 import {
   MintResponseSchema, RevokeResponseSchema, TokenDetailResponseSchema, TokenListResponseSchema,
@@ -28,10 +29,10 @@ export const connectApi = {
     TokenListResponseSchema.parse(await fetchApi<unknown>(TOKENS_PATH)),
 
   mintToken: async (request: MintTokenRequest): Promise<MintResponse> =>
-    MintResponseSchema.parse(await fetchApi<unknown>(TOKENS_PATH, { method: 'POST', body: JSON.stringify(request) })),
+    MintResponseSchema.parse(await fetchApi<unknown>(TOKENS_PATH, post(request))),
 
   revokeToken: async (tokenId: string): Promise<ConnectToken> =>
-    RevokeResponseSchema.parse(await fetchApi<unknown>(`${TOKENS_PATH}/${encodeURIComponent(tokenId)}`, { method: 'DELETE' })).token,
+    RevokeResponseSchema.parse(await fetchApi<unknown>(`${TOKENS_PATH}/${encodeURIComponent(tokenId)}`, del())).token,
 
   tokenDetail: async (tokenId: string, cursor?: string): Promise<TokenDetailResponse> => {
     const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''

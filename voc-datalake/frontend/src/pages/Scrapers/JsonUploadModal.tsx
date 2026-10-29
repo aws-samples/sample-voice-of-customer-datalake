@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { scrapersApi } from '../../api/scrapersApi'
 import { useInvalidateFeedbackData } from '../../api/invalidateFeedbackData'
 import {
-  parseJsonFeedback, downloadTemplate, validateFileBasics,
+  parseJsonFeedback, downloadJsonTemplate, validateFileBasics,
 } from './jsonUploadSchema'
 import type { JsonFeedbackItem, SkippedItem } from './jsonUploadSchema'
 import ModalShell from '../../components/ModalShell/ModalShell'
@@ -53,7 +53,7 @@ function FormatGuide() {
     <div className="p-4 bg-bg-accent rounded-lg space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium text-text">{t('jsonUpload.formatGuide')}</div>
-        <button onClick={downloadTemplate} className="flex items-center gap-1.5 text-sm text-accent-text hover:text-accent-hover font-medium">
+        <button onClick={downloadJsonTemplate} className="flex items-center gap-1.5 text-sm text-accent-text hover:text-accent-hover font-medium">
           <Download size={14} /> {t('jsonUpload.downloadTemplate')}
         </button>
       </div>
@@ -94,10 +94,7 @@ function PreviewList({ items }: Readonly<{ items: JsonFeedbackItem[] }>) {
   return (
     <div>
       <h4 className="text-sm font-medium text-text mb-2">
-        {t('jsonUpload.preview', {
-          count: items.length,
-          plural: items.length === 1 ? '' : 's',
-        })}
+        {t('jsonUpload.preview', { count: items.length })}
       </h4>
       <div className="border rounded-lg divide-y max-h-60 overflow-y-auto">
         {items.slice(0, 20).map((item, i) => (
@@ -171,10 +168,7 @@ function UploadFooter({
       <button onClick={onImport} disabled={itemCount === 0 || isUploading} className="btn btn-primary">
         {isUploading
           ? <><Loader2 size={16} className="animate-spin" /> {t('jsonUpload.importing')}</>
-          : <><Upload size={16} /> {t('jsonUpload.importItems', {
-            count: itemCount,
-            plural: itemCount === 1 ? '' : 's',
-          })}</>}
+          : <><Upload size={16} /> {t('jsonUpload.importItems', { count: itemCount })}</>}
       </button>
     </div>
   )

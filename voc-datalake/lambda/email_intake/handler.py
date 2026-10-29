@@ -22,7 +22,7 @@ from botocore.exceptions import ClientError
 
 from email_intake.intake import MAX_RAW_BYTES, DeferredError, IntakeContext, Outcome, drop, process_email
 from email_intake.state import IntakeState
-from shared.aws import get_bedrock_client, get_dynamodb_resource, get_s3_client, get_sqs_client
+from shared.aws import get_bedrock_client, get_dynamodb_resource, get_s3_client, get_sqs_client, is_missing_s3_object
 from shared.email_intake_settings import today
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
@@ -34,8 +34,6 @@ MAX_VISIBILITY_SECONDS: Final = 43_200
 MIN_DEFER_SECONDS: Final = 60
 #: Deferred mail comes back a few minutes into the new UTC day, after the counters roll over.
 DEFER_UNTIL_MINUTE: Final = 5
-#: S3's answers for an object that is gone (HeadObject has no body, so only the status code).
-_MISSING_OBJECT_CODES: Final = frozenset({'404', 'NoSuchKey', 'NotFound'})
 
 
 def _context() -> IntakeContext:
@@ -107,10 +105,6 @@ def _defer(ctx: IntakeContext, record: dict[str, Any], error: DeferredError) -> 
     logger.info('Email deferred: the daily model budget is spent', extra={'reason': error.reason})
 
 
-def _is_missing(error: ClientError) -> bool:
-    return str(error.response.get('Error', {}).get('Code', '')) in _MISSING_OBJECT_CODES
-
-
 def _handle_record(ctx: IntakeContext, record: dict[str, Any]) -> bool:
     """True when the record is done; False when SQS must deliver it again."""
     for bucket, key in object_keys(str(record.get('body', ''))):
@@ -123,7 +117,7 @@ def _handle_record(ctx: IntakeContext, record: dict[str, Any]) -> bool:
             _defer(ctx, record, error)
             return False
         except ClientError as error:
-            if not _is_missing(error):
+            if not is_missing_s3_object(error):
                 raise
             logger.info('Email object already handled')
     return True

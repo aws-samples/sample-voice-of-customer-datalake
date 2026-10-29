@@ -38,6 +38,18 @@ describe('variantStyle', () => {
     expect(variantStyle(outlined, COLORS, 'focus')).toMatchObject({ outline: '2px solid #8e48ff' })
     expect(variantStyle(outlined, COLORS)).not.toHaveProperty('outline')
   })
+
+  it('paints the whole focus ring (border colour and glow) and the width', () => {
+    const input = variant({
+      styles: { border_color: '#333', width: '36px' },
+      focus: { outline: '1px solid #8e48ff', border_color: 'var:primary', shadow: '0 0 0 3px rgba(178, 127, 255, .16)' },
+    })
+    expect(variantStyle(input, COLORS)).toMatchObject({ borderColor: '#333', width: '36px' })
+    expect(variantStyle(input, COLORS, 'focus')).toMatchObject({
+      outline: '1px solid #8e48ff', borderColor: '#8e48ff', boxShadow: '0 0 0 3px rgba(178, 127, 255, .16)' })
+    expect(variantStyle(variant({ focus: { border_color: 'url(x)', shadow: 'expression(x)' } }), COLORS, 'focus'))
+      .toStrictEqual({ borderStyle: 'none' })
+  })
 })
 
 describe('previewElement', () => {

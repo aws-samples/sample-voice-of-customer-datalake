@@ -36,6 +36,7 @@ from metrics_publishing_routes import (
     routes_publishing_is_partial,
 )
 
+from metrics_handler import AGGREGATE_READ_ROWS
 from shared.api import MAX_FEEDBACK_WINDOW_DAYS, clear_categories_cache
 
 # DERIVED from the handler source rather than listed here — see
@@ -556,7 +557,7 @@ class TestScanPathIsUnchanged:
                     'date': today.strftime('%Y-%m-%d'),
                     'source_created_at': today.isoformat(),
                 }],
-                'ScannedCount': 10000,
+                'ScannedCount': AGGREGATE_READ_ROWS,
                 'LastEvaluatedKey': {'pk': 'more'},
             }
         ] + [{'Items': [], 'ScannedCount': 0}] * 400

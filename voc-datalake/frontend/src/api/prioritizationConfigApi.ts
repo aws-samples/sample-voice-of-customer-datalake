@@ -9,6 +9,7 @@
  *
  * @module api/prioritizationConfigApi
  */
+import { put } from './requestKit'
 import { z } from 'zod'
 import { ApiError, serverReason } from '../lib/errors'
 import { fetchApi } from './client'
@@ -101,10 +102,7 @@ export const prioritizationConfigApi = {
    */
   saveConfig: async (axes: readonly AxisInput[], baseVersion: number): Promise<SaveConfigResult> => {
     try {
-      await fetchApi<unknown>(CONFIG_PATH, {
-        method: 'PUT',
-        body: JSON.stringify({ axes, base_version: baseVersion }),
-      })
+      await fetchApi<unknown>(CONFIG_PATH, put({ axes, base_version: baseVersion }))
       return { ok: true }
     } catch (error: unknown) {
       return refusalOf(error)

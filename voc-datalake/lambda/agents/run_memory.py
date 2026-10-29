@@ -19,9 +19,9 @@ from typing import Final
 from agents import store
 from shared.aws import get_sqs_client
 from shared.logging import logger
+from shared.memory_store import KIND_AGENT_RUN
 
 QUEUE_ENV: Final = 'MEMORY_EXTRACT_QUEUE_URL'
-KIND_AGENT_RUN: Final = 'agent_run'
 # Statuses worth learning from: a cancelled or failed run says little that is durable.
 MEMORABLE_STATUSES: Final = frozenset({store.RUN_COMPLETED, store.RUN_NEEDS_HUMAN})
 # The extractor reads at most its last 40k characters; stay well inside that.

@@ -50,6 +50,8 @@ export interface Dimension {
   infer: boolean
   parent?: string
   values: DimensionValue[]
+  /** Defined in code (`feedback_type`): read-only in the editor, never sent back on save. */
+  builtin?: true
 }
 
 const optionalText = z.string().trim().min(1).optional().catch(undefined)
@@ -73,6 +75,7 @@ const DimensionSchema = z.object({
   infer: z.boolean().catch(true),
   parent: optionalText,
   values: parsedList(DimensionValueSchema),
+  builtin: z.boolean().optional().catch(undefined),
 }).transform((dimension): Dimension => ({
   key: dimension.key,
   label: dimension.label === '' ? dimension.key : dimension.label,
@@ -80,6 +83,7 @@ const DimensionSchema = z.object({
   values: dimension.values,
   ...(dimension.description === undefined ? {} : { description: dimension.description }),
   ...(dimension.parent === undefined ? {} : { parent: dimension.parent }),
+  ...(dimension.builtin === true ? { builtin: true as const } : {}),
 }))
 
 const DimensionsEnvelopeSchema = z.object({

@@ -1,28 +1,29 @@
 """
-Shared utilities for app review ingestor plugins (iOS and Android).
+Shared collection pipeline for app review ingestor plugins (iOS and Android).
 
-Extracts common logic for frequency throttling, watermark management,
-and integer parsing to avoid duplication across platform-specific handlers.
+Frequency throttling (per app: an app connector's own ``frequency_minutes`` wins
+over the plugin's top-level one), watermark management, and the run's health
+report: storefront failures and "no reviews from any storefront" warnings, which
+also reach a manual run's ``SOURCE_RUN#`` row as short ``errors`` text. Config
+parsing and the review-list helpers live in ``app_reviews_config.py``.
 """
 
-import json
 from abc import abstractmethod
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Callable, Generator
 from datetime import UTC, datetime, timedelta
 from typing import ClassVar, Protocol
 
+from botocore.exceptions import BotoCoreError, ClientError
+
+from _shared import app_reviews_parts as parts
+from _shared.app_reviews_config import parse_int
+from _shared.app_reviews_health import StorefrontTally, check_review_drop
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
-from shared.radar_brands import radar_stamp
+from shared.timestamps import now_iso
 
-
-def config_radar_brand(cfg: dict) -> str:
-    """The Radar brand key an app connector's config names (``""`` = one of our own apps).
-
-    Taken as stored, not re-validated: ``radar_stamp`` sends a malformed one on so the
-    queue schema refuses it (fail closed), rather than queueing another brand's reviews
-    as our own.
-    """
-    return radar_stamp(cfg.get("radar_brand")).get("radar_brand_key", "")
+# Run-row ``errors`` entries one run keeps (one per app with a problem; the row is
+# shown on the Data sources page, so it stays short).
+MAX_RUN_WARNINGS = 20
 
 
 class AppConfigLike(Protocol):
@@ -30,25 +31,10 @@ class AppConfigLike(Protocol):
 
     name: str
     enabled: bool
-
-
-def parse_int(value: str | None, default: int, *, allow_zero: bool = False) -> int:
-    """Safely parse a non-negative integer from string, returning default on failure.
-
-    Args:
-        value: String to parse (``None``, an absent setting, yields *default*).
-        default: Fallback when parsing fails or value is out of range.
-        allow_zero: When True, 0 is accepted (e.g. frequency_minutes=0 means manual-only).
-    """
-    if value is None:
-        return default
-    try:
-        parsed = int(value)
-    except (ValueError, TypeError):
-        return default
-    if allow_zero and parsed == 0:
-        return 0
-    return parsed if parsed > 0 else default
+    # The app connector's own schedule (None = the plugin's top-level value).
+    frequency_minutes: int | None
+    # The app connector's own sort order ("" = the plugin's top-level value).
+    sort_by: str
 
 
 def is_due_for_run(
@@ -112,6 +98,10 @@ def yield_new_reviews(
         yield formatted, review_dt
 
 
+def _ignore_warning(_text: str) -> None:
+    """The default ``on_warning``: a caller without a run row to fill."""
+
+
 def process_app_reviews(
     *,
     app_config,
@@ -124,6 +114,7 @@ def process_app_reviews(
     collect_fn,
     format_fn,
     execution_id: str | None = None,
+    on_warning: Callable[[str], None] = _ignore_warning,
 ) -> Generator[dict, None, None]:
     """
     Shared review processing pipeline for a single app.
@@ -132,7 +123,8 @@ def process_app_reviews(
     filtering, yielding, watermark updates, and metrics emission.
 
     When execution_id is set (manual run), frequency checks are skipped —
-    matching the webscraper pattern.
+    matching the webscraper pattern. ``on_warning`` receives the short run-row
+    text of a collection failure or an app that stopped returning reviews.
     """
     # Manual run (has execution_id): always run, skip frequency check
     # Scheduled run (no execution_id): check frequency, skip if manual-only (0)
@@ -169,7 +161,15 @@ def process_app_reviews(
         metrics.add_metric(
             name=f"{platform_label}_{app_name}_Errors", unit="Count", value=1
         )
+        on_warning(f"{app_name}: collection failed ({type(e).__name__})")
         return
+
+    drop = check_review_drop(
+        get_watermark_fn, set_watermark_fn,
+        platform_label=platform_label, app_name=app_name, candidates=len(reviews),
+    )
+    if drop:
+        on_warning(drop)
 
     newest_date = None
     yielded = 0
@@ -189,7 +189,7 @@ def process_app_reviews(
         set_watermark_fn(watermark_key, newest_date.isoformat())
 
     set_watermark_fn(
-        f"{app_name}_last_run", datetime.now(UTC).isoformat()
+        f"{app_name}_last_run", now_iso()
     )
 
     metrics.add_metric(
@@ -199,97 +199,6 @@ def process_app_reviews(
         f"{platform_label} {app_name}: yielded {yielded} new reviews "
         f"(from {len(reviews)} candidates)"
     )
-
-
-def load_app_configs(
-    secrets: dict,
-    *,
-    platform_label: str,
-    legacy_id_key: str,
-    from_entry: Callable[[dict], object],
-    from_legacy: Callable[[str, str, int], object],
-) -> list:
-    """Load app configurations from the ``configs`` JSON array, falling back
-    to the legacy single-app flat keys (``app_name`` + *legacy_id_key*).
-
-    ``from_entry`` builds one config from an array entry; ``from_legacy`` builds
-    the single legacy config from ``(app_name, app_identifier, max_reviews)``.
-    Both may raise ``ValueError``/``TypeError`` for an invalid config, which is
-    logged and skipped.
-    """
-    # Try new multi-app format first
-    configs_json = secrets.get("configs", "")
-    if configs_json:
-        try:
-            configs_list = json.loads(configs_json) if isinstance(configs_json, str) else configs_json
-            if isinstance(configs_list, list):
-                result = []
-                for cfg in configs_list:
-                    try:
-                        result.append(from_entry(cfg))
-                    except (ValueError, TypeError) as e:
-                        logger.warning(f"Skipping invalid {platform_label} app config: {e}")
-                if result:
-                    return result
-        except (json.JSONDecodeError, TypeError) as e:
-            logger.warning(f"Failed to parse {platform_label} configs array: {e}")
-
-    # Fallback to legacy single-app flat keys
-    app_name = secrets.get("app_name", "").strip()
-    app_identifier = secrets.get(legacy_id_key, "").strip()
-    max_reviews = parse_int(secrets.get("max_reviews_per_run"), 500)
-
-    if not app_name or not app_identifier:
-        return []
-
-    try:
-        return [from_legacy(app_name, app_identifier, max_reviews)]
-    except (ValueError, TypeError) as e:
-        logger.warning(f"Invalid {platform_label} app config: {e}")
-        return []
-
-
-def merge_reviews_by_composite_id(
-    all_reviews: dict[str, dict],
-    reviews: Iterable[dict],
-    *,
-    country: str,
-    composite_id_for: Callable[[dict], str | None],
-) -> None:
-    """Add *reviews* to *all_reviews* keyed by their composite id, keeping the
-    first copy of each id and tagging it with the storefront *country*.
-
-    A review for which ``composite_id_for`` returns a falsy id is skipped.
-    """
-    for review in reviews:
-        composite_id = composite_id_for(review)
-        if not composite_id:
-            continue
-        if composite_id not in all_reviews:
-            all_reviews[composite_id] = {
-                **review,
-                "composite_id": composite_id,
-                "country": country,
-            }
-
-
-def newest_first(reviews: Iterable[dict], *, date_field: str, cap: int) -> list[dict]:
-    """Sort reviews by *date_field* descending (undated last) and cap the list."""
-    sorted_reviews = sorted(
-        reviews,
-        key=lambda r: r.get(date_field) or datetime.min.replace(tzinfo=UTC),
-        reverse=True,
-    )
-    return sorted_reviews[:cap]
-
-
-def review_created_at(date) -> str:
-    """ISO timestamp for a review date that may be a datetime, a string or absent."""
-    if date and hasattr(date, "isoformat"):
-        return date.isoformat()
-    if isinstance(date, str):
-        return date
-    return datetime.now(UTC).isoformat()
 
 
 def process_enabled_apps[AppT: AppConfigLike](
@@ -303,29 +212,42 @@ def process_enabled_apps[AppT: AppConfigLike](
 ) -> Generator[dict, None, None]:
     """Run ``process_app_reviews`` for every enabled app config of *ingestor*
     (an ``AppReviewsIngestor`` with ``app_configs`` and ``frequency_minutes``),
-    skipping disabled apps before any review collection happens."""
+    skipping disabled apps before any review collection happens.
+
+    Each app runs on its own ``frequency_minutes`` when its connector sets one
+    (0 = manual only), else on the plugin's top-level value."""
     if not ingestor.app_configs:
         logger.warning(f"No {platform_label} app configurations found")
         return
 
+    enabled: list[AppT] = []
     for app in ingestor.app_configs:
-        if not app.enabled:
-            logger.info(
-                f"Skipping disabled {platform_label} app: {app.name} ({app_identifier_of(app)})"
+        if app.enabled:
+            enabled.append(app)
+        else:
+            logger.info(f"Skipping disabled {platform_label} app: {app.name} ({app_identifier_of(app)})")
+
+    for index, app in enumerate(enabled):
+        # Out of time for another app: the rest run in the next part (app_reviews_parts.py).
+        if ingestor.budget.must_hand_off():
+            ingestor.pending_apps = enabled[index:]
+            logger.info(f"{platform_label}: time budget reached after {index} apps; "
+                        f"{len(enabled) - index} continue in part {ingestor.carried.part + 1}")
+            return
+        with ingestor.budget.timing_app():
+            yield from process_app_reviews(
+                app_config=app,
+                app_name=app.name,
+                platform_label=platform_label,
+                date_field=date_field,
+                get_watermark_fn=ingestor.get_watermark,
+                set_watermark_fn=ingestor.set_watermark,
+                frequency_minutes=ingestor.frequency_for(app),
+                collect_fn=collect_fn,
+                format_fn=format_fn,
+                execution_id=ingestor.execution_id,
+                on_warning=ingestor.record_run_warning,
             )
-            continue
-        yield from process_app_reviews(
-            app_config=app,
-            app_name=app.name,
-            platform_label=platform_label,
-            date_field=date_field,
-            get_watermark_fn=ingestor.get_watermark,
-            set_watermark_fn=ingestor.set_watermark,
-            frequency_minutes=ingestor.frequency_minutes,
-            collect_fn=collect_fn,
-            format_fn=format_fn,
-            execution_id=ingestor.execution_id,
-        )
 
 
 class AppReviewsIngestor[AppT: AppConfigLike](BaseIngestor):
@@ -347,6 +269,65 @@ class AppReviewsIngestor[AppT: AppConfigLike](BaseIngestor):
         self.frequency_minutes = parse_int(
             self.secrets.get("frequency_minutes"), 60, allow_zero=True
         )
+        # Short problem texts of this run (storefront failures, review drops), added
+        # to the run row's `errors` when the run completes.
+        self.run_warnings: list[str] = []
+        # Time-budgeted parts (app_reviews_parts.py): the earlier parts' totals, this
+        # part's budget (none until run_for_event hands it the Lambda context) and
+        # the apps left for the next part when the budget ran out.
+        self.carried = parts.Carried()
+        self.budget = parts.RunBudget()
+        self.pending_apps: list[AppT] = []
+
+    def frequency_for(self, app: AppT) -> int:
+        """The app connector's own schedule, else the plugin's top-level one."""
+        return self.frequency_minutes if app.frequency_minutes is None else app.frequency_minutes
+
+    def sort_by_for(self, app: AppT) -> str:
+        """The app connector's own sort order, else the plugin's top-level one."""
+        return app.sort_by or self.sort_by
+
+    def record_run_warning(self, text: str) -> None:
+        if len(self.run_warnings) < MAX_RUN_WARNINGS:
+            self.run_warnings.append(text)
+
+    def new_tally(self, app: AppT) -> StorefrontTally:
+        """An empty storefront tally for one collection of *app*."""
+        return StorefrontTally(self.PLATFORM_LABEL, app.name, self.app_identifier(app))
+
+    def report_storefronts(self, tally: StorefrontTally) -> None:
+        """Log *tally*'s summary and keep its run-row text when storefronts failed."""
+        text = tally.report()
+        if text:
+            self.record_run_warning(text)
+
+    def _update_source_run_status(self, updates: dict):
+        """Run-row writes with the earlier parts' totals and warnings (``run_row_updates``);
+        a part out of time hands off instead of writing ``completed``."""
+        if updates.get("status") == "completed" and self.pending_apps:
+            self._continue_in_next_part(int(updates.get("items_found", 0)))
+            return
+        warnings = [*self.carried.warnings, *self.run_warnings]
+        super()._update_source_run_status(
+            parts.run_row_updates(updates, self.carried, warnings, MAX_RUN_WARNINGS)
+        )
+
+    def _continue_in_next_part(self, items_this_part: int) -> None:
+        """Hand ``pending_apps`` to the next part; a failed hand-off ends the run as ``error``."""
+        total = self.carried.items_found + items_this_part
+        warnings = [*self.carried.warnings, *self.run_warnings][: MAX_RUN_WARNINGS - 1]
+        apps = [(self.app_identifier(app), app.name) for app in self.pending_apps]
+        event = parts.continuation_event(execution_id=self.execution_id, apps=apps, items_found=total,
+                                         warnings=warnings, part=self.carried.part + 1)
+        super()._update_source_run_status({"items_found": total})
+        try:
+            parts.start_next_part(event)
+        except (BotoCoreError, ClientError, RuntimeError) as error:
+            logger.exception(f"{self.PLATFORM_LABEL}: could not start the next part: {error}")
+            metrics.add_metric(name="AppReviewsPartErrors", unit="Count", value=1)
+            super()._update_source_run_status(
+                parts.hand_off_failure_updates(total, warnings, len(self.pending_apps), error)
+            )
 
     @abstractmethod
     def _load_app_configs(self) -> list[AppT]:
@@ -377,19 +358,34 @@ class AppReviewsIngestor[AppT: AppConfigLike](BaseIngestor):
         )
 
     @classmethod
-    def run_for_event(cls, event: object) -> dict:
-        """Lambda body: build the ingestor and run it, optionally filtered to
-        a single app via ``event['app_id']``.
+    def run_for_event(cls, event: object, context: object = None) -> dict:
+        """Lambda body: build the ingestor and run it on the apps the event names
+        (``configs_for_event``: one ``app_id``, a continuation part's apps, or all),
+        with the Lambda *context*'s remaining time as its budget.
 
         Manual-run secret-cache clearing (issue #141) is centralized in
         BaseIngestor.__init__ — passing execution_id below triggers it.
         """
         execution_id = event.get("execution_id") if isinstance(event, dict) else None
         ingestor = cls(execution_id=execution_id)
-        if isinstance(event, dict):
-            app_id = event.get("app_id")
-            if app_id:
-                ingestor.app_configs = [
-                    c for c in ingestor.app_configs if ingestor.app_identifier(c) == app_id
-                ]
-        return ingestor.run()
+        ingestor.budget = parts.RunBudget.for_context(context)
+        try:
+            ingestor.carried = parts.parse_continuation(event)
+        except parts.InvalidContinuationError as error:
+            return ingestor._refuse_part(f"invalid continuation event ({error})")
+        ingestor.app_configs = parts.configs_for_event(
+            event, ingestor.carried, ingestor.app_configs, ingestor.app_identifier
+        )
+        result = ingestor.run()
+        if ingestor.carried.is_continuation and result.get("status") == "skipped":
+            # A later part skipped by an open breaker would leave the row `running`.
+            return ingestor._refuse_part(str(result.get("reason", "skipped")))
+        return result
+
+    def _refuse_part(self, reason: str) -> dict:
+        """End a run whose part cannot run: logged, and the run row (if any) set to ``error``."""
+        logger.error(f"{self.PLATFORM_LABEL}: run part not run: {reason}")
+        self._update_source_run_status(
+            {"status": "error", "completed_at": now_iso(), "errors": ["RunPartRefused"]}
+        )
+        return {"status": "skipped", "reason": reason}

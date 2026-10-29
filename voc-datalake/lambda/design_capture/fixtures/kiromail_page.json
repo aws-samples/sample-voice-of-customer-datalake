@@ -1,0 +1,183 @@
+{
+ "_about": "A saved copy of www.kiromail.dev (5.35.02 live run, 2026-10-25): the :root custom properties and the :hover rules of its /assets/landing.css as the page's STYLES_JS reports them (CSSOM specified values), the three button samples it measured, and the vision model's Button component as it was stored.",
+ "root_vars": {
+  "--black": "#000000",
+  "--e1": "#19161d",
+  "--e2": "#28242e",
+  "--e3": "#352f3d",
+  "--white": "#ffffff",
+  "--fg": "#fafafa",
+  "--prey-300": "#c1bec6",
+  "--prey-400": "#938f9b",
+  "--prey-500": "#5c5c5c",
+  "--purple-300": "#c59eff",
+  "--purple-400": "#a066ff",
+  "--purple-500": "#9046ff",
+  "--purple-700": "#6a0fcc",
+  "--green-400": "#33d480",
+  "--yellow-400": "#f0cf2e",
+  "--red-400": "#f84a5f",
+  "--code-bg": "#020617",
+  "--code-text": "#ffffffcc",
+  "--code-string": "#80ffb5",
+  "--code-keyword": "#c2a0fd",
+  "--code-function": "#8dc8fb",
+  "--code-variable": "#80f4ff",
+  "--code-comment": "#ffffff99",
+  "--display": "\"Geist Mono\", ui-monospace, SFMono-Regular, Menlo, monospace",
+  "--sans": "\"Geist\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif",
+  "--code": "\"Fragment Mono\", ui-monospace, SFMono-Regular, Menlo, monospace",
+  "--ease": "cubic-bezier(0.4, 0, 0.2, 1)",
+  "--ease-out": "cubic-bezier(0, 0, 0.2, 1)",
+  "--gutter": "clamp(24px, 5.5vw, 80px)"
+ },
+ "components": {
+  "buttons": [
+   {
+    "background": "rgb(255, 255, 255)",
+    "color": "rgb(0, 0, 0)",
+    "border_color": "rgba(0, 0, 0, 0)",
+    "border_width": "1px",
+    "radius": "16px",
+    "padding": "10px 16px 10px 16px",
+    "gap": "8px",
+    "height": "44px",
+    "font_family": "\"Geist Mono\", ui-monospace, SFMono-Regular, Menlo, monospace",
+    "font_size": "13px",
+    "font_weight": "500",
+    "letter_spacing": "0.13px",
+    "text_transform": "uppercase",
+    "shadow": "none",
+    "html": "<a class=\"btn btn-light btn-sm\" href=\"https://app.kiromail.dev/signin\">Log in</a>",
+    "variant": "filled"
+   },
+   {
+    "background": "rgb(144, 70, 255)",
+    "color": "rgb(255, 255, 255)",
+    "border_color": "rgba(0, 0, 0, 0)",
+    "border_width": "1px",
+    "radius": "16px",
+    "padding": "12px 24px 12px 24px",
+    "gap": "8px",
+    "height": "48px",
+    "font_family": "\"Geist Mono\", ui-monospace, SFMono-Regular, Menlo, monospace",
+    "font_size": "16px",
+    "font_weight": "500",
+    "letter_spacing": "-0.16px",
+    "text_transform": "none",
+    "shadow": "none",
+    "html": "<a class=\"btn btn-primary\" href=\"https://app.kiromail.dev/signin\">Log in</a>",
+    "variant": "filled"
+   },
+   {
+    "background": "rgba(0, 0, 0, 0)",
+    "color": "rgb(193, 190, 198)",
+    "border_color": "rgb(53, 47, 61)",
+    "border_width": "1px",
+    "radius": "8px",
+    "padding": "0px 0px 0px 0px",
+    "gap": "normal",
+    "height": "34px",
+    "font_family": "Arial",
+    "font_size": "13.3333px",
+    "font_weight": "400",
+    "letter_spacing": "normal",
+    "text_transform": "none",
+    "shadow": "none",
+    "html": "<button class=\"copy\" type=\"button\" aria-label=\"Copy the command that installs the skill\"></button>",
+    "variant": "outlined"
+   }
+  ]
+ },
+ "rules": [
+  {
+   "selector": ".site-nav a:hover",
+   "state": "hover",
+   "styles": {
+    "background": "var(--e2)"
+   }
+  },
+  {
+   "selector": ".btn-primary:hover, .btn-primary:focus-visible",
+   "state": "hover",
+   "styles": {
+    "color": "var(--black)"
+   }
+  },
+  {
+   "selector": ".btn-outline:hover, .btn-outline:focus-visible",
+   "state": "hover",
+   "styles": {
+    "color": "var(--black)"
+   }
+  },
+  {
+   "selector": ".install-hint a:hover",
+   "state": "hover",
+   "styles": {
+    "color": "var(--white)"
+   }
+  },
+  {
+   "selector": ".copy:hover",
+   "state": "hover",
+   "styles": {
+    "background": "var(--e2)",
+    "color": "var(--white)",
+    "border_color": "var(--prey-500)"
+   }
+  },
+  {
+   "selector": ".site-footer nav a:hover",
+   "state": "hover",
+   "styles": {
+    "color": "var(--purple-300)"
+   }
+  }
+ ],
+ "model_button": {
+  "description": "Uppercase monospace button; white filled for nav login, purple for primary CTAs, outlined for secondary actions.",
+  "example_html": "<a class=\"btn\" style=\"background: #fff; color: #000; border-radius: 16px; padding: 10px 16px; font: 500 13px &#x27;Geist Mono&#x27;,monospace; text-transform: uppercase\">Log in</a>",
+  "name": "Button",
+  "variants": [
+   {
+    "hover": {
+     "color": "#000000"
+    },
+    "name": "primary",
+    "styles": {
+     "background": "#ffffff",
+     "border_color": "rgba(0, 0, 0, 0)",
+     "border_width": "1px",
+     "color": "#000000",
+     "font_family": "\"Geist Mono\", ui-monospace, SFMono-Regular, Menlo, monospace",
+     "font_size": "13px",
+     "font_weight": "500",
+     "gap": "8px",
+     "height": "44px",
+     "letter_spacing": "0.13px",
+     "padding": "10px 16px",
+     "radius": "16px",
+     "shadow": "none",
+     "text_transform": "uppercase"
+    }
+   },
+   {
+    "hover": {
+     "color": "#000000"
+    },
+    "name": "outline",
+    "styles": {
+     "background": "rgba(0, 0, 0, 0)",
+     "border_color": "#352f3d",
+     "border_width": "1px",
+     "color": "#c1bec6",
+     "font_size": "13px",
+     "font_weight": "400",
+     "height": "34px",
+     "radius": "8px"
+    }
+   }
+  ]
+ }
+}

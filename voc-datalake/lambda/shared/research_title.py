@@ -7,6 +7,8 @@ the Step Functions save step and the synchronous fallback alike.
 import re
 from datetime import UTC, datetime
 
+from shared.text_clip import clip_words
+
 # Characters of the question the default title quotes.
 DEFAULT_TITLE_QUESTION_CHARS = 50
 TITLE_STAMP_FORMAT = '%Y-%m-%d %H:%M UTC'
@@ -30,7 +32,7 @@ def research_document_title(title: object, question: str, created: datetime) -> 
     """
     base = title.strip() if isinstance(title, str) else ''
     if not base:
-        base = f'Research: {question[:DEFAULT_TITLE_QUESTION_CHARS]}'
+        base = f'Research: {clip_words(question, DEFAULT_TITLE_QUESTION_CHARS)}'
     stamp = created.astimezone(UTC).strftime(TITLE_STAMP_FORMAT)
     if _ISO_DATE_TIME.search(base):
         return _ISO_DATE_TIME.sub(stamp, base, count=1)

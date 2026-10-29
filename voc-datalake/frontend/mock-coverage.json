@@ -56,6 +56,46 @@
   {
     "file": "api/adminEndpoints.ts",
     "method": "GET",
+    "call": "`/logs/system?${buildSearchParams(params)}`",
+    "probes": [
+      {
+        "path": "/logs/system?days=7&level=error"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "GET",
+    "call": "`/logs/system/request?${buildSearchParams(params)}`",
+    "probes": [
+      {
+        "path": "/logs/system/request?function=projects-assist&request_id=7f3c2a10-4b8e-4d1a-9c55-0e2b6d9a1f37&at=2026-10-27T08:44:43.123Z"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "GET",
+    "call": "'/logs/system/queues'",
+    "probes": [
+      {
+        "path": "/logs/system/queues"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "GET",
+    "call": "'/logs/system/environment'",
+    "probes": [
+      {
+        "path": "/logs/system/environment"
+      }
+    ]
+  },
+  {
+    "file": "api/adminEndpoints.ts",
+    "method": "GET",
     "call": "`/logs/validation?${buildSearchParams(params ?? {})}`",
     "probes": [
       {
@@ -405,6 +445,296 @@
     ]
   },
   {
+    "file": "api/participantsApi.ts",
+    "method": "GET",
+    "call": "'/participants/settings'",
+    "probes": [
+      {
+        "path": "/participants/settings"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "PUT",
+    "call": "'/participants/settings'",
+    "probes": [
+      {
+        "path": "/participants/settings",
+        "body": {
+          "company_domains": [
+            "example.com"
+          ],
+          "allow_external_people": true,
+          "daily_send_cap": 500,
+          "sender_name": "Example Air"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "GET",
+    "call": "'/participants/lists'",
+    "probes": [
+      {
+        "path": "/participants/lists"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "POST",
+    "call": "'/participants/lists'",
+    "probes": [
+      {
+        "path": "/participants/lists",
+        "body": {
+          "name": "Probe list",
+          "kind": "custom"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "GET",
+    "call": "`/participants/lists/${id(listId)}`",
+    "probes": [
+      {
+        "path": "/participants/lists/lst_staff"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "PUT",
+    "call": "`/participants/lists/${id(listId)}`",
+    "probes": [
+      {
+        "path": "/participants/lists/lst_staff",
+        "body": {
+          "name": "Example Air employees"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "DELETE",
+    "call": "`/participants/lists/${id(listId)}`",
+    "probes": [
+      {
+        "path": "/participants/lists/lst_probe_missing"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "POST",
+    "call": "`/participants/lists/${id(listId)}/members`",
+    "probes": [
+      {
+        "path": "/participants/lists/lst_staff/members",
+        "body": {
+          "people": [
+            {
+              "email": "probe@example.com",
+              "name": "Probe Person"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/participants/lists/lst_staff/members",
+        "body": {
+          "origin": "assistant",
+          "people": [
+            {
+              "email": "probe-assistant@example.com"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "DELETE",
+    "call": "`/participants/lists/${id(listId)}/members/${id(personId)}`",
+    "probes": [
+      {
+        "path": "/participants/lists/lst_sales/members/per_probe_missing"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "GET",
+    "call": "`/participants/people${peopleQuery(q, listId)}`",
+    "probes": [
+      {
+        "path": "/participants/people"
+      },
+      {
+        "path": "/participants/people?q=acme&list_id=lst_beta"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "GET",
+    "call": "`/participants/people/${id(personId)}`",
+    "probes": [
+      {
+        "path": "/participants/people/per_ana"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "PUT",
+    "call": "`/participants/people/${id(personId)}`",
+    "probes": [
+      {
+        "path": "/participants/people/per_ana",
+        "body": {
+          "title": "Cabin crew lead"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "DELETE",
+    "call": "`/participants/people/${id(personId)}`",
+    "probes": [
+      {
+        "path": "/participants/people/per_probe_missing"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "GET",
+    "call": "`/participants/projects/${id(projectId)}`",
+    "probes": [
+      {
+        "path": "/participants/projects/proj_1"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "POST",
+    "call": "`/participants/projects/${id(projectId)}`",
+    "probes": [
+      {
+        "path": "/participants/projects/proj_1",
+        "body": {
+          "list_ids": [
+            "lst_beta"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "DELETE",
+    "call": "`/participants/projects/${id(projectId)}/lists/${id(listId)}`",
+    "probes": [
+      {
+        "path": "/participants/projects/proj_1/lists/lst_probe_missing"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "DELETE",
+    "call": "`/participants/projects/${id(projectId)}/people/${id(personId)}`",
+    "probes": [
+      {
+        "path": "/participants/projects/proj_1/people/per_probe_missing"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "POST",
+    "call": "'/participants/asks'",
+    "probes": [
+      {
+        "path": "/participants/asks",
+        "body": {
+          "list_ids": [
+            "lst_sales"
+          ],
+          "person_ids": [],
+          "subject": "Probe",
+          "message": "Probe message",
+          "link": {
+            "kind": "url",
+            "url": "https://example.com/survey"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "GET",
+    "call": "'/participants/asks'",
+    "probes": [
+      {
+        "path": "/participants/asks"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "GET",
+    "call": "`/participants/asks?project_id=${id(projectId)}`",
+    "probes": [
+      {
+        "path": "/participants/asks?project_id=proj_1"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "GET",
+    "call": "`/participants/asks/${id(askId)}`",
+    "probes": [
+      {
+        "path": "/participants/asks/ask_seed1"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "GET",
+    "call": "'/feedback-forms'",
+    "probes": [
+      {
+        "path": "/feedback-forms"
+      }
+    ]
+  },
+  {
+    "file": "api/participantsApi.ts",
+    "method": "POST",
+    "call": "`${getBaseUrl()}/unsubscribe`",
+    "probes": [
+      {
+        "path": "/unsubscribe",
+        "body": {
+          "token": "unsub_unknown"
+        }
+      }
+    ]
+  },
+  {
     "file": "api/problemsApi.ts",
     "method": "GET",
     "call": "`/feedback/problems?${problemTreeSearch(params)}`",
@@ -414,6 +744,9 @@
       },
       {
         "path": "/feedback/problems?days=7&category=delivery&urgent=1&similarity=off"
+      },
+      {
+        "path": "/feedback/problems?days=0&date_basis=review&dims=feedback_type%3Abug%7Cservice_failure%7Cperformance%7Cusability%7Cpricing_billing%7Csupport_experience%7C~unset"
       }
     ]
   },
@@ -584,6 +917,12 @@
         "path": "/settings/model/test",
         "body": {
           "model_id": "global.anthropic.claude-opus-4-8"
+        }
+      },
+      {
+        "path": "/settings/model/test",
+        "body": {
+          "model_id": "stability.stable-image-core-v1:1"
         }
       }
     ]
@@ -806,16 +1145,6 @@
         "body": {
           "key": "v"
         }
-      }
-    ]
-  },
-  {
-    "file": "api/client.ts",
-    "method": "POST",
-    "call": "`/integrations/${source}/test`",
-    "probes": [
-      {
-        "path": "/integrations/webscraper/test"
       }
     ]
   },
@@ -1704,7 +2033,12 @@
           "doc_type": "prfaq",
           "title": "Delay alerts",
           "feature_idea": "Tell customers when a delivery is late",
-          "filters": { "days": 30, "sources": [], "categories": [], "sentiments": [] }
+          "filters": {
+            "days": 30,
+            "sources": [],
+            "categories": [],
+            "sentiments": []
+          }
         }
       }
     ]
@@ -1719,6 +2053,14 @@
         "body": {
           "title": "Doc",
           "content": "x"
+        }
+      },
+      {
+        "path": "/projects/proj_1/documents",
+        "body": {
+          "document_type": "prfaq",
+          "title": "Hand-written",
+          "create_id": "probe1_prfaq"
         }
       }
     ]
@@ -1860,21 +2202,19 @@
         "body": {
           "title": "Delay alerts",
           "feature_idea": "Tell customers when a delivery is late",
-          "answers": ["Frequent shoppers", "", "", "", ""],
-          "filters": { "days": 30, "sources": [], "categories": [], "sentiments": [] }
-        }
-      }
-    ]
-  },
-  {
-    "file": "api/projectsApi.ts",
-    "method": "POST",
-    "call": "`/projects/${projectId}/product-context/interview`",
-    "probes": [
-      {
-        "path": "/projects/proj_1/product-context/interview",
-        "body": {
-          "message": "hi"
+          "answers": [
+            "Frequent shoppers",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "filters": {
+            "days": 30,
+            "sources": [],
+            "categories": [],
+            "sentiments": []
+          }
         }
       }
     ]
@@ -1977,6 +2317,9 @@
     "probes": [
       {
         "path": "/projects/proj_1/prototypes/proto_1/pins/pin_00000000000000000000aaaaaa/resolve"
+      },
+      {
+        "path": "/projects/proj_1/prototypes/proto_1/pins/pin_00000000000000000000aaaaaa/reopen"
       }
     ]
   },
@@ -2203,6 +2546,29 @@
     ]
   },
   {
+    "file": "api/aiModeApi.ts",
+    "method": "GET",
+    "call": "'/users/me/ai-mode'",
+    "probes": [
+      {
+        "path": "/users/me/ai-mode"
+      }
+    ]
+  },
+  {
+    "file": "api/aiModeApi.ts",
+    "method": "PUT",
+    "call": "`/users/${encodeURIComponent(username)}/flags`",
+    "probes": [
+      {
+        "path": "/users/viewer-demo/flags",
+        "body": {
+          "ai_mode": "ai_assisted"
+        }
+      }
+    ]
+  },
+  {
     "file": "api/userFlagsApi.ts",
     "method": "PUT",
     "call": "`/users/${encodeURIComponent(username)}/flags`",
@@ -2255,6 +2621,30 @@
     "probes": [
       {
         "path": "/voting-sessions/vs_x"
+      }
+    ]
+  },
+  {
+    "file": "api/votingSessionsApi.ts",
+    "method": "GET",
+    "call": "`${getBaseUrl()}${sessionPath(sessionId)}/config`",
+    "probes": [
+      {
+        "path": "/voting-sessions/vs_unknown/config"
+      }
+    ]
+  },
+  {
+    "file": "api/votingSessionsApi.ts",
+    "method": "POST",
+    "call": "`${getBaseUrl()}${sessionPath(sessionId)}/submit`",
+    "probes": [
+      {
+        "path": "/voting-sessions/vs_unknown/submit",
+        "body": {
+          "impact": 3,
+          "notes": "probe"
+        }
       }
     ]
   },
@@ -2376,132 +2766,9 @@
     ]
   },
   {
-    "file": "assistant/approvals/companyExecutors.ts",
+    "file": "api/memoryApi.ts",
     "method": "PUT",
-    "call": "COMPANY_CONTEXT",
-    "probes": [
-      {
-        "path": "/settings/company-context",
-        "body": {
-          "vision": "Be the most trusted shop",
-          "objectives": []
-        }
-      }
-    ]
-  },
-  {
-    "file": "assistant/approvals/companyExecutors.ts",
-    "method": "PUT",
-    "call": "DESIGN_SYSTEM",
-    "probes": [
-      {
-        "path": "/settings/design-system",
-        "body": {
-          "guidelines": "One primary action"
-        }
-      }
-    ]
-  },
-  {
-    "file": "assistant/approvals/companyExecutors.ts",
-    "method": "GET",
-    "call": "endpoint",
-    "probes": [
-      {
-        "path": "/settings/company-context"
-      },
-      {
-        "path": "/settings/my-context"
-      },
-      {
-        "path": "/settings/design-system"
-      }
-    ]
-  },
-  {
-    "file": "assistant/approvals/companyExecutors.ts",
-    "method": "PUT",
-    "call": "MY_CONTEXT",
-    "probes": [
-      {
-        "path": "/settings/my-context",
-        "body": {
-          "objectives": [
-            "Cut returns"
-          ]
-        }
-      }
-    ]
-  },
-  {
-    "file": "assistant/approvals/memoryExecutors.ts",
-    "method": "POST",
-    "call": "'/memory'",
-    "probes": [
-      {
-        "path": "/memory",
-        "body": {
-          "scope": "personal",
-          "statement": "probe",
-          "kind": "working_style"
-        }
-      }
-    ]
-  },
-  {
-    "file": "assistant/approvals/memoryExecutors.ts",
-    "method": "POST",
-    "call": "'/memory/merge'",
-    "probes": [
-      {
-        "path": "/memory/merge",
-        "body": {
-          "memory_ids": [
-            "mem_c1",
-            "mem_c2"
-          ],
-          "statement": "x"
-        }
-      }
-    ]
-  },
-  {
-    "file": "assistant/approvals/memoryExecutors.ts",
-    "method": "POST",
-    "call": "`/memory/review/${encodeURIComponent(args.memory_id)}/resolve`",
-    "probes": [
-      {
-        "path": "/memory/review/mem_c3/resolve",
-        "body": {
-          "action": "keep"
-        }
-      }
-    ]
-  },
-  {
-    "file": "assistant/approvals/memoryExecutors.ts",
-    "method": "POST",
-    "call": "item(args.memory_id, '/confirm')",
-    "probes": [
-      {
-        "path": "/memory/mem_c1/confirm"
-      }
-    ]
-  },
-  {
-    "file": "assistant/approvals/memoryExecutors.ts",
-    "method": "POST",
-    "call": "item(args.memory_id, '/forget')",
-    "probes": [
-      {
-        "path": "/memory/mem_p1/forget"
-      }
-    ]
-  },
-  {
-    "file": "assistant/approvals/memoryExecutors.ts",
-    "method": "PUT",
-    "call": "item(args.memory_id)",
+    "call": "item(id)",
     "probes": [
       {
         "path": "/memory/mem_p1",
@@ -2555,6 +2822,19 @@
         "path": "/chat/conversations/seed_sparse/title",
         "body": {
           "title": "Late deliveries"
+        }
+      }
+    ]
+  },
+  {
+    "file": "assistant/sessions/sessionsApi.ts",
+    "method": "POST",
+    "call": "`${sessionPath(id)}/cancel`",
+    "probes": [
+      {
+        "path": "/chat/conversations/seed_sparse/cancel",
+        "body": {
+          "runId": "run_probe"
         }
       }
     ]
@@ -3093,30 +3373,23 @@
   {
     "file": "api/radarApi.ts",
     "method": "GET",
-    "call": "`${brandPath(brand)}?days=${days}`",
+    "call": "`${brandPath(brand)}/page?days=${days}`",
     "probes": [
       {
-        "path": "/radar/brands/acme?days=90"
+        "path": "/radar/brands/acme/page?days=90"
       }
     ]
   },
   {
     "file": "api/radarApi.ts",
     "method": "GET",
-    "call": "`${brandPath(brand)}/releases`",
+    "call": "`/radar/all?days=${days}`",
     "probes": [
       {
-        "path": "/radar/brands/acme/releases"
-      }
-    ]
-  },
-  {
-    "file": "api/radarApi.ts",
-    "method": "GET",
-    "call": "`${brandPath(brand)}/compare?days=${days}`",
-    "probes": [
+        "path": "/radar/all?days=90"
+      },
       {
-        "path": "/radar/brands/acme/compare?days=90"
+        "path": "/radar/all?days=7"
       }
     ]
   },
@@ -3156,6 +3429,18 @@
               "label": "Globex",
               "domains": [
                 "globex.example"
+              ],
+              "language": null,
+              "feed_urls": []
+            },
+            {
+              "label": "Example Air",
+              "domains": [
+                "example.pl"
+              ],
+              "language": "pl",
+              "feed_urls": [
+                "https://example.pl/news/feed.xml"
               ]
             }
           ]
@@ -3185,6 +3470,29 @@
           "max_brands": 10,
           "query_cap": 30
         }
+      }
+    ]
+  },
+  {
+    "file": "api/radarApi.ts",
+    "method": "PUT",
+    "call": "'/radar/settings/exa-key'",
+    "probes": [
+      {
+        "path": "/radar/settings/exa-key",
+        "body": {
+          "api_key": "exa_example_key_123"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/radarApi.ts",
+    "method": "DELETE",
+    "call": "'/radar/settings/exa-key'",
+    "probes": [
+      {
+        "path": "/radar/settings/exa-key"
       }
     ]
   },
@@ -3232,6 +3540,447 @@
       {
         "path": "/settings/email-inbox/feedback-type-dimension",
         "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "GET",
+    "call": "'/feature-requests/boards'",
+    "probes": [
+      {
+        "path": "/feature-requests/boards"
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "GET",
+    "call": "boardPath(boardRef)",
+    "probes": [
+      {
+        "path": "/feature-requests/boards/sales-feature-requests"
+      },
+      {
+        "path": "/feature-requests/boards/brd_service"
+      },
+      {
+        "path": "/feature-requests/boards/brd_sales"
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "POST",
+    "call": "'/feature-requests/boards'",
+    "probes": [
+      {
+        "path": "/feature-requests/boards",
+        "body": {
+          "name": "Partner feedback",
+          "template": "blank",
+          "audience": {
+            "mode": "list",
+            "domains": [
+              "acme.example"
+            ],
+            "emails": []
+          }
+        }
+      },
+      {
+        "path": "/feature-requests/boards",
+        "body": {
+          "name": "Field feedback",
+          "template": "service",
+          "slug": "field-feedback"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "PUT",
+    "call": "boardPath(boardId)",
+    "probes": [
+      {
+        "path": "/feature-requests/boards/brd_beta",
+        "body": {
+          "description": "What beta testers find in the new checkout and cart."
+        }
+      },
+      {
+        "path": "/feature-requests/boards/brd_service",
+        "body": {
+          "fields": {
+            "request": {
+              "kind": {
+                "enabled": true,
+                "required": true
+              },
+              "severity": {
+                "enabled": true,
+                "required": true
+              },
+              "reference": {
+                "enabled": true,
+                "required": false
+              },
+              "steps": {
+                "enabled": true,
+                "required": false
+              },
+              "affected_count": {
+                "enabled": true,
+                "required": false
+              }
+            },
+            "support": {
+              "note": {
+                "enabled": true,
+                "required": false
+              }
+            }
+          },
+          "statuses": [
+            {
+              "key": "new",
+              "label": "New"
+            },
+            {
+              "key": "confirmed",
+              "label": "Confirmed"
+            },
+            {
+              "key": "fixed",
+              "label": "Fixed"
+            },
+            {
+              "key": "wont_fix",
+              "label": "Won't fix"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/feature-requests/boards/brd_sales",
+        "body": {
+          "statuses": [
+            {
+              "key": "new",
+              "label": "New"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "DELETE",
+    "call": "boardDeletePath(boardId, options)",
+    "probes": [
+      {
+        "path": "/feature-requests/boards/brd_unknown"
+      },
+      {
+        "path": "/feature-requests/boards/brd_sales"
+      },
+      {
+        "path": "/feature-requests/boards/field-feedback"
+      },
+      {
+        "path": "/feature-requests/boards/partner-feedback?with_requests=true"
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "GET",
+    "call": "requestsPath(boardRef)",
+    "probes": [
+      {
+        "path": "/feature-requests"
+      },
+      {
+        "path": "/feature-requests?board=customer-service-issues"
+      },
+      {
+        "path": "/feature-requests?board=brd_beta"
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "GET",
+    "call": "requestPath(requestId)",
+    "probes": [
+      {
+        "path": "/feature-requests/fr_0000000000000001"
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "POST",
+    "call": "'/feature-requests'",
+    "probes": [
+      {
+        "path": "/feature-requests",
+        "body": {
+          "title": "Audit log export",
+          "description": "Download the audit log as CSV.",
+          "customer": "Acme",
+          "impact": "committed",
+          "amount_usd": 5000,
+          "name": "Dana Lee"
+        }
+      },
+      {
+        "path": "/feature-requests",
+        "body": {
+          "board": "customer-service-issues",
+          "title": "Invoice PDF is blank",
+          "description": "The emailed invoice opens as an empty page.",
+          "name": "Dana Lee",
+          "fields": {
+            "kind": "bug",
+            "severity": "medium",
+            "affected_count": 3
+          }
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "PUT",
+    "call": "requestPath(requestId)",
+    "probes": [
+      {
+        "path": "/feature-requests/fr_0000000000000002",
+        "body": {
+          "title": "Export dashboards to PDF"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "PUT",
+    "call": "`${requestPath(requestId)}/status`",
+    "probes": [
+      {
+        "path": "/feature-requests/fr_0000000000000002/status",
+        "body": {
+          "status": "under_review"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "DELETE",
+    "call": "requestPath(requestId)",
+    "probes": [
+      {
+        "path": "/feature-requests/fr_unknown"
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "POST",
+    "call": "`${requestPath(requestId)}/supports`",
+    "probes": [
+      {
+        "path": "/feature-requests/fr_0000000000000002/supports",
+        "body": {
+          "customer": "Acme",
+          "impact": "committed",
+          "amount_usd": 5000,
+          "name": "Dana Lee"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "PUT",
+    "call": "supportPath(requestId, supportId)",
+    "probes": [
+      {
+        "path": "/feature-requests/fr_0000000000000001/supports/sup_0000000000000002",
+        "body": {
+          "customer": "Example Air",
+          "impact": "committed",
+          "amount_usd": 85000,
+          "name": "Rui Costa"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "DELETE",
+    "call": "supportPath(requestId, supportId)",
+    "probes": [
+      {
+        "path": "/feature-requests/fr_0000000000000001/supports/sup_unknown"
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestsApi.ts",
+    "method": "POST",
+    "call": "`${requestPath(requestId)}/promote`",
+    "probes": [
+      {
+        "path": "/feature-requests/fr_unknown/promote",
+        "body": {
+          "project_id": "proj_1"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "GET",
+    "call": "`${documentPath(projectId, documentId)}/comments`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/comments"
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${documentPath(projectId, documentId)}/comments`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/comments",
+        "body": {
+          "text": "Who is this for?"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${commentPath(projectId, documentId, commentId)}/replies`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/comments/dc_unknown/replies",
+        "body": {
+          "text": "Agreed"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${commentPath(projectId, documentId, commentId)}/resolve`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/comments/dc_unknown/resolve"
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${commentPath(projectId, documentId, commentId)}/reopen`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/comments/dc_unknown/reopen"
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "DELETE",
+    "call": "commentPath(projectId, documentId, commentId)",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/comments/dc_unknown"
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${documentPath(projectId, documentId)}/share`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/share",
+        "body": {
+          "audience": {
+            "mode": "anyone",
+            "domains": [],
+            "emails": []
+          },
+          "expires_in_days": 30
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "DELETE",
+    "call": "`${documentPath(projectId, documentId)}/share`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/share"
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${documentPath(projectId, documentId)}/persona-review`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/documents/prfaq_1/persona-review",
+        "body": {}
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "GET",
+    "call": "reviewPath(shareId)",
+    "probes": [
+      {
+        "path": "/review/shr_00000000000000000000000000000000"
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${reviewPath(shareId)}/comments`",
+    "probes": [
+      {
+        "path": "/review/shr_00000000000000000000000000000000/comments",
+        "body": {
+          "text": "Looks good"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/documentReviewApi.ts",
+    "method": "POST",
+    "call": "`${reviewPath(shareId)}/comments/${enc(commentId)}/replies`",
+    "probes": [
+      {
+        "path": "/review/shr_00000000000000000000000000000000/comments/dc_unknown/replies",
+        "body": {
+          "text": "Thanks"
+        }
       }
     ]
   }

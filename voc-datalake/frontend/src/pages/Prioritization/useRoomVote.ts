@@ -12,6 +12,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ballotCountRefetchInterval } from './roomVotePolling'
+import { useTeamScoreRefresh } from './useTeamScoreRefresh'
 import { votingSessionsApi } from '../../api/votingSessionsApi'
 import type { VotingSession } from '../../api/votingSessionsApi'
 
@@ -84,6 +85,7 @@ export function useRoomVote(rowId: string, rowTitle: string) {
   // response is authoritative the instant it returns. A stale "open" is the
   // dangerous direction — it is the state in which ballots are still accepted.
   const current = closeMutation.data ?? session
+  useTeamScoreRefresh(sessionId === null ? undefined : current)
 
   return {
     sessionId,

@@ -82,6 +82,18 @@ interface LabelledCategory extends LabelledEntry {
 /** The id every review outside the configured categories is counted under (backend `shared/other_category.py`). */
 export const OTHER_CATEGORY = 'other'
 
+/** The enrichment's placeholder for "the model could not tell" (`shared/categorization.py`). */
+const UNKNOWN_JOURNEY_STAGE = 'unknown'
+
+/**
+ * A journey stage worth a label chip, or undefined. `unknown` is the model's
+ * "could not tell": a chip reading "Unknown" beside the category read as the
+ * subcategory (5.34.00), while the category editor rightly said "None".
+ */
+export function knownJourneyStage(stage: string | null | undefined): string | undefined {
+  return stage === null || stage === undefined || stage === '' || stage.toLowerCase() === UNKNOWN_JOURNEY_STAGE ? undefined : stage
+}
+
 /**
  * A category id's label: its configured name, else the humanised id. `other`
  * (not configured) reads as `otherLabel` — the translated "Other" — when given.
@@ -238,13 +250,50 @@ function webConnectorLabel(id: string): string | undefined {
 }
 
 /**
- * A source id's label: its source profile's label (when one is set — a
- * profile without one carries its id), else the connector-aware humanised id.
+ * The platform's own sources (not connectors an admin names), whose names the SPA
+ * translates (`common:builtInSources.<id>`): a humanised id stayed English in every
+ * language ("Feedback form" in Spanish, 5.34.00). `email_intake`'s English entry is the
+ * label the API gives its unconfigured profile (`shared/source_profiles.py`).
  */
-export function sourceLabel(id: string, profiles: readonly LabelledSource[] = []): string {
+export const BUILT_IN_SOURCES: Readonly<Record<string, string>> = {
+  webscraper: 'Web scraper',
+  manual_import: 'Manual import',
+  s3_import: 'S3 import',
+  feedback_form: 'Feedback form',
+  prototype_feedback: 'Prototype feedback',
+  github_issues: 'GitHub Issues',
+  app_reviews_ios: 'iOS App Reviews',
+  app_reviews_android: 'Android App Reviews',
+  synthetic_reviews: 'Synthetic reviews',
+  web_reviews: 'Web reviews',
+  email_intake: 'Email inbox',
+}
+
+/** A built-in source's name in the reader's language, else undefined. */
+export type BuiltInSourceName = (id: string) => string | undefined
+
+/**
+ * A source id's label: its source profile's label (when an admin set one — a
+ * profile without one carries its id, a built-in one its English default), then a
+ * built-in source's translated name, else the connector-aware humanised id.
+ */
+export function sourceLabel(id: string, profiles: readonly LabelledSource[] = [], builtIn?: BuiltInSourceName): string {
   const profile = profiles.find((p) => p.id === id)
-  const label = profile?.label.trim()
-  if (label !== undefined && label !== '' && label !== id) return label
+  const englishDefault = Object.hasOwn(BUILT_IN_SOURCES, id) ? BUILT_IN_SOURCES[id] : undefined
+  const label = adminLabel(profile, englishDefault)
+  if (label !== undefined) return label
+  const builtInName = englishDefault === undefined ? undefined : builtIn?.(id) ?? englishDefault
+  return builtInName ?? connectorLabel(id, profile)
+}
+
+/** The label an admin set on a profile: not blank, not its id, not the built-in English default. */
+function adminLabel(profile: LabelledSource | undefined, englishDefault: string | undefined): string | undefined {
+  const label = profile?.label.trim() ?? ''
+  return label === '' || label === profile?.id || label === englishDefault ? undefined : label
+}
+
+/** The connector-aware humanised id (Radar, app and web-review connectors, else the id). */
+function connectorLabel(id: string, profile: LabelledSource | undefined): string {
   return radarSourceLabel(id, profile) ?? appConnectorLabel(id) ?? webConnectorLabel(id) ?? humanizeId(id)
 }
 

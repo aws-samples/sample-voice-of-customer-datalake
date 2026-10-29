@@ -4,6 +4,7 @@
  *
  * @module assistant/components/EmptyState
  */
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GhostIdle } from '../../components/KiroGhost/GhostPoses'
 import type { PageKind } from '../contract'
@@ -30,6 +31,7 @@ const SUGGESTION_GROUPS: Partial<Record<PageKind, string>> = {
   problems: 'problems',
   feedback: 'feedback',
   radar: 'radar',
+  participants: 'participants',
 }
 
 const SUGGESTION_COUNT = 3
@@ -41,11 +43,13 @@ function suggestionGroup(kind: PageKind): string {
 export default function EmptyState({ kind, onPick }: Readonly<{ kind: PageKind; onPick: (prompt: string) => void }>) {
   const { t } = useTranslation('assistant')
   const group = suggestionGroup(kind)
+  const titleId = useId()
   const prompts = Array.from({ length: SUGGESTION_COUNT }, (_, i) => t(`suggestions.${group}.${i + 1}`))
   return (
-    <div className="flex flex-col items-center px-2 py-6 text-center animate-rise">
+    // A region named by its title ("How can I help?"): the empty conversation is findable by role.
+    <section aria-labelledby={titleId} className="flex flex-col items-center px-2 py-6 text-center animate-rise">
       <GhostIdle className="mb-3 h-14 w-14 text-aim" />
-      <p className="text-sm font-semibold tracking-tight text-text-strong">{t('empty.title')}</p>
+      <p id={titleId} className="text-sm font-semibold tracking-tight text-text-strong">{t('empty.title')}</p>
       <p className="mb-4 text-[12px] text-muted">{t('empty.subtitle')}</p>
       <ul className="w-full space-y-1.5">
         {prompts.map((prompt) => (
@@ -60,6 +64,6 @@ export default function EmptyState({ kind, onPick }: Readonly<{ kind: PageKind; 
           </li>
         ))}
       </ul>
-    </div>
+    </section>
   )
 }

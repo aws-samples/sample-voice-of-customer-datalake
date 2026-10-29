@@ -50,7 +50,7 @@ describe('FeedbackCard', () => {
 
     it('renders source platform with icon', () => {
       const { container } = renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
-      expect(screen.getByText('Webscraper')).toBeInTheDocument()
+      expect(screen.getByText('Web scraper')).toBeInTheDocument()
       expect(container.querySelector('svg.lucide-globe')).not.toBeNull()
       expect(container.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
     })
@@ -101,6 +101,13 @@ describe('FeedbackCard', () => {
       } finally {
         await i18n.changeLanguage('en')
       }
+    })
+  })
+
+  describe('journey stage', () => {
+    it('shows no "Unknown" chip for a journey stage the model could not tell', () => {
+      renderWithRouter(<FeedbackCard feedback={{ ...mockFeedback, journey_stage: 'unknown' }} />)
+      expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
     })
   })
 
@@ -157,7 +164,7 @@ describe('FeedbackCard', () => {
 
     // verify5/V6: at 390 px / 200 % text a long word in the issue pushed the card to 443 px.
     it('lets the footer actions wrap instead of pushing the card wider', () => {
-      renderWithRouter(<FeedbackCard feedback={mockFeedback} showActions />)
+      renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       const actions = screen.getByTestId('feedback-card-actions')
       expect(actions).toHaveClass('flex-wrap', 'min-w-0')
       expect(actions).not.toHaveClass('flex-shrink-0')
@@ -170,14 +177,9 @@ describe('FeedbackCard', () => {
   })
 
   describe('actions', () => {
-    it('renders Details link when showActions is true', () => {
-      renderWithRouter(<FeedbackCard feedback={mockFeedback} showActions={true} />)
+    it('renders the Details link', () => {
+      renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       expect(screen.getByRole('link', { name: /details/i })).toBeInTheDocument()
-    })
-
-    it('hides actions when showActions is false', () => {
-      renderWithRouter(<FeedbackCard feedback={mockFeedback} showActions={false} />)
-      expect(screen.queryByRole('link', { name: /details/i })).not.toBeInTheDocument()
     })
 
     it('renders external link when source_url is provided', () => {

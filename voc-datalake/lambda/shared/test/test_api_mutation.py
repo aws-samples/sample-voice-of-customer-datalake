@@ -57,6 +57,7 @@ from shared.exceptions import (
     PayloadTooLargeError,
     SecretUnreadableError,
     ServiceError,
+    TooManyRequestsError,
     ValidationError,
 )
 
@@ -214,15 +215,16 @@ class _Teapot(ApiError):
 
 class TestEveryErrorHandlerAnswersItsStatusBodyAndLogLine:
     @pytest.mark.parametrize(('exc_type', 'status', 'log_method', 'prefix'), [
-        # Client errors log at INFO (the API working as designed); a refused authorization stays
-        # WARNING (security-relevant); server faults are ERROR/exception.
+        # Client errors log at INFO (the API working as designed), a refused authorization
+        # included; server faults are ERROR/exception.
         (ValidationError, 400, 'info', 'Validation error'),
         (NotFoundError, 404, 'info', 'Not found'),
         (ConfigurationError, 500, 'error', 'Configuration error'),
         (SecretUnreadableError, 500, 'error', 'Configuration error'),
         (ServiceError, 500, 'exception', 'Service error'),
-        (AuthorizationError, 403, 'warning', 'Authorization error'),
+        (AuthorizationError, 403, 'info', 'Authorization error'),
         (ConflictError, 409, 'info', 'Conflict error'),
+        (TooManyRequestsError, 429, 'info', 'Quota reached'),
         (ApiError, 500, 'exception', 'API error'),
         (_Teapot, 418, 'exception', 'API error'),
     ])
@@ -247,6 +249,14 @@ class TestEveryErrorHandlerAnswersItsStatusBodyAndLogLine:
         assert result['statusCode'] == 413
         assert json.loads(result['body']) == {'success': False, 'error': 'too big', 'message': 'too big'}
         assert logger.mock_calls == [call.info('Payload too large: too big')]
+
+    def test_no_client_error_answer_logs_above_info(self):
+        # Every 4xx in the table is an answer the API gives on purpose: a new row at
+        # WARNING would surface as noise in Administration -> System -> Logs.
+        client_rows = [(exc, level) for exc, status, level, _label, _both in api_module._EXCEPTION_ANSWERS
+                       if status is not None and 400 <= status < 500]
+        assert client_rows, 'the table lists no client errors'
+        assert [exc.__name__ for exc, level in client_rows if level != 'info'] == []
 
 
 OVERRIDE = {'by_sub': 'cognito-sub', 'by_username': 'alice', 'at': '2026-01-01T00:00:00Z'}
@@ -312,7 +322,12 @@ class TestApiHandlerAppliesEveryPowertoolsDecorator:
         assert inner({'e': 1}, None) == {'statusCode': 200}
         tracer.capture_lambda_handler.assert_called_once_with(metrics.log_metrics.return_value.return_value)
         logger.inject_lambda_context.assert_called_once_with(tracer.capture_lambda_handler.return_value)
-        assert wrapped is logger.inject_lambda_context.return_value
+        # Outermost: the e2e traffic tag (shared/e2e_tag.py), reset on every call before the context is injected.
+        assert vars(wrapped)['__wrapped__'] is logger.inject_lambda_context.return_value
+        wrapped({'headers': {'User-Agent': 'node voc-e2e/run-1'}}, None)
+        logger.remove_keys.assert_called_once_with(['test_run'])
+        logger.append_keys.assert_called_once_with(test_run='run-1')
+        logger.inject_lambda_context.return_value.assert_called_once()
 
 
 def _table_with(categories: list[dict] | None) -> MagicMock:

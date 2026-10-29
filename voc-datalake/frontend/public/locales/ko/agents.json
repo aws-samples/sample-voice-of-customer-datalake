@@ -206,6 +206,7 @@
       "produced": "만든 결과",
       "producedNothing": "아직 없습니다.",
       "anArtifact": "새 문서",
+      "artifactTitled": "{{what}}: {{title}}",
       "inProject": "{{name}}에서",
       "needsYou": "필요한 조치",
       "needsDecision": "위 카드에서 다음 단계를 결정하세요.",
@@ -332,10 +333,22 @@
       "arrowTargetNone": "단계 선택…",
       "joinLoop": "루프"
     },
+    "issues": {
+      "instructionsRequired": "이 단계에는 지침이 필요합니다. 무엇을 할지 적어 주세요.",
+      "titleRequired": "이 단계의 제목을 입력하세요.",
+      "duplicateStep": "두 단계가 같은 ID를 사용합니다. 하나를 삭제하고 다시 추가하세요.",
+      "duplicateArrow": "두 화살표가 같은 ID를 사용합니다. 하나를 삭제하고 다시 그리세요.",
+      "reviewTarget": "이 검토가 확인할 대상을 선택하세요.",
+      "endStatus": "실행이 여기서 어떻게 끝날지 선택하세요."
+    },
     "params": {
       "target": "대상",
       "targetAny": "마지막으로 생성된 항목",
       "maxNew": "최대 새 페르소나 수",
+      "generateAvatars": "페르소나마다 초상 이미지 만들기",
+      "maxWords": "분량 목표(단어 수)",
+      "maxWordsNone": "제한 없음",
+      "maxWordsHint": "문서 전체를 대략 이 단어 수 안으로 유지합니다. 비워 두면 지침이 짧은 문서를 요청할 때 약 1,200단어, 그렇지 않으면 제한이 없습니다.",
       "useWebSearch": "웹 검색 사용",
       "useWebSearchHint": "실행당 웹 검색 {{limit, number}}회 한도에 포함됩니다.",
       "endStatus": "실행 종료 상태"
@@ -498,6 +511,18 @@
   "workflowPage": {
     "title": "워크플로",
     "subtitle": "라이브러리의 워크플로입니다. 이를 실행하는 에이전트는 가장 최근에 저장된 리비전을 사용합니다."
+  },
+  "validation": {
+    "scope": "카테고리나 하위 카테고리를 하나 이상 선택하거나, 모든 카테고리를 지켜보도록 하세요.",
+    "name": "에이전트 이름은 {{max, number}}자 이내로 입력하세요.",
+    "description": "설명은 최대 {{max, number}}자입니다.",
+    "instructions": "지침은 최대 {{max, number}}자입니다.",
+    "triggers": "트리거를 확인하세요. 각 값은 범위 안의 정수여야 하고, 사용자 지정 일정에는 cron 식이 필요합니다.",
+    "personas": "고정 페르소나는 최대 {{max, number}}개까지 선택할 수 있습니다.",
+    "models": "역할마다 사용 가능한 모델이나 기본값을 선택하세요.",
+    "workflow": "워크플로를 선택하세요.",
+    "budget": "예산을 확인하세요. 한도는 범위 안의 정수여야 합니다.",
+    "other": "일부 설정이 올바르지 않습니다. 확인한 뒤 다시 시도하세요."
   },
   "decision": {
     "title": "이 실행에는 결정이 필요합니다",

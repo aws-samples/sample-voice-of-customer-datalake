@@ -72,7 +72,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from retention_common import is_conditional_failure, resolve_tables, scan_all, table_parser
 
-from shared.earliest_date import EARLIEST_DATE_PK, lower_watermark_request, parse_iso_date
+from shared.earliest_date import METRIC_META_PK, lower_watermark_request, parse_iso_date
 
 METRIC_PREFIX = 'METRIC#'
 TTL_ATTRIBUTE = 'ttl'
@@ -158,7 +158,7 @@ def load_existing(aggregates_table, plan: Plan) -> None:
     rows = scan_all(
         aggregates_table,
         FilterExpression='begins_with(pk, :metric) AND pk <> :meta',
-        ExpressionAttributeValues={':metric': METRIC_PREFIX, ':meta': EARLIEST_DATE_PK},
+        ExpressionAttributeValues={':metric': METRIC_PREFIX, ':meta': METRIC_META_PK},
     )
     for row in rows:
         key = (row['pk'], row['sk'])

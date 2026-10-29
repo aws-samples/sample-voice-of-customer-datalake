@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import type { FeedbackItem } from '../../api/types'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { formatDate } from '../../utils/dateUtils'
+import { cleanReviewText } from '../../utils/cleanReviewText'
 
 type Row = readonly [labelKey: string, value: string | undefined]
 
@@ -22,8 +23,8 @@ function useRows(item: FeedbackItem): readonly Row[] {
   const labels = useDisplayLabels()
   const { i18n } = useTranslation()
   return [
-    ['details.title', text(item.title)],
-    ['details.text', text(item.original_text)],
+    ['details.title', text(cleanReviewText(item.title))],
+    ['details.text', text(cleanReviewText(item.original_text))],
     ['details.source', labels.source(item.source_platform)],
     ['details.date', text(formatDate(item.source_created_at, i18n.language))],
     ['details.category', item.category ? labels.theme(item.category, item.subcategory) : undefined],

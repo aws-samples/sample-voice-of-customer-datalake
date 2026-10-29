@@ -148,6 +148,26 @@ class TestStop:
             assert _summaries(env, run_id)[-1] == 'Closed by alice: no further action.'
             assert _agent(env, agent_id)['last_run_status'] == 'completed'
 
+    def test_a_closed_run_carries_no_error_and_the_journal_keeps_the_pause(self, lambda_context):
+        # 5.35.02 live: the completed run still showed "Needs a human: the workflow asks for a human."
+        with _api() as env:
+            agent_id, run_id = _needs_human_run(env, lambda_context, END_STOP,
+                                                error='Needs a human: the workflow asks for a human.')
+            store.append_event(env.agents, agent_id, run_id, 'decision',
+                               'Needs a human: the workflow asks for a human.', now=store.utc_now())
+            run = _decide(lambda_context, agent_id, run_id, {'decision': 'stop'})[1]['run']
+
+            assert (run['status'], run['error']) == ('completed', None)
+            assert 'error' not in _run(env, agent_id, run_id)
+            assert 'Needs a human: the workflow asks for a human.' in _summaries(env, run_id)
+
+    def test_a_completed_run_stored_with_an_error_reads_without_one(self, lambda_context):
+        with _api() as env:
+            agent_id, run_id = _needs_human_run(env, lambda_context, None, status='completed')
+            run = _call(lambda_context, 'GET', f'/agents/{agent_id}/runs/{run_id}')[1]['run']
+
+            assert (run['status'], run['error']) == ('completed', None)
+
     def test_a_note_is_trimmed_and_journalled(self, lambda_context):
         with _api() as env:
             agent_id, run_id = _needs_human_run(env, lambda_context)

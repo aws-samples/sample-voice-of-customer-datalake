@@ -1,0 +1,278 @@
+{
+  "page": {
+    "title": "Feedback boards",
+    "subtitle": "Boards your teams and customers use for requests, issues and feedback.",
+    "boardSubtitle": "Requests, with the people behind each one."
+  },
+  "loading": "Loading…",
+  "actions": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "delete": "Delete",
+    "save": "Save"
+  },
+  "status": {
+    "new": "New",
+    "under_review": "Under review",
+    "planned": "Planned",
+    "declined": "Declined",
+    "shipped": "Shipped",
+    "confirmed": "Confirmed",
+    "fixed": "Fixed",
+    "wont_fix": "Won't fix",
+    "seen": "Seen",
+    "done": "Done"
+  },
+  "impact": {
+    "committed": "Committed to pay",
+    "at_risk": "Deal at risk",
+    "none": "No revenue impact"
+  },
+  "totals": {
+    "supporters": "Supporters",
+    "customers": "Customers",
+    "committed": "Committed",
+    "atRisk": "At risk",
+    "peopleAffected": "People affected",
+    "avgRating": "Average rating",
+    "rating": "{{value}} / 5",
+    "notRated": "Not rated yet",
+    "boardSummary": "Board totals"
+  },
+  "list": {
+    "label": "Requests",
+    "intro": "Add a request, or +1 one that matters to you too.",
+    "search": "Search",
+    "searchPlaceholder": "Title, description or reporter",
+    "statusFilter": "Status",
+    "allStatuses": "All statuses",
+    "sortBy": "Sort by",
+    "sort": {
+      "newest": "Newest",
+      "committed": "Committed revenue",
+      "at_risk": "Revenue at risk",
+      "supporters": "Supporters",
+      "people_affected": "People affected",
+      "rating": "Rating"
+    },
+    "reportedBy": "Reported by {{name}}",
+    "empty": "No requests yet. Add the first one.",
+    "noMatch": "No request matches these filters.",
+    "loadFailed": "The requests could not be loaded.",
+    "notAccepted": "This sign-in is not accepted on the board. Sign in with a verified email address the board accepts."
+  },
+  "new": {
+    "open": "New request",
+    "title": "New request",
+    "description": "Everyone who can use {{board}} sees it, with your name and email.",
+    "impactHeading": "Your customer and the revenue impact",
+    "submit": "Add request"
+  },
+  "form": {
+    "title": "Title",
+    "description": "Description",
+    "amountHint": "Whole US dollars",
+    "noAmount": "No amount needed without a revenue impact.",
+    "name": "Your name",
+    "errors": {
+      "titleRequired": "Give the request a title.",
+      "descriptionRequired": "Describe what the customer needs.",
+      "customerRequired": "Name the customer.",
+      "nameRequired": "Add your name.",
+      "amountRequired": "Enter the amount in US dollars.",
+      "amountTooLarge": "That amount is larger than the board accepts.",
+      "contactEmail": "Enter a valid email address, or leave it empty.",
+      "descriptionRequiredService": "Describe what happened and what the customer saw."
+    },
+    "requiredLabel": "{{label}} (required)",
+    "optionalLabel": "{{label}} (optional)",
+    "choose": "Choose...",
+    "notSet": "Not set",
+    "fieldErrors": {
+      "required": "This field is required.",
+      "too_long": "This is longer than the board accepts.",
+      "invalid_choice": "Choose one of the options.",
+      "invalid_number": "Enter a whole number.",
+      "out_of_range": "That number is outside the allowed range.",
+      "invalid_email": "Enter a valid email address.",
+      "invalid_url": "Enter a full https:// link."
+    },
+    "descriptionHint": {
+      "sales": "What the customer needs, and why.",
+      "service": "What happened, and what the customer saw.",
+      "beta": "What you tried, and what happened.",
+      "blank": "Anything that helps others understand it."
+    }
+  },
+  "detail": {
+    "reported": "Reported by {{name}} ({{email}})",
+    "reporter": "Reporter",
+    "copyLink": "Copy link",
+    "copied": "Link copied",
+    "edit": "Edit",
+    "supports": "Supporters",
+    "plusOne": "+1 with my customer",
+    "addSupport": "Add my +1",
+    "contact": "Contact: {{email}}",
+    "editSupport": "Edit the support for {{customer}}",
+    "deleteSupport": "Delete the support for {{customer}}",
+    "deleteSupportTitle": "Delete this support?",
+    "deleteSupportMessage": "The support for {{customer}} and its amount leave the request totals.",
+    "loadFailed": "This request could not be loaded.",
+    "supportsCount_one": "{{count, number}} support",
+    "supportsCount_other": "{{count, number}} supports",
+    "plusOneService": "I am affected too",
+    "plusOneOther": "+1",
+    "alreadySupporting": "You support this request.",
+    "editMySupport": "Edit my +1"
+  },
+  "admin": {
+    "title": "Admin",
+    "status": "Status",
+    "delete": "Delete request",
+    "deleteTitle": "Delete this request?",
+    "deleteMessage": "“{{title}}” and every support on it are deleted for everyone."
+  },
+  "promote": {
+    "title": "Promote to project",
+    "hint": "Every supporter and customer contact joins a participant list linked to the project, so you can email them for feedback.",
+    "project": "Project",
+    "pickProject": "Choose a project",
+    "loadingProjects": "Loading projects…",
+    "newProject": "New project…",
+    "newProjectName": "New project name",
+    "submit": "Promote",
+    "skippedRow": "{{email}}: {{reason}}",
+    "reasons": {
+      "external_not_allowed": "outside the company domains, and external people are not allowed",
+      "invalid_email": "not a valid email address",
+      "unsubscribed": "unsubscribed from participant emails"
+    },
+    "done_one": "{{count, number}} person added to “{{list}}”.",
+    "done_other": "{{count, number}} people added to “{{list}}”.",
+    "skipped_one": "{{count, number}} email was skipped:",
+    "skipped_other": "{{count, number}} emails were skipped:"
+  },
+  "errors": {
+    "generic": "That did not work. Try again.",
+    "forbidden": "You are not allowed to do that.",
+    "notFound": "This request no longer exists.",
+    "conflict": "Someone changed this at the same time. Try again.",
+    "throttled": "Too many requests right now. Wait a moment and try again.",
+    "rateLimited": "You have reached today’s posting limit on this board. Try again tomorrow.",
+    "slugTaken": "Another board already uses this link name.",
+    "boardNotEmpty": "This board still has requests. Delete it together with its requests, or archive it.",
+    "statusInUse": "Requests still use this status. Move them to another status first.",
+    "alreadySupported": "You already support this. Edit your +1 instead."
+  },
+  "auth": {
+    "title": "Sign in to the feature-request board",
+    "intro": "Enter your work email. We send you a link and a one-time code.",
+    "email": "Work email",
+    "sendLink": "Email me a sign-in link",
+    "checkEmail": "Check {{email}}: open the link, or type the code from the email here.",
+    "secondCode": "Your email is confirmed. We sent one more code to {{email}} to sign you in.",
+    "code": "Code from the email",
+    "signIn": "Sign in",
+    "useAnotherEmail": "Use another email",
+    "otherBrowser": "This link was opened in a different browser than the one that asked for it. Type the code in that browser, or send a new link from here.",
+    "errors": {
+      "domain_not_allowed": "This email’s domain is not allowed on the board. Use your company email.",
+      "wrong_code": "That code is not right. Check the email and try again.",
+      "expired": "This sign-in expired. Send a new link.",
+      "tooManyAttempts": "Too many attempts. Wait a few minutes and try again.",
+      "no_session": "There is no sign-in waiting in this browser. Type the code where you asked for it, or send a new link.",
+      "invalid_email": "Enter a valid email address.",
+      "unknown": "Sign-in did not work. Try again in a moment."
+    }
+  },
+  "board": {
+    "title": "Feedback boards",
+    "titleWithBrand": "{{brand}} feedback boards",
+    "signOut": "Sign out",
+    "notEnabledTitle": "Feedback boards are not enabled",
+    "notEnabled": "This deployment has no board sign-in. If you use the app, sign in there and open Feedback boards.",
+    "notEnabledDev": "Local development without a board pool: the mock cannot sign anyone in to Cognito. Add a board block to public/config.json to try a real pool, or use the in-app Feedback boards page with the mock."
+  },
+  "fields": {
+    "customer": "Customer",
+    "deal": "Deal",
+    "impact": "Revenue impact",
+    "amount_usd": "Amount (USD)",
+    "contact_email": "Customer contact email",
+    "kind": "Type",
+    "severity": "Severity",
+    "reference": "Booking or order reference",
+    "steps": "Steps to reproduce",
+    "affected_count": "People affected",
+    "area": "Area",
+    "outcome": "What happened",
+    "rating": "Rating (1-5)",
+    "link": "Link (https)",
+    "note": "Note"
+  },
+  "choices": {
+    "kind": {
+      "bug": "Bug",
+      "complaint": "Complaint",
+      "missing_feature": "Missing feature",
+      "question": "Question"
+    },
+    "severity": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "critical": "Critical"
+    },
+    "outcome": {
+      "works": "It works",
+      "broken": "It is broken",
+      "confusing": "It is confusing"
+    }
+  },
+  "templates": {
+    "sales": "Sales feature requests",
+    "service": "Customer service issues",
+    "beta": "Beta feedback",
+    "blank": "Blank"
+  },
+  "boards": {
+    "listLabel": "Boards",
+    "audienceLabel": "Who can use it",
+    "requestsLabel": "Requests",
+    "audience": {
+      "company": "People at your company",
+      "list": "Invited domains and people",
+      "listCounts": "{{domains}} domains, {{people}} people",
+      "anyone": "Anyone with a verified email"
+    },
+    "open": "Open",
+    "openBoard": "Open {{name}}",
+    "copyBoardLink": "Copy link to {{name}}",
+    "linkCopied": "Link copied",
+    "copyFailed": "The link could not be copied.",
+    "edit": "Edit",
+    "editBoard": "Edit {{name}}",
+    "deleteBoard": "Delete {{name}}",
+    "deleteTitle": "Delete this board?",
+    "deleteMessage": "“{{name}}” is deleted for everyone. This cannot be undone.",
+    "deleteWithRequestsMessage_one": "“{{name}}”, its {{count, number}} request and every +1 on it are deleted permanently. This cannot be undone. Projects already created from its requests are kept.",
+    "deleteWithRequestsMessage_other": "“{{name}}”, its {{count, number}} requests and every +1 on them are deleted permanently. This cannot be undone. Projects already created from its requests are kept.",
+    "deleteWithRequestsMessageStale": "“{{name}}” has requests now. The board, all its requests and every +1 on them are deleted permanently. This cannot be undone. Projects already created from its requests are kept.",
+    "deleteConfirmNameLabel": "Type the board name to confirm",
+    "deleteProgress_one": "Deleted {{deleted, number}} of {{count, number}} request…",
+    "deleteProgress_other": "Deleted {{deleted, number}} of {{count, number}} requests…",
+    "deleteIncomplete": "The board is not fully deleted yet.",
+    "deleteResumeHint": "Press Delete again to continue where it stopped.",
+    "archived": "Archived",
+    "configure": "Configure boards",
+    "emptyTitle": "No boards yet",
+    "empty": "No board is shared with you yet.",
+    "emptyAdmin": "Create a board in <admin>Administration, Privacy & access, Boards</admin>.",
+    "loadFailed": "The boards could not be loaded.",
+    "notFoundTitle": "Board not found",
+    "notFound": "This board does not exist, or it is not shared with you.",
+    "backToBoards": "Back to the boards",
+    "standaloneIntro": "The boards you can use. Open one to add a request or +1 one."
+  }
+}

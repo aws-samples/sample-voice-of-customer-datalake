@@ -11,9 +11,10 @@ import { snapStartAlias } from '../utils/snapstart';
 import {
   publicBallotEndpointSuppressions,
   publicFeedbackEndpointSuppressions,
+  publicUnsubscribeEndpointSuppressions,
   publicWebhookEndpointSuppressions,
 } from '../utils/nag-suppressions';
-import type { ApiGateway } from './api-gateway';
+import { addBrowserPreflight as cors, type ApiGateway } from './api-gateway';
 import { CHAT_STREAM_TIMEOUT, type AssistantLambdas } from './api-assistant-lambdas';
 import type { DataLambdas } from './api-data-lambdas';
 import type { EngagementLambdas } from './api-engagement-lambdas';
@@ -22,16 +23,19 @@ export interface RouteTargets extends DataLambdas, EngagementLambdas, AssistantL
   projectsLambda: lambda.Function;
   /** /radar, /radar/{proxy+} (docs/radar.md). */
   radarLambda: lambda.Function;
+  /** voc-engagement-api: /participants/*, /feature-requests/*, POST /unsubscribe. */
+  engagementLambda: lambda.Function;
   webhookPlugins: PluginManifest[];
   webhookLambdas: Map<string, lambda.Function>;
 }
 
 export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: RouteTargets): void {
-  const { api, authMethodOptions, skipFeedbackFormItemRoutes } = gateway;
+  const { api, authMethodOptions, boardAuthMethodOptions, skipFeedbackFormItemRoutes } = gateway;
   const {
     metricsLambda, feedbackEditLambda, integrationsLambda, scrapersLambda, settingsLambda, usersLambda,
     feedbackFormLambda, chatLambda, chatStreamLambda, projectsLambda, manualImportLambda, logsLambda,
-    s3ImportLambda, dataExplorerLambda, ballotsLambda, memoryLambda, agentsLambda, radarLambda, webhookPlugins, webhookLambdas,
+    s3ImportLambda, dataExplorerLambda, ballotsLambda, memoryLambda, agentsLambda, radarLambda, engagementLambda,
+    webhookPlugins, webhookLambdas,
   } = targets;
 
   // Lambda integrations — every one frugal (see frugalIntegration below).
@@ -58,39 +62,43 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   // ============================================
   // API ROUTES
   // ============================================
+  // Every resource that serves a browser method carries its own CORS preflight (`cors`, a MOCK
+  // OPTIONS); path-only parents carry none (BROWSER_PREFLIGHT in api-gateway.ts). Every proxy
+  // passes `defaultMethodOptions`: a proxy without it is AuthorizationType.NONE.
+  const proxyOf = (
+    parent: apigateway.IResource, integration: apigateway.LambdaIntegration,
+    methodOptions: apigateway.MethodOptions = authMethodOptions,
+  ) => cors(parent.addProxy({ defaultIntegration: integration, anyMethod: true, defaultMethodOptions: methodOptions }));
+  /** A Cognito `{proxy+}` serving ONLY the listed verbs (no ANY), each to its own integration. */
+  const proxyServing = (parent: apigateway.IResource, verbs: Record<string, apigateway.LambdaIntegration>) => {
+    const proxy = cors(parent.addProxy({ anyMethod: false, defaultMethodOptions: authMethodOptions }));
+    for (const [verb, integration] of Object.entries(verbs)) proxy.addMethod(verb, integration, authMethodOptions);
+  };
 
-  // /feedback/*
-  const feedbackResource = api.root.addResource('feedback');
+  // /feedback/* — three resources (5.47.00; ten before). `/feedback/{id}` GET also serves the
+  // single-segment reads (`access`, `urgent`, `entities`, `search`, `problems`): the metrics Lambda
+  // resolves by PATH and Powertools matches its static routes before `/feedback/<id>`. Under the item,
+  // a proxy with GET → metrics (`similar`) and PUT → feedback edit (`category`, `dimensions`, the only
+  // feedback WRITE routes, their own Lambda). Never a sibling `{proxy+}` of `{id}`: API Gateway
+  // allows one variable path part per level, and CloudFormation creates the new resource before it
+  // deletes the old, so that swap fails on every deployed environment.
+  const feedbackResource = cors(api.root.addResource('feedback'));
   feedbackResource.addMethod('GET', metricsIntegration, authMethodOptions);
-  const feedbackIdResource = feedbackResource.addResource('{id}');
+  const feedbackIdResource = cors(feedbackResource.addResource('{id}'));
   feedbackIdResource.addMethod('GET', metricsIntegration, authMethodOptions);
-  feedbackIdResource.addResource('similar').addMethod('GET', metricsIntegration, authMethodOptions);
-  // The only feedback WRITE routes — their own Lambda (see FeedbackEditApi):
-  // a review's category, and its dimensions/tags (docs/dimensions.md).
-  feedbackIdResource.addResource('category').addMethod('PUT', feedbackEditIntegration, authMethodOptions);
-  feedbackIdResource.addResource('dimensions').addMethod('PUT', feedbackEditIntegration, authMethodOptions);
-  // The caller's category scope ({all, categories}) for the UI and the assistant.
-  feedbackResource.addResource('access').addMethod('GET', metricsIntegration, authMethodOptions);
-  feedbackResource.addResource('urgent').addMethod('GET', metricsIntegration, authMethodOptions);
-  feedbackResource.addResource('entities').addMethod('GET', metricsIntegration, authMethodOptions);
-  feedbackResource.addResource('search').addMethod('GET', metricsIntegration, authMethodOptions);
-  // The Problem Analysis tree, aggregated over the whole window (docs/problem-analysis.md). Resolving a
-  // problem is /settings/resolved-problems (settings Lambda); the metrics Lambda has no such route.
-  feedbackResource.addResource('problems').addMethod('GET', metricsIntegration, authMethodOptions);
+  proxyServing(feedbackIdResource, { GET: metricsIntegration, PUT: feedbackEditIntegration });
 
   // /metrics/* — proxy to metrics Lambda
   const metricsResource = api.root.addResource('metrics');
-  metricsResource.addProxy({ defaultIntegration: metricsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
-  // Release watch (docs/decisions-and-release-watch.md): declared explicitly beside
-  // the proxy so the read-only, Cognito-only contract is visible in the stack.
-  metricsResource.addResource('release-watch').addMethod('GET', metricsIntegration, authMethodOptions);
+  // Release watch (`GET /metrics/release-watch`) is served by this proxy since 5.47.00.
+  proxyOf(metricsResource, metricsIntegration);
 
-  // /chat/* — the assistant streams at /chat/stream; sessions live under
-  // /chat/conversations. There is no non-streaming POST /chat any more.
+  // /chat/* — the assistant streams at the static /chat/stream; every other path (the sessions
+  // under /chat/conversations) goes to the chat Lambda. There is no non-streaming POST /chat.
   const chatResource = api.root.addResource('chat');
-  const chatStreamResource = chatResource.addResource('stream');
+  const chatStreamResource = cors(chatResource.addResource('stream'));
   const chatStreamMethod = chatStreamResource.addMethod('POST', chatStreamIntegration, authMethodOptions);
-  chatResource.addResource('conversations').addProxy({ defaultIntegration: chatIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+  proxyOf(chatResource, chatIntegration);
 
   // Apply API Gateway response-streaming overrides to /chat/stream.
   // Cast through `unknown` to the L1 CfnMethod type — `defaultChild` is typed as
@@ -107,66 +115,43 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
     `arn:aws:apigateway:${stack.region}:lambda:path/2021-11-15/functions/${chatStreamLambda.functionArn}/response-streaming-invocations`
   );
 
-  // /integrations/*
-  // {source} uses a greedy proxy so all sub-paths (credentials, apps, apps/{id})
-  // route to the integrations Lambda, which owns the routing.
-  const integrationsResource = api.root.addResource('integrations');
-  integrationsResource.addResource('status').addMethod('GET', integrationsIntegration, authMethodOptions);
-  const intSourceResource = integrationsResource.addResource('{source}');
-  intSourceResource.addProxy({ defaultIntegration: integrationsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
-
-  // /sources/*
-  // {source} uses a greedy proxy so all sub-paths (enable, disable, run)
-  // route to the integrations Lambda.
-  const sourcesResource = api.root.addResource('sources');
-  sourcesResource.addResource('status').addMethod('GET', integrationsIntegration, authMethodOptions);
-  const srcSourceResource = sourcesResource.addResource('{source}');
-  srcSourceResource.addProxy({ defaultIntegration: integrationsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+  // /integrations/* and /sources/* — ANY on `{source}` serves the one-segment paths (`status`),
+  // its proxy everything deeper (credentials, apps, enable, disable, run, reset); the integrations
+  // Lambda routes by path. `{source}` stays (no `{proxy+}` sibling, see /feedback above).
+  for (const pathPart of ['integrations', 'sources']) {
+    const sourceResource = cors(api.root.addResource(pathPart).addResource('{source}'));
+    sourceResource.addMethod('ANY', integrationsIntegration, authMethodOptions);
+    proxyOf(sourceResource, integrationsIntegration);
+  }
 
   // /scrapers/*
-  const scrapersResource = api.root.addResource('scrapers');
+  const scrapersResource = cors(api.root.addResource('scrapers'));
   scrapersResource.addMethod('GET', scrapersIntegration, authMethodOptions);
   scrapersResource.addMethod('POST', scrapersIntegration, authMethodOptions);
-  const manualResource = scrapersResource.addResource('manual');
-  const manualParseResource = manualResource.addResource('parse');
-  manualParseResource.addMethod('POST', manualImportIntegration, authMethodOptions);
-  manualParseResource.addResource('{jobId}').addMethod('GET', manualImportIntegration, authMethodOptions);
-  manualResource.addResource('confirm').addMethod('POST', manualImportIntegration, authMethodOptions);
-  manualResource.addResource('json-upload').addMethod('POST', manualImportIntegration, authMethodOptions);
-  manualResource.addResource('csv-upload').addMethod('POST', manualImportIntegration, authMethodOptions);
-  scrapersResource.addProxy({ defaultIntegration: scrapersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+  // /scrapers/manual/* — the manual import Lambda (admin middleware on every route).
+  proxyOf(scrapersResource.addResource('manual'), manualImportIntegration);
+  proxyOf(scrapersResource, scrapersIntegration);
 
   // /s3-import/* — proxy to s3 import Lambda
-  const s3ImportResource = api.root.addResource('s3-import');
-  s3ImportResource.addProxy({ defaultIntegration: s3ImportIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+  proxyOf(api.root.addResource('s3-import'), s3ImportIntegration);
 
-  // /data-explorer/* — explicit routes, no {proxy+}: customer data is never
-  // deleted, so there is deliberately NO DELETE method on /s3 or /feedback.
-  // A catch-all would keep a DELETE reachable at the gateway the day a
-  // handler route reappeared; explicit routes make removing it structural.
-  // The handler is admin-only on every route (require_admin).
-  const dataExplorerResource = api.root.addResource('data-explorer');
-  const dataExplorerS3Resource = dataExplorerResource.addResource('s3');
-  dataExplorerS3Resource.addMethod('GET', dataExplorerIntegration, authMethodOptions);
-  // Refuses (409) to overwrite an existing object under raw/.
-  dataExplorerS3Resource.addMethod('PUT', dataExplorerIntegration, authMethodOptions);
-  dataExplorerS3Resource.addResource('preview').addMethod('GET', dataExplorerIntegration, authMethodOptions);
-  dataExplorerResource.addResource('feedback').addMethod('PUT', dataExplorerIntegration, authMethodOptions);
-  dataExplorerResource.addResource('buckets').addMethod('GET', dataExplorerIntegration, authMethodOptions);
+  // /data-explorer/* — a proxy with GET and PUT ONLY: customer data is never deleted, so no
+  // DELETE (and no ANY) is routed under /data-explorer, and the role holds no delete permission
+  // either. `PUT /s3` refuses (409) to overwrite an existing object under raw/. The handler is
+  // admin-only on every route (require_admin).
+  proxyServing(api.root.addResource('data-explorer'), { GET: dataExplorerIntegration, PUT: dataExplorerIntegration });
 
   // /settings/* — proxy to settings Lambda
-  const settingsResource = api.root.addResource('settings');
-  settingsResource.addProxy({ defaultIntegration: settingsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+  proxyOf(api.root.addResource('settings'), settingsIntegration);
 
   // /logs/* — proxy to logs Lambda
-  const logsResource = api.root.addResource('logs');
-  logsResource.addProxy({ defaultIntegration: logsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+  proxyOf(api.root.addResource('logs'), logsIntegration);
 
   // /users/*
-  const usersResource = api.root.addResource('users');
+  const usersResource = cors(api.root.addResource('users'));
   usersResource.addMethod('GET', usersIntegration, authMethodOptions);
   usersResource.addMethod('POST', usersIntegration, authMethodOptions);
-  usersResource.addProxy({ defaultIntegration: usersIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+  proxyOf(usersResource, usersIntegration);
 
   // /feedback-forms/* (multiple forms)
   //
@@ -188,7 +173,7 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   // on already-deployed environments: {form_id} and {proxy+} cannot coexist as
   // sibling variable paths, which is what makes the upgrade two deploys. See
   // docs/deployment.md, "A sibling ({proxy+}) of this resource...".
-  const feedbackFormsResource = api.root.addResource('feedback-forms');
+  const feedbackFormsResource = cors(api.root.addResource('feedback-forms'));
   feedbackFormsResource.addMethod('GET', feedbackFormIntegration, authMethodOptions);
   feedbackFormsResource.addMethod('POST', feedbackFormIntegration, authMethodOptions);
 
@@ -220,11 +205,11 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
       + 'This is the first of two upgrade deploys — re-deploy without the flag to restore the routes.',
     );
   } else {
-    const feedbackFormItem = feedbackFormsResource.addResource('{form_id}');
+    const feedbackFormItem = cors(feedbackFormsResource.addResource('{form_id}'));
     feedbackFormItem.addMethod('PUT', feedbackFormIntegration, authMethodOptions);
     feedbackFormItem.addMethod('DELETE', feedbackFormIntegration, authMethodOptions);
-    feedbackFormItem.addResource('submissions').addMethod('GET', feedbackFormIntegration, authMethodOptions);
-    feedbackFormItem.addResource('stats').addMethod('GET', feedbackFormIntegration, authMethodOptions);
+    cors(feedbackFormItem.addResource('submissions')).addMethod('GET', feedbackFormIntegration, authMethodOptions);
+    cors(feedbackFormItem.addResource('stats')).addMethod('GET', feedbackFormIntegration, authMethodOptions);
 
     // Intentionally unauthenticated: the widget runs on the customer's own site.
     //
@@ -242,9 +227,9 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
     // squeeze a third party's page. See publicWidgetReadThrottle for the full
     // argument before deleting either entry as duplicative.
     const publicFeedbackFormMethods = [
-      feedbackFormItem.addResource('config').addMethod('GET', feedbackFormIntegration),
-      feedbackFormItem.addResource('submit').addMethod('POST', feedbackFormIntegration),
-      feedbackFormItem.addResource('iframe').addMethod('GET', feedbackFormIntegration),
+      cors(feedbackFormItem.addResource('config')).addMethod('GET', feedbackFormIntegration),
+      cors(feedbackFormItem.addResource('submit')).addMethod('POST', feedbackFormIntegration),
+      cors(feedbackFormItem.addResource('iframe')).addMethod('GET', feedbackFormIntegration),
     ];
     for (const publicMethod of publicFeedbackFormMethods) {
       NagSuppressions.addResourceSuppressions(publicMethod, publicFeedbackEndpointSuppressions);
@@ -252,10 +237,10 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   }
 
   // /projects/*
-  const projectsResource = api.root.addResource('projects');
+  const projectsResource = cors(api.root.addResource('projects'));
   projectsResource.addMethod('GET', projectsIntegration, authMethodOptions);
   projectsResource.addMethod('POST', projectsIntegration, authMethodOptions);
-  projectsResource.addProxy({ defaultIntegration: projectsIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+  proxyOf(projectsResource, projectsIntegration);
 
   // /memory/*, /agents/*, /workflows/* — every method Cognito-authenticated,
   // the proxies included (defaultMethodOptions — a proxy without it is
@@ -267,14 +252,38 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
     pathPart: string, integration: apigateway.LambdaIntegration, rootMethods: readonly string[] = ['GET', 'POST'],
   ) => {
     const resource = api.root.addResource(pathPart);
+    if (rootMethods.length > 0) cors(resource);
     for (const method of rootMethods) resource.addMethod(method, integration, authMethodOptions);
-    resource.addProxy({ defaultIntegration: integration, anyMethod: true, defaultMethodOptions: authMethodOptions });
+    proxyOf(resource, integration);
   };
   cognitoCollectionWithProxy('memory', memoryIntegration);
   cognitoCollectionWithProxy('agents', agentsIntegration);
   cognitoCollectionWithProxy('workflows', agentsIntegration);
   // Radar (other brands): reads for every signed-in user, admin-only writes in the handler.
   cognitoCollectionWithProxy('radar', frugalIntegration(radarLambda), ['GET']);
+
+  // Engagement (voc-engagement-api). ONE integration, so ONE invoke permission for all three trees.
+  const engagementIntegration = frugalIntegration(engagementLambda);
+  // /participants/* — app users only (the main authorizer); nothing is served on the bare collection.
+  cognitoCollectionWithProxy('participants', engagementIntegration, []);
+  // /feature-requests/* — the board authorizer (app pool + board pool), proxy included.
+  const featureRequestsResource = cors(api.root.addResource('feature-requests'));
+  for (const method of ['GET', 'POST']) featureRequestsResource.addMethod(method, engagementIntegration, boardAuthMethodOptions);
+  proxyOf(featureRequestsResource, engagementIntegration, boardAuthMethodOptions);
+  // /review/* — document review links (docs/document-review.md), the BOARD authorizer like
+  // /feature-requests: a reviewer outside the company signs in with the board pool's emailed code.
+  // Its own root resource, never inside the app-only /projects proxy. Served by the projects
+  // Lambda (shared/document_review_routes.py), which re-checks the link and the verified email on
+  // every call; throttled 10 rps / 20 by REVIEW_METHOD_KEYS in api-gateway.ts.
+  proxyOf(api.root.addResource('review'), projectsIntegration, boardAuthMethodOptions);
+  // POST /unsubscribe — intentionally unauthenticated, on its OWN root resource (never a public
+  // exception inside an authenticated proxy). A mail recipient, or the mail client's RFC 8058
+  // one-click POST, carries only the emailed token; the handler always answers 200, can only
+  // unsubscribe the person that token names, and stores only the token's hash. Named in
+  // INTENTIONALLY_PUBLIC_ROUTES (test-support/api-stack-template.ts); throttled 5 rps / 10 by
+  // UNSUBSCRIBE_METHOD_KEY in api-gateway.ts.
+  const unsubscribeMethod = cors(api.root.addResource('unsubscribe')).addMethod('POST', engagementIntegration);
+  NagSuppressions.addResourceSuppressions(unsubscribeMethod, publicUnsubscribeEndpointSuppressions);
 
   // /voting-sessions/* — a room scores one document from their phones.
   //
@@ -289,13 +298,13 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   // closed — a route the handler registers is unreachable until it is wired
   // here, which is the direction to fail in for a handler that accepts writes
   // from anyone holding a link.
-  const votingSessionsResource = api.root.addResource('voting-sessions');
+  const votingSessionsResource = cors(api.root.addResource('voting-sessions'));
   votingSessionsResource.addMethod('POST', ballotsIntegration, authMethodOptions);
   // `?row_id=`: the row's open vote, so a reloaded page can show its link and close it.
   votingSessionsResource.addMethod('GET', ballotsIntegration, authMethodOptions);
-  const votingSessionItem = votingSessionsResource.addResource('{session_id}');
+  const votingSessionItem = cors(votingSessionsResource.addResource('{session_id}'));
   votingSessionItem.addMethod('GET', ballotsIntegration, authMethodOptions);
-  votingSessionItem.addResource('close').addMethod('POST', ballotsIntegration, authMethodOptions);
+  cors(votingSessionItem.addResource('close')).addMethod('POST', ballotsIntegration, authMethodOptions);
 
   // Intentionally unauthenticated: the room votes from personal phones with no
   // account. The SESSION is the control — a ballot is accepted only against a
@@ -312,15 +321,15 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   // at the top of this stack — keyed by these exact paths, and pinned against
   // them by a test, because a mistyped key throttles nothing and says nothing.
   const publicBallotMethods = [
-    votingSessionItem.addResource('config').addMethod('GET', ballotsIntegration),
-    votingSessionItem.addResource('submit').addMethod('POST', ballotsIntegration),
+    cors(votingSessionItem.addResource('config')).addMethod('GET', ballotsIntegration),
+    cors(votingSessionItem.addResource('submit')).addMethod('POST', ballotsIntegration),
   ];
   for (const publicMethod of publicBallotMethods) {
     NagSuppressions.addResourceSuppressions(publicMethod, publicBallotEndpointSuppressions);
   }
 
 
-  // /webhooks/{pluginId}
+  // /webhooks/{pluginId} — no CORS preflight: a provider's server-to-server POST never sends one.
   const webhooksResource = api.root.addResource('webhooks');
   for (const plugin of webhookPlugins) {
     const webhookFn = webhookLambdas.get(plugin.id);

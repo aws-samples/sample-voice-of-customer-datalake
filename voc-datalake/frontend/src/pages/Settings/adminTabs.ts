@@ -19,7 +19,7 @@ export type AdminTabId = typeof ADMIN_TAB_IDS[number]
 const ADMIN_SECTION_IDS = [
   'plugins', 'integrations', 'inbox', 'radar',
   'categories', 'dimensions',
-  'policies', 'users',
+  'policies', 'users', 'boards',
   'logs', 'version',
 ] as const
 export type AdminSectionId = typeof ADMIN_SECTION_IDS[number]
@@ -42,7 +42,7 @@ const TABS: readonly TabDef[] = [
   { id: 'brand', sections: [] },
   { id: 'sources', sections: [openTo('plugins'), adminOnly('integrations'), adminOnly('inbox'), adminOnly('radar')] },
   { id: 'taxonomy', sections: [openTo('categories'), adminOnly('dimensions')] },
-  { id: 'access', sections: [adminOnly('policies'), adminOnly('users')] },
+  { id: 'access', sections: [adminOnly('policies'), adminOnly('users'), adminOnly('boards')] },
   { id: 'ai', sections: [] },
   { id: 'system', sections: [openTo('logs'), adminOnly('version')] },
 ]

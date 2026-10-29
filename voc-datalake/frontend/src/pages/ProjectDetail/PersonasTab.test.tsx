@@ -90,13 +90,19 @@ describe('PersonasTab', () => {
     const onSelectPersona = vi.fn()
     renderWithQueryClient(<PersonasTab {...defaultProps} personas={[mockPersona]} onSelectPersona={onSelectPersona} />)
     
-    await user.click(screen.getByRole('button', { name: /^T TestUser/ }))
+    await user.click(screen.getByRole('button', { name: 'TestUser' }))
     expect(onSelectPersona).toHaveBeenCalledWith(mockPersona)
+  })
+
+  // 5.35: the card is named by the persona alone (the initial and the tagline repeated it), the tagline describes it.
+  it('names each persona card by the persona and describes it by the tagline', () => {
+    renderWithQueryClient(<PersonasTab {...defaultProps} personas={[mockPersona]} />)
+    expect(screen.getByRole('button', { name: 'TestUser' })).toHaveAccessibleDescription('Test tagline')
   })
 
   it('highlights selected persona', () => {
     renderWithQueryClient(<PersonasTab {...defaultProps} personas={[mockPersona]} selectedPersona={mockPersona} />)
-    expect(screen.getByRole('button', { name: /^T TestUser/ })).toHaveClass('bg-accent-subtle', 'border-accent/40')
+    expect(screen.getByRole('button', { name: 'TestUser' })).toHaveClass('bg-accent-subtle', 'border-accent/40')
   })
 
   it('calls onGeneratePersonas from empty state button', async () => {

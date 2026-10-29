@@ -28,7 +28,7 @@ import { useDimensionsConfig, useSourceProfiles } from '../../hooks/useDimension
 import CsvColumnMapping from './CsvColumnMapping'
 import { mappingProblem } from './csvColumns'
 import SourceDialogHeader from './SourceDialogHeader'
-import { formatFileSize } from '../../utils/file'
+import { downloadFile, formatFileSize } from '../../utils/file'
 import { useCsvSelection } from './useCsvSelection'
 import RadarSourcePicker from './RadarSourcePicker'
 import { useRadarBrandLabel } from './useRadarBrands'
@@ -60,15 +60,7 @@ interface UploadResult {
   errors?: string[]
 }
 
-function downloadTemplate() {
-  const blob = new Blob([TEMPLATE], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'feedback-template.csv'
-  a.click()
-  URL.revokeObjectURL(url)
-}
+const downloadCsvTemplate = () => downloadFile(TEMPLATE, 'feedback-template.csv', 'text/csv;charset=utf-8')
 
 /**
  * The Radar brand the rows go to: the one chosen here, else a legacy profile's (`radar_brand` on
@@ -185,7 +177,7 @@ function UploadForm(props: UploadFormProps) {
   const channelId = useId()
   return (
     <>
-      <FormatGuide onDownload={downloadTemplate} />
+      <FormatGuide onDownload={downloadCsvTemplate} />
       <SourceProfileSelect value={props.sourceId} onChange={props.onSourceIdChange} disabled={props.busy} />
       <RadarSourcePicker value={props.radarKey} onChange={props.onRadarKeyChange} disabled={props.busy} />
       <div>

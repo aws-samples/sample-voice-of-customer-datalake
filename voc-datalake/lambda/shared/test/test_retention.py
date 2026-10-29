@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 from shared.archive_keys import archive_key_stem
-from shared.retention import item_raw_key, retention_cutoffs, value_hash
+from shared.retention import item_raw_key, retention_cutoffs
 
 B = 'bkt'
 
@@ -47,7 +47,3 @@ def test_cutoffs_only_for_profiles_with_a_retention_period():
     profiles = [{'id': 'a', 'retention_days': 30}, {'id': 'b', 'retention_days': None}, {'id': 'c'},
                 {'id': 'd', 'retention_days': True}]
     assert retention_cutoffs(profiles, date(2026, 3, 31)) == {'a': '2026-03-01'}
-
-
-def test_value_hash_is_sha256_hex():
-    assert value_hash('a') == 'ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb'

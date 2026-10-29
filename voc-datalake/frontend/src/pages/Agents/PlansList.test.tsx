@@ -3,7 +3,7 @@
  * an empty state, and opening a plan shows its live progress.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '@test/test-utils'
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
@@ -83,6 +83,20 @@ describe('PlansList — Delete', () => {
     expect(remove).toHaveBeenCalledTimes(1)
     expect(await screen.findByTestId(`plan-row-${ID}`)).toBeInTheDocument()
     await vi.waitFor(() => expect(screen.queryByTestId(`plan-row-${DONE.plan_id}`)).not.toBeInTheDocument())
+  })
+
+  it('a finished plan\u2019s Delete button stays the same node while a running plan polls the list', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      routeFetchApi({ 'GET /agents/plans?limit=20': () => ({ plans: [SUMMARY, DONE] }) })
+      render(<PlansList />)
+      const button = await screen.findByRole('button', DELETE_BUTTON)
+      await act(() => vi.advanceTimersByTimeAsync(31_000))
+      expect(button.isConnected).toBe(true)
+      expect(screen.getByRole('button', DELETE_BUTTON)).toBe(button)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps the plan when the confirmation is cancelled', async () => {

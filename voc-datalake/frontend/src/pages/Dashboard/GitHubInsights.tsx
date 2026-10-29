@@ -25,6 +25,7 @@ import { partialHintText } from './dashboardData'
 import { AXIS_LINE, AXIS_TICK, BAR_CURSOR, CHART_CONTAINER_PROPS, GRID_STROKE, TOOLTIP_PROPS } from './chartTheme'
 import { NUMBER_AXIS_WIDTH, sentimentTickFormatter } from './axisLabel'
 import { useCompactTick } from './useCompactTick'
+import { tooltipFormatter } from './chartTooltip'
 
 const SENTIMENT_DOMAIN: [number, number] = [-1, 1]
 /** Room for "-0.5" at the axis font (4 × 7 px + the tick line). */
@@ -56,7 +57,7 @@ function ReleaseChart({ versions }: Readonly<{ versions: GithubVersionRow[] }>) 
           <YAxis yAxisId="count" tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={AXIS_LINE} width={NUMBER_AXIS_WIDTH} tickFormatter={tick} />
           {/* Ticks run -1 … 1 ("-0.5" is the longest, 4 characters). */}
           <YAxis yAxisId="sentiment" orientation="right" domain={SENTIMENT_DOMAIN} tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={AXIS_LINE} width={SENTIMENT_AXIS_WIDTH} tickFormatter={sentimentTick} />
-          <Tooltip {...TOOLTIP_PROPS} cursor={BAR_CURSOR} />
+          <Tooltip {...TOOLTIP_PROPS} cursor={BAR_CURSOR} formatter={tooltipFormatter(i18n.language, [t('github.avgSentiment')])} />
           <Bar yAxisId="count" dataKey={t('github.reports')} fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
           <Line yAxisId="sentiment" dataKey={t('github.avgSentiment')} stroke="var(--chart-1)" strokeWidth={2} connectNulls />
         </ComposedChart>

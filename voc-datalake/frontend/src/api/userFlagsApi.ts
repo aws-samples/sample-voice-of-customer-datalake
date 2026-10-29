@@ -10,6 +10,7 @@
  *
  * @module api/userFlagsApi
  */
+import { put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 
@@ -30,8 +31,5 @@ export function readUserFlags(raw: unknown): UserFlags {
 
 export const userFlagsApi = {
   save: async (username: string, patch: Partial<UserFlags>): Promise<UserFlags> =>
-    readUserFlags(await fetchApi<unknown>(`/users/${encodeURIComponent(username)}/flags`, {
-      method: 'PUT',
-      body: JSON.stringify(patch),
-    })),
+    readUserFlags(await fetchApi<unknown>(`/users/${encodeURIComponent(username)}/flags`, put(patch))),
 }

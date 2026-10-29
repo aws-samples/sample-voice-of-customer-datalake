@@ -9,9 +9,10 @@ Wire shape (stored on the ``REF#`` row, returned per reference by ``GET /setting
      radius:     [{name, value}],                  ≤ 40
      guidelines_md: str,                           ≤ 20,000
      components: [Component],                      ≤ 30 (shared/design_components.py: variants + styles)
-     logo: {source_url, content_type, preview_key?} | None,  a CANDIDATE only (png / jpeg / webp);
+     logo: {source_url, content_type, preview_key?, rendered?} | None,  a CANDIDATE only (png / jpeg / webp);
            preview_key: the copy downloaded at read time (company-context/design/logo_preview_*),
-           served as ``logo.preview_url`` by GET /settings/design-system
+           served as ``logo.preview_url`` by GET /settings/design-system; rendered: True = an SVG logo
+           rendered to that PNG preview in the managed browser (source_url is the SVG's)
      source: 'computed_styles' | 'repo_files' | 'figma' | 'html' | 'screenshot'}
 
 Every value goes through the token editor's own predicates (``shared.company_context.is_*``)
@@ -30,6 +31,7 @@ from shared.company_context import (
     MAX_TOKEN_ENTRIES,
     MAX_TOKEN_NAME_CHARS,
     MAX_URL_CHARS,
+    dict_entries,
     is_css_color,
     is_css_length,
     is_font_family,
@@ -38,13 +40,13 @@ from shared.company_context import (
 )
 from shared.design_components import clean_components, merge_components
 from shared.prompt_safety import injection_findings, neutralise_tags
+from shared.scope_names import DESIGN_TOKEN_GROUPS
 
 SOURCES = ('computed_styles', 'repo_files', 'figma', 'html', 'screenshot')
 LOGO_CONTENT_TYPES = ('image/png', 'image/jpeg', 'image/webp')
 #: Where a logo candidate's preview copy is stored (the settings and capture roles may put here only).
 LOGO_PREVIEW_PREFIX = 'company-context/design/logo_preview_'
 VALUE_GROUPS = {'colors': is_css_color, 'spacing': is_css_length, 'radius': is_css_length}
-TOKEN_GROUPS = ('colors', 'typography', 'spacing', 'radius')
 _SECTION_TITLE_CHARS = 120
 _WS_RE = re.compile(r'\s+')
 
@@ -61,15 +63,11 @@ def _clean_text(value: object, limit: int) -> str:
     return neutralise_tags(text)
 
 
-def _entries(raw: object) -> list[dict]:
-    return [e for e in raw if isinstance(e, dict)] if isinstance(raw, list) else []
-
-
 def _unique_rows(raw: object, build: Callable[[dict], dict | None], key: str, cap: int) -> list[dict]:
     """The rows ``build`` accepts, first one per ``key`` (case-insensitive), at most ``cap``."""
     out: list[dict] = []
     seen: set[str] = set()
-    for entry in _entries(raw):
+    for entry in dict_entries(raw):
         row = build(entry)
         if row is None or row[key].lower() in seen:
             continue
@@ -108,7 +106,12 @@ def _guidelines(raw: object) -> str:
 
 
 def clean_logo(raw: object) -> dict | None:
-    """``{source_url, content_type, preview_key?}`` for an https raster candidate, else None."""
+    """``{source_url, content_type, preview_key?, rendered?}`` for an https raster candidate, else None.
+
+    ``rendered: True`` (a bool only; anything else is dropped) marks the PNG the capture worker rendered
+    from an SVG logo in the browser: ``source_url`` is then the SVG's address and ``content_type`` the
+    stored preview's (``image/png``). The SVG itself is never stored or served.
+    """
     if not isinstance(raw, dict):
         return None
     url, content_type = raw.get('source_url'), raw.get('content_type')
@@ -117,10 +120,12 @@ def clean_logo(raw: object) -> dict | None:
         return None
     if content_type not in LOGO_CONTENT_TYPES:
         return None
-    logo = {'source_url': url, 'content_type': content_type}
+    logo: dict[str, Any] = {'source_url': url, 'content_type': content_type}
     preview = raw.get('preview_key')
     if isinstance(preview, str) and preview.startswith(LOGO_PREVIEW_PREFIX) and '..' not in preview:
         logo['preview_key'] = preview
+    if raw.get('rendered') is True:
+        logo['rendered'] = True
     return logo
 
 
@@ -142,7 +147,7 @@ def clean_extracted_design(raw: object, source: str) -> dict | None:
 def combine(preferred: dict | None, fallback: dict | None) -> dict:
     """Per group, ``preferred``'s entries when it has any, else ``fallback``'s (both already raw dicts)."""
     first, second = preferred or {}, fallback or {}
-    keys = (*TOKEN_GROUPS, 'components', 'guidelines_md', 'logo')
+    keys = (*DESIGN_TOKEN_GROUPS, 'components', 'guidelines_md', 'logo')
     return {key: first.get(key) or second.get(key) for key in keys}
 
 
@@ -205,9 +210,9 @@ def apply_to_draft(current: dict, design: dict, title: object) -> dict:
     tokens_in = raw_tokens if isinstance(raw_tokens, dict) else {}
     tokens: dict[str, list] = {}
     changes: dict[str, Any] = {}
-    for group in TOKEN_GROUPS:
+    for group in DESIGN_TOKEN_GROUPS:
         field = 'role' if group == 'typography' else 'name'
-        existing, incoming = _entries(tokens_in.get(group)), _entries(design.get(group))
+        existing, incoming = dict_entries(tokens_in.get(group)), dict_entries(design.get(group))
         merged, added, replaced = _merge_group(existing, incoming, field)
         if group in ('colors', 'typography') or merged or group in tokens_in:
             tokens[group] = merged

@@ -3,6 +3,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useConfigStore } from './configStore'
+import { DEFAULT_DATE_BASIS, DEFAULT_TIME_RANGE } from './timeRanges'
+import { getDaysFromRange } from '../api/baseUrl'
 import * as runtimeConfig from '../runtimeConfig'
 
 // Mock the runtimeConfig module
@@ -135,6 +137,26 @@ describe('configStore', () => {
 
       const { customDays } = useConfigStore.getState()
       expect(customDays).toBeNull()
+    })
+  })
+
+  describe('defaults', () => {
+    it('starts a fresh store on the last 14 days by imported date', () => {
+      const { timeRange, customDays, dateBasis } = useConfigStore.getInitialState()
+
+      expect({ timeRange, customDays, dateBasis }).toStrictEqual({ timeRange: '14d', customDays: null, dateBasis: 'imported' })
+      expect(getDaysFromRange(timeRange, customDays)).toBe(14)
+    })
+
+    it('exports the same default the store starts with', () => {
+      expect(DEFAULT_TIME_RANGE).toBe(useConfigStore.getInitialState().timeRange)
+      expect(DEFAULT_DATE_BASIS).toBe(useConfigStore.getInitialState().dateBasis)
+    })
+
+    it('accepts the 14-day preset', () => {
+      useConfigStore.getState().setTimeRange('14d')
+
+      expect(useConfigStore.getState().timeRange).toBe('14d')
     })
   })
 

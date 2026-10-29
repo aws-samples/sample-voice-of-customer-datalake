@@ -360,21 +360,10 @@
       "knownLimitations": "Bekannte Einschränkungen",
       "nonGoals": "Nicht-Ziele",
       "oneLiner": "Kurzbeschreibung",
-      "placeholderEmpty": "—",
       "problemSolved": "Gelöstes Problem",
       "productName": "Produktname",
       "successMetrics": "Erfolgskennzahlen",
       "targetUsers": "Zielnutzer"
-    },
-    "interview": {
-      "captured": "Verstanden — erfasst. Was können Sie mir noch über das Produkt erzählen?",
-      "elaborate": "Können Sie dazu mehr erzählen?",
-      "greeting": "Hallo — ich helfe Ihnen, Ihr Produkt oder Ihren Service zu beschreiben. Sagen Sie mir in ein bis zwei Sätzen, worum es geht, und wir bauen den Rest darauf auf.",
-      "heading": "Produkt-Interview",
-      "hint": "Ich fülle das Formular links aus, während Sie antworten.",
-      "placeholder": "Erzählen Sie mir von Ihrem Produkt…",
-      "send": "Senden",
-      "thinking": "Denke nach…"
     },
     "lifecycle": {
       "beta": "Beta-Version",
@@ -385,9 +374,6 @@
       "select": "— auswählen —"
     },
     "loading": "Produktkontext wird geladen…",
-    "modeBoth": "Beides",
-    "modeChat": "Nur Chat",
-    "modeUpload": "Nur Upload",
     "report": {
       "button": "Bericht generieren",
       "confirmTitle": "Produktbericht erstellen?",
@@ -421,6 +407,36 @@
       "statusFailed": "Fehlgeschlagen",
       "statusReady": "Bereit",
       "statusUploading": "Wird hochgeladen…"
+    },
+    "assistant": {
+      "button": "Mit dem KI-Assistenten ausfüllen",
+      "hint": "Der Assistent fragt nacheinander nach jedem leeren Feld und zeigt dann alle Antworten auf einer Karte zur Freigabe.",
+      "prompt": "Interviewe mich, um die Produktbeschreibung dieses Projekts auszufüllen."
+    },
+    "lastSaved": "Zuletzt gespeichert: {{at}}",
+    "neverSaved": "Noch nicht gespeichert",
+    "saving": "Wird gespeichert…",
+    "sections": {
+      "basics": {
+        "title": "Das Produkt",
+        "description": "Was es ist und wo es steht."
+      },
+      "customers": {
+        "title": "Kunden und Problem",
+        "description": "Für wen es ist und welches Problem es für sie löst."
+      },
+      "offering": {
+        "title": "Angebot",
+        "description": "Was es leistet und wie es sich von Alternativen unterscheidet."
+      },
+      "scope": {
+        "title": "Ziele und Grenzen",
+        "description": "Woran Erfolg gemessen wird, seine Grenzen und was nicht dazugehört."
+      },
+      "notes": {
+        "title": "Notizen",
+        "description": "Alles Weitere, was die Autoren von PRD und PR/FAQ wissen sollten."
+      }
     }
   },
   "tabs": {
@@ -457,6 +473,9 @@
     "generatePrd": "PRD generieren",
     "generatePrdTitle": "PRD generieren",
     "generatePrfaq": "PR/FAQ generieren",
+    "startWritingTitle": "Selbst schreiben",
+    "startWriting": "Mit dem Schreiben beginnen",
+    "startWritingFailed": "Das Dokument konnte nicht erstellt werden. Bitte erneut versuchen.",
     "generatePrfaqTitle": "PR/FAQ generieren",
     "newDocTitle": "Neuer Dokumenttitel",
     "newDocTitlePlaceholder": "z.B. Virtueller Concierge PRD",

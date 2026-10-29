@@ -30,18 +30,24 @@ export function LoadedSection<T>({ query, children }: Readonly<{
 }
 
 /** The save row of a draft-backed section: enabled only while the draft is dirty (and valid). */
-export function DraftSaveRow({ save, dirty, onSave, invalid = false }: Readonly<{
+export function DraftSaveRow({ save, dirty, onSave, onDiscard, invalid = false, failedLabel }: Readonly<{
   save: { isPending: boolean; isSuccess: boolean; isError: boolean }
   dirty: boolean
   onSave: () => void
+  /** Drops the draft (the editors are inline: this is their Cancel). Offered only while dirty. */
+  onDiscard: () => void
   invalid?: boolean
+  /** Shown instead of "Could not save" (also when Save was refused before any request). */
+  failedLabel?: string
 }>) {
   return (
     <SaveRow
       onSave={onSave}
+      onDiscard={dirty ? onDiscard : undefined}
       pending={save.isPending}
       saved={save.isSuccess && !dirty}
-      failed={save.isError}
+      failed={save.isError || failedLabel !== undefined}
+      failedLabel={failedLabel}
       disabled={!dirty || invalid}
     />
   )

@@ -11,6 +11,7 @@ import RatingStars from '../../components/RatingStars'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { formatDate } from '../../utils/dateUtils'
 import type { FeedbackItem } from '../../api/types'
+import { cleanReviewText } from '../../utils/cleanReviewText'
 import { useExampleReviews } from './useExampleReviews'
 import type { ProblemGroup } from '../../api/problemsApi'
 
@@ -33,7 +34,7 @@ function FeedbackItemCard({ item, problemSummary }: Readonly<{ item: FeedbackIte
         </div>
         <SentimentBadge sentiment={item.sentiment_label} score={item.sentiment_score} />
       </div>
-      <p className="text-xs sm:text-sm text-text line-clamp-3">{item.original_text}</p>
+      <p className="text-xs sm:text-sm text-text line-clamp-3">{cleanReviewText(item.original_text)}</p>
       {item.problem_summary && item.problem_summary !== problemSummary && (
         <p className="text-xs text-muted mt-1 italic line-clamp-1">{t('tree.original', { text: item.problem_summary })}</p>
       )}

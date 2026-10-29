@@ -27,6 +27,8 @@ describe('resolveAdminLocation', () => {
     ['sources', 'nope', 'sources', 'plugins'],
     ['taxonomy', 'dimensions', 'taxonomy', 'dimensions'],
     ['access', 'users', 'access', 'users'],
+    ['access', 'boards', 'access', 'boards'],
+    ['access', null, 'access', 'policies'],
     ['system', null, 'system', 'logs'],
     ['system', 'users', 'system', 'logs'],
   ])('resolves the new ?tab=%s&section=%s to %s / %s', (tab, section, expectedTab, expectedSection) => {
@@ -44,6 +46,7 @@ describe('resolveAdminLocation', () => {
     ['radar', null, 'sources', 'plugins'],
     ['sources', 'inbox', 'sources', 'plugins'],
     ['dimensions', null, 'taxonomy', 'categories'],
+    ['access', 'boards', 'brand', null],
   ])('keeps a non-admin off admin-only ?tab=%s&section=%s (→ %s / %s)', (tab, section, expectedTab, expectedSection) => {
     expect(resolveAdminLocation(tab, section, false)).toStrictEqual({ tab: expectedTab, section: expectedSection })
   })
@@ -61,6 +64,13 @@ describe('visibility', () => {
   it('leaves a non-admin one open section per sectioned tab', () => {
     const sections: readonly AdminTabId[] = ['sources', 'taxonomy', 'system']
     expect(sections.map((tab) => visibleSections(tab, false))).toStrictEqual([['plugins'], ['categories'], ['logs']])
+  })
+})
+
+describe('Privacy & access', () => {
+  it('lists Boards after Source policies and Users, for admins only', () => {
+    expect([visibleSections('access', true), visibleSections('access', false)])
+      .toStrictEqual([['policies', 'users', 'boards'], []])
   })
 })
 

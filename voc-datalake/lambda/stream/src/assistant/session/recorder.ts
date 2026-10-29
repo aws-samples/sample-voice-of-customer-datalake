@@ -11,7 +11,8 @@
  * `tool` message; REASONING_ENCRYPTED_VALUE lands on `encryptedValue`; the
  * sources / navigation CUSTOM events ride in the last assistant message's
  * `metadata.voc`; an interrupt outcome parks its interrupts as
- * `pendingInterrupts`.
+ * `pendingInterrupts`; CUSTOM assistant.stopped (Stop, session/cancel.ts) saves the run as
+ * `stopped` with `metadata.voc.stopped` on its last assistant message.
  *
  * Write throttling (never per token): text is flushed every
  * THROTTLE_MS or THROTTLE_CHARS of new text, whichever comes first; tool
@@ -66,10 +67,17 @@ interface RecorderState {
   charsSinceFlush: number;
   sources: unknown;
   navigation: unknown[];
+  /** The user stopped the run (CUSTOM assistant.stopped): saved as `stopped`, the answer marked. */
+  stopped: boolean;
 }
 
 function isAssistant(message: Message): message is AssistantMessage {
   return message.role === 'assistant';
+}
+
+function finishedStatus(stopped: boolean, awaitingApproval: boolean): RunStatus {
+  if (stopped) return 'stopped';
+  return awaitingApproval ? 'interrupted' : 'finished';
 }
 
 function contentText(content: unknown): string {
@@ -79,7 +87,7 @@ function contentText(content: unknown): string {
 export function createSessionRecorder(base: RecorderBase, writer: SessionWriter, nowMs: () => number): SessionRecorder {
   const state: RecorderState = {
     messages: [], lastAssistantId: null, pending: [], status: 'running',
-    lastFlushMs: nowMs(), charsSinceFlush: 0, sources: undefined, navigation: [],
+    lastFlushMs: nowMs(), charsSinceFlush: 0, sources: undefined, navigation: [], stopped: false,
   };
 
   function ensureAssistant(id: string): void {
@@ -98,14 +106,23 @@ export function createSessionRecorder(base: RecorderBase, writer: SessionWriter,
       : m));
   }
 
-  /** The run's output with sources/navigation on the last assistant message, as the SPA stores them. */
+  /**
+   * The run's output with sources/navigation (and the Stopped marker) on the last assistant
+   * message, as the SPA stores them (sessions/serialize.ts). A run stopped before any answer
+   * gets an empty assistant message to carry the marker.
+   */
   function outputMessages(): Message[] {
+    if (state.stopped && state.lastAssistantId === null) ensureAssistant(`stopped-${base.runId}`);
     const anchor = state.lastAssistantId;
     const hasSources = state.sources !== undefined;
     const hasNavigation = state.navigation.length > 0;
     // A null anchor matches no message id, so the map below leaves the list as it is.
-    if (!hasSources && !hasNavigation) return state.messages;
-    const voc = { ...(hasSources ? { sources: state.sources } : {}), ...(hasNavigation ? { navigation: state.navigation } : {}) };
+    if (!hasSources && !hasNavigation && !state.stopped) return state.messages;
+    const voc = {
+      ...(hasSources ? { sources: state.sources } : {}),
+      ...(hasNavigation ? { navigation: state.navigation } : {}),
+      ...(state.stopped ? { stopped: true } : {}),
+    };
     return state.messages.map((m) => (m.id === anchor && isAssistant(m) ? { ...m, metadata: { ...m.metadata, voc } } : m));
   }
 
@@ -160,14 +177,15 @@ export function createSessionRecorder(base: RecorderBase, writer: SessionWriter,
     if (!parsed.success) return;
     if (parsed.data.name === CUSTOM_EVENTS.sources) state.sources = parsed.data.value;
     if (parsed.data.name === CUSTOM_EVENTS.navigation) state.navigation.push(parsed.data.value);
+    if (parsed.data.name === CUSTOM_EVENTS.stopped) state.stopped = true;
   }
 
   function onFinished(event: BaseEvent): number {
     const parsed = finished.safeParse(event);
     const outcome = parsed.success ? parsed.data.outcome : undefined;
     const interrupts = outcome?.type === 'interrupt' ? outcome.interrupts ?? [] : [];
-    state.pending = interrupts;
-    state.status = interrupts.length > 0 ? 'interrupted' : 'finished';
+    state.pending = state.stopped ? [] : interrupts;
+    state.status = finishedStatus(state.stopped, state.pending.length > 0);
     return flush();
   }
 

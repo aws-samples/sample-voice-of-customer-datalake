@@ -124,3 +124,31 @@ export function accountId(): string {
 export function physicalName(base: string): string {
   return `${base}-${accountId()}-${REGION}`
 }
+
+let cachedRawBucket: string | null = null
+
+/**
+ * The deployment's raw-data bucket (persona avatars live under `avatars/`): `E2E_RAW_BUCKET`, else the
+ * `RawDataBucketName` output of `E2E_CORE_STACK` (default `VocCoreStack`; `<prefix>-VocCoreStack` for a
+ * prefixed deployment), read once with a read-only `describe-stacks`. '' when neither is available
+ * (no credentials, no such stack): callers skip the S3 proof and say why.
+ */
+export function rawDataBucket(): string {
+  if (cachedRawBucket !== null) return cachedRawBucket
+  const fromEnv = (process.env['E2E_RAW_BUCKET'] ?? '').trim()
+  if (fromEnv !== '') {
+    cachedRawBucket = fromEnv
+    return cachedRawBucket
+  }
+  const stack = (process.env['E2E_CORE_STACK'] ?? '').trim() || 'VocCoreStack'
+  try {
+    const body = aws(['cloudformation', 'describe-stacks', '--stack-name', stack])
+    const stacks = isRecord(body) && Array.isArray(body['Stacks']) ? body['Stacks'] : []
+    const outputs = stacks.flatMap((s) => (isRecord(s) && Array.isArray(s['Outputs']) ? s['Outputs'] : []))
+    const output = outputs.find((o) => isRecord(o) && o['OutputKey'] === 'RawDataBucketName')
+    cachedRawBucket = isRecord(output) && typeof output['OutputValue'] === 'string' ? output['OutputValue'] : ''
+  } catch {
+    cachedRawBucket = ''
+  }
+  return cachedRawBucket
+}

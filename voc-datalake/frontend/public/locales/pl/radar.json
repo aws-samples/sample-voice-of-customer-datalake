@@ -35,16 +35,28 @@
     "sampled": "Odczytano z najnowszych opinii z tego okresu."
   },
   "releases": {
-    "title": "Premiery",
-    "empty": "Nie znaleziono jeszcze żadnej premiery. Premiery pochodzą z zaplanowanego skanowania lub z opcji Skanuj teraz.",
+    "title": "Aktualności i premiery",
+    "empty": "Nie znaleziono jeszcze aktualności. Aktualności i premiery pochodzą z zaplanowanego skanowania lub z opcji „Skanuj teraz”.",
     "official": "Oficjalne",
     "thirdParty": "Prasa i recenzje",
-    "approximate": "Data przybliżona",
+    "undated": "Data nieopublikowana, po raz pierwszy znaleziono",
     "mentions_one": "{{count, number}} wzmianka",
     "mentions_other": "{{count, number}} wzmianki",
     "sources": "Źródła",
     "mentions_few": "{{count, number}} wzmianki",
-    "mentions_many": "{{count, number}} wzmianek"
+    "mentions_many": "{{count, number}} wzmianek",
+    "kinds": {
+      "release": "Premiera",
+      "announcement": "Ogłoszenie",
+      "promotion": "Promocja",
+      "partnership": "Partnerstwo",
+      "news": "Wiadomości firmowe"
+    },
+    "filterLabel": "Filtruj według rodzaju",
+    "kindAll": "Wszystko",
+    "kindEmpty": "Na tej liście nie ma nic z rodzaju „{{kind}}”. Wybierz „Wszystko”, aby zobaczyć każdą pozycję.",
+    "viaExa": "przez Exa",
+    "viaFeed": "przez kanał"
   },
   "compare": {
     "title": "W porównaniu z nami",
@@ -70,13 +82,12 @@
     "openOurs_many": "Otwórz nasze {{count, number}} recenzji w kategorii {{category}} w sekcji Kategorie"
   },
   "brands": {
-    "hint": "Marki śledzone przez Radar: skanowanie premier przeszukuje sieć dla każdej z nich, a źródła oznaczone jako źródło Radar na stronie Źródła danych dostarczają ich opinie.",
+    "hint": "Marki śledzone przez Radar: skanowanie aktualności szuka każdej z nich w sieci (w jej języku, a także w jej kanałach aktualności, jeśli je podano), a źródła oznaczone na stronie Źródła danych jako źródło Radar dostarczają jej opinie.",
     "addTitle": "Dodaj markę",
     "nameLabel": "Nazwa marki",
     "domainsLabel": "Domeny witryn",
     "domainsHint": "Oddziel przecinkami, maksymalnie {{max, number}} (na przykład witryna i blog). Służą do znajdowania informacji o premierach.",
     "add": "Dodaj markę",
-    "editDomains": "Edytuj domeny",
     "editDomainsLabel": "Domeny witryn marki {{brand}}",
     "doneEditing": "Gotowe",
     "remove": "Usuń",
@@ -93,7 +104,31 @@
     "duplicate": "Marka {{brand}} jest już na liście.",
     "invalidName": "Użyj od 1 do 64 liter, cyfr, spacji lub znaków . & ' + -",
     "tooMany": "Maksymalnie {{max, number}} marek.",
-    "loadFailed": "Nie udało się wczytać listy marek."
+    "loadFailed": "Nie udało się wczytać listy marek.",
+    "edit": "Edytuj",
+    "editLabel": "Edytuj {{brand}}",
+    "languageLabel": "Język wyszukiwania",
+    "languageAuto": "Automatycznie (z domeny: {{language}})",
+    "languageAutoNew": "Automatycznie (z domeny)",
+    "languageSummary": "Język: {{language}}",
+    "feedsLabel": "Kanały aktualności",
+    "feedsHint": "Opcjonalne kanały RSS lub Atom z aktualnościami marki. Odczytywane przy każdym skanowaniu. Najwyżej {{max, number}}, po jednym w wierszu lub oddzielone przecinkami.",
+    "feedsTooMany": "Najwyżej {{max, number}} kanały aktualności.",
+    "feedsHttps": "Każdy kanał aktualności musi być linkiem https://.",
+    "feedsSummary": "Kanały aktualności: {{list}}",
+    "noFeeds": "brak",
+    "moreOptions": "Więcej opcji",
+    "fixFeeds": "Popraw kanały aktualności przed zapisaniem.",
+    "searchTermsLabel": "Wyszukiwane frazy",
+    "searchTermsHint": "Opcjonalne słowa lub frazy dodawane do wyszukiwania aktualności, np. pełna nazwa firmy lub nazwy produktów. Przydatne, gdy nazwa marki jest też zwykłym słowem. Najwyżej {{max, number}}, po jednej w wierszu, każda do {{chars, number}} znaków.",
+    "excludeTermsLabel": "Wykluczone frazy",
+    "excludeTermsHint": "Opcjonalne słowa lub frazy: wynik wyszukiwania, którego tytuł lub fragment zawiera którąś z nich, jest pomijany. Najwyżej {{max, number}}, po jednej w wierszu, każda do {{chars, number}} znaków.",
+    "termsTooMany": "Najwyżej {{max, number}} fraz.",
+    "termsTooLong": "Każda fraza może mieć najwyżej {{chars, number}} znaków.",
+    "termsInvalid": "Fraza nie może zawierać cudzysłowów ani zaczynać się od -.",
+    "searchTermsSummary": "Wyszukiwane frazy: {{list}}",
+    "excludeTermsSummary": "Wykluczone frazy: {{list}}",
+    "fixTerms": "Popraw wyszukiwane lub wykluczone frazy przed zapisaniem."
   },
   "setup": {
     "brandsTitle": "Śledzone marki",
@@ -105,11 +140,11 @@
     "sources": "Zasilana przez:",
     "howTitle": "Jak działa Radar",
     "step1Title": "Dodaj markę",
-    "step1": "Dodaj ją poniżej wraz z domenami jej stron internetowych, aby znaleźć informacje o wydaniach.",
+    "step1": "Dodaj ją poniżej, z domenami jej własnej witryny, aby znaleźć jej aktualności; opcjonalnie z językiem wyszukiwania i kanałami aktualności.",
     "step2Title": "Zaimportuj jej recenzje",
     "step2": "Na stronie Źródła danych zaznacz „Źródło Radar” przy scraperze, stronie Web Reviews, konektorze aplikacji lub imporcie CSV/JSON i wybierz markę. Jej recenzje trafią tylko do Radaru, nigdy do Twoich pulpitów.",
-    "step3Title": "Wydania",
-    "step3": "Wyszukiwanie w sieci uruchamia się automatycznie według poniższej częstotliwości (sprawdzanej codziennie) lub od razu przyciskiem „Skanuj teraz”. Pierwsze skanowanie obejmuje 90 dni wstecz.",
+    "step3Title": "Aktualności i premiery",
+    "step3": "Wyszukiwanie w sieci aktualności każdej marki (premiery, nowe funkcje, promocje, partnerstwa, wiadomości firmowe), w języku marki i przez jej kanały aktualności, uruchamia się automatycznie z częstotliwością ustawioną poniżej (sprawdzaną codziennie) albo od razu przez „Skanuj teraz”. Pierwsze skanowanie obejmuje ostatnie 90 dni.",
     "configure": "Konfiguruj",
     "reviews_few": "{{count, number}} recenzje w ciągu 90 dni",
     "reviews_many": "{{count, number}} recenzji w ciągu 90 dni"
@@ -126,7 +161,7 @@
       "skipped": "pominięte"
     },
     "title": "Radar",
-    "description": "Skanowanie wydań przeszukuje sieć pod kątem premier każdej marki w Radarze. Nic nie działa, dopóki nie dodasz marki.",
+    "description": "Skanowanie aktualności szuka w sieci tego, co każda marka Radar wprowadza i ogłasza. Nic nie działa, dopóki nie dodasz marki.",
     "cadence": "Częstotliwość skanowania",
     "maxBrands": "Marki na skanowanie (maks.)",
     "queryCap": "Wyszukiwania w sieci na skanowanie (maks.)",
@@ -155,7 +190,8 @@
     "scanAdded_few": "{{count, number}} nowe wydania",
     "scanAdded_many": "{{count, number}} nowych wydań",
     "scanMerged_few": "{{count, number}} scalenia",
-    "scanMerged_many": "{{count, number}} scaleń"
+    "scanMerged_many": "{{count, number}} scaleń",
+    "scanNowHint": "Przeszukuje teraz sieć i własne domeny każdej marki pod kątem jej premier i nowości, bez czekania na harmonogram. Trwa to kilka minut i zużywa wyszukiwania w sieci."
   },
   "nav": {
     "label": "Radar"
@@ -208,5 +244,39 @@
     "readTheirs_few": "Przeczytaj ich {{count, number}} recenzje w kategorii {{category}}",
     "readTheirs_many": "Przeczytaj ich {{count, number}} recenzji w kategorii {{category}}"
   },
-  "title": "Radar"
+  "title": "Radar",
+  "all": {
+    "option": "Wszystkie marki",
+    "brandsTitle": "Marki",
+    "brandsCaption": "Każda śledzona marka w tym okresie: jej opinie, nastroje, premiery i najnowsza wiadomość",
+    "noBrands": "Żadna marka nie jest jeszcze śledzona.",
+    "colBrand": "Marka",
+    "colReviews": "Opinie",
+    "colSentiment": "Nastroje",
+    "colReleases": "Wydania w okresie",
+    "colLatest": "Najnowsza wiadomość",
+    "shares": "{{positive}} pozytywnych · {{negative}} negatywnych",
+    "noRelease": "Brak aktualności",
+    "openBrand": "Otwórz {{brand}}",
+    "newsTitle": "Najnowsze wiadomości ze wszystkich marek",
+    "capped": "Pokazano {{shown, number}} najnowszych z {{total, number}}"
+  },
+  "exa": {
+    "title": "Exa (drugi indeks wyszukiwania)",
+    "description": "Gdy wyszukiwanie w sieci Radar nie znajdzie datowanych aktualności marki, przeszukiwany jest też Exa. Do Exa trafiają tylko nazwy marek, wyszukiwane frazy i domeny. Około 5 USD za 1000 wyszukiwań, rozliczane przez Exa.",
+    "configured": "Skonfigurowano",
+    "notConfigured": "Nie skonfigurowano",
+    "keyLabel": "Klucz API Exa",
+    "placeholder": "Wklej klucz API Exa",
+    "replacePlaceholder": "Klucz jest zapisany. Wklej nowy, aby go zastąpić",
+    "save": "Zapisz klucz",
+    "remove": "Usuń klucz",
+    "saved": "Zapisano klucz Exa.",
+    "removed": "Usunięto klucz Exa.",
+    "saveFailed": "Nie udało się zapisać klucza Exa.",
+    "removeFailed": "Nie udało się usunąć klucza Exa.",
+    "invalidKey": "Użyj 8-200 liter, cyfr, - lub _.",
+    "removeTitle": "Usunąć klucz Exa?",
+    "removeMessage": "Radar przestanie przeszukiwać Exa. Własne wyszukiwanie w sieci działa dalej, a znalezione już aktualności zostają."
+  }
 }

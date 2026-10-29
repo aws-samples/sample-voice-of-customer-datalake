@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from shared.aws import get_dynamodb_resource
+from shared.exceptions import ConfigurationError
 
 # boto3 resources are built dynamically at runtime; typing these as the
 # mypy_boto3 `Table` stub is a cross-module migration (every caller's
@@ -41,3 +42,10 @@ def get_feedback_table():
 def get_projects_table():
     """Get projects table resource. Requires PROJECTS_TABLE env var."""
     return _get_table('PROJECTS_TABLE')
+
+
+def configured_table(table: Any, name: str) -> Any:
+    """``table``, or a ConfigurationError (500) naming it when its env var is unset."""
+    if table is None:
+        raise ConfigurationError(f'{name} table not configured')
+    return table

@@ -40,20 +40,24 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from _shared.app_reviews_utils import (
-    AppReviewsIngestor,
-    is_due_for_run,
+from _shared.app_reviews_config import (
     load_app_configs,
-    load_watermark_dt,
     merge_reviews_by_composite_id,
     newest_first,
     parse_int,
-    process_app_reviews,
     review_created_at,
+)
+from _shared.app_reviews_utils import (
+    MAX_RUN_WARNINGS,
+    AppReviewsIngestor,
+    is_due_for_run,
+    load_watermark_dt,
+    process_app_reviews,
     yield_new_reviews,
 )
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
 from _shared.test.scoped_secret import scoped_secret
+from shared.test.clock import frozen_clock as freeze_clock
 from shared.test.instrumentation_fixtures import TRACER_SOURCE
 
 MODULE = "_shared.app_reviews_utils"
@@ -72,14 +76,18 @@ class _FrozenDatetime(datetime):
 
 @pytest.fixture(autouse=True)
 def frozen_clock() -> Iterator[None]:
-    with patch(f"{MODULE}.datetime", _FrozenDatetime):
+    with freeze_clock(MODULE, _FrozenDatetime):
         yield
 
 
 @pytest.fixture
 def obs() -> Iterator[SimpleNamespace]:
     """The module's logger and metrics, replaced by mocks a test asserts on."""
-    with patch(f"{MODULE}.logger") as logger, patch(f"{MODULE}.metrics") as metrics:
+    with (
+        patch(f"{MODULE}.logger") as logger,
+        patch("_shared.app_reviews_config.logger", logger),
+        patch(f"{MODULE}.metrics") as metrics,
+    ):
         yield SimpleNamespace(logger=logger, metrics=metrics)
 
 
@@ -177,7 +185,8 @@ class TestYieldNewReviews:
         assert review_dt is None
 
 
-def _pipeline(obs, reviews, *, execution_id=None, frequency=60, stored=None, collect=None) -> SimpleNamespace:
+def _pipeline(obs, reviews, *, execution_id=None, frequency=60, stored=None, collect=None,
+              **extra) -> SimpleNamespace:
     """Run `process_app_reviews` for iOS MyApp over *reviews* with *stored* watermarks."""
     watermarks = dict(stored or {})
     get_wm = MagicMock(side_effect=watermarks.get)
@@ -196,6 +205,7 @@ def _pipeline(obs, reviews, *, execution_id=None, frequency=60, stored=None, col
         collect_fn=collect,
         format_fn=_format,
         **manual,
+        **extra,
     ))
     return SimpleNamespace(items=items, get_wm=get_wm, set_wm=set_wm, collect=collect, **vars(obs))
 
@@ -239,6 +249,7 @@ class TestScheduledRunWatermarks:
         assert [i["id"] for i in run.items] == ["newest", "newer", "undated"]
         run.collect.assert_called_once_with(APP_CONFIG)
         assert run.set_wm.call_args_list == [
+            call("MyApp_last_count", "4"),
             call("MyApp_last_published_at", "2026-04-21T00:00:00+00:00"),
             call("MyApp_last_run", NOW.isoformat()),
         ]
@@ -252,7 +263,10 @@ class TestScheduledRunWatermarks:
         reviews = [{"id": "older", "at": WATERMARK - timedelta(days=1)}]
         run = _pipeline(obs, reviews, stored=STORED_WATERMARK)
         assert run.items == []
-        run.set_wm.assert_called_once_with("MyApp_last_run", NOW.isoformat())
+        assert run.set_wm.call_args_list == [
+            call("MyApp_last_count", "1"),
+            call("MyApp_last_run", NOW.isoformat()),
+        ]
         run.metrics.add_metric.assert_called_once_with(name="iOS_MyApp_Reviews", unit="Count", value=0)
         run.logger.info.assert_called_with("iOS MyApp: yielded 0 new reviews (from 1 candidates)")
 
@@ -266,8 +280,10 @@ class TestManualRun:
         ]
         run = _pipeline(obs, reviews, execution_id="exec-1", frequency=0, stored=stored)
         assert [i["id"] for i in run.items] == ["a", "b"]
-        run.get_wm.assert_not_called()
+        # Only the review-count watermark is read: no frequency, no date filter.
+        run.get_wm.assert_called_once_with("MyApp_last_count")
         assert run.set_wm.call_args_list == [
+            call("MyApp_last_count", "2"),
             call("MyApp_last_published_at", "2026-03-27T00:00:00+00:00"),
             call("MyApp_last_run", NOW.isoformat()),
         ]
@@ -284,15 +300,37 @@ class TestManualRun:
             {"id": "cest", "at": WATERMARK.astimezone(plus_two)},
         ]
         run = _pipeline(obs, reviews, execution_id="exec-1")
-        assert run.set_wm.call_args_list[0] == call("MyApp_last_published_at", WATERMARK.isoformat())
+        assert run.set_wm.call_args_list[1] == call("MyApp_last_published_at", WATERMARK.isoformat())
 
     def test_a_failed_collection_counts_an_error_and_stamps_nothing(self, obs):
         failing = MagicMock(side_effect=ConnectionError("down"))
-        run = _pipeline(obs, [], execution_id="exec-1", collect=failing)
+        warnings: list[str] = []
+        run = _pipeline(obs, [], execution_id="exec-1", collect=failing, on_warning=warnings.append)
         assert run.items == []
         run.logger.exception.assert_called_once_with("Failed to collect reviews for MyApp: down")
         run.metrics.add_metric.assert_called_once_with(name="iOS_MyApp_Errors", unit="Count", value=1)
         run.set_wm.assert_not_called()
+        assert warnings == ["MyApp: collection failed (ConnectionError)"]
+
+
+class TestReviewDrop:
+    def test_no_reviews_after_a_run_that_had_some_warns_and_reaches_the_run_row(self, obs):
+        warnings: list[str] = []
+        with patch("_shared.app_reviews_health.logger") as health_logger:
+            run = _pipeline(obs, [], execution_id="exec-1", stored={"MyApp_last_count": "12"},
+                            on_warning=warnings.append)
+        (message,), _ = health_logger.warning.call_args
+        assert message.startswith("iOS MyApp: no reviews from any storefront (the previous run fetched 12)")
+        assert warnings == ["MyApp: no reviews from any storefront (previous run: 12)"]
+        assert run.set_wm.call_args_list[0] == call("MyApp_last_count", "0")
+
+    @pytest.mark.parametrize("stored", [{}, {"MyApp_last_count": "0"}, {"MyApp_last_count": "junk"}])
+    def test_an_app_that_never_had_reviews_does_not_warn(self, obs, stored):
+        warnings: list[str] = []
+        with patch("_shared.app_reviews_health.logger") as health_logger:
+            _pipeline(obs, [], execution_id="exec-1", stored=stored, on_warning=warnings.append)
+        health_logger.warning.assert_not_called()
+        assert warnings == []
 
 
 
@@ -395,6 +433,8 @@ class _App:
     name: str
     enabled: bool
     store_id: str
+    frequency_minutes: int | None = None
+    sort_by: str = ""
 
 
 class _Ingestor(AppReviewsIngestor[_App]):
@@ -471,6 +511,54 @@ class TestFetchNewItems:
         ingestor.app_configs = []
         assert list(ingestor.fetch_new_items()) == []
         obs.logger.warning.assert_called_once_with("No iOS app configurations found")
+
+    def test_an_app_connector_frequency_wins_over_the_plugin_one(self, obs):
+        ingestor = _ingestor(frequency_minutes="60")
+        ingestor.app_configs = [_App("A", True, "id-a", frequency_minutes=0), _App("C", True, "id-c")]
+        ingestor.watermarks_table = MagicMock()
+        ingestor.watermarks_table.get_item.return_value = {}
+        assert list(ingestor.fetch_new_items()) == [{"id": "C-1", "app": "C"}]
+        obs.logger.info.assert_any_call("Skipping iOS A - manual-only frequency")
+
+    def test_the_sort_order_falls_back_to_the_plugin_one(self):
+        ingestor = _ingestor(sort_by="rating")
+        assert ingestor.sort_by_for(_App("A", True, "a")) == "rating"
+        assert ingestor.sort_by_for(_App("A", True, "a", sort_by="newest")) == "newest"
+
+
+class TestRunRowWarnings:
+    def test_a_completed_run_carries_its_warnings_as_errors(self):
+        ingestor = _ingestor(execution_id="exec-1")
+        ingestor.aggregates_table = MagicMock()
+        ingestor.record_run_warning("A: 2 storefronts failed (HTTP 403 x2)")
+        ingestor._update_source_run_status({"status": "completed", "items_found": 3})
+        values = ingestor.aggregates_table.update_item.call_args.kwargs["ExpressionAttributeValues"]
+        assert values[":errors"] == ["A: 2 storefronts failed (HTTP 403 x2)"]
+        assert values[":status"] == "completed"
+
+    @pytest.mark.parametrize("updates", [
+        {"status": "running", "items_found": 0},
+        {"status": "error", "errors": ["RuntimeError"]},
+    ])
+    def test_other_updates_are_unchanged(self, updates):
+        ingestor = _ingestor(execution_id="exec-1")
+        ingestor.aggregates_table = MagicMock()
+        ingestor.record_run_warning("A: no reviews from any storefront (previous run: 3)")
+        ingestor._update_source_run_status(dict(updates))
+        values = ingestor.aggregates_table.update_item.call_args.kwargs["ExpressionAttributeValues"]
+        assert values == {f":{key}": value for key, value in updates.items()}
+
+    def test_a_clean_completed_run_writes_no_errors(self):
+        ingestor = _ingestor(execution_id="exec-1")
+        ingestor.aggregates_table = MagicMock()
+        ingestor._update_source_run_status({"status": "completed"})
+        assert ":errors" not in ingestor.aggregates_table.update_item.call_args.kwargs["ExpressionAttributeValues"]
+
+    def test_the_warning_list_is_bounded(self):
+        ingestor = _ingestor()
+        for n in range(MAX_RUN_WARNINGS + 5):
+            ingestor.record_run_warning(f"w{n}")
+        assert len(ingestor.run_warnings) == MAX_RUN_WARNINGS
 
 
 def _fake_run(self: _Ingestor) -> dict:

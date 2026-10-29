@@ -9,10 +9,10 @@ from typing import Any
 from unittest.mock import MagicMock, call
 
 import pytest
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 from moto import mock_aws
 
-from shared.dynamo_paging import iter_query, query_all
+from shared.dynamo_paging import count_query, iter_query, query_all
 from shared.test.moto_tables import create_pk_sk_table
 
 ROWS = 23
@@ -53,6 +53,12 @@ class TestOnMoto:
         query_all(table, kwargs)
         assert kwargs == before
         assert 'ExclusiveStartKey' not in kwargs
+
+    def test_count_query_counts_every_match_across_pages_after_the_filter(self, table):
+        assert count_query(table, _kwargs()) == ROWS
+        filtered = {**_kwargs(), 'FilterExpression': Attr('n').lt(10)}
+        assert count_query(table, filtered) == 10
+        assert 'Select' not in filtered
 
 
 class TestRequests:
@@ -96,3 +102,16 @@ class TestRequests:
         stub = MagicMock()
         stub.query.side_effect = [{'Items': ['junk', {'sk': 'A'}, 3, {'sk': 'B'}, {'sk': 'C'}]}]
         assert query_all(stub, {}, max_items=2) == [{'sk': 'A'}, {'sk': 'B'}]
+
+    def test_count_query_sums_counts_selects_count_and_stops_on_a_malformed_page(self):
+        stub = MagicMock()
+        stub.query.side_effect = [{'Count': 4, 'LastEvaluatedKey': {'pk': 'p'}}, {'Count': 'x',
+                                  'LastEvaluatedKey': {'pk': 'q'}}, {'Count': 2}]
+        assert count_query(stub, {'k': 'v'}) == 6
+        assert stub.query.call_args_list == [
+            call(k='v', Select='COUNT'),
+            call(k='v', Select='COUNT', ExclusiveStartKey={'pk': 'p'}),
+            call(k='v', Select='COUNT', ExclusiveStartKey={'pk': 'q'}),
+        ]
+        stub.query.side_effect = [None]
+        assert count_query(stub, {}) == 0

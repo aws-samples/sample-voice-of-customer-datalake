@@ -49,6 +49,8 @@ FEEDBACK_ITEMS = [
 @pytest.fixture
 def projects_table():
     table = transacting_projects_table()
+    # A live project: the avatar batch first checks its META is still writable.
+    table.get_item.return_value = {'Item': {'pk': 'PROJECT#proj-1', 'sk': 'META'}}
     with patch('api.projects.projects_table', table):
         yield table
 
@@ -155,13 +157,15 @@ class TestReplaceSemantics:
     ):
         from api.projects import generate_personas
 
-        projects_table.query.return_value = {
+        old = {
             'Items': [
                 {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old-1'},
                 {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old-2'},
                 {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old-3'},
             ]
         }
+        # Names to avoid, the clear, then the recount of the partition (the two new rows).
+        projects_table.query.side_effect = [old, old, {'Items': [{'sk': 'PERSONA#new-1'}, {'sk': 'PERSONA#new-2'}]}]
 
         result = generate_personas('proj-1', {'persona_count': 2})
 
@@ -169,8 +173,8 @@ class TestReplaceSemantics:
         deleted = {c.kwargs['Key']['sk'] for c in batch.delete_item.call_args_list}
         assert deleted == {'PERSONA#old-1', 'PERSONA#old-2', 'PERSONA#old-3'}
 
-        # Replace, not increment: two personas saved, so the META count is 2
-        # even though three rows existed before.
+        # Replace, not increment: the recount after the save finds the two new
+        # rows, so the META count is 2 even though three rows existed before.
         values = projects_table.update_item.call_args.kwargs['ExpressionAttributeValues']
         assert values[':count'] == 2
         assert len(result['personas']) == 2

@@ -49,7 +49,7 @@
 
 ### API Lambda Split (20KB IAM Policy Limit)
 
-AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into 15 focused, domain-specific Lambdas:
+AWS Lambda execution roles have a **20KB policy size limit**. To stay under this limit, the API is split into focused, domain-specific Lambdas, one per `lambda/api/*_handler.py` (20 handlers) plus the TypeScript assistant stream:
 
 | Lambda | Handler | Routes | Permissions |
 |--------|---------|--------|-------------|
@@ -57,19 +57,23 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-chat-api` | `chat_handler.py` | `/chat/*` | DynamoDB RW (conversations) only — no feedback/aggregates access, no Bedrock (the assistant is `voc-chat-stream`) |
 | `voc-integrations-api` | `integrations_handler.py` | `/integrations/*`, `/sources/*` | Secrets Manager, EventBridge |
 | `voc-scrapers-api` | `scrapers_handler.py` | `/scrapers/*` | Secrets Manager, Lambda invoke, Bedrock, DynamoDB (aggregates) |
-| `voc-settings-api` | `settings_handler.py` | `/settings/*` (incl. dimensions, sources, erasure, model test/capacity) | DynamoDB (aggregates), Bedrock, `servicequotas:ListServiceQuotas` (read-only), invoke `voc-category-reprocess` + `voc-retention` + its assist twin `voc-settings-assist` |
-| `voc-projects-api` | `projects_handler.py` | `/projects/*` | DynamoDB (projects, jobs, feedback), Step Functions, Bedrock, S3 |
+| `voc-settings-api` | `settings_handler.py` | `/settings/*` (incl. dimensions, sources, erasure, model test/capacity) | DynamoDB (aggregates), Bedrock, `servicequotas:ListServiceQuotas` + `GetServiceQuota` on `bedrock/*` (read-only), invoke `voc-category-reprocess` + `voc-retention` + its assist twin `voc-settings-assist`; image-model row: `bedrock:InvokeModel` on the image model ARN only, `bedrock:GetFoundationModelAvailability`, Marketplace ViewSubscriptions + Subscribe (ProductId-scoped, `lib/stacks/api-marketplace.ts`) |
+| `voc-projects-api` | `projects_handler.py` | `/projects/*`, `/review/*` (document review links, board authorizer; docs/document-review.md) | DynamoDB (projects, jobs, feedback), Step Functions, Bedrock, S3 |
 | `voc-users-api` | `users_handler.py` | `/users/*` | Cognito admin |
 | `voc-feedback-form-api` | `feedback_form_handler.py` | `/feedback-forms/*` | DynamoDB (aggregates), SQS |
-| `voc-chat-stream` | `lambda/stream` (TypeScript, esbuild-bundled) | `/chat/stream` — unified AI assistant, AG-UI 1.0 SSE via API Gateway | DynamoDB read (feedback, aggregates), Bedrock streaming, `lambda:InvokeFunction` on exactly ProjectsApi/MetricsApi/FeedbackFormApi/SettingsApi/ScrapersApi/MemoryApi/AgentsApi/UsersApi (UsersApi only for the admin-only `list_users` / `get_user_access` reads); conversations `GetItem`/`PutItem` (table ARN only) — its ONE write is the caller's own session, saved while a run streams (`assistant/session/`; partition `USER#{verified sub}` enforced in code, IAM cannot pin it); no projects-table access, no business-data writes; its only POSTs are reads (`READ_POSTS`: chat context, memory retrieve, workflow validate, `POST /scrapers/analyze-url` for admins, which starts an assist job the tool then polls); the Lambda and the `/chat/stream` integration run up to 15 min (900 s), `STALE_RUN_SECONDS` 960 |
+| `voc-chat-stream` | `lambda/stream` (TypeScript, esbuild-bundled) | `/chat/stream` — unified AI assistant, AG-UI 1.0 SSE via API Gateway | DynamoDB read (feedback, aggregates), Bedrock streaming, `lambda:InvokeFunction` on exactly ProjectsApi/MetricsApi/FeedbackFormApi/SettingsApi/ScrapersApi/MemoryApi/AgentsApi/UsersApi/EngagementApi (UsersApi only for the admin-only `list_users` / `get_user_access` reads; EngagementApi for the participants tools); conversations `GetItem`/`PutItem` (table ARN only) — its ONE write is the caller's own session, saved while a run streams (`assistant/session/`; partition `USER#{verified sub}` enforced in code, IAM cannot pin it); no projects-table access, no business-data writes; its only POSTs are reads (`READ_POSTS`: chat context, memory retrieve, workflow validate, `POST /scrapers/analyze-url` for admins, which starts an assist job the tool then polls); the Lambda and the `/chat/stream` integration run up to 15 min (900 s), `STALE_RUN_SECONDS` 960; `forwardedProps.mentions` (project pages) runs a review-only persona round of `consult_personas` calls before the model's turn, no new grant (docs/assistant-mentions.md) |
 | `voc-data-explorer-api` | `data_explorer_handler.py` | `/data-explorer/*` | S3, DynamoDB (feedback) |
-| `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read; CloudWatch Put/Delete/DescribeAlarms on `alarm:voc-alerts-<suffix>-*`; SNS Subscribe/Unsubscribe/ListSubscriptionsByTopic on the ops topic (Administration → System → Logs → Alerts) |
+| `voc-logs-api` | `logs_handler.py` | `/logs/*` | CloudWatch Logs read; CloudWatch Put/Delete/DescribeAlarms on `alarm:voc-alerts-<suffix>-*`; SNS Subscribe/Unsubscribe/ListSubscriptionsByTopic on the ops topic (Administration → System → Logs → Alerts); Logs Insights for `GET /logs/system*` (System errors, `lib/stacks/api-logs-diagnostics.ts`): `logs:DescribeLogGroups` on `log-group:*`, `logs:StartQuery` on `/aws/lambda/` + `/aws/stepfunctions/[<prefix>-]voc-*-<account>-<region>`, the API access log and VocCoreStack's CFN-named Lambda log groups (`<stack>-<construct id>*`) only, `logs:GetQueryResults`/`StopQuery` + `cloudwatch:GetMetricData` on `*`; failure-queue peek: `sqs:GetQueueUrl`/`GetQueueAttributes`/`ReceiveMessage` on exactly the `OPS_ALERTS_QUEUES` (no delete), `kms:Decrypt` via SQS for those queues only |
 | `voc-manual-import-api` | `manual_import_handler.py` | `/scrapers/manual/*` (admin-only) | DynamoDB, SQS, S3 |
 | `voc-feedback-edit-api` | `feedback_edit_handler.py` | `PUT /feedback/{id}/category`, `PUT /feedback/{id}/dimensions` (correct a review's category / dimensions + tags) | DynamoDB (feedback RW, aggregates read) |
 | `voc-memory-api` | `memory_handler.py` | `/memory`, `/memory/{proxy+}` | DynamoDB (memory Get/BatchGet/Put/Update/Query — no delete, aggregates read), SQS memory-extract, S3 `memory-imports/*` read+put, Bedrock + Titan Embed V2 |
 | `voc-agents-api` | `agents_handler.py` | `/agents/*` (incl. `/agents/plans*`, not admin-only), `/workflows/*` | DynamoDB (agents Get/Put/Update/Query, aggregates read), Step Functions start/stop on `voc-agent-run` only |
 | `voc-mcp-global-api` | `mcp_global_handler.py` | `POST /mcp/global` (global MCP token) | DynamoDB projects `MCPGTOKEN` Get/Update, jobs audit Put; Cognito AdminGetUser/AdminListGroupsForUser; `lambda:InvokeFunction` on exactly Metrics/Settings/Memory/Projects/Agents APIs |
 | `voc-mcp-tokens-api` | `mcp_tokens_handler.py` | `/connect/tokens/*` (Cognito) | DynamoDB projects `MCPGTOKEN` Query/Get/Put/Update + `PROJECT#*` Get (pin check), jobs audit Query |
+| `voc-engagement-api` | `engagement_handler.py` (routers in `shared/*_routes.py`) | `/participants/*`, `/feature-requests/*` (board authorizer: app + board pools), public `POST /unsubscribe` | DynamoDB participants + feature-requests RW, projects read, aggregates GetItem, KMS, `ses:SendEmail` (only with `-c emailFrom`, `ses:FromAddress` pinned), invoke itself (async send slices, no retries) |
+| `voc-ballots-api` | `ballots_handler.py` | `/voting-sessions/*` (room votes on a Prioritization row; `GET .../config` and `POST .../submit` public) | DynamoDB aggregates Get/Put/Update, projects GetItem, KMS |
+| `voc-radar-api` | `radar_handler.py` | `/radar`, `/radar/{proxy+}` (other brands, docs/radar.md) | DynamoDB radar Get/Query/Put/BatchGet, aggregates read, KMS, invoke the Radar scan worker |
+| `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` (admin-only) | S3 import bucket RW, KMS |
 
 Assist twins (4.00.00, `lib/stacks/api-assist-workers.ts`): `voc-projects-assist`,
 `voc-settings-assist`, `voc-scrapers-assist` run the SAME code, handler, role and env as their API
@@ -173,6 +177,8 @@ def lambda_handler(event, context):
 
 ### Pages
 
+The main pages (a selection: `frontend/src/pages/` has 25 page folders; the router is `src/routes.tsx`):
+
 | Page | Route | Features |
 |------|-------|----------|
 | Login | `/login` | Cognito authentication |
@@ -247,8 +253,8 @@ npm run generate:menu       # Generate menu config only
   (mirrors the ProtectedRoute/AdminRoute bypass; production fails closed) —
   Settings, Users tab, and the AI Models card are all reachable locally.
 - The mock serves stateful fixtures for the full app surface, including
-  project detail (`/projects/proj_1`), the Product tab (context, interview,
-  docs upload, report jobs), user admin, scrapers, and feedback forms.
+  project detail (`/projects/proj_1`), the Product tab (context, docs upload,
+  report jobs), user admin, scrapers, and feedback forms.
   Several fixtures are deliberately sparse (legacy-shaped records) so the
   Zod boundary normalizers stay exercised in dev — don't "fix" them to be
   complete.
@@ -259,7 +265,8 @@ npm run generate:menu       # Generate menu config only
   Route-level errors are contained by `RouteErrorBoundary` (one bad page
   never blanks the app).
 - **Every frontend API call must be mocked (gated).** When a feature adds or
-  changes a `fetchApi(...)` call, in the same change:
+  changes a `fetchApi(...)` call (or a raw `` fetch(`${getBaseUrl()}…`) `` of a
+  public route), in the same change:
   1. Mock the route in the dev mock with the real handler's wire shape
      (envelope, field names, error statuses), stateful for the process
      lifetime. Small additions go in `mock-server.js`. A new domain gets its

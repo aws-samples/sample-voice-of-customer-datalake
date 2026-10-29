@@ -234,6 +234,7 @@ describe('a vote that will not take a ballot', () => {
     ['expired', 'ballot.closed.expired'],
     ['cap_reached', 'ballot.closed.capReached'],
     ['not_found', 'ballot.closed.notFound'],
+    ['gone', 'ballot.closed.gone'],
   ] as const)('says which state it is in, and shows no form: %s', async (reason, sentence) => {
     mockGetBallotSessionConfig.mockResolvedValue({ ...OPEN, open: false, reason, row_title: '' })
 

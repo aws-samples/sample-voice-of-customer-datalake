@@ -17,10 +17,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from agents.fields import dict_field
-from shared.workflow_schema import normalise_custom_step_arrows
+from agents.fields import clipped_text, dict_field
+from shared.workflow_schema import SCHEMA, normalise_custom_step_arrows
 
-SCHEMA = 'voc-workflow/1'
 NODE_TYPES = frozenset({
     'start', 'aggregate_reviews', 'select_or_create_project', 'select_personas',
     'generate_personas', 'deep_research', 'write_prfaq', 'write_prd', 'persona_review',
@@ -87,14 +86,10 @@ class Loop:
     max_rounds: int
 
 
-def _str(value: Any, limit: int) -> str:
-    return value.strip()[:limit] if isinstance(value, str) else ''
-
-
 def _parse_node(raw: Any) -> Node:
     if not isinstance(raw, dict):
         raise WorkflowError('every node must be an object')
-    node_id = _str(raw.get('id'), 64)
+    node_id = clipped_text(raw.get('id'), 64)
     node_type = raw.get('type')
     if not node_id or node_type not in NODE_TYPES:
         raise WorkflowError(f'node {node_id or "?"} has an unknown type')
@@ -103,8 +98,8 @@ def _parse_node(raw: Any) -> Node:
     role = raw_role if isinstance(raw_role, str) and raw_role in ROLES else DEFAULT_ROLES[node_type]
     params = dict_field(data, 'params')
     return Node(
-        id=node_id, type=node_type, title=_str(data.get('title'), 200) or node_type,
-        instructions=_str(data.get('instructions'), 8000), role=role, params=dict(params),
+        id=node_id, type=node_type, title=clipped_text(data.get('title'), 200) or node_type,
+        instructions=clipped_text(data.get('instructions'), 8000), role=role, params=dict(params),
     )
 
 

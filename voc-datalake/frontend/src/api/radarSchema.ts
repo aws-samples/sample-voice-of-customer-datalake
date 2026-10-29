@@ -6,6 +6,8 @@
  */
 import { z } from 'zod'
 import { lenientText, optionalText, parsedList } from './schemaList'
+import { brandLanguage, brandTerms, effectiveLanguage, feedUrls, foundVia, newsKind } from './radarNewsFields'
+import type { RadarLanguage } from './radarNewsFields'
 
 const count = z.number().int().nonnegative().catch(0)
 const share = z.number().min(0).max(1).nullable().catch(null)
@@ -14,12 +16,24 @@ const texts = z.array(z.string()).catch([]).transform((values) => values.filter(
 
 const SENTIMENT_DEFAULT = { positive: 0, negative: 0, neutral: 0, mixed: 0 }
 
-/** `sources`: the source profile ids naming the brand (an older API omits it: none). */
-const BRAND_FIELDS = { key: z.string().min(1), label: lenientText, domains: texts, sources: texts }
+/**
+ * `sources`: the source profile ids naming the brand (an older API omits it: none). `language`:
+ * the one set (null = auto); `effective_language`: what the scan searches in; `feed_urls`: its news feeds;
+ * `search_terms` / `exclude_terms`: words added to its news searches / that drop a result (none on an older API).
+ */
+const BRAND_FIELDS = {
+  key: z.string().min(1), label: lenientText, domains: texts, sources: texts,
+  language: brandLanguage, effective_language: effectiveLanguage, feed_urls: feedUrls,
+  search_terms: brandTerms, exclude_terms: brandTerms,
+}
+/** Where a brand comes from: the brand list, or only a legacy source profile naming it. */
+const ORIGIN = z.enum(['list', 'profile']).catch('list')
 /** A brand without a label reads under its key. */
 const labelled = <T extends { key: string; label: string }>(brand: T): T => ({ ...brand, label: brand.label === '' ? brand.key : brand.label })
 
 const BrandSchema = z.object(BRAND_FIELDS).transform(labelled)
+/** A brand named by a row of another view: its key and its label (the key when it has none). */
+const BrandRefSchema = z.object({ key: z.string().min(1), label: lenientText }).transform(labelled)
 
 const TotalsShape = {
   total: count,
@@ -31,7 +45,7 @@ const BrandSummarySchema = z.object({ ...BRAND_FIELDS, ...TotalsShape }).transfo
 
 export const CADENCES = ['daily', 'weekly', 'monthly'] as const
 export type RadarCadence = typeof CADENCES[number]
-const DEFAULT_RADAR_SETTINGS = { cadence: 'weekly', max_brands: 10, query_cap: 30 } as const
+const DEFAULT_RADAR_SETTINGS = { cadence: 'weekly', max_brands: 10, query_cap: 30, exa_configured: false } as const
 export const MAX_BRANDS_LIMIT = 25
 export const QUERY_CAP_LIMIT = 100
 
@@ -39,6 +53,8 @@ const SettingsSchema = z.object({
   cadence: z.enum(CADENCES).catch('weekly'),
   max_brands: z.number().int().min(1).max(MAX_BRANDS_LIMIT).catch(DEFAULT_RADAR_SETTINGS.max_brands),
   query_cap: z.number().int().min(1).max(QUERY_CAP_LIMIT).catch(DEFAULT_RADAR_SETTINGS.query_cap),
+  /** Whether an Exa API key is stored (the key itself is never sent back). */
+  exa_configured: z.boolean().catch(false),
 }).catch({ ...DEFAULT_RADAR_SETTINGS })
 
 const ScanSchema = z.object({
@@ -86,6 +102,8 @@ const ReleaseSchema = z.object({
   titles: z.array(z.string()).catch([]),
   source_kind: z.enum(['official', 'third_party']).catch('third_party'),
   mentions: count,
+  kind: newsKind,
+  found_via: foundVia,
 })
 
 const ReleasesSchema = z.object({ releases: parsedList(ReleaseSchema) }).catch({ releases: [] })
@@ -139,16 +157,13 @@ export const MAX_RADAR_DOMAINS = 10
  * One brand of GET /radar/brands: `origin` says where it comes from, the brand list
  * (`list`) or only a legacy source profile naming it (`profile`, kept until the next save).
  */
-const BrandEntrySchema = z.object({
-  ...BRAND_FIELDS,
-  origin: z.enum(['list', 'profile']).catch('list'),
-}).transform(labelled)
+const BrandEntrySchema = z.object({ ...BRAND_FIELDS, origin: ORIGIN }).transform(labelled)
 
 const BrandsSchema = z.object({ brands: parsedList(BrandEntrySchema) }).catch({ brands: [] })
 
 /** GET /radar/brands/{brand}/reviews/{id}: one review with the enrichment the list leaves out. */
 const ReviewDetailSchema = z.object({
-  brand: z.object({ key: z.string().min(1), label: lenientText }).transform(labelled),
+  brand: BrandRefSchema,
   review: ReviewSchema.extend({
     persona_name: optionalText,
     persona_type: optionalText,
@@ -160,6 +175,31 @@ const ReviewDetailSchema = z.object({
     language: optionalText,
   }),
 })
+
+
+/**
+ * One brand of GET /radar/all: the brand, its totals in the window, how many releases fell in it
+ * and its newest release (null when it has none, or a malformed one).
+ */
+const AllBrandSchema = z.object({
+  ...BRAND_FIELDS,
+  origin: ORIGIN,
+  ...TotalsShape,
+  releases_in_window: count,
+  latest_release: ReleaseSchema.nullable().catch(null),
+}).transform(labelled)
+
+/** A release of the combined feed: the brand page's release, plus the brand it is about. */
+const BrandReleaseSchema = ReleaseSchema.extend({ brand: BrandRefSchema })
+
+/** GET /radar/all?days=: every tracked brand side by side, and their releases newest first (≤ 100). */
+const AllBrandsSchema = z.object({
+  days: count,
+  brands: parsedList(AllBrandSchema),
+  releases: parsedList(BrandReleaseSchema),
+  releases_total: count,
+  releases_capped: z.boolean().catch(false),
+}).catch({ days: 0, brands: [], releases: [], releases_total: 0, releases_capped: false })
 
 export type RadarOverview = z.infer<typeof OverviewSchema>
 export type RadarBrandSummary = z.infer<typeof BrandSummarySchema>
@@ -174,19 +214,56 @@ export type RadarReview = z.infer<typeof ReviewSchema>
 export type RadarReviewsPage = z.infer<typeof ReviewsPageSchema>
 export type RadarBrandEntry = z.infer<typeof BrandEntrySchema>
 export type RadarReviewDetail = z.infer<typeof ReviewDetailSchema>
-/** What PUT /radar/brands takes: the whole list. */
-export interface RadarBrandInput { readonly label: string; readonly domains: readonly string[] }
+export type RadarBrandRef = z.infer<typeof BrandRefSchema>
+export type RadarAllBrand = z.infer<typeof AllBrandSchema>
+export type RadarAllBrands = z.infer<typeof AllBrandsSchema>
+/** One brand of what PUT /radar/brands takes (the whole list); an absent language, feed or term list = auto / none. */
+export interface RadarBrandInput {
+  readonly label: string
+  readonly domains: readonly string[]
+  readonly language?: RadarLanguage | null
+  readonly feed_urls?: readonly string[]
+  readonly search_terms?: readonly string[]
+  readonly exclude_terms?: readonly string[]
+}
+/** What PUT /radar/settings takes: the scan settings (the Exa key has its own route). */
+export type RadarScanSettings = Omit<RadarSettings, 'exa_configured'>
 
 export const normalizeRadarOverview = (raw: unknown): RadarOverview => OverviewSchema.parse(raw)
 /** The detail view, or null when the answer carries no usable brand. */
-export function normalizeRadarDetail(raw: unknown): RadarDetail | null {
+function normalizeRadarDetail(raw: unknown): RadarDetail | null {
   const parsed = DetailSchema.safeParse(raw)
   return parsed.success ? parsed.data : null
 }
-export const normalizeRadarReleases = (raw: unknown): RadarRelease[] => ReleasesSchema.parse(raw).releases
-export const normalizeRadarCompare = (raw: unknown): RadarCompare => CompareSchema.parse(raw)
+const normalizeRadarReleases = (raw: unknown): RadarRelease[] => ReleasesSchema.parse(raw).releases
+const normalizeRadarCompare = (raw: unknown): RadarCompare => CompareSchema.parse(raw)
+
+/** GET /radar/brands/{brand}/page: the Radar page's one read for a brand. */
+export interface RadarBrandPage {
+  /** Null when the answer carries no usable brand (the page shows its load error). */
+  readonly detail: RadarDetail | null
+  readonly releases: RadarRelease[]
+  readonly compare: RadarCompare
+}
+
+// Each part is normalized on its own (one bad part never blanks the others); an absent one reads as empty.
+const PageSchema = z.object({ detail: z.unknown().optional(), releases: z.unknown().optional(), compare: z.unknown().optional() })
+  .catch({})
+
+export function normalizeRadarPage(raw: unknown): RadarBrandPage {
+  const page = PageSchema.parse(raw)
+  return {
+    detail: normalizeRadarDetail(page.detail),
+    releases: normalizeRadarReleases(page.releases),
+    compare: normalizeRadarCompare(page.compare),
+  }
+}
 export const normalizeRadarSettings = (raw: unknown): RadarSettings =>
   SettingsSchema.parse(z.object({ settings: z.unknown() }).catch({ settings: undefined }).parse(raw).settings)
+/** PUT / DELETE /radar/settings/exa-key: whether a key is stored now (false on anything unusable). */
+export const normalizeExaKeyAnswer = (raw: unknown): boolean =>
+  z.object({ exa_configured: z.boolean() }).catch({ exa_configured: false }).parse(raw).exa_configured
+export const normalizeRadarAll = (raw: unknown): RadarAllBrands => AllBrandsSchema.parse(raw)
 export const normalizeRadarReviews = (raw: unknown): RadarReviewsPage => ReviewsPageSchema.parse(raw)
 export const normalizeRadarBrands = (raw: unknown): RadarBrandEntry[] => BrandsSchema.parse(raw).brands
 /** The review, or null when the answer carries none. */

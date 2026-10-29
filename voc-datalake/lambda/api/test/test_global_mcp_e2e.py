@@ -21,8 +21,6 @@ Live testing with Cowork / Copilot / Amazon Quick / Kiro needs a deployment
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-
 import pytest
 from global_mcp_world import ALPHA, ALPHA_DOC, BETA, GAMMA, global_mcp_world, tool_payload
 
@@ -159,11 +157,7 @@ class TestDeadTokens:
 
     def test_an_expired_token_is_refused(self, world):
         minted = world.mint('alice', scope='read', expires_in_days=1)
-        world.projects.update_item(
-            Key={'pk': gt.GLOBAL_TOKEN_PK, 'sk': gt.token_sk(minted['token_id'])},
-            UpdateExpression='SET expires_at = :past',
-            ExpressionAttributeValues={':past': (datetime.now(UTC) - timedelta(seconds=1)).isoformat()},
-        )
+        world.expire(minted)
 
         reply = world.client(minted).request('tools/list')
 

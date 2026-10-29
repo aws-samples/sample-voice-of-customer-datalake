@@ -191,7 +191,7 @@ describe('FeedbackDetail', () => {
     it('navigates to /categories when the source tag is clicked', async () => {
       const user = renderDetailWithProbe()
 
-      await user.click(await screen.findByRole('button', { name: 'Webscraper' }))
+      await user.click(await screen.findByRole('button', { name: 'Web scraper' }))
 
       expect(screen.getByTestId('categories-probe')).toHaveTextContent('?source=webscraper')
     })
@@ -211,7 +211,7 @@ describe('FeedbackDetail', () => {
 
       expect(await screen.findByRole('button', { name: 'Product quality' })).toHaveClass('bg-accent-subtle', 'text-accent-text')
       expect(screen.getByRole('button', { name: 'Durability' })).toHaveClass('bg-bg-hover', 'text-text')
-      expect(screen.getByRole('button', { name: 'Webscraper' })).toHaveClass('bg-bg-hover', 'text-text')
+      expect(screen.getByRole('button', { name: 'Web scraper' })).toHaveClass('bg-bg-hover', 'text-text')
       expect(document.querySelectorAll('.bg-info-subtle, .bg-aim-subtle, .badge-info, .badge-aim')).toHaveLength(0)
     })
   })
@@ -230,7 +230,7 @@ describe('FeedbackDetail', () => {
     it('shows labels, not stored ids, for source, category, subcategory and persona type', async () => {
       renderDetail()
 
-      expect(await screen.findByRole('heading', { level: 1, name: 'Webscraper Mentions' })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { level: 1, name: 'Web scraper Mentions' })).toBeInTheDocument()
       expect(screen.getByText('Product quality', { selector: 'span' })).toBeInTheDocument()
       expect(screen.getByText('Durability', { selector: 'span' })).toBeInTheDocument()
       expect(screen.getByText('Advocate')).toBeInTheDocument()

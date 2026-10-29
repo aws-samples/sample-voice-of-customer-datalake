@@ -137,5 +137,8 @@
   "seeAllUrgent_one": "Zobacz {{count, number}} pilną opinię",
   "seeAllUrgent_other": "Zobacz wszystkie {{count, number}} pilnych opinii",
   "seeAllUrgent_few": "Zobacz wszystkie {{count, number}} pilne opinie",
-  "seeAllUrgent_many": "Zobacz wszystkie {{count, number}} pilnych opinii"
+  "seeAllUrgent_many": "Zobacz wszystkie {{count, number}} pilnych opinii",
+  "partialNote": {
+    "reviewBasis": "Liczenie według daty opinii odczytuje opinie pojedynczo, więc szeroki zakres zostaje skrócony; przełącz na Data importu, aby zobaczyć pełną sumę."
+  }
 }

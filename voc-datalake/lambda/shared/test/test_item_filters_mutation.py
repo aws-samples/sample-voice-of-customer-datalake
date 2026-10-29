@@ -52,4 +52,5 @@ def test_field_annotations_resolve():
         'tag': str | None,
         'rating_min': int | None,
         'rating_max': int | None,
+        'urgent': bool,
     }

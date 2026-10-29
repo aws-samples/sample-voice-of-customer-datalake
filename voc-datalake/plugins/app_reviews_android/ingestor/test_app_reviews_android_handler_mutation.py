@@ -37,6 +37,7 @@ from unittest.mock import ANY, MagicMock, call, patch
 import pytest
 from aws_lambda_powertools.metrics.provider.cold_start import reset_cold_start_flag
 
+from _shared.app_reviews_health import StorefrontFetch
 from _shared.base_ingestor import logger, metrics, tracer
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
 from _shared.test.scoped_secret import scoped_secret
@@ -129,7 +130,7 @@ class TestConfigLoading:
         assert _build(android, {"app_name": "Old", "app_id": "com.old"}).app_configs == []
 
     def test_a_broken_array_is_reported_as_the_android_array(self, android):
-        with patch("_shared.app_reviews_utils.logger") as utils_logger:
+        with patch("_shared.app_reviews_config.logger") as utils_logger:
             assert _build(android, {"configs": "[oops"}).app_configs == []
         (message,), _ = utils_logger.warning.call_args
         assert message.startswith("Failed to parse Android configs array: ")
@@ -157,7 +158,8 @@ def collect(android) -> Collect:
     def run(pages: list[list[dict]], **overrides: Any):
         app = android.AndroidAppConfig(**{**vars(ingestor.app_configs[0]), **overrides})
         with (
-            patch.object(android, "fetch_reviews_for_country", side_effect=pages) as fetch,
+            patch.object(android, "fetch_reviews_for_country",
+                         side_effect=[StorefrontFetch(page) for page in pages]) as fetch,
             patch.object(android.random, "shuffle", side_effect=lambda xs: xs.reverse()) as shuffle,
         ):
             return ingestor._collect_reviews_for_app(app), fetch, shuffle
@@ -203,13 +205,35 @@ class TestReviewMerging:
         assert [r["reviewId"] for r in result] == ["d", "u"]
 
 
+class TestPerAppSettingsAndFailures:
+    def test_the_app_connector_sort_order_and_frequency_win(self, android):
+        secret = {"configs": json.dumps([{"app_name": "Acme", "package_name": PKG, "sort_by": "rating",
+                                          "frequency_minutes": "0"}]), "frequency_minutes": "60"}
+        ingestor = _build(android, secret)
+        app = ingestor.app_configs[0]
+        assert (app.sort_by, ingestor.sort_by_for(app), ingestor.frequency_for(app)) == ("rating", "rating", 0)
+
+    def test_a_failed_locale_is_warned_and_reaches_the_run_row(self, android):
+        ingestor = _build(android, ACME)
+        app = android.AndroidAppConfig(**{**vars(ingestor.app_configs[0]), "lang": "ko", "country": "kr"})
+        with (
+            patch.object(android, "fetch_reviews_for_country", return_value=StorefrontFetch([], "HTTP 429")),
+            patch("_shared.app_reviews_health.logger") as health_logger,
+        ):
+            assert ingestor._collect_reviews_for_app(app) == []
+        (warning,), _ = health_logger.warning.call_args
+        assert warning == f"Android {app.name} ({PKG}): 1 of 1 storefronts failed - HTTP 429 x1 (ko-kr)"
+        assert ingestor.run_warnings == [f"{app.name}: 1 storefront failed (HTTP 429 x1)"]
+
+
 class TestWatermarkReadsTheAtField:
     def test_only_reviews_after_the_watermark_are_yielded_and_it_advances(self, android):
         ingestor = _build(android, ACME)
         ingestor.watermarks_table = MagicMock()
         ingestor.watermarks_table.get_item.return_value = {"Item": {"value": _day(2).isoformat()}}
         with (
-            patch.object(android, "fetch_reviews_for_country", side_effect=[[_rev("old", 1), _rev("new", 5)]]),
+            patch.object(android, "fetch_reviews_for_country",
+                         side_effect=[StorefrontFetch([_rev("old", 1), _rev("new", 5)])]),
             patch.object(android.random, "shuffle"),
         ):
             ids = [item["id"] for item in ingestor.fetch_new_items()]
@@ -308,7 +332,10 @@ class TestLambdaHandlerWrapping:
     def test_the_event_is_handed_to_run_for_event(self, invoke):
         run, run_for_event = invoke
         assert run({"app_id": PKG}) == {"status": "success"}
-        assert run_for_event.call_args_list == [call({"app_id": PKG})]
+        # The Lambda context travels too: it is the run's time budget (app_reviews_parts.py).
+        event, context = run_for_event.call_args.args
+        assert event == {"app_id": PKG}
+        assert context.aws_request_id == "req-android-1"
 
     def test_the_lambda_context_reaches_the_logger(self, invoke, lambda_ctx):
         run, _ = invoke

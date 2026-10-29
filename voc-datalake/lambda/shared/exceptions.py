@@ -132,6 +132,17 @@ class ServiceUnavailableError(ApiError):
     status_code = 503
 
 
+class TooManyRequestsError(ApiError):
+    """Raised when a quota the deployment configured would be exceeded.
+
+    Examples:
+        - A participant ask whose recipients would pass today's send cap (``daily_cap``)
+
+    HTTP Status: 429 Too Many Requests
+    """
+    status_code = 429
+
+
 class PayloadTooLargeError(ApiError):
     """Raised when a request body would produce a record above a storage limit.
 

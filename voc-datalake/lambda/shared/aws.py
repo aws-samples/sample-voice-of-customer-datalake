@@ -10,6 +10,7 @@ from typing import Final
 import boto3
 
 from shared import dynamodb_fast_items
+from shared.concurrency import MAX_IN_FLIGHT_READS
 from shared.exceptions import ValidationError
 from shared.logging import logger
 
@@ -22,19 +23,40 @@ _bedrock_client = None
 _lambda_client = None
 _eventbridge_client = None
 
+# One pooled connection per read a request can have in flight on the shared DynamoDB client
+# (shared/concurrency.py). Below that, botocore discards the surplus connections after each fan-out
+# and logs "Connection pool is full", and the next fan-out pays for fresh TLS handshakes.
+DYNAMODB_MAX_POOL_CONNECTIONS: Final = MAX_IN_FLIGHT_READS
+
 
 def get_dynamodb_resource():
     """Get shared DynamoDB resource with connection reuse.
 
     Its client decodes the item lists of Query / Scan / BatchGetItem answers in one
     fast pass instead of botocore's per-attribute parse (shared/dynamodb_fast_items.py;
-    the values are exactly what boto3 returns, pinned by its tests).
+    the values are exactly what boto3 returns, pinned by its tests). Its connection pool
+    holds every read a request's fan-out can have in flight (DYNAMODB_MAX_POOL_CONNECTIONS).
     """
     global _dynamodb_resource
     if _dynamodb_resource is None:
-        _dynamodb_resource = boto3.resource("dynamodb")
+        from botocore.config import Config
+        _dynamodb_resource = boto3.resource(
+            "dynamodb", config=Config(max_pool_connections=DYNAMODB_MAX_POOL_CONNECTIONS))
         dynamodb_fast_items.install(_dynamodb_resource.meta.client)
     return _dynamodb_resource
+
+
+# "That key is not there", which S3 spells differently per operation: `head_object` has no
+# response body to model `NoSuchKey` from, so it raises a bare ClientError with code '404'; only
+# `get_object` raises `NoSuchKey`.
+S3_MISSING_KEY_CODES: Final = frozenset({'404', 'NoSuchKey', 'NotFound'})
+
+
+def is_missing_s3_object(error: Exception) -> bool:
+    """True when an S3 ClientError says the object is not there (any operation's spelling)."""
+    response = getattr(error, 'response', None)
+    code = response.get('Error', {}).get('Code', '') if isinstance(response, dict) else ''
+    return str(code) in S3_MISSING_KEY_CODES
 
 
 def is_conditional_check_failure(error: Exception) -> bool:
@@ -179,6 +201,11 @@ def invoke_lambda_async(function_name: str, payload: dict) -> dict:
         InvocationType='Event',
         Payload=json.dumps(payload)
     )
+
+
+def is_action_event(event: dict, action: str) -> bool:
+    """Is ``event`` an async ``{'action': action, ...}`` self-invoke (never an API Gateway request)?"""
+    return event.get('action') == action and 'httpMethod' not in event
 
 
 

@@ -2,7 +2,7 @@
 # audit-detector: run by scripts/audit/run-all.sh
 """py_stored_attrs: DynamoDB attributes a store module writes that nothing ever reads back.
 
-PATTERN (deadpy.md section 4: ``last_run_finished_at`` on an agent, ``approved_at`` on a plan step):
+PATTERN (the 5.28 dead-Python audit: ``last_run_finished_at`` on an agent, ``approved_at`` on a plan step):
 a writer stores an attribute in a DynamoDB item and no reader anywhere names it: not another Python
 module, the assistant stream, the SPA, the static widget or a JSON contract. Storage and write cost for
 nothing, and a field a reader may wrongly assume is maintained.

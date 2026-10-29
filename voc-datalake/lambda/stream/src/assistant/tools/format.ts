@@ -6,10 +6,6 @@
 /** Default per-tool result budget, in characters. */
 const DEFAULT_RESULT_BUDGET = 12_000;
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /** Clip a string to `max` characters, marking the cut. */
 export function clip(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}…`;

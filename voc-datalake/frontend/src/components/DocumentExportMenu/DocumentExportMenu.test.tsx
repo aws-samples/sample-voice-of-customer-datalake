@@ -98,7 +98,7 @@ describe('DocumentExportMenu', () => {
 
     it.each([
       ['markdown', /download as markdown/i],
-      ['PDF', /download as pdf/i],
+      ['PDF', /print or save as pdf/i],
       ['TXT', /download as txt/i],
     ])('shows an enabled download as %s option', async (_format, name) => {
       await openMenu()
@@ -160,7 +160,7 @@ describe('DocumentExportMenu', () => {
     it('calls openPrintWindow when PDF option is clicked', async () => {
       const user = await openMenu()
 
-      await user.click(screen.getByRole('menuitem', { name: /download as pdf/i }))
+      await user.click(screen.getByRole('menuitem', { name: /print or save as pdf/i }))
 
       expect(mockOpenPrintWindow).toHaveBeenCalledWith(
         expect.objectContaining({

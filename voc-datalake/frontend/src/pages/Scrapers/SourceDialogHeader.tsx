@@ -28,22 +28,20 @@ const TONE_TILE: Record<SourceTone, string> = {
   muted: 'bg-bg-hover text-muted',
 }
 
-export function ToneTile({ icon: Icon, tone = 'accent', size = 'md' }: Readonly<{
+export function ToneTile({ icon: Icon, tone = 'accent' }: Readonly<{
   icon: LucideIcon
   /** `muted` only for an inactive state; a kind of source is always `accent`. */
   tone?: SourceTone
-  size?: 'sm' | 'md'
 }>) {
   return (
     <span
       aria-hidden="true"
       className={clsx(
-        'rounded-lg flex items-center justify-center flex-shrink-0',
-        size === 'sm' ? 'w-8 h-8' : 'w-9 h-9',
+        'rounded-lg flex items-center justify-center flex-shrink-0 w-9 h-9',
         TONE_TILE[tone],
       )}
     >
-      <Icon size={size === 'sm' ? 16 : 18} />
+      <Icon size={18} />
     </span>
   )
 }

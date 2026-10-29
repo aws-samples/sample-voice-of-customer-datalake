@@ -360,21 +360,10 @@
       "knownLimitations": "Known limitations",
       "nonGoals": "Non-goals",
       "oneLiner": "One-liner",
-      "placeholderEmpty": "—",
       "problemSolved": "Problem solved",
       "productName": "Product name",
       "successMetrics": "Success metrics",
       "targetUsers": "Target users"
-    },
-    "interview": {
-      "captured": "Got it — captured. What else can you tell me about the product?",
-      "elaborate": "Could you tell me more about that?",
-      "greeting": "Hi — I'll help you describe your product or service. Tell me what it is in a sentence or two, and we'll build out the rest from there.",
-      "heading": "Interview",
-      "hint": "I'll fill the form on the left as you answer.",
-      "placeholder": "Tell me about your product…",
-      "send": "Send",
-      "thinking": "Thinking…"
     },
     "lifecycle": {
       "beta": "Beta",
@@ -385,9 +374,6 @@
       "select": "— select —"
     },
     "loading": "Loading product context…",
-    "modeBoth": "Both",
-    "modeChat": "Chat only",
-    "modeUpload": "Upload only",
     "report": {
       "button": "Generate report",
       "confirmTitle": "Generate the product report?",
@@ -421,6 +407,36 @@
       "statusFailed": "Failed",
       "statusReady": "Ready",
       "statusUploading": "Uploading…"
+    },
+    "assistant": {
+      "button": "Fill with AI assistant",
+      "hint": "The assistant asks about each empty field, one question at a time, then shows all your answers on one card for you to approve.",
+      "prompt": "Interview me to fill in this project's product description."
+    },
+    "lastSaved": "Last saved {{at}}",
+    "neverSaved": "Not saved yet",
+    "saving": "Saving…",
+    "sections": {
+      "basics": {
+        "title": "The product",
+        "description": "What it is and where it stands."
+      },
+      "customers": {
+        "title": "Customers and problem",
+        "description": "Who it is for and what it solves for them."
+      },
+      "offering": {
+        "title": "Offering",
+        "description": "What it does and how it differs from the alternatives."
+      },
+      "scope": {
+        "title": "Goals and boundaries",
+        "description": "How success is measured, its limits, and what is out of scope."
+      },
+      "notes": {
+        "title": "Notes",
+        "description": "Anything else the PRD and PR/FAQ writers should know."
+      }
     }
   },
   "tabs": {
@@ -457,6 +473,9 @@
     "generatePrd": "Generate PRD",
     "generatePrdTitle": "Generate PRD",
     "generatePrfaq": "Generate PR/FAQ",
+    "startWritingTitle": "Write it yourself",
+    "startWriting": "Start writing",
+    "startWritingFailed": "The document could not be created. Try again.",
     "generatePrfaqTitle": "Generate PR/FAQ",
     "newDocTitle": "New Document Title",
     "newDocTitlePlaceholder": "e.g., Virtual Concierge PRD",

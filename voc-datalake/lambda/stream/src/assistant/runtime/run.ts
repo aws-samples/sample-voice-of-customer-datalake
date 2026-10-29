@@ -3,7 +3,7 @@
  *
  *   body → RunAgentInput → RUN_STARTED → identity → forwardedProps + limits →
  *   toolset + model → CUSTOM assistant.context → Bedrock messages (flattened
- *   history + structured tail) → agent loop → CUSTOM assistant.sources →
+ *   history + structured tail) → agent loop (polling Stop) → [CUSTOM assistant.stopped] → CUSTOM assistant.sources →
  *   RUN_FINISHED (success | interrupt)
  *
  * Any error becomes RUN_ERROR{message, code} and the run ends; the HTTP status
@@ -11,7 +11,7 @@
  */
 import type { Message as AguiMessage, ResumeEntry, UserMessage } from '@ag-ui/core';
 import type { Message } from '@aws-sdk/client-bedrock-runtime';
-import { AGUI_PROTOCOL_VERSION, CUSTOM_EVENTS } from '../contract.js';
+import { AGUI_PROTOCOL_VERSION, CUSTOM_EVENTS, type ForwardedProps } from '../contract.js';
 import type {
   AssistantRunContext,
   AssistantToolset,
@@ -22,7 +22,7 @@ import type {
 import { resolveChatModelId } from '../../bedrock/converse-stream.js';
 import { ValidationError } from '../../lib/errors.js';
 import { ProjectAccessLedger } from '../tools/project-access.js';
-import { withoutProjectWrites } from '../tools/registry.js';
+import { withoutDocumentGeneration, withoutProjectWrites } from '../tools/registry.js';
 import { events, type Emitter } from './emitter.js';
 import { isClientError, toRunError } from './errors.js';
 import { extractCallerClaims, getBodyText, isAdminCaller, type LambdaEvent } from './event.js';
@@ -31,6 +31,7 @@ import { enforceLimits, isUserMessage, lastUserIndex, parseForwardedProps, parse
 import { runAgentLoop, type ConverseFn } from './loop.js';
 import { briefForRun, buildCompanyBlock, type LoadCompanyBrief } from './company-brief.js';
 import { restrictionForRun, type LoadCategoryRestriction } from './category-restriction.js';
+import { aiWritingForRun, type AiWritingPolicy, type LoadAiWritingPolicy } from './ai-writing.js';
 import { buildMemoryBlock, recallForRun, type RecallMemory } from './memory-recall.js';
 import { buildPageContextBlock, withDataBlocks } from './page-context.js';
 import { preloadDefaultProject, type ProjectPreload } from './preload.js';
@@ -38,6 +39,8 @@ import { buildDynamicPrompt, buildStaticPrompt } from './system-prompt.js';
 import { buildTail, inspectTail } from './tail.js';
 import { logUsage, toAguiUsage } from './usage.js';
 import { createSessionEmitter, startRunSession, type SessionEmitter, type SessionPersistence } from '../session/run-session.js';
+import { watchForStop } from '../session/cancel.js';
+import type { PersonaRound } from './persona-round.js';
 
 export interface RuntimeDeps {
   converse: ConverseFn;
@@ -52,6 +55,8 @@ export interface RuntimeDeps {
   loadCompanyBrief?: LoadCompanyBrief;
   /** Whether the caller's category access is restricted (fails open in restrictionForRun). Absent = not read. */
   loadCategoryRestriction?: LoadCategoryRestriction;
+  /** The caller's way of working with AI (fails closed in aiWritingForRun). Absent = AI-driven. */
+  loadAiWriting?: LoadAiWritingPolicy;
   now: () => Date;
   /**
    * Server-side session persistence (session/run-session.ts): the run's
@@ -59,6 +64,8 @@ export interface RuntimeDeps {
    * it streams. Absent = not saved (the SPA's own saves still run).
    */
   sessions?: SessionPersistence;
+  /** The @persona / @all round before the model's turn (persona-round.ts). Absent = mentions only name documents. */
+  personaRound?: PersonaRound;
 }
 
 export function dedupeFeedback(sources: readonly FeedbackSource[]): FeedbackSource[] {
@@ -110,6 +117,34 @@ interface ConversationInput {
   dataBlocks: readonly (string | undefined)[];
 }
 
+/** Mentions name a project's personas and documents, so they are refused off a project page. */
+function enforceMentionsPage(props: ForwardedProps): void {
+  if (props.mentions === undefined) return;
+  if (props.page.kind !== 'project' || props.page.projectId === undefined) {
+    throw new ValidationError('Mentions (@persona, #document) are only available on a project page');
+  }
+}
+
+interface MentionRoundInput {
+  deps: RuntimeDeps;
+  props: ForwardedProps;
+  question: string;
+  ctx: AssistantRunContext;
+  signal: AbortSignal | undefined;
+}
+
+/** The `<mentions>` block: the persona round when personas were mentioned, else the tagged documents only. */
+async function mentionsForRun({ deps, props, question, ctx, signal }: MentionRoundInput): Promise<string | undefined> {
+  if (props.mentions === undefined || deps.personaRound === undefined) return undefined;
+  // The round fails open itself; this keeps a rejecting injection from skipping the stop-watch cleanup.
+  try {
+    return await deps.personaRound({ mentions: props.mentions, question, ctx, ...(signal === undefined ? {} : { signal }) });
+  } catch (err) {
+    console.warn(`persona round rejected (${err instanceof Error ? err.name : 'unknown'})`);
+    return undefined;
+  }
+}
+
 function buildConversation({ split, resume, toolset, dataBlocks }: ConversationInput): Conversation {
   const history = flatTurnsToBedrock(flattenHistory(split.before));
   const structured = split.idsValid && split.toolNames.every((name) => toolset.byName.has(name));
@@ -124,9 +159,13 @@ function buildConversation({ split, resume, toolset, dataBlocks }: ConversationI
   };
 }
 
-/** A view-only project on screen: no project write tools this run (reads stay, order kept). */
-function toolsetForPreload(toolset: AssistantToolset, preload: ProjectPreload | undefined): AssistantToolset {
-  return preload?.status === 'loaded' && preload.readOnly ? withoutProjectWrites(toolset) : toolset;
+/**
+ * A view-only project on screen: no project write tools this run (reads stay, order kept).
+ * No PR/FAQ or PRD the AI may write with this person: no `generate_document` (ai-writing.ts).
+ */
+function toolsetForRun(toolset: AssistantToolset, preload: ProjectPreload | undefined, aiWriting: AiWritingPolicy): AssistantToolset {
+  const writable = preload?.status === 'loaded' && preload.readOnly ? withoutProjectWrites(toolset) : toolset;
+  return aiWriting.interactive.size === 0 ? withoutDocumentGeneration(writable) : writable;
 }
 
 async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: RuntimeDeps, limits: RunLimits): Promise<void> {
@@ -136,6 +175,7 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
   const claims = extractCallerClaims(event);
   const props = parseForwardedProps(input);
   enforceLimits(input);
+  enforceMentionsPage(props);
   const isAdmin = isAdminCaller(claims);
   const { page } = props;
 
@@ -155,24 +195,33 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
   // for this message, and starting the server-side save of this run (its
   // partition is the verified caller's sub from the authorizer claims, never
   // anything in the body).
-  const [projectPreload, memories, companyBrief, categoryRestricted] = await Promise.all([
+  const [projectPreload, memories, companyBrief, categoryRestricted, aiWriting] = await Promise.all([
     preloadDefaultProject(pageToolset, ctx),
     recallForRun(deps.recallMemory, textOfParts(split.user.content), ctx),
     briefForRun(deps.loadCompanyBrief, ctx),
     restrictionForRun(deps.loadCategoryRestriction, ctx),
+    aiWritingForRun(deps.loadAiWriting, claims.sub),
     startRunSession(emitter, deps.sessions, { callerSub: claims.sub, input, page }),
   ]);
-  const toolset = toolsetForPreload(pageToolset, projectPreload);
+  ctx.aiWriting = aiWriting;
+  // Stop in the SPA (session/cancel.ts): polled for the rest of the run (persona round included), ended with it.
+  const stopWatch = watchForStop(deps.sessions, { callerSub: claims.sub, threadId: input.threadId, runId: input.runId });
+  // Review-only persona answers, allowed in every way of working (the model's own turn keeps its mode).
+  const mentionsBlock = await mentionsForRun({ deps, props, question: textOfParts(split.user.content), ctx, signal: stopWatch?.signal });
+  const toolset = toolsetForRun(pageToolset, projectPreload, aiWriting);
   const conversation = buildConversation({
     split,
     resume: input.resume ?? [],
     toolset,
-    dataBlocks: [buildCompanyBlock(companyBrief), buildPageContextBlock({ page, projectPreload }), buildMemoryBlock(memories)],
+    dataBlocks: [
+      buildCompanyBlock(companyBrief), buildPageContextBlock({ page, projectPreload }), buildMemoryBlock(memories), mentionsBlock,
+    ],
   });
   console.log(JSON.stringify({
     event: 'assistant_run', page: page.kind, packs: toolset.packs, model: modelId,
     tools: toolset.tools.length, messages: input.messages.length, resumed: (input.resume ?? []).length > 0,
-    projectPreload: projectPreload?.status ?? 'none', memories: memories.length,
+    projectPreload: projectPreload?.status ?? 'none', memories: memories.length, aiMode: aiWriting.mode,
+    mentions: props.mentions === undefined ? 'none' : 'present',
   }));
 
   const result = await runAgentLoop({
@@ -180,13 +229,15 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
     ...conversation,
     toolset,
     systemPrompt: buildStaticPrompt(deps.toolGuidance(toolset)),
-    systemSuffix: buildDynamicPrompt({ page, props, isAdmin, now, projectPreload, categoryRestricted }),
+    systemSuffix: buildDynamicPrompt({ page, props, isAdmin, now, projectPreload, categoryRestricted, aiWriting }),
     modelId,
     ctx,
     emitter,
     now: deps.now,
-  });
+    ...(stopWatch === undefined ? {} : { signal: stopWatch.signal }),
+  }).finally(() => stopWatch?.stop());
 
+  if (result.stopped) emitter.emit(events.custom(CUSTOM_EVENTS.stopped, {}));
   emitter.emit(events.custom(CUSTOM_EVENTS.sources, {
     feedback: dedupeFeedback(result.sources),
     web: dedupeWeb(result.webSources),

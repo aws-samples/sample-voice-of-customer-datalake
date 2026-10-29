@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {"key": "docs/company-context.md::missing-path::company-context/design/", "reason": "An S3 key prefix in the raw data bucket (reference uploads go there by presigned PUT), not a repo directory."},
+    {"key": "docs/company-context.md::missing-path::components/ui.tsx", "reason": "A file the GitHub design reader looks for in the CUSTOMER's repository (the order it ranks component sources), not a file of this repo."},
+    {"key": "docs/lambda-sizing.md::missing-path::voc-e2e/verify/3.00.00/CAPACITY-REPORT.md", "reason": "Evidence kept outside this repo (the release verification workspace beside the checkout), cited as provenance for the measured sizes."},
+    {"key": "docs/kiro-design-system.md::missing-path::website/*", "reason": "Files of the KiroCrew website repository, the Kiro design system's source this doc links to on GitHub; not files of this repo."},
+    {"key": "docs/kiro-design-system.md::missing-path::apps/workflows/WorkflowsRuns.tsx", "reason": "A KiroCrew `website/src/` example of the status-tone rule (the line names that repo), not a file of this repo."},
+    {"key": "docs/kiro-design-system.md::missing-path::components/CommentThreads.tsx", "reason": "A KiroCrew `website/src/` example of the status-tone rule (the line names that repo), not a file of this repo."},
+    {"key": "docs/kiro-design-system.md::missing-path::components/ContextBar.tsx", "reason": "A KiroCrew `website/src/` example of the status-tone rule (the line names that repo), not a file of this repo."},
+    {"key": "docs/kiro-design-system.md::missing-path::pages/ArtifactDetailPage.tsx", "reason": "A KiroCrew `website/src/` example of the status-tone rule (the line names that repo), not a file of this repo."},
+    {"key": "docs/kiro-design-system.md::missing-path::pages/TelemetryPanel.tsx", "reason": "A KiroCrew `website/src/` example of the status-tone rule (the line names that repo), not a file of this repo."},
+    {"key": "docs/kiro-design-system.md::missing-path::pages/settings/SlackPanel.tsx", "reason": "A KiroCrew `website/src/` example of the status-tone rule (the line names that repo), not a file of this repo."},
+    {"key": "docs/kiro-design-system.md::missing-path::ui/tabsPill.ts", "reason": "The KiroCrew website's tab recipe (`website/src/components/ui/tabsPill.ts`, linked on the same row), not a file of this repo."}
+  ]
+}

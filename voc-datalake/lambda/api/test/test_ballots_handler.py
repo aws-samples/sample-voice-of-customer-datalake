@@ -64,7 +64,7 @@ class FakeAggregatesTable(ConditionalFakeTable):
         if rows_exist:
             # THE ROW RECORD OF EVERY SEEDED SESSION, because that is the only state
             # the product can reach: a session is created only for a row that exists
-            # (`_row_exists` gates it), and a ballot now asserts the row still does —
+            # (`_existing_row` gates it), and a ballot now asserts the row still does —
             # it stamps that record's freeze mark and moves the fence a row delete
             # reads. A fixture with a session and no row is a row deleted after the
             # vote opened, which is what `rows_exist=False` is for.
@@ -208,10 +208,29 @@ def open_session(session_id=OPEN_SESSION_ID, **overrides):
     }
 
 
-def _call(table, event, lambda_context, logger=None):
+class LiveProjectsTable:
+    """The projects table as the public routes read it: every project's META exists
+    and is live, unless its id is in `deleted` (then there is a tombstone)."""
+
+    def __init__(self, deleted=()):
+        self.deleted = set(deleted)
+
+    def get_item(self, **kwargs):
+        project_id = kwargs['Key']['pk'].removeprefix('PROJECT#')
+        meta = {'pk': kwargs['Key']['pk'], 'sk': 'META', 'project_id': project_id, 'visibility': 'public'}
+        if project_id in self.deleted:
+            meta['status'] = 'deleted'
+        return {'Item': meta}
+
+
+_LIVE_PROJECTS = object()
+
+
+def _call(table, event, lambda_context, logger=None, projects=_LIVE_PROJECTS):
     from ballots_handler import lambda_handler
 
-    with patch('ballots_handler.get_aggregates_table', return_value=table):
+    with patch('ballots_handler.get_aggregates_table', return_value=table), \
+            patch('ballots_handler.get_projects_table', return_value=LiveProjectsTable() if projects is _LIVE_PROJECTS else projects):
         if logger is None:
             response = lambda_handler(event, lambda_context)
         else:
@@ -687,7 +706,7 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
 
     def test_a_ballot_on_a_row_deleted_after_the_vote_opened_is_refused(
             self, api_gateway_event, lambda_context):
-        """`_row_exists` is checked when the session is OPENED, which can be an hour
+        """`_existing_row` is checked when the session is OPENED, which can be an hour
         before the room votes. `attribute_exists(sk)` on the write is what makes a
         ballot on a row deleted in between fail — instead of resurrecting the row as
         a bare record, since `update_item` is an upsert."""
@@ -695,7 +714,7 @@ class TestAnAnonymousBallotMarksItsRowLikeAnyOther:
 
         status, body = _submit(table, api_gateway_event, lambda_context)
 
-        assert status == 404
+        assert (status, body['reason']) == (410, 'gone')
         assert table.ballot_keys == [], 'no orphan was left behind'
         assert table.find_row() is None, 'and the row was not resurrected'
         assert body['success'] is False
@@ -1092,7 +1111,7 @@ class TestTheFacilitatorHalf:
 
         404, not 400: the id is well-formed and the page sent one it was shown —
         the world changed, not the request. Reverting the fix (removing the
-        `_row_exists` check) fails this on the status: the session opens."""
+        `_existing_row` check) fails this on the status: the session opens."""
         table = FakeAggregatesTable([])
 
         status, body = _create(table, api_gateway_event, lambda_context,

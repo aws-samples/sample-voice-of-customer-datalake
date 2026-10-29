@@ -1,5 +1,30 @@
 {
   "aiModel": {
+    "image": {
+      "title": "Image generation (persona avatars)",
+      "description": "The image model that draws persona avatars. Set by the deployment, not a choice here; the deploy requests its access.",
+      "model": "Model",
+      "region": "Region",
+      "access": "Access",
+      "quota": "Quota",
+      "requestsPerMinute": "{{count, number}} requests/min",
+      "quotaPending": "Reading from Service Quotas, check again in a minute",
+      "avatarsOff": "Avatars are switched off in this deployment (EU inference scope), so this model is not used.",
+      "testTitle": "Generate one small test image with {{model}}. Each click costs a few US cents; the image is not stored.",
+      "status": {
+        "available": "Available",
+        "no_access": "No access",
+        "not_subscribed": "Not subscribed",
+        "not_in_region": "Not in this region",
+        "unknown": "Unknown"
+      },
+      "hint": {
+        "no_access": "This account or its roles may not use the model. Check the organization's policies (SCPs) for Bedrock and AWS Marketplace, then redeploy.",
+        "not_subscribed": "The model's agreement or Marketplace subscription is missing. Redeploy (the deploy requests it), or accept it in the Bedrock console under Model access.",
+        "not_in_region": "The model is not offered in this region. Choose an image model that is offered there in avatar-generation.json.",
+        "unknown": "Access could not be read. Use Test to check the model directly."
+      }
+    },
     "automaticOption": "Automatic — {{model}}",
     "groupOther": "Other models",
     "groupRecommended": "Recommended",
@@ -62,6 +87,7 @@
       "latency": "{{ms}} ms",
       "tokensPerMinute": "{{count, number}} tokens/min",
       "quotaUnknown": "Quota unknown",
+      "quotaStale": "Last stored reading: a fresh one is being read from Service Quotas",
       "all": "Test all models",
       "allTitle": "Model access and capacity",
       "allIntro": "Sends one short request to each model in turn and shows its tokens-per-minute quota for this account and region.",
@@ -146,7 +172,6 @@
   "logs": {
     "clear": "Clear",
     "configureFirst": "Configure the API endpoint in the General tab to view logs.",
-    "daysAgo": "{{count, number}}d ago",
     "daysAgo_one": "{{count, number}}d ago",
     "daysAgo_other": "{{count, number}}d ago",
     "errorLabel": "Error:",
@@ -155,10 +180,8 @@
     "errorsLabel": "Errors:",
     "failures_one": "{{count, number}} failure",
     "failures_other": "{{count, number}} failures",
-    "hoursAgo": "{{count, number}}h ago",
     "hoursAgo_one": "{{count, number}}h ago",
     "hoursAgo_other": "{{count, number}}h ago",
-    "items": "{{count, number}} items",
     "items_one": "{{count, number}} item",
     "items_other": "{{count, number}} items",
     "justNow": "just now",
@@ -168,26 +191,21 @@
     "loadingRuns": "Loading runs...",
     "loadingSummary": "Loading summary...",
     "messageId": "Message ID:",
-    "minutesAgo": "{{count, number}}m ago",
     "minutesAgo_one": "{{count, number}}m ago",
     "minutesAgo_other": "{{count, number}}m ago",
-    "moreEntries": "+{{count, number}} more entries",
     "moreEntries_one": "+{{count, number}} more entry",
     "moreEntries_other": "+{{count, number}} more entries",
     "noProcessingErrors": "No processing errors in this period",
     "noRunsInPeriod": "No runs in this period",
     "noScrapersConfigured": "No data sources that run yet. Add one on the Data sources page.",
     "noValidationFailures": "No validation failures in this period",
-    "pages": "{{count, number}} pages",
     "pages_one": "{{count, number}} page",
     "pages_other": "{{count, number}} pages",
     "processingErrors": "Processing Errors",
     "recordKeys": "Fields present:",
-    "textLength": "Text length: {{count, number}} characters",
     "textLength_one": "Text length: {{count, number}} character",
     "textLength_other": "Text length: {{count, number}} characters",
     "refresh": "Refresh",
-    "runErrors": "{{count, number}} errors",
     "runErrors_one": "{{count, number}} error",
     "runErrors_other": "{{count, number}} errors",
     "scraperRuns": "Scraper Runs",
@@ -230,7 +248,81 @@
       "ios": "iPhone apps",
       "android": "Android apps"
     },
-    "noRunsYet": "No runs yet"
+    "noRunsYet": "No runs yet",
+    "system": {
+      "tab": "System errors",
+      "levelLabel": "Log level",
+      "levelError": "Errors",
+      "levelWarning": "Errors and warnings",
+      "searchingStart": "Searching logs…",
+      "searching_one": "Searching logs of {{count, number}} function…",
+      "searching_other": "Searching logs of {{count, number}} functions…",
+      "searched_one": "Searched the logs of {{count, number}} function",
+      "searched_other": "Searched the logs of {{count, number}} functions",
+      "empty": "No errors in this period",
+      "failed": "The log search failed. Try again.",
+      "loadFailed": "System logs could not be loaded.",
+      "truncated": "Showing the newest {{rows, number}} log lines",
+      "download": "Download",
+      "downloadTitle": "Download these errors as a JSON file to share for analysis",
+      "adminOnly": "System errors are visible to administrators only.",
+      "times": "×{{n, number}}",
+      "occurrences_one": "{{count, number}} occurrence",
+      "occurrences_other": "{{count, number}} occurrences",
+      "firstSeen": "First seen",
+      "lastSeen": "Last seen",
+      "requestId": "Request ID",
+      "sourceTitle": "Where these lines come from",
+      "sourceApi": "API",
+      "sourceWorkflow": "Workflow",
+      "request": {
+        "show": "Show the whole request",
+        "loading": "Reading every line of this request…",
+        "loadFailed": "The request’s lines could not be loaded.",
+        "failed": "The search for this request failed. Try again.",
+        "retry": "Try again",
+        "empty": "No lines found for this request (its logs may have expired).",
+        "truncated": "Showing the first {{lines, number}} lines",
+        "linesLabel": "Log lines of this request",
+        "title_one": "{{count, number}} line of this request",
+        "title_other": "{{count, number}} lines of this request"
+      },
+      "queues": {
+        "title": "Failure queues",
+        "loading": "Checking the failure queues…",
+        "loadFailed": "The failure queues could not be read.",
+        "oldest": "oldest {{age}}",
+        "noSample": "No message could be read for a sample.",
+        "unreadable": "Could not be read",
+        "peekNote": "These messages failed every retry and are not retried again. Reading a sample does not remove it.",
+        "empty_one": "The failure queue is empty",
+        "empty_other": "All {{count, number}} failure queues are empty",
+        "messages_one": "{{count, number}} message",
+        "messages_other": "{{count, number}} messages"
+      },
+      "environment": {
+        "title": "Environment",
+        "loading": "Loading the environment…",
+        "loadFailed": "The environment could not be loaded.",
+        "on": "On",
+        "off": "Off",
+        "none": "None",
+        "fields": {
+          "version": "Version",
+          "region": "Region",
+          "account_suffix": "Account (last 4 digits)",
+          "deployment_prefix": "Deployment prefix",
+          "enabled_sources": "Enabled sources",
+          "web_search": "Web search",
+          "inference_scope": "Inference scope",
+          "image_model": "Image model",
+          "model_overrides": "Model choices",
+          "alerting": "Alerting",
+        "open_circuits": "Paused sources (circuit breaker)",
+        "log_coverage": "Logs searched"
+        }
+      }
+    }
   },
   "saveChanges": "Save Changes",
   "saved": "Saved!",
@@ -251,8 +343,6 @@
     "saveToSecrets": "Save to Secrets Manager",
     "selectOption": "Select...",
     "show": "Show",
-    "test": "Test",
-    "unknownResult": "Unknown result",
     "webhooks": "Webhooks",
     "circuit": {
       "paused": "Paused after repeated failures",
@@ -287,7 +377,8 @@
     "policies": "Source policies",
     "users": "Users",
     "logs": "Logs",
-    "version": "Version"
+    "version": "Version",
+    "boards": "Boards"
   },
   "title": "Administration",
   "users": {
@@ -312,6 +403,7 @@
     "retry": "Retry",
     "loading": "Loading…",
     "saveFailed": "Could not save. Try again.",
+    "discardChanges": "Discard changes",
     "write": "Write",
     "preview": "Preview",
     "nothingToPreview": "Nothing to preview yet.",
@@ -361,14 +453,26 @@
     "removeKpi": "Remove KPI",
     "kpiName": "KPI name",
     "kpiTarget": "Target",
-    "kpiUnit": "Unit"
+    "kpiUnit": "Unit",
+    "fieldRequired": "Required: fill this in, or remove the row",
+    "fieldTooLong": "At most {{max, number}} characters",
+    "fixFields": "Not saved: fix the highlighted fields."
   },
   "designSystem": {
     "title": "Design system",
     "description": "Your brand tokens, guidelines and references. Prototypes and PR/FAQ visuals are built with them so they match your look.",
     "logo": "Logo",
     "logoAlt": "Company logo",
+    "logoInDraft": "New logo from a reference — it becomes the company logo when you save the design system.",
     "uploadLogo": "Upload logo",
+    "logoHint": "PNG, JPEG, WebP or SVG (SVG is converted to PNG in your browser).",
+    "svg": {
+      "tooLarge": "{{name}} is larger than 1 MB. An SVG logo can be up to 1 MB.",
+      "unreadable": "{{name}} could not be read as an SVG image. Export it as PNG and upload that.",
+      "timeout": "{{name}} took too long to convert. Export it as PNG and upload that.",
+      "notConverted": "This SVG could not be converted in your browser. Export it as PNG and upload that.",
+      "resultTooLarge": "The converted PNG is larger than 5 MB. Export a smaller PNG and upload that."
+    },
     "colors": "Colors",
     "typography": "Typography",
     "spacing": "Spacing",
@@ -407,12 +511,22 @@
     "archive": "Archive",
     "archiveTitle": "Archive this reference?",
     "archiveMessage": "\"{{title}}\" stops being used for new prototypes. The file is kept.",
+    "archiveMessageLink": "\"{{title}}\" stops being used for new prototypes. The link and what was read from it are kept.",
     "referenceKind": "Reference type",
     "referenceTitle": "Title",
     "referenceUrl": "Link (https://…)",
+    "urlProblems": {
+      "tooLong": "The address is longer than 2,048 characters.",
+      "notUrl": "This is not a web address. Paste the full link, starting with https://",
+      "notHttps": "Only https:// addresses can be read; {{scheme}}:// addresses are refused.",
+      "noHost": "The address needs a site name after https://, for example https://example.com",
+      "credentials": "Remove the user name or password from the address.",
+      "localhost": "Addresses on this computer cannot be read; use a public site."
+    },
     "referenceFile": "File",
     "addReference": "Add reference",
     "addReferenceFailed": "Could not add the reference. Try again.",
+    "duplicateReference": "This address is already a reference: \"{{title}}\".",
     "referenceTitleOptional": "Title (optional)",
     "kindHints": {
       "website": "We open the page in a secure browser and read its colors, fonts and logo.",
@@ -443,11 +557,10 @@
       "variantsCount_other": "{{count, number}} variants",
       "onlyGuidelines": "Guidelines only",
       "logoCandidate": "Logo found on this reference",
+      "logoRendered": "Rendered from the site's SVG logo",
       "apply": "Use as design system",
       "useLogo": "Use this logo",
-      "logoFailed": "Could not use this logo. Try again.",
-      "replaceLogoTitle": "Replace the current logo?",
-      "replaceLogoMessage": "The logo from \"{{title}}\" replaces your current logo."
+      "logoFailed": "Could not use this logo. Try again."
     },
     "applied": {
       "title": "From {{source}} — review the changes below, then Save.",
@@ -519,6 +632,7 @@
         "padding": "Padding",
         "gap": "Gap",
         "height": "Height",
+        "width": "Width",
         "font_family": "Font",
         "font_size": "Font size",
         "font_weight": "Font weight",
@@ -528,6 +642,7 @@
         "outline": "Focus outline"
       },
       "hoverField": "{{field}} on hover",
+      "focusField": "{{field}} on focus",
       "hoverFocus": "Hover and focus",
       "useToken": "Use token…",
       "useTokenFor": "Use a color token for {{field}}",
@@ -545,6 +660,7 @@
         "padding": "Use one to four lengths, such as 8px 16px.",
         "gap": "Use a length such as 8px.",
         "height": "Use a length such as 36px.",
+        "width": "Use a length such as 36px.",
         "font_family": "Use font names separated by commas.",
         "font_size": "Use a length such as 14px.",
         "font_weight": "Use 100–900, normal or bold.",
@@ -652,5 +768,177 @@
     "changelogTitle": "Release notes",
     "changelogDescription": "Changes per release, newest first, from CHANGELOG.md.",
     "showOlder": "Show older releases ({{count, number}} more)"
+  },
+  "pluginCopy": {
+    "appReviewsAndroid": {
+      "name": "Android App Reviews",
+      "description": "Collect customer reviews from the Google Play Store"
+    },
+    "appReviewsIos": {
+      "name": "iOS App Reviews",
+      "description": "Collect customer reviews from the Apple App Store"
+    },
+    "githubIssues": {
+      "name": "GitHub Issues",
+      "description": "Ingest issues and comments from GitHub repositories, with software version, labels and error signatures"
+    },
+    "s3Import": {
+      "name": "S3 Bulk Import",
+      "description": "Import feedback from an S3 bucket (CSV, JSON, JSONL)"
+    },
+    "syntheticReviews": {
+      "name": "Synthetic Data Review Generator",
+      "description": "Generate realistic synthetic customer reviews with AI (Amazon Bedrock) for demos, testing and modeling. Ingested through the normal pipeline and tagged as synthetic data."
+    },
+    "webReviews": {
+      "name": "Web Reviews",
+      "description": "Read customer reviews from public review pages (Trustpilot, TripAdvisor, forums) with a managed browser. Each page you add is its own source."
+    },
+    "webscraper": {
+      "name": "Web Scraper",
+      "description": "Configurable scraper for extracting feedback from websites"
+    }
+  },
+  "boards": {
+    "loading": "Loading…",
+    "saved": "Saved.",
+    "cancel": "Cancel",
+    "domains": {
+      "title": "Company domains",
+      "description": "The email domains that belong to the company. People at them may sign in to every board open to the company, and they count as colleagues when participants are added.",
+      "label": "Company email domains",
+      "hint": "Press Enter after each domain. With no domain, nobody can sign in to a company board.",
+      "save": "Save domains",
+      "loadFailed": "The company domains could not be loaded."
+    },
+    "participantCard": {
+      "domains": "Company domains: {{list}}.",
+      "noDomains": "No company domains yet.",
+      "editInBoards": "Edit them in Boards"
+    },
+    "list": {
+      "title": "Feedback boards",
+      "description": "Each board collects requests from one team or audience and has its own share link, fields and statuses.",
+      "create": "New board",
+      "empty": "No boards yet. Create one from a template.",
+      "loadFailed": "The boards could not be loaded.",
+      "archived": "Archived",
+      "edit": "Edit",
+      "editLabel": "Edit {{name}}",
+      "requests_one": "{{count, number}} request",
+      "requests_other": "{{count, number}} requests"
+    },
+    "templates": {
+      "sales": "Sales feature requests",
+      "salesHint": "Customer, deal and revenue impact on every request and +1.",
+      "service": "Customer service issues",
+      "serviceHint": "Issue type, severity, reference and steps; a +1 means also affected.",
+      "beta": "Beta feedback",
+      "betaHint": "Product area, outcome, rating and a link for testers.",
+      "blank": "Blank",
+      "blankHint": "Title and description only; add fields later."
+    },
+    "create": {
+      "title": "New board",
+      "hint": "Pick a template to start from. Every field and status can be changed afterwards.",
+      "template": "Template",
+      "slugPreview": "Share link: /board/{{slug}}",
+      "slugLater": "The share link is made from the name when the board is created.",
+      "submit": "Create board"
+    },
+    "editor": {
+      "title": "Board",
+      "back": "Back to boards",
+      "name": "Name",
+      "slug": "Link name",
+      "slugHint": "Lower-case letters, digits and single dashes, at most 60 characters.",
+      "shareLink": "Share link:",
+      "shareAfterSave": "(after saving)",
+      "copyLink": "Copy link",
+      "copied": "Copied.",
+      "description": "Description",
+      "save": "Save board",
+      "unsaved": "Unsaved changes."
+    },
+    "audience": {
+      "title": "Who can sign in and post",
+      "company": "Company",
+      "companyHint": "People at the company domains.",
+      "list": "Specific people",
+      "listHint": "Allowed domains and email addresses.",
+      "anyone": "Anyone",
+      "anyoneHint": "Any email address that confirms itself.",
+      "companyDomains": "Uses the company domains: {{list}}.",
+      "noCompanyDomains": "No company domains are set yet, so nobody can sign in to this board.",
+      "domains": "Allowed domains",
+      "emails": "Allowed email addresses",
+      "emailsCount_one": "{{count, number}} address (at most {{max, number}}).",
+      "emailsCount_other": "{{count, number}} addresses (at most {{max, number}}).",
+      "emailsInvalid": "Not valid email addresses: {{list}}",
+      "anyoneWarning": "Any email address can sign in and post on this board. There is no moderation: each person is limited to 20 requests and 100 +1s a day."
+    },
+    "fieldsEditor": {
+      "title": "Fields",
+      "hint": "Title and description are always asked. Switch on the fields this board needs.",
+      "requestGroup": "On a new request",
+      "supportGroup": "On a +1",
+      "required": "Required",
+      "requiredLabel": "{{field}} required"
+    },
+    "fields": {
+      "customer": "Customer",
+      "deal": "Deal",
+      "impact": "Revenue impact",
+      "amount_usd": "Amount (USD)",
+      "contact_email": "Contact email",
+      "kind": "Issue type",
+      "severity": "Severity",
+      "reference": "Booking or order reference",
+      "steps": "Steps to reproduce",
+      "affected_count": "People affected",
+      "area": "Product area",
+      "outcome": "Outcome",
+      "rating": "Rating",
+      "link": "Link",
+      "note": "Note"
+    },
+    "statuses": {
+      "title": "Statuses",
+      "hint": "New requests start in the first status. Up to {{max, number}} statuses.",
+      "initial": "Initial",
+      "labelFor": "Status {{position, number}} name",
+      "moveUp": "Move {{status}} up",
+      "moveDown": "Move {{status}} down",
+      "remove": "Remove {{status}}",
+      "newLabel": "New status",
+      "add": "Add status",
+      "full": "A board has at most {{max, number}} statuses."
+    },
+    "lifecycle": {
+      "title": "Archive or delete",
+      "hint_one": "This board has {{count, number}} request. Archiving hides it from everyone but admins and keeps its requests; deleting removes the board and its requests.",
+      "hint_other": "This board has {{count, number}} requests. Archiving hides it from everyone but admins and keeps its requests; deleting removes the board and its requests.",
+      "saveFirst": "Save or discard your changes first.",
+      "archive": "Archive",
+      "restore": "Restore",
+      "delete": "Delete board"
+    },
+    "problems": {
+      "nameRequired": "The board needs a name.",
+      "slugInvalid": "The link name may use only lower-case letters, digits and single dashes.",
+      "statusesEmpty": "The board needs at least one status.",
+      "statusLabelRequired": "Every status needs a name.",
+      "emailsInvalid": "Fix or remove the invalid email addresses.",
+      "emailsTooMany": "At most 500 email addresses.",
+      "listEmpty": "Add at least one allowed domain or email address."
+    },
+    "errors": {
+      "slugTaken": "Another board already uses this link name. Choose another one.",
+      "statusInUse": "A status you removed is still used by requests on this board. Move those requests to another status first, or keep the status.",
+      "forbidden": "Only administrators can change boards.",
+      "notFound": "This board no longer exists.",
+      "conflict": "The board changed meanwhile. Reload it and try again.",
+      "generic": "Something went wrong. Try again."
+    }
   }
 }

@@ -7,6 +7,8 @@
  * the components that consume them.
  */
 import { z } from 'zod'
+import { parseEach } from './lenientFields'
+import { UserRefSchema } from './userRefSchema'
 import { asRecord } from './wireRecord'
 import type {
   ProjectDocument,
@@ -187,44 +189,23 @@ const ProjectAccessSchema = z.object({
   can_manage: z.boolean().catch(false),
 }).catch(() => ({ ...DEFAULT_PROJECT_ACCESS }))
 
-const ProjectOwnerSchema = z.object({
-  sub: z.string().min(1),
-  username: z.string().catch(''),
-  email: z.string().catch(''),
-}).nullable().catch(null)
+const ProjectOwnerSchema = UserRefSchema.nullable().catch(null)
 
-const ProjectMemberSchema = z.object({
-  sub: z.string().min(1),
+const ProjectMemberSchema = UserRefSchema.extend({
   role: z.enum(['editor', 'viewer']).catch('viewer'),
-  username: z.string().catch(''),
-  email: z.string().catch(''),
   added_by: optionalString,
   added_at: optionalString,
 })
 
-const MemberCandidateSchema = z.object({
-  sub: z.string().min(1),
-  username: z.string().catch(''),
-  email: z.string().catch(''),
-  name: optionalString,
-})
+const MemberCandidateSchema = UserRefSchema.extend({ name: optionalString })
 
 const VisibilitySchema = z.enum(['public', 'private']).catch('public')
-
-/** Keep only the rows `schema` accepts; a non-array becomes []. */
-function lenientList<T>(schema: z.ZodType<T>, raw: unknown): T[] {
-  if (!Array.isArray(raw)) return []
-  return raw.flatMap((item) => {
-    const parsed = schema.safeParse(item)
-    return parsed.success ? [parsed.data] : []
-  })
-}
 
 const optionalMembersSchema = z
   .array(z.unknown())
   .optional()
   .catch(undefined)
-  .transform((items) => (items === undefined ? undefined : lenientList(ProjectMemberSchema, items)))
+  .transform((items) => (items === undefined ? undefined : parseEach(ProjectMemberSchema, items)))
 
 const ProjectSchema = z.looseObject({
   visibility: VisibilitySchema,
@@ -323,7 +304,7 @@ export function normalizeDocumentVersions(raw: unknown): DocumentVersion[] {
 /** Normalize GET /projects, dropping only rows without a usable project_id. */
 export function normalizeProjectList(raw: unknown): { projects: Project[] } {
   const record = asRecord(raw)
-  const projects = lenientList(ProjectSchema, record?.projects)
+  const projects = parseEach(ProjectSchema, record?.projects)
   return { ...record, projects }
 }
 
@@ -339,7 +320,7 @@ export function normalizeProjectMembers(raw: unknown): ProjectMembersResponse {
   return {
     visibility: VisibilitySchema.parse(record.visibility),
     owner: ProjectOwnerSchema.parse(record.owner),
-    members: lenientList(ProjectMemberSchema, record.members),
+    members: parseEach(ProjectMemberSchema, record.members),
     access: ProjectAccessSchema.parse(record.access),
   }
 }
@@ -352,5 +333,5 @@ export function normalizeProjectMember(raw: unknown): ProjectMember | null {
 
 /** Normalize GET /projects/{id}/members/candidates. */
 export function normalizeMemberCandidates(raw: unknown): ProjectMemberCandidate[] {
-  return lenientList(MemberCandidateSchema, asRecord(raw)?.users)
+  return parseEach(MemberCandidateSchema, asRecord(raw)?.users)
 }

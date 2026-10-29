@@ -164,3 +164,13 @@ def test_chunking_is_bounded_and_deterministic():
     assert ''.join(chunks).count('Paragraph') == 60
     giant = policy.chunk_text('y' * 12_000, size=5000)
     assert [len(c) for c in giant] == [5000, 5000, 2000]
+
+
+def test_a_thirteen_digit_timestamp_in_a_memory_survives_but_a_card_number_is_redacted():
+    kept = policy.clean_statement('The export job 1729856000008 failed for the EU customers again')
+    assert kept.statement is not None
+    assert '1729856000008' in kept.statement
+    redacted = policy.clean_statement('Customer pasted card 4111111111111111 into the support chat form')
+    assert redacted.statement is not None
+    assert '4111111111111111' not in redacted.statement
+    assert '[redacted]' in redacted.statement

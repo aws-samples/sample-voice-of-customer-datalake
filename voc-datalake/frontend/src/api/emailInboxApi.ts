@@ -8,6 +8,7 @@
  *
  * @module api/emailInboxApi
  */
+import { put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { lenientText, optionalText } from './schemaList'
@@ -89,6 +90,6 @@ const DIMENSION_PATH = '/settings/email-inbox/feedback-type-dimension'
 export const emailInboxApi = {
   get: async (): Promise<EmailInboxStatus> => normalizeEmailInbox(await fetchApi<unknown>(PATH)),
   saveCaps: async (caps: EmailInboxCaps): Promise<EmailInboxStatus> =>
-    normalizeEmailInbox(await fetchApi<unknown>(PATH, { method: 'PUT', body: JSON.stringify(caps) })),
+    normalizeEmailInbox(await fetchApi<unknown>(PATH, put(caps))),
   createFeedbackTypeDimension: () => fetchApi<unknown>(DIMENSION_PATH, { method: 'POST', body: '{}' }),
 }

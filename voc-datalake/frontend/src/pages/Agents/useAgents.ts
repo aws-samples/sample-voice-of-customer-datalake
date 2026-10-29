@@ -18,9 +18,21 @@ function useEnabled(): boolean {
   return useConfigStore((s) => s.config.apiEndpoint) !== ''
 }
 
+/** The list refreshes this often while an agent's last run is still queued or running. */
+export const LIST_POLL_MS = 15_000
+
+/** The agents list; polled while a card shows a live run, so its status badge moves on its own. */
 export function useAgentList() {
   const enabled = useEnabled()
-  return useQuery({ queryKey: agentsKeys.list(), queryFn: agentsApi.list, enabled })
+  return useQuery({
+    queryKey: agentsKeys.list(),
+    queryFn: agentsApi.list,
+    enabled,
+    refetchInterval: (query) => {
+      const live = query.state.data?.some(({ stats }) => stats.last_run_status !== null && isActiveRun({ status: stats.last_run_status }))
+      return live === true ? LIST_POLL_MS : false
+    },
+  })
 }
 
 export function useAgent(agentId: string) {

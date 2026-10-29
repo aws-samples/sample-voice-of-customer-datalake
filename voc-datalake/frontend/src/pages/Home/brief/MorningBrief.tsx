@@ -1,17 +1,20 @@
 /**
  * @fileoverview The brief's body on Home: metric tiles, the cards, "Things to do".
- * Cards the reader dismissed stay hidden for the day; the others are marked `seen`
+ * Cards the reader dismissed stay hidden for the day — with an Undo notice right after
+ * (`UndoNotice`) that puts the card back in its previous state; the others are marked `seen`
  * once they are on screen. An act button opens the assistant prefilled (never sent)
  * and marks the card `acted`. While Home shows live agent-decision cards, the
  * brief's own "agent runs waiting" row is left out of "Things to do" (no duplicate).
  * @module pages/Home/brief/MorningBrief
  */
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { openAssistant } from '../../../assistant/store/openAssistant'
 import MetricTiles from './MetricTiles'
 import { BriefCardList, ThingsToDo } from './BriefSections'
 import { isTodo, unseenIds, visibleCards } from './briefCards'
-import type { BriefCard } from '../../../api/briefingApi'
+import UndoNotice from './UndoNotice'
+import type { UndoTarget } from './UndoNotice'
+import type { BriefCard, CardState } from '../../../api/briefingApi'
 import type { BriefResult } from './useBrief'
 
 function useMarkSeen({ brief, setCardStates }: BriefResult): void {
@@ -37,13 +40,23 @@ export default function MorningBrief({ result, liveAgentDecisions = false }: Rea
     openAssistant({ prompt, context: { feedbackIds: card.feedback_ids } })
     setCardStates({ [card.id]: 'acted' })
   }
-  const dismiss = (card: BriefCard) => { setCardStates({ [card.id]: 'dismissed' }) }
+  const [undo, setUndo] = useState<(UndoTarget & { cardId: string; previous: CardState }) | null>(null)
+  const closeUndo = useCallback(() => setUndo(null), [])
+  const dismiss = (card: BriefCard) => {
+    setUndo({ key: `${card.id}:${String(Date.now())}`, title: card.title, cardId: card.id, previous: brief.card_state[card.id] ?? 'seen' })
+    setCardStates({ [card.id]: 'dismissed' })
+  }
+  const undoDismiss = () => {
+    if (undo !== null) setCardStates({ [undo.cardId]: undo.previous })
+    setUndo(null)
+  }
   return (
     <>
       <MetricTiles />
       <BriefCardList cards={shown.filter((card) => !isTodo(card))} onAct={act} onDismiss={dismiss} />
       <ThingsToDo cards={shown.filter((card) => isTodo(card) && !(liveAgentDecisions && card.kind === AGENT_RUNS_TODO))}
         onDismiss={dismiss} />
+      <UndoNotice target={undo} onUndo={undoDismiss} onClose={closeUndo} />
     </>
   )
 }

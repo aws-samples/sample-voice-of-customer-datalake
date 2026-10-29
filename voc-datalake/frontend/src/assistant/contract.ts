@@ -28,6 +28,8 @@ export const PAGE_KINDS = [
   'agent',
   'company',
   'radar',
+  /** /participants: participant lists (docs/participants.md); add many people through one approval card. */
+  'participants',
   'other',
 ] as const
 export type PageKind = (typeof PAGE_KINDS)[number]
@@ -43,6 +45,7 @@ export const TOOL_PACKS = [
   'memory',
   'agents',
   'company',
+  'participants',
 ] as const
 export type ToolPack = (typeof TOOL_PACKS)[number]
 
@@ -65,6 +68,7 @@ export const PAGE_TOOL_PACKS: Record<PageKind, readonly ToolPack[]> = {
   agent: ['core', 'agents', 'memory'],
   company: ['core', 'company'],
   radar: ['core', 'insights', 'scrapers'],
+  participants: ['core', 'participants'],
   other: ['core', 'insights'],
 }
 
@@ -85,6 +89,7 @@ export const SERVER_TOOLS = {
   memory: ['get_memory_review'],
   agents: ['list_agents', 'get_agent', 'get_workflow', 'list_agent_runs', 'get_agent_run', 'validate_workflow'],
   company: ['get_company_context', 'get_my_context', 'get_design_system'],
+  participants: ['list_participant_lists'],
 } as const satisfies Record<ToolPack, readonly string[]>
 
 export const CLIENT_TOOLS = {
@@ -121,6 +126,7 @@ export const CLIENT_TOOLS = {
     'duplicate_workflow',
   ],
   company: ['update_company_context', 'update_my_context', 'update_design_system'],
+  participants: ['create_participant_list', 'add_participants'],
 } as const satisfies Record<ToolPack, readonly string[]>
 
 export type ServerToolName = (typeof SERVER_TOOLS)[ToolPack][number]
@@ -195,10 +201,11 @@ export const CUSTOM_EVENTS = {
   navigation: 'assistant.navigation',
   session: 'assistant.session',
   plan: 'assistant.plan',
+  stopped: 'assistant.stopped',
 } as const
 
 /** Stored run status of a session, written by the stream Lambda while a run streams. */
-export const SESSION_RUN_STATUSES = ['running', 'finished', 'failed', 'interrupted'] as const
+export const SESSION_RUN_STATUSES = ['running', 'finished', 'failed', 'interrupted', 'stopped'] as const
 
 /**
  * A stored `running` session older than this (seconds since its last write) is
@@ -211,6 +218,18 @@ export const MAX_ID_LENGTH = 128
 
 export const ALL_TIME_DAYS = 0
 
+/**
+ * The filters a page shows, from its URL query, so the assistant sees what is on screen (5.35):
+ * Categories (`q` … `tag`, pages/Categories/useCategoryFilters.ts) and Problem Analysis
+ * (`source`, `category`, `subcategory`, `urgent`, `resolved`, `similarity`). The time range is
+ * not here: it travels as `forwardedProps.days` / `dateBasis` on every page.
+ */
+export const PAGE_FILTER_KEYS = [
+  'q', 'category', 'subcategory', 'source', 'sentiment', 'rating', 'rating_dir', 'urgent', 'channel', 'dims', 'tag',
+  'resolved', 'similarity',
+] as const
+export const MAX_PAGE_FILTER_CHARS = 200
+
 export const pageContextSchema = z.object({
   kind: z.enum(PAGE_KINDS),
   path: z.string().max(200),
@@ -219,11 +238,31 @@ export const pageContextSchema = z.object({
   agentId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
   tab: z.string().max(64).optional(),
   title: z.string().max(120).optional(),
+  filters: z.partialRecord(z.enum(PAGE_FILTER_KEYS), z.string().min(1).max(MAX_PAGE_FILTER_CHARS)).optional(),
 })
 export type PageContext = z.infer<typeof pageContextSchema>
 
+/** `@persona` / `@all` / `#document` on a project page (see the server file and docs/assistant-mentions.md). */
+export const MENTION_LIMITS = { maxPersonas: 6, maxDocuments: 3, maxDocumentVersion: 100_000 } as const
+export const MENTION_ALL_PERSONAS = 'all'
+/** Tool call ids of the server's persona round (one `consult_personas` call per mentioned persona). */
+export const MENTION_TOOL_CALL_PREFIX = 'mention_'
+
+export const mentionsSchema = z.object({
+  personas: z.union([
+    z.literal(MENTION_ALL_PERSONAS),
+    z.array(z.string().min(1).max(MAX_ID_LENGTH)).min(1).max(MENTION_LIMITS.maxPersonas),
+  ]).optional(),
+  documents: z.array(z.object({
+    document_id: z.string().min(1).max(MAX_ID_LENGTH),
+    version: z.number().int().min(1).max(MENTION_LIMITS.maxDocumentVersion).optional(),
+  })).min(1).max(MENTION_LIMITS.maxDocuments).optional(),
+})
+export type Mentions = z.infer<typeof mentionsSchema>
+
 export const forwardedPropsSchema = z.object({
   page: pageContextSchema,
+  mentions: mentionsSchema.optional(),
   days: z.number().int().min(ALL_TIME_DAYS).max(9999).optional(),
   dateBasis: z.enum(['imported', 'review']).optional(),
   responseLanguage: z.string().max(16).optional(),

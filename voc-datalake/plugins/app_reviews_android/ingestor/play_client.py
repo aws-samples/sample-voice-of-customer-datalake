@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 from google_play_scraper import Sort, reviews
 
+from _shared.app_reviews_health import StorefrontFetch, failure_cause
 from _shared.base_ingestor import logger
 
 if TYPE_CHECKING:
@@ -56,7 +57,7 @@ def fetch_reviews_for_country(
     count: int,
     sort_by: str,
     lang: str,
-) -> list[dict]:
+) -> StorefrontFetch:
     """
     Fetch up to `count` reviews for a single app in a single country.
 
@@ -64,8 +65,10 @@ def fetch_reviews_for_country(
     Google Play returns no more reviews. A single reviews() call only returns one
     page (~200), so without this loop large apps were silently truncated.
 
-    Returns list of dicts with keys: reviewId, at, userName, score, content,
-    reviewCreatedVersion, replyContent, repliedAt, thumbsUpCount.
+    `reviews` holds dicts with keys: reviewId, at, userName, score, content,
+    reviewCreatedVersion, replyContent, repliedAt, thumbsUpCount. `failure` is the
+    short cause (exception type / HTTP status) when the locale raised before any
+    review was collected; a partial result is kept and is not a failure.
     """
     sort_order = SORT_MAP.get(sort_by, Sort.NEWEST)
     collected: list[dict] = []
@@ -92,7 +95,7 @@ def fetch_reviews_for_country(
             # No further pages — all available reviews collected.
             if token is None:
                 break
-        return collected[:count]
+        return StorefrontFetch(reviews=collected[:count])
     except Exception as e:
         # Log text is not behaviour; the mutant that rewrites it is equivalent.
         logger.exception(
@@ -100,4 +103,6 @@ def fetch_reviews_for_country(
         )
         # Return whatever we managed to collect before the error rather than
         # dropping a partial-but-useful result.
-        return collected[:count]
+        return StorefrontFetch(
+            reviews=collected[:count], failure=None if collected else failure_cause(e),
+        )

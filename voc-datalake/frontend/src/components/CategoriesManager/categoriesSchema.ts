@@ -18,6 +18,7 @@
  * @module components/CategoriesManager/categoriesSchema
  */
 import { z } from 'zod'
+import { UserRefSchema } from '../../api/userRefSchema'
 import type { Category, CategoryOwner, Subcategory } from './CategoriesManager'
 
 /** Slug of a name for derived ids: lowercase, non-alphanumerics collapsed
@@ -82,20 +83,12 @@ const rawSubcategorySchema = z.looseObject({
 })
 
 /**
- * A product owner. `sub` is the identity the backend grants read access by;
- * `username`/`email` are what the editor shows. An entry without a usable `sub`
- * is dropped: it could not grant anything, and saving it back would fail the
- * route's validation.
+ * Product owners (`UserRefSchema`). An entry without a usable `sub` is dropped: it
+ * could not grant anything, and saving it back would fail the route's validation.
  */
-const ownerSchema = z.object({
-  sub: z.string().trim().min(1),
-  username: z.string().catch(''),
-  email: z.string().catch(''),
-})
-
 const ownersSchema = z.array(z.unknown()).optional().catch(undefined).transform((values) =>
   values?.flatMap((raw) => {
-    const parsed = ownerSchema.safeParse(raw)
+    const parsed = UserRefSchema.safeParse(raw)
     return parsed.success ? [parsed.data] : []
   }),
 )
@@ -182,7 +175,7 @@ export function normalizeCategories(rawCategories: readonly unknown[]): Category
  */
 export function normalizeOwnerCandidates(users: readonly unknown[]): CategoryOwner[] {
   return users.flatMap((raw) => {
-    const parsed = ownerSchema.extend({ enabled: z.boolean().catch(true) }).safeParse(raw)
+    const parsed = UserRefSchema.extend({ enabled: z.boolean().catch(true) }).safeParse(raw)
     if (!parsed.success || !parsed.data.enabled) return []
     const { sub, username, email } = parsed.data
     return [{ sub, username, email }]

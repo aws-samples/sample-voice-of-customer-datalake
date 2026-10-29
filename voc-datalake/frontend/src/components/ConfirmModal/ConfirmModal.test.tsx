@@ -11,6 +11,7 @@ describe('ConfirmModal', () => {
     isOpen: true,
     title: 'Delete Item',
     message: 'Are you sure you want to delete this item?',
+    confirmLabel: 'Delete',
     onConfirm: vi.fn(),
     onCancel: vi.fn(),
   }
@@ -42,7 +43,7 @@ describe('ConfirmModal', () => {
       expect(screen.getByText('Are you sure you want to delete this item?')).toBeInTheDocument()
     })
 
-    it('displays default button labels', () => {
+    it('displays the confirm label and the default cancel label', () => {
       render(<ConfirmModal {...defaultProps} />)
       expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
@@ -161,6 +162,14 @@ describe('ConfirmModal', () => {
       await user.click(screen.getByTestId('modal-overlay'))
 
       expect(onCancel).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('confirmDisabled', () => {
+    it('keeps only the confirm button off until its condition holds', () => {
+      render(<ConfirmModal {...defaultProps} confirmDisabled />)
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
     })
   })
 })

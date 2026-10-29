@@ -8,18 +8,24 @@ import { api, getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { normalizeBuckets, normalizeS3Listing } from './dataExplorerSchema'
 import { failedReads } from '../../utils/failedReads'
-import { useDebouncedValue } from '../../components/ProjectSharingModal/useDebouncedValue'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import type { DateRangeParams } from '../../api/client'
 import type { FeedbackItem } from '../../api/types'
+import { metricsKeys } from '../../api/queryKeys'
+import { FEEDBACK_SEARCH_MIN_CHARS } from '../../api/feedbackSearch'
 
 type ViewMode = 's3-raw' | 'dynamodb-processed'
 
-/** Same minimum as the route (`SEARCH_QUERY_MIN_LENGTH`) and the Categories search box. */
-const SEARCH_MIN_CHARS = 2
 const SEARCH_DEBOUNCE_MS = 300
 const PROCESSED_PAGE_LIMIT = 100
 
 /** The processed-feedback list as the view shows it: the rows, and the count they are part of. */
+/** The page's own reads; the mutations invalidate them by root (no arguments). */
+export const dataExplorerKeys = {
+  s3: (...params: readonly unknown[]) => ['data-explorer-s3', ...params] as const,
+  feedback: (...params: readonly unknown[]) => ['data-explorer-feedback', ...params] as const,
+}
+
 export interface ProcessedFeedbackData {
   items: FeedbackItem[]
   /** Matching items in the window (the list's candidate window, or every search match). */
@@ -94,7 +100,7 @@ export function useDataExplorerQueries(
 ) {
   const { timeRange, customDays, dateBasis, config } = useConfigStore()
   const debounced = useDebouncedValue(searchQuery.trim(), SEARCH_DEBOUNCE_MS)
-  const searchText = debounced.length >= SEARCH_MIN_CHARS ? debounced : ''
+  const searchText = debounced.length >= FEEDBACK_SEARCH_MIN_CHARS ? debounced : ''
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const isConfigured = !!config.apiEndpoint
 
@@ -106,7 +112,7 @@ export function useDataExplorerQueries(
   })
 
   const s3Query = useQuery({
-    queryKey: ['data-explorer-s3', selectedBucket, s3Path.join('/')],
+    queryKey: dataExplorerKeys.s3(selectedBucket, s3Path.join('/')),
     queryFn: () => api.getDataExplorerS3(s3Path.join('/'), selectedBucket),
     select: normalizeS3Listing,
     enabled: isConfigured && viewMode === 's3-raw',
@@ -114,7 +120,7 @@ export function useDataExplorerQueries(
 
   const isProcessed = viewMode === 'dynamodb-processed'
   const feedbackQuery = useInfiniteQuery({
-    queryKey: ['data-explorer-feedback', dateParams, sourceFilter, searchText],
+    queryKey: dataExplorerKeys.feedback(dateParams, sourceFilter, searchText),
     queryFn: ({ pageParam }) => readProcessedPage(dateParams, sourceFilter || undefined, searchText, pageParam),
     initialPageParam: FIRST_PAGE,
     getNextPageParam: (last) => last.next,
@@ -124,7 +130,7 @@ export function useDataExplorerQueries(
   // The source filter only exists on the processed tab: the S3 tab is not
   // scoped by the time range, so it must not refetch on a range change.
   const sourcesQuery = useQuery({
-    queryKey: ['sources', dateParams],
+    queryKey: metricsKeys.sources(dateParams),
     queryFn: () => api.getSources(dateParams),
     enabled: isConfigured && isProcessed,
   })

@@ -10,7 +10,7 @@ description: Bedrock AI model standards, Claude model resolution, LLM inference,
 
 Model ids are NOT hardcoded at call sites. Every AI surface resolves its
 model through `lambda/shared/model_config.py` (TS mirror for the streaming
-Lambda: `lambda/stream/src/lib/model-override.ts`):
+Lambda: `lambda/stream/src/bedrock/model-override.ts`):
 
 ```
 explicit arg > per-surface admin override > legacy global model_id

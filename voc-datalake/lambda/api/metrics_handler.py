@@ -26,6 +26,7 @@ from shared.api import (
     create_api_resolver,
     effective_window_days,
     get_configured_categories,
+    requested_window_cutoff,
     validate_date_basis,
     validate_days,
     validate_int,
@@ -48,6 +49,7 @@ from shared.feedback import (
 )
 from shared.feedback_cursor import decode_key_cursor, decode_offset_cursor, encode_key_cursor, encode_offset_cursor
 from shared.feedback_similarity import rank_similar
+from shared.feedback_types import FEEDBACK_TYPE_KEY
 from shared.github_metrics import GITHUB_SOURCE, github_breakdown, issue_attributes, matches_issue_filters
 from shared.indexes import (
     AGGREGATES_BY_METRIC_TYPE_INDEX,
@@ -58,9 +60,20 @@ from shared.indexes import (
 )
 from shared.item_filters import NO_ITEM_FILTERS, ItemFilters, parse_item_filters
 from shared.logging import logger, tracer
+from shared.metric_keys import (
+    CATEGORY_PREFIX,
+    CHANNEL_PREFIX,
+    DAILY_TOTAL_PK,
+    DIMENSION_SENTIMENT_METRIC_TYPE,
+    DIMENSION_SENTIMENT_PREFIX,
+    SENTIMENT_AVG_PK,
+    SENTIMENT_PREFIX,
+    SOURCE_PREFIX,
+    TAG_PREFIX,
+)
 from shared.problem_aggregation import PROBLEM_READ, SlimRead, aggregate_problems, parse_problem_query
 from shared.response_cache import memoized_route, request_versions
-from shared.time_budget import WalkBudget, budgeted_days
+from shared.time_budget import ROW_CAP_PARTIAL_REASON, WalkBudget, budgeted_days
 from shared.urgent_pages import URGENCY_KEY_FIELDS, UrgentPage, read_urgent_page
 
 if TYPE_CHECKING:
@@ -104,6 +117,9 @@ URGENT_PARTITION = 'URGENCY#high'
 # The fields `/feedback/search` matches `q` against (substring, case-insensitive).
 SEARCH_TEXT_FIELDS = ('original_text', 'title', 'problem_summary')
 
+# `/feedback/problems`' `type_counts` bucket of reviews with no `feedback_type` yet (stored before the backfill).
+UNTYPED_COUNT_KEY = 'untyped'
+
 # `/feedback/{id}/similar` ranks one Query page of this many category-partition rows.
 SIMILAR_CANDIDATE_ROWS = 100
 
@@ -119,9 +135,26 @@ METRIC_ROW_FIELDS = ('pk', 'sk', *CHANNEL_INDEX_FIELDS, 'source_channel')
 ISSUE_SAMPLE_PROJECTION = {'ProjectionExpression': '#ps', 'ExpressionAttributeNames': {'#ps': 'problem_summary'}}
 
 def _metric_row_read() -> SlimRead:
-    """`METRIC_ROW_FIELDS` with the full-row walk's caps, read at call time like the walk reads them."""
+    """`METRIC_ROW_FIELDS` with the full-row walk's caps, read at call time like the walk reads them.
+
+    The LIST routes' read (`/feedback`'s candidate window): they page full reviews by key, so
+    their window stays at `MAX_FEEDBACK_OFFSET` rows.
+    """
     return SlimRead(fields=METRIC_ROW_FIELDS, soft_cap=MAX_FEEDBACK_OFFSET,
                     max_scanned_per_partition=MAX_SCANNED_PER_PARTITION, page_limit=DATE_QUERY_LIMIT)
+
+
+# Rows one AGGREGATE route (summary, categories, sentiment, sources, personas, dimensions,
+# entities, github) holds per request and reads per day partition: the `/feedback/problems`
+# capacity (`PROBLEM_READ`), so a 30,000-review import day counts in full. They only tally
+# `METRIC_ROW_FIELDS`, a few hundred bytes a row; the walk budget still bounds the time.
+AGGREGATE_READ_ROWS = PROBLEM_READ.soft_cap
+
+
+def _aggregate_row_read() -> SlimRead:
+    """`METRIC_ROW_FIELDS` at the aggregate capacity (`AGGREGATE_READ_ROWS`), read at call time."""
+    return SlimRead(fields=METRIC_ROW_FIELDS, soft_cap=AGGREGATE_READ_ROWS,
+                    max_scanned_per_partition=AGGREGATE_READ_ROWS, page_limit=PROBLEM_READ.page_limit)
 
 
 # AWS Clients
@@ -230,7 +263,9 @@ def _query_partition(
         if len(matched) >= max_matched or scanned >= max_scanned:
             has_more = True
             break
-    return matched[:max_matched], has_more
+    # A last page can overshoot `max_matched`: the rows cut off here were not counted, so the
+    # partition was NOT read in full (claiming it was made `scanned_through` name the cut day).
+    return matched[:max_matched], has_more or len(matched) > max_matched
 
 
 @tracer.capture_method
@@ -273,8 +308,9 @@ def _scan_recent_items(
 
     A non-sampling walk (no ``per_day_limit``) that still ends early on the cap, or
     on a day it could not read in full, records where it stopped on the walk
-    budget, so the route publishes the same ``partial_reason: 'time_budget'`` +
-    ``scanned_through`` a wall-clock stop gives instead of a bare ``is_partial``.
+    budget with ``partial_reason: 'row_cap'`` (a wall-clock stop says ``'time_budget'``):
+    ``scanned_through`` is the oldest day read in full, never the day the cap cut,
+    and is omitted when the cap cut the first day walked.
     """
     budget = _walk_budget()
     if scope is not None and scope_query.admits_nothing(scope):
@@ -299,8 +335,9 @@ def _scan_recent_items(
         is_partial = is_partial or day_has_more
         capped = len(items) >= soft_cap and i < days - 1
         if per_day_limit is None and (capped or day_has_more):
-            # The newest day read IN FULL: this one, unless it was cut short.
-            budget.record_stop(previous if day_has_more and previous else date)
+            # The oldest day read IN FULL: this one, unless the cap cut it part-way; then the
+            # day walked just before it (None when the cut day is the first one walked).
+            budget.record_stop(previous if day_has_more else date, ROW_CAP_PARTIAL_REASON)
         if len(items) >= soft_cap:
             is_partial = is_partial or capped
             break
@@ -328,8 +365,8 @@ def _scan_window_items(
         items, is_partial = _scan_recent_items(
             days, source=source, scope=scope, row_condition=extra.row_condition(), read=read)
     if date_basis == DATE_BASIS_REVIEW:
-        cutoff = window_cutoff(days)
-        items = [i for i in items if basis_date(i, date_basis) >= cutoff]
+        cutoff = _basis_cutoff(days)
+        items = [i for i in items if basis_date(i, date_basis) >= cutoff] if cutoff else items
     return items, is_partial
 
 
@@ -378,10 +415,11 @@ def _scoped_window_items(
     With a ``channel`` filter the rows come from ``gsi5-by-channel`` and carry only
     ``CHANNEL_INDEX_FIELDS``; a caller that reads anything else (review text) passes
     ``slim=False`` and keeps the day walk. The day walk of a slim caller reads the same
-    fields (``_metric_row_read``) unless ``read`` names another projection.
+    fields (``_aggregate_row_read``: the aggregate routes' capacity) unless ``read`` names
+    another projection.
     """
     if slim and read is None:
-        read = _metric_row_read()
+        read = _aggregate_row_read()
     items, is_partial = _scan_window_items(
         days, date_basis, source=source, scope=scope, extra=extra or NO_ITEM_FILTERS, slim=slim, read=read)
     items = extra.filter(items) if extra is not None else items
@@ -460,7 +498,7 @@ def _walk_budget() -> WalkBudget:
 
 
 def _walk_partial_fields() -> dict[str, str]:
-    """`{partial_reason: 'time_budget', scanned_through}` if a walk hit the budget, else `{}`.
+    """`{partial_reason: 'time_budget'|'row_cap', scanned_through?}` if a walk stopped early, else `{}`.
 
     Spread into every response a walk can feed, beside the route's own partial flag.
     """
@@ -473,23 +511,40 @@ def _versions() -> VersionRead:
     return request_versions(app, aggregates_table)
 
 
-def _request_scope() -> CategoryScope:
-    """`_caller_scope`, looked up at call time (so a patched `_caller_scope` is the one the memo keys on)."""
-    return _caller_scope()
-
-
 # Opt-in warm-container memo for the read routes below (shared/response_cache.py).
 # The scope is resolved for every request before the memo is consulted.
-_memoized = memoized_route(app, scope=_request_scope, versions=_versions)
+_memoized = memoized_route(app, scope=_caller_scope, versions=_versions)
 
 
 def _window_days(params: dict, default: int) -> int:
     """The `days` query parameter, validated (0-9999, 0 = all time) and resolved
     against the earliest-data watermark to the concrete number of days to read.
     See `shared.api.effective_window_days`.
+
+    The REQUESTED days are kept on the request context: the clamped count is right
+    for walking the import-date index, never for a basis-date cutoff
+    (`_basis_cutoff`).
     """
     days = validate_days(params.get('days'), default=default)
+    app.append_context(requested_days=days)
     return effective_window_days(days, _versions().earliest_date, datetime.now(UTC).date())
+
+
+def _basis_cutoff(walk_days: int) -> str:
+    """The oldest basis date (review or import) the request admits; '' = no cutoff (all time).
+
+    From the days the caller ASKED for (`requested_window_cutoff`), not the walk's
+    clamped count: clamping to "days since the earliest import" made the review-date
+    cutoff the first import day, so every review written before it vanished (all
+    time and 365 days collapsed to the import history; TODO Plan 0). On the import
+    basis both cutoffs admit the same rows (nothing is imported before the history
+    starts). A route that never resolved `days` through `_window_days` keeps the
+    walk's own window.
+    """
+    requested = app.context.get('requested_days')
+    if not isinstance(requested, int):
+        return window_cutoff(walk_days)
+    return requested_window_cutoff(requested, datetime.now(UTC).date())
 
 
 def _index_read_was_truncated(response: Mapping[str, Any]) -> bool:
@@ -568,10 +623,13 @@ class _ItemFilters:
         self.label = params.get('label')
         # channel / dims / tag (shared/item_filters.py).
         self.extra = _extra_filters(params)
+        # `cutoff_date` bounds the index read (import timestamps, the clamped walk);
+        # `basis_cutoff` is the requested window on the selected basis ('' = all time).
         self.cutoff_date = window_cutoff(days)
+        self.basis_cutoff = _basis_cutoff(days)
 
     def admits(self, item: dict) -> bool:
-        if basis_date(item, self.date_basis) < self.cutoff_date:
+        if self.basis_cutoff and basis_date(item, self.date_basis) < self.basis_cutoff:
             return False
         if not category_access.admits_item(self.scope, item):
             return False
@@ -650,11 +708,6 @@ def _entities_payload(category_counts: dict, issues: dict, persona_counts: dict,
 # `/feedback/entities` lists at most this many tags (the most frequent).
 MAX_ENTITY_TAGS = 50
 SENTIMENT_LABELS = ('positive', 'neutral', 'negative', 'mixed')
-# The aggregator's row prefixes (aggregator/handler.py; the Lambdas cannot import each other).
-CHANNEL_PREFIX = 'METRIC#daily_channel#'
-TAG_PREFIX = 'METRIC#daily_tag#'
-DIMENSION_SENTIMENT_PREFIX = 'METRIC#daily_dim_sentiment#'
-DIMENSION_SENTIMENT_METRIC_TYPE = 'dim_sentiment#'
 
 
 def _dimensions_config() -> list[dict[str, Any]]:
@@ -931,8 +984,10 @@ def list_feedback():
         # Review basis always needs the post-filter because GSI windows are
         # keyed on import date, and a review can never be imported before it
         # was written.
-        cutoff = window_cutoff(days)
-        candidates = [c for c in candidates if basis_date(c, date_basis) >= cutoff]
+        # The cutoff is the REQUESTED window's (`_basis_cutoff`), none for all time.
+        cutoff = _basis_cutoff(days)
+        if cutoff:
+            candidates = [c for c in candidates if basis_date(c, date_basis) >= cutoff]
     if source:
         candidates = [i for i in candidates if i.get('source_platform') == source]
     if category and not by_category_index:
@@ -1210,10 +1265,10 @@ def get_entities():
     configured = get_configured_categories(aggregates_table)
     (category_totals, is_partial), (source_totals, sources_partial), (persona_counts, personas_partial), \
         (total_window, total_truncated) = concurrently(
-            lambda: _metric_window_totals('METRIC#daily_category#', configured, days, current_date),
-            lambda: _metric_type_totals('source', 'METRIC#daily_source#', days, current_date),
+            lambda: _metric_window_totals(CATEGORY_PREFIX, configured, days, current_date),
+            lambda: _metric_type_totals('source', SOURCE_PREFIX, days, current_date),
             lambda: _metric_type_totals('persona', PERSONA_PREFIX, days, current_date),
-            lambda: _metric_window_pair('METRIC#daily_total', days, current_date),
+            lambda: _metric_window_pair(DAILY_TOTAL_PK, days, current_date),
         )
     category_counts = {category: total for category, total in category_totals.items() if total > 0}
     is_partial = is_partial or sources_partial or personas_partial or total_truncated
@@ -1362,22 +1417,38 @@ def _matches_query(item: Mapping[str, Any], query: str) -> bool:
 def get_problems():
     """The Problem Analysis tree over the WHOLE window (docs/problem-analysis.md).
 
-    Slim rows (``PROBLEM_READ``) through the caller's scope, the source / channel /
-    dims / tag filters and the walk budget; ``category``, ``subcategory``,
-    ``urgent`` and ``similarity`` shape the tree (``shared.problem_aggregation``).
+    The window is the page header's: ``days`` (0 = all time) on ``date_basis``, like
+    every other read route. Slim rows (``PROBLEM_READ``) through the caller's scope,
+    the source / channel / dims / tag filters and the walk budget; ``category``,
+    ``subcategory``, ``urgent`` and ``similarity`` shape the tree
+    (``shared.problem_aggregation``).
     """
     params = app.current_event.query_string_parameters or {}
-    days = _window_days(params, default=30)
-    date_basis = validate_date_basis(params.get('date_basis'))
     try:
         query = parse_problem_query(params)
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
+    days = _window_days(params, default=30)
+    date_basis = validate_date_basis(params.get('date_basis'))
     items, is_partial = _scoped_window_items(
         days, date_basis, _caller_scope(), source=params.get('source'), extra=_extra_filters(params),
         slim=False, read=PROBLEM_READ)
+    described = {'kind': 'days', 'days': app.context.get('requested_days'), 'walk_days': days,
+                 'date_basis': date_basis}
     return {'period_days': days, 'is_partial': is_partial, **_walk_partial_fields(),
+            'window': described, 'type_counts': _feedback_type_counts(items),
             **aggregate_problems(items, query)}
+
+
+def _feedback_type_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+    """Reviews per `feedback_type` dimension value, plus `untyped` (no type yet: before the backfill)."""
+    counts: dict[str, int] = {}
+    for item in items:
+        dims = item.get('dimensions')
+        value = dims.get(FEEDBACK_TYPE_KEY) if isinstance(dims, Mapping) else None
+        key = value if isinstance(value, str) and value else UNTYPED_COUNT_KEY
+        counts[key] = counts.get(key, 0) + 1
+    return _ranked(counts)
 
 
 @app.get("/feedback/access")
@@ -1580,7 +1651,7 @@ def _category_counter_totals(scope: CategoryScope, days: int) -> tuple[dict[str,
     if scope.categories_all:
         windows, (total_rows, total_truncated) = concurrently(
             lambda: _visible_category_windows(scope, days),
-            lambda: _metric_window_pair('METRIC#daily_total', days, datetime.now(UTC)),
+            lambda: _metric_window_pair(DAILY_TOTAL_PK, days, datetime.now(UTC)),
         )
     else:
         windows, total_rows, total_truncated = _visible_category_windows(scope, days), None, False
@@ -1595,7 +1666,7 @@ def _category_counter_totals(scope: CategoryScope, days: int) -> tuple[dict[str,
 def _visible_category_windows(scope: CategoryScope, days: int) -> list[tuple[str, list[dict], bool]]:
     """Each visible category's `METRIC#daily_category#<name>` window as `(name, rows, truncated)`."""
     names = _visible_category_names(scope)
-    windows = _metric_windows([f'METRIC#daily_category#{name}' for name in names], days, datetime.now(UTC))
+    windows = _metric_windows([f'{CATEGORY_PREFIX}{name}' for name in names], days, datetime.now(UTC))
     return [(name, rows, truncated) for name, (rows, truncated) in zip(names, windows, strict=True)]
 
 
@@ -1662,7 +1733,7 @@ def _summary_from_aggregates(days: int) -> tuple[list[dict], list[dict], int, bo
     # branch used to omit the key entirely, which a caller reads as "complete".
     # The three are independent partitions, read concurrently.
     (total_items, is_partial), (sentiment_items, sentiment_truncated), (urgent_items, urgent_truncated) = (
-        _metric_windows(['METRIC#daily_total', 'METRIC#daily_sentiment_avg', 'METRIC#urgent'], days, current_date))
+        _metric_windows([DAILY_TOTAL_PK, SENTIMENT_AVG_PK, 'METRIC#urgent'], days, current_date))
     totals = [
         {'date': item['sk'], 'count': item.get('count', 0)}
         for item in total_items
@@ -1716,7 +1787,7 @@ def get_sentiment_metrics():
         # breakdown (and therefore `total` and every percentage) understated, so
         # truncation ORs across labels rather than being attributed to one.
         result, is_partial = _metric_window_totals(
-            'METRIC#daily_sentiment#', sentiments, days, datetime.now(UTC))
+            SENTIMENT_PREFIX, sentiments, days, datetime.now(UTC))
 
     total = sum(result.values())
     return {
@@ -1771,7 +1842,7 @@ def get_source_metrics():
         source_totals = _tally(items, 'source_platform', 'unknown')
     else:
         source_totals, is_partial = _metric_type_totals(
-            'source', 'METRIC#daily_source#', days, datetime.now(UTC))
+            'source', SOURCE_PREFIX, days, datetime.now(UTC))
 
     return {
         'period_days': days,
@@ -1848,7 +1919,7 @@ def _dimension_from_aggregates(key: str, days: int) -> tuple[dict[str, dict[str,
     current_date = datetime.now(UTC)
     (by_value, partial), (total_window, total_truncated) = concurrently(
         lambda: _dimension_sentiment_totals(key, days, current_date),
-        lambda: _metric_window_pair('METRIC#daily_total', days, current_date),
+        lambda: _metric_window_pair(DAILY_TOTAL_PK, days, current_date),
     )
     total = sum(int(item.get('count', 0)) for item in total_window)
     assigned = sum(sum(labels.values()) for labels in by_value.values())

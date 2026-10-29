@@ -20,19 +20,20 @@ const RELEASES_PAGE_SIZE = 10
 
 function VersionCard({ info }: Readonly<{ info: BuildInfo }>) {
   const { t } = useTranslation('settings')
-  const rows: readonly (readonly [string, string])[] = [
-    [t('version.platform'), paddedVersion(info.version)],
-    [t('version.commit'), info.commit],
-    [t('version.builtAt'), formatBuildTime(info.builtAt)],
+  // [label, value, test id of the value]
+  const rows: readonly (readonly [string, string, string | undefined])[] = [
+    [t('version.platform'), paddedVersion(info.version), 'platform-version'],
+    [t('version.commit'), info.commit, undefined],
+    [t('version.builtAt'), formatBuildTime(info.builtAt), undefined],
   ]
   return (
     <div className="card">
       <SectionHeader icon={Info} title={t('version.title')} description={t('version.description')} />
       <dl className="grid gap-3 sm:grid-cols-3">
-        {rows.map(([label, value]) => (
+        {rows.map(([label, value, testId]) => (
           <div key={label} className="rounded-md border border-border bg-bg-accent px-3 py-2">
             <dt className="text-[0.6875rem] font-semibold uppercase tracking-[.04em] text-muted-strong">{label}</dt>
-            <dd className="font-mono text-sm text-text-strong break-all">{value}</dd>
+            <dd className="font-mono text-sm text-text-strong break-all" data-testid={testId}>{value}</dd>
           </div>
         ))}
       </dl>

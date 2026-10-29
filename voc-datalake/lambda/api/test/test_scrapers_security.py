@@ -32,7 +32,7 @@ false one.
 Those five are now admin-only too, by that owner decision: importing content
 (manual paste, CSV, JSON — and S3 import in `s3_import_handler`) is an
 administrator's action. They are gated differently from the nine here — by ONE
-resolver middleware in `manual_import_handler` (`_admins_only`) rather than a call
+resolver middleware in `manual_import_handler` (`shared.api.admins_only`) rather than a call
 in each route body — which is why `TestTheInventoryIsOneHandlers` pins the
 middleware, and `test_import_admin_gates.py` asserts the behaviour.
 
@@ -95,9 +95,10 @@ REVERT MAP — each assertion below names the mutation it catches:
     — lets a reader take the nine-route inventory for the whole `/scrapers/*`
       prefix. It is not: `manual_import_handler` serves five more, gated by a
       module middleware rather than per route. Pins that module's inventory and
-      the middleware, so dropping `app.use(middlewares=[_admins_only])` fails here.
+      the middleware, so dropping `app.use(middlewares=[admins_only])` fails here.
 """
 import ast
+import importlib
 import inspect
 import json
 from typing import ClassVar
@@ -478,6 +479,8 @@ class TestScraperRouteCoverageIsComplete:
             'get_scraper_status',
             'analyze_url',
             'get_scrapers_assist_job',
+            # 5.47: a read (the app connectors with their Radar brand), open like GET /integrations/<source>/apps.
+            'list_app_connectors',
         }, (
             'the route inventory changed; a NEW route must be added to '
             'SCRAPER_ADMIN_ROUTES if it mutates or spends, and will otherwise be '
@@ -574,7 +577,7 @@ class TestTheInventoryIsOneHandlers:
     def test_they_are_gated_by_the_module_middleware_not_per_route(self):
         """The state the docstring above describes, pinned (owner decision 2026-10-08).
 
-        The gate is ONE `app.use(middlewares=[_admins_only])` whose body calls
+        The gate is ONE `app.use(middlewares=[admins_only])` (shared.api) whose body calls
         `require_admin` unconditionally; no route repeats it. Dropping the
         middleware, or emptying it, fails here (and in `test_import_admin_gates.py`).
         """
@@ -588,8 +591,9 @@ class TestTheInventoryIsOneHandlers:
             for kw in stmt.value.keywords if kw.arg == 'middlewares' and isinstance(kw.value, ast.List)
             for elt in kw.value.elts if isinstance(elt, ast.Name)
         ]
-        assert installed == ['_admins_only']
-        middleware = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_admins_only')
+        assert installed == ['admins_only']
+        shared_api = ast.parse(inspect.getsource(importlib.import_module('shared.api')))
+        middleware = next(n for n in shared_api.body if isinstance(n, ast.FunctionDef) and n.name == 'admins_only')
         assert 'require_admin' in plain_calls_in(middleware)
         per_route = {
             name

@@ -11,6 +11,7 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { radarApi, radarKeys } from '../../api/radarApi'
 import { RADAR_SENTIMENTS } from '../../api/radarSchema'
+import ChoiceSelect from '../../components/ChoiceSelect/ChoiceSelect'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
@@ -65,16 +66,10 @@ function Chips({ filter, onClear }: Readonly<{ filter: RadarReviewFilter; onClea
 
 function SentimentSelect({ value, onChange }: Readonly<{ value: RadarSentiment | undefined; onChange: (next: RadarSentiment | undefined) => void }>) {
   const { t } = useTranslation('radar')
-  const id = useId()
   return (
-    <div>
-      <label htmlFor={id} className="block text-xs font-medium text-text mb-1">{t('reviews.sentimentLabel')}</label>
-      <select id={id} className="select w-auto" value={value ?? ''}
-        onChange={(e) => onChange(isSentiment(e.target.value) ? e.target.value : undefined)}>
-        <option value="">{t('reviews.anySentiment')}</option>
-        {RADAR_SENTIMENTS.map((label) => <option key={label} value={label}>{t(`reviews.sentiments.${label}`)}</option>)}
-      </select>
-    </div>
+    <ChoiceSelect label={t('reviews.sentimentLabel')} noneLabel={t('reviews.anySentiment')} choices={RADAR_SENTIMENTS}
+      value={value ?? null} isChoice={isSentiment} display={(label) => t(`reviews.sentiments.${label}`)}
+      onChange={(next) => onChange(next ?? undefined)} />
   )
 }
 

@@ -37,7 +37,11 @@
     "prfaqFailed": "No se pudo generar el PR/FAQ de esta decisión. Vuelve a redactarlo para intentarlo de nuevo.",
     "revisit": "Revisar de nuevo",
     "releaseWatch": "Seguimiento de lanzamiento",
-    "hideReleaseWatch": "Ocultar seguimiento de lanzamiento"
+    "hideReleaseWatch": "Ocultar seguimiento de lanzamiento",
+    "delete": "Eliminar",
+    "deleteConfirmTitle": "¿Eliminar esta decisión?",
+    "deleteConfirmMessage": "\"{{title}}\" se elimina del proyecto para todos. Los documentos que generó se conservan.",
+    "deleteConfirm": "Eliminar decisión"
   },
   "picker": {
     "label": "Reseñas de respaldo",
@@ -57,7 +61,8 @@
   "errors": {
     "save": "No se pudo guardar la decisión.",
     "conflict": "Esta decisión cambió desde que la abriste. Recarga la página e inténtalo de nuevo.",
-    "pursue": "No se pudo iniciar el PR/FAQ."
+    "pursue": "No se pudo iniciar el PR/FAQ.",
+    "delete": "No se pudo eliminar la decisión."
   },
   "releaseWatch": {
     "title": "Seguimiento de lanzamiento",

@@ -22,6 +22,7 @@
     "stillGenerating": "Ainda gerando…"
   },
   "pages": {
+    "participants": "Participantes",
     "home": "Início",
     "dashboard": "Painel",
     "feedback": "Feedback",
@@ -59,6 +60,8 @@
     "externalLink": "{{host}}, abre em uma nova aba",
     "copy": "Copiar",
     "copied": "Copiado",
+    "stopped": "Interrompido",
+    "regenerate": "Gerar novamente",
     "savedDocumentTitle": "Resposta do assistente – {{date}}",
     "saveAsDocument": {
       "idle": "Salvar como documento",
@@ -153,6 +156,7 @@
     "subtitle": "Posso ler seus dados e propor alterações — nada muda sem a sua aprovação."
   },
   "suggestions": {
+    "participants": {"1": "Quais listas de participantes temos?", "2": "Crie uma lista de clientes beta", "3": "Adicione pessoas a uma lista a partir de uma tabela que eu colar"},
     "dashboard": { "1": "Como o sentimento dos clientes mudou esta semana?", "2": "Quais fontes trazem mais feedback?", "3": "Resuma este painel em três frases" },
     "categories": { "1": "Qual categoria tem mais reclamações?", "2": "O que os clientes dizem sobre a maior categoria?", "3": "Quais categorias estão piorando?" },
     "projects": { "1": "Crie um projeto a partir da principal reclamação desta semana", "2": "Quais projetos estão em andamento?", "3": "Qual deve ser nosso próximo projeto de pesquisa?" },
@@ -273,5 +277,30 @@
       "cancelled": "Cancelado",
       "expired": "Expirado"
     }
+  },
+  "mentions": {
+    "placeholder": "Pergunte sobre este projeto. Digite @ para uma persona, # para um documento…",
+    "allLabel": "Todas as personas",
+    "allHint": "todas as personas respondem",
+    "heading": {
+      "persona": "Personas",
+      "document": "Documentos"
+    },
+    "limit": {
+      "persona": "No máximo {{max, number}} personas por mensagem.",
+      "document": "No máximo {{max, number}} documentos por mensagem."
+    },
+    "loading": "Carregando o projeto…",
+    "empty": {
+      "persona": "Nenhuma persona corresponde.",
+      "document": "Nenhum documento corresponde."
+    },
+    "count_one": "{{count, number}} sugestão",
+    "count_other": "{{count, number}} sugestões",
+    "chips": "Mencionados nesta mensagem",
+    "remove": "Remover {{name}}",
+    "insertPersona": "Mencionar uma persona",
+    "insertDocument": "Marcar um documento",
+    "allCapped": "@all pergunta às primeiras {{max, number}} de {{total, number}} personas: {{names}}."
   }
 }

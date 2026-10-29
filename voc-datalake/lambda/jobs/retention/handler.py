@@ -37,9 +37,12 @@ from botocore.exceptions import BotoCoreError, ClientError
 from shared import retention
 from shared.aws import get_dynamodb_resource, get_s3_client, invoke_lambda_async, is_conditional_check_failure
 from shared.data_version import bump_data_version
+from shared.digests import sha256_hex
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
+from shared.retention import ERASURE_JOB_PK
 from shared.source_profiles import load_source_profiles
+from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
 
 # Bundled beside `shared/` (no sys.path shim); tests import `jobs.retention.handler`.
@@ -48,7 +51,6 @@ FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET = (
 
 MODE_RETENTION: Final = 'retention'
 MODE_ERASE: Final = 'erase'
-ERASURE_JOB_PK: Final = 'JOB#erasure'
 AUDIT_PK: Final = 'AUDIT#retention'
 JOB_ID_RE: Final = re.compile(r'^er_[0-9a-f]{12}\Z')
 STATUS_QUEUED: Final = 'queued'
@@ -66,10 +68,6 @@ MAX_GENERATIONS: Final = 500
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)
 
 
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
 def _tables() -> tuple[Any, Any]:
     dynamodb = get_dynamodb_resource()
     return dynamodb.Table(FEEDBACK_TABLE), dynamodb.Table(AGGREGATES_TABLE)
@@ -81,7 +79,7 @@ def _tables() -> tuple[Any, Any]:
 
 def write_audit(aggregates_table: Any, run: dict[str, Any], status: str, error: str | None = None) -> None:
     """One audit row for a finished (or failed) run: mode, counts, never the erased value."""
-    now = _now()
+    now = now_iso()
     item = {
         'pk': AUDIT_PK, 'sk': f"{now}#{run['run_id']}", 'run_id': run['run_id'], 'mode': run['mode'],
         'status': status, 'deleted_items': run['deleted_items'], 'deleted_objects': run['deleted_objects'],
@@ -104,7 +102,7 @@ def claim_erasure_job(aggregates_table: Any, job_id: str) -> dict[str, Any] | No
             UpdateExpression='SET #status = :running, started_at = if_not_exists(started_at, :now)',
             ConditionExpression='attribute_exists(pk) AND #status IN (:queued, :running)',
             ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={':running': STATUS_RUNNING, ':queued': STATUS_QUEUED, ':now': _now()},
+            ExpressionAttributeValues={':running': STATUS_RUNNING, ':queued': STATUS_QUEUED, ':now': now_iso()},
             ReturnValues='ALL_NEW',
         )
     except ClientError as e:
@@ -118,7 +116,7 @@ def finish_erasure_job(aggregates_table: Any, run: dict[str, Any], status: str, 
     """Record the job's outcome and counts (the row keeps its value_hash, never the value)."""
     names = {'#status': 'status'}
     values: dict[str, Any] = {
-        ':status': status, ':items': run['deleted_items'], ':objects': run['deleted_objects'], ':now': _now(),
+        ':status': status, ':items': run['deleted_items'], ':objects': run['deleted_objects'], ':now': now_iso(),
     }
     expression = 'SET #status = :status, deleted_items = :items, deleted_objects = :objects, finished_at = :now'
     if error:
@@ -142,7 +140,7 @@ def _new_run(event: dict[str, Any], mode: str) -> dict[str, Any]:
     return {
         'mode': mode,
         'run_id': carried.get('run_id') or uuid.uuid4().hex[:12],
-        'started_at': carried.get('started_at') or _now(),
+        'started_at': carried.get('started_at') or now_iso(),
         'generation': int(carried.get('generation', 0)),
         'scanned': int(carried.get('scanned', 0)),
         'deleted_items': int(carried.get('deleted_items', 0)),
@@ -171,7 +169,7 @@ def _erase_setup(aggregates_table: Any, event: dict[str, Any], run: dict[str, An
         return None
     run.update(job_id=job_id, field=job.get('field'), source=job.get('source') or None,
                value_hash=job.get('value_hash'))
-    if job.get('value_hash') != retention.value_hash(value):
+    if job.get('value_hash') != sha256_hex(value):
         raise ValueError('The erasure value does not match the job')
     return retention.erase_filter(str(job.get('field')), value, run['source'])
 

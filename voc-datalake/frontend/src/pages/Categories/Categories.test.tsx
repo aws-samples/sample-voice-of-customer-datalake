@@ -232,6 +232,17 @@ describe('Categories', () => {
       })
     })
 
+    it('counts the distribution with the urgent and rating filters the list uses', async () => {
+      const user = await renderUntilTextWithUser('Urgent only', '/categories?rating=4')
+
+      await user.click(screen.getByRole('checkbox'))
+
+      await waitFor(() => {
+        expect(categoriesApiMocks.getCategories).toHaveBeenLastCalledWith({ days: 7 }, undefined, { rating_min: 4, urgent: 1 })
+      })
+      expect(categoriesApiMocks.getSentiment).toHaveBeenLastCalledWith({ days: 7 }, undefined, { rating_min: 4, urgent: 1 })
+    })
+
     it('filters analytics by source when a source is selected', async () => {
       const user = userEvent.setup()
       renderCategories()

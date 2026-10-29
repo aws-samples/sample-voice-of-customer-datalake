@@ -20,6 +20,7 @@ import {
 import type { RunStatusInfo } from './AppConfigComponents'
 import type { AppConfig } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
+import { allAppConfigsKey } from '../../api/queryKeys'
 
 export default function AppConfigList({
   plugins, isAdmin, onEditPlugin, onDeleteApp, onRunApp,
@@ -124,7 +125,7 @@ export default function AppConfigList({
   const {
     data: allAppConfigs, isLoading: isLoadingApps,
   } = useQuery({
-    queryKey: ['all-app-configs', plugins.map((p) => p.id).join(',')],
+    queryKey: allAppConfigsKey(plugins.map((p) => p.id).join(',')),
     queryFn: async () => {
       const emptyApps: AppConfig[] = []
       const results = await Promise.all(plugins.map(async (plugin) => {

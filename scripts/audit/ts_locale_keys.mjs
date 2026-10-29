@@ -3,7 +3,7 @@
 /**
  * ts_locale_keys — English locale keys no production source can reach.
  *
- * Pattern (deadts.md §1d: 48 keys, e.g. the 17 `projectDetail:wizards.*` leftovers of old wizard copy):
+ * Pattern (the 5.28 dead-TS audit: 48 keys, e.g. the 17 `projectDetail:wizards.*` leftovers of old wizard copy):
  * a key whose last `t()` caller was deleted stays in all 9 catalogues forever, translated and shipped.
  *
  * How: the SPA's own audit logic finds the keys `t()` calls resolve to — `frontend/scripts/i18n-keys.mjs`

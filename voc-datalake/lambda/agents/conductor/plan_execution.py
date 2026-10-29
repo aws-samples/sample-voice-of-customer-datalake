@@ -26,14 +26,13 @@ from shared import plans_store as ps
 from shared.agents_store import iso
 from shared.logging import logger
 from shared.memory_policy import redact_personal_data
-from shared.plan_canonical import CanonicalJsonError, canonical_write_fingerprint
+from shared.plan_canonical import FINGERPRINT_RE, CanonicalJsonError, canonical_write_fingerprint
 from shared.plan_schema import CARD_ONLY_WRITE_TOOLS, NEVER_PREAPPROVABLE_TOOLS, THINK_DEFAULT_OUTPUT
 
 NOT_RUN: Final = {'run': False}
 MAX_PENDING_JSON_CHARS: Final = 32_000
 MAX_MODEL_CALLS_PER_STEP: Final = 100
 EMPTY_THINK_ERROR: Final = 'The analysis step finished without a result, so nothing was stored.'
-_FINGERPRINT_RE: Final = re.compile(r'[0-9a-f]{64}')
 _TOOL_RE: Final = re.compile(r'[a-z_]{1,64}')
 
 
@@ -173,7 +172,7 @@ def _record_done(state: PlanState, step_id: str, result: Mapping[str, Any]) -> s
     if definition.get('kind') == 'think' and not outputs:
         return _record_failed(state, step_id, EMPTY_THINK_ERROR)
     sets: dict[str, Any] = {'status': ps.STEP_DONE, 'finished_at': iso(state.now), 'outputs': outputs}
-    if isinstance(fingerprint, str) and _FINGERPRINT_RE.fullmatch(fingerprint):
+    if isinstance(fingerprint, str) and FINGERPRINT_RE.fullmatch(fingerprint):
         sets['fingerprint'] = fingerprint
     ps.update_step(plan_state.table(), state.plan_id, step_id, ps.Change(sets, (ps.STEP_RUNNING,)), now=state.now)
     return 'step_finished'

@@ -8,6 +8,7 @@
  * @module api/githubMetricsSchema
  */
 import { z } from 'zod'
+import { isPresent } from '../lib/typeGuards'
 import { readPartialWindow, type PartialWindow } from './partialWindow'
 
 const count = z.number().int().nonnegative().catch(0)
@@ -74,10 +75,6 @@ export interface GithubMetrics {
   previousVersion: string | null
   newInLatest: z.infer<typeof GithubMetricsSchema>['new_in_latest']
   partial: PartialWindow
-}
-
-function isPresent<T>(value: T | null): value is T {
-  return value !== null
 }
 
 /** The response as the UI reads it; anything unreadable becomes an empty breakdown. */

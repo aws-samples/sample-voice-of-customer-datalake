@@ -60,10 +60,15 @@ COGNITO_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="User
 COGNITO_REGION=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoRegion") | .OutputValue // "us-west-2"')
 IDENTITY_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="IdentityPoolId") | .OutputValue')
 API_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')
-STREAM_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ChatStreamUrl") | .OutputValue // empty')
-AVATARS_CDN_URL=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="AvatarsCdnUrl") | .OutputValue // empty')
 # "true" when the AgentCore web search gateway is deployed (drives the UI toggles)
 WEB_SEARCH_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="WebSearchAvailable") | .OutputValue // "false"')
+# Only a deployment with -c emailFrom emits EmailAvailable (participant email). The board pool
+# (boards and review links) exists on every deployment since 5.45.00; an older stack without it
+# leaves the board block out of config.json. BoardSignInMode: email_otp (SES) or code.
+EMAIL_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="EmailAvailable") | .OutputValue // "false"')
+BOARD_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolId") | .OutputValue // empty')
+BOARD_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolClientId") | .OutputValue // empty')
+BOARD_SIGN_IN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardSignInMode") | .OutputValue // "email_otp"')
 
 # Validate required values
 if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "null" ]; then
@@ -88,8 +93,8 @@ echo "  Cognito Pool: $COGNITO_USER_POOL_ID"
 echo "  Cognito Client: $COGNITO_CLIENT_ID"
 echo "  Cognito Region: $COGNITO_REGION"
 echo "  Identity Pool: $IDENTITY_POOL_ID"
-echo "  Stream Endpoint: $STREAM_ENDPOINT"
-echo "  Avatars CDN: $AVATARS_CDN_URL"
+echo "  Email: $EMAIL_AVAILABLE"
+echo "  Board Pool: ${BOARD_USER_POOL_ID:-none}"
 
 # Step 2: Build the frontend
 echo ""
@@ -100,20 +105,22 @@ npm run build
 echo ""
 echo "Step 3: Generating runtime config.json..."
 
-# Use jq to properly escape values and generate valid JSON
+# Use jq to properly escape values and generate valid JSON. The same shape the
+# CDK deploy writes (VocApiStack runtimeConfig) and RuntimeConfigSchema reads
+# (frontend/src/runtimeConfig.ts); lib/utils/deploy-scripts.test.ts pins the three.
 jq -n \
   --arg apiEndpoint "$API_ENDPOINT" \
-  --arg streamEndpoint "$STREAM_ENDPOINT" \
-  --arg avatarsCdnUrl "$AVATARS_CDN_URL" \
   --arg userPoolId "$COGNITO_USER_POOL_ID" \
   --arg clientId "$COGNITO_CLIENT_ID" \
   --arg region "$COGNITO_REGION" \
   --arg identityPoolId "$IDENTITY_POOL_ID" \
   --argjson webSearch "$([ "$WEB_SEARCH_AVAILABLE" = "true" ] && echo true || echo false)" \
+  --argjson email "$([ "$EMAIL_AVAILABLE" = "true" ] && echo true || echo false)" \
+  --arg boardUserPoolId "$BOARD_USER_POOL_ID" \
+  --arg boardClientId "$BOARD_CLIENT_ID" \
+  --arg boardSignIn "$BOARD_SIGN_IN" \
   '{
     apiEndpoint: $apiEndpoint,
-    streamEndpoint: $streamEndpoint,
-    avatarsCdnUrl: $avatarsCdnUrl,
     cognito: {
       userPoolId: $userPoolId,
       clientId: $clientId,
@@ -121,9 +128,16 @@ jq -n \
       identityPoolId: $identityPoolId
     },
     features: {
-      webSearch: $webSearch
+      webSearch: $webSearch,
+      email: $email
     }
-  }' > dist/config.json
+  } + (if $boardUserPoolId != "" and $boardClientId != "" then {
+    board: {
+      userPoolId: $boardUserPoolId,
+      clientId: $boardClientId,
+      signIn: $boardSignIn
+    }
+  } else {} end)' > dist/config.json
 
 echo "  ✓ config.json generated with CloudFormation values"
 

@@ -48,8 +48,3 @@ export function converseCommand(request: ConverseRequest): ConverseCommand {
   });
 }
 
-/** The text blocks of a Converse answer, joined. */
-export function answerText(output: ConverseCommandOutput): string {
-  const content = output.output?.message?.content ?? [];
-  return content.flatMap((block) => (typeof block.text === 'string' ? [block.text] : [])).join('').trim();
-}

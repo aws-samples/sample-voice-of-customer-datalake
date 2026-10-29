@@ -27,6 +27,7 @@ import { getSession } from '../sessions/sessionsApi'
 import { useAssistantUiStore, useThreadStore } from '../store/assistantStore'
 import { textRunEvents } from '@test/assistantDoubles'
 import { render } from '@test/test-utils'
+import { clickLauncherOpen } from '@test/assistantPanelHarness'
 import AssistantRoot from './AssistantRoot'
 
 const SAVED_ID = 'saved-1'
@@ -99,7 +100,7 @@ describe('the conversation in view survives a reload and a route change', () => 
   it('holds the send while it loads, so a message cannot start a throwaway conversation', async () => {
     deferGetSession(savedRecord())
     const user = reloadOn('/radar')
-    await user.click(screen.getByRole('button', { name: 'Open assistant' }))
+    await clickLauncherOpen(user)
     await user.type(composer(), 'Typed early')
     await user.keyboard('{Enter}')
     expect(runs).toHaveLength(0)
@@ -110,7 +111,7 @@ describe('the conversation in view survives a reload and a route change', () => 
   it('continues the restored conversation on send and keeps showing its answer after a route change', async () => {
     const land = deferGetSession(savedRecord())
     const user = reloadOn('/radar')
-    await user.click(screen.getByRole('button', { name: 'Open assistant' }))
+    await clickLauncherOpen(user)
     await land()
     expect(screen.getByText('Radar answer from before.')).toBeInTheDocument()
 
@@ -128,7 +129,7 @@ describe('the conversation in view survives a reload and a route change', () => 
   it('leaves a conversation the user started with New chat in view when the old one lands late', async () => {
     const land = deferGetSession(savedRecord())
     const user = reloadOn('/radar')
-    await user.click(screen.getByRole('button', { name: 'Open assistant' }))
+    await clickLauncherOpen(user)
     await user.click(screen.getByRole('button', { name: 'New chat' }))
     expect(screen.queryByText('Opening your last conversation…')).not.toBeInTheDocument()
     await land()

@@ -360,7 +360,7 @@ class TestFreshDeployReportsNothingConfigured:
 
     Measured on the real seeded secret, that was 4 of 5 sources claiming to be
     configured on a fresh deploy, which lights SourceCard's "Connected" badge
-    and enables its Test button against an integration that cannot run.
+    for an integration that cannot run.
 
     Reverting the default comparison in get_integration_status turns
     test_fresh_deploy_reports_nothing_configured red.

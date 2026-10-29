@@ -18,9 +18,19 @@
  * so the placement is measured and corrected rather than assumed. Scrolling or
  * resizing closes it.
  *
+ * The open menu is rendered in a PORTAL: into the enclosing dialog (the
+ * floating assistant panel, so an `aria-modal` panel still contains it), else
+ * into `document.body`. Rendered in place it sat inside the panel header, whose
+ * `chrome-glass` backdrop filter makes a stacking context: the conversation pane
+ * below painted over the menu and took every pointer click (5.35, e2e
+ * assistant-notifications). A portal is outside the trigger's DOM subtree, so a
+ * click in it counts as inside (`useDisclosurePopover(menuRef)`), and Tab / Shift+Tab
+ * close it and move to the control after / before the trigger (the page's tab order).
+ *
  * @module assistant/components/MoreMenu
  */
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { Check, MoreHorizontal } from 'lucide-react'
 import { useDisclosurePopover } from '../../hooks/useDismissOnOutside'
@@ -87,6 +97,24 @@ function moveFocus(event: ReactKeyboardEvent<HTMLDivElement>, menu: HTMLElement 
   items[next]?.focus()
 }
 
+const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Tab / Shift+Tab out of the portaled menu: the next (previous) tabbable control after the trigger
+ * in document order, as if the menu were still beside it. The trigger itself when there is none.
+ */
+function tabTargetFrom(trigger: HTMLElement, backwards: boolean): HTMLElement {
+  const all = [...document.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => el.closest('[role="menu"]') === null)
+  const index = all.indexOf(trigger)
+  return (backwards ? all[index - 1] : all[index + 1]) ?? trigger
+}
+
+/** Where the open menu renders: the enclosing dialog (an aria-modal panel must contain it), else the body. */
+function portalHost(trigger: HTMLElement): HTMLElement {
+  const dialog = trigger.closest('[role="dialog"]')
+  return dialog instanceof HTMLElement ? dialog : document.body
+}
+
 function useCloseOnViewportChange(open: boolean, close: () => void, menu: RefObject<HTMLElement | null>): void {
   useEffect(() => {
     if (!open) return undefined
@@ -128,8 +156,9 @@ function MenuEntry({ item, onDone }: Readonly<{ item: MoreMenuItem; onDone: () =
 }
 
 export default function MoreMenu({ label, items, className, triggerRef, iconSize = 16 }: MoreMenuProps) {
-  const popover = useDisclosurePopover()
   const menuRef = useRef<HTMLDivElement>(null)
+  const popover = useDisclosurePopover(menuRef)
+  const [host, setHost] = useState<HTMLElement | null>(null)
   const { open, close, toggle, panelId, wrapper, trigger: ownTriggerRef } = popover
   // The first (or, opened with ArrowUp, the last) item takes focus on open.
   const focusLast = useRef(false)
@@ -152,18 +181,33 @@ export default function MoreMenu({ label, items, className, triggerRef, iconSize
     ownTriggerRef.current = node
     if (triggerRef !== undefined) triggerRef.current = node
   }
+  const openFrom = (button: HTMLButtonElement) => {
+    setHost(portalHost(button))
+    toggle()
+  }
+  const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') {
+      moveFocus(event, menuRef.current)
+      return
+    }
+    const button = ownTriggerRef.current
+    if (button === null) return
+    event.preventDefault()
+    close()
+    tabTargetFrom(button, event.shiftKey).focus()
+  }
 
   return (
     <div ref={wrapper} className={clsx('relative flex-shrink-0', className)}>
       <button
         ref={setTrigger}
         type="button"
-        onClick={toggle}
+        onClick={(event) => openFrom(event.currentTarget)}
         onKeyDown={(event) => {
           if (open || (event.key !== 'ArrowDown' && event.key !== 'ArrowUp')) return
           event.preventDefault()
           focusLast.current = event.key === 'ArrowUp'
-          toggle()
+          openFrom(event.currentTarget)
         }}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -174,18 +218,19 @@ export default function MoreMenu({ label, items, className, triggerRef, iconSize
       >
         <MoreHorizontal size={iconSize} aria-hidden />
       </button>
-      {open && (
+      {open && host !== null && createPortal(
         <div
           ref={menuRef}
           id={panelId}
           role="menu"
           aria-label={label}
           aria-orientation="vertical"
-          onKeyDown={(event) => moveFocus(event, menuRef.current)}
+          onKeyDown={onMenuKeyDown}
           className="menu fixed z-[75] w-max min-w-44 max-w-[min(18rem,calc(100vw-1rem))]"
         >
           {items.map((item) => <MenuEntry key={item.key} item={item} onDone={close} />)}
-        </div>
+        </div>,
+        host,
       )}
     </div>
   )

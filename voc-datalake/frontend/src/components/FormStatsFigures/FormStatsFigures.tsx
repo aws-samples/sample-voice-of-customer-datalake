@@ -12,7 +12,12 @@
  *   lays them out next to its own controls.
  * - `panel`: three centred figures in their own band (the dialog header).
  *
- * The labels come from the caller, already translated in its own namespace.
+ * The labels come from the caller, already translated in its own namespace (the
+ * submissions label pluralised on the count, "1 Submission").
+ *
+ * `busy` (the figures are being read): each value is a pulsing placeholder and the
+ * figure is `aria-busy`, so a count still on its way never reads as a number —
+ * not even the 0 a cached copy from before the latest submission would show.
  *
  * @module components/FormStatsFigures
  */
@@ -36,6 +41,13 @@ interface FormStatsFiguresProps {
   /** Null / undefined while loading or when the read gave nothing usable. */
   readonly stats: FormStats | null | undefined
   readonly labels: FormStatsLabels
+  /** The figures are being (re)read: show placeholders, not the values. */
+  readonly busy?: boolean
+}
+
+/** A value, or its placeholder while the figures are read. */
+function FigureValue({ value, busy }: Readonly<{ value: string; busy: boolean }>): ReactElement {
+  return busy ? <span className="skeleton inline-block h-6 w-10 align-middle" aria-hidden="true" /> : <>{value}</>
 }
 
 /** The three figures as display strings in `language`. */
@@ -47,36 +59,36 @@ function formStatsText(stats: FormStats | null | undefined, language: string) {
   }
 }
 
-function CompactFigure({ icon, value, label }: Readonly<{ icon: ReactNode; value: string; label: string }>): ReactElement {
+function CompactFigure({ icon, value, label, busy }: Readonly<{ icon: ReactNode; value: string; label: string; busy: boolean }>): ReactElement {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" aria-busy={busy}>
       {icon}
       <div>
-        <p className="text-lg font-bold font-mono text-text-strong">{value}</p>
+        <p className="text-lg font-bold font-mono text-text-strong"><FigureValue value={value} busy={busy} /></p>
         <p className="text-xs text-muted">{label}</p>
       </div>
     </div>
   )
 }
 
-function PanelFigure({ value, label }: Readonly<{ value: string; label: string }>): ReactElement {
+function PanelFigure({ value, label, busy }: Readonly<{ value: string; label: string; busy: boolean }>): ReactElement {
   return (
-    <div className="text-center">
-      <p className="text-2xl font-bold font-mono text-text-strong">{value}</p>
+    <div className="text-center" aria-busy={busy}>
+      <p className="text-2xl font-bold font-mono text-text-strong"><FigureValue value={value} busy={busy} /></p>
       <p className="text-xs font-medium uppercase tracking-[.04em] text-muted">{label}</p>
     </div>
   )
 }
 
-export default function FormStatsFigures({ variant, stats, labels }: FormStatsFiguresProps): ReactElement {
+export default function FormStatsFigures({ variant, stats, labels, busy = false }: FormStatsFiguresProps): ReactElement {
   const { i18n } = useTranslation()
   const text = formStatsText(stats, i18n.language)
   if (variant === 'panel') {
     return (
       <div className="grid grid-cols-3 gap-2 sm:gap-4 px-4 py-3 sm:p-4 bg-bg-accent border-b border-border">
-        <PanelFigure value={text.submissions} label={labels.submissions} />
-        <PanelFigure value={text.avgRating} label={labels.avgRating} />
-        {labels.rated === undefined ? null : <PanelFigure value={text.rated} label={labels.rated} />}
+        <PanelFigure value={text.submissions} label={labels.submissions} busy={busy} />
+        <PanelFigure value={text.avgRating} label={labels.avgRating} busy={busy} />
+        {labels.rated === undefined ? null : <PanelFigure value={text.rated} label={labels.rated} busy={busy} />}
       </div>
     )
   }
@@ -87,11 +99,13 @@ export default function FormStatsFigures({ variant, stats, labels }: FormStatsFi
         icon={<div className="p-1.5 bg-accent-subtle rounded-md"><MessageSquare size={14} className="text-accent-text" aria-hidden="true" /></div>}
         value={text.submissions}
         label={labels.submissions}
+        busy={busy}
       />
       <CompactFigure
         icon={<div className="p-1.5 bg-warn-subtle rounded-md"><Star size={14} className="text-warn" aria-hidden="true" /></div>}
         value={text.avgRating}
         label={labels.avgRating}
+        busy={busy}
       />
     </>
   )

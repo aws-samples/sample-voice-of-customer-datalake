@@ -1,7 +1,6 @@
 """DynamoDB-level contracts for retained project tombstones."""
 
 from datetime import UTC, datetime
-from unittest.mock import patch
 
 import pytest
 from botocore.exceptions import ClientError
@@ -12,6 +11,7 @@ from shared.project_writes import (
     put_project_item,
     put_project_item_and_increment,
 )
+from shared.test.clock import frozen_clock
 from shared.test.moto_tables import create_pk_sk_table
 
 META_KEY = {'pk': 'PROJECT#p1', 'sk': 'META'}
@@ -101,7 +101,7 @@ def test_child_without_created_at_stamps_meta_with_the_clock(projects_table):
     projects_table.put_item(Item={**META_KEY, 'document_count': 2})
     frozen = datetime(2026, 9, 3, 12, 5, tzinfo=UTC)
 
-    with patch.object(project_writes, 'datetime') as clock:
+    with frozen_clock(project_writes) as clock:
         clock.now.return_value = frozen
         put_project_item_and_increment(
             projects_table, 'p1', _child(), 'document_count',

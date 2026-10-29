@@ -9,6 +9,7 @@ import { createTestQueryClient } from '../../test/query-client'
 import { TestRouter } from '../../test/TestRouter'
 import { routes } from '../../routes'
 import { projectsApi } from '../../api/projectsApi'
+import { featureRequestKeys } from '../../api/featureRequestsApi'
 import { workflowsKeys } from '../../api/workflowsApi'
 import { useProjectData } from '../../pages/ProjectDetail/useProjectData'
 import { contextWith, makeProject } from '../../pages/ProjectDetail/project-detail-fixtures'
@@ -153,7 +154,7 @@ describe('Breadcrumbs', () => {
   /**
    * The seeded cases above assert the crumb against a key this file supplies, so
    * they cannot see the two things the docblock actually claims: that the header's
-   * `skipToken` observer neither issues its own request nor suppresses the page's,
+   * cache reader neither issues its own request nor suppresses the page's,
    * and that both sides agree on the key. Here the page's real hook does the
    * fetching — the only fake is the API client — so a renamed key or a swallowed
    * fetch fails, and the assertion covers TanStack semantics that are version
@@ -203,7 +204,7 @@ describe('Breadcrumbs', () => {
     it("fills the crumb from the page's fetch, replacing the stand-in", async () => {
       const nav = renderHandover()
 
-      // Breadcrumbs mounts first and creates the cache entry with `skipToken`;
+      // Breadcrumbs mounts first and reads an empty cache entry;
       // the stand-in is what it shows until the page's own fetch lands.
       expect(screen.getByText('Project')).toBeInTheDocument()
       await waitFor(() => expect(within(nav).getByText(PROJECT_NAME)).toBeInTheDocument())
@@ -417,5 +418,23 @@ describe('a library workflow (/agents/workflows/:workflowId)', () => {
     expect(within(nav).getByRole('link', { name: 'Workflows' })).toHaveAttribute('href', '/agents?tab=workflows')
     expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('Research flow')
     expect(within(nav).queryByText('Agent')).not.toBeInTheDocument()
+  })
+})
+
+describe('a feedback board (/feature-requests/:slug)', () => {
+  it('trails the boards list, then the board named once its page loaded it', () => {
+    renderWithRouter(['/feature-requests/beta-feedback'], (client) => {
+      client.setQueryData(featureRequestKeys.list('app', 'beta-feedback'), { requests: [], board: { name: 'Beta feedback' } })
+    })
+    const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+    // By its link, not its words: the nav label is renamed in another change ("Feedback boards").
+    expect(nav.querySelector('a[href="/feature-requests"]')).not.toBeNull()
+    expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('Beta feedback')
+  })
+
+  it('says "Board" until the board is loaded, never its slug', () => {
+    renderWithRouter(['/feature-requests/beta-feedback'])
+    const nav = screen.getByRole('navigation', { name: /breadcrumb/i })
+    expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('Board')
   })
 })

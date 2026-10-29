@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { ConverseStreamOutput } from '@aws-sdk/client-bedrock-runtime';
-import { createTurnState, finishTurn, parseToolInput, processStreamEvent, type TurnSink } from './stream-processor.js';
+import { createTurnState, finishTurn, parseStreamedToolInput, processStreamEvent, type TurnSink } from './stream-processor.js';
 
 function recordingSink() {
   const calls: string[] = [];
@@ -73,7 +73,7 @@ describe('processStreamEvent', () => {
   });
 });
 
-describe('parseToolInput', () => {
+describe('parseStreamedToolInput', () => {
   it.each([
     ['', {}],
     ['not json', {}],
@@ -81,7 +81,7 @@ describe('parseToolInput', () => {
     ['"str"', {}],
     ['{"a":{"b":[1,null,true]}}', { a: { b: [1, null, true] } }],
   ])('parses %j', (raw, expected) => {
-    expect(parseToolInput(raw)).toStrictEqual(expected);
+    expect(parseStreamedToolInput(raw)).toStrictEqual(expected);
   });
 });
 
@@ -187,8 +187,8 @@ describe('processStreamEvent — reasoning shapes', () => {
   });
 });
 
-describe('parseToolInput — non-object JSON', () => {
+describe('parseStreamedToolInput — non-object JSON', () => {
   it.each(['null', '42', 'true'])('turns %s into {}', (raw) => {
-    expect(parseToolInput(raw)).toStrictEqual({});
+    expect(parseStreamedToolInput(raw)).toStrictEqual({});
   });
 });

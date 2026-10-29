@@ -1,5 +1,6 @@
 {
   "card": {
+    "openParticipants": "참여자 열기",
     "kicker": "승인 필요",
     "details": "세부 정보",
     "toolName": "작업: {{name}}",
@@ -41,6 +42,33 @@
     "openRadarSettings": "관리 → 소스 → 레이더 열기"
   },
   "preview": {
+    "participants": {
+      "summaryLabel": "추가할 사람",
+      "list": "목록",
+      "count": "인원",
+      "countValue_one": "{{count, number}}명",
+      "countValue_other": "{{count, number}}명",
+      "listNotFound": "이 목록을 찾을 수 없어 승인해도 아무도 추가되지 않습니다.",
+      "email": "이메일",
+      "name": "이름",
+      "company": "회사",
+      "title": "직함",
+      "tags": "태그",
+      "notSet": "설정 안 됨",
+      "tableLabel_one": "추가할 {{count, number}}명",
+      "tableLabel_other": "추가할 {{count, number}}명",
+      "reviewAllNote": "모든 사람이 표시됩니다. 승인하기 전에 스크롤하여 모든 행을 확인하세요.",
+      "duplicatesNote_one": "중복된 이메일 주소 {{count, number}}개를 첫 행으로 합쳤습니다.",
+      "duplicatesNote_other": "중복된 이메일 주소 {{count, number}}개를 첫 행으로 합쳤습니다.",
+      "reuseNote": "이미 있는 사람은 저장된 정보를 유지하고, 이미 목록에 있는 사람은 그대로입니다. 이메일은 보내지 않습니다.",
+      "listLabel": "새 목록",
+      "listName": "이름",
+      "kind": "종류",
+      "description": "설명",
+      "emptyListNote": "목록은 비어 있는 상태로 시작합니다. 이어서 사람을 추가하세요.",
+      "listLoading": "목록을 읽는 중…",
+      "listReadFailed": "참여자 목록을 읽을 수 없어 목록을 ID로 표시합니다. 승인하기 전에 참여자에서 확인하세요."
+    },
     "showMore": "모두 보기 ({{n, number}}자)",
     "showLess": "간단히 보기",
     "empty": "(비어 있음)",
@@ -131,7 +159,11 @@
       "everyBrand": "추적 중인 모든 브랜드",
       "brand": "브랜드",
       "scanFields": "스캔",
-      "scanCost": "백그라운드에서 몇 분간 실행되며 웹 검색을 사용합니다 (Radar 설정의 쿼리 한도까지)."
+      "scanCost": "백그라운드에서 몇 분간 실행되며 웹 검색을 사용합니다 (Radar 설정의 쿼리 한도까지).",
+      "language": "검색 언어: {{language}}",
+      "feed": "뉴스 피드: {{feed}}",
+      "searchTerms": "검색어: {{list}}",
+      "excludeTerms": "제외어: {{list}}"
     },
     "scraper": {
       "nothingSaved": "승인하기 전에는 아무것도 저장되지 않습니다.",
@@ -296,6 +328,15 @@
     }
   },
   "tools": {
+    "create_participant_list": {
+      "title": "참여자 목록 만들기",
+      "titleWith": "참여자 목록 {{name}} 만들기"
+    },
+    "add_participants": {
+      "title": "참여자 목록에 사람 추가",
+      "titleWith_one": "참여자 목록에 {{count, number}}명 추가",
+      "titleWith_other": "참여자 목록에 {{count, number}}명 추가"
+    },
     "save_radar_brands": {
       "title": "Radar 브랜드 목록 저장",
       "titleWith_one": "Radar 브랜드 목록 저장 ({{count, number}}개 브랜드)",

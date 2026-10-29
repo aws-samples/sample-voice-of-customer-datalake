@@ -226,6 +226,28 @@ describe('feedback widget rating buttons', () => {
     expect(buttons.map(([value, label]) => `${value}:${label}`)).toStrictEqual(['1:Terrible', '2:Bad', '3:Okay', '4:Good', '5:Amazing'])
     expect(buttons.map(([, , text]) => text.length > 0)).not.toContain(false)
   })
+
+  // 5.34.00 live finding: the face and star buttons had no accessible name (a glyph only).
+  it('names every face, star and number button by its value on the scale, inside a named group', async () => {
+    const names = async (config: Record<string, unknown>) => {
+      const container = await renderWidget({ ...RATING, ...config })
+      expect(container.querySelector('.voc-rating-container')?.getAttribute('aria-label')).toBe('How was it?')
+      return [...container.querySelectorAll('.voc-rating-btn')].map((button) => button.getAttribute('aria-label'))
+    }
+    expect(await names({ rating_type: 'emoji' })).toStrictEqual(
+      ['Terrible (1 of 5)', 'Bad (2 of 5)', 'Okay (3 of 5)', 'Good (4 of 5)', 'Amazing (5 of 5)'])
+    expect(await names({ rating_type: 'stars', rating_max: 6 })).toStrictEqual(
+      ['1 star of 6: Poor', '2 stars of 6: Fair', '3 stars of 6: Good', '4 stars of 6: Great', '5 stars of 6: Excellent', '6 stars of 6'])
+    expect((await names({ rating_type: 'numeric' })).at(-1)).toBe('10 of 10')
+  })
+
+  it('marks the chosen rating as pressed', async () => {
+    const container = await renderWidget({ ...RATING, rating_type: 'emoji' })
+    const okay = container.querySelector<HTMLButtonElement>('.voc-rating-btn[data-value="3"]')
+    okay?.click()
+    expect([...container.querySelectorAll('.voc-rating-btn')].map((button) => button.getAttribute('aria-pressed')))
+      .toStrictEqual(['false', 'false', 'true', 'false', 'false'])
+  })
 })
 
 describe('feedback widget submit failures', () => {

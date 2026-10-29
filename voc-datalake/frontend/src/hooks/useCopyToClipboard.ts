@@ -51,8 +51,23 @@ export function useCopyToClipboard(timeout = 2000) {
     markCopied(key)
   }, [markCopied])
 
+  /**
+   * Write to the clipboard and show the feedback only once the write resolved: true when it did,
+   * false (and no feedback) when the browser refused it, so the caller can say so.
+   */
+  const tryCopy = useCallback(async (text: string, key = '_'): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      return false
+    }
+    markCopied(key)
+    return true
+  }, [markCopied])
+
   return {
     copy,
+    tryCopy,
     markCopied,
     copiedKey,
   } as const

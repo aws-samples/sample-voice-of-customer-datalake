@@ -8,52 +8,25 @@
  *
  * @module components/UserAdmin/UserFlagsPanel
  */
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, Flag } from 'lucide-react'
+import { Flag } from 'lucide-react'
 import { readUserFlags, userFlagsApi } from '../../api/userFlagsApi'
 import type { UserFlag, UserFlags } from '../../api/userFlagsApi'
 import type { CognitoUser } from '../../api/types'
+import UserSettingsPanel from './UserSettingsPanel'
 
-interface FlagChange {
-  username: string
-  flag: UserFlag
-  value: boolean
-}
+const saveFlags = (username: string, patch: Partial<UserFlags>) => userFlagsApi.save(username, patch)
 
 export default function UserFlagsPanel({ users }: Readonly<{ users: readonly CognitoUser[] }>) {
   const { t } = useTranslation('components')
-  const queryClient = useQueryClient()
-  const save = useMutation({
-    mutationFn: ({ username, flag, value }: FlagChange) => userFlagsApi.save(username, { [flag]: value }),
-    // Refetch: setting a fallback owner clears the previous one server-side.
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: ['users'] }),
-  })
-
+  // The panel refetches the users after each save: setting a fallback owner clears the previous one server-side.
+  const copy = { title: t('userAdmin.flags.title'), description: t('userAdmin.flags.description'), saveFailed: t('userAdmin.flags.saveFailed') }
   return (
-    // A fieldset, not a heading: the Settings card owns the only section heading.
-    <fieldset className="border border-border rounded-lg p-4">
-      <legend className="flex items-center gap-2 px-1 text-sm font-semibold tracking-tight text-text-strong">
-        <Flag size={14} className="text-accent" /> {t('userAdmin.flags.title')}
-      </legend>
-      <p className="text-xs text-muted mb-3">{t('userAdmin.flags.description')}</p>
-      {save.isError ? (
-        <p role="alert" className="text-xs text-danger flex items-center gap-1 mb-2">
-          <AlertCircle size={12} /> {t('userAdmin.flags.saveFailed')}
-        </p>
-      ) : null}
-      <ul className="divide-y divide-border">
-        {users.map((user) => (
-          <UserFlagsRow
-            key={user.username}
-            user={user}
-            flags={readUserFlags(user)}
-            disabled={save.isPending}
-            onChange={(flag, value) => save.mutate({ username: user.username, flag, value })}
-          />
-        ))}
-      </ul>
-    </fieldset>
+    <UserSettingsPanel icon={Flag} copy={copy} save={saveFlags} users={users}
+      row={(user, edit) => (
+        <UserFlagsRow key={user.username} user={user} flags={readUserFlags(user)} disabled={edit.disabled}
+          onChange={(flag, value) => edit.change({ [flag]: value })} />
+      )} />
   )
 }
 

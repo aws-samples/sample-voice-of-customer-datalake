@@ -94,7 +94,7 @@ class TestEveryClientFactoryBuildsOnceFromAColdStart:
         constructor: MagicMock = getattr(boto3_mock, boto_method)
         assert constructor.call_count == 0
 
-    def test_only_s3_and_bedrock_pass_a_config(self):
+    def test_only_dynamodb_s3_and_bedrock_pass_a_config(self):
         fresh = _fresh_module()
         with patch.object(fresh, 'boto3') as boto3_mock:
             fresh.get_dynamodb_resource()
@@ -104,7 +104,7 @@ class TestEveryClientFactoryBuildsOnceFromAColdStart:
             fresh.get_bedrock_client()
             fresh.get_lambda_client()
 
-        assert boto3_mock.resource.call_args_list[0].kwargs == {}
+        assert sorted(boto3_mock.resource.call_args_list[0].kwargs) == ['config']
         kwargs_by_service = {
             call.args[0]: sorted(call.kwargs) for call in boto3_mock.client.call_args_list
         }

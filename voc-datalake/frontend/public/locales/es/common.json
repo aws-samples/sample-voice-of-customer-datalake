@@ -16,6 +16,7 @@
     "prioritization": "Priorización",
     "problems": "Análisis de problemas",
     "project": "Proyecto",
+    "board": "Tablero",
     "projects": "Proyectos",
     "scrapers": "Fuentes de datos",
     "memory": "Memoria",
@@ -27,7 +28,9 @@
     "account": "Cuenta",
     "workflows": "Flujos de trabajo",
     "workflow": "Flujo de trabajo",
-    "radar": "Radar"
+    "radar": "Radar",
+    "featureRequests": "Tableros de feedback",
+    "participants": "Participantes"
   },
   "cancel": "Cancelar",
   "configureBrand": "Configurar marca",
@@ -88,7 +91,9 @@
     "memory": "Memoria",
     "company": "Empresa",
     "admin": "Administración",
-    "connect": "MCP y skills"
+    "connect": "MCP y skills",
+    "featureRequests": "Tableros de feedback",
+    "participants": "Participantes"
   },
   "partialCountsHint": "Aproximado: no se pudo leer el periodo completo, los recuentos son un límite inferior",
   "problemAnalysisPage": {
@@ -115,7 +120,8 @@
     "collapseSidebar": "Contraer barra lateral",
     "expandSidebar": "Expandir barra lateral",
     "openMenu": "Abrir menú",
-    "label": "Barra lateral principal"
+    "label": "Barra lateral principal",
+    "mainNav": "Principal"
   },
   "profileMenu": {
     "trigger": "Menú de la cuenta de {{name}}",
@@ -132,6 +138,8 @@
     "48hFull": "48 Horas",
     "7d": "7d",
     "7dFull": "7 Días",
+    "14d": "14d",
+    "14dFull": "14 Días",
     "apply": "Aplicar",
     "cancel": "Cancelar",
     "clear": "Limpiar",
@@ -305,6 +313,7 @@
     "revokedGroup": "Revocados ({{count, number}})",
     "revokeBody": "«{{name}}» deja de funcionar de inmediato para todos los asistentes que lo usan. No se puede deshacer.",
     "revoke": "Revocar",
+    "revokeNamed": "Revocar el token «{{name}}»",
     "toggleAudit": "Mostrar la actividad de {{name}}",
     "status": {
       "active": "Activo",
@@ -336,5 +345,46 @@
   "header": {
     "title": "Voz del cliente",
     "subtitle": "Plataforma unificada de inteligencia sobre la opinión de los clientes"
+  },
+  "builtInSources": {
+    "webscraper": "Recolector web",
+    "manual_import": "Importación manual",
+    "s3_import": "Importación de S3",
+    "feedback_form": "Formulario de opinión",
+    "prototype_feedback": "Opiniones del prototipo",
+    "github_issues": "Issues de GitHub",
+    "app_reviews_ios": "Reseñas de la app iOS",
+    "app_reviews_android": "Reseñas de la app Android",
+    "synthetic_reviews": "Reseñas sintéticas",
+    "web_reviews": "Reseñas web",
+    "email_intake": "Bandeja de correo"
+  },
+  "feedbackDimension": {
+    "label": "Tipo de comentario",
+    "description": "Qué tipo de comentario es una reseña: un tipo principal, asignado por el modelo para cada fuente."
+  },
+  "feedbackTypes": {
+    "bug": "Error",
+    "service_failure": "Fallo del servicio",
+    "feature_request": "Solicitud de función",
+    "usability": "Usabilidad",
+    "performance": "Rendimiento",
+    "pricing_billing": "Precios y facturación",
+    "support_experience": "Experiencia de soporte",
+    "praise": "Elogio",
+    "question": "Pregunta",
+    "other": "Otro"
+  },
+  "feedbackTypeDescriptions": {
+    "bug": "Algo está roto o mal: un error, un bloqueo, datos incorrectos",
+    "service_failure": "El servicio no cumplió: una caída, una entrega o un pago fallidos, no se puede iniciar sesión",
+    "feature_request": "Pide algo nuevo o un cambio",
+    "usability": "Funciona, pero es confuso o difícil de usar",
+    "performance": "Funciona, pero es lento (un bloqueo es un error)",
+    "pricing_billing": "Precios, tarifas, cargos, reembolsos, facturas",
+    "support_experience": "Cómo trató al cliente el soporte o el personal",
+    "praise": "Comentario positivo sin nada que arreglar",
+    "question": "Pregunta cómo funciona algo",
+    "other": "Ninguno de los anteriores"
   }
 }

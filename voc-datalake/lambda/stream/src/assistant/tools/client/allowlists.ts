@@ -30,7 +30,7 @@ function nonEmpty<T extends Record<string, unknown>>(schema: z.ZodType<T, unknow
   return schema.refine((value) => Object.values(value).some((v) => v !== undefined), 'updates must change at least one field');
 }
 
-const text = (max = 2000) => z.string().max(max);
+const textField = (max = 2000) => z.string().max(max);
 const required = (max: number) => z.string().trim().min(1).max(max);
 const textList = z.array(z.string().max(500)).max(20);
 
@@ -41,49 +41,49 @@ export const PERSONA_UPDATE_FIELDS = [
 
 export const personaUpdatesSchema = nonEmpty(z.object({
   name: required(200).optional(),
-  tagline: text(500).optional(),
+  tagline: textField(500).optional(),
   confidence: z.enum(['high', 'medium', 'low']).optional(),
   identity: z.object({
-    age_range: text(100).optional(),
-    location: text(200).optional(),
-    occupation: text(200).optional(),
-    income_bracket: text(100).optional(),
-    education: text(200).optional(),
-    family_status: text(200).optional(),
-    bio: text().optional(),
+    age_range: textField(100).optional(),
+    location: textField(200).optional(),
+    occupation: textField(200).optional(),
+    income_bracket: textField(100).optional(),
+    education: textField(200).optional(),
+    family_status: textField(200).optional(),
+    bio: textField().optional(),
   }).strict().optional(),
   goals_motivations: z.object({
-    primary_goal: text().optional(),
+    primary_goal: textField().optional(),
     secondary_goals: textList.optional(),
-    success_definition: text().optional(),
+    success_definition: textField().optional(),
     underlying_motivations: textList.optional(),
   }).strict().optional(),
   pain_points: z.object({
     current_challenges: textList.optional(),
     blockers: textList.optional(),
     workarounds: textList.optional(),
-    emotional_impact: text().optional(),
+    emotional_impact: textField().optional(),
   }).strict().optional(),
   behaviors: z.object({
     current_solutions: textList.optional(),
     tools_used: textList.optional(),
-    activity_frequency: text(200).optional(),
-    tech_savviness: text(200).optional(),
-    decision_style: text(500).optional(),
+    activity_frequency: textField(200).optional(),
+    tech_savviness: textField(200).optional(),
+    decision_style: textField(500).optional(),
   }).strict().optional(),
   context_environment: z.object({
-    usage_context: text().optional(),
+    usage_context: textField().optional(),
     devices: textList.optional(),
-    time_constraints: text(500).optional(),
-    social_context: text(500).optional(),
+    time_constraints: textField(500).optional(),
+    social_context: textField(500).optional(),
     influencers: textList.optional(),
   }).strict().optional(),
-  quotes: z.array(z.object({ text: required(1000), context: text(500).optional() }).strict()).max(20).optional(),
+  quotes: z.array(z.object({ text: required(1000), context: textField(500).optional() }).strict()).max(20).optional(),
   scenario: z.object({
-    title: text(200).optional(),
-    narrative: text(4000).optional(),
-    trigger: text(1000).optional(),
-    outcome: text(1000).optional(),
+    title: textField(200).optional(),
+    narrative: textField(4000).optional(),
+    trigger: textField(1000).optional(),
+    outcome: textField(1000).optional(),
   }).strict().optional(),
 }).strict());
 
@@ -105,7 +105,7 @@ export const LIFECYCLE_STATES = ['idea', 'mvp', 'beta', 'ga', 'mature'] as const
 
 /** Built from the field → max-length map so the limits live in one place. */
 const productContextStringShape: Record<string, z.ZodOptional<z.ZodString>> = Object.fromEntries(
-  Object.entries(PRODUCT_CONTEXT_STRING_FIELDS).map(([field, max]) => [field, text(max).optional()]),
+  Object.entries(PRODUCT_CONTEXT_STRING_FIELDS).map(([field, max]) => [field, textField(max).optional()]),
 );
 
 export const productContextUpdatesSchema = nonEmpty(z.object({
@@ -135,12 +135,12 @@ export const labelTagsSchema = z.array(z.string().trim().regex(TAG_PATTERN)).max
 export const feedbackFormUpdatesSchema = nonEmpty(z.object({
   enabled: z.boolean().optional(),
   name: required(200).optional(),
-  title: text(200).optional(),
-  description: text(1000).optional(),
-  question: text(500).optional(),
-  placeholder: text(200).optional(),
+  title: textField(200).optional(),
+  description: textField(1000).optional(),
+  question: textField(500).optional(),
+  placeholder: textField(200).optional(),
   submit_button_text: required(50).optional(),
-  success_message: text(500).optional(),
+  success_message: textField(500).optional(),
   rating_enabled: z.boolean().optional(),
   rating_type: z.enum(['stars', 'numeric', 'emoji']).optional(),
   collect_email: z.boolean().optional(),

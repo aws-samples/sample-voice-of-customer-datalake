@@ -1,5 +1,30 @@
 {
   "aiModel": {
+    "image": {
+      "title": "이미지 생성(페르소나 아바타)",
+      "description": "페르소나 아바타를 그리는 이미지 모델입니다. 배포에서 정해지며 여기서 선택할 수 없습니다. 접근 권한은 배포 시 요청됩니다.",
+      "model": "모델",
+      "region": "리전",
+      "access": "접근",
+      "quota": "할당량",
+      "requestsPerMinute": "분당 {{count, number}}회 요청",
+      "quotaPending": "Service Quotas에서 읽는 중입니다. 1분 후 다시 확인하세요",
+      "avatarsOff": "이 배포에서는 아바타가 꺼져 있으므로(EU 추론 범위) 이 모델은 사용되지 않습니다.",
+      "testTitle": "{{model}}(으)로 작은 테스트 이미지 1장을 생성합니다. 클릭할 때마다 몇 센트(미화)가 들며, 이미지는 저장되지 않습니다.",
+      "status": {
+        "available": "사용 가능",
+        "no_access": "접근 불가",
+        "not_subscribed": "구독 안 됨",
+        "not_in_region": "이 리전에서 제공 안 됨",
+        "unknown": "알 수 없음"
+      },
+      "hint": {
+        "no_access": "이 계정 또는 해당 역할은 모델을 사용할 수 없습니다. Bedrock 및 AWS Marketplace에 대한 조직 정책(SCP)을 확인한 후 다시 배포하세요.",
+        "not_subscribed": "모델의 계약 또는 Marketplace 구독이 없습니다. 다시 배포하거나(배포가 요청합니다) Bedrock 콘솔의 모델 액세스에서 수락하세요.",
+        "not_in_region": "이 리전에서는 모델이 제공되지 않습니다. avatar-generation.json에서 그 리전에서 제공되는 이미지 모델을 선택하세요.",
+        "unknown": "접근 상태를 읽을 수 없습니다. 테스트로 모델을 직접 확인하세요."
+      }
+    },
     "automaticOption": "자동 — {{model}}",
     "groupOther": "기타 모델",
     "groupRecommended": "권장",
@@ -62,6 +87,7 @@
       "latency": "{{ms}}ms",
       "tokensPerMinute": "분당 토큰 {{count, number}}개",
       "quotaUnknown": "할당량 알 수 없음",
+      "quotaStale": "마지막으로 저장된 값입니다. Service Quotas에서 새 값을 읽는 중입니다",
       "all": "모든 모델 테스트",
       "allTitle": "모델 액세스 및 용량",
       "allIntro": "각 모델에 짧은 요청을 차례로 하나씩 보내고 이 계정과 리전의 분당 토큰 할당량을 표시합니다.",
@@ -146,7 +172,6 @@
   "logs": {
     "clear": "지우기",
     "configureFirst": "로그를 보려면 일반 탭에서 API 엔드포인트를 구성하세요.",
-    "daysAgo": "{{count, number}}일 전",
     "daysAgo_one": "{{count, number}}일 전",
     "daysAgo_other": "{{count, number}}일 전",
     "errorLabel": "오류:",
@@ -155,10 +180,8 @@
     "errorsLabel": "오류:",
     "failures_one": "{{count, number}}건 실패",
     "failures_other": "{{count, number}}건 실패",
-    "hoursAgo": "{{count, number}}시간 전",
     "hoursAgo_one": "{{count, number}}시간 전",
     "hoursAgo_other": "{{count, number}}시간 전",
-    "items": "{{count, number}}개 항목",
     "items_one": "{{count, number}}개 항목",
     "items_other": "{{count, number}}개 항목",
     "justNow": "방금",
@@ -168,26 +191,21 @@
     "loadingRuns": "실행 로딩 중...",
     "loadingSummary": "요약 로딩 중...",
     "messageId": "메시지 ID:",
-    "minutesAgo": "{{count, number}}분 전",
     "minutesAgo_one": "{{count, number}}분 전",
     "minutesAgo_other": "{{count, number}}분 전",
-    "moreEntries": "+{{count, number}}개 항목 더",
     "moreEntries_one": "+{{count, number}}개 항목 더",
     "moreEntries_other": "+{{count, number}}개 항목 더",
     "noProcessingErrors": "이 기간에 처리 오류 없음",
     "noRunsInPeriod": "이 기간에 실행 없음",
     "noScrapersConfigured": "아직 실행되는 데이터 소스가 없습니다. 데이터 소스 페이지에서 추가하세요.",
     "noValidationFailures": "이 기간에 유효성 검사 실패 없음",
-    "pages": "{{count, number}}페이지",
     "pages_one": "{{count, number}}페이지",
     "pages_other": "{{count, number}}페이지",
     "processingErrors": "처리 오류",
     "recordKeys": "포함된 필드:",
-    "textLength": "텍스트 길이: {{count, number}}자",
     "textLength_one": "텍스트 길이: {{count, number}}자",
     "textLength_other": "텍스트 길이: {{count, number}}자",
     "refresh": "새로고침",
-    "runErrors": "{{count, number}}건 오류",
     "runErrors_one": "{{count, number}}건 오류",
     "runErrors_other": "{{count, number}}건 오류",
     "scraperRuns": "스크레이퍼 실행",
@@ -230,7 +248,81 @@
       "ios": "iPhone 앱",
       "android": "Android 앱"
     },
-    "noRunsYet": "아직 실행 기록 없음"
+    "noRunsYet": "아직 실행 기록 없음",
+    "system": {
+      "tab": "시스템 오류",
+      "levelLabel": "로그 수준",
+      "levelError": "오류",
+      "levelWarning": "오류 및 경고",
+      "searchingStart": "로그를 검색하는 중…",
+      "searching_one": "함수 {{count, number}}개의 로그를 검색하는 중…",
+      "searching_other": "함수 {{count, number}}개의 로그를 검색하는 중…",
+      "searched_one": "함수 {{count, number}}개의 로그를 검색했습니다",
+      "searched_other": "함수 {{count, number}}개의 로그를 검색했습니다",
+      "empty": "이 기간에 오류가 없습니다",
+      "failed": "로그 검색에 실패했습니다. 다시 시도하세요.",
+      "loadFailed": "시스템 로그를 불러올 수 없습니다.",
+      "truncated": "최신 로그 {{rows, number}}줄을 표시합니다",
+      "download": "다운로드",
+      "downloadTitle": "분석을 위해 공유할 수 있도록 이 오류를 JSON 파일로 다운로드합니다",
+      "adminOnly": "시스템 오류는 관리자만 볼 수 있습니다.",
+      "times": "×{{n, number}}",
+      "occurrences_one": "{{count, number}}회 발생",
+      "occurrences_other": "{{count, number}}회 발생",
+      "firstSeen": "처음 발생",
+      "lastSeen": "마지막 발생",
+      "requestId": "요청 ID",
+      "sourceTitle": "이 줄의 출처",
+      "sourceApi": "API",
+      "sourceWorkflow": "워크플로",
+      "request": {
+        "show": "요청 전체 보기",
+        "loading": "이 요청의 모든 줄을 읽는 중…",
+        "loadFailed": "요청의 줄을 불러올 수 없습니다.",
+        "failed": "이 요청 검색에 실패했습니다. 다시 시도하세요.",
+        "retry": "다시 시도",
+        "empty": "이 요청의 줄을 찾을 수 없습니다(로그가 만료되었을 수 있습니다).",
+        "truncated": "처음 {{lines, number}}줄을 표시합니다",
+        "linesLabel": "이 요청의 로그 줄",
+        "title_one": "이 요청의 {{count, number}}줄",
+        "title_other": "이 요청의 {{count, number}}줄"
+      },
+      "queues": {
+        "title": "실패 대기열",
+        "loading": "실패 대기열을 확인하는 중…",
+        "loadFailed": "실패 대기열을 읽을 수 없습니다.",
+        "oldest": "가장 오래됨: {{age}}",
+        "noSample": "샘플로 읽을 수 있는 메시지가 없습니다.",
+        "unreadable": "읽을 수 없음",
+        "peekNote": "이 메시지는 모든 재시도에 실패했으며 다시 시도되지 않습니다. 샘플을 읽어도 삭제되지 않습니다.",
+        "empty_one": "실패 대기열이 비어 있습니다",
+        "empty_other": "실패 대기열 {{count, number}}개가 모두 비어 있습니다",
+        "messages_one": "메시지 {{count, number}}개",
+        "messages_other": "메시지 {{count, number}}개"
+      },
+      "environment": {
+        "title": "환경",
+        "loading": "환경을 불러오는 중…",
+        "loadFailed": "환경을 불러올 수 없습니다.",
+        "on": "켜짐",
+        "off": "꺼짐",
+        "none": "없음",
+        "fields": {
+          "version": "버전",
+          "region": "리전",
+          "account_suffix": "계정(마지막 4자리)",
+          "deployment_prefix": "배포 접두사",
+          "enabled_sources": "활성화된 소스",
+          "web_search": "웹 검색",
+          "inference_scope": "추론 범위",
+          "image_model": "이미지 모델",
+          "model_overrides": "모델 선택",
+          "alerting": "알림",
+        "open_circuits": "일시 중지된 소스(서킷 브레이커)",
+        "log_coverage": "검색한 로그"
+        }
+      }
+    }
   },
   "saveChanges": "변경 사항 저장",
   "saved": "저장됨!",
@@ -251,8 +343,6 @@
     "saveToSecrets": "Secrets Manager에 저장",
     "selectOption": "선택...",
     "show": "표시",
-    "test": "테스트",
-    "unknownResult": "알 수 없는 결과",
     "webhooks": "웹훅",
     "circuit": {
       "paused": "반복된 실패로 일시 중지됨",
@@ -287,7 +377,8 @@
     "policies": "소스 정책",
     "users": "사용자",
     "logs": "로그",
-    "version": "버전"
+    "version": "버전",
+    "boards": "보드"
   },
   "title": "설정",
   "users": {
@@ -312,6 +403,7 @@
     "retry": "다시 시도",
     "loading": "불러오는 중…",
     "saveFailed": "저장하지 못했습니다. 다시 시도하세요.",
+    "discardChanges": "변경 사항 취소",
     "write": "작성",
     "preview": "미리 보기",
     "nothingToPreview": "아직 미리 볼 내용이 없습니다.",
@@ -361,14 +453,26 @@
     "removeKpi": "KPI 삭제",
     "kpiName": "KPI 이름",
     "kpiTarget": "목표값",
-    "kpiUnit": "단위"
+    "kpiUnit": "단위",
+    "fieldRequired": "필수 항목입니다. 입력하거나 행을 삭제하세요",
+    "fieldTooLong": "최대 {{max, number}}자",
+    "fixFields": "저장되지 않았습니다. 표시된 항목을 수정하세요."
   },
   "designSystem": {
     "title": "디자인 시스템",
     "description": "브랜드 토큰, 가이드라인, 참고 자료입니다. 프로토타입과 PR/FAQ 시각 자료가 이를 따라 만들어집니다.",
     "logo": "로고",
     "logoAlt": "회사 로고",
+    "logoInDraft": "참조에서 가져온 새 로고입니다. 디자인 시스템을 저장하면 회사 로고가 됩니다.",
     "uploadLogo": "로고 업로드",
+    "logoHint": "PNG, JPEG, WebP 또는 SVG(SVG는 브라우저에서 PNG로 변환됩니다).",
+    "svg": {
+      "tooLarge": "{{name}}이(가) 1MB를 초과합니다. SVG 로고는 최대 1MB까지 가능합니다.",
+      "unreadable": "{{name}}을(를) SVG 이미지로 읽을 수 없습니다. PNG로 내보내 업로드하세요.",
+      "timeout": "{{name}} 변환에 시간이 너무 오래 걸렸습니다. PNG로 내보내 업로드하세요.",
+      "notConverted": "이 SVG는 브라우저에서 변환할 수 없습니다. PNG로 내보내 업로드하세요.",
+      "resultTooLarge": "변환된 PNG가 5MB를 초과합니다. 더 작은 PNG로 내보내 업로드하세요."
+    },
     "colors": "색상",
     "typography": "타이포그래피",
     "spacing": "간격",
@@ -407,12 +511,22 @@
     "archive": "보관",
     "archiveTitle": "이 참고 자료를 보관할까요?",
     "archiveMessage": "\"{{title}}\"은(는) 새 프로토타입에 더 이상 사용되지 않습니다. 파일은 보존됩니다.",
+    "archiveMessageLink": "\"{{title}}\"은(는) 새 프로토타입에 더 이상 사용되지 않습니다. 링크와 읽어 온 내용은 보존됩니다.",
     "referenceKind": "참고 자료 유형",
     "referenceTitle": "제목",
     "referenceUrl": "링크(https://…)",
+    "urlProblems": {
+      "tooLong": "주소가 2,048자를 넘습니다.",
+      "notUrl": "웹 주소가 아닙니다. https://로 시작하는 전체 링크를 붙여 넣으세요.",
+      "notHttps": "https:// 주소만 읽을 수 있습니다. {{scheme}}:// 주소는 거부됩니다.",
+      "noHost": "https:// 뒤에 사이트 이름이 필요합니다(예: https://example.com).",
+      "credentials": "주소에서 사용자 이름이나 비밀번호를 제거하세요.",
+      "localhost": "이 컴퓨터의 주소는 읽을 수 없습니다. 공개 사이트를 사용하세요."
+    },
     "referenceFile": "파일",
     "addReference": "참고 자료 추가",
     "addReferenceFailed": "참고 자료를 추가하지 못했습니다. 다시 시도하세요.",
+    "duplicateReference": "이 주소는 이미 참조입니다: \"{{title}}\".",
     "referenceTitleOptional": "제목(선택)",
     "kindHints": {
       "website": "안전한 브라우저에서 페이지를 열어 색상, 글꼴, 로고를 읽어 옵니다.",
@@ -443,11 +557,10 @@
       "variantsCount_other": "변형 {{count, number}}개",
       "onlyGuidelines": "가이드라인만",
       "logoCandidate": "이 참고 자료에서 찾은 로고",
+      "logoRendered": "사이트의 SVG 로고에서 렌더링됨",
       "apply": "디자인 시스템으로 사용",
       "useLogo": "이 로고 사용",
-      "logoFailed": "이 로고를 사용하지 못했습니다. 다시 시도하세요.",
-      "replaceLogoTitle": "현재 로고를 바꿀까요?",
-      "replaceLogoMessage": "\"{{title}}\"의 로고가 현재 로고를 대체합니다."
+      "logoFailed": "이 로고를 사용하지 못했습니다. 다시 시도하세요."
     },
     "applied": {
       "title": "{{source}}에서 가져옴 — 변경 사항을 확인한 뒤 저장하세요.",
@@ -519,6 +632,7 @@
         "padding": "안쪽 여백",
         "gap": "간격",
         "height": "높이",
+        "width": "너비",
         "font_family": "글꼴",
         "font_size": "글꼴 크기",
         "font_weight": "글꼴 굵기",
@@ -528,6 +642,7 @@
         "outline": "포커스 테두리"
       },
       "hoverField": "마우스 오버 시 {{field}}",
+      "focusField": "포커스 시 {{field}}",
       "hoverFocus": "마우스 오버와 포커스",
       "useToken": "토큰 사용…",
       "useTokenFor": "{{field}}에 색상 토큰 사용",
@@ -545,6 +660,7 @@
         "padding": "8px 16px처럼 길이를 1~4개 입력하세요.",
         "gap": "8px 같은 길이를 입력하세요.",
         "height": "36px 같은 길이를 입력하세요.",
+        "width": "36px 같은 길이를 사용하세요.",
         "font_family": "글꼴 이름을 쉼표로 구분해 입력하세요.",
         "font_size": "14px 같은 길이를 입력하세요.",
         "font_weight": "100–900, normal 또는 bold를 입력하세요.",
@@ -652,5 +768,177 @@
     "changelogTitle": "릴리스 노트",
     "changelogDescription": "CHANGELOG.md의 릴리스별 변경 사항(최신순).",
     "showOlder": "이전 릴리스 보기 ({{count, number}}개 더)"
+  },
+  "pluginCopy": {
+    "appReviewsAndroid": {
+      "name": "Android 앱 리뷰",
+      "description": "Google Play 스토어에서 고객 리뷰를 수집합니다"
+    },
+    "appReviewsIos": {
+      "name": "iOS 앱 리뷰",
+      "description": "Apple App Store에서 고객 리뷰를 수집합니다"
+    },
+    "githubIssues": {
+      "name": "GitHub 이슈",
+      "description": "GitHub 저장소의 이슈와 댓글을 소프트웨어 버전, 레이블, 오류 서명과 함께 가져옵니다"
+    },
+    "s3Import": {
+      "name": "S3 일괄 가져오기",
+      "description": "S3 버킷에서 피드백을 가져옵니다(CSV, JSON, JSONL)"
+    },
+    "syntheticReviews": {
+      "name": "합성 리뷰 생성기",
+      "description": "데모, 테스트, 모델링을 위해 AI(Amazon Bedrock)로 사실적인 합성 고객 리뷰를 생성합니다. 일반 파이프라인으로 수집되며 합성 데이터로 태그됩니다."
+    },
+    "webReviews": {
+      "name": "웹 리뷰",
+      "description": "관리형 브라우저로 공개 리뷰 페이지(Trustpilot, TripAdvisor, 포럼)의 고객 리뷰를 읽습니다. 추가한 각 페이지가 하나의 소스입니다."
+    },
+    "webscraper": {
+      "name": "웹 스크레이퍼",
+      "description": "웹사이트에서 피드백을 추출하는 구성 가능한 스크레이퍼"
+    }
+  },
+  "boards": {
+    "loading": "불러오는 중…",
+    "saved": "저장했습니다.",
+    "cancel": "취소",
+    "domains": {
+      "title": "회사 도메인",
+      "description": "회사에 속한 이메일 도메인입니다. 이 도메인의 사용자는 회사에 열린 모든 보드에 로그인할 수 있으며, 참가자를 추가할 때 동료로 간주됩니다.",
+      "label": "회사 이메일 도메인",
+      "hint": "도메인마다 Enter 키를 누르세요. 도메인이 없으면 아무도 회사 보드에 로그인할 수 없습니다.",
+      "save": "도메인 저장",
+      "loadFailed": "회사 도메인을 불러오지 못했습니다."
+    },
+    "participantCard": {
+      "domains": "회사 도메인: {{list}}.",
+      "noDomains": "아직 회사 도메인이 없습니다.",
+      "editInBoards": "보드에서 편집"
+    },
+    "list": {
+      "title": "피드백 보드",
+      "description": "각 보드는 한 팀 또는 대상의 요청을 모으며, 자체 공유 링크, 필드, 상태를 가집니다.",
+      "create": "새 보드",
+      "empty": "아직 보드가 없습니다. 템플릿에서 하나를 만드세요.",
+      "loadFailed": "보드를 불러오지 못했습니다.",
+      "archived": "보관됨",
+      "edit": "편집",
+      "editLabel": "{{name}} 편집",
+      "requests_one": "요청 {{count, number}}개",
+      "requests_other": "요청 {{count, number}}개"
+    },
+    "templates": {
+      "sales": "영업 기능 요청",
+      "salesHint": "모든 요청과 +1에 고객, 거래, 매출 영향을 기록합니다.",
+      "service": "고객 서비스 문제",
+      "serviceHint": "문제 유형, 심각도, 참조 번호, 단계. +1은 나도 영향을 받았다는 뜻입니다.",
+      "beta": "베타 피드백",
+      "betaHint": "제품 영역, 결과, 평점, 테스터용 링크.",
+      "blank": "빈 보드",
+      "blankHint": "제목과 설명만. 필드는 나중에 추가합니다."
+    },
+    "create": {
+      "title": "새 보드",
+      "hint": "시작할 템플릿을 선택하세요. 모든 필드와 상태는 나중에 바꿀 수 있습니다.",
+      "template": "템플릿",
+      "slugPreview": "공유 링크: /board/{{slug}}",
+      "slugLater": "공유 링크는 보드를 만들 때 이름으로 생성됩니다.",
+      "submit": "보드 만들기"
+    },
+    "editor": {
+      "title": "보드",
+      "back": "보드 목록으로",
+      "name": "이름",
+      "slug": "링크 이름",
+      "slugHint": "소문자, 숫자, 단일 하이픈만, 최대 60자.",
+      "shareLink": "공유 링크:",
+      "shareAfterSave": "(저장 후)",
+      "copyLink": "링크 복사",
+      "copied": "복사했습니다.",
+      "description": "설명",
+      "save": "보드 저장",
+      "unsaved": "저장하지 않은 변경 사항이 있습니다."
+    },
+    "audience": {
+      "title": "로그인하고 게시할 수 있는 사람",
+      "company": "회사",
+      "companyHint": "회사 도메인의 사용자.",
+      "list": "특정 사용자",
+      "listHint": "허용된 도메인과 이메일 주소.",
+      "anyone": "누구나",
+      "anyoneHint": "확인을 마친 모든 이메일 주소.",
+      "companyDomains": "회사 도메인 사용: {{list}}.",
+      "noCompanyDomains": "아직 회사 도메인이 설정되지 않아 아무도 이 보드에 로그인할 수 없습니다.",
+      "domains": "허용된 도메인",
+      "emails": "허용된 이메일 주소",
+      "emailsCount_one": "주소 {{count, number}}개(최대 {{max, number}}개).",
+      "emailsCount_other": "주소 {{count, number}}개(최대 {{max, number}}개).",
+      "emailsInvalid": "유효하지 않은 이메일 주소: {{list}}",
+      "anyoneWarning": "모든 이메일 주소가 이 보드에 로그인하고 게시할 수 있습니다. 검토 절차는 없으며, 한 사람당 하루에 요청 20개와 +1 100개로 제한됩니다."
+    },
+    "fieldsEditor": {
+      "title": "필드",
+      "hint": "제목과 설명은 항상 입력받습니다. 이 보드에 필요한 필드를 켜세요.",
+      "requestGroup": "새 요청",
+      "supportGroup": "+1",
+      "required": "필수",
+      "requiredLabel": "{{field}} 필수"
+    },
+    "fields": {
+      "customer": "고객",
+      "deal": "거래",
+      "impact": "매출 영향",
+      "amount_usd": "금액(USD)",
+      "contact_email": "연락처 이메일",
+      "kind": "문제 유형",
+      "severity": "심각도",
+      "reference": "예약 또는 주문 번호",
+      "steps": "재현 단계",
+      "affected_count": "영향받은 인원",
+      "area": "제품 영역",
+      "outcome": "결과",
+      "rating": "평점",
+      "link": "링크",
+      "note": "메모"
+    },
+    "statuses": {
+      "title": "상태",
+      "hint": "새 요청은 첫 번째 상태에서 시작합니다. 최대 {{max, number}}개.",
+      "initial": "초기",
+      "labelFor": "상태 {{position, number}} 이름",
+      "moveUp": "{{status}} 위로 이동",
+      "moveDown": "{{status}} 아래로 이동",
+      "remove": "{{status}} 삭제",
+      "newLabel": "새 상태",
+      "add": "상태 추가",
+      "full": "보드에는 상태가 최대 {{max, number}}개까지 있습니다."
+    },
+    "lifecycle": {
+      "title": "보관 또는 삭제",
+      "hint_one": "이 보드에는 요청이 {{count, number}}개 있습니다. 보관하면 관리자 외에는 보이지 않으며 요청은 유지됩니다. 삭제하면 보드와 요청이 함께 삭제됩니다.",
+      "hint_other": "이 보드에는 요청이 {{count, number}}개 있습니다. 보관하면 관리자 외에는 보이지 않으며 요청은 유지됩니다. 삭제하면 보드와 요청이 함께 삭제됩니다.",
+      "saveFirst": "먼저 변경 사항을 저장하거나 취소하세요.",
+      "archive": "보관",
+      "restore": "복원",
+      "delete": "보드 삭제"
+    },
+    "problems": {
+      "nameRequired": "보드에는 이름이 필요합니다.",
+      "slugInvalid": "링크 이름에는 소문자, 숫자, 단일 하이픈만 쓸 수 있습니다.",
+      "statusesEmpty": "보드에는 상태가 하나 이상 필요합니다.",
+      "statusLabelRequired": "모든 상태에 이름이 필요합니다.",
+      "emailsInvalid": "유효하지 않은 이메일 주소를 고치거나 삭제하세요.",
+      "emailsTooMany": "이메일 주소는 최대 500개입니다.",
+      "listEmpty": "허용할 도메인이나 이메일 주소를 하나 이상 추가하세요."
+    },
+    "errors": {
+      "slugTaken": "다른 보드가 이미 이 링크 이름을 사용합니다. 다른 이름을 고르세요.",
+      "statusInUse": "삭제한 상태를 이 보드의 요청이 아직 사용하고 있습니다. 먼저 해당 요청을 다른 상태로 옮기거나 상태를 유지하세요.",
+      "forbidden": "관리자만 보드를 변경할 수 있습니다.",
+      "notFound": "이 보드는 더 이상 존재하지 않습니다.",
+      "conflict": "그사이 보드가 변경되었습니다. 다시 불러온 뒤 시도하세요.",
+      "generic": "문제가 발생했습니다. 다시 시도하세요."
+    }
   }
 }

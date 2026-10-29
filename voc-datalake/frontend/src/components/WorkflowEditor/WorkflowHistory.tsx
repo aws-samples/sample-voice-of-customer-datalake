@@ -47,7 +47,7 @@ function RevisionRow({ item, current, selected, onSelect }: Readonly<{
   const { t, i18n } = useTranslation('agents')
   const savedAt = formatDateTime(item.saved_at, i18n.language)
   return (
-    <li>
+    <li data-revision={item.revision}>
       <button type="button" aria-current={selected ? 'true' : undefined} onClick={onSelect}
         className={clsx('w-full text-left rounded-md px-2.5 py-2 focus-ring', selected ? 'bg-accent-subtle' : 'hover:bg-bg-hover')}>
         <span className="flex items-center gap-2">

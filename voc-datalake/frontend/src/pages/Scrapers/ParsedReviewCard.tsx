@@ -49,6 +49,8 @@ export default function ParsedReviewCard({
   const { t } = useTranslation('scrapers')
   const defaultedNoteId = useId()
   const dateMissing = review.date == null || review.date === ''
+  // Each row's controls name their review: a list of identical "Delete" / "Author" fields is unusable by ear.
+  const row = { n: index + 1 }
   return (
     <div className="border border-border rounded-lg p-4 bg-card">
       <div className="flex items-start justify-between gap-3 mb-3">
@@ -57,6 +59,7 @@ export default function ParsedReviewCard({
           <select
             value={review.rating ?? ''}
             onChange={(e) => onUpdate(index, { rating: e.target.value === '' ? null : Number(e.target.value) })}
+            aria-label={t('parsedReview.ratingLabel', row)}
             className="select select-sm w-auto"
           >
             {RATING_OPTIONS.map((opt) => (
@@ -70,12 +73,13 @@ export default function ParsedReviewCard({
             value={review.author ?? ''}
             onChange={(e) => onUpdate(index, { author: e.target.value === '' ? null : e.target.value })}
             placeholder={t('parsedReview.authorPlaceholder')}
+            aria-label={t('parsedReview.authorLabel', row)}
             className="input w-32 px-2 py-1"
           />
           <input
             type="date"
             required
-            aria-label={t('parsedReview.dateLabel')}
+            aria-label={t('parsedReview.dateLabel', row)}
             aria-invalid={dateMissing}
             aria-describedby={review.date_defaulted === true ? defaultedNoteId : undefined}
             value={review.date ?? ''}
@@ -90,11 +94,13 @@ export default function ParsedReviewCard({
           )}
         </div>
         <button
+          type="button"
           onClick={() => onDelete(index)}
-          className="p-1.5 text-danger hover:bg-danger-subtle rounded-sm transition-colors"
-          title="Delete review"
+          className="p-1.5 text-danger hover:bg-danger-subtle rounded-sm transition-colors focus-ring"
+          aria-label={t('parsedReview.deleteLabel', row)}
+          title={t('parsedReview.deleteLabel', row)}
         >
-          <Trash2 size={16} />
+          <Trash2 size={16} aria-hidden="true" />
         </button>
       </div>
 
@@ -103,6 +109,7 @@ export default function ParsedReviewCard({
         value={review.title ?? ''}
         onChange={(e) => onUpdate(index, { title: e.target.value === '' ? null : e.target.value })}
         placeholder={t('parsedReview.titlePlaceholder')}
+        aria-label={t('parsedReview.titleLabel', row)}
         className="input font-medium mb-2"
       />
 
@@ -110,6 +117,7 @@ export default function ParsedReviewCard({
         value={review.text}
         onChange={(e) => onUpdate(index, { text: e.target.value })}
         placeholder={t('parsedReview.textPlaceholder')}
+        aria-label={t('parsedReview.textLabel', row)}
         rows={3}
         className="input resize-none"
       />

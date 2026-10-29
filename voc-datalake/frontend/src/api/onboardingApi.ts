@@ -12,6 +12,7 @@
  *
  * @module api/onboardingApi
  */
+import { put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { optionalText } from './schemaList'
@@ -76,5 +77,5 @@ const PATH = '/settings/my-onboarding'
 export const onboardingApi = {
   get: async (): Promise<OnboardingPreference> => normalizeOnboarding(await fetchApi<unknown>(PATH)),
   save: async (changes: OnboardingChanges): Promise<OnboardingPreference> =>
-    normalizeOnboarding(await fetchApi<unknown>(PATH, { method: 'PUT', body: JSON.stringify(changes) })),
+    normalizeOnboarding(await fetchApi<unknown>(PATH, put(changes))),
 }

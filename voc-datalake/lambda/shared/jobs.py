@@ -18,6 +18,7 @@ from shared.aws import invoke_lambda_async, is_conditional_check_failure
 from shared.exceptions import ApiError, ServiceError
 from shared.logging import logger
 from shared.tables import get_jobs_table
+from shared.timestamps import now_iso
 
 EXECUTION_LEASE_SKEW_SECONDS = 5
 EXECUTION_REQUEUE_BUDGET_RATIO = 0.9
@@ -186,7 +187,7 @@ def create_job(
         raise ValueError("JOBS_TABLE environment variable not configured")
 
     job_id = f"job_{uuid.uuid4().hex[:16]}"
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     ttl = int((datetime.now(UTC) + timedelta(minutes=ttl_minutes)).timestamp())
 
     item = {
@@ -234,7 +235,7 @@ def update_job_status(
         logger.warning("JOBS_TABLE not configured, skipping job status update")
         return
 
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
 
     update_expr = 'SET #status = :status, progress = :progress, updated_at = :now, gsi1pk = :gsi1pk'
     expr_values = {
@@ -274,7 +275,18 @@ def update_job_status(
             ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
         )
     except Exception as e:
-        logger.error(f"Failed to update job status: {e}", exc_info=True)
+        if not is_conditional_check_failure(e):
+            logger.error(f"Failed to update job status: {e}", exc_info=True)
+            return
+        # The row is gone: its project was deleted (the delete removes its jobs)
+        # or its TTL passed. Nothing to update, and not a fault (5.35.01 e2e: six
+        # ERROR lines for one deleted project).
+        logger.info(
+            f"[JOB] Job {job_id} status not updated to {status}: its row no longer exists "
+            f"(project {project_id} deleted, or the job expired)"
+        )
+
+
 class JobContext:
     """Context object passed to job handlers for progress updates."""
 

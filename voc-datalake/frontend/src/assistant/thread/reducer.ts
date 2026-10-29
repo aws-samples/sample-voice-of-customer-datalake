@@ -37,6 +37,7 @@ export type ThreadAction =
   | { type: 'local/resolution'; resolution: ApprovalResolution }
   | { type: 'local/apply_resolutions'; toolMessages: Message[] }
   | { type: 'local/restore'; state: ThreadState }
+  | { type: 'local/regenerate' }
 
 export function createThreadState(threadId: string): ThreadState {
   return {
@@ -51,6 +52,7 @@ export function createThreadState(threadId: string): ThreadState {
     resolutions: {},
     sources: {},
     navigation: {},
+    stopped: {},
     usage: [],
     status: 'idle',
     error: null,
@@ -214,7 +216,34 @@ function reduceReasoning(state: ThreadState, event: AguiEvent): ThreadState | nu
   }
 }
 
+/** Index of the newest user message, or -1. */
+function lastUserIndex(messages: readonly Message[]): number {
+  return messages.reduce((found, m, i) => (m.role === 'user' ? i : found), -1)
+}
+
+/**
+ * Mark the current turn's answer as stopped. A turn stopped before any answer (still thinking)
+ * gets an empty assistant message to carry the marker, and the thinking streamed so far moves
+ * onto it instead of being dropped (5.35: Stop used to blank the turn).
+ */
+function markStopped(state: ThreadState): ThreadState {
+  const lastUser = lastUserIndex(state.messages)
+  const user = state.messages.at(lastUser)
+  if (lastUser === -1 || user === undefined) return state
+  const answer = state.messages.slice(lastUser + 1).filter(isAssistant).at(-1)
+  const id = answer?.id ?? `stopped-${user.id}`
+  const withAnswer = ensureAssistant(state, id)
+  return { ...withAnswer, stopped: { ...withAnswer.stopped, [id]: true } }
+}
+
+/** Regenerate: drop the last answer (everything after the newest user message) before re-running it. */
+function dropLastAnswer(state: ThreadState): ThreadState {
+  const lastUser = lastUserIndex(state.messages)
+  return lastUser === -1 ? state : { ...state, messages: state.messages.slice(0, lastUser + 1), error: null, lastAssistantId: null }
+}
+
 function reduceCustom(state: ThreadState, event: EventOf<EventType.CUSTOM>): ThreadState {
+  if (event.name === CUSTOM_EVENTS.stopped) return markStopped(state)
   const anchor = state.lastAssistantId
   if (anchor === null) return state
   if (event.name === CUSTOM_EVENTS.sources) return { ...state, sources: { ...state.sources, [anchor]: parseSources(event.value) } }
@@ -316,7 +345,7 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
     case 'local/run_requested':
       return { ...state, status: 'streaming', error: null, lastAssistantId: null }
     case 'local/aborted':
-      return { ...cancelInFlight(state), status: 'idle' }
+      return { ...cancelInFlight(markStopped(state)), status: 'idle' }
     case 'local/failed':
       return { ...cancelInFlight(state), status: 'error', error: action.error }
     case 'local/stream_closed':
@@ -329,6 +358,8 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       return applyResolutions(state, action.toolMessages)
     case 'local/restore':
       return action.state
+    case 'local/regenerate':
+      return dropLastAnswer(state)
     default:
       return state
   }

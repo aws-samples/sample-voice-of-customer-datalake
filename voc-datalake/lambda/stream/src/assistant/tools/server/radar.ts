@@ -15,11 +15,12 @@ import { z } from 'zod';
 import type { AssistantRunContext, ServerToolDefinition } from '../../types.js';
 import type { ToolDeps } from '../deps.js';
 import type { ApiCall } from '../internal-api.js';
-import { isRecord, jsonResult } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
+import { jsonResult } from '../format.js';
 import { idSchema, parseToolInput, toolSpec } from '../spec.js';
 import { seg, serverTool } from './common.js';
 import { labelResult } from './category-labels.js';
-import { shapeCompare, shapeReleases, shapeReviews } from './radar-shape.js';
+import { shapeBrands, shapeCompare, shapeReleases, shapeReviews } from './radar-shape.js';
 
 const RADAR_VIEWS = ['overview', 'summary', 'releases', 'compare', 'reviews', 'review', 'brands'] as const;
 /** What the overview reads, in one tool call (the live run called get_radar four times for one question). */
@@ -64,26 +65,29 @@ const radarInput = z.object({
 type RadarInput = z.infer<typeof radarInput>;
 
 /** A route under `/radar/{proxy+}` (every Radar route but the overview). */
-function proxied(proxy: string, query?: ApiCall['query']): ApiCall {
+function radarProxyCall(proxy: string, query?: ApiCall['query']): ApiCall {
   const path = `/radar/${proxy.split('/').map(seg).join('/')}`;
   return { fn: 'radar', method: 'GET', path, resource: '/radar/{proxy+}', pathParameters: { proxy }, ...(query === undefined ? {} : { query }) };
 }
 
-/** The route of one brand's view (`summary` is the brand itself). */
+/** The path suffix of each brand view read whole (`summary` is the brand itself); literal, so a route audit can see the callers. */
+const BRAND_VIEW_SUFFIX = { summary: '', releases: '/releases', compare: '/compare' } as const;
+
+/** The route of one brand's view. */
 function brandCall(brand: string, view: RadarView, input: RadarInput): ApiCall {
   const days = input.days === undefined ? {} : { days: input.days };
-  if (view === 'review') return proxied(`brands/${brand}/reviews/${input.feedback_id ?? ''}`);
+  if (view === 'review') return radarProxyCall(`brands/${brand}/reviews/${input.feedback_id ?? ''}`);
   if (view === 'reviews') {
     const filters = Object.fromEntries(REVIEW_FILTERS.flatMap((name) => (input[name] === undefined ? [] : [[name, input[name]]])));
-    return proxied(`brands/${brand}/reviews`, { ...days, ...filters });
+    return radarProxyCall(`brands/${brand}/reviews`, { ...days, ...filters });
   }
-  const suffix = view === 'summary' ? '' : `/${view}`;
-  return proxied(`brands/${brand}${suffix}`, input.days === undefined ? undefined : days);
+  const suffix = view === 'releases' || view === 'compare' ? BRAND_VIEW_SUFFIX[view] : BRAND_VIEW_SUFFIX.summary;
+  return radarProxyCall(`brands/${brand}${suffix}`, input.days === undefined ? undefined : days);
 }
 
 function radarCall(input: RadarInput): ApiCall {
   const view = defaultView(input);
-  if (view === 'brands') return proxied('brands');
+  if (view === 'brands') return radarProxyCall('brands');
   if (input.brand === undefined) return { fn: 'radar', method: 'GET', path: '/radar', resource: '/radar' };
   return brandCall(input.brand, view, input);
 }
@@ -98,6 +102,8 @@ function shapeView(view: RadarView, body: unknown, nowMs: number): unknown {
   if (view === 'releases') return shapeReleases(body, nowMs);
   if (view === 'compare') return shapeCompare(body);
   if (view === 'reviews' || view === 'review') return shapeReviews(body);
+  // Both the brand list and the tracked brands (no brand: view summary over GET /radar) carry `sources`.
+  if (view === 'brands' || view === 'summary') return shapeBrands(body);
   return body;
 }
 
@@ -128,10 +134,11 @@ function getRadarTool(deps: ToolDeps): ServerToolDefinition {
     'get_radar',
     'Radar: OTHER brands (competitors, partners) tracked by Radar — never our own feedback. Without `brand`: the tracked '
       + 'brands with their review totals and average sentiment. view "brands": the brand list (key, label, domains, '
-      + 'origin list|profile, sources). With `brand` (a key from those) and no `view`: the overview — summary, the newest '
+      + 'language, effective_language, feed_urls, search_terms, exclude_terms, origin list|profile, profile_sources = older source profiles only, never connectors). With `brand` (a key from those) and no `view`: the overview — summary, the newest '
       + 'releases and compare in ONE call; it is everything Radar holds for the window, so call it once and use another '
       + 'view only to drill down. `view` summary = sentiment trend plus what their '
-      + 'customers love and hate (themes, counts, redacted quotes); releases = what they shipped, from web search, with '
+      + 'customers love and hate (themes, counts, redacted quotes); releases = releases and news (kind: release, '
+      + 'announcement, promotion, partnership, news; found_via: web, exa, feed), with '
       + 'ready-made markdown `links` (cite those links as they are, never a bare URL); compare = per category, their sentiment and volume against ours; reviews = '
       + 'the reviews themselves, newest first, filtered by category, subcategory ("" = none), sentiment, day (YYYY-MM-DD), '
       + 'paged with limit (≤ 50) and the next_cursor of the previous page as cursor; review = one review in full '

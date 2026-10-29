@@ -6,7 +6,7 @@ ADMIN ONLY, every route (owner decision 2026-10-08, #242 follow-up): uploading a
 file here ingests every row in it into the feedback pipeline (the bucket's
 object-created trigger runs the `s3_import` ingestor, which enqueues each row for
 Bedrock enrichment), and the listings expose the import bucket's name and every
-file another admin staged. Enforced by one resolver middleware (`_admins_only`),
+file another admin staged. Enforced by one resolver middleware (`shared.api.admins_only`),
 so a route added later is gated without having to remember the check.
 
 The bucket layout this API reads and writes is `<source>/<filename>`: `<source>`
@@ -26,15 +26,13 @@ import sys
 import urllib.parse
 from typing import Any
 
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver
-from aws_lambda_powertools.event_handler.middlewares import NextMiddleware
 from botocore.exceptions import ClientError
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.api import api_handler, create_api_resolver, require_admin
-from shared.aws import get_s3_client
+from shared.api import admins_only, api_handler, create_api_resolver
+from shared.aws import get_s3_client, is_missing_s3_object
 from shared.exceptions import ConfigurationError, ConflictError, ServiceError, ValidationError
 from shared.logging import logger, tracer
 from shared.request_body import json_object_body
@@ -48,20 +46,13 @@ PROCESSED_PREFIX = 'processed'
 _SOURCE_NAME = re.compile(r'[A-Za-z0-9_-]+')
 # Control characters and a backslash have no place in a staged file name.
 _UNSAFE_FILENAME_CHARS = re.compile(r'[\x00-\x1f\x7f\\]')
-# What S3 answers `head_object` with when the key holds nothing.
-_MISSING_KEY_CODES = frozenset({'404', 'NoSuchKey', 'NotFound'})
 INVALID_KEY = 'Key is outside the import layout <source>/<file.csv|.json|.jsonl>'
 
 app = create_api_resolver()
 
 
-def _admins_only(app: APIGatewayRestResolver, next_middleware: NextMiddleware):
-    """Every S3-import route is admin-only (403 otherwise). See the module docstring."""
-    require_admin(app.current_event.raw_event)
-    return next_middleware(app)
-
-
-app.use(middlewares=[_admins_only])
+# Every S3-import route is admin-only (403 otherwise). See the module docstring.
+app.use(middlewares=[admins_only])
 
 
 def _deletable_key(key: str) -> str:
@@ -90,7 +81,7 @@ def _refuse_existing_object(key: str) -> None:
     try:
         s3_client.head_object(Bucket=S3_IMPORT_BUCKET, Key=key)
     except ClientError as e:
-        if str(e.response.get('Error', {}).get('Code')) in _MISSING_KEY_CODES:
+        if is_missing_s3_object(e):
             return
         logger.exception(f"Failed to check for an existing file: {e}")
         raise ServiceError('Failed to generate upload URL') from e

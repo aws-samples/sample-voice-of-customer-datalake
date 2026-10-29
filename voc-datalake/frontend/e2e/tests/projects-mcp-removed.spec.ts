@@ -22,8 +22,11 @@ import { apiCall } from '../lib/api'
 import { RUN_PREFIX, apiUrl } from '../lib/env'
 import { assertStep, roleOf, settle, site } from '../lib/fixtures'
 import { ensureE2eProject, projectIdOrSkip } from '../lib/projects'
+import { e2eFetch } from '../lib/trafficTag'
 
 const PROJECT = `${RUN_PREFIX}mcp-removed`
+/** The project page's tabs, in order (ProjectTabs.tsx TABS). */
+const PROJECT_TABS = ['Overview', 'Personas', 'Product', 'Documents', 'Decisions', 'Participants'] as const
 
 
 
@@ -40,7 +43,8 @@ test.describe('projects: per-project Export / MCP removed', () => {
       await page.goto(site(`/projects/${id}?tab=mcp`), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
       const tabs = page.getByRole('tab')
-      await expect(tabs).toHaveCount(4)
+      // ProjectTabs.tsx; Personas / Documents may carry a count after the name.
+      await expect(tabs).toHaveText(PROJECT_TABS.map((name) => new RegExp(`^\\s*${name}\\b`)))
       await expect(page.getByRole('tab', { name: /MCP|Export/ })).toHaveCount(0)
       await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
       await expect(page).not.toHaveURL(/[?&]tab=mcp/)
@@ -80,7 +84,7 @@ test.describe('projects: per-project Export / MCP removed', () => {
     // Shape-valid for the gateway's token authorizer, unknown to the server: no secret.
     const bearer = `Bearer voc_tok_0123456789abcdef_${'0'.repeat(64)}`
     const ping = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
-    const post = (path: string) => fetch(`${apiUrl()}${path}`, {
+    const post = (path: string) => e2eFetch(`${apiUrl()}${path}`, {
       method: 'POST', headers: { Authorization: bearer, 'Content-Type': 'application/json' }, body: ping,
     })
     expect((await post('/mcp')).status, 'POST /mcp was retired in 3.00.00').toBe(403)

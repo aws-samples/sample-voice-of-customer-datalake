@@ -1,7 +1,8 @@
 /**
  * `voc-design-capture` (VocIngestionStack): reads ONE live website's design in the AWS-managed
  * AgentCore browser for a `website` design reference (docs/company-context.md). The settings API
- * (VocApiStack) starts it by async invoke of its deterministic name (DESIGN_CAPTURE_FUNCTION).
+ * (VocApiStack) starts it by async invoke of its deterministic name (DESIGN_CAPTURE_FUNCTION). Its second
+ * action, `design_logo_render`, draws a GitHub reference's (sanitised) SVG logo to a PNG with the same grants.
  *
  * Its own least-privilege role:
  * - the managed browser (Start/Stop on aws.browser.v1, the stream connect on `*`), as web_reviews;
@@ -9,7 +10,8 @@
  * - voc-aggregates GetItem on the design-system and model-settings partitions only, UpdateItem on the
  *   design-system partition only (`dynamodb:LeadingKeys`), and KMS for the table;
  * - s3:PutObject on the raw bucket's `company-context/design/logo_preview_*` keys only (the logo
- *   candidate's preview, downloaded through the SSRF-guarded fetch; no read, no delete, no other prefix);
+ *   candidate's preview, downloaded through the SSRF-guarded fetch, or the PNG the browser rendered from an
+ *   SVG logo; no read, no delete, no other prefix);
  * - nothing else: no secrets, no queue.
  *
  * The bundle is the worker (lambda/design_capture), the three web_reviews browser modules flat beside

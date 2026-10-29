@@ -5,31 +5,11 @@
  * several specs used to copy verbatim. knip treats `*-fixtures.tsx` as test
  * support, so nothing here ships in the production bundle.
  */
-import { vi, beforeAll, afterAll } from 'vitest'
+import { vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
-import { stubElementScrollTo } from '../../test/stubScrollTo'
 import { emptyProductContext } from './productContextFields'
 import type { ProjectDocument } from '../../api/types'
 import type { ProductContext, Project, ProjectPersona } from '../../api/projectTypes'
-
-/**
- * Stubs `Element.scrollTo` for the enclosing `describe`, restoring it afterwards.
- *
- * The Product tab's default mode renders the AI interview, whose effect scrolls
- * the transcript. jsdom has no Element.scrollTo, and the resulting exception
- * renders the whole tab as an empty div — which would turn "the callback was not
- * called" into a vacuous pass. Restored so the stub cannot leak into another
- * file's expectations.
- */
-export function stubScrollToForSuite() {
-  const restore: { value: () => void } = { value: () => {} }
-  beforeAll(() => {
-    restore.value = stubElementScrollTo()
-  })
-  afterAll(() => {
-    restore.value()
-  })
-}
 
 /** The API endpoint every ProjectDetail spec reports from the config store. */
 const TEST_API_ENDPOINT = 'https://api.example.com/v1'

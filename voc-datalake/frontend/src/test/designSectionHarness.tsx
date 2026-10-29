@@ -11,7 +11,7 @@ import { afterAll, beforeAll, beforeEach } from 'vitest'
 import DesignSystemSection from '../pages/Company/DesignSystemSection'
 import { renderWithQueryClient } from './query-client'
 import { TestRouter } from './TestRouter'
-import { adminFlag, resetFetchApi, routeFetchApi } from './fetchApiRoutes'
+import { adminFlag, fetchApi, resetFetchApi, routeFetchApi } from './fetchApiRoutes'
 import { stubElementScrollIntoView } from './stubScrollTo'
 import type { RouteHandler } from './fetchApiRoutes'
 
@@ -19,6 +19,11 @@ import type { RouteHandler } from './fetchApiRoutes'
 export function renderDesignSection(routes: Record<string, RouteHandler>): void {
   routeFetchApi(routes)
   renderWithQueryClient(<TestRouter><DesignSystemSection isAdmin={adminFlag.isAdmin} /></TestRouter>)
+}
+
+/** The `fetchApi` calls made as `"METHOD /path"` (GET when no method). */
+export function designCalls(key: string): unknown[] {
+  return fetchApi.mock.calls.filter(([path, options]) => `${options?.method ?? 'GET'} ${path}` === key)
 }
 
 /** Registers the suite's hooks: the scrollIntoView stub, and a reset admin caller per test. */

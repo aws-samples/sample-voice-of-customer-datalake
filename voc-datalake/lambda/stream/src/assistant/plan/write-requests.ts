@@ -11,7 +11,7 @@
  * `extractOutputs` reads the ids a later step may reference from the answer.
  */
 import { TOOL_PACKS } from '../contract.js';
-import { isRecord } from '../tools/format.js';
+import { isRecord } from '../../lib/is-record.js';
 import { planWriteTools } from './schema.js';
 import { WriteRequestError, type Args } from './write-args.js';
 import { PROJECT_WRITE_REQUESTS } from './write-requests-project.js';

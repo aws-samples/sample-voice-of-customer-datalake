@@ -24,8 +24,8 @@ import pytest
 from shared.earliest_date import (
     EARLIEST_DATE_ATTRIBUTE,
     EARLIEST_DATE_KEY,
-    EARLIEST_DATE_PK,
     EARLIEST_DATE_SK,
+    METRIC_META_PK,
     earliest_date_from_item,
     lower_watermark_request,
     parse_iso_date,
@@ -34,7 +34,7 @@ from shared.earliest_date import (
 
 class TestTheWatermarkLivesAtOneFixedKey:
     def test_the_partition_and_sort_keys(self):
-        assert EARLIEST_DATE_PK == 'METRIC#meta'
+        assert METRIC_META_PK == 'METRIC#meta'
         assert EARLIEST_DATE_SK == 'earliest_date'
         assert EARLIEST_DATE_KEY == {'pk': 'METRIC#meta', 'sk': 'earliest_date'}
 

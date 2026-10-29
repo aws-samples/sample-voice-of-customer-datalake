@@ -116,6 +116,17 @@ async function saveDocument(page: Page, content: string): Promise<number> {
   return (await saved).status()
 }
 
+/** The `threadId` of the `/chat/stream` body whose user message is `prompt` ('' when none is). */
+function threadIdAsking(bodies: readonly string[], prompt: string): string {
+  for (const body of bodies) {
+    const parsed: unknown = JSON.parse(body)
+    if (!isRecord(parsed) || typeof parsed['threadId'] !== 'string') continue
+    const messages = Array.isArray(parsed['messages']) ? parsed['messages'] : []
+    if (messages.some((m) => isRecord(m) && m['role'] === 'user' && m['content'] === prompt)) return parsed['threadId']
+  }
+  return ''
+}
+
 test.describe('two tabs, one user', () => {
   const cleanup: Array<() => Promise<unknown>> = []
   test.afterAll(async () => {
@@ -228,10 +239,10 @@ test.describe('two tabs, one user', () => {
     await composer(page).fill(prompts[1] ?? '')
     await send.click()
     await expect.poll(() => streams.length, { message: 'two runs started' }).toBe(2)
-    const ids = streams.map((body) => {
-      const parsed: unknown = JSON.parse(body)
-      return isRecord(parsed) && typeof parsed['threadId'] === 'string' ? parsed['threadId'] : ''
-    })
+    // Each prompt's conversation is the stream whose user message IS that prompt: the two
+    // POSTs can leave the page in either order.
+    const ids = prompts.map((prompt) => threadIdAsking(streams, prompt))
+    expect(ids.every((id) => id !== ''), 'each prompt started its own run').toBe(true)
     expect(new Set(ids).size, 'two distinct conversations').toBe(2)
 
     const sidebar = page.getByRole('navigation', { name: 'Conversations' })

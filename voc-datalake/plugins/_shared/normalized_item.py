@@ -7,9 +7,9 @@ pointer vs. ``is_webhook``). The shared core lives here so the two cannot
 drift apart.
 """
 
-from datetime import UTC, datetime
 
 from shared.producer_labels import message_labels
+from shared.timestamps import now_iso
 
 
 def normalized_item_fields(
@@ -30,9 +30,9 @@ def normalized_item_fields(
         "text": item.get("text", ""),
         "rating": item.get("rating"),
         "created_at": item.get(
-            "created_at", datetime.now(UTC).isoformat()
+            "created_at", now_iso()
         ),
-        "ingested_at": datetime.now(UTC).isoformat(),
+        "ingested_at": now_iso(),
         "brand_name": brand_name,
         "brand_handles_matched": item.get("brand_handles_matched", []),
         **({"issue_attributes": issue_attributes} if issue_attributes else {}),

@@ -140,6 +140,11 @@ describe('readPartialWindow', () => {
       .toStrictEqual({ isPartial: true, scannedThrough: '2025-03-01' })
   })
 
+  it('names the last full day when the aggregate read hit its row cap', () => {
+    expect(readPartialWindow({ is_partial: true, partial_reason: 'row_cap', scanned_through: '2025-02-27' }))
+      .toStrictEqual({ isPartial: true, scannedThrough: '2025-02-27' })
+  })
+
   it('gives no date for other partial reasons', () => {
     expect(readPartialWindow({ is_partial: true, partial_reason: 'scan_truncated', scanned_through: '2025-03-01' }))
       .toStrictEqual({ isPartial: true, scannedThrough: null })

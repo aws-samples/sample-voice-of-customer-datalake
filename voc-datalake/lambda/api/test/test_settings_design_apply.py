@@ -149,19 +149,42 @@ def _response(status: int, body: bytes) -> requests.Response:
 class TestUseLogo:
     PATH = f'/settings/design-system/references/{REF_ID}/logo'
 
-    def test_downloads_through_the_guard_and_stores_it_as_the_logo(self, api_gateway_event, lambda_context, table, s3):
+    def test_downloads_through_the_guard_into_the_draft_and_saves_nothing(self, api_gateway_event, lambda_context, table, s3):
         _seed(table)
         fetch = MagicMock(return_value=_response(200, PNG))
         with patch.object(design_logo, 'fetch_public_url', fetch):
             response, body = _call(api_gateway_event, lambda_context, 'POST', self.PATH)
         assert response['statusCode'] == 200
         fetch.assert_called_once_with('https://kiro.dev/logo.png', timeout=10, max_redirects=3, max_bytes=2_000_001)
-        key = table.get_item(Key={'pk': 'SETTINGS#design_system', 'sk': 'config'})['Item']['logo_s3_key']
-        assert key.startswith('company-context/design/logo_')
-        assert key.endswith('.png')
+        assert 'logo_s3_key' not in (table.get_item(Key={'pk': 'SETTINGS#design_system', 'sk': 'config'}).get('Item') or {})
+        assert body['logo_id'].startswith('logo_')
+        assert body['logo_id'].endswith('.png')
+        key = f'company-context/design/{body["logo_id"]}'
         obj = s3.get_object(Bucket=settings_handler.RAW_DATA_BUCKET, Key=key)
         assert obj['ContentType'] == 'image/png'
         assert key in body['logo_url']
+        _, view = _call(api_gateway_event, lambda_context, 'GET', '/settings/design-system')
+        assert 'logo_url' not in view   # the company logo is unchanged until Save
+
+    def test_saving_the_design_system_with_the_logo_id_makes_it_the_logo(self, api_gateway_event, lambda_context, table, s3):
+        _seed(table)
+        with patch.object(design_logo, 'fetch_public_url', MagicMock(return_value=_response(200, PNG))):
+            _, drafted = _call(api_gateway_event, lambda_context, 'POST', self.PATH)
+        response, body = _call(api_gateway_event, lambda_context, 'PUT', '/settings/design-system',
+                               {'tokens': {}, 'guidelines': 'Calm.', 'logo_id': drafted['logo_id']})
+        assert response['statusCode'] == 200
+        key = table.get_item(Key={'pk': 'SETTINGS#design_system', 'sk': 'config'})['Item']['logo_s3_key']
+        assert key == f'company-context/design/{drafted["logo_id"]}'
+        assert key in body['logo_url']
+        assert s3.head_object(Bucket=settings_handler.RAW_DATA_BUCKET, Key=key)
+
+    @pytest.mark.usefixtures('s3')
+    @pytest.mark.parametrize('logo_id', ['../config.png', 'logo_0123456789ab.svg', 'logo_0123456789ab.png', 7])
+    def test_a_logo_id_that_is_malformed_or_was_never_stored_is_400(self, api_gateway_event, lambda_context, table, logo_id):
+        _seed(table)
+        response, _ = _call(api_gateway_event, lambda_context, 'PUT', '/settings/design-system',
+                            {'tokens': {}, 'guidelines': '', 'logo_id': logo_id})
+        assert response['statusCode'] == 400
 
     @pytest.mark.usefixtures('s3')
     @pytest.mark.parametrize('failure', [
@@ -181,6 +204,50 @@ class TestUseLogo:
         _seed(table, extracted_design={**DESIGN, 'logo': None})
         assert _call(api_gateway_event, lambda_context, 'POST', self.PATH)[0]['statusCode'] == 409
         assert _call(api_gateway_event, lambda_context, 'POST', self.PATH, claims=USER)[0]['statusCode'] == 403
+
+
+PREVIEW_KEY = f'company-context/design/logo_preview_{REF_ID}.png'
+RENDERED_LOGO = {'source_url': 'https://kirocrew.dev/brand/logo.svg', 'content_type': 'image/png',
+                 'rendered': True, 'preview_key': PREVIEW_KEY}
+
+
+class TestUseRenderedLogo:
+    """A reference whose SVG logo the capture worker rendered: its stored PNG is copied, the SVG never downloaded."""
+    PATH = f'/settings/design-system/references/{REF_ID}/logo'
+
+    @pytest.fixture
+    def fetch(self):
+        with patch.object(design_logo, 'fetch_logo') as fetch_logo:
+            yield fetch_logo
+
+    def test_the_rendered_preview_is_copied_into_the_draft(self, api_gateway_event, lambda_context, table, s3, fetch):
+        _seed(table, extracted_design={**DESIGN, 'logo': RENDERED_LOGO})
+        s3.put_object(Bucket=settings_handler.RAW_DATA_BUCKET, Key=PREVIEW_KEY, Body=PNG, ContentType='image/png')
+        response, body = _call(api_gateway_event, lambda_context, 'POST', self.PATH)
+        assert response['statusCode'] == 200
+        fetch.assert_not_called()
+        assert body['logo_id'].startswith('logo_')
+        assert body['logo_id'].endswith('.png')
+        obj = s3.get_object(Bucket=settings_handler.RAW_DATA_BUCKET, Key=f'company-context/design/{body["logo_id"]}')
+        assert (obj['ContentType'], obj['Body'].read()) == ('image/png', PNG)
+
+    @pytest.mark.usefixtures('s3')
+    def test_a_missing_preview_is_409_refresh(self, api_gateway_event, lambda_context, table, fetch):
+        _seed(table, extracted_design={**DESIGN, 'logo': RENDERED_LOGO})
+        response, body = _call(api_gateway_event, lambda_context, 'POST', self.PATH)
+        assert response['statusCode'] == 409
+        assert 'Refresh the reference' in str(body)
+        fetch.assert_not_called()
+
+    @pytest.mark.parametrize('stored', [b'<svg onload="alert(1)"/>', PNG + b'0' * 2_000_000])
+    def test_a_non_png_or_oversized_preview_is_refused(self, api_gateway_event, lambda_context, table, s3, fetch, stored):
+        _seed(table, extracted_design={**DESIGN, 'logo': RENDERED_LOGO})
+        s3.put_object(Bucket=settings_handler.RAW_DATA_BUCKET, Key=PREVIEW_KEY, Body=stored)
+        response, _ = _call(api_gateway_event, lambda_context, 'POST', self.PATH)
+        assert response['statusCode'] == 400
+        fetch.assert_not_called()
+        keys = [o['Key'] for o in s3.list_objects_v2(Bucket=settings_handler.RAW_DATA_BUCKET)['Contents']]
+        assert keys == [PREVIEW_KEY]   # no drafted logo was stored
 
 
 def test_logo_fetcher_refuses_http_before_any_request():

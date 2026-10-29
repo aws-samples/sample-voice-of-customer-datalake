@@ -13,6 +13,7 @@
  *   (another run of this thread), so this run stops writing.
  * - A failed write is logged with an EMF metric and does not stop later writes.
  */
+import { METRIC_NAMESPACE } from '../../lib/metric-namespace.js';
 
 /** A put landed, or was refused because the stored revision is newer. Failures throw. */
 export type PutOutcome = 'written' | 'superseded';
@@ -26,7 +27,6 @@ export interface SessionWriter {
   settled(): Promise<void>;
 }
 
-const METRIC_NAMESPACE = 'VoC';
 export const SESSION_WRITE_FAILED_METRIC = 'AssistantSessionWriteFailed';
 
 function recordWriteFailure(reason: string): void {
@@ -53,7 +53,8 @@ interface WriterState {
   superseded: boolean;
 }
 
-function errorName(error: unknown): string {
+/** An error's name for a log line (never its message: it may quote data). */
+export function errorName(error: unknown): string {
   return error instanceof Error && error.name ? error.name : 'UnknownError';
 }
 

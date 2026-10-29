@@ -1,7 +1,7 @@
 /**
  * LOCKSTEP: the connector approval boundary (./scraperSchemas) ⇄ the stream
  * Lambda's (`lambda/stream/src/assistant/tools/client/scraper-schemas.ts`) ⇄
- * the routes that store the configs (`lambda/api/scrapers_handler.py`,
+ * the routes that store the configs (`lambda/api/scrapers_handler.py`, its id rule in `lambda/shared/row_ids.py`,
  * `integrations_handler.py`) and the app-review manifests. Constants are read as
  * TEXT (so un-exported ones count too); the argument shapes are compared through
  * a direct import of the stream module. A bound accepted by
@@ -25,6 +25,7 @@ const ROOT = join(__dirname, '../../../..')
 const read = (path: string) => readFileSync(join(ROOT, path), 'utf8')
 const stream = read('lambda/stream/src/assistant/tools/client/scraper-schemas.ts')
 const handler = read('lambda/api/scrapers_handler.py')
+const rowIds = read('lambda/shared/row_ids.py')
 const integrations = read('lambda/api/integrations_handler.py')
 
 const streamList = (name: string) => constStringList(stream, name)
@@ -64,7 +65,10 @@ describe('scraper bounds: stream ⇄ SPA ⇄ scrapers_handler.py', () => {
 
   it('the same id pattern on all three sides', () => {
     // JavaScript's `$` is Python's `\Z` (end of input); Python's `$` would also accept a trailing newline.
-    const python = /SCRAPER_ID_PATTERN = re\.compile\(r'([^']+)'\)/.exec(handler)
+    // The route validates ids with shared.row_ids.OPAQUE_ID_RE.
+    expect(handler).toContain('from shared.row_ids import OPAQUE_ID_RE')
+    expect(handler).toContain('OPAQUE_ID_RE.fullmatch(scraper_id)')
+    const python = /OPAQUE_ID_RE: Final = re\.compile\(r'([^']+)'\)/.exec(rowIds)
     expect(at(python ?? [], 1)).toBe(SCRAPER_ID_RULE.source.replace(/\$$/, String.raw`\Z`))
     expect(stream).toContain(`SCRAPER_ID_PATTERN = /${SCRAPER_ID_RULE.source}/;`)
   })

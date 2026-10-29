@@ -16,7 +16,7 @@ import type { LinkedForm } from './formLinkUtils'
 import type { PrioritizationScore } from '../../api/types'
 
 export function PRFAQList({
-  isLoading, rows, axes, scores, aggregates, linkedFormsByDocument, apiEndpoint, composition, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
+  isLoading, rows, axes, scores, savedScores, aggregates, linkedFormsByDocument, apiEndpoint, composition, expandedId, onToggleExpand, onUpdateScore, hasNonScorableOnly,
 }: {
   readonly isLoading: boolean
   readonly rows: PrioritizationRowView[]
@@ -24,6 +24,8 @@ export function PRFAQList({
   readonly axes: readonly ScoringAxis[]
   /** The caller's own ballots, PER ROW, behind each row's own sliders. */
   readonly scores: Record<string, PrioritizationScore>
+  /** The same ballots as saved, without unsaved edits (what a slider may return to). */
+  readonly savedScores: Record<string, PrioritizationScore>
   /**
    * What every reviewer together said — the resting row, and the sort order.
    *
@@ -72,6 +74,7 @@ export function PRFAQList({
           index={index}
           axes={axes}
           score={getScore(scores, row.row_id)}
+          savedScore={getScore(savedScores, row.row_id)}
           team={getTeamView(aggregates, row.row_id)}
           linkedFormsByDocument={linkedFormsByDocument}
           apiEndpoint={apiEndpoint}

@@ -95,8 +95,9 @@ def test_any_other_error_status_from_the_site_is_the_callers_refusal_naming_it(
         'Check that the URL is correct and opens in a browser.',
         0,
     )
-    worker_log.warning.assert_called_once_with('Assist ended with a user-facing refusal',
-                                               extra={'job_type': 'assist_analyze_url', 'status_code': 400})
+    worker_log.info.assert_called_once_with('Assist ended with a user-facing refusal',
+                                            extra={'job_type': 'assist_analyze_url', 'status_code': 400})
+    worker_log.warning.assert_not_called()
     worker_log.exception.assert_not_called()
 
 

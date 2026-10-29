@@ -15,7 +15,7 @@
 import { canonicalJson } from '../assistant/plan/canonical.js';
 import { findPlaceholders } from '../assistant/plan/placeholders.js';
 import { FREE_PLACEHOLDER, REFERENCE_RE } from '../assistant/plan/schema.js';
-import { isRecord } from '../assistant/tools/format.js';
+import { isRecord } from '../lib/is-record.js';
 
 type Path = readonly (string | number)[];
 

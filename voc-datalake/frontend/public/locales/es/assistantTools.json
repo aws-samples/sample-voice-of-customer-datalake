@@ -1,5 +1,6 @@
 {
   "card": {
+    "openParticipants": "Abrir Participantes",
     "kicker": "Se necesita aprobación",
     "details": "Detalles",
     "toolName": "Acción: {{name}}",
@@ -41,6 +42,33 @@
     "openRadarSettings": "Abrir Administración → Fuentes → Radar"
   },
   "preview": {
+    "participants": {
+      "summaryLabel": "Personas que se añaden",
+      "list": "Lista",
+      "count": "Personas",
+      "countValue_one": "{{count, number}} persona",
+      "countValue_other": "{{count, number}} personas",
+      "listNotFound": "No se encontró esta lista, así que al aprobar no se añadirá a nadie.",
+      "email": "Correo",
+      "name": "Nombre",
+      "company": "Empresa",
+      "title": "Cargo",
+      "tags": "Etiquetas",
+      "notSet": "Sin definir",
+      "tableLabel_one": "{{count, number}} persona que se añade",
+      "tableLabel_other": "{{count, number}} personas que se añaden",
+      "reviewAllNote": "Se muestran todas las personas; desplázate para revisar cada fila antes de aprobar.",
+      "duplicatesNote_one": "{{count, number}} dirección de correo repetida se unificó en su primera fila.",
+      "duplicatesNote_other": "{{count, number}} direcciones de correo repetidas se unificaron en su primera fila.",
+      "reuseNote": "Quien ya existe conserva sus datos guardados; quienes ya están en la lista siguen igual. No se envía ningún correo.",
+      "listLabel": "Lista nueva",
+      "listName": "Nombre",
+      "kind": "Tipo",
+      "description": "Descripción",
+      "emptyListNote": "La lista empieza vacía; después añade personas.",
+      "listLoading": "Leyendo la lista…",
+      "listReadFailed": "No se pudieron leer las listas de participantes, así que la lista se muestra por su id; compruébela en Participantes antes de aprobar."
+    },
     "showMore": "Mostrar todo ({{n, number}} caracteres)",
     "showLess": "Mostrar menos",
     "empty": "(vacío)",
@@ -131,7 +159,11 @@
       "everyBrand": "Todas las marcas seguidas",
       "brand": "Marca",
       "scanFields": "Escaneo",
-      "scanCost": "Se ejecuta en segundo plano durante unos minutos y usa búsquedas web (como máximo el límite de consultas de la configuración de Radar)."
+      "scanCost": "Se ejecuta en segundo plano durante unos minutos y usa búsquedas web (como máximo el límite de consultas de la configuración de Radar).",
+      "language": "Idioma de búsqueda: {{language}}",
+      "feed": "Feed de noticias: {{feed}}",
+      "searchTerms": "Términos de búsqueda: {{list}}",
+      "excludeTerms": "Términos excluidos: {{list}}"
     },
     "scraper": {
       "nothingSaved": "No se guarda nada hasta que lo apruebes.",
@@ -296,6 +328,15 @@
     }
   },
   "tools": {
+    "create_participant_list": {
+      "title": "Crear una lista de participantes",
+      "titleWith": "Crear la lista de participantes {{name}}"
+    },
+    "add_participants": {
+      "title": "Añadir personas a una lista de participantes",
+      "titleWith_one": "Añadir {{count, number}} persona a una lista de participantes",
+      "titleWith_other": "Añadir {{count, number}} personas a una lista de participantes"
+    },
     "save_radar_brands": {
       "title": "Guardar la lista de marcas de Radar",
       "titleWith_one": "Guardar la lista de marcas de Radar ({{count, number}} marca)",

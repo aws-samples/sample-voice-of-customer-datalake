@@ -33,6 +33,16 @@
     "status": "Statusfilter"
   },
   "forget": "Vergessen",
+  "edit": "Bearbeiten",
+  "editLabel": "Erinnerung bearbeiten: {{statement}}",
+  "editField": "Text der Erinnerung",
+  "save": "Speichern",
+  "editFailed": "Die Erinnerung konnte nicht gespeichert werden. Bitte erneut versuchen.",
+  "confirmPersonal": "Gilt noch",
+  "confirmPersonalHint": "Bestätigen, dass dies noch gilt, damit es nach 90 ungenutzten Tagen nicht archiviert wird",
+  "confirmPersonalLabel": "Gilt noch: {{statement}}",
+  "confirmLabel": "+1: {{statement}}",
+  "confirmedPersonal": "Als weiterhin gültig bestätigt.",
   "forgetMessage": "„{{statement}}“ wird archiviert und nie automatisch neu gelernt. Sie können es später wiederherstellen.",
   "forgetTitle": "Diese Erinnerung vergessen?",
   "imports": {

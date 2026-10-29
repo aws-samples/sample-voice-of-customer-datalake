@@ -129,7 +129,7 @@ describe('DataSourceWizard localization', () => {
   })
 
   it('translates the context summary, including its "all N" fallbacks', () => {
-    render(
+    renderWithQueryClient(
       <ContextSummary
         config={contextConfig({ useFeedback: true, usePersonas: true, useResearch: true })}
         personas={personas}

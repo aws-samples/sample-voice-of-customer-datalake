@@ -16,6 +16,7 @@ from shared.dimension_config import (
     validate_dimensions,
     validate_tags,
 )
+from shared.feedback_types import feedback_type_dimension
 
 
 def _dim(key: str = 'product', **overrides: object) -> dict:
@@ -168,14 +169,15 @@ class TestLoadDimensionsConfig:
         table = MagicMock()
         table.get_item.return_value = {'Item': {'dimensions': [{'key': 'product', 'values': [{'name': 'app'}]}]}}
         assert load_dimensions_config(table) == [
+            feedback_type_dimension(),
             {'key': 'product', 'label': 'product', 'infer': True, 'values': [{'name': 'app'}]},
         ]
         table.get_item.assert_called_once_with(Key=DIMENSIONS_SETTINGS_KEY, ConsistentRead=True)
 
-    def test_no_row_means_no_dimensions(self):
+    def test_no_row_means_only_the_built_in_dimensions(self):
         table = MagicMock()
         table.get_item.return_value = {}
-        assert load_dimensions_config(table) == []
+        assert load_dimensions_config(table) == [feedback_type_dimension()]
 
     def test_a_dynamodb_error_propagates(self):
         table = MagicMock()

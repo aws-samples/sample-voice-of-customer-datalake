@@ -28,6 +28,8 @@ import type { PanelMode } from '../store/assistantStore'
 export type PanelVariant = 'floating' | 'page'
 
 interface PanelHeaderProps {
+  /** Id of the heading the panel's dialog / region is labelled by. */
+  titleId: string
   page: PageContext
   variant: PanelVariant
   mode: PanelMode
@@ -46,18 +48,16 @@ interface PanelHeaderProps {
   onResetPosition?: () => void
 }
 
-function IconButton({ label, onClick, children, disabled, className }: Readonly<{
+function IconButton({ label, onClick, children, className }: Readonly<{
   label: string
   onClick: () => void
   children: ReactNode
-  disabled?: boolean
   className?: string
 }>) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
       aria-label={label}
       title={label}
       className={clsx('icon-btn', className)}
@@ -126,7 +126,7 @@ function useSecondaryItems(canExport: boolean, onExport: () => void, onResetPosi
 }
 
 export default function PanelHeader({
-  page, variant, mode, hasSidebar, canExport, onNewChat, onToggleSessions, onExport, onMode, onClose, onResetPosition,
+  titleId, page, variant, mode, hasSidebar, canExport, onNewChat, onToggleSessions, onExport, onMode, onClose, onResetPosition,
 }: Readonly<PanelHeaderProps>) {
   const { t } = useTranslation('assistant')
   // With the sidebar on screen its own New / list controls replace these two.
@@ -136,7 +136,7 @@ export default function PanelHeader({
     <header className="chrome-glass flex flex-shrink-0 items-start gap-2 border-b border-border px-3 py-2">
       <KiroGhost className="mt-0.5 h-5 w-5 flex-shrink-0 text-accent-text" />
       <div className="min-w-0 flex-1">
-        <h2 className={clsx('text-sm font-semibold tracking-tight text-text-strong', variant === 'page' && 'sr-only')} id="assistant-panel-title">{t('panel.title')}</h2>
+        <h2 className={clsx('text-sm font-semibold tracking-tight text-text-strong', variant === 'page' && 'sr-only')} id={titleId}>{t('panel.title')}</h2>
         <ContextChip page={page} />
       </div>
       <div className="flex flex-shrink-0 items-center">

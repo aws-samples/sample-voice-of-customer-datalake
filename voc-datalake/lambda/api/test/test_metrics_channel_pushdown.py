@@ -154,6 +154,17 @@ class TestASmallChannelBehindTheCap:
         body = _get(api_gateway_event, lambda_context, '/metrics/categories', days=1, channel=SMALL)
         assert body['categories'] == {'ksef': 2, 'faktury': 1}
 
+    @pytest.mark.parametrize('with_index', [True, False])
+    def test_urgent_only_and_stars_narrow_the_breakdowns_like_the_list(self, world, api_gateway_event, lambda_context,
+                                                                       with_index):
+        """5.34.00 live finding: the Categories page's rating and "Urgent only" filters left its distribution as is."""
+        world(with_index)
+        urgent = _get(api_gateway_event, lambda_context, '/metrics/categories', days=1, channel=SMALL, urgent=1)
+        rated = _get(api_gateway_event, lambda_context, '/metrics/categories', days=1, channel=SMALL, rating_min=2)
+        sentiment = _get(api_gateway_event, lambda_context, '/metrics/sentiment', days=1, channel=SMALL, urgent=1)
+        assert (urgent['categories'], rated['categories'], sentiment['total']) == (
+            {'ksef': 2}, {'ksef': 1, 'faktury': 1}, 2)
+
     def test_the_index_counts_a_channel_bigger_than_the_day_walk_cap(self, world, api_gateway_event, lambda_context):
         world(True)
         body = _get(api_gateway_event, lambda_context, '/metrics/categories', days=1, channel=BIG)

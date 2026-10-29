@@ -1,0 +1,278 @@
+{
+  "page": {
+    "title": "フィードバックボード",
+    "subtitle": "チームや顧客がリクエスト、問題、フィードバックを寄せるボードです。",
+    "boardSubtitle": "リクエストと、それぞれの背後にいる人たち。"
+  },
+  "loading": "読み込み中…",
+  "actions": {
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "delete": "削除",
+    "save": "保存"
+  },
+  "status": {
+    "new": "新規",
+    "under_review": "検討中",
+    "planned": "計画済み",
+    "declined": "見送り",
+    "shipped": "リリース済み",
+    "confirmed": "確認済み",
+    "fixed": "修正済み",
+    "wont_fix": "対応しない",
+    "seen": "確認",
+    "done": "完了"
+  },
+  "impact": {
+    "committed": "支払い確約",
+    "at_risk": "失注リスク",
+    "none": "売上への影響なし"
+  },
+  "totals": {
+    "supporters": "支持者",
+    "customers": "顧客",
+    "committed": "確約額",
+    "atRisk": "リスク額",
+    "peopleAffected": "影響を受けた人数",
+    "avgRating": "平均評価",
+    "rating": "{{value}} / 5",
+    "notRated": "未評価",
+    "boardSummary": "ボードの合計"
+  },
+  "list": {
+    "label": "リクエスト",
+    "intro": "リクエストを追加するか、あなたにも関係するものに +1 してください。",
+    "search": "検索",
+    "searchPlaceholder": "タイトル、説明、報告者",
+    "statusFilter": "ステータス",
+    "allStatuses": "すべてのステータス",
+    "sortBy": "並べ替え",
+    "sort": {
+      "newest": "新しい順",
+      "committed": "確約売上",
+      "at_risk": "リスクのある売上",
+      "supporters": "支持者数",
+      "people_affected": "影響を受けた人数",
+      "rating": "評価"
+    },
+    "reportedBy": "報告者: {{name}}",
+    "empty": "まだリクエストはありません。最初の 1 件を追加してください。",
+    "noMatch": "この条件に一致するリクエストはありません。",
+    "loadFailed": "リクエストを読み込めませんでした。",
+    "notAccepted": "このサインインはボードで受け付けられません。ボードが受け付ける確認済みのメールアドレスでサインインしてください。"
+  },
+  "new": {
+    "open": "新規リクエスト",
+    "title": "新しいリクエスト",
+    "description": "{{board}} を利用できる全員が、あなたの名前とメールとともに閲覧できます。",
+    "impactHeading": "あなたの顧客と売上への影響",
+    "submit": "リクエストを追加"
+  },
+  "form": {
+    "title": "タイトル",
+    "description": "説明",
+    "amountHint": "米ドル（整数）",
+    "noAmount": "売上への影響がない場合、金額は不要です。",
+    "name": "あなたの名前",
+    "errors": {
+      "titleRequired": "リクエストのタイトルを入力してください。",
+      "descriptionRequired": "顧客が必要としていることを説明してください。",
+      "customerRequired": "顧客名を入力してください。",
+      "nameRequired": "名前を入力してください。",
+      "amountRequired": "金額を米ドルで入力してください。",
+      "amountTooLarge": "その金額はボードの上限を超えています。",
+      "contactEmail": "有効なメールアドレスを入力するか、空欄にしてください。",
+      "descriptionRequiredService": "何が起きたか、お客様に何が表示されたかを記入してください。"
+    },
+    "requiredLabel": "{{label}}（必須）",
+    "optionalLabel": "{{label}}（任意）",
+    "choose": "選択...",
+    "notSet": "未設定",
+    "fieldErrors": {
+      "required": "この項目は必須です。",
+      "too_long": "ボードで受け付けられる長さを超えています。",
+      "invalid_choice": "選択肢から選んでください。",
+      "invalid_number": "整数を入力してください。",
+      "out_of_range": "その数値は許可された範囲外です。",
+      "invalid_email": "有効なメールアドレスを入力してください。",
+      "invalid_url": "完全な https:// リンクを入力してください。"
+    },
+    "descriptionHint": {
+      "sales": "お客様が必要としていることとその理由。",
+      "service": "何が起きたか、お客様に何が表示されたか。",
+      "beta": "何を試し、何が起きたか。",
+      "blank": "ほかの人が理解するのに役立つこと。"
+    }
+  },
+  "detail": {
+    "reported": "報告者: {{name}}（{{email}}）",
+    "reporter": "報告者",
+    "copyLink": "リンクをコピー",
+    "copied": "リンクをコピーしました",
+    "edit": "編集",
+    "supports": "支持",
+    "plusOne": "自分の顧客で +1",
+    "addSupport": "+1 を追加",
+    "contact": "担当者: {{email}}",
+    "editSupport": "{{customer}} の支持を編集",
+    "deleteSupport": "{{customer}} の支持を削除",
+    "deleteSupportTitle": "この支持を削除しますか？",
+    "deleteSupportMessage": "{{customer}} の支持とその金額がリクエストの合計から外れます。",
+    "loadFailed": "このリクエストを読み込めませんでした。",
+    "supportsCount_other": "支持 {{count, number}} 件",
+    "supportsCount_one": "支持 {{count, number}} 件",
+    "plusOneService": "自分も影響を受けている",
+    "plusOneOther": "+1",
+    "alreadySupporting": "このリクエストを支持しています。",
+    "editMySupport": "自分の +1 を編集"
+  },
+  "admin": {
+    "title": "管理",
+    "status": "ステータス",
+    "delete": "リクエストを削除",
+    "deleteTitle": "このリクエストを削除しますか？",
+    "deleteMessage": "「{{title}}」とすべての支持が全員から削除されます。"
+  },
+  "promote": {
+    "title": "プロジェクトに昇格",
+    "hint": "支持者と顧客担当者は全員、プロジェクトに紐づく参加者リストに追加され、メールでフィードバックを依頼できます。",
+    "project": "プロジェクト",
+    "pickProject": "プロジェクトを選択",
+    "loadingProjects": "プロジェクトを読み込み中…",
+    "newProject": "新規プロジェクト…",
+    "newProjectName": "新規プロジェクト名",
+    "submit": "昇格",
+    "skippedRow": "{{email}}: {{reason}}",
+    "reasons": {
+      "external_not_allowed": "社外ドメインのため（外部の人は許可されていません）",
+      "invalid_email": "無効なメールアドレス",
+      "unsubscribed": "参加者メールの配信を停止済み"
+    },
+    "done_other": "「{{list}}」に {{count, number}} 人を追加しました。",
+    "done_one": "「{{list}}」に {{count, number}} 人を追加しました。",
+    "skipped_other": "{{count, number}} 件のメールをスキップしました:",
+    "skipped_one": "{{count, number}} 件のメールをスキップしました:"
+  },
+  "errors": {
+    "generic": "うまくいきませんでした。もう一度お試しください。",
+    "forbidden": "この操作は許可されていません。",
+    "notFound": "このリクエストはもう存在しません。",
+    "conflict": "他の人が同時に変更しました。もう一度お試しください。",
+    "throttled": "現在リクエストが多すぎます。少し待ってからもう一度お試しください。",
+    "rateLimited": "このボードでの本日の投稿上限に達しました。明日もう一度お試しください。",
+    "slugTaken": "別のボードがこのリンク名を使用しています。",
+    "boardNotEmpty": "このボードにはまだリクエストがあります。リクエストと一緒に削除するか、アーカイブしてください。",
+    "statusInUse": "このステータスのリクエストがまだあります。先に別のステータスへ移してください。",
+    "alreadySupported": "すでにこのリクエストを支持しています。代わりに +1 を編集してください。"
+  },
+  "auth": {
+    "title": "機能リクエストボードにサインイン",
+    "intro": "勤務先のメールアドレスを入力してください。リンクとワンタイムコードをお送りします。",
+    "email": "勤務先メール",
+    "sendLink": "サインインリンクを送信",
+    "checkEmail": "{{email}} を確認してください。リンクを開くか、メールに記載のコードをここに入力します。",
+    "secondCode": "メールアドレスを確認しました。サインイン用のコードをもう 1 つ {{email}} に送信しました。",
+    "code": "メールのコード",
+    "signIn": "サインイン",
+    "useAnotherEmail": "別のメールアドレスを使う",
+    "otherBrowser": "このリンクは、リクエストしたブラウザとは別のブラウザで開かれました。元のブラウザでコードを入力するか、ここから新しいリンクを送信してください。",
+    "errors": {
+      "domain_not_allowed": "このメールのドメインはボードで許可されていません。会社のメールアドレスを使用してください。",
+      "wrong_code": "コードが正しくありません。メールを確認してもう一度お試しください。",
+      "expired": "このサインインは期限切れです。新しいリンクを送信してください。",
+      "tooManyAttempts": "試行回数が多すぎます。数分待ってからもう一度お試しください。",
+      "no_session": "このブラウザには待機中のサインインがありません。リクエストしたブラウザでコードを入力するか、新しいリンクを送信してください。",
+      "invalid_email": "有効なメールアドレスを入力してください。",
+      "unknown": "サインインできませんでした。しばらくしてからもう一度お試しください。"
+    }
+  },
+  "board": {
+    "title": "フィードバックボード",
+    "titleWithBrand": "{{brand}} フィードバックボード",
+    "signOut": "サインアウト",
+    "notEnabledTitle": "フィードバックボードは有効になっていません",
+    "notEnabled": "このデプロイにはボード用のサインインがありません。アプリを利用している場合は、アプリにサインインして「フィードバックボード」を開いてください。",
+    "notEnabledDev": "ボード用ユーザープールのないローカル開発です。モックでは Cognito にサインインできません。実際のプールを試すには public/config.json に board ブロックを追加するか、モックでアプリ内の「フィードバックボード」ページを使ってください。"
+  },
+  "fields": {
+    "customer": "顧客",
+    "deal": "商談",
+    "impact": "売上への影響",
+    "amount_usd": "金額 (USD)",
+    "contact_email": "顧客の連絡先メール",
+    "kind": "種類",
+    "severity": "重大度",
+    "reference": "予約番号または注文番号",
+    "steps": "再現手順",
+    "affected_count": "影響を受けた人数",
+    "area": "領域",
+    "outcome": "結果",
+    "rating": "評価 (1-5)",
+    "link": "リンク (https)",
+    "note": "メモ"
+  },
+  "choices": {
+    "kind": {
+      "bug": "不具合",
+      "complaint": "苦情",
+      "missing_feature": "不足している機能",
+      "question": "質問"
+    },
+    "severity": {
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "critical": "重大"
+    },
+    "outcome": {
+      "works": "動作する",
+      "broken": "壊れている",
+      "confusing": "わかりにくい"
+    }
+  },
+  "templates": {
+    "sales": "営業の機能リクエスト",
+    "service": "カスタマーサービスの問題",
+    "beta": "ベータのフィードバック",
+    "blank": "空白"
+  },
+  "boards": {
+    "listLabel": "ボード",
+    "audienceLabel": "利用できる人",
+    "requestsLabel": "リクエスト",
+    "audience": {
+      "company": "社内の人",
+      "list": "招待されたドメインと人",
+      "listCounts": "{{domains}} ドメイン、{{people}} 人",
+      "anyone": "確認済みメールを持つ誰でも"
+    },
+    "open": "開く",
+    "openBoard": "{{name}} を開く",
+    "copyBoardLink": "{{name}} のリンクをコピー",
+    "linkCopied": "リンクをコピーしました",
+    "copyFailed": "リンクをコピーできませんでした。",
+    "edit": "編集",
+    "editBoard": "{{name}} を編集",
+    "deleteBoard": "{{name}} を削除",
+    "deleteTitle": "このボードを削除しますか?",
+    "deleteMessage": "「{{name}}」は全員から削除されます。元に戻すことはできません。",
+    "deleteWithRequestsMessage_one": "「{{name}}」と、その {{count, number}} 件のリクエスト、およびそれらへのすべての +1 が完全に削除されます。元に戻すことはできません。リクエストから作成済みのプロジェクトは残ります。",
+    "deleteWithRequestsMessage_other": "「{{name}}」と、その {{count, number}} 件のリクエスト、およびそれらへのすべての +1 が完全に削除されます。元に戻すことはできません。リクエストから作成済みのプロジェクトは残ります。",
+    "deleteWithRequestsMessageStale": "「{{name}}」には現在リクエストがあります。ボード、そのすべてのリクエスト、およびそれらへのすべての +1 が完全に削除されます。元に戻すことはできません。リクエストから作成済みのプロジェクトは残ります。",
+    "deleteConfirmNameLabel": "確認のためボード名を入力してください",
+    "deleteProgress_one": "{{count, number}} 件中 {{deleted, number}} 件のリクエストを削除しました…",
+    "deleteProgress_other": "{{count, number}} 件中 {{deleted, number}} 件のリクエストを削除しました…",
+    "deleteIncomplete": "ボードはまだ完全には削除されていません。",
+    "deleteResumeHint": "もう一度「削除」を押すと、中断したところから再開します。",
+    "archived": "アーカイブ済み",
+    "configure": "ボードを設定",
+    "emptyTitle": "まだボードはありません",
+    "empty": "まだ共有されているボードはありません。",
+    "emptyAdmin": "<admin>管理の「プライバシーとアクセス」にある「ボード」</admin>でボードを作成してください。",
+    "loadFailed": "ボードを読み込めませんでした。",
+    "notFoundTitle": "ボードが見つかりません",
+    "notFound": "このボードは存在しないか、あなたと共有されていません。",
+    "backToBoards": "ボード一覧に戻る",
+    "standaloneIntro": "利用できるボードです。開いてリクエストを追加するか +1 してください。"
+  }
+}

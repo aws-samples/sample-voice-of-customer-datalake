@@ -153,3 +153,22 @@ def test_comprehend_client_is_built_once(monkeypatch):
         redact_text('one', 'en')
         redact_text('two', 'en')
     factory.assert_called_once_with('comprehend')
+
+
+
+@pytest.mark.parametrize('text', [
+    'event at 1729856000008 ms',  # 13-digit millisecond timestamp, Luhn-valid, prefix 1 issues no card
+    'order 9900000000002',        # 13 digits, Luhn-valid, prefix 99 issues no card
+    'id 40000000000002',          # Luhn-valid Visa prefix, but Visa issues 13, 16 and 19 digits only
+    'ref 4000000000005',          # Visa prefix and length, but fails Luhn
+])
+def test_a_number_that_is_not_a_plausible_card_survives(text):
+    assert redact_text(text) == RedactionResult(text, {})
+
+
+@pytest.mark.parametrize('card', [
+    '4000000000006', '4222222222222', '340000000000009', '6011111111111117', '3530111333300000',
+    '30569309025904',
+])
+def test_card_numbers_of_every_network_length_are_replaced(card):
+    assert redact_text(f'card {card} ok').text == 'card [CARD] ok'

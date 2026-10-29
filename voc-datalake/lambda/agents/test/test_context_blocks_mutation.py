@@ -51,7 +51,7 @@ class TestTheDataNoticeIsTheLiteralSentence:
 
     def test_constants(self):
         assert context_blocks.MEMORY_K == 8
-        assert context_blocks._MAX_MEMORY_CHARS == 4000
+        assert context_blocks.MAX_MEMORY_CHARS == 4000
 
 
 class TestEveryBuilderIsBestEffort:

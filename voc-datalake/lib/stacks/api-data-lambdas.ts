@@ -26,6 +26,8 @@ import {
 import type { ApiStackContext } from './api-context';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { briefingApiWiring } from './briefing-worker';
+import { grantImageModelProbe } from './api-marketplace';
+import { LOGO_PREVIEW_PREFIX } from './design-capture';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailSettingsEnv } from '../utils/inbound-email';
 
 export interface DataLambdas {
@@ -340,7 +342,14 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     actions: ['servicequotas:ListServiceQuotas'],
     resources: ['*'],
   }));
+  // A stored reading is refreshed quota by quota (shared/model_quota_store.py): read-only, Bedrock quotas only.
+  settingsRole.addToPolicy(new iam.PolicyStatement({
+    actions: ['servicequotas:GetServiceQuota'],
+    resources: [`arn:${cdk.Aws.PARTITION}:servicequotas:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:bedrock/*`],
+  }));
   NagSuppressions.addResourceSuppressions(settingsRole, serviceQuotasReadSuppressions, true);
+  // Administration → AI models → Image generation: test call, access status, Marketplace (api-marketplace.ts).
+  grantImageModelProbe(settingsRole);
   // Design system (docs/company-context.md): the Figma/GitHub tokens are
   // written by PUT /settings/design-system/integrations and read only by the
   // reference refresh — never returned to a caller. Explicit statement, not
@@ -350,10 +359,17 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     resources: [designIntegrationsSecretArn],
   }));
   // Design-system uploads (screenshots/HTML via presigned PUT, the logo) under
-  // company-context/ only. Read + put, NO delete: removing a reference archives
-  // it and keeps the object (keep-all).
+  // company-context/ only. Read + put; removing a reference archives it and keeps
+  // the uploaded object (keep-all) — only its logo preview is deleted (below).
   rawDataBucket.grantRead(settingsRole, 'company-context/*');
   rawDataBucket.grantPut(settingsRole, 'company-context/*');
+  // The ONE delete: archiving a reference removes its logo PREVIEW (a copy made when the reference was
+  // read, shared/design_logo.py delete_previews). Exactly s3:DeleteObject, on the preview keys only.
+  settingsRole.addToPolicy(new iam.PolicyStatement({
+    sid: 'DeleteLogoPreviewOnArchive',
+    actions: ['s3:DeleteObject'],
+    resources: [rawDataBucket.arnForObjects(`${LOGO_PREVIEW_PREFIX}*`)],
+  }));
   // The morning brief (docs/briefing.md): Refresh queues, the caller's own email subscription.
   const briefing = briefingApiWiring(stack, ctx.uniqueName, kmsKey, ctx.props.userPool);
   briefing.grant(settingsRole);

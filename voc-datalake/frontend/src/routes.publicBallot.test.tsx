@@ -75,6 +75,10 @@ describe('the public ballot route', () => {
       .filter((route) => !guardsChildren(route))
       .map((route) => String(route.path)))
 
-    expect(unguarded).toStrictEqual(['/login', `${BALLOT_PAGE_PATH_PREFIX}:sessionId`])
+    // `/board/*` and `/review/:shareId` sign in with the board's own user pool (docs/feature-requests.md,
+    // docs/document-review.md); `/unsubscribe` is authorized by the emailed token alone (docs/participants.md).
+    expect(unguarded).toStrictEqual(sortedStrings([
+      '/login', `${BALLOT_PAGE_PATH_PREFIX}:sessionId`, '/board/*', '/review/:shareId', '/unsubscribe',
+    ]))
   })
 })

@@ -6,11 +6,13 @@ import { z } from 'zod';
 import type { AssistantRunContext, ServerToolDefinition } from '../../types.js';
 import type { ApiCall } from '../internal-api.js';
 import type { ToolDeps } from '../deps.js';
-import { isRecord, jsonResult, pick } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
+import { jsonResult, pick } from '../format.js';
 import { idProperty, idSchema, parseToolInput, toolSpec } from '../spec.js';
 import { recordsAt, toFeedbackSources } from './feedback-shape.js';
 import { getSettingsRoute, seg, serverTool } from './common.js';
 import { AssistantToolError } from '../errors.js';
+import { ApiError } from '../../../lib/errors.js';
 import { SCRAPER_ANALYZE_RESOURCE } from '../internal-api.js';
 import { SCRAPER_SELECTOR_FIELDS, publicUrlSchema } from '../client/scraper-schemas.js';
 import { awaitAssistJob } from './assist-job.js';
@@ -33,6 +35,8 @@ const SUBMISSION_FIELDS = [
 /** Scraper configs are stored verbatim; only these keys reach the model (no headers or cookies). */
 const SCRAPER_FIELDS = [
   'id', 'name', 'enabled', 'base_url', 'urls', 'frequency_minutes', 'extraction_method', 'template', 'last_run', 'items_found',
+  // The Radar brand key a scraper feeds (docs/radar.md); absent = an ordinary source.
+  'radar_brand',
 ] as const;
 /**
  * Administrators (the only callers who may change a scraper) also see what an
@@ -40,6 +44,10 @@ const SCRAPER_FIELDS = [
  */
 const ADMIN_SCRAPER_FIELDS = [
   ...SCRAPER_FIELDS, ...SCRAPER_SELECTOR_FIELDS, 'pagination', 'dimension_defaults', 'tags',
+] as const;
+/** App-review connectors and review pages (GET /scrapers/connectors): what each is and the Radar brand it feeds. */
+const CONNECTOR_FIELDS = [
+  'source', 'id', 'app_name', 'app_id', 'package_name', 'url', 'enabled', 'frequency_minutes', 'source_id', 'radar_brand',
 ] as const;
 /** The selector suggestion keys analyze-url answers with (its prompt's JSON). */
 const SUGGESTION_FIELDS = [
@@ -192,17 +200,45 @@ function analyzeTool(deps: ToolDeps): ServerToolDefinition {
   });
 }
 
+/**
+ * The app connectors and review pages (GET /scrapers/connectors, the scrapers API: the stream may not invoke the
+ * integrations API). A failed read says so instead of failing the scraper list.
+ */
+async function readConnectors(get: Invoke, ctx: AssistantRunContext): Promise<Record<string, unknown>> {
+  try {
+    const body = await get({
+      fn: 'scrapers', path: '/scrapers/connectors', resource: '/scrapers/{proxy+}', pathParameters: { proxy: 'connectors' },
+    }, ctx);
+    const connectors = recordsAt(body, 'connectors');
+    return { connector_count: connectors.length, connectors: connectors.map((c) => pick(c, CONNECTOR_FIELDS, 300)) };
+  } catch (error) {
+    // Any API failure (a 4xx/5xx answer, an invoke error); a programming error still throws.
+    if (!(error instanceof ApiError)) throw error;
+    return { connectors: [], connectors_note: 'The app connectors could not be read just now; the scrapers above are complete.' };
+  }
+}
+
 function scrapersTools(get: Invoke, deps: ToolDeps): ServerToolDefinition[] {
   const list = serverTool('list_scrapers', 'scrapers', toolSpec(
     'list_scrapers',
-    'Configured web scrapers (id, name, enabled, target URLs, schedule, last run; for administrators also '
-      + 'selectors, pagination and labels). Read it before proposing create_scraper or update_scraper.',
+    'Configured web scrapers (id, name, enabled, target URLs, schedule, last run, radar_brand = the Radar brand it '
+      + 'feeds; for administrators also selectors, pagination and labels), and `connectors`: the app-review connectors '
+      + 'and review pages (source app_reviews_ios | app_reviews_android | web_reviews, id, app_name, app_id / '
+      + 'package_name / url, enabled, frequency_minutes, source_id, radar_brand = the Radar brand it feeds; none = our '
+      + 'own feedback). Read it before proposing create_scraper, update_scraper or create_app_connector, and to see '
+      + 'which sources feed a Radar brand.',
     {},
   ), async (input, ctx) => {
     parseToolInput(noInput, input);
-    const scrapers = recordsAt(await get({ fn: 'scrapers', path: '/scrapers', resource: '/scrapers' }, ctx), 'scrapers');
+    const [scraperBody, connectors] = await Promise.all([
+      get({ fn: 'scrapers', path: '/scrapers', resource: '/scrapers' }, ctx),
+      readConnectors(get, ctx),
+    ]);
+    const scrapers = recordsAt(scraperBody, 'scrapers');
     const fields = ctx.isAdmin ? ADMIN_SCRAPER_FIELDS : SCRAPER_FIELDS;
-    return { content: jsonResult({ count: scrapers.length, scrapers: scrapers.map((s) => pick(s, fields, 300)) }) };
+    return { content: jsonResult({
+      count: scrapers.length, scrapers: scrapers.map((s) => pick(s, fields, 300)), ...connectors,
+    }) };
   });
 
   const status = serverTool('get_scraper_status', 'scrapers', toolSpec(

@@ -1,5 +1,30 @@
 {
   "aiModel": {
+    "image": {
+      "title": "Geração de imagens (avatares de personas)",
+      "description": "O modelo de imagem que desenha os avatares das personas. É definido pela implantação e não se escolhe aqui; a implantação solicita o acesso.",
+      "model": "Modelo",
+      "region": "Região",
+      "access": "Acesso",
+      "quota": "Cota",
+      "requestsPerMinute": "{{count, number}} solicitações/min",
+      "quotaPending": "Lendo do Service Quotas, verifique de novo em um minuto",
+      "avatarsOff": "Os avatares estão desativados nesta implantação (escopo de inferência UE), então este modelo não é usado.",
+      "testTitle": "Gerar uma pequena imagem de teste com {{model}}. Cada clique custa alguns centavos de dólar; a imagem não é guardada.",
+      "status": {
+        "available": "Disponível",
+        "no_access": "Sem acesso",
+        "not_subscribed": "Sem assinatura",
+        "not_in_region": "Indisponível nesta região",
+        "unknown": "Desconhecido"
+      },
+      "hint": {
+        "no_access": "Esta conta ou as suas funções não podem usar o modelo. Verifique as políticas da organização (SCPs) para Bedrock e AWS Marketplace e implante de novo.",
+        "not_subscribed": "Falta o contrato ou a assinatura do Marketplace do modelo. Implante de novo (a implantação a solicita) ou aceite-o no console do Bedrock, em Acesso a modelos.",
+        "not_in_region": "O modelo não é oferecido nesta região. Escolha em avatar-generation.json um modelo de imagem oferecido nela.",
+        "unknown": "Não foi possível ler o acesso. Use Testar para verificar o modelo diretamente."
+      }
+    },
     "automaticOption": "Automático — {{model}}",
     "groupOther": "Outros modelos",
     "groupRecommended": "Recomendado",
@@ -62,6 +87,7 @@
       "latency": "{{ms}} ms",
       "tokensPerMinute": "{{count, number}} tokens/min",
       "quotaUnknown": "Cota desconhecida",
+      "quotaStale": "Última leitura guardada: uma nova está sendo lida do Service Quotas",
       "all": "Testar todos os modelos",
       "allTitle": "Acesso e capacidade dos modelos",
       "allIntro": "Envia uma solicitação curta a cada modelo, um de cada vez, e mostra sua cota de tokens por minuto nesta conta e região.",
@@ -146,7 +172,6 @@
   "logs": {
     "clear": "Limpar",
     "configureFirst": "Configure o endpoint de API na aba Geral para ver os registros.",
-    "daysAgo": "há {{count, number}} d",
     "daysAgo_one": "há {{count, number}} d",
     "daysAgo_other": "há {{count, number}} d",
     "errorLabel": "Erro:",
@@ -155,10 +180,8 @@
     "errorsLabel": "Erros:",
     "failures_one": "{{count, number}} falha",
     "failures_other": "{{count, number}} falhas",
-    "hoursAgo": "há {{count, number}} h",
     "hoursAgo_one": "há {{count, number}} h",
     "hoursAgo_other": "há {{count, number}} h",
-    "items": "{{count, number}} itens",
     "items_one": "{{count, number}} registro",
     "items_other": "{{count, number}} itens",
     "justNow": "agora mesmo",
@@ -168,26 +191,21 @@
     "loadingRuns": "Carregando execuções...",
     "loadingSummary": "Carregando resumo...",
     "messageId": "ID da mensagem:",
-    "minutesAgo": "há {{count, number}} min",
     "minutesAgo_one": "há {{count, number}} min",
     "minutesAgo_other": "há {{count, number}} min",
-    "moreEntries": "+{{count, number}} entradas a mais",
     "moreEntries_one": "+{{count, number}} entrada a mais",
     "moreEntries_other": "+{{count, number}} entradas a mais",
     "noProcessingErrors": "Sem erros de processamento neste período",
     "noRunsInPeriod": "Sem execuções neste período",
     "noScrapersConfigured": "Ainda não há fontes de dados que rodem. Adicione uma na página Fontes de dados.",
     "noValidationFailures": "Sem falhas de validação neste período",
-    "pages": "{{count, number}} páginas",
     "pages_one": "{{count, number}} página",
     "pages_other": "{{count, number}} páginas",
     "processingErrors": "Erros de processamento",
     "recordKeys": "Campos presentes:",
-    "textLength": "Comprimento do texto: {{count, number}} caracteres",
     "textLength_one": "Comprimento do texto: {{count, number}} caractere",
     "textLength_other": "Comprimento do texto: {{count, number}} caracteres",
     "refresh": "Atualizar",
-    "runErrors": "{{count, number}} erros",
     "runErrors_one": "{{count, number}} erro",
     "runErrors_other": "{{count, number}} erros",
     "scraperRuns": "Execuções de scraper",
@@ -240,7 +258,87 @@
       "ios": "Apps de iPhone",
       "android": "Apps de Android"
     },
-    "noRunsYet": "Ainda sem execuções"
+    "noRunsYet": "Ainda sem execuções",
+    "system": {
+      "tab": "Erros do sistema",
+      "levelLabel": "Nível de log",
+      "levelError": "Erros",
+      "levelWarning": "Erros e avisos",
+      "searchingStart": "Pesquisando os logs…",
+      "searching_one": "Pesquisando os logs de {{count, number}} função…",
+      "searching_many": "Pesquisando os logs de {{count, number}} funções…",
+      "searching_other": "Pesquisando os logs de {{count, number}} funções…",
+      "searched_one": "Logs de {{count, number}} função pesquisados",
+      "searched_many": "Logs de {{count, number}} funções pesquisados",
+      "searched_other": "Logs de {{count, number}} funções pesquisados",
+      "empty": "Nenhum erro neste período",
+      "failed": "A pesquisa nos logs falhou. Tente novamente.",
+      "loadFailed": "Não foi possível carregar os logs do sistema.",
+      "truncated": "Mostrando as {{rows, number}} linhas de log mais recentes",
+      "download": "Baixar",
+      "downloadTitle": "Baixar estes erros como arquivo JSON para compartilhar e analisar",
+      "adminOnly": "Os erros do sistema são visíveis apenas para administradores.",
+      "times": "×{{n, number}}",
+      "occurrences_one": "{{count, number}} ocorrência",
+      "occurrences_many": "{{count, number}} ocorrências",
+      "occurrences_other": "{{count, number}} ocorrências",
+      "firstSeen": "Primeira ocorrência",
+      "lastSeen": "Última ocorrência",
+      "requestId": "ID da solicitação",
+      "sourceTitle": "De onde vêm estas linhas",
+      "sourceApi": "API",
+      "sourceWorkflow": "Fluxo de trabalho",
+      "request": {
+        "show": "Mostrar a solicitação inteira",
+        "loading": "Lendo todas as linhas desta solicitação…",
+        "loadFailed": "Não foi possível carregar as linhas da solicitação.",
+        "failed": "A busca desta solicitação falhou. Tente novamente.",
+        "retry": "Tentar novamente",
+        "empty": "Nenhuma linha encontrada para esta solicitação (os logs podem ter expirado).",
+        "truncated": "Mostrando as primeiras {{lines, number}} linhas",
+        "linesLabel": "Linhas de log desta solicitação",
+        "title_one": "{{count, number}} linha desta solicitação",
+        "title_many": "{{count, number}} linhas desta solicitação",
+        "title_other": "{{count, number}} linhas desta solicitação"
+      },
+      "queues": {
+        "title": "Filas de falhas",
+        "loading": "Verificando as filas de falhas…",
+        "loadFailed": "Não foi possível ler as filas de falhas.",
+        "oldest": "a mais antiga {{age}}",
+        "noSample": "Nenhuma mensagem pôde ser lida como amostra.",
+        "unreadable": "Não foi possível ler",
+        "peekNote": "Estas mensagens falharam em todas as tentativas e não são tentadas novamente. Ler uma amostra não a remove.",
+        "empty_one": "A fila de falhas está vazia",
+        "empty_many": "Todas as {{count, number}} filas de falhas estão vazias",
+        "empty_other": "Todas as {{count, number}} filas de falhas estão vazias",
+        "messages_one": "{{count, number}} mensagem",
+        "messages_many": "{{count, number}} mensagens",
+        "messages_other": "{{count, number}} mensagens"
+      },
+      "environment": {
+        "title": "Ambiente",
+        "loading": "Carregando o ambiente…",
+        "loadFailed": "Não foi possível carregar o ambiente.",
+        "on": "Ativado",
+        "off": "Desativado",
+        "none": "Nenhum",
+        "fields": {
+          "version": "Versão",
+          "region": "Região",
+          "account_suffix": "Conta (últimos 4 dígitos)",
+          "deployment_prefix": "Prefixo da implantação",
+          "enabled_sources": "Fontes ativadas",
+          "web_search": "Pesquisa na web",
+          "inference_scope": "Escopo de inferência",
+          "image_model": "Modelo de imagem",
+          "model_overrides": "Modelos escolhidos",
+          "alerting": "Alertas",
+          "open_circuits": "Fontes em pausa (disjuntor)",
+          "log_coverage": "Logs pesquisados"
+        }
+      }
+    }
   },
   "saveChanges": "Salvar alterações",
   "saved": "Salvo!",
@@ -261,8 +359,6 @@
     "saveToSecrets": "Salvar no Secrets Manager",
     "selectOption": "Selecionar...",
     "show": "Mostrar",
-    "test": "Testar",
-    "unknownResult": "Resultado desconhecido",
     "webhooks": "URLs de webhook",
     "circuit": {
       "paused": "Pausada após falhas repetidas",
@@ -297,7 +393,8 @@
     "policies": "Políticas de fontes",
     "users": "Usuários",
     "logs": "Registros",
-    "version": "Versão"
+    "version": "Versão",
+    "boards": "Quadros"
   },
   "title": "Configurações",
   "users": {
@@ -322,6 +419,7 @@
     "retry": "Tentar novamente",
     "loading": "Carregando…",
     "saveFailed": "Não foi possível salvar. Tente novamente.",
+    "discardChanges": "Descartar alterações",
     "write": "Escrever",
     "preview": "Pré-visualizar",
     "nothingToPreview": "Nada para pré-visualizar ainda.",
@@ -371,14 +469,26 @@
     "removeKpi": "Remover KPI",
     "kpiName": "Nome do KPI",
     "kpiTarget": "Meta",
-    "kpiUnit": "Unidade"
+    "kpiUnit": "Unidade",
+    "fieldRequired": "Obrigatório: preencha ou remova a linha",
+    "fieldTooLong": "No máximo {{max, number}} caracteres",
+    "fixFields": "Não salvo: corrija os campos destacados."
   },
   "designSystem": {
     "title": "Sistema de design",
     "description": "Os tokens, diretrizes e referências da sua marca. Protótipos e visuais de PR/FAQ são criados com eles para combinar com sua identidade.",
     "logo": "Logotipo",
     "logoAlt": "Logotipo da empresa",
+    "logoInDraft": "Novo logotipo de uma referência: ele se torna o logotipo da empresa quando você salva o design system.",
     "uploadLogo": "Enviar logotipo",
+    "logoHint": "PNG, JPEG, WebP ou SVG (o SVG é convertido para PNG no seu navegador).",
+    "svg": {
+      "tooLarge": "{{name}} tem mais de 1 MB. Um logotipo SVG pode ter no máximo 1 MB.",
+      "unreadable": "Não foi possível ler {{name}} como imagem SVG. Exporte-o como PNG e envie esse arquivo.",
+      "timeout": "A conversão de {{name}} demorou demais. Exporte-o como PNG e envie esse arquivo.",
+      "notConverted": "Não foi possível converter este SVG no seu navegador. Exporte-o como PNG e envie esse arquivo.",
+      "resultTooLarge": "O PNG convertido tem mais de 5 MB. Exporte um PNG menor e envie-o."
+    },
     "colors": "Cores",
     "typography": "Tipografia",
     "spacing": "Espaçamento",
@@ -417,12 +527,22 @@
     "archive": "Arquivar",
     "archiveTitle": "Arquivar esta referência?",
     "archiveMessage": "\"{{title}}\" deixará de ser usado em novos protótipos. O arquivo é mantido.",
+    "archiveMessageLink": "\"{{title}}\" deixará de ser usado em novos protótipos. O link e o que foi lido dele são mantidos.",
     "referenceKind": "Tipo de referência",
     "referenceTitle": "Título",
     "referenceUrl": "Endereço (https://…)",
+    "urlProblems": {
+      "tooLong": "O endereço tem mais de 2.048 caracteres.",
+      "notUrl": "Isto não é um endereço web. Cole o link completo, começando com https://",
+      "notHttps": "Só endereços https:// podem ser lidos; endereços {{scheme}}:// são recusados.",
+      "noHost": "O endereço precisa de um nome de site depois de https://, por exemplo https://example.com",
+      "credentials": "Remova o nome de usuário ou a senha do endereço.",
+      "localhost": "Endereços deste computador não podem ser lidos; use um site público."
+    },
     "referenceFile": "Arquivo",
     "addReference": "Adicionar referência",
     "addReferenceFailed": "Não foi possível adicionar a referência. Tente novamente.",
+    "duplicateReference": "Este endereço já é uma referência: \"{{title}}\".",
     "referenceTitleOptional": "Título (opcional)",
     "kindHints": {
       "website": "Abrimos a página em um navegador seguro e lemos suas cores, fontes e logotipo.",
@@ -453,11 +573,10 @@
       "variantsCount_other": "{{count, number}} variantes",
       "onlyGuidelines": "Somente diretrizes",
       "logoCandidate": "Logotipo encontrado nesta referência",
+      "logoRendered": "Renderizado a partir do logotipo SVG do site",
       "apply": "Usar como design system",
       "useLogo": "Usar este logotipo",
-      "logoFailed": "Não foi possível usar este logotipo. Tente novamente.",
-      "replaceLogoTitle": "Substituir o logotipo atual?",
-      "replaceLogoMessage": "O logotipo de \"{{title}}\" substitui o seu logotipo atual."
+      "logoFailed": "Não foi possível usar este logotipo. Tente novamente."
     },
     "applied": {
       "title": "De {{source}} — revise as alterações e depois salve.",
@@ -529,6 +648,7 @@
         "padding": "Preenchimento",
         "gap": "Espaço",
         "height": "Altura",
+        "width": "Largura",
         "font_family": "Fonte",
         "font_size": "Tamanho da fonte",
         "font_weight": "Peso da fonte",
@@ -538,6 +658,7 @@
         "outline": "Contorno de foco"
       },
       "hoverField": "{{field}} ao passar o mouse",
+      "focusField": "{{field}} com foco",
       "hoverFocus": "Mouse e foco",
       "useToken": "Usar token…",
       "useTokenFor": "Usar um token de cor para {{field}}",
@@ -555,6 +676,7 @@
         "padding": "Use de um a quatro comprimentos, como 8px 16px.",
         "gap": "Use um comprimento como 8px.",
         "height": "Use um comprimento como 36px.",
+        "width": "Use um comprimento como 36px.",
         "font_family": "Use nomes de fonte separados por vírgulas.",
         "font_size": "Use um comprimento como 14px.",
         "font_weight": "Use 100–900, normal ou bold.",
@@ -662,5 +784,180 @@
     "changelogTitle": "Notas de versão",
     "changelogDescription": "Alterações por versão, da mais recente para a mais antiga, a partir do CHANGELOG.md.",
     "showOlder": "Mostrar versões anteriores (mais {{count, number}})"
+  },
+  "pluginCopy": {
+    "appReviewsAndroid": {
+      "name": "Avaliações de apps Android",
+      "description": "Coleta avaliações de clientes da Google Play Store"
+    },
+    "appReviewsIos": {
+      "name": "Avaliações de apps iOS",
+      "description": "Coleta avaliações de clientes da Apple App Store"
+    },
+    "githubIssues": {
+      "name": "Issues do GitHub",
+      "description": "Importa issues e comentários de repositórios do GitHub, com versão do software, rótulos e assinaturas de erro"
+    },
+    "s3Import": {
+      "name": "Importação em massa do S3",
+      "description": "Importa feedback de um bucket do S3 (CSV, JSON, JSONL)"
+    },
+    "syntheticReviews": {
+      "name": "Gerador de avaliações sintéticas",
+      "description": "Gera avaliações de clientes sintéticas e realistas com IA (Amazon Bedrock) para demos, testes e modelagem. Processadas pelo pipeline normal e marcadas como dados sintéticos."
+    },
+    "webReviews": {
+      "name": "Avaliações da web",
+      "description": "Lê avaliações de clientes em páginas públicas de avaliações (Trustpilot, TripAdvisor, fóruns) com um navegador gerenciado. Cada página adicionada é uma fonte própria."
+    },
+    "webscraper": {
+      "name": "Extrator web",
+      "description": "Extrator configurável para obter feedback de sites"
+    }
+  },
+  "boards": {
+    "loading": "Carregando…",
+    "saved": "Salvo.",
+    "cancel": "Cancelar",
+    "domains": {
+      "title": "Domínios da empresa",
+      "description": "Os domínios de e-mail que pertencem à empresa. Pessoas desses domínios podem entrar em todos os quadros abertos à empresa e contam como colegas ao adicionar participantes.",
+      "label": "Domínios de e-mail da empresa",
+      "hint": "Pressione Enter após cada domínio. Sem domínios, ninguém pode entrar em um quadro da empresa.",
+      "save": "Salvar domínios",
+      "loadFailed": "Não foi possível carregar os domínios da empresa."
+    },
+    "participantCard": {
+      "domains": "Domínios da empresa: {{list}}.",
+      "noDomains": "Ainda não há domínios da empresa.",
+      "editInBoards": "Editá-los em Quadros"
+    },
+    "list": {
+      "title": "Quadros de feedback",
+      "description": "Cada quadro reúne solicitações de uma equipe ou público e tem seu próprio link, campos e status.",
+      "create": "Novo quadro",
+      "empty": "Ainda não há quadros. Crie um a partir de um modelo.",
+      "loadFailed": "Não foi possível carregar os quadros.",
+      "archived": "Arquivado",
+      "edit": "Editar",
+      "editLabel": "Editar {{name}}",
+      "requests_one": "{{count, number}} solicitação",
+      "requests_many": "{{count, number}} solicitações",
+      "requests_other": "{{count, number}} solicitações"
+    },
+    "templates": {
+      "sales": "Solicitações de recursos de vendas",
+      "salesHint": "Cliente, negócio e impacto na receita em cada solicitação e +1.",
+      "service": "Problemas do atendimento ao cliente",
+      "serviceHint": "Tipo de problema, gravidade, referência e passos; um +1 significa também afetado.",
+      "beta": "Feedback do beta",
+      "betaHint": "Área do produto, resultado, avaliação e um link para os testadores.",
+      "blank": "Em branco",
+      "blankHint": "Só título e descrição; adicione campos depois."
+    },
+    "create": {
+      "title": "Novo quadro",
+      "hint": "Escolha um modelo para começar. Todos os campos e status podem ser alterados depois.",
+      "template": "Modelo",
+      "slugPreview": "Link para compartilhar: /board/{{slug}}",
+      "slugLater": "O link para compartilhar é criado a partir do nome quando o quadro é criado.",
+      "submit": "Criar quadro"
+    },
+    "editor": {
+      "title": "Quadro",
+      "back": "Voltar aos quadros",
+      "name": "Nome",
+      "slug": "Nome do link",
+      "slugHint": "Letras minúsculas, dígitos e hifens simples, no máximo 60 caracteres.",
+      "shareLink": "Link para compartilhar:",
+      "shareAfterSave": "(depois de salvar)",
+      "copyLink": "Copiar link",
+      "copied": "Copiado.",
+      "description": "Descrição",
+      "save": "Salvar quadro",
+      "unsaved": "Alterações não salvas."
+    },
+    "audience": {
+      "title": "Quem pode entrar e publicar",
+      "company": "Empresa",
+      "companyHint": "Pessoas dos domínios da empresa.",
+      "list": "Pessoas específicas",
+      "listHint": "Domínios e endereços de e-mail permitidos.",
+      "anyone": "Qualquer pessoa",
+      "anyoneHint": "Qualquer endereço de e-mail que se confirme.",
+      "companyDomains": "Usa os domínios da empresa: {{list}}.",
+      "noCompanyDomains": "Ainda não há domínios da empresa definidos, então ninguém pode entrar neste quadro.",
+      "domains": "Domínios permitidos",
+      "emails": "Endereços de e-mail permitidos",
+      "emailsCount_one": "{{count, number}} endereço (no máximo {{max, number}}).",
+      "emailsCount_many": "{{count, number}} endereços (no máximo {{max, number}}).",
+      "emailsCount_other": "{{count, number}} endereços (no máximo {{max, number}}).",
+      "emailsInvalid": "Endereços de e-mail inválidos: {{list}}",
+      "anyoneWarning": "Qualquer endereço de e-mail pode entrar e publicar neste quadro. Não há moderação: cada pessoa está limitada a 20 solicitações e 100 +1 por dia."
+    },
+    "fieldsEditor": {
+      "title": "Campos",
+      "hint": "Título e descrição são sempre pedidos. Ative os campos de que este quadro precisa.",
+      "requestGroup": "Em uma nova solicitação",
+      "supportGroup": "Em um +1",
+      "required": "Obrigatório",
+      "requiredLabel": "{{field}} obrigatório"
+    },
+    "fields": {
+      "customer": "Cliente",
+      "deal": "Negócio",
+      "impact": "Impacto na receita",
+      "amount_usd": "Valor (USD)",
+      "contact_email": "E-mail de contato",
+      "kind": "Tipo de problema",
+      "severity": "Gravidade",
+      "reference": "Referência de reserva ou pedido",
+      "steps": "Passos para reproduzir",
+      "affected_count": "Pessoas afetadas",
+      "area": "Área do produto",
+      "outcome": "Resultado",
+      "rating": "Avaliação",
+      "link": "Link",
+      "note": "Observação"
+    },
+    "statuses": {
+      "title": "Status",
+      "hint": "Novas solicitações começam no primeiro status. Até {{max, number}} status.",
+      "initial": "Inicial",
+      "labelFor": "Nome do status {{position, number}}",
+      "moveUp": "Mover {{status}} para cima",
+      "moveDown": "Mover {{status}} para baixo",
+      "remove": "Remover {{status}}",
+      "newLabel": "Novo status",
+      "add": "Adicionar status",
+      "full": "Um quadro tem no máximo {{max, number}} status."
+    },
+    "lifecycle": {
+      "title": "Arquivar ou excluir",
+      "hint_one": "Este quadro tem {{count, number}} solicitação. Arquivar o oculta de todos, exceto administradores, e mantém as solicitações; excluir remove o quadro e suas solicitações.",
+      "hint_many": "Este quadro tem {{count, number}} solicitações. Arquivar o oculta de todos, exceto administradores, e mantém as solicitações; excluir remove o quadro e suas solicitações.",
+      "hint_other": "Este quadro tem {{count, number}} solicitações. Arquivar o oculta de todos, exceto administradores, e mantém as solicitações; excluir remove o quadro e suas solicitações.",
+      "saveFirst": "Salve ou descarte suas alterações primeiro.",
+      "archive": "Arquivar",
+      "restore": "Restaurar",
+      "delete": "Excluir quadro"
+    },
+    "problems": {
+      "nameRequired": "O quadro precisa de um nome.",
+      "slugInvalid": "O nome do link só pode usar letras minúsculas, dígitos e hifens simples.",
+      "statusesEmpty": "O quadro precisa de pelo menos um status.",
+      "statusLabelRequired": "Cada status precisa de um nome.",
+      "emailsInvalid": "Corrija ou remova os endereços de e-mail inválidos.",
+      "emailsTooMany": "No máximo 500 endereços de e-mail.",
+      "listEmpty": "Adicione pelo menos um domínio ou endereço de e-mail permitido."
+    },
+    "errors": {
+      "slugTaken": "Outro quadro já usa este nome de link. Escolha outro.",
+      "statusInUse": "Um status que você removeu ainda é usado por solicitações deste quadro. Mova essas solicitações para outro status primeiro ou mantenha o status.",
+      "forbidden": "Só administradores podem alterar quadros.",
+      "notFound": "Este quadro não existe mais.",
+      "conflict": "O quadro mudou nesse meio-tempo. Recarregue-o e tente de novo.",
+      "generic": "Algo deu errado. Tente de novo."
+    }
   }
 }

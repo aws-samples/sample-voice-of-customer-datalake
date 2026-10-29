@@ -160,12 +160,6 @@ export interface ProductDoc {
   created_at: string
 }
 
-export interface ProductInterviewTurnResponse {
-  assistant_message: string
-  applied_patch: Partial<ProductContext>
-  context: ProductContext
-}
-
 export interface Project {
   project_id: string
   name: string

@@ -22,6 +22,19 @@ export function lenientList<T>(keep: (item: unknown) => item is T) {
     .transform((items) => items.filter(keep))
 }
 
+/**
+ * Parse each entry of a wire list with `schema`, keeping the ones that pass (their
+ * parsed output) and dropping the rest; a non-array is the empty list. The
+ * schema-based twin of `lenientList`, for call sites that parse at read time.
+ */
+export function parseEach<T>(schema: z.ZodType<T>, value: unknown): T[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry: unknown) => {
+    const parsed = schema.safeParse(entry)
+    return parsed.success ? [parsed.data] : []
+  })
+}
+
 /** The guard for a list of ids: strings, and not the empty one. */
 export function isNonEmptyString(item: unknown): item is string {
   return typeof item === 'string' && item !== ''

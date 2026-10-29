@@ -202,7 +202,7 @@ describe('Settings', () => {
     it.each([
       ['Sources', ['Source settings', 'Integrations', 'Email inbox', 'Radar'], 'source-card-webscraper'],
       ['Taxonomy', ['Categories', 'Dimensions'], 'categories-manager'],
-      ['Privacy & access', ['Source policies', 'Users'], 'source-policies-section'],
+      ['Privacy & access', ['Source policies', 'Users', 'Boards'], 'source-policies-section'],
       ['System', ['Logs', 'Version'], 'logs-section'],
     ])('opens %s on its first section, under a switch of its sections', async (tab, sections, firstTestId) => {
       await openTab(tab)

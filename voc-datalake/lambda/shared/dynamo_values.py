@@ -19,6 +19,16 @@ def _sorted_members(members: list[Any]) -> list[Any]:
         return members
 
 
+def item_key(item: Mapping[str, Any]) -> dict[str, str]:
+    """The ``{pk, sk}`` key of a stored item (as strings)."""
+    return {'pk': str(item['pk']), 'sk': str(item['sk'])}
+
+
+def as_count(value: object) -> int:
+    """A stored counter as an int (DynamoDB hands back a Decimal); 0 for anything that is not a number."""
+    return int(value) if isinstance(value, int | Decimal) and not isinstance(value, bool) else 0
+
+
 def plain(value: Any) -> Any:
     """``value`` with every Decimal, set, tuple and mapping made JSON-safe, recursively."""
     if isinstance(value, Decimal):

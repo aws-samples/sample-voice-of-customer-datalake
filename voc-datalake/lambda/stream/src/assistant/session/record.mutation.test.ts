@@ -6,7 +6,7 @@
  * anchors, how an attachment is stripped (its mimeType fallback, the emptied
  * data source, the name fallback), how non-string content is read as text, the
  * tool-content trim, the title rules (first USER message, whitespace collapse,
- * the 60-char boundary, the 'New conversation' fallback), the 300-message turn
+ * the 120-char boundary, the 'New conversation' fallback), the 300-message turn
  * window and its fallbacks, the one-turn shrink of tool contents, the exact
  * MAX_ITEM_BYTES boundary and the null result when nothing can shrink.
  */
@@ -139,9 +139,9 @@ describe('the title is the first user message', () => {
     expect(titleOf([message])).toBe('Look here');
   });
 
-  it('keeps 60 characters whole and cuts 61 to 59 plus an ellipsis', () => {
-    expect(titleOf([user('u1', 'a'.repeat(60))])).toBe('a'.repeat(60));
-    expect(titleOf([user('u1', 'b'.repeat(61))])).toBe(`${'b'.repeat(59)}…`);
+  it('keeps 120 characters whole and cuts 121 to 119 plus an ellipsis', () => {
+    expect(titleOf([user('u1', 'a'.repeat(120))])).toBe('a'.repeat(120));
+    expect(titleOf([user('u1', 'b'.repeat(121))])).toBe(`${'b'.repeat(119)}…`);
   });
 
   it('falls back to New conversation without a user message', () => {

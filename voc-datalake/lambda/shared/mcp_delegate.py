@@ -34,7 +34,7 @@ from botocore import exceptions as botocore_exceptions
 from botocore.config import Config
 
 from shared.logging import logger
-from shared.project_access import ACTING_SUBJECT_CLAIM
+from shared.project_access import ACTING_SUBJECT_CLAIM, DELEGATED_SUBJECT_PREFIX
 
 # A DEDICATED Lambda client, not shared.aws.get_lambda_client().
 #
@@ -76,7 +76,6 @@ def get_delegate_lambda_client():
 # key-kind discipline the ballot keys use (`user:` / `anon:`). Without it, a
 # token id could in principle be minted to look like somebody's subject, and
 # every downstream row keyed by subject would merge the two identities.
-SYNTHETIC_SUBJECT_PREFIX: Final = 'mcp:'
 
 # Every claim the synthesized authorizer context carries. Named as a frozenset
 # so the claim-synthesis test can assert the set is EXACTLY this — a claim
@@ -171,7 +170,7 @@ def synthetic_claims(token_info: Mapping[str, Any]) -> dict[str, str]:
         # later phase) landing under a subject nobody can trace.
         raise DelegationUnavailable('token record has no usable token_id')
     claims = {
-        'sub': f'{SYNTHETIC_SUBJECT_PREFIX}{token_id}',
+        'sub': f'{DELEGATED_SUBJECT_PREFIX}{token_id}',
         'cognito:groups': '',
         # Not a mailbox, and deliberately not the minter's. The routes that read
         # an email use it as a display label, and a service credential has no
@@ -183,11 +182,11 @@ def synthetic_claims(token_info: Mapping[str, Any]) -> dict[str, str]:
         # a delegated call. No route does today. The fix when one appears is a
         # routable no-reply address that still names the credential, e.g.
         # `mcp+{token_id}@<domain>`, not relaxing the validation.
-        'email': f'{SYNTHETIC_SUBJECT_PREFIX}{token_id}',
+        'email': f'{DELEGATED_SUBJECT_PREFIX}{token_id}',
     }
     raw_minter = token_info.get('created_by')
     minter = raw_minter.strip() if isinstance(raw_minter, str) else ''
-    if minter and not minter.startswith(SYNTHETIC_SUBJECT_PREFIX):
+    if minter and not minter.startswith(DELEGATED_SUBJECT_PREFIX):
         claims[ACTING_SUBJECT_CLAIM] = minter
     return claims
 

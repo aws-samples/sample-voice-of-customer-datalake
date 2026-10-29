@@ -34,12 +34,13 @@ const SKIPPED_DIRS = new Set(['test', '__pycache__', 'layers', 'node_modules', '
 
 const FunctionSchema = z.object({ Properties: z.object({ Handler: z.string().optional() }) });
 
-/** Every `*_handler.py` under `dir`, recursively. */
-function handlerFiles(dir: string): string[] {
+/** Every `*.py` under `dir`, recursively: the `*_handler.py` entry points and the Powertools `Router`
+ *  modules they include. */
+function pythonFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
-    if (statSync(path).isDirectory()) return SKIPPED_DIRS.has(name) ? [] : handlerFiles(path);
-    return name.endsWith('_handler.py') ? [path] : [];
+    if (statSync(path).isDirectory()) return SKIPPED_DIRS.has(name) ? [] : pythonFiles(path);
+    return name.endsWith('.py') ? [path] : [];
   });
 }
 
@@ -51,15 +52,43 @@ function segmentsOf(path: string): string[] {
     .map((part) => ((part.startsWith('<') && part.endsWith('>')) || (part.startsWith('{') && part.endsWith('}')) ? '*' : part));
 }
 
-const DECORATOR = /@app\.(get|post|put|delete|patch)\(\s*["']([^"']+)["']/g;
+/** A route registration: `@app.<verb>('<path>')` (the resolver, or a `Router` bound to `app` in a router
+ *  module) or `@router.<verb>(…)`. A path may be empty: `@router.get("")` under `include_router(…,
+ *  prefix="/x")` serves `/x` itself. */
+const DECORATOR = /@(?:app|router)\.(get|post|put|delete|patch)\(\s*["']([^"']*)["']/g;
+/** `app.include_router(<module>.app|.router` or `app.include_router(<alias>`, with an optional `prefix=`. */
+const INCLUDE_ROUTER = /app\.include_router\(\s*([A-Za-z_][\w.]*)\s*(?:,\s*prefix\s*=\s*["']([^"']*)["'])?/g;
+/** The attribute a router module binds its `Router()` to (`app = Router()` here; `router` elsewhere). */
+const ROUTER_ATTRIBUTE = /\.(?:app|router)$/;
 
-/** `@app.<verb>('<path>')` registrations of `<moduleName>.py` among `files` (exactly one such file). */
-function registeredRoutes(files: readonly string[], moduleName: string): Route[] {
+/** The one `<moduleName>.py` among `files`. */
+function moduleSource(files: readonly string[], moduleName: string): string {
   const matching = files.filter((file) => file.endsWith(`/${moduleName}.py`));
   expect(matching, `exactly one ${moduleName}.py under lambda/`).toHaveLength(1);
-  const source = readFileSync(matching[0] ?? '', 'utf-8');
+  return readFileSync(matching[0] ?? '', 'utf-8');
+}
+
+function routesMatching(source: string, prefix = ''): Route[] {
   return [...source.matchAll(DECORATOR)]
-    .map((match) => ({ verb: (match[1] ?? '').toUpperCase(), segments: segmentsOf(match[2] ?? '') }));
+    .map((match) => ({ verb: (match[1] ?? '').toUpperCase(), segments: segmentsOf(`${prefix}${match[2] ?? ''}`) }));
+}
+
+/** The module an `include_router` argument names: `participants_routes.app` (the shape engagement_handler.py
+ *  uses, after `from shared import participants_routes`), `participants_routes.router`, or an alias bound by
+ *  `from <pkg.>participants_routes import app|router as <alias>`. */
+function includedModule(source: string, argument: string): string {
+  if (ROUTER_ATTRIBUTE.test(argument)) return argument.replace(ROUTER_ATTRIBUTE, '').split('.').pop() ?? '';
+  const alias = new RegExp(`from\\s+([\\w.]+)\\s+import\\s+(?:app|router)\\s+as\\s+${argument}\\b`).exec(source);
+  return (alias?.[1] ?? '').split('.').pop() ?? '';
+}
+
+/** `@app.<verb>('<path>')` registrations of `<moduleName>.py` among `files` (exactly one such file), plus the
+ *  registrations of every Powertools `Router` module it includes (`app.include_router`). */
+function registeredRoutes(files: readonly string[], moduleName: string): Route[] {
+  const source = moduleSource(files, moduleName);
+  const included = [...source.matchAll(INCLUDE_ROUTER)].flatMap((match) => routesMatching(
+    moduleSource(files, includedModule(source, match[1] ?? '')), match[2] ?? ''));
+  return [...routesMatching(source), ...included];
 }
 
 const sameSegment = (a: string, b: string) => a === '*' || b === '*' || a === b;
@@ -92,7 +121,7 @@ describe('every API method reaches a route its Lambda answers', () => {
   }, SYNTH_TIMEOUT_MS);
 
   it('has no dead method (a Powertools handler without a matching @app route)', () => {
-    const files = handlerFiles(LAMBDA_DIR);
+    const files = pythonFiles(LAMBDA_DIR);
     const routesOf = new Map<string, Route[]>();
     const dead = methods.filter((method) => {
       const routes = routesOf.get(method.moduleName) ?? registeredRoutes(files, method.moduleName);
@@ -107,6 +136,29 @@ describe('every API method reaches a route its Lambda answers', () => {
     const modules = new Set(methods.map((method) => method.moduleName));
     expect(modules.size).toBeGreaterThan(10);
     expect(['metrics_handler', 'projects_handler', 'radar_handler'].every((name) => modules.has(name))).toBe(true);
+  });
+
+  it.each([
+    ['from shared import participants_routes', 'participants_routes.app', 'participants_routes'],
+    ['from shared import feature_requests_routes', 'shared.feature_requests_routes.app', 'feature_requests_routes'],
+    ['from shared.participants_routes import app as participants_app', 'participants_app', 'participants_routes'],
+    ['from participants_routes import router as participants_router', 'participants_router', 'participants_routes'],
+    ['import participants_routes', 'participants_routes.router', 'participants_routes'],
+  ])('resolves the router module of `%s` + include_router(%s) to %s', (source, argument, expected) => {
+    expect(includedModule(source, argument)).toBe(expected);
+  });
+
+  it('applies an include_router prefix to the router routes', () => {
+    expect(routesMatching('@router.get("/lists")', '/participants'))
+      .toStrictEqual([{ verb: 'GET', segments: ['participants', 'lists'] }]);
+  });
+
+  it('reads the routes of the engagement router modules (`app = Router()`, `@app.<verb>`)', () => {
+    const routes = registeredRoutes(pythonFiles(LAMBDA_DIR), 'engagement_handler');
+    expect(answers(routes, 'GET', '/participants/lists/{list_id}')).toBe(true);
+    expect(answers(routes, 'POST', '/participants/asks')).toBe(true);
+    expect(answers(routes, 'PUT', '/feature-requests/{request_id}/status')).toBe(true);
+    expect(answers(routes, 'POST', '/unsubscribe')).toBe(true);
   });
 
   it.each([

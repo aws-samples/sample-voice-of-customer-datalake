@@ -37,7 +37,11 @@
     "prfaqFailed": "この意思決定から PR/FAQ を生成できませんでした。もう一度作成して再試行してください。",
     "revisit": "再検討",
     "releaseWatch": "リリースウォッチ",
-    "hideReleaseWatch": "リリースウォッチを隠す"
+    "hideReleaseWatch": "リリースウォッチを隠す",
+    "delete": "削除",
+    "deleteConfirmTitle": "この意思決定を削除しますか？",
+    "deleteConfirmMessage": "「{{title}}」はすべてのメンバーのプロジェクトから削除されます。これをもとに作成されたドキュメントは残ります。",
+    "deleteConfirm": "意思決定を削除"
   },
   "picker": {
     "label": "根拠となるレビュー",
@@ -57,7 +61,8 @@
   "errors": {
     "save": "意思決定を保存できませんでした。",
     "conflict": "開いた後にこの意思決定が変更されました。ページを再読み込みしてもう一度お試しください。",
-    "pursue": "PR/FAQ を開始できませんでした。"
+    "pursue": "PR/FAQ を開始できませんでした。",
+    "delete": "意思決定を削除できませんでした。"
   },
   "releaseWatch": {
     "title": "リリースウォッチ",

@@ -251,11 +251,11 @@ describe('evaluateFunction', () => {
   });
 
   it('does not list CPU that is unmeasurable by design', () => {
-    const authorizer = evaluateFunction({ stem: 'voc-mcp-token-authorizer', memoryMb: 128 },
+    const signingKeys = evaluateFunction({ stem: 'voc-cdn-signing-keys', memoryMb: 128 },
       [{ memoryMb: 128, invocations: 9, peakPct: 50 }], []);
-    expect(authorizer.unmeasured).toStrictEqual([]);
-    expect(authorizer.cpuStatus).toBe('by-design');
-    expect(authorizer.cpuNotMeasured).toMatch(/inline/);
+    expect(signingKeys.unmeasured).toStrictEqual([]);
+    expect(signingKeys.cpuStatus).toBe('by-design');
+    expect(signingKeys.cpuNotMeasured).toMatch(/deploy-time/);
   });
 });
 

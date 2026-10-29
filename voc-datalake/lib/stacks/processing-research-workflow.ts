@@ -81,7 +81,7 @@ export function createResearchStateMachine(
     resultPath: '$.analysis_result',
     resultSelector: { 'analysis.$': '$.Payload.analysis' },
   });
-  analysisStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'], interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2 });
+  analysisStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingError'], interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2 });
 
   // Step 3: Synthesis
   const synthesisStep = new tasks.LambdaInvoke(scope, 'SynthesizeFindings', {
@@ -97,7 +97,7 @@ export function createResearchStateMachine(
     resultPath: '$.synthesis_result',
     resultSelector: { 'synthesis.$': '$.Payload.synthesis' },
   });
-  synthesisStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'], interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2 });
+  synthesisStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingError'], interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2 });
 
   // Step 4: Validate
   const validateStep = new tasks.LambdaInvoke(scope, 'ValidateResearch', {
@@ -113,7 +113,7 @@ export function createResearchStateMachine(
     resultPath: '$.validate_result',
     resultSelector: { 'validation.$': '$.Payload.validation' },
   });
-  validateStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingException'], interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2 });
+  validateStep.addRetry({ errors: ['Lambda.ServiceException', 'Lambda.TooManyRequestsException', 'States.Timeout', 'BedrockThrottlingError'], interval: cdk.Duration.seconds(5), maxAttempts: 3, backoffRate: 2 });
 
   // Step 5: Save
   const saveStep = new tasks.LambdaInvoke(scope, 'SaveResearchResults', {

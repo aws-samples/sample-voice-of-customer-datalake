@@ -4,15 +4,15 @@
  * The patterns mirror the protected children in `routes.tsx`. They are a table
  * here, not read from `routes.tsx`, because that module imports `Layout`, which
  * mounts the assistant — reading it from here would be an import cycle.
- * `pageContext.test.ts` walks the real route table and fails when a route has
+ * `pageContext.test.tsx` walks the real route table and fails when a route has
  * no pattern below.
  *
  * @module assistant/page/pageContext
  */
 import { matchPath } from 'react-router-dom'
 import { reviewFromSearch } from '../../hooks/useReviewModal'
-import { MAX_ID_LENGTH } from '../contract'
-import type { PageContext, PageKind } from '../contract'
+import { MAX_ID_LENGTH, MAX_PAGE_FILTER_CHARS } from '../contract'
+import type { PAGE_FILTER_KEYS, PageContext, PageKind } from '../contract'
 
 interface PagePattern {
   /** Route path as written in routes.tsx (relative to `/`; '' is the index). */
@@ -60,7 +60,35 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   // "set up Radar for <brand>" (brand list, Radar scraper / connector, scan) works on this page.
   { route: 'radar', kind: 'radar' },
   { route: 'account', kind: 'other', label: 'account' },
+  // Participants (docs/participants.md): its own kind — core + the participants pack (lists, add people).
+  { route: 'participants', kind: 'participants' },
+  // The in-app feature-request board (docs/feature-requests.md): no assistant pack either.
+  { route: 'feature-requests', kind: 'other' },
+  // One feedback board (/feature-requests/:slug): no assistant pack in this release either.
+  { route: 'feature-requests/:slug', kind: 'other' },
 ]
+
+type PageFilterKey = (typeof PAGE_FILTER_KEYS)[number]
+
+/**
+ * The URL filters each filtered page owns (its hook's OWNED_PARAMS, minus legacy keys), sent as
+ * `page.filters` so the assistant knows what is on screen (5.35: on /categories it could not see
+ * the open category). The Dashboard has no URL filters: its time range is `forwardedProps.days`.
+ */
+const PAGE_FILTERS: Partial<Record<PageKind, readonly PageFilterKey[]>> = {
+  categories: ['q', 'source', 'sentiment', 'category', 'subcategory', 'rating', 'rating_dir', 'urgent', 'channel', 'dims', 'tag'],
+  problems: ['source', 'category', 'subcategory', 'urgent', 'resolved', 'similarity'],
+}
+
+/** The page's non-empty filters, each cut to the contract bound; undefined when none is set. */
+function filtersFrom(kind: PageKind, search: string): PageContext['filters'] {
+  const params = new URLSearchParams(search)
+  const entries: [PageFilterKey, string][] = (PAGE_FILTERS[kind] ?? []).flatMap((key): [PageFilterKey, string][] => {
+    const value = params.get(key)?.trim().slice(0, MAX_PAGE_FILTER_CHARS) ?? ''
+    return value === '' ? [] : [[key, value]]
+  })
+  return entries.length === 0 ? undefined : Object.fromEntries(entries)
+}
 
 const MAX_TAB = 64
 const MAX_PATH = 200
@@ -113,10 +141,12 @@ function routeContext(location: LocationLike): PageContext {
     const match = matchPattern(pattern, location.pathname)
     if (match === null) continue
     const id = pattern.param ? paramValue(match.params, pattern.param.name) : undefined
+    const filters = filtersFrom(pattern.kind, location.search)
     return {
       kind: pattern.kind,
       ...base,
       ...(pattern.param && id !== undefined ? { [pattern.param.field]: id } : {}),
+      ...(filters === undefined ? {} : { filters }),
     }
   }
   return { kind: 'other', ...base }

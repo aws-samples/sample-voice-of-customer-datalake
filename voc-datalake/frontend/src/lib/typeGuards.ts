@@ -7,3 +7,8 @@
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
+
+/** Filters `null` out of a list with the element type narrowed (`list.filter(isPresent)`). */
+export function isPresent<T>(value: T | null): value is T {
+  return value !== null
+}

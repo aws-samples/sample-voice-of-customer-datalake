@@ -18,9 +18,9 @@ import { api } from '../../../api/client'
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
 import { parseIds } from './decisionDraft'
 import type { FeedbackItem } from '../../../api/types'
+import { cleanReviewText } from '../../../utils/cleanReviewText'
+import { FEEDBACK_SEARCH_MIN_CHARS } from '../../../api/feedbackSearch'
 
-/** The route refuses shorter (trimmed) terms with a 400 (`SEARCH_QUERY_MIN_LENGTH`). */
-const SEARCH_MIN_CHARS = 2
 const RESULTS_SHOWN = 8
 /** A year back: decisions cite recent evidence, and the route walks fewer days. */
 const SEARCH_DAYS = 365
@@ -28,15 +28,15 @@ const LABEL_WORDS = 10
 
 /** A review as its link reads: its title, else its first words. */
 function reviewLabel(item: Pick<FeedbackItem, 'title' | 'original_text'>): string {
-  const title = item.title?.trim() ?? ''
+  const title = cleanReviewText(item.title).trim()
   if (title !== '') return title
-  const words = item.original_text.split(/\s+/).filter(Boolean)
+  const words = cleanReviewText(item.original_text).split(/\s+/).filter(Boolean)
   return words.length > LABEL_WORDS ? `${words.slice(0, LABEL_WORDS).join(' ')}…` : words.join(' ')
 }
 
 function useReviewSearch(query: string) {
   const q = useDebouncedValue(query.trim())
-  const enabled = q.length >= SEARCH_MIN_CHARS
+  const enabled = q.length >= FEEDBACK_SEARCH_MIN_CHARS
   const result = useQuery({
     queryKey: ['decision-review-search', q],
     queryFn: () => api.searchFeedback({ q, days: SEARCH_DAYS, limit: RESULTS_SHOWN }),

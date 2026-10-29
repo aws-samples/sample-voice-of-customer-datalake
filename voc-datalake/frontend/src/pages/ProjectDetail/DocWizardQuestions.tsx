@@ -17,9 +17,11 @@ interface DocWizardQuestionsProps {
   /** Title and description are both filled: the AI button may run. */
   readonly briefReady: boolean
   readonly onDraft: () => void
+  /** Human-driven on PR/FAQs: the answers are the person's own, so no AI draft button. */
+  readonly aiLocked?: boolean
 }
 
-export function DocWizardQuestions({ answers, onAnswerChange, draft, briefReady, onDraft }: DocWizardQuestionsProps) {
+export function DocWizardQuestions({ answers, onAnswerChange, draft, briefReady, onDraft, aiLocked = false }: DocWizardQuestionsProps) {
   const { t } = useTranslation('projectDetail')
   // Pulled from i18n so the whole wizard matches the chosen language.
   const questions = [1, 2, 3, 4, 5].map((n) => ({
@@ -37,15 +39,17 @@ export function DocWizardQuestions({ answers, onAnswerChange, draft, briefReady,
           {/* A methodology name is a descriptive label, not a success: neutral (labels vs status). */}
           <span className="badge badge-muted">{t('wizards.workingBackwards', { defaultValue: 'Working Backwards' })}</span>
         </div>
-        <AIDraftButton
-          subject={t('wizards.answersSubject')}
-          hasText={hasText}
-          busy={draft.busy}
-          onClick={onDraft}
-          hint={t('wizards.autofillTitle')}
-          disabledReason={briefReady ? null : t('wizards.answersNeedBrief')}
-          error={draft.error}
-        />
+        {aiLocked ? null : (
+          <AIDraftButton
+            subject={t('wizards.answersSubject')}
+            hasText={hasText}
+            busy={draft.busy}
+            onClick={onDraft}
+            hint={t('wizards.autofillTitle')}
+            disabledReason={briefReady ? null : t('wizards.answersNeedBrief')}
+            error={draft.error}
+          />
+        )}
       </div>
       <p className="text-sm text-muted mb-4">{t('wizards.amazonQuestionsHint')}</p>
       <div className="space-y-4">

@@ -69,7 +69,7 @@ async function renderAndEnable() {
   const user = userEvent.setup()
   renderCard()
   await screen.findByText('Paused after repeated failures')
-  await user.click(screen.getByRole('checkbox', { name: /Android Reviews Disabled/i }))
+  await user.click(screen.getByRole('checkbox', { name: /Android App Reviews Disabled/i }))
 }
 
 describe('SourceCard circuit breaker notice', () => {
@@ -128,7 +128,7 @@ describe('SourceCard circuit breaker notice', () => {
     expect(mockResetSource).toHaveBeenCalledWith('app_reviews_android')
     expect(mockEnableSource).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByText('Paused after repeated failures')).not.toBeInTheDocument())
-    expect(screen.getByRole('checkbox', { name: /Android Reviews Disabled/i })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /Android App Reviews Disabled/i })).not.toBeChecked()
   })
 
   it('a failed reset keeps the notice and says so', async () => {

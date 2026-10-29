@@ -10,6 +10,12 @@ are none (the model most product-discovery tools use).
 Each metric (an *axis*) is scored on a fixed **1–5 scale**; **0 means "not scored"**. Only names,
 weights and directions are configurable.
 
+On the page, an axis your saved ballot leaves unscored starts on its own **Not scored** stop, below
+1 (shown as text and announced as "Not scored"), so any choice, 3 included, counts as a score.
+**Clear** (or Home on the keyboard) takes an unsaved choice back to Not scored. An axis you already
+saved runs 1–5 with no Not scored stop: a save never un-scores a stored axis (it reads 0 as "leave
+unchanged").
+
 | Field | Meaning |
 |---|---|
 | `id` | `^[a-z][a-z0-9_]{1,31}$`, minted by the server from the name, never changes |
@@ -47,10 +53,11 @@ v' = 6 − v        for lower_better
 ```
 
 An unscored metric (absent or 0) is left out of **both** sums, so a partial ballot is the score of
-what it said, on the same 1–5 scale. A row's **team composite** is the mean of the composites of its
-*fully scored* ballots (every active metric with a weight above 0 scored). Before anyone has scored
-every metric, it is the same formula over the team's per-metric means. `score_spread` is the range of
-the fully scored ballots' composites (0 below two of them). The server computes it
+what it said, on the same 1–5 scale. A row's **team composite** is the same formula over the team's
+per-metric means, each mean over the reviewers who scored that metric, so every vote counts —
+a partial ballot (the owner's own, say) beside a full room ballot is not dropped. For fully scored
+ballots this equals the mean of their composites. `score_spread` is the range of the *fully scored*
+ballots' composites (every active metric with a weight above 0 scored; 0 below two of them). The server computes it
 (`shared/prioritization_axes.composite`); the page uses the same arithmetic.
 
 ## Templates (in the editor)
@@ -85,6 +92,12 @@ voc-aggregates, partition `PRIORITIZATION`:
 | PATCH | `/projects/prioritization` | signed-in | scores active metric ids only (1–5, clamped as before; 0/null = leave unchanged); an archived or unknown metric id → 400 |
 | GET | `/voting-sessions/{id}/config` | public | adds `axes: [{id, label, description, low_label, high_label, direction, builtin}]` — active metrics, no weights (`[]` for a closed or unknown room) |
 | POST | `/voting-sessions/{id}/submit` | public | scores active metric ids only; an archived or unknown id → 400 `reason: invalid` |
+
+**A room vote ends with its row or project.** Deleting a row (`DELETE /projects/prioritization/rows/{id}`)
+or a project (`DELETE /projects/{id}`) closes the row's open session (`shared/voting_session_close.py`,
+best effort). Whatever the close did, `GET /voting-sessions/{id}/config` and `POST .../submit` refuse a
+session whose row or project is gone with **410** `reason: gone` (the ballot page says the proposal was
+deleted), also when that session is closed or expired, and the facilitator `GET /voting-sessions/{id}` answers 404.
 
 Saving the setup also bumps the read-cache config version (`docs/caching.md`). The AI assistant's
 `get_prioritization` tool reads the setup from the GET and describes the active metrics by name,

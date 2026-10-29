@@ -19,7 +19,7 @@ const WorkerFunctionSchema = z.object({
   }),
 });
 
-export type WorkerFunction = z.infer<typeof WorkerFunctionSchema>['Properties'];
+type WorkerFunction = z.infer<typeof WorkerFunctionSchema>['Properties'];
 
 /** The single function whose FunctionName contains `nameFragment` (asserts exactly one). */
 export function findWorkerFunction(template: Template, nameFragment: string): WorkerFunction {

@@ -105,9 +105,7 @@ function storedOptionLabel(
  * catalogue's own CJK labels use full-width parentheses (`ドキュメント（任意）`,
  * `文档（可选）`) while Korean uses half-width with no space, so building
  * `name (type)` here would print the wrong punctuation into three locales. The
- * key also lets a locale reorder the two parts. Name after type follows
- * `CheckboxItem` in `pages/ProjectDetail/PickerComponents`, the repo's other
- * picker that shows a document's type inline.
+ * key also lets a locale reorder the two parts.
  *
  * The type label comes from `SCORABLE_TYPE_META`, the same source as the badge on
  * the Prioritization row this link feeds, so the type is named identically in

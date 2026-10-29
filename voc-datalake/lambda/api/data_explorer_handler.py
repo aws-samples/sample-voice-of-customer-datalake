@@ -22,21 +22,18 @@ Dedicated Lambda to avoid 20KB IAM policy limit.
 import json
 import os
 import sys
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver
-from aws_lambda_powertools.event_handler.middlewares import NextMiddleware
 from botocore.exceptions import BotoCoreError, ClientError
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.type_defs import PutObjectRequestTypeDef
 
-from shared.api import api_handler, create_api_resolver, require_admin
-from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client
+from shared.api import admins_only, api_handler, create_api_resolver
+from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client, is_missing_s3_object
 from shared.data_version import bump_data_version
 from shared.exceptions import (
     ApiError,
@@ -62,9 +59,11 @@ from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
 from shared.raw_object_summary import add_summaries
 from shared.request_body import json_object_body
+from shared.retention import RAW_PREFIX
 from shared.source_policy import apply_source_policy, raw_archive_allowed
 from shared.source_profiles import cached_source_profile_strict
 from shared.tables import get_aggregates_table
+from shared.timestamps import now_iso
 
 s3_client = get_s3_client()
 dynamodb = get_dynamodb_resource()
@@ -80,7 +79,6 @@ AVAILABLE_BUCKETS = {
 }
 
 # Ingested raw data lives under this prefix and is immutable once written.
-RAW_PREFIX = 'raw/'
 
 # S3 answers a failed `IfNoneMatch='*'` with one of these: 412 when the object
 # exists, 409 when a concurrent conditional write to the same key is in flight.
@@ -95,21 +93,12 @@ FAILED_LIST = 'Failed to list S3 objects'
 FAILED_PREVIEW = 'Failed to preview file'
 FAILED_SAVE = 'Failed to save file'
 
-# "That key is not there", which S3 spells differently per operation:
-# `head_object` has no response body to model `NoSuchKey` from, so it raises a
-# bare ClientError with code '404'; only `get_object` raises `NoSuchKey`.
-S3_MISSING_KEY_CODES = frozenset({'404', 'NoSuchKey', 'NotFound'})
 
 app = create_api_resolver()
 
 
-def _admins_only(app: APIGatewayRestResolver, next_middleware: NextMiddleware):
-    """Every data-explorer route is admin-only (403 otherwise). See the module docstring."""
-    require_admin(app.current_event.raw_event)
-    return next_middleware(app)
-
-
-app.use(middlewares=[_admins_only])
+# Every data-explorer route is admin-only (403 otherwise). See the module docstring.
+app.use(middlewares=[admins_only])
 
 
 def _reject_prototype_mutation(key: str) -> None:
@@ -294,9 +283,9 @@ def preview_s3_file():
         # than folded into it, so the 404 does not rest on botocore's modelling.
         raise NotFoundError('File not found') from e
     except ClientError as e:
-        # The head_object path — see S3_MISSING_KEY_CODES. Any other code falls
+        # The head_object path — see shared.aws.S3_MISSING_KEY_CODES. Any other code falls
         # through to the generic 500.
-        if e.response.get('Error', {}).get('Code') in S3_MISSING_KEY_CODES:
+        if is_missing_s3_object(e):
             raise NotFoundError('File not found') from e
         logger.exception("Failed to preview S3 file")
         raise ServiceError(FAILED_PREVIEW) from e
@@ -503,7 +492,7 @@ def _update_kwargs(key: dict, data: dict, change: CategoryChange | None) -> dict
         names, values = {**names, **change.names}, {**values, **change.values}
     sets.append("#updated_at = :updated_at")
     names["#updated_at"] = "updated_at"
-    values[":updated_at"] = datetime.now(UTC).isoformat()
+    values[":updated_at"] = now_iso()
     return {
         'Key': key,
         'UpdateExpression': update_expression(sets, change.removes if change is not None else []),

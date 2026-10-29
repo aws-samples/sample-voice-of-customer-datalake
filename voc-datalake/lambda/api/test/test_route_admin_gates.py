@@ -9,12 +9,13 @@ explicit tables kept below:
   - the handler body has an unconditional top-level statement calling a shared
     gate primitive: ``require_admin`` (``shared.api``, from the event) or
     ``require_admin_caller`` (``shared.project_gate``, an admin not acting through a
-    delegated credential);
+    delegated credential) or ``require_board_admin`` (``shared.engagement_identity``, an
+    app-pool admin on the feedback boards);
   - that statement calls a module helper that does so itself (to any depth); a
     helper also counts when it is a check, i.e. a top-level ``if`` that tests
     ``.is_admin`` and raises ``AuthorizationError``, like `project_gate.require_admin_caller`;
   - the module installs such a function as an ``app.use(middlewares=[...])``
-    middleware, like `data_explorer_handler._admins_only`.
+    middleware, like `shared.api.admins_only` in `data_explorer_handler`.
 
   A gate that only runs inside an ``if``/``try``/loop or a nested function does NOT
   count. Drop the gate and the route fails here.
@@ -39,7 +40,10 @@ API_DIR = Path(__file__).resolve().parent.parent
 GATE_PRIMITIVE = 'require_admin'
 # Shared gates by name. Each one outside this file is itself checked structurally below
 # (test_every_shared_gate_primitive_is_an_admin_check), so a name here cannot hide a non-gate.
-GATE_PRIMITIVES = frozenset({GATE_PRIMITIVE, 'require_admin_caller'})
+# `require_board_admin` (``shared.engagement_identity``): an app-pool admin on the feedback boards' routes.
+GATE_PRIMITIVES = frozenset({GATE_PRIMITIVE, 'require_admin_caller', 'require_board_admin'})
+# Shared resolver middlewares that gate a whole module (checked the same way, below).
+GATE_MIDDLEWARES = frozenset({'admins_only'})
 SHARED_DIR = API_DIR.parent / 'shared'
 MUTATING_METHODS = frozenset({'post', 'put', 'patch', 'delete'})
 # Top-level statements whose `.value` call runs unconditionally: `f()`, `x = f()`, `x: T = f()`, `return f()`.
@@ -65,6 +69,16 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'DELETE /workflows/<workflow_id>',
     }),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
+    # Feature-request board (docs/feature-requests.md): board admin = an app-pool admin, never a board-pool user.
+    'feature_requests_routes.py': frozenset({
+        'PUT /feature-requests/<request_id>/status', 'DELETE /feature-requests/<request_id>',
+        'POST /feature-requests/<request_id>/promote',
+    }),
+    # Feedback boards (docs/feature-requests.md, owner decision 2026-10-26): only admins create, configure and delete.
+    'feature_boards_routes.py': frozenset({
+        'POST /feature-requests/boards', 'PUT /feature-requests/boards/<board_ref>',
+        'DELETE /feature-requests/boards/<board_ref>',
+    }),
     'integrations_handler.py': frozenset({
         'PUT /integrations/<source>/credentials', 'POST /integrations/<source>/apps',
         'DELETE /integrations/<source>/apps/<app_id>', 'POST /sources/<source>/run',
@@ -80,6 +94,10 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /scrapers/manual/parse', 'POST /scrapers/manual/confirm',
         'POST /scrapers/manual/csv-upload', 'POST /scrapers/manual/json-upload',
     }),
+    # Participants (docs/participants.md): engagement settings, deleting a list, erasing a person.
+    'participants_routes.py': frozenset({
+        'PUT /participants/settings', 'DELETE /participants/lists/<list_id>', 'DELETE /participants/people/<person_id>',
+    }),
     'projects_handler.py': frozenset({
         'DELETE /projects/prioritization/rows/<row_id>',
         # The workspace-wide scoring setup (docs/prioritization.md): every reviewer scores with it.
@@ -87,6 +105,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     }),
     # Radar (docs/radar.md): the release-scan cost guards and "Scan now" (web search + Bedrock spend).
     'radar_handler.py': frozenset({'PUT /radar/settings', 'POST /radar/scan', 'PUT /radar/brands'}),
+    # Radar's Exa key (docs/radar.md): a paid third-party search account's credential.
+    'radar_exa_routes.py': frozenset({'PUT /radar/settings/exa-key', 'DELETE /radar/settings/exa-key'}),
     's3_import_handler.py': frozenset({  # owner decision 2026-10-08 (#242 follow-up), module middleware
         'POST /s3-import/sources', 'POST /s3-import/upload-url', 'DELETE /s3-import/file/<key>',
     }),
@@ -147,10 +167,27 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
     _open("caller's own data: conversations live in the caller's USER#{sub} partition",
           'chat_handler.py', 'POST /chat/conversations/<conversation_id>',
           'PUT /chat/conversations/<conversation_id>/title',
-          'DELETE /chat/conversations/<conversation_id>'),
+          'DELETE /chat/conversations/<conversation_id>',
+          'POST /chat/conversations/<conversation_id>/cancel'),
     _open("feedback edit: limited to the caller's category scope (shared/category_access.py)",
           'feedback_edit_handler.py', 'PUT /feedback/<feedback_id>/category',
           'PUT /feedback/<feedback_id>/dimensions'),
+    _open('participants: every signed-in app user manages lists and people (engagement brief, 5.33)',
+          'participants_routes.py', 'POST /participants/lists', 'PUT /participants/lists/<list_id>',
+          'POST /participants/lists/<list_id>/members', 'DELETE /participants/lists/<list_id>/members/<person_id>',
+          'POST /participants/people', 'PUT /participants/people/<person_id>'),
+    _open('participant project links and project asks: edit on the project (shared/project_access.py)',
+          'participants_ask_routes.py', 'POST /participants/projects/<project_id>',
+          'DELETE /participants/projects/<project_id>/lists/<list_id>',
+          'DELETE /participants/projects/<project_id>/people/<person_id>', 'POST /participants/asks'),
+    _open('public one-click unsubscribe (RFC 8058): a token from the email, always 200 (throttled)',
+          'participants_ask_routes.py', 'POST /unsubscribe'),
+    _open('feedback boards: any user of a board files requests and +1s (no moderation, owner decision 2026-10-26); '
+          'edits are the owner or an admin',
+          'feature_requests_routes.py', 'POST /feature-requests', 'PUT /feature-requests/<request_id>',
+          'POST /feature-requests/<request_id>/supports',
+          'PUT /feature-requests/<request_id>/supports/<support_id>',
+          'DELETE /feature-requests/<request_id>/supports/<support_id>'),
     _open('feedback forms: any signed-in user manages forms (owner decision 2026-10-04)',
           'feedback_form_handler.py', 'POST /feedback-forms', 'PUT /feedback-forms/<form_id>',
           'DELETE /feedback-forms/<form_id>'),
@@ -162,7 +199,8 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'memory_handler.py', 'POST /memory', 'PUT /memory/<memory_id>', 'POST /memory/<memory_id>/confirm',
           'POST /memory/<memory_id>/forget', 'POST /memory/<memory_id>/restore', 'POST /memory/merge',
           'POST /memory/review/<memory_id>/resolve', 'POST /memory/imports', 'POST /memory/retrieve'),
-    _open('projects: per-project view/edit/manage access in shared/project_access.py (middleware)',
+    _open('projects: per-project view/edit/manage access in shared/project_access.py (middleware); AI writing '
+          "of PR/FAQs / PRDs also follows the person's way of working (shared/ai_writing.py)",
           'projects_handler.py',
           'POST /projects', 'PUT /projects/<project_id>', 'DELETE /projects/<project_id>',
           'POST /projects/<project_id>/chat-context', 'PUT /projects/<project_id>/visibility',
@@ -179,7 +217,6 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'DELETE /projects/<project_id>/documents/<document_id>',
           'POST /projects/<project_id>/documents/<document_id>/duplicate',
           'DELETE /projects/<project_id>/jobs/<job_id>', 'PUT /projects/<project_id>/product-context',
-          'POST /projects/<project_id>/product-context/interview',
           'POST /projects/<project_id>/product-docs/upload-url', 'DELETE /projects/<project_id>/product-docs/<doc_id>',
           'POST /projects/<project_id>/prfaq-autofill', 'POST /projects/<project_id>/research/suggest-questions',
           'POST /projects/<project_id>/documents/suggest-brief',
@@ -190,7 +227,20 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'POST /projects/<project_id>/prototypes/<document_id>/pins/resolve',
           'POST /projects/<project_id>/build-prototype', 'POST /projects/<project_id>/product-report',
           'POST /projects/<project_id>/decisions', 'PUT /projects/<project_id>/decisions/<document_id>',
-          'POST /projects/<project_id>/decisions/<document_id>/pursue'),
+          'POST /projects/<project_id>/decisions/<document_id>/pursue',
+          'POST /projects/<project_id>/documents/<document_id>/persona-review'),
+    _open('document comments and review links: per-project access (view comments, edit links), docs/document-review.md',
+          'document_review_routes.py',
+          'POST /projects/<project_id>/documents/<document_id>/comments',
+          'POST /projects/<project_id>/documents/<document_id>/comments/<comment_id>/replies',
+          'POST /projects/<project_id>/documents/<document_id>/comments/<comment_id>/resolve',
+          'POST /projects/<project_id>/documents/<document_id>/comments/<comment_id>/reopen',
+          'DELETE /projects/<project_id>/documents/<document_id>/comments/<comment_id>',
+          'POST /projects/<project_id>/documents/<document_id>/share',
+          'DELETE /projects/<project_id>/documents/<document_id>/share'),
+    _open("review link reviewers: the link's audience and the verified email decide, rate-limited per day",
+          'document_review_routes.py', 'POST /review/<share_id>/comments',
+          'POST /review/<share_id>/comments/<comment_id>/replies'),
     _open("prioritization: rows are shared team state over viewable projects; a ballot is the caller's own",
           'projects_handler.py', 'POST /projects/prioritization/rows', 'POST /projects/prioritization/rows/compose',
           'PATCH /projects/prioritization/rows/<row_id>', 'PUT /projects/prioritization',
@@ -289,7 +339,7 @@ def routes_with_gates(source: str, methods: frozenset[str]) -> dict[str, bool]:
     """Every `@app.<method in *methods*>` route in *source* -> whether it is structurally admin-gated."""
     tree = ast.parse(source)
     gates = gate_functions(tree)
-    module_gated = bool(_middlewares(tree) & gates)
+    module_gated = bool(_middlewares(tree) & (gates | GATE_MIDDLEWARES))
     routes: dict[str, bool] = {}
     for fn in _module_functions(tree).values():
         gated = module_gated or bool(_top_level_calls(fn) & gates)
@@ -307,12 +357,18 @@ def _handler_files() -> list[Path]:
     return sorted(API_DIR.glob('*_handler.py'))
 
 
+def _router_files() -> list[Path]:
+    """Powertools routers a handler includes (``app = Router()``), kept in ``shared/`` because an
+    API bundle ships ``api/<handler>.py`` + ``shared/`` only (test_api_bundle_imports.py)."""
+    return sorted(SHARED_DIR.glob('*_routes.py'))
+
+
 @cache
 def _inventory() -> dict[tuple[str, str], bool]:
-    """(handler file, "METHOD /path") -> gated, over every handler in the repo."""
+    """(handler or router file, "METHOD /path") -> gated, over every handler and router in the repo."""
     return {
         (path.name, key): gated
-        for path in _handler_files()
+        for path in [*_handler_files(), *_router_files()]
         for key, gated in mutating_routes(path.read_text(encoding='utf-8')).items()
     }
 
@@ -331,6 +387,9 @@ def test_the_inventory_finds_the_routes_it_is_about():
     inventory = _inventory()
     assert ('settings_handler.py', 'PUT /settings/brand') in inventory
     assert ('settings_handler.py', 'POST /settings/categories/generate') in inventory
+    # Routers included by a handler are read too (shared/*_routes.py).
+    assert ('participants_routes.py', 'PUT /participants/settings') in inventory
+    assert ('feature_requests_routes.py', 'POST /feature-requests/<request_id>/promote') in inventory
     assert len(inventory) > 100
 
 
@@ -480,6 +539,17 @@ def test_removing_a_real_gate_is_detected(handler, function, route):
 def test_every_shared_gate_primitive_is_an_admin_check():
     functions = _module_functions(ast.parse((SHARED_DIR / 'project_gate.py').read_text(encoding='utf-8')))
     assert _is_admin_check(functions['require_admin_caller'])
+    board = _module_functions(ast.parse((SHARED_DIR / 'engagement_identity.py').read_text(encoding='utf-8')))
+    assert _is_admin_check(board['require_board_admin'])
     api_functions = _module_functions(ast.parse((SHARED_DIR / 'api.py').read_text(encoding='utf-8')))
     require_admin = api_functions[GATE_PRIMITIVE]
     assert any(isinstance(stmt, ast.If) and _raises_authorization_error(stmt.body) for stmt in require_admin.body)
+    for name in GATE_MIDDLEWARES:   # a shared middleware gates only if its first statement is the gate
+        first = api_functions[name].body[1] if ast.get_docstring(api_functions[name]) else api_functions[name].body[0]
+        assert isinstance(first, ast.Expr)
+        assert _called_name(first.value) == GATE_PRIMITIVE
+
+
+def test_the_shared_admin_middleware_gates_every_route_of_its_module():
+    source = (_PRELUDE + 'app.use(middlewares=[admins_only])\n\n\n@app.put("/a")\ndef a():\n    return {}\n')
+    assert mutating_routes(source) == {'PUT /a': True}

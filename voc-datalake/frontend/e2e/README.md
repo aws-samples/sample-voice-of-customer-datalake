@@ -15,6 +15,10 @@ npm run e2e:prod                                  # npm ci in e2e/, then playwri
 
 Chromium revision 1243 must be present (`npx --prefix e2e playwright install chromium` if it is not).
 
+### Sharded run (~30 min)
+
+A serial run of the whole suite takes hours. `npm run e2e:prod:sharded -- 6` (or `bash e2e/scripts/run-sharded.sh 6 [playwright args]`) starts 6 Playwright shards in parallel, 2 workers each (`E2E_SHARD_WORKERS`), which finishes the full production suite in about 30 minutes. Each shard has its own `E2E_OUT` (`<base>/shard<i>`, base `E2E_SHARD_OUT`, default `e2e/e2e-output/sharded-<epoch s>`), so its own saved sessions, run id, ledger and cleanup teardown: no shard reads or deletes another's data. When all shards end, their blob reports are merged (`playwright merge-reports`) into one list on the console, `<base>/results.json` and `<base>/html/`; the exit code is 1 when any shard failed. Logs per shard: `<base>/shard<i>/run.log`.
+
 | Env var | Meaning |
 |---|---|
 | `E2E_SITE` | CloudFront URL of the SPA |
@@ -22,18 +26,36 @@ Chromium revision 1243 must be present (`npx --prefix e2e playwright install chr
 | `E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD` | A user in the `admins` group |
 | `E2E_USER_USER` / `E2E_USER_PASSWORD` | A user in the `users` group |
 | `E2E_OUT` (optional) | Evidence directory (default `e2e/e2e-output`) |
+| `E2E_AUTH_DIR` (optional) | Saved sessions (default `$E2E_OUT/.auth`, or `e2e/.auth` without `E2E_OUT`) |
 | `E2E_SCREENS` (optional) | Screenshot directory (default `$E2E_OUT/screens`) |
 | `E2E_TRACK` (optional) | QA track tag (`s1`…). Run ids become `<track>-<epoch ms>`; the opt-in leftover sweep then reaches only `e2e-<track>-…` names |
+| `E2E_RAW_BUCKET` (optional) | The raw-data bucket for the s3 avatar sweep proof; default: the `RawDataBucketName` output of `E2E_CORE_STACK` (default `VocCoreStack`), read with a read-only `describe-stacks`. Without either, s3 step 12 still deletes the project but skips the S3 proof and says why |
+| `E2E_CORE_STACK` (optional) | The core stack name for that lookup (`<prefix>-VocCoreStack` for a prefixed deployment) |
 | `E2E_SWEEP_LEFTOVERS` (optional) | `1`: cleanup also deletes leftovers of earlier aborted runs (default: only this run's ledger entries) |
 
-Credentials are read from the environment only. Sessions are saved to `e2e/.auth/` with mode 600 and are gitignored, because they hold tokens. Nothing prints a password or a token.
+Credentials are read from the environment only. Sessions are saved to `$E2E_OUT/.auth/` (`e2e/.auth/` without `E2E_OUT`; `E2E_AUTH_DIR` overrides) in a mode-700 directory, each file mode 600, and are gitignored, because they hold tokens. Following `E2E_OUT` keeps parallel runs from overwriting each other's sessions. Nothing prints a password or a token.
+
+### Test traffic tag (5.38)
+
+Every request the suite sends carries the User-Agent token `voc-e2e/<run tag>` (`lib/trafficTag.ts`): browser contexts send Desktop Chrome's User-Agent plus the token (`use.userAgent`, set in `lib/runConfig.ts` and in each config that does not use it), and every Node-side call goes through `e2eFetch` (`apiCall`, `mcpToolsList`; `unit/trafficTag.spec.ts` fails on a bare `fetch(`). A User-Agent needs no CORS change. The run tag is `E2E_TAG_RUN_ID` (`[A-Za-z0-9._-]{1,64}`), pinned once in the config process and inherited by every worker; unset it is the run id (`E2E_RUN_ID`), else `<epoch ms>`. `run-sharded.sh` sets ONE tag for all its shards (`e2e-[<track>-]<UTC yyyymmddThhmmssZ>`, printed at start) while each shard keeps its own run id for entity names. The API Gateway access log has a `userAgent` field and the Lambda logs a `test_run` key on every line of a tagged request (`lambda/shared/e2e_tag.py`), so a sweep can exclude the ~1,000 deliberate 4xx calls of a run (lines from before 5.38 cannot be told apart):
+
+```
+# API access log (/aws/apigateway/…): real traffic only, or one run only
+filter userAgent not like /voc-e2e\//
+filter userAgent like /voc-e2e\/e2e-20261010T080000Z/
+# Lambda logs (/aws/lambda/voc-*)
+filter ispresent(test_run) = 0
+filter test_run = 'e2e-20261010T080000Z'
+```
+
+The access log also carries `path` (the real path, ids included), `integrationStatus` and `errorMessage`. The TypeScript `voc-chat-stream` Lambda does not add `test_run` (filter its requests by the access log's `userAgent`).
 
 ## Projects (in order)
 
 1. `setup`: real login through `/login` for both roles.
 2. `admin` and `user`, each running these specs:
    - `screens.spec.ts`: every route and tab from `lib/inventory.ts`, in dark and light for admin and in dark for user. Admin-only routes must redirect the user.
-   - `modals.spec.ts`: opens each modal, audits it, closes it the designed way, and proves it closed.
+   - `modals.spec.ts`: opens each modal, audits it, closes it the designed way, and proves it closed. The scraper and import dialogs are admin-only: as e2e-user their tiles must be disabled with "Admin access required".
    - `api-sweep.spec.ts`: GETs every endpoint and writes `api-sweep-<role>.json` (status, ms, bytes; bodies are never written).
    - `home-onboarding.spec.ts`: the Home onboarding buddy. Each step is checked iff the APIs say so; Ready / Skip; Skip
      or Don't show again survives a new browser with the local cache removed; Account brings it back; Hide is a
@@ -45,8 +67,8 @@ Credentials are read from the environment only. Sessions are saved to `e2e/.auth
    - `projects-mcp-removed.spec.ts`: both roles, on one public `e2e-<run id>-mcp-removed` project (made through the admin API, ledger-recorded). Checks that there is no Export / MCP tab, that `?tab=mcp` is rewritten to Overview, and that the header's **Connect via MCP** opens `/connect?project=<id>` showing `/mcp/global`. As admin it also checks that the per-project token routes and `GET /projects/{id}/autoseed`, retired in 3.00.00, answer 404.
    - `workflow-custom-arrows.spec.ts`: both roles, read-only (`POST /workflows/validate` stores nothing). A `pass` / `fail` arrow out of a custom step is refused with the error pinned to that step; the plain arrow validates.
    - `projects-edit.spec.ts`: on three private `e2e-<run id>-edit*` projects (`lib/projects.ts`: admin API create, `inviteMember`).
-     - Admin: Escape and Cancel close the Edit dialog without a PUT; an edit of name, description and visibility shows on the card, in `GET /projects/{id}` and on the detail page.
-     - User, invited as a viewer: no Edit on the card, an unshared private project is not listed, and a forced `PUT` gets a 403.
+     - Admin: Edit is in the card's "Actions for <name>" menu. Escape and Cancel close the Edit dialog without a PUT; an edit of name, description and visibility shows on the card, in `GET /projects/{id}` and on the detail page.
+     - User, invited as a viewer: no actions menu on the card, an unshared private project is not listed, and a forced `PUT` gets a 403.
    - `sharing.spec.ts`: admin only, driving e2e-user in a second context, on two private `e2e-<run id>-share-*` projects. The Share dialog sets one Public (e2e-user lists it); invites e2e-user as a viewer (view-only banner, no Edit / Import / Generate / New Document, a forced `PUT` is a 403); then removes them (their `GET` is a 404).
    - `memory.spec.ts`: the caller's OWN personal memory: add (`e2e-<run id>-memory-<role>…`), +1, Forget (with its confirm), Restore from the Archived filter. An injected 500 on `GET /memory/review` shows the alert with Retry; a 403 is silent.
    - `connect.spec.ts`: a read global MCP token minted on /connect (shortest expiry offered), `POST /mcp/global` `tools/list` → 200, revoked in the UI → 401 with a Bearer challenge; and a 1-day token (`expires_in_days: 1`, API) the same way. The secret is never logged or written.
@@ -59,7 +81,7 @@ Credentials are read from the environment only. Sessions are saved to `e2e/.auth
 
 ## Local dev mock (`E2E_MOCK=1`)
 
-`E2E_MOCK=1` (`MOCK` in `lib/env.ts`) is the suite's one mock switch, and `playwright.config.ts` its one runner: under it the config runs only the specs listed in `MOCK_SPEC_NAMES` (`lib/env.ts`), as the admin, with no login (a DEV build without Cognito is an admin session), no saved session, no setup / cleanup and API calls without a token (`apiCall`); e2e-user steps skip. That list holds the P2 specs above that need one user, `s2-workflow-rebuild.spec.ts` and the P3 specs below; `unit/helpers.spec.ts` fails when a spec branches on `MOCK` without being listed, or when anything else reads `E2E_MOCK`. Use private ports and kill only the PIDs you started:
+`E2E_MOCK=1` (`MOCK` in `lib/env.ts`) is the suite's one mock switch, and `playwright.config.ts` its one runner: under it the config runs only the specs listed in `MOCK_SPEC_NAMES` (`lib/env.ts`), as the admin, with no login (a DEV build without Cognito is an admin session), no saved session, no setup / cleanup and API calls without a token (`apiCall`); e2e-user steps skip. That list holds the P2 specs above that need one user, `s2-workflow-rebuild.spec.ts`, the P3 specs and the 5.35 coverage specs below; `unit/helpers.spec.ts` fails when a spec branches on `MOCK` without being listed, or when anything else reads `E2E_MOCK`. Use private ports and kill only the PIDs you started:
 
 ```bash
 cd voc-datalake/frontend
@@ -82,7 +104,7 @@ cd e2e && E2E_MOCK=1 E2E_SITE=http://localhost:5417 E2E_API=http://localhost:341
 
 ## QA track s2 (autonomous agents)
 
-`tests/s2-agents.spec.ts` (QA track s2, autonomous agents) runs ALONE, without the shared setup/teardown: `npx playwright test -c playwright.config.ts --project=admin --no-deps tests/s2-agents.spec.ts`. It signs both roles in itself; it covers the assistant creating and editing an agent, the drag-and-drop workflow editor (native HTML5 drag, handle-to-handle connects, round-trip), Run now / Cancel with Step Functions history and Lambda `REPORT` lines (`lib/aws.ts`, read-only AWS CLI calls), duplicate/export, enable/disable, and e2e-user refusals. Its own `s2-99` cleanup archives the agent. It deletes this run's conversations and any project a run created (each run's journal is read again: `lib/agentRuns.ts`), then archives this run's workflows from the Workflow library on /agents (`lib/workflows.ts`: Archive → "Archive this workflow?" → `DELETE /workflows/{id}`), and checks the built-in has no Archive and answers 409; runs have no delete route and stay (named `e2e-<run id>-*`).
+`tests/s2-agents.spec.ts` (QA track s2, autonomous agents) runs ALONE, without the shared setup/teardown: `npx playwright test -c playwright.config.ts --project=admin --no-deps tests/s2-agents.spec.ts`. It signs both roles in itself; it covers the assistant creating and editing an agent, the drag-and-drop workflow editor (native HTML5 drag, handle-to-handle connects, round-trip), Run now / Cancel with Step Functions history and Lambda `REPORT` lines (`lib/aws.ts`, read-only AWS CLI calls), duplicate/export, enable/disable, and e2e-user refusals. Its own `s2-99` cleanup archives the agent. It deletes the conversations it started and any project its runs created (each run's journal is read again: `lib/agentRuns.ts`), then archives this run's workflows from the Workflow library on /agents (`lib/workflows.ts`: Archive → "Archive this workflow?" → `DELETE /workflows/{id}`), and checks the built-in has no Archive and answers 409; runs have no delete route and stay (named `e2e-<run id>-*`). Like every spec that cleans up after itself, it takes only the ledger entries its own tests recorded (`specLedger()` in `lib/ledger.ts`: each entry carries the `spec` file that recorded it): in a sharded run other specs share the shard's ledger and their entities are still in use (5.35.01: s2-99 deleted s3's project mid-generation). Only the shared teardown (`tests/cleanup.spec.ts`) takes the whole run (`runLedger()`).
 
 `tests/s2-workflow-rebuild.spec.ts` (F4, same gating: `--project=admin --no-deps`, signs both roles itself) rebuilds the
 built-in workflow from a cleared canvas using only the palette and the side panel (steps, arrows with conditions,
@@ -103,6 +125,7 @@ mock (`E2E_MOCK=1`, no login, user step skipped); the header comment has the com
 
 ## Shared helpers (all tracks)
 
+- App selector hooks (5.35): accessible names first — the sidebar's `<nav aria-label="Main">`, Personas-tab cards named by the persona, Home's agent-decision `article` named "<agent> needs your decision", the empty assistant's region "How can I help?". Where no natural name exists, a `data-testid`: `fr-card-<id>`, `fr-status-badge`, `persona-avatar` (the image only; the initials fallback has none), `platform-version`, `prioritization-row-toggle`, `memory-card`, `room-vote-panel`, `radar-release`, and `data-revision="<n>"` on workflow History rows. Prefer these over CSS classes or DOM shape.
 - `lib/test.ts`: every spec imports `test` from here. Its contexts strip persisted UI state (`voc-assistant-ui`, `voc-manual-import`) from both saved sessions once per spec file, and record every conversation a run starts (the `threadId` of each `POST /chat/stream`) in the ledger as the context's role, so cleanup never misses one whose save was refused. They also record every entity a browser create call makes (`POST /projects`, `/feedback-forms`, `/agents` with its workflow copy, `/workflows`, `…/duplicate`; `lib/context.ts` `browserCreated`): the assistant's approved writes run in the SPA, so an entity the model named reaches the ledger too. Such an entry is labelled under the run prefix when its own name is not an e2e name. A spec that calls `browser.newContext` itself wraps it, in the same statement, in `prepareContext(context, role)` (`unit/helpers.spec.ts` fails otherwise); one that writes its session back uses `saveSession` (`lib/context.ts`), which drops the UI state too.
 - `lib/agentRuns.ts`: `runTargetProblems` (before any Run now: the agent runs this run's e2e workflow, and the workflow has only `start` / `aggregate_reviews` / `custom_llm` / `end` steps) and `recordRunProjects` (projects a run created, read from its journal: `node_finished` "Created project {id}" with the same `ref.project_id`, recorded in the ledger; a reused project is returned, never recorded). `lib/runCleanup.ts`: ledger-driven conversation and project deletes with proof, by kind and run (never by label). `lib/avatars.ts`: avatar keys in both layouts (`avatars/{persona_id}/{hash}.{ext}`, legacy `avatars/{persona_id}.{ext}`).
 - `lib/dialogs.ts`: `dialogNamed(page, name)`. Find dialogs by accessible name, never `getByRole('dialog').last()`: the floating assistant panel is a dialog as well.
@@ -142,7 +165,7 @@ See docs/lambda-sizing.md for the policy.
 
 - a bad or missing form id on the public `iframe` route answers a JSON 404 that reflects nothing, and a real form's page carries CSP, `nosniff` and `no-referrer`;
 - a gateway 401 names the site's CORS origin, varies on Origin and Authorization, and challenges with `Bearer`;
-- `POST /scrapers/analyze-url` refuses the metadata IP, localhost, loopback and `file://` (400), and refuses a public URL that redirects to the metadata IP (override the redirector with `E2E_SSRF_REDIRECT_URL`). A malformed body (invalid JSON, or JSON that is not an object) must get a 400. Production currently answers 502 there, so this probe stays red until the handler is fixed;
+- `POST /scrapers/analyze-url` refuses the metadata IP, localhost, loopback and `file://` (400), and refuses a public URL that redirects to the metadata IP (override the redirector with `E2E_SSRF_REDIRECT_URL`): analyze-url is an assist job, so the 202's job is polled (`GET /scrapers/jobs/{id}`) until it ends `failed` with "Redirect refused". A malformed body (invalid JSON, or JSON that is not an object) must get a 400. Production currently answers 502 there, so this probe stays red until the handler is fixed;
 - a junk `days` falls back to the route's default window instead of failing (`validate_days` never raises, so this is a 200, not a 400);
 - e2e-user `DELETE /logs/validation/{source}` is a 403 (the admin is never sent it);
 - error bodies are short and carry no exception text, traceback or path.
@@ -153,7 +176,7 @@ Its only write is an e2e-named feedback form, created only when no form exists. 
 
 These run in the default production run (both roles; writes are admin-only and e2e-named) AND against the local dev mock (`E2E_MOCK=1`, see [Local dev mock](#local-dev-mock-e2e_mock1): no login, the mock API without auth; steps the mock cannot model skip and say why).
 
-- `prioritization.spec.ts`: the board, and the public `/vote/:sessionId` in a fresh context with no session (an unknown id says so; its submit is a 404). The room vote end to end (open on the board, a phone ballot within the cap, a capped session refusing the next device with a 429, close, then refusal with a 409) runs on the mock only, because ballots have no TTL and no delete route.
+- `prioritization.spec.ts`: the board, and the public `/vote/:sessionId` in a fresh context with no session (an unknown id says so; its submit is a 404). The room vote end to end (any open vote of the row closed first, open on the board after its confirm, a phone ballot, close, refusal with a 409, then a capped session refusing the next device with a 429) runs on the mock only, because ballots have no TTL and no delete route.
 - `account.spec.ts`: the caller's own "My objectives & KPIs" (`/settings/my-context`) saved through the UI, then the original objectives put back (also in `afterAll`) and proven equal. Also checks that `/company?tab=mine` lands on that same section.
 - `in-page-tabs.spec.ts`: the 4 FormEditor tabs (Cancel at the end, nothing is written) and the 3 Admin logs sub-tabs, which must show no text block longer than 200 characters (2.12, no customer data).
 - `i18n-smoke.spec.ts`: 9 locales × 5 screens, with the language set through `voc-language`. Checks `<html lang>`, that no raw key is on screen (it matches exact English key paths and `ns:key` references), and that nothing overflows horizontally.
@@ -168,8 +191,24 @@ These run in the default production run (both roles; writes are admin-only and e
   - One 401: a refresh and a retry.
 - `assistant-notifications.spec.ts`: `Notification` is replaced by a recorder and the tab is made to look hidden. A reply notifies only while the tab is hidden, and the notification uses generic words.
 - `flows-matrix.spec.ts`: the main flows in dark and light, and the project flow at 390 px with no horizontal overflow.
-- `prototype-enlarge.spec.ts`: Escape inside a prototype frame rewritten with `document.open()` closes the Enlarge overlay and returns focus to the button (#386). It also opens the tester pins panel. Production is read-only here: it uses an existing prototype or skips.
+- `prototype-enlarge.spec.ts`: Escape inside a prototype frame rewritten with `document.open()` closes the Enlarge overlay and returns focus to the button (#386: since 5.35 the prototype's pin widget forwards Escape out of the opaque-origin frame; the mock prototype carries the real widget, and production skips a prototype built earlier). It also opens the tester pins panel. Production is read-only here: it uses an existing prototype or skips.
 - `design-screens.spec.ts` "F7": no app-coloured solid background off the Kiro palette, and no `rgb(59, 130, 246)`, on 5 screens in both themes (`offPaletteFills` in `lib/design.ts`). Inline user colours, such as a customer's form theme, are only annotated.
+
+## 5.35 coverage specs (production and the local dev mock)
+
+`COVERAGE.md` maps every page, tab, dialog and flow to its spec. These specs cover the 5.00–5.34 features; all run in the default production run and against the dev mock, and keep the safety model (e2e names, own cleanup with a 404 proof for kinds the ledger does not hold, no email, no third-party fetch, no feedback written):
+
+- `participants.spec.ts`: lists create / rename / delete, a person added to an e2e list (`e2e-<run id>-…@example.com`), found, opened and erased; a project's Participants tab links and unlinks a list with its reach; the ask composer's validation and Send disabled while email is off (`POST /participants/asks` is intercepted, 0 hits). A real ask goes only to the mock's fixture list. e2e-user: no delete controls, forced deletes 403.
+- `unsubscribe.spec.ts`: the public page with no token and with a garbage token: no POST on load, one POST on confirm, the generic answer, nothing leaked.
+- `feedback-boards.spec.ts` (5.36): the "Feedback boards" nav item, the board list `/feature-requests` and its seeded Sales card opening `/feature-requests/sales-feature-requests`; for the admin the Edit link and the gear to `/admin?tab=access&section=boards[&board=<id>]`, that section (company domains, the boards, one board's editor and back); e2e-user sees no board admin controls. Read-only.
+- `feature-requests.spec.ts`: the Sales board `/feature-requests/sales-feature-requests`: create, +1 with a customer in USD, search / status filter / sort, `?request=` deep link, status Planned, delete (404 proof); e2e-user sees no admin controls and a forced status PUT is a 403.
+- `board.spec.ts`: `/board` and `/board/sales-feature-requests` with the app session; `/board/login` renders and refuses an `example.org` address server-side (only `SignUp` reaches Cognito, every other call is aborted, so no code is emailed). Production runs the sign-in steps only when `/config.json` has a `board` pool and `example.org` is not an allowed domain.
+- `product-interview.spec.ts`: "Fill with AI assistant" opens the assistant with the interview draft and sends nothing; the send runs in production only with `E2E_ASSISTANT_SEND=1` (`lib/optIn.ts`).
+- `workflow-history.spec.ts`: History on the built-in (read-only) and on an e2e workflow with two revisions; an old revision opens read-only, closing keeps the current one.
+- `radar.spec.ts`: brands, compare, releases, the reviews dialog and a review's details; any `POST /radar/scan` fails the test.
+- `decisions.spec.ts`: a decision created, edited (the card updates without a reload, also on a second edit) and deleted on an e2e project (verdict Park, no Bedrock). The project delete sweeps the decision.
+- `persona-avatars.spec.ts` (`lib/personaAvatars.ts`): every persona has an `avatar_url` and its card's image answers 200 with `naturalWidth > 0` (the initials fallback fails). Generating personas in production needs `E2E_PERSONA_GENERATE=1`; agent-made personas are checked when this run's ledger has an agent-run project (agent-made personas get portraits by default since 5.35). s3 step 02 and s2 (soft) call the same helper.
+- `surfaces.spec.ts`: the five Account tabs and the legacy `?section=`, every Administration tab and section, Company tabs, the Agents views, the Home brief, the review window deep link (Escape, no prev / next), and German on Participants and Feature requests.
 
 ## Evidence (`$E2E_OUT`)
 

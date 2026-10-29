@@ -4,7 +4,7 @@ from boto3.dynamodb.conditions import Key
 
 from jobs.retention import handler
 from jobs.retention.test.conftest import BUCKET, days_ago
-from shared.retention import value_hash
+from shared.digests import sha256_hex
 
 JOB_ID = 'er_0123456789ab'
 
@@ -82,7 +82,7 @@ def test_whole_upload_and_foreign_archives_are_never_deleted(aws, worker_context
 def _erasure_job(aws, field: str, value: str, source: str | None = None, status: str = 'queued') -> None:
     aws['aggregates'].put_item(Item={
         'pk': 'JOB#erasure', 'sk': JOB_ID, 'job_id': JOB_ID, 'status': status, 'field': field,
-        'value_hash': value_hash(value), **({'source': source} if source else {})})
+        'value_hash': sha256_hex(value), **({'source': source} if source else {})})
 
 
 def _job(aws) -> dict:

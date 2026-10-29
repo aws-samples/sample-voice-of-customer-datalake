@@ -574,7 +574,7 @@ class TestAnAnonymousBallotCarriesTheSameInvariantsAsASignedInOne:
 
         status, _ = _room_ballot(aggregates, lambda_context, row_id)
 
-        assert status == 404
+        assert status == 410
         assert [item['sk'] for item in aggregates.scan()['Items']
                 if item['pk'] == PARTITION] == [], 'nothing was resurrected'
 

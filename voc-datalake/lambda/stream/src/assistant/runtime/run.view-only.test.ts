@@ -12,7 +12,7 @@ import { selectToolset } from '../tools/registry.js';
 import { fakeDeps } from '../tools/test-fixtures.js';
 import { nth } from '../../lib/nth-fixtures.js';
 import { runBody, type ScriptedTurn } from './__fixtures__/fakes.js';
-import { finished, harness, lastUserContent, run, silenceConsole, type Harness } from './__fixtures__/harness.js';
+import { finished, harness, lastUserContent, offeredTools, run, silenceConsole, type Harness } from './__fixtures__/harness.js';
 
 const VIEWER_ACCESS = { role: 'viewer', can_view: true, can_edit: false, can_manage: false };
 const OWNER_ACCESS = { role: 'owner', can_view: true, can_edit: true, can_manage: true };
@@ -44,10 +44,6 @@ function projectPageBody(projectId: string, overrides: Record<string, unknown> =
 
 const UPDATE_DOCUMENT_INPUT = { document_id: 'd1', content: '# New PRD', change_summary: 'Rewrote the summary' };
 
-/** Names Bedrock was offered on the first turn. */
-function offeredTools(h: Harness): string[] {
-  return (nth(h.calls, 0).tools ?? []).flatMap((tool) => (tool.toolSpec?.name === undefined ? [] : [tool.toolSpec.name]));
-}
 
 /** The expected names missing from `offered` (empty when all are present). */
 function missingFrom(offered: readonly string[], expected: Iterable<string>): string[] {

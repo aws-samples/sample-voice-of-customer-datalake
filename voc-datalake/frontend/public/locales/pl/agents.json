@@ -209,6 +209,7 @@
       "produced": "Co wygenerowano",
       "producedNothing": "Jeszcze nic.",
       "anArtifact": "Nowy dokument",
+      "artifactTitled": "{{what}}: {{title}}",
       "inProject": "w {{name}}",
       "needsYou": "Co wymaga Twojej uwagi",
       "needsDecision": "Zdecyduj, co dalej, w karcie powyżej.",
@@ -295,10 +296,22 @@
       "arrowTargetNone": "Wybierz krok…",
       "joinLoop": "Pętla"
     },
+    "issues": {
+      "instructionsRequired": "Ten krok potrzebuje instrukcji: napisz, co ma zrobić.",
+      "titleRequired": "Nadaj temu krokowi tytuł.",
+      "duplicateStep": "Dwa kroki mają ten sam identyfikator. Usuń jeden i dodaj go ponownie.",
+      "duplicateArrow": "Dwie strzałki mają ten sam identyfikator. Usuń jedną i narysuj ją ponownie.",
+      "reviewTarget": "Wybierz, co sprawdza ten przegląd.",
+      "endStatus": "Wybierz, jak przebieg kończy się w tym miejscu."
+    },
     "params": {
       "target": "Cel",
       "targetAny": "Cokolwiek wygenerowano jako ostatnie",
       "maxNew": "Maksymalna liczba nowych person",
+      "generateAvatars": "Utwórz portret dla każdej persony",
+      "maxWords": "Limit długości (słowa)",
+      "maxWordsNone": "Bez limitu",
+      "maxWordsHint": "Cały dokument mieści się w około tylu słowach. Puste: około 1200, gdy instrukcje proszą o krótkie dokumenty, w przeciwnym razie bez limitu.",
       "useWebSearch": "Użyj wyszukiwania w sieci",
       "useWebSearchHint": "Wlicza się do limitu {{limit, number}} wyszukiwań w sieci w jednym uruchomieniu.",
       "endStatus": "Uruchomienie kończy się jako"
@@ -529,6 +542,18 @@
     "removeTitle": "Usunąć ten plan?",
     "removeMessage": "„{{goal}}” zostanie usunięty z Twoich planów. Jego wyniki pozostaną w projektach.",
     "removeFailed": "Nie udało się usunąć planu. Plan, który jest nadal uruchomiony, trzeba najpierw anulować."
+  },
+  "validation": {
+    "scope": "Wybierz co najmniej jedną kategorię lub podkategorię albo obserwuj wszystkie kategorie.",
+    "name": "Nadaj agentowi nazwę o długości do {{max, number}} znaków.",
+    "description": "Opis może mieć do {{max, number}} znaków.",
+    "instructions": "Instrukcje mogą mieć do {{max, number}} znaków.",
+    "triggers": "Sprawdź wyzwalacze: każdy wymaga liczb całkowitych z zakresu, a własny harmonogram wymaga wyrażenia cron.",
+    "personas": "Wybierz co najwyżej {{max, number}} stałych person.",
+    "models": "Wybierz dostępny model dla każdej roli albo domyślny.",
+    "workflow": "Wybierz przepływ pracy.",
+    "budget": "Sprawdź budżet: limity muszą być liczbami całkowitymi z zakresu.",
+    "other": "Niektóre ustawienia są nieprawidłowe. Sprawdź je i spróbuj ponownie."
   },
   "decision": {
     "reason": {

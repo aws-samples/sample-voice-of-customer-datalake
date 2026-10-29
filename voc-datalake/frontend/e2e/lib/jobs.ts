@@ -35,6 +35,18 @@ export interface JobTrace {
 const TERMINAL = new Set(['completed', 'failed'])
 const POLL_MS = 5_000
 
+/**
+ * HTTP answers that never change by polling again: an expired session (401), no access (403),
+ * and a job or project that is gone (404 / 410: the project was deleted mid-job, or the job id is
+ * unknown or expired). Each further poll would only add a deliberate 4xx to the logs.
+ */
+const FINAL_HTTP = new Set([401, 403, 404, 410])
+
+/** Pure: does this poll end the follow (a final HTTP answer, or a terminal job status)? */
+export function pollEnds(httpStatus: number, jobStatus: string): boolean {
+  return FINAL_HTTP.has(httpStatus) || TERMINAL.has(jobStatus)
+}
+
 function str(body: Record<string, unknown>, key: string): string {
   const value = body[key]
   return typeof value === 'string' ? value : ''
@@ -58,10 +70,9 @@ export async function followJob(role: Role, projectId: string, jobId: string, ti
     const progress = typeof body['progress'] === 'number' ? body['progress'] : null
     polls.push({ at: new Date().toISOString(), status: res.status, ms: res.ms, jobStatus, progress, currentStep: str(body, 'current_step') })
     if (res.status === 200) last = body
-    // An expired session never recovers by polling; fail fast instead of spinning to the deadline.
-    if (res.status === 401 || res.status === 403) break
-    if (firstStartedAt === null && jobStatus !== '' && jobStatus !== 'pending') firstStartedAt = Date.now()
-    if (TERMINAL.has(jobStatus) || Date.now() > deadline) break
+    if (firstStartedAt === null && res.status === 200 && jobStatus !== '' && jobStatus !== 'pending') firstStartedAt = Date.now()
+    // Fail fast on an answer polling cannot change (FINAL_HTTP) instead of spinning to the deadline.
+    if (pollEnds(res.status, jobStatus) || Date.now() > deadline) break
     await new Promise((resolve) => setTimeout(resolve, POLL_MS))
   }
   return summarizeJob(jobId, last, firstStartedAt, polls)

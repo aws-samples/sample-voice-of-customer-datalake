@@ -360,21 +360,10 @@
       "knownLimitations": "已知限制",
       "nonGoals": "非目标",
       "oneLiner": "一句话描述",
-      "placeholderEmpty": "—",
       "problemSolved": "解决的问题",
       "productName": "产品名称",
       "successMetrics": "成功指标",
       "targetUsers": "目标用户"
-    },
-    "interview": {
-      "captured": "明白了 — 已记录。关于产品您还能告诉我什么？",
-      "elaborate": "能再详细说说吗？",
-      "greeting": "您好 — 我来帮您描述您的产品或服务。请先用一两句话告诉我它是什么，我们再逐步完善其余内容。",
-      "heading": "访谈",
-      "hint": "我会根据您的回答填写左侧表单。",
-      "placeholder": "介绍一下您的产品…",
-      "send": "发送",
-      "thinking": "思考中…"
     },
     "lifecycle": {
       "beta": "测试版",
@@ -385,9 +374,6 @@
       "select": "— 请选择 —"
     },
     "loading": "正在加载产品上下文…",
-    "modeBoth": "两者",
-    "modeChat": "仅聊天",
-    "modeUpload": "仅上传",
     "report": {
       "button": "生成报告",
       "confirmTitle": "生成产品报告？",
@@ -421,6 +407,36 @@
       "statusFailed": "失败",
       "statusReady": "就绪",
       "statusUploading": "上传中…"
+    },
+    "assistant": {
+      "button": "用 AI 助手填写",
+      "hint": "助手会逐一询问每个空白字段，每次一个问题，最后把所有回答汇总在一张卡片上供你批准。",
+      "prompt": "请采访我，以填写这个项目的产品描述。"
+    },
+    "lastSaved": "上次保存：{{at}}",
+    "neverSaved": "尚未保存",
+    "saving": "正在保存…",
+    "sections": {
+      "basics": {
+        "title": "产品",
+        "description": "它是什么，目前处于什么阶段。"
+      },
+      "customers": {
+        "title": "客户与问题",
+        "description": "它面向谁，为他们解决什么问题。"
+      },
+      "offering": {
+        "title": "产品能力",
+        "description": "它能做什么，与替代方案有何不同。"
+      },
+      "scope": {
+        "title": "目标与边界",
+        "description": "如何衡量成功、有哪些限制、哪些不在范围内。"
+      },
+      "notes": {
+        "title": "备注",
+        "description": "PRD 和 PR/FAQ 撰写者还需要了解的其他信息。"
+      }
     }
   },
   "tabs": {
@@ -457,6 +473,9 @@
     "generatePrd": "生成 PRD",
     "generatePrdTitle": "生成 PRD",
     "generatePrfaq": "生成 PR/FAQ",
+    "startWritingTitle": "自己撰写",
+    "startWriting": "开始撰写",
+    "startWritingFailed": "无法创建文档，请重试。",
     "generatePrfaqTitle": "生成 PR/FAQ",
     "newDocTitle": "新文档标题",
     "newDocTitlePlaceholder": "例如：虚拟礼宾 PRD",

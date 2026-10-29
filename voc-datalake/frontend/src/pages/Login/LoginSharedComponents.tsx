@@ -80,12 +80,12 @@ interface TextFieldProps {
   readonly placeholder: string
   readonly type?: 'text' | 'password'
   readonly autoComplete?: string
-  readonly required?: boolean
   readonly minLength?: number
 }
 
+/** Every login field is required. */
 export function TextField({
-  value, onChange, label, placeholder, type = 'text', autoComplete, required = true, minLength,
+  value, onChange, label, placeholder, type = 'text', autoComplete, minLength,
 }: Readonly<TextFieldProps>) {
   const id = useId()
   return (
@@ -101,7 +101,7 @@ export function TextField({
         className="input"
         placeholder={placeholder}
         autoComplete={autoComplete}
-        required={required}
+        required
         minLength={minLength}
       />
     </div>
@@ -117,8 +117,6 @@ interface PasswordInputProps {
   readonly placeholder: string
   readonly label: string
   readonly autoComplete?: string
-  readonly required?: boolean
-  readonly minLength?: number
 }
 
 export function PasswordInput({
@@ -129,8 +127,6 @@ export function PasswordInput({
   placeholder,
   label,
   autoComplete = 'current-password',
-  required = true,
-  minLength,
 }: Readonly<PasswordInputProps>) {
   const { t } = useTranslation('login')
   const id = useId()
@@ -149,8 +145,7 @@ export function PasswordInput({
           className="input pr-11"
           placeholder={placeholder}
           autoComplete={autoComplete}
-          required={required}
-          minLength={minLength}
+          required
         />
         <button
           type="button"

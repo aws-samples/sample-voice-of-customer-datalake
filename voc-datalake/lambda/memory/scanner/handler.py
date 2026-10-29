@@ -34,8 +34,10 @@ from boto3.dynamodb.conditions import Attr
 from shared import memory_policy as policy
 from shared import memory_store as store
 from shared.aws import get_dynamodb_resource, get_sqs_client
+from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
+from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
 
 if TYPE_CHECKING:
@@ -45,14 +47,12 @@ CONVERSATIONS_TABLE = os.environ.get('CONVERSATIONS_TABLE', '')
 # The CDK names the variable MEMORY_EXTRACT_QUEUE_URL (lib/stacks/memory-workers.ts).
 MEMORY_QUEUE_URL = os.environ.get('MEMORY_EXTRACT_QUEUE_URL', '')
 
-ASSISTANT_KIND: Final = 'assistant'
 IDLE_MINUTES: Final = 30
 LOOKBACK_DAYS: Final = 7
 REENQUEUE_AFTER_MINUTES: Final = 120
 SAFETY_MARGIN_MS: Final = 20_000
 SQS_BATCH: Final = 10
 USER_PK_PREFIX: Final = 'USER#'
-CONV_SK_PREFIX: Final = 'CONV#'
 DIRECT_KINDS: Final = ('agent_run', 'project_chat')
 # SQS caps a message at 256 KiB; 60k characters of UTF-8 stays under it even
 # when every character takes three bytes, with room for the envelope.
@@ -62,10 +62,6 @@ MAX_REF_CHARS: Final = 128
 
 def get_conversations_table():
     return get_dynamodb_resource().Table(CONVERSATIONS_TABLE) if CONVERSATIONS_TABLE else None
-
-
-def get_memory_table():
-    return store.get_memory_table()
 
 
 # ── Schedule path ────────────────────────────────────────────────────────────
@@ -98,7 +94,7 @@ def idle_sessions(table, now: datetime, time_left_ms) -> list[dict]:
 def _session_from_row(row: Mapping[str, Any]) -> dict | None:
     pk, sk = row.get('pk'), row.get('sk')
     if not (isinstance(pk, str) and isinstance(sk, str)
-            and pk.startswith(USER_PK_PREFIX) and sk.startswith(CONV_SK_PREFIX)):
+            and pk.startswith(USER_PK_PREFIX) and sk.startswith(CONVERSATION_SK_PREFIX)):
         return None
     try:
         count = int(row.get('message_count') or 0)
@@ -106,7 +102,7 @@ def _session_from_row(row: Mapping[str, Any]) -> dict | None:
         count = 0
     return {
         'owner_sub': pk[len(USER_PK_PREFIX):],
-        'session_id': sk[len(CONV_SK_PREFIX):],
+        'session_id': sk[len(CONVERSATION_SK_PREFIX):],
         'message_count': count,
         'updated_at': str(row.get('updated_at') or ''),
     }
@@ -146,7 +142,7 @@ def _send_batch(messages: list[dict]) -> set[int]:
 
 
 def scan_and_enqueue(now: datetime, time_left_ms) -> dict[str, int]:
-    conversations, memory_table = get_conversations_table(), get_memory_table()
+    conversations, memory_table = get_conversations_table(), store.get_memory_table()
     if conversations is None or memory_table is None or not MEMORY_QUEUE_URL:
         raise RuntimeError('memory scanner is not configured')
     sessions = idle_sessions(conversations, now, time_left_ms)
@@ -160,7 +156,7 @@ def scan_and_enqueue(now: datetime, time_left_ms) -> dict[str, int]:
         for index in sorted(accepted):
             session = batch[index]
             store.save_cursor(memory_table, session['session_id'],
-                              {'owner_sub': session['owner_sub'], 'enqueued_at': store.now_iso(now)}, now=now)
+                              {'owner_sub': session['owner_sub'], 'enqueued_at': now_iso(now)}, now=now)
             enqueued += 1
     if enqueued:
         metrics.add_metric(name='MemorySessionsEnqueued', unit=MetricUnit.Count, value=enqueued)

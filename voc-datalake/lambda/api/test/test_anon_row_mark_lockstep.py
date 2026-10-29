@@ -5,8 +5,8 @@ separate Lambda bundles and must agree.
 partition; `projects_handler.py` owns it — it writes a signed-in reviewer's ballot,
 it is the only reader, and it is where a composition change and a row delete assert
 these attributes. The two are packaged as SEPARATE bundles, so neither may import
-the other and the constants are duplicated by necessity. This file is what keeps the
-copies honest, exactly as `test_anon_ballot_key_lockstep.py` does for the sort key.
+the other; both take these names from `shared.prioritization_keys` (both bundles ship
+`lambda/shared`), and this file pins that and how each writer applies them.
 
 WHAT EACH DRIFT COSTS, WHICH IS WHY THIS IS A TEST AND NOT A COMMENT
 --------------------------------------------------------------------
@@ -35,9 +35,8 @@ Neither of the first two failures is loud. Nothing errors, no log line appears: 
 room votes, every phone says thanks, and an invariant the API advertises is quietly
 not true.
 
-Every value is read as SOURCE TEXT rather than imported, for the reason
-`test_anon_ballot_key_lockstep.py` records: the assertion must not be satisfiable by
-whatever either module happens to resolve at import time.
+The handlers are read as SOURCE TEXT rather than imported: the assertion must not be
+satisfiable by whatever either module happens to resolve at import time.
 """
 import re
 
@@ -52,7 +51,9 @@ import re
 # nothing to compare, and skipping beats a failure that says nothing about the code
 # under test. Neither policy is the general rule; which one is right follows from
 # whether a missing file is possible without anything having gone wrong.
-from lockstep_fixtures import py_int_const, py_str_const, read_source
+from lockstep_fixtures import assert_imported_not_defined, read_source
+
+from shared import prioritization_keys as keys
 
 BALLOTS_SOURCE = 'lambda/api/ballots_handler.py'
 PROJECTS_SOURCE = 'lambda/api/projects_handler.py'
@@ -61,19 +62,12 @@ PROJECTS_SOURCE = 'lambda/api/projects_handler.py'
 class TestTheFreezeMarkIsOneAttributeInBothBundles:
     """The mark a composition change asserts the absence of."""
 
-    def test_both_writers_name_the_same_attribute(self):
-        anon = py_str_const(read_source(BALLOTS_SOURCE), 'ROW_FROZEN_AT_FIELD', BALLOTS_SOURCE)
-        owner = py_str_const(read_source(PROJECTS_SOURCE), 'ROW_FROZEN_AT_FIELD',
-                           PROJECTS_SOURCE)
-
-        assert anon == owner, (
-            f'ROW_FROZEN_AT_FIELD is {anon!r} in {BALLOTS_SOURCE} and {owner!r} in '
-            f'{PROJECTS_SOURCE}. The recompose route asserts the absence of the '
-            f"OWNER'S spelling, so a row whose only ballots came from a room would "
-            f'stay recomposable — and those ballots would end up describing '
-            f'documents nobody who cast them ever saw. Nothing errors when this '
-            f'drifts.'
-        )
+    def test_both_writers_take_it_from_its_one_home(self):
+        """The recompose route asserts the absence of this attribute, so a room ballot stamping
+        another name would leave its row recomposable, with nothing erroring."""
+        for where in (BALLOTS_SOURCE, PROJECTS_SOURCE):
+            assert_imported_not_defined(read_source(where), 'shared.prioritization_keys',
+                                        ('ROW_FROZEN_AT_FIELD',), where)
 
     def test_the_recompose_condition_asserts_that_attribute(self):
         """That the constant AGREES is not the contract; that the refusal is built on
@@ -104,19 +98,12 @@ class TestTheFreezeMarkIsOneAttributeInBothBundles:
 class TestTheDeleteFenceIsOneAttributeInBothBundles:
     """The counter a row delete asserts has not moved."""
 
-    def test_both_writers_name_the_same_attribute(self):
-        anon = py_str_const(read_source(BALLOTS_SOURCE), 'ROW_BALLOT_WRITES_FIELD',
-                          BALLOTS_SOURCE)
-        owner = py_str_const(read_source(PROJECTS_SOURCE), 'ROW_BALLOT_WRITES_FIELD',
-                           PROJECTS_SOURCE)
-
-        assert anon == owner, (
-            f'ROW_BALLOT_WRITES_FIELD is {anon!r} in {BALLOTS_SOURCE} and {owner!r} '
-            f'in {PROJECTS_SOURCE}. The row delete fences on the OWNER\'S spelling, '
-            f'so an anonymous ballot landing between the enumeration and the delete '
-            f'would not move it — and the delete would commit, leaving that ballot '
-            f'orphaned. That is the #342 fault the fence exists to close.'
-        )
+    def test_both_writers_take_it_from_its_one_home(self):
+        """The row delete fences on this counter, so a room ballot moving another name would
+        be orphaned by a delete that commits anyway (#342)."""
+        for where in (BALLOTS_SOURCE, PROJECTS_SOURCE):
+            assert_imported_not_defined(read_source(where), 'shared.prioritization_keys',
+                                        ('ROW_BALLOT_WRITES_FIELD',), where)
 
     def test_the_anonymous_writer_moves_it_with_ADD(self):
         """`ADD` rather than a read-then-increment, so a room of phones submitting at
@@ -132,32 +119,20 @@ class TestTheDeleteFenceIsOneAttributeInBothBundles:
         """One name for both marks would make the freeze instant and the write count
         the same field: the freeze would be overwritten by a counter, and the fence
         would compare timestamps."""
-        source = read_source(PROJECTS_SOURCE)
-        frozen = py_str_const(source, 'ROW_FROZEN_AT_FIELD', PROJECTS_SOURCE)
-        writes = py_str_const(source, 'ROW_BALLOT_WRITES_FIELD', PROJECTS_SOURCE)
-
-        assert frozen != writes
+        assert keys.ROW_FROZEN_AT_FIELD != keys.ROW_BALLOT_WRITES_FIELD
 
 
 class TestBothBundlesReadTheCancellationReasonAtTheSamePosition:
     """Two items each, the row's write second, in both handlers."""
 
-    def test_the_row_index_agrees(self):
-        anon = py_int_const(read_source(BALLOTS_SOURCE), 'BALLOT_TRANSACT_ROW_INDEX',
-                          BALLOTS_SOURCE)
-        owner = py_int_const(read_source(PROJECTS_SOURCE), 'BALLOT_TRANSACT_ROW_INDEX',
-                           PROJECTS_SOURCE)
-
-        assert anon == owner, (
-            f'BALLOT_TRANSACT_ROW_INDEX is {anon} in {BALLOTS_SOURCE} and {owner} in '
-            f'{PROJECTS_SOURCE}. Both read the cancellation reason at that position '
-            f'to tell a vanished row from a write conflict, so a disagreement means '
-            f'one of them answers contention as a settled 404 and drops a ballot.'
-        )
+    def test_both_writers_take_the_row_index_from_its_one_home(self):
+        """Both read the cancellation reason at that position to tell a vanished row from a
+        write conflict; a disagreement would answer contention as a settled 404."""
+        for where in (BALLOTS_SOURCE, PROJECTS_SOURCE):
+            assert_imported_not_defined(read_source(where), 'shared.prioritization_keys',
+                                        ('BALLOT_TRANSACT_ROW_INDEX',), where)
 
     def test_the_index_names_the_second_of_two_items(self):
         """Stated as a number rather than derived, so a transaction that grew a third
         participant — or reordered the two — fails here."""
-        for source, where in ((read_source(BALLOTS_SOURCE), BALLOTS_SOURCE),
-                              (read_source(PROJECTS_SOURCE), PROJECTS_SOURCE)):
-            assert py_int_const(source, 'BALLOT_TRANSACT_ROW_INDEX', where) == 1
+        assert keys.BALLOT_TRANSACT_ROW_INDEX == 1

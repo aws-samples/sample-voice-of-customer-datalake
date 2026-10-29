@@ -90,6 +90,8 @@ export interface ConverseStreamParams {
   cache?: boolean;
   /** Index of the message whose end gets the conversation-prefix checkpoint. */
   cacheMessageIndex?: number;
+  /** Aborted when the user stops the run (session/cancel.ts): the SDK cancels the stream. */
+  abortSignal?: AbortSignal;
 }
 
 const CACHE_POINT = { cachePoint: { type: 'default' } } as const;
@@ -149,7 +151,7 @@ export async function* converseStream(
   });
 
   const bedrockClient = getBedrockClient();
-  const response = await bedrockClient.send(command);
+  const response = await bedrockClient.send(command, params.abortSignal ? { abortSignal: params.abortSignal } : {});
 
   if (response.stream) {
     for await (const event of response.stream) {

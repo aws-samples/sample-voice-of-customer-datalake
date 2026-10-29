@@ -21,6 +21,10 @@
     "evidence": "此卡片依据的评论：{{count, number}} 条",
     "quotes": "客户原话",
     "dismiss": "忽略",
+    "dismissed": "已隐藏：{{title}}",
+    "undo": "撤销",
+    "undoLabel": "撤销隐藏 {{title}}",
+    "closeNotice": "关闭此通知",
     "sources": "来源",
     "newTab": "在新标签页中打开",
     "type": {

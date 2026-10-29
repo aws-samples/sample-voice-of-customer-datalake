@@ -1,0 +1,3 @@
+# The HTML parser lambda/email_intake/mime.py hands BeautifulSoup ('lxml'); bs4 itself comes from the
+# ingestion-deps layer the intake also carries. Only the (opt-in) inbound-email intake gets this layer.
+lxml>=5.0.0

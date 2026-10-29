@@ -27,7 +27,7 @@ vi.mock('../../api/client', () => ({
     saveModelSettings: (surface: string, modelId: string | null) =>
       mockSaveModelSettings(surface, modelId),
     testModel: () => Promise.reject(new Error('not under test here')),
-    getModelCapacity: () => Promise.resolve([]),
+    getModelCapacity: () => Promise.resolve({ models: [], image: null }),
   },
 }))
 

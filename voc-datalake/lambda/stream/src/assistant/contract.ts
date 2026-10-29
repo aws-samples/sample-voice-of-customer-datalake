@@ -47,6 +47,8 @@ export const PAGE_KINDS = [
   'company',
   /** /radar: other brands (docs/radar.md); loads the scrapers pack so "set up Radar for X" works there. */
   'radar',
+  /** /participants: participant lists (docs/participants.md); add many people through one approval card. */
+  'participants',
   'other',
 ] as const;
 export type PageKind = (typeof PAGE_KINDS)[number];
@@ -62,6 +64,7 @@ export const TOOL_PACKS = [
   'memory',
   'agents',
   'company',
+  'participants',
 ] as const;
 export type ToolPack = (typeof TOOL_PACKS)[number];
 
@@ -85,6 +88,7 @@ export const PAGE_TOOL_PACKS: Record<PageKind, readonly ToolPack[]> = {
   agent: ['core', 'agents', 'memory'],
   company: ['core', 'company'],
   radar: ['core', 'insights', 'scrapers'],
+  participants: ['core', 'participants'],
   other: ['core', 'insights'],
 };
 
@@ -114,6 +118,7 @@ export const SERVER_TOOLS = {
   memory: ['get_memory_review'],
   agents: ['list_agents', 'get_agent', 'get_workflow', 'list_agent_runs', 'get_agent_run', 'validate_workflow'],
   company: ['get_company_context', 'get_my_context', 'get_design_system'],
+  participants: ['list_participant_lists'],
 } as const satisfies Record<ToolPack, readonly string[]>;
 
 /** Write tools: proposed by the model, approved by a human, executed by the SPA. */
@@ -151,6 +156,7 @@ export const CLIENT_TOOLS = {
     'duplicate_workflow',
   ],
   company: ['update_company_context', 'update_my_context', 'update_design_system'],
+  participants: ['create_participant_list', 'add_participants'],
 } as const satisfies Record<ToolPack, readonly string[]>;
 
 export type ServerToolName = (typeof SERVER_TOOLS)[ToolPack][number];
@@ -267,13 +273,20 @@ export const CUSTOM_EVENTS = {
    * before the RUN_FINISHED whose interrupt has reason `plan_approval`.
    */
   plan: 'assistant.plan',
+  /**
+   * `{}` — right before the RUN_FINISHED of a run the user stopped (Stop in the SPA writes a
+   * cancel marker the run polls, session/cancel.ts): the answer so far is all there is.
+   */
+  stopped: 'assistant.stopped',
 } as const;
 
 /**
  * Stored run status of a session (`run_status` on the conversations item),
- * written by the stream Lambda while a run streams.
+ * written by the stream Lambda while a run streams. `interrupted` = ended waiting for an
+ * approval (pending interrupts); `stopped` = the user stopped it (5.35), the partial answer kept.
+ * LOCKSTEP with chat_handler.RUN_STATUSES.
  */
-export const SESSION_RUN_STATUSES = ['running', 'finished', 'failed', 'interrupted'] as const;
+export const SESSION_RUN_STATUSES = ['running', 'finished', 'failed', 'interrupted', 'stopped'] as const;
 
 /**
  * A stored `running` session whose last write is older than this is dead
@@ -291,6 +304,18 @@ export const MAX_ID_LENGTH = 128;
 /** `forwardedProps.days = 0` is the all-time window (lambda/shared/api.py `ALL_TIME_DAYS`). */
 export const ALL_TIME_DAYS = 0;
 
+/**
+ * The filters a page shows, from its URL query, so the assistant sees what is on screen (5.35):
+ * Categories (`q` … `tag`, pages/Categories/useCategoryFilters.ts) and Problem Analysis
+ * (`source`, `category`, `subcategory`, `urgent`, `resolved`, `similarity`). The time range is
+ * not here: it travels as `forwardedProps.days` / `dateBasis` on every page.
+ */
+export const PAGE_FILTER_KEYS = [
+  'q', 'category', 'subcategory', 'source', 'sentiment', 'rating', 'rating_dir', 'urgent', 'channel', 'dims', 'tag',
+  'resolved', 'similarity',
+] as const;
+export const MAX_PAGE_FILTER_CHARS = 200;
+
 export const pageContextSchema = z.object({
   kind: z.enum(PAGE_KINDS),
   /** Router pathname, e.g. `/projects/abc`. Informational only. */
@@ -303,11 +328,43 @@ export const pageContextSchema = z.object({
   tab: z.string().max(64).optional(),
   /** Human title of the entity on screen (project name, …), ≤120 chars. */
   title: z.string().max(120).optional(),
+  /** Active page filters (PAGE_FILTER_KEYS); user-typed values, so they reach the model as data only. */
+  filters: z.partialRecord(z.enum(PAGE_FILTER_KEYS), z.string().min(1).max(MAX_PAGE_FILTER_CHARS)).optional(),
 });
 export type PageContext = z.infer<typeof pageContextSchema>;
 
+/**
+ * `@persona`, `@all` and `#document` in the composer on a project page (docs/assistant-mentions.md).
+ * Picked from the project's personas and documents, so they travel as ids, never parsed from the
+ * message text. `personas: 'all'` = the project's personas, the first MENTION_LIMITS.maxPersonas
+ * in project order (the reply names the ones left out).
+ */
+export const MENTION_LIMITS = { maxPersonas: 6, maxDocuments: 3, maxDocumentVersion: 100_000 } as const;
+export const MENTION_ALL_PERSONAS = 'all';
+/**
+ * Tool call ids of the persona round start with this: each mentioned persona's reply is one
+ * `consult_personas` call the server makes itself before the model's turn (runtime/persona-round.ts).
+ * The SPA reads the prefix to re-ask the same personas on Regenerate.
+ */
+export const MENTION_TOOL_CALL_PREFIX = 'mention_';
+
+export const mentionsSchema = z.object({
+  personas: z.union([
+    z.literal(MENTION_ALL_PERSONAS),
+    z.array(z.string().min(1).max(MAX_ID_LENGTH)).min(1).max(MENTION_LIMITS.maxPersonas),
+  ]).optional(),
+  documents: z.array(z.object({
+    document_id: z.string().min(1).max(MAX_ID_LENGTH),
+    /** The `(vN)` the picker showed; informational (the id names the version). */
+    version: z.number().int().min(1).max(MENTION_LIMITS.maxDocumentVersion).optional(),
+  })).min(1).max(MENTION_LIMITS.maxDocuments).optional(),
+});
+export type Mentions = z.infer<typeof mentionsSchema>;
+
 export const forwardedPropsSchema = z.object({
   page: pageContextSchema,
+  /** Personas and documents the user mentioned in THIS message (project pages only). */
+  mentions: mentionsSchema.optional(),
   /** Global time-range picker, 0–9999 (0 = all time), default 7. 9999 = MAX_WINDOW_DAYS (pinned in server-tools.test.ts). */
   days: z.number().int().min(ALL_TIME_DAYS).max(9999).optional(),
   dateBasis: z.enum(['imported', 'review']).optional(),

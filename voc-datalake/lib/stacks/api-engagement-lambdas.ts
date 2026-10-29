@@ -15,6 +15,7 @@ import { FEEDBACK_FORM_API_FUNCTION_BASE_NAME, USERS_API_FUNCTION_BASE_NAME } fr
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import type { ApiStackContext } from './api-context';
 import { OPS_ALERTS_NAG_REASON, opsAlertsWiring } from './dlq-alarms';
+import { grantLogsDiagnostics } from './api-logs-diagnostics';
 
 export interface EngagementLambdas {
   logsLambda: lambda.Function;
@@ -33,7 +34,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const {
     feedbackTable, aggregatesTable, projectsTable, conversationsTable, kmsKey, userPool, processingQueueUrl,
-    processingQueueArn, brandName,
+    processingQueueArn, brandName, participantsTable,
   } = ctx.props;
 
   // Logs API — also runs alerting (Settings → Logs → Alerts): it creates and
@@ -58,6 +59,13 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     ],
   }], true);
 
+  // Administration → System → Logs diagnostics: log search, failure-queue peek (api-logs-diagnostics.ts).
+  const diagnosticsEnv = grantLogsDiagnostics(ctx, logsRole, {
+    opsAlertsQueues: opsAlerts.environment.OPS_ALERTS_QUEUES ?? '',
+    // A plain string (the stack's name), not a token: no cross-stack reference.
+    coreStackName: cdk.Stack.of(userPool).stackName,
+  });
+
   const logsLambda = new lambda.Function(stack, 'LogsApi', {
     functionName: ctx.uniqueName('voc-logs-api'),
     runtime: lambda.Runtime.PYTHON_3_14,
@@ -67,7 +75,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     role: logsRole,
     timeout: cdk.Duration.seconds(30),
     memorySize: 1769, // one vCPU 2026-10-23: single-threaded Python gains nothing above it (lib/sizing/policy.ts)
-    environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-logs-api', LOG_LEVEL: 'INFO', ENABLED_SOURCES: inputs.enabledSourcesEnv, ...opsAlerts.environment },
+    environment: { AGGREGATES_TABLE: aggregatesTable.tableName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-logs-api', LOG_LEVEL: 'INFO', ENABLED_SOURCES: inputs.enabledSourcesEnv, ...diagnosticsEnv, WEB_SEARCH_ENABLED: ctx.props.webSearchGatewayUrl !== undefined ? 'true' : 'false', ...opsAlerts.environment },
     layers: [apiLayer],
     logGroup: ctx.logGroup('LogsApiLogs', ctx.uniqueName('voc-logs-api')),
   });
@@ -110,6 +118,13 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   feedbackFormRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
   // A submission gets its source's PII policy before it is queued.
   feedbackFormRole.addToPolicy(piiDetectionStatement());
+  // Participant attribution (lambda/api/feedback_form_participants.py): a submit carrying an ask's
+  // response token reads that token row and marks the recipient (and the ask's count) responded.
+  // Two single-item actions on the table itself — no index, no query, no delete.
+  feedbackFormRole.addToPolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+    resources: [participantsTable.tableArn],
+  }));
 
   const feedbackFormLambda = new lambda.Function(stack, 'FeedbackFormApi', {
     ...snapStartFunctionProps(), // GET /feedback-forms cold start (lib/utils/snapstart.ts)
@@ -125,6 +140,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
       AGGREGATES_TABLE: aggregatesTable.tableName,
       FEEDBACK_TABLE: feedbackTable.tableName,
       PROCESSING_QUEUE_URL: processingQueueUrl,
+      PARTICIPANTS_TABLE: participantsTable.tableName,
       BRAND_NAME: brandName,
       ...PII_REDACTION_ENV,
       // '*', DELIBERATELY, and the one Lambda in this stack that gets it rather

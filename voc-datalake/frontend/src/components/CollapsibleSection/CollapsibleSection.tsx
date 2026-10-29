@@ -1,6 +1,6 @@
 /**
  * @fileoverview A section whose heading is a disclosure button: a chevron that
- * turns when the section opens, the title, and optional actions on the right.
+ * turns when the section opens, and the title.
  *
  * Controlled: the caller owns `open` and hears every toggle through
  * `onOpenChange`, so it can persist a choice (Home's skipped sections) or open
@@ -20,18 +20,14 @@ interface Props {
   title: ReactNode
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The section element's id (an anchor such as `#how-it-works`). */
-  id?: string
-  /** Shown on the heading row, outside the toggle. */
-  actions?: ReactNode
   children: ReactNode
 }
 
-export default function CollapsibleSection({ title, open, onOpenChange, id, actions, children }: Readonly<Props>) {
+export default function CollapsibleSection({ title, open, onOpenChange, children }: Readonly<Props>) {
   const headingId = useId()
   const regionId = useId()
   return (
-    <section id={id} aria-labelledby={headingId} className="scroll-mt-4 rounded-xl border border-border bg-card">
+    <section aria-labelledby={headingId} className="scroll-mt-4 rounded-xl border border-border bg-card">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <h2 id={headingId} className="min-w-0 flex-1 text-lg font-semibold tracking-tight text-text-strong">
           <button type="button" aria-expanded={open} aria-controls={regionId}
@@ -42,7 +38,6 @@ export default function CollapsibleSection({ title, open, onOpenChange, id, acti
             <span className="min-w-0">{title}</span>
           </button>
         </h2>
-        {actions !== undefined && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
       </div>
       <div id={regionId} hidden={!open} className="px-4 pb-4">
         {open && children}

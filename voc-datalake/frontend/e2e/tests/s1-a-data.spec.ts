@@ -10,6 +10,7 @@
  */
 import { expect, type Locator, type Page, type Response } from '@playwright/test'
 import { test } from '../lib/test'
+import { SCRAPER_EDITOR, TILE_DIALOGS, openSourceMenu, sourceTile } from '../lib/sources'
 import { isRecord } from '../lib/guards'
 import { apiCall, listOf, stringField } from '../lib/api'
 import { isApi, jsonOf, settle, site } from '../lib/fixtures'
@@ -36,17 +37,13 @@ const shownWithin = (locator: Locator, ms: number): Promise<boolean> =>
 
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** ScraperEditor.tsx names itself "New Scraper" for every scraper template tile. */
-const SCRAPER_EDITOR = 'New Scraper'
-
 /**
- * The dialog an Add Data Source tile opens, by accessible name (never by
- * position: the floating assistant panel is a dialog too). A plugin, the
- * generator and the manual-input dialogs carry the tile's title (the CSV one
- * in lower case, "CSV upload"); a scraper template opens the scraper editor.
+ * The dialog a "New source" tile opens, by accessible name (never by position:
+ * the floating assistant panel is a dialog too): `TILE_DIALOGS` (lib/sources.ts),
+ * else the tile's own title (an unknown plugin's tile is its manifest name).
  */
 const tileDialog = (page: Page, title: string): Locator =>
-  dialogNamed(page, new RegExp(`^(${escapeRegExp(title)}|${SCRAPER_EDITOR})$`, 'i'))
+  dialogNamed(page, new RegExp(`^(${escapeRegExp(TILE_DIALOGS[title] ?? title)}|${SCRAPER_EDITOR})$`, 'i'))
 
 /** Keys of the comments whose text is not visible on the current page. */
 async function missingOnPage(page: Page): Promise<string[]> {
@@ -60,10 +57,7 @@ async function missingOnPage(page: Page): Promise<string[]> {
 async function openAddSource(page: Page): Promise<Locator> {
   await page.goto(site('/scrapers'), { waitUntil: 'domcontentloaded' })
   await settle(page, 500)
-  await page.getByRole('button', { name: 'New Source' }).click()
-  const selector = page.getByRole('dialog', { name: 'Add Data Source' })
-  await expect(selector).toBeVisible()
-  return selector
+  return openSourceMenu(page)
 }
 
 /**
@@ -93,7 +87,7 @@ test.describe('s1 data: connectors and the ten-comment import', () => {
   test('S1-T1 connector: analyze-url scraper saved Manual only', async ({ page }) => {
     await s1Step(page, '01-scraper-analyze-save', ['scrapers-api'], async (r) => {
       const selector = await openAddSource(page)
-      await selector.getByRole('button', { name: /Custom \(CSS Selectors\)/ }).first().click()
+      await sourceTile(selector, 'Scraper with CSS selectors').click()
       const editor = dialogNamed(page, SCRAPER_EDITOR)
       const analyzeRes = await analyzeManualScraper(page, editor, r, { name: NAME.scraper, url: ANALYZE_URL })
       expect(analyzeRes.status()).toBeLessThan(300)
@@ -195,7 +189,7 @@ test.describe('s1 data: connectors and the ten-comment import', () => {
       if (hits.length > 0) throw new Error('[e2e-qa] items already exist: refusing to import again')
 
       const selector = await openAddSource(page)
-      await selector.locator('section button').filter({ hasText: 'Manual Import' }).first().click()
+      await sourceTile(selector, 'Paste reviews').click()
       const modal = page.getByRole('dialog', { name: 'Manual Import' })
       await expect(modal).toBeVisible()
       await modal.getByLabel(/Source URL/).fill(IMPORT_SOURCE_URL)

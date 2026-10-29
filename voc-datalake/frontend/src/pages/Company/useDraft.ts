@@ -12,8 +12,7 @@
  */
 import { useState } from 'react'
 import { useUnsavedChangesGuard } from '../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
-
-const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+import { sameJson } from '../../lib/sameJson'
 
 /**
  * @param server  the saved value
@@ -25,7 +24,7 @@ export function useDraft<T>(server: T, toSaved: (value: T) => unknown = (value) 
   const value = draft ?? server
   return {
     value,
-    dirty: draft !== null && !sameValue(toSaved(draft), toSaved(server)),
+    dirty: draft !== null && !sameJson(toSaved(draft), toSaved(server)),
     /** Always an updater, so a draft built from several edits never reads a stale value. */
     update: (change: (current: T) => T) => setDraft((current) => change(current ?? server)),
     reset: () => setDraft(null),

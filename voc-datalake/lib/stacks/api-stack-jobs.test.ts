@@ -33,9 +33,9 @@ const FunctionRoleSchema = z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.strin
 
 describe('ChatStream (AI assistant) delegation', () => {
   // The assistant is read-only server-side: its server tools read through the
-  // nine canonical domain APIs (internal invoke with forwarded claims; memory
+  // ten canonical domain APIs (internal invoke with forwarded claims; memory
   // and agents joined for recall and the memory/agents read tools, users for
-  // the admin-only user-administration reads), and every write is a client
+  // the admin-only user-administration reads, engagement for the participant lists), and every write is a client
   // tool the SPA executes after user approval. These cases pin that boundary
   // in the role, not just in the stream code.
   const FunctionSchema = z.object({
@@ -55,6 +55,7 @@ describe('ChatStream (AI assistant) delegation', () => {
     AGENTS_FUNCTION: 'AgentsApi',
     USERS_FUNCTION: 'UsersApi',
     RADAR_FUNCTION: 'RadarApi',
+    ENGAGEMENT_FUNCTION: 'EngagementApi',
   } as const;
 
   type ParsedFunction = { logicalId: string; properties: z.infer<typeof FunctionSchema>['Properties'] };
@@ -100,7 +101,7 @@ describe('ChatStream (AI assistant) delegation', () => {
     expect(variables).not.toHaveProperty('PROJECTS_TABLE');
   });
 
-  it('may invoke exactly the nine delegate domain APIs, by unqualified ARN in one statement', () => {
+  it('may invoke exactly the ten delegate domain APIs, by unqualified ARN in one statement', () => {
     const all = functions();
     const chat = byLogicalPrefix(all, 'ChatStreamApi');
     const invokeStatements = chatStatements(chat)
@@ -525,7 +526,7 @@ it('leaves no unsuppressed cdk-nag finding on the fixture provider', () => {
     .filter((annotation) => annotation.id.includes('VerificationFixtureProvider'))
     .map((annotation) => `${annotation.id} ${JSON.stringify(annotation.entry.data)}`);
   expect(provider, `unsuppressed findings:\n${provider.join('\n')}`).toStrictEqual([]);
-});
+}, SYNTH_TIMEOUT_MS); // a cdk-nag synth of the prefixed shape, well past 5 s
 
 /** The provider function's properties, parsed rather than asserted. */
 const FixtureProviderSchema = z.object({

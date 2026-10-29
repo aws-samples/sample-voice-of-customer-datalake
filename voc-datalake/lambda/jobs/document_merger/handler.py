@@ -6,7 +6,6 @@ Merges multiple documents into a single document using LLM.
 
 import os
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
 from typing import Any
 
 from boto3.dynamodb.conditions import Key
@@ -21,6 +20,8 @@ from shared.derivation import (
     derivation_source,
 )
 from shared.document_versions import (
+    MERGE_OUTPUT_TYPES,
+    MERGE_VERSIONED_DOCUMENT_TYPES,
     get_versioned_document_by_allocation,
     persist_versioned_document,
 )
@@ -30,11 +31,10 @@ from shared.jobs import JobContext, job_handler
 from shared.logging import logger
 from shared.persona_context import personas_prompt_context
 from shared.project_writes import create_counted_project_child
+from shared.timestamps import now_iso
 
 # Prototype HTML is created only by the prototype generator. Unchecked merger
 # values, including ``prototype``, stay on the custom DOC# path.
-MERGE_OUTPUT_TYPES = ('prd', 'prfaq', 'custom')
-MERGE_VERSIONED_DOCUMENT_TYPES = frozenset({'prd', 'prfaq'})
 
 # Environment
 PROJECTS_TABLE = os.environ.get('PROJECTS_TABLE', '')
@@ -147,7 +147,7 @@ def _save_merged_document(
             'title': title,
         }
 
-    return create_counted_project_child(projects_table, project_id, 'doc', build, 'document_count')
+    return create_counted_project_child(projects_table, project_id, 'doc', build)
 
 
 @job_handler(error_message='Document merge failed')
@@ -231,7 +231,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, merge_config: dict
                        step_name='document_merge')
 
     ctx.update_progress(90, 'saving_document')
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     item_fields = {
         'gsi1pk': f'PROJECT#{project_id}#DOCUMENTS',
         'gsi1sk': now,

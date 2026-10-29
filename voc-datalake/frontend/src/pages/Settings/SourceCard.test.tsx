@@ -19,7 +19,6 @@ import { expectScheduleToggleLocked, sourceScheduleMocks } from '../Scrapers/scr
 const mockGetIntegrationStatus = vi.fn<(...args: unknown[]) => unknown>()
 const mockGetSourcesStatus = vi.fn<(...args: unknown[]) => unknown>()
 const mockUpdateIntegrationCredentials = vi.fn<(...args: unknown[]) => unknown>()
-const mockTestIntegration = vi.fn<(...args: unknown[]) => unknown>()
 const { enableSource: mockEnableSource, disableSource: mockDisableSource } = sourceScheduleMocks
 
 vi.mock('../../api/client', () => ({
@@ -28,7 +27,6 @@ vi.mock('../../api/client', () => ({
     getSourcesStatus: () => mockGetSourcesStatus(),
     updateIntegrationCredentials: (source: string, creds: Record<string, string>) =>
       mockUpdateIntegrationCredentials(source, creds),
-    testIntegration: (source: string) => mockTestIntegration(source),
     enableSource: (source: string) => sourceScheduleMocks.enableSource(source),
     disableSource: (source: string) => sourceScheduleMocks.disableSource(source),
   },
@@ -129,6 +127,12 @@ describe('SourceCard', () => {
       expect(expand).toHaveAttribute('aria-expanded', 'false')
       await user.click(expand)
       expect(expand).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    it('has no icon-only button without a name in its header row', () => {
+      const { container } = renderCard()
+      const unnamed = [...container.querySelectorAll('button')].filter((button) => button.textContent.trim() === '' && !button.hasAttribute('aria-label'))
+      expect(unnamed).toStrictEqual([])
     })
 
     it('renders description when provided', () => {
@@ -379,14 +383,7 @@ describe('SourceCard', () => {
          *  case above.
          *
          *  Save is asserted to be the ONLY control carrying the admin-only
-         *  reason, which is what pins the gate's extent. The `Test` button is
-         *  deliberately not asserted as clickable here: `POST /integrations/
-         *  {source}/test` is NOT admin-gated, but the button's `disabled` reads
-         *  `sourceStatus?.configured`, which comes from the admin-only
-         *  integration-status query — so it is already unreachable for a
-         *  non-admin for a reason that predates and is independent of this gate.
-         *  Asserting it enabled here would fail for that unrelated reason and
-         *  misattribute it to the admin gate. */
+         *  reason, which is what pins the gate's extent. */
         const user = userEvent.setup()
         mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
         await expandAndType(user, false)
@@ -394,60 +391,12 @@ describe('SourceCard', () => {
         expect(screen.getByPlaceholderText('Enter api key')).toBeEnabled()
         expect(screen.getByPlaceholderText('Enter ID')).toBeEnabled()
 
-        // Show/Hide is a local view toggle and stays usable.
-        expect(screen.getByRole('button', { name: /show/i })).toBeEnabled()
-
-        // Save is the only control in this section carrying the admin-only
-        // reason — `Test` calls an ungated route and must not claim otherwise.
-        expect(screen.getByRole('button', { name: /^test$/i })).not.toHaveAttribute('title')
+        // Show/Hide is a local view toggle: it stays usable and, unlike Save,
+        // carries no admin-only reason.
+        const show = screen.getByRole('button', { name: /show/i })
+        expect(show).toBeEnabled()
+        expect(show).not.toHaveAttribute('title')
       })
-    })
-  })
-
-  describe('Test Integration', () => {
-    it('tests integration when test button is clicked', async () => {
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
-      mockTestIntegration.mockResolvedValue({ success: true, message: 'Connection successful' })
-
-      const user = await renderExpanded()
-
-      // Wait for the integration status to load
-      await waitFor(() => {
-        const testButton = screen.getByRole('button', { name: /test$/i })
-        expect(testButton).not.toBeDisabled()
-      })
-
-      await user.click(screen.getByRole('button', { name: /test$/i }))
-
-      await waitFor(() => {
-        expect(mockTestIntegration).toHaveBeenCalledWith('test_source')
-      })
-    })
-
-    it.each([
-      ['shows success message on successful test', true, 'Connection successful'],
-      ['shows error message on failed test', false, 'Invalid credentials'],
-    ])('%s', async (_name, success, message) => {
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: true } })
-      mockTestIntegration.mockResolvedValue({ success, message })
-
-      const user = await renderExpanded()
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /test$/i })).toBeEnabled()
-      })
-      await user.click(screen.getByRole('button', { name: /test$/i }))
-
-      expect(await screen.findByText(message)).toBeInTheDocument()
-    })
-
-    it('disables test button when source not configured', async () => {
-      mockGetIntegrationStatus.mockResolvedValue({ test_source: { configured: false } })
-
-      await renderExpanded()
-
-      // The test button should be disabled when not configured
-      const testButton = screen.getByRole('button', { name: /test$/i })
-      expect(testButton).toBeDisabled()
     })
   })
 
@@ -488,13 +437,13 @@ describe('SourceCard', () => {
     }
 
     it('renders S3ImportExplorer for an admin', async () => {
-      await renderExpanded({ manifest: s3Manifest }, /s3 import/i)
+      await renderExpanded({ manifest: s3Manifest }, /s3 bulk import/i)
 
       expect(screen.getByTestId('s3-import-explorer')).toBeInTheDocument()
     })
 
     it('shows a non-admin the admin-only notice instead of the explorer (every /s3-import route is admin-only)', async () => {
-      await renderExpanded({ manifest: s3Manifest, isAdmin: false }, /s3 import/i)
+      await renderExpanded({ manifest: s3Manifest, isAdmin: false }, /s3 bulk import/i)
 
       expect(screen.queryByTestId('s3-import-explorer')).not.toBeInTheDocument()
       const notice = screen.getByText(i18n.t('components:s3Import.adminOnly'))

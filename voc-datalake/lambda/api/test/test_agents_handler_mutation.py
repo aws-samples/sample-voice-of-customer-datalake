@@ -45,6 +45,7 @@ import agents_handler
 from shared import agents_store as store
 from shared import workflow_schema
 from shared.test.agents_fixtures import AgentsEnv, agent_body
+from shared.test.instrumentation_fixtures import API_HANDLER_LAYERS, handler_layers
 
 DELEGATED_ADMIN = {'sub': 'mcp:tok', 'voc:acting_subject': 'admin-sub', 'cognito:groups': 'admins'}
 MCP_RUNNER = {**DELEGATED_ADMIN, 'voc:mcp_agent_run': 'true'}
@@ -565,5 +566,4 @@ class TestTheRoutesAreInstrumented:
 
     def test_the_handler_is_wrapped_by_api_handler(self):
         handler = agents_handler.lambda_handler
-        assert handler.__code__.co_filename.endswith(os.path.join('logging', 'logger.py'))
-        assert vars(handler)['__wrapped__'].__qualname__ == 'lambda_handler'
+        assert handler_layers(handler) == API_HANDLER_LAYERS

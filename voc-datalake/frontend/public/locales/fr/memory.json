@@ -33,6 +33,16 @@
     "status": "Filtre de statut"
   },
   "forget": "Oublier",
+  "edit": "Modifier",
+  "editLabel": "Modifier le souvenir : {{statement}}",
+  "editField": "Texte du souvenir",
+  "save": "Enregistrer",
+  "editFailed": "Impossible d’enregistrer le souvenir. Réessayez.",
+  "confirmPersonal": "Toujours vrai",
+  "confirmPersonalHint": "Confirmez que c’est toujours vrai, pour qu’il ne soit pas archivé après 90 jours sans usage",
+  "confirmPersonalLabel": "Toujours vrai : {{statement}}",
+  "confirmLabel": "+1 : {{statement}}",
+  "confirmedPersonal": "Confirmé comme toujours vrai.",
   "forgetMessage": "« {{statement}} » est archivé et ne sera jamais réappris automatiquement. Vous pourrez le restaurer plus tard.",
   "forgetTitle": "Oublier ce souvenir ?",
   "imports": {

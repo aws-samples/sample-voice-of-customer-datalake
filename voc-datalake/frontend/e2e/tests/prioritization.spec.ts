@@ -6,11 +6,12 @@
  *    (a room's phone): an id that names no session says so, and the public
  *    submit route refuses it without a session (404) — no login, no redirect.
  * 3. Room vote, end to end, on a row: the facilitator opens a vote on the board
- *    (QR + "0 of N ballots in"), a phone with no session submits within the cap
- *    ("Ballot recorded", the board counts it), a capped session refuses the
- *    ballot past its cap (429, "already collected as many ballots"), the
- *    facilitator closes the vote, and the phone then refuses ("This vote is not
- *    open"; the API answers 409).
+ *    (closing a vote already running there first; QR + "0 of N ballots in"), a
+ *    phone with no session submits within the cap ("Ballot recorded", the board
+ *    counts it), the facilitator closes the vote, and the phone then refuses
+ *    ("This vote is not open"; the API answers 409). Then a session capped at one
+ *    ballot refuses the ballot past its cap (429, "already collected as many
+ *    ballots") — opened after the close, as a row holds one open vote at a time.
  *
  * PRODUCTION runs 1 and 2 only. Step 3 writes BALLOTS, which live in the
  * PRIORITIZATION partition with no TTL and no delete route (a project delete
@@ -19,13 +20,15 @@
  * the local dev mock (playwright.mock.config.ts), which serves the same wire
  * shapes (mock-server.js, ballots_handler.py contract).
  */
-import { expect, type Browser, type Page } from '@playwright/test'
+import { expect, type Browser, type Locator, type Page } from '@playwright/test'
 import { test } from '../lib/test'
 import { apiCall } from '../lib/api'
+import { dialogNamed } from '../lib/dialogs'
 import { anonymousContext } from '../lib/mode'
 import { MOCK, apiUrl } from '../lib/env'
 import { isRecord } from '../lib/guards'
 import { roleOf, runStep, settle, site } from '../lib/fixtures'
+import { e2eFetch } from '../lib/trafficTag'
 
 /** A session id in the real format (`vs_` + 32 hex) that no session will ever have. */
 const UNKNOWN_SESSION = `vs_${'0'.repeat(31)}e`
@@ -69,6 +72,23 @@ async function voteFromNewDevice(browser: Browser, sessionId: string, expectHead
   }
 }
 
+/**
+ * The row may already hold an open vote (the mock seeds `demo` on its row, and the
+ * panel shows a running vote instead of the intro): close it, then start over.
+ */
+/** The expanded row's room-vote panel (RoomVotePanel's `room-vote-panel`). */
+const votePanel = (page: Page): Locator => page.getByTestId('room-vote-panel').first()
+
+async function closeAnyOpenVote(page: Page): Promise<void> {
+  const open = votePanel(page).getByRole('button', { name: 'Open a room vote' })
+  const close = votePanel(page).getByRole('button', { name: 'Close the vote' })
+  await expect(open.or(close).first()).toBeVisible()
+  if (!(await close.isVisible())) return
+  await close.click()
+  await votePanel(page).getByRole('button', { name: 'Open another vote' }).click()
+  await expect(open).toBeVisible()
+}
+
 test.describe('prioritization and room voting', () => {
   test('board renders for the role', async ({ page }, testInfo) => {
     const role = roleOf(testInfo)
@@ -78,7 +98,7 @@ test.describe('prioritization and room voting', () => {
         await page.goto(site('/prioritization'), { waitUntil: 'domcontentloaded' })
         await settle(page)
         await expect(page.getByRole('heading', { name: 'Prioritization', level: 1 })).toBeVisible()
-        const rows = await page.locator('button[aria-expanded] h3').count()
+        const rows = await page.getByTestId('prioritization-row-toggle').count()
         const empty = await page.getByRole('heading').filter({ hasText: new RegExp(`^(${EMPTY_TITLES.join('|')})$`) }).count()
         recorder.note(`rows: ${rows}, empty state: ${empty > 0}`)
         expect(rows > 0 || empty > 0, 'rows or the empty state').toBe(true)
@@ -96,7 +116,8 @@ test.describe('prioritization and room voting', () => {
         page, role: 'user', theme: 'dark', step: 'p3-vote-unknown-anonymous',
         action: async () => {
           await page.goto(site(`/vote/${UNKNOWN_SESSION}`), { waitUntil: 'domcontentloaded' })
-          await expect(page.getByRole('heading', { name: 'Score this proposal', level: 1 })).toBeVisible()
+          // 5.x: with no form on screen the page is titled "Proposal vote".
+          await expect(page.getByRole('heading', { name: 'Proposal vote', level: 1 })).toBeVisible()
           await expect(page.getByRole('heading', { name: NOT_OPEN })).toBeVisible()
           await expect(page.getByText('This link does not open a vote.', { exact: false })).toBeVisible()
           // Public: no redirect to /login, no form.
@@ -106,7 +127,7 @@ test.describe('prioritization and room voting', () => {
       })
       expect(problems, record.screenshot ?? '').toEqual([])
       // The public submit, with no Authorization header at all.
-      const refused = await fetch(`${apiUrl()}/voting-sessions/${UNKNOWN_SESSION}/submit`, {
+      const refused = await e2eFetch(`${apiUrl()}/voting-sessions/${UNKNOWN_SESSION}/submit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ANY_AXES),
       })
       expect(refused.status).toBe(404)
@@ -115,22 +136,25 @@ test.describe('prioritization and room voting', () => {
     }
   })
 
-  test('room vote: open on the board, ballot from a phone within the cap, cap refusal, close, refusal', async ({ page, browser }, testInfo) => {
+  test('room vote: open on the board, ballot from a phone within the cap, close, refusal, cap refusal', async ({ page, browser }, testInfo) => {
     test.skip(!MOCK, 'writes undeletable ballots: dev mock only (see the header)')
     test.skip(roleOf(testInfo) !== 'admin', 'facilitator flow runs as the admin')
 
     // ── the facilitator opens a vote on the board
     await page.goto(site('/prioritization'), { waitUntil: 'domcontentloaded' })
     await settle(page, 600)
-    await page.locator('button[aria-expanded]').filter({ has: page.locator('h3') }).first().click()
+    await page.getByTestId('prioritization-row-toggle').first().click()
+    await closeAnyOpenVote(page)
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/voting-sessions$/.test(new URL(r.url()).pathname))
-    await page.getByRole('button', { name: 'Open a room vote' }).click()
+    // 5.x: opening asks first ("Open a public room vote?" → "Open the vote").
+    await votePanel(page).getByRole('button', { name: 'Open a room vote' }).click()
+    await dialogNamed(page, 'Open a public room vote?').getByRole('button', { name: 'Open the vote' }).click()
     const createdBody: unknown = await (await created).json()
     const session = sessionOf(createdBody)
     const sessionId = sessionIdOf(createdBody)
     expect(sessionId).not.toBe('')
-    await expect(page.getByRole('img', { name: /QR code opening the anonymous ballot page/ })).toBeVisible()
-    await expect(page.getByText(`0 of ${String(session['ballot_cap'])} ballots in`)).toBeVisible()
+    await expect(votePanel(page).getByRole('img', { name: /QR code opening the anonymous ballot page/ })).toBeVisible()
+    await expect(votePanel(page).getByText(`0 of ${String(session['ballot_cap'])} ballots in`)).toBeVisible()
 
     // ── a phone with NO session submits within the cap
     const phone = await anonymousContext(browser)
@@ -141,20 +165,13 @@ test.describe('prioritization and room voting', () => {
       await submitOnBallotPage(ballot)
       await expect(ballot.getByRole('heading', { name: 'Ballot recorded' })).toBeVisible()
       // The facilitator's count follows (the panel polls GET /voting-sessions/{sid}).
-      await expect(page.getByText(`1 of ${String(session['ballot_cap'])} ballots in`)).toBeVisible({ timeout: 20_000 })
-
-      // ── a session capped at one ballot refuses the second device
-      const cappedBody = (await apiCall('admin', 'POST', '/voting-sessions', { row_id: MOCK_ROW, row_title: 'e2e capped', ballot_cap: 1 })).body
-      expect(sessionOf(cappedBody)['ballot_cap']).toBe(1)
-      const cappedId = sessionIdOf(cappedBody)
-      expect(await voteFromNewDevice(browser, cappedId, 'Ballot recorded'), 'first device').toBe(200)
-      expect(await voteFromNewDevice(browser, cappedId, NOT_OPEN, /already collected as many ballots as it accepts/), 'second device, past the cap').toBe(429)
+      await expect(votePanel(page).getByText(`1 of ${String(session['ballot_cap'])} ballots in`)).toBeVisible({ timeout: 20_000 })
 
       // ── the facilitator closes the vote; the phone is refused
-      await page.getByRole('button', { name: 'Close the vote' }).click()
-      await expect(page.getByText('This vote is closed. No further ballots are accepted.')).toBeVisible()
-      await expect(page.getByRole('img', { name: /QR code/ })).toHaveCount(0)
-      await expect(page.getByRole('button', { name: 'Open another vote' })).toBeVisible()
+      await votePanel(page).getByRole('button', { name: 'Close the vote' }).click()
+      await expect(votePanel(page).getByText('This vote is closed. No further ballots are accepted.')).toBeVisible()
+      await expect(votePanel(page).getByRole('img', { name: /QR code/ })).toHaveCount(0)
+      await expect(votePanel(page).getByRole('button', { name: 'Open another vote' })).toBeVisible()
 
       await ballot.reload({ waitUntil: 'domcontentloaded' })
       await expect(ballot.getByRole('heading', { name: NOT_OPEN })).toBeVisible()
@@ -162,6 +179,15 @@ test.describe('prioritization and room voting', () => {
       const late = await apiCall('user', 'POST', `/voting-sessions/${sessionId}/submit`, ANY_AXES)
       expect(late.status).toBe(409)
       expect(isRecord(late.body) ? late.body['reason'] : undefined).toBe('closed')
+
+      // ── a session capped at one ballot refuses the second device. Opened only now:
+      // a row holds one open vote, and a second open returns the running one.
+      const cappedBody = (await apiCall('admin', 'POST', '/voting-sessions', { row_id: MOCK_ROW, row_title: 'e2e capped', ballot_cap: 1 })).body
+      expect(sessionOf(cappedBody)['ballot_cap']).toBe(1)
+      const cappedId = sessionIdOf(cappedBody)
+      expect(await voteFromNewDevice(browser, cappedId, 'Ballot recorded'), 'first device').toBe(200)
+      expect(await voteFromNewDevice(browser, cappedId, NOT_OPEN, /already collected as many ballots as it accepts/), 'second device, past the cap').toBe(429)
+      expect((await apiCall('admin', 'POST', `/voting-sessions/${cappedId}/close`, {})).status, 'capped session closed').toBeLessThan(300)
     } finally {
       await phone.close()
     }

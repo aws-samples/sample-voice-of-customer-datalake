@@ -25,6 +25,7 @@ import requests
 from botocore.exceptions import ClientError
 
 from shared import design_references as dr
+from shared import timestamps
 from shared.company_context import MAX_SUMMARY_CHARS
 from shared.image_limits import MAX_IMAGE_BYTES
 from shared.prompt_safety import neutralise_tags
@@ -114,7 +115,7 @@ def _upload(world: _World, content_type: str, body: bytes, length: object = None
 
 
 def _summary(deps: dr.ProcessDeps, item: dict) -> str:
-    return dr.extract_reference(deps, item)[0]
+    return dr.extract(deps, item).summary
 
 
 def _message(exc_info: pytest.ExceptionInfo[BaseException]) -> str:
@@ -554,7 +555,7 @@ class TestSummaries:
 def frozen(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     clock = MagicMock()
     clock.now.return_value.isoformat.return_value = NOW
-    monkeypatch.setattr(dr, 'datetime', clock)
+    monkeypatch.setattr(timestamps, 'datetime', clock)
     logger = MagicMock()
     monkeypatch.setattr(dr, 'logger', logger)
     return logger

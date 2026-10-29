@@ -197,6 +197,13 @@ export function ownSourceFiles(program, def) {
   })
 }
 
+/** `node` without the parentheses, `as` and `satisfies` around it (`(x as const)` → `x`). */
+export function unwrapExpression(ts, node) {
+  let out = node
+  while (out && (ts.isParenthesizedExpression(out) || ts.isAsExpression(out) || ts.isSatisfiesExpression(out))) out = out.expression
+  return out
+}
+
 /** Is `rel` (relative to def.base) an entry for module code / exports? */
 export function entryFor(def, rel) {
   return def.entries.find((e) => (e.file ? e.file === rel : e.glob.test(rel)))
@@ -355,6 +362,21 @@ export function detectorMain(tool, { usage, spec = {} }, body) {
       return failed(tool, error)
     }
   }
+}
+
+/**
+ * `main` of a detector that scans one tree: `--root`, `--no-allowlist` and `--<minFlag>` (default `min`), the
+ * vacuity guard on `scan(root).count`, then `finishReport` (stale entries are judged on the real tree only).
+ * `scan(root)` returns `{findings, count, summary}`; `what` names what `count` counts in the exit-2 message.
+ */
+export function scanDetectorMain(tool, { usage, minFlag, min, what }, scan) {
+  return detectorMain(tool, { usage, spec: { root: 'string', 'no-allowlist': 'boolean', [minFlag]: 'number' } }, (args) => {
+    const root = args.root ? resolve(args.root) : REPO_ROOT
+    const { findings, count, summary } = scan(root)
+    const floor = args[minFlag] ?? min
+    if (count < floor) throw new AuditError(`vacuous scan: ${count} ${what} (expected at least ${floor})`)
+    return finishReport(tool, args, findings, { summary, reportStale: !args.root })
+  })
 }
 
 /** Run `main` as the process when its module is the entry script (`import.meta.url`). */

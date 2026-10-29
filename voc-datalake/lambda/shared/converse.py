@@ -296,9 +296,8 @@ def build_blocks_request(
     system_prompt: str,
     max_tokens: int,
     temperature: float | None = None,
-    tool_config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The Converse kwargs for ``messages`` (text, image, document or tool-use turns).
+    """The Converse kwargs for ``messages`` (text, image or document turns).
 
     The shaping every request shares: the scoped invocation id, ``temperature``
     only where the model accepts it, no ``system`` block without a system prompt.
@@ -315,8 +314,6 @@ def build_blocks_request(
     }
     if system_prompt:
         kwargs['system'] = [{'text': system_prompt}]
-    if tool_config is not None:
-        kwargs['toolConfig'] = tool_config
     return kwargs
 
 
@@ -383,31 +380,18 @@ def _build_request(
     return kwargs, explicit_thinking
 
 
-def build_single_turn_request(
-    model_id: str,
-    *,
-    prompt: str,
-    max_tokens: int,
-    system_prompt: str = "",
-    temperature: float | None = DEFAULT_TEMPERATURE,
-    thinking_budget: int = 0,
-    service_tier: str | None = None,
-) -> dict:
-    """The Converse kwargs converse() would put on the wire FIRST for ``model_id``.
+def build_single_turn_request(model_id: str, *, prompt: str, max_tokens: int) -> dict:
+    """The Converse kwargs converse() would put on the wire FIRST for ``model_id`` (no system prompt, no tier).
 
-    Same per-model shaping (temperature dropped where the model rejects it, no
-    explicit thinking budget on adaptive-thinking models, the scoped invocation
-    id, Flex only where the model serves it) for a caller that must send exactly
-    one request to exactly one model — the Settings model test
-    (shared/model_capacity.py), which must never fall back or retry.
+    Same per-model shaping (temperature dropped where the model rejects it, the
+    scoped invocation id) for a caller that must send exactly one request to
+    exactly one model — the Settings model test (shared/model_capacity.py),
+    which must never fall back or retry.
     """
     kwargs, _ = _build_request(
-        prompt=prompt, system_prompt=system_prompt, max_tokens=max_tokens,
-        temperature=temperature, thinking_budget=thinking_budget, model_id=model_id,
+        prompt=prompt, system_prompt='', max_tokens=max_tokens,
+        temperature=DEFAULT_TEMPERATURE, thinking_budget=0, model_id=model_id,
     )
-    tier = _wire_tier(service_tier, model_id)
-    if tier:
-        kwargs['serviceTier'] = {'type': tier}
     return kwargs
 
 
@@ -419,9 +403,6 @@ def converse_blocks(
     system_prompt: str,
     max_tokens: int,
     step_name: str,
-    temperature: float | None = None,
-    tool_config: Mapping[str, Any] | None = None,
-    prior_turns: Sequence[Mapping[str, Any]] = (),
     model_id: str | None = None,
     max_retries: int = DEFAULT_MAX_RETRIES,
     call_label: str = 'the Bedrock call',
@@ -433,13 +414,13 @@ def converse_blocks(
     is shaped by ``build_blocks_request`` and sent through ``bedrock_call_with_retry``.
     Unlike ``converse()`` there is no continuation, no empty-answer retry and no
     fallback model: the caller gets Bedrock's raw response and reads its own blocks
-    (text, ``toolUse``). ``prior_turns`` go before the user turn (a chat history).
+    (text).
     ``client`` is the caller's Bedrock runtime client (each caller keeps its own seam).
     """
-    messages = [*prior_turns, {'role': 'user', 'content': list(content)}]
+    messages = [{'role': 'user', 'content': list(content)}]
     kwargs = build_blocks_request(
         model_id or get_active_model_id(surface), messages=messages, system_prompt=system_prompt,
-        max_tokens=max_tokens, temperature=temperature, tool_config=tool_config,
+        max_tokens=max_tokens,
     )
     return bedrock_call_with_retry(
         lambda: client.converse(**kwargs),

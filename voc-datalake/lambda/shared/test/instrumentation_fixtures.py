@@ -47,6 +47,10 @@ _INSTRUMENTED_WRAPPERS = (
     os.path.join('shared', 'invocation_cost.py'),
 )
 INSTRUMENTED_HANDLER_LAYERS = (*_INSTRUMENTED_WRAPPERS, 'lambda_handler')
+# An API entry point adds `shared.e2e_tag.with_test_run_tag` outermost (`test_run` on e2e traffic).
+_E2E_TAG_WRAPPER = os.path.join('shared', 'e2e_tag.py')
+API_HANDLER_LAYERS = (_E2E_TAG_WRAPPER, *INSTRUMENTED_HANDLER_LAYERS)
+_KNOWN_WRAPPERS = (_E2E_TAG_WRAPPER, *_INSTRUMENTED_WRAPPERS)
 
 
 def handler_layers(function: Callable) -> tuple[str, ...]:
@@ -56,7 +60,7 @@ def handler_layers(function: Callable) -> tuple[str, ...]:
     current = function
     while '__wrapped__' in vars(current):
         filename = current.__code__.co_filename
-        names.append(next((tail for tail in _INSTRUMENTED_WRAPPERS if filename.endswith(tail)), filename))
+        names.append(next((tail for tail in _KNOWN_WRAPPERS if filename.endswith(tail)), filename))
         current = vars(current)['__wrapped__']
     names.append(current.__qualname__)
     return tuple(names)

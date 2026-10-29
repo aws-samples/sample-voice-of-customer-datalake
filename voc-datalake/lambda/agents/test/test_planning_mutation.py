@@ -92,24 +92,27 @@ class TestOnlyTheAgentsOwnBusinessIsReusable:
     def test_a_non_dict_or_a_non_editable_project_is_refused(self, project: object):
         assert planning.reusable(project, AGENT) is False
 
-    @pytest.mark.parametrize('extra', [
-        {'created_by_agent': 'ag_1'},
-        {'owner': {'sub': 'owner-1'}},
-        {'visibility': 'private'},
-    ])
-    def test_each_ground_admits_on_its_own(self, extra: dict):
-        project = {'access': {'can_edit': True}, 'visibility': 'public', **extra}
+    def test_a_project_this_agent_created_is_reusable(self):
+        project = {'access': {'can_edit': True}, 'visibility': 'public', 'created_by_agent': 'ag_1'}
         assert planning.reusable(project, AGENT) is True
 
     @pytest.mark.parametrize('extra', [
         {'created_by_agent': 'ag_2'},
-        {'owner': {'sub': 'owner-2'}},
+        # 5.34.00 live: the owner's own (tester's) project and a private shared one were reused,
+        # their personas replaced. Neither is the agent's business any more.
+        {'owner': {'sub': 'owner-1'}},
+        {'owner': {'sub': 'owner-1'}, 'visibility': 'private'},
+        {'visibility': 'private'},
         {'owner': 'owner-1'},
         {},
     ])
-    def test_another_agent_or_owner_on_a_public_project_is_refused(self, extra: dict):
+    def test_a_project_the_agent_did_not_create_is_refused(self, extra: dict):
         project = {'access': {'can_edit': True}, 'visibility': 'public', **extra}
         assert planning.reusable(project, AGENT) is False
+
+    def test_an_agent_without_an_id_reuses_nothing(self):
+        project = {'access': {'can_edit': True}, 'created_by_agent': ''}
+        assert planning.reusable(project, {'agent_id': ''}) is False
 
     def test_an_empty_owner_sub_never_matches_an_agent_without_one(self):
         project = {'access': {'can_edit': True}, 'visibility': 'public', 'owner': {'sub': ''},
@@ -120,9 +123,9 @@ class TestOnlyTheAgentsOwnBusinessIsReusable:
 
 class TestTheProjectDecisionPrompt:
     def test_the_prompt_lists_each_editable_candidate_line_with_its_clips(self, ask: MagicMock):
-        bare = {'project_id': 'p2', 'access': {'can_edit': True}, 'visibility': 'private'}
+        bare = {'project_id': 'p2', 'access': {'can_edit': True}, 'created_by_agent': 'ag_1'}
         long = {'project_id': 'p3', 'name': 'n' * 130, 'description': 'd' * 310, 'purpose': 'u' * 510,
-                'access': {'can_edit': True}, 'visibility': 'private'}
+                'access': {'can_edit': True}, 'created_by_agent': 'ag_1'}
         hidden = {'project_id': 'p4', 'name': 'Hidden', 'access': {'can_edit': False}}
         _decide(ask, '', [OWN, hidden, bare, long])
         lines = ('- id=p1 | name=Checkout | description=Slow pay | purpose=checkout friction\n'
@@ -229,3 +232,17 @@ class TestTheRevisionBrief:
     def test_no_objection_costs_no_call(self, ask: MagicMock):
         assert planning.revision_brief(AGENT, 'ar_1', 'prfaq', [{'objections': ['  ', 7]}]) == ''
         ask.assert_not_called()
+
+
+class TestASimilarlyNamedProjectOfSomebodyElse:
+    def test_the_models_reuse_of_the_owners_own_project_becomes_a_new_project(self, ask: MagicMock):
+        tester = {'project_id': 'p_tester', 'name': 'E2E full project', 'access': {'can_edit': True},
+                  'owner': {'sub': 'owner-1'}, 'visibility': 'private'}
+        answer = json.dumps({'action': 'reuse', 'project_id': 'p_tester', 'name': 'E2E full project',
+                             'description': 'd', 'purpose': 'p', 'reason': 'similar name'})
+
+        decision = _decide(ask, answer, [tester])
+
+        assert decision['action'] == 'create'
+        assert decision['project_id'] is None
+        assert 'p_tester' not in ask.call_args.args[3]  # never even offered

@@ -22,11 +22,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { describe, it, expect, vi } from 'vitest';
+import { beforeAll, describe, it, expect, vi } from 'vitest';
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { apiStackDependencyProps, pkSkTable, sharedSecretArn } from '../test-support/api-stack-fixture';
+import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 
 const WEBHOOK_PLUGIN_ID = 'webhook_fixture';
 
@@ -83,6 +84,11 @@ function synthWithWebhookPlugin(): Template {
 
 let cached: Template | undefined;
 const template = () => (cached ??= synthWithWebhookPlugin());
+
+// Synthesize once, under the synth timeout, rather than inside the first 5 s case.
+beforeAll(() => {
+  template();
+}, SYNTH_TIMEOUT_MS);
 
 const EnvSchema = z.object({
   Properties: z.object({ Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }) }),

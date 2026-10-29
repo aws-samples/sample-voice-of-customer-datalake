@@ -30,6 +30,9 @@ import * as ri from './reviewImportSchemas'
 import * as reviewImport from './reviewImportExecutors'
 import * as rs from './radarSchemas'
 import * as radar from './radarExecutors'
+import * as pa from './participantSchemas'
+import * as participants from './participantExecutors'
+import { AddParticipantsPreview, CreateParticipantListPreview } from './previews/ParticipantPreviews'
 import { RadarBrandsPreview, RadarScanPreview } from './previews/RadarPreviews'
 import { CreateUsersPreview, ImportReviewsPreview, SourceEnabledPreview } from './previews/BulkAdminPreviews'
 import { PlanCard } from './previews/PlanCard'
@@ -100,6 +103,8 @@ const scraperLink = (id: string): ResultLink => ({ to: `/scrapers#${scraperAncho
 /** Settings → Users, where every user write lands. */
 const USERS_LINK: ResultLink = { to: '/admin?tab=access&section=users', labelKey: 'assistantTools:card.openUsers' }
 /** Administration → Sources → Radar, where the brand list is edited by hand. */
+/** The Participants page (its Lists tab is the default). */
+const PARTICIPANTS_LINK: ResultLink = { to: '/participants', labelKey: 'assistantTools:card.openParticipants' }
 const RADAR_SETTINGS_LINK: ResultLink = { to: '/admin?tab=sources&section=radar', labelKey: 'assistantTools:card.openRadarSettings' }
 /** The set_user_access card names the person only when the model passed their email alias as the username. */
 const userAccessTitle = (username: string, t: Translate) =>
@@ -244,6 +249,17 @@ const DEFINITIONS: readonly WriteToolDefinition[] = [
     name: 'set_user_access', argsSchema: us.setUserAccessArgs, execute: users.setUserAccess,
     title: (a, t) => userAccessTitle(a.username, t), Preview: UserAccessPreview,
     resultLink: () => USERS_LINK,
+  }),
+  // ── Participants (participants pack, every signed-in user, card-only) ──
+  defineWriteTool({
+    name: 'create_participant_list', argsSchema: pa.createParticipantListArgs, execute: participants.createParticipantList,
+    title: (a, t) => t('assistantTools:tools.create_participant_list.titleWith', { name: a.name }), Preview: CreateParticipantListPreview,
+    resultLink: () => PARTICIPANTS_LINK,
+  }),
+  defineWriteTool({
+    name: 'add_participants', argsSchema: pa.addParticipantsArgs, execute: participants.addParticipants,
+    title: (a, t) => t('assistantTools:tools.add_participants.titleWith', { count: pa.uniquePeople(a.people).people.length }),
+    Preview: AddParticipantsPreview, resultLink: () => PARTICIPANTS_LINK,
   }),
   // ── Plans (core pack) ──
   defineWriteTool({

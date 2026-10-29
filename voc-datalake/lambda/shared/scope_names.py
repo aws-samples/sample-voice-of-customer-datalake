@@ -33,7 +33,7 @@ from typing import Any, Final
 
 from shared.category_access import FALLBACK_CATEGORY, CategoryScope, admits
 from shared.category_gate import read_categories_config
-from shared.display_labels import category_label, subcategory_label
+from shared.display_labels import category_label, mapping_entries, subcategory_label
 
 __all__ = [
     'HIDE_ALL',
@@ -50,9 +50,8 @@ _CONNECTORS: Final = frozenset({'and'})
 # Between two words of a name: separators, optionally around an "and".
 _SEPARATOR: Final = r'(?:[\s_/&+,\-]+(?:and[\s_/&+,\-]+)?)'
 
-
-def _entries(raw: object) -> list[Mapping[str, Any]]:
-    return [entry for entry in raw if isinstance(entry, Mapping)] if isinstance(raw, list | tuple) else []
+#: The token lists of an extracted design system (shared/extracted_design.py reads them from here).
+DESIGN_TOKEN_GROUPS: Final = ('colors', 'typography', 'spacing', 'radius')
 
 
 def _name(entry: Mapping[str, Any]) -> str:
@@ -68,7 +67,7 @@ def _category_terms(entry: Mapping[str, Any], config: list[Mapping[str, Any]]) -
     """Every name one category goes by: id, label, and its subcategories' ids and labels."""
     name = _name(entry)
     texts = [name, category_label(name, config)]
-    for sub in _entries(entry.get('subcategories')):
+    for sub in mapping_entries(entry.get('subcategories')):
         sub_name = _name(sub)
         if sub_name:
             texts += [sub_name, subcategory_label(sub_name, name, config)]
@@ -118,7 +117,7 @@ def hidden_names(scope: CategoryScope | None, categories_config: object) -> Hidd
     """
     if scope is None or scope.categories_all:
         return None
-    config = _entries(categories_config)
+    config = mapping_entries(categories_config)
     visible: set[tuple[str, ...]] = set()
     hidden: set[tuple[str, ...]] = set()
     for entry in config:
@@ -148,7 +147,7 @@ def named_category_ids(text: object, categories_config: object) -> list[str]:
     """
     if not isinstance(text, str) or not text.strip():
         return []
-    config = _entries(categories_config)
+    config = mapping_entries(categories_config)
     named: list[str] = []
     for entry in config:
         name = _name(entry)
@@ -194,7 +193,6 @@ def scoped_company_context(company: Mapping[str, Any], hidden: HiddenNames | Non
 
 
 # ── Design system (tokens + guidelines + reference summaries) ────────────────
-_DESIGN_TOKEN_GROUPS: Final = ('colors', 'typography', 'spacing', 'radius')
 
 
 def _names_hidden(entry: object, hidden: HiddenNames) -> bool:
@@ -208,7 +206,7 @@ def _scoped_tokens(tokens: object, hidden: HiddenNames) -> object:
     if not isinstance(tokens, Mapping):
         return tokens
     return {key: [e for e in value if not _names_hidden(e, hidden)]
-            if key in _DESIGN_TOKEN_GROUPS and isinstance(value, list) else value
+            if key in DESIGN_TOKEN_GROUPS and isinstance(value, list) else value
             for key, value in tokens.items()}
 
 

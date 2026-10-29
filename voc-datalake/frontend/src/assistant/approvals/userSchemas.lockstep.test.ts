@@ -12,12 +12,13 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  ACCESS_WILDCARD, CATEGORY_NAME_PATTERN, SOURCE_ID_PATTERN, SPA_USER_LIMITS, USERNAME_PATTERN, USER_ROLES,
+  ACCESS_WILDCARD, CATEGORY_NAME_PATTERN, SPA_USER_LIMITS, USERNAME_PATTERN, USER_ROLES,
   createUserArgs, setUserAccessArgs, updateUserArgs,
 } from './userSchemas'
 import { at } from '@test/defined'
 // Self-contained (zod only, same major), like the connector lockstep's direct import.
 import * as streamSchemas from '../../../../lambda/stream/src/assistant/tools/client/user-schemas'
+import { SOURCE_ID_RE } from '../../api/sourceProfilesApi'
 
 const ROOT = join(__dirname, '../../../..')
 const read = (path: string) => readFileSync(join(ROOT, path), 'utf8')
@@ -53,7 +54,7 @@ describe('user tools: stream ⇄ SPA', () => {
 
   it('the same patterns', () => {
     expect(streamSchemas.USERNAME_PATTERN.source).toBe(USERNAME_PATTERN.source)
-    expect(streamSchemas.SOURCE_ID_PATTERN.source).toBe(SOURCE_ID_PATTERN.source)
+    expect(streamSchemas.SOURCE_ID_PATTERN.source).toBe(SOURCE_ID_RE.source)
     expect(streamSchemas.CATEGORY_NAME_PATTERN.source).toBe(CATEGORY_NAME_PATTERN.source)
   })
 
@@ -84,13 +85,13 @@ describe('user tools: SPA ⇄ the routes', () => {
 
   it('the source id rule is the source profiles\u2019 (Python spells the anchor \\Z)', () => {
     const python = /SOURCE_ID_RE: Final = re\.compile\(r'([^']+)'\)/.exec(sourceProfiles)
-    expect(at(python ?? [], 1)).toBe(SOURCE_ID_PATTERN.source.replace(/\$$/, '\\Z'))
+    expect(at(python ?? [], 1)).toBe(SOURCE_ID_RE.source.replace(/\$$/, '\\Z'))
   })
 
   it('the per-entry caps are the ones the patterns encode', () => {
     expect(USERNAME_PATTERN.source).toContain(`{1,${String(SPA_USER_LIMITS.maxUsernameLength)}}`)
     expect(CATEGORY_NAME_PATTERN.source).toContain(`{1,${String(SPA_USER_LIMITS.maxCategoryNameLength)}}`)
-    expect(SOURCE_ID_PATTERN.source).toContain(`{0,${String(SPA_USER_LIMITS.maxSourceIdLength - 1)}}`)
+    expect(SOURCE_ID_RE.source).toContain(`{0,${String(SPA_USER_LIMITS.maxSourceIdLength - 1)}}`)
   })
 })
 

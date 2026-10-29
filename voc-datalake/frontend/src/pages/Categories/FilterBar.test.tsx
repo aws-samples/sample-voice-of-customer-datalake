@@ -166,22 +166,4 @@ describe('FilterBar', () => {
     await user.click(screen.getByText('Clear filters'))
     expect(onClearFilters).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'click' }))
   })
-
-  it('renders trailing content in the bar when provided', () => {
-    render(
-      <FilterBar
-        {...defaultProps}
-        trailing={<button type="button">Export PDF</button>}
-      />
-    )
-
-    expect(screen.getByRole('button', { name: 'Export PDF' })).toBeInTheDocument()
-    expect(screen.getByTestId('filter-bar-trailing')).toBeInTheDocument()
-  })
-
-  it('omits the trailing container when no trailing content is provided', () => {
-    render(<FilterBar {...defaultProps} />)
-
-    expect(screen.queryByTestId('filter-bar-trailing')).not.toBeInTheDocument()
-  })
 })

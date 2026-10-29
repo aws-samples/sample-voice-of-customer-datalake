@@ -96,11 +96,14 @@ export const PLAN_CONTROL_TOOLS = ['propose_plan', 'cancel_plan'] as const;
  * and its executor derives the de-duplication ids. `save_radar_brands` and
  * `run_radar_scan` call the Radar API, which the plan-step runner may not invoke
  * (voc-plan-step has no RADAR_FUNCTION); the brand list card also re-checks the
- * list it diffed against. They stay ordinary chat writes.
+ * list it diffed against. `create_participant_list` and `add_participants` call the
+ * engagement API, which voc-plan-step may not invoke (no ENGAGEMENT_FUNCTION), and
+ * `add_participants` carries up to 200 people from this chat (owner rule: bulk entry is
+ * one approval card the user reads row by row). They stay ordinary chat writes.
  */
 export const CARD_ONLY_WRITE_TOOLS = [
   'save_brand_settings', 'create_user', 'create_users', 'update_user', 'set_user_access', 'import_reviews',
-  'save_radar_brands', 'run_radar_scan',
+  'save_radar_brands', 'run_radar_scan', 'create_participant_list', 'add_participants',
 ] as const;
 const NOT_A_PLAN_WRITE: ReadonlySet<string> = new Set([...PLAN_CONTROL_TOOLS, ...CARD_ONLY_WRITE_TOOLS]);
 

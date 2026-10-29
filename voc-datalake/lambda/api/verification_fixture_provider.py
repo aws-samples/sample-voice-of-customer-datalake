@@ -30,6 +30,8 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
+from shared.prioritization_keys import PRIORITIZATION_PK
+from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import get_aggregates_table, get_projects_table
 
 REQUEST_SCHEMA = 'verification.fixture.provider.request.v1'
@@ -46,9 +48,7 @@ RENEWAL_MARGIN_SECONDS = 60 * 60
 # an explicit teardown. Do not treat TTL as the cleanup mechanism for this fixture.
 # lib/stacks/core-stack.test.ts pins both halves of that asymmetry.
 TRANSACTION_ATTEMPTS = 3
-PRIORITIZATION_PK = 'PRIORITIZATION'
 
-_JOB_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,128}\Z')
 _SLOT_RE = re.compile(r'^[a-z]\Z')
 _SHA_RE = re.compile(r'^(?:[0-9a-f]{40}|[0-9a-f]{64})\Z')
 _REQUEST_KEYS = {
@@ -103,7 +103,7 @@ def parse_provider_request(raw: Any) -> dict[str, str]:
         'schema': REQUEST_SCHEMA,
         'operation': raw['operation'],
         'capability': CAPABILITY,
-        'verification_job_id': _required_string(raw, 'verification_job_id', _JOB_ID_RE),
+        'verification_job_id': _required_string(raw, 'verification_job_id', LONG_OPAQUE_ID_RE),
         'slot': _required_string(raw, 'slot', _SLOT_RE),
         'tested_sha': _required_string(raw, 'tested_sha', _SHA_RE),
     }

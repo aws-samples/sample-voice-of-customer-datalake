@@ -19,8 +19,8 @@ import clsx from 'clsx'
 import { DEFAULT_IMPORT_SOURCE_ID, importStats } from '../reviewImportSchemas'
 import { CardNote, FieldTable, NothingSavedNote } from './FieldDiff'
 import { Code, Muted } from './ScraperValues'
+import { fieldRow } from './format'
 import type { ReactNode } from 'react'
-import type { FieldRow } from './FieldDiff'
 import type { ImportReviewsArgs } from '../reviewImportSchemas'
 import type { SetSourceEnabledArgs } from '../planSchemas'
 import type { CreateUsersArgs, UserRole } from '../userSchemas'
@@ -31,13 +31,11 @@ const PREVIEW_TEXT_CHARS = 160
 const R = 'preview.reviewImport'
 const U = 'preview.users'
 
-const row = (key: string, label: string, value: ReactNode): FieldRow => ({ key, label, value, compare: key })
-
 function clipped(text: string): string {
   return text.length <= PREVIEW_TEXT_CHARS ? text : `${text.slice(0, PREVIEW_TEXT_CHARS)}\u2026`
 }
 
-function TableHead({ labels }: Readonly<{ labels: readonly string[] }>) {
+export function TableHead({ labels }: Readonly<{ labels: readonly string[] }>) {
   return (
     <thead>
       <tr className="text-left text-muted">
@@ -47,7 +45,7 @@ function TableHead({ labels }: Readonly<{ labels: readonly string[] }>) {
   )
 }
 
-function Cell({ children, className }: Readonly<{ children: ReactNode; className?: string }>) {
+export function Cell({ children, className }: Readonly<{ children: ReactNode; className?: string }>) {
   return <td className={clsx('py-1 pr-2 align-top', className)}>{children}</td>
 }
 
@@ -82,11 +80,11 @@ export function ImportReviewsPreview({ args }: Readonly<{ args: ImportReviewsArg
   const stats = importStats(args)
   const undated = stats.total - stats.dated
   const rows = [
-    row('source_name', t(`${R}.sourceName`), args.source_name),
-    row('source_id', t(`${R}.sourceId`), <Code text={args.source_id ?? DEFAULT_IMPORT_SOURCE_ID} />),
-    row('count', t(`${R}.count`), t(`${R}.countValue`, { count: stats.total })),
-    row('rated', t(`${R}.rated`), t(`${R}.ofTotal`, { n: stats.rated, total: stats.total })),
-    row('dated', t(`${R}.dated`), t(`${R}.ofTotal`, { n: stats.dated, total: stats.total })),
+    fieldRow('source_name', t(`${R}.sourceName`), args.source_name),
+    fieldRow('source_id', t(`${R}.sourceId`), <Code text={args.source_id ?? DEFAULT_IMPORT_SOURCE_ID} />),
+    fieldRow('count', t(`${R}.count`), t(`${R}.countValue`, { count: stats.total })),
+    fieldRow('rated', t(`${R}.rated`), t(`${R}.ofTotal`, { n: stats.rated, total: stats.total })),
+    fieldRow('dated', t(`${R}.dated`), t(`${R}.ofTotal`, { n: stats.dated, total: stats.total })),
   ]
   return (
     <div className="space-y-2">
@@ -143,8 +141,8 @@ export function SourceEnabledPreview({ args }: Readonly<{ args: SetSourceEnabled
     ? <span className="badge badge-ok">{t('preview.sourceSchedule.on')}</span>
     : <span className="badge badge-muted">{t('preview.sourceSchedule.off')}</span>
   const rows = [
-    row('source', t('preview.sourceSchedule.source'), <Code text={args.source} />),
-    row('schedule', t('preview.sourceSchedule.schedule'), state),
+    fieldRow('source', t('preview.sourceSchedule.source'), <Code text={args.source} />),
+    fieldRow('schedule', t('preview.sourceSchedule.schedule'), state),
   ]
   return (
     <div className="space-y-2">

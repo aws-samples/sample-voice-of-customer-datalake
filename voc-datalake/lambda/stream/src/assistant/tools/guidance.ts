@@ -5,6 +5,7 @@
  */
 import { TOOL_PACKS, type ToolPack } from '../contract.js';
 import type { AssistantToolset } from '../types.js';
+import { PRODUCT_INTERVIEW_GUIDANCE } from './product-interview.js';
 
 /**
  * Memory is part of `core`: every run recalls memory (the `<memory>` block)
@@ -51,6 +52,9 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
   core: [
     '- Counts, trends and distributions: get_metrics (exact, whole dataset). Finding and quoting feedback: '
       + 'search_feedback (mode="aggregate" for summaries over every match). One item: get_feedback_item.',
+    '- A period the user names ("last 90 days", "all time") goes into `days` on both tools (0 = all time). '
+      + 'search_feedback samples recent feedback; a search that found nothing older never means there is nothing '
+      + 'older: get_metrics(metric="summary", days) gives the real total for that period.',
     '- Categories (name, description, product) the user can see: list_categories. The user only sees feedback in '
       + 'their categories; never speculate about others.',
     '- Dimensions (product, module, user type, ...) and their values: list_dimensions. Filter feedback and metrics '
@@ -65,7 +69,9 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
     '- Other brands: get_radar with the brand and no view returns everything for the window in one call — call it '
       + 'once. Cite its releases with their ready-made links. When you compare their categories with ours, say when a '
       + 'category has fewer than 10 of their reviews (small_sample: only indicative), and when their reviews fall in few '
-      + 'of our categories, say they make a different kind of product before comparing.',
+      + 'of our categories, say they make a different kind of product before comparing. A new release or news scan '
+      + '(run_radar_scan, admins) is available on the Radar and Data sources pages: elsewhere, offer suggest_navigation to '
+      + '/radar.',
     PLAN_GUIDANCE,
     MEMORY_GUIDANCE,
   ].join('\n'),
@@ -112,11 +118,19 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'separate step: offer run_scraper afterwards, which the user approves on its own.',
     '- Radar (admins) tracks OTHER brands. "Set up Radar for <brand>" is four approval cards in this chat, one after the '
       + 'other (not propose_plan — plans cannot run the Radar writes): (1) get_radar view "brands", then save_radar_brands '
-      + 'with the COMPLETE list plus the new brand and its own domains; (2) create_scraper or create_app_connector with '
+      + 'with the COMPLETE list plus the new brand and its own domains (keep each listed brand\u2019s language, feed_urls, search_terms and exclude_terms); (2) create_scraper or create_app_connector with '
       + 'radar_brand = the key its result returned (find review pages with web_search / find_app_store_app first); '
       + '(3) run_scraper or run_source to bring the reviews in; (4) run_radar_scan {brand} for its releases. Those reviews go '
-      + 'to Radar only, never to our dashboards. Ideas from a brand: get_radar view compare, then view reviews (sentiment '
+      + 'to Radar only, never to our dashboards. To check an import: get_source_run (or the scraper run) for the run, then '
+      + 'get_radar without a brand for each brand’s review total. A brand’s `profile_sources` in view "brands" lists only '
+      + 'older source profiles; connectors and scrapers never appear there, so an empty list does NOT mean a source is '
+      + 'unlinked (list_scrapers shows the radar_brand each scraper, app connector and review page feeds). Ideas from a brand: get_radar view compare, then view reviews (sentiment '
       + 'positive where they beat us, negative for gaps).',
+    '- Radar news and releases (admins): "scan now", "look for news", "what did <brand> ship" or "refresh Radar" is ONE '
+      + 'run_radar_scan card ({brand} for one brand, nothing for all): it files each brand\u2019s news (launches, features, '
+      + 'promotions, partnerships, company news) from web search, Exa (when an admin configured its key) and the brand\u2019s '
+      + 'feeds, takes a few minutes, then get_radar view releases shows them. save_radar_brands can set a brand\u2019s language, '
+      + 'feed URLs, search_terms (its legal name, product names) and exclude_terms. Never answer that you cannot scan; the Radar page also has a Scan now button for admins.',
     '- Importing reviews (admins): when the user pastes reviews or attaches a file of them (CSV, spreadsheet, '
       + 'document, PDF), extract each review verbatim and propose import_reviews {source_name, items: [{text, rating?, '
       + 'author?, created_at?, url?, title?}]} — at most 500 per card, more in several cards; leave out what the source '
@@ -152,6 +166,16 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'or create_workflow. Never propose a definition validate_workflow has not passed. To change a shared template '
       + 'without touching other agents, duplicate_workflow first.',
   ].join('\n'),
+  participants: [
+    '- Participant lists (people the team emails for feedback): list_participant_lists first — use its list_id, never '
+      + 'guess one. To add people (one, or many from a pasted or attached list) propose ONE add_participants {list_id, '
+      + 'people: [{email, name?, company?, title?, tags?}]} with every address exactly as given, up to 200 per card, more '
+      + 'in several cards; never invent an address or a field. The card lists every row; after it executes, report '
+      + 'added, already on the list, created and rejected (with the reason) from its result.',
+    '- No fitting list yet (e.g. "make a beta list and add these"): create_participant_list {name, kind} first, then '
+      + 'add_participants with the list_id its result returned. Removing people, deleting lists and emailing them are '
+      + 'done on the Participants page, not by you.',
+  ].join('\n'),
   company: [
     '- Company context: get_company_context (vision, objectives — the tie-breaker for what serves the company), '
       + 'get_my_context (the user\u2019s own objectives & KPIs), get_design_system (tokens, guidelines, references).',
@@ -172,6 +196,8 @@ export function buildToolGuidance(toolset: AssistantToolset): string {
   const names = new Set(toolset.tools.map((tool) => tool.name));
   const packs = TOOL_PACKS.filter((pack) => toolset.packs.includes(pack));
   const sections = ['## Tools', ...packs.map((pack) => PACK_GUIDANCE[pack])];
+  // Only with the write it ends in: a view-only caller (project writes dropped) is never interviewed.
+  if (names.has('update_product_context')) sections.push(PRODUCT_INTERVIEW_GUIDANCE);
   if (names.has('web_search')) {
     sections.push('- Public web search is on for this conversation: web_search, and cite every web source inline.');
   }

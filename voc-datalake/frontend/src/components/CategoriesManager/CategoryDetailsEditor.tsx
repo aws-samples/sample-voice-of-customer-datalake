@@ -16,13 +16,13 @@ import { UserPlus, X } from 'lucide-react'
 import { api } from '../../api/client'
 import { normalizeOwnerCandidates } from './categoriesSchema'
 import type { Category, CategoryOwner } from './CategoriesManager'
+import { usersKey } from '../../api/queryKeys'
 
 /** Server-side limits (contract C), mirrored so the editor refuses before the route does. */
 const MAX_PRODUCT_LENGTH = 120
 const MAX_OWNERS = 20
 
 /** Same key and fetcher as Settings → Users, so the two share one cached list. */
-const USERS_KEY = ['users'] as const
 
 type CategoryDetails = Pick<Category, 'product' | 'owners'>
 
@@ -38,7 +38,7 @@ function ownerLabel(owner: CategoryOwner): string {
 
 function useOwnerCandidates() {
   return useQuery({
-    queryKey: USERS_KEY,
+    queryKey: usersKey(),
     queryFn: () => api.getUsers(),
     select: (data) => normalizeOwnerCandidates(Array.isArray(data.users) ? data.users : []),
   })

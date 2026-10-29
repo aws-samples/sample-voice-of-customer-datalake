@@ -1,0 +1,278 @@
+{
+  "page": {
+    "title": "Feedback-Boards",
+    "subtitle": "Boards, auf denen Ihre Teams und Kunden Wünsche, Probleme und Feedback sammeln.",
+    "boardSubtitle": "Wünsche, mit den Menschen hinter jedem einzelnen."
+  },
+  "loading": "Wird geladen…",
+  "actions": {
+    "cancel": "Abbrechen",
+    "close": "Schließen",
+    "delete": "Löschen",
+    "save": "Speichern"
+  },
+  "status": {
+    "new": "Neu",
+    "under_review": "In Prüfung",
+    "planned": "Geplant",
+    "declined": "Abgelehnt",
+    "shipped": "Ausgeliefert",
+    "confirmed": "Bestätigt",
+    "fixed": "Behoben",
+    "wont_fix": "Wird nicht behoben",
+    "seen": "Gesehen",
+    "done": "Erledigt"
+  },
+  "impact": {
+    "committed": "Zahlungszusage",
+    "at_risk": "Deal gefährdet",
+    "none": "Keine Umsatzwirkung"
+  },
+  "totals": {
+    "supporters": "Unterstützer",
+    "customers": "Kunden",
+    "committed": "Zugesagt",
+    "atRisk": "Gefährdet",
+    "peopleAffected": "Betroffene Personen",
+    "avgRating": "Durchschnittliche Bewertung",
+    "rating": "{{value}} / 5",
+    "notRated": "Noch nicht bewertet",
+    "boardSummary": "Summen des Boards"
+  },
+  "list": {
+    "label": "Einträge",
+    "intro": "Legen Sie einen Eintrag an oder geben Sie einem, der Ihnen auch wichtig ist, +1.",
+    "search": "Suchen",
+    "searchPlaceholder": "Titel, Beschreibung oder Melder",
+    "statusFilter": "Status",
+    "allStatuses": "Alle Status",
+    "sortBy": "Sortieren nach",
+    "sort": {
+      "newest": "Neueste",
+      "committed": "Zugesagter Umsatz",
+      "at_risk": "Gefährdeter Umsatz",
+      "supporters": "Unterstützer",
+      "people_affected": "Betroffene Personen",
+      "rating": "Bewertung"
+    },
+    "reportedBy": "Gemeldet von {{name}}",
+    "empty": "Noch keine Einträge. Legen Sie den ersten an.",
+    "noMatch": "Kein Wunsch passt zu diesen Filtern.",
+    "loadFailed": "Die Einträge konnten nicht geladen werden.",
+    "notAccepted": "Diese Anmeldung wird für das Board nicht akzeptiert. Melden Sie sich mit einer bestätigten Adresse an, die das Board zulässt."
+  },
+  "new": {
+    "open": "Neuer Wunsch",
+    "title": "Neuer Eintrag",
+    "description": "Alle, die {{board}} nutzen können, sehen ihn mit Ihrem Namen und Ihrer E-Mail.",
+    "impactHeading": "Ihr Kunde und die Umsatzwirkung",
+    "submit": "Eintrag anlegen"
+  },
+  "form": {
+    "title": "Titel",
+    "description": "Beschreibung",
+    "amountHint": "Ganze US-Dollar",
+    "noAmount": "Ohne Umsatzwirkung ist kein Betrag nötig.",
+    "name": "Ihr Name",
+    "errors": {
+      "titleRequired": "Geben Sie dem Wunsch einen Titel.",
+      "descriptionRequired": "Beschreiben Sie, was der Kunde braucht.",
+      "customerRequired": "Nennen Sie den Kunden.",
+      "nameRequired": "Geben Sie Ihren Namen an.",
+      "amountRequired": "Geben Sie den Betrag in US-Dollar ein.",
+      "amountTooLarge": "Dieser Betrag ist größer, als das Board zulässt.",
+      "contactEmail": "Geben Sie eine gültige E-Mail-Adresse ein oder lassen Sie das Feld leer.",
+      "descriptionRequiredService": "Beschreiben Sie, was passiert ist und was der Kunde gesehen hat."
+    },
+    "requiredLabel": "{{label}} (Pflichtfeld)",
+    "optionalLabel": "{{label}} (optional)",
+    "choose": "Auswählen...",
+    "notSet": "Nicht angegeben",
+    "fieldErrors": {
+      "required": "Dieses Feld ist erforderlich.",
+      "too_long": "Das ist länger, als das Board zulässt.",
+      "invalid_choice": "Wählen Sie eine der Optionen.",
+      "invalid_number": "Geben Sie eine ganze Zahl ein.",
+      "out_of_range": "Diese Zahl liegt außerhalb des zulässigen Bereichs.",
+      "invalid_email": "Geben Sie eine gültige E-Mail-Adresse ein.",
+      "invalid_url": "Geben Sie einen vollständigen https://-Link ein."
+    },
+    "descriptionHint": {
+      "sales": "Was der Kunde braucht und warum.",
+      "service": "Was passiert ist und was der Kunde gesehen hat.",
+      "beta": "Was Sie versucht haben und was passiert ist.",
+      "blank": "Alles, was anderen beim Verständnis hilft."
+    }
+  },
+  "detail": {
+    "reported": "Gemeldet von {{name}} ({{email}})",
+    "reporter": "Melder",
+    "copyLink": "Link kopieren",
+    "copied": "Link kopiert",
+    "edit": "Bearbeiten",
+    "supports": "Unterstützer",
+    "plusOne": "+1 mit meinem Kunden",
+    "addSupport": "Mein +1 hinzufügen",
+    "contact": "Kontakt: {{email}}",
+    "editSupport": "Unterstützung für {{customer}} bearbeiten",
+    "deleteSupport": "Unterstützung für {{customer}} löschen",
+    "deleteSupportTitle": "Diese Unterstützung löschen?",
+    "deleteSupportMessage": "Die Unterstützung für {{customer}} und ihr Betrag fallen aus den Summen heraus.",
+    "loadFailed": "Dieser Wunsch konnte nicht geladen werden.",
+    "supportsCount_one": "{{count, number}} Unterstützung",
+    "supportsCount_other": "{{count, number}} Unterstützungen",
+    "plusOneService": "Ich bin auch betroffen",
+    "plusOneOther": "+1",
+    "alreadySupporting": "Sie unterstützen diese Anfrage.",
+    "editMySupport": "Mein +1 bearbeiten"
+  },
+  "admin": {
+    "title": "Verwaltung",
+    "status": "Status",
+    "delete": "Wunsch löschen",
+    "deleteTitle": "Diesen Wunsch löschen?",
+    "deleteMessage": "„{{title}}“ und alle Unterstützungen werden für alle gelöscht."
+  },
+  "promote": {
+    "title": "Zum Projekt machen",
+    "hint": "Alle Unterstützer und Kundenkontakte kommen auf eine mit dem Projekt verknüpfte Teilnehmerliste, damit Sie sie per E-Mail um Feedback bitten können.",
+    "project": "Projekt",
+    "pickProject": "Projekt auswählen",
+    "loadingProjects": "Projekte werden geladen…",
+    "newProject": "Neues Projekt…",
+    "newProjectName": "Name des neuen Projekts",
+    "submit": "Übernehmen",
+    "skippedRow": "{{email}}: {{reason}}",
+    "reasons": {
+      "external_not_allowed": "außerhalb der Firmendomains, und externe Personen sind nicht erlaubt",
+      "invalid_email": "keine gültige E-Mail-Adresse",
+      "unsubscribed": "hat sich von Teilnehmer-E-Mails abgemeldet"
+    },
+    "done_one": "{{count, number}} Person zu „{{list}}“ hinzugefügt.",
+    "done_other": "{{count, number}} Personen zu „{{list}}“ hinzugefügt.",
+    "skipped_one": "{{count, number}} E-Mail wurde übersprungen:",
+    "skipped_other": "{{count, number}} E-Mails wurden übersprungen:"
+  },
+  "errors": {
+    "generic": "Das hat nicht geklappt. Bitte erneut versuchen.",
+    "forbidden": "Dazu sind Sie nicht berechtigt.",
+    "notFound": "Dieser Eintrag existiert nicht mehr.",
+    "conflict": "Jemand hat das gleichzeitig geändert. Bitte erneut versuchen.",
+    "throttled": "Gerade zu viele Anfragen. Warten Sie einen Moment und versuchen Sie es erneut.",
+    "rateLimited": "Sie haben das heutige Limit für Beiträge auf diesem Board erreicht. Versuchen Sie es morgen erneut.",
+    "slugTaken": "Ein anderes Board nutzt diesen Linknamen bereits.",
+    "boardNotEmpty": "Dieses Board hat noch Einträge. Löschen Sie es zusammen mit seinen Einträgen oder archivieren Sie es.",
+    "statusInUse": "Einträge nutzen diesen Status noch. Verschieben Sie sie zuerst in einen anderen Status.",
+    "alreadySupported": "Sie unterstützen das bereits. Bearbeiten Sie stattdessen Ihr +1."
+  },
+  "auth": {
+    "title": "Beim Feature-Wunsch-Board anmelden",
+    "intro": "Geben Sie Ihre geschäftliche E-Mail ein. Wir senden Ihnen einen Link und einen Einmalcode.",
+    "email": "Geschäftliche E-Mail",
+    "sendLink": "Anmeldelink senden",
+    "checkEmail": "Prüfen Sie {{email}}: Öffnen Sie den Link oder geben Sie hier den Code aus der E-Mail ein.",
+    "secondCode": "Ihre E-Mail-Adresse ist bestätigt. Wir haben einen weiteren Code an {{email}} gesendet, um Sie anzumelden.",
+    "code": "Code aus der E-Mail",
+    "signIn": "Anmelden",
+    "useAnotherEmail": "Andere E-Mail verwenden",
+    "otherBrowser": "Dieser Link wurde in einem anderen Browser geöffnet als dem, der ihn angefordert hat. Geben Sie den Code dort ein oder senden Sie von hier einen neuen Link.",
+    "errors": {
+      "domain_not_allowed": "Die Domain dieser E-Mail ist für das Board nicht zugelassen. Verwenden Sie Ihre Firmen-E-Mail.",
+      "wrong_code": "Der Code stimmt nicht. Prüfen Sie die E-Mail und versuchen Sie es erneut.",
+      "expired": "Diese Anmeldung ist abgelaufen. Senden Sie einen neuen Link.",
+      "tooManyAttempts": "Zu viele Versuche. Warten Sie einige Minuten und versuchen Sie es erneut.",
+      "no_session": "In diesem Browser wartet keine Anmeldung. Geben Sie den Code dort ein, wo Sie ihn angefordert haben, oder senden Sie einen neuen Link.",
+      "invalid_email": "Geben Sie eine gültige E-Mail-Adresse ein.",
+      "unknown": "Die Anmeldung hat nicht geklappt. Versuchen Sie es gleich noch einmal."
+    }
+  },
+  "board": {
+    "title": "Feedback-Boards",
+    "titleWithBrand": "{{brand}} Feedback-Boards",
+    "signOut": "Abmelden",
+    "notEnabledTitle": "Feedback-Boards sind nicht aktiviert",
+    "notEnabled": "Diese Bereitstellung hat keine Board-Anmeldung. Wenn Sie die App nutzen, melden Sie sich dort an und öffnen Sie Feedback-Boards.",
+    "notEnabledDev": "Lokale Entwicklung ohne Board-Pool: Der Mock kann niemanden bei Cognito anmelden. Fügen Sie public/config.json einen board-Block hinzu, um einen echten Pool zu testen, oder nutzen Sie die Seite Feedback-Boards in der App mit dem Mock."
+  },
+  "fields": {
+    "customer": "Kunde",
+    "deal": "Deal",
+    "impact": "Umsatzwirkung",
+    "amount_usd": "Betrag (USD)",
+    "contact_email": "E-Mail des Kundenkontakts",
+    "kind": "Art",
+    "severity": "Schweregrad",
+    "reference": "Buchungs- oder Bestellnummer",
+    "steps": "Schritte zum Nachstellen",
+    "affected_count": "Betroffene Personen",
+    "area": "Bereich",
+    "outcome": "Was ist passiert",
+    "rating": "Bewertung (1-5)",
+    "link": "Link (https)",
+    "note": "Notiz"
+  },
+  "choices": {
+    "kind": {
+      "bug": "Fehler",
+      "complaint": "Beschwerde",
+      "missing_feature": "Fehlende Funktion",
+      "question": "Frage"
+    },
+    "severity": {
+      "low": "Niedrig",
+      "medium": "Mittel",
+      "high": "Hoch",
+      "critical": "Kritisch"
+    },
+    "outcome": {
+      "works": "Es funktioniert",
+      "broken": "Es ist defekt",
+      "confusing": "Es ist verwirrend"
+    }
+  },
+  "templates": {
+    "sales": "Feature-Wünsche aus dem Vertrieb",
+    "service": "Kundenservice-Probleme",
+    "beta": "Beta-Feedback",
+    "blank": "Leer"
+  },
+  "boards": {
+    "listLabel": "Boards",
+    "audienceLabel": "Wer es nutzen kann",
+    "requestsLabel": "Einträge",
+    "audience": {
+      "company": "Personen in Ihrem Unternehmen",
+      "list": "Eingeladene Domains und Personen",
+      "listCounts": "{{domains}} Domains, {{people}} Personen",
+      "anyone": "Alle mit bestätigter E-Mail"
+    },
+    "open": "Öffnen",
+    "openBoard": "{{name}} öffnen",
+    "copyBoardLink": "Link zu {{name}} kopieren",
+    "linkCopied": "Link kopiert",
+    "copyFailed": "Der Link konnte nicht kopiert werden.",
+    "edit": "Bearbeiten",
+    "editBoard": "{{name}} bearbeiten",
+    "deleteBoard": "{{name}} löschen",
+    "deleteTitle": "Dieses Board löschen?",
+    "deleteMessage": "„{{name}}“ wird für alle gelöscht. Das lässt sich nicht rückgängig machen.",
+    "deleteWithRequestsMessage_one": "„{{name}}“, sein {{count, number}} Eintrag und jedes +1 darauf werden endgültig gelöscht. Das lässt sich nicht rückgängig machen. Projekte, die bereits aus seinen Einträgen erstellt wurden, bleiben erhalten.",
+    "deleteWithRequestsMessage_other": "„{{name}}“, seine {{count, number}} Einträge und jedes +1 darauf werden endgültig gelöscht. Das lässt sich nicht rückgängig machen. Projekte, die bereits aus seinen Einträgen erstellt wurden, bleiben erhalten.",
+    "deleteWithRequestsMessageStale": "„{{name}}“ hat inzwischen Einträge. Das Board, alle seine Einträge und jedes +1 darauf werden endgültig gelöscht. Das lässt sich nicht rückgängig machen. Projekte, die bereits aus seinen Einträgen erstellt wurden, bleiben erhalten.",
+    "deleteConfirmNameLabel": "Geben Sie zur Bestätigung den Namen des Boards ein",
+    "deleteProgress_one": "{{deleted, number}} von {{count, number}} Eintrag gelöscht…",
+    "deleteProgress_other": "{{deleted, number}} von {{count, number}} Einträgen gelöscht…",
+    "deleteIncomplete": "Das Board ist noch nicht vollständig gelöscht.",
+    "deleteResumeHint": "Klicken Sie erneut auf Löschen, um dort weiterzumachen, wo es aufgehört hat.",
+    "archived": "Archiviert",
+    "configure": "Boards konfigurieren",
+    "emptyTitle": "Noch keine Boards",
+    "empty": "Mit Ihnen wurde noch kein Board geteilt.",
+    "emptyAdmin": "Legen Sie ein Board unter <admin>Administration, Datenschutz & Zugriff, Boards</admin> an.",
+    "loadFailed": "Die Boards konnten nicht geladen werden.",
+    "notFoundTitle": "Board nicht gefunden",
+    "notFound": "Dieses Board existiert nicht oder wurde nicht mit Ihnen geteilt.",
+    "backToBoards": "Zurück zu den Boards",
+    "standaloneIntro": "Die Boards, die Sie nutzen können. Öffnen Sie eines, um einen Eintrag anzulegen oder +1 zu geben."
+  }
+}

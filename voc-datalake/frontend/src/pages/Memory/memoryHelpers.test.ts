@@ -25,6 +25,12 @@ describe('detailsToHide (mirrors memory_policy.redact_personal_data)', () => {
     expect(detailsToHide('Since 2026-10-08 12:30, version 4.2.1, 1 200 users')).toStrictEqual([])
   })
 
+  it('keeps a 13-digit timestamp or order id, as the server does, but names a card number', () => {
+    expect(detailsToHide('Export job 1729856000008 failed; order 9900000000002 too')).toStrictEqual([])
+    expect(detailsToHide('Card 4111111111111111 was pasted')).toStrictEqual(['4111111111111111'])
+    expect(detailsToHide('Ref 40000000000002 only')).toStrictEqual([])
+  })
+
   it('knows a stored statement that had something hidden', () => {
     expect([wasRedacted('Call [redacted]'), wasRedacted('Call us')]).toStrictEqual([true, false])
   })

@@ -3,8 +3,5 @@ pydantic>=2.12.0
 requests>=2.31.0
 # Exact pin: an open range let CI resolve a newer LoggerProtocol than local (pyright drift).
 tenacity==9.2.1
-# RSA-SHA1 signing for CloudFront signed URLs (shared/cloudfront_signing.py).
-# botocore ships the CloudFrontSigner but not the crypto primitive, and
-# kms:Sign cannot substitute — it offers no SHA-1 variant. Native wheels exist
-# for manylinux aarch64, so build-layers.sh needs no change.
-cryptography>=44.0.0
+# cryptography (CloudFront URL signing) is NOT here: lambda/layers/signing-deps, attached only to the
+# functions that can sign (lib/utils/dependency-layers.ts).

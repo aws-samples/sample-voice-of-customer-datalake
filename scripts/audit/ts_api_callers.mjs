@@ -3,7 +3,7 @@
 /**
  * ts_api_callers — SPA API client functions (`frontend/src/api/*.ts`) only tests call.
  *
- * Pattern (deadts.md §1a: `api.getPersonas`, 18 `api.*` project delegates, `scrapersApi.getScraperRuns`,
+ * Pattern (the 5.28 dead-TS audit: `api.getPersonas`, 18 `api.*` project delegates, `scrapersApi.getScraperRuns`,
  * `memoryApi.update`, `reprocessApi.get`, `workflowsApi.importDefinition`): a request function whose
  * product caller was removed lives on because its spec still calls it, and it keeps a backend route,
  * a dev-mock route and a `mock-coverage.json` entry alive with it. This is the SPA side of the route

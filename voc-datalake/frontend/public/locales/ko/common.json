@@ -16,6 +16,7 @@
     "prioritization": "우선순위",
     "problems": "문제 분석",
     "project": "프로젝트",
+    "board": "보드",
     "projects": "프로젝트",
     "scrapers": "데이터 소스",
     "memory": "메모리",
@@ -27,7 +28,9 @@
     "account": "계정",
     "workflows": "워크플로 목록",
     "workflow": "워크플로",
-    "radar": "레이더"
+    "radar": "레이더",
+    "featureRequests": "피드백 보드",
+    "participants": "참여자"
   },
   "cancel": "취소",
   "configureBrand": "브랜드 설정",
@@ -85,7 +88,9 @@
     "memory": "메모리",
     "company": "회사",
     "admin": "관리",
-    "connect": "MCP 및 스킬"
+    "connect": "MCP 및 스킬",
+    "featureRequests": "피드백 보드",
+    "participants": "참여자"
   },
   "partialCountsHint": "근사치: 전체 기간을 읽을 수 없어 집계는 최소값입니다",
   "problemAnalysisPage": {
@@ -112,7 +117,8 @@
     "collapseSidebar": "사이드바 접기",
     "expandSidebar": "사이드바 펼치기",
     "openMenu": "메뉴 열기",
-    "label": "기본 사이드바"
+    "label": "기본 사이드바",
+    "mainNav": "주 메뉴"
   },
   "profileMenu": {
     "trigger": "{{name}}님의 계정 메뉴",
@@ -129,6 +135,8 @@
     "48hFull": "48시간",
     "7d": "7일",
     "7dFull": "7일",
+    "14d": "14일",
+    "14dFull": "14일",
     "apply": "적용",
     "cancel": "취소",
     "clear": "지우기",
@@ -301,6 +309,7 @@
     "revokedGroup": "폐기됨 ({{count, number}})",
     "revokeBody": "“{{name}}”은(는) 이를 사용하는 모든 어시스턴트에서 즉시 작동을 멈춥니다. 되돌릴 수 없습니다.",
     "revoke": "폐기",
+    "revokeNamed": "토큰 “{{name}}” 취소",
     "toggleAudit": "{{name}} 활동 보기",
     "status": {
       "active": "활성",
@@ -332,5 +341,46 @@
   "header": {
     "title": "고객의 소리",
     "subtitle": "통합 고객 피드백 인텔리전스 플랫폼"
+  },
+  "builtInSources": {
+    "webscraper": "웹 스크레이퍼",
+    "manual_import": "수동 가져오기",
+    "s3_import": "S3 가져오기",
+    "feedback_form": "피드백 양식",
+    "prototype_feedback": "프로토타입 피드백",
+    "github_issues": "GitHub 이슈",
+    "app_reviews_ios": "iOS 앱 리뷰",
+    "app_reviews_android": "Android 앱 리뷰",
+    "synthetic_reviews": "합성 리뷰",
+    "web_reviews": "웹 리뷰",
+    "email_intake": "이메일 받은편지함"
+  },
+  "feedbackDimension": {
+    "label": "피드백 유형",
+    "description": "리뷰가 어떤 종류의 피드백인지: 모든 소스에서 모델이 정하는 주요 유형 하나입니다."
+  },
+  "feedbackTypes": {
+    "bug": "버그",
+    "service_failure": "서비스 장애",
+    "feature_request": "기능 요청",
+    "usability": "사용성",
+    "performance": "성능",
+    "pricing_billing": "가격 및 청구",
+    "support_experience": "지원 경험",
+    "praise": "칭찬",
+    "question": "질문",
+    "other": "기타"
+  },
+  "feedbackTypeDescriptions": {
+    "bug": "무언가 고장 났거나 잘못됨: 오류, 충돌, 잘못된 데이터",
+    "service_failure": "서비스가 제공되지 않음: 중단, 배송 또는 결제 실패, 로그인 불가",
+    "feature_request": "새로운 기능이나 변경을 요청함",
+    "usability": "작동하지만 헷갈리거나 사용하기 어려움",
+    "performance": "작동하지만 느림(충돌은 버그)",
+    "pricing_billing": "가격, 수수료, 청구, 환불, 송장",
+    "support_experience": "고객 지원이나 직원이 고객을 대한 방식",
+    "praise": "고칠 문제가 없는 긍정적인 피드백",
+    "question": "작동 방식을 물어봄",
+    "other": "위의 어느 것도 아님"
   }
 }

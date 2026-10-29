@@ -25,6 +25,9 @@
  */
 import { ApiError } from '../lib/errors'
 
+/** 409: the write lost a race (a stale revision, a run already live). */
+export const HTTP_CONFLICT = 409
+
 /** The shape `fetchApi` throws for a non-OK response, and nothing else. */
 const API_ERROR_MESSAGE = /^API Error: (\d{3})$/
 

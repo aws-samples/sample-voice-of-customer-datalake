@@ -12,8 +12,9 @@ without a failing test. Pinned here, as literals:
   literally `False` (absent, `None`, `0` or a non-dict `personas` = allowed);
 * otherwise it POSTs once, as the caller, the agent's category scope, `days`
   and `persona_count` from the node params only when they are ints (else 30
-  and 3), the first 2000 characters of the envelope, and `generate_avatars`
-  true only for a literal `True`; it answers the pending result whose summary
+  and 3), the first 2000 characters of the envelope, `generate_avatars`
+  true unless the param is a literal `False` (the product default), and
+  `keep_existing_personas` always (an agent never removes personas); it answers the pending result whose summary
   is `Persona generation started`; without a project it refuses before any POST;
 * `finish` keeps only the string `persona_id`s of dict entries, refuses a job
   that yields none, and files the new ids after the ones already on the run,
@@ -59,7 +60,8 @@ def node_ctx(*, params: dict[str, Any] | None = None, personas: Any = None, proj
 
 def body(**overrides: Any) -> dict:
     return {'categories': ['checkout', 'shipping'], 'days': 30, 'persona_count': 3,
-            'custom_instructions': ENVELOPE, 'generate_avatars': False, **overrides}
+            'custom_instructions': ENVELOPE, 'generate_avatars': True,
+            'keep_existing_personas': True, **overrides}
 
 
 def posted_body(fake: MagicMock) -> dict:
@@ -105,9 +107,9 @@ class TestTheGenerateRequest:
         assert posted_body(fake) == body()
 
     def test_int_params_are_forwarded(self):
-        ctx, fake = node_ctx(params={'count': 5, 'days': 7, 'generate_avatars': True})
+        ctx, fake = node_ctx(params={'count': 5, 'days': 7, 'generate_avatars': False})
         generate_personas.start(ctx)
-        assert posted_body(fake) == body(days=7, persona_count=5, generate_avatars=True)
+        assert posted_body(fake) == body(days=7, persona_count=5, generate_avatars=False)
 
     @pytest.mark.parametrize('value', ['5', 7.5, None, [5]])
     def test_non_int_params_fall_back_to_the_defaults(self, value: Any):
@@ -115,11 +117,22 @@ class TestTheGenerateRequest:
         generate_personas.start(ctx)
         assert posted_body(fake) == body()
 
-    @pytest.mark.parametrize('value', [1, 'yes', False, None])
-    def test_avatars_need_a_literal_true(self, value: Any):
+    @pytest.mark.parametrize('value', [1, 'yes', True, None, 0])
+    def test_avatars_are_on_unless_the_param_is_a_literal_false(self, value: Any):
+        # 5.34.00: agent personas never had images (the node defaulted to False).
         ctx, fake = node_ctx(params={'generate_avatars': value})
         generate_personas.start(ctx)
+        assert posted_body(fake)['generate_avatars'] is True
+
+    def test_avatars_off_only_for_a_literal_false(self):
+        ctx, fake = node_ctx(params={'generate_avatars': False})
+        generate_personas.start(ctx)
         assert posted_body(fake)['generate_avatars'] is False
+
+    def test_the_built_in_max_new_param_sets_the_count(self):
+        ctx, fake = node_ctx(params={'max_new': 2})
+        generate_personas.start(ctx)
+        assert posted_body(fake)['persona_count'] == 2
 
     def test_the_envelope_is_cut_at_2000_characters(self):
         ctx, fake = node_ctx(envelope='a' * 1999 + 'bc')

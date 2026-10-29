@@ -17,7 +17,7 @@ import { THEMES, contrastRatio as contrast, indexCss as css, themeHex as token }
 const MIN_NON_TEXT_CONTRAST = 3
 
 /** Every surface a control is placed on: the page, panels, cards, dialogs and a hovered row. */
-const SURFACES = ['bg', 'bg-accent', 'bg-elevated', 'bg-hover', 'card', 'panel', 'panel-strong'] as const
+const SURFACES = ['bg', 'bg-accent', 'bg-elevated', 'bg-hover', 'card', 'panel'] as const
 
 /** The body of the first rule whose selector list starts with `selector`. */
 function ruleBody(selector: string): string {

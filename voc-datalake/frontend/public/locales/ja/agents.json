@@ -206,6 +206,7 @@
       "produced": "作成したもの",
       "producedNothing": "まだありません。",
       "anArtifact": "新しいドキュメント",
+      "artifactTitled": "{{what}}：{{title}}",
       "inProject": "{{name}} 内",
       "needsYou": "あなたに必要なこと",
       "needsDecision": "上のカードで次にどうするか決めてください。",
@@ -332,10 +333,22 @@
       "arrowTargetNone": "ステップを選択…",
       "joinLoop": "ループ"
     },
+    "issues": {
+      "instructionsRequired": "このステップには指示が必要です。何をするかを書いてください。",
+      "titleRequired": "このステップにタイトルを付けてください。",
+      "duplicateStep": "2 つのステップが同じ ID を使っています。片方を削除して追加し直してください。",
+      "duplicateArrow": "2 本の矢印が同じ ID を使っています。片方を削除して引き直してください。",
+      "reviewTarget": "このレビューで確認する対象を選んでください。",
+      "endStatus": "ここで実行をどう終えるかを選んでください。"
+    },
     "params": {
       "target": "対象",
       "targetAny": "最後に生成されたもの",
       "maxNew": "新規ペルソナの最大数",
+      "generateAvatars": "ペルソナごとに肖像画像を作成する",
+      "maxWords": "文字量の目安（語数）",
+      "maxWordsNone": "制限なし",
+      "maxWordsHint": "文書全体をおおよそこの語数に収めます。空欄の場合、指示で短い文書が求められていれば約 1,200 語、それ以外は制限なしです。",
       "useWebSearch": "Web検索を使用",
       "useWebSearchHint": "1回の実行あたり{{limit, number}}件のWeb検索上限に含まれます。",
       "endStatus": "実行の終了ステータス"
@@ -498,6 +511,18 @@
   "workflowPage": {
     "title": "ワークフロー",
     "subtitle": "ライブラリのワークフローです。これを実行するエージェントは、最新の保存済みリビジョンを使用します。"
+  },
+  "validation": {
+    "scope": "カテゴリまたはサブカテゴリを 1 つ以上選ぶか、すべてのカテゴリを対象にしてください。",
+    "name": "エージェント名は {{max, number}} 文字以内で入力してください。",
+    "description": "説明は {{max, number}} 文字以内です。",
+    "instructions": "指示は {{max, number}} 文字以内です。",
+    "triggers": "トリガーを確認してください。各値は範囲内の整数で、カスタムスケジュールには cron 式が必要です。",
+    "personas": "固定ペルソナは {{max, number}} 件まで選べます。",
+    "models": "各ロールに利用可能なモデルか既定値を選んでください。",
+    "workflow": "ワークフローを選んでください。",
+    "budget": "予算を確認してください。上限は範囲内の整数である必要があります。",
+    "other": "無効な設定があります。確認してもう一度お試しください。"
   },
   "decision": {
     "title": "この実行にはあなたの判断が必要です",

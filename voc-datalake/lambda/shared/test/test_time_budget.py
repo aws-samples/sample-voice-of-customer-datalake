@@ -1,7 +1,7 @@
 """Tests for shared/time_budget.py — the wall-clock bound on per-day walks."""
 from datetime import UTC, datetime
 
-from shared.time_budget import WalkBudget, budgeted_days
+from shared.time_budget import ROW_CAP_PARTIAL_REASON, WalkBudget, budgeted_days
 
 TODAY = datetime(2026, 3, 10, tzinfo=UTC)
 
@@ -67,3 +67,36 @@ def test_zero_days_yields_nothing():
 
     assert list(budgeted_days(0, budget, today=TODAY)) == []
     assert budget.stopped is False
+
+
+def test_a_row_cap_stop_says_row_cap_not_time_budget():
+    budget = WalkBudget(seconds=10, clock=FakeClock())
+    budget.record_stop('2026-03-09', ROW_CAP_PARTIAL_REASON)
+
+    assert budget.stopped is True
+    assert budget.partial_fields() == {'partial_reason': 'row_cap', 'scanned_through': '2026-03-09'}
+
+
+def test_a_stop_that_read_no_day_in_full_omits_the_date():
+    budget = WalkBudget(seconds=10, clock=FakeClock())
+    budget.record_stop(None, ROW_CAP_PARTIAL_REASON)
+
+    assert budget.stopped is True
+    assert budget.partial_fields() == {'partial_reason': 'row_cap'}
+
+
+def test_a_stop_that_read_no_day_in_full_beats_any_date_and_keeps_its_reason():
+    budget = WalkBudget(seconds=10, clock=FakeClock())
+    budget.record_stop('2026-03-09')
+    budget.record_stop(None, ROW_CAP_PARTIAL_REASON)
+    budget.record_stop('2026-03-10')
+
+    assert budget.partial_fields() == {'partial_reason': 'row_cap'}
+
+
+def test_the_least_covered_stop_brings_its_own_reason():
+    budget = WalkBudget(seconds=10, clock=FakeClock())
+    budget.record_stop('2026-03-08', ROW_CAP_PARTIAL_REASON)
+    budget.record_stop('2026-03-09')
+
+    assert budget.partial_fields() == {'partial_reason': 'time_budget', 'scanned_through': '2026-03-09'}

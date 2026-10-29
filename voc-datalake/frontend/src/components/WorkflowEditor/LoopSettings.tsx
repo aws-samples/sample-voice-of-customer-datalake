@@ -15,6 +15,7 @@
 import { useState } from 'react'
 import { Plus, Repeat } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { workflowIssueText } from './workflowIssueText'
 import { API_WORKFLOW_LIMITS, WORKFLOW_LOOP_UNTIL } from '../../api/workflowsApi'
 import { addToLoop, loopIndexOf, removeFromLoop, removeLoop, updateLoop } from './model'
 import { clampRounds, loopIssues } from './loopFields'
@@ -84,7 +85,7 @@ export function LoopForm({ definition, index, readOnly, onChange, issues = [], o
       </p>
       {mine.length > 0 && (
         <ul className="rounded-md border border-danger/30 bg-danger-subtle px-3 py-2 text-[12px] text-danger space-y-0.5" aria-live="polite">
-          {mine.map((message) => <li key={message}>{message}</li>)}
+          {mine.map((message) => <li key={message}>{workflowIssueText(t, message)}</li>)}
         </ul>
       )}
       <LabeledField label={t('editor.fields.until')} hint={t(`loopUntilHint.${loop.until}`)}>

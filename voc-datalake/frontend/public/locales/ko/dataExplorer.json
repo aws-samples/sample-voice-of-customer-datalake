@@ -49,7 +49,9 @@
     "noFiles": "파일을 찾을 수 없음",
     "view": "보기",
     "path": "폴더 경로",
-    "noFilesHint": "이 폴더는 비어 있습니다. 여기에서 파일을 만들거나 데이터 소스에서 데이터를 수집하세요."
+    "noFilesHint": "이 폴더는 비어 있습니다. 여기에서 파일을 만들거나 데이터 소스에서 데이터를 수집하세요.",
+    "personaFolder": "페르소나 {{n, number}} · {{date}}",
+    "personaFolderDated": "페르소나 · {{date}}"
   },
   "tabs": {
     "categories": "카테고리",

@@ -114,3 +114,27 @@ export async function adoptServerSession(threadId: string): Promise<void> {
   applyRecord(threadId, record)
   if (isLiveServerRun(record)) void followServerRun(threadId)
 }
+
+/** How long a stopped run is waited for: the server polls the cancel marker every 1.5 s. */
+const STOP_SETTLE_BOUND_MS = 30_000
+
+/**
+ * After Stop: the server is cancelling the run and saves the partial answer as `stopped` itself,
+ * so a save from this tab would be refused (409) while the run is live (5.35.03, e2e 5.35.02).
+ * Poll until the stored run is no longer live, then take the server's copy — only into a thread
+ * that is still idle (a new message or a closed thread is left alone). Resolves false when the
+ * server holds nothing newer than this tab has (the run never reached it, or the wait timed out):
+ * then this tab's own copy is the one to save.
+ */
+export async function adoptAfterStop(threadId: string, started: number = Date.now(), attempt = 0): Promise<boolean> {
+  if (Date.now() - started >= STOP_SETTLE_BOUND_MS) return false
+  await sleep(delayFor(attempt))
+  if (statusOf(threadId) !== 'idle') return true
+  const record = await readSession(threadId)
+  if (record === null) return false
+  if (record === 'unavailable' || isLiveServerRun(record)) return adoptAfterStop(threadId, started, attempt + 1)
+  const slot = slotOf(useThreadStore.getState().slots, threadId)
+  if (slot === undefined || record.revision <= slot.revision) return false
+  applyRecord(threadId, record)
+  return true
+}

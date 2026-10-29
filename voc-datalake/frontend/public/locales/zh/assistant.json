@@ -22,6 +22,7 @@
     "stillGenerating": "仍在生成…"
   },
   "pages": {
+    "participants": "参与者",
     "home": "首页",
     "dashboard": "仪表盘",
     "feedback": "反馈",
@@ -59,6 +60,8 @@
     "externalLink": "{{host}}，在新标签页中打开",
     "copy": "复制",
     "copied": "已复制",
+    "stopped": "已停止",
+    "regenerate": "重新生成",
     "savedDocumentTitle": "助手回答 – {{date}}",
     "saveAsDocument": {
       "idle": "保存为文档",
@@ -153,6 +156,7 @@
     "subtitle": "我可以读取您的数据并提出修改建议——未经您批准不会做任何更改。"
   },
   "suggestions": {
+    "participants": {"1": "我们有哪些参与者名单？", "2": "创建一个 Beta 客户名单", "3": "把我粘贴的表格中的人加入名单"},
     "dashboard": { "1": "本周客户情绪有什么变化？", "2": "哪些来源带来的反馈最多？", "3": "用三句话总结这个仪表板" },
     "categories": { "1": "哪个类别的投诉最多？", "2": "客户对最大的类别怎么说？", "3": "哪些类别在变差？" },
     "projects": { "1": "根据本周最多的投诉创建一个项目", "2": "哪些项目正在进行？", "3": "我们下一个调研项目应该是什么？" },
@@ -273,5 +277,30 @@
       "cancelled": "已取消",
       "expired": "已过期"
     }
+  },
+  "mentions": {
+    "placeholder": "询问有关此项目的问题。输入 @ 选择用户画像，输入 # 选择文档…",
+    "allLabel": "所有用户画像",
+    "allHint": "所有用户画像都会回答",
+    "heading": {
+      "persona": "用户画像",
+      "document": "文档"
+    },
+    "limit": {
+      "persona": "每条消息最多 {{max, number}} 个用户画像。",
+      "document": "每条消息最多 {{max, number}} 个文档。"
+    },
+    "loading": "正在加载项目…",
+    "empty": {
+      "persona": "没有匹配的用户画像。",
+      "document": "没有匹配的文档。"
+    },
+    "count_one": "{{count, number}} 条建议",
+    "count_other": "{{count, number}} 条建议",
+    "chips": "此消息中提及",
+    "remove": "移除 {{name}}",
+    "insertPersona": "提及用户画像",
+    "insertDocument": "标记文档",
+    "allCapped": "@all 会询问 {{total, number}} 个用户画像中的前 {{max, number}} 个：{{names}}。"
   }
 }

@@ -8,10 +8,10 @@ contract unobserved:
 
 * the FETCH — one ``GET /feedback`` per scoped category (none when the scope is
   "all"), as the agent (``ctx.claims``), with exactly ``{days, limit: 100,
-  category?}``; a malformed payload reads as no reviews; the same review seen
+  offset, category?}`` (paging: test_aggregate_reviews_paging.py); a malformed payload reads as no reviews; the same review seen
   twice keeps its first copy;
 * the DAYS parameter — an int in ``1..365`` is used as is, anything else
-  (``0``, ``366``, a string) falls back to ``7``;
+  (``0``, ``366``, a string) falls back to ``30``, the run's review window;
 * the ORDER — urgency ``high`` < ``medium`` < ``low`` < anything else, then
   ``sentiment_score`` ascending (a non-number reads as ``0``), and only the first
   ``60`` reviews reach the prompt (and count as known ids);
@@ -47,7 +47,7 @@ from agents.nodes.base import NodeContext, NodeFailure
 CLAIMS = {'sub': 'agent:ag_1', 'cognito:groups': '', 'email': 'agent:ag_1'}
 AGENT = {'agent_id': 'ag_1', 'scope': {'all': False, 'categories': ['checkout']}}
 AGENT_ALL = {'agent_id': 'ag_1', 'scope': {'all': True}}
-QUERY = {'days': 7, 'limit': 100}
+QUERY = {'days': 30, 'limit': 100, 'offset': 0}
 SYSTEM_PROMPT = (
     'You analyse customer feedback for a product team. Group the reviews into concrete problems, '
     'most impactful first, and cite review ids. Answer with ONE JSON object only: '
@@ -123,10 +123,11 @@ def seams():
 
 class TestTheLimitsAreTheLiterals:
     def test_every_constant(self):
-        assert aggregate_reviews.PER_CATEGORY_LIMIT == 100
+        assert aggregate_reviews.PAGE_SIZE == 100
+        assert aggregate_reviews.MAX_PAGES_PER_CATEGORY == 20
         assert aggregate_reviews.MAX_REVIEWS_IN_PROMPT == 60
         assert aggregate_reviews.MAX_REVIEW_CHARS == 280
-        assert aggregate_reviews.DEFAULT_DAYS == 7
+        assert aggregate_reviews.DEFAULT_DAYS == 30
         assert aggregate_reviews.MAX_PROBLEMS == 5
         assert aggregate_reviews.SYSTEM == SYSTEM_PROMPT
 
@@ -166,7 +167,7 @@ class TestOneFeedbackQueryPerScopedCategoryAsTheAgent:
         seams.metrics.return_value = payload
         assert aggregate_reviews.start(_ctx()) == {
             'node_id': 'aggregate', 'status': 'done',
-            'summary': 'No reviews in scope in the last 7 days; nothing to do.', 'halt': True,
+            'summary': 'No reviews in scope in the last 30 days; nothing to do.', 'halt': True,
         }
         seams.ask.assert_not_called()
         seams.memories.assert_not_called()
@@ -174,15 +175,15 @@ class TestOneFeedbackQueryPerScopedCategoryAsTheAgent:
 
 class TestTheDaysParameter:
     @pytest.mark.parametrize(('params', 'days'), [
-        ({}, 7), ({'days': 30}, 30), ({'days': 1}, 1), ({'days': 365}, 365),
-        ({'days': 0}, 7), ({'days': 366}, 7), ({'days': -1}, 7), ({'days': '30'}, 7), ({'days': 30.0}, 7),
-        ({'days': None}, 7),
+        ({}, 30), ({'days': 7}, 7), ({'days': 1}, 1), ({'days': 365}, 365),
+        ({'days': 0}, 30), ({'days': 366}, 30), ({'days': -1}, 30), ({'days': '7'}, 30), ({'days': 7.0}, 30),
+        ({'days': None}, 30),
     ])
     def test_only_an_int_between_1_and_365_is_used(self, seams, params, days):
         seams.reviews()
         result = aggregate_reviews.start(_ctx(params=params))
         seams.metrics.assert_called_once_with('GET', '/feedback', CLAIMS,
-                                              query={'days': days, 'limit': 100, 'category': 'checkout'})
+                                              query={'days': days, 'limit': 100, 'offset': 0, 'category': 'checkout'})
         assert result['summary'] == f'No reviews in scope in the last {days} days; nothing to do.'
 
     @pytest.mark.usefixtures('seams')
@@ -370,7 +371,9 @@ class TestTheAnswerBecomesTheNodeResult:
             'updates': {'aggregate': {
                 'title': 'Checkout is slow', 'problem_summary': 'Users wait at payment.',
                 'research_question': 'Why is checkout slow?', 'top_problems': [PROBLEM],
-                'review_count': 2, 'days': 7,
+                'review_count': 2, 'days': 30,
+                'quotes': [{'problem': 'Slow payment', 'text': 'Checkout took forever 0'},
+                           {'problem': 'Slow payment', 'text': 'Checkout took forever 1'}],
             }},
         }
 

@@ -1,7 +1,7 @@
 /**
- * Home used to fetch `/metrics/summary?days=7` twice on load: once for the
- * sidebar badge (the shell, default 7-day range) and once for the metric tiles
- * under a second key. Both now resolve to one cache entry, and the app policy
+ * Home used to fetch the default window's `/metrics/summary` twice on load: once
+ * for the sidebar badge (the shell, default range: 14 days since 5.47.00) and once
+ * for the metric tiles (their 14-day comparison window) under a second key. Both now resolve to one cache entry, and the app policy
  * keeps the shell's reads (summary, brand) from refetching when the tab
  * regains focus.
  */
@@ -24,6 +24,7 @@ vi.mock('../api/client', async (importOriginal) => {
 import { getDateRangeParams } from '../api/client'
 import { createAppQueryClient } from '../api/queryPolicies'
 import { useConfigStore } from '../store/configStore'
+import { DEFAULT_TIME_RANGE } from '../store/timeRanges'
 import { useBrandName } from './useBrandSettings'
 import { useSummaryQuery } from './useSummaryQuery'
 
@@ -37,8 +38,8 @@ function wrapperFor(client: QueryClient) {
 
 /** What Layout and Home's tiles mount together on Home under the default range. */
 function useHomeShell() {
-  const shell = useSummaryQuery(getDateRangeParams('7d'), API)
-  const tiles = useSummaryQuery({ days: 7 }, API) // Home's MetricTiles window
+  const shell = useSummaryQuery(getDateRangeParams(DEFAULT_TIME_RANGE), API)
+  const tiles = useSummaryQuery({ days: 14 }, API) // Home's MetricTiles comparison window (7 days x 2)
   const brand = useBrandName(API)
   return { shell, tiles, brand }
 }
@@ -53,7 +54,7 @@ beforeEach(() => {
 afterEach(() => { focusManager.setFocused() })
 
 describe('Home shell reads', () => {
-  it('fetches the 7-day summary once for the sidebar and the tiles', async () => {
+  it('fetches the default 14-day summary once for the sidebar and the tiles', async () => {
     const { result } = renderHook(useHomeShell, { wrapper: wrapperFor(createAppQueryClient()) })
     await waitFor(() => expect(result.current.tiles.data).toBeDefined())
     expect(result.current.shell.data).toBe(result.current.tiles.data)

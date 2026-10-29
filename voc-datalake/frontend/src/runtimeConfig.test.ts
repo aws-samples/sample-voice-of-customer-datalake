@@ -148,3 +148,69 @@ describe('isWebSearchAvailable', () => {
     expect(isWebSearchAvailable()).toBe(true)
   })
 })
+
+describe('board pool and email capability', () => {
+  useFreshRuntimeConfigModule()
+
+  const baseConfig = {
+    apiEndpoint: 'https://real-api.example.com',
+    cognito: { userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'eu-west-1', identityPoolId: 'eu-west-1:identity' },
+  }
+  const stubConfigJson = (config: Record<string, unknown>) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(config) }))
+  }
+
+  it('reports no board before the config loads', async () => {
+    const { getBoardPoolConfig } = await import('./runtimeConfig')
+    expect(getBoardPoolConfig()).toBeNull()
+  })
+
+  it('exposes the board pool with the deployment region when config.json carries it', async () => {
+    stubConfigJson({ ...baseConfig, board: { userPoolId: 'eu-west-1_board', clientId: 'boardclient' }, features: { email: true } })
+
+    const { loadRuntimeConfig, getBoardPoolConfig } = await import('./runtimeConfig')
+    const config = await loadRuntimeConfig()
+
+    expect(getBoardPoolConfig()).toStrictEqual({ userPoolId: 'eu-west-1_board', clientId: 'boardclient', region: 'eu-west-1', signIn: 'email_otp' })
+    expect(config.features?.email).toBe(true)
+  })
+
+  it('carries the Cognito-email sign-in mode of a pool without SES', async () => {
+    stubConfigJson({ ...baseConfig, board: { userPoolId: 'eu-west-1_board', clientId: 'boardclient', signIn: 'code' } })
+
+    const { loadRuntimeConfig, getBoardPoolConfig } = await import('./runtimeConfig')
+    await loadRuntimeConfig()
+
+    expect(getBoardPoolConfig()?.signIn).toBe('code')
+  })
+
+  it('reads an unknown sign-in mode as EMAIL_OTP rather than dropping the pool', async () => {
+    stubConfigJson({ ...baseConfig, board: { userPoolId: 'eu-west-1_board', clientId: 'boardclient', signIn: 'magic' } })
+
+    const { loadRuntimeConfig, getBoardPoolConfig } = await import('./runtimeConfig')
+    await loadRuntimeConfig()
+
+    expect(getBoardPoolConfig()).toMatchObject({ userPoolId: 'eu-west-1_board', signIn: 'email_otp' })
+  })
+
+  it('reads a deployment without the board pool as no board, keeping the rest of the config', async () => {
+    stubConfigJson(baseConfig)
+
+    const { loadRuntimeConfig, getBoardPoolConfig } = await import('./runtimeConfig')
+    const config = await loadRuntimeConfig()
+
+    expect(config.apiEndpoint).toBe('https://real-api.example.com')
+    expect(getBoardPoolConfig()).toBeNull()
+    expect(config.features?.email).toBeUndefined()
+  })
+
+  it('treats a malformed board block as no board instead of discarding config.json', async () => {
+    stubConfigJson({ ...baseConfig, board: { userPoolId: '', clientId: 7 } })
+
+    const { loadRuntimeConfig, getBoardPoolConfig } = await import('./runtimeConfig')
+    const config = await loadRuntimeConfig()
+
+    expect(config.cognito.userPoolId).toBe('us-east-1_pool')
+    expect(getBoardPoolConfig()).toBeNull()
+  })
+})

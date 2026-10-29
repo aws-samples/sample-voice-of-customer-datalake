@@ -42,6 +42,8 @@ interface WizardSectionProps {
   readonly onSubmitResearch: () => void
   readonly onSubmitDoc: () => void
   readonly onSubmitMerge: () => void
+  /** Open a document by id (the doc wizard's hand-written PR/FAQ / PRD). */
+  readonly onOpenDocument?: (documentId: string) => void
 }
 
 export default function WizardSection({
@@ -67,6 +69,7 @@ export default function WizardSection({
   onSubmitResearch,
   onSubmitDoc,
   onSubmitMerge,
+  onOpenDocument,
 }: WizardSectionProps) {
   if (activeWizard === 'persona') {
     return (
@@ -116,6 +119,7 @@ export default function WizardSection({
         onDocConfigChange={onDocConfigChange}
         onClose={onClose}
         onSubmit={onSubmitDoc}
+        onOpenDocument={onOpenDocument}
       />
     )
   }

@@ -1,5 +1,30 @@
 {
   "aiModel": {
+    "image": {
+      "title": "画像生成（ペルソナのアバター）",
+      "description": "ペルソナのアバターを描く画像モデルです。デプロイで決まり、ここでは選べません。アクセスはデプロイ時に申請されます。",
+      "model": "モデル",
+      "region": "リージョン",
+      "access": "アクセス",
+      "quota": "クォータ",
+      "requestsPerMinute": "{{count, number}} リクエスト/分",
+      "quotaPending": "Service Quotas から読み込み中です。1 分後にもう一度確認してください",
+      "avatarsOff": "このデプロイではアバターがオフです（EU 推論スコープ）。そのため、このモデルは使われません。",
+      "testTitle": "{{model}} で小さなテスト画像を 1 枚生成します。1 回のクリックで数セント（米ドル）かかります。画像は保存されません。",
+      "status": {
+        "available": "利用可能",
+        "no_access": "アクセスなし",
+        "not_subscribed": "未サブスクライブ",
+        "not_in_region": "このリージョンでは提供なし",
+        "unknown": "不明"
+      },
+      "hint": {
+        "no_access": "このアカウントまたはそのロールはモデルを使用できません。Bedrock と AWS Marketplace に関する組織のポリシー（SCP）を確認してから、再デプロイしてください。",
+        "not_subscribed": "モデルの契約または Marketplace のサブスクリプションがありません。再デプロイする（デプロイが申請します）か、Bedrock コンソールの「モデルアクセス」で承諾してください。",
+        "not_in_region": "このモデルはこのリージョンでは提供されていません。avatar-generation.json で、そのリージョンで提供されている画像モデルを選んでください。",
+        "unknown": "アクセス状況を読み取れませんでした。「テスト」でモデルを直接確認してください。"
+      }
+    },
     "automaticOption": "自動 — {{model}}",
     "groupOther": "その他のモデル",
     "groupRecommended": "おすすめ",
@@ -62,6 +87,7 @@
       "latency": "{{ms}} ミリ秒",
       "tokensPerMinute": "{{count, number}} トークン/分",
       "quotaUnknown": "クォータ不明",
+      "quotaStale": "最後に保存された値です。Service Quotas から最新の値を読み込んでいます",
       "all": "すべてのモデルをテスト",
       "allTitle": "モデルのアクセスと容量",
       "allIntro": "各モデルに短いリクエストを 1 件ずつ順番に送信し、このアカウントとリージョンでの 1 分あたりのトークンクォータを表示します。",
@@ -146,7 +172,6 @@
   "logs": {
     "clear": "クリア",
     "configureFirst": "ログを表示するには、一般タブでAPIエンドポイントを設定してください。",
-    "daysAgo": "{{count, number}}日前",
     "daysAgo_one": "{{count, number}}日前",
     "daysAgo_other": "{{count, number}}日前",
     "errorLabel": "エラー:",
@@ -155,10 +180,8 @@
     "errorsLabel": "エラー:",
     "failures_one": "{{count, number}}件のエラー",
     "failures_other": "{{count, number}}件のエラー",
-    "hoursAgo": "{{count, number}}時間前",
     "hoursAgo_one": "{{count, number}}時間前",
     "hoursAgo_other": "{{count, number}}時間前",
-    "items": "{{count, number}}件",
     "items_one": "{{count, number}}件",
     "items_other": "{{count, number}}件",
     "justNow": "たった今",
@@ -168,26 +191,21 @@
     "loadingRuns": "実行を読み込み中...",
     "loadingSummary": "サマリーを読み込み中...",
     "messageId": "メッセージID:",
-    "minutesAgo": "{{count, number}}分前",
     "minutesAgo_one": "{{count, number}}分前",
     "minutesAgo_other": "{{count, number}}分前",
-    "moreEntries": "+{{count, number}}件のエントリ",
     "moreEntries_one": "+{{count, number}}件のエントリ",
     "moreEntries_other": "+{{count, number}}件のエントリ",
     "noProcessingErrors": "この期間に処理エラーはありません",
     "noRunsInPeriod": "この期間に実行はありません",
     "noScrapersConfigured": "実行されるデータソースはまだありません。データソースページで追加してください。",
     "noValidationFailures": "この期間にバリデーションエラーはありません",
-    "pages": "{{count, number}}ページ",
     "pages_one": "{{count, number}}ページ",
     "pages_other": "{{count, number}}ページ",
     "processingErrors": "処理エラー",
     "recordKeys": "含まれるフィールド:",
-    "textLength": "テキスト長: {{count, number}}文字",
     "textLength_one": "テキスト長: {{count, number}}文字",
     "textLength_other": "テキスト長: {{count, number}}文字",
     "refresh": "更新",
-    "runErrors": "{{count, number}}件のエラー",
     "runErrors_one": "{{count, number}}件のエラー",
     "runErrors_other": "{{count, number}}件のエラー",
     "scraperRuns": "スクレイパー実行",
@@ -230,7 +248,81 @@
       "ios": "iPhoneアプリ",
       "android": "Androidアプリ"
     },
-    "noRunsYet": "まだ実行されていません"
+    "noRunsYet": "まだ実行されていません",
+    "system": {
+      "tab": "システムエラー",
+      "levelLabel": "ログレベル",
+      "levelError": "エラー",
+      "levelWarning": "エラーと警告",
+      "searchingStart": "ログを検索しています…",
+      "searching_one": "{{count, number}} 個の関数のログを検索しています…",
+      "searching_other": "{{count, number}} 個の関数のログを検索しています…",
+      "searched_one": "{{count, number}} 個の関数のログを検索しました",
+      "searched_other": "{{count, number}} 個の関数のログを検索しました",
+      "empty": "この期間にエラーはありません",
+      "failed": "ログの検索に失敗しました。もう一度お試しください。",
+      "loadFailed": "システムログを読み込めませんでした。",
+      "truncated": "最新の {{rows, number}} 行のログを表示しています",
+      "download": "ダウンロード",
+      "downloadTitle": "分析のために共有できるよう、これらのエラーを JSON ファイルでダウンロードします",
+      "adminOnly": "システムエラーは管理者のみが表示できます。",
+      "times": "×{{n, number}}",
+      "occurrences_one": "{{count, number}} 回発生",
+      "occurrences_other": "{{count, number}} 回発生",
+      "firstSeen": "初回発生",
+      "lastSeen": "最終発生",
+      "requestId": "リクエスト ID",
+      "sourceTitle": "これらの行の出所",
+      "sourceApi": "API",
+      "sourceWorkflow": "ワークフロー",
+      "request": {
+        "show": "リクエスト全体を表示",
+        "loading": "このリクエストのすべての行を読み込んでいます…",
+        "loadFailed": "リクエストの行を読み込めませんでした。",
+        "failed": "このリクエストの検索に失敗しました。もう一度お試しください。",
+        "retry": "再試行",
+        "empty": "このリクエストの行が見つかりません（ログの保持期間が過ぎた可能性があります）。",
+        "truncated": "最初の {{lines, number}} 行を表示しています",
+        "linesLabel": "このリクエストのログ行",
+        "title_one": "このリクエストの {{count, number}} 行",
+        "title_other": "このリクエストの {{count, number}} 行"
+      },
+      "queues": {
+        "title": "失敗キュー",
+        "loading": "失敗キューを確認しています…",
+        "loadFailed": "失敗キューを読み取れませんでした。",
+        "oldest": "最古: {{age}}",
+        "noSample": "サンプルとして読み取れるメッセージがありませんでした。",
+        "unreadable": "読み取れませんでした",
+        "peekNote": "これらのメッセージはすべての再試行に失敗し、再試行されません。サンプルを読んでも削除されません。",
+        "empty_one": "失敗キューは空です",
+        "empty_other": "{{count, number}} 個の失敗キューはすべて空です",
+        "messages_one": "{{count, number}} 件のメッセージ",
+        "messages_other": "{{count, number}} 件のメッセージ"
+      },
+      "environment": {
+        "title": "環境",
+        "loading": "環境を読み込んでいます…",
+        "loadFailed": "環境を読み込めませんでした。",
+        "on": "オン",
+        "off": "オフ",
+        "none": "なし",
+        "fields": {
+          "version": "バージョン",
+          "region": "リージョン",
+          "account_suffix": "アカウント（下 4 桁）",
+          "deployment_prefix": "デプロイのプレフィックス",
+          "enabled_sources": "有効なソース",
+          "web_search": "ウェブ検索",
+          "inference_scope": "推論スコープ",
+          "image_model": "画像モデル",
+          "model_overrides": "モデルの選択",
+          "alerting": "アラート",
+        "open_circuits": "一時停止中のソース（サーキットブレーカー）",
+        "log_coverage": "検索したログ"
+        }
+      }
+    }
   },
   "saveChanges": "変更を保存",
   "saved": "保存しました！",
@@ -251,8 +343,6 @@
     "saveToSecrets": "Secrets Managerに保存",
     "selectOption": "選択...",
     "show": "表示",
-    "test": "テスト",
-    "unknownResult": "不明な結果",
     "webhooks": "Webhook",
     "circuit": {
       "paused": "失敗が続いたため一時停止中",
@@ -287,7 +377,8 @@
     "policies": "ソースポリシー",
     "users": "ユーザー",
     "logs": "ログ",
-    "version": "バージョン"
+    "version": "バージョン",
+    "boards": "ボード"
   },
   "title": "設定",
   "users": {
@@ -312,6 +403,7 @@
     "retry": "再試行",
     "loading": "読み込み中…",
     "saveFailed": "保存できませんでした。もう一度お試しください。",
+    "discardChanges": "変更を破棄",
     "write": "編集",
     "preview": "プレビュー",
     "nothingToPreview": "まだプレビューする内容がありません。",
@@ -361,14 +453,26 @@
     "removeKpi": "KPI を削除",
     "kpiName": "KPI 名",
     "kpiTarget": "目標値",
-    "kpiUnit": "単位"
+    "kpiUnit": "単位",
+    "fieldRequired": "必須です。入力するか、行を削除してください",
+    "fieldTooLong": "{{max, number}} 文字以内",
+    "fixFields": "保存されていません。強調表示された項目を修正してください。"
   },
   "designSystem": {
     "title": "デザインシステム",
     "description": "ブランドのトークン、ガイドライン、参考資料です。プロトタイプや PR/FAQ のビジュアルはこれに沿って作られます。",
     "logo": "ロゴ",
     "logoAlt": "会社のロゴ",
+    "logoInDraft": "リファレンスの新しいロゴです。デザインシステムを保存すると会社のロゴになります。",
     "uploadLogo": "ロゴをアップロード",
+    "logoHint": "PNG、JPEG、WebP、SVG（SVG はブラウザー内で PNG に変換されます）。",
+    "svg": {
+      "tooLarge": "{{name}} は 1 MB を超えています。SVG ロゴは 1 MB までです。",
+      "unreadable": "{{name}} を SVG 画像として読み込めませんでした。PNG に書き出してアップロードしてください。",
+      "timeout": "{{name}} の変換に時間がかかりすぎました。PNG に書き出してアップロードしてください。",
+      "notConverted": "この SVG はブラウザー内で変換できませんでした。PNG に書き出してアップロードしてください。",
+      "resultTooLarge": "変換後の PNG が 5 MB を超えています。より小さい PNG を書き出してアップロードしてください。"
+    },
     "colors": "カラー",
     "typography": "タイポグラフィ",
     "spacing": "余白",
@@ -407,12 +511,22 @@
     "archive": "アーカイブ",
     "archiveTitle": "この参考資料をアーカイブしますか？",
     "archiveMessage": "「{{title}}」は新しいプロトタイプに使われなくなります。ファイルは保持されます。",
+    "archiveMessageLink": "「{{title}}」は新しいプロトタイプに使われなくなります。リンクと読み取った内容は保持されます。",
     "referenceKind": "参考資料の種類",
     "referenceTitle": "タイトル",
     "referenceUrl": "リンク（https://…）",
+    "urlProblems": {
+      "tooLong": "アドレスが 2,048 文字を超えています。",
+      "notUrl": "Web アドレスではありません。https:// で始まるリンク全体を貼り付けてください。",
+      "notHttps": "読み取れるのは https:// のアドレスだけです。{{scheme}}:// のアドレスは拒否されます。",
+      "noHost": "https:// の後にサイト名が必要です（例: https://example.com）。",
+      "credentials": "アドレスからユーザー名またはパスワードを削除してください。",
+      "localhost": "このコンピューター上のアドレスは読み取れません。公開サイトを使用してください。"
+    },
     "referenceFile": "ファイル",
     "addReference": "参考資料を追加",
     "addReferenceFailed": "参考資料を追加できませんでした。もう一度お試しください。",
+    "duplicateReference": "このアドレスはすでにリファレンスです:「{{title}}」",
     "referenceTitleOptional": "タイトル（任意）",
     "kindHints": {
       "website": "安全なブラウザーでページを開き、色、フォント、ロゴを読み取ります。",
@@ -443,11 +557,10 @@
       "variantsCount_other": "バリエーション {{count, number}} 件",
       "onlyGuidelines": "ガイドラインのみ",
       "logoCandidate": "この参考資料で見つかったロゴ",
+      "logoRendered": "サイトの SVG ロゴから描画",
       "apply": "デザインシステムとして使う",
       "useLogo": "このロゴを使う",
-      "logoFailed": "このロゴを使えませんでした。もう一度お試しください。",
-      "replaceLogoTitle": "現在のロゴを置き換えますか？",
-      "replaceLogoMessage": "「{{title}}」のロゴで現在のロゴを置き換えます。"
+      "logoFailed": "このロゴを使えませんでした。もう一度お試しください。"
     },
     "applied": {
       "title": "{{source}} から — 変更内容を確認してから保存してください。",
@@ -519,6 +632,7 @@
         "padding": "内側の余白",
         "gap": "間隔",
         "height": "高さ",
+        "width": "幅",
         "font_family": "フォント",
         "font_size": "文字サイズ",
         "font_weight": "文字の太さ",
@@ -528,6 +642,7 @@
         "outline": "フォーカス枠"
       },
       "hoverField": "ホバー時の{{field}}",
+      "focusField": "フォーカス時の{{field}}",
       "hoverFocus": "ホバーとフォーカス",
       "useToken": "トークンを使用…",
       "useTokenFor": "{{field}}に色トークンを使用",
@@ -545,6 +660,7 @@
         "padding": "8px 16px のように 1〜4 個の長さを入力してください。",
         "gap": "8px のような長さを入力してください。",
         "height": "36px のような長さを入力してください。",
+        "width": "36px のような長さを使用してください。",
         "font_family": "フォント名をカンマ区切りで入力してください。",
         "font_size": "14px のような長さを入力してください。",
         "font_weight": "100〜900、normal または bold を入力してください。",
@@ -652,5 +768,177 @@
     "changelogTitle": "リリースノート",
     "changelogDescription": "CHANGELOG.md に基づくリリースごとの変更点（新しい順）。",
     "showOlder": "以前のリリースを表示（残り {{count, number}} 件）"
+  },
+  "pluginCopy": {
+    "appReviewsAndroid": {
+      "name": "Android アプリのレビュー",
+      "description": "Google Play ストアから顧客レビューを収集します"
+    },
+    "appReviewsIos": {
+      "name": "iOS アプリのレビュー",
+      "description": "Apple App Store から顧客レビューを収集します"
+    },
+    "githubIssues": {
+      "name": "GitHub Issues",
+      "description": "GitHub リポジトリの Issue とコメントを、ソフトウェアのバージョン、ラベル、エラーシグネチャとともに取り込みます"
+    },
+    "s3Import": {
+      "name": "S3 一括インポート",
+      "description": "S3 バケットからフィードバックをインポートします (CSV、JSON、JSONL)"
+    },
+    "syntheticReviews": {
+      "name": "合成レビュージェネレーター",
+      "description": "デモ、テスト、モデリング用に、AI (Amazon Bedrock) でリアルな合成顧客レビューを生成します。通常のパイプラインで取り込まれ、合成データとしてタグ付けされます。"
+    },
+    "webReviews": {
+      "name": "Web レビュー",
+      "description": "管理されたブラウザーで、公開レビューページ (Trustpilot、TripAdvisor、フォーラム) の顧客レビューを読み取ります。追加した各ページがそれぞれ 1 つのソースになります。"
+    },
+    "webscraper": {
+      "name": "Web スクレイパー",
+      "description": "Web サイトからフィードバックを抽出する設定可能なスクレイパー"
+    }
+  },
+  "boards": {
+    "loading": "読み込み中…",
+    "saved": "保存しました。",
+    "cancel": "キャンセル",
+    "domains": {
+      "title": "会社のドメイン",
+      "description": "会社に属するメールドメインです。これらのドメインのユーザーは会社向けのすべてのボードにサインインでき、参加者を追加するときは同僚として扱われます。",
+      "label": "会社のメールドメイン",
+      "hint": "ドメインごとに Enter キーを押します。ドメインがないと、会社向けボードには誰もサインインできません。",
+      "save": "ドメインを保存",
+      "loadFailed": "会社のドメインを読み込めませんでした。"
+    },
+    "participantCard": {
+      "domains": "会社のドメイン: {{list}}。",
+      "noDomains": "会社のドメインはまだありません。",
+      "editInBoards": "ボードで編集"
+    },
+    "list": {
+      "title": "フィードバックボード",
+      "description": "各ボードは 1 つのチームまたは対象者からのリクエストを集め、独自の共有リンク、項目、ステータスを持ちます。",
+      "create": "新しいボード",
+      "empty": "ボードはまだありません。テンプレートから作成してください。",
+      "loadFailed": "ボードを読み込めませんでした。",
+      "archived": "アーカイブ済み",
+      "edit": "編集",
+      "editLabel": "{{name}} を編集",
+      "requests_one": "リクエスト {{count, number}} 件",
+      "requests_other": "リクエスト {{count, number}} 件"
+    },
+    "templates": {
+      "sales": "営業からの機能リクエスト",
+      "salesHint": "各リクエストと +1 に顧客、商談、売上への影響を記録します。",
+      "service": "カスタマーサービスの問題",
+      "serviceHint": "問題の種類、重大度、参照番号、手順。+1 は「自分も影響を受けている」を意味します。",
+      "beta": "ベータ版のフィードバック",
+      "betaHint": "製品の領域、結果、評価、テスター向けのリンク。",
+      "blank": "空白",
+      "blankHint": "タイトルと説明のみ。項目は後から追加します。"
+    },
+    "create": {
+      "title": "新しいボード",
+      "hint": "出発点となるテンプレートを選びます。項目とステータスはすべて後から変更できます。",
+      "template": "テンプレート",
+      "slugPreview": "共有リンク: /board/{{slug}}",
+      "slugLater": "共有リンクはボードの作成時に名前から作られます。",
+      "submit": "ボードを作成"
+    },
+    "editor": {
+      "title": "ボード",
+      "back": "ボード一覧に戻る",
+      "name": "名前",
+      "slug": "リンク名",
+      "slugHint": "小文字、数字、単一のハイフンのみ、60 文字以内。",
+      "shareLink": "共有リンク:",
+      "shareAfterSave": "(保存後)",
+      "copyLink": "リンクをコピー",
+      "copied": "コピーしました。",
+      "description": "説明",
+      "save": "ボードを保存",
+      "unsaved": "未保存の変更があります。"
+    },
+    "audience": {
+      "title": "サインインして投稿できるユーザー",
+      "company": "会社",
+      "companyHint": "会社のドメインのユーザー。",
+      "list": "特定のユーザー",
+      "listHint": "許可されたドメインとメールアドレス。",
+      "anyone": "誰でも",
+      "anyoneHint": "確認が済んだ任意のメールアドレス。",
+      "companyDomains": "会社のドメインを使用: {{list}}。",
+      "noCompanyDomains": "会社のドメインがまだ設定されていないため、このボードには誰もサインインできません。",
+      "domains": "許可されたドメイン",
+      "emails": "許可されたメールアドレス",
+      "emailsCount_one": "{{count, number}} 件のアドレス(最大 {{max, number}} 件)。",
+      "emailsCount_other": "{{count, number}} 件のアドレス(最大 {{max, number}} 件)。",
+      "emailsInvalid": "無効なメールアドレス: {{list}}",
+      "anyoneWarning": "任意のメールアドレスがこのボードにサインインして投稿できます。モデレーションはありません。1 人あたり 1 日にリクエスト 20 件、+1 は 100 件までです。"
+    },
+    "fieldsEditor": {
+      "title": "項目",
+      "hint": "タイトルと説明は常に入力を求めます。このボードに必要な項目をオンにしてください。",
+      "requestGroup": "新しいリクエスト",
+      "supportGroup": "+1",
+      "required": "必須",
+      "requiredLabel": "{{field}} を必須にする"
+    },
+    "fields": {
+      "customer": "顧客",
+      "deal": "商談",
+      "impact": "売上への影響",
+      "amount_usd": "金額(USD)",
+      "contact_email": "連絡先メール",
+      "kind": "問題の種類",
+      "severity": "重大度",
+      "reference": "予約番号または注文番号",
+      "steps": "再現手順",
+      "affected_count": "影響を受けた人数",
+      "area": "製品の領域",
+      "outcome": "結果",
+      "rating": "評価",
+      "link": "リンク",
+      "note": "メモ"
+    },
+    "statuses": {
+      "title": "ステータス",
+      "hint": "新しいリクエストは最初のステータスから始まります。最大 {{max, number}} 個。",
+      "initial": "初期",
+      "labelFor": "ステータス {{position, number}} の名前",
+      "moveUp": "{{status}} を上へ移動",
+      "moveDown": "{{status}} を下へ移動",
+      "remove": "{{status}} を削除",
+      "newLabel": "新しいステータス",
+      "add": "ステータスを追加",
+      "full": "ボードのステータスは最大 {{max, number}} 個です。"
+    },
+    "lifecycle": {
+      "title": "アーカイブまたは削除",
+      "hint_one": "このボードには {{count, number}} 件のリクエストがあります。アーカイブすると管理者以外には表示されなくなり、リクエストは保持されます。削除するとボードとそのリクエストが削除されます。",
+      "hint_other": "このボードには {{count, number}} 件のリクエストがあります。アーカイブすると管理者以外には表示されなくなり、リクエストは保持されます。削除するとボードとそのリクエストが削除されます。",
+      "saveFirst": "先に変更を保存または破棄してください。",
+      "archive": "アーカイブ",
+      "restore": "復元",
+      "delete": "ボードを削除"
+    },
+    "problems": {
+      "nameRequired": "ボードには名前が必要です。",
+      "slugInvalid": "リンク名には小文字、数字、単一のハイフンのみ使用できます。",
+      "statusesEmpty": "ボードには少なくとも 1 つのステータスが必要です。",
+      "statusLabelRequired": "すべてのステータスに名前が必要です。",
+      "emailsInvalid": "無効なメールアドレスを修正または削除してください。",
+      "emailsTooMany": "メールアドレスは最大 500 件です。",
+      "listEmpty": "許可するドメインまたはメールアドレスを少なくとも 1 つ追加してください。"
+    },
+    "errors": {
+      "slugTaken": "このリンク名は別のボードで使われています。別の名前を選んでください。",
+      "statusInUse": "削除したステータスがこのボードのリクエストでまだ使われています。先にそれらのリクエストを別のステータスに移すか、ステータスを残してください。",
+      "forbidden": "ボードを変更できるのは管理者だけです。",
+      "notFound": "このボードはもう存在しません。",
+      "conflict": "その間にボードが変更されました。再読み込みしてもう一度お試しください。",
+      "generic": "問題が発生しました。もう一度お試しください。"
+    }
   }
 }

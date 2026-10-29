@@ -43,6 +43,7 @@ from settings_handler import lambda_handler
 from shared.category_access import CategoryScope
 from shared.exceptions import AuthorizationError, ServiceError, ValidationError
 from shared.model_config import ALLOWED_MODEL_IDS, PICKER_SURFACES
+from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
 
 HAIKU = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
@@ -61,8 +62,9 @@ def _ccfe(message: str = 'cap') -> ClientError:
     return _client_error('ConditionalCheckFailedException', message)
 
 
-def _entry(days_old: int) -> dict:
-    return {'resolved_at': (datetime.now(UTC) - timedelta(days=days_old)).isoformat()}
+def _entry(days_old: int, now: datetime | None = None) -> dict:
+    """An entry resolved `days_old` days before `now` (the real clock unless a test freezes it)."""
+    return {'resolved_at': ((now or datetime.now(UTC)) - timedelta(days=days_old)).isoformat()}
 
 
 @pytest.fixture
@@ -83,7 +85,7 @@ def logger():
 def fixed_now():
     fake_datetime = MagicMock(wraps=datetime)
     fake_datetime.now.return_value = FIXED_NOW
-    with patch.object(settings_handler, 'datetime', fake_datetime):
+    with frozen_clock(settings_handler, fake_datetime):
         yield FIXED_NOW
 
 
@@ -557,7 +559,9 @@ class TestTheResolveWrites:
     @pytest.mark.usefixtures('fixed_now')
     def test_the_slot_freed_by_pruning_is_written_with_the_same_key(self, route, table):
         table.update_item.side_effect = [_ccfe(), {}, _ccfe(), {}, {}]
-        table.get_item.return_value = {'Item': {'resolved': {'old': _entry(200)}}}
+        # Aged against the FROZEN clock the handler reads: against the real one this entry
+        # stopped being expired once the calendar passed FIXED_NOW + 20 days.
+        table.get_item.return_value = {'Item': {'resolved': {'old': _entry(200, FIXED_NOW)}}}
         response, payload = route('PUT', '/settings/resolved-problems', {'key': 'new', 'resolved': True})
         assert response['statusCode'] == 200
         assert payload == {'success': True, 'key': 'new', 'resolved': True}
@@ -1368,7 +1372,10 @@ class TestReferenceWrites:
     @pytest.mark.usefixtures('fixed_now')
     def test_the_archive_write(self, route, table):
         table.get_item.return_value = {'Item': {'id': REF_ID, 'kind': 'figma', 'status': 'ready'}}
-        response, payload = route('DELETE', f'/settings/design-system/references/{REF_ID}')
+        s3 = MagicMock()
+        s3.delete_objects.return_value = {}
+        with patch.object(settings_handler, 'get_s3_client', return_value=s3):
+            response, payload = route('DELETE', f'/settings/design-system/references/{REF_ID}')
         assert response['statusCode'] == 200
         table.update_item.assert_called_once_with(
             Key=REF_KEY,
@@ -1376,7 +1383,24 @@ class TestReferenceWrites:
             ExpressionAttributeNames={'#st': 'status', '#u': 'updated_at'},
             ExpressionAttributeValues={':archived': 'archived', ':u': FIXED_NOW_ISO},
         )
+        # 5.47.00: the logo preview objects go with the archive (all three possible types, one call).
+        s3.delete_objects.assert_called_once_with(Bucket=settings_handler.RAW_DATA_BUCKET, Delete={'Objects': [
+            {'Key': f'company-context/design/logo_preview_{REF_ID}.{ext}'} for ext in ('png', 'jpg', 'webp')],
+            'Quiet': True})
         assert payload['reference']['id'] == REF_ID
+
+    @pytest.mark.usefixtures('fixed_now')
+    def test_the_archive_write_drops_the_preview_key(self, route, table):
+        table.get_item.return_value = {'Item': {'id': REF_ID, 'kind': 'figma', 'status': 'ready', 'extracted_design': {
+            'logo': {'source_url': 'https://x.example/l.png', 'preview_key': 'k'}}}}
+        s3 = MagicMock()
+        s3.delete_objects.return_value = {}
+        with patch.object(settings_handler, 'get_s3_client', return_value=s3):
+            route('DELETE', f'/settings/design-system/references/{REF_ID}')
+        kwargs = table.update_item.call_args.kwargs
+        assert kwargs['UpdateExpression'] == 'SET #st = :archived, #u = :u REMOVE #d.#l.#p'
+        assert kwargs['ExpressionAttributeNames'] == {'#st': 'status', '#u': 'updated_at', '#d': 'extracted_design',
+                                                      '#l': 'logo', '#p': 'preview_key'}
 
     @pytest.mark.parametrize(('method', 'path'), [
         ('POST', '/settings/design-system/references'),

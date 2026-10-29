@@ -84,6 +84,11 @@ describe('SourceChart', () => {
       .toStrictEqual(['vertical', 'category', null, '128'])
   })
 
+  it('names its bars so the tooltip reads "Reviews", never the data key "value"', () => {
+    render(<SourceChart sources={sources} />)
+    expect(screen.getByTestId('series')).toHaveTextContent('Reviews')
+  })
+
   it('formats the count axis compactly', () => {
     render(<SourceChart sources={sources} />)
     expect(attrs(screen.getByTestId('x-axis'), 'type', 'sample')).toStrictEqual(['number', '10K'])

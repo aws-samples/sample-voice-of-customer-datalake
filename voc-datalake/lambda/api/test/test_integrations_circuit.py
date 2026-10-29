@@ -202,12 +202,12 @@ class TestTheRowShape:
         assert plugin_circuit.circuit_from_row({'failure_count': True}, include_error=True)['failure_count'] == 0
 
     def test_the_key_matches_the_one_the_breaker_writes(self):
-        """Lockstep with plugins/_shared/circuit_breaker.py (a different bundle, so
-        the key is written twice): read its source rather than import it."""
+        """Lockstep with plugins/_shared/circuit_breaker.py: the partition is spelled there, the sort key
+        is imported from shared.plugin_circuit (the plugin bundles ship lambda/shared)."""
         breaker = PLUGINS_SHARED.read_text()
 
         assert re.search(r'return f"CIRCUIT#\{plugin_id\}"', breaker)
-        assert 'TRIPPED_SK = "TRIPPED"' in breaker
+        assert 'from shared.plugin_circuit import TRIPPED_SK' in breaker
         assert plugin_circuit.tripped_key('x') == {'pk': 'CIRCUIT#x', 'sk': 'TRIPPED'}
 
     def test_the_breaker_and_this_api_use_the_same_table(self):

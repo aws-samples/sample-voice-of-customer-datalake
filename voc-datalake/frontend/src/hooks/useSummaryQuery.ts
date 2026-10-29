@@ -9,9 +9,10 @@
  * (two callers, identical query key, different `limit`, so each rendered
  * whichever response resolved last).
  *
- * Home's metric tiles read the same 7-day summary the shell reads under the
- * default time range: `useSummaryQuery({ days: 7 }, …)` is exactly the entry
- * `getDateRangeParams('7d')` yields, so that is one request, not two (they used
+ * Home's metric tiles read the 7-day and 14-day summaries; under the default
+ * time range (14 days by imported date) the shell reads the second one:
+ * `useSummaryQuery({ days: 14 }, …)` is exactly the entry
+ * `getDateRangeParams('14d')` yields, so that is one request, not two (they used
  * to fetch it under a second key, `brief-tiles`).
  * The key is in the `feedbackData` cache family (api/queryPolicies.ts): reused
  * for 5 minutes and not refetched when the tab regains focus.

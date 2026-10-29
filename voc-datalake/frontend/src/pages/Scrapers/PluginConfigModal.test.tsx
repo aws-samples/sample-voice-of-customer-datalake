@@ -68,10 +68,10 @@ describe('PluginConfigModal', () => {
     mockRunSource.mockResolvedValue({ success: true, message: 'Triggered' })
   })
 
-  it('renders plugin name and description', () => {
+  it('renders the plugin name and description from the locale files, not the manifest', () => {
     render(<PluginConfigModal plugin={plugin} onClose={onClose} isAdmin />, { wrapper: createWrapper() })
     expect(screen.getByText('Android App Reviews')).toBeInTheDocument()
-    expect(screen.getByText('Collect reviews from Google Play Store')).toBeInTheDocument()
+    expect(screen.getByText('Collect customer reviews from the Google Play Store')).toBeInTheDocument()
   })
 
   // Live finding: a card's Edit opened the plugin's whole list; it now opens just that app / page.
@@ -197,10 +197,19 @@ describe('PluginConfigModal', () => {
       expect(screen.getByRole('link', { name: 'Open source settings' })).toHaveAttribute('href', '/admin?tab=sources&section=plugins')
     })
 
+    // 5.34.00 live finding: S3 Bulk Import has no token, yet its dialog said "paste the token".
+    it('asks a source without a token for its settings, never a token', async () => {
+      render(<PluginConfigModal plugin={s3Plugin} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })
+      await waitFor(() => { expect(mockGetSourcesStatus).toHaveBeenCalledWith(['s3_import']) })
+      expect(screen.getByText(/S3 Bulk Import is set up in Administration → Sources → Source settings: enter its settings there/)).toBeInTheDocument()
+      expect(screen.queryByText(/token/i)).not.toBeInTheDocument()
+    })
+
     // Live finding: the GitHub dialog said "Paste the token… above" with no field above.
     it('says in plain words where the token goes, and drops the steps written for that other page', async () => {
       const github: PluginManifest = {
         ...s3Plugin, id: 'github_issues', name: 'GitHub Issues',
+        config: [{ key: 'token', label: 'Token', type: 'password', required: true, placeholder: '', secret: true }],
         setup: { title: 'GitHub Issues Setup', color: 'gray', steps: ['Paste the token and the repositories above'] },
       }
       render(<PluginConfigModal plugin={github} onClose={onClose} isAdmin />, { wrapper: createQueryWrapper(['/scrapers']) })

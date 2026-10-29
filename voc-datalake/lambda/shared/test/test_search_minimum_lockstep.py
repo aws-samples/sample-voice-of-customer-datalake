@@ -2,7 +2,8 @@
 
 `shared/api.py` owns `SEARCH_QUERY_MIN_LENGTH`: the route enforces it and the MCP
 tool declares it as `inputSchema.minLength`. The frontend has its own
-`SEARCH_MIN_CHARS`, which decides whether to issue a search at all.
+`FEEDBACK_SEARCH_MIN_CHARS` (`api/feedbackSearch.ts`, read by every search box), which
+decides whether to issue a search at all.
 
 Nothing tied the two together, so the frontend could gate at a different number
 than the route refuses at — and the failure is user-visible rather than loud: the
@@ -20,13 +21,13 @@ import pytest
 from shared.api import SEARCH_QUERY_MIN_LENGTH
 from shared.test.repo_paths import repo_root
 
-_GATE_SOURCE = repo_root() / 'frontend' / 'src' / 'pages' / 'Categories' / 'useFeedbackListData.ts'
+_GATE_SOURCE = repo_root() / 'frontend' / 'src' / 'api' / 'feedbackSearch.ts'
 
 
 def _frontend_minimum() -> int | None:
-    """`SEARCH_MIN_CHARS` as declared in the hook, or None if not found."""
+    """`FEEDBACK_SEARCH_MIN_CHARS` as declared in the module, or None if not found."""
     match = re.search(
-        r'(?:export\s+)?const\s+SEARCH_MIN_CHARS\s*=\s*(\d+)',
+        r'(?:export\s+)?const\s+FEEDBACK_SEARCH_MIN_CHARS\s*=\s*(\d+)',
         _GATE_SOURCE.read_text(),
     )
     return int(match.group(1)) if match else None
@@ -48,14 +49,14 @@ class TestSearchMinimumMirror:
     def test_the_frontend_constant_is_findable(self):
         """The positive control.
 
-        Without it, a rename to `SEARCH_MIN_CHARACTERS` would make the parser
+        Without it, a rename of `FEEDBACK_SEARCH_MIN_CHARS` would make the parser
         return None and the equality test below would be comparing against
         nothing — a green result meaning "did not check", which is the failure
         mode this file exists to prevent, applied to itself.
         """
         assert _GATE_SOURCE.exists(), f'gate source moved: {_GATE_SOURCE}'
         assert _frontend_minimum() is not None, (
-            'parsed no SEARCH_MIN_CHARS from useFeedbackListData.ts — parser drift?'
+            'parsed no FEEDBACK_SEARCH_MIN_CHARS from api/feedbackSearch.ts — parser drift?'
         )
 
     @pytest.mark.skipif(not _GATE_SOURCE.exists(), reason='frontend tree absent from this checkout')

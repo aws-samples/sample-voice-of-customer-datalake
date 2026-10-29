@@ -22,16 +22,18 @@ const reviewItem = (id: string, text: string) => ({
 function routes(reviews: () => unknown): void {
   routeFetchApi({
     'GET /radar': () => ({ brands: [{ key: 'rival', label: 'Rival Co', total: 4 }] }),
-    'GET /radar/brands/rival': () => ({
-      brand: { key: 'rival', label: 'Rival Co' }, total: 4, avg_sentiment: 0.3,
-      trend: [{ date: '2026-10-02', count: 4, avg_sentiment: 0.3 }],
-      love: [{ category: 'shipping', subcategory: 'tracking', count: 4, quotes: ['Tracking is spot on'] }],
-      hate: [{ category: 'returns', subcategory: null, count: 1, quotes: [] }],
+    'GET /radar/brands/rival/page': () => ({
+      detail: {
+        brand: { key: 'rival', label: 'Rival Co' }, total: 4, avg_sentiment: 0.3,
+        trend: [{ date: '2026-10-02', count: 4, avg_sentiment: 0.3 }],
+        love: [{ category: 'shipping', subcategory: 'tracking', count: 4, quotes: ['Tracking is spot on'] }],
+        hate: [{ category: 'returns', subcategory: null, count: 1, quotes: [] }],
+      },
+      releases: { releases: [] },
+      compare: { ours_available: true, categories: [
+        { category: 'returns', theirs: { volume: 3, positive_share: 0.2, negative_share: 0.7 }, ours: null, verdict: null },
+      ] },
     }),
-    'GET /radar/brands/rival/releases': () => ({ releases: [] }),
-    'GET /radar/brands/rival/compare': () => ({ ours_available: true, categories: [
-      { category: 'returns', theirs: { volume: 3, positive_share: 0.2, negative_share: 0.7 }, ours: null, verdict: null },
-    ] }),
     [`GET ${REVIEWS_PATH}`]: reviews,
   }, { ignoreQuery: true })
 }

@@ -6,7 +6,7 @@ Provides common helpers, encoders, validators, and decorators.
 import json
 import os
 from collections.abc import Callable, Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -14,6 +14,7 @@ from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConf
 
 from shared import http_cache
 from shared.category_override import redact_category_overrides
+from shared.e2e_tag import with_test_run_tag
 from shared.earliest_date import parse_iso_date
 from shared.exceptions import (
     ApiError,
@@ -23,6 +24,7 @@ from shared.exceptions import (
     NotFoundError,
     PayloadTooLargeError,
     ServiceError,
+    TooManyRequestsError,
     ValidationError,
 )
 
@@ -61,7 +63,8 @@ MAX_PERSONAS_PER_GENERATION = 10
 # MAX_PERSONAS_PER_GENERATION and for the same reason, because THREE places size
 # themselves against it and two of them are in other files: the route that
 # enforces it, the MCP tool's `inputSchema.minLength` plus the sentence in its
-# description that states it, and the frontend's own `SEARCH_MIN_CHARS` gate.
+# description that states it, and the frontend's own `FEEDBACK_SEARCH_MIN_CHARS`
+# gate (`api/feedbackSearch.ts`).
 #
 # 🔑 The bound was previously the bare literal `2` in the route and a claim in
 # English in the MCP tool description, with nothing declaring it — so the tool
@@ -124,6 +127,22 @@ def effective_window_days(days: int, earliest_date: str | None, today: date) -> 
         return days if days > ALL_TIME_DAYS else ALL_TIME_FALLBACK_DAYS
     history = min(max((today - earliest).days + 1, 1), MAX_FEEDBACK_WINDOW_DAYS)
     return history if days <= ALL_TIME_DAYS else min(days, history)
+
+
+def requested_window_cutoff(days: int, today: date) -> str:
+    """The oldest YYYY-MM-DD a REQUESTED `days` window admits on a basis date; '' for all time.
+
+    `effective_window_days` clamps a window to the import history, which is right for
+    WALKING the import-date index (no review is imported before it was written, so the
+    clamped import window still holds every review written in the requested window).
+    It is wrong as a REVIEW-date cutoff: reviews imported yesterday but written months
+    earlier would all fall before "the first import day" and vanish. The basis-date
+    filter therefore uses this cutoff, computed from the days the caller asked for:
+    none at all for all time (0), else the first day of a `days`-long window ending today.
+    """
+    if days <= ALL_TIME_DAYS:
+        return ''
+    return (today - timedelta(days=days - 1)).isoformat()
 
 
 def validate_limit(
@@ -276,6 +295,16 @@ def require_admin(event: dict) -> None:
         raise AuthorizationError('Admin access required')
 
 
+def admins_only(app: APIGatewayRestResolver, next_middleware: Callable[[APIGatewayRestResolver], Any]) -> Any:
+    """Resolver middleware: every route of the module that installs it is admin-only (403 otherwise).
+
+    ``app.use(middlewares=[admins_only])`` gates a whole module, so a route added later is gated without having
+    to remember the check (the data explorer, manual import and S3 import handlers; owner decision 2026-10-08).
+    """
+    require_admin(app.current_event.raw_event)
+    return next_middleware(app)
+
+
 def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
     """
     Create standard CORS configuration for API Gateway.
@@ -359,9 +388,12 @@ def _register_exception_handlers(app: APIGatewayRestResolver) -> None:
         "error": "Human-readable error message"
     }
 
-    Log levels: a client error (400, 404, 409, 413) is the API working as designed, so it
-    is logged at INFO and WARNING stays meaningful for operators; a refused authorization
-    (403) is security-relevant and stays WARNING; server faults (500) are ERROR.
+    Log levels: every 4xx the API answers on purpose (400, 403, 404, 409, 413, 429) is the
+    API working as designed, so it is logged at INFO and WARNING stays meaningful for
+    operators (System -> Logs lists WARNING lines). A refused authorization ("Admin access
+    required", "You do not have permission to ...") is one of them: the caller's role or
+    project access decided the answer, nothing failed. The access log still records every
+    403 per request. Server faults (5xx) are ERROR.
     """
     for exception_type, status_code, log_level, label, both_keys in _EXCEPTION_ANSWERS:
         app.exception_handler(exception_type)(_exception_answer(status_code, log_level, label, both_keys))
@@ -381,11 +413,14 @@ _EXCEPTION_ANSWERS: tuple[tuple[type[ApiError], int | None, str, str, bool], ...
     # of the two it is.
     (ConfigurationError, 500, 'error', 'Configuration error', False),
     (ServiceError, 500, 'exception', 'Service error', False),
-    (AuthorizationError, 403, 'warning', 'Authorization error', False),
+    # An expected refusal (role / project access), not a fault: INFO, like every 4xx above.
+    (AuthorizationError, 403, 'info', 'Authorization error', False),
     (ConflictError, 409, 'info', 'Conflict error', False),
     # A client-side sizing problem, not a fault: logged at INFO (no stack
     # trace) and answered with BOTH keys, because callers parse `error ?? message`.
     (PayloadTooLargeError, 413, 'info', 'Payload too large', True),
+    # A configured quota (the participant daily send cap): the caller's answer, not a fault.
+    (TooManyRequestsError, 429, 'info', 'Quota reached', False),
     (ApiError, None, 'exception', 'API error', False),
 )
 
@@ -417,6 +452,9 @@ def api_handler(func):
     3. metrics.log_metrics - CloudWatch metrics with cold start
     4. measure_invocation_cost - one `invocation_cost` CPU line per request
        (innermost, so it is written inside the Powertools context)
+    Outermost: with_test_run_tag - `test_run=<run id>` on every line of a request
+    whose User-Agent carries the e2e suite's `voc-e2e/<run id>` token, removed
+    again for every other request (shared/e2e_tag.py)
 
     Usage:
         @api_handler
@@ -424,9 +462,9 @@ def api_handler(func):
             return app.resolve(event, context)
     """
     measured = measure_invocation_cost(func)
-    return logger.inject_lambda_context(
+    return with_test_run_tag(logger)(logger.inject_lambda_context(
         tracer.capture_lambda_handler(
-            metrics.log_metrics(capture_cold_start_metric=True)(measured)))
+            metrics.log_metrics(capture_cold_start_metric=True)(measured))))
 
 
 __all__ = [
@@ -442,6 +480,7 @@ __all__ = [
     'get_caller_groups',
     'get_caller_subject',
     'get_configured_categories',
+    'requested_window_cutoff',
     'require_admin',
     'validate_bool',
     'validate_date_basis',

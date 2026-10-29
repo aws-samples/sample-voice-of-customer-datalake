@@ -8,7 +8,7 @@
  */
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { categoryLabel, channelLabel, humanizeId, keywordLabel, sourceLabel, subcategoryLabel, themeLabel } from '../utils/displayLabels'
+import { BUILT_IN_SOURCES, categoryLabel, humanizeId, keywordLabel, sourceLabel, subcategoryLabel, themeLabel } from '../utils/displayLabels'
 import { useCategoriesConfig } from './useCategories'
 import { useSourceProfiles } from './useDimensions'
 
@@ -17,8 +17,6 @@ export interface DisplayLabels {
   readonly subcategory: (id: string, parent?: string) => string
   readonly theme: (category: string, subcategory?: string | null) => string
   readonly source: (id: string) => string
-  /** A source_channel worth showing beside `source`, else undefined. */
-  readonly channel: (channel: string | undefined, sourceId: string) => string | undefined
   /** A trending keyword: a category id reads as its category, any other keyword as written. */
   readonly keyword: (keyword: string) => string
   /** Persona types and any other id without configured names. */
@@ -33,14 +31,14 @@ export function useDisplayLabels(): DisplayLabels {
   return useMemo(() => {
     const categories = config?.categories ?? []
     const sources = profiles ?? []
+    const builtIn = (id: string) => (Object.hasOwn(BUILT_IN_SOURCES, id) ? t(`builtInSources.${id}`) : undefined)
     return {
       category: (id) => categoryLabel(id, categories, otherLabel),
       subcategory: (id, parent) => subcategoryLabel(id, parent, categories),
       theme: (category, subcategory) => themeLabel(category, subcategory, categories),
-      source: (id) => sourceLabel(id, sources),
-      channel: channelLabel,
+      source: (id) => sourceLabel(id, sources, builtIn),
       keyword: (keyword) => keywordLabel(keyword, categories),
       plain: humanizeId,
     }
-  }, [config, profiles, otherLabel])
+  }, [config, profiles, otherLabel, t])
 }

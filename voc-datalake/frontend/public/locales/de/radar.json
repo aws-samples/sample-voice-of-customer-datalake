@@ -34,14 +34,26 @@
     "sampled": "Aus den neuesten Bewertungen dieses Zeitraums gelesen."
   },
   "releases": {
-    "title": "Veröffentlichungen",
-    "empty": "Noch keine Veröffentlichung gefunden. Veröffentlichungen kommen aus dem geplanten Scan oder aus Jetzt scannen.",
+    "title": "Neuigkeiten und Releases",
+    "empty": "Noch keine Neuigkeiten gefunden. Neuigkeiten und Releases kommen aus dem geplanten Scan oder aus „Jetzt scannen“.",
     "official": "Offiziell",
     "thirdParty": "Presse und Bewertungen",
-    "approximate": "Datum ungefähr",
+    "undated": "Datum nicht veröffentlicht, zuerst gefunden am",
     "mentions_one": "{{count, number}} Erwähnung",
     "mentions_other": "{{count, number}} Erwähnungen",
-    "sources": "Quellen"
+    "sources": "Quellen",
+    "kinds": {
+      "release": "Release",
+      "announcement": "Ankündigung",
+      "promotion": "Aktion",
+      "partnership": "Partnerschaft",
+      "news": "Unternehmensnews"
+    },
+    "filterLabel": "Nach Art filtern",
+    "kindAll": "Alle",
+    "kindEmpty": "Nichts der Art „{{kind}}“ in dieser Liste. Wählen Sie „Alle“, um jeden Eintrag zu sehen.",
+    "viaExa": "über Exa",
+    "viaFeed": "über Feed"
   },
   "compare": {
     "title": "Im Vergleich mit uns",
@@ -63,13 +75,12 @@
     "openOurs_other": "Unsere {{count, number}} Bewertungen in {{category}} unter Kategorien öffnen"
   },
   "brands": {
-    "hint": "Die Marken, denen Radar folgt: Der Release-Scan sucht jede im Web, und die Quellen, die Sie auf der Seite Datenquellen als Radar-Quelle markieren, liefern ihre Bewertungen.",
+    "hint": "Die Marken, denen Radar folgt: Der News-Scan durchsucht das Web nach jeder Marke (in ihrer Sprache und, falls angegeben, ihre News-Feeds), und die Quellen, die Sie auf der Seite „Datenquellen“ als Radar-Quelle markieren, liefern ihre Bewertungen.",
     "addTitle": "Marke hinzufügen",
     "nameLabel": "Markenname",
     "domainsLabel": "Website-Domains",
     "domainsHint": "Durch Kommas getrennt, höchstens {{max, number}} (z. B. Website und Blog). Dient zum Finden ihrer Versionshinweise.",
     "add": "Marke hinzufügen",
-    "editDomains": "Domains bearbeiten",
     "editDomainsLabel": "Website-Domains von {{brand}}",
     "doneEditing": "Fertig",
     "remove": "Entfernen",
@@ -86,7 +97,31 @@
     "duplicate": "{{brand}} ist bereits in der Liste.",
     "invalidName": "Verwenden Sie 1-64 Buchstaben, Ziffern, Leerzeichen oder . & ' + -",
     "tooMany": "Höchstens {{max, number}} Marken.",
-    "loadFailed": "Die Markenliste konnte nicht geladen werden."
+    "loadFailed": "Die Markenliste konnte nicht geladen werden.",
+    "edit": "Bearbeiten",
+    "editLabel": "{{brand}} bearbeiten",
+    "languageLabel": "Suchsprache",
+    "languageAuto": "Automatisch (aus der Domain: {{language}})",
+    "languageAutoNew": "Automatisch (aus der Domain)",
+    "languageSummary": "Sprache: {{language}}",
+    "feedsLabel": "News-Feeds",
+    "feedsHint": "Optionale RSS- oder Atom-Feeds mit den Neuigkeiten der Marke. Werden bei jedem Scan gelesen. Höchstens {{max, number}}, einer pro Zeile oder durch Kommas getrennt.",
+    "feedsTooMany": "Höchstens {{max, number}} News-Feeds.",
+    "feedsHttps": "Jeder News-Feed muss ein https://-Link sein.",
+    "feedsSummary": "News-Feeds: {{list}}",
+    "noFeeds": "keine",
+    "moreOptions": "Weitere Optionen",
+    "fixFeeds": "Korrigieren Sie die News-Feeds vor dem Speichern.",
+    "searchTermsLabel": "Suchbegriffe",
+    "searchTermsHint": "Optionale Wörter oder Wendungen, die den Nachrichtensuchen hinzugefügt werden, etwa der Firmenname oder Produktnamen. Nützlich, wenn der Markenname auch ein gängiges Wort ist. Höchstens {{max, number}}, einer pro Zeile, je {{chars, number}} Zeichen.",
+    "excludeTermsLabel": "Ausschlussbegriffe",
+    "excludeTermsHint": "Optionale Wörter oder Wendungen: Ein Suchergebnis, dessen Titel oder Auszug einen davon enthält, wird übersprungen. Höchstens {{max, number}}, einer pro Zeile, je {{chars, number}} Zeichen.",
+    "termsTooMany": "Höchstens {{max, number}} Begriffe.",
+    "termsTooLong": "Jeder Begriff darf höchstens {{chars, number}} Zeichen haben.",
+    "termsInvalid": "Ein Begriff darf keine doppelten Anführungszeichen enthalten und nicht mit - beginnen.",
+    "searchTermsSummary": "Suchbegriffe: {{list}}",
+    "excludeTermsSummary": "Ausschlussbegriffe: {{list}}",
+    "fixTerms": "Korrigieren Sie die Such- oder Ausschlussbegriffe vor dem Speichern."
   },
   "setup": {
     "brandsTitle": "Beobachtete Marken",
@@ -98,16 +133,16 @@
     "sources": "Gespeist von:",
     "howTitle": "So funktioniert Radar",
     "step1Title": "Marke hinzufügen",
-    "step1": "Fügen Sie sie unten hinzu, mit den Domains ihrer eigenen Website, um ihre Versionshinweise zu finden.",
+    "step1": "Fügen Sie sie unten hinzu, mit ihren eigenen Website-Domains, um ihre Neuigkeiten zu finden; optional mit Suchsprache und News-Feeds.",
     "step2Title": "Bewertungen hereinholen",
     "step2": "Aktivieren Sie auf der Seite Datenquellen „Radar-Quelle“ bei einem Scraper, einer Web-Reviews-Seite, einem App-Connector oder einem CSV/JSON-Import und wählen Sie die Marke. Ihre Bewertungen gehen nur an Radar, nie in Ihre Dashboards.",
-    "step3Title": "Releases",
-    "step3": "Eine Websuche läuft automatisch im Rhythmus unten (täglich geprüft) oder sofort mit Jetzt scannen. Der erste Scan blickt 90 Tage zurück.",
+    "step3Title": "Neuigkeiten und Releases",
+    "step3": "Eine Websuche nach den Neuigkeiten jeder Marke (Markteinführungen, neue Funktionen, Aktionen, Partnerschaften, Unternehmensnews), in der Sprache der Marke und über ihre News-Feeds, läuft automatisch im unten gewählten Rhythmus (täglich geprüft) oder sofort mit „Jetzt scannen“. Der erste Scan blickt 90 Tage zurück.",
     "configure": "Konfigurieren"
   },
   "settings": {
     "title": "Radar",
-    "description": "Der Release-Scan sucht im Web, was jede Radar-Marke veröffentlicht. Nichts läuft, bevor eine Marke hinzugefügt ist.",
+    "description": "Der News-Scan durchsucht das Web nach dem, was jede Radar-Marke veröffentlicht und ankündigt. Nichts läuft, bevor eine Marke hinzugefügt ist.",
     "cadence": "Scan-Rhythmus",
     "cadences": {
       "daily": "Täglich",
@@ -138,7 +173,8 @@
       "completed": "abgeschlossen",
       "failed": "fehlgeschlagen",
       "skipped": "übersprungen"
-    }
+    },
+    "scanNowHint": "Durchsucht jetzt das Web und die eigenen Domains jeder Marke nach ihren Releases und Neuigkeiten, ohne auf den Zeitplan zu warten. Das dauert einige Minuten und verbraucht Websuchen."
   },
   "nav": {
     "label": "Radar"
@@ -184,5 +220,39 @@
     "readTheirs_one": "Ihre Bewertung in {{category}} lesen",
     "readTheirs_other": "Ihre {{count, number}} Bewertungen in {{category}} lesen",
     "noSubcategoryChip": "Ohne Unterkategorie"
+  },
+  "all": {
+    "option": "Alle Marken",
+    "brandsTitle": "Marken",
+    "brandsCaption": "Jede verfolgte Marke in diesem Zeitraum: Bewertungen, Stimmung, Releases und neueste Meldung",
+    "noBrands": "Noch keine Marke wird beobachtet.",
+    "colBrand": "Marke",
+    "colReviews": "Bewertungen",
+    "colSentiment": "Stimmung",
+    "colReleases": "Releases im Zeitraum",
+    "colLatest": "Neueste Meldung",
+    "shares": "{{positive}} positiv · {{negative}} negativ",
+    "noRelease": "Noch keine Neuigkeiten",
+    "openBrand": "{{brand}} öffnen",
+    "newsTitle": "Neueste Meldungen aller Marken",
+    "capped": "Die neuesten {{shown, number}} von {{total, number}}"
+  },
+  "exa": {
+    "title": "Exa (zweiter Suchindex)",
+    "description": "Findet die Websuche von Radar für eine Marke keine datierten Neuigkeiten, wird zusätzlich Exa durchsucht. An Exa gehen nur Markennamen, Suchbegriffe und Domains. Etwa 5 $ pro 1.000 Suchen, abgerechnet von Exa.",
+    "configured": "Eingerichtet",
+    "notConfigured": "Nicht eingerichtet",
+    "keyLabel": "Exa-API-Schlüssel",
+    "placeholder": "Exa-API-Schlüssel einfügen",
+    "replacePlaceholder": "Ein Schlüssel ist gespeichert. Neuen einfügen, um ihn zu ersetzen",
+    "save": "Schlüssel speichern",
+    "remove": "Schlüssel entfernen",
+    "saved": "Exa-Schlüssel gespeichert.",
+    "removed": "Exa-Schlüssel entfernt.",
+    "saveFailed": "Der Exa-Schlüssel konnte nicht gespeichert werden.",
+    "removeFailed": "Der Exa-Schlüssel konnte nicht entfernt werden.",
+    "invalidKey": "Verwenden Sie 8-200 Buchstaben, Ziffern, - oder _.",
+    "removeTitle": "Exa-Schlüssel entfernen?",
+    "removeMessage": "Radar durchsucht Exa nicht mehr. Die eigene Websuche läuft weiter, und bereits gefundene Neuigkeiten bleiben erhalten."
   }
 }

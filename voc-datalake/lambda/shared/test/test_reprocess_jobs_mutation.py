@@ -24,7 +24,7 @@ The moto table is created once per module and emptied between tests: table
 creation is the slow part of a moto test, and these tests must stay fast
 enough to run once per mutant.
 """
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, call
 
@@ -113,11 +113,6 @@ class TestJobIdsAndTokens:
         assert int(first, 16) >= 0
         assert first != second
 
-    def test_now_iso(self):
-        assert jobs.now_iso(NOW) == NOW_ISO
-        parsed = datetime.fromisoformat(jobs.now_iso())
-        assert parsed.tzinfo is not None
-        assert abs((datetime.now(UTC) - parsed).total_seconds()) < 5
 
 
 class TestJobViewIsTheApiShape:

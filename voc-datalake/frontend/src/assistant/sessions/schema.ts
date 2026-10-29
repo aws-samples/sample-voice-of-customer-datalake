@@ -12,7 +12,7 @@
 import { z } from 'zod'
 import { MessageSchema } from '@ag-ui/core/schemas'
 import { SESSION_RUN_STATUSES, STALE_RUN_SECONDS } from '../contract'
-import { lenientList } from '../lenient'
+import { parseEach } from '../../api/lenientFields'
 import { parseApprovalInterrupts } from '../thread/customEvents'
 import type { Message } from '@ag-ui/core'
 import type { ApprovalInterrupt } from '../types'
@@ -44,7 +44,7 @@ const listEnvelope = z.object({ conversations: z.unknown().optional() }).catch({
 
 /** `GET /chat/conversations/_list?kind=assistant`, newest first. */
 export function normalizeSessionList(raw: unknown): SessionSummary[] {
-  return lenientList(sessionSummarySchema, listEnvelope.parse(raw).conversations)
+  return parseEach(sessionSummarySchema, listEnvelope.parse(raw).conversations)
     .filter((s) => s.kind === '' || s.kind === SESSION_KIND)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }

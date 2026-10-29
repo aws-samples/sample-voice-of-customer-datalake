@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
+import { renderWithQueryClient } from '@test/query-client'
 import { describe, expect, it, vi } from 'vitest'
 import { defaultContextConfig } from '../../components/DataSourceWizard/types'
 import { MergeWizard } from './Wizards'
@@ -35,7 +36,7 @@ const mergeConfig: MergeToolConfig = {
 
 describe('MergeWizard translations', () => {
   it('renders every user-facing wizard label through projectDetail translation keys', () => {
-    render(
+    renderWithQueryClient(
       <MergeWizard
         personas={[]}
         documents={[]}

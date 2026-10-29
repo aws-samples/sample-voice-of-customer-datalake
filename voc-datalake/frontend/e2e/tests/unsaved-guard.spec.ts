@@ -17,13 +17,13 @@ import { expect, type Page, type Request } from '@playwright/test'
 import { test } from '../lib/test'
 import { agentName, archiveE2eAgent, createE2eAgent, type E2eAgent } from '../lib/agentFixture'
 import { dialogNamed } from '../lib/dialogs'
-import { apiUrl } from '../lib/env'
+import { RUN_PREFIX, apiUrl } from '../lib/env'
 import { escapeRegExp, isApi, roleOf, settle, site } from '../lib/fixtures'
 
 const GUARD = 'Unsaved changes'
 
 const guard = (page: Page) => dialogNamed(page, GUARD)
-const sidebarHome = (page: Page) => page.locator('aside').getByRole('link', { name: 'Home', exact: true }).first()
+const sidebarHome = (page: Page) => page.getByRole('navigation', { name: 'Main', exact: true }).getByRole('link', { name: 'Home', exact: true }).first()
 
 /** Every write the page sends to the API from now on (the assistant's own session saves excluded). */
 function recordWrites(page: Page): Request[] {
@@ -66,7 +66,7 @@ test.describe('agent page (e2e-admin, e2e-owned agent)', () => {
    */
   async function openAgentWithEdit(page: Page): Promise<string> {
     await page.goto(site('/'))
-    await page.locator('aside').getByRole('link', { name: 'Autonomous agents', exact: true }).first().click()
+    await page.getByRole('navigation', { name: 'Main', exact: true }).getByRole('link', { name: 'Autonomous agents', exact: true }).first().click()
     await expect(page).toHaveURL(/\/agents$/)
     await page.getByRole('link', { name: new RegExp(escapeRegExp(agent?.name ?? '')) }).first().click()
     await expect(page).toHaveURL(new RegExp(`/agents/${escapeRegExp(agent?.id ?? '')}`))
@@ -174,9 +174,11 @@ test.describe('admin settings (Cancel / Discard only, never saved)', () => {
 test.describe('account objectives (both roles, Cancel / Discard only)', () => {
   test('F6-o1: an unsaved objective asks before leaving; nothing is written', async ({ page }) => {
     const writes = recordWrites(page)
-    await page.goto(site('/account?section=objectives'))
+    await page.goto(site('/account?tab=objectives'))
     await settle(page)
     await page.getByRole('button', { name: 'Add objective' }).click()
+    // A blank objective is dropped from the save body (myContextBody), so it is not dirty: type a title.
+    await page.getByLabel('Objective title').last().fill(`${RUN_PREFIX}unsaved objective`)
     await sidebarHome(page).click()
     await expectGuardButtons(page)
     await guard(page).getByRole('button', { name: 'Cancel', exact: true }).click()

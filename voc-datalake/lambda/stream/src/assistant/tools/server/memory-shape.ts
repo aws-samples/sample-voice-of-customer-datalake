@@ -6,7 +6,8 @@
  * hashed supporters and source refs (session / run ids) never do.
  */
 import { z } from 'zod';
-import { isRecord, pick } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
+import { pick } from '../format.js';
 
 export const MEMORY_SCOPES = ['company', 'personal'] as const;
 export const MEMORY_STATUSES = ['active', 'proposed', 'conflict', 'archived'] as const;

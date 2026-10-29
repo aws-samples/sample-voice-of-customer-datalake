@@ -17,7 +17,7 @@ from feedback_page_fixtures import serve_page_by_key
 from handler_events_fixtures import call_route
 from urgency_index_fixtures import wire_urgency_index
 
-from metrics_handler import lambda_handler
+from metrics_handler import AGGREGATE_READ_ROWS, lambda_handler
 from shared.earliest_date import EARLIEST_DATE_KEY
 
 
@@ -60,8 +60,8 @@ def _side_effect_for_day_loop(items: list[dict], days: int) -> list[dict]:
 
 
 def _truncated_first_of_30_days(item: dict) -> list[dict]:
-    """A 30-day walk whose first day hit the scan ceiling with rows left behind, holding `item`."""
-    truncated_day = {'Items': [item], 'ScannedCount': 10000, 'LastEvaluatedKey': {'pk': 'more'}}
+    """A 30-day walk whose first day hit the aggregate routes' scan ceiling with rows left behind, holding `item`."""
+    truncated_day = {'Items': [item], 'ScannedCount': AGGREGATE_READ_ROWS, 'LastEvaluatedKey': {'pk': 'more'}}
     return [truncated_day, *[{'Items': [], 'ScannedCount': 0}] * 29]
 
 
@@ -653,6 +653,9 @@ class TestReviewMetricsPartiality:
 
         assert body['is_partial'] is True
         assert body['total_feedback'] == 1
+        # The cap cut the first day walked: a row cap, and no day is claimed as read in full.
+        assert body['partial_reason'] == 'row_cap'
+        assert 'scanned_through' not in body
 
     @patch('metrics_handler.aggregates_table', new=MagicMock())
     @patch('metrics_handler.feedback_table')

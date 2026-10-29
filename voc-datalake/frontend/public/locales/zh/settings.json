@@ -1,5 +1,30 @@
 {
   "aiModel": {
+    "image": {
+      "title": "图像生成（角色头像）",
+      "description": "绘制角色头像的图像模型。由部署决定，此处不可选择；部署时会申请其访问权限。",
+      "model": "模型",
+      "region": "区域",
+      "access": "访问",
+      "quota": "配额",
+      "requestsPerMinute": "每分钟 {{count, number}} 次请求",
+      "quotaPending": "正在从 Service Quotas 读取，请一分钟后再查看",
+      "avatarsOff": "此部署已关闭头像（EU 推理范围），因此不使用此模型。",
+      "testTitle": "用 {{model}} 生成一张小测试图像。每次点击花费几美分；图像不会保存。",
+      "status": {
+        "available": "可用",
+        "no_access": "无访问权限",
+        "not_subscribed": "未订阅",
+        "not_in_region": "此区域不提供",
+        "unknown": "未知"
+      },
+      "hint": {
+        "no_access": "此账户或其角色无法使用该模型。请检查组织针对 Bedrock 和 AWS Marketplace 的策略（SCP），然后重新部署。",
+        "not_subscribed": "缺少该模型的协议或 Marketplace 订阅。请重新部署（部署时会申请），或在 Bedrock 控制台的“模型访问”中接受。",
+        "not_in_region": "此区域不提供该模型。请在 avatar-generation.json 中选择该区域提供的图像模型。",
+        "unknown": "无法读取访问状态。请使用“测试”直接检查模型。"
+      }
+    },
     "automaticOption": "自动 — {{model}}",
     "groupOther": "其他模型",
     "groupRecommended": "推荐",
@@ -62,6 +87,7 @@
       "latency": "{{ms}} 毫秒",
       "tokensPerMinute": "{{count, number}} 个令牌/分钟",
       "quotaUnknown": "配额未知",
+      "quotaStale": "上次保存的读数：正在从 Service Quotas 读取最新值",
       "all": "测试所有模型",
       "allTitle": "模型访问权限与容量",
       "allIntro": "依次向每个模型发送一个简短请求，并显示其在此账户和区域中每分钟的令牌配额。",
@@ -146,7 +172,6 @@
   "logs": {
     "clear": "清除",
     "configureFirst": "请在常规选项卡中配置API端点以查看日志。",
-    "daysAgo": "{{count, number}}天前",
     "daysAgo_one": "{{count, number}}天前",
     "daysAgo_other": "{{count, number}}天前",
     "errorLabel": "错误：",
@@ -155,10 +180,8 @@
     "errorsLabel": "错误：",
     "failures_one": "{{count, number}}个失败",
     "failures_other": "{{count, number}}个失败",
-    "hoursAgo": "{{count, number}}小时前",
     "hoursAgo_one": "{{count, number}}小时前",
     "hoursAgo_other": "{{count, number}}小时前",
-    "items": "{{count, number}}项",
     "items_one": "{{count, number}}项",
     "items_other": "{{count, number}}项",
     "justNow": "刚刚",
@@ -168,26 +191,21 @@
     "loadingRuns": "正在加载运行记录...",
     "loadingSummary": "正在加载摘要...",
     "messageId": "消息ID：",
-    "minutesAgo": "{{count, number}}分钟前",
     "minutesAgo_one": "{{count, number}}分钟前",
     "minutesAgo_other": "{{count, number}}分钟前",
-    "moreEntries": "+{{count, number}}条更多记录",
     "moreEntries_one": "+{{count, number}}条更多记录",
     "moreEntries_other": "+{{count, number}}条更多记录",
     "noProcessingErrors": "此期间无处理错误",
     "noRunsInPeriod": "此期间无运行记录",
     "noScrapersConfigured": "还没有会运行的数据源。请在数据源页面添加。",
     "noValidationFailures": "此期间无验证失败",
-    "pages": "{{count, number}}页",
     "pages_one": "{{count, number}}页",
     "pages_other": "{{count, number}}页",
     "processingErrors": "处理错误",
     "recordKeys": "包含的字段：",
-    "textLength": "文本长度：{{count, number}}个字符",
     "textLength_one": "文本长度：{{count, number}}个字符",
     "textLength_other": "文本长度：{{count, number}}个字符",
     "refresh": "刷新",
-    "runErrors": "{{count, number}}个错误",
     "runErrors_one": "{{count, number}}个错误",
     "runErrors_other": "{{count, number}}个错误",
     "scraperRuns": "爬虫运行",
@@ -230,7 +248,81 @@
       "ios": "iPhone 应用",
       "android": "Android 应用"
     },
-    "noRunsYet": "尚未运行"
+    "noRunsYet": "尚未运行",
+    "system": {
+      "tab": "系统错误",
+      "levelLabel": "日志级别",
+      "levelError": "错误",
+      "levelWarning": "错误和警告",
+      "searchingStart": "正在搜索日志…",
+      "searching_one": "正在搜索 {{count, number}} 个函数的日志…",
+      "searching_other": "正在搜索 {{count, number}} 个函数的日志…",
+      "searched_one": "已搜索 {{count, number}} 个函数的日志",
+      "searched_other": "已搜索 {{count, number}} 个函数的日志",
+      "empty": "此期间没有错误",
+      "failed": "日志搜索失败，请重试。",
+      "loadFailed": "无法加载系统日志。",
+      "truncated": "显示最新的 {{rows, number}} 行日志",
+      "download": "下载",
+      "downloadTitle": "将这些错误下载为 JSON 文件，以便共享和分析",
+      "adminOnly": "只有管理员可以查看系统错误。",
+      "times": "×{{n, number}}",
+      "occurrences_one": "发生 {{count, number}} 次",
+      "occurrences_other": "发生 {{count, number}} 次",
+      "firstSeen": "首次出现",
+      "lastSeen": "最近出现",
+      "requestId": "请求 ID",
+      "sourceTitle": "这些日志行的来源",
+      "sourceApi": "API",
+      "sourceWorkflow": "工作流",
+      "request": {
+        "show": "显示整个请求",
+        "loading": "正在读取此请求的所有日志行…",
+        "loadFailed": "无法加载该请求的日志行。",
+        "failed": "搜索此请求失败。请重试。",
+        "retry": "重试",
+        "empty": "未找到此请求的日志行（其日志可能已过期）。",
+        "truncated": "显示前 {{lines, number}} 行",
+        "linesLabel": "此请求的日志行",
+        "title_one": "此请求的 {{count, number}} 行",
+        "title_other": "此请求的 {{count, number}} 行"
+      },
+      "queues": {
+        "title": "失败队列",
+        "loading": "正在检查失败队列…",
+        "loadFailed": "无法读取失败队列。",
+        "oldest": "最早：{{age}}",
+        "noSample": "未能读取任何消息作为示例。",
+        "unreadable": "无法读取",
+        "peekNote": "这些消息在每次重试中都失败了，不会再重试。读取示例不会删除它。",
+        "empty_one": "失败队列为空",
+        "empty_other": "全部 {{count, number}} 个失败队列均为空",
+        "messages_one": "{{count, number}} 条消息",
+        "messages_other": "{{count, number}} 条消息"
+      },
+      "environment": {
+        "title": "环境",
+        "loading": "正在加载环境…",
+        "loadFailed": "无法加载环境。",
+        "on": "开启",
+        "off": "关闭",
+        "none": "无",
+        "fields": {
+          "version": "版本",
+          "region": "区域",
+          "account_suffix": "账户（后 4 位）",
+          "deployment_prefix": "部署前缀",
+          "enabled_sources": "已启用的来源",
+          "web_search": "网页搜索",
+          "inference_scope": "推理范围",
+          "image_model": "图像模型",
+          "model_overrides": "模型选择",
+          "alerting": "告警",
+        "open_circuits": "已暂停的来源（断路器）",
+        "log_coverage": "已搜索的日志"
+        }
+      }
+    }
   },
   "saveChanges": "保存更改",
   "saved": "已保存！",
@@ -251,8 +343,6 @@
     "saveToSecrets": "保存到Secrets Manager",
     "selectOption": "选择...",
     "show": "显示",
-    "test": "测试",
-    "unknownResult": "未知结果",
     "webhooks": "Webhook",
     "circuit": {
       "paused": "因多次失败已暂停",
@@ -287,7 +377,8 @@
     "policies": "来源策略",
     "users": "用户",
     "logs": "日志",
-    "version": "版本"
+    "version": "版本",
+    "boards": "看板"
   },
   "title": "设置",
   "users": {
@@ -312,6 +403,7 @@
     "retry": "重试",
     "loading": "加载中…",
     "saveFailed": "保存失败，请重试。",
+    "discardChanges": "放弃更改",
     "write": "编辑",
     "preview": "预览",
     "nothingToPreview": "暂无可预览的内容。",
@@ -361,14 +453,26 @@
     "removeKpi": "移除 KPI",
     "kpiName": "KPI 名称",
     "kpiTarget": "目标值",
-    "kpiUnit": "单位"
+    "kpiUnit": "单位",
+    "fieldRequired": "必填：请填写，或删除该行",
+    "fieldTooLong": "最多 {{max, number}} 个字符",
+    "fixFields": "未保存：请修正标出的字段。"
   },
   "designSystem": {
     "title": "设计系统",
     "description": "品牌令牌、规范与参考资料。原型和 PR/FAQ 视觉都按此构建，以匹配你的风格。",
     "logo": "标志",
     "logoAlt": "公司标志",
+    "logoInDraft": "来自参考的新徽标：保存设计系统后它将成为公司徽标。",
     "uploadLogo": "上传标志",
+    "logoHint": "PNG、JPEG、WebP 或 SVG（SVG 会在浏览器中转换为 PNG）。",
+    "svg": {
+      "tooLarge": "{{name}} 超过 1 MB。SVG 徽标最大为 1 MB。",
+      "unreadable": "无法将 {{name}} 读取为 SVG 图像。请将其导出为 PNG 后上传。",
+      "timeout": "{{name}} 转换耗时过长。请将其导出为 PNG 后上传。",
+      "notConverted": "此 SVG 无法在浏览器中转换。请将其导出为 PNG 后上传。",
+      "resultTooLarge": "转换后的 PNG 超过 5 MB。请导出较小的 PNG 后上传。"
+    },
     "colors": "颜色",
     "typography": "字体排印",
     "spacing": "间距",
@@ -407,12 +511,22 @@
     "archive": "归档",
     "archiveTitle": "要归档此参考资料吗？",
     "archiveMessage": "“{{title}}”将不再用于新原型，文件会保留。",
+    "archiveMessageLink": "“{{title}}”将不再用于新原型，链接及从中读取的内容会保留。",
     "referenceKind": "参考资料类型",
     "referenceTitle": "标题",
     "referenceUrl": "链接（https://…）",
+    "urlProblems": {
+      "tooLong": "地址超过 2,048 个字符。",
+      "notUrl": "这不是网址。请粘贴以 https:// 开头的完整链接。",
+      "notHttps": "只能读取 https:// 地址；{{scheme}}:// 地址会被拒绝。",
+      "noHost": "https:// 后需要网站名称，例如 https://example.com",
+      "credentials": "请从地址中删除用户名或密码。",
+      "localhost": "无法读取本机地址；请使用公开网站。"
+    },
     "referenceFile": "文件",
     "addReference": "添加参考资料",
     "addReferenceFailed": "无法添加参考资料，请重试。",
+    "duplicateReference": "此地址已是参考：“{{title}}”。",
     "referenceTitleOptional": "标题（可选）",
     "kindHints": {
       "website": "我们会在安全浏览器中打开页面，读取其颜色、字体和徽标。",
@@ -443,11 +557,10 @@
       "variantsCount_other": "{{count, number}} 个变体",
       "onlyGuidelines": "仅有规范",
       "logoCandidate": "在此参考资料中找到的徽标",
+      "logoRendered": "由网站的 SVG 徽标渲染",
       "apply": "用作设计系统",
       "useLogo": "使用此徽标",
-      "logoFailed": "无法使用此徽标，请重试。",
-      "replaceLogoTitle": "替换当前徽标？",
-      "replaceLogoMessage": "“{{title}}”中的徽标将替换当前徽标。"
+      "logoFailed": "无法使用此徽标，请重试。"
     },
     "applied": {
       "title": "来自 {{source}}——请检查以下更改，然后保存。",
@@ -519,6 +632,7 @@
         "padding": "内边距",
         "gap": "间隙",
         "height": "高度",
+        "width": "宽度",
         "font_family": "字体",
         "font_size": "字号",
         "font_weight": "字重",
@@ -528,6 +642,7 @@
         "outline": "聚焦轮廓"
       },
       "hoverField": "悬停时的{{field}}",
+      "focusField": "聚焦时的{{field}}",
       "hoverFocus": "悬停与聚焦",
       "useToken": "使用令牌…",
       "useTokenFor": "为{{field}}使用颜色令牌",
@@ -545,6 +660,7 @@
         "padding": "请使用一到四个长度，例如 8px 16px。",
         "gap": "请使用 8px 这样的长度。",
         "height": "请使用 36px 这样的长度。",
+        "width": "请使用长度，例如 36px。",
         "font_family": "请使用以逗号分隔的字体名称。",
         "font_size": "请使用 14px 这样的长度。",
         "font_weight": "请使用 100–900、normal 或 bold。",
@@ -652,5 +768,177 @@
     "changelogTitle": "发布说明",
     "changelogDescription": "来自 CHANGELOG.md 的各版本变更，最新的在前。",
     "showOlder": "显示更早的版本（还有 {{count, number}} 个）"
+  },
+  "pluginCopy": {
+    "appReviewsAndroid": {
+      "name": "Android 应用评论",
+      "description": "从 Google Play 商店收集客户评论"
+    },
+    "appReviewsIos": {
+      "name": "iOS 应用评论",
+      "description": "从 Apple App Store 收集客户评论"
+    },
+    "githubIssues": {
+      "name": "GitHub 问题",
+      "description": "从 GitHub 仓库导入问题和评论，包括软件版本、标签和错误特征"
+    },
+    "s3Import": {
+      "name": "S3 批量导入",
+      "description": "从 S3 存储桶导入反馈（CSV、JSON、JSONL）"
+    },
+    "syntheticReviews": {
+      "name": "合成评论生成器",
+      "description": "使用 AI（Amazon Bedrock）生成逼真的合成客户评论，用于演示、测试和建模。通过常规流水线导入，并标记为合成数据。"
+    },
+    "webReviews": {
+      "name": "网页评论",
+      "description": "使用托管浏览器读取公开评论页面（Trustpilot、TripAdvisor、论坛）上的客户评论。添加的每个页面都是一个独立的来源。"
+    },
+    "webscraper": {
+      "name": "网页抓取器",
+      "description": "可配置的抓取器，用于从网站提取反馈"
+    }
+  },
+  "boards": {
+    "loading": "正在加载…",
+    "saved": "已保存。",
+    "cancel": "取消",
+    "domains": {
+      "title": "公司域名",
+      "description": "属于公司的邮箱域名。使用这些域名的人员可以登录所有面向公司的看板，并在添加参与者时被视为同事。",
+      "label": "公司邮箱域名",
+      "hint": "每输入一个域名后按 Enter。没有域名时，任何人都无法登录公司看板。",
+      "save": "保存域名",
+      "loadFailed": "无法加载公司域名。"
+    },
+    "participantCard": {
+      "domains": "公司域名：{{list}}。",
+      "noDomains": "尚无公司域名。",
+      "editInBoards": "在看板中编辑"
+    },
+    "list": {
+      "title": "反馈看板",
+      "description": "每个看板收集一个团队或受众的请求，并拥有自己的分享链接、字段和状态。",
+      "create": "新建看板",
+      "empty": "尚无看板。从模板创建一个。",
+      "loadFailed": "无法加载看板。",
+      "archived": "已归档",
+      "edit": "编辑",
+      "editLabel": "编辑 {{name}}",
+      "requests_one": "{{count, number}} 个请求",
+      "requests_other": "{{count, number}} 个请求"
+    },
+    "templates": {
+      "sales": "销售功能请求",
+      "salesHint": "每个请求和 +1 都记录客户、商机和收入影响。",
+      "service": "客户服务问题",
+      "serviceHint": "问题类型、严重程度、参考号和步骤；+1 表示也受到影响。",
+      "beta": "Beta 反馈",
+      "betaHint": "产品领域、结果、评分以及供测试者使用的链接。",
+      "blank": "空白",
+      "blankHint": "仅标题和描述；稍后再添加字段。"
+    },
+    "create": {
+      "title": "新建看板",
+      "hint": "选择一个模板作为起点。所有字段和状态之后都可以修改。",
+      "template": "模板",
+      "slugPreview": "分享链接：/board/{{slug}}",
+      "slugLater": "创建看板时会根据名称生成分享链接。",
+      "submit": "创建看板"
+    },
+    "editor": {
+      "title": "看板",
+      "back": "返回看板列表",
+      "name": "名称",
+      "slug": "链接名称",
+      "slugHint": "仅限小写字母、数字和单个连字符，最多 60 个字符。",
+      "shareLink": "分享链接：",
+      "shareAfterSave": "（保存后）",
+      "copyLink": "复制链接",
+      "copied": "已复制。",
+      "description": "描述",
+      "save": "保存看板",
+      "unsaved": "有未保存的更改。"
+    },
+    "audience": {
+      "title": "谁可以登录并发布",
+      "company": "公司",
+      "companyHint": "使用公司域名的人员。",
+      "list": "指定人员",
+      "listHint": "允许的域名和邮箱地址。",
+      "anyone": "任何人",
+      "anyoneHint": "任何完成验证的邮箱地址。",
+      "companyDomains": "使用公司域名：{{list}}。",
+      "noCompanyDomains": "尚未设置公司域名，因此任何人都无法登录此看板。",
+      "domains": "允许的域名",
+      "emails": "允许的邮箱地址",
+      "emailsCount_one": "{{count, number}} 个地址（最多 {{max, number}} 个）。",
+      "emailsCount_other": "{{count, number}} 个地址（最多 {{max, number}} 个）。",
+      "emailsInvalid": "无效的邮箱地址：{{list}}",
+      "anyoneWarning": "任何邮箱地址都可以登录此看板并发布内容。没有审核：每人每天最多 20 个请求和 100 个 +1。"
+    },
+    "fieldsEditor": {
+      "title": "字段",
+      "hint": "标题和描述始终必填。打开此看板需要的字段。",
+      "requestGroup": "新请求",
+      "supportGroup": "+1",
+      "required": "必填",
+      "requiredLabel": "{{field}} 必填"
+    },
+    "fields": {
+      "customer": "客户",
+      "deal": "商机",
+      "impact": "收入影响",
+      "amount_usd": "金额（美元）",
+      "contact_email": "联系邮箱",
+      "kind": "问题类型",
+      "severity": "严重程度",
+      "reference": "预订号或订单号",
+      "steps": "复现步骤",
+      "affected_count": "受影响人数",
+      "area": "产品领域",
+      "outcome": "结果",
+      "rating": "评分",
+      "link": "链接",
+      "note": "备注"
+    },
+    "statuses": {
+      "title": "状态",
+      "hint": "新请求从第一个状态开始。最多 {{max, number}} 个状态。",
+      "initial": "初始",
+      "labelFor": "状态 {{position, number}} 的名称",
+      "moveUp": "上移 {{status}}",
+      "moveDown": "下移 {{status}}",
+      "remove": "删除 {{status}}",
+      "newLabel": "新状态",
+      "add": "添加状态",
+      "full": "一个看板最多有 {{max, number}} 个状态。"
+    },
+    "lifecycle": {
+      "title": "归档或删除",
+      "hint_one": "此看板有 {{count, number}} 个请求。归档后仅管理员可见，请求会保留；删除会移除看板及其请求。",
+      "hint_other": "此看板有 {{count, number}} 个请求。归档后仅管理员可见，请求会保留；删除会移除看板及其请求。",
+      "saveFirst": "请先保存或放弃您的更改。",
+      "archive": "归档",
+      "restore": "恢复",
+      "delete": "删除看板"
+    },
+    "problems": {
+      "nameRequired": "看板需要名称。",
+      "slugInvalid": "链接名称只能使用小写字母、数字和单个连字符。",
+      "statusesEmpty": "看板至少需要一个状态。",
+      "statusLabelRequired": "每个状态都需要名称。",
+      "emailsInvalid": "请修正或删除无效的邮箱地址。",
+      "emailsTooMany": "最多 500 个邮箱地址。",
+      "listEmpty": "请至少添加一个允许的域名或邮箱地址。"
+    },
+    "errors": {
+      "slugTaken": "另一个看板已在使用此链接名称。请另选一个。",
+      "statusInUse": "您删除的状态仍被此看板上的请求使用。请先将这些请求移到其他状态，或保留该状态。",
+      "forbidden": "只有管理员可以更改看板。",
+      "notFound": "此看板已不存在。",
+      "conflict": "看板在此期间已被更改。请重新加载后再试。",
+      "generic": "出了点问题。请重试。"
+    }
   }
 }

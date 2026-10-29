@@ -2,7 +2,7 @@
  * @fileoverview Time range selector dropdown component.
  *
  * Features:
- * - Preset ranges: 24h, 48h, 7d, 30d, 90d, All time (days=0)
+ * - Preset ranges: 24h, 48h, 7d, 14d (the default, by imported date), 30d, 90d, All time (days=0)
  * - Custom "last N days" rolling lookback input: 1–9999 days (all time is the
  *   "All time" preset, offered once); an invalid entry says why in one line
  * - Date-basis picker: filter by imported date (when data was collected) or
@@ -17,6 +17,7 @@ import { useState, useRef, useEffect, type KeyboardEvent as ReactKeyboardEvent }
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useConfigStore } from '../../store/configStore'
+import { DEFAULT_TIME_RANGE } from '../../store/timeRanges'
 import { ALL_TIME_CUSTOM_DAYS, MAX_CUSTOM_DAYS, parseCustomDaysInput } from '../../api/baseUrl'
 import type { DateBasis } from '../../api/types'
 import { Calendar, X, ChevronDown, Check } from 'lucide-react'
@@ -46,12 +47,16 @@ const ranges = [
   { value: '24h', labelKey: 'common:timeRange.24h', fullLabelKey: 'common:timeRange.24hFull' },
   { value: '48h', labelKey: 'common:timeRange.48h', fullLabelKey: 'common:timeRange.48hFull' },
   { value: '7d', labelKey: 'common:timeRange.7d', fullLabelKey: 'common:timeRange.7dFull' },
+  { value: '14d', labelKey: 'common:timeRange.14d', fullLabelKey: 'common:timeRange.14dFull' },
   { value: '30d', labelKey: 'common:timeRange.30d', fullLabelKey: 'common:timeRange.30dFull' },
   { value: '90d', labelKey: 'common:timeRange.90d', fullLabelKey: 'common:timeRange.90dFull' },
   // "All time" in both places: a bare "All" next to a custom "0 = all time" read as two different things.
   { value: 'all', labelKey: 'common:timeRange.allTime', fullLabelKey: 'common:timeRange.allTime' },
   { value: 'custom', labelKey: 'common:timeRange.custom', fullLabelKey: 'common:timeRange.custom' },
 ] as const
+
+/** The preset shown should the store hold an unknown token: the app default. */
+const DEFAULT_RANGE = ranges.find(r => r.value === DEFAULT_TIME_RANGE) ?? ranges[0]
 
 // The two dates every feedback item carries. The time range window applies to
 // whichever one is selected here.
@@ -221,7 +226,7 @@ export default function TimeRangeSelector() {
   const handleClearCustom = () => {
     setCustomDays(null)
     setDaysInput('')
-    setTimeRange('7d')
+    setTimeRange(DEFAULT_TIME_RANGE)
     setShowPicker(false)
   }
 
@@ -237,7 +242,7 @@ export default function TimeRangeSelector() {
   const filterByLabel = t('common:timeRange.filterBy')
 
   const customLabel = customRangeLabel(customDays, t)
-  const currentRange = ranges.find(r => r.value === timeRange) ?? ranges[2]
+  const currentRange = ranges.find(r => r.value === timeRange) ?? DEFAULT_RANGE
 
   const getDisplayLabel = () => (timeRange === 'custom' && customLabel ? customLabel : t(currentRange.labelKey))
   const getCurrentFullLabel = () => (timeRange === 'custom' && customLabel ? customLabel : t(currentRange.fullLabelKey))

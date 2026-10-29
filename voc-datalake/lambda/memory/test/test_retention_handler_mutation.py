@@ -233,7 +233,7 @@ class TestTheSweepReadsOnlyWhatTheDecisionNeeds:
 
 class TestTheHandlerWiring:
     def test_a_missing_table_is_a_configuration_error(self, worker_context, monkeypatch):
-        monkeypatch.setattr(retention, 'get_memory_table', lambda: None)
+        monkeypatch.setattr(store, 'get_memory_table', lambda: None)
         with pytest.raises(RuntimeError) as info:
             retention.lambda_handler({}, worker_context)
         assert str(info.value) == 'MEMORY_TABLE is not configured'

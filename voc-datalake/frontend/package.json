@@ -1,7 +1,7 @@
 {
   "name": "voc-analytics-frontend",
   "private": true,
-  "version": "5.30.1",
+  "version": "5.47.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
     "mock": "node mock-server.js",
     "check:mock": "node scripts/check-mock-coverage.mjs",
     "e2e:prod": "npm --prefix e2e ci --no-audit --no-fund && npm --prefix e2e test",
+    "e2e:prod:sharded": "npm --prefix e2e ci --no-audit --no-fund && bash e2e/scripts/run-sharded.sh",
     "test": "vitest",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",

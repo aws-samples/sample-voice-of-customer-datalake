@@ -151,6 +151,47 @@ export function Copy({ text }: { text: string }) {
 ''', '''
 {"items_one": "{{count, number}} item", "review": "Review {{n}}"}
 '''),
+    'utc-now-iso': (L, '''
+from datetime import UTC, datetime
+def touch(item):
+    item['updated_at'] = datetime.now(UTC).isoformat()
+''', '''
+from datetime import UTC, datetime
+from shared.timestamps import now_iso
+def touch(item, started):
+    item['updated_at'] = now_iso()
+    item['started'] = started.isoformat()   # a given moment, not "now"
+    item['day'] = datetime.now(UTC).date().isoformat()
+'''),
+    'ts-inline-is-record': (UI, '''
+export const isPlain = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v)
+''', '''
+import { isRecord } from '../lib/typeGuards'
+export const isList = (v: unknown) => typeof v === 'object' && v !== null && Array.isArray(v)
+'''),
+    'ts-local-request-init': ('voc-datalake/frontend/src/api/thingApi.ts', '''
+const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) })
+''', '''
+import { post } from './client'
+const patch = (next: Partial<State>) => setState((prev) => ({ ...prev, ...next }))
+'''),
+    'locale-manual-plural': ('voc-datalake/frontend/public/locales/en/thing.json', '''
+{"import_other": "Import {{count, number}} item{{plural}}", "upload": "Uploading file(s)"}
+''', '''
+{"import_one": "Import {{count, number}} item", "import_other": "Import {{count, number}} items"}
+'''),
+    'ts-manual-plural': (UI, '''
+export const label = (n: number) => t('items', { count: n, plural: n === 1 ? '' : 's' })
+''', '''
+// never pass plural: let count pick the form
+export const label = (n: number) => t('items', { count: n })
+'''),
+    'ts-json-equality': (UI, '''
+export const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+''', '''
+import { sameJson } from '../lib/sameJson'
+export const same = (a: unknown, b: unknown) => sameJson(a, b) && JSON.stringify(a).length > 0
+'''),
 }
 
 

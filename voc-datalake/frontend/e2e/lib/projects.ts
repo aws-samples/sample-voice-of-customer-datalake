@@ -77,3 +77,12 @@ export async function inviteMember(id: string, member: Role, memberRole: 'editor
 /** The /projects list card whose heading is exactly `name`. */
 export const projectCard = (page: Page, name: string): Locator =>
   page.locator('.card').filter({ has: page.getByRole('heading', { name, exact: true }) })
+
+/**
+ * Opens the card's "Actions for <name>" menu and clicks its Edit or Delete item (ProjectCard.tsx:
+ * both are `menuitem`s named "Edit project <name>" / "Delete project <name>").
+ */
+export async function chooseProjectAction(page: Page, name: string, action: 'Edit' | 'Delete'): Promise<void> {
+  await page.getByRole('button', { name: `Actions for ${name}`, exact: true }).click()
+  await page.getByRole('menuitem', { name: `${action} project ${name}`, exact: true }).click()
+}

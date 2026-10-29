@@ -294,7 +294,7 @@ class TestDesignSystemValidation:
         ({'guidelines': 'g' * 20_001}, 'guidelines must be at most 20000 characters'),
         ({'logo_url': 5}, 'logo_url must be a URL of at most 2048 characters'),
         ({'logo_url': 'https://a.example/' + 'x' * (2_049 - 18)}, 'logo_url must be a URL of at most 2048 characters'),
-        ({'logo_url': 'http://a.example/x'}, 'logo_url must be an https:// URL'),
+        ({'logo_url': 'http://a.example/x'}, 'logo_url must be an https:// URL; http:// addresses are not read'),
         ({'logo_url': 'https://.example'}, 'logo_url must be an https:// URL'),
         ({'logo_url': 'https://a b'}, 'logo_url must be an https:// URL'),
     ])
@@ -321,12 +321,14 @@ class TestReferenceRequestValidation:
     @pytest.mark.parametrize(('body', 'message'), [
         ({'kind': 'pdf', 'title': 'x'}, 'kind must be one of: screenshot, html, figma, github, website'),
         ({'kind': 'website', 'title': 'Site'}, 'url is required for a website reference'),
-        ({'kind': 'website', 'title': 'Site', 'url': 'http://example.com'}, 'url must be an https:// URL'),
+        ({'kind': 'website', 'title': 'Site', 'url': 'http://example.com'}, 'url must be an https:// URL; http:// addresses are not read'),
+        ({'kind': 'website', 'title': 'Site', 'url': 'FTP://example.com'}, 'url must be an https:// URL; ftp:// addresses are not read'),
+        ({'kind': 'github', 'title': 'Repo', 'url': 'git+ssh://example.com/r'}, 'url must be an https:// URL; git+ssh:// addresses are not read'),
         ({'kind': 'html'}, 'title is required'),
         ({'kind': 'html', 'title': 't' * 201}, 'title must be at most 200 characters'),
         ({'kind': 'figma', 'title': 'Kit'}, 'url is required for a figma reference'),
         ({'kind': 'github', 'title': 'Repo', 'url': ''}, 'url is required for a github reference'),
-        ({'kind': 'html', 'title': 'H', 'url': 'ftp://x'}, 'url must be an https:// URL'),
+        ({'kind': 'html', 'title': 'H', 'url': 'ftp://x'}, 'url must be an https:// URL; ftp:// addresses are not read'),
     ])
     def test_every_refusal_names_its_cause(self, body, message):
         _refused(cc.validate_reference_request, body, message)

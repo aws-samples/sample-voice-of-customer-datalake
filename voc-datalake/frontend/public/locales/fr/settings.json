@@ -1,5 +1,30 @@
 {
   "aiModel": {
+    "image": {
+      "title": "Génération d’images (avatars des personas)",
+      "description": "Le modèle d’image qui dessine les avatars des personas. Il est fixé par le déploiement et ne se choisit pas ici ; le déploiement demande son accès.",
+      "model": "Modèle",
+      "region": "Région",
+      "access": "Accès",
+      "quota": "Quota",
+      "requestsPerMinute": "{{count, number}} requêtes/min",
+      "quotaPending": "Lecture dans Service Quotas, revérifiez dans une minute",
+      "avatarsOff": "Les avatars sont désactivés dans ce déploiement (périmètre d’inférence UE) : ce modèle n’est donc pas utilisé.",
+      "testTitle": "Générer une petite image de test avec {{model}}. Chaque clic coûte quelques cents US ; l’image n’est pas conservée.",
+      "status": {
+        "available": "Disponible",
+        "no_access": "Pas d’accès",
+        "not_subscribed": "Non abonné",
+        "not_in_region": "Absent de cette région",
+        "unknown": "Inconnu"
+      },
+      "hint": {
+        "no_access": "Ce compte ou ses rôles ne peuvent pas utiliser le modèle. Vérifiez les politiques de l’organisation (SCP) pour Bedrock et AWS Marketplace, puis redéployez.",
+        "not_subscribed": "L’accord ou l’abonnement Marketplace du modèle manque. Redéployez (le déploiement le demande) ou acceptez-le dans la console Bedrock, sous Accès aux modèles.",
+        "not_in_region": "Le modèle n’est pas proposé dans cette région. Choisissez dans avatar-generation.json un modèle d’image proposé là-bas.",
+        "unknown": "L’accès n’a pas pu être lu. Utilisez Tester pour vérifier le modèle directement."
+      }
+    },
     "automaticOption": "Automatique — {{model}}",
     "groupOther": "Autres modèles",
     "groupRecommended": "Recommandé",
@@ -62,6 +87,7 @@
       "latency": "{{ms}} ms",
       "tokensPerMinute": "{{count, number}} jetons/min",
       "quotaUnknown": "Quota inconnu",
+      "quotaStale": "Dernière valeur enregistrée : une nouvelle lecture de Service Quotas est en cours",
       "all": "Tester tous les modèles",
       "allTitle": "Accès et capacité des modèles",
       "allIntro": "Envoie une courte requête à chaque modèle, l’un après l’autre, et affiche son quota de jetons par minute pour ce compte et cette région.",
@@ -146,7 +172,6 @@
   "logs": {
     "clear": "Effacer",
     "configureFirst": "Configurez le point de terminaison API dans l'onglet Général pour voir les journaux.",
-    "daysAgo": "il y a {{count, number}} j",
     "daysAgo_one": "il y a {{count, number}} j",
     "daysAgo_other": "il y a {{count, number}} j",
     "errorLabel": "Erreur :",
@@ -155,10 +180,8 @@
     "errorsLabel": "Erreurs :",
     "failures_one": "{{count, number}} échec",
     "failures_other": "{{count, number}} échecs",
-    "hoursAgo": "il y a {{count, number}} h",
     "hoursAgo_one": "il y a {{count, number}} h",
     "hoursAgo_other": "il y a {{count, number}} h",
-    "items": "{{count, number}} éléments",
     "items_one": "{{count, number}} élément",
     "items_other": "{{count, number}} éléments",
     "justNow": "à l'instant",
@@ -168,26 +191,21 @@
     "loadingRuns": "Chargement des exécutions...",
     "loadingSummary": "Chargement du résumé...",
     "messageId": "ID du message :",
-    "minutesAgo": "il y a {{count, number}} min",
     "minutesAgo_one": "il y a {{count, number}} min",
     "minutesAgo_other": "il y a {{count, number}} min",
-    "moreEntries": "+{{count, number}} entrées supplémentaires",
     "moreEntries_one": "+{{count, number}} entrée supplémentaire",
     "moreEntries_other": "+{{count, number}} entrées supplémentaires",
     "noProcessingErrors": "Aucune erreur de traitement sur cette période",
     "noRunsInPeriod": "Aucune exécution sur cette période",
     "noScrapersConfigured": "Aucune source de données qui s’exécute pour l’instant. Ajoutez-en une sur la page Sources de données.",
     "noValidationFailures": "Aucun échec de validation sur cette période",
-    "pages": "{{count, number}} résultats",
     "pages_one": "{{count, number}} résultat",
     "pages_other": "{{count, number}} résultats",
     "processingErrors": "Erreurs de traitement",
     "recordKeys": "Champs présents :",
-    "textLength": "Longueur du texte : {{count, number}} caractères",
     "textLength_one": "Longueur du texte : {{count, number}} caractère",
     "textLength_other": "Longueur du texte : {{count, number}} caractères",
     "refresh": "Actualiser",
-    "runErrors": "{{count, number}} erreurs",
     "runErrors_one": "{{count, number}} erreur",
     "runErrors_other": "{{count, number}} erreurs",
     "scraperRuns": "Exécutions de scraper",
@@ -240,7 +258,87 @@
       "ios": "Applications iPhone",
       "android": "Applications Android"
     },
-    "noRunsYet": "Aucune exécution pour l’instant"
+    "noRunsYet": "Aucune exécution pour l’instant",
+    "system": {
+      "tab": "Erreurs système",
+      "levelLabel": "Niveau de journal",
+      "levelError": "Erreurs",
+      "levelWarning": "Erreurs et avertissements",
+      "searchingStart": "Recherche dans les journaux…",
+      "searching_one": "Recherche dans les journaux de {{count, number}} fonction…",
+      "searching_many": "Recherche dans les journaux de {{count, number}} fonctions…",
+      "searching_other": "Recherche dans les journaux de {{count, number}} fonctions…",
+      "searched_one": "Journaux de {{count, number}} fonction parcourus",
+      "searched_many": "Journaux de {{count, number}} fonctions parcourus",
+      "searched_other": "Journaux de {{count, number}} fonctions parcourus",
+      "empty": "Aucune erreur sur cette période",
+      "failed": "La recherche dans les journaux a échoué. Réessayez.",
+      "loadFailed": "Impossible de charger les journaux système.",
+      "truncated": "Affichage des {{rows, number}} lignes de journal les plus récentes",
+      "download": "Télécharger",
+      "downloadTitle": "Télécharger ces erreurs dans un fichier JSON à partager pour analyse",
+      "adminOnly": "Les erreurs système ne sont visibles que par les administrateurs.",
+      "times": "×{{n, number}}",
+      "occurrences_one": "{{count, number}} occurrence",
+      "occurrences_many": "{{count, number}} occurrences",
+      "occurrences_other": "{{count, number}} occurrences",
+      "firstSeen": "Première occurrence",
+      "lastSeen": "Dernière occurrence",
+      "requestId": "ID de requête",
+      "sourceTitle": "Origine de ces lignes",
+      "sourceApi": "API",
+      "sourceWorkflow": "Workflow",
+      "request": {
+        "show": "Afficher toute la requête",
+        "loading": "Lecture de toutes les lignes de cette requête…",
+        "loadFailed": "Impossible de charger les lignes de la requête.",
+        "failed": "La recherche de cette requête a échoué. Réessayez.",
+        "retry": "Réessayer",
+        "empty": "Aucune ligne trouvée pour cette requête (ses journaux ont peut-être expiré).",
+        "truncated": "Affichage des {{lines, number}} premières lignes",
+        "linesLabel": "Lignes de journal de cette requête",
+        "title_one": "{{count, number}} ligne de cette requête",
+        "title_many": "{{count, number}} lignes de cette requête",
+        "title_other": "{{count, number}} lignes de cette requête"
+      },
+      "queues": {
+        "title": "Files d’échecs",
+        "loading": "Vérification des files d’échecs…",
+        "loadFailed": "Impossible de lire les files d’échecs.",
+        "oldest": "le plus ancien {{age}}",
+        "noSample": "Aucun message n’a pu être lu comme exemple.",
+        "unreadable": "Lecture impossible",
+        "peekNote": "Ces messages ont échoué à chaque nouvelle tentative et ne sont plus retentés. Lire un exemple ne le supprime pas.",
+        "empty_one": "La file d’échecs est vide",
+        "empty_many": "Les {{count, number}} files d’échecs sont vides",
+        "empty_other": "Les {{count, number}} files d’échecs sont vides",
+        "messages_one": "{{count, number}} message",
+        "messages_many": "{{count, number}} messages",
+        "messages_other": "{{count, number}} messages"
+      },
+      "environment": {
+        "title": "Environnement",
+        "loading": "Chargement de l’environnement…",
+        "loadFailed": "Impossible de charger l’environnement.",
+        "on": "Activé",
+        "off": "Désactivé",
+        "none": "Aucun",
+        "fields": {
+          "version": "Version",
+          "region": "Région",
+          "account_suffix": "Compte (4 derniers chiffres)",
+          "deployment_prefix": "Préfixe du déploiement",
+          "enabled_sources": "Sources activées",
+          "web_search": "Recherche web",
+          "inference_scope": "Portée d’inférence",
+          "image_model": "Modèle d’image",
+          "model_overrides": "Choix de modèles",
+          "alerting": "Alertes",
+          "open_circuits": "Sources en pause (disjoncteur)",
+          "log_coverage": "Journaux consultés"
+        }
+      }
+    }
   },
   "saveChanges": "Enregistrer les modifications",
   "saved": "Enregistré !",
@@ -261,8 +359,6 @@
     "saveToSecrets": "Enregistrer dans Secrets Manager",
     "selectOption": "Sélectionner...",
     "show": "Afficher",
-    "test": "Tester",
-    "unknownResult": "Résultat inconnu",
     "webhooks": "URL de webhooks",
     "circuit": {
       "paused": "En pause après des échecs répétés",
@@ -297,7 +393,8 @@
     "policies": "Politiques des sources",
     "users": "Utilisateurs",
     "logs": "Journaux",
-    "version": "Version"
+    "version": "Version",
+    "boards": "Tableaux"
   },
   "title": "Paramètres",
   "users": {
@@ -322,6 +419,7 @@
     "retry": "Réessayer",
     "loading": "Chargement…",
     "saveFailed": "Échec de l'enregistrement. Réessayez.",
+    "discardChanges": "Annuler les modifications",
     "write": "Rédiger",
     "preview": "Aperçu",
     "nothingToPreview": "Rien à prévisualiser pour l'instant.",
@@ -371,14 +469,26 @@
     "removeKpi": "Retirer l'indicateur",
     "kpiName": "Nom de l'indicateur",
     "kpiTarget": "Cible",
-    "kpiUnit": "Unité"
+    "kpiUnit": "Unité",
+    "fieldRequired": "Obligatoire : remplissez-le ou supprimez la ligne",
+    "fieldTooLong": "{{max, number}} caractères au maximum",
+    "fixFields": "Non enregistré : corrigez les champs signalés."
   },
   "designSystem": {
     "title": "Système de design",
     "description": "Les jetons, consignes et références de votre marque. Les prototypes et visuels PR/FAQ les utilisent pour respecter votre identité.",
     "logo": "Logotype",
     "logoAlt": "Logotype de l'entreprise",
+    "logoInDraft": "Nouveau logo issu d’une référence : il devient le logo de l’entreprise lorsque vous enregistrez le design system.",
     "uploadLogo": "Téléverser le logotype",
+    "logoHint": "PNG, JPEG, WebP ou SVG (le SVG est converti en PNG dans votre navigateur).",
+    "svg": {
+      "tooLarge": "{{name}} dépasse 1 Mo. Un logo SVG ne peut pas dépasser 1 Mo.",
+      "unreadable": "{{name}} n'a pas pu être lu comme image SVG. Exportez-le en PNG et importez ce fichier.",
+      "timeout": "La conversion de {{name}} a pris trop de temps. Exportez-le en PNG et importez ce fichier.",
+      "notConverted": "Ce SVG n'a pas pu être converti dans votre navigateur. Exportez-le en PNG et importez ce fichier.",
+      "resultTooLarge": "Le PNG converti dépasse 5 Mo. Exportez un PNG plus petit et importez-le."
+    },
     "colors": "Couleurs",
     "typography": "Typographie",
     "spacing": "Espacements",
@@ -417,12 +527,22 @@
     "archive": "Archiver",
     "archiveTitle": "Archiver cette référence ?",
     "archiveMessage": "« {{title}} » ne sera plus utilisé pour les nouveaux prototypes. Le fichier est conservé.",
+    "archiveMessageLink": "« {{title}} » ne sera plus utilisé pour les nouveaux prototypes. Le lien et ce qui en a été lu sont conservés.",
     "referenceKind": "Type de référence",
     "referenceTitle": "Titre",
     "referenceUrl": "Lien (https://…)",
+    "urlProblems": {
+      "tooLong": "L’adresse dépasse 2 048 caractères.",
+      "notUrl": "Ce n’est pas une adresse web. Collez le lien complet, commençant par https://",
+      "notHttps": "Seules les adresses https:// peuvent être lues ; les adresses {{scheme}}:// sont refusées.",
+      "noHost": "L’adresse doit contenir un nom de site après https://, par exemple https://example.com",
+      "credentials": "Retirez le nom d’utilisateur ou le mot de passe de l’adresse.",
+      "localhost": "Les adresses de cet ordinateur ne peuvent pas être lues ; utilisez un site public."
+    },
     "referenceFile": "Fichier",
     "addReference": "Ajouter une référence",
     "addReferenceFailed": "Impossible d'ajouter la référence. Réessayez.",
+    "duplicateReference": "Cette adresse est déjà une référence : « {{title}} ».",
     "referenceTitleOptional": "Titre (facultatif)",
     "kindHints": {
       "website": "Nous ouvrons la page dans un navigateur sécurisé et lisons ses couleurs, polices et logo.",
@@ -453,11 +573,10 @@
       "variantsCount_other": "{{count, number}} variantes",
       "onlyGuidelines": "Consignes uniquement",
       "logoCandidate": "Logo trouvé sur cette référence",
+      "logoRendered": "Rendu à partir du logo SVG du site",
       "apply": "Utiliser comme système de design",
       "useLogo": "Utiliser ce logo",
-      "logoFailed": "Impossible d’utiliser ce logo. Réessayez.",
-      "replaceLogoTitle": "Remplacer le logo actuel ?",
-      "replaceLogoMessage": "Le logo de « {{title}} » remplace votre logo actuel."
+      "logoFailed": "Impossible d’utiliser ce logo. Réessayez."
     },
     "applied": {
       "title": "Depuis {{source}} : vérifiez les changements, puis enregistrez.",
@@ -529,6 +648,7 @@
         "padding": "Marge intérieure",
         "gap": "Espacement",
         "height": "Hauteur",
+        "width": "Largeur",
         "font_family": "Police",
         "font_size": "Taille de police",
         "font_weight": "Graisse",
@@ -538,6 +658,7 @@
         "outline": "Contour de focus"
       },
       "hoverField": "{{field}} au survol",
+      "focusField": "{{field}} au focus",
       "hoverFocus": "Survol et focus",
       "useToken": "Utiliser un jeton…",
       "useTokenFor": "Utiliser un jeton de couleur pour {{field}}",
@@ -555,6 +676,7 @@
         "padding": "Utilisez une à quatre longueurs, comme 8px 16px.",
         "gap": "Utilisez une longueur comme 8px.",
         "height": "Utilisez une longueur comme 36px.",
+        "width": "Utilisez une longueur comme 36px.",
         "font_family": "Utilisez des noms de police séparés par des virgules.",
         "font_size": "Utilisez une longueur comme 14px.",
         "font_weight": "Utilisez 100–900, normal ou bold.",
@@ -662,5 +784,180 @@
     "changelogTitle": "Notes de version",
     "changelogDescription": "Les changements par version, de la plus récente à la plus ancienne, issus de CHANGELOG.md.",
     "showOlder": "Afficher les versions antérieures ({{count, number}} de plus)"
+  },
+  "pluginCopy": {
+    "appReviewsAndroid": {
+      "name": "Avis d’applications Android",
+      "description": "Collecte les avis clients du Google Play Store"
+    },
+    "appReviewsIos": {
+      "name": "Avis d’applications iOS",
+      "description": "Collecte les avis clients de l’App Store d’Apple"
+    },
+    "githubIssues": {
+      "name": "Tickets GitHub",
+      "description": "Importe les tickets et commentaires des dépôts GitHub, avec version du logiciel, libellés et signatures d’erreur"
+    },
+    "s3Import": {
+      "name": "Import groupé S3",
+      "description": "Importe des retours depuis un bucket S3 (CSV, JSON, JSONL)"
+    },
+    "syntheticReviews": {
+      "name": "Générateur d’avis synthétiques",
+      "description": "Génère des avis clients synthétiques réalistes avec l’IA (Amazon Bedrock) pour les démos, les tests et la modélisation. Traités par le pipeline normal et marqués comme données synthétiques."
+    },
+    "webReviews": {
+      "name": "Avis web",
+      "description": "Lit les avis clients de pages d’avis publiques (Trustpilot, TripAdvisor, forums) avec un navigateur géré. Chaque page ajoutée est une source à part."
+    },
+    "webscraper": {
+      "name": "Extracteur web",
+      "description": "Extracteur configurable pour récupérer des retours sur des sites web"
+    }
+  },
+  "boards": {
+    "loading": "Chargement…",
+    "saved": "Enregistré.",
+    "cancel": "Annuler",
+    "domains": {
+      "title": "Domaines de l’entreprise",
+      "description": "Les domaines e-mail qui appartiennent à l’entreprise. Les personnes de ces domaines peuvent se connecter à tous les tableaux ouverts à l’entreprise et comptent comme collègues lors de l’ajout de participants.",
+      "label": "Domaines e-mail de l’entreprise",
+      "hint": "Appuyez sur Entrée après chaque domaine. Sans domaine, personne ne peut se connecter à un tableau d’entreprise.",
+      "save": "Enregistrer les domaines",
+      "loadFailed": "Les domaines de l’entreprise n’ont pas pu être chargés."
+    },
+    "participantCard": {
+      "domains": "Domaines de l’entreprise : {{list}}.",
+      "noDomains": "Aucun domaine d’entreprise pour l’instant.",
+      "editInBoards": "Les modifier dans Tableaux"
+    },
+    "list": {
+      "title": "Tableaux de retours",
+      "description": "Chaque tableau recueille les demandes d’une équipe ou d’un public et a son propre lien, ses champs et ses statuts.",
+      "create": "Nouveau tableau",
+      "empty": "Aucun tableau pour l’instant. Créez-en un à partir d’un modèle.",
+      "loadFailed": "Les tableaux n’ont pas pu être chargés.",
+      "archived": "Archivé",
+      "edit": "Modifier",
+      "editLabel": "Modifier {{name}}",
+      "requests_one": "{{count, number}} demande",
+      "requests_many": "{{count, number}} demandes",
+      "requests_other": "{{count, number}} demandes"
+    },
+    "templates": {
+      "sales": "Demandes de fonctionnalités des ventes",
+      "salesHint": "Client, affaire et impact sur le chiffre d’affaires pour chaque demande et chaque +1.",
+      "service": "Problèmes du service client",
+      "serviceHint": "Type de problème, gravité, référence et étapes ; un +1 signifie aussi concerné.",
+      "beta": "Retours sur la bêta",
+      "betaHint": "Zone du produit, résultat, note et lien pour les testeurs.",
+      "blank": "Vide",
+      "blankHint": "Titre et description seulement ; ajoutez des champs ensuite."
+    },
+    "create": {
+      "title": "Nouveau tableau",
+      "hint": "Choisissez un modèle de départ. Tous les champs et statuts restent modifiables ensuite.",
+      "template": "Modèle",
+      "slugPreview": "Lien de partage : /board/{{slug}}",
+      "slugLater": "Le lien de partage est créé à partir du nom lors de la création du tableau.",
+      "submit": "Créer le tableau"
+    },
+    "editor": {
+      "title": "Tableau",
+      "back": "Retour aux tableaux",
+      "name": "Nom",
+      "slug": "Nom du lien",
+      "slugHint": "Minuscules, chiffres et tirets simples, 60 caractères au maximum.",
+      "shareLink": "Lien de partage :",
+      "shareAfterSave": "(après l’enregistrement)",
+      "copyLink": "Copier le lien",
+      "copied": "Copié.",
+      "description": "Description",
+      "save": "Enregistrer le tableau",
+      "unsaved": "Modifications non enregistrées."
+    },
+    "audience": {
+      "title": "Qui peut se connecter et publier",
+      "company": "Entreprise",
+      "companyHint": "Les personnes des domaines de l’entreprise.",
+      "list": "Personnes précises",
+      "listHint": "Domaines et adresses e-mail autorisés.",
+      "anyone": "Tout le monde",
+      "anyoneHint": "Toute adresse e-mail qui se confirme.",
+      "companyDomains": "Utilise les domaines de l’entreprise : {{list}}.",
+      "noCompanyDomains": "Aucun domaine d’entreprise n’est défini : personne ne peut se connecter à ce tableau.",
+      "domains": "Domaines autorisés",
+      "emails": "Adresses e-mail autorisées",
+      "emailsCount_one": "{{count, number}} adresse ({{max, number}} au maximum).",
+      "emailsCount_many": "{{count, number}} adresses ({{max, number}} au maximum).",
+      "emailsCount_other": "{{count, number}} adresses ({{max, number}} au maximum).",
+      "emailsInvalid": "Adresses e-mail non valides : {{list}}",
+      "anyoneWarning": "N’importe quelle adresse e-mail peut se connecter et publier sur ce tableau. Il n’y a pas de modération : chaque personne est limitée à 20 demandes et 100 +1 par jour."
+    },
+    "fieldsEditor": {
+      "title": "Champs",
+      "hint": "Le titre et la description sont toujours demandés. Activez les champs dont ce tableau a besoin.",
+      "requestGroup": "Sur une nouvelle demande",
+      "supportGroup": "Sur un +1",
+      "required": "Obligatoire",
+      "requiredLabel": "{{field}} obligatoire"
+    },
+    "fields": {
+      "customer": "Client",
+      "deal": "Affaire",
+      "impact": "Impact sur le chiffre d’affaires",
+      "amount_usd": "Montant (USD)",
+      "contact_email": "E-mail de contact",
+      "kind": "Type de problème",
+      "severity": "Gravité",
+      "reference": "Référence de réservation ou de commande",
+      "steps": "Étapes pour reproduire",
+      "affected_count": "Personnes concernées",
+      "area": "Zone du produit",
+      "outcome": "Résultat",
+      "rating": "Note",
+      "link": "Lien",
+      "note": "Remarque"
+    },
+    "statuses": {
+      "title": "Statuts",
+      "hint": "Les nouvelles demandes commencent au premier statut. Jusqu’à {{max, number}} statuts.",
+      "initial": "Initial",
+      "labelFor": "Nom du statut {{position, number}}",
+      "moveUp": "Monter {{status}}",
+      "moveDown": "Descendre {{status}}",
+      "remove": "Retirer {{status}}",
+      "newLabel": "Nouveau statut",
+      "add": "Ajouter un statut",
+      "full": "Un tableau a au maximum {{max, number}} statuts."
+    },
+    "lifecycle": {
+      "title": "Archiver ou supprimer",
+      "hint_one": "Ce tableau contient {{count, number}} demande. L’archiver le masque à tous sauf aux administrateurs et conserve ses demandes ; le supprimer efface le tableau et ses demandes.",
+      "hint_many": "Ce tableau contient {{count, number}} demandes. L’archiver le masque à tous sauf aux administrateurs et conserve ses demandes ; le supprimer efface le tableau et ses demandes.",
+      "hint_other": "Ce tableau contient {{count, number}} demandes. L’archiver le masque à tous sauf aux administrateurs et conserve ses demandes ; le supprimer efface le tableau et ses demandes.",
+      "saveFirst": "Enregistrez ou annulez d’abord vos modifications.",
+      "archive": "Archiver",
+      "restore": "Restaurer",
+      "delete": "Supprimer le tableau"
+    },
+    "problems": {
+      "nameRequired": "Le tableau a besoin d’un nom.",
+      "slugInvalid": "Le nom du lien ne peut contenir que des minuscules, des chiffres et des tirets simples.",
+      "statusesEmpty": "Le tableau a besoin d’au moins un statut.",
+      "statusLabelRequired": "Chaque statut a besoin d’un nom.",
+      "emailsInvalid": "Corrigez ou retirez les adresses e-mail non valides.",
+      "emailsTooMany": "500 adresses e-mail au maximum.",
+      "listEmpty": "Ajoutez au moins un domaine ou une adresse e-mail autorisés."
+    },
+    "errors": {
+      "slugTaken": "Un autre tableau utilise déjà ce nom de lien. Choisissez-en un autre.",
+      "statusInUse": "Un statut que vous avez retiré est encore utilisé par des demandes de ce tableau. Déplacez d’abord ces demandes vers un autre statut, ou gardez le statut.",
+      "forbidden": "Seuls les administrateurs peuvent modifier les tableaux.",
+      "notFound": "Ce tableau n’existe plus.",
+      "conflict": "Le tableau a changé entre-temps. Rechargez-le et réessayez.",
+      "generic": "Une erreur s’est produite. Réessayez."
+    }
   }
 }

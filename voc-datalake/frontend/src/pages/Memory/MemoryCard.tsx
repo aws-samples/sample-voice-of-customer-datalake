@@ -5,18 +5,21 @@
  * Plain words only: a category id reads as its label, a stored id inside the
  * statement (a category, a source, a project) reads as its name
  * (`useLabelKnownIds`), and a statement the server partly hid for privacy says so.
- * A personal memory has no supporter count — the only supporter is you.
+ * A personal memory has no supporter count — the only supporter is you — so its
+ * confirm reads "Still true" (it refreshes the memory against the 90-day decay).
  *
  * @module pages/Memory/MemoryCard
  */
 import { useTranslation } from 'react-i18next'
-import { Archive, ArchiveRestore, ShieldCheck, ThumbsUp, Users } from 'lucide-react'
+import { Archive, ArchiveRestore, Pencil, ShieldCheck, ThumbsUp, Users } from 'lucide-react'
 import clsx from 'clsx'
 import type { MemoryItem, MemorySourceKind, MemoryStatus } from '../../api/memoryApi'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { useLabelKnownIds } from '../../hooks/useLabelKnownIds'
 import { formatDate } from '../../utils/dateUtils'
 import { wasRedacted } from './privacyPreview'
+import MemoryEditor from './MemoryEditor'
+import type { MemoryEditing } from './MemoryEditor'
 
 /** AI-written memories wear the `aim` tone (AI / generated content). */
 const AUTOMATED_SOURCES: ReadonlySet<MemorySourceKind> = new Set(['extracted', 'agent'])
@@ -29,6 +32,9 @@ export interface MemoryActions {
   readonly onConfirm?: () => void
   /** The server did not count this caller's +1: they already back it (their own memory, or a second +1). */
   readonly alreadyBacked?: boolean
+  /** Your own memory: confirming says it is still true rather than counting a +1. */
+  readonly personal?: boolean
+  readonly onEdit?: () => void
   readonly onForget?: () => void
   readonly onRestore?: () => void
   readonly onToggleSelect?: () => void
@@ -70,31 +76,44 @@ function MemoryMeta({ memory }: Readonly<{ memory: MemoryItem }>) {
   )
 }
 
-function ConfirmButton({ actions }: Readonly<{ actions: MemoryActions }>) {
+function ConfirmButton({ statement, actions }: Readonly<{ statement: string; actions: MemoryActions }>) {
   const { t } = useTranslation('memory')
+  const personal = actions.personal === true
+  const label = personal ? t('confirmPersonal') : t('confirm')
+  const hint = personal ? t('confirmPersonalHint') : t('confirmHint')
+  // Names the memory like Edit does, and starts with the visible label (5.35.03, e2e 5.35.02:
+  // every card's button was announced as the same hint sentence).
+  const name = personal ? t('confirmPersonalLabel', { statement }) : t('confirmLabel', { statement })
   if (actions.alreadyBacked === true) {
     // Said in words next to the control: a +1 that changed nothing used to look broken.
+    const done = personal ? t('confirmedPersonal') : t('alreadyBacked')
     return (
       <span className="flex flex-col items-end gap-0.5">
-        <button type="button" disabled className="btn btn-ghost btn-sm flex items-center gap-1" title={t('alreadyBacked')}>
-          <ThumbsUp size={14} aria-hidden /> {t('confirm')}
+        <button type="button" disabled className="btn btn-ghost btn-sm flex items-center gap-1" title={done}>
+          <ThumbsUp size={14} aria-hidden /> {label}
         </button>
-        <span role="status" className="text-xs text-muted text-right max-w-[14rem]">{t('alreadyBacked')}</span>
+        <span role="status" className="text-xs text-muted text-right max-w-[14rem]">{done}</span>
       </span>
     )
   }
   return (
-    <button type="button" onClick={actions.onConfirm} className="btn btn-ghost btn-sm flex items-center gap-1" title={t('confirmHint')} aria-label={t('confirmHint')}>
-      <ThumbsUp size={14} aria-hidden /> {t('confirm')}
+    <button type="button" onClick={actions.onConfirm} className="btn btn-ghost btn-sm flex items-center gap-1" title={hint} aria-label={name}>
+      <ThumbsUp size={14} aria-hidden /> {label}
     </button>
   )
 }
 
-function MemoryCardActions({ archived, actions }: Readonly<{ archived: boolean; actions: MemoryActions }>) {
+function MemoryCardActions({ memory, archived, actions }: Readonly<{ memory: MemoryItem; archived: boolean; actions: MemoryActions }>) {
   const { t } = useTranslation('memory')
   return (
     <div className="flex items-start gap-1">
-      {actions.onConfirm && !archived ? <ConfirmButton actions={actions} /> : null}
+      {actions.onConfirm && !archived ? <ConfirmButton statement={memory.statement.slice(0, 60)} actions={actions} /> : null}
+      {actions.onEdit && !archived ? (
+        <button type="button" onClick={actions.onEdit} className="icon-btn" title={t('edit')}
+          aria-label={t('editLabel', { statement: memory.statement.slice(0, 60) })}>
+          <Pencil size={16} aria-hidden />
+        </button>
+      ) : null}
       {actions.onForget && !archived ? (
         <button type="button" onClick={actions.onForget} className="icon-btn" aria-label={t('forget')} title={t('forget')}>
           <Archive size={16} aria-hidden />
@@ -109,16 +128,18 @@ function MemoryCardActions({ archived, actions }: Readonly<{ archived: boolean; 
   )
 }
 
-export default function MemoryCard({ memory, selected, actions }: Readonly<{
+export default function MemoryCard({ memory, selected, actions, editing }: Readonly<{
   memory: MemoryItem
   selected: boolean
   actions: MemoryActions
+  /** Set while this card's statement is being edited inline. */
+  editing?: MemoryEditing
 }>) {
   const { t } = useTranslation('memory')
   const labelIds = useLabelKnownIds()
   const archived = memory.status === 'archived'
   return (
-    <li className={clsx('card p-4 flex gap-3', selected && 'bg-accent-subtle border-accent/40')}>
+    <li className={clsx('card p-4 flex gap-3', selected && 'bg-accent-subtle border-accent/40')} data-testid="memory-card">
       {actions.onToggleSelect ? (
         <input
           type="checkbox"
@@ -129,14 +150,16 @@ export default function MemoryCard({ memory, selected, actions }: Readonly<{
         />
       ) : null}
       <div className="flex-1 min-w-0 space-y-2">
-        <p className={clsx('text-sm break-words', archived ? 'text-muted line-through' : 'text-text-strong')}>{labelIds(memory.statement)}</p>
+        {editing ? <MemoryEditor statement={memory.statement} editing={editing} /> : (
+          <p className={clsx('text-sm break-words', archived ? 'text-muted line-through' : 'text-text-strong')}>{labelIds(memory.statement)}</p>
+        )}
         {wasRedacted(memory.statement) ? (
           <p className="text-xs text-muted flex items-center gap-1"><ShieldCheck size={12} aria-hidden /> {t('privacy.hidden')}</p>
         ) : null}
         <MemoryBadges memory={memory} />
         <MemoryMeta memory={memory} />
       </div>
-      <MemoryCardActions archived={archived} actions={actions} />
+      {editing ? null : <MemoryCardActions memory={memory} archived={archived} actions={actions} />}
     </li>
   )
 }

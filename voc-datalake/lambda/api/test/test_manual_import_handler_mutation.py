@@ -49,6 +49,7 @@ from module_reload_fixtures import reload_cycle
 import manual_import_handler as h
 from shared.csv_columns import AUTO_COLUMNS
 from shared.exceptions import ConfigurationError, NotFoundError, ValidationError
+from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_handler_wrapped, assert_tracer_wrapped
 from shared.test.source_profile_fixtures import unconfigured_upload_profile
 
@@ -120,7 +121,7 @@ def frozen() -> Iterator[None]:
     """A fixed clock, epoch and uuid, so every key, ttl and id is a literal."""
     clock = MagicMock()
     clock.now.return_value = NOW
-    with patch.object(h, 'datetime', clock), \
+    with frozen_clock(h, clock), \
             patch.object(h, 'time', MagicMock(time=MagicMock(return_value=EPOCH))), \
             patch.object(h, 'uuid', MagicMock(uuid4=MagicMock(return_value=FIXED_UUID))):
         yield
@@ -239,7 +240,7 @@ class TestTheCallerIdentityStampedOnTheArchive:
         # The gate itself is asserted in test_import_admin_gates.py.
         s3 = MagicMock()
         with patch.object(h, 'PROCESSING_QUEUE_URL', ''), patch.object(h, 'RAW_DATA_BUCKET', BUCKET), \
-                patch.object(h, 's3', s3), patch.object(h, 'require_admin'):
+                patch.object(h, 's3', s3), patch('shared.api.require_admin'):
             response = h.lambda_handler(event, lambda_context)
         assert response['statusCode'] == 200
         return s3.put_object.call_args.kwargs['Metadata']['uploaded_by']

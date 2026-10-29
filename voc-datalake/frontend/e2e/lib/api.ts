@@ -6,6 +6,7 @@
 import { MOCK, apiUrl, type Role } from './env'
 import { isRecord } from './guards'
 import { idTokenFor } from './session'
+import { e2eFetch } from './trafficTag'
 
 export interface ApiResult {
   status: number
@@ -16,7 +17,7 @@ export interface ApiResult {
 
 export async function apiCall(role: Role, method: string, path: string, body?: unknown): Promise<ApiResult> {
   const started = performance.now()
-  const response = await fetch(`${apiUrl()}${path}`, {
+  const response = await e2eFetch(`${apiUrl()}${path}`, {
     method,
     // The dev mock has no login: it answers every caller as the admin.
     headers: MOCK ? { 'Content-Type': 'application/json' } : { Authorization: idTokenFor(role), 'Content-Type': 'application/json' },

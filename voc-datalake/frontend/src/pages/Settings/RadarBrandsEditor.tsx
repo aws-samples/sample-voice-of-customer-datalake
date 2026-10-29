@@ -1,51 +1,32 @@
 /**
  * @fileoverview Administration → Sources → Radar, "Brands tracked": the one place to set up the
- * brands Radar follows (docs/radar.md). Add a brand with its name and website domains, edit its
- * domains, remove it (a confirm says its reviews are kept), then Save brands = one
+ * brands Radar follows (docs/radar.md). Add a brand with its name and website domains (and,
+ * optionally, its search language and news feeds), edit them, remove it (a confirm says its reviews are kept), then Save brands = one
  * PUT /radar/brands with the whole list. A legacy brand named only by a source profile is listed
  * with that origin and written into the list with the next real save (loading it is no change). The 90-day review counts come
  * from GET /radar.
  * @module pages/Settings/RadarBrandsEditor
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, Save, Trash2 } from 'lucide-react'
-import { useId, useState } from 'react'
+import { Pencil, Save, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { radarApi, radarKeys } from '../../api/radarApi'
 import { invalidateFeedbackData } from '../../api/invalidateFeedbackData'
-import { MAX_RADAR_BRANDS, MAX_RADAR_DOMAINS } from '../../api/radarSchema'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
+import { serverReason } from '../../lib/errors'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
-import { addProblem, needsSave, newBrand, splitDomains, toDraft, toInput } from './radarBrandDraft'
+import RadarAddBrandForm from './RadarAddBrandForm'
+import { DomainsField, FeedsField, LanguageSelect, TermsField } from './RadarBrandFields'
+import { useLanguageSummary } from './useLanguageSummary'
+import { feedsProblem, needsSave, termsProblem, toDraft, toInput } from './radarBrandDraft'
 import type { RadarBrandEntry } from '../../api/radarSchema'
-import type { AddProblem, BrandDraft } from './radarBrandDraft'
-
-// Held as `…Key:` data so scripts/i18n-check.mjs sees each message.
-const ADD_PROBLEMS: Record<AddProblem, { messageKey: string }> = {
-  invalidName: { messageKey: 'radar:brands.invalidName' },
-  duplicate: { messageKey: 'radar:brands.duplicate' },
-  tooMany: { messageKey: 'radar:brands.tooMany' },
-}
+import type { BrandDraft } from './radarBrandDraft'
 
 /** The 90-day review count of each brand key, from GET /radar. */
 type BrandTotals = ReadonlyMap<string, number>
-
-function DomainsEditor({ brand, onChange }: Readonly<{ brand: BrandDraft; onChange: (domains: string[]) => void }>) {
-  const { t } = useTranslation('radar')
-  const id = useId()
-  // The text as typed; the draft keeps the parsed domains.
-  const [text, setText] = useState(brand.domains.join(', '))
-  return (
-    <div>
-      <label htmlFor={id} className="sr-only">{t('brands.editDomainsLabel', { brand: brand.label })}</label>
-      <input id={id} type="text" className="input font-mono text-sm" value={text} placeholder="example.com"
-        onChange={(e) => { setText(e.target.value); onChange(splitDomains(e.target.value)) }} />
-      <p className="text-xs text-muted mt-1">{t('brands.domainsHint', { max: MAX_RADAR_DOMAINS })}</p>
-    </div>
-  )
-}
 
 function BrandSources({ brand }: Readonly<{ brand: BrandDraft }>) {
   const { t } = useTranslation('radar')
@@ -66,9 +47,10 @@ function BrandRowActions({ brand, editing, onToggleEdit, onRemove }: Readonly<{
   const { t } = useTranslation('radar')
   return (
     <div className="flex items-center gap-1 shrink-0">
-      <button type="button" className="btn btn-ghost btn-sm" aria-expanded={editing} onClick={onToggleEdit}>
+      <button type="button" className="btn btn-ghost btn-sm" aria-expanded={editing} onClick={onToggleEdit}
+        aria-label={editing ? undefined : t('brands.editLabel', { brand: brand.label })}>
         <Pencil size={14} aria-hidden="true" />
-        {editing ? t('brands.doneEditing') : t('brands.editDomains')}
+        {editing ? t('brands.doneEditing') : t('brands.edit')}
       </button>
       {/* A brand named only by a source profile stays tracked while that profile names it. */}
       {brand.origin === 'list' ? (
@@ -82,8 +64,41 @@ function BrandRowActions({ brand, editing, onToggleEdit, onRemove }: Readonly<{
   )
 }
 
-function BrandRow({ brand, total, onDomains, onRemove }: Readonly<{
-  brand: BrandDraft; total: number | undefined; onDomains: (domains: string[]) => void; onRemove: () => void
+/** A brand's fields, open for editing. */
+function BrandEditor({ brand, onChange }: Readonly<{ brand: BrandDraft; onChange: (patch: Partial<BrandDraft>) => void }>) {
+  const { t } = useTranslation('radar')
+  return (
+    <div className="space-y-3 pt-1">
+      <DomainsField label={t('brands.editDomainsLabel', { brand: brand.label })} domains={brand.domains}
+        onChange={(domains) => onChange({ domains })} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <LanguageSelect language={brand.language} effective={brand.effective_language} onChange={(language) => onChange({ language })} />
+        <FeedsField feeds={brand.feed_urls} onChange={(feeds) => onChange({ feed_urls: feeds })} />
+        <TermsField field="search_terms" terms={brand.search_terms} onChange={(terms) => onChange({ search_terms: terms })} />
+        <TermsField field="exclude_terms" terms={brand.exclude_terms} onChange={(terms) => onChange({ exclude_terms: terms })} />
+      </div>
+    </div>
+  )
+}
+
+/** A brand's fields at rest: domains, search language, news feeds, and its terms when it has some. */
+function BrandSummary({ brand }: Readonly<{ brand: BrandDraft }>) {
+  const { t } = useTranslation('radar')
+  const languageSummary = useLanguageSummary()
+  const none = (list: readonly string[], empty: string) => (list.length === 0 ? empty : list.join(', '))
+  return (
+    <div className="text-xs text-muted space-y-0.5 [overflow-wrap:anywhere]">
+      <p>{t('setup.domains', { list: none(brand.domains, t('setup.noDomains')) })}</p>
+      <p>{t('brands.languageSummary', { language: languageSummary(brand.language, brand.effective_language) })}</p>
+      <p>{t('brands.feedsSummary', { list: none(brand.feed_urls, t('brands.noFeeds')) })}</p>
+      {brand.search_terms.length === 0 ? null : <p>{t('brands.searchTermsSummary', { list: brand.search_terms.join(', ') })}</p>}
+      {brand.exclude_terms.length === 0 ? null : <p>{t('brands.excludeTermsSummary', { list: brand.exclude_terms.join(', ') })}</p>}
+    </div>
+  )
+}
+
+function BrandRow({ brand, total, onChange, onRemove }: Readonly<{
+  brand: BrandDraft; total: number | undefined; onChange: (patch: Partial<BrandDraft>) => void; onRemove: () => void
 }>) {
   const { t } = useTranslation('radar')
   const labels = useDisplayLabels()
@@ -98,11 +113,7 @@ function BrandRow({ brand, total, onDomains, onRemove }: Readonly<{
         </div>
         <BrandRowActions brand={brand} editing={editing} onToggleEdit={() => setEditing(!editing)} onRemove={onRemove} />
       </div>
-      {editing ? <DomainsEditor brand={brand} onChange={onDomains} /> : (
-        <p className="text-xs text-muted">
-          {t('setup.domains', { list: brand.domains.length === 0 ? t('setup.noDomains') : brand.domains.join(', ') })}
-        </p>
-      )}
+      {editing ? <BrandEditor brand={brand} onChange={onChange} /> : <BrandSummary brand={brand} />}
       <BrandSources brand={brand} />
       {brand.origin === 'profile'
         ? <p className="text-xs text-muted">{t('brands.legacyNote', { sources: brand.sources.map(labels.source).join(', ') })}</p>
@@ -111,60 +122,33 @@ function BrandRow({ brand, total, onDomains, onRemove }: Readonly<{
   )
 }
 
-function AddBrandForm({ draft, onAdd }: Readonly<{ draft: readonly BrandDraft[]; onAdd: (brand: BrandDraft) => void }>) {
-  const { t } = useTranslation('radar')
-  const nameId = useId()
-  const domainsId = useId()
-  const [name, setName] = useState('')
-  const [domains, setDomains] = useState('')
-  const [tried, setTried] = useState(false)
-  const problem = name.trim() === '' ? null : addProblem(draft, name)
-  const add = () => {
-    setTried(true)
-    if (name.trim() === '' || problem !== null) return
-    onAdd(newBrand(name, domains))
-    setName(''); setDomains(''); setTried(false)
-  }
-  return (
-    <fieldset className="rounded-lg border border-border p-3 space-y-3">
-      <legend className="px-1 text-sm font-semibold tracking-tight text-text-strong">{t('brands.addTitle')}</legend>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label htmlFor={nameId} className="block text-xs font-medium text-text mb-1">{t('brands.nameLabel')}</label>
-          <input id={nameId} type="text" maxLength={64} className="input" value={name} onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }} />
-        </div>
-        <div>
-          <label htmlFor={domainsId} className="block text-xs font-medium text-text mb-1">{t('brands.domainsLabel')}</label>
-          <input id={domainsId} type="text" className="input font-mono" value={domains} placeholder="example.com"
-            onChange={(e) => setDomains(e.target.value)} />
-          <p className="text-xs text-muted mt-1">{t('brands.domainsHint', { max: MAX_RADAR_DOMAINS })}</p>
-        </div>
-      </div>
-      {tried && problem !== null ? (
-        <p role="alert" className="text-xs text-danger">
-          {t(ADD_PROBLEMS[problem].messageKey, { brand: name.trim(), max: MAX_RADAR_BRANDS })}
-        </p>
-      ) : null}
-      <button type="button" className="btn btn-secondary btn-sm" disabled={name.trim() === ''} onClick={add}>
-        <Plus size={14} aria-hidden="true" />
-        {t('brands.add')}
-      </button>
-    </fieldset>
-  )
-}
-
 interface SaveState { readonly isPending: boolean; readonly isSuccess: boolean; readonly error: string | null }
 
-function SaveBar({ dirty, save, onSave }: Readonly<{ dirty: boolean; save: SaveState; onSave: () => void }>) {
+/** Which list holds the save back (its own box says what is wrong), or null. */
+type Blocked = 'feeds' | 'terms' | null
+
+// Held as `…Key:` data so scripts/i18n-check.mjs sees each message.
+const BLOCKED_MESSAGES: Record<'feeds' | 'terms', { messageKey: string }> = {
+  feeds: { messageKey: 'radar:brands.fixFeeds' },
+  terms: { messageKey: 'radar:brands.fixTerms' },
+}
+
+function blockedBy(draft: readonly BrandDraft[]): Blocked {
+  if (draft.some((brand) => feedsProblem(brand.feed_urls) !== null)) return 'feeds'
+  const badTerms = (brand: BrandDraft) => termsProblem(brand.search_terms) !== null || termsProblem(brand.exclude_terms) !== null
+  return draft.some(badTerms) ? 'terms' : null
+}
+
+function SaveBar({ dirty, blocked, save, onSave }: Readonly<{ dirty: boolean; blocked: Blocked; save: SaveState; onSave: () => void }>) {
   const { t } = useTranslation('radar')
   return (
     <StickyActionBar variant="inline" className="flex flex-wrap items-center gap-3 py-2">
-      <button type="button" className="btn btn-primary btn-sm" disabled={save.isPending || !dirty} onClick={onSave}>
+      <button type="button" className="btn btn-primary btn-sm" disabled={save.isPending || !dirty || blocked !== null} onClick={onSave}>
         <Save size={14} aria-hidden="true" />
         {t('brands.save')}
       </button>
       {dirty ? <p className="text-xs text-muted">{t('brands.unsaved')}</p> : null}
+      {blocked === null ? null : <p className="text-xs text-danger">{t(BLOCKED_MESSAGES[blocked].messageKey)}</p>}
       {save.isSuccess && !dirty ? <p role="status" className="text-xs text-ok">{t('brands.saved')}</p> : null}
       {save.error === null ? null : <p role="alert" className="text-xs text-danger">{t('brands.saveFailed')} {save.error}</p>}
     </StickyActionBar>
@@ -177,8 +161,8 @@ function BrandsForm({ initial, totals, save, onSave }: Readonly<{
   const { t } = useTranslation('radar')
   const [draft, setDraft] = useState<readonly BrandDraft[]>(initial)
   const [removing, setRemoving] = useState<BrandDraft | null>(null)
-  const setDomains = (key: string, domains: string[]) =>
-    setDraft(draft.map((brand) => (brand.key === key ? { ...brand, domains } : brand)))
+  const change = (key: string, patch: Partial<BrandDraft>) =>
+    setDraft(draft.map((brand) => (brand.key === key ? { ...brand, ...patch } : brand)))
   return (
     <div className="space-y-3">
       {draft.length === 0
@@ -187,12 +171,13 @@ function BrandsForm({ initial, totals, save, onSave }: Readonly<{
           <ul className="divide-y divide-border">
             {draft.map((brand) => (
               <BrandRow key={brand.key} brand={brand} total={totals.get(brand.key)}
-                onDomains={(domains) => setDomains(brand.key, domains)} onRemove={() => setRemoving(brand)} />
+                onChange={(patch) => change(brand.key, patch)} onRemove={() => setRemoving(brand)} />
             ))}
           </ul>
         )}
-      <AddBrandForm draft={draft} onAdd={(brand) => setDraft([...draft, brand])} />
-      <SaveBar dirty={needsSave(draft, initial)} save={save} onSave={() => onSave(draft)} />
+      <RadarAddBrandForm draft={draft} onAdd={(brand) => setDraft([...draft, brand])} />
+      <SaveBar dirty={needsSave(draft, initial)} blocked={blockedBy(draft)} save={save}
+        onSave={() => onSave(draft)} />
       {removing === null ? null : (
         <ConfirmModal isOpen variant="danger" title={t('brands.removeTitle', { brand: removing.label })} message={t('brands.removeMessage')}
           confirmLabel={t('brands.remove')}
@@ -218,7 +203,8 @@ function useSaveBrands() {
 }
 
 function saveState(mutation: ReturnType<typeof useSaveBrands>): SaveState {
-  const error = mutation.error === null ? null : mutation.error.message.replace(/^API Error: \d+$/u, '')
+  // Our own line, then the server's reason when it gave one (a bare status adds nothing).
+  const error = mutation.error === null ? null : (serverReason(mutation.error) ?? '')
   return { isPending: mutation.isPending, isSuccess: mutation.isSuccess, error }
 }
 

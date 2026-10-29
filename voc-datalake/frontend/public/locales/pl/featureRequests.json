@@ -1,0 +1,288 @@
+{
+  "page": {
+    "title": "Tablice opinii",
+    "subtitle": "Tablice, na których zespoły i klienci zgłaszają prośby, problemy i opinie.",
+    "boardSubtitle": "Zgłoszenia i osoby, które za nimi stoją."
+  },
+  "loading": "Wczytywanie…",
+  "actions": {
+    "cancel": "Anuluj",
+    "close": "Zamknij",
+    "delete": "Usuń",
+    "save": "Zapisz"
+  },
+  "status": {
+    "new": "Nowa",
+    "under_review": "W ocenie",
+    "planned": "Zaplanowana",
+    "declined": "Odrzucona",
+    "shipped": "Wdrożona",
+    "confirmed": "Potwierdzone",
+    "fixed": "Naprawione",
+    "wont_fix": "Nie zostanie naprawione",
+    "seen": "Widziane",
+    "done": "Gotowe"
+  },
+  "impact": {
+    "committed": "Zobowiązanie do zapłaty",
+    "at_risk": "Transakcja zagrożona",
+    "none": "Bez wpływu na przychód"
+  },
+  "totals": {
+    "supporters": "Popierający",
+    "customers": "Klienci",
+    "committed": "Zobowiązane",
+    "atRisk": "Zagrożone",
+    "peopleAffected": "Osoby, których dotyczy",
+    "avgRating": "Średnia ocena",
+    "rating": "{{value}} / 5",
+    "notRated": "Jeszcze bez oceny",
+    "boardSummary": "Sumy tablicy"
+  },
+  "list": {
+    "label": "Zgłoszenia",
+    "intro": "Dodaj zgłoszenie albo daj +1 temu, które jest ważne także dla Ciebie.",
+    "search": "Szukaj",
+    "searchPlaceholder": "Tytuł, opis lub zgłaszający",
+    "statusFilter": "Status",
+    "allStatuses": "Wszystkie statusy",
+    "sortBy": "Sortuj według",
+    "sort": {
+      "newest": "Najnowsze",
+      "committed": "Zobowiązany przychód",
+      "at_risk": "Zagrożony przychód",
+      "supporters": "Popierający",
+      "people_affected": "Liczba osób, których dotyczy",
+      "rating": "Ocena"
+    },
+    "reportedBy": "Zgłoszone przez: {{name}}",
+    "empty": "Brak zgłoszeń. Dodaj pierwsze.",
+    "noMatch": "Żadna prośba nie pasuje do tych filtrów.",
+    "loadFailed": "Nie udało się wczytać zgłoszeń.",
+    "notAccepted": "To logowanie nie jest akceptowane na tablicy. Zaloguj się zweryfikowanym adresem, który tablica akceptuje."
+  },
+  "new": {
+    "open": "Nowa prośba",
+    "title": "Nowe zgłoszenie",
+    "description": "Każdy, kto może korzystać z tablicy {{board}}, zobaczy je wraz z Twoim imieniem i adresem e-mail.",
+    "impactHeading": "Twój klient i wpływ na przychód",
+    "submit": "Dodaj zgłoszenie"
+  },
+  "form": {
+    "title": "Tytuł",
+    "description": "Opis",
+    "amountHint": "Pełne dolary amerykańskie",
+    "noAmount": "Bez wpływu na przychód kwota nie jest potrzebna.",
+    "name": "Twoje imię i nazwisko",
+    "errors": {
+      "titleRequired": "Nadaj prośbie tytuł.",
+      "descriptionRequired": "Opisz, czego potrzebuje klient.",
+      "customerRequired": "Podaj klienta.",
+      "nameRequired": "Podaj swoje imię i nazwisko.",
+      "amountRequired": "Wpisz kwotę w dolarach amerykańskich.",
+      "amountTooLarge": "Ta kwota przekracza limit tablicy.",
+      "contactEmail": "Wpisz poprawny adres e-mail albo zostaw puste.",
+      "descriptionRequiredService": "Opisz, co się stało i co zobaczył klient."
+    },
+    "requiredLabel": "{{label}} (wymagane)",
+    "optionalLabel": "{{label}} (opcjonalne)",
+    "choose": "Wybierz...",
+    "notSet": "Nie podano",
+    "fieldErrors": {
+      "required": "To pole jest wymagane.",
+      "too_long": "To jest dłuższe, niż tablica przyjmuje.",
+      "invalid_choice": "Wybierz jedną z opcji.",
+      "invalid_number": "Wpisz liczbę całkowitą.",
+      "out_of_range": "Ta liczba jest poza dozwolonym zakresem.",
+      "invalid_email": "Wpisz prawidłowy adres e-mail.",
+      "invalid_url": "Wpisz pełny link https://."
+    },
+    "descriptionHint": {
+      "sales": "Czego klient potrzebuje i dlaczego.",
+      "service": "Co się stało i co zobaczył klient.",
+      "beta": "Co próbowano zrobić i co się stało.",
+      "blank": "Wszystko, co pomoże innym to zrozumieć."
+    }
+  },
+  "detail": {
+    "reported": "Zgłoszone przez: {{name}} ({{email}})",
+    "reporter": "Zgłaszający",
+    "copyLink": "Kopiuj link",
+    "copied": "Skopiowano link",
+    "edit": "Edytuj",
+    "supports": "Poparcia",
+    "plusOne": "+1 z moim klientem",
+    "addSupport": "Dodaj moje +1",
+    "contact": "Kontakt: {{email}}",
+    "editSupport": "Edytuj poparcie dla {{customer}}",
+    "deleteSupport": "Usuń poparcie dla {{customer}}",
+    "deleteSupportTitle": "Usunąć to poparcie?",
+    "deleteSupportMessage": "Poparcie dla {{customer}} i jego kwota przestaną się liczyć do sum prośby.",
+    "loadFailed": "Nie udało się wczytać tej prośby.",
+    "supportsCount_one": "{{count, number}} poparcie",
+    "supportsCount_few": "{{count, number}} poparcia",
+    "supportsCount_many": "{{count, number}} poparć",
+    "supportsCount_other": "{{count, number}} poparcia",
+    "plusOneService": "Mnie też to dotyczy",
+    "plusOneOther": "+1",
+    "alreadySupporting": "Popierasz to zgłoszenie.",
+    "editMySupport": "Edytuj moje +1"
+  },
+  "admin": {
+    "title": "Administracja",
+    "status": "Status",
+    "delete": "Usuń prośbę",
+    "deleteTitle": "Usunąć tę prośbę?",
+    "deleteMessage": "„{{title}}” i wszystkie poparcia zostaną usunięte dla wszystkich."
+  },
+  "promote": {
+    "title": "Przenieś do projektu",
+    "hint": "Każdy popierający i kontakt u klienta trafi na listę uczestników powiązaną z projektem, aby można było poprosić ich e-mailem o opinię.",
+    "project": "Projekt",
+    "pickProject": "Wybierz projekt",
+    "loadingProjects": "Wczytywanie projektów…",
+    "newProject": "Nowy projekt…",
+    "newProjectName": "Nazwa nowego projektu",
+    "submit": "Przenieś",
+    "skippedRow": "{{email}}: {{reason}}",
+    "reasons": {
+      "external_not_allowed": "spoza domen firmy, a osoby zewnętrzne są niedozwolone",
+      "invalid_email": "niepoprawny adres e-mail",
+      "unsubscribed": "wypisał się z e-maili do uczestników"
+    },
+    "done_one": "Dodano {{count, number}} osobę do „{{list}}”.",
+    "done_few": "Dodano {{count, number}} osoby do „{{list}}”.",
+    "done_many": "Dodano {{count, number}} osób do „{{list}}”.",
+    "done_other": "Dodano {{count, number}} osoby do „{{list}}”.",
+    "skipped_one": "Pominięto {{count, number}} adres:",
+    "skipped_few": "Pominięto {{count, number}} adresy:",
+    "skipped_many": "Pominięto {{count, number}} adresów:",
+    "skipped_other": "Pominięto {{count, number}} adresu:"
+  },
+  "errors": {
+    "generic": "Nie udało się. Spróbuj ponownie.",
+    "forbidden": "Nie masz uprawnień do tej czynności.",
+    "notFound": "To zgłoszenie już nie istnieje.",
+    "conflict": "Ktoś zmienił to w tym samym czasie. Spróbuj ponownie.",
+    "throttled": "Za dużo żądań. Poczekaj chwilę i spróbuj ponownie.",
+    "rateLimited": "Osiągnięto dzisiejszy limit wpisów na tej tablicy. Spróbuj jutro.",
+    "slugTaken": "Inna tablica używa już tej nazwy linku.",
+    "boardNotEmpty": "Ta tablica nadal ma zgłoszenia. Usuń ją razem ze zgłoszeniami albo zarchiwizuj.",
+    "statusInUse": "Zgłoszenia nadal mają ten status. Najpierw przenieś je do innego.",
+    "alreadySupported": "Już popierasz to zgłoszenie. Zamiast tego edytuj swoje +1."
+  },
+  "auth": {
+    "title": "Zaloguj się do tablicy próśb o funkcje",
+    "intro": "Podaj służbowy e-mail. Wyślemy link i jednorazowy kod.",
+    "email": "Służbowy e-mail",
+    "sendLink": "Wyślij mi link do logowania",
+    "checkEmail": "Sprawdź {{email}}: otwórz link albo wpisz tutaj kod z wiadomości.",
+    "secondCode": "Twój adres e-mail jest potwierdzony. Wysłaliśmy kolejny kod na {{email}}, aby cię zalogować.",
+    "code": "Kod z wiadomości",
+    "signIn": "Zaloguj się",
+    "useAnotherEmail": "Użyj innego e-maila",
+    "otherBrowser": "Ten link otwarto w innej przeglądarce niż ta, w której o niego poproszono. Wpisz kod w tamtej przeglądarce albo wyślij nowy link stąd.",
+    "errors": {
+      "domain_not_allowed": "Domena tego e-maila nie jest dozwolona na tablicy. Użyj firmowego e-maila.",
+      "wrong_code": "Ten kod jest niepoprawny. Sprawdź wiadomość i spróbuj ponownie.",
+      "expired": "To logowanie wygasło. Wyślij nowy link.",
+      "tooManyAttempts": "Zbyt wiele prób. Odczekaj kilka minut i spróbuj ponownie.",
+      "no_session": "W tej przeglądarce nie czeka żadne logowanie. Wpisz kod tam, gdzie o niego poproszono, albo wyślij nowy link.",
+      "invalid_email": "Wpisz poprawny adres e-mail.",
+      "unknown": "Logowanie nie powiodło się. Spróbuj za chwilę."
+    }
+  },
+  "board": {
+    "title": "Tablice opinii",
+    "titleWithBrand": "Tablice opinii {{brand}}",
+    "signOut": "Wyloguj się",
+    "notEnabledTitle": "Tablice opinii nie są włączone",
+    "notEnabled": "To wdrożenie nie ma logowania do tablic. Jeśli korzystasz z aplikacji, zaloguj się w niej i otwórz Tablice opinii.",
+    "notEnabledDev": "Lokalne środowisko bez puli tablic: mock nie może nikogo zalogować do Cognito. Dodaj blok board do public/config.json, aby wypróbować prawdziwą pulę, albo użyj strony Tablice opinii w aplikacji z mockiem."
+  },
+  "fields": {
+    "customer": "Klient",
+    "deal": "Transakcja",
+    "impact": "Wpływ na przychód",
+    "amount_usd": "Kwota (USD)",
+    "contact_email": "E-mail kontaktowy klienta",
+    "kind": "Rodzaj",
+    "severity": "Waga",
+    "reference": "Numer rezerwacji lub zamówienia",
+    "steps": "Kroki do odtworzenia",
+    "affected_count": "Liczba osób, których dotyczy",
+    "area": "Obszar",
+    "outcome": "Co się stało",
+    "rating": "Ocena (1-5)",
+    "link": "Link (https)",
+    "note": "Notatka"
+  },
+  "choices": {
+    "kind": {
+      "bug": "Błąd",
+      "complaint": "Skarga",
+      "missing_feature": "Brakująca funkcja",
+      "question": "Pytanie"
+    },
+    "severity": {
+      "low": "Niska",
+      "medium": "Średnia",
+      "high": "Wysoka",
+      "critical": "Krytyczna"
+    },
+    "outcome": {
+      "works": "Działa",
+      "broken": "Nie działa",
+      "confusing": "Jest niejasne"
+    }
+  },
+  "templates": {
+    "sales": "Prośby sprzedaży o funkcje",
+    "service": "Problemy obsługi klienta",
+    "beta": "Opinie z wersji beta",
+    "blank": "Pusta"
+  },
+  "boards": {
+    "listLabel": "Tablice",
+    "audienceLabel": "Kto może z niej korzystać",
+    "requestsLabel": "Zgłoszenia",
+    "audience": {
+      "company": "Osoby z Twojej firmy",
+      "list": "Zaproszone domeny i osoby",
+      "listCounts": "Domeny: {{domains}}, osoby: {{people}}",
+      "anyone": "Każdy ze zweryfikowanym e-mailem"
+    },
+    "open": "Otwórz",
+    "openBoard": "Otwórz {{name}}",
+    "copyBoardLink": "Kopiuj link do {{name}}",
+    "linkCopied": "Skopiowano link",
+    "copyFailed": "Nie udało się skopiować linku.",
+    "edit": "Edytuj",
+    "editBoard": "Edytuj {{name}}",
+    "deleteBoard": "Usuń {{name}}",
+    "deleteTitle": "Usunąć tę tablicę?",
+    "deleteMessage": "„{{name}}” zostanie usunięta dla wszystkich. Tej operacji nie można cofnąć.",
+    "deleteWithRequestsMessage_one": "„{{name}}”, jej {{count, number}} zgłoszenie i każde +1 przy nim zostaną trwale usunięte. Tej operacji nie można cofnąć. Projekty utworzone już ze zgłoszeń zostaną zachowane.",
+    "deleteWithRequestsMessage_few": "„{{name}}”, jej {{count, number}} zgłoszenia i każde +1 przy nich zostaną trwale usunięte. Tej operacji nie można cofnąć. Projekty utworzone już ze zgłoszeń zostaną zachowane.",
+    "deleteWithRequestsMessage_many": "„{{name}}”, jej {{count, number}} zgłoszeń i każde +1 przy nich zostaną trwale usunięte. Tej operacji nie można cofnąć. Projekty utworzone już ze zgłoszeń zostaną zachowane.",
+    "deleteWithRequestsMessage_other": "„{{name}}”, jej {{count, number}} zgłoszenia i każde +1 przy nich zostaną trwale usunięte. Tej operacji nie można cofnąć. Projekty utworzone już ze zgłoszeń zostaną zachowane.",
+    "deleteWithRequestsMessageStale": "„{{name}}” ma już zgłoszenia. Tablica, wszystkie jej zgłoszenia i każde +1 przy nich zostaną trwale usunięte. Tej operacji nie można cofnąć. Projekty utworzone już ze zgłoszeń zostaną zachowane.",
+    "deleteConfirmNameLabel": "Wpisz nazwę tablicy, aby potwierdzić",
+    "deleteProgress_one": "Usunięto {{deleted, number}} z {{count, number}} zgłoszenia…",
+    "deleteProgress_few": "Usunięto {{deleted, number}} z {{count, number}} zgłoszeń…",
+    "deleteProgress_many": "Usunięto {{deleted, number}} z {{count, number}} zgłoszeń…",
+    "deleteProgress_other": "Usunięto {{deleted, number}} z {{count, number}} zgłoszeń…",
+    "deleteIncomplete": "Tablica nie została jeszcze całkowicie usunięta.",
+    "deleteResumeHint": "Naciśnij Usuń ponownie, aby kontynuować od miejsca przerwania.",
+    "archived": "Zarchiwizowana",
+    "configure": "Konfiguruj tablice",
+    "emptyTitle": "Brak tablic",
+    "empty": "Nie udostępniono Ci jeszcze żadnej tablicy.",
+    "emptyAdmin": "Utwórz tablicę w <admin>Administracja, Prywatność i dostęp, Tablice</admin>.",
+    "loadFailed": "Nie udało się wczytać tablic.",
+    "notFoundTitle": "Nie znaleziono tablicy",
+    "notFound": "Ta tablica nie istnieje lub nie została Ci udostępniona.",
+    "backToBoards": "Wróć do tablic",
+    "standaloneIntro": "Tablice, z których możesz korzystać. Otwórz jedną, aby dodać zgłoszenie lub dać +1."
+  }
+}

@@ -1,21 +1,21 @@
 /**
  * @fileoverview Administration → Sources → Radar (admin): the brands tracked and how Radar
- * works (RadarSetupGuide), the release-scan cadence and its cost guards, the last scan, and
- * "Scan now" (docs/radar.md).
+ * works (RadarSetupGuide), the news-scan cadence and its cost guards, the Exa key (RadarExaCard),
+ * the last scan, and "Scan now" (docs/radar.md).
  * @module pages/Settings/RadarSection
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Radar, RefreshCw } from 'lucide-react'
+import { Radar } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { TFunction } from 'i18next'
 import { radarApi, radarKeys } from '../../api/radarApi'
 import { CADENCES, MAX_BRANDS_LIMIT, QUERY_CAP_LIMIT } from '../../api/radarSchema'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
-import { formatDateTime } from '../../utils/dateUtils'
+import { LastScan, ScanNow } from '../Radar/RadarScan'
+import RadarExaCard from './RadarExaCard'
 import RadarSetupGuide from './RadarSetupGuide'
-import type { RadarCadence, RadarScan, RadarSettings } from '../../api/radarSchema'
+import type { RadarCadence, RadarScanSettings } from '../../api/radarSchema'
 
 function isCadence(value: string): value is RadarCadence {
   return CADENCES.some((cadence) => cadence === value)
@@ -42,13 +42,13 @@ function NumberField({ label, hint, value, max, onChange }: Readonly<{
   )
 }
 
-function SettingsForm({ initial }: Readonly<{ initial: RadarSettings }>) {
+function SettingsForm({ initial }: Readonly<{ initial: RadarScanSettings }>) {
   const { t } = useTranslation('radar')
   const queryClient = useQueryClient()
   const cadenceId = useId()
-  const [draft, setDraft] = useState<RadarSettings>(initial)
+  const [draft, setDraft] = useState<RadarScanSettings>(initial)
   const save = useMutation({
-    mutationFn: (settings: RadarSettings) => radarApi.saveSettings(settings),
+    mutationFn: (settings: RadarScanSettings) => radarApi.saveSettings(settings),
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: radarKeys.overview() }) },
   })
   return (
@@ -73,43 +73,6 @@ function SettingsForm({ initial }: Readonly<{ initial: RadarSettings }>) {
   )
 }
 
-/** "2 brands, 12 searches, 3 new releases, 1 merged", each count pluralized on its own. */
-function scanCounts(scan: RadarScan, t: TFunction<'radar'>): string {
-  return t('settings.lastScanCounts', {
-    brands: t('settings.scanBrands', { count: scan.brands }),
-    queries: t('settings.scanQueries', { count: scan.queries }),
-    added: t('settings.scanAdded', { count: scan.added }),
-    merged: t('settings.scanMerged', { count: scan.merged }),
-  })
-}
-
-function LastScan({ scan }: Readonly<{ scan: RadarScan | null }>) {
-  const { t, i18n } = useTranslation('radar')
-  if (scan === null) return <p className="text-xs text-muted">{t('settings.neverScanned')}</p>
-  const when = formatDateTime(scan.finished_at ?? scan.started_at, i18n.language)
-  return (
-    <p className="text-xs text-muted">
-      {t('settings.lastScan', { status: t(`settings.status.${scan.status}`), when })}
-      {scan.status === 'completed' ? ` (${scanCounts(scan, t)})` : ''}
-    </p>
-  )
-}
-
-function ScanNow() {
-  const { t } = useTranslation('radar')
-  const scan = useMutation({ mutationFn: () => radarApi.startScan() })
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      <button type="button" className="btn btn-secondary btn-sm" disabled={scan.isPending} onClick={() => scan.mutate()}>
-        <RefreshCw size={14} aria-hidden="true" className={scan.isPending ? 'animate-spin' : undefined} />
-        {t('settings.scanNow')}
-      </button>
-      {scan.isSuccess ? <p role="status" className="text-xs text-ok">{t('settings.scanStarted')}</p> : null}
-      {scan.isError ? <p role="alert" className="text-xs text-danger">{t('settings.scanFailed')}</p> : null}
-    </div>
-  )
-}
-
 /** GET /radar: the same cache entry the Radar page reads. */
 function useRadarOverview() {
   return useQuery({ queryKey: radarKeys.overview(), queryFn: () => radarApi.getOverview() })
@@ -122,10 +85,13 @@ function RadarSectionBody({ overview }: Readonly<{ overview: ReturnType<typeof u
     return <LoadFailed message={t('loadFailed')} onRetry={() => { void overview.refetch() }} retrying={overview.isFetching} />
   }
   if (!overview.data) return <p className="text-sm text-muted">{t('loading')}</p>
+  // The form restarts only when the scan settings change: storing the Exa key keeps an unsaved draft.
+  const { exa_configured: exaConfigured, ...scan } = overview.data.settings
   return (
     <>
       <RadarSetupGuide brands={overview.data.brands} />
-      <SettingsForm key={JSON.stringify(overview.data.settings)} initial={overview.data.settings} />
+      <SettingsForm key={JSON.stringify(scan)} initial={scan} />
+      <RadarExaCard configured={exaConfigured} />
       <LastScan scan={overview.data.last_scan} />
       <ScanNow />
     </>

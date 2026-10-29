@@ -49,7 +49,9 @@
     "noFiles": "ファイルが見つかりません",
     "view": "表示",
     "path": "フォルダのパス",
-    "noFilesHint": "このフォルダは空です。ここでファイルを作成するか、データソースからデータを取り込んでください。"
+    "noFilesHint": "このフォルダは空です。ここでファイルを作成するか、データソースからデータを取り込んでください。",
+    "personaFolder": "ペルソナ {{n, number}} · {{date}}",
+    "personaFolderDated": "ペルソナ · {{date}}"
   },
   "tabs": {
     "categories": "カテゴリ",

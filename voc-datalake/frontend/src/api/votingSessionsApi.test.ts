@@ -142,6 +142,14 @@ describe('what the ballot page is told before it renders a form', () => {
     expect(init?.headers).toBeUndefined()
   })
 
+  it('says the proposal is gone when its row or project was deleted (410)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ success: false, reason: 'gone', error: 'deleted' }, 410))
+
+    const config = await votingSessionsApi.getBallotSessionConfig(SESSION_ID)
+
+    expect([config.open, config.reason]).toStrictEqual([false, 'gone'])
+  })
+
   it.each([
     ['a non-2xx response', jsonResponse({ error: 'boom' }, 500)],
     ['a body this client cannot read', jsonResponse({ nothing: true })],

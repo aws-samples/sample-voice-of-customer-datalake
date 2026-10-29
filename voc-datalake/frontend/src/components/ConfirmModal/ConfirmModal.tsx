@@ -33,10 +33,13 @@ interface ConfirmModalProps {
    * is still a non-null child. Spacing therefore belongs to the child.
    */
   children?: ReactNode
-  confirmLabel?: string
+  /** The confirm button's label: the action it takes ("Delete", "Remove"). */
+  confirmLabel: string
   cancelLabel?: string
   variant?: 'danger' | 'warning' | 'info'
   isLoading?: boolean
+  /** Keeps the confirm button off until the dialog's own condition holds (a typed name). */
+  confirmDisabled?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
@@ -50,6 +53,7 @@ export default function ConfirmModal({
   cancelLabel,
   variant = 'danger',
   isLoading = false,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: Readonly<ConfirmModalProps>) {
@@ -110,11 +114,11 @@ export default function ConfirmModal({
         <button
           type="button"
           onClick={onConfirm}
-          disabled={isLoading}
+          disabled={isLoading || confirmDisabled}
           className={clsx('py-2.5 sm:py-2 gap-2 w-full sm:w-auto', styles.button)}
         >
           {isLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
-          {confirmLabel ?? t('components:confirmModal.delete')}
+          {confirmLabel}
         </button>
       </div>
     </ModalShell>

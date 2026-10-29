@@ -15,21 +15,18 @@
  */
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, Loader2, RefreshCw, Square } from 'lucide-react'
 import clsx from 'clsx'
 import type { TFunction } from 'i18next'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
 import { ALL_TIME_CUSTOM_DAYS, MAX_CUSTOM_DAYS, parseCustomDaysInput } from '../../api/baseUrl'
-import { MAX_REPROCESS_ITEMS, isTerminalJob, latestReprocessJobKey, reprocessApi } from '../../api/reprocessApi'
+import { MAX_REPROCESS_ITEMS, isTerminalJob } from '../../api/reprocessApi'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
-import type { ReprocessJob, ReprocessJobStatus, ReprocessMode, ReprocessRequest } from '../../api/reprocessApi'
+import type { ReprocessJob, ReprocessJobStatus, ReprocessMode } from '../../api/reprocessApi'
+import { useLatestJob, useReprocessMutations } from './useReprocessJob'
 import type { Tone } from '../../theme/tones'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import { formatCount } from '../../utils/numberFormat'
-
-/** How often a running job is re-read. */
-const POLL_INTERVAL_MS = 2_000
 
 /** Copy per mode; a Record, so every mode the API accepts must have a title. */
 const MODE_COPY: Record<ReprocessMode, { titleKey: string; descriptionKey: string }> = {
@@ -78,35 +75,6 @@ function windowLabel(days: number, t: TFunction): string {
     : t('categoriesManager.reprocess.lastNDays', { count: days })
 }
 
-/** The latest job, polled while it is still moving. */
-function useLatestJob() {
-  return useQuery({
-    queryKey: latestReprocessJobKey(),
-    queryFn: () => reprocessApi.getLatest(),
-    refetchInterval: (query) => {
-      const job = query.state.data
-      return job != null && !isTerminalJob(job) ? POLL_INTERVAL_MS : false
-    },
-  })
-}
-
-function useReprocessMutations(onStarted: () => void) {
-  const queryClient = useQueryClient()
-  const store = (job: ReprocessJob | null) => {
-    if (job !== null) queryClient.setQueryData(latestReprocessJobKey(), job)
-    void queryClient.invalidateQueries({ queryKey: latestReprocessJobKey() })
-  }
-  const start = useMutation({
-    mutationFn: (request: ReprocessRequest) => reprocessApi.start(request),
-    onSuccess: (job) => { store(job); onStarted() },
-  })
-  const cancel = useMutation({
-    mutationFn: (jobId: string) => reprocessApi.cancel(jobId),
-    onSuccess: store,
-  })
-  return { start, cancel }
-}
-
 function ModeChoice({ mode, onChange }: Readonly<{ mode: ReprocessMode; onChange: (m: ReprocessMode) => void }>) {
   const { t } = useTranslation('components')
   return (
@@ -139,7 +107,7 @@ function ModeChoice({ mode, onChange }: Readonly<{ mode: ReprocessMode; onChange
   )
 }
 
-function JobProgress({ job, onCancel, cancelling }: Readonly<{ job: ReprocessJob; onCancel: () => void; cancelling: boolean }>) {
+export function JobProgress({ job, onCancel, cancelling }: Readonly<{ job: ReprocessJob; onCancel: () => void; cancelling: boolean }>) {
   const { t, i18n } = useTranslation('components')
   const running = !isTerminalJob(job)
   const status = STATUS[job.status]

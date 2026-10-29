@@ -27,22 +27,25 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final
 from urllib.parse import quote, urlparse
 
 import requests
 from botocore.exceptions import ClientError
 
-from shared import design_logo, github_design
+from shared import design_logo, design_logo_render, design_svg, github_design
 from shared.company_context import DESIGN_SYSTEM_PK, MAX_SUMMARY_CHARS, REFERENCE_SK_PREFIX
+from shared.component_overlay import overlay_components
+from shared.css_component_rules import components_from_css
+from shared.css_theme_modes import modes_markdown, theme_modes
 from shared.css_tokens import custom_properties, tokens_from_css, tokens_from_properties
-from shared.design_components import clean_components
+from shared.design_components import MAX_VARIANTS, clean_components
 from shared.extracted_design import clean_extracted_design, combine
 from shared.image_limits import MAX_IMAGE_BYTES
 from shared.logging import logger
 from shared.prompt_safety import neutralise_tags
 from shared.tailwind_components import Theme, components_from_source
+from shared.timestamps import now_iso
 
 FIGMA_API = 'https://api.figma.com/v1'
 GITHUB_API = 'https://api.github.com'
@@ -55,6 +58,9 @@ MAX_GITHUB_DIGEST_CHARS = 120_000
 #: Of the digest: the UI component sources get this much, the design files the rest.
 MAX_GITHUB_COMPONENT_DIGEST_CHARS = 40_000
 MAX_GITHUB_FILE_CHARS = 20_000
+#: A stylesheet is PARSED (tokens, theme variants, component classes) up to this size; only the model's
+#: digest is cut at MAX_GITHUB_FILE_CHARS (5.35 live: voc-v2's 37 KB index.css lost every component class).
+MAX_PARSED_CSS_CHARS = 400_000
 #: The answer carries the summary, every token group, the components and up to ~6,000 characters of guidelines.
 DESIGN_MAX_TOKENS = 12_000
 #: Facts (parsed tokens, page statistics) handed to the model beside the material.
@@ -78,6 +84,8 @@ UPLOAD_TYPES: dict[str, dict[str, tuple[str, int]]] = {
     },
 }
 UPLOAD_PREFIX = 'company-context/design/'
+# The ``action`` of the async event Settings sends the ``voc-design-capture`` worker (lambda/design_capture).
+DESIGN_CAPTURE_ACTION: Final = 'design_capture'
 _IMAGE_FORMATS = {'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp'}
 
 _FIGMA_HOSTS = {'figma.com', 'www.figma.com'}
@@ -97,10 +105,10 @@ DESIGN_SYSTEM_PROMPT = (
     '"components": [{"name": "Button", "description": "one line: when and how to use it", '
     '"variants": [{"name": "primary", "styles": {"background": "#7c3aed", "color": "#ffffff", '
     '"border_color": "#7c3aed", "border_width": "1px", "radius": "8px", "padding": "8px 16px", "gap": "6px", '
-    '"height": "36px", "font_family": "Inter, sans-serif", "font_size": "14px", "font_weight": "600", '
+    '"height": "36px", "width": "36px", "font_family": "Inter, sans-serif", "font_size": "14px", "font_weight": "600", '
     '"letter_spacing": "normal", "text_transform": "none", "shadow": "0 1px 2px rgba(0,0,0,0.2)"}, '
     '"hover": {"background": "#6d28d9", "color": "#ffffff", "border_color": "#6d28d9", "shadow": "none"}, '
-    '"focus": {"outline": "2px solid #a78bfa"}}], '
+    '"focus": {"outline": "2px solid #a78bfa", "border_color": "#a78bfa", "shadow": "0 0 0 3px rgba(167,139,250,0.3)"}}], '
     '"example_html": "<button class=\\"btn\\">Buy</button>"}], '
     '"guidelines_md": "markdown rules for building UI in this style: voice, layout, component conventions, '
     'do and do not; at most 6000 characters"}\n'
@@ -110,7 +118,7 @@ DESIGN_SYSTEM_PROMPT = (
     'present in the material or the facts; never invent one — leave a list empty instead. At most 40 '
     'entries per token list.\n'
     'Components: at most 30 (Button, Input, Card, Tabs, Badge, Nav bar, Table, Dialog … whatever the material '
-    'shows), at most 6 variants each (primary, secondary, outline, ghost, danger, default …). Every style key is '
+    'shows), at most 8 variants each (primary, secondary, outline, ghost, danger, default …). Every style key is '
     'optional; give only the ones you can ground. When the facts carry MEASURED or PARSED component styles, use '
     'those values (prefer measured over guessed) and only fill gaps from the screenshot or the source. A '
     'colour that is one of the colour tokens may be written "var:<token name>". example_html is a minimal static '
@@ -133,6 +141,19 @@ class ProcessDeps:
     http_get: Callable[..., requests.Response] = requests.get
     #: The logo-candidate download (None = ``shared.http_utils.fetch_public_url``, the SSRF-guarded fetch).
     logo_fetch: Callable[..., requests.Response] | None = None
+    #: Starts the browser render of a repository's SVG logo (``shared.design_logo_render``) with the event
+    #: it is given → whether it started. None = no browser in this deployment: the SVG is not read and the
+    #: guidelines get the "upload a PNG export" note.
+    start_logo_render: Callable[[dict], bool] | None = None
+
+
+@dataclass(frozen=True)
+class Extraction:
+    """What reading a reference produced: the summary, the design, and a GitHub repository's SVG logo
+    (read and sanitised) for the browser to draw once the outcome is recorded."""
+    summary: str
+    design: dict | None
+    svg_logo: design_logo_render.SvgLogo | None = None
 
 
 # ── URL parsing (never fetched) ──────────────────────────────────────────────
@@ -258,6 +279,10 @@ class GithubMaterial:
     logo: dict | None
     #: ``(path, text)`` of the UI component sources read (``github_design.component_files``).
     component_sources: tuple[tuple[str, str], ...] = ()
+    #: The repository's SVG logo when it has no raster one (named; read only when a browser can draw it).
+    svg_logo: str | None = None
+    #: That SVG, read and sanitised for the browser render (``shared.design_logo_render``), else None.
+    readable_svg_logo: design_logo_render.SvgLogo | None = None
 
 
 def _github_headers(deps: ProcessDeps, raw: bool = False) -> dict:
@@ -300,17 +325,38 @@ def _tree_paths(deps: ProcessDeps, target: GithubTarget) -> list[str]:
             if isinstance(e, dict) and e.get('type') == 'blob' and isinstance(e.get('path'), str)]
 
 
+def _raw_url(target: GithubTarget, path: str) -> str:
+    ref = quote(target.ref or 'HEAD', safe='')
+    return f'{GITHUB_RAW}/{target.owner}/{target.repo}/{ref}/{quote(path)}'
+
+
 def _raw_logo(target: GithubTarget, path: str | None) -> dict | None:
     content_type = github_design.logo_content_type(path) if path else None
     if not path or not content_type:
         return None
-    ref = quote(target.ref or 'HEAD', safe='')
-    return {'source_url': f'{GITHUB_RAW}/{target.owner}/{target.repo}/{ref}/{quote(path)}', 'content_type': content_type}
+    return {'source_url': _raw_url(target, path), 'content_type': content_type}
 
 
-def _read_github_file(deps: ProcessDeps, target: GithubTarget, path: str) -> str:
+def _github_svg_logo(deps: ProcessDeps, target: GithubTarget, path: str) -> design_logo_render.SvgLogo | None:
+    """The repository's SVG logo read through the contents API (≤ 1 MB) and sanitised, or None (logged).
+
+    An extra like the component sources: a failed read or a refused SVG never fails the reference.
+    """
+    try:
+        raw = _body_bytes(_github_get(deps, _contents_url(target, path), raw=True), design_svg.MAX_SVG_INPUT_BYTES)
+        svg = design_svg.sanitize_svg(raw)
+    except ReferenceFetchError:
+        logger.info('GitHub SVG logo not read')
+        return None
+    except design_svg.SvgRefused as exc:
+        logger.info('GitHub SVG logo refused', extra={'reason': str(exc)})
+        return None
+    return design_logo_render.SvgLogo(path, _raw_url(target, path), svg)
+
+
+def _read_github_file(deps: ProcessDeps, target: GithubTarget, path: str, limit: int = MAX_GITHUB_FILE_CHARS) -> str:
     raw = _body_bytes(_github_get(deps, _contents_url(target, path), raw=True))
-    return raw.decode('utf-8', errors='replace')[:MAX_GITHUB_FILE_CHARS]
+    return raw.decode('utf-8', errors='replace')[:limit]
 
 
 def _component_sources(deps: ProcessDeps, target: GithubTarget, paths: list[str]) -> tuple[tuple[str, str], ...]:
@@ -329,24 +375,26 @@ def _component_sources(deps: ProcessDeps, target: GithubTarget, paths: list[str]
 def github_material(deps: ProcessDeps, url: str) -> GithubMaterial:
     """The design files (and UI component sources) of a repository, or the one linked file, read and digested.
 
-    Requests: one tree listing + up to 12 design files + up to 8 component sources (21 at most).
+    Requests: one tree listing + up to 12 design files + up to 8 component sources + the SVG logo when a
+    browser can draw it (22 at most).
     """
     target = github_target(url)
     if target.is_file:
-        paths, component_paths, components, logo = [target.path], [], [], None
+        paths, component_paths, components, logo, svg_logo = [target.path], [], [], None, None
     else:
         tree = _tree_paths(deps, target)
         paths = github_design.rank_design_files(tree, target.path)
         component_paths = github_design.component_files(tree, target.path)
         components = github_design.component_names(tree, target.path)
         logo = _raw_logo(target, github_design.logo_path(tree))
+        svg_logo = None if logo else github_design.svg_logo_path(tree)
     if not paths:
         raise ReferenceFetchError('No design tokens, CSS, Tailwind config or README found at that location')
     parts = [f'GitHub repository {target.owner}/{target.repo}' + (f' @ {target.ref}' if target.ref else '')]
     css_parts: list[str] = []
     for path in paths:
-        text = _read_github_file(deps, target, path)
-        parts.append(f'--- {path} ---\n{text}')
+        text = _read_github_file(deps, target, path, MAX_PARSED_CSS_CHARS)
+        parts.append(f'--- {path} ---\n{text[:MAX_GITHUB_FILE_CHARS]}')
         if path.lower().endswith(('.css', '.scss', '.sass', '.less', '.pcss')):
             css_parts.append(text)
     sources = _component_sources(deps, target, component_paths)
@@ -355,7 +403,8 @@ def github_material(deps: ProcessDeps, url: str) -> GithubMaterial:
     digest = '\n\n'.join(parts)[:design_budget]
     if component_digest:
         digest += '\n\n' + component_digest[:MAX_GITHUB_COMPONENT_DIGEST_CHARS]
-    return GithubMaterial(digest, '\n'.join(css_parts), components, logo, sources)
+    readable = _github_svg_logo(deps, target, svg_logo) if svg_logo and deps.start_logo_render else None
+    return GithubMaterial(digest, '\n'.join(css_parts), components, logo, sources, svg_logo, readable)
 
 
 # ── Uploads ──────────────────────────────────────────────────────────────────
@@ -451,15 +500,21 @@ def _summary_from_design(design: dict) -> str:
     return ' '.join(p for p in parts if p)
 
 
-def design_outcome(answer: str, source: str, deterministic: dict | None = None) -> tuple[str, dict | None]:
+def design_outcome(answer: str, source: str, deterministic: dict | None = None,
+                   appended_guidelines: str = '') -> tuple[str, dict | None]:
     """``(summary, extracted_design)``: the model's proposal, per group backed by what was parsed.
 
     ``deterministic`` holds what was read without a model (CSS custom properties, the tree's
-    components and logo); a group the model left empty falls back to it. Raises
+    components and logo); a group the model left empty falls back to it. ``appended_guidelines``
+    (the parsed theme variants) is added after whichever guidelines won. Raises
     ReferenceFetchError when neither a summary nor a design came out.
     """
     summary, proposed = parse_design_answer(answer)
-    design = clean_extracted_design(combine(proposed, deterministic), source)
+    combined = combine(proposed, deterministic)
+    if appended_guidelines:
+        combined['guidelines_md'] = '\n\n'.join(
+            part for part in (str(combined.get('guidelines_md') or '').strip(), appended_guidelines) if part)
+    design = clean_extracted_design(combined, source)
     text = summary.strip() or (_summary_from_design(design) if design else '')
     return _clean_summary(text), design
 
@@ -470,27 +525,65 @@ def facts_block(title: str, facts: dict) -> str:
     return f'{title} (JSON):\n{body}'
 
 
+def _with_css_components(parsed: list[dict], from_css: list[dict]) -> list[dict]:
+    """``parsed`` (from the UI sources) with the CSS component classes added: a new name is appended, a
+    known one gains the variants it lacks (the UI source's own variants win)."""
+    by_name = {c['name'].lower(): c for c in parsed}
+    for component in from_css:
+        known = by_name.get(component['name'].lower())
+        if known is None:
+            parsed.append(component)
+            by_name[component['name'].lower()] = component
+            continue
+        have = {str(v.get('name', '')).lower() for v in known.get('variants', [])}
+        extra = [v for v in component['variants'] if v['name'].lower() not in have]
+        known['variants'] = [*known.get('variants', []), *extra][:MAX_VARIANTS]
+    return parsed
+
+
 def parsed_components(material: GithubMaterial, props: dict[str, str]) -> list[dict]:
-    """The components the UI sources define (styles mapped from Tailwind, cleaned), then the tree's other
+    """The components the UI sources define (styles mapped from Tailwind, cleaned), then the stylesheets'
+    component classes (``.btn-ghost { … }``, ``.badge-ok { @apply … }``), then the tree's other
     ``components/ui`` names (name only), ≤ 30."""
     theme = Theme(props)
     parsed: list[dict] = []
     for path, text in material.component_sources:
         parsed.extend(components_from_source(text, path, theme))
+    parsed = _with_css_components(parsed, components_from_css(material.css, theme))
     named = {c['name'].lower() for c in parsed}
     parsed.extend({'name': n, 'description': ''} for n in material.components if n.lower() not in named)
     return clean_components(parsed)
 
 
-def _github_reference(deps: ProcessDeps, url: str) -> tuple[str, dict | None]:
+def svg_logo_note(path: str | None) -> str:
+    """The guidelines note for a repository whose SVG logo is not drawn (no browser in this deployment, a refused
+    SVG, or a hand-off that could not start), or ''."""
+    if not path:
+        return ''
+    return (f'## Logo\n\nThe repository\'s logo is an SVG (`{neutralise_tags(path)[:200]}`). SVG logos are not '
+            'read (an SVG is a document that can carry script, and the company logo is used as an image). '
+            'Upload a PNG, JPEG or WebP export of it as the company logo.')
+
+
+def _github_reference(deps: ProcessDeps, url: str) -> Extraction:
     material = github_material(deps, url)
     props = custom_properties(material.css)
     tokens = tokens_from_properties(props)
     components = parsed_components(material, props)
+    default_theme, modes = theme_modes(material.css)
     deterministic = {**tokens, 'components': components, 'logo': material.logo}
-    facts = facts_block('Tokens parsed from the CSS custom properties, and component styles PARSED from the UI '
-                        'sources (Tailwind classes resolved to those tokens)', {**tokens, 'components': components})
-    return design_outcome(deps.summarise(f'{material.digest}\n\n{facts}'), 'repo_files', deterministic)
+    facts = facts_block('Tokens parsed from the CSS custom properties (the default theme), the other themes\' '
+                        'changed colours, and component styles PARSED from the UI sources and CSS component '
+                        'classes (Tailwind classes resolved to those tokens)',
+                        {**tokens, 'components': components, 'theme_variants': modes})
+    # A readable SVG logo is drawn by the browser after the outcome is recorded; only otherwise the note.
+    note = '' if material.readable_svg_logo else svg_logo_note(material.svg_logo)
+    appended = '\n\n'.join(p for p in (modes_markdown(modes, default_theme), note) if p)
+    summary, design = design_outcome(deps.summarise(f'{material.digest}\n\n{facts}'), 'repo_files', deterministic,
+                                     appended_guidelines=appended)
+    # The parsed styles are the repository's own values: they win over the model's version of a component.
+    design = overlay_components(design, components)
+    return Extraction(summary, design, material.readable_svg_logo if design is not None else None)
 
 
 def _html_reference(deps: ProcessDeps, raw: bytes) -> tuple[str, dict | None]:
@@ -500,21 +593,22 @@ def _html_reference(deps: ProcessDeps, raw: bytes) -> tuple[str, dict | None]:
     return design_outcome(deps.summarise(f'{digest}\n\n{facts}'), 'html', tokens)
 
 
-def extract_reference(deps: ProcessDeps, item: dict) -> tuple[str, dict | None]:
-    """Fetch the reference's material: ``(summary, extracted_design)`` (raises ReferenceFetchError)."""
+def extract(deps: ProcessDeps, item: dict) -> Extraction:
+    """Fetch the reference's material (summary + extracted design) plus a GitHub repository's readable SVG
+    logo, to hand to the browser. Raises ReferenceFetchError."""
     kind = item.get('kind')
     if kind == 'figma':
-        return design_outcome(deps.summarise(figma_digest(deps, str(item.get('url')))), 'figma')
+        return Extraction(*design_outcome(deps.summarise(figma_digest(deps, str(item.get('url')))), 'figma'))
     if kind == 'github':
         return _github_reference(deps, str(item.get('url')))
     if kind == 'website':
         raise ReferenceFetchError('Reading live websites is not available in this deployment')
     raw, content_type = _read_upload(deps, item)
     if kind == 'html':
-        return _html_reference(deps, raw)
+        return Extraction(*_html_reference(deps, raw))
     if len(raw) > MAX_IMAGE_BYTES:
         raise ReferenceFetchError('The screenshot is larger than the AI can read (3.75 MB); upload a smaller image')
-    return design_outcome(deps.summarise_image(raw, _IMAGE_FORMATS[content_type]), 'screenshot')
+    return Extraction(*design_outcome(deps.summarise_image(raw, _IMAGE_FORMATS[content_type]), 'screenshot'))
 
 
 def process_reference(table: Any, item: dict, deps: ProcessDeps) -> dict:
@@ -523,24 +617,39 @@ def process_reference(table: Any, item: dict, deps: ProcessDeps) -> dict:
     Returns the attributes written. Fetch and model failures become
     ``status='error'``; only a failure to WRITE the outcome propagates. ``fetched_at`` is the
     time the read FINISHED (ready or error). A logo candidate is downloaded as a preview
-    (``shared.design_logo.store_preview``) when there is a bucket.
+    (``shared.design_logo.store_preview``) when there is a bucket. A GitHub repository's SVG logo is
+    handed to the browser AFTER the ready outcome is written (``_start_svg_logo_render``).
     """
     ref_id = str(item.get('id'))
+    svg_logo = None
     try:
-        summary, design = extract_reference(deps, item)
-        design = design_logo.store_preview(design, ref_id, deps.s3, deps.bucket, deps.logo_fetch)
-        outcome = ready_outcome(summary, design, _now())
+        extraction = extract(deps, item)
+        design = design_logo.store_preview(extraction.design, ref_id, deps.s3, deps.bucket, deps.logo_fetch)
+        outcome = ready_outcome(extraction.summary, design, now_iso())
+        svg_logo = extraction.svg_logo
     except ReferenceFetchError as exc:
-        outcome = error_outcome(str(exc), _now())
+        outcome = error_outcome(str(exc), now_iso())
     except Exception as exc:  # noqa: BLE001 - every failure is recorded, never a 500
         logger.warning(f'Design reference processing failed: {type(exc).__name__}')
-        outcome = error_outcome('The reference could not be processed; try Refresh again later', _now())
+        outcome = error_outcome('The reference could not be processed; try Refresh again later', now_iso())
     record_outcome(table, ref_id, outcome, str(outcome['fetched_at']))
+    if svg_logo is not None:
+        outcome = _start_svg_logo_render(table, ref_id, outcome, svg_logo, deps)
     return outcome
 
 
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
+def _start_svg_logo_render(table: Any, ref_id: str, outcome: dict, svg_logo: design_logo_render.SvgLogo,
+                           deps: ProcessDeps) -> dict:
+    """Ask the browser to draw the SVG logo; when that cannot start, record the "upload a PNG" note instead."""
+    fetched_at = str(outcome['fetched_at'])
+    start = deps.start_logo_render
+    if start is not None and start(design_logo_render.render_event(ref_id, svg_logo, fetched_at)):
+        return outcome
+    design = dict(outcome['extracted_design'])
+    design['guidelines_md'] = design_logo_render.with_note(design.get('guidelines_md'), svg_logo_note(svg_logo.path))
+    noted = {**outcome, 'extracted_design': design}
+    record_outcome(table, ref_id, noted, fetched_at)
+    return noted
 
 
 def ready_outcome(summary: str, design: dict | None, now: str) -> dict:

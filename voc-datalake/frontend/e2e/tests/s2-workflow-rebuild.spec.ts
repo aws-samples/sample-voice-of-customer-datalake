@@ -40,10 +40,10 @@ import { expect, type Browser, type BrowserContext, type Locator, type Page } fr
 import { prepareContext, test } from '../lib/test'
 import { apiCall, listOf, stringField, type ApiResult } from '../lib/api'
 import { dialogNamed } from '../lib/dialogs'
-import { AUTH_DIR, BUILTIN_WORKFLOW_ID, MOCK, OUT_DIR, RUN_PREFIX, storageStatePath, type Role } from '../lib/env'
+import { ensureAuthDir, BUILTIN_WORKFLOW_ID, MOCK, OUT_DIR, RUN_PREFIX, storageStatePath, type Role } from '../lib/env'
 import { isRecord } from '../lib/guards'
 import { isApi, jsonOf, runStep, settle, site } from '../lib/fixtures'
-import { recordCreated, runLedger } from '../lib/ledger'
+import { recordCreated, specLedger } from '../lib/ledger'
 import { loginThroughUi } from '../lib/session'
 import { archiveWorkflowsInLibrary, expectBuiltinNotArchivable } from '../lib/workflows'
 import type { StepRecorder } from '../lib/recorder'
@@ -274,7 +274,7 @@ test.describe('s2 workflow editor rebuilds the built-in (F4)', () => {
 
   test('s2wr-00 sign in both roles', async ({ browser }) => {
     test.skip(MOCK, 'the dev mock has no login')
-    fs.mkdirSync(AUTH_DIR, { recursive: true })
+    ensureAuthDir()
     for (const role of ['admin', 'user'] as const) {
       fs.writeFileSync(storageStatePath(role), JSON.stringify({ cookies: [], origins: [] }), { mode: 0o600 })
       const context = prepareContext(await browser.newContext({ storageState: storageStatePath(role) }), role)
@@ -404,7 +404,7 @@ test.describe('s2 workflow editor rebuilds the built-in (F4)', () => {
 
   test('s2wr-99 cleanup: archive the agent and this run\'s workflows, prove it', async ({ browser }) => {
     const proof: Array<{ action: string; status: number; detail: string }> = []
-    const ledger = runLedger()
+    const ledger = specLedger()
     for (const agent of ledger.filter((e) => e.kind === 'agent' && e.name === NAME.agent)) {
       const res = await api('admin', 'DELETE', `/agents/${agent.id}`)
       proof.push({ action: 'DELETE /agents/{id} (archive)', status: res.status, detail: agent.id })

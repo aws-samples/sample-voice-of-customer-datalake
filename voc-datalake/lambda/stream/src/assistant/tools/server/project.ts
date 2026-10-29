@@ -6,14 +6,15 @@ import { z } from 'zod';
 import type { ServerToolDefinition } from '../../types.js';
 import type { ToolDeps } from '../deps.js';
 import { AssistantToolError } from '../errors.js';
-import { clip, isRecord, jsonResult, pick, withinBudget } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
+import { clip, jsonResult, pick } from '../format.js';
 import { idProperty, idSchema, parseToolInput, resolveId, toolSpec } from '../spec.js';
 import { parseProjectAccess } from '../project-access.js';
-import { loadChatContext, type ChatContextDocument } from './chat-context.js';
+import { loadChatContext } from './chat-context.js';
 import { getProjectRoute, serverTool } from './common.js';
 import { recordsAt } from './feedback-shape.js';
 import { createConsultPersonasTool } from './consult-personas.js';
-import { isPrototype, parseProjectPayload, PERSONA_DETAIL_FIELDS } from './project-shape.js';
+import { parseProjectPayload, PERSONA_DETAIL_FIELDS, renderDocument } from './project-shape.js';
 
 const MAX_DOCUMENTS_PER_READ = 5;
 /** get_documents exists to hand the model document text, so its budget is larger than the default. */
@@ -36,15 +37,6 @@ const jobsInput = z.object({
 }).strict();
 
 const productContextSchema = z.object({ context: z.record(z.string(), z.unknown()) }).loose();
-
-function renderDocument(document: ChatContextDocument, share: number): string {
-  const header = `## ${document.title ?? 'Untitled'} (${(document.document_type ?? 'doc').toUpperCase()}) [ID: ${document.document_id}]`;
-  if (isPrototype(document)) {
-    return `${header}\nPrototype HTML is not available as text.`;
-  }
-  if (document.content === undefined) return `${header}\n(No text content.)`;
-  return `${header}\n\n${withinBudget(document.content, share)}`;
-}
 
 function getDocumentsTool(deps: ToolDeps): ServerToolDefinition {
   const spec = toolSpec(

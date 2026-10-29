@@ -18,7 +18,7 @@
  *
  * Run alone, without the shared setup/teardown (it proves its own cleanup in s2-99):
  *   npx playwright test -c playwright.config.ts --project=admin --no-deps tests/s2-agents.spec.ts
- * It signs both roles in itself (lib/session.ts) and saves the sessions to e2e/.auth/.
+ * It signs both roles in itself (lib/session.ts) and saves the sessions to AUTH_DIR (lib/env.ts: $E2E_OUT/.auth).
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -29,11 +29,12 @@ import { openFloating } from '../lib/assistant'
 import { dialogNamed } from '../lib/dialogs'
 import { REGION, accountId, physicalName, stepFunctionsExecution } from '../lib/aws'
 import { LOG_LAG_PAD_MS, reportLines, statsOf, type ReportLine } from '../lib/cloudwatch'
-import { AUTH_DIR, E2E_PREFIX, OUT_DIR, RUN_ID, storageStatePath, type Role } from '../lib/env'
+import { ensureAuthDir, E2E_PREFIX, OUT_DIR, RUN_ID, storageStatePath, type Role } from '../lib/env'
 import { isRecord } from '../lib/guards'
 import { isApi, jsonOf, runStep, settle, site } from '../lib/fixtures'
-import { recordCreated, runLedger } from '../lib/ledger'
+import { recordCreated, specLedger } from '../lib/ledger'
 import { recordRunProjects, runTargetProblems } from '../lib/agentRuns'
+import { personaAvatarProblems } from '../lib/personaAvatars'
 import { deleteConversations, deleteProjects, runConversations } from '../lib/runCleanup'
 import { loginThroughUi } from '../lib/session'
 import { archiveWorkflowsInLibrary, expectBuiltinNotArchivable } from '../lib/workflows'
@@ -283,6 +284,32 @@ function nodeDurations(events: readonly RunEvent[]): Array<{ node_id: string; st
   return out
 }
 
+/** The step graph and event log sit behind "Show technical log" since 5.35.00 (the plain summary comes first). */
+async function openTechnicalLog(page: Page): Promise<Locator> {
+  const toggle = page.getByRole('button', { name: /^(Show|Hide) technical log$/ })
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
+  const log = page.getByRole('region', { name: 'Event log' })
+  await expect(log).toBeVisible()
+  return log
+}
+
+/**
+ * A run that ended at needs_human asks for a decision (5.35.00): close it through its decision
+ * card, as an admin would, and answer the run as it then stands (completed).
+ */
+async function closeIfNeedsHuman(page: Page, r: StepRecorder, agentId: string, run: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (run['status'] !== 'needs_human') return run
+  const runId = String(run['run_id'])
+  const card = page.getByRole('region', { name: 'This run needs your decision' })
+  await expect(card).toBeVisible()
+  await card.getByRole('radio', { name: /^Close the run/ }).check()
+  await card.getByRole('button', { name: 'Make the decision' }).click()
+  const decided = page.waitForResponse((res) => isApi(res, 'POST', new RegExp(`/runs/${runId}/decision$`)))
+  await dialogNamed(page, 'Close this run?').getByRole('button', { name: 'Close the run' }).click()
+  r.note(`run ${runId} ended at needs_human; closed through its decision card -> ${(await decided).status()}`)
+  return record((await apiCall('admin', 'GET', `/agents/${agentId}/runs/${runId}`)).body, 'run')
+}
+
 async function waitForRun(agentId: string, runId: string, timeoutMs: number): Promise<Record<string, unknown>> {
   const deadline = Date.now() + timeoutMs
   let run: Record<string, unknown> = {}
@@ -330,8 +357,10 @@ async function expectSafeRunTarget(r: StepRecorder, agentId: string): Promise<vo
  * Records the projects a terminal run created (cleanup deletes them) and fails on any:
  * the e2e workflow has no project step, so a project means the run was not on it.
  */
-async function expectRunTouchedNoProject(r: StepRecorder, agentId: string, runId: string): Promise<void> {
+async function expectRunTouchedNoProject(page: Page, r: StepRecorder, agentId: string, runId: string): Promise<void> {
   const { created, reused } = await recordRunProjects(agentId, runId)
+  // A created project's personas must all have images (5.35: agent-made personas get portraits by default).
+  for (const id of created) expect.soft(await personaAvatarProblems(page, 'admin', id), `run ${runId} project ${id} persona avatars`).toEqual([])
   r.note(`run ${runId} projects (journal): created ${created.join(', ') || 'none'}; reused ${reused.join(', ') || 'none'}`)
   expect.soft(created, 'a project the run created (recorded in the ledger for cleanup)').toEqual([])
   expect.soft(reused, 'a project the run wrote into').toEqual([])
@@ -348,6 +377,8 @@ async function runNowViaUi(page: Page, r: StepRecorder, agentId: string): Promis
   const clickedAt = Date.now()
   const started = page.waitForResponse((res) => isApi(res, 'POST', new RegExp(`/agents/${agentId}/run$`)))
   await page.getByRole('button', { name: 'Run now' }).click()
+  // 5.35.00: Run now confirms what will run (agent, workflow, scope) before it starts.
+  await dialogNamed(page, 'Start a run now?').getByRole('button', { name: 'Start run', exact: true }).click()
   const res = await started
   const body = await jsonOf(res)
   r.note(`POST /agents/{id}/run -> ${res.status()} in ${Date.now() - clickedAt}ms ${res.status() === 202 ? '' : JSON.stringify(body).slice(0, 200)}`)
@@ -405,7 +436,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
   })
 
   test('s2-00 sign in both roles', async ({ browser }) => {
-    fs.mkdirSync(AUTH_DIR, { recursive: true })
+    ensureAuthDir()
     for (const role of ['admin', 'user'] as const) {
       // The admin project's `use.storageState` also applies to browser.newContext(): start from an
       // empty session file (overwritten by the real login below).
@@ -530,7 +561,8 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
       await page.locator('input[type=file][accept*="json"]').setInputFiles(file)
       await expect.poll(() => nodeCount(page)).toBe(2)
       r.note('Import (client-side) replaced the draft with start + end; the server is not called')
-      await expect(page.getByText(NAME.workflow).first()).toBeVisible()
+      // The imported name lands in the editor's "Workflow name" field (an input, not text).
+      await expect(page.getByLabel('Workflow name', { exact: true }).first()).toHaveValue(NAME.workflow)
     })
 
     await step(page, '03c-drag-from-palette', async (r) => {
@@ -759,19 +791,19 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
 
     await step(page, '04b-follow-run-to-completion', async (r) => {
       const runId = requireId(readState().runId, 'run')
-      const run = await waitForRun(aid, runId, RUN_TIMEOUT_MS)
-      await expectRunTouchedNoProject(r, aid, runId)
+      const ended = await waitForRun(aid, runId, RUN_TIMEOUT_MS)
+      await expectRunTouchedNoProject(page, r, aid, runId)
       const events = await allEvents(aid, runId)
       const durations = nodeDurations(events)
-      const startedAt = Date.parse(String(run['started_at']))
-      const finishedAt = Date.parse(String(run['finished_at']))
+      const startedAt = Date.parse(String(ended['started_at']))
+      const finishedAt = Date.parse(String(ended['finished_at']))
       if (!Number.isNaN(startedAt)) {
         // The Lambda REPORT window is the run's own lifetime (it may have started in an earlier attempt).
         writeState({ windows: { ...(readState().windows ?? {}), run: [startedAt, Number.isNaN(finishedAt) ? Date.now() : finishedAt] } })
       }
-      r.note(`run ${runId}: status=${String(run['status'])} model_calls=${String(run['model_calls'])} started=${String(run['started_at'])} finished=${String(run['finished_at'])} error=${String(run['error'])}`)
+      r.note(`run ${runId}: status=${String(ended['status'])} model_calls=${String(ended['model_calls'])} started=${String(ended['started_at'])} finished=${String(ended['finished_at'])} error=${String(ended['error'])}`)
       for (const d of durations) r.note(`node ${d.node_id}: ${d.outcome} ${d.ms ?? '?'}ms`)
-      saveJson('s2-run-completed.json', { run, events, durations })
+      saveJson('s2-run-completed.json', { run: ended, events, durations })
       await page.goto(site(`/agents/${aid}?tab=runs`), { waitUntil: 'domcontentloaded' })
       await settle(page)
       // The tab opens the NEWEST run; pick this one (the list is newest first, like the API).
@@ -779,10 +811,13 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
       const index = order.indexOf(runId)
       expect(index, 'the run is listed').toBeGreaterThanOrEqual(0)
       await page.getByRole('list', { name: 'Runs' }).getByRole('button').nth(index).click()
-      await expect(page.locator('section[aria-label="Event log"]')).toBeVisible()
-      await expect.poll(() => page.locator('section[aria-label="Event log"] li').count(), { timeout: 15_000 }).toBe(events.length)
-      const eventLogItems = await page.locator('section[aria-label="Event log"] li').count()
-      r.note(`Runs tab (run selected in the list) event log shows ${eventLogItems} entries (API: ${events.length})`)
+      const run = await closeIfNeedsHuman(page, r, aid, ended)
+      const log = await openTechnicalLog(page)
+      // A closed run journals its decision too, so the log is compared with the journal as it now stands.
+      const journalled = (await allEvents(aid, runId)).length
+      await expect.poll(() => log.getByRole('listitem').count(), { timeout: 15_000 }).toBe(journalled)
+      const eventLogItems = await log.getByRole('listitem').count()
+      r.note(`Runs tab (run selected in the list) event log shows ${eventLogItems} entries (API: ${journalled})`)
       expect(run['status']).toBe('completed')
       expect(durations.filter((d) => d.outcome === 'node_finished').map((d) => d.node_id)).toEqual(
         expect.arrayContaining(['aggregate_reviews_1', 'custom_llm_1']))
@@ -843,7 +878,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
       const cancelledAt = attempt?.cancelledAt ?? Date.now()
       if (attempt === null) r.note(`evidence for run ${runId}, cancelled by an earlier attempt of this step (no extra run)`)
       const run = await waitForRun(aid, runId, 90_000)
-      await expectRunTouchedNoProject(r, aid, runId)
+      await expectRunTouchedNoProject(page, r, aid, runId)
       const events = await allEvents(aid, runId)
       await new Promise((resolve) => setTimeout(resolve, 3_000))
       const execution = stepFunctionsExecution(executionArn(runId))
@@ -931,7 +966,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
       await settle(page)
       const runs = page.getByRole('list', { name: 'Runs' }).getByRole('button')
       const listed = await apiCall('admin', 'GET', `/agents/${aid}/runs`)
-      const expected = runLedger().filter((e) => e.kind === 'agent-run').map((e) => e.id)
+      const expected = specLedger().filter((e) => e.kind === 'agent-run').map((e) => e.id)
       const listedIds = listOf(listed.body, 'items').map((x) => String(x['run_id']))
       r.note(`GET /agents/{id}/runs -> ${listed.status}: ${listOf(listed.body, 'items').map((x) => `${String(x['run_id'])}=${String(x['status'])}`).join(', ')}`)
       expect([...listedIds].sort()).toEqual([...new Set(expected)].sort())
@@ -939,8 +974,9 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
       expect([runId, cancelRunId].every((id) => id !== undefined && listedIds.includes(id))).toBe(true)
       await runs.nth(1).click()
       await expect(runs.nth(1)).toHaveAttribute('aria-current', 'true')
-      await expect(page.locator('section[aria-label="Event log"] li').first()).toBeVisible()
-      r.note(`older run selected; its graph + event log render (${await page.locator('section[aria-label="Event log"] li').count()} events)`)
+      const log = await openTechnicalLog(page)
+      await expect(log.getByRole('listitem').first()).toBeVisible()
+      r.note(`older run selected; its graph + event log render (${await log.getByRole('listitem').count()} events)`)
     })
 
     await softStep(page, '05e-save-as-ui', async (r) => {
@@ -1018,7 +1054,8 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
     test.setTimeout(240_000)
     const state = readState()
     const proof: Array<{ action: string; status: number; detail: string }> = []
-    const ledger = runLedger()
+    // Only what THIS spec made: s3, s2-workflow-rebuild and the others share the shard's ledger.
+    const ledger = specLedger()
     const context = await contextFor(browser, 'admin')
     const page = await context.newPage()
     await softStep(page, '99-cleanup', async (r) => {
@@ -1058,7 +1095,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
 
       // Assistant conversations: every one this run started (the stream tap and the save watcher
       // both record them), each deleted as its owner.
-      for (const c of await deleteConversations(runConversations())) {
+      for (const c of await deleteConversations(runConversations(specLedger()))) {
         proof.push({ action: `DELETE + GET /chat/conversations/{id} as ${c.owner}`, status: c.getStatus, detail: `${c.id}: delete ${c.deleteStatus}, get ${c.getStatus}` })
         expect.soft(c.getStatus).toBe(404)
       }
@@ -1075,7 +1112,7 @@ test.describe('s2 autonomous agents (admin, e2e-owned data only)', () => {
         })
         proof.push({ action: 'run journal: projects', status: 0, detail: `${runEntry.id}: created ${found.created.join(',') || 'none'}; reused ${found.reused.join(',') || 'none'}` })
       }
-      for (const p of await deleteProjects(runLedger().filter((e) => e.kind === 'project'))) {
+      for (const p of await deleteProjects(specLedger().filter((e) => e.kind === 'project'))) {
         proof.push({ action: 'DELETE + GET /projects/{id}', status: p.getStatus, detail: `${p.id} (${p.name}): delete ${p.deleteStatus}, get ${p.getStatus}` })
         expect.soft(p.getStatus, `project ${p.id} left behind`).toBe(404)
       }

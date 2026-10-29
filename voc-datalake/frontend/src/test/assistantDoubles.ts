@@ -23,6 +23,7 @@ export function sessionsApiModule() {
     getSession: vi.fn(() => Promise.resolve(null)),
     deleteSession: vi.fn(() => Promise.resolve()),
     renameSession: vi.fn((_id: string, title: string) => Promise.resolve(title)),
+    cancelServerRun: vi.fn(() => Promise.resolve()),
   }
 }
 

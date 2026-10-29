@@ -9,8 +9,8 @@ import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
 import { VocApiStack } from '../lib/stacks/api-stack';
 import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
-import { AnthropicUseCaseSchema, AnthropicUseCaseConfig } from '../lib/stacks/bedrock-access-stack';
-import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, comprehendSuppressions, translateSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
+import { AnthropicUseCaseSchema, AnthropicUseCaseConfig, ImageModelAccess } from '../lib/stacks/bedrock-access-stack';
+import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, comprehendSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
 import { shouldDeployWebSearchInScope } from '../lib/utils/web-search-default';
 import { applyInferenceScopeEnv, inferenceScopeOf } from '../lib/utils/inference-scope';
 import { shouldDeployAiEnablement } from '../lib/utils/ai-enablement-default';
@@ -167,6 +167,10 @@ const coreStack = new VocCoreStack(app, stackId('VocCoreStack'), {
   description: 'VoC Data Lake - Core Infrastructure (Storage, Auth, Frontend Hosting) (uksb-0q2jyqfvlm)(tag:VocCoreStack)',
 });
 tagStack(coreStack, 'Core');
+// The persona-avatar image model's agreement / Marketplace subscription, on every
+// deployment (no flag): hosted by Core because it always exists and deploys first.
+// VocWebSearchStack, which carries the Claude agreements, is optional. Best effort.
+ImageModelAccess.addTo(coreStack, 'ImageModelAccess');
 
 // ============================================
 // Stack 2: VocIngestionStack
@@ -235,6 +239,8 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   memoryTable: coreStack.memoryTable,
   agentsTable: coreStack.agentsTable,
   radarTable: coreStack.radarTable,
+  participantsTable: coreStack.participantsTable,
+  featureRequestsTable: coreStack.featureRequestsTable,
   designIntegrationsSecretArn: coreStack.designIntegrationsSecretArn,
   kmsKey: coreStack.kmsKey,
   rawDataBucket: coreStack.rawDataBucket,
@@ -248,6 +254,8 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   userPool: coreStack.userPool,
   userPoolClient: coreStack.userPoolClient,
   identityPool: coreStack.identityPool,
+  boardUserPool: coreStack.boardUserPool,
+  boardUserPoolClient: coreStack.boardUserPoolClient,
   processingQueueUrl: ingestionStack.processingQueue.queueUrl,
   processingQueueArn: ingestionStack.processingQueue.queueArn,
   secretsArn: ingestionStack.secretsArn,
@@ -284,8 +292,8 @@ Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
 NagSuppressions.addStackSuppressions(coreStack, [...lambdaBasicExecutionRoleSuppressions, ...cdkAssetsSuppressions], true);
 // Apply stack-level suppressions
 NagSuppressions.addStackSuppressions(ingestionStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...comprehendSuppressions], true);
-NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(), ...comprehendSuppressions, ...translateSuppressions], true);
-NagSuppressions.addStackSuppressions(apiStack, [...lambdaBasicExecutionRoleSuppressions, ...apiGatewayPushToCloudwatchLogsRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(), ...cdkAssetsSuppressions, ...comprehendSuppressions, ...translateSuppressions], true);
+NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(), ...comprehendSuppressions], true);
+NagSuppressions.addStackSuppressions(apiStack, [...lambdaBasicExecutionRoleSuppressions, ...apiGatewayPushToCloudwatchLogsRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(), ...cdkAssetsSuppressions, ...comprehendSuppressions], true);
 
 // inferenceScope=eu: BEDROCK_INFERENCE_SCOPE=eu + AVATARS_ENABLED=false on every
 // Lambda of every stack. A no-op for `global`, so default templates are unchanged.

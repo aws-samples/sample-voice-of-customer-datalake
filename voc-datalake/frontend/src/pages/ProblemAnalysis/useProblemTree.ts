@@ -15,6 +15,7 @@ import type { DateRangeParams } from '../../api/client'
 import { getProblemTree } from '../../api/problemsApi'
 import type { ProblemTreeResponse } from '../../api/problemsApi'
 import type { ProblemFilters } from './useProblemFilters'
+import { typeSelectionDims } from './feedbackTypes'
 
 /** How long a tree counts as fresh: the server reads a whole window per request. */
 const TREE_STALE_MS = 5 * 60 * 1000
@@ -27,6 +28,7 @@ const EMPTY_TREE: ProblemTreeResponse = {
   problemsTruncated: false,
   isPartial: false,
   scannedThrough: null,
+  typeCounts: {},
 }
 
 export interface ProblemTree extends ProblemTreeResponse {
@@ -40,11 +42,12 @@ export interface ProblemTree extends ProblemTreeResponse {
   retry: () => void
 }
 
-type TreeFilters = Pick<ProblemFilters, 'source' | 'category' | 'subcategory' | 'urgentOnly' | 'similarity'>
+type TreeFilters = Pick<ProblemFilters, 'source' | 'category' | 'subcategory' | 'urgentOnly' | 'similarity' | 'types'>
 
+/** The tree for the header's period and date basis (`dateParams`) and the page filters. */
 export function useProblemTree(dateParams: DateRangeParams, filters: TreeFilters, apiEndpoint: string): ProblemTree {
-  const { source, category, subcategory, urgentOnly, similarity } = filters
-  const params = { ...dateParams, source, category, subcategory, urgentOnly, similarity }
+  const { source, category, subcategory, urgentOnly, similarity, types } = filters
+  const params = { ...dateParams, source, category, subcategory, urgentOnly, similarity, dims: typeSelectionDims(types) }
   const query = useQuery({
     queryKey: ['feedback-problems', params],
     queryFn: () => getProblemTree(params),

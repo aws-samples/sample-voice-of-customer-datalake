@@ -6,16 +6,18 @@
  * wait — so the user would pay for a job that cannot succeed and read the reason
  * as an untranslated job error. The guard has to be here, before the call.
  */
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { screen, waitFor, within } from '@testing-library/react'
+import { renderWithQueryClient } from '@test/query-client'
 import userEvent from '@testing-library/user-event'
-import { productTabApiModule, productTabMocks } from './product-tab-fixtures'
+import { companyStripModule, productTabApiModule, productTabMocks } from './product-tab-fixtures'
 // After the fixtures on purpose: this imports ProductTab, whose module graph runs
 // the `vi.mock` factory below, which needs the fixture module evaluated.
 import ProductTab from './ProductTab'
 import type { ProductContext } from '../../api/projectTypes'
 
 vi.mock('../../api/projectsApi', () => productTabApiModule())
+vi.mock('./CompanyContextStrip', () => companyStripModule())
 const {
   getProductContext: mockGetProductContext,
   generateProductReport: mockGenerateProductReport,
@@ -49,21 +51,6 @@ async function startReport(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('ProductTab report guard', () => {
-  // The tab's default mode renders the AI interview, whose effect scrolls the
-  // transcript. jsdom has no Element.scrollTo, and the resulting exception
-  // renders the whole tab as an empty div — which silently turns any "the API was
-  // not called" assertion into a vacuous pass. Restored afterwards so the stub
-  // cannot leak into another file's expectations.
-  const realScrollTo = Element.prototype.scrollTo
-
-  beforeAll(() => {
-    Element.prototype.scrollTo = vi.fn()
-  })
-
-  afterAll(() => {
-    Element.prototype.scrollTo = realScrollTo
-  })
-
   beforeEach(() => {
     vi.clearAllMocks()
     mockGenerateProductReport.mockResolvedValue({ job_id: 'job-1' })
@@ -73,7 +60,7 @@ describe('ProductTab report guard', () => {
   it('asks before starting: one click on the card starts nothing', async () => {
     const user = userEvent.setup()
     mockGetProductContext.mockResolvedValue({ context: filledContext })
-    render(<ProductTab canEdit projectId="proj-1" />)
+    renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />)
 
     await user.click(await waitFor(generateButton))
 
@@ -84,7 +71,7 @@ describe('ProductTab report guard', () => {
   it('refuses to start a report when no context field is filled', async () => {
     const user = userEvent.setup()
     mockGetProductContext.mockResolvedValue({ context: emptyContext })
-    render(<ProductTab canEdit projectId="proj-1" />)
+    renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />)
 
     await startReport(user)
 
@@ -98,7 +85,7 @@ describe('ProductTab report guard', () => {
     const user = userEvent.setup()
     const onJobStarted = vi.fn()
     mockGetProductContext.mockResolvedValue({ context: filledContext })
-    render(<ProductTab canEdit projectId="proj-1" onJobStarted={onJobStarted} />)
+    renderWithQueryClient(<ProductTab canEdit projectId="proj-1" onJobStarted={onJobStarted} />)
 
     await startReport(user)
 
@@ -112,7 +99,7 @@ describe('ProductTab report guard', () => {
     // A context that has been saved and then cleared carries updated_at and
     // nothing else. Treating that as "filled" would reinstate the doomed job.
     mockGetProductContext.mockResolvedValue({ context: { updated_at: '2026-08-08T10:00:00Z' } })
-    render(<ProductTab canEdit projectId="proj-1" />)
+    renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />)
 
     await startReport(user)
 
@@ -128,7 +115,7 @@ describe('ProductTab report guard', () => {
     const user = userEvent.setup()
     mockGetProductContext.mockResolvedValue({ context: emptyContext })
     mockListProductDocs.mockResolvedValue({ docs: [readyDoc] })
-    render(<ProductTab canEdit projectId="proj-1" />)
+    renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />)
 
     await startReport(user)
 
@@ -141,7 +128,7 @@ describe('ProductTab report guard', () => {
     mockGetProductContext.mockResolvedValue({ context: emptyContext })
     // Not `ready` ⇒ the backend will not use it, so the job would still fail.
     mockListProductDocs.mockResolvedValue({ docs: [{ ...readyDoc, status: 'pending' as const }] })
-    render(<ProductTab canEdit projectId="proj-1" />)
+    renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />)
 
     await startReport(user)
 
@@ -152,7 +139,7 @@ describe('ProductTab report guard', () => {
     const user = userEvent.setup()
     mockGetProductContext.mockResolvedValue({ context: emptyContext })
     mockListProductDocs.mockRejectedValue(new Error('network'))
-    render(<ProductTab canEdit projectId="proj-1" />)
+    renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />)
 
     await startReport(user)
 
@@ -163,7 +150,7 @@ describe('ProductTab report guard', () => {
   it('does not ask for the document list when a field is already filled', async () => {
     const user = userEvent.setup()
     mockGetProductContext.mockResolvedValue({ context: filledContext })
-    render(<ProductTab canEdit projectId="proj-1" />)
+    renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />)
 
     await waitFor(generateButton)
     // DocsUpload lists docs for its own pane, so snapshot that and require the

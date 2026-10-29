@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next'
 import type { ReactNode } from 'react'
 import type { FeedbackItem } from '../../api/types'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
-import { humanizeId } from '../../utils/displayLabels'
+import { humanizeId, knownJourneyStage } from '../../utils/displayLabels'
 import { SECTION_LABEL } from './FeedbackDetailParts'
 
 /**
@@ -68,7 +68,7 @@ export default function TagsSection({ feedback, onOpen }: TagsSectionProps) {
             {feedback.persona_name}
           </span>
         )}
-        {feedback.journey_stage && (
+        {knownJourneyStage(feedback.journey_stage) === undefined ? null : (
           <span className={LABEL_CHIP}>
             {humanizeId(feedback.journey_stage)}
           </span>

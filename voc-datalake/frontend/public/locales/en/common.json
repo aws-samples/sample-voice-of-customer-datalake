@@ -16,6 +16,7 @@
     "prioritization": "Prioritization",
     "problems": "Problem Analysis",
     "project": "Project",
+    "board": "Board",
     "projects": "Projects",
     "scrapers": "Data sources",
     "memory": "Memory",
@@ -27,7 +28,9 @@
     "account": "Account",
     "workflows": "Workflows",
     "workflow": "Workflow",
-    "radar": "Radar"
+    "radar": "Radar",
+    "featureRequests": "Feedback boards",
+    "participants": "Participants"
   },
   "cancel": "Cancel",
   "configureBrand": "Configure brand",
@@ -85,7 +88,9 @@
     "memory": "Memory",
     "company": "Company",
     "admin": "Administration",
-    "connect": "MCP & skills"
+    "connect": "MCP & skills",
+    "featureRequests": "Feedback boards",
+    "participants": "Participants"
   },
   "partialCountsHint": "Approximate: the full window could not be read, counts are a lower bound",
   "problemAnalysisPage": {
@@ -112,7 +117,8 @@
     "collapseSidebar": "Collapse sidebar",
     "expandSidebar": "Expand sidebar",
     "openMenu": "Open menu",
-    "label": "Main sidebar"
+    "label": "Main sidebar",
+    "mainNav": "Main"
   },
   "profileMenu": {
     "trigger": "Account menu for {{name}}",
@@ -129,6 +135,8 @@
     "48hFull": "48 Hours",
     "7d": "7d",
     "7dFull": "7 Days",
+    "14d": "14d",
+    "14dFull": "14 Days",
     "apply": "Apply",
     "cancel": "Cancel",
     "clear": "Clear",
@@ -301,6 +309,7 @@
     "revokedGroup": "Revoked ({{count, number}})",
     "revokeBody": "“{{name}}” stops working immediately for every assistant using it. This cannot be undone.",
     "revoke": "Revoke",
+    "revokeNamed": "Revoke token “{{name}}”",
     "toggleAudit": "Show activity of {{name}}",
     "status": {
       "active": "Active",
@@ -332,5 +341,46 @@
   "header": {
     "title": "Voice of the Customer",
     "subtitle": "Unified customer feedback intelligence platform"
+  },
+  "builtInSources": {
+    "webscraper": "Web scraper",
+    "manual_import": "Manual import",
+    "s3_import": "S3 import",
+    "feedback_form": "Feedback form",
+    "prototype_feedback": "Prototype feedback",
+    "github_issues": "GitHub Issues",
+    "app_reviews_ios": "iOS App Reviews",
+    "app_reviews_android": "Android App Reviews",
+    "synthetic_reviews": "Synthetic reviews",
+    "web_reviews": "Web reviews",
+    "email_intake": "Email inbox"
+  },
+  "feedbackDimension": {
+    "label": "Feedback type",
+    "description": "What kind of feedback a review is: one primary type, set by the model for every source."
+  },
+  "feedbackTypes": {
+    "bug": "Bug",
+    "service_failure": "Service failure",
+    "feature_request": "Feature request",
+    "usability": "Usability",
+    "performance": "Performance",
+    "pricing_billing": "Pricing and billing",
+    "support_experience": "Support experience",
+    "praise": "Praise",
+    "question": "Question",
+    "other": "Other"
+  },
+  "feedbackTypeDescriptions": {
+    "bug": "Something is broken or wrong: an error, a crash, wrong data",
+    "service_failure": "The service did not deliver: an outage, a failed delivery or payment, cannot log in",
+    "feature_request": "Asks for something new or for a change",
+    "usability": "Works, but is confusing or hard to use",
+    "performance": "Works, but is slow (a crash is a bug)",
+    "pricing_billing": "Prices, fees, charges, refunds, invoices",
+    "support_experience": "How customer support or staff handled the customer",
+    "praise": "Positive feedback with no problem to fix",
+    "question": "Asks how something works",
+    "other": "None of the above"
   }
 }

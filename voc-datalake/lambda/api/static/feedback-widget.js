@@ -78,7 +78,8 @@
         .then(function(data) {
           var config = data.config || data;
           if (data.success && config && config.enabled) {
-            new TypeformWidget(container, config, apiEndpoint, submitEndpoint, embedDimensions(options.dimensions));
+            new TypeformWidget(container, config, apiEndpoint, submitEndpoint, embedDimensions(options.dimensions),
+              participantToken(window.VoCFeedbackForm.participantToken));
           } else {
             message(container, 'Feedback form unavailable.');
           }
@@ -108,8 +109,14 @@
     return count ? out : null;
   }
 
-  function TypeformWidget(container, config, apiEndpoint, submitEndpoint, dimensions) {
+  // Set only by the API's own iframe page (a participant ask's link): an opaque token string.
+  function participantToken(raw) {
+    return typeof raw === 'string' && raw.length > 0 && raw.length <= 128 ? raw : null;
+  }
+
+  function TypeformWidget(container, config, apiEndpoint, submitEndpoint, dimensions, token) {
     this.container = container;
+    this.participantToken = token || null;
     this.config = config;
     this.apiEndpoint = apiEndpoint;
     this.submitEndpoint = submitEndpoint;
@@ -297,13 +304,21 @@
 
     var ratingContainer = document.createElement('div');
     ratingContainer.className = 'voc-rating-container';
+    // One named group, so a screen reader hears the question with the choices.
+    ratingContainer.setAttribute('role', 'group');
+    ratingContainer.setAttribute('aria-label', step.title || 'Rating');
     ratingContainer.style.cssText = 'display:flex;justify-content:center;gap:12px;flex-wrap:wrap;';
 
     // One rating button; `label` feeds the hover hint and is absent for numeric.
-    function addRatingButton(value, label, cssText, text) {
+    // `name` is its accessible name: a face or a star glyph alone reads as nothing
+    // useful ("smiling face"), so every button says its value out of the scale.
+    function addRatingButton(value, label, cssText, text, name) {
       var btn = document.createElement('button');
+      btn.type = 'button';
       btn.className = 'voc-rating-btn';
       btn.dataset.value = value;
+      btn.setAttribute('aria-label', name);
+      btn.setAttribute('aria-pressed', 'false');
       if (label !== undefined) btn.dataset.label = label;
       btn.style.cssText = cssText;
       btn.textContent = text;
@@ -314,17 +329,20 @@
       var emojis = ['😡', '😕', '😐', '🙂', '😍'];
       emojis.forEach(function(emoji, i) {
         addRatingButton(i + 1, emojiLabels[i],
-          'font-size:48px;background:none;border:none;cursor:pointer;opacity:0.4;transition:all 0.2s;padding:8px;', emoji);
+          'font-size:48px;background:none;border:none;cursor:pointer;opacity:0.4;transition:all 0.2s;padding:8px;', emoji,
+          emojiLabels[i] + ' (' + (i + 1) + ' of 5)');
       });
     } else if (step.ratingType === 'numeric') {
       for (var n = 1; n <= 10; n++) {
         addRatingButton(n, undefined,
-          'width:44px;height:44px;border:2px solid ' + KIRO.border + ';background:' + KIRO.background + ';color:' + KIRO.text + ';border-radius:8px;cursor:pointer;font-size:16px;font-weight:600;transition:all 0.2s;', n);
+          'width:44px;height:44px;border:2px solid ' + KIRO.border + ';background:' + KIRO.background + ';color:' + KIRO.text + ';border-radius:8px;cursor:pointer;font-size:16px;font-weight:600;transition:all 0.2s;', n,
+          n + ' of 10');
       }
     } else {
       for (var s = 1; s <= step.max; s++) {
         addRatingButton(s, ratingLabels[s-1] || '',
-          'font-size:40px;background:none;border:none;cursor:pointer;opacity:0.3;transition:all 0.2s;', '★');
+          'font-size:40px;background:none;border:none;cursor:pointer;opacity:0.3;transition:all 0.2s;', '★',
+          s + (s === 1 ? ' star' : ' stars') + ' of ' + step.max + (ratingLabels[s-1] ? ': ' + ratingLabels[s-1] : ''));
       }
     }
     content.appendChild(ratingContainer);
@@ -341,6 +359,7 @@
     function paintRatingButtons(rating, selecting) {
       content.querySelectorAll('.voc-rating-btn').forEach(function(b) {
         var v = parseInt(b.dataset.value);
+        if (selecting) b.setAttribute('aria-pressed', v === rating ? 'true' : 'false');
         if (step.ratingType === 'stars') {
           b.style.opacity = v <= rating ? '1' : '0.3';
         } else if (step.ratingType === 'numeric') {
@@ -461,6 +480,7 @@
       page_url: window.location.href
     };
     if (this.dimensions) payload.dimensions = this.dimensions;
+    if (this.participantToken) payload.participant_token = this.participantToken;
 
     fetch(this.apiEndpoint + this.submitEndpoint, {
       method: 'POST',

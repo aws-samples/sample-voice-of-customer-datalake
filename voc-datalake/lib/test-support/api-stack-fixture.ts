@@ -19,7 +19,7 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import type { VocApiStackProps } from '../stacks/api-stack';
 import { fixtureBucket } from './fixture-resources';
 
-export interface ApiStackEnv {
+interface ApiStackEnv {
   account: string;
   region: string;
 }
@@ -43,7 +43,7 @@ export function pkSkTable(scope: cdk.Stack, id: string): dynamodb.Table {
 }
 
 /** Every VocApiStack prop except the env, prefix and config a suite sets itself. */
-export type ApiStackDependencyProps = Omit<VocApiStackProps, 'env' | 'deploymentPrefix' | 'brandName' | 'enabledSources'>;
+type ApiStackDependencyProps = Omit<VocApiStackProps, 'env' | 'deploymentPrefix' | 'brandName' | 'enabledSources'>;
 
 /** Adds the `gsi1` (gsi1pk/gsi1sk) index every indexed fixture table carries. */
 export function addGsi1(table: dynamodb.Table): void {
@@ -68,12 +68,17 @@ export function indexedTableFactory(deps: cdk.Stack): (id: string) => dynamodb.T
   };
 }
 
+/**
+ * VocApiStack's dependency props. The board pool + client are always built: VocCoreStack creates
+ * them on every deployment since 5.45.00 (core-board-auth.ts).
+ */
 export function apiStackDependencyProps(
   deps: cdk.Stack,
   env: ApiStackEnv,
   table: (id: string) => dynamodb.Table,
 ): ApiStackDependencyProps {
   const userPool = new cognito.UserPool(deps, 'UserPool');
+  const boardUserPool = new cognito.UserPool(deps, 'BoardUserPool');
   const websiteBucket = fixtureBucket(deps, 'Website');
   return {
     feedbackTable: table('Feedback'),
@@ -84,6 +89,8 @@ export function apiStackDependencyProps(
     memoryTable: table('Memory'),
     agentsTable: table('Agents'),
     radarTable: table('Radar'),
+    participantsTable: table('Participants'),
+    featureRequestsTable: table('FeatureRequests'),
     designIntegrationsSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:design-integrations`,
     kmsKey: new kms.Key(deps, 'Key'),
     rawDataBucket: fixtureBucket(deps, 'RawData'),
@@ -98,6 +105,8 @@ export function apiStackDependencyProps(
     frontendDomainName: 'app.example.invalid',
     userPool,
     userPoolClient: userPool.addClient('Client'),
+    boardUserPool,
+    boardUserPoolClient: boardUserPool.addClient('BoardClient'),
     identityPool: new cognito.CfnIdentityPool(deps, 'IdentityPool', { allowUnauthenticatedIdentities: false }),
     processingQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/processing`,
     processingQueueArn: `arn:aws:sqs:${env.region}:${env.account}:processing`,

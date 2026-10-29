@@ -22,6 +22,7 @@
     "stillGenerating": "Nadal generuję…"
   },
   "pages": {
+    "participants": "Uczestnicy",
     "home": "Strona główna",
     "dashboard": "Pulpit",
     "feedback": "Opinie",
@@ -65,6 +66,8 @@
     "externalLink": "{{host}}, otwiera się w nowej karcie",
     "copy": "Kopiuj",
     "copied": "Skopiowano",
+    "stopped": "Zatrzymano",
+    "regenerate": "Wygeneruj ponownie",
     "savedDocumentTitle": "Odpowiedź asystenta – {{date}}",
     "toolGroupRunning_few": "Przeglądam {{count, number}} elementy…",
     "toolGroupRunning_many": "Przeglądam {{count, number}} elementów…",
@@ -161,6 +164,7 @@
     "subtitle": "Mogę odczytywać Twoje dane i proponować zmiany, ale nic nie zostanie zmienione bez Twojej akceptacji."
   },
   "suggestions": {
+    "participants": {"1": "Jakie mamy listy uczestników?", "2": "Utwórz listę klientów beta", "3": "Dodaj osoby do listy z tabeli, którą wkleję"},
     "dashboard": {
       "1": "Jak zmieniły się nastroje klientów w tym tygodniu?",
       "2": "Które źródła dostarczają najwięcej opinii?",
@@ -309,5 +313,32 @@
     "actionFailed": "Nie udało się. Odśwież stronę i spróbuj ponownie.",
     "cancel": "Anuluj plan",
     "openProject": "Otwórz projekt"
+  },
+  "mentions": {
+    "placeholder": "Zapytaj o ten projekt. Wpisz @, aby wskazać personę, # dla dokumentu…",
+    "allLabel": "Wszystkie persony",
+    "allHint": "odpowiadają wszystkie persony",
+    "heading": {
+      "persona": "Persony",
+      "document": "Dokumenty"
+    },
+    "limit": {
+      "persona": "Najwyżej {{max, number}} person na wiadomość.",
+      "document": "Najwyżej {{max, number}} dokumenty na wiadomość."
+    },
+    "loading": "Wczytywanie projektu…",
+    "empty": {
+      "persona": "Brak pasującej persony.",
+      "document": "Brak pasującego dokumentu."
+    },
+    "count_one": "{{count, number}} propozycja",
+    "count_few": "{{count, number}} propozycje",
+    "count_many": "{{count, number}} propozycji",
+    "count_other": "{{count, number}} propozycji",
+    "chips": "Wspomniane w tej wiadomości",
+    "remove": "Usuń {{name}}",
+    "insertPersona": "Wspomnij personę",
+    "insertDocument": "Oznacz dokument",
+    "allCapped": "@all pyta pierwsze {{max, number}} z {{total, number}} person: {{names}}."
   }
 }

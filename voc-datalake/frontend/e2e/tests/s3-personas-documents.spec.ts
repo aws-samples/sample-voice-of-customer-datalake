@@ -21,14 +21,18 @@ import { dialogNamed } from '../lib/dialogs'
 import { apiCall, listOf, stringField } from '../lib/api'
 import { askAssistant, type AssistantTurn } from '../lib/assistant'
 import { LOG_LAG_PAD_MS, logLines, reportLines, scrubTokens } from '../lib/cloudwatch'
+import { rawDataBucket } from '../lib/aws'
 import { E2E_PREFIX, OUT_DIR, RUN_ID, apiUrl } from '../lib/env'
 import { escapeRegExp, jsonOf, runStep, settle, site } from '../lib/fixtures'
 import { isRecord } from '../lib/guards'
 import { followJob, type JobTrace } from '../lib/jobs'
-import { readLedger, recordCreated } from '../lib/ledger'
+import { readLedger, recordCreated, specLedger } from '../lib/ledger'
 import { avatarKeyOfUrl, existingAvatarKeys } from '../lib/avatars'
+import { personaAvatarProblems } from '../lib/personaAvatars'
+import { chooseProjectAction } from '../lib/projects'
 import { deleteConversations, runConversations } from '../lib/runCleanup'
 import type { StepRecorder } from '../lib/recorder'
+import { e2eFetch } from '../lib/trafficTag'
 
 const PROJECT = `${E2E_PREFIX}${RUN_ID}-s3-project`
 const PRD_TITLE = `${E2E_PREFIX}${RUN_ID}-s3 Saved filters`
@@ -37,7 +41,6 @@ const PRD_TITLE = `${E2E_PREFIX}${RUN_ID}-s3 Saved filters`
 const CRUD_PERSONA = 'Priya Raman'
 const CRUD_TAGLINE = 'Edited by the e2e suite'
 /** The deployment's raw-data bucket (voc-raw-data-<account>-<region>); required for the S3 avatar proof. */
-const RAW_BUCKET = process.env['E2E_RAW_BUCKET'] ?? ''
 const JOB_TIMEOUT_MS = 14 * 60_000
 const ASSISTANT_TIMEOUT_MS = 240_000
 const EVIDENCE = path.join(OUT_DIR, 's3')
@@ -123,8 +126,11 @@ const DIALOG = {
   editPersona: 'Edit Persona',
   // ProjectModals.tsx ConfirmModalWrapper (confirmDelete.personaTitle).
   deletePersona: 'Delete Persona?',
-  // The wizard renames itself as types are toggled: Generate PRD / PR-FAQ / PRD + PR-FAQ.
-  documents: /^Generate (PRD \+ PR-FAQ|PR-FAQ|PRD)$/,
+  // The wizard renames itself as types are toggled: Generate PRD / PR/FAQ / PRD + PR/FAQ
+  // (the copy writes PR/FAQ; PR-FAQ is accepted too).
+  documents: /^Generate (PRD \+ PR[-/]FAQ|PR[-/]FAQ|PRD)$/,
+  // Wizards.tsx: the persona wizard's submit asks first (it spends AI credits).
+  personaConfirm: 'Generate personas now?',
   editDocument: 'Edit Document',
   remix: 'Remix Documents',
   research: 'Run Research',
@@ -303,15 +309,13 @@ async function checkAvatars(page: Page): Promise<AvatarCheck[]> {
     let contentType: string | null = null
     let bytes: number | null = null
     if (url !== '') {
-      const img = await fetch(url)
+      const img = await e2eFetch(url)
       httpStatus = img.status
       contentType = img.headers.get('content-type')
       bytes = (await img.arrayBuffer()).byteLength
     }
-    // CSS.escape is browser-only; escape backslashes before quotes so a name
-    // containing either still selects the right element.
-    const cssString = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    const imgLocator = page.locator(`img[alt="${cssString}"]`).first()
+    // The persona's list card (named by the persona) and its avatar image.
+    const imgLocator = page.getByRole('button', { name, exact: true }).getByTestId('persona-avatar').first()
     const hasImg = await imgLocator.count() > 0
     const natural = hasImg ? await imgLocator.evaluate((el) => (el instanceof HTMLImageElement ? el.naturalWidth : 0)) : null
     const parsed = url === '' ? null : new URL(url)
@@ -350,10 +354,17 @@ function avatarDurations(lines: string[]): Array<{ persona: string; ms: number |
   return out
 }
 
-/** Read-only S3 proof: the avatar objects of these personas that exist now (both key layouts, lib/avatars.ts). */
-function avatarObjects(personaIds: string[]): string[] {
-  if (RAW_BUCKET === '') throw new Error('Set E2E_RAW_BUCKET to the deployment raw-data bucket (voc-raw-data-<account>-<region>)')
-  return existingAvatarKeys(RAW_BUCKET, personaIds)
+/** Why step 12 cannot prove the S3 sweep: no bucket from the env or the stack output. */
+const NO_RAW_BUCKET = 'S3 avatar sweep proof skipped: set E2E_RAW_BUCKET, or give read access to the VocCoreStack '
+  + 'RawDataBucketName output (E2E_CORE_STACK for a prefixed deployment); the project is still deleted and proven gone'
+
+/**
+ * Read-only S3 proof: the avatar objects of these personas that exist now (both key layouts,
+ * lib/avatars.ts), or null when the raw-data bucket is unknown (lib/aws.ts rawDataBucket).
+ */
+function avatarObjects(personaIds: string[]): string[] | null {
+  const bucket = rawDataBucket()
+  return bucket === '' ? null : existingAvatarKeys(bucket, personaIds)
 }
 
 /** Starts a job via `trigger` (which resolves to the POST response) and follows it to completion. */
@@ -429,6 +440,9 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
         await completeWizard(page, DIALOG.personas, /^Generate Personas$/, r, async () => {
           await dialog(page, DIALOG.personas).locator('input[type="range"]').fill('3')
         })
+        const confirm = dialog(page, DIALOG.personaConfirm)
+        await expect(confirm).toBeVisible()
+        await confirm.getByRole('button', { name: 'Generate Personas', exact: true }).click()
         return posted
       }, '"PERSONA"')
       r.note(`persona job result: ${JSON.stringify(trace.result).slice(0, 300)}`)
@@ -448,6 +462,8 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
         expect(c.path, `${c.name}: path`).toMatch(/^\/avatars\//)
         expect(c.imgNaturalWidth ?? 0, `${c.name}: img decoded`).toBeGreaterThan(0)
       }
+      // Every persona, through the shared helper (API avatar_url + each card's <img> loaded, no initials fallback).
+      expect(await personaAvatarProblems(page, 'admin', projectId() ?? ''), 'persona avatar problems').toEqual([])
     })
   })
 
@@ -504,7 +520,8 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
     // The persona step 03 imported, deleted here, so the later steps see the generated personas only.
     // Each step fails the test (step() asserts), so a later one never runs without the persona.
     let crudPersonaId = ''
-    const listButton = page.getByRole('button', { name: new RegExp(`@${CRUD_PERSONA}`) }).first()
+    // A Personas-tab card is named by the persona's name alone (aria-label, 5.35.00; names lost their "@").
+    const listButton = page.getByRole('button', { name: new RegExp(escapeRegExp(CRUD_PERSONA)) }).first()
     const stored = async (): Promise<Record<string, unknown> | undefined> =>
       listOf((await apiCall('admin', 'GET', `/projects/${projectId() ?? ''}`)).body, 'personas').find((p) => p['persona_id'] === crudPersonaId)
     await step(page, '03c-persona-find', async (r) => {
@@ -556,14 +573,14 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
     test.skip(projectId() === undefined, 'no project')
     await step(page, '04-docs-wizard', async (r) => {
       await openTab(page, 'overview')
-      const card = page.locator('.card').filter({ has: page.getByRole('heading', { name: /Generate PRD \/ PR-FAQ/ }) })
+      const card = page.locator('.card').filter({ has: page.getByRole('heading', { name: /Generate PRD \/ PR[-/]FAQ/ }) })
       await card.getByRole('button').first().click()
       await expect(dialog(page, DIALOG.documents)).toBeVisible()
       const posted: Response[] = []
       const listener = (res: Response): void => { if (isApi(res, 'POST', /\/projects\/[^/]+\/document$/)) posted.push(res) }
       page.on('response', listener)
       await groundOnPersonasIfNoFeedback(page, DIALOG.documents, r)
-      await completeWizard(page, DIALOG.documents, /^Generate (PRD \+ PR-FAQ|PR-FAQ|PRD)$/, r, async () => {
+      await completeWizard(page, DIALOG.documents, DIALOG.documents, r, async () => {
         const wizard = dialog(page, DIALOG.documents)
         // PR-FAQ is preselected; add PRD so both generate at once.
         await wizard.getByRole('button', { name: /^PRD/ }).first().click()
@@ -768,7 +785,7 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
           const count = await checkboxes.count()
           r.note(`remix step ${(await wizard.getByText(/Step \d+ of \d+/).first().innerText().catch(() => '')).trim()}: ${count} checkboxes`)
           if (/Select Documents|Select Personas/.test(await wizard.innerText())) {
-            const docs = wizard.getByRole('checkbox', { name: /PRD|PR-FAQ|Saved filters|e2e-/ })
+            const docs = wizard.getByRole('checkbox', { name: /PRD|PR[-/]FAQ|Saved filters|e2e-/ })
             const n = await docs.count()
             for (let k = 0; k < Math.min(n, 2); k += 1) await docs.nth(k).check().catch(async () => docs.nth(k).click())
           }
@@ -820,7 +837,9 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
         }).observe(document.body, { childList: true })
       })
       await page.getByRole('button', { name: 'Download options' }).first().click()
-      await page.getByRole('menuitem', { name: 'Download as PDF' }).or(page.getByRole('button', { name: 'Download as PDF' })).first().click()
+      // 5.35 relabel: the PDF export opens the browser's print dialog, so it says so.
+      const pdfItem = 'Print or save as PDF'
+      await page.getByRole('menuitem', { name: pdfItem }).or(page.getByRole('button', { name: pdfItem })).first().click()
       await expect.poll(() => page.evaluate(() => typeof Reflect.get(window, '__s3PrintDoc')), { timeout: 10_000 }).toBe('string')
       const srcdoc = await page.evaluate(() => String(Reflect.get(window, '__s3PrintDoc') ?? ''))
       const printPage = await page.context().newPage()
@@ -905,15 +924,20 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
       const pointedAt = personas.map((p) => avatarKeyOfUrl(stringField(p, 'avatar_url') ?? '')).filter((k): k is string => k !== null).sort()
       const allIds = [...new Set([...ids, ...personas.map((p) => stringField(p, 'persona_id') ?? '').filter((id) => id !== '')])]
       const beforeObjects = avatarObjects(allIds)
-      r.note(`avatar objects before delete: ${beforeObjects.join(', ')} (personas point at: ${pointedAt.join(', ')})`)
-      expect(beforeObjects, 'the S3 listing finds every avatar the personas point at').toEqual(expect.arrayContaining(pointedAt))
+      if (beforeObjects === null) {
+        test.info().annotations.push({ type: 'skip', description: NO_RAW_BUCKET })
+        r.note(NO_RAW_BUCKET)
+      } else {
+        r.note(`avatar objects before delete: ${beforeObjects.join(', ')} (personas point at: ${pointedAt.join(', ')})`)
+        expect(beforeObjects, 'the S3 listing finds every avatar the personas point at').toEqual(expect.arrayContaining(pointedAt))
+      }
       await page.goto(site('/projects'), { waitUntil: 'domcontentloaded' })
       await settle(page)
       await persistSession(page)
       if ((await apiCall('admin', 'GET', `/projects/${projectId() ?? ''}`)).status === 404) {
         r.note('project already deleted through this UI flow in an earlier attempt (timed out after the DELETE); re-proving only')
       } else {
-        await page.getByRole('button', { name: `Delete project ${PROJECT}` }).click()
+        await chooseProjectAction(page, PROJECT, 'Delete')
         await expect(dialog(page, DIALOG.deleteProject)).toBeVisible()
         const deleted = page.waitForResponse((res) => isApi(res, 'DELETE', /\/projects\/[^/]+$/))
         await dialog(page, DIALOG.deleteProject).getByRole('button', { name: 'Delete', exact: true }).click()
@@ -926,14 +950,14 @@ test.describe('s3: personas, avatars, documents (admin, e2e project)', () => {
       expect(check.status).toBe(404)
       const afterObjects = avatarObjects(allIds)
       // Every conversation this run started (the stream tap records them as `assistant stream <id>`).
-      const conversations = await deleteConversations(runConversations())
+      const conversations = await deleteConversations(runConversations(specLedger()))
       const list = await apiCall('admin', 'GET', '/projects')
       const remaining = listOf(list.body, 'projects').filter((p) => (stringField(p, 'name') ?? '') === PROJECT)
       evidence('12-cleanup-proof', { personaIds: allIds, pointedAt, beforeObjects, afterObjects, conversations, projectsListed: listOf(list.body, 'projects').length, remaining: remaining.length })
-      r.note(`after: ${afterObjects.length} avatar objects remain; conversations ${JSON.stringify(conversations)}; project listed: ${remaining.length}`)
+      r.note(`after: ${afterObjects?.length ?? 'unknown (no bucket)'} avatar objects remain; conversations ${JSON.stringify(conversations)}; project listed: ${remaining.length}`)
       expect(remaining).toEqual([])
       expect(conversations.filter((c) => c.getStatus !== 404), 'conversations left behind').toEqual([])
-      expect(afterObjects, 'avatar objects left behind').toEqual([])
+      if (afterObjects !== null) expect(afterObjects, 'avatar objects left behind').toEqual([])
     })
   })
 })

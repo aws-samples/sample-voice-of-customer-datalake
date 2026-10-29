@@ -1,5 +1,5 @@
 /**
- * @fileoverview The memory list's writes: +1, forget, restore, merge — and the
+ * @fileoverview The memory list's writes: +1, edit, forget, restore, merge — and the
  * add from the "Add memory" dialog. Each one lays the item the server answered
  * over the list at once (`memoryOverlay`) and invalidates every memory list, so
  * the change shows immediately and the server copy catches up underneath.
@@ -27,6 +27,7 @@ export function useMemoryMutations(record: RecordWrite, onMerged: () => void, on
         settle(item)
       },
     }),
+    update: useMutation({ mutationFn: memoryApi.update, onSuccess: settle }),
     forget: useMutation({ mutationFn: memoryApi.forget, onSuccess: settle }),
     restore: useMutation({ mutationFn: memoryApi.restore, onSuccess: settle }),
     merge: useMutation({

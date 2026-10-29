@@ -17,7 +17,8 @@ import { test } from '../lib/test'
 import { apiCall } from '../lib/api'
 import { dialogNamed } from '../lib/dialogs'
 import { MOCK, apiUrl } from '../lib/env'
-import { roleOf, runStep, settle, site } from '../lib/fixtures'
+import { escapeRegExp, roleOf, runStep, settle, site } from '../lib/fixtures'
+import { ADD_SOURCE_DIALOG, NEW_SOURCE, PLUGIN_TILE_TITLES, openSourceMenu, sourceTile } from '../lib/sources'
 import { isRecord } from '../lib/guards'
 
 interface ModalCase {
@@ -42,12 +43,12 @@ const SESSIONS_TITLE = 'Past conversations'
 const DIALOG = {
   createProject: 'Create New Project',
   formTemplates: 'Create New Form',
-  addSource: 'Add Data Source',
+  addSource: ADD_SOURCE_DIALOG,
   // ScraperEditor.tsx: "New Scraper" for a new one, "Edit Scraper" when editing.
   scraperEditor: 'New Scraper',
   manualImport: 'Manual Import',
   jsonUpload: 'JSON Upload',
-  // The tile reads "CSV Upload"; the dialog title is "CSV upload".
+  // The tiles read "Spreadsheet (CSV)" / "JSON file" / "Paste reviews" (sourceMenu.items); the dialogs keep their titles.
   csvUpload: 'CSV upload',
   createAgent: 'Create an autonomous agent',
   categoryAccess: 'Category access',
@@ -72,9 +73,9 @@ async function clickAndDialog(page: Page, trigger: Locator, name: DialogName): P
   return dialog
 }
 
-/** "New Source" -> a tile of "Add Data Source"; the selector closes and the tile's own dialog opens. */
+/** "New source" -> a tile of "Add a data source"; the selector closes and the tile's own dialog opens. */
 async function openSourceTile(page: Page, tile: RegExp, name: DialogName): Promise<Locator> {
-  const selector = await clickAndDialog(page, page.getByRole('button', { name: 'New Source' }), DIALOG.addSource)
+  const selector = await openSourceMenu(page)
   await selector.getByRole('button', { name: tile }).first().click()
   const dialog = dialogNamed(page, name)
   await expect(dialog).toBeVisible()
@@ -84,14 +85,16 @@ async function openSourceTile(page: Page, tile: RegExp, name: DialogName): Promi
 const CASES: readonly ModalCase[] = [
   { step: 'modal-create-project', path: '/projects', open: (p) => clickAndDialog(p, p.getByRole('button', { name: /^(New Project|Create Project)$/ }).first(), DIALOG.createProject) },
   { step: 'modal-form-template-wizard', path: '/feedback-forms', open: (p) => clickAndDialog(p, p.getByRole('button', { name: /^(Create Form|Create Your First Form)$/ }).first(), DIALOG.formTemplates) },
-  { step: 'modal-source-template-selector', path: '/scrapers', open: (p) => clickAndDialog(p, p.getByRole('button', { name: 'New Source' }), DIALOG.addSource) },
+  { step: 'modal-source-template-selector', path: '/scrapers', open: (p) => clickAndDialog(p, p.getByRole('button', { name: NEW_SOURCE, exact: true }), DIALOG.addSource) },
+  // Scrapers and imports are admin-only (sourceMenu.ts adminOnly): a user's tiles are disabled,
+  // checked by 'modal-source-admin-tiles' below.
   {
-    step: 'modal-scraper-editor', path: '/scrapers', open: (p) => openSourceTile(p, /Custom \(CSS Selectors\)/, DIALOG.scraperEditor),
+    step: 'modal-scraper-editor', path: '/scrapers', adminOnly: true, open: (p) => openSourceTile(p, /^Scraper with CSS selectors/, DIALOG.scraperEditor),
     close: clickInDialog(DIALOG.scraperEditor, 'Cancel'), closeNote: 'dismissable={false} by design (ScraperEditor.tsx:161): Escape must not discard a half-written config',
   },
-  { step: 'modal-manual-import', path: '/scrapers', open: (p) => openSourceTile(p, /Manual Import/, DIALOG.manualImport) },
-  { step: 'modal-json-upload', path: '/scrapers', open: (p) => openSourceTile(p, /JSON Upload/, DIALOG.jsonUpload) },
-  { step: 'modal-csv-upload', path: '/scrapers', open: (p) => openSourceTile(p, /CSV Upload/, DIALOG.csvUpload) },
+  { step: 'modal-manual-import', path: '/scrapers', adminOnly: true, open: (p) => openSourceTile(p, /^Paste reviews/, DIALOG.manualImport) },
+  { step: 'modal-json-upload', path: '/scrapers', adminOnly: true, open: (p) => openSourceTile(p, /^JSON file/, DIALOG.jsonUpload) },
+  { step: 'modal-csv-upload', path: '/scrapers', adminOnly: true, open: (p) => openSourceTile(p, /^Spreadsheet \(CSV\)/, DIALOG.csvUpload) },
   { step: 'modal-create-agent', path: '/agents', adminOnly: true, open: (p) => clickAndDialog(p, p.getByRole('button', { name: 'New agent' }).first(), DIALOG.createAgent) },
   { step: 'modal-category-access', path: '/admin?tab=access&section=users', adminOnly: true, open: (p) => clickAndDialog(p, p.getByRole('button', { name: /category access/i }).first(), DIALOG.categoryAccess) },
   { step: 'popover-time-range-custom', path: '/dashboard', open: (p) => clickAndDialog(p, p.getByRole('button', { name: /^Custom/ }).first(), DIALOG.customRange) },
@@ -153,6 +156,38 @@ test.describe('modals', () => {
   }
 })
 
+// ------------------------------------------------ template selector: admin-only tiles ----
+
+/** TemplateSelector.tsx: a non-admin's admin-only tile is disabled and titled with this (constants/admin.ts). */
+const ADMIN_ONLY_TITLE = 'Admin access required'
+/** Plugin tiles only an admin may open (sourceMenu.ts ADMIN_ONLY_PLUGIN_IDS). */
+const ADMIN_ONLY_PLUGIN_IDS: ReadonlySet<string> = new Set(['s3_import'])
+/** The scraper and import tiles (all admin-only). */
+const ADMIN_ONLY_TILES = ['Scraper with CSS selectors', 'Paste reviews', 'JSON file', 'Spreadsheet (CSV)'] as const
+
+async function expectAdminOnly(tile: Locator, label: string): Promise<void> {
+  await expect(tile, `${label}: disabled for a non-admin`).toBeDisabled()
+  await expect(tile, `${label}: says why`).toHaveAttribute('title', ADMIN_ONLY_TITLE)
+}
+
+test.describe('modals: a non-admin cannot open the admin-only sources', () => {
+  test('modal-source-admin-tiles', async ({ page }, testInfo) => {
+    const role = roleOf(testInfo)
+    test.skip(role === 'admin', 'the admin opens each of these dialogs above')
+    const { record, problems } = await runStep({
+      page, role, theme: 'dark', step: 'modal-source-admin-tiles', audit: false,
+      action: async () => {
+        await page.goto(site('/scrapers'), { waitUntil: 'domcontentloaded' })
+        await settle(page, 800)
+        const selector = await openSourceMenu(page)
+        for (const title of ADMIN_ONLY_TILES) await expectAdminOnly(sourceTile(selector, title), title)
+        await pressEscape(page)
+      },
+    })
+    expect(problems, `modal-source-admin-tiles: ${record.screenshot ?? ''}`).toEqual([])
+  })
+})
+
 // ------------------------------------------------ template selector: enabled plugins only ----
 
 interface Manifest { id: string; name: string; enabled: boolean; category: string; hasIngestor: boolean }
@@ -178,6 +213,8 @@ async function enabledPluginIds(): Promise<Set<string>> {
   return new Set(Object.keys(sources))
 }
 
+const tileTitle = (m: Manifest): string => PLUGIN_TILE_TITLES[m.id] ?? m.name
+
 /** Plugins the selector shows as tiles (TemplateSelector.tsx: app-review sources + synthetic generators). */
 const isTilePlugin = (m: Manifest): boolean => m.id !== 'webscraper' && m.hasIngestor
 
@@ -200,12 +237,18 @@ test.describe('modals: Add Data Source offers enabled plugins only', () => {
         await page.goto(site('/scrapers'), { waitUntil: 'domcontentloaded' })
         await settle(page, 800)
         r.note(`enabled: ${[...enabled].join(', ')}; offered: ${offered.map((m) => m.id).join(', ')}; not offered: ${notOffered.map((m) => m.id).join(', ')}`)
-        const selector = await clickAndDialog(page, page.getByRole('button', { name: 'New Source' }), DIALOG.addSource)
-        for (const m of notOffered) await expect(selector.getByRole('button', { name: new RegExp(`^${escapeRegExp(m.name)}`) }), `${m.id} is not enabled`).toHaveCount(0)
-        for (const m of offered) await expect(selector.getByRole('button', { name: new RegExp(`^${escapeRegExp(m.name)}`) }), `${m.id} is enabled`).toBeVisible()
+        const selector = await openSourceMenu(page)
+        for (const m of notOffered) await expect(selector.getByRole('button', { name: new RegExp(`^${escapeRegExp(tileTitle(m))}`) }), `${m.id} is not enabled`).toHaveCount(0)
+        for (const m of offered) await expect(selector.getByRole('button', { name: new RegExp(`^${escapeRegExp(tileTitle(m))}`) }), `${m.id} is enabled`).toBeVisible()
         await pressEscape(page)
-        for (const m of offered) {
-          const tile = await openSourceTilePlugin(page, m.name)
+        const locked = role === 'admin' ? [] : offered.filter((m) => ADMIN_ONLY_PLUGIN_IDS.has(m.id))
+        if (locked.length > 0) {
+          const menu = await openSourceMenu(page)
+          for (const m of locked) await expectAdminOnly(sourceTile(menu, tileTitle(m)), m.id)
+          await pressEscape(page)
+        }
+        for (const m of offered.filter((o) => !locked.includes(o))) {
+          const tile = await openSourceTilePlugin(page, m)
           r.note(`${m.id}: its dialog opened`)
           await pressEscape(page)
           await expect(tile).toBeHidden()
@@ -218,13 +261,11 @@ test.describe('modals: Add Data Source offers enabled plugins only', () => {
   })
 })
 
-const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-/** "New Source" -> the plugin's tile -> its own dialog (named after the plugin). */
-async function openSourceTilePlugin(page: Page, name: string): Promise<Locator> {
-  const selector = await clickAndDialog(page, page.getByRole('button', { name: 'New Source' }), DIALOG.addSource)
-  await selector.getByRole('button', { name: new RegExp(`^${escapeRegExp(name)}`) }).first().click()
-  const dialog = dialogNamed(page, name)
+/** "New source" -> the plugin's tile -> its own dialog (named after the plugin's manifest name). */
+async function openSourceTilePlugin(page: Page, m: Manifest): Promise<Locator> {
+  const selector = await openSourceMenu(page)
+  await sourceTile(selector, tileTitle(m)).click()
+  const dialog = dialogNamed(page, m.name)
   await expect(dialog).toBeVisible()
   return dialog
 }

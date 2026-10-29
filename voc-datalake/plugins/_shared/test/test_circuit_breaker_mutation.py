@@ -38,6 +38,7 @@ from botocore.exceptions import ClientError
 from _shared import circuit_breaker
 from _shared.circuit_breaker import CircuitBreaker
 from _shared.test.fresh_import import assert_loading_puts_root_first, load_fresh
+from shared.test.clock import frozen_clock
 
 MODULE_PATH = Path(circuit_breaker.__file__).resolve()
 PLUGINS_ROOT = str(MODULE_PATH.parents[1])
@@ -81,7 +82,7 @@ def table() -> Iterator[MagicMock]:
 
 @pytest.fixture
 def fixed_clock() -> Iterator[MagicMock]:
-    with patch('_shared.circuit_breaker.datetime') as clock:
+    with frozen_clock('_shared.circuit_breaker') as clock:
         clock.now.return_value = NOW
         yield clock
 

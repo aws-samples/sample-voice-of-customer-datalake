@@ -25,7 +25,7 @@ describe.each([
   ['pages/Scrapers/ScraperCard.tsx', '>{scraper.name}</h2>'],
   ['pages/Scrapers/ScraperCard.tsx', '>{domain}</p>'],
   ['pages/Scrapers/SourceCardParts.tsx', '<dd className='],
-  ['pages/Settings/SourceCard.tsx', '{manifest.description}</span>'],
+  ['pages/Settings/SourceCard.tsx', '{copy.description}</span>'],
   ['pages/Settings/AlertsCard.tsx', '{recipient.email}</span>'],
   ['pages/Projects/ProjectCard.tsx', '>{project.name}</h2>'],
   ['pages/ProjectDetail/ProjectHeader.tsx', '>{name}</h1>'],

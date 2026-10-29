@@ -1221,7 +1221,15 @@ def lambda_handler(event, context):
 }
 ```
 
-5. **Deploy**
+5. **Translate its name and description**
+
+The manifest's `name` and `description` are English. The app shows the copy from the locale
+files instead: add `pluginCopy.<camelCaseId>.name` / `.description` to
+`frontend/public/locales/<lang>/settings.json` in all nine locales and the id to
+`PLUGIN_COPY_KEYS` in `frontend/src/plugins/pluginCopy.ts` (`pluginCopy.test.tsx` fails for a
+manifest without keys; the manifest text is only the fallback).
+
+6. **Deploy**
 
 ```bash
 cdk deploy VocIngestionStack
@@ -1310,83 +1318,6 @@ def validate_message(msg: dict) -> tuple[bool, list[str]]:
     
     return len(errors) == 0, errors
 ```
-
----
-
-## Migration Plan
-
-### Phase 1: Create Plugin Structure
-
-1. Create `plugins/` folder
-2. Create `plugins/_shared/` with base classes
-3. Create `plugins/_template/` with starter template
-
-### Phase 2: Migrate Existing Connectors
-
-For each existing connector:
-
-1. Create `plugins/{source}/manifest.json`
-2. Move `lambda/ingestors/{source}/*` → `plugins/{source}/ingestor/`
-3. Move `lambda/webhooks/{source}/*` → `plugins/{source}/webhook/` (if exists)
-4. Update imports in handler files
-
-### Phase 3: Update CDK
-
-1. Create `lib/plugin-loader.ts`
-2. Update `ingestion-stack.ts` to use plugin loader
-3. Update `api-stack.ts` for dynamic webhook routes
-4. Remove hardcoded source configs
-
-### Phase 4: Update Frontend
-
-1. Create `scripts/generate-manifests.ts`
-2. Add prebuild script to `package.json`
-3. Create `frontend/src/plugins/` with types and loader
-4. Update Settings page to use manifests
-5. Remove `sourceConfig.ts`
-
-### Phase 5: Cleanup
-
-1. Remove `lambda/ingestors/` (now in plugins)
-2. Remove `lambda/webhooks/` (now in plugins)
-3. Update documentation
-4. Test all connectors
-
----
-
-## File Changes Summary
-
-### Files to Create
-
-| File | Purpose |
-|------|---------|
-| `plugins/_shared/base_ingestor.py` | Base class for ingestors |
-| `plugins/_shared/base_webhook.py` | Base class for webhooks |
-| `plugins/_template/manifest.json` | Template manifest |
-| `plugins/_template/ingestor/handler.py` | Template handler |
-| `plugins/{source}/manifest.json` | Manifest for each source |
-| `lib/plugin-loader.ts` | CDK plugin discovery |
-| `scripts/generate-manifests.ts` | Frontend manifest generator |
-| `frontend/src/plugins/types.ts` | TypeScript types |
-| `frontend/src/plugins/index.ts` | Plugin loader |
-
-### Files to Modify
-
-| File | Changes |
-|------|---------|
-| `lib/stacks/ingestion-stack.ts` | Use plugin loader instead of hardcoded configs |
-| `lib/stacks/api-stack.ts` | Dynamic webhook routes from plugins |
-| `frontend/src/pages/Settings/Settings.tsx` | Import from plugins instead of sourceConfig |
-| `frontend/src/pages/Settings/SourceCard.tsx` | Accept manifest prop instead of sourceInfo |
-| `package.json` | Add generate:manifests script |
-
-### Files to Delete
-
-| File | Reason |
-|------|--------|
-| `frontend/src/pages/Settings/sourceConfig.ts` | Replaced by manifests.json |
-| `lambda/ingestors/*` | Moved to plugins/ |
-| `lambda/webhooks/*` | Moved to plugins/ |
 
 ---
 

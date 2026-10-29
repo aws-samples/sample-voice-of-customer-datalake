@@ -63,6 +63,7 @@ def test_stops_at_the_cap_and_claims_only_the_days_after_the_last_row():
     table = _table({'Items': _rows('2026-10-22', '2026-10-21', '2026-10-21'), 'LastEvaluatedKey': {'k': 1}})
     rows, partial = walk_channel(table, 'soz', '2026-10-01', budget, cap=2)
     assert (len(rows), partial, budget.scanned_through) == (2, True, '2026-10-22')
+    assert budget.partial_reason == 'row_cap'
     assert table.query.call_count == 1
 
 
@@ -76,6 +77,7 @@ def test_stops_when_the_walk_budget_runs_out():
     table = _table({'Items': _rows('2026-10-22'), 'LastEvaluatedKey': {'k': 1}})
     rows, partial = walk_channel(table, 'soz', '2026-10-01', budget)
     assert (len(rows), partial, budget.scanned_through) == (1, True, '2026-10-23')
+    assert budget.partial_reason == 'time_budget'
 
 
 def test_an_empty_stopped_page_claims_nothing_newer_than_the_cutoff():

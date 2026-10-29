@@ -134,5 +134,8 @@
   "openInCategories": "Abrir {{name}} en Categorías",
   "seeAllUrgent_one": "Ver la reseña urgente",
   "seeAllUrgent_other": "Ver las {{count, number}} reseñas urgentes",
-  "seeAllUrgent_many": "Ver las {{count, number}} reseñas urgentes"
+  "seeAllUrgent_many": "Ver las {{count, number}} reseñas urgentes",
+  "partialNote": {
+    "reviewBasis": "Contar por fecha de la reseña lee las reseñas una a una, así que un periodo amplio se queda corto; cambie a Fecha de importación para ver el total completo."
+  }
 }

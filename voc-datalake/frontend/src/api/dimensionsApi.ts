@@ -13,7 +13,7 @@
  */
 import { messageKeyForStatus, type StatusMessage } from './apiErrorStatus'
 import { fetchApi } from './client'
-import { buildSearchParams } from './requestKit'
+import { buildSearchParams, put } from './requestKit'
 import {
   normalizeDimensionMetrics, normalizeDimensionsConfig, normalizeDimensionsEdit,
 } from './dimensionsSchema'
@@ -45,19 +45,13 @@ export const dimensionsApi = {
     normalizeDimensionsConfig(await fetchApi<unknown>('/settings/dimensions')),
 
   saveConfig: async (dimensions: Dimension[]): Promise<DimensionsConfig> =>
-    normalizeDimensionsConfig(await fetchApi<unknown>('/settings/dimensions', {
-      method: 'PUT',
-      body: JSON.stringify({ dimensions }),
-    })),
+    normalizeDimensionsConfig(await fetchApi<unknown>('/settings/dimensions', put({ dimensions }))),
 
   getMetrics: async (params: DimensionMetricsParams): Promise<DimensionMetrics> =>
     normalizeDimensionMetrics(await fetchApi<unknown>(`/metrics/dimensions?${buildSearchParams(params)}`)),
 
   setFeedbackDimensions: async (feedbackId: string, change: FeedbackDimensionsChange): Promise<FeedbackDimensionsResult> =>
-    normalizeDimensionsEdit(await fetchApi<unknown>(`/feedback/${encodeURIComponent(feedbackId)}/dimensions`, {
-      method: 'PUT',
-      body: JSON.stringify(change),
-    })),
+    normalizeDimensionsEdit(await fetchApi<unknown>(`/feedback/${encodeURIComponent(feedbackId)}/dimensions`, put(change))),
 }
 
 /** A dimension edit moves the whole feedback family, dimension metrics included. */

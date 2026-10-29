@@ -2,6 +2,8 @@
  * Zod schema and template data for JSON feedback upload.
  */
 import { z } from 'zod'
+import { isRecord } from '../../lib/typeGuards'
+import { downloadFile } from '../../utils/file'
 
 // ============================================
 // Zod Schema — matches pipeline minimum fields
@@ -100,10 +102,6 @@ const TEMPLATE_DATA = {
 // ============================================
 // Helpers
 // ============================================
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function isObjectWithItems(raw: unknown): raw is { items: unknown } {
   return typeof raw === 'object' && raw !== null && 'items' in raw
@@ -204,14 +202,8 @@ export function parseJsonFeedback(content: string): ParseResult {
   return { ok: true, ...partitionItems(arr) }
 }
 
-export function downloadTemplate() {
-  const blob = new Blob([JSON.stringify(TEMPLATE_DATA, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'feedback-template.json'
-  a.click()
-  URL.revokeObjectURL(url)
+export function downloadJsonTemplate() {
+  downloadFile(JSON.stringify(TEMPLATE_DATA, null, 2), 'feedback-template.json', 'application/json')
 }
 
 export function validateFileBasics(file: File): string | null {

@@ -175,7 +175,7 @@ describe('the retired per-project MCP server is gone (3.00.00)', () => {
     expect(policies, 'the global token partition must still be granted').toContain('"MCPGTOKEN"');
   });
 
-  it('keeps the bearer-token shape authorizer for /mcp/global', () => {
+  it('keeps the bearer-token authorizer for /mcp/global', () => {
     expect(Object.keys(apiTemplate().findResources('AWS::ApiGateway::Authorizer', {
       Properties: { Name: 'voc-mcp-token-authorizer' },
     }))).toHaveLength(1);

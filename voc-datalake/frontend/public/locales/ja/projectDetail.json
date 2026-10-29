@@ -360,21 +360,10 @@
       "knownLimitations": "既知の制限",
       "nonGoals": "非目標",
       "oneLiner": "一行説明",
-      "placeholderEmpty": "—",
       "problemSolved": "解決する課題",
       "productName": "製品名",
       "successMetrics": "成功指標",
       "targetUsers": "対象ユーザー"
-    },
-    "interview": {
-      "captured": "了解しました — 記録しました。製品について他に教えていただけることはありますか？",
-      "elaborate": "その点についてもう少し詳しく教えていただけますか？",
-      "greeting": "こんにちは — 製品やサービスの説明づくりをお手伝いします。まず一、二文でどんなものか教えてください。そこから残りを組み立てていきましょう。",
-      "heading": "インタビュー",
-      "hint": "回答に合わせて左側のフォームを埋めていきます。",
-      "placeholder": "製品について教えてください…",
-      "send": "送信",
-      "thinking": "考え中…"
     },
     "lifecycle": {
       "beta": "ベータ版",
@@ -385,9 +374,6 @@
       "select": "— 選択 —"
     },
     "loading": "製品コンテキストを読み込み中…",
-    "modeBoth": "両方",
-    "modeChat": "チャットのみ",
-    "modeUpload": "アップロードのみ",
     "report": {
       "button": "レポートを生成",
       "confirmTitle": "製品レポートを生成しますか？",
@@ -421,6 +407,36 @@
       "statusFailed": "失敗",
       "statusReady": "準備完了",
       "statusUploading": "アップロード中…"
+    },
+    "assistant": {
+      "button": "AI アシスタントで入力",
+      "hint": "アシスタントが空欄の項目について 1 問ずつ質問し、最後にすべての回答を 1 枚のカードにまとめて承認を求めます。",
+      "prompt": "このプロジェクトの製品説明を埋めるために、インタビューしてください。"
+    },
+    "lastSaved": "最終保存: {{at}}",
+    "neverSaved": "未保存",
+    "saving": "保存中…",
+    "sections": {
+      "basics": {
+        "title": "製品",
+        "description": "製品の概要と現在の段階。"
+      },
+      "customers": {
+        "title": "顧客と課題",
+        "description": "誰のための製品で、どんな課題を解決するか。"
+      },
+      "offering": {
+        "title": "提供内容",
+        "description": "何ができるか、代替手段とどう違うか。"
+      },
+      "scope": {
+        "title": "目標と範囲",
+        "description": "成功の測り方、制約、対象外とすること。"
+      },
+      "notes": {
+        "title": "メモ",
+        "description": "PRD と PR/FAQ の作成者が知っておくべきその他の情報。"
+      }
     }
   },
   "tabs": {
@@ -457,6 +473,9 @@
     "generatePrd": "PRD を生成",
     "generatePrdTitle": "PRD を生成",
     "generatePrfaq": "PR/FAQ を生成",
+    "startWritingTitle": "自分で書く",
+    "startWriting": "書き始める",
+    "startWritingFailed": "ドキュメントを作成できませんでした。もう一度お試しください。",
     "generatePrfaqTitle": "PR/FAQ を生成",
     "newDocTitle": "新しいドキュメントタイトル",
     "newDocTitlePlaceholder": "例：Virtual Concierge PRD",

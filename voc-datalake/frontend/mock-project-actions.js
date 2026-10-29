@@ -827,7 +827,6 @@ const PIN_DOCUMENT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const PIN_ID = /^pin_\d{20}[0-9a-f]{6}$/;
 const MAX_REPLIES = 50;
 const MAX_REPLY_CHARS = 2000;
-const MAX_BATCH_PINS = 50;
 const SEEDED_PIN_PROJECT = 'proj_1';
 const pinStore = new Map();
 
@@ -949,34 +948,6 @@ function changePinStatus(ctx, documentId, pinId, action) {
   return [200, { success: true, pin: publicPin(pin) }];
 }
 
-function batchPinIds(body) {
-  const raw = body.pin_ids;
-  if (!Array.isArray(raw) || raw.length === 0) return [null, 'pin_ids must be a non-empty list'];
-  if (raw.length > MAX_BATCH_PINS) return [null, `at most ${MAX_BATCH_PINS} pin_ids are allowed`];
-  if (!raw.every((p) => typeof p === 'string' && PIN_ID.test(p))) return [null, 'pin_ids holds an invalid pin id'];
-  return [[...new Set(raw)], null];
-}
-
-function batchPins(ctx, documentId, action) {
-  const revision = ctx.body.revision_document_id;
-  if (action === 'addressed' && (typeof revision !== 'string' || !PIN_DOCUMENT_ID.test(revision))) {
-    return bad('revision_document_id is required');
-  }
-  const [pins, error] = pinsFor(ctx, documentId);
-  if (error) return error;
-  const [pinIds, idsError] = batchPinIds(ctx.body);
-  if (idsError) return bad(idsError);
-  const changed = [];
-  const skipped = [];
-  for (const pinId of pinIds) {
-    const moved = action === 'addressed'
-      ? movePin(pins, pinId, 'addressed', ['open'], { addressed_by: revision })
-      : movePin(pins, pinId, 'resolved', ['addressed'], {});
-    (moved ? changed : skipped).push(pinId);
-  }
-  return [200, { success: true, changed, skipped }];
-}
-
 // ── Route table ─────────────────────────────────────────────────────────────
 // `pattern` matches the path after `/projects/{id}`. `body`: 'none' (GET/DELETE),
 // 'lenient' (the backend's `json_body or {}`) or 'object' (json_object_body: a
@@ -1009,8 +980,6 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/build-prototype$/, body: 'object', run: startPrototypeBuild },
 
   { method: 'GET', pattern: /^\/prototypes\/([^/]+)\/pins$/, run: listPins },
-  { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/addressed$/, body: 'object', run: (ctx, doc) => batchPins(ctx, doc, 'addressed') },
-  { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/resolve$/, body: 'object', run: (ctx, doc) => batchPins(ctx, doc, 'resolve') },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/replies$/, body: 'object', run: replyToPin },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/resolve$/, body: 'object', run: (ctx, doc, pin) => changePinStatus(ctx, doc, pin, 'resolve') },
   { method: 'POST', pattern: /^\/prototypes\/([^/]+)\/pins\/([^/]+)\/reopen$/, body: 'object', run: (ctx, doc, pin) => changePinStatus(ctx, doc, pin, 'reopen') },

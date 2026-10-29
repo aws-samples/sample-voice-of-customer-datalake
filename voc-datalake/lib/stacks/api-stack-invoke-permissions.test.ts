@@ -76,6 +76,12 @@ function integratedFunctionIds(template: Template): string[] {
   return [...new Set(ids.filter((id): id is string => id !== undefined))].sort(byCodeUnit);
 }
 
+/** The SourceArn of each API Gateway authorizer's own invoke permission (`<api>/authorizers/<id>`), JSON-encoded. */
+function authorizerSourceArns(template: Template, restApiId: string): string[] {
+  return Object.keys(template.findResources('AWS::ApiGateway::Authorizer'))
+    .map((authorizerId) => JSON.stringify(executeApiArn(restApiId, ['/authorizers/', { Ref: authorizerId }])));
+}
+
 function gatewayPermissionsFor(template: Template, functionId: string): Permission[] {
   const aliasFunctions = aliasFunctionIds(template);
   return allPermissions(template)
@@ -92,8 +98,13 @@ describe('every Lambda behind an API Gateway method', () => {
 
     const isScopedInvoke = (permission: Permission) => permission.Action === 'lambda:InvokeFunction'
       && JSON.stringify(permission.SourceArn) === JSON.stringify(expected);
+    // The global MCP function is also its route's token authorizer (api-mcp.ts): that invoke
+    // permission is the authorizer's own, scoped to `<api>/authorizers/<id>`, not a route's.
+    const authorizerArns = authorizerSourceArns(template, onlyRestApiId(template));
+    const routePermissions = (functionId: string) => gatewayPermissionsFor(template, functionId)
+      .filter((permission) => !authorizerArns.includes(JSON.stringify(permission.SourceArn)));
     const offenders = functionIds
-      .map((functionId) => ({ functionId, permissions: gatewayPermissionsFor(template, functionId) }))
+      .map((functionId) => ({ functionId, permissions: routePermissions(functionId) }))
       .filter(({ permissions }) => permissions.length !== 1 || !permissions.every(isScopedInvoke))
       .map(({ functionId, permissions }) => `${functionId}: ${permissions.length} permission(s)`);
     expect(offenders).toStrictEqual([]);
@@ -103,10 +114,7 @@ describe('every Lambda behind an API Gateway method', () => {
     const template = apiTemplateAllPlugins();
     const restApiId = onlyRestApiId(template);
     const routeScoped = JSON.stringify(restApiScopedArn(restApiId));
-    const authorizerIds = Object.keys(template.findResources('AWS::ApiGateway::Authorizer'));
-    const authorizerScoped = authorizerIds.map((authorizerId) => JSON.stringify(
-      executeApiArn(restApiId, ['/authorizers/', { Ref: authorizerId }]),
-    ));
+    const authorizerScoped = authorizerSourceArns(template, restApiId);
 
     const unscoped = allPermissions(template)
       .filter((permission) => permission.Principal === 'apigateway.amazonaws.com')
@@ -128,6 +136,22 @@ const FRUGAL_FUNCTIONS: [string, string][] = [
   ['the integrations API', 'integrations_handler.py'],
   ['the Radar API', 'radar_handler.py'],
 ];
+
+describe('the global MCP function, also its own token authorizer', () => {
+  it('holds one route permission and one permission for that authorizer', () => {
+    const template = apiTemplateAllPlugins();
+    const restApiId = onlyRestApiId(template);
+    const [mcpAuthorizer = ''] = Object.keys(template.findResources('AWS::ApiGateway::Authorizer', {
+      Properties: { Name: 'voc-mcp-token-authorizer' },
+    }));
+    const arns = gatewayPermissionsFor(template, functionIdForHandler(template, 'mcp_global_handler.py'))
+      .map((permission) => JSON.stringify(permission.SourceArn));
+    expect([...arns].sort(byCodeUnit)).toStrictEqual([
+      JSON.stringify(restApiScopedArn(restApiId)),
+      JSON.stringify(executeApiArn(restApiId, ['/authorizers/', { Ref: mcpAuthorizer }])),
+    ].sort(byCodeUnit));
+  });
+});
 
 describe.each(FRUGAL_FUNCTIONS)('%s', (_label, handlerFile) => {
   it('has exactly one API Gateway invoke permission', () => {

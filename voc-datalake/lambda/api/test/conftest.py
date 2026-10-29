@@ -66,6 +66,19 @@ def _no_circuit_store():
 
 
 @pytest.fixture(autouse=True)
+def _ai_driven_by_default():
+    """The PR/FAQ / PRD AI-writing gate (shared/ai_writing.py) reads the caller's way of
+    working from the aggregates table and FAILS CLOSED when it cannot. Default every caller
+    to the no-row answer (AI-driven, today's behaviour) so the projects suites that predate
+    the gate never reach DynamoDB. A test about the gate patches
+    `shared.ai_mode.get_ai_mode` itself (a nested patch wins)."""
+    from shared import ai_mode
+
+    with patch('shared.ai_mode.get_ai_mode', return_value=ai_mode.DEFAULT_AI_MODE):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _fresh_plugin_secret_defaults():
     """Drop `integrations_handler._plugin_secret_defaults`'s process-wide cache after each test.
 

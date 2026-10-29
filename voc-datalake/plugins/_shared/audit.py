@@ -5,12 +5,12 @@ Structured audit logging for plugin operations.
 import os
 import sys
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
 from typing import Literal
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.logging import logger
+from shared.timestamps import now_iso
 
 AuditAction = Literal[
     "plugin.invoked",
@@ -58,7 +58,7 @@ def emit_audit_event(
     Emit a structured audit event as one CloudWatch log line under ``AUDIT``.
     """
     event = AuditEvent(
-        timestamp=datetime.now(UTC).isoformat(),
+        timestamp=now_iso(),
         action=action,
         plugin_id=plugin_id,
         success=success,

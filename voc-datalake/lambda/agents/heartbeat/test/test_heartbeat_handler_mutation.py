@@ -116,7 +116,6 @@ class TestModuleConfiguration:
         assert timedelta(seconds=450) == hb.SCHEDULE_TOLERANCE
         assert timedelta(hours=3) == hb.CRON_LOOKBACK
         assert {'12h': timedelta(hours=12), '24h': timedelta(hours=24)} == hb.EVERY_PERIODS
-        assert hb.CATEGORY_METRIC_PREFIX == 'METRIC#daily_category#'
 
     def test_a_decision_starts_empty(self):
         decision = hb.Decision()

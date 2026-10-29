@@ -31,6 +31,11 @@ from _shared.test.offline_plugin_imports import import_plugin_client_offline
 itunes_client = import_plugin_client_offline(__file__, "itunes_client")
 
 
+def _reviews(*args, **kwargs) -> list[dict]:
+    """The reviews of one storefront fetch (its `failure` is pinned in TestStorefrontFailure)."""
+    return itunes_client.fetch_reviews_for_country(*args, **kwargs).reviews
+
+
 def _entry(i: int) -> dict:
     return {
         "id": {"label": str(i)},
@@ -98,7 +103,7 @@ class TestRequestedPages:
         every page is full and the limit is not reached."""
         session = MagicMock()
         session._get.side_effect = [_page([_entry(i)]) for i in range(20)]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=1000)
+        result = _reviews("1", "kr", session, limit=1000)
         assert itunes_client._MAX_PAGES == 10
         assert _requested_paths(session) == [
             f"/kr/rss/customerreviews/page={page}/id=1/sortby=mostrecent/json"
@@ -108,13 +113,13 @@ class TestRequestedPages:
 
     def test_a_zero_limit_requests_nothing(self):
         session = MagicMock()
-        assert itunes_client.fetch_reviews_for_country("1", "kr", session, limit=0) == []
+        assert _reviews("1", "kr", session, limit=0) == []
         session._get.assert_not_called()
 
     def test_the_default_limit_is_50(self):
         session = MagicMock()
         session._get.side_effect = [_page([_entry(i) for i in range(60)])]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session)
+        result = _reviews("1", "kr", session)
         assert len(result) == 50
         assert session._get.call_count == 1
 
@@ -129,7 +134,7 @@ class TestRequestedPages:
             AppStoreError("500"),
             _page([_entry(99)]),
         ]
-        result = itunes_client.fetch_reviews_for_country("1", "kr", session, limit=500)
+        result = _reviews("1", "kr", session, limit=500)
         assert [review["id"] for review in result] == ["0"]
         assert session._get.call_count == 4
         assert itunes_client._MAX_CONSECUTIVE_EMPTY == 3
@@ -169,7 +174,7 @@ class TestWarningLines:
             _page(None), _page(None), _page(None),
         ]
         with patch.object(itunes_client, "logger") as logger:
-            itunes_client.fetch_reviews_for_country("284882215", "kr", session, limit=500)
+            _reviews("284882215", "kr", session, limit=500)
         logger.warning.assert_called_once_with(
             "iOS RSS page 2 failed for app 284882215 in kr: HTTP 503"
         )
@@ -181,8 +186,41 @@ class TestWarningLines:
             urllib3.exceptions.ProtocolError("connection reset"),
         ]
         with patch.object(itunes_client, "logger") as logger:
-            result = itunes_client.fetch_reviews_for_country("284882215", "us", session, limit=500)
+            result = _reviews("284882215", "us", session, limit=500)
         assert [review["id"] for review in result] == ["0"]
         logger.warning.assert_called_once_with(
             "Failed to fetch iOS reviews for app 284882215 in us: connection reset"
         )
+
+
+class TestStorefrontFailure:
+    @staticmethod
+    def _fetch(*answers):
+        session = MagicMock()
+        session._get.side_effect = list(answers)
+        with patch.object(itunes_client, "logger"):
+            return itunes_client.fetch_reviews_for_country("1", "gb", session, limit=500)
+
+    def test_a_failed_first_page_is_a_failed_storefront_with_its_status(self):
+        fetch = self._fetch(
+            AppStoreError("iTunes API request failed with status 403"), _page(None), _page(None),
+        )
+        assert (fetch.reviews, fetch.failure) == ([], "HTTP 403")
+
+    def test_an_empty_storefront_is_not_a_failure(self):
+        fetch = self._fetch(_page(None), _page(None), _page(None))
+        assert (fetch.reviews, fetch.failure) == ([], None)
+
+    def test_a_failed_first_page_with_later_reviews_is_not_a_failure(self):
+        fetch = self._fetch(AppStoreError("status 503"), _page([_entry(0)]), _page(None), _page(None), _page(None))
+        assert fetch.failure is None
+        assert [review["id"] for review in fetch.reviews] == ["0"]
+
+    def test_a_connection_failure_before_any_review_names_the_urllib3_cause(self):
+        class MaxRetryError(urllib3.exceptions.HTTPError):
+            """urllib3's MaxRetryError shape: the underlying error on ``reason``."""
+
+            reason = urllib3.exceptions.ConnectTimeoutError("t")
+
+        fetch = self._fetch(MaxRetryError("retries exceeded"))
+        assert (fetch.reviews, fetch.failure) == ([], "MaxRetryError(ConnectTimeoutError)")

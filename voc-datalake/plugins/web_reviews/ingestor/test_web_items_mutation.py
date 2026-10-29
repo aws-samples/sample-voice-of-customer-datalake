@@ -12,6 +12,7 @@ import pytest
 from extract import ExtractedReview
 from web_items import WebTarget, created_at, queue_item, review_id, stored_configs, target_from_config
 
+from shared.test.clock import frozen_clock
 from shared.web_review_targets import TargetError
 
 URL = 'https://www.trustpilot.com/review/example.com'
@@ -104,7 +105,7 @@ class TestCreatedAt:
     def test_an_undated_review_is_the_ingest_time_in_utc(self):
         clock = MagicMock()
         clock.now.return_value = datetime(2026, 10, 5, 8, 30, tzinfo=UTC)
-        with patch('web_items.datetime', clock):
+        with frozen_clock('web_items', clock):
             assert created_at(UNDATED) == '2026-10-05T08:30:00+00:00'
         clock.now.assert_called_once_with(UTC)
 

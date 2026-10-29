@@ -24,9 +24,10 @@ def _make_page(n, start=0):
 
 
 def _fetch(count, sort_by="newest"):
+    """The reviews of one locale fetch (its `failure` is pinned in TestLocaleFailure)."""
     return play_client.fetch_reviews_for_country(
         "com.x", country="kr", count=count, sort_by=sort_by, lang="ko"
-    )
+    ).reviews
 
 
 def _recording(fake):
@@ -156,3 +157,23 @@ class TestSortOrder:
         field = next(f for f in manifest["config"] if f["key"] == "sort_by")
         assert {o["value"] for o in field["options"]} == {"newest", "rating"}
         assert set(play_client.SORT_MAP) == {"newest", "rating"}
+
+
+class TestLocaleFailure:
+    def test_an_error_before_any_review_is_a_failed_locale_with_its_cause(self):
+        with patch.object(play_client, "reviews", side_effect=ConnectionError("reset")):
+            fetch = play_client.fetch_reviews_for_country("com.x", country="kr", count=10, sort_by="newest", lang="ko")
+        assert (fetch.reviews, fetch.failure) == ([], "ConnectionError")
+
+    def test_a_partial_result_is_not_a_failure(self):
+        pages = iter([(_make_page(5), "token")])
+
+        def fake(_pkg, **_kw):
+            try:
+                return next(pages)
+            except StopIteration:
+                raise ConnectionError("reset") from None
+
+        with patch.object(play_client, "reviews", side_effect=fake):
+            fetch = play_client.fetch_reviews_for_country("com.x", country="kr", count=10, sort_by="newest", lang="ko")
+        assert (len(fetch.reviews), fetch.failure) == (5, None)

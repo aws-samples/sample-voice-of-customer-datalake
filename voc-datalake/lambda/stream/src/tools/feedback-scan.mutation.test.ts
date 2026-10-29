@@ -108,6 +108,18 @@ describe('fetchCandidatesByDate', () => {
     warn.mockRestore();
   });
 
+  it('queries one DATE# partition of gsi1-by-date, newest first, paging by LastEvaluatedKey', async () => {
+    const client = pagedClient({ [daysAgo(0)]: [{ Items: [], LastEvaluatedKey: { page: 1 } }] });
+
+    await scan(client, 1);
+    const day = { TableName: TABLE, IndexName: 'gsi1-by-date', KeyConditionExpression: 'gsi1pk = :pk',
+      ExpressionAttributeValues: { ':pk': `DATE#${daysAgo(0)}` }, ScanIndexForward: false };
+    expect(client.send.mock.calls.map(([command]) => command.input)).toStrictEqual([
+      { ...day, ExclusiveStartKey: undefined },
+      { ...day, ExclusiveStartKey: { page: 1 } },
+    ]);
+  });
+
   it('counts a day of only malformed rows as a day with data for the dated budget', async () => {
     const warn = spyWarn();
     const client = pagedClient({ [daysAgo(0)]: [{ Items: [BAD] }] });

@@ -31,3 +31,9 @@ MEMORY_BY_STATUS_INDEX = 'gsi1-by-memory-status'
 
 # voc-agents table (gsi1pk AGENTS | WORKFLOWS | RUNS_ACTIVE)
 AGENTS_LISTING_INDEX = 'gsi1-by-agents-listing'
+
+# voc-participants table (gsi1pk PEOPLE | LISTS | ASKS; one index serves every listing)
+PARTICIPANTS_LISTING_INDEX = 'gsi1'
+
+# voc-feature-requests table (gsi1pk FRS, gsi1sk {created_at}#{request_id})
+FEATURE_REQUESTS_LISTING_INDEX = 'gsi1'

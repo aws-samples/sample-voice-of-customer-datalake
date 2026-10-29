@@ -45,6 +45,8 @@ MAX_POLLS_PER_NODE = 120          # 120 x 30 s = one hour per async node
 MAX_STEPS = decisions.MAX_STEPS_PER_RUN   # executed nodes per run, loops included (120)
 MAX_CONTEXT_BYTES = 120_000       # the run row stays far below DynamoDB's 400 KB
 REVISION_TYPES = frozenset({'revise_document', 'revise_prototype'})
+#: Steps that judge a document rather than write one (no 'artifact' event).
+REVIEW_TYPES = frozenset({'persona_review', 'final_review'})
 # Cleared with the first dispatch after a resume (a redriven init before it still resumes).
 RESUME_ATTRIBUTES = ('resume', 'needs_human')
 
@@ -204,7 +206,9 @@ def _record_result(agent_id: str, run_id: str, node: Node, result: dict) -> None
     ref = {k: claimed.get(k) for k in ('project_id', 'document_id') if isinstance(claimed.get(k), str)}
     store.append_mate(agent_id, run_id, node.role, node.id, 'from_mate', summary)
     store.append_event(agent_id, run_id, 'node_finished', summary, node_id=node.id, role=node.role, ref=ref)
-    if claimed.get('document_id'):
+    # A review claims the document it read (so it is verified) but produced nothing: announcing
+    # it again listed every PR/FAQ twice under "What it produced".
+    if claimed.get('document_id') and node.type not in REVIEW_TYPES:
         store.append_event(agent_id, run_id, 'artifact',
                            f"{_capitalised(document_label(claimed.get('document_type') or 'document'))} ready",
                            node_id=node.id, ref=ref)

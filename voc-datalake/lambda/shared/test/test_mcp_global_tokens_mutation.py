@@ -26,7 +26,7 @@ tell apart:
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
 import pytest
@@ -138,25 +138,6 @@ class TestExpiryForIsStrictAtBothEnds:
     def test_naive_now_yields_a_naive_deadline(self):
         # Naive on purpose: this pins how a naive `now` is handled.
         assert gt.expiry_for(2, datetime(2026, 1, 15, 12, 0, 0)) == '2026-01-17T12:00:00'  # noqa: DTZ001
-
-
-class TestParsedTime:
-    @pytest.mark.parametrize('value', [None, '', 7, b'2026-01-15', 'not a date', '2026-13-45T00:00:00'])
-    def test_unreadable_values_are_none(self, value):
-        assert gt._parsed_time(value) is None
-
-    def test_naive_string_is_read_as_utc(self):
-        parsed = gt._parsed_time('2026-01-15T12:00:00')
-        assert parsed == NOW
-        assert parsed is not None
-        assert parsed.tzinfo is UTC
-
-    def test_aware_string_keeps_its_own_offset(self):
-        parsed = gt._parsed_time('2026-01-15T14:00:00+02:00')
-        assert parsed == NOW
-        assert parsed is not None
-        assert parsed.utcoffset() == timedelta(hours=2)
-        assert parsed.tzinfo == timezone(timedelta(hours=2))
 
 
 class TestTokenStatusFailsClosed:

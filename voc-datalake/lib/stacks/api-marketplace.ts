@@ -7,8 +7,8 @@
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { NagSuppressions } from 'cdk-nag';
 import type { IConstruct } from 'constructs';
-import { IMAGE_MODEL_MARKETPLACE_PRODUCT_ID } from '../utils/model-allowlist';
-import { marketplaceSuppressions } from '../utils/nag-suppressions';
+import { IMAGE_MODEL_MARKETPLACE_PRODUCT_ID, imageModelArn } from '../utils/model-allowlist';
+import { bedrockAgreementSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
 
 /**
  * The first InvokeModel of a Marketplace-listed model in an account
@@ -37,4 +37,20 @@ export function grantMarketplaceSubscription(principal: iam.IGrantable & IConstr
     },
   }));
   NagSuppressions.addResourceSuppressions(principal, marketplaceSuppressions, true);
+}
+
+/**
+ * What the Settings API (and its assist twin, same role) needs for the image row of
+ * Administration → AI models (lambda/shared/image_model_status.py):
+ * - `bedrock:InvokeModel` on the image model ARN only: POST /settings/model/test sends ONE
+ *   minimal image request;
+ * - `bedrock:GetFoundationModelAvailability` (account-level, no resource ARN): the access status;
+ * - the Marketplace actions above: the first InvokeModel of a Marketplace model subscribes as the caller.
+ * `servicequotas:ListServiceQuotas` (the requests-per-minute quota) is already on the role.
+ */
+export function grantImageModelProbe(role: iam.Role): void {
+  role.addToPolicy(new iam.PolicyStatement({ actions: ['bedrock:InvokeModel'], resources: [imageModelArn()] }));
+  role.addToPolicy(new iam.PolicyStatement({ actions: ['bedrock:GetFoundationModelAvailability'], resources: ['*'] }));
+  grantMarketplaceSubscription(role);
+  NagSuppressions.addResourceSuppressions(role, bedrockAgreementSuppressions, true);
 }

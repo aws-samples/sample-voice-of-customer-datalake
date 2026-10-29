@@ -15,6 +15,7 @@ import clsx from 'clsx'
 import SourceCard from './SourceCard'
 import { getEnabledPlugins } from '../../plugins'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { SECTION_TITLE } from './sectionTitle'
 
 // ============================================
 // Header Component
@@ -71,9 +72,6 @@ export function Header({ saved, saving, saveFailed, onSave, canSave, showSave }:
 // ============================================
 // Shared bits
 // ============================================
-
-// min-w-0 + hyphens: a long one-word title (de "Quelleneinstellungen") wraps beside its icon at 200 % text.
-const SECTION_TITLE = 'min-w-0 break-words hyphens-auto text-lg font-semibold tracking-tight text-text-strong'
 
 function ConfigureFirstNotice({ message }: Readonly<{ message: string }>) {
   return (

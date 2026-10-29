@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { cursorPage } from './mock-feedback-cursor.js';
 import { effectiveBrands, radarBrandError } from './mock-radar-brands.js';
+import { SYSTEM_LOG_ROUTES } from './mock-system-logs.js';
 
 const DAY_MS = 86_400_000;
 /** How long a mock scraper / source run stays 'running' before it completes. */
@@ -596,11 +597,6 @@ function putCredentials(_ctx, source, body) {
   for (const [key, value] of entries) if (value) storedFor(source).set(key, value);
   return [200, { success: true, message: `Credentials updated for ${source}` }];
 }
-
-// integrations_handler.py has NO /test route: the request reaches the Lambda
-// through the {proxy+} and Powertools answers its own not-found. Mirrored rather
-// than faked so local dev does not hide that the Settings "Test" button 404s.
-const testIntegration = () => [404, { statusCode: 404, message: 'Not found' }];
 
 // ── /scrapers/manual/* (manual_import_handler.py) ────────────────────────────
 
@@ -1227,6 +1223,7 @@ const ROUTES = [
   ['GET', /^\/logs\/scraper\/([^/]+)$/, 'none', (c, id) => scraperLogs(c, id)],
   ['GET', /^\/logs\/summary$/, 'none', logsSummary],
   ['DELETE', /^\/logs\/validation\/([^/]+)$/, 'none', clearValidationLogs],
+  ...SYSTEM_LOG_ROUTES,
   ['GET', /^\/feedback\/search$/, 'none', searchFeedback],
   ['PUT', /^\/sources\/([^/]+)\/(enable|disable)$/, 'none', toggleSource],
   ['POST', /^\/sources\/([^/]+)\/reset$/, 'none', resetSource],
@@ -1235,7 +1232,6 @@ const ROUTES = [
   ['GET', /^\/integrations\/status$/, 'none', integrationStatus],
   ['GET', /^\/integrations\/([^/]+)\/credentials$/, 'none', getCredentials],
   ['PUT', /^\/integrations\/([^/]+)\/credentials$/, 'rawjson', putCredentials],
-  ['POST', /^\/integrations\/([^/]+)\/test$/, 'none', testIntegration],
   ['GET', /^\/scrapers\/templates$/, 'none', () => [200, { templates: structuredClone(SCRAPER_TEMPLATES) }]],
   ['POST', /^\/scrapers\/analyze-url$/, 'json', (c, body) => c.shared.startOwnerAssistJob('scrapers', 'assist_analyze_url', analyzeUrl(c, body))],
   ['POST', /^\/scrapers\/manual\/parse$/, 'json', startParse],

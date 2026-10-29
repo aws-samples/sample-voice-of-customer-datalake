@@ -7,13 +7,16 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { defineConfig } from '@playwright/test'
+import { browserUserAgent, pinRunTag } from './lib/trafficTag'
 
 process.env['E2E_API'] ??= 'https://api.unit.example/v1'
 const OUT = process.env['E2E_OUT'] ??= fs.mkdtempSync(path.join(os.tmpdir(), 'voc-e2e-unit-'))
 process.env['E2E_RUN_ID'] ??= 'unit-1'
+pinRunTag()
 
 export default defineConfig({
   testDir: './unit',
+  use: { userAgent: browserUserAgent() },
   timeout: 30_000,
   reporter: 'line',
   // Playwright's own run state goes with the throwaway output, not into the repo.

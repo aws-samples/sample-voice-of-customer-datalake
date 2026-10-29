@@ -5,13 +5,13 @@
  */
 import fs from 'node:fs'
 import { test as setup } from '@playwright/test'
-import { AUTH_DIR, ROLES, storageStatePath } from '../lib/env'
+import { ensureAuthDir, ROLES, storageStatePath } from '../lib/env'
 import { StepRecorder } from '../lib/recorder'
 import { loginThroughUi } from '../lib/session'
 
 for (const role of ROLES) {
   setup(`login ${role}`, async ({ page }) => {
-    fs.mkdirSync(AUTH_DIR, { recursive: true })
+    ensureAuthDir()
     const recorder = new StepRecorder(page, role, 'dark', 'login')
     try {
       await loginThroughUi(page, role)

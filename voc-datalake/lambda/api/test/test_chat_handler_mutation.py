@@ -35,6 +35,7 @@ from test_chat_assistant_sessions import USER_A, FakeConversationsTable, _as, _b
 
 import chat_handler
 from shared.exceptions import ConfigurationError, PayloadTooLargeError, ValidationError
+from shared.test.clock import frozen_clock
 
 FIXED_NOW = '2026-10-05T12:00:00.000001+00:00'
 PK_A = f'USER#{USER_A}'
@@ -51,7 +52,7 @@ def table():
 
 @pytest.fixture
 def fixed_now():
-    with patch.object(chat_handler, '_now_iso', return_value=FIXED_NOW):
+    with patch.object(chat_handler, 'now_iso', return_value=FIXED_NOW):
         yield FIXED_NOW
 
 
@@ -256,7 +257,7 @@ class TestTheLegacySaveIsByteForByte:
             'id': 'legacy-1', 'title': 'Old chat', 'messages': [{'role': 'user', 'content': 'hi'}],
             'filters': {'days': 7, 'source': 'webscraper'}, 'createdAt': '2020-01-01T00:00:00Z',
         }
-        with _as(USER_A, body=body), patch.object(chat_handler, 'datetime') as fake_datetime:
+        with _as(USER_A, body=body), frozen_clock(chat_handler) as fake_datetime:
             fake_datetime.now.return_value.isoformat.return_value = FIXED_NOW
             chat_handler.save_conversation(conversation_id='legacy-1')
         assert table.items[(PK_A, 'CONV#legacy-1')] == {
@@ -358,9 +359,9 @@ class TestTheListSummaryAndItsQuery:
             assert chat_handler.get_conversations(conversation_id='_list') == {'conversations': []}
         kwargs = mock_table.query.call_args.kwargs
         built = ConditionExpressionBuilder().build_expression(kwargs['KeyConditionExpression'])
-        assert built.condition_expression == '#n0 = :v0'
-        assert built.attribute_name_placeholders == {'#n0': 'pk'}
-        assert built.attribute_value_placeholders == {':v0': PK_A}
+        assert built.condition_expression == '(#n0 = :v0 AND begins_with(#n1, :v1))'
+        assert built.attribute_name_placeholders == {'#n0': 'pk', '#n1': 'sk'}
+        assert built.attribute_value_placeholders == {':v0': PK_A, ':v1': 'CONV#'}
         assert kwargs['ProjectionExpression'] == '#cid, #title, #ct, #kind, #mc, #created, #updated, #msgs, #rs'
         assert kwargs['ExpressionAttributeNames'] == {
             '#cid': 'conversation_id', '#title': 'title', '#ct': 'custom_title', '#kind': 'kind', '#mc': 'message_count',
@@ -541,7 +542,7 @@ class TestTheColdStartModuleState:
         assert (chat_handler.MAX_TITLE_CHARS, chat_handler.MAX_MESSAGES,
                 chat_handler.MAX_PENDING_INTERRUPTS, chat_handler.MAX_ITEM_BYTES,
                 chat_handler.LIST_LIMIT) == (120, 300, 20, 350_000, 100)
-        assert chat_handler.CONVERSATION_ID_PATTERN.pattern == r'^[A-Za-z0-9_-]{1,64}\Z'
+        assert chat_handler.OPAQUE_ID_RE.pattern == r'^[A-Za-z0-9_-]{1,64}\Z'
         assert chat_handler._LIST_PROJECTION_NAMES == {
             '#cid': 'conversation_id', '#title': 'title', '#ct': 'custom_title', '#kind': 'kind', '#mc': 'message_count',
             '#created': 'created_at', '#updated': 'updated_at', '#msgs': 'messages', '#rs': 'run_status',

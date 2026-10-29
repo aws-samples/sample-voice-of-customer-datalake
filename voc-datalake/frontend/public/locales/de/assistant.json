@@ -22,6 +22,7 @@
     "stillGenerating": "Wird noch generiert…"
   },
   "pages": {
+    "participants": "Teilnehmende",
     "home": "Startseite",
     "dashboard": "Übersicht",
     "feedback": "Feedback",
@@ -59,6 +60,8 @@
     "externalLink": "{{host}}, öffnet in einem neuen Tab",
     "copy": "Kopieren",
     "copied": "Kopiert",
+    "stopped": "Gestoppt",
+    "regenerate": "Neu generieren",
     "savedDocumentTitle": "Antwort des Assistenten – {{date}}",
     "saveAsDocument": {
       "idle": "Als Dokument speichern",
@@ -153,6 +156,7 @@
     "subtitle": "Ich kann Ihre Daten lesen und Änderungen vorschlagen – ohne Ihre Freigabe wird nichts geändert."
   },
   "suggestions": {
+    "participants": {"1": "Welche Teilnehmerlisten haben wir?", "2": "Erstelle eine Liste für Beta-Kunden", "3": "Füge Personen aus einer eingefügten Tabelle zu einer Liste hinzu"},
     "dashboard": { "1": "Wie hat sich die Kundenstimmung diese Woche verändert?", "2": "Welche Quellen liefern das meiste Feedback?", "3": "Fasse dieses Dashboard in drei Sätzen zusammen" },
     "categories": { "1": "Welche Kategorie hat die meisten Beschwerden?", "2": "Was sagen Kunden über die größte Kategorie?", "3": "Welche Kategorien werden schlechter?" },
     "projects": { "1": "Starte ein Projekt zur häufigsten Beschwerde dieser Woche", "2": "Welche Projekte laufen gerade?", "3": "Was sollte unser nächstes Forschungsprojekt sein?" },
@@ -273,5 +277,30 @@
       "cancelled": "Abgebrochen",
       "expired": "Abgelaufen"
     }
+  },
+  "mentions": {
+    "placeholder": "Fragen Sie zu diesem Projekt. @ für eine Persona, # für ein Dokument…",
+    "allLabel": "Alle Personas",
+    "allHint": "alle Personas antworten",
+    "heading": {
+      "persona": "Personas",
+      "document": "Dokumente"
+    },
+    "limit": {
+      "persona": "Höchstens {{max, number}} Personas pro Nachricht.",
+      "document": "Höchstens {{max, number}} Dokumente pro Nachricht."
+    },
+    "loading": "Projekt wird geladen…",
+    "empty": {
+      "persona": "Keine passende Persona.",
+      "document": "Kein passendes Dokument."
+    },
+    "count_one": "{{count, number}} Vorschlag",
+    "count_other": "{{count, number}} Vorschläge",
+    "chips": "In dieser Nachricht erwähnt",
+    "remove": "{{name}} entfernen",
+    "insertPersona": "Persona erwähnen",
+    "insertDocument": "Dokument markieren",
+    "allCapped": "@all fragt die ersten {{max, number}} von {{total, number}} Personas: {{names}}."
   }
 }

@@ -6,7 +6,7 @@ ADMIN ONLY, every route (owner decision 2026-10-08, #242 follow-up): each one wr
 feedback content into the pipeline (the raw archive and the enrichment queue that
 Bedrock drains) or reads a parse job of it, so importing data is an administrator's
 action, like configuring a scraper. Enforced by one resolver middleware
-(`_admins_only`), so a route added later is gated without having to remember the check.
+(`shared.api.admins_only`), so a route added later is gated without having to remember the check.
 """
 
 import csv
@@ -21,8 +21,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from aws_lambda_powertools.event_handler import APIGatewayRestResolver
-from aws_lambda_powertools.event_handler.middlewares import NextMiddleware
 from botocore.exceptions import BotoCoreError, ClientError
 
 if TYPE_CHECKING:
@@ -30,7 +28,7 @@ if TYPE_CHECKING:
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.api import api_handler, create_api_resolver, decimal_default, require_admin
+from shared.api import admins_only, api_handler, create_api_resolver, decimal_default
 from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client, invoke_lambda_async
 from shared.csv_columns import ColumnPlan, bounded_metadata, plan_columns
 from shared.exceptions import ConfigurationError, NotFoundError, ServiceError, ValidationError
@@ -39,6 +37,7 @@ from shared.logging import logger, tracer
 from shared.producer_labels import message_labels
 from shared.radar_brands import radar_brand_setting, radar_stamp
 from shared.request_body import json_object_body
+from shared.timestamps import now_iso
 
 dynamodb = get_dynamodb_resource()
 sqs = get_sqs_client()
@@ -53,13 +52,8 @@ aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else Non
 app = create_api_resolver()
 
 
-def _admins_only(app: APIGatewayRestResolver, next_middleware: NextMiddleware):
-    """Every manual-import route is admin-only (403 otherwise). See the module docstring."""
-    require_admin(app.current_event.raw_event)
-    return next_middleware(app)
-
-
-app.use(middlewares=[_admins_only])
+# Every manual-import route is admin-only (403 otherwise). See the module docstring.
+app.use(middlewares=[admins_only])
 
 MAX_CHARACTERS = 10000
 JOB_TTL_SECONDS = 3600  # 1 hour
@@ -547,7 +541,7 @@ def _parse_csv_to_items(
             except (ValueError, TypeError):
                 warnings.append(f'row {idx}: rating "{rating_raw}" is not a number — left blank')
 
-        created_at = created_at_raw or datetime.now(UTC).isoformat()
+        created_at = created_at_raw or now_iso()
 
         # The customer's own row identifier, kept so an operator can still answer
         # "find the record for review_id 4711". It is deliberately NOT the item

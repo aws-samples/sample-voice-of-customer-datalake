@@ -13,10 +13,10 @@
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-export default function LoadFailed({ onRetry, retrying = false, message }: Readonly<{
+export default function LoadFailed({ onRetry, retrying, message }: Readonly<{
   onRetry: () => void
   /** A refetch is in flight: the button waits for it rather than stacking another. */
-  retrying?: boolean
+  retrying: boolean
   /** What failed to load, when the page names it (else the generic `common:loadFailed.message`). */
   message?: string
 }>) {

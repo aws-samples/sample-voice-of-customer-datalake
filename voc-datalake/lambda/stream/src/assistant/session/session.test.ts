@@ -39,6 +39,7 @@ function fakeStore(options: { stored?: StoredSession | null; fail?: boolean } = 
       puts.push({ callerSub, item, revision });
       return 'written';
     },
+    cancelRequested: async () => false,
   };
 }
 

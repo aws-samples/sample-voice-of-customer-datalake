@@ -1,0 +1,76 @@
+{
+  "entries": [
+    {
+      "key": "ACCESS_SK_PREFIX|SUBSCRIBER_SK_PREFIX|USER_PK_PREFIX::*",
+      "reason": "three unrelated keys that happen to start with the user namespace: a conversations partition, a briefing subscriber row and a category-access row"
+    },
+    {
+      "key": "BEDROCK_MODEL_ID|_SONNET55::*",
+      "reason": "the platform's last-resort default model and the name of one allowlisted model; the default moves without the alias table moving"
+    },
+    {
+      "key": "OPEN_ROW_SESSION_SK_PREFIX|ROW_SK_PREFIX::*",
+      "reason": "the open-session pointer lives in its own partition (OPEN_ROW_SESSION_PK); it only shares the ROW# spelling with the Prioritization row records"
+    },
+    {
+      "key": "_WHITESPACE|_WS_RE::*",
+      "reason": "a one-token whitespace regex; sharing it would couple unrelated text cleaners for no contract"
+    },
+    {
+      "key": "CATEGORY_FIELDS|THRESHOLD_PER::*",
+      "reason": "the Data Explorer's editable category fields and an agent threshold's per-bucket choices: equal tuples, different meanings"
+    },
+    {
+      "key": "CURSOR_SK_PREFIX|SESSION_SK_PREFIX::*",
+      "reason": "a memory extraction cursor (voc-memory) and a ballot session row (voc-aggregates): different tables, same word"
+    },
+    {
+      "key": "PROMPT_VERSION|SERVER_VERSION::*",
+      "reason": "the categorization prompt's version and the MCP server's advertised version; both 1.0.0 by coincidence"
+    },
+    {
+      "key": "CONFIG_SK::lambda/shared/company_context.py,lambda/shared/user_flags.py",
+      "reason": "the sort key of two different items (company context, a user's flags); 'config' is a common row name, not one contract"
+    },
+    {
+      "key": "GITHUB_API::*",
+      "reason": "the public GitHub REST base URL of two independent integrations (design references, the GitHub Issues plugin) with their own clients and auth"
+    },
+    {
+      "key": "REDACTED|_REDACTED::*",
+      "reason": "two redaction outputs (an agent failure reason, a memory statement) that print the same marker; neither reads the other's"
+    },
+    {
+      "key": "STATUS_ACTIVE::*",
+      "reason": "three status vocabularies (MCP tokens, memories, participants) that each use the word active"
+    },
+    {
+      "key": "STATUS_COMPLETED::lambda/jobs/retention/handler.py,lambda/shared/reprocess_jobs.py",
+      "reason": "erasure jobs and category-reprocess jobs are separate job kinds with their own lifecycles; equal status words are not one contract"
+    },
+    {
+      "key": "STATUS_FAILED::*",
+      "reason": "erasure jobs, reprocess jobs and briefings each have a failed status; separate lifecycles"
+    },
+    {
+      "key": "STATUS_OPEN::*",
+      "reason": "an open ballot session and an open prototype pin: separate vocabularies"
+    },
+    {
+      "key": "STATUS_RESOLVED::*",
+      "reason": "a resolved prototype pin (open/addressed/resolved) and a resolved document comment thread (open/resolved): separate vocabularies on separate rows"
+    },
+    {
+      "key": "STATUS_QUEUED::lambda/jobs/retention/handler.py,lambda/shared/reprocess_jobs.py",
+      "reason": "erasure jobs and category-reprocess jobs are separate job kinds with their own lifecycles"
+    },
+    {
+      "key": "STATUS_RUNNING::lambda/jobs/retention/handler.py,lambda/shared/reprocess_jobs.py",
+      "reason": "erasure jobs and category-reprocess jobs are separate job kinds with their own lifecycles"
+    },
+    {
+      "key": "SURFACE::lambda/briefing/writer.py,lambda/email_intake/model_calls.py",
+      "reason": "each feature's own model-surface choice (both the utility surface today); one may move without the other"
+    }
+  ]
+}

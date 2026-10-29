@@ -3,14 +3,12 @@ and the fallback-owner drop on demotion), against a moto aggregates table."""
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
-import boto3
 import pytest
 from handler_events_fixtures import call_route
-from moto import mock_aws
+from users_table_fixtures import users_aggregates_table
 
 import users_handler
 from shared import user_flags
-from shared.test.moto_tables import create_pk_sk_table
 from users_handler import lambda_handler
 
 ADMIN = {'sub': 'admin-sub', 'cognito:groups': 'admins'}
@@ -37,12 +35,8 @@ def _cognito(groups_by_user):
 
 @pytest.fixture
 def table():
-    with mock_aws():
-        resource = boto3.resource('dynamodb', region_name='us-east-1')
-        table = create_pk_sk_table('test-aggregates', resource)
-        with patch.object(users_handler, 'aggregates_table', table), \
-                patch.object(users_handler, 'get_dynamodb_resource', return_value=resource):
-            yield table
+    with users_aggregates_table() as table:
+        yield table
 
 
 @pytest.fixture

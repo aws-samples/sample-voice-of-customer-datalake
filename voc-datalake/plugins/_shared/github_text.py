@@ -84,9 +84,13 @@ _ENVIRONMENT_WORDS = frozenset({
 _WORD_BEFORE = re.compile(r"([A-Za-z][\w.+-]*)\W*\Z")
 
 
-def _after_environment_word(text: str, start: int, window: int = 24) -> bool:
-    """True when the word just before *start* (within *window* chars) is an environment name."""
-    match = _WORD_BEFORE.search(text[max(0, start - window):start])
+#: How far back (characters) the environment word before a version may start.
+_ENVIRONMENT_WORD_WINDOW = 24
+
+
+def _after_environment_word(text: str, start: int) -> bool:
+    """True when the word just before *start* (within ``_ENVIRONMENT_WORD_WINDOW`` chars) is an environment name."""
+    match = _WORD_BEFORE.search(text[max(0, start - _ENVIRONMENT_WORD_WINDOW):start])
     return bool(match) and match.group(1).lower() in _ENVIRONMENT_WORDS
 
 

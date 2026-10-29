@@ -14,7 +14,7 @@
  */
 import type { ApiCall } from '../tools/internal-api.js';
 import { APP_ID_FIELD } from '../tools/client/scraper-schemas.js';
-import { isRecord } from '../tools/format.js';
+import { isRecord } from '../../lib/is-record.js';
 import { recordsAt } from '../tools/server/feedback-shape.js';
 import { appConnectorSource, storedScraperRecord } from './scraper-records.js';
 import { text, type Args } from './write-args.js';

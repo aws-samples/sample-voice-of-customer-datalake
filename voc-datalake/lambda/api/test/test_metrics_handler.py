@@ -184,12 +184,13 @@ class TestGetSentimentEndpoint:
         # derives its label with rsplit, so 'METRIC#sentiment#positive' would
         # satisfy it just as well as the real 'METRIC#daily_sentiment#positive'.
         # Without this, the endpoint-to-partition mapping is unasserted.
-        assert [c.args[0] for c in mock_window.call_args_list] == [
+        # The four windows are read concurrently, so their order is not part of the contract.
+        assert sorted(c.args[0] for c in mock_window.call_args_list) == sorted([
             'METRIC#daily_sentiment#positive',
             'METRIC#daily_sentiment#neutral',
             'METRIC#daily_sentiment#negative',
             'METRIC#daily_sentiment#mixed',
-        ]
+        ])
 
 
 def _urgent_row(feedback_id: str, **fields) -> dict:

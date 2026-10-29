@@ -36,6 +36,17 @@ describe('normalizeModelCapacity', () => {
     expect(rows).toStrictEqual([{ model_id: OPUS55, label: 'Claude Opus 5.5', quota: null }])
   })
 
+  it('keeps the stale flag of a stored quota reading and drops a malformed one', () => {
+    const rows = normalizeModelCapacity({
+      models: [
+        { model_id: OPUS55, label: 'Opus', quota: { name: 'q', tokens_per_minute: 5, stale: true } },
+        { model_id: 'b', label: 'B', quota: { name: 'q', tokens_per_minute: 5, stale: 'yes' } },
+      ],
+    })
+
+    expect(rows.map((row) => row.quota?.stale)).toStrictEqual([true, undefined])
+  })
+
   it('is an empty list for a missing envelope', () => {
     expect(normalizeModelCapacity(null)).toStrictEqual([])
   })

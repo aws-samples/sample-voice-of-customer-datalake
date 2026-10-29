@@ -9,6 +9,8 @@ import { z } from 'zod';
 import { ConfigurationError } from '../lib/errors.js';
 import { ALL_TIME_DAYS } from '../assistant/contract.js';
 import { admitsItem, type CategoryScope } from './category-scope.js';
+import { windowDaysSchema } from '../assistant/tools/server/common.js';
+import { plainReviewText } from './review-text.js';
 import {
   fetchCandidatesByDate,
   feedbackItemSchema,
@@ -35,6 +37,9 @@ const searchInputSchema = z.object({
   tag: z.string().optional(),
   dims: z.record(z.string(), z.string()).optional(),
   limit: z.number().optional(),
+  // The window the question names (0 = all time); absent = the page time range. 5.35: the tool
+  // had no `days`, so "the last 90 days" asked on a 7-day page was answered from 7 days.
+  days: windowDaysSchema.optional(),
   // 'aggregate' returns distribution stats over ALL matches in one call
   // (counts by urgency/sentiment/category + a few examples) instead of a
   // capped list — answers "summarize all" / "top issues" without looping.
@@ -67,11 +72,20 @@ function requestedWindowNoun(requestedDays: number): string {
   return isAllTime(requestedDays) ? 'the all-time window' : `the ${requestedDays}-day window`;
 }
 
-/** What the scan did NOT read of the requested window, as prose. */
-function unreadRemainderPhrase(requestedDays: number, scannedDays: number): string {
-  return isAllTime(requestedDays)
-    ? 'anything older'
-    : `the ${requestedDays - scannedDays} earlier days`;
+/**
+ * What the scan did NOT read of the requested window, and what the model must not conclude from
+ * it. 5.35 (E2E 5.34): the old wording, "say nothing about anything older", was read as "there is
+ * nothing older" — an all-time question answered from the newest 90 days with data came back as
+ * "Nothing older is in the data" over a store holding 17,067 reviews. So the unread part is named
+ * as UNSEARCHED, never as empty, and the model is pointed at get_metrics, which counts the whole
+ * requested window.
+ */
+function unreadRemainderClause(requestedDays: number, scannedDays: number): string {
+  const unread = isAllTime(requestedDays)
+    ? 'Older feedback was NOT searched'
+    : `The ${requestedDays - scannedDays} earlier days were NOT searched`;
+  return `${unread}: that is not evidence that there is none, so never say or imply that no older feedback exists. `
+    + `For counts over ${requestedWindowNoun(requestedDays)}, call get_metrics with days=${requestedDays}.`;
 }
 
 function urgencyRank(item: FeedbackItem): number {
@@ -288,7 +302,7 @@ function resolveSearchParams(toolInput: unknown, contextFilters: ContextFilters)
 } {
   const parsed = searchInputSchema.safeParse(toolInput);
   const input: SearchInput = parsed.success ? parsed.data : {};
-  const requestedDays = Math.max(contextFilters.days ?? 30, ALL_TIME_DAYS);
+  const requestedDays = Math.max(input.days ?? contextFilters.days ?? 30, ALL_TIME_DAYS);
   return {
     input,
     query: input.query ?? '',
@@ -454,17 +468,19 @@ function truncationNotice(
   if (!scanWasIncomplete(reasons)) {
     return `\n⚠️ NARROWER WINDOW THAN ASKED ABOUT: this search reaches back at most `
       + `${scannedDays} days, but the question named ${requestedWindowPhrase(requestedDays)}. The figures above `
-      + `are complete for the most recent ${scannedDays} days and say nothing about `
-      + `${unreadRemainderPhrase(requestedDays, scannedDays)}. Name the ${scannedDays}-day window when `
-      + 'you answer, and do not describe these numbers as covering the longer period.\n';
+      + `are complete for the most recent ${scannedDays} days. ${unreadRemainderClause(requestedDays, scannedDays)} `
+      + `Name the ${scannedDays}-day window when you answer, and do not describe these numbers as covering the `
+      + 'longer period.\n';
   }
   const causes = [...new Set(reasons)].map((reason) => TRUNCATION_CLAUSES[reason]).join('; ');
-  const windowRead = requestExceedsScan(requestedDays, scannedDays)
+  const clamped = requestExceedsScan(requestedDays, scannedDays);
+  const windowRead = clamped
     ? `only the most recent ${scannedDays} days of ${requestedWindowNoun(requestedDays)} asked about`
     : `part of the ${scannedDays}-day window`;
+  const remainder = clamped ? ` ${unreadRemainderClause(requestedDays, scannedDays)}` : '';
   return `\n⚠️ INCOMPLETE RESULTS: the items and any counts above cover ${windowRead} `
     + `— ${causes}. Say so when you answer, name the ${scannedDays}-day window they do cover, `
-    + 'and do not present these totals or percentages as complete.\n';
+    + `and do not present these totals or percentages as complete.${remainder}\n`;
 }
 
 function formatSingleItem(item: FeedbackItem, index: number, label?: CategoryLabelFn): string {
@@ -477,7 +493,7 @@ function formatSingleItem(item: FeedbackItem, index: number, label?: CategoryLab
 - Sentiment: ${item.sentiment_label ?? 'unknown'} (${score})
 - Category: ${labelled(item.category ?? 'other', label)}
 - Rating: ${item.rating ?? 'N/A'}
-- Text: "${(item.original_text ?? '').slice(0, 400)}"
+- Text: "${plainReviewText(item.original_text ?? '').slice(0, 400)}"
 ${problemLine}
 
 `;

@@ -41,7 +41,7 @@ const project = { ...PAGE_PROJECT, document_count: 1 }
 /**
  * A prototype build needs a PRD or a PR/FAQ to be enabled at all — and both, to
  * skip the single-document confirmation gate that U12 added. The gate has its own
- * tests in BuildPrototypeButton.test.tsx; it is not what these pin.
+ * tests in OverviewTab.prototypeCard.test.tsx; it is not what these pin.
  */
 const documents: ProjectDocument[] = [
   {

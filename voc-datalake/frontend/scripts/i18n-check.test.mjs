@@ -37,8 +37,6 @@ function test(name, fn) {
 // ── Test: plural keys in categories.json must not be English key names ──
 
 const PLURAL_KEYS_TO_CHECK = [
-  'issuesWithPercent_one',
-  'issuesWithPercent_other',
   'mentionsTooltip_one',
   'mentionsTooltip_other',
   'starsMin_one',
@@ -53,18 +51,12 @@ for (const lang of LANGUAGES) {
     test(`${lang}/categories.json: ${key} is not an English key name`, () => {
       const value = flat.get(key)
       assert.ok(value, `Key "${key}" should exist`)
-      // The bug was values like "issuesWithPercent" or "starsMin" — the English key name as the value
+      // The bug was values like "mentionsTooltip" or "starsMin" — the English key name as the value
       const keyBase = key.replace(/_one$|_other$|_many$/, '')
       assert.notEqual(value, keyBase, `Value should not be the English key name "${keyBase}"`)
       assert.notEqual(value, key, `Value should not be the key itself "${key}"`)
     })
   }
-
-  test(`${lang}/categories.json: issuesWithPercent_one contains the {{count, number}} template`, () => {
-    const value = flat.get('issuesWithPercent_one')
-    assert.ok(COUNT_PLACEHOLDER.test(value ?? ''), `Should contain the {{count, number}} interpolation, got: "${value}"`)
-    assert.ok(value?.includes('{{percent}}'), `Should contain {{percent}} interpolation, got: "${value}"`)
-  })
 
   test(`${lang}/categories.json: mentionsTooltip_one contains the {{count, number}} template`, () => {
     const value = flat.get('mentionsTooltip_one')

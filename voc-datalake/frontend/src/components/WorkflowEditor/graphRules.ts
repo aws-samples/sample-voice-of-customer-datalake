@@ -8,7 +8,8 @@
  *
  * @module components/WorkflowEditor/graphRules
  */
-import { REVIEW_TARGETS, END_STATUSES, isObject, workflowDefinitionSchema } from '../../api/workflowsApi'
+import { REVIEW_TARGETS, END_STATUSES, workflowDefinitionSchema } from '../../api/workflowsApi'
+import { isRecord } from '../../lib/typeGuards'
 import { gateOf } from './loopGates'
 import type { GateLabels } from './loopGates'
 import type { WorkflowDefinition, WorkflowEdge, WorkflowIssue } from '../../api/workflowsApi'
@@ -217,13 +218,13 @@ export function checkGraph(definition: WorkflowDefinition): WorkflowIssue[] {
 /** The step a Zod issue path points into (`nodes.<i>.…`), if any. */
 function nodeAt(definition: unknown, path: readonly PropertyKey[]): Record<string, unknown> | undefined {
   const [head, index] = path
-  if (head !== 'nodes' || typeof index !== 'number' || !isObject(definition) || !Array.isArray(definition.nodes)) return undefined
+  if (head !== 'nodes' || typeof index !== 'number' || !isRecord(definition) || !Array.isArray(definition.nodes)) return undefined
   const node: unknown = definition.nodes[index]
-  return isObject(node) && typeof node.id === 'string' ? node : undefined
+  return isRecord(node) && typeof node.id === 'string' ? node : undefined
 }
 
 const blankTitle = (node: Record<string, unknown>): boolean =>
-  isObject(node.data) && typeof node.data.title === 'string' && node.data.title.trim() === ''
+  isRecord(node.data) && typeof node.data.title === 'string' && node.data.title.trim() === ''
 
 /** A Zod issue as the server would word it, pinned to its step when it is about one. */
 function shapeIssue(definition: unknown, path: readonly PropertyKey[], message: string): WorkflowIssue {

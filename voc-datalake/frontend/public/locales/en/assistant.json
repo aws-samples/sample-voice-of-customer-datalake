@@ -22,6 +22,7 @@
     "stillGenerating": "Still generating…"
   },
   "pages": {
+    "participants": "Participants",
     "home": "Home",
     "dashboard": "Dashboard",
     "feedback": "Feedback",
@@ -59,6 +60,8 @@
     "externalLink": "{{host}}, opens in a new tab",
     "copy": "Copy",
     "copied": "Copied",
+    "stopped": "Stopped",
+    "regenerate": "Regenerate",
     "savedDocumentTitle": "Assistant answer – {{date}}",
     "saveAsDocument": {
       "idle": "Save as document",
@@ -153,6 +156,7 @@
     "subtitle": "I can read your data and propose changes — nothing is changed without your approval."
   },
   "suggestions": {
+    "participants": {"1": "Which participant lists do we have?", "2": "Make a beta customers list", "3": "Add people to a list from a table I paste"},
     "dashboard": { "1": "How did customer sentiment change this week?", "2": "Which sources bring in the most feedback?", "3": "Summarize this dashboard in three sentences" },
     "categories": { "1": "Which category has the most complaints?", "2": "What do customers say about the biggest category?", "3": "Which categories are getting worse?" },
     "projects": { "1": "Start a project from this week's top complaint", "2": "Which projects are in progress?", "3": "What should our next research project be?" },
@@ -273,5 +277,30 @@
       "cancelled": "Cancelled",
       "expired": "Expired"
     }
+  },
+  "mentions": {
+    "placeholder": "Ask about this project. Type @ for a persona, # for a document…",
+    "allLabel": "Every persona",
+    "allHint": "every persona answers",
+    "heading": {
+      "persona": "Personas",
+      "document": "Documents"
+    },
+    "limit": {
+      "persona": "At most {{max, number}} personas per message.",
+      "document": "At most {{max, number}} documents per message."
+    },
+    "loading": "Loading the project…",
+    "empty": {
+      "persona": "No persona matches.",
+      "document": "No document matches."
+    },
+    "count_one": "{{count, number}} suggestion",
+    "count_other": "{{count, number}} suggestions",
+    "chips": "Mentioned in this message",
+    "remove": "Remove {{name}}",
+    "insertPersona": "Mention a persona",
+    "insertDocument": "Tag a document",
+    "allCapped": "@all asks the first {{max, number}} of {{total, number}} personas: {{names}}."
   }
 }

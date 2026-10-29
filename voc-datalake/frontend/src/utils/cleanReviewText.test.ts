@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { cleanFeedbackText, cleanReviewText } from './cleanReviewText'
 import { languageName } from './languageName'
+import cleanupCases from '../../../schemas/review-text-cleanup-cases.json'
 
 describe('cleanReviewText', () => {
+  // The cases the Web Reviews ingestor and the assistant pin too: one rule set, three places.
+  it.each(cleanupCases.cases)('reads "$input" as plain text', ({ input, output }) => {
+    expect(cleanReviewText(input)).toBe(output)
+  })
+
+  it('gives two sentences an escaped full stop glued together their space back', () => {
+    expect(cleanReviewText('a stressful situation\\.On the next day')).toBe('a stressful situation. On the next day')
+  })
+
   it('drops markdown escapes and bold markers', () => {
     expect(cleanReviewText('**Great** app\\. 5\\* support\\! a\\-b')).toBe('Great app. 5* support! a-b')
   })

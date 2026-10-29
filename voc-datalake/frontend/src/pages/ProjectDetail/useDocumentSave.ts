@@ -14,7 +14,7 @@
  */
 import { useCallback, useState } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
-import { apiErrorStatus } from '../../api/apiErrorStatus'
+import { apiErrorStatus, HTTP_CONFLICT } from '../../api/apiErrorStatus'
 import { isVersionManagedDocument } from '../../api/documentLineage'
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
@@ -22,8 +22,6 @@ import type { ProjectDocument } from '../../api/types'
 import { documentRevision, latestDocument } from './documentEdit'
 import type { DocumentConflict } from './DocumentModal'
 import type { useDocModalState } from './useModalState'
-
-const HTTP_CONFLICT = 409
 
 interface UpdateVariables {
   docId: string

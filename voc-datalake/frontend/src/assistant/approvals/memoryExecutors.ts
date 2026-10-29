@@ -9,16 +9,13 @@
  * @module assistant/approvals/memoryExecutors
  */
 import { apiErrorStatus } from '../../api/apiErrorStatus'
-import { fetchApi } from '../../api/client'
+import { memoryRequests } from '../../api/memoryApi'
 import { invalidateKeys, keysFor } from './invalidation'
-import { isRecord } from './previews/format'
+import { isRecord } from '../../lib/typeGuards'
 import type { WriteToolExecutionContext } from '../types'
 import type {
   ConfirmMemoryArgs, ForgetMemoryArgs, MergeMemoriesArgs, RememberArgs, ResolveMemoryConflictArgs, UpdateCompanyMemoryArgs,
 } from './memorySchemas'
-
-const post = (body?: unknown): RequestInit => ({ method: 'POST', ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
-const item = (id: string, action = '') => `/memory/${encodeURIComponent(id)}${action}`
 
 /** `{memory: {memory_id, status}}` or the bare item → what the summary names. */
 function answered(raw: unknown): { id?: string; status?: string } {
@@ -38,7 +35,7 @@ const statusNote = (status: string | undefined) =>
   (status === 'proposed' ? ' It was filed as a PROPOSAL for an admin or memory reviewer to approve.' : '')
 
 export async function remember(args: RememberArgs, ctx: WriteToolExecutionContext) {
-  const res = answered(await fetchApi<unknown>('/memory', post(args)))
+  const res = answered(await memoryRequests.add(args))
   settle(ctx)
   const id = res.id === undefined ? '' : ` (${res.id})`
   return { summary: `Remembered (${args.scope})${id}.${statusNote(res.status)}`, data: res }
@@ -51,9 +48,7 @@ export async function remember(args: RememberArgs, ctx: WriteToolExecutionContex
  */
 export async function updateCompanyMemory(args: UpdateCompanyMemoryArgs, ctx: WriteToolExecutionContext) {
   try {
-    const res = answered(await fetchApi<unknown>(item(args.memory_id), {
-      method: 'PUT', body: JSON.stringify({ statement: args.statement }),
-    }))
+    const res = answered(await memoryRequests.update(args.memory_id, args.statement))
     settle(ctx)
     return { summary: `Updated company memory ${args.memory_id} for everyone.${statusNote(res.status)}`, data: res }
   } catch (error) {
@@ -64,7 +59,7 @@ export async function updateCompanyMemory(args: UpdateCompanyMemoryArgs, ctx: Wr
 
 /** The non-curator path of {@link updateCompanyMemory}: a company add the Lambda files as `proposed`. */
 async function proposeCompanyMemory(args: UpdateCompanyMemoryArgs, ctx: WriteToolExecutionContext) {
-  const res = answered(await fetchApi<unknown>('/memory', post({ scope: 'company', statement: args.statement, kind: args.kind })))
+  const res = answered(await memoryRequests.add({ scope: 'company', statement: args.statement, kind: args.kind }))
   settle(ctx)
   const id = res.id === undefined ? '' : ` (${res.id})`
   return {
@@ -74,30 +69,30 @@ async function proposeCompanyMemory(args: UpdateCompanyMemoryArgs, ctx: WriteToo
 }
 
 export async function forgetMemory(args: ForgetMemoryArgs, ctx: WriteToolExecutionContext) {
-  await fetchApi<unknown>(item(args.memory_id, '/forget'), post())
+  await memoryRequests.forget(args.memory_id)
   settle(ctx)
   return { summary: `Forgot memory ${args.memory_id} (archived and tombstoned; an admin can restore it).` }
 }
 
 export async function confirmMemory(args: ConfirmMemoryArgs, ctx: WriteToolExecutionContext) {
-  await fetchApi<unknown>(item(args.memory_id, '/confirm'), post())
+  await memoryRequests.confirm(args.memory_id)
   settle(ctx)
   return { summary: `Added your +1 to memory ${args.memory_id}.` }
 }
 
 export async function mergeMemories(args: MergeMemoriesArgs, ctx: WriteToolExecutionContext) {
-  const res = answered(await fetchApi<unknown>('/memory/merge', post({ ids: args.memory_ids, statement: args.statement })))
+  const res = answered(await memoryRequests.merge(args.memory_ids, args.statement))
   settle(ctx)
   const into = res.id === undefined ? '' : ` into ${res.id}`
   return { summary: `Merged ${args.memory_ids.length} memories${into}; the originals are archived.`, data: res }
 }
 
 export async function resolveMemoryConflict(args: ResolveMemoryConflictArgs, ctx: WriteToolExecutionContext) {
-  await fetchApi<unknown>(`/memory/review/${encodeURIComponent(args.memory_id)}/resolve`, post({
+  await memoryRequests.resolve(args.memory_id, {
     action: args.action,
     ...(args.winner_id === undefined ? {} : { winner_id: args.winner_id }),
     ...(args.statement === undefined ? {} : { statement: args.statement }),
-  }))
+  })
   settle(ctx)
   return { summary: `Resolved review item ${args.memory_id}: ${args.action.replaceAll('_', ' ')}.` }
 }

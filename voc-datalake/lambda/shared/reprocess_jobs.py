@@ -24,13 +24,14 @@ its first checkpoint — and exits without further work.
 """
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
 from boto3.dynamodb.conditions import Key
 
 from shared.aws import is_conditional_check_failure
+from shared.timestamps import now_iso
 
 JOB_PK = 'JOB#category_reprocess'
 LOCK_SK = 'LOCK'
@@ -64,10 +65,6 @@ MAX_ERROR_CHARS = 500
 # Cost ceiling: each examined review can cost one model call, so a job stops
 # (as 'completed', with ``stopped_at_ceiling``) once it has scanned this many.
 MAX_REPROCESS_ITEMS = 50000
-
-
-def now_iso(now: datetime | None = None) -> str:
-    return (now or datetime.now(UTC)).isoformat()
 
 
 def new_job_id(now: datetime) -> str:

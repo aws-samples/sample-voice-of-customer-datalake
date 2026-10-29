@@ -30,14 +30,12 @@ import type { DateRangeParams } from '../../api/client'
 import type { FeedbackItem } from '../../api/types'
 import { FEEDBACK_PAGE_LIMIT, nextPageOffset, nextPageToken } from '../../api/feedbackPagination'
 import type { CursorPage, FeedbackPage } from '../../api/feedbackPagination'
-import { attributeFiltersOf } from './useCategoryFilters'
+import { attributeFiltersOf, ratingParamsOf } from './useCategoryFilters'
 import type { CategoryFiltersState } from './useCategoryFilters'
-import type { RatingFilter } from './types'
 import { failedReads, type FailedReads, type RetryableRead } from '../../utils/failedReads'
 import { categoryBucket } from '../../utils/displayLabels'
 import { useCategoriesConfig } from '../../hooks/useCategories'
-
-const SEARCH_MIN_CHARS = 2
+import { FEEDBACK_SEARCH_MIN_CHARS } from '../../api/feedbackSearch'
 
 export interface FeedbackListData {
   filteredFeedback: FeedbackItem[]
@@ -58,12 +56,6 @@ export interface FeedbackListData {
   isLoadingMore: boolean
   /** The active read failed with nothing to show: not the same as "no feedback found". */
   failure: FailedReads
-}
-
-/** The server's `rating_min` / `rating_max` for the picker's threshold and direction. */
-function ratingParamsOf(filter: RatingFilter): { rating_min?: number; rating_max?: number } {
-  if (filter.value === 0) return {}
-  return filter.direction === 'up' ? { rating_min: filter.value } : { rating_max: filter.value }
 }
 
 function buildCommonParams(dateParams: DateRangeParams, filters: CategoryFiltersState) {
@@ -126,7 +118,7 @@ export function useFeedbackListData(
   // user would see an error from an ordinary typing sequence. Sending the trimmed
   // value too keeps the cache key, the request and the server's view identical.
   const searchText = filters.searchText.trim()
-  const isSearching = searchText.length >= SEARCH_MIN_CHARS
+  const isSearching = searchText.length >= FEEDBACK_SEARCH_MIN_CHARS
   const enabled = computeEnabledQueries(apiEndpoint, isSearching, filters.showUrgentOnly)
   const commonParams = buildCommonParams(dateParams, filters)
 

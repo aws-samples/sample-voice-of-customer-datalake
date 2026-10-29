@@ -29,6 +29,7 @@ from moto import mock_aws
 
 from shared import prototype_pins as pins
 from shared.exceptions import ValidationError
+from shared.test.clock import frozen_clock
 from shared.test.moto_tables import create_pk_sk_table
 
 DOC = 'prototype_abc123'
@@ -49,7 +50,7 @@ class _FrozenDatetime(datetime):
 @pytest.fixture
 def frozen():
     with (
-        patch.object(pins, 'datetime', _FrozenDatetime),
+        frozen_clock(pins, _FrozenDatetime),
         patch.object(pins.secrets, 'token_hex', return_value='abcdef') as token_hex,
     ):
         yield token_hex

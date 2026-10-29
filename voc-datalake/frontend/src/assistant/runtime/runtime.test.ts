@@ -1,6 +1,7 @@
 /**
  * Runtime: stop keeps partial text, errors surface, duplicate resolutions and
- * sends while approvals are open are ignored.
+ * sends while approvals are open are ignored; Stop cancels the server run and marks the
+ * answer, Regenerate re-runs the last question.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { EventType } from '@ag-ui/core'
@@ -13,10 +14,11 @@ vi.mock('../agui/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../agui/client')>()
   return { ...actual, runAgent: (...args: Parameters<typeof runAgentMock>) => runAgentMock(...args) }
 })
-vi.mock('../sessions/sessionsApi', () => ({ saveSession: vi.fn(() => Promise.resolve()), getSession: vi.fn() }))
+vi.mock('../sessions/sessionsApi', () => ({ saveSession: vi.fn(() => Promise.resolve()), getSession: vi.fn(), cancelServerRun: vi.fn(() => Promise.resolve()) }))
 
-import { resolveApproval, sendMessage, stopRun } from './runtime'
-import { getSession, saveSession } from '../sessions/sessionsApi'
+import { regenerate, resolveApproval, sendMessage, stopRun } from './runtime'
+import { cancelServerRun, getSession, saveSession } from '../sessions/sessionsApi'
+import { threadFromSession, toSaveBody } from '../sessions/serialize'
 import { useThreadStore } from '../store/assistantStore'
 import type { RunEnvironment } from './runtime'
 import type { ApprovalResolution } from '../types'
@@ -175,5 +177,105 @@ describe('assistant runtime', () => {
       expect(runAgentMock).toHaveBeenCalledTimes(1)
       expect(useThreadStore.getState().thread.messages.at(0)).toMatchObject({ role: 'user', content: 'hi' })
     })
+  })
+})
+
+/** A run that streams `events` and then hangs until it is aborted, like the real transport. */
+function hangAfter(events: AguiEvent[]) {
+  runAgentMock.mockImplementationOnce((input, onEvent, signal) => new Promise((_resolve, reject) => {
+    onEvent({ type: EventType.RUN_STARTED, threadId: input.threadId, runId: input.runId })
+    for (const event of events) onEvent(event)
+    signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+  }))
+}
+
+async function sendAndStop(events: AguiEvent[]) {
+  hangAfter(events)
+  const pending = sendMessage('Write a long report', env)
+  await vi.waitFor(() => expect(runAgentMock).toHaveBeenCalledTimes(1))
+  stopRun()
+  await pending
+  return useThreadStore.getState().thread
+}
+
+function lastRun(): RunAgentInput {
+  const input = runAgentMock.mock.calls.at(-1)?.[0]
+  if (input === undefined) throw new Error('no run')
+  return input
+}
+
+// 5.35 (E2E 5.34): Stop cleared the answer while the server run went on, a reload showed the full
+// answer, and nothing said the answer was stopped.
+beforeEach(() => {
+  runAgentMock.mockReset()
+  vi.mocked(cancelServerRun).mockClear()
+  useThreadStore.getState().reset()
+})
+
+describe('Stop', () => {
+  it('asks the server to cancel exactly the run it stopped', async () => {
+    const thread = await sendAndStop([{ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Partial' }])
+    expect(cancelServerRun).toHaveBeenCalledWith(thread.threadId, lastRun().runId)
+  })
+
+  it('keeps the partial answer and marks it Stopped', async () => {
+    const thread = await sendAndStop([{ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Partial' }])
+    expect(thread.messages.at(-1)).toMatchObject({ id: 'a', role: 'assistant', content: 'Partial' })
+    expect(thread.stopped).toStrictEqual({ a: true })
+  })
+
+  it('keeps the thinking of a turn stopped before any answer, on a marked empty answer', async () => {
+    const thread = await sendAndStop([{ type: EventType.REASONING_MESSAGE_CONTENT, messageId: 'r', delta: 'Counting themes' }])
+    const answer = thread.messages.at(-1)
+    expect(answer).toMatchObject({ role: 'assistant', content: '' })
+    const id = answer?.id ?? ''
+    expect(thread.stopped[id]).toBe(true)
+    expect(thread.reasoningByMessage[id]).toBe('Counting themes')
+  })
+
+  it('saves the marker, so a reload shows it again', async () => {
+    const thread = await sendAndStop([{ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Partial' }])
+    const body = toSaveBody(thread, null, '2026-10-25T00:00:00Z')
+    expect(body.messages.at(-1)).toMatchObject({ metadata: { voc: { stopped: true } } })
+    const restored = threadFromSession({
+      id: thread.threadId, messages: body.messages, pendingInterrupts: [], createdAt: '', updatedAt: '', runStatus: 'stopped', revision: 1,
+    })
+    expect(restored.stopped).toStrictEqual({ a: true })
+  })
+
+  it('marks an answer the server reports stopped (another tab pressed Stop)', async () => {
+    runAgentMock.mockImplementationOnce(async (input, onEvent) => {
+      onEvent({ type: EventType.RUN_STARTED, threadId: input.threadId, runId: input.runId })
+      onEvent({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Partial' })
+      onEvent({ type: EventType.CUSTOM, name: 'assistant.stopped', value: {} })
+      onEvent({ type: EventType.RUN_FINISHED, threadId: input.threadId, runId: input.runId, outcome: { type: 'success' } })
+    })
+    await sendMessage('Write a long report', env)
+    expect(useThreadStore.getState().thread.stopped).toStrictEqual({ a: true })
+  })
+})
+
+describe('Regenerate', () => {
+  it('re-runs the last question without its old answer', async () => {
+    await sendAndStop([{ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Partial' }])
+    runAgentMock.mockImplementationOnce(async (input, onEvent) => {
+      onEvent({ type: EventType.RUN_STARTED, threadId: input.threadId, runId: input.runId })
+      onEvent({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'b', delta: 'Full answer' })
+      onEvent({ type: EventType.RUN_FINISHED, threadId: input.threadId, runId: input.runId, outcome: { type: 'success' } })
+    })
+    await regenerate(env)
+    expect(lastRun().messages.map((m) => m.role)).toStrictEqual(['user'])
+    const { thread } = useThreadStore.getState()
+    expect(thread.messages.some((m) => m.id === 'a')).toBe(false)
+    expect(thread.messages.at(-1)).toMatchObject({ id: 'b', content: 'Full answer' })
+  })
+
+  it('does nothing while the thread is streaming', async () => {
+    hangAfter([])
+    void sendMessage('Write a long report', env)
+    await vi.waitFor(() => expect(runAgentMock).toHaveBeenCalledTimes(1))
+    await regenerate(env)
+    expect(runAgentMock).toHaveBeenCalledTimes(1)
+    stopRun()
   })
 })

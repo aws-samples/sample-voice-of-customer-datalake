@@ -58,6 +58,8 @@ SENTIMENT_LABELS: Final = ('positive', 'negative', 'neutral', 'mixed')
 # Love = positive themes, hate = negative ones; neutral/mixed reviews make no theme.
 THEME_POLARITIES: Final = ('positive', 'negative')
 TRANSACT_ATTEMPTS: Final = 3
+# The latest Radar scan's outcome: written by the scan job, read by the Radar page.
+LAST_SCAN_KEY: Final = {'pk': 'RADARSCAN', 'sk': 'LAST'}
 # The GSI keys of a feedback item: the radar table has no index, so they are dropped.
 _FEEDBACK_INDEX_KEYS: Final = ('gsi1pk', 'gsi1sk', 'gsi2pk', 'gsi2sk', 'gsi3pk', 'gsi3sk')
 

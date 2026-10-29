@@ -1,6 +1,6 @@
 {
   "name": "voc-datalake",
-  "version": "5.30.1",
+  "version": "5.47.2",
   "description": "Voice of the Customer Data Lake - AWS CDK Infrastructure",
   "scripts": {
     "build": "tsc",
@@ -14,9 +14,6 @@
     "synth": "npx cdk synth",
     "diff": "npx cdk diff",
     "deploy": "bash scripts/cdk-deploy.sh --all",
-    "deploy:core": "cdk deploy VocCoreStack",
-    "deploy:ingestion": "cdk deploy VocIngestionStack",
-    "deploy:processing": "cdk deploy VocProcessingStack",
     "deploy:api": "bash scripts/cdk-deploy.sh VocApiStack",
     "deploy:frontend": "npm run deploy:frontend --prefix frontend",
     "destroy": "cdk destroy --all",

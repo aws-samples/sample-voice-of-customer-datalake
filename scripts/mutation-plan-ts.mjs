@@ -211,25 +211,33 @@ export function doneGaps(file, lineCount, done) {
   return open;
 }
 
+/** Cut `interval` into `count` pieces of similar weight: piece k ends just before the candidate start whose
+ *  prefix weight is nearest to k/count of the interval's weight. `prefix[n]` is the weight of lines 1..n;
+ *  `starts` are the allowed cut lines (the caller bounds them above), and a cut must leave its piece at least
+ *  two lines (a start > from + 1). No candidate left: the rest is one piece. Shared with the Python planner. */
+export function balancedCuts(prefix, interval, starts, count) {
+  const total = prefix[interval.to] - prefix[interval.from - 1];
+  const pieces = [];
+  let from = interval.from;
+  for (let k = 1; k < count; k += 1) {
+    const goal = prefix[interval.from - 1] + (total * k) / count;
+    const usable = starts.filter((c) => c > from + 1);
+    if (usable.length === 0) break;
+    const cut = usable.reduce((best, c) => (Math.abs(prefix[c - 1] - goal) < Math.abs(prefix[best - 1] - goal) ? c : best));
+    pieces.push({ from, to: cut - 1 });
+    from = cut;
+  }
+  pieces.push({ from, to: interval.to });
+  return pieces;
+}
+
 /** Cut [from, to] into `count` pieces of similar work at top-level starts (else blank-line starts). */
 function cutInterval(info, interval, count) {
   const { lines, workUpTo } = info;
   const starts = (re) => lines.map((l, i) => (re(l, i) ? i + 1 : 0)).filter((n) => n > interval.from + 1 && n <= interval.to);
   let cands = starts((l) => TOP_LEVEL.test(l));
   if (cands.length < count - 1) cands = [...new Set([...cands, ...starts((l, i) => i > 0 && lines[i - 1].trim() === '' && l.trim() !== '')])].sort((a, b) => a - b);
-  const total = workUpTo[interval.to] - workUpTo[interval.from - 1];
-  const pieces = [];
-  let from = interval.from;
-  for (let k = 1; k < count; k += 1) {
-    const goal = workUpTo[interval.from - 1] + (total * k) / count;
-    const usable = cands.filter((c) => c > from + 1);
-    if (usable.length === 0) break;
-    const cut = usable.reduce((best, c) => (Math.abs(workUpTo[c - 1] - goal) < Math.abs(workUpTo[best - 1] - goal) ? c : best));
-    pieces.push({ from, to: cut - 1 });
-    from = cut;
-  }
-  pieces.push({ from, to: interval.to });
-  return pieces;
+  return balancedCuts(workUpTo, interval, cands, count);
 }
 
 // ---- plan ---------------------------------------------------------------------------------------------

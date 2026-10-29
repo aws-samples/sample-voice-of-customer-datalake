@@ -104,7 +104,6 @@ KiroCrew has no "secondary" button colour: a **secondary action** is the neutral
 | `bg-card` | `--card` | `#211d25` | `#ffffff` | Cards, dialogs |
 | `bg-bg-elevated` | `--bg-elevated` | `#211d25` | `#ffffff` | Inputs, selects, menus, tab tracks |
 | `bg-bg-hover` | `--bg-hover` | `#28242e` | `#f0f0f0` | Hover fill, neutral chips, skeletons |
-| `bg-panel-strong` | `--panel-strong` | `#28242e` | `#f5f5f5` | Strong neutral fill |
 | `bg-overlay` | `--overlay` | `rgba(10,8,12,.6)` | `rgba(25,22,29,.4)` | Modal/drawer backdrop |
 | — | `--chrome` | `rgba(25,22,29,.95)` | `rgba(255,255,255,.95)` | Frosted header (`.chrome-glass`) |
 | — | `--card-hl` | `rgba(255,255,255,.04)` | `rgba(0,0,0,.03)` | 1px inner top highlight on cards |
@@ -126,16 +125,16 @@ In Kiro Light `--card` equals `--bg`, so cards **must** keep their border.
 |---|---|---|---|
 | `border-border` | `#352f3d` | `#e4e4e7` | Default 1px border, dividers (`divide-border`) |
 | `border-border-strong` | `#4a464f` | `#d4d4d8` | Hover border, emphasised edges |
-| `border-border-hover` | `#5e5966` | `#a1a1aa` | Strongest neutral edge |
+| `--border-hover` (no utility) | `#5e5966` | `#a1a1aa` | Strongest neutral edge: React Flow edges (`workflowCanvas.css`) |
 | `border-control-border` | `#77727f` | `#86818e` | The edge that **identifies a form control** (`.input`, `.select`, textarea, checkbox, radio). Not for dividers or cards |
 | `border-control-border-hover` | `#938f9b` | `#5e5966` | That edge on hover |
 
-`--border` is a divider, not a field boundary: it is 1.28:1 (dark) / 1.27:1 (light) on the card, and WCAG 1.4.11 asks 3:1 of a boundary that identifies a control. `--control-border` clears 3:1 against every surface a control sits on (`--bg`, `--bg-accent`, `--bg-elevated`/`--card`, `--panel`, `--panel-strong` and the `--bg-hover` row), in both themes:
+`--border` is a divider, not a field boundary: it is 1.28:1 (dark) / 1.27:1 (light) on the card, and WCAG 1.4.11 asks 3:1 of a boundary that identifies a control. `--control-border` clears 3:1 against every surface a control sits on (`--bg`, `--bg-accent`, `--bg-elevated`/`--card`, `--panel` and the `--bg-hover` row), in both themes:
 
-| Token | Theme | bg | bg-accent | bg-elevated / card | bg-hover | panel | panel-strong |
-|---|---|---|---|---|---|---|---|
-| `--control-border` | dark | 3.83 | 3.71 | 3.55 | 3.25 | 3.55 | 3.25 |
-| `--control-border` | light | 3.79 | 3.47 | 3.79 | 3.32 | 3.63 | 3.47 |
+| Token | Theme | bg | bg-accent | bg-elevated / card | bg-hover | panel |
+|---|---|---|---|---|---|---|
+| `--control-border` | dark | 3.83 | 3.71 | 3.55 | 3.25 | 3.55 |
+| `--control-border` | light | 3.79 | 3.47 | 3.79 | 3.32 | 3.63 |
 
 `theme/controlBorder.test.ts` computes these ratios from index.css (and the hover step's, and the checked `--accent` fill's), so a retune below 3:1 fails the suite. A control's border may only be overridden by a STATE colour at full strength (`border-danger`, `border-warn`, `border-aim`), never by `border-border*` or a tone at an opacity (`border-danger/60`); the same test enforces that.
 
@@ -146,8 +145,8 @@ In Kiro Light `--card` equals `--bg`, so cards **must** keep their border.
 | `ok` | `text-ok`, `bg-ok` | `bg-ok-subtle` | `text-ok-fg` | `#1bb36b` | `#007038` | Success, positive, active |
 | `warn` | `text-warn`, `bg-warn` | `bg-warn-subtle` | `text-warn-fg` | `#e0b94d` | `#6b5900` | Warning, urgent, pending |
 | `danger` | `text-danger`, `bg-danger` | `bg-danger-subtle` | `text-danger-fg` | `#ff5f73` | `#bd1c3a` | Error, negative, destructive |
-| `info` | `text-info`, `bg-info` | `bg-info-subtle` | `text-info-fg` | `#7aa3e6` | `#285092` | Informational **state** (provenance: set by hand, built-in, restored) — never a kind of label |
-| `aim` | `text-aim`, `bg-aim` | `bg-aim-subtle` | `text-aim-fg` | `#c19aff` | `#7337d6` | AI / generated / secondary highlight — not a second accent for labels |
+| `info` | `text-info`, `bg-info` | `bg-info-subtle` | — | `#7aa3e6` | `#285092` | Informational **state** (provenance: set by hand, built-in, restored) — never a kind of label |
+| `aim` | `text-aim`, `bg-aim` | `bg-aim-subtle` | — | `#c19aff` | `#7337d6` | AI / generated / secondary highlight — not a second accent for labels |
 | `accent` | `text-accent-text`, `bg-accent` | `bg-accent-subtle` | `text-accent-fg` | see Brand | | Primary / running |
 | `muted` | `text-muted` | `bg-bg-hover` | — | see Text | | Neutral |
 
@@ -229,14 +228,14 @@ KiroCrew separates two kinds of colour in data, and VoC follows it:
 
 **Sentiment decision: status tones.** Positive / negative / mixed are meaning, not identity, so sentiment stays on `ok` / `danger` / `warn` with `--muted` for neutral, exactly as KiroCrew colours its own good/bad values, and never joins the ramp. (The alternative, putting sentiment on the categorical ramp, would contradict KiroCrew and give "negative" a hue that elsewhere just means "category 3".) The `--sentiment-*` tokens are aliases, so there is one source of truth:
 
-| Variable / utility | Alias of | Dark | Light |
+| Variable | Alias of | Dark | Light |
 |---|---|---|---|
-| `--sentiment-positive` / `*-sentiment-positive` | `--ok` | `#1bb36b` | `#007038` |
+| `--sentiment-positive` | `--ok` | `#1bb36b` | `#007038` |
 | `--sentiment-neutral` | `--muted` | `#938f9b` | `#5e5966` |
 | `--sentiment-negative` | `--danger` | `#ff5f73` | `#bd1c3a` |
 | `--sentiment-mixed` | `--warn` | `#e0b94d` | `#6b5900` |
 
-On screen use `sentimentCssVar(label)` (`lib/sentiment.ts`) or the `text-sentiment-*` utilities; `SentimentBadge` (`bg-ok-subtle text-ok`, …) and `MetricCard` take tones. `sentimentHexColor` is for the PDF path only. `theme/statusTones.test.ts` pins the four aliases in both themes and fails if one points at `--chart-*`.
+On screen use `sentimentCssVar(label)` (`lib/sentiment.ts`; there are no `*-sentiment-*` utilities); `SentimentBadge` (`bg-ok-subtle text-ok`, …) and `MetricCard` take tones. `sentimentHexColor` is for the PDF path only. `theme/statusTones.test.ts` pins the four aliases in both themes and fails if one points at `--chart-*`.
 
 **The data ramp** (`--chart-1` … `--chart-8`, utilities `bg-chart-N` / `border-chart-N`) is KiroCrew's categorical set. **Dark** uses KiroCrew's recipe exactly — `color-mix(in srgb, <hue> 74%, var(--card))`, precomputed to hex. **Light** keeps each hue but darkens it toward black (HSL hue unchanged) to the first step ≥ 3.2:1, because KiroCrew's 74%-into-white mixes are only 1.5–2.3:1 on the white card, below the 3:1 [WCAG 1.4.11 Non-text Contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html) asks of bars, lines and swatches. The one hue KiroCrew's set has that VoC drops is `-skillidx` `#8f7bff`: it is 7.7 ΔE2000 from `-tool` (indistinguishable), and the accent step takes its place.
 
@@ -477,9 +476,8 @@ House easing: **`cubic-bezier(.16, 1, .3, 1)`** (fast out, soft settle). Duratio
 | Focus | Every control: `:focus-visible` 2px `--ring` outline, offset 2px (`.focus-ring`, `.link`, `.tab`, `.switch`, the `.range` thumb, React Flow nodes; `.menu-item` insets it, offset -2px). Text fields (`.input`/`.select`): `border-ring` + a 1px inset `--ring` outline (survives `border-*` utilities) + the `0 0 0 3px var(--accent-subtle)` glow. `--ring` clears 3:1 on every surface in both themes (`theme/focusRing.test.ts`); a tint alone is never a focus state |
 | Theme change | `body` cross-fades background and colour over .25s |
 | Dialog / menu entrance | `animate-scale-in` (.2s, scale .92 → 1); overlay `animate-fade-in` (.15s) |
-| Content entrance | `animate-rise` (.35s, 8px up), `animate-slide-up` (.3s, 12px), `animate-slide-in-left/right` |
+| Content entrance | `animate-rise` (.35s, 8px up) |
 | Loading | `skeleton` (pulse) · `animate-spin` spinners in `border-accent` |
-| Live / breathing indicator | `animate-dot-breathe` (2s) |
 | Switch | Track `transition-colors`, knob `transition-transform` |
 | Slider | Thumb scales 1.1 while pressed; focus shows a 4px `--accent-subtle` halo |
 | Sidebar collapse | Width transition, 150ms |

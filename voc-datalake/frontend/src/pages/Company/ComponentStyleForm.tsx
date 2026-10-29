@@ -13,18 +13,20 @@ import clsx from 'clsx'
 import {
   COLOR_KEYS, HOVER_KEYS, SHAPE_KEYS, TEXT_TRANSFORMS, isValidOutline, isValidStyleValue,
 } from '../../api/designComponents'
-import type { ComponentVariant, HoverKey, StyleKey } from '../../api/designComponents'
+import type { ComponentVariant, FocusKey, HoverKey, StyleKey } from '../../api/designComponents'
 import type { NamedValue } from '../../api/designSystemApi'
 import { resolveColor } from './componentPreviewStyle'
 
 const PLACEHOLDERS: Readonly<Record<StyleKey, string>> = {
   background: '#8e48ff', color: '#ffffff', border_color: '#352f3d',
-  border_width: '1px', radius: '8px', padding: '8px 16px', gap: '8px', height: '36px',
+  border_width: '1px', radius: '8px', padding: '8px 16px', gap: '8px', height: '36px', width: '36px',
   font_family: 'Inter, sans-serif', font_size: '14px', font_weight: '600', letter_spacing: '0.01em',
   text_transform: '', shadow: '0 1px 2px rgba(0,0,0,0.2)',
 }
 const TEXT_FIELDS = ['font_family', 'font_size', 'font_weight', 'letter_spacing'] as const satisfies readonly StyleKey[]
 const COLOR_SET: ReadonlySet<string> = new Set(COLOR_KEYS)
+/** The focus ring's keys beside the outline: its border colour and its glow. */
+const RING_KEYS = ['border_color', 'shadow'] as const satisfies readonly FocusKey[]
 
 type Change = (change: (variant: ComponentVariant) => ComponentVariant) => void
 
@@ -63,10 +65,11 @@ function FieldGroup({ title, columns = 'sm:grid-cols-2 lg:grid-cols-3', children
   )
 }
 
-/** The hover overrides and the focus outline, collapsed until opened. */
+/** The hover overrides and the focus ring (outline, border colour, glow), collapsed until opened. */
 function HoverFocusForm({ variant, colors, onChange }: FormProps) {
   const { t } = useTranslation('settings')
   const setHover = (key: HoverKey, value: string) => onChange((v) => ({ ...v, hover: { ...v.hover, [key]: value } }))
+  const setFocus = (key: FocusKey, value: string) => onChange((v) => ({ ...v, focus: { ...v.focus, [key]: value } }))
   const outline = variant.focus.outline ?? ''
   return (
     <details className="rounded-md border border-border p-2">
@@ -88,8 +91,18 @@ function HoverFocusForm({ variant, colors, onChange }: FormProps) {
           placeholder={t('designSystem.components.example', { value: '2px solid #8e48ff' })}
           invalid={!isValidOutline(outline)}
           invalidText={t('designSystem.components.invalid.outline')}
-          onValue={(value) => onChange((v) => ({ ...v, focus: { outline: value } }))}
+          onValue={(value) => setFocus('outline', value)}
         />
+        {RING_KEYS.map((key) => (
+          <StyleField
+            key={`focus-${key}`}
+            styleKey={key}
+            label={t('designSystem.components.focusField', { field: t(`designSystem.components.fields.${key}`) })}
+            value={variant.focus[key] ?? ''}
+            colors={colors}
+            onValue={(value) => setFocus(key, value)}
+          />
+        ))}
       </div>
     </details>
   )

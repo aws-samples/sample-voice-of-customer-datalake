@@ -37,6 +37,7 @@ import { dataProtectionOf } from '../utils/data-protection';
 import type { InboundEmailConfig } from '../utils/inbound-email';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
+import { EMAIL_INTAKE_LAYER_DIR, dependencyLayer } from '../utils/dependency-layers';
 import { stackModelArns } from '../utils/model-allowlist';
 import { bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
@@ -213,7 +214,9 @@ function intakeFunction(scope: Construct, props: EmailIntakeProps, bucket: s3.Bu
     role: intakeRole(scope, props, bucket),
     timeout: INTAKE_TIMEOUT,
     memorySize: 1024, // CPU: 87.0 % p95 at 512 MB, 2026-10-18 (OPTIONAL_FUNCTION_SIZES, lib/sizing/policy.ts)
-    layers: [props.layer],
+    // lxml lives in its own layer: only this (opt-in) function parses with it.
+    layers: [props.layer, dependencyLayer(scope, 'EmailIntakeDepsLayer', EMAIL_INTAKE_LAYER_DIR,
+      'HTML parser for the inbound-email intake (ARM64/Graviton)')],
     environment: {
       WATERMARKS_TABLE: props.watermarksTable.tableName,
       AGGREGATES_TABLE: props.aggregatesTable.tableName,

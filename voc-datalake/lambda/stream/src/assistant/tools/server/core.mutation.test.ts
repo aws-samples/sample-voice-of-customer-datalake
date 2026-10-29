@@ -8,7 +8,7 @@
  */
 import { EventType } from '@ag-ui/core';
 import { describe, expect, it } from 'vitest';
-import { isRecord } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
 import { fakeContext, fakeDeps, serverTool } from '../test-fixtures.js';
 import { isAllowedNavigationPath } from './core.js';
 

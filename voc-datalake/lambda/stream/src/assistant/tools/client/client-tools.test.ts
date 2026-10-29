@@ -37,6 +37,8 @@ const VALID: Record<string, Record<string, unknown>> = {
   set_source_enabled: { source: 'webscraper', enabled: true },
   import_reviews: { source_name: 'Survey', items: [{ text: 'Checkout keeps failing.' }] },
   create_users: { users: [{ email: 'bob@example.com', role: 'users' }] },
+  create_participant_list: { name: 'Beta customers', kind: 'beta' },
+  add_participants: { list_id: 'lst_0123456789abcdef', people: [{ email: 'ana@example.com' }] },
   build_prototype: { title: 'Checkout prototype' },
   cancel_plan: { plan_id: 'pl_0123456789ab' },
   propose_plan: {

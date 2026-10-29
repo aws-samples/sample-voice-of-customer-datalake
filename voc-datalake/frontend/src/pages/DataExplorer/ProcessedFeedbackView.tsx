@@ -13,6 +13,7 @@ import { formatDateTime } from '../../utils/dateUtils'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import type { ProcessedFeedbackData } from './useDataExplorerQueries'
 import FeedbackRecordDetails from './FeedbackRecordDetails'
+import { cleanReviewText } from '../../utils/cleanReviewText'
 
 interface ProcessedFeedbackViewProps {
   /** Already filtered server-side (source, window and search): rendered as given. */
@@ -134,7 +135,7 @@ function FeedbackRow({ item, isExpanded, onToggleExpand, onView, onEdit }: Feedb
             <span className="text-xs text-muted">{formatDateTime(item.source_created_at, i18n.language)}</span>
             <SentimentBadge sentiment={item.sentiment_label} score={item.sentiment_score} />
           </div>
-          <p className="text-sm text-text-strong line-clamp-2">{item.original_text}</p>
+          <p className="text-sm text-text-strong line-clamp-2">{cleanReviewText(item.original_text)}</p>
           <div className="flex flex-wrap items-center gap-2 mt-1">
             <span className="text-xs text-muted" title={item.category}>{t('feedback.category', { category: labels.category(item.category) })}</span>
             {item.urgency === 'high' && (

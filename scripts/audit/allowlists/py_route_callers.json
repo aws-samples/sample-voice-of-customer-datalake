@@ -1,6 +1,5 @@
 {
   "entries": [
-    {"key": "POST /projects/<project_id>/prototypes/<document_id>/pins/<pin_id>/reopen", "reason": "Called by the SPA as `${pinPath(...)}/${action}` with action: 'resolve' | 'reopen' (frontend/src/api/prototypePinsApi.ts setStatus): the last segment is a typed union, not a literal."},
     {"key": "POST /agents/plans/<plan_id>/steps/<step_id>/approve", "reason": "Called by the SPA through stepPath(planId, stepId, action) with action: 'approve' | 'decline' (frontend/src/api/plansApi.ts): a typed union, not a literal."},
     {"key": "POST /agents/plans/<plan_id>/steps/<step_id>/decline", "reason": "Called by the SPA through stepPath(planId, stepId, action) with action: 'approve' | 'decline' (frontend/src/api/plansApi.ts): a typed union, not a literal."}
   ]

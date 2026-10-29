@@ -4,6 +4,7 @@
  *
  * @module assistant/sessions/sessionsApi
  */
+import { del, post, put } from '../../api/requestKit'
 import { z } from 'zod'
 import { fetchApi } from '../../api/client'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
@@ -44,7 +45,7 @@ export async function getSession(id: string): Promise<SessionRecord | null> {
 }
 
 function postSession(body: SaveSessionBody): Promise<unknown> {
-  return fetchApi<unknown>(sessionPath(body.id), { method: 'POST', body: JSON.stringify(body) })
+  return fetchApi<unknown>(sessionPath(body.id), post(body))
 }
 
 /** Save; on 413 drop the oldest turns once and retry. */
@@ -58,7 +59,7 @@ export async function saveSession(body: SaveSessionBody): Promise<void> {
 }
 
 export async function deleteSession(id: string): Promise<void> {
-  await fetchApi<unknown>(sessionPath(id), { method: 'DELETE' })
+  await fetchApi<unknown>(sessionPath(id), del())
 }
 
 const renamedSchema = z.object({ title: z.string().min(1) })
@@ -69,7 +70,16 @@ const renamedSchema = z.object({ title: z.string().min(1) })
  * still being generated for it.
  */
 export async function renameSession(id: string, title: string): Promise<string> {
-  const raw = await fetchApi<unknown>(`${sessionPath(id)}/title`, { method: 'PUT', body: JSON.stringify({ title }) })
+  const raw = await fetchApi<unknown>(`${sessionPath(id)}/title`, put({ title }))
   const parsed = renamedSchema.safeParse(raw)
   return parsed.success ? parsed.data.title : title
+}
+
+/**
+ * Stop the server's run `runId` of a conversation (`POST /chat/conversations/{id}/cancel`). The
+ * browser's abort does not reach the stream Lambda, which keeps generating without a client;
+ * this marker is what it polls, so it stops and saves the partial answer as `stopped`.
+ */
+export async function cancelServerRun(id: string, runId: string): Promise<void> {
+  await fetchApi<unknown>(`${sessionPath(id)}/cancel`, post({ runId }))
 }

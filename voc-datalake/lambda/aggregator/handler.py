@@ -157,10 +157,14 @@ Known residuals
   process with a jittered backoff (`TRANSACT_WRITE_ATTEMPTS`, and
   CONFLICTED_METRIC is what makes the rate visible), past that bound the stream
   redelivers, and the claim makes every one of those retries a no-op if an earlier
-  attempt landed. So contention converges rather than losing records — but if
-  CONFLICTED_METRIC climbs under import, the lever is the event source's
+  attempt landed. So contention converges rather than losing records. Since 5.47.00
+  a run of consecutive arrivals shares its transactions (see "A run of INSERTs is
+  applied together" below), which is what cut the contention a bulk import produced:
+  about two transactions on the hot rows per batch instead of one per record. If
+  CONFLICTED_METRIC still climbs under import, the lever is the event source's
   `parallelizationFactor` and `batchSize` in
-  `lib/stacks/processing-stack-consolidated.ts`, not a wider transaction.
+  `lib/stacks/processing-stack-consolidated.ts`, not putting the conditional
+  reversals into a transaction.
 * NO RECONCILIATION JOB. Nothing recomputes a stored aggregate from the feedback
   table, so drift already written stays written — the point above only stops new
   drift arriving. A rebuild has to write ABSOLUTE values rather than replay
@@ -221,6 +225,7 @@ import os
 import secrets
 import sys
 import time
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -258,6 +263,20 @@ from shared.idempotency import dedupe_claim_item
 
 # Shared module imports
 from shared.logging import logger, metrics, tracer
+from shared.metric_keys import (
+    CATEGORY_PREFIX,
+    CHANNEL_PREFIX,
+    DAILY_TOTAL_PK,
+    DIMENSION_PREFIX,
+    DIMENSION_SENTIMENT_METRIC_TYPE,
+    DIMENSION_SENTIMENT_PREFIX,
+    SENTIMENT_AVG_PK,
+    SENTIMENT_PREFIX,
+    SOURCE_PREFIX,
+    SUBCATEGORY_PREFIX,
+    TAG_PREFIX,
+)
+from shared.timestamps import now_iso
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.type_defs import TransactWriteItemTypeDef
@@ -331,34 +350,23 @@ DECLINED_METRIC = "AggregateWriteDeclined"
 REPLAYED_METRIC = "AggregateRecordReplayed"
 CONFLICTED_METRIC = "AggregateTransactionConflicted"
 
-# The two aggregate rows this module names outside `counter_dimensions`, hoisted
-# for the reason PERSONA_FIELD is named: a second unmarked copy of one of these
-# strings is what makes an argument elsewhere in the file true or false.
+# The metric partitions are declared once in `shared.metric_keys`, which every reader
+# (`/metrics/*`, the agent heartbeat, the briefing) imports too, for the reason
+# PERSONA_FIELD is named: a second unmarked copy of one of these strings is what makes an
+# argument elsewhere true or false.
 #
 # DAILY_TOTAL_PK is the sentinel `_day_has_aggregates` reads, and that read is only
 # a sound test of "is this day still here?" because this is the ONE counter every
 # item writes unconditionally — see that docstring. Spelling it twice would leave a
 # reader of the sentinel having to know that the copy in `counter_dimensions` is
 # what licenses the argument.
-DAILY_TOTAL_PK = 'METRIC#daily_total'
-SENTIMENT_AVG_PK = 'METRIC#daily_sentiment_avg'
-
-# The agent heartbeat (`agents/heartbeat/handler.py`) reads these partitions by the
-# same prefix; the two Lambdas cannot import each other.
-SUBCATEGORY_PREFIX = 'METRIC#daily_subcategory#'
-SUBCATEGORY_MAX_CHARS = 64
-
-# Per-dimension-value and per-tag daily counters. `/metrics/dimensions` reads the
+#
+# Per-dimension-value and per-tag daily counters: `/metrics/dimensions` reads the
 # sentiment rows of one dimension through the `metric_type` index
-# (`dim_sentiment#<key>`, see `get_metric_type`), so these prefixes are spelled
-# again in `api/metrics_handler.py`; the two Lambdas cannot import each other.
-DIMENSION_PREFIX = 'METRIC#daily_dim#'
-DIMENSION_SENTIMENT_PREFIX = 'METRIC#daily_dim_sentiment#'
-DIMENSION_SENTIMENT_METRIC_TYPE = 'dim_sentiment#'
-TAG_PREFIX = 'METRIC#daily_tag#'
-# Per-`source_channel` daily counter (the `channel` filter's breakdown in
-# `/feedback/entities`); tag and channel rows are on the `metric_type` index too.
-CHANNEL_PREFIX = 'METRIC#daily_channel#'
+# (`dim_sentiment#<key>`, see `get_metric_type`). The per-`source_channel` counter is the
+# `channel` filter's breakdown in `/feedback/entities`; tag and channel rows are on the
+# `metric_type` index too.
+SUBCATEGORY_MAX_CHARS = 64
 CHANNEL_MAX_CHARS = 64
 
 # --- Reversing an item whose INSERT ran before the persona axis moved ---------
@@ -586,7 +594,7 @@ def get_metric_type(pk: str) -> str | None:
     is BUILT would leave every persona row untagged and the dimension empty with
     every count still computed correctly.
     """
-    if pk.startswith('METRIC#daily_source#'):
+    if pk.startswith(SOURCE_PREFIX):
         return 'source'
     if pk.startswith(PERSONA_PREFIX):
         return 'persona'
@@ -1095,9 +1103,9 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
         # constant as its sentinel, and its argument for doing so is that this line
         # is unconditional. Two spellings would leave that dependency unmarked.
         (DAILY_TOTAL_PK, 'count'),
-        (f'METRIC#daily_source#{source_platform}', 'count'),
-        (f'METRIC#daily_category#{category}', 'count'),
-        (f'METRIC#daily_sentiment#{sentiment_label}', 'count'),
+        (f'{SOURCE_PREFIX}{source_platform}', 'count'),
+        (f'{CATEGORY_PREFIX}{category}', 'count'),
+        (f'{SENTIMENT_PREFIX}{sentiment_label}', 'count'),
         # PERSONA_PREFIX, not the literal: `get_metric_type` tags this row for the
         # `metric_type` GSI by the same prefix and `metrics_handler` strips it back
         # off, across two Lambdas that cannot import each other.
@@ -1296,7 +1304,9 @@ def _counter_transaction_item(pk: str, sk: str, field: str, increment: int = 1) 
     name added and the whole thing wrapped in the `{'Update': ...}` shape the
     transaction API takes.
 
-    `increment` defaults to 1 and every caller leaves it there. It is still a
+    `increment` defaults to 1, and only the coalesced arrival run passes more (the
+    number of records of the run that move this counter, `_summed_counter_items`). It is
+    still a
     parameter because `_counter_request` reads its SIGN to decide whether the write
     carries the floor condition, and a builder that could not express that would have
     to re-derive the condition rather than forward it — but a NEGATIVE value must not
@@ -1311,9 +1321,12 @@ def _counter_transaction_item(pk: str, sk: str, field: str, increment: int = 1) 
                        **_counter_request(pk, sk, field, increment)}}
 
 
-def _average_transaction_item(pk: str, sk: str, value: Decimal) -> 'TransactWriteItemTypeDef':
+def _average_transaction_item(pk: str, sk: str, value: Decimal, count: int = 1) -> 'TransactWriteItemTypeDef':
     """The running average's INCREMENT half as a `TransactWriteItems` entry.
 
+    `value` is the score sum and `count` the number of scored items it adds: 1 for one
+    record, more for a coalesced arrival run (`_summed_average_item`). Never below 1,
+    because this is the increment half only.
     Increment only, and that is a scope statement rather than an omission — enforced
     by taking no `sign` at all rather than by this paragraph. The transaction exists
     for the arrival path, whose average write is unconditional; every DECREMENT of the
@@ -1329,8 +1342,11 @@ def _average_transaction_item(pk: str, sk: str, value: Decimal) -> 'TransactWrit
     spelling of them here would be free to drift into a row the read path cannot see.
     `sign=1` is passed as the literal it is, since this path has no other direction.
     """
-    return {'Update': {'TableName': AGGREGATES_TABLE,
-                       **_average_request(pk, sk, value, 1)}}
+    if count < 1:
+        raise ValueError('an average increment adds at least one scored item')
+    request = _average_request(pk, sk, value, 1)
+    request['ExpressionAttributeValues'][':one'] = count
+    return {'Update': {'TableName': AGGREGATES_TABLE, **request}}
 
 
 def _claimed_transaction(dedupe_key: str, items: 'list[TransactWriteItemTypeDef]') -> bool:
@@ -1426,14 +1442,7 @@ def _claimed_transaction(dedupe_key: str, items: 'list[TransactWriteItemTypeDef]
                     f"transient reason (contention or throttling); retrying "
                     f"(attempt {attempt + 2} of {TRANSACT_WRITE_ATTEMPTS})"
                 )
-                delay = TRANSACT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
-                # HALF JITTER: the multiplier spans [0.5, 1.0), so the wait is 50-100%
-                # of the nominal delay above — 25-50ms, then 50-100ms — and never
-                # longer than it. Decorrelating records that collided once matters more
-                # here than the absolute wait, which is why the range is one-sided
-                # rather than the symmetric [0.5, 1.5) `randbelow(1000)` would give.
-                # `_write_ballot` jitters the same way, for the same reason.
-                time.sleep(delay * (0.5 + secrets.randbelow(500) / 1000))
+                _contention_pause(attempt)
                 continue
             if _conflicted(e):
                 logger.warning(
@@ -1454,6 +1463,22 @@ def _claimed_transaction(dedupe_key: str, items: 'list[TransactWriteItemTypeDef]
         'TRANSACT_WRITE_ATTEMPTS is not at least 1, so no aggregate transaction was '
         'attempted. Raising rather than reporting a record that was never applied.'
     )
+
+
+def _contention_pause(attempt: int) -> None:
+    """Wait before re-attempt `attempt + 2` of a contended aggregate transaction.
+
+    Shared by the one-record transaction and the coalesced arrival run, so the two
+    back off identically.
+    """
+    delay = TRANSACT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
+    # HALF JITTER: the multiplier spans [0.5, 1.0), so the wait is 50-100% of the
+    # nominal delay above — 25-50ms, then 50-100ms — and never longer than it.
+    # Decorrelating records that collided once matters more here than the absolute
+    # wait, which is why the range is one-sided rather than the symmetric [0.5, 1.5)
+    # `randbelow(1000)` would give. `_write_ballot` jitters the same way, for the same
+    # reason.
+    time.sleep(delay * (0.5 + secrets.randbelow(500) / 1000))
 
 
 def _cancellation_reasons(error: ClientError) -> list | None:
@@ -1811,7 +1836,7 @@ def lower_earliest_date(date: str) -> None:
         return
     if _known_earliest_date is not None and date >= _known_earliest_date:
         return
-    request = lower_watermark_request(date, datetime.now(UTC).isoformat())
+    request = lower_watermark_request(date, now_iso())
     try:
         aggregates_table.update_item(**request)
     except ClientError as e:
@@ -2200,7 +2225,7 @@ def record_handler(record: DynamoDBRecord) -> dict:
 
     INSERT adds to the aggregates, REMOVE takes back out (unless TTL did the
     deleting) and MODIFY moves an item between buckets. Counting only INSERTs is
-    what made `get_metrics_summary` (aggregates) and `search_feedback` (scan)
+    what made `get_summary` (aggregates) and `search_feedback` (scan)
     report different totals for the same window.
 
     One metric per behaviour, because the three now do materially different things
@@ -2301,9 +2326,15 @@ def _handle_insert(record: DynamoDBRecord, new_image: dict[str, Any] | None) -> 
         # stream, and Streams preserve per-shard order, so that record would block its
         # partition. UPDATED_METRIC is not emitted either — nothing was updated, and a
         # metric claiming otherwise is what made the original bug invisible.
+        return _insert_result(applied=False)
+    return _insert_result(applied=True)
+
+
+def _insert_result(*, applied: bool) -> dict:
+    """An INSERT's result: success with UPDATED_METRIC, or the redelivery skip (no metric)."""
+    if not applied:
         return {"status": "skipped", "reason": "already applied"}
     metrics.add_metric(name=UPDATED_METRIC, unit="Count", value=1)
-
     return {"status": "success"}
 
 
@@ -2504,24 +2535,268 @@ def _reverse_average_together(date: str, scores: list[Decimal]) -> bool:
     return True
 
 
-def _is_removal(raw: object) -> bool:
-    return isinstance(raw, Mapping) and raw.get('eventName') == 'REMOVE'
+# --- A run of INSERTs is applied together -----------------------------------
+# 🔑 CONTENTION, NOT SEMANTICS. One arrival is one `TransactWriteItems`: its dedupe
+# claim plus one increment per counter dimension plus the average, ~10 aggregate rows.
+# Every arrival of a day writes the SAME hot rows (`METRIC#daily_total`, the day's
+# sentiment average, its sentiment and category counters), and a bulk import spreads
+# over many stream shards, each with its own concurrent invocation walking its batch
+# of 100 one transaction at a time. Two transactions touching one item at once cancel
+# with `TransactionConflict`, so the conflict rate grows with (shards x transactions
+# per second per shard), and on 2026-10-23 968 records ran out of their three
+# attempts during one import. Joining the run cuts the transactions on a hot row from
+# one per record to one per GROUP (up to `TRANSACT_WRITE_MAX_ITEMS` items: one claim
+# per record plus one summed increment per distinct counter), about two per batch of
+# 100 same-day records instead of 100 — test_arrival_run.py prints the numbers.
+#
+# EXACTLY ONCE STILL HOLDS: every record's claim travels in the same transaction as
+# the summed increments that include its contribution, so they commit or not together.
+# A cancellation names its refused claims (`ConditionalCheckFailed` at their index):
+# those records were applied by an earlier delivery, so they leave the group and the
+# rest is re-sent. Contention backs off as `_claimed_transaction` does. Anything else
+# (a validation error, contention past the bound, a sum DynamoDB cannot hold exactly)
+# applies the group's records one at a time through `process_new_feedback`, which is
+# the old path outcome for outcome — a poison record still fails alone. A record with
+# no dedupe key or an unusual score is applied alone up front for the same reason.
+# Increments are unconditional, so the order of a run's writes cannot change any of
+# them; only CONSECUTIVE INSERTs are joined, like the removal run above.
+
+# DynamoDB's limit on the items of one `TransactWriteItems`.
+TRANSACT_WRITE_MAX_ITEMS = 100
 
 
-class _RemovalRunProcessor(BatchProcessor):
-    """The DynamoDB Streams processor, with runs of consecutive REMOVEs reversed together.
+@dataclass
+class _PlannedArrival:
+    """One INSERT of a coalesced run: what it adds, and how it ended."""
+    raw: dict
+    record: DynamoDBRecord
+    item: dict | None = None
+    date: str = ''
+    dedupe_key: str = ''
+    keys: frozenset[tuple[str, str, str]] = frozenset()
+    # `object`, not Decimal: an image can carry a score of another type (text), and
+    # such a record must go through the one-record path, which fails it alone.
+    score: object = Decimal('0')
+    result: dict | None = None
+    error: ExceptionInfo | None = None
 
-    Every other record, and a REMOVE alone, goes through `record_handler` exactly as
-    before. A run reports each record as the one-record path would: success with the
-    same result dict, or failure with the exception that stopped it.
+    def fail(self) -> None:
+        """Record the exception being handled; the record is reported failed."""
+        self.error = sys.exc_info()
+
+
+def _plan_arrival(plan: _PlannedArrival) -> None:
+    """`record_handler` + `_handle_insert` for one INSERT, up to its writes."""
+    record = plan.record
+    logger.info("Processing record: event_name=INSERT")
+    data_changed.mark()
+    stream = record.dynamodb
+    new_image = stream.new_image if stream else None
+    if not new_image:
+        logger.warning("No new_image in record")
+        plan.result = {"status": "skipped", "reason": "no new image"}
+        return
+    item = deserialize_image(new_image)
+    logger.info(f"Processing feedback: date={item.get('date')}, source={item.get('source_platform')}")
+    date = _image_date(item)
+    lower_earliest_date(date)
+    plan.item, plan.date = item, date
+    plan.dedupe_key = _dedupe_key(record) or ''
+    plan.keys = frozenset(counter_keys(item, date))
+    plan.score = _image_score(item)
+
+
+def _summable_score(plan: _PlannedArrival) -> Decimal | None:
+    """The arrival's score as a Decimal, or None when it is not a number a sum can take."""
+    score = plan.score
+    if isinstance(score, bool) or not isinstance(score, (Decimal, int)):
+        return None
+    return Decimal(score)
+
+
+def _joins_a_group(plan: _PlannedArrival) -> bool:
+    """Can this arrival share a transaction? Needs a claim and a score DynamoDB can sum."""
+    return bool(plan.dedupe_key) and _summable_score(plan) is not None
+
+
+def _arrival_rows(plan: _PlannedArrival) -> set[tuple[str, str, str]]:
+    """The aggregate rows one arrival moves, the average included when it is scored."""
+    rows = set(plan.keys)
+    if plan.score:
+        rows.add((SENTIMENT_AVG_PK, plan.date, 'sum'))
+    return rows
+
+
+def _arrival_groups(plans: list[_PlannedArrival]) -> list[list[_PlannedArrival]]:
+    """Consecutive arrivals packed so each group's claims plus distinct rows fit one transaction."""
+    groups: list[list[_PlannedArrival]] = []
+    current: list[_PlannedArrival] = []
+    rows: set[tuple[str, str, str]] = set()
+    for plan in plans:
+        needed = rows | _arrival_rows(plan)
+        if current and len(current) + 1 + len(needed) > TRANSACT_WRITE_MAX_ITEMS:
+            groups.append(current)
+            current, needed = [], _arrival_rows(plan)
+        current.append(plan)
+        rows = needed
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _summed_counter_items(counts: Counter[tuple[str, str, str]]) -> 'list[TransactWriteItemTypeDef]':
+    """One increment per distinct counter, by the number of the group's records that move it."""
+    keys = set(counts)
+    return [_counter_transaction_item(pk, date, field, counts[(pk, date, field)])
+            for pk, date, field in sorted(keys)]
+
+
+def _summed_average_item(date: str, scores: list[Decimal]) -> 'TransactWriteItemTypeDef':
+    """One day's scores as ONE average increment, summed in DynamoDB's own decimal context.
+
+    That context traps rounding, so the sum is exactly what the row would reach one score
+    at a time; a sum it cannot hold exactly raises, and the group goes one by one.
+    """
+    with localcontext(DYNAMODB_CONTEXT):
+        total = sum(scores, Decimal(0))
+    return _average_transaction_item(SENTIMENT_AVG_PK, date, total, count=len(scores))
+
+
+def _arrival_group_items(group: list[_PlannedArrival]) -> 'list[TransactWriteItemTypeDef]':
+    """The group's transaction: every claim FIRST (so index i is record i), then the summed rows."""
+    now = int(datetime.now(UTC).timestamp())
+    claims = [dedupe_claim_item(IDEMPOTENCY_TABLE, plan.dedupe_key, now) for plan in group]
+    counts: Counter[tuple[str, str, str]] = Counter(key for plan in group for key in plan.keys)
+    scores_by_day: dict[str, list[Decimal]] = {}
+    for plan in group:
+        score = _summable_score(plan)
+        if score:
+            scores_by_day.setdefault(plan.date, []).append(score)
+    averages = [_summed_average_item(day, scores) for day, scores in sorted(scores_by_day.items())]
+    return [*claims, *_summed_counter_items(counts), *averages]
+
+
+def _refused_claims(error: ClientError, claims: int) -> set[int]:
+    """The indexes of the claims this cancellation refused: records an earlier delivery applied.
+
+    Only a claim carries a condition in this transaction, so `ConditionalCheckFailed` at
+    an index below `claims` is that record's claim and nothing else. Unreadable reasons
+    answer the empty set, which sends the group one record at a time (each re-checks its
+    own claim) rather than calling anything applied.
+    """
+    reasons = _cancellation_reasons(error) or []
+    return {index for index, reason in enumerate(reasons[:claims])
+            if isinstance(reason, Mapping) and reason.get('Code') == 'ConditionalCheckFailed'}
+
+
+def _arrival_applied(plan: _PlannedArrival) -> None:
+    item = plan.item or {}
+    logger.info(
+        f"Updated aggregates for source={item.get('source_platform', 'unknown')}, "
+        f"category={item.get('category', 'other')}"
+    )
+    plan.result = _insert_result(applied=True)
+
+
+def _arrival_replayed(plan: _PlannedArrival) -> None:
+    logger.info(f"Stream record {plan.dedupe_key} was already applied; leaving its aggregate writes alone")
+    metrics.add_metric(name=REPLAYED_METRIC, unit="Count", value=1)
+    plan.result = _insert_result(applied=False)
+
+
+def _apply_alone(plan: _PlannedArrival) -> None:
+    """The one-record path for one planned arrival, outcome for outcome."""
+    item = plan.item
+    if item is None:
+        return
+    try:
+        applied = process_new_feedback(item, plan.dedupe_key or None)
+    except _RECORD_FAILURES:
+        plan.fail()
+        return
+    plan.result = _insert_result(applied=applied)
+
+
+def _send_arrival_group(group: list[_PlannedArrival]) -> ClientError | None:
+    """Send the group's transaction; the cancellation it met, or None when it committed."""
+    try:
+        aggregates_table.meta.client.transact_write_items(TransactItems=_arrival_group_items(group))
+    except ClientError as error:
+        return error
+    return None
+
+
+def _apply_arrival_group(group: list[_PlannedArrival]) -> None:
+    """One group's records in one transaction, re-sent without its replays and past contention."""
+    pending, attempt = list(group), 0
+    while len(pending) > 1:
+        try:
+            error = _send_arrival_group(pending)
+        except (BotoCoreError, ArithmeticError):
+            break
+        if error is None:
+            for plan in pending:
+                _arrival_applied(plan)
+            return
+        refused = _refused_claims(error, len(pending))
+        if refused:
+            for index in sorted(refused):
+                _arrival_replayed(pending[index])
+            pending = [plan for index, plan in enumerate(pending) if index not in refused]
+            continue
+        if not (_conflicted(error) and attempt + 1 < TRANSACT_WRITE_ATTEMPTS):
+            break
+        metrics.add_metric(name=CONFLICTED_METRIC, unit="Count", value=1)
+        logger.info(f"Aggregate transaction for {len(pending)} arrivals was cancelled for a transient "
+                    f"reason; retrying (attempt {attempt + 2} of {TRANSACT_WRITE_ATTEMPTS})")
+        _contention_pause(attempt)
+        attempt += 1
+    if len(pending) > 1:
+        logger.info(f"Applying {len(pending)} arrivals one at a time after their joint transaction failed")
+    for plan in pending:
+        _apply_alone(plan)
+
+
+@tracer.capture_method
+def apply_arrivals(plans: list[_PlannedArrival]) -> None:
+    """Apply a run's planned arrivals: alone when they cannot share a transaction, else in groups."""
+    planned = [plan for plan in plans if plan.item is not None and plan.error is None]
+    for plan in planned:
+        if not _joins_a_group(plan):
+            _apply_alone(plan)
+    for group in _arrival_groups([plan for plan in planned if _joins_a_group(plan)]):
+        _apply_arrival_group(group)
+
+
+_COALESCED_EVENTS = ('INSERT', 'REMOVE')
+
+
+def _run_kind(raw: object) -> str | None:
+    """The event a record joins a run of (INSERT or REMOVE), or None for one handled alone."""
+    if not isinstance(raw, Mapping):
+        return None
+    name = raw.get('eventName')
+    return name if name in _COALESCED_EVENTS else None
+
+
+class _RunCoalescingProcessor(BatchProcessor):
+    """The DynamoDB Streams processor, with runs of consecutive REMOVEs and INSERTs joined.
+
+    Every other record, and an INSERT or REMOVE alone, goes through `record_handler`
+    exactly as before. INSERT runs are joined only when the dedupe table is configured
+    (their exactly-once claim is what the joint transaction carries). A run reports each
+    record as the one-record path would: success with the same result dict, or failure
+    with the exception that stopped it.
     """
 
     def process(self) -> list[tuple]:
         results: list[tuple] = []
-        for is_removal, group in groupby(self.records, key=_is_removal):
+        for kind, group in groupby(self.records, key=_run_kind):
             run = list(group)
-            if is_removal and len(run) > 1:
+            if kind == 'REMOVE' and len(run) > 1:
                 results.extend(self._reverse_run(run))
+            elif kind == 'INSERT' and len(run) > 1 and IDEMPOTENCY_TABLE:
+                results.extend(self._arrival_run(run))
             else:
                 results.extend(self._process_record(record) for record in run)
         return results
@@ -2536,13 +2811,23 @@ class _RemovalRunProcessor(BatchProcessor):
         reverse_removals(plans)
         return [self._report(plan) for plan in plans]
 
-    def _report(self, plan: _PlannedReversal) -> tuple:
+    def _arrival_run(self, run: list[dict]) -> list[tuple]:
+        plans = [_PlannedArrival(raw, DynamoDBRecord(raw)) for raw in run]
+        for plan in plans:
+            try:
+                _plan_arrival(plan)
+            except _RECORD_FAILURES:
+                plan.fail()
+        apply_arrivals(plans)
+        return [self._report(plan) for plan in plans]
+
+    def _report(self, plan: '_PlannedReversal | _PlannedArrival') -> tuple:
         if plan.error is not None:
             return self.failure_handler(record=plan.record, exception=plan.error)
         return self.success_handler(record=plan.raw, result=plan.result)
 
 
-processor = _RemovalRunProcessor(event_type=EventType.DynamoDBStreams)
+processor = _RunCoalescingProcessor(event_type=EventType.DynamoDBStreams)
 
 # One data_version bump per stream batch that carried a feedback write (docs/caching.md).
 data_changed = BatchBump(bump_data_version)

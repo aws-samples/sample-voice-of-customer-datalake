@@ -62,6 +62,7 @@ from shared.jobs import (
     recover_job_execution_claim,
     update_job_status,
 )
+from shared.test.clock import frozen_clock
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 NOW_EPOCH = int(NOW.timestamp())
@@ -112,7 +113,7 @@ def no_table():
 
 @pytest.fixture
 def frozen_now():
-    with patch('shared.jobs.datetime') as mock_datetime:
+    with frozen_clock('shared.jobs') as mock_datetime:
         mock_datetime.now.return_value = NOW
         yield NOW
 
@@ -489,15 +490,28 @@ class TestUpdateJobStatusWritesTheExactRequest:
 
     def test_write_failure_is_logged_with_traceback_not_raised(self, table, mock_logger):
         table.update_item.side_effect = ClientError(
-            {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'gone'}}, 'UpdateItem',
+            {'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow'}}, 'UpdateItem',
         )
 
         assert update_job_status('p1', 'j1', 'running', 1) is None
 
         mock_logger.error.assert_called_once()
         message, kwargs = mock_logger.error.call_args.args[0], mock_logger.error.call_args.kwargs
-        assert message.startswith('Failed to update job status: An error occurred (ConditionalCheckFailedException)')
+        assert message.startswith('Failed to update job status: An error occurred (ProvisionedThroughputExceededException)')
         assert kwargs == {'exc_info': True}
+
+    def test_a_job_row_that_is_gone_is_an_info_naming_the_job_and_project(self, table, mock_logger):
+        table.update_item.side_effect = ClientError(
+            {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'gone'}}, 'UpdateItem',
+        )
+
+        assert update_job_status('p1', 'j1', 'running', 1) is None
+
+        mock_logger.error.assert_not_called()
+        mock_logger.info.assert_called_once_with(
+            '[JOB] Job j1 status not updated to running: its row no longer exists '
+            '(project p1 deleted, or the job expired)'
+        )
 
 
 @pytest.mark.usefixtures('mock_logger')

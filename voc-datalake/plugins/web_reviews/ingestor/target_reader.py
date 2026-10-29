@@ -21,20 +21,20 @@ policy.
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Final, Literal, Protocol
+from typing import Literal, Protocol
 from urllib.parse import urlparse
 
 from block_detection import blocked_by
 from extract import ExtractedReview
 from page_reader import PageSnapshot, page_parameter_successor, same_origin
 
+from shared.http_statuses import NOT_FOUND_STATUSES
 from shared.web_review_targets import TargetError, checked_url
 
 Stop = Literal['pages', 'reviews', 'no_next', 'no_new', 'time', 'blocked', 'off_host']  # pragma: no mutate  an alias read only as an annotation
-#: A NEXT page answered with one of these does not exist: the list ended (``no_next``). The
-#: page-number fallback guesses ``?page=N+1`` past the last page, and Trustpilot answers 404;
-#: that used to end the target as "blocked by HTTP 404". On the first page it is still a block.
-PAST_THE_LAST_PAGE: Final = frozenset({404, 410})
+# A NEXT page answered with NOT_FOUND_STATUSES (404 / 410) does not exist: the list ended (``no_next``).
+# The page-number fallback guesses ``?page=N+1`` past the last page, and Trustpilot answers 404;
+# that used to end the target as "blocked by HTTP 404". On the first page it is still a block.
 
 
 class Tab(Protocol):
@@ -153,7 +153,7 @@ def read_target(tab: Tab, url: str, extract: Callable[[PageSnapshot], list[Extra
         if urlparse(snapshot.url).hostname != host:
             result.off_host = True
             return _stopped(result, 'off_host')
-        if result.pages_read > limits.start_page and snapshot.status in PAST_THE_LAST_PAGE:
+        if result.pages_read > limits.start_page and snapshot.status in NOT_FOUND_STATUSES:
             # A guessed next page (`?page=N+1`) that does not exist: the list ended. Not a block.
             return _stopped(result, 'no_next')
         vendor = blocked_by(snapshot.signals())

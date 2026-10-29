@@ -161,6 +161,7 @@ describe('a prefixed deployment', () => {
     const exempt = nameInventory(prefixed.template(`${PREFIX}-VocApiStack`)).physicalNames
       .filter((entry) => isApiScopedName(entry));
     expect(exempt).toStrictEqual([
+      'AWS::ApiGateway::Authorizer Name = voc-board-authorizer',
       'AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer',
       'AWS::ApiGateway::Authorizer Name = voc-mcp-token-authorizer',
     ]);

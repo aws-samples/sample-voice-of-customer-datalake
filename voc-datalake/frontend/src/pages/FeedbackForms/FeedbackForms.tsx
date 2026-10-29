@@ -31,12 +31,7 @@ import TemplateWizard from './TemplateWizard'
 import FormsListContent from './FormsList'
 import FormEditor from './FormEditor'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
-
-
-function stripTrailingSlashes(str: string): string {
-  if (str.length === 0 || str[str.length - 1] !== '/') return str
-  return stripTrailingSlashes(str.slice(0, -1))
-}
+import { stripTrailingSlashes } from '../../api/baseUrl'
 
 /**
  * The part of a create response the notice reads, validated rather than
@@ -223,6 +218,7 @@ export default function FeedbackForms() {
         onToggle={(formId, enabled) => toggleMutation.mutate({ formId, enabled })}
         onCreateNew={() => setShowWizard(true)}
         apiEndpoint={apiEndpoint}
+        statsRefreshing={isFetching}
       />
 
       {/* Template Wizard */}

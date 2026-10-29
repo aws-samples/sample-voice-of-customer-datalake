@@ -17,6 +17,10 @@ import {
 } from './prioritization-render-fixtures'
 import { required } from '../../components/component-spec-fixtures'
 
+
+/** What the API returns after `PATCH {impact: 4}` on a fresh row: 0.0 is "not scored". */
+const STORED_IMPACT_ONLY = { row_id: R.d1, impact: 4, time_to_market: 0, confidence: 0, strategic_fit: 0, notes: '' }
+
 describe('Prioritization', () => {
   beforeEach(() => {
     resetPrioritizationPage()
@@ -143,9 +147,8 @@ describe('Prioritization', () => {
       // Nobody has scored it: no ballot of the caller's own, and no team row.
       prioritizationMocks.getPrioritizationScores.mockResolvedValue({ scores: {}, aggregates: {} })
       const { user, impact } = await openRowSliders()
-      // Exactly one slider moves. The other three read "Not scored" (#343 —
-      // the handle rests mid-track as presentation, but no number is asserted
-      // on screen), and an unscored axis must not become a vote.
+      // Exactly one slider moves. The other three rest on their "Not scored"
+      // stop (#343), and an unscored axis must not become a vote.
       await moveSliderAndSave(user, impact, '5')
 
       expect(prioritizationMocks.patchPrioritizationScores).toHaveBeenCalledWith({
@@ -173,7 +176,7 @@ describe('Prioritization', () => {
         // row: the expressed axis, and 0.0 (the wire encoding of "absent") for
         // the rest.
         scores: {
-          [R.d1]: { row_id: R.d1, impact: 4, time_to_market: 0, confidence: 0, strategic_fit: 0, notes: '' },
+          [R.d1]: STORED_IMPACT_ONLY,
         },
         aggregates: {
           [R.d1]: { impact: 4, time_to_market: 0, confidence: 0, strategic_fit: 0, reviewer_count: 1, score_spread: 0 },
@@ -184,68 +187,57 @@ describe('Prioritization', () => {
       // The one scored axis reads as its number, out of five...
       expect(impact).toHaveValue('4')
       expect(impact).toHaveAttribute('aria-valuetext', '4 of 5')
-      // ...and each unscored one says so where a screen reader listens. The
-      // handle may REST at mid-track (a range input cannot be valueless), but
-      // no number is presented as the axis's value.
+      // ...and each unscored one says so where a screen reader listens, on its
+      // own "Not scored" stop rather than on a number.
       for (const slider of sliders.slice(1)) {
         expect(slider).toHaveAttribute('aria-valuetext', 'Not scored')
       }
     })
 
-    it('releasing a press on an unscored slider commits the resting value, so exactly-3 is reachable by click', async () => {
-      // Clicking the track AT the resting position fires no `change` (the value
-      // did not move), so without this path a reviewer who wants exactly 3 has
-      // no way to say so short of wiggling the handle. The commit reads the
-      // value off the CONTROL at release — not this render's props — so a
-      // click-at-5 (whose `change` fires first) cannot be rewritten back to 3
-      // by a stale closure. Reverting the onPointerUp path fails this test:
-      // no change event fires, no edit is recorded, Save stays disabled.
+    it('an unscored slider rests on its own "Not scored" stop, so choosing exactly 3 is a vote', async () => {
+      // The 5.34 e2e: the handle of an unscored axis rested ON 3, so choosing 3
+      // fired no change, the axis stayed unscored and still announced "Not
+      // scored". The unscored state now has its own stop below 1, and any
+      // choice — 3 included — is a real change.
       loadSingleRow({ scores: {}, aggregates: {} })
       const { user, timeToMarket } = await openRowSliders()
+      expect(timeToMarket).toHaveValue('0')
       expect(timeToMarket).toHaveAttribute('aria-valuetext', 'Not scored')
 
-      // A press that starts AND ends on the control, without moving: the
-      // click-at-the-resting-position case.
-      fireEvent.pointerDown(timeToMarket)
-      fireEvent.pointerUp(timeToMarket)
-
+      fireEvent.change(timeToMarket, { target: { value: '3' } })
+      expect(timeToMarket).toHaveAttribute('aria-valuetext', '3 of 5')
       await expectSaveEnabled()
       await user.click(saveButton())
+
       expect(prioritizationMocks.patchPrioritizationScores).toHaveBeenCalledWith({
         [R.d1]: { row_id: R.d1, time_to_market: 3 },
       })
     })
 
-    it('a pointer released over an unscored slider after going down elsewhere casts nothing', async () => {
-      // `pointerup` fires on whatever the pointer is over when it is released,
-      // including a press that started on the row header and drifted. A stray
-      // release must not cast a vote nobody aimed at the control.
+    it('Clear returns an unsaved choice to "Not scored" and leaves nothing to save', async () => {
       loadSingleRow({ scores: {}, aggregates: {} })
-      const { timeToMarket } = await openRowSliders()
+      const { user, timeToMarket } = await openRowSliders()
+      fireEvent.change(timeToMarket, { target: { value: '3' } })
+      await expectSaveEnabled()
 
-      // Release over the control with NO pointerdown on it first.
-      fireEvent.pointerUp(timeToMarket)
+      await user.click(screen.getByRole('button', { name: 'Clear the Time to Market score' }))
 
+      expect(timeToMarket).toHaveAttribute('aria-valuetext', 'Not scored')
       expect(saveButton()).toBeDisabled()
-      expect(prioritizationMocks.patchPrioritizationScores).not.toHaveBeenCalled()
     })
 
-    it('a press that starts on an unscored slider and ends elsewhere does not arm the next stray release', async () => {
-      // The stuck-flag case: without clearing the guard on pointerleave, a
-      // press that started on the slider and ended off it leaves the flag
-      // armed, and the NEXT unrelated release over the input casts the resting
-      // value — the exact stray vote the guard exists to prevent, one
-      // interaction later. Removing the clearing handlers fails this test.
-      loadSingleRow({ scores: {}, aggregates: {} })
-      const { timeToMarket } = await openRowSliders()
+    it('offers no "Not scored" stop or Clear over an axis the saved ballot scored', async () => {
+      // A save reads 0 as "leave unchanged", so un-scoring a stored axis on screen
+      // would show "Not scored" for a value the save then keeps.
+      loadSingleRow({
+        scores: { [R.d1]: STORED_IMPACT_ONLY },
+        aggregates: {},
+      })
+      const { impact, timeToMarket } = await openRowSliders()
 
-      fireEvent.pointerDown(timeToMarket)
-      fireEvent.pointerLeave(timeToMarket)
-      // The press ended elsewhere; this later release over the input is stray.
-      fireEvent.pointerUp(timeToMarket)
-
-      expect(saveButton()).toBeDisabled()
-      expect(prioritizationMocks.patchPrioritizationScores).not.toHaveBeenCalled()
+      expect(impact).toHaveAttribute('min', '1')
+      expect(timeToMarket).toHaveAttribute('min', '0')
+      expect(screen.queryByRole('button', { name: 'Clear the Impact score' })).not.toBeInTheDocument()
     })
 
     it('says nobody has scored a document absent from the aggregate', async () => {

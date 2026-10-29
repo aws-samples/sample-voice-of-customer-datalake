@@ -18,7 +18,7 @@ Two record shapes share ``voc-conversations`` (``pk USER#{sub}``,
 
 The stream Lambda (``lambda/stream/src/assistant/session/``) writes the same
 assistant item while a run streams, adding ``run_id`` / ``run_status``
-(running|finished|failed|interrupted) / ``revision`` (a number that only grows,
+(running|finished|failed|interrupted|stopped) / ``revision`` (a number that only grows,
 time-based). The server owns a run's answer, so an SPA save may never overwrite
 a newer server revision:
 
@@ -30,6 +30,15 @@ a newer server revision:
 - otherwise written with a condition on the revision read, so a server write
   landing in between still wins; the run fields are carried over unchanged.
 
+Stop (``POST /chat/conversations/{id}/cancel`` ``{runId}``, 5.35): the SPA's own abort
+does not reach the stream Lambda (API Gateway response streaming does not end the
+invocation when the client goes away), so Stop also writes a cancel marker the
+stream Lambda polls while its run streams (``lambda/stream/src/assistant/session/cancel.ts``).
+It is its own item, ``sk RUNCANCEL#{id}``, not an attribute of the conversation: the stream's
+whole-item PutItems would erase an attribute before it was read. It expires (``ttl``)
+after a day, and the list reads ``CONV#`` keys only, so it is never a conversation.
+The stopped run is saved as ``run_status: stopped`` with its partial answer.
+
 A user's rename (``PUT /chat/conversations/{id}/title``) is stored as
 ``custom_title`` (and ``title``); every later save, the SPA's here and the
 stream Lambda's, keeps it as the title instead of the first-message one.
@@ -37,8 +46,8 @@ stream Lambda's, keeps it as the title instead of the first-message one.
 
 import json
 import os
-import re
 import sys
+import time
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -52,10 +61,13 @@ from botocore.exceptions import ClientError
 
 from shared.api import api_handler, create_api_resolver, get_caller_subject
 from shared.aws import get_dynamodb_resource
+from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX
 from shared.dynamo_paging import iter_query
 from shared.exceptions import ConfigurationError, ConflictError, PayloadTooLargeError, ValidationError
 from shared.logging import logger, tracer
 from shared.request_body import json_body_value
+from shared.row_ids import LONG_OPAQUE_ID_RE, OPAQUE_ID_RE
+from shared.timestamps import now_iso
 
 # AWS Clients
 dynamodb = get_dynamodb_resource()
@@ -72,9 +84,7 @@ app = create_api_resolver()
 # Chat Conversations Endpoints
 # ============================================
 
-ASSISTANT_KIND = 'assistant'
 LEGACY_KIND = 'chat'
-CONVERSATION_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,64}\Z')
 DEFAULT_ASSISTANT_TITLE = 'New conversation'
 MAX_TITLE_CHARS = 120
 MAX_MESSAGES = 300
@@ -90,7 +100,12 @@ LIST_LIMIT = 100
 # Lambda times out at 900 s, 15 minutes, and writes at every tool boundary; 60 s margin).
 STALE_RUN_SECONDS = 960
 RUN_STATUS_RUNNING = 'running'
-RUN_STATUSES = ('running', 'finished', 'failed', 'interrupted')
+# LOCKSTEP with SESSION_RUN_STATUSES in lambda/stream/src/assistant/contract.ts.
+RUN_STATUSES = ('running', 'finished', 'failed', 'interrupted', 'stopped')
+# LOCKSTEP with CANCEL_SK_PREFIX in lambda/stream/src/assistant/session/record.ts.
+CANCEL_SK_PREFIX = 'RUNCANCEL#'
+CANCEL_TTL_SECONDS = 86_400
+
 # Server-owned attributes an SPA save carries over unchanged.
 _RUN_FIELDS = ('run_id', 'run_status', 'revision')
 # The user's own name for an assistant conversation (PUT .../title). Every save
@@ -119,18 +134,14 @@ CONVERSATION_NOT_FOUND = 'Conversation not found'
 
 
 def _require_valid_conversation_id(conversation_id: str) -> None:
-    """Reject ids outside CONVERSATION_ID_PATTERN as not found.
+    """Reject ids outside OPAQUE_ID_RE as not found.
 
     Legacy ids (``conv-<timestamp>``) and assistant ids both match the pattern,
     so valid records stay reachable; anything else cannot name a stored record
     this API would write, and gets the same answer as a missing one.
     """
-    if not CONVERSATION_ID_PATTERN.fullmatch(conversation_id):
+    if not OPAQUE_ID_RE.fullmatch(conversation_id):
         raise NotFoundError(CONVERSATION_NOT_FOUND)
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _conversations_store():
@@ -215,8 +226,8 @@ def _estimated_item_bytes(item: dict) -> int:
 
 
 def _valid_conversation_id(conversation_id: object) -> str:
-    """`conversation_id`, when it matches CONVERSATION_ID_PATTERN."""
-    if not isinstance(conversation_id, str) or not CONVERSATION_ID_PATTERN.fullmatch(conversation_id):
+    """`conversation_id`, when it matches OPAQUE_ID_RE."""
+    if not isinstance(conversation_id, str) or not OPAQUE_ID_RE.fullmatch(conversation_id):
         raise ValidationError('id must match ^[A-Za-z0-9_-]{1,64}$')
     return conversation_id
 
@@ -313,7 +324,7 @@ def _put_unless_revised(item: dict, existing: dict) -> None:
 
 def _save_assistant_conversation(caller_pk: str, proxy: str, body: dict) -> dict:
     fields = _validated_assistant_body(proxy, body)
-    now = _now_iso()
+    now = now_iso()
     existing = _existing_state(caller_pk, fields['id'])
     _require_no_newer_server_revision(existing, fields['base_revision'])
     stored_created = existing.get('created_at')
@@ -424,8 +435,9 @@ def _list_conversations(caller_pk: str, kind: str | None) -> dict:
     Sorted by ``updatedAt`` rather than by key: the sort key is the id, which
     says nothing about recency.
     """
+    # The CONV# keys only: the partition also holds the RUNCANCEL# markers of stopped runs.
     query_kwargs = {
-        'KeyConditionExpression': Key('pk').eq(caller_pk),
+        'KeyConditionExpression': Key('pk').eq(caller_pk) & Key('sk').begins_with(CONVERSATION_SK_PREFIX),
         'ProjectionExpression': _LIST_PROJECTION,
         'ExpressionAttributeNames': _LIST_PROJECTION_NAMES,
     }
@@ -513,8 +525,8 @@ def _save_legacy_conversation(caller_pk: str, path_id: str, body: dict) -> dict:
         'title': body.get('title', 'New Conversation'),
         'messages': body.get('messages', []),
         'filters': body.get('filters', {}),
-        'created_at': body.get('createdAt') or datetime.now(UTC).isoformat(),
-        'updated_at': datetime.now(UTC).isoformat(),
+        'created_at': body.get('createdAt') or now_iso(),
+        'updated_at': now_iso(),
     }
     _require_fits(item)
 
@@ -580,6 +592,33 @@ def rename_conversation(conversation_id: str):
         raise
     return {'success': True, 'id': conversation_id, 'title': title}
 
+
+
+@app.post("/chat/conversations/<conversation_id>/cancel")
+@tracer.capture_method
+def cancel_run(conversation_id: str):
+    """Stop the stream Lambda's run ``{runId}`` of one of the caller's conversations.
+
+    Writes the cancel marker the run polls; the run then stops generating (no more model
+    calls) and saves its partial answer as ``stopped``. Idempotent, and harmless when the run
+    already ended: nothing reads the marker then, and it expires.
+    """
+    caller_pk = _caller_pk()
+    if not conversations_table:
+        raise ConfigurationError('Conversations not configured')
+    _require_valid_conversation_id(conversation_id)
+    body = json_body_value(app)
+    run_id = body.get('runId') if isinstance(body, dict) else None
+    if not isinstance(run_id, str) or not LONG_OPAQUE_ID_RE.fullmatch(run_id):
+        raise ValidationError('runId must be a run id')
+    conversations_table.put_item(Item={
+        'pk': caller_pk,
+        'sk': f'{CANCEL_SK_PREFIX}{conversation_id}',
+        'run_id': run_id,
+        'requested_at': now_iso(),
+        'ttl': int(time.time()) + CANCEL_TTL_SECONDS,
+    })
+    return {'success': True, 'id': conversation_id, 'runId': run_id}
 
 
 # ============================================

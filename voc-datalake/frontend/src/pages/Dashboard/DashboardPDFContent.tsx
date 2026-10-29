@@ -13,6 +13,7 @@ import { signedAverage } from '../../components/SentimentWords/sentimentWords'
 import { formatDate } from '../../utils/dateUtils'
 import { formatCount } from '../../utils/numberFormat'
 import type { FeedbackItem } from '../../api/types'
+import { cleanReviewText } from '../../utils/cleanReviewText'
 
 interface DailyTotal {
   readonly date: string;
@@ -158,7 +159,8 @@ function UrgentSection({ urgentItems }: { readonly urgentItems: readonly Feedbac
 
 function UrgentItem({ item }: { readonly item: FeedbackItem }) {
   const dateStr = formatDate(item.source_created_at, PDF_REPORT_LOCALE)
-  const text = item.original_text.length > 200 ? item.original_text.slice(0, 200) + '…' : item.original_text
+  const shown = cleanReviewText(item.original_text)
+  const text = shown.length > 200 ? shown.slice(0, 200) + '…' : shown
   return (
     <div data-pdf-section style={{
       padding: '10px 14px',

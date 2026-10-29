@@ -87,7 +87,8 @@ the metrics and Radar entries depend on.
   covers chat conversations, agent runs, plans, every `…/jobs` poll, the brief,
   reprocess, erasure, manual-import parse polls, scraper status,
   `/sources/status`, `/integrations/status`, connect tokens, memory
-  import polls (`/memory/imports/{id}`) and voting sessions. The full list is
+  import polls (`/memory/imports/{id}`), voting sessions and the system log search
+  (`/logs/system`). The full list is
   `NO_STORE_PATTERNS`. Any other GET that is not a
   200 JSON answer gets `no-store` too.
 - `ETag` is in `Access-Control-Expose-Headers`, both on the Lambdas' own CORS and on
@@ -107,6 +108,37 @@ the metrics and Radar entries depend on.
 - Every other writer already held `UpdateItem` (the processing role, reprocess,
   retention and settings). The metrics role already had `BatchGetItem`.
 - The grants are pinned by `lib/stacks/api-stack-cache-versions.test.ts`.
+
+## First load
+
+The 5.34.00 live test timed first loads at about 10 s on Radar, 8.9 s on Participants and 8 s on Data
+Explorer. CloudWatch REPORT lines for those loads (read-only, 7 days to 2026-10-25) put the API side at
+1.6–4.5 s, nearly all of it Lambda Init: warm invocations of the three functions ran p50 11–48 ms and
+p95 104–440 ms, and every first call paid an Init Duration of 1.1–1.8 s. The rest was the browser
+fetching the app shell. Three causes were ours:
+
+- **Radar asked for one brand in three parallel requests.** After `GET /radar` it called the detail,
+  `/releases` and `/compare` together. A cold `voc-radar-api` serves one request per environment, so the
+  third request often started a SECOND environment and paid a second Init (05:00 UTC load: 1.29 s, then
+  1.42 s, one after the other). The page now reads `GET /radar/brands/{brand}/page` (the three answers in
+  one, memoized like its parts). A `?brand=` link starts that read beside `/radar`, and the categories
+  config and source profiles used for labels start at mount instead of after the first render.
+  Pinned by `Radar.requests.test.tsx` and `test_radar_brand_page.py`.
+- **The app shell imported the charts library.** `clsx` is a dependency of `recharts`, so Rollup put it
+  in `vendor-recharts`. The shell uses `clsx`, so every first load fetched and ran 389 KB of charts
+  (114 KB gzipped), on pages that draw none. `vendorChunks.json` (vite.config.ts) lists `clsx` beside React, and
+  `vendorChunks.test.ts` fails when another shared dependency is left unlisted.
+- **The floating assistant panel was in the shell.** It renders only once opened, but `AssistantRoot`
+  imported it, and with it `react-markdown` (156 KB). It is now a lazy chunk. Pinned by `bootGraph.test.ts`,
+  which walks the static imports from `main.tsx`.
+
+JS fetched before any page chunk (entry plus `modulepreload`s; measured on local builds of 5.34.00 and of
+this change): 1,699 KB → 937 KB (516 → 291 KB gzipped).
+
+Not changed: Participants (one `GET /participants/lists`) and Data Explorer (the buckets and S3 listing,
+in parallel) already make one round of requests. What is left for them is Init. SnapStart would cut a cold
+start to a restore (p50 460–500 ms on the four SnapStart APIs, docs/lambda-sizing.md) but adds a monthly
+cache charge, so it is an owner decision.
 
 ## Expected savings
 

@@ -32,6 +32,7 @@ import { useCategoryAxisMax } from './useCategoryAxisMax'
 import { sourceChartRows, trendSeries } from './dashboardData'
 import type { ChartRow } from './dashboardData'
 import { useCompactTick } from './useCompactTick'
+import { tooltipFormatter } from './chartTooltip'
 import { AXIS_LINE, AXIS_TICK, BAR_CURSOR, CHART_CONTAINER_PROPS, GRID_STROKE, TOOLTIP_PROPS } from './chartTheme'
 
 const SENTIMENT_DOMAIN: [number, number] = [-1, 1]
@@ -80,6 +81,7 @@ export function TrendChart({ summary }: TrendChartProps) {
 
 /** A horizontal bar chart of labelled rows: names on the Y axis (ellipsis + tooltip), compact counts on the X axis. */
 function HorizontalBars({ rows, fill, onSelect }: Readonly<{ rows: readonly ChartRow[]; fill: string; onSelect: (row: ChartRow) => void }>) {
+  const { t, i18n } = useTranslation('dashboard')
   const tick = useCompactTick()
   const maxAxisWidth = useCategoryAxisMax()
   const axisWidth = categoryAxisWidth(rows.map((row) => row.name), maxAxisWidth)
@@ -102,8 +104,9 @@ function HorizontalBars({ rows, fill, onSelect }: Readonly<{ rows: readonly Char
             tickLine={AXIS_LINE}
             width={axisWidth}
           />
-          <Tooltip {...TOOLTIP_PROPS} cursor={BAR_CURSOR} />
-          <Bar dataKey="value" fill={fill} radius={[0, 4, 4, 0]} onClick={select} className="cursor-pointer" />
+          {/* Named, or the tooltip reads "value : 3". */}
+          <Tooltip {...TOOLTIP_PROPS} cursor={BAR_CURSOR} formatter={tooltipFormatter(i18n.language)} />
+          <Bar dataKey="value" name={t('trend.reviews')} fill={fill} radius={[0, 4, 4, 0]} onClick={select} className="cursor-pointer" />
         </BarChart>
       </ResponsiveContainer>
     </div>

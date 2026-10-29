@@ -43,7 +43,7 @@ from shared.categorization import (
 )
 from shared.converse import BedrockThrottlingError, converse
 from shared.data_version import BatchBump, bump_radar_version
-from shared.dimension_config import load_dimensions_config
+from shared.dimension_config import load_dimensions_config, with_builtin_dimensions
 from shared.feedback_dimensions import category_product, merged_tags, reinfer_dimensions, resolve_item_dimensions
 from shared.idempotency import (
     IdempotencyAlreadyInProgressError,
@@ -60,6 +60,7 @@ from shared.idempotency import (
 # function's error metric, and impossible to mistake for a healthy processor.
 from shared.ingest_schemas import MAX_SOURCE_PLATFORM_LENGTH, IngestMessage, safe_validate_message
 from shared.logging import logger, metrics, tracer
+from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE
 from shared.radar_brands import brand_key
 from shared.radar_routing import BrandLabels
 from shared.source_profiles import (
@@ -80,6 +81,7 @@ from shared.source_updates import (
     text_changed,
     update_decision,
 )
+from shared.timestamps import now_iso
 
 # AWS Clients (using shared module for connection reuse)
 dynamodb = get_dynamodb_resource()
@@ -162,8 +164,6 @@ MAX_SUMMARY_KEYS = 50
 # anything else (a dict key a producer chose, e.g. an email) is masked.
 _SAFE_SEGMENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}\Z')
 MASKED_SEGMENT = '*'
-PROCESSING_FAILED_MESSAGE = 'Processing failed; details are in the processor CloudWatch logs'
-THROTTLED_MESSAGE = 'Bedrock throttled the request; SQS will retry the message'
 
 
 def _safe_segment(segment: object) -> str:
@@ -354,8 +354,8 @@ def _cached_setting(name: str, loader) -> list:
 
 
 def get_dimensions_config() -> list:
-    """The configured dimensions (cached; [] when none or unreadable)."""
-    return _cached_setting('dimensions', load_dimensions_config)
+    """The built-in plus the configured dimensions (cached; only the built-ins when the read failed)."""
+    return _cached_setting('dimensions', load_dimensions_config) or with_builtin_dimensions([])
 
 
 def source_profile(source_platform: str) -> dict:
@@ -493,11 +493,11 @@ def refresh_stored_item(stored: dict, raw_record: dict) -> str:
         logger.info(f"Source update {decision}: {stored.get('feedback_id')}")
         count_metric("SourceUpdatesStale" if decision == UPDATE_STALE else "SourceUpdatesUnchanged")
         return decision
-    now_iso = datetime.now(UTC).isoformat()
+    refreshed_at = now_iso()
     if text_changed(stored, raw_record, pii_policy):
-        kwargs = _reenrichment_update(stored, raw_record, now_iso)
+        kwargs = _reenrichment_update(stored, raw_record, refreshed_at)
     else:
-        kwargs = attributes_update(stored, raw_record, now_iso)
+        kwargs = attributes_update(stored, raw_record, refreshed_at)
     try:
         feedback_table.update_item(**kwargs)
     except ClientError as e:

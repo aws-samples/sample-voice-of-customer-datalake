@@ -138,6 +138,13 @@ describe('aggregate formatting', () => {
 
 describe('truncation notices, word for word', () => {
   const SAY_SO = 'Say so when you answer';
+  /** 5.35: the unread part is UNSEARCHED, never empty ("say nothing about anything older" read as "nothing older"). */
+  const unsearched = (days: number) => {
+    const unread = days === 0 ? 'Older feedback was' : 'The ' + String(days - 400) + ' earlier days were';
+    const noun = days === 0 ? 'the all-time window' : 'the ' + String(days) + '-day window';
+    return `${unread} NOT searched: that is not evidence that there is none, so never say or imply that no older `
+      + `feedback exists. For counts over ${noun}, call get_metrics with days=${days}.`;
+  };
 
   /** Every partition empty except `failDay`, which throws a transient error. */
   function oneDayFails(failDay: number) {
@@ -164,7 +171,7 @@ describe('truncation notices, word for word', () => {
     expect(formatted).toBe(`${NO_MATCH}\n⚠️ INCOMPLETE RESULTS: the items and any counts above cover only the most recent `
       + `400 days of ${noun} asked about — the requested window is longer than this search can reach; `
       + `at least one day could not be read. ${SAY_SO}, name the 400-day window they do cover, `
-      + 'and do not present these totals or percentages as complete.\n');
+      + `and do not present these totals or percentages as complete. ${unsearched(days)}\n`);
     warn.mockRestore();
   });
 
@@ -172,9 +179,8 @@ describe('truncation notices, word for word', () => {
     const { formatted } = await search([makeFeedbackItem()], {}, { days: 500 });
     expect(formatted).toBe(`Found 1 relevant feedback items:\n\n${block(1, DEFAULT_BLOCK)}`
       + '\n⚠️ NARROWER WINDOW THAN ASKED ABOUT: this search reaches back at most 400 days, but the question '
-      + 'named 500 days. The figures above are complete for the most recent 400 days and say nothing about '
-      + 'the 100 earlier days. Name the 400-day window when you answer, and do not describe these numbers '
-      + 'as covering the longer period.\n');
+      + `named 500 days. The figures above are complete for the most recent 400 days. ${unsearched(500)} `
+      + 'Name the 400-day window when you answer, and do not describe these numbers as covering the longer period.\n');
   });
 
   it('tells the model the window is unmeasured when no day could be read', async () => {

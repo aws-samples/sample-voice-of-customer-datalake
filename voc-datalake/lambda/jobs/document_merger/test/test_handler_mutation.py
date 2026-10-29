@@ -45,6 +45,7 @@ from jobs.document_merger import handler
 from shared.category_access import CategoryScope
 from shared.exceptions import ServiceError
 from shared.logging import logger, metrics
+from shared.test.clock import frozen_clock
 from shared.test.emf_fixtures import cold_start_metric_names
 
 PROJECT_ID = 'proj_m1'
@@ -116,7 +117,7 @@ def world(mock_jobs_table: MagicMock) -> Iterator[_World]:
               side_effect=lambda prefix, _now=None: f'{prefix}_20250102030405_a1b2c3d4'),
         patch.object(handler, 'query_feedback_by_date', return_value=[]) as query_feedback,
         patch.object(handler, 'personas_prompt_context', return_value='PERSONA BLOCK') as personas,
-        patch.object(handler, 'datetime', _FrozenDatetime),
+        frozen_clock(handler, _FrozenDatetime),
     ):
         yield _World(
             resource=resource, projects=projects, feedback=feedback, converse=converse,

@@ -15,7 +15,6 @@ readable by more people than this admin-only page.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
@@ -35,6 +34,7 @@ from shared.ops_alerts import (
     subscriber_view,
     unsubscribe,
 )
+from shared.timestamps import now_iso
 
 
 def _settings_row(table: Any) -> dict:
@@ -90,7 +90,7 @@ def set_alerting(table: Any, cloudwatch: Any, targets: AlertTargets, body: dict,
     if not isinstance(enabled, bool):
         raise ValidationError('enabled must be true or false')
     count = enable_alarms(cloudwatch, targets) if enabled else disable_alarms(cloudwatch, targets)
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     table.update_item(
         Key=ALERTS_SETTINGS_KEY,
         UpdateExpression='SET #enabled = :enabled, #at = :at, #by = :by',

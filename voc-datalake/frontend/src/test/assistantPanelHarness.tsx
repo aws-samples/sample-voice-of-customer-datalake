@@ -15,8 +15,16 @@ export type User = ReturnType<typeof userEvent.setup>
 export async function openPanel(): Promise<User> {
   const user = userEvent.setup()
   render(<AssistantRoot />, { initialEntries: ['/projects/p1'] })
-  await user.click(screen.getByRole('button', { name: 'Open assistant' }))
+  await clickLauncherOpen(user)
   return user
+}
+
+/** Open the floating panel from the launcher and wait for it: the panel is a lazy chunk (AssistantRoot). */
+export async function clickLauncherOpen(user: User): Promise<HTMLElement> {
+  // Transform the chunk before the click, so the wait below is only React's one suspended render.
+  await import('../assistant/components/AssistantPanel')
+  await user.click(screen.getByRole('button', { name: 'Open assistant' }))
+  return screen.findByRole('dialog')
 }
 
 /**

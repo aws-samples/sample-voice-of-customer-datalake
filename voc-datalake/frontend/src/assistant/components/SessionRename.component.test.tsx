@@ -117,4 +117,27 @@ describe('an open conversation', () => {
     await user.type(field(), ' Q3{Enter}')
     expect(renameSession).toHaveBeenCalledWith('t1', 'Pricing churn Q3')
   })
+
+  // 5.35 (E2E 5.34): the field opened on the list's cut title, ellipsis included.
+  it('opens the rename field on the whole first message, not the cut title', async () => {
+    const question = `Which complaint themes grew the most among business travellers over the last ninety days, and why?`
+    store.sessions = []
+    act(() => {
+      useThreadStore.getState().replace({ ...createThreadState('t2'), messages: [{ id: 'u1', role: 'user', content: question }] })
+    })
+    const user = userEvent.setup()
+    render(<SessionList onPick={vi.fn()} />)
+    await rowAction(user, question, 'Rename', within(screen.getByRole('list', { name: 'Open' })))
+    expect(field()).toHaveValue(question)
+  })
+})
+
+describe('a saved conversation with a cut auto-title', () => {
+  it('opens the rename field without the ellipsis', async () => {
+    store.sessions = [saved('c2', 'Which complaint themes grew the most…')]
+    const user = userEvent.setup()
+    render(<SessionList onPick={vi.fn()} />)
+    await rowAction(user, 'Which complaint themes grew the most…', 'Rename')
+    expect(field()).toHaveValue('Which complaint themes grew the most')
+  })
 })

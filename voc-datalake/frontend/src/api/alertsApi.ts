@@ -8,6 +8,7 @@
  *
  * @module api/alertsApi
  */
+import { post, put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { lenientText, optionalText, parsedList } from './schemaList'
@@ -55,9 +56,9 @@ const REMOVE_RECIPIENT_PATH = '/logs/alerts/recipients/remove'
 
 export const alertsApi = {
   get: async (): Promise<AlertsStatus> => normalizeAlertsStatus(await fetchApi<unknown>(PATH)),
-  setEnabled: (enabled: boolean) => fetchApi<unknown>(PATH, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+  setEnabled: (enabled: boolean) => fetchApi<unknown>(PATH, put({ enabled })),
   addRecipient: (email: string) =>
-    fetchApi<unknown>(RECIPIENTS_PATH, { method: 'POST', body: JSON.stringify({ email }) }),
+    fetchApi<unknown>(RECIPIENTS_PATH, post({ email })),
   removeRecipient: (email: string) =>
-    fetchApi<unknown>(REMOVE_RECIPIENT_PATH, { method: 'POST', body: JSON.stringify({ email }) }),
+    fetchApi<unknown>(REMOVE_RECIPIENT_PATH, post({ email })),
 }

@@ -18,28 +18,37 @@ export interface DisclosurePopover {
   readonly trigger: RefObject<HTMLButtonElement | null>
 }
 
-/** Open/close state + refs for a trigger-and-popover pair, dismissed by {@link useDismissOnOutside}. */
-export function useDisclosurePopover(): DisclosurePopover {
+/**
+ * Open/close state + refs for a trigger-and-popover pair, dismissed by {@link useDismissOnOutside}.
+ * `portal`: a popover rendered outside `wrapper` (a portal); a mousedown in it is not "outside".
+ */
+export function useDisclosurePopover(portal?: RefObject<HTMLElement | null>): DisclosurePopover {
   const [open, setOpen] = useState(false)
   const panelId = useId()
   const wrapper = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const close = useCallback(() => setOpen(false), [])
   const toggle = useCallback(() => setOpen((v) => !v), [])
-  useDismissOnOutside(open, close, wrapper, trigger)
+  useDismissOnOutside(open, close, { container: wrapper, trigger, portal })
   return { open, toggle, close, panelId, wrapper, trigger }
 }
 
 function useDismissOnOutside(
   open: boolean,
   close: () => void,
-  container: RefObject<HTMLElement | null>,
-  trigger: RefObject<HTMLButtonElement | null>,
+  { container, trigger, portal }: Readonly<{
+    container: RefObject<HTMLElement | null>
+    trigger: RefObject<HTMLButtonElement | null>
+    portal: RefObject<HTMLElement | null> | undefined
+  }>,
 ): void {
   useEffect(() => {
     if (!open) return undefined
     const onMouseDown = (event: MouseEvent) => {
-      if (event.target instanceof Node && container.current?.contains(event.target) !== true) close()
+      const target = event.target
+      if (!(target instanceof Node)) return
+      const isInside = (ref: RefObject<HTMLElement | null> | undefined) => ref?.current?.contains(target) === true
+      if (!isInside(container) && !isInside(portal)) close()
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -53,5 +62,5 @@ function useDismissOnOutside(
       document.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [open, close, container, trigger])
+  }, [open, close, container, trigger, portal])
 }

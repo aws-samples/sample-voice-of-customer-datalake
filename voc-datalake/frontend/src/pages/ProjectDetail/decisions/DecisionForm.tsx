@@ -7,7 +7,7 @@ import { Loader2 } from 'lucide-react'
 import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { apiErrorStatus } from '../../../api/apiErrorStatus'
+import { apiErrorStatus, HTTP_CONFLICT } from '../../../api/apiErrorStatus'
 import StickyActionBar from '../../../components/StickyActionBar/StickyActionBar'
 import { VERDICTS } from '../../../api/decisionSchema'
 import type { ProjectDocument } from '../../../api/types'
@@ -15,8 +15,6 @@ import { draftToInput, isSubmittable } from './decisionDraft'
 import ReviewSearchPicker from './ReviewSearchPicker'
 import type { DecisionDraft } from './decisionDraft'
 import type { DecisionInput } from '../../../api/decisionsApi'
-
-const HTTP_CONFLICT = 409
 
 interface DecisionFormProps {
   readonly initial: DecisionDraft

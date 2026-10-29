@@ -26,7 +26,7 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const {
     feedbackTable, aggregatesTable, projectsTable, jobsTable, kmsKey, rawDataBucket, researchStateMachine,
-    cdnSigningSecretArn, cdnSigningKeyPairId, avatarsCdnUrl, prototypesCdnUrl, userPool,
+    cdnSigningSecretArn, cdnSigningKeyPairId, avatarsCdnUrl, prototypesCdnUrl, userPool, boardUserPool,
   } = ctx.props;
 
   // Projects API
@@ -116,6 +116,10 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
       CDN_SIGNING_SECRET_ARN: cdnSigningSecretArn,
       CDN_SIGNING_KEY_PAIR_ID: cdnSigningKeyPairId,
       USER_POOL_ID: userPool.userPoolId,
+      // The two pools the /review routes' board authorizer accepts (shared/engagement_identity.py
+      // tells them apart by the verified `iss`).
+      APP_USER_POOL_ID: userPool.userPoolId,
+      BOARD_USER_POOL_ID: boardUserPool.userPoolId,
       ALLOWED_ORIGIN: allowedOrigin,
       POWERTOOLS_SERVICE_NAME: 'voc-projects-api',
       LOG_LEVEL: 'INFO',

@@ -27,13 +27,13 @@ from agents.fields import list_field
 from agents.nodes.base import NodeContext, NodeFailure, done
 from shared.logging import logger
 from shared.persona_context import persona_prompt_block
+from shared.workflow_schema import REVIEW_TARGETS
 
 MAX_PANEL_PERSONAS = 6
 PERSONA_CONCURRENCY = 3
 PERSONA_MAX_TOKENS = 1200
 AGREEMENT_MEAN = 4.0
 MAX_OBJECTIONS = 5
-TARGETS = ('prfaq', 'prd', 'prototype')
 
 _VERDICT_INSTRUCTIONS = (
     'Review the artifact as yourself — your goals, frustrations and context — and say honestly '
@@ -112,7 +112,7 @@ def _consult(agent: dict, artifact_prompt: str, entry: tuple[str, dict]) -> dict
 
 def review(ctx: NodeContext) -> dict:
     target = ctx.param('target', 'prfaq')
-    if target not in TARGETS:
+    if target not in REVIEW_TARGETS:
         raise NodeFailure('persona_review target must be prfaq, prd or prototype')
     project_id = ctx.require_project()
     document_id = ctx.document(target)

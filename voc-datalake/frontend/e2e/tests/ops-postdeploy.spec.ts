@@ -30,6 +30,7 @@ import { lambdaLogGroup } from '../lib/cloudwatch'
 import { isRecord } from '../lib/guards'
 import { insights, metricSum, OPS_ENABLED, OPS_SKIP_REASON, opsWindow, recordsAt, writeEvidence } from '../lib/ops'
 import { test } from '../lib/test'
+import { e2eFetch } from '../lib/trafficTag'
 
 /** The feedback processor's batching (lib/stacks/processing-stack-consolidated.ts). */
 const PROCESSOR_BATCH = { size: 10, windowSeconds: 5 }
@@ -39,7 +40,7 @@ const ZERO_METRICS = ['FlexFallback', 'ModelFallback', 'AssistantSessionWriteFai
 /** Queue names that hold failures (DLQs and async failure destinations). */
 const FAILURE_QUEUE = /(dlq|failures)/i
 
-/** HTTP verbs API Gateway models as methods (OPTIONS is the CORS preflight on every resource). */
+/** HTTP verbs API Gateway models as methods (OPTIONS is the CORS preflight of each method-bearing resource). */
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch', 'head', 'any', 'x-amazon-apigateway-any-method'] as const
 
 /** Routes retired in 3.00.00 (per-project MCP, autoseed). None may answer 2xx or 5xx. */
@@ -166,7 +167,7 @@ test.describe('ops: post-deploy health (read-only)', () => {
     const bearer = `Bearer voc_tok_0123456789abcdef_${'0'.repeat(64)}`
     const results: Array<{ route: string; status: number }> = []
     for (const [method, route] of RETIRED_ROUTES) {
-      const res = await fetch(`${apiUrl()}${route}`, {
+      const res = await e2eFetch(`${apiUrl()}${route}`, {
         method,
         headers: { Authorization: bearer, 'Content-Type': 'application/json' },
         body: method === 'POST' ? JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) : undefined,

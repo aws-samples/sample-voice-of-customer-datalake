@@ -8,6 +8,7 @@
  */
 import { expect, type Locator, type Page, type Response } from '@playwright/test'
 import { test } from '../lib/test'
+import { openSourceMenu, sourceTile } from '../lib/sources'
 import { apiCall, stringField } from '../lib/api'
 import { isRecord } from '../lib/guards'
 import path from 'node:path'
@@ -15,11 +16,13 @@ import { E2E_PREFIX, RUN_ID, SCREENS_DIR, apiUrl } from '../lib/env'
 import { isApi, jsonOf, runStep, settle, site } from '../lib/fixtures'
 import { readLedger, recordCreated } from '../lib/ledger'
 import { analyzeManualScraper } from '../lib/scrapers'
+import { chooseProjectAction } from '../lib/projects'
 import { dialogNamed } from '../lib/dialogs'
 import { composer, conversationLog, newChat, openFloating } from '../lib/assistant'
 import { expectHealthy, headWords, lastAssistantText, plainText, runStatusOf, watchAssistantHealth } from '../lib/assistantHealth'
 import { streamThreadId } from '../lib/context'
 import type { StepRecorder } from '../lib/recorder'
+import { e2eFetch } from '../lib/trafficTag'
 
 const NAME = {
   project: `${E2E_PREFIX}${RUN_ID}-project`,
@@ -61,7 +64,6 @@ const DIALOG = {
   // Continue on the template step swaps the wizard for the editor, a dialog of its own.
   formEditor: 'Create New Feedback Form',
   deleteForm: 'Delete Form',
-  addSource: 'Add Data Source',
   manualImport: 'Manual Import',
   scraperEditor: 'New Scraper',
   deleteScraper: 'Delete Scraper',
@@ -278,7 +280,7 @@ test.describe('writes (admin, e2e-owned data only)', () => {
     await step(page, 'write-project-delete', async (r) => {
       await page.goto(site('/projects'), { waitUntil: 'domcontentloaded' })
       await settle(page)
-      await page.getByRole('button', { name: `Delete project ${NAME.project}` }).click()
+      await chooseProjectAction(page, NAME.project, 'Delete')
       const confirm = dialog(page, DIALOG.deleteProject)
       await expect(confirm).toBeVisible()
       const deleted = page.waitForResponse((res) => isApi(res, 'DELETE', /\/projects\/[^/]+$/))
@@ -323,15 +325,16 @@ test.describe('writes (admin, e2e-owned data only)', () => {
     await step(page, 'public-widget-iframe', async (r) => {
       const formId = state.formId ?? ''
       // New forms are created disabled (formTemplates.ts `enabled: false`); the
-      // widget renders only an enabled form, so enable THIS e2e form on its card.
+      // widget renders only an enabled form, so enable THIS e2e form from its card's
+      // disabled notice (FormCard.tsx DisabledNotice: "Enable now").
       await page.goto(site('/feedback-forms'), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
       const enabled = page.waitForResponse((res) => isApi(res, 'PUT', /\/feedback-forms\/[^/]+$/))
-      await page.locator('.card').filter({ hasText: NAME.form }).last().getByRole('button', { name: 'Enable form' }).click()
+      await page.locator('.card').filter({ hasText: NAME.form }).last().getByRole('button', { name: 'Enable now', exact: true }).click()
       r.note(`PUT /feedback-forms/{id} (enable e2e form) -> ${(await enabled).status()}`)
       // Unauthenticated, exactly as an embedding site calls them. No submit: a
       // submission would enter the real feedback table, which has no delete route.
-      const configRes = await fetch(`${apiUrl()}/feedback-forms/${formId}/config`)
+      const configRes = await e2eFetch(`${apiUrl()}/feedback-forms/${formId}/config`)
       r.note(`public GET /feedback-forms/{id}/config -> ${configRes.status}`)
       expect(configRes.status).toBe(200)
       await page.goto(`${apiUrl()}/feedback-forms/${formId}/iframe`, { waitUntil: 'domcontentloaded' })
@@ -353,8 +356,7 @@ test.describe('writes (admin, e2e-owned data only)', () => {
     await step(page, 'write-scraper-analyze-and-save', async (r) => {
       await page.goto(site('/scrapers'), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
-      await page.getByRole('button', { name: 'New Source' }).click()
-      await dialog(page, DIALOG.addSource).getByRole('button', { name: /Custom \(CSS Selectors\)/ }).first().click()
+      await sourceTile(await openSourceMenu(page), 'Scraper with CSS selectors').click()
       const editor = dialog(page, DIALOG.scraperEditor)
       // "Manual only": the scheduled ingestor never picks it up.
       const analyzeRes = await analyzeManualScraper(page, editor, r, { name: NAME.scraper, url: 'https://example.com' })
@@ -399,8 +401,7 @@ test.describe('manual import: date gate, cancelled at preview (no write)', () =>
     await step(page, 'write-manual-import-date-gate', async (r) => {
       await page.goto(site('/scrapers'), { waitUntil: 'domcontentloaded' })
       await settle(page, 500)
-      await page.getByRole('button', { name: 'New Source' }).click()
-      await dialog(page, DIALOG.addSource).getByRole('button', { name: /^Manual Import/ }).click()
+      await sourceTile(await openSourceMenu(page), 'Paste reviews').click()
       const modal = dialog(page, DIALOG.manualImport)
       await modal.getByLabel('Source URL').fill(`https://example.com/${E2E_PREFIX}${RUN_ID}-date-gate`)
       await modal.getByLabel('Paste reviews').fill(`[${E2E_PREFIX}date-gate] The export button is hard to find, otherwise a solid app.`)
@@ -409,7 +410,7 @@ test.describe('manual import: date gate, cancelled at preview (no write)', () =>
       r.note(`POST /scrapers/manual/parse -> ${(await parsed).status()}`)
       await expect(modal.getByRole('heading', { name: /^\d+ reviews? found$/ })).toBeVisible({ timeout: PARSE_TIMEOUT_MS })
 
-      const dates = modal.getByLabel('Review date (required)')
+      const dates = modal.getByLabel(/^Date of review \d+ \(required\)$/)
       const reviews = await dates.count()
       r.note(`preview: ${reviews} review(s); first date "${await dates.first().inputValue()}"`)
       expect(reviews).toBeGreaterThan(0)

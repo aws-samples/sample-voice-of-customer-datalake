@@ -15,7 +15,7 @@ is reported in the run's errors (``<target>: blocked by <vendor>``), never read 
 
 import time
 from collections.abc import Callable, Generator
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any, Final
 
 from agentcore_browser import BrowserUnavailableError, browser_session, session_seconds
@@ -31,6 +31,7 @@ from _shared.app_reviews_utils import is_due_for_run
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
 from shared.converse import converse
 from shared.invocation_cost import measure_invocation_cost
+from shared.timestamps import now_iso
 from shared.web_review_targets import MAX_REVIEWS, TargetError
 
 #: Reviews one run sends at most, across every target (a target's own limit at most).
@@ -162,7 +163,7 @@ class WebReviewsIngestor(BaseIngestor):
         if newest and (previous is None or newest > previous.isoformat()):
             self.set_watermark(f'{target.watermark_prefix}_newest_review', newest)
         self._resume.save(target, resume_at)
-        self.set_watermark(f'{target.watermark_prefix}_last_run', datetime.now(UTC).isoformat())
+        self.set_watermark(f'{target.watermark_prefix}_last_run', now_iso())
         metrics.add_metric(name='WebReviewsRead', unit='Count', value=len(result.reviews))
         logger.info(f'web_reviews {target.host}: {len(result.reviews)} reviews from {result.pages_read} pages '
                     f'(stop: {result.stop})')

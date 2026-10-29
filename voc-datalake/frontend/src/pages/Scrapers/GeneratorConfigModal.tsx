@@ -16,6 +16,7 @@ import {
   useId, useState, useEffect,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { usePluginCopy } from '../../plugins/pluginCopy'
 import { api } from '../../api/client'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
@@ -65,6 +66,7 @@ export default function GeneratorConfigModal({
   plugin, onClose, isAdmin,
 }: GeneratorConfigModalProps) {
   const { t } = useTranslation('scrapers')
+  const copy = usePluginCopy()(plugin)
   const titleId = useId()
   const fieldKeys = plugin.config.map((f) => f.key)
 
@@ -127,7 +129,7 @@ export default function GeneratorConfigModal({
     // Escape / backdrop are off while a run is in flight, so a stray key does not
     // drop the progress view mid-run; Close and the X remain the deliberate exits.
     <ModalShell isOpen onClose={onClose} ariaLabelledBy={titleId} dismissable={!isBusy} panelClassName="max-w-2xl max-h-[95vh] sm:max-h-[90vh]">
-        <SourceDialogHeader titleId={titleId} title={plugin.name} description={plugin.description} icon={FlaskConical} onClose={onClose} />
+        <SourceDialogHeader titleId={titleId} title={copy.name} description={copy.description} icon={FlaskConical} onClose={onClose} />
 
         <div className="dialog-body space-y-4">
           <PluginFieldGrid

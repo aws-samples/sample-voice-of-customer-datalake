@@ -1,7 +1,7 @@
 /**
  * @fileoverview Argument schemas of the `agents` pack write tools — a strict
  * mirror of `lambda/stream/src/assistant/tools/{agent-schemas.ts,client/agents.ts}`
- * (same keys, enums and limits; `agentSchemas.lockstep.test.ts` reads the
+ * (same keys, enums and limits; `newTools.lockstep.test.ts` reads the
  * stream source as text and pins the limits).
  *
  * The shapes are built by the same builders the editor and the agent form use

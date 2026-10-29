@@ -180,6 +180,12 @@ describe('AssistantPanel', () => {
       expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
     })
 
+    // 5.35 (E2E 5.34 reported the dialog unnamed): pinned so the name cannot be lost.
+    it('names the floating dialog and the /chat region by the panel heading', async () => {
+      await openPanel()
+      expect(screen.getByRole('dialog', { name: 'Assistant' })).toBeInTheDocument()
+    })
+
     // Escape in every mode: AssistantPanel.escape.component.test.tsx.
     it('Close closes the panel', async () => {
       const user = await openPanel()

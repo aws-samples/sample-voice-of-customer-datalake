@@ -19,13 +19,16 @@ interface SubmissionsModalProps {
   readonly onClose: () => void
 }
 
-function RatingStars({ rating, max = 5 }: { readonly rating: number | null; readonly max?: number }) {
+/** Ratings are out of five. */
+const MAX_STARS = 5
+
+function RatingStars({ rating }: { readonly rating: number | null }) {
   const { t } = useTranslation('feedbackForms')
   if (rating === null) return <span className="text-muted text-sm">{t('submissions.noRating')}</span>
 
   return (
     <div className="flex items-center gap-0.5">
-      {Array.from({ length: max }, (_, i) => (
+      {Array.from({ length: MAX_STARS }, (_, i) => (
         <Star
           key={i}
           size={14}
@@ -33,7 +36,7 @@ function RatingStars({ rating, max = 5 }: { readonly rating: number | null; read
           aria-hidden="true"
         />
       ))}
-      <span className="ml-1 text-sm font-mono text-text">{rating}/{max}</span>
+      <span className="ml-1 text-sm font-mono text-text">{rating}/{MAX_STARS}</span>
     </div>
   )
 }

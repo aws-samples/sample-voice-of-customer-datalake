@@ -4,6 +4,7 @@ from __future__ import annotations
 from agents.fields import dict_field, list_field
 from agents.nodes import web
 from agents.nodes.base import (
+    DEFAULT_REVIEW_DAYS,
     NodeContext,
     document_updates,
     done,
@@ -12,8 +13,11 @@ from agents.nodes.base import (
     started_job,
 )
 from shared.agentic_search import MAX_TOTAL_QUERIES
+from shared.text_clip import clip_words
 
-DEFAULT_DAYS = 30
+DEFAULT_DAYS = DEFAULT_REVIEW_DAYS
+#: Characters of the run's title the research report's title quotes (clipped on a word).
+TITLE_SUBJECT_CHARS = 80
 
 
 def start(ctx: NodeContext) -> dict:
@@ -28,7 +32,7 @@ def start(ctx: NodeContext) -> dict:
     web_queries = web.granted_queries(ctx, MAX_TOTAL_QUERIES)
     payload = ctx.projects('POST', f'/projects/{project_id}/research', body={
         'question': question[:2000],
-        'title': f"Research: {str(aggregate.get('title') or question)[:80]}",
+        'title': f"Research: {clip_words(str(aggregate.get('title') or question), TITLE_SUBJECT_CHARS)}",
         'categories': scope_categories(ctx.agent),
         'days': days if isinstance(days, int) else DEFAULT_DAYS,
         'selected_persona_ids': persona_ids[:20],

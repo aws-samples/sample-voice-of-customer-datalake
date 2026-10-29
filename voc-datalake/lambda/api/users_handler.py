@@ -8,18 +8,18 @@ Provides Cognito user management for admins:
 - Reset passwords
 - Enable/disable users
 
-Only accessible by users in the 'admins' group.
+Only accessible by users in the 'admins' group, except ``GET /users/me/ai-mode``
+(the caller's own way of working with AI, docs/ways-of-working.md).
 """
 import os
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
 from typing import Any, Final
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import category_access, user_flags
+from shared import ai_mode, category_access, user_flags
 from shared.api import (
     DEFAULT_CATEGORIES,
     api_handler,
@@ -44,6 +44,7 @@ from shared.logging import logger, tracer
 from shared.project_access import ADMIN_GROUP
 from shared.request_body import json_body_value, json_object_body
 from shared.source_profiles import load_source_profiles
+from shared.timestamps import now_iso
 
 # AWS Clients
 cognito = boto3.client('cognito-idp')
@@ -541,7 +542,7 @@ def put_user_category_access(username: str):
         'categories': categories,
         **({'sources': sources} if sources is not None else {}),
         'updated_by': get_caller_subject(event),
-        'updated_at': datetime.now(UTC).isoformat(),
+        'updated_at': now_iso(),
     }
     try:
         _access_table().put_item(Item=row)
@@ -571,8 +572,16 @@ def _attach_flags(users: list[dict]) -> None:
                 get_dynamodb_resource(), AGGREGATES_TABLE, [u['sub'] for u in users])
         except (ClientError, BotoCoreError):
             logger.warning('User flags unavailable; listing users without them')
+    modes_by_sub: dict = {}
+    if aggregates_table:
+        try:
+            modes_by_sub = ai_mode.ai_modes_for_subs(
+                get_dynamodb_resource(), AGGREGATES_TABLE, [u['sub'] for u in users])
+        except (ClientError, BotoCoreError):
+            logger.warning('Ways of working unavailable; listing users with the default')
     for user in users:
         user['flags'] = dict(flags_by_sub.get(user['sub'], _NO_FLAGS))
+        user['ai_mode'] = modes_by_sub.get(user['sub'], ai_mode.DEFAULT_AI_MODE).to_dict()
 
 
 def _clear_fallback_owner_on_demotion(username: str) -> None:
@@ -589,22 +598,48 @@ def _user_groups(username: str) -> list[str]:
     return [g['GroupName'] for g in response.get('Groups', [])]
 
 
+def _ai_mode_changes(body: dict) -> dict:
+    """The validated way-of-working fields of a flags body (shared/ai_mode.py)."""
+    changes: dict = {}
+    if 'ai_mode' in body:
+        if body['ai_mode'] not in ai_mode.MODES:
+            raise ValidationError(f'ai_mode must be one of: {", ".join(ai_mode.MODES)}')
+        changes['ai_mode'] = body['ai_mode']
+    for field in ai_mode.UNLOCK_FIELDS.values():
+        if field in body:
+            changes[field] = validate_bool(body[field], False, field)
+    return changes
+
+
+def _save_ai_mode(sub: str, changes: dict, actor_sub: str) -> dict:
+    try:
+        return ai_mode.set_ai_mode(_access_table(), sub=sub, changes=changes, actor_sub=actor_sub).to_dict()
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error saving the way of working')
+        raise ServiceError('Failed to save the way of working') from exc
+
+
 @app.put('/users/<username>/flags')
 @tracer.capture_method
 def put_user_flags(username: str):
-    """Set ``{fallback_owner?, memory_reviewer?}`` (admin). Only an admin may be
-    the fallback owner, and there is at most one: setting it moves it."""
+    """Set ``{fallback_owner?, memory_reviewer?, ai_mode?, ai_writing_prfaq?, ai_writing_prd?}``
+    (admin). Only an admin may be the fallback owner, and there is at most one: setting
+    it moves it. The way-of-working fields go to their own row (shared/ai_mode.py)."""
     event = app.current_event.raw_event
     require_admin(event)
     body = json_object_body(app)
-    unknown = set(body) - set(user_flags.FLAG_NAMES)
+    unknown = set(body) - set(user_flags.FLAG_NAMES) - set(ai_mode.FIELD_NAMES)
     if unknown:
         raise ValidationError(f'Unknown flag(s): {", ".join(sorted(unknown))}')
     changes = {name: validate_bool(body[name], False, name) for name in user_flags.FLAG_NAMES if name in body}
-    if not changes:
-        raise ValidationError('Provide fallback_owner and/or memory_reviewer')
+    mode_changes = _ai_mode_changes(body)
+    if not changes and not mode_changes:
+        raise ValidationError('Provide at least one flag or way-of-working field')
     table = _access_table()
     sub = _user_sub(username)
+    actor_sub = get_caller_subject(event)
+    if not changes:
+        return {'success': True, 'username': username, 'ai_mode': _save_ai_mode(sub, mode_changes, actor_sub)}
     if changes.get('fallback_owner'):
         try:
             groups = _user_groups(username)
@@ -615,11 +650,32 @@ def put_user_flags(username: str):
             raise ValidationError('Only an admin can be the fallback owner')
     try:
         flags = user_flags.set_flags(
-            table, sub=sub, username=username, changes=changes, actor_sub=get_caller_subject(event))
+            table, sub=sub, username=username, changes=changes, actor_sub=actor_sub)
     except (ClientError, BotoCoreError) as exc:
         logger.exception('Error saving user flags')
         raise ServiceError('Failed to save user flags') from exc
-    return {'success': True, 'username': username, 'flags': flags}
+    answer = {'success': True, 'username': username, 'flags': flags}
+    if mode_changes:
+        answer['ai_mode'] = _save_ai_mode(sub, mode_changes, actor_sub)
+    return answer
+
+
+@app.get('/users/me/ai-mode')
+@tracer.capture_method
+def get_my_ai_mode():
+    """The caller's own way of working ``{mode, ai_writing_prfaq, ai_writing_prd}`` (any signed-in user).
+
+    Read by the SPA to shape the editor (Coach me / Review my draft); the server
+    gate (shared/ai_writing.py) is the authority. An unreadable row answers 500
+    rather than a default, so the SPA never shows AI writing it would refuse.
+    """
+    sub = get_caller_subject(app.current_event.raw_event)
+    try:
+        mode = ai_mode.get_ai_mode(_access_table(), sub)
+    except (ClientError, BotoCoreError) as exc:
+        logger.exception('Error reading the way of working')
+        raise ServiceError('Failed to read your way of working') from exc
+    return {'success': True, 'ai_mode': mode.to_dict()}
 
 
 @api_handler

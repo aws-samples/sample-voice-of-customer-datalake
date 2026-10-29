@@ -18,6 +18,7 @@
  *
  * @module api/categoryAccessApi
  */
+import { put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { nonBlankStringList } from './lenientFields'
@@ -65,7 +66,6 @@ const CallerScopeSchema = z.object({
   source_rule: z.enum(['all', 'allow', 'deny']).optional().catch(undefined),
   sources_denied: nameList,
 }).catch({ all: false, categories: [], sources_all: false, sources: [], sources_denied: [] })
-
 
 /**
  * One user's stored grant. Absent `categories` (no row) and a `'*'` entry both
@@ -193,8 +193,5 @@ export const categoryAccessApi = {
     normalizeUserGrant(await fetchApi<unknown>(`/users/${encodeURIComponent(username)}/category-access`)),
 
   saveUserGrant: async (username: string, grant: CategoryScope, sourceGrant?: SourceGrant): Promise<UserCategoryGrant> =>
-    normalizeUserGrant(await fetchApi<unknown>(`/users/${encodeURIComponent(username)}/category-access`, {
-      method: 'PUT',
-      body: JSON.stringify(grantBody(grant, sourceGrant)),
-    })),
+    normalizeUserGrant(await fetchApi<unknown>(`/users/${encodeURIComponent(username)}/category-access`, put(grantBody(grant, sourceGrant)))),
 }

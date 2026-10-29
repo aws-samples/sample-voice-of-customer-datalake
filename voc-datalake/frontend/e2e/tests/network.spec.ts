@@ -196,8 +196,14 @@ test.describe('bad networks', () => {
     const threadId = threadIdOf((await streamed).postData())
     expect(threadId, 'the run names its conversation').not.toBe('')
     await expect.poll(() => streamCutAt(page), { timeout: 90_000, message: 'the stream was cut after its first answer bytes' }).not.toBeNull()
-    await expect(page.getByRole('alert').filter({ hasText: /connection closed before the answer finished|Something went wrong/ }))
-      .toBeVisible({ timeout: 20_000 })
+    // The cut is said, OR the tab already recovered: after a cut the save is refused (409) and the tab adopts
+    // the server's copy, which replaces the alert as soon as a short answer has finished (5.35.03 prod run).
+    const cutSaid = page.getByRole('alert').filter({ hasText: /connection closed before the answer finished|Something went wrong/ })
+    await expect.poll(async () => {
+      if (await cutSaid.isVisible()) return 'alert'
+      const read = await apiCall('admin', 'GET', `/chat/conversations/${encodeURIComponent(threadId)}`)
+      return read.status === 200 && runStatusOf(read.body) === 'finished' && await conversationLog(page).locator('p').count() > 1 ? 'recovered' : ''
+    }, { timeout: 30_000, message: 'the cut is said, or the server copy is already shown' }).not.toBe('')
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     const log = conversationLog(page)

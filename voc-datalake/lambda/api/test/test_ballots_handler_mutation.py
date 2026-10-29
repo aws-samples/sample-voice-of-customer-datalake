@@ -93,6 +93,14 @@ class TestEveryRefusalIsSpelledOut:
         got_status, body = _submit(table, api_gateway_event, lambda_context)
         assert (got_status, body) == (status, {'success': False, 'reason': reason, 'error': error})
 
+    @pytest.mark.parametrize('overrides', [{'status': 'closed'}, {'ttl': PAST}], ids=['closed', 'expired'])
+    def test_a_dead_session_whose_row_was_deleted_is_gone_like_its_config(
+            self, api_gateway_event, lambda_context, overrides):
+        """5.35.03 (e2e 5.35.02): submit answered 409 `closed` while `/config` answered 410."""
+        table = FakeAggregatesTable([open_session(**overrides)], rows_exist=False)
+        status, body = _submit(table, api_gateway_event, lambda_context)
+        assert (status, body['reason']) == (410, 'gone')
+
     def test_an_unknown_session(self, api_gateway_event, lambda_context):
         status, body = _submit(FakeAggregatesTable([]), api_gateway_event, lambda_context)
         assert (status, body) == (404, {
@@ -102,8 +110,8 @@ class TestEveryRefusalIsSpelledOut:
     def test_a_row_that_vanished_after_the_vote_opened(self, api_gateway_event, lambda_context):
         table = FakeAggregatesTable([open_session()], rows_exist=False)
         status, body = _submit(table, api_gateway_event, lambda_context)
-        assert (status, body) == (404, {
-            'success': False, 'reason': 'not_found', 'error': 'That proposal no longer exists',
+        assert (status, body) == (410, {
+            'success': False, 'reason': 'gone', 'error': 'The proposal this vote was about has been deleted',
         })
 
     @pytest.mark.parametrize(('body', 'error'), [
@@ -508,8 +516,7 @@ class TestTheFacilitatorRoutesAreSpelledOut:
             path_params={'session_id': OPEN_SESSION_ID},
             claims={'sub': 'viewer', 'cognito:groups': ''},
         )
-        with patch('ballots_handler.get_projects_table', return_value=None):
-            status, body = _call(table, event, lambda_context)
+        status, body = _call(table, event, lambda_context, projects=None)
         assert (status, body['error']) == (500, 'Projects table not configured')
 
     def test_no_aggregates_table_is_a_configuration_fault(self, api_gateway_event, lambda_context):
@@ -615,7 +622,7 @@ class TestACancelledTransactionIsReadAtTheRowsIndex:
         attempts = _cancel_with(table, self.ROW_GONE)
         with patch('ballots_handler.time.sleep') as slept:
             status, body = _submit(table, api_gateway_event, lambda_context, logger=logger)
-        assert (status, body['reason']) == (404, 'not_found')
+        assert (status, body['reason']) == (410, 'gone')
         assert (len(attempts), slept.call_count) == (1, 0)
         assert _messages(logger, 'warning') == [
             f'An anonymous ballot named a row that no longer exists, on session {REF}. '

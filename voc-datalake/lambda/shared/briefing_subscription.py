@@ -14,7 +14,6 @@ hash of the endpoint (to notice a changed Cognito email on the next save).
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from collections.abc import Mapping
@@ -26,12 +25,11 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import briefing_prefs as prefs
 from shared import briefing_store as store
+from shared.digests import sha256_hex
 from shared.exceptions import ConfigurationError, ServiceError, ValidationError
 from shared.logging import logger
 from shared.project_access import Caller
 
-TOPIC_ENV: Final = 'BRIEFING_TOPIC_ARN'
-USER_POOL_ENV: Final = 'USER_POOL_ID'
 ORIGIN_ENV: Final = 'ALLOWED_ORIGIN'
 
 _clients: dict[str, Any] = {}
@@ -50,7 +48,7 @@ def _cognito() -> Any:
 
 
 def _topic_arn() -> str:
-    arn = os.environ.get(TOPIC_ENV, '')
+    arn = os.environ.get(store.TOPIC_ENV, '')
     if not arn:
         raise ConfigurationError('Brief email is not configured')
     return arn
@@ -63,12 +61,12 @@ def site_url() -> str:
 
 
 def endpoint_hash(email: str) -> str:
-    return hashlib.sha256(email.strip().lower().encode('utf-8')).hexdigest()
+    return sha256_hex(email.strip().lower())
 
 
 def verified_email(username: str, sub: str) -> str:
     """The caller's own verified Cognito email; 400 when the account has none."""
-    pool = os.environ.get(USER_POOL_ENV, '')
+    pool = os.environ.get(store.USER_POOL_ENV, '')
     if not pool or not username:
         raise ConfigurationError('User directory is not configured')
     try:

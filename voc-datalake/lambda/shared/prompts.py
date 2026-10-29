@@ -186,7 +186,7 @@ def build_chain_steps(filename: str, step_names: list[str], context: dict) -> li
         context: Dict of values to format into prompts
 
     Returns:
-        List of step dicts ready for invoke_bedrock_chain()
+        List of step dicts ready for converse_chain()
     """
     response_language = context.pop('response_language', None)
     language_instruction = get_response_language_instruction(response_language)

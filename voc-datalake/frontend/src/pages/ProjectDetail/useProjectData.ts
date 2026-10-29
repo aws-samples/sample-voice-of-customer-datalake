@@ -37,10 +37,10 @@ export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] a
 /**
  * Query key for a project's product context.
  *
- * Exported for the same reason as the jobs key: more than one place needs it.
- * The Product tab still fetches the context itself, because it edits the record
- * field by field and owns that local state; if it is ever moved onto React Query
- * this is the key it should share.
+ * Exported for the same reason as the jobs key: more than one place needs it —
+ * this page (the Overview card), the Product tab (the form) and the assistant's
+ * `update_product_context` approval, which refreshes it so the form shows what
+ * the assistant just filled in.
  */
 export const productContextKey = (id: string | undefined) => ['product-context', id] as const
 
@@ -73,12 +73,27 @@ const JOB_POLL_INTERVAL_MS = 3000
 /**
  * How long a fetched product context counts as fresh.
  *
- * Generous because the only writer is the Product tab, and it pushes its result
- * into this cache directly. Five minutes bounds the staleness if the record is
- * ever changed elsewhere (the global chat's `create_project` tool can seed five of
- * its fields) without paying a request every time the window regains focus.
+ * Generous because both writers keep this cache current: the Product tab pushes
+ * each saved field into it, and the assistant's approval card refreshes it. Five
+ * minutes bounds the staleness if the record is ever changed elsewhere (the
+ * assistant's `create_project` can seed five of its fields) without paying a
+ * request every time the window regains focus.
  */
 const PRODUCT_CONTEXT_STALE_MS = 5 * 60_000
+
+/**
+ * The one product-context query, shared by this page and the Product tab, so both
+ * read the same cache entry. `retry: false`: a failure reads as "unknown" (the
+ * Overview card shows no state, the form starts blank) and a retry storm buys nothing.
+ */
+export function productContextQuery(id: string | undefined) {
+  return {
+    queryKey: productContextKey(id),
+    queryFn: () => projectsApi.getProductContext(id ?? ''),
+    staleTime: PRODUCT_CONTEXT_STALE_MS,
+    retry: false,
+  } as const
+}
 
 /**
  * How long until the jobs list should be read again: the poll cadence while
@@ -146,22 +161,14 @@ export function useProjectData({
    * small extra request per project open.
    *
    * Failing is not fatal: `undefined` reaches the card as "unknown", which renders
-   * no state rather than a wrong one — hence `retry: false`, since the card is
-   * built to tolerate not knowing and a retry storm buys nothing.
+   * no state rather than a wrong one.
    *
    * `staleTime` is what keeps the cost honest. Without it the default refetch on
    * window focus makes "one request per project open" untrue for anyone who tabs
-   * away and back. The record only changes from the Product tab, which hands the
-   * new value straight into this cache (see ProjectDetail's onContextSaved), so
-   * there is nothing a background refetch would discover.
+   * away and back. The Product tab reads and writes this same cache entry
+   * (`productContextQuery`), so there is nothing a background refetch would discover.
    */
-  const { data: productContextData } = useQuery({
-    queryKey: productContextKey(id),
-    queryFn: () => projectsApi.getProductContext(id ?? ''),
-    enabled: isEnabled,
-    staleTime: PRODUCT_CONTEXT_STALE_MS,
-    retry: false,
-  })
+  const { data: productContextData } = useQuery({ ...productContextQuery(id), enabled: isEnabled })
 
   /**
    * The project's uploaded product docs, for the prototype card's visual picker.

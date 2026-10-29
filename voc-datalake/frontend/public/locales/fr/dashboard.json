@@ -134,5 +134,8 @@
   "openInCategories": "Ouvrir {{name}} dans Catégories",
   "seeAllUrgent_one": "Voir l'avis urgent",
   "seeAllUrgent_other": "Voir les {{count, number}} avis urgents",
-  "seeAllUrgent_many": "Voir les {{count, number}} avis urgents"
+  "seeAllUrgent_many": "Voir les {{count, number}} avis urgents",
+  "partialNote": {
+    "reviewBasis": "Le comptage par date de l'avis lit les avis un par un, donc une large période est tronquée ; passez à Date d'import pour obtenir le total complet."
+  }
 }

@@ -64,7 +64,11 @@ SUMMARY = 'Structural near-duplicates in the Python source: the renamed clones j
 DEFAULT_PATHS = ('voc-datalake/lambda', 'voc-datalake/plugins', 'voc-datalake/scripts', 'scripts')
 DEFAULT_EXCLUDE = ('voc-datalake/lambda/stream/**',)
 DEFAULT_ALLOWLIST = Path(__file__).resolve().parent / 'allowlists' / 'clones_struct.json'
+#: ``--kind function`` keeps its own list: its small groups are judged by another rule than the default run's.
+FUNCTION_ALLOWLIST = Path(__file__).resolve().parent / 'allowlists' / 'clones_struct_functions.json'
 DEFAULT_MIN_NODES = 40
+#: ``--kind function`` looks lower: a whole function is a natural unit, so small copies are still meaningful.
+FUNCTION_MIN_NODES = 8
 DEFAULT_WINDOW = 3
 #: A real-tree scan below this many files means the scope is wrong, not that the code is clean.
 DEFAULT_MIN_FILES = 300
@@ -84,7 +88,11 @@ _IMPORTS = (ast.Import, ast.ImportFrom)
 class _Shape:
     """Token stream of a fragment, with consistent per-fragment renaming."""
 
-    def __init__(self) -> None:
+    def __init__(self, local_names: frozenset[str] | None = None) -> None:
+        # Verbatim mode (``local_names`` given, small functions): literals, attribute / keyword names and FREE
+        # names (globals, builtins, imports) are kept as written; only the function's own locals are renamed.
+        self.verbatim = local_names is not None
+        self.local_names = local_names or frozenset()
         self.tokens: list[str] = []
         self.nodes = 0
         self._names: dict[tuple[str, str], str] = {}
@@ -99,10 +107,11 @@ class _Shape:
 
     def _primitive(self, name: str, value: Any) -> None:
         if isinstance(value, str) and name in _IDENT_FIELDS:
-            self.tokens.append(self._rename('i', value))
+            free = self.verbatim and value not in self.local_names
+            self.tokens.append(value if free else self._rename('i', value))
         elif isinstance(value, str) and name in _ATTR_FIELDS:
-            self.tokens.append(self._rename('a', value))
-        elif value is None or isinstance(value, bool):
+            self.tokens.append(f'.{value}' if self.verbatim else self._rename('a', value))
+        elif self.verbatim or value is None or isinstance(value, bool):
             self.tokens.append(repr(value))
         else:
             self.tokens.append(type(value).__name__)
@@ -113,7 +122,7 @@ class _Shape:
         self.nodes += 1
         self.tokens.append(type(node).__name__)
         if isinstance(node, ast.keyword) and node.arg is not None:
-            self.tokens.append(self._rename('a', node.arg))
+            self.tokens.append(f'{node.arg}=' if self.verbatim else self._rename('a', node.arg))
         for name, value in ast.iter_fields(node):
             if name in _SKIP_FIELDS or (isinstance(node, ast.keyword) and name == 'arg'):
                 continue
@@ -198,16 +207,33 @@ class _Index:
     list_ids: int = 0
 
 
-def _shape_of(nodes: list[ast.AST]) -> _Shape:
-    shape = _Shape()
+def local_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
+    """Names the function binds itself: parameters, assignment / loop / with / except targets, local defs."""
+    args = node.args
+    params = [*args.posonlyargs, *args.args, *args.kwonlyargs, *(a for a in (args.vararg, args.kwarg) if a)]
+    found = {a.arg for a in params}
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store | ast.Del):
+            found.add(sub.id)
+        elif isinstance(sub, ast.ExceptHandler):
+            if sub.name:
+                found.add(sub.name)
+        elif isinstance(sub, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) and sub is not node:
+            found.add(sub.name)
+    return frozenset(found)
+
+
+def _shape_of(nodes: list[ast.AST], locals_: frozenset[str] | None = None) -> _Shape:
+    shape = _Shape(locals_)
     for node in nodes:
         shape.visit(node)
     return shape
 
 
-def _index_function(index: _Index, rel: str, node: ast.FunctionDef | ast.AsyncFunctionDef, min_nodes: int) -> None:
+def _index_function(index: _Index, rel: str, node: ast.FunctionDef | ast.AsyncFunctionDef, min_nodes: int,
+                    verbatim: bool = False) -> None:
     body = _without_docstring(node.body)
-    shape = _shape_of([node.args, *body])
+    shape = _shape_of([node.args, *body], local_names(node) if verbatim else None)
     if body and shape.nodes >= min_nodes:
         copy = Copy(rel, node.lineno, node.end_lineno or node.lineno, node.name)
         index.functions.append(_Function(copy, shape.nodes, shape.digest(), shape.shingles()))
@@ -226,10 +252,13 @@ def _index_windows(index: _Index, rel: str, stmts: list[ast.stmt], window: int, 
                                                               _shape_of([chunk[-1]]).nodes)
 
 
-def index_module(index: _Index, rel: str, tree: ast.Module, *, window: int, min_nodes: int) -> None:
+def index_module(index: _Index, rel: str, tree: ast.Module, *, window: int, min_nodes: int,
+                 functions_only: bool = False) -> None:
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            _index_function(index, rel, node, min_nodes)
+            _index_function(index, rel, node, min_nodes, verbatim=functions_only)
+        if functions_only:
+            continue
         for name in ('body', 'orelse', 'finalbody'):
             stmts = getattr(node, name, None)
             if isinstance(stmts, list) and stmts and isinstance(stmts[0], ast.stmt):
@@ -339,6 +368,19 @@ def _function_groups(index: _Index, similarity: float, same_file: bool) -> list[
     return groups
 
 
+def _exact_function_groups(index: _Index, same_file: bool) -> list[Group]:
+    """Functions with identical shapes, grouped by digest (no pairwise near-match search)."""
+    by_digest: dict[str, list[_Function]] = defaultdict(list)
+    for fn in index.functions:
+        by_digest[fn.digest].append(fn)
+    groups = []
+    for members in by_digest.values():
+        copies = sorted((m.copy for m in members), key=lambda c: (c.path, c.start))
+        if _spans_files(copies, same_file):
+            groups.append(Group('function', members[0].nodes, copies))
+    return groups
+
+
 def _drop_nested(groups: list[Group]) -> list[Group]:
     """Biggest first; a group whose every copy lies inside a kept group's copy adds nothing."""
     kept: list[Group] = []
@@ -362,6 +404,7 @@ class Options:
     similarity: float = DEFAULT_SIMILARITY
     same_file: bool = False
     exclude: tuple[str, ...] = DEFAULT_EXCLUDE
+    functions_only: bool = False   # exact whole-function clones only (no windows, no near matches)
 
 
 def scan(root: Path, scan_paths: tuple[str, ...], opts: Options) -> tuple[list[Group], int, list[str]]:
@@ -375,10 +418,28 @@ def scan(root: Path, scan_paths: tuple[str, ...], opts: Options) -> tuple[list[G
             broken.append(rel)
             continue
         parsed += 1
-        index_module(index, rel, tree, window=opts.window, min_nodes=opts.min_nodes)
-    found = _function_groups(index, opts.similarity, opts.same_file) + _WindowGroups(index).groups(opts.same_file)
+        index_module(index, rel, tree, window=opts.window, min_nodes=opts.min_nodes, functions_only=opts.functions_only)
+    if opts.functions_only:
+        found = _exact_function_groups(index, opts.same_file)
+    else:
+        found = _function_groups(index, opts.similarity, opts.same_file) + _WindowGroups(index).groups(opts.same_file)
     groups = _drop_nested(found)
     return groups, parsed, broken
+
+
+def shared_home_groups(groups: list[Group], bundles: Any, prefix: str = 'voc-datalake/') -> list[Group]:
+    """The groups whose copies could share one home (py_bundles.Bundles.home); a copy in a bundle that cannot
+    import (``product_doc_extractor``) is dropped from its group, the rest still judged."""
+    def home(copies: list[Copy]) -> object:
+        return bundles.home(c.path.removeprefix(prefix) for c in copies)
+
+    kept = []
+    for group in groups:
+        copies = group.copies if home(group.copies) else \
+            [c for c in group.copies if bundles.ships_shared(c.path.removeprefix(prefix))]
+        if _spans_files(copies, same_file=False) and home(copies):
+            kept.append(Group(group.kind, group.nodes, copies, group.similarity))
+    return kept
 
 
 def _report_lines(groups: list[Group]) -> list[str]:
@@ -395,12 +456,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument('paths', nargs='*', help=f'repo-relative paths to scan (default: {" ".join(DEFAULT_PATHS)})')
     parser.add_argument('--root', default=str(REPO), help='repository root (fixtures use a temp dir)')
     parser.add_argument('--include-tests', action='store_true', help='also scan test modules and test support')
-    parser.add_argument('--min-nodes', type=int, default=DEFAULT_MIN_NODES, help='smallest fragment, in AST nodes')
+    parser.add_argument('--min-nodes', type=int, default=None,
+                        help=f'smallest fragment, in AST nodes (default {DEFAULT_MIN_NODES}; {FUNCTION_MIN_NODES} with --kind function)')
     parser.add_argument('--window', type=int, default=DEFAULT_WINDOW, help='statements per window')
     parser.add_argument('--similarity', type=float, default=DEFAULT_SIMILARITY,
                         help='near-function threshold, 0-1 (above 1 turns near matches off)')
     parser.add_argument('--same-file', action='store_true', help='also report copies within one file')
-    parser.add_argument('--allowlist', default=str(DEFAULT_ALLOWLIST))
+    parser.add_argument('--kind', choices=('all', 'function'), default='all',
+                        help='function: exact whole-function clones only (literals and attribute names kept verbatim, '
+                             'local names renamed), kept when their copies ship in bundles that can share one home '
+                             '(needs the cached synth; own allowlist clones_struct_functions.json)')
+    parser.add_argument('--allowlist', default=None, help='allowlist file (default: per --kind)')
     parser.add_argument('--min-files', type=int, default=None, help='vacuity guard (default: on the default scope only)')
     add_json_flag(parser)
     return parser
@@ -409,12 +475,19 @@ def _parser() -> argparse.ArgumentParser:
 def _checked_scan(args: argparse.Namespace) -> tuple[list[dict[str, Any]], list[Group], int, list[str]]:
     """Allowlist and scan; AuditError for a bad allowlist or a vacuous scan."""
     min_files = args.min_files if args.min_files is not None else (DEFAULT_MIN_FILES if not args.paths else 1)
-    entries = read_allowlist(Path(args.allowlist), ('files',))
+    functions_only = args.kind == 'function'
+    if args.min_nodes is None:
+        args.min_nodes = FUNCTION_MIN_NODES if functions_only else DEFAULT_MIN_NODES
+    default_list = FUNCTION_ALLOWLIST if functions_only else DEFAULT_ALLOWLIST
+    entries = read_allowlist(Path(args.allowlist or default_list), ('files',))
     opts = Options(include_tests=args.include_tests, min_nodes=args.min_nodes, window=args.window,
-                   similarity=args.similarity, same_file=args.same_file)
+                   similarity=args.similarity, same_file=args.same_file, functions_only=functions_only)
     groups, parsed, broken = scan(Path(args.root), tuple(args.paths) or DEFAULT_PATHS, opts)
     if parsed < min_files:
         raise AuditError(f'only {parsed} Python file(s) parsed (expected >= {min_files}); wrong scope?')
+    if functions_only:
+        from py_bundles import load_bundles  # the synth is only needed in this mode
+        groups = shared_home_groups(groups, load_bundles(Path(args.root) / 'voc-datalake'))
     return entries, groups, parsed, broken
 
 
@@ -431,7 +504,8 @@ def main(argv: list[str] | None = None) -> int:
     lines = [*_report_lines(reported), *(f'stale-allowlist  {e["reason"][:80]}' for e in stale)]
     if broken:
         lines.append(f'  not parsed (syntax): {", ".join(broken)}')
-    summary = (f'clone groups in {parsed} Python files (>= {args.min_nodes} nodes, window {args.window}, '
+    shape = 'whole functions sharing a home' if args.kind == 'function' else f'window {args.window}'
+    summary = (f'clone groups in {parsed} Python files (>= {args.min_nodes} nodes, {shape}, '
                f'{len(allowlisted)} allowlisted{", tests included" if args.include_tests else ""})')
     return print_report(TOOL, findings, lines, as_json=args.json, summary=summary,
                         extra={'files': parsed, 'unparsed': broken, 'allowlisted': len(allowlisted)})

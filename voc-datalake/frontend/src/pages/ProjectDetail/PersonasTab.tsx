@@ -78,6 +78,10 @@ export default function PersonasTab({
                   type="button"
                   onClick={() => onSelectPersona(p)}
                   aria-current={selected ? 'true' : undefined}
+                  // Named by the persona alone (the avatar's alt and the tagline would
+                  // otherwise repeat in the name); the tagline describes it.
+                  aria-label={p.name}
+                  aria-describedby={`persona-tagline-${p.persona_id}`}
                   className={clsx(
                     'flex-shrink-0 w-48 lg:w-full text-left p-3 lg:p-4 rounded-lg border transition-colors focus-ring',
                     selected
@@ -94,7 +98,7 @@ export default function PersonasTab({
                           The name wraps (it is the button's label and must be whole);
                           the tagline keeps two lines with its full text as a tooltip. */}
                       <p className="font-medium break-words hyphens-auto text-sm lg:text-base text-text-strong" data-testid="persona-list-name">{p.name}</p>
-                      <p className={clsx('text-xs line-clamp-2 break-words', selected ? 'text-text' : 'text-muted')} title={p.tagline}>{p.tagline}</p>
+                      <p id={`persona-tagline-${p.persona_id}`} className={clsx('text-xs line-clamp-2 break-words', selected ? 'text-text' : 'text-muted')} title={p.tagline}>{p.tagline}</p>
                     </div>
                   </div>
                 </button>

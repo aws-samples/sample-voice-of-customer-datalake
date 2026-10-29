@@ -44,7 +44,7 @@ from retention_common import is_conditional_failure as _is_conditional_failure
 from retention_common import resolve_tables, table_parser
 from retention_common import scan_all as _scan
 
-from shared.earliest_date import EARLIEST_DATE_PK, lower_watermark_request, parse_iso_date
+from shared.earliest_date import METRIC_META_PK, lower_watermark_request, parse_iso_date
 
 TTL_ATTRIBUTE = 'ttl'
 METRIC_PREFIX = 'METRIC#'
@@ -105,7 +105,7 @@ def migrate_aggregates(aggregates_table, report: Report, apply: bool) -> None:
         ProjectionExpression='pk, sk',
         FilterExpression='begins_with(pk, :metric) AND attribute_exists(#ttl) AND pk <> :meta',
         ExpressionAttributeNames={'#ttl': TTL_ATTRIBUTE},
-        ExpressionAttributeValues={':metric': METRIC_PREFIX, ':meta': EARLIEST_DATE_PK},
+        ExpressionAttributeValues={':metric': METRIC_PREFIX, ':meta': METRIC_META_PK},
     )
     for row in rows:
         report.aggregate_rows_with_ttl += 1

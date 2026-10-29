@@ -9,6 +9,7 @@ neither the AWS-shaped Python import graph nor a bundler.
 These helpers only READ and EXTRACT; every expected value stays literal in the test
 that asserts it.
 """
+import ast
 import re
 from pathlib import Path
 
@@ -78,3 +79,21 @@ def py_int_const(source: str, name: str, where: str) -> int:
 def ts_int_const(source: str, name: str, where: str) -> int:
     """A top-level `export const NAME = 123` in a TypeScript source."""
     return single_int(source, rf'^export const {name}\s*=\s*(\d+)', where, f'{name} assignment')
+
+
+def assert_imported_not_defined(source: str, module: str, names: tuple[str, ...], where: str) -> None:
+    """``where`` takes each of ``names`` from ``from <module> import ...`` and assigns none of them itself.
+
+    The lockstep for constants that moved to ONE home in ``lambda/shared``: equal values no longer
+    need comparing, but a later local copy (the drift this replaced) must fail here.
+    """
+    tree = ast.parse(source)
+    imported = {alias.asname or alias.name for node in tree.body if isinstance(node, ast.ImportFrom)
+                and node.module == module for alias in node.names}
+    assigned = {target.id for node in tree.body if isinstance(node, ast.Assign | ast.AnnAssign)
+                for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+                if isinstance(target, ast.Name)}
+    if not set(names) <= imported:
+        raise AssertionError(f'{where} does not import {sorted(set(names) - imported)} from {module}')
+    if set(names) & assigned:
+        raise AssertionError(f'{where} defines its own {sorted(set(names) & assigned)}; import it from {module}')

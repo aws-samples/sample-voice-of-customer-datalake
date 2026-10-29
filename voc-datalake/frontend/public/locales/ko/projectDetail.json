@@ -360,21 +360,10 @@
       "knownLimitations": "알려진 한계",
       "nonGoals": "범위 외 항목",
       "oneLiner": "한 줄 설명",
-      "placeholderEmpty": "—",
       "problemSolved": "해결하는 문제",
       "productName": "제품 이름",
       "successMetrics": "성공 지표",
       "targetUsers": "대상 사용자"
-    },
-    "interview": {
-      "captured": "확인했습니다. 제품에 대해 더 알려주실 내용이 있나요?",
-      "elaborate": "조금 더 자세히 말씀해 주시겠어요?",
-      "greeting": "안녕하세요 — 제품 또는 서비스를 설명하는 데 도움을 드리겠습니다. 한두 문장으로 어떤 제품/서비스인지 알려주시면 거기서부터 함께 정리해 보겠습니다.",
-      "heading": "인터뷰",
-      "hint": "답변하시면 왼쪽 양식이 자동으로 채워집니다.",
-      "placeholder": "제품에 대해 알려주세요…",
-      "send": "보내기",
-      "thinking": "생각 중…"
     },
     "lifecycle": {
       "beta": "베타",
@@ -385,9 +374,6 @@
       "select": "— 선택 —"
     },
     "loading": "제품 컨텍스트를 불러오는 중…",
-    "modeBoth": "모두",
-    "modeChat": "채팅만",
-    "modeUpload": "업로드만",
     "report": {
       "button": "보고서 생성",
       "confirmTitle": "제품 보고서를 생성할까요?",
@@ -421,6 +407,36 @@
       "statusFailed": "실패",
       "statusReady": "준비됨",
       "statusUploading": "업로드 중…"
+    },
+    "assistant": {
+      "button": "AI 어시스턴트로 채우기",
+      "hint": "어시스턴트가 비어 있는 항목마다 한 번에 하나씩 질문한 뒤, 모든 답변을 카드 한 장에 모아 승인을 요청합니다.",
+      "prompt": "이 프로젝트의 제품 설명을 채울 수 있도록 인터뷰해 주세요."
+    },
+    "lastSaved": "마지막 저장: {{at}}",
+    "neverSaved": "아직 저장되지 않음",
+    "saving": "저장 중…",
+    "sections": {
+      "basics": {
+        "title": "제품",
+        "description": "무엇이며 현재 어느 단계인지."
+      },
+      "customers": {
+        "title": "고객과 문제",
+        "description": "누구를 위한 것이며 어떤 문제를 해결하는지."
+      },
+      "offering": {
+        "title": "제공 내용",
+        "description": "무엇을 하며 대안과 어떻게 다른지."
+      },
+      "scope": {
+        "title": "목표와 범위",
+        "description": "성공을 측정하는 방법, 제약, 범위에서 제외되는 것."
+      },
+      "notes": {
+        "title": "메모",
+        "description": "PRD와 PR/FAQ 작성자가 알아야 할 그 밖의 내용."
+      }
     }
   },
   "tabs": {
@@ -457,6 +473,9 @@
     "generatePrd": "PRD 생성",
     "generatePrdTitle": "PRD 생성",
     "generatePrfaq": "PR/FAQ 생성",
+    "startWritingTitle": "직접 작성하기",
+    "startWriting": "작성 시작",
+    "startWritingFailed": "문서를 만들지 못했습니다. 다시 시도하세요.",
     "generatePrfaqTitle": "PR/FAQ 생성",
     "newDocTitle": "새 문서 제목",
     "newDocTitlePlaceholder": "예: Virtual Concierge PRD",

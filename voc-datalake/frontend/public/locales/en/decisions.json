@@ -37,7 +37,11 @@
     "prfaqFailed": "The PR/FAQ from this decision could not be generated. Draft it again to retry.",
     "revisit": "Revisit",
     "releaseWatch": "Release watch",
-    "hideReleaseWatch": "Hide release watch"
+    "hideReleaseWatch": "Hide release watch",
+    "delete": "Delete",
+    "deleteConfirmTitle": "Delete this decision?",
+    "deleteConfirmMessage": "\"{{title}}\" is removed from the project for everyone. Documents it seeded are kept.",
+    "deleteConfirm": "Delete decision"
   },
   "picker": {
     "label": "Supporting reviews",
@@ -57,7 +61,8 @@
   "errors": {
     "save": "The decision could not be saved.",
     "conflict": "This decision changed since you opened it. Reload the page and try again.",
-    "pursue": "The PR/FAQ could not be started."
+    "pursue": "The PR/FAQ could not be started.",
+    "delete": "The decision could not be deleted."
   },
   "releaseWatch": {
     "title": "Release watch",

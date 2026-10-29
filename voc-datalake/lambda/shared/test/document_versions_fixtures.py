@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from botocore.exceptions import ClientError
 
 import shared.document_versions as dv
+from shared.test.clock import frozen_clock
 
 COUNTER_KEY = {'pk': 'DOCUMENT_VERSIONS#PROJECT#p1', 'sk': 'PRD#digest'}
 NOW_ISO = '2026-09-01T00:00:00+00:00'
@@ -51,6 +52,6 @@ def frozen_time() -> Iterator[tuple[MagicMock, MagicMock]]:
         patch.object(dv.time, 'time', return_value=NOW_EPOCH),
         patch.object(dv.time, 'monotonic', return_value=0.0) as monotonic,
         patch.object(dv.time, 'sleep') as sleep,
-        patch.object(dv, 'datetime', fake_datetime),
+        frozen_clock(dv, fake_datetime),
     ):
         yield monotonic, sleep

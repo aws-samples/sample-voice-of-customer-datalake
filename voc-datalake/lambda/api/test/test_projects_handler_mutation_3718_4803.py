@@ -226,39 +226,9 @@ class TestTheProductContextRoutesDelegate:
             assert projects_handler.ASSIST_WORK[job_type].run(config) == {'ok': True}
         handler.assert_called_once_with('proj-123', received, category_scope={'all': True})
 
-    def test_the_interview_job_gets_the_body(self, api_gateway_event, lambda_context):
-        body = {'message': 'We sell bikes', 'history': [{'role': 'user', 'content': 'hi'}]}
-        with patch('projects_handler.assist_jobs.start', return_value={'success': True}) as start:
-            response, _ = call_route(lambda_handler, api_gateway_event, lambda_context,
-                                     method='POST', path=f'{P123}/product-context/interview', body=body)
-
-        assert response['statusCode'] == 202
-        assert start.call_args.args[1] == 'assist_interview_turn'
-        with patch('product_context.interview_turn', return_value={'ok': True}) as turn:
-            projects_handler.ASSIST_WORK['assist_interview_turn'].run(start.call_args.args[2])
-        turn.assert_called_once_with('proj-123', body)
-
-    @pytest.mark.parametrize('body', [{}, {'message': '  '}, {'message': 7}])
-    def test_an_interview_without_a_message_is_a_400_before_any_job(self, api_gateway_event, lambda_context, body):
-        with patch('projects_handler.assist_jobs.start') as start:
-            response, answer = call_route(lambda_handler, api_gateway_event, lambda_context,
-                                          method='POST', path=f'{P123}/product-context/interview', body=body)
-
-        assert (response['statusCode'], answer) == (400, {'success': False, 'error': 'message is required'})
-        start.assert_not_called()
-
-    def test_the_interview_job_keeps_only_the_turns_the_model_sees(self, api_gateway_event, lambda_context):
-        history = [{'role': 'user', 'content': f'turn {n}'} for n in range(30)]
-        with patch('projects_handler.assist_jobs.start', return_value={'success': True}) as start:
-            call_route(lambda_handler, api_gateway_event, lambda_context, method='POST',
-                       path=f'{P123}/product-context/interview', body={'message': 'm', 'history': history})
-
-        stored = json.loads(start.call_args.args[2]['body_json'])
-        assert stored['history'] == history[-12:]
-
     @pytest.mark.parametrize('route', [
-        'api_get_product_context', 'api_update_product_context', 'api_product_context_interview',
-        'api_list_product_docs', 'api_create_product_doc_upload_url', 'api_delete_product_doc',
+        'api_get_product_context', 'api_update_product_context', 'api_list_product_docs',
+        'api_create_product_doc_upload_url', 'api_delete_product_doc',
         'api_autofill_prfaq_questions', 'api_suggest_research_questions',
         'api_suggest_document_brief', 'list_prototype_pins', 'reply_to_prototype_pin',
         'resolve_prototype_pin', 'reopen_prototype_pin', 'mark_prototype_pins_addressed',

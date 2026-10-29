@@ -10,7 +10,7 @@ import { fetchApi } from '../../api/client'
 import { ApiError } from '../../lib/errors'
 import { normalizeSessionList, normalizeSessionRecord, isValidSessionId } from './schema'
 import {
-  MAX_RETRY_TOOL_CHARS, MAX_STORED_TOOL_CHARS, dropOldestTurns, sessionTitle, threadFromSession, toSaveBody,
+  MAX_RETRY_TOOL_CHARS, MAX_STORED_TOOL_CHARS, MAX_TITLE_CHARS, dropOldestTurns, sessionTitle, threadFromSession, toSaveBody,
 } from './serialize'
 import { deleteSession, getSession, listSessions, renameSession, saveSession } from './sessionsApi'
 import { createThreadState } from '../thread/reducer'
@@ -84,8 +84,8 @@ describe('save body', () => {
   it('titles an assistant session from the first user message, collapsed and capped', () => {
     const body = saved()
     expect(body.kind).toBe('assistant')
-    expect(body.title.length).toBeLessThanOrEqual(60)
-    expect(body.title.startsWith('What about this screenshot')).toBe(true)
+    expect(body.title).toBe('What about this screenshot of the checkout page that keeps failing on mobile?')
+    expect(sessionTitle([{ id: 'u', role: 'user', content: 'x'.repeat(MAX_TITLE_CHARS + 1) }])).toBe(`${'x'.repeat(MAX_TITLE_CHARS - 1)}…`)
     expect(sessionTitle([])).toBe('')
   })
 

@@ -498,7 +498,7 @@ class TestServerOwnsTheRunsAnswer:
                                            '{"id":"a1","role":"assistant","content":"partial"}]',
             'page_json': 'null', 'pending_json': '[]', 'message_count': 2,
             'created_at': '2026-01-01T00:00:00+00:00',
-            'updated_at': updated_at or chat_handler._now_iso(),
+            'updated_at': updated_at or chat_handler.now_iso(),
             'run_id': 'run-1', 'run_status': status, 'revision': revision,
         }
 

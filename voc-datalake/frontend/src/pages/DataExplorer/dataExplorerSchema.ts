@@ -48,7 +48,7 @@ const bucketSchema = z.object({
   label: optionalString,
 })
 
-const nonEmpty = (...values: Array<string | undefined>): string | undefined =>
+const firstNonEmpty = (...values: Array<string | undefined>): string | undefined =>
   values.find((v) => v != null && v !== '')
 
 /** Normalize `GET /data-explorer/buckets`; entries with neither id nor name are dropped. */
@@ -59,10 +59,10 @@ export function normalizeBuckets(raw: unknown): BucketOption[] {
   return list.data.buckets.flatMap((entry) => {
     const parsed = bucketSchema.safeParse(entry)
     if (!parsed.success) return []
-    const id = nonEmpty(parsed.data.id, parsed.data.name)
+    const id = firstNonEmpty(parsed.data.id, parsed.data.name)
     if (id == null || seen.has(id)) return []
     seen.add(id)
-    return [{ id, label: nonEmpty(parsed.data.label, parsed.data.name, id) ?? id }]
+    return [{ id, label: firstNonEmpty(parsed.data.label, parsed.data.name, id) ?? id }]
   })
 }
 

@@ -1,5 +1,30 @@
 {
   "aiModel": {
+    "image": {
+      "title": "Generowanie obrazów (awatary person)",
+      "description": "Model obrazu, który rysuje awatary person. Ustala go wdrożenie, nie wybiera się go tutaj; wdrożenie wnioskuje o dostęp.",
+      "model": "Model",
+      "region": "Region",
+      "access": "Dostęp",
+      "quota": "Limit",
+      "requestsPerMinute": "{{count, number}} żądań/min",
+      "quotaPending": "Odczyt z Service Quotas, sprawdź ponownie za minutę",
+      "avatarsOff": "Awatary są wyłączone w tym wdrożeniu (zakres wnioskowania UE), więc ten model nie jest używany.",
+      "testTitle": "Wygeneruj jeden mały obraz testowy modelem {{model}}. Każde kliknięcie kosztuje kilka centów USD; obraz nie jest zapisywany.",
+      "status": {
+        "available": "Dostępny",
+        "no_access": "Brak dostępu",
+        "not_subscribed": "Brak subskrypcji",
+        "not_in_region": "Niedostępny w tym regionie",
+        "unknown": "Nieznany"
+      },
+      "hint": {
+        "no_access": "To konto lub jego role nie mogą używać modelu. Sprawdź zasady organizacji (SCP) dla Bedrock i AWS Marketplace, a potem wdróż ponownie.",
+        "not_subscribed": "Brakuje umowy lub subskrypcji Marketplace dla modelu. Wdróż ponownie (wdrożenie o nią wnioskuje) albo zaakceptuj ją w konsoli Bedrock w sekcji Dostęp do modeli.",
+        "not_in_region": "Model nie jest oferowany w tym regionie. Wybierz w avatar-generation.json model obrazu oferowany w tym regionie.",
+        "unknown": "Nie udało się odczytać dostępu. Użyj Testu, aby sprawdzić model bezpośrednio."
+      }
+    },
     "surfaces": {
       "chat": {
         "description": "Pływający asystent świadomy kontekstu strony oraz pełnoekranowa strona czatu",
@@ -85,6 +110,7 @@
       "latency": "{{ms}} ms",
       "tokensPerMinute": "{{count, number}} tokenów/min",
       "quotaUnknown": "Limit nieznany",
+      "quotaStale": "Ostatni zapisany odczyt: trwa pobieranie nowego z Service Quotas",
       "all": "Testuj wszystkie modele",
       "allTitle": "Dostęp do modeli i przepustowość",
       "allIntro": "Wysyła po jednym krótkim zapytaniu do każdego modelu po kolei i pokazuje ich limit tokenów na minutę dla tego konta i regionu.",
@@ -182,7 +208,6 @@
     "noRunsYet": "Brak uruchomień",
     "clear": "Wyczyść",
     "configureFirst": "Skonfiguruj endpoint API w zakładce Ogólne, aby wyświetlić logi.",
-    "daysAgo": "{{count, number}}d temu",
     "daysAgo_one": "{{count, number}}d temu",
     "daysAgo_other": "{{count, number}}d temu",
     "errorLabel": "Błąd:",
@@ -191,10 +216,8 @@
     "errorsLabel": "Błędy:",
     "failures_one": "{{count, number}} niepowodzenie",
     "failures_other": "{{count, number}} niepowodzenia",
-    "hoursAgo": "{{count, number}}g temu",
     "hoursAgo_one": "{{count, number}}g temu",
     "hoursAgo_other": "{{count, number}}g temu",
-    "items": "{{count, number}} elem.",
     "items_one": "{{count, number}} element",
     "items_other": "{{count, number}} elementu",
     "justNow": "przed chwilą",
@@ -204,26 +227,21 @@
     "loadingRuns": "Ładowanie uruchomień...",
     "loadingSummary": "Ładowanie podsumowania...",
     "messageId": "ID wiadomości:",
-    "minutesAgo": "{{count, number}} min temu",
     "minutesAgo_one": "{{count, number}} min temu",
     "minutesAgo_other": "{{count, number}} min temu",
-    "moreEntries": "+{{count, number}} kolejnych wpisów",
     "moreEntries_one": "+{{count, number}} kolejny wpis",
     "moreEntries_other": "+{{count, number}} kolejnych wpisów",
     "noProcessingErrors": "Brak błędów przetwarzania w tym okresie",
     "noRunsInPeriod": "Brak uruchomień w tym okresie",
     "noScrapersConfigured": "Brak źródeł danych, które działają automatycznie. Dodaj je na stronie Źródła danych.",
     "noValidationFailures": "Brak błędów walidacji w tym okresie",
-    "pages": "{{count, number}} stron",
     "pages_one": "{{count, number}} strona",
     "pages_other": "{{count, number}} stron",
     "processingErrors": "Błędy przetwarzania",
     "recordKeys": "Obecne pola:",
-    "textLength": "Długość tekstu: {{count, number}} znaków",
     "textLength_one": "Długość tekstu: {{count, number}} znak",
     "textLength_other": "Długość tekstu: {{count, number}} znaków",
     "refresh": "Odśwież",
-    "runErrors": "{{count, number}} błędów",
     "runErrors_one": "{{count, number}} błąd",
     "runErrors_other": "{{count, number}} błędów",
     "scraperRuns": "Uruchomienia scraperów",
@@ -250,7 +268,93 @@
     "textLength_few": "Długość tekstu: {{count, number}} znaki",
     "textLength_many": "Długość tekstu: {{count, number}} znaków",
     "runErrors_few": "{{count, number}} błędy",
-    "runErrors_many": "{{count, number}} błędów"
+    "runErrors_many": "{{count, number}} błędów",
+    "system": {
+      "tab": "Błędy systemu",
+      "levelLabel": "Poziom logów",
+      "levelError": "Błędy",
+      "levelWarning": "Błędy i ostrzeżenia",
+      "searchingStart": "Przeszukiwanie logów…",
+      "searching_one": "Przeszukiwanie logów {{count, number}} funkcji…",
+      "searching_few": "Przeszukiwanie logów {{count, number}} funkcji…",
+      "searching_many": "Przeszukiwanie logów {{count, number}} funkcji…",
+      "searching_other": "Przeszukiwanie logów {{count, number}} funkcji…",
+      "searched_one": "Przeszukano logi {{count, number}} funkcji",
+      "searched_few": "Przeszukano logi {{count, number}} funkcji",
+      "searched_many": "Przeszukano logi {{count, number}} funkcji",
+      "searched_other": "Przeszukano logi {{count, number}} funkcji",
+      "empty": "Brak błędów w tym okresie",
+      "failed": "Wyszukiwanie w logach nie powiodło się. Spróbuj ponownie.",
+      "loadFailed": "Nie udało się wczytać logów systemu.",
+      "truncated": "Wyświetlanie najnowszych {{rows, number}} wierszy logów",
+      "download": "Pobierz",
+      "downloadTitle": "Pobierz te błędy jako plik JSON, aby przekazać je do analizy",
+      "adminOnly": "Błędy systemu są widoczne tylko dla administratorów.",
+      "times": "×{{n, number}}",
+      "occurrences_one": "{{count, number}} wystąpienie",
+      "occurrences_few": "{{count, number}} wystąpienia",
+      "occurrences_many": "{{count, number}} wystąpień",
+      "occurrences_other": "{{count, number}} wystąpienia",
+      "firstSeen": "Pierwsze wystąpienie",
+      "lastSeen": "Ostatnie wystąpienie",
+      "requestId": "ID żądania",
+      "sourceTitle": "Skąd pochodzą te wiersze",
+      "sourceApi": "API",
+      "sourceWorkflow": "Przepływ pracy",
+      "request": {
+        "show": "Pokaż całe żądanie",
+        "loading": "Odczytywanie wszystkich wierszy tego żądania…",
+        "loadFailed": "Nie udało się wczytać wierszy żądania.",
+        "failed": "Wyszukiwanie tego żądania nie powiodło się. Spróbuj ponownie.",
+        "retry": "Spróbuj ponownie",
+        "empty": "Nie znaleziono wierszy tego żądania (jego logi mogły wygasnąć).",
+        "truncated": "Wyświetlane są pierwsze wiersze (limit: {{lines, number}})",
+        "linesLabel": "Wiersze logu tego żądania",
+        "title_one": "{{count, number}} wiersz tego żądania",
+        "title_few": "{{count, number}} wiersze tego żądania",
+        "title_many": "{{count, number}} wierszy tego żądania",
+        "title_other": "{{count, number}} wiersza tego żądania"
+      },
+      "queues": {
+        "title": "Kolejki błędów",
+        "loading": "Sprawdzanie kolejek błędów…",
+        "loadFailed": "Nie udało się odczytać kolejek błędów.",
+        "oldest": "najstarsza: {{age}}",
+        "noSample": "Nie udało się odczytać żadnej wiadomości jako przykładu.",
+        "unreadable": "Nie udało się odczytać",
+        "peekNote": "Te wiadomości nie powiodły się przy każdej próbie i nie będą ponawiane. Odczytanie przykładu go nie usuwa.",
+        "empty_one": "Kolejka błędów jest pusta",
+        "empty_few": "Wszystkie {{count, number}} kolejki błędów są puste",
+        "empty_many": "Wszystkie {{count, number}} kolejek błędów jest pustych",
+        "empty_other": "Wszystkie kolejki błędów ({{count, number}}) są puste",
+        "messages_one": "{{count, number}} wiadomość",
+        "messages_few": "{{count, number}} wiadomości",
+        "messages_many": "{{count, number}} wiadomości",
+        "messages_other": "{{count, number}} wiadomości"
+      },
+      "environment": {
+        "title": "Środowisko",
+        "loading": "Wczytywanie środowiska…",
+        "loadFailed": "Nie udało się wczytać środowiska.",
+        "on": "Włączone",
+        "off": "Wyłączone",
+        "none": "Brak",
+        "fields": {
+          "version": "Wersja",
+          "region": "Region",
+          "account_suffix": "Konto (ostatnie 4 cyfry)",
+          "deployment_prefix": "Prefiks wdrożenia",
+          "enabled_sources": "Włączone źródła",
+          "web_search": "Wyszukiwanie w sieci",
+          "inference_scope": "Zakres wnioskowania",
+          "image_model": "Model obrazów",
+          "model_overrides": "Wybrane modele",
+          "alerting": "Alerty",
+          "open_circuits": "Wstrzymane źródła (bezpiecznik)",
+          "log_coverage": "Przeszukane logi"
+        }
+      }
+    }
   },
   "saveChanges": "Zapisz zmiany",
   "saved": "Zapisano!",
@@ -271,8 +375,6 @@
     "saveToSecrets": "Zapisz w Secrets Manager",
     "selectOption": "Wybierz...",
     "show": "Pokaż",
-    "test": "Testuj",
-    "unknownResult": "Nieznany wynik",
     "webhooks": "Webhooki",
     "circuit": {
       "paused": "Wstrzymano po powtarzających się błędach",
@@ -307,7 +409,8 @@
     "users": "Użytkownicy",
     "logs": "Logi",
     "version": "Wersja",
-    "radar": "Radar"
+    "radar": "Radar",
+    "boards": "Tablice"
   },
   "title": "Administracja",
   "users": {
@@ -332,6 +435,7 @@
     "retry": "Ponów",
     "loading": "Wczytywanie…",
     "saveFailed": "Nie udało się zapisać. Spróbuj ponownie.",
+    "discardChanges": "Odrzuć zmiany",
     "write": "Edycja",
     "preview": "Podgląd",
     "nothingToPreview": "Brak treści do wyświetlenia.",
@@ -381,13 +485,25 @@
     "removeKpi": "Usuń KPI",
     "kpiName": "Nazwa KPI",
     "kpiTarget": "Wartość docelowa",
-    "kpiUnit": "Jednostka"
+    "kpiUnit": "Jednostka",
+    "fieldRequired": "Wymagane: wypełnij albo usuń wiersz",
+    "fieldTooLong": "Maksymalnie {{max, number}} znaków",
+    "fixFields": "Nie zapisano: popraw zaznaczone pola."
   },
   "designSystem": {
     "title": "System projektowy",
     "description": "Twoje tokeny marki, wytyczne i referencje. Prototypy i wizualizacje PR/FAQ są tworzone na ich podstawie, aby pasowały do Twojego wyglądu.",
     "logoAlt": "Logo firmy",
+    "logoInDraft": "Nowe logo z referencji — stanie się logo firmy po zapisaniu systemu projektowego.",
     "uploadLogo": "Prześlij logo",
+    "logoHint": "PNG, JPEG, WebP lub SVG (SVG jest konwertowany do PNG w przeglądarce).",
+    "svg": {
+      "tooLarge": "Plik {{name}} jest większy niż 1 MB. Logo SVG może mieć najwyżej 1 MB.",
+      "unreadable": "Nie udało się odczytać pliku {{name}} jako obrazu SVG. Wyeksportuj go jako PNG i prześlij ten plik.",
+      "timeout": "Konwersja pliku {{name}} trwała zbyt długo. Wyeksportuj go jako PNG i prześlij ten plik.",
+      "notConverted": "Nie udało się przekonwertować tego pliku SVG w przeglądarce. Wyeksportuj go jako PNG i prześlij ten plik.",
+      "resultTooLarge": "Przekonwertowany plik PNG jest większy niż 5 MB. Wyeksportuj mniejszy PNG i prześlij go."
+    },
     "colors": "Kolory",
     "typography": "Typografia",
     "spacing": "Odstępy",
@@ -431,12 +547,22 @@
     "archive": "Archiwizuj",
     "archiveTitle": "Zarchiwizować tę referencję?",
     "archiveMessage": "\"{{title}}\" nie będzie już używana w nowych prototypach. Plik zostanie zachowany.",
+    "archiveMessageLink": "\"{{title}}\" nie będzie już używana w nowych prototypach. Link i to, co z niego odczytano, zostaną zachowane.",
     "referenceKind": "Typ referencji",
     "referenceTitle": "Tytuł",
     "referenceUrl": "Link (https://…)",
+    "urlProblems": {
+      "tooLong": "Adres ma więcej niż 2048 znaków.",
+      "notUrl": "To nie jest adres internetowy. Wklej pełny link zaczynający się od https://",
+      "notHttps": "Można odczytać tylko adresy https://; adresy {{scheme}}:// są odrzucane.",
+      "noHost": "Po https:// potrzebna jest nazwa witryny, na przykład https://example.com",
+      "credentials": "Usuń z adresu nazwę użytkownika lub hasło.",
+      "localhost": "Nie można odczytać adresów na tym komputerze; użyj publicznej witryny."
+    },
     "referenceFile": "Plik",
     "addReference": "Dodaj referencję",
     "addReferenceFailed": "Nie udało się dodać referencji. Spróbuj ponownie.",
+    "duplicateReference": "Ten adres jest już referencją: \"{{title}}\".",
     "referenceTitleOptional": "Tytuł (opcjonalnie)",
     "kindHints": {
       "website": "Otwieramy stronę w bezpiecznej przeglądarce i odczytujemy jej kolory, czcionki i logo.",
@@ -479,11 +605,10 @@
       "variantsCount_other": "{{count, number}} wariantu",
       "onlyGuidelines": "Tylko wytyczne",
       "logoCandidate": "Logo znalezione w tej referencji",
+      "logoRendered": "Wyrenderowano z logo SVG strony",
       "apply": "Użyj jako systemu projektowego",
       "useLogo": "Użyj tego logo",
-      "logoFailed": "Nie udało się użyć tego logo. Spróbuj ponownie.",
-      "replaceLogoTitle": "Zastąpić obecne logo?",
-      "replaceLogoMessage": "Logo z „{{title}}” zastąpi obecne logo."
+      "logoFailed": "Nie udało się użyć tego logo. Spróbuj ponownie."
     },
     "applied": {
       "title": "Z {{source}} — przejrzyj zmiany, a potem zapisz.",
@@ -561,6 +686,7 @@
         "padding": "Dopełnienie",
         "gap": "Odstęp",
         "height": "Wysokość",
+        "width": "Szerokość",
         "font_family": "Czcionka",
         "font_size": "Rozmiar czcionki",
         "font_weight": "Grubość czcionki",
@@ -570,6 +696,7 @@
         "outline": "Obrys fokusu"
       },
       "hoverField": "{{field}} po najechaniu",
+      "focusField": "{{field}} po zaznaczeniu",
       "hoverFocus": "Najechanie i fokus",
       "useToken": "Użyj tokenu…",
       "useTokenFor": "Użyj tokenu koloru dla pola {{field}}",
@@ -587,6 +714,7 @@
         "padding": "Użyj od jednej do czterech długości, np. 8px 16px.",
         "gap": "Użyj długości, np. 8px.",
         "height": "Użyj długości, np. 36px.",
+        "width": "Użyj długości, np. 36px.",
         "font_family": "Użyj nazw czcionek oddzielonych przecinkami.",
         "font_size": "Użyj długości, np. 14px.",
         "font_weight": "Użyj 100–900, normal lub bold.",
@@ -690,5 +818,183 @@
     "changelogTitle": "Informacje o wydaniach",
     "changelogDescription": "Zmiany w każdym wydaniu, od najnowszego, z CHANGELOG.md.",
     "showOlder": "Pokaż starsze wydania (pozostało: {{count, number}})"
+  },
+  "pluginCopy": {
+    "appReviewsAndroid": {
+      "name": "Opinie o aplikacjach na Androida",
+      "description": "Zbiera opinie klientów ze sklepu Google Play"
+    },
+    "appReviewsIos": {
+      "name": "Opinie o aplikacjach na iOS",
+      "description": "Zbiera opinie klientów z Apple App Store"
+    },
+    "githubIssues": {
+      "name": "Zgłoszenia GitHub",
+      "description": "Pobiera zgłoszenia i komentarze z repozytoriów GitHub, z wersją oprogramowania, etykietami i sygnaturami błędów"
+    },
+    "s3Import": {
+      "name": "Import zbiorczy z S3",
+      "description": "Importuje opinie z zasobnika S3 (CSV, JSON, JSONL)"
+    },
+    "syntheticReviews": {
+      "name": "Generator syntetycznych opinii",
+      "description": "Generuje realistyczne syntetyczne opinie klientów za pomocą AI (Amazon Bedrock) na potrzeby demonstracji, testów i modelowania. Przechodzą przez zwykły potok i są oznaczone jako dane syntetyczne."
+    },
+    "webReviews": {
+      "name": "Opinie z sieci",
+      "description": "Odczytuje opinie klientów z publicznych stron z opiniami (Trustpilot, TripAdvisor, fora) za pomocą zarządzanej przeglądarki. Każda dodana strona jest osobnym źródłem."
+    },
+    "webscraper": {
+      "name": "Scraper stron WWW",
+      "description": "Konfigurowalny scraper do pobierania opinii ze stron internetowych"
+    }
+  },
+  "boards": {
+    "loading": "Wczytywanie…",
+    "saved": "Zapisano.",
+    "cancel": "Anuluj",
+    "domains": {
+      "title": "Domeny firmy",
+      "description": "Domeny e-mail należące do firmy. Osoby z tych domen mogą logować się do każdej tablicy otwartej dla firmy i są traktowane jako współpracownicy przy dodawaniu uczestników.",
+      "label": "Domeny e-mail firmy",
+      "hint": "Po każdej domenie naciśnij Enter. Bez domen nikt nie zaloguje się do tablicy firmowej.",
+      "save": "Zapisz domeny",
+      "loadFailed": "Nie udało się wczytać domen firmy."
+    },
+    "participantCard": {
+      "domains": "Domeny firmy: {{list}}.",
+      "noDomains": "Brak domen firmy.",
+      "editInBoards": "Edytuj je w sekcji Tablice"
+    },
+    "list": {
+      "title": "Tablice opinii",
+      "description": "Każda tablica zbiera zgłoszenia jednego zespołu lub grupy odbiorców i ma własny link, pola i statusy.",
+      "create": "Nowa tablica",
+      "empty": "Brak tablic. Utwórz pierwszą z szablonu.",
+      "loadFailed": "Nie udało się wczytać tablic.",
+      "archived": "Zarchiwizowana",
+      "edit": "Edytuj",
+      "editLabel": "Edytuj {{name}}",
+      "requests_one": "{{count, number}} zgłoszenie",
+      "requests_few": "{{count, number}} zgłoszenia",
+      "requests_many": "{{count, number}} zgłoszeń",
+      "requests_other": "{{count, number}} zgłoszenia"
+    },
+    "templates": {
+      "sales": "Prośby o funkcje od działu sprzedaży",
+      "salesHint": "Klient, transakcja i wpływ na przychód przy każdym zgłoszeniu i +1.",
+      "service": "Problemy obsługi klienta",
+      "serviceHint": "Rodzaj problemu, waga, numer referencyjny i kroki; +1 oznacza, że też dotyczy.",
+      "beta": "Opinie z wersji beta",
+      "betaHint": "Obszar produktu, wynik, ocena i link dla testerów.",
+      "blank": "Pusta",
+      "blankHint": "Tylko tytuł i opis; pola dodasz później."
+    },
+    "create": {
+      "title": "Nowa tablica",
+      "hint": "Wybierz szablon na start. Wszystkie pola i statusy można potem zmienić.",
+      "template": "Szablon",
+      "slugPreview": "Link do udostępnienia: /board/{{slug}}",
+      "slugLater": "Link do udostępnienia powstanie z nazwy przy tworzeniu tablicy.",
+      "submit": "Utwórz tablicę"
+    },
+    "editor": {
+      "title": "Tablica",
+      "back": "Wróć do tablic",
+      "name": "Nazwa",
+      "slug": "Nazwa linku",
+      "slugHint": "Małe litery, cyfry i pojedyncze myślniki, najwyżej 60 znaków.",
+      "shareLink": "Link do udostępnienia:",
+      "shareAfterSave": "(po zapisaniu)",
+      "copyLink": "Kopiuj link",
+      "copied": "Skopiowano.",
+      "description": "Opis",
+      "save": "Zapisz tablicę",
+      "unsaved": "Niezapisane zmiany."
+    },
+    "audience": {
+      "title": "Kto może się logować i publikować",
+      "company": "Firma",
+      "companyHint": "Osoby z domen firmy.",
+      "list": "Wybrane osoby",
+      "listHint": "Dozwolone domeny i adresy e-mail.",
+      "anyone": "Każdy",
+      "anyoneHint": "Dowolny adres e-mail, który się potwierdzi.",
+      "companyDomains": "Używa domen firmy: {{list}}.",
+      "noCompanyDomains": "Nie ustawiono jeszcze domen firmy, więc nikt nie może zalogować się do tej tablicy.",
+      "domains": "Dozwolone domeny",
+      "emails": "Dozwolone adresy e-mail",
+      "emailsCount_one": "{{count, number}} adres (najwyżej {{max, number}}).",
+      "emailsCount_few": "{{count, number}} adresy (najwyżej {{max, number}}).",
+      "emailsCount_many": "{{count, number}} adresów (najwyżej {{max, number}}).",
+      "emailsCount_other": "{{count, number}} adresu (najwyżej {{max, number}}).",
+      "emailsInvalid": "Nieprawidłowe adresy e-mail: {{list}}",
+      "anyoneWarning": "Każdy adres e-mail może się zalogować i publikować na tej tablicy. Nie ma moderacji: każda osoba może dodać najwyżej 20 zgłoszeń i 100 +1 dziennie."
+    },
+    "fieldsEditor": {
+      "title": "Pola",
+      "hint": "Tytuł i opis są zawsze wymagane. Włącz pola potrzebne tej tablicy.",
+      "requestGroup": "W nowym zgłoszeniu",
+      "supportGroup": "Przy +1",
+      "required": "Wymagane",
+      "requiredLabel": "{{field}} wymagane"
+    },
+    "fields": {
+      "customer": "Klient",
+      "deal": "Transakcja",
+      "impact": "Wpływ na przychód",
+      "amount_usd": "Kwota (USD)",
+      "contact_email": "E-mail kontaktowy",
+      "kind": "Rodzaj problemu",
+      "severity": "Waga",
+      "reference": "Numer rezerwacji lub zamówienia",
+      "steps": "Kroki do odtworzenia",
+      "affected_count": "Liczba osób, których dotyczy",
+      "area": "Obszar produktu",
+      "outcome": "Wynik",
+      "rating": "Ocena",
+      "link": "Link",
+      "note": "Notatka"
+    },
+    "statuses": {
+      "title": "Statusy",
+      "hint": "Nowe zgłoszenia zaczynają od pierwszego statusu. Najwyżej {{max, number}} statusów.",
+      "initial": "Początkowy",
+      "labelFor": "Nazwa statusu {{position, number}}",
+      "moveUp": "Przenieś {{status}} wyżej",
+      "moveDown": "Przenieś {{status}} niżej",
+      "remove": "Usuń {{status}}",
+      "newLabel": "Nowy status",
+      "add": "Dodaj status",
+      "full": "Tablica może mieć najwyżej {{max, number}} statusów."
+    },
+    "lifecycle": {
+      "title": "Archiwizuj lub usuń",
+      "hint_one": "Ta tablica ma {{count, number}} zgłoszenie. Archiwizacja ukrywa ją przed wszystkimi poza administratorami i zachowuje zgłoszenia; usunięcie kasuje tablicę i jej zgłoszenia.",
+      "hint_few": "Ta tablica ma {{count, number}} zgłoszenia. Archiwizacja ukrywa ją przed wszystkimi poza administratorami i zachowuje zgłoszenia; usunięcie kasuje tablicę i jej zgłoszenia.",
+      "hint_many": "Ta tablica ma {{count, number}} zgłoszeń. Archiwizacja ukrywa ją przed wszystkimi poza administratorami i zachowuje zgłoszenia; usunięcie kasuje tablicę i jej zgłoszenia.",
+      "hint_other": "Ta tablica ma {{count, number}} zgłoszenia. Archiwizacja ukrywa ją przed wszystkimi poza administratorami i zachowuje zgłoszenia; usunięcie kasuje tablicę i jej zgłoszenia.",
+      "saveFirst": "Najpierw zapisz lub odrzuć zmiany.",
+      "archive": "Archiwizuj",
+      "restore": "Przywróć",
+      "delete": "Usuń tablicę"
+    },
+    "problems": {
+      "nameRequired": "Tablica potrzebuje nazwy.",
+      "slugInvalid": "Nazwa linku może zawierać tylko małe litery, cyfry i pojedyncze myślniki.",
+      "statusesEmpty": "Tablica potrzebuje co najmniej jednego statusu.",
+      "statusLabelRequired": "Każdy status potrzebuje nazwy.",
+      "emailsInvalid": "Popraw lub usuń nieprawidłowe adresy e-mail.",
+      "emailsTooMany": "Najwyżej 500 adresów e-mail.",
+      "listEmpty": "Dodaj co najmniej jedną dozwoloną domenę lub adres e-mail."
+    },
+    "errors": {
+      "slugTaken": "Inna tablica używa już tej nazwy linku. Wybierz inną.",
+      "statusInUse": "Usunięty status jest nadal używany przez zgłoszenia na tej tablicy. Najpierw przenieś te zgłoszenia do innego statusu albo zachowaj status.",
+      "forbidden": "Tylko administratorzy mogą zmieniać tablice.",
+      "notFound": "Ta tablica już nie istnieje.",
+      "conflict": "Tablica zmieniła się w międzyczasie. Wczytaj ją ponownie i spróbuj jeszcze raz.",
+      "generic": "Coś poszło nie tak. Spróbuj ponownie."
+    }
   }
 }

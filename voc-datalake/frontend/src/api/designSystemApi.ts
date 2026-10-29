@@ -15,6 +15,7 @@
  *
  * @module api/designSystemApi
  */
+import { del, post, put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import { lenientText as text, optionalText, parsedList } from './schemaList'
@@ -33,7 +34,8 @@ const MB = 1024 * 1024
 export const UPLOAD_LIMITS = {
   screenshot: { types: ['image/png', 'image/jpeg', 'image/webp'], maxBytes: 5 * MB },
   html: { types: ['text/html'], maxBytes: 2 * MB },
-  // No SVG: an SVG is a document that can carry script (the API refuses it too).
+  // No SVG: an SVG is a document that can carry script (the API refuses it too). The logo picker
+  // still offers SVG: utils/svgToPng converts it to PNG in the browser and only the PNG is sent.
   logo: { types: ['image/png', 'image/jpeg', 'image/webp'], maxBytes: 5 * MB },
 } as const satisfies Record<string, { types: readonly string[]; maxBytes: number }>
 export type UploadTarget = keyof typeof UPLOAD_LIMITS
@@ -75,8 +77,16 @@ const imageSrc = z.string().regex(SAFE_IMAGE_SRC_RE).optional().catch(undefined)
  * A logo the reference points at — a candidate only; the logo route fetches and stores it.
  * `preview_url` (wave 13) is a copy the server downloaded and serves like `logo_url`, so the
  * app's CSP (`img-src 'self'`) lets it show; absent when that download failed.
+ *
+ * `rendered` (5.39) is true when the capture browser drew the site's SVG logo to a PNG; anything
+ * but a boolean reads as absent.
  */
-const LogoCandidateSchema = z.object({ source_url: z.url(), content_type: optionalText, preview_url: imageSrc })
+const LogoCandidateSchema = z.object({
+  source_url: z.url(),
+  content_type: optionalText,
+  preview_url: imageSrc,
+  rendered: z.boolean().optional().catch(undefined),
+})
 export type LogoCandidate = z.output<typeof LogoCandidateSchema>
 const nullableLogo = LogoCandidateSchema.nullable().optional().transform((logo) => logo ?? null).catch(null)
 
@@ -183,10 +193,17 @@ export function normalizeAppliedDraft(raw: unknown): AppliedDraft {
   return AppliedDraftSchema.parse(envelope.data.draft)
 }
 
-/** `{logo_url}` from the reference-logo route, or null when absent. */
-export function readLogoUrl(raw: unknown): string | null {
-  const parsed = z.object({ logo_url: z.string().min(1) }).safeParse(raw)
-  return parsed.success ? parsed.data.logo_url : null
+/**
+ * A reference's logo put into the editor's draft ("Use this logo"): the API stored the file but saved
+ * nothing; `url` is its signed preview, and Save sends `logo_id` to make it the company logo.
+ */
+const DraftLogoSchema = z.object({ logo_id: z.string().regex(/^logo_[0-9a-f]{12}\.(png|jpg|webp)$/), logo_url: z.string().min(1) })
+export interface DraftLogo { id: string; url: string }
+
+/** `{logo_id, logo_url}` from the reference-logo route, or null when it is not that shape. */
+export function readDraftLogo(raw: unknown): DraftLogo | null {
+  const parsed = DraftLogoSchema.safeParse(raw)
+  return parsed.success ? { id: parsed.data.logo_id, url: parsed.data.logo_url } : null
 }
 
 export interface CreatedReference {
@@ -235,54 +252,54 @@ export interface DesignSystemBody {
   tokens: DesignTokens
   guidelines: string
   components: DesignComponent[]
+  /** A reference's logo the draft carries ("Use this logo"); saved as the company logo only with the rest. */
+  logo?: DraftLogo | null
 }
 
-/** The PUT body: components in THE CONTRACT wire shape (empty values dropped). */
+/** The PUT body: components in THE CONTRACT wire shape (empty values dropped), `logo_id` when the draft has a logo. */
 export function designSystemBody(value: DesignSystemBody): unknown {
-  return { tokens: value.tokens, guidelines: value.guidelines, components: toWireComponents(value.components) }
+  const body = { tokens: value.tokens, guidelines: value.guidelines, components: toWireComponents(value.components) }
+  return value.logo ? { ...body, logo_id: value.logo.id } : body
 }
 
 const BASE = '/settings/design-system'
 
 export const designSystemKey = () => ['design-system'] as const
 
+/** The document route with its raw answer (the assistant's design-system executor); `designSystemApi` normalises it. */
+export const designSystemRequests = {
+  get: () => fetchApi<unknown>(BASE),
+  put: (body: unknown) => fetchApi<unknown>(BASE, put(body)),
+}
+
 export const designSystemApi = {
-  get: async (): Promise<DesignSystem> => normalizeDesignSystem(await fetchApi<unknown>(BASE)),
+  get: async (): Promise<DesignSystem> => normalizeDesignSystem(await designSystemRequests.get()),
 
   save: async (body: DesignSystemBody): Promise<DesignSystem> =>
-    normalizeDesignSystem(await fetchApi<unknown>(BASE, { method: 'PUT', body: JSON.stringify(designSystemBody(body)) })),
+    normalizeDesignSystem(await designSystemRequests.put(designSystemBody(body))),
 
   createReference: async (request: CreateReferenceRequest): Promise<CreatedReference> =>
-    normalizeCreatedReference(await fetchApi<unknown>(`${BASE}/references`, {
-      method: 'POST',
-      body: JSON.stringify(request),
-    })),
+    normalizeCreatedReference(await fetchApi<unknown>(`${BASE}/references`, post(request))),
 
   refreshReference: async (id: string): Promise<void> => {
-    await fetchApi<unknown>(`${BASE}/references/${encodeURIComponent(id)}/refresh`, { method: 'POST' })
+    await fetchApi<unknown>(`${BASE}/references/${encodeURIComponent(id)}/refresh`, post())
   },
 
   archiveReference: async (id: string): Promise<void> => {
-    await fetchApi<unknown>(`${BASE}/references/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    await fetchApi<unknown>(`${BASE}/references/${encodeURIComponent(id)}`, del())
   },
 
   /** The saved design system merged with a reference's extracted design — NOT saved (the admin presses Save). */
   applyReference: async (id: string): Promise<AppliedDraft> =>
-    normalizeAppliedDraft(await fetchApi<unknown>(`${BASE}/references/${encodeURIComponent(id)}/apply`, { method: 'POST' })),
+    normalizeAppliedDraft(await fetchApi<unknown>(`${BASE}/references/${encodeURIComponent(id)}/apply`, post())),
 
-  /** Fetch the reference's logo candidate server-side and store it as the company logo. */
-  adoptReferenceLogo: async (id: string): Promise<string | null> =>
-    readLogoUrl(await fetchApi<unknown>(`${BASE}/references/${encodeURIComponent(id)}/logo`, { method: 'POST' })),
+  /** Fetch the reference's logo candidate server-side for the draft — NOT saved (Save sends its `logo_id`). */
+  draftReferenceLogo: async (id: string): Promise<DraftLogo | null> =>
+    readDraftLogo(await fetchApi<unknown>(`${BASE}/references/${encodeURIComponent(id)}/logo`, post())),
 
   createLogoUpload: async (contentType: string, sizeBytes: number): Promise<PresignedUpload | null> =>
-    readUpload(await fetchApi<unknown>(`${BASE}/logo`, {
-      method: 'POST',
-      body: JSON.stringify({ content_type: contentType, size_bytes: sizeBytes }),
-    })),
+    readUpload(await fetchApi<unknown>(`${BASE}/logo`, post({ content_type: contentType, size_bytes: sizeBytes }))),
 
   saveIntegrations: async (tokens: { figma_token?: string; github_token?: string }): Promise<IntegrationsStatus> =>
-    normalizeIntegrations(await fetchApi<unknown>(`${BASE}/integrations`, {
-      method: 'PUT',
-      body: JSON.stringify(tokens),
-    })),
+    normalizeIntegrations(await fetchApi<unknown>(`${BASE}/integrations`, put(tokens))),
 }

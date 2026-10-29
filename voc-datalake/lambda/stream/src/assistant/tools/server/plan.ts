@@ -18,7 +18,8 @@ import { ADMIN_ONLY_CLIENT_TOOLS, ADMIN_ONLY_PACKS, ADMIN_ONLY_SERVER_TOOLS, TOO
 import type { AssistantRunContext, AssistantToolDefinition, ServerToolDefinition } from '../../types.js';
 import type { ToolDeps } from '../deps.js';
 import { AssistantToolError } from '../errors.js';
-import { isRecord, jsonResult } from '../format.js';
+import { isRecord } from '../../../lib/is-record.js';
+import { jsonResult } from '../format.js';
 import { parseToolInput, toolSpec } from '../spec.js';
 import { FREE_TEXT_FIELDS, NEVER_PREAPPROVABLE_TOOLS, PLAN_CONTROL_TOOLS, PLAN_ID_RE, PLAN_LIMITS } from '../../plan/schema.js';
 import { THINK_DEFAULT_OUTPUT } from '../../plan/outputs.js';

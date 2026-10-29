@@ -44,11 +44,10 @@ describe('formatTime', () => {
 })
 
 describe('getTimeRangeLabel', () => {
-  it('maps preset tokens to human-readable labels', () => {
-    expect(getTimeRangeLabel('24h')).toBe('24 Hours')
-    expect(getTimeRangeLabel('48h')).toBe('48 Hours')
-    expect(getTimeRangeLabel('7d')).toBe('7 Days')
-    expect(getTimeRangeLabel('30d')).toBe('30 Days')
+  it.each([
+    ['24h', '24 Hours'], ['48h', '48 Hours'], ['7d', '7 Days'], ['14d', '14 Days'], ['30d', '30 Days'],
+  ])('maps the %s preset token to "%s"', (token, label) => {
+    expect(getTimeRangeLabel(token)).toBe(label)
   })
 
   it('labels the 90d preset "90 Days" and the "all" token "All time" (never the raw token)', () => {

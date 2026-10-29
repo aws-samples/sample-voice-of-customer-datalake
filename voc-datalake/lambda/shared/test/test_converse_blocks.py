@@ -1,7 +1,7 @@
 """``shared.converse.converse_blocks``: the one path for Converse calls whose turn is not plain text.
 
-Persona import (image), design references (image), email intake (attachments) and
-the product interview (tool use) once built their own requests. Each former request
+Persona import (image), design references (image) and email intake (attachments)
+once built their own requests. Each former request
 is written out below as the literal it was, and the new call must hand boto exactly
 those kwargs (the callers' own suites pin the same requests from their side).
 """
@@ -51,11 +51,9 @@ class TestTheRequest:
         assert config(MODEL) == {'maxTokens': 10, 'temperature': 0.3}
         assert config(NO_TEMPERATURE_MODEL) == {'maxTokens': 10}
 
-    def test_no_system_block_without_a_system_prompt_and_a_tool_config_when_given(self):
-        kwargs = build_blocks_request(MODEL, messages=[], system_prompt='', max_tokens=10,
-                                      tool_config={'tools': []})
+    def test_no_system_block_without_a_system_prompt(self):
+        kwargs = build_blocks_request(MODEL, messages=[], system_prompt='', max_tokens=10)
         assert 'system' not in kwargs
-        assert kwargs['toolConfig'] == {'tools': []}
 
     def test_an_eu_deployment_sends_the_eu_profile(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv(model_config.INFERENCE_SCOPE_ENV, 'eu')
@@ -65,7 +63,7 @@ class TestTheRequest:
 
 class TestTheCall:
     def test_the_surfaces_model_is_resolved_and_the_raw_response_returned(self, retry):
-        answer = {'output': {'message': {'content': [{'toolUse': {'name': 't', 'input': {}}}]}}}
+        answer = {'output': {'message': {'content': [{'text': 'a design system'}]}}}
         client = _client(answer)
         with patch('shared.converse.get_active_model_id', return_value=MODEL) as model:
             assert converse_blocks(client, IMAGE, surface='documents', system_prompt='S', max_tokens=5,
@@ -86,17 +84,6 @@ class TestTheCall:
                             max_tokens=5, step_name='step')
         model.assert_not_called()
         assert client.converse.call_args.kwargs['modelId'] == MODEL
-
-    @pytest.mark.usefixtures('retry')
-    def test_prior_turns_go_before_the_user_turn(self):
-        client = _client()
-        prior = [{'role': 'user', 'content': [{'text': 'a'}]}, {'role': 'assistant', 'content': [{'text': 'b'}]}]
-        with patch('shared.converse.get_active_model_id', return_value=MODEL):
-            converse_blocks(client, [{'text': 'c'}], surface='chat', system_prompt='S', max_tokens=5,
-                            prior_turns=prior, step_name='step')
-        assert client.converse.call_args.kwargs['messages'] == [
-            *prior, {'role': 'user', 'content': [{'text': 'c'}]},
-        ]
 
     def test_the_retry_policy_settings_pass_through(self, retry):
         with patch('shared.converse.get_active_model_id', return_value=MODEL):

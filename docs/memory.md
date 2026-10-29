@@ -8,6 +8,11 @@ imports — and recalls it in the AI surfaces listed under "Who recalls what" be
 | **Company** | every signed-in user — except that a user restricted to some categories never sees a memory about, or naming, a category outside their access (see "Category access" below) | admins and users with the **memory reviewer** flag; anyone else's company add is stored as `proposed` |
 | **Personal** | its owner only (admins never see its content) | its owner |
 
+On the Memory page, whoever can change a memory edits its statement inline (pencil, then Save or Cancel —
+`PUT /memory/{id}`; Cancel or Escape keeps the saved text). A company memory offers **+1** to anyone; your own
+personal memory offers **Still true** instead (the same `POST /memory/{id}/confirm`: it refreshes the memory
+against the 90-day decay and is never counted as a supporter).
+
 Rule for the extractor (owner's examples, verbatim in the prompt): generic and valuable for the company — any
 product, customer or project knowledge — is **company**; specific to one user is **personal**.
 "I like you to reply in short" → personal. "Our customer demonstrated they xx and xx" → company.
@@ -134,7 +139,7 @@ Two policies, one helper each side (`lambda/shared/grounding.py`; the generators
 | Surface | Policy | Memory | Company context | How |
 |---|---|---|---|---|
 | Research (Step Functions) | SHARED | company | yes | `voc-research-step` reads voc-memory directly (query = the research question); the text rides the scratch claim-check `scratch/research_jobs/<job_id>/grounding.txt`, only `grounding_included` rides the state |
-| PR/FAQ, PRD, prototypes (document generator) | SHARED | company | yes (+ design system) | direct read (query = feature idea / title) |
+| PR/FAQ, PRD, prototypes (document generator) | SHARED | company | yes (+ design system for prototypes only) | direct read (query = feature idea / title) |
 | Persona generation | SHARED | company, kinds `product` and `customer` only | yes | direct read, on the analysis step only |
 | Agent steps (`voc-agent-nodes`) | SHARED (agent principal) | company | yes | `POST /memory/retrieve` as the `agent:` principal (company scope only) |
 | Assistant (`/chat/stream`) | PRIVATE | company + the caller's personal | yes, + the caller's own objectives (auto-injected, ≤ 2 KB) | `POST /memory/retrieve` as the caller |

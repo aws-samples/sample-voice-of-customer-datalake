@@ -39,9 +39,9 @@ function buildForm(): FeedbackForm {
 
 const noop = () => undefined
 
-function renderCard(form: FeedbackForm, apiEndpoint = 'https://api.example.com') {
+function renderCard(form: FeedbackForm, apiEndpoint = 'https://api.example.com', statsRefreshing = false) {
   return render(
-    <FormCard form={form} onEdit={noop} onDelete={noop} onToggle={noop} apiEndpoint={apiEndpoint} />,
+    <FormCard form={form} onEdit={noop} onDelete={noop} onToggle={noop} apiEndpoint={apiEndpoint} statsRefreshing={statsRefreshing} />,
     { wrapper: createQueryWrapper() },
   )
 }
@@ -72,7 +72,7 @@ describe('FormCard (issue #171)', () => {
 
   it('says Live or Off on a labelled switch and toggles the form', async () => {
     const onToggle = vi.fn()
-    render(<FormCard form={buildForm()} onEdit={noop} onDelete={noop} onToggle={onToggle} apiEndpoint="https://api.example.com" />,
+    render(<FormCard form={buildForm()} onEdit={noop} onDelete={noop} onToggle={onToggle} apiEndpoint="https://api.example.com" statsRefreshing={false} />,
       { wrapper: createQueryWrapper() })
 
     const live = screen.getByRole('switch', { name: 'Live' })
@@ -85,6 +85,30 @@ describe('FormCard (issue #171)', () => {
     renderCard({ ...buildForm(), category: 'software_firmware', subcategory: 'boot_loop' })
 
     expect(screen.getByText('Software firmware / Boot loop')).toBeInTheDocument()
+  })
+
+  // 5.34.00 live finding: "1 Submissions".
+  it('says one Submission and three Submissions', async () => {
+    mockGetFeedbackFormStats.mockResolvedValue({ success: true, form_id: 'form_1', stats: { total_submissions: 1, avg_rating: 4, rating_count: 1 } })
+    renderCard(buildForm())
+    expect(await screen.findByText('Submission')).toBeInTheDocument()
+    expect(screen.queryByText('Submissions')).not.toBeInTheDocument()
+  })
+
+  // 5.34.00 live finding: the cards said "0" for ~5 s while their counts were still being read.
+  it('shows busy placeholders, never a count, while the stats are being read', async () => {
+    mockGetFeedbackFormStats.mockReturnValue(new Promise(() => undefined))
+    renderCard(buildForm())
+    const figure = screen.getByText('Submissions').closest('[aria-busy]')
+    expect(figure).toHaveAttribute('aria-busy', 'true')
+    expect(figure).not.toHaveTextContent(/\d/)
+    expect(screen.queryByText('0')).not.toBeInTheDocument()
+  })
+
+  it('shows placeholders while the page re-reads the list, instead of the cached count', async () => {
+    renderCard(buildForm(), 'https://api.example.com', true)
+    expect(await screen.findByText('Submissions')).toBeInTheDocument()
+    expect(screen.getByText('Submissions').closest('[aria-busy]')).toHaveAttribute('aria-busy', 'true')
   })
 
   it('explains why View submissions is disabled when there are none', async () => {
@@ -259,7 +283,7 @@ describe('FormCard: a disabled form says what that means (E2E F6)', () => {
   it('explains the disabled state and enables the form in one click', async () => {
     const onToggle = vi.fn()
     render(
-      <FormCard form={{ ...buildForm(), enabled: false }} onEdit={noop} onDelete={noop} onToggle={onToggle} apiEndpoint="https://api.example.com" />,
+      <FormCard form={{ ...buildForm(), enabled: false }} onEdit={noop} onDelete={noop} onToggle={onToggle} apiEndpoint="https://api.example.com" statsRefreshing={false} />,
       { wrapper: createQueryWrapper() },
     )
 

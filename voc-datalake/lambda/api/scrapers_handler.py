@@ -68,6 +68,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import assist_jobs
 from shared.api import api_handler, create_api_resolver, get_caller_subject, require_admin
+from shared.app_connector_listing import connectors_in_secret
 from shared.aws import get_secrets_client, put_secret_json
 from shared.exceptions import ConfigurationError, ServiceError, ValidationError
 from shared.ids import timestamped_id
@@ -75,8 +76,10 @@ from shared.logging import logger, tracer
 from shared.producer_labels import normalise_label_fields
 from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_object_body
+from shared.row_ids import OPAQUE_ID_RE
 from shared.scraper_run_errors import redacted_scraper_errors
 from shared.tables import get_aggregates_table
+from shared.timestamps import now_iso
 from shared.url_policy import (
     PRIVATE_ADDRESS_ERROR,
     BlockedDestinationError,
@@ -264,7 +267,6 @@ def _scraper_url_error(scraper: dict) -> str | None:
 # one save may put there is bounded even for an admin: a typo or a runaway client
 # must not lock integration credentials out of the secret.
 # The editor already stays inside all of these (its max-pages input is max=50).
-SCRAPER_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,64}\Z')
 MAX_SCRAPERS = 50
 MAX_SCRAPER_BYTES = 8 * 1024
 # The whole `webscraper_configs` value. Secrets Manager caps the secret at 64 KiB
@@ -349,7 +351,7 @@ def _scraper_shape_error(scraper: dict) -> str | None:
     """Why `scraper` is malformed or too large to store, else None. Cheap checks
     only; the DNS-resolving URL policy runs after these pass."""
     scraper_id = scraper.get('id')
-    if not isinstance(scraper_id, str) or not SCRAPER_ID_PATTERN.fullmatch(scraper_id):
+    if not isinstance(scraper_id, str) or not OPAQUE_ID_RE.fullmatch(scraper_id):
         return 'id must be 1-64 letters, digits, "_" or "-"'
     for check in (_text_fields_error, _url_fields_error, _schedule_fields_error):
         error = check(scraper)
@@ -485,6 +487,25 @@ def delete_scraper(scraper_id: str):
     return {'success': True}
 
 
+@app.get("/scrapers/connectors")
+@tracer.capture_method
+def list_app_connectors():
+    """The app-review connectors and review pages with their Radar brand (shared/app_connector_listing.py).
+
+    Read-only and open to every signed-in user, like GET /integrations/<source>/apps, which returns
+    the same configs in full; this answers only the listed fields. The AI assistant reads it.
+    """
+    if not SECRETS_ARN:
+        return {'connectors': []}
+    try:
+        # The secret alone: a malformed `webscraper_configs` must not hide the connectors.
+        secrets = json.loads(secretsmanager.get_secret_value(SecretId=SECRETS_ARN).get('SecretString', '{}'))
+    except (ClientError, BotoCoreError, ValueError, TypeError, AttributeError) as e:
+        logger.warning(f"Could not read app connector configs: {e}")
+        return {'connectors': []}
+    return {'connectors': connectors_in_secret(secrets) if isinstance(secrets, dict) else []}
+
+
 @app.get("/scrapers/templates")
 @tracer.capture_method
 def get_templates():
@@ -547,7 +568,7 @@ def run_scraper(scraper_id: str):
         if table:
             table.put_item(Item={
                 'pk': f'SCRAPER_RUN#{scraper_id}', 'sk': execution_id, 'status': 'running',
-                'started_at': datetime.now(UTC).isoformat(), 'pages_scraped': 0, 'items_found': 0, 'errors': []
+                'started_at': now_iso(), 'pages_scraped': 0, 'items_found': 0, 'errors': []
             })
         function_name = require_webscraper_function()
         lambda_client.invoke(FunctionName=function_name, InvocationType='Event',

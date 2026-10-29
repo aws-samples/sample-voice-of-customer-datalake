@@ -14,8 +14,6 @@ from unittest.mock import patch
 import pytest
 import test_project_jobs_access as job_routes
 
-from shared.exceptions import ServiceError
-
 # The same moto tables and project (owner + one editor) as the other job routes' suite.
 _tables = job_routes._tables
 tables = job_routes.tables
@@ -33,8 +31,6 @@ ASSISTS = [
      'projects.suggest_document_brief', {'title': 'T', 'feature_idea': 'F'}),
     (f'/projects/{PROJECT}/research/suggest-questions', {'filters': {'days': 7}}, 'assist_research_questions',
      'projects.suggest_research_questions', {'suggestions': [{'title': 't', 'question': 'q?'}]}),
-    (f'/projects/{PROJECT}/product-context/interview', {'message': 'We sell bikes'}, 'assist_interview_turn',
-     'product_context.interview_turn', {'assistant_message': 'ok', 'applied_patch': {}, 'context': {}}),
     (f'/projects/{PROJECT}/personas/x1/regenerate-avatar', None, 'assist_persona_avatar',
      'projects.regenerate_persona_avatar', {'success': True, 'avatar_url': 'https://cdn/a.png', 'avatar_prompt': 'p'}),
 ]
@@ -119,15 +115,6 @@ class TestEveryAssistIsAJob:
         _, polled = world.call(EDITOR, 'GET', f'/projects/{PROJECT}/jobs/{started["job_id"]}')
         assert (polled['status'], polled['error']) == ('failed', 'Could not draft the answers. Please try again.')
 
-    def test_the_interview_keeps_its_unavailable_message(self, world):
-        _, started = world.call(EDITOR, 'POST', f'/projects/{PROJECT}/product-context/interview', {'message': 'm'})
-
-        with patch('product_context.interview_turn', side_effect=ServiceError('anything')):
-            world.work()
-
-        _, polled = world.call(EDITOR, 'GET', f'/projects/{PROJECT}/jobs/{started["job_id"]}')
-        assert polled['error'] == 'AI interview unavailable. Please try again.'
-
 
 class TestCheapRefusalsStaySynchronous:
     def test_a_missing_persona_is_404_and_starts_nothing(self, world):
@@ -137,10 +124,13 @@ class TestCheapRefusalsStaySynchronous:
         assert world.invoked == []
         assert world.jobs.scan()['Items'] == []
 
-    def test_an_empty_interview_message_is_400_and_starts_nothing(self, world):
-        status, answer = world.call(EDITOR, 'POST', f'/projects/{PROJECT}/product-context/interview', {})
+    def test_the_retired_product_interview_route_is_not_found_and_starts_nothing(self, world):
+        # The Product tab's interview chat was replaced by the AI assistant's guided
+        # interview (update_product_context approval card); its assist route is gone.
+        status, _ = world.call(EDITOR, 'POST', f'/projects/{PROJECT}/product-context/interview', {'message': 'm'})
 
-        assert (status, answer) == (400, {'success': False, 'error': 'message is required'})
+        assert status == 404
+        assert world.invoked == []
         assert world.jobs.scan()['Items'] == []
 
     @pytest.mark.parametrize(('path', 'body', 'error'), [

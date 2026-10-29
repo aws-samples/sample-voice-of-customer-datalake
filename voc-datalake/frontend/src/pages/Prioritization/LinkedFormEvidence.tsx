@@ -88,7 +88,8 @@ function LinkedFormStats({
             <FormStatsFigures
               variant="compact"
               stats={isPending ? undefined : stats}
-              labels={{ submissions: t('evidence.submissions'), avgRating: t('evidence.avgRating') }}
+              busy={isPending}
+              labels={{ submissions: t('evidence.submissions', { count: stats?.total_submissions ?? 0 }), avgRating: t('evidence.avgRating') }}
             />
           </div>
           {!isPending && noRatings ? (
