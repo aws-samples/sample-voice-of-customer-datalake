@@ -19,6 +19,7 @@
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/agents_store.py", "scope": "list_runs", "reason": "one page plus an encoded client cursor"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/channel_index.py", "scope": "walk_channel", "reason": "row cap and time budget, returns a truncated flag; maps a missing index to ChannelIndexUnavailable"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/feedback_sampling.py", "scope": "_read_partition", "reason": "room cap and time budget, returns an overflow flag"},
+    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/import_runs.py", "scope": "list_import_runs", "reason": "one page plus an encoded client cursor (GET /scrapers/manual/history)"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/memory_store.py", "scope": "list_company", "reason": "one page plus a client cursor"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/memory_store.py", "scope": "count_status", "reason": "Select COUNT: sums each page's Count, there are no items for iter_query to yield"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/radar_releases.py", "scope": "list_releases", "reason": "reads whole pages until at least `limit` rows, then re-sorts the views; max_items would stop mid-page and change which releases rank first"},

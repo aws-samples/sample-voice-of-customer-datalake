@@ -52,7 +52,7 @@ function RunRow({ run, selected, onSelect }: Readonly<{ run: ImportRunSummary; s
   return (
     <tr className={clsx('border-t border-border align-top', selected && 'bg-hover')}>
       <td className="py-2 pr-2">
-        <button type="button" className="text-left font-medium text-accent hover:underline focus-ring rounded-sm"
+        <button type="button" className="link text-left font-medium focus-ring rounded-sm"
           aria-expanded={selected} onClick={onSelect}
           aria-label={t('importHistory.openRun', { method: t(`importHistory.methods.${run.method}`), source: run.source })}>
           {t(`importHistory.methods.${run.method}`)}
