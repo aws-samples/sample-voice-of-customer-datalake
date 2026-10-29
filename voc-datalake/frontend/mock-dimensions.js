@@ -4,7 +4,8 @@
 //
 //   GET|PUT /settings/dimensions        {dimensions, updated_at} / {success, dimensions}
 //   GET|PUT /settings/sources           {sources} / {success, sources}  (the mock caller is an admin)
-//   GET|POST /settings/erasure          {jobs} / 202 {job}  (only the value's sha256 is kept)
+//   GET|POST /settings/erasure          {jobs, sources} / 202 {job}  (only the value's sha256 is kept;
+//                                       field 'source' = a whole source, with `confirm` repeating it)
 //   GET /metrics/dimensions?key=…       {key, period_days, is_partial, values, unassigned}
 //   PUT /feedback/{id}/dimensions       {success, feedback_id, dimensions, tags}
 //
@@ -29,7 +30,7 @@ const TAG_RE = /^[^\s#,:][^#,:\p{Cc}]{0,63}$/u;
 const SOURCE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 const RESERVED = new Set(['category', 'subcategory', 'source', 'channel', 'tag', 'tags', 'sentiment', 'urgency', 'days', 'limit', 'offset', 'q']);
 const PII = ['allow', 'redact', 'summary_only'];
-const ERASURE_FIELDS = ['author', 'source_id', 'csv_row_id', 'email'];
+const ERASURE_FIELDS = ['author', 'source_id', 'csv_row_id', 'email', 'source'];
 const SENTIMENTS = ['positive', 'negative', 'neutral', 'mixed'];
 const CALLER = 'admin-demo';
 
@@ -268,28 +269,63 @@ function putSources(body) {
 
 /** A poll moves a live job one step: queued → running → completed. */
 function advanceErasure(job, shared) {
-  if (job.status === 'queued') job.status = 'running';
-  else if (job.status === 'running') {
-    job.deleted_items = shared.mockFeedback.filter((f) => f.author && job.value_hash === sha256(f.author)).length;
+  if (job.status === 'queued') {
+    job.status = 'running';
+    if (job.field === 'source') job.phase = 'items';
+  } else if (job.status === 'running') {
+    // Counted, not deleted: the shared fixtures stay intact for the other pages.
+    const matches = job.field === 'source'
+      ? (f) => f.source_platform === job.source
+      : (f) => f.author && job.value_hash === sha256(f.author);
+    job.deleted_items = shared.mockFeedback.filter(matches).length;
     job.deleted_objects = job.deleted_items;
+    if (job.field === 'source') job.phase = 'raw';
     job.status = 'completed';
     job.finished_at = now();
   }
 }
 
+/** Profiles plus every source the fixtures hold data for (the real route reads METRIC#daily_source# rows). */
+function erasableSources(shared) {
+  const ids = new Set(state.sources.map((p) => p.id));
+  for (const item of shared.mockFeedback) if (SOURCE_ID_RE.test(item.source_platform || '')) ids.add(item.source_platform);
+  return [...ids].sort();
+}
+
+/** The whole-source checks of the real route (shared/source_erasure.py): 400s and the live-job 409. */
+function sourceErasureProblem(body, value, shared) {
+  if (!SOURCE_ID_RE.test(value)) return [400, { success: false, error: 'value must be a source id when field is source' }];
+  if (body.source !== undefined && body.source !== value) return [400, { success: false, error: 'source must equal value when field is source' }];
+  if (body.confirm !== value) return [400, { success: false, error: 'confirm must repeat the source id' }];
+  if (!erasableSources(shared).includes(value)) return [400, { success: false, error: 'Unknown source' }];
+  if (state.erasureJobs.some((j) => j.source === value && (j.status === 'queued' || j.status === 'running'))) {
+    return [409, { success: false, error: 'An erasure of this source is already running' }];
+  }
+  return null;
+}
+
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
-function startErasure(body) {
+function startErasure(body, shared) {
   const field = body?.field;
   const value = typeof body?.value === 'string' ? body.value.trim() : '';
   if (!ERASURE_FIELDS.includes(field) || !value || value.length > 512) {
-    return [400, { success: false, error: 'field must be author, source_id, csv_row_id or email, with a value' }];
+    return [400, { success: false, error: 'field must be author, source_id, csv_row_id, email or source, with a value' }];
+  }
+  if (field === 'source') {
+    const problem = sourceErasureProblem(body, value, shared);
+    if (problem) return problem;
+    return queueErasure(field, value, value);
   }
   const source = typeof body.source === 'string' && body.source !== '' ? body.source : undefined;
   if (source && !state.sources.some((p) => p.id === source)) return [400, { success: false, error: 'Unknown source' }];
   if (!source && (field === 'source_id' || field === 'csv_row_id')) {
     return [400, { success: false, error: `source is required when field is ${field}` }];
   }
+  return queueErasure(field, value, source);
+}
+
+function queueErasure(field, value, source) {
   const job = {
     job_id: `er_${randomHex()}`, status: 'queued', field, source, value_hash: sha256(value),
     deleted_items: 0, deleted_objects: 0, started_by: CALLER, created_at: now(),
@@ -348,10 +384,10 @@ function route(req, url, body, shared) {
     case 'PUT /settings/dimensions': return putDimensions(body);
     case 'GET /settings/sources': return [200, { sources: state.sources }];
     case 'PUT /settings/sources': return putSources(body);
-    case 'POST /settings/erasure': return startErasure(body);
+    case 'POST /settings/erasure': return startErasure(body, shared);
     case 'GET /settings/erasure':
       state.erasureJobs.forEach((job) => advanceErasure(job, shared));
-      return [200, { jobs: state.erasureJobs.slice(0, 20) }];
+      return [200, { jobs: state.erasureJobs.slice(0, 20), sources: erasableSources(shared) }];
     case 'GET /metrics/dimensions': return dimensionMetrics(url, shared);
     default: break;
   }

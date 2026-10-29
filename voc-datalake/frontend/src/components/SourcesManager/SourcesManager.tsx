@@ -1,7 +1,7 @@
 /**
  * @fileoverview Settings → Sources: the data-protection policy of each source
  * (PII handling, retention, restricted visibility) and the dimension values and
- * tags every review from it carries; plus the erasure panel.
+ * tags every review from it carries; plus the erasure panels (one person, a whole source).
  *
  * A source with no profile uses the defaults (keep everything, forever, visible
  * to all). Edits stay in a local draft until Save (one PUT of the whole list,
@@ -21,6 +21,7 @@ import { useInvalidateFeedbackData } from '../../api/invalidateFeedbackData'
 import { getEnabledPlugins } from '../../plugins'
 import AddSourceProfile from './AddSourceProfile'
 import ErasurePanel from './ErasurePanel'
+import SourceErasurePanel from './SourceErasurePanel'
 import SourceProfileEditor from './SourceProfileEditor'
 import { draftProblem, knownSourceIds, newProfile, toDraft, toWire } from './sourceDraft'
 import type { SourceProfile } from '../../api/sourceProfilesApi'
@@ -69,6 +70,7 @@ function ProfilesEditor({ stored }: Readonly<{ stored: readonly SourceProfile[] 
       <AddSourceProfile knownIds={knownIds} draft={draft} disabled={draft.length >= MAX_SOURCE_PROFILES} onAdd={(id) => edit([...draft, newProfile(id)])} />
       <DraftSaveBar {...barProps} />
       <ErasurePanel profiles={stored} />
+      <SourceErasurePanel profiles={stored} />
     </div>
   )
 }

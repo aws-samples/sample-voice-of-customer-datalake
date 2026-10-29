@@ -612,7 +612,8 @@
       "author": "Autor",
       "source_id": "Id de origem",
       "csv_row_id": "Id da linha CSV",
-      "email": "E-mail"
+      "email": "E-mail",
+      "source": "Fonte inteira"
     },
     "valueLabel": "Valor",
     "sourceLabel": "Dentro da fonte",
@@ -631,6 +632,24 @@
     },
     "confirmTitle": "Apagar o feedback desta pessoa?",
     "confirmMessage": "Todas as avaliações cujo campo {{field}} corresponda ao valor ({{source}}) e seu arquivo bruto serão excluídos permanentemente."
+  },
+  "sourceErasure": {
+    "title": "Excluir todos os dados de uma fonte",
+    "description": "Exclui todas as avaliações de uma fonte e todos os arquivos brutos da pasta raw dela. As contagens do painel diminuem conforme as avaliações são excluídas. A fonte mantém as configurações, o agendamento e a posição de sincronização, então novas avaliações continuam chegando até você desativar a fonte. Os arquivos CSV e JSON enviados são mantidos. Não é possível desfazer.",
+    "sourceLabel": "Fonte",
+    "chooseSource": "Escolha uma fonte",
+    "noSources": "Nenhuma fonte tem dados ainda.",
+    "start": "Excluir todos os dados desta fonte",
+    "startError": "A exclusão não foi iniciada: {{reason}}",
+    "confirmTitle": "Excluir todos os dados de {{source}}?",
+    "confirmMessage": "Todas as avaliações de {{source}} e todos os arquivos brutos da pasta dela serão excluídos permanentemente.",
+    "typeLabel": "Digite {{source}} para confirmar",
+    "confirm": "Excluir todos os dados",
+    "progress": {
+      "items": "Excluindo avaliações. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
+      "raw": "Excluindo arquivos brutos. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
+      "done": "Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}."
+    }
   },
   "dimensionsEdit": {
     "errors": {

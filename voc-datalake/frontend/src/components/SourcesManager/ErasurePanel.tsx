@@ -11,22 +11,22 @@
  */
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, Eraser } from 'lucide-react'
 import clsx from 'clsx'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
-import { ERASURE_FIELDS, erasureJobsKey, isLiveErasure, sourceProfilesApi } from '../../api/sourceProfilesApi'
-import type { ErasureField, ErasureJob, ErasureStatus, SourceProfile } from '../../api/sourceProfilesApi'
+import { ERASURE_FIELDS, erasureJobsKey, sourceProfilesApi } from '../../api/sourceProfilesApi'
+import type { ErasureField, ErasureJob, ErasureJobField, ErasureStatus, SourceProfile } from '../../api/sourceProfilesApi'
 import type { Tone } from '../../theme/tones'
 import { sourceLabel } from '../../utils/displayLabels'
+import { useErasureJobs } from './useErasureJobs'
 
-const POLL_INTERVAL_MS = 2_000
-
-const FIELD_COPY: Record<ErasureField, { labelKey: string }> = {
+const FIELD_COPY: Record<ErasureJobField, { labelKey: string }> = {
   author: { labelKey: 'components:erasure.fields.author' },
   source_id: { labelKey: 'components:erasure.fields.source_id' },
   csv_row_id: { labelKey: 'components:erasure.fields.csv_row_id' },
   email: { labelKey: 'components:erasure.fields.email' },
+  source: { labelKey: 'components:erasure.fields.source' },
 }
 
 const STATUS: Record<ErasureStatus, { tone: Tone; labelKey: string }> = {
@@ -46,10 +46,9 @@ function isErasureField(value: string): value is ErasureField {
 function JobRow({ job }: Readonly<{ job: ErasureJob }>) {
   const { t } = useTranslation('components', { keyPrefix: 'erasure' })
   const { t: tAll } = useTranslation()
-  const status = STATUS[job.status]
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs py-2 border-t border-border first:border-t-0">
-      <span className={clsx('badge', `badge-${status.tone}`)}>{tAll(status.labelKey)}</span>
+      <ErasureStatusBadge status={job.status} />
       <span className="text-text">{tAll(FIELD_COPY[job.field].labelKey)}</span>
       {job.source !== undefined && <span className="font-mono text-muted">{job.source}</span>}
       <span className="font-mono text-muted" title={job.value_hash}>{job.value_hash.slice(0, 12)}</span>
@@ -60,12 +59,9 @@ function JobRow({ job }: Readonly<{ job: ErasureJob }>) {
   )
 }
 
-function useErasureJobs() {
-  return useQuery({
-    queryKey: erasureJobsKey(),
-    queryFn: () => sourceProfilesApi.listErasureJobs(),
-    refetchInterval: (query) => ((query.state.data ?? []).some(isLiveErasure) ? POLL_INTERVAL_MS : false),
-  })
+export function ErasureStatusBadge({ status }: Readonly<{ status: ErasureStatus }>) {
+  const { t } = useTranslation()
+  return <span className={clsx('badge', `badge-${STATUS[status].tone}`)}>{t(STATUS[status].labelKey)}</span>
 }
 
 export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly SourceProfile[] }>) {

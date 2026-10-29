@@ -602,7 +602,8 @@
       "author": "Autor",
       "source_id": "Quell-ID",
       "csv_row_id": "CSV-Zeilen-ID",
-      "email": "E-Mail"
+      "email": "E-Mail",
+      "source": "Ganze Quelle"
     },
     "valueLabel": "Wert",
     "sourceLabel": "Innerhalb der Quelle",
@@ -621,6 +622,24 @@
     },
     "confirmTitle": "Feedback dieser Person löschen?",
     "confirmMessage": "Jede Bewertung, deren {{field}} dem Wert entspricht ({{source}}), und ihr Rohdaten-Archiv werden dauerhaft gelöscht."
+  },
+  "sourceErasure": {
+    "title": "Alle Daten einer Quelle löschen",
+    "description": "Löscht alle Bewertungen einer Quelle und alle Rohdateien in ihrem raw-Ordner. Die Zahlen im Dashboard sinken, während die Bewertungen gelöscht werden. Die Quelle behält ihre Einstellungen, ihren Zeitplan und ihre Synchronisationsposition, daher kommen weiter neue Bewertungen an, bis Sie die Quelle deaktivieren. Hochgeladene CSV- und JSON-Dateien bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
+    "sourceLabel": "Quelle",
+    "chooseSource": "Quelle auswählen",
+    "noSources": "Noch keine Quelle hat Daten.",
+    "start": "Alle Daten dieser Quelle löschen",
+    "startError": "Das Löschen wurde nicht gestartet: {{reason}}",
+    "confirmTitle": "Alle Daten von {{source}} löschen?",
+    "confirmMessage": "Alle Bewertungen von {{source}} und alle Rohdateien in ihrem Ordner werden endgültig gelöscht.",
+    "typeLabel": "Geben Sie {{source}} zur Bestätigung ein",
+    "confirm": "Alle Daten löschen",
+    "progress": {
+      "items": "Bewertungen werden gelöscht. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
+      "raw": "Rohdateien werden gelöscht. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
+      "done": "Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}."
+    }
   },
   "dimensionsEdit": {
     "errors": {

@@ -602,7 +602,8 @@
       "author": "作成者",
       "source_id": "ソース ID",
       "csv_row_id": "CSV 行 ID",
-      "email": "メールアドレス"
+      "email": "メールアドレス",
+      "source": "ソース全体"
     },
     "valueLabel": "値",
     "sourceLabel": "対象ソース",
@@ -621,6 +622,24 @@
     },
     "confirmTitle": "この人物のフィードバックを消去しますか?",
     "confirmMessage": "{{field}} が値と一致するすべてのレビュー({{source}})と元データのアーカイブが完全に削除されます。"
+  },
+  "sourceErasure": {
+    "title": "ソースのすべてのデータを削除",
+    "description": "1 つのソースのすべてのレビューと、その raw フォルダー内のすべての生ファイルを削除します。レビューが削除されるにつれてダッシュボードの件数は減ります。ソースの設定、スケジュール、同期位置は残るため、ソースをオフにするまで新しいレビューは届き続けます。アップロードされた CSV と JSON ファイルは残ります。この操作は元に戻せません。",
+    "sourceLabel": "ソース",
+    "chooseSource": "ソースを選択",
+    "noSources": "データのあるソースはまだありません。",
+    "start": "このソースのすべてのデータを削除",
+    "startError": "削除を開始できませんでした: {{reason}}",
+    "confirmTitle": "{{source}} のすべてのデータを削除しますか?",
+    "confirmMessage": "{{source}} のすべてのレビューと、そのフォルダー内のすべての生ファイルが完全に削除されます。",
+    "typeLabel": "確認のため {{source}} と入力してください",
+    "confirm": "すべてのデータを削除",
+    "progress": {
+      "items": "レビューを削除しています。削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。",
+      "raw": "生ファイルを削除しています。削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。",
+      "done": "削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。"
+    }
   },
   "dimensionsEdit": {
     "errors": {

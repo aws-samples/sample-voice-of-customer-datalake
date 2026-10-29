@@ -602,7 +602,8 @@
       "author": "작성자",
       "source_id": "소스 ID",
       "csv_row_id": "CSV 행 ID",
-      "email": "이메일"
+      "email": "이메일",
+      "source": "전체 소스"
     },
     "valueLabel": "값",
     "sourceLabel": "대상 소스",
@@ -621,6 +622,24 @@
     },
     "confirmTitle": "이 사람의 피드백을 삭제할까요?",
     "confirmMessage": "{{field}}이(가) 값과 일치하는 모든 리뷰({{source}})와 원본 보관 파일이 영구 삭제됩니다."
+  },
+  "sourceErasure": {
+    "title": "소스의 모든 데이터 삭제",
+    "description": "한 소스의 모든 리뷰와 raw 폴더의 모든 원본 파일을 삭제합니다. 리뷰가 삭제되면서 대시보드 수치가 줄어듭니다. 소스의 설정, 일정, 동기화 위치는 유지되므로 소스를 끄기 전까지 새 리뷰가 계속 들어옵니다. 업로드한 CSV 및 JSON 파일은 유지됩니다. 이 작업은 되돌릴 수 없습니다.",
+    "sourceLabel": "소스",
+    "chooseSource": "소스 선택",
+    "noSources": "아직 데이터가 있는 소스가 없습니다.",
+    "start": "이 소스의 모든 데이터 삭제",
+    "startError": "삭제를 시작하지 못했습니다: {{reason}}",
+    "confirmTitle": "{{source}}의 모든 데이터를 삭제할까요?",
+    "confirmMessage": "{{source}}의 모든 리뷰와 해당 폴더의 모든 원본 파일이 영구적으로 삭제됩니다.",
+    "typeLabel": "확인하려면 {{source}}을(를) 입력하세요",
+    "confirm": "모든 데이터 삭제",
+    "progress": {
+      "items": "리뷰를 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
+      "raw": "원본 파일을 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
+      "done": "삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}."
+    }
   },
   "dimensionsEdit": {
     "errors": {

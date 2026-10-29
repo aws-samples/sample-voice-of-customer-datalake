@@ -7,9 +7,12 @@
  *   through the same lenient schema, so the missing fields take their defaults.
  * - `PUT /settings/sources` (admin) — validated server-side
  *   (`shared/source_profiles.py`).
- * - `POST /settings/erasure` (admin) → 202 `{job}`; `GET` → `{jobs}` newest
- *   first. The erased value is only ever hashed server-side; this client never
- *   stores it either (the form clears it once the job is accepted).
+ * - `POST /settings/erasure` (admin) → 202 `{job}`; `GET` → `{jobs, sources}`,
+ *   jobs newest first. The erased value is only ever hashed server-side; this
+ *   client never stores it either (the form clears it once the job is accepted).
+ *   `field: 'source'` erases a whole source: `value` and `confirm` both carry
+ *   the source id (the server refuses a mismatch), and `sources` lists the ids
+ *   it accepts (docs/source-policies.md → Delete all data from a source).
  *
  * @module api/sourceProfilesApi
  */
@@ -84,8 +87,14 @@ export function defaultSourceProfile(id: string, label = id): SourceProfile {
 
 // ── Erasure ─────────────────────────────────────────────────────────────────
 
+/** The person fields of the erasure form. */
 export const ERASURE_FIELDS = ['author', 'source_id', 'csv_row_id', 'email'] as const
 export type ErasureField = typeof ERASURE_FIELDS[number]
+/** A job's field: a person field, or `source` for a whole-source erasure. */
+export const SOURCE_ERASURE_FIELD = 'source'
+const JOB_FIELDS = [...ERASURE_FIELDS, SOURCE_ERASURE_FIELD] as const
+export type ErasureJobField = typeof JOB_FIELDS[number]
+const ERASURE_PHASES = ['items', 'raw'] as const
 
 const ERASURE_STATUSES = ['queued', 'running', 'completed', 'failed'] as const
 export type ErasureStatus = typeof ERASURE_STATUSES[number]
@@ -97,7 +106,7 @@ const ErasureJobSchema = z.object({
   job_id: z.string().min(1),
   // Unknown reads as failed, like reprocess jobs: never poll forever.
   status: z.enum(ERASURE_STATUSES).catch('failed'),
-  field: z.enum(ERASURE_FIELDS).catch('author'),
+  field: z.enum(JOB_FIELDS).catch('author'),
   source: optionalText,
   value_hash: z.string().catch(''),
   deleted_items: count,
@@ -106,6 +115,8 @@ const ErasureJobSchema = z.object({
   created_at: z.string().catch(''),
   finished_at: optionalText,
   error: optionalText,
+  /** A whole-source erasure deletes the reviews first, then the raw folder. */
+  phase: z.enum(ERASURE_PHASES).optional().catch(undefined),
 })
 
 export type ErasureJob = z.infer<typeof ErasureJobSchema>
@@ -116,6 +127,14 @@ export function isLiveErasure(job: Pick<ErasureJob, 'status'>): boolean {
 
 const JobsEnvelopeSchema = z.object({ jobs: parsedList(ErasureJobSchema) }).catch({ jobs: [] })
 const JobEnvelopeSchema = z.object({ job: z.unknown() }).catch({ job: undefined })
+const SourcesListSchema = z.object({
+  sources: z.array(z.unknown()).catch([]).transform((ids) => ids.filter((id): id is string => typeof id === 'string' && SOURCE_ID_RE.test(id))),
+}).catch({ sources: [] })
+
+/** The source ids a whole-source erasure may name (`GET /settings/erasure` → `sources`). */
+export function normalizeErasableSources(raw: unknown): string[] {
+  return SourcesListSchema.parse(raw).sources
+}
 
 export function normalizeErasureJobs(raw: unknown): ErasureJob[] {
   return JobsEnvelopeSchema.parse(raw).jobs
@@ -132,8 +151,15 @@ export interface ErasureRequest {
   source?: string
 }
 
+export interface SourceErasureRequest {
+  source: string
+  /** What the person typed; the server refuses it unless it equals `source`. */
+  confirm: string
+}
+
 export const sourceProfilesKey = () => ['source-profiles'] as const
 export const erasureJobsKey = () => ['erasure-jobs'] as const
+export const erasableSourcesKey = () => ['erasure-sources'] as const
 
 export const sourceProfilesApi = {
   getProfiles: async (): Promise<SourceProfile[]> =>
@@ -147,6 +173,12 @@ export const sourceProfilesApi = {
         ? { field: request.field, value: request.value }
         : request))),
 
+  startSourceErasure: async ({ source, confirm }: SourceErasureRequest): Promise<ErasureJob | null> =>
+    normalizeErasureJob(await fetchApi<unknown>('/settings/erasure', post({ field: SOURCE_ERASURE_FIELD, value: source, confirm }))),
+
   listErasureJobs: async (): Promise<ErasureJob[]> =>
     normalizeErasureJobs(await fetchApi<unknown>('/settings/erasure')),
+
+  listErasableSources: async (): Promise<string[]> =>
+    normalizeErasableSources(await fetchApi<unknown>('/settings/erasure')),
 }
