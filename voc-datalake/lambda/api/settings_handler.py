@@ -91,7 +91,6 @@ from shared.model_config import (
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value, json_object_body
 from shared.retention import ERASE_FIELDS, ERASURE_JOB_PK, SOURCE_FIELD
-from shared.source_erasure import blocking_job, known_sources
 from shared.scope_names import (
     HiddenNames,
     component_names_hidden,
@@ -99,6 +98,7 @@ from shared.scope_names import (
     scoped_company_context,
     scoped_design_system,
 )
+from shared.source_erasure import blocking_job, known_sources
 from shared.source_profiles import (
     SOURCE_ID_RE,
     SOURCES_SETTINGS_KEY,
