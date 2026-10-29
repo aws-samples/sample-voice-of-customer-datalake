@@ -163,6 +163,12 @@ nothing else. Copies derived from a review before it was erased stay where they 
 | Whole-file CSV / JSON upload archives | `raw/csv_upload/…`, `raw/json_upload/…` in the raw bucket | Never deletable by the worker (see the limitation above); remove the file by hand with an admin role in the S3 console, or avoid it by giving the source a retention period or a non-`allow` policy |
 | Archives named before 3.06.00 for ids that were not filename-safe | `raw/<source>/…` | See the archive naming note above |
 
+**The corpus ids on generated artefacts are not a copy.** A persona, research report, PRD, PR/FAQ or
+merged document stores `input_feedback_ids`, the ids of the reviews its prompts held
+([project workspace](project-workspace.md#which-feedback-a-generation-reads)). Only ids are stored, never
+review text, so this list needs no clean-up: after an erasure or a retention delete the id stays on the
+artefact and the "Written from N reviews" list shows that review as unavailable.
+
 Record what you removed by hand next to the erasure job: the job row keeps only the value's
 hash, so it is safe to reference.
 
