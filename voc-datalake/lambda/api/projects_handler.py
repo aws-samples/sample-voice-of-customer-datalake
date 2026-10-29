@@ -3942,7 +3942,7 @@ def _ballot_transact_items(table, update_kwargs: dict, row_id: str, now: str) ->
     # against a real implementation; the suite's fake accepts any `dict`.)
     #
     # RAISED RATHER THAN `assert`ed, though the reasoning above is why it is checked
-    # at all. A bare `assert` is stripped under `python -O`/`PYTHONOPTIMIZE`, which
+    # at all. A bare `assert` is stripped under `python -O` (the PYTHONOPTIMIZE environment variable), which
     # would leave the malformed key reaching DynamoDB — the exact outcome this exists
     # to name — and an `AssertionError` in a request path is an unhandled 500 with a
     # bare message, bypassing the logging every other failure in this module routes

@@ -17,6 +17,15 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.47.03] - 2026-10-29
+
+The code-audit gate gives the same answer locally and in CI.
+
+### Fixed
+- `audit: py_doc_refs` failed in CI with a stale allowlist entry for `PYTHONOPTIMIZE`: whether that name counts as a
+  known token depends on the Python installation, so one comment in `lambda/api/projects_handler.py` now names the
+  environment variable in plain prose and the allowlist entry is gone. See [code audit](docs/code-audit.md).
+
 ## [5.47.02] - 2026-10-29
 
 Docs and test data use fictional names only.

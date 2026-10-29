@@ -9,10 +9,6 @@
       "reason": "names a class the docstring explains was deliberately NOT added to shared/api.py (one caller)"
     },
     {
-      "key": "lambda/api/projects_handler.py::PYTHONOPTIMIZE",
-      "reason": "the CPython environment variable (implemented in C, so no library token carries it)"
-    },
-    {
       "key": "lambda/api/projects_handler.py::migrated_at",
       "reason": "a hypothetical marker attribute a future migration would add; the docstring says so"
     },
