@@ -153,8 +153,8 @@ export const s3BucketSuppressions: NagPackSuppression[] = [
     reason: 'Object access scoped to ONE named key prefix of the raw data bucket (the data family the role owns); the trailing wildcard is the object key under that prefix, never the bucket or another prefix',
     // Every item is anchored to exactly one prefix, so a grant on a new prefix (or on the whole bucket) is
     // still reported. Owners as of 5.34.00, for the reviewer: avatars/ (projects API, persona generator and
-    // importer), company-context/ (settings API), company-context/design/logo_preview_ (design capture,
-    // logo previews only), memory-imports/ (memory API and extractor), projects/*/product_docs/ (projects API;
+    // importer), company-context/ (settings API), company-context/design/logo_preview_ and icons_ (design
+    // capture, logo previews and copied icons only), memory-imports/ (memory API and extractor), projects/*/product_docs/ (projects API;
     // extracted/ for the document generator), prototypes/ (projects API, document generator, agent nodes and
     // persona panel), raw/github_issues/ (the GitHub webhook), scratch/document_jobs/ and scratch/research_jobs/
     // (the document and research workflows' scratch space).
@@ -162,6 +162,7 @@ export const s3BucketSuppressions: NagPackSuppression[] = [
       { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/avatars/\\*$/' },
       { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/company-context/\\*$/' },
       { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/company-context/design/logo_preview_\\*$/' },
+      { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/company-context/design/icons_\\*$/' },
       { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/memory-imports/\\*$/' },
       { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/projects/\\*/product_docs/(extracted/)?\\*$/' },
       { regex: '/^Resource::<.*RawDataBucket.*\\.Arn>/prototypes/\\*$/' },

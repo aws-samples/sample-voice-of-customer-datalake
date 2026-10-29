@@ -266,6 +266,18 @@ describe('the settings Lambda can test models and read their quotas', () => {
     expect(settingsRole, `no ${ROLE}`).toBeDefined();
     expect(JSON.stringify(settingsRole?.[1])).toContain('servicequotas:ListServiceQuotas supports no resource-level permission');
   });
+
+  it('may list the raw bucket, so archiving a design reference can find its copied icons (5.48.00)', () => {
+    // ListObjectsV2 is authorized by s3:ListBucket on the BUCKET ARN, not by an object grant. The
+    // `company-context/*` read grant carries s3:List* on the bucket itself; without it every
+    // reference archive would answer 503 after the row is archived.
+    const reads = roleStatements(apiTemplate(), ROLE)
+      .filter((s) => s.effect === 'Allow' && s.actions.includes('s3:List*') && s.resource.includes('company-context/*'));
+    expect(reads).toHaveLength(1);
+    const resources = z.array(z.unknown()).parse(JSON.parse(itemAt(reads, 0).resource));
+    const bucketLevel = resources.filter((r) => !JSON.stringify(r).includes('/'));
+    expect(bucketLevel).toHaveLength(1);
+  });
 });
 
 describe('the data explorer never deletes customer data', () => {
