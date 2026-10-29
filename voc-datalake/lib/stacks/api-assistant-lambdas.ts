@@ -1,5 +1,5 @@
 /**
- * VocApiStack's memory and agents APIs, the streaming AI assistant, S3 import
+ * VocApiStack's memory and agents APIs, the streaming AI assistant, S3 import (api-s3-import-lambda.ts)
  * and the data explorer. Resources are created on the stack itself — see api-context.ts.
  */
 import * as cdk from 'aws-cdk-lib';
@@ -14,6 +14,7 @@ import { snapStartFunctionProps } from '../utils/snapstart';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
 import type { ApiStackContext } from './api-context';
+import { createS3ImportLambda } from './api-s3-import-lambda';
 
 /**
  * The assistant's run ceiling: the Lambda timeout AND the /chat/stream
@@ -54,7 +55,7 @@ export function createAssistantLambdas(ctx: ApiStackContext, delegates: Assistan
     projectsLambda, metricsLambda, feedbackFormLambda, settingsLambda, scrapersLambda, usersLambda, radarLambda, engagementLambda,
   } = delegates;
   const {
-    feedbackTable, aggregatesTable, memoryTable, agentsTable, conversationsTable, kmsKey, rawDataBucket, s3ImportBucket,
+    feedbackTable, aggregatesTable, memoryTable, agentsTable, conversationsTable, kmsKey, rawDataBucket,
     processingQueueUrl, processingQueueArn, memoryExtractQueueUrl, memoryExtractQueueArn, agentRunStateMachine,
     avatarsCdnUrl, cdnSigningSecretArn, cdnSigningKeyPairId, webSearchGatewayUrl, webSearchGatewayArn, webSearchToolName,
   } = ctx.props;
@@ -308,24 +309,8 @@ export function createAssistantLambdas(ctx: ApiStackContext, delegates: Assistan
     { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the streaming Lambda — latest stable LTS' },
   ], true);
 
-  // S3 Import API
-  const s3ImportRole = ctx.role('S3ImportLambdaRole');
-  s3ImportBucket.grantReadWrite(s3ImportRole);
-  kmsKey.grantEncryptDecrypt(s3ImportRole);
-
-  const s3ImportLambda = new lambda.Function(stack, 'S3ImportApi', {
-    functionName: ctx.uniqueName('voc-s3-import-api'),
-    runtime: lambda.Runtime.PYTHON_3_14,
-    architecture: lambda.Architecture.ARM_64,
-    handler: 's3_import_handler.lambda_handler',
-    code: createApiLambdaCode('s3_import_handler.py'),
-    role: s3ImportRole,
-    timeout: cdk.Duration.seconds(30),
-    memorySize: 1024, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
-    environment: { S3_IMPORT_BUCKET: s3ImportBucket.bucketName, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-s3-import-api', LOG_LEVEL: 'INFO' },
-    layers: [apiLayer],
-    logGroup: ctx.logGroup('S3ImportApiLogs', ctx.uniqueName('voc-s3-import-api')),
-  });
+  // S3 Import API (api-s3-import-lambda.ts)
+  const s3ImportLambda = createS3ImportLambda(ctx);
 
   // Data Explorer API
   // Raw data is immutable and customer data is never deleted: read + put
