@@ -34,7 +34,7 @@ from shared.feedback import (
 from shared.feedback import (
     get_feedback_context as _get_feedback_context,
 )
-from shared.feedback_sampling import MAX_INPUT_FEEDBACK_IDS, input_feedback_ids
+from shared.feedback_sampling import INPUT_FEEDBACK_IDS_FIELD, input_feedback_ids, received_input_feedback_ids
 from shared.grounding import Grounding
 from shared.ids import timestamped_id
 from shared.job_knowledge import derivation_knowledge, shared_grounding, with_guidance
@@ -270,7 +270,7 @@ def _feedback_usage(
     }
 
 
-INPUT_IDS_KEY = 'input_feedback_ids'
+INPUT_IDS_KEY = INPUT_FEEDBACK_IDS_FIELD
 
 
 _USAGE_COUNT_KEYS = ('feedback_count', 'feedback_items_used', 'fetch_limit')
@@ -296,9 +296,9 @@ def _received_feedback_usage(value: object) -> dict:
     if not (counts_ok and flags_ok):
         return {}
     usage = {key: value[key] for key in (*_USAGE_COUNT_KEYS, *_USAGE_FLAG_KEYS)}
-    ids = value.get(INPUT_IDS_KEY)
-    if isinstance(ids, list) and all(isinstance(fid, str) and fid for fid in ids):
-        usage[INPUT_IDS_KEY] = ids[:MAX_INPUT_FEEDBACK_IDS]
+    ids = received_input_feedback_ids(value.get(INPUT_IDS_KEY))
+    if ids is not None:
+        usage[INPUT_IDS_KEY] = ids
     return usage
 
 

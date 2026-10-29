@@ -75,7 +75,7 @@ from shared.feedback import (
 from shared.feedback import (
     get_feedback_context as _get_feedback_context,
 )
-from shared.feedback_sampling import input_feedback_ids
+from shared.feedback_sampling import input_feedback_fields, input_feedback_ids
 from shared.grounding import Grounding
 from shared.human_documents import HUMAN_DOC_TYPES, create_human_document
 from shared.ids import timestamped_id, write_with_fresh_id
@@ -2322,6 +2322,8 @@ def _build_persona_items(
             'research_notes': [],
             'supporting_evidence': persona.get('supporting_evidence', []),
             'source_breakdown': source_breakdown,
+            # DISPLAY ONLY: the first 20 reviews fetched, kept for older readers. The
+            # corpus is input_feedback_ids below; nothing should read this as provenance.
             'source_feedback_ids': [item.get('feedback_id', '') for item in feedback_items[:20]],
             # Every review the persona-writing step read, in prompt order (#236): the
             # corpus behind the persona, an even sample across the chosen window.
@@ -3667,6 +3669,8 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
                 'question': research_question,
                 'content': full_report,
                 'feedback_count': len(feedback_items),
+                # Every fetched review reaches this fallback's prompt untrimmed (#236).
+                **input_feedback_fields(input_feedback_ids(feedback_items)),
                 'date_basis': date_basis,
                 'created_at': now,
             }

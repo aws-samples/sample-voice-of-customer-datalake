@@ -560,6 +560,7 @@ class TestHandleJob:
             '_with_org_context': MagicMock(return_value='PCTX+ORG'),
             '_generate_chain_document': MagicMock(return_value=('CONTENT', {'a': 1})),
             '_feedback_usage_fields': MagicMock(return_value={'feedback_items_used': 3}),
+            '_feedback_corpus_fields': MagicMock(return_value={'input_feedback_ids': ['f1']}),
             'build_derivation': MagicMock(return_value={'d': 1}),
             '_date_basis_fields': MagicMock(return_value={'date_basis': 'b'}),
             '_document_item_fields': MagicMock(return_value={'fields': 1}),
@@ -567,6 +568,7 @@ class TestHandleJob:
         }
         config = {'doc_type': 'prfaq', 'title': 'Mine', 'feature_idea': 'idea'}
         result, ctx, tables = self._run(config, **mocks)
+        # The corpus ids go on the document, never on the job result (#236).
         assert result == {'document_id': 'n', 'title': 'Saved', 'feedback_items_used': 3}
         chain_type.assert_called_once_with('prfaq')
         mocks['_gather_context'].assert_called_once_with(ctx, tables.projects, tables.feedback, PROJECT, config)
@@ -577,13 +579,14 @@ class TestHandleJob:
             ctx, spec, 'idea', 'FB', 'PE', config, 'PCTX+ORG', grounding=GROUNDED,
         )
         mocks['_feedback_usage_fields'].assert_called_once_with('SAMPLE')
+        mocks['_feedback_corpus_fields'].assert_called_once_with('SAMPLE')
         mocks['build_derivation'].assert_called_once_with(
             sources=['s'], product_context_included=True, memory_ids=['mem_1'], company_context_included=True,
         )
         mocks['_date_basis_fields'].assert_called_once_with(config)
         mocks['_document_item_fields'].assert_called_once_with(
-            PROJECT, JOB, 'idea', 'CONTENT', {'d': 1}, {'a': 1}, {'feedback_items_used': 3},
-            {'date_basis': 'b'},
+            PROJECT, JOB, 'idea', 'CONTENT', {'d': 1}, {'a': 1},
+            {'feedback_items_used': 3, 'input_feedback_ids': ['f1']}, {'date_basis': 'b'},
         )
         mocks['persist_versioned_document'].assert_called_once_with(
             tables.projects, PROJECT, 'prfaq', 'Mine', JOB, {'fields': 1},
@@ -708,6 +711,7 @@ class TestBuildSteps:
             _with_org_context=MagicMock(return_value='PC+ORG'),
             build_derivation=MagicMock(return_value={'d': 2}),
             _feedback_usage_fields=MagicMock(return_value={'u': 3}),
+            _feedback_corpus_fields=MagicMock(return_value={'input_feedback_ids': ['f1']}),
             _date_basis_fields=MagicMock(return_value={'date_basis': 'b'}),
         )
         assert result == {'doc_type': 'prfaq', 'title': 'T', 'feature_idea': 'idea',
@@ -721,7 +725,7 @@ class TestBuildSteps:
         assert puts.call_args_list == [
             call('scratch/document_jobs/job_1/steps.txt', '[{"s": 1}, {"s": 2}]'),
             call('scratch/document_jobs/job_1/derivation.txt', '{"d": 2}'),
-            call('scratch/document_jobs/job_1/feedback_usage.txt', '{"u": 3}'),
+            call('scratch/document_jobs/job_1/feedback_usage.txt', '{"u": 3, "input_feedback_ids": ["f1"]}'),
             call('scratch/document_jobs/job_1/date_basis.txt', '{"date_basis": "b"}'),
         ]
         assert job_context.return_value.update_progress.call_args_list == [

@@ -36,14 +36,17 @@ from shared.logging import logger
 from shared.time_budget import WalkBudget
 
 __all__ = [
+    'INPUT_FEEDBACK_IDS_FIELD',
     'MAX_INPUT_FEEDBACK_IDS',
     'POOL_MAX_ROWS',
     'FeedbackPool',
     'Partition',
     'fetch_full',
+    'input_feedback_fields',
     'input_feedback_ids',
     'read_channel_pool',
     'read_pool',
+    'received_input_feedback_ids',
     'sample_evenly',
 ]
 
@@ -255,6 +258,8 @@ def fetch_full(table: Any, rows: Sequence[Mapping[str, Any]]) -> list[dict]:
 # model actually read (#236). Every LLM-context fetch limit is far below this
 # (persona ~145 items on a 200K-token model), so it bounds the stored row, not the record.
 MAX_INPUT_FEEDBACK_IDS: Final = 500
+# The artefact field that holds them (persona, research report, PRD, PR/FAQ, merged document).
+INPUT_FEEDBACK_IDS_FIELD: Final = 'input_feedback_ids'
 
 
 def input_feedback_ids(items: Sequence[Mapping[str, Any]], used: int | None = None) -> list[str]:
@@ -266,3 +271,25 @@ def input_feedback_ids(items: Sequence[Mapping[str, Any]], used: int | None = No
     head = items if used is None else items[:max(used, 0)]
     ids = [item.get('feedback_id') for item in head]
     return [fid for fid in ids if isinstance(fid, str) and fid][:MAX_INPUT_FEEDBACK_IDS]
+
+
+def input_feedback_fields(ids: Sequence[str]) -> dict[str, list[str]]:
+    """The artefact's ``input_feedback_ids`` field, or ``{}`` when its prompts held no review.
+
+    Ids only, never review text: the reviews stay where source retention and erasure
+    reach them (docs/source-policies.md), and an erased one reads as unavailable.
+    """
+    return {INPUT_FEEDBACK_IDS_FIELD: list(ids)[:MAX_INPUT_FEEDBACK_IDS]} if ids else {}
+
+
+def received_input_feedback_ids(value: object) -> list[str] | None:
+    """An ``input_feedback_ids`` list read back across a boundary, capped; None when malformed.
+
+    The research and document workflows carry the list from the step that read the
+    feedback to the step that saves the artefact (Step Functions state, an S3
+    claim-check). Anything that is not a list of non-empty strings reads as "not
+    reported", so the artefact is saved without the field rather than with junk.
+    """
+    if not isinstance(value, list) or not all(isinstance(fid, str) and fid for fid in value):
+        return None
+    return value[:MAX_INPUT_FEEDBACK_IDS]
