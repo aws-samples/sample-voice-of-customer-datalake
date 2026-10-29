@@ -76,5 +76,30 @@
   "newFile": "Nowy plik",
   "notConfigured": "Skonfiguruj endpoint API w Administracja → Ogólne, aby przeglądać dane",
   "refresh": "Odśwież",
-  "title": "Eksplorator danych"
+  "title": "Eksplorator danych",
+  "dataQuality": {
+    "title": "Jakość danych",
+    "description": "Na ile przydatne są opinie z każdego źródła: poziom wyznaczany regułami na podstawie długości, szczegółów (liczby, nazwy produktów) i tego, czy opisują konkretny problem lub prośbę. Źródło z przewagą niskich opinii często oznacza źle skonfigurowany scraper lub pomijane pole formularza.",
+    "loading": "Wczytywanie jakości danych…",
+    "empty": "Brak opinii w tym okresie.",
+    "unratedShare": "{{share}} opinii z tego okresu nie ma jeszcze oceny.",
+    "backfillHint": "Opinie zapisane przed wprowadzeniem ocen nie mają poziomu; ponowne przetworzenie kategorii (Administracja → Taksonomia) je oceni.",
+    "chartTop_one": "Wykres pokazuje najbardziej aktywne źródło; tabela zawiera wszystkie źródła.",
+    "chartTop_few": "Wykres pokazuje {{count, number}} najbardziej aktywne źródła; tabela zawiera wszystkie źródła.",
+    "chartTop_many": "Wykres pokazuje {{count, number}} najbardziej aktywnych źródeł; tabela zawiera wszystkie źródła.",
+    "chartTop_other": "Wykres pokazuje {{count, number}} najbardziej aktywnego źródła; tabela zawiera wszystkie źródła.",
+    "partial": "Części danych nie udało się odczytać na czas, więc te liczby mogą być niższe od rzeczywistych.",
+    "tableCaption": "Przydatność opinii według źródła",
+    "allSources": "Wszystkie źródła",
+    "columns": {
+      "source": "Źródło",
+      "total": "Razem"
+    },
+    "bands": {
+      "high": "Wysoka",
+      "medium": "Średnia",
+      "low": "Niska",
+      "unrated": "Bez oceny"
+    }
+  }
 }

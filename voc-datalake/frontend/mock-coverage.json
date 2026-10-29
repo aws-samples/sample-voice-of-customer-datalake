@@ -2953,6 +2953,19 @@
     ]
   },
   {
+    "file": "api/dataQualityApi.ts",
+    "method": "GET",
+    "call": "`/metrics/data-quality?${buildSearchParams(range)}`",
+    "probes": [
+      {
+        "path": "/metrics/data-quality?days=30"
+      },
+      {
+        "path": "/metrics/data-quality?days=7&date_basis=review"
+      }
+    ]
+  },
+  {
     "file": "api/dimensionsApi.ts",
     "method": "GET",
     "call": "`/metrics/dimensions?${buildSearchParams(params)}`",

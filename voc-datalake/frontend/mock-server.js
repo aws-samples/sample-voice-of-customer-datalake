@@ -22,6 +22,7 @@ import { handleDecisionRoutes } from './mock-decisions.js';
 import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
 import { handleFeatureRequestRoutes } from './mock-feature-requests.js';
+import { handleDataQualityRoutes } from './mock-data-quality.js';
 import { radarBrandError } from './mock-radar-brands.js';
 import {
   attributeFilterOf, dimensionsConfig, entityExtras, handleDimensionRoutes, seedDimensionFixtures, sourceProfiles,
@@ -1286,6 +1287,7 @@ function handleDomainModules(req, res, url) {
   };
   return handlePrioritizationConfigRoutes(req, res, url, send, shared)
     || handleDimensionRoutes(req, res, url, send, shared)
+    || handleDataQualityRoutes(req, res, url, send, shared)
     || handleScopeRoutes(req, res, url, send, shared)
     || handleAssistJobRoutes(req, res, url, send)
     || handleSourceRoutes(req, res, url, send, shared)

@@ -76,5 +76,28 @@
     "persona": "Persona",
     "showRaw": "Afficher le JSON brut",
     "hideRaw": "Masquer le JSON brut"
+  },
+  "dataQuality": {
+    "title": "Qualité des données",
+    "description": "L'utilité des retours de chaque source : un niveau calculé par des règles à partir de leur longueur, de leurs détails (chiffres, termes produit) et de la présence d'un problème ou d'une demande concrets. Une source aux retours surtout faibles signale souvent un scraper mal configuré ou un champ de formulaire ignoré.",
+    "loading": "Chargement de la qualité des données…",
+    "empty": "Aucun retour sur cette période.",
+    "unratedShare": "{{share}} des retours de cette période ne sont pas encore évalués.",
+    "backfillHint": "Les retours enregistrés avant l'existence des évaluations n'ont pas de niveau ; un retraitement des catégories (Administration → Taxonomie) les évalue.",
+    "chartTop_one": "Le graphique montre la source la plus active ; le tableau liste toutes les sources.",
+    "chartTop_other": "Le graphique montre les {{count, number}} sources les plus actives ; le tableau liste toutes les sources.",
+    "partial": "Certaines données n'ont pas pu être lues à temps : ces chiffres peuvent être inférieurs à la réalité.",
+    "tableCaption": "Utilité des retours par source",
+    "allSources": "Toutes les sources",
+    "columns": {
+      "source": "Source",
+      "total": "Total"
+    },
+    "bands": {
+      "high": "Élevée",
+      "medium": "Moyenne",
+      "low": "Faible",
+      "unrated": "Non évalué"
+    }
   }
 }
