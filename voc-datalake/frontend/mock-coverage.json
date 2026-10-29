@@ -3072,6 +3072,14 @@
           "field": "author",
           "value": "Jordan P."
         }
+      },
+      {
+        "path": "/settings/erasure",
+        "body": {
+          "field": "source",
+          "value": "webscraper",
+          "confirm": "webscraper"
+        }
       }
     ]
   },

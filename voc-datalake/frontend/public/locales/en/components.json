@@ -602,7 +602,8 @@
       "author": "Author",
       "source_id": "Source id",
       "csv_row_id": "CSV row id",
-      "email": "Email"
+      "email": "Email",
+      "source": "Whole source"
     },
     "valueLabel": "Value",
     "sourceLabel": "Within source",
@@ -621,6 +622,24 @@
     },
     "confirmTitle": "Erase this person's feedback?",
     "confirmMessage": "Every review whose {{field}} matches the value ({{source}}) and its raw archive will be deleted permanently."
+  },
+  "sourceErasure": {
+    "title": "Delete all data from a source",
+    "description": "Deletes every review from one source and every raw file in its raw folder. Dashboard counts go down as the reviews are deleted. The source keeps its settings, schedule and sync position, so new reviews keep arriving until you turn the source off. Uploaded CSV and JSON files are kept. This cannot be undone.",
+    "sourceLabel": "Source",
+    "chooseSource": "Choose a source",
+    "noSources": "No source has data yet.",
+    "start": "Delete all data from this source",
+    "startError": "The deletion was not started: {{reason}}",
+    "confirmTitle": "Delete all data from {{source}}?",
+    "confirmMessage": "Every review from {{source}} and every raw file in its folder will be deleted permanently.",
+    "typeLabel": "Type {{source}} to confirm",
+    "confirm": "Delete all data",
+    "progress": {
+      "items": "Deleting reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
+      "raw": "Deleting raw files. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
+      "done": "Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}."
+    }
   },
   "dimensionsEdit": {
     "errors": {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  defaultSourceProfile, isLiveErasure, normalizeErasureJob, normalizeErasureJobs, normalizeSourceProfiles,
+  defaultSourceProfile, isLiveErasure, normalizeErasableSources, normalizeErasureJob, normalizeErasureJobs, normalizeSourceProfiles,
 } from './sourceProfilesApi'
 
 describe('normalizeSourceProfiles', () => {
@@ -42,5 +42,19 @@ describe('erasure jobs', () => {
   it('treats queued and running as live', () => {
     expect(isLiveErasure({ status: 'queued' })).toBe(true)
     expect(isLiveErasure({ status: 'completed' })).toBe(false)
+  })
+  it('reads a whole-source job with its phase, and an unknown phase as absent', () => {
+    const [whole, odd] = normalizeErasureJobs({ jobs: [
+      { ...job, field: 'source', source: 'web_x', phase: 'raw' },
+      { ...job, job_id: 'er_2', field: 'source', phase: 'later' },
+    ] })
+    expect([whole?.field, whole?.phase]).toStrictEqual(['source', 'raw'])
+    expect(odd?.phase).toBeUndefined()
+  })
+
+  it('keeps only valid source ids in the erasable list', () => {
+    expect(normalizeErasableSources({ jobs: [], sources: ['web_x', 'Bad Id', 7, 'manual_import'] }))
+      .toStrictEqual(['web_x', 'manual_import'])
+    expect(normalizeErasableSources({ jobs: [] })).toStrictEqual([])
   })
 })

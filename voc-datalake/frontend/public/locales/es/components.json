@@ -612,7 +612,8 @@
       "author": "Autor",
       "source_id": "Id de origen",
       "csv_row_id": "Id de fila CSV",
-      "email": "Correo electrónico"
+      "email": "Correo electrónico",
+      "source": "Fuente completa"
     },
     "valueLabel": "Valor",
     "sourceLabel": "Dentro de la fuente",
@@ -631,6 +632,24 @@
     },
     "confirmTitle": "¿Borrar las opiniones de esta persona?",
     "confirmMessage": "Se eliminarán de forma permanente todas las opiniones cuyo campo {{field}} coincida con el valor ({{source}}) y su archivo sin procesar."
+  },
+  "sourceErasure": {
+    "title": "Eliminar todos los datos de una fuente",
+    "description": "Elimina todas las reseñas de una fuente y todos los archivos sin procesar de su carpeta raw. Los recuentos del panel bajan a medida que se eliminan las reseñas. La fuente conserva su configuración, su programación y su posición de sincronización, así que seguirán llegando reseñas nuevas hasta que desactives la fuente. Los archivos CSV y JSON subidos se conservan. No se puede deshacer.",
+    "sourceLabel": "Fuente",
+    "chooseSource": "Elige una fuente",
+    "noSources": "Ninguna fuente tiene datos todavía.",
+    "start": "Eliminar todos los datos de esta fuente",
+    "startError": "No se inició la eliminación: {{reason}}",
+    "confirmTitle": "¿Eliminar todos los datos de {{source}}?",
+    "confirmMessage": "Todas las reseñas de {{source}} y todos los archivos sin procesar de su carpeta se eliminarán para siempre.",
+    "typeLabel": "Escribe {{source}} para confirmar",
+    "confirm": "Eliminar todos los datos",
+    "progress": {
+      "items": "Eliminando reseñas. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
+      "raw": "Eliminando archivos sin procesar. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
+      "done": "Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}."
+    }
   },
   "dimensionsEdit": {
     "errors": {
