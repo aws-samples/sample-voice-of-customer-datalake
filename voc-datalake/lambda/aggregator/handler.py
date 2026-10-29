@@ -275,8 +275,11 @@ from shared.metric_keys import (
     SOURCE_PREFIX,
     SUBCATEGORY_PREFIX,
     TAG_PREFIX,
+    USEFULNESS_METRIC_TYPE,
+    USEFULNESS_PREFIX,
 )
 from shared.timestamps import now_iso
+from shared.usefulness import USEFULNESS_UNRATED, stored_band
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.type_defs import TransactWriteItemTypeDef
@@ -605,6 +608,8 @@ def get_metric_type(pk: str) -> str | None:
         return 'tag'
     if pk.startswith(CHANNEL_PREFIX):
         return 'channel'
+    if pk.startswith(USEFULNESS_PREFIX):
+        return USEFULNESS_METRIC_TYPE
     return None
 
 
@@ -1015,7 +1020,9 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     This replaces a hardcoded `update_counter` call per dimension; an inverted copy
     of that list would have re-created the hazard on day one.
 
-    URGENCY AND SUBCATEGORY ARE THE ONLY CONDITIONAL DIMENSIONS. Every other item below is appended
+    URGENCY AND SUBCATEGORY ARE THE ONLY CONDITIONAL DIMENSIONS among the fixed axes (the
+    admin dimensions, tags, channel and usefulness rows at the end are conditional too, each
+    on a key-safe value / a stored band). Every other item below is appended
     unconditionally, because each read has a non-empty default — a reader asking
     "which of these might be absent?" gets one short answer. So the count varies with
     urgency and with whether the item carries a key-safe subcategory; no docstring in this module states
@@ -1134,8 +1141,27 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
     channel = channel_bucket(item)
     if channel is not None:
         dimensions.append((f'{CHANNEL_PREFIX}{channel}', 'count'))
+    usefulness = usefulness_bucket(item)
+    if usefulness is not None:
+        dimensions.append((usefulness, 'count'))
 
     return dimensions
+
+
+def usefulness_bucket(item: dict) -> str | None:
+    """The item's per-source usefulness row (``METRIC#daily_usefulness#<source>#<band>``), or None.
+
+    Only a RATED item has a row (``shared.usefulness.stored_band``): an item stored before
+    the band existed is never counted here, in either direction, and `/metrics/data-quality`
+    reads it as unrated (the source's total minus its banded rows). A MODIFY that rates it
+    (a reprocess backfill) or moves its band is a symmetric difference like any other.
+    The source is the same `source_platform` (and default) the per-source row uses.
+    """
+    band = stored_band(item)
+    if band == USEFULNESS_UNRATED:
+        return None
+    source = item.get('source_platform', 'unknown')
+    return f'{USEFULNESS_PREFIX}{source}#{band}'
 
 
 def channel_bucket(item: dict) -> str | None:
