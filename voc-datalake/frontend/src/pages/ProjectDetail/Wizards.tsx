@@ -16,7 +16,7 @@ import { z } from 'zod'
 import { lenientList } from '../../api/lenientFields'
 import { projectsApi } from '../../api/projectsApi'
 import { serverReason } from '../../lib/errors'
-import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
+import { PersonaGenerateConfirm, PersonaModeChoice } from './PersonaModeChoice'
 import DataSourceWizard from '../../components/DataSourceWizard/DataSourceWizard'
 import ContextSummary from '../../components/DataSourceWizard/ContextSummary'
 import { documentTypeLabel } from '../../components/DocumentTypeBadge/documentTypes'
@@ -143,6 +143,11 @@ export function PersonaWizard({
               customInstructions: e.target.value,
             })} placeholder="e.g., Focus on business travelers..." rows={4} className="input" />
           </div>
+          <PersonaModeChoice
+            existingCount={personas.length}
+            mode={personaConfig.mode}
+            onChange={(mode) => onPersonaConfigChange({ ...personaConfig, mode })}
+          />
         </FinalStepSummary>
       )}
       finalStepValid
@@ -151,12 +156,11 @@ export function PersonaWizard({
       isSubmitting={generating === 'personas'}
       submitLabel={<><Sparkles size={16} />{t('wizards.submitGeneratePersonas')}</>}
     />
-    <ConfirmModal
+    <PersonaGenerateConfirm
       isOpen={confirming}
-      variant="info"
-      title={t('wizards.personaConfirmTitle')}
-      message={t('wizards.personaConfirmMessage', { n: personaConfig.personaCount })}
-      confirmLabel={t('wizards.submitGeneratePersonas')}
+      existingCount={personas.length}
+      mode={personaConfig.mode}
+      personaCount={personaConfig.personaCount}
       onConfirm={() => { setConfirming(false); onSubmit() }}
       onCancel={() => setConfirming(false)}
     />

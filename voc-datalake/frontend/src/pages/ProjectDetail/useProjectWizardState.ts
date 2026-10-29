@@ -14,6 +14,7 @@ type WizardType = 'persona' | 'research' | 'doc' | 'merge' | null
 const DEFAULT_PERSONA_CONFIG: PersonaToolConfig = {
   personaCount: 3,
   customInstructions: '',
+  mode: 'add',
 }
 const DEFAULT_RESEARCH_CONFIG: ResearchToolConfig = {
   question: '',

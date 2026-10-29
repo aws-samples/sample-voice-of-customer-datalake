@@ -100,6 +100,14 @@
       "language": "Schreibt das Ergebnis auf {{language}}.",
       "background": "Dies läuft im Hintergrund und erscheint in den Jobs des Projekts. Sie können währenddessen weiterarbeiten."
     },
+    "personas": {
+      "add_one": "Ergänzt die {{count, number}} Persona des Projekts; sie bleibt erhalten.",
+      "add_other": "Ergänzt die {{count, number}} Personas des Projekts; sie bleiben erhalten.",
+      "addUnknown": "Ergänzt die vorhandenen Personas des Projekts; sie bleiben erhalten.",
+      "replace_one": "Löscht die {{count, number}} vorhandene Persona des Projekts samt Änderungen und Avatar, bevor der neue Satz geschrieben wird.",
+      "replace_other": "Löscht die {{count, number}} vorhandenen Personas des Projekts samt Änderungen und Avataren, bevor der neue Satz geschrieben wird.",
+      "replaceUnknown": "Löscht die vorhandenen Personas des Projekts samt Änderungen und Avataren, bevor der neue Satz geschrieben wird."
+    },
     "agent": "Agent",
     "run": "Lauf",
     "memory": {

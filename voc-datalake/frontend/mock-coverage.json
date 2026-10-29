@@ -2189,6 +2189,12 @@
       {
         "path": "/projects/proj_1/personas/generate",
         "body": {}
+      },
+      {
+        "path": "/projects/proj_1/personas/generate",
+        "body": {
+          "keep_existing_personas": true
+        }
       }
     ]
   },

@@ -49,7 +49,7 @@ function personaProps() {
     personas,
     documents,
     contextConfig: defaultContextConfig,
-    personaConfig: { personaCount: 3, customInstructions: '' },
+    personaConfig: { personaCount: 3, customInstructions: '', mode: 'add' as const },
     generating: null,
     onContextChange: vi.fn(),
     onPersonaConfigChange: vi.fn(),
@@ -174,5 +174,22 @@ describe('PersonaWizard asks before generating', () => {
     const dialog = screen.getByRole('dialog', { name: 'Generate personas now?' })
     await user.click(within(dialog).getByRole('button', { name: 'Generate Personas' }))
     expect(props.onSubmit).toHaveBeenCalledTimes(1)
+  })
+})
+
+/** #353: a project with personas chooses add (default) or replace on the final step. */
+describe('PersonaWizard add-or-replace', () => {
+  beforeEach(resetWizardMocks)
+
+  it('offers the choice on the final step, add selected, and reports a switch to replace', async () => {
+    const props = personaProps()
+    const user = userEvent.setup()
+    render(<PersonaWizard {...props} />, { wrapper: createWrapper() })
+    await screen.findByText('Customer Feedback')
+    await reachFinalStep(user)
+
+    expect(screen.getByRole('radio', { name: /Add to existing personas/ })).toBeChecked()
+    await user.click(screen.getByRole('radio', { name: /Replace existing personas/ }))
+    expect(props.onPersonaConfigChange).toHaveBeenCalledWith(expect.objectContaining({ mode: 'replace' }))
   })
 })

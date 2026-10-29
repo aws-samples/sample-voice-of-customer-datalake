@@ -343,23 +343,53 @@ function personaItem(taken, fields) {
   };
 }
 
-/** A fresh set of `count` personas; they replace the project's, so only ids within the set must differ. */
-function generatedPersonas(shared, count) {
+/** shared/persona_overlap._name_key: whitespace collapsed, case folded. */
+const personaNameKey = (name) => (typeof name === 'string' ? name.split(/\s+/).filter(Boolean).join(' ').toLowerCase() : '');
+
+/** A fresh set of `count` personas; ids differ from each other and from the `kept` personas. */
+function generatedPersonas(shared, count, kept = []) {
   const read = feedbackCount(shared);
   const personas = [];
-  const taken = (id) => personas.some((p) => p.persona_id === id);
-  for (let i = 0; i < count; i += 1) {
+  const taken = (id) => personas.some((p) => p.persona_id === id) || kept.some((p) => p.persona_id === id);
+  // Like the real plan step told the kept names: skip a name a kept persona already has.
+  const keptNames = new Set(kept.map((p) => personaNameKey(p.name)));
+  let i = 0;
+  while (personas.length < count) {
     const template = PERSONA_TEMPLATES[i % PERSONA_TEMPLATES.length];
     const round = Math.floor(i / PERSONA_TEMPLATES.length);
+    const name = round > 0 ? `${template.name} ${round + 1}` : template.name;
+    i += 1;
+    if (keptNames.has(personaNameKey(name))) continue;
     personas.push(personaItem(taken, {
       ...cloneJson(template),
-      name: round > 0 ? `${template.name} ${round + 1}` : template.name,
+      name,
       feedback_count: Math.max(1, Math.round(read / count)),
       source_breakdown: { webscraper: read },
       supporting_evidence: ['Recurring delivery-estimate complaints', 'Checkout friction mentions'],
     }));
   }
   return personas;
+}
+
+/**
+ * keep_existing_personas (#353): add next to the project's personas, dropping a new one whose
+ * name repeats a kept one (drop_name_clashes); otherwise replace them (_clear_existing_personas).
+ * Returns [the new personas saved, how many were dropped].
+ */
+function savePersonaSet(detail, generated, keep) {
+  if (!keep) {
+    detail.personas.splice(0, detail.personas.length, ...generated);
+    return [generated, 0];
+  }
+  const seen = new Set(detail.personas.map((p) => personaNameKey(p.name)).filter(Boolean));
+  const added = generated.filter((p) => {
+    const key = personaNameKey(p.name);
+    if (key && seen.has(key)) return false;
+    if (key) seen.add(key);
+    return true;
+  });
+  detail.personas.push(...added);
+  return [added, generated.length - added.length];
 }
 
 const personaIdTaken = (detail) => (id) => Boolean(findPersona(detail, id));
@@ -371,15 +401,20 @@ function startPersonaGeneration(ctx) {
   if (own(ctx.body, 'generate_avatars') && ctx.body.generate_avatars !== null && typeof ctx.body.generate_avatars !== 'boolean') {
     return bad(`generate_avatars must be true or false, got ${pyTypeName(ctx.body.generate_avatars)}`);
   }
+  const keepRaw = ctx.body.keep_existing_personas;
+  if (own(ctx.body, 'keep_existing_personas') && keepRaw !== null && typeof keepRaw !== 'boolean') {
+    return bad(`keep_existing_personas must be true or false, got ${pyTypeName(keepRaw)}`);
+  }
+  const keep = keepRaw === true;
   if (!anyFeedbackMatches(ctx.shared, ctx.body)) return bad(PERSONA_NO_FEEDBACK_MESSAGE);
   return startJob(ctx.projectId, {
     jobType: 'generate_personas', status: 'running', message: 'Persona generation started.',
     runningStep: 'executing_llm_chain', errorMessage: 'Persona generation failed',
     complete: (detail) => {
-      // Replace semantics (_clear_existing_personas): a re-run never accumulates.
-      const personas = generatedPersonas(ctx.shared, count);
-      detail.personas.splice(0, detail.personas.length, ...personas);
-      detail.project.persona_count = personas.length;
+      const [personas, duplicateNamesDropped] = savePersonaSet(
+        detail, generatedPersonas(ctx.shared, count, detail.personas), keep,
+      );
+      detail.project.persona_count = detail.personas.length;
       const read = feedbackCount(ctx.shared);
       return {
         success: true, personas: cloneJson(personas),
@@ -387,7 +422,7 @@ function startPersonaGeneration(ctx) {
         metadata: {
           feedback_count: read, feedback_items_used: read, context_truncated: false,
           fetch_limit_reached: false, fetch_limit: 500, source_breakdown: { webscraper: read },
-          generation_time_ms: 1800,
+          duplicate_names_dropped: duplicateNamesDropped, generation_time_ms: 1800,
         },
       };
     },

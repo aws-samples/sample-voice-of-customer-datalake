@@ -233,12 +233,18 @@ const generateDocument = defineClientTool({
 const generatePersonas = defineClientTool({
   name: 'generate_personas',
   pack: 'project',
-  description: 'Start a background job that derives new personas from the feedback in the page time window.',
+  description: 'Start a background job that derives new personas from the feedback in the page time window. '
+    + 'By default the new personas are ADDED next to the project\u2019s existing ones, written to be clearly different.',
   properties: {
     project_id: PROJECT_ID,
     persona_count: { type: 'integer', minimum: 1, maximum: 8, description: 'How many personas (1-8).' },
     custom_instructions: stringProperty('Extra guidance for the generator, e.g. whose customers the personas describe.', 2000),
     sources: SOURCES_PROPERTY,
+    keep_existing_personas: {
+      type: 'boolean',
+      description: 'Omit or true (default): keep the existing personas and add new ones. false: DELETE the existing '
+        + 'personas first. Send false only when the user explicitly asked to replace them.',
+    },
   },
   required: ['project_id', 'persona_count'],
   projectScoped: true,
@@ -247,8 +253,10 @@ const generatePersonas = defineClientTool({
     persona_count: z.number().int().min(1).max(8),
     custom_instructions: z.string().max(2000).optional(),
     sources: sourceListSchema.optional(),
+    keep_existing_personas: z.boolean().optional(),
   }).strict(),
-  summarize: (args) => `Generate ${args.persona_count} persona${args.persona_count === 1 ? '' : 's'} in project ${args.project_id}.`,
+  summarize: (args) => `Generate ${args.persona_count} persona${args.persona_count === 1 ? '' : 's'} in project ${args.project_id}`
+    + `${args.keep_existing_personas === false ? ', replacing the existing personas' : ''}.`,
 });
 
 const mergeDocuments = defineClientTool({

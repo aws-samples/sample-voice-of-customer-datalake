@@ -226,6 +226,8 @@ export const generatePersonasArgs = z.strictObject({
   persona_count: z.number().int().min(1).max(8),
   custom_instructions: z.string().max(2000).optional(),
   sources: sourceList.optional(),
+  /** Absent or true adds next to the project's personas; false replaces them (#353). */
+  keep_existing_personas: z.boolean().optional(),
 })
 
 export const mergeDocumentsArgs = z.strictObject({

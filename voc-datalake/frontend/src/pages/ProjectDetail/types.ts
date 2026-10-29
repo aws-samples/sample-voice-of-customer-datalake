@@ -30,9 +30,17 @@ export type NoteItem = string | {
   created_at?: string
 }
 
+/**
+ * What a generation does to the project's personas (#353): `add` keeps them and writes
+ * different ones next to them (`keep_existing_personas: true`), `replace` deletes them first.
+ */
+export type PersonaGenerationMode = 'add' | 'replace'
+
 export interface PersonaToolConfig {
   personaCount: number
   customInstructions: string
+  /** Only offered when the project has personas; `add` (non-destructive) by default. */
+  mode: PersonaGenerationMode
 }
 
 export interface ResearchToolConfig {
