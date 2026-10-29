@@ -10,7 +10,7 @@ import { renderWithQueryClient } from '../../test/query-client'
 import type { S3ImportFile } from '../../api/types'
 import type { S3ImportRun } from '../../api/s3ImportReprocessApi'
 
-// The explorer's own list and upload calls; only the two below are asserted on.
+// The explorer's own calls; beforeEach answers the sources and files reads.
 vi.mock('../../api/client', () => ({
   api: Object.fromEntries(
     ['getS3ImportSources', 'getS3ImportFiles', 'createS3ImportSource', 'deleteS3ImportFile', 'getS3UploadUrl']
