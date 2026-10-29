@@ -74,7 +74,8 @@ A CSV upload also archives the **whole file** under `raw/csv_upload/…` before 
 split. That archive is never redacted and never touched by retention or erasure. To keep
 personal data out of it, import a sensitive source with a source profile whose `pii` is not
 `allow` and whose `retention_days` is set: such sources archive per item, after redaction,
-and never as a whole file.
+and never as a whole file. A confirmed CSV correction ([csv-import.md](csv-import.md)) rewrites the
+stored item's own per-item archive, so retention still deletes it with the item.
 
 ## Access: by category AND by source
 

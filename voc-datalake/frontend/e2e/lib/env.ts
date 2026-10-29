@@ -39,6 +39,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   // 5.35 coverage (COVERAGE.md): the 5.00–5.34 features.
   'participants', 'unsubscribe', 'feature-requests', 'feedback-boards', 'board', 'product-interview', 'workflow-history', 'radar',
   'decisions', 'persona-avatars', 'surfaces',
+  // Issue #411: CSV dataset re-upload updates (writes feedback, so mock only).
+  'csv-dataset-update',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

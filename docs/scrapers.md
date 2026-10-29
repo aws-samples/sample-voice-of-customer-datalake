@@ -188,7 +188,7 @@ The same URL prefix also serves the import routes, from a second Lambda
 | POST | `/scrapers/manual/parse` | Admin | Start an LLM parse of pasted review text |
 | GET | `/scrapers/manual/parse/{job_id}` | Admin | Poll a parse job |
 | POST | `/scrapers/manual/confirm` | Admin | Import the parsed reviews |
-| POST | `/scrapers/manual/csv-upload` | Admin | Import CSV rows (column mapping, source profile) |
+| POST | `/scrapers/manual/csv-upload` | Admin | Import CSV rows (column mapping, source profile); with `dataset_name`, `dry_run` previews and `apply_updates` confirms in-place updates of a corrected re-upload ([csv-import.md](csv-import.md)) |
 | POST | `/scrapers/manual/json-upload` | Admin | Import JSON items |
 | GET | `/scrapers/manual/history` | Admin | Import runs of the last 90 days, newest first (`?limit=`, `?cursor=`); see [import-history.md](import-history.md) |
 | GET | `/scrapers/manual/history/{run_id}` | Admin | One import run with its warnings and errors |
