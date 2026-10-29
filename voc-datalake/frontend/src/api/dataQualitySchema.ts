@@ -5,6 +5,7 @@
  * @module api/dataQualitySchema
  */
 import { z } from 'zod'
+import { toOptionalFiniteNumber } from './lenientFields'
 
 /** The stored bands, best first, then the reviews stored before the band existed. */
 export const QUALITY_BANDS = ['high', 'medium', 'low', 'unrated'] as const
@@ -28,10 +29,8 @@ export function shareOf(part: number, total: number): number {
   return total > 0 ? (part / total) * 100 : 0
 }
 
-const count = z.unknown().transform((value) => {
-  const n = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0
-})
+/** A whole, non-negative count; absent, junk or negative reads as 0. */
+const count = z.unknown().transform((value) => Math.max(Math.round(toOptionalFiniteNumber(value) ?? 0), 0))
 
 const CountsSchema = z.object({ high: count, medium: count, low: count, unrated: count, total: count })
 const SourceSchema = CountsSchema.extend({ source: z.string().min(1) })
