@@ -149,16 +149,22 @@ describe('PersonaWizard start failure (F1)', () => {
   })
 })
 
+/** The wizard rendered with the two-persona project and walked to its final step. */
+async function renderAtFinalStep() {
+  const props = personaProps()
+  const user = userEvent.setup()
+  render(<PersonaWizard {...props} />, { wrapper: createWrapper() })
+  await screen.findByText('Customer Feedback')
+  await reachFinalStep(user)
+  return { props, user }
+}
+
 /** Wave 4 live finding: the final "Generate Personas" started an AI job in one click (PR/FAQ and prototype ask first). */
 describe('PersonaWizard asks before generating', () => {
   beforeEach(resetWizardMocks)
 
   async function openConfirm() {
-    const props = personaProps()
-    const user = userEvent.setup()
-    render(<PersonaWizard {...props} />, { wrapper: createWrapper() })
-    await screen.findByText('Customer Feedback')
-    await reachFinalStep(user)
+    const { props, user } = await renderAtFinalStep()
     await user.click(screen.getByRole('button', { name: /Generate Personas/ }))
     return { props, user }
   }
@@ -182,11 +188,7 @@ describe('PersonaWizard add-or-replace', () => {
   beforeEach(resetWizardMocks)
 
   it('offers the choice on the final step, add selected, and reports a switch to replace', async () => {
-    const props = personaProps()
-    const user = userEvent.setup()
-    render(<PersonaWizard {...props} />, { wrapper: createWrapper() })
-    await screen.findByText('Customer Feedback')
-    await reachFinalStep(user)
+    const { props, user } = await renderAtFinalStep()
 
     expect(screen.getByRole('radio', { name: /Add to existing personas/ })).toBeChecked()
     await user.click(screen.getByRole('radio', { name: /Replace existing personas/ }))
