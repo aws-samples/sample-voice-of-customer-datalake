@@ -80,6 +80,7 @@ const CONSOLIDATED_ROUTES: [string, string, string][] = [
   ['GET', '/feedback/fb_1/similar', 'metrics_handler.py'],
   ['PUT', '/feedback/fb_1/dimensions', 'feedback_edit_handler.py'],
   ['GET', '/metrics/release-watch', 'metrics_handler.py'],
+  ['GET', '/metrics/data-quality', 'metrics_handler.py'],
   ['POST', '/scrapers/manual/parse', 'manual_import_handler.py'],
   ['GET', '/scrapers/manual/parse/job_1', 'manual_import_handler.py'],
   ['POST', '/scrapers/manual/confirm', 'manual_import_handler.py'],
