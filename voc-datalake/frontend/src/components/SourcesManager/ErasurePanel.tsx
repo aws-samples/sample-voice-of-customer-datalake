@@ -11,15 +11,13 @@
  */
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Eraser } from 'lucide-react'
-import clsx from 'clsx'
+import { Eraser } from 'lucide-react'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
-import { ERASURE_FIELDS, erasureJobsKey, sourceProfilesApi } from '../../api/sourceProfilesApi'
-import type { ErasureField, ErasureJob, ErasureJobField, ErasureStatus, SourceProfile } from '../../api/sourceProfilesApi'
-import type { Tone } from '../../theme/tones'
+import { ERASURE_FIELDS, sourceProfilesApi } from '../../api/sourceProfilesApi'
+import type { ErasureField, ErasureJob, ErasureJobField, SourceProfile } from '../../api/sourceProfilesApi'
 import { sourceLabel } from '../../utils/displayLabels'
-import { useErasureJobs } from './useErasureJobs'
+import { ErasureSection, ErasureStartError, ErasureStatusBadge } from './erasureParts'
+import { errorReason, useErasureJobs, useStartErasure } from './useErasureJobs'
 
 const FIELD_COPY: Record<ErasureJobField, { labelKey: string }> = {
   author: { labelKey: 'components:erasure.fields.author' },
@@ -27,13 +25,6 @@ const FIELD_COPY: Record<ErasureJobField, { labelKey: string }> = {
   csv_row_id: { labelKey: 'components:erasure.fields.csv_row_id' },
   email: { labelKey: 'components:erasure.fields.email' },
   source: { labelKey: 'components:erasure.fields.source' },
-}
-
-const STATUS: Record<ErasureStatus, { tone: Tone; labelKey: string }> = {
-  queued: { tone: 'muted', labelKey: 'components:erasure.status.queued' },
-  running: { tone: 'info', labelKey: 'components:erasure.status.running' },
-  completed: { tone: 'ok', labelKey: 'components:erasure.status.completed' },
-  failed: { tone: 'danger', labelKey: 'components:erasure.status.failed' },
 }
 
 /** An item id / CSV row id is unique only within a source, so the API requires `source` for these. */
@@ -59,19 +50,12 @@ function JobRow({ job }: Readonly<{ job: ErasureJob }>) {
   )
 }
 
-export function ErasureStatusBadge({ status }: Readonly<{ status: ErasureStatus }>) {
-  const { t } = useTranslation()
-  return <span className={clsx('badge', `badge-${STATUS[status].tone}`)}>{t(STATUS[status].labelKey)}</span>
-}
-
 export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly SourceProfile[] }>) {
   const { t } = useTranslation('components', { keyPrefix: 'erasure' })
   const { t: tAll } = useTranslation()
-  const titleId = useId()
   const fieldId = useId()
   const valueId = useId()
   const sourceId = useId()
-  const queryClient = useQueryClient()
   const [field, setField] = useState<ErasureField>('author')
   const [value, setValue] = useState('')
   const [source, setSource] = useState('')
@@ -79,23 +63,16 @@ export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly
   const { data: jobs = [] } = useErasureJobs()
   const needsSource = SOURCE_SCOPED_FIELDS.has(field) && source === ''
   const hintId = useId()
-  const start = useMutation({
-    mutationFn: () => sourceProfilesApi.startErasure({ field, value: value.trim(), source }),
-    onSuccess: () => {
+  const start = useStartErasure(() => sourceProfilesApi.startErasure({ field, value: value.trim(), source }), {
+    onAccepted: () => {
       setValue('')
       setConfirming(false)
-      void queryClient.invalidateQueries({ queryKey: erasureJobsKey() })
     },
-    onError: () => setConfirming(false),
+    onRefused: () => setConfirming(false),
   })
 
   return (
-    <section className="rounded-lg border border-danger/30 p-3 sm:p-4 space-y-3" aria-labelledby={titleId}>
-      <div className="flex items-center gap-2">
-        <Eraser size={16} className="text-danger" aria-hidden="true" />
-        <h3 id={titleId} className="text-sm font-semibold tracking-tight text-text-strong">{t('title')}</h3>
-      </div>
-      <p className="text-sm text-muted">{t('description')}</p>
+    <ErasureSection icon={Eraser} title={t('title')} description={t('description')}>
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
           <label htmlFor={fieldId} className="block text-xs font-medium text-text mb-1">{t('fieldLabel')}</label>
@@ -120,12 +97,7 @@ export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly
       <button type="button" onClick={() => setConfirming(true)} disabled={value.trim() === '' || needsSource || start.isPending} className="btn btn-danger">
         <Eraser size={14} aria-hidden="true" /> {t('start')}
       </button>
-      {start.isError && (
-        <p role="alert" className="text-sm text-text flex items-center gap-2 bg-danger-subtle border border-danger/30 rounded-md px-3 py-2">
-          <AlertCircle size={14} className="text-danger flex-shrink-0" aria-hidden="true" />
-          {t('startError', { reason: start.error instanceof Error ? start.error.message : '' })}
-        </p>
-      )}
+      {start.isError && <ErasureStartError text={t('startError', { reason: errorReason(start.error) })} />}
       <div>
         <h4 className="text-xs font-medium text-text mb-1">{t('jobsTitle')}</h4>
         {jobs.length === 0 ? <p className="text-xs text-muted">{t('noJobs')}</p> : (
@@ -139,9 +111,9 @@ export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly
         confirmLabel={t('start')}
         variant="danger"
         isLoading={start.isPending}
-        onConfirm={() => start.mutate()}
+        onConfirm={() => start.mutate(undefined)}
         onCancel={() => setConfirming(false)}
       />
-    </section>
+    </ErasureSection>
   )
 }

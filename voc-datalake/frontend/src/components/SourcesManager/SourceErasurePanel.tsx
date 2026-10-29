@@ -12,14 +12,14 @@
  */
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Trash2 } from 'lucide-react'
-import { erasableSourcesKey, erasureJobsKey, sourceProfilesApi } from '../../api/sourceProfilesApi'
+import { useQuery } from '@tanstack/react-query'
+import { Trash2 } from 'lucide-react'
+import { erasableSourcesKey, sourceProfilesApi } from '../../api/sourceProfilesApi'
 import type { ErasureJob, SourceProfile } from '../../api/sourceProfilesApi'
 import { sourceLabel } from '../../utils/displayLabels'
 import DeleteSourceDataDialog from './DeleteSourceDataDialog'
-import { ErasureStatusBadge } from './ErasurePanel'
-import { useErasureJobs } from './useErasureJobs'
+import { ErasureSection, ErasureStartError, ErasureStatusBadge } from './erasureParts'
+import { errorReason, useErasureJobs, useStartErasure } from './useErasureJobs'
 
 const PROGRESS_KEYS = {
   items: 'components:sourceErasure.progress.items',
@@ -46,32 +46,23 @@ function JobProgress({ job }: Readonly<{ job: ErasureJob }>) {
 
 export default function SourceErasurePanel({ profiles }: Readonly<{ profiles: readonly SourceProfile[] }>) {
   const { t } = useTranslation('components', { keyPrefix: 'sourceErasure' })
-  const titleId = useId()
   const selectId = useId()
-  const queryClient = useQueryClient()
   const [source, setSource] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [startedId, setStartedId] = useState<string | null>(null)
   const { data: sources = [] } = useQuery({ queryKey: erasableSourcesKey(), queryFn: () => sourceProfilesApi.listErasableSources() })
   const { data: jobs = [] } = useErasureJobs()
   const started = jobs.find((job) => job.job_id === startedId)
-  const start = useMutation({
-    mutationFn: (confirm: string) => sourceProfilesApi.startSourceErasure({ source, confirm }),
-    onSuccess: (job) => {
+  const start = useStartErasure((confirm: string) => sourceProfilesApi.startSourceErasure({ source, confirm }), {
+    onAccepted: (job) => {
       setConfirming(false)
       setStartedId(job?.job_id ?? null)
-      void queryClient.invalidateQueries({ queryKey: erasureJobsKey() })
     },
-    onError: () => setConfirming(false),
+    onRefused: () => setConfirming(false),
   })
 
   return (
-    <section className="rounded-lg border border-danger/30 p-3 sm:p-4 space-y-3" aria-labelledby={titleId}>
-      <div className="flex items-center gap-2">
-        <Trash2 size={16} className="text-danger" aria-hidden="true" />
-        <h3 id={titleId} className="text-sm font-semibold tracking-tight text-text-strong">{t('title')}</h3>
-      </div>
-      <p className="text-sm text-muted">{t('description')}</p>
+    <ErasureSection icon={Trash2} title={t('title')} description={t('description')}>
       {sources.length === 0 ? <p className="text-xs text-muted">{t('noSources')}</p> : (
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -86,17 +77,12 @@ export default function SourceErasurePanel({ profiles }: Readonly<{ profiles: re
           </button>
         </div>
       )}
-      {start.isError && (
-        <p role="alert" className="text-sm text-text flex items-center gap-2 bg-danger-subtle border border-danger/30 rounded-md px-3 py-2">
-          <AlertCircle size={14} className="text-danger flex-shrink-0" aria-hidden="true" />
-          {t('startError', { reason: start.error instanceof Error ? start.error.message : '' })}
-        </p>
-      )}
+      {start.isError && <ErasureStartError text={t('startError', { reason: errorReason(start.error) })} />}
       {started !== undefined && <JobProgress job={started} />}
       {confirming && (
         <DeleteSourceDataDialog source={source} isPending={start.isPending}
           onConfirm={(typed) => start.mutate(typed)} onCancel={() => setConfirming(false)} />
       )}
-    </section>
+    </ErasureSection>
   )
 }
