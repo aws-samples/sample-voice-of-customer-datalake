@@ -20,7 +20,7 @@ import { fetchApi } from './client'
 /** Query-key root of a polled run (api/queryPolicies.ts, api/feedbackDataWatch.ts). */
 export const S3_IMPORT_REPROCESS_ROOT = 's3-import-reprocess'
 
-export const S3ImportRunSchema = z.object({
+const S3ImportRunSchema = z.object({
   run_id: z.string().min(1),
   key: z.string().catch(''),
   status: z.string().catch('unknown'),
