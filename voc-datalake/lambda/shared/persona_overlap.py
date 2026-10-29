@@ -73,12 +73,14 @@ def _line(value: object, limit: int) -> str:
     return ' '.join(value.split())[:limit]
 
 
-def _mapping(value: object) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
+def _nested(row: dict, section: str, key: str) -> object:
+    """``row[section][key]``, or None when the section is not a map."""
+    part = row.get(section)
+    return part.get(key) if isinstance(part, dict) else None
 
 
-def _pain_points(value: object) -> list[str]:
-    challenges = _mapping(value).get('current_challenges')
+def _pain_points(row: dict) -> list[str]:
+    challenges = _nested(row, 'pain_points', 'current_challenges')
     if not isinstance(challenges, list):
         return []
     lines = (_line(entry, MAX_FIELD_CHARS) for entry in challenges)
@@ -90,9 +92,9 @@ def _project_persona(row: dict) -> dict[str, Any]:
     entry: dict[str, Any] = {
         'name': _line(row.get('name'), MAX_NAME_CHARS),
         'tagline': _line(row.get('tagline'), MAX_FIELD_CHARS),
-        'occupation': _line(_mapping(row.get('identity')).get('occupation'), MAX_FIELD_CHARS),
-        'primary_goal': _line(_mapping(row.get('goals_motivations')).get('primary_goal'), MAX_FIELD_CHARS),
-        'pain_points': _pain_points(row.get('pain_points')),
+        'occupation': _line(_nested(row, 'identity', 'occupation'), MAX_FIELD_CHARS),
+        'primary_goal': _line(_nested(row, 'goals_motivations', 'primary_goal'), MAX_FIELD_CHARS),
+        'pain_points': _pain_points(row),
     }
     return {key: value for key, value in entry.items() if value}
 
@@ -125,7 +127,7 @@ def _existing_personas_section(projected: list[dict[str, Any]]) -> str:
 
 def _describe_existing(rows: Iterable[dict]) -> ExistingPersonas:
     """``ExistingPersonas`` from the project's PERSONA# rows in query (sort-key) order, newest last."""
-    ordered = [row for row in rows if isinstance(row, dict)]
+    ordered = list(rows)
     keys = frozenset(key for key in (_name_key(row.get('name')) for row in ordered) if key)
     return ExistingPersonas(keys, _existing_personas_section(_bounded_projection(ordered)))
 
