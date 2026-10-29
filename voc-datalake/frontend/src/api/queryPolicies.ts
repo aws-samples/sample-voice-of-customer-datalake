@@ -121,6 +121,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'release-watch': 'feedbackData',
   'resolved-problems': 'live',
   's3-import-files': 'live',
+  's3-import-reprocess': 'live', // one reprocess run (GET /s3-import/reprocess/{run_id}), polled while running
   's3-import-sources': 'standard',
   'scraper-logs': 'live',
   'scraper-templates': 'config',

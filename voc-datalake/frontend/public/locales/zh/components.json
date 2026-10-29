@@ -314,7 +314,19 @@
     "uploadingTo": "上传到：{{source}}",
     "alreadyExists": "已存在同名文件。请先删除该文件，然后再重新上传。",
     "uploadStatus": "上传被拒绝 (HTTP {{status}})",
-    "adminOnly": "只有管理员可以从 S3 导入存储桶导入文件。"
+    "adminOnly": "只有管理员可以从 S3 导入存储桶导入文件。",
+    "reprocess": {
+      "action": "重新处理文件",
+      "confirmTitle": "重新处理 {{filename}}?",
+      "confirmMessage": "该文件将以来源 {{source}} 再次通过导入管道。数据湖中已有的行会作为重复项跳过,因此只导入缺失的行。已存储的行不会重新富化:如需重新分类,请使用 管理 → 分类体系 中的“重新处理现有反馈”。",
+      "confirm": "重新处理",
+      "running": "正在重新处理 {{filename}}...",
+      "failed": "重新处理 {{filename}} 失败。详情请查看系统日志。",
+      "startFailed": "无法开始重新处理:{{error}}",
+      "dismiss": "关闭",
+      "completed_one": "已重新处理 {{filename}}:{{count, number}} 行已发送到管道(重复项在管道中跳过)。",
+      "completed_other": "已重新处理 {{filename}}:{{count, number}} 行已发送到管道(重复项在管道中跳过)。"
+    }
   },
   "socialFeed": {
     "all": "全部",

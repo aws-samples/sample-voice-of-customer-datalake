@@ -4006,5 +4006,28 @@
         }
       }
     ]
+  },
+  {
+    "file": "api/s3ImportReprocessApi.ts",
+    "method": "POST",
+    "call": "'/s3-import/reprocess'",
+    "probes": [
+      {
+        "path": "/s3-import/reprocess",
+        "body": {
+          "key": "reviews_export/june_reviews.csv"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/s3ImportReprocessApi.ts",
+    "method": "GET",
+    "call": "`/s3-import/reprocess/${encodeURIComponent(runId)}`",
+    "probes": [
+      {
+        "path": "/s3-import/reprocess/run_s3_import_20260310120000_0a1b2c3d"
+      }
+    ]
   }
 ]
