@@ -33,7 +33,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.api import admins_only, api_handler, create_api_resolver, decimal_default
 from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client, invoke_lambda_async
 from shared.csv_columns import ColumnPlan, bounded_metadata, plan_columns
-from shared.exceptions import ConfigurationError, NotFoundError, ServiceError, ValidationError
+from shared.csv_dataset_plan import CsvDatasetPlan, StoredRowsUnreadable, plan_dataset_rows, preview_view
+from shared.csv_datasets import csv_content_hash, csv_row_id_v2, dataset_key
+from shared.exceptions import (
+    ConfigurationError,
+    ConflictError,
+    NotFoundError,
+    ServiceError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from shared.import_runs import (
     ImportCounts,
     ImportRun,
@@ -55,10 +64,13 @@ sqs = get_sqs_client()
 s3 = get_s3_client()
 
 AGGREGATES_TABLE = os.environ.get("AGGREGATES_TABLE", "")
+# Read only by a CSV dataset upload (issue #411): BatchGetItem of the rows it names.
+FEEDBACK_TABLE = os.environ.get("FEEDBACK_TABLE", "")
 PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
 
 aggregates_table = dynamodb.Table(AGGREGATES_TABLE) if AGGREGATES_TABLE else None
+feedback_table = dynamodb.Table(FEEDBACK_TABLE) if FEEDBACK_TABLE else None
 
 app = create_api_resolver()
 
@@ -518,10 +530,13 @@ class CsvRowDrops:
 
 
 def _parse_csv_to_items(
-    csv_text: str, default_source: str, column_map: object = None, drops: CsvRowDrops | None = None,
+    csv_text: str, default_source: str, column_map: object = None, dataset: str | None = None,
+    drops: CsvRowDrops | None = None,
 ) -> tuple[list[dict], list[str]]:
     """Parse CSV text into the same item shape as json_upload. Returns (items, warnings).
 
+    With a ``dataset`` (``shared.csv_datasets.dataset_key``), a row carrying its own id is
+    keyed ``csv-row-v2`` and gets a ``content_hash``; every other row keeps ``csv-row-v1``.
     ``drops``, when given, counts the rows left out (empty text, duplicate), so callers never parse warning text.
     """
     items: list[dict] = []
@@ -561,7 +576,7 @@ def _parse_csv_to_items(
         url = col(row, 'url')
         source_column = col(row, 'channel')
 
-        feedback_id = _csv_row_id({
+        v1_id = _csv_row_id({
             'source_id': source_id,
             # A row carrying an id is identified by it, so the file can be
             # reordered without re-keying. A row without one has nothing but
@@ -576,9 +591,11 @@ def _parse_csv_to_items(
             'url': url,
             'source': source_column,
         })
+        feedback_id = csv_row_id_v2(dataset, source_id) if dataset and source_id else v1_id
 
         if feedback_id in seen_row_ids:
-            warnings.append(f'row {idx}: duplicate row — skipped')
+            warnings.append(f'row {idx}: duplicate row — skipped' if feedback_id == v1_id
+                            else f'row {idx}: its id appears again in this dataset — skipped')
             drops.duplicate += 1
             continue
         seen_row_ids.add(feedback_id)
@@ -607,8 +624,9 @@ def _parse_csv_to_items(
             )
             csv_row_id = ''
 
-        items.append({
+        item = {
             'id': feedback_id,
+            'row': idx,
             'csv_row_id': csv_row_id,
             'text': text,
             'rating': rating,
@@ -618,9 +636,31 @@ def _parse_csv_to_items(
             'timestamp': created_at,
             'source': source_column or default_source,
             **_row_extras(row, plan, idx, warnings),
-        })
+        }
+        if feedback_id != v1_id and dataset:
+            item.update(_dataset_stamp(item, dataset, created_at_raw))
+        items.append(item)
 
     return items, warnings
+
+
+def _dataset_stamp(item: dict, dataset: str, created_at_raw: str) -> dict:
+    """``csv_dataset`` + ``content_hash`` of a ``csv-row-v2`` row (``shared.csv_datasets``)."""
+    return {
+        'csv_dataset': dataset,
+        'dated': bool(created_at_raw),
+        'content_hash': csv_content_hash({
+            'text': item['text'],
+            'rating': item['rating'],
+            # The file's own date: a dateless row's import-time default must not read as an edit.
+            'created_at': created_at_raw,
+            'author': item['author'],
+            'title': item['title'],
+            'url': item['url'],
+            'channel': item['source'],
+            'metadata': item.get('metadata') or {},
+        }),
+    }
 
 
 def _upload_context(body: dict) -> tuple[dict, str, datetime, str]:
@@ -660,7 +700,49 @@ def _csv_message(item: dict, source_id: str, radar: dict[str, str] | None = None
     for key in ('metadata', 'dimensions', 'tags'):
         if item.get(key):
             message[key] = item[key]
+    if item.get('content_hash'):
+        message['csv_dataset'] = item['csv_dataset']
+        message['csv_content_hash'] = item['content_hash']
+    if item.get('csv_replace'):
+        message['csv_replace'] = True
     return message
+
+
+def _upload_dataset(body: dict, radar: dict[str, str]) -> str | None:
+    """The upload's normalised dataset key (``shared.csv_datasets.dataset_key``); 400 when malformed."""
+    try:
+        dataset = dataset_key(body.get('dataset_name'))
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    if dataset and radar:
+        # Radar rows live in voc-radar, which has no update path: refuse rather than half-apply.
+        raise ValidationError('dataset_name cannot be combined with radar_brand')
+    return dataset
+
+
+def _dataset_plan(source_id: str, items: list[dict]) -> CsvDatasetPlan:
+    """The upload's rows by new / changed / unchanged / v1 (``shared.csv_dataset_plan``); 503 when unreadable."""
+    if feedback_table is None:
+        raise ConfigurationError('FEEDBACK_TABLE not configured')
+    try:
+        return plan_dataset_rows(feedback_table, source_id, items)
+    except (StoredRowsUnreadable, *_AWS_WRITE_ERRORS) as e:
+        logger.warning(f"CSV dataset rows could not be read: {e}")
+        raise ServiceUnavailableError('Stored rows could not be read; try the upload again') from e
+
+
+def _confirmed_update(item: dict, stored: dict) -> dict:
+    """A changed row as queued: marked ``csv_replace``; a dateless row keeps the stored review date."""
+    update = {**item, 'csv_replace': True}
+    if not item.get('dated') and stored.get('source_created_at'):
+        update['timestamp'] = stored['source_created_at']
+    return update
+
+
+def _rows_to_queue(plan: CsvDatasetPlan) -> list[dict]:
+    """v1 + new rows as ever, confirmed updates marked, unchanged rows left out; in file order."""
+    rows = [*plan.v1_rows, *plan.new, *(_confirmed_update(item, stored) for item, stored in plan.changed)]
+    return sorted(rows, key=lambda item: item.get('row') or 0)
 
 
 def _archive_csv_file(
@@ -698,6 +780,7 @@ def csv_upload():
     csv_text = body.get('csv_text', '')
     default_source = (body.get('default_source') or 'csv_upload').strip() or 'csv_upload'
     radar = _upload_radar_stamp(body)
+    dataset = _upload_dataset(body, radar)
 
     if not isinstance(csv_text, str) or not csv_text.strip():
         raise ValidationError('csv_text is required')
@@ -705,7 +788,8 @@ def csv_upload():
         raise ValidationError(f'CSV exceeds {MAX_CSV_BYTES // (1024 * 1024)} MB limit')
 
     drops = CsvRowDrops()
-    items, warnings = _parse_csv_to_items(csv_text, default_source, body.get('column_map'), drops)
+    items, warnings = _parse_csv_to_items(csv_text, default_source, body.get('column_map'),
+                                          dataset=dataset, drops=drops)
     if not items:
         raise ValidationError('CSV produced no valid rows. ' + '; '.join(warnings[:5]))
     if len(items) > MAX_JSON_UPLOAD_ITEMS:
@@ -714,9 +798,17 @@ def csv_upload():
             'Split the file and try again.'
         )
     profile, user_id, now, job_id = _upload_context(body)
+    plan = _dataset_plan(profile['id'], items) if dataset else CsvDatasetPlan(v1_rows=items)
+    if body.get('dry_run') is True:
+        return _csv_preview(plan, len(items), warnings)
+    if plan.changed and body.get('apply_updates') is not True:
+        raise ConflictError(
+            f'This upload changes {len(plan.changed)} stored row(s): preview it (dry_run) '
+            'and confirm the updates (apply_updates) to apply them')
+    queued = _rows_to_queue(plan)
 
     messages, mode = prepare_messages(s3, RAW_DATA_BUCKET,
-                                      [_csv_message(item, profile['id'], radar) for item in items], profile, now)
+                                      [_csv_message(item, profile['id'], radar) for item in queued], profile, now)
     s3_uri = stamp_file_archive(
         messages, mode, lambda: _archive_csv_file(csv_text, job_id, user_id, default_source, profile['id'], now))
     imported_count, send_errors = _send_items_to_sqs(messages)
@@ -727,6 +819,7 @@ def csv_upload():
         'total_rows': len(items),
         's3_uri': s3_uri,
         **({'radar_brand': radar['radar_brand_key']} if radar else {}),
+        **({'counts': plan.counts()} if dataset else {}),
     }
     if warnings:
         result['warnings'] = warnings[:20]
@@ -743,6 +836,14 @@ def _csv_counts(items: list[dict], messages: list[dict], drops: CsvRowDrops, imp
     return ImportCounts(received=len(items) + drops.skipped + drops.duplicate, imported=imported,
                         skipped=drops.skipped + len(items) - len(messages), duplicate=drops.duplicate,
                         failed=len(messages) - imported)
+
+
+def _csv_preview(plan: CsvDatasetPlan, total_rows: int, warnings: list[str]) -> dict:
+    """The dry-run answer: nothing archived or queued, only what the upload would do."""
+    view = preview_view(feedback_table, plan) if plan.changed else {
+        'counts': plan.counts(), 'changed_rows': [], 'changed_rows_truncated': False}
+    return {'success': True, 'dry_run': True, 'total_rows': total_rows, **view,
+            **({'warnings': warnings[:20]} if warnings else {})}
 
 
 def _json_upload_item_errors(items: list) -> list[str]:

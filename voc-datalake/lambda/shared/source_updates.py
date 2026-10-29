@@ -129,7 +129,7 @@ def update_decision(stored: Mapping[str, Any], raw_record: Mapping[str, Any], pi
 # update_item kwargs
 # ============================================
 
-class _Update:
+class ItemUpdate:
     """Accumulates one ``update_item`` call's expression, names, values and conditions."""
 
     def __init__(self, stored: Mapping[str, Any]):
@@ -183,7 +183,7 @@ class _Update:
 
 def attributes_update(stored: Mapping[str, Any], raw_record: Mapping[str, Any], now_iso: str) -> dict:
     """Refresh ``issue_attributes`` only (labels, state, milestone, reactions, …)."""
-    update = _Update(stored)
+    update = ItemUpdate(stored)
     update.assign({ISSUE_ATTRIBUTES: raw_record[ISSUE_ATTRIBUTES], 'source_refreshed_at': now_iso})
     update.require_unchanged(stored, ISSUE_ATTRIBUTES)
     return update.kwargs()
@@ -243,7 +243,7 @@ def reenrichment_update(
     corrected it by hand meanwhile: a correction landing mid-flight fails this
     update, the record is retried, and the retry keeps the correction.
     """
-    update = _Update(stored)
+    update = ItemUpdate(stored)
     update.assign({
         ISSUE_ATTRIBUTES: raw_record[ISSUE_ATTRIBUTES],
         'source_refreshed_at': now_iso,
