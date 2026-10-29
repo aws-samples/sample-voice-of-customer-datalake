@@ -100,6 +100,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'form-submissions': 'standard',
   'generator-config': 'config',
   'githubMetrics': 'feedbackData',
+  'import-history': 'standard', // import runs (Data sources → Import history); a finished upload invalidates it
   'integration-status': 'standard',
   'logs': 'config', // ['logs', 'alerts']: the alerting switch and recipients
   'logs-summary': 'live',
