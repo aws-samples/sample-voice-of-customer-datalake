@@ -4054,7 +4054,7 @@
   {
     "file": "api/importHistoryApi.ts",
     "method": "GET",
-    "call": "`${PATH}?${params.toString()}`",
+    "call": "`/scrapers/manual/history?${params.toString()}`",
     "probes": [
       {
         "path": "/scrapers/manual/history?limit=25"
@@ -4064,7 +4064,7 @@
   {
     "file": "api/importHistoryApi.ts",
     "method": "GET",
-    "call": "`${PATH}/${encodeURIComponent(runId)}`",
+    "call": "`/scrapers/manual/history/${encodeURIComponent(runId)}`",
     "probes": [
       {
         "path": "/scrapers/manual/history/7d3c2b1a-0f9e-4d8c-b7a6-5e4d3c2b1a09"
