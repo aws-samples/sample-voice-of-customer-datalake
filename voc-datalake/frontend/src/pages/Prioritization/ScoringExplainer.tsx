@@ -8,7 +8,7 @@
  *
  * @module pages/Prioritization/ScoringExplainer
  */
-import { GitBranch, History, Info } from 'lucide-react'
+import { BadgeCheck, GitBranch, History, Info } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import type { ReactElement } from 'react'
@@ -49,6 +49,12 @@ function ExplainerBody({ axes }: { readonly axes: readonly ScoringAxis[] }): Rea
             <History size={12} aria-hidden="true" />{t('lineage.stale')}
           </dt>
           <dd className="mt-0.5">{t('lineage.staleReason')}</dd>
+        </div>
+        <div>
+          <dt className="inline-flex items-center gap-1 font-medium text-text-strong">
+            <BadgeCheck size={12} aria-hidden="true" />{t('lineage.acknowledged')}
+          </dt>
+          <dd className="mt-0.5">{t('lineage.acknowledgedReason')}</dd>
         </div>
       </dl>
     </div>

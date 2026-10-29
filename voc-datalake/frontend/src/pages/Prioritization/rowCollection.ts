@@ -3,6 +3,7 @@
  * @module pages/Prioritization/rowCollection
  */
 
+import { withLineageAck } from './lineageAck'
 import { projectLineageSources, rowLineageOf } from './rowLineage'
 import type { ProjectLineageSources } from './rowLineage'
 import type {
@@ -309,11 +310,11 @@ export function collectRows(
        * type the ballots covered — while the classification still describes the
        * documents actually on screen. Argued at `rowLineageOf`.
        */
-      lineage: rowLineageOf({
+      lineage: withLineageAck(rowLineageOf({
         is_frozen: row.is_frozen,
         documents,
         composition_truncated: documents.length !== row.document_ids.length,
-      }, project.lineage),
+      }, project.lineage), row),
       prototype: byId.get(row.prototype_id) ?? latestPrototypeOf(project.documents),
     }]
   })

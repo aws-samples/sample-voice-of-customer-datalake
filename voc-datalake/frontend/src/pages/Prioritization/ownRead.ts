@@ -270,6 +270,12 @@ const RowSchema = z.object({
   is_default: z.boolean().catch(false),
   created_at: z.string().catch(''),
   is_frozen: z.boolean().catch(false),
+  // Degrades to null (not marked): an unreadable mark shows the advisory label, which
+  // is what the row said before anybody marked it (#399).
+  lineage_ack: z.object({
+    document_ids: z.array(z.string().min(1)).min(1).max(MAX_ROW_DOCUMENT_IDS),
+    acknowledged_at: z.string().catch(''),
+  }).nullable().catch(null),
 })
 
 /**

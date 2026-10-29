@@ -11,6 +11,7 @@ import LinkedFormEvidence from './LinkedFormEvidence'
 import { PREVIEW_MARKDOWN_COMPONENTS } from './previewMarkdown'
 import RoomVotePanel from './RoomVotePanel'
 import RowCompositionPanel from './RowCompositionPanel'
+import { RowLineageAckControl } from './RowLineageAckControl'
 import { RowLineageBadge, RowLineageNote, RowStaleBadge } from './RowLineagePanels'
 import { MAX_NOTE_LENGTH, SCORABLE_TYPE_META, axisValue } from './prioritizationUtils'
 import type { BallotChange, PrioritizationRowView } from './prioritizationUtils'
@@ -275,6 +276,8 @@ function PRFAQRowExpanded({
               a sentence per row would bury the numbers beside it; this is where a
               sighted reader reads it. */}
           <RowLineageNote lineage={row.lineage} />
+          {/* "Keep both versions" (#399): only on a row whose documents cross generations. */}
+          <RowLineageAckControl row={row} />
           <h4 className="font-medium text-text-strong">{t('preview.title')}</h4>
           {/* Every document the row is scored on, each with its own evidence. Newest
               first, which is the order `collectRows` resolved them in and the order

@@ -140,6 +140,13 @@ export interface RowLineage extends SelectionLineage {
    * which is a gap in the UI rather than in this field.
    */
   readonly fresherDocumentIds: readonly string[]
+  /**
+   * Was this row's `crossGeneration` marked intentional for the documents it holds now
+   * ("Keep both versions", #399)? Set only by `withLineageAck` (lineageAck.ts), never by
+   * `rowLineageOf`: the classification describes the documents, the mark describes a
+   * reviewer's decision about them. Absent means not acknowledged.
+   */
+  readonly acknowledged?: boolean
 }
 
 /** Shared empty list, so the common non-stale answer allocates nothing. */

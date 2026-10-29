@@ -93,6 +93,7 @@ from shared import (
     project_access,
     project_gate,
     prototype_pins,
+    row_lineage_ack,
 )
 from shared import prioritization_axes as axes_mod
 from shared.api import (
@@ -2434,6 +2435,7 @@ def _row_payload(row: dict, row_ballots: Iterable[Any] = ()) -> dict:
         'is_default': _is_default_row(row),
         'created_at': row.get('created_at', ''),
         'is_frozen': _is_frozen_row(row, row_ballots),
+        'lineage_ack': row_lineage_ack.published_ack(row),
     }
 
 
@@ -3363,6 +3365,92 @@ def _transact_delete_row(
     except Exception as e:
         logger.exception(f'Failed to delete a prioritization row: {e}')
         raise ServiceError('Failed to delete the prioritization row') from e
+
+
+@app.put("/projects/prioritization/rows/<row_id>/lineage-ack")
+@tracer.capture_method
+def api_set_prioritization_row_lineage_ack(row_id: str):
+    """Mark, or unmark, a row's `Crosses generations` label as intentional (#399).
+
+    Body `{project_id, acknowledged, document_ids}`. `document_ids` is the set the
+    reviewer was looking at; marking requires it to equal the row's stored set, so an
+    acknowledgement can only ever describe the documents somebody actually saw. The
+    record and why it lapses on its own when the row is recomposed:
+    `shared/row_lineage_ack.py`.
+
+    NOT FENCED BY THE FREEZE. The mark changes no document and no ballot, only which
+    words the row shows, so a balloted row may be marked like any other. Edit access on
+    the row's project, the same gate a recompose has: the mark is shared team state
+    every reviewer of the row sees.
+
+    The row is read first so that a row of ANOTHER project, or one that does not
+    exist, answers one 404 without saying which; the write then repeats the
+    project and (for a mark) the document set in its condition, so a recompose racing
+    this request makes it a 409 rather than an acknowledgement of a set nobody saw.
+    """
+    path_row_id = validated_row_id(row_id)
+    body, project_id, _documents = _row_request_project()
+    acknowledged, document_ids = row_lineage_ack.validated_ack_request(body, MAX_ROW_DOCUMENT_IDS)
+
+    table = get_aggregates_table()
+    if not table:
+        raise ConfigurationError('Aggregates table not configured')
+
+    stored = _consistent_row_read(
+        table, path_row_id,
+        'Failed to read a prioritization row before a lineage acknowledgement',
+        'Failed to update the row',
+    )
+    if not isinstance(stored, dict) or stored.get('project_id') != project_id:
+        raise NotFoundError('Prioritization row not found')
+
+    names = {'#ack': row_lineage_ack.LINEAGE_ACK_FIELD, '#project_id': 'project_id',
+             '#updated_at': 'updated_at'}
+    values: dict[str, Any] = {':project_id': project_id, ':updated_at': now_iso()}
+    condition = 'attribute_exists(sk) AND #project_id = :project_id'
+    if acknowledged:
+        stored_ids = stored.get('document_ids')
+        if not isinstance(stored_ids, list) or not row_lineage_ack.same_document_set(
+                _row_document_ids(stored), document_ids):
+            raise ConflictError(
+                "This row's documents changed since the page was loaded; reload the "
+                'page and try again'
+            )
+        update = 'SET #ack = :ack, #updated_at = :updated_at'
+        values[':ack'] = row_lineage_ack.ack_record(
+            document_ids, _request_caller().subject, values[':updated_at'])
+        # The STORED list, verbatim: the condition asks "is the row still exactly what
+        # was compared above", and the stored value is the one DynamoDB holds.
+        values[':stored_ids'] = stored_ids
+        names['#document_ids'] = 'document_ids'
+        condition += ' AND #document_ids = :stored_ids'
+    else:
+        update = 'REMOVE #ack SET #updated_at = :updated_at'
+
+    try:
+        response = table.update_item(
+            Key={'pk': PRIORITIZATION_PK, 'sk': _row_sk(path_row_id)},
+            UpdateExpression=update,
+            ConditionExpression=condition,
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+            ReturnValues='ALL_NEW',
+        )
+    except ClientError as e:
+        if not is_conditional_check_failure(e):
+            logger.exception(f'Failed to update a row lineage acknowledgement: {e}')
+            raise ServiceError('Failed to update the row') from e
+        raise ConflictError(
+            'This row changed while it was being updated; reload the page and try again'
+        ) from e
+    except Exception as e:
+        logger.exception(f'Failed to update a row lineage acknowledgement: {e}')
+        raise ServiceError('Failed to update the row') from e
+
+    attributes = response.get('Attributes')
+    if not isinstance(attributes, dict):
+        raise ServiceError('Failed to read the updated row back')
+    return {'success': True, 'row': _row_payload(attributes)}
 
 
 @app.delete("/projects/prioritization/rows/<row_id>")

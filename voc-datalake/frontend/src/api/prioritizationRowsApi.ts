@@ -28,7 +28,7 @@
  *
  * @module api/prioritizationRowsApi
  */
-import { del, patch, post } from './requestKit'
+import { del, patch, post, put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
 import type { PrioritizationRow } from './projectTypes'
@@ -52,6 +52,16 @@ import type { PrioritizationRow } from './projectTypes'
 export interface RowComposition {
   readonly project_id: string
   readonly document_ids: readonly string[]
+}
+
+/**
+ * "Keep both versions" (#399): mark a row's `Crosses generations` label as intentional,
+ * or withdraw the mark. `document_ids` is the set the reviewer was looking at; the API
+ * refuses a mark with 409 when it is not the row's stored set, so a mark can only ever
+ * describe documents somebody saw.
+ */
+export interface RowLineageAckRequest extends RowComposition {
+  readonly acknowledged: boolean
 }
 
 /**
@@ -108,6 +118,14 @@ export const prioritizationRowsApi = {
    */
   recomposePrioritizationRow: (rowId: string, input: RowComposition) =>
     fetchApi<RowWriteResponse>(rowPath(rowId), patch(input)),
+
+  /**
+   * Mark (or unmark) a row's crossing as intentional. Open to anyone who may edit the
+   * row's project, frozen rows included — the mark changes no document and no ballot.
+   * The page re-reads the prioritization read afterwards, so the answer is not parsed.
+   */
+  setRowLineageAck: (rowId: string, input: RowLineageAckRequest) =>
+    fetchApi<RowWriteResponse>(`${rowPath(rowId)}/lineage-ack`, put(input)),
 
   /**
    * Delete one row TOGETHER WITH ITS BALLOTS. Admin only, server-enforced.

@@ -515,6 +515,7 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | GET | `/projects/{id}/prototypes/{document_id}/pins` | Tester pins on a prototype, `?status=open\|addressed\|resolved` (edit) — docs/feedback-forms.md |
 | POST | `/projects/{id}/prototypes/{document_id}/pins/{pin_id}/replies\|resolve\|reopen` | Pin thread reply / resolve / reopen (edit) |
 | POST | `/projects/{id}/prototypes/{document_id}/pins/addressed\|resolve` | Batch: mark pins addressed by a revision / resolve addressed pins (edit; used by agents) |
+| PUT | `/projects/prioritization/rows/{row_id}/lineage-ack` | "Keep both versions": mark / unmark a row's Crosses-generations label as intentional `{project_id, acknowledged, document_ids}` (edit on the row's project; 409 unless `document_ids` is the row's stored set); stored on the row as `lineage_ack` (aggregates `PRIORITIZATION`/`ROW#…`), lapses when the set changes — docs/prioritization.md |
 
 ### Document comments and review links (`shared/document_review_routes.py`, included by projects_handler.py) — docs/document-review.md
 | Method | Path | Description |

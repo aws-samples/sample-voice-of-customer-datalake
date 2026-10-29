@@ -5002,8 +5002,10 @@ class TestTheFirstBallotFreezesTheComposition:
 
         assert set(body['rows']['row-1']) == {
             'row_id', 'project_id', 'document_ids', 'prototype_id', 'is_default',
-            'created_at', 'is_frozen',
+            'created_at', 'is_frozen', 'lineage_ack',
         }
+        # Added by #399 ("Keep both versions"); null on a row nobody marked.
+        assert body['rows']['row-1']['lineage_ack'] is None
 
     def test_a_frozen_row_still_takes_more_ballots(
         self, api_gateway_event, lambda_context

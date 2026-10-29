@@ -285,6 +285,13 @@ export interface PrioritizationRow {
   is_default: boolean
   created_at: string
   is_frozen: boolean
+  /**
+   * "Keep both versions": the row's `Crosses generations` label marked intentional, for
+   * the document set named here (#399). `null` when nobody marked it; optional so a
+   * row built by hand (tests, the ensure answer) need not state it. Whether it still
+   * applies is decided by `pages/Prioritization/lineageAck.ts`.
+   */
+  lineage_ack?: { document_ids: string[]; acknowledged_at: string } | null
 }
 
 /**

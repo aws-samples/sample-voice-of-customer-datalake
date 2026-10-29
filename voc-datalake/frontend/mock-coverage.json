@@ -1794,6 +1794,23 @@
   },
   {
     "file": "api/prioritizationRowsApi.ts",
+    "method": "PUT",
+    "call": "`${rowPath(rowId)}/lineage-ack`",
+    "probes": [
+      {
+        "path": "/projects/prioritization/rows/row_proj_1_default/lineage-ack",
+        "body": {
+          "project_id": "proj_1",
+          "acknowledged": true,
+          "document_ids": [
+            "prfaq_1"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/prioritizationRowsApi.ts",
     "method": "PATCH",
     "call": "rowPath(rowId)",
     "probes": [
