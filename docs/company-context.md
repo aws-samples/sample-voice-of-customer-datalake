@@ -43,8 +43,10 @@ on the server). A refused field is marked and explained in place and nothing is 
 Storage: aggregates rows `SETTINGS#company_context`, `SETTINGS#design_system`, `USERCTX#{sub}`, `USERFLAGS#{sub}`
 (`sk = config`). Uploads (screenshots png/jpg/webp ≤ 5 MB, HTML ≤ 2 MB, the logo png/jpg/webp ≤ 5 MB) go to the raw bucket under
 `company-context/design/` by presigned PUT and are kept when a reference is archived; the reference's logo
-**preview** (`company-context/design/logo_preview_<ref id>.png|jpg|webp`, a copy made when it was read) is deleted
-with the archive and its `preview_key` dropped from the row (one idempotent `DeleteObjects`; an S3 failure answers
+**preview** (`company-context/design/logo_preview_<ref id>.png|jpg|webp`, a copy made when it was read, and the
+sanitised `.svg` beside it), and a website reference's copied icons (everything under
+`company-context/design/icons_<ref id>/`, listed once), are deleted with the archive and their keys
+(`preview_key`, `svg_preview_key`, `icons`) dropped from the row (one idempotent `DeleteObjects`; an S3 failure answers
 503 with the reference already archived, and repeating the DELETE removes it). The logo picker also takes an
 SVG (≤ 1 MB): the browser draws it to a PNG (longest side 1024 px, transparent background) and uploads only that PNG, so
 the API still never receives an SVG; an SVG the browser cannot convert (some browsers refuse one with a
@@ -54,7 +56,9 @@ in the Secrets Manager secret `voc/design-integrations-<account>-<region>` (Core
 
 Infrastructure: the settings role gains `secretsmanager:GetSecretValue`/`PutSecretValue` on that one secret and
 S3 read + put on `company-context/*`, and one delete: `s3:DeleteObject` on `company-context/design/logo_preview_*`
-only (the archive's preview clean-up); its environment gains `DESIGN_INTEGRATIONS_SECRET_ARN` and
+and `company-context/design/icons_*` only (the archive's clean-up of the copies made at read time; the icon folder
+is listed through the `s3:List*` on the bucket ARN that the `company-context/*` read grant includes, pinned in
+`lib/stacks/api-stack-lambda-iam.test.ts`); its environment gains `DESIGN_INTEGRATIONS_SECRET_ARN` and
 `RAW_DATA_BUCKET`. The users Lambda keeps its single-item aggregates grant (`GetItem`/`PutItem`).
 
 ## Components
@@ -102,7 +106,9 @@ Each is processed in the background (`status` `pending` → `ready` | `error`) i
 ```
 {colors: [{name, value}], typography: [{role, family, size?, weight?}], spacing: [{name, value}],
  radius: [{name, value}], guidelines_md, components: [Component] (≤ 30, the shape above),
- logo: {source_url, content_type, preview_url?, rendered?} | null, source: computed_styles | repo_files | figma | html | screenshot}
+ logo: {source_url, content_type, preview_url?, svg_preview_url?, rendered?} | null,
+ icons: [{kind, sizes, content_type, url, svg_url?, source_url}] (website only),
+ source: computed_styles | repo_files | figma | html | screenshot}
 ```
 
 Every value passes the token editor's own rules (`shared/company_context.py` `is_css_color` / `is_css_length` /
@@ -113,13 +119,15 @@ refused). **Why SVG stays refused:** an SVG is a document that can carry script 
 every consumer of the company logo is raster-only — the upload types, "Use this logo", the preview copy and the
 Bedrock image blocks (PNG / JPEG / GIF / WebP). Rasterising needs a native renderer (cairo / librsvg) that no
 Lambda layer carries, and serving a sanitised SVG from the app's CDN would put an active document type on it.
-So an SVG logo is only ever **drawn by the managed browser** (`voc-design-capture`) and kept as a PNG. A
+So an SVG logo is only ever **drawn by the managed browser** (`voc-design-capture`) and used as a PNG; its sanitised
+markup is kept beside it only as a download-only file in the bucket, never served from the app (see "Every copy is local" below). A
 repository whose only logo is an SVG (`*logo*.svg`, or the one SVG in a `public/` directory) has it read through
 the GitHub contents API (the token's path, so a private repository works; ≤ 1 MB), rebuilt deny-by-default
 (`shared/design_svg.py`, below) and handed to `voc-design-capture` once the reference is recorded as ready
 (`shared/design_logo_render.py`, async event `design_logo_render` with the sanitised markup and the read's
 `fetched_at`). The worker sanitises it again, draws it as an `<img>` from a `data:` URL in a fresh `about:blank`
-tab (one short browser session, the same render and PNG checks as below), stores the PNG as the preview and sets
+tab (one short browser session, the same render and PNG checks as below), stores the PNG as the preview (and the
+sanitised SVG beside it) and sets
 `logo: {source_url: <raw.githubusercontent.com URL>, content_type: image/png, rendered: true}` — only while the
 reference is still `ready` with the same `fetched_at` (a refresh or an archive in between wins). When it cannot be
 drawn, or the hand-off cannot start, the guidelines get a `## Logo` note naming the file and asking for a PNG /
@@ -142,7 +150,8 @@ bytes (`png_check.py`: a PNG, ≤ 2 MB, at least 8 px a side, not fully transpar
 `{source_url: <the SVG's URL>, content_type: image/png, rendered: true}` (GET adds `preview_url`). Any failure
 (decode timeout, no size, not a PNG, too large, empty or blank, a CDP error) just means no rendered logo — the
 raster candidate is used as before and the capture is unaffected; the capture log gets one `SVG logo not
-rendered` line with a short reason. The SVG's bytes are never stored or served. **An inline `<svg>` logo**
+rendered` line with a short reason. The SVG's bytes are downloaded once more through the SSRF-guarded fetch
+(≤ 1 MB, an SVG by its bytes) only to keep the sanitised copy (below); the PNG is still drawn from the URL. **An inline `<svg>` logo**
 (markup in the header, no image URL) is read only when the page names no header logo image: one more evaluate
 (`lambda/design_capture/page_inline_logo.py`) picks a visible `<svg>` (≥ 24 × 12 px, not nested, not in a cookie /
 consent banner) in `header` / `nav` or a `*logo*` / `*brand*` container that is named `logo` / `brand` (id, class,
@@ -154,9 +163,37 @@ logo" (≤ 2 MB, type decided by its bytes) to `company-context/design/logo_prev
 returns `logo.preview_url`, a short-lived signed URL like `logo_url` (the key itself never leaves the API); any
 failure just leaves it absent. A reference's `fetched_at` is the time its read FINISHED, ready or failed.
 
+**Every copy is local (5.48).** The owner's rule is "keep all copies local, do not rely on the web": what a
+reference shows comes from the private raw bucket, and the stored design names a web address only as provenance
+(`source_url`).
+
+- **The sanitised SVG beside the PNG.** Whenever an SVG logo is drawn (a website's header / og-image `.svg`, an
+  inline `<svg>`, a GitHub repository's SVG), the sanitised markup (`shared/design_svg.py` output) is kept at
+  `company-context/design/logo_preview_<ref id>.svg` and recorded as `logo.svg_preview_key`; GET returns
+  `logo.svg_preview_url`. It can never run as a document: the object carries `Content-Type: image/svg+xml` and
+  `Content-Disposition: attachment`, the signed URL asks S3 for the same two response headers
+  (`shared/design_assets.py`), it is served from the bucket's origin, never the app's, and the reference preview
+  offers it only as a **Download SVG** link. The model still reads the PNG. The sanitiser now also carries the file's
+  own `<style>` sheet over before dropping it (`shared/design_svg_style.py`): simple `.class` and element rules
+  become presentation attributes (a class rule over a type rule, never over the element's own `style`), checked like
+  every other attribute, so a tool-exported logo keeps its colours in both the PNG and the copy.
+- **Icons.** A website capture copies the page's icons — `<link rel=icon | apple-touch-icon | mask-icon>` with their
+  `sizes`, the web manifest's icons, `og:image` when it is the logo candidate, and `/favicon.ico` when the page
+  declares no icon (`lambda/design_capture/page_icons.py`) — into `company-context/design/icons_<ref id>/<sha-256
+  prefix>.<ext>` (`shared/design_icons.py`): at most 12 files, ≤ 2 MB each, at most 16 URLs tried within 20 s of the
+  session, every fetch through the SSRF-guarded `fetch_public_url`, the type decided by the bytes (PNG, JPEG, WebP,
+  GIF, ICO; an HTML page or anything else is skipped), identical files kept once. An SVG icon is sanitised and drawn
+  to a PNG like the logo (at most two), both kept; one that cannot be sanitised or drawn is skipped. The design
+  records `icons: [{kind, sizes, content_type, key, source_url, svg_key?}]`; GET swaps the keys for signed `url` /
+  `svg_url`, and the reference preview shows them as thumbnails. Without a bucket nothing is fetched.
+- **Nothing else is hotlinked.** Component snippets already keep `img src` only as a `data:` image and CSS without
+  `url()` (`shared/html_sanitizer.py`, `shared/design_components.py`); the guidelines now lose every remote image
+  (`![alt](https://…)` keeps its alt text, an `<img>` tag goes; links stay, nothing loads them). **Fonts are family
+  names only:** no font file is ever copied (font licences rarely allow redistribution).
+
 | Kind | How it is read | Runs on |
 |---|---|---|
-| `website` | The AWS-managed AgentCore browser opens the page (one session, at most 120 s). ONE in-page evaluate reads the `:root` custom properties, the computed styles of body/headings/links/buttons/inputs/nav/header/footer/cards, the most-used colours, lengths and fonts, logo candidates (header image, touch icon, `og:image`) and **component samples**: per kind (buttons grouped as filled / outlined / text, links, inputs/textareas/selects, cards with a border or shadow, nav/header, `[role=tab]`, badges/chips/pill spans, tables, dialogs) up to 3 visible, distinct elements with their computed styles in the component keys and a trimmed `outerHTML` (≤ 600), plus the `:hover` / `:focus-visible` rules of same-origin stylesheets (`:hover` cannot be computed; cross-origin sheets are skipped). Filled buttons are sampled one per background (at most two, so an outlined / text button keeps a slot) and named `primary` (a coloured fill), `inverse` (light neutral) or `neutral` (dark): a purple call-to-action and a white nav button are two variants. State rules are read when their selector names a known kind OR a class a sample carries; their `var(--x)` values are resolved through the page's `:root` properties, and a rule goes on a sample only when its SUBJECT (the compound after the last combinator; pseudo-elements excluded) matches that element — all its classes on the element, its tag the element's tag; `.site-nav a:hover` is skipped (the ancestry is unknown). Then ONE JPEG screenshot and ONE vision call that returns components grounded in the measured values. **The measured components win over the model's** (`shared/component_overlay.py`, by component name; a variant matches by name, else by background): their styles and focus keys override the model's, their hover REPLACES it (hover is invisible in a screenshot, so only a CSS rule is evidence — a model-guessed hover is dropped), the model's other variants follow (≤ 8), the model's description is kept and a measured snippet fills a missing `example_html`. Spacing tokens never come from layout: the page reports its centring margins (computed left = right > 0, e.g. `margin: auto` around a max-width column) and a spacing value equal to one (± 0.5 px), or a fractional px the page never measured, is dropped (`page_spacing.py`) | `voc-design-capture` (VocIngestionStack, 5 min) |
+| `website` | The AWS-managed AgentCore browser opens the page (one session, at most 120 s). ONE in-page evaluate reads the `:root` custom properties, the computed styles of body/headings/links/buttons/inputs/nav/header/footer/cards, the most-used colours, lengths and fonts, logo candidates (header image, touch icon, `og:image`) and **component samples**: per kind (buttons grouped as filled / outlined / text, links, inputs/textareas/selects, cards with a border or shadow, nav/header, `[role=tab]`, badges/chips/pill spans, tables, dialogs) up to 3 visible, distinct elements with their computed styles in the component keys and a trimmed `outerHTML` (≤ 600), plus the `:hover` / `:focus-visible` rules of same-origin stylesheets (`:hover` cannot be computed; cross-origin sheets are skipped). Filled buttons are sampled one per background (at most two, so an outlined / text button keeps a slot) and named `primary` (a coloured fill), `inverse` (light neutral) or `neutral` (dark): a purple call-to-action and a white nav button are two variants. State rules are read when their selector names a known kind OR a class a sample carries; their `var(--x)` values are resolved through the page's `:root` properties, and a rule goes on a sample only when its SUBJECT (the compound after the last combinator; pseudo-elements excluded) matches that element — all its classes on the element, its tag the element's tag; `.site-nav a:hover` is skipped (the ancestry is unknown). Then ONE vision call with up to THREE screenshots (`lambda/design_capture/page_shots.py`, `shared/design_vision.py`): the page above the fold, the header region (≤ 240 px tall; the top 160 px without a header element) and the footer region (scrolled to, ≤ 600 px tall; skipped when it already sits in the first screen), each clipped and scaled by the browser so the model reads it without resizing it (longest side ≤ 1568 px, ≤ 1.15 megapixels, at most 2×), as PNG when ≤ 1.5 MB and otherwise the same clip as a JPEG at quality 90; the prompt names each image, a header or footer failure only drops that image, and about 2,700 input tokens of images go in for a typical page (≤ 3,550; the single JPEG before was about 1,600). The model returns components grounded in the measured values. **The measured components win over the model's** (`shared/component_overlay.py`, by component name; a variant matches by name, else by background): their styles and focus keys override the model's, their hover REPLACES it (hover is invisible in a screenshot, so only a CSS rule is evidence — a model-guessed hover is dropped), the model's other variants follow (≤ 8), the model's description is kept and a measured snippet fills a missing `example_html`. Spacing tokens never come from layout: the page reports its centring margins (computed left = right > 0, e.g. `margin: auto` around a max-width column) and a spacing value equal to one (± 0.5 px), or a fractional px the page never measured, is dropped (`page_spacing.py`) | `voc-design-capture` (VocIngestionStack, 5 min) |
 | `github` | ONE `git/trees/{ref}?recursive=1` call ranks the whole tree: token files, Tailwind v4 theme/palette CSS, font faces, Tailwind configs, entry CSS, design docs and `.kiro/steering/*design*` (up to 12 files × 20k; the README only when nothing else exists). CSS custom properties are parsed without a model. Up to 8 UI component sources are read too (`components/ui.tsx`, then `components/ui/{button,input,card,badge,tabs,dialog,select,…}.*`; a source that fails is skipped): `cva()` variant maps, class-string maps and `a ? '…' : '…'` chains become variants, and the common Tailwind utilities are resolved to the parsed tokens without a model (`bg-accent` → the accent colour, `rounded-lg` → `--radius-lg` or 0.5rem, `px-4` → 16px, `text-sm`, `font-semibold`, `w-9` → 36px, `shadow-[…var(--x)]`, `hover:`; `shared/tailwind_components.py`). `shadow-sm` / `shadow` / `shadow-2xl` take the repository's own `--shadow-sm` / `--shadow` / `--shadow-2xl` when it defines one (resolved through its `var()`s), Tailwind v4's default otherwise; `color-mix(in srgb|oklch, …)` with literal colours and `transparent` is computed to an `rgba()` / `#hex` (`shared/css_color_mix.py`; anything else is kept as written). Plain CSS component classes are read the same
 way (`shared/css_component_rules.py`): `.btn { @apply …; }`, `.btn-ghost { background: …; color: var(--x) }`,
 `.btn-primary:not(:disabled):hover`, `.input:focus-visible { outline: …; border-color: …; box-shadow: … }` (the whole focus ring), `.badge-ok` … `.badge-aim` (every tone a variant), `.tab-active`,
@@ -221,8 +258,9 @@ Infrastructure: `voc-design-capture` runs as its own role — the managed-browse
 `aws.browser.v1`, the stream connect on `*`), `bedrock:InvokeModel` on the model allowlist, aggregates `GetItem`
 on the `SETTINGS#design_system` and `SETTINGS#model` partitions and `UpdateItem` on `SETTINGS#design_system` only
 (`dynamodb:LeadingKeys`), KMS for the table and bucket, `s3:PutObject` on
-`company-context/design/logo_preview_*` only (the logo preview: a downloaded raster candidate or the PNG the
-browser rendered from an SVG logo; env `RAW_DATA_BUCKET`); no read, no delete, no
+`company-context/design/logo_preview_*` (the logo preview: a downloaded raster candidate or the PNG the
+browser rendered from an SVG logo, and its sanitised SVG) and `company-context/design/icons_*` (the copied icons)
+only; env `RAW_DATA_BUCKET`; no read, no delete, no
 secrets. Its second action, `design_logo_render` (a GitHub reference's SVG logo), uses the same grants. It is never retried (a retry opens another billed
 session). The settings role may invoke it (`DESIGN_CAPTURE_FUNCTION`, by name: VocIngestionStack deploys before
 VocApiStack).

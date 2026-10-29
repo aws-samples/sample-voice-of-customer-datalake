@@ -17,6 +17,82 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.48.02] - 2026-10-29
+
+Follow-ups from the 5.48 review: the design-reference archive's list permission is pinned, SVG download links have
+their own schema, and the CodeQL script no longer depends on a bash quirk.
+
+### Fixed
+- The dev mock's feedback boards hide `created_by` from non-admins, like the API (`board_view`) and
+  [feedback boards](docs/feature-requests.md) say; only `paused_by` was hidden.
+- `npm run validate:codeql` calls the summary with or without `--strict` directly instead of expanding an optional
+  flag array, so the 5.48.01 macOS bash failure cannot come back by dropping a guard.
+
+### Changed
+- The SVG copies of a design reference's logo and icons (download links) are read through their own `downloadHref`
+  schema, which takes the same safe shapes as an image source (https, the dev server, a same-origin path) and never
+  `data:`, `javascript:` or a protocol-relative link; a test pins both sinks.
+- [Company context](docs/company-context.md) states that archiving a reference lists its icon folder through the
+  `s3:List*` on the bucket ARN that the `company-context/*` read grant includes; a CDK test pins that grant.
+
+## [5.48.01] - 2026-10-29
+
+A transient DNS failure no longer refuses a public URL.
+
+### Fixed
+- The outbound URL check (design references, scrapers, analyze-url, the web scraper and every SSRF-guarded fetch)
+  retries a DNS lookup that failed for a transient reason (`EAI_AGAIN`, or a resolver error such as
+  "Device or resource busy" on a cold start) twice, after a short wait, before it refuses the URL with
+  "URL validation failed". A name that does not exist is still refused at once, and every address of the lookup that
+  succeeds is still checked.
+- `npm run validate:codeql` no longer stops with "strict[@]: unbound variable" under the macOS bash when strict
+  mode is off.
+
+## [5.48.00] - 2026-10-29
+
+Feedback boards can be paused, design references keep local copies of their logo SVG and icons, and the website
+capture's model call reads three screenshots.
+
+### Added
+- **Pause a feedback board** (the board card, and Administration → Privacy & access → Boards). A paused board stays
+  visible to its audience, who can still sign in and read it, but nobody can post a request, add or change a +1 or
+  edit until an admin resumes it; such writes answer 409 `board_paused`. Admins can still change statuses, delete
+  requests or +1s, and promote. The board shows "Paused: new requests and votes are closed for now".
+  `PUT /feature-requests/boards/{board}` accepts `paused`, and every board answer carries it.
+  See [feedback boards](docs/feature-requests.md).
+- **Design references keep local copies of their icons**: a website reference copies the page's favicons, touch icons,
+  manifest icons and `og:image` (when it is the logo) into the private bucket: at most 12 files, type checked by their
+  bytes, duplicates kept once. They show as thumbnails in the reference preview. See
+  [company context](docs/company-context.md).
+- **A logo drawn from an SVG keeps its sanitised SVG** (website header, inline `<svg>`, GitHub repository), offered as
+  **Download SVG**. It is served as a download only and never shown inside the page.
+
+### Changed
+- **Archiving a board is the step before deleting it**: Delete is offered only on an archived board, and the archive
+  confirm says the board leaves its audience's view. Restore stays available. The API is unchanged
+  (`DELETE …?with_requests=true` still archives first).
+- **The website capture reads three screenshots in its one model call**: above the fold, the header and the footer,
+  each sized so the model does not shrink it (PNG, or JPEG when large). About 2,700 image tokens per capture instead
+  of about 1,600.
+- The SVG sanitiser applies the file's own simple `<style>` rules before dropping the sheet, so logos exported from
+  drawing tools keep their colours.
+- A reference's extracted guidelines no longer embed remote images (links stay); fonts are kept as family names only,
+  never as files.
+- The e2e suite deletes its saved sessions when its cleanup ends (`E2E_KEEP_AUTH=1` keeps them), and the working-tree
+  secret scan skips `.auth/` like the other git-ignored folders.
+
+### Fixed
+- `PUT /feature-requests/{id}` refuses a body that names `board` or `board_id` (400) instead of ignoring it: a request
+  never moves to another board.
+- `board_archived` and `board_paused` refusals show a translated sentence instead of the code.
+- Archiving a design reference also deletes its SVG copy and its copied icons.
+
+### Upgrade notes
+- IAM: the design capture role may write `company-context/design/icons_*`, and the settings role's archive delete
+  also covers `company-context/design/icons_*`. Deploy VocIngestionStack and VocApiStack.
+- Existing design references get their icons and SVG copy on their next **Fetch again**. Boards stored before this
+  release read as not paused; nothing to migrate.
+
 ## [5.47.04] - 2026-10-29
 
 AWS Lambda Powertools is pinned, so every deploy and CI run uses the same version.
