@@ -109,6 +109,7 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     'radar_exa_routes.py': frozenset({'PUT /radar/settings/exa-key', 'DELETE /radar/settings/exa-key'}),
     's3_import_handler.py': frozenset({  # owner decision 2026-10-08 (#242 follow-up), module middleware
         'POST /s3-import/sources', 'POST /s3-import/upload-url', 'DELETE /s3-import/file/<key>',
+        'POST /s3-import/reprocess',  # re-runs a file through the ingestor (issue #144)
     }),
     'scrapers_handler.py': frozenset({
         'POST /scrapers', 'DELETE /scrapers/<scraper_id>', 'POST /scrapers/<scraper_id>/run',
@@ -446,7 +447,9 @@ def test_only_the_recorded_handlers_are_not_resolvers():
 # its allowlist through that route, so gating it is pending an owner decision on that caller.
 ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
     # Owner decision 2026-10-08 (#242 follow-up): the import bucket and parse jobs are admin-only.
-    's3_import_handler.py': frozenset({'GET /s3-import/sources', 'GET /s3-import/files'}),
+    's3_import_handler.py': frozenset({
+        'GET /s3-import/sources', 'GET /s3-import/files', 'GET /s3-import/reprocess/<run_id>',
+    }),
     'manual_import_handler.py': frozenset({'GET /scrapers/manual/parse/<job_id>'}),
 }
 
