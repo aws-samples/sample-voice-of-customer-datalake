@@ -32,6 +32,7 @@ from shared.api import admins_only, api_handler, create_api_resolver, decimal_de
 from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client, invoke_lambda_async
 from shared.csv_columns import ColumnPlan, bounded_metadata, plan_columns
 from shared.exceptions import ConfigurationError, NotFoundError, ServiceError, ValidationError
+from shared.import_runs import ImportCounts, ImportRun, actor_from_event, get_import_run, list_import_runs, parse_limit, record_import_run
 from shared.ingest_archive import DEFAULT_UPLOAD_SOURCE, prepare_messages, stamp_file_archive, upload_profile
 from shared.logging import logger, tracer
 from shared.producer_labels import message_labels
@@ -86,6 +87,23 @@ def _caller_user_id() -> str:
     except AttributeError:
         # Claims that are not a mapping.
         return 'unknown'
+
+
+def _record_run(method: str, source: str, started_at: datetime, counts: ImportCounts, **fields: Any) -> None:
+    """Write this request's import-history record (docs/import-history.md); never raises.
+
+    The response is left unchanged: the run shows up in ``GET /scrapers/manual/history``.
+    """
+    actor, actor_email = actor_from_event(app.current_event.raw_event)
+    record_import_run(aggregates_table, ImportRun(
+        method=method, source=source, actor=actor, actor_email=actor_email,
+        started_at=started_at.isoformat(), counts=counts, **fields,
+    ))
+
+
+def _radar_key(radar: dict[str, str] | None) -> str:
+    """The Radar brand key of an upload's stamp ('' for our own feedback)."""
+    return radar.get('radar_brand_key', '') if radar else ''
 
 
 def _job_key(job_id: str) -> dict:
@@ -329,6 +347,10 @@ def _import_confirmed_reviews(job: dict, job_id: str, reviews: list[dict]) -> di
     }
     if errors:
         result['errors'] = errors
+    _record_run('paste', str(job.get('source_origin') or 'unknown'), now, ImportCounts(
+        received=len(reviews), imported=imported_count,
+        skipped=len(reviews) - len(messages), failed=len(messages) - imported_count,
+    ), source_id=profile['id'], errors=errors, raw_s3_key=s3_uri)
     return result
 
 
@@ -682,7 +704,24 @@ def csv_upload():
         result['warnings'] = warnings[:20]
     if send_errors:
         result['errors'] = send_errors
+    _record_run('csv', default_source, now, _csv_counts(items, messages, warnings, imported_count),
+                         run_id=job_id, source_id=profile['id'], warnings=warnings, errors=send_errors,
+                         raw_s3_key=s3_uri, radar_brand=_radar_key(radar))
     return result
+
+
+# The two `_parse_csv_to_items` warnings that drop a row (every other warning keeps it).
+_CSV_SKIPPED_SUFFIX = '— skipped'
+_CSV_DUPLICATE_MARK = 'duplicate row'
+
+
+def _csv_counts(items: list[dict], messages: list[dict], warnings: list[str], imported: int) -> ImportCounts:
+    """An upload's counts: the parser's skipped / duplicate rows, policy drops, and send failures."""
+    dropped = [w for w in warnings if w.endswith(_CSV_SKIPPED_SUFFIX)]
+    duplicate = sum(1 for w in dropped if _CSV_DUPLICATE_MARK in w)
+    skipped = len(dropped) - duplicate + len(items) - len(messages)
+    return ImportCounts(received=len(items) + len(dropped), imported=imported, skipped=skipped,
+                        duplicate=duplicate, failed=len(messages) - imported)
 
 
 def _json_upload_item_errors(items: list) -> list[str]:
@@ -795,7 +834,51 @@ def json_upload():
     if send_errors:
         result['errors'] = send_errors
 
+    method, source = _json_run_origin(body, profile['id'])
+    _record_run(method, source, now, ImportCounts(
+        received=len(items), imported=imported_count,
+        skipped=len(items) - len(messages), failed=len(messages) - imported_count,
+    ), run_id=job_id, source_id=profile['id'], errors=send_errors, raw_s3_key=s3_uri,
+        radar_brand=_radar_key(radar))
     return result
+
+
+def _json_run_origin(body: dict, source_id: str) -> tuple[str, str]:
+    """``(method, source label)`` of a JSON upload's history record.
+
+    The assistant's ``import_reviews`` sends ``import_origin: 'assistant'`` and the
+    ``source_label`` the user named; any other caller is a plain ``json`` upload.
+    """
+    method = 'assistant' if body.get('import_origin') == 'assistant' else 'json'
+    label = body.get('source_label')
+    return method, label.strip() if isinstance(label, str) and label.strip() else source_id
+
+
+@app.get("/scrapers/manual/history")
+@tracer.capture_method
+def list_import_history():
+    """Import runs, newest first (docs/import-history.md): ``?limit=`` (1-100, default 25), ``?cursor=``."""
+    if aggregates_table is None:
+        raise ConfigurationError('Table not configured')
+    params = app.current_event.query_string_parameters or {}
+    try:
+        limit = parse_limit(params.get('limit'))
+        runs, next_cursor = list_import_runs(aggregates_table, limit=limit, cursor=params.get('cursor') or None)
+    except ValueError as e:
+        raise ValidationError('limit or cursor is not valid') from e
+    return {'runs': runs, 'next_cursor': next_cursor}
+
+
+@app.get("/scrapers/manual/history/<run_id>")
+@tracer.capture_method
+def get_import_history_run(run_id: str):
+    """One import run with its warnings and errors; 404 when unknown or expired."""
+    if aggregates_table is None:
+        raise ConfigurationError('Table not configured')
+    run = get_import_run(aggregates_table, run_id)
+    if run is None:
+        raise NotFoundError('Import run not found')
+    return {'run': run}
 
 
 @api_handler

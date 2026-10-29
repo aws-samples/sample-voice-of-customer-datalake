@@ -34,6 +34,9 @@ MANUAL_IMPORT_ROUTES = [
     ('POST', '/scrapers/manual/confirm', {'body': {'job_id': 'job-1', 'reviews': []}}),
     ('POST', '/scrapers/manual/csv-upload', {'body': {'csv': 'text\nhello\n'}}),
     ('POST', '/scrapers/manual/json-upload', {'body': {'items': [{'text': 'hello'}]}}),
+    ('GET', '/scrapers/manual/history', {}),
+    ('GET', '/scrapers/manual/history/0b1f3c4e-7a2d-4f6b-9c8e-1d2a3b4c5d6e',
+     {'path_params': {'run_id': '0b1f3c4e-7a2d-4f6b-9c8e-1d2a3b4c5d6e'}}),
 ]
 
 

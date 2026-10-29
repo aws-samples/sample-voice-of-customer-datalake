@@ -66,6 +66,15 @@ def _no_circuit_store():
 
 
 @pytest.fixture(autouse=True)
+def import_run_rows():
+    """The import-history rows (shared/import_runs.py) the routes write, captured instead of
+    reaching DynamoDB. A test that asserts on the record a route wrote takes this fixture."""
+    rows: list[dict] = []
+    with patch('shared.import_runs._put_rows', side_effect=lambda _table, items: rows.extend(items)):
+        yield rows
+
+
+@pytest.fixture(autouse=True)
 def _ai_driven_by_default():
     """The PR/FAQ / PRD AI-writing gate (shared/ai_writing.py) reads the caller's way of
     working from the aggregates table and FAILS CLOSED when it cannot. Default every caller
