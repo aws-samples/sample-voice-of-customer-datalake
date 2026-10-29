@@ -323,7 +323,19 @@
     "uploadingTo": "Cargando en: {{source}}",
     "alreadyExists": "Ya existe un archivo con este nombre. Elimínelo primero para volver a subirlo.",
     "uploadStatus": "la subida fue rechazada (HTTP {{status}})",
-    "adminOnly": "Solo los administradores pueden importar archivos desde el bucket de importación de S3."
+    "adminOnly": "Solo los administradores pueden importar archivos desde el bucket de importación de S3.",
+    "reprocess": {
+      "action": "Reprocesar archivo",
+      "confirmTitle": "¿Reprocesar {{filename}}?",
+      "confirmMessage": "El archivo vuelve a pasar por el proceso de importación, con su origen {{source}}. Las filas que ya están en el data lake se omiten como duplicadas, así que solo se importan las que faltan. Las filas guardadas no se vuelven a enriquecer: para recategorizarlas, usa \"Reprocesar los comentarios existentes\" en Administración → Taxonomía.",
+      "confirm": "Reprocesar",
+      "running": "Reprocesando {{filename}}...",
+      "failed": "No se pudo reprocesar {{filename}}. Los registros del sistema tienen los detalles.",
+      "startFailed": "No se pudo iniciar el reprocesamiento: {{error}}",
+      "dismiss": "Cerrar",
+      "completed_one": "{{filename}} reprocesado: {{count, number}} fila enviada al proceso (allí se omiten los duplicados).",
+      "completed_other": "{{filename}} reprocesado: {{count, number}} filas enviadas al proceso (allí se omiten los duplicados)."
+    }
   },
   "socialFeed": {
     "all": "Todos",

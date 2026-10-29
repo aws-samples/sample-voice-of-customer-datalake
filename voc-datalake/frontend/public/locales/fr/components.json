@@ -323,7 +323,19 @@
     "uploadingTo": "Téléchargement vers : {{source}}",
     "alreadyExists": "Un fichier portant ce nom existe déjà. Supprimez-le d’abord pour le téléverser à nouveau.",
     "uploadStatus": "le téléversement a été refusé (HTTP {{status}})",
-    "adminOnly": "Seuls les administrateurs peuvent importer des fichiers depuis le bucket d’import S3."
+    "adminOnly": "Seuls les administrateurs peuvent importer des fichiers depuis le bucket d’import S3.",
+    "reprocess": {
+      "action": "Retraiter le fichier",
+      "confirmTitle": "Retraiter {{filename}} ?",
+      "confirmMessage": "Le fichier repasse dans le pipeline d'import, sous sa source {{source}}. Les lignes déjà présentes dans le data lake sont ignorées comme doublons : seules les lignes manquantes sont importées. Les lignes stockées ne sont pas ré-enrichies : pour les recatégoriser, utilisez « Retraiter les retours existants » dans Administration → Taxonomie.",
+      "confirm": "Retraiter",
+      "running": "Retraitement de {{filename}}...",
+      "failed": "Le retraitement de {{filename}} a échoué. Les journaux système donnent le détail.",
+      "startFailed": "Impossible de lancer le retraitement : {{error}}",
+      "dismiss": "Fermer",
+      "completed_one": "{{filename}} retraité : {{count, number}} ligne envoyée au pipeline (les doublons y sont ignorés).",
+      "completed_other": "{{filename}} retraité : {{count, number}} lignes envoyées au pipeline (les doublons y sont ignorés)."
+    }
   },
   "socialFeed": {
     "all": "Tous",

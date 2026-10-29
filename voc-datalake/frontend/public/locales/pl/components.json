@@ -344,7 +344,21 @@
     "filesCount_few": "Pliki ({{count, number}})",
     "filesCount_many": "Pliki ({{count, number}})",
     "uploading_few": "Przesyłanie {{count, number}} pliki...",
-    "uploading_many": "Przesyłanie {{count, number}} plików..."
+    "uploading_many": "Przesyłanie {{count, number}} plików...",
+    "reprocess": {
+      "action": "Przetwórz plik ponownie",
+      "confirmTitle": "Przetworzyć ponownie {{filename}}?",
+      "confirmMessage": "Plik ponownie przejdzie przez potok importu, ze źródłem {{source}}. Wiersze, które są już w data lake, zostaną pominięte jako duplikaty, więc zaimportowane zostaną tylko brakujące wiersze. Zapisane wiersze nie są ponownie wzbogacane: aby zmienić ich kategorie, użyj „Ponownie przetwórz istniejące opinie” w Administracja → Taksonomia.",
+      "confirm": "Przetwórz ponownie",
+      "running": "Ponowne przetwarzanie {{filename}}...",
+      "failed": "Ponowne przetwarzanie {{filename}} nie powiodło się. Szczegóły są w logach systemowych.",
+      "startFailed": "Nie udało się rozpocząć ponownego przetwarzania: {{error}}",
+      "dismiss": "Zamknij",
+      "completed_one": "Przetworzono ponownie {{filename}}: {{count, number}} wiersz wysłany do potoku (duplikaty są tam pomijane).",
+      "completed_other": "Przetworzono ponownie {{filename}}: {{count, number}} wierszy wysłanych do potoku (duplikaty są tam pomijane).",
+      "completed_few": "Przetworzono ponownie {{filename}}: {{count, number}} wiersze wysłane do potoku (duplikaty są tam pomijane).",
+      "completed_many": "Przetworzono ponownie {{filename}}: {{count, number}} wierszy wysłanych do potoku (duplikaty są tam pomijane)."
+    }
   },
   "socialFeed": {
     "all": "Wszystkie",

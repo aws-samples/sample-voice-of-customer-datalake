@@ -314,7 +314,19 @@
     "uploadingTo": "Uploading to: {{source}}",
     "alreadyExists": "A file with this name already exists. Delete it first to upload it again.",
     "uploadStatus": "the upload was refused (HTTP {{status}})",
-    "adminOnly": "Only admins can import files from the S3 import bucket."
+    "adminOnly": "Only admins can import files from the S3 import bucket.",
+    "reprocess": {
+      "action": "Reprocess file",
+      "confirmTitle": "Reprocess {{filename}}?",
+      "confirmMessage": "This runs the file through the import pipeline again, under its source {{source}}. Rows already in the data lake are skipped as duplicates, so only missing rows are imported. Stored rows are not re-enriched: to re-categorize them, use \"Reprocess existing feedback\" in Administration → Taxonomy.",
+      "confirm": "Reprocess",
+      "running": "Reprocessing {{filename}}...",
+      "failed": "Reprocessing {{filename}} failed. The system logs have the details.",
+      "startFailed": "Could not start reprocessing: {{error}}",
+      "dismiss": "Dismiss",
+      "completed_one": "Reprocessed {{filename}}: {{count, number}} row sent to the pipeline (duplicates are skipped there).",
+      "completed_other": "Reprocessed {{filename}}: {{count, number}} rows sent to the pipeline (duplicates are skipped there)."
+    }
   },
   "socialFeed": {
     "all": "All",

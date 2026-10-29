@@ -6,6 +6,7 @@
  * - Create new import sources
  * - Upload CSV, JSON, JSONL files via presigned URLs
  * - View file status (pending/processed)
+ * - Reprocess a file through the import pipeline (S3ImportReprocess.tsx)
  * - Delete files
  *
  * @module components/S3ImportExplorer
@@ -24,6 +25,7 @@ import type { S3ImportFile, S3ImportSource } from '../../api/types'
 import clsx from 'clsx'
 import { formatFileSize } from '../../utils/file'
 import { formatDateTime } from '../../utils/dateUtils'
+import S3ImportReprocess, { ReprocessFileButton } from './S3ImportReprocess'
 
 const SUPPORTED_FILE_REGEX = /\.(csv|json|jsonl)$/i
 const FALLBACK_CONTENT_TYPE = 'application/octet-stream'
@@ -90,7 +92,9 @@ function UploadStateDisplay({ uploadSuccess, uploadError, selectedSource }: Read
   return <IdleState selectedSource={selectedSource} />
 }
 
-function FileListContent({ loadingFiles, files, onDelete }: Readonly<{ loadingFiles: boolean; files: S3ImportFile[]; onDelete: (key: string) => void }>) {
+function FileListContent({ loadingFiles, files, onDelete, onReprocess }: Readonly<{
+  loadingFiles: boolean; files: S3ImportFile[]; onDelete: (key: string) => void; onReprocess: (key: string) => void
+}>) {
   const { t, i18n } = useTranslation('components')
   if (loadingFiles) {
     return (
@@ -126,6 +130,7 @@ function FileListContent({ loadingFiles, files, onDelete }: Readonly<{ loadingFi
             <span className={clsx('text-xs px-2 py-0.5 rounded-sm whitespace-nowrap', file.status === 'processed' ? 'bg-ok-subtle text-ok' : 'bg-warn-subtle text-warn')}>
               {file.status === 'processed' ? t('s3Import.processed') : t('s3Import.pending')}
             </span>
+            <ReprocessFileButton onClick={() => onReprocess(file.key)} />
             <button
               type="button"
               onClick={() => onDelete(file.key)}
@@ -152,6 +157,7 @@ export default function S3ImportExplorer() {
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set())
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [reprocessKey, setReprocessKey] = useState<string | null>(null)
 
   const { data: sourcesData } = useQuery({
     queryKey: ['s3-import-sources'],
@@ -364,11 +370,12 @@ export default function S3ImportExplorer() {
       </div>
 
       {/* File list */}
+      <S3ImportReprocess fileKey={reprocessKey} onClose={() => setReprocessKey(null)} />
       <div className="border border-border rounded-lg overflow-hidden">
         <div className="bg-bg-accent px-4 py-2 border-b border-border text-sm font-medium text-text-strong">
           {t('s3Import.filesCount', { count: files.length })}
         </div>
-        <FileListContent loadingFiles={loadingFiles} files={files} onDelete={(key) => deleteFileMutation.mutate(key)} />
+        <FileListContent loadingFiles={loadingFiles} files={files} onDelete={(key) => deleteFileMutation.mutate(key)} onReprocess={setReprocessKey} />
       </div>
     </div>
   )

@@ -12,7 +12,7 @@
 // Wired into mock-server.js by handleDomainModules, which runs this BEFORE every
 // other route: handleSourceRoutes claims only the method + path pairs in ROUTES.
 
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { cursorPage } from './mock-feedback-cursor.js';
 import { effectiveBrands, radarBrandError } from './mock-radar-brands.js';
@@ -1028,6 +1028,48 @@ function deleteImportFile(_ctx, key) {
   return [200, { success: true, deleted_key: key }];
 }
 
+// POST /s3-import/reprocess + GET /s3-import/reprocess/{run_id} (issue #144): a SOURCE_RUN#s3_import row
+// per run. A run reports `running` for REPROCESS_RUN_MS, then `completed` with a row count from the size.
+const REPROCESS_RUN_MS = 1500;
+const MOCK_BYTES_PER_ROW = 400;
+const reprocessRuns = new Map();
+
+/** The handler's `_reprocessable_key`: a staged `<source>/<file>`, or one archived as `processed/<source>/<file>`. */
+function isReprocessableImportKey(key) {
+  const staged = key.startsWith('processed/') ? key.slice('processed/'.length) : key;
+  return isDeletableImportKey(staged);
+}
+
+function runView(run) {
+  const done = Date.now() - run.startedMs >= REPROCESS_RUN_MS;
+  return {
+    run_id: run.run_id, key: run.key, status: done ? 'completed' : 'running',
+    items_found: done ? Math.max(1, Math.round(run.size / MOCK_BYTES_PER_ROW)) : 0,
+    started_at: new Date(run.startedMs).toISOString(),
+    completed_at: done ? new Date(run.startedMs + REPROCESS_RUN_MS).toISOString() : null,
+    errors: [],
+  };
+}
+
+function startReprocess(body) {
+  const key = typeof body.key === 'string' ? body.key.trim() : '';
+  if (!key) return fail(400, 'key is required');
+  if (!isReprocessableImportKey(key)) return fail(400, INVALID_IMPORT_KEY);
+  const file = importFiles.get(key);
+  if (!file) return fail(404, `File not found: ${key}`);
+  if (!file.size) return fail(400, 'The file is empty');
+  // The real id: shared/ids.py timestamped_id ('<prefix>_<UTC YYYYmmddHHMMSS>_<8 hex>').
+  const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+  const run = { run_id: `run_s3_import_${stamp}_${randomBytes(4).toString('hex')}`, key, size: file.size, startedMs: Date.now() };
+  reprocessRuns.set(run.run_id, run);
+  return [202, { success: true, run: runView(run) }];
+}
+
+function getReprocessRun(_ctx, runId) {
+  const run = reprocessRuns.get(runId);
+  return run ? [200, { run: runView(run) }] : fail(404, 'Run not found');
+}
+
 // ── /data-explorer/* writes + preview (data_explorer_handler.py) ─────────────
 
 const DATA_EXPLORER_BUCKETS = new Set(['raw-data']);
@@ -1246,6 +1288,8 @@ const ROUTES = [
   ['GET', /^\/s3-import\/files$/, 'none', listImportFiles],
   ['POST', /^\/s3-import\/upload-url$/, 'json', uploadUrl],
   ['DELETE', /^\/s3-import\/file\/(.+)$/, 'none', deleteImportFile],
+  ['POST', /^\/s3-import\/reprocess$/, 'json', (_c, body) => startReprocess(body)],
+  ['GET', /^\/s3-import\/reprocess\/([^/]+)$/, 'none', getReprocessRun],
   ['PUT', /^\/mock-s3-import-upload\/(.+)$/, 'raw', receiveUpload],
   ['GET', /^\/data-explorer\/buckets$/, 'none', listBuckets],
   ['GET', /^\/data-explorer\/s3$/, 'none', listObjects],

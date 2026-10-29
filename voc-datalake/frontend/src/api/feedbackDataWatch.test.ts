@@ -52,6 +52,15 @@ describe('watchFeedbackJobs', () => {
     expect(summaryStale(client)).toBe(true)
   })
 
+  it('refreshes when an S3 import reprocess run completes', () => {
+    const client = watched()
+    const run = (status: string) => ({ run_id: 'run_s3_import_1', key: 'default/a.json', status, items_found: 3, errors: [] })
+    client.setQueryData(['s3-import-reprocess', 'run_s3_import_1'], run('running'))
+    expect(summaryStale(client)).toBe(false)
+    client.setQueryData(['s3-import-reprocess', 'run_s3_import_1'], run('completed'))
+    expect(summaryStale(client)).toBe(true)
+  })
+
   it('ignores unrelated queries and malformed job payloads', () => {
     const client = watched()
     client.setQueryData(['projects'], [job('running')])
