@@ -11,7 +11,10 @@ what and how). Two modes, one scan loop:
   ``POST /settings/erasure`` (async invoke). The job row (``pk JOB#erasure``)
   holds the field, the optional source and the value's SHA-256; the value
   itself travels only in the invoke payload, is checked against that hash, and
-  is never stored or logged.
+  is never stored or logged. ``field = 'source'`` erases a whole source: the
+  scan deletes every item of that ``source_platform``, then a second phase
+  (``phase: 'raw'``) deletes every object version left under ``raw/{source}/``
+  (``shared/retention.delete_raw_prefix_page``), one listing page at a time.
 
 The scan is paged and time-budgeted: before the Lambda's budget runs out the
 worker re-invokes itself with the scan cursor and its running counters, like
@@ -27,6 +30,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any, Final
@@ -40,7 +44,7 @@ from shared.data_version import bump_data_version
 from shared.digests import sha256_hex
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
-from shared.retention import ERASURE_JOB_PK
+from shared.retention import ERASURE_JOB_PK, SOURCE_FIELD
 from shared.source_profiles import load_source_profiles
 from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
@@ -57,6 +61,10 @@ STATUS_QUEUED: Final = 'queued'
 STATUS_RUNNING: Final = 'running'
 STATUS_COMPLETED: Final = 'completed'
 STATUS_FAILED: Final = 'failed'
+PHASE_ITEMS: Final = 'items'
+PHASE_RAW: Final = 'raw'
+# A running job's row is refreshed when its counts move, and at least this often.
+PROGRESS_EVERY_SECONDS: Final = 60
 
 PAGE_SIZE: Final = 100
 # Hand over to a fresh invocation when less than this remains of the budget.
@@ -129,6 +137,36 @@ def finish_erasure_job(aggregates_table: Any, run: dict[str, Any], status: str, 
     )
 
 
+def record_progress(aggregates_table: Any, run: dict[str, Any], phase: str, *, force: bool = False) -> None:
+    """Write a running erasure job's counts and phase (no-op for retention runs).
+
+    Throttled: only when the counts moved since the last write or
+    ``PROGRESS_EVERY_SECONDS`` passed, so a long scan with few matches still
+    shows it is alive without one write per page.
+    """
+    if not run.get('job_id'):
+        return
+    counts = (run['deleted_items'], run['deleted_objects'], phase)
+    last = run.get('_progress')
+    if not force and isinstance(last, tuple) and last[0] == counts \
+            and time.monotonic() - last[1] < PROGRESS_EVERY_SECONDS:
+        return
+    try:
+        aggregates_table.update_item(
+            Key=_job_key(run['job_id']),
+            UpdateExpression='SET deleted_items = :items, deleted_objects = :objects, phase = :phase, progress_at = :now',
+            ConditionExpression='#status = :running',
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues={':items': run['deleted_items'], ':objects': run['deleted_objects'],
+                                       ':phase': phase, ':now': now_iso(), ':running': STATUS_RUNNING},
+        )
+    except ClientError as e:
+        # A row that is gone or no longer running is never recreated; the outcome write still runs.
+        if not is_conditional_check_failure(e):
+            raise
+    run['_progress'] = (counts, time.monotonic())
+
+
 # ============================================
 # Run setup (one per mode)
 # ============================================
@@ -189,17 +227,19 @@ def _time_left(context: Any) -> bool:
     return context.get_remaining_time_in_millis() > TIME_RESERVE_MS
 
 
-def _hand_over(context: Any, event: dict[str, Any], run: dict[str, Any], cursor: dict | None) -> dict:
+def _hand_over(context: Any, event: dict[str, Any], run: dict[str, Any], cursor: dict | None,
+               **extra: Any) -> dict:
     carried = {key: run[key] for key in ('run_id', 'started_at', 'scanned', 'deleted_items', 'deleted_objects')}
-    payload = {**event, 'mode': run['mode'], 'cursor': cursor,
+    payload = {**event, 'mode': run['mode'], 'cursor': cursor, **extra,
                'run': {**carried, 'generation': run['generation'] + 1}}
     invoke_lambda_async(context.function_name, payload)
     return {'status': 'continued', 'run_id': run['run_id']}
 
 
-def _walk(feedback_table: Any, context: Any, event: dict[str, Any], run: dict[str, Any],
+def _walk(tables: tuple[Any, Any], context: Any, event: dict[str, Any], run: dict[str, Any],
           condition: ConditionBase) -> dict | None:
     """Delete every match from the event's cursor on; a hand-over result, or None when done."""
+    feedback_table, aggregates_table = tables
     s3 = get_s3_client()
     cursor = event.get('cursor') or None
     while True:
@@ -212,6 +252,7 @@ def _walk(feedback_table: Any, context: Any, event: dict[str, Any], run: dict[st
             run['deleted_items'] += items
             run['deleted_objects'] += objects
             cursor = {'pk': item['pk'], 'sk': item['sk']}
+        record_progress(aggregates_table, run, PHASE_ITEMS)
         cursor = page.get('LastEvaluatedKey') or None
         if cursor is None:
             return None
@@ -219,7 +260,30 @@ def _walk(feedback_table: Any, context: Any, event: dict[str, Any], run: dict[st
             return _hand_over(context, event, run, cursor)
 
 
+def _sweep_raw(aggregates_table: Any, context: Any, event: dict[str, Any], run: dict[str, Any]) -> dict | None:
+    """A whole-source erasure's second phase: every object left under ``raw/{source}/``.
+
+    The per-item archives went with their items; this removes what no item
+    points at any more (an archive whose item failed processing, an older
+    copy). Each page lists from the start of the prefix (what was listed is
+    gone), so a hand-over carries only ``phase: 'raw'``.
+    """
+    prefix = retention.raw_source_prefix(str(run.get('source') or ''))
+    if prefix is None or not RAW_DATA_BUCKET:
+        return None
+    s3 = get_s3_client()
+    more = True
+    while more:
+        if not _time_left(context):
+            return _hand_over(context, event, run, None, phase=PHASE_RAW)
+        objects, more = retention.delete_raw_prefix_page(s3, RAW_DATA_BUCKET, prefix)
+        run['deleted_objects'] += objects
+        record_progress(aggregates_table, run, PHASE_RAW)
+    return None
+
+
 def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str | None = None) -> dict:
+    run.pop('_progress', None)
     if run.get('job_id'):
         finish_erasure_job(aggregates_table, run, status, error)
     write_audit(aggregates_table, run, status, error)
@@ -259,7 +323,7 @@ def _run(feedback_table: Any, aggregates_table: Any, context: Any, event: dict[s
             # an erase event that cannot run leaves its job as it was.
             return (_finish(aggregates_table, state, STATUS_COMPLETED) if mode == MODE_RETENTION
                     else {'status': 'nothing_to_do'})
-        handed_over = _walk(feedback_table, context, event, state, condition)
+        handed_over = _erase_walks((feedback_table, aggregates_table), context, event, state, condition)
     except (*_AWS_ERRORS, ValueError, RuntimeError) as e:
         failure = type(e).__name__
     else:
@@ -267,6 +331,17 @@ def _run(feedback_table: Any, aggregates_table: Any, context: Any, event: dict[s
     # The error TYPE only: a message (or a traceback) could quote the erased value back.
     logger.error('Retention run failed', extra={'mode': mode, 'error_type': failure})
     return _finish(aggregates_table, state, STATUS_FAILED, f'Run failed ({failure})')
+
+
+def _erase_walks(tables: tuple[Any, Any], context: Any, event: dict[str, Any], state: dict[str, Any],
+                 condition: ConditionBase) -> dict | None:
+    """The item scan, then (whole-source erasure only) the raw sweep; a hand-over result or None."""
+    whole_source = state.get('field') == SOURCE_FIELD
+    if not (whole_source and event.get('phase') == PHASE_RAW):
+        handed_over = _walk(tables, context, event, state, condition)
+        if handed_over is not None or not whole_source:
+            return handed_over
+    return _sweep_raw(tables[1], context, event, state)
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

@@ -90,7 +90,8 @@ from shared.model_config import (
 )
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value, json_object_body
-from shared.retention import ERASE_FIELDS, ERASURE_JOB_PK
+from shared.retention import ERASE_FIELDS, ERASURE_JOB_PK, SOURCE_FIELD
+from shared.source_erasure import blocking_job, known_sources
 from shared.scope_names import (
     HiddenNames,
     component_names_hidden,
@@ -1731,7 +1732,7 @@ MAX_ERASURE_VALUE_CHARS = 1_000
 MAX_LISTED_ERASURE_JOBS = 20
 ERASURE_VIEW_FIELDS = (
     'job_id', 'status', 'field', 'source', 'value_hash', 'deleted_items', 'deleted_objects',
-    'started_by', 'created_at', 'finished_at', 'error',
+    'started_by', 'created_at', 'finished_at', 'error', 'phase', 'progress_at',
 )
 
 
@@ -1753,7 +1754,34 @@ def _erasure_request(body: dict) -> tuple[str, str, str | None]:
     # every source could delete another source's unrelated item.
     if field in SOURCE_SCOPED_ERASURE_FIELDS and not source:
         raise ValidationError(f'source is required when field is {field}')
+    if field == SOURCE_FIELD:
+        return field, *_whole_source_request(body, value.strip(), source)
     return field, value.strip(), source
+
+
+def _erasable_sources() -> list[str]:
+    """The source ids a whole-source erasure may name (shared/source_erasure.py)."""
+    try:
+        profile_ids = [profile['id'] for profile in load_source_profiles(_configured_table())]
+    except ValueError:
+        logger.warning('Stored source profiles are invalid; listing counted sources only')
+        profile_ids = []
+    return known_sources(_configured_table(), profile_ids)
+
+
+def _whole_source_request(body: dict, value: str, source: str | None) -> tuple[str, str]:
+    """``(value, source)`` of a whole-source erasure: confirmed, known, and not already being erased."""
+    if not SOURCE_ID_RE.match(value):
+        raise ValidationError('value must be a source id when field is source')
+    if source is not None and source != value:
+        raise ValidationError('source must equal value when field is source')
+    if body.get('confirm') != value:
+        raise ValidationError('confirm must repeat the source id')
+    if value not in _erasable_sources():
+        raise ValidationError('Unknown source')
+    if blocking_job(_configured_table(), value, datetime.now(UTC)) is not None:
+        raise ConflictError('An erasure of this source is already running')
+    return value, value
 
 
 def erasure_job_view(item: dict) -> dict:
@@ -1821,14 +1849,14 @@ def start_erasure_route():
 @app.get("/settings/erasure")
 @tracer.capture_method
 def list_erasure_route():
-    """The newest erasure jobs (admin), at most 20."""
+    """The newest erasure jobs (admin), at most 20, and the sources a whole-source erasure may name."""
     require_admin(app.current_event.raw_event)
     response = _configured_table().query(
         KeyConditionExpression=Key('pk').eq(ERASURE_JOB_PK) & Key('sk').begins_with(ERASURE_JOB_PREFIX),
         ScanIndexForward=False,
         Limit=MAX_LISTED_ERASURE_JOBS,
     )
-    return {'jobs': [erasure_job_view(item) for item in response.get('Items', [])]}
+    return {'jobs': [erasure_job_view(item) for item in response.get('Items', [])], 'sources': _erasable_sources()}
 
 
 @api_handler

@@ -7,7 +7,18 @@ two opt-in modes and nothing else may call it:
   whose ``date`` is older than that many days.
 - ``erase``: items whose ``author`` / ``source_id`` / ``csv_row_id`` equals a
   value, or whose ``metadata.email`` / ``metadata.submitter_email`` does —
-  optionally within one source.
+  optionally within one source. ``field = 'source'`` is the whole-source
+  erasure: every item whose ``source_platform`` is the value, then every
+  remaining object under ``raw/{source}/`` (``raw_source_prefix``,
+  ``delete_raw_prefix_page``), so orphaned archives go too.
+
+A whole-source erasure matches on ``source_platform``, never on the partition
+key: an item's ``pk`` is ``SOURCE#{brand_name or source_platform}``
+(``processor/handler.py``), so a deployment with a brand name keeps every
+plugin's items in ONE brand partition, and a feedback form keeps its own
+brand's. Querying ``pk = SOURCE#{source}`` would miss those items, and the
+partition alone cannot tell sources apart, so the worker scans with the
+``source_platform`` filter exactly like the retention mode does.
 
 An item is removed with DeleteItem (the aggregator's stream REMOVE path moves
 its counters) and its per-item raw archive (every version) is removed with it.
@@ -38,12 +49,16 @@ from shared.logging import logger
 
 __all__ = [
     'delete_item',
+    'delete_raw_prefix_page',
     'erase_filter',
+    'raw_source_prefix',
     'retention_cutoffs',
     'retention_filter',
 ]
 
-ERASE_FIELDS: Final = ('author', 'source_id', 'csv_row_id', 'email')
+# The whole-source erasure's field: the value IS a source id (``source_platform``).
+SOURCE_FIELD: Final = 'source'
+ERASE_FIELDS: Final = ('author', 'source_id', 'csv_row_id', 'email', SOURCE_FIELD)
 # The partition of erasure job rows in voc-aggregates (Settings starts them, voc-retention runs them).
 ERASURE_JOB_PK: Final = 'JOB#erasure'
 _EMAIL_PATHS: Final = ('metadata.email', 'metadata.submitter_email')
@@ -87,11 +102,12 @@ def erase_filter(field: str, value: str, source: str | None) -> ConditionBase:
         # also matches an item stored before that normalisation.
         spellings = list(dict.fromkeys([value.strip().lower(), value]))
         match = Attr(_EMAIL_PATHS[0]).is_in(spellings) | Attr(_EMAIL_PATHS[1]).is_in(spellings)
+    elif field == SOURCE_FIELD:
+        match = Attr('source_platform').eq(value)
     else:
         match = Attr(field).eq(value)
     condition = _feedback_items() & match
-    return condition & Attr('source_platform').eq(source) if source else condition
-
+    return condition & Attr('source_platform').eq(source) if source and field != SOURCE_FIELD else condition
 
 
 def item_raw_key(item: Mapping[str, Any], bucket: str) -> str | None:
@@ -143,3 +159,37 @@ def delete_item(feedback_table: Any, s3: Any, bucket: str, item: Mapping[str, An
     feedback_table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
     logger.debug('Deleted one feedback item under its retention / erasure rule')
     return 1, objects
+
+
+def raw_source_prefix(source: str) -> str | None:
+    """``raw/{source}/``: every per-item archive of ``source``; None for a whole-upload archive folder.
+
+    The trailing ``/`` keeps ``raw/web/`` from matching ``raw/web_reviews/``. A
+    source id never contains ``/`` (``SOURCE_ID_RE``), so no other folder can
+    be reached from it.
+    """
+    if not source or '/' in source or source in ('.', '..'):
+        return None
+    prefix = f'{RAW_PREFIX}{source}/'
+    return None if prefix.startswith(_WHOLE_UPLOAD_PREFIXES) else prefix
+
+
+def delete_raw_prefix_page(s3: Any, bucket: str, prefix: str) -> tuple[int, bool]:
+    """Delete the first listing page (≤ 1,000 versions) under ``prefix``: ``(objects deleted, more left)``.
+
+    Every version and delete marker goes, as for one item's archive. The count
+    is of distinct objects (the one latest entry of each key in the page). No
+    listing cursor is kept: what was listed is deleted, so the next call lists
+    from the start of the prefix again and sees only what is left (a marker
+    naming a version just deleted is not a reliable place to resume from).
+    """
+    page = s3.list_object_versions(Bucket=bucket, Prefix=prefix, MaxKeys=_MAX_VERSIONS_PER_DELETE)
+    entries = [entry for entry in [*page.get('Versions', []), *page.get('DeleteMarkers', [])]
+               if str(entry.get('Key', '')).startswith(prefix) and entry.get('VersionId')]
+    if entries:
+        response = s3.delete_objects(Bucket=bucket, Delete={
+            'Objects': [{'Key': entry['Key'], 'VersionId': entry['VersionId']} for entry in entries], 'Quiet': True})
+        if response.get('Errors'):
+            raise RuntimeError(f'{len(response["Errors"])} raw object versions could not be deleted')
+    objects = sum(1 for entry in entries if entry.get('IsLatest'))
+    return objects, bool(entries) and bool(page.get('IsTruncated'))
