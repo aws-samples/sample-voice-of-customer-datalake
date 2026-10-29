@@ -40,6 +40,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from shared.categorization import Enrichment
+from shared.csv_datasets import is_csv_replace
 from shared.feedback_category import CATEGORY_SOURCE_MANUAL
 from shared.github_metrics import GITHUB_SOURCE
 from shared.source_profiles import PII_SUMMARY_ONLY
@@ -75,12 +76,16 @@ def content_fingerprint(raw_record: Mapping[str, Any]) -> str:
 
 
 def idempotency_key_for(raw_record: Mapping[str, Any]) -> str:
-    """``<source>:<id>``, plus the content fingerprint for update-capable records.
+    """``<source>:<id>``, plus the content fingerprint for update-capable records and CSV corrections.
 
     So an identical resend of an issue is still answered by the idempotency store,
     while a genuinely changed copy of it gets a key of its own and is processed.
     """
     base = f"{raw_record.get('source_platform', 'unknown')}:{raw_record.get('id', 'unknown')}"
+    if is_csv_replace(raw_record):
+        # A confirmed CSV correction (shared/csv_datasets.py): the row's first import holds
+        # the bare key, so the correction is keyed by its content digest too.
+        return f"{base}:csv:{raw_record['csv_content_hash']}"
     return f"{base}:{content_fingerprint(raw_record)}" if is_update_capable(raw_record) else base
 
 

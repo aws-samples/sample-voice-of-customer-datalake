@@ -78,8 +78,19 @@ def _key_id(message_id: object) -> str:
     return archive_key_stem(message_id) if message_id not in (None, '') else 'item'
 
 
-def _archive_one(s3: Any, bucket: str, source_id: str, now: datetime, message: dict[str, Any]) -> str | None:
-    key = f"raw/{source_id}/{now.year}/{now.month:02d}/{now.day:02d}/{_key_id(message.get('id'))}.json"
+def _rewritten_key(bucket: str, source_id: str, uri: object) -> str | None:
+    """The key of ``uri`` when it is a per-item archive of ``source_id`` in ``bucket``; else None."""
+    prefix = f's3://{bucket}/'
+    if not isinstance(uri, str) or not uri.startswith(prefix) or not uri.endswith('.json'):
+        return None
+    key = uri.removeprefix(prefix)
+    return key if key.startswith(f'raw/{source_id}/') else None
+
+
+def _archive_one(s3: Any, bucket: str, source_id: str, now: datetime, message: dict[str, Any],
+                 rewrite_uris: Mapping[str, str]) -> str | None:
+    key = _rewritten_key(bucket, source_id, rewrite_uris.get(str(message.get('id')))) or (
+        f"raw/{source_id}/{now.year}/{now.month:02d}/{now.day:02d}/{_key_id(message.get('id'))}.json")
     body = {k: v for k, v in message.items() if k != 's3_raw_uri'}
     try:
         s3.put_object(Bucket=bucket, Key=key, Body=json.dumps(body, default=decimal_default),
@@ -90,11 +101,18 @@ def _archive_one(s3: Any, bucket: str, source_id: str, now: datetime, message: d
     return f's3://{bucket}/{key}'
 
 
-def archive_per_item(s3: Any, bucket: str, source_id: str, messages: list[dict[str, Any]], now: datetime) -> None:
-    """Write one JSON per message and point its ``s3_raw_uri`` at it (None where a write failed)."""
+def archive_per_item(s3: Any, bucket: str, source_id: str, messages: list[dict[str, Any]], now: datetime,
+                     rewrite_uris: Mapping[str, str] | None = None) -> None:
+    """Write one JSON per message and point its ``s3_raw_uri`` at it (None where a write failed).
+
+    ``rewrite_uris`` (message id -> the stored item's archive) writes an update of a stored
+    item over its own archive (a new version of the same key), so the item keeps ONE archive
+    that retention deletes with it, instead of leaving the old one behind.
+    """
     if not bucket:
         return
-    uris = ordered_map(lambda message: _archive_one(s3, bucket, source_id, now, message), messages,
+    rewrites = rewrite_uris or {}
+    uris = ordered_map(lambda message: _archive_one(s3, bucket, source_id, now, message, rewrites), messages,
                        max_workers=_ARCHIVE_WORKERS)
     for message, uri in zip(messages, uris, strict=True):  # pragma: no mutate  ordered_map returns one result per input
         message['s3_raw_uri'] = uri
@@ -115,6 +133,7 @@ def stamp_file_archive(
 
 def prepare_messages(
     s3: Any, bucket: str, messages: list[dict[str, Any]], profile: Mapping[str, Any], now: datetime,
+    rewrite_uris: Mapping[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Apply the policy, archive per item when the profile asks for it; ``(messages, archive mode)``.
 
@@ -125,7 +144,7 @@ def prepare_messages(
     mode = archive_mode(profile)
     out = policy_applied(messages, profile)
     if mode == ARCHIVE_ITEM:
-        archive_per_item(s3, bucket, str(profile.get('id') or DEFAULT_UPLOAD_SOURCE), out, now)
+        archive_per_item(s3, bucket, str(profile.get('id') or DEFAULT_UPLOAD_SOURCE), out, now, rewrite_uris)
     elif mode != ARCHIVE_FILE:
         for message in out:
             message['s3_raw_uri'] = None

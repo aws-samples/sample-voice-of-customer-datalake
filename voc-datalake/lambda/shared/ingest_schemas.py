@@ -28,6 +28,7 @@ from datetime import UTC, datetime, timedelta
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 
 # Imports nothing else from shared/, so the processor bundle's import graph stays the same.
+from shared.csv_datasets import DATASET_NAME_MAX_LENGTH
 from shared.dimension_config import validate_tags
 from shared.timestamps import now_iso
 
@@ -289,6 +290,12 @@ class IngestMessage(BaseModel):
     # derived instead (a CSV `id` column is unique only within its file, so it
     # cannot key the item — see CSV_ROW_ID_FIELDS in manual_import_handler).
     csv_row_id: str | None = Field(None, max_length=MAX_ID_LENGTH)
+    # CSV dataset upload (issue #411, shared/csv_datasets.py): the normalised dataset key of
+    # a `csv-row-v2` row, the digest of its updatable content, and `csv_replace` on a row the
+    # uploader confirmed as an update of the stored one (the only CSV record that may overwrite).
+    csv_dataset: str | None = Field(None, min_length=1, max_length=DATASET_NAME_MAX_LENGTH, pattern=r"^[a-z0-9 ._-]+$")
+    csv_content_hash: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
+    csv_replace: bool | None = None
     rating: float | None = Field(None, ge=1, le=MAX_RATING)
     url: str | None = Field(None, max_length=MAX_URL_LENGTH)
     source_url: str | None = Field(None, max_length=MAX_URL_LENGTH)
