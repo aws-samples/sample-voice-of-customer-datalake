@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 from shared.dynamo_values import plain
 from shared.feedback_cursor import decode_key_cursor, encode_key_cursor
 from shared.logging import logger
@@ -165,8 +167,9 @@ def record_import_run(table: Any, run: ImportRun, *, now: datetime | None = None
     try:
         summary, detail = _rows(run, now or datetime.now(UTC))
         _put_rows(table, (detail, summary))
-    except Exception:
+    except (ClientError, BotoCoreError, TypeError, ValueError):
         # The import itself has already happened: losing its history row must not turn it into an error.
+        # ClientError/BotoCoreError: the write; TypeError/ValueError: a value boto3 cannot serialise.
         logger.warning('Import run record not written', extra={'run_id': run.run_id}, exc_info=True)
         return None
     return run.run_id
