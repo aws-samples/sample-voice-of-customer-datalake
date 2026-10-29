@@ -450,7 +450,11 @@ ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
     's3_import_handler.py': frozenset({
         'GET /s3-import/sources', 'GET /s3-import/files', 'GET /s3-import/reprocess/<run_id>',
     }),
-    'manual_import_handler.py': frozenset({'GET /scrapers/manual/parse/<job_id>'}),
+    'manual_import_handler.py': frozenset({
+        'GET /scrapers/manual/parse/<job_id>',
+        # Import history (#237): who imported what, from which file — admin data like the imports themselves.
+        'GET /scrapers/manual/history', 'GET /scrapers/manual/history/<run_id>',
+    }),
 }
 
 

@@ -12,10 +12,11 @@ the state BEFORE round 1 gated the writes; they are kept because they are why
 the writes are gated.
 
 SCOPE, first, because the module name and the URL prefix do not line up: this file
-covers `scrapers_handler` ONLY. `/scrapers/*` is served by TWO Lambdas — five more
+covers `scrapers_handler` ONLY. `/scrapers/*` is served by TWO Lambdas — seven more
 routes under the same prefix live in `manual_import_handler`
 (`/scrapers/manual/parse`, `.../parse/<job_id>`, `.../confirm`, `.../csv-upload`,
-`.../json-upload`). Before the owner decision of 2026-10-08 (#242 follow-up) none
+`.../json-upload`, and since #237 the read-only `.../history` and `.../history/<run_id>`).
+Before the owner decision of 2026-10-08 (#242 follow-up) none
 of them called `require_admin`; measured then as a caller whose only
 `cognito:groups` claim is `users`:
 
@@ -457,6 +458,9 @@ MANUAL_IMPORT_ROUTES = {
     'confirm_import',
     'csv_upload',
     'json_upload',
+    # Import history (#237), read-only, behind the same module middleware.
+    'list_import_history',
+    'get_import_history_run',
 }
 
 
