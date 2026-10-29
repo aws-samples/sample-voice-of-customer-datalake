@@ -34,13 +34,17 @@ def _seed(projects):
     return projects
 
 
+def _claims(subject: str) -> dict:
+    """Cognito claims for `subject`; only ADMIN is in the admins group."""
+    return {'sub': subject, 'cognito:groups': 'admins' if subject == ADMIN else ''}
+
+
 def _call(tables, method, path, body=None, subject=ADMIN):
+    """One request through `projects_handler.lambda_handler`, both tables real."""
     import projects_handler
 
-    aggregates, projects = tables
-    groups = 'admins' if subject == ADMIN else ''
-    event = rest_event(method, path, claims={'sub': subject, 'cognito:groups': groups}, body=body)
-    return invoke(projects_handler, event, MagicMock(), aggregates=aggregates, projects=projects)
+    event = rest_event(method, path, claims=_claims(subject), body=body)
+    return invoke(projects_handler, event, MagicMock(), aggregates=tables[0], projects=tables[1])
 
 
 def _ack(tables, row_id, document_ids, acknowledged=True, project_id='p1', subject=ADMIN):
