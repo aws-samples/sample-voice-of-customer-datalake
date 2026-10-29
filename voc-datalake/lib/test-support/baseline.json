@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "f7b423da36f522f79a6a2308346f667ab0b8f389a3da0dc6865b9dd0f12148ac",
+      "templateSha256": "8f36b401253cdd6d96b11cf9db8ac3f72c3ee6efa8c52a2e05d170841c6739e3",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -163,6 +163,7 @@
           "RADAR_EXA_PARAMETER = /voc/radar/exa-api-key",
           "RADAR_SCAN_FUNCTION = voc-radar-scan-<AWS::AccountId>-<AWS::Region>",
           "RETENTION_FUNCTION = voc-retention-<AWS::AccountId>-<AWS::Region>",
+          "S3_IMPORT_INGESTOR_FUNCTION = voc-ingestor-s3_import-<AWS::AccountId>-<AWS::Region>",
           "SYSTEM_API_ACCESS_LOG_GROUP = /aws/apigateway/voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
           "SYSTEM_LOG_GROUP_PATTERN = /aws/lambda/voc-*-<AWS::AccountId>-<AWS::Region>",
           "SYSTEM_WORKFLOW_LOG_GROUP_PATTERN = /aws/stepfunctions/voc-*-<AWS::AccountId>-<AWS::Region>",
