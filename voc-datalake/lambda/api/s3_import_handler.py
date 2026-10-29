@@ -18,27 +18,44 @@ object, and the presigned PUT is signed with `If-None-Match: *`, so S3 itself
 refuses (412) an object that appeared after the check. The ingestor processes
 every object-created event and has no re-upload flow, so replacing a file means
 deleting it first (the bucket is versioned, so neither step loses the old bytes).
+
+Ingested files stay where they were uploaded: the ingestor never moves or deletes
+them. `processed/<source>/<file>` exists only when an operator archives a file there
+by hand (the bucket's lifecycle rule moves that prefix to Glacier after 30 days).
+`POST /s3-import/reprocess` re-runs one file of either layout through the ingestor
+(issue #144); its run is a `SOURCE_RUN#s3_import` row, polled at
+`GET /s3-import/reprocess/<run_id>`.
 """
 
+import json
 import os
 import re
 import sys
 import urllib.parse
 from typing import Any
 
+from aws_lambda_powertools.event_handler import Response, content_types
 from botocore.exceptions import ClientError
 
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from shared import s3_import_runs
 from shared.api import admins_only, api_handler, create_api_resolver
 from shared.aws import get_s3_client, is_missing_s3_object
-from shared.exceptions import ConfigurationError, ConflictError, ServiceError, ValidationError
+from shared.exceptions import ConfigurationError, ConflictError, NotFoundError, ServiceError, ValidationError
 from shared.logging import logger, tracer
 from shared.request_body import json_object_body
+from shared.tables import get_aggregates_table
 
 s3_client = get_s3_client()
 S3_IMPORT_BUCKET = os.environ.get("S3_IMPORT_BUCKET", "")
+# The s3_import ingestor (VocIngestionStack), by name; absent when the plugin is disabled.
+S3_IMPORT_INGESTOR_FUNCTION = os.environ.get("S3_IMPORT_INGESTOR_FUNCTION", "")
+
+# The ingestor skips an empty file and one over its MAX_FILE_SIZE_MB (50 MB) without a word,
+# so a reprocess refuses both up front rather than reporting a run that imported nothing.
+MAX_REPROCESS_BYTES = 50 * 1024 * 1024
 
 IMPORTABLE_EXTENSIONS = ('.csv', '.json', '.jsonl')
 PROCESSED_PREFIX = 'processed'
@@ -74,6 +91,34 @@ def _deletable_key(key: str) -> str:
     if not filename.strip() or not filename.endswith(IMPORTABLE_EXTENSIONS):
         raise ValidationError(INVALID_KEY)
     return key
+
+
+def _reprocessable_key(key: str) -> str:
+    """*key* when it is a staged file or one archived under `processed/`; ValidationError otherwise.
+
+    Accepted: `<source>/<file>` exactly as `_deletable_key`, and `processed/<source>/<file>`
+    (an archived copy keeps its folder, which names the source `S3 - <source>` the
+    pipeline's duplicate check keys on).
+    """
+    if key.startswith(f'{PROCESSED_PREFIX}/'):
+        return f'{PROCESSED_PREFIX}/{_deletable_key(key[len(PROCESSED_PREFIX) + 1:])}'
+    return _deletable_key(key)
+
+
+def _require_reprocessable_object(key: str) -> None:
+    """NotFoundError when *key* holds nothing; ValidationError when the ingestor would skip it."""
+    try:
+        head = s3_client.head_object(Bucket=S3_IMPORT_BUCKET, Key=key)
+    except ClientError as e:
+        if is_missing_s3_object(e):
+            raise NotFoundError(f'File not found: {key}') from e
+        logger.exception(f"Failed to read the file to reprocess: {e}")
+        raise ServiceError(s3_import_runs.START_FAILED) from e
+    size = head.get('ContentLength', 0)
+    if not size:
+        raise ValidationError('The file is empty')
+    if size > MAX_REPROCESS_BYTES:
+        raise ValidationError('The file is larger than the 50 MB import limit')
 
 
 def _refuse_existing_object(key: str) -> None:
@@ -229,6 +274,51 @@ def delete_file(key: str):
         logger.exception(f"Failed to delete file: {e}")
         raise ServiceError('Failed to delete file') from e
     return {'success': True, 'deleted_key': decoded_key}
+
+
+@app.post("/s3-import/reprocess")
+@tracer.capture_method
+def reprocess_file():
+    """Re-run one imported file through the s3_import ingestor → 202 `{success, run}`.
+
+    Duplicates are skipped by the processor (the feedback id is derived from the
+    source and the row, not the import time), so only rows missing from the data
+    lake are imported again. Existing rows are not re-enriched: that is category
+    reprocess (`POST /settings/categories/reprocess`).
+    """
+    if not S3_IMPORT_BUCKET:
+        raise ConfigurationError('S3 import bucket not configured')
+    table = get_aggregates_table()
+    if not S3_IMPORT_INGESTOR_FUNCTION or table is None:
+        raise ConfigurationError('S3 import ingestor not configured')
+
+    body = json_object_body(app)
+    raw_key = body.get('key')
+    if not isinstance(raw_key, str) or not raw_key.strip():
+        raise ValidationError('key is required')
+    key = _reprocessable_key(raw_key.strip())
+    _require_reprocessable_object(key)
+
+    item = s3_import_runs.start_run(table, S3_IMPORT_INGESTOR_FUNCTION, S3_IMPORT_BUCKET, key)
+    logger.info("S3 import reprocess started", extra={'run_id': item['sk'], 'key': key})
+    return Response(
+        status_code=202,
+        content_type=content_types.APPLICATION_JSON,
+        body=json.dumps({'success': True, 'run': s3_import_runs.run_view(item)}),
+    )
+
+
+@app.get("/s3-import/reprocess/<run_id>")
+@tracer.capture_method
+def get_reprocess_run(run_id: str):
+    """One reprocess run's `SOURCE_RUN#s3_import` row → `{run}`; 404 when absent."""
+    table = get_aggregates_table()
+    if table is None:
+        raise ConfigurationError('S3 import ingestor not configured')
+    item = s3_import_runs.get_run(table, run_id)
+    if not item:
+        raise NotFoundError('Run not found')
+    return {'run': s3_import_runs.run_view(item)}
 
 
 @api_handler
