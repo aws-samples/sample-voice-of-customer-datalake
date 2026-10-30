@@ -59,19 +59,13 @@ describe('DocumentsTab', () => {
     expect(screen.getByRole('button', { name: 'Versions' })).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('renders document list when documents exist', () => {
+  it.each<[outcome: string, text: string]>([
+    ['renders document list when documents exist', 'Test Document'],
+    ['renders document type badge', 'PRD'],
+    ['shows select message when no document selected', 'Select a document'],
+  ])('%s', (_outcome, text) => {
     renderWithRouter(<DocumentsTab {...defaultProps} documents={[mockDoc]} />)
-    expect(screen.getByText('Test Document')).toBeInTheDocument()
-  })
-
-  it('renders document type badge', () => {
-    renderWithRouter(<DocumentsTab {...defaultProps} documents={[mockDoc]} />)
-    expect(screen.getByText('PRD')).toBeInTheDocument()
-  })
-
-  it('shows select message when no document selected', () => {
-    renderWithRouter(<DocumentsTab {...defaultProps} documents={[mockDoc]} />)
-    expect(screen.getByText('Select a document')).toBeInTheDocument()
+    expect(screen.getByText(text)).toBeInTheDocument()
   })
 
   it('calls onSelectDoc when document is clicked', async () => {

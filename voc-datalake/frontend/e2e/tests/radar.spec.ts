@@ -31,6 +31,7 @@ import { assertStep, escapeRegExp, isApi, jsonOf, roleOf, settle, site } from '.
 const TEXT = {
   emptyTitle: 'No brand on the Radar yet',
   brand: 'Brand',
+  allBrands: 'All brands',
   compare: 'Compared with us',
   compareEmpty: 'No category to compare yet.',
   releases: 'Releases',
@@ -89,8 +90,10 @@ test.describe('radar', () => {
         return
       }
       const options = brandPicker(page).locator('option')
-      await expect(options).toHaveCount(labels.length)
-      expect((await options.allInnerTexts()).map((t) => t.trim())).toEqual(labels)
+      // 5.47.04: with two or more brands the picker starts with "All brands" (the overview).
+      const expected = labels.length >= 2 ? [TEXT.allBrands, ...labels] : labels
+      await expect(options).toHaveCount(expected.length)
+      expect((await options.allInnerTexts()).map((t) => t.trim())).toEqual(expected)
       expect(labels).toContain(await chosenBrand(page))
       await expect(releasesSection(page)).toBeVisible()
     })

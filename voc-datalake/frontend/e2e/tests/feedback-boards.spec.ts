@@ -19,7 +19,10 @@
  */
 import { expect, type Page } from '@playwright/test'
 import { test } from '../lib/test'
+import { apiCall, stringField } from '../lib/api'
+import { RUN_PREFIX } from '../lib/env'
 import { assertStep, roleOf, settle, site } from '../lib/fixtures'
+import { isRecord } from '../lib/guards'
 
 /** The board seeded on every deployment (shared/feature_boards_store.py) and in the dev mock. */
 const SALES = { id: 'brd_sales', slug: 'sales-feature-requests', name: 'Sales feature requests' } as const
@@ -73,24 +76,42 @@ test.describe('feedback boards', () => {
     })
   })
 
-  test('admin: Delete asks for the name of a board with requests (cancelled, nothing deleted)', async ({ page }, testInfo) => {
+  test('admin: Delete is offered only on an archived board, and asks for the name of one with requests (cancelled)', async ({ page }, testInfo) => {
     test.skip(roleOf(testInfo) !== 'admin', 'admin controls')
-    await assertStep(page, 'admin', 'fb-06-delete-dialog', async (r) => {
-      await visit(page, '/feature-requests')
-      const requests = Number((await salesCard(page).locator('dd').nth(1).innerText()).replace(/\D/g, ''))
-      await salesCard(page).getByRole('button', { name: `Delete ${SALES.name}` }).click()
-      const dialog = page.getByRole('dialog', { name: 'Delete this board?' })
-      const nameInput = dialog.getByRole('textbox', { name: 'Type the board name to confirm' })
-      if (requests > 0) {
-        await expect(nameInput).toBeVisible()
+    // 5.48.02: archiving is the step before deleting, so the open seeded board offers no Delete.
+    await visit(page, '/feature-requests')
+    await expect(salesCard(page)).toBeVisible()
+    await expect(salesCard(page).getByRole('button', { name: `Delete ${SALES.name}` })).toHaveCount(0)
+
+    // A board of this run's own, with one request, archived: the dialog is checked there, then the board is removed.
+    const name = `${RUN_PREFIX}delete-dialog-board`
+    const made = await apiCall('admin', 'POST', '/feature-requests/boards', { name, template: 'blank' })
+    expect(made.status, 'POST /feature-requests/boards').toBe(201)
+    const board = isRecord(made.body) && isRecord(made.body['board']) ? made.body['board'] : {}
+    const boardId = stringField(board, 'board_id') ?? ''
+    expect(boardId, 'board_id').not.toBe('')
+    try {
+      const request = await apiCall('admin', 'POST', '/feature-requests', {
+        board: boardId, title: `${RUN_PREFIX}delete-dialog-request`, description: 'Written by the e2e suite.', name: 'e2e admin', fields: {},
+      })
+      expect(request.status, 'POST /feature-requests').toBe(201)
+      expect((await apiCall('admin', 'PUT', `/feature-requests/boards/${boardId}`, { archived: true })).status, 'archive').toBe(200)
+      await assertStep(page, 'admin', 'fb-06-delete-dialog', async (r) => {
+        await visit(page, '/feature-requests')
+        const card = page.getByTestId(`board-card-${boardId}`)
+        await card.getByRole('button', { name: `Delete ${name}`, exact: true }).click()
+        const dialog = page.getByRole('dialog', { name: 'Delete this board?' })
+        await expect(dialog.getByRole('textbox', { name: 'Type the board name to confirm' })).toBeVisible()
         await expect(dialog.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled()
-      } else {
-        await expect(nameInput).toHaveCount(0)
-      }
-      await dialog.getByRole('button', { name: 'Cancel' }).click()
-      await expect(dialog).toHaveCount(0)
-      r.note(`${String(requests)} request(s): ${requests > 0 ? 'type-the-name' : 'plain'} confirm, cancelled`)
-    })
+        await dialog.getByRole('button', { name: 'Cancel' }).click()
+        await expect(dialog).toHaveCount(0)
+        await expect(card).toBeVisible()
+        r.note('archived board with 1 request: type-the-name confirm, cancelled, board still there')
+      })
+    } finally {
+      const removed = await apiCall('admin', 'DELETE', `/feature-requests/boards/${boardId}?with_requests=true`)
+      expect(removed.status, 'the scratch board is deleted').toBeLessThan(300)
+    }
   })
 
   test('e2e-user sees no board admin controls', async ({ page }, testInfo) => {

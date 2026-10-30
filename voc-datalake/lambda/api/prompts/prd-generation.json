@@ -5,7 +5,7 @@
     "problem_analysis": {
       "name": "problem_analysis",
       "description": "Deep analysis of customer problems to define product requirements",
-      "max_tokens": 6000,
+      "max_tokens": 16000,
       "system_prompt": "You are a product manager analyzing customer problems to define product requirements.\nBe specific, data-driven, and focus on measurable outcomes.\n\nRefer to categories, subcategories and sources by these names, never by their ids.",
       "user_prompt_template": "Analyze the customer feedback and personas to deeply understand the problem space.\n\nFEATURE IDEA: {feature_idea}\n\nCURRENT PRODUCT CONTEXT (existing product/service the feature is being added to):\n{product_context}\n\nUSER PERSONAS:\n{personas_context}\n\nCUSTOMER FEEDBACK:\n{feedback_context}\n\nProvide a thorough problem analysis grounded in the existing product context above:\n1. What are the core problems customers are experiencing?\n2. How do these problems affect different personas?\n3. What is the business impact of not solving these problems given the current product state?\n4. What are the root causes?\n5. What constraints should we consider (product limitations, non-goals, etc.)?"
     },

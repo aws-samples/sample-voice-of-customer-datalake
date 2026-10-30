@@ -50,7 +50,7 @@ describe('asFrame', () => {
     const { doc } = mountFrame(document, '')
     const nested = doc.createElement('iframe')
 
-    expect(nested instanceof HTMLIFrameElement).toBe(false)
+    expect(nested).not.toBeInstanceOf(HTMLIFrameElement)
     expect(asFrame(nested)).toBe(nested)
   })
 })

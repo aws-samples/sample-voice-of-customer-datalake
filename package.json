@@ -1,6 +1,6 @@
 {
   "name": "voice-of-customer-datalake",
-  "version": "5.48.4",
+  "version": "5.48.6",
   "description": "Voice of the Customer Data Lake - Unified customer feedback intelligence platform",
   "private": true,
   "scripts": {
@@ -66,7 +66,7 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
-    "jscpd": "5.2.1",
-    "pyright": "1.1.408"
+    "jscpd": "5.4.2",
+    "pyright": "1.1.414"
   }
 }

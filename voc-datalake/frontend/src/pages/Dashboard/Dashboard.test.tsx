@@ -220,61 +220,30 @@ describe('Dashboard', () => {
       expect(screen.queryByTestId('metric-hint')).not.toBeInTheDocument()
     })
 
-    it('displays average sentiment metric', async () => {
+    it.each<[label: string, testId: string]>([
+      ['average sentiment metric', 'metric-average-sentiment'],
+      ['urgent issues count', 'metric-urgent-issues'],
+      ['sources active count', 'metric-sources-with-reviews'],
+    ])('displays %s', async (_label, testId) => {
       renderDashboard()
       
       await waitFor(() => {
-        expect(screen.getByTestId('metric-average-sentiment')).toBeInTheDocument()
-      })
-    })
-
-    it('displays urgent issues count', async () => {
-      renderDashboard()
-      
-      await waitFor(() => {
-        expect(screen.getByTestId('metric-urgent-issues')).toBeInTheDocument()
-      })
-    })
-
-    it('displays sources active count', async () => {
-      renderDashboard()
-      
-      await waitFor(() => {
-        expect(screen.getByTestId('metric-sources-with-reviews')).toBeInTheDocument()
+        expect(screen.getByTestId(testId)).toBeInTheDocument()
       })
     })
   })
 
   describe('charts', () => {
-    it('renders trend chart', async () => {
+    it.each<[label: string, title: string]>([
+      ['trend chart', 'Reviews and sentiment per day'],
+      ['sentiment distribution chart', 'Sentiment Distribution'],
+      ['category chart', 'Top Issue Categories'],
+      ['source chart', 'Feedback by Source'],
+    ])('renders %s', async (_label, title) => {
       renderDashboard()
       
       await waitFor(() => {
-        expect(screen.getByText('Reviews and sentiment per day')).toBeInTheDocument()
-      })
-    })
-
-    it('renders sentiment distribution chart', async () => {
-      renderDashboard()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Sentiment Distribution')).toBeInTheDocument()
-      })
-    })
-
-    it('renders category chart', async () => {
-      renderDashboard()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Top Issue Categories')).toBeInTheDocument()
-      })
-    })
-
-    it('renders source chart', async () => {
-      renderDashboard()
-      
-      await waitFor(() => {
-        expect(screen.getByText('Feedback by Source')).toBeInTheDocument()
+        expect(screen.getByText(title)).toBeInTheDocument()
       })
     })
   })

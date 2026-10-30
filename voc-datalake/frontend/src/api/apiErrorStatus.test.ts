@@ -50,13 +50,39 @@ describe('the status behind a real fetchApi rejection', () => {
     expect(isPermanentRefusal(reason)).toBe(true)
   })
 
-  it('recovers a 5xx and calls it worth retrying', async () => {
-    // The half that decides a retry HAPPENS. A 500 read as "no status" would still
-    // answer `false` here, so this case alone cannot catch a broken reader — which is
-    // why its 4xx sibling exists.
-    const reason = await rejectionFor(500)
+  /*
+   * The statuses worth retrying, each recovered from a real rejection.
+   *
+   * 500: the half that decides a retry HAPPENS. A 500 read as "no status" would still
+   * answer `false` here, so this case alone cannot catch a broken reader — which is
+   * why its 4xx sibling exists.
+   *
+   * 429: INVERTED from asserting `true`. The old justification — "the API's throttling
+   * answer is a 5xx" — was simply wrong about the platform: API Gateway answers 429
+   * for method and stage throttling, for a usage plan limit, and for the
+   * account-level request quota, and the SDKs treat 429 as the retryable status by
+   * definition. The caller fans out one request per project inside a single
+   * `Promise.allSettled` on mount, which is precisely the burst that trips those
+   * limits, so calling a throttle settled is worst exactly when it fires most: the
+   * throttled projects are never released, and a page whose whole content is those
+   * rows loses them for the rest of the mount with no message on screen.
+   *
+   * 403: also inverted. 403 is not only "you may not": AWS WAF answers 403 for a blocked
+   * request — including a rate-based rule tripped by the same mount burst as above —
+   * and an authorizer answers it for authorization that has LAPSED rather than never
+   * existed. A real refusal does live here, so this is the deliberate trade: retrying
+   * one costs a further idempotent, refused conditional write per pass, while not
+   * retrying a WAF block drops the project off the page silently. The cheap mistake
+   * is the one to make.
+   */
+  it.each<[label: string, reason: string, status: number]>([
+    ['a 5xx', '', 500],
+    ['a 429', ', because a throttle is not an answer', 429],
+    ['a 403', ', because the edge answers it too', 403],
+  ])('recovers %s and calls it worth retrying%s', async (_label, _reason, status) => {
+    const reason = await rejectionFor(status)
 
-    expect(apiErrorStatus(reason)).toBe(500)
+    expect(apiErrorStatus(reason)).toBe(status)
     expect(isPermanentRefusal(reason)).toBe(false)
   })
 
@@ -67,36 +93,6 @@ describe('the status behind a real fetchApi rejection', () => {
   // once-per-mount ask back into a per-refetch loop.
   it.each([404, 409])('recovers the settled %i as a permanent refusal, not just the one a caller thought of', async (status) => {
     expect(isPermanentRefusal(await rejectionFor(status))).toBe(true)
-  })
-
-  it('recovers a 429 and calls it worth retrying, because a throttle is not an answer', async () => {
-    // INVERTED from asserting `true`. The old justification — "the API's throttling
-    // answer is a 5xx" — was simply wrong about the platform: API Gateway answers 429
-    // for method and stage throttling, for a usage plan limit, and for the
-    // account-level request quota, and the SDKs treat 429 as the retryable status by
-    // definition. The caller fans out one request per project inside a single
-    // `Promise.allSettled` on mount, which is precisely the burst that trips those
-    // limits, so calling a throttle settled is worst exactly when it fires most: the
-    // throttled projects are never released, and a page whose whole content is those
-    // rows loses them for the rest of the mount with no message on screen.
-    const reason = await rejectionFor(429)
-
-    expect(apiErrorStatus(reason)).toBe(429)
-    expect(isPermanentRefusal(reason)).toBe(false)
-  })
-
-  it('recovers a 403 and calls it worth retrying, because the edge answers it too', async () => {
-    // Also inverted. 403 is not only "you may not": AWS WAF answers 403 for a blocked
-    // request — including a rate-based rule tripped by the same mount burst as above —
-    // and an authorizer answers it for authorization that has LAPSED rather than never
-    // existed. A real refusal does live here, so this is the deliberate trade: retrying
-    // one costs a further idempotent, refused conditional write per pass, while not
-    // retrying a WAF block drops the project off the page silently. The cheap mistake
-    // is the one to make.
-    const reason = await rejectionFor(403)
-
-    expect(apiErrorStatus(reason)).toBe(403)
-    expect(isPermanentRefusal(reason)).toBe(false)
   })
 
   it('never sees a 401, because fetchApi answers that one itself', async () => {

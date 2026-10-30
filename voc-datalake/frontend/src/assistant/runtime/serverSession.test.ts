@@ -117,7 +117,7 @@ describe('a session the server is still generating', () => {
     expect(slot()?.thread).toMatchObject({ status: 'error', error: { code: FOLLOW_TIMEOUT_CODE } })
     const polls = getSessionMock.mock.calls.length
     await vi.advanceTimersByTimeAsync(60_000)
-    expect(getSessionMock.mock.calls.length).toBe(polls)
+    expect(getSessionMock.mock.calls).toHaveLength(polls)
   })
 
   it('keeps polling through a failed poll', async () => {

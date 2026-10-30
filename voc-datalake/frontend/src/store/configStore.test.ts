@@ -89,31 +89,15 @@ describe('configStore', () => {
   })
 
   describe('setTimeRange', () => {
-    it('sets time range to 24h', () => {
+    type TimeRange = Parameters<ReturnType<typeof useConfigStore.getState>['setTimeRange']>[0]
+
+    it.each<[range: TimeRange]>([['24h'], ['30d'], ['custom']])('sets time range to %s', (range) => {
       const { setTimeRange } = useConfigStore.getState()
 
-      setTimeRange('24h')
+      setTimeRange(range)
 
       const { timeRange } = useConfigStore.getState()
-      expect(timeRange).toBe('24h')
-    })
-
-    it('sets time range to 30d', () => {
-      const { setTimeRange } = useConfigStore.getState()
-
-      setTimeRange('30d')
-
-      const { timeRange } = useConfigStore.getState()
-      expect(timeRange).toBe('30d')
-    })
-
-    it('sets time range to custom', () => {
-      const { setTimeRange } = useConfigStore.getState()
-
-      setTimeRange('custom')
-
-      const { timeRange } = useConfigStore.getState()
-      expect(timeRange).toBe('custom')
+      expect(timeRange).toBe(range)
     })
   })
 
