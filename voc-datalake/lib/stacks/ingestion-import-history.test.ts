@@ -7,36 +7,18 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Template } from 'aws-cdk-lib/assertions';
-import { z } from 'zod';
-import { capitalize } from '../plugin-loader';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
-import { itemAt } from '../test-support/guards';
+import { findWorkerFunction } from '../test-support/worker-function';
+import { allowedActions, roleStatements } from '../test-support/iam-statements';
 
-const FunctionSchema = z.object({
-  Properties: z.object({
-    Role: z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.string()]) }),
-    Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }),
-  }),
-});
-const PolicySchema = z.object({
-  Properties: z.object({
-    Roles: z.array(z.object({ Ref: z.string() })),
-    PolicyDocument: z.object({
-      Statement: z.array(z.object({ Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown() })),
-    }),
-  }),
-});
 
 describe('VocIngestionStack S3 import history writes', () => {
   let template: Template;
-  let fn: z.infer<typeof FunctionSchema>['Properties'];
+  let fn: ReturnType<typeof findWorkerFunction>;
 
   beforeAll(() => {
     template = synthIngestionTemplate(['s3_import']);
-    const ids = Object.keys(template.findResources('AWS::Lambda::Function'))
-      .filter((id) => id.startsWith(`Ingestor${capitalize('s3_import')}`));
-    if (ids.length !== 1) throw new Error(`expected one s3_import ingestor, found ${ids.length}`);
-    fn = FunctionSchema.parse(template.findResources('AWS::Lambda::Function')[itemAt(ids, 0)]).Properties;
+    fn = findWorkerFunction(template, 'voc-ingestor-s3_import');
   });
 
   it('names the aggregates table to the ingestor', () => {
@@ -45,12 +27,6 @@ describe('VocIngestionStack S3 import history writes', () => {
 
   it("grants PutItem on the aggregates table to the ingestor's own role", () => {
     const [roleId] = fn.Role['Fn::GetAtt'];
-    const statements = Object.values(template.findResources('AWS::IAM::Policy'))
-      .map((resource) => PolicySchema.parse(resource).Properties)
-      .filter((policy) => policy.Roles.some((role) => role.Ref === roleId))
-      .flatMap((policy) => policy.PolicyDocument.Statement);
-    const putsToAggregates = statements.filter((statement) =>
-      [statement.Action].flat().includes('dynamodb:PutItem') && JSON.stringify(statement.Resource).includes('Aggregates'));
-    expect(putsToAggregates.length).toBeGreaterThan(0);
+    expect(allowedActions(roleStatements(template, roleId), 'dynamodb:', 'Aggregates')).toContain('dynamodb:PutItem');
   });
 });
