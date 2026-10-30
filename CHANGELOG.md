@@ -17,6 +17,21 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.57.02] - 2026-10-31
+
+Two bug fixes: job Lambdas can requeue themselves, and a person can no longer +1 a request twice by sending two +1s at once.
+
+### Fixed
+
+- Persona generation, document generation, document merge and persona import jobs: when a second delivery of
+  a job waits for the first and runs short of time, it now hands the job on to a new invocation of its own
+  function. Its IAM grant named the function in a form that matches no Lambda, so that hand-off was denied and
+  the waiting delivery's attempt was lost (VocApiStack, the four `voc-job-*` roles).
+- Feedback boards: two +1s sent at the same moment by the same email both counted (`POST
+  /feature-requests/{id}/supports`). The second now answers 409 `already_supported` like any repeat +1. New
+  +1s get an id derived from the request and the email; existing +1s keep theirs
+  ([docs/feature-requests.md](docs/feature-requests.md)).
+
 ## [5.57.01] - 2026-10-31
 
 Dependabot proposes only minor and patch updates; major upgrades are made deliberately, one at a time.
