@@ -13,11 +13,22 @@ vi.mock('../../api/dataQualityApi', () => ({
 }))
 vi.mock('../../store/configStore', () => configStoreModule())
 vi.mock('./useAppSourceLabel', () => ({ useAppSourceLabel: () => (source: string) => `Label ${source}` }))
+const chart = vi.hoisted(() => {
+  const data: unknown[] = []
+  return { data }
+})
 vi.mock('recharts', () => {
   const passThrough = ({ children }: { children?: ReactNode }) => <div>{children}</div>
   const nothing = () => null
+  const BarChart = ({ children, data }: { children?: ReactNode; data: unknown[] }) => {
+    chart.data = data
+    return <div>{children}</div>
+  }
+  const Bar = ({ dataKey, name }: { dataKey: string; name: string }) => (
+    <span data-testid="chart-bar" data-key={dataKey}>{name}</span>
+  )
   return {
-    ResponsiveContainer: passThrough, BarChart: passThrough, Bar: nothing, CartesianGrid: nothing,
+    ResponsiveContainer: passThrough, BarChart, Bar, CartesianGrid: nothing,
     Legend: nothing, Tooltip: nothing, XAxis: nothing, YAxis: nothing,
   }
 })
@@ -52,6 +63,19 @@ describe('DataQualitySection', () => {
       ['Source', 'High', 'Medium', 'Low', 'Not rated', 'Total'])
     expect(within(table).getByRole('row', { name: /Label web/ })).toHaveTextContent('3(38%)0(0%)1(13%)4(50%)8')
     expect(within(table).getByRole('row', { name: /All sources/ })).toHaveTextContent('10')
+  })
+
+  it('keys the chart by the stable band id and names each series with its label', async () => {
+    api.getDataQuality.mockResolvedValue(twoSources())
+    renderWithQueryClient(<DataQualitySection />)
+
+    const bars = await screen.findAllByTestId('chart-bar')
+    expect(bars.map((bar) => bar.dataset.key)).toStrictEqual(['high', 'medium', 'low', 'unrated'])
+    expect(bars.map((bar) => bar.textContent)).toStrictEqual(['High', 'Medium', 'Low', 'Not rated'])
+    expect(chart.data).toStrictEqual([
+      { name: 'Label web', high: 3, medium: 0, low: 1, unrated: 4 },
+      { name: 'Label app', high: 0, medium: 2, low: 0, unrated: 0 },
+    ])
   })
 
   it('states the not-rated share and how to backfill it', async () => {
