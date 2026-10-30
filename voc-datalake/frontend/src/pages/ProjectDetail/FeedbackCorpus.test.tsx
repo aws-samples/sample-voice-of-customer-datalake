@@ -102,6 +102,14 @@ describe('FeedbackCorpus', () => {
     expect(within(dialog).queryByText('This review is no longer available')).toBeNull()
   })
 
+  it('renders the list beside the line, not inside its paragraph', async () => {
+    renderCorpus(['a'])
+    const dialog = await openList()
+    const line = screen.getByTestId('feedback-corpus')
+    expect(line.tagName).toBe('P')
+    expect(line.contains(dialog)).toBe(false)
+  })
+
   it('closes from its close button', async () => {
     renderCorpus(['a'])
     const dialog = await openList()

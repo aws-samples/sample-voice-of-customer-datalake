@@ -155,7 +155,7 @@ export default function DocumentsTab({
               <RevisionFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
               <DerivationFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
               <FeedbackCorpus feedbackIds={selectedDoc.input_feedback_ids}
-                className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted" />
+                className="mt-2" />
               {/* Prototypes keep their own revision lineage (the footer above). */}
               {NO_CONTENT_EDITOR.has(selectedDoc.document_type) ? null : (
                 <DocumentVersions key={selectedDoc.document_id} projectId={project.project_id}

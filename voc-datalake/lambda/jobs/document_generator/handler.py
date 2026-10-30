@@ -666,7 +666,7 @@ def _feedback_usage_fields(feedback: FeedbackSample) -> dict:
 def _feedback_corpus_fields(feedback: FeedbackSample) -> dict:
     """The ids of the reviews the document's prompts held (#236), or ``{}`` when it read none.
 
-    Stored on the document only: the job result keeps the counts (``_job_usage``).
+    Stored on the document only: the job result keeps the counts (``_without_corpus_ids``).
     """
     return input_feedback_fields(feedback.input_ids)
 
@@ -676,8 +676,12 @@ def _stashed_feedback_fields(feedback: FeedbackSample) -> dict:
     return {**_feedback_usage_fields(feedback), **_feedback_corpus_fields(feedback)}
 
 
-def _job_usage(feedback_fields: dict) -> dict:
-    """The job result's share of the document's feedback fields: the counts, not the id list."""
+def _without_corpus_ids(feedback_fields: dict) -> dict:
+    """``feedback_fields`` minus the id list: the usage counts.
+
+    Two callers: the job result (which keeps the counts, never the ids) and the save step's
+    stash read (which re-validates the ids separately and adds them back).
+    """
     return {key: value for key, value in feedback_fields.items() if key != INPUT_FEEDBACK_IDS_FIELD}
 
 
@@ -1606,7 +1610,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
         job_id,
         item_fields,
     )
-    return {'document_id': item['document_id'], 'title': item['title'], **_job_usage(feedback_fields)}
+    return {'document_id': item['document_id'], 'title': item['title'], **_without_corpus_ids(feedback_fields)}
 
 
 # ── Step Functions step handlers ─────────────────────────────────────────────
@@ -1686,7 +1690,7 @@ def _read_feedback_usage(job_id: str) -> dict:
     if INPUT_FEEDBACK_IDS_FIELD not in stashed:
         return stashed
     ids = received_input_feedback_ids(stashed[INPUT_FEEDBACK_IDS_FIELD])
-    return {**_job_usage(stashed), **input_feedback_fields(ids or [])}
+    return {**_without_corpus_ids(stashed), **input_feedback_fields(ids or [])}
 
 
 def _read_date_basis(job_id: str) -> dict:
@@ -1857,7 +1861,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
     except Exception:
         logger.exception("Scratch cleanup failed (non-fatal)")
 
-    result = {'document_id': item['document_id'], 'title': item['title'], **_job_usage(feedback_fields)}
+    result = {'document_id': item['document_id'], 'title': item['title'], **_without_corpus_ids(feedback_fields)}
     update_job_status(
         project_id, job_id, 'completed', 100, 'complete', result=result,
     )

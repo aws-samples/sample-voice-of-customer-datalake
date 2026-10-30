@@ -57,7 +57,7 @@ Not covered, because no review reaches their prompt: prototypes (built from a PR
 
 **In the UI**, a persona's header and a document's provenance footer show "Written from N reviews" with **Show reviews**, which opens the list ten at a time. Each review is read by id (`GET /feedback/{id}`, so the caller's category and source access applies) and opens in the review modal; one that is gone or outside the caller's access shows as unavailable.
 
-`source_feedback_ids` on a persona (the first 20 reviews fetched) is **display-only** and kept for older readers: it is not the corpus, and nothing in the app reads it. Personas and documents generated before this change, and imported or hand-made ones, have no `input_feedback_ids` and show no corpus line.
+`source_feedback_ids` on a persona (the first 20 reviews fetched) is **display-only** and kept for older readers: it is not the corpus, and nothing in the app reads it. Artefacts generated before the field reached their path have no `input_feedback_ids` and show no corpus line: personas before 5.25.00; PRDs, PR/FAQs, merged documents and fallback research reports before 5.50.00. Imported and hand-made ones never have it.
 
 ## Managed Document Versions
 
