@@ -17,6 +17,10 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.51.00] - 2026-10-30
+
+Persona generation can add to a project's existing personas instead of replacing them, from the wizard and the AI assistant (#353).
+
 ### Added
 - Persona generation can add personas without deleting the ones a project has
   ([persona generation](docs/persona-generation.md)). On the project page, Generate Personas offers **Add to
