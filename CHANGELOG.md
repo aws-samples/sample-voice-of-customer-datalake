@@ -17,6 +17,26 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.48.05] - 2026-10-30
+
+The Python suite no longer fails when a run crosses midnight UTC.
+
+### Fixed
+- Every pytest run moves the clock to 12:00 UTC of its own day, still ticking, from `pytest_configure` on, so dates a
+  test module computes at import are covered too (`voc-datalake/conftest.py`, with
+  `time-machine` 3.6.0 pinned in `requirements-dev.txt`). Fixtures that write "today" and the handler that reads it
+  could land on two different days when a run crossed midnight UTC: four metrics tests failed in CI that way.
+  The controlling pytest process picks that noon once
+  (`VOC_TEST_MIDDAY`, overwriting a stale shell value; workers refuse a missing value or one that is not 12:00 UTC), so every
+  pytest-xdist worker shares it; `lambda/shared/test/test_suite_clock.py` pins the
+  rule and fails without the fixture. Test tooling only. One `projects_handler.py` docstring names
+  its hypothetical marker in plain prose, so `py_doc_refs` needs no allowlist entry for it (whether that back-ticked
+  name resolved depended on which test libraries were installed).
+- `scripts/validate.sh` passes its CDK-suite timeout (`VALIDATE_VITEST_TIMEOUT_MS`, 30 s) to hooks too: a
+  `beforeAll` synth in `processing-stack-radar.test.ts` hit vitest's 10 s hook default on a loaded CI runner.
+- The gate step `audit: every detector has a step` reads `scripts/validate.sh` once instead of piping it into
+  `grep -q` per detector, which failed intermittently under `pipefail` (grep: write error: Broken pipe) in CI.
+
 ## [5.48.04] - 2026-10-29
 
 Every open Dependabot alert is fixed: 50 alerts (14 high, 24 moderate, 12 low) across the four npm packages.
