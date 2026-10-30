@@ -8,7 +8,7 @@ model, Comprehend and Translate are stubbed.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import patch
@@ -59,7 +59,7 @@ def _table(resource, name: str, indexes: list[tuple[str, str, str]]):
 
 
 @contextmanager
-def _world() -> Iterator[tuple]:
+def _world() -> Generator[tuple, None, None]:
     with mock_aws():
         resource = boto3.resource('dynamodb', region_name='us-east-1')
         feedback = _table(resource, 'e2e-feedback', [('gsi1-by-date', 'gsi1pk', 'gsi1sk')])
