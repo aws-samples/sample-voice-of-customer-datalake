@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import time
+import unicodedata
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -401,6 +402,9 @@ MAX_JSON_UPLOAD_ITEMS = 50000
 
 MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
 
+# Longest assistant-reported `source_label` kept on an import-history record.
+MAX_SOURCE_LABEL_CHARS = 120
+
 # Bound on the informational copy of a row's own identifier. Mirrors
 # `IngestMessage.csv_row_id`'s max_length: this Lambda's bundle does not include
 # the plugin schema package, so the value is restated rather than imported. Keep
@@ -569,7 +573,7 @@ def _parse_csv_to_items(
             try:
                 rating = int(float(rating_raw))
             except (ValueError, TypeError):
-                warnings.append(f'row {idx}: rating "{rating_raw}" is not a number — left blank')
+                warnings.append(f'row {idx}: rating is not a number — left blank')
 
         created_at = created_at_raw or now_iso()
 
@@ -855,11 +859,18 @@ def _json_run_origin(body: dict, source_id: str) -> tuple[str, str]:
     """``(method, source label)`` of a JSON upload's history record.
 
     The assistant's ``import_reviews`` sends ``import_origin: 'assistant'`` and the
-    ``source_label`` the user named; any other caller is a plain ``json`` upload.
+    ``source_label`` the user named; any other caller is a plain ``json`` upload
+    labelled with the source profile id. Both fields are client-reported (an audit
+    hint, not proof), so the label is honoured only for the assistant origin, with
+    control/format characters removed and at most ``MAX_SOURCE_LABEL_CHARS`` kept.
     """
-    method = 'assistant' if body.get('import_origin') == 'assistant' else 'json'
+    if body.get('import_origin') != 'assistant':
+        return 'json', source_id
     label = body.get('source_label')
-    return method, label.strip() if isinstance(label, str) and label.strip() else source_id
+    if not isinstance(label, str):
+        return 'assistant', source_id
+    cleaned = ''.join(ch for ch in label if unicodedata.category(ch) not in ('Cc', 'Cf')).strip()
+    return 'assistant', cleaned[:MAX_SOURCE_LABEL_CHARS].strip() or source_id
 
 
 @app.get("/scrapers/manual/history")

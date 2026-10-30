@@ -148,7 +148,7 @@ def _parse_csv(stream, source_name: str, report: FileReport | None = None) -> Ge
                 report.skip(f"row {row_num}: empty text — skipped")
         except _ROW_ERRORS as e:
             logger.warning(f"Row {row_num}: parse error: {e}")
-            report.skip(f"row {row_num}: parse error — skipped: {e}")
+            report.skip(f"row {row_num}: parse error ({type(e).__name__}) — skipped")
 
 
 def _parse_jsonl(stream, source_name: str, report: FileReport | None = None) -> Generator[dict, None, None]:
@@ -170,7 +170,7 @@ def _parse_jsonl(stream, source_name: str, report: FileReport | None = None) -> 
             # ValueError covers json.JSONDecodeError; RecursionError is what
             # json.loads raises for a pathologically nested line.
             logger.warning(f"JSONL line {line_num}: {e}")
-            report.skip(f"line {line_num}: not valid JSON — skipped: {e}")
+            report.skip(f"line {line_num}: not valid JSON — skipped")
 
 
 def _parse_json(stream, source_name: str, report: FileReport | None = None) -> Generator[dict, None, None]:
@@ -193,7 +193,7 @@ def _parse_json(stream, source_name: str, report: FileReport | None = None) -> G
                 report.skip(f"item {idx}: empty text — skipped")
         except _ROW_ERRORS as e:
             logger.warning(f"JSON item {idx}: {e}")
-            report.skip(f"item {idx}: not an object — skipped: {e}")
+            report.skip(f"item {idx}: not an object — skipped")
 
 
 def _get_parser(key: str):
@@ -294,7 +294,8 @@ class S3ImportIngestor(BaseIngestor):
                 total += self.send_to_queue(batch)
             sent_all = True
         except Exception as e:
-            report.errors.append(f"stopped after {total} items: {e}")
+            # The error class only: an exception message can quote a row value.
+            report.errors.append(f"stopped after {total} items: {type(e).__name__}")
             raise
         finally:
             # Emit in a finally for the same reason the shared helper does: when

@@ -30,6 +30,14 @@ Import history: every import writes a run record that administrators can browse 
   through the admin-only `GET /scrapers/manual/history` and `GET /scrapers/manual/history/{run_id}`.
   See [docs/import-history.md](docs/import-history.md).
 
+### Security
+
+- Import history records never copy customer values: the CSV warning for a non-numeric rating no longer quotes the
+  cell, and S3 import parse errors name the error class instead of its message. On `POST /scrapers/manual/json-upload`
+  the `source_label` is kept only with `import_origin: 'assistant'` (at most 120 characters, control characters
+  removed); both are client-reported, an audit hint rather than proof.
+  See [docs/import-history.md](docs/import-history.md).
+
 ### Upgrade notes
 
 - Import run records live in `voc-aggregates` (`IMPORT_RUN` partition) and expire after 90 days; no new table,
