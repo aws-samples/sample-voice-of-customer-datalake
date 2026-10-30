@@ -215,6 +215,21 @@ vitest (`connectSnippets.test.ts`) fails if the skill's tool table and
 }
 ```
 
+**Token from an environment variable (since 5.57.00).** Connect's `mcp.json` card has one snippet per client and
+opens on the first. The Claude Code, Cursor and Kiro snippets read the token from `VOC_MCP_TOKEN`, so the file
+holds no secret and can be committed. Set the variable in the shell that starts the client
+(`export VOC_MCP_TOKEN='<YOUR_VOC_TOKEN>'`):
+
+| Client | File | Header value |
+|---|---|---|
+| Claude Code | `.mcp.json` (project root; `"type": "http"`) | `Bearer ${VOC_MCP_TOKEN}` |
+| Cursor | `.cursor/mcp.json` or `~/.cursor/mcp.json` | `Bearer ${env:VOC_MCP_TOKEN}` |
+| Kiro | `.kiro/settings/mcp.json` or `~/.kiro/settings/mcp.json` | `Bearer ${VOC_MCP_TOKEN}`. The IDE expands only approved variables: add `VOC_MCP_TOKEN` under Settings → *Mcp Approved Env Vars*. Kiro CLI reads it from the shell; a project `.env` is not loaded ([kiro.dev MCP configuration](https://kiro.dev/docs/mcp/configuration)) |
+| Other clients | their own config | the inline snippet above, with the token pasted in |
+
+The builders are `buildClientMcpJson` / `tokenExportLine` in `frontend/src/pages/Connect/connectSnippets.ts`
+(exact JSON per client pinned in `connectSnippets.test.ts`).
+
 ## Infrastructure
 
 `lib/stacks/global-mcp.ts` (a construct inside `VocApiStack`; no new stack):

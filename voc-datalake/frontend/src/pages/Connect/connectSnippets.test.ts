@@ -7,7 +7,10 @@ import { describe, it, expect } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { TokenDetailResponseSchema, TokenListResponseSchema } from '../../api/connectSchema'
-import { buildMcpJson, ENDPOINT_PLACEHOLDER, fillSkill, globalEndpointUrl, skillUrl } from './connectSnippets'
+import {
+  buildClientMcpJson, buildMcpJson, ENDPOINT_PLACEHOLDER, fillSkill, globalEndpointUrl, isMcpClient, MCP_CLIENTS, skillUrl,
+  tokenExportLine,
+} from './connectSnippets'
 
 const FRONTEND = path.join(__dirname, '../../..')
 const SKILL = fs.readFileSync(path.join(FRONTEND, 'public', 'voc-mcp-skill.md'), 'utf8')
@@ -38,6 +41,30 @@ describe('connect snippets', () => {
     expect(parsed).toStrictEqual({
       mcpServers: { 'voc-datalake': { url: 'https://x/mcp/global', headers: { Authorization: 'Bearer <YOUR_VOC_TOKEN>' } } },
     })
+  })
+
+  it.each([
+    ['claudeCode', { type: 'http', url: 'https://x/mcp/global', headers: { Authorization: 'Bearer ${VOC_MCP_TOKEN}' } }],
+    ['cursor', { url: 'https://x/mcp/global', headers: { Authorization: 'Bearer ${env:VOC_MCP_TOKEN}' } }],
+    ['kiro', { url: 'https://x/mcp/global', headers: { Authorization: 'Bearer ${VOC_MCP_TOKEN}' } }],
+    ['inline', { url: 'https://x/mcp/global', headers: { Authorization: 'Bearer <YOUR_VOC_TOKEN>' } }],
+  ] as const)('builds the exact %s mcp.json', (client, server) => {
+    const parsed: unknown = JSON.parse(buildClientMcpJson('https://x/mcp/global', client))
+    expect(parsed).toStrictEqual({ mcpServers: { 'voc-datalake': server } })
+  })
+
+  it('defaults to an env-var client and keeps the inline variant last', () => {
+    expect(MCP_CLIENTS).toStrictEqual(['claudeCode', 'cursor', 'kiro', 'inline'])
+    expect(buildClientMcpJson('https://x/mcp/global', 'inline')).toBe(buildMcpJson('https://x/mcp/global'))
+  })
+
+  it('recognises only the listed clients', () => {
+    expect(MCP_CLIENTS.every(isMcpClient)).toBe(true)
+    expect(['', 'vscode', 'Kiro'].some(isMcpClient)).toBe(false)
+  })
+
+  it('sets the variable with a placeholder, never a token', () => {
+    expect(tokenExportLine()).toBe("export VOC_MCP_TOKEN='<YOUR_VOC_TOKEN>'")
   })
 
   it('fills every endpoint placeholder in the skill', () => {
