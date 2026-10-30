@@ -140,6 +140,9 @@ describe('describeImportKey', () => {
   it.each([
     ['reviews/june.csv', 'june.csv', 'S3 - reviews'],
     ['processed/reviews/may.csv', 'may.csv', 'S3 - reviews'],
+    // A key with no folder is labelled as the ingestor labels it (`_get_source_from_key`).
+    ['loose.csv', 'loose.csv', 'S3 - Import'],
+    ['processed/loose.csv', 'loose.csv', 'S3 - processed'],
   ])('%s is %s under %s', (key, filename, source) => {
     expect(describeImportKey(key)).toStrictEqual({ filename, source })
   })

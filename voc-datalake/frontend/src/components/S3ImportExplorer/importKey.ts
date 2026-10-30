@@ -8,9 +8,12 @@
  */
 
 const PROCESSED_FOLDER = 'processed'
+/** The ingestor's label for a key with no folder (`_get_source_from_key`). */
+const ROOT_SOURCE = 'S3 - Import'
 
 export function describeImportKey(key: string): { filename: string; source: string } {
   const parts = key.split('/')
-  const folderParts = parts[0] === PROCESSED_FOLDER && parts.length > 2 ? parts.slice(1) : parts
-  return { filename: parts.at(-1) ?? key, source: `S3 - ${folderParts[0] ?? ''}` }
+  const [folder, ...rest] = parts[0] === PROCESSED_FOLDER && parts.length > 2 ? parts.slice(1) : parts
+  const source = folder !== undefined && rest.length > 0 ? `S3 - ${folder}` : ROOT_SOURCE
+  return { filename: parts.at(-1) ?? key, source }
 }

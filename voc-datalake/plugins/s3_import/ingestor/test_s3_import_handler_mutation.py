@@ -390,13 +390,14 @@ class TestWhatReachesTheQueue:
 # lambda_handler: the exact response, record skipping, and its decorators
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def _import_bucket_is_b():
-    """Every event below names bucket "b": make it the import bucket the ingestor trusts."""
+    """The events of the lambda_handler classes below name bucket "b": make it the import bucket the ingestor trusts."""
     with patch.object(handler, "IMPORT_BUCKET", "b"):
         yield
 
 
+@pytest.mark.usefixtures("_import_bucket_is_b")
 class TestLambdaHandlerResponses:
     @pytest.mark.parametrize("event", [{}, {"Records": []}])
     def test_no_records_is_skipped_with_a_reason(self, event):
@@ -432,6 +433,7 @@ class TestLambdaHandlerResponses:
         assert result["results"] == [{"file": "kept.csv", "items_processed": 4}]
 
 
+@pytest.mark.usefixtures("_import_bucket_is_b")
 class TestLambdaHandlerIsWrapped:
     def test_the_module_holds_a_real_s3_client(self):
         assert handler.s3_client.meta.service_model.service_name == "s3"

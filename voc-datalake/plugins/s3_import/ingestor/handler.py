@@ -256,28 +256,53 @@ class S3ImportIngestor(BaseIngestor):
         return total
 
 
+class NoImportFileRead(Exception):
+    """A reprocess run whose event named no record this ingestor reads (another bucket, or no S3 record).
+
+    Its type name is what the run row's `errors` shows; without it the run would read
+    `completed` with 0 rows, the same as an empty file.
+    """
+
+
+def _read_records(ingestor: S3ImportIngestor, records: list, results: list[dict], *, reprocess: bool) -> None:
+    """Process each S3 record of the import bucket, appending `{file, items_processed}` to *results* as it goes."""
+    for record in records:
+        if record.get("eventSource") != "aws:s3":
+            continue
+        bucket = record["s3"]["bucket"]["name"]
+        if not IMPORT_BUCKET or bucket != IMPORT_BUCKET:
+            logger.warning("Skipping a record for a bucket other than the import bucket",
+                           extra={"bucket": bucket})
+            continue
+        key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
+        logger.info(f"Processing s3://{bucket}/{key}")
+        count = ingestor.process_file(bucket, key, reprocess=reprocess)
+        results.append({"file": key, "items_processed": count})
+    if reprocess and not results:
+        raise NoImportFileRead("The reprocess event named no file in the import bucket")
+
+
 def _process_records(ingestor: S3ImportIngestor, records: list, *, reprocess: bool) -> list[dict]:
-    """Process every S3 record of an event; the run's row ends `completed`, or `error` and the error is re-raised."""
+    """Process every S3 record of an event; the run's row ends `completed`, or `error` and the error is re-raised.
+
+    A reprocess that reads no record ends `error` (`NoImportFileRead`), raised like any other failure.
+    """
     ingestor.record_run_started()
     results: list[dict] = []
     try:
-        for record in records:
-            if record.get("eventSource") != "aws:s3":
-                continue
-            bucket = record["s3"]["bucket"]["name"]
-            if not IMPORT_BUCKET or bucket != IMPORT_BUCKET:
-                logger.warning("Skipping a record for a bucket other than the import bucket",
-                               extra={"bucket": bucket})
-                continue
-            key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
-            logger.info(f"Processing s3://{bucket}/{key}")
-            count = ingestor.process_file(bucket, key, reprocess=reprocess)
-            results.append({"file": key, "items_processed": count})
+        _read_records(ingestor, records, results, reprocess=reprocess)
     except Exception as e:
         ingestor.record_run_finished(sum(r["items_processed"] for r in results), e)
         raise
     ingestor.record_run_finished(sum(r["items_processed"] for r in results))
     return results
+
+
+def _failed_reprocess(error: Exception) -> dict:
+    """The answer to a reprocess whose run row was closed as `error`."""
+    logger.exception(f"Reprocess failed: {type(error).__name__}")
+    metrics.add_metric(name="ReprocessFailed", unit="Count", value=1)
+    return {"status": "error", "error": type(error).__name__}
 
 
 @logger.inject_lambda_context
@@ -288,7 +313,9 @@ def lambda_handler(event, context):
     """Handle S3 event notifications, and the API's reprocess input (an S3-shaped event).
 
     `execution_id` (a run the API recorded) and `reprocess: True` (a re-run of one
-    file, issue #144) are the only additions to the trigger's event shape.
+    file, issue #144) are the only additions to the trigger's event shape. A failed
+    reprocess answers `{"status": "error", "error": <type>}` instead of raising, so
+    Lambda does not retry it.
     """
     execution_id = event.get("execution_id") if isinstance(event.get("execution_id"), str) else None
     records = event.get("Records") or []
@@ -296,9 +323,18 @@ def lambda_handler(event, context):
         logger.info("No S3 records in event, nothing to do")
         return {"status": "skipped", "reason": "no records"}
 
+    reprocess = event.get("reprocess") is True
     ingestor = S3ImportIngestor(execution_id=execution_id)
     # A run with no file (`POST /sources/s3_import/run`) still closes its row, as completed with 0 items.
-    results = _process_records(ingestor, records, reprocess=event.get("reprocess") is True)
+    try:
+        results = _process_records(ingestor, records, reprocess=reprocess)
+    except Exception as e:
+        # An upload's S3 event is raised again, so Lambda retries it (its only recovery). A
+        # reprocess's `error` is final: a retry would move the row back to `running` after the
+        # explorer stopped polling it. The admin presses Reprocess again (duplicates are skipped).
+        if not reprocess:
+            raise
+        return _failed_reprocess(e)
 
     total = sum(r["items_processed"] for r in results)
     return {

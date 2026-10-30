@@ -29,7 +29,9 @@ An imported S3 file can be reprocessed through the pipeline from the S3 import e
   stays the job of *Reprocess existing feedback*. A copy archived by hand as `processed/<folder>/<file>` keeps
   its original source `S3 - <folder>`. New admin-only routes `POST /s3-import/reprocess` and
   `GET /s3-import/reprocess/{run_id}`; the run is the ordinary `SOURCE_RUN#s3_import` source-run record
-  ([Data lake structure → Reprocessing a file](docs/data-lake-structure.md#reprocessing-a-file)). A second
+  ([Data lake structure → Reprocessing a file](docs/data-lake-structure.md#reprocessing-a-file)). A failed
+  reprocess ends `error` and is not retried by Lambda (press Reprocess again); an upload's S3 event keeps its
+  retries. A second
   reprocess of a file answers 409 while its earlier run is still running (younger than the ingestor's 300 s
   timeout).
 
