@@ -31,7 +31,11 @@ export function datasetKey(raw) {
   return { key: name.replace(/ +/g, ' ').toLowerCase() };
 }
 
-/** The `csv-row-v2` id and content digest of a row with its own id (`fields`: the parsed columns). */
+/**
+ * The `csv-row-v2` id and content digest of a row with its own id (`fields`: the parsed columns).
+ * The digest is the `allow` recipe only: the Lambda hashes `redact` / `summary_only` rows differently
+ * (`shared/csv_content_digest.py`), so this mock is not the digest contract.
+ */
 export function datasetIdentity(dataset, fields, rating, channel, metadata) {
   return {
     id: digest(['csv-row-v2', dataset, fields.id]),

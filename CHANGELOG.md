@@ -39,9 +39,13 @@ A CSV upload with a dataset name updates the rows a corrected file changes inste
 - Only a CSV dataset upload's row may overwrite a stored item: the processing queue refuses `csv_replace` from
   any other producer or without a valid dataset and content digest, and the update lands only on an item the
   same dataset stored. A correction whose model call fails keeps the stored enrichment instead of the fallback.
-- Under a `redact` or `summary_only` source the stored content digest covers only the redacted values, so it
-  cannot confirm a guess of withheld PII. A correction that changes only redacted PII is therefore seen as
-  unchanged ([CSV import](docs/csv-import.md#the-content-digest-and-pii)).
+- Under a `redact` source the stored content digest covers only the redacted values, and under a
+  `summary_only` source only the fields the item stores (rating, review date, channel, link; never the text,
+  title, author or metadata), so it cannot confirm a guess of withheld PII or of the customer's wording. A
+  correction that changes only redacted PII (or, under `summary_only`, only the text, title, author or
+  metadata) is therefore seen as unchanged ([CSV import](docs/csv-import.md#the-content-digest-and-pii)).
+- A `csv_replace` naming an item its dataset did not store is refused before any model call (metric
+  `CsvUpdatesRefused`), so a forged or mismatched correction costs no Bedrock invocation on its SQS retries.
 
 ### Upgrade notes
 - `voc-manual-import-api` gains `FEEDBACK_TABLE` and `dynamodb:BatchGetItem` on the feedback table (keyed reads
