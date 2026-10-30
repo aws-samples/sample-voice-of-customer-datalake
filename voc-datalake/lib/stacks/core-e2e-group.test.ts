@@ -17,7 +17,7 @@ const HAIKU55 = 'global.anthropic.claude-haiku-5-5';
 /** The string literal assigned to `name` at the start of a line (Python `NAME: Final = '…'`, TS `export const NAME = '…'`). */
 function literal(file: string, name: string): string {
   const source = readFileSync(join(LAMBDA, file), 'utf8');
-  const match = new RegExp(`^(?:export const )?${name}(?::\\s*Final)?\\s*=\\s*'([^']+)'`, 'm').exec(source);
+  const match = new RegExp(`^(?:export\\s+)?(?:const\\s+)?${name}(?::\\s*Final)?\\s*=\\s*'([^']+)'`, 'm').exec(source);
   if (!match?.[1]) throw new Error(`could not read ${name} from ${file}`);
   return match[1];
 }
@@ -42,7 +42,7 @@ describe('the e2e Cognito group', () => {
 
   it('resolves, in both runtimes, to the allowlisted Haiku 5.5', () => {
     expect(readFileSync(join(LAMBDA, 'shared', 'model_config.py'), 'utf8')).toMatch(/^PROFILE_MODELS = \{E2E_PROFILE: _HAIKU55\}$/m);
-    expect(literal('stream/src/bedrock/model-profile.ts', 'const HAIKU55')).toBe(HAIKU55);
+    expect(literal('stream/src/bedrock/model-profile.ts', 'HAIKU55')).toBe(HAIKU55);
     expect(ALLOWED_MODEL_IDS).toContain(HAIKU55);
   });
 });
