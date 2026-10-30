@@ -38,6 +38,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
+import { GLOBAL_MCP_SERVICE_NAME } from '../utils/function-names';
 import { snapStartAlias, snapStartFunctionProps } from '../utils/snapstart';
 import { workerRole } from '../utils/worker-lambda';
 
@@ -52,6 +53,15 @@ export const GLOBAL_MCP_METHOD_THROTTLE: Record<string, apigateway.MethodDeploym
   '/mcp/global/GET': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
   '/mcp/global/DELETE': { throttlingRateLimit: 20, throttlingBurstLimit: 40 },
 };
+
+/**
+ * Reserved concurrency of `voc-mcp-global-api` (docs/mcp.md → Alarms and concurrency). The function is
+ * also its own token authorizer, so one request is two short invocations; at the stage ceiling (20 rps)
+ * that needs well under 20 concurrent. The cap keeps a runaway client from taking the account's shared
+ * pool from every other Lambda, and guarantees the endpoint its 20. It is taken from the account's
+ * unreserved concurrency (which must stay at least 100), so the account quota must be 120 or more.
+ */
+export const GLOBAL_MCP_RESERVED_CONCURRENCY = 20;
 
 /** The env key each domain's function name arrives in (= DOMAIN_FUNCTION_ENV in mcp_global_tools.py). */
 type GlobalMcpDomainFunctions = Record<
@@ -150,12 +160,12 @@ export class GlobalMcp extends Construct {
     const functionNames = Object.fromEntries(
       Object.entries(domainFunctions).map(([envKey, fn]) => [envKey, fn.functionName]),
     );
-    return this.pythonFunction('GlobalMcpApi', 'voc-mcp-global-api', 'mcp_global_handler.py', role, {
+    return this.pythonFunction('GlobalMcpApi', GLOBAL_MCP_SERVICE_NAME, 'mcp_global_handler.py', role, {
       PROJECTS_TABLE: projectsTable.tableName,
       JOBS_TABLE: jobsTable.tableName,
       USER_POOL_ID: userPool.userPoolId,
       ...functionNames,
-    }, 512); // CPU: 80.7 % p95 at 256 MB, 2026-10-18 (lib/sizing/policy.ts)
+    }, 512, { reservedConcurrentExecutions: GLOBAL_MCP_RESERVED_CONCURRENCY }); // CPU: 80.7 % p95 at 256 MB, 2026-10-18 (lib/sizing/policy.ts)
   }
 
   private createTokensFunction(): lambda.Function {
