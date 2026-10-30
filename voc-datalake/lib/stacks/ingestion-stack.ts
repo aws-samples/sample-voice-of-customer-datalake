@@ -66,6 +66,12 @@ export const SCHEDULE_TARGET_MAX_EVENT_AGE = cdk.Duration.hours(1);
  */
 export const SELF_CONTINUING_INGESTORS: ReadonlySet<string> = new Set(['app_reviews_ios', 'app_reviews_android']);
 
+/**
+ * The env var naming the import bucket on an S3-triggered ingestor
+ * (plugins/s3_import/ingestor/handler.py IMPORT_BUCKET): records for any other bucket are skipped.
+ */
+export const S3_IMPORT_BUCKET_ENV = 'S3_IMPORT_BUCKET';
+
 /** Enforce SSL/TLS for queue access: deny every SQS action over plain HTTP. */
 function denyInsecureTransport(queue: sqs.Queue): void {
   queue.addToResourcePolicy(new iam.PolicyStatement({
@@ -515,6 +521,9 @@ export class VocIngestionStack extends VocStack {
 
     // Grant S3 permissions
     this.s3ImportBucket.grantReadWrite(fn);
+    // The ingestor reads only records naming this bucket: the API also invokes it
+    // directly (POST /s3-import/reprocess), so the bucket in an event is not trusted.
+    fn.addEnvironment(S3_IMPORT_BUCKET_ENV, this.s3ImportBucket.bucketName);
 
     // Add event notifications for each suffix
     for (const suffix of s3Trigger.suffixes) {

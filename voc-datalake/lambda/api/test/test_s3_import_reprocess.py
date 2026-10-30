@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import urllib.parse
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,6 +39,7 @@ def s3() -> Iterator[MagicMock]:
 @pytest.fixture
 def table() -> Iterator[MagicMock]:
     aggregates = MagicMock()
+    aggregates.query.return_value = {'Items': []}
     with patch.object(h, 'get_aggregates_table', return_value=aggregates), \
             patch.object(h, 'S3_IMPORT_INGESTOR_FUNCTION', INGESTOR):
         yield aggregates
@@ -183,6 +186,82 @@ class TestStartingAReprocess:
 
         assert status == 403
         invoke.assert_not_called()
+
+
+def _run_row(status: str, started_ago: timedelta, key: str = 'reviews/a.csv') -> dict:
+    started = (datetime.now(UTC) - started_ago).isoformat()
+    return {'pk': 'SOURCE_RUN#s3_import', 'sk': 'run_s3_import_20260310115500_ffffffff',
+            'status': status, 'file_key': key, 'started_at': started}
+
+
+@pytest.mark.usefixtures('s3', 'table', 'invoke')
+class TestOneLiveRunPerFile:
+    def test_a_running_reprocess_of_the_same_file_is_a_409_and_starts_nothing(
+            self, api_gateway_event, lambda_context, table, invoke):
+        table.query.return_value = {'Items': [_run_row('running', timedelta(seconds=30))]}
+
+        status, body = _reprocess(api_gateway_event, lambda_context, {'key': 'reviews/a.csv'})
+
+        assert status == 409
+        assert 'already being reprocessed' in json.dumps(body)
+        table.put_item.assert_not_called()
+        invoke.assert_not_called()
+
+    @pytest.mark.parametrize('row', [
+        _run_row('running', timedelta(seconds=s3_import_runs.INGESTOR_TIMEOUT_SECONDS + 1)),
+        _run_row('completed', timedelta(seconds=30)),
+        _run_row('error', timedelta(seconds=30)),
+        _run_row('running', timedelta(seconds=30), key='reviews/other.csv'),
+        {**_run_row('running', timedelta(seconds=30)), 'started_at': 'not-a-time'},
+    ], ids=['stale-running', 'completed', 'error', 'other-file', 'unreadable-start'])
+    def test_a_stale_finished_or_unrelated_run_does_not_block(
+            self, api_gateway_event, lambda_context, table, invoke, row):
+        table.query.return_value = {'Items': [row]}
+
+        status, _ = _reprocess(api_gateway_event, lambda_context, {'key': 'reviews/a.csv'})
+
+        assert status == 202
+        invoke.assert_called_once()
+
+    def test_a_running_row_on_a_later_page_still_blocks(self, api_gateway_event, lambda_context, table, invoke):
+        table.query.side_effect = [
+            {'Items': [], 'LastEvaluatedKey': {'pk': 'SOURCE_RUN#s3_import', 'sk': 'x'}},
+            {'Items': [_run_row('running', timedelta(seconds=5))]},
+        ]
+
+        status, _ = _reprocess(api_gateway_event, lambda_context, {'key': 'reviews/a.csv'})
+
+        assert status == 409
+        assert table.query.call_args_list[1].kwargs['ExclusiveStartKey'] == {'pk': 'SOURCE_RUN#s3_import', 'sk': 'x'}
+        invoke.assert_not_called()
+
+    def test_the_check_reads_only_recent_run_ids_of_the_run_partition(self, table):
+        now = datetime(2026, 3, 10, 12, 0, 0, tzinfo=UTC)
+
+        s3_import_runs.refuse_running_duplicate(table, 'reviews/a.csv', now=now)
+
+        condition = table.query.call_args.kwargs['KeyConditionExpression'].get_expression()
+        pk, sk = condition['values']
+        assert pk.get_expression()['values'][1] == 'SOURCE_RUN#s3_import'
+        lower, upper = sk.get_expression()['values'][1:]
+        assert lower == 'run_s3_import_20260310114000'
+        assert upper == 'run_s3_import_99999999999999~'
+
+    def test_an_unreadable_run_partition_is_a_500_and_starts_nothing(
+            self, api_gateway_event, lambda_context, table, invoke):
+        table.query.side_effect = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException',
+                                                         'Message': 'slow down'}}, 'Query')
+
+        status, body = _reprocess(api_gateway_event, lambda_context, {'key': 'reviews/a.csv'})
+
+        assert status == 500
+        assert 'Failed to start reprocessing' in json.dumps(body)
+        invoke.assert_not_called()
+
+    def test_the_window_is_the_ingestor_timeout_its_manifest_sets(self):
+        manifest = Path(__file__).resolve().parents[3] / 'plugins' / 's3_import' / 'manifest.json'
+        timeout = json.loads(manifest.read_text())['infrastructure']['ingestor']['timeout']
+        assert timeout == s3_import_runs.INGESTOR_TIMEOUT_SECONDS
 
 
 class TestPollingARun:

@@ -7,6 +7,7 @@ original upload had (the processor's duplicate check keys on it), and a plain
 trigger event behaves exactly as before.
 """
 
+import importlib
 import io
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -16,6 +17,7 @@ import pytest
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
 from s3_import.ingestor import handler
 from s3_import.ingestor.handler import _get_source_from_key, lambda_handler
+from shared import s3_import_runs
 
 RUN_ID = "run_s3_import_20260310120000_0a1b2c3d"
 CSV = b"text,rating\nGreat flight,5\nLost my bag,1\n"
@@ -29,10 +31,14 @@ def _context() -> SimpleNamespace:
     )
 
 
-def _event(key: str, *, execution_id: str | None = RUN_ID, reprocess: bool = True) -> dict:
+IMPORT_BUCKET = "import-bucket"
+
+
+def _event(key: str, *, execution_id: str | None = RUN_ID, reprocess: bool = True,
+           bucket: str = IMPORT_BUCKET) -> dict:
     event: dict = {"Records": [{
         "eventSource": "aws:s3", "eventName": "ObjectCreated:Put",
-        "s3": {"bucket": {"name": "import-bucket"}, "object": {"key": key}},
+        "s3": {"bucket": {"name": bucket}, "object": {"key": key}},
     }]}
     if execution_id is not None:
         event["execution_id"] = execution_id
@@ -54,10 +60,12 @@ def run():
     Yields `(invoke, built)`: `built` records the constructor kwargs and the
     `ingestor`; set `built["queue_error"]` before invoking to make the queue send raise.
     """
-    with offline_ingestor_construction(), patch.object(handler, "s3_client") as s3:
+    built: dict = {}
+    with offline_ingestor_construction(), patch.object(handler, "s3_client") as s3, \
+            patch.object(handler, "IMPORT_BUCKET", IMPORT_BUCKET):
+        built["s3"] = s3
         s3.head_object.return_value = {"ContentLength": len(CSV)}
         s3.get_object.side_effect = lambda **_: {"Body": io.BytesIO(CSV)}
-        built: dict = {}
         real_class = handler.S3ImportIngestor
 
         def build(**kwargs):
@@ -158,3 +166,71 @@ class TestATriggerEventIsUnchanged:
 
         assert invoke({}) == {"status": "skipped", "reason": "no records"}
         assert "ingestor" not in built
+
+
+class TestOnlyTheImportBucketIsRead:
+    """The API invokes the ingestor directly, so the bucket named in an event is not trusted."""
+
+    def test_a_record_for_another_bucket_is_skipped_without_a_read(self, run):
+        invoke, built = run
+
+        with patch.object(handler, "logger") as log:
+            result = invoke(_event("reviews/june.csv", bucket="someone-elses-bucket"))
+
+        assert result["files_processed"] == 0
+        built["s3"].head_object.assert_not_called()
+        built["s3"].get_object.assert_not_called()
+        built["ingestor"].send_to_queue.assert_not_called()
+        log.warning.assert_called_once_with(
+            "Skipping a record for a bucket other than the import bucket",
+            extra={"bucket": "someone-elses-bucket"})
+        assert [u["status"] for u in _run_updates(built["ingestor"])] == ["running", "completed"]
+
+    def test_without_a_configured_bucket_no_record_is_read(self, run):
+        invoke, built = run
+
+        with patch.object(handler, "IMPORT_BUCKET", ""):
+            result = invoke(_event("reviews/june.csv"))
+
+        assert result["files_processed"] == 0
+        built["s3"].head_object.assert_not_called()
+
+    def test_the_import_bucket_is_read(self, run):
+        invoke, built = run
+
+        invoke(_event("reviews/june.csv"))
+
+        built["s3"].head_object.assert_called_once_with(Bucket=IMPORT_BUCKET, Key="reviews/june.csv")
+
+    def test_the_bucket_comes_from_the_environment_the_stack_sets(self, monkeypatch):
+        monkeypatch.setenv("S3_IMPORT_BUCKET", "voc-import-from-env")
+        try:
+            importlib.reload(handler)
+            assert handler.IMPORT_BUCKET == "voc-import-from-env"
+        finally:
+            monkeypatch.delenv("S3_IMPORT_BUCKET")
+            importlib.reload(handler)
+        assert handler.IMPORT_BUCKET == ""
+
+
+class TestTheApiEventEndToEnd:
+    """The event `POST /s3-import/reprocess` sends (shared/s3_import_runs.py) is the one this handler reads."""
+
+    def test_the_api_event_for_the_import_bucket_imports_the_file_and_closes_the_run(self, run):
+        invoke, built = run
+
+        result = invoke(s3_import_runs.reprocess_event(IMPORT_BUCKET, "processed/reviews/june 1.csv", RUN_ID))
+
+        assert result["results"] == [{"file": "processed/reviews/june 1.csv", "items_processed": 2}]
+        built["s3"].get_object.assert_called_once_with(Bucket=IMPORT_BUCKET, Key="processed/reviews/june 1.csv")
+        [batch] = [c.args[0] for c in built["ingestor"].send_to_queue.call_args_list]
+        assert {item["source_platform_override"] for item in batch} == {"S3 - reviews"}
+        assert [u["status"] for u in _run_updates(built["ingestor"])] == ["running", "completed"]
+
+    def test_the_api_event_naming_another_bucket_reads_nothing(self, run):
+        invoke, built = run
+
+        invoke(s3_import_runs.reprocess_event("someone-elses-bucket", "reviews/june.csv", RUN_ID))
+
+        built["s3"].head_object.assert_not_called()
+        built["s3"].get_object.assert_not_called()

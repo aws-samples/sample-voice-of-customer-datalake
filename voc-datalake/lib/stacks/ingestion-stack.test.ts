@@ -7,12 +7,15 @@
  * unbounded storage growth, or turns the bucket back into one where a delete is
  * unrecoverable.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import {
   IMPORT_ABORT_MULTIPART_DAYS,
   IMPORT_NONCURRENT_VERSION_DAYS,
+  S3_IMPORT_BUCKET_ENV,
   SCHEDULE_TARGET_MAX_EVENT_AGE,
   SCHEDULE_TARGET_RETRY_ATTEMPTS,
 } from './ingestion-stack';
@@ -324,5 +327,38 @@ describe('VocIngestionStack circuit-breaker DisableRule grants', () => {
     expect(fn.Environment.Variables).not.toHaveProperty('INGEST_SCHEDULE_RULE_NAME');
     const [roleId] = fn.Role['Fn::GetAtt'];
     expect(grants.filter((grant) => grant.roles.includes(roleId))).toStrictEqual([]);
+  });
+});
+
+// The s3_import ingestor is also invoked directly by the API (POST /s3-import/reprocess),
+// so it reads only records naming the bucket it is configured for (handler.py IMPORT_BUCKET).
+describe('VocIngestionStack s3_import ingestor bucket check', () => {
+  let template: Template;
+  beforeAll(() => {
+    template = synthIngestionTemplate(['webscraper', 's3_import']);
+  });
+
+  const ingestorEnv = (pluginId: string) => {
+    const ids = Object.keys(template.findResources('AWS::Lambda::Function'))
+      .filter((id) => id.startsWith(`Ingestor${capitalize(pluginId)}`));
+    expect(ids).toHaveLength(1);
+    return IngestorFunctionSchema.parse(template.findResources('AWS::Lambda::Function')[itemAt(ids, 0)])
+      .Properties.Environment.Variables;
+  };
+
+  it('names the import bucket on the s3_import ingestor', () => {
+    const [bucketId] = Object.keys(template.findResources('AWS::S3::Bucket'))
+      .filter((id) => id.startsWith('S3ImportBucket'));
+    expect(bucketId).toBeDefined();
+    expect(ingestorEnv('s3_import')[S3_IMPORT_BUCKET_ENV]).toStrictEqual({ Ref: bucketId });
+  });
+
+  it('sets no import bucket on an ingestor without an S3 trigger', () => {
+    expect(ingestorEnv('webscraper')).not.toHaveProperty(S3_IMPORT_BUCKET_ENV);
+  });
+
+  it('is the variable the ingestor reads', () => {
+    const source = readFileSync(join(__dirname, '..', '..', 'plugins', 's3_import', 'ingestor', 'handler.py'), 'utf8');
+    expect(source).toContain(`os.environ.get("${S3_IMPORT_BUCKET_ENV}", "")`);
   });
 });

@@ -167,8 +167,22 @@ processing failure, or to restore rows after an accidental erasure.
   (`running`) in the aggregates table, and the ingestor moves it to `completed` (with `items_found`,
   the rows sent to the processing queue, duplicates included) or `error` (the exception type only).
   `GET /sources/status?run_status=s3_import` and the assistant's `get_source_run` read the same rows.
-  The S3 import API role may write only that partition (`dynamodb:LeadingKeys`) and invoke only the
-  `s3_import` ingestor. Without the plugin enabled, the route answers "not configured".
+  The S3 import API role may read and write only that partition (`dynamodb:LeadingKeys`) and invoke
+  only the `s3_import` ingestor. Without the plugin enabled, the route answers "not configured".
+- **One live run per file (409).** A second `POST /s3-import/reprocess` for a file answers **409**
+  ("This file is already being reprocessed") while a `running` run of that file started less than the
+  ingestor's timeout ago (300 s, `infrastructure.ingestor.timeout` in `plugins/s3_import/manifest.json`;
+  `INGESTOR_TIMEOUT_SECONDS` in `lambda/shared/s3_import_runs.py`). A finished run, or one still
+  `running` but older than that (it timed out without closing its row), does not block. Two requests in
+  the same instant can both start; that is harmless, because duplicates are skipped.
+- **Only the import bucket is read.** The ingestor reads a record only when it names the bucket in its
+  `S3_IMPORT_BUCKET` environment variable (set by `VocIngestionStack`, the bucket of the S3 trigger). A
+  record for any other bucket is skipped with a warning, unread, because the API invokes the ingestor
+  directly and the event's bucket is not trusted. Its role's S3 grant is read/write on the import
+  bucket only (and its KMS key).
+- **Retries.** The ingestor keeps Lambda's default 2 async retries: an upload's S3 event has no other
+  automatic recovery from a transient failure. A retried reprocess re-runs the same file under the same
+  run id (its `started_at` moves to the retry), and the rows it queues again are skipped as duplicates.
 - **Raw archive.** A row is archived under a key derived from its id and its date, so a re-run
   overwrites the same object; a row with no date is archived under the day of the re-run.
 

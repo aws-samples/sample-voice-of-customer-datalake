@@ -8,6 +8,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 import urllib.parse
 from collections.abc import Generator
 
@@ -18,6 +19,12 @@ from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
 
 s3_client = boto3.client("s3")
+
+# The import bucket this ingestor serves (VocIngestionStack sets it next to the S3 trigger).
+# A record naming any other bucket is skipped unread: the API invokes this function
+# directly (`POST /s3-import/reprocess`), so the bucket in an event is not trusted.
+# Unset = no bucket is trusted, and every record is skipped.
+IMPORT_BUCKET = os.environ.get("S3_IMPORT_BUCKET", "")
 
 MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
@@ -258,6 +265,10 @@ def _process_records(ingestor: S3ImportIngestor, records: list, *, reprocess: bo
             if record.get("eventSource") != "aws:s3":
                 continue
             bucket = record["s3"]["bucket"]["name"]
+            if not IMPORT_BUCKET or bucket != IMPORT_BUCKET:
+                logger.warning("Skipping a record for a bucket other than the import bucket",
+                               extra={"bucket": bucket})
+                continue
             key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
             logger.info(f"Processing s3://{bucket}/{key}")
             count = ingestor.process_file(bucket, key, reprocess=reprocess)
