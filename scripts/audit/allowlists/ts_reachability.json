@@ -24,7 +24,6 @@
     {"key": "frontend:src/api/types.ts#PrioritizationScore.row_id", "reason": "Decoder output: each read-back ballot names its row, set from the map key (ownRead.ts); callers address ballots by the key instead (wire/decoder class: a decoded wire shape is kept whole)."},
     {"key": "frontend:src/api/types.ts#ScraperTemplate.*", "reason": "Wire shape of GET /scrapers/templates kept whole for the template fixtures/mocks; the SPA shows name/description only (wire/decoder class: a decoded wire shape is kept whole)."},
     {"key": "frontend:src/pages/DataExplorer/dataExplorerSchema.ts#S3Listing.prefix", "reason": "Decoder output of the S3 listing (wire/decoder class: the 5.28 audit kept decoded wire shapes whole)."},
-    {"key": "frontend:src/pages/Scrapers/CsvUploadModal.tsx#UploadResult.*", "reason": "Decoder output of the CSV upload answer (wire/decoder class: the 5.28 audit kept decoded wire shapes whole)."},
     {"key": "frontend:src/api/designSystemApi.ts#CreatedReference.reference", "reason": "Decoder output; the create-reference envelope is validated here (wire/decoder class: a decoded wire shape is kept whole)."},
     {"key": "frontend:src/assistant/approvals/registry.ts#ToolSpec.Preview.page", "reason": "Shared `{args, page}` preview signature: every preview gets the page, only some read it (cosmetic)."},
     {"key": "frontend:src/api/projectsApi.ts#projectsApi.createProject.success", "reason": "Envelope member of the create answer (fetchApi<{success; project}> wire type)."}
