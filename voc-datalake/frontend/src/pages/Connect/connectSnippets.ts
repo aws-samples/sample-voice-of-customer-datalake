@@ -32,6 +32,45 @@ export function buildMcpJson(endpointUrl: string): string {
   }, null, 2)
 }
 
+/** The environment variable the env-var snippets read the token from. */
+export const TOKEN_ENV_VAR = 'VOC_MCP_TOKEN'
+
+/**
+ * The clients Connect has an `mcp.json` for. The first three read the token from `VOC_MCP_TOKEN`
+ * (each in its own substitution syntax), so the file holds no secret and can be committed; `inline`
+ * is the paste-the-token variant for any other client. The first is the page's default.
+ */
+export const MCP_CLIENTS = ['claudeCode', 'cursor', 'kiro', 'inline'] as const
+export type McpClient = (typeof MCP_CLIENTS)[number]
+
+/** How each env-var client spells "the value of VOC_MCP_TOKEN" inside mcp.json. */
+const ENV_REFERENCE: Record<Exclude<McpClient, 'inline'>, string> = {
+  // Claude Code: `${VAR}` expansion in .mcp.json (url, headers, env).
+  claudeCode: `\${${TOKEN_ENV_VAR}}`,
+  // Cursor: `${env:NAME}` interpolation in mcp.json.
+  cursor: `\${env:${TOKEN_ENV_VAR}}`,
+  // Kiro: `${VAR}` in headers (kiro.dev/docs/mcp/configuration); the IDE expands only approved variables.
+  kiro: `\${${TOKEN_ENV_VAR}}`,
+}
+
+export function isMcpClient(value: string): value is McpClient {
+  return MCP_CLIENTS.some((client) => client === value)
+}
+
+/** The `mcp.json` for one client; the env-var variants carry no token, not even a placeholder. */
+export function buildClientMcpJson(endpointUrl: string, client: McpClient): string {
+  if (client === 'inline') return buildMcpJson(endpointUrl)
+  const headers = { Authorization: `Bearer ${ENV_REFERENCE[client]}` }
+  // Claude Code needs the transport named for a remote server in .mcp.json.
+  const server = client === 'claudeCode' ? { type: 'http', url: endpointUrl, headers } : { url: endpointUrl, headers }
+  return JSON.stringify({ mcpServers: { [SERVER_KEY]: server } }, null, 2)
+}
+
+/** The shell line that sets the variable before starting the client (placeholder, never a token). */
+export function tokenExportLine(): string {
+  return `export ${TOKEN_ENV_VAR}='${TOKEN_PLACEHOLDER}'`
+}
+
 /** The skill with this deployment's endpoint in every placeholder. */
 export function fillSkill(template: string, endpointUrl: string): string {
   return template.split(ENDPOINT_PLACEHOLDER).join(endpointUrl)

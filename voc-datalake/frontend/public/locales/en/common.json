@@ -336,7 +336,21 @@
       "denied": "Denied",
       "failed": "Failed"
     },
-    "shortcutTitle": "Connect an external assistant to this project"
+    "shortcutTitle": "Connect an external assistant to this project",
+    "mcpClientLabel": "Client",
+    "mcpClient": {
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor",
+      "kiro": "Kiro",
+      "inline": "Other clients"
+    },
+    "mcpFile": {
+      "claudeCode": "Save as .mcp.json in the project root.",
+      "cursor": "Save as .cursor/mcp.json in the project, or ~/.cursor/mcp.json for every project.",
+      "kiro": "Save as .kiro/settings/mcp.json in the workspace, or ~/.kiro/settings/mcp.json. In the Kiro IDE, add VOC_MCP_TOKEN under Settings → Mcp Approved Env Vars; Kiro CLI reads it from the shell.",
+      "inline": "For clients that cannot read environment variables: the token is pasted into the file, so do not commit or share it."
+    },
+    "mcpEnvHint": "This file reads the token from the {{name}} environment variable, so it holds no secret. Set it in the shell that starts the client, with a token from below:"
   },
   "header": {
     "title": "Voice of the Customer",

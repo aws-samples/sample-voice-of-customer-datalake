@@ -340,7 +340,21 @@
       "denied": "Refusé",
       "failed": "Échec"
     },
-    "shortcutTitle": "Connecter un assistant externe à ce projet"
+    "shortcutTitle": "Connecter un assistant externe à ce projet",
+    "mcpClientLabel": "Client",
+    "mcpClient": {
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor",
+      "kiro": "Kiro",
+      "inline": "Autres clients"
+    },
+    "mcpFile": {
+      "claudeCode": "Enregistrez-le sous .mcp.json à la racine du projet.",
+      "cursor": "Enregistrez-le sous .cursor/mcp.json dans le projet, ou ~/.cursor/mcp.json pour tous les projets.",
+      "kiro": "Enregistrez-le sous .kiro/settings/mcp.json dans l'espace de travail, ou ~/.kiro/settings/mcp.json. Dans l'IDE Kiro, ajoutez VOC_MCP_TOKEN sous Settings → Mcp Approved Env Vars ; Kiro CLI la lit depuis le shell.",
+      "inline": "Pour les clients qui ne lisent pas les variables d'environnement : le jeton est collé dans le fichier, ne le committez pas et ne le partagez pas."
+    },
+    "mcpEnvHint": "Ce fichier lit le jeton dans la variable d'environnement {{name}} : il ne contient aucun secret. Définissez-la dans le shell qui lance le client, avec un jeton ci-dessous :"
   },
   "header": {
     "title": "Voix du client",
