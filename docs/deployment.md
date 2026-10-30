@@ -32,7 +32,8 @@ From the project root:
 # Install all dependencies
 npm run install:all
 
-# Build Lambda layers (requires Docker; Finch users: CDK_DOCKER=finch npm run build:layers)
+# Build Lambda layers (requires Docker; Finch users: CDK_DOCKER=finch npm run build:layers).
+# Unchanged layers are skipped; FORCE_LAYER_BUILD=1 rebuilds them all (see "Faster deploys" below).
 npm run build:layers
 
 # Bootstrap CDK (first time only)
@@ -293,6 +294,32 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 ```bash
 npm run deploy:infra    # Deploy all CDK stacks, then refresh the API stage
 ```
+
+### Faster deploys: skip what did not change
+
+Two ways a deploy avoids redoing work:
+
+- **Layer builds skip unchanged layers.** `npm run build:layers` writes a stamp
+  (`lambda/layers/<layer>/.build-stamp`, gitignored) holding a SHA-256 of the
+  layer's `requirements*.txt`, the install recipe, the build image and the
+  platform. When the hash matches and the layer's `python/` dir exists, the layer
+  is skipped with one log line. A missing or unreadable stamp rebuilds it.
+  `FORCE_LAYER_BUILD=1 npm run build:layers` (or `build-layers.sh --force`)
+  rebuilds every layer; do that after pulling a new build image, because the
+  `:latest` tag can move without the hash changing.
+- **Deploy only the stacks that changed (opt-in).**
+  `CDK_DEPLOY_CHANGED=1 npm run deploy:infra -- -c frontendDomain=example.com`
+  runs `cdk diff --all` once (with the `-c`/`--context` and `--profile`
+  arguments), then `cdk deploy --exclusively <changed stacks>`; CDK orders them
+  by dependency. The stage refresh (next section) runs whenever VocApiStack is
+  among them. When no stack differs, nothing is deployed. When `cdk diff` fails
+  or its output cannot be read with certainty (`scripts/cdk-changed-stacks.mjs`
+  cross-checks the per-stack results against the diff's own "Number of stacks
+  with differences"), the script falls back to the full deploy and the refresh.
+  Use it for whole-app deploys only: `--all` is replaced by the changed list, so
+  do not name stacks in the arguments. `cdk diff` reads the deployed templates,
+  so it needs the same read access as `cdk deploy`. The default (no variable)
+  is the full deploy.
 
 ### Refresh the API stage after every deploy (removed routes)
 
