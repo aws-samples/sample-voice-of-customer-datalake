@@ -643,6 +643,8 @@
     "startError": "La suppression n’a pas démarré : {{reason}}",
     "confirmTitle": "Supprimer toutes les données de {{source}} ?",
     "confirmMessage": "Tous les avis de {{source}} et tous les fichiers bruts de son dossier seront supprimés définitivement.",
+    "keepsRunning": "La source continue de fonctionner après la suppression : si sa planification est active, de nouveaux avis continuent d'arriver. Désactivez d'abord la source si vous voulez qu'elle reste vide. Les fichiers CSV et JSON importés (raw/csv_upload, raw/json_upload) sont conservés.",
+    "scheduleOn": "La planification de {{source}} est active. De nouveaux avis arriveront après la suppression, sauf si vous désactivez d'abord la source.",
     "typeLabel": "Saisissez {{source}} pour confirmer",
     "confirm": "Supprimer toutes les données",
     "progress": {

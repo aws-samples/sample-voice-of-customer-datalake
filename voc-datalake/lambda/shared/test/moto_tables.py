@@ -25,6 +25,22 @@ def create_pk_sk_table(table_name: str, resource=None):
     )
 
 
+def create_aggregates_table_with_metric_index(table_name: str, resource=None):
+    """voc-aggregates as in core-stack.ts: ``pk`` + ``sk`` plus the ``gsi1-by-metric-type`` index
+    (``metric_type`` HASH, ``pk`` RANGE, all attributes projected)."""
+    if resource is None:
+        resource = boto3.resource('dynamodb', region_name='us-east-1')
+    return resource.create_table(
+        TableName=table_name, BillingMode='PAY_PER_REQUEST',
+        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
+        AttributeDefinitions=[{'AttributeName': a, 'AttributeType': 'S'} for a in ('metric_type', 'pk', 'sk')],
+        GlobalSecondaryIndexes=[{
+            'IndexName': 'gsi1-by-metric-type', 'Projection': {'ProjectionType': 'ALL'},
+            'KeySchema': [{'AttributeName': 'metric_type', 'KeyType': 'HASH'},
+                          {'AttributeName': 'pk', 'KeyType': 'RANGE'}]}],
+    )
+
+
 def create_projects_table_with_meta(table_name: str, project_id: str = 'p1'):
     """A projects table holding one project's META row (no documents yet) —
     the starting state of the document-version allocation tests."""

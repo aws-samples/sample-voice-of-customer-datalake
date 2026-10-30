@@ -633,6 +633,8 @@
     "startError": "삭제를 시작하지 못했습니다: {{reason}}",
     "confirmTitle": "{{source}}의 모든 데이터를 삭제할까요?",
     "confirmMessage": "{{source}}의 모든 리뷰와 해당 폴더의 모든 원본 파일이 영구적으로 삭제됩니다.",
+    "keepsRunning": "삭제 후에도 소스는 계속 실행됩니다. 일정이 켜져 있으면 새 리뷰가 계속 들어옵니다. 비어 있는 상태로 두려면 먼저 소스를 끄세요. 업로드한 CSV 및 JSON 파일(raw/csv_upload, raw/json_upload)은 유지됩니다.",
+    "scheduleOn": "{{source}}의 일정이 켜져 있습니다. 먼저 소스를 끄지 않으면 삭제 후에도 새 리뷰가 들어옵니다.",
     "typeLabel": "확인하려면 {{source}}을(를) 입력하세요",
     "confirm": "모든 데이터 삭제",
     "progress": {

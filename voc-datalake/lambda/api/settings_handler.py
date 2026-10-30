@@ -98,7 +98,13 @@ from shared.scope_names import (
     scoped_company_context,
     scoped_design_system,
 )
-from shared.source_erasure import blocking_job, known_sources
+from shared.source_erasure import (
+    SourceLocked,
+    acquire_source_lock,
+    blocking_job,
+    known_sources,
+    release_source_lock,
+)
 from shared.source_profiles import (
     SOURCE_ID_RE,
     SOURCES_SETTINGS_KEY,
@@ -1802,13 +1808,34 @@ def _new_erasure_job(field: str, value: str, source: str | None, event: dict) ->
     }
     if source:
         item['source'] = source
+    if field == SOURCE_FIELD:
+        # Closes the race the live-job check leaves open (shared/source_erasure.py).
+        try:
+            acquire_source_lock(_configured_table(), value, job_id, now)
+        except SourceLocked as exc:
+            raise ConflictError('An erasure of this source is already running') from exc
     try:
         _configured_table().put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
     except ClientError as exc:
+        _release_erasure_lock(item)
         if _error_code(exc) == 'ConditionalCheckFailedException':
             raise ConflictError('An erasure job was started at the same moment; retry') from exc
         raise
     return item
+
+
+def _release_erasure_lock(job: dict) -> None:
+    """Free a whole-source job's lock when the job never reaches the worker.
+
+    Best effort on an error path: a failed release must not hide the original
+    error, and an unreleased lock goes stale after ``STALE_AFTER`` anyway.
+    """
+    if job.get('field') != SOURCE_FIELD:
+        return
+    try:
+        release_source_lock(_configured_table(), str(job.get('source')), job['job_id'], datetime.now(UTC))
+    except ClientError as exc:
+        logger.warning('Could not release the source erasure lock', extra={'error_type': type(exc).__name__})
 
 
 @app.post("/settings/erasure")
@@ -1837,6 +1864,7 @@ def start_erasure_route():
             ExpressionAttributeValues={':failed': 'failed', ':now': now_iso(),
                                        ':error': 'Could not start the erasure worker'},
         )
+        _release_erasure_lock(job)
         raise ServiceError('Failed to start the erasure job') from e
     logger.info('Erasure job started', extra={'job_id': job['job_id'], 'field': field})
     return Response(

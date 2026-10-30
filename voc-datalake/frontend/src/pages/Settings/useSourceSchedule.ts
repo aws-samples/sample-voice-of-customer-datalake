@@ -6,12 +6,13 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
+import { sourcesStatusKey } from '../../api/queryKeys'
 import { ownValue } from '../Scrapers/scraper-helpers'
 import { CLOSED_CIRCUIT as CLOSED } from '../../api/sourcesStatusSchema'
 import type { SourceCircuit, SourceStatus, SourcesStatus } from '../../api/sourcesStatusSchema'
 
-/** Shared by every SourceCard so the page makes one /sources/status call. */
-const SOURCES_STATUS_KEY = ['sources-status'] as const
+/** Shared by every SourceCard (and the source erasure panel) so the page makes one /sources/status call. */
+const SOURCES_STATUS_KEY = sourcesStatusKey()
 
 interface ScheduleState {
   readonly enabled: boolean

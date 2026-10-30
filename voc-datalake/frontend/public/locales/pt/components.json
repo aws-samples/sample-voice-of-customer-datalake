@@ -643,6 +643,8 @@
     "startError": "A exclusão não foi iniciada: {{reason}}",
     "confirmTitle": "Excluir todos os dados de {{source}}?",
     "confirmMessage": "Todas as avaliações de {{source}} e todos os arquivos brutos da pasta dela serão excluídos permanentemente.",
+    "keepsRunning": "A fonte continua em execução após a exclusão: se o agendamento estiver ativado, novas avaliações continuam chegando. Desative a fonte primeiro se quiser que ela fique vazia. Os arquivos CSV e JSON enviados (raw/csv_upload, raw/json_upload) são mantidos.",
+    "scheduleOn": "O agendamento de {{source}} está ativado. Novas avaliações chegarão após a exclusão, a menos que você desative a fonte primeiro.",
     "typeLabel": "Digite {{source}} para confirmar",
     "confirm": "Excluir todos os dados",
     "progress": {
