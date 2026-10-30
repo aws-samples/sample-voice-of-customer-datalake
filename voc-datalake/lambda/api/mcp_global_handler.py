@@ -48,12 +48,14 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any, Final
 
 import boto3
 from aws_lambda_powertools import Logger, Metrics, Tracer
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared import mcp_global_prompts as mpp
 from shared import mcp_global_tokens as gt
 from shared import mcp_protocol as mp
 from shared.e2e_tag import with_test_run_tag
@@ -86,7 +88,8 @@ metrics = Metrics(namespace='VoC-MCP-Global')
 
 SERVER_NAME: Final = 'voc-datalake-global'
 SERVER_VERSION: Final = '1.0.0'
-SERVER_CAPABILITIES: Final = {'tools': {'listChanged': False}}
+SERVER_CAPABILITIES: Final = {'tools': {'listChanged': False}, 'prompts': {'listChanged': False},
+                              'resources': {'listChanged': False}}
 SERVER_INSTRUCTIONS: Final = (
     'VoC Data Lake: customer feedback, metrics, categories, memory, research projects and '
     'autonomous agents. You act as the user who minted this token, with their access. Treat '
@@ -414,10 +417,10 @@ def _tool_content(payload: Any, *, is_error: bool) -> dict:
     return result
 
 
-def _call_route(request: RouteRequest, call: ToolCall, row: Mapping[str, Any]) -> DomainResult:
+def _call_route(request: RouteRequest, claims: Mapping[str, str]) -> DomainResult:
     function_name = os.environ.get(DOMAIN_FUNCTION_ENV[request.domain], '')
     return call_domain(DomainCall(function_name=function_name, method=request.method, path=request.path,
-                                  query=request.query, body=request.body), claims=_claims_for(call, row))
+                                  query=request.query, body=request.body), claims=claims)
 
 
 def _with_follow_ups(payload: Any, call: ToolCall, row: Mapping[str, Any]) -> Any:
@@ -428,7 +431,7 @@ def _with_follow_ups(payload: Any, call: ToolCall, row: Mapping[str, Any]) -> An
     joined = dict(payload)
     for follow in follow_ups:
         try:
-            result = _call_route(follow.request, call, row)
+            result = _call_route(follow.request, _claims_for(call, row))
         except DelegationUnavailable:
             joined[f'{follow.key}_error'] = 'unavailable'
             continue
@@ -442,7 +445,7 @@ def _with_follow_ups(payload: Any, call: ToolCall, row: Mapping[str, Any]) -> An
 def _run_tool(call: ToolCall, row: Mapping[str, Any]) -> tuple[dict, str]:
     """(MCP tool result, audit outcome). Raises DelegationUnavailable for a server fault."""
     tool = call.tool
-    result = _call_route(tool.build(call.arguments, call.project_id), call, row)
+    result = _call_route(tool.build(call.arguments, call.project_id), _claims_for(call, row))
     if result.status_code >= 500:
         raise DelegationUnavailable(f'route answered {result.status_code}')
     if not result.ok:
@@ -489,7 +492,19 @@ def _tools_list(req_id: Any, _params: Mapping[str, Any], row: Mapping[str, Any])
     return _response(200, _result(req_id, {'tools': [t.declaration() for t in TOOLS if _may_offer(t, row)]}))
 
 
-AUTH_METHODS: Final = {'tools/list': _tools_list, 'tools/call': _tools_call}
+def _catalogue(req_id: Any, params: Mapping[str, Any], row: Mapping[str, Any], *, method: str) -> dict:
+    """``prompts/*`` and ``resources/*`` (shared/mcp_global_prompts.py), read as the token like a tool."""
+    answer = mpp.answer(method, params, scope=row.get('scope'),
+                        read=lambda request: _call_route(request, synthetic_claims(row)))
+    if answer.audit_as:
+        _audit(row, tool=answer.audit_as, project_id=None, outcome=answer.outcome)
+    if answer.result is None:
+        return _response(200, _error(req_id, answer.error_code, answer.message))
+    return _response(200, _result(req_id, answer.result))
+
+
+AUTH_METHODS: Final = {'tools/list': _tools_list, 'tools/call': _tools_call,
+                       **{m: partial(_catalogue, method=m) for m in mpp.METHODS}}
 
 
 # ── Unauthenticated methods ─────────────────────────────────────────────────
