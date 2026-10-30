@@ -160,7 +160,7 @@ describe('SocialFeed', () => {
       
       await waitFor(() => {
         const filledStars = document.querySelectorAll('.text-warn.fill-warn')
-        expect(filledStars.length).toBe(5)
+        expect(filledStars).toHaveLength(5)
       })
     })
 

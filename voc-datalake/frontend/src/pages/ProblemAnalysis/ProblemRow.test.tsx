@@ -16,22 +16,18 @@ beforeEach(() => {
 
 describe('ProblemRow', () => {
   describe('collapsed state', () => {
-    it('renders problem summary', () => {
-      renderProblemRow()
+    it.each<[outcome: string, overrides: Parameters<typeof renderProblemRow>[0], text: string]>([
+      ['renders problem summary', {}, 'Slow delivery times'],
+      ['shows similar problems count badge', {}, '+2 similar'],
+      [
+        'counts every merged wording, not only the ones the server listed',
+        { problemGroup: makeProblemGroup({ similarCount: 25 }) },
+        '+25 similar',
+      ],
+    ])('%s', (_outcome, overrides, text) => {
+      renderProblemRow(overrides)
 
-      expect(screen.getByText('Slow delivery times')).toBeInTheDocument()
-    })
-
-    it('shows similar problems count badge', () => {
-      renderProblemRow()
-
-      expect(screen.getByText('+2 similar')).toBeInTheDocument()
-    })
-
-    it('counts every merged wording, not only the ones the server listed', () => {
-      renderProblemRow({ problemGroup: makeProblemGroup({ similarCount: 25 }) })
-
-      expect(screen.getByText('+25 similar')).toBeInTheDocument()
+      expect(screen.getByText(text)).toBeInTheDocument()
     })
 
     // Labels vs status (design system rule 15): a count is a label, so it is

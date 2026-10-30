@@ -1,6 +1,6 @@
 {
   "name": "voc-datalake",
-  "version": "5.48.5",
+  "version": "5.48.6",
   "description": "Voice of the Customer Data Lake - AWS CDK Infrastructure",
   "scripts": {
     "build": "tsc",
@@ -37,33 +37,33 @@
   "type": "commonjs",
   "dependencies": {
     "aws-cdk-lib": "2.275.0",
-    "cdk-nag": "2.37.55",
-    "constructs": "10.6.0",
+    "cdk-nag": "2.38.2",
+    "constructs": "10.8.1",
     "source-map-support": "0.5.21",
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@eslint-community/eslint-plugin-eslint-comments": "4.7.2",
-    "@stryker-mutator/core": "10.0.0",
-    "@stryker-mutator/vitest-runner": "10.0.0",
-    "@types/estree": "1.0.8",
-    "@types/node": "^22.19.3",
+    "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
+    "@types/estree": "1.0.10",
+    "@types/node": "^22.20.5",
     "@vitest/coverage-v8": "4.1.12",
     "@vitest/eslint-plugin": "1.6.27",
     "aws-cdk": "2.1146.1",
-    "esbuild": "0.28.1",
+    "esbuild": "0.28.2",
     "eslint": "9.39.5",
-    "eslint-plugin-sonarjs": "4.0.2",
+    "eslint-plugin-sonarjs": "4.2.2",
     "eslint-plugin-unicorn": "63.0.0",
-    "knip": "6.37.0",
+    "knip": "6.44.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "8.67.0",
+    "typescript-eslint": "8.72.1",
     "vitest": "4.1.12"
   },
   "overrides": {
     "typed-rest-client": {
-      "qs": "^6.16.1"
+      "qs": "^6.17.1"
     }
   }
 }

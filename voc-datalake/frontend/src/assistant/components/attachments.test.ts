@@ -61,7 +61,7 @@ describe('attachment limits', () => {
   })
 
   it('states the total budget in decoded megabytes', () => {
-    expect(MAX_ATTACHMENT_MB).toBe(2.1)
+    expect(MAX_ATTACHMENT_MB).toBeCloseTo(2.1, 10)
   })
 
   it('offers every document extension in the file picker', () => {

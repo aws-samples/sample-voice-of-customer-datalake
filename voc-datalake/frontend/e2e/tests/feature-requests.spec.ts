@@ -132,9 +132,27 @@ test.describe('feature requests: the in-app board', () => {
     })
 
     await assertStep(page, 'admin', 'fr-02-plus-one-usd', async (r) => {
-      const added = page.waitForResponse((res) => isApi(res, 'POST', /\/feature-requests\/[^/]+\/supports$/))
-      await addSupport(detail)
-      expect((await added).status()).toBe(201)
+      // The reporter's own +1 is filed with the request, so a reporter with an email is offered "Edit my +1",
+      // never a second "+1" (the API refuses it with 409); the second customer's +1 then comes from e2e-user.
+      // A viewer without an email (the dev mock) is not matched to the reporter row and +1s here.
+      const plusOne = detail.getByRole('button', { name: '+1 with my customer' })
+      const editMine = detail.getByRole('button', { name: 'Edit my +1' })
+      await expect(plusOne.or(editMine).first()).toBeVisible()
+      if (await plusOne.isVisible()) {
+        const added = page.waitForResponse((res) => isApi(res, 'POST', /\/feature-requests\/[^/]+\/supports$/))
+        await addSupport(detail)
+        expect((await added).status()).toBe(201)
+        r.note('the second +1 was added in the dialog')
+      } else {
+        await expect(detail.getByText('You support this request.', { exact: true })).toBeVisible()
+        const added = await apiCall('user', 'POST', `/feature-requests/${encodeURIComponent(state.id)}/supports`, {
+          name: SUPPORTER_NAME,
+          fields: { customer: SUPPORT_CUSTOMER, impact: 'committed', amount_usd: AMOUNT },
+        })
+        expect(added.status, 'e2e-user files the second +1').toBe(201)
+        await openBoard(page, `?request=${encodeURIComponent(state.id)}`)
+        r.note('the reporter is offered "Edit my +1"; e2e-user filed the second +1')
+      }
       await expect(detail.getByRole('heading', { name: '2 supports' })).toBeVisible()
       await expect(figure(detail, 'Committed')).toHaveText(AMOUNT_USD)
       await expect(figure(detail, 'Customers')).toHaveText('2')

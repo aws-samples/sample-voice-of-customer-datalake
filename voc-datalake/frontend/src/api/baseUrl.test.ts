@@ -179,31 +179,21 @@ describe('getAuthHeaders — untrusted origin', () => {
     expect(headers['Authorization']).toBe('mock-cognito-id-token')
   })
 
-  it('does NOT attach Authorization to a foreign-origin URL', () => {
-    const headers = getAuthHeaders('https://attacker.example.com/collect')
-    expect(headers['Authorization']).toBeUndefined()
-  })
-
-  it('does NOT attach Authorization even if a token exists (stale persisted value scenario)', () => {
-    // Simulate a stale localStorage value: the store has a foreign endpoint,
-    // but the header must still not be attached.
-    const headers = getAuthHeaders('https://evil.example.com/steal-tokens')
+  // The second row simulates a stale localStorage value: the store has a foreign
+  // endpoint, but the header must still not be attached even though a token exists.
+  it.each<[label: string, url: string]>([
+    ['to a foreign-origin URL', 'https://attacker.example.com/collect'],
+    ['even if a token exists (stale persisted value scenario)', 'https://evil.example.com/steal-tokens'],
+    ['when the URL has no host (fail closed)', 'http://'],
+    ['to a backslash-separator foreign URL', '/\\evil.example.com/collect'],
+  ])('does NOT attach Authorization %s', (_label, url) => {
+    const headers = getAuthHeaders(url)
     expect(headers['Authorization']).toBeUndefined()
   })
 
   it('still includes Content-Type even when Authorization is withheld', () => {
     const headers = getAuthHeaders('https://attacker.example.com/collect')
     expect(headers['Content-Type']).toBe('application/json')
-  })
-
-  it('does NOT attach Authorization when the URL has no host (fail closed)', () => {
-    const headers = getAuthHeaders('http://')
-    expect(headers['Authorization']).toBeUndefined()
-  })
-
-  it('does NOT attach Authorization to a backslash-separator foreign URL', () => {
-    const headers = getAuthHeaders('/\\evil.example.com/collect')
-    expect(headers['Authorization']).toBeUndefined()
   })
 
   it('does NOT attach Authorization when config is not loaded', () => {

@@ -160,6 +160,6 @@ describe('ProductTab report guard', () => {
     await startReport(user)
 
     await waitFor(() => expect(mockGenerateProductReport).toHaveBeenCalledTimes(1))
-    expect(mockListProductDocs.mock.calls.length).toBe(callsBeforeClick)
+    expect(mockListProductDocs.mock.calls).toHaveLength(callsBeforeClick)
   })
 })

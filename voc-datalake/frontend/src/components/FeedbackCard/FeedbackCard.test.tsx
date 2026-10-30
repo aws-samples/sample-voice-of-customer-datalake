@@ -116,14 +116,14 @@ describe('FeedbackCard', () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       // Should have 5 star icons
       const stars = document.querySelectorAll('.text-warn')
-      expect(stars.length).toBe(5)
+      expect(stars).toHaveLength(5)
     })
 
     it('does not render rating when not provided', () => {
       const feedbackWithoutRating = { ...mockFeedback, rating: undefined }
       renderWithRouter(<FeedbackCard feedback={feedbackWithoutRating} />)
       const stars = document.querySelectorAll('.text-warn')
-      expect(stars.length).toBe(0)
+      expect(stars).toHaveLength(0)
     })
   })
 

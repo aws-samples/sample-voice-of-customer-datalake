@@ -9,7 +9,7 @@ import { installStaleBuildReload } from './lib/staleBuildReload'
 // A tab opened before a deploy reloads once when it asks for a chunk the deploy removed (lib/staleBuildReload).
 installStaleBuildReload({
   target: window, storage: window.sessionStorage, reload: () => window.location.reload(),
-  build: import.meta.env.BUILD_COMMIT,
+  build: import.meta.env.BUILD_COMMIT, isOnline: () => window.navigator.onLine,
 })
 
 const rootElement = document.getElementById('root')

@@ -66,8 +66,9 @@ export const cognitoSecuritySuppressions: NagPackSuppression[] = [
     reason: 'MFA not enforced by default to reduce friction for sample application - users can enable MFA in their account settings',
   },
   {
-    id: 'AwsSolutions-COG3',
-    reason: 'Cognito Advanced Security Mode not enforced to minimize costs for sample deployment ($0.05 per login attempt) - recommended for production use',
+    // cdk-nag 2.38 replaced COG3 (advanced security mode) with COG8 (the plus feature plan that now carries it).
+    id: 'AwsSolutions-COG8',
+    reason: 'Cognito plus feature plan (threat protection: compromised-credential and adaptive sign-in checks) not enabled to keep the sample pay-per-use - it adds a per-monthly-active-user charge; recommended for production use',
   },
 ];
 

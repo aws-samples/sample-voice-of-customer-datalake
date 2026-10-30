@@ -290,7 +290,7 @@ describe('collected feedback on a prioritization row', () => {
     // The row already holds the form object; the QR is derived from its id. A
     // fetch here would be paid on a page that is already N+1 on project reads.
     expect(prioritizationMocks.getFeedbackFormStats).toHaveBeenCalledTimes(1)
-    expect(prioritizationMocks.getFeedbackForms.mock.calls.length).toBe(formsListCalls)
+    expect(prioritizationMocks.getFeedbackForms.mock.calls).toHaveLength(formsListCalls)
   })
 
   it('says why there is no QR when the endpoint cannot address the form', async () => {

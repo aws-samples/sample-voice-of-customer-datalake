@@ -351,53 +351,19 @@ describe('PersonaPDFContent', () => {
   })
 
   describe('Empty Sections', () => {
-    it('does not render goals section when no goals data', () => {
+    it.each<[section: string, condition: string, heading: string]>([
+      ['goals', 'no goals data', 'Goals & Motivations'],
+      ['pain points', 'no frustrations', 'Pain Points & Frustrations'],
+      ['behaviors', 'no behaviors', 'Behaviors & Habits'],
+      ['context', 'no context_environment', 'Context & Environment'],
+      ['quotes', 'no quotes', 'Representative Quotes'],
+      ['scenario', 'scenario is empty', 'Scenario'],
+      ['research notes', 'no notes', 'Research Notes'],
+    ])('does not render %s section when %s', (_section, _condition, heading) => {
       const persona = createMinimalPersona()
       render(<PersonaPDFContent persona={persona} />)
 
-      expect(screen.queryByText('Goals & Motivations')).not.toBeInTheDocument()
-    })
-
-    it('does not render pain points section when no frustrations', () => {
-      const persona = createMinimalPersona()
-      render(<PersonaPDFContent persona={persona} />)
-
-      expect(screen.queryByText('Pain Points & Frustrations')).not.toBeInTheDocument()
-    })
-
-    it('does not render behaviors section when no behaviors', () => {
-      const persona = createMinimalPersona()
-      render(<PersonaPDFContent persona={persona} />)
-
-      expect(screen.queryByText('Behaviors & Habits')).not.toBeInTheDocument()
-    })
-
-    it('does not render context section when no context_environment', () => {
-      const persona = createMinimalPersona()
-      render(<PersonaPDFContent persona={persona} />)
-
-      expect(screen.queryByText('Context & Environment')).not.toBeInTheDocument()
-    })
-
-    it('does not render quotes section when no quotes', () => {
-      const persona = createMinimalPersona()
-      render(<PersonaPDFContent persona={persona} />)
-
-      expect(screen.queryByText('Representative Quotes')).not.toBeInTheDocument()
-    })
-
-    it('does not render scenario section when scenario is empty', () => {
-      const persona = createMinimalPersona()
-      render(<PersonaPDFContent persona={persona} />)
-
-      expect(screen.queryByText('Scenario')).not.toBeInTheDocument()
-    })
-
-    it('does not render research notes section when no notes', () => {
-      const persona = createMinimalPersona()
-      render(<PersonaPDFContent persona={persona} />)
-
-      expect(screen.queryByText('Research Notes')).not.toBeInTheDocument()
+      expect(screen.queryByText(heading)).not.toBeInTheDocument()
     })
   })
 })

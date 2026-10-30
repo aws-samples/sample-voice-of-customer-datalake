@@ -17,6 +17,47 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.48.06] - 2026-10-30
+
+The rest of the npm packages move to their newest release within their current major, and the fixes a full
+production end-to-end run and log sweep found after the 5.48.04 dependency upgrade.
+
+### Changed
+- Every npm package not already moved by 5.48.04 goes to its newest release within its current major. `cdk-nag`
+  2.37 → 2.38 and `constructs` 10.6 → 10.8 in the CDK app. The stream Lambda's AWS SDK clients move to 3.1160. Frontend
+  runtime: React 19.3, React Router 7.18.5, Recharts 3.10, Tailwind 4.3, Zustand 5.0.16, date-fns 4.4,
+  aws-amplify 6.22, i18next 25.10. Tooling: typescript-eslint 8.72, eslint-plugin-sonarjs 4.2, knip 6.44, Stryker
+  10.1, pyright 1.1.414, jscpd 5.4, Playwright 1.64 (the e2e suite), and the stream Lambda's TypeScript 5.7 → 5.9.
+  The stricter lint and type rules these bring are fixed in the code (tests regrouped as parameterized tests,
+  specific matchers, one redundant optional type), with no gate setting changed.
+- `cdk-nag` 2.38 replaced its Cognito rule COG3 (advanced security mode) with COG8 (the plus feature plan); the
+  suppression on both user pools follows it with the same decision (not enabled, to stay pay-per-use).
+- Held back on purpose: `amazon-cognito-identity-js` stays at 6.3.20 (6.3.22 marks the whole library deprecated in
+  favour of Amplify v6, a sign-in migration of its own), `@tanstack/react-query` at 5.95 (5.105 deprecates
+  `fetchQuery` / `prefetchQuery` in favour of `query()`), `@vitest/eslint-plugin` at 1.6.27 (1.6.28 needs
+  TypeScript 6), and `eslint-plugin-react-refresh` at 0.4. Major upgrades (TypeScript 7, ESLint 10 in the CDK app
+  and SPA, Vite 8, Vitest 5, i18next 26) are not part of this release.
+
+### Fixed
+- Opening a page while offline shows the app's own error state ("Reload page", or the page's "could not be
+  loaded") again, instead of the browser's offline page. The 5.47.04 stale-build reload treated a lazy page that
+  failed for lack of network as a removed chunk and reloaded the tab; it now reloads only while the browser is
+  online, and an offline failure does not use up its one reload per build.
+- Two model budgets that thinking used up, seen in the production logs: the PRD chain's `problem_analysis` step
+  asks for 16,000 tokens (was 6,000, which came back empty and was retried), and the memory relation judge asks for
+  its 800-token answer plus the standard 2,048-token thinking headroom (it came back truncated, so every pair fell
+  back to "unrelated").
+- The production end-to-end suite follows 5.47.04 and 5.48.02: the Radar picker's "All brands" option, "Edit my
+  +1" for a request's reporter (the second +1 comes from the other test user), Delete only on an archived board
+  (checked on a scratch board the test removes), and the SSRF redirect probe skips with a reason when its public
+  redirector refuses internal targets (httpbin.org now answers 403 for them).
+- `test_logs_at_info_with_tenacitys_wording_and_stacklevel_two` reads the qualified name off the undecorated
+  function, which pyright 1.1.414 requires.
+
+### Security
+- `qs` under `typed-rest-client` (Stryker's dashboard reporter) is forced to ^6.17.1 in the CDK app, the frontend
+  and the stream Lambda. `npm audit` still reports 0 vulnerabilities in every package.
+
 ## [5.48.05] - 2026-10-30
 
 The Python suite no longer fails when a run crosses midnight UTC.

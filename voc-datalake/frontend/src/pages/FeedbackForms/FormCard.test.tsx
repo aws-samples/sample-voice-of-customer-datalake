@@ -47,12 +47,6 @@ function renderCard(form: FeedbackForm, apiEndpoint = 'https://api.example.com',
 }
 
 describe('FormCard (issue #171)', () => {
-  // Wave 4: the Theme tile read as an empty value (a swatch, no words).
-  it('says the theme in words beside its swatch', () => {
-    renderCard(buildForm())
-    expect(screen.getByText('Default colours')).toBeInTheDocument()
-  })
-
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetFeedbackFormStats.mockResolvedValue({
@@ -60,6 +54,12 @@ describe('FormCard (issue #171)', () => {
       form_id: 'form_1',
       stats: { total_submissions: 3, avg_rating: 4.5, rating_count: 2 },
     })
+  })
+
+  // Wave 4: the Theme tile read as an empty value (a swatch, no words).
+  it('says the theme in words beside its swatch', () => {
+    renderCard(buildForm())
+    expect(screen.getByText('Default colours')).toBeInTheDocument()
   })
 
   it('shows the form colour as a swatch, never its hex code', () => {

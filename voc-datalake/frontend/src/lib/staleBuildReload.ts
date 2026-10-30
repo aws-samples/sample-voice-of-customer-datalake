@@ -10,7 +10,9 @@
  * Vite fires `vite:preloadError` on `window` when a dynamic import fails. A fresh load fetches the new
  * `index.html` and with it the current chunk names, so the fix is a reload. Once per build only: when the
  * reloaded page fails too (a real outage, not a stale tab), it is left to the page's own error state
- * instead of reloading in a loop.
+ * instead of reloading in a loop. Never while the browser is offline: then the chunk failed because there
+ * is no network, and a reload would swap the app (its error state and "Reload page" button) for the
+ * browser's own offline page.
  *
  * @module lib/staleBuildReload
  */
@@ -24,6 +26,8 @@ interface ReloadDeps {
   readonly reload: () => void
   /** The running build's identity (BUILD_COMMIT); a new build may reload once again. */
   readonly build: string
+  /** Whether the browser reports a network (`navigator.onLine`); a failed import while offline is not a stale build. */
+  readonly isOnline: () => boolean
 }
 
 /**
@@ -40,9 +44,10 @@ function claimReload(storage: ReloadDeps['storage'], build: string): boolean {
   }
 }
 
-/** Listen for failed dynamic imports and reload once per build. */
-export function installStaleBuildReload({ target, storage, reload, build }: ReloadDeps): void {
+/** Listen for failed dynamic imports and reload once per build (online only). */
+export function installStaleBuildReload({ target, storage, reload, build, isOnline }: ReloadDeps): void {
   target.addEventListener('vite:preloadError', (event) => {
+    if (!isOnline()) return // no network: the page shows its own error; the build is not spent
     if (!claimReload(storage, build)) return // already reloaded once: the page shows its own error
     event.preventDefault() // the reload handles it; no unhandled rejection for the dying page
     reload()

@@ -223,7 +223,7 @@ describe('executeSearchFeedback', () => {
     const result = await runSearch(docClient, { urgency: 'high' }, { days: 7 });
 
     expect(result.items).toHaveLength(2);
-    expect(nth(result.items, 0).sentiment_score).toBe(0.95);
+    expect(nth(result.items, 0).sentiment_score).toBeCloseTo(0.95, 10);
     expect(nth(result.items, 0).rating).toBe(5);
   });
 

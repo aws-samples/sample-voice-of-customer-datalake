@@ -201,7 +201,7 @@ describe('projects Lambda Cognito access (per-project sharing)', () => {
 
   it('scopes ListUsers to the stack user pool, not a wildcard', () => {
     const statements = projectsStatements().filter((s) => s.actions.includes('cognito-idp:ListUsers'));
-    expect(statements.length).toBe(1);
+    expect(statements).toHaveLength(1);
     const { resource } = itemAt(statements, 0);
     expect(resource).toContain('UserPool');
     expect(resource).not.toContain('"*"');

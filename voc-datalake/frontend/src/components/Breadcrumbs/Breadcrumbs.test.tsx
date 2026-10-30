@@ -282,13 +282,13 @@ describe('Breadcrumbs', () => {
       renderWithRouter(['/categories'])
       // Should have chevron between Home and Categories
       const chevrons = document.querySelectorAll('.lucide-chevron-right')
-      expect(chevrons.length).toBe(1)
+      expect(chevrons).toHaveLength(1)
     })
 
     it('renders multiple chevrons for nested routes', () => {
       renderWithRouter([`/projects/${PROJECT_ID}`])
       const chevrons = document.querySelectorAll('.lucide-chevron-right')
-      expect(chevrons.length).toBe(2)
+      expect(chevrons).toHaveLength(2)
     })
 
     it('chevrons have aria-hidden attribute', () => {
