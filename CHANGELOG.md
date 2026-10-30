@@ -17,6 +17,10 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.54.00] - 2026-10-30
+
+Every review gets a usefulness band, and the Data Explorer shows each source's data quality (#238).
+
 ### Added
 - Every review now carries a `usefulness` band (`low`, `medium`, `high`): a rule-based rating from its
   length, specifics (numbers, product terms) and whether it names a concrete issue or request, computed by
