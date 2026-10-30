@@ -46,6 +46,7 @@ from botocore.exceptions import ClientError
 from shared.aws import invoke_lambda_async, is_conditional_check_failure
 from shared.exceptions import ApiError, NotFoundError, ServiceError
 from shared.logging import logger
+from shared.model_profile import payload_fields
 from shared.tables import get_jobs_table
 
 ASSIST_ACTION: Final = 'assist_job'
@@ -139,7 +140,8 @@ def start(pk: str, job_type: str, config: Mapping[str, Any], *, worker_function:
         item['initiated_by'] = initiated_by
     _table().put_item(Item=item)
     try:
-        invoke_lambda_async(worker_function, {'action': ASSIST_ACTION, 'pk': pk, 'job_id': job_id})
+        # The starter's model profile rides the event (the worker's api_handler opens its scope).
+        invoke_lambda_async(worker_function, {'action': ASSIST_ACTION, 'pk': pk, 'job_id': job_id, **payload_fields()})
     except Exception as exc:
         logger.exception('Assist worker invoke failed', extra={'job_type': job_type})
         _finish(pk, job_id, FAILED, error='The assistant could not be started; try again.')

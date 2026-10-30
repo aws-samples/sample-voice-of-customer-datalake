@@ -56,6 +56,7 @@ from shared.import_runs import (
 )
 from shared.ingest_archive import DEFAULT_UPLOAD_SOURCE, prepare_messages, stamp_file_archive, upload_profile
 from shared.logging import logger, tracer
+from shared.model_profile import payload_fields
 from shared.producer_labels import message_labels
 from shared.radar_brands import radar_brand_setting, radar_stamp
 from shared.request_body import json_object_body
@@ -211,7 +212,7 @@ def start_parse():
 
     # Invoke async processing
     try:
-        invoke_lambda_async(MANUAL_IMPORT_PROCESSOR_FUNCTION, {'job_id': job_id})
+        invoke_lambda_async(MANUAL_IMPORT_PROCESSOR_FUNCTION, {'job_id': job_id, **payload_fields()})
     except Exception as e:
         logger.exception(f"Failed to invoke processor: {e}")
         # Update job status to failed
