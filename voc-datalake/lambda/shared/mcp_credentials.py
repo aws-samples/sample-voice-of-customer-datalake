@@ -21,7 +21,6 @@ from typing import Any, TypeGuard
 
 from aws_lambda_powertools import Logger
 
-from shared import mcp_global_tokens as gt
 from shared import mcp_oauth_grants as grants
 from shared.mcp_oauth_config import oauth_config
 from shared.mcp_oauth_jwt import InvalidToken, JwksCache, JwksUnavailable, verify_access_token
@@ -40,13 +39,7 @@ def looks_like_jwt(credential: str) -> bool:
 
 def _usable_grant(row: dict | None, *, sub: str, client_id: str, origin_jti: str,
                   now: datetime) -> TypeGuard[dict]:
-    if row is None or not grants.is_grant(row):
-        return False
-    if row.get('created_by') != sub or row.get('client_id') != client_id:
-        return False
-    if gt.token_status(row, now) != gt.STATUS_ACTIVE:
-        return False
-    return origin_jti in grants.chains(row)
+    return grants.is_active_grant_of(row, sub=sub, client_id=client_id, now=now) and origin_jti in grants.chains(row)
 
 
 def authenticate_oauth(credential: str, *, load_row: Callable[[str], dict | None],
