@@ -7,6 +7,7 @@ import time_machine
 from suite_clock import MIDDAY_ENV, MIDDAY_FORCE_ENV, controller_midday, midday_of, publish_midday, suite_midday
 
 IMPORTED_AT = datetime.now(UTC)
+REAL_IMPORTED_AT = time_machine.escape_hatch.datetime.datetime.now(UTC)
 
 
 @pytest.mark.parametrize('now', [
@@ -52,16 +53,15 @@ def test_a_naive_off_noon_or_malformed_published_value_is_refused(monkeypatch, v
 
 
 def test_this_run_travelled_to_today_s_published_noon():
-    # Against the REAL clock: the published noon is the real UTC day's (12 hours before it to 23 hours after,
-    # allowing a run that crosses midnight). This alone cannot tell yesterday's noon from today's in the first
-    # 11 hours of a day; the overwrite itself is pinned by test_the_controller_overwrites_a_stale_noon.
+    # Exact, against the REAL day this module was imported on: pytest_configure published the noon moments
+    # before collection, so a stale noon from another day (a shell leftover) fails here at any hour.
     if MIDDAY_ENV not in os.environ:
         pytest.fail(f'{MIDDAY_ENV} is not set: the root voc-datalake/conftest.py was not loaded')
     if os.environ.get(MIDDAY_FORCE_ENV):
         pytest.skip(f'{MIDDAY_FORCE_ENV} is set: this run reproduces another day on purpose')
     published = datetime.fromisoformat(os.environ[MIDDAY_ENV])
-    real_now = time_machine.escape_hatch.datetime.datetime.now(UTC)
-    assert timedelta(hours=-12) <= real_now - published < timedelta(hours=23)
+    # The previous day only if the run started just before midnight and this module was imported after it.
+    assert published in {midday_of(REAL_IMPORTED_AT), midday_of(REAL_IMPORTED_AT - timedelta(days=1))}
 
 
 def test_a_forced_noon_is_what_the_controller_publishes(monkeypatch):
@@ -86,16 +86,24 @@ def test_publishing_reads_the_forced_noon_from_the_same_mapping():
     assert environ[MIDDAY_ENV] == '2026-03-01T12:00:00+00:00'
 
 
+def test_a_noon_in_another_offset_is_published_as_utc():
+    environ = {MIDDAY_FORCE_ENV: '2026-03-01T13:00:00+01:00'}
+    publish_midday(environ)
+    assert environ[MIDDAY_ENV] == '2026-03-01T12:00:00+00:00'
+
+
+@pytest.mark.parametrize('value', ['2026-03-01T12:00:00', '2026-03-01T23:59:00+00:00'])
+def test_a_naive_or_off_noon_forced_value_names_its_variable(monkeypatch, value):
+    monkeypatch.setenv(MIDDAY_FORCE_ENV, value)
+    with pytest.raises(ValueError, match=f'{MIDDAY_FORCE_ENV}=.* is not 12:00 UTC'):
+        controller_midday()
+
+
 def test_a_malformed_forced_noon_names_its_variable(monkeypatch):
     monkeypatch.setenv(MIDDAY_FORCE_ENV, 'tomorrow')
     with pytest.raises(ValueError, match=f'{MIDDAY_FORCE_ENV}=.* is not an ISO date-time'):
         controller_midday()
 
-
-def test_a_forced_noon_that_is_not_noon_is_refused(monkeypatch):
-    monkeypatch.setenv(MIDDAY_FORCE_ENV, '2026-03-01T23:59:00+00:00')
-    with pytest.raises(ValueError, match=f'{MIDDAY_FORCE_ENV}=.* is not 12:00 UTC'):
-        controller_midday()
 
 
 def test_a_module_level_now_is_taken_on_the_fake_clock_too():
