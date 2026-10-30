@@ -11,23 +11,13 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { capitalize } from '../plugin-loader';
+import { flattenRefJoin } from '../test-support/cfn-join';
 import { type NormalizedStatement, roleStatements } from '../test-support/iam-statements';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
 import { SELF_CONTINUING_INGESTORS } from './ingestion-stack';
 
 const FunctionSchema = z.object({ Properties: z.object({ FunctionName: z.unknown() }) });
-const JoinSchema = z.object({
-  'Fn::Join': z.tuple([z.literal(''), z.array(z.union([z.string(), z.object({ Ref: z.string() })]))]),
-});
-
-/** A synthesized string value, an `Fn::Join` of literals and `{Ref}`s written out as `${Ref}`. */
-function flatten(value: unknown): string {
-  if (typeof value === 'string') return value;
-  return JoinSchema.parse(value)['Fn::Join'][1]
-    .map((part) => (typeof part === 'string' ? part : `\${${part.Ref}}`))
-    .join('');
-}
 
 const invokeStatements = (statements: NormalizedStatement[]) =>
   statements.filter((s) => s.actions.includes('lambda:InvokeFunction'));
@@ -41,7 +31,7 @@ describe('VocIngestionStack app-review self-invoke grants', () => {
   const functionName = (pluginId: string): string => {
     const [resource] = Object.entries(template.findResources('AWS::Lambda::Function'))
       .filter(([id]) => id.startsWith(`Ingestor${capitalize(pluginId)}`));
-    return flatten(FunctionSchema.parse(resource?.[1]).Properties.FunctionName);
+    return flattenRefJoin(FunctionSchema.parse(resource?.[1]).Properties.FunctionName);
   };
   const grantsOf = (pluginId: string) => invokeStatements(
     roleStatements(template, `IngestorRole${capitalize(pluginId)}DefaultPolicy`, { byIdPrefix: true }),
@@ -51,7 +41,7 @@ describe('VocIngestionStack app-review self-invoke grants', () => {
     expect(SELF_CONTINUING_INGESTORS.has(pluginId)).toBe(true);
     const grants = grantsOf(pluginId);
     expect(grants.map((s) => s.actions)).toStrictEqual([['lambda:InvokeFunction']]);
-    expect(grants.map((s) => flatten(JSON.parse(s.resource)))).toStrictEqual([
+    expect(grants.map((s) => flattenRefJoin(JSON.parse(s.resource)))).toStrictEqual([
       `arn:aws:lambda:${SYNTH_REGION}:${SYNTH_ACCOUNT}:function:${functionName(pluginId)}`,
     ]);
   });
