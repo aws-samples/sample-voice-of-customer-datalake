@@ -1,7 +1,7 @@
 /**
  * The e2e model profile for the stream Lambdas (owner decision, 5.58.00). MIRRORS
  * lambda/shared/model_profile.py and model_config.py's PROFILE_MODELS / PROFILE_FALLBACKS
- * (test_model_profile_lockstep.py reads this file).
+ * (lib/stacks/core-e2e-group.test.ts reads this file).
  *
  * A caller in the Cognito group `e2e` (the production e2e test users) runs every model call
  * on Haiku 5.5, whatever the admin picked; the capacity fallback stays on Haiku. The profile
