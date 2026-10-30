@@ -32,7 +32,8 @@ process only.
 
 ### Fixed
 - `test_this_run_travelled_to_today_s_published_noon` compared the published noon with the fake clock that noon had
-  set, so it could not fail. It now compares with the real clock (`time_machine.escape_hatch`). The controller's
+  set, so it could not fail. It now checks it exactly against the real day (`time_machine.escape_hatch`), and a
+  noon given in another offset is published as 12:00 UTC. The controller's
   overwrite of a stale noon is a function of its own (`publish_midday`, which reads the forced noon from the mapping
   it writes) with unit tests, and a malformed `VOC_TEST_MIDDAY_FORCE` names the variable.
 - `suite_clock.py` calls the travel a `pytest_configure` hook, which it is, not a session fixture.

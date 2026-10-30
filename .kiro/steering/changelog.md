@@ -35,7 +35,7 @@ lands on one of them should skip that check.
 
 Several changes merged together take ONE bump: the highest kind among them.
 
-## Apply it (one commit)
+## Apply it (all the bump edits together, in one commit)
 
 1. **`CHANGELOG.md`**: add a release section directly under `## [Unreleased]` (leave that heading empty):
    `## [2.10.00] - YYYY-MM-DD` — two-digit minor and patch, today's date (`date +%F`). Under it a one-line
