@@ -60,6 +60,7 @@ from shared import mcp_global_tokens as gt
 from shared import mcp_protocol as mp
 from shared.e2e_tag import with_test_run_tag
 from shared.invocation_cost import measure_invocation_cost
+from shared.mcp_credentials import CredentialBackendUnavailable, authenticate_oauth, looks_like_jwt
 from shared.mcp_delegate import (
     DelegationUnavailable,
     DomainCall,
@@ -199,8 +200,7 @@ def _origin_allowed(event: Mapping[str, Any]) -> bool:
 
 
 # ── Authentication ──────────────────────────────────────────────────────────
-class AuthBackendUnavailable(Exception):
-    """The credential could not be checked (store or directory fault): a 500, not a 401."""
+AuthBackendUnavailable = CredentialBackendUnavailable  # a store, directory or JWKS fault: a 500, not a 401
 
 
 def _stored_token(token_id: str) -> dict | None:
@@ -246,7 +246,10 @@ def _authenticate(event: Mapping[str, Any]) -> dict | None:
     authorization = _header(event, 'authorization')
     if authorization is None or not authorization.startswith('Bearer '):
         return None
-    parsed = parse_token(authorization[len('Bearer '):])
+    credential = authorization[len('Bearer '):]
+    if looks_like_jwt(credential):  # an MCP OAuth access token (shared/mcp_credentials.py)
+        return authenticate_oauth(credential, load_row=_stored_token, minter_current=_minter_is_current, now=_now())
+    parsed = parse_token(credential)
     if parsed is None:
         return None
     token_id, secret = parsed
