@@ -48,6 +48,7 @@ fi
 # The CDK suite keeps vitest's 5 s default for local runs (a hung test reports fast). Here it runs
 # beside three other lanes, and its in-process VocApiStack synths take 1–3 s on an idle machine, so
 # load alone could cross 5 s. A per-test timeout is not an assertion: nothing a test checks changes.
+# The same value covers hooks: a file's beforeAll synth (default 10 s) timed out under CI load once (5.48.05).
 VALIDATE_VITEST_TIMEOUT_MS="${VALIDATE_VITEST_TIMEOUT_MS:-30000}"
 export ROOT CDK FRONTEND STREAM KNIP_PROD TSC_CACHE PYTHON_BIN PATH VALIDATE_PYTEST_WORKERS VALIDATE_VITEST_TIMEOUT_MS CPUS
 
@@ -132,7 +133,7 @@ def test frontend,frontend-static,cdk,cdk-tests,audit,audit-py-synth "vite build
 # stages frontend/dist (VocApiStack's website asset), so the step follows the vite build, which carries its
 # group for that reason, and comes before the vitest suites so a failing suite cannot leave it unrun.
 def test audit,audit-py-synth               "audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function" 'cd "$ROOT" && rc=0 && for d in scripts/audit/py_reachability.py scripts/audit/py_env_contract.py scripts/audit/py_iam_contract.py scripts/audit/py_layers.py scripts/audit/py_sfn_errors.py scripts/audit/py_shared_constants.py scripts/audit/py_doc_refs.py "scripts/audit/clones_struct.py --kind function"; do "$PYTHON_BIN" $d || { r=$?; echo "audit: $d exited $r"; [ "$r" -gt "$rc" ] && rc=$r; }; done; exit "$rc"'
-def test cdk,cdk-tests                      "vitest: CDK app"                    'cd "$CDK" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS"'
+def test cdk,cdk-tests                      "vitest: CDK app"                    'cd "$CDK" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --hookTimeout "$VALIDATE_VITEST_TIMEOUT_MS"'
 def test stream,stream-tests                "vitest: stream Lambda"              'cd "$STREAM" && npx vitest run'
 def test frontend,frontend-tests            "vitest: frontend"                   'cd "$FRONTEND" && npx vitest run'
 
@@ -166,7 +167,7 @@ def tsc  audit,audit-ts                     "audit: ts_query_keys"              
 # detector run-all.sh discovers has a step above, so a new detector cannot land outside the gate.
 def tsc  audit,audit-tools                  "audit: detector tests"              'cd "$ROOT" && "$PYTHON_BIN" -m pytest -c scripts/audit/pytest.ini scripts/audit && node --test scripts/audit/*.test.mjs'
 def tsc  audit,audit-tools                  "audit: detector lint (ruff + pyright)" 'cd "$CDK" && ruff check --config ruff.toml ../scripts/audit && cd "$ROOT" && npx pyright --pythonpath "$PYTHON_BIN" -p scripts/audit/pyrightconfig.json'
-def tsc  audit,audit-tools                  "audit: every detector has a step"   'cd "$ROOT" && missing="" && for d in $(bash scripts/audit/run-all.sh --list); do grep "^def " scripts/validate.sh | grep -qF "$d" || missing="$missing $d"; done && [ -z "$missing" ] || { echo "detectors with no scripts/validate.sh step:$missing"; exit 1; }'
+def tsc  audit,audit-tools                  "audit: every detector has a step"   'cd "$ROOT" && missing="" && defs="$(grep "^def " scripts/validate.sh)" && for d in $(bash scripts/audit/run-all.sh --list); do grep -qF "$d" <<<"$defs" || missing="$missing $d"; done && [ -z "$missing" ] || { echo "detectors with no scripts/validate.sh step:$missing"; exit 1; }'
 
 # ---- Selection ----
 selected() {  # step index -> 0 when it runs in this invocation
