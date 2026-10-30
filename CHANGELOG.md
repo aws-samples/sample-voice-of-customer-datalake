@@ -21,6 +21,13 @@ the platform package version.
 
 Two bug fixes: job Lambdas can requeue themselves, and a person can no longer +1 a request twice by sending two +1s at once.
 
+### Changed
+
+- [docs/radar.md → Search terms](docs/radar.md#search-terms) now records how the AgentCore web-search connector
+  handles the scan's query operators (checked live): it ignores `-"…"` exclusions and reads an `OR` group as
+  relevance hints. Exclude terms still work, because the scan drops matching results itself before any model
+  call.
+
 ### Fixed
 
 - Persona generation, document generation, document merge and persona import jobs: when a second delivery of

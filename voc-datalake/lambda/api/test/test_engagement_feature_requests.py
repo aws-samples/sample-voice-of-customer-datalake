@@ -116,10 +116,17 @@ def test_one_support_per_person_the_reporter_included(lambda_context):
     # The reporter already supports their own request (the +1 filed with it).
     assert call(lambda_context, 'POST', path, claims=BOARD, body=plus_one) == (409, {'success': False,
                                                                                 'error': 'already_supported'})
-    _support(lambda_context, request_id)
-    status, body = call(lambda_context, 'POST', path, claims={**BOARD_2, 'email': 'KIM@acme.example'}, body=plus_one)
+    _assert_second_plus_one_refused(lambda_context, request_id)
+
+
+def _assert_second_plus_one_refused(ctx, request_id):
+    """Kim +1s, then +1s again (other case): 409, and the request keeps the reporter's + Kim's."""
+    _support(ctx, request_id)
+    status, body = call(ctx, 'POST', f'/feature-requests/{request_id}/supports',
+                        claims={**BOARD_2, 'email': 'KIM@acme.example'},
+                        body={'customer': 'Example Air', 'impact': 'committed', 'amount_usd': 1})
     assert (status, body['error']) == (409, 'already_supported')
-    detail = ok(lambda_context, 'GET', f'/feature-requests/{request_id}', claims=BOARD_2)
+    detail = ok(ctx, 'GET', f'/feature-requests/{request_id}', claims=BOARD_2)
     assert len(detail['supports']) == 2
     assert detail['request']['totals']['supporters'] == 2
 
@@ -129,16 +136,8 @@ def test_two_simultaneous_plus_ones_by_one_person_store_one(lambda_context):
     # Both deliveries pass the read check before either writes (the race): the person's own key
     # makes the second conditional put fail, so only one +1 is stored and the loser gets a 409.
     request_id = _request(lambda_context)['request']['request_id']
-    path = f'/feature-requests/{request_id}/supports'
-    plus_one = {'customer': 'Example Air', 'impact': 'committed', 'amount_usd': 1}
     with patch('shared.feature_requests_routes._not_yet_supporting'):
-        _support(lambda_context, request_id)
-        status, body = call(lambda_context, 'POST', path, claims={**BOARD_2, 'email': 'KIM@acme.example'},
-                            body=plus_one)
-    assert (status, body['error']) == (409, 'already_supported')
-    detail = ok(lambda_context, 'GET', f'/feature-requests/{request_id}', claims=BOARD_2)
-    assert len(detail['supports']) == 2
-    assert detail['request']['totals']['supporters'] == 2
+        _assert_second_plus_one_refused(lambda_context, request_id)
 
 
 def test_a_persons_support_id_is_stable_per_request_and_case_blind():
