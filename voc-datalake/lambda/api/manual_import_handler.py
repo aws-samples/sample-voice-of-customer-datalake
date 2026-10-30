@@ -347,7 +347,7 @@ def _import_confirmed_reviews(job: dict, job_id: str, reviews: list[dict]) -> di
             if PROCESSING_QUEUE_URL:
                 sqs.send_message(
                     QueueUrl=PROCESSING_QUEUE_URL,
-                    MessageBody=json.dumps(message)
+                    MessageBody=json.dumps({**message, **payload_fields()})
                 )
             imported_count += 1
         except _AWS_WRITE_ERRORS as e:
@@ -491,7 +491,8 @@ def _send_items_to_sqs(messages: list[dict], label: str = 'row') -> tuple[int, l
     for start in range(0, len(messages), 10):
         chunk = messages[start:start + 10]
         entries: list[SendMessageBatchRequestEntryTypeDef] = [
-            {'Id': str(i), 'MessageBody': json.dumps(msg)}
+            # The importer's model profile rides each message (the processor scopes and drops it).
+            {'Id': str(i), 'MessageBody': json.dumps({**msg, **payload_fields()})}
             for i, msg in enumerate(chunk)
         ]
         try:
