@@ -17,6 +17,34 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.60.00] - 2026-10-31
+
+Company personas: a persona library on the Company page that projects copy from and promote into.
+
+### Added
+- **Company → Personas** tab (`/company?tab=personas`): the company persona library, with the same list, detail,
+  generate wizard, import, edit, notes and avatar controls as a project. Every signed-in user reads it; only
+  admins create, edit, delete or regenerate. Generating here always adds to the library (no replace mode).
+  API: `GET /company-personas`, `POST /company-personas/generate|import`, `GET /company-personas/jobs[/{job_id}]`,
+  `PUT|DELETE /company-personas/{persona_id}`, `POST /company-personas/{persona_id}/notes|regenerate-avatar`
+  ([docs/project-workspace.md → Company personas](docs/project-workspace.md#company-personas)).
+- **Promote to company** on a project persona (admins): `POST /projects/{id}/personas/{persona_id}/promote` copies
+  it into the library.
+- **Copy from…** on a project's Personas tab: copy up to 20 personas from the company library or from another
+  project you own or are a member of (`GET /projects/{id}/personas/copy-sources`, `POST /projects/{id}/personas/copy`).
+  Every copy is independent (new id, its own copy of the avatar) and starts without research notes; its detail
+  shows where it was copied from.
+
+### Changed
+- The AI assistant's @persona / @all mentions, persona review and the agents' persona panel still see only the
+  current project's personas: a company persona reaches them once it is copied into the project.
+- The review and test-generator Kiro agents in `.kiro/agents/` may load skills.
+
+### Upgrade notes
+- `VocApiStack` gains the `/company-personas` resource on the projects Lambda; deploy with `npm run deploy:infra`
+  (it ends with the API stage refresh). No new permissions, tables or stacks. The library is stored in the
+  projects table under the reserved id `company_personas`, which every `/projects/{id}` route answers with 404.
+
 ## [5.57.03] - 2026-10-31
 
 A freshness report lists every dependency, Lambda runtime, toolchain and workflow pin that is behind its newest release.
