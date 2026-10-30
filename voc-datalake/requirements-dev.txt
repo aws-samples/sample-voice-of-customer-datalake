@@ -40,4 +40,4 @@ vulture==2.16
 # (scripts/mutate-python.sh). Not a gate: a report on what a change touched.
 mutmut==2.5.1
 # mutmut's `patch` extra, exactly: `scripts/mutate-python.sh --patch` reads the diff with it.
-whatthepatch==0.0.6
+whatthepatch==1.0.7
