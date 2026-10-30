@@ -136,6 +136,8 @@ def test_a_voc_v2_like_repository_yields_its_components_light_theme_and_logo_not
     assert '"theme_variants": [{"name": "kiro-light"' in world.summarise.call_args.args[0]
 
 
+# A time budget measures the code, not the coverage tracer: no_cover runs it untraced (docs/coverage-gate.md).
+@pytest.mark.no_cover
 def test_a_hostile_selector_of_repeated_pseudo_parts_is_matched_in_linear_time():
     """CodeQL py/redos: `.a:` followed by many `(:` backtracked exponentially in the class-part pattern."""
     import time

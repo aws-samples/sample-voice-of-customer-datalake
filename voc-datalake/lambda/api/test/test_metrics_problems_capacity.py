@@ -273,6 +273,8 @@ class TestThirtyThousandReviewsInOneImportDay:
         assert 'partial_reason' not in run.body
         assert sum(run.body['type_counts'].values()) == REVIEWS_IN_ONE_DAY
 
+    # A CPU budget measures the route, not the coverage tracer: no_cover runs it untraced (docs/coverage-gate.md).
+    @pytest.mark.no_cover
     @pytest.mark.parametrize('similarity', ['med', 'low'])
     def test_the_similarity_merge_finishes_well_within_the_time_left_after_the_walk(
             self, world, api_gateway_event, lambda_context, similarity):
