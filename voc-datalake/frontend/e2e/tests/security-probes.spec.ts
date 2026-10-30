@@ -51,12 +51,18 @@ const SSRF_TARGETS: ReadonlyArray<{ url: string; why: string }> = [
   { url: 'file:///etc/passwd', why: 'non-http scheme' },
 ]
 
+const METADATA_URL = encodeURIComponent('http://169.254.169.254/latest/meta-data/')
+
 /**
- * A public URL answering a redirect to the metadata IP. Override with
- * E2E_SSRF_REDIRECT_URL when the default redirector is unreachable.
+ * Public redirectors to the metadata IP, tried in order; the first that answers a real redirect is probed.
+ * E2E_SSRF_REDIRECT_URL (one you control) goes first. httpbin.org answers 403 "Forbidden redirect target"
+ * for internal targets since 2026-10; httpbin.dev still redirects. The test skips only when none does.
  */
-const SSRF_REDIRECT_URL = process.env['E2E_SSRF_REDIRECT_URL']
-  ?? `https://httpbin.org/redirect-to?url=${encodeURIComponent('http://169.254.169.254/latest/meta-data/')}`
+const SSRF_REDIRECT_CANDIDATES: readonly string[] = [
+  ...(process.env['E2E_SSRF_REDIRECT_URL'] ? [process.env['E2E_SSRF_REDIRECT_URL']] : []),
+  `https://httpbin.dev/redirect-to?url=${METADATA_URL}`,
+  `https://httpbin.org/redirect-to?url=${METADATA_URL}`,
+]
 
 /** Whether `url` answers a 3xx with a Location (fetched without following it). */
 async function redirectorAnswersRedirect(url: string): Promise<{ redirects: boolean; detail: string }> {
@@ -68,6 +74,17 @@ async function redirectorAnswersRedirect(url: string): Promise<{ redirects: bool
   } catch (error: unknown) {
     return { redirects: false, detail: error instanceof Error ? error.message : String(error) }
   }
+}
+
+/** The first candidate that redirects, or why none did. */
+async function workingRedirector(): Promise<{ url: string | null; tried: string[] }> {
+  const tried: string[] = []
+  for (const url of SSRF_REDIRECT_CANDIDATES) {
+    const check = await redirectorAnswersRedirect(url)
+    if (check.redirects) return { url, tried }
+    tried.push(`${new URL(url).host}: ${check.detail}`)
+  }
+  return { url: null, tried }
 }
 
 /** Bodies `analyze-url` must refuse as a client error (label, probe options). */
@@ -237,19 +254,19 @@ test.describe('security probes (API level)', () => {
   test('scraper analyze-url refuses a public URL that redirects to the metadata IP (#244)', async ({}, testInfo) => {
     test.skip(roleOf(testInfo) !== 'admin', 'one outbound fetch per run')
     test.setTimeout(ASSIST_JOB_TIMEOUT_MS + 30_000)
-    // The probe proves something only while its public redirector really answers a redirect.
-    // Public redirectors started refusing internal targets (httpbin.org answers 403 "Forbidden
-    // redirect target" since 2026-10); then the worker sees a plain 403 and the probe is moot.
-    const redirector = await redirectorAnswersRedirect(SSRF_REDIRECT_URL)
-    test.skip(!redirector.redirects, `${SSRF_REDIRECT_URL} does not redirect (${redirector.detail}); set E2E_SSRF_REDIRECT_URL`)
-    const res = await probe(api, 'analyze-url redirect', 'POST', '/scrapers/analyze-url', { role: 'admin', body: { url: SSRF_REDIRECT_URL } })
+    // The probe proves something only while its public redirector really answers a redirect, so the
+    // first candidate that does is used (SSRF_REDIRECT_CANDIDATES); with none it skips and says why.
+    const { url: redirectUrl, tried } = await workingRedirector()
+    test.skip(redirectUrl === null, `no redirector answers a redirect (${tried.join('; ')}); set E2E_SSRF_REDIRECT_URL`)
+    if (redirectUrl === null) return
+    const res = await probe(api, 'analyze-url redirect', 'POST', '/scrapers/analyze-url', { role: 'admin', body: { url: redirectUrl } })
     // An assist job (4.00.00): the first hop is public, so the start is a 202 and the
     // worker's fetch refuses the redirect; the job ends `failed` with that refusal.
     expect(res.status, 'analyze-url starts an assist job').toBe(202)
     const jobId = stringField(jsonBody(res), 'job_id') ?? ''
     expect(jobId, 'the 202 names its job').not.toBe('')
     const job = await finishedAssistJob(jobId)
-    testInfo.annotations.push({ type: 'redirect', description: `${SSRF_REDIRECT_URL} -> job ${job.status}: ${job.error}` })
+    testInfo.annotations.push({ type: 'redirect', description: `${redirectUrl} -> job ${job.status}: ${job.error}` })
     expect(job.status, 'never analysed: the redirect hop is refused').toBe('failed')
     expect(job.error).toMatch(/^Redirect refused/)
     expect(`${job.error} ${job.text}`).not.toMatch(/ami-id|instance-id|security-credentials|selectors/)
