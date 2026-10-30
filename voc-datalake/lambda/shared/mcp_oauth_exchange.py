@@ -32,7 +32,7 @@ import requests
 from shared import mcp_oauth_grants as grants
 from shared import mcp_oauth_relay as relay
 from shared.mcp_oauth_config import OAuthConfig
-from shared.mcp_oauth_jwt import unverified_claims
+from shared.mcp_oauth_jwt_parts import unverified_claims
 from shared.mcp_oauth_loopback import loopback_path
 from shared.mcp_oauth_register import redirect_allowed
 

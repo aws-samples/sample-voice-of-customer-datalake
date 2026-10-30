@@ -17,12 +17,14 @@ import { synthIngestionStacks } from '../test-support/ingestion-stack-fixture';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import {
-  EMAIL_INTAKE_LAYER_DIR, SIGNING_LAYER_DIR, SIGNING_LAYER_FUNCTION_IDS, SIGNING_LAYER_VERIFIER_IDS, attachSigningLayer,
+  EMAIL_INTAKE_LAYER_DIR, SIGNING_LAYER_DIR, SIGNING_LAYER_FUNCTION_IDS, attachSigningLayer,
 } from './dependency-layers';
 
 const LayersSchema = z.looseObject({
   Properties: z.looseObject({ Layers: z.array(z.object({ Ref: z.string() })).optional() }),
 });
+/** The functions that VERIFY with the signing layer's cryptography: the global MCP endpoint (api-mcp-oauth.ts). */
+const SIGNING_LAYER_VERIFIER_IDS: readonly string[] = ['GlobalMcpGlobalMcpApi'];
 const byName = (a: string, b: string): number => a.localeCompare(b);
 
 /** A layer's requirements.txt lines, comments and blanks dropped. */

@@ -12,6 +12,7 @@ const describeConsent = vi.fn<(query: string) => unknown>()
 const approveConsent = vi.fn<(choice: unknown) => unknown>()
 
 vi.mock('../../api/oauthApi', () => ({
+  oauthConsentKey: (query: string) => ['connect', 'oauth', 'consent', query],
   oauthApi: {
     describeConsent: (query: string) => describeConsent(query),
     approveConsent: (choice: unknown) => approveConsent(choice),

@@ -6,7 +6,7 @@
 import { credentialStatus, isoIn } from './mock-credentials.js';
 
 /** The mock deployment's MCP clients (kind → id), as MCP_OAUTH_CLIENTS names them. */
-export const MOCK_OAUTH_CLIENTS = { kiro: 'mock-kiro-client', 'claude-code': 'mock-claude-client', cursor: 'mock-cursor-client' };
+const MOCK_OAUTH_CLIENTS = { kiro: 'mock-kiro-client', 'claude-code': 'mock-claude-client', cursor: 'mock-cursor-client' };
 const CLIENT_NAMES = { kiro: 'Kiro', 'claude-code': 'Claude Code', cursor: 'Cursor', web: 'Web assistant' };
 const LOOPBACK_PATHS = { kiro: '/oauth/callback', 'claude-code': '/callback', cursor: '/callback' };
 const CONSENT_ROUTE = /^\/connect\/oauth\/consent$/;
