@@ -819,7 +819,7 @@ class TestCsvRefusalsAndWarnings:
         assert [i['text'] for i in items] == ['hello', 'kept']
         assert items[1]['csv_row_id'] == ''
         assert warnings == [
-            'row 1: rating "five" is not a number — left blank',
+            'row 1: rating is not a number — left blank',
             'row 2: empty text — skipped',
             'row 3: duplicate row — skipped',
             'row 4: id exceeds 256 characters — not kept for lookup, row imported',

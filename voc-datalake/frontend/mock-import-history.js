@@ -75,7 +75,7 @@ recordImportRun({
   warnings: [
     ...Array.from({ length: 9 }, (_, i) => `row ${i * 37 + 4}: empty text — skipped`),
     ...Array.from({ length: 5 }, (_, i) => `row ${i * 61 + 12}: duplicate row — skipped`),
-    'row 88: rating "five" is not a number — left blank',
+    'row 88: rating is not a number — left blank',
   ],
   raw_s3_key: 's3://voc-raw-data-123456789012-us-west-2/raw/csv_upload/2026/10/01/mock.csv',
 });

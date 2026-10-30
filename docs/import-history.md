@@ -15,8 +15,17 @@ are separate features; both can target a run once it has an id.
 | `POST /scrapers/manual/confirm` (paste a review page, then confirm) | `paste` | the detected origin (`g2`, a domain) | the caller's Cognito sub and email |
 | `POST /scrapers/manual/csv-upload` | `csv` | the upload's `default_source` (default `csv_upload`) | the caller |
 | `POST /scrapers/manual/json-upload` | `json` | the source profile id (`manual_import` by default) | the caller |
-| The AI assistant's `import_reviews` (it calls json-upload with `import_origin: 'assistant'`) | `assistant` | the source name the user gave (`source_label`) | the approving user |
+| The AI assistant's `import_reviews` (it calls json-upload with `import_origin: 'assistant'`) | `assistant` | the source name the user gave (`source_label`, at most 120 characters, control characters removed; the profile id when blank) | the approving user |
 | A file dropped in the S3 import bucket (`plugins/s3_import`), one record per file | `s3` | `S3 - <folder>` | `s3-upload` (the bucket trigger does not know who uploaded the file) |
+
+On json-upload the `assistant` method and its label are **client-reported**: the route records
+what the request says (`import_origin`, `source_label`) and cannot verify that the AI assistant sent
+it. Read them as an audit hint, not proof; the actor and the archived raw file are what the server
+knows. A `source_label` without `import_origin: 'assistant'` is ignored.
+
+Warnings and errors never quote a cell or field value (a rating cell can hold review text or an email
+address, and the record outlives the source's retention and erasure): they name the row, the column
+and the reason only, and an S3 import's parse error names the error class.
 
 A request refused with a 400 (no `text` column, a JSON item without an id, a file over the size
 limit on the REST routes) imports nothing and writes no record: the response is the whole outcome.
