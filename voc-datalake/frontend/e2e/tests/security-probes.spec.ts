@@ -76,10 +76,14 @@ async function redirectorAnswersRedirect(url: string): Promise<{ redirects: bool
   }
 }
 
-/** The first candidate that redirects, or why none did. */
+/** The first candidate that redirects, or why none did (a malformed candidate is reported, never thrown). */
 async function workingRedirector(): Promise<{ url: string | null; tried: string[] }> {
   const tried: string[] = []
   for (const url of SSRF_REDIRECT_CANDIDATES) {
+    if (!URL.canParse(url)) {
+      tried.push(`invalid URL ${url.slice(0, 80)}`)
+      continue
+    }
     const check = await redirectorAnswersRedirect(url)
     if (check.redirects) return { url, tried }
     tried.push(`${new URL(url).host}: ${check.detail}`)

@@ -6,7 +6,7 @@ This guide covers how to deploy the VoC (Voice of Customer) platform, including 
 
 - **AWS CLI** configured with appropriate credentials
 - **Node.js** 22.12+ and npm (Vite 7 and Stryker 10 need it; CI runs Node 22)
-- **Python** 3.12+ (for Lambda functions)
+- **Python** 3.14+ (for Lambda functions)
 - **AWS CDK** CLI installed (`npm install -g aws-cdk`)
 
 ## Project Structure
