@@ -74,8 +74,7 @@ def test_without_a_forced_noon_the_controller_takes_midday_of_now(monkeypatch):
     assert controller_midday() == midday_of(datetime.now(UTC))
 
 
-def test_the_controller_overwrites_a_stale_noon(monkeypatch):
-    monkeypatch.delenv(MIDDAY_FORCE_ENV, raising=False)
+def test_the_controller_overwrites_a_stale_noon():
     environ = {MIDDAY_ENV: '2020-01-01T12:00:00+00:00'}
     assert publish_midday(environ) == midday_of(datetime.now(UTC))
     assert environ[MIDDAY_ENV] == midday_of(datetime.now(UTC)).isoformat()
