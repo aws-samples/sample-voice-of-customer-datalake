@@ -17,6 +17,7 @@ from shared.logging import logger, metrics
 from shared.model_config import (
     DEFAULT_SURFACE,
     SERVICE_TIERS,
+    apply_model_profile,
     fallback_chain,
     get_active_model_id,
     invocation_model_id,
@@ -26,6 +27,7 @@ from shared.model_config import (
     uses_adaptive_thinking,
 )
 from shared.model_fallback import run_with_fallback
+from shared.model_profile import active_profile
 
 # Retry configuration
 DEFAULT_MAX_RETRIES = 5
@@ -395,6 +397,11 @@ def build_single_turn_request(model_id: str, *, prompt: str, max_tokens: int) ->
     return kwargs
 
 
+def _resolved_model(model_id: str | None, surface: str) -> str:
+    """The caller's explicit ``model_id`` or the surface's resolved model; the model profile wins over both."""
+    return apply_model_profile(model_id) if model_id else get_active_model_id(surface)
+
+
 def converse_blocks(
     client: Any,
     content: Sequence[Mapping[str, Any]],
@@ -419,7 +426,7 @@ def converse_blocks(
     """
     messages = [{'role': 'user', 'content': list(content)}]
     kwargs = build_blocks_request(
-        model_id or get_active_model_id(surface), messages=messages, system_prompt=system_prompt,
+        _resolved_model(model_id, surface), messages=messages, system_prompt=system_prompt,
         max_tokens=max_tokens,
     )
     return bedrock_call_with_retry(
@@ -636,7 +643,7 @@ def converse_detailed(
             of the chain and raise_on_throttle=True (the first model's error)
         ClientError: For non-retryable AWS errors
     """
-    primary = model_id or get_active_model_id(surface)
+    primary = _resolved_model(model_id, surface)
     requested_tier = _validated_tier(service_tier, surface)
     start_time = time.time()
 
@@ -681,7 +688,7 @@ def _converse_on_model(
     tier_state = _TierState(
         surface=surface, sending=_wire_tier(requested_tier, used_model), requested=requested_tier,
     )
-    logger.info(f"[BEDROCK] Starting converse call for step '{step_name}' with model {used_model} (surface={surface}, service_tier={requested_tier})")
+    logger.info(f"[BEDROCK] Starting converse call for step '{step_name}' with model {used_model} (surface={surface}, service_tier={requested_tier}, model_profile={active_profile() or 'none'})")
     logger.info(f"[BEDROCK] Requested params: max_tokens={max_tokens}, temperature={temperature}, thinking_budget={thinking_budget}")
     logger.info(f"[BEDROCK] Prompt length: {len(prompt)} chars, system_prompt length: {len(system_prompt)} chars")
 

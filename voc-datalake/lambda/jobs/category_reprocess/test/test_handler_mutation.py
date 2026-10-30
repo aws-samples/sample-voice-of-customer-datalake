@@ -815,16 +815,16 @@ class TestCompletionCeilingAndCancellationAreObservable:
 
 class TestLambdaHandlerIsInstrumented:
     """The entry point carries the logger context, the tracer, the metrics
-    flush (with the cold-start metric) and the invocation_cost CPU line; each
-    decorator leaves ``__wrapped__``."""
+    flush (with the cold-start metric), the invocation_cost CPU line and the model
+    profile scope; each decorator leaves ``__wrapped__``."""
 
-    def test_four_decorators_wrap_the_handler(self):
+    def test_five_decorators_wrap_the_handler(self):
         layers = 0
         function = handler.lambda_handler
         while '__wrapped__' in vars(function):
             function = vars(function)['__wrapped__']
             layers += 1
-        assert layers == 4
+        assert layers == 5
         assert function.__qualname__ == 'lambda_handler'
 
     def test_the_cold_start_metric_and_lambda_context_are_emitted(self, capsys):

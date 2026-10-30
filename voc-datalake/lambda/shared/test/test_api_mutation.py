@@ -319,7 +319,8 @@ class TestApiHandlerAppliesEveryPowertoolsDecorator:
         metrics.log_metrics.assert_called_once_with(capture_cold_start_metric=True)
         metrics.log_metrics.return_value.assert_called_once()
         inner = metrics.log_metrics.return_value.call_args.args[0]
-        assert inner.__wrapped__ is handler
+        # measure_invocation_cost, then the model-profile scope (shared/model_profile.py), then the handler.
+        assert inner.__wrapped__.__wrapped__ is handler
         assert inner({'e': 1}, None) == {'statusCode': 200}
         tracer.capture_lambda_handler.assert_called_once_with(metrics.log_metrics.return_value.return_value)
         logger.inject_lambda_context.assert_called_once_with(tracer.capture_lambda_handler.return_value)

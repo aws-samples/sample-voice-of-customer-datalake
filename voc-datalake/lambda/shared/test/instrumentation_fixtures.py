@@ -45,6 +45,8 @@ _INSTRUMENTED_WRAPPERS = (
     TRACER_SOURCE,
     os.path.join('metrics', 'provider', 'base.py'),
     os.path.join('shared', 'invocation_cost.py'),
+    # Innermost: the model profile scope (shared/model_profile.py, an e2e user's models).
+    os.path.join('shared', 'model_profile.py'),
 )
 INSTRUMENTED_HANDLER_LAYERS = (*_INSTRUMENTED_WRAPPERS, 'lambda_handler')
 # An API entry point adds `shared.e2e_tag.with_test_run_tag` outermost (`test_run` on e2e traffic).
