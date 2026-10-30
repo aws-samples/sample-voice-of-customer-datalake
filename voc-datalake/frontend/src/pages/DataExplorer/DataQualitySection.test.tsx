@@ -13,15 +13,13 @@ vi.mock('../../api/dataQualityApi', () => ({
 }))
 vi.mock('../../store/configStore', () => configStoreModule())
 vi.mock('./useAppSourceLabel', () => ({ useAppSourceLabel: () => (source: string) => `Label ${source}` }))
-const chart = vi.hoisted(() => {
-  const data: unknown[] = []
-  return { data }
-})
+// The rows the stacked bar was given, recorded by a spy (a render must not assign to outer state).
+const chart = vi.hoisted(() => ({ record: vi.fn<(data: unknown[]) => void>() }))
 vi.mock('recharts', () => {
   const passThrough = ({ children }: { children?: ReactNode }) => <div>{children}</div>
   const nothing = () => null
   const BarChart = ({ children, data }: { children?: ReactNode; data: unknown[] }) => {
-    chart.data = data
+    chart.record(data)
     return <div>{children}</div>
   }
   const Bar = ({ dataKey, name }: { dataKey: string; name: string }) => (
@@ -72,7 +70,7 @@ describe('DataQualitySection', () => {
     const bars = await screen.findAllByTestId('chart-bar')
     expect(bars.map((bar) => bar.dataset.key)).toStrictEqual(['high', 'medium', 'low', 'unrated'])
     expect(bars.map((bar) => bar.textContent)).toStrictEqual(['High', 'Medium', 'Low', 'Not rated'])
-    expect(chart.data).toStrictEqual([
+    expect(chart.record).toHaveBeenLastCalledWith([
       { name: 'Label web', high: 3, medium: 0, low: 1, unrated: 4 },
       { name: 'Label app', high: 0, medium: 2, low: 0, unrated: 0 },
     ])
