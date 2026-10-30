@@ -55,7 +55,6 @@ __all__ = [
     'known_sources',
     'refresh_source_lock',
     'release_source_lock',
-    'reset_known_sources_cache',
 ]
 
 SOURCE_METRIC_TYPE: Final = 'source'
@@ -65,23 +64,19 @@ SOURCE_LOCK_PREFIX: Final = 'SRCLOCK#'
 KNOWN_SOURCES_TTL_SECONDS: Final = 60
 
 # Warm-container memo of the counted sources: table name -> (expires at, source ids).
-_counted_cache: dict[str, tuple[float, frozenset[str]]] = {}
+# Public so the test suite's conftest can clear it between cases.
+counted_sources_cache: dict[str, tuple[float, frozenset[str]]] = {}
 
 
 class SourceLocked(Exception):
     """Another erasure of the source holds its lock (the API answers 409)."""
 
 
-def reset_known_sources_cache() -> None:
-    """Forget the warm-container memo of counted sources (tests, between cases)."""
-    _counted_cache.clear()
-
-
 def _counted_sources(table: Any) -> frozenset[str]:
     """Every source with a ``METRIC#daily_source#<id>`` row: keys only, deduped while paging, memoised."""
     name = str(getattr(table, 'name', '') or id(table))
     now = time.monotonic()
-    cached = _counted_cache.get(name)
+    cached = counted_sources_cache.get(name)
     if cached is not None and now < cached[0]:
         return cached[1]
     counted: set[str] = set()
@@ -95,7 +90,7 @@ def _counted_sources(table: Any) -> frozenset[str]:
         if isinstance(pk, str) and pk.startswith(SOURCE_PREFIX) and len(pk) > len(SOURCE_PREFIX):
             counted.add(pk.removeprefix(SOURCE_PREFIX))
     result = frozenset(counted)
-    _counted_cache[name] = (now + KNOWN_SOURCES_TTL_SECONDS, result)
+    counted_sources_cache[name] = (now + KNOWN_SOURCES_TTL_SECONDS, result)
     return result
 
 
