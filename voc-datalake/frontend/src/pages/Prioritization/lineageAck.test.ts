@@ -39,6 +39,10 @@ describe('isLineageAcknowledged', () => {
     expect(isLineageAcknowledged(twoVersions, ack(['prd_1', 'prd_1']), ['prd_1', 'prd_2'])).toBe(false)
   })
 
+  it('does not read a stored set with a repeated id as the marked set either (both directions)', () => {
+    expect(isLineageAcknowledged(twoVersions, ack(['prd_1', 'prd_2']), ['prd_1', 'prd_1'])).toBe(false)
+  })
+
   it('does nothing without a mark', () => {
     expect(isLineageAcknowledged(twoVersions, null, ['prd_1', 'prd_2'])).toBe(false)
     expect(isLineageAcknowledged(twoVersions, undefined, ['prd_1', 'prd_2'])).toBe(false)

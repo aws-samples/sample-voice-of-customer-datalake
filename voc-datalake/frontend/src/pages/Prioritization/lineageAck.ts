@@ -26,11 +26,17 @@ export interface RowLineageAck {
   readonly acknowledged_at: string
 }
 
-/** Do the two lists name exactly the same documents, in any order? */
+/** Do the two lists name exactly the same documents (as multisets), in any order? */
 function sameDocumentSet(left: readonly string[], right: readonly string[]): boolean {
   if (left.length !== right.length) return false
-  const held = new Set(left)
-  return held.size === left.length && right.every((id) => held.has(id))
+  const remaining = new Map<string, number>()
+  for (const id of left) remaining.set(id, (remaining.get(id) ?? 0) + 1)
+  for (const id of right) {
+    const count = remaining.get(id) ?? 0
+    if (count === 0) return false
+    remaining.set(id, count - 1)
+  }
+  return true
 }
 
 /**
