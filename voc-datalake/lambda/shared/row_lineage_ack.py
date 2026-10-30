@@ -37,6 +37,8 @@ from typing import Any, Final
 from shared.exceptions import ValidationError
 
 LINEAGE_ACK_FIELD: Final = 'lineage_ack'
+#: A row's composition bound (`projects_handler.MAX_ROW_DOCUMENT_IDS`, pinned by a test).
+MAX_PUBLISHED_DOCUMENT_IDS: Final = 25
 
 
 def validated_ack_request(body: dict, max_document_ids: int) -> tuple[bool, list[str]]:
@@ -107,6 +109,10 @@ def published_ack(row: Any) -> dict | None:
     # All or nothing: dropping a malformed entry would publish a SMALLER set than the
     # one acknowledged, which could then match a row that holds only that subset.
     if not ids or not all(isinstance(value, str) and value for value in ids):
+        return None
+    # The page's schema refuses a longer mark (`ownRead.ts`, `.max(MAX_ROW_DOCUMENT_IDS)`), so
+    # one longer than any row can hold is not published at all rather than dropped client-side.
+    if len(ids) > MAX_PUBLISHED_DOCUMENT_IDS:
         return None
     document_ids = list(ids)
     acknowledged_at = stored.get('acknowledged_at')

@@ -242,8 +242,17 @@ class TestTheRequestBody:
 class TestAStoredMarkReadsDefensively:
     def test_the_bound_here_is_the_rows_own(self):
         import projects_handler
+        from shared.row_lineage_ack import MAX_PUBLISHED_DOCUMENT_IDS
 
         assert projects_handler.MAX_ROW_DOCUMENT_IDS == ROW_BOUND
+        assert MAX_PUBLISHED_DOCUMENT_IDS == ROW_BOUND
+
+    def test_a_mark_longer_than_any_row_is_not_published(self):
+        from shared.row_lineage_ack import published_ack
+
+        ids = [f'doc_{i}' for i in range(ROW_BOUND + 1)]
+        assert published_ack({'lineage_ack': {'document_ids': ids, 'acknowledged_at': ''}}) is None
+        assert published_ack({'lineage_ack': {'document_ids': ids[:ROW_BOUND], 'acknowledged_at': ''}}) is not None
 
     @pytest.mark.parametrize('stored', [
         'yes', {'document_ids': 'prd_v1'}, {'document_ids': []}, {'document_ids': [1, None]},
