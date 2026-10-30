@@ -56,7 +56,15 @@ MAX_DOCUMENT_CHARS: Final = 200_000
 MIN_SEARCH_QUERY_LENGTH: Final = 2  # /feedback/search refuses shorter queries
 MAX_RUNS_LIMIT: Final = 50          # agents_handler.MAX_RUNS_PAGE
 DEFAULT_RUNS_LIMIT: Final = 5
-METRIC_VIEWS: Final[tuple[str, ...]] = ('summary', 'sentiment', 'categories', 'sources', 'personas', 'dimensions')
+METRIC_VIEWS: Final[tuple[str, ...]] = ('summary', 'sentiment', 'categories', 'sources', 'personas', 'dimensions',
+                                         'github', 'entities')
+# The views a route other than `/metrics/{view}` serves: the filter values with their counts.
+_VIEW_PATHS: Final[dict[str, str]] = {'entities': '/feedback/entities'}
+# `get_feedback include_similar`: at most this many neighbours, each with a bounded text.
+MAX_SIMILAR: Final = 5
+MAX_SIMILAR_TEXT_CHARS: Final = 500
+_SIMILAR_FIELDS: Final[tuple[str, ...]] = ('feedback_id', 'source_platform', 'source_created_at', 'category',
+                                           'sentiment_label', 'urgency', 'rating', 'title', 'problem_summary')
 # Post-query filters every feedback/metrics route takes (docs/dimensions.md); `dims` is serialised.
 ITEM_FILTERS: Final[tuple[str, ...]] = ('channel', 'tag')
 
@@ -86,6 +94,22 @@ def _unchanged(payload: Any, _args: Mapping[str, Any]) -> Any:
 
 
 @dataclass(frozen=True)
+class FollowUp:
+    """A second read whose shaped answer joins a successful tool result under ``key``.
+
+    Best effort: the handler records a refusal or fault as ``{key}_error`` and keeps the main result.
+    """
+
+    key: str
+    request: RouteRequest
+    shape: Callable[[Any], Any]
+
+
+def _no_follow_ups(_args: Mapping[str, Any]) -> tuple[FollowUp, ...]:
+    return ()
+
+
+@dataclass(frozen=True)
 class GlobalTool:
     name: str
     title: str
@@ -97,6 +121,8 @@ class GlobalTool:
     admin_only: bool = False
     # Takes a `project_id` argument; a pinned token's pin applies (and defaults it).
     project_scoped: bool = False
+    # Extra reads after the main route answered (validated by ``build`` first).
+    follow_ups: Callable[[Mapping[str, Any]], tuple[FollowUp, ...]] = _no_follow_ups
 
     def declaration(self) -> dict:
         """The tool as `tools/list` publishes it."""
@@ -136,6 +162,13 @@ def _text_arg(args: Mapping[str, Any], name: str, *, max_length: int, required: 
     if len(text) > max_length:
         raise InvalidToolArgument(f'{name} must be at most {max_length} characters')
     return text
+
+
+def _bool_arg(args: Mapping[str, Any], name: str) -> bool:
+    value = args.get(name, False)
+    if not isinstance(value, bool):
+        raise InvalidToolArgument(f'{name} must be true or false')
+    return value
 
 
 def _id_arg(args: Mapping[str, Any], name: str) -> str:
@@ -191,6 +224,7 @@ _ITEM_FILTERS = {
              'additionalProperties': {'type': 'string', 'maxLength': MAX_FILTER_LENGTH},
              'description': 'Dimension filters {key: value} (keys from list_dimensions), all must match.'},
 }
+_BOOL = {'type': 'boolean', 'default': False}
 _ID = {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}
 _PROJECT_ID = {**_ID, 'description': 'Project id (from list_projects). Optional for a project-scoped token.'}
 
@@ -262,13 +296,36 @@ def _search_feedback(args: Mapping[str, Any], _project: str | None) -> RouteRequ
     for name in ('category', 'sentiment', 'source'):
         filters[name] = _text_arg(args, name, max_length=MAX_FILTER_LENGTH)
     filters.update(_item_filters(args))
+    # shared/item_filters.py: `urgent=1` keeps only high-urgency items, on both routes, with every other filter.
+    filters['urgent'] = '1' if _bool_arg(args, 'urgent') else None
     if query and len(query) >= MIN_SEARCH_QUERY_LENGTH:
         return RouteRequest(DOMAIN_METRICS, 'GET', '/feedback/search', query={'q': query, **filters})
     return RouteRequest(DOMAIN_METRICS, 'GET', '/feedback', query=filters)
 
 
 def _get_feedback(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
+    _bool_arg(args, 'include_similar')
     return RouteRequest(DOMAIN_METRICS, 'GET', f"/feedback/{_id_arg(args, 'feedback_id')}")
+
+
+def _slim_similar(payload: object) -> list[dict]:
+    """``/feedback/{id}/similar`` as at most ``MAX_SIMILAR`` slim rows with a bounded ``text``."""
+    rows = []
+    for item in [i for i in _items(payload, 'items') if isinstance(i, Mapping)][:MAX_SIMILAR]:
+        row = {key: item[key] for key in _SIMILAR_FIELDS if item.get(key) is not None}
+        text = item.get('original_text')
+        if isinstance(text, str):
+            row['text'] = text[:MAX_SIMILAR_TEXT_CHARS]
+        rows.append(row)
+    return rows
+
+
+def _similar_follow_up(args: Mapping[str, Any]) -> tuple[FollowUp, ...]:
+    if args.get('include_similar') is not True:
+        return ()
+    request = RouteRequest(DOMAIN_METRICS, 'GET', f"/feedback/{_id_arg(args, 'feedback_id')}/similar",
+                           query={'limit': MAX_SIMILAR})
+    return (FollowUp('similar', request, _slim_similar),)
 
 
 def _get_metrics(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
@@ -283,7 +340,7 @@ def _get_metrics(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
         if not DIMENSION_KEY_RE.match(key or ''):
             raise InvalidToolArgument('key must be a dimension key (from list_dimensions)')
         query['key'] = key
-    return RouteRequest(DOMAIN_METRICS, 'GET', f'/metrics/{view}', query=query)
+    return RouteRequest(DOMAIN_METRICS, 'GET', _VIEW_PATHS.get(view, f'/metrics/{view}'), query=query)
 
 
 def _list_categories(_args: Mapping[str, Any], _project: str | None) -> RouteRequest:
@@ -360,20 +417,25 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'search_feedback', 'Search feedback',
         'Search or list customer feedback (reviews, form submissions, imports) you can see. Give `query` '
-        '(2+ characters) for a text search, or only filters to list the newest items. Returns verbatims '
-        'with sentiment, category and urgency. Use it to ground any claim about what customers say.',
+        '(2+ characters) for a text search, or only filters to list the newest items; `urgent: true` keeps '
+        'high-urgency items only. Returns verbatims with sentiment, category and urgency. Use it to ground '
+        'any claim about what customers say.',
         _schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH}, 'days': _DAYS, 'limit': _LIMIT,
-                 'category': _FILTER, 'sentiment': _FILTER, 'source': _FILTER, **_ITEM_FILTERS}),
+                 'category': _FILTER, 'sentiment': _FILTER, 'source': _FILTER, 'urgent': _BOOL, **_ITEM_FILTERS}),
         _search_feedback, _stripped),
     GlobalTool(
         'get_feedback', 'Get one feedback item',
-        'One feedback item in full, by `feedback_id` (from search_feedback).',
-        _schema({'feedback_id': _ID}, ('feedback_id',)), _get_feedback, _stripped),
+        'One feedback item in full, by `feedback_id` (from search_feedback); `include_similar: true` adds '
+        f'up to {MAX_SIMILAR} similar items.',
+        _schema({'feedback_id': _ID, 'include_similar': _BOOL}, ('feedback_id',)), _get_feedback, _stripped,
+        follow_ups=_similar_follow_up),
     GlobalTool(
         'get_metrics', 'Get feedback metrics',
         'Aggregated metrics over a window: `view` = summary (totals, average sentiment, urgent count, '
-        'daily series) or a breakdown by sentiment, categories, sources, personas or one dimension '
-        '(`dimensions` + `key`); every view takes the source / channel / tag / dims filters. '
+        'daily series), a breakdown by sentiment, categories, sources, personas or one dimension '
+        '(`dimensions` + `key`), `github` (GitHub issues per release and label) or `entities` (the filter '
+        'values in use: categories, sources, channels, tags, dimensions, with counts); every view takes the '
+        'source / channel / tag / dims filters. '
         'Use it for trends and volumes instead of counting search results.',
         _schema({'view': {'type': 'string', 'enum': list(METRIC_VIEWS), 'default': 'summary'}, 'days': _DAYS,
                  'key': _FILTER, 'source': _FILTER, **_ITEM_FILTERS}),
