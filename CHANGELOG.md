@@ -59,6 +59,8 @@ check, CDK template gates, GitHub Actions lint, tighter TypeScript and Python ru
 - Every GitHub Action is pinned to a commit SHA; the quality-gates job timeout is 60 minutes (coverage adds time).
 - The duplication gate (jscpd) skips only generated coverage reports under `voc-datalake/`, so `scripts/coverage/`
   is scanned like every other script.
+- Tests that assert a time budget run without coverage tracing (`@pytest.mark.no_cover`), so the tracer cannot
+  push them over their bound on a slower CI runner ([docs/coverage-gate.md](docs/coverage-gate.md)).
 
 ### Fixed
 - The processing queue's visibility timeout is now 1805 s (6 × the processor's 300 s + its batching window)
