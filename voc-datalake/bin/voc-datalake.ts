@@ -257,6 +257,7 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   identityPool: coreStack.identityPool,
   boardUserPool: coreStack.boardUserPool,
   boardUserPoolClient: coreStack.boardUserPoolClient,
+  userPoolDomainPrefix: coreStack.userPoolDomainPrefix,
   processingQueueUrl: ingestionStack.processingQueue.queueUrl,
   processingQueueArn: ingestionStack.processingQueue.queueArn,
   secretsArn: ingestionStack.secretsArn,

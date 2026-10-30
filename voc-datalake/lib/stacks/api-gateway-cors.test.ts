@@ -12,6 +12,7 @@ import type { Template } from 'aws-cdk-lib/assertions';
 
 import { apiTemplate, apiTemplateDev, serviceEnvironment } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { RenderedStringRecordSchema } from '../test-support/cfn-render';
 
 beforeAll(() => {
   apiTemplate();
@@ -23,7 +24,8 @@ const ERROR_RESPONSES = ['DEFAULT_4XX', 'DEFAULT_5XX', 'UNAUTHORIZED'] as const;
 const ResponseParamsSchema = z.object({
   Properties: z.object({
     ResponseType: z.string(),
-    ResponseParameters: z.record(z.string(), z.string()),
+    // A value may embed the API id (the UNAUTHORIZED challenge's resource_metadata URL): rendered to text.
+    ResponseParameters: RenderedStringRecordSchema,
   }),
 });
 
