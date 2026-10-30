@@ -96,8 +96,10 @@ jobs:
           echo "${ZIZMOR_SHA256}  /tmp/${zz}" | sha256sum --check --strict -
           tar -xzf "/tmp/${zz}" -C "$HOME/.local/bin" zizmor
 
+      # --pytest-first: pytest runs alone, then the other lanes. On this 4-vCPU runner the lanes beside it pushed a
+      # test that bounds its own CPU time over its bound (docs/coverage-gate.md); about 10 minutes longer.
       - name: Validate
-        run: bash scripts/validate.sh
+        run: bash scripts/validate.sh --pytest-first
 
       # The pending gates' counts (scripts/quality-baseline.sh), so a PR that raises one shows it in its
       # own log. A measurement, not a gate: it never fails the job, and it runs even when Validate failed.

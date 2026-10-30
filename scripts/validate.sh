@@ -15,6 +15,8 @@
 #   bash scripts/validate.sh --keep-going     do not stop the other lanes when a step fails
 #   bash scripts/validate.sh --only python,cdk   only the steps tagged with one of these groups
 #   bash scripts/validate.sh --list           print the steps (lane, groups, name) and exit
+#   bash scripts/validate.sh --pytest-first   run the pytest step alone, then every other lane (CI uses this)
+#   bash scripts/validate.sh --dry-run        schedule and report every step with its command replaced by a no-op
 #
 # Groups (used by scripts/validate-affected.sh): python, frontend, cdk, stream = every step of that
 # package; <package>-static = its lint/type/dead-code steps; <package>-tests = its test suite
@@ -53,7 +55,7 @@ VALIDATE_VITEST_TIMEOUT_MS="${VALIDATE_VITEST_TIMEOUT_MS:-30000}"
 export ROOT CDK FRONTEND STREAM KNIP_PROD TSC_CACHE PYTHON_BIN PATH VALIDATE_PYTEST_WORKERS VALIDATE_VITEST_TIMEOUT_MS CPUS
 
 # ---- Options ----
-SERIAL=0; FAIL_FAST=1; ONLY=""; LIST=0
+SERIAL=0; FAIL_FAST=1; ONLY=""; LIST=0; PYTEST_FIRST=0; DRY_RUN=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --serial) SERIAL=1 ;;
@@ -61,7 +63,9 @@ while [[ $# -gt 0 ]]; do
     --only) ONLY="${2:?--only needs a comma-separated group list}"; shift ;;
     --only=*) ONLY="${1#--only=}" ;;
     --list) LIST=1 ;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    --pytest-first) PYTEST_FIRST=1 ;;
+    --dry-run) DRY_RUN=1 ;;
+    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
     *) printf 'validate: unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
   esac
   shift
@@ -97,6 +101,7 @@ def tsc  repo                               "node: coverage gate tests"         
 def tsc  repo                               "node: PR description check"         'cd "$ROOT" && node --test scripts/pr-checks/*.test.mjs'
 def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/scheduled-failure-watch.test.mjs'
 def tsc  repo                               "node: pre-push hook parsing"        'cd "$ROOT" && node --test scripts/git-hooks/pre-push.test.mjs'
+def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs'
 # Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build
 # output and dependencies allowlisted by path; .gitleaksignore for reviewed fingerprints).
 def lint repo                               "gitleaks: working tree"             'cd "$ROOT" && bash scripts/gitleaks-tree.sh'
@@ -200,6 +205,20 @@ if [[ "$LIST" -eq 1 ]]; then
   exit 0
 fi
 [[ "$SERIAL" -eq 1 ]] && for i in "${!S_LANE[@]}"; do S_LANE[$i]=serial; done
+# --pytest-first: the pytest step gets a lane of its own that runs to the end before any other lane starts.
+# Why (5.55.01): some tests bound their own CPU time (docs/coverage-gate.md), and on CI's 4-vCPU runner the
+# four other lanes running beside pytest pushed one of them over its bound. Run alone, nothing competes.
+FIRST_LANE=first
+if [[ "$PYTEST_FIRST" -eq 1 ]]; then
+  for i in "${!S_NAME[@]}"; do [[ "${S_NAME[$i]}" == pytest ]] && S_LANE[$i]="$FIRST_LANE"; done
+fi
+# --dry-run: the same scheduling, lanes and report, with every command replaced by a no-op (tests the runner).
+# VALIDATE_DRY_RUN_FAIL=<step name> makes that one step exit 1 instead, so a test can drive the failure paths.
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  for i in "${!S_CMD[@]}"; do
+    if [[ "${S_NAME[$i]}" == "${VALIDATE_DRY_RUN_FAIL:-}" ]]; then S_CMD[$i]='exit 1'; else S_CMD[$i]=':'; fi
+  done
+fi
 
 # ---- Run ----
 LOG_DIR="${VALIDATE_LOG_DIR:-$ROOT/.cache/validate/logs/$(date +%Y%m%d-%H%M%S)}"
@@ -242,23 +261,44 @@ kill_tree() {  # a lane and every process it started (never anything else)
 }
 
 LANES=()
+HAS_FIRST=0
 for lane in $(printf '%s\n' "${S_LANE[@]}" | awk '!seen[$0]++'); do
   for i in "${!S_NAME[@]}"; do
-    if [[ "${S_LANE[$i]}" == "$lane" ]] && selected "$i"; then LANES+=("$lane"); break; fi
+    if [[ "${S_LANE[$i]}" == "$lane" ]] && selected "$i"; then
+      if [[ "$lane" == "$FIRST_LANE" ]]; then HAS_FIRST=1; else LANES+=("$lane"); fi
+      break
+    fi
   done
 done
-if [[ "${#LANES[@]}" -eq 0 ]]; then printf 'validate: no step matches --only %s\n' "$ONLY" >&2; exit 2; fi
+if [[ "${#LANES[@]}" -eq 0 && "$HAS_FIRST" -eq 0 ]]; then printf 'validate: no step matches --only %s\n' "$ONLY" >&2; exit 2; fi
 T_ALL=$(date +%s)
-printf 'validate: %s lane(s) [%s], pytest workers %s, logs in %s\n' "${#LANES[@]}" "${LANES[*]}" "$VALIDATE_PYTEST_WORKERS" "$LOG_DIR"
+FIRST_NOTE=""; [[ "$HAS_FIRST" -eq 1 ]] && FIRST_NOTE=" after pytest alone"
+printf 'validate: %s lane(s) [%s]%s, pytest workers %s, logs in %s\n' "${#LANES[@]}" "${LANES[*]:-}" "$FIRST_NOTE" "$VALIDATE_PYTEST_WORKERS" "$LOG_DIR"
 PIDS=(); DONE=()
-for lane in "${LANES[@]}"; do
+stop_all() { local p; for p in "${PIDS[@]+"${PIDS[@]}"}"; do kill_tree "$p"; done; }   # bash 3.2 + set -u: empty-safe
+FAILED=0; STOPPED=0
+if [[ "$HAS_FIRST" -eq 1 ]]; then
+  run_lane "$FIRST_LANE" &
+  PIDS+=("$!")
+  trap 'stop_all; exit 130' INT TERM
+  rc=0; wait "${PIDS[0]}" || rc=$?
+  trap - INT TERM
+  PIDS=()
+  if [[ "$rc" -ne 0 ]]; then
+    FAILED=1
+    if [[ "$FAIL_FAST" -eq 1 && "${#LANES[@]}" -gt 0 ]]; then
+      printf '%s  validate: pytest failed; the other lanes do not start (--keep-going to run them anyway)\n' "$(date +%T)"
+      LANES=()
+    fi
+  fi
+fi
+for lane in "${LANES[@]+"${LANES[@]}"}"; do
   run_lane "$lane" &
   PIDS+=("$!"); DONE+=(0)
 done
-stop_all() { local p; for p in "${PIDS[@]}"; do kill_tree "$p"; done; }
 trap 'stop_all; exit 130' INT TERM
 
-FAILED=0; STOPPED=0; remaining=${#PIDS[@]}
+remaining=${#PIDS[@]}
 while [[ "$remaining" -gt 0 ]]; do
   for k in "${!PIDS[@]}"; do
     [[ "${DONE[$k]}" -eq 0 ]] || continue

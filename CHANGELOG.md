@@ -17,6 +17,22 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.55.01] - 2026-10-30
+
+CI runs the Python suite on its own before the other gate lanes, so a test that bounds its CPU time is not pushed over
+it by the lanes beside it.
+
+### Changed
+- `scripts/validate.sh --pytest-first` runs the pytest step alone, then every other lane; a pytest failure stops the
+  run there unless `--keep-going`. The quality-gates workflow uses it, which adds about 10 minutes to CI. Local runs
+  keep every lane in parallel ([docs/coverage-gate.md](docs/coverage-gate.md#tests-that-assert-a-time-budget)).
+- `scripts/validate.sh --dry-run` schedules and reports every step with its command replaced by a no-op, so the runner
+  itself is tested (a new `validate.sh` step).
+
+### Fixed
+- The Problem Analysis capacity test no longer fails on CI at 6.3 s of CPU against its 6.0 s bound; the bound is
+  unchanged.
+
 ## [5.55.00] - 2026-10-30
 
 Stricter quality gates: per-file coverage, dependency updates and license/vulnerability checks, a PR description
