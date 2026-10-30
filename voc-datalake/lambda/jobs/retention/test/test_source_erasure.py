@@ -3,6 +3,8 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 from jobs.retention import handler
 from jobs.retention.test.conftest import BUCKET, days_ago
@@ -12,6 +14,8 @@ from shared.source_erasure import (
     STALE_AFTER,
     SourceLocked,
     acquire_source_lock,
+    blocking_job,
+    refresh_source_lock,
     release_source_lock,
     source_lock_key,
 )
@@ -132,8 +136,8 @@ def test_progress_is_written_to_the_running_job_between_pages(aws, worker_contex
     seen: list[int] = []
     real = handler.record_progress
 
-    def spy(table, run, phase, **kwargs):
-        real(table, run, phase, **kwargs)
+    def spy(table, run, phase):
+        real(table, run, phase)
         if phase == 'items':
             seen.append(int(_job_row(aws)['deleted_items']))
 
@@ -260,3 +264,83 @@ def test_a_released_or_stale_lock_can_be_taken_and_a_held_one_cannot(aws):
     # Held by er_b, but taken more than STALE_AFTER ago: its holder died.
     acquire_source_lock(table, SOURCE, 'er_c', now + STALE_AFTER + timedelta(seconds=1))
     assert _lock(aws)['job_id'] == 'er_c'
+
+
+# ---- PR #448 review: lock liveness, best-effort release, stuck rows, file counts ----
+
+@pytest.mark.usefixtures('invoke_mock')
+def test_a_hand_over_renews_the_lock_so_a_long_job_never_reads_as_stale(aws, worker_context):
+    _job(aws)
+    taken = datetime.now(UTC) - timedelta(minutes=50)
+    acquire_source_lock(aws['aggregates'], SOURCE, JOB_ID, taken)
+    _seed(aws, 'own', SOURCE)
+    worker_context.get_remaining_time_in_millis.return_value = 0
+    assert handler.handle_event(EVENT, worker_context)['status'] == 'continued'
+    assert datetime.fromisoformat(_lock(aws)['locked_at']) > taken + timedelta(minutes=49)
+    # More than STALE_AFTER after the first take, yet the live job still holds it.
+    with pytest.raises(SourceLocked):
+        acquire_source_lock(aws['aggregates'], SOURCE, 'er_00000000ffff', taken + STALE_AFTER + timedelta(minutes=5))
+
+
+def test_a_renewal_never_touches_a_released_lock_or_another_jobs(aws):
+    table, now = aws['aggregates'], datetime.now(UTC)
+    acquire_source_lock(table, SOURCE, 'er_a', now - timedelta(minutes=30))
+    refresh_source_lock(table, SOURCE, 'er_other', now)
+    assert _lock(aws)['locked_at'] == (now - timedelta(minutes=30)).isoformat()
+    release_source_lock(table, SOURCE, 'er_a', now)
+    refresh_source_lock(table, SOURCE, 'er_a', now + timedelta(minutes=1))
+    assert _lock(aws)['locked_at'] == (now - timedelta(minutes=30)).isoformat()
+
+
+def test_a_failed_lock_release_still_finishes_the_run_and_writes_its_audit(aws, worker_context):
+    _job(aws)
+    _hold_lock(aws)
+    _seed(aws, 'own', SOURCE)
+    error = ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow'}}, 'UpdateItem')
+    with patch.object(handler, 'release_source_lock', side_effect=error):
+        result = handler.handle_event(EVENT, worker_context)
+    assert (result['status'], result['deleted_items']) == ('completed', 1)
+    assert _job_row(aws)['status'] == 'completed'
+    audits = aws['aggregates'].query(KeyConditionExpression=Key('pk').eq(handler.AUDIT_PK))['Items']
+    assert [(row['job_id'], row['status']) for row in audits] == [(JOB_ID, 'completed')]
+
+
+def test_a_live_job_without_a_readable_timestamp_does_not_block_the_source_forever(aws):
+    aws['aggregates'].put_item(Item={'pk': 'JOB#erasure', 'sk': JOB_ID, 'job_id': JOB_ID, 'status': 'running',
+                                     'field': 'source', 'source': SOURCE, 'created_at': 'not a time'})
+    assert blocking_job(aws['aggregates'], SOURCE, datetime.now(UTC)) is None
+
+
+def test_a_live_job_that_moved_recently_still_blocks_the_source(aws):
+    now = datetime.now(UTC)
+    aws['aggregates'].put_item(Item={'pk': 'JOB#erasure', 'sk': JOB_ID, 'job_id': JOB_ID, 'status': 'running',
+                                     'field': 'source', 'source': SOURCE, 'created_at': 'not a time',
+                                     'progress_at': (now - timedelta(minutes=5)).isoformat()})
+    assert blocking_job(aws['aggregates'], SOURCE, now) == JOB_ID
+
+
+def test_the_live_job_check_reads_job_rows_only():
+    table = MagicMock()
+    table.query.return_value = {'Items': []}
+    blocking_job(table, SOURCE, datetime.now(UTC))
+    condition = table.query.call_args.kwargs['KeyConditionExpression']
+    assert condition.get_expression()['operator'] == 'AND'
+    sk_condition = condition.get_expression()['values'][1]
+    assert sk_condition.get_expression()['operator'] == 'begins_with'
+    assert sk_condition.get_expression()['values'][1] == 'er_'
+
+
+def test_a_delete_marker_alone_is_not_counted_as_a_file():
+    s3 = MagicMock()
+    s3.list_object_versions.return_value = {
+        'Versions': [{'Key': 'raw/t/a.json', 'VersionId': 'a1', 'IsLatest': True},
+                     {'Key': 'raw/t/a.json', 'VersionId': 'a0', 'IsLatest': False},
+                     {'Key': 'raw/t/b.json', 'VersionId': 'b0', 'IsLatest': False}],
+        'DeleteMarkers': [{'Key': 'raw/t/b.json', 'VersionId': 'bm', 'IsLatest': True},
+                          {'Key': 'raw/t/c.json', 'VersionId': 'cm', 'IsLatest': True}],
+    }
+    s3.delete_objects.return_value = {}
+    # a (two versions) and b (an older version under a marker) were files; c was only a marker.
+    assert retention.delete_raw_prefix_page(s3, 'bkt', 'raw/t/') == (2, False)
+    deleted = s3.delete_objects.call_args.kwargs['Delete']['Objects']
+    assert len(deleted) == 5

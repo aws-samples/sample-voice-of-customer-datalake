@@ -145,6 +145,25 @@ export function normalizeErasureJob(raw: unknown): ErasureJob | null {
   return parsed.success ? parsed.data : null
 }
 
+/** `GET /settings/erasure`: the newest jobs and the source ids a whole-source erasure may name. */
+export interface ErasureList {
+  jobs: ErasureJob[]
+  sources: string[]
+}
+
+export function normalizeErasureList(raw: unknown): ErasureList {
+  return { jobs: normalizeErasureJobs(raw), sources: normalizeErasableSources(raw) }
+}
+
+/**
+ * Whether a job that `before` showed live has since ended (completed or failed): its
+ * deletions have moved the feedback counts, so every feedback view should refresh.
+ */
+export function erasureEnded(before: readonly ErasureJob[], after: readonly ErasureJob[]): boolean {
+  const wasLive = new Set(before.filter(isLiveErasure).map((job) => job.job_id))
+  return after.some((job) => wasLive.has(job.job_id) && !isLiveErasure(job))
+}
+
 export interface ErasureRequest {
   field: ErasureField
   value: string
@@ -159,7 +178,6 @@ export interface SourceErasureRequest {
 
 export const sourceProfilesKey = () => ['source-profiles'] as const
 export const erasureJobsKey = () => ['erasure-jobs'] as const
-export const erasableSourcesKey = () => ['erasure-sources'] as const
 
 export const sourceProfilesApi = {
   getProfiles: async (): Promise<SourceProfile[]> =>
@@ -176,9 +194,7 @@ export const sourceProfilesApi = {
   startSourceErasure: async ({ source, confirm }: SourceErasureRequest): Promise<ErasureJob | null> =>
     normalizeErasureJob(await fetchApi<unknown>('/settings/erasure', post({ field: SOURCE_ERASURE_FIELD, value: source, confirm }))),
 
-  listErasureJobs: async (): Promise<ErasureJob[]> =>
-    normalizeErasureJobs(await fetchApi<unknown>('/settings/erasure')),
-
-  listErasableSources: async (): Promise<string[]> =>
-    normalizeErasableSources(await fetchApi<unknown>('/settings/erasure')),
+  /** One read serves both panels: the polled job list and the whole-source picker. */
+  listErasure: async (): Promise<ErasureList> =>
+    normalizeErasureList(await fetchApi<unknown>('/settings/erasure')),
 }

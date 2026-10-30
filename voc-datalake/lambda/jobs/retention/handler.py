@@ -32,6 +32,7 @@ import os
 import re
 import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Final
 
@@ -45,7 +46,7 @@ from shared.digests import sha256_hex
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
 from shared.retention import ERASURE_JOB_PK, SOURCE_FIELD
-from shared.source_erasure import release_source_lock
+from shared.source_erasure import refresh_source_lock, release_source_lock
 from shared.source_profiles import SOURCE_ID_RE, load_source_profiles
 from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
@@ -138,7 +139,7 @@ def finish_erasure_job(aggregates_table: Any, run: dict[str, Any], status: str, 
     )
 
 
-def record_progress(aggregates_table: Any, run: dict[str, Any], phase: str, *, force: bool = False) -> None:
+def record_progress(aggregates_table: Any, run: dict[str, Any], phase: str) -> None:
     """Write a running erasure job's counts and phase (no-op for retention runs).
 
     Throttled: only when the counts moved since the last write or
@@ -149,7 +150,7 @@ def record_progress(aggregates_table: Any, run: dict[str, Any], phase: str, *, f
         return
     counts = (run['deleted_items'], run['deleted_objects'], phase)
     last = run.get('_progress')
-    if not force and isinstance(last, tuple) and last[0] == counts \
+    if isinstance(last, tuple) and last[0] == counts \
             and time.monotonic() - last[1] < PROGRESS_EVERY_SECONDS:
         return
     try:
@@ -240,13 +241,33 @@ def _time_left(context: Any) -> bool:
     return context.get_remaining_time_in_millis() > TIME_RESERVE_MS
 
 
-def _hand_over(context: Any, event: dict[str, Any], run: dict[str, Any], cursor: dict | None,
-               **extra: Any) -> dict:
+def _hand_over(aggregates_table: Any, context: Any, event: dict[str, Any], run: dict[str, Any],
+               cursor: dict | None, **extra: Any) -> dict:
+    _whole_source_lock_call(aggregates_table, run, refresh_source_lock, 'renew')
     carried = {key: run[key] for key in ('run_id', 'started_at', 'scanned', 'deleted_items', 'deleted_objects')}
     payload = {**event, 'mode': run['mode'], 'cursor': cursor, **extra,
                'run': {**carried, 'generation': run['generation'] + 1}}
     invoke_lambda_async(context.function_name, payload)
     return {'status': 'continued', 'run_id': run['run_id']}
+
+
+def _whole_source_lock_call(aggregates_table: Any, run: dict[str, Any],
+                            operation: Callable[[Any, str, str, datetime], None], action: str) -> None:
+    """Renew or release a whole-source erasure run's source lock (shared/source_erasure.py); best effort.
+
+    At a hand-over (``refresh_source_lock``) a missed renewal only lets the
+    lock read as stale sooner, and the live-job check still sees this job's
+    ``progress_at``. At the finish (``release_source_lock``) a failed release
+    must not fail the invocation: the job already reads completed, the audit
+    row would be lost, and the lock goes stale after ``STALE_AFTER`` anyway.
+    """
+    if not (run.get('job_id') and run.get('field') == SOURCE_FIELD and run.get('source')):
+        return
+    try:
+        operation(aggregates_table, str(run['source']), str(run['job_id']), datetime.now(UTC))
+    except _AWS_ERRORS as e:
+        logger.warning('Could not update the source erasure lock',
+                       extra={'action': action, 'error_type': type(e).__name__})
 
 
 def _walk(tables: tuple[Any, Any], context: Any, event: dict[str, Any], run: dict[str, Any],
@@ -260,7 +281,7 @@ def _walk(tables: tuple[Any, Any], context: Any, event: dict[str, Any], run: dic
         run['scanned'] += int(page.get('ScannedCount', 0))
         for item in page.get('Items', []):
             if not _time_left(context):
-                return _hand_over(context, event, run, cursor)
+                return _hand_over(aggregates_table, context, event, run, cursor)
             items, objects = retention.delete_item(feedback_table, s3, RAW_DATA_BUCKET, item)
             run['deleted_items'] += items
             run['deleted_objects'] += objects
@@ -270,7 +291,7 @@ def _walk(tables: tuple[Any, Any], context: Any, event: dict[str, Any], run: dic
         if cursor is None:
             return None
         if not _time_left(context):
-            return _hand_over(context, event, run, cursor)
+            return _hand_over(aggregates_table, context, event, run, cursor)
 
 
 def _sweep_raw(aggregates_table: Any, context: Any, event: dict[str, Any], run: dict[str, Any]) -> dict | None:
@@ -288,7 +309,7 @@ def _sweep_raw(aggregates_table: Any, context: Any, event: dict[str, Any], run: 
     more = True
     while more:
         if not _time_left(context):
-            return _hand_over(context, event, run, None, phase=PHASE_RAW)
+            return _hand_over(aggregates_table, context, event, run, None, phase=PHASE_RAW)
         objects, more = retention.delete_raw_prefix_page(s3, RAW_DATA_BUCKET, prefix)
         run['deleted_objects'] += objects
         record_progress(aggregates_table, run, PHASE_RAW)
@@ -299,9 +320,8 @@ def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str 
     run.pop('_progress', None)
     if run.get('job_id'):
         finish_erasure_job(aggregates_table, run, status, error)
-        if run.get('field') == SOURCE_FIELD and run.get('source'):
-            # Completed or failed: the next erasure of this source may start (shared/source_erasure.py).
-            release_source_lock(aggregates_table, str(run['source']), run['job_id'], datetime.now(UTC))
+        # Completed or failed: the next erasure of this source may start.
+        _whole_source_lock_call(aggregates_table, run, release_source_lock, 'release')
     write_audit(aggregates_table, run, status, error)
     metrics.add_metric(name='RetentionItemsDeleted', unit='Count', value=run['deleted_items'])
     return {'status': status, 'run_id': run['run_id'],
