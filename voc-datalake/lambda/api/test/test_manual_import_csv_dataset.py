@@ -112,7 +112,7 @@ class TestIdentity:
     def test_a_repeated_id_in_one_dataset_is_skipped_with_a_warning(self):
         items, warnings = h._parse_csv_to_items('id,text\n1,a\n1,b\n', 'w', None, 'q3')
         assert [i['text'] for i in items] == ['a']
-        assert warnings == ['row 2: id "1" appears again in this dataset — skipped']
+        assert warnings == ['row 2: its id appears again in this dataset — skipped']  # never quotes the cell (#237)
 
     def test_dimension_and_tag_columns_are_not_part_of_the_content_digest(self):
         one, _ = h._parse_csv_to_items('id,text,tags\n1,a,vip\n', 'w', None, 'q3')
