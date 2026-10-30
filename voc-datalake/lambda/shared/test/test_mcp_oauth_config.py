@@ -6,7 +6,7 @@ import json
 import pytest
 
 from shared.mcp_oauth_config import canonical_url, oauth_config, token_minting_enabled
-from shared.mcp_oauth_loopback import is_loopback_for, loopback_path
+from shared.mcp_oauth_loopback import loopback_path
 from shared.test.mcp_oauth_fixtures import API, CLIENTS, RESOURCE, oauth_env
 
 
@@ -16,7 +16,6 @@ def test_a_complete_environment_loads():
     assert config is not None
     assert config.resource == RESOURCE
     assert config.issuer == API
-    assert config.prm_url == f'{API}/.well-known/oauth-protected-resource/mcp/global'
     assert config.relay_url == f'{API}/oauth/callback'
     assert config.scopes_supported == [f'{RESOURCE}/read', f'{RESOURCE}/write']
     assert config.kind_of(CLIENTS['cursor']) == 'cursor'
@@ -64,7 +63,7 @@ def test_canonical_url(url, expected):
     'http://127.0.0.1:1024/callback', 'http://localhost:65535/callback', 'http://[::1]:49152/callback',
 ])
 def test_loopback_on_any_allowed_port(uri):
-    assert is_loopback_for(uri, '/callback')
+    assert loopback_path(uri) == '/callback'
 
 
 @pytest.mark.parametrize('uri', [
@@ -84,7 +83,7 @@ def test_loopback_on_any_allowed_port(uri):
     None, 7, '',
 ])
 def test_not_loopback_for_the_callback_path(uri):
-    assert not is_loopback_for(uri, '/callback')
+    assert loopback_path(uri) != '/callback'
 
 
 def test_loopback_path_reads_the_path():

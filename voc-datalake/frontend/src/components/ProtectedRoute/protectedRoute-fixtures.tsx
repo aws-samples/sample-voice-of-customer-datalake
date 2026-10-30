@@ -6,7 +6,7 @@
 import { render } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ProtectedRoute from './ProtectedRoute'
-import { LoginProbe } from './protectedRoute-login-probe'
+import { LoginProbe } from './protectedRoute-login-fixtures'
 
 /** Mount the guard around a marker child at `/protected`, with `/login` rendering "Login Page". */
 export function renderProtected(initialEntries = ['/protected']) {
