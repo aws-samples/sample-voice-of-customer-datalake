@@ -23,6 +23,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from shared.ai_writing import PLAN_PRINCIPAL_CLAIM as PRINCIPAL_CLAIM
 from shared.ai_writing import PLAN_PRINCIPAL_PREFIX
 from shared.logging import logger
+from shared.model_profile import E2E_GROUP
 from shared.project_access import ACTING_SUBJECT_CLAIM, ADMIN_GROUP
 
 USERS_GROUP: Final = 'users'
@@ -73,19 +74,20 @@ def _require_current(username: str, sub: str) -> None:
         raise ApproverRefused("The approver's account no longer matches the plan.")
 
 
-def _require_admin(username: str) -> None:
+def _groups(username: str) -> set[str]:
     page = _directory_call('admin_list_groups_for_user', Username=username, Limit=_GROUPS_PAGE)
-    groups = {g.get('GroupName') for g in page.get('Groups', []) if isinstance(g, dict)}
-    if ADMIN_GROUP not in groups:
-        raise ApproverRefused('The approver is no longer an administrator.')
+    return {g['GroupName'] for g in page.get('Groups', []) if isinstance(g, dict) and isinstance(g.get('GroupName'), str)}
 
 
-def _is_admin(username: str) -> bool:
+def _step_groups(username: str, *, needs_admin: bool, admin_if_current: bool) -> set[str]:
+    """The approver's groups now. An ordinary step (no admin question) still runs when Cognito cannot
+    list them, as before the e2e profile read them; it then simply runs without that profile."""
+    if needs_admin or admin_if_current:
+        return _groups(username)
     try:
-        _require_admin(username)
-    except ApproverRefused:
-        return False
-    return True
+        return _groups(username)
+    except DirectoryUnavailable:
+        return set()
 
 
 def approver_claims(meta: Mapping[str, Any], *, needs_admin: bool, admin_if_current: bool = False) -> dict[str, str]:
@@ -101,11 +103,15 @@ def approver_claims(meta: Mapping[str, Any], *, needs_admin: bool, admin_if_curr
     if not isinstance(sub, str) or not sub or not isinstance(username, str) or not username:
         raise ApproverRefused('The plan has no approver.')
     _require_current(username, sub)
-    if needs_admin:
-        _require_admin(username)
-    admin = needs_admin or (admin_if_current and _is_admin(username))
-    groups = f'{ADMIN_GROUP},{USERS_GROUP}' if admin else USERS_GROUP
+    current = _step_groups(username, needs_admin=needs_admin, admin_if_current=admin_if_current)
+    if needs_admin and ADMIN_GROUP not in current:
+        raise ApproverRefused('The approver is no longer an administrator.')
+    admin = needs_admin or (admin_if_current and ADMIN_GROUP in current)
+    names = [ADMIN_GROUP, USERS_GROUP] if admin else [USERS_GROUP]
+    # The e2e test users' model profile (shared/model_profile.py) follows the approver's group, read now.
+    if E2E_GROUP in current:
+        names.append(E2E_GROUP)
     return {
-        'sub': sub, 'cognito:username': username, 'cognito:groups': groups,
+        'sub': sub, 'cognito:username': username, 'cognito:groups': ','.join(names),
         ACTING_SUBJECT_CLAIM: sub, PRINCIPAL_CLAIM: f"{PLAN_PRINCIPAL_PREFIX}{meta['plan_id']}",
     }

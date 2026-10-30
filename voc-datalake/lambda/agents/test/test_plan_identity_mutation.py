@@ -135,10 +135,24 @@ class TestTheApproverIsCurrent:
 
 
 class TestTheClaims:
-    def test_an_ordinary_step_runs_as_the_user_without_asking_for_groups(self, client: MagicMock):
+    def test_an_ordinary_step_runs_as_the_user_even_for_an_admin(self, client: MagicMock):
         client.admin_list_groups_for_user.return_value = _groups('admins')
         assert pi.approver_claims(META, needs_admin=False) == USER_ONLY
-        client.admin_list_groups_for_user.assert_not_called()
+        # Read once, only for the e2e model profile (shared/model_profile.py).
+        client.admin_list_groups_for_user.assert_called_once_with(UserPoolId=POOL, Username='ada', Limit=60)
+
+    def test_an_e2e_approver_carries_the_e2e_group_so_the_step_runs_on_the_profile_model(self, client: MagicMock):
+        client.admin_list_groups_for_user.return_value = _groups('users', 'e2e')
+        assert pi.approver_claims(META, needs_admin=False)['cognito:groups'] == 'users,e2e'
+        client.admin_list_groups_for_user.return_value = _groups('users', 'admins', 'e2e')
+        assert pi.approver_claims(META, needs_admin=True)['cognito:groups'] == 'admins,users,e2e'
+
+    def test_an_ordinary_step_still_runs_when_the_groups_cannot_be_listed(self, client: MagicMock):
+        client.admin_list_groups_for_user.side_effect = ClientError(
+            {'Error': {'Code': 'TooManyRequestsException', 'Message': 'slow down'}}, 'AdminListGroupsForUser')
+        assert pi.approver_claims(META, needs_admin=False) == USER_ONLY
+        with pytest.raises(pi.DirectoryUnavailable):
+            pi.approver_claims(META, needs_admin=True)
 
     def test_an_admin_step_carries_admins_for_a_current_admin(self, client: MagicMock):
         client.admin_list_groups_for_user.return_value = _groups('users', 'admins')

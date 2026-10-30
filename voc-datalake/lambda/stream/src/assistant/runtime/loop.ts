@@ -27,6 +27,7 @@ import {
   orderForAttempt,
   recordFallback,
 } from '../../bedrock/model-fallback.js';
+import { profileForGroups } from '../../bedrock/model-profile.js';
 import { events, type Emitter } from './emitter.js';
 import { encodeReasoning } from './reasoning.js';
 import { runToolCalls, type PendingApproval } from './tool-calls.js';
@@ -200,7 +201,9 @@ function switchModel(input: LoopInput, models: ModelSelection, modelId: string):
  * model fails, the first model's error is thrown.
  */
 async function runTurn(request: TurnRequest, allowFallback: boolean, models: ModelSelection): Promise<TurnOutcome> {
-  const ordered = orderForAttempt(fallbackChain(models.modelId));
+  // The e2e profile (bedrock/model-profile.ts) keeps the fallback on its own models.
+  const profile = profileForGroups(request.input.ctx.claims['cognito:groups']);
+  const ordered = orderForAttempt(fallbackChain(models.modelId, profile));
   const head = ordered.at(0) ?? models.modelId;
   if (head !== models.modelId) recordFallback(models.modelId, head, 'cooldown');
   const failures: Error[] = [];

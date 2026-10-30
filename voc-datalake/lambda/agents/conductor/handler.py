@@ -37,6 +37,7 @@ from shared import agent_run_decisions as decisions
 from shared.aws import get_dynamodb_resource
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger
+from shared.model_profile import model_profile_scope, profile_from_payload
 from shared.warm_init import warm_at_init
 
 ENVELOPE_PREFIX = '[sent by conductor]'
@@ -107,7 +108,9 @@ def _revision_brief(agent: dict, run: dict, node: Node, context: dict) -> str:
     target = 'prototype' if node.type == 'revise_prototype' else str(
         node.params.get('target') or context.get('last_review_target') or 'prfaq')
     try:
-        brief = planning.revision_brief(agent, run['run_id'], target, list_field(context, 'last_verdicts'))
+        # The run row's model profile (shared/model_profile.py), like the node steps (agents/runtime.py).
+        with model_profile_scope(profile_from_payload(run)):
+            brief = planning.revision_brief(agent, run['run_id'], target, list_field(context, 'last_verdicts'))
     except store.BudgetExhausted as exc:
         raise _Finish(store.RUN_NEEDS_HUMAN, 'The run spent its model-call budget.',
                       resume.payload(decisions.REASON_BUDGET, node)) from exc

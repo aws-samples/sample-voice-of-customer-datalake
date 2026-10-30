@@ -8,6 +8,7 @@
 import { DEFAULT_PLAN_DAYS } from '../assistant/plan/write-requests.js';
 import type { WriteEnv } from '../assistant/plan/write-routes.js';
 import { isAdminCaller } from '../assistant/runtime/event.js';
+import { profiledModelId } from '../bedrock/model-profile.js';
 import { ProjectAccessLedger } from '../assistant/tools/project-access.js';
 import { describeToolError } from '../assistant/tools/errors.js';
 import type { PageContext } from '../assistant/contract.js';
@@ -68,7 +69,8 @@ async function dispatch(deps: PlanStepDeps, event: PlanStepEvent, limits: RunLim
   const claims = claimsOf(event);
   const isAdmin = isAdminCaller(claims);
   const env = envOf(event, claims);
-  const modelId = memo(() => deps.resolveModel());
+  // The approver's e2e profile rides the claims the conductor built from Cognito (bedrock/model-profile.ts).
+  const modelId = memo(async () => profiledModelId(await deps.resolveModel(), claims['cognito:groups'], 'agent_worker'));
   const { step } = event;
   if (step.kind === 'wait') return failed('A wait step is run by the plan runtime, not by voc-plan-step.');
   if (step.kind === 'think') {
