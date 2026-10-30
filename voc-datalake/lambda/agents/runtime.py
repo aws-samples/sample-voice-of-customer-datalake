@@ -12,6 +12,7 @@ from shared.agents_store import BUILTIN_REVISION
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics, tracer
 from shared.mcp_delegate import DelegationUnavailable
+from shared.model_profile import model_profile_scope, profile_from_payload
 from shared.workflow_schema import DEFAULT_WORKFLOW_ID, default_template
 
 
@@ -57,7 +58,7 @@ def build_context(event: dict) -> NodeContext:
         if mate and mate.get('node_id') == node.id:
             envelope = str(mate.get('text') or '')
     return NodeContext(agent=agent, run=run, node=node, envelope=envelope,
-                       claims=principal.agent_claims(agent))
+                       claims=principal.agent_claims(agent, model_profile=profile_from_payload(run)))
 
 
 def step_lambda_handler(execute: Callable[[dict], dict], finished_message: str) -> Callable[[dict, Any], dict]:
@@ -77,7 +78,10 @@ def run_step(event: dict, step: Callable[[NodeContext], dict]) -> dict:
     """Build the context, run ``step``, and map every expected failure to a node result."""
     node_id = str(event.get('node_id') or '')
     try:
-        return store.plain(step(build_context(event)))
+        ctx = build_context(event)
+        # The run row's model profile (written when a verified e2e request started it).
+        with model_profile_scope(profile_from_payload(ctx.run)):
+            return store.plain(step(ctx))
     except store.BudgetExhausted:
         return {**failed(node_id, 'The run has spent its model-call budget.'), 'error': 'budget_exhausted'}
     # People read the plain sentence; the technical reason rides along as ``detail`` (agents/failure_reason.py).
