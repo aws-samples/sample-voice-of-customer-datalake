@@ -187,6 +187,11 @@ class TestLibraryWritesAreAdminOnly:
         status, body = call('GET', '/company-personas/jobs', STRANGER)
         assert status == 200
         assert [job['job_id'] for job in body['jobs']] == [job_id]
+        assert not {'error', 'result', 'initiated_by'} & set(body['jobs'][0])
+
+        status, body = call('GET', '/company-personas/jobs', ADMIN)
+        assert status == 200
+        assert body['jobs'][0]['initiated_by']
 
         status, body = call('GET', f'/company-personas/jobs/{job_id}', ADMIN)
         assert status == 200
@@ -268,7 +273,7 @@ class TestCopySources:
         assert body['projects'] == [{'project_id': 'p1', 'name': 'Alpha', 'persona_count': 1}]
 
     def test_projects_without_personas_or_being_deleted_are_left_out(self, call, world):
-        world['table'].put_item(Item=_meta('p4', name='Empty'))
+        world['table'].put_item(Item=_meta('p4', name='Empty', persona_count=0))
         world['table'].put_item(Item=_meta('p5', name='Going', deletion_started_at='now'))
         world['table'].put_item(Item=_persona('p5', 'persona_g', name='Gone'))
 
@@ -276,6 +281,21 @@ class TestCopySources:
 
         assert status == 200
         assert body['projects'] == [{'project_id': 'p1', 'name': 'Alpha', 'persona_count': 1}]
+
+    def test_the_stored_persona_count_is_used_and_a_legacy_meta_without_one_is_counted(self, call, world):
+        world['table'].put_item(Item=_meta('p6', name='Stored', persona_count=4))
+        legacy = _meta('p7', name='Legacy')
+        del legacy['persona_count']
+        world['table'].put_item(Item=legacy)
+        world['table'].put_item(Item=_persona('p7', 'persona_l1', name='Lee'))
+        world['table'].put_item(Item=_persona('p7', 'persona_l2', name='Lou'))
+
+        status, body = call('GET', '/projects/p2/personas/copy-sources', OWNER)
+
+        assert status == 200
+        counts = {source['project_id']: source['persona_count'] for source in body['projects']}
+        assert counts['p6'] == 4
+        assert counts['p7'] == 2
 
     def test_a_viewer_may_list_sources(self, call):
         assert call('GET', '/projects/p1/personas/copy-sources', MEMBER)[0] == 200

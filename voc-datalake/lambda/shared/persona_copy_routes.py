@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterator
+from decimal import Decimal
 from typing import Final
 
 from aws_lambda_powertools.event_handler import Response, content_types
@@ -120,11 +121,19 @@ def _member_projects(caller: Caller, exclude: str) -> Iterator[dict]:
             yield item
 
 
+def _persona_count(item: dict) -> int:
+    """The META's stored ``persona_count`` (kept by ``store_persona_count``); counted only when absent (legacy)."""
+    stored = item.get('persona_count')
+    if isinstance(stored, (int, Decimal)) and not isinstance(stored, bool):
+        return int(stored)
+    return count_personas(_table(), str(item['project_id']))
+
+
 def _source_projects(caller: Caller, exclude: str) -> list[dict]:
     """``[{project_id, name, persona_count}]`` with personas, by name, at most 100."""
     sources = []
     for item in _member_projects(caller, exclude):
-        count = count_personas(_table(), str(item['project_id']))
+        count = _persona_count(item)
         if count > 0:
             sources.append({'project_id': item['project_id'], 'name': str(item.get('name') or ''),
                             'persona_count': count})

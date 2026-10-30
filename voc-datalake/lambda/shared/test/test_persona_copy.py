@@ -159,6 +159,30 @@ class TestCopyPersonas:
         assert keys == [SOURCE_KEY]
         assert _personas(table, 'p2') == []
 
+    def test_an_unexpected_save_failure_removes_the_unsaved_avatar_copies_and_re_raises(self, world):
+        table, s3 = world
+        with (
+            patch.object(persona_copy, 'save_persona_items', side_effect=RuntimeError('throttled')),
+            pytest.raises(RuntimeError, match='throttled'),
+        ):
+            _copy(table, s3)
+
+        keys = [obj['Key'] for obj in s3.list_objects_v2(Bucket=BUCKET).get('Contents', [])]
+        assert keys == [SOURCE_KEY]
+
+    def test_a_failure_after_the_save_keeps_the_avatar_of_the_stored_copy(self, world):
+        table, s3 = world
+        with (
+            patch.object(persona_copy, 'store_persona_count', side_effect=RuntimeError('throttled')),
+            pytest.raises(RuntimeError, match='throttled'),
+        ):
+            _copy(table, s3)
+
+        [copy] = _personas(table, 'p2')
+        copy_key = copy['avatar_url'].removeprefix(f's3://{BUCKET}/')
+        keys = {obj['Key'] for obj in s3.list_objects_v2(Bucket=BUCKET).get('Contents', [])}
+        assert keys == {SOURCE_KEY, copy_key}
+
 
 class TestCompanyContainerMeta:
     def test_the_first_write_creates_an_unlisted_private_meta(self, world):
