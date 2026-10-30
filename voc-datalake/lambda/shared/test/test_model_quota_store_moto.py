@@ -299,6 +299,8 @@ def _stale_overview() -> list[dict[str, Any]]:
     return [{'name': GLOBAL + m['label'], 'tokens_per_minute': 10 + i, 'stale': True} for i, m in enumerate(ALLOWED_MODELS)]
 
 
+# A time budget measures the code, not the coverage tracer: no_cover runs it untraced (docs/coverage-gate.md).
+@pytest.mark.no_cover
 def test_an_old_row_answers_at_once_marked_stale_and_a_worker_refreshes_it(table, monkeypatch, invoke):
     client = SlowQuotas()
     _install(monkeypatch, client)
