@@ -52,7 +52,7 @@ def profile_for_groups(groups: Iterable[str]) -> str | None:
     """The profile for a caller in ``groups`` (verified Cognito groups only; a parsed list, not the raw claim)."""
     if isinstance(groups, str):
         groups = [groups]
-    return E2E_PROFILE if E2E_GROUP in {g.strip() for g in groups if isinstance(g, str)} else None
+    return E2E_PROFILE if E2E_GROUP in {g.strip() for g in groups} else None
 
 
 def profile_from_payload(payload: object) -> str | None:

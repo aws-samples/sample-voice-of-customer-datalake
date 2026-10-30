@@ -11,8 +11,8 @@
  */
 import { parseGroups } from '../assistant/runtime/event.js';
 
-export const E2E_GROUP = 'e2e';
-export const E2E_PROFILE = 'e2e';
+const E2E_GROUP = 'e2e';
+const E2E_PROFILE = 'e2e';
 export type ModelProfile = typeof E2E_PROFILE;
 
 const HAIKU55 = 'global.anthropic.claude-haiku-5-5';
