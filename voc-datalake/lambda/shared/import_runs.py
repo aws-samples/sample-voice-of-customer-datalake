@@ -94,15 +94,19 @@ class ImportRun:
     run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
 
-def run_status(counts: ImportCounts) -> str:
-    """``failed`` when nothing was imported, ``partial`` when some rows failed, else ``completed``.
+def run_status(counts: ImportCounts, *, has_errors: bool = False) -> str:
+    """``partial`` when some rows failed but others were imported, ``failed`` when rows failed and none was
+    imported, or nothing was imported and the run recorded an error (an unreadable or refused file);
+    else ``completed``.
 
-    Skipped and duplicate rows are expected outcomes (they carry a warning), not failures.
+    Skipped and duplicate rows are expected outcomes (they carry a warning), not failures, so a file
+    whose rows were all skipped by the source policy, or one with no data rows, is ``completed`` with 0
+    imported rather than reported as a failed import.
     """
-    if counts.imported <= 0:
-        return IMPORT_FAILED
     if counts.failed > 0:
-        return IMPORT_PARTIAL
+        return IMPORT_PARTIAL if counts.imported > 0 else IMPORT_FAILED
+    if counts.imported <= 0 and has_errors:
+        return IMPORT_FAILED
     return IMPORT_COMPLETED
 
 
@@ -151,7 +155,7 @@ def _rows(run: ImportRun, now: datetime) -> tuple[dict[str, Any], dict[str, Any]
         'started_at': run.started_at,
         'finished_at': now.isoformat(),
         **_count_fields(run.counts),
-        'status': run_status(run.counts),
+        'status': run_status(run.counts, has_errors=error_count > 0),
         'warning_count': warning_count,
         'error_count': error_count,
         'truncated': warnings_cut or errors_cut,
