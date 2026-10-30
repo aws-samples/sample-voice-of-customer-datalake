@@ -18,6 +18,7 @@ import sys
 import time
 import unicodedata
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -508,11 +509,23 @@ def _row_extras(row: dict, plan: ColumnPlan, idx: int, warnings: list[str]) -> d
     return {**({'metadata': metadata} if metadata else {}), **labels}
 
 
+@dataclass
+class CsvRowDrops:
+    """The rows ``_parse_csv_to_items`` dropped, counted where it drops them (the import-history counts)."""
+
+    skipped: int = 0
+    duplicate: int = 0
+
+
 def _parse_csv_to_items(
-    csv_text: str, default_source: str, column_map: object = None,
+    csv_text: str, default_source: str, column_map: object = None, drops: CsvRowDrops | None = None,
 ) -> tuple[list[dict], list[str]]:
-    """Parse CSV text into the same item shape as json_upload. Returns (items, warnings)."""
+    """Parse CSV text into the same item shape as json_upload. Returns (items, warnings).
+
+    ``drops``, when given, counts the rows left out (empty text, duplicate), so callers never parse warning text.
+    """
     items: list[dict] = []
+    drops = drops if drops is not None else CsvRowDrops()
 
     # csv.DictReader handles quoted commas, embedded newlines, and BOM.
     reader = csv.DictReader(io.StringIO(csv_text))
@@ -537,6 +550,7 @@ def _parse_csv_to_items(
         text = col(row, 'text')
         if not text:
             warnings.append(f'row {idx}: empty text — skipped')
+            drops.skipped += 1
             continue
 
         source_id = col(row, 'id')
@@ -565,6 +579,7 @@ def _parse_csv_to_items(
 
         if feedback_id in seen_row_ids:
             warnings.append(f'row {idx}: duplicate row — skipped')
+            drops.duplicate += 1
             continue
         seen_row_ids.add(feedback_id)
 
@@ -689,7 +704,8 @@ def csv_upload():
     if len(csv_text.encode('utf-8')) > MAX_CSV_BYTES:
         raise ValidationError(f'CSV exceeds {MAX_CSV_BYTES // (1024 * 1024)} MB limit')
 
-    items, warnings = _parse_csv_to_items(csv_text, default_source, body.get('column_map'))
+    drops = CsvRowDrops()
+    items, warnings = _parse_csv_to_items(csv_text, default_source, body.get('column_map'), drops)
     if not items:
         raise ValidationError('CSV produced no valid rows. ' + '; '.join(warnings[:5]))
     if len(items) > MAX_JSON_UPLOAD_ITEMS:
@@ -716,24 +732,17 @@ def csv_upload():
         result['warnings'] = warnings[:20]
     if send_errors:
         result['errors'] = send_errors
-    _record_run('csv', default_source, now, _csv_counts(items, messages, warnings, imported_count),
-                         run_id=job_id, source_id=profile['id'], warnings=warnings, errors=send_errors,
-                         raw_s3_key=s3_uri, radar_brand=_radar_key(radar))
+    _record_run('csv', default_source, now, _csv_counts(items, messages, drops, imported_count),
+                run_id=job_id, source_id=profile['id'], warnings=warnings, errors=send_errors,
+                raw_s3_key=s3_uri, radar_brand=_radar_key(radar))
     return result
 
 
-# The two `_parse_csv_to_items` warnings that drop a row (every other warning keeps it).
-_CSV_SKIPPED_SUFFIX = '— skipped'
-_CSV_DUPLICATE_MARK = 'duplicate row'
-
-
-def _csv_counts(items: list[dict], messages: list[dict], warnings: list[str], imported: int) -> ImportCounts:
+def _csv_counts(items: list[dict], messages: list[dict], drops: CsvRowDrops, imported: int) -> ImportCounts:
     """An upload's counts: the parser's skipped / duplicate rows, policy drops, and send failures."""
-    dropped = [w for w in warnings if w.endswith(_CSV_SKIPPED_SUFFIX)]
-    duplicate = sum(1 for w in dropped if _CSV_DUPLICATE_MARK in w)
-    skipped = len(dropped) - duplicate + len(items) - len(messages)
-    return ImportCounts(received=len(items) + len(dropped), imported=imported, skipped=skipped,
-                        duplicate=duplicate, failed=len(messages) - imported)
+    return ImportCounts(received=len(items) + drops.skipped + drops.duplicate, imported=imported,
+                        skipped=drops.skipped + len(items) - len(messages), duplicate=drops.duplicate,
+                        failed=len(messages) - imported)
 
 
 def _json_upload_item_errors(items: list) -> list[str]:

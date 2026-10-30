@@ -35,6 +35,7 @@ from shared.feedback_cursor import decode_key_cursor, encode_key_cursor
 from shared.logging import logger
 
 __all__ = [
+    'MAX_MESSAGES',
     'ImportCounts',
     'ImportRun',
     'actor_from_event',
@@ -88,6 +89,8 @@ class ImportRun:
     errors: Iterable[object] = ()
     raw_s3_key: str | None = None
     radar_brand: str = ''
+    # Warnings the entry point counted but stopped collecting (a long file keeps at most MAX_MESSAGES in memory).
+    warnings_not_kept: int = 0
     run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
 
@@ -103,11 +106,14 @@ def run_status(counts: ImportCounts) -> str:
     return IMPORT_COMPLETED
 
 
-def _bounded(messages: Iterable[object]) -> tuple[list[str], int, bool]:
-    """``(the first 200 messages, each cut to 300 characters; how many there were; whether any was cut)``."""
+def _bounded(messages: Iterable[object], *, not_kept: int = 0) -> tuple[list[str], int, bool]:
+    """``(the first 200 messages, each cut to 300 characters; how many there were; whether any was cut)``.
+
+    ``not_kept``: messages the caller counted but never collected; they add to the count and mark it cut.
+    """
     kept: list[str] = []
-    total = 0
-    cut = False
+    total = max(0, not_kept)
+    cut = total > 0
     for message in messages:
         total += 1
         if len(kept) >= MAX_MESSAGES:
@@ -131,7 +137,7 @@ def _count_fields(counts: ImportCounts) -> dict[str, int]:
 
 def _rows(run: ImportRun, now: datetime) -> tuple[dict[str, Any], dict[str, Any]]:
     """The ``(summary, detail)`` rows of ``run`` finished at ``now``."""
-    warnings, warning_count, warnings_cut = _bounded(run.warnings)
+    warnings, warning_count, warnings_cut = _bounded(run.warnings, not_kept=run.warnings_not_kept)
     errors, error_count, errors_cut = _bounded(run.errors)
     summary: dict[str, Any] = {
         'pk': LIST_PK,

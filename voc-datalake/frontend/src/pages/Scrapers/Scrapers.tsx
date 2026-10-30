@@ -9,7 +9,7 @@ import {
 import {
   Plus, Globe, AlertCircle, Loader2, RefreshCw,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { accountTabPath } from '../Account/accountSections'
 import { api } from '../../api/client'
@@ -193,11 +193,20 @@ function DeleteAppConfirm({ pluginId, onConfirm, onCancel }: Readonly<{ pluginId
   return <ConfirmModal isOpen title={t(copy.deleteTitle)} message={t(copy.deleteMessage)} confirmLabel={t('deleteConfirmLabel')} onConfirm={onConfirm} onCancel={onCancel} />
 }
 
+/** Run `onClose` when `isOpen` goes from true to false (the paste import modal lives in a store, not here). */
+function useOnClose(isOpen: boolean, onClose: () => void) {
+  const wasOpen = useRef(isOpen)
+  useEffect(() => {
+    if (wasOpen.current && !isOpen) onClose()
+    wasOpen.current = isOpen
+  }, [isOpen, onClose])
+}
+
 export default function Scrapers() {
   const { t } = useTranslation('scrapers')
   const { config } = useConfigStore()
   const isAdmin = useIsAdmin()
-  const { setIsModalOpen } = useManualImportStore()
+  const { setIsModalOpen, isModalOpen: isManualImportOpen } = useManualImportStore()
   const [editingScraper, setEditingScraper] = useState<ScraperConfig | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
@@ -236,6 +245,7 @@ export default function Scrapers() {
   const queryClient = useQueryClient()
   // A finished upload is the newest import run (docs/import-history.md).
   const refreshImportHistory = () => void queryClient.invalidateQueries({ queryKey: importHistoryKey() })
+  useOnClose(isManualImportOpen, refreshImportHistory)
   const deleteAppMutation = useMutation({
     mutationFn: ({
       pluginId, appId,

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
+from shared.import_runs import MAX_MESSAGES
 
 HANDLER = "s3_import.ingestor.handler"
 
@@ -36,6 +37,11 @@ def _serve(mock_s3: MagicMock, data: bytes) -> None:
     mock_s3.get_object.return_value = {"Body": io.BytesIO(data)}
 
 
+def _csv_with_empty_rows(empties: int) -> bytes:
+    """One good row, then ``empties`` rows with no text (each one a skipped-row warning)."""
+    return ("id,text\n1,Good\n" + "".join(f"{i},\n" for i in range(empties))).encode()
+
+
 @patch(f"{HANDLER}.s3_client")
 def test_a_file_records_its_counts_and_the_skipped_rows(mock_s3, ingestor, recorded):
     _serve(mock_s3, b"id,text\n1,Great\n2,\n3,Slow\n")
@@ -43,7 +49,7 @@ def test_a_file_records_its_counts_and_the_skipped_rows(mock_s3, ingestor, recor
     [run] = recorded
     assert (run.method, run.source, run.actor) == ("s3", "S3 - surveys", "s3-upload")
     assert (run.counts.received, run.counts.imported, run.counts.skipped, run.counts.failed) == (3, 2, 1, 0)
-    assert run.warnings == ["row 3: empty text — skipped"]
+    assert run.warnings == ["row 2: empty text — skipped"]
     assert run.raw_s3_key == "s3://bucket/surveys/q3.csv"
 
 
@@ -62,7 +68,50 @@ def test_an_unreadable_json_file_is_a_failed_run_with_the_error(mock_s3, ingesto
     assert ingestor.process_file("bucket", "web/a.json") == 0
     [run] = recorded
     assert run.counts.imported == 0
-    assert run.errors[0].startswith("Invalid JSON")
+    assert run.errors == ["Invalid JSON at line 1, column 2"]
+
+
+@patch(f"{HANDLER}.s3_client")
+def test_a_json_item_that_is_not_an_object_is_named_so(mock_s3, ingestor, recorded):
+    _serve(mock_s3, json.dumps([{"text": "ok"}, "just a string"]).encode())
+    ingestor.process_file("bucket", "web/a.json")
+    [run] = recorded
+    assert run.warnings == ["item 1: not an object — skipped"]
+
+
+@patch(f"{HANDLER}.s3_client")
+def test_a_long_file_keeps_at_most_max_messages_warnings_and_counts_the_rest(mock_s3, ingestor, recorded):
+    empties = MAX_MESSAGES + 50
+    _serve(mock_s3, _csv_with_empty_rows(empties))
+    ingestor.process_file("bucket", "web/a.csv")
+    [run] = recorded
+    assert len(run.warnings) == MAX_MESSAGES
+    assert run.warnings_not_kept == 50
+    assert (run.counts.received, run.counts.skipped) == (empties + 1, empties)
+
+
+@patch(f"{HANDLER}.s3_client")
+def test_the_stored_warning_count_includes_the_warnings_not_kept(mock_s3, ingestor):
+    _serve(mock_s3, _csv_with_empty_rows(MAX_MESSAGES + 5))
+    ingestor.process_file("bucket", "web/a.csv")
+    summary = ingestor.aggregates_table.put_item.call_args_list[1].kwargs["Item"]
+    assert (summary["warning_count"], summary["truncated"]) == (MAX_MESSAGES + 5, True)
+
+
+@patch(f"{HANDLER}.s3_client")
+def test_a_failing_record_never_replaces_the_imports_own_error(mock_s3, ingestor):
+    _serve(mock_s3, b"id,text\n1,Good\n")
+    ingestor.send_to_queue = MagicMock(side_effect=RuntimeError("SQS rejected"))
+    with patch(f"{HANDLER}.record_import_run", side_effect=KeyError("unexpected")), \
+            pytest.raises(RuntimeError, match="SQS rejected"):
+        ingestor.process_file("bucket", "web/a.csv")
+
+
+@patch(f"{HANDLER}.s3_client")
+def test_a_failing_record_never_fails_a_good_import(mock_s3, ingestor):
+    _serve(mock_s3, b"id,text\n1,Good\n")
+    with patch(f"{HANDLER}.record_import_run", side_effect=AttributeError("no table")):
+        assert ingestor.process_file("bucket", "web/a.csv") == 1
 
 
 @patch(f"{HANDLER}.s3_client")

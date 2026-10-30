@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { QueryClient } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { sortedStrings } from '@test/stringLists'
@@ -48,10 +49,11 @@ vi.mock('../../store/authStore', async (importOriginal) => ({
   useIsAdmin: () => role.isAdmin,
 }))
 
+const manualImport = { isModalOpen: false }
 vi.mock('../../store/manualImportStore', () => ({
   useManualImportStore: () => ({
     setIsModalOpen: vi.fn(),
-    isModalOpen: false,
+    isModalOpen: manualImport.isModalOpen,
   }),
 }))
 
@@ -163,6 +165,7 @@ describe('Scrapers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     role.isAdmin = true
+    manualImport.isModalOpen = false
     mockSyntheticPlugins.length = 0
     mockGetScrapers.mockResolvedValue({ scrapers: mockScrapers })
     mockGetScraperStatus.mockResolvedValue({ status: 'never_run' })
@@ -490,6 +493,18 @@ describe('Scrapers', () => {
       await renderLoaded()
 
       expect(screen.queryByTestId('import-history') !== null).toBe(isAdmin)
+    })
+
+    it.each([[true, 1], [false, 0]])('refreshes the import history when the paste modal closes (was open: %s)', async (wasOpen, refreshes) => {
+      manualImport.isModalOpen = wasOpen
+      const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries')
+      const { rerender } = render(<Scrapers />, { wrapper: createWrapper() })
+      await screen.findByText('Test Scraper')
+      manualImport.isModalOpen = false
+      rerender(<Scrapers />)
+      const historyRefreshes = invalidate.mock.calls.filter(([filters]) => filters?.queryKey?.[0] === 'import-history')
+      invalidate.mockRestore()
+      expect(historyRefreshes).toHaveLength(refreshes)
     })
 
     it('the control: an admin has the manual-import modal mounted', async () => {
