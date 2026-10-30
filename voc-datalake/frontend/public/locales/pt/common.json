@@ -354,7 +354,29 @@
       "kiro": "Salve como .kiro/settings/mcp.json no workspace, ou ~/.kiro/settings/mcp.json. No IDE do Kiro, adicione VOC_MCP_TOKEN em Mcp Approved Env Vars; o Kiro CLI a lê do shell.",
       "inline": "Para clientes que não leem variáveis de ambiente: o token fica no arquivo, então não faça commit nem compartilhe."
     },
-    "mcpEnvHint": "Este arquivo lê o token da variável de ambiente {{name}}, então não contém nenhum segredo. Defina-a no shell que inicia o cliente, com um token abaixo:"
+    "mcpEnvHint": "Este arquivo lê o token da variável de ambiente {{name}}, então não contém nenhum segredo. Defina-a no shell que inicia o cliente, com um token abaixo:",
+    "oauth": {
+      "title": "Entrar com a sua conta",
+      "body": "Estes assistentes conectam-se sem token: adicione o servidor e o assistente abre o navegador para entrar e aprovar o acesso. Ele age como você, nunca como administrador.",
+      "kiro": "Kiro (mcp.json)",
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor (mcp.json)",
+      "consentHint": "Na tela de aprovação, você escolhe somente leitura ou leitura e escrita e, opcionalmente, um projeto. Você entra mais uma vez na página de conta a seguir.",
+      "webUntested": "Assistentes web podem entrar com a mesma URL do servidor. O login deles ainda não foi testado ao vivo.",
+      "webNotConfigured": "Assistentes web não estão configurados nesta implantação (um operador adiciona as URLs de retorno).",
+      "grantsTitle": "Assistentes conectados",
+      "grantsFailed": "Não foi possível carregar seus assistentes conectados.",
+      "grantsEmpty": "Nenhum assistente entrou com a sua conta ainda.",
+      "revokeTitle": "Desconectar este assistente?",
+      "revokeBody": "\"{{name}}\" perde o acesso na próxima solicitação e precisa entrar e ser aprovado novamente.",
+      "revokeNamed": "Desconectar {{name}}",
+      "mintingOff": "Não é possível criar tokens pessoais nesta implantação. Os tokens existentes continuam funcionando até expirarem ou serem revogados; entre com a sua conta.",
+      "status": {
+        "active": "Ativo",
+        "revoked": "Desconectado",
+        "expired": "Expirado"
+      }
+    }
   },
   "header": {
     "title": "Voz do cliente",
@@ -400,5 +422,21 @@
     "praise": "Feedback positivo sem nada a corrigir",
     "question": "Pergunta como algo funciona",
     "other": "Nenhum dos anteriores"
+  },
+  "oauthConsent": {
+    "title": "Aprovar um assistente",
+    "asks": "{{client}} pede para usar o VoC como você.",
+    "scope": {
+      "read": "Somente leitura: pesquisar feedback, métricas, memória e projetos",
+      "write": "Leitura e escrita: também criar e atualizar documentos"
+    },
+    "actsAs": "Ele recebe o seu acesso a projetos e categorias, no máximo como editor, nunca como administrador. Você pode desconectá-lo a qualquer momento na página Conectar.",
+    "runsAgents": "Como administrador, você também permite que ele inicie execuções de agentes (verificado novamente a cada execução).",
+    "approveFailed": "A aprovação falhou. Tente novamente.",
+    "approve": "Aprovar e entrar",
+    "deny": "Negar",
+    "invalid": "Esta solicitação de login não é válida. Inicie o login novamente pelo assistente.",
+    "refused": "A solicitação do assistente não pode ser aprovada: {{reason}}",
+    "back": "Voltar ao assistente"
   }
 }

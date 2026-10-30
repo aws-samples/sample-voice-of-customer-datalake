@@ -2616,22 +2616,6 @@
             "Labels": "tags"
           }
         }
-      },
-      {
-        "path": "/scrapers/manual/csv-upload",
-        "body": {
-          "csv_text": "id,text\n1,Login fails\n",
-          "dataset_name": "Example Air reviews",
-          "dry_run": true
-        }
-      },
-      {
-        "path": "/scrapers/manual/csv-upload",
-        "body": {
-          "csv_text": "id,text\n1,Login fails\n",
-          "dataset_name": "Example Air reviews",
-          "apply_updates": true
-        }
       }
     ]
   },
@@ -4212,6 +4196,50 @@
     "probes": [
       {
         "path": "/scrapers/manual/history/7d3c2b1a-0f9e-4d8c-b7a6-5e4d3c2b1a09"
+      }
+    ]
+  },
+  {
+    "file": "api/oauthApi.ts",
+    "method": "DELETE",
+    "call": "`${GRANTS_PATH}/${encodeURIComponent(grantId)}`",
+    "probes": [
+      {
+        "path": "/connect/oauth/grants/oag_fedcba9876543210fedcba9876543210fedcba98"
+      }
+    ]
+  },
+  {
+    "file": "api/oauthApi.ts",
+    "method": "GET",
+    "call": "GRANTS_PATH",
+    "probes": [
+      {
+        "path": "/connect/oauth/grants"
+      }
+    ]
+  },
+  {
+    "file": "api/oauthApi.ts",
+    "method": "GET",
+    "call": "`${CONSENT_PATH}?authorize_query=${encodeURIComponent(authorizeQuery)}`",
+    "probes": [
+      {
+        "path": "/connect/oauth/consent?authorize_query=response_type%3Dcode%26client_id%3Dmock-kiro-client%26redirect_uri%3Dhttp%253A%252F%252F127.0.0.1%253A53111%252Foauth%252Fcallback%26state%3Ds%26code_challenge%3DE9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM%26code_challenge_method%3DS256"
+      }
+    ]
+  },
+  {
+    "file": "api/oauthApi.ts",
+    "method": "POST",
+    "call": "CONSENT_PATH",
+    "probes": [
+      {
+        "path": "/connect/oauth/consent",
+        "body": {
+          "authorize_query": "response_type=code&client_id=mock-kiro-client&redirect_uri=http%3A%2F%2F127.0.0.1%3A53111%2Foauth%2Fcallback&state=s&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+          "scope": "read"
+        }
       }
     ]
   }

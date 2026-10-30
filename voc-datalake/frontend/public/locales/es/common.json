@@ -354,7 +354,29 @@
       "kiro": "Guárdalo como .kiro/settings/mcp.json en el espacio de trabajo, o ~/.kiro/settings/mcp.json. En el IDE de Kiro, añade VOC_MCP_TOKEN en Mcp Approved Env Vars; Kiro CLI lo lee del shell.",
       "inline": "Para clientes que no pueden leer variables de entorno: el token se pega en el archivo, así que no lo confirmes en el repositorio ni lo compartas."
     },
-    "mcpEnvHint": "Este archivo lee el token de la variable de entorno {{name}}, así que no contiene ningún secreto. Defínela en el shell que inicia el cliente, con un token de abajo:"
+    "mcpEnvHint": "Este archivo lee el token de la variable de entorno {{name}}, así que no contiene ningún secreto. Defínela en el shell que inicia el cliente, con un token de abajo:",
+    "oauth": {
+      "title": "Iniciar sesión con tu cuenta",
+      "body": "Estos asistentes se conectan sin token: añade el servidor y el asistente abre tu navegador para iniciar sesión y aprobar su acceso. Actúa como tú, nunca como administrador.",
+      "kiro": "Kiro (mcp.json)",
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor (mcp.json)",
+      "consentHint": "En la pantalla de aprobación eliges solo lectura o lectura y escritura, y opcionalmente un proyecto. Vuelves a iniciar sesión en la página de cuenta que sigue.",
+      "webUntested": "Los asistentes web pueden iniciar sesión con la misma URL del servidor. Su inicio de sesión aún no se ha probado en vivo.",
+      "webNotConfigured": "Los asistentes web no están configurados en este despliegue (un operador añade sus URL de retorno).",
+      "grantsTitle": "Asistentes con sesión iniciada",
+      "grantsFailed": "No se pudieron cargar tus asistentes con sesión iniciada.",
+      "grantsEmpty": "Ningún asistente ha iniciado sesión con tu cuenta todavía.",
+      "revokeTitle": "¿Cerrar la sesión de este asistente?",
+      "revokeBody": "«{{name}}» pierde el acceso en su próxima solicitud y tendrá que iniciar sesión y ser aprobado de nuevo.",
+      "revokeNamed": "Cerrar la sesión de {{name}}",
+      "mintingOff": "En este despliegue no se pueden crear tokens personales. Los tokens existentes siguen funcionando hasta que caduquen o se revoquen; inicia sesión con tu cuenta en su lugar.",
+      "status": {
+        "active": "Activo",
+        "revoked": "Sesión cerrada",
+        "expired": "Caducado"
+      }
+    }
   },
   "header": {
     "title": "Voz del cliente",
@@ -400,5 +422,21 @@
     "praise": "Comentario positivo sin nada que arreglar",
     "question": "Pregunta cómo funciona algo",
     "other": "Ninguno de los anteriores"
+  },
+  "oauthConsent": {
+    "title": "Aprobar un asistente",
+    "asks": "{{client}} pide usar VoC en tu nombre.",
+    "scope": {
+      "read": "Solo lectura: buscar comentarios, métricas, memoria y proyectos",
+      "write": "Lectura y escritura: además crear y actualizar documentos"
+    },
+    "actsAs": "Obtiene tu acceso a proyectos y categorías, como máximo como editor, nunca como administrador. Puedes cerrar su sesión en la página Conectar en cualquier momento.",
+    "runsAgents": "Como administrador, también le permites iniciar ejecuciones de agentes (se comprueba de nuevo en cada ejecución).",
+    "approveFailed": "La aprobación falló. Inténtalo de nuevo.",
+    "approve": "Aprobar e iniciar sesión",
+    "deny": "Denegar",
+    "invalid": "Esta solicitud de inicio de sesión no es válida. Vuelve a iniciar sesión desde tu asistente.",
+    "refused": "La solicitud del asistente no se puede aprobar: {{reason}}",
+    "back": "Volver al asistente"
   }
 }

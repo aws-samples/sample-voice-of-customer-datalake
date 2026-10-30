@@ -70,6 +70,14 @@ describe('ProtectedRoute', () => {
       expect(screen.getByText('Login Page')).toBeInTheDocument()
       expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
     })
+
+    it('sends the visitor back WITH the query, so an OAuth consent link survives the sign-in', () => {
+      setAuthState({ isAuthenticated: false })
+
+      renderProtected(['/protected?client_id=kiro-client&state=abc'])
+
+      expect(screen.getByTestId('login-from')).toHaveTextContent('/protected?client_id=kiro-client&state=abc')
+    })
   })
 
   /*
