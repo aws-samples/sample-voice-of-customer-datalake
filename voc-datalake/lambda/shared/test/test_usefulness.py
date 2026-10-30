@@ -4,6 +4,7 @@ import pytest
 from shared.feedback_types import feedback_type_dimension
 from shared.usefulness import (
     BAND_RANK,
+    CJK_CHARS_PER_WORD,
     CONCRETE_TYPES,
     DETAILED_WORDS,
     HIGH_POINTS,
@@ -77,6 +78,35 @@ class TestBand:
         assert MIN_WORDS < DETAILED_WORDS < LONG_WORDS
         assert 0 < MEDIUM_POINTS < HIGH_POINTS
         assert MIN_CHARS > 0
+
+
+class TestUnspacedScripts:
+    """Untranslated text in a script without spaces between words is not near-empty by default."""
+
+    JAPANESE = 'アプリを開くたびにクラッシュします。バージョン4.2から設定画面が使えません。'
+
+    def test_a_detailed_japanese_review_is_not_low(self):
+        assert usefulness_band(self.JAPANESE) == 'medium'
+        assert usefulness_band(self.JAPANESE, feedback_type='bug') == 'high'
+
+    def test_a_short_chinese_review_naming_an_issue_passes_the_floor(self):
+        # 9 ideographs: one "word" under the old \w+ count, now 5 words and 18 weighted chars.
+        assert usefulness_band('登录后应用一直崩溃', feedback_type='bug') == 'medium'
+        assert usefulness_band('登录后应用一直崩溃') == 'low'
+
+    def test_a_two_character_review_stays_near_empty(self):
+        assert usefulness_band('很好', feedback_type='bug') == 'low'
+
+    def test_each_word_of_unspaced_text_counts_toward_the_length_points(self):
+        detailed = '字' * (DETAILED_WORDS * CJK_CHARS_PER_WORD)
+        just_short = '字' * (DETAILED_WORDS * CJK_CHARS_PER_WORD - CJK_CHARS_PER_WORD)
+        assert usefulness_band(detailed) == 'medium'
+        assert usefulness_band(just_short) == 'low'
+
+    def test_latin_word_counting_is_unchanged_next_to_ideographs(self):
+        # Mixed text: the Latin words and the ideographs both count.
+        assert usefulness_band('ok 好') == 'low'
+        assert usefulness_band('Login 登录失败了', feedback_type='bug') == 'medium'
 
 
 class TestItem:

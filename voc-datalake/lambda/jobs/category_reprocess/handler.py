@@ -75,7 +75,8 @@ from shared.invocation_cost import instrumented_handler
 # import it as `jobs.category_reprocess.handler` from the lambda/ root.
 from shared.logging import logger, metrics
 from shared.timestamps import now_iso
-from shared.usefulness import USEFULNESS_FIELD, item_usefulness
+from shared.source_profiles import PII_SUMMARY_ONLY
+from shared.usefulness import USEFULNESS_FIELD, USEFULNESS_UNRATED, item_usefulness, stored_band
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
 AGGREGATES_TABLE = os.environ.get('AGGREGATES_TABLE', '')
@@ -343,6 +344,18 @@ def build_usefulness_update(item: dict, band: str) -> dict:
     return _update_kwargs(item, expression, conditions, names, values)
 
 
+def reprocess_band(item: dict, reprocessed: dict) -> str:
+    """The band a reprocess stores for ``item``, rated from ``reprocessed`` (the item as it will be).
+
+    A ``summary_only`` review keeps the band ingestion gave it from the full text: the stored text
+    is only the summary, so re-rating it would move the band (and its counters) on every reprocess.
+    """
+    kept = stored_band(item)
+    if item.get('pii_policy') == PII_SUMMARY_ONLY and kept != USEFULNESS_UNRATED:
+        return kept
+    return item_usefulness(reprocessed)
+
+
 def rate_usefulness(feedback_table: Any, item: dict, band: str) -> str:
     """Store ``band`` when the review's stored band differs; ``updated`` / ``unchanged``."""
     if item.get(USEFULNESS_FIELD) == band:
@@ -366,7 +379,7 @@ def reprocess_dimensions(
         dimensions_config, item,
         product=category_product(categories_config, item.get('category')), ai=answer,
     )
-    band = item_usefulness({**item, 'dimensions': dimensions})
+    band = reprocess_band(item, {**item, 'dimensions': dimensions})
     if dimensions == _stored_map(item, 'dimensions') and sources == _stored_map(item, 'dimension_sources'):
         return rate_usefulness(feedback_table, item, band)
     feedback_table.update_item(**build_dimensions_update(item, dimensions, sources, now_iso(), band))
@@ -400,12 +413,12 @@ def reprocess_item(
             if attributes and attributes['category'] == item.get('category') \
                     and attributes['subcategory'] == item.get('subcategory'):
                 # The category stays; the band may still be missing (a pre-band review).
-                _record(counters, rate_usefulness(feedback_table, item, item_usefulness(item)))
+                _record(counters, rate_usefulness(feedback_table, item, reprocess_band(item, item)))
                 return
         if attributes is None:
             _record(counters, 'failed')
             return
-        attributes = {**attributes, USEFULNESS_FIELD: item_usefulness({**item, **attributes})}
+        attributes = {**attributes, USEFULNESS_FIELD: reprocess_band(item, {**item, **attributes})}
         feedback_table.update_item(**build_update(item, attributes, include_manual, now_iso()))
         _record(counters, 'updated')
     except BedrockThrottlingError:
