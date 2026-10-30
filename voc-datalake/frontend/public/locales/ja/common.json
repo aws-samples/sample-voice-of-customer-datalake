@@ -347,7 +347,7 @@
     "mcpFile": {
       "claudeCode": "プロジェクトのルートに .mcp.json として保存します。",
       "cursor": "プロジェクト内の .cursor/mcp.json、またはすべてのプロジェクト用に ~/.cursor/mcp.json として保存します。",
-      "kiro": "ワークスペースの .kiro/settings/mcp.json、または ~/.kiro/settings/mcp.json として保存します。Kiro IDE では Settings → Mcp Approved Env Vars に VOC_MCP_TOKEN を追加します。Kiro CLI はシェルから読み取ります。",
+      "kiro": "ワークスペースの .kiro/settings/mcp.json、または ~/.kiro/settings/mcp.json として保存します。Kiro IDE では Mcp Approved Env Vars に VOC_MCP_TOKEN を追加します。Kiro CLI はシェルから読み取ります。",
       "inline": "環境変数を読めないクライアント向け: トークンをファイルに貼り付けるため、コミットや共有はしないでください。"
     },
     "mcpEnvHint": "このファイルは環境変数 {{name}} からトークンを読み取るため、秘密情報を含みません。クライアントを起動するシェルで、下のトークンを設定してください:"
