@@ -17,6 +17,27 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.55.02] - 2026-10-30
+
+Follow-ups from the 5.48.05 review of the suite clock, and PRs merged with their commits kept. Tooling and
+process only.
+
+### Changed
+- `VOC_TEST_MIDDAY_FORCE=<day>T12:00:00+00:00` reproduces a pytest run from another day: the controlling
+  process publishes that noon instead of today's (it must be 12:00 UTC with a timezone, or the run stops).
+  Without it, a stale `VOC_TEST_MIDDAY` from the shell is still overwritten.
+- [Branches and PRs](.kiro/steering/changelog.md): *Allow rebase merging* is now on for the repository, so the
+  rebase merge 5.48.06 describes works; a PR bumps the version once, in any of its commits; and after a merge
+  the branch, its local copy and its worktrees are deleted (step 5).
+
+### Fixed
+- `test_this_run_travelled_to_today_s_published_noon` compared the published noon with the fake clock that noon had
+  set, so it could not fail. It now checks it exactly against the real day (`time_machine.escape_hatch`), and a
+  noon given in another offset is published as 12:00 UTC. The controller's
+  overwrite of a stale noon is a function of its own (`publish_midday`, which reads the forced noon from the mapping
+  it writes) with unit tests, and a malformed `VOC_TEST_MIDDAY_FORCE` names the variable.
+- `suite_clock.py` calls the travel a `pytest_configure` hook, which it is, not a session fixture.
+
 ## [5.55.01] - 2026-10-30
 
 CI runs the Python suite on its own before the other gate lanes, so a test that bounds its CPU time is not pushed over
