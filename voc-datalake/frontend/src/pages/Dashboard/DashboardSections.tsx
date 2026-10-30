@@ -39,7 +39,7 @@ interface MetricsGridProps {
 
 function SentimentTile({ summary, sentiment }: Readonly<Omit<MetricsGridProps, 'activeSources'>>) {
   const { t, i18n } = useTranslation('dashboard')
-  const average = summary ? Number(summary.avg_sentiment) : 0
+  const average = summary ? summary.avg_sentiment : 0
   const tone = sentimentTone(average)
   const { Icon, color } = SENTIMENT_TONE_DISPLAY[tone]
   const share = sentiment === undefined ? undefined : sentimentShareText(t, average, sentiment.breakdown)

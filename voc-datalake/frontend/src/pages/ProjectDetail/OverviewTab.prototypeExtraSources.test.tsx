@@ -211,7 +211,7 @@ beforeEach(resetPrototypeMocks)
  * the placement is now pinned. What stays here is what the controls DO.
  */
 describe('what the optional inputs send', () => {
-  it('offers both tick-boxes on a project with one PRD, one PR/FAQ and no prototype', async () => {
+  it('offers both tick-boxes on a project with one PRD, one PR/FAQ and no prototype', () => {
     // Still the fixture worth naming: this is the project that used to open no
     // dialog at all, so it is the one a placement regression would strand.
     renderWizard([PRD, PRFAQ, RESEARCH_A], FILLED_CONTEXT)
@@ -358,7 +358,7 @@ describe('which uploaded visuals the build reads', () => {
     expect(screen.getByText(en.documents.prototype.started)).toBeInTheDocument()
   })
 
-  it('offers only ready images, and says how many are still being processed', async () => {
+  it('offers only ready images, and says how many are still being processed', () => {
     // A text upload is not a visual at all — it reaches the prompt through the
     // product-context box — so it is absent without comment. An image that is
     // still extracting has no description yet, so it cannot be ticked, but it

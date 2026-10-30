@@ -1,5 +1,5 @@
 """`shared/source_profiles.py`: per-source data-protection policy and its container cache."""
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -175,7 +175,7 @@ class TestProfileFor:
 @contextmanager
 def _stored_profiles(
     monkeypatch: pytest.MonkeyPatch, sources: object = None, error: Exception | None = None,
-) -> Iterator[MagicMock]:
+) -> Generator[MagicMock, None, None]:
     """An aggregates table holding *sources* (or failing every read with *error*), wired in as the module's resource."""
     monkeypatch.setenv('AGGREGATES_TABLE', 'agg')
     table = MagicMock()
@@ -190,7 +190,7 @@ def _stored_profiles(
 
 
 @contextmanager
-def _clock(readings: list[float]) -> Iterator[MagicMock]:
+def _clock(readings: list[float]) -> Generator[MagicMock, None, None]:
     """The module's own clock reads *readings* in turn (the logger keeps the real one)."""
     with patch.object(source_profiles, 'time') as fake_time:
         fake_time.time.side_effect = readings

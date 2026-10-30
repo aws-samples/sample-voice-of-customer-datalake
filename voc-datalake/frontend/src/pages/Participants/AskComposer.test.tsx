@@ -12,6 +12,7 @@ import type { RouteHandler } from '@test/fetchApiRoutes'
 import { ApiError } from '../../lib/errors'
 import AskComposer from './AskComposer'
 import { SEED_ASK, SETTINGS_VIEW, participantRoutes } from './participants-fixtures'
+import { parsedJson } from '@test/jsonText'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
@@ -96,7 +97,7 @@ describe('the ask composer', () => {
     await user.click(screen.getByRole('button', { name: /^send$/i }))
     expect(await screen.findByText('Your ask is on its way to 3 people.')).toBeInTheDocument()
     await waitFor(() => expect(asksPosted()).toHaveLength(1))
-    expect(JSON.parse(String(asksPosted()[0]?.[1]?.body))).toStrictEqual({
+    expect(parsedJson(asksPosted()[0]?.[1]?.body)).toStrictEqual({
       project_id: 'proj_1', list_ids: ['lst_staff'], person_ids: ['per_dev'], subject: 'Booking flow',
       message: 'Two minutes, please.', link: { kind: 'form', form_id: 'form_1' },
     })

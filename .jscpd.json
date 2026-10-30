@@ -32,7 +32,7 @@
     "**/node_modules/**",
     "**/dist/**",
     "**/build/**",
-    "**/coverage/**",
+    "voc-datalake/**/coverage/**",
     "**/__pycache__/**",
     "**/.venv/**",
     "**/*.d.ts",

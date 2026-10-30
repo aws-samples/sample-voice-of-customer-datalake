@@ -46,9 +46,21 @@ def rss_sort_segment(sort_by: str) -> str:
     return _RSS_SORT_BY.get(sort_by, _RSS_SORT_BY[_DEFAULT_SORT_BY])
 
 
-def create_session(delay: float = 0.5, jitter: float = 0.2, retries: int = 3) -> AppStoreSession:
+class FeedSession(AppStoreSession):
+    """The library's session (pooling, rate limiting, retries) with its JSON GET as a public method.
+
+    The library pages through the feed with that same GET; we page ourselves (see the module
+    docstring), so this subclass is the one place that reaches the library's own request method.
+    """
+
+    def get_json(self, path: str) -> dict:
+        """GET ``path`` on the iTunes host, rate-limited and retried; raises `AppStoreError` on HTTP >= 400."""
+        return self._get(path)
+
+
+def create_session(delay: float = 0.5, jitter: float = 0.2, retries: int = 3) -> FeedSession:
     """Create a shared session with connection pooling and rate limiting."""
-    return AppStoreSession(
+    return FeedSession(
         delay=delay,
         delay_jitter=jitter,
         retries=retries,
@@ -93,7 +105,7 @@ def _rss_path(country: str, app_id: str, page: int, sort_segment: str) -> str:
 def _collect_pages(
     app_id: str,
     country: str,
-    session: AppStoreSession,
+    session: FeedSession,
     limit: int,
     sort_segment: str,
     reviews: list[dict],
@@ -109,7 +121,7 @@ def _collect_pages(
         if len(reviews) >= limit or consecutive_empty >= _MAX_CONSECUTIVE_EMPTY:
             return first_page_failure
         try:
-            entries = _page_entries(session._get(_rss_path(country, app_id, page, sort_segment)))
+            entries = _page_entries(session.get_json(_rss_path(country, app_id, page, sort_segment)))
         except AppStoreError as e:
             # Transient HTTP error on one page — skip it, keep paging.
             logger.warning(f"iOS RSS page {page} failed for app {app_id} in {country}: {e}")
@@ -134,7 +146,7 @@ def _collect_pages(
 def fetch_reviews_for_country(
     app_id: str,
     country: str,
-    session: AppStoreSession,
+    session: FeedSession,
     limit: int = 50,
     sort_by: str = _DEFAULT_SORT_BY,
 ) -> StorefrontFetch:

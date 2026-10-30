@@ -15,6 +15,7 @@ import { useNodesInitialized, useReactFlow } from '@xyflow/react'
 import { STEP_HEIGHT, STEP_WIDTH } from './model'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import type { StepState } from './runState'
+import { noCleanup } from '../../hooks/noCleanup'
 
 /** The canvas's fit: never below a readable zoom, never above 1:1. */
 export const FIT_VIEW_OPTIONS = { padding: 0.15, minZoom: 0.6, maxZoom: 1 } as const
@@ -53,7 +54,7 @@ export function useFocusStep(definition: WorkflowDefinition, focusId: string | u
     latest.current = definition
   })
   useEffect(() => {
-    if (!initialized || focusId === undefined) return undefined
+    if (!initialized || focusId === undefined) return noCleanup
     const run = { cancelled: false }
     void fitView(FIT_VIEW_OPTIONS).then(() => {
       const position = latest.current.nodes.find((node) => node.id === focusId)?.position

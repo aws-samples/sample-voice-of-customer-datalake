@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { BaseEvent } from '@ag-ui/core';
+import { EventType } from '@ag-ui/core';
 import { CLIENT_TOOLS } from '../contract.js';
 import { buildCatalogue } from '../tools/catalogue.js';
 import { selectToolset } from '../tools/registry.js';
@@ -80,7 +81,7 @@ describe('runAssistant — view-only project page', () => {
     expect(lastUserContent(nth(h.calls, 1))).toStrictEqual([{
       toolResult: { toolUseId: 'tu_w', content: [{ text: 'Error: unknown tool "update_document".' }], status: 'error' },
     }]);
-    expect(events.filter((e) => e.type === 'TOOL_CALL_RESULT').map((e) => e.toolCallId)).toStrictEqual(['tu_w']);
+    expect(events.filter((e) => e.type === EventType.TOOL_CALL_RESULT).map((e) => e.toolCallId)).toStrictEqual(['tu_w']);
     expect(finished(events)).toMatchObject({ outcome: { type: 'success' } });
   });
 
@@ -118,7 +119,7 @@ describe('runAssistant — project write against a project read as view-only', (
 
     expect({
       bedrockCalls: h.calls.length,
-      toolResults: events.filter((e) => e.type === 'TOOL_CALL_RESULT').map((e) => e.toolCallId),
+      toolResults: events.filter((e) => e.type === EventType.TOOL_CALL_RESULT).map((e) => e.toolCallId),
     }).toStrictEqual({ bedrockCalls: 3, toolResults: ['tu_r', 'tu_w'] });
     const refusal = nth(lastUserContent(nth(h.calls, 2)), 0);
     expect(refusal.toolResult).toMatchObject({ toolUseId: 'tu_w', status: 'error' });

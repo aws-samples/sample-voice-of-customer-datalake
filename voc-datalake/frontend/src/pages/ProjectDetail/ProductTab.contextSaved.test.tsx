@@ -58,7 +58,7 @@ describe('ProductTab saving', () => {
   it('keeps the cached context when the save fails', async () => {
     const client = createTestQueryClient({ gcTime: Infinity })
     mockUpdateProductContext.mockRejectedValue(new Error('API Error: 500'))
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await editProductName(client)
 

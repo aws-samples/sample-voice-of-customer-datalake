@@ -72,7 +72,7 @@ function commonHead(a: string, b: string): number {
   return firstMiss ?? limit
 }
 
-const reversed = (text: string) => [...text].reverse().join('')
+const reversed = (text: string) => Array.from(text).reverse().join('')
 
 /** How many trailing characters `a` and `b` share. */
 function commonTail(a: string, b: string): number {

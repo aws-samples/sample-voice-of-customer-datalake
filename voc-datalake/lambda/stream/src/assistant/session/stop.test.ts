@@ -29,14 +29,14 @@ function stoppableStore(): SessionStore & { puts: Put[]; stopNow: () => void; ch
     puts,
     checks,
     stopNow: () => { state.stopped = true; },
-    load: async () => null,
-    put: async (_sub, item) => {
+    load: () => Promise.resolve(null),
+    put: (_sub, item) => {
       puts.push({ item });
-      return 'written';
+      return Promise.resolve('written');
     },
-    cancelRequested: async (callerSub, threadId, runId) => {
+    cancelRequested: (callerSub, threadId, runId) => {
       checks.push([callerSub, threadId, runId]);
-      return state.stopped;
+      return Promise.resolve(state.stopped);
     },
   };
 }
@@ -102,7 +102,7 @@ describe('Stop on a running answer', () => {
 
 describe('the Stop marker read', () => {
   it('reads RUNCANCEL#<thread> in the caller partition and matches the run id', async () => {
-    const send = vi.fn(async (command: unknown) => (command instanceof GetCommand ? { Item: { run_id: 'run-1' } } : {}));
+    const send = vi.fn((command: unknown) => Promise.resolve(command instanceof GetCommand ? { Item: { run_id: 'run-1' } } : {}));
     const store = createDynamoSessionStore({ send }, 'conversations');
     await expect(store.cancelRequested('sub-1', 'thread-1', 'run-1')).resolves.toBe(true);
     await expect(store.cancelRequested('sub-1', 'thread-1', 'run-2')).resolves.toBe(false);
@@ -111,7 +111,7 @@ describe('the Stop marker read', () => {
   });
 
   it('answers no stop when there is no marker', async () => {
-    const store = createDynamoSessionStore({ send: async () => ({}) }, 'conversations');
+    const store = createDynamoSessionStore({ send: () => Promise.resolve({}) }, 'conversations');
     await expect(store.cancelRequested('sub-1', 'thread-1', 'run-1')).resolves.toBe(false);
   });
 });
@@ -129,7 +129,7 @@ describe('createCancelWatch', () => {
   });
 
   it('stops polling when the run ends', async () => {
-    const check = vi.fn(async () => false);
+    const check = vi.fn(() => Promise.resolve(false));
     const watch = createCancelWatch(check, 2);
     watch.stop();
     await new Promise((resolve) => { setTimeout(resolve, 20); });

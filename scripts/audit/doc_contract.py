@@ -170,7 +170,7 @@ def _looks_like_path(token: str) -> bool:
         return False
     if re.search(r'[{}<>*()\[\]=:,;|]', token):
         return False
-    first = token.split('/')[0]
+    first = token.split('/', maxsplit=1)[0]
     if '.' in first.strip('.') and not EXTENSION.search(first):
         return False   # a host name (`example-air.example/rss/changelog.json`), not a repo path
     return bool(EXTENSION.search(token) or token.endswith('/'))

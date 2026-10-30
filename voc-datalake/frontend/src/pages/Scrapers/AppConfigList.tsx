@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../api/client'
+import { ignoreRejection } from '../../lib/rejections'
 import { useConfigStore } from '../../store/configStore'
 import { AppConfigCard } from './AppConfigComponents'
 import { useRadarBrandLabeler } from './useRadarBrands'
@@ -21,6 +22,7 @@ import type { RunStatusInfo } from './AppConfigComponents'
 import type { AppConfig } from './scraper-helpers'
 import type { PluginManifest } from '../../plugins/types'
 import { allAppConfigsKey } from '../../api/queryKeys'
+import { noCleanup } from '../../hooks/noCleanup'
 
 export default function AppConfigList({
   plugins, isAdmin, onEditPlugin, onDeleteApp, onRunApp,
@@ -42,7 +44,7 @@ export default function AppConfigList({
 
   // Poll run status for running apps
   useEffect(() => {
-    if (runningApps.size === 0) return
+    if (runningApps.size === 0) return noCleanup
     // Extract unique plugin IDs from running app keys
     const runningPluginIds = new Set([...runningApps].map((key) => {
       const [pluginId = ''] = key.split('-')
@@ -85,7 +87,8 @@ export default function AppConfigList({
             updateStatus(pluginId, result)
             return null
           })
-          .catch(() => null)
+          // A failed poll changes nothing on screen; the next tick (2 s) asks again.
+          .catch(ignoreRejection)
       }
     }
     const interval = setInterval(pollStatus, 2000)

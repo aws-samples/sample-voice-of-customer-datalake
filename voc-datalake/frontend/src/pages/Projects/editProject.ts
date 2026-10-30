@@ -77,7 +77,8 @@ export function hasEdits(edits: ProjectEdits): boolean {
 
 /** The list cache with `edits` applied to the project they belong to. */
 function withEdits(list: { projects: Project[] } | undefined, projectId: string, edits: ProjectEdits) {
-  if (list === undefined) return undefined
+  // Nothing cached yet: nothing to edit (the list is read fresh when it is next shown).
+  if (list === undefined) return list
   return {
     ...list,
     projects: list.projects.map((p) => (p.project_id === projectId

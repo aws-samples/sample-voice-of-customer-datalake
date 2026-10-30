@@ -102,7 +102,7 @@ describe('converseStream', () => {
 
     mockSend.mockResolvedValueOnce({
       stream: (async function* () {
-        for (const e of events) yield e;
+        for (const e of events) yield await Promise.resolve(e);
       })(),
     });
 

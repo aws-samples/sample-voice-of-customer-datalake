@@ -10,7 +10,7 @@ POSTed `writer_context` a literal, and the body the writer builds from all of it
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import Mock, patch
@@ -67,7 +67,7 @@ def projects_fake(ctx: NodeContext) -> Mock:
 
 
 @contextmanager
-def stubbed_context_blocks() -> Iterator[None]:
+def stubbed_context_blocks() -> Generator[None, None, None]:
     """The context blocks stubbed so the POSTed ``writer_context`` is a literal."""
     with (
         patch.object(context_blocks, 'memories', return_value='<memory>M</memory>'),

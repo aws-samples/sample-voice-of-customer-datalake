@@ -39,7 +39,7 @@ export function expectAcceptsImagesNotPdf(accept: string) {
 
 /** A 2d context that accepts fills and draws and records nothing. */
 function inertContext2d() {
-  return { fillStyle: '', fillRect: () => undefined, drawImage: () => undefined }
+  return { fillStyle: '', fillRect: () => {}, drawImage: () => {} }
 }
 
 /**
@@ -83,7 +83,7 @@ class OversizedOffscreenCanvas {
 /** Stubs the decoder to yield a bitmap of the given dimensions. */
 function stubDecoder(width: number, height: number) {
   vi.stubGlobal('createImageBitmap', vi.fn(() => Promise.resolve({
-    width, height, close: () => undefined,
+    width, height, close: () => {},
   })))
 }
 

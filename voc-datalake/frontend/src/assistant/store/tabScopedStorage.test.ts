@@ -70,7 +70,7 @@ describe('tabScopedStorage', () => {
   })
 
   it('keeps the shared half when the tab storage is unavailable or throws on write', () => {
-    const throwing = { ...memoryStorage(), setItem: () => { throw new Error('QuotaExceededError') } }
+    const throwing: Storage = Object.assign(memoryStorage(), { setItem: () => { throw new Error('QuotaExceededError') } })
     const unavailable = tabScopedStorage(['open'], { shared: () => shared, tab: () => { throw new Error('SecurityError') } })
     tabScopedStorage(['open'], { shared: () => shared, tab: () => throwing }).setItem(KEY, envelope({ open: true, mode: 'expanded' }))
     expect(stored(shared)).toStrictEqual({ state: { mode: 'expanded' }, version: 0 })
@@ -87,7 +87,8 @@ describe('useAssistantUiStore open state', () => {
 
   it('opening the panel stores open in this tab only', () => {
     useAssistantUiStore.getState().setOpen(true)
-    const sharedWrite = vi.mocked(localStorage.setItem).mock.calls.at(-1)?.[1] ?? ''
+    // spyOn returns the setup file's existing mock (src/test/setup.ts), without detaching the method.
+    const [, sharedWrite = ''] = vi.spyOn(localStorage, 'setItem').mock.lastCall ?? []
     expect(stored(sessionStorage)).toMatchObject({ state: { open: true } })
     expect(JSON.parse(sharedWrite)).not.toHaveProperty('state.open')
   })

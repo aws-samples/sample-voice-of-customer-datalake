@@ -16,6 +16,7 @@ import { useConfigStore } from '../../store/configStore'
 import { useAssistantUiStore } from '../../assistant/store/assistantStore'
 import { useBubbleStore } from '../../assistant/bubble/bubbleStore'
 import { languageNames, supportedLanguages } from '../../i18n/languages'
+import { parsedJson } from '@test/jsonText'
 
 const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
 const signOut = vi.fn<() => void>()
@@ -31,7 +32,7 @@ vi.mock('../../store/authStore', () => {
   // The assistant store subscribes at import (sign-out wipe); nothing here signs out.
   return {
     useIsAdmin: () => state.isAdmin,
-    useAuthStore: Object.assign(useAuthStore, { subscribe: () => () => undefined, getState: () => ({ user: state.user }) }),
+    useAuthStore: Object.assign(useAuthStore, { subscribe: () => () => {}, getState: () => ({ user: state.user }) }),
   }
 })
 vi.mock('../../services/auth', () => ({ authService: { signOut: () => signOut(), changePassword: vi.fn() } }))
@@ -205,7 +206,7 @@ describe('Account — objectives & KPIs', () => {
   it('saves the caller\u2019s own objective with a KPI', async () => {
     const save = vi.fn((body: unknown) => body)
     fetchApi.mockImplementation((endpoint, options) => {
-      if (options?.method === 'PUT') return Promise.resolve(save(JSON.parse(String(options.body))))
+      if (options?.method === 'PUT') return Promise.resolve(save(parsedJson(options.body)))
       return endpoint === '/settings/my-context' ? Promise.resolve({ objectives: [] }) : Promise.reject(new Error('API Error: 404'))
     })
     renderAt('?tab=objectives')

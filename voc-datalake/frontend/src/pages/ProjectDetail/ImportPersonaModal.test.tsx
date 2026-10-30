@@ -453,7 +453,7 @@ describe('ImportPersonaModal image input paths', () => {
     expectMissedDropCancelled(screen.getByTestId('modal-overlay'))
   })
 
-  it('leaves a TEXT drag into the persona textarea alone, unlike a file drag', async () => {
+  it('leaves a TEXT drag into the persona textarea alone, unlike a file drag', () => {
     // The control for the two cancel tests above, and a regression they caused:
     // the cancel handler sits on the backdrop, an ancestor of the textarea, and
     // dropping dragged text on a textarea is exactly how a browser inserts it at
@@ -476,7 +476,7 @@ describe('ImportPersonaModal image input paths', () => {
     expect(textDragOver).toBe(true)
   })
 
-  it('still cancels a FILE drag over the text step, where nothing wants it', async () => {
+  it('still cancels a FILE drag over the text step, where nothing wants it', () => {
     // The other half of the gate: a file drop is destructive wherever it lands,
     // including over the text step, so the type of the drag decides this — not
     // which step is showing.
@@ -790,7 +790,7 @@ describe('ImportPersonaModal image input paths', () => {
     // prepare() is async and nothing serializes two drops. A slow failure from the
     // first can settle AFTER the second succeeded, which paired a good filename
     // with a red refusal about a file already replaced.
-    const gate: { release: () => void } = { release: () => undefined }
+    const gate: { release: () => void } = { release: () => {} }
     const slowFailure = new Promise((_, reject) => { gate.release = () => reject(new Error('bad bytes')) })
     vi.stubGlobal('createImageBitmap', vi.fn(() => slowFailure))
     await openImageStep()
@@ -851,7 +851,7 @@ describe('ImportPersonaModal image input paths', () => {
     expect(await screen.findByText('shot.png')).toBeInTheDocument()
   })
 
-  it('does not intercept a paste into the persona textarea', async () => {
+  it('does not intercept a paste into the persona textarea', () => {
     // The text-import path has its own paste behaviour and must stay untouched:
     // the modal-level handler is scoped to the image step, and an image-carrying
     // clipboard is not a reason to cancel a paste aimed at a textarea.

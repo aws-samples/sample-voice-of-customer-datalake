@@ -20,8 +20,7 @@ const OBJECTIVES_BY_SUB: Record<string, unknown> = {
 
 /** The settings Lambda: company context for everyone, my-context for the CALLER only. */
 function settingsFake(): ApiInvoker & { mock: { calls: Array<[ApiCall, CallerClaims]> } } {
-  return vi.fn(async (call: ApiCall, claims: CallerClaims) => (
-    call.path === '/settings/company-context' ? COMPANY : OBJECTIVES_BY_SUB[claims.sub] ?? { objectives: [] }));
+  return vi.fn((call: ApiCall, claims: CallerClaims) => Promise.resolve(call.path === '/settings/company-context' ? COMPANY : OBJECTIVES_BY_SUB[claims.sub] ?? { objectives: [] }));
 }
 
 async function blockFor(invoke: ApiInvoker): Promise<string> {
@@ -38,10 +37,9 @@ describe('createCompanyBriefLoader', () => {
   });
 
   it('one failed read costs only its half', async () => {
-    const invoke = vi.fn(async (call: ApiCall) => {
-      if (call.path === '/settings/my-context') throw new Error('down');
-      return COMPANY;
-    });
+    const invoke = vi.fn((call: ApiCall) => (
+      call.path === '/settings/my-context' ? Promise.reject(new Error('down')) : Promise.resolve(COMPANY)
+    ));
     const block = await blockFor(invoke);
     expect(block).toContain('Cut refund time to 24 h');
     expect(block).not.toContain('Your own objectives');
@@ -83,7 +81,7 @@ describe('briefForRun (fails open)', () => {
   it('answers the empty brief without a loader, on a throw and on a timeout', async () => {
     const empty = { vision: '', companyObjectives: [], myObjectives: [] };
     await expect(briefForRun(undefined, fakeContext())).resolves.toStrictEqual(empty);
-    await expect(briefForRun(async () => { throw new Error('boom'); }, fakeContext())).resolves.toStrictEqual(empty);
+    await expect(briefForRun(() => Promise.reject(new Error('boom')), fakeContext())).resolves.toStrictEqual(empty);
     await expect(briefForRun(() => new Promise(() => {}), fakeContext(), 5)).resolves.toStrictEqual(empty);
   });
 });

@@ -4,15 +4,12 @@ Google Play Store review client using google-play-scraper.
 Wraps the library with pagination, error handling, and structured output.
 """
 
-from typing import TYPE_CHECKING, cast
+import functools
 
 from google_play_scraper import Sort, reviews
 
 from _shared.app_reviews_health import StorefrontFetch, failure_cause
 from _shared.base_ingestor import logger
-
-if TYPE_CHECKING:
-    from google_play_scraper.features.reviews import _ContinuationToken
 
 SORT_MAP = {
     "newest": Sort.NEWEST,
@@ -24,31 +21,8 @@ SORT_MAP = {
 # until we hit `count` or the token runs out (i.e. all text reviews collected).
 _PAGE_SIZE = 200
 # Backstop so a runaway token loop can't spin forever (well above any real
-# app's text-review count; e.g. Gangnamunni has ~2,376 in ko/kr).
+# app's text-review count; a large app has a few thousand in one storefront).
 _MAX_ROUNDS = 200
-
-
-def _fetch_page(
-    package_name: str,
-    *,
-    lang: str,
-    country: str,
-    sort_order: Sort,
-    count: int,
-    token: "_ContinuationToken | None",
-) -> "tuple[list[dict], _ContinuationToken | None]":
-    """One `reviews()` page; *token* None requests the first page."""
-    return reviews(
-        package_name,
-        lang=lang,
-        country=country,
-        sort=sort_order,
-        count=count,
-        # The library declares `continuation_token: _ContinuationToken = None`
-        # (an implicit Optional) — None is its documented first-page value.
-        # A string first argument to cast() is never evaluated, so mutating it is equivalent.
-        continuation_token=cast("_ContinuationToken", token),  # pragma: no mutate
-    )
 
 
 def fetch_reviews_for_country(
@@ -70,10 +44,11 @@ def fetch_reviews_for_country(
     short cause (exception type / HTTP status) when the locale raised before any
     review was collected; a partial result is kept and is not a failure.
     """
-    sort_order = SORT_MAP.get(sort_by, Sort.NEWEST)
+    fetch_page = functools.partial(reviews, package_name, lang=lang, country=country,
+                                   sort=SORT_MAP.get(sort_by, Sort.NEWEST))
     collected: list[dict] = []
-    # A local annotation is never evaluated at runtime, so its mutant is equivalent.
-    token: _ContinuationToken | None = None  # pragma: no mutate
+    # The library's own token type (inferred from `reviews`), or None before the first page.
+    token = None
 
     try:
         for _ in range(_MAX_ROUNDS):
@@ -81,19 +56,16 @@ def fetch_reviews_for_country(
             if remaining <= 0:
                 # `continue` here would only idle out the remaining rounds; same result.
                 break  # pragma: no mutate
-            result, token = _fetch_page(
-                package_name,
-                lang=lang,
-                country=country,
-                sort_order=sort_order,
-                count=min(_PAGE_SIZE, remaining),
-                token=token,
-            )
+            page_size = min(_PAGE_SIZE, remaining)
+            # The first page is asked without a token: the library's parameter is typed as its token
+            # class with a None default, so None is its first-page value but not a value of its type.
+            result, token = (fetch_page(count=page_size) if token is None
+                             else fetch_page(count=page_size, continuation_token=token))
             if not result:
                 break
             collected.extend(result)
-            # No further pages — all available reviews collected.
-            if token is None:
+            # No further pages: the library hands back a token whose own `token` is None.
+            if token.token is None:
                 break
         return StorefrontFetch(reviews=collected[:count])
     except Exception as e:

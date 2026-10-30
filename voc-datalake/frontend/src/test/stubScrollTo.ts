@@ -15,18 +15,13 @@
  * isolates per file by default.
  */
 import { vi } from 'vitest'
+import { restoreProperty } from './originals'
 
 export function stubElementScrollIntoView(): () => void {
-  const existed = 'scrollIntoView' in Element.prototype
-  const original = Element.prototype.scrollIntoView
+  // jsdom has no scrollIntoView, so there is usually nothing to capture and the restore removes the stub.
+  const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
 
   Element.prototype.scrollIntoView = vi.fn()
 
-  return () => {
-    if (existed) {
-      Element.prototype.scrollIntoView = original
-    } else {
-      Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
-    }
-  }
+  return () => { restoreProperty(Element.prototype, 'scrollIntoView', original) }
 }

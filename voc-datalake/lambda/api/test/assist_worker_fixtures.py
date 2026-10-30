@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from types import ModuleType, SimpleNamespace
 from typing import Any
@@ -27,7 +27,7 @@ WORKER_FUNCTION = 'voc-test-assist'
 
 
 @contextmanager
-def inline_assist_worker(handler: ModuleType, lambda_context: Any, *, run_worker: bool = True) -> Iterator[SimpleNamespace]:
+def inline_assist_worker(handler: ModuleType, lambda_context: Any, *, run_worker: bool = True) -> Generator[SimpleNamespace, None, None]:
     """A moto jobs table plus a worker invoke that runs ``handler.lambda_handler`` in-process."""
     def _invoke(function_name: str, payload: dict) -> None:
         # Only the configured twin runs the work; tests read `invoke.call_args` for the name.

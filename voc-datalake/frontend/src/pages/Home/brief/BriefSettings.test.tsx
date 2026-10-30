@@ -141,7 +141,7 @@ describe('brief settings', () => {
     expect(save).toHaveBeenCalledWith({ instructions: 'Focus on delivery' })
   })
 
-  it('refuses instructions over 2,000 characters before saving', async () => {
+  it('refuses instructions over 2,000 characters before saving', () => {
     renderSettings(settings({ ...ON, instructions: 'x'.repeat(2001) }))
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })

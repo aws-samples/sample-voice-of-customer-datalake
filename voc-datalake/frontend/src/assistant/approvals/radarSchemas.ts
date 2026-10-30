@@ -38,7 +38,7 @@ const KEY_TRIM: ReadonlySet<string> = new Set(['-', '_'])
 
 /** shared/radar_brands.brand_key: "Acme Air" → "acme-air" (`.strip('-_')`: no "-" / "_" at either end). */
 export function brandKeyOf(label: string): string {
-  const chars = [...label.trim().toLowerCase().replaceAll(NOT_WORD, '-')]
+  const chars = Array.from(label.trim().toLowerCase().replaceAll(NOT_WORD, '-'))
   const kept = (char: string) => !KEY_TRIM.has(char)
   const first = chars.findIndex(kept)
   if (first < 0) return ''

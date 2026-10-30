@@ -85,9 +85,14 @@ def botocore_model_warmer(*services: str) -> Callable[[], None]:
         import boto3
         from botocore.exceptions import DataNotFoundError
 
-        # Private, but the cache every client and resource of this session reads; a
-        # change surfaces as a logged priming failure (see `prime`), never a crash.
-        loader = boto3._get_default_session()._loader
+        # boto3's default session, created exactly as boto3 creates it on first use. Its loader
+        # is private (boto3 has no accessor) but is the cache every client and resource of the
+        # session reads; a rename surfaces as a logged priming failure (see `prime`), never a crash.
+        if boto3.DEFAULT_SESSION is None:
+            boto3.setup_default_session()
+        loader = getattr(boto3.DEFAULT_SESSION, '_loader', None)
+        if loader is None:
+            raise RuntimeError('boto3 default session has no botocore loader to prime')
         for service in services:
             for model in BOTOCORE_MODEL_FILES:
                 try:

@@ -8,6 +8,7 @@
  * @module assistant/approvals/useExpiry
  */
 import { useEffect, useState } from 'react'
+import { noCleanup } from '../../hooks/noCleanup'
 
 const TICK_MS = 1000
 
@@ -44,7 +45,7 @@ export function useExpiry(expiresAt: string | undefined): Expiry {
   const done = deadline === null || now >= deadline
 
   useEffect(() => {
-    if (done) return undefined
+    if (done) return noCleanup
     const timer = setInterval(() => setNow(Date.now()), TICK_MS)
     return () => clearInterval(timer)
   }, [done])

@@ -70,7 +70,7 @@ export default function ProductTab({ projectId, canEdit, onJobStarted }: Product
       // Seed the shared cache with the server's copy: the Overview card counts from it.
       queryClient.setQueryData<ProductContextResponse>(productContextKey(projectId), { context: normalised(saved.context) })
     } catch (e) {
-      console.error(`Failed to save ${String(field)}`, e)
+      console.error(`Failed to save ${field}`, e)
     } finally {
       setSavingField(null)
     }

@@ -12,6 +12,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ModalShell from './ModalShell'
 import { required } from '../component-spec-fixtures'
+import { callOriginal, getOriginal, inheritedDescriptor, ownDescriptor } from '@test/originals'
 
 const onClose = vi.fn<() => void>()
 
@@ -370,13 +371,12 @@ function isDocument(value: unknown): value is Document {
 function onEachFrameDocument(wrap: (doc: Document) => readonly (keyof Document)[]): () => void {
   const real = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument')
   if (!real?.get) throw new Error('no contentDocument getter to wrap')
-  const realGet = real.get
   const wrapped = new WeakSet<Document>()
   const unwrap: (() => void)[] = []
   Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', {
     configurable: true,
     get(): Document | null {
-      const got: unknown = realGet.call(this)
+      const got: unknown = getOriginal(real, this)
       const doc = isDocument(got) ? got : null
       if (doc && !wrapped.has(doc)) {
         wrapped.add(doc)
@@ -444,7 +444,7 @@ function eraseListenersOnOpen(): () => void {
   return onEachFrameDocument((doc) => {
     const realAdd = doc.addEventListener.bind(doc)
     const realRemove = doc.removeEventListener.bind(doc)
-    const realOpen = doc.open
+    const realOpen = inheritedDescriptor(doc, 'open')
     const state = { generation: 0 }
     // Per listener, its live gate per `type|capture` — the identity the DOM dedupes on.
     const gates = new WeakMap<object, Map<string, Gate>>()
@@ -480,7 +480,7 @@ function eraseListenersOnOpen(): () => void {
       configurable: true,
       value: (...args: unknown[]): unknown => {
         state.generation += 1
-        return Reflect.apply(realOpen, doc, args)
+        return callOriginal(realOpen, doc, ...args)
       },
     })
     return ['addEventListener', 'removeEventListener', 'open']
@@ -1025,10 +1025,7 @@ describe('ModalShell with a nested frame', () => {
     const el = doc.createElement('iframe')
     el.title = 'nested'
     // The own-property override below only falls back to this getter once deleted.
-    required(
-      Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument')?.get,
-      'a contentDocument getter on the prototype',
-    )
+    ownDescriptor(HTMLIFrameElement.prototype, 'contentDocument')
     Object.defineProperty(el, 'contentDocument', {
       configurable: true,
       get() {

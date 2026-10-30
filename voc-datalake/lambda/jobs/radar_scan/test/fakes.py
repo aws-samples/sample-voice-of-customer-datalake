@@ -1,5 +1,5 @@
 """Shared fakes for the Radar news scan tests: a moto world with one tracked brand, and a Lambda context."""
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import date
 from typing import Any
@@ -13,7 +13,7 @@ from shared.test.radar_fixtures import radar_pk_sk_table
 
 
 @contextmanager
-def acme_world(brand: dict[str, Any]) -> Iterator[Any]:
+def acme_world(brand: dict[str, Any]) -> Generator[Any, None, None]:
     """The radar + aggregates tables (moto) with ``brand`` as the only listed brand; yields the radar table."""
     with mock_aws():
         radar = radar_pk_sk_table('radar')

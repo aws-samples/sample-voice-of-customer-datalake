@@ -20,7 +20,7 @@ and the first slice's suite. What those suites could not see:
   spends, and the day its decline names — the EARLIEST of the dates, which is not
   the date of the smallest key.
 """
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock, call, patch
@@ -28,7 +28,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 from botocore.exceptions import ClientError
 
-import aggregator.handler as handler
+from aggregator import handler
 from aggregator.handler import CounterWrite, apply_counter_keys, counter_dimensions, subcategory_bucket
 
 if TYPE_CHECKING:
@@ -50,7 +50,7 @@ def _cancelled(*codes: str) -> ClientError:
 
 
 @contextmanager
-def _transaction(*outcomes: Exception | None) -> Iterator[dict[str, MagicMock]]:
+def _transaction(*outcomes: Exception | None) -> Generator[dict[str, MagicMock], None, None]:
     """`_claimed_transaction` against a client whose calls end as `outcomes`, in order.
 
     Exhaustible: a retry-forever mutant dies on StopIteration rather than looping.

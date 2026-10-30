@@ -18,6 +18,7 @@ import { addBrowserPreflight as cors, type ApiGateway } from './api-gateway';
 import { CHAT_STREAM_TIMEOUT, type AssistantLambdas } from './api-assistant-lambdas';
 import type { DataLambdas } from './api-data-lambdas';
 import type { EngagementLambdas } from './api-engagement-lambdas';
+import { partitionOf } from '../utils/model-allowlist';
 
 export interface RouteTargets extends DataLambdas, EngagementLambdas, AssistantLambdas {
   projectsLambda: lambda.Function;
@@ -113,7 +114,7 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   chatStreamCfnMethod.addPropertyOverride('Integration.TimeoutInMillis', CHAT_STREAM_TIMEOUT.toMilliseconds());
   chatStreamCfnMethod.addPropertyOverride(
     'Integration.Uri',
-    `arn:aws:apigateway:${stack.region}:lambda:path/2021-11-15/functions/${chatStreamLambda.functionArn}/response-streaming-invocations`
+    `arn:${partitionOf(stack.region)}:apigateway:${stack.region}:lambda:path/2021-11-15/functions/${chatStreamLambda.functionArn}/response-streaming-invocations`
   );
 
   // /integrations/* and /sources/* — ANY on `{source}` serves the one-segment paths (`status`),

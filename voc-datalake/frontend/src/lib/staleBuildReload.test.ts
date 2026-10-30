@@ -41,7 +41,7 @@ describe('installStaleBuildReload', () => {
   it('never reloads when sessionStorage is blocked', () => {
     const target = new EventTarget()
     const reload = vi.fn()
-    const storage = { getItem: () => { throw new Error('blocked') }, setItem: () => undefined }
+    const storage = { getItem: () => { throw new Error('blocked') }, setItem: () => {} }
     installStaleBuildReload({ target, storage, reload, build: 'abc1234', isOnline: () => true })
     target.dispatchEvent(new Event('vite:preloadError', { cancelable: true }))
     expect(reload).not.toHaveBeenCalled()

@@ -112,7 +112,7 @@ def _signed_post(url: str, payload: dict) -> dict:
         method='POST',
     )
     try:
-        with urllib.request.urlopen(http_request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:  # noqa: S310
+        with urllib.request.urlopen(http_request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:  # noqa: S310 — https gateway URL from CDK config
             content_type = response.headers.get('Content-Type', '')  # pragma: no mutate - only ever tested for 'text/event-stream'; any other default behaves the same
             raw = response.read().decode('utf-8')
     except Exception as e:

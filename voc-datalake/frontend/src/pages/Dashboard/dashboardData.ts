@@ -131,7 +131,7 @@ export function buildPDFExportData(input: PDFExportInput) {
   return {
     timeRange: input.timeRange,
     totalFeedback: input.summary?.total_feedback ?? 0,
-    avgSentiment: input.summary ? Number(input.summary.avg_sentiment) : 0,
+    avgSentiment: input.summary ? input.summary.avg_sentiment : 0,
     urgentCount: input.summary?.urgent_count ?? 0,
     sourcesCount: input.sourcesCount,
     dailyTotals: input.summary?.daily_totals ?? [],

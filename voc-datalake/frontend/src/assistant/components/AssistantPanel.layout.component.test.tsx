@@ -79,14 +79,15 @@ async function pickFromDrawer(user: User, question: string) {
 }
 
 describe('AssistantPanel layout', () => {
-  beforeEach(() => stubElementScrollIntoView())
-
   beforeEach(() => {
+    // The stub's restore is this hook's teardown (vitest runs a returned function after each test).
+    const restoreScrollIntoView = stubElementScrollIntoView()
     scripts.length = 0
     vi.mocked(getSession).mockClear()
     vi.mocked(downloadMarkdown).mockClear()
     useThreadStore.getState().reset()
     useAssistantUiStore.getState().reset()
+    return restoreScrollIntoView
   })
 
   describe('wide sidebar', () => {

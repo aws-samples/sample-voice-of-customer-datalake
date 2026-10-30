@@ -22,7 +22,7 @@ from aws_lambda_powertools.utilities.idempotency import (
     IdempotencyConfig,
 )
 
-import shared.idempotency as idempotency
+from shared import idempotency
 
 
 @pytest.fixture

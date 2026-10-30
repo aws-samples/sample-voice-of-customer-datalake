@@ -35,7 +35,7 @@ function harness(image: FakeImage, toBlob: () => Promise<Blob | null> = () => Pr
   const loaded: string[] = []
   const createCanvas = (width: number, height: number): RasterCanvas<FakeImage> => {
     sizes.push({ width, height })
-    return { drawImage: () => undefined, toBlob }
+    return { drawImage: () => {}, toBlob }
   }
   return {
     sizes,
@@ -100,7 +100,7 @@ describe('svgToPng', () => {
   })
 
   it('a decode that never finishes is a timeout error', async () => {
-    const h = harness(new FakeImage(10, 10, () => new Promise(() => undefined)))
+    const h = harness(new FakeImage(10, 10, () => new Promise(() => {})))
     expect(await reasonOf(svgToPngWith(svgFile(), h.deps))).toBe('timeout')
   })
 

@@ -13,6 +13,7 @@ import { formatDateTime } from '../../utils/dateUtils'
 import type { CommentActions, ViewedVersion } from './commentTypes'
 import type { CommentAuthor, CommentThread } from '../../api/documentReviewSchema'
 import type { LucideIcon } from 'lucide-react'
+import { ignoreRejection } from '../../lib/rejections'
 
 const AUTHOR_ICONS: Readonly<Record<CommentAuthor['kind'], LucideIcon>> = {
   user: User,
@@ -58,7 +59,8 @@ function ThreadActions({ thread, actions }: Readonly<{ thread: CommentThread; ac
   const run = (action: ((id: string) => Promise<unknown>) | undefined) => {
     if (action === undefined) return
     setBusy(true)
-    void action(thread.comment_id).catch(() => undefined).finally(() => setBusy(false))
+    // The action's own mutation shows a failure; this only clears the busy state either way.
+    void action(thread.comment_id).catch(ignoreRejection).finally(() => setBusy(false))
   }
   const resolved = thread.status === 'resolved'
   const toggle = resolved ? actions.reopen : actions.resolve

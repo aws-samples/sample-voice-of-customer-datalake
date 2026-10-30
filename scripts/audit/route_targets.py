@@ -55,7 +55,7 @@ class Request:
 
 def segments(path: str) -> tuple[str, ...]:
     """A path as a segment template: any parameter (``<id>``, ``{id}``, ``${id}``, ``:id``) is ``*``."""
-    parts = path.split('?')[0].split('#')[0].strip('/').split('/')
+    parts = path.split('?', maxsplit=1)[0].split('#', maxsplit=1)[0].strip('/').split('/')
     return tuple('*' if _PARAM.search(p) or p == '*' else p for p in parts if p)
 
 
@@ -105,7 +105,7 @@ def python_routes(cdk_dir: Path) -> list[Served]:
 
 
 def _chain_segments(chain: str, resources: dict[str, tuple[str, ...]]) -> tuple[str, ...] | None:
-    base = chain.split('.addResource(')[0]
+    base = chain.split('.addResource(', maxsplit=1)[0]
     if base in ('api.root', 'apiRoot'):
         prefix: tuple[str, ...] = ()
     elif base in resources:

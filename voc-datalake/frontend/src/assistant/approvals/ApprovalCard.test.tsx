@@ -40,9 +40,8 @@ const P = 'proj_1'
 const FUTURE = () => new Date(Date.now() + 10 * 60_000).toISOString()
 
 // jsdom has no scrollIntoView; the returned teardown removes the stub again.
-beforeEach(() => stubElementScrollIntoView())
-
 beforeEach(() => {
+  const restoreScrollIntoView = stubElementScrollIntoView()
   vi.clearAllMocks()
   resetExecutions()
   m.isAdmin.value = true
@@ -51,6 +50,7 @@ beforeEach(() => {
     personas: [],
     documents: [{ document_id: 'd1', title: 'PRD v1', content: 'line a\nline b\nline c', document_type: 'prd' }],
   })
+  return restoreScrollIntoView
 })
 
 function renderCard(overrides: Partial<ApprovalCardProps> & Pick<ApprovalCardProps, 'toolCall'>) {

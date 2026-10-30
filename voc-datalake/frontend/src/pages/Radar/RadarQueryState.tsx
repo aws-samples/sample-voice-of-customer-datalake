@@ -12,7 +12,7 @@ export function RadarLoading() {
   return <p className="text-sm text-muted">{t('loading')}</p>
 }
 
-export function RadarLoadFailed({ query }: Readonly<{ query: Pick<UseQueryResult<unknown>, 'refetch' | 'isFetching'> }>) {
+export function RadarLoadFailed({ query }: Readonly<{ query: Pick<UseQueryResult, 'refetch' | 'isFetching'> }>) {
   const { t } = useTranslation('radar')
   return <LoadFailed message={t('loadFailed')} onRetry={() => { void query.refetch() }} retrying={query.isFetching} />
 }

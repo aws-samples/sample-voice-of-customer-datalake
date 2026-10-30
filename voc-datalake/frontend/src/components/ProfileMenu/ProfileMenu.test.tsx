@@ -38,7 +38,7 @@ describe('ProfileMenu trigger', () => {
   it('falls back to the email for the name and initial', () => {
     render(
       <TestRouter initialEntries={['/']}>
-        <ProfileMenu user={{ username: 'u1', email: 'alex@example.com' }} isAdmin={false} onSignOut={() => undefined} />
+        <ProfileMenu user={{ username: 'u1', email: 'alex@example.com' }} isAdmin={false} onSignOut={() => {}} />
       </TestRouter>,
     )
     expect(screen.getByRole('button', { name: 'Account menu for alex@example.com' })).toHaveTextContent(/^A$/)

@@ -1,0 +1,9 @@
+# Per-file coverage baseline (docs/coverage-gate.md). Every measured production file must reach the floor
+# (scripts/coverage/suites.json) unless it is listed here; a listed file must not fall below the rate it had
+# when it was recorded. This file only ever SHRINKS: add tests to a listed file until it reaches the floor,
+# then run this, which deletes graduated and vanished rows and never adds one:
+#   node scripts/coverage/check-per-file-coverage.mjs --suite python --update-baseline
+# A new or renamed file is a new path: it reaches the floor, or the owner decides. Do not edit rates by hand.
+# Format: <repo-relative path> <line rate when recorded>   # <covered>/<total>
+voc-datalake/lambda/briefing/identity.py 36.36   # 16/44
+voc-datalake/lambda/shared/briefing_subscription.py 75.21   # 88/117

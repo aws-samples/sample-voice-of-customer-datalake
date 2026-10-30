@@ -256,7 +256,7 @@ snapshot('navigate', null, [], __LIMITS__).then((out) => process.stdout.write(ou
 def run_node(script: str, *arguments: str) -> str:
     """stdout of ``node -e script arguments...`` (a fixed argv, test-only)."""
     assert NODE, 'node is needed to run the snapshot script'
-    result = subprocess.run([NODE, '-e', script, *arguments], capture_output=True, text=True, timeout=60, check=True)  # noqa: S603
+    result = subprocess.run([NODE, '-e', script, *arguments], capture_output=True, text=True, timeout=60, check=True)  # noqa: S603 — fixed argv: the located node binary, -e, a test script
     return result.stdout
 
 

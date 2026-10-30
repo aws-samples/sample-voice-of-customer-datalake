@@ -170,7 +170,7 @@ describe('prioritization, scrapers and settings tools', () => {
       'not a record',
     ];
     const { result } = await runTool('get_prioritization', 'GET /projects/prioritization', { axes });
-    expect(JSON.parse(String(result.content)).scoring_metrics).toStrictEqual([
+    expect(JSON.parse(result.content).scoring_metrics).toStrictEqual([
       { id: 'reach', name: 'Reach', share_percent: 50, direction: 'higher is better' },
       { id: 'confidence', name: 'Confidence', share_percent: 33, direction: 'higher is better' },
       { id: 'effort', name: 'Effort', share_percent: 17, direction: 'lower is better' },
@@ -180,7 +180,7 @@ describe('prioritization, scrapers and settings tools', () => {
   it('get_prioritization reports a 0 % share when no active metric carries weight', async () => {
     const axes = [{ id: 'reach', label: '', weight: 0 }, { id: 7, weight: 'x' }];
     const { result } = await runTool('get_prioritization', 'GET /projects/prioritization', { axes });
-    expect(JSON.parse(String(result.content)).scoring_metrics).toStrictEqual([
+    expect(JSON.parse(result.content).scoring_metrics).toStrictEqual([
       { id: 'reach', name: 'reach', share_percent: 0, direction: 'higher is better' },
       { id: '', name: '', share_percent: 0, direction: 'higher is better' },
     ]);

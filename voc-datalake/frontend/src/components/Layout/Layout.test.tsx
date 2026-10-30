@@ -18,7 +18,7 @@ const mockGetBrandSettings = vi.fn(() => Promise.resolve({ brand_name: 'Test Bra
 vi.mock('../../store/configStore', () => import('@test/page-mocks').then((m) => m.configStoreHookMock({
   timeRange: '7d',
   config: { apiEndpoint: 'https://api.example.com', brandName: 'Test Brand' },
-  setConfig: () => undefined,
+  setConfig: () => {},
 })))
 
 vi.mock('../../api/client', () => ({

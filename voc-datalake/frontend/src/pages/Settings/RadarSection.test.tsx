@@ -14,6 +14,7 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.f
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { sourceLabel } from '../../utils/displayLabels'
 import RadarSection from './RadarSection'
+import { parsedJson } from '@test/jsonText'
 
 const LAST_SCAN = { status: 'completed', finished_at: '2026-10-15T05:46:00Z', brands: 2, queries: 12, added: 3, merged: 1 }
 
@@ -31,7 +32,7 @@ function route(scan: (body: unknown) => unknown = () => ({ success: true, status
 }
 
 const lastBody = (path: string): unknown =>
-  JSON.parse(String(fetchApi.mock.calls.filter(([endpoint]) => endpoint === path).at(-1)?.[1]?.body))
+  parsedJson(fetchApi.mock.calls.filter(([endpoint]) => endpoint === path).at(-1)?.[1]?.body)
 
 const renderSection = () => renderWithQueryClient(<MemoryRouter><RadarSection /></MemoryRouter>)
 

@@ -10,6 +10,7 @@
  */
 import { useState } from 'react'
 import { useUnsavedChangesGuard } from './useUnsavedChangesGuard'
+import { ignoreRejection } from '../../lib/rejections'
 
 export function useSnapshotGuard<T>({ value, onSave, onClose, canSave = true }: Readonly<{
   /** The editor's current value (compared structurally with the opening one). */
@@ -33,5 +34,5 @@ export function useSnapshotGuard<T>({ value, onSave, onClose, canSave = true }: 
 
 /** Fire the host's save from a button: a failure stays on screen (the host owns the error). */
 export function saveIgnoringFailure(save: () => Promise<unknown> | undefined): void {
-  Promise.resolve(save()).catch(() => undefined)
+  Promise.resolve(save()).catch(ignoreRejection)
 }

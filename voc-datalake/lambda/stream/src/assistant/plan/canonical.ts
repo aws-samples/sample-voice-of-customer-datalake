@@ -18,8 +18,9 @@ export class CanonicalJsonError extends Error {}
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 function codePointCompare(a: string, b: string): number {
-  const left = [...a];
-  const right = [...b];
+  // Array.from iterates a string by code point (like a spread), so astral characters stay whole.
+  const left = Array.from(a);
+  const right = Array.from(b);
   const index = left.findIndex((char, position) => char !== right[position]);
   if (index === -1) return left.length - right.length;
   return (left[index]?.codePointAt(0) ?? 0) - (right[index]?.codePointAt(0) ?? 0);

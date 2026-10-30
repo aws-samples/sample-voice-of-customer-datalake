@@ -28,7 +28,7 @@ export interface FailedReads {
 }
 
 /** Nothing failed — the default for a component told about failures optionally. */
-export const NO_FAILED_READS: FailedReads = { loadFailed: false, retrying: false, retry: () => undefined }
+export const NO_FAILED_READS: FailedReads = { loadFailed: false, retrying: false, retry: () => {} }
 
 /** Whether any of `reads` failed with no data, and how to retry just those. */
 export function failedReads(reads: readonly RetryableRead[]): FailedReads {

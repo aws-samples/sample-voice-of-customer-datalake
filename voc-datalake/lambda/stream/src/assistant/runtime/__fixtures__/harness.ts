@@ -3,6 +3,7 @@
  * every Converse request and toolset request it makes.
  */
 import type { BaseEvent } from '@ag-ui/core';
+import { EventType } from '@ag-ui/core';
 import { beforeEach, vi } from 'vitest';
 import type { ContentBlock } from '@aws-sdk/client-bedrock-runtime';
 import type { ConverseStreamParams } from '../../../bedrock/converse-stream.js';
@@ -24,7 +25,7 @@ import {
 
 const NOW = new Date('2026-03-01T12:00:00Z');
 
-export const searchTool = fakeServerTool('search_feedback', async () => ({
+export const searchTool = fakeServerTool('search_feedback', () => Promise.resolve({
   content: 'Found 3 complaints about delivery',
   sources: [{ feedback_id: 'f1', text: 'late' }, { feedback_id: 'f1', text: 'dup' }],
   webSources: [{ title: 'x', url: 'https://x.test' }],
@@ -70,10 +71,10 @@ export function harness(
       },
       toolGuidance: () => 'TOOL GUIDANCE',
       // No admin override configured: the runtime falls back to the default model.
-      resolveModel: async () => UNSET.value,
+      resolveModel: () => Promise.resolve(UNSET.value),
       webSearchConfigured: () => false,
       // No memories recalled unless a spec scripts them.
-      recallMemory: async () => [],
+      recallMemory: () => Promise.resolve([]),
       now: () => NOW,
     },
   };
@@ -95,11 +96,11 @@ export function silenceConsole(): void {
 }
 
 export function types(events: BaseEvent[]): string[] {
-  return events.map((event) => (event.type === 'CUSTOM' ? `CUSTOM:${String(event.name)}` : event.type));
+  return events.map((event) => (event.type === EventType.CUSTOM ? `CUSTOM:${String(event.name)}` : event.type));
 }
 
 export function finished(events: BaseEvent[]): BaseEvent {
-  const event = events.find((e) => e.type === 'RUN_FINISHED');
+  const event = events.find((e) => e.type === EventType.RUN_FINISHED);
   if (!event) throw new ServiceError('no RUN_FINISHED');
   return event;
 }
@@ -127,6 +128,6 @@ export function errorToolResult(toolUseId: string, text: string): ContentBlock[]
 
 /** The parsed arguments of the last TOOL_CALL_ARGS event (a client tool's normalised args). */
 export function lastToolCallArgs(events: BaseEvent[]): unknown {
-  const delta: unknown = [...events].reverse().find((e) => e.type === 'TOOL_CALL_ARGS')?.delta;
+  const delta: unknown = [...events].reverse().find((e) => e.type === EventType.TOOL_CALL_ARGS)?.delta;
   return JSON.parse(typeof delta === 'string' ? delta : 'null');
 }

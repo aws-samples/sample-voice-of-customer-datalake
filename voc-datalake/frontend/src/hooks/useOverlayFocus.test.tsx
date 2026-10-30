@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useOverlayFocus } from './useOverlayFocus'
+import { capturedMethod } from '@test/originals'
 
 function Harness({ closeOnFocusOut = false, initialFocus }: Readonly<{ closeOnFocusOut?: boolean; initialFocus?: string }>) {
   const [open, setOpen] = useState(false)
@@ -84,14 +85,14 @@ describe('useOverlayFocus', () => {
 // (the property is transitioned), so the first focus() is a no-op in a browser.
 describe('useOverlayFocus while the overlay is still becoming visible', () => {
   it('retries on later frames until focus lands', async () => {
-    const original = HTMLElement.prototype.focus
+    const realFocus = capturedMethod(HTMLElement.prototype, 'focus')
     const state = { refusals: 2 }
     const spy = vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
       if (this.textContent === 'First' && state.refusals > 0) {
         state.refusals -= 1
         return
       }
-      original.call(this, options)
+      realFocus(this, options)
     })
     try {
       render(<Harness />)

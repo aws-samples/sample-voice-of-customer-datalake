@@ -486,7 +486,7 @@ function truncationNotice(
 function formatSingleItem(item: FeedbackItem, index: number, label?: CategoryLabelFn): string {
   const sourceDate = item.source_created_at?.slice(0, 10) ?? 'N/A';
   const problemLine = item.problem_summary ? `- Problem Summary: ${item.problem_summary}` : '';
-  const score = Number(item.sentiment_score ?? 0).toFixed(2);
+  const score = (item.sentiment_score ?? 0).toFixed(2);
   return `### Feedback #${index + 1}
 - Source: ${item.source_platform ?? 'unknown'}
 - Date: ${sourceDate}
@@ -507,10 +507,13 @@ function formatToolResults(items: FeedbackItem[], label?: CategoryLabelFn): stri
 
 // ── Aggregate formatting ──
 
-function countBy(items: FeedbackItem[], field: keyof FeedbackItem): [string, number][] {
+/** The text fields an aggregate's distributions are counted by. */
+type DistributionField = 'urgency' | 'sentiment_label' | 'category' | 'source_platform';
+
+function countBy(items: FeedbackItem[], field: DistributionField): [string, number][] {
   const counts = new Map<string, number>();
   for (const item of items) {
-    const key = String(item[field] ?? 'unknown');
+    const key = item[field] ?? 'unknown';
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);

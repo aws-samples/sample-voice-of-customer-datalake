@@ -22,9 +22,23 @@
  */
 
 import * as cdk from 'aws-cdk-lib';
+import { RegionInfo } from 'aws-cdk-lib/region-info';
 import type { IConstruct } from 'constructs';
 
 import { inferenceScopeOf, type InferenceScope } from './inference-scope';
+
+/**
+ * The ARN partition (`aws`, `aws-cn`, `aws-us-gov`, ...) of `region`, so no ARN hardcodes `arn:aws:`.
+ * A concrete region gives its literal partition from RegionInfo, so the commercial-partition template is
+ * byte-identical to a hardcoded `arn:aws:`; an unresolved (token) region, or one RegionInfo does not
+ * know, falls back to the `AWS::Partition` pseudo parameter. Unlike `Stack.partition`, it does not depend
+ * on the `@aws-cdk/core:enablePartitionLiterals` flag (absent from the specs' synth context). Added 5.49
+ * wave (the CDK partition lint rule); also used by api-routes.ts.
+ */
+export function partitionOf(region: string): string {
+  if (cdk.Token.isUnresolved(region)) return cdk.Aws.PARTITION;
+  return RegionInfo.get(region).partition ?? cdk.Aws.PARTITION;
+}
 
 /** Strip the `global.` cross-region prefix to get the foundation-model id. */
 function toFoundationModelId(inferenceProfileId: string): string {
@@ -100,9 +114,10 @@ export function allowlistedModelArns(region: string, account: string, scope: Inf
   const arns: string[] = [];
   // eu: only models with a verified `eu.` profile (the rest are excluded in the EU).
   const models = scope === 'eu' ? ALLOWED_MODEL_IDS.filter((id) => EU_PROFILE_MODEL_IDS.includes(id)) : ALLOWED_MODEL_IDS;
+  const partition = partitionOf(region);
   for (const id of models) {
-    arns.push(`arn:aws:bedrock:${region}:${account}:inference-profile/${scopedModelId(id, scope)}`);
-    arns.push(`arn:aws:bedrock:*::foundation-model/${toFoundationModelId(id)}`);
+    arns.push(`arn:${partition}:bedrock:${region}:${account}:inference-profile/${scopedModelId(id, scope)}`);
+    arns.push(`arn:${partition}:bedrock:*::foundation-model/${toFoundationModelId(id)}`);
   }
   return arns;
 }
@@ -184,7 +199,7 @@ export const IMAGE_MODEL_REGION = 'us-west-2';
  * suppression.
  */
 export function imageModelArn(): string {
-  return `arn:aws:bedrock:${IMAGE_MODEL_REGION}::foundation-model/${IMAGE_MODEL_ID}`;
+  return `arn:${partitionOf(IMAGE_MODEL_REGION)}:bedrock:${IMAGE_MODEL_REGION}::foundation-model/${IMAGE_MODEL_ID}`;
 }
 
 /**
@@ -201,7 +216,7 @@ export const EMBEDDING_MODEL_ID = 'amazon.titan-embed-text-v2:0';
 
 /** IAM resource ARN for {@link EMBEDDING_MODEL_ID} in `region`. */
 export function embeddingModelArn(region: string): string {
-  return `arn:aws:bedrock:${region}::foundation-model/${EMBEDDING_MODEL_ID}`;
+  return `arn:${partitionOf(region)}:bedrock:${region}::foundation-model/${EMBEDDING_MODEL_ID}`;
 }
 
 /**

@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { anchorOfSelection } from './anchors'
 import type { RefObject } from 'react'
 import type { TextQuoteAnchor } from '../../api/documentReviewSchema'
+import { noCleanup } from '../../hooks/noCleanup'
 
 export interface SelectionAnchor {
   readonly anchor: TextQuoteAnchor
@@ -37,7 +38,7 @@ export function useSelectionAnchor(rootRef: RefObject<HTMLElement | null>, enabl
   }, [rootRef])
   useEffect(() => {
     const root = rootRef.current
-    if (!enabled || root === null) return undefined
+    if (!enabled || root === null) return noCleanup
     const onSelectionChange = () => {
       if (window.getSelection()?.isCollapsed ?? true) setSelected(null)
     }

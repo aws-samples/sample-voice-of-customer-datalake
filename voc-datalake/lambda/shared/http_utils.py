@@ -4,7 +4,8 @@ Uses tenacity for exponential backoff on transient failures.
 """
 
 import socket
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any, TypeGuard
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -128,7 +129,7 @@ def _require_policy(url: str) -> None:
         raise UnsafeURLError(url, reason)
 
 
-def _pinned_new_conn(conn: HTTPConnection) -> socket.socket:
+def _pinned_new_conn(conn: HTTPConnection, dns_host: str) -> socket.socket:
     """urllib3 `_new_conn` through `shared.url_policy.connect_to_validated_address`.
 
     The socket goes only to an address the policy vetted AT CONNECT (and its
@@ -141,7 +142,7 @@ def _pinned_new_conn(conn: HTTPConnection) -> socket.socket:
     """
     try:
         # `conn.timeout` is already resolved (urllib3 `Timeout.resolve_default_timeout`).
-        sock = connect_to_validated_address((conn._dns_host, conn.port), conn.timeout, conn.source_address)
+        sock = connect_to_validated_address((dns_host, conn.port), conn.timeout, conn.source_address)
     except BlockedDestinationError as e:
         raise UnsafeURLError(f"{conn.host}:{conn.port}", PRIVATE_ADDRESS_ERROR) from e
     except socket.gaierror as e:
@@ -155,27 +156,50 @@ def _pinned_new_conn(conn: HTTPConnection) -> socket.socket:
     return sock
 
 
+# `_dns_host` is the name urllib3's own `_new_conn` resolves (`host` without its trailing-dot strip);
+# the subclasses read it as urllib3 does and hand it over.
 class _PinnedHTTPConnection(HTTPConnection):
     def _new_conn(self) -> socket.socket:
-        return _pinned_new_conn(self)
+        return _pinned_new_conn(self, self._dns_host)
 
 
 class _PinnedHTTPSConnection(HTTPSConnection):
     def _new_conn(self) -> socket.socket:
-        return _pinned_new_conn(self)
+        return _pinned_new_conn(self, self._dns_host)
 
 
-# `cast`, not a runtime conversion: urllib3 declares `ConnectionCls` as its own
-# BaseHTTP(S)Connection protocols, which its concrete HTTP(S)Connection classes
-# do not structurally satisfy for a type checker (`default_socket_options` is
-# `Final` there and a mutable ClassVar in the protocol) although urllib3 itself
-# assigns exactly those classes. The subclasses below change only `_new_conn`.
+# urllib3 declares `ConnectionCls` as its own BaseHTTP(S)Connection protocols, which its
+# concrete HTTP(S)Connection classes do not structurally satisfy for a type checker
+# (`default_socket_options` is `Final` there and a mutable ClassVar in the protocol)
+# although urllib3 itself assigns exactly those classes. These guards state that rule and
+# check it when the module loads: a pinned class must derive from urllib3's own concrete class.
+def _is_http_connection_class(cls: type) -> 'TypeGuard[type[BaseHTTPConnection]]':
+    return issubclass(cls, HTTPConnection)
+
+
+def _is_https_connection_class(cls: type) -> 'TypeGuard[type[BaseHTTPSConnection]]':
+    return issubclass(cls, HTTPSConnection)
+
+
+def _http_connection_class(cls: type) -> 'type[BaseHTTPConnection]':
+    if not _is_http_connection_class(cls):
+        raise TypeError(f'{cls.__name__} is not a urllib3 HTTPConnection')
+    return cls
+
+
+def _https_connection_class(cls: type) -> 'type[BaseHTTPSConnection]':
+    if not _is_https_connection_class(cls):
+        raise TypeError(f'{cls.__name__} is not a urllib3 HTTPSConnection')
+    return cls
+
+
+# The subclasses below change only `_new_conn`.
 class _PinnedHTTPPool(urllib3.HTTPConnectionPool):
-    ConnectionCls = cast('type[BaseHTTPConnection]', _PinnedHTTPConnection)
+    ConnectionCls = _http_connection_class(_PinnedHTTPConnection)
 
 
 class _PinnedHTTPSPool(urllib3.HTTPSConnectionPool):
-    ConnectionCls = cast('type[BaseHTTPSConnection]', _PinnedHTTPSConnection)
+    ConnectionCls = _https_connection_class(_PinnedHTTPSConnection)
 
 
 class _PinnedAdapter(HTTPAdapter):
@@ -241,23 +265,52 @@ def _refuse_downgrade(previous_url: str, next_url: str) -> None:
 _CAPPED_READ_CHUNK = 65_536
 
 
+class _CappedBody:
+    """Stands in for a streamed response's ``raw`` so that requests reads at most ``max_bytes`` of the body.
+
+    requests reads ``.content`` through ``raw.stream(...)`` (inside its own error mapping: a broken
+    chunked body is still a ``ChunkedEncodingError``), so this yields the original body's decoded
+    chunks, cut at the cap, and stops pulling from the connection there.
+    """
+
+    def __init__(self, raw: Any, max_bytes: int) -> None:
+        self._raw = raw
+        self._max_bytes = max_bytes
+
+    def stream(self, _chunk_size: int, decode_content: bool = True) -> Iterator[bytes]:
+        remaining = self._max_bytes
+        for chunk in self._chunks(min(_CAPPED_READ_CHUNK, self._max_bytes), decode_content):
+            piece = chunk[:remaining]
+            yield piece
+            remaining -= len(piece)
+            if remaining <= 0:
+                return
+
+    def _chunks(self, size: int, decode_content: bool) -> Iterator[bytes]:
+        """The original body in ``size`` pieces, read the way requests itself reads a ``raw``."""
+        if hasattr(self._raw, 'stream'):
+            yield from self._raw.stream(size, decode_content=decode_content)
+            return
+        while chunk := self._raw.read(size):
+            yield chunk
+
+
 def _read_capped(response: requests.Response, max_bytes: int) -> requests.Response:
     """Read at most ``max_bytes`` of a streamed body, close the connection, keep the bytes read.
 
     The bytes become the response's content, so ``.content`` / ``.text`` work as on an
-    unstreamed response (requests' own cache attribute; the rest of the body is never read).
+    unstreamed response; the rest of the body is never read.
     """
-    chunks: list[bytes] = []
-    remaining = max_bytes
+    original = response.raw
+    response.raw = _CappedBody(original, max_bytes)
     try:
-        for chunk in response.iter_content(chunk_size=min(_CAPPED_READ_CHUNK, max_bytes)):
-            chunks.append(chunk[:remaining])
-            remaining -= len(chunks[-1])
-            if remaining <= 0:
-                break
+        _ = response.content  # read (and cached by requests) through the cap
     finally:
-        response.close()
-    response._content = b''.join(chunks)
+        # Closed, not released for reuse: the connection may still hold unread body bytes.
+        original.close()
+        release_conn = getattr(original, 'release_conn', None)
+        if release_conn is not None:
+            release_conn()
     return response
 
 

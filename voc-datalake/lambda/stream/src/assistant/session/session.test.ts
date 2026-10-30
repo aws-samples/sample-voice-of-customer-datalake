@@ -30,16 +30,16 @@ function fakeStore(options: { stored?: StoredSession | null; fail?: boolean } = 
   return {
     puts,
     loads,
-    load: async (callerSub, threadId) => {
+    load: (callerSub, threadId) => {
       loads.push([callerSub, threadId]);
-      return options.stored ?? null;
+      return Promise.resolve(options.stored ?? null);
     },
-    put: async (callerSub, item, revision) => {
-      if (options.fail) throw new ServiceError('ProvisionedThroughputExceeded');
+    put: (callerSub, item, revision) => {
+      if (options.fail) return Promise.reject(new ServiceError('ProvisionedThroughputExceeded'));
       puts.push({ callerSub, item, revision });
-      return 'written';
+      return Promise.resolve('written');
     },
-    cancelRequested: async () => false,
+    cancelRequested: () => Promise.resolve(false),
   };
 }
 
@@ -164,9 +164,9 @@ describe('the partition is always the verified caller', () => {
 
   it('the DynamoDB store keys every read and conditional write by the caller, and refuses another partition', async () => {
     const sent: unknown[] = [];
-    const client = { send: vi.fn(async (command: GetCommand | PutCommand) => {
+    const client = { send: vi.fn((command: GetCommand | PutCommand) => {
       sent.push(command.input);
-      return command instanceof GetCommand ? { Item: { created_at: '2026-01-01T00:00:00Z', messages_json: '[]' } } : {};
+      return Promise.resolve(command instanceof GetCommand ? { Item: { created_at: '2026-01-01T00:00:00Z', messages_json: '[]' } } : {});
     }) };
     const store = createDynamoSessionStore(client, 'conv-table');
 
@@ -191,7 +191,7 @@ describe('the partition is always the verified caller', () => {
   });
 
   it('reads the stored rename (custom_title) with the conversation, and ignores a blank one', async () => {
-    const stored = (item: Record<string, unknown>) => createDynamoSessionStore({ send: async () => ({ Item: item }) }, 't');
+    const stored = (item: Record<string, unknown>) => createDynamoSessionStore({ send: () => Promise.resolve({ Item: item }) }, 't');
     await expect(stored({ created_at: 'c', messages_json: '[]', custom_title: 'Pricing churn' }).load('a', 't1'))
       .resolves.toStrictEqual({ createdAt: 'c', messages: [], customTitle: 'Pricing churn' });
     await expect(stored({ created_at: 'c', messages_json: '[]', custom_title: '' }).load('a', 't1'))
@@ -297,19 +297,18 @@ describe('the writer: ordered, coalescing, fire-and-forget', () => {
 
   it('stops writing once a newer revision owns the conversation', async () => {
     const seen: number[] = [];
-    await twoWritesThrough(async (_item, revision) => {
+    await twoWritesThrough((_item, revision) => {
       seen.push(revision);
-      return 'superseded';
+      return Promise.resolve('superseded');
     });
     expect(seen).toHaveLength(1);
   });
 
   it('keeps writing after a failed write', async () => {
     const calls = { n: 0 };
-    await twoWritesThrough(async () => {
+    await twoWritesThrough(() => {
       calls.n += 1;
-      if (calls.n === 1) throw new ServiceError('throttled');
-      return 'written';
+      return calls.n === 1 ? Promise.reject(new ServiceError('throttled')) : Promise.resolve('written');
     });
     expect(calls.n).toBe(2);
   });

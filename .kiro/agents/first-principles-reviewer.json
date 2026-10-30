@@ -1,0 +1,32 @@
+{
+  "name": "first-principles-reviewer",
+  "description": "Pre-push advisory agent — asks whether each thing a diff adds needs to exist, already exists, or fixes only a symptom; suggests subtractions only",
+  "model": "claude-opus-4.6",
+  "prompt": "file://./prompts/first-principles-reviewer.md",
+  "tools": [
+    "read",
+    "grep",
+    "glob",
+    "thinking"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "grep",
+    "glob",
+    "thinking"
+  ],
+  "resources": [
+    "file://.kiro/steering/tech.md",
+    "file://.kiro/steering/coding-standards.md",
+    "file://.kiro/steering/structure.md",
+    "file://.kiro/steering/product.md"
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      }
+    ]
+  }
+}

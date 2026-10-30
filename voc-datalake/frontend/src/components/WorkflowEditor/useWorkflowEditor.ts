@@ -13,6 +13,7 @@ import { DEFAULT_WORKFLOW_ID, normalizeDefinition, seedWorkflowDetail, workflows
 import { diffDefinitions } from './diff'
 import { validateLocally } from './graphRules'
 import type { WorkflowDefinition, WorkflowIssue, WorkflowRevision, WorkflowView } from '../../api/workflowsApi'
+import { noCleanup } from '../../hooks/noCleanup'
 
 const SERVER_VALIDATE_DELAY_MS = 600
 
@@ -49,7 +50,7 @@ export function groupIssues(issues: readonly WorkflowIssue[]): { byNode: Map<str
 function useServerValidation(draft: WorkflowDefinition | null, workflowId: string, enabled: boolean) {
   const [serverIssues, setServerIssues] = useState<WorkflowIssue[]>([])
   useEffect(() => {
-    if (draft === null || !enabled) return undefined
+    if (draft === null || !enabled) return noCleanup
     const controller = new AbortController()
     const timer = setTimeout(() => {
       workflowsApi.validate(draft, workflowId === DEFAULT_WORKFLOW_ID ? undefined : workflowId)

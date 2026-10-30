@@ -35,7 +35,7 @@ function stubTab({ visible, focused }: { visible: boolean; focused: boolean }) {
   vi.spyOn(document, 'hasFocus').mockReturnValue(focused)
 }
 
-const offScreen = { enabled: true, threadOnScreen: false, onOpen: () => undefined }
+const offScreen = { enabled: true, threadOnScreen: false, onOpen: () => {} }
 
 function only(): Shown {
   expect(shown).toHaveLength(1)
@@ -110,7 +110,7 @@ describe('announceRunEnd', () => {
 
   it('a click focuses the window, opens the conversation and closes the notification', () => {
     const onOpen = vi.fn()
-    const focus = vi.spyOn(window, 'focus').mockImplementation(() => undefined)
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => {})
     announceRunEnd('t1', { status: 'idle' }, { ...offScreen, onOpen })
     only().instance.onclick?.()
     expect(focus).toHaveBeenCalledExactlyOnceWith()
@@ -184,15 +184,15 @@ describe('announcePlanChange', () => {
     ['issues', 'A plan finished with problems', 'voc-assistant:plan:pl_a1b2c3d4e5f6:planIssues'],
     ['approval', 'A plan step needs your approval', 'voc-assistant:plan:pl_a1b2c3d4e5f6:planApproval'],
   ] as const)('announces %s with a generic title and one tag per plan and kind', (notice, title, tag) => {
-    expect(announcePlanChange('pl_a1b2c3d4e5f6', notice, { enabled: true, onOpen: () => undefined })).toBe(true)
+    expect(announcePlanChange('pl_a1b2c3d4e5f6', notice, { enabled: true, onOpen: () => {} })).toBe(true)
     expect(only().title).toBe(title)
     expect(only().options?.tag).toBe(tag)
   })
 
   it('stays quiet while the tab is in front or notifications are off', () => {
-    expect(announcePlanChange('pl_a1b2c3d4e5f6', 'done', { enabled: false, onOpen: () => undefined })).toBe(false)
+    expect(announcePlanChange('pl_a1b2c3d4e5f6', 'done', { enabled: false, onOpen: () => {} })).toBe(false)
     stubTab({ visible: true, focused: true })
-    expect(announcePlanChange('pl_a1b2c3d4e5f6', 'done', { enabled: true, onOpen: () => undefined })).toBe(false)
+    expect(announcePlanChange('pl_a1b2c3d4e5f6', 'done', { enabled: true, onOpen: () => {} })).toBe(false)
     expect(shown).toHaveLength(0)
   })
 

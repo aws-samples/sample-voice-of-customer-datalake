@@ -11,6 +11,7 @@ import { TestRouter } from '@test/TestRouter'
 import { asRecord } from '../../../api/wireRecord'
 import { adminFlag, fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { SALES_BOARD, boardRoutes, refusal } from './board-fixtures'
+import { parsedJson } from '@test/jsonText'
 
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
@@ -43,7 +44,7 @@ describe('the company domains card', () => {
     await user.type(screen.getByRole('textbox', { name: 'Company email domains' }), 'acme.example{Enter}')
     await user.click(screen.getByRole('button', { name: 'Save domains' }))
     await waitFor(() => expect(calls('PUT', '/participants/settings')).toHaveLength(1))
-    expect(JSON.parse(String(calls('PUT', '/participants/settings')[0]?.[1]?.body))).toStrictEqual({
+    expect(parsedJson(calls('PUT', '/participants/settings')[0]?.[1]?.body)).toStrictEqual({
       company_domains: ['example.com', 'acme.example'],
     })
   })
@@ -109,7 +110,7 @@ describe('New board', () => {
     await user.click(dialog.getByRole('radio', { name: /Customer service issues/ }))
     await user.click(dialog.getByRole('button', { name: 'Create board' }))
     await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent('board=brd_0000abcd'))
-    expect(JSON.parse(String(calls('POST', '/feature-requests/boards')[0]?.[1]?.body))).toStrictEqual({
+    expect(parsedJson(calls('POST', '/feature-requests/boards')[0]?.[1]?.body)).toStrictEqual({
       name: 'Support issues', template: 'service', slug: 'support-issues',
     })
   })
@@ -150,7 +151,7 @@ describe('saving a board in its editor', () => {
       // The first read answers; the refetch after the save never does (a slow network), so only the cache can tell.
       'GET /feature-requests/boards': () => {
         listed.calls += 1
-        return listed.calls === 1 ? { boards: [SALES_BOARD] } : new Promise(() => undefined)
+        return listed.calls === 1 ? { boards: [SALES_BOARD] } : new Promise(() => {})
       },
       'PUT /feature-requests/boards/brd_sales': (body) => ({ board: { ...SALES_BOARD, ...asRecord(body) } }),
     }))

@@ -65,7 +65,7 @@ const PlanRow = memo(function PlanRow({ plan, open, onToggle, removing, onRemove
   )
 })
 
-const ignoreOpen = () => undefined
+const ignoreOpen = () => {}
 
 export function PlansList() {
   const { t } = useTranslation('agents')

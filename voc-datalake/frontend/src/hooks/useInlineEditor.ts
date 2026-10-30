@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
+import { noCleanup } from './noCleanup'
 
 const FOCUSABLE = 'select, input, textarea, button, [tabindex]:not([tabindex="-1"])'
 
@@ -55,7 +56,7 @@ export function useInlineEditor(): InlineEditor {
       returnFocus.current = false
       triggerRef.current?.focus()
     }
-    return undefined
+    return noCleanup
   }, [open])
 
   const close = useCallback(() => {

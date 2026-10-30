@@ -10,6 +10,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { fetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import RadarBrandsEditor from './RadarBrandsEditor'
+import { parsedJson } from '@test/jsonText'
 
 /** What the server would answer: every saved brand now on the list. */
 function savedFrom(body: unknown): unknown[] {
@@ -29,7 +30,7 @@ export function route(brands: unknown[], put: (body: unknown) => unknown = (body
 }
 
 export const lastPut = (): unknown =>
-  JSON.parse(String(fetchApi.mock.calls.filter(([path, options]) => path === '/radar/brands' && options?.method === 'PUT').at(-1)?.[1]?.body))
+  parsedJson(fetchApi.mock.calls.filter(([path, options]) => path === '/radar/brands' && options?.method === 'PUT').at(-1)?.[1]?.body)
 
 export const renderEditor = () =>
   renderWithQueryClient(<MemoryRouter><RadarBrandsEditor totals={new Map([['globex', 12]])} /></MemoryRouter>)

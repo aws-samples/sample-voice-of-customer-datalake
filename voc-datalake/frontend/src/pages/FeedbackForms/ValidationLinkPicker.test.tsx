@@ -306,7 +306,7 @@ describe('validation link in the form editor', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('reuses the shared project query keys so the cache is not split', async () => {
+  it('reuses the shared project query keys so the cache is not split', () => {
     // A literal key here would still work — it would just address a separate
     // cache entry and miss Projects.tsx's invalidations. Nothing observable
     // fails, hence this test.

@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { RefObject } from 'react'
+import { noCleanup } from './noCleanup'
 
 export interface DisclosurePopover {
   readonly open: boolean
@@ -43,7 +44,7 @@ function useDismissOnOutside(
   }>,
 ): void {
   useEffect(() => {
-    if (!open) return undefined
+    if (!open) return noCleanup
     const onMouseDown = (event: MouseEvent) => {
       const target = event.target
       if (!(target instanceof Node)) return

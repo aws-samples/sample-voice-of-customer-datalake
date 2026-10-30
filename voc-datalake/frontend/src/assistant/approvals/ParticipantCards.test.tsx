@@ -53,7 +53,7 @@ describe('add_participants card', () => {
   })
 
   it('says the list is being read instead of showing its raw id while the lists load', () => {
-    routeFetchApi({ 'GET /participants/lists': () => new Promise(() => undefined) })
+    routeFetchApi({ 'GET /participants/lists': () => new Promise(() => {}) })
     card()
     expect(field('list').getByText('Reading the list…')).toBeInTheDocument()
     expect(screen.queryByText(LIST_ID)).not.toBeInTheDocument()

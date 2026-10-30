@@ -19,6 +19,7 @@ import { projectsKey } from '../../api/projectQueryKeys'
 import { DEFAULT_WORKFLOW_ID, workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import type { QueryClient } from '@tanstack/react-query'
 import { modelSettingsKey } from '../../api/queryKeys'
+import { noCleanup } from '../../hooks/noCleanup'
 
 /** How long after the agent loads the idle prefetch waits (lets the first paint settle). */
 const IDLE_PREFETCH_MS = 400
@@ -66,7 +67,7 @@ export function useAgentTabPrefetch(
     if (agentId !== undefined && run !== undefined) void run(client, { agentId, workflowId, isAdmin })
   }, [agentId, workflowId, client, isAdmin])
   useEffect(() => {
-    if (agentId === undefined) return undefined
+    if (agentId === undefined) return noCleanup
     const timer = setTimeout(() => Object.keys(PREFETCH).forEach(prefetch), IDLE_PREFETCH_MS)
     return () => clearTimeout(timer)
   }, [agentId, prefetch])

@@ -36,5 +36,4 @@ export function configureAmplify(): void {
   }, { ssr: false })
 
   amplifyState.configured = true
-  console.log('Amplify configured for IAM signing')
 }

@@ -38,12 +38,13 @@ async function openFullScreen() {
 }
 
 describe('SessionsSidebar', () => {
-  beforeEach(() => stubElementScrollIntoView())
-
   beforeEach(() => {
+    // The stub's restore is this hook's teardown (vitest runs a returned function after each test).
+    const restoreScrollIntoView = stubElementScrollIntoView()
     scripts.length = 0
     useThreadStore.getState().reset()
     useAssistantUiStore.getState().reset()
+    return restoreScrollIntoView
   })
 
   describe('collapse and expand', () => {

@@ -58,7 +58,7 @@ function Page({ withPageDialog = false }: Readonly<{ withPageDialog?: boolean }>
     <div>
       <p data-testid="location">{`${location.pathname}${location.search}`}</p>
       <button type="button" onClick={() => { void navigate(-1) }}>History back</button>
-      {withPageDialog ? <ModalShell isOpen onClose={() => undefined} ariaLabel="Acme reviews">{links}</ModalShell> : links}
+      {withPageDialog ? <ModalShell isOpen onClose={() => {}} ariaLabel="Acme reviews">{links}</ModalShell> : links}
       {/* Stands in for the full-screen assistant, which Layout mounts before the host. */}
       <div data-testid="fullscreen-assistant" className="fixed inset-0 z-[60]" />
     </div>

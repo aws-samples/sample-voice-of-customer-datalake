@@ -24,7 +24,7 @@ const APPROVAL_NOTE = ' Requires the user\u2019s approval: the user sees exactly
   + 'card and nothing changes unless they approve. Never say the change was made unless the tool result has '
   + 'status "executed".';
 
-type ArgsSchema<T> = z.ZodType<T, unknown>;
+type ArgsSchema<T> = z.ZodType<T>;
 
 export interface ClientToolConfig<T extends Record<string, unknown>> {
   name: ClientToolName;
@@ -41,9 +41,9 @@ export interface ClientToolConfig<T extends Record<string, unknown>> {
   agentScoped?: boolean;
   summarize(args: T): string;
   /** See `ClientToolDefinition.precheck`; receives the parsed args. */
-  precheck?(args: T, ctx: AssistantRunContext): Promise<string | undefined>;
+  precheck?: (args: T, ctx: AssistantRunContext) => Promise<string | undefined>;
   /** See `ClientToolDefinition.describe`; receives the parsed args. */
-  describe?(args: T, ctx: AssistantRunContext): Promise<string>;
+  describe?: (args: T, ctx: AssistantRunContext) => Promise<string>;
 }
 
 /** Tool id argument → the page field that defaults it, per scoping flag. */

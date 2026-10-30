@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { anchorRange, indexText } from './anchors'
 import type { RefObject } from 'react'
 import type { CommentThread } from '../../api/documentReviewSchema'
+import { noCleanup } from '../../hooks/noCleanup'
 
 const HIGHLIGHT = 'voc-comment'
 const ACTIVE_HIGHLIGHT = 'voc-comment-active'
@@ -101,7 +102,7 @@ export function useCommentLayout(
   }, [measure, content])
   useEffect(() => {
     const root = rootRef.current
-    if (root === null || typeof ResizeObserver === 'undefined') return undefined
+    if (root === null || typeof ResizeObserver === 'undefined') return noCleanup
     const observer = new ResizeObserver(() => measure())
     observer.observe(root)
     return () => observer.disconnect()

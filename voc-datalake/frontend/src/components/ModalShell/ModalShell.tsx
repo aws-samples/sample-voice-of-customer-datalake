@@ -67,6 +67,7 @@ import {
   bodyOf, focusable, holdsFrame, isFrameNode, nestedDocuments, tabAcrossFrame, tabWithinPanel,
 } from './frameFocus'
 import { useFrameEscape } from './useFrameEscape'
+import { noCleanup } from '../../hooks/noCleanup'
 
 interface ModalShellBaseProps {
   readonly isOpen: boolean
@@ -175,7 +176,7 @@ export default function ModalShell({
   // Move focus into the dialog on open, and restore it to whatever opened the
   // dialog on close — otherwise keyboard users are dropped at the top of the page.
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) return noCleanup
     const active = document.activeElement
     // Type guard rather than an assertion: activeElement is Element | null, and
     // only an HTMLElement can be re-focused.
@@ -189,9 +190,9 @@ export default function ModalShell({
   // Register in the open-shell stack for as long as this shell is open, so the
   // keydown handler can tell whether it is the top-most dialog.
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) return noCleanup
     const panel = panelRef.current
-    if (!panel) return
+    if (!panel) return noCleanup
     openShells.push(panel)
     return () => {
       const i = openShells.indexOf(panel)
@@ -200,7 +201,7 @@ export default function ModalShell({
   }, [isOpen])
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) return noCleanup
     /**
      * Captured ONCE per open, and everything below is keyed on it: the top-most check
      * compares against it, the `load` listener and the MutationObserver attach to it,
@@ -223,7 +224,7 @@ export default function ModalShell({
      * worse than none — it teaches the next reader to guard the wrong edit.
      */
     const panel = panelRef.current
-    if (!panel) return
+    if (!panel) return noCleanup
     /**
      * The handler as attached to ONE document.
      *

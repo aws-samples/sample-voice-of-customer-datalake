@@ -329,7 +329,7 @@ describe('prototype card rebuild guard', () => {
     expect(mockBuildPrototype).not.toHaveBeenCalled()
   })
 
-  it('never opens the panel on its own, whatever the documents do', async () => {
+  it('never opens the panel on its own, whatever the documents do', () => {
     // The half of the old open-flag bug that still applies: a panel appearing
     // unasked is one reflexive click from a multi-minute billable build. With
     // visibility owned rather than derived, no document change can produce it.

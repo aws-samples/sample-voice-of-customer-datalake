@@ -52,7 +52,7 @@ class TestCloseXrayEmitterSocket:
         """One pytest session over a test that imports the SDK; ``plugin`` is ``conftest`` or ``no:conftest``."""
         (tmp_path / 'test_imports_sdk.py').write_text(textwrap.dedent('''
             def test_imports_the_sdk():
-                import aws_xray_sdk.core  # noqa: F401
+                import aws_xray_sdk.core  # noqa: F401 — the import is what the generated test checks
         '''))
         return subprocess.run(
             [sys.executable, '-W', 'always', '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-p', plugin, str(tmp_path)],

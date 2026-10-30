@@ -134,7 +134,7 @@ class _Ingestor(AppReviewsIngestor[_App]):
         return {"id": review["id"], "app": app.name}
 
     # The SQS / raw-archive side is not what this suite is about.
-    def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:  # noqa: ARG002
+    def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:  # noqa: ARG002 — overrides the base signature
         return item
 
     def send_to_queue(self, items: list[dict]) -> int:

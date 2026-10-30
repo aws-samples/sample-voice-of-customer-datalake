@@ -5,14 +5,14 @@ Every producer resolves its source's profile through ``cached_source_profile_str
 would be a real ``GetItem``; seeding the cache stands in for the stored row.
 """
 import os
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 
 from shared import source_profiles
 
 
 @contextmanager
-def seeded_source_profiles(profiles: list[dict] | None = None) -> Iterator[None]:
+def seeded_source_profiles(profiles: list[dict] | None = None) -> Generator[None, None, None]:
     """Serve ``profiles`` (default: none configured) from the cache for the block.
 
     Nests: the previous cache state comes back on exit, so a test can seed its
@@ -36,7 +36,7 @@ def seeded_source_profiles(profiles: list[dict] | None = None) -> Iterator[None]
 
 
 @contextmanager
-def unreadable_source_profiles() -> Iterator[None]:
+def unreadable_source_profiles() -> Generator[None, None, None]:
     """The cache holds a FAILED read for the block: lenient readers get defaults, strict ones raise."""
     with seeded_source_profiles():
         source_profiles._cache['failed'] = True

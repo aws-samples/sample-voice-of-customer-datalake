@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import shared fixtures
-from jobs.conftest import *  # noqa: F403
+from jobs.conftest import *  # noqa: F403 — every shared job fixture
 
 
 @pytest.fixture

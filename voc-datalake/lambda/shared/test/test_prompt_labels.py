@@ -28,8 +28,8 @@ class TestPromptLabels:
 
 class TestLoad:
     def test_reads_the_category_config_and_the_source_profiles(self, monkeypatch):
-        import shared.api as api
         import shared.prompt_labels_store as loader
+        from shared import api
 
         monkeypatch.setattr(api, '_categories_cache', None)
         table = MagicMock()

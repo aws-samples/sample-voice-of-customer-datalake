@@ -53,7 +53,7 @@ const projectPage = () => runBody({
 
 /** Runs one attempted write (then a closing text turn) under `policy`. */
 async function attempt(name: string, input: Record<string, unknown>, policy: AiWritingPolicy): Promise<{ h: Harness; events: BaseEvent[] }> {
-  const h = catalogueHarness([{ toolUses: [{ id: 'tu_w', name, input }] }, { text: 'Let me coach you instead.' }], async () => policy);
+  const h = catalogueHarness([{ toolUses: [{ id: 'tu_w', name, input }] }, { text: 'Let me coach you instead.' }], () => Promise.resolve(policy));
   return { h, events: await run(projectPage(), h) };
 }
 
@@ -63,7 +63,7 @@ function refusalText(h: Harness): unknown {
 
 describe('runAssistant — Human-driven, nothing unlocked', () => {
   it('never offers generate_document and adds the coaching section to the prompt', async () => {
-    const h = catalogueHarness([{ text: 'Tell me what you would say first.' }], async () => LOCKED);
+    const h = catalogueHarness([{ text: 'Tell me what you would say first.' }], () => Promise.resolve(LOCKED));
     await run(projectPage(), h);
     const offered = offeredTools(h);
     expect([offered.includes('generate_document'), offered.includes('update_document'), offered.includes('merge_documents')])
@@ -112,7 +112,7 @@ describe('runAssistant — unlocks, AI-driven and an unreadable mode', () => {
   });
 
   it('reads an unreadable mode as locked: no generate_document, the coaching section present', async () => {
-    const h = catalogueHarness([{ text: 'Coaching.' }], async () => { throw new Error('AccessDenied'); });
+    const h = catalogueHarness([{ text: 'Coaching.' }], () => Promise.reject(new Error('AccessDenied')));
     await run(projectPage(), h);
     expect(offeredTools(h)).not.toContain('generate_document');
     expect(nth(h.calls, 0).systemSuffix).toContain('## Way of working with AI');

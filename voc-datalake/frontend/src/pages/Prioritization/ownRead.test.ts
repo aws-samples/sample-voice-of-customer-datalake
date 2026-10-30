@@ -106,7 +106,7 @@ describe('normalizeRow validates the ONE row a create answers with', () => {
       { row_id: 'row-1', document_ids: ['prd-1'] },
       { row_id: 'row-1', project_id: 'p1' },
     ]
-    expect(refused.map((raw) => normalizeRow(raw))).toStrictEqual(refused.map(() => undefined))
+    expect(refused.map((raw) => normalizeRow(raw))).toStrictEqual(Array.from({ length: refused.length }))
   })
 
   it('refuses a row it could not address', () => {

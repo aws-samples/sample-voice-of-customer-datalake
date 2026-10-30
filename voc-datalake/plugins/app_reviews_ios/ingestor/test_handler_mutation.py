@@ -30,11 +30,12 @@ branch could never run); it was deleted rather than tested.
 import importlib
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -75,7 +76,7 @@ def handler():
 
 
 @contextmanager
-def _ingestor(handler, secret: dict | None = None, *, execution_id=None) -> Iterator:
+def _ingestor(handler, secret: dict | None = None, *, execution_id=None) -> Generator[Any, None, None]:
     """Construct an `IOSAppReviewsIngestor` offline from *secret* (bare keys)."""
     session = MagicMock(name="session")
     with (

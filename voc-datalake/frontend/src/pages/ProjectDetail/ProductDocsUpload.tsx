@@ -31,6 +31,7 @@ import ProductCard from './ProductCard'
 import { formatFileSize } from '../../utils/file'
 import { isImagePrepError, resizeImageForUpload } from './resizeImage'
 import type { ProductDoc } from '../../api/projectTypes'
+import { noCleanup } from '../../hooks/noCleanup'
 
 /**
  * Exactly the content types the upload boundary accepts — see
@@ -120,7 +121,7 @@ export function DocsUpload({ projectId, canEdit }: { readonly projectId: string;
 
   const inFlight = useMemo(() => docs.some((d) => d.status === 'pending' || d.status === 'extracting'), [docs])
   useEffect(() => {
-    if (!inFlight) return
+    if (!inFlight) return noCleanup
     const start = Date.now()
     const id = setInterval(() => {
       if (Date.now() - start > 60_000) { clearInterval(id); return }

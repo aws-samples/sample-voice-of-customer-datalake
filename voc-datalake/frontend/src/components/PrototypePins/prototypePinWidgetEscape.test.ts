@@ -84,7 +84,7 @@ describe('the pin widget forwards Escape to its host frame', () => {
     const rewrite = observers.find((o) => o.target === document)
     expect(rewrite?.options).toStrictEqual({ childList: true })
     const added = vi.spyOn(window, 'addEventListener')
-    rewrite?.callback([], new RecordingObserver(() => undefined))
+    rewrite?.callback([], new RecordingObserver(() => {}))
     expect(added.mock.calls.map(([type, , capture]) => [type, capture])).toStrictEqual([['message', undefined], ['keydown', true]])
     added.mockRestore()
   })

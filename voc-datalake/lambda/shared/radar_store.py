@@ -94,7 +94,7 @@ def radar_day(item: Mapping[str, Any]) -> str:
     """
     imported = str(item['date'])
     written = basis_date(dict(item), DATE_BASIS_REVIEW)
-    return written if written <= imported else imported
+    return min(written, imported)
 
 
 def radar_item(item: Mapping[str, Any], brand: str, brand_label: str) -> dict[str, Any]:

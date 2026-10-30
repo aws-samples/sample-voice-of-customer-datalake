@@ -106,7 +106,7 @@ describe('FormEditor — the shared Cancel-keeps-the-draft contract (3.00.00 R2)
       },
       expectLeft: () => expect(onCancel).toHaveBeenCalledTimes(1),
       // The page's categories query refetched: the host hands over a new array.
-      whileDialogOpen: async () => { view.rerender?.(editor([{ id: 'delivery', name: 'Delivery', subcategories: [] }])) },
+      whileDialogOpen: () => { view.rerender?.(editor([{ id: 'delivery', name: 'Delivery', subcategories: [] }])); return Promise.resolve() },
     })
   })
 })

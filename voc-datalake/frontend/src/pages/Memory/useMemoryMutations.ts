@@ -15,7 +15,7 @@ type RecordWrite = (items: readonly MemoryItem[], options?: { created?: boolean 
 const ARCHIVED: MemoryStatus = 'archived'
 const present = (item: MemoryItem | null): MemoryItem[] => (item === null ? [] : [item])
 
-export function useMemoryMutations(record: RecordWrite, onMerged: () => void, onNotCounted: (memoryId: string) => void = () => undefined) {
+export function useMemoryMutations(record: RecordWrite, onMerged: () => void, onNotCounted: (memoryId: string) => void = () => {}) {
   const queryClient = useQueryClient()
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: memoryKeys.all() })
   const settle = (item: MemoryItem | null) => { record(present(item)); invalidate() }

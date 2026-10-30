@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -137,7 +137,7 @@ def _table(resource: Any, name: str, *, index: bool) -> Any:
 
 
 @contextmanager
-def plan_env() -> Iterator[PlanEnv]:
+def plan_env() -> Generator[PlanEnv, None, None]:
     import shared.aws
     # The table env vars the conductor reads, so lambda/shared/test/strict_iam.py judges every call
     # against the conductor role's grants (memory-agents-dynamodb-grants.json).

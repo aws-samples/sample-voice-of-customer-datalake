@@ -1,0 +1,24 @@
+{
+  "_comment": "Per-file coverage gate (docs/coverage-gate.md). floor = the minimum line rate, in percent, every measured production file must reach unless the suite's baseline lists it. HUMAN-OWNED gate values, like eslint-rules/quality-gates.mjs: never lower one to make a change pass. Paths are relative to the repository root; base = the directory the report's relative paths are relative to.",
+  "python": {
+    "format": "py",
+    "report": ".cache/coverage/python.json",
+    "base": "voc-datalake",
+    "baseline": "scripts/coverage/baselines/python.txt",
+    "floor": 80
+  },
+  "frontend": {
+    "format": "vitest",
+    "report": ".cache/coverage/frontend/coverage-summary.json",
+    "base": "voc-datalake/frontend",
+    "baseline": "scripts/coverage/baselines/frontend.txt",
+    "floor": 80
+  },
+  "stream": {
+    "format": "vitest",
+    "report": ".cache/coverage/stream/coverage-summary.json",
+    "base": "voc-datalake/lambda/stream",
+    "baseline": "scripts/coverage/baselines/stream.txt",
+    "floor": 80
+  }
+}

@@ -37,7 +37,7 @@ function buildForm(): FeedbackForm {
   }
 }
 
-const noop = () => undefined
+const noop = () => {}
 
 function renderCard(form: FeedbackForm, apiEndpoint = 'https://api.example.com', statsRefreshing = false) {
   return render(
@@ -96,8 +96,8 @@ describe('FormCard (issue #171)', () => {
   })
 
   // 5.34.00 live finding: the cards said "0" for ~5 s while their counts were still being read.
-  it('shows busy placeholders, never a count, while the stats are being read', async () => {
-    mockGetFeedbackFormStats.mockReturnValue(new Promise(() => undefined))
+  it('shows busy placeholders, never a count, while the stats are being read', () => {
+    mockGetFeedbackFormStats.mockReturnValue(new Promise(() => {}))
     renderCard(buildForm())
     const figure = screen.getByText('Submissions').closest('[aria-busy]')
     expect(figure).toHaveAttribute('aria-busy', 'true')

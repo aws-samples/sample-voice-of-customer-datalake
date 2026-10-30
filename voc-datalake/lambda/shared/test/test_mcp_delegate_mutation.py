@@ -33,7 +33,7 @@ import pytest
 from botocore.config import Config
 from botocore.exceptions import ClientError, EndpointConnectionError
 
-import shared.mcp_delegate as mcp_delegate
+from shared import mcp_delegate
 from shared.mcp_delegate import (
     OPTIONAL_SYNTHETIC_CLAIM_KEYS,
     SYNTHETIC_CLAIM_KEYS,

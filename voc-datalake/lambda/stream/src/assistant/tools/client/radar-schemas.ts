@@ -38,7 +38,7 @@ const KEY_EDGE: ReadonlySet<string> = new Set(['-', '_']);
 
 /** `value` without leading and trailing "-" / "_" (Python's `.strip('-_')`). */
 function trimKeyEdges(value: string): string {
-  const chars = [...value];
+  const chars = Array.from(value);
   const start = chars.findIndex((char) => !KEY_EDGE.has(char));
   if (start < 0) return '';
   const fromEnd = [...chars].reverse().findIndex((char) => !KEY_EDGE.has(char));

@@ -26,7 +26,7 @@ import asyncio
 import inspect
 import sys
 import types
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
 from unittest.mock import MagicMock, call
@@ -63,12 +63,12 @@ class FakeRecorder:
         self.calls.append(('put_metadata', kwargs))
 
     @contextmanager
-    def in_subsegment(self, **kwargs: Any) -> Iterator[object]:
+    def in_subsegment(self, **kwargs: Any) -> Generator[object, None, None]:
         self.calls.append(('in_subsegment', kwargs))
         yield self.subsegment
 
     @asynccontextmanager
-    async def in_subsegment_async(self, **kwargs: Any) -> AsyncIterator[object]:
+    async def in_subsegment_async(self, **kwargs: Any) -> AsyncGenerator[object, None]:
         self.calls.append(('in_subsegment_async', kwargs))
         yield self.subsegment
 

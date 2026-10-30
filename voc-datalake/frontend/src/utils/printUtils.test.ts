@@ -15,7 +15,7 @@ const TestContent = () => createElement('div', null, 'Test content')
  */
 function openTestFrame(title = 'Test Title', onClose?: () => void) {
   const result = openPrintWindow({ title, content: createElement(TestContent), onClose })
-  if (result) vi.spyOn(result, 'print').mockImplementation(() => undefined)
+  if (result) vi.spyOn(result, 'print').mockImplementation(() => {})
   return result
 }
 
@@ -217,7 +217,7 @@ describe('printUtils', () => {
       )
 
       generate({ name: 'Q3' })
-      vi.spyOn(requireFrameWindow(), 'print').mockImplementation(() => undefined)
+      vi.spyOn(requireFrameWindow(), 'print').mockImplementation(() => {})
 
       expect(requireFrame().srcdoc).toContain('<title>Report Q3</title>')
     })

@@ -55,11 +55,12 @@ describe('assistant runtime', () => {
 
   /** Start a run that ends awaiting approval of one `create_project` call. */
   async function awaitApproval() {
-    runAgentMock.mockImplementationOnce(async (_i, onEvent) => {
+    runAgentMock.mockImplementationOnce((_i, onEvent) => {
       onEvent({ type: EventType.RUN_STARTED, threadId: 't', runId: 'r' })
       onEvent({ type: EventType.TOOL_CALL_START, toolCallId: 'w', toolCallName: 'create_project', parentMessageId: 'a' })
       onEvent({ type: EventType.TOOL_CALL_END, toolCallId: 'w' })
       onEvent({ type: EventType.RUN_FINISHED, threadId: 't', runId: 'r', outcome: { type: 'interrupt', interrupts: [{ id: 'approval:w', reason: 'tool_approval', toolCallId: 'w' }] } })
+      return Promise.resolve()
     })
     await sendMessage('make a project', env)
   }
@@ -98,7 +99,7 @@ describe('assistant runtime', () => {
     const savedRoles = (call: number): string[] => (saveMock.mock.calls.at(call)?.[0].messages ?? []).map((m) => m.role)
     /** Hold the next (early) save in flight; call the returned function to let it land. */
     const holdEarlySave = (): (() => void) => {
-      const early: { release: () => void } = { release: () => undefined }
+      const early: { release: () => void } = { release: () => {} }
       saveMock.mockImplementationOnce(() => new Promise<void>((resolve) => { early.release = resolve }))
       return () => early.release()
     }
@@ -120,10 +121,11 @@ describe('assistant runtime', () => {
 
     it('writes the finished thread after the early save, never before it', async () => {
       saveMock.mockImplementationOnce(() => Promise.resolve())
-      runAgentMock.mockImplementation(async (_input, onEvent) => {
+      runAgentMock.mockImplementation((_input, onEvent) => {
         onEvent({ type: EventType.RUN_STARTED, threadId: 't', runId: 'r' })
         onEvent({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Answer' })
         onEvent({ type: EventType.RUN_FINISHED, threadId: 't', runId: 'r' })
+        return Promise.resolve()
       })
       await sendMessage('hi', env)
       expect(saveMock).toHaveBeenCalledTimes(2)
@@ -244,11 +246,12 @@ describe('Stop', () => {
   })
 
   it('marks an answer the server reports stopped (another tab pressed Stop)', async () => {
-    runAgentMock.mockImplementationOnce(async (input, onEvent) => {
+    runAgentMock.mockImplementationOnce((input, onEvent) => {
       onEvent({ type: EventType.RUN_STARTED, threadId: input.threadId, runId: input.runId })
       onEvent({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Partial' })
       onEvent({ type: EventType.CUSTOM, name: 'assistant.stopped', value: {} })
       onEvent({ type: EventType.RUN_FINISHED, threadId: input.threadId, runId: input.runId, outcome: { type: 'success' } })
+      return Promise.resolve()
     })
     await sendMessage('Write a long report', env)
     expect(useThreadStore.getState().thread.stopped).toStrictEqual({ a: true })
@@ -258,10 +261,11 @@ describe('Stop', () => {
 describe('Regenerate', () => {
   it('re-runs the last question without its old answer', async () => {
     await sendAndStop([{ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Partial' }])
-    runAgentMock.mockImplementationOnce(async (input, onEvent) => {
+    runAgentMock.mockImplementationOnce((input, onEvent) => {
       onEvent({ type: EventType.RUN_STARTED, threadId: input.threadId, runId: input.runId })
       onEvent({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'b', delta: 'Full answer' })
       onEvent({ type: EventType.RUN_FINISHED, threadId: input.threadId, runId: input.runId, outcome: { type: 'success' } })
+      return Promise.resolve()
     })
     await regenerate(env)
     expect(lastRun().messages.map((m) => m.role)).toStrictEqual(['user'])

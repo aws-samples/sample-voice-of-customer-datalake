@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Undo2, X } from 'lucide-react'
+import { noCleanup } from '../../../hooks/noCleanup'
 
 export const UNDO_TIMEOUT_MS = 8000
 
@@ -29,7 +30,7 @@ function UndoCard({ title, onUndo, onClose }: Readonly<{ title: string } & Notic
   const { t } = useTranslation('briefing')
   const [held, setHeld] = useState(false)
   useEffect(() => {
-    if (held) return undefined
+    if (held) return noCleanup
     const timer = window.setTimeout(onClose, UNDO_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
   }, [held, onClose])

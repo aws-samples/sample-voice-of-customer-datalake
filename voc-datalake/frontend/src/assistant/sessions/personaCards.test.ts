@@ -8,6 +8,7 @@ import { parsePersonaResponses } from '../components/messageHelpers'
 import { normalizeSessionRecord } from './schema'
 import { MAX_STORED_TOOL_CHARS, dropOldestTurns, threadFromSession, toSaveBody } from './serialize'
 import type { Message } from '@ag-ui/core'
+import { asText } from '@test/jsonText'
 
 const LONG_ANSWER = `I would ship it, "but" not like this.\n${'Detail. '.repeat(600)}`
 
@@ -41,7 +42,7 @@ describe('persona cards after a reload', () => {
 
   it('keeps every card when a one-turn record is shrunk after a 413 (an answer within the retry cap stays whole)', () => {
     const cards = dropOldestTurns(roundMessages())
-      .flatMap((message) => (message.role === 'tool' ? parsePersonaResponses(String(message.content)) : []))
+      .flatMap((message) => (message.role === 'tool' ? parsePersonaResponses(asText(message.content)) : []))
     expect(cards.map((card) => ({ id: card.persona_id, cut: card.answer.endsWith('…') })))
       .toStrictEqual([{ id: 'p1', cut: false }, { id: 'p2', cut: false }])
   })

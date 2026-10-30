@@ -1,0 +1,93 @@
+# PR description check: does the pull request description follow .github/PULL_REQUEST_TEMPLATE.md?
+#
+# Why: a reviewer should learn the goal, the scope, the compatibility and the proof from the description,
+# not reconstruct them from the diff. scripts/pr-checks/check-pr-body.mjs states the rules and their limits
+# (it checks form, never truth).
+#
+# Trust model:
+# - The checker is read from the DEFAULT branch, so a pull request cannot edit the checker to pass itself.
+#   The price: a change to the checker takes effect only after it merges (and a PR that changes the rules
+#   is judged by the old ones). This workflow file itself comes from the PR (that is how `pull_request`
+#   works), so a PR could still weaken it; that edit is visible in review, like any other.
+# - The PR head is only READ as data: its file list, its CHANGELOG.md and the base copy are taken with
+#   `git ls-tree` / `git show` from a blob-less fetch. Nothing from the PR is checked out or executed.
+# - The title and body reach the checker through `env:` only, never through `${{ }}` inside `run:`.
+# - `pull_request` (not `pull_request_target`): fork PRs get a read-only token and no secrets.
+#
+# PR_CHECK_ENFORCED: 'false' = problems are warnings (the job passes); 'true' = problems fail the job.
+name: PR description
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: pr-description-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  PR_CHECK_ENFORCED: 'false'
+
+jobs:
+  check:
+    name: check-pr-body
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out the checker from the default branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          sparse-checkout: scripts/pr-checks
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Read the PR's changed files, file list and CHANGELOG.md (as data)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/pr"
+          out="$RUNNER_TEMP/pr"
+          # The REST API lists at most 3,000 files; beyond that "changed here" checks see a partial list.
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename' > "$out/changed-files.txt"
+          git init -q "$out/repo"
+          git -C "$out/repo" remote add origin "$SERVER/$REPO.git"
+          git -C "$out/repo" fetch -q --no-tags --depth=1 --filter=blob:none origin \
+            "+refs/pull/$PR_NUMBER/head:refs/pr/head" "+refs/heads/$BASE_REF:refs/pr/base"
+          git -C "$out/repo" ls-tree -r --name-only refs/pr/head > "$out/head-tree.txt"
+          git -C "$out/repo" show refs/pr/head:CHANGELOG.md > "$out/head-changelog.md" 2>/dev/null || rm -f "$out/head-changelog.md"
+          git -C "$out/repo" show refs/pr/base:CHANGELOG.md > "$out/base-changelog.md" 2>/dev/null || rm -f "$out/base-changelog.md"
+          wc -l "$out/changed-files.txt" "$out/head-tree.txt"
+
+      - name: Check the description
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          checker=trusted/scripts/pr-checks/check-pr-body.mjs
+          if [ ! -f "$checker" ]; then
+            echo "::notice title=PR description::the default branch has no $checker yet; nothing to check"
+            exit 0
+          fi
+          out="$RUNNER_TEMP/pr"
+          node "$checker" \
+            --changed-files "$out/changed-files.txt" \
+            --head-tree "$out/head-tree.txt" \
+            --base-changelog "$out/base-changelog.md" \
+            --head-changelog "$out/head-changelog.md"

@@ -42,7 +42,7 @@ describe('useBrandName', () => {
 
   it('shows the persisted name while the request is in flight', () => {
     useConfigStore.setState((state) => ({ config: { ...state.config, brandName: 'Cached Brand' } }))
-    mockGetBrandSettings.mockReturnValue(new Promise(() => undefined))
+    mockGetBrandSettings.mockReturnValue(new Promise(() => {}))
 
     const { result } = renderHook(() => useBrandName(API), { wrapper })
 

@@ -8,7 +8,7 @@ import {
   APP_CONNECTOR_DEFAULTS, APP_ID_FIELD, type AppConnectorSource, SCRAPER_LIMITS, WEB_REVIEW_PAGES, WEB_REVIEW_REVIEWS,
 } from '../tools/client/scraper-schemas.js';
 import { isRecord } from '../../lib/is-record.js';
-import { defined, optionalText, record, text, type Args } from './write-args.js';
+import { defined, optionalNumber, optionalText, record, text, type Args } from './write-args.js';
 
 type ScraperRecord = Record<string, unknown>;
 
@@ -111,13 +111,13 @@ export function appConnectorSource(args: Args): AppConnectorSource {
 /** The config a create saves (string values, as the route stores them; the server mints the id). */
 export function appConnectorRecord(args: Args): Record<string, string> {
   const source = appConnectorSource(args);
-  const frequency = String(args.frequency_minutes ?? APP_CONNECTOR_DEFAULTS.frequencyMinutes);
+  const frequency = String(optionalNumber(args, 'frequency_minutes') ?? APP_CONNECTOR_DEFAULTS.frequencyMinutes);
   if (source === 'web_reviews') {
     return {
       app_name: text(args, 'app_name'),
       url: optionalText(args, 'url') ?? '',
-      max_pages: String(args.max_pages ?? WEB_REVIEW_PAGES.default),
-      max_reviews: String(args.max_reviews ?? WEB_REVIEW_REVIEWS.default),
+      max_pages: String(optionalNumber(args, 'max_pages') ?? WEB_REVIEW_PAGES.default),
+      max_reviews: String(optionalNumber(args, 'max_reviews') ?? WEB_REVIEW_REVIEWS.default),
       frequency_minutes: frequency,
       ...radarField(optionalText(args, 'radar_brand')),
     };
@@ -127,7 +127,7 @@ export function appConnectorRecord(args: Args): Record<string, string> {
     app_name: text(args, 'app_name'),
     [idField]: optionalText(args, idField) ?? '',
     sort_by: optionalText(args, 'sort_by') ?? DEFAULT_SORT[source],
-    max_reviews_per_run: String(args.max_reviews_per_run ?? APP_CONNECTOR_DEFAULTS.maxReviewsPerRun),
+    max_reviews_per_run: String(optionalNumber(args, 'max_reviews_per_run') ?? APP_CONNECTOR_DEFAULTS.maxReviewsPerRun),
     frequency_minutes: frequency,
     ...radarField(optionalText(args, 'radar_brand')),
   };
