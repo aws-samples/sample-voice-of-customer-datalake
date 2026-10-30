@@ -12,7 +12,9 @@
 #
 # Env: E2E_SHARD_OUT  base directory (default e2e/e2e-output/sharded-<epoch s>)
 #      E2E_TAG_RUN_ID  the test traffic tag shared by all shards (default e2e-[<track>-]<UTC yyyymmddThhmmssZ>)
-#      E2E_SHARD_WORKERS  workers per shard (default 2; each shard drives the deployment serially otherwise)
+#      E2E_SHARD_WRITE_WORKERS  workers per shard for the specs that write (default 2, as before 5.58.00)
+#      E2E_SHARD_READ_WORKERS   workers per shard for the read-only specs (lib/parallel.ts; default 2)
+#      E2E_SHARD_WORKERS  total workers per shard (default read + write)
 set -uo pipefail
 
 MAX_SHARDS=16
@@ -25,7 +27,9 @@ shift
 
 E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE="${E2E_SHARD_OUT:-$E2E_DIR/e2e-output/sharded-$(date +%s)}"
-WORKERS="${E2E_SHARD_WORKERS:-2}"
+WRITE_WORKERS="${E2E_SHARD_WRITE_WORKERS:-2}"
+READ_WORKERS="${E2E_SHARD_READ_WORKERS:-2}"
+WORKERS="${E2E_SHARD_WORKERS:-$((WRITE_WORKERS + READ_WORKERS))}"
 BLOBS="$BASE/blob"
 mkdir -p "$BLOBS"
 cd "$E2E_DIR" || exit 2
@@ -48,6 +52,8 @@ for ((i = 1; i <= N; i++)); do
   [[ -n "${E2E_TRACK:-}" ]] && RUN_ID="$E2E_TRACK-$RUN_ID"
   (
     export E2E_OUT="$OUT" E2E_RUN_ID="$RUN_ID" E2E_TAG_RUN_ID="$TAG_RUN_ID"
+    # The per-project caps playwright.config.ts applies (lib/parallel.ts); --workers is the shard's total.
+    export E2E_WRITE_WORKERS="$WRITE_WORKERS" E2E_READ_WORKERS="$READ_WORKERS"
     export PLAYWRIGHT_JSON_OUTPUT_NAME="$OUT/results.json"
     # Its own blob directory: the blob reporter empties its output directory when it starts.
     export PLAYWRIGHT_BLOB_OUTPUT_DIR="$OUT/blob" PLAYWRIGHT_BLOB_OUTPUT_NAME="report-$i.zip"
