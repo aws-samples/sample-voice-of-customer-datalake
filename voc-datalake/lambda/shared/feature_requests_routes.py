@@ -31,6 +31,7 @@ from shared.feature_boards_limits import charge_request, charge_support
 from shared.feature_boards_store import board_view, is_paused
 from shared.feature_requests_promote import promote
 from shared.feature_requests_store import (
+    ALREADY_SUPPORTED,
     REQUEST_NOT_FOUND,
     REQUEST_PREFIX,
     SUPPORT_NOT_FOUND,
@@ -60,7 +61,6 @@ app = Router()
 BOARD_ARCHIVED: Final = 'board_archived'
 BOARD_PAUSED: Final = 'board_paused'
 BOARD_FIXED: Final = 'A request cannot be moved to another board'
-ALREADY_SUPPORTED: Final = 'already_supported'
 
 
 def _request_id(raw: str) -> str:
@@ -108,7 +108,9 @@ def _same_board(body: Mapping[str, Any]) -> None:
 
 def _not_yet_supporting(table: Any, request_id: str, email: str) -> None:
     """One +1 per person per request (the reporter's own included): a second one is refused, so
-    the person edits theirs instead (it would count twice as a support, once as a supporter)."""
+    the person edits theirs instead (it would count twice as a support, once as a supporter).
+    This read catches supports from before per-person ids; two +1s at once are refused by the
+    conditional put on the person's own key (``put_support``)."""
     if any(str(row.get('email') or '').lower() == email.lower() for row in supports_of(table, request_id)):
         raise ConflictError(ALREADY_SUPPORTED)
 

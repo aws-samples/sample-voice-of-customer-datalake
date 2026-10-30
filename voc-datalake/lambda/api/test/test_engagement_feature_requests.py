@@ -19,6 +19,7 @@ from engagement_fixtures import (
 )
 
 from shared import feature_requests_store
+from shared.engagement_common import is_id
 from shared.feature_requests_store import compute_totals, recompute_totals
 from shared.participants_settings import SETTINGS_KEY
 
@@ -121,6 +122,31 @@ def test_one_support_per_person_the_reporter_included(lambda_context):
     detail = ok(lambda_context, 'GET', f'/feature-requests/{request_id}', claims=BOARD_2)
     assert len(detail['supports']) == 2
     assert detail['request']['totals']['supporters'] == 2
+
+
+@pytest.mark.usefixtures('world')
+def test_two_simultaneous_plus_ones_by_one_person_store_one(lambda_context):
+    # Both deliveries pass the read check before either writes (the race): the person's own key
+    # makes the second conditional put fail, so only one +1 is stored and the loser gets a 409.
+    request_id = _request(lambda_context)['request']['request_id']
+    path = f'/feature-requests/{request_id}/supports'
+    plus_one = {'customer': 'Example Air', 'impact': 'committed', 'amount_usd': 1}
+    with patch('shared.feature_requests_routes._not_yet_supporting'):
+        _support(lambda_context, request_id)
+        status, body = call(lambda_context, 'POST', path, claims={**BOARD_2, 'email': 'KIM@acme.example'},
+                            body=plus_one)
+    assert (status, body['error']) == (409, 'already_supported')
+    detail = ok(lambda_context, 'GET', f'/feature-requests/{request_id}', claims=BOARD_2)
+    assert len(detail['supports']) == 2
+    assert detail['request']['totals']['supporters'] == 2
+
+
+def test_a_persons_support_id_is_stable_per_request_and_case_blind():
+    support_id = feature_requests_store.support_id_for('fr_0123456789abcdef', 'Kim@Acme.example')
+    assert support_id == feature_requests_store.support_id_for('fr_0123456789abcdef', ' kim@acme.example')
+    assert support_id != feature_requests_store.support_id_for('fr_fedcba9876543210', 'kim@acme.example')
+    assert support_id != feature_requests_store.support_id_for('fr_0123456789abcdef', 'sam@acme.example')
+    assert is_id(support_id, feature_requests_store.SUPPORT_PREFIX)
 
 
 @pytest.mark.usefixtures('world')

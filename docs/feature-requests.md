@@ -168,7 +168,7 @@ an unverified one: 403); `name` comes from the token when there is one, else fro
 | PUT | `/feature-requests/{id}` | reporter or admin | `{title?, description?, fields?}` (`fields` replaces all request values) → `{request}`; `board` / `board_id` in the body: 400 (a request never changes board) |
 | PUT | `/feature-requests/{id}/status` | **admin** | `{status}`: one of the board's status keys → `{request}` |
 | DELETE | `/feature-requests/{id}` | **admin** | the request and every support |
-| POST | `/feature-requests/{id}/supports` | a user of its board who does not support it yet | `{fields, name?}` → 201 `{support, request}`; one +1 per person per request (the reporter's own included, emails compared case-insensitively): a second answers 409 `already_supported`, and the board offers "Edit my +1" instead of "+1" |
+| POST | `/feature-requests/{id}/supports` | a user of its board who does not support it yet | `{fields, name?}` → 201 `{support, request}`; one +1 per person per request (the reporter's own included, emails compared case-insensitively): a second answers 409 `already_supported` (also when two arrive at once: the +1's id is derived from the request and the email, and the write is conditional), and the board offers "Edit my +1" instead of "+1" |
 | PUT, DELETE | `/feature-requests/{id}/supports/{support_id}` | its owner or admin | PUT replaces the support's fields → `{request}` |
 | POST | `/feature-requests/{id}/promote` | **admin** with edit on the project | `{project_id}` → `{request, list, added, skipped: [{email, reason}]}` |
 
@@ -215,7 +215,7 @@ Table `voc-feature-requests-<suffix>` (pk/sk, index `gsi1`, the Core KMS key, po
 | `SLUG#{slug}` | `BOARD` | board_id: the slug's uniqueness guard, written in one transaction with META |
 | `BOARDS#SEEDED` | `META` | nothing but the key: the Sales board was seeded (no gsi1pk, never listed); never seed again |
 | `FR#{id}` | `META` | title, description, status, `board_id` (absent = the seeded board), `fields`, reporter email and name, totals, project_id?, list_id?, `version` (conditional writes); gsi1pk `FRS` |
-| `FR#{id}` | `SUP#{id}` | email, name, the +1's field values, is_reporter, created/updated |
+| `FR#{id}` | `SUP#{id}` | email, name, the +1's field values, is_reporter, created/updated. Since 5.54.01 the id is `sup_` + the first 16 hex of sha256(request id, lowercased email); older supports keep random ids |
 | `RATE#{board_id}#{hash}#{day}` | `COUNT` | `requests`, `supports` counters of an `anyone` board, `ttl` |
 
 The participants table holds the derived sign-up row `SETTINGS` / `board_audience` (above).

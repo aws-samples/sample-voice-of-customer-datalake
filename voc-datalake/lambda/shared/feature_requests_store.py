@@ -10,6 +10,7 @@ change and written with a ``version`` condition, retried once on a conflict.
 """
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
@@ -19,6 +20,7 @@ from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import count_query, query_all
 from shared.dynamo_values import as_count
 from shared.engagement_common import (
+    ID_HEX_BYTES,
     conditional_write,
     new_id,
     now_iso,
@@ -42,6 +44,7 @@ MAX_REQUESTS_LISTED: Final = 1000
 MAX_SUPPORTS: Final = 2000
 REQUEST_NOT_FOUND: Final = 'Feature request not found'
 SUPPORT_NOT_FOUND: Final = 'Support not found'
+ALREADY_SUPPORTED: Final = 'already_supported'
 _HIDDEN: Final = frozenset({'version'})
 
 
@@ -222,8 +225,18 @@ def recompute_totals(table: Any, request_id: str, template: str = 'sales') -> di
 
 # ── Writes ────────────────────────────────────────────────────────────────────
 
+def support_id_for(request_id: str, email: str) -> str:
+    """The id of ``email``'s +1 on the request: ``sup_`` + the first 16 hex of
+    sha256(request id, lowercased email). One person = one key, so a conditional put refuses a
+    second +1 even when two arrive at once. Supports from before this rule keep random ids (the
+    routes still refuse those by reading). The email is already in every support view, so the
+    hash discloses nothing new."""
+    digest = hashlib.sha256(f'{request_id}\n{email.strip().lower()}'.encode()).hexdigest()
+    return f'{SUPPORT_PREFIX}_{digest[:ID_HEX_BYTES * 2]}'
+
+
 def new_support(request_id: str, fields: Mapping[str, Any], email: str, *, is_reporter: bool) -> dict[str, Any]:
-    support_id = new_id(SUPPORT_PREFIX)
+    support_id = support_id_for(request_id, email) if email else new_id(SUPPORT_PREFIX)
     now = now_iso()
     return {**support_key(request_id, support_id), 'support_id': support_id, 'request_id': request_id,
             **fields, 'email': email, 'is_reporter': is_reporter, 'created_at': now, 'updated_at': now}
@@ -285,10 +298,13 @@ def get_support(table: Any, request_id: str, support_id: str) -> dict[str, Any]:
 
 
 def put_support(table: Any, item: Mapping[str, Any], *, replacing: bool = False) -> None:
-    """Write a support row. ``replacing``: only over the row that is still there (NotFoundError when a
-    concurrent delete removed it, so an edit never brings a deleted +1 back)."""
+    """Write a support row. New: only where none is (ConflictError ``already_supported`` when the
+    person's +1 landed meanwhile, ``support_id_for``). ``replacing``: only over the row that is
+    still there (NotFoundError when a concurrent delete removed it, so an edit never brings a
+    deleted +1 back)."""
     if not replacing:
-        table.put_item(Item=dict(item))
+        if not conditional_write(table.put_item, Item=dict(item), ConditionExpression='attribute_not_exists(pk)'):
+            raise ConflictError(ALREADY_SUPPORTED)
         return
     if not conditional_write(table.put_item, Item=dict(item), ConditionExpression='attribute_exists(pk)'):
         raise NotFoundError(SUPPORT_NOT_FOUND)
