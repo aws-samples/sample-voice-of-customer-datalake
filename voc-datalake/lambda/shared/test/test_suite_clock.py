@@ -81,6 +81,12 @@ def test_the_controller_overwrites_a_stale_noon(monkeypatch):
     assert environ[MIDDAY_ENV] == midday_of(datetime.now(UTC)).isoformat()
 
 
+def test_publishing_reads_the_forced_noon_from_the_same_mapping():
+    environ = {MIDDAY_FORCE_ENV: '2026-03-01T12:00:00+00:00'}
+    assert publish_midday(environ) == datetime(2026, 3, 1, 12, tzinfo=UTC)
+    assert environ[MIDDAY_ENV] == '2026-03-01T12:00:00+00:00'
+
+
 def test_a_malformed_forced_noon_names_its_variable(monkeypatch):
     monkeypatch.setenv(MIDDAY_FORCE_ENV, 'tomorrow')
     with pytest.raises(ValueError, match=f'{MIDDAY_FORCE_ENV}=.* is not an ISO date-time'):

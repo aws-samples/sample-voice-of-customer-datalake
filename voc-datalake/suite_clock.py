@@ -1,6 +1,6 @@
 """The pytest suite's clock: 12:00 UTC of the run's own day (used by conftest.py's pytest_configure hook)."""
 import os
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping
 from datetime import UTC, datetime, time
 
 # Set once by the controlling pytest process, so every pytest-xdist worker travels to the SAME noon even when
@@ -28,15 +28,16 @@ def parse_midday(name: str, value: str) -> datetime:
     return noon
 
 
-def controller_midday() -> datetime:
-    """The noon the controlling process publishes: a forced one when a person set it, else today's."""
-    forced = os.environ.get(MIDDAY_FORCE_ENV)
+def controller_midday(environ: Mapping[str, str] = os.environ) -> datetime:
+    """The noon the controlling process publishes: a forced one when a person set it in ``environ``, else today's."""
+    forced = environ.get(MIDDAY_FORCE_ENV)
     return parse_midday(MIDDAY_FORCE_ENV, forced) if forced else midday_of(datetime.now(UTC))
 
 
 def publish_midday(environ: MutableMapping[str, str]) -> datetime:
-    """On the controller: (over)write ``MIDDAY_ENV`` with this run's noon, whatever a shell left there, and return it."""
-    noon = controller_midday()
+    """On the controller: (over)write ``MIDDAY_ENV`` in ``environ`` with this run's noon, whatever a shell left there,
+    and return it. The forced noon is read from the same ``environ``."""
+    noon = controller_midday(environ)
     environ[MIDDAY_ENV] = noon.isoformat()
     return noon
 
