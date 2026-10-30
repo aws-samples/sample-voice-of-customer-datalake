@@ -14,9 +14,11 @@ as the change (or the release branch's final commit before its PR merges). `scri
    `bash scripts/validate.sh` once.
 3. Check that you publish only new work: `git rev-list --count <branch> --not --remotes` must equal the number of
    commits you made. Then push the branch and open a PR against `main`.
-4. The PR is squash-merged once CI (`scripts/validate.sh`) is green. `main` takes no direct pushes and needs one
-   approval from someone other than the last pusher; a repository admin may stand in for that approval with
-   `gh pr merge --squash --admin`, never for a red or missing CI run.
+4. The PR is rebase-merged once CI (`scripts/validate.sh`) is green: `gh pr merge --rebase`, so each commit of the
+   branch lands on `main` as it is (several commits are fine; squashing is not required). `main` keeps a linear
+   history, so a merge commit is refused: bring the branch up to date with `git rebase origin/main`, not a merge.
+   `main` takes no direct pushes and needs one approval from someone other than the last pusher; a repository admin
+   may stand in for that approval with `gh pr merge --rebase --admin`, never for a red or missing CI run.
 
 ## Pick the bump
 
@@ -50,7 +52,8 @@ Several changes merged together take ONE bump: the highest kind among them.
 - Topic branches that feed one release branch do NOT bump: they add their bullets under `## [Unreleased]`
   only. Whoever merges them into the release branch turns `[Unreleased]` into the new release section and
   bumps once.
-- When `main` moves while your PR is open, rebase or merge `origin/main` into your branch; on a CHANGELOG
+- When `main` moves while your PR is open, rebase your branch on `origin/main` (`git rebase origin/main`, then
+  `git push --force-with-lease` to your own branch; a merge commit cannot land on `main`); on a CHANGELOG
   conflict, keep both sides' sections in version order: `main`'s released sections stay as they are, and only your
   own not-yet-merged section moves on top with the next free number. On a `package.json` version conflict take
   that number and re-run the check.

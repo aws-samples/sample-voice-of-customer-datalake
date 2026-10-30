@@ -69,8 +69,8 @@ CI (`.github/workflows/quality-gates.yml`) runs that script and nothing else. Ea
   tool you need (`ruff check <files>`, `pytest <test files>`, `npx vitest run <spec>`).
 - **The release branch: the full `scripts/validate.sh`, ONCE, just before it is pushed for its PR** (after any
   topic branches are merged into it). It is the backstop for anything the affected mapping misses, so it is never
-  skipped; CI runs it again on the PR. Release branches start from `main` and reach it only through a squash-merged
-  PR (`.kiro/steering/changelog.md` → Branches and PRs).
+  skipped; CI runs it again on the PR. Release branches start from `main` and reach it only through a rebase-merged
+  PR that keeps each commit (`.kiro/steering/changelog.md` → Branches and PRs).
 
 ### How validate.sh runs
 The steps run in five parallel lanes — `py` (ruff, vulture, pyright, pytest with pytest-xdist), `tsc` (type checks,
