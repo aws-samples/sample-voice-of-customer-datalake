@@ -15,6 +15,7 @@
  * @module api/connectSchema
  */
 import { z } from 'zod'
+import { OAuthSummarySchema } from './oauthSummarySchema'
 
 /** Mirrors VALID_SCOPES in shared/mcp_global_tokens.py. */
 export const CONNECT_SCOPES = ['read', 'write'] as const
@@ -37,7 +38,7 @@ export function isConnectScope(value: string): value is ConnectScope {
   return CONNECT_SCOPES.some((scope) => scope === value)
 }
 
-const optionalText = z.string().nullable().optional().catch(undefined)
+export const optionalText = z.string().nullable().optional().catch(undefined)
   .transform((value) => (value == null || value === '' ? undefined : value))
 
 const ConnectTokenSchema = z.object({
@@ -55,7 +56,7 @@ const ConnectTokenSchema = z.object({
 export type ConnectToken = z.infer<typeof ConnectTokenSchema>
 
 /** Rows that fail ``schema`` are dropped (a row without an id cannot be keyed or revoked). */
-function lenientRows<T>(schema: z.ZodType<T>) {
+export function lenientRows<T>(schema: z.ZodType<T>) {
   return (raw: unknown): T[] => {
     if (!Array.isArray(raw)) return []
     return raw.flatMap((row) => {
@@ -76,6 +77,9 @@ export const TokenListResponseSchema = z.object({
   endpoint_path: z.string().startsWith('/').catch('/mcp/global'),
   can_mint_agent_runner: z.boolean().catch(false),
   limits: LimitsSchema,
+  // -c mcpTokenMinting=false (docs/mcp.md): new tokens refused, existing ones still work.
+  minting_enabled: z.boolean().catch(true),
+  oauth: OAuthSummarySchema,
 })
 export type TokenListResponse = z.infer<typeof TokenListResponseSchema>
 
