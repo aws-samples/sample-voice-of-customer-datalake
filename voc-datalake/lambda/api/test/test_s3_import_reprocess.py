@@ -6,6 +6,7 @@ trigger's own event shape, recorded as a `SOURCE_RUN#s3_import` row.
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -146,7 +147,7 @@ class TestStartingAReprocess:
         table.put_item.assert_not_called()
         invoke.assert_not_called()
 
-    @pytest.mark.parametrize(('size', 'reason'), [(0, 'empty'), (50 * 1024 * 1024 + 1, '50 MB')])
+    @pytest.mark.parametrize(('size', 'reason'), [(0, 'empty'), (h.MAX_REPROCESS_BYTES + 1, '50 MB')])
     def test_a_file_the_ingestor_would_skip_is_refused(
             self, api_gateway_event, lambda_context, s3, invoke, size, reason):
         s3.head_object.return_value = {'ContentLength': size}
@@ -156,6 +157,24 @@ class TestStartingAReprocess:
         assert status == 400
         assert reason in json.dumps(body)
         invoke.assert_not_called()
+
+    def test_the_size_limit_is_the_one_the_ingestor_enforces(self):
+        source = (Path(__file__).resolve().parents[3] / 'plugins' / 's3_import' / 'ingestor' / 'handler.py').read_text()
+        [limit_mb] = re.findall(r'^MAX_FILE_SIZE_MB = (\d+)$', source, re.MULTILINE)
+        assert int(limit_mb) * 1024 * 1024 == h.MAX_REPROCESS_BYTES
+
+    def test_the_largest_file_the_ingestor_reads_is_accepted(self, api_gateway_event, lambda_context, s3, invoke):
+        s3.head_object.return_value = {'ContentLength': h.MAX_REPROCESS_BYTES}
+
+        status, _ = _reprocess(api_gateway_event, lambda_context, {'key': 'reviews/a.csv'})
+
+        assert status == 202
+        invoke.assert_called_once()
+
+    def test_the_key_keeps_its_slashes_as_in_an_s3_notification(self):
+        event = s3_import_runs.reprocess_event(BUCKET, 'processed/my reviews/q2+.csv', RUN_ID)
+
+        assert event['Records'][0]['s3']['object']['key'] == 'processed/my+reviews/q2%2B.csv'
 
     def test_a_failed_invoke_closes_the_run_as_an_error_and_answers_500(
             self, api_gateway_event, lambda_context, table, invoke):

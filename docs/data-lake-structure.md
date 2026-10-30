@@ -178,11 +178,15 @@ processing failure, or to restore rows after an accidental erasure.
 - **Only the import bucket is read.** The ingestor reads a record only when it names the bucket in its
   `S3_IMPORT_BUCKET` environment variable (set by `VocIngestionStack`, the bucket of the S3 trigger). A
   record for any other bucket is skipped with a warning, unread, because the API invokes the ingestor
-  directly and the event's bucket is not trusted. Its role's S3 grant is read/write on the import
+  directly and the event's bucket is not trusted. A reprocess that reads no file this way ends `error`
+  (`NoImportFileRead`), never `completed` with 0 rows. Its role's S3 grant is read/write on the import
   bucket only (and its KMS key).
-- **Retries.** The ingestor keeps Lambda's default 2 async retries: an upload's S3 event has no other
-  automatic recovery from a transient failure. A retried reprocess re-runs the same file under the same
-  run id (its `started_at` moves to the retry), and the rows it queues again are skipped as duplicates.
+- **Retries.** An upload's S3 event keeps Lambda's default 2 async retries, its only automatic recovery
+  from a transient failure. A reprocess that fails is NOT retried: the ingestor closes the run `error`
+  and returns instead of raising, so the row the explorer stopped polling never moves back to
+  `running`. Press Reprocess again; the rows already queued are skipped as duplicates. A reprocess
+  whose invocation crashes or times out (no `error` written) is still retried by Lambda under the same
+  run id, and its `started_at` moves to the retry.
 - **Raw archive.** A row is archived under a key derived from its id and its date, so a re-run
   overwrites the same object; a row with no date is archived under the day of the re-run.
 

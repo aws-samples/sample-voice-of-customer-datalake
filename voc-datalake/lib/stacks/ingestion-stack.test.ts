@@ -338,13 +338,13 @@ describe('VocIngestionStack s3_import ingestor bucket check', () => {
     template = synthIngestionTemplate(['webscraper', 's3_import']);
   });
 
-  const ingestorEnv = (pluginId: string) => {
+  const ingestorFunction = (pluginId: string) => {
     const ids = Object.keys(template.findResources('AWS::Lambda::Function'))
       .filter((id) => id.startsWith(`Ingestor${capitalize(pluginId)}`));
     expect(ids).toHaveLength(1);
-    return IngestorFunctionSchema.parse(template.findResources('AWS::Lambda::Function')[itemAt(ids, 0)])
-      .Properties.Environment.Variables;
+    return IngestorFunctionSchema.parse(template.findResources('AWS::Lambda::Function')[itemAt(ids, 0)]).Properties;
   };
+  const ingestorEnv = (pluginId: string) => ingestorFunction(pluginId).Environment.Variables;
 
   it('names the import bucket on the s3_import ingestor', () => {
     const [bucketId] = Object.keys(template.findResources('AWS::S3::Bucket'))
@@ -360,5 +360,18 @@ describe('VocIngestionStack s3_import ingestor bucket check', () => {
   it('is the variable the ingestor reads', () => {
     const source = readFileSync(join(__dirname, '..', '..', 'plugins', 's3_import', 'ingestor', 'handler.py'), 'utf8');
     expect(source).toContain(`os.environ.get("${S3_IMPORT_BUCKET_ENV}", "")`);
+  });
+
+  // The ingestor closes a reprocess run's SOURCE_RUN#s3_import row (BaseIngestor._update_source_run_status):
+  // without the table name and UpdateItem on it, every run would stay `running`.
+  it('names the aggregates table and may update it', () => {
+    expect(ingestorEnv('s3_import')).toHaveProperty('AGGREGATES_TABLE');
+    const [roleId] = ingestorFunction('s3_import').Role['Fn::GetAtt'];
+    const updates = Object.values(template.findResources('AWS::IAM::Policy'))
+      .map((resource) => IamPolicySchema.parse(resource).Properties)
+      .filter((policy) => policy.Roles.some((role) => role.Ref === roleId))
+      .flatMap((policy) => policy.PolicyDocument.Statement)
+      .filter((statement) => [statement.Action].flat().includes('dynamodb:UpdateItem'));
+    expect(updates.some((statement) => JSON.stringify(statement.Resource).includes('Aggregates'))).toBe(true);
   });
 });
