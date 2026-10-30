@@ -77,3 +77,9 @@ export function cognitoSubFor(role: Role): string {
   if (typeof sub !== 'string' || sub === '') throw new Error(`No sub in the saved ${role} session`)
   return sub
 }
+
+/** Cognito groups of the signed-in role, from the id token's `cognito:groups` (a JSON array claim). */
+export function cognitoGroupsFor(role: Role): string[] {
+  const groups = idTokenClaim(role, 'cognito:groups')
+  return Array.isArray(groups) ? groups.filter((g): g is string => typeof g === 'string') : []
+}
