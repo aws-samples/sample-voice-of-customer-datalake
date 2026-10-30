@@ -16,6 +16,7 @@ import type { RolePolicyStatement } from '../test-support/api-stack-template';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { findWorkerFunction } from '../test-support/worker-function';
+import { RenderedStringRecordSchema } from '../test-support/cfn-render';
 
 const LeadingKeysSchema = z.object({
   'ForAllValues:StringEquals': z.object({ 'dynamodb:LeadingKeys': z.array(z.string()) }),
@@ -68,7 +69,7 @@ describe('the Radar scan worker', () => {
 
 describe('ETag reaches the SPA', () => {
   const GatewayResponseSchema = z.object({
-    Properties: z.object({ ResponseParameters: z.record(z.string(), z.string()).optional() }),
+    Properties: z.object({ ResponseParameters: RenderedStringRecordSchema.optional() }),
   });
 
   it('is in the expose list of every gateway response that publishes one', () => {
