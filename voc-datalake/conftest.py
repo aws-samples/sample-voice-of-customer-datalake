@@ -8,7 +8,7 @@ import socket
 import sys
 
 import pytest
-from suite_clock import MIDDAY_ENV, controller_midday, suite_midday
+from suite_clock import publish_midday, suite_midday
 
 try:
     import time_machine
@@ -40,7 +40,7 @@ def pytest_configure(config: pytest.Config) -> None:
     """
     is_worker = hasattr(config, 'workerinput')
     if not is_worker:
-        os.environ[MIDDAY_ENV] = controller_midday().isoformat()
+        publish_midday(os.environ)
     traveller = time_machine.travel(suite_midday(require_published=is_worker), tick=True)
     traveller.start()
     config.stash[_TRAVELLER] = traveller
