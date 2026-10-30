@@ -18,7 +18,9 @@ The live-job check alone is check-then-act: two requests in the same instant
 could both pass it. The source's LOCK row closes that race: ``pk JOB#erasure``,
 ``sk SRCLOCK#<source>``, written with a condition (no row, a released row, or
 one taken more than ``STALE_AFTER`` ago), so exactly one of two concurrent
-starts wins and the other answers 409. The worker releases it when the job
+starts wins and the other answers 409. The worker renews ``locked_at`` at each
+hand-over (``refresh_source_lock``), so a job that runs for hours never presents
+a stale lock, and releases it when the job
 completes or fails, by UpdateItem (``released_at``): voc-retention holds no
 delete on voc-aggregates, and a release names its job, so a job whose stale
 lock was taken over never frees its successor's. A job's ``sk`` starts with
@@ -42,15 +44,18 @@ from botocore.exceptions import ClientError
 from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.indexes import AGGREGATES_BY_METRIC_TYPE_INDEX
+from shared.logging import logger
 from shared.metric_keys import SOURCE_PREFIX
-from shared.retention import ERASURE_JOB_PK
+from shared.retention import ERASURE_JOB_PK, ERASURE_JOB_PREFIX
 
 __all__ = [
     'SourceLocked',
     'acquire_source_lock',
     'blocking_job',
     'known_sources',
+    'refresh_source_lock',
     'release_source_lock',
+    'reset_known_sources_cache',
 ]
 
 SOURCE_METRIC_TYPE: Final = 'source'
@@ -65,6 +70,11 @@ _counted_cache: dict[str, tuple[float, frozenset[str]]] = {}
 
 class SourceLocked(Exception):
     """Another erasure of the source holds its lock (the API answers 409)."""
+
+
+def reset_known_sources_cache() -> None:
+    """Forget the warm-container memo of counted sources (tests, between cases)."""
+    _counted_cache.clear()
 
 
 def _counted_sources(table: Any) -> frozenset[str]:
@@ -122,17 +132,34 @@ def acquire_source_lock(table: Any, source: str, job_id: str, now: datetime) -> 
         raise
 
 
+def refresh_source_lock(table: Any, source: str, job_id: str, now: datetime) -> None:
+    """Renew ``locked_at`` while ``job_id`` still holds ``source``'s lock (the worker, at each hand-over).
+
+    A whole-source erasure of a large table runs for several 15-minute
+    invocations; without the renewal its lock would read as stale after
+    ``STALE_AFTER`` and a second start could take it over. A lock that is
+    released or held by another job is left alone.
+    """
+    _set_on_own_lock(table, source, job_id, now, 'locked_at', extra_condition=' AND attribute_not_exists(released_at)')
+
+
 def release_source_lock(table: Any, source: str, job_id: str, now: datetime) -> None:
     """Mark ``source``'s lock released, only while ``job_id`` still holds it (UpdateItem, never a delete)."""
+    _set_on_own_lock(table, source, job_id, now, 'released_at')
+
+
+def _set_on_own_lock(table: Any, source: str, job_id: str, now: datetime, stamp: str, *,
+                     extra_condition: str = '') -> None:
+    """Set ``stamp`` to ``now`` on ``source``'s lock row while ``job_id`` holds it; a no-op otherwise."""
     try:
         table.update_item(
             Key=source_lock_key(source),
-            UpdateExpression='SET released_at = :now',
-            ConditionExpression='attribute_exists(pk) AND job_id = :job',
+            UpdateExpression=f'SET {stamp} = :now',
+            ConditionExpression=f'attribute_exists(pk) AND job_id = :job{extra_condition}',
             ExpressionAttributeValues={':now': now.isoformat(), ':job': job_id},
         )
     except ClientError as e:
-        # Gone, or taken over by a later job: that lock is not ours to free.
+        # Gone, or taken over by a later job: that lock is not ours to touch.
         if not is_conditional_check_failure(e):
             raise
 
@@ -151,13 +178,22 @@ def _last_moved(job: Mapping[str, Any]) -> datetime | None:
 
 
 def blocking_job(table: Any, source: str, now: datetime) -> str | None:
-    """The id of a live erasure job of ``source`` that has moved within ``STALE_AFTER``, else None."""
+    """The id of a live erasure job of ``source`` that has moved within ``STALE_AFTER``, else None.
+
+    Reads only the job rows (``sk`` ``er_…``), not the partition's lock rows. A
+    live row with no readable ``progress_at`` / ``created_at`` cannot show it is
+    alive, so it counts as stale (logged) instead of blocking the source forever;
+    the lock row still keeps two new starts apart.
+    """
     jobs = iter_query(table, {
-        'KeyConditionExpression': Key('pk').eq(ERASURE_JOB_PK),
+        'KeyConditionExpression': Key('pk').eq(ERASURE_JOB_PK) & Key('sk').begins_with(ERASURE_JOB_PREFIX),
         'FilterExpression': Attr('status').is_in(list(LIVE_STATUSES)) & Attr('source').eq(source),
     })
     for job in jobs:
         moved = _last_moved(job)
-        if moved is None or now - moved < STALE_AFTER:
+        if moved is None:
+            logger.warning('A live erasure job has no readable timestamp; treating it as stale',
+                           extra={'job_id': str(job.get('job_id') or job.get('sk'))})
+        elif now - moved < STALE_AFTER:
             return str(job.get('job_id') or job.get('sk'))
     return None

@@ -88,8 +88,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'document-comments': 'live', // margin comment threads of a PR/FAQ / PRD series (reviewers comment meanwhile)
   'entities': 'feedbackData',
   'entities-all-sources': 'feedbackData',
-  'erasure-jobs': 'live',
-  'erasure-sources': 'feedbackData', // GET /settings/erasure → sources: moves when a source gains or loses data
+  'erasure-jobs': 'live', // GET /settings/erasure → {jobs, sources}: polled while a job runs
   'feature-requests': 'standard', // feedback boards, their requests and a request's detail (api/featureRequestsApi)
   'feedback': 'feedbackData',
   'feedback-access': 'config', // the caller's category/source scope

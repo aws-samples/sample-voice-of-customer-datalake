@@ -14,6 +14,8 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => ({
   ...m.fetchApiClientModule(),
   api: { getSourcesStatus: () => m.fetchApi('/sources/status') },
 })))
+const mockInvalidateFeedbackData = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+vi.mock('../../api/invalidateFeedbackData', () => ({ invalidateFeedbackData: mockInvalidateFeedbackData }))
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import SourceErasurePanel from './SourceErasurePanel'
 import { normalizeSourceProfiles } from '../../api/sourceProfilesApi'
@@ -40,6 +42,7 @@ const panel = () => screen.findByRole('region', { name: 'Delete all data from a 
 
 beforeEach(() => {
   resetFetchApi()
+  mockInvalidateFeedbackData.mockClear()
   route()
 })
 
@@ -131,5 +134,21 @@ describe('SourceErasurePanel', () => {
     route({ sources: [] })
     renderWithQueryClient(<SourceErasurePanel profiles={[]} />)
     expect(await within(await panel()).findByText('No source has data yet.')).toBeInTheDocument()
+  })
+
+  it('reads the jobs and the source list with one request', async () => {
+    renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
+    await within(await panel()).findByLabelText('Source')
+    const reads = fetchApi.mock.calls.filter((call) => call[0] === '/settings/erasure' && call[1] === undefined)
+    expect(reads).toHaveLength(1)
+  })
+
+  it('refreshes the feedback views once a job it saw running has ended, not before', async () => {
+    route({ jobs: [running] })
+    renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
+    await within(await panel()).findByLabelText('Source')
+    expect(mockInvalidateFeedbackData).not.toHaveBeenCalled()
+    route({ jobs: [{ ...running, status: 'completed' }] })
+    await waitFor(() => expect(mockInvalidateFeedbackData).toHaveBeenCalledTimes(1), { timeout: 5_000 })
   })
 })

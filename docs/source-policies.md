@@ -175,14 +175,18 @@ The request is `POST /settings/erasure` with
   deduped while paging, and kept for 60 seconds in a warm container, so a just-counted source can take
   up to a minute to appear.
 - **409** while another erasure job of the same source is queued or running. A live job whose row
-  has not moved for an hour (`progress_at`, else `created_at`) is treated as dead and does not block.
+  has not moved for an hour (`progress_at`, else `created_at`) is treated as dead and does not block;
+  so is a live row with neither timestamp readable (logged), so a malformed row cannot block the
+  source forever.
   Two starts in the same instant cannot both pass: the start also takes the source's lock row in
   `voc-aggregates` (`pk JOB#erasure`, `sk SRCLOCK#<source>`, `job_id`, `locked_at`) with a conditional
   write that succeeds only when there is no lock, it was released, or it was taken more than an hour
   ago. The loser answers **409**. The worker releases the lock when the job completes or fails, by
   setting `released_at` (an UpdateItem that names the job, so a job whose stale lock was taken over
   never frees its successor's; `voc-retention` holds no delete on `voc-aggregates`). A start whose
-  worker invoke fails releases it at once. A hand-over keeps it.
+  worker invoke fails releases it at once. Each hand-over keeps it and renews `locked_at`, so a job
+  that runs for hours never presents a stale lock. Renewing and releasing are best effort: a failure
+  is logged, never fails the run, and an unreleased lock goes stale after an hour.
 - The job row keeps `field: 'source'`, `source` and the usual `value_hash` (the SHA-256 of the
   source id, for one audit shape across modes).
 
@@ -202,11 +206,14 @@ What the worker does:
    erasing source `web` never reaches the folder of a source named `web_shop`.
 3. **Progress.** While it runs, the job row carries `deleted_items`, `deleted_objects`, `phase`
    (`items`, then `raw`) and `progress_at`, refreshed when the counts move and at least every
-   minute. It hands over to a fresh invocation before its timeout, in either phase.
+   minute. `deleted_objects` counts files: the per-item archives, plus each key under the folder
+   that still held a version (a delete marker alone is not counted). It hands over to a fresh
+   invocation before its timeout, in either phase.
 4. **Metrics.** Each DeleteItem reaches the aggregator as a stream REMOVE, which decrements every
    counter the insert added (pinned by `TestADeleteReversesExactlyWhatTheInsertAdded` in
-   `lambda/aggregator/test/test_handler.py`). Dashboard counts fall while the job runs. The
-   `METRIC#daily_source#<id>` rows stay at 0, so the source stays in the picker.
+   `lambda/aggregator/test/test_handler.py`). Dashboard counts fall while the job runs, and an open
+   Administration page refreshes the app's feedback views when it sees a job it showed running end.
+   The `METRIC#daily_source#<id>` rows stay at 0, so the source stays in the picker.
 
 What it keeps:
 

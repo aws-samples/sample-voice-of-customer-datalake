@@ -26,7 +26,8 @@ Administrators can delete all data from one source in a single erasure job (#143
 - **Delete all data from a source** (Administration → Privacy & access → Sources): one erasure job removes
   every review of a source and every raw file under its `raw/<source>/` folder, behind a dialog where you
   type the source id. The panel shows the job's progress (reviews, then raw files). Dashboard counts fall
-  as the reviews go, through the aggregator's delete path. The source keeps its settings, schedule and
+  as the reviews go, through the aggregator's delete path, and the app's feedback views refresh when the
+  job ends. The source keeps its settings, schedule and
   sync position, and uploaded CSV / JSON files are kept.
   See [docs/source-policies.md → Delete all data from a source](docs/source-policies.md#delete-all-data-from-a-source).
 - `POST /settings/erasure` accepts `{field: 'source', value: <source id>, confirm: <source id>}` (admin).

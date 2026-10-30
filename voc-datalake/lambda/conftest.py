@@ -129,7 +129,7 @@ def _clear_log_group_discovery() -> None:
 def _clear_counted_sources() -> None:
     module = sys.modules.get('shared.source_erasure')
     if module is not None:
-        module._counted_cache.clear()
+        module.reset_known_sources_cache()
 
 
 @pytest.fixture(autouse=True)

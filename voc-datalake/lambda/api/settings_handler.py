@@ -90,7 +90,7 @@ from shared.model_config import (
 )
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value, json_object_body
-from shared.retention import ERASE_FIELDS, ERASURE_JOB_PK, SOURCE_FIELD
+from shared.retention import ERASE_FIELDS, ERASURE_JOB_PK, ERASURE_JOB_PREFIX, SOURCE_FIELD
 from shared.scope_names import (
     HiddenNames,
     component_names_hidden,
@@ -1733,7 +1733,6 @@ def create_feedback_type_dimension_route():
     return {'success': True, 'created': False, 'dimensions': _stored_dimensions_or_500()}
 
 
-ERASURE_JOB_PREFIX = 'er_'
 MAX_ERASURE_VALUE_CHARS = 1_000
 MAX_LISTED_ERASURE_JOBS = 20
 ERASURE_VIEW_FIELDS = (

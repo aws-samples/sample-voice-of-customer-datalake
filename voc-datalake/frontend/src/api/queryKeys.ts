@@ -37,10 +37,10 @@ export const appConfigsKey = (pluginId: string) => ['app-configs', pluginId] as 
 /** Every plugin's app connectors: the root alone matches every list, `ids` names one read. */
 export const allAppConfigsKey = (...ids: readonly string[]) => ['all-app-configs', ...ids] as const
 
-/** A plugin's latest manual run: the root alone matches every plugin's. */
 /** `GET /sources/status` (every plugin's schedule on/off and circuit): one call per page, shared by its readers. */
 export const sourcesStatusKey = () => ['sources-status'] as const
 
+/** A plugin's latest manual run: the root alone matches every plugin's. */
 export const sourceRunStatusKey = (...pluginIds: readonly string[]) => ['source-run-status', ...pluginIds] as const
 
 /**

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  defaultSourceProfile, isLiveErasure, normalizeErasableSources, normalizeErasureJob, normalizeErasureJobs, normalizeSourceProfiles,
+  defaultSourceProfile, erasureEnded, isLiveErasure, normalizeErasableSources, normalizeErasureJob, normalizeErasureJobs,
+  normalizeErasureList, normalizeSourceProfiles,
 } from './sourceProfilesApi'
 
 describe('normalizeSourceProfiles', () => {
@@ -56,5 +57,23 @@ describe('erasure jobs', () => {
     expect(normalizeErasableSources({ jobs: [], sources: ['web_x', 'Bad Id', 7, 'manual_import'] }))
       .toStrictEqual(['web_x', 'manual_import'])
     expect(normalizeErasableSources({ jobs: [] })).toStrictEqual([])
+  })
+
+  it('reads jobs and sources from one envelope, each half falling back on its own', () => {
+    expect(normalizeErasureList({ jobs: [job], sources: ['web_x'] })).toMatchObject({ jobs: [{ job_id: job.job_id }], sources: ['web_x'] })
+    expect(normalizeErasureList({ jobs: 'junk', sources: ['web_x'] })).toStrictEqual({ jobs: [], sources: ['web_x'] })
+  })
+
+  it('sees an erasure end only when a job it saw live is now finished', () => {
+    const [live] = normalizeErasureJobs({ jobs: [job] })
+    const [done] = normalizeErasureJobs({ jobs: [{ ...job, status: 'completed' }] })
+    const [failed] = normalizeErasureJobs({ jobs: [{ ...job, status: 'failed' }] })
+    if (live === undefined || done === undefined || failed === undefined) throw new Error('fixture did not parse')
+    expect(erasureEnded([live], [done])).toBe(true)
+    expect(erasureEnded([live], [failed])).toBe(true)
+    expect(erasureEnded([live], [live])).toBe(false)
+    // Finished before this tab first saw it: nothing to refresh.
+    expect(erasureEnded([], [done])).toBe(false)
+    expect(erasureEnded([done], [done])).toBe(false)
   })
 })
