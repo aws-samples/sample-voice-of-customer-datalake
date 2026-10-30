@@ -3,7 +3,7 @@
 ## Infrastructure (AWS CDK)
 
 - **Language**: TypeScript
-- **CDK Version**: ^2.261.0 per `voc-datalake/package.json` (CLI pinned as devDependency, assembly schema 54+)
+- **CDK Version**: 2.275.0 (exact) per `voc-datalake/package.json` (the `aws-cdk` CLI is pinned exactly too, as a devDependency; assembly schema 54+)
 - **Runtime**: Node.js 18+
 - **Entry Point**: `bin/voc-datalake.ts`
 

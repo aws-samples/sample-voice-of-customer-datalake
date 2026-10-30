@@ -30,9 +30,20 @@ ROOT="$PWD"
 EXPLAIN=0
 if [[ "${1:-}" == "--explain" ]]; then EXPLAIN=1; shift; fi
 BASE="origin/main"
-if [[ $# -gt 0 && "$1" != -* ]]; then BASE="$1"; shift; fi
+BASE_GIVEN=0
+if [[ $# -gt 0 && "$1" != -* ]]; then BASE="$1"; BASE_GIVEN=1; shift
+# No remote-tracking ref (a shallow checkout, a clone without `origin`): locally the local main is the next best
+# base. Never in CI (`CI` set), where a stale or merge-commit `main` could shrink the changed set and skip gates.
+elif [[ -z "${CI:-}" ]] && ! git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null && git rev-parse --verify --quiet "main^{commit}" >/dev/null; then
+  printf 'validate-affected: no origin/main here; comparing against the local main (git fetch origin main to refresh it)\n' >&2
+  BASE="main"
+fi
 if ! git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
-  printf 'validate-affected: base %s is not a commit (pass one: validate-affected.sh <base>)\n' "$BASE" >&2
+  if [[ "$BASE_GIVEN" -eq 0 ]]; then
+    printf 'validate-affected: base %s is not a commit (git fetch origin main, or pass one: validate-affected.sh <base>)\n' "$BASE" >&2
+  else
+    printf 'validate-affected: base %s is not a commit (pass one: validate-affected.sh <base>)\n' "$BASE" >&2
+  fi
   exit 2
 fi
 

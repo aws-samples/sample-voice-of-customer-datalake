@@ -10,12 +10,13 @@ as the change (or the release branch's final commit before its PR merges). `scri
 
 1. Start each release from the current `main`: `git fetch origin && git switch -c release/<x.yy.zz> origin/main`
    (or a topic name such as `fix/<what>`). Never base work on a local branch whose history is not on `origin`.
-2. Commit there (it is fine to make several commits), bump once for the release (below), run the full
-   `bash scripts/validate.sh` once, then push the branch and open a PR against `main`.
-3. Before the first push, check that you publish only new work: `git rev-list --count <branch> --not --remotes`
-   must equal the number of commits you made.
-4. The PR is squash-merged once CI (`scripts/validate.sh`) is green. `main` takes no direct pushes; a repository
-   admin may merge with `gh pr merge --squash --admin`.
+2. Commit there (it is fine to make several commits), bump once for the release (below), and run the full
+   `bash scripts/validate.sh` once.
+3. Check that you publish only new work: `git rev-list --count <branch> --not --remotes` must equal the number of
+   commits you made. Then push the branch and open a PR against `main`.
+4. The PR is squash-merged once CI (`scripts/validate.sh`) is green. `main` takes no direct pushes and needs one
+   approval from someone other than the last pusher; a repository admin may stand in for that approval with
+   `gh pr merge --squash --admin`, never for a red or missing CI run.
 
 ## Pick the bump
 
@@ -50,6 +51,7 @@ Several changes merged together take ONE bump: the highest kind among them.
   only. Whoever merges them into the release branch turns `[Unreleased]` into the new release section and
   bumps once.
 - When `main` moves while your PR is open, rebase or merge `origin/main` into your branch; on a CHANGELOG
-  conflict, keep both sides' sections in version order (yours on top, renumbered past `main`'s), and on a
-  `package.json` version conflict take the higher version and re-run the check.
+  conflict, keep both sides' sections in version order: `main`'s released sections stay as they are, and only your
+  own not-yet-merged section moves on top with the next free number. On a `package.json` version conflict take
+  that number and re-run the check.
 - Never rewrite or renumber a released section; correct it with a new entry instead.

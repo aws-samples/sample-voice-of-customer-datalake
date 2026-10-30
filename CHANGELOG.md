@@ -17,6 +17,55 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.48.04] - 2026-10-29
+
+Every open Dependabot alert is fixed: 50 alerts (14 high, 24 moderate, 12 low) across the four npm packages.
+
+### Security
+- `zod` 4.6.7 everywhere (frontend, stream Lambda, the Kiro ACP bridge; the CDK app already had it): fixes the
+  high-severity advisory for versions before 4.6.6.
+- `aws-cdk-lib` 2.261.0 → 2.275.0 (exact): the copy of `brace-expansion` bundled inside it (5.0.6, high) cannot be
+  overridden, and 2.275.0 bundles 5.0.12. The `aws-cdk` CLI moves to 2.1146.1 with it, pinned exactly like the library.
+- `vitest` and every `@vitest/*` package 4.1.12 (the CDK app, frontend and stream Lambda): fixes the
+  `@vitest/mocker` advisory for 4.1.11 and earlier. Test tooling only.
+- Frontend: `i18next-http-backend` 3 → 4.0.6 (v4 uses the browser's own `fetch`, nothing to configure);
+  `fast-xml-parser`, `fast-xml-builder`, `uuid`, `undici`, `fast-uri`, `qs` and `@babel/core` updated in range
+  (through `aws-amplify` and the build tooling).
+- Dev tooling with a parent that pins the old version gets an npm `overrides` entry: `qs` ^6.16.1 under
+  `typed-rest-client` (Stryker) in all three packages, and `esbuild` ^0.28.1 in the frontend (`i18next-parser`
+  pinned 0.25).
+- `npm audit` reports 0 vulnerabilities in the repo root, the CDK app, the frontend, its e2e suite, the stream
+  Lambda and the bridge.
+
+### Upgrade notes
+- The CDK library jumps 14 minor versions. Run `npx cdk diff` before the next deploy. On a synth it changes only
+  CDK's own output: the three Step Functions roles' trust policies (research, document, agent run) gain the
+  `aws:SourceAccount` / `aws:SourceArn` confused-deputy conditions, and CDK's website-upload function
+  (`BucketDeployment`) runs on arm64. No resource is renamed or replaced: the name inventory in
+  `lib/test-support/baseline.json` is unchanged, only the VocApiStack and VocProcessingStack hashes moved.
+
+### Fixed
+- The `quality gates` and `no-event-logging guard` workflows run on pushes to `main` again: their push trigger still
+  named the retired `development` branch, so a merged PR was never re-checked on `main` (pull requests were).
+- The CDK app uses `addStackDependency` / `addResourceDependency`, which 2.275.0 asks for instead of the deprecated
+  `addDependency` on stacks and `CfnResource`s (the ESLint deprecation gate).
+- Frontend spec type-check: `tsconfig.test.json` names the `node` types itself; Vitest 4.1.12 no longer brings them,
+  and the lockstep specs read files with `node:fs`.
+- `test_scanner_enqueues_only_ended_sessions_with_new_messages` pins the scanner's clock to the test's `NOW`: on a
+  slow suite run its 5-minute-old "active" session aged past the 30-minute idle cut-off and was enqueued.
+- `scripts/validate-affected.sh` falls back to the local `main` when there is no `origin/main` (a shallow checkout,
+  a clone without that remote) and says so, except in CI (`CI` set), where it stops instead of risking a smaller
+  changed set; a missing default base names `git fetch origin main`. `scripts/validate-affected.test.mjs` (in the
+  version gate step) runs the script in a scratch repository: an explicit base, the local fallback, the CI stop, and a bad
+  explicit base (`origin/main` included), which never gets the fetch hint.
+- A CDK test pins the stack deploy order from the cloud assembly (`lib/app-baseline.test.ts`): templates do not carry
+  it, so the baseline hashes alone would not catch a dropped stack dependency.
+
+### Changed
+- [Branches and PRs](.kiro/steering/changelog.md) reads in execution order (check what you publish, then push), and
+  scopes the admin merge to standing in for the second approval, never for a red or missing CI run. A CHANGELOG
+  conflict renumbers only your own unmerged section.
+
 ## [5.48.03] - 2026-10-29
 
 Contributing starts from `main`: one branch per release, merged by pull request.

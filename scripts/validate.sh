@@ -87,7 +87,7 @@ def py   python,python-static               "check_tests_assert"                
 def py   python,python-tests                "pytest"                             'cd "$CDK" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider --no-cov -n "$VALIDATE_PYTEST_WORKERS" --dist loadgroup'
 
 # Release bookkeeping: CHANGELOG.md's newest release = the version in every platform package.json.
-def tsc  repo                               "version: CHANGELOG ↔ package.json"  'cd "$ROOT" && node --test scripts/check-version.test.mjs && node scripts/check-version.mjs'
+def tsc  repo                               "version: CHANGELOG ↔ package.json"  'cd "$ROOT" && node --test scripts/check-version.test.mjs scripts/validate-affected.test.mjs && node scripts/check-version.mjs'
 # Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build
 # output and dependencies allowlisted by path; .gitleaksignore for reviewed fingerprints).
 def lint repo                               "gitleaks: working tree"             'cd "$ROOT" && bash scripts/gitleaks-tree.sh'

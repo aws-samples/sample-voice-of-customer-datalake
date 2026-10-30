@@ -1,5 +1,5 @@
 # Runs scripts/validate.sh, every quality gate in the repo, on each pull request and on pushes to
-# development. CI calls that script and nothing else, so a green local `npm run validate` is a
+# main. CI calls that script and nothing else, so a green local `npm run validate` is a
 # green run here. Gates not enforced yet are counted by scripts/quality-baseline.sh instead.
 name: quality gates
 
@@ -7,7 +7,7 @@ on:
   pull_request:
   push:
     branches:
-      - development
+      - main
 
 permissions:
   contents: read
