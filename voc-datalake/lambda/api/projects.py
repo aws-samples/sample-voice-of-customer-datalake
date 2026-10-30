@@ -3651,13 +3651,15 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
 {results[2]}
 """
 
-        # DynamoDB has 400KB limit - truncate if needed
+        # DynamoDB has 400KB limit - truncate if needed. The 50 KB left over holds the other fields,
+        # including input_feedback_ids: at most 500 ids of 32 hex chars, about 17 KB (#236).
         max_content_size = 350000
         if len(full_report) > max_content_size:
             full_report = full_report[:max_content_size] + "\n\n---\n\n*[Report truncated due to size limits]*"
             logger.warning(f"Research report truncated from {len(full_report)} to {max_content_size} chars")
 
-        # Every fetched review reaches this fallback's prompt untrimmed, so all are the corpus (#236).
+        # Every fetched review reaches this fallback's prompt untrimmed (format_feedback_for_llm has
+        # no total budget), so all are the corpus (#236); test_run_research_date_basis.py pins it.
         feedback_fields = {'feedback_count': len(feedback_items),
                            **input_feedback_fields(input_feedback_ids(feedback_items))}
 

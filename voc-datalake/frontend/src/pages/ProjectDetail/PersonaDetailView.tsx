@@ -67,7 +67,7 @@ export default function PersonaDetailView({
                 {persona.feedback_count == null ? '' : <> · <span className="font-mono">{t('personas.reviews', { count: persona.feedback_count })}</span></>}
               </span>}
               <FeedbackCorpus feedbackIds={persona.input_feedback_ids}
-                className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-muted" />
+                className="mt-1.5" />
             </div>
           </div>
           <div className="flex items-center gap-1 self-end sm:self-start">

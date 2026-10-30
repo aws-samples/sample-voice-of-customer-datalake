@@ -12,21 +12,27 @@ import pytest
 FEEDBACK = [{'feedback_id': 'f1', 'source_platform': 'web', 'original_text': 'slow'}]
 
 
+def _run_research(body: dict, project_filters: dict | None = None, feedback: list[dict] | None = None):
+    """Run run_research for p1 with ``body``: (feedback-query filters, saved item, chain prompts)."""
+    project = {'project': {'filters': project_filters or {}}}
+    save = MagicMock()
+    with patch('projects.projects_table', MagicMock()), \
+            patch('projects.get_project', return_value=project), \
+            patch('projects.get_scoped_feedback_context', return_value=FEEDBACK if feedback is None else feedback) as query, \
+            patch('projects.converse_chain', return_value=['analysis', 'summary', 'validation']) as chain, \
+            patch('shared.project_writes.put_project_item_and_increment', save):
+        from projects import run_research
+
+        run_research('p1', body, category_scope=None)
+    return query.call_args.args[0], save.call_args.args[2], str(chain.call_args.args[0])
+
+
 @pytest.fixture
 def research():
-    """Run run_research for p1 with ``body``: (feedback-query mock, saved item)."""
+    """Run run_research for p1 with ``body``: (feedback-query filters, saved item)."""
     def run(body: dict, project_filters: dict | None = None):
-        project = {'project': {'filters': project_filters or {}}}
-        save = MagicMock()
-        with patch('projects.projects_table', MagicMock()), \
-                patch('projects.get_project', return_value=project), \
-                patch('projects.get_scoped_feedback_context', return_value=FEEDBACK) as query, \
-                patch('projects.converse_chain', return_value=['analysis', 'summary', 'validation']), \
-                patch('shared.project_writes.put_project_item_and_increment', save):
-            from projects import run_research
-
-            run_research('p1', body, category_scope=None)
-        return query.call_args.args[0], save.call_args.args[2]
+        filters, item, _ = _run_research(body, project_filters)
+        return filters, item
     return run
 
 
@@ -68,3 +74,18 @@ def test_the_report_stores_the_ids_of_the_reviews_it_read(research):
     _, item = research({'sources': ['web']})
 
     assert item['input_feedback_ids'] == ['f1']
+
+
+def test_every_stored_id_is_a_review_the_prompt_held():
+    """#236: the fallback stores every fetched id because its prompt trims none of them.
+
+    Pins that contract: if the feedback block ever gains a budget, this fails and the
+    fallback must pass the used count to ``input_feedback_ids`` like the other paths.
+    """
+    feedback = [{'feedback_id': f'f{n}', 'source_platform': 'web', 'original_text': f'review body {n:02d}'}
+                for n in range(60)]
+
+    _, item, prompts = _run_research({'sources': ['web']}, feedback=feedback)
+
+    assert item['input_feedback_ids'] == [f'f{n}' for n in range(60)]
+    assert all(f'review body {n:02d}' in prompts for n in range(60))
