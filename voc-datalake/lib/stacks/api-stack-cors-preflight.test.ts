@@ -28,8 +28,14 @@ beforeAll(() => {
 /** The two synth shapes: webhook receivers exist only with their plugin on. */
 const TEMPLATE_SHAPES: [string, () => Template][] = [['no plugins', apiTemplate], ['every plugin', apiTemplateAllPlugins]];
 
-/** Paths whose methods a browser never calls cross-origin: a provider's signed server-to-server POST. */
+/**
+ * Paths whose methods a browser never calls cross-origin: a provider's signed server-to-server POST,
+ * and the MCP OAuth facade + discovery (api-mcp-oauth.ts), which native MCP clients call directly and a
+ * browser reaches only by top-level navigation (authorize, callback). Nine preflights nobody sends.
+ */
 const isWebhook = (path: string) => path.startsWith('/webhooks/');
+const isOAuthFacade = (path: string) => path.startsWith('/oauth/') || path.startsWith('/.well-known/');
+const isServerToServer = (path: string) => isWebhook(path) || isOAuthFacade(path);
 
 function pathsWith(template: Template, keep: (verb: string) => boolean): Set<string> {
   return new Set(apiMethods(template).filter((m) => keep(m.httpMethod)).map((m) => m.path));
@@ -41,7 +47,7 @@ describe('CORS preflight on exactly the method-bearing resources', () => {
     (_shape, template) => {
       const preflighted = pathsWith(template(), (verb) => verb === 'OPTIONS');
       const missing = [...pathsWith(template(), (verb) => verb !== 'OPTIONS')]
-        .filter((path) => !isWebhook(path) && !preflighted.has(path));
+        .filter((path) => !isServerToServer(path) && !preflighted.has(path));
       expect([...missing].sort(byCodeUnit)).toStrictEqual([]);
     },
   );
@@ -51,7 +57,7 @@ describe('CORS preflight on exactly the method-bearing resources', () => {
     (_shape, template) => {
       const served = pathsWith(template(), (verb) => verb !== 'OPTIONS');
       const stray = [...pathsWith(template(), (verb) => verb === 'OPTIONS')]
-        .filter((path) => isWebhook(path) || !served.has(path));
+        .filter((path) => isServerToServer(path) || !served.has(path));
       expect([...stray].sort(byCodeUnit)).toStrictEqual([]);
     },
   );

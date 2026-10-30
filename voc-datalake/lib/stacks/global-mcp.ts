@@ -92,7 +92,7 @@ export interface GlobalMcpProps {
   domainFunctions: GlobalMcpDomainFunctions;
 }
 
-function leadingKeys(table: dynamodb.ITable, actions: string[], operator: 'StringEquals' | 'StringLike', key: string) {
+export function leadingKeys(table: dynamodb.ITable, actions: string[], operator: 'StringEquals' | 'StringLike', key: string) {
   return new iam.PolicyStatement({
     actions: actions.map((a) => `dynamodb:${a}`),
     resources: [table.tableArn],
@@ -103,11 +103,14 @@ function leadingKeys(table: dynamodb.ITable, actions: string[], operator: 'Strin
 export class GlobalMcp extends Construct {
   public readonly mcpFunction: lambda.Function;
   public readonly tokensFunction: lambda.Function;
+  /** The tokens function's published `live` alias (SnapStart): every route integrates through it. */
+  public readonly tokensAlias: lambda.IFunction;
 
   constructor(scope: Construct, id: string, private readonly props: GlobalMcpProps) {
     super(scope, id);
     this.mcpFunction = this.createMcpFunction();
     this.tokensFunction = this.createTokensFunction();
+    this.tokensAlias = snapStartAlias(this.tokensFunction);
     this.wireRoutes();
   }
 
@@ -210,7 +213,7 @@ export class GlobalMcp extends Construct {
     // The handler routes by path and answers 404 to anything else. `defaultMethodOptions` keeps the
     // authorizer on the proxy (a proxy without it is AuthorizationType.NONE).
     // Through the published `live` alias: SnapStart never snapshots `$LATEST`.
-    const tokensIntegration = new apigateway.LambdaIntegration(snapStartAlias(this.tokensFunction), integrationOptions);
+    const tokensIntegration = new apigateway.LambdaIntegration(this.tokensAlias, integrationOptions);
     apiRoot.addResource('connect')
       .addProxy({ defaultIntegration: tokensIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions })
       .addCorsPreflight(browserPreflight);

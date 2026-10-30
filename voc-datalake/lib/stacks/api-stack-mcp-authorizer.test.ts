@@ -13,7 +13,8 @@ import { z } from 'zod';
 import { apiMethods, apiTemplate, functionIdForHandler } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
-import { MCP_BEARER_CHALLENGE, MCP_UNAUTHORIZED_BODY } from './api-mcp';
+import { MCP_UNAUTHORIZED_BODY, mcpBearerChallenge } from './api-mcp';
+import { RenderedStringRecordSchema } from '../test-support/cfn-render';
 
 beforeAll(() => {
   apiTemplate();
@@ -32,7 +33,7 @@ const GatewayResponseSchema = z.object({
   Properties: z.object({
     ResponseType: z.string(),
     StatusCode: z.string().optional(),
-    ResponseParameters: z.record(z.string(), z.string()).optional(),
+    ResponseParameters: RenderedStringRecordSchema.optional(),
     ResponseTemplates: z.record(z.string(), z.string()).optional(),
   }),
 });
@@ -84,8 +85,10 @@ describe('access denied gateway response', () => {
   it('answers a refused MCP credential with a 401 and the Bearer challenge', () => {
     const props = accessDenied();
     expect(props.StatusCode).toBe('401');
-    expect(props.ResponseParameters?.['gatewayresponse.header.WWW-Authenticate']).toBe(`'${MCP_BEARER_CHALLENGE}'`);
-    expect(MCP_BEARER_CHALLENGE).toMatch(/^Bearer realm="voc-mcp-global"/);
+    const prm = 'https://{api}.execute-api.us-east-1.{Ref:AWS::URLSuffix}/v1/.well-known/oauth-protected-resource/mcp/global';
+    const challenge = props.ResponseParameters?.['gatewayresponse.header.WWW-Authenticate'] ?? '';
+    expect(challenge.replace(/\{Ref:VocAnalyticsApi[0-9A-F]{8}\}/, '{api}')).toBe(`'${mcpBearerChallenge(prm)}'`);
+    expect(mcpBearerChallenge(prm)).toMatch(/^Bearer realm="voc-mcp-global", resource_metadata="https:\/\/[^"]+\/mcp\/global", error="invalid_token"$/);
   });
 
   it('lets a browser read the challenge and tells a cache the 401 varies by credential', () => {
