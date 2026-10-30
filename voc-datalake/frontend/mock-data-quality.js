@@ -41,13 +41,24 @@ function distribution(items) {
   return { sources, overall };
 }
 
+// The handler's window (shared/api.py `effective_window_days`): absent = 30 days; `0` (all time) =
+// the data's history, a year when there is no earliest-data date, as for these fixtures.
+const DEFAULT_DAYS = 30;
+const ALL_TIME_FALLBACK_DAYS = 365;
+
+function periodDays(url) {
+  if (!url.searchParams.has('days')) return DEFAULT_DAYS;
+  const days = Number(url.searchParams.get('days'));
+  return days === 0 ? ALL_TIME_FALLBACK_DAYS : days;
+}
+
 function dataQuality(url, shared) {
   stampBands(shared.mockFeedback);
   const days = Number(url.searchParams.get('days'));
   if (url.searchParams.has('days') && (!Number.isInteger(days) || days < 0 || days > 9999)) {
     return [400, { success: false, message: 'days must be an integer between 0 and 9999' }];
   }
-  return [200, { period_days: days || 30, is_partial: false, ...distribution(shared.mockFeedback) }];
+  return [200, { period_days: periodDays(url), is_partial: false, ...distribution(shared.mockFeedback) }];
 }
 
 /** Handle this module's route; returns true when the request was taken. */

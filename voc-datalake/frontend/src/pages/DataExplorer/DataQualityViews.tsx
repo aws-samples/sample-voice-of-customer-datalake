@@ -41,9 +41,11 @@ interface ViewProps {
 export function QualityChart({ sources, sourceName }: ViewProps) {
   const { t, i18n } = useTranslation('dataExplorer')
   const shown = sources.slice(0, CHART_MAX_SOURCES)
+  // Keyed by the stable band id: the translated label is only the series name, so two bands that
+  // translate alike never collapse into one segment and a language switch does not rebuild the rows.
   const data = shown.map((row) => ({
     name: sourceName(row.source),
-    ...Object.fromEntries(QUALITY_BANDS.map((band) => [t(BAND_LABEL_KEYS[band]), row[band]])),
+    high: row.high, medium: row.medium, low: row.low, unrated: row.unrated,
   }))
   const height = shown.length * ROW_HEIGHT_PX + CHART_PADDING_PX
   return (
@@ -58,7 +60,7 @@ export function QualityChart({ sources, sourceName }: ViewProps) {
           {/* In band order (best first), not Recharts' default alphabetical order. */}
           <Legend itemSorter={null} />
           {QUALITY_BANDS.map((band) => (
-            <Bar key={band} dataKey={t(BAND_LABEL_KEYS[band])} stackId="quality" fill={BAND_COLORS[band]} />
+            <Bar key={band} dataKey={band} name={t(BAND_LABEL_KEYS[band])} stackId="quality" fill={BAND_COLORS[band]} />
           ))}
         </BarChart>
       </ResponsiveContainer>
