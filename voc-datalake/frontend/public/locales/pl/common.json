@@ -332,7 +332,21 @@
     "auditOutcomeLabel": "Wynik",
     "shortcutTitle": "Połącz zewnętrznego asystenta z tym projektem",
     "expiryDays_few": "{{count, number}} dni",
-    "expiryDays_many": "{{count, number}} dni"
+    "expiryDays_many": "{{count, number}} dni",
+    "mcpClientLabel": "Klient",
+    "mcpClient": {
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor",
+      "kiro": "Kiro",
+      "inline": "Inni klienci"
+    },
+    "mcpFile": {
+      "claudeCode": "Zapisz jako .mcp.json w katalogu głównym projektu.",
+      "cursor": "Zapisz jako .cursor/mcp.json w projekcie albo ~/.cursor/mcp.json dla wszystkich projektów.",
+      "kiro": "Zapisz jako .kiro/settings/mcp.json w obszarze roboczym albo ~/.kiro/settings/mcp.json. W Kiro IDE dodaj VOC_MCP_TOKEN w Settings → Mcp Approved Env Vars; Kiro CLI odczytuje ją z powłoki.",
+      "inline": "Dla klientów, które nie odczytują zmiennych środowiskowych: token jest wklejony do pliku, więc nie commituj go ani nie udostępniaj."
+    },
+    "mcpEnvHint": "Ten plik odczytuje token ze zmiennej środowiskowej {{name}}, więc nie zawiera sekretu. Ustaw ją w powłoce uruchamiającej klienta, używając tokenu poniżej:"
   },
   "header": {
     "title": "Głos klienta",
