@@ -83,6 +83,14 @@ It runs the suites with coverage one after another (about 14 minutes on 12 cores
 4, stream under a minute), then `--init` for each. `--init` refuses when the baseline exists, and nothing is
 written when a suite fails.
 
+## Tests that assert a time budget
+
+Coverage tracing slows tight Python loops several times over, and the CI runner is slower than a laptop, so a test
+that bounds wall-clock or CPU time measures the tracer, not the code, once coverage is on (5.50.00: the Problem
+Analysis capacity test took 9 s of CPU against its 6 s budget on CI, and under 2 s untraced). Mark such a test
+`@pytest.mark.no_cover` (pytest-cov runs it untraced) and keep its bound as it is. Its code is still measured through
+the suite's other tests; if a file then falls under the floor, add a behaviour test, not a looser bound.
+
 ## Cost
 
 Measured on 12 cores with other work running, so read the numbers as ratios: pytest (8 xdist workers) 417 s
