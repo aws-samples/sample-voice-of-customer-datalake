@@ -17,6 +17,10 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.50.00] - 2026-10-30
+
+Every generated persona, research report, PRD and PR/FAQ stores the ids of the reviews it was written from, and the project shows them (#236).
+
 ### Added
 - PRDs, PR/FAQs, merged documents and research reports from the synchronous fallback now store
   `input_feedback_ids`, the ids of the reviews their prompts held (at most 500), as personas and Step Functions
