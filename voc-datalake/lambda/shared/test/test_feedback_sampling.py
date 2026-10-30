@@ -33,11 +33,28 @@ from shared.feedback_sampling import (
     sample_evenly,
     spread_order,
 )
+from shared.time_budget import WalkBudget
 
 BIG_DAY = 1_500     # the bulk import, today
 SMALL_DAY = 50      # each of the six older days
 OLDER_DAYS = 6
 LIMIT = 120
+# The walk's wall-clock budget (shared/time_budget.py, 20 s) is not what these tests are about: under coverage
+# tracing a moto walk of this table runs about three times slower and stopped after the first day (5.56.00 gate),
+# turning a "covers every day" assertion into a budget one. Same reason as `_finish_reads_regardless_of_load`.
+UNHURRIED_WALK_SECONDS = 600
+
+
+class _UnhurriedWalkBudget(WalkBudget):
+    """`WalkBudget` with a default the tests cannot hit; an explicit `seconds` (the probe's) is kept."""
+
+    def __init__(self, seconds: float = UNHURRIED_WALK_SECONDS, **kwargs: Any) -> None:
+        super().__init__(seconds=seconds, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _walks_finish_regardless_of_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr('shared.feedback.WalkBudget', _UnhurriedWalkBudget)
 
 
 def _day(offset: int) -> str:
