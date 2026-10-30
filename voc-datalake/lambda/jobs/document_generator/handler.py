@@ -88,6 +88,7 @@ from shared.job_knowledge import derivation_knowledge, shared_grounding, with_gu
 from shared.jobs import JobContext, job_handler, update_job_status
 from shared.logging import logger, metrics
 from shared.model_config import surface_context_window_tokens
+from shared.model_profile import model_profile_scope, payload_fields, profile_from_payload
 from shared.persona_context import personas_prompt_context
 from shared.prompt_labels_store import load_prompt_labels
 from shared.prompts import get_prd_generation_steps, get_prfaq_generation_steps
@@ -1769,6 +1770,8 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     )
     # And for the date basis the feedback was read with (#258).
     _put_text(_scratch_key(job_id, 'date_basis'), _json.dumps(_date_basis_fields(doc_config)))
+    # And for the model profile (shared/model_profile.py): run_step gets only ids from the state.
+    _put_text(_scratch_key(job_id, 'model_profile'), _json.dumps(payload_fields()))
 
     ctx.update_progress(15, 'context_ready')
     # S3 keys are deterministic from (job_id, index), so SF state carries only
@@ -1909,7 +1912,10 @@ def lambda_handler(event: dict, context) -> dict:
         return _build_steps(project_id, job_id, event['doc_config'])
 
     if step == 'run_step':
-        _run_one_step(project_id, job_id, event['index'])
+        # The gather step stashed the starter's model profile; an older gather wrote none (= no profile).
+        stashed = _read_scratch_json(job_id, 'model_profile', {}, 'model profile')
+        with model_profile_scope(profile_from_payload(stashed)):
+            _run_one_step(project_id, job_id, event['index'])
         return {'index': event['index']}
 
     if step == 'save':

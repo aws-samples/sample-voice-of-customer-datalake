@@ -727,6 +727,8 @@ class TestBuildSteps:
             call('scratch/document_jobs/job_1/derivation.txt', '{"d": 2}'),
             call('scratch/document_jobs/job_1/feedback_usage.txt', '{"u": 3, "input_feedback_ids": ["f1"]}'),
             call('scratch/document_jobs/job_1/date_basis.txt', '{"date_basis": "b"}'),
+            # No model profile in force: an empty profile record (run_step then uses the configured models).
+            call('scratch/document_jobs/job_1/model_profile.txt', '{}'),
         ]
         assert job_context.return_value.update_progress.call_args_list == [
             call(10, 'gathering_context'), call(15, 'context_ready'),

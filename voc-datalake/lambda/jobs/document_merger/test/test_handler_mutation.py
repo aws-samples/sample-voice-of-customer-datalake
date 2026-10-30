@@ -423,6 +423,6 @@ class TestLambdaHandlerIsWrapped:
             layers.append(os.path.basename(func.__code__.co_filename))
             func = vars(func).get('__wrapped__')
         # logger.inject_lambda_context → tracer.capture_lambda_handler → metrics.log_metrics
-        # → the invocation_cost line → the handler
-        assert layers == ['logger.py', 'tracer.py', 'base.py', 'invocation_cost.py', 'handler.py']
+        # → the invocation_cost line → the model profile scope → the handler
+        assert layers == ['logger.py', 'tracer.py', 'base.py', 'invocation_cost.py', 'model_profile.py', 'handler.py']
         assert inspect.unwrap(handler.handle_job).__name__ == 'handle_job'

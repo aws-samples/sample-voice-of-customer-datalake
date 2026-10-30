@@ -237,7 +237,7 @@ class TestTheTranscript:
         converse('Hi', system_prompt='Sys', model_id=MODEL, step_name='s')
 
         assert _lines(logs) == [
-            f"INFO [BEDROCK] Starting converse call for step 's' with model {MODEL} (surface=default, service_tier=None)",
+            f"INFO [BEDROCK] Starting converse call for step 's' with model {MODEL} (surface=default, service_tier=None, model_profile=none)",
             'INFO [BEDROCK] Requested params: max_tokens=2048, temperature=0.1, thinking_budget=0',
             'INFO [BEDROCK] Prompt length: 2 chars, system_prompt length: 3 chars',
             'INFO [BEDROCK] Got Bedrock client successfully',
