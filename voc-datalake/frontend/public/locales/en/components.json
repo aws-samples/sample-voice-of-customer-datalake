@@ -633,6 +633,8 @@
     "startError": "The deletion was not started: {{reason}}",
     "confirmTitle": "Delete all data from {{source}}?",
     "confirmMessage": "Every review from {{source}} and every raw file in its folder will be deleted permanently.",
+    "keepsRunning": "The source keeps running after the deletion: if its schedule is on, new reviews keep arriving. Turn the source off first if you want it to stay empty. Uploaded CSV and JSON files (raw/csv_upload, raw/json_upload) are kept.",
+    "scheduleOn": "The schedule of {{source}} is on. New reviews will arrive after the deletion unless you turn the source off first.",
     "typeLabel": "Type {{source}} to confirm",
     "confirm": "Delete all data",
     "progress": {

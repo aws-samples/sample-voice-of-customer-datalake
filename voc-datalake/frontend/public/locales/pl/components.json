@@ -667,6 +667,8 @@
     "startError": "Usuwanie nie zostało rozpoczęte: {{reason}}",
     "confirmTitle": "Usunąć wszystkie dane źródła {{source}}?",
     "confirmMessage": "Wszystkie opinie ze źródła {{source}} i wszystkie surowe pliki z jego folderu zostaną trwale usunięte.",
+    "keepsRunning": "Źródło działa dalej po usunięciu: jeśli jego harmonogram jest włączony, nadal będą napływać nowe opinie. Najpierw wyłącz źródło, jeśli ma pozostać puste. Przesłane pliki CSV i JSON (raw/csv_upload, raw/json_upload) są zachowywane.",
+    "scheduleOn": "Harmonogram źródła {{source}} jest włączony. Po usunięciu napłyną nowe opinie, chyba że najpierw wyłączysz źródło.",
     "typeLabel": "Wpisz {{source}}, aby potwierdzić",
     "confirm": "Usuń wszystkie dane",
     "progress": {

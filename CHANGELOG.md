@@ -27,8 +27,12 @@ the platform package version.
   See [docs/source-policies.md → Delete all data from a source](docs/source-policies.md#delete-all-data-from-a-source).
 - `POST /settings/erasure` accepts `{field: 'source', value: <source id>, confirm: <source id>}` (admin).
   It answers 400 when `confirm` differs or the source is unknown (no profile and no counted data), and
-  409 while another erasure of that source is queued or running. `GET /settings/erasure` now also
-  returns `sources`, the ids a whole-source erasure may name.
+  409 while another erasure of that source is queued or running; a lock row in `voc-aggregates`
+  (`JOB#erasure` / `SRCLOCK#<source>`) makes two starts in the same instant answer 202 once and 409
+  once. `GET /settings/erasure` now also returns `sources`, the ids a whole-source erasure may name
+  (cached for 60 seconds per warm Lambda).
+- The delete dialog says that the source keeps running (turn it off first if it should stay empty) and
+  that uploaded CSV / JSON files are kept, and warns when the source's own schedule is on.
 
 ### Changed
 

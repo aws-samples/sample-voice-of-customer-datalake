@@ -643,6 +643,8 @@
     "startError": "No se inició la eliminación: {{reason}}",
     "confirmTitle": "¿Eliminar todos los datos de {{source}}?",
     "confirmMessage": "Todas las reseñas de {{source}} y todos los archivos sin procesar de su carpeta se eliminarán para siempre.",
+    "keepsRunning": "La fuente sigue funcionando después de la eliminación: si su programación está activada, seguirán llegando reseñas nuevas. Desactiva primero la fuente si quieres que quede vacía. Los archivos CSV y JSON subidos (raw/csv_upload, raw/json_upload) se conservan.",
+    "scheduleOn": "La programación de {{source}} está activada. Llegarán reseñas nuevas después de la eliminación a menos que desactives primero la fuente.",
     "typeLabel": "Escribe {{source}} para confirmar",
     "confirm": "Eliminar todos los datos",
     "progress": {

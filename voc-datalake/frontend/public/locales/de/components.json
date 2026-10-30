@@ -633,6 +633,8 @@
     "startError": "Das Löschen wurde nicht gestartet: {{reason}}",
     "confirmTitle": "Alle Daten von {{source}} löschen?",
     "confirmMessage": "Alle Bewertungen von {{source}} und alle Rohdateien in ihrem Ordner werden endgültig gelöscht.",
+    "keepsRunning": "Die Quelle läuft nach dem Löschen weiter: Ist ihr Zeitplan aktiv, kommen weiterhin neue Bewertungen an. Deaktivieren Sie die Quelle zuerst, wenn sie leer bleiben soll. Hochgeladene CSV- und JSON-Dateien (raw/csv_upload, raw/json_upload) bleiben erhalten.",
+    "scheduleOn": "Der Zeitplan von {{source}} ist aktiv. Nach dem Löschen kommen neue Bewertungen an, sofern Sie die Quelle nicht zuerst deaktivieren.",
     "typeLabel": "Geben Sie {{source}} zur Bestätigung ein",
     "confirm": "Alle Daten löschen",
     "progress": {

@@ -3,14 +3,16 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
-import boto3
 import pytest
 from handler_events_fixtures import call_route
 from moto import mock_aws
 
 import settings_handler
 from settings_handler import lambda_handler
+from shared import source_erasure
 from shared.feedback_types import feedback_type_dimension
+from shared.source_erasure import STALE_AFTER, clear_known_sources_cache, source_lock_key
+from shared.test.moto_tables import create_aggregates_table_with_metric_index
 
 USER_CLAIMS = {'sub': 'user-1', 'cognito:username': 'casey', 'cognito:groups': 'users'}
 DIMENSIONS = [{'key': 'product', 'label': 'Product', 'values': [{'name': 'App'}, {'name': 'Web'}]}]
@@ -18,23 +20,11 @@ PROFILE = {'id': 'support_tickets', 'label': 'Support', 'pii': 'redact', 'retent
            'restricted': True, 'dimension_defaults': {'product': 'App'}, 'tags': ['support']}
 
 
-def _aggregates_table():
-    """pk/sk plus the `gsi1-by-metric-type` index (metric_type, pk), as in core-stack.ts."""
-    return boto3.resource('dynamodb', region_name='us-east-1').create_table(
-        TableName='test-aggregates-settings-classification', BillingMode='PAY_PER_REQUEST',
-        KeySchema=[{'AttributeName': 'pk', 'KeyType': 'HASH'}, {'AttributeName': 'sk', 'KeyType': 'RANGE'}],
-        AttributeDefinitions=[{'AttributeName': a, 'AttributeType': 'S'} for a in ('metric_type', 'pk', 'sk')],
-        GlobalSecondaryIndexes=[{
-            'IndexName': 'gsi1-by-metric-type', 'Projection': {'ProjectionType': 'ALL'},
-            'KeySchema': [{'AttributeName': 'metric_type', 'KeyType': 'HASH'},
-                          {'AttributeName': 'pk', 'KeyType': 'RANGE'}]}],
-    )
-
-
 @pytest.fixture
 def table():
+    clear_known_sources_cache()  # a fresh moto table per test: no counted sources carried over
     with mock_aws():
-        moto_table = _aggregates_table()
+        moto_table = create_aggregates_table_with_metric_index('test-aggregates-settings-classification')
         with patch.object(settings_handler, 'aggregates_table', moto_table), \
              patch.object(settings_handler, 'RETENTION_FUNCTION', 'voc-retention'):
             yield moto_table
@@ -257,3 +247,95 @@ class TestWholeSourceErasure:
         _counted(table, 'tickets')
         response, _ = route('POST', '/settings/erasure', body=_whole('tickets'), claims=USER_CLAIMS)
         assert response['statusCode'] == 403
+
+
+def _lock_row(table, source: str) -> dict:
+    """``source``'s erasure lock row (fails the test when there is none)."""
+    item = table.get_item(Key=source_lock_key(source)).get('Item')
+    assert isinstance(item, dict)
+    return item
+
+
+@pytest.mark.usefixtures('table')
+class TestWholeSourceErasureLock:
+    """The conditional lock row closes the race the live-job check leaves open."""
+
+    @pytest.mark.usefixtures('invoke')
+    def test_a_start_takes_the_lock_and_the_job_list_never_shows_it(self, route, table):
+        _counted(table, 'tickets')
+        response, body = route('POST', '/settings/erasure', body=_whole('tickets'))
+        assert response['statusCode'] == 202
+        lock = _lock_row(table, 'tickets')
+        assert lock['job_id'] == body['job']['job_id']
+        assert 'released_at' not in lock
+        _, listed = route('GET', '/settings/erasure')
+        assert [job['job_id'] for job in listed['jobs']] == [body['job']['job_id']]
+
+    def test_a_second_concurrent_start_is_409_and_starts_nothing(self, route, invoke, table):
+        """Both passed the live-job check (no job row yet); the held lock refuses the second."""
+        _counted(table, 'tickets')
+        table.put_item(Item={**source_lock_key('tickets'), 'source': 'tickets', 'job_id': 'er_000000000009',
+                             'locked_at': datetime.now(UTC).isoformat()})
+        response, body = route('POST', '/settings/erasure', body=_whole('tickets'))
+        assert (response['statusCode'], body['error']) == (409, 'An erasure of this source is already running')
+        invoke.assert_not_called()
+        assert _lock_row(table, 'tickets')['job_id'] == 'er_000000000009'
+        _, listed = route('GET', '/settings/erasure')
+        assert listed['jobs'] == []
+
+    @pytest.mark.usefixtures('invoke')
+    def test_a_stale_or_released_lock_is_taken_over(self, route, table):
+        _counted(table, 'tickets')
+        _counted(table, 'web')
+        stale = (datetime.now(UTC) - STALE_AFTER - timedelta(minutes=1)).isoformat()
+        table.put_item(Item={**source_lock_key('tickets'), 'source': 'tickets', 'job_id': 'er_000000000001',
+                             'locked_at': stale})
+        table.put_item(Item={**source_lock_key('web'), 'source': 'web', 'job_id': 'er_000000000002',
+                             'locked_at': datetime.now(UTC).isoformat(), 'released_at': stale})
+        for source in ('tickets', 'web'):
+            response, body = route('POST', '/settings/erasure', body=_whole(source))
+            assert response['statusCode'] == 202
+            lock = _lock_row(table, source)
+            assert lock['job_id'] == body['job']['job_id']
+            assert 'released_at' not in lock
+
+    def test_a_failed_invoke_releases_the_lock(self, route, invoke, table):
+        _counted(table, 'tickets')
+        invoke.side_effect = RuntimeError('down')
+        response, _ = route('POST', '/settings/erasure', body=_whole('tickets'))
+        assert response['statusCode'] == 500
+        assert _lock_row(table, 'tickets')['released_at']
+        invoke.side_effect = None
+        response, _ = route('POST', '/settings/erasure', body=_whole('tickets'))
+        assert response['statusCode'] == 202
+
+    @pytest.mark.usefixtures('invoke')
+    def test_an_id_erasure_takes_no_lock(self, route, table):
+        response, _ = route('POST', '/settings/erasure', body={'field': 'author', 'value': 'x'})
+        assert response['statusCode'] == 202
+        assert table.scan()['Count'] == 1
+
+
+@pytest.mark.usefixtures('table')
+class TestKnownSourcesCache:
+    def test_counted_sources_are_deduped_keys_only_and_read_once_per_ttl(self, table):
+        for day in ('2026-01-01', '2026-01-02', '2026-01-03'):
+            table.put_item(Item={'pk': 'METRIC#daily_source#tickets', 'sk': day, 'metric_type': 'source'})
+        _counted(table, 'web')
+        query = MagicMock(wraps=table.query)
+        with patch.object(table, 'query', query):
+            assert source_erasure.known_sources(table, ['support']) == ['support', 'tickets', 'web']
+            assert source_erasure.known_sources(table, []) == ['tickets', 'web']
+        assert query.call_count == 1
+        assert query.call_args.kwargs['ProjectionExpression'] == 'pk'
+
+    def test_the_memo_expires_after_its_ttl(self, table):
+        _counted(table, 'tickets')
+        with patch.object(source_erasure.time, 'monotonic', return_value=1_000.0):
+            assert source_erasure.known_sources(table, []) == ['tickets']
+        _counted(table, 'web')
+        with patch.object(source_erasure.time, 'monotonic', return_value=1_030.0):
+            assert source_erasure.known_sources(table, []) == ['tickets']
+        later = 1_000.0 + source_erasure.KNOWN_SOURCES_TTL_SECONDS + 1
+        with patch.object(source_erasure.time, 'monotonic', return_value=later):
+            assert source_erasure.known_sources(table, []) == ['tickets', 'web']

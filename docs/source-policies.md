@@ -153,7 +153,17 @@ How it works:
 ### Delete all data from a source
 
 Removes a whole dataset in one job: a mis-imported CSV, a demo or test source, a Web Reviews page
-you no longer track. The request is `POST /settings/erasure` with
+you no longer track.
+
+> **The source keeps running.** Deleting its data does not turn it off. If its schedule or plugin is
+> enabled, new reviews keep arriving during and after the job: **disable the source first** (Data
+> sources page) if it should stay empty. The dialog says so, and shows a warning when the source's own
+> schedule is on (from the `GET /sources/status` read the Sources page already makes; a source with no
+> schedule of its own, such as one Web Reviews page or a feedback form, gets the plain note only).
+> Uploaded whole-file archives (`raw/csv_upload/…`, `raw/json_upload/…`) are **kept** (see the table
+> below).
+
+The request is `POST /settings/erasure` with
 `{field: 'source', value: '<source id>', confirm: '<source id>'}`:
 
 - `confirm` must repeat the source id exactly (a server-side type-to-confirm; the Settings dialog
@@ -161,14 +171,27 @@ you no longer track. The request is `POST /settings/erasure` with
 - The source must be known: a configured source profile, or a source the aggregator has counted
   (a `METRIC#daily_source#<id>` row). That includes sources without a profile, such as each Web
   Reviews page (`web_<site>_<app>`). Otherwise **400** `Unknown source`. `GET /settings/erasure`
-  answers `{jobs, sources}`, where `sources` is that list.
+  answers `{jobs, sources}`, where `sources` is that list. The counted sources are read keys only and
+  deduped while paging, and kept for 60 seconds in a warm container, so a just-counted source can take
+  up to a minute to appear.
 - **409** while another erasure job of the same source is queued or running. A live job whose row
   has not moved for an hour (`progress_at`, else `created_at`) is treated as dead and does not block.
+  Two starts in the same instant cannot both pass: the start also takes the source's lock row in
+  `voc-aggregates` (`pk JOB#erasure`, `sk SRCLOCK#<source>`, `job_id`, `locked_at`) with a conditional
+  write that succeeds only when there is no lock, it was released, or it was taken more than an hour
+  ago. The loser answers **409**. The worker releases the lock when the job completes or fails, by
+  setting `released_at` (an UpdateItem that names the job, so a job whose stale lock was taken over
+  never frees its successor's; `voc-retention` holds no delete on `voc-aggregates`). A start whose
+  worker invoke fails releases it at once. A hand-over keeps it.
 - The job row keeps `field: 'source'`, `source` and the usual `value_hash` (the SHA-256 of the
   source id, for one audit shape across modes).
 
 What the worker does:
 
+0. **Check.** The job row must name the invoked source (`source` = the invoke `value`) and that id
+   must match the source-id pattern the route checks (`SOURCE_ID_RE`). Otherwise the job fails with
+   `Run failed (ValueError)` before anything is deleted (defence in depth for a job row written some
+   other way).
 1. **Reviews.** It scans `voc-feedback` with a `source_platform = <source>` filter, deleting each
    item with its own per-item archive. It does not Query `pk = SOURCE#<source>`: an item's
    partition is `SOURCE#<brand_name or source_platform>` (the processor), so a deployment with a
