@@ -142,9 +142,13 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
     return () => { run.live = false }
   }, [validating])
 
+  // Where Login sends the visitor back: the path WITH its query, so a deep link such as the MCP
+  // OAuth consent page (/oauth/authorize?client_id=…) survives the sign-in (docs/mcp.md).
+  const from = `${location.pathname}${location.search}`
+
   // If Cognito is not configured, only allow access in development mode
   if (!authService.isConfigured()) {
-    return <UnconfiguredAuthFallback from={location.pathname}>{children}</UnconfiguredAuthFallback>
+    return <UnconfiguredAuthFallback from={from}>{children}</UnconfiguredAuthFallback>
   }
 
   /*
@@ -160,7 +164,7 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
 
   // If not authenticated, redirect to login
   if (!isAuthenticated) {
-    return <LoginRedirect from={location.pathname} />
+    return <LoginRedirect from={from} />
   }
 
   return <>{children}</>
