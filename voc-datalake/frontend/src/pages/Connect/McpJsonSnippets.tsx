@@ -7,23 +7,10 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import PressedChoices from '../../components/PressedChoices/PressedChoices'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { buildClientMcpJson, MCP_CLIENTS, type McpClient, TOKEN_ENV_VAR, tokenExportLine } from './connectSnippets'
 import { CopyButton } from './CopyButton'
-
-function ClientPicker({ value, onChange }: Readonly<{ value: McpClient; onChange: (client: McpClient) => void }>) {
-  const { t } = useTranslation('common')
-  return (
-    <div role="group" aria-label={t('connect.mcpClientLabel')} className="flex flex-wrap gap-1">
-      {MCP_CLIENTS.map((client) => (
-        <button key={client} type="button" aria-pressed={client === value} onClick={() => onChange(client)}
-          className={client === value ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}>
-          {t(`connect.mcpClient.${client}`)}
-        </button>
-      ))}
-    </div>
-  )
-}
 
 function EnvLine({ copiedKey, onCopy }: Readonly<{ copiedKey: string | null; onCopy: (text: string, key: string) => void }>) {
   const { t } = useTranslation('common')
@@ -51,7 +38,9 @@ export function McpJsonSnippets({ endpointUrl }: Readonly<{ endpointUrl: string 
         <p className="text-[12px] font-medium text-muted">{t('connect.mcpJsonLabel')}</p>
         <CopyButton text={mcpJson} copyKey="mcpJson" copiedKey={copiedKey} onCopy={copy} />
       </div>
-      <ClientPicker value={client} onChange={setClient} />
+      <PressedChoices label={t('connect.mcpClientLabel')} choices={MCP_CLIENTS} value={client} onChange={setClient}
+        display={(choice) => t(`connect.mcpClient.${choice}`)}
+        className="flex flex-wrap gap-1" pressedClassName="btn btn-primary btn-sm" idleClassName="btn btn-secondary btn-sm" />
       {/* Focusable and named: it scrolls sideways on a phone, and a scroll region
           with nothing focusable inside cannot be scrolled from the keyboard
           (axe scrollable-region-focusable, design audit). */}
