@@ -39,7 +39,8 @@ const REVOKED = { ...ACTIVE, token_id: 'tok_fedcba9876543210', name: 'Old', stat
 function listing(tokens: unknown[] = [ACTIVE], extra: Record<string, unknown> = {}) {
   return {
     tokens, endpoint_path: '/mcp/global', can_mint_agent_runner: false,
-    limits: { default_expiry_days: 30, max_expiry_days: 90, max_active_tokens: 20 }, ...extra,
+    limits: { default_expiry_days: 30, max_expiry_days: 90, max_active_tokens: 20 },
+    minting_enabled: true, oauth: { enabled: false, clients: [] }, ...extra,
   }
 }
 
