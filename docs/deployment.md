@@ -722,6 +722,7 @@ missing, the alarms themselves say whether alerting is on.
 | `aggregator-errors` | `voc-aggregation-processor` Lambda `Errors` | Sum > 0 over 5 minutes |
 | `aggregator-iterator-age` | `voc-aggregation-processor` `IteratorAge` | Max > 15 minutes for 3 consecutive 5-minute periods (dashboard metrics going stale) |
 | `ingestor-errors` | every enabled plugin ingestor's `Errors`, one metric-math `SUM` | Sum > 0 over 5 minutes (more than 10 ingestors split into `ingestor-errors-2`, …) |
+| `mcp-auth-denied`, `mcp-tool-denied`, `mcp-tool-failed`, `mcp-rate-limited` | `VoC-MCP-Global` metrics of `/mcp/global` | Sum over 5 minutes > 50 / 20 / 5 / 30 ([docs/mcp.md](mcp.md#alarms-and-concurrency)) |
 
 Missing data is never breaching, so an idle queue or function stays OK.
 
@@ -744,8 +745,8 @@ Every route is admin-only. Addresses are never logged.
 the time of writing), and the first 10 alarm metrics in an account each month are
 free. A metric-math alarm is billed per metric it reads, so the one ingestor `SUM`
 costs the same as one alarm per ingestor, but notifies once. With every alarm above
-and N enabled ingestors that is 8 + N alarm metrics: about $1.40 a month with 6
-ingestors, before the free tier. The topic's KMS key is about $1 per month whether
+and N enabled ingestors that is 12 + N alarm metrics (8 + N, plus the 4 MCP alarms): about
+$1.80 a month with 6 ingestors, before the free tier. The topic's KMS key is about $1 per month whether
 or not alerting is on; SNS email delivery is free at alarm volumes. Check current
 CloudWatch and KMS pricing for your region.
 
