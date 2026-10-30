@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [5.50.00] - 2026-10-30
+## [5.49.00] - 2026-10-30
 
 Every generated persona, research report, PRD and PR/FAQ stores the ids of the reviews it was written from, and the project shows them (#236).
 
