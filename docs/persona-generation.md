@@ -43,15 +43,19 @@ per-persona call:
 
 **Prompt growth is bounded.** At most the newest 20 kept personas are projected, and the JSON list is held
 under 1,500 characters by dropping the oldest first. Extending a project many times cannot grow the prompt
-without limit.
+without limit. "Newest" is sort-key order: every persona id, generated or imported, starts with its UTC
+creation time (`persona_<YYYYmmddHHMMSS>_…`). In add mode both blocks come from one read of the project's
+personas.
 
 **Overlap check after generation.** The instruction is only advice, so one rule is enforced in code. A new
-persona whose name matches a kept persona, or an earlier new one, is **dropped** before its avatar is made.
+persona whose name matches a kept persona is **dropped** before its avatar is made. (A name repeated inside
+one run's new set never gets this far, in either mode: the plan step keeps each name once.)
 The match ignores case and runs of whitespace. The persona is not renamed, because a suffixed "Ada Moreno 2"
 would still read as the same person in `@all` roundtables. The check compares against **every** kept name,
 not just the projected 20. The job's result reports the count as `metadata.duplicate_names_dropped`, 0 in
-replace mode. If the kept personas cannot be read, the run still adds and never deletes; it just has
-nothing to compare against.
+replace mode, and the project's Jobs list says how many new personas were not added and why. If the kept
+personas cannot be read, the run still adds and never deletes; it just has nothing to compare against (and
+no names-to-avoid list).
 
 ## Avatars and the roundtable
 

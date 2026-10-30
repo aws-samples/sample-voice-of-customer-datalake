@@ -24,6 +24,7 @@ import JobStatusBadge from './JobStatusBadge'
 import { formatDateTime, formatTime } from '../../utils/dateUtils'
 import { humanizeId } from '../../utils/displayLabels'
 import type { ProjectJob } from '../../api/projectTypes'
+import DuplicateNamesNotice from './DuplicateNamesNotice'
 import { parseJobGrounding, hasUsableCounts } from '../../api/jobGroundingSchema'
 
 type JobStatus = 'running' | 'pending' | 'completed' | 'failed'
@@ -185,6 +186,7 @@ function JobStatusMessage({
         </p>
       )}
       <TruncationNotice job={job} />
+      <DuplicateNamesNotice job={job} />
     </>
   )
 }

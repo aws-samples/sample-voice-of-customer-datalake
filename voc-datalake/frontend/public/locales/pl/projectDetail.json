@@ -201,6 +201,10 @@
       "pending": "oczekuje",
       "running": "w toku"
     },
+    "duplicateNamesDropped_one": "Nie dodano {{count, number}} nowej persony: jej nazwa powtarza personę, którą projekt już ma.",
+    "duplicateNamesDropped_few": "Nie dodano {{count, number}} nowych person: ich nazwy powtarzają persony, które projekt już ma.",
+    "duplicateNamesDropped_many": "Nie dodano {{count, number}} nowych person: ich nazwy powtarzają persony, które projekt już ma.",
+    "duplicateNamesDropped_other": "Nie dodano {{count, number}} nowych person: ich nazwy powtarzają persony, które projekt już ma.",
     "truncated": {
       "counted": "Na podstawie {{used, number}} z {{total, number}} przeanalizowanych opinii. Pozostałe nie zmieściły się w jednej generacji.",
       "fetchCapped": "Ta generacja odczytuje maksymalnie {{limit, number}} opinii. Więcej może pasować do filtrów. Zawęź je, aby zmienić, które opinie są użyte.",

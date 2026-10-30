@@ -191,6 +191,8 @@
       "pending": "pendiente",
       "running": "en ejecución"
     },
+    "duplicateNamesDropped_one": "No se añadió {{count, number}} persona nueva: su nombre repite el de una que el proyecto ya tiene.",
+    "duplicateNamesDropped_other": "No se añadieron {{count, number}} personas nuevas: sus nombres repiten los de otras que el proyecto ya tiene.",
     "truncated": {
       "counted": "Basado en {{used, number}} de los {{total, number}} comentarios leídos: el resto no cupo en una sola generación.",
       "fetchCapped": "Cada generación lee como máximo {{limit, number}} comentarios. Puede que más coincidan con tus filtros: ajústalos para cambiar cuáles se usan.",

@@ -191,6 +191,8 @@
       "pending": "保留中",
       "running": "実行中"
     },
+    "duplicateNamesDropped_one": "新しいペルソナ{{count, number}}件は追加されませんでした。名前がこのプロジェクトの既存のペルソナと同じです。",
+    "duplicateNamesDropped_other": "新しいペルソナ{{count, number}}件は追加されませんでした。名前がこのプロジェクトの既存のペルソナと同じです。",
     "truncated": {
       "counted": "読み込んだ {{total, number}} 件のうち {{used, number}} 件のフィードバックに基づいています。残りは 1 回の生成に収まりませんでした。",
       "fetchCapped": "1 回の生成で読み込めるフィードバックは最大 {{limit, number}} 件です。フィルター条件に一致する件数がさらに多い可能性があります。条件を絞り込むと対象を変更できます。",

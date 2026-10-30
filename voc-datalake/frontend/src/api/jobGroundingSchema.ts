@@ -65,6 +65,8 @@ const JobGroundingSchema = z.object({
   context_truncated: wireFlag,
   fetch_limit_reached: wireFlag,
   fetch_limit: wireCount,
+  /** Add mode (#353): new personas dropped because their name repeated a kept persona's. */
+  duplicate_names_dropped: wireCount,
 })
 
 export type JobGrounding = z.infer<typeof JobGroundingSchema>
@@ -76,6 +78,7 @@ const NOTHING_REPORTED: JobGrounding = {
   context_truncated: undefined,
   fetch_limit_reached: undefined,
   fetch_limit: undefined,
+  duplicate_names_dropped: undefined,
 }
 
 /**

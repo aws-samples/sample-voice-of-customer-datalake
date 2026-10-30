@@ -21,9 +21,11 @@ function ModeLine({ replace, existing }: Readonly<{ replace: boolean; existing: 
   const { t } = useTranslation('assistantTools')
   if (existing === 0) return null
   if (!replace) {
+    // Add is harmless, so it waits for the count rather than claiming personas a new project may not have.
+    if (existing === undefined) return null
     return (
       <p data-testid="persona-mode" className="text-[12px] text-text">
-        {existing === undefined ? t('preview.personas.addUnknown') : t('preview.personas.add', { count: existing })}
+        {t('preview.personas.add', { count: existing })}
       </p>
     )
   }

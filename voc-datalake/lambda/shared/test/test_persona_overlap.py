@@ -71,6 +71,12 @@ class TestReadExistingPersonas:
         assert existing.name_keys == frozenset(f'p{i}' for i in range(40))
         assert len(_listed(existing.section)) == po.MAX_PROJECTED_PERSONAS
 
+    def test_names_are_every_kept_name_as_one_line_in_sort_key_order(self):
+        table = MagicMock()
+        table.query.return_value = {'Items': [{'name': ' Old\n One '}, {'tagline': 'nameless'}, {'name': 'Newer'}]}
+        existing = po.read_existing_personas(table, 'proj-1')
+        assert existing.names == ('Old One', 'Newer')
+
     def test_the_query_reads_only_the_projected_attributes_aliased(self):
         table = MagicMock()
         table.query.return_value = {'Items': []}

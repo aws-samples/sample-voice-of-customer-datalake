@@ -16,7 +16,8 @@ from repeating the old one:
    (not renamed: a suffixed "Ada Moreno 2" would still answer as the same person). The
    job reports how many were dropped.
 
-The replace path (the default) uses none of this.
+The replace path (the default) uses none of this; a name repeated inside one run's new set
+is already dropped by the plan step (``projects._plan_entries``).
 """
 from __future__ import annotations
 
@@ -50,11 +51,14 @@ class ExistingPersonas:
     """The kept personas as the generator needs them.
 
     ``name_keys`` holds EVERY kept persona's normalised name (uncapped: the clash
-    check must see them all); ``section`` is the bounded prompt block ('' for none).
+    check must see them all); ``section`` is the bounded prompt block ('' for none);
+    ``names`` is every kept name as one line, in sort-key order (oldest first), so the
+    generator's names-to-avoid list comes from this same read instead of a second query.
     """
 
     name_keys: frozenset[str]
     section: str
+    names: tuple[str, ...] = ()
 
 
 NO_EXISTING_PERSONAS = ExistingPersonas(frozenset(), '')
@@ -126,10 +130,16 @@ def _existing_personas_section(projected: list[dict[str, Any]]) -> str:
 
 
 def _describe_existing(rows: Iterable[dict]) -> ExistingPersonas:
-    """``ExistingPersonas`` from the project's PERSONA# rows in query (sort-key) order, newest last."""
+    """``ExistingPersonas`` from the project's PERSONA# rows in query (sort-key) order, newest last.
+
+    Sort-key order is creation order: every persona id is ``shared.ids.timestamped_id``
+    (``persona_<UTC stamp>_<hex>``), generated and imported alike; a generated batch adds
+    ``_<index>``, one digit because a run writes at most ``MAX_PERSONAS_PER_GENERATION`` (10).
+    """
     ordered = list(rows)
     keys = frozenset(key for key in (_name_key(row.get('name')) for row in ordered) if key)
-    return ExistingPersonas(keys, _existing_personas_section(_bounded_projection(ordered)))
+    names = tuple(name for name in (_line(row.get('name'), MAX_NAME_CHARS) for row in ordered) if name)
+    return ExistingPersonas(keys, _existing_personas_section(_bounded_projection(ordered)), names)
 
 
 def read_existing_personas(table: Any, project_id: str) -> ExistingPersonas:

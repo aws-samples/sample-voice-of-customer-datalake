@@ -191,6 +191,8 @@
       "pending": "等待中",
       "running": "运行中"
     },
+    "duplicateNamesDropped_one": "有 {{count, number}} 个新用户画像未添加：其名称与本项目已有的画像重复。",
+    "duplicateNamesDropped_other": "有 {{count, number}} 个新用户画像未添加：其名称与本项目已有的画像重复。",
     "truncated": {
       "counted": "基于已读取的 {{total, number}} 条反馈中的 {{used, number}} 条，其余内容无法在单次生成中容纳。",
       "fetchCapped": "单次生成最多读取 {{limit, number}} 条反馈。符合筛选条件的反馈可能更多，请缩小筛选范围以更改所用内容。",

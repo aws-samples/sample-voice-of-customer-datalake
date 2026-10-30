@@ -50,8 +50,8 @@ def world() -> Iterator[World]:
         yield World(projects=projects_table, avatar_for=[])
 
 
-def _generate(world: World, filters: dict) -> tuple[dict, FakePersonaModel]:
-    model = FakePersonaModel(NEW_NAMES)
+def _generate(world: World, filters: dict, model: FakePersonaModel | None = None) -> tuple[dict, FakePersonaModel]:
+    model = model or FakePersonaModel(NEW_NAMES)
 
     def avatar(_project_id: str, _persona_id: str, persona: dict) -> dict:
         world.avatar_for.append(persona['name'])
@@ -83,6 +83,16 @@ class TestReplaceMode:
 
         assert not any(KEPT_HEADING in prompt for prompt in model.prompts(PLAN_STEP) + model.prompts(PERSONA_STEP))
 
+    def test_replace_never_saves_a_name_twice_the_plan_drops_the_repeat(self, world):
+        world.seed({'old-1': 'Kept One'})
+        model = FakePersonaModel(['Ada Moreno', ' ADA  moreno', 'Grace Okafor'])
+
+        result, _model = _generate(world, {}, model)
+
+        assert sorted(row['name'] for row in world.personas().values()) == ['Ada Moreno', 'Grace Okafor']
+        assert world.avatar_for == ['Ada Moreno', 'Grace Okafor']
+        assert result['metadata']['duplicate_names_dropped'] == 0
+
 
 class TestAddMode:
     def test_add_never_deletes_the_kept_personas_stay_unchanged(self, world):
@@ -105,6 +115,17 @@ class TestAddMode:
         prompts = model.prompts(PLAN_STEP) + model.prompts(PERSONA_STEP)
         assert len(prompts) == 4
         assert all(KEPT_HEADING in prompt and 'The reviewed Kept One' in prompt for prompt in prompts)
+
+    def test_add_reads_the_kept_personas_once_and_avoids_their_names(self, world):
+        world.seed({'old-1': 'Kept One'})
+
+        with patch.object(projects, '_existing_persona_names') as second_read:
+            _result, model = _generate(world, {'keep_existing_personas': True})
+
+        second_read.assert_not_called()
+        avoid_section = projects._avoid_names_section(['Kept One'])
+        assert avoid_section
+        assert all(avoid_section in prompt for prompt in model.prompts(PLAN_STEP))
 
     def test_a_new_persona_named_like_a_kept_one_is_dropped_before_its_avatar(self, world):
         world.seed({'old-1': '  ada   MORENO '})

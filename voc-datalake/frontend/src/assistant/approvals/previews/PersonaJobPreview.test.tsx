@@ -52,4 +52,10 @@ describe('the generate_personas card', () => {
     show({ keep_existing_personas: false })
     expect(screen.getByTestId('persona-mode')).toHaveTextContent("Deletes the project's existing personas")
   })
+
+  it('claims no existing personas for an add before the project has loaded', () => {
+    getProject.mockReturnValue(new Promise(() => {}))
+    show({})
+    expect(screen.queryByTestId('persona-mode')).not.toBeInTheDocument()
+  })
 })

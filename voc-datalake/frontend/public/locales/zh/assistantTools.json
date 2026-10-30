@@ -103,7 +103,6 @@
     "personas": {
       "add_one": "在项目现有的 {{count, number}} 个用户画像之外新增，现有画像保留。",
       "add_other": "在项目现有的 {{count, number}} 个用户画像之外新增，现有画像保留。",
-      "addUnknown": "在项目现有的用户画像之外新增，现有画像保留。",
       "replace_one": "在生成新画像之前，删除项目现有的 {{count, number}} 个用户画像（包括其修改和头像）。",
       "replace_other": "在生成新画像之前，删除项目现有的 {{count, number}} 个用户画像（包括其修改和头像）。",
       "replaceUnknown": "在生成新画像之前，删除项目现有的用户画像（包括其修改和头像）。"

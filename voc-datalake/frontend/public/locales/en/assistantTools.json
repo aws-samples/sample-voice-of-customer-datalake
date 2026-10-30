@@ -103,7 +103,6 @@
     "personas": {
       "add_one": "Adds to the {{count, number}} persona the project has; it is kept.",
       "add_other": "Adds to the {{count, number}} personas the project has; they are kept.",
-      "addUnknown": "Adds to the project's existing personas; they are kept.",
       "replace_one": "Deletes the project's {{count, number}} existing persona, with its edits and avatar, before writing the new set.",
       "replace_other": "Deletes the project's {{count, number}} existing personas, with their edits and avatars, before writing the new set.",
       "replaceUnknown": "Deletes the project's existing personas, with their edits and avatars, before writing the new set."

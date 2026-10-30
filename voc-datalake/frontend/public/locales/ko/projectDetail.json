@@ -191,6 +191,8 @@
       "pending": "대기 중",
       "running": "실행 중"
     },
+    "duplicateNamesDropped_one": "새 페르소나 {{count, number}}개가 추가되지 않았습니다. 이름이 이 프로젝트의 기존 페르소나와 같습니다.",
+    "duplicateNamesDropped_other": "새 페르소나 {{count, number}}개가 추가되지 않았습니다. 이름이 이 프로젝트의 기존 페르소나와 같습니다.",
     "truncated": {
       "counted": "읽어온 피드백 {{total, number}}건 중 {{used, number}}건을 기반으로 합니다. 나머지는 한 번의 생성에 포함되지 않았습니다.",
       "fetchCapped": "한 번의 생성에서 읽는 피드백은 최대 {{limit, number}}건입니다. 필터와 일치하는 항목이 더 많을 수 있으니 범위를 좁혀 대상을 변경하세요.",
