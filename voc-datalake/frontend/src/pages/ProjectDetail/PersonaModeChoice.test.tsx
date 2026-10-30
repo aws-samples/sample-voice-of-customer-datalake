@@ -25,7 +25,7 @@ function Choice({ existingCount }: { readonly existingCount: number }) {
       <PersonaModeChoice existingCount={existingCount} mode={mode} onChange={setMode} />
       <PersonaGenerateConfirm
         isOpen existingCount={existingCount} mode={mode} personaCount={3}
-        onConfirm={() => undefined} onCancel={() => undefined}
+        onConfirm={() => {}} onCancel={() => {}}
       />
     </>
   )
@@ -73,7 +73,7 @@ describe('the generate request', () => {
   async function sentKeep(mode?: PersonaGenerationMode): Promise<boolean | undefined> {
     const { result } = renderHook(() => {
       const wizard = useProjectWizardState()
-      const mutations = useProjectMutations({ id: 'proj_1', ...wizard, onSuccess: () => undefined, onError: () => undefined })
+      const mutations = useProjectMutations({ id: 'proj_1', ...wizard, onSuccess: () => {}, onError: () => {} })
       return { wizard, mutations }
     }, { wrapper })
     if (mode) act(() => { result.current.wizard.setPersonaConfig((c) => ({ ...c, mode })) })
