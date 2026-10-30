@@ -25,7 +25,7 @@ def parse_midday(name: str, value: str) -> datetime:
         raise ValueError(f'{name}={value!r} is not an ISO date-time') from exc
     if noon.tzinfo is None or midday_of(noon) != noon:
         raise ValueError(f'{name}={value!r} is not 12:00 UTC with a timezone')
-    return noon
+    return noon.astimezone(UTC)  # canonical: +01:00's 13:00 is published as 12:00+00:00
 
 
 def controller_midday(environ: Mapping[str, str] = os.environ) -> datetime:
@@ -35,8 +35,10 @@ def controller_midday(environ: Mapping[str, str] = os.environ) -> datetime:
 
 
 def publish_midday(environ: MutableMapping[str, str]) -> datetime:
-    """On the controller: (over)write ``MIDDAY_ENV`` in ``environ`` with this run's noon, whatever a shell left there,
-    and return it. The forced noon is read from the same ``environ``."""
+    """On the controller: (over)write ``MIDDAY_ENV`` in ``environ`` with this run's noon and return it.
+
+    Whatever a shell left there is replaced. The forced noon is read from the same ``environ``.
+    """
     noon = controller_midday(environ)
     environ[MIDDAY_ENV] = noon.isoformat()
     return noon
