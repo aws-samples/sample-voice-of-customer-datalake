@@ -65,8 +65,12 @@ describe('RowLineageAckControl', () => {
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: PRIORITIZATION_SCORES_KEY }))
   })
 
-  it('offers Undo on an acknowledged row, which withdraws the mark', async () => {
-    mount({ ...crossing, acknowledged: true })
+  // Undo needs no set match, so a truncated composition (a stored document gone) keeps it.
+  it.each([
+    ['whole', EDITABLE],
+    ['truncated', { ...EDITABLE, composition_truncated: true }],
+  ])('offers Undo on an acknowledged row (composition %s), which withdraws the mark', async (_composition, flags) => {
+    mount({ ...crossing, acknowledged: true }, flags)
 
     expect(screen.getByText(t('lineage.acknowledgedNote'))).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('lineage.acknowledge') })).not.toBeInTheDocument()
@@ -89,14 +93,6 @@ describe('RowLineageAckControl', () => {
 
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(screen.getByTestId('row-lineage-ack-unavailable')).toHaveTextContent(t('lineage.acknowledgeUnavailable'))
-  })
-
-  it('still offers Undo on an acknowledged row whose composition is truncated', async () => {
-    mount({ ...crossing, acknowledged: true }, { ...EDITABLE, composition_truncated: true })
-
-    await userEvent.click(screen.getByRole('button', { name: t('lineage.acknowledgeUndo') }))
-
-    expect(mockSetRowLineageAck).toHaveBeenCalledWith('row-1', expect.objectContaining({ acknowledged: false }))
   })
 
   it.each([
