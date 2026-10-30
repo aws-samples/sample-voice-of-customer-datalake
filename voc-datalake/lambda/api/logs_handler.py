@@ -495,10 +495,10 @@ SYSTEM_DAYS_DEFAULT, SYSTEM_DAYS_MAX = 1, 30
 def _logs_client() -> Any:
     # Standard retries back off on a ThrottlingException: the System errors search makes up to 6 concurrent
     # StartQuery / GetQueryResults calls and 4 DescribeLogGroups listings (each quota: 10 requests/s per account).
-    # Three attempts and short timeouts keep a throttled or slow call well inside the 18 s poll budget and the
-    # 29 s API Gateway limit (standard mode waits about 1 s, then 2 s, between attempts).
-    return boto3.client('logs', config=Config(retries={'mode': 'standard', 'max_attempts': 3},
-                                              connect_timeout=3, read_timeout=10))
+    # Worst case per call, a stall: 5 s + about 1 s of backoff + 5 s = 11 s, inside the 29 s API Gateway limit even
+    # when it starts late in the 18 s poll budget. A normal call answers in well under a second.
+    return boto3.client('logs', config=Config(retries={'mode': 'standard', 'max_attempts': 2},
+                                              connect_timeout=3, read_timeout=5))
 
 
 @app.get("/logs/system")
