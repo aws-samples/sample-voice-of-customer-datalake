@@ -74,8 +74,8 @@ from shared.invocation_cost import instrumented_handler
 # CategoryReprocess bundling in processing-stack-consolidated.ts), and tests
 # import it as `jobs.category_reprocess.handler` from the lambda/ root.
 from shared.logging import logger, metrics
-from shared.timestamps import now_iso
 from shared.source_profiles import PII_SUMMARY_ONLY
+from shared.timestamps import now_iso
 from shared.usefulness import USEFULNESS_FIELD, USEFULNESS_UNRATED, item_usefulness, stored_band
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
