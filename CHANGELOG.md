@@ -17,6 +17,10 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.49.00] - 2026-10-30
+
+A Prioritization row that crosses generations on purpose can be marked Keep both versions (#399).
+
 ### Added
 
 - Prioritization: a row labelled **Crosses generations** (for example PRD v1 and PRD v2 scored together on
