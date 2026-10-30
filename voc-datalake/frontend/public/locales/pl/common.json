@@ -346,7 +346,29 @@
       "kiro": "Zapisz jako .kiro/settings/mcp.json w obszarze roboczym albo ~/.kiro/settings/mcp.json. W Kiro IDE dodaj VOC_MCP_TOKEN w Mcp Approved Env Vars; Kiro CLI odczytuje ją z powłoki.",
       "inline": "Dla klientów, które nie odczytują zmiennych środowiskowych: token jest wklejony do pliku, więc nie commituj go ani nie udostępniaj."
     },
-    "mcpEnvHint": "Ten plik odczytuje token ze zmiennej środowiskowej {{name}}, więc nie zawiera sekretu. Ustaw ją w powłoce uruchamiającej klienta, używając tokenu poniżej:"
+    "mcpEnvHint": "Ten plik odczytuje token ze zmiennej środowiskowej {{name}}, więc nie zawiera sekretu. Ustaw ją w powłoce uruchamiającej klienta, używając tokenu poniżej:",
+    "oauth": {
+      "title": "Zaloguj się swoim kontem",
+      "body": "Ci asystenci łączą się bez tokenu: dodaj serwer, a asystent otworzy przeglądarkę, aby się zalogować i zatwierdzić dostęp. Działa jako Ty, nigdy jako administrator.",
+      "kiro": "Kiro (mcp.json)",
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor (mcp.json)",
+      "consentHint": "Na ekranie zatwierdzania wybierasz tylko odczyt albo odczyt i zapis oraz opcjonalnie jeden projekt. Na następnej stronie konta logujesz się jeszcze raz.",
+      "webUntested": "Asystenci webowi mogą się logować pod tym samym adresem serwera. Ich logowanie nie zostało jeszcze przetestowane na żywo.",
+      "webNotConfigured": "Asystenci webowi nie są skonfigurowani w tym wdrożeniu (operator dodaje ich adresy zwrotne).",
+      "grantsTitle": "Zalogowani asystenci",
+      "grantsFailed": "Nie udało się wczytać zalogowanych asystentów.",
+      "grantsEmpty": "Żaden asystent nie zalogował się jeszcze Twoim kontem.",
+      "revokeTitle": "Wylogować tego asystenta?",
+      "revokeBody": "„{{name}}” traci dostęp przy następnym żądaniu i musi zalogować się i zostać zatwierdzony ponownie.",
+      "revokeNamed": "Wyloguj {{name}}",
+      "mintingOff": "W tym wdrożeniu nie można tworzyć tokenów osobistych. Istniejące tokeny działają do wygaśnięcia lub unieważnienia; zamiast tego zaloguj się swoim kontem.",
+      "status": {
+        "active": "Aktywny",
+        "revoked": "Wylogowany",
+        "expired": "Wygasły"
+      }
+    }
   },
   "header": {
     "title": "Głos klienta",
@@ -406,5 +428,21 @@
     "praise": "Pozytywna opinia bez problemu do naprawy",
     "question": "Pyta, jak coś działa",
     "other": "Żadne z powyższych"
+  },
+  "oauthConsent": {
+    "title": "Zatwierdź asystenta",
+    "asks": "{{client}} prosi o korzystanie z VoC w Twoim imieniu.",
+    "scope": {
+      "read": "Tylko odczyt: wyszukiwanie opinii, wskaźników, pamięci i projektów",
+      "write": "Odczyt i zapis: także tworzenie i aktualizowanie dokumentów"
+    },
+    "actsAs": "Otrzymuje Twój dostęp do projektów i kategorii, najwyżej jako edytor, nigdy jako administrator. W każdej chwili możesz go wylogować na stronie Połącz.",
+    "runsAgents": "Jako administrator pozwalasz mu też uruchamiać agentów (sprawdzane przy każdym uruchomieniu).",
+    "approveFailed": "Zatwierdzenie nie powiodło się. Spróbuj ponownie.",
+    "approve": "Zatwierdź i zaloguj",
+    "deny": "Odmów",
+    "invalid": "To żądanie logowania jest nieprawidłowe. Rozpocznij logowanie ponownie w asystencie.",
+    "refused": "Nie można zatwierdzić żądania asystenta: {{reason}}",
+    "back": "Wróć do asystenta"
   }
 }
