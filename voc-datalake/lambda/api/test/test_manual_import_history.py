@@ -132,6 +132,57 @@ class TestEveryImportWritesOneRecord:
         assert body['imported_count'] == 2
 
 
+_ONE_ITEM = [{'id': 'a', 'text': 'ok', 'source': 'chat', 'timestamp': '2026-10-01T00:00:00Z'}]
+
+
+@pytest.mark.usefixtures("wired")
+class TestTheRecordHoldsNoCustomerValues:
+    def test_a_rating_cell_holding_an_email_never_reaches_the_stored_record(
+            self, import_run_rows, api_gateway_event, lambda_context):
+        email = 'jane.doe@example.com'
+        call_route(h.lambda_handler, api_gateway_event, lambda_context, method='POST',
+                   path='/scrapers/manual/csv-upload', body={'csv_text': f'text,rating\nGreat flight,{email}\n'})
+        [detail] = _details(import_run_rows)
+        assert detail['warnings'] == ['row 1: rating is not a number — left blank']
+        assert email not in json.dumps(import_run_rows, default=str)
+
+
+@pytest.mark.usefixtures("wired")
+class TestTheJsonUploadSourceLabel:
+    def _summary(self, rows, event, context, **extra) -> dict:
+        call_route(h.lambda_handler, event, context, method='POST', path='/scrapers/manual/json-upload',
+                   body={'items': _ONE_ITEM, **extra})
+        [summary] = _summaries(rows)
+        return summary
+
+    def test_a_label_without_the_assistant_origin_is_ignored(self, import_run_rows, api_gateway_event, lambda_context):
+        summary = self._summary(import_run_rows, api_gateway_event, lambda_context, source_label='Forged origin')
+        assert (summary['method'], summary['source']) == ('json', 'manual_import')
+
+    def test_an_unknown_origin_is_a_plain_json_upload(self, import_run_rows, api_gateway_event, lambda_context):
+        summary = self._summary(import_run_rows, api_gateway_event, lambda_context,
+                                import_origin='s3', source_label='Forged origin')
+        assert (summary['method'], summary['source']) == ('json', 'manual_import')
+
+    def test_the_assistant_label_is_capped_at_120_characters(self, import_run_rows, api_gateway_event, lambda_context):
+        summary = self._summary(import_run_rows, api_gateway_event, lambda_context,
+                                import_origin='assistant', source_label='x' * 500)
+        assert summary['source'] == 'x' * 120
+
+    def test_control_and_format_characters_are_removed_from_the_label(
+            self, import_run_rows, api_gateway_event, lambda_context):
+        summary = self._summary(import_run_rows, api_gateway_event, lambda_context,
+                                import_origin='assistant', source_label='\x1b[31mExample\u202e Air\n\x00forum ')
+        assert summary['source'] == '[31mExample Airforum'
+
+    @pytest.mark.parametrize('label', [None, 42, '', '  \x07\n '])
+    def test_an_assistant_import_without_a_usable_label_names_the_profile(
+            self, label, import_run_rows, api_gateway_event, lambda_context):
+        summary = self._summary(import_run_rows, api_gateway_event, lambda_context,
+                                import_origin='assistant', source_label=label)
+        assert (summary['method'], summary['source']) == ('assistant', 'manual_import')
+
+
 class TestHistoryRoutes:
     def test_the_list_passes_limit_and_cursor_through(self, api_gateway_event, lambda_context):
         with patch.object(h, 'list_import_runs', return_value=([{'run_id': RUN_ID}], 'next')) as listing:

@@ -725,6 +725,14 @@ function uploadRadarBrand(body, shared) {
   return effectiveBrands(shared).some((b) => b.key === brand) ? { brand } : { error: `Radar brand ${brand} is not in the brand list` };
 }
 
+// Mirrors `_json_run_origin`: the label counts only for the assistant origin, without
+// control / format characters, at most 120 characters; otherwise the profile id.
+function jsonRunOrigin(body, sourceId) {
+  if (body.import_origin !== 'assistant') return { method: 'json', source: sourceId };
+  const label = typeof body.source_label === 'string' ? body.source_label.replace(/[\p{Cc}\p{Cf}]/gu, '').trim() : '';
+  return { method: 'assistant', source: label.slice(0, 120).trim() || sourceId };
+}
+
 function jsonUpload({ shared }, body) {
   const radar = uploadRadarBrand(body, shared);
   if (radar.error) return fail(400, radar.error);
@@ -746,8 +754,7 @@ function jsonUpload({ shared }, body) {
     });
   }
   recordImportRun({
-    method: body.import_origin === 'assistant' ? 'assistant' : 'json',
-    source: str(body.source_label).trim() || sourceId, source_id: sourceId,
+    ...jsonRunOrigin(body, sourceId), source_id: sourceId,
     counts: { received: items.length, imported: clean.length }, raw_s3_key: `s3://${MOCK_RAW_BUCKET}/${key}`, radar_brand: radar.brand,
   });
   return [200, { success: true, imported_count: clean.length, total_items: items.length, s3_uri: `s3://${MOCK_RAW_BUCKET}/${key}` }];
@@ -885,7 +892,7 @@ function csvItems(csvText, defaultSource, columnMap) {
     if (fields.rating) {
       const n = Number(fields.rating);
       if (Number.isFinite(n)) rating = Math.trunc(n);
-      else warnings.push(`row ${idx}: rating "${fields.rating}" is not a number — left blank`);
+      else warnings.push(`row ${idx}: rating is not a number — left blank`);
     }
     items.push({
       id, text: fields.text, rating, title: fields.title, url: fields.url, author: fields.author,

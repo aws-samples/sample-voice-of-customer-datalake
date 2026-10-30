@@ -53,7 +53,7 @@ def test_a_bad_jsonl_line_is_a_skipped_row_with_its_reason(mock_s3, ingestor, re
     ingestor.process_file("bucket", "web/a.jsonl")
     [run] = recorded
     assert (run.counts.received, run.counts.imported, run.counts.skipped) == (2, 1, 1)
-    assert run.warnings[0].startswith("line 2: not valid JSON — skipped")
+    assert run.warnings == ["line 2: not valid JSON — skipped"]
 
 
 @patch(f"{HANDLER}.s3_client")
@@ -106,7 +106,7 @@ def test_a_queue_failure_is_recorded_before_the_error_propagates(mock_s3, ingest
         ingestor.process_file("bucket", "web/a.csv")
     [run] = recorded
     assert (run.counts.received, run.counts.imported, run.counts.failed) == (150, 100, 50)
-    assert run.errors == ["stopped after 100 items: SQS rejected"]
+    assert run.errors == ["stopped after 100 items: RuntimeError"]
 
 
 @patch(f"{HANDLER}.s3_client")

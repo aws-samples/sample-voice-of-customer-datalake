@@ -180,6 +180,14 @@ Administrators can delete all data from one source in a single erasure job (#143
 - Erasure jobs now report their counts while they run (`deleted_items`, `deleted_objects`, `progress_at`,
   and `phase` for a whole-source job), not only when they finish.
 
+### Security
+
+- Import history records never copy customer values: the CSV warning for a non-numeric rating no longer quotes the
+  cell, and S3 import parse errors name the error class instead of its message. On `POST /scrapers/manual/json-upload`
+  the `source_label` is kept only with `import_origin: 'assistant'` (at most 120 characters, control characters
+  removed); both are client-reported, an audit hint rather than proof.
+  See [docs/import-history.md](docs/import-history.md).
+
 ### Upgrade notes
 
 - No new IAM grant, table or stack: `voc-retention` already holds feedback `Scan` / `DeleteItem` and
