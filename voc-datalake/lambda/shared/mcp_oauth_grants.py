@@ -26,7 +26,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from datetime import datetime, timedelta
-from typing import Any, Final
+from typing import Any, Final, TypeGuard
 
 from shared import mcp_global_tokens as gt
 from shared.mcp_oauth_config import CLIENT_DISPLAY_NAMES, OAuthConfig
@@ -53,6 +53,15 @@ def grant_key(subject: str, client_id: str) -> dict[str, str]:
 
 def is_grant(row: Mapping[str, Any] | None) -> bool:
     return isinstance(row, Mapping) and row.get('kind') == KIND_OAUTH_GRANT and not row.get('secret_hash')
+
+
+def is_active_grant_of(row: dict | None, *, sub: str, client_id: str, now: datetime) -> TypeGuard[dict]:
+    """``row`` is an unrevoked, unexpired grant of exactly this person and this client."""
+    if row is None or not is_grant(row):
+        return False
+    if row.get('created_by') != sub or row.get('client_id') != client_id:
+        return False
+    return gt.token_status(row, now) == gt.STATUS_ACTIVE
 
 
 def grant_item(*, subject: str, username: str, is_admin: bool, client_id: str, client_kind: str,
@@ -91,7 +100,7 @@ def chain_window_open(row: Mapping[str, Any], now: datetime) -> bool:
     return deadline is not None and now < deadline
 
 
-def is_valid_origin_jti(value: object) -> bool:
+def is_valid_origin_jti(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and 0 < len(value) <= MAX_ORIGIN_JTI_LENGTH and value.isprintable()
 
 
