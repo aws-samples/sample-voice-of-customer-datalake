@@ -35,7 +35,7 @@ describe('VocIngestionStack S3 import history writes', () => {
     template = synthIngestionTemplate(['s3_import']);
     const ids = Object.keys(template.findResources('AWS::Lambda::Function'))
       .filter((id) => id.startsWith(`Ingestor${capitalize('s3_import')}`));
-    expect(ids).toHaveLength(1);
+    if (ids.length !== 1) throw new Error(`expected one s3_import ingestor, found ${ids.length}`);
     fn = FunctionSchema.parse(template.findResources('AWS::Lambda::Function')[itemAt(ids, 0)]).Properties;
   });
 
