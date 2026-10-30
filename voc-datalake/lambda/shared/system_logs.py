@@ -169,7 +169,11 @@ def poll(client: Any, ids: tuple[str, ...], budget: float,
     waits = itertools.chain(POLL_INTERVALS_SECONDS, itertools.repeat(POLL_INTERVAL_SECONDS))
     while True:
         open_ids = [query_id for query_id in ids if query_id not in done]
-        answers = ordered_map(lambda query_id: client.get_query_results(queryId=query_id), open_ids)
+        try:
+            answers = ordered_map(lambda query_id: client.get_query_results(queryId=query_id), open_ids)
+        except (ClientError, BotoCoreError):
+            stop_queries(client, ids)  # a failed read must not leave the search's queries running
+            raise
         statuses = {answer.get('status') for answer in answers}
         if statuses & DONE_FAILED:
             stop_queries(client, ids)

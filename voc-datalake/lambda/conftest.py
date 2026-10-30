@@ -113,9 +113,14 @@ def _reset_log_group_discovery():
     """Forget shared.system_log_sources' cached log-group listing between tests.
 
     It is kept 5 minutes per (client, sources) in a warm Lambda, so a test reusing a fake and an env within that
-    time would otherwise list nothing. Cleared only when the module is already loaded, like the cooldowns above.
+    time would otherwise list nothing. Cleared before and after each test (only when the module is loaded).
     """
+    _clear_log_group_discovery()
     yield
+    _clear_log_group_discovery()
+
+
+def _clear_log_group_discovery() -> None:
     module = sys.modules.get('shared.system_log_sources')
     if module is not None:
         module.discovered_log_groups.clear()

@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import boto3
 from boto3.dynamodb.conditions import Key
+from botocore.config import Config
 
 from shared.api import (
     MAX_FEEDBACK_WINDOW_DAYS,
@@ -492,7 +493,9 @@ SYSTEM_DAYS_DEFAULT, SYSTEM_DAYS_MAX = 1, 30
 
 @cache
 def _logs_client() -> Any:
-    return boto3.client('logs')
+    # Standard retries back off on a ThrottlingException: the System errors search makes up to 6 concurrent
+    # StartQuery / GetQueryResults calls and 4 DescribeLogGroups listings (each quota: 10 requests/s per account).
+    return boto3.client('logs', config=Config(retries={'mode': 'standard', 'max_attempts': 5}))
 
 
 @app.get("/logs/system")

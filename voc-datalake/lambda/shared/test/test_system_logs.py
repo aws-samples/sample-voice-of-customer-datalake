@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from shared.exceptions import ConfigurationError, ValidationError
 from shared.system_log_groups import MAX_GROUPS, MAX_MESSAGE_CHARS, MAX_SAMPLE_CHARS, LogLine, group_lines, normalize
@@ -185,16 +185,23 @@ class TestPolling:
         assert fake.stopped == [fake.started[0]['queryId']]
 
     @pytest.mark.parametrize('operation', ['get_query_results', 'get_paginator'])
-    def test_a_throttled_read_or_listing_inside_the_concurrent_calls_is_failed_without_its_text(self, operation, monkeypatch):
-        # ordered_map re-raises the worker's own ClientError, so search() still answers its fixed message.
+    @pytest.mark.parametrize('error', [
+        ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'secret detail'}}, 'Op'),
+        EndpointConnectionError(endpoint_url='https://logs.secret-detail.example'),
+    ], ids=['ClientError', 'BotoCoreError'])
+    def test_a_throttled_read_or_listing_inside_the_concurrent_calls_is_failed_without_its_text(
+            self, operation, error, monkeypatch):
+        # ordered_map re-raises the worker's own exception, so search() still answers its fixed message.
         fake = FakeLogs(list(self.TWO_BATCHES))
 
-        def throttled(*_args, **_kwargs):
-            raise ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'secret detail'}}, operation)
-        monkeypatch.setattr(fake, operation, throttled)
+        def broken(*_args, **_kwargs):
+            raise error
+        monkeypatch.setattr(fake, operation, broken)
         body = _run(fake, budget=10.0)
         assert (body['status'], body['message']) == ('failed', FAILED_MESSAGE)
-        assert 'secret detail' not in str(body)
+        assert 'secret' not in str(body)
+        # A failed read stops every query the search started (a failed listing starts none).
+        assert sorted(fake.stopped) == sorted(q['queryId'] for q in fake.started)
 
 
 def _groups(rows: list, level: str = 'error') -> list[dict]:
