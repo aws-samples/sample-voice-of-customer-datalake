@@ -8,6 +8,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { stackModelArns } from '../utils/model-allowlist';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
+import { grantInvokeByName } from '../utils/worker-lambda';
 import {
   PY_LAMBDA_ASSET_EXCLUDES,
   VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
@@ -254,24 +255,16 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   });
 
   // A lease loser self-redelivers once before its own budget becomes too
-  // small, so an owner crash still has a durable post-expiry attempt. Use
-  // deterministic physical-name ARNs instead of Function.grantInvoke: the
-  // function already depends on its role, and a role policy that GetAtts the
-  // function creates a CloudFormation cycle.
-  const grantSelfInvoke = (role: iam.Role, functionName: string) => {
-    role.addToPolicy(new iam.PolicyStatement({
-      actions: ['lambda:InvokeFunction'],
-      resources: [stack.formatArn({
-        service: 'lambda',
-        resource: 'function',
-        resourceName: functionName,
-      })],
-    }));
-  };
-  grantSelfInvoke(personaGeneratorRole, ctx.uniqueName('voc-job-persona-generator'));
-  grantSelfInvoke(documentGeneratorRole, ctx.uniqueName('voc-job-document-generator'));
-  grantSelfInvoke(documentMergerRole, ctx.uniqueName('voc-job-document-merger'));
-  grantSelfInvoke(personaImporterRole, ctx.uniqueName('voc-job-persona-importer'));
+  // small (shared/jobs.py recover_job_execution_claim), so an owner crash
+  // still has a durable post-expiry attempt. Grant by deterministic physical
+  // name instead of Function.grantInvoke: the function already depends on its
+  // role, and a role policy that GetAtts the function creates a CloudFormation
+  // cycle. grantInvokeByName writes the colon-form `function:<name>` ARN; a
+  // slash-form `function/<name>` matches no function and denied the requeue.
+  grantInvokeByName(stack, personaGeneratorRole, [ctx.uniqueName('voc-job-persona-generator')]);
+  grantInvokeByName(stack, documentGeneratorRole, [ctx.uniqueName('voc-job-document-generator')]);
+  grantInvokeByName(stack, documentMergerRole, [ctx.uniqueName('voc-job-document-merger')]);
+  grantInvokeByName(stack, personaImporterRole, [ctx.uniqueName('voc-job-persona-importer')]);
 
   // Wire job Lambda function names into the Projects API + grant invoke
   for (const fn of projectsFunctions) {
