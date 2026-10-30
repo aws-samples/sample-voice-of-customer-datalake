@@ -52,7 +52,7 @@
     "@vitest/eslint-plugin": "1.6.27",
     "aws-cdk": "2.1146.1",
     "esbuild": "0.28.2",
-    "eslint": "9.39.5",
+    "eslint": "10.13.0",
     "eslint-plugin-sonarjs": "4.2.2",
     "eslint-plugin-unicorn": "63.0.0",
     "knip": "6.44.0",
