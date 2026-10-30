@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import pytest
+from botocore.exceptions import ClientError
 
 from shared.exceptions import ConfigurationError, ValidationError
 from shared.system_log_groups import MAX_GROUPS, MAX_MESSAGE_CHARS, MAX_SAMPLE_CHARS, LogLine, group_lines, normalize
 from shared.system_logs import (
     FAILED_MESSAGE,
     GROUPS_PER_QUERY,
+    POLL_INTERVAL_SECONDS,
+    POLL_INTERVALS_SECONDS,
     ROW_LIMIT,
     SearchRequest,
     parse_level,
@@ -131,6 +134,55 @@ class TestDiscoveryAndQueries:
     def test_hitting_the_row_cap_is_truncated(self):
         rows = [row('a', '2026-10-27 08:00:00.000', level='ERROR', message='same')] * ROW_LIMIT
         assert _run(FakeLogs([group('a')], rows=rows))['truncated'] is True
+
+
+class _PerQueryLogs(FakeLogs):
+    """Each started query answers its own status sequence (by start order); one batch can refuse to start."""
+
+    def __init__(self, names: list[str], sequences: list[list[str]], refuse: str = '') -> None:
+        super().__init__(names)
+        self.sequences = sequences
+        self.refuse = refuse
+
+    def start_query(self, **kwargs):
+        if self.refuse in kwargs['logGroupNames']:
+            raise ClientError({'Error': {'Code': 'LimitExceededException', 'Message': 'x'}}, 'StartQuery')
+        return super().start_query(**kwargs)
+
+    def get_query_results(self, *, queryId: str) -> dict:
+        count = self.polls[queryId]
+        self.polls[queryId] = count + 1
+        index = sorted(self.started, key=lambda q: q['logGroupNames'][0]).index(
+            next(q for q in self.started if q['queryId'] == queryId))
+        sequence = self.sequences[index]
+        return {'status': sequence[min(count, len(sequence) - 1)], 'results': []}
+
+
+class TestPolling:
+    TWO_BATCHES: tuple[str, ...] = tuple(group(f'fn-{i:03d}') for i in range(GROUPS_PER_QUERY + 1))
+
+    def test_a_finished_query_is_not_read_again_while_another_runs(self):
+        fake = _PerQueryLogs(list(self.TWO_BATCHES), [['Complete'], ['Running', 'Running', 'Complete']])
+        body = _run(fake, budget=10.0)
+        assert body['status'] == 'complete'
+        first, second = sorted(fake.started, key=lambda q: q['logGroupNames'][0])
+        assert (fake.polls[first['queryId']], fake.polls[second['queryId']]) == (1, 3)
+
+    def test_the_first_waits_are_short_then_one_second(self):
+        waits: list[float] = []
+        fake = FakeLogs([group('a')], statuses=['Running', 'Running', 'Running', 'Running', 'Complete'])
+        ticks = iter(range(10_000))
+        body = search(fake, SearchRequest(1, 'error', ()), now=NOW, budget=30.0, sleep=waits.append,
+                      clock=lambda: float(next(ticks)))
+        assert body['status'] == 'complete'
+        assert waits == [*POLL_INTERVALS_SECONDS, POLL_INTERVAL_SECONDS, POLL_INTERVAL_SECONDS]
+
+    def test_a_query_that_cannot_start_stops_the_ones_that_did(self):
+        fake = _PerQueryLogs(list(self.TWO_BATCHES), [['Complete']], refuse=self.TWO_BATCHES[-1])
+        body = _run(fake)
+        assert body['status'] == 'failed'
+        assert [q['logGroupNames'][0] for q in fake.started] == [self.TWO_BATCHES[0]]
+        assert fake.stopped == [fake.started[0]['queryId']]
 
 
 def _groups(rows: list, level: str = 'error') -> list[dict]:

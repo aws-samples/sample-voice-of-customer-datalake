@@ -5,7 +5,7 @@ This guide covers how to deploy the VoC (Voice of Customer) platform, including 
 ## Prerequisites
 
 - **AWS CLI** configured with appropriate credentials
-- **Node.js** 18+ and npm
+- **Node.js** 22.12+ and npm (Vite 7 and Stryker 10 need it; CI runs Node 22)
 - **Python** 3.14+ (for Lambda functions)
 - **Docker or Finch** (for building Lambda layers and CDK asset bundling)
 
@@ -648,8 +648,10 @@ regional Insights query of a deployment in another region).
     (`lambda/shared/system_logs.py`; sources `system_log_sources.py`, rows
     `system_log_rows.py`, grouping `system_log_groups.py`). One Logs Insights query per
     ≤ 50 Lambda groups (at most 4), one for the state machines, one for the access log,
-    polled for up to 18 s; a slower search answers `running` with up to 6 comma-separated
-    `query_id`s and the page polls again. Each group: `source`, `function`, `level`,
+    started and read concurrently and polled for up to 18 s (first after 0.5 s, then 1 s; a
+    finished query is not read again); a slower search answers `running` with up to 6 comma-separated
+    `query_id`s and the page polls again. The log groups are listed once per 5 minutes per warm
+    Lambda (`DISCOVERY_TTL_SECONDS`), so a poll does not list them again. Each group: `source`, `function`, `level`,
     `message` (≤ 300, ids / times / numbers / quoted values replaced), `sample` (the newest
     full line with its stack trace, ≤ 6,000), `count`, `first_seen`, `last_seen`,
     `request_id`. At most 200 groups; `truncated` = a query hit Insights' 10,000-row cap;

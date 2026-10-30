@@ -12,7 +12,7 @@ import { OUT_DIR, RUN_ID, RUN_PREFIX, type Role } from './env'
 import { withFileLock } from './fileLock'
 
 /** `token` is a global MCP token (`/connect/tokens`); `memory` and `token` are owned by `role`, like conversations. */
-export const ENTITY_KINDS = ['project', 'feedback-form', 'scraper', 'conversation', 'agent', 'workflow', 'agent-run', 'memory', 'token'] as const
+export const ENTITY_KINDS = ['project', 'feedback-form', 'scraper', 'conversation', 'agent', 'workflow', 'agent-run', 'memory', 'token', 'board'] as const
 export type EntityKind = (typeof ENTITY_KINDS)[number]
 
 const isEntityKind = (value: unknown): value is EntityKind => ENTITY_KINDS.some((kind) => kind === value)

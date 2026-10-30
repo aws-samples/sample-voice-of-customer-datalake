@@ -35,6 +35,8 @@ const COLLECTIONS: readonly Collection[] = [
   { kind: 'project', list: '/projects', key: 'projects', idKeys: ['project_id', 'id'], del: (id) => `/projects/${encodeURIComponent(id)}` },
   { kind: 'feedback-form', list: '/feedback-forms', key: 'forms', idKeys: ['form_id', 'id'], del: (id) => `/feedback-forms/${encodeURIComponent(id)}` },
   { kind: 'scraper', list: '/scrapers', key: 'scrapers', idKeys: ['id'], del: (id) => `/scrapers/${encodeURIComponent(id)}` },
+  // A feedback board goes with its requests (the route's resumable `with_requests`; a scratch board holds one or two).
+  { kind: 'board', list: '/feature-requests/boards', key: 'boards', idKeys: ['board_id'], del: (id) => `/feature-requests/boards/${encodeURIComponent(id)}?with_requests=true` },
 ]
 
 interface ProofLine {

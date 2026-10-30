@@ -9,13 +9,16 @@ Each group says its `source`: `lambda`, `workflow` or `api`.
 
 An Insights query can outlive one API call (API Gateway stops at 29 s), so the search
 polls for at most `POLL_BUDGET_SECONDS` and otherwise answers `running` with the query
-ids; the caller polls again with `query_id`. Rows are only ever returned redacted and
+ids; the caller polls again with `query_id`. The queries are started and read concurrently,
+a finished query is not read again, and the first reads come sooner than the later ones
+(most searches finish in 1 to 2 s). Rows are only ever returned redacted and
 are never logged. AWS error text is never returned either: a failure is `failed` with a
 fixed message.
 """
 from __future__ import annotations
 
 import contextlib
+import itertools
 import re
 import time
 from collections.abc import Callable, Iterable
@@ -24,6 +27,7 @@ from typing import Any, Final
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared.concurrency import ordered_map
 from shared.e2e_tag import TEST_RUN_KEY
 from shared.exceptions import ValidationError
 from shared.logging import logger
@@ -57,6 +61,9 @@ MAX_LAMBDA_QUERIES: Final = 4
 MAX_QUERIES: Final = MAX_LAMBDA_QUERIES + 2
 ROW_LIMIT: Final = 10000              # Insights' own cap on one query's rows
 POLL_BUDGET_SECONDS: Final = 18.0     # the Lambda has 30 s, API Gateway 29 s
+# Waits between reads: short at first (a 7-day search measured 0.5 to 1.9 s per query), then 1 s.
+# At most MAX_QUERIES reads per round stays under GetQueryResults' 10 requests/s account quota.
+POLL_INTERVALS_SECONDS: Final = (0.5, 0.5)
 POLL_INTERVAL_SECONDS: Final = 1.0
 SECONDS_PER_DAY: Final = 86400
 FAILED_MESSAGE: Final = 'The log search failed. Try again in a minute.'
@@ -122,16 +129,22 @@ def query_plan(targets: list[LogTarget], level: str) -> list[tuple[list[str], st
 
 
 def start_queries(client: Any, plan: list[tuple[list[str], str]], start: int, end: int) -> tuple[str, ...]:
-    ids: list[str] = []
-    try:
-        for names, query in plan:
+    """Start every query of `plan` concurrently; on any failure the ones that started are stopped."""
+    def started(entry: tuple[list[str], str]) -> str | Exception:
+        names, query = entry
+        try:
             response = client.start_query(logGroupNames=names, startTime=start, endTime=end,
                                           queryString=query, limit=ROW_LIMIT)
-            ids.append(response['queryId'])
-    except (ClientError, BotoCoreError):
+        except (ClientError, BotoCoreError) as error:
+            return error
+        return str(response['queryId'])
+    outcomes = ordered_map(started, plan)
+    ids = tuple(outcome for outcome in outcomes if isinstance(outcome, str))
+    failure = next((outcome for outcome in outcomes if isinstance(outcome, Exception)), None)
+    if failure is not None:
         stop_queries(client, ids)
-        raise
-    return tuple(ids)
+        raise failure
+    return ids
 
 
 def stop_queries(client: Any, ids: Iterable[str]) -> None:
@@ -147,19 +160,28 @@ def result_row(fields: list[dict[str, str]]) -> dict[str, str]:
 
 def poll(client: Any, ids: tuple[str, ...], budget: float,
          sleep: Callable[[float], None], clock: Callable[[], float]) -> tuple[str, list[dict]]:
-    """(`complete` | `running` | `failed`, each query's results once all are complete)."""
+    """(`complete` | `running` | `failed`, each query's results, in `ids` order, once all are complete).
+
+    Each round reads the queries still open, concurrently; a `Complete` answer is kept, not read again.
+    """
     deadline = clock() + budget
+    done: dict[str, dict] = {}
+    waits = itertools.chain(POLL_INTERVALS_SECONDS, itertools.repeat(POLL_INTERVAL_SECONDS))
     while True:
-        answers = [client.get_query_results(queryId=query_id) for query_id in ids]
+        open_ids = [query_id for query_id in ids if query_id not in done]
+        answers = ordered_map(lambda query_id: client.get_query_results(queryId=query_id), open_ids)
         statuses = {answer.get('status') for answer in answers}
         if statuses & DONE_FAILED:
             stop_queries(client, ids)
             return 'failed', []
-        if statuses == {'Complete'}:
-            return 'complete', answers
-        if clock() + POLL_INTERVAL_SECONDS > deadline:
+        done.update((query_id, answer) for query_id, answer in zip(open_ids, answers, strict=True)
+                    if answer.get('status') == 'Complete')
+        if len(done) == len(ids):
+            return 'complete', [done[query_id] for query_id in ids]
+        wait = next(waits)
+        if clock() + wait > deadline:
             return 'running', []
-        sleep(POLL_INTERVAL_SECONDS)
+        sleep(wait)
 
 
 def _classify(row: dict[str, str], target: LogTarget, wanted: tuple[str, ...]) -> LogLine | None:

@@ -13,16 +13,22 @@ Four kinds of group, each named to the logs Lambda by CDK (lib/stacks/api-logs-d
 
 Only the first is required; a deployment without the others simply searches fewer groups.
 Every group is listed with `DescribeLogGroups` (a prefix plus a check here), so a name that
-does not exist is never handed to `StartQuery` (which would fail the whole query).
+does not exist is never handed to `StartQuery` (which would fail the whole query). The kinds
+are listed concurrently, and the answer is kept for `DISCOVERY_TTL_SECONDS` in the warm Lambda:
+a search and each of its `query_id` polls would otherwise list every group again (log groups
+change only with a deploy, or when a new function first logs, which then shows within minutes).
 """
 from __future__ import annotations
 
 import os
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from operator import attrgetter
 from typing import Any, Final
 
+from shared.concurrency import concurrently
 from shared.exceptions import ConfigurationError
 
 PATTERN_ENV: Final = 'SYSTEM_LOG_GROUP_PATTERN'
@@ -35,6 +41,10 @@ SOURCE_WORKFLOW: Final = 'workflow'
 SOURCE_API: Final = 'api'
 API_FUNCTION: Final = 'api'
 _ACCOUNT_ID = re.compile(r'(?<!\d)\d{12}(?!\d)')
+DISCOVERY_TTL_SECONDS: Final = 300.0
+# Entries are keyed by (client, sources): one in a Lambda (a cached client, fixed env), a few in tests.
+_MAX_CACHED_DISCOVERIES: Final = 8
+_discovered: dict[tuple[Any, LogSources], tuple[float, tuple[LogTarget, ...]]] = {}
 
 
 @dataclass(frozen=True)
@@ -156,12 +166,30 @@ def _api_targets(client: Any, api_group: str) -> list[LogTarget]:
     return [LogTarget(name, API_FUNCTION, SOURCE_API) for name in _listed(client, api_group) if name == api_group]
 
 
-def discover(client: Any, sources: LogSources) -> list[LogTarget]:
-    """Every existing log group of `sources`, sorted by name within each kind."""
-    lambdas = _pattern_targets(client, sources.lambdas, SOURCE_LAMBDA) + _extra_targets(client, sources.extras)
-    workflows = _pattern_targets(client, sources.workflows, SOURCE_WORKFLOW) if sources.workflows else []
+def _listed_targets(client: Any, sources: LogSources) -> list[LogTarget]:
+    """Every existing log group of `sources`, sorted by name within each kind (one listing per kind, concurrent)."""
+    lambdas, extras, workflows, api = concurrently(
+        lambda: _pattern_targets(client, sources.lambdas, SOURCE_LAMBDA),
+        lambda: _extra_targets(client, sources.extras),
+        lambda: _pattern_targets(client, sources.workflows, SOURCE_WORKFLOW) if sources.workflows else [],
+        lambda: _api_targets(client, sources.api_group),
+    )
     by_name = attrgetter('name')
-    return sorted(lambdas, key=by_name) + sorted(workflows, key=by_name) + _api_targets(client, sources.api_group)
+    return sorted(lambdas + extras, key=by_name) + sorted(workflows, key=by_name) + api
+
+
+def discover(client: Any, sources: LogSources, *, clock: Callable[[], float] = time.monotonic) -> list[LogTarget]:
+    """Every existing log group of `sources`, sorted by name within each kind; listed at most once per TTL."""
+    key = (client, sources)
+    now = clock()
+    cached = _discovered.get(key)
+    if cached is not None and cached[0] > now:
+        return list(cached[1])
+    targets = _listed_targets(client, sources)
+    if len(_discovered) >= _MAX_CACHED_DISCOVERIES:
+        _discovered.clear()
+    _discovered[key] = (now + DISCOVERY_TTL_SECONDS, tuple(targets))
+    return targets
 
 
 def log_group_name(log: str) -> str:
