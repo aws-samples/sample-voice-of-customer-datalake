@@ -17,10 +17,11 @@ from botocore.exceptions import BotoCoreError, ClientError
 from shared import project_access
 from shared.api import get_caller_groups
 from shared.company_personas import is_company_container
-from shared.exceptions import AuthorizationError, NotFoundError, ServiceError
+from shared.exceptions import AuthorizationError, NotFoundError, ServiceError, ValidationError
 from shared.logging import logger
 from shared.project_access import Caller, ProjectAccess
 from shared.project_writes import PROJECT_DELETION_ATTRIBUTE, is_project_tombstone
+from shared.row_ids import LONG_OPAQUE_ID_RE
 
 PROJECT_NOT_FOUND = 'Project not found'
 # No LEVEL_VIEW entry: a caller who cannot view is answered 404 before the level
@@ -101,3 +102,27 @@ def require_project_level(
     if not access.allows(level):
         raise AuthorizationError(DENIED_MESSAGES[level])
     return access
+
+
+def require_viewable_pin(table: Any, project_id: object, caller: Caller) -> str | None:
+    """The optional project pin of an MCP credential (token or OAuth grant), which ``caller`` must be able to view.
+
+    ``None`` / ``''`` = no pin. Checked for admins too (who skip the access gate), so a pin always names a
+    project that exists. Raises ValidationError (malformed id), NotFoundError or AuthorizationError.
+    """
+    if project_id is None or project_id == '':
+        return None
+    if not isinstance(project_id, str) or not LONG_OPAQUE_ID_RE.fullmatch(project_id):
+        raise ValidationError('project_id is not a valid project id')
+    require_project_level(lambda: read_gate_meta(table, project_id), caller, project_access.LEVEL_VIEW)
+    if caller.is_admin and not read_gate_meta(table, project_id):
+        raise NotFoundError(PROJECT_NOT_FOUND)
+    return project_id
+
+
+def require_person(event: Mapping[str, Any], refusal: str) -> Caller:
+    """A real signed-in person, or 403 ``refusal``: a delegated credential cannot manage credentials."""
+    caller = caller_from_event(event)
+    if caller.delegated or not caller.subject:
+        raise AuthorizationError(refusal)
+    return caller
