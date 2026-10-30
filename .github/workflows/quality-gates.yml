@@ -39,7 +39,7 @@ jobs:
             tools/kiro-acp-bridge/package-lock.json
 
       # The gates type-check and test against 3.12, the ruff and pyright target (the Lambdas run 3.14, lib/stacks).
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
 
