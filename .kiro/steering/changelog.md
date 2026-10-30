@@ -1,8 +1,8 @@
 # Versioning and CHANGELOG — required for every change
 
-Every change that lands on `main` bumps the version and records itself in `CHANGELOG.md`, in the SAME commit
-as the change (or the release branch's final commit before its PR merges). `scripts/check-version.mjs` (a
-`scripts/validate.sh` step) fails when they disagree.
+Every PR that lands on `main` bumps the version once and records its changes in `CHANGELOG.md`, in one of its
+commits (usually the last one, so the release section describes everything the PR brings).
+`scripts/check-version.mjs` (a `scripts/validate.sh` step) fails when they disagree.
 
 ## Branches and PRs
 
@@ -10,7 +10,8 @@ as the change (or the release branch's final commit before its PR merges). `scri
 
 1. Start each release from the current `main`: `git fetch origin && git switch -c release/<x.yy.zz> origin/main`
    (or a topic name such as `fix/<what>`). Never base work on a local branch whose history is not on `origin`.
-2. Commit there (it is fine to make several commits), bump once for the release (below), and run the full
+2. Commit there as often as you like: keep separate commits for separate changes, and don't squash or rewrite
+   history just to tidy it. Bump the version once for the release (below), and run the full
    `bash scripts/validate.sh` once.
 3. Check that you publish only new work: `git rev-list --count <branch> --not --remotes` must equal the number of
    commits you made. Then push the branch and open a PR against `main`.
@@ -19,6 +20,8 @@ as the change (or the release branch's final commit before its PR merges). `scri
    history, so a merge commit is refused: bring the branch up to date with `git rebase origin/main`, not a merge.
    `main` takes no direct pushes and needs one approval from someone other than the last pusher; a repository admin
    may stand in for that approval with `gh pr merge --rebase --admin`, never for a red or missing CI run.
+5. After the merge, delete the branch (GitHub deletes the remote one) and remove its local branch and worktrees:
+   `git switch main && git pull --ff-only && git branch -d <branch> && git worktree prune`.
 
 ## Pick the bump
 
@@ -30,7 +33,7 @@ as the change (or the release branch's final commit before its PR merges). `scri
 
 Several changes merged together take ONE bump: the highest kind among them.
 
-## Apply it (all in one commit)
+## Apply it (the CHANGELOG section and the three versions together, in one commit)
 
 1. **`CHANGELOG.md`**: add a release section directly under `## [Unreleased]` (leave that heading empty):
    `## [2.10.00] - YYYY-MM-DD` — two-digit minor and patch, today's date (`date +%F`). Under it a one-line
