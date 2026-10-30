@@ -102,10 +102,16 @@ class TestStatus:
         (ImportCounts(received=3, imported=2, skipped=1), 'completed'),
         (ImportCounts(received=3, imported=2, failed=1), 'partial'),
         (ImportCounts(received=3, imported=0, failed=3), 'failed'),
-        (ImportCounts(received=0, imported=0), 'failed'),
+        # Nothing to import is not a failed import: no data rows, or every row dropped on purpose.
+        (ImportCounts(received=0, imported=0), 'completed'),
+        (ImportCounts(received=3, imported=0, skipped=2, duplicate=1), 'completed'),
     ])
     def test_status_follows_the_counts(self, counts, status):
         assert run_status(counts) == status
+
+    def test_a_run_that_imported_nothing_and_recorded_an_error_failed(self):
+        assert run_status(ImportCounts(received=0, imported=0), has_errors=True) == 'failed'
+        assert run_status(ImportCounts(received=2, imported=2), has_errors=True) == 'completed'
 
 
 class TestActor:
