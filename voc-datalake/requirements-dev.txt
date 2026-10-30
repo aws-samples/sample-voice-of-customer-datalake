@@ -8,7 +8,7 @@
 # (scripts/audit/py_layers.py resolves every layer against this venv: a missing or
 # differently-pinned one is a `version-mismatch` finding.)
 #
-pytest>=8.0.0
+pytest>=9.1.1
 pytest-cov>=6.0.0
 pytest-mock>=3.14.0
 # Parallel pytest: scripts/validate.sh runs `pytest -n <workers> --dist loadgroup` (pinned exactly, like
