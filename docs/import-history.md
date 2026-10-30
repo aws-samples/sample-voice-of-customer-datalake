@@ -25,7 +25,8 @@ knows. A `source_label` without `import_origin: 'assistant'` is ignored.
 
 Warnings and errors never quote a cell or field value (a rating cell can hold review text or an email
 address, and the record outlives the source's retention and erasure): they name the row, the column
-and the reason only, and an S3 import's parse error names the error class.
+and the reason only. An S3 import's parse error names the error class, or for an unreadable JSON file the
+line and column. Rows are numbered the same way everywhere: data rows from 1, the header not counted.
 
 A request refused with a 400 (no `text` column, a JSON item without an id, a file over the size
 limit on the REST routes) imports nothing and writes no record: the response is the whole outcome.

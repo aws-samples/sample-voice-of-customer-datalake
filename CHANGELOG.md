@@ -27,13 +27,16 @@ Import history: every import writes a run record that administrators can browse 
   S3 import file now writes one run record (method, source, who, when, received / imported / skipped / duplicate /
   failed counts, up to 200 warnings and errors, the raw file, status). Administrators see them in the new
   **Import history** section of the Data sources page (`/scrapers`), where a row opens its warnings and errors, and
-  through the admin-only `GET /scrapers/manual/history` and `GET /scrapers/manual/history/{run_id}`.
+  through the admin-only `GET /scrapers/manual/history` and `GET /scrapers/manual/history/{run_id}`. The section
+  refreshes when a paste, CSV or JSON import closes. Rows are numbered the same way for every method (data rows
+  from 1), and a large S3 file keeps at most 200 warnings in memory while still counting every skipped row.
   See [docs/import-history.md](docs/import-history.md).
 
 ### Security
 
 - Import history records never copy customer values: the CSV warning for a non-numeric rating no longer quotes the
-  cell, and S3 import parse errors name the error class instead of its message. On `POST /scrapers/manual/json-upload`
+  cell, and S3 import parse errors name the error class (for an unreadable JSON file, the line and column) instead
+  of its message. On `POST /scrapers/manual/json-upload`
   the `source_label` is kept only with `import_origin: 'assistant'` (at most 120 characters, control characters
   removed); both are client-reported, an audit hint rather than proof.
   See [docs/import-history.md](docs/import-history.md).

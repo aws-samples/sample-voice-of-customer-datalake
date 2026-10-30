@@ -129,4 +129,19 @@ describe('the import history wire boundary', () => {
     expect(normalizeImportHistoryPage('oops')).toStrictEqual({ runs: [], next_cursor: undefined })
     expect(normalizeImportRunDetail({})).toBeNull()
   })
+
+  it('reads the nulls the Lambda really sends (last page, no raw file, no Radar brand) as absent', () => {
+    // list_import_history answers `next_cursor: None`; run_view answers `raw_s3_key` / `radar_brand` None.
+    const parsed = normalizeImportHistoryPage({ runs: [{ ...CSV_RUN, raw_s3_key: null, radar_brand: null }], next_cursor: null })
+    expect(parsed.runs).toHaveLength(1)
+    expect(parsed.runs[0]).toMatchObject({ run_id: 'run-csv', raw_s3_key: undefined, radar_brand: undefined })
+    expect(parsed.next_cursor).toBeUndefined()
+  })
+
+  it('shows a page whose next_cursor is null, with no Load more', async () => {
+    list.mockResolvedValue(normalizeImportHistoryPage({ runs: [CSV_RUN], next_cursor: null }))
+    renderWithQueryClient(<ImportHistory />)
+    expect(await screen.findByText('Example Air survey')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
+  })
 })

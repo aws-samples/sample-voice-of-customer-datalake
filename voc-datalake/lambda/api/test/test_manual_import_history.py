@@ -83,6 +83,27 @@ class TestEveryImportWritesOneRecord:
         assert len(body['warnings']) == 20
         assert len(_details(import_run_rows)[0]['warnings']) == 30
 
+    @pytest.mark.usefixtures("wired")
+    def test_csv_counts_follow_the_parsers_drops_not_its_warnings(self, import_run_rows, api_gateway_event, lambda_context):
+        """A row kept with a warning (an over-long id) is imported; only empty-text and duplicate rows are dropped."""
+        long_id = 'x' * (h.MAX_CSV_ROW_ID_LENGTH + 1)
+        csv_text = f'id,text\n{long_id},Kept row\n3, \n2,Fine\n2,Fine\n'
+        _, body = call_route(h.lambda_handler, api_gateway_event, lambda_context, method='POST',
+                             path='/scrapers/manual/csv-upload', body={'csv_text': csv_text})
+        assert len(body['warnings']) == 3
+        [summary] = _summaries(import_run_rows)
+        assert _counts(summary) == {'received': 4, 'imported': 2, 'skipped': 1, 'duplicate': 1, 'failed': 0}
+
+    @pytest.mark.parametrize(('csv_text', 'expected'), [
+        ('id,text\n1,A\n2, \n3,B\n', (1, 0)),
+        ('id,text\n1,A\n1,A\n1,A\n', (0, 2)),
+        ('text\nA\nA\n', (0, 0)),  # rows without an id are told apart by position
+    ])
+    def test_the_parser_counts_the_rows_it_drops(self, csv_text, expected):
+        drops = h.CsvRowDrops()
+        h._parse_csv_to_items(csv_text, 's', None, drops)
+        assert (drops.skipped, drops.duplicate) == expected
+
     def test_json_upload_records_send_failures_as_partial(self, wired, import_run_rows, api_gateway_event, lambda_context):
         wired.send_message_batch.side_effect = _batch(frozenset({'1'}))
         items = [{'id': f'i{i}', 'text': 'ok', 'source': 'web', 'timestamp': '2026-10-01T00:00:00Z'} for i in range(3)]
