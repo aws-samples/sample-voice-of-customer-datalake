@@ -16,9 +16,6 @@ Never logs a token or a claim value.
 
 from __future__ import annotations
 
-import base64
-import binascii
-import json
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -30,47 +27,24 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from shared.mcp_oauth_config import OAuthConfig, canonical_url
+from shared.mcp_oauth_jwt_parts import MAX_TOKEN_LENGTH, InvalidToken, b64url, json_segment
 
 JWKS_TTL_SECONDS: Final = 3600
 JWKS_REFRESH_FLOOR_SECONDS: Final = 60
 JWKS_TIMEOUT_SECONDS: Final = 3
 # Clock skew tolerated on `iat` (a token "from the future").
 IAT_LEEWAY_SECONDS: Final = 60
-MAX_TOKEN_LENGTH: Final = 8192
 MIN_RSA_BITS: Final = 2048
-
-
-class InvalidToken(Exception):
-    """The credential is not a usable MCP access token (a 401). The message names the check, never a value."""
 
 
 class JwksUnavailable(Exception):
     """The signing keys could not be read: the token cannot be checked either way (a 500)."""
 
 
-def _b64url(segment: str) -> bytes:
-    if not segment or '=' in segment:
-        raise InvalidToken('malformed segment')
-    try:
-        return base64.urlsafe_b64decode(segment + '=' * (-len(segment) % 4))
-    except (binascii.Error, ValueError) as exc:
-        raise InvalidToken('malformed segment') from exc
-
-
-def _json_segment(segment: str) -> dict[str, Any]:
-    try:
-        value = json.loads(_b64url(segment))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise InvalidToken('malformed segment') from exc
-    if not isinstance(value, dict):
-        raise InvalidToken('malformed segment')
-    return value
-
-
-def _int_from_b64url(segment: object) -> int:
+def _int_fromb64url(segment: object) -> int:
     if not isinstance(segment, str):
         raise ValueError('not a string')
-    return int.from_bytes(_b64url(segment), 'big')
+    return int.from_bytes(b64url(segment), 'big')
 
 
 def public_key_from_jwk(jwk: Mapping[str, Any]) -> rsa.RSAPublicKey | None:
@@ -78,7 +52,7 @@ def public_key_from_jwk(jwk: Mapping[str, Any]) -> rsa.RSAPublicKey | None:
     if jwk.get('kty') != 'RSA' or jwk.get('use', 'sig') != 'sig' or jwk.get('alg', 'RS256') != 'RS256':
         return None
     try:
-        key = rsa.RSAPublicNumbers(_int_from_b64url(jwk.get('e')), _int_from_b64url(jwk.get('n'))).public_key()
+        key = rsa.RSAPublicNumbers(_int_fromb64url(jwk.get('e')), _int_fromb64url(jwk.get('n'))).public_key()
     except (InvalidToken, ValueError):
         return None
     return key if key.key_size >= MIN_RSA_BITS else None
@@ -131,7 +105,7 @@ def _verified_payload(token: str, config: OAuthConfig, cache: JwksCache) -> dict
     if len(token) > MAX_TOKEN_LENGTH or token.count('.') != 2:
         raise InvalidToken('not a JWT')
     header_b64, payload_b64, signature_b64 = token.split('.')
-    header = _json_segment(header_b64)
+    header = json_segment(header_b64)
     if header.get('alg') != 'RS256':
         raise InvalidToken('unsupported algorithm')
     kid = header.get('kid')
@@ -141,11 +115,11 @@ def _verified_payload(token: str, config: OAuthConfig, cache: JwksCache) -> dict
     if key is None:
         raise InvalidToken('unknown key id')
     try:
-        key.verify(_b64url(signature_b64), f'{header_b64}.{payload_b64}'.encode('ascii'),
+        key.verify(b64url(signature_b64), f'{header_b64}.{payload_b64}'.encode('ascii'),
                    padding.PKCS1v15(), hashes.SHA256())
     except (InvalidSignature, UnicodeEncodeError) as exc:
         raise InvalidToken('bad signature') from exc
-    return _json_segment(payload_b64)
+    return json_segment(payload_b64)
 
 
 def _numeric(claims: Mapping[str, Any], name: str) -> int:
@@ -211,16 +185,4 @@ def verify_access_token(token: str, config: OAuthConfig, *, now: float,
     )
 
 
-def unverified_claims(token: object) -> dict[str, Any] | None:
-    """The payload of a JWT WITHOUT checking its signature, or None.
-
-    Only for a token this service received DIRECTLY from Cognito's token endpoint over TLS (the token
-    facade, which reads ``sub`` / ``client_id`` / ``origin_jti`` to record the grant's chain). Never for
-    a token a client presented.
-    """
-    if not isinstance(token, str) or len(token) > MAX_TOKEN_LENGTH or token.count('.') != 2:
-        return None
-    try:
-        return _json_segment(token.split('.')[1])
-    except InvalidToken:
-        return None
+__all__ = ['AccessClaims', 'InvalidToken', 'JwksCache', 'JwksUnavailable', 'public_key_from_jwk', 'verify_access_token']

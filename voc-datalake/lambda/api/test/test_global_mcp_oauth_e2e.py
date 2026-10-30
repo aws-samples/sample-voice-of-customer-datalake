@@ -38,8 +38,12 @@ def _authorizer(oauth, token: str) -> str:
     return answer['policyDocument']['Statement'][0]['Effect']
 
 
+def _grant_key(subject: str, client_id: str) -> dict:
+    return {'pk': gt.GLOBAL_TOKEN_PK, 'sk': gt.token_sk(grants.grant_id(subject, client_id))}
+
+
 def _grant_row(oauth, username: str, client_id: str) -> dict:
-    return oauth.world.projects.get_item(Key=grants.grant_key(oauth.world.subs[username], client_id))['Item']
+    return oauth.world.projects.get_item(Key=_grant_key(oauth.world.subs[username], client_id))['Item']
 
 
 class TestSignedInClient:
@@ -154,7 +158,7 @@ class TestChainIsBoundToConsent:
         query = oauth.authorize_query(client_id, redirect_uri)
         _, approved = oauth.consent('alice', query)
         oauth.world.projects.update_item(
-            Key=grants.grant_key(oauth.world.subs['alice'], client_id), UpdateExpression='SET chain_open_until = :t',
+            Key=_grant_key(oauth.world.subs['alice'], client_id), UpdateExpression='SET chain_open_until = :t',
             ExpressionAttributeValues={':t': (datetime.now(UTC) - timedelta(seconds=1)).isoformat()})
         delivered = oauth.cognito.sign_in(approved['redirect_to'], 'alice')
         relayed = oauth.call(anonymous('GET', '/oauth/callback', query=delivered))

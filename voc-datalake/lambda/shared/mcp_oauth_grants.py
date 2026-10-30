@@ -47,10 +47,6 @@ def grant_id(subject: str, client_id: str) -> str:
     return f'{GRANT_ID_PREFIX}{digest[:40]}'
 
 
-def grant_key(subject: str, client_id: str) -> dict[str, str]:
-    return {'pk': gt.GLOBAL_TOKEN_PK, 'sk': gt.token_sk(grant_id(subject, client_id))}
-
-
 def is_grant(row: Mapping[str, Any] | None) -> bool:
     return isinstance(row, Mapping) and row.get('kind') == KIND_OAUTH_GRANT and not row.get('secret_hash')
 
@@ -118,18 +114,16 @@ def effective_scope(row: Mapping[str, Any], token_scopes: frozenset[str], config
     return gt.SCOPE_WRITE if has_write and gt.scope_allows_write(row.get('scope')) else gt.SCOPE_READ
 
 
+_SHARED_VIEW_FIELDS: Final = ('scope', 'project_id', 'created_at', 'expires_at', 'last_used_at', 'revoked_at', 'status')
+
+
 def grant_view(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
-    """The Connect page's shape of a grant: never the chains or the subject."""
+    """The Connect page's shape of a grant: the token view's lifecycle fields, never the chains or the subject."""
+    token = gt.token_view(row, now)
     return {
-        'grant_id': row.get('token_id'),
+        'grant_id': token['token_id'],
         'client_kind': row.get('client_kind') or '',
-        'client_name': row.get('name') or '',
-        'scope': row.get('scope') if gt.scope_is_valid(row.get('scope')) else gt.SCOPE_READ,
-        'project_id': row.get('project_id') or None,
-        'created_at': row.get('created_at'),
-        'expires_at': row.get('expires_at'),
-        'last_used_at': row.get('last_used_at'),
-        'revoked_at': row.get('revoked_at'),
-        'status': gt.token_status(row, now),
+        'client_name': token['name'],
+        **{field: token[field] for field in _SHARED_VIEW_FIELDS},
         'signed_in': bool(chains(row)),
     }
