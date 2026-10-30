@@ -28,7 +28,7 @@ from datetime import UTC, datetime, timedelta
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 
 # Imports nothing else from shared/, so the processor bundle's import graph stays the same.
-from shared.csv_datasets import DATASET_NAME_MAX_LENGTH
+from shared.csv_datasets import CSV_INGESTION_METHOD, DATASET_NAME_MAX_LENGTH
 from shared.dimension_config import validate_tags
 from shared.timestamps import now_iso
 
@@ -441,6 +441,19 @@ class IngestMessage(BaseModel):
         admin's CSV upload (shared.radar_brands), so a stamped paste is a producer bug, refused."""
         if self.radar_brand_key and self.ingestion_method == "manual":
             raise ValueError("radar_brand_key is not accepted on a manual paste import")
+        return self
+
+    @model_validator(mode="after")
+    def csv_replace_only_from_a_csv_dataset_upload(self) -> "IngestMessage":
+        """``csv_replace`` (the one CSV record that may overwrite a stored item) is accepted only on a
+        CSV upload's row that names its dataset and carries its content digest (both already
+        pattern-checked above); any other producer setting it is refused, never half-applied."""
+        if self.csv_replace is not True:
+            return self
+        if self.ingestion_method != CSV_INGESTION_METHOD:
+            raise ValueError("csv_replace is accepted only on a csv_upload message")
+        if not self.csv_dataset or not self.csv_content_hash:
+            raise ValueError("csv_replace needs csv_dataset and csv_content_hash")
         return self
 
     @model_validator(mode="after")

@@ -14,9 +14,13 @@ as a duplicate, so a corrected spreadsheet amends its rows rather than doubling 
   and dimension / tag COLUMNS of the file are not applied to a stored row.
 * The keys and the import date stay (``pk``/``sk``, ``gsi1*``, ``date``), so the aggregator
   rebuckets the stream's MODIFY on the item's own day (category, sentiment, urgency, channel).
-* Conditional on the digest still being what was read (and, when re-enriched, on the
-  dimensions and on nobody having corrected the category meanwhile): a concurrent change
-  fails the update and SQS retries it against the new state. Nothing is created or deleted.
+* Conditional on the stored ``csv_dataset`` being the record's (a replace never touches an item
+  another dataset, or no dataset, stored), on the digest still being what was read (and, when
+  re-enriched, on the dimensions and on nobody having corrected the category meanwhile): a
+  failed condition fails the update and SQS retries it against the new state. Nothing is
+  created or deleted.
+* A failed model call (``enrichment_failed``) writes the row's own fields only and keeps the
+  stored text, enrichment and digest, as an issue refresh keeps them.
 * ``s3_raw_uri`` follows the newest archive and is never removed: the API rewrites a
   per-item archive at the stored key, so retention still finds (and deletes) it.
 """
@@ -73,15 +77,25 @@ def _row_fields(raw_record: Mapping[str, Any], pii_policy: str, now_iso: str) ->
 def csv_update(
     stored: Mapping[str, Any], raw_record: Mapping[str, Any], pii_policy: str, now_iso: str,
     reenriched: Mapping[str, Any] | None = None, moves_category: bool = False,
+    enrichment_failed: bool = False,
 ) -> dict:
     """``update_item`` kwargs for a confirmed CSV correction.
 
     ``reenriched`` are the text + enrichment fields when the text changed (they win over
     the row's own ``title``); ``moves_category`` guards the move against a manual correction.
+    ``enrichment_failed`` (the text changed but the model call failed): only the row's own
+    fields are written and the STORED digest is kept, so the stored text and enrichment stay
+    as they were and the row still previews as changed (a later confirmed upload retries it).
     """
     update = ItemUpdate(stored)
-    update.assign({**_row_fields(raw_record, pii_policy, now_iso), **(reenriched or {})})
+    fields = _row_fields(raw_record, pii_policy, now_iso)
+    if enrichment_failed:
+        fields.pop('csv_content_hash')
+    update.assign({**fields, **(reenriched or {})})
     update.require_unchanged(stored, 'csv_content_hash')
+    # Only an item the same dataset stored: a replace that merely shares a key with a
+    # non-CSV item (no csv_dataset) or another dataset's row fails the condition, writing nothing.
+    update.require_equal('csv_dataset', raw_record['csv_dataset'])
     if reenriched is not None:
         update.require_unchanged(stored, 'dimensions')
         if moves_category:
