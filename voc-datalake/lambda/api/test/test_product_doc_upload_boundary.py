@@ -415,7 +415,7 @@ class TestAHostileDeclaredSizeIsNeverMaterialised:
         the exponent has to be one an unbounded implementation still finishes.
 
         THE BUDGET IS CHOSEN FOR MARGIN ON BOTH SIDES, which is why it is not
-        simply "generous". Measured on this runtime: the bounded path is ~10µs,
+        simply "generous". Measured on this runtime: the bounded path is ~10 microseconds,
         and `int(Decimal('1E+1000000'))` costs ~30s. So 5s sits ~500,000x above
         the real cost and ~6x below the failure — a contended runner cannot reach
         it without every other test in this suite timing out first, and an

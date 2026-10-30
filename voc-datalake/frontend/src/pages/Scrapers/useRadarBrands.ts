@@ -16,10 +16,9 @@ export function useRadarBrands() {
  */
 export function useRadarBrandLabeler(): (key: string | undefined) => string | undefined {
   const { data } = useRadarBrands()
-  return (key) => {
-    if (key === undefined || key === '') return undefined
-    return data?.find((brand) => brand.key === key)?.label ?? key
-  }
+  return (key) => (key === undefined || key === ''
+    ? undefined
+    : data?.find((brand) => brand.key === key)?.label ?? key)
 }
 
 /** The label of Radar brand `key` (see {@link useRadarBrandLabeler}). */

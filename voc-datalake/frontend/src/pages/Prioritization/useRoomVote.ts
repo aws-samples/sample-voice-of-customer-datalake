@@ -27,8 +27,8 @@ function shownSessionId(
 
 /** What the status query starts from: whichever answer already describes `id`. */
 function seedFor(id: string | null, candidates: readonly (VotingSession | null | undefined)[]) {
-  if (id === null) return undefined
-  return candidates.find((candidate) => candidate?.session_id === id) ?? undefined
+  const match = id === null ? null : candidates.find((candidate) => candidate?.session_id === id)
+  return match ?? undefined
 }
 
 export function useRoomVote(rowId: string, rowTitle: string) {

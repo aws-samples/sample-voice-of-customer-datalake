@@ -10,7 +10,7 @@ import enCommon from '../../../public/locales/en/common.json'
 // `failed` names the view whose listing read failed with nothing cached.
 const queriesState = vi.hoisted(() => {
   const state: { isConfigured: boolean; failed: 's3' | 'feedback' | null; retry: () => void } = {
-    isConfigured: true, failed: null, retry: () => undefined,
+    isConfigured: true, failed: null, retry: () => {},
   }
   return state
 })
@@ -82,7 +82,7 @@ describe('DataExplorer', () => {
   })
 
   describe('rendering', () => {
-    it('renders page header', async () => {
+    it('renders page header', () => {
       renderDataExplorer()
 
       expect(screen.getByText('Data Explorer')).toBeInTheDocument()
@@ -96,13 +96,13 @@ describe('DataExplorer', () => {
       })
     })
 
-    it('renders New File button in S3 view', async () => {
+    it('renders New File button in S3 view', () => {
       renderDataExplorer()
 
       expect(screen.getByRole('button', { name: /new file/i })).toBeInTheDocument()
     })
 
-    it('renders Refresh button', async () => {
+    it('renders Refresh button', () => {
       renderDataExplorer()
 
       expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument()

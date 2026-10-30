@@ -58,7 +58,7 @@ interface Citation {
 
 /** `path` without its trailing slashes (a loop, not a `/\/+$/` regex: linear on any input). */
 function trimTrailingSlashes(path: string): string {
-  const slashes = [...path].reverse().findIndex((ch) => ch !== '/')
+  const slashes = Array.from(path).reverse().findIndex((ch) => ch !== '/')
   if (slashes === -1) return ''
   return path.slice(0, path.length - slashes)
 }

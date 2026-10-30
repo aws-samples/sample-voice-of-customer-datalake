@@ -40,6 +40,19 @@ export function serverTool(
   return { kind: 'server', name, pack, spec, execute };
 }
 
+/**
+ * {@link serverTool} for a tool whose work is synchronous. A throw from `run` still becomes a
+ * rejection (it runs inside `.then`), as it did from an `async` executor.
+ */
+export function syncServerTool(
+  name: ServerToolName,
+  pack: ToolPack,
+  spec: Tool,
+  run: (input: unknown, ctx: AssistantRunContext) => ServerToolResult,
+): ServerToolDefinition {
+  return serverTool(name, pack, spec, (input, ctx) => Promise.resolve().then(() => run(input, ctx)));
+}
+
 /** The analysis window: explicit days, else the page's time-range picker, else the default. */
 export function windowQuery(ctx: AssistantRunContext, days?: number): { days: number; date_basis?: string } {
   const requested = Math.trunc(days ?? ctx.props.days ?? DEFAULT_WINDOW_DAYS);

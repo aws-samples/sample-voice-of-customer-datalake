@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 # Import shared fixtures
-from jobs.conftest import *  # noqa: F403
+from jobs.conftest import *  # noqa: F403 — every shared job fixture
 
 # The 200 K-token window every allowlisted model has (shared/model_config.py).
 TEST_CONTEXT_WINDOW_TOKENS = 200_000

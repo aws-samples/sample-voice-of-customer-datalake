@@ -64,7 +64,7 @@ function streamResponse(chunks: string[]) {
           const next = queue.shift()
           return Promise.resolve(next === undefined ? { done: true, value: undefined } : { done: false, value: encoder.encode(next) })
         },
-        releaseLock: () => undefined,
+        releaseLock: () => {},
       }),
     },
   }

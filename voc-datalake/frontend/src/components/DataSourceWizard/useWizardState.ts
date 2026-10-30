@@ -15,6 +15,8 @@ import { sourceListDays } from './sourceListWindow'
 import { categoryLabel } from '../../utils/displayLabels'
 import { useViewerScope } from '../ScopeNotice/useViewerScope'
 import { categoriesConfigKey } from '../../hooks/useCategories'
+import { ignoreRejection } from '../../lib/rejections'
+import { noCleanup } from '../../hooks/noCleanup'
 
 interface UseWizardStateProps {
   readonly personas: ReadonlyArray<ProjectPersona>
@@ -129,7 +131,7 @@ export function useWizardState({
 
   const listDays = sourceListDays(contextConfig.days)
   useEffect(() => {
-    if (!config.apiEndpoint) return
+    if (!config.apiEndpoint) return noCleanup
     // The window changes with the selection, so an older, slower response must
     // not overwrite the list for the window now selected.
     const stale = new AbortController()
@@ -141,9 +143,8 @@ export function useWizardState({
         .sort(([, a], [, b]) => b - a)
         .map(([source]) => source)
       if (!stale.signal.aborted && apiSources.length > 0) setSources(apiSources)
-    }).catch(() => {
-      // Keep default sources on error (or on a malformed response)
-    })
+      // Keep the default sources on an error (or a malformed response).
+    }).catch(ignoreRejection)
     return () => { stale.abort() }
   }, [config.apiEndpoint, listDays])
 

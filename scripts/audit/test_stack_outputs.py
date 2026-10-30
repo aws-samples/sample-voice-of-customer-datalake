@@ -56,7 +56,7 @@ def test_every_read_shape_is_seen(make_tree: TreeMaker) -> None:
 
 
 def test_an_option_named_like_the_helper_is_not_a_call(make_tree: TreeMaker) -> None:
-    root = make_tree({'s.sh': SHELL.split('API=')[0] + 'aws x --output text\n'})
+    root = make_tree({'s.sh': SHELL.split('API=', maxsplit=1)[0] + 'aws x --output text\n'})
     assert reads_in(root)[0] == []
 
 

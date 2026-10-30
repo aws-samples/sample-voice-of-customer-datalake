@@ -55,7 +55,7 @@ def _page(entries: list | None) -> dict:
 
 
 def _requested_paths(session: MagicMock) -> list[str]:
-    return [call.args[0] for call in session._get.call_args_list]
+    return [call.args[0] for call in session.get_json.call_args_list]
 
 
 class TestParsedReviewShape:
@@ -102,7 +102,7 @@ class TestRequestedPages:
         """Apple exposes ten pages; an eleventh is never requested even when
         every page is full and the limit is not reached."""
         session = MagicMock()
-        session._get.side_effect = [_page([_entry(i)]) for i in range(20)]
+        session.get_json.side_effect = [_page([_entry(i)]) for i in range(20)]
         result = _reviews("1", "kr", session, limit=1000)
         assert itunes_client._MAX_PAGES == 10
         assert _requested_paths(session) == [
@@ -114,20 +114,20 @@ class TestRequestedPages:
     def test_a_zero_limit_requests_nothing(self):
         session = MagicMock()
         assert _reviews("1", "kr", session, limit=0) == []
-        session._get.assert_not_called()
+        session.get_json.assert_not_called()
 
     def test_the_default_limit_is_50(self):
         session = MagicMock()
-        session._get.side_effect = [_page([_entry(i) for i in range(60)])]
+        session.get_json.side_effect = [_page([_entry(i) for i in range(60)])]
         result = _reviews("1", "kr", session)
         assert len(result) == 50
-        assert session._get.call_count == 1
+        assert session.get_json.call_count == 1
 
     def test_three_consecutive_failing_pages_end_the_country(self):
         """A page that raises AppStoreError counts as an empty page: it must
         not reset the consecutive-empty counter and keep the walk going."""
         session = MagicMock()
-        session._get.side_effect = [
+        session.get_json.side_effect = [
             _page([_entry(0)]),
             AppStoreError("500"),
             AppStoreError("500"),
@@ -136,13 +136,13 @@ class TestRequestedPages:
         ]
         result = _reviews("1", "kr", session, limit=500)
         assert [review["id"] for review in result] == ["0"]
-        assert session._get.call_count == 4
+        assert session.get_json.call_count == 4
         assert itunes_client._MAX_CONSECUTIVE_EMPTY == 3
 
 
 class TestSessionConfiguration:
     def test_the_default_session_rate_limits_and_retries(self):
-        with patch.object(itunes_client, "AppStoreSession") as session_cls:
+        with patch.object(itunes_client, "FeedSession") as session_cls:
             session_cls.return_value = MagicMock(name="session")
             assert itunes_client.create_session() is session_cls.return_value
         session_cls.assert_called_once_with(
@@ -154,7 +154,7 @@ class TestSessionConfiguration:
         )
 
     def test_the_overrides_reach_the_session(self):
-        with patch.object(itunes_client, "AppStoreSession") as session_cls:
+        with patch.object(itunes_client, "FeedSession") as session_cls:
             itunes_client.create_session(delay=1.0, jitter=0.0, retries=1)
         session_cls.assert_called_once_with(
             delay=1.0,
@@ -168,7 +168,7 @@ class TestSessionConfiguration:
 class TestWarningLines:
     def test_a_failed_page_is_logged_with_page_app_country_and_cause(self):
         session = MagicMock()
-        session._get.side_effect = [
+        session.get_json.side_effect = [
             _page([_entry(0)]),
             AppStoreError("HTTP 503"),
             _page(None), _page(None), _page(None),
@@ -181,7 +181,7 @@ class TestWarningLines:
 
     def test_a_connection_failure_is_logged_with_app_country_and_cause(self):
         session = MagicMock()
-        session._get.side_effect = [
+        session.get_json.side_effect = [
             _page([_entry(0)]),
             urllib3.exceptions.ProtocolError("connection reset"),
         ]
@@ -197,7 +197,7 @@ class TestStorefrontFailure:
     @staticmethod
     def _fetch(*answers):
         session = MagicMock()
-        session._get.side_effect = list(answers)
+        session.get_json.side_effect = list(answers)
         with patch.object(itunes_client, "logger"):
             return itunes_client.fetch_reviews_for_country("1", "gb", session, limit=500)
 

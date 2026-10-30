@@ -6,6 +6,7 @@
  */
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
+import { noCleanup } from '../../hooks/noCleanup'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
@@ -31,7 +32,7 @@ function wrapFocus(container: HTMLElement, event: KeyboardEvent): void {
 export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean): void {
   useEffect(() => {
     const container = ref.current
-    if (!active || container === null) return
+    if (!active || container === null) return noCleanup
     if (!container.contains(document.activeElement)) focusables(container)[0]?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Tab') wrapFocus(container, event)

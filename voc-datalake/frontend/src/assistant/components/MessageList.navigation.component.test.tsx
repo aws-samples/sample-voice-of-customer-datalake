@@ -40,10 +40,11 @@ function renderAnswer() {
   return userEvent.setup()
 }
 
+/** Only what the code reads (`matches`, the `change` listeners); MediaQueryList's deprecated members are left out. */
 function mockViewport(narrow: boolean) {
-  vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+  vi.stubGlobal('matchMedia', (query: string) => ({
     matches: narrow, media: query, onchange: null,
-    addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(() => true),
+    addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(() => true),
   }))
 }
 
@@ -70,7 +71,10 @@ describe('navigation chips in the conversation', () => {
     useAssistantUiStore.getState().reset()
     mockViewport(false)
   })
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
 
   it('renders the chip after the answer text', () => {
     renderAnswer()

@@ -7,7 +7,7 @@ from ``AGENTS_TABLE``, and Step Functions is a MagicMock (returned as ``sfn``).
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -56,7 +56,7 @@ def _table(resource: Any, name: str, index: str | None, prefix: str = 'gsi1') ->
 
 
 @contextmanager
-def agents_env(*, with_state_machine: bool = True) -> Iterator[AgentsEnv]:
+def agents_env(*, with_state_machine: bool = True) -> Generator[AgentsEnv, None, None]:
     env = {agents_store.AGENTS_TABLE_ENV: AGENTS_TABLE_NAME}
     if with_state_machine:
         env[agents_store.STATE_MACHINE_ENV] = STATE_MACHINE_ARN
@@ -71,7 +71,7 @@ def agents_env(*, with_state_machine: bool = True) -> Iterator[AgentsEnv]:
         agents_store._table_cache.clear()
         clear_categories_cache()
         with patch.object(agents_store, 'get_dynamodb_resource', return_value=resource), \
-                patch.object(agents_store, '_stepfunctions', return_value=sfn):
+                patch.object(agents_store, 'stepfunctions_client', return_value=sfn):
             yield AgentsEnv(resource, agents, aggregates, feedback, sfn)
         agents_store._table_cache.clear()
         clear_categories_cache()

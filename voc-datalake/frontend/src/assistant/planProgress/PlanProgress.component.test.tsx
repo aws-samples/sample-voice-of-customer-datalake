@@ -41,7 +41,7 @@ afterEach(() => {
 describe('PlanProgress', () => {
   it('lists the steps with their statuses', async () => {
     routeFetchApi({ [`GET /agents/plans/${ID}`]: () => RUNNING })
-    render(<PlanProgress planId={ID} onOpen={() => undefined} />)
+    render(<PlanProgress planId={ID} onOpen={() => {}} />)
     const first = await screen.findByTestId('plan-progress-step-s1')
     expect(within(first).getByText('Done')).toBeInTheDocument()
     expect(within(first).getByText('proj_1')).toBeInTheDocument()
@@ -52,7 +52,7 @@ describe('PlanProgress', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const answers = [RUNNING, view('completed', [step('s1', 'done')], { summary: 'Every step finished.' })]
     routeFetchApi({ [`GET /agents/plans/${ID}`]: () => answers.shift() ?? answers.at(-1) ?? RUNNING })
-    render(<PlanProgress planId={ID} onOpen={() => undefined} />)
+    render(<PlanProgress planId={ID} onOpen={() => {}} />)
     await screen.findByText('Needs approval')
     await act(async () => { await vi.advanceTimersByTimeAsync(PLAN_POLL_MS) })
     await screen.findByText('Every step finished.')
@@ -64,7 +64,7 @@ describe('PlanProgress', () => {
     const approved = view('running', [step('s1', 'done'), step('s2', 'running')])
     const sent: unknown[] = []
     routeFetchApi({ [`GET /agents/plans/${ID}`]: () => RUNNING, [`POST /agents/plans/${ID}/steps/s2/approve`]: (body) => { sent.push(body); return approved } })
-    render(<PlanProgress planId={ID} onOpen={() => undefined} />)
+    render(<PlanProgress planId={ID} onOpen={() => {}} />)
     const approval = await screen.findByTestId('plan-step-approval')
     expect(within(approval).getByTestId('field-persona_count')).toHaveTextContent('5')
     await userEvent.click(within(approval).getByRole('button', { name: 'Approve step' }))
@@ -79,7 +79,7 @@ describe('PlanProgress', () => {
       [`GET /agents/plans/${ID}`]: () => answers.shift() ?? answers.at(-1) ?? RUNNING,
       [`POST /agents/plans/${ID}/steps/s2/approve`]: () => { throw new Error('API Error: 409') },
     })
-    render(<PlanProgress planId={ID} onOpen={() => undefined} />)
+    render(<PlanProgress planId={ID} onOpen={() => {}} />)
     await userEvent.click(within(await screen.findByTestId('plan-step-approval')).getByRole('button', { name: 'Approve step' }))
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByTestId('field-persona_count')).toHaveTextContent('9'))
@@ -88,7 +88,7 @@ describe('PlanProgress', () => {
   it('offers only Decline for a paused write without a fingerprint', async () => {
     const unsigned = view('running', [step('s2', 'needs_approval', { pending: { ...PENDING, fingerprint: undefined } })])
     routeFetchApi({ [`GET /agents/plans/${ID}`]: () => unsigned })
-    render(<PlanProgress planId={ID} onOpen={() => undefined} />)
+    render(<PlanProgress planId={ID} onOpen={() => {}} />)
     const approval = await screen.findByTestId('plan-step-approval')
     expect(within(approval).getByRole('button', { name: 'Approve step' })).toBeDisabled()
     expect(within(approval).getByRole('button', { name: 'Decline step' })).toBeEnabled()
@@ -97,7 +97,7 @@ describe('PlanProgress', () => {
   it('declines a step that needs approval', async () => {
     const declined = view('completed_with_errors', [step('s1', 'done'), step('s2', 'failed', { error: 'Declined by the approver.' })])
     routeFetchApi({ [`GET /agents/plans/${ID}`]: () => RUNNING, [`POST /agents/plans/${ID}/steps/s2/decline`]: () => declined })
-    render(<PlanProgress planId={ID} onOpen={() => undefined} />)
+    render(<PlanProgress planId={ID} onOpen={() => {}} />)
     await userEvent.click(await screen.findByRole('button', { name: 'Decline step' }))
     expect(await screen.findByText('Declined by the approver.')).toBeInTheDocument()
   })
@@ -105,7 +105,7 @@ describe('PlanProgress', () => {
   it('Cancel stops the plan; an ended plan offers its project instead', async () => {
     const cancelled = view('cancelled', [step('s1', 'done', { outputs: { project_id: 'proj_1' } }), step('s2', 'cancelled')])
     routeFetchApi({ [`GET /agents/plans/${ID}`]: () => RUNNING, [`POST /agents/plans/${ID}/cancel`]: () => cancelled })
-    render(<PlanProgress planId={ID} onOpen={() => undefined} />)
+    render(<PlanProgress planId={ID} onOpen={() => {}} />)
     await userEvent.click(await screen.findByRole('button', { name: 'Cancel plan' }))
     expect(await screen.findByRole('link', { name: 'Open the project' })).toHaveAttribute('href', '/projects/proj_1')
     expect(screen.queryByRole('button', { name: 'Cancel plan' })).not.toBeInTheDocument()
@@ -138,7 +138,7 @@ describe('PlanProgress \u2014 analysis results', () => {
   const think = (outputs: Record<string, string>) => step('s1', 'done', { kind: 'think', pack: 'insights', outputs })
   const renderWith = async (outputs: Record<string, string>) => {
     routeFetchApi({ [`GET /agents/plans/${ID}`]: () => view('completed', [think(outputs)]) })
-    render(<PlanProgress planId={ID} onOpen={() => undefined} />)
+    render(<PlanProgress planId={ID} onOpen={() => {}} />)
     return within(await screen.findByTestId('plan-progress-step-s1'))
   }
 

@@ -23,7 +23,7 @@ Every expectation here is the literal string, call or dict the module emits.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, call, patch
@@ -58,7 +58,7 @@ def _table(*, categories: Any = None, fallback: Any = None) -> MagicMock:
 
 
 @contextmanager
-def _aggregates(table: Any) -> Iterator[None]:
+def _aggregates(table: Any) -> Generator[None, None, None]:
     with patch.object(soc, 'get_aggregates_table', return_value=table):
         yield
 
@@ -142,7 +142,7 @@ class TestTheHandoffOwner:
 
 
 @contextmanager
-def _decided(decision: dict) -> Iterator[MagicMock]:
+def _decided(decision: dict) -> Generator[MagicMock, None, None]:
     with patch.object(planning, 'decide_project', return_value=decision) as decide:
         yield decide
 

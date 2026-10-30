@@ -5,7 +5,7 @@ mocked, and a reader for what it enqueued — shared by
 `test_github_issues_ingestor.py` and `test_github_issues_handler_mutation.py`.
 """
 import json
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -58,7 +58,7 @@ class ObservedIngestor:
 @contextmanager
 def ingestor_with(
     github: FakeGitHub, watermarks: WatermarkTable, *, deadline=None, **secrets: str | None,
-) -> Iterator[ObservedIngestor]:
+) -> Generator[ObservedIngestor, None, None]:
     """The ingestor over *github* and *watermarks*; a secret given as ``ABSENT`` is left out."""
     sqs = MagicMock()
     sqs.send_message_batch.side_effect = echo_batch_success

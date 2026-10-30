@@ -71,6 +71,9 @@ export interface CategoryFiltersState {
   tag: string | null
 }
 
+/** Every key of {@link AttributeFilters}, in the order they go on the URL. */
+const ATTRIBUTE_FILTER_KEYS: readonly (keyof AttributeFilters)[] = ['channel', 'dims', 'tag']
+
 /** The `channel` / `dims` / `tag` query parameters of a filter state (absent when unset). */
 export function attributeFiltersOf(state: Pick<CategoryFiltersState, 'channel' | 'dimensionFilter' | 'tag'>): AttributeFilters {
   const dims = serializeDims(state.dimensionFilter)
@@ -155,7 +158,11 @@ function buildShareableParams(filters: ShareableFilters): URLSearchParams {
   if (filters.ratingFilter.value > 0) params.set('rating', String(filters.ratingFilter.value))
   if (filters.ratingFilter.value > 0 && filters.ratingFilter.direction === 'below') params.set('rating_dir', 'below')
   if (filters.showUrgentOnly) params.set('urgent', '1')
-  for (const [key, value] of Object.entries(attributeFiltersOf(filters))) params.set(key, value)
+  const attributes = attributeFiltersOf(filters)
+  for (const key of ATTRIBUTE_FILTER_KEYS) {
+    const value = attributes[key]
+    if (value !== undefined) params.set(key, value)
+  }
   return params
 }
 

@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from aws_lambda_powertools.utilities.batch import EventType
+from aws_lambda_powertools.utilities.batch.exceptions import UnexpectedBatchTypeError
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
 
 from shared import batch
@@ -138,17 +139,26 @@ class TestEveryDecoratorIsApplied:
         record_handler = _fail_on()
         processor = ConcurrentSqsBatchProcessor(max_workers=1)
         log_metrics = MagicMock(return_value=lambda fn: fn)
-        batch_decorator = MagicMock(return_value=lambda fn: fn)
+        run_batch = MagicMock(return_value={'batchItemFailures': []})
         inject = MagicMock(side_effect=lambda fn: fn)
         capture = MagicMock(side_effect=lambda fn: fn)
+        event, context = _event('m0'), _context()
         with patch.object(metrics, 'log_metrics', log_metrics), \
-                patch.object(batch, 'batch_processor', batch_decorator), \
+                patch.object(batch, 'process_partial_response', run_batch), \
                 patch.object(logger, 'inject_lambda_context', inject), \
                 patch.object(tracer, 'capture_lambda_handler', capture):
             handler = batch_lambda_handler(record_handler, processor)
+            assert handler(event, context) == {'batchItemFailures': []}
         log_metrics.assert_called_once_with(capture_cold_start_metric=True)
-        batch_decorator.assert_called_once_with(record_handler=record_handler, processor=processor)
+        # The batch goes through Powertools with exactly this event, record handler, processor and context.
+        run_batch.assert_called_once_with(event, record_handler, processor, context)
         # Every decorator is the identity here, so each one received the handler that came out.
         inject.assert_called_once_with(handler)
         capture.assert_called_once_with(handler)
         assert handler.__name__ == 'lambda_handler'
+
+    def test_an_event_without_records_is_refused(self):
+        """The one difference from the retired decorator, stated in batch_lambda_handler's docstring."""
+        handler = batch_lambda_handler(_fail_on(), ConcurrentSqsBatchProcessor(max_workers=1))
+        with pytest.raises(UnexpectedBatchTypeError):
+            handler({'Records': []}, _context())

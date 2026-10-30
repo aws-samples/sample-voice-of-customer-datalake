@@ -33,7 +33,7 @@ const form = {
   ...defaultFormConfig, form_id: 'form_1', name: 'Website', enabled: true,
   created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
 }
-const noop = () => undefined
+const noop = () => {}
 
 function renderCard() {
   return render(

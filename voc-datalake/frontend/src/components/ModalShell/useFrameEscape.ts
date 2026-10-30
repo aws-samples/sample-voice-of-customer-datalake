@@ -18,6 +18,7 @@
 import { useEffect, type RefObject } from 'react'
 import { z } from 'zod'
 import { isPrototypeFrameOrigin } from '../PrototypePins/pinMessages'
+import { noCleanup } from '../../hooks/noCleanup'
 
 const FrameEscapeSchema = z.strictObject({
   source: z.literal('voc-pin-widget'),
@@ -41,7 +42,7 @@ function isFrameOf(panel: HTMLElement, source: MessageEventSource | null): boole
 export function useFrameEscape(panelRef: RefObject<HTMLElement | null>, isOpen: boolean, onEscape: () => void): void {
   useEffect(() => {
     const panel = panelRef.current
-    if (!isOpen || panel === null) return undefined
+    if (!isOpen || panel === null) return noCleanup
     const onMessage = (event: MessageEvent) => {
       if (!isPrototypeFrameOrigin(event.origin) || !isFrameOf(panel, event.source)) return
       if (isFrameEscapeMessage(event.data)) onEscape()

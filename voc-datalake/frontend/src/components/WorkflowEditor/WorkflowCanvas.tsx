@@ -245,7 +245,7 @@ function CanvasInner({
 
   return (
     <div className="voc-workflow h-full w-full" onDragOver={onDragOver} onDrop={onDrop}>
-      <ReactFlow<FlowNode, Edge>
+      <ReactFlow<FlowNode>
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}

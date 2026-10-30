@@ -20,14 +20,14 @@ jobs:
   validate:
     name: scripts/validate.sh
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # No step pushes, tags, or calls the API (same reason as the other workflows).
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -39,7 +39,7 @@ jobs:
             tools/kiro-acp-bridge/package-lock.json
 
       # The gates type-check and test against 3.12, the ruff and pyright target (the Lambdas run 3.14, lib/stacks).
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 
@@ -65,15 +65,36 @@ jobs:
       - name: Install gitleaks (the working-tree secret scan, scripts/gitleaks-tree.sh)
         env:
           GITLEAKS_VERSION: 8.30.1
+          # Committed digest (release checksums file and GitHub's asset digest agree); bump with the version.
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
           base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
           tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           curl -sSfL -o "/tmp/${tarball}" "${base}/${tarball}"
-          curl -sSfL -o /tmp/gitleaks_checksums.txt "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
-          (cd /tmp && grep " ${tarball}\$" gitleaks_checksums.txt | sha256sum --check --strict -)
+          echo "${GITLEAKS_SHA256}  /tmp/${tarball}" | sha256sum --check --strict -
           mkdir -p "$HOME/.local/bin"
           tar -xzf "/tmp/${tarball}" -C "$HOME/.local/bin" gitleaks
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Pinned binaries for scripts/actions-lint.sh, verified against digests committed HERE (not a checksum
+      # file fetched from the same release, which an attacker able to replace the asset could replace too).
+      # Bump: update the version + digest together, and ACTIONLINT_VERSION / ZIZMOR_VERSION in the script.
+      - name: Install actionlint + zizmor (GitHub Actions lint, scripts/actions-lint.sh)
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          ZIZMOR_VERSION: 1.31.1
+          ZIZMOR_SHA256: d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          al="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL -o "/tmp/${al}" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${al}"
+          echo "${ACTIONLINT_SHA256}  /tmp/${al}" | sha256sum --check --strict -
+          tar -xzf "/tmp/${al}" -C "$HOME/.local/bin" actionlint
+          zz="zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          curl -sSfL -o "/tmp/${zz}" "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/${zz}"
+          echo "${ZIZMOR_SHA256}  /tmp/${zz}" | sha256sum --check --strict -
+          tar -xzf "/tmp/${zz}" -C "$HOME/.local/bin" zizmor
 
       - name: Validate
         run: bash scripts/validate.sh

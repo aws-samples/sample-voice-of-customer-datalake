@@ -47,7 +47,7 @@ function renderSidebar(decisionCount: number) {
       <Sidebar sidebarCollapsed={false} mobileMenuOpen={false} brandName="Example Air" brandLoading={false}
         visibleNavItems={[{ to: '/agents', icon: Workflow, labelKey: 'agents:nav.label', menuKey: 'agents' }]}
         urgentCount={0} decisionCount={decisionCount}
-        onClose={() => undefined} onToggleCollapse={() => undefined} />
+        onClose={() => {}} onToggleCollapse={() => {}} />
     </TestRouter>,
   )
 }

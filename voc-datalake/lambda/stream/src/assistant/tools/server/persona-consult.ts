@@ -123,7 +123,11 @@ async function consultOne(job: Consultation, persona: ChatContextPersona): Promi
         console.warn(`consult_personas: persona ${persona.persona_id} failed (${err instanceof Error ? err.name : 'unknown'})`);
         return FAILED_ANSWER;
       }),
-    deps.resolveAvatar(persona.avatar_url).catch(() => null),
+    deps.resolveAvatar(persona.avatar_url).catch((err: unknown) => {
+      // A card without an avatar still carries the answer; persona id and error name only.
+      console.warn(`consult_personas: avatar for persona ${persona.persona_id} failed (${err instanceof Error ? err.name : 'unknown'})`);
+      return null;
+    }),
   ]);
   ctx.emit(step(EventType.STEP_FINISHED, name));
   return { persona_id: persona.persona_id, name, ...(avatarUrl ? { avatar_url: avatarUrl } : {}), answer };

@@ -37,6 +37,7 @@ import { createScheduleDeadLetterQueue } from './ingestion-schedule-dlq';
 import { IngestorRoles } from './ingestion-roles';
 import { createEmailIntake } from './email-intake';
 import { createDesignCapture } from './design-capture';
+import { PROCESSING_QUEUE_VISIBILITY_TIMEOUT } from './processor-timing';
 import { DESIGN_CAPTURE_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailConfig } from '../utils/inbound-email';
 
@@ -323,7 +324,8 @@ export class VocIngestionStack extends VocStack {
       queueName: this.uniqueName('voc-processing-queue'),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: kmsKey,
-      visibilityTimeout: cdk.Duration.minutes(6),
+      // 6 x the processor timeout + its batching window (AWS Lambda SQS guidance, processor-timing.ts).
+      visibilityTimeout: PROCESSING_QUEUE_VISIBILITY_TIMEOUT,
       deadLetterQueue: { queue: dlq, maxReceiveCount: 3 },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });

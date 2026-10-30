@@ -12,6 +12,7 @@
  */
 import { useEffect, useState } from 'react'
 import type { RefObject } from 'react'
+import { noCleanup } from '../../hooks/noCleanup'
 
 /** A bar's on-screen box, as `getBoundingClientRect` reports it. */
 export interface BarRect {
@@ -32,7 +33,7 @@ function notify(): void {
 export function useRegisterActionBar(ref: RefObject<HTMLElement | null>): void {
   useEffect(() => {
     const element = ref.current
-    if (element === null) return
+    if (element === null) return noCleanup
     bars.add(element)
     notify()
     return () => {

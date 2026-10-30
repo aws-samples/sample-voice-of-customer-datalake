@@ -214,7 +214,7 @@ describe('Home', () => {
     renderHome()
     await findBuddy()
     await waitFor(() => { expect(screen.getByText('Last 7 days')).toBeInTheDocument() })
-    const summaries = fetchApi.mock.calls.map(([path]) => String(path)).filter((path) => path.startsWith('/metrics/summary'))
+    const summaries = fetchApi.mock.calls.map(([path]) => path).filter((path) => path.startsWith('/metrics/summary'))
     expect([...summaries].sort((a, b) => a.localeCompare(b))).toStrictEqual(['/metrics/summary?days=14', '/metrics/summary?days=7'])
   })
 
@@ -405,7 +405,7 @@ describe('onboarding buddy', () => {
   })
 
   it('shows nothing in the buddy slot until the server answers on a fresh browser', () => {
-    fetchApi.mockImplementation(() => new Promise(() => undefined))
+    fetchApi.mockImplementation(() => new Promise(() => {}))
     renderHome()
     expect(screen.queryByRole('region', { name: 'Your setup checklist' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Show setup checklist' })).toBeNull()
@@ -472,14 +472,14 @@ describe('opening the app with a start page', () => {
   })
 
   it('shows nothing on a fresh browser until the start page is known (no flash of Home)', () => {
-    fetchApi.mockImplementation(() => new Promise(() => undefined))
+    fetchApi.mockImplementation(() => new Promise(() => {}))
     renderHome('/')
     expect([screen.queryByRole('heading', { level: 1 }), screen.queryByText('Dashboard page')]).toStrictEqual([null, null])
   })
 
   it('uses the cached start page at once on a known browser', async () => {
     storage.set('voc-onboarding:me-sub', JSON.stringify({ state: 'dismissed', visible: false, start_page: 'dashboard' }))
-    fetchApi.mockImplementation(() => new Promise(() => undefined))
+    fetchApi.mockImplementation(() => new Promise(() => {}))
     renderHome('/')
     expect(await screen.findByText('Dashboard page')).toBeInTheDocument()
   })

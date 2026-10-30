@@ -148,7 +148,7 @@ export const authService = {
    */
   isConfigured: (): boolean => {
     const cfg = getRuntimeConfig()
-    return !!(cfg.cognito.userPoolId !== '' && cfg.cognito.clientId !== '')
+    return cfg.cognito.userPoolId !== '' && cfg.cognito.clientId !== ''
   },
 
   /**
@@ -163,7 +163,6 @@ export const authService = {
     try {
       // Force Amplify to fetch fresh credentials from Identity Pool
       await fetchAuthSession({ forceRefresh: true })
-      console.log('Amplify session synced')
     } catch (error) {
       console.error('Failed to sync Amplify session:', error)
       // Non-fatal - streaming API will fail but rest of app works

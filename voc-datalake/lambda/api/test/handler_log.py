@@ -8,7 +8,7 @@ Tests that pin the exact log lines a route writes capture through
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -17,7 +17,7 @@ COST_LINE = 'invocation_cost'
 
 
 @contextmanager
-def handler_info(logger: Any) -> Iterator[MagicMock]:
+def handler_info(logger: Any) -> Generator[MagicMock, None, None]:
     """Patch `logger.info`; yield a mock that saw every line but `invocation_cost`."""
     info = MagicMock()
 

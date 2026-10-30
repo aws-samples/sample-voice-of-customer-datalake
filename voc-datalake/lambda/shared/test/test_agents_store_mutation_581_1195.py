@@ -784,8 +784,8 @@ class TestStepFunctions:
         monkeypatch.setattr(store, '_sfn_client', None)
         client = MagicMock()
         with patch.object(store.boto3, 'client', client):
-            first = store._stepfunctions()
-            assert store._stepfunctions() is first
+            first = store.stepfunctions_client()
+            assert store.stepfunctions_client() is first
         client.assert_called_once_with('stepfunctions')
         assert first is client.return_value
 
@@ -798,7 +798,7 @@ class TestStepFunctions:
         spec.loader.exec_module(fresh)
         client = MagicMock()
         with patch.object(fresh.boto3, 'client', client):
-            assert fresh._stepfunctions() is client.return_value
+            assert fresh.stepfunctions_client() is client.return_value
 
     def test_the_state_machine_comes_from_the_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv('AGENT_RUN_STATE_MACHINE_ARN', MACHINE)
@@ -822,14 +822,14 @@ class TestStepFunctions:
         monkeypatch.setenv('AGENT_RUN_STATE_MACHINE_ARN', MACHINE)
         sfn = MagicMock()
         sfn.start_execution.return_value = {'executionArn': 'arn:exec'}
-        with patch.object(store, '_stepfunctions', return_value=sfn):
+        with patch.object(store, 'stepfunctions_client', return_value=sfn):
             assert store.start_execution({'run_id': RUN_ID, 'agent_id': AGENT_ID, 'x': 1}) == 'arn:exec'
         sfn.start_execution.assert_called_once_with(
             stateMachineArn=MACHINE, name=RUN_ID, input=f'{{"run_id": "{RUN_ID}", "agent_id": "{AGENT_ID}"}}')
 
     def test_stop_execution_names_the_cause(self) -> None:
         sfn = MagicMock()
-        with patch.object(store, '_stepfunctions', return_value=sfn):
+        with patch.object(store, 'stepfunctions_client', return_value=sfn):
             store.stop_execution('arn:exec')
         sfn.stop_execution.assert_called_once_with(executionArn='arn:exec', cause='Cancelled by an admin')
 
@@ -837,7 +837,7 @@ class TestStepFunctions:
         sfn = MagicMock()
         sfn.stop_execution.side_effect = _failure('ExecutionDoesNotExist')
         logger = MagicMock()
-        with patch.object(store, '_stepfunctions', return_value=sfn), patch.object(store, 'logger', logger):
+        with patch.object(store, 'stepfunctions_client', return_value=sfn), patch.object(store, 'logger', logger):
             store.stop_execution('arn:exec')
         logger.warning.assert_called_once_with('Could not stop the agent run execution')
 
@@ -851,7 +851,7 @@ class TestLaunchRun:
         table.update_item.return_value = {'Attributes': {'event_seq': 1}}
         sfn = MagicMock()
         sfn.start_execution.return_value = {'executionArn': 'arn:exec'}
-        with patch.object(store, '_stepfunctions', return_value=sfn):
+        with patch.object(store, 'stepfunctions_client', return_value=sfn):
             assert store.launch_run(table, LAUNCHED, now=NOW) == {**LAUNCHED, 'execution_arn': 'arn:exec'}
         assert table.update_item.call_args_list[0].kwargs['ExpressionAttributeValues'] == {':arn': 'arn:exec'}
         table.put_item.assert_called_once_with(Item={
@@ -865,7 +865,7 @@ class TestLaunchRun:
         sfn = MagicMock()
         sfn.start_execution.side_effect = error
         logger = MagicMock()
-        with patch.object(store, '_stepfunctions', return_value=sfn), patch.object(store, 'logger', logger), \
+        with patch.object(store, 'stepfunctions_client', return_value=sfn), patch.object(store, 'logger', logger), \
                 pytest.raises(ServiceError, match=r'^Could not start the agent run\. Please retry\.$'):
             store.launch_run(table, LAUNCHED, now=NOW)
         logger.exception.assert_called_once_with('Agent run execution failed to start', extra={'run_id': RUN_ID})

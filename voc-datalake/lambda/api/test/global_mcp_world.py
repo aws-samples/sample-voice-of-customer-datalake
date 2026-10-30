@@ -22,7 +22,7 @@ import io
 import json
 import os
 import uuid
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -237,7 +237,7 @@ def _seed(projects_table: Any, subs: dict[str, str]) -> None:
 
 
 @contextmanager
-def global_mcp_world(lambda_context: Any) -> Iterator[World]:
+def global_mcp_world(lambda_context: Any) -> Generator[World, None, None]:
     with agents_env() as env, ExitStack() as stack:
         projects_table = pk_sk_table('e2e-projects', gsi1_index=PROJECTS_BY_TYPE_INDEX)
         jobs_table = pk_sk_table('e2e-jobs')

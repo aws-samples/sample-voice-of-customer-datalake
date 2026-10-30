@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import ScoreSlider from './ScoreSlider'
 
-const noop = () => undefined
+const noop = () => {}
 
 describe('ScoreSlider accessible name', () => {
   it('is labelled by the visible axis name', () => {

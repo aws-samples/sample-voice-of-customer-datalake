@@ -1,5 +1,5 @@
 """Test doubles for the admin's stored model config read by shared/model_config.py."""
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +9,7 @@ import pytest
 @contextmanager
 def stored_model_config(
     monkeypatch: pytest.MonkeyPatch, item: object, error: Exception | None = None,
-) -> Iterator[MagicMock]:
+) -> Generator[MagicMock, None, None]:
     """An aggregates table whose model-config item is *item* (or absent when
     falsy), or whose every read raises *error*, wired in as the module's
     DynamoDB resource. Yields the table double."""

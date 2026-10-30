@@ -8,7 +8,7 @@ import pytest
 from moto import mock_aws
 
 from jobs.category_reprocess import handler
-from jobs.conftest import *  # noqa: F403
+from jobs.conftest import *  # noqa: F403 — every shared job fixture
 from shared import reprocess_jobs as jobs
 from shared.test.moto_tables import create_pk_sk_table
 

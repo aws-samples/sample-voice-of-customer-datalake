@@ -519,8 +519,9 @@ describe('the save as a run starts (QA perf: a reload mid-run keeps the conversa
         })
         order.push(`start:${String(body.messages.length)}`)
       })
-      .mockImplementation(async (body) => {
+      .mockImplementation((body) => {
         order.push(`end:${String(body.messages.length)}`)
+        return Promise.resolve()
       })
     const id = store().activeId
     const done = sendMessage('hi', env, id)

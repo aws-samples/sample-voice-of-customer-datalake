@@ -73,14 +73,14 @@ describe('createAiWritingLoader', () => {
 describe('aiWritingForRun (fails closed)', () => {
   it('is AI-driven without a loader, the loaded policy otherwise', async () => {
     const human = await policyOf({ mode: 'human_driven', ai_writing_prd: true });
-    const answers = await Promise.all([aiWritingForRun(undefined, 'sub-1'), aiWritingForRun(async () => human, 'sub-1')]);
+    const answers = await Promise.all([aiWritingForRun(undefined, 'sub-1'), aiWritingForRun(() => Promise.resolve(human), 'sub-1')]);
     expect(answers.map(shape)).toStrictEqual([AI_DRIVEN, shape(human)]);
   });
 
   it('is Human-driven with nothing unlocked on a throw, a timeout or a missing table name', async () => {
     const unconfigured = createAiWritingLoader(docClient(vi.fn().mockResolvedValue({})), '');
     const answers = await Promise.all([
-      aiWritingForRun(async () => { throw new Error('AccessDenied'); }, 'sub-1'),
+      aiWritingForRun(() => Promise.reject(new Error('AccessDenied')), 'sub-1'),
       aiWritingForRun(() => new Promise<AiWritingPolicy>(() => {}), 'sub-1', 5),
       aiWritingForRun(unconfigured, 'sub-1'),
     ]);

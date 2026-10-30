@@ -31,6 +31,7 @@ import { pathOrQueryChanged } from './pathOrQueryChanged'
 import type { ReactNode } from 'react'
 import type { Location } from 'react-router-dom'
 import type { PendingLeave as Pending } from './RouterBlocker'
+import { noCleanup } from '../../hooks/noCleanup'
 
 export interface UnsavedChangesGuardOptions {
   /** The editor holds edits that are not saved. */
@@ -54,12 +55,21 @@ export interface UnsavedChangesGuard {
 
 function useBeforeUnload(active: boolean): void {
   useEffect(() => {
-    if (!active) return
+    if (!active) return noCleanup
     // preventDefault is what current browsers need for their own "Leave site?" prompt.
     const handler = (event: BeforeUnloadEvent) => event.preventDefault()
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [active])
+}
+
+/** The host's save; a rejection reads as a failed save, which the dialog then shows. */
+async function saveSucceeded(onSave: () => Promise<boolean>): Promise<boolean> {
+  try {
+    return await onSave()
+  } catch {
+    return false
+  }
 }
 
 export function useUnsavedChangesGuard({
@@ -83,7 +93,7 @@ export function useUnsavedChangesGuard({
   }, [])
   const requestLeave = useCallback((action: () => void) => {
     if (!latest.current.dirty) action()
-    else open({ proceed: action, stay: () => undefined })
+    else open({ proceed: action, stay: () => {} })
   }, [open])
 
   useEffect(() => registerGuard({ isDirty: () => latest.current.dirty, requestLeave }), [requestLeave])
@@ -102,7 +112,7 @@ export function useUnsavedChangesGuard({
   const save = async () => {
     setSaving(true)
     setSaveFailed(false)
-    const ok = await latest.current.onSave().catch(() => false)
+    const ok = await saveSucceeded(latest.current.onSave)
     setSaving(false)
     if (ok) close(true)
     else setSaveFailed(true)

@@ -39,6 +39,7 @@ import {
 } from './boardCognito'
 import type { AuthTokens, Challenge } from './boardCognito'
 import type { BoardPoolConfig } from '../runtimeConfig'
+import { nullOnRejection } from '../lib/rejections'
 
 /** The localStorage key of a sign-in waiting for its code. */
 export const PENDING_OTP_KEY = 'voc-board-otp'
@@ -136,7 +137,8 @@ export function createBoardAuth(deps: BoardAuthDeps) {
     }).catch(() => {
       throw new BoardAuthError('unknown')
     })
-    const body: unknown = await response.json().catch(() => null)
+    // A body that is not JSON reads as no body; the status still decides.
+    const body: unknown = await response.json().catch(nullOnRejection)
     if (!response.ok) throw new CognitoRefusal(body)
     return body
   }
@@ -276,7 +278,7 @@ export function createBoardAuth(deps: BoardAuthDeps) {
     const session = sessionAnswerSchema.parse(confirmed).Session
     const tokens = session === undefined ? null : tokensOf(await cognito('InitiateAuth', {
       AuthFlow: 'USER_AUTH', ClientId: clientId, AuthParameters: { USERNAME: pending.email }, Session: session,
-    }).catch(() => null))
+    }).catch(nullOnRejection))
     if (tokens !== null) return { status: 'signed_in', email: keepSession(pending.email, tokens) }
     // Confirmed but not signed in: the returning-person code finishes it.
     return { status: 'next', pending: await returningStep(pending.email, pending) }

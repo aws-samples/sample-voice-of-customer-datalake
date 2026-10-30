@@ -62,7 +62,74 @@ export const SOURCE_RULES = {
   '@typescript-eslint/no-floating-promises': 'error',
   // `attributes: false`: React discards an event handler's return value, so an async JSX handler is fine.
   '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
+  // Added 5.49 wave, owner-approved: an API marked @deprecated is scheduled to go away.
+  '@typescript-eslint/no-deprecated': 'error',
+  // Added 5.49 wave, owner-approved: a function that sometimes returns a value and sometimes falls off
+  // its end hides an `undefined` its callers did not plan for.
+  'sonarjs/no-inconsistent-returns': 'error',
 };
+
+/**
+ * Added 5.49 wave, owner-approved: a low-noise subset of typescript-eslint's strict type-checked rules,
+ * for the frontend and the stream Lambda (source AND specs). Each one catches a real defect class:
+ * unsafe values leaking into calls, `[object Object]` in strings, non-Error throws and rejections,
+ * `async` without `await`, and methods detached from their `this`.
+ */
+export const TYPE_SAFETY_RULES = {
+  '@typescript-eslint/no-unsafe-argument': 'error',
+  '@typescript-eslint/no-base-to-string': 'error',
+  '@typescript-eslint/no-misused-spread': 'error',
+  '@typescript-eslint/restrict-plus-operands': 'error',
+  '@typescript-eslint/no-unnecessary-type-conversion': 'error',
+  '@typescript-eslint/no-unnecessary-type-arguments': 'error',
+  '@typescript-eslint/only-throw-error': 'error',
+  '@typescript-eslint/prefer-promise-reject-errors': 'error',
+  '@typescript-eslint/no-dynamic-delete': 'error',
+  '@typescript-eslint/use-unknown-in-catch-callback-variable': 'error',
+  '@typescript-eslint/no-unsafe-enum-comparison': 'error',
+  '@typescript-eslint/require-await': 'error',
+  '@typescript-eslint/unbound-method': 'error',
+};
+
+/**
+ * Added 5.49 wave, owner-approved: the spec-file settings of two TYPE_SAFETY_RULES rules.
+ * - A spec may reject with a reason typed `unknown` (to pin how code copes with a non-Error
+ *   rejection); a known non-Error type is still reported. Same default as `only-throw-error`'s
+ *   `allowThrowingUnknown`.
+ * - `unbound-method` is checked by the vitest plugin's variant, which is the same rule except that it
+ *   understands `expect(mock.method)` (the method is inspected, never called unbound).
+ */
+export const TYPE_SAFETY_SPEC_RULES = {
+  '@typescript-eslint/prefer-promise-reject-errors': ['error', { allowThrowingUnknown: true }],
+  '@typescript-eslint/unbound-method': 'off',
+  'vitest/unbound-method': 'error',
+};
+
+/**
+ * Added 5.49 wave, owner-approved: `no-restricted-syntax` entries that ban swallowing a rejection with
+ * an inline `.catch()` arrow that returns a literal (`null`, `false`, `''`, ...), `undefined`, or, with no
+ * parameter, any identifier, or that has an empty body. `.catch((err) => err)` (capturing the reason to
+ * assert on it) is allowed. A package spreads
+ * them into its own `no-restricted-syntax` list (ESLint keeps only the last setting of a rule, so they
+ * cannot be a rule entry of their own). Handle the error, log it, or rethrow. Where dropping the
+ * rejection is genuinely correct, pass a NAMED handler whose comment says why (the selectors match
+ * only inline arrow functions, so `.catch(ignoreRejection)` is allowed and stays searchable).
+ * Limit: syntax only. `.catch(() => [])`, `.catch((err) => FALLBACK)`, `.catch(function () {})`, a
+ * `try {} catch {}` that drops the error, or a named handler that swallows everything are not caught.
+ */
+export const SWALLOWED_REJECTION_SELECTORS = [
+  {
+    selector:
+      'CallExpression[callee.property.name="catch"] > ArrowFunctionExpression:matches([body.type="Literal"], [params.length=0][body.type="Identifier"], [body.type="Identifier"][body.name="undefined"])',
+    message:
+      'This .catch() swallows the rejection. Handle it, log it, or rethrow; if dropping it is correct, pass a named handler that says why.',
+  },
+  {
+    selector: 'CallExpression[callee.property.name="catch"] > ArrowFunctionExpression > BlockStatement[body.length=0]',
+    message:
+      'An empty .catch() swallows the rejection. Handle it, log it, or rethrow; if dropping it is correct, pass a named handler that says why.',
+  },
+];
 
 /** Rules for spec files (`*.test.ts(x)`, `*.spec.ts(x)`). */
 export const SPEC_RULES = {
@@ -82,6 +149,25 @@ export const SPEC_RULES = {
   'vitest/prefer-strict-equal': 'error',
   'vitest/prefer-called-with': 'error',
   'vitest/require-to-throw-message': 'error',
+  // Added 5.49 wave, owner-approved: a snapshot pins whatever the code printed, right or wrong, and is
+  // re-recorded with one flag; assert the values that matter instead.
+  'vitest/no-restricted-matchers': [
+    'error',
+    {
+      toMatchSnapshot: 'Assert the values that matter instead of a snapshot.',
+      toMatchInlineSnapshot: 'Assert the values that matter instead of a snapshot.',
+      toMatchFileSnapshot: 'Assert the values that matter instead of a snapshot.',
+      toThrowErrorMatchingSnapshot: 'Use toThrow() with the expected message.',
+      toThrowErrorMatchingInlineSnapshot: 'Use toThrow() with the expected message.',
+    },
+  ],
+  // Added 5.49 wave, owner-approved: test structure. (`vitest/no-done-callback` is deprecated in
+  // @vitest/eslint-plugin 1.6, so it is not listed.)
+  'vitest/no-test-return-statement': 'error',
+  'vitest/valid-title': 'error',
+  'vitest/hoisted-apis-on-top': 'error',
+  'vitest/no-duplicate-hooks': 'error',
+  'vitest/prefer-hooks-on-top': 'error',
 };
 
 /** No suppression comments at all: fix the finding. */

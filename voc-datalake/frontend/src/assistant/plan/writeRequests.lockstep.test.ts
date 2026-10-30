@@ -30,6 +30,7 @@ import { getWriteTool } from '../approvals/registry'
 import { scraperFingerprint } from '../approvals/scraperSchemas'
 import { createShownRecord } from '../approvals/shown'
 import type { ShownRecord } from '../approvals/shown'
+import { ignoreRejection } from '../../lib/rejections'
 
 const BASE = 'https://api.example.com'
 const EDIT_ID = '<edit-id>'
@@ -92,7 +93,7 @@ async function spaRequests(tool: string, args: Record<string, unknown>): Promise
   }
   const ctx = { queryClient: new QueryClient(), page: { kind: 'home' as const, path: '/' }, shown, isAdmin: true }
   // A generic answer may not satisfy the executor's response parsing; the request has been sent by then.
-  await getWriteTool(tool)?.execute(args, ctx).catch(() => undefined)
+  await getWriteTool(tool)?.execute(args, ctx).catch(ignoreRejection)
   return writes.map((write) => ({ ...write, body: withEditIdMarked(write.body) }))
 }
 

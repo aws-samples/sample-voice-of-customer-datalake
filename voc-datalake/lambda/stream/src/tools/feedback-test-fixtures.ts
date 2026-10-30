@@ -116,12 +116,9 @@ export function docClientReturning(rows: FeedbackRow[]): FakeDocClient {
   return fakeDocClient(() => Promise.resolve({ Items: rows }));
 }
 
-/** Fails every call with `error` (whose `name` is what the scan classifies on). */
-export function docClientRejecting(error: Error): FakeDocClient {
-  async function rejectWith(): Promise<FeedbackQueryPage> {
-    throw error;
-  }
-  return fakeDocClient(rejectWith);
+/** Fails every call with `failure` (whose `name` is what the scan classifies on). */
+export function docClientRejecting(failure: Error): FakeDocClient {
+  return fakeDocClient((): Promise<FeedbackQueryPage> => Promise.reject(failure));
 }
 
 /** The YYYY-MM-DD a Query command addresses, read out of its `:pk = DATE#…` value. */

@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useThemeStore } from './themeStore'
 import { useThemeSync } from './useThemeSync'
+import { restoreProperty } from '@test/originals'
 
 type Listener = () => void
 
@@ -9,7 +10,7 @@ type Listener = () => void
 function systemSchemeStub() {
   const state = { dark: false }
   const listeners = new Set<Listener>()
-  const original = window.matchMedia
+  const original = Object.getOwnPropertyDescriptor(window, 'matchMedia')
   return {
     /** Install the stub with the given OS scheme and no listeners. */
     install(initialDark: boolean) {
@@ -27,7 +28,7 @@ function systemSchemeStub() {
       listeners.forEach((fn) => { fn() })
     },
     listenerCount: () => listeners.size,
-    restore: () => { window.matchMedia = original },
+    restore: () => { restoreProperty(window, 'matchMedia', original) },
   }
 }
 

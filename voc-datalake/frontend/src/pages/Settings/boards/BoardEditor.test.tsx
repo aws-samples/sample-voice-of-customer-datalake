@@ -12,6 +12,7 @@ import { asRecord } from '../../../api/wireRecord'
 import { adminFlag, fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { boardSchema } from '../../../api/featureBoardsSchema'
 import { BETA_BOARD, SALES_BOARD, boardRoutes, refusal } from './board-fixtures'
+import { parsedJson } from '@test/jsonText'
 
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
@@ -27,7 +28,7 @@ const renderEditor = (boardId = 'brd_sales') =>
   renderWithQueryClient(<TestRouter><BoardEditor boardId={boardId} onClose={onClose} /></TestRouter>)
 
 const puts = () => fetchApi.mock.calls.filter(([, options]) => options?.method === 'PUT')
-const lastPutBody = () => asRecord(JSON.parse(String(puts().at(-1)?.[1]?.body))) ?? {}
+const lastPutBody = () => asRecord(parsedJson(puts().at(-1)?.[1]?.body)) ?? {}
 const saveButton = () => screen.getByRole('button', { name: 'Save board' })
 
 /** A PUT that answers the stored board with the body applied (and a new updated_at). */
@@ -203,7 +204,7 @@ describe('pause, archive and delete', () => {
     await user.click(dialog.getByRole('button', { name: 'Pause' }))
     await waitFor(() => expect(lastPutBody()).toStrictEqual({ paused: true }))
     await user.click(await screen.findByRole('button', { name: 'Resume Sales feature requests' }))
-    await waitFor(() => expect(puts().map(([, options]) => asRecord(JSON.parse(String(options?.body)))))
+    await waitFor(() => expect(puts().map(([, options]) => asRecord(parsedJson(options?.body))))
       .toStrictEqual([{ paused: true }, { paused: false }]))
   })
 

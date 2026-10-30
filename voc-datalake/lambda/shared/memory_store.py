@@ -39,7 +39,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Final, SupportsBytes, cast
+from typing import Any, Final, SupportsBytes
 
 from boto3.dynamodb.conditions import Attr, Key
 from boto3.dynamodb.types import Binary
@@ -148,10 +148,11 @@ def encode_embedding(vector: list[float]) -> bytes:
 
 def decode_embedding(blob: object) -> list[float] | None:
     """The stored vector, or None for a missing / corrupt blob (never raises)."""
-    # cast: the installed Binary stub declares neither `.value` nor `__bytes__`,
-    # but boto3.dynamodb.types.Binary sets `self.value` in __init__ and defines
-    # `__bytes__` returning it — the stub is provably incomplete.
-    raw = cast(SupportsBytes, blob).__bytes__() if isinstance(blob, Binary) else blob
+    # The installed Binary stub declares neither `.value` nor `__bytes__`, but
+    # boto3.dynamodb.types.Binary defines `__bytes__` returning its value; the
+    # runtime-checkable SupportsBytes test proves it on the object itself. (Not
+    # `bytes(blob)`: the value may be a bytearray, which `bytes()` refuses from `__bytes__`.)
+    raw = blob.__bytes__() if isinstance(blob, Binary) and isinstance(blob, SupportsBytes) else blob
     if not isinstance(raw, (bytes, bytearray)):
         return None
     try:

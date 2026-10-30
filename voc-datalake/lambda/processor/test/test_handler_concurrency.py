@@ -16,7 +16,7 @@ enrichment per record. These tests pin the second half:
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -106,7 +106,7 @@ class _Rendezvous:
 
 @contextmanager
 def _fake_enrichment(gauge: _Gauge, throttle_ids: frozenset[str] = frozenset(),
-                     rendezvous: _Rendezvous | None = None) -> Iterator[MagicMock]:
+                     rendezvous: _Rendezvous | None = None) -> Generator[MagicMock, None, None]:
     """Every AWS stage stubbed with a sleep; the model call is gauged. Yields the write mock."""
     def sentiment(_text: str, _lang: str) -> dict:
         time.sleep(FAKE_COMPREHEND_S)

@@ -215,7 +215,7 @@ describe('SessionList open conversations', () => {
 
 describe('SessionList history', () => {
   it('shows a loader and no empty message while loading', () => {
-    vi.mocked(listSessions).mockImplementation(() => new Promise<SessionSummary[]>(() => undefined))
+    vi.mocked(listSessions).mockImplementation(() => new Promise<SessionSummary[]>(() => {}))
     renderList()
     expect(screen.getByLabelText('Loading conversations')).toBeInTheDocument()
     expect(screen.queryByText('No saved conversations yet.')).not.toBeInTheDocument()
@@ -320,7 +320,7 @@ describe('SessionList history', () => {
   })
 
   it('deleting a session also closes it when it has been opened meanwhile', async () => {
-    const gate: { release: () => void } = { release: () => undefined }
+    const gate: { release: () => void } = { release: () => {} }
     vi.mocked(deleteSession).mockImplementation(() => new Promise<void>((resolve) => { gate.release = resolve }))
     serveHistory(summary('s-beta', 'Beta'))
     renderList()

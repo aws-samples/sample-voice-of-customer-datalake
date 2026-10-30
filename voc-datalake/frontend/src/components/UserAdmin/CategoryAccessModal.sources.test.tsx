@@ -13,6 +13,7 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.f
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import CategoryAccessModal from './CategoryAccessModal'
 import { cognitoUser } from './userAdmin-fixtures'
+import { parsedJson } from '@test/jsonText'
 
 const viewer = cognitoUser({ username: 'viewer-demo', email: 'viewer@example.com', name: 'Vic' })
 
@@ -32,7 +33,7 @@ function renderModal() {
 async function saveAndReadBody(user: ReturnType<typeof userEvent.setup>): Promise<unknown> {
   await user.click(screen.getByRole('button', { name: 'Save Changes' }))
   await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/users/viewer-demo/category-access', expect.objectContaining({ method: 'PUT' })))
-  return JSON.parse(String(fetchApi.mock.calls.at(-1)?.[1]?.body))
+  return parsedJson(fetchApi.mock.calls.at(-1)?.[1]?.body)
 }
 
 beforeEach(() => {

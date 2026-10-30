@@ -10,7 +10,8 @@ import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated'
 import { VocApiStack } from '../lib/stacks/api-stack';
 import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
 import { AnthropicUseCaseSchema, AnthropicUseCaseConfig, ImageModelAccess } from '../lib/stacks/bedrock-access-stack';
-import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, comprehendSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
+import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
+import { suppressReviewedResourceStar } from '../lib/utils/nag-resource-star';
 import { shouldDeployWebSearchInScope } from '../lib/utils/web-search-default';
 import { applyInferenceScopeEnv, inferenceScopeOf } from '../lib/utils/inference-scope';
 import { shouldDeployAiEnablement } from '../lib/utils/ai-enablement-default';
@@ -291,9 +292,13 @@ Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
 // gateway resources.
 NagSuppressions.addStackSuppressions(coreStack, [...lambdaBasicExecutionRoleSuppressions, ...cdkAssetsSuppressions], true);
 // Apply stack-level suppressions
-NagSuppressions.addStackSuppressions(ingestionStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...comprehendSuppressions], true);
-NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(), ...comprehendSuppressions], true);
-NagSuppressions.addStackSuppressions(apiStack, [...lambdaBasicExecutionRoleSuppressions, ...apiGatewayPushToCloudwatchLogsRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(), ...cdkAssetsSuppressions, ...comprehendSuppressions], true);
+NagSuppressions.addStackSuppressions(ingestionStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions], true);
+NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions()], true);
+NagSuppressions.addStackSuppressions(apiStack, [...lambdaBasicExecutionRoleSuppressions, ...apiGatewayPushToCloudwatchLogsRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(), ...cdkAssetsSuppressions], true);
+// `Resource::*` is suppressed per POLICY, never stack-wide: only a policy whose every "*" action is on the
+// reviewed list (lib/utils/resource-star-actions.ts) gets it, so a new unscoped grant elsewhere is reported.
+// After every stack is built, so each policy document is complete when it is read.
+for (const stack of [ingestionStack, processingStack, apiStack]) suppressReviewedResourceStar(stack);
 
 // inferenceScope=eu: BEDROCK_INFERENCE_SCOPE=eu + AVATARS_ENABLED=false on every
 // Lambda of every stack. A no-op for `global`, so default templates are unchanged.

@@ -35,7 +35,7 @@ export default function CopyReviewLink({ feedbackId, radar = false }: CopyReview
   const { pathname, search } = useLocation()
   const copy = () => {
     // A refused clipboard leaves the label as it was: nothing was copied.
-    void navigator.clipboard.writeText(reviewLink(feedbackId, radar ? `${pathname}${search}` : null)).then(markCopied, () => undefined)
+    void navigator.clipboard.writeText(reviewLink(feedbackId, radar ? `${pathname}${search}` : null)).then(markCopied, () => {})
   }
   const Icon = copied ? Check : Link2
   return (

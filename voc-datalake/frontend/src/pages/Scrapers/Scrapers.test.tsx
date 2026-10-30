@@ -77,7 +77,7 @@ vi.mock('./ScraperEditor', () => ({
     <div data-testid="scraper-editor" data-admin={String(isAdmin)}>
       {saveError == null ? null : <p role="alert">{saveError}</p>}
       {/* Like the real editor: a rejected save stays open and the host shows why. */}
-      <button onClick={() => { onSave({ id: 'new', name: 'Test' }).catch(() => undefined) }}>Save</button>
+      <button onClick={() => { onSave({ id: 'new', name: 'Test' }).catch(ignoreRejection) }}>Save</button>
       <button onClick={onClose}>Close</button>
     </div>
   ),
@@ -100,6 +100,7 @@ vi.mock('./ManualImportModal', () => ({
 import Scrapers from './Scrapers'
 import { at } from '@test/defined'
 import { clickLoadFailedRetry } from '@test/loadFailed'
+import { ignoreRejection } from '../../lib/rejections'
 
 const createWrapper = () => createQueryWrapper(['/'])
 
@@ -184,7 +185,7 @@ describe('Scrapers', () => {
       }
     })
 
-    it('renders page header', async () => {
+    it('renders page header', () => {
       render(<Scrapers />, { wrapper: createWrapper() })
 
       // One name everywhere: the sidebar, the breadcrumb and the heading say "Data sources".
@@ -192,7 +193,7 @@ describe('Scrapers', () => {
       expect(screen.getByText(/everywhere your feedback comes from/i)).toBeInTheDocument()
     })
 
-    it('renders action buttons', async () => {
+    it('renders action buttons', () => {
       render(<Scrapers />, { wrapper: createWrapper() })
 
       expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument()

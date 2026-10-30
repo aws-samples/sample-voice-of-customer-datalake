@@ -27,10 +27,18 @@ export default defineConfig({
         singleFork: true,
       },
     },
+    // The per-file coverage gate (docs/coverage-gate.md) reads this through scripts/validate.sh, which adds
+    // `--coverage.enabled --coverage.reporter=json-summary` on the command line.
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      // Every source file, so a file no test imports reports 0 % instead of disappearing from the report.
+      include: ['src/**/*.{ts,tsx}'],
       exclude: [
+        // Spec files and test-only data are not production code.
+        'src/**/*.{test,spec}.{ts,tsx}',
+        'src/**/*-fixtures.{ts,tsx}',
+        'src/**/__fixtures__/**',
         'node_modules/',
         'dist/',
         'public/',

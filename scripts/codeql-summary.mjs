@@ -50,6 +50,11 @@ const ACCEPTED = [
   },
   {
     rule: 'py/uninitialized-local-variable',
+    prefix: 'voc-datalake/lambda/shared/invocation_cost.py',
+    reason: 'extractor false positive: `R` is the PEP 695 type parameter of `measure_invocation_cost[R]`, not a local (same CodeQL 2.27 generic-clause misread as converse.py)',
+  },
+  {
+    rule: 'py/uninitialized-local-variable',
     prefix: 'voc-datalake/lambda/shared/workflow_schema.py',
     reason: 'extractor false positive: `unchanged` is assigned unconditionally on the line before the one flagged (`diff_definitions` return)',
   },

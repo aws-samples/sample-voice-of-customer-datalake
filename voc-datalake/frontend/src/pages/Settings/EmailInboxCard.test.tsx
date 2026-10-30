@@ -37,7 +37,7 @@ describe('EmailInboxCard', () => {
     vi.clearAllMocks()
     auth.isAdmin = true
     api.get.mockResolvedValue(DEPLOYED)
-    api.saveCaps.mockImplementation(async (caps) => ({ ...DEPLOYED, caps }))
+    api.saveCaps.mockImplementation((caps) => Promise.resolve({ ...DEPLOYED, caps }))
     api.createFeedbackTypeDimension.mockResolvedValue({ success: true, created: true })
   })
 

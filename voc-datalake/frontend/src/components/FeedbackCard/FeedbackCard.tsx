@@ -32,6 +32,7 @@ import DimensionsEditControl from '../FeedbackDimensions/DimensionsEditControl'
 import clsx from 'clsx'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import type { DisplayLabels } from '../../hooks/useDisplayLabels'
+import { ignoreRejection } from '../../lib/rejections'
 
 interface FeedbackCardProps {
   feedback: FeedbackItem
@@ -248,7 +249,7 @@ export default function FeedbackCard({ feedback, compact = false }: Readonly<Fee
     // Best-effort: a denied permission or insecure context rejects, and the
     // text stays on screen to copy by hand — so the rejection is absorbed
     // rather than surfacing as an unhandled promise.
-    navigator.clipboard.writeText(text).catch(() => undefined)
+    navigator.clipboard.writeText(text).catch(ignoreRejection)
   }
 
   if (compact) {

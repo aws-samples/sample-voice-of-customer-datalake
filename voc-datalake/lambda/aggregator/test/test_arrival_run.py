@@ -23,6 +23,7 @@ from unittest.mock import patch
 import boto3
 import pytest
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, process_partial_response
+from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
@@ -272,7 +273,7 @@ def test_groups_never_exceed_the_transaction_item_limit():
     # Every record carries 30 tags of its own, so the distinct rows grow fast.
     plans = []
     for n in range(40):
-        plan = handler._PlannedArrival(raw={}, record=None)  # type: ignore[arg-type]
+        plan = handler._PlannedArrival(raw={}, record=DynamoDBRecord({}))
         plan.item, plan.date, plan.dedupe_key = {}, DAY, f'k{n}'
         plan.keys = frozenset({('METRIC#daily_total', DAY, 'count')}
                               | {(f'METRIC#daily_tag#t{n}_{t}', DAY, 'count') for t in range(30)})

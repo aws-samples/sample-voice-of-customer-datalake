@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { RefObject } from 'react'
 import type { RenameFailure } from './useSessionRename'
+import { noCleanup } from '../../hooks/noCleanup'
 
 /** chat_handler.MAX_TITLE_CHARS. */
 const MAX_TITLE_CHARS = 120
@@ -49,7 +50,7 @@ export function TitleEditor({ initial, onSave, onDone, returnFocusTo }: Readonly
 
   useEffect(() => {
     const input = inputRef.current
-    if (input === null) return
+    if (input === null) return noCleanup
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()

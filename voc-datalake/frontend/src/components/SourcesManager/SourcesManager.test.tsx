@@ -12,6 +12,7 @@ import { dimensionsWire, sourcesWire, supportProfile } from '@test/dimensionFixt
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import SourcesManager from './SourcesManager'
+import { parsedJson } from '@test/jsonText'
 const mockAfterIngest = vi.fn()
 vi.mock('../../api/invalidateFeedbackData', () => ({ useInvalidateFeedbackData: () => mockAfterIngest }))
 
@@ -20,7 +21,7 @@ const job = { job_id: 'er_0123456789ab', status: 'completed', field: 'email', va
 /** The body of the last `PUT /settings/sources`. */
 function savedBody(): unknown {
   const call = fetchApi.mock.calls.filter(([endpoint, options]) => endpoint === '/settings/sources' && options?.method === 'PUT').at(-1)
-  return JSON.parse(String(call?.[1]?.body))
+  return parsedJson(call?.[1]?.body)
 }
 
 /** The settings routes, with `jobs` as the stored erasure jobs. */

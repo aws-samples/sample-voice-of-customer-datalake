@@ -177,7 +177,7 @@ export default function ProjectDetail() {
   })
 
   // Loading state
-  if (Boolean(isLoading)) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="animate-spin text-accent" size={32} />

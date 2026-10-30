@@ -33,6 +33,14 @@ import { runToolCalls, type PendingApproval } from './tool-calls.js';
 import { streamTurn } from './turn.js';
 import { addUsage, emptyUsage, type UsageTotals } from './usage.js';
 
+/** A turn found no model to try. Unreachable (the chain always holds the configured model); it keeps the throw an Error. */
+class EmptyModelChainError extends Error {
+  override readonly name = 'EmptyModelChainError';
+  constructor(modelId: string) {
+    super(`no model to try for ${modelId}`);
+  }
+}
+
 export const MAX_TOOL_ROUNDS = 15;
 export const MAX_ROUNDS_NOTICE = '_Reached the maximum number of tool steps. Please ask a more specific question._';
 
@@ -210,8 +218,8 @@ async function runTurn(request: TurnRequest, allowFallback: boolean, models: Mod
       if (next !== undefined) recordFallback(modelId, next, fallbackReason(err));
     }
   }
-  // The chain always holds the configured model, so the loop ran at least once.
-  throw failures[0];
+  // The chain always holds the configured model, so the loop ran at least once and recorded a failure.
+  throw failures.at(0) ?? new EmptyModelChainError(models.modelId);
 }
 
 /**

@@ -117,7 +117,7 @@ describe('ProblemAnalysis', () => {
   })
 
   describe('loading state', () => {
-    it('shows loading spinner while fetching', async () => {
+    it('shows loading spinner while fetching', () => {
       getProblemTree.mockReturnValue(new Promise(() => {}))
 
       renderPage()

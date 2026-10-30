@@ -103,6 +103,11 @@ async function loadSettings(
   return item;
 }
 
+/** A configured value for a log line: a string as is, anything else as JSON (never `[object Object]`). */
+function shownValue(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
 function allowlisted(value: unknown): string | undefined {
   // A lookup by equality (not Set.has) so a non-string value needs no separate type check.
   const allowed = [...ALLOWED_MODEL_IDS].find((id) => id === value);
@@ -110,7 +115,7 @@ function allowlisted(value: unknown): string | undefined {
     return allowed;
   }
   if (value) {
-    console.warn(`Configured model '${String(value).slice(0, 80)}' not in allowlist; ignoring`);
+    console.warn(`Configured model '${shownValue(value).slice(0, 80)}' not in allowlist; ignoring`);
   }
   return undefined;
 }

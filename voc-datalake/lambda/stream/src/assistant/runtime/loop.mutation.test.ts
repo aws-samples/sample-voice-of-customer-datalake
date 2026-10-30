@@ -43,7 +43,7 @@ const NOW = new Date('2026-03-01T12:00:00Z');
 const QUESTION: Message[] = [{ role: 'user', content: [{ text: 'How are customers feeling?' }] }];
 const TEXT_TAIL: Message[] = [{ role: 'user', content: [{ text: 'tail as text' }] }];
 
-const metricsTool = fakeServerTool('get_metrics', async () => ({ content: 'metrics: 4' }));
+const metricsTool = fakeServerTool('get_metrics', () => Promise.resolve({ content: 'metrics: 4' }));
 const toolUse = (id: string, name = 'search_feedback') => ({ id, name, input: { query: 'late' } });
 
 function named(name: string, message: string): Error {
@@ -233,10 +233,8 @@ describe('runAgentLoop — approval interrupts', () => {
 });
 
 describe('runAgentLoop — a navigation chip ends an answered turn (prod 5.14: a second, repeated answer)', () => {
-  const navigationTool = fakeServerTool('suggest_navigation', async () => ({ content: 'link shown' }));
-  const failingNavigation = fakeServerTool('suggest_navigation', async () => {
-    throw new Error('not an app route');
-  });
+  const navigationTool = fakeServerTool('suggest_navigation', () => Promise.resolve({ content: 'link shown' }));
+  const failingNavigation = fakeServerTool('suggest_navigation', () => Promise.reject(new Error('not an app route')));
   const tools = [searchTool, navigationTool];
   const navUse = (id: string) => ({ id, name: 'suggest_navigation', input: { path: '/problems', label: 'Problems' } });
 

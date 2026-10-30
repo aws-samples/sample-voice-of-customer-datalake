@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -83,7 +83,7 @@ def _mock_table(**methods: Any) -> MagicMock:
 
 
 @contextmanager
-def _update_item_raising_boom() -> Iterator[None]:
+def _update_item_raising_boom() -> Generator[None, None, None]:
     """A table whose ``update_item`` raises a NON-conditional error, around a call that must let it through.
 
     The writers swallow only ``ConditionalCheckFailedException``; anything else has to reach the caller

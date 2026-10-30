@@ -29,7 +29,7 @@ describe('Imports history', () => {
   })
 
   it('shows a loading line, not the id, before the status arrives', () => {
-    routeFetchApi({ [`GET /memory/imports/${IMPORT_ID}`]: () => new Promise(() => undefined) }, { ignoreQuery: true })
+    routeFetchApi({ [`GET /memory/imports/${IMPORT_ID}`]: () => new Promise(() => {}) }, { ignoreQuery: true })
     renderWithQueryClient(<MemoryImports />)
     expect(screen.getByText('Loading import…')).toBeInTheDocument()
     expect(screen.queryByText(IMPORT_ID)).not.toBeInTheDocument()

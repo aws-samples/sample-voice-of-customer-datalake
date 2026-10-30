@@ -1,6 +1,6 @@
 """The web_reviews ingestor end to end, with the browser and every AWS client faked."""
 import json
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -56,7 +56,7 @@ def target_config(**fields: str) -> dict[str, str]:
 
 @contextmanager
 def ingestor(configs: list[dict], pages: dict[str, PageSnapshot] | None = None, *, execution_id: str | None = 'run_1',
-             table: WatermarkTable | None = None, session: Any = None) -> Iterator[Any]:
+             table: WatermarkTable | None = None, session: Any = None) -> Generator[Any, None, None]:
     """The ingestor over *configs*, its watermarks in *table*, its browser session *session* (a mock)."""
     from web_reviews.ingestor import handler
 

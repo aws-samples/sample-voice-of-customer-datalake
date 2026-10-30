@@ -19,7 +19,7 @@ copies (README "Copy this folder"), and the ingestion stack bundles `plugins/<id
 the Lambda, so a test in there would be copied into every new plugin and shipped in its bundle.
 """
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -40,7 +40,7 @@ PLUGIN_DIR = str(TEMPLATE_PATH.parents[1])
 @contextmanager
 def built_offline(
     execution_id: str | None = None, **secrets: str,
-) -> Iterator[tuple[handler.MySourceIngestor, MagicMock]]:
+) -> Generator[tuple[handler.MySourceIngestor, MagicMock], None, None]:
     """A `MySourceIngestor` built offline from a secret holding *secrets* (a filler key when none),
     and the mocked `clear_secret_cache` its construction may call."""
     with (
@@ -54,7 +54,7 @@ def built_offline(
 
 
 @contextmanager
-def template_ingestor(**secrets: str) -> Iterator[handler.MySourceIngestor]:
+def template_ingestor(**secrets: str) -> Generator[handler.MySourceIngestor, None, None]:
     """`built_offline` for the tests that only need the ingestor."""
     with built_offline(**secrets) as (ingestor, _):
         yield ingestor

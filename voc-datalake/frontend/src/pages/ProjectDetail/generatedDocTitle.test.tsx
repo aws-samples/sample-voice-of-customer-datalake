@@ -26,7 +26,7 @@ function wrapper({ children }: { readonly children: ReactNode }) {
 function useWizardWithMutations(documents: readonly SeriesDocument[]) {
   const wizard = useProjectWizardState()
   const mutations = useProjectMutations({
-    id: 'proj_1', ...wizard, documents, onSuccess: () => undefined, onError: () => undefined,
+    id: 'proj_1', ...wizard, documents, onSuccess: () => {}, onError: () => {},
   })
   return { wizard, mutations }
 }
@@ -45,11 +45,14 @@ async function requestedTitles(
   return Object.fromEntries(generateDocument.mock.calls.map(([, body]) => [body.doc_type, body.title]))
 }
 
+/** Every spec starts from a generate call that answers a pending job. */
+function resetGenerateDocument(): void {
+  generateDocument.mockReset()
+  generateDocument.mockResolvedValue({ success: true, job_id: 'job_1', status: 'pending', message: '' })
+}
+
 describe('generated document titles', () => {
-  beforeEach(() => {
-    generateDocument.mockReset()
-    generateDocument.mockResolvedValue({ success: true, job_id: 'job_1', status: 'pending', message: '' })
-  })
+  beforeEach(resetGenerateDocument)
 
   it('gives a PRD and a PR/FAQ generated together distinct titles', async () => {
     expect(await requestedTitles(['prd', 'prfaq'], 'Checkout revamp')).toStrictEqual({
@@ -90,13 +93,10 @@ const SERIES_KEY_CASES: ReadonlyArray<readonly [string, string, string]> = [
 ]
 
 describe('document series identity', () => {
+  beforeEach(resetGenerateDocument)
+
   it.each(SERIES_KEY_CASES)('keys %j (%s) as %j', (title, docType, expected) => {
     expect(documentSeriesKey(title, docType)).toBe(expected)
-  })
-
-  beforeEach(() => {
-    generateDocument.mockReset()
-    generateDocument.mockResolvedValue({ success: true, job_id: 'job_1', status: 'pending', message: '' })
   })
 
   it('continues the PRD series a dual generation started when a single PRD follows', async () => {

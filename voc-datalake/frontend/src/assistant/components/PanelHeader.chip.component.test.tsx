@@ -11,7 +11,7 @@ import assistantEn from '../../../public/locales/en/assistant.json'
 import { pageContextFromLocation } from '../page/pageContext'
 import PanelHeader from './PanelHeader'
 
-const noop = () => undefined
+const noop = () => {}
 
 function renderHeaderAt(pathname: string) {
   render(

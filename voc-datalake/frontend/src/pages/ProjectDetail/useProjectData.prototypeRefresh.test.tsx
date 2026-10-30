@@ -61,7 +61,7 @@ async function loadProject(documents: ProjectDocument[]) {
 /** Moves the fake clock forward inside `act`, so effects scheduled by the hook run. */
 async function advanceClock(ms: number) {
   await act(async () => {
-    vi.advanceTimersByTime(ms)
+    await vi.advanceTimersByTimeAsync(ms)
   })
 }
 
@@ -130,13 +130,13 @@ describe('pre-expiry re-sign', () => {
     await waitFor(() => expect(result.current.data).toBeDefined())
 
     await act(async () => {
-      vi.advanceTimersByTime(HOUR_MS - REFRESH_LEAD_MS + 1000)
+      await vi.advanceTimersByTimeAsync(HOUR_MS - REFRESH_LEAD_MS + 1000)
     })
     await waitFor(() => expect(getProject).toHaveBeenCalledTimes(2))
 
     invalidateSpy.mockClear()
     await act(async () => {
-      vi.advanceTimersByTime(2 * HOUR_MS)
+      await vi.advanceTimersByTimeAsync(2 * HOUR_MS)
     })
 
     expect(invalidatedProject()).toBe(true)

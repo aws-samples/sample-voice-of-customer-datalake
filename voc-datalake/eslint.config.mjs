@@ -11,6 +11,7 @@ import {
   SPEC_FILES,
   SPEC_RULES,
   SUPPRESSION_RULES,
+  SWALLOWED_REJECTION_SELECTORS,
   pendingPresetRules,
   withPending,
 } from '../eslint-rules/quality-gates.mjs';
@@ -59,7 +60,29 @@ export default tseslint.config(
       unicorn,
       custom: { rules: { 'no-re-exports': noReExports } },
     },
-    rules: withPending(SOURCE_RULES, PENDING_SOURCE),
+    rules: {
+      ...withPending(SOURCE_RULES, PENDING_SOURCE),
+      'no-restricted-syntax': ['error', ...SWALLOWED_REJECTION_SELECTORS],
+    },
+  },
+  {
+    // Added 5.49 wave, owner-approved: no hardcoded `arn:aws:` partition in production CDK code, so a
+    // template also deploys to aws-cn / aws-us-gov. Build ARNs from `Stack.of(this).partition` (a literal
+    // for a concrete region under @aws-cdk/core:enablePartitionLiterals) or `cdk.Aws.PARTITION`.
+    // Limit: only a string or template part that STARTS with `arn:aws:` is caught.
+    files: ['**/*.ts'],
+    ignores: [...SPEC_FILES, 'lib/test-support/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...SWALLOWED_REJECTION_SELECTORS,
+        { selector: 'Literal[value=/^arn:aws:/]', message: 'Hardcoded ARN partition: build it from the stack partition.' },
+        {
+          selector: 'TemplateElement[value.raw=/^arn:aws:/]',
+          message: 'Hardcoded ARN partition: build it from the stack partition.',
+        },
+      ],
+    },
   },
   {
     files: SPEC_FILES,

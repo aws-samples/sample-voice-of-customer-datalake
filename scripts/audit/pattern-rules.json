@@ -306,6 +306,44 @@
       "regex": "JSON\\.stringify\\([^()]*\\) === JSON\\.stringify\\(",
       "message": "structural equality spelled as two JSON.stringify calls",
       "use": "lib/sameJson sameJson(a, b)"
+    },
+    {
+      "id": "py-cast",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/**",
+        "voc-datalake/plugins/**"
+      ],
+      "exclude": [],
+      "regex": "(?<![\\w.])cast\\(|\\btyping\\.cast\\(",
+      "code_only": true,
+      "message": "typing.cast in production code: a claim the type checker cannot verify and nothing checks at run time",
+      "use": "real narrowing: isinstance / a TypeGuard that checks, a pydantic model or a validated TypedDict, or a signature that tells the truth"
+    },
+    {
+      "id": "noqa-reason",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/**",
+        "voc-datalake/plugins/**",
+        "voc-datalake/scripts/**"
+      ],
+      "exclude": [],
+      "regex": "(?i)#\\s*noqa(?!:\\s*[A-Z]+[0-9]+(?:\\s*,\\s*[A-Z]+[0-9]+)*[ \\t]+\\S)",
+      "message": "a # noqa without a rule code, or with codes but no reason after them",
+      "use": "# noqa: CODE — the reason it is right here (repo convention), or fix the code and drop the noqa"
+    },
+    {
+      "id": "shared-imports-handler",
+      "language": "python",
+      "include": [
+        "voc-datalake/lambda/shared/**",
+        "voc-datalake/plugins/_shared/**"
+      ],
+      "exclude": [],
+      "regex": "^\\s*(?:from\\s+(?!aws_lambda_powertools\\b)[\\w.]*?\\b(?:\\w+_)?handler\\s+import\\b|import\\s+(?!aws_lambda_powertools\\b)[\\w.]*?\\b(?:\\w+_)?handler\\b(?![.\\w])|from\\s+api\\s+import\\b[^#]*\\b\\w+_handler\\b|from\\s+[\\w.]+\\s+import\\s+(?:[^#]*,\\s*)?\\(?\\s*handler\\b)|import_module\\(\\s*['\"][\\w.]*handler['\"]",
+      "message": "shared code importing a Lambda handler module (the layering runs handler -> shared, never back; a multi-line `from api import (...)` is not seen)",
+      "use": "move what both need into lambda/shared (or plugins/_shared) and import it from there in the handler"
     }
   ]
 }

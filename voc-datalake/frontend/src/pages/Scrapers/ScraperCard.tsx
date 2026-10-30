@@ -19,6 +19,7 @@ import type { ScraperConfig } from '../../api/types'
 import { normalizedBaseUrl, scraperDomainLabel } from './scraperUrl'
 import { CardActions, CardStat, RadarBadge, RunOutcomeBadge, RunStartedNotice, type RunOutcome } from './SourceCardParts'
 import { ToneTile } from './SourceDialogHeader'
+import { noCleanup } from '../../hooks/noCleanup'
 
 interface RunStatus {
   status: string
@@ -60,7 +61,7 @@ function ScraperRunStatus({
   const [polling, setPolling] = useState(true)
 
   useEffect(() => {
-    if (!polling) return
+    if (!polling) return noCleanup
 
     const poll = async () => {
       try {

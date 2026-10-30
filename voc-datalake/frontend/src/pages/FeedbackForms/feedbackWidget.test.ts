@@ -217,7 +217,7 @@ describe('feedback widget rating buttons', () => {
 
     expect(buttons.map(([value]) => value)).toStrictEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])
     expect(buttons.map(([value, , text]) => text === value)).not.toContain(false)
-    expect(buttons.map(([, label]) => label)).toStrictEqual(Array.from({ length: 10 }, () => undefined))
+    expect(buttons.map(([, label]) => label)).toStrictEqual(Array.from({ length: 10 }))
   })
 
   it('renders five faces labelled Terrible to Amazing', async () => {

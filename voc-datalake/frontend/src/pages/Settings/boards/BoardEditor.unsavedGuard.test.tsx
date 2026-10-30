@@ -15,6 +15,7 @@ import { asRecord } from '../../../api/wireRecord'
 import { adminFlag, fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { SALES_BOARD, boardRoutes } from './board-fixtures'
 import { boardAdminKeys } from './boardAdminQueries'
+import { parsedJson } from '@test/jsonText'
 
 vi.mock('../../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
@@ -102,7 +103,7 @@ describe('the board editor guard', () => {
     const { user, router } = await editAndLeave()
     await user.click(guardDialog().getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(router.state.location.search).toBe('?tab=access&section=boards'))
-    expect(asRecord(JSON.parse(String(puts()[0]?.[1]?.body)))?.description).toBe('Draft text')
+    expect(asRecord(parsedJson(puts()[0]?.[1]?.body))?.description).toBe('Draft text')
   })
 })
 

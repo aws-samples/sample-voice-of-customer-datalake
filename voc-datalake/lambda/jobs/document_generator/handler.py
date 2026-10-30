@@ -482,7 +482,7 @@ def _visual_brief(project_id: str, doc_ids) -> tuple[str, list[str]]:
     # of this repo's pre-existing BLE001 findings; the suppression is here rather
     # than there so this change holds the lint count at its baseline instead of
     # moving it in either direction.
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 — optional grounding: any failure costs only the brief (see above)
         logger.warning(f"Failed to build visual brief: {e}")
         return '', []
 

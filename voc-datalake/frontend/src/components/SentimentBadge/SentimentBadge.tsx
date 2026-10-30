@@ -57,7 +57,7 @@ export default function SentimentBadge({ sentiment, label, score, size = 'sm' }:
         // Same tone as the label, no opacity fade: opacity-70 on the 12px
         // score dropped it below WCAG AA contrast on the subtle fills.
         // Signed, with the locale's decimal mark ("−0,78").
-        <span className="ml-1 font-mono">({signedAverage(Number(score), i18n.language)})</span>
+        <span className="ml-1 font-mono">({signedAverage(score, i18n.language)})</span>
       )}
     </span>
   )

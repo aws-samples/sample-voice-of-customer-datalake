@@ -44,7 +44,7 @@ function ReplyBox({ busy, onReply }: Pick<PinCardProps, 'busy' | 'onReply'>) {
   const send = () => {
     const value = text.trim()
     if (value === '') return
-    void onReply(value).then(() => setText(''), () => undefined)
+    void onReply(value).then(() => setText(''), () => {})
   }
   return (
     <div className="flex gap-1.5">

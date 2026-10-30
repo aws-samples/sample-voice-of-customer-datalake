@@ -184,7 +184,7 @@ class TestTheColdStartModuleState:
         (warmers,) = registered
         assert warmers[0] is reloaded._plugin_secret_defaults
         session = MagicMock()
-        with patch('boto3._get_default_session', return_value=session):
+        with patch('boto3.DEFAULT_SESSION', session):
             warmers[1]()
         assert session._loader.load_service_model.call_args_list == [
             call(service, model) for service in ('dynamodb', 'lambda') for model in BOTOCORE_MODEL_FILES

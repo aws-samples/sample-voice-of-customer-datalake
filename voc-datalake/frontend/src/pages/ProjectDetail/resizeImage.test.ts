@@ -17,6 +17,7 @@ import {
   resizeImageForUpload,
 } from './resizeImage'
 import type { ImagePrepFailure } from './resizeImage'
+import { ignoreRejection } from '../../lib/rejections'
 
 /** Runs the resize on `file` and checks that it rejected with a typed `failure`. */
 async function expectPrepFailure(file: File, failure: ImagePrepFailure) {
@@ -70,7 +71,7 @@ class FakeOffscreenCanvas {
     const ctx = {
       fillStyle: '',
       fillRect: () => { this.fills.push(ctx.fillStyle) },
-      drawImage: () => undefined,
+      drawImage: () => {},
     }
     return ctx
   }
@@ -103,6 +104,12 @@ function stubDecoder(width: number, height: number, name = 'bitmap') {
   const decode = vi.fn(() => Promise.resolve(fakeBitmap(name, width, height)))
   vi.stubGlobal('createImageBitmap', decode)
   return decode
+}
+
+
+/** Put back a canvas prototype property exactly as it was (jsdom defines both that a spec swaps). */
+function restoreCanvasProperty(name: 'getContext' | 'toBlob', descriptor: PropertyDescriptor | undefined): void {
+  if (descriptor !== undefined) Object.defineProperty(HTMLCanvasElement.prototype, name, descriptor)
 }
 
 describe('resizeImageForUpload', () => {
@@ -201,7 +208,8 @@ describe('resizeImageForUpload', () => {
     config.sizeFor = () => 3_800_000
     stubDecoder(3000, 2000)
 
-    await resizeImageForUpload(imageFile('shot.png', 'image/png', 4_000_000)).catch(() => undefined)
+    // The ladder runs out (every size stays too big), so the resize rejects; only the attempts matter here.
+    await resizeImageForUpload(imageFile('shot.png', 'image/png', 4_000_000)).catch(ignoreRejection)
 
     expect(encodeCalls.map((c) => [c.type, c.quality, c.width])).toStrictEqual([
       ['image/png', undefined, 1568],
@@ -240,7 +248,8 @@ describe('resizeImageForUpload', () => {
 
     config.sizeFor = () => 3_800_000
     stubDecoder(3000, 2000, 'failed')
-    await resizeImageForUpload(imageFile('shot.png', 'image/png', 4_000_000)).catch(() => undefined)
+    // The ladder runs out (every size stays too big), so the resize rejects; only the attempts matter here.
+    await resizeImageForUpload(imageFile('shot.png', 'image/png', 4_000_000)).catch(ignoreRejection)
 
     expect(closedBitmaps).toStrictEqual(['ok', 'failed'])
   })
@@ -254,12 +263,12 @@ describe('resizeImageForUpload', () => {
       callback(new Blob([new Uint8Array(1_000)], { type }))
     })
     const original = {
-      getContext: HTMLCanvasElement.prototype.getContext,
-      toBlob: HTMLCanvasElement.prototype.toBlob,
+      getContext: Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext'),
+      toBlob: Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'toBlob'),
     }
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
       configurable: true,
-      value: () => ({ fillStyle: '', fillRect: () => undefined, drawImage: () => undefined }),
+      value: () => ({ fillStyle: '', fillRect: () => {}, drawImage: () => {} }),
     })
     Object.defineProperty(HTMLCanvasElement.prototype, 'toBlob', {
       configurable: true,
@@ -273,12 +282,8 @@ describe('resizeImageForUpload', () => {
       expect(canvasSizes).toStrictEqual([[MAX_IMAGE_EDGE_PX, 1045]])
       expect(toBlob).toHaveBeenCalledTimes(1)
     } finally {
-      Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
-        configurable: true, value: original.getContext,
-      })
-      Object.defineProperty(HTMLCanvasElement.prototype, 'toBlob', {
-        configurable: true, value: original.toBlob,
-      })
+      restoreCanvasProperty('getContext', original.getContext)
+      restoreCanvasProperty('toBlob', original.toBlob)
     }
   })
 

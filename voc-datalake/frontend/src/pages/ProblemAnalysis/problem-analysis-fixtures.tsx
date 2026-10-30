@@ -156,8 +156,8 @@ interface Deferred<T> {
 
 function deferred<T>(): Deferred<T> {
   const holder: Deferred<T>['holder'] = {
-    resolve: () => undefined,
-    reject: () => undefined,
+    resolve: () => {},
+    reject: () => {},
   }
   const promise = new Promise<T>((resolve, reject) => {
     holder.resolve = resolve

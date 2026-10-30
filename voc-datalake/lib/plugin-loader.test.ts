@@ -19,12 +19,14 @@ const mockFs = vi.mocked(fs);
  * selects that overload without an assertion; `mockReturnValue` on the full
  * overload set would otherwise demand the LAST overload's Buffer-named Dirents.
  */
-type ReaddirWithFileTypes = (path: fs.PathLike, options: { withFileTypes: true }) => fs.Dirent[];
+// `Dirent.path` is deprecated (Node 20.12+, use parentPath), so the mocks leave it out.
+type MockDirent = Omit<fs.Dirent, 'path'>;
+type ReaddirWithFileTypes = (path: fs.PathLike, options: { withFileTypes: true }) => MockDirent[];
 const readdirWithFileTypes: ReaddirWithFileTypes = fs.readdirSync;
 const mockReaddir = vi.mocked(readdirWithFileTypes);
 
 // Helper to create mock Dirent objects
-function createMockDirent(name: string, isDir: boolean): fs.Dirent {
+function createMockDirent(name: string, isDir: boolean): MockDirent {
   return {
     name,
     isDirectory: () => isDir,
@@ -34,7 +36,6 @@ function createMockDirent(name: string, isDir: boolean): fs.Dirent {
     isSymbolicLink: () => false,
     isFIFO: () => false,
     isSocket: () => false,
-    path: '',
     parentPath: '',
   };
 }

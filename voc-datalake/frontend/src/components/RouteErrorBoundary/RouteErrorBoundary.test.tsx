@@ -48,7 +48,7 @@ describe('RouteErrorBoundary (issue #173)', () => {
   // react-router/React report the caught error too; silence the noise while
   // keeping the spy available for the reporting assertion.
   beforeEach(() => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
   afterEach(() => {
@@ -124,7 +124,9 @@ describe('RouteErrorBoundary (issue #173)', () => {
     const reload = vi.fn()
     // jsdom's Location is non-configurable; stubGlobal swaps the whole
     // object (cast-free) so the component's reload call lands on the spy.
-    vi.stubGlobal('location', { ...window.location, reload })
+    // The URL parts, copied by name: a spread of a Location copies its values by accident of jsdom's own-property layout.
+    const { href, origin, protocol, host, hostname, port, pathname, search, hash } = window.location
+    vi.stubGlobal('location', { href, origin, protocol, host, hostname, port, pathname, search, hash, reload })
 
     const user = userEvent.setup()
     renderRouterAt('/broken')

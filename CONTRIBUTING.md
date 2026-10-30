@@ -33,8 +33,16 @@ To send us a pull request, please:
 2. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
 3. Ensure local tests pass.
 4. Commit to your fork using clear commit messages.
-5. Send us a pull request, answering any default questions in the pull request interface.
+5. Send us a pull request and fill in the description from the template
+   ([.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)): the goal in one sentence, why it matters,
+   what is not a goal, what changed, backwards compatibility, the tests that ran, and the release it adds. If the
+   release section in `CHANGELOG.md` has a `### Fixed` group, also add one `Proof:` line (the test that fails without
+   the fix, or `not provable -- <reason>: <detail>`) and a sibling sweep (other places with the same defect, or
+   `Siblings: none -- <why>`). One `Proof:` line and one sweep cover a release that bundles several fixes.
 6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
+   The **PR description** check (`.github/workflows/pr-description.yml`, rules and limits in
+   `scripts/pr-checks/check-pr-body.mjs`) reads the description again on every edit. It checks the form only, and
+   it skips drafts and Dependabot pull requests.
 
 GitHub provides additional document on [forking a repository](https://help.github.com/articles/fork-a-repo/) and
 [creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
@@ -59,8 +67,11 @@ security-and-quality queries over JS/TS and Python with zero errors and warnings
 CLI with `brew install codeql`; about 5 minutes; skipped on GitHub Actions, where code scanning runs the same
 analysis on every PR), the code-audit detectors in `scripts/audit/` (dead code, renamed clones and re-implemented
 helpers; one `audit: …` step each, plus their own tests and lint — [docs/code-audit.md](docs/code-audit.md#in-the-gate)),
-pytest and vitest.
+pytest and vitest with a per-file coverage floor and a shrink-only baseline ([docs/coverage-gate.md](docs/coverage-gate.md)),
+and actionlint + zizmor over `.github/workflows` (`scripts/actions-lint.sh`; install both, e.g. `brew install actionlint zizmor`).
 CI (`.github/workflows/quality-gates.yml`) runs that script and nothing else. Each gate allows zero findings.
+Outside `validate.sh`, pull requests also get the license gate and the dependency vulnerability audit; Dependabot PRs
+need a release bump before they merge ([docs/dependencies.md](docs/dependencies.md)).
 
 ### When to run what
 - **Track, agent and mutation branches: the affected gates only.** `bash scripts/validate-affected.sh [<base>]`
@@ -108,9 +119,21 @@ the gate: fix it, or allowlist it in `scripts/audit/allowlists/<tool>.json` with
 their own tests and `npm run lint:audit` lints them (both gate steps too). See [docs/code-audit.md](docs/code-audit.md).
 
 ### Optional: AI review before push
-`scripts/git-hooks/pre-push` reviews the diff you are pushing with Kiro CLI agents. It blocks on critical findings and asks
-about warnings; it skips itself when `kiro-cli` is not installed, or with `SKIP_AI_REVIEW=1`. Git does not run it until
-you install it in your clone: `cp scripts/git-hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push`.
+`scripts/git-hooks/pre-push` reviews the diff you are pushing with three Kiro CLI agents (`.kiro/agents/`), run in
+parallel on each chunk of the diff:
+
+- `security-reviewer` checks the boundaries this platform has (per-resource authorization, public routes, MCP tokens,
+  SSRF, PII, IAM) and also a tightening that would refuse a legitimate operation. A CRITICAL finding blocks the push.
+- `quality-reviewer` checks logic, edge cases, contracts, error handling and missing tests for the behaviour that
+  changed, not what `scripts/validate.sh` already enforces. A BLOCKING finding blocks the push.
+- `first-principles-reviewer` asks whether each thing the diff adds needs to exist, already exists, or fixes only a
+  symptom, and suggests deletions only. It is advisory: it never blocks.
+
+A finding blocks only when it names a concrete trigger and an observable outcome. Warnings, missing tests, or a
+review that did not finish ask before pushing (and block without a terminal). The hook skips itself when `kiro-cli`
+is not installed, or with `SKIP_AI_REVIEW=1`. Git does not run it until you install it in your clone:
+`cp scripts/git-hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push`. Its parsing of the agents'
+output is tested by `node --test scripts/git-hooks/pre-push.test.mjs`.
 
 
 ## Finding contributions to work on

@@ -18,6 +18,7 @@
  * @module hooks/useOverlayFocus
  */
 import { useEffect, useRef, type RefObject } from 'react'
+import { noCleanup } from './noCleanup'
 
 const FOCUSABLE = [
   'a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])',
@@ -71,7 +72,7 @@ export function useOverlayFocus(ref: RefObject<HTMLElement | null>, open: boolea
 
   useEffect(() => {
     const container = ref.current
-    if (!open || container === null) return
+    if (!open || container === null) return noCleanup
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const state = { leftByFocus: false }
 

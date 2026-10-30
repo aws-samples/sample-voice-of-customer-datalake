@@ -17,6 +17,72 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.50.00] - 2026-10-30
+
+Stricter quality gates: per-file coverage, dependency updates and license/vulnerability checks, a PR description
+check, CDK template gates, GitHub Actions lint, tighter TypeScript and Python rules, and rewritten AI review prompts.
+
+### Added
+- Per-file coverage gate for the Python, frontend and stream suites: every production file must reach 80% line
+  coverage unless its suite's baseline lists it, and a baseline can only shrink. `scripts/validate.sh` checks it
+  after each suite ([docs/coverage-gate.md](docs/coverage-gate.md)).
+- Dependabot version updates for GitHub Actions, npm and pip: weekly, one grouped minor/patch PR per directory,
+  and no release younger than 7 days ([docs/dependencies.md](docs/dependencies.md)).
+- License gate on pull requests (dependency review, default-deny SPDX allowlist with reviewed exceptions).
+- Vulnerability audit of every npm lockfile and Lambda layer requirements file, on dependency PRs and weekly
+  (`scripts/dependency-audit.mjs`), with dated reviewed ignores in `.github/dependency-audit-ignore.json`.
+- A failed scheduled workflow opens a tracking issue, closed again by the next green scheduled run.
+- Pull request template and a "PR description" check (advisory for now): goal, scope, compatibility, tests and
+  release; a PR whose release has `### Fixed` also gives a `Proof:` line and a sibling sweep.
+- CDK template gates: every IAM grant on `Resource: "*"` must use a reviewed action, and every SQS-triggered
+  Lambda's queue must have a visibility timeout of at least 6× its timeout plus the batching window.
+- `scripts/actions-lint.sh`: pinned actionlint and zizmor over `.github`, a `validate.sh` step.
+- The pre-push AI review gains an advisory first-principles reviewer that only suggests removals.
+
+### Changed
+- TypeScript lint: deprecated APIs, unsafe arguments, `[object Object]` stringification, non-Error throws and
+  rejections, `async` without `await`, detached methods, swallowed `.catch()`, inconsistent returns, snapshot
+  matchers and misplaced or duplicate hooks are now errors. The tsconfigs add `noImplicitOverride`, and stream and
+  CDK add switch-fallthrough, unreachable-code and unused-label checks.
+- Python lint: naive datetimes, `sys.version` misuse, async functions that never await, deep nesting, leftover
+  TODO/FIXME, `typing.cast` in Lambda and plugin code, `# noqa` without a reason and shared code importing a handler
+  are rejected; pyright rejects deprecated APIs and `# type: ignore`, and production code may not use another
+  module's private names. pytest fails on unregistered markers and on xfail tests that pass.
+- SQS and DynamoDB Streams consumers use Powertools' `process_partial_response` (the deprecated `batch_processor`
+  decorator is gone); partial-batch failure reporting is unchanged.
+- The cdk-nag wildcard suppression for Comprehend/Translate is applied per policy instead of per stack, so a new
+  unscoped grant elsewhere is reported.
+- CDK code builds ARNs from the region's partition instead of a literal `arn:aws:`; commercial templates are
+  unchanged.
+- The security and quality pre-push reviewers block only on a finding with a concrete trigger and outcome, ignore
+  instructions planted in the diff, and leave lint, duplication and dead code to the gates.
+- Every GitHub Action is pinned to a commit SHA; the quality-gates job timeout is 60 minutes (coverage adds time).
+- The duplication gate (jscpd) skips only generated coverage reports under `voc-datalake/`, so `scripts/coverage/`
+  is scanned like every other script.
+
+### Fixed
+- The processing queue's visibility timeout is now 1805 s (6 × the processor's 300 s + its batching window)
+  instead of 360 s, so a batch still being processed is no longer handed to a second consumer.
+- The Google Play reviews client stops at the library's end-of-feed token instead of making one extra request.
+- Assistant log lines and aggregate counts no longer print `[object Object]` for an unexpected value.
+- The pre-push hook no longer fails on macOS for diffs over 60 KB, reviews every pushed ref, and covers `.mjs`,
+  `.sh`, `.yml` and `.kiro` files.
+
+### Security
+- The MCP backend test workflow no longer expands a step output inside a shell script.
+- The pre-push AI reviewers run with only their own read-only tools trusted (no `--trust-all-tools`), so an
+  instruction planted in a reviewed diff cannot run a command.
+- A reviewed `Resource: "*"` action that needs narrowing (KMS decrypt) must test the named condition key
+  (`kms:ViaService`); any other condition no longer counts.
+- The quality-gates workflow checks the gitleaks download against a committed digest.
+
+### Upgrade notes
+- Deploying updates `ProcessingQueue`'s visibility timeout in place (no replacement). A failed message is retried
+  after about 30 minutes, so its three receives before the DLQ take about 90 minutes instead of 18.
+- Dependabot PRs fail the version check until whoever merges them adds the release bump (CHANGELOG + package.json).
+- The license gate and the dependency audit are new pull-request checks; mark them required in the `main` ruleset
+  when you want them to block.
+
 ## [5.49.00] - 2026-10-30
 
 Every generated persona, research report, PRD and PR/FAQ stores the ids of the reviews it was written from, and the project shows them (#236).

@@ -21,6 +21,15 @@
  */
 import { z } from 'zod'
 
+/** The number a wire value spells; NaN for anything but a number or a non-blank string. */
+function wireNumber(value: unknown): number {
+  if (typeof value === 'number') return value
+  // Whitespace-only needs rejecting explicitly, not just the empty string:
+  // Number(' ') and Number('\t') are both 0.
+  if (typeof value === 'string' && value.trim() !== '') return Number(value)
+  return Number.NaN
+}
+
 /**
  * A non-negative integer from a number, or from a string holding one.
  *
@@ -30,11 +39,8 @@ import { z } from 'zod'
  * perfectly plausible count and render as one.
  */
 const wireCount = z.preprocess((value) => {
-  if (typeof value !== 'number' && typeof value !== 'string') return undefined
-  // Whitespace-only needs rejecting explicitly, not just the empty string:
-  // Number(' ') and Number('\t') are both 0.
-  if (typeof value === 'string' && value.trim() === '') return undefined
-  const n = typeof value === 'number' ? value : Number(value)
+  // A value that is neither a number nor a non-blank string reads as NaN, rejected below.
+  const n = wireNumber(value)
   // Reject NaN, Infinity, negatives, and fractions: every one of these would
   // render as a count, and a count is what the user reads it as.
   return Number.isInteger(n) && n >= 0 ? n : undefined

@@ -8,5 +8,7 @@
   "reportUnnecessaryComparison": "error",
   "reportUnnecessaryContains": "error",
   "reportUnnecessaryCast": "error",
-  "reportUnnecessaryTypeIgnoreComment": "error"
+  "reportUnnecessaryTypeIgnoreComment": "error",
+  "enableTypeIgnoreComments": false,
+  "reportDeprecated": "error"
 }

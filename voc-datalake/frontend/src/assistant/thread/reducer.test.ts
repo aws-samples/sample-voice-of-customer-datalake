@@ -11,6 +11,7 @@ import type { AguiEvent } from '../agui/sse'
 import type { Message } from '@ag-ui/core'
 import type { ThreadState } from './types'
 import { at, defined } from '@test/defined'
+import { asText, parsedJson } from '@test/jsonText'
 
 function run(events: AguiEvent[], start: ThreadState = createThreadState('t1')): ThreadState {
   return events.reduce((s, event) => threadReducer(s, { type: 'event', event }), start)
@@ -163,7 +164,7 @@ describe('threadReducer — interrupts and resume', () => {
       { interruptId: 'approval:w1', status: 'resolved', payload: { approved: true } },
       { interruptId: 'approval:w2', status: 'resolved', payload: { approved: false } },
     ])
-    expect(toolMessages.map((m) => (m.role === 'tool' ? [m.toolCallId, JSON.parse(String(m.content))] : null))).toStrictEqual([
+    expect(toolMessages.map((m) => (m.role === 'tool' ? [m.toolCallId, parsedJson(m.content)] : null))).toStrictEqual([
       ['w1', { status: 'executed', summary: 'Created T' }],
       ['w2', { status: 'declined' }],
     ])
@@ -224,7 +225,7 @@ describe('wire messages', () => {
     ])
     expect(wire[0]).toStrictEqual({ id: 'u', role: 'user', content: [{ type: 'text', text: 'see' }, { type: 'text', text: '[attachment "shot.png" not available in restored conversation]' }] })
     expect(wire[1]).toStrictEqual({ id: 'a', role: 'assistant', content: 'a' })
-    expect(at(wire, 2).role === 'tool' && String(at(wire, 2).content).length).toBe(20_000)
+    expect(at(wire, 2).role === 'tool' && asText(at(wire, 2).content).length).toBe(20_000)
   })
 
   it('keeps whole newest turns within the cap', () => {

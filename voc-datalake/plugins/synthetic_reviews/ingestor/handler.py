@@ -228,8 +228,8 @@ class SyntheticReviewsIngestor(BaseIngestor):
         now = datetime.now(UTC)
         offset = timedelta(
             days=random.randint(0, GENERATION_WINDOW_DAYS),  # noqa: S311 - synthetic timestamps, not security-sensitive
-            hours=random.randint(0, 23),  # noqa: S311
-            minutes=random.randint(0, 59),  # noqa: S311
+            hours=random.randint(0, 23),  # noqa: S311 — synthetic timestamps, not security-sensitive
+            minutes=random.randint(0, 59),  # noqa: S311 — synthetic timestamps, not security-sensitive
         )
         return (now - offset).isoformat()
 

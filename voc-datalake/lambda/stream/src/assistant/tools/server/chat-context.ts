@@ -12,7 +12,7 @@ import { parseProjectAccess, type ProjectAccessSummary } from '../project-access
 import { seg } from './common.js';
 
 /** Lenient field: null or a malformed value degrades to absent instead of failing the row. */
-function lenient<T>(schema: z.ZodType<T, unknown>) {
+function lenient<T>(schema: z.ZodType<T>) {
   return schema.nullish().catch(null).transform((value): T | undefined => value ?? undefined);
 }
 
@@ -55,7 +55,7 @@ const bodySchema = z.object({
   access: z.unknown().optional(),
 });
 
-function parseEach<T>(schema: z.ZodType<T, unknown>, rows: unknown[]): T[] {
+function parseEach<T>(schema: z.ZodType<T>, rows: unknown[]): T[] {
   return rows.flatMap((row) => {
     const parsed = schema.safeParse(row);
     return parsed.success ? [parsed.data] : [];

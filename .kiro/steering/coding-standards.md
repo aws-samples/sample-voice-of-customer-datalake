@@ -93,7 +93,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
 ### SQS Batch Processing Pattern
 
 ```python
-from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
+from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, process_partial_response
 
 processor = BatchProcessor(event_type=EventType.SQS)
 
@@ -102,9 +102,9 @@ def record_handler(record: SQSRecord) -> dict:
     # Process record...
     return {"status": "success"}
 
-@batch_processor(record_handler=record_handler, processor=processor)
+# `@batch_processor` is deprecated (pyright reportDeprecated is an error).
 def lambda_handler(event: dict, context: Any) -> dict:
-    return processor.response()
+    return process_partial_response(event=event, record_handler=record_handler, processor=processor, context=context)
 ```
 
 ### Bedrock Invocation

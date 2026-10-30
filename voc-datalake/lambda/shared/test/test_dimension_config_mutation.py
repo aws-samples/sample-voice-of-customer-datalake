@@ -18,7 +18,7 @@ from collections.abc import Callable
 
 import pytest
 
-import shared.dimension_config as dimension_config
+from shared import dimension_config
 from shared.dimension_config import parse_dims_param, resolve_dimensions, validate_dimensions, validate_tags
 
 

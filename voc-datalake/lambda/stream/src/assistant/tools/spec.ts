@@ -51,7 +51,7 @@ export function describeIssues(error: z.ZodError): string {
 }
 
 /** Parse model input or throw an `invalid_input` tool error the model can act on. */
-export function parseToolInput<T>(schema: z.ZodType<T, unknown>, input: unknown): T {
+export function parseToolInput<T>(schema: z.ZodType<T>, input: unknown): T {
   const parsed = schema.safeParse(input ?? {});
   if (!parsed.success) {
     throw new AssistantToolError('invalid_input', `Invalid arguments — ${describeIssues(parsed.error)}`);

@@ -189,7 +189,7 @@ export function overLongNoteRows(
  * than told a save failed.
  */
 function noteLength(notes: string | null | undefined): number {
-  return [...(notes ?? '')].length
+  return Array.from(notes ?? '').length
 }
 
 /**

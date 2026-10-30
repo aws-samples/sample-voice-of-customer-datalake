@@ -52,6 +52,7 @@ npm-debug.log*
 # Test coverage
 .coverage
 coverage/
+!/scripts/coverage/
 htmlcov/
 coverage_html/
 

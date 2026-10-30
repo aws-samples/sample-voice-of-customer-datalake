@@ -11,6 +11,7 @@ import { TestRouter } from '@test/TestRouter'
 import { asRecord } from '../../api/wireRecord'
 import { adminFlag, fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { SETTINGS_VIEW } from '../Participants/participants-fixtures'
+import { parsedJson } from '@test/jsonText'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
@@ -60,7 +61,7 @@ describe('the participant settings card', () => {
     await user.type(cap, '200')
     await user.click(screen.getByRole('button', { name: /save/i }))
     await waitFor(() => expect(saves()).toHaveLength(1))
-    expect(JSON.parse(String(saves()[0]?.[1]?.body))).toStrictEqual({
+    expect(parsedJson(saves()[0]?.[1]?.body)).toStrictEqual({
       allow_external_people: false, daily_send_cap: 200, sender_name: 'Example Air',
     })
   })

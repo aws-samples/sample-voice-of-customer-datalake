@@ -54,7 +54,7 @@ function dialogScenario({ host, field, typed, expected, onClose, leave = pressEs
     leave,
     expectStayed: () => expect(onClose).not.toHaveBeenCalled(),
     expectLeft: () => expect(onClose).toHaveBeenCalledTimes(1),
-    whileDialogOpen: async () => { view.rerender?.(wrap(1)) },
+    whileDialogOpen: () => { view.rerender?.(wrap(1)); return Promise.resolve() },
   }
 }
 

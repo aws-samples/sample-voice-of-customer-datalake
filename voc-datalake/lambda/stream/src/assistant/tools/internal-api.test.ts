@@ -241,7 +241,7 @@ describe('every refusal and failure names its cause', () => {
 
   it.each([['an Error', new Error('arn:aws:iam::123'), 'Error'], ['a non-Error', 'boom', 'unknown']])(
     'names the unreachable service and logs only the route and the error name, for %s',
-    async (_label, failure, name) => {
+    async (_label, failure: unknown, name) => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const send = vi.fn<(command: InvokeCommand) => Promise<InvocationResponse>>(() => Promise.reject(failure));
       const invoke = createInternalApiInvoker({ send }, DEFAULT_FUNCTIONS);

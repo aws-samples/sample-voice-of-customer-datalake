@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -321,7 +321,7 @@ class TestDailyCounts:
 # --------------------------------------------------------------------------
 
 @contextmanager
-def _counters(data: dict[str, dict[str, int]]) -> Iterator[MagicMock]:
+def _counters(data: dict[str, dict[str, int]]) -> Generator[MagicMock, None, None]:
     with patch.object(hb, 'daily_counts', side_effect=lambda _t, pk, _f, _l: dict(data.get(pk, {}))) as mock:
         yield mock
 
@@ -471,7 +471,7 @@ class StoreMocks:
 
 
 @contextmanager
-def _store_mocks() -> Iterator[StoreMocks]:
+def _store_mocks() -> Generator[StoreMocks, None, None]:
     names = ('get_run', 'clear_lock', 'finish_run', 'set_agent_attributes', 'get_workflow', 'start_run',
              'launch_run')
     patches = [patch.object(store, name) for name in names]
@@ -619,7 +619,7 @@ class Tick:
 
 @contextmanager
 def _tick(agents: list[dict], outcomes: list[Any] | None = None, *, feedback_name: str = 'fb',
-          aggregates_name: str = 'agg', arn: str = 'arn:sm', has_table: bool = True) -> Iterator[Tick]:
+          aggregates_name: str = 'agg', arn: str = 'arn:sm', has_table: bool = True) -> Generator[Tick, None, None]:
     agents_table = MagicMock(name='agents') if has_table else None
     feedback, aggregates = MagicMock(name='feedback'), MagicMock(name='aggregates')
     resource = MagicMock()

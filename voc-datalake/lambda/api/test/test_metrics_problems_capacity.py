@@ -22,7 +22,7 @@ import hashlib
 import json
 import logging
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -197,7 +197,7 @@ def big_day() -> list[dict[str, Any]]:
 
 
 @contextmanager
-def capacity_world(day: list[dict[str, Any]], aggregates_name: str) -> Iterator[_FakeDateIndex]:
+def capacity_world(day: list[dict[str, Any]], aggregates_name: str) -> Generator[_FakeDateIndex, None, None]:
     """The fake feedback index holding *day*, moto aggregates with 120 days of history.
 
     Shared with the aggregate-routes capacity suite (test_metrics_aggregate_capacity.py)."""

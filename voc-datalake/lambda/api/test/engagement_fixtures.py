@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -65,7 +65,7 @@ def _seed(projects: Any, aggregates: Any) -> None:
 
 
 @contextmanager
-def engagement_world(**env: str) -> Iterator[World]:
+def engagement_world(**env: str) -> Generator[World, None, None]:
     """moto tables + patched AWS edges for one test (``env`` overrides the Lambda environment)."""
     values = {'PARTICIPANTS_TABLE': 'participants', 'FEATURE_REQUESTS_TABLE': 'requests',
               'EMAIL_FROM': EMAIL_FROM, 'FRONTEND_URL': FRONTEND, 'APP_USER_POOL_ID': APP_POOL,
@@ -97,7 +97,7 @@ COMPANY_DOMAIN = 'acme.example'
 
 
 @contextmanager
-def boards_world() -> Iterator[World]:
+def boards_world() -> Generator[World, None, None]:
     """``engagement_world`` with the company domain set (the boards' ``company`` audience)."""
     from shared.participants_settings import SETTINGS_KEY
     with engagement_world() as world:

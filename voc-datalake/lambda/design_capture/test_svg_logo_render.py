@@ -73,7 +73,7 @@ def logo_downloads(fetch: MagicMock) -> list[str]:
     return [c.args[0] for c in fetch.call_args_list if not c.args[0].endswith('/favicon.ico')]
 
 
-def _capture(table, s3, cdp: FakeCdp, *, svg_allowed: bool = True, answer: str = ANSWER,  # noqa: F811
+def _capture(table, s3, cdp: FakeCdp, *, svg_allowed: bool = True, answer: str = ANSWER,  # noqa: F811 — pytest fixture parameter named like the imported fixture
              svg_body: bytes = SITE_SVG):
     raster = MagicMock(side_effect=_server(svg_body))
     deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(return_value=answer),
@@ -110,7 +110,7 @@ class _FailingDrawCdp(FakeCdp):
 
 class TestTheSvgLogoIsRendered:
     def test_a_header_svg_beats_the_favicon_its_png_is_the_preview_and_its_sanitised_svg_a_download(
-            self, table, s3):  # noqa: F811
+            self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = FakeCdp(_page((SVG, 'header'), (FAVICON, 'icon')), render_answer=BOX, logo_png=LOGO_PNG)
         result, stored, raster = _capture(table, s3, cdp)
         assert result == {'status': 'ready'}
@@ -127,13 +127,13 @@ class TestTheSvgLogoIsRendered:
         assert '<style' not in markup
         assert logo_downloads(raster) == [SVG]   # once, for the copy; the PNG is still drawn from the URL
 
-    def test_an_svg_url_that_serves_no_svg_keeps_only_the_png(self, table, s3):  # noqa: F811
+    def test_an_svg_url_that_serves_no_svg_keeps_only_the_png(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = FakeCdp(_page((SVG, 'header')), render_answer=BOX, logo_png=LOGO_PNG)
         _, stored, _ = _capture(table, s3, cdp, svg_body=b'<!doctype html><html>blocked</html>')
         assert 'svg_preview_key' not in stored['extracted_design']['logo']
         assert stored['extracted_design']['logo']['rendered'] is True
 
-    def test_the_render_runs_in_its_own_transparent_tab_and_photographs_the_image_box(self, table, s3):  # noqa: F811
+    def test_the_render_runs_in_its_own_transparent_tab_and_photographs_the_image_box(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = FakeCdp(_page((SVG, 'header'), (TOUCH, 'touch-icon')), render_answer=BOX, logo_png=LOGO_PNG)
         _capture(table, s3, cdp)
         calls = _render_calls(cdp)
@@ -145,7 +145,7 @@ class TestTheSvgLogoIsRendered:
         assert ('Target.createTarget', {'url': 'about:blank'}) in cdp.calls[-8:]
         assert cdp.calls[-1] == ('Target.closeTarget', {'targetId': 't2'})
 
-    def test_the_url_is_a_call_argument_set_as_a_property_never_in_code_or_markup(self, table, s3):  # noqa: F811
+    def test_the_url_is_a_call_argument_set_as_a_property_never_in_code_or_markup(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = FakeCdp(_page((SVG, 'header'), (FAVICON, 'icon')), render_answer=BOX, logo_png=LOGO_PNG)
         _capture(table, s3, cdp)
         (_, draw), = [c for c in cdp.calls if c[0] == 'Runtime.callFunctionOn']
@@ -165,7 +165,7 @@ class TestTheSvgLogoIsRendered:
 
 
 class TestTheRasterStillWins:
-    def test_a_header_raster_beats_a_header_svg_and_nothing_is_rendered(self, table, s3):  # noqa: F811
+    def test_a_header_raster_beats_a_header_svg_and_nothing_is_rendered(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = FakeCdp(_page((SVG, 'header'), ('https://kirocrew.dev/logo.png', 'header')), render_answer=BOX,
                       logo_png=LOGO_PNG)
         _, stored, raster = _capture(table, s3, cdp)
@@ -175,7 +175,7 @@ class TestTheRasterStillWins:
         assert logo_downloads(raster) == ['https://kirocrew.dev/logo.png']
 
     @pytest.mark.parametrize('svg', ['http://kirocrew.dev/logo.svg', SVG])
-    def test_a_non_https_or_policy_refused_svg_is_never_rendered(self, table, s3, svg):  # noqa: F811
+    def test_a_non_https_or_policy_refused_svg_is_never_rendered(self, table, s3, svg):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = FakeCdp(_page((svg, 'header'), (TOUCH, 'touch-icon')), render_answer=BOX, logo_png=LOGO_PNG)
         _, stored, _ = _capture(table, s3, cdp, svg_allowed=False)
         assert cdp.methods().count('Target.createTarget') == 1
@@ -190,7 +190,7 @@ class TestTheRasterStillWins:
         pytest.param({'x': 0, 'y': 0, 'width': 'wide', 'height': 64}, LOGO_PNG, id='bad-box'),
     ])
     def test_a_failed_render_falls_back_to_the_touch_icon_and_the_capture_succeeds(
-            self, table, s3, render_answer, logo_png):  # noqa: F811
+            self, table, s3, render_answer, logo_png):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = FakeCdp(_page((SVG, 'header'), (TOUCH, 'touch-icon')), render_answer=render_answer, logo_png=logo_png)
         with patch.object(logo_render, 'logger') as log:
             result, stored, raster = _capture(table, s3, cdp)
@@ -202,13 +202,13 @@ class TestTheRasterStillWins:
         assert SVG not in str(log.mock_calls)
         assert cdp.calls[-1][0] == 'Target.closeTarget'
 
-    def test_a_cdp_error_in_the_render_tab_is_no_logo_never_no_capture(self, table, s3):  # noqa: F811
+    def test_a_cdp_error_in_the_render_tab_is_no_logo_never_no_capture(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = _FailingDrawCdp(_page((SVG, 'header'), (TOUCH, 'touch-icon')))
         result, stored, _ = _capture(table, s3, cdp)
         assert result == {'status': 'ready'}
         assert stored['extracted_design']['logo']['source_url'] == TOUCH
 
-    def test_a_model_proposed_rendered_flag_is_never_kept(self, table, s3):  # noqa: F811
+    def test_a_model_proposed_rendered_flag_is_never_kept(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         answer = json.dumps({'summary': 'S', 'logo': {'source_url': SVG, 'content_type': 'image/png',
                                                       'rendered': True, 'preview_key': PREVIEW_KEY}})
         cdp = FakeCdp(_page(('https://kirocrew.dev/logo.png', 'header')))

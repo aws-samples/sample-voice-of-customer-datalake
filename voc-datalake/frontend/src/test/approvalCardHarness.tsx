@@ -21,6 +21,7 @@ import { approvalExpiresAt } from './assistantDoubles'
 import { fetchApi } from './fetchApiRoutes'
 import type { PageContext } from '../assistant/contract'
 import type { ApprovalCardProps, ApprovalResolution, AssistantToolCall } from '../assistant/types'
+import { parsedJson } from '@test/jsonText'
 
 type ResolveSpy = ReturnType<typeof vi.fn<(r: ApprovalResolution) => void>>
 type User = ReturnType<typeof userEvent.setup>
@@ -83,5 +84,5 @@ export function resumedToolMessage(onResolve: ResolveSpy, toolCallId: string): u
   const interruptId = `approval:${toolCallId}`
   const interrupt = { id: interruptId, toolCallId, expiresAt: approvalExpiresAt() }
   const { toolMessages } = buildResume([interrupt], resolution === undefined ? {} : { [interruptId]: resolution })
-  return JSON.parse(String(toolMessages.at(0)?.content))
+  return parsedJson(toolMessages.at(0)?.content)
 }

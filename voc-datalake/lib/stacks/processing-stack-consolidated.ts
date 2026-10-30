@@ -25,6 +25,7 @@ import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
+import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_TIMEOUT } from './processor-timing';
 
 export interface VocProcessingStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;
@@ -66,8 +67,8 @@ export interface VocProcessingStackProps extends VocStackProps {
  */
 export const CATEGORY_REPROCESS_FUNCTION_BASE_NAME = 'voc-category-reprocess';
 
-// Feedback processor event source. Pinned by processing-stack-consolidated.test.ts.
-const PROCESSOR_BATCHING_WINDOW_SECONDS = 5;
+// Feedback processor event source (the timeout and batching window live in processor-timing.ts). Pinned by
+// processing-stack-consolidated.test.ts.
 const PROCESSOR_ENRICHMENT_CONCURRENCY = 5;
 
 /**
@@ -159,7 +160,7 @@ export class VocProcessingStack extends VocStack {
       handler: 'handler.lambda_handler',
       code: processorCode,
       role: processingRole,
-      timeout: cdk.Duration.minutes(5),
+      timeout: PROCESSOR_TIMEOUT, // the processing queue's visibility timeout derives from it (processor-timing.ts)
       memorySize: 1769, // CPU: 90.9 % p95 at 1024 MB, projected 60.6 % at 1536 → one vCPU, 2026-10-18 (lib/sizing/policy.ts)
       environment: {
         FEEDBACK_TABLE: feedbackTable.tableName,
@@ -190,7 +191,7 @@ export class VocProcessingStack extends VocStack {
     // are enriched ENRICHMENT_CONCURRENCY at a time (lambda/processor/handler.py).
     this.processingLambda.addEventSource(new lambdaEventSources.SqsEventSource(processingQueue, {
       batchSize: 10,
-      maxBatchingWindow: cdk.Duration.seconds(PROCESSOR_BATCHING_WINDOW_SECONDS),
+      maxBatchingWindow: PROCESSOR_BATCHING_WINDOW,
       reportBatchItemFailures: true,
     }));
 
