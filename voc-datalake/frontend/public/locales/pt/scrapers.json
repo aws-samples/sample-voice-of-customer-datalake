@@ -91,7 +91,7 @@
       "hint": "Dê um nome aos dados deste arquivo para corrigi-los depois: ao reenviar com o mesmo nome, as linhas que têm id são atualizadas em vez de adicionadas de novo. Não diferencia maiúsculas de minúsculas.",
       "radarNote": "Indisponível para um envio ao Radar: as linhas dele não podem ser atualizadas depois.",
       "problems": {
-        "tooLong": "Use no máximo {{max}} caracteres.",
+        "tooLong": "Use no máximo {{max, number}} caracteres.",
         "invalidChars": "Use apenas letras, dígitos, espaços, \"-\", \"_\" e \".\"."
       }
     },

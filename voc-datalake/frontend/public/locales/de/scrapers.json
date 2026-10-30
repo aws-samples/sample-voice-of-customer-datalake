@@ -90,7 +90,7 @@
       "hint": "Benennen Sie die Daten dieser Datei, um sie später zu korrigieren: Ein erneuter Upload unter demselben Namen aktualisiert Zeilen mit einer ID, statt sie noch einmal hinzuzufügen. Groß- und Kleinschreibung spielt keine Rolle.",
       "radarNote": "Für einen Radar-Upload nicht verfügbar: Seine Zeilen können später nicht aktualisiert werden.",
       "problems": {
-        "tooLong": "Höchstens {{max}} Zeichen verwenden.",
+        "tooLong": "Höchstens {{max, number}} Zeichen verwenden.",
         "invalidChars": "Nur Buchstaben, Ziffern, Leerzeichen, „-“, „_“ und „.“ verwenden."
       }
     },

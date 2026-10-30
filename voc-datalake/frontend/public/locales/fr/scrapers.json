@@ -91,7 +91,7 @@
       "hint": "Nommez les données de ce fichier pour pouvoir les corriger plus tard : un nouvel import sous le même nom met à jour les lignes qui ont un id au lieu de les ajouter à nouveau. Insensible à la casse.",
       "radarNote": "Indisponible pour un import Radar : ses lignes ne peuvent pas être mises à jour ensuite.",
       "problems": {
-        "tooLong": "Utilisez au plus {{max}} caractères.",
+        "tooLong": "Utilisez au plus {{max, number}} caractères.",
         "invalidChars": "Utilisez uniquement des lettres, des chiffres, des espaces, « - », « _ » et « . »."
       }
     },
