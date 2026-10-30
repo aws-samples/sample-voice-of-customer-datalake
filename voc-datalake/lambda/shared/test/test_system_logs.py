@@ -81,7 +81,7 @@ class TestDiscoveryAndQueries:
         body = _run(fake, days=7)
         assert fake.prefixes == ['/aws/lambda/voc-']
         assert body['log_groups'] == len(mine)
-        assert [len(q['logGroupNames']) for q in fake.started] == [GROUPS_PER_QUERY, 4]
+        assert sorted(len(q['logGroupNames']) for q in fake.started) == [4, GROUPS_PER_QUERY]  # started concurrently
         searched = {name for q in fake.started for name in q['logGroupNames']}
         assert searched == set(mine)
         assert {(q['startTime'], q['endTime']) for q in fake.started} == {(int(NOW) - 7 * 86400, int(NOW))}
@@ -183,6 +183,18 @@ class TestPolling:
         assert body['status'] == 'failed'
         assert [q['logGroupNames'][0] for q in fake.started] == [self.TWO_BATCHES[0]]
         assert fake.stopped == [fake.started[0]['queryId']]
+
+    @pytest.mark.parametrize('operation', ['get_query_results', 'get_paginator'])
+    def test_a_throttled_read_or_listing_inside_the_concurrent_calls_is_failed_without_its_text(self, operation, monkeypatch):
+        # ordered_map re-raises the worker's own ClientError, so search() still answers its fixed message.
+        fake = FakeLogs(list(self.TWO_BATCHES))
+
+        def throttled(*_args, **_kwargs):
+            raise ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'secret detail'}}, operation)
+        monkeypatch.setattr(fake, operation, throttled)
+        body = _run(fake, budget=10.0)
+        assert (body['status'], body['message']) == ('failed', FAILED_MESSAGE)
+        assert 'secret detail' not in str(body)
 
 
 def _groups(rows: list, level: str = 'error') -> list[dict]:

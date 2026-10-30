@@ -648,7 +648,7 @@ regional Insights query of a deployment in another region).
     (`lambda/shared/system_logs.py`; sources `system_log_sources.py`, rows
     `system_log_rows.py`, grouping `system_log_groups.py`). One Logs Insights query per
     ≤ 50 Lambda groups (at most 4), one for the state machines, one for the access log,
-    started and read concurrently and polled for up to 18 s (first after 0.5 s, then 1 s; a
+    started and read concurrently and polled for up to 18 s (the first two reads 0.5 s apart, then 1 s; a
     finished query is not read again); a slower search answers `running` with up to 6 comma-separated
     `query_id`s and the page polls again. The log groups are listed once per 5 minutes per warm
     Lambda (`DISCOVERY_TTL_SECONDS`), so a poll does not list them again. Each group: `source`, `function`, `level`,
