@@ -49,6 +49,9 @@ export function layerStripSteps(pythonDir: string): string {
     + ` && find ${pythonDir} -mindepth 2 -type d -name tests -prune -exec rm -rf {} +`;
 }
 
+/** scripts/build-layers.sh's skip-unchanged marker, written next to `python/` (lockstepped by the test). */
+export const LAYER_BUILD_STAMP = '.build-stamp';
+
 /**
  * Bundled asset for a Python dependency layer, kept in lockstep with
  * scripts/build-layers.sh (issue #194) — lib/utils/python-layer-bundling.test.ts
@@ -90,12 +93,13 @@ export function layerStripSteps(pythonDir: string): string {
  * The local `python/` build output from scripts/build-layers.sh is excluded
  * from the asset input: the container installs fresh from requirements.txt,
  * and staging it would nest a stale copy inside the deployed layer and churn
- * the asset hash on every local rebuild. README.md and .DS_Store are
- * excluded for the same hash-stability reason.
+ * the asset hash on every local rebuild. README.md, .DS_Store and the
+ * script's `.build-stamp` (its skip-unchanged marker) are excluded for the
+ * same hash-stability reason.
  */
 export function pythonLayerCode(layerDir: string): lambda.Code {
   return lambda.Code.fromAsset(layerDir, {
-    exclude: ['python', 'README.md', '**/.DS_Store'],
+    exclude: ['python', LAYER_BUILD_STAMP, 'README.md', '**/.DS_Store'],
     bundling: {
       image: lambda.Runtime.PYTHON_3_14.bundlingImage,
       platform: 'linux/arm64',
