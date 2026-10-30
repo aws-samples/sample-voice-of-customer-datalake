@@ -254,4 +254,13 @@ describe('think steps', () => {
     expect(names).toContain('list_feedback');
     expect(names.filter((name) => ['create_project', 'set_feedback_category', 'propose_plan'].includes(name ?? ''))).toStrictEqual([]);
   });
+
+  it('run on Haiku 5.5 when the conductor\u2019s approver claims carry the e2e group, else on the resolved model', async () => {
+    const e2e = harness({}, [text('Done.')]);
+    await runPlanStep(event(think, { claims: { ...USER_CLAIMS, 'cognito:groups': 'users,e2e' } }), e2e.deps);
+    expect(e2e.commands[0]?.input.modelId).toBe('global.anthropic.claude-haiku-5-5');
+    const regular = harness({}, [text('Done.')]);
+    await runPlanStep(event(think), regular.deps);
+    expect(regular.commands[0]?.input.modelId).toBe('global.anthropic.claude-sonnet-5-5');
+  });
 });
