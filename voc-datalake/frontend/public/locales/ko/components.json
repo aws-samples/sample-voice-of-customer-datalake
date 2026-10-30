@@ -322,6 +322,7 @@
       "confirm": "재처리",
       "running": "{{filename}} 재처리 중...",
       "failed": "{{filename}} 재처리에 실패했습니다. 자세한 내용은 시스템 로그를 확인하세요.",
+      "pollFailed": "{{filename}} 상태를 확인하지 못했습니다. 아직 실행 중일 수 있으니 이 페이지를 다시 열어 확인하세요.",
       "startFailed": "재처리를 시작할 수 없습니다: {{error}}",
       "dismiss": "닫기",
       "completed_one": "{{filename}} 재처리 완료: {{count, number}}개 행을 파이프라인에 보냈습니다(중복은 그곳에서 건너뜁니다).",

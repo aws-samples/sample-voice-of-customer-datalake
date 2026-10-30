@@ -322,6 +322,7 @@
       "confirm": "重新处理",
       "running": "正在重新处理 {{filename}}...",
       "failed": "重新处理 {{filename}} 失败。详情请查看系统日志。",
+      "pollFailed": "无法查看 {{filename}} 的状态。它可能仍在运行；请重新打开此页面查看。",
       "startFailed": "无法开始重新处理:{{error}}",
       "dismiss": "关闭",
       "completed_one": "已重新处理 {{filename}}:{{count, number}} 行已发送到管道(重复项在管道中跳过)。",

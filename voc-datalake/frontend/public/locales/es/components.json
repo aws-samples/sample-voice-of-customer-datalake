@@ -331,6 +331,7 @@
       "confirm": "Reprocesar",
       "running": "Reprocesando {{filename}}...",
       "failed": "No se pudo reprocesar {{filename}}. Los registros del sistema tienen los detalles.",
+      "pollFailed": "No se pudo comprobar {{filename}}. Puede que siga en curso; vuelve a abrir esta página para comprobarlo.",
       "startFailed": "No se pudo iniciar el reprocesamiento: {{error}}",
       "dismiss": "Cerrar",
       "completed_one": "{{filename}} reprocesado: {{count, number}} fila enviada al proceso (allí se omiten los duplicados).",
