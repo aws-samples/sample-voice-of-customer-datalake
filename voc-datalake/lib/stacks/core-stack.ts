@@ -112,6 +112,8 @@ export class VocCoreStack extends VocStack {
   /** The board pool (feedback boards and review links) and its client, on every deployment (core-board-auth.ts). */
   public readonly boardUserPool: cognito.UserPool;
   public readonly boardUserPoolClient: cognito.UserPoolClient;
+  /** The app pool's hosted-UI domain prefix (`<prefix>.auth.<region>.amazoncognito.com`); MCP OAuth forwards to it. */
+  public readonly userPoolDomainPrefix: string;
   /** How customer data is removed with the stacks (`-c protectData`). */
   public readonly dataProtection: DataProtection;
 
@@ -490,6 +492,7 @@ export class VocCoreStack extends VocStack {
     this.userPool = auth.userPool;
     this.userPoolClient = auth.userPoolClient;
     this.identityPool = auth.identityPool;
+    this.userPoolDomainPrefix = auth.domainPrefix;
     // The board pool: feedback boards and document review links (core-board-auth.ts), on every
     // deployment; `-c emailFrom` only chooses how it emails its sign-in codes.
     const board = createBoardAuth(buildContext, {

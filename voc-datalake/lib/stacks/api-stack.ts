@@ -95,6 +95,8 @@ export interface VocApiStackProps extends VocStackProps {
   /** The board pool (boards and review links) and its client — on every deployment since 5.45.00 (core-board-auth.ts). */
   boardUserPool: cognito.IUserPool;
   boardUserPoolClient: cognito.IUserPoolClient;
+  /** The app pool's hosted-UI domain prefix: MCP OAuth forwards sign-in and token calls there (api-mcp-oauth.ts). */
+  userPoolDomainPrefix: string;
 
   // Ingestion stack resources
   processingQueueUrl: string;
@@ -274,7 +276,7 @@ export class VocApiStack extends VocStack {
       s3ImportIngestorDeployed: s3ImportIngestorDeployed(getEnabledPlugins(data.allPlugins, props.enabledSources)),
     });
     // cryptography only where live code can sign CloudFront URLs (py_layers derives the set).
-    attachSigningLayer(this);
+    const signingLayer = attachSigningLayer(this);
 
 
     // ============================================
@@ -327,7 +329,7 @@ export class VocApiStack extends VocStack {
       settingsLambda: data.settingsLambda,
       memoryLambda: assistant.memoryLambda,
       agentsLambda: assistant.agentsLambda,
-    });
+    }, signingLayer);
     const { webSearch } = assistant;
 
 
