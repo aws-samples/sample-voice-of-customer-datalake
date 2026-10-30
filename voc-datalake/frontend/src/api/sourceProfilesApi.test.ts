@@ -64,16 +64,19 @@ describe('erasure jobs', () => {
     expect(normalizeErasureList({ jobs: 'junk', sources: ['web_x'] })).toStrictEqual({ jobs: [], sources: ['web_x'] })
   })
 
-  it('sees an erasure end only when a job it saw live is now finished', () => {
-    const [live] = normalizeErasureJobs({ jobs: [job] })
-    const [done] = normalizeErasureJobs({ jobs: [{ ...job, status: 'completed' }] })
-    const [failed] = normalizeErasureJobs({ jobs: [{ ...job, status: 'failed' }] })
-    if (live === undefined || done === undefined || failed === undefined) throw new Error('fixture did not parse')
-    expect(erasureEnded([live], [done])).toBe(true)
-    expect(erasureEnded([live], [failed])).toBe(true)
-    expect(erasureEnded([live], [live])).toBe(false)
-    // Finished before this tab first saw it: nothing to refresh.
-    expect(erasureEnded([], [done])).toBe(false)
-    expect(erasureEnded([done], [done])).toBe(false)
+  const live = normalizeErasureJobs({ jobs: [job] })
+  const done = normalizeErasureJobs({ jobs: [{ ...job, status: 'completed' }] })
+  const failed = normalizeErasureJobs({ jobs: [{ ...job, status: 'failed' }] })
+
+  it('sees an erasure end when a job it saw live has completed or failed', () => {
+    expect([live, done, failed].map((jobs) => jobs.length)).toStrictEqual([1, 1, 1])
+    expect(erasureEnded(live, done)).toBe(true)
+    expect(erasureEnded(live, failed)).toBe(true)
+  })
+
+  it('sees no end while the job runs or when it finished before it was first seen', () => {
+    expect(erasureEnded(live, live)).toBe(false)
+    expect(erasureEnded([], done)).toBe(false)
+    expect(erasureEnded(done, done)).toBe(false)
   })
 })
