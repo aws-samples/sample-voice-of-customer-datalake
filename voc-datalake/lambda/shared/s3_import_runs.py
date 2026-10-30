@@ -59,7 +59,7 @@ def reprocess_event(bucket: str, key: str, run_id: str) -> dict:
     `execution_id` is the key `POST /sources/{source}/run` passes every ingestor.
     `reprocess: True` is the one explicit addition: it lets the ingestor name a
     `processed/<source>/<file>` key's source `S3 - <source>`, as the original upload was.
-    The key is URL-encoded the way S3 encodes it in a notification.
+    The key is URL-encoded the way S3 encodes it in a notification (a space as `+`, `/` kept).
     """
     return {
         'execution_id': run_id,
@@ -67,7 +67,7 @@ def reprocess_event(bucket: str, key: str, run_id: str) -> dict:
         'Records': [{
             'eventSource': 'aws:s3',
             'eventName': 'ObjectCreated:Put',
-            's3': {'bucket': {'name': bucket}, 'object': {'key': urllib.parse.quote_plus(key)}},
+            's3': {'bucket': {'name': bucket}, 'object': {'key': urllib.parse.quote_plus(key, safe='/')}},
         }],
     }
 

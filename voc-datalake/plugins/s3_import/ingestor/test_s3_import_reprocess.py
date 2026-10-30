@@ -130,16 +130,25 @@ class TestAReprocessRun:
         [batch] = [c.args[0] for c in built["ingestor"].send_to_queue.call_args_list]
         assert {item["source_platform_override"] for item in batch} == {"S3 - reviews"}
 
-    def test_a_failure_records_the_error_type_only_and_is_raised_again(self, run):
+    def test_a_failure_records_the_error_type_only_and_is_not_raised_so_lambda_does_not_retry(self, run):
         invoke, built = run
         built["queue_error"] = RuntimeError("queue https://secret.example")
 
-        with pytest.raises(RuntimeError):
-            invoke(_event("reviews/june.csv"))
+        with patch.object(handler, "metrics") as m:
+            result = invoke(_event("reviews/june.csv"))
 
+        assert result == {"status": "error", "error": "RuntimeError"}
         updates = _run_updates(built["ingestor"])
-        assert updates[-1]["status"] == "error"
+        assert [u["status"] for u in updates] == ["running", "error"]
         assert updates[-1]["errors"] == ["RuntimeError"]
+        m.add_metric.assert_any_call(name="ReprocessFailed", unit="Count", value=1)
+
+    def test_a_failed_upload_event_is_raised_again_for_lambdas_retry(self, run):
+        invoke, built = run
+        built["queue_error"] = RuntimeError("queue down")
+
+        with pytest.raises(RuntimeError):
+            invoke(_event("reviews/june.csv", execution_id=None, reprocess=False))
 
     def test_a_run_with_no_file_closes_its_row_as_completed_with_nothing(self, run):
         invoke, built = run
@@ -177,14 +186,25 @@ class TestOnlyTheImportBucketIsRead:
         with patch.object(handler, "logger") as log:
             result = invoke(_event("reviews/june.csv", bucket="someone-elses-bucket"))
 
-        assert result["files_processed"] == 0
+        assert result == {"status": "error", "error": "NoImportFileRead"}
         built["s3"].head_object.assert_not_called()
         built["s3"].get_object.assert_not_called()
         built["ingestor"].send_to_queue.assert_not_called()
         log.warning.assert_called_once_with(
             "Skipping a record for a bucket other than the import bucket",
             extra={"bucket": "someone-elses-bucket"})
-        assert [u["status"] for u in _run_updates(built["ingestor"])] == ["running", "completed"]
+        updates = _run_updates(built["ingestor"])
+        assert [u["status"] for u in updates] == ["running", "error"]
+        assert updates[-1]["errors"] == ["NoImportFileRead"]
+
+    def test_an_upload_event_for_another_bucket_is_skipped_as_before(self, run):
+        invoke, built = run
+
+        result = invoke(_event("reviews/june.csv", bucket="someone-elses-bucket", execution_id=None, reprocess=False))
+
+        assert result["status"] == "success"
+        assert result["files_processed"] == 0
+        built["s3"].head_object.assert_not_called()
 
     def test_without_a_configured_bucket_no_record_is_read(self, run):
         invoke, built = run
@@ -192,7 +212,7 @@ class TestOnlyTheImportBucketIsRead:
         with patch.object(handler, "IMPORT_BUCKET", ""):
             result = invoke(_event("reviews/june.csv"))
 
-        assert result["files_processed"] == 0
+        assert result == {"status": "error", "error": "NoImportFileRead"}
         built["s3"].head_object.assert_not_called()
 
     def test_the_import_bucket_is_read(self, run):
