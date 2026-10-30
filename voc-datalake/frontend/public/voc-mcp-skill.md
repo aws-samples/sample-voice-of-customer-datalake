@@ -53,9 +53,9 @@ outcome — never the arguments or any content).
 
 | Tool | Use it to |
 |---|---|
-| `search_feedback` | Find what customers say. Give `query` (2+ characters) to search the text, or only filters (`days`, `category`, `sentiment`, `source`, `channel`, `tag`, `dims`, `limit`) to list the newest items. `dims` is an object like `{"product": "app"}`; every pair must match. |
-| `get_feedback` | Read one feedback item in full by `feedback_id`. |
-| `get_metrics` | Volumes and trends: `view` = `summary`, `sentiment`, `categories`, `sources`, `personas`, or `dimensions` with a `key` (counts per value of one dimension), over `days` (0 = all time). Every view also takes `source`, `channel`, `tag` and `dims`. Prefer this to counting search results. |
+| `search_feedback` | Find what customers say. Give `query` (2+ characters) to search the text, or only filters (`days`, `category`, `sentiment`, `source`, `channel`, `tag`, `dims`, `limit`) to list the newest items. `dims` is an object like `{"product": "app"}`; every pair must match. `urgent: true` keeps only high-urgency items (with the other filters). |
+| `get_feedback` | Read one feedback item in full by `feedback_id`; `include_similar: true` adds up to 5 similar items (short text, no full records). |
+| `get_metrics` | Volumes and trends: `view` = `summary`, `sentiment`, `categories`, `sources`, `personas`, `dimensions` with a `key` (counts per value of one dimension), `github` (GitHub issues per release and label) or `entities` (the filter values in use — categories, sources, channels, tags, dimensions — with counts), over `days` (0 = all time). Every view also takes `source`, `channel`, `tag` and `dims`. Prefer this to counting search results. |
 | `list_categories` | The category taxonomy the user can see — use the exact names as filters. |
 | `list_dimensions` | The feedback dimensions (product, module, user type, ...) and their allowed values — use the exact keys and values in `dims` and as the `key` of the dimensions view. |
 | `search_memory` | Check what the team already decided or knows (company + the user's personal memory) before proposing something. |
