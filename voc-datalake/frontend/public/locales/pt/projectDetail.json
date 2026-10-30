@@ -323,7 +323,38 @@
     "regenerateAvatarConfirmMessage": "A IA desenha uma nova imagem para esta persona e substitui a atual. Leva alguns segundos.",
     "regeneratingAvatar": "Gerando um novo avatar…",
     "regenerateAvatarFailed": "Não foi possível gerar o avatar novamente. Tente de novo.",
-    "notesCount_many": "{{count, number}} notas"
+    "notesCount_many": "{{count, number}} notas",
+    "promote": {
+      "button": "Promover para a empresa",
+      "done": "Copiada para a biblioteca de personas da empresa.",
+      "openLibrary": "Abrir a biblioteca",
+      "failed": "Não foi possível copiar a persona para a biblioteca da empresa. Tente novamente."
+    },
+    "copiedFrom": {
+      "company": "a biblioteca da empresa",
+      "unnamedProject": "outro projeto",
+      "line": "Copiada de {{source}} em {{date}}",
+      "lineNoDate": "Copiada de {{source}}"
+    },
+    "copy": {
+      "open": "Copiar de…",
+      "title": "Copiar personas para este projeto",
+      "explain": "Cada persona é copiada, não vinculada: alterações posteriores em qualquer lado ficam separadas. As notas de pesquisa não são copiadas.",
+      "sourceLabel": "Copiar de",
+      "companySource": "Biblioteca de personas da empresa",
+      "projectSource_one": "{{name}} ({{count, number}} persona)",
+      "projectSource_many": "{{name}} ({{count, number}} personas)",
+      "projectSource_other": "{{name}} ({{count, number}} personas)",
+      "choose": "Escolha personas (até {{max, number}})",
+      "loading": "Carregando personas…",
+      "loadFailed": "Não foi possível carregar as personas. Feche e tente novamente.",
+      "sourceEmpty": "Esta origem não tem personas.",
+      "failed": "Não foi possível copiar as personas. Tente novamente.",
+      "cancel": "Cancelar",
+      "submit_one": "Copiar {{count, number}} persona",
+      "submit_many": "Copiar {{count, number}} personas",
+      "submit_other": "Copiar {{count, number}} personas"
+    }
   },
   "personaSections": {
     "ageRange": "Idade",

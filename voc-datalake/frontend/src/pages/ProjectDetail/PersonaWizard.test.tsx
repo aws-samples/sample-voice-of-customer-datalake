@@ -150,8 +150,9 @@ describe('PersonaWizard start failure (F1)', () => {
 })
 
 /** The wizard rendered with the two-persona project and walked to its final step. */
-async function renderAtFinalStep() {
-  const props = personaProps()
+async function renderAtFinalStep(extra: { additiveOnly?: boolean; mode?: 'add' | 'replace' } = {}) {
+  const base = personaProps()
+  const props = { ...base, additiveOnly: extra.additiveOnly, personaConfig: { ...base.personaConfig, mode: extra.mode ?? 'add' } }
   const user = userEvent.setup()
   render(<PersonaWizard {...props} />, { wrapper: createWrapper() })
   await screen.findByText('Customer Feedback')
@@ -193,5 +194,21 @@ describe('PersonaWizard add-or-replace', () => {
     expect(screen.getByRole('radio', { name: /Add to existing personas/ })).toBeChecked()
     await user.click(screen.getByRole('radio', { name: /Replace existing personas/ }))
     expect(props.onPersonaConfigChange).toHaveBeenCalledWith(expect.objectContaining({ mode: 'replace' }))
+  })
+})
+
+/** 5.60: the company library is only ever added to, so its wizard offers no replace. */
+describe('PersonaWizard additive only (company library)', () => {
+  beforeEach(resetWizardMocks)
+
+  it('hides the add-or-replace choice', async () => {
+    await renderAtFinalStep({ additiveOnly: true })
+    expect(screen.queryByRole('radio', { name: /Replace existing personas/ })).not.toBeInTheDocument()
+  })
+
+  it('confirms as an addition even if the config says replace', async () => {
+    const { user } = await renderAtFinalStep({ additiveOnly: true, mode: 'replace' })
+    await user.click(screen.getByRole('button', { name: /Generate Personas/ }))
+    expect(screen.getByRole('dialog', { name: 'Generate personas now?' })).toBeInTheDocument()
   })
 })

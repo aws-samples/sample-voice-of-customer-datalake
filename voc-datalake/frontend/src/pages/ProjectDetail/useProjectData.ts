@@ -8,31 +8,20 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { designSystemApi, designSystemKey } from '../../api/designSystemApi'
 import { projectsApi } from '../../api/projectsApi'
-import { projectKey } from '../../api/projectQueryKeys'
+import { projectJobsKey, projectKey } from '../../api/projectQueryKeys'
 import { usePrototypeLinkRefresh } from '../../components/usePrototypeLinkRefresh'
 import { generatedDocTitle, type SeriesDocument } from './generatedDocTitle'
+import { hasRecentlyCompletedJob } from './jobCompletion'
 import type {
-  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig, NoteItem,
+  PersonaToolConfig, ResearchToolConfig, DocToolConfig, MergeToolConfig,
 } from './types'
 import type {
   ProjectDocument,
 } from '../../api/types'
 import type {
-  ProjectPersona,
   ProjectJob,
 } from '../../api/projectTypes'
 import type { ContextConfig } from '../../components/DataSourceWizard/types'
-
-/**
- * Query key for a project's job list.
- *
- * Exported because the key has to be identical in three places that can drift:
- * the query itself, the wizard mutations that invalidate it, and
- * ProjectDetail's onJobStarted (which is the only thing that makes the panel
- * notice a job started outside a wizard). A typo in any of them fails silently
- * — the panel simply never updates.
- */
-export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] as const
 
 /**
  * Query key for a project's product context.
@@ -205,13 +194,7 @@ export function useProjectData({
 
   // When a job completes, refresh project data
   useEffect(() => {
-    const jobs = jobsData?.jobs ?? []
-    const TEN_SECONDS = 10000
-    const completedRecently = jobs.some((j: ProjectJob) =>
-      j.status === 'completed' && j.completed_at != null && j.completed_at !== '' &&
-      new Date(j.completed_at).getTime() > Date.now() - TEN_SECONDS,
-    )
-    if (completedRecently) {
+    if (hasRecentlyCompletedJob(jobsData?.jobs ?? [], Date.now())) {
       void queryClient.invalidateQueries({ queryKey: projectKey(id) })
     }
   }, [jobsData, id, queryClient])
@@ -374,76 +357,6 @@ export function useProjectMutations({
     resMut,
     mergeMut,
     dismissJobMut,
-  }
-}
-
-interface UsePersonaMutationsProps {
-  id: string | undefined
-  selectedPersona: ProjectPersona | null
-  editingPersona: ProjectPersona | null
-  setEditingPersona: (p: ProjectPersona | null) => void
-  setSelectedPersona: (p: ProjectPersona | null) => void
-}
-
-export function usePersonaMutations({
-  id,
-  selectedPersona,
-  editingPersona,
-  setEditingPersona,
-  setSelectedPersona,
-}: UsePersonaMutationsProps) {
-  const queryClient = useQueryClient()
-  const projectId = id ?? ''
-
-  const updatePersonaMut = useMutation({
-    mutationFn: (data: {
-      personaId: string;
-      updates: Partial<ProjectPersona>
-    }) =>
-      projectsApi.updatePersona(projectId, data.personaId, data.updates),
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-      if (editingPersona?.persona_id === variables.personaId) {
-        setEditingPersona(null)
-        setSelectedPersona(null)
-      }
-    },
-  })
-
-  const deletePersonaMut = useMutation({
-    mutationFn: (personaId: string) => projectsApi.deletePersona(projectId, personaId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectKey(id) })
-      setSelectedPersona(null)
-    },
-  })
-
-  const importPersonaMut = useMutation({
-    mutationFn: (data: {
-      input_type: 'image' | 'text';
-      content: string;
-      media_type?: string
-    }) =>
-      projectsApi.importPersona(projectId, data),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectJobsKey(id) })
-    },
-  })
-
-  // Save research notes
-  const saveNotes = (notes: NoteItem[]): void => {
-    if (!selectedPersona) return
-    updatePersonaMut.mutate({
-      personaId: selectedPersona.persona_id,
-      updates: { research_notes: notes },
-    })
-  }
-
-  return {
-    updatePersonaMut,
-    deletePersonaMut,
-    importPersonaMut,
-    saveNotes,
   }
 }
 

@@ -410,7 +410,17 @@
     "tabs": {
       "vision": "Visão e objetivos",
       "mine": "Meus objetivos",
-      "design": "Sistema de design"
+      "design": "Sistema de design",
+      "personas": "Personas"
+    },
+    "personas": {
+      "loading": "Carregando as personas da empresa…",
+      "loadFailed": "Não foi possível carregar as personas da empresa. Recarregue a página para tentar novamente.",
+      "intro": "Personas compartilhadas por toda a empresa. Os projetos as copiam daqui; cada cópia é independente e começa sem notas de pesquisa.",
+      "emptyTitle": "Ainda não há personas da empresa",
+      "emptyBody": "A biblioteca guarda personas a partir das quais qualquer projeto pode começar, para que as equipes não recriem o mesmo cliente do zero.",
+      "emptyHowAdmin": "Gere personas a partir de feedback, importe uma de uma descrição ou imagem, ou promova uma persona de um projeto.",
+      "emptyHowReader": "Um administrador a preenche gerando ou importando personas, ou promovendo-as a partir de projetos."
     }
   },
   "shared": {

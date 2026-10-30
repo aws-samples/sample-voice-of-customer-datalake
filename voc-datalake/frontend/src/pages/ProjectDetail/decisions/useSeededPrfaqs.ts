@@ -13,7 +13,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import { projectsApi } from '../../../api/projectsApi'
-import { projectJobsKey } from '../useProjectData'
+import { projectJobsKey } from '../../../api/projectQueryKeys'
 import type { Decision } from '../../../api/decisionSchema'
 
 const SeededJobSchema = z.object({

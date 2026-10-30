@@ -76,6 +76,8 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'categories-feedback-urgent': 'feedbackData',
   'category-reprocess-job': 'live',
   'company-context': 'config',
+  'company-persona-jobs': 'live', // the library's generate / import jobs, polled while one runs (like project-jobs)
+  'company-personas': 'standard', // Knowledge → Company → Personas (the shared persona library)
   'connect': 'standard',
   'data-explorer-buckets': 'standard',
   'data-explorer-feedback': 'feedbackData',
@@ -116,6 +118,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'product-context': 'standard',
   'product-docs': 'standard',
   'project': 'standard',
+  'persona-copy-sources': 'standard', // a project's "Copy from…" sources (library + the caller's projects)
   'project-jobs': 'live',
   'projects': 'standard',
   'prototype-pins': 'live',

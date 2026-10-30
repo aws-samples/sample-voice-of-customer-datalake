@@ -63,6 +63,11 @@ interface PersonaWizardProps {
   readonly onPersonaConfigChange: (c: PersonaToolConfig) => void
   readonly onClose: () => void
   readonly onSubmit: () => void
+  /**
+   * The company library is only ever added to (replace would wipe it): no add/replace
+   * choice, and the confirmation is the additive one.
+   */
+  readonly additiveOnly?: boolean
 }
 
 /**
@@ -106,10 +111,12 @@ function FinalStepSummary({ contextConfig, personas, documents, startError, chil
 
 export function PersonaWizard({
   personas, documents, contextConfig, personaConfig, generating, startError, onContextChange, onPersonaConfigChange, onClose, onSubmit,
+  additiveOnly = false,
 }: PersonaWizardProps) {
   const { t } = useTranslation('projectDetail')
   // Generating reads the feedback in scope with the AI for minutes: asked first, like PR/FAQ and prototype.
   const [confirming, setConfirming] = useState(false)
+  const mode = additiveOnly ? 'add' : personaConfig.mode
   return (
     <>
     <DataSourceWizard
@@ -143,11 +150,13 @@ export function PersonaWizard({
               customInstructions: e.target.value,
             })} placeholder="e.g., Focus on business travelers..." rows={4} className="input" />
           </div>
-          <PersonaModeChoice
-            existingCount={personas.length}
-            mode={personaConfig.mode}
-            onChange={(mode) => onPersonaConfigChange({ ...personaConfig, mode })}
-          />
+          {additiveOnly ? null : (
+            <PersonaModeChoice
+              existingCount={personas.length}
+              mode={personaConfig.mode}
+              onChange={(next) => onPersonaConfigChange({ ...personaConfig, mode: next })}
+            />
+          )}
         </FinalStepSummary>
       )}
       finalStepValid
@@ -159,7 +168,7 @@ export function PersonaWizard({
     <PersonaGenerateConfirm
       isOpen={confirming}
       existingCount={personas.length}
-      mode={personaConfig.mode}
+      mode={mode}
       personaCount={personaConfig.personaCount}
       onConfirm={() => { setConfirming(false); onSubmit() }}
       onCancel={() => setConfirming(false)}

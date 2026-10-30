@@ -318,8 +318,8 @@
           "image_model": "图像模型",
           "model_overrides": "模型选择",
           "alerting": "告警",
-        "open_circuits": "已暂停的来源（断路器）",
-        "log_coverage": "已搜索的日志"
+          "open_circuits": "已暂停的来源（断路器）",
+          "log_coverage": "已搜索的日志"
         }
       }
     }
@@ -394,7 +394,17 @@
     "tabs": {
       "vision": "愿景与目标",
       "mine": "我的目标",
-      "design": "设计系统"
+      "design": "设计系统",
+      "personas": "用户画像"
+    },
+    "personas": {
+      "loading": "正在加载公司用户画像…",
+      "loadFailed": "无法加载公司用户画像。请刷新页面重试。",
+      "intro": "全公司共享的用户画像。项目从这里复制；每个副本都是独立的，且不含研究笔记。",
+      "emptyTitle": "还没有公司用户画像",
+      "emptyBody": "画像库保存每个项目都可以作为起点的用户画像，团队不必从头重建同一个客户。",
+      "emptyHowAdmin": "根据反馈生成用户画像，从描述或图片导入，或将项目中的用户画像提升到公司。",
+      "emptyHowReader": "由管理员通过生成、导入用户画像或从项目提升来填充。"
     }
   },
   "shared": {

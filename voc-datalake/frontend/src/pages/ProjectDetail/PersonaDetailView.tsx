@@ -24,11 +24,17 @@ import {
 import FeedbackCorpus from './FeedbackCorpus'
 import ResearchNotes from './ResearchNotes'
 import { useRegenerateAvatar } from './useRegenerateAvatar'
+import CopiedFromLine from './CopiedFromLine'
+import { PromotePersonaButton, PromoteStatus } from './PromotePersonaButton'
+import { usePromotePersona } from './usePromotePersona'
+import { useIsAdmin } from '../../store/authStore'
+import type { PersonaScope } from './personaScope'
 import type { NoteItem } from './types'
 import type { ProjectPersona } from '../../api/projectTypes'
 
 interface PersonaDetailViewProps {
-  readonly projectId: string
+  /** A project's persona, or one in the company library (Knowledge → Company → Personas). */
+  readonly scope: PersonaScope
   readonly persona: ProjectPersona
   /** False for a viewer: no Edit / Delete, and the research notes are read-only. Export stays — it is a read. */
   readonly canEdit: boolean
@@ -40,7 +46,7 @@ interface PersonaDetailViewProps {
 }
 
 export default function PersonaDetailView({
-  projectId,
+  scope,
   persona,
   canEdit,
   onEdit,
@@ -50,7 +56,10 @@ export default function PersonaDetailView({
   isSavingNotes,
 }: PersonaDetailViewProps) {
   const { t } = useTranslation('projectDetail')
-  const avatar = useRegenerateAvatar(projectId, persona.persona_id)
+  const avatar = useRegenerateAvatar(scope, persona.persona_id)
+  // Promote to company: an admin who can edit this PROJECT (never offered inside the library).
+  const canPromote = useIsAdmin() && canEdit && scope.kind === 'project'
+  const promote = usePromotePersona({ projectId: scope.kind === 'project' ? scope.projectId : '', personaId: persona.persona_id })
   const shown = avatar.avatarUrl === undefined ? persona : { ...persona, avatar_url: avatar.avatarUrl }
   return (
     <div className="h-full overflow-y-auto">
@@ -68,12 +77,14 @@ export default function PersonaDetailView({
               </span>}
               <FeedbackCorpus feedbackIds={persona.input_feedback_ids}
                 className="mt-1.5" />
+              <CopiedFromLine copiedFrom={persona.copied_from} />
             </div>
           </div>
           <div className="flex items-center gap-1 self-end sm:self-start">
             <PersonaExportMenu persona={persona} />
             {canEdit ? (
               <>
+                {canPromote ? <PromotePersonaButton promote={promote} /> : null}
                 <RegenerateAvatarButton avatar={avatar} />
                 <button
                   type="button"
@@ -99,6 +110,7 @@ export default function PersonaDetailView({
           </div>
         </div>
         <AvatarRegenerationStatus isPending={avatar.isPending} failed={avatar.failed} />
+        {canPromote ? <PromoteStatus promote={promote} /> : null}
       </div>
 
       <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">

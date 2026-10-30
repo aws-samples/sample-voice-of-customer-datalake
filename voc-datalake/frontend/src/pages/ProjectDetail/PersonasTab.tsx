@@ -3,16 +3,20 @@
  */
 import clsx from 'clsx'
 import {
-  Users, Sparkles, Upload,
+  Users, Sparkles, Upload, Copy,
 } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import PersonaAvatar from './PersonaAvatar'
+import PersonasEmptyCard from './PersonasEmptyCard'
 import PersonaDetailView from './PersonaDetailView'
 import type { NoteItem } from './types'
+import type { PersonaScope } from './personaScope'
 import type { ProjectPersona } from '../../api/projectTypes'
 
 interface PersonasTabProps {
-  readonly projectId: string
+  /** A project's personas, or the company library (Knowledge → Company → Personas). */
+  readonly scope: PersonaScope
   readonly personas: ProjectPersona[]
   /** Viewers (`can_edit: false`) get the list and detail, but no import / generate / edit / delete / notes controls. */
   readonly canEdit: boolean
@@ -23,12 +27,16 @@ interface PersonasTabProps {
   readonly onSaveNotes: (notes: NoteItem[]) => void
   readonly onGeneratePersonas: () => void
   readonly onImportPersona: () => void
+  /** "Copy from…" (a project copying in from the library or another project); absent = no button. */
+  readonly onCopyPersonas?: () => void
+  /** Replaces the default empty state (the library explains itself differently). */
+  readonly emptyState?: ReactNode
   readonly isDeleting: boolean
   readonly isSavingNotes: boolean
 }
 
 export default function PersonasTab({
-  projectId,
+  scope,
   personas,
   canEdit,
   selectedPersona,
@@ -38,6 +46,8 @@ export default function PersonasTab({
   onSaveNotes,
   onGeneratePersonas,
   onImportPersona,
+  onCopyPersonas,
+  emptyState,
   isDeleting,
   isSavingNotes,
 }: PersonasTabProps) {
@@ -47,6 +57,11 @@ export default function PersonasTab({
     <div className="space-y-4">
       {canEdit ? (
         <div className="flex flex-col sm:flex-row justify-end gap-2">
+          {onCopyPersonas ? (
+            <button type="button" onClick={onCopyPersonas} className="btn btn-secondary">
+              <Copy size={16} aria-hidden />{t('personas.copy.open')}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onImportPersona}
@@ -65,7 +80,7 @@ export default function PersonasTab({
       ) : null}
 
       {personas.length === 0 ? (
-        <EmptyPersonasState onGenerate={canEdit ? onGeneratePersonas : undefined} />
+        emptyState ?? <EmptyPersonasState onGenerate={canEdit ? onGeneratePersonas : undefined} />
       ) : (
         <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 lg:gap-6">
           {/* Persona List */}
@@ -113,7 +128,7 @@ export default function PersonasTab({
                 // Remounted per persona: a pending or failed avatar regeneration
                 // belongs to the persona it was started for.
                 key={selectedPersona.persona_id}
-                projectId={projectId}
+                scope={scope}
                 persona={selectedPersona}
                 canEdit={canEdit}
                 onEdit={onEditPersona}
@@ -139,17 +154,12 @@ export default function PersonasTab({
 function EmptyPersonasState({ onGenerate }: { readonly onGenerate?: () => void }) {
   const { t } = useTranslation('projectDetail')
   return (
-    <div className="card text-center py-12 sm:py-16">
-      <div className="w-12 h-12 mx-auto mb-4 rounded-lg bg-accent-subtle flex items-center justify-center">
-        <Users size={20} className="text-accent-text" aria-hidden />
-      </div>
-      <h2 className="text-base font-semibold tracking-tight text-text-strong mb-1">{t('personas.noPersonasYet')}</h2>
-      <p className={clsx('text-sm text-muted', onGenerate && 'mb-5')}>{t('personas.generateFromFeedback')}</p>
+    <PersonasEmptyCard title={t('personas.noPersonasYet')} body={t('personas.generateFromFeedback')}>
       {onGenerate ? (
         <button type="button" onClick={onGenerate} className="btn btn-secondary">
           <Sparkles size={16} aria-hidden />{t('overview.generate')}
         </button>
       ) : null}
-    </div>
+    </PersonasEmptyCard>
   )
 }

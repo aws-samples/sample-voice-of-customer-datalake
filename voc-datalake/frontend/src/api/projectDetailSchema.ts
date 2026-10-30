@@ -8,6 +8,7 @@
  */
 import { z } from 'zod'
 import { parseEach } from './lenientFields'
+import { copiedFromSchema } from './personaCopiedFrom'
 import { UserRefSchema } from './userRefSchema'
 import { asRecord } from './wireRecord'
 import type {
@@ -133,7 +134,14 @@ const ProjectPersonaSchema = z.looseObject({
   supporting_evidence: optionalStringArray,
   source_breakdown: z.record(z.string(), z.number()).optional().catch(undefined),
   input_feedback_ids: optionalStringArray,
+  copied_from: copiedFromSchema,
 })
+
+/** One persona row, or null when it has no usable id (company library, copy answers). */
+export function normalizePersona(raw: unknown): ProjectPersona | null {
+  const parsed = ProjectPersonaSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
 
 function withLegacyManagedDocumentType(raw: unknown): unknown {
   const record = asRecord(raw)

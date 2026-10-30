@@ -320,7 +320,36 @@
     "regenerateAvatarConfirmTitle": "Neuen Avatar erstellen?",
     "regenerateAvatarConfirmMessage": "Die KI zeichnet ein neues Bild für diese Persona und ersetzt das aktuelle. Das dauert einige Sekunden.",
     "regeneratingAvatar": "Neuer Avatar wird generiert…",
-    "regenerateAvatarFailed": "Der Avatar konnte nicht neu generiert werden. Versuchen Sie es erneut."
+    "regenerateAvatarFailed": "Der Avatar konnte nicht neu generiert werden. Versuchen Sie es erneut.",
+    "promote": {
+      "button": "Ins Unternehmen übernehmen",
+      "done": "In die Persona-Bibliothek des Unternehmens kopiert.",
+      "openLibrary": "Bibliothek öffnen",
+      "failed": "Die Persona konnte nicht in die Unternehmensbibliothek kopiert werden. Versuchen Sie es erneut."
+    },
+    "copiedFrom": {
+      "company": "der Unternehmensbibliothek",
+      "unnamedProject": "einem anderen Projekt",
+      "line": "Kopiert aus {{source}} am {{date}}",
+      "lineNoDate": "Kopiert aus {{source}}"
+    },
+    "copy": {
+      "open": "Kopieren aus…",
+      "title": "Personas in dieses Projekt kopieren",
+      "explain": "Jede Persona wird kopiert, nicht verknüpft: Spätere Änderungen auf einer Seite bleiben getrennt. Forschungsnotizen werden nicht kopiert.",
+      "sourceLabel": "Kopieren aus",
+      "companySource": "Persona-Bibliothek des Unternehmens",
+      "projectSource_one": "{{name}} ({{count, number}} Persona)",
+      "projectSource_other": "{{name}} ({{count, number}} Personas)",
+      "choose": "Personas auswählen (bis zu {{max, number}})",
+      "loading": "Personas werden geladen…",
+      "loadFailed": "Die Personas konnten nicht geladen werden. Schließen Sie das Fenster und versuchen Sie es erneut.",
+      "sourceEmpty": "Diese Quelle hat keine Personas.",
+      "failed": "Die Personas konnten nicht kopiert werden. Versuchen Sie es erneut.",
+      "cancel": "Abbrechen",
+      "submit_one": "{{count, number}} Persona kopieren",
+      "submit_other": "{{count, number}} Personas kopieren"
+    }
   },
   "personaSections": {
     "ageRange": "Alter",

@@ -348,7 +348,40 @@
     "regeneratingAvatar": "Generowanie nowego awatara…",
     "regenerateAvatarFailed": "Nie udało się ponownie wygenerować awatara. Spróbuj ponownie.",
     "notesCount_few": "{{count, number}} notatki",
-    "notesCount_many": "{{count, number}} notatek"
+    "notesCount_many": "{{count, number}} notatek",
+    "promote": {
+      "button": "Przenieś do firmy",
+      "done": "Skopiowano do biblioteki person firmy.",
+      "openLibrary": "Otwórz bibliotekę",
+      "failed": "Nie udało się skopiować persony do biblioteki firmy. Spróbuj ponownie."
+    },
+    "copiedFrom": {
+      "company": "biblioteki firmy",
+      "unnamedProject": "innego projektu",
+      "line": "Skopiowano z {{source}} dnia {{date}}",
+      "lineNoDate": "Skopiowano z {{source}}"
+    },
+    "copy": {
+      "open": "Kopiuj z…",
+      "title": "Kopiuj persony do tego projektu",
+      "explain": "Każda persona jest kopiowana, a nie łączona: późniejsze zmiany po obu stronach pozostają oddzielne. Notatki badawcze nie są kopiowane.",
+      "sourceLabel": "Kopiuj z",
+      "companySource": "Biblioteka person firmy",
+      "projectSource_one": "{{name}} ({{count, number}} persona)",
+      "projectSource_few": "{{name}} ({{count, number}} persony)",
+      "projectSource_many": "{{name}} ({{count, number}} person)",
+      "projectSource_other": "{{name}} ({{count, number}} persony)",
+      "choose": "Wybierz persony (maksymalnie {{max, number}})",
+      "loading": "Ładowanie person…",
+      "loadFailed": "Nie udało się wczytać person. Zamknij i spróbuj ponownie.",
+      "sourceEmpty": "To źródło nie ma person.",
+      "failed": "Nie udało się skopiować person. Spróbuj ponownie.",
+      "cancel": "Anuluj",
+      "submit_one": "Kopiuj {{count, number}} personę",
+      "submit_few": "Kopiuj {{count, number}} persony",
+      "submit_many": "Kopiuj {{count, number}} person",
+      "submit_other": "Kopiuj {{count, number}} persony"
+    }
   },
   "personaSections": {
     "ageRange": "Wiek",

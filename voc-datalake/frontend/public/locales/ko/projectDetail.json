@@ -320,7 +320,36 @@
     "regenerateAvatarConfirmTitle": "새 아바타를 만들까요?",
     "regenerateAvatarConfirmMessage": "AI가 이 페르소나의 새 이미지를 그려 현재 이미지를 대체합니다. 몇 초 걸립니다.",
     "regeneratingAvatar": "새 아바타를 생성하는 중…",
-    "regenerateAvatarFailed": "아바타를 다시 생성하지 못했습니다. 다시 시도하세요."
+    "regenerateAvatarFailed": "아바타를 다시 생성하지 못했습니다. 다시 시도하세요.",
+    "promote": {
+      "button": "회사로 승격",
+      "done": "회사 페르소나 라이브러리에 복사했습니다.",
+      "openLibrary": "라이브러리 열기",
+      "failed": "페르소나를 회사 라이브러리에 복사하지 못했습니다. 다시 시도하세요."
+    },
+    "copiedFrom": {
+      "company": "회사 라이브러리",
+      "unnamedProject": "다른 프로젝트",
+      "line": "{{date}}에 {{source}}에서 복사함",
+      "lineNoDate": "{{source}}에서 복사함"
+    },
+    "copy": {
+      "open": "복사해 오기…",
+      "title": "이 프로젝트로 페르소나 복사",
+      "explain": "각 페르소나는 연결되지 않고 복사됩니다. 이후 어느 쪽에서 변경해도 서로 반영되지 않습니다. 리서치 노트는 복사되지 않습니다.",
+      "sourceLabel": "복사할 위치",
+      "companySource": "회사 페르소나 라이브러리",
+      "projectSource_one": "{{name}} (페르소나 {{count, number}}개)",
+      "projectSource_other": "{{name}} (페르소나 {{count, number}}개)",
+      "choose": "페르소나 선택 (최대 {{max, number}}개)",
+      "loading": "페르소나를 불러오는 중…",
+      "loadFailed": "페르소나를 불러오지 못했습니다. 닫고 다시 시도하세요.",
+      "sourceEmpty": "이 위치에는 페르소나가 없습니다.",
+      "failed": "페르소나를 복사하지 못했습니다. 다시 시도하세요.",
+      "cancel": "취소",
+      "submit_one": "페르소나 {{count, number}}개 복사",
+      "submit_other": "페르소나 {{count, number}}개 복사"
+    }
   },
   "personaSections": {
     "ageRange": "나이",

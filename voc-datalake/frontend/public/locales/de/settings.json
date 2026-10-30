@@ -318,8 +318,8 @@
           "image_model": "Bildmodell",
           "model_overrides": "Modellauswahl",
           "alerting": "Benachrichtigungen",
-        "open_circuits": "Pausierte Quellen (Schutzschalter)",
-        "log_coverage": "Durchsuchte Protokolle"
+          "open_circuits": "Pausierte Quellen (Schutzschalter)",
+          "log_coverage": "Durchsuchte Protokolle"
         }
       }
     }
@@ -394,7 +394,17 @@
     "tabs": {
       "vision": "Vision & Ziele",
       "mine": "Meine Ziele",
-      "design": "Designsystem"
+      "design": "Designsystem",
+      "personas": "Personas"
+    },
+    "personas": {
+      "loading": "Unternehmens-Personas werden geladen…",
+      "loadFailed": "Die Unternehmens-Personas konnten nicht geladen werden. Laden Sie die Seite neu, um es erneut zu versuchen.",
+      "intro": "Personas, die das ganze Unternehmen teilt. Projekte kopieren sie von hier; jede Kopie ist unabhängig und beginnt ohne Forschungsnotizen.",
+      "emptyTitle": "Noch keine Unternehmens-Personas",
+      "emptyBody": "Die Bibliothek enthält Personas, mit denen jedes Projekt starten kann, damit Teams denselben Kunden nicht neu erarbeiten.",
+      "emptyHowAdmin": "Generieren Sie Personas aus Feedback, importieren Sie eine aus einer Beschreibung oder einem Bild, oder übernehmen Sie eine Persona aus einem Projekt.",
+      "emptyHowReader": "Ein Administrator füllt sie, indem er Personas generiert oder importiert oder aus Projekten übernimmt."
     }
   },
   "shared": {

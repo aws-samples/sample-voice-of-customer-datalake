@@ -320,7 +320,36 @@
     "regenerateAvatarConfirmTitle": "新しいアバターを作成しますか？",
     "regenerateAvatarConfirmMessage": "AI がこのペルソナの新しい画像を描き、現在の画像と置き換えます。数秒かかります。",
     "regeneratingAvatar": "新しいアバターを生成しています…",
-    "regenerateAvatarFailed": "アバターを再生成できませんでした。もう一度お試しください。"
+    "regenerateAvatarFailed": "アバターを再生成できませんでした。もう一度お試しください。",
+    "promote": {
+      "button": "会社に昇格",
+      "done": "会社のペルソナライブラリにコピーしました。",
+      "openLibrary": "ライブラリを開く",
+      "failed": "ペルソナを会社のライブラリにコピーできませんでした。もう一度お試しください。"
+    },
+    "copiedFrom": {
+      "company": "会社のライブラリ",
+      "unnamedProject": "別のプロジェクト",
+      "line": "{{date}}に{{source}}からコピー",
+      "lineNoDate": "{{source}}からコピー"
+    },
+    "copy": {
+      "open": "コピー元…",
+      "title": "このプロジェクトにペルソナをコピー",
+      "explain": "各ペルソナはリンクではなくコピーされます。その後どちらかで変更しても、もう一方には反映されません。リサーチノートはコピーされません。",
+      "sourceLabel": "コピー元",
+      "companySource": "会社のペルソナライブラリ",
+      "projectSource_one": "{{name}}（{{count, number}}件のペルソナ）",
+      "projectSource_other": "{{name}}（{{count, number}}件のペルソナ）",
+      "choose": "ペルソナを選択（最大{{max, number}}件）",
+      "loading": "ペルソナを読み込んでいます…",
+      "loadFailed": "ペルソナを読み込めませんでした。閉じてもう一度お試しください。",
+      "sourceEmpty": "このコピー元にはペルソナがありません。",
+      "failed": "ペルソナをコピーできませんでした。もう一度お試しください。",
+      "cancel": "キャンセル",
+      "submit_one": "{{count, number}}件のペルソナをコピー",
+      "submit_other": "{{count, number}}件のペルソナをコピー"
+    }
   },
   "personaSections": {
     "ageRange": "年齢",

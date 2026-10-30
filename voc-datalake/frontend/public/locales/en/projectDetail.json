@@ -320,7 +320,36 @@
     "regenerateAvatarConfirmTitle": "Create a new avatar?",
     "regenerateAvatarConfirmMessage": "AI draws a new picture for this persona and replaces the current one. It takes a few seconds.",
     "regeneratingAvatar": "Generating a new avatar…",
-    "regenerateAvatarFailed": "The avatar couldn't be regenerated. Try again."
+    "regenerateAvatarFailed": "The avatar couldn't be regenerated. Try again.",
+    "promote": {
+      "button": "Promote to company",
+      "done": "Copied to the company persona library.",
+      "openLibrary": "Open the library",
+      "failed": "The persona couldn't be copied to the company library. Try again."
+    },
+    "copiedFrom": {
+      "company": "the company library",
+      "unnamedProject": "another project",
+      "line": "Copied from {{source}} on {{date}}",
+      "lineNoDate": "Copied from {{source}}"
+    },
+    "copy": {
+      "open": "Copy from…",
+      "title": "Copy personas into this project",
+      "explain": "Each persona is copied, not linked: later changes on either side stay separate. Research notes are not copied.",
+      "sourceLabel": "Copy from",
+      "companySource": "Company persona library",
+      "projectSource_one": "{{name}} ({{count, number}} persona)",
+      "projectSource_other": "{{name}} ({{count, number}} personas)",
+      "choose": "Choose personas (up to {{max, number}})",
+      "loading": "Loading personas…",
+      "loadFailed": "The personas couldn't be loaded. Close and try again.",
+      "sourceEmpty": "This source has no personas.",
+      "failed": "The personas couldn't be copied. Try again.",
+      "cancel": "Cancel",
+      "submit_one": "Copy {{count, number}} persona",
+      "submit_other": "Copy {{count, number}} personas"
+    }
   },
   "personaSections": {
     "ageRange": "Age",

@@ -136,6 +136,22 @@ export interface ProjectPersona {
    * fetched, is display-only and deliberately not declared here.)
    */
   input_feedback_ids?: string[]
+  /**
+   * Set on a persona copied from the company library or another project (a copy, never a
+   * link; research notes are never copied). Replaced, not chained, on a copy of a copy.
+   */
+  copied_from?: PersonaCopiedFrom
+}
+
+/** Where a copied persona came from (`copied_from` on the persona row). */
+export interface PersonaCopiedFrom {
+  scope: 'project' | 'company'
+  /** Only when `scope` is `project`. */
+  project_id?: string
+  project_name?: string
+  persona_id: string
+  copied_at: string
+  copied_by?: string
 }
 
 export type ProductLifecycleState = '' | 'idea' | 'mvp' | 'beta' | 'ga' | 'mature'
