@@ -336,7 +336,21 @@
       "denied": "거부됨",
       "failed": "실패"
     },
-    "shortcutTitle": "이 프로젝트에 외부 어시스턴트 연결"
+    "shortcutTitle": "이 프로젝트에 외부 어시스턴트 연결",
+    "mcpClientLabel": "클라이언트",
+    "mcpClient": {
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor",
+      "kiro": "Kiro",
+      "inline": "기타 클라이언트"
+    },
+    "mcpFile": {
+      "claudeCode": "프로젝트 루트에 .mcp.json으로 저장하세요.",
+      "cursor": "프로젝트의 .cursor/mcp.json 또는 모든 프로젝트용 ~/.cursor/mcp.json으로 저장하세요.",
+      "kiro": "워크스페이스의 .kiro/settings/mcp.json 또는 ~/.kiro/settings/mcp.json으로 저장하세요. Kiro IDE에서는 Settings → Mcp Approved Env Vars에 VOC_MCP_TOKEN을 추가하세요. Kiro CLI는 셸에서 읽습니다.",
+      "inline": "환경 변수를 읽지 못하는 클라이언트용: 토큰이 파일에 들어가므로 커밋하거나 공유하지 마세요."
+    },
+    "mcpEnvHint": "이 파일은 {{name}} 환경 변수에서 토큰을 읽으므로 비밀 정보가 없습니다. 클라이언트를 시작하는 셸에서 아래 토큰으로 설정하세요:"
   },
   "header": {
     "title": "고객의 소리",

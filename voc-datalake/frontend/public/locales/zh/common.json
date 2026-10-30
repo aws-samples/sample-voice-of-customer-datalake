@@ -336,7 +336,21 @@
       "denied": "已拒绝",
       "failed": "失败"
     },
-    "shortcutTitle": "将外部助手连接到此项目"
+    "shortcutTitle": "将外部助手连接到此项目",
+    "mcpClientLabel": "客户端",
+    "mcpClient": {
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor",
+      "kiro": "Kiro",
+      "inline": "其他客户端"
+    },
+    "mcpFile": {
+      "claudeCode": "保存为项目根目录下的 .mcp.json。",
+      "cursor": "保存为项目中的 .cursor/mcp.json，或保存为适用于所有项目的 ~/.cursor/mcp.json。",
+      "kiro": "保存为工作区中的 .kiro/settings/mcp.json，或 ~/.kiro/settings/mcp.json。在 Kiro IDE 中，在 Settings → Mcp Approved Env Vars 下添加 VOC_MCP_TOKEN；Kiro CLI 从 shell 读取它。",
+      "inline": "适用于无法读取环境变量的客户端：令牌直接写在文件中，请勿提交或分享该文件。"
+    },
+    "mcpEnvHint": "此文件从环境变量 {{name}} 读取令牌，因此不包含任何机密。请在启动客户端的 shell 中使用下方的令牌设置它："
   },
   "header": {
     "title": "客户之声",
