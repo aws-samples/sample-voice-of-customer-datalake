@@ -46,6 +46,9 @@ RESULT_COMPLETE: Final = 'complete'
 DISCOVER_METHOD: Final = 'server/discover'
 TOOLS_LIST_METHOD: Final = 'tools/list'
 TOOLS_CALL_METHOD: Final = 'tools/call'
+# The other methods that name one target in the body. Their ``Mcp-Name`` is checked when sent (a
+# disagreeing header is refused like a tool's) but not required: only tools/call has always needed it.
+NAMED_TARGET_PARAMS: Final[dict[str, str]] = {'prompts/get': 'name', 'resources/read': 'uri'}
 # What `tools/list` shows depends on the token (read vs write scope, admin backing),
 # so it may only be cached per credential. The catalogue changes only on a deploy;
 # five minutes keeps a client from re-listing on every turn.
@@ -120,18 +123,21 @@ def _refuse_unservable_header(header_version: str | None) -> bool:
 
 
 def _check_routing_headers(header: HeaderReader, method: str, params: Mapping[str, Any]) -> None:
-    """``Mcp-Method`` always, and ``Mcp-Name`` for ``tools/call``, must equal the body."""
+    """``Mcp-Method`` always, ``Mcp-Name`` for ``tools/call`` (and, when sent, for a prompt or resource) must
+    equal the body."""
     mcp_method = header('mcp-method')
     if mcp_method is None:
         raise _mismatch('the Mcp-Method header is required')
     if mcp_method != method:
         raise _mismatch(f"Mcp-Method header value '{_echo(mcp_method)}' does not match body value '{_echo(method)}'")
-    if method != TOOLS_CALL_METHOD:
+    if method != TOOLS_CALL_METHOD and method not in NAMED_TARGET_PARAMS:
         return
     raw_name = header('mcp-name')
     if raw_name is None:
-        raise _mismatch('the Mcp-Name header is required for tools/call')
-    name, body_name = decoded_header_value(raw_name), params.get('name')
+        if method == TOOLS_CALL_METHOD:
+            raise _mismatch('the Mcp-Name header is required for tools/call')
+        return
+    name, body_name = decoded_header_value(raw_name), params.get(NAMED_TARGET_PARAMS.get(method, 'name'))
     if name != body_name:
         shown = body_name if isinstance(body_name, str) else ''
         raise _mismatch(f"Mcp-Name header value '{_echo(name)}' does not match body value '{_echo(shown)}'")
