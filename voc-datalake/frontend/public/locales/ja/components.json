@@ -633,6 +633,8 @@
     "startError": "削除を開始できませんでした: {{reason}}",
     "confirmTitle": "{{source}} のすべてのデータを削除しますか?",
     "confirmMessage": "{{source}} のすべてのレビューと、そのフォルダー内のすべての生ファイルが完全に削除されます。",
+    "keepsRunning": "削除後もソースは動作し続けます。スケジュールがオンの場合、新しいレビューが引き続き届きます。空のままにしたい場合は、先にソースをオフにしてください。アップロードされた CSV ファイルと JSON ファイル (raw/csv_upload、raw/json_upload) は保持されます。",
+    "scheduleOn": "{{source}} のスケジュールはオンです。先にソースをオフにしない限り、削除後に新しいレビューが届きます。",
     "typeLabel": "確認のため {{source}} と入力してください",
     "confirm": "すべてのデータを削除",
     "progress": {

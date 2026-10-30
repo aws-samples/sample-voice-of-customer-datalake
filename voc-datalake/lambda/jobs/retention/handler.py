@@ -45,7 +45,8 @@ from shared.digests import sha256_hex
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
 from shared.retention import ERASURE_JOB_PK, SOURCE_FIELD
-from shared.source_profiles import load_source_profiles
+from shared.source_erasure import release_source_lock
+from shared.source_profiles import SOURCE_ID_RE, load_source_profiles
 from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
 
@@ -209,7 +210,19 @@ def _erase_setup(aggregates_table: Any, event: dict[str, Any], run: dict[str, An
                value_hash=job.get('value_hash'))
     if job.get('value_hash') != sha256_hex(value):
         raise ValueError('The erasure value does not match the job')
+    if run['field'] == SOURCE_FIELD:
+        _check_whole_source(run['source'], value)
     return retention.erase_filter(str(job.get('field')), value, run['source'])
+
+
+def _check_whole_source(source: object, value: str) -> None:
+    """A whole-source job names the invoked source, and it is a source id (defence in depth).
+
+    The settings route already insists on both; a job row written any other way
+    must not turn into an erasure of something else.
+    """
+    if source != value or not SOURCE_ID_RE.match(value):
+        raise ValueError('The whole-source erasure does not name one valid source')
 
 
 # ============================================
@@ -286,6 +299,9 @@ def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str 
     run.pop('_progress', None)
     if run.get('job_id'):
         finish_erasure_job(aggregates_table, run, status, error)
+        if run.get('field') == SOURCE_FIELD and run.get('source'):
+            # Completed or failed: the next erasure of this source may start (shared/source_erasure.py).
+            release_source_lock(aggregates_table, str(run['source']), run['job_id'], datetime.now(UTC))
     write_audit(aggregates_table, run, status, error)
     metrics.add_metric(name='RetentionItemsDeleted', unit='Count', value=run['deleted_items'])
     return {'status': status, 'run_id': run['run_id'],

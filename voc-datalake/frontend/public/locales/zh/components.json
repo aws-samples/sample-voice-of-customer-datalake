@@ -633,6 +633,8 @@
     "startError": "未能开始删除：{{reason}}",
     "confirmTitle": "删除 {{source}} 的全部数据？",
     "confirmMessage": "{{source}} 的所有评论及其文件夹中的所有原始文件将被永久删除。",
+    "keepsRunning": "删除后该来源仍会继续运行：如果其计划已开启，新的评论会继续到来。如果希望它保持为空，请先关闭该来源。已上传的 CSV 和 JSON 文件（raw/csv_upload、raw/json_upload）会保留。",
+    "scheduleOn": "{{source}} 的计划已开启。除非先关闭该来源，否则删除后仍会有新的评论到来。",
     "typeLabel": "输入 {{source}} 以确认",
     "confirm": "删除全部数据",
     "progress": {

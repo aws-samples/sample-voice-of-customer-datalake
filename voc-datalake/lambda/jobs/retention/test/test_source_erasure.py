@@ -1,4 +1,5 @@
 """voc-retention: the whole-source erasure (``field = 'source'``) against moto tables and a versioned bucket."""
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,6 +8,13 @@ from jobs.retention import handler
 from jobs.retention.test.conftest import BUCKET, days_ago
 from shared import retention
 from shared.digests import sha256_hex
+from shared.source_erasure import (
+    STALE_AFTER,
+    SourceLocked,
+    acquire_source_lock,
+    release_source_lock,
+    source_lock_key,
+)
 
 JOB_ID = 'er_00000000abcd'
 SOURCE = 'web_trustpilot_example_air'
@@ -166,3 +174,89 @@ def test_an_empty_page_is_the_end_even_when_marked_truncated():
     s3.list_object_versions.return_value = {'IsTruncated': True}
     assert retention.delete_raw_prefix_page(s3, 'bkt', 'raw/t/') == (0, False)
     s3.delete_objects.assert_not_called()
+
+
+# ---- Defence in depth + the source lock (security review) ----
+
+def _lock(aws) -> dict:
+    """The source's lock row (fails the test when there is none)."""
+    item = aws['aggregates'].get_item(Key=source_lock_key(SOURCE)).get('Item')
+    assert isinstance(item, dict)
+    return item
+
+
+def _hold_lock(aws, job_id: str = JOB_ID) -> None:
+    acquire_source_lock(aws['aggregates'], SOURCE, job_id, datetime.now(UTC))
+
+
+@pytest.mark.parametrize(('row_source', 'value'), [
+    ('tickets', SOURCE),        # the job row names another source than the invoke
+    (None, SOURCE),             # the job row names no source at all
+    ('Bad Id', 'Bad Id'),       # not a source id, though row and invoke agree
+])
+def test_a_whole_source_job_that_does_not_name_the_invoked_source_id_fails_without_deleting(
+        aws, worker_context, row_source, value):
+    item = {'pk': 'JOB#erasure', 'sk': JOB_ID, 'job_id': JOB_ID, 'status': 'queued', 'field': 'source',
+            'value_hash': sha256_hex(value)}
+    if row_source is not None:
+        item['source'] = row_source
+    aws['aggregates'].put_item(Item=item)
+    _seed(aws, 'own', SOURCE)
+    _seed(aws, 'ticket', 'tickets')
+    result = handler.handle_event({**EVENT, 'value': value}, worker_context)
+    assert (result['status'], result['deleted_items'], result['deleted_objects']) == ('failed', 0, 0)
+    job = _job_row(aws)
+    # The error TYPE only, never the value.
+    assert (job['status'], job['error']) == ('failed', 'Run failed (ValueError)')
+    assert _ids(aws) == {'own', 'ticket'}
+
+
+def test_a_completed_job_releases_its_source_lock(aws, worker_context):
+    _job(aws)
+    _hold_lock(aws)
+    handler.handle_event(EVENT, worker_context)
+    lock = _lock(aws)
+    assert lock['job_id'] == JOB_ID
+    assert lock['released_at']
+
+
+def test_a_failed_job_releases_its_source_lock(aws, worker_context):
+    _job(aws)
+    _hold_lock(aws)
+    _seed(aws, 'own', SOURCE)
+    with patch.object(handler, '_scan_page', side_effect=RuntimeError('boom')):
+        result = handler.handle_event(EVENT, worker_context)
+    assert result['status'] == 'failed'
+    assert _lock(aws)['released_at']
+
+
+@pytest.mark.usefixtures('invoke_mock')
+def test_a_hand_over_keeps_the_source_lock(aws, worker_context):
+    _job(aws)
+    _hold_lock(aws)
+    _seed(aws, 'own', SOURCE)
+    worker_context.get_remaining_time_in_millis.return_value = 0
+    result = handler.handle_event(EVENT, worker_context)
+    assert result['status'] == 'continued'
+    assert 'released_at' not in _lock(aws)
+
+
+def test_a_job_never_frees_a_lock_a_later_job_took_over(aws, worker_context):
+    _job(aws)
+    _hold_lock(aws, job_id='er_00000000ffff')
+    handler.handle_event(EVENT, worker_context)
+    lock = _lock(aws)
+    assert lock['job_id'] == 'er_00000000ffff'
+    assert 'released_at' not in lock
+
+
+def test_a_released_or_stale_lock_can_be_taken_and_a_held_one_cannot(aws):
+    table, now = aws['aggregates'], datetime.now(UTC)
+    acquire_source_lock(table, SOURCE, 'er_a', now)
+    with pytest.raises(SourceLocked):
+        acquire_source_lock(table, SOURCE, 'er_b', now)
+    release_source_lock(table, SOURCE, 'er_a', now)
+    acquire_source_lock(table, SOURCE, 'er_b', now)
+    # Held by er_b, but taken more than STALE_AFTER ago: its holder died.
+    acquire_source_lock(table, SOURCE, 'er_c', now + STALE_AFTER + timedelta(seconds=1))
+    assert _lock(aws)['job_id'] == 'er_c'

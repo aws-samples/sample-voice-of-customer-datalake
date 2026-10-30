@@ -20,14 +20,14 @@ import { memoryKeys } from '../../api/memoryApi'
 import { companyContextKey, myContextKey } from '../../api/companyContextApi'
 import { designSystemKey } from '../../api/designSystemApi'
 import {
-  allAppConfigsKey, appConfigsKey, resolvedProblemsKey, scrapersKey, sourceRunStatusKey, usersKey,
+  allAppConfigsKey, appConfigsKey, resolvedProblemsKey, scrapersKey, sourceRunStatusKey, sourcesStatusKey, usersKey,
 } from '../../api/queryKeys'
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
 
 /** Settings/Settings.tsx */
 const BRAND_SETTINGS_KEY = ['brand-settings'] as const
 /** Settings/useSourceSchedule.ts (every plugin's schedule on/off and circuit). */
-const SOURCES_STATUS_KEY = ['sources-status'] as const
+const SOURCES_STATUS_KEY = sourcesStatusKey()
 /** api/radarApi.ts `radarKeys` (the Radar page and Settings → Sources → Radar) all start with this. */
 const RADAR_KEY = ['radar'] as const
 /** Card-local keys of the company previews' current-value reads (not shared with Settings, like the brand preview). */

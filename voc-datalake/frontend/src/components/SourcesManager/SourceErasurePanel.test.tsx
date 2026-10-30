@@ -9,7 +9,11 @@ import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { supportProfile } from '@test/dimensionFixtures'
 
-vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
+// `api.getSourcesStatus` (the page-wide schedule read) goes through the same routed double.
+vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => ({
+  ...m.fetchApiClientModule(),
+  api: { getSourcesStatus: () => m.fetchApi('/sources/status') },
+})))
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import SourceErasurePanel from './SourceErasurePanel'
 import { normalizeSourceProfiles } from '../../api/sourceProfilesApi'
@@ -21,12 +25,14 @@ const running = {
   deleted_items: 40, deleted_objects: 12, started_by: 'admin', created_at: '2026-01-01', phase: 'raw',
 }
 
-interface Routes { jobs?: unknown[]; sources?: string[]; post?: () => unknown }
+interface Routes { jobs?: unknown[]; sources?: string[]; post?: () => unknown; scheduled?: Record<string, boolean> }
 
-function route({ jobs = [], sources = [SOURCE, 'support_tickets'], post = () => ({ job: running }) }: Routes = {}) {
+function route({ jobs = [], sources = [SOURCE, 'support_tickets'], post = () => ({ job: running }), scheduled = {} }: Routes = {}) {
+  const status = Object.fromEntries(Object.entries(scheduled).map(([id, enabled]) => [id, { enabled }]))
   routeFetchApi({
     'GET /settings/erasure': () => ({ jobs, sources }),
     'POST /settings/erasure': post,
+    'GET /sources/status': () => ({ sources: status }),
   })
 }
 
@@ -56,6 +62,27 @@ describe('SourceErasurePanel', () => {
     const region = await panel()
     await within(region).findByLabelText('Source')
     expect(within(region).getByRole('button', { name: 'Delete all data from this source' })).toBeDisabled()
+  })
+
+  it('says the source keeps running and uploaded files are kept, without a warning when its schedule is off', async () => {
+    route({ scheduled: { [SOURCE]: false, support_tickets: true } })
+    const user = userEvent.setup()
+    renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
+    await openDialog(user)
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText(/The source keeps running after the deletion/)).toHaveTextContent(
+      'Uploaded CSV and JSON files (raw/csv_upload, raw/json_upload) are kept.')
+    expect(within(dialog).queryByText(/schedule of .* is on/)).not.toBeInTheDocument()
+  })
+
+  it('warns when the chosen source has its schedule on', async () => {
+    route({ scheduled: { [SOURCE]: true } })
+    const user = userEvent.setup()
+    renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
+    await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/sources/status'))
+    await openDialog(user)
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(
+      `The schedule of ${SOURCE} is on. New reviews will arrive after the deletion unless you turn the source off first.`)
   })
 
   it('keeps Delete off until the source id is typed exactly', async () => {
