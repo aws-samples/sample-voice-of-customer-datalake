@@ -263,6 +263,10 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   cognitoCollectionWithProxy('workflows', agentsIntegration);
   // Radar (other brands): reads for every signed-in user, admin-only writes in the handler.
   cognitoCollectionWithProxy('radar', frugalIntegration(radarLambda), ['GET']);
+  // The company persona library (shared/company_personas_routes.py in the projects Lambda): reads for
+  // every signed-in user, admin-only writes in the handler. Its own root resource: the container is
+  // never addressable under /projects (the handler answers 404 there).
+  cognitoCollectionWithProxy('company-personas', projectsIntegration, ['GET']);
 
   // Engagement (voc-engagement-api). ONE integration, so ONE invoke permission for all three trees.
   const engagementIntegration = frugalIntegration(engagementLambda);

@@ -48,7 +48,7 @@ from shared.logging import logger, tracer
 from shared.plan_canonical import FINGERPRINT_RE
 from shared.plan_schema import ADMIN_ONLY_PACKS, PACKS, is_plan_id, validate_plan
 from shared.project_access import Caller
-from shared.project_gate import caller_from_event, require_admin_caller
+from shared.project_gate import acts_as_admin, caller_from_event, require_admin_caller
 from shared.request_body import json_object_body
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.tables import get_aggregates_table
@@ -154,7 +154,7 @@ def _find_workflow(workflow_id: object, *, include_archived: bool = False) -> di
 
 def _sees_archived(caller: Caller) -> bool:
     """Only a non-delegated admin reads an archived workflow (like an archived agent)."""
-    return caller.is_admin and not caller.delegated
+    return acts_as_admin(caller)
 
 
 def _require_workflow(workflow_id: str) -> None:

@@ -161,6 +161,13 @@ describe('every API method reaches a route its Lambda answers', () => {
     expect(answers(routes, 'POST', '/unsubscribe')).toBe(true);
   });
 
+  it('reads the company persona routers the projects handler includes', () => {
+    const routes = registeredRoutes(pythonFiles(LAMBDA_DIR), 'projects_handler');
+    expect(answers(routes, 'GET', '/company-personas')).toBe(true);
+    expect(answers(routes, 'ANY', '/company-personas/{proxy+}')).toBe(true);
+    expect(answers(routes, 'POST', '/projects/{project_id}/personas/copy')).toBe(true);
+  });
+
   it.each([
     ['GET', '/feedback/problems', 'GET', '/feedback/problems', true],
     ['GET', '/feedback/problems/resolved', 'GET', '/feedback/problems', false],

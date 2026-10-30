@@ -85,11 +85,13 @@ from shared import (
     assist_jobs,
     category_access,
     category_gate,
+    company_personas_routes,
     decision_records,
     document_review,
     document_review_routes,
     document_series,
     draft_intent,
+    persona_copy_routes,
     project_access,
     project_gate,
     prototype_pins,
@@ -110,6 +112,7 @@ from shared.api import (
     validate_int,
 )
 from shared.aws import get_dynamodb_resource, invoke_lambda_async, is_conditional_check_failure
+from shared.company_personas import is_company_container
 from shared.data_version import bump_config_version
 from shared.document_versions import MERGE_OUTPUT_TYPES, MERGE_VERSIONED_DOCUMENT_TYPES, split_versioned_title
 from shared.exceptions import (
@@ -186,7 +189,13 @@ def _gate_meta(project_id: str) -> dict | None:
 
 
 def _project_access_for(project_id: str, caller: Caller, level: str) -> ProjectAccess:
-    """The caller's access, or the refusal the HTTP contract prescribes."""
+    """The caller's access, or the refusal the HTTP contract prescribes.
+
+    The company persona library's reserved container (shared/company_personas.py) is not a
+    project: every ``/projects/{id}/...`` route answers it 404, admins included.
+    """
+    if is_company_container(project_id):
+        raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
     return project_gate.require_project_level(
         lambda: _gate_meta(project_id), caller, level,
     )
@@ -567,7 +576,11 @@ def api_transfer_project_owner(project_id: str):
 @tracer.capture_method
 def api_import_persona(project_id: str):
     """Import a persona from an image or pasted text - runs as background job."""
-    body = json_object_body(app)
+    return _start_persona_import(project_id, json_object_body(app))
+
+
+def _start_persona_import(project_id: str, body: dict) -> dict:
+    """Validate an import body and start its job (the project route and the company library)."""
     content = body.get('content', '')
     media_type = body.get('media_type', '')
     # INVARIANT (tested): validated BEFORE create_job, so a refused import leaves
@@ -613,6 +626,10 @@ def api_add_persona_note(project_id: str, persona_id: str):
 def api_regenerate_persona_avatar(project_id: str, persona_id: str):
     """202 + an assist job; the 404 for a missing persona stays synchronous."""
     require_persona(project_id, persona_id)
+    return _start_avatar_assist(project_id, persona_id)
+
+
+def _start_avatar_assist(project_id: str, persona_id: str) -> Response:
     return _started_assist(project_id, ASSIST_PERSONA_AVATAR, {'project_id': project_id, 'persona_id': persona_id})
 
 
@@ -620,7 +637,11 @@ def api_regenerate_persona_avatar(project_id: str, persona_id: str):
 @tracer.capture_method
 def api_generate_personas(project_id: str):
     """Start async persona generation."""
-    body = json_object_body(app)
+    return _start_persona_generation(project_id, json_object_body(app))
+
+
+def _start_persona_generation(project_id: str, body: dict) -> dict:
+    """Validate a generation body and start its job (the project route and the company library)."""
     filters = {
         **feedback_filters_from_body(body),
         'date_basis': validate_date_basis(body.get('date_basis')),
@@ -1055,6 +1076,10 @@ def api_duplicate_document(project_id: str, document_id: str):
 @app.get("/projects/<project_id>/jobs/<job_id>")
 @tracer.capture_method
 def api_get_job_status(project_id: str, job_id: str):
+    return _job_status(project_id, job_id)
+
+
+def _job_status(project_id: str, job_id: str) -> dict:
     # Consistent: an assist's first poll lands milliseconds after its start wrote the row.
     response = get_jobs_table().get_item(
         Key={'pk': f'PROJECT#{project_id}', 'sk': f'JOB#{job_id}'}, ConsistentRead=True,
@@ -1106,6 +1131,10 @@ def _project_job_rows(project_id: str) -> list[dict]:
 @app.get("/projects/<project_id>/jobs")
 @tracer.capture_method
 def api_list_jobs(project_id: str):
+    return _job_list(project_id)
+
+
+def _job_list(project_id: str) -> dict:
     jobs = [{
         'job_id': i.get('job_id') or i.get('sk', '').removeprefix('JOB#') or None,
         'job_type': i.get('job_type'), 'status': i.get('status'),
@@ -5030,6 +5059,18 @@ ASSIST_WORK = {
 # Document comments and review links (shared/document_review_routes.py, docs/document-review.md). Included
 # after every route above; the project-access middleware applies to its routes as to the handler's own.
 app.include_router(document_review_routes.app)
+
+# The company persona library (shared/company_personas_routes.py) and copying personas into / out of
+# a project (shared/persona_copy_routes.py), docs/project-workspace.md → Company personas. The library
+# runs these same persona functions on its reserved container.
+company_personas_routes.configure(company_personas_routes.PersonaOps(
+    start_generation=_start_persona_generation, start_import=_start_persona_import,
+    start_avatar=_start_avatar_assist, job_list=_job_list, job_status=_job_status,
+    update_persona=update_persona, delete_persona=delete_persona, add_note=add_persona_note,
+    require_persona=require_persona, sign_avatars=projects.with_signed_avatars,
+))
+app.include_router(company_personas_routes.app)
+app.include_router(persona_copy_routes.app)
 
 
 # ============================================

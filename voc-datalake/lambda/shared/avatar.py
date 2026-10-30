@@ -184,6 +184,8 @@ def get_image_model_config() -> dict:
 
 
 AVATAR_KEY_PREFIX = 'avatars/'
+# Every avatar key is new per image (avatar_object_key), so an object never changes once written.
+AVATAR_CACHE_CONTROL = 'public, max-age=31536000, immutable'
 
 # Hex characters of the content digest in an avatar key: enough that two images of
 # one persona never share a key, short enough to keep the URL readable.
@@ -546,7 +548,7 @@ def _store_avatar_image(
         # No jpg/jpeg special case needed: get_image_model_config() has already
         # constrained the format to _SUPPORTED_OUTPUT_FORMATS.
         ContentType=f"image/{image_format}",
-        CacheControl='public, max-age=31536000, immutable',
+        CacheControl=AVATAR_CACHE_CONTROL,
         Metadata=owner_metadata,
     )
     # Earlier images are NOT removed here: the persona row still names one of
