@@ -108,6 +108,7 @@
     "absentReason": "Aucun de ces documents n'indique à partir de quoi il a été créé — la réponse habituelle pour un document rédigé à la main ou créé avant l'enregistrement de la filiation. La ligne reste notable ; il n'y a simplement rien pour vérifier la combinaison.",
     "acknowledge": "Garder les deux versions",
     "acknowledgeFailed": "Impossible d’enregistrer cette modification. Rechargez la page et réessayez.",
+    "acknowledgeUnavailable": "L'un des documents de cette ligne n'existe plus : ses versions ne peuvent donc pas être marquées comme conservées volontairement.",
     "acknowledgeHint": "Ces versions sont-elles combinées volontairement ?",
     "acknowledgeSaving": "Enregistrement...",
     "acknowledgeUndo": "Annuler",

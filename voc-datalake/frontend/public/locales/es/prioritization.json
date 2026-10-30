@@ -108,6 +108,7 @@
     "absentReason": "Ninguno de estos documentos registra a partir de qué se creó — la respuesta habitual para un documento escrito a mano o creado antes de que se registrara el linaje. La fila se puede puntuar igualmente; simplemente no hay nada con lo que comprobar la combinación.",
     "acknowledge": "Mantener ambas versiones",
     "acknowledgeFailed": "No se pudo guardar este cambio. Recarga la página e inténtalo de nuevo.",
+    "acknowledgeUnavailable": "Uno de los documentos de esta fila ya no existe, por lo que sus versiones no se pueden marcar como mantenidas a propósito.",
     "acknowledgeHint": "¿Has combinado estas versiones a propósito?",
     "acknowledgeSaving": "Guardando...",
     "acknowledgeUndo": "Deshacer",

@@ -107,6 +107,7 @@
     "absentReason": "None of these documents records what it was built from — the usual answer for a hand-authored document, or one created before lineage was recorded. The row is still scorable; there is simply nothing to check the combination against.",
     "acknowledge": "Keep both versions",
     "acknowledgeFailed": "This change could not be saved. Reload the page and try again.",
+    "acknowledgeUnavailable": "One of this row's documents no longer exists, so its versions cannot be marked as kept on purpose.",
     "acknowledgeHint": "Combined these versions on purpose?",
     "acknowledgeSaving": "Saving...",
     "acknowledgeUndo": "Undo",

@@ -3403,6 +3403,9 @@ def api_set_prioritization_row_lineage_ack(row_id: str):
     )
     if not isinstance(stored, dict) or stored.get('project_id') != project_id:
         raise NotFoundError('Prioritization row not found')
+    if not acknowledged and row_lineage_ack.LINEAGE_ACK_FIELD not in stored:
+        # Nothing to withdraw: answer the row as it is rather than bump `updated_at`.
+        return {'success': True, 'row': _row_payload(stored)}
 
     names = {'#ack': row_lineage_ack.LINEAGE_ACK_FIELD, '#project_id': 'project_id',
              '#updated_at': 'updated_at'}

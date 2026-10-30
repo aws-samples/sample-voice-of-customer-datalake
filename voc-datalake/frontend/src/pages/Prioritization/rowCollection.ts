@@ -248,6 +248,7 @@ export function collectRows(
    */
   const byProject = new Map<string, {
     name: string;
+    canEdit: boolean
     documents: ProjectDocument[]
     byId: Map<string, ProjectDocument>
     lineage: ProjectLineageSources
@@ -258,6 +259,7 @@ export function collectRows(
     const documents = detail.documents ?? []
     byProject.set(project.project_id, {
       name: project.name,
+      canEdit: project.access?.can_edit === true,
       documents,
       byId: new Map(documents.map((doc) => [doc.document_id, doc])),
       lineage: projectLineageSources(documents),
@@ -276,6 +278,7 @@ export function collectRows(
       .sort(byNewestFirst)
     const leading = documents.at(0)
     if (!leading) return []
+    const compositionTruncated = documents.length !== row.document_ids.length
     return [{
       row_id: row.row_id,
       project_id: row.project_id,
@@ -313,8 +316,10 @@ export function collectRows(
       lineage: withLineageAck(rowLineageOf({
         is_frozen: row.is_frozen,
         documents,
-        composition_truncated: documents.length !== row.document_ids.length,
+        composition_truncated: compositionTruncated,
       }, project.lineage), row),
+      composition_truncated: compositionTruncated,
+      can_edit: project.canEdit,
       prototype: byId.get(row.prototype_id) ?? latestPrototypeOf(project.documents),
     }]
   })

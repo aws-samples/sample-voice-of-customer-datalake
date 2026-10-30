@@ -88,4 +88,21 @@ describe('collectRows carries the stored mark onto the row', () => {
     const row = onlyItem(collectRows(rowWith(['prd_1', 'prd_2', 'prd_9'], ack(['prd_1', 'prd_2'])), details, projects), 'row')
     expect(row.lineage.acknowledged).toBeUndefined()
   })
+
+  it('flags a row whose stored set did not fully resolve, so the mark is not offered for it', () => {
+    const truncated = onlyItem(collectRows(rowWith(['prd_1', 'prd_2', 'prd_9'], null), details, projects), 'row')
+    const whole = onlyItem(collectRows(rowWith(['prd_1', 'prd_2'], null), details, projects), 'row')
+    expect(truncated.composition_truncated).toBe(true)
+    expect(whole.composition_truncated).toBe(false)
+  })
+
+  it.each([
+    ['an editor', { role: 'editor' as const, can_view: true, can_edit: true, can_manage: false }, true],
+    ['a viewer', { role: 'viewer' as const, can_view: true, can_edit: false, can_manage: false }, false],
+    ['a project without access fields', undefined, false],
+  ])('carries whether the caller may edit the project for %s', (_who, access, canEdit) => {
+    const withAccess = [{ ...project('p1', 'P1'), access }]
+    const row = onlyItem(collectRows(rowWith(['prd_1', 'prd_2'], null), details, withAccess), 'row')
+    expect(row.can_edit).toBe(canEdit)
+  })
 })

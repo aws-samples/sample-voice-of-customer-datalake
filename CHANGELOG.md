@@ -28,6 +28,9 @@ A Prioritization row that crosses generations on purpose can be marked Keep both
   **Undo** restores the warning. The mark is stored on the row for its exact document set
   (`PUT /projects/prioritization/rows/{row_id}/lineage-ack`, edit access on the project), so it lapses by
   itself when the row's documents change. See [docs/prioritization.md](docs/prioritization.md#keep-both-versions-lineage-acknowledgement).
+  Recomposing a row back to exactly the marked set applies the mark again. A row holding a document the project
+  no longer has says it cannot be marked instead of offering a button that would always fail. The control is
+  shown only to people who can edit the row's project; a viewer sees the label without it.
 
 ## [5.48.06] - 2026-10-30
 

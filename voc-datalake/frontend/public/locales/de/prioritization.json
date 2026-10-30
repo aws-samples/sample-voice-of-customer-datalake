@@ -107,6 +107,7 @@
     "absentReason": "Keines dieser Dokumente hält fest, woraus es erstellt wurde — die übliche Antwort für ein handgeschriebenes Dokument oder ein Dokument, das vor der Erfassung der Herkunft entstanden ist. Die Zeile ist weiterhin bewertbar; es gibt lediglich nichts, womit sich die Kombination prüfen ließe.",
     "acknowledge": "Beide Versionen behalten",
     "acknowledgeFailed": "Diese Änderung konnte nicht gespeichert werden. Laden Sie die Seite neu und versuchen Sie es erneut.",
+    "acknowledgeUnavailable": "Eines der Dokumente dieser Zeile existiert nicht mehr, daher können ihre Versionen nicht als absichtlich beibehalten markiert werden.",
     "acknowledgeHint": "Diese Versionen absichtlich kombiniert?",
     "acknowledgeSaving": "Wird gespeichert...",
     "acknowledgeUndo": "Rückgängig",
