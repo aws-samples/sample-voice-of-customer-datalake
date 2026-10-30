@@ -244,7 +244,6 @@
     "source_feedback_ids": {
       "type": "array",
       "items": { "type": "string" },
-      "maxItems": 20,
       "description": "DISPLAY ONLY: the first 20 feedback ids fetched for the generation. Not the corpus; read input_feedback_ids for the reviews the persona was written from"
     },
     "input_feedback_ids": {

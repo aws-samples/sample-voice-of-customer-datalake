@@ -202,7 +202,13 @@ class TestFeedbackCorpusIsRecorded:
         with patch.object(handler, 'feedback_char_budget', return_value=600), \
                 patch.object(handler, 'query_feedback_by_date', return_value=reviews):
             sample = handler._feedback_context(MagicMock(), {})
-        assert sample.input_ids == tuple(f'fb{i}' for i in range(sample.items_used))
+        text_of = {review['feedback_id']: review['original_text'] for review in reviews}
+        stored = set(sample.input_ids)
+        # Judged against the prompt itself, not the helper's own "first N" rule: every stored id's review
+        # is in the context, every review left out of the context is left out of the ids too.
+        assert 0 < len(stored) < len(reviews)
+        assert all(text_of[fid] in sample.context for fid in stored)
+        assert not any(text in sample.context for fid, text in text_of.items() if fid not in stored)
 
     @pytest.mark.usefixtures('mock_dynamodb', 'mock_jobs_table', 'mock_converse_chain', 'mock_prompt_steps')
     def test_single_shot_stores_the_ids_on_the_document_and_keeps_them_off_the_job_result(

@@ -538,7 +538,7 @@ export interface ProjectDocument {
   /**
    * Ids of the reviews the generation's prompts held, in prompt order (at most 500,
    * #236): research reports, PRDs, PR/FAQs and merged documents generated from feedback. Absent on
-   * PRDs, PR/FAQs, merged documents and fallback research reports generated before 5.50.00.
+   * PRDs, PR/FAQs, merged documents and fallback research reports generated before 5.49.00.
    */
   input_feedback_ids?: string[]
   /**
