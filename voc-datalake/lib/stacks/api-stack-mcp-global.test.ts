@@ -170,7 +170,7 @@ describe('global MCP endpoint IAM', () => {
     const { resource } = itemAt(invoke, 0);
     expect(['MetricsApi', 'SettingsApi', 'MemoryApi', 'ProjectsApi', 'AgentsApi'].filter((fn) => !resource.includes(fn)))
       .toStrictEqual([]);
-    expect((resource.match(/Api[0-9A-F]{8}/g) ?? []).length).toBe(domainEnvKeys().length);
+    expect(resource.match(/Api[0-9A-F]{8}/g) ?? []).toHaveLength(domainEnvKeys().length);
     expect(resource).not.toContain(':*');
   });
 

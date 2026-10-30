@@ -41,7 +41,7 @@ describe('getTeamScore', () => {
     // impact 4 (weight .4) + confidence 2 (weight .1): (1.6 + 0.2) / 0.5 = 3.6.
     const team = teamScoreFromAggregate({ impact: 4, time_to_market: 0, strategic_fit: 0, confidence: 2, reviewer_count: 2 })
 
-    expect(team?.displayComposite).toBe(3.6)
+    expect(team?.displayComposite).toBeCloseTo(3.6, 10)
   })
 
   it('a ballot that expressed no axis at all has no composite', () => {
@@ -62,7 +62,7 @@ describe('getTeamScore', () => {
     // nothing — a full ballot's number is untouched by #343.
     const team = teamScoreFromAggregate({ impact: 5, time_to_market: 4, strategic_fit: 2, confidence: 3, reviewer_count: 4 })
 
-    expect(team?.displayComposite).toBe(3.9)
+    expect(team?.displayComposite).toBeCloseTo(3.9, 10)
   })
 
   it('composites the team means through the same weights the page sorts by', () => {
@@ -75,7 +75,7 @@ describe('getTeamScore', () => {
     // deliberately carries only the rounded value. This is the stronger form anyway: it
     // names the two functions whose agreement is the actual claim.
     expect(compositeScore(DEFAULT_AXES, { impact: 5, time_to_market: 4, strategic_fit: 2, confidence: 3 })).toBeCloseTo(3.9)
-    expect(team?.displayComposite).toBe(3.9)
+    expect(team?.displayComposite).toBeCloseTo(3.9, 10)
     expect(team?.reviewerCount).toBe(4)
   })
 

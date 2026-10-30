@@ -31,7 +31,7 @@ import { roleOf } from '../lib/fixtures'
 import { readLedger, recordCreated } from '../lib/ledger'
 import { idTokenFor } from '../lib/session'
 import { isRecord } from '../lib/guards'
-import { nodeUserAgent } from '../lib/trafficTag'
+import { e2eFetch, nodeUserAgent } from '../lib/trafficTag'
 
 const FORM_NAME = `${RUN_PREFIX}security-probe-form`
 
@@ -57,6 +57,18 @@ const SSRF_TARGETS: ReadonlyArray<{ url: string; why: string }> = [
  */
 const SSRF_REDIRECT_URL = process.env['E2E_SSRF_REDIRECT_URL']
   ?? `https://httpbin.org/redirect-to?url=${encodeURIComponent('http://169.254.169.254/latest/meta-data/')}`
+
+/** Whether `url` answers a 3xx with a Location (fetched without following it). */
+async function redirectorAnswersRedirect(url: string): Promise<{ redirects: boolean; detail: string }> {
+  try {
+    const res = await e2eFetch(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
+    const location = res.headers.get('location')
+    const redirects = res.status >= 300 && res.status < 400 && location !== null
+    return { redirects, detail: redirects ? `${res.status} -> ${location}` : `HTTP ${res.status}` }
+  } catch (error: unknown) {
+    return { redirects: false, detail: error instanceof Error ? error.message : String(error) }
+  }
+}
 
 /** Bodies `analyze-url` must refuse as a client error (label, probe options). */
 const MALFORMED_BODIES: ReadonlyArray<readonly [string, { rawBody?: string; body?: unknown }]> = [
@@ -225,6 +237,11 @@ test.describe('security probes (API level)', () => {
   test('scraper analyze-url refuses a public URL that redirects to the metadata IP (#244)', async ({}, testInfo) => {
     test.skip(roleOf(testInfo) !== 'admin', 'one outbound fetch per run')
     test.setTimeout(ASSIST_JOB_TIMEOUT_MS + 30_000)
+    // The probe proves something only while its public redirector really answers a redirect.
+    // Public redirectors started refusing internal targets (httpbin.org answers 403 "Forbidden
+    // redirect target" since 2026-10); then the worker sees a plain 403 and the probe is moot.
+    const redirector = await redirectorAnswersRedirect(SSRF_REDIRECT_URL)
+    test.skip(!redirector.redirects, `${SSRF_REDIRECT_URL} does not redirect (${redirector.detail}); set E2E_SSRF_REDIRECT_URL`)
     const res = await probe(api, 'analyze-url redirect', 'POST', '/scrapers/analyze-url', { role: 'admin', body: { url: SSRF_REDIRECT_URL } })
     // An assist job (4.00.00): the first hop is public, so the start is a 202 and the
     // worker's fetch refuses the redirect; the job ends `failed` with that refusal.

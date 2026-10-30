@@ -47,7 +47,7 @@ from boto3.dynamodb.types import Binary
 from shared import memory_policy as policy
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
 from shared.category_access import CategoryScope, admits
-from shared.converse import converse_detailed
+from shared.converse import converse_detailed, with_thinking_headroom
 from shared.dynamo_paging import query_all
 from shared.dynamo_values import item_key, plain
 from shared.embeddings import EMBED_DIMENSIONS, embed_text
@@ -77,6 +77,9 @@ POOL_CACHE_SECONDS: Final = 60
 # Neighbours per candidate the relation judge sees; more costs tokens, rarely helps.
 MAX_JUDGED_NEIGHBOURS: Final = 3
 MAX_JUDGED_PAIRS: Final = 60
+# The judge's JSON answer (one label per pair) plus thinking room: 800 alone was spent on thinking and the
+# reply truncated (5.48.03 prod logs: 'memory_relations' still truncated after continuations).
+RELATION_MAX_TOKENS: Final = with_thinking_headroom(800)
 _SUPPORTER_NAMESPACE: Final = b'voc-memory-supporter/v1'
 # Stored blobs are little-endian float32; a big-endian host byteswaps on the way.
 _LITTLE_ENDIAN: Final = sys.byteorder == 'little'
@@ -609,7 +612,7 @@ def judge_relations(pairs: list[tuple[str, str]], *, service_tier: str | None) -
     fallback = [policy.RELATION_UNRELATED] * len(pairs)
     try:
         reply = call_memory_model(prompt, RELATION_SYSTEM_PROMPT, step_name='memory_relations',
-                                  max_tokens=800, service_tier=service_tier)
+                                  max_tokens=RELATION_MAX_TOKENS, service_tier=service_tier)
     except Exception:
         logger.exception('Memory relation judgement failed; treating pairs as unrelated')
         return fallback

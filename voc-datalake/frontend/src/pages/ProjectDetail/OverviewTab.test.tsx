@@ -62,24 +62,14 @@ function cardFor(title: string): HTMLElement {
 }
 
 describe('OverviewTab', () => {
-  it('renders Generate Personas action card', () => {
+  it.each<[card: string, description: string]>([
+    ['Generate Personas', 'Create user personas from feedback'],
+    ['Generate PRD / PR/FAQ', 'Create product documents from feedback'],
+    ['Run Research', 'Deep dive into feedback with filters'],
+    ['Remix Documents', 'Combine and revise documents into new versions'],
+  ])('renders %s action card', (_card, description) => {
     render(<OverviewTab {...defaultProps} />)
-    expect(screen.getByText('Create user personas from feedback')).toBeInTheDocument()
-  })
-
-  it('renders Generate PRD / PR/FAQ action card', () => {
-    render(<OverviewTab {...defaultProps} />)
-    expect(screen.getByText('Create product documents from feedback')).toBeInTheDocument()
-  })
-
-  it('renders Run Research action card', () => {
-    render(<OverviewTab {...defaultProps} />)
-    expect(screen.getByText('Deep dive into feedback with filters')).toBeInTheDocument()
-  })
-
-  it('renders Remix Documents action card', () => {
-    render(<OverviewTab {...defaultProps} />)
-    expect(screen.getByText('Combine and revise documents into new versions')).toBeInTheDocument()
+    expect(screen.getByText(description)).toBeInTheDocument()
   })
 
   it('calls onGeneratePersonas when Generate button is clicked', async () => {

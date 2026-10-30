@@ -130,6 +130,6 @@ describe('ProjectDetail job handover (U9)', () => {
 
     // The start failed, so there is no job to show; the error belongs inline.
     await waitFor(() => expect(screen.getByText(/Bedrock unavailable/)).toBeInTheDocument())
-    expect(mockGetJobs.mock.calls.length).toBe(callsBeforeBuild)
+    expect(mockGetJobs.mock.calls).toHaveLength(callsBeforeBuild)
   })
 })

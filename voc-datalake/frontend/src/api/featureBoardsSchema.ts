@@ -154,7 +154,7 @@ export interface BoardPatch {
   readonly description?: string
   readonly fields?: BoardFields
   readonly statuses?: readonly BoardStatus[]
-  readonly audience?: NewBoardInput['audience']
+  readonly audience?: NonNullable<NewBoardInput['audience']>
   readonly archived?: boolean
   readonly paused?: boolean
 }

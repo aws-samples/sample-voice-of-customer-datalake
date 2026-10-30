@@ -25,7 +25,7 @@ function rawItem(overrides: Record<string, unknown> = {}): Record<string, unknow
 describe('normalizeFeedbackItem', () => {
   it('coerces a string sentiment_score to a number', () => {
     const item = normalizeFeedbackItem(rawItem({ sentiment_score: '0.9' }))
-    expect(item.sentiment_score).toBe(0.9)
+    expect(item.sentiment_score).toBeCloseTo(0.9, 10)
     expect(typeof item.sentiment_score).toBe('number')
     // The coerced value is now safe for numeric operations like .toFixed().
     expect(item.sentiment_score.toFixed(2)).toBe('0.90')

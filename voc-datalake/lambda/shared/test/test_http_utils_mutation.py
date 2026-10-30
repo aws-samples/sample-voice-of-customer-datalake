@@ -149,18 +149,19 @@ class TestACustomScheduleDoublesAndIsClampedToMaxWait:
 
 class TestTheLogLineBeforeEachSleep:
     def test_logs_at_info_with_tenacitys_wording_and_stacklevel_two(self):
+        def flaky_call():
+            raise requests.exceptions.Timeout('slow')
+
         target = MagicMock()
         with patch('shared.http_utils.logger', target):
-            @create_retry_decorator(max_attempts=2, min_wait=0, max_wait=0)
-            def flaky():
-                raise requests.exceptions.Timeout('slow')
+            flaky = create_retry_decorator(max_attempts=2, min_wait=0, max_wait=0)(flaky_call)
 
         with pytest.raises(requests.exceptions.Timeout):
             flaky()
 
         target.log.assert_called_once_with(
             20,
-            f'Retrying {__name__}.{flaky.__qualname__} in 0 seconds '
+            f'Retrying {__name__}.{flaky_call.__qualname__} in 0 seconds '
             'as it raised Timeout: slow.',
             stacklevel=2,
         )

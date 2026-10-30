@@ -174,7 +174,7 @@ class TestRelationJudge:
     def test_the_request(self):
         _, model = self._judge([('crème', 'b')], json.dumps({'relations': ['same']}), tier=None)
         model.assert_called_once_with('<pairs>\n[{"a": "crème", "b": "b"}]\n</pairs>', store.RELATION_SYSTEM_PROMPT,
-                                      step_name='memory_relations', max_tokens=800, service_tier=None)
+                                      step_name='memory_relations', max_tokens=2848, service_tier=None)
 
     def test_the_system_prompt_names_each_label_and_the_data_rule(self):
         # Line by line: a piece's start and end are both pinned, as is every join between pieces.
