@@ -20,6 +20,7 @@ import type {
   WebSourceRef,
 } from '../types.js';
 import { resolveChatModelId } from '../../bedrock/converse-stream.js';
+import { profiledModelId } from '../../bedrock/model-profile.js';
 import { ValidationError } from '../../lib/errors.js';
 import { ProjectAccessLedger } from '../tools/project-access.js';
 import { withoutDocumentGeneration, withoutProjectWrites } from '../tools/registry.js';
@@ -182,7 +183,8 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
   const split = splitThread(input.messages);
   const webSearch = props.useWebSearch === true && deps.webSearchConfigured();
   const pageToolset = deps.getToolset({ page, isAdmin, webSearch, alsoInclude: split.toolNames });
-  const modelId = resolveChatModelId(await deps.resolveModel());
+  // An e2e test user (Cognito group `e2e`, verified claims) runs on the profile's model (bedrock/model-profile.ts).
+  const modelId = profiledModelId(resolveChatModelId(await deps.resolveModel()), claims['cognito:groups'], 'chat');
   // Packs never change below (only project write tools can be dropped), so the context event goes out first.
   emitter.emit(events.custom(CUSTOM_EVENTS.context, { page, packs: pageToolset.packs, model: modelId, webSearch }));
 

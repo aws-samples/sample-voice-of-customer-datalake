@@ -6,7 +6,8 @@ MCP adapter uses (``shared.mcp_delegate``) — so every route's validation,
 per-project gate and category scope apply to the agent exactly as they would to
 its owner:
 
-- ``sub = agent:{agent_id}``, ``cognito:groups`` always empty (never admin);
+- ``sub = agent:{agent_id}``, ``cognito:groups`` empty (never admin; only ``e2e`` for a run an e2e
+  test user started, shared/model_profile.py);
 - ``voc:acting_subject`` = the agent's owner (``project_access`` caps it at editor);
 - ``voc:agent_owner_sub`` / ``voc:agent_editor_subs`` only on project creation.
 
@@ -20,6 +21,7 @@ from typing import Any
 
 from shared import project_access
 from shared.mcp_delegate import DelegationUnavailable, DomainCall, DomainResult, call_domain
+from shared.model_profile import E2E_GROUP, E2E_PROFILE
 
 
 class RouteError(Exception):
@@ -30,12 +32,16 @@ class RouteError(Exception):
         self.status_code = status_code
 
 
-def agent_claims(agent: dict, *, owner_sub: str = '', editor_subs: tuple[str, ...] = ()) -> dict[str, str]:
+def agent_claims(agent: dict, *, owner_sub: str = '', editor_subs: tuple[str, ...] = (),
+                 model_profile: str | None = None) -> dict[str, str]:
     agent_id = agent.get('agent_id')
     if not isinstance(agent_id, str) or not agent_id:
         raise DelegationUnavailable('agent record has no agent_id')
     sub = f'{project_access.AGENT_SUBJECT_PREFIX}{agent_id}'
-    claims = {'sub': sub, 'cognito:groups': '', 'email': sub}
+    # Never admin. Only the e2e group (the run row's model profile, shared/model_profile.py) may ride
+    # along, so the domain routes the run calls run their own model calls on the profile's model too.
+    groups = E2E_GROUP if model_profile == E2E_PROFILE else ''
+    claims = {'sub': sub, 'cognito:groups': groups, 'email': sub}
     acting = agent.get('owner_sub') if isinstance(agent.get('owner_sub'), str) else ''
     if acting and not project_access.is_synthetic_subject(acting):
         claims[project_access.ACTING_SUBJECT_CLAIM] = acting
