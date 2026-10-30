@@ -38,11 +38,9 @@ function runStatus(counts) {
 /** Newest first, like the real listing (sk `{started_at}#{run_id}`, ScanIndexForward false). */
 const runs = [];
 
-/** A CSV upload's counts from its parser warnings, as manual_import_handler._csv_counts. */
-export function csvUploadCounts(imported, warnings) {
-  const dropped = warnings.filter((w) => w.endsWith('— skipped'));
-  const duplicate = dropped.filter((w) => w.includes('duplicate row')).length;
-  return { received: imported + dropped.length, imported, skipped: dropped.length - duplicate, duplicate };
+/** A CSV upload's counts from the rows its parser dropped, as manual_import_handler._csv_counts. */
+export function csvUploadCounts(imported, { skipped, duplicate }) {
+  return { received: imported + skipped + duplicate, imported, skipped, duplicate };
 }
 
 /**

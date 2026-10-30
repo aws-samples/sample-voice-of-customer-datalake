@@ -864,7 +864,7 @@ function rowFields(row, header, targets, warnings, idx) {
   return out;
 }
 
-/** _parse_csv_to_items: `{items, warnings}`, or `{error}` for a 400. */
+/** _parse_csv_to_items: `{items, warnings, drops: {skipped, duplicate}}`, or `{error}` for a 400. */
 function csvItems(csvText, defaultSource, columnMap) {
   const [header, ...rows] = parseCsvRows(csvText);
   if (!header) return { error: 'CSV is empty or has no header row' };
@@ -874,17 +874,20 @@ function csvItems(csvText, defaultSource, columnMap) {
   }
   const items = [];
   const warnings = [];
+  const drops = { skipped: 0, duplicate: 0 };
   const seen = new Set();
   rows.forEach((row, i) => {
     const idx = i + 1;
     const { fields, dimensions, tags, metadata } = rowFields(row, header, targets, warnings, idx);
     if (!fields.text) {
       warnings.push(`row ${idx}: empty text — skipped`);
+      drops.skipped += 1;
       return;
     }
     const id = createHash('sha256').update(JSON.stringify(['csv-row-v1', fields.id ?? '', fields.id ? '' : String(idx), fields.text, fields.rating, fields.date, fields.author, fields.title, fields.url, fields.channel])).digest('hex').slice(0, 32);
     if (seen.has(id)) {
       warnings.push(`row ${idx}: duplicate row — skipped`);
+      drops.duplicate += 1;
       return;
     }
     seen.add(id);
@@ -900,7 +903,7 @@ function csvItems(csvText, defaultSource, columnMap) {
       dimensions, tags: [...new Set(tags)].slice(0, 20), metadata,
     });
   });
-  return { items, warnings };
+  return { items, warnings, drops };
 }
 
 function csvUpload({ shared }, body) {
@@ -916,7 +919,7 @@ function csvUpload({ shared }, body) {
   const mapError = badColumnMap(body.column_map, shared);
   if (mapError) return fail(400, mapError);
   if (Buffer.byteLength(csvText) > MAX_CSV_BYTES) return fail(400, `CSV exceeds ${MAX_CSV_BYTES / (1024 * 1024)} MB limit`);
-  const { items, warnings, error } = csvItems(csvText, defaultSource, body.column_map ?? {});
+  const { items, warnings, drops, error } = csvItems(csvText, defaultSource, body.column_map ?? {});
   if (error) return fail(400, error);
   if (items.length === 0) return fail(400, `CSV produced no valid rows. ${warnings.slice(0, 5).join('; ')}`);
   if (items.length > MAX_UPLOAD_ITEMS) return fail(400, `Maximum ${MAX_UPLOAD_ITEMS} rows per upload (got ${items.length}). Split the file and try again.`);
@@ -927,7 +930,7 @@ function csvUpload({ shared }, body) {
   if (warnings.length) result.warnings = warnings.slice(0, 20);
   recordImportRun({
     method: 'csv', source: defaultSource, source_id: sourceId, warnings, raw_s3_key: result.s3_uri, radar_brand: radar.brand,
-    counts: csvUploadCounts(items.length, warnings),
+    counts: csvUploadCounts(items.length, drops),
   });
   return [200, result];
 }

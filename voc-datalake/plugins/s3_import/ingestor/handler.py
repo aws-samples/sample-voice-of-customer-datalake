@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 import boto3
 
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
-from shared.import_runs import S3_UPLOAD_ACTOR, ImportCounts, ImportRun, record_import_run
+from shared.import_runs import MAX_MESSAGES, S3_UPLOAD_ACTOR, ImportCounts, ImportRun, record_import_run
 from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
 
@@ -52,15 +52,22 @@ FIELD_ALIASES: dict[str, list[str]] = {
 
 @dataclass
 class FileReport:
-    """What parsing one file dropped, for its import-history record (docs/import-history.md)."""
+    """What parsing one file dropped, for its import-history record (docs/import-history.md).
+
+    At most ``MAX_MESSAGES`` warnings are kept in memory (the record stores no more); the rest are only counted.
+    """
 
     skipped: int = 0
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    warnings_not_kept: int = 0
 
     def skip(self, note: str) -> None:
         self.skipped += 1
-        self.warnings.append(note)
+        if len(self.warnings) < MAX_MESSAGES:
+            self.warnings.append(note)
+        else:
+            self.warnings_not_kept += 1
 
 
 def _resolve_field(row: dict, canonical: str, default: str | None = "") -> str | None:
@@ -138,17 +145,20 @@ def _parse_csv(stream, source_name: str, report: FileReport | None = None) -> Ge
         report.errors.append(f"CSV missing text column. Expected one of: {', '.join(sorted(text_aliases))}")
         return
 
+    # The logs number by file line (the header is line 1); the history record numbers data rows from 1,
+    # as the CSV upload route does, so one Import history table means one thing.
     for row_num, row in enumerate(reader, start=2):
+        data_row = row_num - 1
         try:
             item = _normalize_row(row, source_name, "csv_import")
             if item:
                 yield item
             else:
                 logger.debug(f"Row {row_num}: empty text, skipping")
-                report.skip(f"row {row_num}: empty text — skipped")
+                report.skip(f"row {data_row}: empty text — skipped")
         except _ROW_ERRORS as e:
             logger.warning(f"Row {row_num}: parse error: {e}")
-            report.skip(f"row {row_num}: parse error ({type(e).__name__}) — skipped")
+            report.skip(f"row {data_row}: parse error ({type(e).__name__}) — skipped")
 
 
 def _parse_jsonl(stream, source_name: str, report: FileReport | None = None) -> Generator[dict, None, None]:
@@ -180,7 +190,8 @@ def _parse_json(stream, source_name: str, report: FileReport | None = None) -> G
         data = json.loads(stream.read())
     except json.JSONDecodeError as e:
         logger.exception(f"Invalid JSON: {e}")
-        report.errors.append(f"Invalid JSON: {e}")
+        # The position only, like the row paths' error class: never text from the file.
+        report.errors.append(f"Invalid JSON at line {e.lineno}, column {e.colno}")
         return
 
     items = data if isinstance(data, list) else [data]
@@ -193,7 +204,8 @@ def _parse_json(stream, source_name: str, report: FileReport | None = None) -> G
                 report.skip(f"item {idx}: empty text — skipped")
         except _ROW_ERRORS as e:
             logger.warning(f"JSON item {idx}: {e}")
-            report.skip(f"item {idx}: not an object — skipped")
+            reason = "not an object" if isinstance(e, AttributeError) else f"parse error ({type(e).__name__})"
+            report.skip(f"item {idx}: {reason} — skipped")
 
 
 def _get_parser(key: str):
@@ -235,12 +247,20 @@ class S3ImportIngestor(BaseIngestor):
         self._update_source_run_status(updates)
 
     def _record_file_run(self, bucket: str, key: str, started_at: str, counts: ImportCounts, report: FileReport) -> None:
-        """One import-history record for this file (docs/import-history.md); never raises."""
-        record_import_run(self.aggregates_table, ImportRun(
-            method="s3", source=_get_source_from_key(key), actor=S3_UPLOAD_ACTOR, started_at=started_at,
-            counts=counts, source_id=self.source_platform, warnings=report.warnings, errors=report.errors,
-            raw_s3_key=f"s3://{bucket}/{key}",
-        ))
+        """One import-history record for this file (docs/import-history.md); never raises.
+
+        Called from ``process_file``'s ``finally``: anything raised here would replace the import's own
+        exception, so every failure is logged and dropped, not only the write errors the shared writer catches.
+        """
+        try:
+            record_import_run(self.aggregates_table, ImportRun(
+                method="s3", source=_get_source_from_key(key), actor=S3_UPLOAD_ACTOR, started_at=started_at,
+                counts=counts, source_id=self.source_platform, warnings=report.warnings, errors=report.errors,
+                raw_s3_key=f"s3://{bucket}/{key}", warnings_not_kept=report.warnings_not_kept,
+            ))
+        except Exception:
+            # Unexpected (the writer already absorbs write errors at warning level), so logged as an error.
+            logger.exception("Import run record not written", extra={"key": key})
 
     def _refuse_file(self, bucket: str, key: str, started_at: str, reason: str) -> int:
         """Record a file that was not read at all (empty or over the size limit) as a failed run; 0 imported."""
