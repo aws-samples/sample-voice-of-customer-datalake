@@ -63,6 +63,7 @@ from shared.idempotency import (
 # function's error metric, and impossible to mistake for a healthy processor.
 from shared.ingest_schemas import MAX_SOURCE_PLATFORM_LENGTH, IngestMessage, safe_validate_message
 from shared.logging import logger, metrics, tracer
+from shared.model_profile import PAYLOAD_KEY, model_profile_scope, profile_from_payload
 from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE
 from shared.radar_brands import brand_key
 from shared.radar_routing import BrandLabels
@@ -887,6 +888,20 @@ def _after_lost_put(raw_record: dict, processed_item: dict) -> dict:
 
 
 def record_handler(record: SQSRecord) -> dict:
+    """One SQS record, under the model profile its (authenticated) importer stamped on it.
+
+    The field is removed before anything else reads the record, so it never reaches
+    the idempotency key or the stored item (shared/model_profile.py).
+    """
+    raw_record = json.loads(record.body)
+    profile = profile_from_payload(raw_record)
+    if isinstance(raw_record, dict):
+        raw_record.pop(PAYLOAD_KEY, None)
+    with model_profile_scope(profile):
+        return _process_record(raw_record)
+
+
+def _process_record(raw_record: dict) -> dict:
     """
     Process a single SQS record with idempotency protection.
 
@@ -897,7 +912,6 @@ def record_handler(record: SQSRecord) -> dict:
     If Bedrock is throttled after retries, raises exception to keep message in queue.
     SQS visibility timeout will make it available for retry later.
     """
-    raw_record = json.loads(record.body)
     source_platform = raw_record.get('source_platform', 'unknown')
     source_id = raw_record.get('id', 'unknown')
 
