@@ -108,6 +108,19 @@ def _reset_model_cooldowns():
         module.cooldown_until.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_log_group_discovery():
+    """Forget shared.system_log_sources' cached log-group listing between tests.
+
+    It is kept 5 minutes per (client, sources) in a warm Lambda, so a test reusing a fake and an env within that
+    time would otherwise list nothing. Cleared only when the module is already loaded, like the cooldowns above.
+    """
+    yield
+    module = sys.modules.get('shared.system_log_sources')
+    if module is not None:
+        module.discovered_log_groups.clear()
+
+
 #: The random tail every `shared.ids.timestamped_id` gets under `fixed_id_suffix`.
 FIXED_ID_SUFFIX = 'a1b2c3d4'
 

@@ -44,7 +44,7 @@ _ACCOUNT_ID = re.compile(r'(?<!\d)\d{12}(?!\d)')
 DISCOVERY_TTL_SECONDS: Final = 300.0
 # Entries are keyed by (client, sources): one in a Lambda (a cached client, fixed env), a few in tests.
 _MAX_CACHED_DISCOVERIES: Final = 8
-_discovered: dict[tuple[Any, LogSources], tuple[float, tuple[LogTarget, ...]]] = {}
+discovered_log_groups: dict[tuple[Any, LogSources], tuple[float, tuple[LogTarget, ...]]] = {}
 
 
 @dataclass(frozen=True)
@@ -182,13 +182,13 @@ def discover(client: Any, sources: LogSources, *, clock: Callable[[], float] = t
     """Every existing log group of `sources`, sorted by name within each kind; listed at most once per TTL."""
     key = (client, sources)
     now = clock()
-    cached = _discovered.get(key)
+    cached = discovered_log_groups.get(key)
     if cached is not None and cached[0] > now:
         return list(cached[1])
     targets = _listed_targets(client, sources)
-    if len(_discovered) >= _MAX_CACHED_DISCOVERIES:
-        _discovered.clear()
-    _discovered[key] = (now + DISCOVERY_TTL_SECONDS, tuple(targets))
+    if len(discovered_log_groups) >= _MAX_CACHED_DISCOVERIES:
+        discovered_log_groups.clear()
+    discovered_log_groups[key] = (now + DISCOVERY_TTL_SECONDS, tuple(targets))
     return targets
 
 

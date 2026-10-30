@@ -252,7 +252,7 @@ test.describe('security probes (API level)', () => {
   })
 
   test('scraper analyze-url refuses a public URL that redirects to the metadata IP (#244)', async ({}, testInfo) => {
-    test.skip(roleOf(testInfo) !== 'admin', 'one outbound fetch per run')
+    test.skip(roleOf(testInfo) !== 'admin', 'one role runs the outbound probe per run')
     test.setTimeout(ASSIST_JOB_TIMEOUT_MS + 30_000)
     // The probe proves something only while its public redirector really answers a redirect, so the
     // first candidate that does is used (SSRF_REDIRECT_CANDIDATES); with none it skips and says why.
