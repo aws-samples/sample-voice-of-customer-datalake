@@ -159,13 +159,19 @@ class ItemUpdate:
 
     def require_unchanged(self, stored: Mapping[str, Any], field: str) -> None:
         """The update only lands if ``field`` is still what was read (absent stays absent)."""
+        if field in stored:
+            self.require_equal(field, stored[field])
+            return
         alias = f'#g{len(self.names)}'
         self.names[alias] = field
-        if field not in stored:
-            self.conditions.append(f'attribute_not_exists({alias})')
-            return
+        self.conditions.append(f'attribute_not_exists({alias})')
+
+    def require_equal(self, field: str, value: Any) -> None:
+        """The update only lands if ``field`` is stored and equal to ``value`` (absent fails)."""
+        alias = f'#g{len(self.names)}'
+        self.names[alias] = field
         placeholder = f':g{len(self.values)}'
-        self.values[placeholder] = stored[field]
+        self.values[placeholder] = value
         self.conditions.append(f'{alias} = {placeholder}')
 
     def require_not_manual_category(self) -> None:

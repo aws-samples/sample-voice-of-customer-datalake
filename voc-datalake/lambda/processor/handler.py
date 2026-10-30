@@ -525,13 +525,17 @@ def refresh_stored_item(stored: dict, raw_record: dict) -> str:
     return decision
 
 
-def _csv_reenriched(stored: dict, raw_record: dict, pii_policy: str) -> tuple[dict, bool]:
+def _csv_reenriched(stored: dict, raw_record: dict, pii_policy: str) -> tuple[dict | None, bool]:
     """The text + enrichment fields of a corrected CSV row, and whether its category moves.
 
-    Enriched exactly like a new row (a failed model call keeps the fallback, as on import);
-    under summary-only the text is the model's summary and the customer's words are dropped.
+    Enriched exactly like a new row; under summary-only the text is the model's summary and the
+    customer's words are dropped. A FAILED model call returns ``(None, False)``: like an issue
+    refresh, the stored enrichment is never overwritten with the fallback defaults.
     """
     enrichment, categories_config = _enrich_again(raw_record)
+    if enrichment.llm_failed:
+        count_metric("CsvUpdateEnrichmentFailed")
+        return None, False
     dimensions = _reinferred_dimensions(stored, enrichment, categories_config)
     fields = reenriched_fields(stored, raw_record, enrichment, dimensions)
     if pii_policy == PII_SUMMARY_ONLY:
@@ -552,11 +556,15 @@ def refresh_csv_item(stored: dict, raw_record: dict) -> str:
         count_metric("CsvUpdatesUnchanged")
         return decision
     pii_policy = pii_policy_for(raw_record)
+    wants_reenrichment = needs_reenrichment(stored, raw_record, pii_policy)
     reenriched, moves_category = (
-        _csv_reenriched(stored, raw_record, pii_policy)
-        if needs_reenrichment(stored, raw_record, pii_policy) else (None, False))
+        _csv_reenriched(stored, raw_record, pii_policy) if wants_reenrichment else (None, False))
+    # A failed re-enrichment applies the row's own fields only and keeps the stored digest,
+    # so the row still previews as changed and a later confirmed upload retries the text.
+    enrichment_failed = wants_reenrichment and reenriched is None
     try:
-        feedback_table.update_item(**csv_update(stored, raw_record, pii_policy, now_iso(), reenriched, moves_category))
+        feedback_table.update_item(**csv_update(
+            stored, raw_record, pii_policy, now_iso(), reenriched, moves_category, enrichment_failed))
     except ClientError as e:
         if is_conditional_check_failure(e):
             raise ConcurrentSourceUpdateError(f"Feedback {stored.get('feedback_id')} changed during a CSV update") from e

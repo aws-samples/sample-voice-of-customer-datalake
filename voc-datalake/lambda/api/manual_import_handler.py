@@ -18,6 +18,7 @@ import sys
 import time
 import unicodedata
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -33,8 +34,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.api import admins_only, api_handler, create_api_resolver, decimal_default
 from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client, invoke_lambda_async
 from shared.csv_columns import ColumnPlan, bounded_metadata, plan_columns
+from shared.csv_content_digest import csv_row_digest
 from shared.csv_dataset_plan import CsvDatasetPlan, StoredRowsUnreadable, plan_dataset_rows, preview_view
-from shared.csv_datasets import csv_content_hash, csv_row_id_v2, dataset_key
+from shared.csv_datasets import csv_row_id_v2, dataset_key
 from shared.exceptions import (
     ConfigurationError,
     ConflictError,
@@ -531,12 +533,14 @@ class CsvRowDrops:
 
 def _parse_csv_to_items(
     csv_text: str, default_source: str, column_map: object = None, dataset: str | None = None,
+    profile: Mapping[str, Any] | None = None,
     drops: CsvRowDrops | None = None,
 ) -> tuple[list[dict], list[str]]:
     """Parse CSV text into the same item shape as json_upload. Returns (items, warnings).
 
     With a ``dataset`` (``shared.csv_datasets.dataset_key``), a row carrying its own id is
-    keyed ``csv-row-v2`` and gets a ``content_hash``; every other row keeps ``csv-row-v1``.
+    keyed ``csv-row-v2`` and gets a ``content_hash`` under the upload's source ``profile``
+    (``shared.csv_content_digest``; no profile = ``allow``); every other row keeps ``csv-row-v1``.
     ``drops``, when given, counts the rows left out (empty text, duplicate), so callers never parse warning text.
     """
     items: list[dict] = []
@@ -638,18 +642,18 @@ def _parse_csv_to_items(
             **_row_extras(row, plan, idx, warnings),
         }
         if feedback_id != v1_id and dataset:
-            item.update(_dataset_stamp(item, dataset, created_at_raw))
+            item.update(_dataset_stamp(item, dataset, created_at_raw, profile or {}))
         items.append(item)
 
     return items, warnings
 
 
-def _dataset_stamp(item: dict, dataset: str, created_at_raw: str) -> dict:
-    """``csv_dataset`` + ``content_hash`` of a ``csv-row-v2`` row (``shared.csv_datasets``)."""
+def _dataset_stamp(item: dict, dataset: str, created_at_raw: str, profile: Mapping[str, Any]) -> dict:
+    """``csv_dataset`` + ``content_hash`` of a ``csv-row-v2`` row (``shared.csv_content_digest``)."""
     return {
         'csv_dataset': dataset,
         'dated': bool(created_at_raw),
-        'content_hash': csv_content_hash({
+        'content_hash': csv_row_digest({
             'text': item['text'],
             'rating': item['rating'],
             # The file's own date: a dateless row's import-time default must not read as an edit.
@@ -659,7 +663,7 @@ def _dataset_stamp(item: dict, dataset: str, created_at_raw: str) -> dict:
             'url': item['url'],
             'channel': item['source'],
             'metadata': item.get('metadata') or {},
-        }),
+        }, profile),
     }
 
 
@@ -787,9 +791,11 @@ def csv_upload():
     if len(csv_text.encode('utf-8')) > MAX_CSV_BYTES:
         raise ValidationError(f'CSV exceeds {MAX_CSV_BYTES // (1024 * 1024)} MB limit')
 
+    # The profile first: a dataset row's digest is computed under its PII policy (shared.csv_content_digest).
+    profile, user_id, now, job_id = _upload_context(body)
     drops = CsvRowDrops()
     items, warnings = _parse_csv_to_items(csv_text, default_source, body.get('column_map'),
-                                          dataset=dataset, drops=drops)
+                                          dataset=dataset, profile=profile, drops=drops)
     if not items:
         raise ValidationError('CSV produced no valid rows. ' + '; '.join(warnings[:5]))
     if len(items) > MAX_JSON_UPLOAD_ITEMS:
@@ -797,7 +803,6 @@ def csv_upload():
             f'Maximum {MAX_JSON_UPLOAD_ITEMS} rows per upload (got {len(items)}). '
             'Split the file and try again.'
         )
-    profile, user_id, now, job_id = _upload_context(body)
     plan = _dataset_plan(profile['id'], items) if dataset else CsvDatasetPlan(v1_rows=items)
     if body.get('dry_run') is True:
         return _csv_preview(plan, len(items), warnings)
