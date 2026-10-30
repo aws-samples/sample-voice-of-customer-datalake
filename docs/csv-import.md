@@ -69,10 +69,12 @@ duplicate and the promised update would never happen.
 ## What an update changes
 
 A confirmed changed row is queued with `csv_replace: true` (`IngestMessage`,
-`shared/ingest_schemas.py`). Only such a record, from a CSV upload, carrying a dataset and a
-digest, may overwrite a stored item; every other record naming a stored item is still a
-duplicate and skipped (`shared/csv_datasets.py` `is_csv_replace`). The processor applies it
-with one conditional `update_item` (`shared/csv_updates.py`):
+`shared/ingest_schemas.py`). The queue schema refuses `csv_replace` on any message that is not
+a CSV upload's (`ingestion_method: csv_upload`) or that lacks a well-formed `csv_dataset` and
+`csv_content_hash`, so no other producer can set it. Only such a record may overwrite a stored
+item; every other record naming a stored item is still a duplicate and skipped
+(`shared/csv_datasets.py` `is_csv_replace`). The processor applies it with one conditional
+`update_item` (`shared/csv_updates.py`):
 
 - **Replaced:** rating, author, title, link, review date, channel, metadata, the row's own id
   (`csv_row_id`), the digest, `source_refreshed_at`. A row without a date column keeps the
@@ -81,12 +83,19 @@ with one conditional `update_item` (`shared/csv_updates.py`):
   sentiment, urgency, summary, …), exactly like a new row. A summary-only source stores no
   text to compare, so its changed rows are always re-enriched, and the customer's words are
   still never stored.
+- **A failed model call:** like a GitHub issue refresh, the fallback enrichment never
+  overwrites the stored one. Only the row's own fields are written (rating, author, link, …);
+  the stored text, enrichment AND digest stay, so the row still previews as changed and a later
+  confirmed upload tries the text again (after the one-hour idempotency window of that exact
+  correction).
 - **Kept:** a category a person corrected (`category_source: manual`), locked dimensions,
   tags, the item keys and the import date. Dimension and tag COLUMNS of the file are not
   applied to a stored row, and are not part of the digest.
-- **Guarded:** the update lands only if the stored digest (and, when re-enriched, the
-  dimensions and the category's manual flag) is still what was read; a concurrent change fails
-  it and SQS retries it against the new state.
+- **Guarded:** the update lands only if the stored item was stored by the SAME dataset (its
+  `csv_dataset` equals the record's, so a replace that merely shares a key with a non-CSV item
+  writes nothing) and the stored digest (and, when re-enriched, the dimensions and the
+  category's manual flag) is still what was read; a failed condition is retried by SQS against
+  the current state and ends in the DLQ when it can never hold.
 - **Metrics:** the item keeps its import day, so the aggregator moves the counters of the
   stream's MODIFY on that day (category, sentiment, urgency, channel), as for an in-place GitHub
   issue refresh ([processing-pipeline.md](processing-pipeline.md)).
@@ -95,6 +104,26 @@ with one conditional `update_item` (`shared/csv_updates.py`):
   A kept-forever source archives the whole new file under `raw/csv_upload/…` as before.
 - **Idempotency:** the correction's key is `<source>:<id>:csv:<digest>`, so the first import's
   idempotency record does not swallow it, while a redelivery of the same correction does.
+
+## The content digest and PII
+
+`csv_content_hash` is one function, `shared/csv_content_digest.py` `csv_row_digest`, called by
+the manual-import API for both the preview and the upload; the processor stores the digest the
+message carries.
+
+- **`allow` source:** a sha256 of the file's own values (`csv-content-v1`).
+- **`redact` / `summary_only` source:** a sha256 of the values AFTER the source policy
+  (`csv-content-policed-v1`): author dropped, text, title, link and metadata redacted, exactly
+  what the policy stores. A digest of the original values would let anyone who can read it
+  confirm a guess of the withheld PII (an email, a name).
+
+Why not a keyed HMAC: no secret reaches both the manual-import Lambda and the processor
+without new infrastructure (the customer-managed KMS key is an encryption key, not an HMAC
+key; neither Lambda reads a Secrets Manager value), so hashing what is stored needs no new
+secret and no new IAM. **Trade-off:** a correction that changes ONLY redacted PII (an email
+address, a phone number, the author's name) previews as unchanged and is not applied, because
+nothing that is stored would change. CSV messages carry no language, so the redaction is the
+deterministic pattern set (`shared/pii_redaction.py`).
 
 ## Decisions (issue #411)
 

@@ -16,8 +16,10 @@ upload ``reviews.csv``). It is trimmed, 1 to 64 characters of letters, digits, s
 so ``Example Air Q3`` and ``example air  q3`` are one dataset.
 
 Whether a re-uploaded row changed is decided by ``csv_content_hash``: a digest of the
-fields an update can change, computed from the file's own values (before any source
-policy), stored on the item and compared at the next upload. Dimension and tag columns
+fields an update can change, stored on the item and compared at the next upload. Under an
+``allow`` source it is computed from the file's own values; under ``redact`` /
+``summary_only`` from the values AFTER the source policy (``shared.csv_content_digest``), so
+the stored digest never confirms a guess of withheld PII. Dimension and tag columns
 are not part of it and an update never changes them (a person may have corrected them).
 
 A row the uploader CONFIRMED as changed is queued with ``csv_replace: true``; only such a
@@ -44,6 +46,8 @@ __all__ = [
 
 CSV_ROW_ID_V2: Final = 'csv-row-v2'
 CSV_CONTENT_VERSION: Final = 'csv-content-v1'
+#: The digest of a row under a non-``allow`` PII policy: over the POLICED values (what is stored).
+CSV_CONTENT_POLICED_VERSION: Final = 'csv-content-policed-v1'
 DATASET_NAME_MAX_LENGTH: Final = 64
 _DATASET_NAME_RE: Final = re.compile(r'^[A-Za-z0-9 ._-]+\Z')
 _SPACES: Final = re.compile(r' +')
@@ -89,9 +93,13 @@ def csv_row_id_v2(dataset: str, source_id: str) -> str:
     return _digest([CSV_ROW_ID_V2, dataset, source_id])
 
 
-def csv_content_hash(fields: Mapping[str, Any]) -> str:
-    """A digest of a row's updatable content (``CSV_CONTENT_FIELDS``; KeyError when one is missing)."""
-    return _digest([CSV_CONTENT_VERSION, *(fields[name] for name in CSV_CONTENT_FIELDS)])
+def csv_content_hash(fields: Mapping[str, Any], version: str = CSV_CONTENT_VERSION) -> str:
+    """A digest of a row's updatable content (``CSV_CONTENT_FIELDS``; KeyError when one is missing).
+
+    Callers go through ``shared.csv_content_digest.csv_row_digest``, which picks the values
+    (the file's own under ``allow``, the policed ones otherwise) and the ``version`` tag.
+    """
+    return _digest([version, *(fields[name] for name in CSV_CONTENT_FIELDS)])
 
 
 def is_csv_replace(raw_record: Mapping[str, Any]) -> bool:

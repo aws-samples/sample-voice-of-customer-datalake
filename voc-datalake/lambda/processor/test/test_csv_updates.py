@@ -108,6 +108,22 @@ class TestCorrections:
         assert item['rating'] == Decimal(5)
         assert llm.call_count == 1
 
+    def test_a_failed_model_call_keeps_the_stored_enrichment_and_digest_and_applies_the_row_fields(self):
+        """Like an issue refresh: the fallback never overwrites a good enrichment; the stored
+        digest stays, so the row still previews as changed and a later upload retries the text."""
+        failed = {'insights': {}, 'metadata': {'error': 'unparseable'}}
+        with world([insights('performance', -0.9, 'high'), failed]) as (feedback, llm):
+            deliver(csv_message())
+            (before,) = items(feedback)
+            deliver(csv_message('the app crashes', HASH_B, replace=True, rating=4))
+            (after,) = items(feedback)
+        assert llm.call_count == 2
+        enriched = ('original_text', 'category', 'sentiment_score', 'sentiment_label', 'urgency', 'csv_content_hash')
+        assert {k: after.get(k) for k in enriched} == {k: before.get(k) for k in enriched}
+        assert after['csv_content_hash'] == HASH_A
+        assert after['rating'] == Decimal(4)
+        assert 'source_refreshed_at' in after
+
     def test_a_correction_never_moves_a_manual_category(self):
         with world([insights('product_quality'), insights('performance')]) as (feedback, _):
             deliver(csv_message())
@@ -138,14 +154,38 @@ class TestCorrections:
 
 class TestMarker:
     @pytest.mark.parametrize('change', [
-        {'ingestion_method': 'json_upload'}, {'csv_dataset': None}, {'csv_content_hash': None},
+        {'ingestion_method': 'json_upload'}, {'ingestion_method': None},
+        {'csv_dataset': None}, {'csv_content_hash': None},
     ])
-    def test_only_a_csv_dataset_row_may_overwrite(self, change):
+    def test_a_replace_from_anything_but_a_csv_dataset_row_is_refused_and_changes_nothing(self, change):
         with world() as (feedback, _):
             deliver(csv_message())
-            deliver({**csv_message('the app crashes', HASH_B, replace=True), **change})
+            with pytest.raises(handler.MessageRejectedError):
+                deliver({**csv_message('the app crashes', HASH_B, replace=True), **change})
             (item,) = items(feedback)
-        assert item['original_text'] == 'teh app crashes'
+        assert (item['original_text'], item['csv_content_hash']) == ('teh app crashes', HASH_A)
+
+    def test_a_forged_replace_aimed_at_a_non_csv_item_fails_the_condition_and_changes_nothing(self):
+        """An item no dataset stored (no csv_dataset) that merely shares the key is never overwritten."""
+        with world() as (feedback, llm):
+            deliver({**csv_message(), 'csv_dataset': None, 'csv_content_hash': None,
+                     'ingestion_method': 'json_upload'})
+            (before,) = items(feedback)
+            with pytest.raises(handler.ConcurrentSourceUpdateError):
+                deliver(csv_message('the app crashes', HASH_B, replace=True, rating=5))
+            (after,) = items(feedback)
+        assert 'csv_dataset' not in before
+        assert after == before
+        assert llm.call_count == 2  # enriched, then the conditional write refused it
+
+    def test_a_replace_naming_another_dataset_fails_the_condition_and_changes_nothing(self):
+        with world() as (feedback, _):
+            deliver(csv_message())
+            (before,) = items(feedback)
+            with pytest.raises(handler.ConcurrentSourceUpdateError):
+                deliver(csv_message('the app crashes', HASH_B, replace=True, csv_dataset='example air q4'))
+            (after,) = items(feedback)
+        assert after == before
 
     def test_a_correction_gets_an_idempotency_key_of_its_own(self):
         first, correction = csv_message(), csv_message(content_hash=HASH_B, replace=True)
