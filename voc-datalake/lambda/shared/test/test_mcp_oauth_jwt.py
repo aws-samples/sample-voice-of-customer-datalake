@@ -149,6 +149,8 @@ def test_jwks_entries_that_are_not_rs256_signing_keys_are_ignored(overrides):
 
 
 def test_unverified_claims_only_decodes():
-    assert unverified_claims(sign(access_claims()))['sub'] == 'sub-alice'
+    decoded = unverified_claims(sign(access_claims()))
+    assert decoded is not None
+    assert decoded['sub'] == 'sub-alice'
     assert unverified_claims('not-a-jwt') is None
     assert unverified_claims(None) is None
