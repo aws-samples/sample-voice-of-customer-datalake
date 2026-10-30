@@ -27,7 +27,7 @@ export function s3ImportIngestorDeployed(enabledPlugins: readonly PluginManifest
 
 /**
  * The reprocess grants: invoke exactly the s3_import ingestor (unqualified ARN by
- * name), and Put/Get/Update on the aggregates table pinned by `dynamodb:LeadingKeys`
+ * name), and Put/Get/Update/Query on the aggregates table pinned by `dynamodb:LeadingKeys`
  * to the run partition, so the role can write nothing else there. Returns the env
  * the handler reads, empty when the ingestor is not deployed (the route then
  * answers "not configured").
@@ -41,7 +41,8 @@ function grantReprocess(ctx: ApiStackContext, role: iam.Role, ingestorDeployed: 
   }));
   const { aggregatesTable } = ctx.props;
   role.addToPolicy(new iam.PolicyStatement({
-    actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem'],
+    // Query: the duplicate-run check reads the run partition (s3_import_runs.refuse_running_duplicate).
+    actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:Query'],
     resources: [aggregatesTable.tableArn],
     conditions: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [S3_IMPORT_RUN_PARTITION] } },
   }));

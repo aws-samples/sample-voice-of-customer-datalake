@@ -390,6 +390,13 @@ class TestWhatReachesTheQueue:
 # lambda_handler: the exact response, record skipping, and its decorators
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _import_bucket_is_b():
+    """Every event below names bucket "b": make it the import bucket the ingestor trusts."""
+    with patch.object(handler, "IMPORT_BUCKET", "b"):
+        yield
+
+
 class TestLambdaHandlerResponses:
     @pytest.mark.parametrize("event", [{}, {"Records": []}])
     def test_no_records_is_skipped_with_a_reason(self, event):

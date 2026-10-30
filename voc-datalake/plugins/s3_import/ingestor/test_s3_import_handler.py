@@ -262,5 +262,6 @@ class TestLambdaHandler:
         mock_inst.process_file.return_value = 1
         MockIngestor.return_value = mock_inst
 
-        lambda_handler(_make_s3_event("bucket", "my+folder/my+file.csv"), lambda_context)
+        with patch("s3_import.ingestor.handler.IMPORT_BUCKET", "bucket"):
+            lambda_handler(_make_s3_event("bucket", "my+folder/my+file.csv"), lambda_context)
         mock_inst.process_file.assert_called_once_with("bucket", "my folder/my file.csv", reprocess=False)

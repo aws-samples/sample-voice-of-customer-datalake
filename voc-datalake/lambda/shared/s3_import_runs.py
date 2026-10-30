@@ -14,14 +14,15 @@ plus the run id and `reprocess: True`; see `reprocess_event`.
 
 import re
 import urllib.parse
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
 from shared.aws import invoke_lambda_async
-from shared.exceptions import ServiceError
-from shared.ids import timestamped_id
+from shared.exceptions import ConflictError, ServiceError
+from shared.ids import STAMP_FORMAT, timestamped_id
 from shared.logging import logger
 from shared.timestamps import now_iso
 
@@ -31,6 +32,19 @@ _RUN_ID = re.compile(r'run_s3_import_\d{14}_[0-9a-f]{8}')
 START_FAILED = 'Failed to start reprocessing'
 # The run row's `errors` when the ingestor was never invoked (a type-like name, as the ingestor writes).
 INVOKE_FAILED = 'InvokeFailed'
+ALREADY_RUNNING = 'This file is already being reprocessed'
+
+# The s3_import ingestor's Lambda timeout: `infrastructure.ingestor.timeout` in
+# plugins/s3_import/manifest.json (VocIngestionStack sets the function's timeout
+# from it; test_s3_import_reprocess.py pins the two equal). A `running` row younger
+# than this may still have a live invocation, so a second reprocess of the same file
+# is refused (409). An older one is a run that timed out without closing its row.
+INGESTOR_TIMEOUT_SECONDS = 300
+# How far back (by run id, which starts with its creation time) the duplicate check
+# looks. Wider than the timeout: Lambda's async retries (2, about 1 and 2 minutes
+# after a failed attempt) re-run an older run id, and the ingestor then moves the
+# row's `started_at` to the retry's start.
+_DUPLICATE_LOOKBACK = timedelta(seconds=4 * INGESTOR_TIMEOUT_SECONDS)
 
 
 def is_run_id(value: str) -> bool:
@@ -83,12 +97,75 @@ def _mark_not_started(table: Any, run_id: str) -> None:
         logger.warning(f"Failed to close the reprocess run: {e}")
 
 
+def _started_at(item: dict) -> datetime | None:
+    """A row's `started_at` as an aware datetime, or None when absent or unparseable."""
+    value = item.get('started_at')
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _recent_running_rows(table: Any, key: str, now: datetime) -> list[dict]:
+    """Every `running` reprocess row of *key* whose run id is within `_DUPLICATE_LOOKBACK`."""
+    lower = f'{RUN_ID_PREFIX}_{(now - _DUPLICATE_LOOKBACK).strftime(STAMP_FORMAT)}'
+    upper = f'{RUN_ID_PREFIX}_{"9" * len(now.strftime(STAMP_FORMAT))}~'
+    query: dict = {
+        'KeyConditionExpression': Key('pk').eq(SOURCE_RUN_PK) & Key('sk').between(lower, upper),
+        'FilterExpression': Attr('status').eq('running') & Attr('file_key').eq(key),
+    }
+    rows: list[dict] = []
+    while True:
+        page = table.query(**query)
+        rows.extend(page.get('Items') or [])
+        last = page.get('LastEvaluatedKey')
+        if not last:
+            return rows
+        query['ExclusiveStartKey'] = last
+
+
+def refuse_running_duplicate(table: Any, key: str, now: datetime | None = None) -> None:
+    """ConflictError when a run of *key* is `running` and started within the ingestor's timeout.
+
+    A finished run, or a `running` one older than `INGESTOR_TIMEOUT_SECONDS` (it timed
+    out without closing its row), does not block. ServiceError when the runs cannot be read.
+    Two requests in the same instant can both pass; a duplicate run is harmless (the
+    processor skips rows already in the data lake), the check only bounds how many start.
+    """
+    moment = now or datetime.now(UTC)
+    try:
+        rows = _recent_running_rows(table, key, moment)
+    except ClientError as e:
+        logger.exception(f"Failed to read the reprocess runs: {e}")
+        raise ServiceError(START_FAILED) from e
+    cutoff = moment - timedelta(seconds=INGESTOR_TIMEOUT_SECONDS)
+    if any(_is_live_run_of(row, key, cutoff) for row in rows):
+        raise ConflictError(ALREADY_RUNNING)
+
+
+def _is_live_run_of(row: dict, key: str, cutoff: datetime) -> bool:
+    """Whether *row* is a `running` run of *key* started after *cutoff*.
+
+    Status and key are re-checked here as well as in the FilterExpression, so what
+    blocks a start is exact and testable without DynamoDB.
+    """
+    if row.get('status') != 'running' or row.get('file_key') != key:
+        return False
+    started = _started_at(row)
+    return started is not None and started > cutoff
+
+
 def start_run(table: Any, function_name: str, bucket: str, key: str) -> dict:
     """Write the `running` row, then async-invoke the ingestor for *key*. Returns the row.
 
+    ConflictError when *key* already has a live run (`refuse_running_duplicate`).
     ServiceError when the row cannot be written or the invoke fails; on a failed
     invoke the row is closed as `error` first, so a poller never spins on it.
     """
+    refuse_running_duplicate(table, key)
     run_id = timestamped_id(RUN_ID_PREFIX, datetime.now(UTC))
     item = {
         'pk': SOURCE_RUN_PK, 'sk': run_id, 'status': 'running', 'items_found': 0,
