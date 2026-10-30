@@ -66,7 +66,14 @@ from shared.mcp_delegate import (
     get_delegate_lambda_client,
     synthetic_claims,
 )
-from shared.mcp_global_tools import DOMAIN_FUNCTION_ENV, TOOLS, TOOLS_BY_NAME, GlobalTool, InvalidToolArgument
+from shared.mcp_global_tools import (
+    DOMAIN_FUNCTION_ENV,
+    TOOLS,
+    TOOLS_BY_NAME,
+    GlobalTool,
+    InvalidToolArgument,
+    RouteRequest,
+)
 from shared.mcp_tokens import parse_token, secret_matches
 from shared.project_access import ADMIN_GROUP, MCP_AGENT_RUN_CLAIM
 from shared.tables import get_jobs_table, get_projects_table
@@ -407,13 +414,35 @@ def _tool_content(payload: Any, *, is_error: bool) -> dict:
     return result
 
 
+def _call_route(request: RouteRequest, call: ToolCall, row: Mapping[str, Any]) -> DomainResult:
+    function_name = os.environ.get(DOMAIN_FUNCTION_ENV[request.domain], '')
+    return call_domain(DomainCall(function_name=function_name, method=request.method, path=request.path,
+                                  query=request.query, body=request.body), claims=_claims_for(call, row))
+
+
+def _with_follow_ups(payload: Any, call: ToolCall, row: Mapping[str, Any]) -> Any:
+    """The result with each follow-up read joined in; a refused or failed one is ``{key}_error``."""
+    follow_ups = call.tool.follow_ups(call.arguments)
+    if not follow_ups or not isinstance(payload, dict):
+        return payload
+    joined = dict(payload)
+    for follow in follow_ups:
+        try:
+            result = _call_route(follow.request, call, row)
+        except DelegationUnavailable:
+            joined[f'{follow.key}_error'] = 'unavailable'
+            continue
+        if result.ok:
+            joined[follow.key] = follow.shape(result.payload)
+        else:
+            joined[f'{follow.key}_error'] = _route_message(result)
+    return joined
+
+
 def _run_tool(call: ToolCall, row: Mapping[str, Any]) -> tuple[dict, str]:
     """(MCP tool result, audit outcome). Raises DelegationUnavailable for a server fault."""
     tool = call.tool
-    request = tool.build(call.arguments, call.project_id)
-    function_name = os.environ.get(DOMAIN_FUNCTION_ENV[request.domain], '')
-    result = call_domain(DomainCall(function_name=function_name, method=request.method, path=request.path,
-                                    query=request.query, body=request.body), claims=_claims_for(call, row))
+    result = _call_route(tool.build(call.arguments, call.project_id), call, row)
     if result.status_code >= 500:
         raise DelegationUnavailable(f'route answered {result.status_code}')
     if not result.ok:
@@ -424,7 +453,7 @@ def _run_tool(call: ToolCall, row: Mapping[str, Any]) -> tuple[dict, str]:
     payload = tool.shape(result.payload, call.arguments)
     if tool.name == 'list_projects':
         payload = _pinned_projects(payload, gt.pinned_project(row))
-    return _tool_content(payload, is_error=False), gt.OUTCOME_OK
+    return _tool_content(_with_follow_ups(payload, call, row), is_error=False), gt.OUTCOME_OK
 
 
 @tracer.capture_method
