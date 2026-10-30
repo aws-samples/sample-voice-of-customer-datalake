@@ -24,7 +24,7 @@ from shared.aws import invoke_lambda_async
 from shared.exceptions import ConflictError, ServiceError
 from shared.ids import STAMP_FORMAT, timestamped_id
 from shared.logging import logger
-from shared.timestamps import now_iso
+from shared.timestamps import now_iso, parse_iso
 
 SOURCE_RUN_PK = 'SOURCE_RUN#s3_import'
 RUN_ID_PREFIX = 'run_s3_import'
@@ -97,18 +97,6 @@ def _mark_not_started(table: Any, run_id: str) -> None:
         logger.warning(f"Failed to close the reprocess run: {e}")
 
 
-def _started_at(item: dict) -> datetime | None:
-    """A row's `started_at` as an aware datetime, or None when absent or unparseable."""
-    value = item.get('started_at')
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
 def _recent_running_rows(table: Any, key: str, now: datetime) -> list[dict]:
     """Every `running` reprocess row of *key* whose run id is within `_DUPLICATE_LOOKBACK`."""
     lower = f'{RUN_ID_PREFIX}_{(now - _DUPLICATE_LOOKBACK).strftime(STAMP_FORMAT)}'
@@ -154,7 +142,7 @@ def _is_live_run_of(row: dict, key: str, cutoff: datetime) -> bool:
     """
     if row.get('status') != 'running' or row.get('file_key') != key:
         return False
-    started = _started_at(row)
+    started = parse_iso(row.get('started_at'))
     return started is not None and started > cutoff
 
 
