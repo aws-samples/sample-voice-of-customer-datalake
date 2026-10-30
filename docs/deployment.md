@@ -1206,6 +1206,29 @@ aws bedrock-runtime converse --region us-east-1 \
   --inference-config '{"maxTokens":5}'
 ```
 
+### E2E Test Users Run on Haiku 5.5 (the `e2e` Cognito group)
+
+VocCoreStack creates a Cognito group `e2e` next to `admins` and `users`. For a member, every model
+call the app makes on that user's behalf resolves to Claude Haiku 5.5 (`global.anthropic.claude-haiku-5-5`,
+mapped to `eu.` under `-c inferenceScope=eu`) on every surface, whatever is picked in Administration →
+AI models, and the capacity fallback stays on Haiku (then Haiku 4.5). It exists so the production e2e
+suite does not spend flagship-model money; real users and the admin picker are unaffected, and the
+image model (persona avatars) is not part of it. The group grants no permission.
+
+The profile is read only from verified data: the Cognito authorizer's `cognito:groups`, the claims the
+assistant stream forwards, the approver's groups the plan conductor re-reads in Cognito, and a
+`model_profile` field that a verified request stamped on a job (project jobs, assist jobs, agent runs,
+manual-import queue messages). A request body cannot set it. Logs: `[BEDROCK] Starting converse call
+… model_profile=e2e` in the Python Lambdas, `model profile applied` in `voc-chat-stream` / `voc-plan-step`.
+Not covered: background memory extraction, product-document extraction on upload, scheduled agent runs
+and global MCP token calls (no verified caller groups there).
+
+Add a test user once (admin only; the e2e suite's setup fails when a user is missing from the group):
+
+```bash
+aws cognito-idp admin-add-user-to-group --user-pool-id <UserPoolId> --username '<e2e user>' --group-name e2e
+```
+
 ### Testing a Model Before Saving It (Administration → AI models)
 
 The AI models card edits a **draft**: changing a surface's select does not save
