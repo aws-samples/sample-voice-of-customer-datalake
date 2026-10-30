@@ -54,7 +54,7 @@
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-plugin-sonarjs": "4.2.2",
-    "eslint-plugin-unicorn": "63.0.0",
+    "eslint-plugin-unicorn": "79.0.0",
     "knip": "6.44.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
