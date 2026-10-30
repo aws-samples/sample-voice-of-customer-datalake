@@ -61,6 +61,8 @@ SOURCE_FIELD: Final = 'source'
 ERASE_FIELDS: Final = ('author', 'source_id', 'csv_row_id', 'email', SOURCE_FIELD)
 # The partition of erasure job rows in voc-aggregates (Settings starts them, voc-retention runs them).
 ERASURE_JOB_PK: Final = 'JOB#erasure'
+# Every job row's ``sk`` (and ``job_id``) starts with this; the partition's lock rows do not.
+ERASURE_JOB_PREFIX: Final = 'er_'
 _EMAIL_PATHS: Final = ('metadata.email', 'metadata.submitter_email')
 _FEEDBACK_SK_PREFIX: Final = 'FEEDBACK#'
 RAW_PREFIX: Final = 'raw/'
@@ -178,18 +180,24 @@ def delete_raw_prefix_page(s3: Any, bucket: str, prefix: str) -> tuple[int, bool
     """Delete the first listing page (≤ 1,000 versions) under ``prefix``: ``(objects deleted, more left)``.
 
     Every version and delete marker goes, as for one item's archive. The count
-    is of distinct objects (the one latest entry of each key in the page). No
+    is of files: the distinct keys in the page that still had a version holding
+    data (a delete marker alone is no file, so it never counts). No
     listing cursor is kept: what was listed is deleted, so the next call lists
     from the start of the prefix again and sees only what is left (a marker
     naming a version just deleted is not a reliable place to resume from).
     """
     page = s3.list_object_versions(Bucket=bucket, Prefix=prefix, MaxKeys=_MAX_VERSIONS_PER_DELETE)
-    entries = [entry for entry in [*page.get('Versions', []), *page.get('DeleteMarkers', [])]
-               if str(entry.get('Key', '')).startswith(prefix) and entry.get('VersionId')]
+    versions = [entry for entry in page.get('Versions', []) if _under(entry, prefix)]
+    entries = [*versions, *(entry for entry in page.get('DeleteMarkers', []) if _under(entry, prefix))]
     if entries:
         response = s3.delete_objects(Bucket=bucket, Delete={
             'Objects': [{'Key': entry['Key'], 'VersionId': entry['VersionId']} for entry in entries], 'Quiet': True})
         if response.get('Errors'):
             raise RuntimeError(f'{len(response["Errors"])} raw object versions could not be deleted')
-    objects = sum(1 for entry in entries if entry.get('IsLatest'))
+    objects = len({entry['Key'] for entry in versions})
     return objects, bool(entries) and bool(page.get('IsTruncated'))
+
+
+def _under(entry: Mapping[str, Any], prefix: str) -> bool:
+    """A listed version / marker under ``prefix`` that names a version id (what DeleteObjects needs)."""
+    return str(entry.get('Key', '')).startswith(prefix) and bool(entry.get('VersionId'))

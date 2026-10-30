@@ -21,13 +21,13 @@ import { useQuery } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
 import { api } from '../../api/client'
 import { sourcesStatusKey } from '../../api/queryKeys'
-import { erasableSourcesKey, sourceProfilesApi } from '../../api/sourceProfilesApi'
+import { sourceProfilesApi } from '../../api/sourceProfilesApi'
 import type { ErasureJob, SourceProfile } from '../../api/sourceProfilesApi'
 import type { SourcesStatus } from '../../api/sourcesStatusSchema'
 import { sourceLabel } from '../../utils/displayLabels'
 import DeleteSourceDataDialog from './DeleteSourceDataDialog'
 import { ErasureSection, ErasureStartError, ErasureStatusBadge } from './erasureParts'
-import { errorReason, useErasureJobs, useStartErasure } from './useErasureJobs'
+import { errorReason, useErasableSources, useErasureJobs, useStartErasure } from './useErasureJobs'
 
 const PROGRESS_KEYS = {
   items: 'components:sourceErasure.progress.items',
@@ -64,7 +64,7 @@ export default function SourceErasurePanel({ profiles }: Readonly<{ profiles: re
   const [source, setSource] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [startedId, setStartedId] = useState<string | null>(null)
-  const { data: sources = [] } = useQuery({ queryKey: erasableSourcesKey(), queryFn: () => sourceProfilesApi.listErasableSources() })
+  const { data: sources = [] } = useErasableSources()
   const { data: jobs = [] } = useErasureJobs()
   const { data: status } = useQuery({ queryKey: sourcesStatusKey(), queryFn: () => api.getSourcesStatus() })
   const scheduleOn = isScheduleOn(status, source)
