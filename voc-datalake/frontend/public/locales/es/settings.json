@@ -410,7 +410,17 @@
     "tabs": {
       "vision": "Visión y objetivos",
       "mine": "Mis objetivos",
-      "design": "Sistema de diseño"
+      "design": "Sistema de diseño",
+      "personas": "Personas"
+    },
+    "personas": {
+      "loading": "Cargando las personas de la empresa…",
+      "loadFailed": "No se pudieron cargar las personas de la empresa. Recarga la página para intentarlo de nuevo.",
+      "intro": "Personas que comparte toda la empresa. Los proyectos las copian desde aquí; cada copia es independiente y empieza sin notas de investigación.",
+      "emptyTitle": "Aún no hay personas de la empresa",
+      "emptyBody": "La biblioteca guarda personas desde las que cualquier proyecto puede empezar, para que los equipos no recreen el mismo cliente desde cero.",
+      "emptyHowAdmin": "Genera personas a partir de comentarios, importa una desde una descripción o una imagen, o pasa una persona de un proyecto.",
+      "emptyHowReader": "Un administrador la llena generando o importando personas, o pasándolas desde proyectos."
     }
   },
   "shared": {

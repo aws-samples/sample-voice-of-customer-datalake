@@ -32,6 +32,7 @@ import { cursorPage } from './mock-feedback-cursor.js';
 import { problemTree } from './mock-problems.js';
 import { callerAccess, handleScopeRoutes, scopeAdmits, scopedCategoriesConfig, scopedMetric } from './mock-scope.js';
 import { handleProjectActionRoutes, startProjectAssistJob } from './mock-project-actions.js';
+import { handleCompanyPersonaRoutes } from './mock-company-personas.js';
 import { handleDocumentReviewRoutes } from './mock-document-review.js';
 import { handleAssistJobRoutes, startOwnerAssistJob } from './mock-assist-jobs.js';
 
@@ -1285,6 +1286,7 @@ function handleDomainModules(req, res, url) {
     mockScrapers, mockScraperRuns, mockCategoriesConfig,
     mockFeedbackForms, mockFormStats, mockProjectDetails, mockProductJobs,
     attributeFilterOf, sourceProfiles, dimensionsConfig, startOwnerAssistJob, startProjectAssistJob,
+    mockProjectSharing, mockCaller: MOCK_CALLER,
   };
   return handlePrioritizationConfigRoutes(req, res, url, send, shared)
     || handleDimensionRoutes(req, res, url, send, shared)
@@ -1295,6 +1297,7 @@ function handleDomainModules(req, res, url) {
     || handleSourceRoutes(req, res, url, send, shared)
     || handleFormRoutes(req, res, url, send, shared)
     || handleDocumentReviewRoutes(req, res, url, send, shared)
+    || handleCompanyPersonaRoutes(req, res, url, send, shared)
     || handleProjectActionRoutes(req, res, url, send, shared)
     || handleOnboardingRoutes(req, res, url, send, shared)
     || handleBriefingRoutes(req, res, url, send, shared)
@@ -1704,8 +1707,21 @@ const mockProjectDetails = {
     ],
   },
   proj_3: {
-    project: { project_id: 'proj_3', name: 'Pricing Experiments', description: 'Shared with the whole workspace', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 0, document_count: 0 },
-    personas: [],
+    project: { project_id: 'proj_3', name: 'Pricing Experiments', description: 'Shared with the whole workspace', status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), persona_count: 1, document_count: 0 },
+    // One persona so proj_1's "Copy from…" lists a project the caller is a member of (company personas, 5.60).
+    personas: [
+      {
+        persona_id: 'persona_4',
+        name: 'Fare-Watching Fern',
+        tagline: 'Waits for the price to drop',
+        created_at: new Date().toISOString(),
+        confidence: 'medium',
+        feedback_count: 5,
+        goals: ['Pay the price she saw first'],
+        frustrations: ['Fees that appear at the last step'],
+        quote: 'Show me the full price up front and I will book today.',
+      },
+    ],
     documents: [],
   },
 };
@@ -1737,11 +1753,17 @@ const mockProjectSharing = {
       },
     },
   },
-  // Public, owned by someone else — the caller reaches it as workspace admin.
+  // Public, owned by someone else — the caller reaches it as workspace admin, and is also an
+  // invited editor (so it is a "Copy from…" source of proj_1: owner or member, any role).
   proj_3: {
     owner_sub: mockSub('viewer-demo'), owner_username: 'viewer-demo', owner_email: 'viewer@example.com',
     visibility: 'public',
-    members: {},
+    members: {
+      [mockSub('admin-demo')]: {
+        role: 'editor', username: 'admin-demo', email: 'admin@example.com',
+        added_by: mockSub('viewer-demo'), added_at: new Date(Date.now() - 86400000).toISOString(),
+      },
+    },
   },
 };
 

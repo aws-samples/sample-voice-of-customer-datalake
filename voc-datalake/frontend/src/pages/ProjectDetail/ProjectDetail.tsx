@@ -17,18 +17,22 @@ import { useConfigStore } from '../../store/configStore'
 import JobsBadge from './JobsBadge'
 import ProjectHeader from './ProjectHeader'
 import {
-  PersonaEditModalWrapper, ImportPersonaModalWrapper, DocumentModalWrapper, ConfirmModalWrapper,
+  DocumentModalWrapper, ConfirmModalWrapper, CopyPersonasModalWrapper,
 } from './ProjectModals'
 import ProjectTabs from './ProjectTabs'
 import ReadOnlyBanner from './ReadOnlyBanner'
 import { canEditProject } from './projectAccess'
 import TabContent from './TabContent'
 import {
-  useSelectionState, useDocModalState, useImportModalState, useConfirmModalState,
+  useSelectionState, useDocModalState, useImportModalState, useConfirmModalState, personaListHandlers,
 } from './useModalState'
 import {
-  useProjectData, useProjectMutations, usePersonaMutations, useDocumentMutations, projectJobsKey,
+  useProjectData, useProjectMutations, useDocumentMutations,
 } from './useProjectData'
+import { usePersonaMutations } from './usePersonaMutations'
+import PersonaModals from './PersonaModals'
+import { projectPersonaScope } from './personaScope'
+import { projectJobsKey } from '../../api/projectQueryKeys'
 import { projectDocumentPath, useDocumentSelection } from './useDocumentSelection'
 import { useProjectWizardState } from './useProjectWizardState'
 import WizardSection from './WizardSection'
@@ -62,6 +66,7 @@ export default function ProjectDetail() {
   // JOB_START_POLL_WINDOW_MS in useProjectData.
   const [jobStartedAt, setJobStartedAt] = useState<number | null>(null)
   const [showSharing, setShowSharing] = useState(false)
+  const [showCopyPersonas, setShowCopyPersonas] = useState(false)
   const { t } = useTranslation('projectDetail')
 
   // Custom hooks for state management
@@ -98,15 +103,14 @@ export default function ProjectDetail() {
     onError: () => wizard.setGenerating(null),
   })
 
-  const {
-    updatePersonaMut, deletePersonaMut, importPersonaMut, saveNotes,
-  } = usePersonaMutations({
-    id,
+  const personaMutations = usePersonaMutations({
+    scope: projectPersonaScope(id),
     selectedPersona: selection.selectedPersona,
     editingPersona: selection.editingPersona,
     setEditingPersona: selection.setEditingPersona,
     setSelectedPersona: selection.setSelectedPersona,
   })
+  const { updatePersonaMut, deletePersonaMut, saveNotes } = personaMutations
 
   const {
     createDocMut, deleteDocMut, updateDocMut,
@@ -117,17 +121,6 @@ export default function ProjectDetail() {
   })
 
   // Handlers
-  const handleImportPersona = useCallback(() => {
-    importPersonaMut.mutate(
-      {
-        input_type: importModal.importType,
-        content: importModal.importContent,
-        media_type: importModal.importMediaType,
-      },
-      { onSuccess: importModal.closeModal },
-    )
-  }, [importPersonaMut, importModal])
-
   /**
    * Long-running actions (prototype build, prototype revision, product report)
    * hand their wait to the Background Jobs panel instead of polling in local
@@ -158,16 +151,8 @@ export default function ProjectDetail() {
     confirm.closeConfirm()
   }, [confirm, deletePersonaMut, deleteDocMut])
 
-  // Both saves return their promise (resolve = saved, reject = failed), so the
-  // editors' unsaved-changes guard can wait for them (E2E F6).
-  const handleSavePersona = useCallback(async () => {
-    const persona = selection.editingPersona
-    if (persona) await updatePersonaMut.mutateAsync({
-      personaId: persona.persona_id,
-      updates: persona,
-    })
-  }, [selection.editingPersona, updatePersonaMut])
-
+  // The document save returns its promise (resolve = saved, reject = failed), like the
+  // persona save (usePersonaMutations), so the editor's unsaved-changes guard can wait (E2E F6).
   const documentSave = useDocumentSave({
     projectId: id,
     queryClient,
@@ -296,11 +281,10 @@ export default function ProjectDetail() {
         onRunResearch={() => wizard.openResearchWizard(personas.map((p) => p.persona_id))}
         onRemixDocuments={wizard.openMergeWizard}
         onOpenProductTool={() => setActiveTab('product')}
-        onSelectPersona={selection.setSelectedPersona}
-        onEditPersona={() => selection.selectedPersona && selection.setEditingPersona(selection.selectedPersona)}
-        onDeletePersona={() => selection.selectedPersona && confirm.openPersonaConfirm(selection.selectedPersona.persona_id)}
+        {...personaListHandlers(selection, confirm)}
         onSaveNotes={saveNotes}
         onImportPersona={() => importModal.setShowImportModal(true)}
+        onCopyPersonas={() => setShowCopyPersonas(true)}
         onSelectDoc={docSelection.setSelectedDoc}
         onEditDoc={() => docSelection.selectedDoc && docModal.openEditModal(docSelection.selectedDoc)}
         onDeleteDoc={() => docSelection.selectedDoc && confirm.openDocumentConfirm(docSelection.selectedDoc.document_id)}
@@ -308,25 +292,14 @@ export default function ProjectDetail() {
         onJobStarted={handleJobStarted}
       />
 
-      <PersonaEditModalWrapper
-        editingPersona={selection.editingPersona}
-        isSaving={updatePersonaMut.isPending}
-        onChange={selection.setEditingPersona}
-        onSave={handleSavePersona}
-        onClose={() => selection.setEditingPersona(null)}
-      />
+      <PersonaModals selection={selection} importModal={importModal} mutations={personaMutations} />
 
-      <ImportPersonaModalWrapper
-        showModal={importModal.showImportModal}
-        importType={importModal.importType}
-        importContent={importModal.importContent}
-        importFileName={importModal.importFileName}
-        isImporting={importPersonaMut.isPending}
-        onTypeChange={importModal.handleTypeChange}
-        onContentChange={importModal.setImportContent}
-        onFileChange={importModal.handleFileChange}
-        onClose={importModal.closeModal}
-        onImport={handleImportPersona}
+      <CopyPersonasModalWrapper
+        showModal={showCopyPersonas}
+        projectId={project.project_id}
+        onClose={() => setShowCopyPersonas(false)}
+        // Show the first copy, so the result of the copy is on screen.
+        onCopied={(copies) => selection.setSelectedPersona(copies.at(0) ?? null)}
       />
 
       <DocumentModalWrapper

@@ -426,7 +426,17 @@
     "tabs": {
       "vision": "Wizja i cele",
       "mine": "Moje cele",
-      "design": "System projektowy"
+      "design": "System projektowy",
+      "personas": "Persony"
+    },
+    "personas": {
+      "loading": "Ładowanie person firmy…",
+      "loadFailed": "Nie udało się wczytać person firmy. Odśwież stronę, aby spróbować ponownie.",
+      "intro": "Persony wspólne dla całej firmy. Projekty kopiują je stąd; każda kopia jest niezależna i zaczyna się bez notatek badawczych.",
+      "emptyTitle": "Brak person firmy",
+      "emptyBody": "Biblioteka przechowuje persony, od których może zacząć każdy projekt, aby zespoły nie odtwarzały tego samego klienta od zera.",
+      "emptyHowAdmin": "Wygeneruj persony z opinii, zaimportuj jedną z opisu lub obrazu albo przenieś personę z projektu.",
+      "emptyHowReader": "Administrator wypełnia ją, generując lub importując persony albo przenosząc je z projektów."
     }
   },
   "shared": {

@@ -8,6 +8,7 @@ import type { DocumentEditorProps } from './DocumentModal'
 import { isVersionManagedDocument } from '../../api/documentLineage'
 import { documentRevision } from './documentEdit'
 import ImportPersonaModal from './ImportPersonaModal'
+import CopyPersonasModal from './CopyPersonasModal'
 import PersonaEditModal from './PersonaEditModal'
 import type {
   ProjectDocument,
@@ -84,6 +85,17 @@ export function ImportPersonaModalWrapper({
       onImport={onImport}
     />
   )
+}
+
+/** "Copy from…" (the company library or another project), mounted only while open so each opening starts fresh. */
+export function CopyPersonasModalWrapper({ showModal, projectId, onClose, onCopied }: Readonly<{
+  showModal: boolean
+  projectId: string
+  onClose: () => void
+  onCopied: (copies: ProjectPersona[]) => void
+}>) {
+  if (!showModal) return null
+  return <CopyPersonasModal projectId={projectId} onClose={onClose} onCopied={onCopied} />
 }
 
 interface DocumentModalWrapperProps extends DocumentEditorProps {

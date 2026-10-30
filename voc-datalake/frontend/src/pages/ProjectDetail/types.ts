@@ -67,7 +67,8 @@ export interface MergeToolConfig {
 }
 
 export interface PersonaAvatarProps {
-  readonly persona: ProjectPersona
+  /** Only the name and image are read, so a copy-source summary renders too. */
+  readonly persona: Pick<ProjectPersona, 'name' | 'avatar_url'>
   readonly size?: 'sm' | 'md' | 'lg'
 }
 

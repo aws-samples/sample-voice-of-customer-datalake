@@ -323,7 +323,38 @@
     "regenerateAvatarConfirmMessage": "L'IA dessine une nouvelle image pour ce persona et remplace l'actuelle. Cela prend quelques secondes.",
     "regeneratingAvatar": "Génération d’un nouvel avatar…",
     "regenerateAvatarFailed": "L’avatar n’a pas pu être régénéré. Réessayez.",
-    "notesCount_many": "{{count, number}} notes"
+    "notesCount_many": "{{count, number}} notes",
+    "promote": {
+      "button": "Promouvoir dans l'entreprise",
+      "done": "Copiée dans la bibliothèque de personas de l'entreprise.",
+      "openLibrary": "Ouvrir la bibliothèque",
+      "failed": "La persona n'a pas pu être copiée dans la bibliothèque de l'entreprise. Réessayez."
+    },
+    "copiedFrom": {
+      "company": "la bibliothèque de l'entreprise",
+      "unnamedProject": "un autre projet",
+      "line": "Copiée depuis {{source}} le {{date}}",
+      "lineNoDate": "Copiée depuis {{source}}"
+    },
+    "copy": {
+      "open": "Copier depuis…",
+      "title": "Copier des personas dans ce projet",
+      "explain": "Chaque persona est copiée, pas liée : les modifications ultérieures d'un côté ou de l'autre restent séparées. Les notes de recherche ne sont pas copiées.",
+      "sourceLabel": "Copier depuis",
+      "companySource": "Bibliothèque de personas de l'entreprise",
+      "projectSource_one": "{{name}} ({{count, number}} persona)",
+      "projectSource_many": "{{name}} ({{count, number}} personas)",
+      "projectSource_other": "{{name}} ({{count, number}} personas)",
+      "choose": "Choisissez des personas (jusqu'à {{max, number}})",
+      "loading": "Chargement des personas…",
+      "loadFailed": "Les personas n'ont pas pu être chargées. Fermez et réessayez.",
+      "sourceEmpty": "Cette source n'a aucune persona.",
+      "failed": "Les personas n'ont pas pu être copiées. Réessayez.",
+      "cancel": "Annuler",
+      "submit_one": "Copier {{count, number}} persona",
+      "submit_many": "Copier {{count, number}} personas",
+      "submit_other": "Copier {{count, number}} personas"
+    }
   },
   "personaSections": {
     "ageRange": "Âge",

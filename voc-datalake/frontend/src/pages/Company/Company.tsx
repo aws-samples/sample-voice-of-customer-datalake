@@ -11,7 +11,8 @@
  * it is that project's own context and shows this page's company context as a
  * read-only strip.
  *
- * `?tab=design` deep-links a tab.
+ * `?tab=design` / `?tab=personas` deep-links a tab. Personas (5.60) is the company persona
+ * library: admins write it, projects copy from it.
  *
  * @module pages/Company
  */
@@ -19,18 +20,19 @@ import { useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
-import { Compass, Palette } from 'lucide-react'
+import { Compass, Palette, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useGuardedAction } from '../../components/UnsavedChangesGuard/guardRegistry'
 import { useIsAdmin } from '../../store/authStore'
 import { useConfigStore } from '../../store/configStore'
 import CompanyContextSection from './CompanyContextSection'
 import DesignSystemSection from './DesignSystemSection'
+import CompanyPersonasSection from './CompanyPersonasSection'
 
-const COMPANY_TABS = ['vision', 'design'] as const
+const COMPANY_TABS = ['vision', 'design', 'personas'] as const
 type CompanyTab = typeof COMPANY_TABS[number]
 
-const TAB_ICONS: Record<CompanyTab, LucideIcon> = { vision: Compass, design: Palette }
+const TAB_ICONS: Record<CompanyTab, LucideIcon> = { vision: Compass, design: Palette, personas: Users }
 
 function isCompanyTab(value: string | null): value is CompanyTab {
   return COMPANY_TABS.some((tab) => tab === value)
@@ -78,5 +80,7 @@ export default function Company() {
 
 function CompanyTabContent({ tab, isAdmin }: Readonly<{ tab: CompanyTab; isAdmin: boolean }>) {
   if (tab === 'design') return <DesignSystemSection isAdmin={isAdmin} />
+  // Who may write the library is the API's answer (`can_edit`), not this page's guess.
+  if (tab === 'personas') return <CompanyPersonasSection />
   return <CompanyContextSection isAdmin={isAdmin} />
 }

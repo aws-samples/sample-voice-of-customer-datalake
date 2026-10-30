@@ -5,6 +5,7 @@ import DocumentsTab from './DocumentsTab'
 import DecisionsTab from './decisions/DecisionsTab'
 import OverviewTab, { type OverviewTabProps } from './OverviewTab'
 import PersonasTab from './PersonasTab'
+import { projectPersonaScope } from './personaScope'
 import ProductTab from './ProductTab'
 import ParticipantsTab from './ParticipantsTab'
 import type {
@@ -39,6 +40,8 @@ interface TabContentProps extends OverviewPassThrough {
   readonly onDeletePersona: () => void
   readonly onSaveNotes: (notes: NoteItem[]) => void
   readonly onImportPersona: () => void
+  /** Opens "Copy from…" (the library or another project); editors only. */
+  readonly onCopyPersonas: () => void
   readonly onSelectDoc: (d: ProjectDocument | null) => void
   readonly onEditDoc: () => void
   readonly onDeleteDoc: () => void
@@ -68,6 +71,7 @@ export default function TabContent({
   onDeletePersona,
   onSaveNotes,
   onImportPersona,
+  onCopyPersonas,
   onSelectDoc,
   onEditDoc,
   onDeleteDoc,
@@ -99,7 +103,7 @@ export default function TabContent({
   if (activeTab === 'personas') {
     return (
       <PersonasTab
-        projectId={project.project_id}
+        scope={projectPersonaScope(project.project_id)}
         personas={personas}
         canEdit={canEdit}
         selectedPersona={selectedPersona}
@@ -109,6 +113,7 @@ export default function TabContent({
         onSaveNotes={onSaveNotes}
         onGeneratePersonas={onGeneratePersonas}
         onImportPersona={onImportPersona}
+        onCopyPersonas={canEdit ? onCopyPersonas : undefined}
         isDeleting={isDeleting}
         isSavingNotes={isSavingNotes}
       />

@@ -155,3 +155,20 @@ export function useConfirmModalState() {
     closeConfirm,
   }
 }
+
+/**
+ * The persona list's select / edit / delete callbacks (PersonasTab), the same on the
+ * project page and in the company library: edit opens the selected persona in the edit
+ * modal, delete asks first.
+ */
+export function personaListHandlers(
+  selection: ReturnType<typeof useSelectionState>,
+  confirm: Pick<ReturnType<typeof useConfirmModalState>, 'openPersonaConfirm'>,
+) {
+  const { selectedPersona } = selection
+  return {
+    onSelectPersona: selection.setSelectedPersona,
+    onEditPersona: () => { if (selectedPersona) selection.setEditingPersona(selectedPersona) },
+    onDeletePersona: () => { if (selectedPersona) confirm.openPersonaConfirm(selectedPersona.persona_id) },
+  }
+}

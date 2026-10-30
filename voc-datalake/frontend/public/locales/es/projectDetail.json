@@ -323,7 +323,38 @@
     "regenerateAvatarConfirmMessage": "La IA dibuja una imagen nueva para esta persona y reemplaza la actual. Tarda unos segundos.",
     "regeneratingAvatar": "Generando un avatar nuevo…",
     "regenerateAvatarFailed": "No se pudo regenerar el avatar. Inténtalo de nuevo.",
-    "notesCount_many": "{{count, number}} notas"
+    "notesCount_many": "{{count, number}} notas",
+    "promote": {
+      "button": "Pasar a la empresa",
+      "done": "Copiado a la biblioteca de personas de la empresa.",
+      "openLibrary": "Abrir la biblioteca",
+      "failed": "No se pudo copiar la persona a la biblioteca de la empresa. Inténtalo de nuevo."
+    },
+    "copiedFrom": {
+      "company": "la biblioteca de la empresa",
+      "unnamedProject": "otro proyecto",
+      "line": "Copiado de {{source}} el {{date}}",
+      "lineNoDate": "Copiado de {{source}}"
+    },
+    "copy": {
+      "open": "Copiar de…",
+      "title": "Copiar personas en este proyecto",
+      "explain": "Cada persona se copia, no se vincula: los cambios posteriores en cualquiera de los lados quedan separados. Las notas de investigación no se copian.",
+      "sourceLabel": "Copiar de",
+      "companySource": "Biblioteca de personas de la empresa",
+      "projectSource_one": "{{name}} ({{count, number}} persona)",
+      "projectSource_many": "{{name}} ({{count, number}} personas)",
+      "projectSource_other": "{{name}} ({{count, number}} personas)",
+      "choose": "Elige personas (hasta {{max, number}})",
+      "loading": "Cargando personas…",
+      "loadFailed": "No se pudieron cargar las personas. Cierra e inténtalo de nuevo.",
+      "sourceEmpty": "Este origen no tiene personas.",
+      "failed": "No se pudieron copiar las personas. Inténtalo de nuevo.",
+      "cancel": "Cancelar",
+      "submit_one": "Copiar {{count, number}} persona",
+      "submit_many": "Copiar {{count, number}} personas",
+      "submit_other": "Copiar {{count, number}} personas"
+    }
   },
   "personaSections": {
     "ageRange": "Edad",

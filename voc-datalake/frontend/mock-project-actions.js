@@ -175,6 +175,18 @@ const RESEARCH_NO_FEEDBACK_MESSAGE = 'No feedback data found matching the filter
 
 const jobs = new Map();
 
+// Persona containers that are NOT projects (the company persona mock registers the company
+// library, `company_personas`): their jobs land in the container, and every
+// `/projects/{container id}/...` route is a 404, as the real per-project gate answers.
+const containers = new Map(); // container id -> detail-shaped { project, personas, documents }
+
+/** Register a non-project persona container (id -> its detail-shaped store). */
+export function registerPersonaContainer(containerId, detail) {
+  containers.set(containerId, detail);
+}
+
+const detailOf = (shared, id) => containers.get(id) ?? shared.mockProjectDetails[id];
+
 function startJob(projectId, { jobType, status, message, runningStep, errorMessage, complete }) {
   const jobId = `job_${hex(16)}`;
   const at = nowIso();
@@ -192,7 +204,7 @@ function startJob(projectId, { jobType, status, message, runningStep, errorMessa
 
 function finishJob(entry, shared) {
   const { record } = entry;
-  const detail = shared.mockProjectDetails[entry.projectId];
+  const detail = detailOf(shared, entry.projectId);
   const at = nowIso();
   try {
     if (!detail) throw new Error('Project not found');
@@ -1038,7 +1050,7 @@ function routeBody(route, raw) {
 }
 
 function dispatch(route, { projectId, groups, raw, params, shared }) {
-  const detail = shared.mockProjectDetails[projectId];
+  const detail = detailOf(shared, projectId);
   if (!detail) return NOT_FOUND;
   const [body, error] = routeBody(route, raw);
   if (error) return error;
@@ -1052,13 +1064,24 @@ export function handleProjectActionRoutes(req, res, url, send, shared) {
   const projectId = safeDecode(match[1]);
   // `/projects/prioritization/...` belongs to mock-server.js, never a project id.
   if (projectId === 'prioritization') return false;
-  const rest = match[2];
-  const route = ROUTES.find((r) => r.method === req.method && r.pattern.test(rest));
+  // A persona container is never a project, for admins too.
+  if (containers.has(projectId)) {
+    send(...NOT_FOUND);
+    return true;
+  }
+  return serveRoute(req, res, { projectId, rest: match[2], params: url.searchParams, send, shared });
+}
+
+/** Find and run the route for `rest` on `projectId`; false when no route takes it. */
+function serveRoute(req, res, { projectId, rest, params, send, shared, routes = ROUTES, bodyPatch }) {
+  const route = routes.find((r) => r.method === req.method && r.pattern.test(rest));
   if (!route) return false;
   const groups = rest.match(route.pattern).slice(1).map(safeDecode);
   if (route.claim && !route.claim(projectId, ...groups)) return false;
   const respond = (raw) => {
-    const [status, payload] = dispatch(route, { projectId, groups, raw, params: url.searchParams, shared });
+    // A patch always lands: on a non-object body it is the whole body (never a lost override).
+    const patched = bodyPatch ? { ...(isPlainObject(raw) ? raw : {}), ...bodyPatch } : raw;
+    const [status, payload] = dispatch(route, { projectId, groups, raw: patched, params, shared });
     send(status, payload);
   };
   if (route.body) {
@@ -1067,4 +1090,17 @@ export function handleProjectActionRoutes(req, res, url, send, shared) {
     respond(null);
   }
   return true;
+}
+
+// The routes a registered container offers: its jobs and its persona writes (no documents).
+const CONTAINER_PREFIXES = [String.raw`^\/jobs`, String.raw`^\/personas`];
+const CONTAINER_ROUTES = ROUTES.filter((r) => CONTAINER_PREFIXES.some((prefix) => r.pattern.source.startsWith(prefix)));
+
+/**
+ * Serve `rest` (a project-relative path such as `/personas/generate`) on a registered
+ * container. `bodyPatch` overrides body fields (the library forces additive generation).
+ * Returns false when no container route takes the request.
+ */
+export function serveContainerRoute(req, res, { containerId, rest, params, send, shared, bodyPatch }) {
+  return serveRoute(req, res, { projectId: containerId, rest, params, send, shared, routes: CONTAINER_ROUTES, bodyPatch });
 }

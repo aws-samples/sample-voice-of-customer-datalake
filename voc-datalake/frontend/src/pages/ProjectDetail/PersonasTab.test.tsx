@@ -3,6 +3,7 @@ import { screen } from '@testing-library/react'
 import { renderWithQueryClient } from '../../test/query-client'
 import userEvent from '@testing-library/user-event'
 import PersonasTab from './PersonasTab'
+import { projectPersonaScope } from './personaScope'
 import type { ProjectPersona } from '../../api/projectTypes'
 import { required } from '../../components/component-spec-fixtures'
 
@@ -16,7 +17,7 @@ const mockPersona: ProjectPersona = {
 const noPersonas: ProjectPersona[] = []
 
 const defaultProps = {
-  projectId: 'proj_1',
+  scope: projectPersonaScope('proj_1'),
   personas: noPersonas,
   canEdit: true,
   selectedPersona: null,
@@ -31,6 +32,19 @@ const defaultProps = {
 }
 
 describe('PersonasTab', () => {
+  it('offers "Copy from…" when the page passes the action (5.60)', async () => {
+    const user = userEvent.setup()
+    const onCopyPersonas = vi.fn()
+    renderWithQueryClient(<PersonasTab {...defaultProps} onCopyPersonas={onCopyPersonas} />)
+    await user.click(screen.getByRole('button', { name: 'Copy from…' }))
+    expect(onCopyPersonas).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers no "Copy from…" without the action, nor to a viewer', () => {
+    renderWithQueryClient(<PersonasTab {...defaultProps} canEdit={false} onCopyPersonas={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: 'Copy from…' })).not.toBeInTheDocument()
+  })
+
   it('renders empty state when no personas', () => {
     renderWithQueryClient(<PersonasTab {...defaultProps} />)
     expect(screen.getByText('No personas yet')).toBeInTheDocument()

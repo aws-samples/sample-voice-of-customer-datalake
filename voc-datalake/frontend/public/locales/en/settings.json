@@ -318,8 +318,8 @@
           "image_model": "Image model",
           "model_overrides": "Model choices",
           "alerting": "Alerting",
-        "open_circuits": "Paused sources (circuit breaker)",
-        "log_coverage": "Logs searched"
+          "open_circuits": "Paused sources (circuit breaker)",
+          "log_coverage": "Logs searched"
         }
       }
     }
@@ -394,7 +394,17 @@
     "tabs": {
       "vision": "Vision & objectives",
       "mine": "My objectives",
-      "design": "Design system"
+      "design": "Design system",
+      "personas": "Personas"
+    },
+    "personas": {
+      "loading": "Loading the company personas…",
+      "loadFailed": "The company personas couldn't be loaded. Reload the page to try again.",
+      "intro": "Personas the whole company shares. Projects copy them in from here; each copy is independent and starts without research notes.",
+      "emptyTitle": "No company personas yet",
+      "emptyBody": "The library holds personas every project can start from, so teams don't rebuild the same customer from scratch.",
+      "emptyHowAdmin": "Generate personas from feedback, import one from a description or image, or promote a persona from a project.",
+      "emptyHowReader": "An administrator fills it by generating or importing personas, or by promoting them from projects."
     }
   },
   "shared": {

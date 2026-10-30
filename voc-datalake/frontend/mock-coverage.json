@@ -445,6 +445,134 @@
     ]
   },
   {
+    "file": "api/companyPersonasApi.ts",
+    "method": "GET",
+    "call": "BASE",
+    "probes": [
+      {
+        "path": "/company-personas"
+      }
+    ]
+  },
+  {
+    "file": "api/companyPersonasApi.ts",
+    "method": "POST",
+    "call": "`${BASE}/generate`",
+    "probes": [
+      {
+        "path": "/company-personas/generate",
+        "body": {
+          "persona_count": 1
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/companyPersonasApi.ts",
+    "method": "POST",
+    "call": "`${BASE}/import`",
+    "probes": [
+      {
+        "path": "/company-personas/import",
+        "body": {
+          "input_type": "text",
+          "content": "A frequent Example Air traveller"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/companyPersonasApi.ts",
+    "method": "GET",
+    "call": "`${BASE}/jobs`",
+    "probes": [
+      {
+        "path": "/company-personas/jobs"
+      }
+    ]
+  },
+  {
+    "file": "api/companyPersonasApi.ts",
+    "method": "GET",
+    "call": "`${BASE}/jobs/${encodeURIComponent(jobId)}`",
+    "probes": [
+      {
+        "path": "/company-personas/jobs/job_unknown"
+      }
+    ]
+  },
+  {
+    "file": "api/companyPersonasApi.ts",
+    "method": "PUT",
+    "call": "personaPath(personaId)",
+    "probes": [
+      {
+        "path": "/company-personas/cpersona_1",
+        "body": {
+          "tagline": "Books Example Air every month"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/companyPersonasApi.ts",
+    "method": "DELETE",
+    "call": "personaPath(personaId)",
+    "probes": [
+      {
+        "path": "/company-personas/cpersona_missing"
+      }
+    ]
+  },
+  {
+    "file": "api/companyPersonasApi.ts",
+    "method": "POST",
+    "call": "`${personaPath(personaId)}/regenerate-avatar`",
+    "probes": [
+      {
+        "path": "/company-personas/cpersona_1/regenerate-avatar"
+      }
+    ]
+  },
+  {
+    "file": "api/companyPersonasApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/personas/${encodeURIComponent(personaId)}/promote`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_2/promote"
+      }
+    ]
+  },
+  {
+    "file": "api/companyPersonasApi.ts",
+    "method": "GET",
+    "call": "`/projects/${projectId}/personas/copy-sources`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/copy-sources"
+      }
+    ]
+  },
+  {
+    "file": "api/companyPersonasApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/personas/copy`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/copy",
+        "body": {
+          "source": {
+            "scope": "company"
+          },
+          "persona_ids": [
+            "cpersona_1"
+          ]
+        }
+      }
+    ]
+  },
+  {
     "file": "api/participantsApi.ts",
     "method": "GET",
     "call": "'/participants/settings'",

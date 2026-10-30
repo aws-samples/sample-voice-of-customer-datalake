@@ -320,7 +320,36 @@
     "regenerateAvatarConfirmTitle": "创建新头像？",
     "regenerateAvatarConfirmMessage": "AI 将为此用户画像绘制新图片并替换当前图片。需要几秒钟。",
     "regeneratingAvatar": "正在生成新头像…",
-    "regenerateAvatarFailed": "无法重新生成头像，请重试。"
+    "regenerateAvatarFailed": "无法重新生成头像，请重试。",
+    "promote": {
+      "button": "提升到公司",
+      "done": "已复制到公司用户画像库。",
+      "openLibrary": "打开画像库",
+      "failed": "无法将该用户画像复制到公司画像库。请重试。"
+    },
+    "copiedFrom": {
+      "company": "公司画像库",
+      "unnamedProject": "另一个项目",
+      "line": "于 {{date}} 从{{source}}复制",
+      "lineNoDate": "从{{source}}复制"
+    },
+    "copy": {
+      "open": "复制自…",
+      "title": "将用户画像复制到此项目",
+      "explain": "每个用户画像都是复制而非链接：之后任一方的更改都互不影响。研究笔记不会被复制。",
+      "sourceLabel": "复制自",
+      "companySource": "公司用户画像库",
+      "projectSource_one": "{{name}}（{{count, number}} 个用户画像）",
+      "projectSource_other": "{{name}}（{{count, number}} 个用户画像）",
+      "choose": "选择用户画像（最多 {{max, number}} 个）",
+      "loading": "正在加载用户画像…",
+      "loadFailed": "无法加载用户画像。请关闭后重试。",
+      "sourceEmpty": "此来源没有用户画像。",
+      "failed": "无法复制用户画像。请重试。",
+      "cancel": "取消",
+      "submit_one": "复制 {{count, number}} 个用户画像",
+      "submit_other": "复制 {{count, number}} 个用户画像"
+    }
   },
   "personaSections": {
     "ageRange": "年龄",
