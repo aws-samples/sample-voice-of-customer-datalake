@@ -71,10 +71,15 @@ describe('CsvUploadModal with a dataset name', () => {
     })
     expect(mockUpload).not.toHaveBeenCalled()
     expect(await screen.findByText('1 stored row will be updated')).toBeInTheDocument()
-    expect(screen.getByText('1 new row will be added')).toBeInTheDocument()
+  })
+
+  it('counts the new and the not-updatable rows and lists each change with its stored text', async () => {
+    const user = await openWithDataset()
+    await user.click(screen.getByRole('button', { name: 'Preview changes' }))
+
+    expect(await screen.findByText('1 new row will be added')).toBeInTheDocument()
     expect(screen.getByText('1 row cannot be updated later (no id)')).toBeInTheDocument()
-    expect(screen.getByText('Row 2 (id 2)')).toBeInTheDocument()
-    expect(screen.getByText('Login fials')).toBeInTheDocument()
+    expect(screen.getByText('Row 2 (id 2)').closest('li')).toHaveTextContent('Login fials')
   })
 
   it('confirms the updates the preview listed with apply_updates', async () => {
@@ -127,8 +132,8 @@ describe('CsvUploadModal with a dataset name', () => {
 describe('parseCsvDatasetPreview', () => {
   it('reads missing counts as zero and drops a malformed changed row', () => {
     const preview = parseCsvDatasetPreview({ counts: { changed: 2 }, changed_rows: [{ row: 'x', before: 1 }, 'junk'] })
-    expect(preview.counts).toEqual({ new: 0, changed: 2, unchanged: 0, v1_rows: 0 })
-    expect(preview.changed_rows).toEqual([{ row: null, csv_row_id: null, before: '', after: '' }])
+    expect(preview.counts).toStrictEqual({ new: 0, changed: 2, unchanged: 0, v1_rows: 0 })
+    expect(preview.changed_rows).toStrictEqual([{ row: null, csv_row_id: null, before: '', after: '' }])
   })
 
   it('never throws on a non-object', () => {
