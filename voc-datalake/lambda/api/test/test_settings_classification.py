@@ -11,7 +11,7 @@ import settings_handler
 from settings_handler import lambda_handler
 from shared import source_erasure
 from shared.feedback_types import feedback_type_dimension
-from shared.source_erasure import STALE_AFTER, clear_known_sources_cache, source_lock_key
+from shared.source_erasure import STALE_AFTER, source_lock_key
 from shared.test.moto_tables import create_aggregates_table_with_metric_index
 
 USER_CLAIMS = {'sub': 'user-1', 'cognito:username': 'casey', 'cognito:groups': 'users'}
@@ -22,7 +22,6 @@ PROFILE = {'id': 'support_tickets', 'label': 'Support', 'pii': 'redact', 'retent
 
 @pytest.fixture
 def table():
-    clear_known_sources_cache()  # a fresh moto table per test: no counted sources carried over
     with mock_aws():
         moto_table = create_aggregates_table_with_metric_index('test-aggregates-settings-classification')
         with patch.object(settings_handler, 'aggregates_table', moto_table), \

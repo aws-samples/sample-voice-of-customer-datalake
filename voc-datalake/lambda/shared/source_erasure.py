@@ -67,11 +67,6 @@ class SourceLocked(Exception):
     """Another erasure of the source holds its lock (the API answers 409)."""
 
 
-def clear_known_sources_cache() -> None:
-    """Forget the memoised counted sources (tests; a new table)."""
-    _counted_cache.clear()
-
-
 def _counted_sources(table: Any) -> frozenset[str]:
     """Every source with a ``METRIC#daily_source#<id>`` row: keys only, deduped while paging, memoised."""
     name = str(getattr(table, 'name', '') or id(table))

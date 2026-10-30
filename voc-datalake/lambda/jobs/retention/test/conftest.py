@@ -8,6 +8,7 @@ import pytest
 from moto import mock_aws
 
 from jobs.retention import handler
+from shared.test.moto_s3 import create_versioned_bucket
 from shared.test.moto_tables import create_pk_sk_table
 
 BUCKET = handler.RAW_DATA_BUCKET or 'test-raw-data-bucket'
@@ -21,9 +22,7 @@ def days_ago(days: int) -> str:
 def aws():
     with mock_aws():
         resource = boto3.resource('dynamodb', region_name='us-east-1')
-        s3 = boto3.client('s3', region_name='us-east-1')
-        s3.create_bucket(Bucket=BUCKET)
-        s3.put_bucket_versioning(Bucket=BUCKET, VersioningConfiguration={'Status': 'Enabled'})
+        s3 = create_versioned_bucket(BUCKET)
         feedback = create_pk_sk_table(handler.FEEDBACK_TABLE, resource)
         aggregates = create_pk_sk_table(handler.AGGREGATES_TABLE, resource)
         with patch.object(handler, 'get_dynamodb_resource', return_value=resource), \

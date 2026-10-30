@@ -126,6 +126,25 @@ def _clear_log_group_discovery() -> None:
         module.discovered_log_groups.clear()
 
 
+def _clear_counted_sources() -> None:
+    module = sys.modules.get('shared.source_erasure')
+    if module is not None:
+        module._counted_cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_counted_sources():
+    """Forget shared.source_erasure's warm-container memo of counted sources.
+
+    Each test builds a fresh moto table under the same name, so a memo from an
+    earlier test would answer with that test's sources. Cleared only when the
+    module is already loaded, like the model cooldowns above.
+    """
+    _clear_counted_sources()
+    yield
+    _clear_counted_sources()
+
+
 #: The random tail every `shared.ids.timestamped_id` gets under `fixed_id_suffix`.
 FIXED_ID_SUFFIX = 'a1b2c3d4'
 

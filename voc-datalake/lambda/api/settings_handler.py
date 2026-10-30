@@ -1761,7 +1761,8 @@ def _erasure_request(body: dict) -> tuple[str, str, str | None]:
     if field in SOURCE_SCOPED_ERASURE_FIELDS and not source:
         raise ValidationError(f'source is required when field is {field}')
     if field == SOURCE_FIELD:
-        return field, *_whole_source_request(body, value.strip(), source)
+        source_value, source_id = _whole_source_request(body, value.strip(), source)
+        return field, source_value, source_id
     return field, value.strip(), source
 
 

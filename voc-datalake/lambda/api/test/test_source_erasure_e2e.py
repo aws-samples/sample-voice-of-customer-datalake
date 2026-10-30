@@ -13,7 +13,8 @@ from moto import mock_aws
 import settings_handler
 from jobs.retention import handler as worker
 from settings_handler import lambda_handler
-from shared.source_erasure import clear_known_sources_cache, source_lock_key
+from shared.source_erasure import source_lock_key
+from shared.test.moto_s3 import create_versioned_bucket, version_keys
 from shared.test.moto_tables import create_aggregates_table_with_metric_index, create_pk_sk_table
 
 SOURCE = 'web_reviews_example_air'
@@ -24,12 +25,9 @@ UPLOAD_KEY = 'raw/csv_upload/2026/01/01/import.csv'
 
 @pytest.fixture
 def aws():
-    clear_known_sources_cache()
     with mock_aws():
         resource = boto3.resource('dynamodb', region_name='us-east-1')
-        s3 = boto3.client('s3', region_name='us-east-1')
-        s3.create_bucket(Bucket=BUCKET)
-        s3.put_bucket_versioning(Bucket=BUCKET, VersioningConfiguration={'Status': 'Enabled'})
+        s3 = create_versioned_bucket(BUCKET)
         aggregates = create_aggregates_table_with_metric_index(worker.AGGREGATES_TABLE, resource)
         feedback = create_pk_sk_table(worker.FEEDBACK_TABLE, resource)
         invoke = MagicMock()
@@ -68,8 +66,7 @@ def _seed(aws, feedback_id: str, source: str) -> str:
 
 
 def _keys(aws) -> set[str]:
-    page = aws['s3'].list_object_versions(Bucket=BUCKET)
-    return {entry['Key'] for entry in [*page.get('Versions', []), *page.get('DeleteMarkers', [])]}
+    return version_keys(aws['s3'], BUCKET)
 
 
 def _start(route) -> tuple[int, dict]:
