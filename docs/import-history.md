@@ -43,7 +43,7 @@ reason, because nobody sees a response for it. A file with an unsupported extens
 | `actor`, `actor_email` | Cognito sub and email of the caller; `s3-upload` and an empty email for the bucket trigger |
 | `started_at`, `finished_at` | ISO 8601, UTC |
 | `counts` | `received` (rows in the input), `imported` (accepted by the processing queue), `skipped` (empty text, a parse error, or dropped by the source's PII policy), `duplicate` (the same row twice in one CSV), `failed` (rows the queue refused) |
-| `status` | `failed` when nothing was imported, `partial` when some rows failed, else `completed`. Skipped and duplicate rows do not make a run partial: they are expected and each carries a warning. |
+| `status` | `partial` when some rows failed and others were imported; `failed` when rows failed and none was imported, or when nothing was imported and the run recorded an error (an unreadable, empty or oversized file); else `completed`. Skipped and duplicate rows are expected and each carries a warning, so a file whose rows were all skipped (or that has no data rows) is `completed` with 0 imported. |
 | `warnings`, `errors` | Detail only. At most 200 of each, each at most 300 characters; `warning_count` / `error_count` are the full counts and `truncated` is true when anything was cut |
 | `raw_s3_key` | The archived input (`s3://…`), which has every row; empty when the source policy keeps no raw file (redaction, summary-only, or a retention period) |
 | `radar_brand` | Set when the upload went to a [Radar](radar.md) brand instead of our own feedback |

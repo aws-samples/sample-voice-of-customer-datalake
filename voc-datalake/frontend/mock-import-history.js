@@ -29,10 +29,11 @@ function bounded(messages) {
   return { kept, cut };
 }
 
-/** import_runs.run_status: failed when nothing was imported, partial when rows failed. */
-function runStatus(counts) {
-  if (counts.imported <= 0) return 'failed';
-  return counts.failed > 0 ? 'partial' : 'completed';
+/** import_runs.run_status: rows that failed make it partial (or failed when none imported); nothing imported
+ * is failed only when the run recorded an error, else completed (skipped and duplicate rows are expected). */
+function runStatus(counts, hasErrors) {
+  if (counts.failed > 0) return counts.imported > 0 ? 'partial' : 'failed';
+  return counts.imported <= 0 && hasErrors ? 'failed' : 'completed';
 }
 
 /** Newest first, like the real listing (sk `{started_at}#{run_id}`, ScanIndexForward false). */
@@ -56,7 +57,7 @@ export function recordImportRun(run) {
   const record = {
     run_id: run.run_id ?? randomUUID(), method: run.method, source: run.source, source_id: run.source_id ?? 'manual_import',
     actor: run.actor ?? MOCK_ACTOR.actor, actor_email: run.actor_email ?? MOCK_ACTOR.actor_email,
-    started_at: run.started_at ?? now, finished_at: run.finished_at ?? now, counts, status: runStatus(counts),
+    started_at: run.started_at ?? now, finished_at: run.finished_at ?? now, counts, status: runStatus(counts, (run.errors ?? []).length > 0),
     warning_count: (run.warnings ?? []).length, error_count: (run.errors ?? []).length,
     truncated: warnings.cut || errors.cut, raw_s3_key: run.raw_s3_key ?? null, radar_brand: run.radar_brand ?? null,
     warnings: warnings.kept, errors: errors.kept,
