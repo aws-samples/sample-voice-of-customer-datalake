@@ -80,9 +80,11 @@ test.describe('feedback boards', () => {
   test('admin: Delete is offered only on an archived board, and asks for the name of one with requests (cancelled)', async ({ page }, testInfo) => {
     test.skip(roleOf(testInfo) !== 'admin', 'admin controls')
     // 5.48.02: archiving is the step before deleting, so the open seeded board offers no Delete.
-    await visit(page, '/feature-requests')
-    await expect(salesCard(page)).toBeVisible()
-    await expect(salesCard(page).getByRole('button', { name: `Delete ${SALES.name}` })).toHaveCount(0)
+    await assertStep(page, 'admin', 'fb-06a-open-board-no-delete', async () => {
+      await visit(page, '/feature-requests')
+      await expect(salesCard(page)).toBeVisible()
+      await expect(salesCard(page).getByRole('button', { name: `Delete ${SALES.name}` })).toHaveCount(0)
+    })
 
     // A board of this run's own, with one request, archived: the dialog is checked there, then the board is removed.
     const name = `${RUN_PREFIX}delete-dialog-board`
