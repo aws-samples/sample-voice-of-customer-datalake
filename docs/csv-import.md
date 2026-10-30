@@ -81,8 +81,8 @@ item; every other record naming a stored item is still a duplicate and skipped
   stored review date.
 - **Re-enriched when the text changed:** the text and every enriched field (category,
   sentiment, urgency, summary, …), exactly like a new row. A summary-only source stores no
-  text to compare, so its changed rows are always re-enriched, and the customer's words are
-  still never stored.
+  text to compare, so a changed row is always re-enriched (its digest leaves the text out, see
+  [below](#the-content-digest-and-pii)), and the customer's words are still never stored.
 - **A failed model call:** like a GitHub issue refresh, the fallback enrichment never
   overwrites the stored one. Only the row's own fields are written (rating, author, link, …);
   the stored text, enrichment AND digest stay, so the row still previews as changed and a later
@@ -95,7 +95,11 @@ item; every other record naming a stored item is still a duplicate and skipped
   `csv_dataset` equals the record's, so a replace that merely shares a key with a non-CSV item
   writes nothing) and the stored digest (and, when re-enriched, the dimensions and the
   category's manual flag) is still what was read; a failed condition is retried by SQS against
-  the current state and ends in the DLQ when it can never hold.
+  the current state and ends in the DLQ when it can never hold. A dataset mismatch is refused
+  before the model is called (`CsvUpdatesRefused`), so its retries cost no Bedrock call; the
+  conditional write stays the authoritative guard. Each applied correction counts one metric:
+  `CsvUpdatesApplied` (row fields only), `CsvUpdatesReenriched`, or `CsvUpdatesFieldsOnly`
+  (the re-enrichment failed, alongside `CsvUpdateEnrichmentFailed`).
 - **Metrics:** the item keeps its import day, so the aggregator moves the counters of the
   stream's MODIFY on that day (category, sentiment, urgency, channel), as for an in-place GitHub
   issue refresh ([processing-pipeline.md](processing-pipeline.md)).
@@ -112,17 +116,24 @@ the manual-import API for both the preview and the upload; the processor stores 
 message carries.
 
 - **`allow` source:** a sha256 of the file's own values (`csv-content-v1`).
-- **`redact` / `summary_only` source:** a sha256 of the values AFTER the source policy
+- **`redact` source:** a sha256 of the values AFTER the source policy
   (`csv-content-policed-v1`): author dropped, text, title, link and metadata redacted, exactly
   what the policy stores. A digest of the original values would let anyone who can read it
   confirm a guess of the withheld PII (an email, a name).
+- **`summary_only` source:** a sha256 of only the fields the item stores
+  (`csv-content-summary-v1`): rating, review date, channel and the redacted link. The item keeps
+  no text, title, author or metadata (only the model's summary), and the pattern redaction does
+  not catch everything (a name in free text), so a digest of the text would let anyone who can
+  read the item confirm a guess of the customer's full wording.
 
 Why not a keyed HMAC: no secret reaches both the manual-import Lambda and the processor
 without new infrastructure (the customer-managed KMS key is an encryption key, not an HMAC
 key; neither Lambda reads a Secrets Manager value), so hashing what is stored needs no new
 secret and no new IAM. **Trade-off:** a correction that changes ONLY redacted PII (an email
 address, a phone number, the author's name) previews as unchanged and is not applied, because
-nothing that is stored would change. CSV messages carry no language, so the redaction is the
+nothing that is stored would change. Under `summary_only` the same holds for a correction of only
+the text, title, author or metadata; when anything stored changes, the row is re-enriched from the
+file's current text. CSV messages carry no language, so the redaction is the
 deterministic pattern set (`shared/pii_redaction.py`).
 
 ## Decisions (issue #411)

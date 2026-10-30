@@ -67,6 +67,13 @@ async function sendFrom(page: Page, dialog: Locator, button: string): Promise<Re
   return isRecord(body) ? body : {}
 }
 
+/** The `original_text` of every item a `GET /feedback` answer lists. */
+function listedTexts(body: unknown): string[] {
+  const items = isRecord(body) && Array.isArray(body['items']) ? body['items'] : []
+  return items.flatMap((item: unknown) =>
+    isRecord(item) && typeof item['original_text'] === 'string' ? [item['original_text']] : [])
+}
+
 test.describe('csv dataset update', () => {
   test.skip(!MOCK, 'writes feedback, which has no delete route: dev mock only')
 
@@ -105,9 +112,9 @@ test.describe('csv dataset update', () => {
       })
       expect(unconfirmed.status, 'a change without apply_updates').toBe(409)
       const listed = await apiCall(role, 'GET', '/feedback?days=0&limit=500')
-      const text = JSON.stringify(listed.body)
-      expect(text.split(FIXED).length - 1, 'the corrected row, once').toBe(1)
-      expect(text.includes(TYPO), 'the typo is gone').toBe(false)
+      const texts = listedTexts(listed.body)
+      expect(texts.filter((text) => text === FIXED), 'the corrected row, once').toHaveLength(1)
+      expect(texts.some((text) => text.includes(TYPO)), 'the typo is gone').toBe(false)
     })
   })
 })

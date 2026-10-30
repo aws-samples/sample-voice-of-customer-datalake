@@ -17,9 +17,10 @@ so ``Example Air Q3`` and ``example air  q3`` are one dataset.
 
 Whether a re-uploaded row changed is decided by ``csv_content_hash``: a digest of the
 fields an update can change, stored on the item and compared at the next upload. Under an
-``allow`` source it is computed from the file's own values; under ``redact`` /
-``summary_only`` from the values AFTER the source policy (``shared.csv_content_digest``), so
-the stored digest never confirms a guess of withheld PII. Dimension and tag columns
+``allow`` source it is computed from the file's own values; under ``redact`` from the values
+AFTER the source policy, and under ``summary_only`` from only the fields the item stores
+(``shared.csv_content_digest``), so the stored digest never confirms a guess of anything the
+policy withholds. Dimension and tag columns
 are not part of it and an update never changes them (a person may have corrected them).
 
 A row the uploader CONFIRMED as changed is queued with ``csv_replace: true``; only such a
@@ -48,6 +49,8 @@ CSV_ROW_ID_V2: Final = 'csv-row-v2'
 CSV_CONTENT_VERSION: Final = 'csv-content-v1'
 #: The digest of a row under a non-``allow`` PII policy: over the POLICED values (what is stored).
 CSV_CONTENT_POLICED_VERSION: Final = 'csv-content-policed-v1'
+#: The digest of a ``summary_only`` row: over the fields the item stores (no text, author, title, metadata).
+CSV_CONTENT_SUMMARY_VERSION: Final = 'csv-content-summary-v1'
 DATASET_NAME_MAX_LENGTH: Final = 64
 _DATASET_NAME_RE: Final = re.compile(r'^[A-Za-z0-9 ._-]+\Z')
 _SPACES: Final = re.compile(r' +')

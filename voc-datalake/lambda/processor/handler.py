@@ -453,6 +453,14 @@ class ConcurrentSourceUpdateError(Exception):
     """A stored item changed between the read and the conditional refresh; SQS retries the record."""
 
 
+class CsvReplaceRefusedError(Exception):
+    """A CSV correction names an item its dataset did not store; the record fails (SQS → DLQ).
+
+    Raised before any model call, so a forged or mismatched replace costs no Bedrock invocation
+    per retry. The conditional write in ``shared.csv_updates`` stays the authoritative guard.
+    """
+
+
 @tracer.capture_method
 def load_stored_item(pk: str, sk: str) -> dict | None:
     """The stored item at (pk, sk), read consistently, or None when there is none."""
@@ -548,8 +556,12 @@ def _csv_reenriched(stored: dict, raw_record: dict, pii_policy: str) -> tuple[di
 def refresh_csv_item(stored: dict, raw_record: dict) -> str:
     """Apply a confirmed CSV correction to its stored row (shared/csv_updates.py); the decision.
 
-    Raises ``ConcurrentSourceUpdateError`` when the item changed under us (SQS retries).
+    Raises ``ConcurrentSourceUpdateError`` when the item changed under us (SQS retries), and
+    ``CsvReplaceRefusedError`` when the stored item is not this dataset's row.
     """
+    if stored.get('csv_dataset') != raw_record['csv_dataset']:
+        count_metric("CsvUpdatesRefused")
+        raise CsvReplaceRefusedError(f"Feedback {stored.get('feedback_id')} was not stored by this CSV dataset")
     decision = csv_update_decision(stored, raw_record)
     if decision != UPDATE_APPLY:
         logger.info(f"CSV update {decision}: {stored.get('feedback_id')}")
@@ -570,8 +582,15 @@ def refresh_csv_item(stored: dict, raw_record: dict) -> str:
             raise ConcurrentSourceUpdateError(f"Feedback {stored.get('feedback_id')} changed during a CSV update") from e
         raise
     logger.info(f"Updated stored feedback {stored.get('feedback_id')} from a corrected CSV row")
-    count_metric("CsvUpdatesApplied" if reenriched is None else "CsvUpdatesReenriched")
+    count_metric(_csv_update_metric(wants_reenrichment, enrichment_failed))
     return decision
+
+
+def _csv_update_metric(wants_reenrichment: bool, enrichment_failed: bool) -> str:
+    """One metric per outcome: a failed re-enrichment (fields only) is not counted as a plain update."""
+    if enrichment_failed:
+        return "CsvUpdatesFieldsOnly"
+    return "CsvUpdatesReenriched" if wants_reenrichment else "CsvUpdatesApplied"
 
 
 def _refreshable(raw_record: dict) -> bool:

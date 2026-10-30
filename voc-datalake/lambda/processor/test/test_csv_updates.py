@@ -64,6 +64,11 @@ def items(feedback) -> list[dict]:
     return feedback.scan()['Items']
 
 
+def csv_update_metrics(counted: MagicMock) -> list[str]:
+    """The ``CsvUpdates*`` metric names a patched ``count_metric`` was called with, in order."""
+    return [call.args[0] for call in counted.call_args_list if call.args[0].startswith('CsvUpdates')]
+
+
 class TestCorrections:
     def test_a_confirmed_correction_updates_the_stored_row_instead_of_adding_one(self):
         with world() as (feedback, llm):
@@ -124,6 +129,25 @@ class TestCorrections:
         assert after['rating'] == Decimal(4)
         assert 'source_refreshed_at' in after
 
+    @pytest.mark.parametrize(('second', 'expected'), [
+        (insights(), 'CsvUpdatesReenriched'),
+        ({'insights': {}, 'metadata': {'error': 'unparseable'}}, 'CsvUpdatesFieldsOnly'),
+    ])
+    def test_each_correction_outcome_counts_one_metric_of_its_own(self, second, expected):
+        """A failed re-enrichment is counted as fields-only, never also as a plain update."""
+        with world([insights(), second]) as _, patch.object(handler, 'count_metric') as counted:
+            deliver(csv_message())
+            counted.reset_mock()
+            deliver(csv_message('the app crashes', HASH_B, replace=True))
+        assert csv_update_metrics(counted) == [expected]
+
+    def test_a_rating_only_correction_counts_as_applied(self):
+        with world() as _, patch.object(handler, 'count_metric') as counted:
+            deliver(csv_message())
+            counted.reset_mock()
+            deliver(csv_message(content_hash=HASH_B, replace=True, rating=5))
+        assert csv_update_metrics(counted) == ['CsvUpdatesApplied']
+
     def test_a_correction_never_moves_a_manual_category(self):
         with world([insights('product_quality'), insights('performance')]) as (feedback, _):
             deliver(csv_message())
@@ -165,27 +189,42 @@ class TestMarker:
             (item,) = items(feedback)
         assert (item['original_text'], item['csv_content_hash']) == ('teh app crashes', HASH_A)
 
-    def test_a_forged_replace_aimed_at_a_non_csv_item_fails_the_condition_and_changes_nothing(self):
-        """An item no dataset stored (no csv_dataset) that merely shares the key is never overwritten."""
+    def test_a_forged_replace_aimed_at_a_non_csv_item_is_refused_before_any_model_call(self):
+        """An item no dataset stored (no csv_dataset) that merely shares the key is never overwritten,
+        and the refusal costs no Bedrock call (each SQS retry would otherwise enrich again)."""
         with world() as (feedback, llm):
             deliver({**csv_message(), 'csv_dataset': None, 'csv_content_hash': None,
                      'ingestion_method': 'json_upload'})
             (before,) = items(feedback)
-            with pytest.raises(handler.ConcurrentSourceUpdateError):
+            with pytest.raises(handler.CsvReplaceRefusedError):
                 deliver(csv_message('the app crashes', HASH_B, replace=True, rating=5))
             (after,) = items(feedback)
         assert 'csv_dataset' not in before
         assert after == before
-        assert llm.call_count == 2  # enriched, then the conditional write refused it
+        assert llm.call_count == 1  # only the first import was enriched
 
-    def test_a_replace_naming_another_dataset_fails_the_condition_and_changes_nothing(self):
-        with world() as (feedback, _):
+    def test_a_replace_naming_another_dataset_is_refused_before_any_model_call(self):
+        with world() as (feedback, llm):
             deliver(csv_message())
             (before,) = items(feedback)
-            with pytest.raises(handler.ConcurrentSourceUpdateError):
+            with pytest.raises(handler.CsvReplaceRefusedError):
                 deliver(csv_message('the app crashes', HASH_B, replace=True, csv_dataset='example air q4'))
             (after,) = items(feedback)
         assert after == before
+        assert llm.call_count == 1
+
+    def test_the_conditional_write_still_refuses_a_dataset_that_changed_after_the_read(self):
+        """The pre-check is an optimisation; the condition on csv_dataset stays the guard."""
+        with world() as (feedback, _):
+            deliver(csv_message())
+            (before,) = items(feedback)
+            moved = {**before, 'csv_dataset': 'example air q4'}
+            feedback.put_item(Item=moved)  # changed after the processor's read (the patched one below)
+            with patch.object(handler, 'load_stored_item', return_value=before), \
+                 pytest.raises(handler.ConcurrentSourceUpdateError):
+                deliver(csv_message(content_hash=HASH_B, replace=True, rating=5))
+            (after,) = items(feedback)
+        assert after == moved
 
     def test_a_correction_gets_an_idempotency_key_of_its_own(self):
         first, correction = csv_message(), csv_message(content_hash=HASH_B, replace=True)

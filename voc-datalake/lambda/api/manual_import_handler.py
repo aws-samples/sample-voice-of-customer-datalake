@@ -96,6 +96,8 @@ MANUAL_IMPORT_PROCESSOR_FUNCTION = os.environ.get('MANUAL_IMPORT_PROCESSOR_FUNCT
 # What an S3/SQS write raises. The archive and enqueue steps degrade on exactly
 # these (the row is reported, the request still answers); anything else is a bug.
 _AWS_WRITE_ERRORS = (ClientError, BotoCoreError)
+# What a DynamoDB read of stored rows raises (the CSV dataset preview answers 503 on it).
+_AWS_READ_ERRORS = (ClientError, BotoCoreError)
 
 
 def _caller_user_id() -> str:
@@ -730,7 +732,7 @@ def _dataset_plan(source_id: str, items: list[dict]) -> CsvDatasetPlan:
         raise ConfigurationError('FEEDBACK_TABLE not configured')
     try:
         return plan_dataset_rows(feedback_table, source_id, items)
-    except (StoredRowsUnreadable, *_AWS_WRITE_ERRORS) as e:
+    except (StoredRowsUnreadable, *_AWS_READ_ERRORS) as e:
         logger.warning(f"CSV dataset rows could not be read: {e}")
         raise ServiceUnavailableError('Stored rows could not be read; try the upload again') from e
 
