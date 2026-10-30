@@ -213,6 +213,9 @@ test('latency budgets: mode from E2E_BUDGETS, per-route overrides, and the slowe
   expect(endpointBudget('/projects/proj_1/members')).toEqual(ENDPOINT_DEFAULT)
   expect(screenDclBudget('login').p95Ms).toBeGreaterThan(screenDclBudget('dashboard').p95Ms)
   expect(screenSlowestCallBudget('dashboard').source).not.toBe('')
+  // The System errors screen waits on a Logs Insights search; no other admin screen inherits its budget.
+  expect(screenSlowestCallBudget('admin-system-logs').p95Ms).toBeGreaterThan(screenSlowestCallBudget('dashboard').p95Ms)
+  expect(screenSlowestCallBudget('admin-system')).toEqual(screenSlowestCallBudget('dashboard'))
 
   const budget = { p95Ms: 100, source: 'unit' }
   expect(breachOf('x', 100, budget)).toBeNull()

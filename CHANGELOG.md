@@ -36,7 +36,8 @@ production end-to-end run and log sweep found after the 5.48.04 dependency upgra
   search measured 6.0 s → 3.0 s (median of 6, production). The Insights queries start and are read concurrently, a
   finished query is not read again, the first reads come after 0.5 s instead of 1 s, and the log-group listing is
   kept for 5 minutes in the warm Lambda, so a `query_id` poll no longer lists every log group again. A new
-  function's log group therefore joins the search within 5 minutes.
+  function's log group therefore joins the search within 5 minutes. The e2e suite gives this screen its own
+  latency budget (8 s, measured warm 2.9-4.0 s and with a cold Lambda 4.9-6.4 s), far below the 18 s poll limit.
 - The supported Node.js is 22.12+ (root `package.json` `engines`, [deployment](docs/deployment.md)): Vite 7 and
   Stryker 10 need it, and CI already runs Node 22. The mutation tool's own Babel is 8.x (Stryker 10.1's
   instrumenter); the SPA's build keeps Babel 7 through `@vitejs/plugin-react` 5.2.
