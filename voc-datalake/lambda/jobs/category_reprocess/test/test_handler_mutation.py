@@ -544,9 +544,11 @@ class TestReprocessItemOutcomes:
         assert counters == _counters(scanned=1, unchanged=1)
         table.update_item.assert_not_called()
 
-    def test_processed_mode_rates_an_unrated_review_whose_category_stays(self, doubles):
+    @pytest.mark.parametrize('pii_policy', [None, 'summary_only'], ids=['full-text', 'summary-only'])
+    def test_processed_mode_rates_an_unrated_review_whose_category_stays(self, doubles, pii_policy):
+        """Rated from the stored text: the full text, or the summary of a summary-only review."""
         table, _processed, _raw = doubles
-        item = _item(category='shipping', subcategory='late')
+        item = _item(category='shipping', subcategory='late', **({'pii_policy': pii_policy} if pii_policy else {}))
         counters = self._run(doubles, item)
         assert counters == _counters(scanned=1, updated=1)
         table.update_item.assert_called_once_with(**build_usefulness_update(item, 'low'))
@@ -566,13 +568,6 @@ class TestReprocessItemOutcomes:
         assert counters == _counters(scanned=1, updated=1)
         table.update_item.assert_called_once_with(
             **build_update(item, {**self.NEW, 'usefulness': 'high'}, False, self.NOW))
-
-    def test_an_unrated_summary_only_review_is_rated_from_its_summary(self, doubles):
-        table, _processed, _raw = doubles
-        item = _item(category='shipping', subcategory='late', pii_policy='summary_only')
-        counters = self._run(doubles, item)
-        assert counters == _counters(scanned=1, updated=1)
-        table.update_item.assert_called_once_with(**build_usefulness_update(item, 'low'))
 
     def test_the_classifier_answer_is_not_mutated(self, doubles):
         _table, processed, _raw = doubles
