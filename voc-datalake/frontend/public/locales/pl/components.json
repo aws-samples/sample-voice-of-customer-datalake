@@ -352,6 +352,7 @@
       "confirm": "Przetwórz ponownie",
       "running": "Ponowne przetwarzanie {{filename}}...",
       "failed": "Ponowne przetwarzanie {{filename}} nie powiodło się. Szczegóły są w logach systemowych.",
+      "pollFailed": "Nie udało się sprawdzić stanu {{filename}}. Przetwarzanie może nadal trwać; otwórz tę stronę ponownie, aby sprawdzić.",
       "startFailed": "Nie udało się rozpocząć ponownego przetwarzania: {{error}}",
       "dismiss": "Zamknij",
       "completed_one": "Przetworzono ponownie {{filename}}: {{count, number}} wiersz wysłany do potoku (duplikaty są tam pomijane).",

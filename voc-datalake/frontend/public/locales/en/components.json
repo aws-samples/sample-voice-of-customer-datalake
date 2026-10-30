@@ -322,6 +322,7 @@
       "confirm": "Reprocess",
       "running": "Reprocessing {{filename}}...",
       "failed": "Reprocessing {{filename}} failed. The system logs have the details.",
+      "pollFailed": "Couldn't check on {{filename}}. It may still be running; reopen this page to check again.",
       "startFailed": "Could not start reprocessing: {{error}}",
       "dismiss": "Dismiss",
       "completed_one": "Reprocessed {{filename}}: {{count, number}} row sent to the pipeline (duplicates are skipped there).",

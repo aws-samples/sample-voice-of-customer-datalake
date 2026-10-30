@@ -31,9 +31,12 @@ export type S3ImportRun = z.output<typeof S3ImportRunSchema>
 
 const RunEnvelopeSchema = z.object({ run: S3ImportRunSchema })
 
-/** Only `running` can still change; every other status (completed, error, unknown) is settled. */
+/** The statuses a run cannot leave: done, failed, or unreadable (`unknown`, so a malformed row never polls forever). */
+const SETTLED_STATUSES: ReadonlySet<string> = new Set(['completed', 'error', 'unknown'])
+
+/** Whether a run has finished. Any other status (`running`, or one written before the ingestor starts) can still change. */
 export function isRunSettled(run: S3ImportRun): boolean {
-  return run.status !== 'running'
+  return SETTLED_STATUSES.has(run.status)
 }
 
 function parseRun(raw: unknown): S3ImportRun {

@@ -322,6 +322,7 @@
       "confirm": "再処理",
       "running": "{{filename}} を再処理しています...",
       "failed": "{{filename}} の再処理に失敗しました。詳細はシステムログを確認してください。",
+      "pollFailed": "{{filename}} の状態を確認できませんでした。まだ処理中の可能性があります。このページを開き直して確認してください。",
       "startFailed": "再処理を開始できませんでした: {{error}}",
       "dismiss": "閉じる",
       "completed_one": "{{filename}} を再処理しました: {{count, number}} 行をパイプラインに送信しました (重複はそこでスキップされます)。",

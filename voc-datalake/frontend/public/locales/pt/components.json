@@ -331,6 +331,7 @@
       "confirm": "Reprocessar",
       "running": "Reprocessando {{filename}}...",
       "failed": "Falha ao reprocessar {{filename}}. Os logs do sistema têm os detalhes.",
+      "pollFailed": "Não foi possível verificar {{filename}}. Ele pode ainda estar em execução; reabra esta página para verificar.",
       "startFailed": "Não foi possível iniciar o reprocessamento: {{error}}",
       "dismiss": "Fechar",
       "completed_one": "{{filename}} reprocessado: {{count, number}} linha enviada ao pipeline (lá as duplicadas são ignoradas).",

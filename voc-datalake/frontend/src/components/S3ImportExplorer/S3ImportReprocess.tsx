@@ -36,8 +36,16 @@ export function ReprocessFileButton({ onClick }: Readonly<{ onClick: () => void 
   )
 }
 
-function RunStatusLine({ run, filename }: Readonly<{ run: S3ImportRun; filename: string }>) {
+function RunStatusLine({ run, filename, pollFailed }: Readonly<{ run: S3ImportRun; filename: string; pollFailed: boolean }>) {
   const { t } = useTranslation('components')
+  if (pollFailed) {
+    // The status could not be read; the run itself may still be going, so it is not reported as failed.
+    return (
+      <span className="flex items-center gap-2 text-muted">
+        <AlertCircle size={16} aria-hidden /> {t('s3Import.reprocess.pollFailed', { filename })}
+      </span>
+    )
+  }
   if (!isRunSettled(run)) {
     return (
       <span className="flex items-center gap-2 text-accent-text">
@@ -68,12 +76,12 @@ function RunStatus({ started, onDismiss }: Readonly<{ started: S3ImportRun; onDi
     // Stops once the run settles, and on a failed poll (a 4xx is not retried; see queryPolicies).
     refetchInterval: (query) => (query.state.error !== null || isRunSettled(query.state.data ?? started) ? false : POLL_INTERVAL_MS),
   })
-  // A poll that failed leaves the last answer `running`: shown as failed, not as a spinner forever.
-  const shown: S3ImportRun = isError && !isRunSettled(data) ? { ...data, status: 'unknown' } : data
+  // A failed poll says so (the run may still be going), with a dismiss, rather than a spinner forever.
+  const pollFailed = isError && !isRunSettled(data)
   return (
     <div role="status" className="flex items-center justify-between gap-2 border border-border rounded-lg px-3 py-2 text-sm">
-      <RunStatusLine run={shown} filename={describeImportKey(started.key).filename} />
-      {isRunSettled(shown) && (
+      <RunStatusLine run={data} filename={describeImportKey(started.key).filename} pollFailed={pollFailed} />
+      {(pollFailed || isRunSettled(data)) && (
         <button type="button" onClick={onDismiss} className="p-1 text-muted hover:text-text rounded-sm"
           aria-label={t('s3Import.reprocess.dismiss')} title={t('s3Import.reprocess.dismiss')}>
           <X size={14} aria-hidden />
