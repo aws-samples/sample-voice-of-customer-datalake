@@ -53,10 +53,6 @@ const ENV_REFERENCE: Record<Exclude<McpClient, 'inline'>, string> = {
   kiro: `\${${TOKEN_ENV_VAR}}`,
 }
 
-export function isMcpClient(value: string): value is McpClient {
-  return MCP_CLIENTS.some((client) => client === value)
-}
-
 /** The `mcp.json` for one client; the env-var variants carry no token, not even a placeholder. */
 export function buildClientMcpJson(endpointUrl: string, client: McpClient): string {
   if (client === 'inline') return buildMcpJson(endpointUrl)

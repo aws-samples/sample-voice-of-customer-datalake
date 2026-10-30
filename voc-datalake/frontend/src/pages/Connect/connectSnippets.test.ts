@@ -8,7 +8,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { TokenDetailResponseSchema, TokenListResponseSchema } from '../../api/connectSchema'
 import {
-  buildClientMcpJson, buildMcpJson, ENDPOINT_PLACEHOLDER, fillSkill, globalEndpointUrl, isMcpClient, MCP_CLIENTS, skillUrl,
+  buildClientMcpJson, buildMcpJson, ENDPOINT_PLACEHOLDER, fillSkill, globalEndpointUrl, MCP_CLIENTS, skillUrl,
   tokenExportLine,
 } from './connectSnippets'
 
@@ -56,11 +56,6 @@ describe('connect snippets', () => {
   it('defaults to an env-var client and keeps the inline variant last', () => {
     expect(MCP_CLIENTS).toStrictEqual(['claudeCode', 'cursor', 'kiro', 'inline'])
     expect(buildClientMcpJson('https://x/mcp/global', 'inline')).toBe(buildMcpJson('https://x/mcp/global'))
-  })
-
-  it('recognises only the listed clients', () => {
-    expect(MCP_CLIENTS.every(isMcpClient)).toBe(true)
-    expect(['', 'vscode', 'Kiro'].some(isMcpClient)).toBe(false)
   })
 
   it('sets the variable with a placeholder, never a token', () => {
