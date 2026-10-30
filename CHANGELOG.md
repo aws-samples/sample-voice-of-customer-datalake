@@ -17,6 +17,10 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.53.00] - 2026-10-30
+
+Administrators can delete all data from one source in a single erasure job (#143).
+
 ### Added
 
 - **Delete all data from a source** (Administration → Privacy & access → Sources): one erasure job removes
