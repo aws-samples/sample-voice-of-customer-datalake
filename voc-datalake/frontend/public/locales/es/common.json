@@ -351,7 +351,7 @@
     "mcpFile": {
       "claudeCode": "Guárdalo como .mcp.json en la raíz del proyecto.",
       "cursor": "Guárdalo como .cursor/mcp.json en el proyecto, o ~/.cursor/mcp.json para todos los proyectos.",
-      "kiro": "Guárdalo como .kiro/settings/mcp.json en el espacio de trabajo, o ~/.kiro/settings/mcp.json. En el IDE de Kiro, añade VOC_MCP_TOKEN en Settings → Mcp Approved Env Vars; Kiro CLI lo lee del shell.",
+      "kiro": "Guárdalo como .kiro/settings/mcp.json en el espacio de trabajo, o ~/.kiro/settings/mcp.json. En el IDE de Kiro, añade VOC_MCP_TOKEN en Mcp Approved Env Vars; Kiro CLI lo lee del shell.",
       "inline": "Para clientes que no pueden leer variables de entorno: el token se pega en el archivo, así que no lo confirmes en el repositorio ni lo compartas."
     },
     "mcpEnvHint": "Este archivo lee el token de la variable de entorno {{name}}, así que no contiene ningún secreto. Defínela en el shell que inicia el cliente, con un token de abajo:"
