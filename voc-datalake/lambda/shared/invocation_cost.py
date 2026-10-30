@@ -33,6 +33,7 @@ from collections.abc import Callable
 from typing import Any
 
 from shared.logging import logger, metrics, tracer
+from shared.model_profile import profile_from_job_event, with_model_profile
 
 #: The message of the line; Logs Insights filters on `message = "invocation_cost"`.
 COST_LINE = 'invocation_cost'
@@ -96,8 +97,10 @@ def instrumented_handler(func: Callable[[Any, Any], Any]) -> Callable[[Any, Any]
     then `measure_invocation_cost` innermost — the same stack as `shared.api.api_handler`
     (which composes it on its own module globals, so its tests can patch them). Worker
     and job handlers that log through `shared.logging` use this instead of repeating
-    the four decorators.
+    the four decorators. Innermost of all, the model profile a job event carries
+    (shared/model_profile.py: an e2e user's job runs on the profile's model).
     """
+    profiled = with_model_profile(profile_from_job_event)(func)
     return logger.inject_lambda_context(
         tracer.capture_lambda_handler(
-            metrics.log_metrics(capture_cold_start_metric=True)(measure_invocation_cost(func))))
+            metrics.log_metrics(capture_cold_start_metric=True)(measure_invocation_cost(profiled))))

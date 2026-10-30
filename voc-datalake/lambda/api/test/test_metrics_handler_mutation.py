@@ -1158,7 +1158,8 @@ class TestTheHandlerIsWrappedByApiHandler:
             return False
 
         func = inspect.unwrap(metrics_handler.lambda_handler, stop=record)
-        # api_handler's innermost layer is the per-request invocation_cost wrapper.
-        assert chain[-1].endswith(os.path.join('shared', 'invocation_cost.py'))
+        # api_handler's innermost layers: the per-request invocation_cost wrapper, then the model profile scope.
+        assert chain[-2].endswith(os.path.join('shared', 'invocation_cost.py'))
+        assert chain[-1].endswith(os.path.join('shared', 'model_profile.py'))
         assert func.__code__.co_filename == metrics_handler.__file__
         assert func.__qualname__ == 'lambda_handler'

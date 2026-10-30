@@ -88,6 +88,7 @@ from shared.model_config import (
     SURFACE_DEFAULTS,
     clear_model_cache,
 )
+from shared.model_profile import payload_fields
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value, json_object_body
 from shared.retention import ERASE_FIELDS, ERASURE_JOB_PK, ERASURE_JOB_PREFIX, SOURCE_FIELD
@@ -859,7 +860,7 @@ def start_category_reprocess():
     if job is None:
         raise ConflictError('A reprocess job is already queued or running')
     try:
-        invoke_lambda_async(CATEGORY_REPROCESS_FUNCTION, {'job_id': job['sk']})
+        invoke_lambda_async(CATEGORY_REPROCESS_FUNCTION, {'job_id': job['sk'], **payload_fields()})
     except Exception as e:
         logger.exception("Failed to start category reprocess worker")
         reprocess_jobs.finish_job(table, job['sk'], reprocess_jobs.STATUS_FAILED,
@@ -1321,10 +1322,10 @@ def _start_reference_refresh(table, ref_id: str, kind: object = None) -> None:
             design_references.record_outcome(table, ref_id, {
                 'status': 'error', 'error': 'Reading live websites is not available in this deployment'}, now_iso())
             return
-        function_name, payload = DESIGN_CAPTURE_FUNCTION, {'action': DESIGN_CAPTURE_ACTION, 'ref_id': ref_id}
+        function_name, payload = DESIGN_CAPTURE_FUNCTION, {'action': DESIGN_CAPTURE_ACTION, 'ref_id': ref_id, **payload_fields()}
     else:
         function_name = os.environ.get('ASSIST_WORKER_FUNCTION') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME', '')
-        payload = {'action': DESIGN_REFRESH_ACTION, 'ref_id': ref_id}
+        payload = {'action': DESIGN_REFRESH_ACTION, 'ref_id': ref_id, **payload_fields()}
     if not function_name:
         _record_refresh_start_failure(table, ref_id, RuntimeError.__name__)
         return

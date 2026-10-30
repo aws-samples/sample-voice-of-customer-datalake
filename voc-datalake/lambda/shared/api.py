@@ -39,6 +39,7 @@ from shared.feedback import (  # noqa: F401 — re-export
 )
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics, tracer
+from shared.model_profile import profile_for_groups, profile_from_job_event, with_model_profile
 from shared.project_access import ADMIN_GROUP
 
 
@@ -442,6 +443,12 @@ def _exception_answer(status_code: int | None, log_level: str, label: str,
     return answer
 
 
+def _invocation_model_profile(event: object) -> str | None:
+    """The model profile of an API invocation: verified Cognito groups first, then an internal event's field."""
+    groups = get_caller_groups(event) if isinstance(event, dict) else []
+    return profile_for_groups(groups) or profile_from_job_event(event)
+
+
 def api_handler(func):
     """
     Combined decorator for Lambda API handlers.
@@ -460,8 +467,11 @@ def api_handler(func):
         @api_handler
         def lambda_handler(event, context):
             return app.resolve(event, context)
+
+    Innermost of all: the model profile (shared/model_profile.py) — from the verified
+    ``cognito:groups`` claim, or the stamped field of an internal (assist / job) event.
     """
-    measured = measure_invocation_cost(func)
+    measured = measure_invocation_cost(with_model_profile(_invocation_model_profile)(func))
     return with_test_run_tag(logger)(logger.inject_lambda_context(
         tracer.capture_lambda_handler(
             metrics.log_metrics(capture_cold_start_metric=True)(measured))))
