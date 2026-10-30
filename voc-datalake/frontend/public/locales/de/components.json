@@ -322,6 +322,7 @@
       "confirm": "Neu verarbeiten",
       "running": "{{filename}} wird neu verarbeitet...",
       "failed": "Die Neuverarbeitung von {{filename}} ist fehlgeschlagen. Details stehen in den Systemprotokollen.",
+      "pollFailed": "Der Stand von {{filename}} konnte nicht abgefragt werden. Die Verarbeitung läuft womöglich noch; öffnen Sie die Seite erneut, um nachzusehen.",
       "startFailed": "Die Neuverarbeitung konnte nicht gestartet werden: {{error}}",
       "dismiss": "Schließen",
       "completed_one": "{{filename}} neu verarbeitet: {{count, number}} Zeile an die Pipeline gesendet (Duplikate werden dort übersprungen).",

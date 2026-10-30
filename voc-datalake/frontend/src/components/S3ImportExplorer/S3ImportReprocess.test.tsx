@@ -25,7 +25,7 @@ vi.mock('../../api/s3ImportReprocessApi', async (importOriginal) => ({
 }))
 
 import { api } from '../../api/client'
-import { getS3ImportReprocessRun, reprocessS3ImportFile } from '../../api/s3ImportReprocessApi'
+import { getS3ImportReprocessRun, isRunSettled, reprocessS3ImportFile } from '../../api/s3ImportReprocessApi'
 import S3ImportExplorer from './S3ImportExplorer'
 import { describeImportKey } from './importKey'
 
@@ -124,15 +124,27 @@ describe('reprocessing a file', () => {
     expect(screen.getByRole('heading', { name: 'Reprocess june.csv?' })).toBeInTheDocument()
   })
 
-  it('stops polling and shows failure when a poll is refused', async () => {
+  it('stops polling on a refused poll and says the status is unknown, not that the run failed', async () => {
     mockStart.mockResolvedValue(run('running'))
     mockPoll.mockRejectedValue(new Error('Run not found'))
     const user = await openConfirm()
 
     await user.click(screen.getByRole('button', { name: 'Reprocess' }))
 
-    expect(await screen.findByText(/Reprocessing june.csv failed/, {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(await screen.findByText(/Couldn't check on june.csv/, {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.queryByText(/Reprocessing june.csv failed/)).not.toBeInTheDocument()
     expect(mockPoll).toHaveBeenCalledWith('run_s3_import_20260310120000_0a1b2c3d')
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByText(/Couldn't check on june.csv/)).not.toBeInTheDocument()
+  })
+})
+
+describe('isRunSettled', () => {
+  it.each([
+    ['completed', true], ['error', true], ['unknown', true],
+    ['running', false], ['queued', false],
+  ])('reads a %s run as settled: %s', (status, settled) => {
+    expect(isRunSettled(run(status))).toBe(settled)
   })
 })
 

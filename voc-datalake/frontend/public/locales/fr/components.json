@@ -331,6 +331,7 @@
       "confirm": "Retraiter",
       "running": "Retraitement de {{filename}}...",
       "failed": "Le retraitement de {{filename}} a échoué. Les journaux système donnent le détail.",
+      "pollFailed": "Impossible de vérifier {{filename}}. Le traitement est peut-être encore en cours ; rouvrez cette page pour vérifier.",
       "startFailed": "Impossible de lancer le retraitement : {{error}}",
       "dismiss": "Fermer",
       "completed_one": "{{filename}} retraité : {{count, number}} ligne envoyée au pipeline (les doublons y sont ignorés).",
