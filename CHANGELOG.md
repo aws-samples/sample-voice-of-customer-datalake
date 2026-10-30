@@ -17,6 +17,36 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.56.00] - 2026-10-30
+
+Import history: every import writes a run record that administrators can browse (#237).
+
+### Added
+
+- Import history: every paste confirm, CSV upload, JSON upload (including the AI assistant's `import_reviews`) and
+  S3 import file now writes one run record (method, source, who, when, received / imported / skipped / duplicate /
+  failed counts, up to 200 warnings and errors, the raw file, status). Administrators see them in the new
+  **Import history** section of the Data sources page (`/scrapers`), where a row opens its warnings and errors, and
+  through the admin-only `GET /scrapers/manual/history` and `GET /scrapers/manual/history/{run_id}`. The section
+  refreshes when a paste, CSV or JSON import closes. Rows are numbered the same way for every method (data rows
+  from 1), and a large S3 file keeps at most 200 warnings in memory while still counting every skipped row.
+  See [docs/import-history.md](docs/import-history.md).
+
+### Security
+
+- Import history records never copy customer values: the CSV warning for a non-numeric rating no longer quotes the
+  cell, and S3 import parse errors name the error class (for an unreadable JSON file, the line and column) instead
+  of its message. On `POST /scrapers/manual/json-upload`
+  the `source_label` is kept only with `import_origin: 'assistant'` (at most 120 characters, control characters
+  removed); both are client-reported, an audit hint rather than proof.
+  See [docs/import-history.md](docs/import-history.md).
+
+### Upgrade notes
+
+- Import run records live in `voc-aggregates` (`IMPORT_RUN` partition) and expire after 90 days; no new table,
+  stack or IAM permission. Imports made before this release have no record. Feedback-form submissions and scheduled
+  plugin / scraper runs are not import runs and are not recorded (see the doc).
+
 ## [5.55.02] - 2026-10-30
 
 Follow-ups from the 5.48.05 review of the suite clock, and PRs merged with their commits kept. Tooling and
