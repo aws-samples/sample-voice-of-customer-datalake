@@ -26,7 +26,6 @@ from shared.concurrency import ordered_map
 from shared.feedback_keys import feedback_item_key
 
 __all__ = [
-    'CHANGED_ROWS_LIMIT',
     'CsvDatasetPlan',
     'StoredRowsUnreadable',
     'plan_dataset_rows',
