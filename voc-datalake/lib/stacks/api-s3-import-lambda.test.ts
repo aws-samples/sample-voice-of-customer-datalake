@@ -38,11 +38,12 @@ describe('with the s3_import plugin enabled', () => {
     expect(invokes[0]?.resource).not.toContain('*');
   });
 
-  it('writes the aggregates table only in the run partition the handler uses', () => {
+  it('reads and writes the aggregates table only in the run partition the handler uses', () => {
     expect(S3_IMPORT_RUN_PARTITION).toBe(pythonRunPartition());
     const dynamo = statements().filter((s) => s.actions.some((a) => a.startsWith('dynamodb:')));
+    // Query is the duplicate-run check (409); the LeadingKeys condition still pins it to the run partition.
     expect(dynamo).toStrictEqual([{
-      actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem'],
+      actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:Query'],
       resource: expect.stringContaining('Aggregates'),
       condition: { 'ForAllValues:StringEquals': { 'dynamodb:LeadingKeys': [S3_IMPORT_RUN_PARTITION] } },
     }]);

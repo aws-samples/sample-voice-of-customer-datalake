@@ -25,16 +25,23 @@ the platform package version.
   stays the job of *Reprocess existing feedback*. A copy archived by hand as `processed/<folder>/<file>` keeps
   its original source `S3 - <folder>`. New admin-only routes `POST /s3-import/reprocess` and
   `GET /s3-import/reprocess/{run_id}`; the run is the ordinary `SOURCE_RUN#s3_import` source-run record
-  ([Data lake structure → Reprocessing a file](docs/data-lake-structure.md#reprocessing-a-file)).
+  ([Data lake structure → Reprocessing a file](docs/data-lake-structure.md#reprocessing-a-file)). A second
+  reprocess of a file answers 409 while its earlier run is still running (younger than the ingestor's 300 s
+  timeout).
 
 ### Fixed
 - `POST /sources/s3_import/run` no longer leaves its run record at `running` forever: the S3 import ingestor
   now closes a run it is given, as completed with 0 rows when no file was named.
 
+### Security
+- The S3 import ingestor reads only records that name its own import bucket (new `S3_IMPORT_BUCKET`
+  environment variable); a record for any other bucket is skipped with a warning, unread.
+
 ### Upgrade notes
-- `VocApiStack` only: the S3 import API role gains `lambda:InvokeFunction` on the `s3_import` ingestor and
-  aggregates-table Put/Get/UpdateItem limited to the `SOURCE_RUN#s3_import` partition (only when the
-  `s3_import` plugin is enabled). No resource is renamed or replaced.
+- `VocApiStack`: the S3 import API role gains `lambda:InvokeFunction` on the `s3_import` ingestor and
+  aggregates-table Put/Get/UpdateItem/Query limited to the `SOURCE_RUN#s3_import` partition (only when the
+  `s3_import` plugin is enabled). `VocIngestionStack`: the `s3_import` ingestor gains the `S3_IMPORT_BUCKET`
+  environment variable. Deploy both stacks together. No resource is renamed or replaced.
 
 ## [5.48.06] - 2026-10-30
 

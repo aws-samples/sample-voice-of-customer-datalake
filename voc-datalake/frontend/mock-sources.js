@@ -1058,6 +1058,10 @@ function startReprocess(body) {
   const file = importFiles.get(key);
   if (!file) return fail(404, `File not found: ${key}`);
   if (!file.size) return fail(400, 'The file is empty');
+  // The handler's s3_import_runs.refuse_running_duplicate: one live run per file.
+  if ([...reprocessRuns.values()].some((r) => r.key === key && runView(r).status === 'running')) {
+    return fail(409, 'This file is already being reprocessed');
+  }
   // The real id: shared/ids.py timestamped_id ('<prefix>_<UTC YYYYmmddHHMMSS>_<8 hex>').
   const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
   const run = { run_id: `run_s3_import_${stamp}_${randomBytes(4).toString('hex')}`, key, size: file.size, startedMs: Date.now() };
