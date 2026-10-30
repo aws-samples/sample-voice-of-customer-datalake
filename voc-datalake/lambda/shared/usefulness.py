@@ -18,6 +18,10 @@ A review is ``low`` whatever its points when it is near-empty (under ``MIN_WORDS
 Otherwise ``HIGH_POINTS`` or more points is ``high``, ``MEDIUM_POINTS`` or more ``medium``.
 
 The English cue words read ``normalized_text`` (the translation) when the review has one.
+Length is script-aware: in scripts written without spaces between words (Chinese, Japanese
+kana, Thai, ...) every ``CJK_CHARS_PER_WORD`` characters count as one word and each such
+character as ``CJK_CHARS_PER_WORD`` characters, so an untranslated review in those scripts
+is not near-empty just because it has no spaces.
 A review stored without the attribute (written before this existed) is ``unrated``
 everywhere (``stored_band``); a category reprocess fills it in (docs/data-quality.md).
 
@@ -80,7 +84,15 @@ SPECIFIC_TERMS: Final = (
     'baggage', 'luggage', 'ticket', 'support', 'agent', 'wait', 'delay', 'cancel',
 )
 _TERMS_RE: Final = re.compile(r'\b(?:' + '|'.join(re.escape(term) for term in SPECIFIC_TERMS) + ')')
-_WORD_RE: Final = re.compile(r'\w+')
+# Scripts written without spaces between words: Thai, Lao, Khmer, kana, CJK ideographs.
+_UNSPACED_CLASS: Final = (
+    '\u0e00-\u0eff\u1780-\u17ff\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff'
+)
+_UNSPACED_RE: Final = re.compile(f'[{_UNSPACED_CLASS}]')
+# A word: a run of word characters outside those scripts.
+_WORD_RE: Final = re.compile(f'(?:(?![{_UNSPACED_CLASS}])\\w)+')
+#: In an unspaced script, this many characters count as one word (roughly a word's length).
+CJK_CHARS_PER_WORD: Final = 2
 _NUMBER_RE: Final = re.compile(r'\d')
 _NOT_LETTER_RE: Final = re.compile(r'[^a-z ]+')
 
@@ -114,11 +126,18 @@ def _points(text: str, words: int, concrete: bool) -> int:
     return sum(1 for signal in signals if signal)
 
 
+def _length(clean: str) -> tuple[int, int]:
+    """``(words, chars)`` of a whitespace-collapsed text, weighting unspaced scripts (see the module)."""
+    unspaced = len(_UNSPACED_RE.findall(clean))
+    words = len(_WORD_RE.findall(clean)) + (unspaced + CJK_CHARS_PER_WORD - 1) // CJK_CHARS_PER_WORD
+    return words, len(clean) + unspaced * (CJK_CHARS_PER_WORD - 1)
+
+
 def usefulness_band(text: object, *, problem_summary: object = None, feedback_type: object = None) -> str:
     """``low`` | ``medium`` | ``high`` for one review's text and its enrichment (see the module)."""
     clean = ' '.join(text.split()) if isinstance(text, str) else ''
-    words = len(_WORD_RE.findall(clean))
-    if words < MIN_WORDS or len(clean) < MIN_CHARS or _boilerplate(clean):
+    words, chars = _length(clean)
+    if words < MIN_WORDS or chars < MIN_CHARS or _boilerplate(clean):
         return LOW
     points = _points(clean, words, _concrete(problem_summary, feedback_type))
     if points >= HIGH_POINTS:

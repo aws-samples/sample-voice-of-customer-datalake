@@ -28,8 +28,11 @@ Otherwise 3 points or more is `high` (`HIGH_POINTS`), 1 or 2 is `medium` (`MEDIU
 `low`.
 
 The cue words are English, so the rule reads `normalized_text` (the translation the processor stores
-for a review in another language) when there is one. A `summary_only` source is rated on the full
-text at ingestion, before the storage policy replaces it with the summary.
+for a review in another language) when there is one. Length is script-aware: without a translation, a
+review in a script written without spaces (Chinese, Japanese, Thai, ...) counts every 2 characters
+(`CJK_CHARS_PER_WORD`) as one word and each character as 2 toward `MIN_CHARS`, so it is not rated
+`low` just because it has no spaces. Its product terms still only match in English. A `summary_only`
+source is rated on the full text at ingestion, before the storage policy replaces it with the summary.
 
 The band is stored as the top-level `usefulness` attribute of the feedback item. It is recomputed
 when the text changes: an in-place refresh of a GitHub issue (`shared/source_updates.py`) and every
@@ -54,7 +57,9 @@ the band from the stored text, with no extra model call for the band itself:
   mode.
 
 A band-only update counts as `updated` in the job's counters and is conditional on the band being what
-was read, so a concurrent change wins. A reprocess of a `summary_only` source rates the stored summary.
+was read, so a concurrent change wins. A review from a `summary_only` source keeps the band it was
+given at ingestion (from the full text, which is no longer stored): a reprocess re-rates it only when it
+has no band yet, and then rates the stored summary.
 
 ## Per-source counters
 

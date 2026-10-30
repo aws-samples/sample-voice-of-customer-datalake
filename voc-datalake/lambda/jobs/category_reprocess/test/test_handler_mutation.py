@@ -551,6 +551,29 @@ class TestReprocessItemOutcomes:
         assert counters == _counters(scanned=1, updated=1)
         table.update_item.assert_called_once_with(**build_usefulness_update(item, 'low'))
 
+    def test_a_summary_only_review_keeps_its_band_when_its_category_stays(self, doubles):
+        # The stored text is the summary ('stored text' rates low); the ingestion band holds.
+        table, _processed, _raw = doubles
+        item = _item(category='shipping', subcategory='late', pii_policy='summary_only', usefulness='high')
+        counters = self._run(doubles, item)
+        assert counters == _counters(scanned=1, unchanged=1)
+        table.update_item.assert_not_called()
+
+    def test_a_summary_only_review_keeps_its_band_when_its_category_moves(self, doubles):
+        table, _processed, _raw = doubles
+        item = _item(pii_policy='summary_only', usefulness='high')
+        counters = self._run(doubles, item)
+        assert counters == _counters(scanned=1, updated=1)
+        table.update_item.assert_called_once_with(
+            **build_update(item, {**self.NEW, 'usefulness': 'high'}, False, self.NOW))
+
+    def test_an_unrated_summary_only_review_is_rated_from_its_summary(self, doubles):
+        table, _processed, _raw = doubles
+        item = _item(category='shipping', subcategory='late', pii_policy='summary_only')
+        counters = self._run(doubles, item)
+        assert counters == _counters(scanned=1, updated=1)
+        table.update_item.assert_called_once_with(**build_usefulness_update(item, 'low'))
+
     def test_the_classifier_answer_is_not_mutated(self, doubles):
         _table, processed, _raw = doubles
         answer = dict(self.NEW)
