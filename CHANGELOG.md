@@ -17,6 +17,10 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.52.00] - 2026-10-30
+
+An imported S3 file can be reprocessed through the pipeline from the S3 import explorer (#144).
+
 ### Added
 - **Reprocess an imported S3 file.** Each file in the S3 import explorer (Administration → Sources → S3 Bulk
   Import) has a Reprocess action that runs it through the import pipeline again and shows the run until it
