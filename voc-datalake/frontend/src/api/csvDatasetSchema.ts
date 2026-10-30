@@ -33,7 +33,6 @@ const count = z.number().int().nonnegative().catch(0)
 const CountsSchema = z.object({ new: count, changed: count, unchanged: count, v1_rows: count })
   .catch({ new: 0, changed: 0, unchanged: 0, v1_rows: 0 })
 
-
 const ChangedRowSchema = z.object({
   row: z.number().int().positive().nullable().catch(null),
   csv_row_id: z.string().nullable().catch(null),
