@@ -23,6 +23,7 @@ import { apiCall, stringField } from '../lib/api'
 import { RUN_PREFIX } from '../lib/env'
 import { assertStep, roleOf, settle, site } from '../lib/fixtures'
 import { isRecord } from '../lib/guards'
+import { recordCreated } from '../lib/ledger'
 
 /** The board seeded on every deployment (shared/feature_boards_store.py) and in the dev mock. */
 const SALES = { id: 'brd_sales', slug: 'sales-feature-requests', name: 'Sales feature requests' } as const
@@ -90,6 +91,8 @@ test.describe('feedback boards', () => {
     const board = isRecord(made.body) && isRecord(made.body['board']) ? made.body['board'] : {}
     const boardId = stringField(board, 'board_id') ?? ''
     expect(boardId, 'board_id').not.toBe('')
+    // In the run ledger at once: a killed worker leaves the board to the cleanup teardown's sweep.
+    recordCreated('board', boardId, name)
     try {
       const request = await apiCall('admin', 'POST', '/feature-requests', {
         board: boardId, title: `${RUN_PREFIX}delete-dialog-request`, description: 'Written by the e2e suite.', name: 'e2e admin', fields: {},
@@ -109,8 +112,9 @@ test.describe('feedback boards', () => {
         r.note('archived board with 1 request: type-the-name confirm, cancelled, board still there')
       })
     } finally {
+      // Soft: a failed cleanup is reported without replacing an error the steps above threw (the ledger sweep retries it).
       const removed = await apiCall('admin', 'DELETE', `/feature-requests/boards/${boardId}?with_requests=true`)
-      expect(removed.status, 'the scratch board is deleted').toBeLessThan(300)
+      expect.soft(removed.status, 'the scratch board is deleted').toBeLessThan(300)
     }
   })
 

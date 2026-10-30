@@ -32,6 +32,14 @@ production end-to-end run and log sweep found after the 5.48.04 dependency upgra
   specific matchers, one redundant optional type), with no gate setting changed.
 - `cdk-nag` 2.38 replaced its Cognito rule COG3 (advanced security mode) with COG8 (the plus feature plan); the
   suppression on both user pools follows it with the same decision (not enabled, to stay pay-per-use).
+- Administration → System → Logs → System errors (`GET /logs/system`) answers in about half the time: a 7-day
+  search measured 6.0 s → 3.0 s (median of 6, production). The Insights queries start and are read concurrently, a
+  finished query is not read again, the first reads come after 0.5 s instead of 1 s, and the log-group listing is
+  kept for 5 minutes in the warm Lambda, so a `query_id` poll no longer lists every log group again. A new
+  function's log group therefore joins the search within 5 minutes.
+- The supported Node.js is 22.12+ (root `package.json` `engines`, [deployment](docs/deployment.md)): Vite 7 and
+  Stryker 10 need it, and CI already runs Node 22. The mutation tool's own Babel is 8.x (Stryker 10.1's
+  instrumenter); the SPA's build keeps Babel 7 through `@vitejs/plugin-react` 5.2.
 - Held back on purpose: `amazon-cognito-identity-js` stays at 6.3.20 (6.3.22 marks the whole library deprecated in
   favour of Amplify v6, a sign-in migration of its own), `@tanstack/react-query` at 5.95 (5.105 deprecates
   `fetchQuery` / `prefetchQuery` in favour of `query()`), `@vitest/eslint-plugin` at 1.6.27 (1.6.28 needs
@@ -49,8 +57,10 @@ production end-to-end run and log sweep found after the 5.48.04 dependency upgra
   back to "unrelated").
 - The production end-to-end suite follows 5.47.04 and 5.48.02: the Radar picker's "All brands" option, "Edit my
   +1" for a request's reporter (the second +1 comes from the other test user), Delete only on an archived board
-  (checked on a scratch board the test removes), and the SSRF redirect probe skips with a reason when its public
-  redirector refuses internal targets (httpbin.org now answers 403 for them).
+  (checked on a scratch board that is recorded in the run ledger, so the cleanup teardown removes it even when the
+  worker dies; feedback boards are a new ledger kind), and the SSRF redirect probe tries its redirectors in turn
+  (`E2E_SSRF_REDIRECT_URL`, httpbin.dev, httpbin.org) because httpbin.org now refuses internal targets; it skips,
+  naming each answer, only when none redirects.
 - `test_logs_at_info_with_tenacitys_wording_and_stacklevel_two` reads the qualified name off the undecorated
   function, which pyright 1.1.414 requires.
 

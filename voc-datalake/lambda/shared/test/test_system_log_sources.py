@@ -16,8 +16,8 @@ from shared.system_log_rows import (
     normalized_path,
     workflow_query,
 )
-from shared.system_log_sources import LogSources, discover
-from shared.system_logs import MAX_QUERIES, SearchRequest, parse_query_ids, search
+from shared.system_log_sources import DISCOVERY_TTL_SECONDS, LogSources, discover
+from shared.system_logs import MAX_QUERIES, SearchRequest, parse_query_ids, query_string, search
 from shared.test.system_logs_fake import ACCOUNT, PATTERN, SUFFIX, FakeLogs, group, row
 
 ERRORS = ERROR_LEVELS
@@ -67,8 +67,28 @@ class TestDiscovery:
         assert [(t.function, t.source) for t in targets] == [
             ('projects-assist', 'lambda'), ('cognito-custom-message', 'lambda'), ('product-doc-extractor', 'lambda'),
             ('agent-run', 'workflow'), ('api', 'api')]
-        # One listing per kind: the two extra groups share one prefix.
-        assert fake.prefixes == ['/aws/lambda/voc-', 'VocCoreStack-', '/aws/stepfunctions/voc-', API_GROUP]
+        # One listing per kind (run concurrently, so in any order): the two extra groups share one prefix.
+        assert sorted(fake.prefixes) == sorted(['/aws/lambda/voc-', 'VocCoreStack-', '/aws/stepfunctions/voc-', API_GROUP])
+
+    @pytest.mark.parametrize('pattern', [PATTERN, f'/aws/lambda/stg-voc-*{SUFFIX}'])
+    def test_a_listing_is_reused_within_its_ttl_and_listed_again_after(self, monkeypatch, pattern):
+        monkeypatch.setenv('SYSTEM_LOG_GROUP_PATTERN', pattern)
+        fake = FakeLogs(ALL_GROUPS)
+        sources = LogSources.from_env()
+        first = discover(fake, sources, clock=lambda: 1000.0)
+        listings = len(fake.prefixes)
+        # A poll with `query_id` within the TTL lists nothing again, and gets an equal, separate list.
+        again = discover(fake, sources, clock=lambda: 1000.0 + DISCOVERY_TTL_SECONDS - 1)
+        assert (again, len(fake.prefixes)) == (first, listings)
+        assert again is not first
+        discover(fake, sources, clock=lambda: 1000.0 + DISCOVERY_TTL_SECONDS)
+        assert len(fake.prefixes) == 2 * listings
+
+    def test_a_listing_is_cached_per_client(self):
+        sources = LogSources.from_env()
+        one, two = FakeLogs(ALL_GROUPS), FakeLogs([group('projects-assist')])
+        assert len(discover(one, sources, clock=lambda: 0.0)) == 5
+        assert [t.function for t in discover(two, sources, clock=lambda: 0.0)] == ['projects-assist']
 
     def test_optional_sources_are_skipped_when_not_configured(self, monkeypatch):
         for name in ('SYSTEM_EXTRA_LOG_GROUPS', 'SYSTEM_WORKFLOW_LOG_GROUP_PATTERN', 'SYSTEM_API_ACCESS_LOG_GROUP'):
@@ -99,10 +119,13 @@ class TestSearchAcrossSources:
         fake = FakeLogs(ALL_GROUPS)
         body = self._run(fake)
         assert body['log_groups_by_source'] == {'lambda': 3, 'workflow': 1, 'api': 1}
-        assert [q['logGroupNames'] for q in fake.started] == [
-            sorted([group('projects-assist'), DOC_GROUP, MESSAGE_GROUP]), [WORKFLOW_GROUP], [API_GROUP]]
-        assert fake.started[1]['queryString'] == workflow_query(10000)
-        assert fake.started[2]['queryString'] == api_query('error', 10000)
+        # The queries start concurrently, so the fake records them in any order.
+        started = {tuple(q['logGroupNames']): q['queryString'] for q in fake.started}
+        assert started == {
+            tuple(sorted([group('projects-assist'), DOC_GROUP, MESSAGE_GROUP])): query_string('error'),
+            (WORKFLOW_GROUP,): workflow_query(10000),
+            (API_GROUP,): api_query('error', 10000),
+        }
 
     def test_rows_are_classified_by_their_log_group(self):
         fake = FakeLogs(ALL_GROUPS, rows=[
