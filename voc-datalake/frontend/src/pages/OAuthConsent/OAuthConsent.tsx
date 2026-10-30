@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { CONNECT_SCOPES, isConnectScope } from '../../api/connectSchema'
 import type { ConnectScope } from '../../api/connectSchema'
-import { oauthApi } from '../../api/oauthApi'
+import { oauthApi, oauthConsentKey } from '../../api/oauthApi'
 import type { ConsentDescription } from '../../api/oauthSchema'
 import { projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
@@ -75,7 +75,7 @@ function ConsentForm({ consent, authorizeQuery }: Readonly<{ consent: Approvable
 function ConsentBody({ authorizeQuery }: Readonly<{ authorizeQuery: string }>) {
   const { t } = useTranslation('common')
   const consent = useQuery({
-    queryKey: ['connect', 'oauth', 'consent', authorizeQuery],
+    queryKey: oauthConsentKey(authorizeQuery),
     queryFn: () => oauthApi.describeConsent(authorizeQuery),
     retry: false,
   })

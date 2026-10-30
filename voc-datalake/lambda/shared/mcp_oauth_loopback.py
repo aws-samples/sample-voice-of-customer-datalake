@@ -36,7 +36,3 @@ def loopback_path(uri: object) -> str | None:
         return None
     return parts.path
 
-
-def is_loopback_for(uri: object, path: str) -> bool:
-    """True when ``uri`` is a loopback URI on exactly ``path`` (any allowed port)."""
-    return loopback_path(uri) == path

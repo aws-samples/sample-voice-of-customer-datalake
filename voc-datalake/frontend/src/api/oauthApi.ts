@@ -19,6 +19,11 @@ const GRANTS_PATH = '/connect/oauth/grants'
 /** TanStack Query key of "my sign-ins". */
 export const OAUTH_GRANTS_KEY = ['connect', 'oauth', 'grants'] as const
 
+/** TanStack Query key of one consent request's description. */
+export function oauthConsentKey(authorizeQuery: string) {
+  return ['connect', 'oauth', 'consent', authorizeQuery] as const
+}
+
 export interface ConsentChoice {
   /** The MCP client's authorization query, exactly as it arrived on the consent page. */
   authorize_query: string

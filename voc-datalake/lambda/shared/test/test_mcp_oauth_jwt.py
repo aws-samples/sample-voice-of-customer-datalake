@@ -11,9 +11,9 @@ from shared.mcp_oauth_jwt import (
     JwksCache,
     JwksUnavailable,
     public_key_from_jwk,
-    unverified_claims,
     verify_access_token,
 )
+from shared.mcp_oauth_jwt_parts import unverified_claims
 from shared.test.mcp_oauth_fixtures import (
     CLIENTS,
     KID,
