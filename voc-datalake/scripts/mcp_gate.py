@@ -173,15 +173,25 @@ MODULE_FLOORS: dict[str, int] = {
     # 9 -> 5 (b6dbc8fc): the four memory-recall cases for a credential moved to
     # test_memory_handler_mutation.py, which pins the same rule more tightly.
     'test_global_mcp_tokens_api': 5,
+    # 5.57.00: MCP prompts and resources end to end, both eras.
+    'test_global_mcp_prompts_e2e': 14,
     # Mutation-hardening suites (one per module or slice).
     # 171 -> 194: the 2026-07-28 era (server/discover, mirrored headers, results);
     # test_mcp_protocol unit-tests shared/mcp_protocol.py on its own.
     'test_mcp_global_handler_mutation': 194,
-    'test_mcp_protocol': 17,
+    # 17 -> 23 (5.57.00): Mcp-Name on prompts/get and resources/read.
+    'test_mcp_protocol': 23,
     'test_mcp_delegate_mutation': 68,
     'test_mcp_global_tokens_mutation': 147,
-    'test_mcp_global_tools_mutation': 121,
+    # 121 -> 137 (5.57.00): get_metrics github/entities views, the urgent filter.
+    'test_mcp_global_tools_mutation': 137,
     'test_mcp_global_tools_budget': 1,
+    # 5.57.00: the tools' new reach (urgent, github/entities, include_similar), their
+    # follow-up reads, the prompts/resources catalogue, and the endpoint's alarms.
+    'test_mcp_global_tools_reach': 16,
+    'test_mcp_global_follow_ups': 6,
+    'test_mcp_global_prompts': 35,
+    'test_mcp_global_alarms': 14,
     'test_mcp_tokens_handler_mutation': 93,
     'test_mcp_tokens_creator_index': 12,
     'test_mcp_tokens': 27,
