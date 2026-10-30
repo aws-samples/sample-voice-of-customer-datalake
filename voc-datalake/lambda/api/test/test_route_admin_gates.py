@@ -69,6 +69,13 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'DELETE /workflows/<workflow_id>',
     }),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
+    # Company personas (owner decision, 5.60.00): only admins write the library; promote copies into it.
+    'company_personas_routes.py': frozenset({
+        'POST /company-personas/generate', 'POST /company-personas/import',
+        'PUT /company-personas/<persona_id>', 'DELETE /company-personas/<persona_id>',
+        'POST /company-personas/<persona_id>/notes', 'POST /company-personas/<persona_id>/regenerate-avatar',
+    }),
+    'persona_copy_routes.py': frozenset({'POST /projects/<project_id>/personas/<persona_id>/promote'}),
     # Feature-request board (docs/feature-requests.md): board admin = an app-pool admin, never a board-pool user.
     'feature_requests_routes.py': frozenset({
         'PUT /feature-requests/<request_id>/status', 'DELETE /feature-requests/<request_id>',
@@ -239,6 +246,9 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'DELETE /projects/<project_id>/documents/<document_id>/comments/<comment_id>',
           'POST /projects/<project_id>/documents/<document_id>/share',
           'DELETE /projects/<project_id>/documents/<document_id>/share'),
+    _open('copy personas into a project: edit on the target project, and the source is the library or a '
+          'project the caller owns or is a member of (owner decision, 5.60.00)',
+          'persona_copy_routes.py', 'POST /projects/<project_id>/personas/copy'),
     _open("review link reviewers: the link's audience and the verified email decide, rate-limited per day",
           'document_review_routes.py', 'POST /review/<share_id>/comments',
           'POST /review/<share_id>/comments/<comment_id>/replies'),

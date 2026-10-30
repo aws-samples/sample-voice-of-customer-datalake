@@ -40,6 +40,11 @@ def caller_from_event(event: Mapping[str, Any]) -> Caller:
         raise AuthorizationError('Caller identity could not be determined') from exc
 
 
+def acts_as_admin(caller: Caller) -> bool:
+    """True for an admin acting for themselves (a delegated credential never is one)."""
+    return caller.is_admin and not caller.delegated
+
+
 def require_admin_caller(caller: Caller) -> None:
     """403 unless ``caller`` is an admin acting for themselves.
 

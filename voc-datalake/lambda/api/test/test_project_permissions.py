@@ -40,6 +40,9 @@ CANNOT_EDIT = {'success': False, 'error': 'You do not have permission to edit th
 CANNOT_MANAGE = {'success': False, 'error': 'You do not have permission to manage this project'}
 
 HANDLER_SOURCE = Path(__file__).resolve().parent.parent / 'projects_handler.py'
+# Routers projects_handler includes that serve /projects/{id}/... routes: the gate covers them too.
+_SHARED_DIR = Path(__file__).resolve().parents[2] / 'shared'
+ROUTER_SOURCES = (_SHARED_DIR / 'document_review_routes.py', _SHARED_DIR / 'persona_copy_routes.py')
 _ROUTE_PATTERN = re.compile(r'@app\.(get|post|put|patch|delete)\(\s*"([^"]+)"')
 
 
@@ -187,7 +190,8 @@ def _meta(table, project_id='p1'):
 # ---------------------------------------------------------------------------
 
 def _handler_routes():
-    return _ROUTE_PATTERN.findall(HANDLER_SOURCE.read_text())
+    return [route for source in (HANDLER_SOURCE, *ROUTER_SOURCES)
+            for route in _ROUTE_PATTERN.findall(source.read_text())]
 
 
 def _concrete(template):

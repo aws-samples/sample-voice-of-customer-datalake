@@ -32,6 +32,7 @@ from shared.avatar import (
 from shared.avatar_failure import AvatarGenerationFailed
 from shared.aws import get_s3_client
 from shared.batch_get import batch_get_all
+from shared.company_personas import is_company_container
 from shared.converse import ConverseResult, converse_chain, converse_detailed
 from shared.decision_records import DECISION_DOCUMENT_TYPE
 from shared.document_history import (
@@ -890,12 +891,12 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
         return {'project': project, 'documents': documents}
     return {
         'project': project,
-        'personas': _with_signed_avatars(personas),
+        'personas': with_signed_avatars(personas),
         'documents': documents
     }
 
 
-def _with_signed_avatars(personas: list[dict]) -> list[dict]:
+def with_signed_avatars(personas: list[dict]) -> list[dict]:
     """Each persona's S3 avatar URI swapped for a signed CloudFront CDN URL (in place)."""
     for persona in personas:
         if persona.get('avatar_url') and persona['avatar_url'].startswith('s3://'):
@@ -940,7 +941,9 @@ def get_project_details(project_ids: list[str], caller: Caller) -> dict:
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    viewable = _viewable_ids(project_ids, caller)
+    # The company persona library's container is not a project (shared/company_personas.py).
+    project_ids = [project_id for project_id in project_ids if not is_company_container(project_id)]
+    viewable = _viewable_ids(project_ids, caller) if project_ids else set()
     details = []
     for project_id in (pid for pid in project_ids if pid in viewable):
         try:

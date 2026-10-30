@@ -28,6 +28,7 @@ prompt (`<company_context>`, `<design_system>`) — never as system prompt:
 | Vision (markdown ≤ 20k) + objectives (≤ 50; horizon long / quarter / date) | `GET/PUT /settings/company-context` | everyone | admins |
 | My objectives & KPIs | `GET/PUT /settings/my-context` | self | self (cannot touch company objectives) |
 | Design system: tokens, guidelines, **components**, logo, references | `GET/PUT /settings/design-system`, `POST …/references`, `POST …/references/{id}/refresh`, `DELETE …/references/{id}` (archives) | everyone | admins |
+| Company personas (Company → Personas; copied into projects, never linked; [project-workspace.md](project-workspace.md#company-personas)) | `GET /company-personas`, `POST …/generate`, `POST …/import`, `PUT/DELETE …/{persona_id}` (projects Lambda) | everyone | admins |
 | Use a reference as the design system | `POST …/references/{id}/apply` → 200 `{draft, changes}` (nothing saved), `POST …/references/{id}/logo` → 200 `{logo_id, logo_url}` (nothing saved; `PUT` with `logo_id` saves it) | — | admins |
 | Figma / GitHub tokens | `PUT /settings/design-system/integrations` | nobody (GET reports `{figma, github}` booleans only) | admins |
 | User flags `fallback_owner` (admins only, at most one), `memory_reviewer`; the way of working with AI `ai_mode`, `ai_writing_prfaq`, `ai_writing_prd` ([ways-of-working.md](ways-of-working.md)) | `PUT /users/{username}/flags` (users Lambda); own mode `GET /users/me/ai-mode` | admins (own mode: everyone) | admins |

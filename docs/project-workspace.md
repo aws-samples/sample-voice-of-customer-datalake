@@ -144,6 +144,33 @@ Project objects returned by list, get, and create carry computed `visibility`, `
 
 An MCP token acts as the user who minted it — never as an admin, and never above editor — and its read reach still applies on top. Tokens cannot create projects.
 
+## Company personas
+
+The **Company** page (`/company`) has a **Personas** tab (`?tab=personas`) beside Vision and Design system: one shared library of personas for the whole workspace. Every signed-in user reads it; **only admins write it** (generate, import, edit, notes, regenerate the avatar, delete, and promote a project persona into it). Company personas are not filtered by category access.
+
+**Copy, never link.** Moving a persona between the library and a project always makes an independent copy with a new id, its own avatar image, and a `copied_from` record (`{scope: 'project' | 'company', project_id?, project_name?, persona_id, copied_at, copied_by}`, replaced on a copy of a copy). **Research notes are never copied**, in either direction: the copy starts with no notes. Later edits to either side do not reach the other. Deleting a company persona is a hard delete, like a project persona.
+
+- **Promote to company** (Project → Personas, admins only): `POST /projects/{id}/personas/{persona_id}/promote` → `201 {success, persona}`. It needs edit on the project and admin; a non-admin gets `403`.
+- **Copy personas in** (Project → Personas, edit on the target project): `GET /projects/{id}/personas/copy-sources` (view) lists the library and the OTHER projects you **own or are a member of** that have personas (at most 100, by name). `POST /projects/{id}/personas/copy` with `{source: {scope: 'company'} | {scope: 'project', project_id}, persona_ids: [1–20 ids]}` → `201 {success, personas}`. A public project you are not a member of is not a source, also for an admin; such a project, a missing one, and the library's own id answer `404 Project not found`. A persona id that is not in the source answers `404 Persona not found`; a bad body or this project as its own source answers `400`.
+- **Avatars are copied** to `avatars/{new persona id}/…` and stamped with the target as their owner, so deleting the source project never removes a copy's image. A failed image copy saves the persona without an avatar.
+
+| Method | Path | Who | Answer |
+|---|---|---|---|
+| GET | `/company-personas` | every signed-in user | `{personas, can_edit}` (newest first; `can_edit` = an admin acting for themselves) |
+| POST | `/company-personas/generate` | admin | Same body as project generation; always **adds** to the library (never replaces) → `{success, job_id, status: 'running'}` |
+| POST | `/company-personas/import` | admin | Same body as project import → `{success, job_id, status: 'running'}` |
+| GET | `/company-personas/jobs` | every signed-in user | `{success, jobs}` like `GET /projects/{id}/jobs` |
+| GET | `/company-personas/jobs/{job_id}` | admin | Like `GET /projects/{id}/jobs/{job_id}` (polls generation, import and avatar jobs) |
+| PUT / DELETE | `/company-personas/{persona_id}` | admin | Edit (same body as the project route) / hard delete with its avatar |
+| POST | `/company-personas/{persona_id}/notes` | admin | Add a research note |
+| POST | `/company-personas/{persona_id}/regenerate-avatar` | admin | `202` assist job; poll `GET /company-personas/jobs/{job_id}` |
+
+Generation reads the same feedback and SHARED company knowledge as project generation (never personal memories), with web search off.
+
+**The assistant stays project-scoped.** `@persona` / `@all` mentions, `consult_personas`, persona review and the agents' persona panel only see the current project's personas. To use a company persona there, copy it into the project.
+
+**Storage.** The library is a reserved persona container, `company_personas` (`lambda/shared/company_personas.py`): rows `PROJECT#company_personas` / `PERSONA#{id}`, a META row created on the first write and never listed as a project, and jobs under the same partition in voc-jobs. The id is not a project: every `/projects/company_personas/...` route answers `404 Project not found`, for admins too, and `GET /projects?ids=` leaves it out.
+
 ## MCP access
 
 External assistants reach projects through the **global MCP server** (`POST {api}/mcp/global`). Tokens are minted on **Connect** (`/connect`) and act as the minting user — their project access, never admin, at most editor — optionally pinned to one project. See [mcp.md](mcp.md).
