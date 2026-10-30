@@ -6,10 +6,9 @@ keeps only what every tree shares: the X-Ray socket clean-up and the midday cloc
 import os
 import socket
 import sys
-from datetime import UTC, datetime
 
 import pytest
-from suite_clock import MIDDAY_ENV, midday_of, suite_midday
+from suite_clock import MIDDAY_ENV, controller_midday, suite_midday
 
 try:
     import time_machine
@@ -33,14 +32,15 @@ def pytest_configure(config: pytest.Config) -> None:
     real day's. ``tick=True`` keeps time moving, so timeouts, TTLs and durations behave as before.
 
     The controlling process picks the noon and publishes it (overwriting any stale value from the shell);
-    pytest-xdist workers, which inherit the environment, travel to that same noon.
+    pytest-xdist workers, which inherit the environment, travel to that same noon. To reproduce a run from
+    another day, set ``VOC_TEST_MIDDAY_FORCE=<that day>T12:00:00+00:00``.
 
     Caveats: the clock can sit up to 12 hours away from real time, so a file's ``st_mtime`` or a timestamp
     made outside Python (a subprocess) can look like the future or the past (no test compares either today).
     """
     is_worker = hasattr(config, 'workerinput')
     if not is_worker:
-        os.environ[MIDDAY_ENV] = midday_of(datetime.now(UTC)).isoformat()
+        os.environ[MIDDAY_ENV] = controller_midday().isoformat()
     traveller = time_machine.travel(suite_midday(require_published=is_worker), tick=True)
     traveller.start()
     config.stash[_TRAVELLER] = traveller
