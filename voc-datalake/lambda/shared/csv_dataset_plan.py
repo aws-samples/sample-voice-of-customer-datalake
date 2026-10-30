@@ -68,8 +68,9 @@ class CsvDatasetPlan:
                 'unchanged': len(self.unchanged), 'v1_rows': len(self.v1_rows)}
 
 
-def _key_tuple(key: Mapping[str, Any]) -> tuple[Any, Any]:
-    return key.get('pk'), key.get('sk')
+def _key_tuple(key: Mapping[str, Any]) -> tuple[str, str]:
+    """``(pk, sk)`` of a key or a stored item, as the lookup key of the plan's reads."""
+    return str(key['pk']), str(key['sk'])
 
 
 def _read_chunk(table: Any, keys: list[dict[str, str]], fields: Sequence[str]) -> list[dict[str, Any]]:

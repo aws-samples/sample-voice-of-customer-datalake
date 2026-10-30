@@ -121,7 +121,7 @@ class TestIdentity:
 
     def test_the_v2_recipe_is_pinned(self):
         # A PERSISTED CONTRACT value (see csv-row-v1's CSV_BASIC_ROW1_ID): never recompute it.
-        assert csv_row_id_v2('example air q3', '4711') == csv_row_id_v2(dataset_key(' Example  Air Q3 '), '4711')
+        assert dataset_key(' Example  Air Q3 ') == 'example air q3'
         assert csv_row_id_v2('example air q3', '4711') == '9c77b9d45d211abc7e3d8acf25e7f503'
 
 

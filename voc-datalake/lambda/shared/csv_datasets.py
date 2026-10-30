@@ -60,23 +60,27 @@ CSV_CONTENT_FIELDS: Final = ('text', 'rating', 'created_at', 'author', 'title', 
 CSV_INGESTION_METHOD: Final = 'csv_upload'
 
 
+def _name_problem(name: str) -> str | None:
+    """Why a trimmed, non-blank ``name`` is not a dataset name; None when it is one."""
+    if len(name) > DATASET_NAME_MAX_LENGTH:
+        return f'dataset_name must be at most {DATASET_NAME_MAX_LENGTH} characters'
+    if _DATASET_NAME_RE.match(name) is None:
+        return 'dataset_name may contain only letters, digits, spaces, "-", "_" and "."'
+    return None
+
+
 def dataset_key(raw: object) -> str | None:
     """The normalised dataset key of an upload's ``dataset_name``; None when none was given.
 
     Raises ``ValueError`` (the caller answers 400) for a value that is not a valid name.
     """
-    if raw is None:
-        return None
-    if not isinstance(raw, str):
+    if raw is not None and not isinstance(raw, str):
         raise ValueError('dataset_name must be a string')
-    name = raw.strip()
-    if not name:
-        return None
-    if len(name) > DATASET_NAME_MAX_LENGTH:
-        raise ValueError(f'dataset_name must be at most {DATASET_NAME_MAX_LENGTH} characters')
-    if not _DATASET_NAME_RE.match(name):
-        raise ValueError('dataset_name may contain only letters, digits, spaces, "-", "_" and "."')
-    return _SPACES.sub(' ', name).casefold()
+    name = (raw or '').strip()
+    problem = _name_problem(name) if name else None
+    if problem is not None:
+        raise ValueError(problem)
+    return _SPACES.sub(' ', name).casefold() or None
 
 
 def _digest(parts: list[Any]) -> str:
