@@ -91,7 +91,7 @@
       "hint": "Ponle nombre a los datos de este archivo para poder corregirlos más tarde: al volver a subirlo con el mismo nombre, las filas que tienen id se actualizan en lugar de añadirse otra vez. No distingue mayúsculas de minúsculas.",
       "radarNote": "No disponible para una subida a Radar: sus filas no se pueden actualizar después.",
       "problems": {
-        "tooLong": "Usa como máximo {{max}} caracteres.",
+        "tooLong": "Usa como máximo {{max, number}} caracteres.",
         "invalidChars": "Usa solo letras, dígitos, espacios, \"-\", \"_\" y \".\"."
       }
     },

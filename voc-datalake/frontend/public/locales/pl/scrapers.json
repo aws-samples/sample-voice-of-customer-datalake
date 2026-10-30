@@ -91,7 +91,7 @@
       "hint": "Nazwij dane z tego pliku, aby móc je później poprawić: ponowne przesłanie pod tą samą nazwą aktualizuje wiersze z id zamiast dodawać je jeszcze raz. Wielkość liter nie ma znaczenia.",
       "radarNote": "Niedostępne przy przesyłaniu do Radaru: jego wierszy nie można później zaktualizować.",
       "problems": {
-        "tooLong": "Użyj najwyżej {{max}} znaków.",
+        "tooLong": "Użyj najwyżej {{max, number}} znaków.",
         "invalidChars": "Używaj tylko liter, cyfr, spacji oraz znaków „-”, „_” i „.”."
       }
     },
