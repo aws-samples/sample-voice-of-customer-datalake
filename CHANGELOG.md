@@ -24,7 +24,8 @@ Every review gets a usefulness band, and the Data Explorer shows each source's d
 ### Added
 - Every review now carries a `usefulness` band (`low`, `medium`, `high`): a rule-based rating from its
   length, specifics (numbers, product terms) and whether it names a concrete issue or request, computed by
-  the processor with no extra model call ([data quality](docs/data-quality.md)).
+  the processor with no extra model call ([data quality](docs/data-quality.md)). Length is script-aware,
+  so an untranslated Chinese, Japanese or Thai review is not rated `low` for having no spaces.
 - `GET /metrics/data-quality?days=` on the metrics API: per source, how many reviews are `low`, `medium`,
   `high` or not rated yet. It reads daily per-source counters (`METRIC#daily_usefulness#<source>#<band>` in
   `voc-aggregates`); a caller with a category or source rule, or the review-date basis, is counted from the
@@ -35,7 +36,7 @@ Every review gets a usefulness band, and the Data Explorer shows each source's d
 ### Changed
 - The category reprocess (every mode) also computes the usefulness band of each review it reads. A review
   whose category or dimensions do not change but whose band is missing gets a band-only update, counted as
-  `updated`.
+  `updated`. A review from a `summary_only` source keeps the band it got at ingestion from its full text.
 - Persona, research and document generation use the band as a tiebreaker when they sample feedback: within
   one day, more useful reviews are picked first. Each day keeps its share and no review is excluded.
 
