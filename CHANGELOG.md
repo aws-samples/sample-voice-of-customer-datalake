@@ -36,6 +36,41 @@ Persona generation can add to a project's existing personas instead of replacing
   project's Jobs list shows that count with the reason, so a short add run does not look like a failed one.
   Without the field, `POST /projects/{id}/personas/generate` still replaces the personas, as before.
 
+## [5.50.00] - 2026-10-30
+
+A Prioritization row that crosses generations on purpose can be marked Keep both versions (#399).
+
+### Added
+
+- Prioritization: a row labelled **Crosses generations** (for example PRD v1 and PRD v2 scored together on
+  purpose) can be marked **Keep both versions**. The row then shows a quiet **Kept on purpose** label, and
+  **Undo** restores the warning. The mark is stored on the row for its exact document set
+  (`PUT /projects/prioritization/rows/{row_id}/lineage-ack`, edit access on the project), so it lapses by
+  itself when the row's documents change. See [docs/prioritization.md](docs/prioritization.md#keep-both-versions-lineage-acknowledgement).
+  Recomposing a row back to exactly the marked set applies the mark again. A row holding a document the project
+  no longer has says it cannot be marked instead of offering a button that would always fail. The control is
+  shown only to people who can edit the row's project; a viewer sees the label without it.
+
+## [5.49.00] - 2026-10-30
+
+Every generated persona, research report, PRD and PR/FAQ stores the ids of the reviews it was written from, and the project shows them (#236).
+
+### Added
+- PRDs, PR/FAQs, merged documents and research reports from the synchronous fallback now store
+  `input_feedback_ids`, the ids of the reviews their prompts held (at most 500), as personas and Step Functions
+  research reports already did. A persona's header and a document's provenance footer show "Written from N
+  reviews" with **Show reviews**, a paged list of those reviews read by id that opens each in the review modal.
+  See [project workspace](docs/project-workspace.md#which-feedback-a-generation-reads).
+
+### Changed
+- `source_feedback_ids` on a persona (the first 20 reviews fetched) is documented as display-only in
+  `schemas/persona.schema.json`; `input_feedback_ids` is the corpus.
+
+### Upgrade notes
+- Only review ids are stored on artefacts, never review text, so source retention and erasure still reach every
+  review ([source policies](docs/source-policies.md#what-erasure-does-not-reach)); an erased review shows as
+  unavailable in the list. Artefacts generated before this release have no ids and show no corpus line.
+
 ## [5.48.06] - 2026-10-30
 
 The rest of the npm packages move to their newest release within their current major, and the fixes a full
