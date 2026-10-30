@@ -125,6 +125,10 @@ _STALE_OR_NO_WINDOW: Final = 'attribute_exists(sk) AND (attribute_not_exists(rat
 # below API Gateway's 10 MB and Lambda's 6 MB payload ceilings.
 MAX_RESULT_TEXT_CHARS: Final = 200_000
 _ALLOW_HEADER: Final = 'POST, OPTIONS'
+# Every refused credential or Origin (handler 401/403, authorizer Deny) counts here; the runtime
+# `mcp-auth-denied` alarm (shared/ops_alerts.py) watches it for spikes.
+AUTH_DENIED_METRIC: Final = 'AuthDenied'
+_AUTH_DENIED_STATUSES: Final = frozenset({401, 403})
 
 _cognito = None
 
@@ -158,6 +162,8 @@ def _response(status: int, body: dict | None = None, *, allow: str | None = None
         headers['Retry-After'] = str(retry_after)
     if status == 401:
         headers['WWW-Authenticate'] = 'Bearer realm="voc-mcp-global"'
+    if status in _AUTH_DENIED_STATUSES:
+        metrics.add_metric(name=AUTH_DENIED_METRIC, unit='Count', value=1)
     return {'statusCode': status, 'headers': headers,
             'body': json.dumps(body) if body is not None else '', 'isBase64Encoded': False}
 
@@ -643,6 +649,7 @@ def _authorize(event: Mapping[str, Any]) -> dict:
     token = event.get('authorizationToken')
     row = _authenticate({'headers': {'authorization': token if isinstance(token, str) else ''}})
     if row is None:
+        metrics.add_metric(name=AUTH_DENIED_METRIC, unit='Count', value=1)
         return _authorizer_policy('Deny', method_arn)
     return _authorizer_policy('Allow', method_arn, str(row['token_id']))
 
