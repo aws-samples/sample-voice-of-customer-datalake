@@ -2,7 +2,9 @@
 
 Every PR that lands on `main` bumps the version once and records its changes in `CHANGELOG.md`, in one of its
 commits (usually the last one, so the release section describes everything the PR brings).
-`scripts/check-version.mjs` (a `scripts/validate.sh` step) fails when they disagree.
+`scripts/check-version.mjs` (a `scripts/validate.sh` step) fails when they disagree. CI runs it on a PR's head and
+on `main` after the merge, never per commit, so the commits before the bump may disagree; a `git bisect` that
+lands on one of them should skip that check.
 
 ## Branches and PRs
 
@@ -33,7 +35,7 @@ commits (usually the last one, so the release section describes everything the P
 
 Several changes merged together take ONE bump: the highest kind among them.
 
-## Apply it (the CHANGELOG section and the three versions together, in one commit)
+## Apply it (one commit)
 
 1. **`CHANGELOG.md`**: add a release section directly under `## [Unreleased]` (leave that heading empty):
    `## [2.10.00] - YYYY-MM-DD` — two-digit minor and patch, today's date (`date +%F`). Under it a one-line
