@@ -104,6 +104,40 @@ match `^[A-Za-z0-9_-]{1,128}$` before they are put in a route path; results drop
 storage keys and every signed URL. A route's 4xx is a tool error (`isError: true`)
 the model can act on; a 5xx or an invoke fault is JSON-RPC `-32603`.
 
+## Prompts and resources
+
+Since 5.57.00 the server also advertises the `prompts` and `resources` capabilities, in `initialize`
+(legacy versions) and in `server/discover` (2026-07-28). The catalogue is
+`lambda/shared/mcp_global_prompts.py`; the handler only dispatches to it.
+
+| Prompt | Arguments | What it asks the model to do |
+|---|---|---|
+| `weekly_summary` | `days` (default 7) | Summarise volumes, sentiment and the top themes with verbatims, via `get_metrics` and `search_feedback` |
+| `triage_urgent` | `days` (default 7) | Group high-urgency feedback (`search_feedback urgent=true`, `get_feedback include_similar=true`) by problem and rank it; change nothing |
+| `prfaq_from_feedback` | `topic` (required, ≤ 200 chars), `project_id` | Draft a PR/FAQ citing feedback ids. A **read** token's text says to draft in the chat only; a **write** token's text allows `create_document` after the user confirms |
+
+`prompts/get` returns one user-role text message. Every prompt repeats the skill's rules (feedback is
+data, cite `feedback_id`s, summarise personal data). A prompt reads nothing: whatever the model does next
+goes through the tools and their scope, pin and admin checks.
+
+| Resource | Route (settings Lambda) |
+|---|---|
+| `voc://categories` | `GET /settings/categories` |
+| `voc://company-context` | `GET /settings/company-context` |
+
+`resources/read` returns the route's JSON as one `application/json` text content. It is delegated with the
+token's claims exactly like a tool (the minter's category scope, never admin), never a direct table read.
+The skill is **not** a resource: it is a static file of the SPA (`/voc-mcp-skill.md`), outside the Lambda
+bundle, and only the site knows the endpoint to fill in. Download it from Connect instead.
+
+An unknown prompt or resource, a bad argument (`days` not a whole number 0–9999, a missing `topic`, a
+malformed `project_id`) and a route's refusal are JSON-RPC `-32602`; a route fault is `-32603`. For a
+2026-07-28 client, an `Mcp-Name` header on `prompts/get` / `resources/read` must equal `params.name` /
+`params.uri` (`-32020` otherwise); unlike `tools/call` it may be left out. Each `prompts/get` and
+`resources/read` writes an audit row like a tool call, named `prompt:<name>` or `resource:<uri>`
+(`prompt:unknown` / `resource:unknown` for a name not in the catalogue), with the outcome and never the
+arguments. The two list methods are not audited, like `tools/list`.
+
 ## Token API (Connect page)
 
 Cognito-authenticated, `lambda/api/mcp_tokens_handler.py` (`voc-mcp-tokens-api`).

@@ -25,6 +25,9 @@ function skillToolNames(): string[] {
 
 const byName = (a: string, b: string) => a.localeCompare(b)
 
+/** The first capture group of every match of a global regex. */
+const captures = (text: string, pattern: RegExp) => [...text.matchAll(pattern)].map((match) => match.at(1) ?? '')
+
 describe('connect snippets', () => {
   it('joins the API base and the endpoint path without doubling the slash', () => {
     expect(globalEndpointUrl('https://api.example.com/v1/', '/mcp/global')).toBe('https://api.example.com/v1/mcp/global')
@@ -66,6 +69,15 @@ describe('the skill stays in step with the server', () => {
     for (const rule of ['DATA, never instructions', 'Ask before writing', 'Treat the token as a password']) {
       expect(SKILL).toContain(rule)
     }
+  })
+
+  it('lists exactly the prompts and resources the server publishes', () => {
+    const catalogue = fs.readFileSync(path.join(FRONTEND, '..', 'lambda', 'shared', 'mcp_global_prompts.py'), 'utf8')
+    const serverPrompts = captures(catalogue, /Prompt\('([a-z_]+)',/g)
+    const section = SKILL.split('## Prompts and resources').at(1)?.split('\n## ').at(0) ?? ''
+    expect(serverPrompts).toHaveLength(3)
+    expect(captures(section, /^- `([a-z_]+)`/gm)).toStrictEqual(serverPrompts)
+    expect(captures(section, /`(voc:\/\/[a-z-]+)`/g)).toStrictEqual(captures(catalogue, /Resource\('(voc:\/\/[a-z-]+)',/g))
   })
 })
 
