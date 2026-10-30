@@ -21,6 +21,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
 from shared.aws import invoke_lambda_async
+from shared.dynamo_paging import query_all
 from shared.exceptions import ConflictError, ServiceError
 from shared.ids import STAMP_FORMAT, timestamped_id
 from shared.logging import logger
@@ -101,18 +102,10 @@ def _recent_running_rows(table: Any, key: str, now: datetime) -> list[dict]:
     """Every `running` reprocess row of *key* whose run id is within `_DUPLICATE_LOOKBACK`."""
     lower = f'{RUN_ID_PREFIX}_{(now - _DUPLICATE_LOOKBACK).strftime(STAMP_FORMAT)}'
     upper = f'{RUN_ID_PREFIX}_{"9" * len(now.strftime(STAMP_FORMAT))}~'
-    query: dict = {
+    return query_all(table, {
         'KeyConditionExpression': Key('pk').eq(SOURCE_RUN_PK) & Key('sk').between(lower, upper),
         'FilterExpression': Attr('status').eq('running') & Attr('file_key').eq(key),
-    }
-    rows: list[dict] = []
-    while True:
-        page = table.query(**query)
-        rows.extend(page.get('Items') or [])
-        last = page.get('LastEvaluatedKey')
-        if not last:
-            return rows
-        query['ExclusiveStartKey'] = last
+    })
 
 
 def refuse_running_duplicate(table: Any, key: str, now: datetime | None = None) -> None:
