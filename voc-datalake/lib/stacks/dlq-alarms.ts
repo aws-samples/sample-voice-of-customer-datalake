@@ -25,6 +25,7 @@ import { Construct } from 'constructs';
 import type { PluginManifest } from '../plugin-loader';
 import { MEMORY_EXTRACT_DLQ_BASE_NAME } from './memory-workers';
 import { BRIEFING_DLQ_BASE_NAME } from './briefing-worker';
+import { GLOBAL_MCP_SERVICE_NAME } from '../utils/function-names';
 import { inboundEmailConfig } from '../utils/inbound-email';
 
 /** Base physical name of the operational alarm topic (run through `uniqueName()`). */
@@ -228,6 +229,8 @@ export function opsAlertsWiring(inputs: OpsAlertsInputs): OpsAlertsWiring {
       OPS_ALERTS_PROCESSOR_FUNCTION: uniqueName(FEEDBACK_PROCESSOR_FUNCTION_BASE_NAME),
       OPS_ALERTS_AGGREGATOR_FUNCTION: uniqueName(AGGREGATOR_FUNCTION_BASE_NAME),
       OPS_ALERTS_INGESTOR_FUNCTIONS: ingestors.join(','),
+      // Powertools `service` of /mcp/global (not deployment-unique: see docs/mcp.md → Alarms).
+      OPS_ALERTS_MCP_SERVICE: GLOBAL_MCP_SERVICE_NAME,
     },
     statements: [
       new iam.PolicyStatement({

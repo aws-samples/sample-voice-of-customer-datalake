@@ -47,3 +47,8 @@ export const USERS_API_FUNCTION_BASE_NAME = 'voc-users-api';
 export const INTEGRATIONS_API_FUNCTION_BASE_NAME = 'voc-integrations-api';
 /** `set_feedback_category` (PUT /feedback/{id}/category). */
 export const FEEDBACK_EDIT_API_FUNCTION_BASE_NAME = 'voc-feedback-edit-api';
+/**
+ * The global MCP endpoint (VocApiStack, global-mcp.ts). Also its Powertools `service`, the dimension
+ * of its `VoC-MCP-Global` metrics, which the runtime MCP alarms filter on (dlq-alarms.ts → ops_alerts.py).
+ */
+export const GLOBAL_MCP_SERVICE_NAME = 'voc-mcp-global-api';

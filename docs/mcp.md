@@ -231,6 +231,36 @@ vitest (`connectSnippets.test.ts`) fails if the skill's tool table and
 - each function has ONE API-scoped invoke permission (not two per method) because
   `VocApiStack` is close to CloudFormation's 500-resource limit.
 
+## Alarms and concurrency
+
+**Alarms (runtime-managed, since 5.57.00).** Like every operational alert, the endpoint's alarms exist only
+while an admin has alerting on (**Administration → System → Logs → Alerts**, [deployment.md](deployment.md)):
+the logs API creates them under the deployment's `voc-alerts-<account>-<region>-` prefix and they notify the
+ops SNS topic. Each is the Sum of one custom metric (namespace `VoC-MCP-Global`, dimension
+`service=voc-mcp-global-api`) over one 5-minute period, above a named constant in
+`lambda/shared/ops_alerts.py`:
+
+| Alarm | Metric (emitted by `mcp_global_handler.py`) | Fires above | Usually means |
+|---|---|---|---|
+| `mcp-auth-denied` | `AuthDenied`: an authorizer Deny, a handler 401, or a 403 for a foreign `Origin` | 50 (`MCP_AUTH_DENIED_THRESHOLD`) | A token scan, or many clients still configured with revoked / expired tokens |
+| `mcp-tool-denied` | `ToolCall_denied`: scope, pin, admin or route-403 refusals of `tools/call` (and of a prompt or resource) | 20 (`MCP_TOOL_DENIED_THRESHOLD`) | A client probing beyond its token; check the token audit logs on Connect |
+| `mcp-tool-failed` | `ToolCall_failed`: calls a server fault stopped (`-32603`) | 5 (`MCP_TOOL_FAILED_THRESHOLD`) | A domain Lambda or the delegation is failing |
+| `mcp-rate-limited` | `RateLimited`: 429s from the per-token budget | 30 (`MCP_RATE_LIMITED_THRESHOLD`) | A client looping |
+
+`AuthDenied` is new in 5.57.00; the other three were already emitted. The metrics carry the Powertools
+`service` dimension, which is the function's base name, not the deployment-unique one: two deployments in one
+account and region (a `deploymentPrefix` beside the default) share these metrics, so each one's alarms count
+both. Four more alarm metrics cost $0.40 a month at the list price while alerting is on.
+
+**Reserved concurrency.** `voc-mcp-global-api` reserves **20** concurrent executions
+(`GLOBAL_MCP_RESERVED_CONCURRENCY` in `lib/stacks/global-mcp.ts`, pinned by
+`api-stack-mcp-global-ops.test.ts`). The function is also its own token authorizer, so a request is two short
+invocations; at the stage ceiling (20 rps) that needs well under 20. The reservation keeps a runaway client
+from starving the account's other Lambdas and guarantees the endpoint its share. Past it, invocations are
+throttled and API Gateway answers with a 5xx. The 20 come out of the account's
+unreserved pool, which Lambda keeps at 100 or more, so the account's concurrency quota must be at least 120
+or the deploy fails. It is the only reservation in the app; `docs/lambda-sizing.md` covers memory only.
+
 ## Testing
 
 `lambda/api/test/test_global_mcp_e2e.py` drives the handler as an external MCP client
