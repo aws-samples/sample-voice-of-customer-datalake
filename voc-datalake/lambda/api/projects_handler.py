@@ -2110,7 +2110,7 @@ def _drop_legacy_score(table, document_id: str) -> None:
     to migrate ONE `get_item` per save and no writes, rather than a write per
     document of every scored row forever. A future change that wants the path gone
     still has to add the marker it would key on (delete the item when the map
-    empties, or stamp a `migrated_at` on it) as its first step.
+    empties, or stamp a migration timestamp on it) as its first step.
     """
     try:
         table.update_item(

@@ -17,6 +17,9 @@ pytest-mock>=3.14.0
 # pytest-randomly is deliberately NOT here: installed, it reorders and reseeds every pytest run of the
 # environment (mutmut included). Run an order audit on demand instead (CONTRIBUTING.md).
 pytest-xdist==3.8.0
+# The suite's clock is moved to 12:00 UTC of the run's own day (conftest.py), so a run that crosses
+# midnight UTC cannot split "today" between a fixture and the handler under test. Pinned exactly.
+time-machine==3.6.0
 moto[dynamodb,s3,sqs,secretsmanager]>=5.0.0
 boto3>=1.35.0
 boto3-stubs[dynamodb,s3,sqs,secretsmanager,bedrock-runtime]>=1.35.0

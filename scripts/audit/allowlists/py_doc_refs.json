@@ -9,10 +9,6 @@
       "reason": "names a class the docstring explains was deliberately NOT added to shared/api.py (one caller)"
     },
     {
-      "key": "lambda/api/projects_handler.py::migrated_at",
-      "reason": "a hypothetical marker attribute a future migration would add; the docstring says so"
-    },
-    {
       "key": "lambda/shared/mcp_delegate.py::invoke_lambda_sync",
       "reason": "the docstring states this sibling deliberately does not exist"
     },
