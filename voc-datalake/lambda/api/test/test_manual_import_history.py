@@ -101,7 +101,7 @@ class TestEveryImportWritesOneRecord:
     ])
     def test_the_parser_counts_the_rows_it_drops(self, csv_text, expected):
         drops = h.CsvRowDrops()
-        h._parse_csv_to_items(csv_text, 's', None, drops)
+        h._parse_csv_to_items(csv_text, 's', None, drops=drops)
         assert (drops.skipped, drops.duplicate) == expected
 
     def test_json_upload_records_send_failures_as_partial(self, wired, import_run_rows, api_gateway_event, lambda_context):
