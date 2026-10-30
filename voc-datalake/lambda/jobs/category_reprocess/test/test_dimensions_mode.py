@@ -61,6 +61,16 @@ def test_unchanged_dimensions_still_backfill_a_missing_usefulness_band():
     assert 'attribute_not_exists(#use_now)' in kwargs['ConditionExpression']
 
 
+def test_a_summary_only_review_keeps_its_ingestion_band_through_new_dimensions():
+    item = _item(pii_policy='summary_only', usefulness='high')
+    counters, table = _run(item, {'product': 'App'})
+    assert counters['updated'] == 1
+    kwargs = table.update_item.call_args.kwargs
+    name = next(alias for alias, field in kwargs['ExpressionAttributeNames'].items() if field == 'usefulness')
+    value = kwargs['UpdateExpression'].split(f'{name} = ')[1].split(',')[0].split()[0]
+    assert kwargs['ExpressionAttributeValues'][value] == 'high'
+
+
 def test_a_manual_category_does_not_skip_the_dimensions():
     counters, _ = _run(_item(category_source='manual'), {'product': 'App'})
     assert counters['updated'] == 1

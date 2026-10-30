@@ -226,10 +226,9 @@ def reenriched_fields(
     if not keep_category:
         fields['gsi2pk'] = f"CATEGORY#{enriched['category']}"
     # The text changed, so its usefulness band may have (the aggregator re-buckets the MODIFY).
-    fields[USEFULNESS_FIELD] = item_usefulness({
-        'original_text': fields['original_text'], 'normalized_text': enriched.get('normalized_text'),
-        'problem_summary': enriched.get('problem_summary'), 'dimensions': resolved,
-    })
+    # Rated from the fields being written, like the processor rates the item it builds: never the
+    # stored item, whose translation or summary may belong to the old text.
+    fields[USEFULNESS_FIELD] = item_usefulness(fields)
     return fields
 
 

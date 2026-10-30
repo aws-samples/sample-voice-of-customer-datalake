@@ -36,6 +36,7 @@ from shared.source_updates import (
     text_changed,
     update_decision,
 )
+from shared.usefulness import item_usefulness
 
 NOW = '2026-03-01T00:00:00+00:00'
 OLD = '2026-01-02T00:00:00+00:00'
@@ -230,6 +231,16 @@ class TestTheReenrichedFields:
             # One word: low (shared/usefulness.py); the aggregator re-buckets the change.
             'usefulness': 'low',
         }
+
+    def test_the_band_is_the_one_the_written_fields_give_never_the_stored_translation(self):
+        # The stored item still holds the OLD text's translation and summary; the band reads the new text.
+        stored = _stored(normalized_text='Since version 4.2 the app crashes at checkout every single day',
+                         problem_summary='Old crash')
+        text = 'The checkout keeps spinning forever'
+        fields = reenriched_fields(stored, _incoming(NEW, text=text), _enrichment(),
+                                   ({'feedback_type': 'praise'}, {'feedback_type': 'ai'}))
+
+        assert fields['usefulness'] == item_usefulness(fields) == 'medium'
 
     def test_a_kept_category_leaves_category_subcategory_and_its_index_alone(self):
         stored = _stored(category_source='manual', gsi2sk='-0.4#T')
