@@ -90,7 +90,7 @@
       "hint": "Name the data this file holds to correct it later: re-uploading under the same name updates the rows that have an id instead of adding them again. Not case-sensitive.",
       "radarNote": "Not available for a Radar upload: its rows cannot be updated later.",
       "problems": {
-        "tooLong": "Use at most {{max}} characters.",
+        "tooLong": "Use at most {{max, number}} characters.",
         "invalidChars": "Use only letters, digits, spaces, \"-\", \"_\" and \".\"."
       }
     },
