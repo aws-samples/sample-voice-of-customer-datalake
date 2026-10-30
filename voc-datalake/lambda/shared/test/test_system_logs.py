@@ -185,17 +185,17 @@ class TestPolling:
         assert fake.stopped == [fake.started[0]['queryId']]
 
     @pytest.mark.parametrize('operation', ['get_query_results', 'get_paginator'])
-    @pytest.mark.parametrize('error', [
-        ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'secret detail'}}, 'Op'),
-        EndpointConnectionError(endpoint_url='https://logs.secret-detail.example'),
+    @pytest.mark.parametrize('make_error', [
+        lambda: ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'secret detail'}}, 'Op'),
+        lambda: EndpointConnectionError(endpoint_url='https://logs.secret-detail.example'),
     ], ids=['ClientError', 'BotoCoreError'])
     def test_a_throttled_read_or_listing_inside_the_concurrent_calls_is_failed_without_its_text(
-            self, operation, error, monkeypatch):
+            self, operation, make_error, monkeypatch):
         # ordered_map re-raises the worker's own exception, so search() still answers its fixed message.
         fake = FakeLogs(list(self.TWO_BATCHES))
 
         def broken(*_args, **_kwargs):
-            raise error
+            raise make_error()
         monkeypatch.setattr(fake, operation, broken)
         body = _run(fake, budget=10.0)
         assert (body['status'], body['message']) == ('failed', FAILED_MESSAGE)
