@@ -17,6 +17,21 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.48.07] - 2026-10-30
+
+Follow-ups from the 5.48.05 review of the suite clock. Test tooling only.
+
+### Changed
+- `VOC_TEST_MIDDAY_FORCE=<day>T12:00:00+00:00` reproduces a pytest run from another day: the controlling
+  process publishes that noon instead of today's (it must be 12:00 UTC with a timezone, or the run stops).
+  Without it, a stale `VOC_TEST_MIDDAY` from the shell is still overwritten.
+
+### Fixed
+- `test_this_run_travelled_to_today_s_published_noon` compared the published noon with the fake clock that noon had
+  set, so it could not fail. It now compares with the real clock (`time_machine.escape_hatch`), so a noon from
+  another day fails it.
+- `suite_clock.py` calls the travel a `pytest_configure` hook, which it is, not a session fixture.
+
 ## [5.48.06] - 2026-10-30
 
 The rest of the npm packages move to their newest release within their current major, and the fixes a full

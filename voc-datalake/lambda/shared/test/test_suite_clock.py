@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 import time_machine
-from suite_clock import MIDDAY_ENV, midday_of, suite_midday
+from suite_clock import MIDDAY_ENV, MIDDAY_FORCE_ENV, controller_midday, midday_of, suite_midday
 
 IMPORTED_AT = datetime.now(UTC)
 
@@ -52,12 +52,31 @@ def test_a_naive_off_noon_or_malformed_published_value_is_refused(monkeypatch, v
 
 
 def test_this_run_travelled_to_today_s_published_noon():
-    # The controller overwrites any stale shell value with today's noon, so the published value and the
-    # fake clock agree on the day.
+    # Against the REAL clock, so a stale value from another day would fail: the published noon is the real
+    # UTC day's (from 12 hours before it to 23 hours after, allowing a run that crosses midnight).
     if MIDDAY_ENV not in os.environ:
         pytest.fail(f'{MIDDAY_ENV} is not set: the root voc-datalake/conftest.py was not loaded')
+    if os.environ.get(MIDDAY_FORCE_ENV):
+        pytest.skip(f'{MIDDAY_FORCE_ENV} is set: this run reproduces another day on purpose')
     published = datetime.fromisoformat(os.environ[MIDDAY_ENV])
-    assert published == midday_of(datetime.now(UTC))
+    real_now = time_machine.escape_hatch.datetime.datetime.now(UTC)
+    assert timedelta(hours=-12) <= real_now - published < timedelta(hours=23)
+
+
+def test_a_forced_noon_is_what_the_controller_publishes(monkeypatch):
+    monkeypatch.setenv(MIDDAY_FORCE_ENV, '2026-03-01T12:00:00+00:00')
+    assert controller_midday() == datetime(2026, 3, 1, 12, tzinfo=UTC)
+
+
+def test_without_a_forced_noon_the_controller_publishes_today_s(monkeypatch):
+    monkeypatch.delenv(MIDDAY_FORCE_ENV, raising=False)
+    assert controller_midday() == midday_of(datetime.now(UTC))
+
+
+def test_a_forced_noon_that_is_not_noon_is_refused(monkeypatch):
+    monkeypatch.setenv(MIDDAY_FORCE_ENV, '2026-03-01T23:59:00+00:00')
+    with pytest.raises(ValueError, match=f'{MIDDAY_FORCE_ENV}=.* is not 12:00 UTC'):
+        controller_midday()
 
 
 def test_a_module_level_now_is_taken_on_the_fake_clock_too():
