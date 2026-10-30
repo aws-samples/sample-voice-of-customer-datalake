@@ -15,6 +15,7 @@ from shared.source_erasure import (
     release_source_lock,
     source_lock_key,
 )
+from shared.test.moto_s3 import version_keys
 
 JOB_ID = 'er_00000000abcd'
 SOURCE = 'web_trustpilot_example_air'
@@ -47,8 +48,7 @@ def _ids(aws) -> set[str]:
 
 
 def _keys(aws) -> set[str]:
-    page = aws['s3'].list_object_versions(Bucket=BUCKET)
-    return {entry['Key'] for entry in [*page.get('Versions', []), *page.get('DeleteMarkers', [])]}
+    return version_keys(aws['s3'], BUCKET)
 
 
 EVENT = {'mode': 'erase', 'job_id': JOB_ID, 'value': SOURCE}
