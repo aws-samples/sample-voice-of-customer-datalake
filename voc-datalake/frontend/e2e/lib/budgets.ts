@@ -80,7 +80,11 @@ export const SCREEN_SLOWEST_CALL_DEFAULT: Budget = {
   source: 'VERIFY steps: slowest call per screen p95 2,819 ms, worst read screen admin-logs 3,440 ms (1.3×, rounded)',
 }
 
-const SCREEN_SLOWEST_CALL_OVERRIDES: readonly PatternBudget[] = []
+const SCREEN_SLOWEST_CALL_OVERRIDES: readonly PatternBudget[] = [
+  // GET /logs/system is a Logs Insights search (polled up to 18 s by design, then `running`). 5.48.06 prod after its
+  // concurrency fix: warm 2.9-4.0 s for 7 days; a cold container adds 1.2-2.5 s of init (measured 4.9 and 6.4 s).
+  { pattern: /^admin-system-logs\b/, p95Ms: 8_000, source: '5.48.06 prod: warm 2,855-3,976 ms (7 days), cold 4,871-6,381 ms; well under the 18 s poll budget' },
+]
 
 // ---------------------------------------------------------------- endpoints
 
