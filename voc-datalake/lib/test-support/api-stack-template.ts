@@ -57,6 +57,26 @@ export const INTENTIONALLY_PUBLIC_ROUTES = [
   'POST /voting-sessions/{session_id}/submit',
 ];
 
+/** The anonymous MCP OAuth surface (api-mcp-oauth.ts, docs/mcp.md "OAuth sign-in"): an MCP client
+ *  holds no credential before it signs in, so discovery and the facade cannot be authenticated.
+ *  Each route is throttled per method, stores nothing a caller controls beyond single-use relay rows
+ *  (TTL 10 min), and grants nothing: a token is issued by Cognito to a person who signed in there,
+ *  and only counts at /mcp/global when that person CONSENTED (Cognito-authenticated) beforehand.
+ *
+ *  THE SAME REVIEW GATE as INTENTIONALLY_PUBLIC_ROUTES: a new entry is somebody choosing to publish
+ *  a route. Kept apart from that list so its "six" keeps meaning the widget, ballot and unsubscribe. */
+export const INTENTIONALLY_PUBLIC_OAUTH_ROUTES = [
+  'GET /.well-known/oauth-authorization-server',
+  'GET /.well-known/oauth-protected-resource',
+  'GET /.well-known/oauth-protected-resource/mcp/global',
+  'GET /.well-known/openid-configuration',
+  'GET /oauth/authorize',
+  'GET /oauth/callback',
+  'POST /oauth/register',
+  'POST /oauth/revoke',
+  'POST /oauth/token',
+];
+
 /** `/mcp` uses a custom Lambda token authorizer because MCP clients cannot run
  *  the Cognito flow. Authenticated, just not by Cognito. */
 export const CUSTOM_AUTHORIZER_ROUTE_PREFIXES = ['/mcp'];

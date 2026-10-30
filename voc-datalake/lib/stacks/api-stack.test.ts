@@ -25,7 +25,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 
 import { ManifestSchema } from '../plugin-loader';
 import {
-  CUSTOM_AUTHORIZER_ROUTE_PREFIXES, INTENTIONALLY_PUBLIC_ROUTES, INTENTIONALLY_PUBLIC_WEBHOOK_ROUTES, PLUGINS_DIR, apiMethods, apiTemplate, apiTemplateAllPlugins, apiTemplateFlagged, callerFormsPaths, discoverPluginIds, functionIdForHandler, nonOptions, readRepoFile, resolveMethod, unauthenticatedRoutes,
+  CUSTOM_AUTHORIZER_ROUTE_PREFIXES, INTENTIONALLY_PUBLIC_OAUTH_ROUTES, INTENTIONALLY_PUBLIC_ROUTES, INTENTIONALLY_PUBLIC_WEBHOOK_ROUTES, PLUGINS_DIR, apiMethods, apiTemplate, apiTemplateAllPlugins, apiTemplateFlagged, callerFormsPaths, discoverPluginIds, functionIdForHandler, nonOptions, readRepoFile, resolveMethod, unauthenticatedRoutes,
 } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
@@ -35,6 +35,9 @@ import { byCodeUnit } from '../utils/compare';
 beforeAll(() => {
   apiTemplate();
 }, SYNTH_TIMEOUT_MS);
+
+/** Every deliberately anonymous route of the default template (no plugin webhooks), sorted. */
+const EVERY_PUBLIC_ROUTE = [...INTENTIONALLY_PUBLIC_ROUTES, ...INTENTIONALLY_PUBLIC_OAUTH_ROUTES].sort(byCodeUnit);
 
 /** How the default template authorizes `route`, or `undefined` when it is not wired. */
 function authorizationOf(route: string): { authorizationType: string; hasAuthorizerId: boolean } | undefined {
@@ -54,7 +57,9 @@ describe('VocApiStack authorization invariant', () => {
     // CORS value or a rewired resource tree is not an authorization change — this
     // is the single guard that says so for all of them.
     expect(INTENTIONALLY_PUBLIC_ROUTES).toHaveLength(6);
-    expect(unauthenticatedRoutes(apiTemplate())).toStrictEqual(INTENTIONALLY_PUBLIC_ROUTES);
+    // Nine: the MCP OAuth discovery documents (4) and facade (5), INTENTIONALLY_PUBLIC_OAUTH_ROUTES.
+    expect(INTENTIONALLY_PUBLIC_OAUTH_ROUTES).toHaveLength(9);
+    expect(unauthenticatedRoutes(apiTemplate())).toStrictEqual(EVERY_PUBLIC_ROUTE);
   });
 
   it('discovers the real plugins, excluding scaffolding', () => {
@@ -90,7 +95,7 @@ describe('VocApiStack authorization invariant', () => {
     // webhook fails this until its route is a considered entry in
     // INTENTIONALLY_PUBLIC_WEBHOOK_ROUTES rather than a silent anonymous route.
     expect(unauthenticatedRoutes(apiTemplateAllPlugins())).toStrictEqual(
-      [...INTENTIONALLY_PUBLIC_ROUTES, ...INTENTIONALLY_PUBLIC_WEBHOOK_ROUTES].sort(byCodeUnit),
+      [...EVERY_PUBLIC_ROUTE, ...INTENTIONALLY_PUBLIC_WEBHOOK_ROUTES].sort(byCodeUnit),
     );
   });
 
@@ -123,7 +128,7 @@ describe('VocApiStack authorization invariant', () => {
     // Asserting `!== NONE` would accept a method that regressed to AWS_IAM or
     // picked up a stray authorizer.
     const offenders = nonOptions(apiTemplateAllPlugins())
-      .filter((m) => !INTENTIONALLY_PUBLIC_ROUTES.includes(m.route))
+      .filter((m) => !EVERY_PUBLIC_ROUTE.includes(m.route))
       .filter((m) => !INTENTIONALLY_PUBLIC_WEBHOOK_ROUTES.includes(m.route))
       .filter((m) => !CUSTOM_AUTHORIZER_ROUTE_PREFIXES.some((prefix) => m.path.startsWith(prefix)))
       .filter((m) => m.authorizationType !== 'COGNITO_USER_POOLS' || !m.hasAuthorizerId)
@@ -486,11 +491,12 @@ describe('skipFeedbackFormItemRoutes (transitional upgrade flag)', () => {
       'GET /voting-sessions/{session_id}/config',
       'POST /unsubscribe',
       'POST /voting-sessions/{session_id}/submit',
-    ]);
+      ...INTENTIONALLY_PUBLIC_OAUTH_ROUTES,
+    ].sort(byCodeUnit));
   });
 
   it('is a no-op when absent — the default template keeps the item routes', () => {
-    expect(unauthenticatedRoutes(apiTemplate())).toStrictEqual(INTENTIONALLY_PUBLIC_ROUTES);
+    expect(unauthenticatedRoutes(apiTemplate())).toStrictEqual(EVERY_PUBLIC_ROUTE);
     expect(apiMethods(apiTemplate()).map((m) => m.route)).toContain('PUT /feedback-forms/{form_id}');
   });
 });
