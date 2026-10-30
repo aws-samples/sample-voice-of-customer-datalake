@@ -41,9 +41,8 @@ export function isConnectScope(value: string): value is ConnectScope {
 export const optionalText = z.string().nullable().optional().catch(undefined)
   .transform((value) => (value == null || value === '' ? undefined : value))
 
-const ConnectTokenSchema = z.object({
-  token_id: z.string().min(1),
-  name: z.string().catch(''),
+/** The lifecycle every MCP credential shares: a token here, an OAuth grant in oauthSchema.ts. */
+export const CREDENTIAL_LIFECYCLE_FIELDS = {
   scope: z.enum(CONNECT_SCOPES).catch('read'),
   project_id: optionalText,
   created_at: z.string().catch(''),
@@ -51,6 +50,12 @@ const ConnectTokenSchema = z.object({
   last_used_at: optionalText,
   revoked_at: optionalText,
   status: z.enum(TOKEN_STATUSES).catch('expired'),
+}
+
+const ConnectTokenSchema = z.object({
+  token_id: z.string().min(1),
+  name: z.string().catch(''),
+  ...CREDENTIAL_LIFECYCLE_FIELDS,
   can_run_agents: z.boolean().catch(false),
 })
 export type ConnectToken = z.infer<typeof ConnectTokenSchema>

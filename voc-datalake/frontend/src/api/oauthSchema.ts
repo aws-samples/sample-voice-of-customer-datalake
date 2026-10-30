@@ -10,10 +10,8 @@
  * @module api/oauthSchema
  */
 import { z } from 'zod'
-import { CONNECT_SCOPES, lenientRows, optionalText } from './connectSchema'
+import { CREDENTIAL_LIFECYCLE_FIELDS, lenientRows } from './connectSchema'
 import { OAUTH_CLIENT_KINDS } from './oauthSummarySchema'
-
-const GRANT_STATUSES = ['active', 'revoked', 'expired'] as const
 
 /** An absolute http(s) URL the browser may navigate to. */
 const NavigableUrlSchema = z.string().refine((value) => {
@@ -29,13 +27,7 @@ const GrantSchema = z.object({
   grant_id: z.string().min(1),
   client_kind: z.string().catch(''),
   client_name: z.string().catch(''),
-  scope: z.enum(CONNECT_SCOPES).catch('read'),
-  project_id: optionalText,
-  created_at: z.string().catch(''),
-  expires_at: optionalText,
-  last_used_at: optionalText,
-  revoked_at: optionalText,
-  status: z.enum(GRANT_STATUSES).catch('expired'),
+  ...CREDENTIAL_LIFECYCLE_FIELDS,
   signed_in: z.boolean().catch(false),
 })
 export type OAuthGrant = z.infer<typeof GrantSchema>

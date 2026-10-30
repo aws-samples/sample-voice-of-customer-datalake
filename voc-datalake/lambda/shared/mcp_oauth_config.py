@@ -55,7 +55,6 @@ EXCHANGE_PATH: Final = '/oauth/token'  # the token endpoint
 REVOKE_PATH: Final = '/oauth/revoke'
 REGISTER_PATH: Final = '/oauth/register'
 CALLBACK_PATH: Final = '/oauth/callback'
-PRM_PATH: Final = '/.well-known/oauth-protected-resource'
 # The SPA's consent page.
 CONSENT_PAGE_PATH: Final = '/oauth/authorize'
 
@@ -115,11 +114,6 @@ class OAuthConfig:
     @property
     def jwks_uri(self) -> str:
         return f'{self.cognito_issuer}/.well-known/jwks.json'
-
-    @property
-    def prm_url(self) -> str:
-        """The protected-resource metadata of the MCP endpoint (RFC 9728 path-suffixed form)."""
-        return f'{self.issuer}{PRM_PATH}/mcp/global'
 
 
 def _string_list(raw: str | None) -> tuple[str, ...] | None:
@@ -189,4 +183,4 @@ def token_minting_enabled() -> bool:
 
     Existing tokens are unaffected (they stay valid until revoked or expired).
     """
-    return os.environ.get('MCP_TOKEN_MINTING', 'true') != 'false'
+    return os.environ.get('MCP_TOKEN_MINTING') != 'false'

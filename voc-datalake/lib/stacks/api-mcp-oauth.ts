@@ -208,7 +208,7 @@ export function addMcpOAuth(stack: cdk.Stack, props: McpOAuthProps): McpOAuth {
 }
 
 /** `-c mcpTokenMinting=false` turns minting of `voc_tok_` tokens off; existing tokens stay valid. */
-export function tokenMintingEnabled(stack: cdk.Stack): boolean {
+function tokenMintingEnabled(stack: cdk.Stack): boolean {
   return booleanContextFlag(stack.node.tryGetContext('mcpTokenMinting'), 'mcpTokenMinting', true,
     'Use -c mcpTokenMinting=true|false.');
 }
