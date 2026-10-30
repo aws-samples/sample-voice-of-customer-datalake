@@ -126,4 +126,24 @@ def copy_personas(
     except ProjectNotWritableError as error:
         _sweep_copied_avatars(s3, bucket, items)
         raise NotFoundError(PROJECT_NOT_FOUND) from error
+    except Exception:
+        # Any other failure (throttling, a non-condition ClientError) may leave rows unsaved: remove
+        # the avatar copies no saved row points at, then let the error through.
+        _sweep_copied_avatars(s3, bucket, _unsaved(table, items))
+        raise
     return saved
+
+
+def _unsaved(table: Any, items: list[dict]) -> list[dict]:
+    """The copies whose row is not stored (an unreadable row counts as stored: never sweep a live avatar)."""
+    unsaved = []
+    for item in items:
+        try:
+            stored = table.get_item(Key={'pk': item['pk'], 'sk': item['sk']}, ConsistentRead=True).get('Item')
+        except Exception:  # noqa: BLE001 - unknown means keep the avatar
+            logger.warning('[PERSONA_COPY] Could not read back a copy; its avatar is kept',
+                           extra={'persona_id': item.get('persona_id')})
+            continue
+        if not isinstance(stored, dict):
+            unsaved.append(item)
+    return unsaved

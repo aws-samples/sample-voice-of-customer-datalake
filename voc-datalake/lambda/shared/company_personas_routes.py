@@ -85,11 +85,6 @@ def request_caller() -> Caller:
     return caller_of(app)
 
 
-def _require_signed_in() -> None:
-    """Fail closed (403) unless the middleware identified a caller."""
-    request_caller()
-
-
 def _require_admin() -> None:
     """403 unless an admin acting for themselves (never a delegated credential or an agent)."""
     require_admin_caller(request_caller())
@@ -126,11 +121,21 @@ def import_company_persona():
     return ops().start_import(CONTAINER, body)
 
 
+#: Job fields a non-admin reader of the library's jobs list never gets (the starter's sub, raw errors, results).
+ADMIN_ONLY_JOB_FIELDS = frozenset({'error', 'result', 'initiated_by'})
+
+
 @app.get("/company-personas/jobs")
 @tracer.capture_method
 def list_company_persona_jobs():
-    _require_signed_in()
-    return ops().job_list(CONTAINER)
+    """Every reader sees job progress; only admins (who start the jobs) see who started one and why it failed."""
+    caller = request_caller()
+    listing = ops().job_list(CONTAINER)
+    if acts_as_admin(caller):
+        return listing
+    jobs = [{key: value for key, value in job.items() if key not in ADMIN_ONLY_JOB_FIELDS}
+            for job in listing.get('jobs', [])]
+    return {**listing, 'jobs': jobs}
 
 
 @app.get("/company-personas/jobs/<job_id>")
