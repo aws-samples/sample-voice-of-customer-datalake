@@ -1,0 +1,42 @@
+# License gate on every pull request: a dependency the pull request adds or changes must carry a
+# license from .github/dependency-review-config.yml (default deny), or this check fails.
+#
+# It compares the base and head dependency graphs through GitHub's dependency review API, so it
+# installs nothing and runs no code from the pull request. Known vulnerabilities are left to
+# dependency-audit.yml (vulnerability-check: false in the config).
+#
+# The result goes to the job summary only. `comment-summary-in-pr` would need `pull-requests: write`,
+# and a pull request from a fork gets a read-only token anyway, so the comment would fail exactly for
+# the contributors it is meant to inform.
+#
+# No `paths:` filter on purpose: a pull request that changes no manifest finishes in seconds ("No
+# Dependency Changes found"), and an unfiltered check can be made required in branch protection without
+# blocking pull requests it never ran on.
+name: dependency review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: dependency licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Checked out only so the action can read the local config file.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          config-file: ./.github/dependency-review-config.yml

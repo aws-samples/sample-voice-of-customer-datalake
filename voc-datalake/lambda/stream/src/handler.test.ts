@@ -70,7 +70,7 @@ function primeMocks(): void {
   mockIsWebSearchConfigured.mockReturnValue(false);
   mockStartHeartbeat.mockReturnValue(mockStopHeartbeat);
   mockConverseStream.mockImplementation(async function* () {
-    yield { contentBlockDelta: { contentBlockIndex: 0, delta: { text: 'Hi!' } } };
+    yield await Promise.resolve({ contentBlockDelta: { contentBlockIndex: 0, delta: { text: 'Hi!' } } });
     yield { messageStop: { stopReason: 'end_turn' } };
   });
   docSend.mockResolvedValue({});

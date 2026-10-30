@@ -77,7 +77,7 @@ describe('normalizeScrapers (issue #169)', () => {
   })
 
   it('drops records without a usable id instead of inventing one', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     const scrapers = normalizeScrapers([
       sparseScraper,

@@ -12,7 +12,7 @@ import { jsonResult, pick, withinBudget } from '../format.js';
 import { idProperty, idSchema, parseToolInput, resolveId, toolSpec } from '../spec.js';
 import { searchFeedbackSpec, webSearchSpec } from './search-specs.js';
 import { recordsAt, summarizeFeedback, toFeedbackSource, toFeedbackSources } from './feedback-shape.js';
-import { getProjectRoute, getSettingsRoute, seg, serverTool, windowDaysProperty, windowDaysSchema, windowQuery } from './common.js';
+import { getProjectRoute, getSettingsRoute, seg, serverTool, syncServerTool, windowDaysProperty, windowDaysSchema, windowQuery } from './common.js';
 import { summarizeProject } from './project-shape.js';
 import { readCategoryScope, readVisibleCategories } from './category-access.js';
 import { breakdownLabels, labelResult, readCategoryLabeller } from './category-labels.js';
@@ -268,7 +268,7 @@ function suggestNavigationTool(): ServerToolDefinition {
     },
     ['path', 'label'],
   );
-  return serverTool('suggest_navigation', 'core', spec, async (input, ctx) => {
+  return syncServerTool('suggest_navigation', 'core', spec, (input, ctx) => {
     const args = parseToolInput(navigationInput, input);
     if (!isAllowedNavigationPath(args.path)) {
       throw new AssistantToolError('invalid_input', `"${args.path.slice(0, 80)}" is not an app route that can be linked.`);

@@ -36,6 +36,11 @@ export function LongText({ text }: Readonly<{ text: string }>) {
   )
 }
 
+/** A value that is none of the shapes above (a bigint, a class instance): JSON rather than `[object Object]`. */
+function otherValueText(value: unknown): string {
+  return typeof value === 'bigint' ? value.toString() : JSON.stringify(value)
+}
+
 export function ValueView({ value }: Readonly<{ value: unknown }>) {
   const { t } = useTranslation('assistantTools')
   if (value === undefined || value === null || value === '') {
@@ -54,7 +59,7 @@ export function ValueView({ value }: Readonly<{ value: unknown }>) {
     )
   }
   if (isRecord(value)) return <KeyValueList value={value} nested />
-  return <span>{String(value)}</span>
+  return <span>{otherValueText(value)}</span>
 }
 
 export function KeyValueList({ value, nested = false }: Readonly<{ value: Record<string, unknown>; nested?: boolean }>) {

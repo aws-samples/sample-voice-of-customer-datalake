@@ -5852,7 +5852,7 @@ class TestABallotAndItsRowsExistenceAreSettledTogether:
         assert len(aggregates.transact_calls) == 1
         row_writes = [
             request for entry in aggregates.transact_calls[0]
-            for operation, request in entry.items()
+            for request in entry.values()
             if str(request['Key']['sk']).startswith('ROW#')
         ]
         assert len(row_writes) == 1

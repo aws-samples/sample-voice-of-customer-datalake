@@ -496,7 +496,7 @@ def launch_plan(table: Any, meta: Mapping[str, Any], *, now: datetime) -> None:
     plan_id = str(meta['plan_id'])
     try:
         # The agents store owns the one Step Functions client of this Lambda (tests patch it there).
-        agents_store._stepfunctions().start_execution(
+        agents_store.stepfunctions_client().start_execution(
             stateMachineArn=agents_store.state_machine_arn(), name=plan_id,
             input=json.dumps({'run_kind': 'plan', 'plan_id': plan_id}),
         )

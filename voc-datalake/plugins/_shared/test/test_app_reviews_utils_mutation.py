@@ -31,7 +31,7 @@ review yielded is already newer than the watermark), `len(configs_list) > 0`
 string defaults handed to `parse_int` (its integer default already covers an
 absent key).
 """
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
@@ -459,7 +459,7 @@ APPS = (("A", True), ("B", False), ("C", True))
 
 
 @contextmanager
-def _constructed(**secret: str) -> Iterator[None]:
+def _constructed(**secret: str) -> Generator[None, None, None]:
     with (
         offline_ingestor_construction(),
         patch("_shared.base_ingestor.get_secret", return_value=scoped_secret(**secret)),

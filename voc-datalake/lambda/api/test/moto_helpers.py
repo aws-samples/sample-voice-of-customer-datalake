@@ -8,7 +8,7 @@ the ``requestContext.identity.sourceIp`` the public ballot routes read.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
@@ -95,7 +95,7 @@ def seeded_category_edit_tables(item: dict, categories_config: dict) -> tuple[Ta
 
 
 @contextmanager
-def projects_module_world(bucket: str, *, also_shared_jobs: bool = False) -> Iterator[tuple[Table, Table, Any]]:
+def projects_module_world(bucket: str, *, also_shared_jobs: bool = False) -> Generator[tuple[Table, Table, Any], None, None]:
     """``(projects, jobs, s3)`` moto resources with the ``projects`` module wired to them (its table, jobs
     table, S3 client and ``RAW_DATA_BUCKET``); ``also_shared_jobs`` points ``shared.jobs`` at the jobs table too.
     Call inside ``mock_aws()``."""

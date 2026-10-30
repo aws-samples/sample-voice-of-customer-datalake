@@ -144,7 +144,6 @@ async function fetchConfig(): Promise<RuntimeConfig> {
       return getEnvConfig()
     }
 
-    console.log('Loaded runtime config from /config.json')
     return parsed.data
   } catch (error) {
     console.warn('Error fetching config.json, using env vars:', error)

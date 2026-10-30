@@ -10,7 +10,7 @@ import { applyTheme, DARK_QUERY, resolveMode, systemPrefersDark, useThemeStore }
 import type { ThemeMode } from './themeStore'
 
 function subscribeToSystemScheme(onChange: () => void): () => void {
-  if (typeof window.matchMedia !== 'function') return () => undefined
+  if (typeof window.matchMedia !== 'function') return () => {}
   const query = window.matchMedia(DARK_QUERY)
   query.addEventListener('change', onChange)
   return () => query.removeEventListener('change', onChange)

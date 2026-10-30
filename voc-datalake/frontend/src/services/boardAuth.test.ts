@@ -7,6 +7,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { PENDING_OTP_KEY, createBoardAuth } from './boardAuth'
 import { BoardAuthError } from './boardCognito'
 import type { BoardPoolConfig } from '../runtimeConfig'
+import { parsedJson } from '@test/jsonText'
 
 const OTP_POOL: BoardPoolConfig = { userPoolId: 'us-east-1_board', clientId: 'boardclient', region: 'us-east-1', signIn: 'email_otp' }
 const CODE_POOL: BoardPoolConfig = { ...OTP_POOL, signIn: 'code' }
@@ -55,7 +56,7 @@ function refusal(type: string, message = ''): Answer {
 }
 
 function payloadOf(init: RequestInit | undefined): Record<string, unknown> {
-  const payload: unknown = JSON.parse(String(init?.body))
+  const payload: unknown = parsedJson(init?.body)
   return typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {}
 }
 

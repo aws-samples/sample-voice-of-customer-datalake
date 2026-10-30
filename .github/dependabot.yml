@@ -1,0 +1,102 @@
+# Dependabot version updates: a handful of grouped pull requests a week, never a release younger than
+# a week. Security alerts are a separate repository setting and are already on; this file only adds the
+# routine version updates. Reference: GitHub docs, "Dependabot options reference".
+#
+# EVERY Dependabot pull request fails the `version: CHANGELOG ↔ package.json` step of scripts/validate.sh
+# until whoever merges it adds the release bump (the repo rule in .kiro/steering/changelog.md: every
+# change on main bumps the version and records itself in CHANGELOG.md). That is intended. Check out the
+# branch, add a patch release section and run `npm version <x.y.z> --no-git-tag-version` in the three
+# package directories, push, then merge. docs/dependencies.md walks through it.
+#
+# Choices, and why:
+# - weekly, Monday 06:00 UTC: one review batch a week instead of a trickle.
+# - groups: one pull request per directory for every minor and patch update together; each major
+#   update stays its own pull request, because a major is a change to read, not to batch.
+# - cooldown 7 days: a release must be a week old before it is proposed. Most malicious or broken
+#   releases are found and pulled within days, so waiting keeps them out of our lockfiles (GitHub docs,
+#   "Dependabot options reference: cooldown"). Security updates are not delayed by it.
+# - labels: only labels that exist in the repository (dependencies, javascript); naming a missing one
+#   would make Dependabot create it.
+# - pip `versioning-strategy: increase`: the requirements files mix exact pins with `>=` floors; this
+#   moves a floor up to the release it proposes instead of leaving an old floor that still resolves to
+#   anything, which keeps the files moving toward the exact pins the repo prefers.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    # "/" covers .github/workflows. Actions are pinned to commit SHAs with a `# vX.Y.Z` comment;
+    # Dependabot updates both.
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    # One entry per lockfile: the five platform packages and the isolated Playwright suite.
+    directories:
+      - /
+      - /voc-datalake
+      - /voc-datalake/frontend
+      - /voc-datalake/frontend/e2e
+      - /voc-datalake/lambda/stream
+      - /tools/kiro-acp-bridge
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - javascript
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: pip
+    # requirements-dev.txt (test and lint tools) and the four Lambda layer requirements.txt files.
+    directories:
+      - /voc-datalake
+      - /voc-datalake/lambda/layers/email-intake-deps
+      - /voc-datalake/lambda/layers/ingestion-deps
+      - /voc-datalake/lambda/layers/processing-deps
+      - /voc-datalake/lambda/layers/signing-deps
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      pip-minor-and-patch:
+        update-types:
+          - minor
+          - patch

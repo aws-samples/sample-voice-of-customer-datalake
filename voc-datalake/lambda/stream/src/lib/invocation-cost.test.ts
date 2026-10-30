@@ -52,7 +52,7 @@ describe('memoryMb', () => {
 describe('measureInvocationCost', () => {
   it('logs one JSON line per invocation with numbers only', async () => {
     const clock = fakeClock(1024);
-    const handler = measureInvocationCost(async (event: { prompt: string }) => event.prompt.length, clock);
+    const handler = measureInvocationCost((event: { prompt: string }) => Promise.resolve(event.prompt.length), clock);
 
     await expect(handler({ prompt: 'a secret prompt' })).resolves.toBe(15);
 
@@ -67,9 +67,7 @@ describe('measureInvocationCost', () => {
 
   it('still logs when the handler throws', async () => {
     const clock = fakeClock(1024);
-    const handler = measureInvocationCost(async () => {
-      throw new Error('boom');
-    }, clock);
+    const handler = measureInvocationCost(() => Promise.reject(new Error('boom')), clock);
 
     await expect(handler()).rejects.toThrow('boom');
     expect(clock.lines).toHaveLength(1);
@@ -81,7 +79,7 @@ describe('measureInvocationCost', () => {
     vi.spyOn(process, 'cpuUsage').mockReturnValue({ user: 30_000, system: 20_000 });
     vi.spyOn(performance, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(1_250);
     try {
-      await measureInvocationCost(async () => undefined)();
+      await measureInvocationCost(() => Promise.resolve())();
       expect(log.mock.calls).toStrictEqual([[JSON.stringify({
         message: 'invocation_cost', cpu_ms: 50, wall_ms: 250, function_memory_size: 1769, cpu_pct_of_allocation: 20,
       })]]);

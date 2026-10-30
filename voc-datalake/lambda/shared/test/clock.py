@@ -10,7 +10,7 @@ Code writes "now" stamps through ``shared.timestamps.now_iso``, which reads ITS
 ``frozen_clock(module, fake)``.
 """
 import importlib
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from types import ModuleType
@@ -26,7 +26,7 @@ def today_utc() -> str:
 
 
 @contextmanager
-def frozen_clock(module: ModuleType | str, fake: Any = None) -> Iterator[Any]:
+def frozen_clock(module: ModuleType | str, fake: Any = None) -> Generator[Any, None, None]:
     """Patch ``module.datetime`` (when the module still imports it) and ``shared.timestamps.datetime`` with ONE
     fake (a ``MagicMock`` by default), so ``now_iso()`` and the module's own reads see the same frozen time."""
     clock = MagicMock() if fake is None else fake

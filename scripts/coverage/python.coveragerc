@@ -1,0 +1,24 @@
+# coverage.py configuration for the per-file coverage gate (docs/coverage-gate.md). scripts/validate.sh's
+# pytest step passes it with --cov-config, so the gate measures exactly the files listed here, whatever an
+# ad-hoc run's voc-datalake/.coveragerc says. Paths are relative to voc-datalake/, where pytest runs.
+[run]
+# Report keys relative to voc-datalake/ (the checker turns them into repo-relative paths).
+relative_files = True
+# Every worker of pytest-xdist writes its own data file; pytest-cov combines them before reporting.
+data_file = ../.cache/coverage/python.coverage
+omit =
+    # Plugin scaffold: not shipped, its tests are excluded (pytest.ini norecursedirs).
+    plugins/_template/*
+    # Vendored layer build output.
+    lambda/layers/*
+    # The tests themselves are not production code: test modules, fixtures and conftest files.
+    */test/*
+    */tests/*
+    */test_*.py
+    */*_test.py
+    */conftest.py
+    conftest.py
+
+[report]
+# Python's own coverage gate is per file (scripts/coverage/check-per-file-coverage.mjs), not a total.
+skip_empty = True

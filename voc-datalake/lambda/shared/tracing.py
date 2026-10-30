@@ -37,7 +37,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
 
@@ -145,7 +145,7 @@ class DeferredXRayProvider(BaseProvider):
     # -- BaseProvider -------------------------------------------------------
 
     @contextmanager
-    def in_subsegment(self, name: str | None = None, **kwargs: Any) -> Iterator[Any]:
+    def in_subsegment(self, name: str | None = None, **kwargs: Any) -> Generator[Any, None, None]:
         if not self._active():
             yield _NOOP_SUBSEGMENT
             return
@@ -153,7 +153,7 @@ class DeferredXRayProvider(BaseProvider):
             yield subsegment
 
     @asynccontextmanager
-    async def in_subsegment_async(self, name: str | None = None, **kwargs: Any) -> AsyncIterator[Any]:
+    async def in_subsegment_async(self, name: str | None = None, **kwargs: Any) -> AsyncGenerator[Any, None]:
         if not self._active():
             yield _NOOP_SUBSEGMENT
             return

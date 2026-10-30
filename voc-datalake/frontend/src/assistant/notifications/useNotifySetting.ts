@@ -16,6 +16,9 @@ import { useAssistantUiStore } from '../store/assistantStore'
 import { notificationAccess, requestNotificationAccess } from './runNotifications'
 import type { NotificationAccess } from './runNotifications'
 
+/** A permission prompt that fails (an old browser, a blocked frame) reads as a refusal. */
+const deniedOnFailure = (): NotificationAccess => 'denied'
+
 function labelKey(access: NotificationAccess, on: boolean): string {
   if (access === 'unsupported') return 'notifications.toggle.unsupported'
   if (access === 'denied') return 'notifications.toggle.blocked'
@@ -57,7 +60,7 @@ export function useNotifySetting(): NotifySetting {
       setNotify(false)
       return
     }
-    const answer = await requestNotificationAccess().catch((): NotificationAccess => 'denied')
+    const answer = await requestNotificationAccess().catch(deniedOnFailure)
     setAccess(answer)
     setNotify(answer === 'granted')
   }

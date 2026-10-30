@@ -23,6 +23,9 @@
     "noImplicitReturns": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
     "noUncheckedSideEffectImports": true
   },
   "include": ["vite.config.ts", "changelogPlugin.ts", "vendorChunks.json"]

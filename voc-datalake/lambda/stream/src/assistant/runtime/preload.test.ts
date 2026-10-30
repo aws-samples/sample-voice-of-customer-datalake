@@ -26,9 +26,9 @@ const EDITOR = { role: 'editor', can_edit: true, can_manage: false };
 
 /** A get_project fake that records `access` for p1 the way the real tool does. */
 function getProjectReporting(access: ProjectAccessSummary | undefined) {
-  return fakeServerTool('get_project', async (_input, ctx) => {
+  return fakeServerTool('get_project', (_input, ctx) => {
     ctx.projectAccess.record('p1', access);
-    return { content: '{}' };
+    return Promise.resolve({ content: '{}' });
   });
 }
 

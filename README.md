@@ -201,6 +201,8 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Lambda Sizing](docs/lambda-sizing.md) | Memory and timeout policy for every Lambda, and how it is measured |
 | [Read Caching](docs/caching.md) | Version counters, the warm-container read memo, ETag/304: TTLs, invalidation, how to verify |
 | [Code Audit](docs/code-audit.md) | `npm run audit:code`: dead-code, renamed-clone and re-implemented-helper detectors, how to read and allowlist them |
+| [Coverage Gate](docs/coverage-gate.md) | The per-file coverage floor, its shrink-only baselines, and how to fix a red |
+| [Dependencies](docs/dependencies.md) | Dependabot updates, the license gate, the vulnerability audit and the scheduled-failure watch |
 | [Changelog](CHANGELOG.md) | Release notes and upgrade guidance |
 
 ## 📄 License

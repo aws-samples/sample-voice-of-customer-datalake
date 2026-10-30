@@ -160,7 +160,7 @@ class BaseIngestor(ABC):
                 # the breaker is broken.
                 "counted_against_circuit_breaker": not unreadable,
             })
-        except Exception as reporting_error:  # noqa: BLE001
+        except Exception as reporting_error:  # noqa: BLE001 — reporting must never mask the original failure; logged
             logger.warning(f"Failed to emit construction failure audit event: {reporting_error}")
 
         # The exception TYPE only, the same rule as run()'s path (#263): the
@@ -174,13 +174,13 @@ class BaseIngestor(ABC):
                 'completed_at': now_iso(),
                 'errors': [type(error).__name__],
             })
-        except Exception as reporting_error:  # noqa: BLE001
+        except Exception as reporting_error:  # noqa: BLE001 — reporting must never mask the original failure; logged
             logger.warning(f"Failed to record construction failure run status: {reporting_error}")
 
         if not unreadable:
             try:
                 self.circuit_breaker.record_failure(str(error))
-            except Exception as reporting_error:  # noqa: BLE001
+            except Exception as reporting_error:  # noqa: BLE001 — reporting must never mask the original failure; logged
                 logger.warning(f"Failed to record construction failure with the circuit breaker: {reporting_error}")
 
     def _load_secrets(self) -> dict:

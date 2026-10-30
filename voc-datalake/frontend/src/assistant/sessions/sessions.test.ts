@@ -17,6 +17,7 @@ import { createThreadState } from '../thread/reducer'
 import type { Message } from '@ag-ui/core'
 import type { SaveSessionBody } from './serialize'
 import { at, defined } from '@test/defined'
+import { asText, parsedJson } from '@test/jsonText'
 
 const fetchMock = vi.mocked(fetchApi)
 
@@ -129,7 +130,7 @@ describe('save body', () => {
     ]
     const retried = dropOldestTurns(msgs)
     expect(retried.map((m) => m.id)).toStrictEqual(['u1', 'a1', 't1', 'a2'])
-    expect(at(retried, 2).role === 'tool' && String(at(retried, 2).content).length).toBe(MAX_RETRY_TOOL_CHARS)
+    expect(at(retried, 2).role === 'tool' && asText(at(retried, 2).content).length).toBe(MAX_RETRY_TOOL_CHARS)
   })
 
   it('windows the saved messages to the newest turns within 300 messages', () => {
@@ -204,7 +205,7 @@ describe('sessions API', () => {
     fetchMock.mockRejectedValueOnce(new Error('API Error: 413')).mockResolvedValueOnce({})
     await saveSession(body)
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    const retried: unknown = JSON.parse(String(at(fetchMock.mock.calls, 1)[1]?.body))
+    const retried: unknown = parsedJson(at(fetchMock.mock.calls, 1)[1]?.body)
     expect(retried).toMatchObject({ id: 't1', messages: [{ id: 'u2' }, { id: 'a2' }] })
   })
 

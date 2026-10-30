@@ -137,7 +137,7 @@ class TestExpiryForIsStrictAtBothEnds:
 
     def test_naive_now_yields_a_naive_deadline(self):
         # Naive on purpose: this pins how a naive `now` is handled.
-        assert gt.expiry_for(2, datetime(2026, 1, 15, 12, 0, 0)) == '2026-01-17T12:00:00'  # noqa: DTZ001
+        assert gt.expiry_for(2, datetime(2026, 1, 15, 12, 0, 0)) == '2026-01-17T12:00:00'  # noqa: DTZ001 — naive on purpose, the case under test
 
 
 class TestTokenStatusFailsClosed:

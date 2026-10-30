@@ -12,6 +12,9 @@ import {
   SPEC_FILES,
   SPEC_RULES,
   SUPPRESSION_RULES,
+  SWALLOWED_REJECTION_SELECTORS,
+  TYPE_SAFETY_RULES,
+  TYPE_SAFETY_SPEC_RULES,
   withPending,
 } from '../../eslint-rules/quality-gates.mjs'
 
@@ -74,6 +77,7 @@ export default tseslint.config(
           selector: 'VariableDeclaration[kind="let"]',
           message: 'Use const. Avoid mutation.',
         },
+        ...SWALLOWED_REJECTION_SELECTORS,
       ],
       // No any types
       // A leading underscore marks a binding kept on purpose (a mock's positional parameter, a
@@ -88,6 +92,15 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-return': 'error',
       // Shared quality-gate set: size, escape hatches, re-exports, unnecessary logic, promises
       ...withPending(SOURCE_RULES, PENDING_SOURCE),
+      ...TYPE_SAFETY_RULES,
+      // Added 5.49 wave, owner-approved: console.warn / console.error are the SPA's reporting path
+      // (schema drops, failed loads); console.log / info / debug are leftover debugging. And, as in the
+      // stream Lambda, no `undefined` spelled out where it is already the default.
+      'no-console': ['error', { allow: ['warn', 'error'] }],
+      // `checkArguments: false`: TypeScript requires an `undefined` argument where the parameter is not
+      // optional (zod's `.catch(undefined)`, a spec passing `undefined` to an `unknown` parameter), and the
+      // rule's autofix removes it, which breaks the build (and `reduce(fn, undefined)` changes meaning).
+      'unicorn/no-useless-undefined': ['error', { checkArguments: false }],
       // Naming conventions
       '@typescript-eslint/naming-convention': [
         'error',
@@ -137,6 +150,6 @@ export default tseslint.config(
         tsconfigRootDir: import.meta.dirname,
       },
     },
-    rules: withPending(SPEC_RULES, PENDING_SPEC),
+    rules: { ...withPending(SPEC_RULES, PENDING_SPEC), ...TYPE_SAFETY_SPEC_RULES },
   },
 )

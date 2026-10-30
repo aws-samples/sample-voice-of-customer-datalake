@@ -236,14 +236,14 @@ class TestValidateSqsMessage:
 
     def test_validates_with_the_bundled_shared_schema(self):
         """The processor's validator is the shared/ one its bundle ships (#249)."""
-        import processor.handler as handler
-        import shared.ingest_schemas as ingest_schemas
+        from processor import handler
+        from shared import ingest_schemas
 
         assert handler.safe_validate_message is ingest_schemas.safe_validate_message
 
     def test_there_is_no_switch_that_disables_validation(self):
         """A silent VALIDATION_ENABLED=False was the #249 failure mode."""
-        import processor.handler as handler
+        from processor import handler
 
         assert not hasattr(handler, 'VALIDATION_ENABLED')
 

@@ -26,7 +26,7 @@ import hmac
 import importlib
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -53,7 +53,7 @@ def _sig(body: bytes, key: str = KEY) -> str:
 
 
 @contextmanager
-def isolated(**secrets: str) -> Iterator[MagicMock]:
+def isolated(**secrets: str) -> Generator[MagicMock, None, None]:
     """No AWS: the secret is *secrets*, SQS and S3 are mocks; yields the audit emitter."""
     with (
         patch("_shared.base_webhook.get_sqs_client"),
@@ -65,7 +65,7 @@ def isolated(**secrets: str) -> Iterator[MagicMock]:
 
 
 @contextmanager
-def built(**secrets: str) -> Iterator[tuple[handler.GitHubIssuesWebhook, MagicMock, MagicMock]]:
+def built(**secrets: str) -> Generator[tuple[handler.GitHubIssuesWebhook, MagicMock, MagicMock], None, None]:
     """A constructed webhook (secret *secrets*), its audit emitter and its metric recorder."""
     with isolated(**secrets) as audit, patch.object(handler.metrics, "add_metric") as add_metric:
         yield handler.GitHubIssuesWebhook(), audit, add_metric

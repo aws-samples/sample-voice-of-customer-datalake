@@ -14,6 +14,7 @@ import { nth } from '../../lib/nth-fixtures.js';
 import { fakeServerTool, fakeToolset, runBody } from './__fixtures__/fakes.js';
 import { finished, harness, lastUserContent, run, silenceConsole, type Harness } from './__fixtures__/harness.js';
 import { MAX_PARALLEL_SERVER_TOOLS } from './tool-calls.js';
+import { EventType } from '@ag-ui/core';
 
 silenceConsole();
 
@@ -74,30 +75,28 @@ describe('runAssistant — server tools in one turn', () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
       return { content: 'slow', sources: [{ feedback_id: 'f-slow', text: 's' }] };
     });
-    const fast = fakeServerTool('list_projects', async () => ({ content: 'fast', sources: [{ feedback_id: 'f-fast', text: 'f' }] }));
+    const fast = fakeServerTool('list_projects', () => Promise.resolve({ content: 'fast', sources: [{ feedback_id: 'f-fast', text: 'f' }] }));
     const h = toolTurnHarness(PAIR, [slow, fast]);
 
     const events = await run(runBody(), h);
 
     const results = lastUserContent(nth(h.calls, 1));
     expect(results.map((b) => b.toolResult?.toolUseId)).toStrictEqual(['tu_a', 'tu_b']);
-    expect(events.filter((e) => e.type === 'TOOL_CALL_RESULT').map((e) => e.toolCallId)).toStrictEqual(['tu_a', 'tu_b']);
+    expect(events.filter((e) => e.type === EventType.TOOL_CALL_RESULT).map((e) => e.toolCallId)).toStrictEqual(['tu_a', 'tu_b']);
     expect(events.find((e) => e.name === 'assistant.sources')).toMatchObject({
       value: { feedback: [{ feedback_id: 'f-slow' }, { feedback_id: 'f-fast' }] },
     });
     // Every call's START precedes its own RESULT.
     for (const id of ['tu_a', 'tu_b']) {
-      const start = events.findIndex((e) => e.type === 'TOOL_CALL_START' && e.toolCallId === id);
-      const result = events.findIndex((e) => e.type === 'TOOL_CALL_RESULT' && e.toolCallId === id);
+      const start = events.findIndex((e) => e.type === EventType.TOOL_CALL_START && e.toolCallId === id);
+      const result = events.findIndex((e) => e.type === EventType.TOOL_CALL_RESULT && e.toolCallId === id);
       expect(start).toBeLessThan(result);
     }
   });
 
   it('keeps one failing tool from affecting the others', async () => {
-    const failing = fakeServerTool('get_metrics', async () => {
-      throw new Error('boom');
-    });
-    const ok = fakeServerTool('list_projects', async () => ({ content: 'fine' }));
+    const failing = fakeServerTool('get_metrics', () => Promise.reject(new Error('boom')));
+    const ok = fakeServerTool('list_projects', () => Promise.resolve({ content: 'fine' }));
     const h = toolTurnHarness(PAIR, [failing, ok]);
 
     await run(runBody(), h);

@@ -4,6 +4,7 @@ import { ServiceError } from '../../lib/errors.js';
 import { runBody } from './__fixtures__/fakes.js';
 import { firstCall, harness, lastUserContent, run, silenceConsole, type Harness } from './__fixtures__/harness.js';
 import { buildMemoryBlock, createMemoryRecall, recallForRun } from './memory-recall.js';
+import { EventType } from '@ag-ui/core';
 
 silenceConsole();
 
@@ -11,7 +12,7 @@ const MEMORY = { memory_id: 'mem_1', scope: 'company', kind: 'customer', stateme
 
 describe('createMemoryRecall', () => {
   it('posts the query to /memory/retrieve as the caller with k=8 and the page', async () => {
-    const invoke = vi.fn(async () => ({ items: [MEMORY, { junk: true }] }));
+    const invoke = vi.fn(() => Promise.resolve({ items: [MEMORY, { junk: true }] }));
     const recall = createMemoryRecall(invoke);
     const items = await recall('Do customers want SSO?', fakeContext('project', { projectId: 'p1' }));
     expect(items).toStrictEqual([MEMORY]);
@@ -25,9 +26,7 @@ describe('createMemoryRecall', () => {
 describe('recallForRun (fails open)', () => {
   it('returns [] and logs the error class only when recall throws', async () => {
     const warn = vi.spyOn(console, 'warn');
-    const items = await recallForRun(async () => {
-      throw new ServiceError('boom user text');
-    }, 'secret question', fakeContext());
+    const items = await recallForRun(() => Promise.reject(new ServiceError('boom user text')), 'secret question', fakeContext());
     expect(items).toStrictEqual([]);
     expect(warn).toHaveBeenCalledWith('Memory recall skipped (ServiceError)');
     expect(JSON.stringify(warn.mock.calls)).not.toContain('secret question');
@@ -39,7 +38,7 @@ describe('recallForRun (fails open)', () => {
   });
 
   it('skips the call for an empty message', async () => {
-    const recall = vi.fn(async () => [MEMORY]);
+    const recall = vi.fn(() => Promise.resolve([MEMORY]));
     await expect(recallForRun(recall, '   ', fakeContext())).resolves.toStrictEqual([]);
     expect(recall).not.toHaveBeenCalled();
   });
@@ -71,9 +70,9 @@ describe('runAssistant with memory recall', () => {
   async function runRecallingMemory(): Promise<{ h: Harness; queries: string[] }> {
     const h = harness([{ text: 'ok' }]);
     const queries: string[] = [];
-    h.deps.recallMemory = async (query) => {
+    h.deps.recallMemory = (query) => {
       queries.push(query);
-      return [MEMORY];
+      return Promise.resolve([MEMORY]);
     };
     await run(runBody(), h);
     return { h, queries };
@@ -96,17 +95,15 @@ describe('runAssistant with memory recall', () => {
 
   it('runs without a block when recall fails', async () => {
     const h = harness([{ text: 'ok' }]);
-    h.deps.recallMemory = async () => {
-      throw new ServiceError('memory down');
-    };
+    h.deps.recallMemory = () => Promise.reject(new ServiceError('memory down'));
     const events = await run(runBody(), h);
-    expect(events.some((event) => event.type === 'RUN_ERROR')).toBe(false);
+    expect(events.some((event) => event.type === EventType.RUN_ERROR)).toBe(false);
     expect(lastUserContent(firstCall(h)).some((block) => (block.text ?? '').includes('<memory>'))).toBe(false);
   });
 
   it('places <context> before <memory> on a page with authored data', async () => {
     const h = harness([{ text: 'ok' }]);
-    h.deps.recallMemory = async () => [MEMORY];
+    h.deps.recallMemory = () => Promise.resolve([MEMORY]);
     await run(runBody({ forwardedProps: { page: { kind: 'dashboard', path: '/', title: 'Overview' } } }), h);
     const texts = lastUserContent(firstCall(h)).map((block) => block.text ?? '');
     expect(texts[0]).toContain('<context>');

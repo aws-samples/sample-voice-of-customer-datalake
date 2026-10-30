@@ -40,7 +40,22 @@ select = [
     # Measured at 0 (or fixed to 0) on 2026-10-08, so they only stop new findings:
     "LOG", "PLE", "RSE", "A", "PGH", "ISC", "T10", "TID", "ASYNC",   # logging, pylint errors, builtins shadowing, …
     "DTZ001", "PLW2901", "EXE", "ICN001", "PYI034", "FURB167",   # naive datetimes, loop-var reuse, …
+    # Measured at 0 on 2026-10-09 (quality-gates wave), so they only stop new findings:
+    "DTZ", "YTT", "INT", "PYI",                      # every naive datetime, sys.version misuse, gettext, stubs
+    "PLR0124", "PLR0133",                            # comparing a name with itself, comparing two constants
+    # Fixed to 0 in the same wave:
+    "FURB136", "PLC0207", "PLR0402",                 # hand-written min/max ternary, split without maxsplit, `import a.b as b`
+    "FIX", "TD",                                     # no TODO/FIXME/XXX/HACK left behind: fix it, or state the fact
+    # Preview-only rules, selected by exact code (see `preview` below):
+    "RUF029",                                        # `async def` that never awaits
+    "PLR1702",                                       # more than 5 nested blocks
 ]
+# `preview` is needed for RUF029 and PLR1702 only. `explicit-preview-rules` keeps every OTHER preview rule off
+# (a prefix such as "RUF" or "PLR" never pulls one in); preview also turns on some stable rules' preview behaviour,
+# which found 2 more (PERF102, RUF002) on 2026-10-09, both fixed. ruff is pinned exactly, so that set only moves
+# on a deliberate upgrade (https://docs.astral.sh/ruff/preview/).
+preview = true
+explicit-preview-rules = true
 # Measured and deliberately NOT selected (2026-10-08): G, TRY003/EM (log/exception message style), PLW0603 (the
 # cold-start `global` caches are intended), INP001 (Lambda folders have no __init__.py), FBT (signature redesign),
 # FLY002 (multi-line '\n'.join of pinned literals reads better than one long f-string), FURB162 (its fix changes

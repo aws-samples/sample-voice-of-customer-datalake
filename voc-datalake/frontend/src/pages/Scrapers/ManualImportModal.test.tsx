@@ -173,7 +173,7 @@ describe('ManualImportModal', () => {
       expect(screen.getByPlaceholderText(SOURCE_URL_PLACEHOLDER)).toHaveAttribute('aria-invalid', 'false')
     })
 
-    it('shows error when text exceeds max characters', async () => {
+    it('shows error when text exceeds max characters', () => {
       const longText = 'a'.repeat(10001)
       useManualImportStore.setState({ rawText: longText })
       render(<ManualImportModal />)

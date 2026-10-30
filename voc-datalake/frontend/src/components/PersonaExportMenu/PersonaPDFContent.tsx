@@ -120,7 +120,7 @@ function IdentitySection({ persona }: PersonaPDFContentProps) {
             borderRadius: '6px',
             fontSize: '12px',
           }}>
-            {humanizeId(k)}: {String(v)}
+            {humanizeId(k)}: {v}
           </span>
         ))}
       </div>

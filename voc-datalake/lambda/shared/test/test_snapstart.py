@@ -101,7 +101,8 @@ class TestRouteAndModelWarmers:
             original = botocore.session.Session.create_client
             botocore.session.Session.create_client = lambda *a, **k: created.append(a) or original(*a, **k)
             from shared import snapstart
-            loader = boto3._get_default_session()._loader
+            boto3.setup_default_session()
+            loader = boto3.DEFAULT_SESSION._loader
             calls = []
             load = loader.load_service_model
             loader.load_service_model = lambda svc, kind, *a: calls.append((svc, kind)) or load(svc, kind, *a)
@@ -112,6 +113,14 @@ class TestRouteAndModelWarmers:
             'calls': [[svc, kind] for svc in ('dynamodb', 'lambda') for kind in snapstart.BOTOCORE_MODEL_FILES],
             'clients': 0,
         }
+
+    def test_botocore_model_warmer_refuses_a_session_without_a_loader(self, monkeypatch):
+        """A boto3 that renamed its loader fails the priming step loudly (`prime` logs it), not silently."""
+        import boto3
+
+        monkeypatch.setattr(boto3, 'DEFAULT_SESSION', types.SimpleNamespace())
+        with pytest.raises(RuntimeError, match='no botocore loader'):
+            snapstart.botocore_model_warmer('dynamodb')()
 
 
 @pytest.fixture

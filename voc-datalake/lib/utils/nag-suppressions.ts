@@ -254,19 +254,9 @@ export const serviceQuotasReadSuppressions: NagPackSuppression[] = [
   },
 ];
 
-// AWS Comprehend + Translate - real-time text analysis and translation APIs
-export const comprehendSuppressions: NagPackSuppression[] = [
-  {
-    id: 'AwsSolutions-IAM5',
-    // One entry for every `Resource::*` of a stateless AI API: cdk-nag reports the wildcard once per policy
-    // whatever the action, and uses the first entry that matches, so a second (Translate) entry with the same
-    // `appliesTo` never suppressed anything.
-    reason: 'Comprehend real-time detection APIs (DetectSentiment, DetectKeyPhrases, DetectDominantLanguage, DetectPiiEntities) and Translate TranslateText (no custom terminology or parallel data) do not support resource-level permissions - these are stateless analysis operations that require Resource:*',
-    appliesTo: [
-      'Resource::*',
-    ],
-  },
-];
+// `Resource::*` of reviewed unscopable actions (Comprehend, Translate, Step Functions log delivery, ...) is NOT
+// suppressed here any more: suppressReviewedResourceStar (nag-resource-star.ts) suppresses it per policy, only
+// where every `"*"` action is on the reviewed list in resource-star-actions.ts.
 
 // API Gateway request validation
 export const apiGatewayRequestValidationSuppressions: NagPackSuppression[] = [

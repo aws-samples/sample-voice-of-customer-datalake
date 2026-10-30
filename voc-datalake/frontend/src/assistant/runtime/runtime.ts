@@ -30,11 +30,13 @@ import { adoptAfterStop, adoptServerSession, followServerRun } from './followSer
 import { mentionsOfLastTurn } from '../mentions/mentionsOfTurn'
 import type { AguiEvent } from '../agui/sse'
 import type { ContentPart, Message, ResumeEntry } from '@ag-ui/core'
+import { EventType } from '@ag-ui/core'
 import type { Mentions, PageContext } from '../contract'
 import type { ApprovalResolution } from '../types'
 import type { ThreadAction } from '../thread/reducer'
 import type { ThreadState } from '../thread/types'
 import type { SessionRecord } from '../sessions/schema'
+import { ignoreRejection } from '../../lib/rejections'
 
 export interface RunEnvironment {
   page: PageContext
@@ -105,7 +107,7 @@ async function saveThreadNow(threadId: string, page: PageContext | null, adoptOn
  * True when the event was one: the server has stored the run's outcome.
  */
 function noteServerRevision(threadId: string, event: AguiEvent): boolean {
-  if (event.type !== 'CUSTOM' || event.name !== CUSTOM_EVENTS.session) return false
+  if (event.type !== EventType.CUSTOM || event.name !== CUSTOM_EVENTS.session) return false
   const value: unknown = event.value
   const revision: unknown = typeof value === 'object' && value !== null ? Reflect.get(value, 'revision') : undefined
   if (typeof revision !== 'number' || !Number.isSafeInteger(revision)) return false
@@ -271,7 +273,7 @@ export function stopRun(page: PageContext | null = null, threadId: string = acti
   dispatchTo(threadId, { type: 'local/aborted' })
   if (runId !== undefined && isValidSessionId(threadId)) {
     // Best effort: a failed cancel leaves the run to finish on its own, as before.
-    cancelServerRun(threadId, runId).catch(() => undefined)
+    cancelServerRun(threadId, runId).catch(ignoreRejection)
     void settleStoppedRun(threadId, page)
     return
   }

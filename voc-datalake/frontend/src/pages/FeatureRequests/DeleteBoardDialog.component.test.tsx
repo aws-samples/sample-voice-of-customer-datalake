@@ -75,7 +75,7 @@ describe('a board with requests', () => {
 
   it('shows progress while it deletes, stays open, then closes and cleans up when done', async () => {
     const user = userEvent.setup()
-    const last: { release: (step: DeleteBoardStep) => void } = { release: () => undefined }
+    const last: { release: (step: DeleteBoardStep) => void } = { release: () => {} }
     const api = deleteStepsApi(
       { done: false, deleted: 2, remaining: 1 },
       new Promise<DeleteBoardStep>((resolve) => { last.release = resolve }),

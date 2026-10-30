@@ -25,6 +25,7 @@ import { z } from 'zod'
 import { DEFAULT_AXES, activeAxes, normalizeAxes } from './prioritizationAxes'
 import { getBaseUrl } from './baseUrl'
 import { fetchApi } from './client'
+import { nullOnRejection } from '../lib/rejections'
 
 /**
  * Why a ballot was refused. The strings are the backend's `reason` values
@@ -247,7 +248,8 @@ export const votingSessionsApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ballot),
     })
-    const body: unknown = await response.json().catch(() => null)
+    // A body that is not JSON (a gateway error page) reads as no body; the status still decides.
+    const body: unknown = await response.json().catch(nullOnRejection)
     if (!response.ok) {
       const refusal = ballotRefusalSchema.safeParse(body)
       return {

@@ -1,0 +1,68 @@
+# License gate for pull requests, read by .github/workflows/dependency-review.yml
+# (actions/dependency-review-action). Reference: the action's README, "Configuration options".
+#
+# Default deny: a dependency a pull request ADDS or CHANGES must carry a license on this list, or the
+# check fails. Unchanged dependencies are not judged; the action compares the base and head
+# dependency graphs.
+#
+# Why this list: the repository is MIT-0 (LICENSE) and is cloned, deployed and modified by others, so
+# what we pull in must be free to use, modify and redistribute without imposing terms on their code.
+# The list is permissive licenses, plus:
+# - MPL-2.0: file-level copyleft that binds only changes to the MPL files themselves. We consume such
+#   packages unmodified (lightningcss in the build, axe-core in the e2e suite, certifi in Python), which
+#   creates no obligation for our code. Modifying an MPL-2.0 file in place is what this does NOT cover.
+# - CC-BY-4.0: data, not code (caniuse-lite's browser tables); attribution travels with the package.
+# - OFL-1.1: fonts (@fontsource/*), the standard font license; it allows bundling with software.
+# - Python-2.0 / PSF-2.0: the Python Software Foundation license (argparse's port, typing_extensions).
+# Anything else needs a reviewed exception below, with the reason.
+#
+# Scopes: development dependencies are judged too (fail-on-scopes). They are not shipped in a Lambda or
+# the SPA bundle, but anyone who clones the repo installs them, so a copyleft dev tool is still a
+# decision to make on purpose.
+#
+# Vulnerabilities are NOT checked here (vulnerability-check: false): scripts/dependency-audit.mjs does
+# that on pull requests and weekly, with a reviewed-ignore file, and Dependabot alerts cover main.
+#
+# A dependency GitHub finds no license for is reported in the job summary but does not fail (the
+# action's documented behaviour); one with a license string that is not valid SPDX fails, so review it.
+license-check: true
+vulnerability-check: false
+
+fail-on-scopes:
+  - runtime
+  - development
+  - unknown
+
+allow-licenses:
+  - 0BSD
+  - Apache-2.0
+  - BlueOak-1.0.0
+  - BSD-2-Clause
+  - BSD-2-Clause-Views
+  - BSD-3-Clause
+  - BSL-1.0
+  - CC-BY-4.0
+  - CC0-1.0
+  - ISC
+  - MIT
+  - MIT-0
+  - MPL-2.0
+  - OFL-1.1
+  - PSF-2.0
+  - Python-2.0
+  - Unlicense
+  - Zlib
+
+# Reviewed exceptions: packages already in our trees whose license (as GitHub's dependency graph
+# reports it, 2026-10-30) is outside the list. Each is excluded by name, every version.
+allow-dependencies-licenses:
+  # LGPL-3.0-only. An ESLint plugin (the code-quality rules in eslint-rules/); development scope only,
+  # runs in the linter, never bundled or shipped, and we do not modify it. LGPL places no terms on code
+  # that merely uses the library.
+  - pkg:npm/eslint-plugin-sonarjs
+  # "ISC AND JSON AND MIT". recharts' vendored d3 modules; the JSON license's "Good, not Evil" clause
+  # is not an OSI license, so it stays an exception rather than a list entry.
+  - pkg:npm/victory-vendor
+  # "MIT AND MITNFA" (MIT plus no false attribution) for some versions. User-agent parsing pulled in
+  # by the AWS SDK for JavaScript; permissive, but not common enough to allow generically.
+  - pkg:npm/bowser

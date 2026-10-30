@@ -11,7 +11,7 @@ vi.mock('../lib/trustedOrigins', () => ({ isTrustedOrigin: () => true }))
 vi.mock('./baseUrl', () => ({ getBaseUrl: () => 'https://api.example.com/v1' }))
 vi.mock('./client', () => ({
   fetchApi: vi.fn(),
-  apiErrorFor: async (response: Response) => new ApiError(response.status, 'Only an admin can do that'),
+  apiErrorFor: (response: Response) => Promise.resolve(new ApiError(response.status, 'Only an admin can do that')),
 }))
 
 const REQUEST = {

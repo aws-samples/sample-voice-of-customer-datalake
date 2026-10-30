@@ -8,6 +8,7 @@ import type { ConverseStreamOutput } from '@aws-sdk/client-bedrock-runtime';
 import { cooldownUntil, fallbackChain, isCoolingDown } from '../../bedrock/model-fallback.js';
 import { bedrockEvents, failingStream, runBody, streamOf, type ScriptedTurn } from './__fixtures__/fakes.js';
 import { finished, harness, run, silenceConsole, types, type Harness } from './__fixtures__/harness.js';
+import { EventType } from '@ag-ui/core';
 
 silenceConsole();
 beforeEach(() => vi.mocked(console.log).mockClear());
@@ -43,7 +44,7 @@ function byModel(h: Harness, failing: Record<string, () => AsyncIterable<Convers
 
 function textOf(events: Awaited<ReturnType<typeof run>>): string {
   return events
-    .filter((e) => e.type === 'TEXT_MESSAGE_CONTENT')
+    .filter((e) => e.type === EventType.TEXT_MESSAGE_CONTENT)
     .map((e) => String(Reflect.get(e, 'delta')))
     .join('');
 }
@@ -147,7 +148,7 @@ describe('runAssistant — model capacity fallback', () => {
 
   it('falls back from a configured Opus to the Sonnet chain', async () => {
     const h = harness([]);
-    h.deps.resolveModel = async () => OPUS5;
+    h.deps.resolveModel = () => Promise.resolve(OPUS5);
     const tried = byModel(h, {
       [OPUS5]: () => failingStream(named('AccessDeniedException', "You don't have access to the model with the specified model ID.")),
     });

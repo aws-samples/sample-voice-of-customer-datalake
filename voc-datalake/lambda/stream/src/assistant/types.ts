@@ -93,7 +93,7 @@ export interface ClientToolDefinition {
    * defaults). Read by plan validation (`plan/validate.ts`) to check a plan's
    * literal arguments; optional so hand-built test fakes need not carry one.
    */
-  argsSchema?: z.ZodType<Record<string, unknown>, unknown>;
+  argsSchema?: z.ZodType<Record<string, unknown>>;
   /**
    * Optional read-only check of the VALIDATED args against current state (e.g.
    * a create whose id already exists), run before the approval card is raised.

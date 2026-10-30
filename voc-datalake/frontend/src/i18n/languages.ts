@@ -45,5 +45,5 @@ export function changeLanguage(lang: string): Promise<void> {
     return Promise.resolve()
   }
   // Drop i18next's `t` result: callers only wait for the switch.
-  return i18n.changeLanguage(lang).then(() => undefined)
+  return i18n.changeLanguage(lang).then(() => {})
 }

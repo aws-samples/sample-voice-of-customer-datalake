@@ -15,6 +15,7 @@ import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { ApiError } from '../../lib/errors'
 import { radarApi, radarKeys } from '../../api/radarApi'
 import RadarExaCard from './RadarExaCard'
+import { parsedJson } from '@test/jsonText'
 
 const KEY = 'exa_example_key_1234'
 
@@ -62,7 +63,7 @@ describe('RadarExaCard', () => {
     await user.type(await screen.findByLabelText('Exa API key'), KEY)
     await user.click(screen.getByRole('button', { name: 'Save key' }))
     expect(await screen.findByText('Configured')).toBeInTheDocument()
-    expect(JSON.parse(String(callsTo('PUT')[0]?.[1]?.body))).toStrictEqual({ api_key: KEY })
+    expect(parsedJson(callsTo('PUT')[0]?.[1]?.body)).toStrictEqual({ api_key: KEY })
     expect(screen.getByLabelText('Exa API key')).toHaveValue('')
     // Nowhere on screen: not as text, not in an attribute.
     expect(container.innerHTML).not.toContain(KEY)

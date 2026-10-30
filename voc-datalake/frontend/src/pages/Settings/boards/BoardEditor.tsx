@@ -25,6 +25,7 @@ import BoardBasicsFields from './BoardBasicsFields'
 import BoardFieldsEditor from './BoardFieldsEditor'
 import BoardLifecycleActions from './BoardLifecycleActions'
 import BoardStatusesEditor from './BoardStatusesEditor'
+import { ignoreRejection } from '../../../lib/rejections'
 
 /** The board being edited (shared by the heading and the form: one query). */
 const useBoard = useAdminBoard
@@ -98,7 +99,7 @@ function BoardForm({ board, canSave, saved, onSavedChange, onDeleted }: Readonly
         <>
           <SaveBar dirty={dirty} problems={problems} pending={save.isPending} saved={saved}
             error={save.isError ? boardErrorMessage(save.error, t) : null}
-            onSave={() => { saveDraft().catch(() => undefined) }} />
+            onSave={() => { saveDraft().catch(ignoreRejection) }} />
           <BoardLifecycleActions board={board} dirty={dirty} onDeleted={onDeleted} />
         </>
       ) : null}

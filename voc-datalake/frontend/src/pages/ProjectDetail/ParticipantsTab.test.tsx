@@ -10,6 +10,7 @@ import { renderWithQueryClient } from '@test/query-client'
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { ANA, LIST_BETA, participantRoutes } from '../Participants/participants-fixtures'
 import ParticipantsTab from './ParticipantsTab'
+import { parsedJson } from '@test/jsonText'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
@@ -49,7 +50,7 @@ describe('the project Participants tab', () => {
     await user.selectOptions(select, 'lst_staff')
     await user.click(screen.getByRole('button', { name: /link list/i }))
     await waitFor(() => expect(callsTo('POST', '/participants/projects/proj_1')).toHaveLength(1))
-    expect(JSON.parse(String(callsTo('POST', '/participants/projects/proj_1')[0]?.[1]?.body))).toStrictEqual({ list_ids: ['lst_staff'] })
+    expect(parsedJson(callsTo('POST', '/participants/projects/proj_1')[0]?.[1]?.body)).toStrictEqual({ list_ids: ['lst_staff'] })
   })
 
   it('invites a new person by email', async () => {
@@ -58,7 +59,7 @@ describe('the project Participants tab', () => {
     await user.type(await screen.findByRole('textbox', { name: /email/i }), 'new.person@example.com')
     await user.click(screen.getByRole('button', { name: /^invite$/i }))
     await waitFor(() => expect(callsTo('POST', '/participants/projects/proj_1')).toHaveLength(1))
-    expect(JSON.parse(String(callsTo('POST', '/participants/projects/proj_1')[0]?.[1]?.body))).toStrictEqual({ people: [{ email: 'new.person@example.com' }] })
+    expect(parsedJson(callsTo('POST', '/participants/projects/proj_1')[0]?.[1]?.body)).toStrictEqual({ people: [{ email: 'new.person@example.com' }] })
   })
 
   it('says why a new address was refused (the API answers 200 with `rejected`)', async () => {

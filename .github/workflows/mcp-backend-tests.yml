@@ -65,14 +65,14 @@ jobs:
     # rather than to accommodate the run time.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # Nothing in this job pushes, tags, or calls the API, so the token has
           # no use in `.git/config`. Keeping it out is also the safe default if
           # the commented pull-request trigger is re-enabled for untrusted forks.
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version-file: .python-version
           cache: pip
@@ -236,8 +236,11 @@ jobs:
       # exit-code is never compared against '0'.
       - name: Report the test result
         if: ${{ !cancelled() && steps.run-tests.outcome != 'skipped' && steps.run-tests.outputs.exit-code != '0' }}
+        # Passed through env and read as data, never expanded into the script (template injection).
+        env:
+          PYTEST_EXIT: ${{ steps.run-tests.outputs.exit-code }}
         run: |
-          echo "::error::The MCP test surface failed (pytest exit ${{ steps.run-tests.outputs.exit-code }}). See the 'Run MCP test surface' step."
+          echo "::error::The MCP test surface failed (pytest exit ${PYTEST_EXIT}). See the 'Run MCP test surface' step."
           exit 1
 
       # Kept on failure only: a green run's report says nothing the log does not,
@@ -245,7 +248,7 @@ jobs:
       # truncated or the failure is a collection error.
       - name: Upload the JUnit report
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mcp-gate-report
           path: voc-datalake/mcp-gate-report.xml

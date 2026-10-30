@@ -190,7 +190,7 @@ describe('normalizeFeedbackForms (list boundary)', () => {
   })
 
   it('drops records without a usable form_id instead of inventing one', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     // Defaulting form_id to '' would collide React list keys and the
     // ['form-stats', form_id] query key across such records.

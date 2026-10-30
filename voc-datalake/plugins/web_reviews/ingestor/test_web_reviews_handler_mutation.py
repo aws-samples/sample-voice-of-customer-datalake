@@ -11,7 +11,7 @@ non-``completed`` run status and the Lambda's instrumentation stack were all uno
 The run also showed the ``newest`` loop's ``None`` seed to be equivalent to ``''`` (both falsy);
 the newest date is now a ``max`` over the read reviews.
 """
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -45,14 +45,14 @@ def result_of(*reviews: ExtractedReview, **fields: Any) -> TargetResult:
 
 
 @contextmanager
-def clock(now: float = NOW) -> Iterator[None]:
+def clock(now: float = NOW) -> Generator[None, None, None]:
     with patch.object(handler.time, 'monotonic', return_value=now):
         yield
 
 
 @contextmanager
 def reading(result: TargetResult | Exception, configs: list[dict] | None = None,
-            **kwargs: Any) -> Iterator[tuple[Any, MagicMock]]:
+            **kwargs: Any) -> Generator[tuple[Any, MagicMock], None, None]:
     """An ingestor whose every target read returns *result* (or raises it), and that read's mock."""
     read = MagicMock(side_effect=result) if isinstance(result, Exception) else MagicMock(return_value=result)
     with ingestor(configs or [target_config()], **kwargs) as run, patch.object(handler, 'read_target', read):
@@ -182,7 +182,7 @@ class TestTheWatermarkCutoff:
 
 class TestTheWatermarkWrites:
     @contextmanager
-    def written(self, result: TargetResult, stored: str | None) -> Iterator[MagicMock]:
+    def written(self, result: TargetResult, stored: str | None) -> Generator[MagicMock, None, None]:
         table = WatermarkTable({f'test_source#{PREFIX}_newest_review': stored} if stored else {})
         with reading(result, table=table) as (run, _read), patch.object(run, 'set_watermark') as write, \
                 frozen_clock(handler) as clock_now:

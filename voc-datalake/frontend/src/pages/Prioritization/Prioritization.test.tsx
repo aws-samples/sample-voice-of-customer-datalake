@@ -85,7 +85,7 @@ describe('Prioritization', () => {
   })
 
   describe('rendering', () => {
-    it('renders page header', async () => {
+    it('renders page header', () => {
       renderPrioritization()
 
       expect(screen.getByText('Prioritization')).toBeInTheDocument()
@@ -102,7 +102,7 @@ describe('Prioritization', () => {
       })
     })
 
-    it('renders sort controls', async () => {
+    it('renders sort controls', () => {
       renderPrioritization()
 
       expect(screen.getByText('Sort by:')).toBeInTheDocument()

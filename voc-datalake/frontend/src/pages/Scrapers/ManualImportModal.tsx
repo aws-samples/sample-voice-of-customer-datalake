@@ -414,7 +414,7 @@ export default function ManualImportModal() {
             </button>
             <button
               onClick={() => void handleParse()}
-              disabled={!Boolean(canParse)}
+              disabled={!canParse}
               className="btn btn-primary"
             >
               {t('manualImport.parseReviews')}

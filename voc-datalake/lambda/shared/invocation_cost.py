@@ -68,7 +68,7 @@ def log_invocation_cost(context: Any, cpu_start: float, wall_start: float) -> No
     logger.info(COST_LINE, extra=invocation_cost_fields(memory_mb(context), cpu_ms, wall_ms))
 
 
-def measure_invocation_cost[H: Callable[..., Any]](func: H) -> H:
+def measure_invocation_cost[R](func: Callable[[Any, Any], R]) -> Callable[[Any, Any], R]:
     """Decorate a `(event, context)` Lambda handler so every invocation logs its CPU use.
 
     Put it innermost — directly above the `def` — so the line is written inside
@@ -76,7 +76,7 @@ def measure_invocation_cost[H: Callable[..., Any]](func: H) -> H:
     function name). The line is written even when the handler raises.
     """
     @functools.wraps(func)
-    def wrapper(event: Any, context: Any) -> Any:
+    def wrapper(event: Any, context: Any) -> R:
         cpu_start = time.process_time()
         wall_start = time.perf_counter()
         try:
@@ -85,7 +85,7 @@ def measure_invocation_cost[H: Callable[..., Any]](func: H) -> H:
             log_invocation_cost(context, cpu_start, wall_start)
 
     setattr(wrapper, MEASURED_ATTR, True)
-    return wrapper  # type: ignore[return-value]
+    return wrapper
 
 
 def instrumented_handler(func: Callable[[Any, Any], Any]) -> Callable[[Any, Any], Any]:

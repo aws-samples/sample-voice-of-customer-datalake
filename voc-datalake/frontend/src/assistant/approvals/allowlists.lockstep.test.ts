@@ -40,7 +40,7 @@ const WORD_CHAR = /^\w$/
 
 /** The identifier that ends `text` (`'  foo_bar'` → `'foo_bar'`). */
 function trailingWord(text: string): string {
-  const chars = [...text.trimEnd()].reverse()
+  const chars = Array.from(text.trimEnd()).reverse()
   const end = chars.findIndex((c) => !WORD_CHAR.test(c))
   return chars.slice(0, end === -1 ? chars.length : end).reverse().join('')
 }

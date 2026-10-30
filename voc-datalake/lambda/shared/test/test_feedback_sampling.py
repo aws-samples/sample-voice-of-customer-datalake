@@ -332,7 +332,7 @@ class TestTheProbeIsBounded:
 class TestTheSampleIsRecheckedOnTheFullItems:
     def test_a_review_recategorised_between_the_reads_is_dropped(self, table, monkeypatch):
         """Pool rows are admitted on the projected read; the full item must still match."""
-        import shared.feedback as feedback
+        from shared import feedback
 
         real = feedback.fetch_full
 

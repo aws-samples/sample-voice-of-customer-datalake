@@ -35,7 +35,7 @@ const CARD_NETWORKS: readonly (readonly [number, number, readonly number[]])[] =
 ]
 
 function luhnValid(digits: string): boolean {
-  const sum = [...digits].reverse().reduce((total, ch, index) => {
+  const sum = Array.from(digits).reverse().reduce((total, ch, index) => {
     const digit = Number(ch) * (index % 2 === 1 ? 2 : 1)
     return total + (digit > 9 ? digit - 9 : digit)
   }, 0)
@@ -53,7 +53,7 @@ function isPaymentCard(candidate: string): boolean {
 
 function isPhone(candidate: string): boolean {
   if (isPaymentCard(candidate)) return true
-  const digits = [...candidate].filter((ch) => ch >= '0' && ch <= '9').length
+  const digits = Array.from(candidate).filter((ch) => ch >= '0' && ch <= '9').length
   return digits >= PHONE_MIN_DIGITS && !BARE_DIGITS_RE.test(candidate) && !ISO_DATE_RE.test(candidate)
 }
 

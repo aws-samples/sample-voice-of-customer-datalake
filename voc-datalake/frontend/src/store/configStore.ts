@@ -20,10 +20,10 @@ import { DEFAULT_DATE_BASIS, DEFAULT_TIME_RANGE, TIME_RANGES, type TimeRange } f
  */
 const isAllowedApiEndpoint = isTrustedApiEndpoint
 
-/** Return a copy of `obj` with `key` removed (avoids unused-variable lints). */
+/** Return a copy of `obj` with `key` removed. */
 function omitKey<T extends object, K extends keyof T>(obj: T, key: K): Omit<T, K> {
   const copy = { ...obj }
-  delete copy[key]
+  Reflect.deleteProperty(copy, key)
   return copy
 }
 

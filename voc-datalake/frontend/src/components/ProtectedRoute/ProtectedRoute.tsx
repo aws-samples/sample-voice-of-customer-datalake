@@ -17,6 +17,7 @@ import { authService } from '../../services/auth'
 import { endExpiredSession } from '../../services/sessionExpiry'
 import PageLoader from '../PageLoader/PageLoader'
 import { LoginRedirect, UnconfiguredAuthFallback } from './authRedirects'
+import { noCleanup } from '../../hooks/noCleanup'
 
 /**
  * Pause before the single boot-validation retry. Long enough for a brief
@@ -71,7 +72,7 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
   })
 
   useEffect(() => {
-    if (!validating) return
+    if (!validating) return noCleanup
 
     /*
      * Stops OUR follow-up work after unmount — it cannot cancel the refresh

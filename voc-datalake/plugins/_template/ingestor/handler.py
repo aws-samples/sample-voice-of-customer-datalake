@@ -89,7 +89,7 @@ class MySourceIngestor(BaseIngestor):
         last_id = self.get_watermark("last_id")
         logger.info(f"Fetching items since last_id: {last_id}")
 
-        # TODO: Implement your API fetching logic here (see the docstring example).
+        # A new plugin's API fetching logic goes here (see the docstring example).
 
         # Placeholder - remove this when implementing
         logger.info("Template ingestor - no items to fetch")

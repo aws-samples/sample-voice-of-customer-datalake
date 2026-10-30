@@ -30,6 +30,7 @@ import type { INagLogger, NagLoggerSuppressedData, NagLoggerSuppressedErrorData,
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
+import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
 import { isRecord } from './test-support/guards';
 import { SYNTH_ACCOUNT, SYNTH_REGION, SYNTH_TIMEOUT_MS } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
@@ -146,19 +147,6 @@ function committedContext(): Record<string, unknown> {
   };
 }
 
-/** Every context-gated feature on (the audit synth's GATED_CONTEXT, scripts/audit/py_assembly.py, plus data protection). */
-const ALL_ON: Record<string, unknown> = {
-  enableVerificationFixtureProvider: true,
-  defaultModelId: 'global.anthropic.claude-sonnet-5-5',
-  inboundEmailDomain: 'voc.example.com',
-  emailFrom: 'noreply@voc.example.com',
-  protectData: true,
-  anthropicUseCase: {
-    companyName: 'Example Air', companyWebsite: 'https://example.com', intendedUsers: '0',
-    industryOption: 'Technology', useCases: 'Nag suppression audit synth.', otherIndustryOption: '',
-  },
-};
-
 const outdirs: string[] = [];
 afterAll(() => { for (const dir of outdirs) rmSync(dir, { recursive: true, force: true }); });
 
@@ -217,7 +205,7 @@ describe('cdk-nag suppressions', () => {
 
   it('every suppression (and every appliesTo item) suppresses a finding in the default or the all-features synth', async () => {
     const [declaredDefault, usedDefault] = await synthShape({});
-    const [declaredAll, usedAll] = await synthShape(ALL_ON);
+    const [declaredAll, usedAll] = await synthShape(ALL_FEATURES_CONTEXT);
     const declared = new Set([...declaredDefault, ...declaredAll]);
     const used = new Set([...usedDefault, ...usedAll]);
     // Vacuity: the logger saw the app's suppressions and the findings they consume.

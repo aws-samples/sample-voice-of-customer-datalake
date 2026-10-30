@@ -95,7 +95,8 @@ export function useOnboardingPreference(): OnboardingPreferenceResult {
   const mutation = useMutation({
     mutationFn: (changes: OnboardingChanges) => onboardingApi.save(changes),
     onMutate: async (changes) => {
-      if (!closesACard(changes)) return undefined
+      // Nothing optimistic to write, so nothing to roll back on an error.
+      if (!closesACard(changes)) return { previous: undefined }
       await queryClient.cancelQueries({ queryKey })
       const previous = queryClient.getQueryData<OnboardingPreference>(queryKey)
       queryClient.setQueryData(queryKey, closedCards(previous ?? DEFAULT_ONBOARDING, changes))

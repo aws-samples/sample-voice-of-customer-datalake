@@ -1,0 +1,61 @@
+# Opens one issue when a SCHEDULED run of a watched workflow fails, comments on it while it keeps
+# failing, and closes it when a later scheduled run is green. The logic and its tests are in
+# scripts/scheduled-failure-watch.mjs (+ .test.mjs).
+#
+# Watched: every workflow with a `schedule:` trigger. Today that is only `dependency audit`; add a new
+# scheduled workflow's `name:` to the list below.
+#
+# Safety: `workflow_run` runs in the context of the default branch with this file and the script as
+# they are on main, never as a pull request changed them, and it checks out main, not the run's head.
+# Run details (name, conclusion, URL, commit) reach the script through `env:` only and are used as
+# data. The token can write issues and nothing else.
+name: scheduled failure watch
+
+on:
+  # zizmor flags every workflow_run trigger (dangerous-triggers): the risk is a privileged run that
+  # executes code or artifacts from the triggering pull request. Neither happens here: the job runs
+  # only for `schedule` events (main, no pull request), checks out main, downloads no artifact, and
+  # holds only `issues: write`.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows:
+      - dependency audit
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+# Two completions of the same workflow close together must not both see "no open issue" and open two.
+# Queued, never cancelled: each run's outcome has to be recorded.
+concurrency:
+  group: scheduled-failure-watch-${{ github.event.workflow_run.workflow_id }}
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: track scheduled failures
+    # Only scheduled runs speak for "main is broken with nobody changing it"; the script checks again.
+    if: ${{ github.event.workflow_run.event == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write # open, comment on and close the one watch issue
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Open, update or close the issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WATCH_WORKFLOW: ${{ github.event.workflow_run.name }}
+          WATCH_EVENT: ${{ github.event.workflow_run.event }}
+          WATCH_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WATCH_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          WATCH_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/scheduled-failure-watch.mjs

@@ -211,7 +211,7 @@ _TRUNCATION_MARKER = '\n\n... [truncated - file too large]'
 
 def _extension(key: str) -> str:
     """The lower-cased text after the key's last dot, or '' when it has none."""
-    return key.split('.')[-1].lower() if '.' in key else ''
+    return key.rsplit('.', maxsplit=1)[-1].lower() if '.' in key else ''
 
 
 def _is_binary_object(key: str, content_type: str) -> bool:
@@ -233,7 +233,7 @@ def _read_text_preview(bucket_name: str, key: str, size: int) -> str:
 
 def _decoded_preview_content(content: str) -> object:
     """Parsed JSON when the (untruncated part of the) text is JSON; the text itself otherwise."""
-    body = content.split('\n... [truncated')[0] if '... [truncated' in content else content
+    body = content.split('\n... [truncated', maxsplit=1)[0] if '... [truncated' in content else content
     try:
         return json.loads(body)
     except json.JSONDecodeError:

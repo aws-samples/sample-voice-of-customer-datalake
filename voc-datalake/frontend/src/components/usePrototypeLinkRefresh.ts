@@ -30,6 +30,7 @@
 import { useEffect, useRef } from 'react'
 import { earliestPrototypeExpiry, refreshDelayMs } from './prototypeLinkLifetime'
 import type { ProjectDocument } from '../api/types'
+import { noCleanup } from '../hooks/noCleanup'
 
 /**
  * Schedule a re-sign shortly before the soonest prototype deadline in `documents`.
@@ -89,7 +90,7 @@ export function usePrototypeLinkRefresh(
   // new one, which is the property `useProjectData` had before this was extracted.
   useEffect(() => {
     const delay = refreshDelayMs(expiresAt, Date.now())
-    if (delay == null) return
+    if (delay == null) return noCleanup
     const timer = setTimeout(() => onRefreshRef.current(), delay)
     return () => clearTimeout(timer)
   }, [expiresAt, refreshScope])

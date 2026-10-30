@@ -172,7 +172,7 @@ def _synth(cdk_dir: Path, extra: dict[str, object]) -> tuple[dict[str, dict], li
                'CDK_CONTEXT_JSON': json.dumps({**_base_context(cdk_dir), **extra}),
                'VOC_AUDIT_BUNDLING_OUT': str(capture_out)}
         command = ['node', '-r', str(CAPTURE), '-r', 'ts-node/register', 'bin/voc-datalake.ts']
-        done = subprocess.run(command, cwd=cdk_dir, env=env, capture_output=True, text=True, check=False)  # noqa: S603
+        done = subprocess.run(command, cwd=cdk_dir, env=env, capture_output=True, text=True, check=False)  # noqa: S603 — fixed argv: docker and the pinned build command
         if done.returncode != 0:
             raise AuditError(f'cdk synth failed ({done.returncode}):\n{done.stdout[-2000:]}\n{done.stderr[-2000:]}')
         templates = {p.name.removesuffix('.template.json'): json.loads(p.read_text(encoding='utf-8'))

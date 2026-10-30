@@ -18,6 +18,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { usePluginCopy } from '../../plugins/pluginCopy'
 import { api } from '../../api/client'
+import { ignoreRejection } from '../../lib/rejections'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
 import {
   PluginFieldGrid, SetupInstructions, ResultMessage,
@@ -25,6 +26,7 @@ import {
 import type { PluginManifest } from '../../plugins/types'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import SourceDialogHeader from './SourceDialogHeader'
+import { noCleanup } from '../../hooks/noCleanup'
 
 interface GeneratorConfigModalProps {
   readonly plugin: PluginManifest
@@ -89,7 +91,7 @@ export default function GeneratorConfigModal({
   }
 
   useEffect(() => {
-    if (phase !== 'running') return
+    if (phase !== 'running') return noCleanup
     const poll = () => {
       void api.getSourceRunStatus(plugin.id)
         .then((res) => {
@@ -99,7 +101,8 @@ export default function GeneratorConfigModal({
           }
           return null
         })
-        .catch(() => null)
+        // A failed poll changes nothing on screen; the next interval asks again.
+        .catch(ignoreRejection)
     }
     const interval = setInterval(poll, POLL_INTERVAL_MS)
     return () => clearInterval(interval)

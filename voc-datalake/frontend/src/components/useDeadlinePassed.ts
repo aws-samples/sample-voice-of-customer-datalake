@@ -21,6 +21,7 @@
  * dead signature once a live replacement exists.
  */
 import { useEffect, useState } from 'react'
+import { noCleanup } from '../hooks/noCleanup'
 
 export function useDeadlinePassed(deadline: number | null): boolean {
   const [now, setNow] = useState(() => Date.now())
@@ -28,7 +29,7 @@ export function useDeadlinePassed(deadline: number | null): boolean {
   useEffect(() => {
     // No deadline is not a passed deadline — an unsigned or legacy prototype must never
     // be reported as expired.
-    if (deadline == null) return
+    if (deadline == null) return noCleanup
 
     // Clamped rather than branched: a deadline already behind us schedules an immediate
     // tick instead of an early return, which closes the gap where time crossed the

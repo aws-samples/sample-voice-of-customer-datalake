@@ -102,7 +102,7 @@ describe('LogsSection', () => {
   })
 
   describe('when API endpoint is configured', () => {
-    it('displays system logs header', async () => {
+    it('displays system logs header', () => {
       renderSection()
 
       expect(screen.getByText('System Logs')).toBeInTheDocument()
@@ -189,7 +189,7 @@ describe('LogsSection', () => {
   })
 
   describe('tab navigation', () => {
-    it('displays the system errors tab as active by default', async () => {
+    it('displays the system errors tab as active by default', () => {
       renderSection()
 
       expect(screen.getByRole('button', { name: /system errors/i })).toHaveClass('tab-active')

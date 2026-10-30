@@ -41,7 +41,7 @@ export default function App() {
           
           setConfigReady(true)
         })
-        .catch((err) => {
+        .catch((err: unknown) => {
           console.error('Failed to load config:', err)
           setError('Failed to load application configuration')
         })

@@ -15,7 +15,7 @@ const OPEN = { ...RESTRICTED, all: true, categories: [] };
 const SOURCES_ONLY = { ...OPEN, sources_all: false, sources: ['web'], source_rule: 'allow' };
 
 function accessFake(body: unknown): ApiInvoker & { mock: { calls: Array<[ApiCall]> } } {
-  return vi.fn(async (_call: ApiCall) => body);
+  return vi.fn((_call: ApiCall) => Promise.resolve(body));
 }
 
 describe('createCategoryRestrictionLoader', () => {
@@ -29,11 +29,11 @@ describe('createCategoryRestrictionLoader', () => {
 
 describe('restrictionForRun (fails open: the tools fail closed on their own)', () => {
   it('is false for an admin without reading, without a loader, on a throw and on a timeout', async () => {
-    const load = vi.fn(async () => true);
+    const load = vi.fn(() => Promise.resolve(true));
     const answers = await Promise.all([
       restrictionForRun(load, fakeContext('home', {}, { isAdmin: true })),
       restrictionForRun(undefined, fakeContext()),
-      restrictionForRun(async () => { throw new Error('down'); }, fakeContext()),
+      restrictionForRun(() => Promise.reject(new Error('down')), fakeContext()),
       restrictionForRun(() => new Promise<boolean>(() => {}), fakeContext(), 5),
     ]);
     expect([...answers, load.mock.calls.length]).toStrictEqual([false, false, false, false, 0]);

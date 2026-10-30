@@ -3,7 +3,7 @@
  * assistant runtime.
  */
 import { describe, it, expect } from 'vitest';
-import { bedrockEvents, failingStream, fakeToolset, runBody } from './__fixtures__/fakes.js';
+import { bedrockEvents, failingStream, fakeToolset, runBody, streamOf } from './__fixtures__/fakes.js';
 import { buildPageContextBlock } from './page-context.js';
 import type { ConverseStreamOutput } from '@aws-sdk/client-bedrock-runtime';
 import {
@@ -20,6 +20,7 @@ import {
 import { encodeReasoning } from './reasoning.js';
 import { nth } from '../../lib/nth-fixtures.js';
 import { ABANDONED_RESULT, DECLINED_RESULT } from './tail.js';
+import { EventType } from '@ag-ui/core';
 
 class ValidationException extends Error {
   constructor(message: string) {
@@ -81,8 +82,8 @@ describe('client tools → interrupt', () => {
 
     expect(h.calls).toHaveLength(1);
     expect(types(events).slice(-2)).toStrictEqual(['CUSTOM:assistant.sources', 'RUN_FINISHED']);
-    expect(events.filter((e) => e.type === 'TOOL_CALL_RESULT').map((e) => e.toolCallId)).toStrictEqual(['tu_s']);
-    expect(events.filter((e) => e.type === 'TOOL_CALL_ARGS').at(-1)).toMatchObject({ toolCallId: 'tu_c', delta: '{"name":"Delivery fixes"}' });
+    expect(events.filter((e) => e.type === EventType.TOOL_CALL_RESULT).map((e) => e.toolCallId)).toStrictEqual(['tu_s']);
+    expect(events.filter((e) => e.type === EventType.TOOL_CALL_ARGS).at(-1)).toMatchObject({ toolCallId: 'tu_c', delta: '{"name":"Delivery fixes"}' });
   });
 
   it('finishes with a tool_approval interrupt for the client tool', async () => {
@@ -123,8 +124,8 @@ describe('client tools → interrupt', () => {
   it('round-trips the turn reasoning as REASONING_ENCRYPTED_VALUE', async () => {
     const h = harness([{ reasoning: 'plan', signature: 'sig-1', toolUses: [{ id: 'tu_c', name: 'create_project', input: { name: 'A' } }] }]);
     const events = await run(runBody(), h);
-    const encrypted = events.find((e) => e.type === 'REASONING_ENCRYPTED_VALUE');
-    const start = events.find((e) => e.type === 'TOOL_CALL_START');
+    const encrypted = events.find((e) => e.type === EventType.REASONING_ENCRYPTED_VALUE);
+    const start = events.find((e) => e.type === EventType.TOOL_CALL_START);
     expect(encrypted).toMatchObject({ subtype: 'message', entityId: start?.parentMessageId });
   });
 });
@@ -205,7 +206,7 @@ describe('resume after approval', () => {
     const original = h.deps.converse;
     const attempts = { count: 0 };
     async function* partialThenFail(): AsyncGenerator<ConverseStreamOutput> {
-      yield* bedrockEvents({ text: 'Partial' }).filter((e) => e.contentBlockDelta !== undefined);
+      yield* streamOf(bedrockEvents({ text: 'Partial' }).filter((e) => e.contentBlockDelta !== undefined));
       throw new ValidationException('Expected thinking block');
     }
     h.deps.converse = (params) => {
@@ -214,7 +215,7 @@ describe('resume after approval', () => {
     };
     const events = await run(resumeBody({ toolMessage: EXECUTED }), h);
     expect(attempts.count).toBe(1);
-    expect(events.filter((e) => e.type === 'TEXT_MESSAGE_START')).toHaveLength(1);
+    expect(events.filter((e) => e.type === EventType.TEXT_MESSAGE_START)).toHaveLength(1);
     expect(events.at(-1)).toMatchObject({ type: 'RUN_ERROR' });
   });
 

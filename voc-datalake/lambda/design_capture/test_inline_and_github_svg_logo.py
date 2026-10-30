@@ -54,7 +54,7 @@ class InlineCdp(FakeCdp):
         return super()._evaluate(expression)
 
 
-def _capture(table, s3, cdp):  # noqa: F811
+def _capture(table, s3, cdp):  # noqa: F811 — pytest fixture parameter named like the imported fixture
     raster = MagicMock(return_value=MagicMock(status_code=200, content=png_bytes(32, 32)))
     deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(return_value='{"summary": "S"}'),
                           sleep=lambda _s: None, clock=iter(range(1000)).__next__, now=lambda: FETCHED,
@@ -78,7 +78,7 @@ def _draw_argument(cdp: FakeCdp) -> str:
 
 
 class TestTheInlineSvgLogo:
-    def test_an_inline_header_svg_is_sanitised_drawn_and_stored_with_the_page_as_its_source(self, table, s3):  # noqa: F811
+    def test_an_inline_header_svg_is_sanitised_drawn_and_stored_with_the_page_as_its_source(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = InlineCdp(_styles(logos=[{'url': TOUCH, 'kind': 'touch-icon'}]),
                         {'svg': INLINE, 'width': 166, 'height': 52}, render_answer=BOX, logo_png=LOGO_PNG)
         result, stored, raster = _capture(table, s3, cdp)
@@ -97,7 +97,7 @@ class TestTheInlineSvgLogo:
         assert 'steal' not in markup
         assert 'fill="#7c3aed"' in markup
 
-    def test_a_header_logo_image_means_the_inline_svg_is_never_looked_for(self, table, s3):  # noqa: F811
+    def test_a_header_logo_image_means_the_inline_svg_is_never_looked_for(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = InlineCdp(_styles(logos=[{'url': 'https://kirocrew.dev/logo.png', 'kind': 'header'}]),
                         {'svg': INLINE, 'width': 166, 'height': 52}, render_answer=BOX, logo_png=LOGO_PNG)
         _, stored, _ = _capture(table, s3, cdp)
@@ -109,7 +109,7 @@ class TestTheInlineSvgLogo:
         pytest.param({'svg': '<!DOCTYPE svg [<!ENTITY a "x">]><svg/>', 'width': 166, 'height': 52}, id='refused'),
         pytest.param({'svg': INLINE, 'width': 4, 'height': 4}, id='too-small'),
     ])
-    def test_no_usable_inline_svg_falls_back_to_the_touch_icon(self, table, s3, inline):  # noqa: F811
+    def test_no_usable_inline_svg_falls_back_to_the_touch_icon(self, table, s3, inline):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = InlineCdp(_styles(logos=[{'url': TOUCH, 'kind': 'touch-icon'}]), inline, render_answer=BOX,
                         logo_png=LOGO_PNG)
         result, stored, raster = _capture(table, s3, cdp)
@@ -119,7 +119,7 @@ class TestTheInlineSvgLogo:
         assert 'Runtime.callFunctionOn' not in cdp.methods()
         assert logo_downloads(raster) == [TOUCH]
 
-    def test_a_failed_draw_of_the_inline_svg_keeps_the_capture(self, table, s3):  # noqa: F811
+    def test_a_failed_draw_of_the_inline_svg_keeps_the_capture(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = InlineCdp(_styles(logos=[{'url': TOUCH, 'kind': 'touch-icon'}]),
                         {'svg': INLINE, 'width': 166, 'height': 52}, render_answer={'error': 'decode_failed'},
                         logo_png=LOGO_PNG)
@@ -143,7 +143,7 @@ class TestTheInlineSvgLogo:
 
 # ── A GitHub repository's SVG logo (logo_job) ───────────────────────────────
 
-def _github_row(table, **overrides):  # noqa: F811
+def _github_row(table, **overrides):  # noqa: F811 — pytest fixture parameter named like the imported fixture
     table.put_item(Item={'pk': DESIGN_SYSTEM_PK, 'sk': f'REF#{REF_ID}', 'id': REF_ID, 'kind': 'github',
                          'title': 'UI', 'url': 'https://github.com/acme/ui', 'status': 'ready', 'created_at': '1',
                          'fetched_at': FETCHED, 'extracted_design': {'source': 'repo_files', 'guidelines_md': '## Voice'},
@@ -154,14 +154,14 @@ def _event(svg: str = INLINE, fetched_at: str = FETCHED) -> dict:
     return render_event(REF_ID, SvgLogo('brand/logo.svg', RAW_SVG_URL, svg), fetched_at)
 
 
-def _job(table, s3, cdp, event):  # noqa: F811
+def _job(table, s3, cdp, event):  # noqa: F811 — pytest fixture parameter named like the imported fixture
     sessions: list[int] = []
     cdp._targets = 1   # no page tab in this job: the render tab is the fake's ``s2`` (its PNG answer)
     return logo_job.run_logo_render(event, table, _kit(cdp, sessions), s3, 'raw'), sessions
 
 
 class TestTheGithubSvgLogo:
-    def test_the_svg_is_drawn_and_recorded_as_the_rendered_logo(self, table, s3):  # noqa: F811
+    def test_the_svg_is_drawn_and_recorded_as_the_rendered_logo(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         _github_row(table)
         cdp = FakeCdp(_styles(), render_answer=BOX, logo_png=LOGO_PNG)
         result, sessions = _job(table, s3, cdp, _event())
@@ -178,7 +178,7 @@ class TestTheGithubSvgLogo:
         assert (svg['ContentDisposition'], svg['Body'].read().decode()) == ('attachment; filename="logo.svg"', markup)
         assert 'Page.navigate' not in cdp.methods()   # no page is opened, only the blank render tab
 
-    def test_an_svg_that_cannot_be_drawn_leaves_the_upload_a_png_note(self, table, s3):  # noqa: F811
+    def test_an_svg_that_cannot_be_drawn_leaves_the_upload_a_png_note(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         _github_row(table)
         cdp = FakeCdp(_styles(), render_answer={'error': 'decode_timeout'}, logo_png=LOGO_PNG)
         result, _ = _job(table, s3, cdp, _event())
@@ -189,7 +189,7 @@ class TestTheGithubSvgLogo:
         assert '`brand/logo.svg`' in design['guidelines_md']
         assert 'Contents' not in s3.list_objects_v2(Bucket='raw')
 
-    def test_a_refused_svg_opens_no_browser(self, table, s3):  # noqa: F811
+    def test_a_refused_svg_opens_no_browser(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         _github_row(table)
         cdp = FakeCdp(_styles())
         result, sessions = _job(table, s3, cdp, _event(svg='<html/>'))
@@ -201,7 +201,7 @@ class TestTheGithubSvgLogo:
         pytest.param({'status': 'pending'}, id='refresh-running'),
         pytest.param({'extracted_design': None}, id='no-design'),
     ])
-    def test_a_changed_reference_is_left_alone_and_no_browser_opens(self, table, s3, row):  # noqa: F811
+    def test_a_changed_reference_is_left_alone_and_no_browser_opens(self, table, s3, row):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         _github_row(table, **row)
         before = _stored(table)
         cdp = FakeCdp(_styles(), render_answer=BOX, logo_png=LOGO_PNG)
@@ -209,7 +209,7 @@ class TestTheGithubSvgLogo:
         assert (result, sessions) == ({'status': 'skipped'}, [])
         assert _stored(table) == before
 
-    def test_a_refresh_landing_during_the_render_wins(self, table, s3):  # noqa: F811
+    def test_a_refresh_landing_during_the_render_wins(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         _github_row(table)
 
         class RefreshingCdp(FakeCdp):
@@ -227,7 +227,7 @@ class TestTheGithubSvgLogo:
         {**_event(), 'ref_id': 'ref_x'}, {**_event(), 'source_url': 'http://raw.githubusercontent.com/a'},
         {**_event(), 'svg': ''}, {**_event(), 'path': ''}, {**_event(), 'action': 'design_capture'},
     ])
-    def test_a_malformed_event_is_skipped(self, table, s3, event):  # noqa: F811
+    def test_a_malformed_event_is_skipped(self, table, s3, event):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         _github_row(table)
         result, sessions = _job(table, s3, FakeCdp(_styles()), event)
         assert (result, sessions) == ({'status': 'skipped'}, [])

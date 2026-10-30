@@ -14,6 +14,9 @@ import {
   SPEC_FILES,
   SPEC_RULES,
   SUPPRESSION_RULES,
+  SWALLOWED_REJECTION_SELECTORS,
+  TYPE_SAFETY_RULES,
+  TYPE_SAFETY_SPEC_RULES,
   withPending,
 } from '../../../eslint-rules/quality-gates.mjs'
 
@@ -60,7 +63,7 @@ export default tseslint.config(
         tsconfigRootDir: import.meta.dirname,
       },
     },
-    rules: withPending(SOURCE_RULES, PENDING_SOURCE),
+    rules: { ...withPending(SOURCE_RULES, PENDING_SOURCE), ...TYPE_SAFETY_RULES },
   },
 
   // ─── Main rules for all TS files ───
@@ -90,6 +93,7 @@ export default tseslint.config(
           selector: 'NewExpression[callee.name="Error"]',
           message: 'Use custom error classes instead of generic Error.',
         },
+        ...SWALLOWED_REJECTION_SELECTORS,
       ],
       'no-negated-condition': 'error',
 
@@ -169,11 +173,13 @@ export default tseslint.config(
     plugins: { vitest },
     rules: {
       ...withPending(SPEC_RULES, PENDING_SPEC),
+      ...TYPE_SAFETY_SPEC_RULES,
       // Relax production rules for tests (pre-existing; the shared set has no such relaxation)
       'no-inline-comments': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/consistent-type-assertions': 'off',
-      'no-restricted-syntax': 'off',
+      // Tests may use `let` and `new Error`, but not swallow a rejection (5.49 wave, owner-approved).
+      'no-restricted-syntax': ['error', ...SWALLOWED_REJECTION_SELECTORS],
       'security/detect-non-literal-regexp': 'off',
 
       'vitest/consistent-test-it': ['error', { fn: 'it' }],

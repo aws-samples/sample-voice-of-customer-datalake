@@ -1,6 +1,6 @@
 """Arrange helpers shared by the `shared/document_versions.py` mutation suites."""
 import hashlib
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -44,7 +44,7 @@ def transactions(table: MagicMock) -> list[list[dict[str, Any]]]:
 
 
 @contextmanager
-def frozen_time() -> Iterator[tuple[MagicMock, MagicMock]]:
+def frozen_time() -> Generator[tuple[MagicMock, MagicMock], None, None]:
     """Freeze wall clock, monotonic clock, sleep and the ISO timestamp; yield (monotonic, sleep)."""
     fake_datetime = MagicMock()
     fake_datetime.now.return_value.isoformat.return_value = NOW_ISO

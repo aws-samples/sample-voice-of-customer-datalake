@@ -47,7 +47,7 @@ function Harness() {
 
 beforeEach(() => {
   // The first read answers; every refetch after a write never does.
-  getProject.mockReset().mockResolvedValueOnce(DETAIL).mockReturnValue(new Promise<ProjectDetail>(() => undefined))
+  getProject.mockReset().mockResolvedValueOnce(DETAIL).mockReturnValue(new Promise<ProjectDetail>(() => {}))
   api.updateDecision.mockReset().mockResolvedValue(decisionDocument('park', 'Revisit after the release', 2))
   projects.deleteDocument.mockReset().mockResolvedValue({ success: true })
 })

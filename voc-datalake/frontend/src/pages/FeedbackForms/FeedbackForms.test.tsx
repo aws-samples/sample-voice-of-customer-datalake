@@ -108,13 +108,13 @@ describe('FeedbackForms', () => {
   })
 
   describe('rendering', () => {
-    it('renders page header', async () => {
+    it('renders page header', () => {
       renderPage()
 
       expect(screen.getByText('Feedback Forms')).toBeInTheDocument()
     })
 
-    it('renders create button', async () => {
+    it('renders create button', () => {
       renderPage()
 
       expect(screen.getByRole('button', { name: /create form/i })).toBeInTheDocument()

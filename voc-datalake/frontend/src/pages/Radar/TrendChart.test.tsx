@@ -28,7 +28,7 @@ vi.mock('recharts', () => {
 
 describe('Radar TrendChart', () => {
   it('formats the review counts compactly and lets the axis measure its ticks', () => {
-    render(<TrendChart trend={[{ date: '2026-10-16', count: 9800, avg_sentiment: -0.4 }]} onDay={() => undefined} />)
+    render(<TrendChart trend={[{ date: '2026-10-16', count: 9800, avg_sentiment: -0.4 }]} onDay={() => {}} />)
     const axis = screen.getByTestId('y-axis-count')
     expect([axis.dataset.sample, axis.dataset.width]).toStrictEqual(['10K', 'auto'])
   })
@@ -36,7 +36,7 @@ describe('Radar TrendChart', () => {
   it('writes the sentiment axis with the decimal mark of the app language (pl "-0,5")', async () => {
     await i18n.changeLanguage('pl')
     try {
-      render(<TrendChart trend={[{ date: '2026-10-16', count: 3, avg_sentiment: -0.4 }]} onDay={() => undefined} />)
+      render(<TrendChart trend={[{ date: '2026-10-16', count: 3, avg_sentiment: -0.4 }]} onDay={() => {}} />)
       expect(screen.getByTestId('y-axis-score').dataset.score).toBe('-0,5')
     } finally {
       await i18n.changeLanguage('en')

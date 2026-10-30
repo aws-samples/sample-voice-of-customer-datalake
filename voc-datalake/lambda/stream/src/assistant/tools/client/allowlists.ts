@@ -26,7 +26,7 @@
 import { z } from 'zod';
 import { DIMENSION_KEY_PATTERN, DIMENSION_VALUE_PATTERN } from '../server/item-filters.js';
 
-function nonEmpty<T extends Record<string, unknown>>(schema: z.ZodType<T, unknown>) {
+function nonEmpty<T extends Record<string, unknown>>(schema: z.ZodType<T>) {
   return schema.refine((value) => Object.values(value).some((v) => v !== undefined), 'updates must change at least one field');
 }
 

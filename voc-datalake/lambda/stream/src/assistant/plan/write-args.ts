@@ -22,6 +22,13 @@ export function optionalText(args: Args, key: string): string | undefined {
   return args[key] === undefined ? undefined : text(args, key);
 }
 
+export function optionalNumber(args: Args, key: string): number | undefined {
+  const value = args[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number') throw new WriteRequestError(`${key} must be a number`);
+  return value;
+}
+
 export function record(args: Args, key: string): Record<string, unknown> {
   const value = args[key];
   if (!isRecord(value)) throw new WriteRequestError(`${key} must be an object`);

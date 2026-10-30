@@ -9,7 +9,7 @@ and the handler call cannot drift apart between the two files.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import patch
@@ -38,7 +38,7 @@ def event(method: str, path: str, *, claims: dict = ADMIN, body: object = None,
 
 
 @contextmanager
-def api(**env_kwargs: Any) -> Iterator[AgentsEnv]:
+def api(**env_kwargs: Any) -> Generator[AgentsEnv, None, None]:
     """The agents tables under moto, with the handler's aggregates lookup pointed at them.
 
     The default-agent seed's warm-container memo is reset, so each test starts as a fresh deployment.

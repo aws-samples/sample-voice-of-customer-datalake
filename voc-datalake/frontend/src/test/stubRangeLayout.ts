@@ -8,7 +8,7 @@
  * stubScrollTo.ts.
  */
 export function stubRangeLayout(): () => void {
-  if ('getBoundingClientRect' in Range.prototype) return () => undefined
+  if ('getBoundingClientRect' in Range.prototype) return () => {}
   Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
     configurable: true,
     value: () => new DOMRect(0, 0, 0, 0),

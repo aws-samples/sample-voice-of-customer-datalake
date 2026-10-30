@@ -47,7 +47,7 @@ async function loadThenAdvance(documents: unknown[], ms: number) {
   prioritizationMocks.getProject.mockResolvedValue(payload(documents))
   await renderLoadedPage()
   await act(async () => {
-    vi.advanceTimersByTime(ms)
+    await vi.advanceTimersByTimeAsync(ms)
   })
 }
 
@@ -109,7 +109,7 @@ describe('pre-expiry re-sign on the Prioritization page', () => {
     await renderLoadedPage()
 
     await act(async () => {
-      vi.advanceTimersByTime(HOUR_MS - REFRESH_LEAD_MS + 1000)
+      await vi.advanceTimersByTimeAsync(HOUR_MS - REFRESH_LEAD_MS + 1000)
     })
     await waitFor(() => {
       expect(prioritizationMocks.getProject).toHaveBeenCalledTimes(2)
@@ -118,7 +118,7 @@ describe('pre-expiry re-sign on the Prioritization page', () => {
     // Past the SECOND deadline's lead, which only exists if the timer was re-armed
     // from the replacement rather than fired once and forgotten.
     await act(async () => {
-      vi.advanceTimersByTime(3 * HOUR_MS)
+      await vi.advanceTimersByTimeAsync(3 * HOUR_MS)
     })
 
     await waitFor(() => {

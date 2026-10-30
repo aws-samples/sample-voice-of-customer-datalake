@@ -36,6 +36,7 @@ import { Check, MoreHorizontal } from 'lucide-react'
 import { useDisclosurePopover } from '../../hooks/useDismissOnOutside'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
+import { noCleanup } from '../../hooks/noCleanup'
 
 export interface MoreMenuItem {
   readonly key: string
@@ -117,7 +118,7 @@ function portalHost(trigger: HTMLElement): HTMLElement {
 
 function useCloseOnViewportChange(open: boolean, close: () => void, menu: RefObject<HTMLElement | null>): void {
   useEffect(() => {
-    if (!open) return undefined
+    if (!open) return noCleanup
     const onScroll = (event: Event) => {
       // Scrolling inside the menu itself (a long menu) keeps it open.
       if (event.target instanceof Node && menu.current?.contains(event.target) === true) return

@@ -7,6 +7,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { TestRouter } from '@test/TestRouter'
+import { parsedJson } from '@test/jsonText'
 
 const fetchApi = vi.fn<(endpoint: string, options?: RequestInit) => Promise<unknown>>()
 vi.mock('../../api/client', () => ({ fetchApi: (endpoint: string, options?: RequestInit) => fetchApi(endpoint, options) }))
@@ -27,7 +28,7 @@ describe('IntegrationsSection', () => {
     const saveTokens = vi.fn((_body: unknown) => ({ integrations: { figma: true, github: true } }))
     fetchApi.mockImplementation((endpoint, options) => {
       if (options?.method === 'PUT' && endpoint === '/settings/design-system/integrations') {
-        return Promise.resolve(saveTokens(JSON.parse(String(options.body))))
+        return Promise.resolve(saveTokens(parsedJson(options.body)))
       }
       return Promise.resolve(DESIGN)
     })

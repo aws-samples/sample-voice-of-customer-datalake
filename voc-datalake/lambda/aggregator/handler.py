@@ -256,7 +256,7 @@ from shared.feedback import (
     # re-exported here deliberately: the LEGACY_PERSONA_UNKNOWN comment's argument is
     # that the two empty-bucket spellings must differ, and a reader checking that
     # should find both names in one namespace.
-    PERSONA_UNKNOWN,  # noqa: F401
+    PERSONA_UNKNOWN,  # noqa: F401 — re-exported beside LEGACY_PERSONA_UNKNOWN (see the comment above)
     persona_bucket,
 )
 from shared.idempotency import dedupe_claim_item

@@ -2,9 +2,9 @@
 // CI when origin/main is missing, and a hard stop otherwise. Runs the real script in a throwaway repository.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 const SCRIPT = new URL('./validate-affected.sh', import.meta.url);
@@ -67,4 +67,46 @@ describe('validate-affected base resolution', () => {
       assert.match(output, new RegExp(`base ${base} is not a commit \\(pass one`));
     });
   }
+});
+
+/** The `groups:` the script selects when only `path` changed (an untracked file against base main). */
+function groupsFor(path) {
+  const file = join(repo, path);
+  // Remember the directories this call creates, so cleanup removes exactly those (never scripts/ itself).
+  const created = [];
+  for (let dir = dirname(file); dir !== repo && !existsSync(dir); dir = dirname(dir)) created.push(dir);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, 'x\n');
+  try {
+    const { status, output } = explain({ base: 'main' });
+    assert.equal(status, 0, output);
+    const line = output.split('\n').find((l) => l.startsWith('groups: ')) ?? '';
+    return line.slice('groups: '.length).split(',').filter(Boolean).sort();
+  } finally {
+    rmSync(file);
+    for (const dir of created) rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('validate-affected path mapping (5.49.00 gates)', () => {
+  it('runs the three test suites (and repo) for a change to the coverage gate', () => {
+    assert.deepEqual(groupsFor('scripts/coverage/check-per-file-coverage.mjs'),
+      ['frontend-tests', 'python-tests', 'repo', 'stream-tests']);
+  });
+
+  it('runs only the repo group for GitHub config no gate step reads', () => {
+    for (const path of ['.github/dependabot.yml', '.github/PULL_REQUEST_TEMPLATE.md', '.github/dependency-review-config.yml']) {
+      assert.deepEqual(groupsFor(path), ['repo'], path);
+    }
+  });
+
+  it('still runs everything for a workflow change', () => {
+    assert.deepEqual(groupsFor('.github/workflows/quality-gates.yml'),
+      ['audit', 'bridge', 'cdk', 'frontend', 'python', 'repo', 'stream']);
+  });
+
+  // `repo` is always selected (the script starts from it), so it appears beside the mapped group.
+  it('runs the python group for the production pyright config', () => {
+    assert.deepEqual(groupsFor('voc-datalake/pyrightconfig.production.json'), ['python', 'repo']);
+  });
 });

@@ -9,6 +9,7 @@ import {
   useCallback, useEffect, useRef, useState,
   type KeyboardEvent as ReactKeyboardEvent, type RefObject,
 } from 'react'
+import { noCleanup } from '../../hooks/noCleanup'
 
 /** Which item takes focus when the menu opens. */
 type OpenFocus = 'first' | 'last'
@@ -72,7 +73,7 @@ export function useMenuButton(): MenuButton {
 
   // A press outside the button and the menu closes it (focus stays where the press put it).
   useEffect(() => {
-    if (!open) return undefined
+    if (!open) return noCleanup
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target
       if (!(target instanceof Node)) return

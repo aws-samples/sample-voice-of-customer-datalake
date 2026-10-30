@@ -44,6 +44,7 @@ import { HANG, textRunEvents as textRun, toolCallEvents as toolCall } from '@tes
 import { openPanel, renderChatPage, typeAndSend as send } from '@test/assistantPanelHarness'
 import type { User } from '@test/assistantPanelHarness'
 import { rowAction } from '@test/assistantRowMenu'
+import { parsedJson } from '@test/jsonText'
 
 const interruptRun: AguiEvent[] = [
   { type: EventType.RUN_STARTED, threadId: 't', runId: 'r1' },
@@ -80,13 +81,13 @@ function runAt(index: number): RunAgentInput {
 
 describe('AssistantPanel', () => {
   // jsdom has no scrollIntoView; the returned teardown removes the stub again.
-  beforeEach(() => stubElementScrollIntoView())
-
   beforeEach(() => {
+    const restoreScrollIntoView = stubElementScrollIntoView()
     runs.length = 0
     scripts.length = 0
     useThreadStore.getState().reset()
     useAssistantUiStore.getState().reset()
+    return restoreScrollIntoView
   })
 
   it('sends with Enter and renders the streamed answer', async () => {
@@ -160,7 +161,7 @@ describe('AssistantPanel', () => {
       const { messages } = runAt(1)
       expect(messages.map((m) => m.role)).toStrictEqual(['user', 'assistant', 'tool', 'tool'])
       expect(messages[1]).toMatchObject({ toolCalls: [{ id: 'w1' }, { id: 'w2' }] })
-      expect(messages.slice(2).map((m) => (m.role === 'tool' ? [m.toolCallId, JSON.parse(String(m.content))] : null))).toStrictEqual([
+      expect(messages.slice(2).map((m) => (m.role === 'tool' ? [m.toolCallId, parsedJson(m.content)] : null))).toStrictEqual([
         ['w1', { status: 'executed', summary: 'did create_document' }],
         ['w2', { status: 'executed', summary: 'did update_project' }],
       ])

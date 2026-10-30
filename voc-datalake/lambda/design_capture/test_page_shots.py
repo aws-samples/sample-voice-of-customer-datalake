@@ -44,13 +44,13 @@ class ShotCdp(FakeCdp):
                 if m == 'Page.captureScreenshot' and s == 's1']
 
 
-def _run(table, cdp, *, s3=None, fetch=None):  # noqa: F811
+def _run(table, cdp, *, s3=None, fetch=None):  # noqa: F811 — pytest fixture parameter named like the imported fixture
     _, stored, vision, _ = run_capture(table, cdp, s3=s3, fetch=fetch, now=lambda: '2026-10-29T00:00:00+00:00')
     return stored, vision
 
 
 class TestThreeImages:
-    def test_the_fold_header_and_footer_go_to_one_vision_call_each_within_the_no_resize_bounds(self, table):  # noqa: F811
+    def test_the_fold_header_and_footer_go_to_one_vision_call_each_within_the_no_resize_bounds(self, table):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = ShotCdp(_styles(), regions=[REGIONS, SCROLLED])
         stored, vision = _run(table, cdp)
         assert stored['status'] == 'ready'
@@ -68,7 +68,7 @@ class TestThreeImages:
         assert (footer['y'], footer['height']) == (3000, 420)
         assert ('Runtime.evaluate', {'expression': 'window.scrollTo(0, 3000)', 'returnByValue': True}) in cdp.calls
 
-    def test_a_large_png_is_taken_again_as_a_jpeg(self, table):  # noqa: F811
+    def test_a_large_png_is_taken_again_as_a_jpeg(self, table):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = ShotCdp(_styles(), png_size=page_shots.PNG_MAX_BYTES + 1, regions=[REGIONS, SCROLLED])
         _, vision = _run(table, cdp)
         shots, _ = vision.call_args.args
@@ -76,12 +76,12 @@ class TestThreeImages:
         assert [p['format'] for p in cdp.page_shots()] == ['png', 'jpeg'] * 3
         assert {p.get('quality') for p in cdp.page_shots() if p['format'] == 'jpeg'} == {page_shots.JPEG_QUALITY}
 
-    def test_a_footer_inside_the_first_screen_is_not_photographed_again(self, table):  # noqa: F811
+    def test_a_footer_inside_the_first_screen_is_not_photographed_again(self, table):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         short = {**REGIONS, 'footer': {'top': 700, 'height': 120}, 'page': 900}
         _, vision = _run(table, ShotCdp(_styles(), regions=[short]))
         assert [s.region for s in vision.call_args.args[0]] == ['fold', 'header']
 
-    def test_no_header_element_uses_the_top_strip_and_no_footer_the_page_end(self, table):  # noqa: F811
+    def test_no_header_element_uses_the_top_strip_and_no_footer_the_page_end(self, table):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         bare = {**REGIONS, 'header': None, 'footer': None}
         cdp = ShotCdp(_styles(), regions=[bare, {**bare, 'sy': 2520}])
         _run(table, cdp)
@@ -89,13 +89,13 @@ class TestThreeImages:
         assert (header['y'], header['height']) == (0, page_shots.FALLBACK_HEADER_PX)
         assert (footer['y'], footer['height']) == (3420 - page_shots.FALLBACK_FOOTER_PX, page_shots.FALLBACK_FOOTER_PX)
 
-    def test_a_failing_footer_shot_never_fails_the_capture(self, table):  # noqa: F811
+    def test_a_failing_footer_shot_never_fails_the_capture(self, table):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = ShotCdp(_styles(), regions=[REGIONS])   # the second measurement is unreadable
         stored, vision = _run(table, cdp)
         assert stored['status'] == 'ready'
         assert [s.region for s in vision.call_args.args[0]] == ['fold', 'header']
 
-    def test_a_fold_that_cannot_be_photographed_is_a_clear_error(self, table):  # noqa: F811
+    def test_a_fold_that_cannot_be_photographed_is_a_clear_error(self, table):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         cdp = ShotCdp(_styles(), png_size=page_shots.PNG_MAX_BYTES + 1, regions=[REGIONS])
         with patch.object(page_shots, 'MAX_IMAGE_BYTES', 10):
             stored, vision = _run(table, cdp)
@@ -155,7 +155,7 @@ class TestIcons:
         client.create_bucket(Bucket='raw')
         return client
 
-    def test_the_pages_icons_are_copied_and_the_stored_design_names_no_remote_asset(self, table, s3):  # noqa: F811
+    def test_the_pages_icons_are_copied_and_the_stored_design_names_no_remote_asset(self, table, s3):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         png = b'\x89PNG\r\n\x1a\n' + b'i' * 32
         bodies = {'https://kirocrew.dev/favicon-32.png': png, 'https://kirocrew.dev/apple-touch-icon.png': png + b'2',
                   'https://kirocrew.dev/site.webmanifest': json.dumps({'icons': [{'src': '/m512.png', 'sizes': '512x512'}]}).encode(),
@@ -174,7 +174,7 @@ class TestIcons:
         remote = [v for v in _strings(stored['extracted_design']) if v.startswith(('http://', 'https://', '//'))]
         assert sorted(remote) == sorted([*(i['source_url'] for i in icons), stored['extracted_design']['logo']['source_url']])
 
-    def test_without_a_bucket_nothing_is_fetched_for_icons(self, table):  # noqa: F811
+    def test_without_a_bucket_nothing_is_fetched_for_icons(self, table):  # noqa: F811 — pytest fixture parameter named like the imported fixture
         fetch = MagicMock()
         stored, _ = _run(table, FakeCdp(_styles(icons=[{'url': 'https://kirocrew.dev/i.png', 'rel': 'icon'}])),
                          fetch=fetch)

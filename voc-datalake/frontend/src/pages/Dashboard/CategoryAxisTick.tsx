@@ -20,7 +20,8 @@ interface TickProps {
 }
 
 export function CategoryAxisTick({ x = 0, y = 0, payload, axisWidth }: TickProps) {
-  const label = typeof payload?.value === 'string' ? payload.value : String(payload?.value ?? '')
+  const raw = payload?.value
+  const label = typeof raw === 'string' || typeof raw === 'number' ? String(raw) : ''
   return (
     <g transform={`translate(${x},${y})`}>
       <text x={-TICK_GAP_PX} y={0} dy={4} textAnchor="end" fontSize={AXIS_TICK.fontSize} fill={AXIS_TICK.fill}>

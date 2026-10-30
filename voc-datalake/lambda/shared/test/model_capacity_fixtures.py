@@ -4,7 +4,7 @@ moto covers neither bedrock-runtime nor service-quotas, so both clients are real
 boto3 clients wrapped in botocore Stubbers and injected through the module's
 client cache. A Stubber also proves the exact request on the wire.
 """
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 import boto3
@@ -58,7 +58,7 @@ class World:
 
 
 @contextmanager
-def stubbed_world(monkeypatch: pytest.MonkeyPatch) -> Iterator[World]:
+def stubbed_world(monkeypatch: pytest.MonkeyPatch) -> Generator[World, None, None]:
     """A World installed in the module (no inference scope, empty quota cache); every stub consumed."""
     monkeypatch.delenv('BEDROCK_INFERENCE_SCOPE', raising=False)
     model_capacity.clear_quota_cache()

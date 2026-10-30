@@ -23,7 +23,7 @@ Two survivors were dead code rather than missing tests and were deleted instead:
 `'None'` branch of the new-image keys log (the line is reached only with an image),
 and an annotation on a local that Python never evaluates.
 """
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
@@ -35,7 +35,7 @@ from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import 
     DynamoDBRecordEventName,
 )
 
-import aggregator.handler as handler
+from aggregator import handler
 from aggregator.test.aggregator_fixtures import stream_record
 from shared.test.fresh_module import fresh_module_copy
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
@@ -261,7 +261,7 @@ class TestTheRecordIsReadFromTheEvent:
 
 
 @contextmanager
-def _observed() -> Iterator[tuple[MagicMock, MagicMock]]:
+def _observed() -> Generator[tuple[MagicMock, MagicMock], None, None]:
     with patch.object(handler, 'logger') as logger, patch.object(handler, 'metrics') as metrics:
         yield logger, metrics
 

@@ -192,6 +192,36 @@ export const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.strin
 import { sameJson } from '../lib/sameJson'
 export const same = (a: unknown, b: unknown) => sameJson(a, b) && JSON.stringify(a).length > 0
 '''),
+    'py-cast': (L, '''
+from typing import cast
+def size(value):
+    return cast(int, value)
+''', '''
+def forecast(value):
+    return value
+def broadcast(values, column):
+    column.cast('int')  # a method named cast, not typing.cast
+    return [forecast(v) for v in values]
+def size(value):
+    if not isinstance(value, int):
+        raise TypeError('cast(int, value) would have hidden this')
+    return value
+'''),
+    'noqa-reason': (L, '''
+import os  # noqa: F401
+''', '''
+import os  # noqa: F401 — re-exported for the handler
+import sys  # noqa: F401,E402 - kept for the CLI entry point
+# A comment line may mention a bare noqa or `# noqa: S603` without being one.
+'''),
+    'shared-imports-handler': ('voc-datalake/lambda/shared/thing.py', '''
+from metrics_handler import list_feedback
+''', '''
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver
+from aws_lambda_powertools.middleware_factory import lambda_handler_decorator
+from shared.api import api_handler
+import shared.batch as batch_tools
+'''),
 }
 
 
@@ -238,6 +268,37 @@ def test_the_legitimate_look_alike_is_not(tmp_path, rules, rule_id):
 def test_a_date_formatted_through_to_locale_string_is_a_local_formatter(tmp_path, rules, line, reported):
     _write(tmp_path, UI, f'{line}\n')
     assert bool(_findings(tmp_path, rules['local-date-formatter'])) is reported
+
+
+@pytest.mark.parametrize(('line', 'reported'), [
+    ('from metrics_handler import app', True),
+    ('from api.metrics_handler import app', True),
+    ('from processor.handler import record_handler', True),
+    ('import metrics_handler', True),
+    ('import processor.handler', True),
+    ('from api import metrics_handler', True),
+    ('from processor import handler', True),
+    ("module = importlib.import_module('metrics_handler')", True),
+    ('from aws_lambda_powertools.event_handler import APIGatewayRestResolver', False),
+    ('import aws_lambda_powertools.event_handler', False),
+    ('from shared.api import api_handler', False),  # a decorator, not a handler module
+    ('from shared.handler_kit import wrap', False),
+])
+def test_every_way_of_importing_a_handler_into_shared_is_seen(tmp_path, rules, line, reported):
+    _write(tmp_path, 'voc-datalake/lambda/shared/thing.py', f'{line}\n')
+    assert bool(_findings(tmp_path, rules['shared-imports-handler'])) is reported
+
+
+@pytest.mark.parametrize(('line', 'reported'), [
+    ('x = 1  # noqa', True),
+    ('x = 1  # NOQA: E501', True),
+    ('x = 1  # noqa: E501,W291', True),
+    ('x = 1  # noqa:E501 long fixture literal', False),
+    ('x = 1  # noqa: E501, W291 — long fixture literal', False),
+])
+def test_a_noqa_needs_a_code_and_a_reason(tmp_path, rules, line, reported):
+    _write(tmp_path, L, f'{line}\n')
+    assert bool(_findings(tmp_path, rules['noqa-reason'])) is reported
 
 
 def test_the_helpers_home_is_excluded_by_the_rule(tmp_path, rules):

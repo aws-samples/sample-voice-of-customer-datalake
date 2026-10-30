@@ -35,7 +35,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -731,7 +731,7 @@ ONE_OF_TWO_FAILED = {'Successful': [{'Id': '1'}], 'Failed': [{'Id': '0', 'Messag
 
 
 @contextmanager
-def _upload_clients() -> Iterator[tuple[MagicMock, MagicMock]]:
+def _upload_clients() -> Generator[tuple[MagicMock, MagicMock], None, None]:
     """The upload routes wired to a queue and a bucket: the patched `s3` and batch-answering `sqs`."""
     with patch.object(h, 'PROCESSING_QUEUE_URL', QUEUE_URL), patch.object(h, 'RAW_DATA_BUCKET', BUCKET), \
             patch.object(h, 's3') as s3, patch.object(h, 'sqs', _batch_sqs()) as sqs:

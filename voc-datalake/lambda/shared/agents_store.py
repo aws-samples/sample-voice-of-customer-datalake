@@ -1127,7 +1127,8 @@ def list_events(table: Any, run_id: str, *, after: int, limit: int) -> list[dict
 _sfn_client: Any = None
 
 
-def _stepfunctions() -> Any:
+def stepfunctions_client() -> Any:
+    """This Lambda's one Step Functions client, built on first use (plans_store starts plan runs through it)."""
     global _sfn_client
     if _sfn_client is None:
         _sfn_client = boto3.client('stepfunctions')
@@ -1159,7 +1160,7 @@ def start_execution(run: Mapping[str, Any], name: str | None = None) -> str:
     The execution is named after the run id; a resumed run's later executions are
     named ``{run_id}-r{n}`` (Step Functions refuses a reused name).
     """
-    response = _stepfunctions().start_execution(
+    response = stepfunctions_client().start_execution(
         stateMachineArn=state_machine_arn(), name=name or run['run_id'],
         input=json.dumps({'run_id': run['run_id'], 'agent_id': run['agent_id']}),
     )
@@ -1169,7 +1170,7 @@ def start_execution(run: Mapping[str, Any], name: str | None = None) -> str:
 def stop_execution(execution_arn: str) -> None:
     """Best effort: a run is already ``cancelled`` in the table, which the interpreter honours."""
     try:
-        _stepfunctions().stop_execution(executionArn=execution_arn, cause='Cancelled by an admin')
+        stepfunctions_client().stop_execution(executionArn=execution_arn, cause='Cancelled by an admin')
     except (ClientError, BotoCoreError):
         logger.warning('Could not stop the agent run execution')
 

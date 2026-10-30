@@ -26,7 +26,7 @@ function's own role (``lambda:InvokeFunction`` on its own ARN,
 
 import os
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Protocol
@@ -203,7 +203,7 @@ class RunBudget:
         return self._remaining_ms() / 1000 < self.reserve_seconds()
 
     @contextmanager
-    def timing_app(self) -> Iterator[None]:
+    def timing_app(self) -> Generator[None, None, None]:
         """Time one app (its collection plus the run's handling of what it yields)."""
         self.apps_started += 1
         started = self._clock()

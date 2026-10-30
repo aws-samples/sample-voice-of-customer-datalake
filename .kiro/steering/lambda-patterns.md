@@ -13,7 +13,7 @@ All Lambda handlers MUST use AWS Lambda Powertools:
 
 ```python
 from aws_lambda_powertools import Logger, Tracer, Metrics
-from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
+from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, process_partial_response
 
 logger = Logger()
 tracer = Tracer()
@@ -81,7 +81,7 @@ def lambda_handler(event, context):
 Use Powertools batch processor for SQS-triggered Lambdas:
 
 ```python
-from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
+from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, process_partial_response
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
 
 processor = BatchProcessor(event_type=EventType.SQS)
@@ -92,16 +92,15 @@ def record_handler(record: SQSRecord) -> dict:
     # Process the record
     return {"status": "success"}
 
-@batch_processor(record_handler=record_handler, processor=processor)
 def lambda_handler(event, context):
-    return processor.response()
+    return process_partial_response(event=event, record_handler=record_handler, processor=processor, context=context)
 ```
 
 ## D
 ynamoDB Streams Processing
 
 ```python
-from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, batch_processor
+from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, process_partial_response
 from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord
 
 processor = BatchProcessor(event_type=EventType.DynamoDBStreams)
@@ -114,9 +113,8 @@ def record_handler(record: DynamoDBRecord) -> dict:
     # Process the new item
     return {"status": "success"}
 
-@batch_processor(record_handler=record_handler, processor=processor)
 def lambda_handler(event, context):
-    return processor.response()
+    return process_partial_response(event=event, record_handler=record_handler, processor=processor, context=context)
 ```
 
 ## API Handler Pattern

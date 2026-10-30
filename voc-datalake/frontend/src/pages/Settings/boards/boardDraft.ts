@@ -25,7 +25,7 @@ export interface BoardDraft {
 
 /** `text` without leading and trailing `char` (by index: an anchored `+` regex backtracks). */
 function trimChar(text: string, char: string): string {
-  const chars = [...text]
+  const chars = Array.from(text)
   const start = chars.findIndex((c) => c !== char)
   if (start === -1) return ''
   const fromEnd = [...chars].reverse().findIndex((c) => c !== char)
@@ -59,7 +59,7 @@ export function parseEmails(text: string): ParsedEmails {
 }
 
 /** Status keys allow only `[a-z_]`, so a clash is resolved with a letter suffix (≤ 8 statuses: 26 always suffice). */
-const KEY_SUFFIXES = [...'abcdefghijklmnopqrstuvwxyz']
+const KEY_SUFFIXES = Array.from('abcdefghijklmnopqrstuvwxyz')
 
 /** A key for a new status from its label, unique among `taken` (`status_<letter>` when the label has no ASCII letters). */
 export function statusKeyFor(label: string, taken: readonly string[]): string {

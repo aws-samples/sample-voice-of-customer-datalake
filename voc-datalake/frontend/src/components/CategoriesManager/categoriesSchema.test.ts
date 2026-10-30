@@ -110,7 +110,7 @@ describe('normalizeCategories (issue #181)', () => {
   })
 
   it('treats whitespace-only and symbol-only names as unusable identity', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     const categories = normalizeCategories([legacyRow, { name: '   ' }, { name: '///' }])
 
@@ -119,7 +119,7 @@ describe('normalizeCategories (issue #181)', () => {
   })
 
   it('drops a row only when both id and name are unusable', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     const categories = normalizeCategories([
       legacyRow,

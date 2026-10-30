@@ -264,7 +264,7 @@ class Graph:
                 self.reach.why.setdefault(key, self.current)
                 self.work.append((info, info.defs[qualname]))
                 if '.' in qualname:
-                    self.mark(info, qualname.split('.')[0], depth + 1)
+                    self.mark(info, qualname.split('.', maxsplit=1)[0], depth + 1)
             return
         binding = info.imports.get(qualname)
         if binding is not None:

@@ -42,7 +42,8 @@ export function compactFormatter(locale = 'en'): (value: unknown) => string {
   const format = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 })
   const thousands = abbreviatesThousands(format) ? null : thousandsFormatter(locale)
   return (value) => {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return String(value ?? '')
+    if (typeof value !== 'number') return typeof value === 'string' ? value : ''
+    if (!Number.isFinite(value)) return String(value)
     if (thousands !== null && Math.abs(value) >= THOUSAND && Math.abs(value) < MILLION) return thousands(value)
     return format.format(value)
   }

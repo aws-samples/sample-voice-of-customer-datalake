@@ -12,6 +12,7 @@ vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.f
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
 import { ApiError } from '../../lib/errors'
 import DimensionsManager from './DimensionsManager'
+import { parsedJson } from '@test/jsonText'
 
 beforeEach(() => {
   resetFetchApi()
@@ -37,7 +38,7 @@ describe('DimensionsManager', () => {
     await user.type(within(userType).getByLabelText('New value for User type'), 'reseller{Enter}')
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/settings/dimensions', expect.objectContaining({ method: 'PUT' })))
-    const body: unknown = JSON.parse(String(fetchApi.mock.calls.at(-1)?.[1]?.body))
+    const body: unknown = parsedJson(fetchApi.mock.calls.at(-1)?.[1]?.body)
     expect(body).toMatchObject({ dimensions: [{ key: 'product' }, { key: 'module', parent: 'product' }, { key: 'user_type', values: [{}, {}, { name: 'reseller' }] }] })
   })
 

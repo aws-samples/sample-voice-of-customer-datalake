@@ -24,7 +24,7 @@ const WEB_REVIEWS: PluginManifest = {
   hasIngestor: true, hasWebhook: false, hasS3Trigger: false, enabled: true,
 }
 
-const noop = () => undefined
+const noop = () => {}
 
 function queryWrapper() {
   const client = createTestQueryClient()

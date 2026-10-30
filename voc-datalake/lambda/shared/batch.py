@@ -11,7 +11,12 @@ partial-failure contract (`reportBatchItemFailures`) cannot drift between them.
 from collections.abc import Callable
 from typing import Any
 
-from aws_lambda_powertools.utilities.batch import BasePartialBatchProcessor, BatchProcessor, EventType, batch_processor
+from aws_lambda_powertools.utilities.batch import (
+    BasePartialBatchProcessor,
+    BatchProcessor,
+    EventType,
+    process_partial_response,
+)
 from aws_lambda_powertools.utilities.batch.types import PartialItemFailureResponse
 
 from shared.concurrency import ordered_map
@@ -77,11 +82,12 @@ def batch_lambda_handler(
     to its IdempotencyConfig, which needs the remaining time to expire in-progress claims).
     `after_batch` runs ONCE after every record, even when the batch raised (the cache
     version bump of `shared.data_version.BatchBump`: one per batch, never per record).
-    """
 
-    @batch_processor(record_handler=record_handler, processor=processor)
-    def _batch(_event: dict, context: Any) -> PartialItemFailureResponse:
-        return processor.response()
+    The batch runs through Powertools' `process_partial_response` (the replacement for the
+    deprecated `batch_processor` decorator). It processes and reports exactly as the decorator
+    did; the one difference is an event with no `Records` (or an empty list), which it refuses
+    with `UnexpectedBatchTypeError`. SQS and DynamoDB Streams never invoke with an empty batch.
+    """
 
     @logger.inject_lambda_context
     @tracer.capture_lambda_handler
@@ -92,7 +98,7 @@ def batch_lambda_handler(
         if on_context is not None:
             on_context(context)
         try:
-            return _batch(event, context)
+            return process_partial_response(event, record_handler, processor, context)
         finally:
             if after_batch is not None:
                 after_batch()

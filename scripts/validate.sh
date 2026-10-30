@@ -81,14 +81,22 @@ def py   python,python-static               "vulture: production code"          
 def py   python,python-static               "vulture: test-support code"         'cd "$CDK" && bash scripts/lint-python.sh --dead-code-tests'
 # pyright standard mode + reportUnnecessary* (pyrightconfig.json); zero errors.
 def py   python,python-static               "pyright"                            'cd "$CDK" && npx --prefix "$ROOT" pyright --pythonpath "$PYTHON_BIN"'
+# Production code only (pyrightconfig.production.json): no use of another module's private names.
+def py   python,python-static               "pyright: production (private usage)" 'cd "$CDK" && npx --prefix "$ROOT" pyright --pythonpath "$PYTHON_BIN" -p pyrightconfig.production.json'
 # Every pytest test asserts something (directly or through a helper it calls).
 def py   python,python-static               "check_tests_assert"                 'cd "$CDK" && out="$("$PYTHON_BIN" scripts/check_tests_assert.py)" && [ -z "$out" ] || { printf "%s\n" "$out"; exit 1; }'
-# pytest-xdist; `loadgroup` keeps @pytest.mark.xdist_group tests on one worker. Coverage is not a
-# gate (pytest.ini has --cov-fail-under=0), so the gate skips its tracing; plain `pytest` still reports it.
-def py   python,python-tests                "pytest"                             'cd "$CDK" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider --no-cov -n "$VALIDATE_PYTEST_WORKERS" --dist loadgroup'
+# pytest-xdist; `loadgroup` keeps @pytest.mark.xdist_group tests on one worker.
+# Coverage is gated per file (docs/coverage-gate.md): the check runs after the suite.
+def py   python,python-tests                "pytest"                             'cd "$CDK" && mkdir -p "$ROOT/.cache/coverage" && rm -f "$ROOT"/.cache/coverage/python.coverage* "$ROOT/.cache/coverage/python.json" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider -n "$VALIDATE_PYTEST_WORKERS" --dist loadgroup --cov-config="$ROOT/scripts/coverage/python.coveragerc" --cov-report=term-missing:skip-covered --cov-report=html:"$ROOT/.cache/coverage/python-html" --cov-report=json:"$ROOT/.cache/coverage/python.json" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite python'
 
 # Release bookkeeping: CHANGELOG.md's newest release = the version in every platform package.json.
 def tsc  repo                               "version: CHANGELOG ↔ package.json"  'cd "$ROOT" && node --test scripts/check-version.test.mjs scripts/validate-affected.test.mjs && node scripts/check-version.mjs'
+# The repo scripts' own tests: the coverage gate, the PR description check, the dependency audit and
+# scheduled-failure watch, and the pre-push hook's verdict parsing.
+def tsc  repo                               "node: coverage gate tests"          'cd "$ROOT" && node --test scripts/coverage/check-per-file-coverage.test.mjs'
+def tsc  repo                               "node: PR description check"         'cd "$ROOT" && node --test scripts/pr-checks/*.test.mjs'
+def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/scheduled-failure-watch.test.mjs'
+def tsc  repo                               "node: pre-push hook parsing"        'cd "$ROOT" && node --test scripts/git-hooks/pre-push.test.mjs'
 # Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build
 # output and dependencies allowlisted by path; .gitleaksignore for reviewed fingerprints).
 def lint repo                               "gitleaks: working tree"             'cd "$ROOT" && bash scripts/gitleaks-tree.sh'
@@ -123,6 +131,8 @@ def tsc  frontend,frontend-static           "node: frontend mock coverage"      
 # assistant/contract.ts and approvals/schemas.ts are excluded there on purpose: they mirror the stream
 # Lambda's contract/allowlists line for line and the *.lockstep.test.ts specs prove they agree.
 def lint repo                               "jscpd"                              'cd "$ROOT" && npx jscpd --fail-on-empty --reporters console --silent'
+# GitHub Actions workflows: pinned actionlint (+ shellcheck) and zizmor --offline, every finding fails.
+def lint repo                               "actions: actionlint + zizmor"       'cd "$ROOT" && node --test scripts/actions-lint.test.mjs && bash scripts/actions-lint.sh'
 def tsc  bridge                             "node: kiro-acp-bridge tests"        'cd "$ROOT/tools/kiro-acp-bridge" && node --test test/*.test.mjs'
 
 # Tests that need the built SPA: the CDK stacks stage frontend/dist as an asset. Built once per run.
@@ -134,8 +144,8 @@ def test frontend,frontend-static,cdk,cdk-tests,audit,audit-py-synth "vite build
 # group for that reason, and comes before the vitest suites so a failing suite cannot leave it unrun.
 def test audit,audit-py-synth               "audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function" 'cd "$ROOT" && rc=0 && for d in scripts/audit/py_reachability.py scripts/audit/py_env_contract.py scripts/audit/py_iam_contract.py scripts/audit/py_layers.py scripts/audit/py_sfn_errors.py scripts/audit/py_shared_constants.py scripts/audit/py_doc_refs.py "scripts/audit/clones_struct.py --kind function"; do "$PYTHON_BIN" $d || { r=$?; echo "audit: $d exited $r"; [ "$r" -gt "$rc" ] && rc=$r; }; done; exit "$rc"'
 def test cdk,cdk-tests                      "vitest: CDK app"                    'cd "$CDK" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --hookTimeout "$VALIDATE_VITEST_TIMEOUT_MS"'
-def test stream,stream-tests                "vitest: stream Lambda"              'cd "$STREAM" && npx vitest run'
-def test frontend,frontend-tests            "vitest: frontend"                   'cd "$FRONTEND" && npx vitest run'
+def test stream,stream-tests                "vitest: stream Lambda"              'cd "$STREAM" && rm -rf "$ROOT/.cache/coverage/stream" && npx vitest run --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/stream" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite stream'
+def test frontend,frontend-tests            "vitest: frontend"                   'cd "$FRONTEND" && rm -rf "$ROOT/.cache/coverage/frontend" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/frontend" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite frontend'
 
 # Code-audit detectors (scripts/audit/, docs/code-audit.md): dead code, renamed clones and re-implemented
 # helpers the gates above cannot see. Each exits 0 clean, 1 findings, 2 cannot run, and any non-zero exit

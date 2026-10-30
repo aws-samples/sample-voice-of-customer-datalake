@@ -22,7 +22,7 @@ def _no_dedupe_table_unless_a_test_names_one(monkeypatch):
     batch tests here take the dedupe-transaction path. Tests that exercise dedupe
     patch the name themselves, after this.
     """
-    import aggregator.handler as handler
+    from aggregator import handler
 
     monkeypatch.setattr(handler, 'IDEMPOTENCY_TABLE', '')
 
@@ -37,7 +37,7 @@ def _earliest_date_watermark(request, monkeypatch):
     watermark has its own tests (`real_watermark`) instead of leaking into theirs.
     `lower_earliest_date` also memoises per container; reset both ways.
     """
-    import aggregator.handler as handler
+    from aggregator import handler
 
     handler._known_earliest_date = None
     if request.node.get_closest_marker('real_watermark') is None:

@@ -100,7 +100,7 @@ describe('a session the server is still generating', () => {
   })
 
   it('backs off between polls (1 s, 2 s, 3 s, then every 5 s)', async () => {
-    getSessionMock.mockImplementation(async () => record({ updatedAt: new Date(Date.now()).toISOString() }))
+    getSessionMock.mockImplementation(() => Promise.resolve(record({ updatedAt: new Date(Date.now()).toISOString() })))
     await openSession('conv_1', env)
     const counts: number[] = []
     for (const step of [999, 1, 2000, 3000, 5000, 5000]) {
@@ -111,7 +111,7 @@ describe('a session the server is still generating', () => {
   })
 
   it('gives up after the bound and says so', async () => {
-    getSessionMock.mockImplementation(async () => record({ updatedAt: new Date(Date.now()).toISOString() }))
+    getSessionMock.mockImplementation(() => Promise.resolve(record({ updatedAt: new Date(Date.now()).toISOString() })))
     await openSession('conv_1', env)
     await vi.advanceTimersByTimeAsync(FOLLOW_BOUND_MS + 10_000)
     expect(slot()?.thread).toMatchObject({ status: 'error', error: { code: FOLLOW_TIMEOUT_CODE } })
@@ -212,10 +212,11 @@ describe('the SPA never overwrites a newer server revision', () => {
   })
 
   it('still saves after the run when the server never said it stored it', async () => {
-    runAgentMock.mockImplementationOnce(async (input, onEvent) => {
+    runAgentMock.mockImplementationOnce((input, onEvent) => {
       onEvent({ type: EventType.RUN_STARTED, threadId: input.threadId, runId: input.runId })
       onEvent({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Done' })
       onEvent({ type: EventType.RUN_FINISHED, threadId: input.threadId, runId: input.runId })
+      return Promise.resolve()
     })
     await sendMessage('hi', env)
     expect(saveSessionMock).toHaveBeenCalledTimes(2)
@@ -223,10 +224,10 @@ describe('the SPA never overwrites a newer server revision', () => {
 
   it('on 409 adopts the server copy (and follows it while it is still running) instead of overwriting', async () => {
     // A stream cut mid-answer: the client has a partial, the server is still writing.
-    runAgentMock.mockImplementationOnce(async (input, onEvent) => {
+    runAgentMock.mockImplementationOnce((input, onEvent) => {
       onEvent({ type: EventType.RUN_STARTED, threadId: input.threadId, runId: input.runId })
       onEvent({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'a', delta: 'Part' })
-      throw new Error('network')
+      return Promise.reject(new Error('network'))
     })
     saveSessionMock.mockRejectedValue(new ApiError(409))
     const threadId = useThreadStore.getState().activeId

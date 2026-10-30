@@ -42,7 +42,7 @@ describe('create_scraper executes with the user token', () => {
       { id: 'acme', name: 'Acme', extraction_method: 'jsonld', base_url: 'https://www.acme.example/reviews' },
       { queryClient: new QueryClient() },
     )
-    const calls = fetchMock.mock.calls.map(([url, init]) => [String(url), init?.method ?? 'GET', new Headers(init?.headers).get('Authorization')])
+    const calls = fetchMock.mock.calls.map(([url, init]) => [url instanceof Request ? url.url : String(url), init?.method ?? 'GET', new Headers(init?.headers).get('Authorization')])
     expect(calls).toStrictEqual([
       [`${ENDPOINT}/scrapers`, 'GET', 'user-id-token'],
       [`${ENDPOINT}/scrapers`, 'POST', 'user-id-token'],

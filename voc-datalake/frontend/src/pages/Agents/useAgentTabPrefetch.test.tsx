@@ -37,7 +37,7 @@ function setup() {
 describe('useAgentTabPrefetch', () => {
   it('warms the runs tab on hover, under the key the Runs tab reads', async () => {
     const { client, prefetch } = setup()
-    await act(async () => { prefetch('runs') })
+    act(() => { prefetch('runs') })
     await vi.waitFor(() => expect(client.getQueryData(agentsKeys.runs('ag_1'))).toBeDefined())
     expect(called('/workflows/wf_1')).toBe(true)
   })

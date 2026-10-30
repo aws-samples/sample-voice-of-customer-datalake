@@ -9,6 +9,7 @@ import { AlertCircle, CheckCircle2, Loader2, Lock } from 'lucide-react'
 import { authService } from '../../services/auth'
 import { Section } from './ProfileSections'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
+import { noCleanup } from '../../hooks/noCleanup'
 
 const MIN_PASSWORD_LENGTH = 8
 const SUCCESS_VISIBLE_MS = 3000
@@ -64,7 +65,7 @@ export default function PasswordSection() {
   const [success, setSuccess] = useState(false)
 
   useEffect(() => {
-    if (!success) return undefined
+    if (!success) return noCleanup
     const timer = setTimeout(() => setSuccess(false), SUCCESS_VISIBLE_MS)
     return () => clearTimeout(timer)
   }, [success])
