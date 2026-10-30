@@ -191,6 +191,8 @@
       "pending": "pending",
       "running": "running"
     },
+    "duplicateNamesDropped_one": "{{count, number}} new persona was not added: its name repeats one this project already has.",
+    "duplicateNamesDropped_other": "{{count, number}} new personas were not added: their names repeat ones this project already has.",
     "truncated": {
       "counted": "Based on {{used, number}} of the {{total, number}} feedback items read — the rest did not fit in one generation.",
       "fetchCapped": "This generation reads at most {{limit, number}} feedback items. More may match your filters — narrow them to change which ones are used.",

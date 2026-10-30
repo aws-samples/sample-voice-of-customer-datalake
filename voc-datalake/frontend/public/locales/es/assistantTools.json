@@ -103,7 +103,6 @@
     "personas": {
       "add_one": "Se añade a la {{count, number}} persona del proyecto, que se conserva.",
       "add_other": "Se añade a las {{count, number}} personas del proyecto, que se conservan.",
-      "addUnknown": "Se añade a las personas existentes del proyecto, que se conservan.",
       "replace_one": "Elimina la {{count, number}} persona existente del proyecto, con sus cambios y su avatar, antes de escribir el conjunto nuevo.",
       "replace_other": "Elimina las {{count, number}} personas existentes del proyecto, con sus cambios y avatares, antes de escribir el conjunto nuevo.",
       "replaceUnknown": "Elimina las personas existentes del proyecto, con sus cambios y avatares, antes de escribir el conjunto nuevo."

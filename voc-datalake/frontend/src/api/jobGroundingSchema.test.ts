@@ -102,6 +102,7 @@ describe('parseJobGrounding', () => {
       context_truncated: undefined,
       fetch_limit_reached: undefined,
       fetch_limit: undefined,
+      duplicate_names_dropped: undefined,
     })
   })
 

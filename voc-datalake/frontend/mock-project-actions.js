@@ -351,15 +351,18 @@ function generatedPersonas(shared, count, kept = []) {
   const read = feedbackCount(shared);
   const personas = [];
   const taken = (id) => personas.some((p) => p.persona_id === id) || kept.some((p) => p.persona_id === id);
-  // Like the real plan step told the kept names: skip a name a kept persona already has.
+  // Like the real plan step told the kept names: skip a name a kept persona already has. The
+  // instruction is advisory, so the FIRST candidate may still repeat one, which savePersonaSet then
+  // drops (duplicate_names_dropped), so the job's notice can be seen against the mock.
   const keptNames = new Set(kept.map((p) => personaNameKey(p.name)));
   let i = 0;
   while (personas.length < count) {
     const template = PERSONA_TEMPLATES[i % PERSONA_TEMPLATES.length];
     const round = Math.floor(i / PERSONA_TEMPLATES.length);
     const name = round > 0 ? `${template.name} ${round + 1}` : template.name;
+    const mayRepeat = i === 0;
     i += 1;
-    if (keptNames.has(personaNameKey(name))) continue;
+    if (!mayRepeat && keptNames.has(personaNameKey(name))) continue;
     personas.push(personaItem(taken, {
       ...cloneJson(template),
       name,

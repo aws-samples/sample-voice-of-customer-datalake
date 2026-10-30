@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -1673,12 +1673,29 @@ def _existing_persona_names(project_id: str) -> list[str]:
     except Exception:
         logger.exception("[PERSONA] Could not read existing persona names (continuing)")
         return []
+    return _bounded_avoid_names(item.get('name') for item in items)
+
+
+def _bounded_avoid_names(names: Iterable[object]) -> list[str]:
+    """Persona names (oldest first) as the names-to-avoid list: one line each, de-duplicated, the newest only."""
     unique: dict[str, None] = {}
-    for item in items:
-        name = _one_line_name(item.get('name'))
+    for value in names:
+        name = _one_line_name(value)
         if name:
             unique[name] = None  # pragma: no mutate  the dict is an ordered set; its values are never read
     return list(unique)[-MAX_AVOID_PERSONA_NAMES:]
+
+
+def _is_additive(filters: dict) -> bool:
+    """Add mode (#353): only a literal ``True`` keeps the project's personas (the route validates the bool)."""
+    return filters.get('keep_existing_personas') is True
+
+
+def _avoid_names(project_id: str, filters: dict, kept: persona_overlap.ExistingPersonas) -> list[str]:
+    """The names-to-avoid list. Add mode takes it from the kept-personas read (one query, #353)."""
+    if _is_additive(filters):
+        return _bounded_avoid_names(kept.names)
+    return _existing_persona_names(project_id)
 
 
 def _one_line_name(value: object) -> str:
@@ -2478,7 +2495,7 @@ def _kept_personas(project_id: str, filters: dict) -> persona_overlap.ExistingPe
     Replace mode, or a failed read, is no description: the read is best effort like
     the names-to-avoid list, and the name post-check then has nothing to compare.
     """
-    if filters.get('keep_existing_personas') is not True:
+    if not _is_additive(filters):
         return persona_overlap.NO_EXISTING_PERSONAS
     try:
         return persona_overlap.read_existing_personas(projects_table, project_id)
@@ -2490,8 +2507,12 @@ def _kept_personas(project_id: str, filters: dict) -> persona_overlap.ExistingPe
 def _personas_to_add(
     project_id: str, filters: dict, personas: list[dict], kept: persona_overlap.ExistingPersonas,
 ) -> tuple[list[dict], int]:
-    """``(the personas to save, name clashes dropped)``; replace mode clears the old set first."""
-    if filters.get('keep_existing_personas') is not True:
+    """``(the personas to save, name clashes dropped)``; replace mode clears the old set first.
+
+    A repeat inside the new set cannot reach here in either mode: ``_plan_entries`` drops a
+    repeated planned name and ``_write_one_persona`` pins each persona to its planned name.
+    """
+    if not _is_additive(filters):
         _clear_existing_personas(project_id)
         return personas, 0
     kept_personas, clashes = persona_overlap.drop_name_clashes(personas, kept.name_keys)
@@ -2547,8 +2568,8 @@ def generate_personas(
     try:
         logger.info("[PERSONA] Step 3/5: Building LLM chain steps from prompts...")
         update_progress(15, 'building_prompts')
-        avoid_names = _existing_persona_names(project_id)
         kept = _kept_personas(project_id, filters)
+        avoid_names = _avoid_names(project_id, filters, kept)
         chain_steps = with_persona_knowledge(
             _build_persona_chain(corpus, filters, persona_count, avoid_names, kept.section), knowledge,
         )
@@ -2638,7 +2659,7 @@ def generate_personas(
             'personas_planned': len(run.planned),
             'personas_dropped': run.batch.dropped,
             # Additive mode: new personas dropped because their name repeated a kept
-            # (or an earlier new) persona's (#353, shared/persona_overlap.py).
+            # persona's (#353, shared/persona_overlap.py); 0 in replace mode.
             'duplicate_names_dropped': name_clashes,
             'source_breakdown': source_breakdown,
             'generation_time_ms': llm_time

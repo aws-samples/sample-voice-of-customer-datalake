@@ -191,6 +191,8 @@
       "pending": "Ausstehend",
       "running": "Läuft"
     },
+    "duplicateNamesDropped_one": "{{count, number}} neue Persona wurde nicht hinzugefügt: Ihr Name wiederholt eine Persona, die dieses Projekt schon hat.",
+    "duplicateNamesDropped_other": "{{count, number}} neue Personas wurden nicht hinzugefügt: Ihre Namen wiederholen Personas, die dieses Projekt schon hat.",
     "truncated": {
       "counted": "Basiert auf {{used, number}} der {{total, number}} gelesenen Feedback-Einträge — der Rest passte nicht in einen Durchlauf.",
       "fetchCapped": "Ein Durchlauf liest höchstens {{limit, number}} Feedback-Einträge. Möglicherweise entsprechen mehr Ihren Filtern — grenzen Sie sie ein, um die Auswahl zu ändern.",

@@ -191,6 +191,8 @@
       "pending": "pendente",
       "running": "em execução"
     },
+    "duplicateNamesDropped_one": "{{count, number}} nova persona não foi adicionada: o nome dela repete o de uma que o projeto já tem.",
+    "duplicateNamesDropped_other": "{{count, number}} novas personas não foram adicionadas: os nomes delas repetem os de outras que o projeto já tem.",
     "truncated": {
       "counted": "Baseado em {{used, number}} dos {{total, number}} itens de feedback lidos — o restante não caberia em uma geração.",
       "fetchCapped": "Cada geração lê no máximo {{limit, number}} itens de feedback. Mais podem corresponder aos seus filtros — restrinja-os para mudar quais são usados.",

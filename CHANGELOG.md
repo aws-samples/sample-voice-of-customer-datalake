@@ -32,8 +32,9 @@ Persona generation can add to a project's existing personas instead of replacing
 - An additive run (`keep_existing_personas: true`, which autonomous agents always send) now shows the model a
   short, bounded description of the kept personas: at most 20, under 1,500 characters. It asks for clearly
   different archetypes and drops a new persona whose name repeats a kept one (case-insensitive) before its
-  avatar is made. The job result reports how many were dropped as `metadata.duplicate_names_dropped`. Without
-  the field, `POST /projects/{id}/personas/generate` still replaces the personas, as before.
+  avatar is made. The job result reports how many were dropped as `metadata.duplicate_names_dropped`, and the
+  project's Jobs list shows that count with the reason, so a short add run does not look like a failed one.
+  Without the field, `POST /projects/{id}/personas/generate` still replaces the personas, as before.
 
 ## [5.48.06] - 2026-10-30
 

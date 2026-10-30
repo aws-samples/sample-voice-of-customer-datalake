@@ -37,7 +37,7 @@ export default function RadioCard<T extends string>({
         onChange={() => onSelect(value)}
         className="mt-0.5 accent-accent"
       />
-      {/* min-w-0 + break-word: de "Verarbeitete Bewertungen neu kategorisieren" wraps at 390 px / 200 %. */}
+      {/* min-w-0 + break-word: a long single word (German compounds) wraps at 390 px / 200 % zoom. */}
       <span data-testid={textTestId} className="min-w-0 hyphens-auto [overflow-wrap:break-word]">
         <span className="block text-sm font-medium text-text-strong">{title}</span>
         <span className="block text-xs text-text">{hint}</span>

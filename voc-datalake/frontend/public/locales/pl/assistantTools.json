@@ -96,7 +96,6 @@
       "add_few": "Dodaje do {{count, number}} person projektu; zostają one zachowane.",
       "add_many": "Dodaje do {{count, number}} person projektu; zostają one zachowane.",
       "add_other": "Dodaje do {{count, number}} persony projektu; zostają one zachowane.",
-      "addUnknown": "Dodaje do istniejących person projektu; zostają one zachowane.",
       "replace_one": "Usuwa {{count, number}} istniejącą personę projektu, razem ze zmianami i awatarem, zanim powstanie nowy zestaw.",
       "replace_few": "Usuwa {{count, number}} istniejące persony projektu, razem ze zmianami i awatarami, zanim powstanie nowy zestaw.",
       "replace_many": "Usuwa {{count, number}} istniejących person projektu, razem ze zmianami i awatarami, zanim powstanie nowy zestaw.",

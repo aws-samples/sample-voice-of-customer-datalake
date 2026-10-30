@@ -191,6 +191,8 @@
       "pending": "en attente",
       "running": "en cours"
     },
+    "duplicateNamesDropped_one": "{{count, number}} nouveau persona n'a pas été ajouté : son nom reprend celui d'un persona que ce projet a déjà.",
+    "duplicateNamesDropped_other": "{{count, number}} nouveaux personas n'ont pas été ajoutés : leurs noms reprennent ceux de personas que ce projet a déjà.",
     "truncated": {
       "counted": "Basé sur {{used, number}} des {{total, number}} retours lus : le reste n'a pas pu tenir dans une seule génération.",
       "fetchCapped": "Une génération lit au maximum {{limit, number}} retours. D'autres peuvent correspondre à vos filtres — affinez-les pour changer lesquels sont utilisés.",

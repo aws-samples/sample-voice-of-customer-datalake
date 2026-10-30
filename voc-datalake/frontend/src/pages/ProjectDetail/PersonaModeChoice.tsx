@@ -12,8 +12,8 @@ import RadioCard from '../../components/RadioCard/RadioCard'
 import type { PersonaGenerationMode } from './types'
 
 const MODES: ReadonlyArray<{ value: PersonaGenerationMode; titleKey: string; hintKey: string }> = [
-  { value: 'add', titleKey: 'projectDetail:wizards.personaModeAdd', hintKey: 'projectDetail:wizards.personaModeAddHint' },
-  { value: 'replace', titleKey: 'projectDetail:wizards.personaModeReplace', hintKey: 'projectDetail:wizards.personaModeReplaceHint' },
+  { value: 'add', titleKey: 'wizards.personaModeAdd', hintKey: 'wizards.personaModeAddHint' },
+  { value: 'replace', titleKey: 'wizards.personaModeReplace', hintKey: 'wizards.personaModeReplaceHint' },
 ]
 
 interface PersonaModeChoiceProps {
