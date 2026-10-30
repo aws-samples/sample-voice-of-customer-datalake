@@ -107,6 +107,7 @@
     "absentReason": "这些文档都没有记录自己是基于什么创建的——手工撰写的文档，或在开始记录来源之前创建的文档，通常都是这样。该行仍可评分，只是没有依据可用来核对这个组合。",
     "acknowledge": "保留两个版本",
     "acknowledgeFailed": "无法保存此更改。请重新加载页面后重试。",
+    "acknowledgeUnavailable": "此行的某个文档已不存在，因此无法将其版本标记为有意保留。",
     "acknowledgeHint": "是有意组合这些版本的吗？",
     "acknowledgeSaving": "正在保存...",
     "acknowledgeUndo": "撤销",

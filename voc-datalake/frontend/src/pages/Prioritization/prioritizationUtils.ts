@@ -80,6 +80,20 @@ export interface PrioritizationRowView {
    * SAYS. See the `rowLineage` module docstring.
    */
   readonly lineage: RowLineage
+  /**
+   * Did a stored `document_id` fail to resolve against the project read? Then the
+   * documents on screen are not the set the row holds, and "Keep both versions" cannot
+   * be given for them (the API compares the stored set and would answer 409 to every
+   * press), so `RowLineageAckControl` says why instead of offering the button.
+   * Optional, defaulting to "no", for views built without a stored id list behind them.
+   */
+  readonly composition_truncated?: boolean
+  /**
+   * May the caller edit this row's project (`Project.access.can_edit`)? Gates the
+   * "Keep both versions" control, which the API refuses a viewer with 403. Optional,
+   * and absent reads as "no" (fail closed: it can only hide a control).
+   */
+  readonly can_edit?: boolean
   // The row's prototype (if any), resolved the same way. Surfaced under the
   // document preview so reviewers can see the demo without leaving the page.
   readonly prototype?: ProjectDocument

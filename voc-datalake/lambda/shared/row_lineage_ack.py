@@ -14,7 +14,10 @@ THE ACKNOWLEDGEMENT NAMES THE SET IT WAS GIVEN FOR, and that is what makes it la
 its own. A recompose changes `document_ids` and leaves this record alone, so the page
 (which compares the two sets, `pages/Prioritization/lineageAck.ts`) shows the warning
 again for a composition nobody acknowledged. Nothing has to remember to clear it, and a
-write path added later cannot carry a stale acknowledgement onto a new set.
+write path added later cannot carry a stale acknowledgement onto a new set. A row
+recomposed BACK to exactly the acknowledged set reads as acknowledged again, by design:
+the mark is about the set, and that set was marked (pinned in
+`lambda/api/test/test_prioritization_row_lineage_ack.py`).
 
 The ids are stored SORTED: the acknowledgement is about a set, and the row's own order
 is the reviewer's choice of which document leads — not something a set comparison should
@@ -28,6 +31,7 @@ reasoning `_validated_row_document_ids` records in `projects_handler.py`.
 """
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any, Final
 
 from shared.exceptions import ValidationError
@@ -65,8 +69,13 @@ def validated_ack_request(body: dict, max_document_ids: int) -> tuple[bool, list
 
 
 def same_document_set(left: list[str], right: list[str]) -> bool:
-    """Do two id lists name the same documents, whatever their order?"""
-    return set(left) == set(right) and len(left) == len(right)
+    """Do two id lists name the same documents, whatever their order?
+
+    A multiset comparison, so a list holding an id twice (a legacy or hand-edited row)
+    never matches a different list of the same length. The page's twin
+    (`lineageAck.ts: sameDocumentSet`) refuses duplicates the same way.
+    """
+    return Counter(left) == Counter(right)
 
 
 def ack_record(document_ids: list[str], subject: str, now: str) -> dict:
@@ -95,9 +104,11 @@ def published_ack(row: Any) -> dict | None:
     ids = stored.get('document_ids')
     if not isinstance(ids, list):
         return None
-    document_ids = [value for value in ids if isinstance(value, str) and value]
-    if not document_ids:
+    # All or nothing: dropping a malformed entry would publish a SMALLER set than the
+    # one acknowledged, which could then match a row that holds only that subset.
+    if not ids or not all(isinstance(value, str) and value for value in ids):
         return None
+    document_ids = list(ids)
     acknowledged_at = stored.get('acknowledged_at')
     return {
         'document_ids': document_ids,

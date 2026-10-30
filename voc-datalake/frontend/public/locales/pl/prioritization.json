@@ -108,6 +108,7 @@
     "absentReason": "Żaden z tych dokumentów nie zapisuje, z czego został zbudowany. Zwykle dotyczy to dokumentu napisanego ręcznie lub utworzonego przed wprowadzeniem śledzenia pochodzenia. Wiersz nadal można ocenić, po prostu nie ma nic, z czym można by sprawdzić tę kombinację.",
     "acknowledge": "Zachowaj obie wersje",
     "acknowledgeFailed": "Nie udało się zapisać tej zmiany. Załaduj stronę ponownie i spróbuj jeszcze raz.",
+    "acknowledgeUnavailable": "Jeden z dokumentów tego wiersza już nie istnieje, więc jego wersji nie można oznaczyć jako zachowanych celowo.",
     "acknowledgeHint": "Te wersje połączono celowo?",
     "acknowledgeSaving": "Zapisywanie...",
     "acknowledgeUndo": "Cofnij",

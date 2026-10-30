@@ -29,14 +29,20 @@ const t = (key: string) => i18n.t(key, { ns: 'prioritization' })
 
 const crossing: RowLineage = { state: 'crossGeneration', reason: 'repeatedType', stale: false, fresherDocumentIds: [] }
 const documents = [doc('prd_2', 'prd', 'PRD v2', '2026-02-01'), doc('prd_1', 'prd', 'PRD v1', '2026-01-01')]
-const rowWith = (lineage: RowLineage) => ({ row_id: 'row-1', project_id: 'p1', documents, lineage })
+/** What the row view says beyond its lineage; an editor's whole row unless a test says otherwise. */
+interface RowFlags {
+  readonly composition_truncated?: boolean
+  readonly can_edit?: boolean
+}
 
-function mount(lineage: RowLineage) {
+const EDITABLE: RowFlags = { composition_truncated: false, can_edit: true }
+
+function mount(lineage: RowLineage, flags: RowFlags = EDITABLE) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
   render(
     <QueryClientProvider client={queryClient}>
-      <RowLineageAckControl row={rowWith(lineage)} />
+      <RowLineageAckControl row={{ row_id: 'row-1', project_id: 'p1', documents, lineage, ...flags }} />
     </QueryClientProvider>,
   )
   return { invalidate }
@@ -76,6 +82,32 @@ describe('RowLineageAckControl', () => {
     await userEvent.click(screen.getByRole('button', { name: t('lineage.acknowledge') }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(t('lineage.acknowledgeFailed'))
+  })
+
+  it('does not offer the mark when a stored document no longer resolves, and says why', () => {
+    mount(crossing, { ...EDITABLE, composition_truncated: true })
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.getByTestId('row-lineage-ack-unavailable')).toHaveTextContent(t('lineage.acknowledgeUnavailable'))
+  })
+
+  it('still offers Undo on an acknowledged row whose composition is truncated', async () => {
+    mount({ ...crossing, acknowledged: true }, { ...EDITABLE, composition_truncated: true })
+
+    await userEvent.click(screen.getByRole('button', { name: t('lineage.acknowledgeUndo') }))
+
+    expect(mockSetRowLineageAck).toHaveBeenCalledWith('row-1', expect.objectContaining({ acknowledged: false }))
+  })
+
+  it.each([
+    ['a viewer of the project', { can_edit: false }, false],
+    ['a viewer of the project, on an acknowledged row', { can_edit: false }, true],
+    ['a caller whose access is unknown', {}, false],
+  ])('offers nothing to %s, whom the API would refuse', (_who, flags: RowFlags, acknowledged) => {
+    mount({ ...crossing, acknowledged }, flags)
+
+    expect(screen.queryByTestId('row-lineage-ack')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
   it('renders nothing on a row that does not cross generations', () => {

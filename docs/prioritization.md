@@ -116,6 +116,15 @@ while the row holds exactly that set (`frontend/src/pages/Prioritization/lineage
 row and the warning comes back, without anything clearing the stored record. Server half:
 `lambda/shared/row_lineage_ack.py`.
 
+Because the mark is about a set, it applies again if the row is later recomposed back to exactly that
+set: the same documents were already marked as kept together on purpose, so nobody has to mark them a
+second time. Press **Undo** to withdraw it for good. A row holding a document the project no longer has
+cannot be marked (the documents on screen are not the row's stored set), and says so instead of offering
+the button; an existing mark on such a row can still be undone. Withdrawing a mark from a row that holds
+none changes nothing. The control is shown only to a caller who can edit the row's project (the project
+list's `access.can_edit`; the route refuses anyone else with 403), so a viewer sees the row's lineage
+label (**Kept on purpose** on a marked row) but no button.
+
 **A room vote ends with its row or project.** Deleting a row (`DELETE /projects/prioritization/rows/{id}`)
 or a project (`DELETE /projects/{id}`) closes the row's open session (`shared/voting_session_close.py`,
 best effort). Whatever the close did, `GET /voting-sessions/{id}/config` and `POST .../submit` refuse a

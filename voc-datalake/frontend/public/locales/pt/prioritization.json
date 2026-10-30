@@ -108,6 +108,7 @@
     "absentReason": "Nenhum destes documentos registra a partir de que foi criado — a resposta habitual para um documento escrito à mão ou criado antes de a linhagem ser registrada. A linha continua pontuável; apenas não há nada com que verificar a combinação.",
     "acknowledge": "Manter as duas versões",
     "acknowledgeFailed": "Não foi possível salvar esta alteração. Recarregue a página e tente novamente.",
+    "acknowledgeUnavailable": "Um dos documentos desta linha já não existe, por isso as suas versões não podem ser marcadas como mantidas de propósito.",
     "acknowledgeHint": "Combinou estas versões de propósito?",
     "acknowledgeSaving": "Salvando...",
     "acknowledgeUndo": "Desfazer",

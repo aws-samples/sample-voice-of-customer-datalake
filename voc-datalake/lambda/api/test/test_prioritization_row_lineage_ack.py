@@ -138,6 +138,15 @@ class TestWithdrawingTheMark:
         assert status == 200
         assert body['row']['lineage_ack'] is None
 
+    def test_unmarking_a_row_that_holds_no_mark_writes_nothing(self, two_versions):
+        tables, row_id = two_versions
+        before = _stored_row(tables, row_id)
+
+        status, _ = _ack(tables, row_id, ['prd_v1', 'prd_v2'], acknowledged=False)
+
+        assert status == 200
+        assert _stored_row(tables, row_id) == before
+
 
 class TestTheMarkLapsesWithTheComposition:
     def test_a_recomposed_row_keeps_the_old_set_so_it_no_longer_matches(self, two_versions):
@@ -152,6 +161,20 @@ class TestTheMarkLapsesWithTheComposition:
         row = body['rows'][row_id]
         assert sorted(row['document_ids']) == ['prd_v1', 'prd_v2', 'prfaq_1']
         assert row['lineage_ack']['document_ids'] == ['prd_v1', 'prd_v2']
+
+    def test_recomposing_back_to_the_marked_set_applies_the_mark_again(self, two_versions):
+        """Pinned on purpose (docs/prioritization.md): the mark is about a SET, so a row
+        holding exactly that set again reads as acknowledged without a new mark."""
+        tables, row_id = two_versions
+        _ack(tables, row_id, ['prd_v1', 'prd_v2'])
+        for document_ids in (['prd_v1', 'prd_v2', 'prfaq_1'], ['prd_v2', 'prd_v1']):
+            status, _ = _call(tables, 'PATCH', f'/projects/prioritization/rows/{row_id}',
+                              {'project_id': 'p1', 'document_ids': document_ids})
+            assert status == 200
+
+        _, body = _call(tables, 'GET', '/projects/prioritization')
+        row = body['rows'][row_id]
+        assert sorted(row['document_ids']) == row['lineage_ack']['document_ids'] == ['prd_v1', 'prd_v2']
 
     def test_marking_a_set_the_row_does_not_hold_is_a_409_that_writes_nothing(self, two_versions):
         tables, row_id = two_versions
@@ -224,11 +247,25 @@ class TestAStoredMarkReadsDefensively:
 
     @pytest.mark.parametrize('stored', [
         'yes', {'document_ids': 'prd_v1'}, {'document_ids': []}, {'document_ids': [1, None]},
-    ], ids=['not-a-map', 'ids-not-a-list', 'empty-ids', 'no-string-ids'])
+        {'document_ids': ['prd_v1', 5]}, {'document_ids': ['prd_v1', '']},
+    ], ids=['not-a-map', 'ids-not-a-list', 'empty-ids', 'no-string-ids', 'one-non-string-id', 'one-empty-id'])
     def test_a_malformed_stored_mark_reads_as_none(self, stored):
+        """All or nothing: a partly readable set is never published as the smaller set."""
         from shared.row_lineage_ack import published_ack
 
         assert published_ack({'lineage_ack': stored}) is None
+
+    @pytest.mark.parametrize(('left', 'right', 'same'), [
+        (['a', 'b'], ['b', 'a'], True),
+        (['a', 'a', 'b'], ['a', 'b', 'b'], False),
+        (['a', 'b'], ['a', 'b', 'b'], False),
+        (['a'], ['b'], False),
+    ], ids=['any-order', 'same-length-other-duplicates', 'extra-duplicate', 'different'])
+    def test_the_set_comparison_counts_duplicates(self, left, right, same):
+        """Agrees with the page's `sameDocumentSet`, which refuses a duplicated list."""
+        from shared.row_lineage_ack import same_document_set
+
+        assert same_document_set(left, right) is same
 
     def test_an_unreadable_instant_reads_as_empty(self):
         from shared.row_lineage_ack import published_ack

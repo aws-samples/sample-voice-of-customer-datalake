@@ -1040,6 +1040,9 @@ function ensureDefaultRow(body) {
 /** Mirrors MAX_ROW_ENSURE_BATCH in lambda/shared/prioritization_row_batch.py. */
 const MAX_ROW_ENSURE_BATCH = 25;
 
+/** Mirrors MAX_ROW_DOCUMENT_IDS in lambda/api/projects_handler.py (a row's own composition bound). */
+const MAX_ROW_DOCUMENT_IDS = 25;
+
 const rowBatchRefusal = (error) => ({ __status: 400, body: { success: false, error } });
 
 /**
@@ -1117,15 +1120,23 @@ function recomposeRow(rowId, body) {
  * `PUT /projects/prioritization/rows/{id}/lineage-ack` (#399, shared/row_lineage_ack.py):
  * `{project_id, acknowledged, document_ids}`. A mark needs the row's own document set
  * (409 otherwise) and is stored sorted; frozen rows may be marked.
+ *
+ * Checked in the handler's order: the project first (404 for one that does not exist),
+ * then the body (400), then the row (404).
  */
 function setRowLineageAck(rowId, body) {
   const refuse = (status, error) => ({ status, payload: { success: false, error } });
-  const ids = body?.document_ids;
-  if (typeof body?.acknowledged !== 'boolean') return refuse(400, 'acknowledged must be true or false');
-  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 25
-      || ids.some((id) => typeof id !== 'string' || id.trim() === '') || new Set(ids).size !== ids.length) {
-    return refuse(400, 'document_ids must be a non-empty list of distinct document id strings');
+  if (typeof body?.project_id !== 'string' || !mockProjectDetails[body.project_id]) {
+    return refuse(404, 'Project not found');
   }
+  if (typeof body.acknowledged !== 'boolean') return refuse(400, 'acknowledged must be true or false');
+  const raw = body.document_ids;
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_ROW_DOCUMENT_IDS
+      || raw.some((id) => typeof id !== 'string' || id.trim() === '')) {
+    return refuse(400, 'document_ids must be a non-empty list of document id strings');
+  }
+  const ids = raw.map((id) => id.trim());
+  if (new Set(ids).size !== ids.length) return refuse(400, 'document_ids must name distinct documents');
   const row = mockPrioritizationRows[rowId];
   if (!row || row.project_id !== body.project_id) return refuse(404, 'Prioritization row not found');
   if (body.acknowledged) {
