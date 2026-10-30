@@ -86,10 +86,15 @@ written when a suite fails.
 ## Tests that assert a time budget
 
 Coverage tracing slows tight Python loops several times over, and the CI runner is slower than a laptop, so a test
-that bounds wall-clock or CPU time measures the tracer, not the code, once coverage is on (5.50.00: the Problem
+that bounds wall-clock or CPU time measures the tracer, not the code, once coverage is on (5.55.00: the Problem
 Analysis capacity test took 9 s of CPU against its 6 s budget on CI, and under 2 s untraced). Mark such a test
 `@pytest.mark.no_cover` (pytest-cov runs it untraced) and keep its bound as it is. Its code is still measured through
 the suite's other tests; if a file then falls under the floor, add a behaviour test, not a looser bound.
+
+Untraced was not quite enough on CI: the 4-vCPU runner also runs the four other `validate.sh` lanes beside pytest,
+and that contention alone took the same test to 6.3 s (5.55.00). CI therefore runs `validate.sh --pytest-first`:
+the pytest step runs alone, and the other lanes start once it has passed. That costs about 10 minutes of CI time.
+Locally the lanes still run together; use `--pytest-first` to reproduce CI's order.
 
 ## Cost
 

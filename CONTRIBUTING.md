@@ -89,7 +89,9 @@ knip, small node checks, most code-audit detectors), `lint` (ESLint, jscpd, gitl
 stream and frontend vitest suites), `sec` (CodeQL). The first failing step stops the other lanes and its log tail is printed; every run ends with a table
 of each step's status and duration, and every step's full log is in `.cache/validate/logs/<run>/`. Options:
 `--serial` (one step after another), `--keep-going` (let the other lanes finish after a failure), `--only <groups>`,
-`--list`. `VALIDATE_PYTEST_WORKERS` sets the pytest-xdist worker count (default: CPUs − 4).
+`--list`, `--pytest-first` (pytest alone, then the other lanes; CI runs this, see
+[docs/coverage-gate.md](docs/coverage-gate.md#tests-that-assert-a-time-budget)), `--dry-run` (every command a no-op,
+to test the runner). `VALIDATE_PYTEST_WORKERS` sets the pytest-xdist worker count (default: CPUs − 4).
 
 pytest runs in several processes in any order, so a test must not depend on another test having run or on a
 fixed path; tests that must share one process are marked `@pytest.mark.xdist_group('<name>')`. Parametrize ids
