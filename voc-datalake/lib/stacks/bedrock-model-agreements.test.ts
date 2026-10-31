@@ -30,7 +30,10 @@ const AGREEMENT = 'AWS::CloudFormation::CustomResource';
 const HOST_REGION = 'eu-west-1';
 
 const AgreementSchema = z.object({
-  Properties: z.object({ ServiceToken: z.unknown(), modelId: z.string(), region: z.string(), bestEffort: z.string().optional() }),
+  Properties: z.object({
+    ServiceToken: z.unknown(), modelId: z.string(), region: z.string(), bestEffort: z.string().optional(),
+    retry: z.string().optional(),
+  }),
 });
 const InlineFunctionSchema = z.object({ Properties: z.object({ Code: z.object({ ZipFile: z.string() }) }) });
 
@@ -39,10 +42,10 @@ function agreementsOf(template: Template): z.infer<typeof AgreementSchema>['Prop
 }
 
 /** The agreements alone in a stack of another region than the image model's, under the app's id. */
-function agreementsTemplate(): Template {
+function agreementsTemplate(retry?: string): Template {
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
   const stack = new cdk.Stack(app, 'Host', { env: { account: '111111111111', region: HOST_REGION } });
-  BedrockModelAgreements.addTo(stack, 'ImageModelAccess');
+  BedrockModelAgreements.addTo(stack, 'ImageModelAccess', { retry });
   return Template.fromStack(stack);
 }
 
@@ -87,5 +90,16 @@ describe('BedrockModelAgreements construct', () => {
       'bedrock:GetFoundationModelAvailability', 'aws-marketplace:Subscribe', 'aws-marketplace:ViewSubscriptions',
     ]) expect(json).toContain(action);
     expect(json).not.toMatch(/bedrock:Invoke/);
+  });
+});
+
+describe('retrying the agreements (-c modelAgreementRetry)', () => {
+  it('sends no retry property without the option, so the properties never change', () => {
+    expect(agreementsOf(agreementsTemplate()).every((agreement) => agreement.retry === undefined)).toBe(true);
+  });
+
+  it('stamps the token on every agreement, so a new value makes CloudFormation send an Update', () => {
+    expect(agreementsOf(agreementsTemplate('2026-11-01')).map((agreement) => agreement.retry))
+      .toStrictEqual(Array(ALLOWED_FOUNDATION_MODEL_IDS.length + 1).fill('2026-11-01'));
   });
 });

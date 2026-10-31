@@ -228,7 +228,12 @@ export const PAGE_FILTER_KEYS = [
   'q', 'category', 'subcategory', 'source', 'sentiment', 'usefulness', 'rating', 'rating_dir', 'urgent', 'channel', 'dims',
   'tag', 'resolved', 'similarity',
 ] as const
-export const MAX_PAGE_FILTER_CHARS = 200
+/**
+ * The longest filter value: a full facet list, MAX_FACET_VALUES (50) values of MAX_FACET_VALUE_CHARS
+ * (128) plus their commas (shared/item_facets.py; pinned by page-filters.test.ts). A shorter bound let an
+ * on-screen list fail the contract, and a filter set that fails it must never reach the run as no floor.
+ */
+export const MAX_PAGE_FILTER_CHARS = 6500
 
 /** One filter set in the PAGE_FILTER_KEYS vocabulary: a page's URL filters, or the /chat panel's scope. */
 export const pageFiltersSchema = z.partialRecord(z.enum(PAGE_FILTER_KEYS), z.string().min(1).max(MAX_PAGE_FILTER_CHARS))

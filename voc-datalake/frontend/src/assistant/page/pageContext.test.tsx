@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '@test/TestRouter'
 import { agentsKeys } from '../../api/agentsApi'
 import { routes } from '../../routes'
+import { MAX_PAGE_FILTER_CHARS } from '../contract'
 import { PAGE_PATTERNS, pageContextFromLocation } from './pageContext'
 import { usePageContext } from './usePageContext'
 import type { ReactNode } from 'react'
@@ -71,8 +72,8 @@ describe('pageContextFromLocation', () => {
     )
 
     it('cuts a value to the contract bound', () => {
-      const page = pageContextFromLocation({ pathname: '/categories', search: `?q=${'x'.repeat(300)}` })
-      expect(page.filters?.q).toBe('x'.repeat(200))
+      const page = pageContextFromLocation({ pathname: '/categories', search: `?q=${'x'.repeat(MAX_PAGE_FILTER_CHARS + 1)}` })
+      expect(page.filters?.q).toBe('x'.repeat(MAX_PAGE_FILTER_CHARS))
     })
   })
 

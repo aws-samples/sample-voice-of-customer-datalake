@@ -28,6 +28,12 @@ export function stampBands(feedback) {
 }
 
 const SENTIMENTS = ['positive', 'neutral', 'negative', 'mixed'];
+
+/** A fixture's position from its numeric feedback id; the list position when the id is not a number. */
+function stableIndex(item, fallback) {
+  const id = Number(item.feedback_id);
+  return Number.isInteger(id) ? id : fallback;
+}
 const LENGTH_BOUNDS = [[50, 'short'], [200, 'medium'], [1000, 'long']];
 
 function emptyProfile() {
@@ -83,8 +89,9 @@ function distribution(items) {
     rows.set(source, row);
     row.total += 1;
     row[BANDS.includes(item.usefulness) ? item.usefulness : 'unrated'] += 1;
-    // Stored "before the profile counters existed": every fourth fixture, so the note shows.
-    if (index % 4 !== 1) addProfile(row.profile, item);
+    // Stored "before the profile counters existed": a fixed quarter of the fixtures (by feedback id, so
+    // which ones does not move with the filters), so the note shows.
+    if (stableIndex(item, index) % 4 !== 1) addProfile(row.profile, item);
   });
   const sources = [...rows.values()].sort((a, b) => b.total - a.total || a.source.localeCompare(b.source));
   const overall = { low: 0, medium: 0, high: 0, unrated: 0, total: 0 };

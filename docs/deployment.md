@@ -159,10 +159,17 @@ first enrichment call would fail.
 the region, a missing use-case form, throttling, a dropped connection, even an
 AccessDenied on the agreement role) is logged as a warning in the
 `ModelAgreementLambda` log group and reported as `UNAVAILABLE`. It never fails or
-rolls back the deploy. Each resource runs on its first create only, so a later
-deploy does not retry it; accept a missing agreement in the Bedrock console, or
-invoke the model once from the console playground. Administration → AI models shows
-which models answer (each row's **Test** button, below).
+rolls back the deploy. Each resource runs when it is created, and a later deploy
+does not repeat it on its own. Administration → AI models shows which models answer
+(each row's **Test** button, below).
+
+**Retry a refused agreement.** After filing the use-case form in the console, or fixing
+what refused it (a Private Marketplace rule, a missing permission), deploy once with a
+new value of `-c modelAgreementRetry` (for example the date:
+`npm run deploy:infra -- -c modelAgreementRetry=2026-11-01`). Every agreement then runs
+again, best effort as before; the value only needs to differ from the last one used.
+You can also accept a missing agreement in the Bedrock console, or invoke the model once
+from the console playground.
 
 ### Submit the form from CDK instead (opt-in)
 

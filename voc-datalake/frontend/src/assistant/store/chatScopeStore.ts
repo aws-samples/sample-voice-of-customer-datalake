@@ -9,7 +9,7 @@
  * @module assistant/store/chatScopeStore
  */
 import { create } from 'zustand'
-import { chatScopeSchema } from '../contract'
+import { MAX_PAGE_FILTER_CHARS, chatScopeSchema } from '../contract'
 import type { ChatScope, PAGE_FILTER_KEYS } from '../contract'
 
 export type ScopeFilterKey = (typeof PAGE_FILTER_KEYS)[number]
@@ -33,6 +33,12 @@ export const useChatScopeStore = create<ChatScopeState>()((set) => ({
 
 const NO_FILTERS: ScopeFilters = {}
 
+/**
+ * The scope a /chat run sends when its filters cannot pass the contract: a sentiment no review has,
+ * so the floor admits nothing. Never no scope, which would read without the user's filters (fail open).
+ */
+export const REFUSED_SCOPE: ChatScope = { filters: { sentiment: 'none' } }
+
 /** The conversation's filters (a stable empty object when none). */
 export function useScopeFilters(threadId: string): ScopeFilters {
   return useChatScopeStore((state) => state.byThread[threadId] ?? NO_FILTERS)
@@ -45,6 +51,9 @@ export function useScopeFilters(threadId: string): ScopeFilters {
  */
 export function chatScopeFor(threadId: string): ChatScope {
   const filters = useChatScopeStore.getState().byThread[threadId] ?? NO_FILTERS
-  const parsed = chatScopeSchema.safeParse(Object.keys(filters).length > 0 ? { filters } : {})
-  return parsed.success ? parsed.data : {}
+  // Each value is cut to the contract bound, like page.filters: a cut list only narrows the floor,
+  // while dropping the filters would send a run with none (fail open).
+  const bounded = Object.fromEntries(Object.entries(filters).map(([key, value]) => [key, value.slice(0, MAX_PAGE_FILTER_CHARS)]))
+  const parsed = chatScopeSchema.safeParse(Object.keys(bounded).length > 0 ? { filters: bounded } : {})
+  return parsed.success ? parsed.data : REFUSED_SCOPE
 }

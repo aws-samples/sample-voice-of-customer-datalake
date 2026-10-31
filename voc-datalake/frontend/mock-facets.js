@@ -107,14 +107,14 @@ const METRICS = {
   sources: (items, days) => ({ period_days: days, is_partial: false, sources: tallyBy(items, (item) => item.source_platform || 'unknown') }),
 };
 
+/** The read routes' window when `days` is absent (shared.api effective_window_days); `0` stays all time. */
+const DEFAULT_WINDOW_DAYS = 30;
+
 /**
  * The `metric` route's answer over the filtered `items` when a facet is set, else null (the
  * route keeps its static fixture). `keepSingleCategory`: a lone `category` is the route's own
  * scope (the Categories gauge's `/metrics/sentiment?category=`), not a facet.
  */
-/** The read routes' window when `days` is absent (shared.api effective_window_days); `0` stays all time. */
-const DEFAULT_WINDOW_DAYS = 30;
-
 export function facetedMetric(metric, params, items, { keepSingleCategory = false } = {}) {
   const filter = facetFilterOf(params);
   if (filter.error) return { __status: 400, body: { success: false, error: filter.error } };
@@ -122,6 +122,7 @@ export function facetedMetric(metric, params, items, { keepSingleCategory = fals
   const onlyOneCategory = category.length === 1 && Object.values(others).every((values) => values.length === 0);
   if (!filter.active || (keepSingleCategory && onlyOneCategory)) return null;
   const raw = params?.get('days');
-  const days = raw === null || raw === undefined || raw.trim() === '' ? DEFAULT_WINDOW_DAYS : Number(raw);
+  const asked = raw === null || raw === undefined || raw.trim() === '' ? DEFAULT_WINDOW_DAYS : Number(raw);
+  const days = Number.isFinite(asked) ? asked : DEFAULT_WINDOW_DAYS;
   return METRICS[metric](items.filter(filter.admits), days);
 }
