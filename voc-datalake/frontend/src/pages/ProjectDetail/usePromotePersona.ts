@@ -11,15 +11,27 @@ import { copySourcesRootKey } from './useCopyPersonas'
 export const COMPANY_PERSONAS_PATH = '/company?tab=personas'
 
 /**
+ * Raised when promote runs outside a project. A programming error, never shown to a person:
+ * the button is only offered on a project persona, and the notice shows only a server reason
+ * (`serverReason`) or its own translated fallback.
+ */
+export class NotAProjectPersonaError extends Error {
+  constructor() {
+    super('usePromotePersona: no project id (promote is only offered on a project persona)')
+    this.name = 'NotAProjectPersonaError'
+  }
+}
+
+/**
  * ``projectId`` is null outside a project (the company library offers no promote): the
  * request then refuses before any call, so `/projects//personas/…` can never be sent.
  */
 export function usePromotePersona({ projectId, personaId }: Readonly<{ projectId: string | null; personaId: string }>) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => projectId === null || projectId === ''
-      ? Promise.reject(new Error('Only a project persona can be promoted'))
-      : companyPersonasApi.promotePersona(projectId, personaId),
+    mutationFn: () => projectId
+      ? companyPersonasApi.promotePersona(projectId, personaId)
+      : Promise.reject(new NotAProjectPersonaError()),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: companyPersonasKey() })
       void queryClient.invalidateQueries({ queryKey: copySourcesRootKey() })

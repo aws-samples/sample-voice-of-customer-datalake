@@ -31,6 +31,18 @@ function wrapper() {
   return { Wrapper, invalidate, client }
 }
 
+/** The library hook over an empty, read-only library whose jobs list is ``jobs()`` on every poll. */
+function renderLibrary(jobs: () => unknown[]) {
+  route({
+    'GET /company-personas': () => ({ personas: [], can_edit: false }),
+    'GET /company-personas/jobs': () => ({ jobs: jobs() }),
+  })
+  const { Wrapper, invalidate, client } = wrapper()
+  const { result } = renderHook(() => useCompanyPersonas(), { wrapper: Wrapper })
+  const libraryRefetches = () => invalidate.mock.calls.filter(([filters]) => filters?.queryKey?.[0] === 'company-personas')
+  return { result, client, libraryRefetches }
+}
+
 function sentBody(path: string, method: string): unknown {
   const call = fetchApi.mock.calls.find(([endpoint, options]) => endpoint === path && options?.method === method)
   const body = call?.[1]?.body
@@ -66,25 +78,34 @@ describe('useCompanyPersonas', () => {
 
   it('refetches the library once per finished job, not on every later poll', async () => {
     const completedAt = new Date().toISOString()
-    const progressOf = vi.fn<() => number>().mockReturnValueOnce(10).mockReturnValue(60)
-    route({
-      'GET /company-personas': () => ({ personas: [], can_edit: false }),
-      'GET /company-personas/jobs': () => ({
-        jobs: [
-          { job_id: 'job_1', job_type: 'generate_personas', status: 'completed', completed_at: completedAt },
-          { job_id: 'job_2', job_type: 'import_persona', status: 'running', progress: progressOf() },
-        ],
-      }),
-    })
-    const { Wrapper, invalidate, client } = wrapper()
-    const { result } = renderHook(() => useCompanyPersonas(), { wrapper: Wrapper })
-    const libraryRefetches = () => invalidate.mock.calls.filter(([filters]) => filters?.queryKey?.[0] === 'company-personas')
+    const phase = { progress: 10 }
+    const { result, client, libraryRefetches } = renderLibrary(() => [
+      { job_id: 'job_1', job_type: 'generate_personas', status: 'completed', completed_at: completedAt },
+      { job_id: 'job_2', job_type: 'import_persona', status: 'running', progress: phase.progress },
+    ])
 
     await waitFor(() => expect(result.current.jobs).toHaveLength(2))
     await waitFor(() => expect(libraryRefetches()).toHaveLength(1))
 
+    phase.progress = 60
     await act(() => client.refetchQueries({ queryKey: ['company-persona-jobs'] }))
     await waitFor(() => expect(result.current.jobs[1]?.progress).toBe(60))
+
+    expect(libraryRefetches()).toHaveLength(1)
+  })
+
+  it('does not refetch when a handled completion drops out of the jobs list', async () => {
+    const now = new Date().toISOString()
+    const phase = { jobs: [
+      { job_id: 'job_1', job_type: 'generate_personas', status: 'completed', completed_at: now },
+      { job_id: 'job_2', job_type: 'import_persona', status: 'completed', completed_at: now },
+    ] }
+    const { result, client, libraryRefetches } = renderLibrary(() => phase.jobs)
+    await waitFor(() => expect(libraryRefetches()).toHaveLength(1))
+
+    phase.jobs = phase.jobs.slice(1)
+    await act(() => client.refetchQueries({ queryKey: ['company-persona-jobs'] }))
+    await waitFor(() => expect(result.current.jobs).toHaveLength(1))
 
     expect(libraryRefetches()).toHaveLength(1)
   })
