@@ -234,7 +234,7 @@ def post_ask():
         raise NotFoundError(PERSON_NOT_FOUND)
     recipients = [pid for pid in recipients if pid in people]
     active = sum(1 for pid in recipients if is_active(people[pid]))
-    sender = get_caller_subject(event)
+    sender = get_caller_subject(event)  # never empty: it raises AuthorizationError without a sub
     # The per-sender cap holds any signed-in user's asks to 50 emails a day; an administrator, who
     # already sets the deployment's own daily cap, is bounded by that cap only.
     capped_sender = '' if is_admin(event) else sender

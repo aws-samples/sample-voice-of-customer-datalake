@@ -310,7 +310,13 @@ export default function Login() {
       await passkeyAuth.signIn(username)
       continueAfterSignIn()
     } catch (err: unknown) {
-      setError(passkeyErrorText(t, err))
+      // A first-login account must still set its password: the same form as after a password sign-in.
+      if (isNewPasswordChallenge(err)) {
+        setChallengePending(true)
+        setMode('newPassword')
+      } else {
+        setError(passkeyErrorText(t, err))
+      }
     } finally {
       setIsLoading(false)
     }

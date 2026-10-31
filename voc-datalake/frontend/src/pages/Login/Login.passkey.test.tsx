@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
 import { TestRouter } from '../../test/TestRouter'
 import { PasskeyError } from '../../services/passkey'
+import { AuthChallengeError, NEW_PASSWORD_REQUIRED } from '../../services/auth'
 
 const mockCanUse = vi.fn<() => boolean>()
 const mockPasskeySignIn = vi.fn<(username: string) => Promise<void>>()
@@ -72,5 +73,14 @@ describe('Login with a passkey', () => {
     await user.click(screen.getByRole('button', PASSKEY_BUTTON))
     expect(await screen.findByRole('alert')).toHaveTextContent(text)
     expect(mockNavigate).not.toHaveBeenCalled()
+  })
+
+  it('shows the set-new-password form when the account must still set its first password', async () => {
+    mockPasskeySignIn.mockRejectedValue(new AuthChallengeError(NEW_PASSWORD_REQUIRED, 'New password required'))
+    const user = userEvent.setup()
+    renderLogin()
+    await user.type(screen.getByPlaceholderText(/Enter your username/i), 'dana@example.com')
+    await user.click(screen.getByRole('button', PASSKEY_BUTTON))
+    expect(await screen.findByRole('heading', { name: 'Set New Password' })).toBeVisible()
   })
 })
