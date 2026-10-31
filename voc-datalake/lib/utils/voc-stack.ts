@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
+import { dataProtectionOf } from './data-protection';
 import { DeploymentNaming } from './naming';
 
 /**
@@ -35,6 +36,9 @@ export class VocStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: VocStackProps) {
     super(scope, id, props);
     this.naming = new DeploymentNaming(this, props.deploymentPrefix);
+    // A protected (production) deployment cannot be deleted by one `cdk destroy` or console click (OPS-9):
+    // the operator turns termination protection off first, on purpose (docs/deployment.md).
+    if (dataProtectionOf(this).deletionProtection === true) this.terminationProtection = true;
   }
 
   /** The prefix in force, or `undefined` for an unprefixed deployment. */
