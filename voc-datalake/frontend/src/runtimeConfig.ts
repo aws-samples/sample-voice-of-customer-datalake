@@ -50,6 +50,8 @@ const RuntimeConfigSchema = z.object({
     webSearch: z.boolean().optional(),
     /** Participant email sending is configured (`-c emailFrom`); the UI explains it is off otherwise. */
     email: z.boolean().optional(),
+    /** The app user pool allows passkey sign-in (5.58); older deployments omit it and the UI offers none. */
+    passkey: z.boolean().optional(),
   }).optional(),
   /**
    * The feature-request board's own Cognito user pool (docs/feature-requests.md), present only when
@@ -113,6 +115,16 @@ export function isConfigLoaded(): boolean {
  */
 export function isWebSearchAvailable(): boolean {
   return configState.config?.features?.webSearch === true
+}
+
+/**
+ * Whether the app user pool takes passkeys (`features.passkey`, set by every deployment since 5.58).
+ * Says nothing about the browser: services/passkey.ts `passkeySupported()` checks that.
+ * Safe to call before config load (returns false).
+ */
+export function isPasskeyAvailable(): boolean {
+  const config = configState.config
+  return config?.features?.passkey === true && config.cognito.clientId !== ''
 }
 
 /**

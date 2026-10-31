@@ -19,7 +19,9 @@ import {
   useNavigate, useLocation,
 } from 'react-router-dom'
 import KiroGhost from '../../components/KiroGhost/KiroGhost'
+import { passkeyErrorText } from '../../components/PasskeyPrompt/passkeyErrorText'
 import { authService } from '../../services/auth'
+import { canUsePasskeys, passkeyAuth } from '../../services/passkeyAuth'
 import { isSessionExpiredRedirect } from '../../services/sessionExpiry'
 import { LANDING_STATE } from '../../utils/landing'
 import {
@@ -101,6 +103,7 @@ function AuthFormContent({
   onConfirmPassword,
   onSwitchToForgotPassword,
   onBackToLogin,
+  onPasskeySignIn,
 }: Readonly<AuthFormContentProps>) {
   if (mode === 'login') {
     return (
@@ -116,6 +119,7 @@ function AuthFormContent({
         onToggleShowPassword={onToggleShowPassword}
         onSubmit={onLogin}
         onForgotPassword={onSwitchToForgotPassword}
+        onPasskeySignIn={onPasskeySignIn}
       />
     )
   }
@@ -293,6 +297,24 @@ export default function Login() {
     }
   }
 
+  const handlePasskeySignIn = async () => {
+    setError(null)
+    setMessage(null)
+    if (username.trim() === '') {
+      setError(t('passkey.errors.needUsername'))
+      return
+    }
+    setIsLoading(true)
+    try {
+      await passkeyAuth.signIn(username)
+      continueAfterSignIn()
+    } catch (err: unknown) {
+      setError(passkeyErrorText(t, err))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleSwitchToForgotPassword = () => {
     setMode('forgotPassword')
     setError(null)
@@ -344,6 +366,7 @@ export default function Login() {
             onConfirmPassword={(e) => void handleConfirmPassword(e)}
             onSwitchToForgotPassword={handleSwitchToForgotPassword}
             onBackToLogin={handleBackToLogin}
+            onPasskeySignIn={canUsePasskeys() ? () => void handlePasskeySignIn() : undefined}
           />
         </div>
 

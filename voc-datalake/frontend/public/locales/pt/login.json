@@ -45,5 +45,26 @@
     "title": "Introduzir Código de Verificação"
   },
   "showPassword": "Mostrar senha",
-  "hidePassword": "Ocultar senha"
+  "hidePassword": "Ocultar senha",
+  "passkey": {
+    "add": "Adicionar passkey",
+    "signIn": "Entrar com passkey",
+    "offer": {
+      "title": "Entre mais rápido com uma passkey",
+      "body": "Uma passkey permite entrar neste dispositivo com sua impressão digital, reconhecimento facial ou bloqueio de tela, em vez da senha. Ela não pode ser alvo de phishing nem reutilizada em outro site.",
+      "notNow": "Agora não"
+    },
+    "section": {
+      "title": "Passkey",
+      "intro": "Entre neste dispositivo com sua impressão digital, reconhecimento facial ou bloqueio de tela, em vez da senha. Sua senha continua funcionando.",
+      "added": "Passkey adicionada. Na próxima vez, você pode entrar com ela."
+    },
+    "errors": {
+      "needUsername": "Informe primeiro seu nome de usuário ou e-mail e, em seguida, escolha Entrar com passkey.",
+      "cancelled": "A solicitação da passkey foi cancelada ou expirou. Tente novamente quando quiser.",
+      "no_passkey": "Não há nenhuma passkey configurada para esta conta neste dispositivo. Entre com sua senha e adicione uma.",
+      "unsupported": "Este navegador não pode usar passkeys. Entre com sua senha.",
+      "unknown": "A etapa da passkey falhou. Tente novamente ou entre com sua senha."
+    }
+  }
 }

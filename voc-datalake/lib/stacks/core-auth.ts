@@ -101,6 +101,14 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
       requireSymbols: true,
     },
     accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+    // Opt-in passkeys (docs/deployment.md -> Passkeys): after sign-in the SPA offers to register one
+    // (StartWebAuthnRegistration), and Login can then sign in with it (USER_AUTH, WEB_AUTHN). A password
+    // stays the other first factor. Passkeys need the Essentials plan (the default for new pools; set here
+    // so an older Lite pool moves too). The relying party is the site the SPA is served from.
+    featurePlan: cognito.FeaturePlan.ESSENTIALS,
+    signInPolicy: { allowedFirstAuthFactors: { password: true, passkey: true } },
+    passkeyRelyingPartyId: frontendDomainName,
+    passkeyUserVerification: cognito.PasskeyUserVerification.REQUIRED,
     removalPolicy: ctx.dataProtection.removalPolicy,
     deletionProtection: ctx.dataProtection.deletionProtection,
     userVerification: {
@@ -143,7 +151,8 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   // User Pool Client
   const userPoolClient = userPool.addClient('VocWebClient', {
     userPoolClientName: ctx.uniqueName('voc-web-client'),
-    authFlows: { userPassword: true, userSrp: true },
+    // `user` = the choice-based USER_AUTH flow, which passkey sign-in uses.
+    authFlows: { userPassword: true, userSrp: true, user: true },
     oAuth: {
       flows: {
         authorizationCodeGrant: true,

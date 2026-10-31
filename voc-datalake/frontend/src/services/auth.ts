@@ -33,6 +33,8 @@ import {
 } from '../lib/errors'
 import { isRecord } from '../lib/typeGuards'
 import { getRuntimeConfig } from '../runtimeConfig'
+import { sessionFromTokens } from './cognitoIdp'
+import type { AuthTokens } from './boardCognito'
 import { useAuthStore } from '../store/authStore'
 import type { User } from '../store/authStore'
 
@@ -236,6 +238,21 @@ export const authService = {
         onFailure: rejectWith(reject),
       })
     })
+  },
+
+  /**
+   * Signs in with tokens a direct Cognito call returned (passkey sign-in, services/passkeyAuth.ts):
+   * the SDK caches them exactly as after a password sign-in, so refresh, new tabs and sign-out work
+   * the same way.
+   */
+  adoptTokens: (tokens: AuthTokens): CognitoUserSession => {
+    const session = sessionFromTokens(tokens)
+    const username = extractUser(tokens.IdToken).username
+    if (username === '') throw new AuthError('Sign-in returned no user')
+    cognitoUserFor(username, requireUserPool()).setSignInUserSession(session)
+    storeSession(session)
+    void authService.syncAmplifySession()
+    return session
   },
 
   /**

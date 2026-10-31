@@ -27,8 +27,7 @@
  * @module services/boardAuth
  */
 import {
-  CognitoAccessToken, CognitoIdToken, CognitoRefreshToken, CognitoUser, CognitoUserPool, CognitoUserSession,
-  type ICognitoStorage,
+  CognitoUser, CognitoUserPool, type CognitoUserSession, type ICognitoStorage,
 } from 'amazon-cognito-identity-js'
 import { z } from 'zod'
 import { isValidSlug } from '../api/boardFields'
@@ -38,6 +37,7 @@ import {
   tokensOf,
 } from './boardCognito'
 import type { AuthTokens, Challenge } from './boardCognito'
+import { createCognitoIdpClient, sessionFromTokens } from './cognitoIdp'
 import type { BoardPoolConfig } from '../runtimeConfig'
 import { nullOnRejection } from '../lib/rejections'
 
@@ -120,28 +120,18 @@ function signUpMetadata(target: SignInTarget): Record<string, string> {
 
 /** The board sign-in service for one pool. */
 export function createBoardAuth(deps: BoardAuthDeps) {
-  const fetchImpl = deps.fetchImpl ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init))
   const storage = deps.storage ?? window.localStorage
   const now = deps.now ?? Date.now
   const mode = deps.pool.signIn ?? 'email_otp'
   const clientId = deps.pool.clientId
-  const endpoint = `https://cognito-idp.${deps.pool.region}.amazonaws.com/`
+  const idp = createCognitoIdpClient(deps.pool.region, deps.fetchImpl)
   const userPool = new CognitoUserPool({ UserPoolId: deps.pool.userPoolId, ClientId: clientId, Storage: storage })
 
-  /** One Cognito call: the parsed body, or a thrown CognitoRefusal / BoardAuthError. */
-  async function call(target: string, payload: object): Promise<unknown> {
-    const response = await fetchImpl(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-amz-json-1.1', 'X-Amz-Target': `AWSCognitoIdentityProviderService.${target}` },
-      body: JSON.stringify(payload),
-    }).catch(() => {
-      throw new BoardAuthError('unknown')
+  /** One Cognito call: the parsed body, or a thrown CognitoRefusal / BoardAuthError (offline). */
+  const call = (target: string, payload: object): Promise<unknown> =>
+    idp.call(target, payload).catch((error: unknown) => {
+      throw error instanceof CognitoRefusal ? error : new BoardAuthError('unknown')
     })
-    // A body that is not JSON reads as no body; the status still decides.
-    const body: unknown = await response.json().catch(nullOnRejection)
-    if (!response.ok) throw new CognitoRefusal(body)
-    return body
-  }
 
   /** The same call, every refusal mapped to the reason shown. */
   const cognito = (target: string, payload: object) =>
@@ -172,12 +162,7 @@ export function createBoardAuth(deps: BoardAuthDeps) {
   }
 
   function keepSession(email: string, tokens: AuthTokens): string {
-    const session = new CognitoUserSession({
-      IdToken: new CognitoIdToken({ IdToken: tokens.IdToken }),
-      AccessToken: new CognitoAccessToken({ AccessToken: tokens.AccessToken }),
-      RefreshToken: new CognitoRefreshToken({ RefreshToken: tokens.RefreshToken }),
-    })
-    new CognitoUser({ Username: email, Pool: userPool, Storage: storage }).setSignInUserSession(session)
+    new CognitoUser({ Username: email, Pool: userPool, Storage: storage }).setSignInUserSession(sessionFromTokens(tokens))
     storage.removeItem(PENDING_OTP_KEY)
     return email
   }

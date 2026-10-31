@@ -45,5 +45,26 @@
     "title": "Bestätigungscode eingeben"
   },
   "showPassword": "Passwort anzeigen",
-  "hidePassword": "Passwort verbergen"
+  "hidePassword": "Passwort verbergen",
+  "passkey": {
+    "add": "Passkey hinzufügen",
+    "signIn": "Mit Passkey anmelden",
+    "offer": {
+      "title": "Mit einem Passkey schneller anmelden",
+      "body": "Mit einem Passkey können Sie sich auf diesem Gerät mit Ihrem Fingerabdruck, Ihrem Gesicht oder der Bildschirmsperre anmelden, statt Ihr Passwort zu verwenden. Er kann nicht abgefangen oder auf einer anderen Website wiederverwendet werden.",
+      "notNow": "Nicht jetzt"
+    },
+    "section": {
+      "title": "Passkey",
+      "intro": "Melden Sie sich auf diesem Gerät mit Ihrem Fingerabdruck, Ihrem Gesicht oder der Bildschirmsperre an, statt mit Ihrem Passwort. Ihr Passwort funktioniert weiterhin.",
+      "added": "Passkey hinzugefügt. Beim nächsten Mal können Sie sich damit anmelden."
+    },
+    "errors": {
+      "needUsername": "Geben Sie zuerst Ihren Benutzernamen oder Ihre E-Mail-Adresse ein und wählen Sie dann „Mit Passkey anmelden“.",
+      "cancelled": "Die Passkey-Anfrage wurde abgebrochen oder ist abgelaufen. Versuchen Sie es erneut, wenn Sie bereit sind.",
+      "no_passkey": "Für dieses Konto ist auf diesem Gerät kein Passkey eingerichtet. Melden Sie sich mit Ihrem Passwort an und fügen Sie anschließend einen Passkey hinzu.",
+      "unsupported": "Dieser Browser kann keine Passkeys verwenden. Melden Sie sich mit Ihrem Passwort an.",
+      "unknown": "Der Passkey-Schritt ist fehlgeschlagen. Versuchen Sie es erneut oder melden Sie sich mit Ihrem Passwort an."
+    }
+  }
 }
