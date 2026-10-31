@@ -255,7 +255,9 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // The async processor is invoked by its exact name (MANUAL_IMPORT_PROCESSOR_FUNCTION).
   const manualImportProcessorName = ctx.uniqueName('voc-manual-import-processor');
   manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [functionArnByName(ctx, manualImportProcessorName)] }));
-  rawDataBucket.grantReadWrite(manualImportRole);
+  // Write-only under raw/ (IAM-1): archives go to raw/<source>/, raw/manual_import/, raw/csv_upload/ and
+  // raw/json_upload/ (shared/ingest_archive.py, this handler). No read and no delete: only voc-retention deletes.
+  rawDataBucket.grantPut(manualImportRole, 'raw/*');
   // CSV/JSON/confirm apply the source's PII policy before archive + queue.
   manualImportRole.addToPolicy(piiDetectionStatement());
 

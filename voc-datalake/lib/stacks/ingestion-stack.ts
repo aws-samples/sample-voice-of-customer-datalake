@@ -522,7 +522,8 @@ export class VocIngestionStack extends VocStack {
     }
 
     // Grant S3 permissions
-    this.s3ImportBucket.grantReadWrite(fn);
+    // Read-only (IAM-13): the ingestor only head/get_objects the staged file; staging and delete are the API's.
+    this.s3ImportBucket.grantRead(fn);
     // The ingestor reads only records naming this bucket: the API also invokes it
     // directly (POST /s3-import/reprocess), so the bucket in an event is not trusted.
     fn.addEnvironment(S3_IMPORT_BUCKET_ENV, this.s3ImportBucket.bucketName);
