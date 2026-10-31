@@ -146,7 +146,8 @@ describe('DocumentsTab', () => {
       delete: shown(screen.queryByTitle('Delete document')),
     }).toStrictEqual({
       heading: true, listEntry: true, edit: false, downloadMenu: false,
-      openInNewTab: true, downloadHtml: true, delete: true,
+      // No "Open in new tab" for inline HTML: a blob: URL runs at the app's own origin (FE-3).
+      openInNewTab: false, downloadHtml: true, delete: true,
     })
     expect(onEditDoc).not.toHaveBeenCalled()
   })
