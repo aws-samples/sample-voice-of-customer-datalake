@@ -63,7 +63,7 @@ describe('voc-engagement-api Lambda', () => {
 
   it('carries exactly the contract environment', () => {
     expect(Object.keys(serviceEnvironment(apiTemplate(), SERVICE)).sort(byCodeUnit)).toStrictEqual([
-      'AGGREGATES_TABLE', 'ALLOWED_ORIGIN', 'APP_USER_POOL_ID', 'BOARD_USER_POOL_ID', 'EMAIL_FROM',
+      'AGGREGATES_TABLE', 'ALLOWED_ORIGIN', 'APP_CLIENT_IDS', 'APP_USER_POOL_ID', 'BOARD_USER_POOL_ID', 'EMAIL_FROM',
       'ENGAGEMENT_FUNCTION', 'FEATURE_REQUESTS_TABLE', 'FRONTEND_URL', 'LOG_LEVEL', 'PARTICIPANTS_TABLE',
       'POWERTOOLS_SERVICE_NAME', 'PROJECTS_TABLE',
     ]);
