@@ -6,7 +6,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
-from global_mcp_oauth_world import CHALLENGE, anonymous, oauth_world
+from global_mcp_oauth_world import CHALLENGE, VERIFIER, anonymous, oauth_world
 from moto_helpers import rest_event
 
 import mcp_tokens_handler
@@ -58,6 +58,7 @@ class TestDiscovery:
         assert body['jwks_uri'] == 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_e2e/.well-known/jwks.json'
         assert body['token_endpoint_auth_methods_supported'] == ['none']
         assert body['grant_types_supported'] == ['authorization_code', 'refresh_token']
+        assert body['scopes_supported'] == [f'{RESOURCE}/read', f'{RESOURCE}/write']  # no openid
 
     def test_every_route_is_404_when_oauth_is_off(self, oauth):
         with patch.dict(os.environ, {'MCP_OAUTH_CLIENTS': ''}):
@@ -173,7 +174,7 @@ class TestConsent:
         params = {k: v[0] for k, v in parse_qs(url.query).items()}
         assert params['redirect_uri'] == f'{API}/oauth/callback'
         assert params['state'] != 'client-state'
-        assert params['scope'] == f'openid {RESOURCE}/read'
+        assert params['scope'] == f'{RESOURCE}/read'  # never openid: Cognito then issues no ID token
         assert params['code_challenge'] == CHALLENGE
         assert 'resource' not in params  # dropped unless -c mcpOAuthResourceIndicator=true
 
@@ -227,10 +228,10 @@ class TestRelayAndToken:
         location = oauth.call(anonymous('GET', '/oauth/callback', query=delivered)).headers['Location']
         code = parse_qs(urlsplit(location).query)['code'][0]
         wrong = oauth.exchange({'grant_type': 'authorization_code', 'client_id': CLIENTS['kiro'], 'code': code,
-                                'redirect_uri': 'http://127.0.0.1:5999/oauth/callback', 'code_verifier': 'v' * 43})
+                                'redirect_uri': 'http://127.0.0.1:5999/oauth/callback', 'code_verifier': VERIFIER})
         assert wrong.body['error'] == 'invalid_grant'
         replay = oauth.exchange({'grant_type': 'authorization_code', 'client_id': CLIENTS['kiro'], 'code': code,
-                                 'redirect_uri': redirect_uri, 'code_verifier': 'v' * 43})
+                                 'redirect_uri': redirect_uri, 'code_verifier': VERIFIER})
         assert replay.body['error'] == 'invalid_grant'  # the binding was consumed by the first attempt
 
     @pytest.mark.parametrize(('form', 'status', 'error'), [
@@ -247,6 +248,13 @@ class TestRelayAndToken:
     def test_a_json_body_is_not_a_form(self, oauth):
         reply = oauth.call(anonymous('POST', '/oauth/token', json_body={'grant_type': 'refresh_token'}))
         assert reply.body['error'] == 'invalid_request'
+
+    def test_the_token_answer_never_carries_an_id_token(self, oauth):
+        signed_in = oauth.sign_in('alice')  # the fake Cognito answers an id_token anyway
+        assert sorted(signed_in.tokens) == ['access_token', 'expires_in', 'refresh_token', 'token_type']
+        refreshed = oauth.refresh(signed_in)
+        assert refreshed.status == 200
+        assert 'id_token' not in refreshed.body
 
     def test_revoke_forwards_to_cognito(self, oauth):
         reply = oauth.call(anonymous('POST', '/oauth/revoke', form={'token': 'rt', 'client_id': CLIENTS['kiro']}))

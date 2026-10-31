@@ -8,8 +8,9 @@ and add what Cognito cannot know:
   to the relay URL Cognito issued the code for. A code with no binding is accepted only for a client's
   configured NON-loopback callback (it never went through the relay).
 * After Cognito answers 200, the new access token's ``origin_jti`` (its refresh chain) is RECORDED on the
-  person's grant — only while the consent window is open (``mcp_oauth_grants.chain_window_open``), once
-  per consent, and never on a revoked grant. No consent → no chain → every token of it is refused.
+  person's grant — only while the consent window is open (``mcp_oauth_grants.chain_window_open``), only
+  for the consented authorize request (its ``code_verifier`` must S256-match the consent's challenge,
+  ``mcp_oauth_grants.verifier_matches_consent``), once per consent, and never on a revoked grant. No consent → no chain → every token of it is refused.
 * **refresh_token** — the refreshed access token must still belong to a recorded chain of an active grant.
 * Any refusal after Cognito already issued tokens revokes the refresh token at Cognito (best effort) and
   answers ``400 invalid_grant``.
@@ -38,8 +39,9 @@ from shared.mcp_oauth_register import redirect_allowed
 
 COGNITO_TIMEOUT_SECONDS: Final = 10
 RECONNECT_MESSAGE: Final = 'Approve the connection on the consent screen, then sign in again'
-# Cognito's answer fields a client may see.
-_TOKEN_FIELDS: Final = ('access_token', 'id_token', 'refresh_token', 'token_type', 'expires_in')
+# Cognito's answer fields a client may see. NEVER `id_token`: the main API accepts an ID token of the pool
+# as an app session, so one in an MCP client's hands would be the person's full rights (security review).
+_TOKEN_FIELDS: Final = ('access_token', 'refresh_token', 'token_type', 'expires_in')
 _ERROR_FIELDS: Final = ('error', 'error_description')
 
 
@@ -131,7 +133,7 @@ class Exchange:
         if status != 200:
             return FacadeAnswer(status if 400 <= status < 500 else 502, _only(body, _ERROR_FIELDS)
                                 or {'error': 'server_error'})
-        if self._grant_accepts(body.get('access_token'), form['client_id'], new_chain=new_chain):
+        if self._grant_accepts(body.get('access_token'), form, new_chain=new_chain):
             return FacadeAnswer(200, _only(body, _TOKEN_FIELDS))
         self._revoke_quietly(body.get('refresh_token') or form.get('refresh_token'), form['client_id'])
         return oauth_error('invalid_grant', RECONNECT_MESSAGE)
@@ -150,7 +152,8 @@ class Exchange:
         row = self.store.load(grants.grant_id(sub, client_id))
         return row if grants.is_active_grant_of(row, sub=sub, client_id=client_id, now=self.now) else None
 
-    def _grant_accepts(self, access_token: object, client_id: str, *, new_chain: bool) -> bool:
+    def _grant_accepts(self, access_token: object, form: Mapping[str, str], *, new_chain: bool) -> bool:
+        client_id = form['client_id']
         identity = self._token_identity(access_token, client_id)
         row = self._active_grant(identity[0], client_id) if identity else None
         if identity is None or row is None:
@@ -158,7 +161,9 @@ class Exchange:
         origin_jti = identity[1]
         if not new_chain:
             return origin_jti in grants.chains(row)
-        return grants.chain_window_open(row, self.now) and self.store.record_chain(row, origin_jti)
+        return (grants.chain_window_open(row, self.now)
+                and grants.verifier_matches_consent(row, form.get('code_verifier'))
+                and self.store.record_chain(row, origin_jti))
 
     def _revoke_quietly(self, refresh_token: object, client_id: str) -> None:
         if not isinstance(refresh_token, str) or not refresh_token:

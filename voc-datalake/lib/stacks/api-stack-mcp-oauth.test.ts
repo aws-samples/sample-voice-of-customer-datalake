@@ -31,6 +31,7 @@ const ClientSchema = z.object({
     AllowedOAuthFlows: z.array(z.string()),
     AllowedOAuthFlowsUserPoolClient: z.boolean(),
     AllowedOAuthScopes: z.array(z.unknown()),
+    ExplicitAuthFlows: z.array(z.string()).optional(),
     CallbackURLs: z.array(z.unknown()),
     AccessTokenValidity: z.number(),
     RefreshTokenValidity: z.number(),
@@ -81,13 +82,14 @@ describe('MCP OAuth app clients', () => {
     expect(Object.keys(mcpClients(apiTemplate())).sort(byCodeUnit)).toStrictEqual(['McpOAuthClaudeCode', 'McpOAuthCursor', 'McpOAuthKiro']);
   });
 
-  it('are public PKCE clients: code flow only, no secret, openid + the MCP scopes, revocable', () => {
+  it('are public PKCE clients: code flow only, no secret, ONLY the MCP scopes (no openid = no ID token), no SRP/password flow, revocable', () => {
     for (const [name, props] of Object.entries(mcpClients(apiTemplate()))) {
       expect({
         secret: props.GenerateSecret ?? false,
         flows: props.AllowedOAuthFlows,
         oauthClient: props.AllowedOAuthFlowsUserPoolClient,
         scopes: props.AllowedOAuthScopes.map(render),
+        authFlows: props.ExplicitAuthFlows,
         revocation: props.EnableTokenRevocation,
         userExistenceErrors: props.PreventUserExistenceErrors,
         providers: props.SupportedIdentityProviders,
@@ -97,7 +99,8 @@ describe('MCP OAuth app clients', () => {
         secret: false,
         flows: ['code'],
         oauthClient: true,
-        scopes: ['openid', `${BASE}/mcp/global/read`, `${BASE}/mcp/global/write`],
+        scopes: [`${BASE}/mcp/global/read`, `${BASE}/mcp/global/write`],
+        authFlows: ['ALLOW_REFRESH_TOKEN_AUTH'],
         revocation: true,
         userExistenceErrors: 'ENABLED',
         providers: ['COGNITO'],

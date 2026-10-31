@@ -1,6 +1,8 @@
 """The OAuth credential check of /mcp/global (shared/mcp_credentials.py) and the grant rules it applies."""
 from __future__ import annotations
 
+import base64
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -16,7 +18,7 @@ NOW = datetime.now(UTC)
 
 def _grant(**overrides):
     row = grants.grant_item(subject='sub-alice', username='alice', is_admin=False, client_id=CLIENTS['kiro'],
-                            client_kind='kiro', scope='write', project_id=None, now=NOW)
+                            client_kind='kiro', scope='write', project_id=None, code_challenge='c' * 43, now=NOW)
     row['origin_jtis'] = ['chain-1']
     row.update(overrides)
     return row
@@ -141,3 +143,26 @@ def test_grant_view_never_shows_chains_or_subject():
     assert 'created_by' not in view
     assert view['client_name'] == 'Kiro'
     assert view['signed_in'] is True
+
+
+RFC_VERIFIER = 'Example-Air-verifier_0123456789.abcdefghijk~'
+# BASE64URL(SHA256(verifier)) without padding (RFC 7636 §4.2), computed outside the code under test.
+RFC_CHALLENGE = base64.urlsafe_b64encode(hashlib.sha256(RFC_VERIFIER.encode()).digest()).rstrip(b'=').decode()
+
+
+def test_s256_is_rfc_7636():
+    assert grants.s256_challenge(RFC_VERIFIER) == RFC_CHALLENGE
+    assert '=' not in RFC_CHALLENGE
+    assert len(RFC_CHALLENGE) == 43
+
+
+def test_the_consent_window_is_bound_to_the_consented_challenge():
+    row = grants.grant_item(subject='s', username='u', is_admin=False, client_id=CLIENTS['kiro'], client_kind='kiro',
+                            scope='read', project_id=None, code_challenge=RFC_CHALLENGE, now=NOW)
+    assert RFC_CHALLENGE not in str(row)  # only its hash is stored
+    assert grants.verifier_matches_consent(row, RFC_VERIFIER)
+    assert not grants.verifier_matches_consent(row, 'x' * 43)
+    assert not grants.verifier_matches_consent(row, None)
+    assert not grants.verifier_matches_consent(row, '')
+    legacy = {key: value for key, value in row.items() if key != 'consent_challenge_sha256'}
+    assert not grants.verifier_matches_consent(legacy, RFC_VERIFIER)
