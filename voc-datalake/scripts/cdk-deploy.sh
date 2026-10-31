@@ -13,8 +13,11 @@
 # Opt-in: CDK_DEPLOY_CHANGED=1 deploys only the stacks that changed. It runs
 # `cdk diff --all` once (with the -c/--context and --profile arguments), reads
 # the stacks with differences (scripts/cdk-changed-stacks.mjs), deploys exactly
-# those with --exclusively (CDK orders them by dependency) and refreshes the
-# stage when VocApiStack was among them. When the diff fails or cannot be read
+# those with --exclusively (CDK orders them by dependency) and ALWAYS refreshes
+# the stage afterwards, also when VocApiStack had no differences or nothing was
+# deployed: an earlier deploy whose refresh never ran (interrupted, failed) would
+# otherwise leave removed routes live until the API stack next changes, and the
+# refresh is one idempotent create-deployment. When the diff fails or cannot be read
 # with certainty it falls back to the full deploy + refresh below. It is for
 # whole-app deploys (deploy:infra, deploy): `--all` is replaced by the changed
 # list, so do not name stacks in the arguments. docs/deployment.md has details.
@@ -80,21 +83,11 @@ while IFS= read -r stack; do
 done <<<"$changed_list"
 
 if [ "${#changed[@]}" -eq 0 ]; then
-  echo "cdk-deploy: no stack has differences; nothing deployed, no stage refresh needed"
-  exit 0
-fi
-
-echo "cdk-deploy: deploying only the changed stacks: ${changed[*]}"
-npx cdk deploy --exclusively ${deploy_args[@]+"${deploy_args[@]}"} "${changed[@]}"
-
-api_deployed=0
-for stack in "${changed[@]}"; do
-  case "$stack" in
-    VocApiStack|*-VocApiStack) api_deployed=1 ;;
-  esac
-done
-if [ "$api_deployed" = "1" ]; then
-  bash scripts/refresh-api-stage.sh
+  echo "cdk-deploy: no stack has differences; nothing deployed"
 else
-  echo "cdk-deploy: VocApiStack had no differences; stage refresh not needed"
+  echo "cdk-deploy: deploying only the changed stacks: ${changed[*]}"
+  npx cdk deploy --exclusively ${deploy_args[@]+"${deploy_args[@]}"} "${changed[@]}"
 fi
+
+# Always, whichever stacks changed (see the header): the stage serves exactly the API definition.
+bash scripts/refresh-api-stage.sh
