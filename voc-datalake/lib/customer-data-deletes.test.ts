@@ -9,9 +9,8 @@
  *
  * LEGACY entries: broad `grantReadWriteData` / `grantReadWrite` grants that predate
  * this inventory and carry delete actions their handlers never call (the processor
- * and the webhook write feedback with Put/Update only; the ingestors and manual
- * import only put raw objects). They are frozen here — not endorsed — so the set
- * can only shrink. Narrowing them is a separate, deliberate change.
+ * and the webhook write feedback with Put/Update only). They are frozen here — not
+ * endorsed — so the set can only shrink. Narrowing them is a separate, deliberate change.
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -28,16 +27,8 @@ const FEEDBACK_DELETERS = [
 ];
 
 const RAW_ARCHIVE_DELETERS = [
-  'VocApiStack/ManualImportLambdaRole', // LEGACY
-  'VocIngestionStack/IngestionLambdaRole', // LEGACY
-  // LEGACY too: the same base ingestion grant (lib/stacks/ingestion-roles.ts), on the
-  // dedicated role a scheduled plugin gets for its circuit breaker since 3.05.00.
-  'VocIngestionStack/IngestorRoleAppReviewsAndroid',
-  'VocIngestionStack/IngestorRoleAppReviewsIos',
-  'VocIngestionStack/IngestorRoleGithubIssues',
-  'VocIngestionStack/IngestorRoleSyntheticReviews', // LEGACY
-  'VocIngestionStack/IngestorRoleWebReviews', // the same base ingestion grant (3.18.00)
-  'VocIngestionStack/IngestorRoleWebscraper',
+  // The ingestor roles (lib/stacks/ingestion-roles.ts) and manual import left this list in 5.61.00:
+  // they write `raw/*` only (IAM-1), so the opt-in retention worker is the one raw-archive deleter.
   RETENTION_ROLE,
 ];
 
