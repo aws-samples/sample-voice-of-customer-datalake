@@ -40,6 +40,7 @@ MAX_RECIPIENTS: Final = 500
 PER_SENDER_DAILY_CAP: Final = 50
 # The ask's attribute naming whose cap its emails count against: the creator's sub for a
 # non-administrator, absent for an administrator (and for asks created before the cap existed).
+# Fixed when the ask is created: a later promotion or demotion does not change an ask already queued.
 CAP_SENDER_FIELD: Final = 'cap_sender'
 SENDER_CAP_REFUSAL: Final = 'sender_daily_cap'
 DAILY_CAP_REFUSAL: Final = 'daily_cap'

@@ -416,14 +416,14 @@ def merge_memories():
 def _review_entry(table, item: dict, reader: tuple[CategoryScope, HiddenNames | None]) -> dict:
     """One review-queue entry. Linked memories the reader may not see are left out, and so are their ids
     from ``conflicts_with`` (BE-3): the queue never reveals a hidden memory, nor that one exists."""
-    every = list(store.linked_items(table, item))
-    linked: list[Mapping[str, Any]] = list(_visible(every, reader))
+    linked: list[Mapping[str, Any]] = list(_visible(list(store.linked_items(table, item)), reader))
     view = store.public_view(item)
-    # Whatever the rule that hid them (categories or names), a hidden linked memory's id leaves
-    # conflicts_with too, so the entry never reveals that one exists.
-    hidden_ids = {other.get('memory_id') for other in every} - {other.get('memory_id') for other in linked}
-    if hidden_ids:
-        view['conflicts_with'] = [mid for mid in view.get('conflicts_with') or [] if mid not in hidden_ids]
+    # A reader with a category rule keeps only the ids they can see in conflicts_with (a whitelist:
+    # an id that resolves to nothing or to a hidden memory both go). `_visible` hides nothing from
+    # a reader who sees every category, so their list stays whole (beyond `linked_items`' cap too).
+    if not reader[0].categories_all:
+        visible_ids = {other.get('memory_id') for other in linked}
+        view['conflicts_with'] = [mid for mid in view.get('conflicts_with') or [] if mid in visible_ids]
     return {
         'memory': view,
         'linked': [store.public_view(other) for other in linked],
