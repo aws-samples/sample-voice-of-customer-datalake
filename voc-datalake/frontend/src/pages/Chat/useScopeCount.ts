@@ -40,7 +40,7 @@ function ratingParamsOf(filters: ScopeFilters): Pick<ItemFilterParams, 'rating_m
 }
 
 /** The scope's item filters as the routes' query parameters (the Categories page's own mapping). */
-export function itemFiltersOf(filters: ScopeFilters): ItemFilterParams {
+function itemFiltersOf(filters: ScopeFilters): ItemFilterParams {
   return {
     ...(filters.channel === undefined ? {} : { channel: filters.channel }),
     ...(filters.tag === undefined ? {} : { tag: filters.tag }),
