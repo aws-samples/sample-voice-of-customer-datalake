@@ -83,9 +83,10 @@ class TestReadExistingPersonas:
         assert po.read_existing_personas(table, 'proj-1') == po.NO_EXISTING_PERSONAS
         table.query.assert_called_once_with(
             KeyConditionExpression=Key('pk').eq('PROJECT#proj-1') & Key('sk').begins_with('PERSONA#'),
-            ProjectionExpression='#a0, #a1, #a2, #a3, #a4',
+            ProjectionExpression='#a0, #a1, #a2, #a3, #a4, #a5',
             ExpressionAttributeNames={
                 '#a0': 'name', '#a1': 'tagline', '#a2': 'identity', '#a3': 'goals_motivations', '#a4': 'pain_points',
+                '#a5': 'protected',
             },
         )
 
