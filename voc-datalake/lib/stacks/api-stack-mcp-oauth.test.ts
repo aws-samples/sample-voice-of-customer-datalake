@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 import { renderCfnString } from '../test-support/cfn-render';
 import {
-  INTENTIONALLY_PUBLIC_OAUTH_ROUTES, apiMethods, apiTemplate, functionIdForHandler, methodSettings, readRepoFile, synthApiTemplate,
+  INTENTIONALLY_PUBLIC_OAUTH_ROUTES, apiMethods, apiTemplate, buildApiStack, functionIdForHandler, methodSettings, readRepoFile, synthApiTemplate,
 } from '../test-support/api-stack-template';
 import { itemAt } from '../test-support/guards';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
@@ -189,6 +189,12 @@ describe('function environment and layers', () => {
     expect({ mcp: facts(mcp), tokens: facts(tokens) }).toStrictEqual({ mcp: expected, tokens: expected });
     expect([tokens.MCP_TOKEN_MINTING, mcp.MCP_TOKEN_MINTING]).toStrictEqual(['true', undefined]);
   });
+
+  it('tells the SPA the same hosted UI (config.json cognito.hostedUiDomain), the consent page\'s only non-loopback sign-in origin', () => {
+    const stack = buildApiStack();
+    const cognito = z.object({ cognito: z.object({ hostedUiDomain: z.string() }) }).parse(stack.resolve(stack.runtimeConfig)).cognito;
+    expect(`https://${cognito.hostedUiDomain}`).toBe(envOf(apiTemplate(), 'mcp_tokens_handler.py').COGNITO_DOMAIN_URL);
+  }, SYNTH_TIMEOUT_MS);
 
   it('turns minting off and forwards resource only when the context says so', () => {
     const template = synthApiTemplate({ mcpTokenMinting: 'false', mcpOAuthResourceIndicator: 'true' });
