@@ -27,6 +27,7 @@ from shared.metric_keys import (
     PROFILE_METRIC_TYPES,
     PROFILE_RATING_PREFIX,
     PROFILE_SENTIMENT_PREFIX,
+    source_keyed_counts,
 )
 
 RATING_VALUES: Final = ('1', '2', '3', '4', '5', 'none')
@@ -103,10 +104,10 @@ def from_counter_rows(rows: Mapping[str, Mapping[str, int]]) -> dict[str, dict[s
     """
     profiles: dict[str, dict[str, Any]] = {}
     for facet, counts in rows.items():
-        for key, count in counts.items():
-            source, _, value = key.rpartition('#')
-            if source and facet in FACETS:
-                _add(profiles, source, facet, value, int(count))
+        if facet not in FACETS:
+            continue
+        for source, value, count in source_keyed_counts(counts):
+            _add(profiles, source, facet, value, count)
     return profiles
 
 

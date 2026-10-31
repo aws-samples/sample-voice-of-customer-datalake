@@ -99,10 +99,14 @@
     },
     {
       "files": [
+        "voc-datalake/frontend/src/pages/Agents/AgentDetail.tsx",
+        "voc-datalake/frontend/src/pages/Dashboard/DashboardFilters.tsx",
+        "voc-datalake/frontend/src/pages/FeedbackForms/FormCard.tsx",
         "voc-datalake/frontend/src/pages/FeedbackForms/FormsList.tsx",
+        "voc-datalake/frontend/src/pages/Memory/Memory.tsx",
         "voc-datalake/frontend/src/pages/Projects/Projects.tsx"
       ],
-      "reason": "two empty states (no forms / no projects) with their own copy and call to action"
+      "reason": "one notice shape (icon, title, text, optional action) with page-specific copy and meaning: the no-forms and no-projects empty states, the Dashboard's no-match card, the needs-decision banner, the disabled-form notice and the load-failed notice"
     },
     {
       "files": [
@@ -125,13 +129,6 @@
         "voc-datalake/frontend/src/pages/Company/Company.tsx"
       ],
       "reason": "three icon tab strips (agent detail, agents views, company) with different prefetch/guard handlers; CANDIDATE for one TabStrip, but Company's icons lack aria-hidden, so merging changes its accessibility tree (not a byte-identical consolidation)"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/pages/Agents/AgentDetail.tsx",
-        "voc-datalake/frontend/src/pages/Memory/Memory.tsx"
-      ],
-      "reason": "a needs-decision banner and a load-failed notice: same alert shape, different meaning"
     },
     {
       "files": [
@@ -183,6 +180,13 @@
         "voc-datalake/frontend/src/pages/ProjectDetail/ProductFormFields.tsx"
       ],
       "reason": "a LabeledField + native select row of the workflow editor, the token form and the Product tab's lifecycle field: different options, state and i18n keys"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/DataExplorer/DataQualitySectionProfile.tsx",
+        "voc-datalake/frontend/src/pages/Radar/NewsKind.tsx"
+      ],
+      "reason": "two aria-pressed chip groups with different styles (buttons vs badges) and label sources; a shared component would need both as props"
     }
   ]
 }

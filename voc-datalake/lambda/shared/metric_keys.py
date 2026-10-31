@@ -5,6 +5,7 @@ Declared once because the writer (``aggregator/handler.py``) and its readers (``
 is ``pk = <PREFIX><value>``, ``sk = <YYYY-MM-DD>``; the ``metric_type`` index carries ``<type>#<key>`` for the
 breakdowns ``/metrics/*`` read by type (``dim_sentiment#<key>``, tags, channels).
 """
+from collections.abc import Iterator, Mapping
 from typing import Final
 
 DAILY_TOTAL_PK: Final = 'METRIC#daily_total'
@@ -33,3 +34,15 @@ PROFILE_METRIC_TYPES: Final = {
     PROFILE_SENTIMENT_PREFIX: 'profile_sentiment',
     PROFILE_LENGTH_PREFIX: 'profile_length',
 }
+
+
+def source_keyed_counts(counts: Mapping[str, int]) -> Iterator[tuple[str, str, int]]:
+    """``(source, value, count)`` for every ``<source>#<value>`` counter key.
+
+    The value is the LAST ``#`` segment, so a source name containing ``#`` still parses; a key
+    with no source part is skipped. The caller decides which values it knows.
+    """
+    for key, count in counts.items():
+        source, _, value = key.rpartition('#')
+        if source:
+            yield source, value, int(count)

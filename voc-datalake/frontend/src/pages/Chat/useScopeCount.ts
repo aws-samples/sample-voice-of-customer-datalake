@@ -14,6 +14,8 @@ import { api, getDateRangeParams } from '../../api/client'
 import type { ItemFilterParams, SentimentBreakdown } from '../../api/types'
 import { useConfigStore } from '../../store/configStore'
 import type { ScopeFilters } from '../../assistant/store/chatScopeStore'
+import { ratingParamsOf } from '../Categories/useCategoryFilters'
+import type { RatingFilter } from '../Categories/types'
 
 export interface ScopeCount {
   readonly total: number
@@ -31,11 +33,11 @@ const MIN_STARS = 1
 const MAX_STARS = 5
 const URGENT_ONLY: NonNullable<ItemFilterParams['urgent']> = 1
 
-/** `rating` (+ `rating_dir=below`) as the routes' whole-star bound; anything else is any rating. */
-function ratingParamsOf(filters: ScopeFilters): Pick<ItemFilterParams, 'rating_min' | 'rating_max'> {
+/** `rating` (+ `rating_dir=below`) as the Categories picker's state: a whole 1-5 star bound, else any (0). */
+function ratingFilterOf(filters: ScopeFilters): RatingFilter {
   const stars = Number(filters.rating)
-  if (!Number.isInteger(stars) || stars < MIN_STARS || stars > MAX_STARS) return {}
-  return filters.rating_dir === 'below' ? { rating_max: stars } : { rating_min: stars }
+  const valid = Number.isInteger(stars) && stars >= MIN_STARS && stars <= MAX_STARS
+  return { value: valid ? stars : 0, direction: filters.rating_dir === 'below' ? 'below' : 'up' }
 }
 
 /** The scope's item filters as the routes' query parameters (the Categories page's own mapping). */
@@ -44,7 +46,7 @@ function itemFiltersOf(filters: ScopeFilters): ItemFilterParams {
     ...(filters.channel === undefined ? {} : { channel: filters.channel }),
     ...(filters.tag === undefined ? {} : { tag: filters.tag }),
     ...(filters.dims === undefined ? {} : { dims: filters.dims }),
-    ...ratingParamsOf(filters),
+    ...ratingParamsOf(ratingFilterOf(filters)),
     ...(filters.urgent === '1' ? { urgent: URGENT_ONLY } : {}),
   }
 }
