@@ -10,8 +10,11 @@
 #
 # Choices, and why:
 # - weekly, Monday 06:00 UTC: one review batch a week instead of a trickle.
-# - groups: one pull request per directory for every minor and patch update together; each major
-#   update stays its own pull request, because a major is a change to read, not to batch.
+# - groups: one pull request per directory for every minor and patch update together.
+# - ignore semver-major (owner decision, 5.57.01): a major changes an API or a default, so it is upgraded
+#   deliberately, one at a time (docs/dependencies.md). The first weekly run opened 22 major pull requests
+#   at once. `update-types` in an ignore rule applies to version updates only: security updates still
+#   arrive, majors included.
 # - cooldown 7 days: a release must be a week old before it is proposed. Most malicious or broken
 #   releases are found and pulled within days, so waiting keeps them out of our lockfiles (GitHub docs,
 #   "Dependabot options reference: cooldown"). Security updates are not delayed by it.
@@ -39,6 +42,10 @@ updates:
       - dependencies
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
     groups:
       actions-minor-and-patch:
         update-types:
@@ -68,6 +75,10 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
     groups:
       npm-minor-and-patch:
         update-types:
@@ -95,6 +106,10 @@ updates:
       - dependencies
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
     groups:
       pip-minor-and-patch:
         update-types:
