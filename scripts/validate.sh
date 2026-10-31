@@ -89,9 +89,13 @@ def py   python,python-static               "pyright"                           
 def py   python,python-static               "pyright: production (private usage)" 'cd "$CDK" && npx --prefix "$ROOT" pyright --pythonpath "$PYTHON_BIN" -p pyrightconfig.production.json'
 # Every pytest test asserts something (directly or through a helper it calls).
 def py   python,python-static               "check_tests_assert"                 'cd "$CDK" && out="$("$PYTHON_BIN" scripts/check_tests_assert.py)" && [ -z "$out" ] || { printf "%s\n" "$out"; exit 1; }'
+# Every test that bounds its own running time is marked `timing` (scripts/check_timing_tests.py).
+def py   python,python-static               "check_timing_tests"                 'cd "$CDK" && "$PYTHON_BIN" scripts/check_timing_tests.py'
 # pytest-xdist; `loadgroup` keeps @pytest.mark.xdist_group tests on one worker.
 # Coverage is gated per file (docs/coverage-gate.md): the check runs after the suite.
-def py   python,python-tests                "pytest"                             'cd "$CDK" && mkdir -p "$ROOT/.cache/coverage" && rm -f "$ROOT"/.cache/coverage/python.coverage* "$ROOT/.cache/coverage/python.json" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider -n "$VALIDATE_PYTEST_WORKERS" --dist loadgroup --cov-config="$ROOT/scripts/coverage/python.coveragerc" --cov-report=term-missing:skip-covered --cov-report=html:"$ROOT/.cache/coverage/python-html" --cov-report=json:"$ROOT/.cache/coverage/python.json" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite python'
+# Tests marked `timing` (they bound their own running time) are left out of that parallel, traced run and
+# run after it in ONE process, untraced, so neither the tracer nor the other workers decide their result.
+def py   python,python-tests                "pytest"                             'cd "$CDK" && mkdir -p "$ROOT/.cache/coverage" && rm -f "$ROOT"/.cache/coverage/python.coverage* "$ROOT/.cache/coverage/python.json" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider -n "$VALIDATE_PYTEST_WORKERS" --dist loadgroup -m "not timing" --cov-config="$ROOT/scripts/coverage/python.coveragerc" --cov-report=term-missing:skip-covered --cov-report=html:"$ROOT/.cache/coverage/python-html" --cov-report=json:"$ROOT/.cache/coverage/python.json" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite python && cd "$CDK" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider -p no:xdist --no-cov -m timing'
 
 # Release bookkeeping: CHANGELOG.md's newest release = the version in every platform package.json.
 def tsc  repo                               "version: CHANGELOG ↔ package.json"  'cd "$ROOT" && node --test scripts/check-version.test.mjs scripts/validate-affected.test.mjs && node scripts/check-version.mjs'

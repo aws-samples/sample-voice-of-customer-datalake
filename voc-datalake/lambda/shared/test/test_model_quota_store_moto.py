@@ -22,11 +22,9 @@ from shared.aws import is_action_event
 from shared.model_config import ALLOWED_MODELS
 from shared.test.model_capacity_fixtures import GLOBAL
 
-CALL_SECONDS = 0.25
-# Several tests bound wall time against CALL_SECONDS to prove no slow Service Quotas call was made; the
-# coverage tracer alone can cost that much on a loaded machine, so the module runs untraced
-# (docs/coverage-gate.md). Each test also checks the calls themselves.
-pytestmark = pytest.mark.no_cover
+# How long the slow stand-in's every call takes. The `timing` tests prove no call was made by answering in
+# less than one call; 1 s keeps that margin on a shared, loaded CI runner (0.25 s measured 0.33 s there).
+CALL_SECONDS = 1.0
 
 
 def _expected() -> list[str]:
@@ -109,6 +107,7 @@ def _timed_overview() -> tuple[list[model_capacity.ModelCapacity], float]:
 
 
 class TestTheStoredRow:
+    @pytest.mark.timing
     def test_a_fresh_row_answers_with_no_service_call(self, table, monkeypatch):
         client = SlowQuotas()
         _install(monkeypatch, client)
@@ -120,6 +119,7 @@ class TestTheStoredRow:
         assert seconds < CALL_SECONDS
         assert [m['quota']['tokens_per_minute'] for m in overview if m['quota']] == [10 + i for i in range(len(ALLOWED_MODELS))]
 
+    @pytest.mark.timing
     def test_a_stale_row_is_refreshed_by_code_in_parallel_well_inside_the_budget(self, table, monkeypatch):
         client = SlowQuotas()
         _install(monkeypatch, client)
@@ -129,7 +129,7 @@ class TestTheStoredRow:
 
         assert client.calls_to('list_service_quotas') == []
         assert sorted(c['QuotaCode'] for c in client.calls_to('get_service_quota')) == [f'L-{i:04d}' for i in range(len(ALLOWED_MODELS))]
-        # Sequential would be len(models) x CALL_SECONDS (2 s for 8); REFRESH_WORKERS at a time is a few rounds.
+        # Sequential would be len(models) x CALL_SECONDS (8 s for 8); REFRESH_WORKERS at a time is a few rounds.
         rounds = -(-len(ALLOWED_MODELS) // model_quota_store.REFRESH_WORKERS)
         assert seconds < (rounds + 1) * CALL_SECONDS < len(ALLOWED_MODELS) * CALL_SECONDS
         assert all(m['quota'] == {'name': GLOBAL + m['label'], 'tokens_per_minute': 2000} for m in overview)
@@ -159,6 +159,7 @@ class TestTheStoredRow:
 
 @pytest.mark.usefixtures('table')
 class TestTheFirstListingWithTheTable:
+    @pytest.mark.timing
     def test_lists_100_per_page_once_then_a_cold_container_reads_the_row(self, monkeypatch):
         client = SlowQuotas()
         _install(monkeypatch, client)
@@ -303,6 +304,7 @@ def _stale_overview() -> list[dict[str, Any]]:
     return [{'name': GLOBAL + m['label'], 'tokens_per_minute': 10 + i, 'stale': True} for i, m in enumerate(ALLOWED_MODELS)]
 
 
+@pytest.mark.timing
 def test_an_old_row_answers_at_once_marked_stale_and_a_worker_refreshes_it(table, monkeypatch, invoke):
     client = SlowQuotas()
     _install(monkeypatch, client)

@@ -85,16 +85,33 @@ written when a suite fails.
 
 ## Tests that assert a time budget
 
-Coverage tracing slows tight Python loops several times over, and the CI runner is slower than a laptop, so a test
-that bounds wall-clock or CPU time measures the tracer, not the code, once coverage is on (5.55.00: the Problem
-Analysis capacity test took 9 s of CPU against its 6 s budget on CI, and under 2 s untraced). Mark such a test
-`@pytest.mark.no_cover` (pytest-cov runs it untraced) and keep its bound as it is. Its code is still measured through
-the suite's other tests; if a file then falls under the floor, add a behaviour test, not a looser bound.
+A test that bounds its own running time (`elapsed < N`) measures the machine as much as the code. Coverage tracing
+slows tight Python loops several times over, and on CI the 4-vCPU runner is shared with the other gate lanes and
+the other pytest workers. Such tests went over their bounds there with nothing wrong in the code (5.55.00: the
+Problem Analysis capacity test at 9 s, then 6.3 s, against 6 s; 5.56.00: the Service Quotas store at 0.33 s against
+0.25 s).
 
-Untraced was not quite enough on CI: the 4-vCPU runner also runs the four other `validate.sh` lanes beside pytest,
-and that contention alone took the same test to 6.3 s (5.55.00). CI therefore runs `validate.sh --pytest-first`:
-the pytest step runs alone, and the other lanes start once it has passed. That costs about 10 minutes of CI time.
-Locally the lanes still run together; use `--pytest-first` to reproduce CI's order.
+So a test that bounds its time is marked `@pytest.mark.timing` (on the test, its class or the module's
+`pytestmark`), and the gate treats it differently:
+
+- `conftest.py` adds `no_cover` to it, so it runs untraced wherever it runs.
+- The `pytest` step of `scripts/validate.sh` leaves it out of the parallel, traced run (`-m "not timing"`) and runs
+  every `timing` test afterwards in ONE process, untraced (`-p no:xdist --no-cov -m timing`).
+- CI runs `validate.sh --pytest-first`, so that whole step, the separate timing run included, has the runner to
+  itself; the other lanes start once it has passed (about 10 minutes of CI time). Locally the lanes run together;
+  `--pytest-first` reproduces CI's order.
+- `scripts/check_timing_tests.py` (the `check_timing_tests` step) fails on a test that reads `time.perf_counter`,
+  `monotonic` or `process_time` (directly or through a helper in its module) and asserts an ordering, unless it is
+  marked.
+
+A bound must still leave room for a slow, shared machine: a few times what a laptop measures, and well inside the
+real limit the test protects (the capacity routes: 10 s of CPU against API Gateway's 29 s). A test proving that a slow
+call was NOT made gives that call a cost the answer cannot reach by accident (the quota store's stand-in takes 1 s per
+call). A timing test's own lines are not traced, so its code must be measured by the suite's other tests; if a file
+falls under the floor, add a behaviour test, never a looser bound.
+
+The frontend's equivalent: `findBy*` / `waitFor` wait up to 5 s (`src/test/setup.ts`), not testing-library's 1 s
+default, so a dialog that mounts slowly on a loaded runner is not a failure.
 
 ## Cost
 
