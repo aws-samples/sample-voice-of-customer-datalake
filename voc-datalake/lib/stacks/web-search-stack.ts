@@ -2,7 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as bedrockagentcore from 'aws-cdk-lib/aws-bedrockagentcore';
 import { Construct } from 'constructs';
-import { BedrockModelAccess, AnthropicUseCaseConfig } from './bedrock-access-stack';
+import { AnthropicUseCaseSubmission, AnthropicUseCaseConfig } from './bedrock-access-stack';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { WEB_SEARCH_CONFIGURATION_NAME, WEB_SEARCH_CONNECTOR_ID, pinWebSearchConnector } from './web-search-connector-pin';
 
@@ -12,15 +12,17 @@ import { WEB_SEARCH_CONFIGURATION_NAME, WEB_SEARCH_CONNECTOR_ID, pinWebSearchCon
  *
  *   1. an AgentCore Gateway exposing the AWS-managed `web-search` connector
  *      as an MCP tool (`deployWebSearch`);
- *   2. Bedrock model access — the Anthropic use-case submission and the model
- *      agreements (`anthropicUseCase`).
+ *   2. the Anthropic use-case form submission (`anthropicUseCase`), opt-in.
  *
- * They live together because they are the same deployment unit: both must sit
- * in us-east-1 (the web-search connector exists only there; the
- * PutUseCaseForModelAccess API works only there), both are one-shot account
- * enablement built from custom resources, and neither depends on the core
- * stack chain. Keeping them apart put the app at six CloudFormation templates,
- * one over Workshop Studio's ceiling of five.
+ * They live together because both run in us-east-1 (the web-search connector
+ * exists only there; the form has only ever been submitted there), both are
+ * one-shot account enablement built from custom resources, and neither depends
+ * on the core stack chain. Keeping them apart put the app at six CloudFormation
+ * templates, one over Workshop Studio's ceiling of five.
+ *
+ * The model agreements are not here: VocCoreStack creates them in the app's own
+ * region on every deploy (BedrockModelAgreements). So with web search off and no
+ * form to submit, this stack is not created and nothing deploys to us-east-1.
  *
  * ⚠️ The stack is named for the web-search half only, for a deliberate reason:
  * the CDK id determines the CloudFormation export names that VocProcessingStack
@@ -57,24 +59,11 @@ export interface VocWebSearchStackProps extends VocStackProps {
   deployWebSearch: boolean;
 
   /**
-   * Create the Bedrock model-access half. Omit for accounts that already have
-   * Anthropic access; the agreements are then neither created nor needed.
+   * Submit Anthropic's use case form with these details. Omit (the default) to
+   * leave the form to the Bedrock console. bin/voc-datalake.ts also omits it
+   * under `skipUseCaseSubmission`.
    */
   anthropicUseCase?: AnthropicUseCaseConfig;
-
-  /**
-   * Region the model agreements are created in — normally the app's region, not
-   * this stack's.
-   *
-   * Optional here but **required whenever `anthropicUseCase` is set**, and
-   * validated as such: a gateway-only caller has no model agreements, so
-   * forcing it to invent a value it never reads would be noise. There is
-   * deliberately no default — see BedrockModelAccessProps.
-   */
-  modelRegion?: string;
-
-  /** @default false */
-  skipUseCaseSubmission?: boolean;
 }
 
 export class VocWebSearchStack extends VocStack {
@@ -100,24 +89,16 @@ export class VocWebSearchStack extends VocStack {
     }
 
     if (props.anthropicUseCase) {
-      if (!props.modelRegion) {
-        throw new Error(
-          `${id}: modelRegion is required when anthropicUseCase is set — it decides where the ` +
-          'model agreements are created, and this stack is pinned to us-east-1 regardless of ' +
-          'where the app runs. Pass the app region.',
-        );
-      }
-      // The Bedrock model-access half.
-      BedrockModelAccess.addTo(this, 'BedrockModelAccess', {
+      // The use-case half. The id predates the split (it was BedrockModelAccess, form
+      // and agreements together) and is kept so the submission keeps its logical id.
+      AnthropicUseCaseSubmission.addTo(this, 'BedrockModelAccess', {
         anthropicUseCase: props.anthropicUseCase,
-        modelRegion: props.modelRegion,
-        skipUseCaseSubmission: props.skipUseCaseSubmission,
       });
     }
 
     if (!props.deployWebSearch) {
-      // Gateway half off. The stack still holds the model-access half — the
-      // caller is responsible for not constructing it with both halves off.
+      // Gateway half off. The stack still holds the use-case half — the guard
+      // above rules out both halves off.
       return;
     }
 

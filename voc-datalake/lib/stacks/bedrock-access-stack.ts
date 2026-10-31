@@ -1,8 +1,17 @@
 /**
- * NOTE ON THIS FILE'S NAME: it exports a Construct (BedrockModelAccess), not a
- * stack, despite living in lib/stacks/ and being called *-stack.ts. This used
- * to be BedrockAccessStack; it was folded into VocWebSearchStack to stay within
- * Workshop Studio's five-template ceiling.
+ * NOTE ON THIS FILE'S NAME: it exports Constructs, not a stack, despite living in
+ * lib/stacks/ and being called *-stack.ts. This used to be BedrockAccessStack; it
+ * was folded into other stacks to stay within the five-template ceiling, and later
+ * split in two (ported from PR #429 by @aws-bryan):
+ *
+ *   - AnthropicUseCaseSubmission: Anthropic's first-time use case form. Opt-in
+ *     (`anthropicUseCase` in context), hosted by the us-east-1 VocWebSearchStack.
+ *   - BedrockModelAgreements: a Marketplace agreement per allowlisted Claude model
+ *     (in the app region) plus the persona-avatar image model's. Every deploy,
+ *     best effort, hosted by VocCoreStack.
+ *
+ * So with no form and `-c enableWebSearch=false`, a deployment touches no region
+ * but its own.
  *
  * The path was kept deliberately: lambda/shared/test/test_model_agreement_handler.py
  * reads THIS path and regexes `getModelAgreementLambdaCode()` out of it to test
@@ -71,72 +80,44 @@ export type AnthropicUseCaseConfig = z.infer<typeof AnthropicUseCaseSchema>;
  */
 const REQUIRED_MODELS = [...ALLOWED_FOUNDATION_MODEL_IDS];
 
-export interface BedrockModelAccessProps {
-  /**
-   * Anthropic use case configuration for first-time model access.
-   *
-   * Required: the caller decides whether this half is deployed at all by
-   * choosing whether to construct it. See VocWebSearchStack.
-   */
-  anthropicUseCase: AnthropicUseCaseConfig;
-
-  /**
-   * AWS region where the models will be used.
-   * Model agreements are created in this region.
-   *
-   * This is a custom-resource *property*, not a placement decision — the
-   * handler does `boto3.client('bedrock', region_name=region)` — so the
-   * agreements land in the app's region even though this construct is hosted
-   * by a stack pinned to us-east-1.
-   *
-   * Required deliberately: a default here would be a silently-wrong region for
-   * every caller that forgot to pass one, and the agreements would be created
-   * somewhere the app never calls Bedrock.
-   */
-  modelRegion: string;
-
-  /**
-   * Skip the use case submission step.
-   * @default false
-   */
-  skipUseCaseSubmission?: boolean;
+export interface AnthropicUseCaseSubmissionProps {
+  /** The form's contents. Validated again here, since a caller may skip bin's parse. */
+  readonly anthropicUseCase: AnthropicUseCaseConfig;
 }
 
 /**
- * Bedrock model access for Anthropic models.
+ * Submits Anthropic's first-time use case form (PutUseCaseForModelAccess).
  *
- * Performs two operations:
- * 1. Submits the Anthropic use case form (required once per account, us-east-1 only)
- * 2. Creates model agreements for required Claude models (accepts EULA)
+ * Anthropic requires the form once per account (or once at the organization's
+ * management account) before Claude can be invoked. Opt-in: built only when the
+ * deployer passes their own `anthropicUseCase` block, because the form states who
+ * the deployer is, and a committed default would file it in every deployer's
+ * account under somebody else's name. Without it, the form is filed once in the
+ * Bedrock console (docs/deployment.md → Bedrock model access).
  *
- * IMPORTANT: The PutUseCaseForModelAccess API ONLY works in us-east-1, so the
- * hosting stack must be pinned there. Model agreements can be created in any
- * region where the models are available (see `modelRegion`).
- *
- * This is a Construct rather than a Stack: it is hosted by VocWebSearchStack,
- * which is already pinned to us-east-1 for the same reason. The two used to be
- * separate stacks, which put the app one template over Workshop Studio's
- * five-template ceiling. Nothing else imports from this half — it publishes no
- * consumed exports — so folding it in cost no cross-stack wiring.
+ * The call is made in us-east-1 (the `region` below), which is why the hosting
+ * stack is VocWebSearchStack. The model agreements are NOT here: they are
+ * BedrockModelAgreements, in VocCoreStack, and bin/voc-datalake.ts makes Core wait
+ * for this stack when there is a form to submit.
  */
-export class BedrockModelAccess extends Construct {
+export class AnthropicUseCaseSubmission extends Construct {
   /**
-   * Adds the model-access half to `scope`. The host stack keeps no reference:
-   * the construct publishes nothing another construct reads.
+   * Adds the submission to `scope`. VocWebSearchStack passes the id
+   * `BedrockModelAccess` (the construct's name before the split), so the
+   * submission's logical id, and with it the deployed resource, stays the same:
+   * a new logical id would be a new Create, i.e. a second submission.
    */
-  public static addTo(scope: Construct, id: string, props: BedrockModelAccessProps): BedrockModelAccess {
-    return new BedrockModelAccess(scope, id, props);
+  public static addTo(scope: Construct, id: string, props: AnthropicUseCaseSubmissionProps): AnthropicUseCaseSubmission {
+    return new AnthropicUseCaseSubmission(scope, id, props);
   }
 
-  private constructor(scope: Construct, id: string, props: BedrockModelAccessProps) {
+  private constructor(scope: Construct, id: string, props: AnthropicUseCaseSubmissionProps) {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);
-    const anthropicUseCase = props.anthropicUseCase;
-    const modelRegion = props.modelRegion;
 
     // Validate and transform config at runtime
-    const parseResult = AnthropicUseCaseSchema.safeParse(anthropicUseCase);
+    const parseResult = AnthropicUseCaseSchema.safeParse(props.anthropicUseCase);
     if (!parseResult.success) {
       throw new Error(
         'Invalid anthropicUseCase configuration: ' +
@@ -164,84 +145,56 @@ export class BedrockModelAccess extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // ============================================
-    // Step 1: Submit Anthropic Use Case (us-east-1 only)
-    // Skip for internal accounts
-    // ============================================
-    const skipUseCaseSubmission = props.skipUseCaseSubmission ?? false;
-    let submitUseCase: cr.AwsCustomResource | undefined;
-    
-    if (!skipUseCaseSubmission) {
-      submitUseCase = new cr.AwsCustomResource(this, 'SubmitAnthropicUseCase', {
-        onCreate: {
-          service: 'Bedrock',
-          action: 'putUseCaseForModelAccess',
-          parameters: {
-            formData: formDataJson,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of('anthropic-use-case-submission'),
-          region: 'us-east-1',
-          // Best-effort submission: accounts that already have Anthropic
-          // access (prior submission, org-level grants, internal accounts)
-          // reject the call, e.g. with "Internal Accounts should not submit
-          // use case details". That must not fail the whole deployment —
-          // model agreements in Step 2 will surface any real access problem.
-          // Access/permission/throttling errors still fail loudly. See #103.
-          ignoreErrorCodesMatching: 'ValidationException|ConflictException',
+    const submitUseCase = new cr.AwsCustomResource(this, 'SubmitAnthropicUseCase', {
+      onCreate: {
+        service: 'Bedrock',
+        action: 'putUseCaseForModelAccess',
+        parameters: {
+          formData: formDataJson,
         },
-        onUpdate: undefined,
-        onDelete: undefined,
-        policy: cr.AwsCustomResourcePolicy.fromStatements([
-          new iam.PolicyStatement({
-            actions: ['bedrock:PutUseCaseForModelAccess'],
-            resources: ['*'],
-          }),
-        ]),
-        logGroup,
-        installLatestAwsSdk: true,
-      });
-      
-      // Suppress CDK custom resource Lambda runtime warnings for AwsCustomResource.
-      // Object-based rather than path-based: this is now a Construct, so a
-      // hardcoded `<stackName>/SubmitAnthropicUseCase/...` path would no longer
-      // resolve (the real path gains this construct's id as a segment).
-      NagSuppressions.addResourceSuppressions(
-        submitUseCase,
-        [...cdkCustomResourceSuppressions, ...bedrockAgreementSuppressions],
-        true
-      );
-
-      // The AwsCustomResource construct creates a singleton Lambda with a
-      // deterministic UUID. It is scoped to the STACK, not to this construct,
-      // so these paths stay stack-relative.
-      //
-      // Built from the stack's CONSTRUCT ID, not `stack.stackName`: these are
-      // matched against `node.path`, which uses construct ids. The two only
-      // coincide while no explicit `stackName` is set, so using stackName here
-      // would silently stop matching — and therefore silently drop the
-      // suppressions — the day someone overrides it.
-      suppressAwsCustomResourceProvider(stack, stack.node.id);
-    }
-
-    // ============================================
-    // Step 2: Create Model Agreements (accepts EULA)
-    // ============================================
-    // Created directly in this construct (not under a child), so the Claude provider keeps the
-    // construct paths, logical ids and service token it had before the image agreement existed:
-    // CloudFormation refuses to change a custom resource's ServiceToken.
-    const agreements = new ModelAgreementProvider(this);
-
-    // Create model agreements for each required model
-    REQUIRED_MODELS.forEach((modelId, index) => {
-      const agreement = agreements.agree(this, `ModelAgreement${index}`, modelId, modelRegion);
-      // Ensure use case is submitted before creating agreements (if not skipped)
-      if (submitUseCase) {
-        agreement.node.addDependency(submitUseCase);
-      }
+        physicalResourceId: cr.PhysicalResourceId.of('anthropic-use-case-submission'),
+        region: 'us-east-1',
+        // Best-effort submission: accounts that already have Anthropic
+        // access (prior submission, org-level grants, internal accounts)
+        // reject the call, e.g. with "Internal Accounts should not submit
+        // use case details". That must not fail the whole deployment —
+        // invoking a model surfaces any real access problem.
+        // Access/permission/throttling errors still fail loudly. See #103.
+        ignoreErrorCodesMatching: 'ValidationException|ConflictException',
+      },
+      onUpdate: undefined,
+      onDelete: undefined,
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          actions: ['bedrock:PutUseCaseForModelAccess'],
+          resources: ['*'],
+        }),
+      ]),
+      logGroup,
+      installLatestAwsSdk: true,
     });
 
-    // Outputs. Informational only — nothing imports these, which is precisely
-    // why this half could be folded into another stack without rewiring.
+    // Object-based rather than path-based: this is a Construct, so a hardcoded
+    // `<stackName>/SubmitAnthropicUseCase/...` path would not resolve (the real
+    // path gains this construct's id as a segment).
+    NagSuppressions.addResourceSuppressions(
+      submitUseCase,
+      [...cdkCustomResourceSuppressions, ...bedrockAgreementSuppressions],
+      true
+    );
+
+    // The AwsCustomResource construct creates a singleton Lambda with a
+    // deterministic UUID. It is scoped to the STACK, not to this construct,
+    // so these paths stay stack-relative.
+    //
+    // Built from the stack's CONSTRUCT ID, not `stack.stackName`: these are
+    // matched against `node.path`, which uses construct ids. The two only
+    // coincide while no explicit `stackName` is set, so using stackName here
+    // would silently stop matching — and therefore silently drop the
+    // suppressions — the day someone overrides it.
+    suppressAwsCustomResourceProvider(stack, stack.node.id);
+
+    // Outputs. Informational only — nothing imports these.
     new cdk.CfnOutput(this, 'BedrockAccessStatus', {
       value: 'SUBMITTED',
       description: 'Status of Anthropic model access request',
@@ -251,54 +204,63 @@ export class BedrockModelAccess extends Construct {
       value: validatedConfig.companyName,
       description: 'Company name submitted for Anthropic access',
     });
-
-    new cdk.CfnOutput(this, 'ModelsEnabled', {
-      value: REQUIRED_MODELS.join(', '),
-      description: 'Models with agreements created',
-    });
-
-    new cdk.CfnOutput(this, 'ModelRegion', {
-      value: modelRegion,
-      description: 'Region where model agreements were created',
-    });
   }
 }
 
 /**
- * Model agreement acceptance for the persona-avatar image model (Stability,
- * IMAGE_MODEL_ID in IMAGE_MODEL_REGION), on EVERY deployment: no flag, no opt-out.
+ * The Bedrock model agreements (EULA + Marketplace subscription), on EVERY
+ * deployment, best effort: one per allowlisted Claude model (REQUIRED_MODELS) in
+ * the hosting stack's region, and the persona-avatar image model's (IMAGE_MODEL_ID
+ * in IMAGE_MODEL_REGION, us-west-2 whatever the app region).
  *
- * Hosted by VocCoreStack (bin/voc-datalake.ts), not by VocWebSearchStack like the
- * Claude agreements: that stack exists only when web search or `anthropicUseCase`
- * is on, and the image agreement must not depend on either. Core always exists,
- * deploys first (so the subscription is in place before any persona is generated)
- * and is far from the 500-resource ceiling, so the 5-stack cap is untouched. The
- * agreement is created in the image model's region whatever the app region is
- * (the handler's `region` property), and it sends no customer data.
+ * Bedrock also subscribes a model on its first invocation, but only when the
+ * caller holds `aws-marketplace:Subscribe`, and most of this app's Lambda roles do
+ * not: without these agreements a new account's first enrichment call would fail.
  *
- * Best effort: any failure (a Private Marketplace refusal, an org policy, a model
- * not offered) is logged and reported as UNAVAILABLE instead of failing the deploy —
- * Core is the first stack, and avatars degrade to none without the model.
- * Administration → AI models → Image generation shows whether access is in place.
+ * Hosted by VocCoreStack (bin/voc-datalake.ts): it always exists, deploys first (so
+ * the subscriptions are in place before Ingestion and Processing call a model),
+ * runs in the app's region, and is far from the 500-resource ceiling. The Claude
+ * agreements lived in the us-east-1 VocWebSearchStack until they moved here (ported
+ * from PR #429 by @aws-bryan), and were created only alongside the use case form.
+ *
+ * Best effort: a failure of any kind (a Private Marketplace refusal, a model not
+ * offered in the region, throttling, a dropped connection, even the role's own
+ * AccessDenied) is logged and reported as UNAVAILABLE, never a failed deploy: a
+ * raise here would roll back the stack that holds every table. Runs on Create only;
+ * Update and Delete leave the account's agreements alone, so moving or removing a
+ * resource revokes nothing. Administration → AI models shows what is usable.
  */
-export class ImageModelAccess extends Construct {
-  public static addTo(scope: Construct, id: string): ImageModelAccess {
-    return new ImageModelAccess(scope, id);
+export class BedrockModelAgreements extends Construct {
+  /**
+   * Adds the agreements to `scope`. bin/voc-datalake.ts passes the id
+   * `ImageModelAccess` (the construct's name when it held only the image
+   * agreement), so the image agreement and the shared provider keep their logical
+   * ids, log group names and service token: CloudFormation refuses to change a
+   * custom resource's ServiceToken.
+   */
+  public static addTo(scope: Construct, id: string): BedrockModelAgreements {
+    return new BedrockModelAgreements(scope, id);
   }
 
   private constructor(scope: Construct, id: string) {
     super(scope, id);
     const agreements = new ModelAgreementProvider(this);
-    agreements.agree(this, 'ImageModelAgreement', IMAGE_MODEL_ID, IMAGE_MODEL_REGION, { bestEffort: true });
+    agreements.agree(this, 'ImageModelAgreement', IMAGE_MODEL_ID, IMAGE_MODEL_REGION);
+    // Where the app runs. Passed as a property rather than read by the handler, so the
+    // template states it.
+    const appRegion = cdk.Stack.of(this).region;
+    REQUIRED_MODELS.forEach((modelId, index) => {
+      agreements.agree(this, `ClaudeModelAgreement${index}`, modelId, appRegion);
+    });
   }
 }
 
 /**
  * The custom-resource provider that accepts one Bedrock model's agreement (EULA +
- * Marketplace subscription) per custom resource. Shared by BedrockModelAccess (the
- * Claude allowlist) and ImageModelAccess (the image model). Deliberately not a
- * Construct: its resources are created directly in the host construct, so moving
- * the Claude path onto this helper changed none of its logical ids.
+ * Marketplace subscription) per custom resource, used by BedrockModelAgreements for
+ * the image model and every Claude model alike. Deliberately not a Construct: its
+ * resources are created directly in the host construct, so the image agreement's
+ * provider kept its logical ids when the Claude agreements joined it.
  */
 class ModelAgreementProvider {
   private readonly serviceToken: string;
@@ -353,7 +315,7 @@ class ModelAgreementProvider {
     // references, which carry no VoC physical name and so no prefix. The
     // ingestor/schedule entries in that set simply do not apply here.
     //
-    // BedrockModelAccess is a Construct, not a VocStack, so it has no access to
+    // BedrockModelAgreements is a Construct, not a VocStack, so it has no access to
     // the prefix either; threading one through would be work with no effect. If
     // that ever stopped being true, the zero-warnings assertion over the
     // PREFIXED synth in lib/app-deployment-prefix.test.ts would fail, since an
@@ -376,20 +338,14 @@ class ModelAgreementProvider {
 
   /**
    * One model's agreement, created in `region` (a property, not a placement: the
-   * handler builds its Bedrock client there). `bestEffort` turns every failure into
-   * an UNAVAILABLE result instead of a failed deploy.
+   * handler builds its Bedrock client there). Always best effort (`bestEffort:
+   * 'true'`): the handler turns every failure into an UNAVAILABLE result instead of
+   * a failed deploy.
    */
-  public agree(
-    scope: Construct, id: string, modelId: string, region: string, options: { readonly bestEffort?: boolean } = {},
-  ): cdk.CustomResource {
+  public agree(scope: Construct, id: string, modelId: string, region: string): cdk.CustomResource {
     return new cdk.CustomResource(scope, id, {
       serviceToken: this.serviceToken,
-      properties: {
-        modelId,
-        region,
-        // Absent (not 'false') for the Claude agreements, so their templates are unchanged.
-        ...(options.bestEffort ? { bestEffort: 'true' } : {}),
-      },
+      properties: { modelId, region, bestEffort: 'true' },
     });
   }
 
@@ -438,9 +394,12 @@ def _error_code(error):
 
 def handler(event, context):
     """
-    Custom resource entry point. A resource with bestEffort='true' (the image
-    model's, ImageModelAccess) never fails the deploy: every error is logged and
-    reported as UNAVAILABLE. Without it (the Claude agreements) the rules below hold.
+    Custom resource entry point. A resource with bestEffort='true' never fails the
+    deploy: every error is logged and reported as UNAVAILABLE. Every agreement the
+    app creates sets it (BedrockModelAgreements, in VocCoreStack, where a raise
+    would roll back the stack holding every table). Without it the stricter rules
+    in _handle decide: only an AccessDenied on the agreement call and a transient
+    network failure are absorbed, everything else raises.
     """
     properties = event.get('ResourceProperties', {})
     if str(properties.get('bestEffort', '')).lower() != 'true':
@@ -500,17 +459,16 @@ def _handle(event):
         logger.info(f"Fetching offer token for {model_id}")
         offers_response = bedrock.list_foundation_model_agreement_offers(modelId=model_id)
         offers = offers_response.get('offers', [])
-        
-        if not offers:
-            logger.warning(f"No offers available for {model_id}")
+
+        # An offer without a token is as unusable as no offer at all, and is
+        # reported the same way rather than raised.
+        offer_token = offers[0].get('offerToken') if offers else None
+        if not offer_token:
+            logger.warning(f"No usable agreement offer for {model_id}")
             return {
                 'PhysicalResourceId': f'model-agreement-{model_id}',
                 'Data': {'status': 'NO_OFFERS', 'modelId': model_id}
             }
-        
-        offer_token = offers[0].get('offerToken')
-        if not offer_token:
-            raise Exception(f"Offer token not found for {model_id}")
         
         logger.info(f"Creating agreement for {model_id}")
 
