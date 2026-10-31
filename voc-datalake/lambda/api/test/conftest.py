@@ -108,7 +108,7 @@ def _fresh_plugin_secret_defaults():
 def _plugin_secret_keys_env(monkeypatch):
     """PLUGIN_SECRET_KEYS as CDK sets it on the integrations Lambda (from the same manifests).
 
-    The credentials GET fails closed without it (returns no values), so every test sees the
+    The credentials GET fails closed without it (500, never a value), so every test sees the
     deployed shape unless it sets its own.
     """
     from plugin_manifests import PLUGIN_SECRET_KEYS

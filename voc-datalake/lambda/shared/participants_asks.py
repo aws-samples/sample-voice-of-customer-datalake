@@ -38,6 +38,9 @@ MAX_RECIPIENTS: Final = 500
 # Emails one person's asks may send per UTC day (BE-4): any signed-in user can send an ask, so one
 # account cannot use the deployment's whole daily cap (default 500) on outside addresses.
 PER_SENDER_DAILY_CAP: Final = 50
+# The ask's attribute naming whose cap its emails count against: the creator's sub for a
+# non-administrator, absent for an administrator (and for asks created before the cap existed).
+CAP_SENDER_FIELD: Final = 'cap_sender'
 SENDER_CAP_REFUSAL: Final = 'sender_daily_cap'
 DAILY_CAP_REFUSAL: Final = 'daily_cap'
 SEND_COUNT_TTL: Final = timedelta(days=3)
@@ -56,7 +59,7 @@ UNSUBSCRIBE_SK: Final = 'UNSUB'
 MIN_TOKEN_CHARS: Final = 16
 MAX_TOKEN_CHARS: Final = 128
 COUNT_FIELDS: Final = ('recipients', 'sent', 'failed', 'skipped', 'responded')
-_HIDDEN: Final = frozenset({'created_by_email', 'api_base'})
+_HIDDEN: Final = frozenset({'created_by_email', 'api_base', CAP_SENDER_FIELD})
 
 
 def ask_key(ask_id: str) -> dict[str, str]:
@@ -254,8 +257,8 @@ def claim_send(table: Any, cap: int, sender: str) -> str | None:
 
     None when it was counted; otherwise the cap that refused it (``'sender_daily_cap'`` or
     ``'daily_cap'``), with nothing left counted: a sender claim the deployment cap then refuses
-    (or fails on) is given back. An ask without a sender (created before 5.61) counts against the
-    deployment cap only, never one shared empty-sender bucket.
+    (or fails on) is given back. An ask without a capped sender (an administrator's, or one created
+    before 5.62) counts against the deployment cap only, never one shared empty-sender bucket.
     """
     now = _today()
     day = now.date().isoformat()

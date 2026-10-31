@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 import pytest
 from botocore.exceptions import ClientError
 from engagement_fixtures import (
-    ADMIN,
     API_HOST,
     OWNER,
     PRIVATE_PROJECT,
@@ -283,7 +282,15 @@ def _send_counts(world):
 @pytest.mark.usefixtures('world', 'sender_cap_of_two')
 def test_the_sender_cap_is_checked_before_queueing(lambda_context):
     ids = _people(lambda_context, 'a@example.com', 'b@example.com', 'c@example.com')
-    assert _ask(lambda_context, 429, person_ids=ids)['error'] == 'sender_daily_cap'
+    assert _ask(lambda_context, 429, claims=USER, person_ids=ids)['error'] == 'sender_daily_cap'
+
+
+@pytest.mark.usefixtures('sender_cap_of_two')
+def test_an_administrators_ask_is_bounded_by_the_deployment_cap_only(world, lambda_context):
+    ids = _people(lambda_context, 'a@example.com', 'b@example.com', 'c@example.com')
+    _ask(lambda_context, person_ids=ids)
+    run_send_job(lambda_context, world)
+    assert _send_counts(world) == {'COUNT': 3}
 
 
 def test_the_sender_cap_is_fifty_a_day():
@@ -294,23 +301,23 @@ def test_the_sender_cap_is_fifty_a_day():
 @pytest.mark.usefixtures('sender_cap_of_two')
 def test_the_sender_cap_stops_sending_mid_job_and_counts_nothing_it_refused(world, lambda_context):
     ids = _people(lambda_context, 'a@example.com', 'b@example.com')
-    first = _ask(lambda_context, person_ids=ids)['ask']
+    first = _ask(lambda_context, claims=USER, person_ids=ids)['ask']
     (third,) = _people(lambda_context, 'c@example.com')
-    second = _ask(lambda_context, person_ids=[third])['ask']
+    second = _ask(lambda_context, claims=USER, person_ids=[third])['ask']
     run_send_job(lambda_context, world)
     run_send_job(lambda_context, world)
     errors = [r['error'] for r in ok(lambda_context, 'GET', f'/participants/asks/{second["ask_id"]}')['recipients']]
     assert ok(lambda_context, 'GET', f'/participants/asks/{first["ask_id"]}')['ask']['counts']['sent'] == 2
     assert errors == ['sender_daily_cap']
-    assert _send_counts(world) == {'COUNT': 2, f'SENDER#{ADMIN["sub"]}': 2}
+    assert _send_counts(world) == {'COUNT': 2, f'SENDER#{USER["sub"]}': 2}
 
 
 def test_a_deployment_cap_refusal_gives_the_sender_claim_back(world, lambda_context):
     ids = _people(lambda_context, 'a@example.com', 'b@example.com', 'c@example.com')
-    _ask(lambda_context, person_ids=ids)
+    _ask(lambda_context, claims=USER, person_ids=ids)
     ok(lambda_context, 'PUT', '/participants/settings', body={'daily_send_cap': 2})
     run_send_job(lambda_context, world)
-    assert _send_counts(world) == {'COUNT': 2, f'SENDER#{ADMIN["sub"]}': 2}
+    assert _send_counts(world) == {'COUNT': 2, f'SENDER#{USER["sub"]}': 2}
 
 
 def test_an_ask_without_a_sender_counts_against_the_deployment_cap_only(world):

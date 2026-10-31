@@ -21,7 +21,7 @@ Settings (`SETTINGS` / `engagement` in the participants table):
 |---|---|---|
 | `company_domains` | `[]` | Up to 20 lower-case domains. Also the audience of every `company` [feedback board](feature-requests.md#who-sees-a-board) and part of the boards' sign-up rule (an exact domain match; a subdomain is a different domain). Edited with the boards in the UI. |
 | `allow_external_people` | `true` | When false, a NEW person must have a company-domain address. Existing people are never removed. |
-| `daily_send_cap` | `500` | 1–5000 emails per UTC day, for the whole deployment. Each person's own asks also stop at **50 emails a UTC day** (fixed, `PER_SENDER_DAILY_CAP` in `shared/participants_asks.py`): checked before queueing (429 `sender_daily_cap`) and on every send (that recipient fails with `sender_daily_cap`), counted in `SENDCOUNT#{day}` / `SENDER#{sub}` |
+| `daily_send_cap` | `500` | 1–5000 emails per UTC day, for the whole deployment. A non-administrator's own asks also stop at **50 emails a UTC day** (fixed; an administrator, who sets this cap, is bounded by it alone; `PER_SENDER_DAILY_CAP` in `shared/participants_asks.py`): checked before queueing (429 `sender_daily_cap`) and on every send (that recipient fails with `sender_daily_cap`), counted in `SENDCOUNT#{day}` / `SENDER#{sub}` |
 | `sender_name` | the brand name | Up to 80 characters, the From display name |
 
 ## API

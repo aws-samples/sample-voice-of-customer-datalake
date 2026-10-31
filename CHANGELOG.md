@@ -171,8 +171,9 @@ safer handling of customer text in prompts.
   password keeps working; MFA is not enforced. The app user pool allows WebAuthn as a first factor, with the
   site's own domain as relying party and the choice-based `USER_AUTH` flow on the web client
   (`features.passkey` in `config.json`). See [docs/deployment.md → Passkeys](docs/deployment.md#passkeys).
-- **Per-sender email cap.** One person's asks (`POST /participants/asks`) send at most 50 emails a UTC day, checked
-  before queueing (429 `sender_daily_cap`) and again on every send; the deployment cap (default 500) still applies.
+- **Per-sender email cap.** A non-administrator's asks (`POST /participants/asks`) send at most 50 emails a UTC day,
+  checked before queueing (429 `sender_daily_cap`) and again on every send; the deployment cap (default 500) still
+  applies, and is an administrator's only limit.
 
 ### Changed
 - **API Gateway** uses the enhanced TLS 1.2+ forward-secret policy `SecurityPolicy_TLS12_PFS_2025_EDGE`

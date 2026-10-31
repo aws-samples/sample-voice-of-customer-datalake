@@ -15,7 +15,7 @@ from aws_lambda_powertools.event_handler.api_gateway import Router
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import engagement_config, participants_send
-from shared.api import get_caller_subject
+from shared.api import get_caller_subject, is_admin
 from shared.engagement_common import (
     created,
     id_list,
@@ -27,6 +27,7 @@ from shared.engagement_identity import can_view_project, require_project_access,
 from shared.exceptions import ConflictError, NotFoundError, TooManyRequestsError, ValidationError
 from shared.logging import logger, tracer
 from shared.participants_asks import (
+    CAP_SENDER_FIELD,
     DAILY_CAP_REFUSAL,
     MAX_RECIPIENTS,
     PER_SENDER_DAILY_CAP,
@@ -206,10 +207,11 @@ def _ask_fields(body: Mapping[str, Any], event: dict[str, Any]) -> dict[str, Any
     return fields
 
 
-def _check_capacity(table: Any, active: int, sender: str) -> None:
+def _check_capacity(table: Any, active: int, capped_sender: str) -> None:
+    """400 without recipients; 429 over the sender's own cap (when they have one) or the deployment's."""
     if not active:
         raise ValidationError('no_recipients')
-    if sent_today_by(table, sender) + active > PER_SENDER_DAILY_CAP:
+    if capped_sender and sent_today_by(table, capped_sender) + active > PER_SENDER_DAILY_CAP:
         raise TooManyRequestsError(SENDER_CAP_REFUSAL)
     settings = load_settings(table, engagement_config.brand_name())
     if sent_today(table) + active > int(settings['daily_send_cap']):
@@ -233,8 +235,12 @@ def post_ask():
     recipients = [pid for pid in recipients if pid in people]
     active = sum(1 for pid in recipients if is_active(people[pid]))
     sender = get_caller_subject(event)
-    _check_capacity(table, active, sender)
-    ask = create_ask(table, fields, recipients, sender)
+    # The per-sender cap holds any signed-in user's asks to 50 emails a day; an administrator, who
+    # already sets the deployment's own daily cap, is bounded by that cap only.
+    capped_sender = '' if is_admin(event) else sender
+    _check_capacity(table, active, capped_sender)
+    ask = create_ask(table, {**fields, **({CAP_SENDER_FIELD: capped_sender} if capped_sender else {})},
+                     recipients, sender)
     participants_send.start(ask['ask_id'])
     logger.info('Ask created', extra={'ask_id': ask['ask_id'], 'recipients': len(recipients), 'active': active})
     return created({'ask': ask_view(ask)}, status_code=202)

@@ -186,8 +186,13 @@ export const authService = {
       username: username.trim(),
       options: { authFlowType: 'USER_AUTH', preferredChallenge: 'WEB_AUTHN' },
     }).catch((error: unknown) => { throw toPasskeyError(error) })
-    // Without a passkey Cognito offers the other first factors instead of WebAuthn.
-    if (output.nextStep.signInStep !== 'DONE') throw new PasskeyError('no_passkey')
+    // Without a passkey Cognito offers the other first factors instead of WebAuthn: abandon that
+    // half-started sign-in. Any other step (a new password, an unsupported one) is the password
+    // sign-in's own answer.
+    if (output.nextStep.signInStep === 'CONTINUE_SIGN_IN_WITH_FIRST_FACTOR_SELECTION') {
+      await startSignOut()
+      throw new PasskeyError('no_passkey')
+    }
     await finishSignIn(output)
   },
 
