@@ -302,5 +302,43 @@
     "insertPersona": "Mencionar uma persona",
     "insertDocument": "Marcar um documento",
     "allCapped": "@all pergunta às primeiras {{max, number}} de {{total, number}} personas: {{names}}."
+  },
+  "scope": {
+    "title": "Escopo do feedback",
+    "allFeedback": "Todo o feedback",
+    "activeFilters_one": "{{count}} filtro",
+    "activeFilters_other": "{{count}} filtros",
+    "count_one": "{{formatted}} avaliação",
+    "count_other": "{{formatted}} avaliações",
+    "countPartial_one": "{{formatted}}+ avaliação",
+    "countPartial_other": "{{formatted}}+ avaliações",
+    "counting": "Contando avaliações…",
+    "countUnavailable": "Contagem de avaliações indisponível",
+    "overCap": "Este escopo tem mais de {{max}} avaliações. O assistente lê no máximo {{max}} por pesquisa, então parte do feedback fica de fora. Restrinja os filtros para obter uma resposta completa.",
+    "clear": "Limpar filtros",
+    "timeRange": "Período",
+    "source": "Fonte",
+    "anySource": "Qualquer fonte",
+    "sentiment": "Sentimento",
+    "anySentiment": "Qualquer sentimento",
+    "sentiments": {
+      "positive": "Positivo",
+      "neutral": "Neutro",
+      "negative": "Negativo",
+      "mixed": "Misto"
+    },
+    "rating": "Nota",
+    "anyRating": "Qualquer nota",
+    "ratingAtLeast_one": "Pelo menos {{count}} estrela",
+    "ratingAtLeast_other": "Pelo menos {{count}} estrelas",
+    "ratingAtMost_one": "No máximo {{count}} estrela",
+    "ratingAtMost_other": "No máximo {{count}} estrelas",
+    "channel": "Canal",
+    "anyChannel": "Qualquer canal",
+    "tag": "Tag",
+    "anyTag": "Qualquer tag",
+    "urgentOnly": "Somente urgentes",
+    "categories": "Categorias",
+    "noCategories": "Nenhuma categoria neste período."
   }
 }
