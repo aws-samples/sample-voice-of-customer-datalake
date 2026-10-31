@@ -95,7 +95,8 @@ class TestLegacyClient:
         world.client(minted).request('prompts/get', {'name': 'weekly_summary', 'arguments': {'days': '14'}})
         (event,) = world.audit('alice', minted['token_id'])
         assert (event['tool'], event['outcome']) == ('prompt:weekly_summary', 'ok')
-        assert '14' not in json.dumps(event)
+        # The argument's NAME, not its value: an audit row carries a timestamp, so "14" can be its minute.
+        assert 'days' not in json.dumps(event)
 
     def test_a_resource_is_read_through_the_settings_route_as_the_minter(self, world, settings):
         minted = world.mint('alice', scope='read')
