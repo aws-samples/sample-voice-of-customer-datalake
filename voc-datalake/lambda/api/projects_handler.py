@@ -362,7 +362,13 @@ def _require_project_exists(project_id: str) -> None:
     it looks the project up would write it for a project that does not exist. The
     routes that do that call this first; for a non-admin it is a second, cheap read
     of a META the gate has already confirmed.
+
+    The company persona library's container is reached only through ``/company-personas``,
+    whose admin-only writes create its META first (``ensure_company_personas_meta``); the
+    gate's META read treats it as missing on purpose, so it is not read here.
     """
+    if is_company_container(project_id):
+        return
     meta = _gate_meta(project_id)
     if not meta or is_project_tombstone(meta):
         raise NotFoundError(project_gate.PROJECT_NOT_FOUND)

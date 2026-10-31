@@ -347,6 +347,7 @@
       "sourceEmpty": "Diese Quelle hat keine Personas.",
       "failed": "Die Personas konnten nicht kopiert werden. Versuchen Sie es erneut.",
       "cancel": "Abbrechen",
+      "submitNone": "Kopieren",
       "submit_one": "{{count, number}} Persona kopieren",
       "submit_other": "{{count, number}} Personas kopieren"
     }

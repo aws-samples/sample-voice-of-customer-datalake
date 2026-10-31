@@ -22,6 +22,7 @@ from shared.company_personas import (
     COMPANY_PERSONAS_CONTAINER,
     company_persona_items,
     ensure_company_personas_meta,
+    without_copier,
 )
 from shared.document_review_routes import CALLER_CONTEXT_KEY
 from shared.exceptions import AuthorizationError, ConfigurationError
@@ -95,12 +96,26 @@ def _writable_library() -> None:
     ensure_company_personas_meta(projects_table())
 
 
+#: Storage keys never returned by the library read.
+STORAGE_KEYS = frozenset({'pk', 'sk', 'gsi1pk', 'gsi1sk'})
+
+
+def public_persona(persona: dict, *, admin: bool) -> dict:
+    """A library persona as the API returns it: no storage keys; who copied it only for admins."""
+    shown = {key: value for key, value in persona.items() if key not in STORAGE_KEYS}
+    provenance = shown.get('copied_from')
+    if not admin and isinstance(provenance, dict):
+        shown['copied_from'] = without_copier(provenance)
+    return shown
+
+
 @app.get("/company-personas")
 @tracer.capture_method
 def list_company_personas():
     """``{personas, can_edit}``, newest first: every signed-in user reads the library."""
+    admin = acts_as_admin(request_caller())
     personas = ops().sign_avatars(company_persona_items(projects_table()))
-    return {'personas': personas, 'can_edit': acts_as_admin(request_caller())}
+    return {'personas': [public_persona(persona, admin=admin) for persona in personas], 'can_edit': admin}
 
 
 @app.post("/company-personas/generate")

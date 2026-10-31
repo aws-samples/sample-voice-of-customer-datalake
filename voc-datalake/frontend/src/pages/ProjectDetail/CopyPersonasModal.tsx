@@ -119,7 +119,7 @@ export default function CopyPersonasModal({ projectId, onClose, onCopied }: Copy
         <button type="button" onClick={onClose} className="btn btn-secondary w-full sm:w-auto">{t('personas.copy.cancel')}</button>
         <button type="button" onClick={() => copy.mutate()} disabled={count === 0 || copy.isPending} className="btn btn-primary w-full sm:w-auto">
           {copy.isPending ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Copy size={16} aria-hidden />}
-          {t('personas.copy.submit', { count })}
+          {count === 0 ? t('personas.copy.submitNone') : t('personas.copy.submit', { count })}
         </button>
       </div>
     </ModalShell>

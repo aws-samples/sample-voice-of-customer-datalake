@@ -96,6 +96,13 @@ class TestReadGateMeta:
         with pytest.raises(RuntimeError):
             project_gate.read_gate_meta(table, 'p1')
 
+    def test_the_company_persona_library_reads_as_missing_without_a_read(self):
+        table = MagicMock()
+        table.get_item.return_value = {'Item': _meta()}
+
+        assert project_gate.read_gate_meta(table, 'company_personas') is None
+        table.get_item.assert_not_called()
+
 
 class TestRequireProjectLevel:
     def test_admins_skip_the_read(self):

@@ -351,6 +351,7 @@
       "sourceEmpty": "Este origen no tiene personas.",
       "failed": "No se pudieron copiar las personas. Inténtalo de nuevo.",
       "cancel": "Cancelar",
+      "submitNone": "Copiar",
       "submit_one": "Copiar {{count, number}} persona",
       "submit_many": "Copiar {{count, number}} personas",
       "submit_other": "Copiar {{count, number}} personas"

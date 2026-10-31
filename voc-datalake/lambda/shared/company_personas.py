@@ -79,6 +79,11 @@ def company_persona_items(table: Any) -> list[dict]:
     return sorted(rows, key=_created_at, reverse=True)
 
 
+def without_copier(provenance: dict) -> dict:
+    """``copied_from`` without ``copied_by`` (a user id), for readers other than admins."""
+    return {key: value for key, value in provenance.items() if key != 'copied_by'}
+
+
 def persona_summary(persona: dict) -> dict:
     """``{persona_id, name, tagline, avatar_url, copied_from?}`` of an (already signed) persona."""
     summary = {
@@ -88,5 +93,5 @@ def persona_summary(persona: dict) -> dict:
         'avatar_url': persona.get('avatar_url') or None,
     }
     if isinstance(persona.get('copied_from'), dict):
-        summary['copied_from'] = persona['copied_from']
+        summary['copied_from'] = without_copier(persona['copied_from'])
     return summary

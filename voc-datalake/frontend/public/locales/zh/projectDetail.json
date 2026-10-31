@@ -347,6 +347,7 @@
       "sourceEmpty": "此来源没有用户画像。",
       "failed": "无法复制用户画像。请重试。",
       "cancel": "取消",
+      "submitNone": "复制",
       "submit_one": "复制 {{count, number}} 个用户画像",
       "submit_other": "复制 {{count, number}} 个用户画像"
     }

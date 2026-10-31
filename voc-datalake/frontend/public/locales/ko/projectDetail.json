@@ -347,6 +347,7 @@
       "sourceEmpty": "이 위치에는 페르소나가 없습니다.",
       "failed": "페르소나를 복사하지 못했습니다. 다시 시도하세요.",
       "cancel": "취소",
+      "submitNone": "복사",
       "submit_one": "페르소나 {{count, number}}개 복사",
       "submit_other": "페르소나 {{count, number}}개 복사"
     }

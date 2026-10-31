@@ -347,6 +347,7 @@
       "sourceEmpty": "このコピー元にはペルソナがありません。",
       "failed": "ペルソナをコピーできませんでした。もう一度お試しください。",
       "cancel": "キャンセル",
+      "submitNone": "コピー",
       "submit_one": "{{count, number}}件のペルソナをコピー",
       "submit_other": "{{count, number}}件のペルソナをコピー"
     }
