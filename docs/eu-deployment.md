@@ -18,7 +18,8 @@ npm run deploy:infra -- -c inferenceScope=eu --context frontendDomain=<domain>
 | Stored / allowlisted model ids | Canonical `global.…` | Unchanged (still canonical). The prefix is mapped at call time |
 | Web search (AgentCore gateway) | On by default | **Never deployed.** An explicit `-c enableWebSearch=true` throws, because the connector runs only in us-east-1 |
 | Persona avatars | Image model in us-west-2 | **Disabled** (`AVATARS_ENABLED=false`); personas have no avatar |
-| Anthropic use-case form (`anthropicUseCase`) | Allowed | Still allowed. It is an account-level form submitted in us-east-1, and no inference or customer data passes through it (the synth adds an info annotation) |
+| Anthropic use-case form (`anthropicUseCase`) | Opt-in: only with your own block (none is committed); otherwise filed in the Bedrock console | The same. With a block, `VocWebSearchStack` is created in us-east-1 for the account-level form only; no inference or customer data passes through it (the synth adds an info annotation). Without one, **no stack deploys to us-east-1** |
+| Model agreements (Claude) | Created by `VocCoreStack` on every deploy, in the app region, best effort | The same, in your EU app region |
 
 ### How the scope applies at runtime
 
