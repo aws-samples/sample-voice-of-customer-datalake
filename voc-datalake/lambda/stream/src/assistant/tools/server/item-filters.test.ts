@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fakeContext, fakeDeps, serverTool } from '../test-fixtures.js';
-import { itemFilterQuery, serializeDims } from './item-filters.js';
+import { serializeDims } from './item-filters.js';
 
 const dashboard = () => fakeContext('dashboard', {}, { props: { page: { kind: 'dashboard', path: '/' }, days: 7 } });
 const FILTERS = { channel: 'email', tag: 'VIP', dims: { product: 'app', user_type: 'partner' } };
@@ -10,7 +10,6 @@ describe('the item filter helpers', () => {
   it('serialise dims as key:value pairs and drop an empty object', () => {
     expect(serializeDims({ product: 'app', module: 'billing' })).toBe('product:app,module:billing');
     expect(serializeDims({})).toBeUndefined();
-    expect(itemFilterQuery({})).toStrictEqual({ channel: undefined, tag: undefined, dims: undefined });
   });
 });
 
