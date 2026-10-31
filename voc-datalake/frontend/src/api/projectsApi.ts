@@ -173,6 +173,13 @@ export const projectsApi = {
       post({ ...getDateBasisBodyParams(), ...body, mode, purpose })),
   ),
 
+  /** Protect a persona (or release it): a replace regeneration keeps a protected one (#429). */
+  setPersonaProtected: (projectId: string, personaId: string, isProtected: boolean) =>
+    fetchApi<unknown>(
+      `/projects/${encodeURIComponent(projectId)}/personas/${encodeURIComponent(personaId)}/protection`,
+      put({ protected: isProtected }),
+    ),
+
   updatePersona: (projectId: string, personaId: string, data: Partial<Omit<ProjectPersona, 'persona_id' | 'created_at'>>) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, put(data)),
 

@@ -141,6 +141,8 @@ export interface ProjectPersona {
    * #429), a subset of `input_feedback_ids` in first-cited order. Absent on older personas.
    */
   evidence_feedback_ids?: string[]
+  /** A replace regeneration keeps a protected persona (#429). Absent = unprotected. */
+  protected?: boolean
   /**
    * Set on a persona copied from the company library or another project (a copy, never a
    * link; research notes are never copied). Replaced, not chained, on a copy of a copy.
