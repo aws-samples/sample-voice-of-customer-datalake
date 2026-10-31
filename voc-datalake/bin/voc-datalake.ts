@@ -9,7 +9,7 @@ import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
 import { VocApiStack } from '../lib/stacks/api-stack';
 import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
-import { AnthropicUseCaseSchema, AnthropicUseCaseConfig, ImageModelAccess } from '../lib/stacks/bedrock-access-stack';
+import { AnthropicUseCaseSchema, AnthropicUseCaseConfig, BedrockModelAgreements } from '../lib/stacks/bedrock-access-stack';
 import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
 import { suppressReviewedResourceStar } from '../lib/utils/nag-resource-star';
 import { shouldDeployWebSearchInScope } from '../lib/utils/web-search-default';
@@ -76,8 +76,8 @@ const env = {
 // Stack 0: VocWebSearchStack — the us-east-1 AI-enablement stack
 // ============================================
 // Two independently switchable halves in ONE stack, because they are one
-// deployment unit: both must live in us-east-1 (the web-search connector
-// exists only there; PutUseCaseForModelAccess works only there), both are
+// deployment unit: both run in us-east-1 (the web-search connector exists only
+// there; the use-case form has only ever been submitted there), both are
 // one-shot account enablement, and neither depends on the core stack chain.
 // They used to be two stacks, which put the app at six CloudFormation
 // templates — one over Workshop Studio's ceiling of five.
@@ -88,9 +88,14 @@ const env = {
 //           lib/utils/web-search-default.ts (single source of truth).
 //           Per-request search stays opt-in in both UIs ($7/1k queries; the
 //           gateway itself has no standing cost).
-//   half 2: Bedrock model access — Anthropic use-case submission plus the
-//           model agreements. Skipped entirely when `anthropicUseCase` is
-//           absent, e.g. for an account that already has access.
+//   half 2: Anthropic use-case form submission. Opt-in: only when the
+//           deployer passes their own `anthropicUseCase` block (-c or a local
+//           context file) and `skipUseCaseSubmission` is not set. Unset by
+//           default, so the form is filed in the Bedrock console instead.
+//
+// The model agreements are NOT here: VocCoreStack creates them in the app's
+// region on every deploy (BedrockModelAgreements). So with web search off and
+// no form to submit, this stack is not created and nothing goes to us-east-1.
 //
 // The BASE id stays `VocWebSearchStack` deliberately: it determines the
 // CloudFormation export names VocProcessingStack and VocApiStack import. It goes
@@ -119,12 +124,16 @@ if (anthropicUseCaseRaw) {
   } else {
     console.warn('⚠️  Invalid anthropicUseCase config in cdk.context.json:');
     console.warn(z.prettifyError(parseResult.error));
-    console.warn('Skipping Bedrock model access. See cdk.context.example.json for the required format.');
+    console.warn('Skipping the use case submission. See "Bedrock model access" in docs/deployment.md for the required format.');
   }
 }
 
+// What half 2 submits, if anything. Skipping applies here, so a skipped
+// submission with web search off leaves no reason to create the stack.
+const useCaseToSubmit = skipUseCaseSubmission ? undefined : anthropicUseCase;
+
 let webSearchStack: VocWebSearchStack | undefined;
-if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
+if (shouldDeployAiEnablement(deployWebSearch, useCaseToSubmit)) {
   webSearchStack = new VocWebSearchStack(app, stackId('VocWebSearchStack'), {
     env: { account: env.account, region: 'us-east-1' },
     deploymentPrefix,
@@ -134,16 +143,14 @@ if (shouldDeployAiEnablement(deployWebSearch, anthropicUseCase)) {
     crossRegionReferences: true,
     description: 'VoC Data Lake - AI Enablement (web search gateway, Bedrock model access) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
     deployWebSearch,
-    anthropicUseCase,
-    modelRegion: env.region, // Create model agreements in the same region as other stacks
-    skipUseCaseSubmission,
+    anthropicUseCase: useCaseToSubmit,
   });
   tagStack(webSearchStack, 'AiEnablement');
   if (inferenceScope === 'eu') {
-    // Only the model-access half can be here (web search is never deployed for eu).
+    // Only the use-case half can be here (web search is never deployed for eu).
     cdk.Annotations.of(webSearchStack).addInfo(
-      'inferenceScope=eu: VocWebSearchStack carries only Bedrock model access (the account-level Anthropic ' +
-      'use-case form, submitted in us-east-1). No inference and no customer data go through it.',
+      'inferenceScope=eu: VocWebSearchStack carries only the account-level Anthropic use-case form, ' +
+      'submitted in us-east-1. No inference and no customer data go through it.',
     );
   }
   if (webSearchCrossRegion) {
@@ -168,10 +175,18 @@ const coreStack = new VocCoreStack(app, stackId('VocCoreStack'), {
   description: 'VoC Data Lake - Core Infrastructure (Storage, Auth, Frontend Hosting) (uksb-0q2jyqfvlm)(tag:VocCoreStack)',
 });
 tagStack(coreStack, 'Core');
-// The persona-avatar image model's agreement / Marketplace subscription, on every
-// deployment (no flag): hosted by Core because it always exists and deploys first.
-// VocWebSearchStack, which carries the Claude agreements, is optional. Best effort.
-ImageModelAccess.addTo(coreStack, 'ImageModelAccess');
+// The Bedrock model agreements / Marketplace subscriptions, on every deployment
+// (no flag), best effort: every allowlisted Claude model in the app region, and
+// the persona-avatar image model. Hosted by Core because it always exists, deploys
+// first and runs in the app region. The id is the construct's earlier name
+// (image agreement only), kept so that resource keeps its logical id.
+BedrockModelAgreements.addTo(coreStack, 'ImageModelAccess');
+// The form goes in before Core's agreements are attempted, as it did when both
+// lived in one construct. Only when there IS a form: otherwise Core must not wait
+// on (or, with `cdk deploy VocCoreStack`, drag in) a us-east-1 stack.
+if (webSearchStack && useCaseToSubmit) {
+  coreStack.addStackDependency(webSearchStack);
+}
 
 // ============================================
 // Stack 2: VocIngestionStack
@@ -285,8 +300,8 @@ Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
 // Global suppressions.
 // VocWebSearchStack deliberately gets NONE: the gateway half has always passed
 // cdk-nag unsuppressed (its IAM is scoped to the concrete gateway ARN), and the
-// model-access half carries its own resource-scoped suppressions inside
-// BedrockModelAccess. The plugin/Comprehend/Translate sets that used to be
+// use-case half carries its own resource-scoped suppressions inside
+// AnthropicUseCaseSubmission. The plugin/Comprehend/Translate sets that used to be
 // applied to BedrockAccessStack at stack level were copy-paste — that stack
 // calls neither service — so they are dropped rather than inherited by the
 // gateway resources.
