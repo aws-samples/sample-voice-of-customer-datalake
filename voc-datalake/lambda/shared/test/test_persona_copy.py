@@ -57,6 +57,10 @@ def _personas(table, project_id):
             if item['pk'] == f'PROJECT#{project_id}' and item['sk'].startswith('PERSONA#')]
 
 
+def _bucket_keys(s3):
+    return {obj['Key'] for obj in s3.list_objects_v2(Bucket=BUCKET).get('Contents', [])}
+
+
 class TestCopyPersonas:
     def test_the_copy_is_a_new_persona_with_the_content_and_none_of_the_notes(self, world):
         table, s3 = world
@@ -155,8 +159,7 @@ class TestCopyPersonas:
         with pytest.raises(NotFoundError, match='Project not found'):
             _copy(table, s3)
 
-        keys = [obj['Key'] for obj in s3.list_objects_v2(Bucket=BUCKET).get('Contents', [])]
-        assert keys == [SOURCE_KEY]
+        assert _bucket_keys(s3) == {SOURCE_KEY}
         assert _personas(table, 'p2') == []
 
     def test_an_unexpected_save_failure_removes_the_unsaved_avatar_copies_and_re_raises(self, world):
@@ -167,8 +170,7 @@ class TestCopyPersonas:
         ):
             _copy(table, s3)
 
-        keys = [obj['Key'] for obj in s3.list_objects_v2(Bucket=BUCKET).get('Contents', [])]
-        assert keys == [SOURCE_KEY]
+        assert _bucket_keys(s3) == {SOURCE_KEY}
 
     def test_a_failure_after_the_save_keeps_the_avatar_of_the_stored_copy(self, world):
         table, s3 = world
@@ -180,8 +182,7 @@ class TestCopyPersonas:
 
         [copy] = _personas(table, 'p2')
         copy_key = copy['avatar_url'].removeprefix(f's3://{BUCKET}/')
-        keys = {obj['Key'] for obj in s3.list_objects_v2(Bucket=BUCKET).get('Contents', [])}
-        assert keys == {SOURCE_KEY, copy_key}
+        assert _bucket_keys(s3) == {SOURCE_KEY, copy_key}
 
 
 class TestCompanyContainerMeta:
