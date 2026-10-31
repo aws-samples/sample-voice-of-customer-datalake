@@ -1,5 +1,5 @@
 /**
- * The Cognito `e2e` group (lib/stacks/core-auth.ts, 5.61.00): the production e2e test users, whose
+ * The Cognito `e2e` group (lib/stacks/core-auth.ts, 5.62.00): the production e2e test users, whose
  * model calls resolve to Haiku 5.5 on every surface. Pinned here, together with the two runtime
  * copies of its name and model (lambda/shared/model_profile.py + model_config.py, and
  * lambda/stream/src/bedrock/model-profile.ts), so a rename in one place fails the CDK suite.

@@ -12,7 +12,7 @@
 #
 # Env: E2E_SHARD_OUT  base directory (default e2e/e2e-output/sharded-<epoch s>)
 #      E2E_TAG_RUN_ID  the test traffic tag shared by all shards (default e2e-[<track>-]<UTC yyyymmddThhmmssZ>)
-#      E2E_SHARD_WRITE_WORKERS  workers per shard for the specs that write (default 2, as before 5.61.00)
+#      E2E_SHARD_WRITE_WORKERS  workers per shard for the specs that write (default 2, as before 5.62.00)
 #      E2E_SHARD_READ_WORKERS   workers per shard for the read-only specs (lib/parallel.ts; default 2)
 #      E2E_SHARD_WORKERS  total workers per shard (default read + write)
 set -uo pipefail
