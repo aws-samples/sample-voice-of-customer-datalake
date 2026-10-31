@@ -71,7 +71,6 @@ voc-datalake/frontend/src/pages/ProblemAnalysis/problemAnalysisPdfGenerator.tsx 
 voc-datalake/frontend/src/pages/ProblemAnalysis/problemGrouping.ts 57.14   # 4/7
 voc-datalake/frontend/src/pages/ProjectDetail/DocumentPrototypeView.tsx 64.40   # 38/59
 voc-datalake/frontend/src/pages/ProjectDetail/ProjectDetail.tsx 58.33   # 42/72
-voc-datalake/frontend/src/pages/ProjectDetail/ProjectModals.tsx 72.72   # 8/11
 voc-datalake/frontend/src/pages/ProjectDetail/ResearchNotes.tsx 52.00   # 13/25
 voc-datalake/frontend/src/pages/ProjectDetail/WizardSection.tsx 55.55   # 5/9
 voc-datalake/frontend/src/pages/ProjectDetail/Wizards.tsx 60.00   # 30/50
