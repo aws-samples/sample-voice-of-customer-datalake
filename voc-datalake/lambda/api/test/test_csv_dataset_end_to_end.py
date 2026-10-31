@@ -5,7 +5,7 @@ The real manual-import handler (preview, upload, confirmed update) and the real 
 to the processor, so the digest the preview compares is the one the processor stored.
 """
 import json
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -37,7 +37,7 @@ def _processor_settings_seeded() -> Iterator[None]:
 
 
 @contextmanager
-def platform() -> Iterator[tuple[object, MagicMock]]:
+def platform() -> Generator[tuple[object, MagicMock], None, None]:
     """The processor's moto world with the upload Lambda wired to the same feedback table."""
     with world([insights(), insights('performance', -0.9, 'high')]) as (feedback, _llm):
         sqs = MagicMock()
