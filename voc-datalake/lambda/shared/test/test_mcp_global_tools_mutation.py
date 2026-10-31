@@ -67,8 +67,8 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         False, False, False),
     'get_feedback': (
         'Get one feedback item',
-        'One feedback item in full, by `feedback_id` (from search_feedback); `include_similar: true` adds up to '
-        '5 similar items.',
+        ('One feedback item in full, by `feedback_id` (from search_feedback); `include_similar: true` adds up to '
+        '5 similar items.'),
         _object({'feedback_id': ID, 'include_similar': BOOL}, 'feedback_id'), False, False, False),
     'get_metrics': (
         'Get feedback metrics',
