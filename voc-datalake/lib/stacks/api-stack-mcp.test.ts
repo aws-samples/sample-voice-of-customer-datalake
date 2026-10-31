@@ -601,7 +601,7 @@ describe('unauthorized gateway response', () => {
       .find((p) => p.ResponseType === 'UNAUTHORIZED');
     expect(unauthorized, 'no UNAUTHORIZED gateway response in the template').toBeDefined();
     const params = unauthorized?.ResponseParameters ?? {};
-    // Since 5.61.00: the MCP endpoint's protected-resource metadata, which an MCP client signs in from when it
+    // Since 5.62.00: the MCP endpoint's protected-resource metadata, which an MCP client signs in from when it
     // sent no credential (a TOKEN authorizer is not invoked without its header, so THIS is that 401). No
     // `error=`: the request carried no credential (RFC 6750 §3.1). The SPA never reads this header.
     expect((params['gatewayresponse.header.WWW-Authenticate'] ?? '').replace(/\{Ref:VocAnalyticsApi[0-9A-F]{8}\}/, '{api}'))

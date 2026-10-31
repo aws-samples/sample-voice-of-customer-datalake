@@ -1,5 +1,5 @@
 /**
- * Which production specs may run side by side (5.61.00). The suite used to run every spec on one
+ * Which production specs may run side by side (5.62.00). The suite used to run every spec on one
  * worker, so a full run took hours unless sharded. Specs that only READ (or validate without
  * storing) share nothing and run in parallel projects (`admin-read`, `user-read`) with up to
  * `E2E_READ_WORKERS` workers; every spec that writes stays in the `admin` / `user` projects, one
