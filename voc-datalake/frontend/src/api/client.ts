@@ -15,7 +15,6 @@ import { isRecord } from '../lib/typeGuards'
 import { runAssistJob } from './assistJobs'
 import { parseGeneratedCategories } from './assistResults'
 import type {
-  AttributeFilters,
   ItemFilterParams,
   CursorListParams,
   DateBasis,
@@ -36,6 +35,7 @@ import type {
   GenerateDocumentBody,
 } from './types'
 import type { PrioritizationRow } from './projectTypes'
+import type { FacetQueryParams } from './feedbackFacets'
 
 /**
  * Date-range query parameters sent to time-filtered analytics endpoints.
@@ -177,6 +177,9 @@ interface CategoryConfigEntry {
   subcategories: Array<{ id: string; name: string; description?: string }>
 }
 
+/** The item filters a metrics route takes, the facet lists included. */
+type MetricFilterParams = ItemFilterParams & FacetQueryParams
+
 export const api = {
   // Feedback
   getFeedback: async (params: FeedbackListParams) => {
@@ -237,21 +240,22 @@ export const api = {
   },
   
   // Metrics
-  getSummary: (range: DateRangeParams, source?: string, filters?: AttributeFilters) => {
+  /** `filters` may carry the facet lists (`source=a,b`, `category`, `sentiment`, `usefulness`). */
+  getSummary: (range: DateRangeParams, source?: string, filters?: MetricFilterParams) => {
     const searchParams = buildSearchParams({ ...range, source, ...filters })
     return fetchApi<MetricsSummary>(`/metrics/summary?${searchParams}`)
   },
   /** `category` narrows the breakdown to one category (the Categories page's scoped gauge). */
-  getSentiment: (range: DateRangeParams, source?: string, filters?: ItemFilterParams, category?: string) => {
+  getSentiment: (range: DateRangeParams, source?: string, filters?: MetricFilterParams, category?: string) => {
     const searchParams = buildSearchParams({ ...range, source, ...filters, category })
     return fetchApi<SentimentBreakdown>(`/metrics/sentiment?${searchParams}`)
   },
-  getCategories: (range: DateRangeParams, source?: string, filters?: ItemFilterParams) => {
+  getCategories: (range: DateRangeParams, source?: string, filters?: MetricFilterParams) => {
     const searchParams = buildSearchParams({ ...range, source, ...filters })
     return fetchApi<CategoryBreakdown>(`/metrics/categories?${searchParams}`)
   },
-  getSources: (range: DateRangeParams) => {
-    const searchParams = buildSearchParams({ ...range })
+  getSources: (range: DateRangeParams, filters?: MetricFilterParams) => {
+    const searchParams = buildSearchParams({ ...range, ...filters })
     return fetchApi<SourceBreakdown>(`/metrics/sources?${searchParams}`)
   },
   /** GitHub Issues per release / per label (normalized: the Dashboard renders it as-is). */

@@ -1,6 +1,8 @@
 /**
  * @fileoverview Problem Analysis filters, kept in the URL so a filtered view can be
- * shared, survives a reload, and Back returns to it: `source`, `category`,
+ * shared, survives a reload, and Back returns to it: `source` and `usefulness` (comma
+ * lists, any of them; read and written by `api/feedbackFacets.ts` like the Dashboard and
+ * Categories), `category`,
  * `subcategory`, `urgent=1`, `resolved=1`, `similarity` (low|med|high|off;
  * absent = the default, med) and `types` (absent = Problems only; `all`; or a comma
  * list, `feedbackTypes.ts`). The period and date basis are the header's, like every
@@ -12,6 +14,8 @@
  * @module pages/ProblemAnalysis/useProblemFilters
  */
 import { useSearchParams } from 'react-router-dom'
+import { EMPTY_FACETS, facetEntries, readFacets } from '../../api/feedbackFacets'
+import type { UsefulnessFacet } from '../../api/feedbackFacets'
 import { withOwnedParams } from '../../utils/searchParams'
 import { isProblemsOnly, readTypeSelection, writeTypeSelection } from './feedbackTypes'
 import type { TypeSelection } from './feedbackTypes'
@@ -29,10 +33,13 @@ function isSimilarityLevel(value: string | null): value is SimilarityLevel {
  * Keys this page writes. `window` (the retired "Latest 2,000 reviews" select) is read
  * by nothing; it is listed so the next filter change drops it from an old link.
  */
-const OWNED_PARAMS: readonly string[] = ['source', 'category', 'subcategory', 'urgent', 'resolved', 'similarity', 'types', 'window']
+const OWNED_PARAMS: readonly string[] = ['source', 'usefulness', 'category', 'subcategory', 'urgent', 'resolved', 'similarity', 'types', 'window']
 
 export interface ProblemFilters {
-  readonly source: string | null
+  /** Sources, any of them (empty = all). */
+  readonly sources: readonly string[]
+  /** Usefulness bands (+ `unrated`), any of them (empty = all). */
+  readonly usefulness: readonly UsefulnessFacet[]
   readonly category: string | null
   readonly subcategory: string | null
   readonly urgentOnly: boolean
@@ -55,8 +62,10 @@ function paramOrNull(params: URLSearchParams, name: string): string | null {
 /** The filters a URL says. */
 function readProblemFilters(params: URLSearchParams): ProblemFilters {
   const similarity = params.get('similarity')
+  const facets = readFacets(params)
   return {
-    source: paramOrNull(params, 'source'),
+    sources: facets.sources,
+    usefulness: facets.usefulness,
     category: paramOrNull(params, 'category'),
     subcategory: paramOrNull(params, 'subcategory'),
     urgentOnly: params.get('urgent') === '1',
@@ -68,8 +77,10 @@ function readProblemFilters(params: URLSearchParams): ProblemFilters {
 
 /** The canonical query for `filters` (defaults omitted). */
 function writeProblemFilters(filters: ProblemFilters): URLSearchParams {
+  // The tree's `category` is its own (one category; no category = `uncategorized`), not a facet list.
+  const facets = facetEntries({ ...EMPTY_FACETS, sources: filters.sources, usefulness: filters.usefulness })
   const entries: [string, string | null][] = [
-    ['source', filters.source],
+    ...facets,
     ['category', filters.category],
     ['subcategory', filters.subcategory],
     ['urgent', filters.urgentOnly ? '1' : null],
@@ -94,7 +105,7 @@ export function useProblemFilters(): ProblemFiltersApi {
   // Clear resets the narrowing filters; Similarity is a view setting and stays.
   const clear = () => write({ ...readProblemFilters(new URLSearchParams()), similarity: filters.similarity })
 
-  const anyActive = filters.source !== null || filters.category !== null || filters.subcategory !== null
+  const anyActive = filters.sources.length > 0 || filters.usefulness.length > 0 || filters.category !== null || filters.subcategory !== null
     || filters.urgentOnly || filters.showResolved || !isProblemsOnly(filters.types)
   return { ...filters, update, clear, anyActive }
 }

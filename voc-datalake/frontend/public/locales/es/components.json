@@ -690,5 +690,40 @@
     "trendUp": "Aumentó un {{percent}}",
     "trendDown": "Disminuyó un {{percent}}",
     "trendNeutral": "Sin cambios ({{percent}})"
+  },
+  "facetFilters": {
+    "groupLabel": "Filtros de comentarios",
+    "source": "Fuente",
+    "allSources": "Todas las fuentes",
+    "category": "Categoría",
+    "allCategories": "Todas las categorías",
+    "sentiment": "Sentimiento",
+    "allSentiments": "Todos los sentimientos",
+    "sentiments": {
+      "positive": "Positivo",
+      "neutral": "Neutral",
+      "negative": "Negativo",
+      "mixed": "Mixto"
+    },
+    "usefulness": "Utilidad",
+    "allUsefulness": "Cualquier utilidad",
+    "usefulnessValues": {
+      "high": "Utilidad alta",
+      "medium": "Utilidad media",
+      "low": "Utilidad baja",
+      "unrated": "Sin puntuar"
+    },
+    "usefulnessShort": {
+      "high": "Alta",
+      "medium": "Media",
+      "low": "Baja"
+    },
+    "usefulnessBadge": "Utilidad: {{band}}",
+    "selectedCount_one": "{{count, number}} seleccionado",
+    "selectedCount_other": "{{count, number}} seleccionados",
+    "clear": "Borrar",
+    "clearAll": "Borrar filtros",
+    "noMatchTitle": "Ningún comentario coincide con estos filtros",
+    "noMatchHint": "Cambia o borra los filtros, o elige un periodo más largo."
   }
 }

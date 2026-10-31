@@ -5,12 +5,11 @@
  * (`/feedback/search`) when a query of 2+ chars is present, urgent-only
  * (`/feedback/urgent`) when the toggle is on, otherwise the regular list
  * (`/feedback`). The star-rating filter is a SERVER filter (`rating_min` /
- * `rating_max`) on all three, so pagination and totals count only matching
- * items; only multi-category selection and the subcategory are still refined
- * client-side (the routes take one category and no subcategory). While a
- * client-side refinement is active the server's total counts the UNREFINED
- * window, so the header counts what is loaded instead (a lower bound while
- * more pages remain).
+ * `rating_max`) on all three, and so is every facet: several sources,
+ * categories, sentiments or usefulness bands go as comma lists, the
+ * subcategory as `subcategory` (`api/feedbackFacets.ts`). Nothing is refined
+ * in the browser, so pagination and totals count exactly the matching items
+ * (PR #429, @aws-bryan: the old refinement filtered a capped page).
  *
  * Every endpoint paginates through `loadMore` (infinite query): the list by
  * offset until the candidate window's `total` is loaded, search and urgent by
@@ -23,18 +22,16 @@
  * @module pages/Categories/useFeedbackListData
  */
 
-import { useMemo } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { DateRangeParams } from '../../api/client'
 import type { FeedbackItem } from '../../api/types'
 import { FEEDBACK_PAGE_LIMIT, nextPageOffset, nextPageToken } from '../../api/feedbackPagination'
 import type { CursorPage, FeedbackPage } from '../../api/feedbackPagination'
+import { facetQueryParams } from '../../api/feedbackFacets'
 import { attributeFiltersOf, ratingParamsOf } from './useCategoryFilters'
 import type { CategoryFiltersState } from './useCategoryFilters'
 import { failedReads, type FailedReads, type RetryableRead } from '../../utils/failedReads'
-import { categoryBucket } from '../../utils/displayLabels'
-import { useCategoriesConfig } from '../../hooks/useCategories'
 import { FEEDBACK_SEARCH_MIN_CHARS } from '../../api/feedbackSearch'
 
 export interface FeedbackListData {
@@ -46,11 +43,6 @@ export interface FeedbackListData {
   isPartialWindow: boolean
   /** True when the active endpoint has more pages to load. */
   hasMore: boolean
-  /**
-   * Reviews loaded so far BEFORE the client-side refinement (subcategory, several categories);
-   * null when nothing is refined in the browser, so "N of M loaded match" is only said when true.
-   */
-  loadedCount: number | null
   /** Fetches the next page of the active endpoint. */
   loadMore: () => void
   isLoadingMore: boolean
@@ -59,33 +51,15 @@ export interface FeedbackListData {
 }
 
 function buildCommonParams(dateParams: DateRangeParams, filters: CategoryFiltersState) {
+  // Every filter is a server filter on all three routes ("urgent only" picks the urgent route).
   return {
     ...dateParams,
     limit: FEEDBACK_PAGE_LIMIT,
-    source: filters.selectedSource ?? undefined,
-    sentiment: filters.sentimentFilter !== 'all' ? filters.sentimentFilter : undefined,
-    // The list endpoints accept a single category; multi-select is refined client-side.
-    category: filters.selectedCategories.length === 1 ? filters.selectedCategories[0] : undefined,
-    // channel / dims / tag / rating are server-side filters on every list route.
+    ...facetQueryParams(filters.facets),
+    ...(filters.subcategory === null ? {} : { subcategory: filters.subcategory }),
     ...attributeFiltersOf(filters),
     ...ratingParamsOf(filters.ratingFilter),
   }
-}
-
-/**
- * The browser-side refinement. A review under no configured category matches
- * the "Other" row (`other`), the same rule the server applies to `category=other`.
- */
-function matchesClientFilters(item: FeedbackItem, filters: CategoryFiltersState, configured: readonly string[]): boolean {
-  const selected = filters.selectedCategories
-  const categoryOk = selected.length <= 1 || selected.includes(item.category)
-    || selected.includes(categoryBucket(item.category, configured))
-  return categoryOk && (filters.subcategory === null || item.subcategory === filters.subcategory)
-}
-
-/** True when the list is narrowed in the browser, so the server's total does not describe it. */
-function refinesClientSide(filters: CategoryFiltersState): boolean {
-  return filters.selectedCategories.length > 1 || filters.subcategory !== null
 }
 
 /** Exactly one of the three queries is enabled for any given filter state. */
@@ -148,20 +122,12 @@ export function useFeedbackListData(
 
   const active = pickActiveSource(isSearching, filters.showUrgentOnly, { searchQuery, urgentQuery, listQuery })
 
-  const { data: categoriesConfig } = useCategoriesConfig()
-  const configured = useMemo(() => (categoriesConfig?.categories ?? []).map((c) => c.name), [categoriesConfig])
-  const filteredFeedback = useMemo(() => {
-    return active.items.filter((item) => matchesClientFilters(item, filters, configured))
-  }, [active.items, filters, configured])
-
-  const refined = refinesClientSide(filters)
   return {
-    filteredFeedback,
+    filteredFeedback: active.items,
     isLoading: active.isLoading,
-    totalCount: refined ? filteredFeedback.length : active.totalCount,
-    isPartialWindow: refined ? active.hasMore : active.isPartialWindow,
+    totalCount: active.totalCount,
+    isPartialWindow: active.isPartialWindow,
     hasMore: active.hasMore,
-    loadedCount: refined ? active.items.length : null,
     loadMore: active.loadMore,
     isLoadingMore: active.isLoadingMore,
     failure: active.failure,

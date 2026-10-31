@@ -92,9 +92,7 @@
     "shownOf": "{{count, number}} shown of {{total, number}}",
     "loading": "Loading reviews…",
     "subcategoryChip": "Subcategory: {{name}}",
-    "removeSubcategory": "Remove the {{name}} filter",
-    "refinedMoreBelow_one": "{{count, number}} match in the first {{loaded, number}} reviews · Load more below",
-    "refinedMoreBelow_other": "{{count, number}} matches in the first {{loaded, number}} reviews · Load more below"
+    "removeSubcategory": "Remove the {{name}} filter"
   },
   "uncategorised": "Uncategorised",
   "uncategorisedHint": "Reviews of this period that no category matched"

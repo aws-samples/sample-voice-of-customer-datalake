@@ -108,9 +108,9 @@ function categoryTotals(categoryData: readonly CategoryData[], windowTotal: numb
   return { categorised, uncategorised: Math.max(0, (windowTotal ?? 0) - categorised) }
 }
 
-/** The `source` query parameter for a selection: none (`null`) and the empty "all sources" value both mean unfiltered. */
-function sourceFilter(selectedSource: string | null): string | undefined {
-  return selectedSource === null || selectedSource === '' ? undefined : selectedSource
+/** The `source` query parameter for a selection: a comma list (any of them), or none for unfiltered. */
+function sourceFilter(selectedSources: readonly string[]): string | undefined {
+  return selectedSources.length === 0 ? undefined : selectedSources.join(',')
 }
 
 /** The unfiltered entities read, shared by both entity queries when no source is selected. */
@@ -125,24 +125,24 @@ function allSourcesEntitiesKey(dateParams: DateRangeParams): readonly unknown[] 
  */
 export function useCategoryAnalytics(
   dateParams: DateRangeParams,
-  selectedSource: string | null,
+  selectedSources: readonly string[],
   apiEndpoint: string,
   attributes: ItemFilterParams = {},
   selectedCategories?: readonly string[],
 ): CategoryAnalytics {
   const enabled = !!apiEndpoint
-  const source = sourceFilter(selectedSource)
+  const source = sourceFilter(selectedSources)
   const unfiltered = source === undefined && Object.keys(attributes).length === 0
 
   const categoriesQuery = useQuery({
-    queryKey: metricsKeys.categories(dateParams, selectedSource, attributes),
+    queryKey: metricsKeys.categories(dateParams, source ?? null, attributes),
     queryFn: () => api.getCategories(dateParams, source, attributes),
     enabled,
   })
   const categories = categoriesQuery.data
 
   const sentimentQuery = useQuery({
-    queryKey: metricsKeys.sentiment(dateParams, selectedSource, attributes),
+    queryKey: metricsKeys.sentiment(dateParams, source ?? null, attributes),
     queryFn: () => api.getSentiment(dateParams, source, attributes),
     enabled,
   })

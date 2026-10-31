@@ -11,6 +11,7 @@ import { formatCalendarDay, formatDateTime } from '../../utils/dateUtils'
 import { useTranslation } from 'react-i18next'
 import type { FeedbackItem } from '../../api/types'
 import ReviewSentimentBadge from '../../components/SentimentBadge/ReviewSentimentBadge'
+import UsefulnessBadge from '../../components/UsefulnessBadge/UsefulnessBadge'
 import RatingStars from '../../components/RatingStars'
 import CategoryChangeControl, { ManualCategoryBadge } from '../../components/CategoryChangeControl/CategoryChangeControl'
 import FeedbackDimensionChips, { PiiPolicyNote } from '../../components/FeedbackDimensions/FeedbackDimensionChips'
@@ -75,6 +76,7 @@ export function FeedbackHeader({ feedback, level = 'h1', radarBrand }: HeaderPro
           <span className="badge badge-warn">{t('urgent')}</span>
         )}
         <ReviewSentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} size="md" />
+        <UsefulnessBadge band={feedback.usefulness} />
       </div>
     </div>
   )

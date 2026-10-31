@@ -165,7 +165,7 @@ export default function ProblemAnalysis() {
         categories: toPDFCategories(visibleData, labels),
         timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
         resolvedLabel: t('problemResolution.resolved'),
-        filters: { source: filters.source, category: filters.category, subcategory: filters.subcategory, urgentOnly: filters.urgentOnly },
+        filters: { source: filters.sources.join(', '), category: filters.category, subcategory: filters.subcategory, urgentOnly: filters.urgentOnly },
       })
     } catch {
       // PDF generation is best-effort (e.g. popup blocked)

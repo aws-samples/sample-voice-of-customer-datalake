@@ -28,9 +28,10 @@ const defaultProps: ComponentProps<typeof FeedbackResults> = {
   feedbackLoading: false,
   viewMode: 'grid',
   onViewModeChange: vi.fn(),
-  selectedSource: null,
+  selectedSources: [],
   selectedCategories: ['delivery'],
-  sentimentFilter: 'all',
+  selectedSentiments: [],
+  selectedUsefulness: [],
   ratingFilter: { value: 0, direction: 'up' },
   onExport: vi.fn(),
   totalCount: 2,
@@ -58,12 +59,18 @@ describe('FeedbackResults', () => {
     })
 
     it('shows selected source in subtitle', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} selectedSource="webscraper" />)
+      renderWithRouter(<FeedbackResults {...defaultProps} selectedSources={['webscraper']} />)
       expect(screen.getByText(/Source: Web scraper/)).toBeInTheDocument()
     })
 
+    it('names every selected source, sentiment and usefulness band', () => {
+      renderWithRouter(<FeedbackResults {...defaultProps} selectedSources={['webscraper', 'feedback_form']}
+        selectedSentiments={['negative', 'mixed']} selectedUsefulness={['high', 'unrated']} />)
+      expect(screen.getByText(/Source: Web scraper, .+ • Delivery • Negative, Mixed • High usefulness, Not scored/)).toBeInTheDocument()
+    })
+
     it('shows the localized sentiment filter in the subtitle', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} sentimentFilter="positive" filteredFeedback={[]} />)
+      renderWithRouter(<FeedbackResults {...defaultProps} selectedSentiments={['positive']} filteredFeedback={[]} />)
       expect(screen.getByText(/• Positive/)).toBeInTheDocument()
     })
 
@@ -93,12 +100,6 @@ describe('FeedbackResults', () => {
       renderWithRouter(<FeedbackResults {...defaultProps} totalCount={2} isPartialWindow={true} />)
       expect(screen.getByText('2 reviews')).toBeInTheDocument()
       expect(screen.queryByText(/narrow the filters/)).not.toBeInTheDocument()
-    })
-
-    it('says a subcategory match count is out of the reviews LOADED, never "94 of 100" as if 100 were the total', () => {
-      renderWithRouter(<FeedbackResults {...defaultProps} totalCount={2} hasMore={true} loadedCount={100} />)
-      expect(screen.getByText('2 matches in the first 100 reviews · Load more below')).toBeInTheDocument()
-      expect(screen.queryByText(/shown of/)).not.toBeInTheDocument()
     })
 
     it('points to Load more instead of "N of N+" when another page exists', () => {

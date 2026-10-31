@@ -22,7 +22,7 @@ function sentimentWith(percentages: Record<string, number>) {
 }
 
 function renderAnalytics() {
-  return renderHook(() => useCategoryAnalytics({ days: 7 }, null, 'https://api.example.com'), {
+  return renderHook(() => useCategoryAnalytics({ days: 7 }, [], 'https://api.example.com'), {
     wrapper: createQueryWrapper(),
   })
 }
@@ -60,16 +60,16 @@ describe('useCategoryAnalytics avgSentiment (positive % minus negative %)', () =
 })
 
 describe('useCategoryAnalytics entities reads (QA perf: one request, not two)', () => {
-  function renderFor(source: string | null) {
-    return renderHook(() => useCategoryAnalytics({ days: 7 }, source, 'https://api.example.com'), {
+  function renderFor(sources: readonly string[]) {
+    return renderHook(() => useCategoryAnalytics({ days: 7 }, sources, 'https://api.example.com'), {
       wrapper: createQueryWrapper(),
     })
   }
 
-  it.each([null, ''])('asks once when no source is selected (%j)', async (source) => {
+  it('asks once when no source is selected', async () => {
     categoriesApiMocks.getSentiment.mockResolvedValue(sentimentWith({}))
     categoriesApiMocks.getEntities.mockResolvedValue({ entities: { sources: { webscraper: 3 }, issues: { 'late delivery': 2 } } })
-    const { result } = renderFor(source)
+    const { result } = renderFor([])
 
     await waitFor(() => expect(result.current.allSources).toStrictEqual(['webscraper']))
     expect(result.current.wordCloudData.map((w) => w.word)).toContain('late')
@@ -78,11 +78,18 @@ describe('useCategoryAnalytics entities reads (QA perf: one request, not two)', 
 
   it('still reads the filtered and the all-sources entities when a source is selected', async () => {
     categoriesApiMocks.getSentiment.mockResolvedValue(sentimentWith({}))
-    renderFor('webscraper')
+    renderFor(['webscraper'])
 
     await waitFor(() => expect(categoriesApiMocks.getEntities).toHaveBeenCalledTimes(2))
     expect(categoriesApiMocks.getEntities).toHaveBeenCalledWith({ days: 7, limit: 50, source: 'webscraper' })
     expect(categoriesApiMocks.getEntities).toHaveBeenCalledWith({ days: 7, limit: 50 })
+  })
+
+  it('sends several sources as one comma list', async () => {
+    categoriesApiMocks.getSentiment.mockResolvedValue(sentimentWith({}))
+    renderFor(['webscraper', 'app'])
+
+    await waitFor(() => expect(categoriesApiMocks.getCategories).toHaveBeenCalledWith({ days: 7 }, 'webscraper,app', {}))
   })
 })
 
