@@ -259,7 +259,7 @@ def claim_send(table: Any, cap: int, sender: str) -> str | None:
     None when it was counted; otherwise the cap that refused it (``'sender_daily_cap'`` or
     ``'daily_cap'``), with nothing left counted: a sender claim the deployment cap then refuses
     (or fails on) is given back. An ask without a capped sender (an administrator's, or one created
-    before 5.62) counts against the deployment cap only, never one shared empty-sender bucket.
+    before 5.64) counts against the deployment cap only, never one shared empty-sender bucket.
     """
     now = _today()
     day = now.date().isoformat()
