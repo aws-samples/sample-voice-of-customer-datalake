@@ -28,6 +28,25 @@ function useFreshRuntimeConfigModule(): void {
   })
 }
 
+/** The cognito block a current deployment writes (and the env fallback builds). */
+const COGNITO = { userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'us-east-1' }
+
+/** `fetch('/config.json')` answers `config`. */
+function serveConfigJson(config: Record<string, unknown>): void {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(config) }))
+}
+
+/** `fetch('/config.json')` fails, so the env fallback runs. */
+function noConfigJson(): void {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+}
+
+/** Load the config through a fresh module (see useFreshRuntimeConfigModule). */
+async function loadFreshConfig() {
+  const { loadRuntimeConfig } = await import('./runtimeConfig')
+  return loadRuntimeConfig()
+}
+
 describe('loadRuntimeConfig env fallback', () => {
   useFreshRuntimeConfigModule()
 
@@ -37,59 +56,39 @@ describe('loadRuntimeConfig env fallback', () => {
     ['falls back to the documented mock port for a malformed endpoint', 'not-a-url', 'http://localhost:3001'],
   ])('%s', async (_title, envEndpoint, expected) => {
     vi.stubEnv('VITE_API_ENDPOINT', envEndpoint)
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+    noConfigJson()
 
-    const { loadRuntimeConfig } = await import('./runtimeConfig')
-    const config = await loadRuntimeConfig()
+    const config = await loadFreshConfig()
 
     expect(config.apiEndpoint).toBe(expected)
   })
 
   it('prefers a valid config.json over env vars', async () => {
     vi.stubEnv('VITE_API_ENDPOINT', 'http://localhost:9999')
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        apiEndpoint: 'https://real-api.example.com',
-        cognito: {
-          userPoolId: 'us-east-1_pool',
-          clientId: 'client123',
-          region: 'us-east-1',
-        },
-      }),
-    }))
+    serveConfigJson({ apiEndpoint: 'https://real-api.example.com', cognito: COGNITO })
 
-    const { loadRuntimeConfig } = await import('./runtimeConfig')
-    const config = await loadRuntimeConfig()
+    const config = await loadFreshConfig()
 
     expect(config.apiEndpoint).toBe('https://real-api.example.com')
   })
 
   it('loads a config.json from a deployment that still writes identityPoolId (the key is ignored)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        apiEndpoint: 'https://real-api.example.com',
-        cognito: { userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'us-east-1', identityPoolId: 'us-east-1:old' },
-      }),
-    }))
+    serveConfigJson({ apiEndpoint: 'https://real-api.example.com', cognito: { ...COGNITO, identityPoolId: 'us-east-1:old' } })
 
-    const { loadRuntimeConfig } = await import('./runtimeConfig')
-    const config = await loadRuntimeConfig()
+    const config = await loadFreshConfig()
 
-    expect(config.cognito).toStrictEqual({ userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'us-east-1' })
+    expect(config.cognito).toStrictEqual(COGNITO)
   })
 
   it('accepts the env config without VITE_IDENTITY_POOL_ID', async () => {
     vi.stubEnv('VITE_API_ENDPOINT', 'http://localhost:9999')
-    vi.stubEnv('VITE_COGNITO_USER_POOL_ID', 'us-east-1_pool')
-    vi.stubEnv('VITE_COGNITO_CLIENT_ID', 'client123')
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+    vi.stubEnv('VITE_COGNITO_USER_POOL_ID', COGNITO.userPoolId)
+    vi.stubEnv('VITE_COGNITO_CLIENT_ID', COGNITO.clientId)
+    noConfigJson()
 
-    const { loadRuntimeConfig } = await import('./runtimeConfig')
-    const config = await loadRuntimeConfig()
+    const config = await loadFreshConfig()
 
-    expect(config.cognito).toStrictEqual({ userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'us-east-1' })
+    expect(config.cognito).toStrictEqual(COGNITO)
   })
 })
 
