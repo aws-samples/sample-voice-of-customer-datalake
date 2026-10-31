@@ -37,7 +37,8 @@ export function useCompanyPersonas() {
 
   // Refetch the library once per finished job: each poll tick inside the "recently completed"
   // window brings a new `jobs.data`, and only a completion not seen before invalidates the list
-  // (a job leaving the window, or dropping out of a truncated list, never does).
+  // (a job leaving the window, or dropping out of a truncated list, never does). The set grows by
+  // one key per finished job while the page is open: a handful, so it is not pruned.
   const handledCompletions = useRef(new Set<string>())
   useEffect(() => {
     const fresh = recentlyCompletedJobs(jobs.data?.jobs ?? [], Date.now())
