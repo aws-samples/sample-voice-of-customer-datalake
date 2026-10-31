@@ -143,7 +143,8 @@ export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProp
   }, [validating])
 
   // Where Login sends the visitor back: the path WITH its query, so a deep link such as the MCP
-  // OAuth consent page (/oauth/authorize?client_id=…) survives the sign-in (docs/mcp.md).
+  // OAuth consent page (/oauth/authorize?client_id=…) survives the sign-in (docs/mcp.md). The `#hash`
+  // is not kept: no deep link uses one today; add `location.hash` here when one does.
   const from = `${location.pathname}${location.search}`
 
   // If Cognito is not configured, only allow access in development mode
