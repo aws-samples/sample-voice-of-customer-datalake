@@ -1418,3 +1418,22 @@ describe('VocCoreStack CDN signing-key Lambda capacity', () => {
     expect(props.MemorySize).toBe(256);
   });
 });
+
+describe('the SPA security headers (WA SEC11, EDGE-3/4/6)', () => {
+  const spaPolicy = () => Object.values(synthCoreTemplate().findResources('AWS::CloudFront::ResponseHeadersPolicy'))
+    .map((policy) => recordAt(policy, 'Properties', 'ResponseHeadersPolicyConfig'))
+    .find((config) => recordAt(config, 'SecurityHeadersConfig', 'ContentSecurityPolicy')?.ContentSecurityPolicy
+      !== PROTOTYPE_BASE_CSP);
+
+  it('limits form posts to the app and drops the dead Lambda Function URL source', () => {
+    const csp = String(recordAt(spaPolicy(), 'SecurityHeadersConfig', 'ContentSecurityPolicy')?.ContentSecurityPolicy);
+    expect(csp).toContain("form-action 'self'");
+    expect(csp).not.toContain('lambda-url');
+  });
+
+  it('turns the legacy XSS filter off and denies device features the app never uses', () => {
+    const config = spaPolicy();
+    expect(recordAt(config, 'SecurityHeadersConfig', 'XSSProtection')).toMatchObject({ Protection: false });
+    expect(JSON.stringify(recordAt(config, 'CustomHeadersConfig'))).toContain('camera=(), microphone=()');
+  });
+});
