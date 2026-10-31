@@ -15,6 +15,7 @@ import * as path from 'path';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { getEnabledPlugins, getPluginsWithWebhook, capitalize, pluginDirectoryIds, type PluginManifest } from '../plugin-loader';
+import { applyAppClientEnv } from '../utils/app-client-env';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, cdkAssetsSuppressions } from '../utils/nag-suppressions';
 import { imageModelArn } from '../utils/model-allowlist';
@@ -379,6 +380,10 @@ export class VocApiStack extends VocStack {
         NagSuppressions.addResourceSuppressions(child, [...cdkCustomResourceSuppressions, ...cdkAssetsSuppressions], true);
       }
     }
+
+    // Only the SPA's and the board pool's tokens reach the REST handlers (an MCP OAuth client's token of the
+    // same pool is refused, shared/app_clients.py; security review of 5.58.00).
+    applyAppClientEnv(this, [userPoolClient.userPoolClientId, props.boardUserPoolClient.userPoolClientId]);
 
     // ============================================
     // OUTPUTS
