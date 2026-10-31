@@ -23,6 +23,10 @@ from shared.model_config import ALLOWED_MODELS
 from shared.test.model_capacity_fixtures import GLOBAL
 
 CALL_SECONDS = 0.25
+# Several tests bound wall time against CALL_SECONDS to prove no slow Service Quotas call was made; the
+# coverage tracer alone can cost that much on a loaded machine, so the module runs untraced
+# (docs/coverage-gate.md). Each test also checks the calls themselves.
+pytestmark = pytest.mark.no_cover
 
 
 def _expected() -> list[str]:
@@ -299,8 +303,6 @@ def _stale_overview() -> list[dict[str, Any]]:
     return [{'name': GLOBAL + m['label'], 'tokens_per_minute': 10 + i, 'stale': True} for i, m in enumerate(ALLOWED_MODELS)]
 
 
-# A time budget measures the code, not the coverage tracer: no_cover runs it untraced (docs/coverage-gate.md).
-@pytest.mark.no_cover
 def test_an_old_row_answers_at_once_marked_stale_and_a_worker_refreshes_it(table, monkeypatch, invoke):
     client = SlowQuotas()
     _install(monkeypatch, client)
