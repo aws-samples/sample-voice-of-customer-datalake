@@ -5,6 +5,7 @@ the real index shapes; the estimate's scaling and the cache are checked with a s
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
@@ -34,9 +35,9 @@ class _UnhurriedWalkBudget(WalkBudget):
 def _fresh(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr('shared.feedback.WalkBudget', _UnhurriedWalkBudget)
     monkeypatch.setattr(preview, 'WalkBudget', _UnhurriedWalkBudget)
-    preview.clear_cache()
-    yield
-    preview.clear_cache()
+    # A fresh container: no cached answer and no cached index count leaks between tests.
+    monkeypatch.setattr(preview, '_cache', OrderedDict())
+    monkeypatch.setattr(preview, '_index_counts', {})
 
 
 def _day(offset: int) -> str:
