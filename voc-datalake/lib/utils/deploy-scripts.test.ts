@@ -340,20 +340,27 @@ function schemaKeys(): string[] {
  */
 const TRANSITIONAL_CONFIG_KEYS = ['cognito.identityPoolId'];
 
+/** The CDK runtimeConfig's keys with every option on; one synth shared by the cases below. */
+const cdkConfigKeys = (() => {
+  const cache: { keys?: string[] } = {};
+  return (): string[] => {
+    cache.keys ??= leafKeys(buildApiStack({ emailFrom: 'noreply@voc.example.com' }).runtimeConfig);
+    return cache.keys;
+  };
+})();
+
 describe('runtime config.json keys', () => {
   it('deploy.sh writes exactly what the CDK deploy writes (every option on) and RuntimeConfigSchema reads', () => {
-    const stack = buildApiStack({ emailFrom: 'noreply@voc.example.com' });
-    const cdkKeys = leafKeys(stack.runtimeConfig);
+    const cdkKeys = cdkConfigKeys();
     const schema = schemaKeys();
     expect(deployShConfigKeys(), 'deploy.sh vs the CDK runtimeConfig').toStrictEqual(cdkKeys);
     expect(schema, 'RuntimeConfigSchema vs the CDK runtimeConfig (less the transitional keys)')
       .toStrictEqual(cdkKeys.filter((key) => !TRANSITIONAL_CONFIG_KEYS.includes(key)));
   }, SYNTH_TIMEOUT_MS);
 
-  it('lists only transitional keys the writers still emit and the schema no longer reads', () => {
-    const cdkKeys = leafKeys(buildApiStack({ emailFrom: 'noreply@voc.example.com' }).runtimeConfig);
+  it('each transitional key is still written and no longer read (a stale entry fails here)', () => {
     for (const key of TRANSITIONAL_CONFIG_KEYS) {
-      expect(cdkKeys, `${key} is still written`).toContain(key);
+      expect(cdkConfigKeys(), `${key} is still written`).toContain(key);
       expect(schemaKeys(), `${key} is no longer read`).not.toContain(key);
     }
   }, SYNTH_TIMEOUT_MS);

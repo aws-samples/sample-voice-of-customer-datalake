@@ -86,6 +86,12 @@ if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "null" ]; then
   exit 1
 fi
 
+# TRANSITIONAL (5.62.00): an empty value would break a cached pre-5.62 page just like a missing key.
+if [ -z "$IDENTITY_POOL_ID" ] || [ "$IDENTITY_POOL_ID" = "null" ]; then
+  echo "Error: Could not fetch IdentityPoolId from $CORE_STACK"
+  exit 1
+fi
+
 echo "  Bucket: $BUCKET_NAME"
 echo "  Distribution: $DISTRIBUTION_ID"
 echo "  API Endpoint: $API_ENDPOINT"
