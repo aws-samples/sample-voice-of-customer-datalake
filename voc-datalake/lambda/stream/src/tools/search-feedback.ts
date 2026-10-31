@@ -11,6 +11,8 @@ import { ALL_TIME_DAYS } from '../assistant/contract.js';
 import { admitsItem, type CategoryScope } from './category-scope.js';
 import { windowDaysSchema } from '../assistant/tools/server/common.js';
 import { plainReviewText } from './review-text.js';
+import { admitsFloor, isEmptyFloor, NO_FLOOR, type FeedbackFloor } from '../assistant/tools/server/feedback-floor.js';
+import { floorConflicts, floorNote } from '../assistant/tools/server/floor-args.js';
 import {
   fetchCandidatesByDate,
   feedbackItemSchema,
@@ -130,6 +132,13 @@ interface ContextFilters {
   dateBasis?: 'imported' | 'review';
   /** Category id → display label (`display-labels.ts`); results show it beside the id. */
   categoryLabel?: CategoryLabelFn;
+  /**
+   * The filters the user has on screen (page filters AND the /chat panel's scope): a hard floor
+   * ANDed with the model's own arguments, so they narrow within it and never widen it. Absent = none.
+   */
+  floor?: FeedbackFloor;
+  /** At most this many matching reviews are used (the /chat panel's `limit`); absent = no extra cap. */
+  readLimit?: number;
 }
 
 type CategoryLabelFn = (id: string) => string;
@@ -214,9 +223,11 @@ function matchesFeedbackItem(
   filters: SearchFilters,
   cutoffDate: string,
   scope: CategoryScope,
+  floor: FeedbackFloor,
   dateBasis?: 'imported' | 'review',
 ): boolean {
   return admitsItem(scope, item)
+    && admitsFloor(floor, item)
     && passesDateFilter(item, cutoffDate, dateBasis)
     && passesFieldFilters(item, filters)
     && passesItemFilters(item, filters)
@@ -241,6 +252,7 @@ async function lookupByFeedbackId(
   feedbackTable: string,
   feedbackId: string,
   scope: CategoryScope,
+  floor: FeedbackFloor,
   label?: CategoryLabelFn,
 ): Promise<SearchFeedbackResult | null> {
   const rows = await queryFeedbackById(docClient, feedbackTable, feedbackId);
@@ -254,8 +266,9 @@ async function lookupByFeedbackId(
   // same way). An unparseable row cannot be shown to be in scope, so it is hidden too.
   if (!scope.all) {
     const visible = items.filter((item) => admitsItem(scope, item));
-    return { items: visible, formatted: formatToolResults(visible, label) };
+    return floored(visible, floor, label);
   }
+  if (!isEmptyFloor(floor) && items.length > 0) return floored(items, floor, label);
   // A direct ID hit reads one row by key: nothing was truncated.
   if (items.length > 0) return { items, formatted: formatToolResults(items, label) };
   console.warn(`search_feedback: feedback_id ${feedbackId} matched a row that would not parse`);
@@ -264,6 +277,29 @@ async function lookupByFeedbackId(
     formatted: 'The requested feedback item exists but its stored row could not be read, so '
       + 'its details are unavailable. Say that the item could not be read — do NOT say no such '
       + 'item exists, and do not present other feedback as if it were this item.\n',
+  };
+}
+
+/** An id hit under the user's floor: the item when it is inside, else why it is not shown. */
+function floored(items: FeedbackItem[], floor: FeedbackFloor, label?: CategoryLabelFn): SearchFeedbackResult {
+  const inside = items.filter((item) => admitsFloor(floor, item));
+  const outside = inside.length < items.length
+    ? '\nThe requested item is outside the filters the user set, so it is not shown. Tell the user their '
+      + 'filters exclude it and that they can change them to include it.\n'
+    : '';
+  return { items: inside, formatted: formatToolResults(inside, label) + outside };
+}
+
+/**
+ * The /chat panel's reading cap: the first `readLimit` matches (the scan's newest-first order) are
+ * used, and the answer says how many matched. Absent = every match, as before.
+ */
+function capToReadLimit(matched: FeedbackItem[], readLimit: number | undefined): { kept: FeedbackItem[]; note: string } {
+  if (readLimit === undefined || matched.length <= readLimit) return { kept: matched, note: '' };
+  return {
+    kept: matched.slice(0, readLimit),
+    note: `\n⚠ READING CAP: ${matched.length} reviews matched; the user's chat scope caps a read at ${readLimit}, `
+      + `so only the newest ${readLimit} were used. Say so, and suggest narrowing the filters for a complete answer.\n`,
   };
 }
 
@@ -343,7 +379,8 @@ export async function executeSearchFeedback(
 
   // Check if query is a feedback ID
   if (query && /^[a-f0-9]{32}$/i.test(query.trim())) {
-    const idResult = await lookupByFeedbackId(docClient, feedbackTable, query, contextFilters.scope, contextFilters.categoryLabel);
+    const idResult = await lookupByFeedbackId(
+      docClient, feedbackTable, query, contextFilters.scope, contextFilters.floor ?? NO_FLOOR, contextFilters.categoryLabel);
     if (idResult) return idResult;
   }
 
@@ -375,11 +412,13 @@ export async function executeSearchFeedback(
   cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1));
   const cutoffDate = cutoff.toISOString().slice(0, 10);
 
-  const allMatched = scan.candidates.filter((item) =>
-    matchesFeedbackItem(item, query, filters, cutoffDate, contextFilters.scope, dateBasis),
+  const floor = contextFilters.floor ?? NO_FLOOR;
+  const { kept: allMatched, note: capNote } = capToReadLimit(
+    scan.candidates.filter((item) => matchesFeedbackItem(item, query, filters, cutoffDate, contextFilters.scope, floor, dateBasis)),
+    contextFilters.readLimit,
   );
 
-  const notice = truncationNotice(reasons, days, requestedDays);
+  const notice = truncationNotice(reasons, days, requestedDays) + capNote + floorNote(floor, floorConflicts(floor, input));
 
   // aggregate mode: summarize the WHOLE match set in one call (no list cap),
   // so "summarize all feedback" / "top issues" don't force the model to loop.

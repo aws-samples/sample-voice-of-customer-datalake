@@ -230,6 +230,21 @@ export const PAGE_FILTER_KEYS = [
 ] as const
 export const MAX_PAGE_FILTER_CHARS = 200
 
+/** One filter set in the PAGE_FILTER_KEYS vocabulary: a page's URL filters, or the /chat panel's scope. */
+export const pageFiltersSchema = z.partialRecord(z.enum(PAGE_FILTER_KEYS), z.string().min(1).max(MAX_PAGE_FILTER_CHARS))
+
+/**
+ * The /chat filter panel (docs/assistant-chat-scope.md): `filters` is a hard floor on every
+ * feedback-reading tool (the model narrows within it, never past it), and `limit` caps how many
+ * reviews one feedback read may use (default and maximum CHAT_SCOPE_MAX_ITEMS).
+ */
+export const CHAT_SCOPE_MAX_ITEMS = 1000
+export const chatScopeSchema = z.object({
+  filters: pageFiltersSchema.optional(),
+  limit: z.number().int().min(1).max(CHAT_SCOPE_MAX_ITEMS).optional(),
+})
+export type ChatScope = z.infer<typeof chatScopeSchema>
+
 export const pageContextSchema = z.object({
   kind: z.enum(PAGE_KINDS),
   path: z.string().max(200),
@@ -238,7 +253,7 @@ export const pageContextSchema = z.object({
   agentId: z.string().min(1).max(MAX_ID_LENGTH).optional(),
   tab: z.string().max(64).optional(),
   title: z.string().max(120).optional(),
-  filters: z.partialRecord(z.enum(PAGE_FILTER_KEYS), z.string().min(1).max(MAX_PAGE_FILTER_CHARS)).optional(),
+  filters: pageFiltersSchema.optional(),
 })
 export type PageContext = z.infer<typeof pageContextSchema>
 
@@ -267,6 +282,8 @@ export const forwardedPropsSchema = z.object({
   dateBasis: z.enum(['imported', 'review']).optional(),
   responseLanguage: z.string().max(16).optional(),
   useWebSearch: z.boolean().optional(),
+  /** The /chat filter panel's scope (chatScopeSchema); the page filters are a floor too. */
+  scope: chatScopeSchema.optional(),
 })
 export type ForwardedProps = z.infer<typeof forwardedPropsSchema>
 

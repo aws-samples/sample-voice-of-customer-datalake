@@ -17,6 +17,7 @@
 import { ALL_TIME_DAYS, type ForwardedProps, type PageContext } from '../contract.js';
 import { getLanguageInstruction, isSupportedLanguage } from '../../context/language.js';
 import type { ProjectPreload } from './preload.js';
+import { readLimitForRun } from '../tools/server/feedback-floor.js';
 import { aiWritingPromptLines, type AiWritingPolicy } from './ai-writing.js';
 
 export const BASE_RULES = `You are the Voice of the Customer (VoC) product-research assistant. You help product teams understand customer feedback, find and prioritise problems, and turn insights into project work (personas, PRDs, PR/FAQs, research).
@@ -47,18 +48,22 @@ function quote(value: string): string {
 
 /**
  * The page on screen is filtered (5.35: on /categories the assistant answered about all feedback
- * while the user looked at one category). The filter VALUES are user data, so they are in the
- * <context> block; this rule only says how to use them.
+ * while the user looked at one category), or the /chat filter panel set a scope. The filter VALUES
+ * are user data, so they are in the <context> block; this rule only says how they work. Since the
+ * chat-scope port (#429) the feedback tools apply them as a floor themselves (feedback-floor.ts).
  */
-const FILTERED_PAGE_RULE = 'The page on screen is filtered; the filters are listed in the user message\'s '
-  + '<context> block. When the user asks about what is on screen ("these reviews", "this category", "here"), pass the '
-  + 'same filters to the tools: category, source, sentiment, channel and tag are the tool arguments of the same name '
-  + '(a comma-separated category is several categories: one call each), dims "key:value,…" is dims={key: value}, '
-  + 'urgent=1 is urgency="high", q is the search text; subcategory, rating with rating_dir (up = at least, below = '
-  + 'at most) and resolved narrow the view further, so mention them. Say which filters your answer uses. For a '
-  + 'question about all feedback, ignore them.';
+export const FILTERED_PAGE_RULE = 'The user has filters set; they are listed in the user message\'s <context> block. '
+  + 'Every feedback tool already applies them and cannot read past them: you may narrow further with tool arguments '
+  + '(category, source, sentiment, channel, tag, dims, urgency, query, days), but an argument outside the filters '
+  + 'matches nothing. When the filters allow several values of one argument and a tool asks for one, call it once '
+  + 'per value. Say which filters your answer covers. For a question about all feedback, answer within the filters '
+  + 'and tell the user they can clear them to see everything.';
 
-function pageLines(page: PageContext): string[] {
+function hasFilters(filters: PageContext['filters']): boolean {
+  return Object.keys(filters ?? {}).length > 0;
+}
+
+function pageLines(page: PageContext, props: ForwardedProps): string[] {
   const lines = [`The user is on the ${page.kind} page (path ${quote(page.path)}).`];
   if (page.projectId) {
     lines.push(
@@ -66,7 +71,11 @@ function pageLines(page: PageContext): string[] {
       + 'Its personas, documents and product context are available via get_project / get_persona and the project tools.',
     );
   }
-  if (Object.keys(page.filters ?? {}).length > 0) lines.push(FILTERED_PAGE_RULE);
+  if (hasFilters(page.filters) || hasFilters(props.scope?.filters)) lines.push(FILTERED_PAGE_RULE);
+  const readLimit = readLimitForRun(props);
+  if (readLimit !== undefined) {
+    lines.push(`The user's chat scope caps each feedback read at ${readLimit} reviews; a tool result says when it used fewer than matched.`);
+  }
   if (page.feedbackId) {
     lines.push(
       `The user is looking at feedback item ${quote(page.feedbackId)}; treat it as the default subject (get_feedback_item).`,
@@ -120,7 +129,7 @@ export function buildDynamicPrompt({ page, props, isAdmin, now, projectPreload, 
   const language = isSupportedLanguage(props.responseLanguage) ? props.responseLanguage : undefined;
   const lines = [
     '## Current context',
-    ...pageLines(page),
+    ...pageLines(page, props),
     ...preloadLines(projectPreload),
     `Feedback time window: ${windowText}, by ${basis}. Tools apply this window automatically.`,
     `Today is ${now.toISOString().slice(0, 10)} (UTC).`,
