@@ -21,7 +21,7 @@ function allowedClientIds(env: NodeJS.ProcessEnv): Set<string> {
 }
 
 /** `client_id` (access token) or `aud` (ID token); undefined when neither is a non-empty string. */
-export function issuingClient(claims: Record<string, unknown>): string | undefined {
+function issuingClient(claims: Record<string, unknown>): string | undefined {
   for (const name of ['client_id', 'aud']) {
     const value = claims[name];
     if (typeof value === 'string' && value.trim().length > 0) return value.trim();
