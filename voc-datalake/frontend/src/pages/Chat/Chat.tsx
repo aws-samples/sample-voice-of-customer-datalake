@@ -11,17 +11,23 @@
  * title — so the page still has the one level-one heading every route has
  * (axe page-has-heading-one, design audit D-STRUCT).
  *
+ * Above the composer sits the filter panel (ChatScopePanel): the conversation's scope, sent with
+ * every turn and applied by the assistant's feedback tools as a floor.
+ *
  * @module pages/Chat
  */
 import { useTranslation } from 'react-i18next'
 import AssistantPanel from '../../assistant/components/AssistantPanel'
+import ChatScopePanel from './ChatScopePanel'
+
+const scopePanel = (threadId: string) => <ChatScopePanel threadId={threadId} />
 
 export default function Chat() {
   const { t } = useTranslation('common')
   return (
     <div className="flex h-full min-h-0 flex-col">
       <h1 className="sr-only">{t('nav.aiChat')}</h1>
-      <AssistantPanel variant="page" />
+      <AssistantPanel variant="page" composerAccessory={scopePanel} />
     </div>
   )
 }
