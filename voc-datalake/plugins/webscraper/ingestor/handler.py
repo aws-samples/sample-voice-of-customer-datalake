@@ -17,7 +17,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from bs4 import BeautifulSoup
 
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
-from shared.http_utils import UnsafeURLError, fetch_public_url
+from shared.http_utils import MAX_PAGE_BYTES, UnsafeURLError, fetch_public_url
 from shared.invocation_cost import measure_invocation_cost
 from shared.producer_labels import message_labels
 from shared.radar_brands import radar_stamp
@@ -284,7 +284,7 @@ class WebScraperIngestor(BaseIngestor):
         try:
             # Set Referer to the site's root so it looks like in-site navigation
             page_headers = {**self.headers, 'Referer': f"https://{urlparse(url).netloc}/"}
-            response = fetch_public_url(url, headers=page_headers, timeout=15)
+            response = fetch_public_url(url, headers=page_headers, timeout=15, max_bytes=MAX_PAGE_BYTES)
             if response.status_code == 403:
                 logger.warning(f"Access denied (403) for {url} - site may be blocking automated requests")
                 return None
