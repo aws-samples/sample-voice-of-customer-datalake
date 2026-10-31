@@ -49,19 +49,13 @@ describe('SentimentGauge', () => {
     expect(screen.getByRole('button', { name: /negative/i })).toHaveTextContent('15%')
   })
 
-  it('toggles a sentiment when its chip is clicked', async () => {
+  it.each([
+    ['toggles a sentiment on when its chip is clicked', []],
+    ['toggles a selected sentiment off with the same chip', ['positive']],
+  ])('%s', async (_title, selected) => {
     const user = userEvent.setup()
     const onChange = vi.fn()
-    render(<SentimentGauge {...defaultProps} onToggleSentiment={onChange} />)
-
-    await user.click(screen.getByRole('button', { name: /positive/i }))
-    expect(onChange).toHaveBeenCalledWith('positive')
-  })
-
-  it('toggles a selected sentiment off with the same chip', async () => {
-    const user = userEvent.setup()
-    const onChange = vi.fn()
-    render(<SentimentGauge {...defaultProps} selectedSentiments={['positive']} onToggleSentiment={onChange} />)
+    render(<SentimentGauge {...defaultProps} selectedSentiments={selected} onToggleSentiment={onChange} />)
 
     await user.click(screen.getByRole('button', { name: /positive/i }))
     expect(onChange).toHaveBeenCalledWith('positive')

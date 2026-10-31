@@ -44,6 +44,8 @@ EXACT_BUDGET_SECONDS: Final = 20
 ESTIMATE_SAMPLE_PAGES: Final = 4
 #: Fewer matching sample rows than this is too noisy to show.
 ESTIMATE_MIN_SAMPLE_MATCHES: Final = 20
+#: Significant digits an estimate keeps (28,202 -> 28,000).
+ESTIMATE_SIGNIFICANT_DIGITS: Final = 2
 #: How long an answer is reused, and how many are kept per container.
 CACHE_SECONDS: Final = 300
 CACHE_MAX_ENTRIES: Final = 128
@@ -149,10 +151,6 @@ def import_floor(request: Any, sample: Sequence[Mapping[str, Any]]) -> str:
     if len(dates) > request.max_dated_days:
         return dates[request.max_dated_days - 1]
     return cutoff
-
-
-#: Significant digits an estimate keeps.
-ESTIMATE_SIGNIFICANT_DIGITS = 2
 
 
 def _round_significant(value: float) -> int:

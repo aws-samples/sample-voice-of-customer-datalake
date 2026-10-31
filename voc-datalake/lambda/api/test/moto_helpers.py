@@ -10,10 +10,12 @@ from __future__ import annotations
 import json
 from collections.abc import Generator
 from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import boto3
+from moto import mock_aws
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.service_resource import Table
@@ -147,3 +149,40 @@ def invoke(handler_module, event, context, **tables):
                 patch.object(handler_module, f'get_{name}_table', return_value=table))
         response = handler_module.lambda_handler(event, context)
     return response['statusCode'], json.loads(response['body'])
+
+
+def seed_project_personas(table: Table, project_id: str, personas: dict[str, dict[str, Any]]) -> None:
+    """A project's META plus one persona row per ``{persona_id: attributes}`` (each gets a tagline from its name)."""
+    table.put_item(Item={'pk': f'PROJECT#{project_id}', 'sk': 'META', 'project_id': project_id})
+    for persona_id, attributes in personas.items():
+        name = attributes['name']
+        table.put_item(Item={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}', 'persona_id': persona_id,
+                             'tagline': f'The reviewed {name}', **attributes})
+
+
+def project_personas(table: Table, project_id: str) -> dict[str, dict]:
+    """The project's persona rows by persona id."""
+    rows = table.query(
+        KeyConditionExpression='pk = :pk AND begins_with(sk, :p)',
+        ExpressionAttributeValues={':pk': f'PROJECT#{project_id}', ':p': 'PERSONA#'},
+    )['Items']
+    return {str(row['persona_id']): row for row in rows}
+
+
+@dataclass
+class PersonaWorld:
+    """One project's personas in a mocked projects table (the persona generation suites)."""
+
+    projects: Table
+    project_id: str
+
+    def personas(self) -> dict[str, dict]:
+        return project_personas(self.projects, self.project_id)
+
+
+@contextmanager
+def mocked_projects_table(bucket: str) -> Generator[Table, None, None]:
+    """The projects module wired to mocked tables and ``bucket``; yields the projects table."""
+    with mock_aws(), projects_module_world(bucket) as (projects_table, _jobs, _s3):
+        yield projects_table
+

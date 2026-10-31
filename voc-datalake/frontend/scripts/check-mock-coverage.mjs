@@ -99,7 +99,8 @@ export function collectCallSites(srcDir = SRC) {
 
 export const siteKey = ({ file, method, call }) => `${file}\t${method}\t${call}`
 
-function freePort() {
+/** A free local TCP port (the mock binds it next; also used by the mock suites this step imports). */
+export function freePort() {
   return new Promise((resolvePort, reject) => {
     const probe = createServer()
     probe.once('error', reject)

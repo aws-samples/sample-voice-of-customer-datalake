@@ -89,6 +89,12 @@ describe('ChatScopePanel', () => {
     expect(getSentiment).toHaveBeenCalledWith(expect.anything(), undefined, { rating_max: 2, urgent: 1 }, undefined)
   })
 
+  it('sends no rating bound for a rating outside 1-5 stars', async () => {
+    useChatScopeStore.setState({ byThread: { [THREAD]: { rating: '9', rating_dir: 'below' } } })
+    render(<ChatScopePanel threadId={THREAD} />)
+    await waitFor(() => expect(getSentiment).toHaveBeenCalledWith(expect.anything(), undefined, {}, undefined))
+  })
+
   it('checks categories and clears every filter', async () => {
     const user = userEvent.setup()
     render(<ChatScopePanel threadId={THREAD} />)

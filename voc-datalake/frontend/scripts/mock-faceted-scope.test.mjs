@@ -13,24 +13,13 @@
 
 import { strict as assert } from 'node:assert'
 import { spawn } from 'node:child_process'
-import { createServer } from 'node:net'
 import { after, before, describe, it } from 'node:test'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { freePort } from './check-mock-coverage.mjs'
 
 const FRONTEND = join(dirname(fileURLToPath(import.meta.url)), '..')
 const START_TIMEOUT_MS = 20_000
-
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const probe = createServer()
-    probe.once('error', reject)
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address()
-      probe.close(() => resolve(port))
-    })
-  })
-}
 
 let child
 let base
