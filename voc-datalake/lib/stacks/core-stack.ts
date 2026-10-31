@@ -14,7 +14,7 @@ import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, stackModelA
 import { NagSuppressions } from 'cdk-nag';
 import { idempotencyTableSuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
-import { stringOr } from '../utils/context';
+import { isDevDeployment } from '../utils/context';
 import { createCoreAuth } from './core-auth';
 import { createBoardAuth } from './core-board-auth';
 import { emailSenderOf } from '../utils/email-sender';
@@ -125,8 +125,7 @@ export class VocCoreStack extends VocStack {
 
     // localhost origins only under `-c environment=dev`, like the API's CORS (DATA-10): a production bucket
     // answers no browser page on the operator's own machine.
-    const environment = stringOr(this.node.tryGetContext('environment'), 'production');
-    const corsAllowedOriginsBase = environment === 'dev' || environment === 'development'
+    const corsAllowedOriginsBase = isDevDeployment(this.node)
       ? ['http://localhost:5173', 'http://localhost:3000'] : [];
 
     // ============================================
