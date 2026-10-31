@@ -17,7 +17,15 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared import category_access, draft_intent, persona_overlap, persona_replace, persona_save, project_access
+from shared import (
+    category_access,
+    draft_intent,
+    persona_feedback_preview,
+    persona_overlap,
+    persona_replace,
+    persona_save,
+    project_access,
+)
 from shared.api import MAX_PERSONAS_PER_GENERATION, validate_days
 from shared.avatar import (
     avatar_key_from_uri,
@@ -331,6 +339,26 @@ def get_scoped_feedback_context(
 
 projects_table = get_projects_table()
 feedback_table = get_feedback_table()
+
+
+#: What a wizard's live count is for: the persona wizard also says how many of the matches
+#: the generation reads (its sample limit); research sizes its own read, so it gets none.
+FEEDBACK_PREVIEW_PURPOSES = ('personas', 'research')
+
+
+def preview_feedback(project_id: str, filters: dict, mode: object, purpose: object) -> dict:
+    """``POST /projects/{id}/feedback-preview``: how many reviews the wizard's filters match.
+
+    ``filters`` is built like the generation route's (the caller's category scope
+    included), so the count is the generation's own read (shared/persona_feedback_preview.py).
+    """
+    if not isinstance(mode, str) or mode not in persona_feedback_preview.PREVIEW_MODES:
+        raise ValidationError(f"mode must be one of: {', '.join(persona_feedback_preview.PREVIEW_MODES)}")
+    if purpose not in FEEDBACK_PREVIEW_PURPOSES:
+        raise ValidationError(f"purpose must be one of: {', '.join(FEEDBACK_PREVIEW_PURPOSES)}")
+    answer = persona_feedback_preview.preview_feedback(feedback_table, project_id, filters, mode)
+    sample_limit = persona_context_budget()[1] if purpose == 'personas' else None
+    return {**answer, 'sample_limit': sample_limit}
 
 
 def fix_persona_name(name: str) -> str:

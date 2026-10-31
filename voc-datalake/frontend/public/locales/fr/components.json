@@ -240,7 +240,21 @@
     "sentiments": "Tonalités",
     "sources": "Canaux",
     "stepOf": "Étape {{step}} sur {{total, number}}",
-    "timeRange": "Plage horaire"
+    "timeRange": "Plage horaire",
+    "feedbackPreview": {
+      "counting": "Comptage des avis correspondants…",
+      "matches_one": "{{count, number}} avis correspond",
+      "matches_other": "{{count, number}} avis correspondent",
+      "matchesAtLeast_one": "Au moins {{count, number}} avis correspond",
+      "matchesAtLeast_other": "Au moins {{count, number}} avis correspondent",
+      "matchesEstimated_one": "Environ {{count, number}} avis correspond",
+      "matchesEstimated_other": "Environ {{count, number}} avis correspondent",
+      "sampled": "La génération de personas en lit un échantillon régulier de {{limit, number}}.",
+      "usesAll": "La génération de personas les lit tous.",
+      "confirming": "Confirmation du nombre exact…",
+      "noMatches": "Aucun avis ne correspond à ces filtres. Élargissez-les, sinon l’exécution n’aura rien à lire.",
+      "error": "Impossible de compter les avis correspondants."
+    }
   },
   "documentExport": {
     "copied": "Copié !",
