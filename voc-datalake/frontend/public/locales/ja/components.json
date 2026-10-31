@@ -680,5 +680,40 @@
     "trendUp": "{{percent}} 増加",
     "trendDown": "{{percent}} 減少",
     "trendNeutral": "変化なし（{{percent}}）"
+  },
+  "facetFilters": {
+    "groupLabel": "フィードバックのフィルター",
+    "source": "ソース",
+    "allSources": "すべてのソース",
+    "category": "カテゴリ",
+    "allCategories": "すべてのカテゴリ",
+    "sentiment": "センチメント",
+    "allSentiments": "すべてのセンチメント",
+    "sentiments": {
+      "positive": "ポジティブ",
+      "neutral": "ニュートラル",
+      "negative": "ネガティブ",
+      "mixed": "混在"
+    },
+    "usefulness": "有用性",
+    "allUsefulness": "すべての有用性",
+    "usefulnessValues": {
+      "high": "有用性: 高",
+      "medium": "有用性: 中",
+      "low": "有用性: 低",
+      "unrated": "未評価"
+    },
+    "usefulnessShort": {
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    },
+    "usefulnessBadge": "有用性: {{band}}",
+    "selectedCount_one": "{{count, number}} 件選択",
+    "selectedCount_other": "{{count, number}} 件選択",
+    "clear": "クリア",
+    "clearAll": "フィルターをクリア",
+    "noMatchTitle": "これらのフィルターに一致するフィードバックはありません",
+    "noMatchHint": "フィルターを変更またはクリアするか、より長い期間を選択してください。"
   }
 }

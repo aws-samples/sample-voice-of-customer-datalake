@@ -21,6 +21,7 @@ import type { TFunction } from 'i18next'
 import { formatDate, formatTime } from '../../utils/dateUtils'
 import type { FeedbackItem } from '../../api/types'
 import ReviewSentimentBadge from '../SentimentBadge/ReviewSentimentBadge'
+import UsefulnessBadge from '../UsefulnessBadge/UsefulnessBadge'
 import { cleanFeedbackText, cleanReviewText } from '../../utils/cleanReviewText'
 import { knownJourneyStage } from '../../utils/displayLabels'
 import { useChannelLabel } from '../../hooks/useChannelLabel'
@@ -70,6 +71,7 @@ function CompactCard({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
               </span>
             )}
             <ReviewSentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} />
+            <UsefulnessBadge band={feedback.usefulness} />
             <span
               className="text-xs text-muted"
               title={t('feedbackCard.reviewDateHint')}
@@ -114,6 +116,7 @@ function CardHeader({ feedback }: Readonly<{ feedback: FeedbackItem }>) {
           </span>
         )}
         <ReviewSentimentBadge sentiment={feedback.sentiment_label} score={feedback.sentiment_score} />
+        <UsefulnessBadge band={feedback.usefulness} />
       </div>
     </div>
   )

@@ -96,10 +96,7 @@
     "shownOf": "{{count, number}} mostradas de {{total, number}}",
     "loading": "A carregar avaliações…",
     "subcategoryChip": "Subcategoria: {{name}}",
-    "removeSubcategory": "Remover o filtro {{name}}",
-    "refinedMoreBelow_one": "{{count, number}} correspondência nas primeiras {{loaded, number}} avaliações · Carregue mais abaixo",
-    "refinedMoreBelow_many": "{{count, number}} correspondências nas primeiras {{loaded, number}} avaliações · Carregue mais abaixo",
-    "refinedMoreBelow_other": "{{count, number}} correspondências nas primeiras {{loaded, number}} avaliações · Carregue mais abaixo"
+    "removeSubcategory": "Remover o filtro {{name}}"
   },
   "uncategorised": "Sem categoria",
   "uncategorisedHint": "Avaliações deste período sem nenhuma categoria"

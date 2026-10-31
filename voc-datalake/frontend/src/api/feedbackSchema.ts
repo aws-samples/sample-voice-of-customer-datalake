@@ -19,6 +19,7 @@
 import { z } from 'zod'
 import { toOptionalFiniteNumber } from './lenientFields'
 import { StringMapSchema, TagsSchema } from './dimensionsSchema'
+import { USEFULNESS_BANDS } from './feedbackFacets'
 import type { FeedbackItem } from './types'
 
 /** Coerce an unknown value to a finite number, or `0` when not numeric. */
@@ -91,6 +92,8 @@ const FeedbackItemSchema = z.object({
   tags: TagsSchema.transform((tags) => (tags.length === 0 ? undefined : tags)),
   // An unknown policy reads as absent (= allow): only a recognised one earns a badge.
   pii_policy: z.enum(['allow', 'redact', 'summary_only']).optional().catch(undefined),
+  // Only a stored band reads; anything else (absent, junk) is "not scored" and shows no badge.
+  usefulness: z.enum(USEFULNESS_BANDS).optional().catch(undefined),
 })
 
 function emptyAsUndefined(map: Record<string, string>): Record<string, string> | undefined {

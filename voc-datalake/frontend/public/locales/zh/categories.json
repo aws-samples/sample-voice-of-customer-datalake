@@ -96,9 +96,7 @@
     "shownOf": "已显示 {{count, number}} / {{total, number}} 条",
     "loading": "正在加载评论…",
     "subcategoryChip": "子类别：{{name}}",
-    "removeSubcategory": "移除“{{name}}”筛选",
-    "refinedMoreBelow_one": "前 {{loaded, number}} 条评论中有 {{count, number}} 条匹配 · 在下方加载更多",
-    "refinedMoreBelow_other": "前 {{loaded, number}} 条评论中有 {{count, number}} 条匹配 · 在下方加载更多"
+    "removeSubcategory": "移除“{{name}}”筛选"
   },
   "uncategorised": "未分类",
   "uncategorisedHint": "此期间未匹配任何类别的评论"
