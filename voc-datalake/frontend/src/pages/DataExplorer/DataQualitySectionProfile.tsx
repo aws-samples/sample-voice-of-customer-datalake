@@ -8,8 +8,9 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
-import { formatCount, formatPercent } from '../../utils/numberFormat'
+import { formatPercent } from '../../utils/numberFormat'
 import { shareOf } from '../../api/dataQualitySchema'
+import { CountRow } from './DataQualityViews'
 import { PROFILE_FACETS, PROFILE_VALUES } from '../../api/dataQualityProfileSchema'
 import type { OverallQuality, SourceQuality } from '../../api/dataQualitySchema'
 import type { ProfileFacet, SourceProfile } from '../../api/dataQualityProfileSchema'
@@ -40,22 +41,8 @@ const VALUE_LABEL_KEYS: Readonly<Record<ProfileFacet, Readonly<Record<string, st
 function ProfileRow({ label, profile, facet, strong = false }: Readonly<{
   label: string; profile: SourceProfile; facet: ProfileFacet; strong?: boolean
 }>) {
-  const { i18n } = useTranslation()
-  return (
-    <tr className={clsx('border-t border-border', strong && 'font-semibold')}>
-      <th scope="row" className="px-3 py-2 text-left font-medium text-text-strong">{label}</th>
-      {PROFILE_VALUES[facet].map((value) => {
-        const count = profile[facet][value] ?? 0
-        return (
-          <td key={value} className="px-3 py-2 text-right tabular-nums">
-            {formatCount(count, i18n.language)}
-            <span className="ml-1 text-xs text-muted">({formatPercent(shareOf(count, profile.profiled), i18n.language)})</span>
-          </td>
-        )
-      })}
-      <td className="px-3 py-2 text-right tabular-nums">{formatCount(profile.profiled, i18n.language)}</td>
-    </tr>
-  )
+  const counts = PROFILE_VALUES[facet].map((value): [string, number] => [value, profile[facet][value] ?? 0])
+  return <CountRow label={label} counts={counts} total={profile.profiled} strong={strong} />
 }
 
 function FacetSwitch({ facet, onChange }: Readonly<{ facet: ProfileFacet; onChange: (facet: ProfileFacet) => void }>) {
