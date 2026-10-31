@@ -46,7 +46,7 @@ from shared.mcp_delegate import DelegationUnavailable, DomainCall, DomainResult
 from shared.mcp_global_tools import TOOLS_BY_NAME, InvalidToolArgument
 from shared.mcp_tokens import mint_token
 from shared.test.instrumentation_fixtures import (
-    API_HANDLER_LAYERS,
+    HAND_WRITTEN_API_HANDLER_LAYERS,
     assert_tracer_wrapped,
     handler_layers,
 )
@@ -192,7 +192,7 @@ class TestEnvelope:
         assert counted.call_count == 1
 
     def test_the_instrumentation_wraps_the_handler_and_the_tool_call(self):
-        assert handler_layers(h.lambda_handler) == API_HANDLER_LAYERS
+        assert handler_layers(h.lambda_handler) == HAND_WRITTEN_API_HANDLER_LAYERS
         assert_tracer_wrapped(h, '_tools_call')
 
 

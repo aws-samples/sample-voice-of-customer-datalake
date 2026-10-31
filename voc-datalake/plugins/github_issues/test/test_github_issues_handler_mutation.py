@@ -35,7 +35,7 @@ from _shared.github_api import StopRun
 from _shared.test.fresh_import import assert_loading_puts_root_first, load_fresh
 from github_issues.ingestor import handler
 from shared.test.emf_fixtures import cold_start_metric_names
-from shared.test.instrumentation_fixtures import INSTRUMENTED_HANDLER_LAYERS, handler_layers
+from shared.test.instrumentation_fixtures import HAND_WRITTEN_HANDLER_LAYERS, handler_layers
 
 MODULE_PATH = Path(handler.__file__).resolve()
 PLUGIN_ROOT = str(MODULE_PATH.parents[1])
@@ -156,7 +156,7 @@ class TestLambdaHandler:
         assert ingestor_class.call_args_list == [call(execution_id=execution_id, deadline=1240.0)]
 
     def test_carries_all_four_instrumentation_layers(self):
-        assert handler_layers(handler.lambda_handler) == INSTRUMENTED_HANDLER_LAYERS
+        assert handler_layers(handler.lambda_handler) == HAND_WRITTEN_HANDLER_LAYERS
 
     @pytest.mark.usefixtures("ingestor_class")
     def test_flushes_the_cold_start_metric(self, capsys):
