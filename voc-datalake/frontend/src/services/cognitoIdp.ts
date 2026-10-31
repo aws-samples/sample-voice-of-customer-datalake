@@ -16,7 +16,7 @@ import { nullOnRejection } from '../lib/rejections'
 export type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 /** The global `fetch`, called late so a test's stub is the one used. */
-export const globalFetch: FetchImpl = (input, init) => fetch(input, init)
+const globalFetch: FetchImpl = (input, init) => fetch(input, init)
 
 /** A caller of one pool's region: `call(target, payload)` answers the parsed body. */
 export interface CognitoIdpClient {

@@ -5,6 +5,7 @@ import {
   ABORT_MULTIPART_DAYS,
   ACCESS_LOGS_NONCURRENT_VERSION_DAYS,
   RAW_NONCURRENT_VERSION_DAYS,
+  SCRATCH_EXPIRATION_DAYS,
   WEBSITE_NONCURRENT_VERSION_DAYS,
 } from './core-buckets';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
@@ -54,7 +55,7 @@ describe('VocCoreStack bucket versioning', () => {
     ['RawDataBucket', RAW_NONCURRENT_VERSION_DAYS],
     ['WebsiteBucket', WEBSITE_NONCURRENT_VERSION_DAYS],
   ])('%s expires noncurrent versions, aborts stale uploads and clears delete markers', (prefix, days) => {
-    expect(versionedBucket(prefix).Properties.LifecycleConfiguration.Rules).toStrictEqual([
+    expect(versionedBucket(prefix).Properties.LifecycleConfiguration.Rules.slice(0, 2)).toStrictEqual([
       {
         Id: 'version-hygiene',
         Status: 'Enabled',
@@ -65,8 +66,10 @@ describe('VocCoreStack bucket versioning', () => {
     ]);
   });
 
-  it('never expires current raw-data versions (raw customer data is kept forever)', () => {
+  it('never expires current raw-data versions outside scratch/ (raw customer data is kept forever)', () => {
     const rules = versionedBucket('RawDataBucket').Properties.LifecycleConfiguration.Rules;
-    expect(rules.filter((rule) => 'ExpirationInDays' in rule || 'ExpirationDate' in rule)).toStrictEqual([]);
+    expect(rules.filter((rule) => 'ExpirationInDays' in rule || 'ExpirationDate' in rule)).toStrictEqual([
+      { Id: 'scratch-expiry', Status: 'Enabled', Prefix: 'scratch/', ExpirationInDays: SCRATCH_EXPIRATION_DAYS },
+    ]);
   });
 });

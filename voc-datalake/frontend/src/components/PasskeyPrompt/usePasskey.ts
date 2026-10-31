@@ -13,7 +13,7 @@ import { useAuthStore } from '../../store/authStore'
 const OFFER_KEY_PREFIX = 'voc-passkey-offer:'
 
 /** The query key of "does the signed-in person have a passkey". */
-export const passkeyQueryKey = (sub: string) => ['passkey', 'has', sub] as const
+const passkeyQueryKey = (sub: string) => ['passkey', 'has', sub] as const
 
 function offerKey(sub: string): string {
   return `${OFFER_KEY_PREFIX}${sub}`

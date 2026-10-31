@@ -10,12 +10,16 @@ from shared.form_theme import validate_theme
     {},
     {'primary_color': None},
 ], ids=['full', 'empty', 'null-colour'])
-def test_a_hex_theme_is_accepted(theme):
-    validate_theme({'theme': theme})
+def test_a_hex_theme_is_accepted_unchanged(theme):
+    body = {'theme': dict(theme)}
+    validate_theme(body)
+    assert body == {'theme': theme}
 
 
 def test_a_body_without_a_theme_is_not_checked():
-    validate_theme({'name': 'Form'})
+    body = {'name': 'Form'}
+    validate_theme(body)
+    assert body == {'name': 'Form'}
 
 
 @pytest.mark.parametrize(('theme', 'message'), [
