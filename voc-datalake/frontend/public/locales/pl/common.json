@@ -28,7 +28,8 @@
     "workflow": "Przepływ pracy",
     "radar": "Radar",
     "featureRequests": "Tablice opinii",
-    "participants": "Uczestnicy"
+    "participants": "Uczestnicy",
+    "oauthConsent": "Zatwierdź asystenta"
   },
   "filters": {
     "allCategories": "Wszystkie kategorie",

@@ -21,6 +21,7 @@ import { oauthApi, oauthConsentKey } from '../../api/oauthApi'
 import type { ConsentDescription } from '../../api/oauthSchema'
 import { projectsKey } from '../../api/projectQueryKeys'
 import { projectsApi } from '../../api/projectsApi'
+import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import { leaveTo } from './leaveApp'
 
 type Approvable = Extract<ConsentDescription, { refused: false }>
@@ -62,12 +63,12 @@ function ConsentForm({ consent, authorizeQuery }: Readonly<{ consent: Approvable
       {consent.can_run_agents && scope === 'write' && !projectId
         && <p className="text-[12px] text-muted">{t('oauthConsent.runsAgents')}</p>}
       {approve.isError && <p role="alert" className="text-sm text-danger">{t('oauthConsent.approveFailed')}</p>}
-      <div className="flex flex-wrap gap-2">
+      <StickyActionBar variant="inline" className="flex flex-wrap gap-2 py-2">
         <button type="submit" className="btn btn-primary" disabled={approve.isPending}>{t('oauthConsent.approve')}</button>
         <button type="button" className="btn btn-secondary" onClick={() => leaveTo(consent.deny_redirect)}>
           {t('oauthConsent.deny')}
         </button>
-      </div>
+      </StickyActionBar>
     </form>
   )
 }
