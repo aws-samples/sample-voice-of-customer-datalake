@@ -17,6 +17,111 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.62.00] - 2026-10-31
+
+Ideas from @aws-bryan's PR #429 rebuilt on the current platform: model agreements without a shared use-case form, the assistant kept to the filters on screen, multi-value and usefulness filters, persona match counts, citations and protection, project export/import, and a per-source data profile.
+
+### Added
+
+- AI Chat (`/chat`) has a filter panel above the composer: time range, source, categories, sentiment, rating,
+  channel, tag and "Urgent only". It shows a live count of the matching reviews and a non-blocking warning when
+  the scope holds more than 1,000 reviews, the most one assistant search reads. The scope belongs to the
+  conversation and is sent with every message as `forwardedProps.scope` on `POST /chat/stream`
+  ([docs/assistant-chat-scope.md](docs/assistant-chat-scope.md)). (ported from #429 by @aws-bryan)
+- Every feedback read route (`/feedback`, `/feedback/urgent`, `/feedback/search`, `/feedback/entities`,
+  `/feedback/problems`, `/metrics/*`) takes several values of `source`, `category`, `subcategory` and
+  `sentiment` as a comma list meaning any of them; one value works as before. The caller's category and
+  source access still applies, so a list never shows a hidden source
+  ([docs/categories.md](docs/categories.md#filtering-by-several-values)) (ported from #429 by @aws-bryan).
+- A `usefulness` filter on the same routes (`low`, `medium`, `high`, several allowed; `unrated` for reviews
+  without a band), with a Usefulness filter on Categories and Problem Analysis (ported from #429 by @aws-bryan).
+- Dashboard filters for source, category, sentiment and usefulness, kept in the URL like Categories. A filtered
+  window with no reviews keeps the filters and offers Clear filters (ported from #429 by @aws-bryan).
+- A usefulness badge (High / Medium / Low) on feedback cards and in the review modal; unscored reviews show
+  none (ported from #429 by @aws-bryan).
+- The persona and research wizards show a live "N reviews match" line at the foot of the feedback-filters step: a
+  quick estimate first ("About N"), then the exact count, which is the generation's own read of the window, filters
+  and your category access, so the number and the run agree. The persona wizard also says whether the personas read
+  every match or an even sample of them. New route `POST /projects/{id}/feedback-preview` (edit access, under the
+  existing projects proxy; the exact count stops after 20 seconds and then says "at least N"; answers are reused for
+  five minutes) (docs/project-workspace.md) (ported from #429 by @aws-bryan).
+- A generated persona now records which reviews it cites: the model's "Review #N" references in its supporting
+  evidence are resolved to the feedback ids of that run's prompt order and stored as `evidence_feedback_ids`.
+  "Written from N reviews" on the persona says how many it cites, and the list opens on a "Cited" view next to
+  "All used". A reference that names no review the model read stays as text only. Personas generated before
+  this release have no Cited view (docs/project-workspace.md) (ported from #429 by @aws-bryan).
+- Protect a persona: a lock in the persona header (edit access) marks it protected, and a "Replace existing
+  personas" generation then keeps it, next to the existing add/replace choice. The new personas are written knowing
+  the protected ones (like an add run), a new persona with a protected one's name is dropped, the wizard counts only
+  the unprotected personas it deletes, and a persona protected while a run is going is still kept. The list shows a
+  lock on protected personas. New route `PUT /projects/{id}/personas/{persona_id}/protection` `{protected: true|false}`
+  under the existing projects proxy (docs/project-workspace.md) (ported from #429 by @aws-bryan).
+- Projects can be copied between deployments with two operator scripts, `voc-datalake/scripts/project-export.py`
+  and `project-import.py`, run with your own AWS credentials (no new route or Lambda). A versioned bundle carries
+  the whole project: personas, PR/FAQs, PRDs, prototypes, documents and their versions, decision records, comment
+  threads, prototype pins, product docs and avatars. The owner and members are matched in the target user pool by
+  email (`--owner-email` when the owner is not there), `--new-ids` imports a second copy under fresh ids, and
+  `--dry-run` prints the plan. Review links, MCP tokens and jobs are not carried.
+  See [docs/project-export.md](docs/project-export.md). (ported from #429 by @aws-bryan)
+- Data Explorer → Processed Feedback → Data quality shows a **Source profile** below the usefulness bands: per
+  source, its star ratings, sentiment split and text-length buckets, one facet at a time. `GET /metrics/data-quality`
+  adds a `profile` object to every source row and to `overall` (additive; existing fields unchanged), read from new
+  daily aggregator counters (`METRIC#daily_profile_rating|sentiment|length#<source>#<value>`), with no model call
+  and no new worker. See [docs/data-quality.md](docs/data-quality.md#per-source-profile). (ported from #429 by @aws-bryan)
+
+### Changed
+
+- The Claude model agreements (EULA + Marketplace subscription per allowlisted model) are now created by
+  `VocCoreStack` on every deploy, in the app's region, best effort: a refused agreement, a model not offered in
+  the region, throttling or a dropped connection is logged in the agreement Lambda's log group and reported, and
+  never fails or rolls back the deploy. They used to be created by the us-east-1 `VocWebSearchStack`, and only
+  alongside the use-case form. With web search off (`-c enableWebSearch=false`) and no form, no stack deploys to
+  us-east-1 any more. See [docs/deployment.md → Anthropic Model Access](docs/deployment.md#anthropic-model-access-first-time-setup)
+  (ported from #429 by @aws-bryan)
+- Anthropic's use-case form is opt-in: the committed `cdk.context.json` no longer carries an `anthropicUseCase`
+  block, so a deploy no longer files the form in your account under another company's name. File it once in the
+  Bedrock console (Model catalog → an Anthropic model → Submit use case details), or pass your own block.
+  `skipUseCaseSubmission` still works, and with it a block alone no longer creates `VocWebSearchStack`
+  (ported from #429 by @aws-bryan)
+- The AI assistant can no longer read past the filters on screen. The Categories and Problem Analysis filters and
+  the AI Chat panel's scope are a floor for `search_feedback`, `list_feedback`, `get_urgent_feedback`,
+  `get_entities` and `get_metrics`: the assistant can narrow within them, an argument outside them returns
+  nothing, and a filter a tool cannot apply makes it refuse rather than widen. Without filters the assistant
+  reads as before ([docs/assistant-chat-scope.md](docs/assistant-chat-scope.md)). (ported from #429 by @aws-bryan)
+- Categories: choosing several categories, sources or sentiments (the sentiment chips now multi-select) and a
+  subcategory filters on the server, so the list's counts and pages are exact. Before, extra categories and the
+  subcategory were filtered in the browser over the loaded page only. Problem Analysis takes several sources
+  (ported from #429 by @aws-bryan).
+- An unknown `sentiment` value on the read routes is now a 400 instead of an empty answer.
+
+### Fixed
+
+- An agreement offer without an offer token is reported as `NO_OFFERS` instead of failing the agreement step
+  (ported from #429 by @aws-bryan)
+- Persona regeneration in replace mode (Projects → Personas → Generate, "replace the current personas") now removes
+  every existing persona. It used to read only the first page of a project's personas and to stop at the first
+  failed delete, so some old personas could survive next to the new set. Each persona is now deleted on its own, a
+  failed delete is logged and the rest still go, and only the deleted personas' avatar images are removed.
+
+### Upgrade notes
+
+- On the next deploy, `VocCoreStack` adds one agreement custom resource per allowlisted Claude model; the
+  agreement Lambda it already had for the image model runs them. Models that already have an agreement are
+  reported `ALREADY_AVAILABLE`. `VocWebSearchStack` drops its agreement resources and their Lambda and provider;
+  if you deploy without a use-case block it also drops the submission resource, and with web search off the
+  whole stack leaves the app (CDK does not delete a stack dropped from the app: remove it with
+  `cdk destroy VocWebSearchStack` once nothing imports from it). Nothing in your account is revoked: the
+  agreement handler leaves agreements in place on Delete, and the form, once filed, stays filed. No table,
+  bucket or other data resource is renamed or replaced (ported from #429 by @aws-bryan)
+- If you relied on the committed `anthropicUseCase` block to file Anthropic's use-case form, nothing files it
+  any more. File it in the Bedrock console, or pass your own block in an uncommitted context file or in your
+  deploy job (`docs/deployment.md` → "Submit the form from CDK instead"). An account that already has access
+  needs neither (ported from #429 by @aws-bryan)
+- The source profile counters start when this release is deployed: reviews stored earlier are counted in the
+  source totals but not in the profile, and the Data quality section shows that share. To profile an older window,
+  run `scripts/retention/rebuild_aggregates.py` for it. Each new review writes three more aggregate rows.
+  (ported from #429 by @aws-bryan)
+
 ## [5.60.02] - 2026-10-31
 
 Review follow-ups to company personas (5.60.00).
