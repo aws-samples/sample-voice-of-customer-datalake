@@ -23,7 +23,7 @@ const USE_CASE = {
 function pinsOf(deployWebSearch: boolean): z.infer<typeof PinSchema>[] {
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
   const stack = new VocWebSearchStack(app, 'Pin', {
-    env: { account: '123456789012', region: 'us-east-1' }, modelRegion: 'us-east-1', deployWebSearch,
+    env: { account: '123456789012', region: 'us-east-1' }, deployWebSearch,
     anthropicUseCase: deployWebSearch ? undefined : USE_CASE,
   });
   return Object.values(Template.fromStack(stack).findResources(WEB_SEARCH_CONNECTOR_PIN_TYPE)).map((r) => PinSchema.parse(r));
