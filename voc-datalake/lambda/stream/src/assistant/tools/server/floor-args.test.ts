@@ -32,6 +32,13 @@ describe('floorQuery', () => {
       .toStrictEqual({ kind: 'query', query: { category: 'b' } });
   });
 
+  it('sends the usefulness floor to a route that filters on it, and refuses one that does not', () => {
+    const withUsefulness = new Set([...LIST_FIELDS, 'usefulness'] as const);
+    expect(floorQuery(floorFromFilters({ usefulness: 'high' }), {}, 'list_feedback', withUsefulness))
+      .toStrictEqual({ kind: 'query', query: { usefulness: 'high' } });
+    expect(() => floorQuery(floorFromFilters({ usefulness: 'high' }), {}, 'list_feedback', LIST_FIELDS)).toThrow(/usefulness/);
+  });
+
   it('answers empty for an argument outside the floor (intersected, not obeyed)', () => {
     const outcome = floorQuery(floorFromFilters({ source: 'webscraper' }), { source: 'manual_import' }, 'list_feedback', LIST_FIELDS);
     expect(outcome.kind).toBe('empty');

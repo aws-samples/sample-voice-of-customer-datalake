@@ -72,11 +72,12 @@ describe('ChatScopePanel', () => {
     await waitFor(() => expect(getSentiment).toHaveBeenLastCalledWith(expect.anything(), 'webscraper', {}, undefined))
   })
 
-  it('counts several categories as one call each, summed, and a sentiment as its bucket', async () => {
+  it('counts several categories in one call and a sentiment as its bucket', async () => {
+    getSentiment.mockResolvedValue(breakdown({ positive: 110, negative: 240 }))
     useChatScopeStore.setState({ byThread: { [THREAD]: { category: 'delivery,billing', sentiment: 'negative' } } })
     render(<ChatScopePanel threadId={THREAD} />)
     expect(await screen.findByText('240 reviews')).toBeInTheDocument()
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(getSentiment).toHaveBeenCalledExactlyOnceWith(expect.anything(), undefined, {}, 'delivery,billing')
     expect(screen.getByText('2 filters')).toBeInTheDocument()
   })
 

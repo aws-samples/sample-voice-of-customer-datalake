@@ -105,16 +105,6 @@ export function categoryLabel(id: string, categories: readonly LabelledCategory[
 }
 
 /**
- * The breakdown row a review filed under `category` counts in: its category when
- * configured, else `other` (no category, the fallback, or a removed category).
- * `configured` empty (still loading, or unreadable) keeps every name as is.
- */
-export function categoryBucket(category: string | undefined, configured: readonly string[]): string {
-  const name = category === undefined || category === '' ? OTHER_CATEGORY : category
-  return configured.length === 0 || configured.includes(name) ? name : OTHER_CATEGORY
-}
-
-/**
  * A trending keyword's label. A keyword that IS a category id
  * (`pricing_licensing`) reads as that category does (`Pricing & Licensing`),
  * so the word cloud and the category chips agree; any other keyword is shown

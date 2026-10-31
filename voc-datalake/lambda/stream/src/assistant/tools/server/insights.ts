@@ -48,8 +48,8 @@ const FILTER_PROPERTIES: JsonSchemaProperties = {
 };
 
 /** What /feedback and /feedback/urgent filter on; /feedback/entities takes no category or sentiment. */
-const LIST_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set(['source', 'category', 'sentiment', 'channel', 'tag', 'dims', 'rating', 'urgent']);
-const ENTITIES_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set(['source', 'channel', 'tag', 'dims', 'rating', 'urgent']);
+const LIST_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set(['source', 'category', 'sentiment', 'usefulness', 'channel', 'tag', 'dims', 'rating', 'urgent']);
+const ENTITIES_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set(['source', 'usefulness', 'channel', 'tag', 'dims', 'rating', 'urgent']);
 
 /** The tool's filters under the user's floor (floor-args.ts): the query to send, or an empty answer. */
 function flooredFilters(ctx: AssistantRunContext, args: z.infer<typeof listInput>, tool: string, fields: ReadonlySet<RouteFloorField>): FloorQueryOutcome {
