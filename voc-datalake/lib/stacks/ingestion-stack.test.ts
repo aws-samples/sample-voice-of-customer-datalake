@@ -15,6 +15,7 @@ import { z } from 'zod';
 import {
   IMPORT_ABORT_MULTIPART_DAYS,
   IMPORT_NONCURRENT_VERSION_DAYS,
+  IMPORT_STAGED_EXPIRATION_DAYS,
   S3_IMPORT_BUCKET_ENV,
   SCHEDULE_TARGET_MAX_EVENT_AGE,
   SCHEDULE_TARGET_RETRY_ATTEMPTS,
@@ -70,11 +71,13 @@ describe('VocIngestionStack S3 import bucket', () => {
 
   it('bounds versioning cost: noncurrent versions expire and abandoned uploads abort', () => {
     expect(IMPORT_NONCURRENT_VERSION_DAYS).toBe(7);
+    expect(IMPORT_STAGED_EXPIRATION_DAYS).toBe(90);
     expect(IMPORT_ABORT_MULTIPART_DAYS).toBe(1);
     expect(bucket.Properties.LifecycleConfiguration.Rules).toStrictEqual(expect.arrayContaining([
       {
         Id: 'staging-version-hygiene',
         Status: 'Enabled',
+        ExpirationInDays: IMPORT_STAGED_EXPIRATION_DAYS,
         NoncurrentVersionExpiration: { NoncurrentDays: IMPORT_NONCURRENT_VERSION_DAYS },
         AbortIncompleteMultipartUpload: { DaysAfterInitiation: IMPORT_ABORT_MULTIPART_DAYS },
       },

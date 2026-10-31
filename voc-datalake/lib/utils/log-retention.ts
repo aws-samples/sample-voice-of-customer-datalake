@@ -47,3 +47,26 @@ class LambdaLogRetentionAspect implements cdk.IAspect {
 export function applyLambdaLogRetention(scope: IConstruct): void {
   cdk.Aspects.of(scope).add(new LambdaLogRetentionAspect());
 }
+
+/**
+ * Production log retention (`-c protectData=true`, WA SEC04-BP01 / SEC10-BP03, finding OPS-6).
+ *
+ * Demos and workshops keep two weeks and delete their logs with the stacks. A protected deployment keeps
+ * every log group 365 days (the AWS Config `cw-loggroup-retention-period-check` and Security Hub
+ * `CloudWatch.16` default) and RETAINS it on stack deletion, so an incident found weeks later, or a
+ * teardown, still has its evidence. Storage is pay-per-use; nothing is billed for the setting itself.
+ */
+export const PROTECTED_LOG_RETENTION_DAYS = 365;
+
+class ProtectedLogRetentionAspect implements cdk.IAspect {
+  visit(node: IConstruct): void {
+    if (!(node instanceof logs.CfnLogGroup)) return;
+    node.retentionInDays = PROTECTED_LOG_RETENTION_DAYS;
+    node.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
+  }
+}
+
+/** Apply to the app after `applyLambdaLogRetention` (bin/voc-datalake.ts); a no-op unless `protected`. */
+export function applyProtectedLogRetention(scope: IConstruct, isProtected: boolean): void {
+  if (isProtected) cdk.Aspects.of(scope).add(new ProtectedLogRetentionAspect());
+}

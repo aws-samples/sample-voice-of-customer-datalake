@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { ABORT_MULTIPART_DAYS, ACCESS_LOGS_NONCURRENT_VERSION_DAYS } from './core-buckets';
+import { SCRATCH_EXPIRATION_DAYS } from './core-buckets';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { itemAt, recordAt, valueAt } from '../test-support/guards';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
@@ -254,8 +255,8 @@ describe('VocCoreStack raw-data bucket CORS', () => {
    * `Aws.ACCOUNT_ID`/`Aws.REGION` pseudo-parameters, so BucketName synthesizes
    * to an Fn::Join object rather than a comparable string.
    */
-  function rawDataBucketCors(): z.infer<typeof CorsRuleSchema>[] {
-    const buckets = Object.entries(synthCoreTemplate().findResources('AWS::S3::Bucket'));
+  function rawDataBucketCors(template: Template = synthCoreTemplate()): z.infer<typeof CorsRuleSchema>[] {
+    const buckets = Object.entries(template.findResources('AWS::S3::Bucket'));
     const raw = buckets.filter(([logicalId]) => logicalId.startsWith('RawDataBucket'));
     // Count FIRST, parse second. Parsing inside the filter would report a
     // bucket that exists but lost its CORS block as a raw ZodError, hiding
@@ -272,9 +273,10 @@ describe('VocCoreStack raw-data bucket CORS', () => {
     expect(itemAt(rules, 0).AllowedMethods).toStrictEqual(expect.arrayContaining(['GET', 'PUT']));
   });
 
-  it('keeps the localhost dev origins alongside the deployed origin', () => {
-    // Dropping these silently breaks the upload flow under `npm run dev`.
-    expect(itemAt(rawDataBucketCors(), 0).AllowedOrigins).toStrictEqual(
+  it('allows the localhost dev origins only under -c environment=dev (DATA-10)', () => {
+    // A production bucket answers no page on the operator's own machine; a dev deployment keeps them.
+    expect(itemAt(rawDataBucketCors(), 0).AllowedOrigins.filter((o) => o.startsWith('http://localhost'))).toStrictEqual([]);
+    expect(itemAt(rawDataBucketCors(synthCoreTemplate({ environment: 'dev' })), 0).AllowedOrigins).toStrictEqual(
       expect.arrayContaining(['http://localhost:5173', 'http://localhost:3000']),
     );
   });
@@ -1433,6 +1435,16 @@ describe('VocCoreStack CDN signing-key Lambda capacity', () => {
     expect(functions, 'expected exactly one CdnSigningKeysLambda').toHaveLength(1);
     const props = z.object({ MemorySize: z.number() }).parse(itemAt(functions, 0)[1].Properties);
     expect(props.MemorySize).toBe(256);
+  });
+});
+
+describe('raw bucket scratch copies (DATA-4)', () => {
+  it('expire scratch/ claim-checks a failed workflow left behind', () => {
+    const [bucket] = Object.entries(synthCoreTemplate().findResources('AWS::S3::Bucket'))
+      .filter(([id]) => id.startsWith('RawDataBucket')).map(([, resource]) => resource);
+    expect(bucket).toMatchObject({ Properties: { LifecycleConfiguration: { Rules: expect.arrayContaining([
+      { Id: 'scratch-expiry', Prefix: 'scratch/', Status: 'Enabled', ExpirationInDays: SCRATCH_EXPIRATION_DAYS },
+    ]) } } });
   });
 });
 
