@@ -216,7 +216,7 @@ async function execute(event: LambdaEvent, emitter: SessionEmitter, deps: Runtim
     resume: input.resume ?? [],
     toolset,
     dataBlocks: [
-      buildCompanyBlock(companyBrief), buildPageContextBlock({ page, projectPreload }), buildMemoryBlock(memories), mentionsBlock,
+      buildCompanyBlock(companyBrief), buildPageContextBlock({ page, projectPreload, scope: props.scope }), buildMemoryBlock(memories), mentionsBlock,
     ],
   });
   console.log(JSON.stringify({

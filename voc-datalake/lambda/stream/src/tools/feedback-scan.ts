@@ -38,6 +38,8 @@ export const feedbackItemSchema = z.object({
   // results. coerce accepts both "0.95"/0.95 and "5"/5.
   sentiment_score: z.coerce.number().optional(),
   category: z.string().optional(),
+  // Read by the user's floor (assistant/tools/server/feedback-floor.ts) only.
+  subcategory: z.string().optional(),
   rating: z.coerce.number().nullable().optional(),
   original_text: z.string().optional(),
   title: z.string().optional(),
