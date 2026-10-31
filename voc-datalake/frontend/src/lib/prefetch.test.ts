@@ -2,7 +2,7 @@
  * @fileoverview `prefetch` keeps `prefetchQuery`'s contract on top of `queryClient.query`: the data lands in
  * the cache, a fresh entry is not fetched again, and a failed fetch never rejects.
  */
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, queryOptions } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import { prefetch } from './prefetch'
 
@@ -27,5 +27,12 @@ describe('prefetch', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     await expect(prefetch(client, { queryKey: KEY, queryFn: () => Promise.reject(new Error('offline')) })).resolves.toBeUndefined()
     expect(client.getQueryData(KEY)).toBeUndefined()
+  })
+
+  it('takes the options query() takes, typed by the queryFn (no cast at the call site)', async () => {
+    const client = new QueryClient()
+    const typed = queryOptions({ queryKey: ['prefetch-typed'], queryFn: () => Promise.resolve(1) })
+    await prefetch(client, typed)
+    expect(client.getQueryData(typed.queryKey)).toBe(1)
   })
 })
