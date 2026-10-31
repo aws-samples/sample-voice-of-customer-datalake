@@ -35,7 +35,7 @@ const LANG_NAMES = {
   es: 'Spanish', fr: 'French', de: 'German',
   ko: 'Korean', pt: 'Portuguese', ja: 'Japanese', zh: 'Simplified Chinese', pl: 'Polish',
 }
-// The address the existing catalogue uses, so a new string matches it (a review caught "Du" in 5.61.00).
+// The address the existing catalogue uses, so a new string matches it (a review caught "Du" in 5.64.00).
 const LANG_STYLE = {
   de: 'Address the reader formally with "Sie" (Sie / Ihr / Ihnen), never "du", as the rest of the German UI does',
 }
