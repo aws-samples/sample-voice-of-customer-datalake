@@ -20,8 +20,12 @@ Dependabot covers GitHub Actions, the six npm lockfiles (repo root, `voc-datalak
 `voc-datalake/frontend/e2e/`, `voc-datalake/lambda/stream/`, `tools/kiro-acp-bridge/`) and the Python
 requirements files (`voc-datalake/requirements-dev.txt` and the four `voc-datalake/lambda/layers/*/requirements.txt`).
 
-- One pull request per directory carries every minor and patch update together; each major update is its own
-  pull request.
+- One pull request per directory carries every minor and patch update together.
+- **Major updates are not proposed** (`ignore: update-types: version-update:semver-major` on every ecosystem).
+  A major changes an API or a default, so it is a deliberate upgrade: one major at a time, on its own branch,
+  with the upstream release notes read and the full `bash scripts/validate.sh` run. Security updates still
+  arrive, majors included: the ignore rule's `update-types` applies to version updates only. To see which
+  majors are available, run `npm outdated` in a package directory or `pip list --outdated` in `voc-datalake/`.
 - **Cooldown of 7 days**: a release is proposed only once it is a week old, so a malicious or broken release
   that is pulled within days never reaches a lockfile. Security updates are not delayed.
 
@@ -31,7 +35,7 @@ Every Dependabot pull request **fails `version: CHANGELOG ↔ package.json`** in
 intended: every change on `main` bumps the version and records itself in `CHANGELOG.md`
 (`.kiro/steering/changelog.md`). To merge one:
 
-1. Read the update. For a major, read the upstream release notes and run the area's tests locally.
+1. Read the update and its upstream release notes.
 2. Check out the branch, add a patch release section under `## [Unreleased]` in `CHANGELOG.md` (a
    `### Changed` or `### Security` bullet naming what moved and why it matters to a deployer).
 3. In the repo root, `voc-datalake/` and `voc-datalake/frontend/`, run `npm version <x.y.z> --no-git-tag-version`.

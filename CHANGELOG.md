@@ -17,6 +17,17 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.57.01] - 2026-10-31
+
+Dependabot proposes only minor and patch updates; major upgrades are made deliberately, one at a time.
+
+### Changed
+- `.github/dependabot.yml` ignores semver-major version updates for GitHub Actions, npm and pip. The first weekly
+  run had opened 22 major pull requests at once (vitest 5, eslint 10, cdk-nag 3, i18next 26, the v7 actions, …);
+  they are closed, and each major is now upgraded on its own branch with its release notes read
+  ([docs/dependencies.md](docs/dependencies.md#version-updates-dependabot)). Security updates still arrive,
+  majors included.
+
 ## [5.57.00] - 2026-10-31
 
 A CSV upload with a dataset name updates the rows a corrected file changes instead of adding them again (#411).
