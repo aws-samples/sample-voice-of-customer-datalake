@@ -2,13 +2,17 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "1403c71f2a881a6e26dedb31353f882cd71630e8865ca6e5b23f8afa506030bf",
+      "templateSha256": "a91fc470dabefeb208a127bedd4b92561220090065aa83e8482ac35945f5d28f",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
           "AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer",
           "AWS::ApiGateway::Authorizer Name = voc-mcp-token-authorizer",
           "AWS::ApiGateway::RestApi Name = voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Cognito::UserPoolClient ClientName = voc-mcp-claude-code-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Cognito::UserPoolClient ClientName = voc-mcp-cursor-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Cognito::UserPoolClient ClientName = voc-mcp-kiro-<AWS::AccountId>-<AWS::Region>",
+          "AWS::Cognito::UserPoolResourceServer Name = voc-mcp-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-agents-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-ballots-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Lambda::Function FunctionName = voc-chat-api-<AWS::AccountId>-<AWS::Region>",
@@ -125,12 +129,14 @@
           "BRIEFING_QUEUE_URL = https://sqs.us-east-1.<AWS::URLSuffix>/111111111111/voc-briefing-<AWS::AccountId>-<AWS::Region>",
           "BRIEFING_TOPIC_ARN = arn:aws:sns:us-east-1:111111111111:voc-briefing-<AWS::AccountId>-<AWS::Region>",
           "CATEGORY_REPROCESS_FUNCTION = voc-category-reprocess-<AWS::AccountId>-<AWS::Region>",
+          "COGNITO_DOMAIN_URL = https://voc-<AWS::AccountId>-<AWS::Region>.auth.us-east-1.amazoncognito.com",
           "DESIGN_CAPTURE_FUNCTION = voc-design-capture-<AWS::AccountId>-<AWS::Region>",
           "ENGAGEMENT_FUNCTION = voc-engagement-api-<AWS::AccountId>-<AWS::Region>",
           "MANUAL_IMPORT_PROCESSOR_FUNCTION = voc-manual-import-processor-<AWS::AccountId>-<AWS::Region>",
           "OPS_ALERTS_AGGREGATOR_FUNCTION = voc-aggregation-processor-<AWS::AccountId>-<AWS::Region>",
           "OPS_ALERTS_ALARM_PREFIX = voc-alerts-<AWS::AccountId>-<AWS::Region>",
           "OPS_ALERTS_INGESTOR_FUNCTIONS = voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>,voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>,voc-ingestor-github_issues-<AWS::AccountId>-<AWS::Region>,voc-ingestor-s3_import-<AWS::AccountId>-<AWS::Region>,voc-ingestor-synthetic_reviews-<AWS::AccountId>-<AWS::Region>,voc-ingestor-web_reviews-<AWS::AccountId>-<AWS::Region>,voc-ingestor-webscraper-<AWS::AccountId>-<AWS::Region>",
+          "OPS_ALERTS_MCP_SERVICE = voc-mcp-global-api",
           "OPS_ALERTS_PROCESSOR_FUNCTION = voc-feedback-processor-<AWS::AccountId>-<AWS::Region>",
           "OPS_ALERTS_QUEUES = processing-dlq=voc-processing-dlq-<AWS::AccountId>-<AWS::Region>,ingest-schedule-dlq=voc-ingest-schedule-dlq-<AWS::AccountId>-<AWS::Region>,aggregator-stream-failures=voc-aggregator-stream-failures-<AWS::AccountId>-<AWS::Region>,memory-extract-dlq=voc-memory-extract-dlq-<AWS::AccountId>-<AWS::Region>,briefing-dlq=voc-briefing-dlq-<AWS::AccountId>-<AWS::Region>,api-async-failures=voc-api-async-failures-<AWS::AccountId>-<AWS::Region>",
           "OPS_ALERTS_TOPIC_ARN = arn:aws:sns:us-east-1:111111111111:voc-ops-alarms-<AWS::AccountId>-<AWS::Region>",
@@ -172,7 +178,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "958ab39460fd34b4aab5d25cb83b2e68951bdf8514e7317e9ab45a7bc120bf1c",
+      "templateSha256": "d6f4e8973f2cd2d3f0ce2e68118a032ba0bd55c7af5dde616d8cc7e6dd528e8b",
       "names": {
         "physicalNames": [
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
