@@ -7,7 +7,7 @@
  */
 import { z } from 'zod'
 
-/** Mirrors CLIENT_KINDS in shared/mcp_oauth_config.py. */
+/** Mirrors CLIENT_KINDS in shared/mcp_oauth_config.py (pinned by lib/stacks/mcp-oauth-client-kinds.test.ts). */
 export const OAUTH_CLIENT_KINDS = ['kiro', 'claude-code', 'cursor', 'web'] as const
 
 /** Off unless the backend says otherwise: a missing block hides the sign-in snippets. */

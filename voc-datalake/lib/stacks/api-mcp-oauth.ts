@@ -55,7 +55,7 @@ const MCP_CLIENT_AUTH_FLOWS: cognito.AuthFlow = {
   userSrp: false, userPassword: false, adminUserPassword: false, custom: false, user: false,
 };
 
-/** Client kinds = CLIENT_KINDS in shared/mcp_oauth_config.py. */
+/** Client kinds = CLIENT_KINDS in shared/mcp_oauth_config.py (pinned by mcp-oauth-client-kinds.test.ts). */
 export type McpOAuthClientKind = 'kiro' | 'claude-code' | 'cursor' | 'web';
 
 const throttle = (rate: number, burst: number): apigateway.MethodDeploymentOptions =>
