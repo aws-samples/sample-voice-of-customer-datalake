@@ -116,5 +116,3 @@ export function createBoardSession({ clientId, storage, now, call }: BoardSessio
     email,
   }
 }
-
-export type BoardSession = ReturnType<typeof createBoardSession>
