@@ -530,7 +530,7 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   // authorizer instead (ACCESS_DENIED → 401 with the challenge, api-mcp.ts).
   // Pinned by 'unauthorized gateway response' in api-stack.test.ts.
   //
-  // Since 5.62.00 the challenge also names the MCP endpoint's protected-resource
+  // Since 5.63.00 the challenge also names the MCP endpoint's protected-resource
   // metadata (RFC 9728), because a request to /mcp/global WITHOUT a credential
   // gets THIS response (a TOKEN authorizer is never invoked without its identity
   // source), and an MCP client starts OAuth sign-in from `resource_metadata`.

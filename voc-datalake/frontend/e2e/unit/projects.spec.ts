@@ -1,5 +1,5 @@
 /**
- * The production project graph of playwright.config.ts (5.62.00): which project tears down after
+ * The production project graph of playwright.config.ts (5.63.00): which project tears down after
  * which, and how many workers each may use. A mistake here does not fail a run, it silently changes
  * it (cleanup starts while specs still write, or the writing specs run side by side), so it is pinned
  * offline.

@@ -47,7 +47,7 @@ refusal is not the handler's: the endpoint's token authorizer is the global MCP 
 itself (`_authorize`, the same credential check, never cached), and its Deny is answered by
 the `ACCESS_DENIED` gateway response (`lib/stacks/api-mcp.ts`), which sets the header as
 given. `id` is `null` because the gateway cannot read the request. A request with no
-`Authorization` header gets the API-wide 401, which since 5.62.00 carries
+`Authorization` header gets the API-wide 401, which since 5.63.00 carries
 `Bearer resource_metadata="…"` with no `error` (RFC 6750 §3.1: the request carried no
 credential); the SPA never reads that header. An OAuth client starts its sign-in from
 `resource_metadata`; a token user mints a new token on Connect. Cost: each request
@@ -110,7 +110,7 @@ the model can act on; a 5xx or an invoke fault is JSON-RPC `-32603`.
 
 ## Prompts and resources
 
-Since 5.62.00 the server also advertises the `prompts` and `resources` capabilities, in `initialize`
+Since 5.63.00 the server also advertises the `prompts` and `resources` capabilities, in `initialize`
 (legacy versions) and in `server/discover` (2026-07-28). The catalogue is
 `lambda/shared/mcp_global_prompts.py`; the handler only dispatches to it.
 
@@ -219,7 +219,7 @@ vitest (`connectSnippets.test.ts`) fails if the skill's tool table and
 }
 ```
 
-**Token from an environment variable (since 5.62.00).** Connect's `mcp.json` card has one snippet per client and
+**Token from an environment variable (since 5.63.00).** Connect's `mcp.json` card has one snippet per client and
 opens on the first. The Claude Code, Cursor and Kiro snippets read the token from `VOC_MCP_TOKEN`, so the file
 holds no secret and can be committed. Set the variable in the shell that starts the client
 (`export VOC_MCP_TOKEN='<YOUR_VOC_TOKEN>'`):
@@ -236,7 +236,7 @@ The builders are `buildClientMcpJson` / `tokenExportLine` in `frontend/src/pages
 
 ## OAuth sign-in
 
-Since 5.62.00 an MCP client can connect **without a token**: add the server URL, and the client
+Since 5.63.00 an MCP client can connect **without a token**: add the server URL, and the client
 opens the browser, the person approves it on VoC's consent screen and signs in with their VoC
 account. Personal `voc_tok_` tokens keep working beside it.
 
@@ -325,7 +325,7 @@ sent the browser where the request asked; it does not vet the callback itself. T
 callbacks a client may use is the backend's client and redirect validation (`GET /oauth/authorize` in
 `shared/mcp_oauth_authorize.py`, and the `POST /oauth/register` facade in `shared/mcp_oauth_register.py`),
 which answers a plain 400 before the consent page for an unknown client or redirect. A `config.json`
-without the hosted UI (written before 5.62.00) refuses the approval until the next deploy.
+without the hosted UI (written before 5.63.00) refuses the approval until the next deploy.
 
 **Revocation is immediate.** Connect lists the person's signed-in assistants (one per client) with
 revoke (`GET /connect/oauth/grants`, `DELETE /connect/oauth/grants/{grant_id}`). Revoking marks the
@@ -395,7 +395,7 @@ test user who is NOT an administrator, then once with an administrator for `run_
 
 ## Alarms and concurrency
 
-**Alarms (runtime-managed, since 5.62.00).** Like every operational alert, the endpoint's alarms exist only
+**Alarms (runtime-managed, since 5.63.00).** Like every operational alert, the endpoint's alarms exist only
 while an admin has alerting on (**Administration → System → Logs → Alerts**, [deployment.md](deployment.md)):
 the logs API creates them under the deployment's `voc-alerts-<account>-<region>-` prefix and they notify the
 ops SNS topic. Each is the Sum of one custom metric (namespace `VoC-MCP-Global`, dimension
@@ -409,7 +409,7 @@ ops SNS topic. Each is the Sum of one custom metric (namespace `VoC-MCP-Global`,
 | `mcp-tool-failed` | `ToolCall_failed`: calls a server fault stopped (`-32603`) | 5 (`MCP_TOOL_FAILED_THRESHOLD`) | A domain Lambda or the delegation is failing |
 | `mcp-rate-limited` | `RateLimited`: 429s from the per-token budget | 30 (`MCP_RATE_LIMITED_THRESHOLD`) | A client looping |
 
-`AuthDenied` is new in 5.62.00; the other three were already emitted. The metrics carry the Powertools
+`AuthDenied` is new in 5.63.00; the other three were already emitted. The metrics carry the Powertools
 `service` dimension, which is the function's base name, not the deployment-unique one: two deployments in one
 account and region (a `deploymentPrefix` beside the default) share these metrics, so each one's alarms count
 both. Four more alarm metrics cost $0.40 a month at the list price while alerting is on.

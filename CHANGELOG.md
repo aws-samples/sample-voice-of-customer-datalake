@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [5.62.00] - 2026-10-31
+## [5.63.00] - 2026-10-31
 
 Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the app through the existing tools, MCP prompts and resources, alarms and env-var config snippets; and faster, cheaper releases (skipped layer builds, changed-stacks deploys, a parallel production e2e run on Claude Haiku 5.5).
 

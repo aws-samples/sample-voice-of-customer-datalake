@@ -1,5 +1,5 @@
 """
-Model profile of the current invocation (owner decision, 5.62.00).
+Model profile of the current invocation (owner decision, 5.63.00).
 
 The production e2e suite signs in as users in the Cognito group ``e2e``. Every
 model call the APP makes for them resolves to one cheap model (Haiku 5.5, see
