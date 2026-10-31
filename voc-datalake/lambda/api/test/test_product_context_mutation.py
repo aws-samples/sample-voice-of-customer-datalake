@@ -701,8 +701,8 @@ REPORT_USER_LINES = (
     '8. **Success metrics**',
     '9. **Additional notes** (anything from internal documents that adds context)',
     '',
-    'Keep the tone factual and specific. Don\'t include sections like "future roadmap" or '
-    '"go-to-market" — those belong in PRD/PR-FAQ, not here.',
+    ('Keep the tone factual and specific. Don\'t include sections like "future roadmap" or '
+    '"go-to-market" — those belong in PRD/PR-FAQ, not here.'),
     '',
     'INPUT:',
     'BLOCK',

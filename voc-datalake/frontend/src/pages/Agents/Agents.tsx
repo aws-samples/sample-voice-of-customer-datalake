@@ -23,6 +23,7 @@ import { useAgentList, useCreateAgent } from './useAgents'
 import { WorkflowLibrary } from './WorkflowLibrary'
 import { AgentRowActions } from './AgentRowActions'
 import { PlansList } from './PlansList'
+import { prefetch } from '../../lib/prefetch'
 import type { LucideIcon } from 'lucide-react'
 import type { Agent } from '../../api/agentsApi'
 
@@ -100,7 +101,7 @@ function ViewTabs({ view, onChange }: Readonly<{ view: AgentsView; onChange: (vi
   const queryClient = useQueryClient()
   // The library's list is read before the tab opens, so the first switch renders from cache.
   const warm = (id: AgentsView) => {
-    if (id === 'workflows') void queryClient.prefetchQuery({ queryKey: workflowsKeys.list(), queryFn: workflowsApi.list, staleTime: 30_000 })
+    if (id === 'workflows') void prefetch(queryClient, { queryKey: workflowsKeys.list(), queryFn: workflowsApi.list, staleTime: 30_000 })
   }
   return (
     <div className="tabs-rail overflow-x-auto">

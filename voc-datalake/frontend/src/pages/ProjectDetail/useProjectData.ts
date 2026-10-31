@@ -360,6 +360,21 @@ export function useProjectMutations({
   }
 }
 
+/** A custom document to create (the create mutation's variables). */
+export interface DocumentDraft {
+  title: string
+  content: string
+}
+
+/** A save of an existing document (the update mutation's variables). */
+export interface DocumentUpdate {
+  docId: string
+  title?: string
+  content: string
+  /** The revision the editor loaded (documentEdit.documentRevision); absent = no stale check. */
+  expectedRevision?: number
+}
+
 interface UseDocumentMutationsProps {
   id: string | undefined
   selectedDoc: ProjectDocument | null
@@ -375,10 +390,7 @@ export function useDocumentMutations({
   const projectId = id ?? ''
 
   const createDocMut = useMutation({
-    mutationFn: (data: {
-      title: string;
-      content: string
-    }) =>
+    mutationFn: (data: DocumentDraft) =>
       projectsApi.createDocument(projectId, {
         ...data,
         document_type: 'custom',
@@ -397,13 +409,7 @@ export function useDocumentMutations({
   })
 
   const updateDocMut = useMutation({
-    mutationFn: (data: {
-      docId: string;
-      title?: string;
-      content: string;
-      /** The revision the editor loaded (documentEdit.documentRevision); absent = no stale check. */
-      expectedRevision?: number
-    }) =>
+    mutationFn: (data: DocumentUpdate) =>
       projectsApi.updateDocument(projectId, data.docId, {
         ...(data.title === undefined ? {} : { title: data.title }),
         content: data.content,

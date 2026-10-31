@@ -146,7 +146,7 @@ def plan_fingerprint(plan: Mapping[str, Any]) -> str:
 
 
 def _service_error(what: str, exc: Exception) -> ServiceError:
-    logger.exception(f'Plans store: {what} failed', extra={'error_type': type(exc).__name__})
+    logger.exception(f'Plans store: {what} failed', extra={'error_type': type(exc).__name__})  # noqa: LOG004 — only called from an except handler, which supplies the traceback
     return ServiceError(f'Could not {what}. Please retry.')
 
 

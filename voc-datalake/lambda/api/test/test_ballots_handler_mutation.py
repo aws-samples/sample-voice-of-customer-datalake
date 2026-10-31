@@ -625,8 +625,8 @@ class TestACancelledTransactionIsReadAtTheRowsIndex:
         assert (status, body['reason']) == (410, 'gone')
         assert (len(attempts), slept.call_count) == (1, 0)
         assert _messages(logger, 'warning') == [
-            f'An anonymous ballot named a row that no longer exists, on session {REF}. '
-            'Nothing was written.',
+            (f'An anonymous ballot named a row that no longer exists, on session {REF}. '
+            'Nothing was written.'),
         ]
 
     @pytest.mark.parametrize('reasons', [
@@ -646,10 +646,10 @@ class TestACancelledTransactionIsReadAtTheRowsIndex:
         assert (status, body) == (500, {'success': False, 'error': 'Failed to record the ballot'})
         assert len(attempts) == 3
         assert _messages(logger, 'warning') == [
-            f'An anonymous ballot write was cancelled without a failed condition on session '
-            f'{REF}; retrying (attempt 2 of 3).',
-            f'An anonymous ballot write was cancelled without a failed condition on session '
-            f'{REF}; retrying (attempt 3 of 3).',
+            (f'An anonymous ballot write was cancelled without a failed condition on session '
+            f'{REF}; retrying (attempt 2 of 3).'),
+            (f'An anonymous ballot write was cancelled without a failed condition on session '
+            f'{REF}; retrying (attempt 3 of 3).'),
         ]
         assert len(_messages(logger, 'exception')) == 1
         assert _messages(logger, 'exception')[0].startswith(
@@ -721,9 +721,9 @@ class TestTheBackoffSchedule:
             status, body = _submit(table, api_gateway_event, lambda_context, logger=logger)
         assert (status, body['error']) == (500, 'Failed to record the ballot')
         assert _messages(logger, 'error') == [
-            'An anonymous ballot write made no attempt at all, which means '
+            ('An anonymous ballot write made no attempt at all, which means '
             'BALLOT_WRITE_ATTEMPTS is not at least 1. Refusing rather than reporting a '
-            'ballot that was never written.',
+            'ballot that was never written.'),
         ]
 
     def test_the_constants_themselves(self):

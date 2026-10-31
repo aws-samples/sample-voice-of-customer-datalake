@@ -346,8 +346,8 @@ class TestTheFailurePath:
         world.table.update_item.side_effect = aws_error('table gone', 'UpdateItem')
         world.run()
         assert world.messages('warning') == [
-            'Could not mark job job-7 failed: An error occurred (InternalFailure) '
-            'when calling the UpdateItem operation: table gone'
+            ('Could not mark job job-7 failed: An error occurred (InternalFailure) '
+            'when calling the UpdateItem operation: table gone')
         ]
 
 

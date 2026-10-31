@@ -71,7 +71,9 @@ pytest and vitest with a per-file coverage floor and a shrink-only baseline ([do
 and actionlint + zizmor over `.github/workflows` (`scripts/actions-lint.sh`; install both, e.g. `brew install actionlint zizmor`).
 CI (`.github/workflows/quality-gates.yml`) runs that script and nothing else. Each gate allows zero findings.
 Outside `validate.sh`, pull requests also get the license gate and the dependency vulnerability audit; Dependabot PRs
-need a release bump before they merge ([docs/dependencies.md](docs/dependencies.md)).
+need a release bump before they merge ([docs/dependencies.md](docs/dependencies.md)). Before starting a feature
+(and at least once a week), run `npm run deps:freshness`: it lists every dependency, Lambda runtime, toolchain and workflow pin
+behind its newest release, so the work starts from current versions.
 
 ### When to run what
 - **Track, agent and mutation branches: the affected gates only.** `bash scripts/validate-affected.sh [<base>]`

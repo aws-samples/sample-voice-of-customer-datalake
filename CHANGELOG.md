@@ -17,6 +17,38 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.60.01] - 2026-10-31
+
+Every dependency, Lambda runtime and layer moves to its newest release within its current major, starting from
+what `npm run deps:freshness` (5.57.03) lists.
+
+### Changed
+- npm (CDK app, frontend, stream Lambda): `aws-cdk` CLI 2.1147.0 (`aws-cdk-lib` 2.275.0 and `constructs` 10.8.1 were
+  already the newest), the AWS SDK clients 3.1161.0, TanStack Query 5.105, amazon-cognito-identity-js 6.3.22, the
+  i18next detector and HTTP backend, eslint 10.14 in the stream Lambda, and every transitive dependency `npm update`
+  moves. `@vitest/eslint-plugin` stays at 1.6.27 (1.6.28 requires TypeScript 6, a major), knip at 6.44.0 (6.44.1
+  newly reports the exported compile-time type pins in `src/api/projectsApi.ts`) and
+  amazon-cognito-identity-js at 6.3.20 (6.3.21 deprecates its whole API; the sign-in moves to Amplify v6 next),
+  both on purpose. `prefetchQuery` / `fetchQuery`, deprecated in TanStack Query 5.105, become
+  `queryClient.query` (best-effort prefetches through `src/lib/prefetch.ts`).
+- The assistant stream and plan-step Lambdas run on Node.js 24 (was 22), the newest Lambda Node.js runtime; both
+  handlers were already async, as `nodejs24.x` requires.
+- Python: the Lambda layers rebuild with pydantic 2.14.2 (ingestion and processing) and raised floors (lxml 6.1,
+  requests 2.34, beautifulsoup4 4.15, cryptography 50); the test and lint tools move to
+  pytest 9.2, pytest-mock 3.17, moto 5.2.5, boto3 1.43.123 and ruff 0.17.3. ruff 0.17's new rules found 47 lines:
+  implicit string concatenation inside lists is parenthesized, `os.path.commonprefix` is replaced, and the eight
+  `logger.exception` calls in helpers that run inside an except handler carry a reason.
+
+### Security
+- `npm audit` still reports only moderate advisories (no high or critical), all one minimatch denial of service
+  (GHSA-g3hv-75wg-m249) reached through eslint, typescript-eslint, Stryker and the `aws-cdk-lib` synth. It is
+  fixed only in minimatch 11, which those packages adopt in their next major versions.
+
+### Upgrade notes
+- Rebuild the Lambda layers before deploying (`./scripts/build-layers.sh`): the processing and ingestion layers
+  pin pydantic 2.14.2.
+- Deploying updates the `voc-chat-stream` and `voc-plan-step` functions to the `nodejs24.x` runtime in place.
+
 ## [5.60.00] - 2026-10-31
 
 Company personas: a persona library on the Company page that projects copy from and promote into.
@@ -44,6 +76,7 @@ Company personas: a persona library on the Company page that projects copy from 
 - `VocApiStack` gains the `/company-personas` resource on the projects Lambda; deploy with `npm run deploy:infra`
   (it ends with the API stage refresh). No new permissions, tables or stacks. The library is stored in the
   projects table under the reserved id `company_personas`, which every `/projects/{id}` route answers with 404.
+
 
 ## [5.57.03] - 2026-10-31
 
@@ -78,6 +111,7 @@ Two bug fixes: job Lambdas can requeue themselves, and a person can no longer +1
   /feature-requests/{id}/supports`). The second now answers 409 `already_supported` like any repeat +1. New
   +1s get an id derived from the request and the email; existing +1s keep theirs
   ([docs/feature-requests.md](docs/feature-requests.md)).
+
 
 ## [5.57.01] - 2026-10-31
 

@@ -220,7 +220,7 @@ def _failure_text(exc: Exception, job_type: object, work: Work) -> str:
         logger.info('Assist ended with a user-facing refusal',
                        extra={'job_type': job_type, 'status_code': exc.status_code})
         return str(exc)
-    logger.exception('Assist failed', extra={'job_type': job_type})
+    logger.exception('Assist failed', extra={'job_type': job_type})  # noqa: LOG004 — only called from an except handler, which supplies the traceback
     return work.failure_message
 
 

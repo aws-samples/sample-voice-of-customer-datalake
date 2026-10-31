@@ -280,10 +280,10 @@ def summary_lines(plan: Plan, apply: bool) -> list[str]:
         f'  items processed in settle win: {plan.recent_items} (newest processed_at {plan.newest_processed_at})',
         f'  dates rebuilt:                 {len(plan.dates)}'
         + (f' ({min(plan.dates)} .. {max(plan.dates)})' if plan.dates else ''),
-        f'  sum of daily totals:           {totals_sum}'
-        f' ({"MATCHES" if totals_sum == dated else "DIFFERS FROM"} dated items)',
-        f'  existing METRIC# rows:         {len(plan.existing)}'
-        f' ({len(plan.untouched_existing_dates)} dates with no dated feedback, left untouched)',
+        (f'  sum of daily totals:           {totals_sum}'
+        f' ({"MATCHES" if totals_sum == dated else "DIFFERS FROM"} dated items)'),
+        (f'  existing METRIC# rows:         {len(plan.existing)}'
+        f' ({len(plan.untouched_existing_dates)} dates with no dated feedback, left untouched)'),
         f'  rows written (dry run: would): {sum(plan.written.values())}',
         f'  rows already correct:          {sum(plan.unchanged.values())}',
         f'  rows zeroed (not deleted):     {sum(plan.zeroed.values())}',

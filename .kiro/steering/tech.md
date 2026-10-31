@@ -13,7 +13,7 @@
 |---------|---------|------------|
 | **DynamoDB** | Processed data, streams | On-demand billing, KMS encryption, TTL |
 | **S3** | Raw data lake, avatars | KMS encryption, partitioned by source/date |
-| **Lambda** | Compute | Python 3.14 (the assistant stream: Node.js 22), ARM64 (Graviton), Powertools |
+| **Lambda** | Compute | Python 3.14 (the assistant stream: Node.js 24), ARM64 (Graviton), Powertools |
 | **SQS** | Processing queue | DLQ, visibility timeout, batch processing |
 | **API Gateway** | REST API | Throttling, CORS, Cognito auth |
 | **Cognito** | Authentication | User Pool, admins/users groups |

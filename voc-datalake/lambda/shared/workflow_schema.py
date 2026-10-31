@@ -590,11 +590,11 @@ def diff_definitions(before: Mapping[str, Any] | None, after: Mapping[str, Any])
 _TEMPLATE_NODES: Final = (
     ('start', NODE_START, 'Start', None, 1, 0, {}, ''),
     ('aggregate', 'aggregate_reviews', 'Aggregate reviews in scope', 'worker', 1, 1, {},
-     'Group the reviews in scope since the last run into the top problems by category and '
-     'subcategory. Cite review ids for every problem.'),
+     ('Group the reviews in scope since the last run into the top problems by category and '
+     'subcategory. Cite review ids for every problem.')),
     ('project', 'select_or_create_project', 'Choose or create the project', 'orchestrator', 1, 2, {},
-     "Reuse the project whose purpose covers these problems, or create a new one and record its purpose. "
-     'Never merge, move or delete projects.'),
+     ("Reuse the project whose purpose covers these problems, or create a new one and record its purpose. "
+     'Never merge, move or delete projects.')),
     ('personas_fixed', 'select_personas', 'Fixed personas', 'orchestrator', 0, 3, {}, ''),
     ('personas_new', 'generate_personas', 'Generate personas from the reviews', 'worker', 1, 3,
      {'max_new': 3}, ''),

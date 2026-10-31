@@ -373,8 +373,8 @@ class TestTheJobRecord:
                      'Persona import accepts pasted text or an image.',
         }
         assert _job_errors(mock_jobs_table) == [
-            'Persona import failed: PDF import is not supported yet. '
-            'Persona import accepts pasted text or an image.',
+            ('Persona import failed: PDF import is not supported yet. '
+            'Persona import accepts pasted text or an image.'),
         ]
         # Validation runs after the first progress tick, so the record shows the
         # step it was refused at before it is marked failed.

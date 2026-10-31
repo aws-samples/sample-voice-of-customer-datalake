@@ -647,11 +647,11 @@ class TestStepSave:
         (None, ' | Web search: enabled', ''),
         ([' ', 7], ' | Web search: enabled', ''),
         (['one'], ' | Web search: enabled (1 query)',
-         '\n---\n\n## Web Searches\n\nPublic-web grounding for this report came from the following searches:'
-         '\n\n1. "one"\n'),
+         ('\n---\n\n## Web Searches\n\nPublic-web grounding for this report came from the following searches:'
+         '\n\n1. "one"\n')),
         (['a  b', 'c'], ' | Web search: enabled (2 queries)',
-         '\n---\n\n## Web Searches\n\nPublic-web grounding for this report came from the following searches:'
-         '\n\n1. "a b"\n2. "c"\n'),
+         ('\n---\n\n## Web Searches\n\nPublic-web grounding for this report came from the following searches:'
+         '\n\n1. "a b"\n2. "c"\n')),
     ])
     @pytest.mark.usefixtures('job_status')
     def test_web_search_disclosure(self, saved: MagicMock, queries: Any, note: str, section: str) -> None:

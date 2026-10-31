@@ -129,10 +129,10 @@ class TestClassification:
 
     @pytest.mark.parametrize(('code', 'message'), [
         ('AccessDeniedException', "You don't have access to the model with the specified model ID."),
-        ('AccessDeniedException', 'User: arn:aws:sts::1:assumed-role/r is not authorized to perform: '
-                                  'bedrock:InvokeModelWithResponseStream on resource: arn:aws:bedrock:x'),
-        ('ValidationException', "Invocation of model ID anthropic.claude-x with on-demand throughput "
-                                "isn't supported. Retry your request with an inference profile."),
+        ('AccessDeniedException', ('User: arn:aws:sts::1:assumed-role/r is not authorized to perform: '
+                                  'bedrock:InvokeModelWithResponseStream on resource: arn:aws:bedrock:x')),
+        ('ValidationException', ("Invocation of model ID anthropic.claude-x with on-demand throughput "
+                                "isn't supported. Retry your request with an inference profile.")),
         ('ValidationException', 'The provided model identifier is invalid.'),
         ('ValidationException', 'This model version has reached the end of its life.'),
         ('ValidationException', 'The model is not enabled for this account.'),

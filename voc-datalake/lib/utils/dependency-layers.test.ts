@@ -73,8 +73,8 @@ describe('the signing layer (cryptography)', () => {
   it('the split libraries are installed by their own layer and no longer by the shared ones', () => {
     const requirements = (dir: string): string[] => fs.readFileSync(path.join(dir, 'requirements.txt'), 'utf8')
       .split('\n').map((line) => line.split('#')[0]?.trim() ?? '').filter(Boolean);
-    expect(requirements(SIGNING_LAYER_DIR)).toStrictEqual(['cryptography>=44.0.0']);
-    expect(requirements(EMAIL_INTAKE_LAYER_DIR)).toStrictEqual(['lxml>=5.0.0']);
+    expect(requirements(SIGNING_LAYER_DIR)).toStrictEqual(['cryptography>=50.0.2']);
+    expect(requirements(EMAIL_INTAKE_LAYER_DIR)).toStrictEqual(['lxml>=6.1.3']);
     expect(requirements('lambda/layers/processing-deps').join(' ')).not.toContain('cryptography');
     expect(requirements('lambda/layers/ingestion-deps').join(' ')).not.toContain('lxml');
   });

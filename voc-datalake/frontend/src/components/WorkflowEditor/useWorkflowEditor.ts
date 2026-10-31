@@ -155,7 +155,7 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean) {
   }, [])
 
   const resetToTemplate = useCallback(async () => {
-    const { workflow: template } = await queryClient.fetchQuery({
+    const { workflow: template } = await queryClient.query({
       queryKey: workflowsKeys.detail(DEFAULT_WORKFLOW_ID),
       queryFn: () => workflowsApi.get(DEFAULT_WORKFLOW_ID),
     })

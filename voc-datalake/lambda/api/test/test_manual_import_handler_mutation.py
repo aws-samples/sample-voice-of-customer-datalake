@@ -848,8 +848,8 @@ class TestCsvUpload(_WiredUploads):
         ({'csv_text': 123}, 'csv_text is required'),
         ({'csv_text': '   \n'}, 'csv_text is required'),
         ({'csv_text': 'text,rating\n,1\n,2\n,3\n,4\n,5\n,6\n'},
-         'CSV produced no valid rows. row 1: empty text — skipped; row 2: empty text — skipped; '
-         'row 3: empty text — skipped; row 4: empty text — skipped; row 5: empty text — skipped'),
+         ('CSV produced no valid rows. row 1: empty text — skipped; row 2: empty text — skipped; '
+         'row 3: empty text — skipped; row 4: empty text — skipped; row 5: empty text — skipped')),
         ({'csv_text': 'text\n\n'}, 'CSV produced no valid rows. '),
     ])
     def test_every_refusal_is_a_400_with_the_exact_message(self, api_gateway_event, lambda_context, body, message):
@@ -978,9 +978,9 @@ class TestJsonUploadRefusals:
         ([], 'Request must contain a non-empty "items" array'),
         (['string-item'], 'Validation failed: Item 0: must be an object'),
         ([{'text': '', 'id': '', 'source': '', 'timestamp': ''}],
-         'Validation failed: Item 0: "text" is required and must be a non-empty string; '
+         ('Validation failed: Item 0: "text" is required and must be a non-empty string; '
          'Item 0: "id" is required for deduplication; Item 0: "source" is required; '
-         'Item 0: "timestamp" is required (ISO 8601 format)'),
+         'Item 0: "timestamp" is required (ISO 8601 format)')),
         ([{**VALID_ITEM, 'text': 7}],
          'Validation failed: Item 0: "text" is required and must be a non-empty string'),
         ([{'id': 'r1', 'source': 's', 'timestamp': 't'}],

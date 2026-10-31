@@ -358,10 +358,10 @@ class TestMetadata:
     def test_every_offending_entry_is_listed_in_order_separated_by_semicolons(self):
         metadata = {2: 'x', 'custom_fields': {'ok': 1}, 'k' * 65: ['list'], 'nested': {'a': 1}}
         assert _errors(_raw(metadata=metadata)) == [
-            "metadata: Value error, metadata key must be string, got <class 'int'>; "
+            ("metadata: Value error, metadata key must be string, got <class 'int'>; "
             f"metadata key '{'k' * 20}...' exceeds max length; "
             f"metadata value for '{'k' * 65}' must be primitive (string, number, boolean, null); "
-            "metadata value for 'nested' must be primitive (string, number, boolean, null)",
+            "metadata value for 'nested' must be primitive (string, number, boolean, null)"),
         ]
 
     def test_a_non_dict_metadata_is_a_validation_error_not_a_crash(self):
@@ -395,7 +395,7 @@ class TestCustomFields:
         ({'': 'v'}, 'Value error, custom_fields keys must be 1-64 characters'),
         ({'k' * 65: 'v'}, 'Value error, custom_fields keys must be 1-64 characters'),
         ({'k' * 30: 'v' * 1001}, f"Value error, custom_fields value for '{'k' * 20}' exceeds max length"),
-        ({f'k{i}': i for i in range(21)}, 'Dictionary should have at most 20 items after validation, not 21'),
+        ({f'k{i}': i for i in range(21)}, 'Dictionary should have at most 20 items after validation, not more'),
     ])
     def test_each_refusal_is_located_at_metadata_custom_fields(self, custom, message):
         assert _errors(_raw(metadata={'custom_fields': custom})) == [f'metadata.custom_fields: {message}']
@@ -583,7 +583,7 @@ class TestDimensionsTagsAndPiiPolicy:
     def test_ten_dimensions_are_accepted_and_eleven_refused(self):
         assert len(validate_message(_raw(dimensions={f'd{i}': 'v' for i in range(10)})).dimensions or {}) == 10
         assert _errors(_raw(dimensions={f'd{i}': 'v' for i in range(11)})) == [
-            'dimensions: Dictionary should have at most 10 items after validation, not 11',
+            'dimensions: Dictionary should have at most 10 items after validation, not more',
         ]
 
     def test_dimension_keys_are_bounded_at_32_characters(self):

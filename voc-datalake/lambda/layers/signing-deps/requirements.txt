@@ -2,4 +2,4 @@
 # botocore ships the CloudFrontSigner but not the crypto primitive, and
 # kms:Sign cannot substitute: it offers no SHA-1 variant. Native wheels exist
 # for manylinux aarch64. Brings cffi + pycparser.
-cryptography>=44.0.0
+cryptography>=50.0.2

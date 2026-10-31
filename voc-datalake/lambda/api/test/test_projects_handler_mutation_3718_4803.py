@@ -81,8 +81,8 @@ class TestEveryBallotRefusalNamesItsCause:
         ({'r' * (MAX_KEY_SEGMENT_ID_LEN + 1): AXES},
          f'scores keys must be at most {MAX_KEY_SEGMENT_ID_LEN} characters'),
         ({'row-1': AXES, ' row-1 ': AXES},
-         'scores keys must be distinct row ids; two keys differing '
-         'only in surrounding whitespace address the same ballot'),
+         ('scores keys must be distinct row ids; two keys differing '
+         'only in surrounding whitespace address the same ballot')),
         ({f'row-{n}': AXES for n in range(MAX_BALLOTS_PER_SAVE + 1)},
          f'scores may carry at most {MAX_BALLOTS_PER_SAVE} rows per save'),
     ])

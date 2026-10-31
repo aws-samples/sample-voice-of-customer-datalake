@@ -19,7 +19,7 @@ key is needed, and committing one to a public repo is not acceptable. Signature
 agreement follows from policy agreement because RSA PKCS#1 v1.5 is
 deterministic; the TS test proves its own signature verifies under RSA-SHA1.
 """
-import datetime
+import datetime as dt
 import json
 import pathlib
 
@@ -46,7 +46,7 @@ class TestFixtureIsReproducible:
 
     def test_canned_policy_matches_botocore(self):
         fx = _load_fixture()
-        expires = datetime.datetime.fromtimestamp(fx['expiresEpochSeconds'], tz=datetime.UTC)
+        expires = dt.datetime.fromtimestamp(fx['expiresEpochSeconds'], tz=dt.UTC)
 
         expected = _signer(fx['keyPairId']).build_policy(fx['url'], expires)
 
@@ -59,7 +59,7 @@ class TestFixtureIsReproducible:
 
     def test_canned_policy_matches_botocore_for_a_url_with_a_query_string(self):
         fx = _load_fixture()
-        expires = datetime.datetime.fromtimestamp(fx['expiresEpochSeconds'], tz=datetime.UTC)
+        expires = dt.datetime.fromtimestamp(fx['expiresEpochSeconds'], tz=dt.UTC)
 
         expected = _signer(fx['keyPairId']).build_policy(fx['urlWithQuery'], expires)
 

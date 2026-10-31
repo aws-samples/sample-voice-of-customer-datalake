@@ -57,9 +57,9 @@ def _object(properties: dict, *required: str) -> dict:
 CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
     'search_feedback': (
         'Search feedback',
-        'Search or list customer feedback (reviews, form submissions, imports) you can see. Give `query` '
+        ('Search or list customer feedback (reviews, form submissions, imports) you can see. Give `query` '
         '(2+ characters) for a text search, or only filters to list the newest items. Returns verbatims with '
-        'sentiment, category and urgency. Use it to ground any claim about what customers say.',
+        'sentiment, category and urgency. Use it to ground any claim about what customers say.'),
         _object({'query': {'type': 'string', 'maxLength': 500}, 'days': DAYS, 'limit': LIMIT,
                  'category': FILTER, 'sentiment': FILTER, 'source': FILTER, **ITEM_FILTERS}),
         False, False, False),
@@ -69,10 +69,10 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         _object({'feedback_id': ID}, 'feedback_id'), False, False, False),
     'get_metrics': (
         'Get feedback metrics',
-        'Aggregated metrics over a window: `view` = summary (totals, average sentiment, urgent count, daily '
+        ('Aggregated metrics over a window: `view` = summary (totals, average sentiment, urgent count, daily '
         'series) or a breakdown by sentiment, categories, sources, personas or one dimension (`dimensions` + '
         '`key`); every view takes the source / channel / tag / dims filters. Use it for trends and volumes '
-        'instead of counting search results.',
+        'instead of counting search results.'),
         _object({'view': {'type': 'string', 'enum': ['summary', 'sentiment', 'categories', 'sources', 'personas',
                                                      'dimensions'],
                           'default': 'summary'}, 'days': DAYS, 'key': FILTER, 'source': FILTER, **ITEM_FILTERS}),
@@ -83,14 +83,14 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         NO_ARGS, False, False, False),
     'list_dimensions': (
         'List dimensions',
-        'The feedback dimensions (product, module, user type, ...): key, label and allowed values, for the `dims` '
-        'filter and the dimensions metric view.',
+        ('The feedback dimensions (product, module, user type, ...): key, label and allowed values, for the `dims` '
+        'filter and the dimensions metric view.'),
         NO_ARGS, False, False, False),
     'search_memory': (
         'Search memory',
-        'Semantic search over company memory and your personal memory (decisions, facts, preferences the team '
+        ('Semantic search over company memory and your personal memory (decisions, facts, preferences the team '
         'has recorded), filtered to the categories you can see. Use it before proposing something the team may '
-        'already have decided.',
+        'already have decided.'),
         _object({'query': {'type': 'string', 'maxLength': 500},
                  'k': {'type': 'integer', 'minimum': 1, 'maximum': 20, 'default': 8}}, 'query'),
         False, False, False),
@@ -104,8 +104,8 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         NO_ARGS, False, False, False),
     'get_project': (
         'Get a project',
-        'A project with its personas and the list of its documents (PRDs, PR/FAQs, research, custom documents) '
-        '— titles and ids only; read a body with get_document.',
+        ('A project with its personas and the list of its documents (PRDs, PR/FAQs, research, custom documents) '
+        '— titles and ids only; read a body with get_document.'),
         _object({'project_id': PROJECT_ID}), False, False, True),
     'get_document': (
         'Get a document',
@@ -117,28 +117,28 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         NO_ARGS, False, False, False),
     'get_agent_run': (
         'Get agent runs',
-        "An agent's run by `run_id` (status, current step, project, error), or without `run_id` its newest "
-        'runs. Use it to follow a run started with run_agent; read its output with get_project.',
+        ("An agent's run by `run_id` (status, current step, project, error), or without `run_id` its newest "
+        'runs. Use it to follow a run started with run_agent; read its output with get_project.'),
         _object({'agent_id': ID, 'run_id': ID,
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50, 'default': 5}}, 'agent_id'),
         False, False, False),
     'create_document': (
         'Create a project document',
-        'Create a custom markdown document in a project you can edit. Requires a write token. Write only what '
-        'the user asked for; cite feedback ids for claims about customers.',
+        ('Create a custom markdown document in a project you can edit. Requires a write token. Write only what '
+        'the user asked for; cite feedback ids for claims about customers.'),
         _object({'project_id': PROJECT_ID, 'title': TITLE, 'content': CONTENT}, 'title', 'content'),
         True, False, True),
     'update_document': (
         'Update a project document',
-        "Replace a document's title and/or content in a project you can edit. Requires a write token. Managed "
-        'PRD / PR/FAQ titles cannot change series, and prototype bodies cannot be edited here.',
+        ("Replace a document's title and/or content in a project you can edit. Requires a write token. Managed "
+        'PRD / PR/FAQ titles cannot change series, and prototype bodies cannot be edited here.'),
         _object({'project_id': PROJECT_ID, 'document_id': ID, 'title': TITLE, 'content': CONTENT}, 'document_id'),
         True, False, True),
     'run_agent': (
         'Run an autonomous agent',
-        'Start a run of an autonomous agent now (from list_agents). Only for write tokens minted by an '
+        ('Start a run of an autonomous agent now (from list_agents). Only for write tokens minted by an '
         'administrator who is still an administrator; returns the queued run. Confirm with the user first — a '
-        'run spends model budget and creates or updates projects.',
+        'run spends model budget and creates or updates projects.'),
         _object({'agent_id': ID}, 'agent_id'), True, True, False),
 }
 

@@ -226,8 +226,8 @@ class TestEveryDocumentSetRefusalNamesItsRule:
          f'document_ids must name at most {MAX_ROW_DOCUMENT_IDS} documents'),
         ([' '], ValidationError, 'document_ids must be non-empty document id strings'),
         (['proto-1'], NotFoundError,
-         'document_ids name a document this project does not hold, or one that is not '
-         'a PRD or a PR/FAQ'),
+         ('document_ids name a document this project does not hold, or one that is not '
+         'a PRD or a PR/FAQ')),
         (['prd-1', ' prd-1 '], ValidationError, 'document_ids must name distinct documents'),
     ])
     def test_refusal(self, raw, error, message):
@@ -248,8 +248,8 @@ class TestTheComposeRoute:
         status, body = _compose_p1(aggregates, api_gateway_event, lambda_context)
         assert (status, body['error']) == (
             409,
-            f'This project already holds the {MAX_ROWS_PER_PROJECT} prioritization rows '
-            'one project may have; delete a row before composing another',
+            (f'This project already holds the {MAX_ROWS_PER_PROJECT} prioritization rows '
+            'one project may have; delete a row before composing another'),
         )
 
     def test_a_failed_put_is_logged_and_named(self, api_gateway_event, lambda_context):

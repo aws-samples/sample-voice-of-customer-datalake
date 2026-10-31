@@ -31,7 +31,6 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import {
@@ -96,7 +95,7 @@ export function createPlanStepFunction(scope: Construct, props: PlanStepProps): 
     entry: path.join(STREAM_ROOT, 'src/plan-step/handler.ts'),
     depsLockFilePath: path.join(STREAM_ROOT, 'package-lock.json'),
     handler: 'handler',
-    runtime: lambda.Runtime.NODEJS_22_X,
+    runtime: lambda.Runtime.NODEJS_24_X,
     architecture: lambda.Architecture.ARM_64,
     role,
     // Like the streaming assistant: a think step is a bounded tool loop.
@@ -131,8 +130,5 @@ export function createPlanStepFunction(scope: Construct, props: PlanStepProps): 
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });
-  NagSuppressions.addResourceSuppressions(fn, [
-    { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the stream-built Lambdas — latest stable LTS' },
-  ], true);
   return fn;
 }

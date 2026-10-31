@@ -1,6 +1,6 @@
 {
   "name": "voc-datalake",
-  "version": "5.60.0",
+  "version": "5.60.1",
   "description": "Voice of the Customer Data Lake - AWS CDK Infrastructure",
   "scripts": {
     "build": "tsc",
@@ -50,7 +50,7 @@
     "@types/node": "^22.20.5",
     "@vitest/coverage-v8": "4.1.12",
     "@vitest/eslint-plugin": "1.6.27",
-    "aws-cdk": "2.1146.1",
+    "aws-cdk": "2.1147.0",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-plugin-sonarjs": "4.2.2",

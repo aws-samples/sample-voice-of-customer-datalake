@@ -449,8 +449,8 @@ class TestEveryRefusalIsLoggedVerbatim:
         extractor._update_doc('proj_1', 'abc123', {'status': 'ready', 'error': None})
 
         assert _messages(caplog) == [
-            "Product doc abc123 is already failed; refusing to overwrite ['error', 'status'] onto it"
-            ' - the API already gave this document up as stalled and told the user to upload it again'
+            ("Product doc abc123 is already failed; refusing to overwrite ['error', 'status'] onto it"
+            ' - the API already gave this document up as stalled and told the user to upload it again')
         ]
 
     def test_a_malformed_record(self, extractor, wire, pending_doc, caplog):
@@ -459,9 +459,9 @@ class TestEveryRefusalIsLoggedVerbatim:
         extractor._update_doc('proj_1', 'abc123', {'status': 'ready'})
 
         assert _messages(caplog) == [
-            "Product doc abc123 has no usable status ('sideways'); refusing to overwrite ['status']"
+            ("Product doc abc123 has no usable status ('sideways'); refusing to overwrite ['status']"
             ' onto it - the record is malformed or predates the status field, so no read path put it'
-            ' in this state'
+            ' in this state')
         ]
 
     def test_any_other_write_failure(self, extractor, wire, caplog):
