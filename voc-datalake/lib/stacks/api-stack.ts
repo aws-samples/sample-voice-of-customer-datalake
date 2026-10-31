@@ -346,6 +346,9 @@ export class VocApiStack extends VocStack {
         userPoolId: userPool.userPoolId,
         clientId: userPoolClient.userPoolClientId,
         region: this.region,
+        // TRANSITIONAL (5.64.00): the SPA no longer reads it, but a browser may still run a cached
+        // pre-5.64 bundle whose schema requires it (index.html carries no Cache-Control here). Removed
+        // with the identity pool (lib/utils/deploy-scripts.test.ts TRANSITIONAL_CONFIG_KEYS).
         identityPoolId: identityPool.attrId,
         // The hosted UI the MCP OAuth consent page may send the browser to (docs/mcp.md → OAuth sign-in).
         hostedUiDomain: cognitoHostedUiHost(props.userPoolDomainPrefix, this.region),

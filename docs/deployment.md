@@ -1097,8 +1097,8 @@ for building.
 > Deploy the frontend with `npm run deploy:frontend` or `cdk deploy VocApiStack`.
 > If you must sync by hand, omit `--delete`. Recovery is a normal
 > `cdk deploy VocApiStack --exclusively`, which regenerates the file from the
-> stack — do not hand-write it: a wrong `identityPoolId` makes
-> `RuntimeConfigSchema` blank all four Cognito values and reproduces the same
+> stack — do not hand-write it: a missing user pool or client id makes
+> `RuntimeConfigSchema` blank every Cognito value and reproduces the same
 > symptom (see "Environment Variables" below).
 
 **Bypass** (rare, intentional cases only):

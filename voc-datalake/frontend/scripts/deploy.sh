@@ -96,6 +96,12 @@ if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "null" ]; then
   exit 1
 fi
 
+# TRANSITIONAL (5.64.00): an empty value would break a cached pre-5.64 page just like a missing key.
+if [ -z "$IDENTITY_POOL_ID" ] || [ "$IDENTITY_POOL_ID" = "null" ]; then
+  echo "Error: Could not fetch IdentityPoolId from $CORE_STACK"
+  exit 1
+fi
+
 echo "  Bucket: $BUCKET_NAME"
 echo "  Distribution: $DISTRIBUTION_ID"
 echo "  API Endpoint: $API_ENDPOINT"
@@ -115,6 +121,8 @@ npm run build
 echo ""
 echo "Step 3: Generating runtime config.json..."
 
+# cognito.identityPoolId is TRANSITIONAL (5.64.00): the SPA ignores it, but a cached pre-5.64 bundle
+# still requires it. It goes with the identity pool (lib/utils/deploy-scripts.test.ts).
 # Use jq to properly escape values and generate valid JSON. The same shape the
 # CDK deploy writes (VocApiStack runtimeConfig) and RuntimeConfigSchema reads
 # (frontend/src/runtimeConfig.ts); lib/utils/deploy-scripts.test.ts pins the three.

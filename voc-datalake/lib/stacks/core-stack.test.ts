@@ -775,6 +775,24 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
 });
 
 /**
+ * 5.64.00 transition: VocApiStack stopped importing the identity pool id, but the DEPLOYED VocApiStack
+ * still imports it until its own update, and VocCoreStack deploys first. Without the explicit
+ * `exportValue` CDK drops the export with its last consumer and CloudFormation refuses the Core update
+ * ("export ... is in use"). Remove this case together with the pool.
+ */
+describe('VocCoreStack keeps the identity pool id export for the deployed VocApiStack (5.64.00)', () => {
+  it('exports the pool id under the name the deployed VocApiStack imports', () => {
+    // `<stack name>:` + the name CDK derives from the pool's logical id; the real app's
+    // `VocCoreStack:ExportsOutputFnGetAttVocIdentityPoolId9B6189CA` is pinned in baseline.json.
+    const outputs = z.record(z.string(), z.object({ Export: z.object({ Name: z.string() }).optional() }))
+      .parse(synthCoreTemplate().toJSON()['Outputs']);
+    const exported = Object.values(outputs).flatMap((output) => (output.Export ? [output.Export.Name] : []));
+
+    expect(exported).toContainEqual('TestCoreStack:ExportsOutputFnGetAttVocIdentityPoolId9B6189CA');
+  });
+});
+
+/**
  * Regression guard for issue #254: the Identity Pool's AUTHENTICATED role must
  * not be able to invoke a Lambda directly.
  *
@@ -1031,9 +1049,8 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
 
   it('keeps the pool attachment and the federated trust policy intact', () => {
     // The removal above is a permission removal only. The pool, the role and the
-    // attachment stay — Amplify is configured from `identityPoolId` and the
-    // credential exchange needs an assumable role — so a change that deleted the
-    // role outright would make the two cases above vacuously green.
+    // attachment stay until a release deletes them on purpose, so a change that
+    // deleted the role outright would make the two cases above vacuously green.
     const template = synthCoreTemplate();
     const federated = soleFederatedTrustStatement(template);
 

@@ -1,7 +1,8 @@
 /**
  * VocCoreStack's identity layer: the Cognito user pool (custom-message trigger,
  * web client, hosted-UI domain, groups), the greenfield admin bootstrap, the
- * opt-in global model pin, and the identity pool with its authenticated role.
+ * opt-in global model pin, and the identity pool with its authenticated role (unused by the app since
+ * 5.64.00; kept until a release removes it).
  * Created on the stack itself (not a child construct), so logical ids are unchanged.
  */
 import * as cdk from 'aws-cdk-lib';
@@ -341,7 +342,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   }
 
   // ============================================
-  // COGNITO IDENTITY POOL (for AWS IAM authentication)
+  // COGNITO IDENTITY POOL (unused since 5.64.00: no app code exchanges tokens for AWS credentials)
   // ============================================
   const identityPool = new cognito.CfnIdentityPool(stack, 'VocIdentityPool', {
     identityPoolName: ctx.uniqueName('voc-identity-pool'),
@@ -369,13 +370,13 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     description: 'Role for authenticated Cognito Identity Pool users',
   });
 
-  // NO PERMISSIONS BY DESIGN: Amplify still exchanges the User Pool session
-  // for Identity Pool credentials, but application code does not consume them
-  // or call AWS services with them. Chat streams over `POST /chat/stream` behind
-  // the Cognito authorizer, and private CDN paths use signed URLs the API mints.
-  // The pool and role are retained because Amplify is configured from
-  // `identityPoolId` and the JWT -> credentials exchange needs an assumable
-  // role. See issue #254.
+  // NO PERMISSIONS BY DESIGN: since 5.61.00 the SPA configures Amplify with the
+  // user pool only, and since 5.64.00 it no longer reads identityPoolId (config.json
+  // still carries it for one release, for cached older pages), so nothing exchanges
+  // a User Pool session for Identity Pool credentials. Chat streams over
+  // `POST /chat/stream` behind the Cognito authorizer, and private CDN paths use
+  // signed URLs the API mints. The pool and role stay until the release that
+  // deletes them (CHANGELOG 5.64.00, Deprecated). See issue #254.
 
   // Attach role to Identity Pool
   new cognito.CfnIdentityPoolRoleAttachment(stack, 'IdentityPoolRoleAttachment', {

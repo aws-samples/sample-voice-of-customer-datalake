@@ -39,7 +39,6 @@ const {
         userPoolId: 'pool-1',
         clientId: 'client-1',
         region: 'us-east-1',
-        identityPoolId: 'id-pool',
       },
     },
     DEFAULT_STORE_STATE: {

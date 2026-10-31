@@ -177,8 +177,8 @@ describe('frontend/scripts/update-env.sh', () => {
   const source = () => readFileSync(UPDATE_ENV_SH, 'utf8');
 
   it('writes every VITE_ var that runtimeConfig.ts requires', () => {
-    // RuntimeConfigSchema rejects an empty identityPoolId, and getEnvConfig's
-    // failure branch then BLANKS all four cognito values — so omitting one var
+    // RuntimeConfigSchema rejects an empty user pool or client id, and getEnvConfig's
+    // failure branch then BLANKS every cognito value — so omitting one var
     // makes the login screen claim "Cognito not configured" even when the user
     // pool and client id resolved fine. Any var read there must be written here.
     const runtimeConfig = readFileSync(RUNTIME_CONFIG_TS, 'utf8');
@@ -342,6 +342,21 @@ function schemaKeys(): string[] {
   return walk(root, '').sort(byCodeUnit);
 }
 
+/**
+ * Keys both writers still emit for browsers on a cached older bundle, which RuntimeConfigSchema no
+ * longer reads. Each leaves with the resource it names (5.64.00: the identity pool, kept one more release).
+ */
+const TRANSITIONAL_CONFIG_KEYS = ['cognito.identityPoolId'];
+
+/** The CDK runtimeConfig's keys with every option on; one synth shared by the cases below. */
+const cdkConfigKeys = (() => {
+  const cache: { keys?: string[] } = {};
+  return (): string[] => {
+    cache.keys ??= leafKeys(buildApiStack({ emailFrom: 'noreply@voc.example.com' }).runtimeConfig);
+    return cache.keys;
+  };
+})();
+
 /** deploy.sh's HOSTED_UI_HOST_PATTERN (the bash ERE its UserPoolDomain warning tests). */
 function deployShHostedUiPattern(): string {
   const pattern = /^HOSTED_UI_HOST_PATTERN='([^']+)'$/m.exec(readFileSync(DEPLOY_SH, 'utf8'))?.[1];
@@ -360,17 +375,31 @@ function hostedUiWarningBlock(): string {
 
 describe('runtime config.json keys', () => {
   it('deploy.sh writes exactly what the CDK deploy writes (every option on) and RuntimeConfigSchema reads', () => {
-    const stack = buildApiStack({ emailFrom: 'noreply@voc.example.com' });
-    const cdkKeys = leafKeys(stack.runtimeConfig);
+    const cdkKeys = cdkConfigKeys();
     const schema = schemaKeys();
     expect(deployShConfigKeys(), 'deploy.sh vs the CDK runtimeConfig').toStrictEqual(cdkKeys);
-    expect(schema, 'RuntimeConfigSchema vs the CDK runtimeConfig').toStrictEqual(cdkKeys);
+    expect(schema, 'RuntimeConfigSchema vs the CDK runtimeConfig (less the transitional keys)')
+      .toStrictEqual(cdkKeys.filter((key) => !TRANSITIONAL_CONFIG_KEYS.includes(key)));
   }, SYNTH_TIMEOUT_MS);
+
+  it('each transitional key is still written and no longer read (a stale entry fails here)', () => {
+    for (const key of TRANSITIONAL_CONFIG_KEYS) {
+      expect(cdkConfigKeys(), `${key} is still written`).toContain(key);
+      expect(schemaKeys(), `${key} is no longer read`).not.toContain(key);
+    }
+  }, SYNTH_TIMEOUT_MS);
+
+  it('deploy.sh refuses an empty IdentityPoolId exactly while cognito.identityPoolId is transitional', () => {
+    // The guard keeps a cached older page working; left behind after the key goes, it would fail
+    // `deploy:frontend` once the pool and its output are deleted.
+    const guarded = readFileSync(DEPLOY_SH, 'utf8').includes('Error: Could not fetch IdentityPoolId from $CORE_STACK');
+    expect(guarded, 'the IdentityPoolId guard in deploy.sh').toBe(TRANSITIONAL_CONFIG_KEYS.includes('cognito.identityPoolId'));
+  });
 
   it('reads real key sets (each parser sees nested keys), so equality is not vacuous', () => {
     for (const keys of [deployShConfigKeys(), schemaKeys()]) {
       expect(keys.length).toBeGreaterThanOrEqual(5);
-      expect(keys).toContain('cognito.identityPoolId');
+      expect(keys).toContain('cognito.region');
     }
   });
 

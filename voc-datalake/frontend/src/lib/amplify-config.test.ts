@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const configure = vi.hoisted(() => vi.fn())
 vi.mock('aws-amplify', () => ({ Amplify: { configure } }))
 
-const cognito = vi.hoisted(() => ({ userPoolId: '', clientId: '', identityPoolId: 'us-east-1:pool' }))
+const cognito = vi.hoisted(() => ({ userPoolId: '', clientId: '' }))
 vi.mock('../runtimeConfig', () => ({ getRuntimeConfig: () => ({ cognito }) }))
 
 /** A fresh module: its once-per-page flag starts unset. */

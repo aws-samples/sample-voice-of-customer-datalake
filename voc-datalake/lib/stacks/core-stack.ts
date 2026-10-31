@@ -554,7 +554,12 @@ export class VocCoreStack extends VocStack {
     new cdk.CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID for frontend' });
     new cdk.CfnOutput(this, 'UserPoolDomain', { value: `${auth.domainPrefix}.auth.${this.region}.amazoncognito.com`, description: 'Cognito User Pool Domain' });
     new cdk.CfnOutput(this, 'CognitoRegion', { value: this.region, description: 'AWS Region for Cognito' });
-    new cdk.CfnOutput(this, 'IdentityPoolId', { value: this.identityPool.ref, description: 'Cognito Identity Pool ID for AWS IAM auth' });
+    new cdk.CfnOutput(this, 'IdentityPoolId', { value: this.identityPool.ref, description: 'Cognito Identity Pool ID (unused by the app since 5.64.00)' });
+    // TRANSITIONAL (5.64.00): kept explicitly so the release that drops `identityPoolId` from config.json
+    // (VocApiStack's last import of it) can deploy: CDK would remove the export with its last consumer,
+    // VocCoreStack deploys first, and CloudFormation refuses to delete an export still imported by the
+    // deployed VocApiStack ("export in use"). Removed in the release after that, with the pool.
+    this.exportValue(this.identityPool.attrId);
     new cdk.CfnOutput(this, 'InitialAdminPassword', { 
       value: auth.initialAdminPassword, 
       // ASCII only: CloudFormation mangles non-ASCII in output descriptions

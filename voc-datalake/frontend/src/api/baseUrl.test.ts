@@ -73,7 +73,7 @@ describe('buildTrustedApiOrigins', () => {
   it('returns no origin derived from an unparseable runtime config endpoint', () => {
     vi.mocked(runtimeConfigModule.getRuntimeConfig).mockReturnValueOnce({
       apiEndpoint: 'not-a-url',
-      cognito: { userPoolId: '', clientId: '', region: 'us-east-1', identityPoolId: '' },
+      cognito: { userPoolId: '', clientId: '', region: 'us-east-1' },
     })
     // Config is "loaded" but the endpoint is unparseable.
     // buildTrustedApiOrigins never adds localhost entries — that logic lives

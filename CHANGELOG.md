@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.64.00] - 2026-10-31
+
+The SPA no longer reads the Cognito identity pool, which nothing has used since 5.61.00.
+
+### Changed
+- The frontend no longer reads `cognito.identityPoolId` or `VITE_IDENTITY_POOL_ID`: `frontend/scripts/update-env.sh`
+  stops writing the variable and no longer fails when the `IdentityPoolId` output is missing.
+
+### Deprecated
+- `cognito.identityPoolId` in `config.json` is still written (by VocApiStack and `npm run deploy:frontend`) for this
+  release only: a browser on a cached pre-5.64 page still requires it. The next release stops writing it, and the
+  one after deletes the unused identity pool, its authenticated role (no permissions) and VocCoreStack's
+  `IdentityPoolId` output. VocCoreStack already exports the pool id explicitly, so the release that drops
+  VocApiStack's import can deploy (CloudFormation refuses to delete an export that is still imported).
+
+### Upgrade notes
+- Deploy every stack together (`npm run deploy:infra`), as usual. Nothing to change in `cdk.context.json`. A local
+  `frontend/.env` may keep `VITE_IDENTITY_POOL_ID`; it is ignored.
+
 ## [5.63.00] - 2026-10-31
 
 Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the app through the existing tools, MCP prompts and resources, alarms and env-var config snippets; and faster, cheaper releases (skipped layer builds, changed-stacks deploys, a parallel production e2e run on Claude Haiku 5.5).

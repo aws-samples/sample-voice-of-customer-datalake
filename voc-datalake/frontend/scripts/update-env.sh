@@ -31,12 +31,6 @@ API_ENDPOINT=$(cfn_output "$API_STACK" ApiEndpoint)
 COGNITO_USER_POOL_ID=$(cfn_output "$CORE_STACK" UserPoolId)
 COGNITO_CLIENT_ID=$(cfn_output "$CORE_STACK" UserPoolClientId)
 COGNITO_REGION=$(cfn_output "$CORE_STACK" CognitoRegion)
-# REQUIRED, not optional: RuntimeConfigSchema demands a non-empty
-# cognito.identityPoolId. Omitting it makes the whole env config fail
-# validation, and the fallback branch then BLANKS every cognito value — the
-# login screen shows "Cognito not configured" even though the user pool and
-# client id were both resolved correctly.
-IDENTITY_POOL_ID=$(cfn_output "$CORE_STACK" IdentityPoolId)
 [ -z "$COGNITO_REGION" ] || [ "$COGNITO_REGION" = "None" ] \
   && COGNITO_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 
@@ -46,7 +40,6 @@ MISSING=""
 [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "None" ] && MISSING="$MISSING ApiEndpoint($API_STACK)"
 [ -z "$COGNITO_USER_POOL_ID" ] || [ "$COGNITO_USER_POOL_ID" = "None" ] && MISSING="$MISSING UserPoolId($CORE_STACK)"
 [ -z "$COGNITO_CLIENT_ID" ] || [ "$COGNITO_CLIENT_ID" = "None" ] && MISSING="$MISSING UserPoolClientId($CORE_STACK)"
-[ -z "$IDENTITY_POOL_ID" ] || [ "$IDENTITY_POOL_ID" = "None" ] && MISSING="$MISSING IdentityPoolId($CORE_STACK)"
 if [ -n "$MISSING" ]; then
   echo "ERROR: could not resolve:$MISSING" >&2
   echo "       Check AWS_PROFILE/AWS_REGION and that the stacks are deployed." >&2
@@ -60,7 +53,6 @@ VITE_API_ENDPOINT=${API_ENDPOINT}
 VITE_COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
 VITE_COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
 VITE_COGNITO_REGION=${COGNITO_REGION}
-VITE_IDENTITY_POOL_ID=${IDENTITY_POOL_ID}
 EOF
 
 echo "Wrote .env:"
@@ -68,5 +60,4 @@ echo "  VITE_API_ENDPOINT=${API_ENDPOINT}"
 echo "  VITE_COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}"
 echo "  VITE_COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}"
 echo "  VITE_COGNITO_REGION=${COGNITO_REGION}"
-echo "  VITE_IDENTITY_POOL_ID=${IDENTITY_POOL_ID}"
 echo "✓ done — restart the dev server to pick it up"
