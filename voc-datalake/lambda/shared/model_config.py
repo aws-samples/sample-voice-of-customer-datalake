@@ -210,7 +210,7 @@ _HAIKU45 = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 # lambda/stream/src/bedrock/model-fallback.ts (test_model_fallback_lockstep.py).
 MODEL_FALLBACK_ORDER = (_SONNET55, _SONNET5, _SONNET46, _HAIKU55, _HAIKU45)
 
-# --- Model profiles (shared/model_profile.py, 5.58.00) ------------------------
+# --- Model profiles (shared/model_profile.py, 5.61.00) ------------------------
 # While a profile is in force (an e2e test user's request, or a job such a request
 # started) EVERY surface resolves to the profile's model, an explicit model id
 # included, and the capacity fallback stays on the profile's own models.
