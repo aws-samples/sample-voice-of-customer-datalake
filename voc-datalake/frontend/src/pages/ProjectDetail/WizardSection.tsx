@@ -74,6 +74,7 @@ export default function WizardSection({
   if (activeWizard === 'persona') {
     return (
       <PersonaWizard
+        projectId={projectId}
         personas={personas}
         documents={documents}
         contextConfig={contextConfig}

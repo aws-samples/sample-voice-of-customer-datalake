@@ -233,7 +233,21 @@
     "sentiments": "Stimmungen",
     "sources": "Quellen",
     "stepOf": "Schritt {{step}} von {{total, number}}",
-    "timeRange": "Zeitraum"
+    "timeRange": "Zeitraum",
+    "feedbackPreview": {
+      "counting": "Passende Bewertungen werden gezählt…",
+      "matches_one": "{{count, number}} Bewertung passt",
+      "matches_other": "{{count, number}} Bewertungen passen",
+      "matchesAtLeast_one": "Mindestens {{count, number}} Bewertung passt",
+      "matchesAtLeast_other": "Mindestens {{count, number}} Bewertungen passen",
+      "matchesEstimated_one": "Etwa {{count, number}} Bewertung passt",
+      "matchesEstimated_other": "Etwa {{count, number}} Bewertungen passen",
+      "sampled": "Die Persona-Generierung liest eine gleichmäßige Stichprobe von {{limit, number}} davon.",
+      "usesAll": "Die Persona-Generierung liest alle davon.",
+      "confirming": "Genaue Anzahl wird bestätigt…",
+      "noMatches": "Keine Bewertungen passen zu diesen Filtern. Erweitern Sie sie, sonst hat der Lauf nichts zu lesen.",
+      "error": "Die passenden Bewertungen konnten nicht gezählt werden."
+    }
   },
   "documentExport": {
     "copied": "Kopiert!",

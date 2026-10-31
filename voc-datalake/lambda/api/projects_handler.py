@@ -639,6 +639,19 @@ def _start_avatar_assist(project_id: str, persona_id: str) -> Response:
     return _started_assist(project_id, ASSIST_PERSONA_AVATAR, {'project_id': project_id, 'persona_id': persona_id})
 
 
+@app.post("/projects/<project_id>/feedback-preview")
+@tracer.capture_method
+def api_preview_feedback(project_id: str):
+    """The persona / research wizards' live "N reviews match" (``mode``: estimate | exact)."""
+    body = json_object_body(app)
+    filters = {
+        **feedback_filters_from_body(body),
+        'date_basis': validate_date_basis(body.get('date_basis')),
+        category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
+    }
+    return projects.preview_feedback(project_id, filters, body.get('mode'), body.get('purpose', 'personas'))
+
+
 @app.post("/projects/<project_id>/personas/generate")
 @tracer.capture_method
 def api_generate_personas(project_id: str):

@@ -240,7 +240,21 @@
     "sentiments": "Sentimientos",
     "sources": "Fuentes",
     "stepOf": "Paso {{step}} de {{total, number}}",
-    "timeRange": "Rango de Tiempo"
+    "timeRange": "Rango de Tiempo",
+    "feedbackPreview": {
+      "counting": "Contando las reseñas que coinciden…",
+      "matches_one": "{{count, number}} reseña coincide",
+      "matches_other": "{{count, number}} reseñas coinciden",
+      "matchesAtLeast_one": "Al menos {{count, number}} reseña coincide",
+      "matchesAtLeast_other": "Al menos {{count, number}} reseñas coinciden",
+      "matchesEstimated_one": "Aproximadamente {{count, number}} reseña coincide",
+      "matchesEstimated_other": "Aproximadamente {{count, number}} reseñas coinciden",
+      "sampled": "La generación de personas lee una muestra uniforme de {{limit, number}} de ellas.",
+      "usesAll": "La generación de personas las lee todas.",
+      "confirming": "Confirmando el recuento exacto…",
+      "noMatches": "Ninguna reseña coincide con estos filtros. Amplíelos o la ejecución no tendrá nada que leer.",
+      "error": "No se pudieron contar las reseñas que coinciden."
+    }
   },
   "documentExport": {
     "copied": "¡Copiado!",

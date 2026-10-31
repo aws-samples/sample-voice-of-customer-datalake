@@ -24,6 +24,7 @@ import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
 import { handleFeatureRequestRoutes } from './mock-feature-requests.js';
 import { handleDataQualityRoutes } from './mock-data-quality.js';
+import { handlePersonaRoutes } from './mock-personas.js';
 import { radarBrandError } from './mock-radar-brands.js';
 import {
   attributeFilterOf, dimensionsConfig, entityExtras, handleDimensionRoutes, seedDimensionFixtures, sourceProfiles,
@@ -1303,6 +1304,7 @@ function handleDomainModules(req, res, url) {
     || handleFormRoutes(req, res, url, send, shared)
     || handleDocumentReviewRoutes(req, res, url, send, shared)
     || handleCompanyPersonaRoutes(req, res, url, send, shared)
+    || handlePersonaRoutes(req, res, url, send, shared)
     || handleProjectActionRoutes(req, res, url, send, shared)
     || handleOnboardingRoutes(req, res, url, send, shared)
     || handleBriefingRoutes(req, res, url, send, shared)

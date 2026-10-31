@@ -259,7 +259,27 @@
     "personasCount_few": "Persony ({{count, number}})",
     "personasCount_many": "Persony ({{count, number}})",
     "researchDocumentsCount_few": "Dokumenty badawcze ({{count, number}})",
-    "researchDocumentsCount_many": "Dokumenty badawcze ({{count, number}})"
+    "researchDocumentsCount_many": "Dokumenty badawcze ({{count, number}})",
+    "feedbackPreview": {
+      "counting": "Liczenie pasujących opinii…",
+      "matches_one": "{{count, number}} opinia pasuje",
+      "matches_few": "{{count, number}} opinie pasują",
+      "matches_many": "{{count, number}} opinii pasuje",
+      "matches_other": "{{count, number}} opinii pasuje",
+      "matchesAtLeast_one": "Co najmniej {{count, number}} opinia pasuje",
+      "matchesAtLeast_few": "Co najmniej {{count, number}} opinie pasują",
+      "matchesAtLeast_many": "Co najmniej {{count, number}} opinii pasuje",
+      "matchesAtLeast_other": "Co najmniej {{count, number}} opinii pasuje",
+      "matchesEstimated_one": "Około {{count, number}} opinia pasuje",
+      "matchesEstimated_few": "Około {{count, number}} opinie pasują",
+      "matchesEstimated_many": "Około {{count, number}} opinii pasuje",
+      "matchesEstimated_other": "Około {{count, number}} opinii pasuje",
+      "sampled": "Generowanie person czyta z nich równomierną próbkę {{limit, number}}.",
+      "usesAll": "Generowanie person czyta je wszystkie.",
+      "confirming": "Potwierdzanie dokładnej liczby…",
+      "noMatches": "Żadna opinia nie pasuje do tych filtrów. Rozszerz je, inaczej uruchomienie nie będzie miało czego czytać.",
+      "error": "Nie udało się policzyć pasujących opinii."
+    }
   },
   "documentExport": {
     "copied": "Skopiowano!",

@@ -233,7 +233,21 @@
     "sentiments": "감정",
     "sources": "출처",
     "stepOf": "{{step}} / {{total, number}} 단계",
-    "timeRange": "시간 범위"
+    "timeRange": "시간 범위",
+    "feedbackPreview": {
+      "counting": "일치하는 리뷰를 세는 중…",
+      "matches_one": "리뷰 {{count, number}}개 일치",
+      "matches_other": "리뷰 {{count, number}}개 일치",
+      "matchesAtLeast_one": "리뷰 최소 {{count, number}}개 일치",
+      "matchesAtLeast_other": "리뷰 최소 {{count, number}}개 일치",
+      "matchesEstimated_one": "리뷰 약 {{count, number}}개 일치",
+      "matchesEstimated_other": "리뷰 약 {{count, number}}개 일치",
+      "sampled": "페르소나 생성은 그중 {{limit, number}}개를 고르게 샘플링해 읽습니다.",
+      "usesAll": "페르소나 생성은 모두 읽습니다.",
+      "confirming": "정확한 개수를 확인하는 중…",
+      "noMatches": "이 필터와 일치하는 리뷰가 없습니다. 필터를 넓히지 않으면 실행 시 읽을 데이터가 없습니다.",
+      "error": "일치하는 리뷰를 셀 수 없습니다."
+    }
   },
   "documentExport": {
     "copied": "복사됨!",
