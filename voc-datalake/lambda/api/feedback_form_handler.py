@@ -29,6 +29,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.feedback_form_participants import record_response, resolve_participant
+from shared.form_theme import validate_theme
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.service_resource import Table
@@ -484,6 +485,7 @@ def build_form_item(body: dict, form_id: str | None = None) -> dict:
     reach the table with an unvalidated link by forgetting a line.
     """
     validate_link_fields(body)
+    validate_theme(body)
     now = now_iso()
     fid = form_id or str(uuid.uuid4())[:8]
 
@@ -795,6 +797,7 @@ def update_form(form_id: str):
     """Update a feedback form."""
     body = json_object_body(app)
     validate_link_fields(body)
+    validate_theme(body)
     _validate_form_labels(body)
     now = now_iso()
 
