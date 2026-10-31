@@ -24,12 +24,15 @@ export interface McpDelegates {
 export const MCP_UNAUTHORIZED_BODY =
   '{"jsonrpc": "2.0", "id": null, "error": {"code": -32001, "message": "Unauthorized: invalid, expired or revoked token"}}';
 
+/** The challenge's scheme and realm, as the handler names it (pinned by test_global_mcp_authorizer.py). */
+const MCP_BEARER_CHALLENGE = 'Bearer realm="voc-mcp-global"';
+
 /**
- * The challenge a refused MCP credential gets (RFC 6750 §3, realm as the handler names it), naming the
- * protected-resource metadata (RFC 9728) an MCP client starts OAuth sign-in from (api-mcp-oauth.ts).
+ * The challenge a refused MCP credential gets (RFC 6750 §3), naming the protected-resource
+ * metadata (RFC 9728) an MCP client starts OAuth sign-in from (api-mcp-oauth.ts).
  */
 export function mcpBearerChallenge(resourceMetadataUrl: string): string {
-  return `Bearer realm="voc-mcp-global", resource_metadata="${resourceMetadataUrl}", error="invalid_token"`;
+  return `${MCP_BEARER_CHALLENGE}, resource_metadata="${resourceMetadataUrl}", error="invalid_token"`;
 }
 
 /**

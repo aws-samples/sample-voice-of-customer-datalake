@@ -185,4 +185,4 @@ def verify_access_token(token: str, config: OAuthConfig, *, now: float,
     )
 
 
-__all__ = ['AccessClaims', 'InvalidToken', 'JwksCache', 'JwksUnavailable', 'public_key_from_jwk', 'verify_access_token']
+__all__ = ['InvalidToken', 'JwksCache', 'JwksUnavailable', 'verify_access_token']

@@ -30,7 +30,8 @@
     "workflow": "Flujo de trabajo",
     "radar": "Radar",
     "featureRequests": "Tableros de feedback",
-    "participants": "Participantes"
+    "participants": "Participantes",
+    "oauthConsent": "Aprobar un asistente"
   },
   "cancel": "Cancelar",
   "configureBrand": "Configurar marca",
