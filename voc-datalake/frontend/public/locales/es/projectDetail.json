@@ -613,6 +613,12 @@
     "range": "{{from, number}}–{{to, number}} de {{total, number}}",
     "previous": "Anterior",
     "next": "Siguiente",
-    "close": "Cerrar"
+    "close": "Cerrar",
+    "citedSummary_one": "cita {{count, number}} de ellas",
+    "citedSummary_other": "cita {{count, number}} de ellas",
+    "viewLabel": "Qué reseñas",
+    "viewCited": "Citadas ({{n, number}})",
+    "viewUsed": "Todas las usadas ({{n, number}})",
+    "citedNote": "Las reseñas que nombran las evidencias de la persona. Una cita que no nombra ninguna reseña leída se conserva solo como texto."
   }
 }

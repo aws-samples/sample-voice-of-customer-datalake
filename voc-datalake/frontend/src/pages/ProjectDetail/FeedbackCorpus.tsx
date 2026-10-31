@@ -8,6 +8,10 @@
  * as unavailable. Renders nothing for an artefact without the field (generated before the field
  * existed, imported or written by hand).
  *
+ * A persona also has `evidence_feedback_ids` (`citedIds`): the reviews its supporting evidence
+ * cites, resolved from the model's "Review #N" at generation (ported from #429 by @aws-bryan).
+ * With any, the line says how many it cites and the modal opens on a "Cited" view next to "All used".
+ *
  * @module pages/ProjectDetail/FeedbackCorpus
  */
 import clsx from 'clsx'
@@ -18,13 +22,16 @@ import { corpusIds } from './feedbackCorpusIds'
 
 interface FeedbackCorpusProps {
   readonly feedbackIds: readonly string[] | undefined
+  /** The ids the artefact cites (a persona's `evidence_feedback_ids`); absent or empty = no Cited view. */
+  readonly citedIds?: readonly string[]
   /** Extra classes for the line (its placement, e.g. a top margin); the base look is the component's own. */
   readonly className?: string
 }
 
-export default function FeedbackCorpus({ feedbackIds, className }: FeedbackCorpusProps) {
+export default function FeedbackCorpus({ feedbackIds, citedIds, className }: FeedbackCorpusProps) {
   const { t } = useTranslation('projectDetail')
   const ids = useMemo(() => corpusIds(feedbackIds), [feedbackIds])
+  const cited = useMemo(() => corpusIds(citedIds), [citedIds])
   const [open, setOpen] = useState(false)
   if (ids.length === 0) return null
   // The modal is a sibling of the line, never inside it: ModalShell renders in place (no portal),
@@ -33,9 +40,10 @@ export default function FeedbackCorpus({ feedbackIds, className }: FeedbackCorpu
     <>
       <p data-testid="feedback-corpus" className={clsx('flex flex-wrap items-center gap-x-2 text-xs text-muted', className)}>
         <span>{t('corpus.summary', { count: ids.length })}</span>
+        {cited.length > 0 ? <span>{t('corpus.citedSummary', { count: cited.length })}</span> : null}
         <button type="button" className="link" onClick={() => setOpen(true)}>{t('corpus.show')}</button>
       </p>
-      {open ? <FeedbackCorpusModal ids={ids} onClose={() => setOpen(false)} /> : null}
+      {open ? <FeedbackCorpusModal ids={ids} citedIds={cited} onClose={() => setOpen(false)} /> : null}
     </>
   )
 }

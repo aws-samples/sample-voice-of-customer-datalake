@@ -40,6 +40,15 @@ describe('normalizeProjectDetail', () => {
     ])
   })
 
+  it('keeps a persona\'s cited review ids, and drops a malformed list (#429)', () => {
+    const result = normalizeProjectDetail(envelope([
+      { persona_id: 'cited', evidence_feedback_ids: ['fb-2', 'fb-1'] },
+      { persona_id: 'malformed', evidence_feedback_ids: 'fb-2' },
+    ]))
+    expect(at(result.personas, 0).evidence_feedback_ids).toStrictEqual(['fb-2', 'fb-1'])
+    expect(at(result.personas, 1).evidence_feedback_ids).toBeUndefined()
+  })
+
   it('infers a prototype from a legacy PROTOTYPE sort key', () => {
     const result = normalizeProjectDetail(envelope([], [{
       document_id: 'prototype-legacy',
