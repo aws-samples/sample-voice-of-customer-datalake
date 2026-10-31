@@ -154,6 +154,19 @@ describe('feedback widget colours', () => {
     expect(container.style.color).toBe('rgb(25, 22, 29)')
     expect(container.style.background).toBe('rgb(255, 255, 255)')
   })
+
+  it('falls back to the defaults for a stored colour that is not a hex value, so no CSS reaches the page', async () => {
+    const injected = 'red;position:fixed;inset:0;z-index:2147483647'
+    const container = await renderWidget({
+      ...BASE, theme: { primary_color: injected, background_color: injected, text_color: 'rgb(0,0,0)' },
+    })
+
+    expect({
+      position: container.style.position, zIndex: container.style.zIndex,
+      background: container.style.background, color: container.style.color,
+    }).toStrictEqual({ position: 'relative', zIndex: '', background: 'rgb(255, 255, 255)', color: 'rgb(25, 22, 29)' })
+    expect(startButton(container).style.background).toBe('rgb(142, 72, 255)')
+  })
 })
 
 describe('feedback widget states', () => {

@@ -204,12 +204,30 @@ function linkFieldError(body) {
   return null;
 }
 
+/** shared/form_theme.validate_theme: a closed object of hex colours and a pixel radius. */
+const THEME_COLOR_FIELDS = ['primary_color', 'background_color', 'text_color'];
+const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+function themeError(body) {
+  if (!own(body, 'theme')) return null;
+  const theme = body.theme;
+  if (!isPlainObject(theme)) return 'theme must be an object';
+  const unknown = Object.keys(theme).filter((key) => ![...THEME_COLOR_FIELDS, 'border_radius'].includes(key)).sort();
+  if (unknown.length) return `theme has unknown fields: ${unknown.slice(0, 5).join(', ')}`;
+  const bad = THEME_COLOR_FIELDS.find((f) => theme[f] != null && !(typeof theme[f] === 'string' && HEX_COLOR.test(theme[f])));
+  if (bad) return `theme.${bad} must be a hex colour such as #8e48ff`;
+  const radius = theme.border_radius;
+  if (radius != null && !(typeof radius === 'string' && /^\d{1,2}px$/.test(radius))) {
+    return 'theme.border_radius must be a pixel value such as 8px';
+  }
+  return null;
+}
+
 // ── CRUD ────────────────────────────────────────────────────────────────────
 
 function createForm(shared, body) {
   const input = body ?? {};
   if (!isPlainObject(input)) return fail(400, 'Request body must be a JSON object');
-  const linkError = linkFieldError(input);
+  const linkError = linkFieldError(input) ?? themeError(input);
   if (linkError) return fail(400, linkError);
   const now = new Date().toISOString();
   // str(uuid.uuid4())[:8] in build_form_item.
@@ -225,7 +243,7 @@ function createForm(shared, body) {
 function updateForm(shared, formId, body) {
   const input = body ?? {};
   if (!isPlainObject(input)) return fail(400, 'Request body must be a JSON object');
-  const linkError = linkFieldError(input);
+  const linkError = linkFieldError(input) ?? themeError(input);
   if (linkError) return fail(400, linkError);
   const fields = UPDATABLE_FIELDS.filter((field) => own(input, field));
   if (fields.length === 0) return fail(400, 'No fields to update');

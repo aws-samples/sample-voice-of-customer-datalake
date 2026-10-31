@@ -987,7 +987,8 @@ class TestEveryBoundAcceptsItsLimit:
         body: dict[str, object] = {field: f'v-{field}' for field in EMPTY_FORM if field not in NOT_UPDATABLE}
         # The two label fields are validated (against an empty dimensions config here).
         table.get_item.return_value = {}
-        body.update(dimension_defaults={}, tags=['t'])
+        # The theme is a checked object too (shared/form_theme.py).
+        body.update(dimension_defaults={}, tags=['t'], theme={'primary_color': '#8e48ff'})
         _route(api_gateway_event, lambda_context, 'PUT', f'/feedback-forms/{FORM_ID}',
                path_params={'form_id': FORM_ID}, body=body)
         names = table.update_item.call_args.kwargs['ExpressionAttributeNames']

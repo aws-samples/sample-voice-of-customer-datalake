@@ -50,6 +50,13 @@
    * white label failed WCAG AA on the old blue default (3.68:1, E2E F6).
    * Anything that is not a hex colour keeps white.
    */
+  /** `#rgb`, `#rrggbb` or `#rrggbbaa` only (as shared/form_theme.py HEX_COLOR): the theme is concatenated
+   * into style.cssText on the customer's own page, so anything else falls back to the default (FE-2). */
+  var HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+  function safeColour(value, fallback) {
+    return typeof value === 'string' && HEX_COLOR.test(value) ? value : fallback;
+  }
+
   function readableOn(fill) {
     var l = luminance(fill);
     if (l === null) return '#ffffff';
@@ -147,10 +154,10 @@
 
   TypeformWidget.prototype.render = function() {
     var t = this.config.theme || {};
-    var primary = t.primary_color || KIRO.primary;
+    var primary = safeColour(t.primary_color, KIRO.primary);
     var onPrimary = readableOn(primary);
-    var bg = t.background_color || KIRO.background;
-    var text = t.text_color || KIRO.text;
+    var bg = safeColour(t.background_color, KIRO.background);
+    var text = safeColour(t.text_color, KIRO.text);
 
     this.container.innerHTML = '';
     this.container.style.cssText = 'position:relative;min-height:400px;background:' + bg + ';color:' + text + ';font-family:system-ui,-apple-system,sans-serif;overflow:hidden;';
@@ -218,7 +225,7 @@
   TypeformWidget.prototype.createSlide = function(step, index) {
     var self = this;
     var t = this.config.theme || {};
-    var primary = t.primary_color || KIRO.primary;
+    var primary = safeColour(t.primary_color, KIRO.primary);
 
     var slide = document.createElement('div');
     slide.dataset.index = index;
