@@ -1,6 +1,7 @@
 /**
  * scripts/cdk-deploy.sh with CDK_DEPLOY_CHANGED=1 (H7): deploy only the stacks `cdk diff` reports,
- * refresh the API stage whenever VocApiStack is among them, and fall back to the full deploy (with
+ * ALWAYS refresh the API stage afterwards (also when VocApiStack or nothing changed: an earlier
+ * interrupted refresh must not leave removed routes live), and fall back to the full deploy (with
  * the refresh) whenever the diff fails or cannot be read. The default mode stays the full deploy.
  *
  * The real script runs with fake `npx` and `aws` first on PATH: the fake npx prints a canned
@@ -91,10 +92,10 @@ describe('scripts/cdk-deploy.sh', () => {
     ]);
   });
 
-  it('changed mode: skips the refresh when VocApiStack did not change', () => {
+  it('changed mode: still refreshes the stage when VocApiStack did not change', () => {
     writeFileSync(diff, changed('VocProcessingStack') + unchanged('VocApiStack') + summary(1));
     expect(deploy(['--all'], { CDK_DEPLOY_CHANGED: '1' })).toStrictEqual([
-      'npx cdk diff --all', 'npx cdk deploy --exclusively VocProcessingStack',
+      'npx cdk diff --all', 'npx cdk deploy --exclusively VocProcessingStack', ...REFRESH,
     ]);
   });
 
@@ -104,9 +105,9 @@ describe('scripts/cdk-deploy.sh', () => {
       .toStrictEqual(['npx cdk diff --all -c deploymentPrefix=p', 'npx cdk deploy --exclusively -c deploymentPrefix=p p-VocApiStack', ...REFRESH]);
   });
 
-  it('changed mode: deploys nothing when no stack has differences', () => {
+  it('changed mode: deploys nothing when no stack has differences, and still refreshes the stage', () => {
     writeFileSync(diff, unchanged('VocCoreStack') + unchanged('VocApiStack') + summary(0));
-    expect(deploy(['--all'], { CDK_DEPLOY_CHANGED: '1' })).toStrictEqual(['npx cdk diff --all']);
+    expect(deploy(['--all'], { CDK_DEPLOY_CHANGED: '1' })).toStrictEqual(['npx cdk diff --all', ...REFRESH]);
   });
 
   it.each([

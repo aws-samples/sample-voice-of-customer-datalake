@@ -314,8 +314,10 @@ Two ways a deploy avoids redoing work:
   `CDK_DEPLOY_CHANGED=1 npm run deploy:infra -- -c frontendDomain=example.com`
   runs `cdk diff --all` once (with the `-c`/`--context` and `--profile`
   arguments), then `cdk deploy --exclusively <changed stacks>`; CDK orders them
-  by dependency. The stage refresh (next section) runs whenever VocApiStack is
-  among them. When no stack differs, nothing is deployed. When `cdk diff` fails
+  by dependency. The stage refresh (next section) then ALWAYS runs, also when
+  VocApiStack had no differences or no stack differs (nothing is deployed then):
+  an earlier deploy whose refresh never ran would otherwise keep removed routes
+  live until VocApiStack next changes. When `cdk diff` fails
   or its output cannot be read with certainty (`scripts/cdk-changed-stacks.mjs`
   cross-checks the per-stack results against the diff's own "Number of stacks
   with differences"), the script falls back to the full deploy and the refresh.
