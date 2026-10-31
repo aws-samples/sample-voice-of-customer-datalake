@@ -109,152 +109,116 @@ Test coverage reports are generated in `voc-datalake/coverage_html/`.
 
 ## Anthropic Model Access (First-Time Setup)
 
-Anthropic requires first-time customers to submit use case details before invoking Claude models on Amazon Bedrock. This is a **one-time requirement per AWS account** (or once at the organization's management account level).
+Two separate things stand between a new AWS account and Claude on Amazon Bedrock:
 
-### Automatic Setup via CDK
+1. **Anthropic's use-case form**, required once per account (or once at the
+   organization's management account). It states who you are, so you file it
+   yourself. The deploy does **not** file it unless you pass your own details.
+2. **A model agreement per model** (the EULA and Marketplace subscription). The
+   deploy creates these for you, on every deploy, in the app's region.
 
-The model-access half of `VocWebSearchStack` automates this process (it was its
-own `BedrockAccessStack` before the two us-east-1 stacks were merged). To enable
-it:
+### File the use-case form in the Bedrock console (recommended)
 
-1. Copy the example config:
-   ```bash
-   cd voc-datalake
-   # If you don't have cdk.context.json yet:
-   cp cdk.context.example.json cdk.context.json
-   ```
+Do this once, before or after the first deploy:
 
-2. Add the `anthropicUseCase` section to your `cdk.context.json`:
-   ```json
-   {
-     "anthropicUseCase": {
-       "companyName": "Your Company Name",
-       "companyWebsite": "https://your-company.com",
-       "intendedUsers": "Internal teams for customer feedback analysis",
-       "industryOption": "Technology",
-       "useCases": "Analyzing customer feedback to identify product improvement opportunities, sentiment analysis, and generating insights from voice of customer data."
-     }
-   }
-   ```
+1. Open the Amazon Bedrock console in the region you deploy to.
+2. Open **Model catalog** and choose any Anthropic model (for example Claude Sonnet).
+3. Choose **Submit use case details**, fill in your company's details, and submit.
 
-3. Deploy the stack:
-   ```bash
-   npm run deploy:infra
-   ```
+Access is granted shortly after a successful submission. The console route keeps
+your company details out of CloudFormation entirely.
 
-### Configuration Fields
+**Do you need it at all?** Per the Bedrock guide
+([Request access to models](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html)),
+a submission made at the organization's management account is inherited by the
+other accounts in the organization; it must be repeated in opt-in Regions. To check
+an account, run
+`aws bedrock get-foundation-model-availability --model-id <claude model id> --region <app region>`
+and look at `authorizationStatus` / `agreementAvailability.status`.
+
+### Model agreements: every deploy, in the app region, best effort
+
+`VocCoreStack` carries the agreements (`BedrockModelAgreements` in
+`lib/stacks/bedrock-access-stack.ts`, construct id `ImageModelAccess`): one custom
+resource per allowlisted Claude model (`lib/utils/model-allowlist.ts`), created in
+the app's region, plus one for the persona-avatar image model
+(`stability.stable-image-core-v1:1`, in us-west-2 whatever the app region). Each runs
+`GetFoundationModelAvailability`, then `ListFoundationModelAgreementOffers` +
+`CreateFoundationModelAgreement`; a model already `AVAILABLE` is skipped.
+
+Why the deploy does this: Bedrock enables a serverless third-party model the first
+time it is invoked, but only when the caller holds `aws-marketplace:Subscribe` /
+`ViewSubscriptions`, and this platform's runtime Lambda roles do not hold them for
+the Claude listings (the only API-stack Marketplace grant is scoped to the image
+model, `lib/stacks/api-marketplace.ts`). Without the agreements, a new account's
+first enrichment call would fail.
+
+**Best effort.** Any failure (a Private Marketplace refusal, a model not offered in
+the region, a missing use-case form, throttling, a dropped connection, even an
+AccessDenied on the agreement role) is logged as a warning in the
+`ModelAgreementLambda` log group and reported as `UNAVAILABLE`. It never fails or
+rolls back the deploy. Each resource runs on its first create only, so a later
+deploy does not retry it; accept a missing agreement in the Bedrock console, or
+invoke the model once from the console playground. Administration → AI models shows
+which models answer (each row's **Test** button, below).
+
+### Submit the form from CDK instead (opt-in)
+
+You can have the deploy file the form by passing your own `anthropicUseCase` block.
+The committed `cdk.context.json` carries none (earlier releases committed one with
+another company's details, which every deployer then submitted). The block must be a
+JSON object, so put it in a context file that you do not commit, or in the deploy
+job of your pipeline; a plain `-c anthropicUseCase=…` arrives as a string and is
+skipped with a warning.
+
+```json
+{
+  "anthropicUseCase": {
+    "companyName": "Example Air",
+    "companyWebsite": "https://example.com",
+    "intendedUsers": "0",
+    "industryOption": "Technology",
+    "useCases": "Analyzing customer feedback to identify product improvement opportunities, sentiment analysis, and generating insights from voice of customer data."
+  }
+}
+```
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `companyName` | Yes | Your company or organization name |
 | `companyWebsite` | Yes | Your company website URL |
-| `intendedUsers` | Yes | Who will use the models (e.g., "Internal engineering teams") |
-| `industryOption` | Yes | Your industry (e.g., "Technology", "Healthcare", "Finance") |
-| `useCases` | Yes | Description of how you'll use the models |
-| `otherIndustryOption` | No | Specify if industryOption is "Other" |
+| `intendedUsers` | No (default `"0"`) | An index: `"0"` internal users, `"1"` external customers, `"2"` both |
+| `industryOption` | No (default `Technology`) | One of `Technology`, `Healthcare`, `Financial Services`, `Retail`, `Manufacturing`, `Media & Entertainment`, `Education`, `Government`, `Other` |
+| `useCases` | Yes | How you will use the models (at least 10 characters) |
+| `otherIndustryOption` | No | Your industry when `industryOption` is `Other` |
 
-### Accounts That Already Have Model Access
+The submission is made in us-east-1 by `VocWebSearchStack`, so a deployment with a
+block always has that stack, even with `-c enableWebSearch=false`, and
+`VocCoreStack` waits for it (the form goes in before the agreements are attempted).
+Accounts that already have access reject the call (for example
+`Internal Accounts should not submit use case details`); that is treated as a
+no-op. Permission and throttling errors on the submission still fail the deploy.
 
-If your account already has Anthropic model access (a previous submission,
-organization-level access, or an AWS-internal account), the use case
-submission is skipped gracefully: rejections such as
-`Internal Accounts should not submit use case details` are treated as a
-no-op instead of failing the deployment. Permission and throttling errors
-still fail loudly.
+`skipUseCaseSubmission: true` (or `--context skipUseCaseSubmission=true`) keeps a
+block from being submitted. With it, the block is still validated but nothing is
+submitted and the block alone no longer creates `VocWebSearchStack`.
 
-You can also skip the submission entirely via `cdk.context.json`:
+**The form values end up in the template.** The stack passes them to the
+`PutUseCaseForModelAccess` custom resource as properties, so every field is a
+literal in the synthesized `VocWebSearchStack` template (`cdk.out/`, and the
+template CloudFormation stores), and `companyName` is also a stack output
+(`CompanyName`). Treat them as public: don't commit them, or a `cdk.out/` built
+with them, to a public repository, and drop the block once the submission has been
+accepted.
 
-```json
-{
-  "skipUseCaseSubmission": true
-}
-```
+How the switches combine:
 
-or on the CLI: `cdk deploy --all --context skipUseCaseSubmission=true`.
-
-### Security Note: the form values end up in the template
-
-The `anthropicUseCase` values are not only configuration. The stack passes them
-to the `PutUseCaseForModelAccess` custom resource as properties, so
-`companyName`, `companyWebsite`, `intendedUsers`, `industryOption` and
-`useCases` are **literals in the synthesized `VocWebSearchStack` template**
-(`cdk.out/`, and the template CloudFormation stores). Anyone who can read
-`cdk.out`, run `cloudformation get-template`, or open the stack in the console
-can read them, and `companyName` is also a stack output (`CompanyName`). Treat
-them as public:
-
-- Don't commit your actual company details, or a `cdk.out/` built with them, to
-  a public repository; use the example file as a template.
-- `cdk.context.json` is tracked in this repository: in a fork, add the
-  `anthropicUseCase` block only in the deploy job that needs it (written from
-  the pipeline's own variables) rather than committing it. The block is read
-  as a JSON object, so it belongs in `cdk.context.json`; a plain
-  `-c anthropicUseCase=…` arrives as a string and is skipped with a warning.
-- Once the submission has been accepted, the values have done their job:
-  drop them on the next deploy (see the table below for what each setting
-  keeps).
-
-### Do you need the submission at all?
-
-Per the Bedrock guide ([Request access to models](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html)),
-the Anthropic use-case form is needed **once per account or once at the
-organization's management account**; a submission made at the management
-account is inherited by the other accounts in the organization. It must be
-repeated in opt-in Regions. So:
-
-- **Account in an organization whose management account already submitted:**
-  no submission is needed. Check before deploying with
-  `aws bedrock get-foundation-model-availability --model-id <claude model id> --region us-east-1`
-  (`agreementAvailability.status: AVAILABLE` means access is already in place).
-- **Standalone account that never submitted:** submit once, either here or in
-  the Bedrock console (model catalog, then an Anthropic model, then "Submit use
-  case details"). The console route keeps the values out of CloudFormation
-  entirely.
-
-**`CreateFoundationModelAgreement` is a separate step and can still be needed.**
-The same guide says a serverless third-party model is enabled automatically the
-first time it is invoked, but only when the invoking principal holds
-`aws-marketplace:Subscribe` / `ViewSubscriptions`. This platform's runtime
-Lambda roles do not hold them for the Claude listings (the only API-stack
-Marketplace grant is scoped to the image model, `lib/stacks/api-marketplace.ts`).
-So when `anthropicUseCase` is set, the model-access half of `VocWebSearchStack`
-creates the agreement for each allowlisted model at deploy time
-(`GetFoundationModelAvailability`, then `ListFoundationModelAgreementOffers` +
-`CreateFoundationModelAgreement`; a model already `AVAILABLE` is skipped, and an
-account whose Private Marketplace refuses an agreement logs it and carries on).
-It is redundant once someone with Marketplace permissions has invoked each model
-in the account, for example from the Bedrock console playground.
-
-**The persona-avatar image model's agreement is requested on every deployment**
-(5.45, no flag, no opt-out). `VocCoreStack` carries one more custom resource,
-`ImageModelAccess` (`lib/stacks/bedrock-access-stack.ts`), which runs the same steps
-for the Stability image model (`stability.stable-image-core-v1:1`) in its own region
-(us-west-2), whatever the app region and whether or not web search or
-`anthropicUseCase` is set. It is best effort: any failure (a Private Marketplace
-refusal, an organization policy, a model not offered) is logged in the
-`ModelAgreementLambda` log group and reported as `UNAVAILABLE`; it never fails the
-deploy. Like the Claude agreements, it runs on the resource's first create only, so
-a later deploy does not retry it. Administration → AI models → **Image generation**
-shows whether access is in place (below).
-
-How the switches combine today:
-
-| Context | Use-case submission | Model agreements | Form values in the template |
-|---|---|---|---|
-| no `anthropicUseCase` | no | no (invoke each model once with Marketplace permissions instead) | none |
-| `anthropicUseCase` + `skipUseCaseSubmission` | no | yes | `companyName` only, as the `CompanyName` output (every field is still validated) |
-| `anthropicUseCase` | yes | yes | every field |
-
-### Manual Alternative
-
-You can also submit use case details via the AWS Console:
-1. Open Amazon Bedrock console
-2. Navigate to **Bedrock configurations** → **Model access**
-3. Click **Modify model access**
-4. Click **Submit use case details**
-5. Fill out the form and submit
-
-Access is granted immediately after successful submission.
+| Context | Use-case submission | Model agreements | Stack in us-east-1 | Form values in a template |
+|---|---|---|---|---|
+| no `anthropicUseCase` (the committed default) | no: file it in the console | yes, in `VocCoreStack`, app region | only with web search on | none |
+| no `anthropicUseCase`, `-c enableWebSearch=false` | no: file it in the console | yes, in `VocCoreStack`, app region | **none**: nothing is deployed to, or names, us-east-1 | none |
+| `anthropicUseCase` + `skipUseCaseSubmission` | no | yes, in `VocCoreStack`, app region | only with web search on | none |
+| `anthropicUseCase` | yes, in us-east-1 | yes, in `VocCoreStack`, app region (after the submission) | yes | every field |
 
 ## CDK Stacks
 
@@ -282,11 +246,11 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 
 | Stack | Description | Dependencies |
 |-------|-------------|--------------|
-| `VocCoreStack` | DynamoDB tables (incl. `voc-memory`, `voc-agents`), KMS, S3 buckets, Cognito, CloudFront, the `voc/design-integrations` secret | None |
+| `VocCoreStack` | DynamoDB tables (incl. `voc-memory`, `voc-agents`), KMS, S3 buckets, Cognito, CloudFront, the `voc/design-integrations` secret, the Bedrock model agreements (every deploy, best effort) | `VocWebSearchStack` only when an `anthropicUseCase` form is submitted |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions (research, `voc-agent-run`), category reprocess worker, memory workers (scanner, `voc-memory-extract` queue + extractor, retention), agent heartbeat / conductor / persona panel, Bedrock | Core, Ingestion |
 | `VocApiStack` | API Gateway, domain-specific API Lambdas (incl. `voc-memory-api`, `voc-agents-api`), Webhooks | Core, Ingestion, Processing |
-| `VocWebSearchStack` (AI enablement) | **Two independently switchable halves in one us-east-1 stack:** (a) the AgentCore Gateway for public web search — on by default, opt out via `enableWebSearch: false`; (b) Bedrock model access / Anthropic use-case submission — created only when `anthropicUseCase` is set in `cdk.context.json`. The stack is not created at all when both are off. Always deploys to us-east-1: the web-search connector exists only there, and `PutUseCaseForModelAccess` works only there. **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
+| `VocWebSearchStack` (AI enablement) | **Two independently switchable halves in one us-east-1 stack:** (a) the AgentCore Gateway for public web search — on by default, opt out via `enableWebSearch: false`; (b) the Anthropic use-case form submission — opt-in, only when you pass your own `anthropicUseCase` block and `skipUseCaseSubmission` is not set. The model agreements are not here (they are in `VocCoreStack`). The stack is not created at all when both halves are off, and then nothing deploys to us-east-1. Always deploys to us-east-1: the web-search connector exists only there, and the form has only ever been submitted there. **Upgrade note:** existing non-us-east-1 deployments must bootstrap us-east-1 once (`cdk bootstrap aws://ACCOUNT_ID/us-east-1`) or set the opt-out flag | None |
 
 ### Deploy All Stacks
 
@@ -638,9 +602,10 @@ faults and degraded paths only; a 5xx is ERROR. Each group carries `source`:
 | `api` | the stage access log `/aws/apigateway/[<prefix>-]voc-analytics-api-<account>-<region>` (env `SYSTEM_API_ACCESS_LOG_GROUP`) | every 5xx as `HTTP`; with warnings also every 4xx except 401 / 403 / 404 / 409 / 410 (a signed-out caller, a refusal, a missing record, a conflict, an expired or closed link; 400 and 429 stay) as `WARNING`; message `<METHOD> <path, ids as {id}> → <status> <gateway error or integration status>`; requests with a `voc-e2e/` User-Agent (the e2e suite) are left out; the caller IP is never read |
 
 **Not covered:** the CDK provider / custom-resource handlers (`*Provider*`, bucket
-notifications, auto-delete, BucketDeployment — framework code, not the app), and the
-Bedrock model-agreement Lambda of `VocWebSearchStack` (always us-east-1, so outside a
-regional Insights query of a deployment in another region).
+notifications, auto-delete, BucketDeployment — framework code, not the app). The
+Bedrock model-agreement Lambda is in `VocCoreStack` and IS covered, under the function
+name `image-model-access` (its construct id): a refused or failed agreement shows there
+as a warning.
 
 - **Routes** (all admin-only, 403 otherwise, `Cache-Control: no-store`, every returned
   text through the regex PII redaction, results never logged):
