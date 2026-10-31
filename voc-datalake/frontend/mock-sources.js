@@ -435,16 +435,13 @@ function searchFeedback({ url, shared }) {
   const days = Math.min(Math.max(intParam(params, 'days', 30), 0), 9999);
   const reviewBasis = params.get('date_basis') === 'review';
   const cutoff = days === 0 ? -Infinity : Date.now() - days * DAY_MS;
-  const [source, sentiment, category] = ['source', 'sentiment', 'category'].map((k) => params.get(k));
+  // The source / category / sentiment / usefulness lists are part of `attributeFilterOf` (mock-facets.js).
   const attributes = shared.attributeFilterOf(params);
   if (attributes.error) return fail(400, attributes.error);
   const matches = shared.mockFeedback.filter((item) => {
     if (!attributes.admits(item)) return false;
     const date = reviewBasis ? (item.source_created_at ?? item.processed_at) : item.processed_at;
     if (Date.parse(date) < cutoff) return false;
-    if (source && item.source_platform !== source) return false;
-    if (sentiment && item.sentiment_label !== sentiment) return false;
-    if (category && item.category !== category) return false;
     return [item.original_text, item.title, item.problem_summary].some((t) => str(t).toLowerCase().includes(query));
   });
   // Every match is counted (`total`); `next_token` pages through them, as the route does.
