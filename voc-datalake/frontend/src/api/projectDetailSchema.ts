@@ -135,6 +135,7 @@ const ProjectPersonaSchema = z.looseObject({
   source_breakdown: z.record(z.string(), z.number()).optional().catch(undefined),
   input_feedback_ids: optionalStringArray,
   copied_from: copiedFromSchema,
+  evidence_feedback_ids: optionalStringArray,
 })
 
 /** One persona row, or null when it has no usable id (company library, copy answers). */

@@ -30,11 +30,11 @@ function review(id: string) {
   }
 }
 
-function renderCorpus(ids: readonly string[] | undefined) {
+function renderCorpus(ids: readonly string[] | undefined, citedIds?: readonly string[]) {
   return render(
     <QueryClientProvider client={createTestQueryClient()}>
       <MemoryRouter>
-        <FeedbackCorpus feedbackIds={ids} />
+        <FeedbackCorpus feedbackIds={ids} citedIds={citedIds} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -115,6 +115,38 @@ describe('FeedbackCorpus', () => {
     const dialog = await openList()
     await userEvent.setup().click(within(dialog).getByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
+describe('FeedbackCorpus cited view (#429)', () => {
+  const used = ['a', 'b', 'c', 'd']
+
+  it('says how many of the reviews the persona cites', () => {
+    renderCorpus(used, ['c', 'a'])
+    expect(screen.getByTestId('feedback-corpus')).toHaveTextContent('Written from 4 reviewscites 2 of them')
+  })
+
+  it('opens on the cited reviews, in cited order', async () => {
+    renderCorpus(used, ['c', 'a'])
+    const dialog = await openList()
+    expect(within(dialog).getByRole('button', { name: 'Cited (2)' })).toHaveAttribute('aria-pressed', 'true')
+    expect(await within(dialog).findByText('Review text a')).toBeInTheDocument()
+    expect(getFeedbackById.mock.calls.map(([id]) => id)).toStrictEqual(['c', 'a'])
+  })
+
+  it('switches to every review used', async () => {
+    renderCorpus(used, ['c'])
+    const dialog = await openList()
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: 'All used (4)' }))
+    expect(await within(dialog).findByText('Review text d')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Cited (1)' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('has no switch without citations', async () => {
+    renderCorpus(used, [])
+    const dialog = await openList()
+    expect(within(dialog).queryByRole('button', { name: /Cited/ })).toBeNull()
+    expect(screen.getByTestId('feedback-corpus')).not.toHaveTextContent('cites')
   })
 })
 

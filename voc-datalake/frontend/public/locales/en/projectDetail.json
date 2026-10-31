@@ -607,6 +607,12 @@
     "range": "{{from, number}}–{{to, number}} of {{total, number}}",
     "previous": "Previous",
     "next": "Next",
-    "close": "Close"
+    "close": "Close",
+    "citedSummary_one": "cites {{count, number}} of them",
+    "citedSummary_other": "cites {{count, number}} of them",
+    "viewLabel": "Which reviews",
+    "viewCited": "Cited ({{n, number}})",
+    "viewUsed": "All used ({{n, number}})",
+    "citedNote": "The reviews the persona's supporting evidence names. A citation that named no review it read is kept as text only."
   }
 }
