@@ -84,6 +84,20 @@ class TestTaggedGet:
         assert response['body']
 
 
+class TestNosniff:
+    """Every answer, of every method and status, says nosniff (EDGE-8)."""
+
+    @pytest.mark.parametrize(('path', 'method'), [
+        ('/metrics/summary', 'GET'), ('/metrics/summary', 'PUT'), ('/missing', 'GET'), ('/no-such-route', 'GET'),
+    ])
+    def test_every_answer_is_nosniff(self, path, method):
+        assert _header(_call(path, method=method), 'X-Content-Type-Options') == 'nosniff'
+
+    def test_a_304_is_nosniff_too(self):
+        etag = _header(_call('/metrics/summary'), 'ETag')
+        assert _header(_call('/metrics/summary', if_none_match=etag), 'X-Content-Type-Options') == 'nosniff'
+
+
 class TestNotTagged:
     @pytest.mark.parametrize('path', ['/chat/conversations/c1', '/missing', '/accepted'])
     def test_live_state_errors_and_non_200s_are_no_store_without_a_tag(self, path):

@@ -201,13 +201,14 @@ class TestCorsContract:
         assert result['statusCode'] == 200
         headers = dict(result['multiValueHeaders'])
         assert {key: headers[key] for key in CORS_HEADERS} == CORS_HEADERS
-        assert set(headers) - set(CORS_HEADERS) == {'Content-Type', 'ETag', 'Cache-Control', 'Vary'}
+        assert set(headers) - set(CORS_HEADERS) == {'Content-Type', 'ETag', 'Cache-Control', 'Vary', 'X-Content-Type-Options'}
 
     def test_preflight_is_answered_with_the_same_allowlist(self):
         result = _resolve(_app_with_route('/ok', lambda: {'ok': True}), '/ok', 'OPTIONS')
         assert result['statusCode'] == 204
         assert dict(result['multiValueHeaders']) == {
-            'Access-Control-Allow-Methods': ['GET,OPTIONS'], **CORS_HEADERS, 'Vary': ['Origin']}
+            'Access-Control-Allow-Methods': ['GET,OPTIONS'], **CORS_HEADERS, 'Vary': ['Origin'],
+            'X-Content-Type-Options': ['nosniff']}
 
 
 class _Teapot(ApiError):

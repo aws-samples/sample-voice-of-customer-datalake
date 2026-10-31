@@ -138,6 +138,8 @@ export function gatewayErrorCorsHeaders(allowedOrigin: string, vary: string[] = 
     'Access-Control-Allow-Origin': `'${allowedOrigin}'`,
     'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS_VALUE,
     'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'",
+    // A gateway error (401, 403, 429, 5xx) is JSON, never to be sniffed as HTML (EDGE-8).
+    'X-Content-Type-Options': "'nosniff'",
     ...(varyNames.length > 0 ? { Vary: `'${varyNames.join(', ')}'` } : {}),
   };
 }

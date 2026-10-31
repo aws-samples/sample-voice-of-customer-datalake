@@ -65,6 +65,10 @@ describe('gateway error responses carry the API origin', () => {
     expect(headersOf(apiTemplate(), type)['Access-Control-Allow-Credentials']).toBeUndefined();
   });
 
+  it.each(ERROR_RESPONSES)('%s says nosniff (EDGE-8)', (type) => {
+    expect(headersOf(apiTemplate(), type)['X-Content-Type-Options']).toBe("'nosniff'");
+  });
+
   it('keeps the Authorization vary on the 401 in dev, without Origin', () => {
     expect(headersOf(apiTemplateDev(), 'UNAUTHORIZED').Vary).toBe("'Authorization'");
   });
