@@ -49,7 +49,10 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
   falls back to the full deploy when the diff fails or cannot be read. The default deploy is unchanged
   ([docs/deployment.md → Faster deploys](docs/deployment.md#faster-deploys-skip-what-did-not-change)).
 - e2e suite: the read-only specs run in their own fully parallel projects (`admin-read`, `user-read`,
-  `E2E_READ_WORKERS`, default 4) while the writing specs stay one at a time (`E2E_WRITE_WORKERS`); an
+  `E2E_READ_WORKERS`, default 4) while the writing specs stay one at a time (`E2E_WRITE_WORKERS`); only specs
+  that depend on no data a write can change are listed (`request-counts`, `error-states`,
+  `workflow-custom-arrows`). `run-sharded.sh` with only `E2E_SHARD_WORKERS` gives the writing specs at most 2
+  workers and the read-only ones the rest, and refuses a per-project cap above that total; an
   assistant conversation is capped at 8 runs per spec page so each model call's context stays small
   (`voc-datalake/frontend/e2e/README.md`).
 - OAuth sign-in for `POST /mcp/global` ([docs/mcp.md → OAuth sign-in](docs/mcp.md#oauth-sign-in)): discovery
