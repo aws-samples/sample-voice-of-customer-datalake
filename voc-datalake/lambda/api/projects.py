@@ -711,14 +711,15 @@ def _fenced_json(raw: str | None, failure_message: str) -> dict:
     named keys, so an array or scalar reply is as unusable as unparseable text
     (it used to reach `.get` and fail the request).
     """
+    # Only the length is logged (BE-9): a model answer can quote reviews or personal data.
     text = _without_code_fence((raw or '').strip())
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
-        logger.warning(f"{failure_message} raw={text[:200]}")
+        logger.warning(f"{failure_message} (not JSON, {len(text)} chars)")
         return {}
     if not isinstance(parsed, dict):
-        logger.warning(f"{failure_message} (not a JSON object) raw={text[:200]}")
+        logger.warning(f"{failure_message} (not a JSON object: {type(parsed).__name__})")
         return {}
     return parsed
 

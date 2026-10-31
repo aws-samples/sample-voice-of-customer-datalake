@@ -1213,7 +1213,7 @@ class TestAutofillPrfaqQuestions(_Assist):
 
     def test_a_non_json_answer_is_logged_under_its_own_label_and_padded(self, log):
         result, _stubs = self.run('autofill_prfaq_questions', {}, raw='nope')
-        log.warning.assert_called_once_with('Autofill JSON parse failed; returning best-effort. raw=nope')
+        log.warning.assert_called_once_with('Autofill JSON parse failed; returning best-effort. (not JSON, 4 chars)')
         assert result == {'answers': ['', '', '', '', '']}
 
     @pytest.mark.parametrize(('raw', 'answers'), [
@@ -1282,7 +1282,7 @@ class TestSuggestDocumentBrief(_Assist):
 
     def test_a_non_json_answer_is_logged_under_its_own_label(self, log):
         self.run('suggest_document_brief', {}, raw='nope')
-        log.warning.assert_called_once_with('Document-brief JSON parse failed; raw=nope')
+        log.warning.assert_called_once_with('Document-brief JSON parse failed; (not JSON, 4 chars)')
 
     def test_without_a_table_the_refusal_names_it(self):
         with patch.object(projects, 'projects_table', None), pytest.raises(ConfigurationError) as exc:
@@ -1356,7 +1356,7 @@ class TestSuggestResearchQuestions(_Assist):
 
     def test_a_non_json_answer_is_logged_under_its_own_label(self, log):
         self.run('suggest_research_questions', {}, raw='nope')
-        log.warning.assert_called_once_with('Research-suggest JSON parse failed; raw=nope')
+        log.warning.assert_called_once_with('Research-suggest JSON parse failed; (not JSON, 4 chars)')
 
     def test_without_a_table_the_refusal_names_it(self):
         with patch.object(projects, 'projects_table', None), pytest.raises(ConfigurationError) as exc:

@@ -388,9 +388,9 @@ class TestStartParse:
             Key={'pk': f'MANUAL_IMPORT#{FIXED_UUID}', 'sk': 'JOB'},
             UpdateExpression='SET #status = :status, #error = :error',
             ExpressionAttributeNames={'#status': 'status', '#error': 'error'},
-            ExpressionAttributeValues={':status': 'failed', ':error': 'Lambda invoke failed'},
+            ExpressionAttributeValues={':status': 'failed', ':error': 'Failed to start processing'},
         )
-        assert log.call_args_list[0].args == ('Failed to invoke processor: Lambda invoke failed',)
+        assert log.call_args_list[0].args == ('Failed to invoke processor',)
 
 
 # ============================================

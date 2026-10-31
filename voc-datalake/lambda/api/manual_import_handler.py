@@ -214,15 +214,16 @@ def start_parse():
     try:
         invoke_lambda_async(MANUAL_IMPORT_PROCESSOR_FUNCTION, {'job_id': job_id, **payload_fields()})
     except Exception as e:
-        logger.exception(f"Failed to invoke processor: {e}")
-        # Update job status to failed
+        logger.exception("Failed to invoke processor")
+        # The stored reason is fixed text (BE-9): the boto message names the function ARN,
+        # account and request id, and GET /scrapers/manual/parse/{job_id} returns it.
         aggregates_table.update_item(
             Key=_job_key(job_id),
             UpdateExpression='SET #status = :status, #error = :error',
             ExpressionAttributeNames={'#status': 'status', '#error': 'error'},
-            ExpressionAttributeValues={':status': 'failed', ':error': str(e)}
+            ExpressionAttributeValues={':status': 'failed', ':error': FAILED_START_PROCESSING}
         )
-        raise ServiceError('Failed to start processing') from e
+        raise ServiceError(FAILED_START_PROCESSING) from e
 
     return {'success': True, 'job_id': job_id, 'source_origin': source_origin}
 
@@ -445,6 +446,8 @@ MAX_CSV_ROW_ID_LENGTH = 256
 # every prior upload would re-import as new records. Add a new version tag
 # instead of editing v1.
 CSV_ROW_ID_VERSION = 'csv-row-v1'
+# Client-facing and stored reason when the parse worker cannot be started (never the boto text).
+FAILED_START_PROCESSING = 'Failed to start processing'
 CSV_ROW_ID_FIELDS = (
     'source_id',   # the row's own id/review_id column; '' when absent
     'row_index',   # 1-based position; '' when the row HAS an id
