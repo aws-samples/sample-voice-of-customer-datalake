@@ -54,6 +54,7 @@ import ReviewModalHost from '../ReviewModal/ReviewModalHost'
 import { isMenuItemEnabled } from '../../config/menuConfig'
 import { useOverlayFocus } from '../../hooks/useOverlayFocus'
 import ProfileMenu from '../ProfileMenu/ProfileMenu'
+import PasskeyPrompt from '../PasskeyPrompt/PasskeyPrompt'
 import { Sidebar, type NavItem } from './SidebarComponents'
 
 /**
@@ -295,6 +296,7 @@ export default function Layout() {
           className={clsx('relative flex-1 overflow-auto p-4 sm:p-6', !isChatRoute(location.pathname) && LAUNCHER_RESERVE_CLASS)}
           data-testid="page-scroller"
         >
+          <PasskeyPrompt />
           <Outlet />
         </div>
       </main>

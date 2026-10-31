@@ -63,7 +63,7 @@ export const cloudfrontDefaultCertSuppressions: NagPackSuppression[] = [
 export const cognitoSecuritySuppressions: NagPackSuppression[] = [
   {
     id: 'AwsSolutions-COG2',
-    reason: 'MFA not enforced by default to reduce friction for sample application - users can enable MFA in their account settings',
+    reason: 'MFA not enforced, to keep sign-in simple for the sample - every user is offered an opt-in passkey (phishing-resistant, WebAuthn) after sign-in; enforce MFA for production use',
   },
   {
     // cdk-nag 2.38 replaced COG3 (advanced security mode) with COG8 (the plus feature plan that now carries it).

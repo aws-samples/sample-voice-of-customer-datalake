@@ -149,7 +149,8 @@ jq -n \
     },
     features: {
       webSearch: $webSearch,
-      email: $email
+      email: $email,
+      passkey: true
     }
   } + (if $boardUserPoolId != "" and $boardClientId != "" then {
     board: {

@@ -28,6 +28,7 @@ import BriefSection from './BriefSection'
 import BrowserSection from './BrowserSection'
 import OnboardingSection from './OnboardingSection'
 import PasswordSection from './PasswordSection'
+import PasskeySection from './PasskeySection'
 import {
   IdentityHeader, McpTokensSection, PreferencesSection, ProfileDetails, SignOutSection,
 } from './ProfileSections'
@@ -50,7 +51,7 @@ function SignOut() {
 /** One tab's cards. */
 function TabContent({ tab, user, isAdmin }: Readonly<{ tab: AccountTabId; user: AccountUser; isAdmin: boolean }>) {
   const contents: Readonly<Record<AccountTabId, () => ReactNode>> = {
-    profile: () => <><ProfileDetails user={user} isAdmin={isAdmin} /><PasswordSection /><SignOut /></>,
+    profile: () => <><ProfileDetails user={user} isAdmin={isAdmin} /><PasswordSection /><PasskeySection /><SignOut /></>,
     preferences: () => <><PreferencesSection /><OnboardingSection /><AssistantSection /><BrowserSection /></>,
     briefing: () => <BriefSection />,
     objectives: () => <ObjectivesSection />,

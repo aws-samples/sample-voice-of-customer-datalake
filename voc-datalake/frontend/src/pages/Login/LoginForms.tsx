@@ -3,6 +3,7 @@
  * @module pages/Login/LoginForms
  */
 
+import { KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   ErrorAlert, SuccessMessage, SubmitButton, PasswordInput, TextField,
@@ -126,6 +127,8 @@ export interface LoginFormProps {
   readonly onToggleShowPassword: () => void
   readonly onSubmit: (e: SyntheticEvent) => void
   readonly onForgotPassword: () => void
+  /** Present when passkeys can be used here (services/passkeyAuth canUsePasskeys): shows the passkey button. */
+  readonly onPasskeySignIn?: () => void
 }
 
 export function LoginForm({
@@ -140,6 +143,7 @@ export function LoginForm({
   onToggleShowPassword,
   onSubmit,
   onForgotPassword,
+  onPasskeySignIn,
 }: Readonly<LoginFormProps>) {
   const { t } = useTranslation('login')
   return (
@@ -150,13 +154,26 @@ export function LoginForm({
       submit={{ isLoading, loadingText: t('signingIn'), text: t('signIn') }}
       onSubmit={onSubmit}
       footer={(
-        <button
-          type="button"
-          onClick={onForgotPassword}
-          className="w-full text-sm link focus-ring rounded-md"
-        >
-          {t('forgotPassword')}
-        </button>
+        <>
+          {onPasskeySignIn && (
+            <button
+              type="button"
+              onClick={onPasskeySignIn}
+              disabled={isLoading}
+              className="btn btn-secondary w-full py-2 gap-2"
+            >
+              <KeyRound size={16} aria-hidden="true" />
+              {t('passkey.signIn')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onForgotPassword}
+            className="w-full text-sm link focus-ring rounded-md"
+          >
+            {t('forgotPassword')}
+          </button>
+        </>
       )}
     >
       <UsernameField value={username} onChange={onUsernameChange} />

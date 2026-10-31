@@ -45,5 +45,26 @@
     "title": "Enter Verification Code"
   },
   "showPassword": "Show password",
-  "hidePassword": "Hide password"
+  "hidePassword": "Hide password",
+  "passkey": {
+    "add": "Add a passkey",
+    "signIn": "Sign in with a passkey",
+    "offer": {
+      "title": "Sign in faster with a passkey",
+      "body": "A passkey lets you sign in on this device with your fingerprint, face or screen lock instead of your password. It cannot be phished or reused on another site.",
+      "notNow": "Not now"
+    },
+    "section": {
+      "title": "Passkey",
+      "intro": "Sign in on this device with your fingerprint, face or screen lock instead of your password. Your password keeps working.",
+      "added": "Passkey added. You can sign in with it next time."
+    },
+    "errors": {
+      "needUsername": "Enter your username or email first, then choose Sign in with a passkey.",
+      "cancelled": "The passkey request was cancelled or timed out. Try again when you are ready.",
+      "no_passkey": "No passkey is set up for this account on this device. Sign in with your password, then add one.",
+      "unsupported": "This browser cannot use passkeys. Sign in with your password.",
+      "unknown": "The passkey step failed. Try again, or sign in with your password."
+    }
+  }
 }
