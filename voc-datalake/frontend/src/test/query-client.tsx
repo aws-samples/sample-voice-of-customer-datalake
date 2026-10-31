@@ -28,7 +28,7 @@ export function createTestQueryClient(queries: QueryDefaults = {}): QueryClient 
 }
 
 /** A `wrapper` for `render`/`renderHook` that provides `client` (a new no-retry client by default). */
-function createQueryWrapper(client: QueryClient = createTestQueryClient()) {
+export function createQueryWrapper(client: QueryClient = createTestQueryClient()) {
   return function QueryWrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>
   }

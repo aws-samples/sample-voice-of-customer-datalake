@@ -40,7 +40,13 @@ describe('PersonasTab', () => {
     expect(onCopyPersonas).toHaveBeenCalledTimes(1)
   })
 
-  it('offers no "Copy from…" without the action, nor to a viewer', () => {
+  it('offers no "Copy from…" to an editor when the page passes no action', () => {
+    renderWithQueryClient(<PersonasTab {...defaultProps} canEdit />)
+    expect(screen.getByRole('button', { name: /Import Persona/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Copy from…' })).not.toBeInTheDocument()
+  })
+
+  it('offers no "Copy from…" to a viewer, even with the action', () => {
     renderWithQueryClient(<PersonasTab {...defaultProps} canEdit={false} onCopyPersonas={vi.fn()} />)
     expect(screen.queryByRole('button', { name: 'Copy from…' })).not.toBeInTheDocument()
   })

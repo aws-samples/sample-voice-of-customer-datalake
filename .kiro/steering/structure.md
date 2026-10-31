@@ -505,6 +505,9 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | PUT | `/projects/{id}` | Update project |
 | DELETE | `/projects/{id}` | Delete project (manage) |
 | POST | `/projects/{id}/personas/generate` | Generate personas from feedback; `keep_existing_personas: true` adds next to the existing ones (name clashes dropped), absent/false replaces them (docs/persona-generation.md) |
+| POST | `/projects/{id}/personas/{persona_id}/promote` | Copy a persona into the company library (edit + admin) → 201 `{success, persona}` |
+| GET | `/projects/{id}/personas/copy-sources` | The company library + the OTHER projects the caller owns or is a member of, with personas (view) |
+| POST | `/projects/{id}/personas/copy` | Copy `{source: {scope: company} \| {scope: project, project_id}, persona_ids: [1–20]}` in (edit) → 201 `{success, personas}`; notes never copied, avatars copied |
 | POST | `/projects/{id}/research` | Run research job (Step Functions) |
 | POST | `/projects/{id}/documents` | Create a custom document, or a hand-written PR/FAQ / PRD from a blank template (`document_type: prfaq\|prd`, `{title, content?, create_id?}`, `origin: human`) |
 | — | (project chat) | Now the unified AI assistant at `POST /chat/stream` with `forwardedProps.page.projectId` |
@@ -518,17 +521,13 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | GET | `/projects/{id}/prototypes/{document_id}/pins` | Tester pins on a prototype, `?status=open\|addressed\|resolved` (edit) — docs/feedback-forms.md |
 | POST | `/projects/{id}/prototypes/{document_id}/pins/{pin_id}/replies\|resolve\|reopen` | Pin thread reply / resolve / reopen (edit) |
 | POST | `/projects/{id}/prototypes/{document_id}/pins/addressed\|resolve` | Batch: mark pins addressed by a revision / resolve addressed pins (edit; used by agents) |
-| POST | `/projects/{id}/personas/{persona_id}/promote` | Copy a persona into the company library (edit + admin) → 201 `{success, persona}` |
-| GET | `/projects/{id}/personas/copy-sources` | The company library + the OTHER projects the caller owns or is a member of, with personas (view) |
-| POST | `/projects/{id}/personas/copy` | Copy `{source: {scope: company} \| {scope: project, project_id}, persona_ids: [1–20]}` in (edit) → 201 `{success, personas}`; notes never copied, avatars copied |
+| PUT | `/projects/prioritization/rows/{row_id}/lineage-ack` | "Keep both versions": mark / unmark a row's Crosses-generations label as intentional `{project_id, acknowledged, document_ids}` (edit on the row's project; 409 unless `document_ids` is the row's stored set); stored on the row as `lineage_ack` (aggregates `PRIORITIZATION`/`ROW#…`), lapses when the set changes — docs/prioritization.md |
 
 ### Company personas (`shared/company_personas_routes.py`, included by projects_handler.py) — docs/project-workspace.md → Company personas
 Reads (`GET /company-personas` → `{personas, can_edit}`, `GET /company-personas/jobs`) for every signed-in user; admin writes:
 `POST …/generate` (always additive), `POST …/import`, `GET …/jobs/{job_id}`, `PUT/DELETE …/{persona_id}`, `POST …/{persona_id}/notes`,
 `POST …/{persona_id}/regenerate-avatar` (202). Stored in the reserved container `PROJECT#company_personas` (no `gsi1pk`);
 every `/projects/company_personas/...` route is 404, admins included. The assistant never sees company personas.
-
-| PUT | `/projects/prioritization/rows/{row_id}/lineage-ack` | "Keep both versions": mark / unmark a row's Crosses-generations label as intentional `{project_id, acknowledged, document_ids}` (edit on the row's project; 409 unless `document_ids` is the row's stored set); stored on the row as `lineage_ack` (aggregates `PRIORITIZATION`/`ROW#…`), lapses when the set changes — docs/prioritization.md |
 
 ### Document comments and review links (`shared/document_review_routes.py`, included by projects_handler.py) — docs/document-review.md
 | Method | Path | Description |

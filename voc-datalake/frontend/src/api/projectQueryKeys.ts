@@ -24,6 +24,13 @@
 export const projectKey = (id: string | undefined) => ['project', id] as const
 
 /**
+ * A project's job list. Shared by the jobs query, the wizard mutations, ProjectDetail's
+ * onJobStarted and the persona scope adapter: a typo in any of them fails silently (the
+ * jobs panel simply never updates).
+ */
+export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] as const
+
+/**
  * The project list — `projectsApi.getProjects`.
  *
  * Earned its place here by the rule above: three features read it (Projects,
@@ -31,13 +38,6 @@ export const projectKey = (id: string | undefined) => ['project', id] as const
  * Projects invalidates it on every mutation — so every reader is coupled to an
  * invalidation it had better be able to name.
  */
-/**
- * A project's job list. Shared by the jobs query, the wizard mutations, ProjectDetail's
- * onJobStarted and the persona scope adapter: a typo in any of them fails silently (the
- * jobs panel simply never updates).
- */
-export const projectJobsKey = (id: string | undefined) => ['project-jobs', id] as const
-
 export const projectsKey = () => ['projects'] as const
 
 /**

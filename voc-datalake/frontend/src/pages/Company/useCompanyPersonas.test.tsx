@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
 import { createTestQueryClient } from '@test/query-client'
 import { fetchApi, resetFetchApi, routeFetchApi as route } from '@test/fetchApiRoutes'
 import { defaultContextConfig } from '../../components/DataSourceWizard/types'
-import type { ProjectPersona } from '../../api/projectTypes'
+import type { ProjectJob, ProjectPersona } from '../../api/projectTypes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
@@ -28,7 +28,19 @@ function wrapper() {
   function Wrapper({ children }: Readonly<{ children: ReactNode }>) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>
   }
-  return { Wrapper, invalidate }
+  return { Wrapper, invalidate, client }
+}
+
+/** The library hook over an empty, read-only library whose jobs list is ``jobs()`` on every poll. */
+function renderLibrary(jobs: () => Array<Partial<ProjectJob>>) {
+  route({
+    'GET /company-personas': () => ({ personas: [], can_edit: false }),
+    'GET /company-personas/jobs': () => ({ jobs: jobs() }),
+  })
+  const { Wrapper, invalidate, client } = wrapper()
+  const { result } = renderHook(() => useCompanyPersonas(), { wrapper: Wrapper })
+  const libraryRefetches = () => invalidate.mock.calls.filter(([filters]) => filters?.queryKey?.[0] === 'company-personas')
+  return { result, client, libraryRefetches }
 }
 
 function sentBody(path: string, method: string): unknown {
@@ -64,18 +76,38 @@ describe('useCompanyPersonas', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['company-persona-jobs'] })
   })
 
-  it('refetches the library when a job has just completed', async () => {
-    route({
-      'GET /company-personas': () => ({ personas: [], can_edit: false }),
-      'GET /company-personas/jobs': () => ({
-        jobs: [{ job_id: 'job_1', job_type: 'generate_personas', status: 'completed', completed_at: new Date().toISOString() }],
-      }),
-    })
-    const { Wrapper, invalidate } = wrapper()
-    const { result } = renderHook(() => useCompanyPersonas(), { wrapper: Wrapper })
+  it('refetches the library once per finished job, not on every later poll', async () => {
+    const completedAt = new Date().toISOString()
+    const phase = { progress: 10 }
+    const { result, client, libraryRefetches } = renderLibrary(() => [
+      { job_id: 'job_1', job_type: 'generate_personas', status: 'completed', completed_at: completedAt },
+      { job_id: 'job_2', job_type: 'import_persona', status: 'running', progress: phase.progress },
+    ])
 
+    await waitFor(() => expect(result.current.jobs).toHaveLength(2))
+    await waitFor(() => expect(libraryRefetches()).toHaveLength(1))
+
+    phase.progress = 60
+    await act(() => client.refetchQueries({ queryKey: ['company-persona-jobs'] }))
+    await waitFor(() => expect(result.current.jobs[1]?.progress).toBe(60))
+
+    expect(libraryRefetches()).toHaveLength(1)
+  })
+
+  it('does not refetch when a handled completion drops out of the jobs list', async () => {
+    const now = new Date().toISOString()
+    const phase: { jobs: Array<Partial<ProjectJob>> } = { jobs: [
+      { job_id: 'job_1', job_type: 'generate_personas', status: 'completed', completed_at: now },
+      { job_id: 'job_2', job_type: 'import_persona', status: 'completed', completed_at: now },
+    ] }
+    const { result, client, libraryRefetches } = renderLibrary(() => phase.jobs)
+    await waitFor(() => expect(libraryRefetches()).toHaveLength(1))
+
+    phase.jobs = phase.jobs.slice(1)
+    await act(() => client.refetchQueries({ queryKey: ['company-persona-jobs'] }))
     await waitFor(() => expect(result.current.jobs).toHaveLength(1))
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['company-personas'] }))
+
+    expect(libraryRefetches()).toHaveLength(1)
   })
 })
 

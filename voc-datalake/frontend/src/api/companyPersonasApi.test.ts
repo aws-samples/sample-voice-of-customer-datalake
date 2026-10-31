@@ -95,4 +95,22 @@ describe('companyPersonasApi', () => {
     expect(sent('/projects/proj_1/personas/copy', 'POST')).toStrictEqual({ source: { scope: 'company' }, persona_ids: ['c1'] })
     expect(answer.personas.map((persona) => persona.persona_id)).toStrictEqual(['p9'])
   })
+
+  it('encodes the project id, so it cannot reshape the project-side paths', async () => {
+    route({
+      'POST /projects/a%2F..%2Fb/personas/p1/promote': () => ({ success: true }),
+      'GET /projects/a%2F..%2Fb/personas/copy-sources': () => ({ company: [], projects: [] }),
+      'POST /projects/a%2F..%2Fb/personas/copy': () => ({ success: true, personas: [] }),
+    })
+
+    await companyPersonasApi.promotePersona('a/../b', 'p1')
+    await companyPersonasApi.getPersonaCopySources('a/../b')
+    await companyPersonasApi.copyPersonas('a/../b', { source: { scope: 'company' }, persona_ids: ['c1'] })
+
+    expect(fetchApi.mock.calls.map(([endpoint]) => endpoint)).toStrictEqual([
+      '/projects/a%2F..%2Fb/personas/p1/promote',
+      '/projects/a%2F..%2Fb/personas/copy-sources',
+      '/projects/a%2F..%2Fb/personas/copy',
+    ])
+  })
 })
