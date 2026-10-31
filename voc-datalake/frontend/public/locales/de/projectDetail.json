@@ -350,7 +350,12 @@
       "submitNone": "Kopieren",
       "submit_one": "{{count, number}} Persona kopieren",
       "submit_other": "{{count, number}} Personas kopieren"
-    }
+    },
+    "protect": "Persona schützen: beim Ersetzen der Personas behalten",
+    "unprotect": "Schutz dieser Persona aufheben",
+    "protected": "Geschützt",
+    "protectedHint": "Bleibt erhalten, wenn eine neue Generierung die Personas dieses Projekts ersetzt",
+    "protectFailed": "Der Schutz konnte nicht geändert werden. Versuchen Sie es erneut."
   },
   "personaSections": {
     "ageRange": "Alter",
@@ -559,7 +564,9 @@
     "personaReplaceConfirmMessage_other": "Die {{count, number}} vorhandenen Personas des Projekts werden samt Änderungen und Avataren gelöscht, und ein neuer Satz mit {{n, number}} wird geschrieben. Das lässt sich nicht rückgängig machen.",
     "submitReplacePersonas": "Löschen und generieren",
     "submitRemixDocuments": "Dokumente remixen",
-    "workingBackwards": "Rückwärts arbeiten"
+    "workingBackwards": "Rückwärts arbeiten",
+    "personaReplaceKeepsProtected_one": "Die {{count, number}} geschützte Persona bleibt erhalten.",
+    "personaReplaceKeepsProtected_other": "Die {{count, number}} geschützten Personas bleiben erhalten."
   },
   "header": {
     "back": "Zurück zu den Projekten",

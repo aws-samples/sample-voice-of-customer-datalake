@@ -18,13 +18,13 @@ import type { PersonaGenerationMode } from './types'
 const generatePersonas = vi.hoisted(() => vi.fn<(projectId: string, body: { keep_existing_personas?: boolean }) => Promise<unknown>>())
 vi.mock('../../api/projectsApi', () => ({ projectsApi: { generatePersonas } }))
 
-function Choice({ existingCount }: { readonly existingCount: number }) {
+function Choice({ existingCount, protectedCount = 0 }: { readonly existingCount: number; readonly protectedCount?: number }) {
   const [mode, setMode] = useState<PersonaGenerationMode>('add')
   return (
     <>
-      <PersonaModeChoice existingCount={existingCount} mode={mode} onChange={setMode} />
+      <PersonaModeChoice existingCount={existingCount} protectedCount={protectedCount} mode={mode} onChange={setMode} />
       <PersonaGenerateConfirm
-        isOpen existingCount={existingCount} mode={mode} personaCount={3}
+        isOpen existingCount={existingCount} protectedCount={protectedCount} mode={mode} personaCount={3}
         onConfirm={() => {}} onCancel={() => {}}
       />
     </>
@@ -57,6 +57,23 @@ describe('the add-or-replace choice', () => {
   it('names a single persona in the singular', () => {
     render(<Choice existingCount={1} />)
     expect(screen.getByText(/Keeps the 1 persona this project has and writes new, clearly different ones next to it\./)).toBeInTheDocument()
+  })
+})
+
+describe('replacing with protected personas (#429)', () => {
+  it('counts only the unprotected personas and says the protected ones stay', async () => {
+    render(<Choice existingCount={3} protectedCount={1} />)
+    await userEvent.setup().click(screen.getByRole('radio', { name: /Replace existing personas/ }))
+    expect(screen.getByText(/Deletes the 2 personas this project has.*The 1 protected persona is kept\./)).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Replace the existing personas?' })
+    expect(dialog).toHaveTextContent("deletes the project's 2 existing personas")
+    expect(dialog).toHaveTextContent('The 1 protected persona is kept.')
+  })
+
+  it('is no delete warning when every persona is protected', async () => {
+    render(<Choice existingCount={2} protectedCount={2} />)
+    await userEvent.setup().click(screen.getByRole('radio', { name: /Replace existing personas/ }))
+    expect(screen.getByRole('dialog', { name: 'Generate personas now?' })).toHaveTextContent('The 2 protected personas are kept.')
   })
 })
 

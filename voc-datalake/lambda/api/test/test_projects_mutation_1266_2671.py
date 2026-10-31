@@ -604,7 +604,8 @@ class TestClearingExistingPersonas:
         table = self._clear([])
         table.query.assert_called_once_with(
             KeyConditionExpression=Key('pk').eq('PROJECT#proj-1') & Key('sk').begins_with('PERSONA#'),
-            ProjectionExpression='pk, sk',
+            ProjectionExpression='pk, sk, #protected',
+            ExpressionAttributeNames={'#protected': 'protected'},
         )
 
     def test_each_stored_key_is_deleted_and_the_count_logged(self, log):
@@ -613,7 +614,7 @@ class TestClearingExistingPersonas:
             {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#persona_2'},
         ]
         table = self._clear(rows)
-        assert table.delete_item.call_args_list == [call(Key=row) for row in rows]
+        assert [c.kwargs['Key'] for c in table.delete_item.call_args_list] == rows
         log.info.assert_called_once_with('[PERSONA] Cleared 2 existing persona(s) before regeneration')
 
     def test_no_personas_means_no_delete_and_no_log(self, log):

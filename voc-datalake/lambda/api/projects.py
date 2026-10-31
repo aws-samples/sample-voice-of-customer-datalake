@@ -2303,13 +2303,15 @@ def _clear_existing_personas(project_id: str) -> None:
     same persona answer multiple times. Best effort: every page of personas is read
     and each is deleted on its own (``shared.persona_replace``), so one failed delete
     is logged and the rest still go. Only the personas actually deleted take their
-    avatar objects with them.
+    avatar objects with them. Protected personas are kept (``shared.persona_replace``).
     """
     try:
         cleared = persona_replace.clear_personas(projects_table, project_id)
     except Exception:
         logger.exception("[PERSONA] Failed to read the existing personas to clear (continuing)")
         return
+    if cleared.protected:
+        logger.info(f"[PERSONA] Kept {len(cleared.protected)} protected persona(s)")
     if cleared.failed:
         logger.warning(
             f"[PERSONA] {len(cleared.failed)} persona(s) could not be deleted before regeneration; kept",
@@ -2529,15 +2531,17 @@ def _save_personas(project_id: str, persona_items: list[tuple[str, dict, dict]],
 
 
 def _kept_personas(project_id: str, filters: dict) -> persona_overlap.ExistingPersonas:
-    """Additive mode: the personas the project keeps, described for the prompt (#353).
+    """The personas the project keeps, described for the prompt: every one in additive mode (#353),
+    the protected ones in replace mode (ported from #429 by @aws-bryan).
 
-    Replace mode, or a failed read, is no description: the read is best effort like
-    the names-to-avoid list, and the name post-check then has nothing to compare.
+    A failed read is no description: the read is best effort like the names-to-avoid list,
+    and the name post-check then has nothing to compare. The clear re-reads protection for
+    itself, so a failed read here never deletes a protected persona.
     """
-    if not _is_additive(filters):
-        return persona_overlap.NO_EXISTING_PERSONAS
     try:
-        return persona_overlap.read_existing_personas(projects_table, project_id)
+        return persona_overlap.read_existing_personas(
+            projects_table, project_id, only_protected=not _is_additive(filters),
+        )
     except Exception:
         logger.exception("[PERSONA] Could not read the kept personas (continuing)")
         return persona_overlap.NO_EXISTING_PERSONAS
@@ -2546,14 +2550,15 @@ def _kept_personas(project_id: str, filters: dict) -> persona_overlap.ExistingPe
 def _personas_to_add(
     project_id: str, filters: dict, personas: list[dict], kept: persona_overlap.ExistingPersonas,
 ) -> tuple[list[dict], int]:
-    """``(the personas to save, name clashes dropped)``; replace mode clears the old set first.
+    """``(the personas to save, name clashes dropped)``; replace mode clears the unprotected set first.
 
-    A repeat inside the new set cannot reach here in either mode: ``_plan_entries`` drops a
-    repeated planned name and ``_write_one_persona`` pins each persona to its planned name.
+    A new persona whose name repeats a kept one (every persona when adding, a protected one
+    when replacing) is dropped. A repeat inside the new set cannot reach here in either mode:
+    ``_plan_entries`` drops a repeated planned name and ``_write_one_persona`` pins each
+    persona to its planned name.
     """
     if not _is_additive(filters):
         _clear_existing_personas(project_id)
-        return personas, 0
     kept_personas, clashes = persona_overlap.drop_name_clashes(personas, kept.name_keys)
     if clashes:
         logger.warning(
@@ -3483,6 +3488,20 @@ def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
         logger.exception(f"Failed to add persona note: {e}")
         raise ServiceError('Failed to add note') from e
     return {'success': True, 'note': new_note}
+
+
+def set_persona_protection(project_id: str, persona_id: str, body: dict) -> dict:
+    """``PUT /projects/{id}/personas/{pid}/protection``: a protected persona survives a replace run.
+
+    ``protected`` must be a real boolean: ``"false"`` read as truthy would protect a persona the
+    caller meant to release, and it would then survive every regeneration (ported from #429 by
+    @aws-bryan). 404 for a persona the project does not have.
+    """
+    protected = body.get('protected')
+    if not isinstance(protected, bool):
+        raise ValidationError('protected must be true or false')
+    persona_replace.set_protection(projects_table, project_id, persona_id, protected, now_iso())
+    return {'success': True, 'persona_id': persona_id, 'protected': protected}
 
 
 def require_persona(project_id: str, persona_id: str) -> None:

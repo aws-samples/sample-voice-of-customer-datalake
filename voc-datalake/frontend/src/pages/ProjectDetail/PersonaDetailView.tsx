@@ -29,6 +29,8 @@ import { PromotePersonaButton, PromoteStatus } from './PromotePersonaButton'
 import { usePromotePersona } from './usePromotePersona'
 import { useIsAdmin } from '../../store/authStore'
 import type { PersonaScope } from './personaScope'
+import { PersonaProtectStatus, PersonaProtectToggle } from './PersonaProtectToggle'
+import type { PersonaProtection } from './usePersonaProtection'
 import type { NoteItem } from './types'
 import type { ProjectPersona } from '../../api/projectTypes'
 
@@ -43,11 +45,14 @@ interface PersonaDetailViewProps {
   readonly onSaveNotes: (notes: NoteItem[]) => void
   readonly isDeleting: boolean
   readonly isSavingNotes: boolean
+  /** The tab's protect toggle (#429); absent = no toggle and no badge. */
+  readonly protection?: PersonaProtection
 }
 
 export default function PersonaDetailView({
   scope,
   persona,
+  protection,
   canEdit,
   onEdit,
   onDelete,
@@ -75,6 +80,9 @@ export default function PersonaDetailView({
                 {t('personas.confidence', { level: persona.confidence })}
                 {persona.feedback_count == null ? '' : <> · <span className="font-mono">{t('personas.reviews', { count: persona.feedback_count })}</span></>}
               </span>}
+              {protection ? (
+                <PersonaProtectStatus personaId={persona.persona_id} isProtected={persona.protected === true} protection={protection} />
+              ) : null}
               <FeedbackCorpus feedbackIds={persona.input_feedback_ids} citedIds={persona.evidence_feedback_ids}
                 className="mt-1.5" />
               <CopiedFromLine copiedFrom={persona.copied_from} />
@@ -85,6 +93,9 @@ export default function PersonaDetailView({
             {canEdit ? (
               <>
                 {canPromote ? <PromotePersonaButton promote={promote} /> : null}
+                {protection ? (
+                  <PersonaProtectToggle personaId={persona.persona_id} isProtected={persona.protected === true} protection={protection} />
+                ) : null}
                 <RegenerateAvatarButton avatar={avatar} />
                 <button
                   type="button"
