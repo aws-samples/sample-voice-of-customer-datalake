@@ -22,6 +22,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from shared.exceptions import AuthenticationError
+from shared.project_access import claims_from_event
 
 APP_CLIENT_IDS_ENV: Final = 'APP_CLIENT_IDS'
 TOKEN_MARKER_CLAIMS: Final = ('token_use', 'aud', 'client_id')
@@ -31,13 +32,6 @@ REFUSAL: Final = 'This sign-in is not valid for this API'
 def allowed_client_ids() -> frozenset[str]:
     raw = os.environ.get(APP_CLIENT_IDS_ENV, '')
     return frozenset(part.strip() for part in raw.split(',') if part.strip())
-
-
-def _authorizer_claims(event: Mapping[str, Any]) -> Mapping[str, Any]:
-    context = event.get('requestContext')
-    authorizer = context.get('authorizer') if isinstance(context, Mapping) else None
-    claims = authorizer.get('claims') if isinstance(authorizer, Mapping) else None
-    return claims if isinstance(claims, Mapping) else {}
 
 
 def issuing_client(claims: Mapping[str, Any]) -> str | None:
@@ -55,7 +49,7 @@ def is_token_claims(claims: Mapping[str, Any]) -> bool:
 
 def require_app_client(event: Mapping[str, Any]) -> None:
     """Raise AuthenticationError (401) when the request's Cognito token was issued to a foreign client."""
-    claims = _authorizer_claims(event)
+    claims = claims_from_event(event)
     if not is_token_claims(claims):
         return
     client = issuing_client(claims)
