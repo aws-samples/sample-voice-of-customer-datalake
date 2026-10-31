@@ -188,6 +188,14 @@ describe('FeedbackCard', () => {
       expect(externalLink).toHaveAttribute('href', 'https://example.com/review/123')
     })
 
+    it.each(['javascript:alert(1)', 'data:text/html,<b>x</b>', '/feedback/1'])(
+      'renders no external link when source_url is not an http(s) URL (%s)',
+      (sourceUrl) => {
+        renderWithRouter(<FeedbackCard feedback={{ ...mockFeedback, source_url: sourceUrl }} />)
+        expect(document.querySelector('a[target="_blank"]')).toBeNull()
+      },
+    )
+
     it('renders copy button', () => {
       renderWithRouter(<FeedbackCard feedback={mockFeedback} />)
       expect(screen.getByTitle('Copy text')).toBeInTheDocument()

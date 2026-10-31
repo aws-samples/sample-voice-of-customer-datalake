@@ -19,6 +19,7 @@ import { SourceIcon } from '../../components/SourceIcon/SourceIcon'
 import { useChannelLabel } from '../../hooks/useChannelLabel'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { humanizeId } from '../../utils/displayLabels'
+import { httpHref } from '../../utils/httpHref'
 
 /** Section label inside the main card — an h2 under the page h1 (h3 under the modal's h2). */
 export const SECTION_LABEL = 'text-sm font-medium text-muted mb-2 sm:mb-3'
@@ -231,6 +232,7 @@ interface MetadataProps {
 /** Review date, import date (ours only: a Radar review has none to show), language, Copy link, original link. */
 export function MetadataSection({ feedback, showImported = true, writtenDay, radar = false }: MetadataProps) {
   const { t, i18n } = useTranslation('feedbackDetail')
+  const sourceHref = httpHref(feedback.source_url)
   const unknown = t('unknown')
   return (
     <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-muted pt-3 sm:pt-4 border-t border-border">
@@ -248,9 +250,9 @@ export function MetadataSection({ feedback, showImported = true, writtenDay, rad
         <span>{t('language', { lang: feedback.original_language ? languageName(feedback.original_language, i18n.language) : unknown })}</span>
       </div>
       <CopyReviewLink feedbackId={feedback.feedback_id} radar={radar} />
-      {feedback.source_url && (
+      {sourceHref && (
         <a
-          href={feedback.source_url}
+          href={sourceHref}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 link focus-ring rounded-sm sm:ml-auto"
