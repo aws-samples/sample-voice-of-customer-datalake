@@ -696,10 +696,10 @@ All Lambdas use ARM64 (Graviton) architecture for better price/performance.
 
 ```bash
 # ❌ WRONG - bash will try to expand !2025 as history reference
-PASSWORD="DeployTest!2025"
+PASSWORD="Example!2025"
 
 # ✅ CORRECT - single quotes prevent expansion
-PASSWORD='DeployTest!2025'
+PASSWORD='Example!2025'
 
 # ✅ CORRECT - for AWS CLI auth-parameters with special chars
 aws cognito-idp initiate-auth \
@@ -719,12 +719,12 @@ CLIENT_ID=$(aws cloudformation describe-stacks --stack-name VocCoreStack \
 API_URL=$(aws cloudformation describe-stacks --stack-name VocApiStack \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text)
 
-# Get Cognito token (use single quotes for password with !)
+# Get Cognito token. The password is your test user's own, from the environment: never commit one.
 # Note: Create test user first with aws cognito-idp admin-create-user
 TOKEN=$(aws cognito-idp initiate-auth \
   --client-id "$CLIENT_ID" \
   --auth-flow USER_PASSWORD_AUTH \
-  --auth-parameters 'USERNAME=deployment-test,PASSWORD=DeployTest!2025' \
+  --auth-parameters "USERNAME=deployment-test,PASSWORD=$VOC_TEST_PASS" \
   --query 'AuthenticationResult.IdToken' \
   --output text)
 
