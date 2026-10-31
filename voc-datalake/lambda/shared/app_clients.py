@@ -57,4 +57,4 @@ def require_app_client(event: Mapping[str, Any]) -> None:
         raise AuthenticationError(REFUSAL)
 
 
-__all__ = ['APP_CLIENT_IDS_ENV', 'allowed_client_ids', 'issuing_client', 'require_app_client']
+__all__ = ['require_app_client']
