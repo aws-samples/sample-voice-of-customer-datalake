@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { fakeJwt } from '@test/scriptedCognito'
 
 // Mock amazon-cognito-identity-js
 /** The callback object amazon-cognito-identity-js hands its async calls. */
@@ -14,6 +15,17 @@ const mockForgotPassword = vi.fn<(callbacks: CognitoCallbacks) => void>()
 const mockConfirmPassword = vi.fn<(code: string, newPassword: string, callbacks: CognitoCallbacks) => void>()
 const mockCompleteNewPasswordChallenge = vi.fn()
 const mockSignOut = vi.fn()
+const mockSetSignInUserSession = vi.fn()
+
+// A plain session object standing in for the SDK's (whose classes are mocked away below).
+vi.mock('./cognitoIdp', () => ({
+  sessionFromTokens: (tokens: { IdToken: string; AccessToken: string; RefreshToken: string }) => ({
+    idToken: tokens.IdToken,
+    getIdToken: () => ({ getJwtToken: () => tokens.IdToken }),
+    getAccessToken: () => ({ getJwtToken: () => tokens.AccessToken }),
+    getRefreshToken: () => ({ getToken: () => tokens.RefreshToken }),
+  }),
+}))
 
 // The implementations MUST be `function`, not arrow, expressions: the source calls
 // `new CognitoUserPool(...)` / `new CognitoUser(...)`, and vitest 4 honours `new` with real
@@ -38,6 +50,7 @@ vi.mock('amazon-cognito-identity-js', () => ({
       getSession: mockGetSession,
       refreshSession: mockRefreshSession,
       signOut: mockSignOut,
+      setSignInUserSession: mockSetSignInUserSession,
     }
   }),
   AuthenticationDetails: vi.fn(),
@@ -145,10 +158,44 @@ describe('authService', () => {
     })
   })
 
+  describe('adoptTokens (passkey sign-in)', () => {
+    it('caches the session in the SDK for the token\'s user and stores tokens and user like a password sign-in', () => {
+      const idToken = fakeJwt({ sub: 'sub-9', 'cognito:username': 'dana-uuid', email: 'dana@example.com' }, Date.now())
+      authService.adoptTokens({ IdToken: idToken, AccessToken: 'access', RefreshToken: 'refresh' })
+      expect(mockSetSignInUserSession).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ idToken }))
+      expect(mockSetTokens).toHaveBeenCalledExactlyOnceWith({ accessToken: 'access', idToken, refreshToken: 'refresh' })
+      expect(mockSetUser).toHaveBeenCalledWith(expect.objectContaining({ username: 'dana-uuid', sub: 'sub-9' }))
+    })
+
+    it('refuses tokens that name no user, storing nothing', () => {
+      mockSetTokens.mockClear()
+      expect(() => authService.adoptTokens({ IdToken: 'not-a-jwt', AccessToken: 'a', RefreshToken: 'r' })).toThrow('Sign-in returned no user')
+      expect(mockSetTokens).not.toHaveBeenCalled()
+    })
+  })
+
   describe('signOut', () => {
     it('calls logout on authStore', () => {
       authService.signOut()
       expect(mockLogout).toHaveBeenCalledWith()
+    })
+
+    it('asks the SDK to revoke the refresh token at Cognito', () => {
+      mockSignOut.mockImplementationOnce((callback?: (err?: Error) => void) => { callback?.() })
+      authService.signOut()
+      expect(mockSignOut).toHaveBeenCalledExactlyOnceWith(expect.any(Function))
+    })
+
+    it('starts the revocation before the app state is cleared', () => {
+      authService.signOut()
+      expect(mockSignOut.mock.invocationCallOrder[0]).toBeLessThan(mockLogout.mock.invocationCallOrder[0] ?? 0)
+    })
+
+    it('still clears the SDK storage when revocation fails', () => {
+      mockSignOut.mockImplementationOnce((callback?: (err?: Error) => void) => { callback?.(new Error('offline')) })
+      authService.signOut()
+      expect(mockSignOut).toHaveBeenCalledTimes(2)
+      expect(mockSignOut).toHaveBeenLastCalledWith()
     })
   })
 

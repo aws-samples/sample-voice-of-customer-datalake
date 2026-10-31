@@ -76,6 +76,9 @@ SOURCE_PLACEHOLDER = "{source}"
 # can set it and clear the cache. It is parsed once per execution context either
 # way, which is what the cache is for.
 PLUGIN_DEFAULTS_ENV_VAR = "PLUGIN_SECRET_DEFAULTS"
+# {plugin_id: [config key, ...]} of the manifest fields marked `secret` (lib/plugin-loader.ts
+# secretConfigKeysByPlugin): write-only, never returned by the credentials GET (BE-5).
+WRITE_ONLY_FIELDS_ENV_VAR = "PLUGIN_SECRET_KEYS"
 
 app = create_api_resolver()
 
@@ -351,6 +354,28 @@ def _plugin_secret_defaults() -> dict[str, dict[str, str]]:
     return defaults
 
 
+@cache
+def _write_only_fields() -> dict[str, frozenset[str]] | None:
+    """Parse PLUGIN_SECRET_KEYS into {plugin_id: {config keys the manifest marks secret}}.
+
+    The credentials GET never returns these values (BE-5). CDK always writes the
+    variable; an absent or malformed one is None, and the GET then fails CLOSED:
+    it returns no value at all rather than risk returning a secret.
+    """
+    try:
+        parsed = json.loads(os.environ.get(WRITE_ONLY_FIELDS_ENV_VAR, ""))
+    except ValueError:
+        parsed = None
+    if not isinstance(parsed, dict):
+        logger.error("PLUGIN_SECRET_KEYS is absent or not a JSON object; the credentials GET returns no values")
+        return None
+    return {
+        source: frozenset(key for key in keys if isinstance(key, str))
+        for source, keys in parsed.items()
+        if isinstance(source, str) and isinstance(keys, list)
+    }
+
+
 def _deploy_suffix() -> str:
     """`-<account>-<region>`, exactly what CDK's uniqueName() appends with no prefix."""
     return f"-{DEPLOY_ACCOUNT_ID}-{DEPLOY_REGION}" if DEPLOY_ACCOUNT_ID and DEPLOY_REGION else ""
@@ -439,23 +464,18 @@ def get_credentials(source: str):
     """Get saved configuration values for an integration so the Settings UI
     can pre-populate form fields (e.g. app_name, sort_by, frequency).
 
-    This is NOT returning sensitive API keys — the app review plugins use
-    public endpoints with no authentication. The values stored in Secrets
-    Manager for these plugins are non-secret configuration like app names,
-    package names, and tuning parameters. Secrets Manager is reused as the
-    storage backend because the existing plugin infrastructure already
-    reads config from there via BaseIngestor._load_secrets().
+    This is NOT returning sensitive API keys: a key the plugin manifest marks
+    `secret` (the GitHub token, the webhook HMAC secret) is never returned once
+    saved (BE-5, `PLUGIN_SECRET_KEYS`); the write path keeps an omitted key
+    unchanged. The other values stored in Secrets Manager are non-secret
+    configuration like app names, package names, and tuning parameters. Secrets
+    Manager is reused as the storage backend because the existing plugin
+    infrastructure already reads config from there via BaseIngestor._load_secrets().
 
     The caller must specify which keys to retrieve via the `keys` query
     parameter (comma-separated). Only matching keys are returned.
 
     Requires admin access — credential management is an administrative operation.
-
-    NOTE: Whether this endpoint needs to return actual values (vs. a
-    configured/not-configured status) is an open question.  Returning only
-    presence information would be safer and would serve the Settings UI equally
-    well, but that changes the frontend contract and should be done as a
-    separate change with coordinated frontend work.
     """
     require_admin(app.current_event.raw_event)
 
@@ -487,6 +507,10 @@ def get_credentials(source: str):
         secrets = json.loads(response.get('SecretString', '{}'))
 
         prefix = f"{source}_"
+        write_only_by_source = _write_only_fields()
+        if write_only_by_source is None:
+            return {}
+        write_only = write_only_by_source.get(source, frozenset())
         result = {}
         for key in requested_keys:
             prefixed_key = f"{prefix}{key}"
@@ -494,7 +518,7 @@ def get_credentials(source: str):
             # An unprefixed fallback would allow any caller to read keys
             # belonging to other features (e.g. webscraper_api_key written
             # by the scrapers handler as a top-level secret key).
-            if secrets.get(prefixed_key):
+            if key not in write_only and secrets.get(prefixed_key):
                 result[key] = secrets[prefixed_key]
     except (ConfigurationError, ValidationError):
         raise

@@ -5,13 +5,16 @@
 Tokens are minted at SEND time, one per email: ``TOKEN#{sha256}`` / ``RESPONSE``
 (attributes a form answer to the recipient) and ``TOKEN#{sha256}`` / ``UNSUB``
 (unsubscribes the person). Only the hash is stored; the plaintext is in the email.
-``SENDCOUNT#{day}`` / ``COUNT`` counts the emails sent per UTC day (TTL +3 days).
+``SENDCOUNT#{day}`` / ``COUNT`` counts the emails sent per UTC day and ``SENDCOUNT#{day}`` /
+``SENDER#{sub}`` those of one sender's asks (TTL +3 days).
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
+
+from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.batch_get import batch_get_all
 from shared.digests import sha256_hex
@@ -25,12 +28,18 @@ from shared.engagement_common import (
 )
 from shared.exceptions import ServiceError
 from shared.indexes import PARTICIPANTS_LISTING_INDEX
+from shared.logging import logger
 from shared.participants_store import remember_token
 
 ASK_PREFIX: Final = 'ask'
 ASKS_PARTITION: Final = 'ASKS'
 MAX_ASKS_LISTED: Final = 200
 MAX_RECIPIENTS: Final = 500
+# Emails one person's asks may send per UTC day (BE-4): any signed-in user can send an ask, so one
+# account cannot use the deployment's whole daily cap (default 500) on outside addresses.
+PER_SENDER_DAILY_CAP: Final = 50
+SENDER_CAP_REFUSAL: Final = 'sender_daily_cap'
+DAILY_CAP_REFUSAL: Final = 'daily_cap'
 SEND_COUNT_TTL: Final = timedelta(days=3)
 RCPT_QUEUED: Final = 'queued'
 RCPT_SENT: Final = 'sent'
@@ -207,23 +216,69 @@ def _count_key(day: str) -> dict[str, str]:
     return {'pk': f'SENDCOUNT#{day}', 'sk': 'COUNT'}
 
 
+def _sender_count_key(day: str, sender: str) -> dict[str, str]:
+    return {'pk': f'SENDCOUNT#{day}', 'sk': f'SENDER#{sender}'}
+
+
 def _today() -> datetime:
     return datetime.now(UTC)
 
 
-def sent_today(table: Any) -> int:
-    item = table.get_item(Key=_count_key(_today().date().isoformat()), ConsistentRead=True).get('Item')
+def _sent(table: Any, key: Mapping[str, str]) -> int:
+    item = table.get_item(Key=dict(key), ConsistentRead=True).get('Item')
     return int(item.get('count') or 0) if item else 0
 
 
-def claim_send(table: Any, cap: int) -> bool:
-    """Count one email against today's cap; False (nothing counted) when the cap is reached."""
-    now = _today()
+def sent_today(table: Any) -> int:
+    return _sent(table, _count_key(_today().date().isoformat()))
+
+
+def sent_today_by(table: Any, sender: str) -> int:
+    """Emails counted today against one person's own cap (PER_SENDER_DAILY_CAP)."""
+    return _sent(table, _sender_count_key(_today().date().isoformat(), sender))
+
+
+def _claim(table: Any, key: Mapping[str, str], cap: int, now: datetime) -> bool:
     return conditional_write(
         table.update_item,
-        Key=_count_key(now.date().isoformat()),
+        Key=dict(key),
         UpdateExpression='ADD #c :one SET #t = if_not_exists(#t, :ttl)',
         ConditionExpression='attribute_not_exists(#c) OR #c < :cap',
         ExpressionAttributeNames={'#c': 'count', '#t': 'ttl'},
         ExpressionAttributeValues={':one': 1, ':cap': cap, ':ttl': int((now + SEND_COUNT_TTL).timestamp())},
     )
+
+
+def claim_send(table: Any, cap: int, sender: str) -> str | None:
+    """Count one email from ``sender`` against their own cap and today's cap.
+
+    None when it was counted; otherwise the cap that refused it (``'sender_daily_cap'`` or
+    ``'daily_cap'``), with nothing left counted: a sender claim the deployment cap then refuses
+    (or fails on) is given back. An ask without a sender (created before 5.61) counts against the
+    deployment cap only, never one shared empty-sender bucket.
+    """
+    now = _today()
+    day = now.date().isoformat()
+    if not sender:
+        return None if _claim(table, _count_key(day), cap, now) else DAILY_CAP_REFUSAL
+    sender_key = _sender_count_key(day, sender)
+    if not _claim(table, sender_key, PER_SENDER_DAILY_CAP, now):
+        return SENDER_CAP_REFUSAL
+    try:
+        counted = _claim(table, _count_key(day), cap, now)
+    except Exception:
+        _give_back(table, sender_key)
+        raise
+    if counted:
+        return None
+    _give_back(table, sender_key)
+    return DAILY_CAP_REFUSAL
+
+
+def _give_back(table: Any, sender_key: Mapping[str, str]) -> None:
+    """Undo one sender claim; a failure only leaves that sender one email short today (logged)."""
+    try:
+        table.update_item(Key=dict(sender_key), UpdateExpression='ADD #c :minus',
+                          ExpressionAttributeNames={'#c': 'count'}, ExpressionAttributeValues={':minus': -1})
+    except (ClientError, BotoCoreError):
+        logger.warning('Could not give back a sender send claim', extra={'day_key': sender_key.get('pk')})

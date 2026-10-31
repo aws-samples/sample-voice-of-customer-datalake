@@ -187,7 +187,8 @@
     "tooManyRecipients": "요청 한 번에 최대 500명까지 보낼 수 있습니다.",
     "externalNotAllowed": "회사 도메인의 주소만 추가할 수 있습니다.",
     "invalidEmail": "올바른 이메일 주소를 입력하세요.",
-    "unsubscribedPerson": "이 사람은 수신을 거부했습니다."
+    "unsubscribedPerson": "이 사람은 수신을 거부했습니다.",
+    "senderDailyCap": "하루에 최대 50통의 이메일을 보낼 수 있습니다. 수신자 수를 줄이거나 내일 다시 시도해 주세요."
   },
   "settings": {
     "title": "참가자 이메일",

@@ -13,7 +13,7 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 import {
-  flattenEntries, isStringList, listItemOf, missingPluralForms, parseAnswer, resolveEnValue, selectedLanguages,
+  flattenEntries, isStringList, keySelected, listItemOf, missingPluralForms, parseAnswer, parseOptions, resolveEnValue,
 } from './fix-i18n-helpers.mjs'
 
 describe('parseAnswer', () => {
@@ -76,17 +76,40 @@ describe('string lists', () => {
   })
 })
 
-describe('selectedLanguages', () => {
-  const known = ['es', 'pl']
+describe('parseOptions', () => {
+  const known = { languages: ['es', 'pl'], namespaces: ['login', 'participants'] }
 
-  it('defaults to every known language', () => assert.deepEqual(selectedLanguages([], known), known))
-
-  it('returns each --lang given, in order', () => {
-    assert.deepEqual(selectedLanguages(['--lang', 'pl', '--lang', 'es'], known), ['pl', 'es'])
+  it('defaults to every language and namespace, every key, and the delta only', () => {
+    assert.deepEqual(parseOptions([], known),
+      { languages: ['es', 'pl'], namespaces: ['login', 'participants'], keys: null, recheckEnglish: false })
   })
 
-  it('throws on an unknown code instead of translating nothing', () => {
-    assert.throws(() => selectedLanguages(['--lang', 'xx'], known), /unknown --lang xx/)
+  it('returns each --lang / --ns given, in order, repeated or comma-separated', () => {
+    const options = parseOptions(['--lang', 'pl', '--lang', 'es', '--ns', 'participants,login'], known)
+    assert.deepEqual([options.languages, options.namespaces], [['pl', 'es'], ['participants', 'login']])
+  })
+
+  it('takes --keys and --recheck-english', () => {
+    const options = parseOptions(['--keys', 'errors.senderDailyCap, passkey.add', '--recheck-english'], known)
+    assert.deepEqual([options.keys, options.recheckEnglish], [['errors.senderDailyCap', 'passkey.add'], true])
+  })
+
+  it('throws on an unknown language or namespace instead of translating nothing', () => {
+    assert.throws(() => parseOptions(['--lang', 'xx'], known), /unknown --lang xx/)
+    assert.throws(() => parseOptions(['--ns', 'nope'], known), /unknown --ns nope/)
+  })
+})
+
+describe('keySelected', () => {
+  it('selects every key without --keys', () => assert.equal(keySelected('a.b', null), true))
+
+  it('selects the key, its plural forms and its list items or subkeys, nothing else', () => {
+    const keys = ['errors.count', 'passkey']
+    assert.deepEqual(
+      ['errors.count', 'errors.count_few', 'errors.count.0', 'passkey.offer.title', 'errors.counted', 'errors.count_x', 'other']
+        .map((key) => keySelected(key, keys)),
+      [true, true, true, true, false, false, false],
+    )
   })
 })
 

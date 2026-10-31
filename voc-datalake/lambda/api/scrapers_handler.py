@@ -71,6 +71,7 @@ from shared.api import api_handler, create_api_resolver, get_caller_subject, req
 from shared.app_connector_listing import connectors_in_secret
 from shared.aws import get_secrets_client, put_secret_json
 from shared.exceptions import ConfigurationError, ServiceError, ValidationError
+from shared.http_utils import MAX_PAGE_BYTES
 from shared.ids import timestamped_id
 from shared.logging import logger, tracer
 from shared.producer_labels import normalise_label_fields
@@ -615,7 +616,8 @@ def _fetch_html(url: str) -> str:
     req = urllib.request.Request(url, headers=headers)
     try:
         with _SAFE_OPENER.open(req, timeout=30) as response:
-            return response.read().decode('utf-8', errors='ignore')
+            # Capped (BE-8): the rest of an oversized page is never read.
+            return response.read(MAX_PAGE_BYTES).decode('utf-8', errors='ignore')
     except urllib.error.URLError as e:
         if isinstance(e, _RedirectRefusedError):
             raise ValidationError(e.reason) from e

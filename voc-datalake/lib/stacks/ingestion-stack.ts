@@ -48,6 +48,8 @@ import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailConfig } from '../utils/inbou
  * multipart parts are dropped after a day (S3 cost best practice).
  */
 export const IMPORT_NONCURRENT_VERSION_DAYS = 7;
+/** A staged import file (and its `processed/` copy) is deleted this many days after upload. */
+export const IMPORT_STAGED_EXPIRATION_DAYS = 90;
 export const IMPORT_ABORT_MULTIPART_DAYS = 1;
 
 /**
@@ -262,6 +264,9 @@ export class VocIngestionStack extends VocStack {
           // Retention rationale on IMPORT_NONCURRENT_VERSION_DAYS above; short
           // because once ingested, the durable copy is the raw data lake.
           id: 'staging-version-hygiene',
+          // Staged files are unredacted uploads outside retention and erasure (DATA-1): they expire once
+          // ingested long enough ago that the raw lake and the feedback table are the durable copy.
+          expiration: cdk.Duration.days(IMPORT_STAGED_EXPIRATION_DAYS),
           noncurrentVersionExpiration: cdk.Duration.days(IMPORT_NONCURRENT_VERSION_DAYS),
           abortIncompleteMultipartUploadAfter: cdk.Duration.days(IMPORT_ABORT_MULTIPART_DAYS),
         },
@@ -522,7 +527,8 @@ export class VocIngestionStack extends VocStack {
     }
 
     // Grant S3 permissions
-    this.s3ImportBucket.grantReadWrite(fn);
+    // Read-only (IAM-13): the ingestor only head/get_objects the staged file; staging and delete are the API's.
+    this.s3ImportBucket.grantRead(fn);
     // The ingestor reads only records naming this bucket: the API also invokes it
     // directly (POST /s3-import/reprocess), so the bucket in an event is not trusted.
     fn.addEnvironment(S3_IMPORT_BUCKET_ENV, this.s3ImportBucket.bucketName);

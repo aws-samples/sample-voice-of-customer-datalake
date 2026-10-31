@@ -28,6 +28,8 @@ import { dataProtection, type DataProtection } from '../utils/data-protection';
  * long enough to notice and restore customer data before it is purged.
  */
 export const RAW_NONCURRENT_VERSION_DAYS = 90;
+/** `scratch/` objects (workflow claim-checks) expire after this many days; no workflow runs longer than 2 h. */
+export const SCRATCH_EXPIRATION_DAYS = 2;
 /**
  * SPA bucket: each deploy's `s3 sync --delete` turns the previous build's assets
  * noncurrent. 30 days keeps a month of deploys restorable for a rollback; the
@@ -129,8 +131,9 @@ export function createCoreBuckets(
     blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     enforceSSL: true,
     versioned: true,
-    removalPolicy: cdk.RemovalPolicy.DESTROY,
-    autoDeleteObjects: true,
+    // Audit evidence: kept with the data under protectData (DATA-19), deleted with a demo's stacks otherwise.
+    removalPolicy: protection.removalPolicy,
+    autoDeleteObjects: protection.autoDeleteObjects,
     // ONE unprefixed rule (core-stack.test.ts pins why no prefix): current
     // versions expire at 90 days, which also lets S3 remove the resulting
     // expired delete markers itself, so no separate marker rule is needed
@@ -151,7 +154,12 @@ export function createCoreBuckets(
     accessLogsBucket,
     accessLogPrefix: 'raw-data-bucket/',
     protection,
-    lifecycleRules: versionHygieneRules(RAW_NONCURRENT_VERSION_DAYS),
+    lifecycleRules: [
+      ...versionHygieneRules(RAW_NONCURRENT_VERSION_DAYS),
+      // Research / document workflow scratch copies of feedback-derived text (DATA-4): the workflows run at
+      // most 2 h and delete their own on success; this removes what a failed or timed-out run left behind.
+      { id: 'scratch-expiry', prefix: 'scratch/', expiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS) },
+    ],
     cors: [{
       // PUT is required for browser-side presigned uploads (project product docs).
       // The CloudFront domain is not known at bucket-creation time (the frontend

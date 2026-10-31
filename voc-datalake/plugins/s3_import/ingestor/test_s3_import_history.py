@@ -53,6 +53,16 @@ def test_a_file_records_its_counts_and_the_skipped_rows(mock_s3, ingestor, recor
     assert run.raw_s3_key == "s3://bucket/surveys/q3.csv"
 
 
+@pytest.mark.parametrize("data", [b"id,text\n1,Great\n", b""], ids=["read", "refused-empty"])
+@patch(f"{HANDLER}.s3_client")
+def test_a_reprocessed_archived_file_is_recorded_under_its_original_folder(mock_s3, data, ingestor, recorded):
+    """The record carries the label the rows are imported under, not the `processed` folder's (read or refused)."""
+    _serve(mock_s3, data)
+    ingestor.process_file("bucket", "processed/surveys/q3.csv", reprocess=True)
+    [run] = recorded
+    assert run.source == "S3 - surveys"
+
+
 @patch(f"{HANDLER}.s3_client")
 def test_a_bad_jsonl_line_is_a_skipped_row_with_its_reason(mock_s3, ingestor, recorded):
     _serve(mock_s3, b'{"text": "ok"}\nnot json\n')

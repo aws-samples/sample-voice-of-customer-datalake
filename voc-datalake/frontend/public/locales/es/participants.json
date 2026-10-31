@@ -191,7 +191,8 @@
     "tooManyRecipients": "Una solicitud puede llegar como máximo a 500 personas.",
     "externalNotAllowed": "Solo se pueden añadir direcciones de los dominios de la empresa.",
     "invalidEmail": "Introduce una dirección de correo válida.",
-    "unsubscribedPerson": "Esta persona se ha dado de baja."
+    "unsubscribedPerson": "Esta persona se ha dado de baja.",
+    "senderDailyCap": "Puedes enviar hasta 50 correos al día. Envía a menos personas o inténtalo de nuevo mañana."
   },
   "settings": {
     "title": "Correo a participantes",

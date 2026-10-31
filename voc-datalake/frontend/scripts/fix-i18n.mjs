@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /**
- * Fix all missing/empty i18n translations using Amazon Bedrock (Claude Haiku 5.5).
- * Reads English source, finds gaps in target locales, translates in batches. Each batch
- * carries the page description and the JSX lines where every key is used, so the model
- * sees the UI context of a string, not just the string.
+ * Translate the i18n delta using Amazon Bedrock (Claude Haiku 5.5): write the new strings in English
+ * (public/locales/en), then run this; it finds the keys missing or empty in each target locale and
+ * translates only those, in batches. Each batch carries the page description and the JSX lines where
+ * every key is used, so the model sees the UI context of a string, not just the string.
  *
- * Usage: node scripts/fix-i18n.mjs [--lang <code>]...   (default: every target locale)
+ * Usage: node scripts/fix-i18n.mjs [--lang <code>]... [--ns <namespace>]... [--keys <a.b,c.d>] [--recheck-english]
+ *   --lang / --ns       only these locales / catalogues (repeatable or comma-separated; default: all)
+ *   --keys              only these dotted keys (plus their plural forms and list items)
+ *   --recheck-english   also retranslate values still identical to English (the old default; many strings)
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
 import { resolve, join, isAbsolute, delimiter } from 'node:path'
@@ -14,8 +17,8 @@ import { execFileSync } from 'node:child_process'
 import { collectSourceFiles, stripPlaceholders } from './i18n-locales.mjs'
 import { setNested, UNSAFE_SEGMENTS } from './set-nested.mjs'
 import {
-  flattenEntries, getNested, isStringList, listItemOf, missingPluralForms, parseAnswer, resolveEnValue,
-  selectedLanguages,
+  flattenEntries, getNested, isStringList, keySelected, listItemOf, missingPluralForms, parseAnswer, parseOptions,
+  resolveEnValue,
 } from './fix-i18n-helpers.mjs'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -37,7 +40,13 @@ const LANG_NAMES = {
 const MODEL_ID = 'global.anthropic.claude-haiku-5-5'
 const REGION = 'us-east-1'
 const BATCH_SIZE = 60
-const LANGUAGES = selectedLanguages(process.argv.slice(2), ALL_LANGUAGES)
+const OPTIONS = parseOptions(process.argv.slice(2), { languages: ALL_LANGUAGES, namespaces: NAMESPACES })
+const LANGUAGES = OPTIONS.languages
+
+/** Drop, in place, the `[key, …]` entries `--keys` did not select. */
+function keepSelected(entries) {
+  entries.splice(0, entries.length, ...entries.filter(([key]) => keySelected(key, OPTIONS.keys)))
+}
 
 /**
  * Absolute path of the AWS CLI. `AWS_CLI` (absolute) wins; otherwise the first
@@ -242,7 +251,7 @@ let totalUnwritable = 0
 for (const lang of LANGUAGES) {
   console.log(`\n🌐 Processing ${lang.toUpperCase()} (${LANG_NAMES[lang]})`)
 
-  for (const ns of NAMESPACES) {
+  for (const ns of OPTIONS.namespaces) {
     const enData = loadJSON('en', ns)
     const targetData = loadJSON(lang, ns)
     const enEntries = flattenEntries(enData)
@@ -266,7 +275,10 @@ for (const lang of LANGUAGES) {
 
       const isMissing = targetValue === undefined
       const isEmpty = typeof targetValue === 'string' && targetValue.trim() === ''
-      const isUntranslated = typeof targetValue === 'string'
+      // Still identical to English: retranslated only on request (`--recheck-english`), so an
+      // ordinary run sends just the missing or empty keys, not hundreds of strings again.
+      const isUntranslated = OPTIONS.recheckEnglish
+        && typeof targetValue === 'string'
         && targetValue === resolved
         && targetValue.length > 3
         && !targetValue.startsWith('http')
@@ -315,6 +327,11 @@ for (const lang of LANGUAGES) {
         }
       }
     }
+
+    // Only the selected keys (`--keys`), and only the delta unless `--recheck-english`.
+    keepSelected(toFix)
+    keepSelected(directCopy)
+    keepSelected(listKeys)
 
     // Apply direct copies immediately (no Bedrock needed)
     for (const [key, val] of directCopy) {

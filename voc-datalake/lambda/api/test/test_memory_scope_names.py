@@ -164,3 +164,28 @@ def test_a_merge_tags_the_merged_statement(call, world):
     status, body = call('POST', '/memory/merge', claims=ADMIN_CLAIMS,
                         body={'ids': ids, 'statement': ABOUT_HARDWARE})
     assert (status, body['memory']['categories']) == (200, ['hardware_quality'])
+
+
+# ── By id (WA SEC08-BP04, BE-3): an id is no way around the category rule ──
+def _memory_id(world, statement):
+    return next(row['memory_id'] for row in world.memories() if row['statement'] == statement)
+
+
+def test_a_hidden_memory_is_not_found_by_id_for_a_restricted_reader(seeded, world):
+    hidden = _memory_id(world, NAMES_HIDDEN)
+    status, body = seeded('POST', f'/memory/{hidden}/confirm')
+    assert status == 404
+    assert NAMES_HIDDEN not in json.dumps(body)
+
+
+def test_a_visible_memory_is_still_found_by_id(seeded, world):
+    visible = _memory_id(world, NAMES_VISIBLE)
+    status, body = seeded('POST', f'/memory/{visible}/confirm')
+    assert (status, body['memory']['statement']) == (200, NAMES_VISIBLE)
+
+
+def test_a_restricted_reviewer_cannot_forget_a_hidden_memory(seeded, world):
+    _restrict(world, REVIEWER_CLAIMS['sub'])
+    hidden = _memory_id(world, NAMES_HIDDEN)
+    status, _ = seeded('POST', f'/memory/{hidden}/forget', claims=REVIEWER_CLAIMS)
+    assert status == 404

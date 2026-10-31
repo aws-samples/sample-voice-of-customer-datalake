@@ -115,3 +115,13 @@ describe('resolveId', () => {
     });
   });
 });
+
+describe('idSchema refuses dot-only ids (a URL parser resolves /documents/.. to the parent route)', () => {
+  it.each(['.', '..'])('refuses %j', (id) => {
+    expect(idSchema.safeParse(id).success).toBe(false);
+  });
+
+  it.each(['doc_1', 'v1.2', '...', '.hidden', 'a..b'])('accepts %j', (id) => {
+    expect(idSchema.safeParse(id).success).toBe(true);
+  });
+});

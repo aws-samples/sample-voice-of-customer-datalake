@@ -45,5 +45,26 @@
     "title": "Wpisz kod weryfikacyjny"
   },
   "showPassword": "Pokaż hasło",
-  "hidePassword": "Ukryj hasło"
+  "hidePassword": "Ukryj hasło",
+  "passkey": {
+    "add": "Dodaj passkey",
+    "signIn": "Zaloguj się passkey",
+    "offer": {
+      "title": "Logowanie szybciej dzięki passkey",
+      "body": "Passkey pozwala logować się na tym urządzeniu za pomocą odcisku palca, rozpoznawania twarzy lub blokady ekranu zamiast hasła. Nie da się go wyłudzić ani ponownie użyć na innej stronie.",
+      "notNow": "Nie teraz"
+    },
+    "section": {
+      "title": "Passkey",
+      "intro": "Loguj się na tym urządzeniu za pomocą odcisku palca, rozpoznawania twarzy lub blokady ekranu zamiast hasła. Twoje hasło nadal będzie działać.",
+      "added": "Dodano passkey. Następnym razem możesz zalogować się przy jego użyciu."
+    },
+    "errors": {
+      "needUsername": "Najpierw wpisz nazwę użytkownika lub adres e-mail, a następnie wybierz opcję „Zaloguj się passkey”.",
+      "cancelled": "Żądanie passkey zostało anulowane lub przekroczyło limit czasu. Spróbuj ponownie, gdy będziesz gotowy.",
+      "no_passkey": "Na tym urządzeniu nie skonfigurowano passkey dla tego konta. Zaloguj się hasłem, a następnie dodaj passkey.",
+      "unsupported": "Ta przeglądarka nie obsługuje passkey. Zaloguj się hasłem.",
+      "unknown": "Nie udało się wykonać kroku z passkey. Spróbuj ponownie lub zaloguj się hasłem."
+    }
+  }
 }

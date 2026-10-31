@@ -14,6 +14,7 @@ import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, stackModelA
 import { NagSuppressions } from 'cdk-nag';
 import { idempotencyTableSuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
+import { isDevDeployment } from '../utils/context';
 import { createCoreAuth } from './core-auth';
 import { createBoardAuth } from './core-board-auth';
 import { emailSenderOf } from '../utils/email-sender';
@@ -120,8 +121,10 @@ export class VocCoreStack extends VocStack {
     this.dataProtection = dataProtectionOf(this);
     const data = this.dataProtection;
 
-    // Base CORS origins for localhost development
-    const corsAllowedOriginsBase = ['http://localhost:5173', 'http://localhost:3000'];
+    // localhost origins only under `-c environment=dev`, like the API's CORS (DATA-10): a production bucket
+    // answers no browser page on the operator's own machine.
+    const corsAllowedOriginsBase = isDevDeployment(this.node)
+      ? ['http://localhost:5173', 'http://localhost:3000'] : [];
 
     // ============================================
     // KMS KEY
@@ -551,6 +554,9 @@ export class VocCoreStack extends VocStack {
     new cdk.CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID for frontend' });
     new cdk.CfnOutput(this, 'UserPoolDomain', { value: `${auth.domainPrefix}.auth.${this.region}.amazoncognito.com`, description: 'Cognito User Pool Domain' });
     new cdk.CfnOutput(this, 'CognitoRegion', { value: this.region, description: 'AWS Region for Cognito' });
+    // The app pool takes passkeys (core-auth.ts); frontend/scripts/deploy.sh reads a missing output as
+    // `features.passkey: false`, so a frontend-only deploy over an older stack offers none.
+    new cdk.CfnOutput(this, 'PasskeyAvailable', { value: 'true', description: 'The app user pool allows passkey sign-in (drives the frontend features.passkey flag)' });
     new cdk.CfnOutput(this, 'IdentityPoolId', { value: this.identityPool.ref, description: 'Cognito Identity Pool ID for AWS IAM auth' });
     new cdk.CfnOutput(this, 'InitialAdminPassword', { 
       value: auth.initialAdminPassword, 

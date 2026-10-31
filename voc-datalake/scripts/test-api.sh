@@ -5,7 +5,7 @@
 # Usage: test-api.sh [API_URL] [STREAM_URL]
 #
 # Environment:
-#   VOC_TEST_USER / VOC_TEST_PASS - Cognito test creds (default: deployment-test / DeployTest!2025)
+#   VOC_TEST_USER / VOC_TEST_PASS - Cognito test creds (user default: deployment-test; the password is required)
 #   RUN_SYNTHETIC=1               - also fire a synthetic_reviews generation run (SIDE EFFECTS:
 #                                   writes synthetic feedback + incurs Bedrock cost). Off by default.
 #
@@ -46,11 +46,16 @@ DEFAULT_API=$(aws cloudformation describe-stacks \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
   --output text 2>/dev/null)
 
-# Test credentials - should be created in Cognito for deployment testing
+# Test credentials - a Cognito user created for deployment testing
 # Create with: aws cognito-idp admin-create-user --user-pool-id <pool-id> --username deployment-test
+# and give it your own password. There is no default (OPS-4): a password in this public repo would
+# let anyone sign in to every deployment that followed it. Disable or delete the user after validating.
 DEPLOY_USER="${VOC_TEST_USER:-deployment-test}"
-# NOTE: Use single quotes for password to prevent bash history expansion of '!'
-DEPLOY_PASS="${VOC_TEST_PASS:-DeployTest!2025}"
+DEPLOY_PASS="${VOC_TEST_PASS:-}"
+if [ -z "$DEPLOY_PASS" ]; then
+  echo "❌ Set VOC_TEST_PASS to the test user's password, e.g.  read -rs VOC_TEST_PASS && export VOC_TEST_PASS"
+  exit 1
+fi
 
 # Allow override via command line arguments
 API="${1:-$DEFAULT_API}"

@@ -8,7 +8,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as path from 'path';
 import { NagSuppressions } from 'cdk-nag';
-import { loadPlugins, aggregateSecretsByPlugin, getEnabledPlugins, getPluginsWithIngestor, type PluginManifest } from '../plugin-loader';
+import { loadPlugins, aggregateSecretsByPlugin, getEnabledPlugins, getPluginsWithIngestor, secretConfigKeysByPlugin, type PluginManifest } from '../plugin-loader';
 import { serviceQuotasReadSuppressions } from '../utils/nag-suppressions';
 import { stackModelArns } from '../utils/model-allowlist';
 import { SOURCE_PLACEHOLDER } from '../utils/naming';
@@ -185,7 +185,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     // PATTERNS instead, as it hands WEBSCRAPER_FUNCTION_NAME to the scrapers API.
     // Only on a prefixed deployment, so the default template stays as it was
     // (VocStack.prefixOnlyEnv).
-    environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, PLUGIN_SECRET_DEFAULTS: JSON.stringify(pluginSecretDefaults), ENABLED_SOURCES: enabledSourcesEnv, ...ctx.prefixOnlyEnv({
+    environment: { SECRETS_ARN: secretsArn, ALLOWED_ORIGIN: allowedOrigin, POWERTOOLS_SERVICE_NAME: 'voc-integrations-api', LOG_LEVEL: 'INFO', DEPLOY_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID, DEPLOY_REGION: cdk.Aws.REGION, PLUGIN_SECRET_DEFAULTS: JSON.stringify(pluginSecretDefaults), PLUGIN_SECRET_KEYS: JSON.stringify(secretConfigKeysByPlugin(allPlugins)), ENABLED_SOURCES: enabledSourcesEnv, ...ctx.prefixOnlyEnv({
       INGESTOR_FUNCTION_NAME_PATTERN: ctx.uniqueNamePattern(`voc-ingestor-${SOURCE_PLACEHOLDER}`),
       INGEST_SCHEDULE_RULE_NAME_PATTERN: ctx.uniqueNamePattern(`voc-ingest-${SOURCE_PLACEHOLDER}-schedule`),
     }), AGGREGATES_TABLE: aggregatesTable.tableName },
@@ -255,7 +255,9 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // The async processor is invoked by its exact name (MANUAL_IMPORT_PROCESSOR_FUNCTION).
   const manualImportProcessorName = ctx.uniqueName('voc-manual-import-processor');
   manualImportRole.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [functionArnByName(ctx, manualImportProcessorName)] }));
-  rawDataBucket.grantReadWrite(manualImportRole);
+  // Write-only under raw/ (IAM-1): archives go to raw/<source>/, raw/manual_import/, raw/csv_upload/ and
+  // raw/json_upload/ (shared/ingest_archive.py, this handler). No read and no delete: only voc-retention deletes.
+  rawDataBucket.grantPut(manualImportRole, 'raw/*');
   // CSV/JSON/confirm apply the source's PII policy before archive + queue.
   manualImportRole.addToPolicy(piiDetectionStatement());
 

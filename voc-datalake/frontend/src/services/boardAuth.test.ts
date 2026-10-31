@@ -7,7 +7,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { PENDING_OTP_KEY, createBoardAuth } from './boardAuth'
 import { BoardAuthError } from './boardCognito'
 import type { BoardPoolConfig } from '../runtimeConfig'
-import { parsedJson } from '@test/jsonText'
+import { fakeJwt as scriptedJwt, refusal, scriptedCognito, targetsOf } from '@test/scriptedCognito'
+import type { Answer, Script } from '@test/scriptedCognito'
 
 const OTP_POOL: BoardPoolConfig = { userPoolId: 'us-east-1_board', clientId: 'boardclient', region: 'us-east-1', signIn: 'email_otp' }
 const CODE_POOL: BoardPoolConfig = { ...OTP_POOL, signIn: 'code' }
@@ -15,11 +16,7 @@ const NOW = 1_800_000_000_000
 const SHARE_ID = `shr_${'a'.repeat(32)}`
 const REVIEW_PATH = `/review/${SHARE_ID}`
 
-/** An unsigned JWT the library can decode; `exp` an hour after NOW. */
-function fakeJwt(claims: Record<string, unknown>): string {
-  const encode = (value: object) => btoa(JSON.stringify(value)).replaceAll('=', '').replaceAll('+', '-').replaceAll('/', '_')
-  return `${encode({ alg: 'none' })}.${encode({ exp: Math.floor(NOW / 1000) + 3600, iat: Math.floor(NOW / 1000), ...claims })}.sig`
-}
+const fakeJwt = (claims: Record<string, unknown>) => scriptedJwt(claims, NOW)
 
 function memoryStorage() {
   const items = new Map<string, string>()
@@ -31,9 +28,6 @@ function memoryStorage() {
     clear: () => { items.clear() },
   }
 }
-
-interface Answer { readonly status: number; readonly body: unknown }
-type Script = Partial<Record<string, Answer | Answer[]>>
 
 const NEW_ACCOUNT: Answer = { status: 200, body: { UserConfirmed: false, Session: 'signup-session' } }
 const NEW_ACCOUNT_NO_SESSION: Answer = { status: 200, body: { UserConfirmed: false } }
@@ -51,41 +45,12 @@ const TOKENS: Answer = {
 const CONFIRMED_WITH_SESSION: Answer = { status: 200, body: { Session: 'confirm-session' } }
 const EMPTY_OK: Answer = { status: 200, body: {} }
 
-function refusal(type: string, message = ''): Answer {
-  return { status: 400, body: { __type: type, message } }
-}
-
-function payloadOf(init: RequestInit | undefined): Record<string, unknown> {
-  const payload: unknown = parsedJson(init?.body)
-  return typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {}
-}
-
-/** The scripted answer for one call; an unscripted target answers 500. */
-function nextAnswer(entry: Answer | Answer[] | undefined): Answer {
-  const answer = Array.isArray(entry) ? entry.shift() : entry
-  return answer ?? { status: 500, body: {} }
-}
-
-/** A Cognito double answering each target from `script` (an array answers one per call). */
-function scriptedCognito(script: Script) {
-  const calls: Array<{ target: string; payload: Record<string, unknown> }> = []
-  const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-    const target = (new Headers(init?.headers).get('X-Amz-Target') ?? '').replace('AWSCognitoIdentityProviderService.', '')
-    calls.push({ target, payload: payloadOf(init) })
-    const answer = nextAnswer(script[target])
-    return Promise.resolve(new Response(JSON.stringify(answer.body), { status: answer.status }))
-  })
-  return { calls, fetchImpl }
-}
-
 function setup(script: Script, pool: BoardPoolConfig = OTP_POOL) {
   const storage = memoryStorage()
   const cognito = scriptedCognito(script)
   const auth = createBoardAuth({ pool, fetchImpl: cognito.fetchImpl, storage, now: () => NOW })
   return { auth, storage, ...cognito }
 }
-
-const targetsOf = (calls: ReadonlyArray<{ target: string }>) => calls.map((call) => call.target)
 
 async function failureOf(promise: Promise<unknown>): Promise<string> {
   try {

@@ -8,6 +8,7 @@
  * the analysis prompt. These tests fail if either half of the wiring is
  * removed again (e.g. in a conflict resolution on the selector block).
  */
+import { PROCESSOR_MAX_CONCURRENCY } from './processor-timing';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -512,6 +513,10 @@ describe('the feedback processor picks up new feedback within seconds (QA 2.13.0
 
   it('keeps per-record partial-batch failures', () => {
     expect(processorMapping().FunctionResponseTypes).toStrictEqual(['ReportBatchItemFailures']);
+  });
+
+  it('caps the processor at PROCESSOR_MAX_CONCURRENCY invocations, so a queued flood cannot take the account (EDGE-2)', () => {
+    expect(processorMapping().ScalingConfig).toStrictEqual({ MaximumConcurrency: PROCESSOR_MAX_CONCURRENCY });
   });
 
   it('tells the handler to enrich 5 records at a time', () => {

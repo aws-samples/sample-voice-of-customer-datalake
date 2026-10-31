@@ -24,6 +24,7 @@ import {
 } from '../utils/nag-suppressions';
 import type { CoreBuildContext } from './core-cdn';
 import { retainOnReplace } from '../utils/retain-on-replace';
+import { isDevDeployment } from '../utils/context';
 
 export interface CoreAuth {
   userPool: cognito.UserPool;
@@ -56,14 +57,12 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   // COGNITO AUTH
   // ============================================
 
-  // Build callback URLs
-  const callbackUrls = ['http://localhost:5173', 'http://localhost:5173/callback'];
-  const logoutUrls = ['http://localhost:5173'];
-  callbackUrls.push(`https://${frontendDomainName}`);
-  callbackUrls.push(`https://${frontendDomainName}/callback`);
-  logoutUrls.push(`https://${frontendDomainName}`);
-
+  // OAuth URLs: the deployed site, plus the Vite dev server only for a dev deployment
+  // (IAM-8: a production client accepts no redirect to the operator's machine).
   const signInUrl = `https://${frontendDomainName}`;
+  const origins = [...(isDevDeployment(stack.node) ? ['http://localhost:5173'] : []), signInUrl];
+  const callbackUrls = origins.flatMap((origin) => [origin, `${origin}/callback`]);
+  const logoutUrls = origins;
 
   // Custom Message Lambda Trigger
   const customMessageLambda = new lambda.Function(stack, 'CustomMessageLambda', {
@@ -101,6 +100,14 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
       requireSymbols: true,
     },
     accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+    // Opt-in passkeys (docs/deployment.md -> Passkeys): after sign-in the SPA offers to register one
+    // (StartWebAuthnRegistration), and Login can then sign in with it (USER_AUTH, WEB_AUTHN). A password
+    // stays the other first factor. Passkeys need the Essentials plan (the default for new pools; set here
+    // so an older Lite pool moves too). The relying party is the site the SPA is served from.
+    featurePlan: cognito.FeaturePlan.ESSENTIALS,
+    signInPolicy: { allowedFirstAuthFactors: { password: true, passkey: true } },
+    passkeyRelyingPartyId: frontendDomainName,
+    passkeyUserVerification: cognito.PasskeyUserVerification.REQUIRED,
     removalPolicy: ctx.dataProtection.removalPolicy,
     deletionProtection: ctx.dataProtection.deletionProtection,
     userVerification: {
@@ -143,7 +150,8 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   // User Pool Client
   const userPoolClient = userPool.addClient('VocWebClient', {
     userPoolClientName: ctx.uniqueName('voc-web-client'),
-    authFlows: { userPassword: true, userSrp: true },
+    // `user` = the choice-based USER_AUTH flow, which passkey sign-in uses.
+    authFlows: { userPassword: true, userSrp: true, user: true },
     oAuth: {
       flows: {
         authorizationCodeGrant: true,

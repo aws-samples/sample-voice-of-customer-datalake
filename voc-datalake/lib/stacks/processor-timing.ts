@@ -20,3 +20,13 @@ export const PROCESSOR_BATCHING_WINDOW = cdk.Duration.seconds(5);
 export const PROCESSING_QUEUE_VISIBILITY_TIMEOUT = cdk.Duration.seconds(
   6 * PROCESSOR_TIMEOUT.toSeconds() + PROCESSOR_BATCHING_WINDOW.toSeconds(),
 );
+
+/**
+ * At most this many processor invocations run at once (the SQS event source's `maxConcurrency`,
+ * WA SEC06 / Serverless Lens, finding EDGE-2). Every queued review costs Comprehend, Translate and a
+ * Bedrock call, and anonymous `POST /feedback-forms/{id}/submit` can fill the queue at its 20 rps
+ * throttle: without a ceiling a backlog would scale the processor into the account's whole Lambda
+ * concurrency and starve the API. 20 × 10 records × ENRICHMENT_CONCURRENCY keeps a normal day's
+ * ingestion (and a 25k-review load test) draining in minutes. Free: it reserves nothing.
+ */
+export const PROCESSOR_MAX_CONCURRENCY = 20;
