@@ -302,5 +302,43 @@
     "insertPersona": "Persona erwähnen",
     "insertDocument": "Dokument markieren",
     "allCapped": "@all fragt die ersten {{max, number}} von {{total, number}} Personas: {{names}}."
+  },
+  "scope": {
+    "title": "Feedback-Umfang",
+    "allFeedback": "Gesamtes Feedback",
+    "activeFilters_one": "{{count}} Filter",
+    "activeFilters_other": "{{count}} Filter",
+    "count_one": "{{formatted}} Bewertung",
+    "count_other": "{{formatted}} Bewertungen",
+    "countPartial_one": "{{formatted}}+ Bewertung",
+    "countPartial_other": "{{formatted}}+ Bewertungen",
+    "counting": "Bewertungen werden gezählt…",
+    "countUnavailable": "Anzahl der Bewertungen nicht verfügbar",
+    "overCap": "Dieser Umfang umfasst mehr als {{max}} Bewertungen. Der Assistent liest pro Suche höchstens {{max}}, daher bleibt ein Teil des Feedbacks unberücksichtigt. Grenzen Sie die Filter ein, um eine vollständige Antwort zu erhalten.",
+    "clear": "Filter zurücksetzen",
+    "timeRange": "Zeitraum",
+    "source": "Quelle",
+    "anySource": "Alle Quellen",
+    "sentiment": "Stimmung",
+    "anySentiment": "Jede Stimmung",
+    "sentiments": {
+      "positive": "Positiv",
+      "neutral": "Neutral",
+      "negative": "Negativ",
+      "mixed": "Gemischt"
+    },
+    "rating": "Bewertung",
+    "anyRating": "Jede Bewertung",
+    "ratingAtLeast_one": "Mindestens {{count}} Stern",
+    "ratingAtLeast_other": "Mindestens {{count}} Sterne",
+    "ratingAtMost_one": "Höchstens {{count}} Stern",
+    "ratingAtMost_other": "Höchstens {{count}} Sterne",
+    "channel": "Kanal",
+    "anyChannel": "Alle Kanäle",
+    "tag": "Tag",
+    "anyTag": "Alle Tags",
+    "urgentOnly": "Nur dringende",
+    "categories": "Kategorien",
+    "noCategories": "Keine Kategorien in diesem Zeitraum."
   }
 }

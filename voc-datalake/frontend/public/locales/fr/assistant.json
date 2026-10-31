@@ -302,5 +302,43 @@
     "insertPersona": "Mentionner un persona",
     "insertDocument": "Étiqueter un document",
     "allCapped": "@all interroge les {{max, number}} premiers des {{total, number}} personas : {{names}}."
+  },
+  "scope": {
+    "title": "Périmètre des avis",
+    "allFeedback": "Tous les avis",
+    "activeFilters_one": "{{count}} filtre",
+    "activeFilters_other": "{{count}} filtres",
+    "count_one": "{{formatted}} avis",
+    "count_other": "{{formatted}} avis",
+    "countPartial_one": "{{formatted}}+ avis",
+    "countPartial_other": "{{formatted}}+ avis",
+    "counting": "Comptage des avis…",
+    "countUnavailable": "Nombre d’avis indisponible",
+    "overCap": "Ce périmètre compte plus de {{max}} avis. L’assistant en lit au plus {{max}} par recherche, une partie des retours est donc laissée de côté. Affinez les filtres pour obtenir une réponse complète.",
+    "clear": "Effacer les filtres",
+    "timeRange": "Période",
+    "source": "Source",
+    "anySource": "Toutes les sources",
+    "sentiment": "Sentiment",
+    "anySentiment": "Tous les sentiments",
+    "sentiments": {
+      "positive": "Positif",
+      "neutral": "Neutre",
+      "negative": "Négatif",
+      "mixed": "Mitigé"
+    },
+    "rating": "Note",
+    "anyRating": "Toutes les notes",
+    "ratingAtLeast_one": "Au moins {{count}} étoile",
+    "ratingAtLeast_other": "Au moins {{count}} étoiles",
+    "ratingAtMost_one": "Au plus {{count}} étoile",
+    "ratingAtMost_other": "Au plus {{count}} étoiles",
+    "channel": "Canal",
+    "anyChannel": "Tous les canaux",
+    "tag": "Étiquette",
+    "anyTag": "Toutes les étiquettes",
+    "urgentOnly": "Urgents uniquement",
+    "categories": "Catégories",
+    "noCategories": "Aucune catégorie sur cette période."
   }
 }
