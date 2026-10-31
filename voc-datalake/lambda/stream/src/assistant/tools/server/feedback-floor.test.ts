@@ -97,6 +97,18 @@ describe('admitsFloor', () => {
     expect(admitsFloor(floorFromFilters({ subcategory: 'early' }), ITEM)).toBe(false);
   });
 
+  it('matches the stored usefulness band, any of a comma list', () => {
+    const rated = { ...ITEM, usefulness: 'high' };
+    expect(admitsFloor(floorFromFilters({ usefulness: 'high,medium' }), rated)).toBe(true);
+    expect(admitsFloor(floorFromFilters({ usefulness: 'low' }), rated)).toBe(false);
+  });
+
+  it('admits a review without a band only to `unrated`', () => {
+    expect(admitsFloor(floorFromFilters({ usefulness: 'high' }), ITEM)).toBe(false);
+    expect(admitsFloor(floorFromFilters({ usefulness: 'unrated' }), ITEM)).toBe(true);
+    expect(admitsFloor(floorFromFilters({ usefulness: 'unrated' }), { ...ITEM, usefulness: 'high' })).toBe(false);
+  });
+
   it('matches tags and dims ignoring case, ~unset for a missing value', () => {
     expect(admitsFloor(floorFromFilters({ tag: 'vip', dims: 'product:app' }), ITEM)).toBe(true);
     expect(admitsFloor(floorFromFilters({ dims: 'module:~unset' }), ITEM)).toBe(true);

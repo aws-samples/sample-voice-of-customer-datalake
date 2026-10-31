@@ -3,14 +3,13 @@
  * the current time window.
  *
  * Read from `GET /metrics/sentiment`, the one existing count route that takes every filter the
- * panel offers (source, one category, the item filters: channel / tag / dims / rating / urgent)
- * and answers per sentiment. A sentiment filter picks its bucket; several categories are one call
- * each, summed (a review has one category, so the sets do not overlap). `is_partial` on any call
- * makes the number a lower bound.
+ * panel offers (source, categories, the item filters: channel / tag / dims / rating / urgent) and
+ * answers per sentiment. Several categories are ONE call (`category=a,b` is any of them, 5.62), and
+ * a sentiment filter picks its bucket. `is_partial` makes the number a lower bound.
  *
  * @module pages/Chat/useScopeCount
  */
-import { keepPreviousData, useQueries } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { api, getDateRangeParams } from '../../api/client'
 import type { ItemFilterParams, SentimentBreakdown } from '../../api/types'
 import { useConfigStore } from '../../store/configStore'
@@ -59,19 +58,18 @@ export function useScopeCount(filters: ScopeFilters, enabled: boolean): ScopeCou
   const { timeRange, customDays, dateBasis } = useConfigStore()
   const range = getDateRangeParams(timeRange, customDays, dateBasis)
   const categories = splitList(filters.category)
+  const category = categories.length > 0 ? categories.join(',') : undefined
   const itemFilters = itemFiltersOf(filters)
-  const queries = useQueries({
-    queries: (categories.length > 0 ? categories : [undefined]).map((category) => ({
-      queryKey: ['chat-scope-count', range, filters.source, category, itemFilters],
-      queryFn: () => api.getSentiment(range, filters.source, itemFilters, category),
-      enabled,
-      placeholderData: keepPreviousData,
-    })),
+  const query = useQuery({
+    queryKey: ['chat-scope-count', range, filters.source, category, itemFilters],
+    queryFn: () => api.getSentiment(range, filters.source, itemFilters, category),
+    enabled,
+    placeholderData: keepPreviousData,
   })
   return {
-    total: queries.reduce((sum, query) => sum + countOf(query.data, filters.sentiment), 0),
-    isPartial: queries.some((query) => query.data?.is_partial === true),
-    isLoading: queries.some((query) => query.isLoading),
-    isError: queries.some((query) => query.isError),
+    total: countOf(query.data, filters.sentiment),
+    isPartial: query.data?.is_partial === true,
+    isLoading: query.isLoading,
+    isError: query.isError,
   }
 }

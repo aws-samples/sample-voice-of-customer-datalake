@@ -25,8 +25,9 @@ The scope belongs to one conversation and lives in the browser tab's memory: a n
 or a reload, starts with no filters. It is sent with every turn of that conversation.
 
 The count is read from `GET /metrics/sentiment`, the existing count route that takes every filter
-the panel offers. A sentiment filter reads its bucket; several categories are one call each, summed
-(a review has one category). No new API route was added.
+the panel offers. A sentiment filter reads its bucket, and several categories are one call (`category=a,b` is any
+of them). No new API route was added. A Usefulness filter set on Categories or Problem Analysis is part
+of the floor (`unrated` = a review without a band); the panel itself has no Usefulness control yet.
 
 ## The wire contract
 
@@ -39,7 +40,7 @@ Analysis, `page.filters` holds the page's URL filters. A run from `/chat` also c
 ```
 
 - `filters` uses the same keys and spelling as `page.filters` (`PAGE_FILTER_KEYS`: `q`, `category`,
-  `subcategory`, `source`, `sentiment`, `rating`, `rating_dir`, `urgent`, `channel`, `dims`, `tag`;
+  `subcategory`, `source`, `sentiment`, `usefulness`, `rating`, `rating_dir`, `urgent`, `channel`, `dims`, `tag`;
   each value a string of at most 200 characters). A comma list (`category=a,b`) means any of the
   values, as on the Categories page. `dims` is `key:value,…` with `key:a|b` for either value and
   `~unset` for no value.

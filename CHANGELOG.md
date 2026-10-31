@@ -72,7 +72,8 @@ Ideas from @aws-bryan's PR #429 rebuilt on the current platform: model agreement
 ### Changed
 
 - The Claude model agreements (EULA + Marketplace subscription per allowlisted model) are now created by
-  `VocCoreStack` on every deploy, in the app's region, best effort: a refused agreement, a model not offered in
+  `VocCoreStack` in the app's region, best effort, on the first deploy that includes them (a later deploy does not
+  retry one): a refused agreement, a model not offered in
   the region, throttling or a dropped connection is logged in the agreement Lambda's log group and reported, and
   never fails or rolls back the deploy. They used to be created by the us-east-1 `VocWebSearchStack`, and only
   alongside the use-case form. With web search off (`-c enableWebSearch=false`) and no form, no stack deploys to
@@ -86,8 +87,8 @@ Ideas from @aws-bryan's PR #429 rebuilt on the current platform: model agreement
 - The AI assistant can no longer read past the filters on screen. The Categories and Problem Analysis filters and
   the AI Chat panel's scope are a floor for `search_feedback`, `list_feedback`, `get_urgent_feedback`,
   `get_entities` and `get_metrics`: the assistant can narrow within them, an argument outside them returns
-  nothing, and a filter a tool cannot apply makes it refuse rather than widen. Without filters the assistant
-  reads as before ([docs/assistant-chat-scope.md](docs/assistant-chat-scope.md)). (ported from #429 by @aws-bryan)
+  nothing, and a filter a tool cannot apply makes it refuse rather than widen. A Usefulness filter is part of the
+  floor too (`unrated` = reviews without a band). Without filters the assistant reads as before ([docs/assistant-chat-scope.md](docs/assistant-chat-scope.md)). (ported from #429 by @aws-bryan)
 - Categories: choosing several categories, sources or sentiments (the sentiment chips now multi-select) and a
   subcategory filters on the server, so the list's counts and pages are exact. Before, extra categories and the
   subcategory were filtered in the browser over the loaded page only. Problem Analysis takes several sources
@@ -105,6 +106,10 @@ Ideas from @aws-bryan's PR #429 rebuilt on the current platform: model agreement
 
 ### Upgrade notes
 
+- An unknown `sentiment` value on the read routes (`/feedback`, `/metrics/*`, `/feedback/entities`,
+  `/feedback/problems`) now answers 400 instead of an empty result, like the other facets. A saved link or an
+  API caller sending a value other than `positive`, `neutral`, `negative` or `mixed` (for example `sentiment=all`)
+  must drop the parameter to mean every sentiment.
 - On the next deploy, `VocCoreStack` adds one agreement custom resource per allowlisted Claude model; the
   agreement Lambda it already had for the image model runs them. Models that already have an agreement are
   reported `ALREADY_AVAILABLE`. `VocWebSearchStack` drops its agreement resources and their Lambda and provider;

@@ -115,7 +115,8 @@ Two separate things stand between a new AWS account and Claude on Amazon Bedrock
    organization's management account). It states who you are, so you file it
    yourself. The deploy does **not** file it unless you pass your own details.
 2. **A model agreement per model** (the EULA and Marketplace subscription). The
-   deploy creates these for you, on every deploy, in the app's region.
+   deploy creates these for you in the app's region, once: on the first deploy that
+   includes them (a later deploy does not retry a refused one; see below).
 
 ### File the use-case form in the Bedrock console (recommended)
 

@@ -24,6 +24,8 @@ export interface FloorArgs {
   category?: string;
   subcategory?: string;
   sentiment?: string;
+  /** Never a model argument today; named so every floor field has a slot. */
+  usefulness?: string;
   channel?: string;
   tag?: string;
   /** search_feedback's urgency level; the floor's urgent admits only `high`. */
@@ -89,6 +91,7 @@ export interface FloorQuery {
   source?: string;
   category?: string;
   sentiment?: string;
+  usefulness?: string;
   channel?: string;
   tag?: string;
   dims?: string;
@@ -101,8 +104,8 @@ export type FloorQueryOutcome =
   | { readonly kind: 'query'; readonly query: FloorQuery }
   | { readonly kind: 'empty'; readonly content: string };
 
-type QueryListField = 'source' | 'category' | 'sentiment' | 'channel' | 'tag';
-const QUERY_LIST_FIELDS: readonly QueryListField[] = ['source', 'category', 'sentiment', 'channel', 'tag'];
+type QueryListField = 'source' | 'category' | 'sentiment' | 'usefulness' | 'channel' | 'tag';
+const QUERY_LIST_FIELDS: readonly QueryListField[] = ['source', 'category', 'sentiment', 'usefulness', 'channel', 'tag'];
 
 function unsupported(tool: string, field: string): AssistantToolError {
   return new AssistantToolError('invalid_input', `The filters the user set include ${field}, which ${tool} cannot apply, `
