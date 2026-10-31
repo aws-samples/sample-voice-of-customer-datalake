@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 from botocore.exceptions import ClientError
 from engagement_fixtures import (
+    ADMIN,
     API_HOST,
     OWNER,
     PRIVATE_PROJECT,
@@ -259,9 +260,57 @@ def test_the_cap_stops_sending_mid_job(world, lambda_context):
     detail = ok(lambda_context, 'GET', f'/participants/asks/{ask["ask_id"]}')
     assert detail['ask']['counts']['sent'] == 2
     assert [r['error'] for r in detail['recipients'] if r['status'] == 'failed'] == ['daily_cap']
-    today = next(row for row in world.participants.scan()['Items'] if row['pk'].startswith('SENDCOUNT#'))
+    today = next(row for row in world.participants.scan()['Items']
+                 if row['pk'].startswith('SENDCOUNT#') and row['sk'] == 'COUNT')
     assert today['count'] == 2
     assert today['ttl'] > 0
+
+
+# ── The per-sender daily cap (BE-4) ───────────────────────────────────────────
+
+@pytest.fixture
+def sender_cap_of_two(monkeypatch):
+    """The 50-a-day sender cap, lowered to 2 where the route and the send job read it."""
+    from shared import participants_ask_routes, participants_asks
+    monkeypatch.setattr(participants_asks, 'PER_SENDER_DAILY_CAP', 2)
+    monkeypatch.setattr(participants_ask_routes, 'PER_SENDER_DAILY_CAP', 2)
+
+
+def _send_counts(world):
+    return {row['sk']: int(row['count']) for row in world.participants.scan()['Items'] if row['pk'].startswith('SENDCOUNT#')}
+
+
+@pytest.mark.usefixtures('world', 'sender_cap_of_two')
+def test_the_sender_cap_is_checked_before_queueing(lambda_context):
+    ids = _people(lambda_context, 'a@example.com', 'b@example.com', 'c@example.com')
+    assert _ask(lambda_context, 429, person_ids=ids)['error'] == 'sender_daily_cap'
+
+
+def test_the_sender_cap_is_fifty_a_day():
+    from shared.participants_asks import PER_SENDER_DAILY_CAP
+    assert PER_SENDER_DAILY_CAP == 50
+
+
+@pytest.mark.usefixtures('sender_cap_of_two')
+def test_the_sender_cap_stops_sending_mid_job_and_counts_nothing_it_refused(world, lambda_context):
+    ids = _people(lambda_context, 'a@example.com', 'b@example.com')
+    first = _ask(lambda_context, person_ids=ids)['ask']
+    (third,) = _people(lambda_context, 'c@example.com')
+    second = _ask(lambda_context, person_ids=[third])['ask']
+    run_send_job(lambda_context, world)
+    run_send_job(lambda_context, world)
+    errors = [r['error'] for r in ok(lambda_context, 'GET', f'/participants/asks/{second["ask_id"]}')['recipients']]
+    assert ok(lambda_context, 'GET', f'/participants/asks/{first["ask_id"]}')['ask']['counts']['sent'] == 2
+    assert errors == ['sender_daily_cap']
+    assert _send_counts(world) == {'COUNT': 2, f'SENDER#{ADMIN["sub"]}': 2}
+
+
+def test_a_deployment_cap_refusal_gives_the_sender_claim_back(world, lambda_context):
+    ids = _people(lambda_context, 'a@example.com', 'b@example.com', 'c@example.com')
+    _ask(lambda_context, person_ids=ids)
+    ok(lambda_context, 'PUT', '/participants/settings', body={'daily_send_cap': 2})
+    run_send_job(lambda_context, world)
+    assert _send_counts(world) == {'COUNT': 2, f'SENDER#{ADMIN["sub"]}': 2}
 
 
 def test_the_job_continues_with_a_cursor(world, lambda_context, monkeypatch):

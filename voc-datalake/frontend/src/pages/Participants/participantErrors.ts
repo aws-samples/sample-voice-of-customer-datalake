@@ -22,6 +22,7 @@ function reasonCodes(error: unknown): string[] {
 
 function reasonSentence(codes: readonly string[], t: Translate): string | null {
   if (codes.includes('email_not_configured')) return t('participants:errors.emailNotConfigured')
+  if (codes.includes('sender_daily_cap')) return t('participants:errors.senderDailyCap')
   if (codes.includes('daily_cap')) return t('participants:errors.dailyCap')
   if (codes.includes('no_recipients')) return t('participants:errors.noRecipients')
   if (codes.includes('too_many_recipients')) return t('participants:errors.tooManyRecipients')

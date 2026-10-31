@@ -195,7 +195,8 @@
     "tooManyRecipients": "Prośba może trafić do maksymalnie 500 osób.",
     "externalNotAllowed": "Można dodawać tylko adresy w domenach firmy.",
     "invalidEmail": "Wpisz prawidłowy adres e-mail.",
-    "unsubscribedPerson": "Ta osoba wypisała się z wiadomości."
+    "unsubscribedPerson": "Ta osoba wypisała się z wiadomości.",
+    "senderDailyCap": "Możesz wysłać do 50 wiadomości e-mail dziennie. Wyślij do mniejszej liczby osób lub spróbuj ponownie jutro."
   },
   "settings": {
     "title": "E-mail do uczestników",
