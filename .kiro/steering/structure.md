@@ -521,14 +521,13 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | POST | `/projects/{id}/personas/{persona_id}/promote` | Copy a persona into the company library (edit + admin) → 201 `{success, persona}` |
 | GET | `/projects/{id}/personas/copy-sources` | The company library + the OTHER projects the caller owns or is a member of, with personas (view) |
 | POST | `/projects/{id}/personas/copy` | Copy `{source: {scope: company} \| {scope: project, project_id}, persona_ids: [1–20]}` in (edit) → 201 `{success, personas}`; notes never copied, avatars copied |
+| PUT | `/projects/prioritization/rows/{row_id}/lineage-ack` | "Keep both versions": mark / unmark a row's Crosses-generations label as intentional `{project_id, acknowledged, document_ids}` (edit on the row's project; 409 unless `document_ids` is the row's stored set); stored on the row as `lineage_ack` (aggregates `PRIORITIZATION`/`ROW#…`), lapses when the set changes — docs/prioritization.md |
 
 ### Company personas (`shared/company_personas_routes.py`, included by projects_handler.py) — docs/project-workspace.md → Company personas
 Reads (`GET /company-personas` → `{personas, can_edit}`, `GET /company-personas/jobs`) for every signed-in user; admin writes:
 `POST …/generate` (always additive), `POST …/import`, `GET …/jobs/{job_id}`, `PUT/DELETE …/{persona_id}`, `POST …/{persona_id}/notes`,
 `POST …/{persona_id}/regenerate-avatar` (202). Stored in the reserved container `PROJECT#company_personas` (no `gsi1pk`);
 every `/projects/company_personas/...` route is 404, admins included. The assistant never sees company personas.
-
-| PUT | `/projects/prioritization/rows/{row_id}/lineage-ack` | "Keep both versions": mark / unmark a row's Crosses-generations label as intentional `{project_id, acknowledged, document_ids}` (edit on the row's project; 409 unless `document_ids` is the row's stored set); stored on the row as `lineage_ack` (aggregates `PRIORITIZATION`/`ROW#…`), lapses when the set changes — docs/prioritization.md |
 
 ### Document comments and review links (`shared/document_review_routes.py`, included by projects_handler.py) — docs/document-review.md
 | Method | Path | Description |

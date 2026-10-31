@@ -17,6 +17,21 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.60.02] - 2026-10-31
+
+Review follow-ups to company personas (5.60.00).
+
+### Fixed
+- Project → Personas: Promote to company and Copy from… encode the project id in their request paths, like every
+  other id (`POST /projects/{id}/personas/{persona_id}/promote`, `GET …/copy-sources`, `POST …/copy`), and Promote
+  refuses before any request outside a project.
+- Company → Personas refetches the library once per finished job instead of on every jobs poll while a job is
+  recent.
+
+### Changed
+- `.kiro/steering/structure.md`: the Prioritization lineage-ack route is back in its place in the projects route
+  table, and the persona copy / promote routes sit beside the other persona routes.
+
 ## [5.60.01] - 2026-10-31
 
 Every dependency, Lambda runtime and layer moves to its newest release within its current major, starting from

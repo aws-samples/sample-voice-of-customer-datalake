@@ -59,7 +59,7 @@ export default function PersonaDetailView({
   const avatar = useRegenerateAvatar(scope, persona.persona_id)
   // Promote to company: an admin who can edit this PROJECT (never offered inside the library).
   const canPromote = useIsAdmin() && canEdit && scope.kind === 'project'
-  const promote = usePromotePersona({ projectId: scope.kind === 'project' ? scope.projectId : '', personaId: persona.persona_id })
+  const promote = usePromotePersona({ projectId: scope.kind === 'project' ? scope.projectId : null, personaId: persona.persona_id })
   const shown = avatar.avatarUrl === undefined ? persona : { ...persona, avatar_url: avatar.avatarUrl }
   return (
     <div className="h-full overflow-y-auto">
