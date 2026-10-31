@@ -15,9 +15,12 @@ function discardData(): void {
 
 /**
  * `queryClient.query(options)` with the failure dropped: the screen's own query retries and reports it.
- * Generic like `query` itself, so a `queryFn` whose data does not fit the `queryKey`'s tag still fails to compile.
+ * Generic exactly like `query()` (same type parameters, same options type), so a call site is typed as strictly
+ * as a direct `query()` call would be.
  */
-export function prefetch<TQueryFnData, TError = DefaultError, TData = TQueryFnData, TQueryKey extends QueryKey = QueryKey>(
+export function prefetch<
+  TQueryFnData, TError = DefaultError, TData = TQueryFnData, TQueryKey extends QueryKey = QueryKey,
+>(
   client: QueryClient,
   options: QueryExecuteOptions<TQueryFnData, TError, TData, TQueryFnData, TQueryKey>,
 ): Promise<void> {

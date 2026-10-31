@@ -86,7 +86,7 @@ describe('the signing layer (cryptography)', () => {
 // processor (reader), so the two layers must install the SAME pydantic: a floor in one could resolve to a newer
 // release than the other's pin, and the two sides would validate one message differently (5.60.01).
 describe('pydantic is one exact version in both layers that run the ingest schemas', () => {
-  const pins = (dir: string): string[] => requirements(dir).filter((line) => /^pydantic\b/.test(line));
+  const pins = (dir: string): string[] => requirements(dir).filter((line) => /^pydantic(\[|[=<>~!]|$)/.test(line));
 
   it('pins pydantic exactly, to the same version, in the ingestion and processing layers', () => {
     const ingestion = pins('lambda/layers/ingestion-deps');
