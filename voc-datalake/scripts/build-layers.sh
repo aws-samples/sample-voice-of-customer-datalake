@@ -13,7 +13,10 @@
 # SHA-256 of everything that determines the build — the layer's
 # requirements*.txt, the install recipe below, the build image (Python
 # version) and the platform. Same hash and a built python/ dir → the layer is
-# skipped with one log line. A missing or unreadable stamp rebuilds. Force a
+# skipped with one log line. A missing or unreadable stamp rebuilds, and so
+# does a stamp older than 7 days (LAYER_STAMP_MAX_AGE_DAYS): a requirements
+# line without an exact pin (`>=`) would otherwise keep the version it
+# resolved to on the first build forever, missing every later fix. Force a
 # full rebuild with either of:
 #   FORCE_LAYER_BUILD=1 ./scripts/build-layers.sh
 #   ./scripts/build-layers.sh --force
@@ -31,6 +34,11 @@ LAYERS_DIR="${LAYERS_DIR:-$PROJECT_ROOT/lambda/layers}"
 STAMP_NAME=".build-stamp"
 # Bump to invalidate every stamp when the stamp format itself changes.
 STAMP_FORMAT="1"
+# A stamp older than this rebuilds anyway, so unpinned dependencies are re-resolved at least weekly.
+STAMP_MAX_AGE_DAYS="${LAYER_STAMP_MAX_AGE_DAYS:-7}"
+case "$STAMP_MAX_AGE_DAYS" in
+  ''|*[!0-9]*) echo "LAYER_STAMP_MAX_AGE_DAYS must be a whole number of days" >&2; exit 2 ;;
+esac
 
 FORCE="${FORCE_LAYER_BUILD:-0}"
 for arg in "$@"; do
@@ -106,12 +114,22 @@ layer_build_hash() {
   } | sha256_stdin
 }
 
-# True when the layer was built from exactly this hash and its output is there.
+# True when the stamp was written more than STAMP_MAX_AGE_DAYS ago (find -mmin: GNU and BSD).
+stamp_is_expired() {
+  local stamp="$1"
+  [ -n "$(find "$stamp" -mmin +$((STAMP_MAX_AGE_DAYS * 1440)) 2>/dev/null)" ]
+}
+
+# True when the layer was built from exactly this hash, recently enough, and its output is there.
 layer_is_current() {
   local layer_dir="$1" want="$2" have
   [ "$FORCE" = "1" ] && return 1
   [ -d "$layer_dir/python" ] || return 1
   [ -f "$layer_dir/$STAMP_NAME" ] || return 1
+  if stamp_is_expired "$layer_dir/$STAMP_NAME"; then
+    echo "~ $(basename "$layer_dir") layer stamp is older than $STAMP_MAX_AGE_DAYS days, rebuilding"
+    return 1
+  fi
   have="$(head -n 1 "$layer_dir/$STAMP_NAME" 2>/dev/null || true)"
   [ "$have" = "$want" ]
 }

@@ -303,7 +303,10 @@ Two ways a deploy avoids redoing work:
   (`lambda/layers/<layer>/.build-stamp`, gitignored) holding a SHA-256 of the
   layer's `requirements*.txt`, the install recipe, the build image and the
   platform. When the hash matches and the layer's `python/` dir exists, the layer
-  is skipped with one log line. A missing or unreadable stamp rebuilds it.
+  is skipped with one log line. A missing or unreadable stamp rebuilds it, and so
+  does a stamp older than 7 days (`LAYER_STAMP_MAX_AGE_DAYS=<days>` changes the
+  limit): a requirement without an exact pin (`>=`) is re-resolved at least once a
+  week instead of keeping the version of the first build.
   `FORCE_LAYER_BUILD=1 npm run build:layers` (or `build-layers.sh --force`)
   rebuilds every layer; do that after pulling a new build image, because the
   `:latest` tag can move without the hash changing.
