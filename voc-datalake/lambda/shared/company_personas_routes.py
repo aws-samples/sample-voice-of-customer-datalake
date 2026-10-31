@@ -96,13 +96,14 @@ def _writable_library() -> None:
     ensure_company_personas_meta(projects_table())
 
 
-#: Storage keys never returned by the library read.
-STORAGE_KEYS = frozenset({'pk', 'sk', 'gsi1pk', 'gsi1sk'})
+def _is_storage_key(field: str) -> bool:
+    """The table key and index key attributes (``pk``, ``sk``, ``gsi*``): never returned by the library read."""
+    return field in ('pk', 'sk') or field.startswith('gsi')
 
 
 def public_persona(persona: dict, *, admin: bool) -> dict:
     """A library persona as the API returns it: no storage keys; who copied it only for admins."""
-    shown = {key: value for key, value in persona.items() if key not in STORAGE_KEYS}
+    shown = {key: value for key, value in persona.items() if not _is_storage_key(key)}
     provenance = shown.get('copied_from')
     if not admin and isinstance(provenance, dict):
         shown['copied_from'] = without_copier(provenance)
