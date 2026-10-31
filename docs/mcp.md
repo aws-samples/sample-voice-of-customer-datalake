@@ -271,6 +271,19 @@ an optional project pin (the person must be able to view it). Cognito is asked f
 consented scopes; per request the grant's scope is narrowed again by the token's
 (`write` only when both say so).
 
+**No app session for an MCP client.** The MCP app clients are allowed ONLY the two MCP scopes (no
+`openid`, `email` or `profile`) and no SRP, password or custom auth flow (hosted-UI authorization
+code + refresh only), so Cognito issues them no ID token; `openid` in a client's request is accepted
+and dropped, discovery and registration no longer advertise it, and the token facade never passes an
+`id_token` on in any case. The access token still carries `username` (Cognito sets it without
+`openid`); the person's groups are read from Cognito per request, never from the token. As defence in
+depth, every REST API Lambda and the assistant stream refuse, with a 401, a token issued to any app
+client other than the SPA's web client and the board pool's client (`APP_CLIENT_IDS`, set on every
+VocApiStack function; `shared/app_clients.py`, `lambda/stream/src/assistant/runtime/app-client.ts`):
+API Gateway's Cognito authorizer accepts a token of any client of the pool, so without it an MCP
+client's token would act on every REST route with the person's full rights, admin included.
+`/mcp/global` keeps its own verification (below).
+
 ### How a sign-in works
 
 | Step | Route (all under the `/v1` stage) | What happens |
@@ -280,10 +293,10 @@ consented scopes; per request the grant's scope is narrowed again by the token's
 | 3 | `GET /.well-known/oauth-authorization-server`, `/.well-known/openid-configuration` | RFC 8414 metadata of the facade: `code_challenge_methods_supported: ["S256"]`, endpoints below, Cognito's `jwks_uri` |
 | 4 | `POST /oauth/register` | DCR facade: stores nothing, answers the PRE-registered public client the redirect URIs select (loopback `/oauth/callback` = Kiro; `/callback` = Cursor when `client_name` says so, else Claude Code; an exact configured web callback = Cursor or web). Unknown web URIs are dropped, a confidential client or other grant types refused, refusals logged with the public metadata |
 | 5 | `GET /oauth/authorize?…` | Checks client + redirect (else a plain 400, never a redirect), other faults go back to the client; then 302 to the SPA `https://<frontend>/oauth/authorize?<same query>` |
-| 6 | SPA consent (`GET`/`POST /connect/oauth/consent`, Cognito) | The person approves: the grant is stored (replacing an earlier one of this person and client, which ends its tokens) with a 10-minute window for ONE new sign-in; a loopback redirect gets a single-use relay row; the answer is Cognito's `/oauth2/authorize` with PKCE and state preserved |
+| 6 | SPA consent (`GET`/`POST /connect/oauth/consent`, Cognito) | The person approves: the grant is stored (replacing an earlier one of this person and client, which ends its tokens) with a 10-minute window for ONE new sign-in, bound to this authorize request (the SHA-256 of its `code_challenge` is stored on the grant); a loopback redirect gets a single-use relay row; the answer is Cognito's `/oauth2/authorize` with PKCE and state preserved |
 | 7 | Cognito hosted sign-in | The person signs in again (the SPA signs in with SRP, so there is no hosted-UI session) |
 | 8 | `GET /oauth/callback?code&state` | Loopback relay: consumes the relay row (state = 256-bit id, 10 min, single use), records which client and loopback URI got the code (sha256 of the code only), 302 to the client's own loopback URI, any port 1024–65535 (RFC 8252 §7.3) |
-| 9 | `POST /oauth/token` | Forwards to Cognito (`redirect_uri` put back to the relay URL after checking the code's client and loopback URI). On success it records the token's `origin_jti` (its refresh chain) on the grant, only inside the consent window; a refresh must come from a recorded chain of an active grant. Any refusal revokes the refresh token at Cognito and answers `invalid_grant` |
+| 9 | `POST /oauth/token` | Forwards to Cognito (`redirect_uri` put back to the relay URL after checking the code's client and loopback URI). On success it records the token's `origin_jti` (its refresh chain) on the grant, only inside the consent window and only when the `code_verifier` S256-matches the consented `code_challenge` (another authorization started meanwhile cannot take the consent over); a refresh must come from a recorded chain of an active grant. Any refusal revokes the refresh token at Cognito and answers `invalid_grant` |
 | 10 | `POST /mcp/global` with `Bearer <access token>` | Verified as below, then the token path's rules |
 
 `POST /oauth/revoke` forwards to Cognito's `/oauth2/revoke`. Every facade answer is
