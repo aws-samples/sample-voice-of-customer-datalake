@@ -96,6 +96,18 @@ class ServiceError(ApiError):
     status_code = 500
 
 
+class AuthenticationError(ApiError):
+    """Raised when the presented credential is not one this API accepts.
+
+    Examples:
+        - A Cognito token issued to an app client other than the SPA's own
+          (an MCP OAuth client, ``shared.app_clients``)
+
+    HTTP Status: 401 Unauthorized
+    """
+    status_code = 401
+
+
 class AuthorizationError(ApiError):
     """Raised when user lacks permission for an action.
 
