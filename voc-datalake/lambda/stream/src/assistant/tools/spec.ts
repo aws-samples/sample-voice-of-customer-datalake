@@ -31,8 +31,11 @@ export function toolSpec(
   };
 }
 
-/** Ids reach URL paths and DynamoDB keys downstream: a conservative charset. */
-const ID_PATTERN = /^[\w.:-]+$/;
+/**
+ * Ids reach URL paths and DynamoDB keys downstream: a conservative charset, and never `.` or `..`
+ * alone — a browser's URL parser resolves `/projects/P/documents/..` to `/projects/P/` (WA SEC11, FE-1).
+ */
+const ID_PATTERN = /^(?!\.{1,2}$)[\w.:-]+$/;
 const MAX_TOOL_ID_LENGTH = 128;
 
 export const idSchema = z.string().trim().min(1).max(MAX_TOOL_ID_LENGTH).regex(ID_PATTERN, 'must be a plain identifier');
