@@ -42,7 +42,6 @@ const RuntimeConfigSchema = z.object({
     userPoolId: z.string().min(1),
     clientId: z.string().min(1),
     region: z.string().min(1),
-    identityPoolId: z.string().min(1),
   }),
   // Optional capability flags: deployments without a given capability omit
   // the flag (or the whole block) and the UI hides the feature.
@@ -170,7 +169,6 @@ function getEnvConfig(): RuntimeConfig {
       userPoolId: getEnvString('VITE_COGNITO_USER_POOL_ID'),
       clientId: getEnvString('VITE_COGNITO_CLIENT_ID'),
       region: getEnvString('VITE_COGNITO_REGION', 'us-east-1'),
-      identityPoolId: getEnvString('VITE_IDENTITY_POOL_ID'),
     },
     features,
   }
@@ -192,7 +190,6 @@ function getEnvConfig(): RuntimeConfig {
         userPoolId: '',
         clientId: '',
         region: 'us-east-1',
-        identityPoolId: '',
       },
       // Keep the feature flags: mock-only dev (no Cognito vars) is exactly
       // when this branch runs, and it's also exactly when the

@@ -24,7 +24,7 @@ vi.mock('../runtimeConfig', () => ({
   isConfigLoaded: vi.fn(() => true),
   getRuntimeConfig: vi.fn(() => ({
     apiEndpoint: 'https://abc123.execute-api.us-east-1.amazonaws.com/v1',
-    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
+    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1' },
   })),
 }))
 
@@ -64,7 +64,7 @@ describe('buildTrustedApiOrigins', () => {
   it('returns an empty array when the runtime config endpoint is unparseable', () => {
     vi.mocked(runtimeConfigModule.getRuntimeConfig).mockReturnValue({
       apiEndpoint: 'not-a-url',
-      cognito: { userPoolId: '', clientId: '', region: 'us-east-1', identityPoolId: '' },
+      cognito: { userPoolId: '', clientId: '', region: 'us-east-1' },
     })
     // buildTrustedApiOrigins never adds localhost entries — that logic lives
     // only in isTrustedAbsoluteUrl.  When the endpoint is unparseable the

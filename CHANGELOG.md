@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.62.00] - 2026-10-31
+
+The SPA's runtime config no longer carries the Cognito identity pool, which nothing has used since 5.61.00.
+
+### Changed
+- `config.json` (written by VocApiStack and by `npm run deploy:frontend`) drops `cognito.identityPoolId`, and the
+  frontend no longer reads `VITE_IDENTITY_POOL_ID`: `frontend/scripts/update-env.sh` stops writing it and no longer
+  fails when the `IdentityPoolId` output is missing. A `config.json` that still has the key loads as before (the
+  key is ignored), so a cached old file does not break sign-in.
+- VocApiStack no longer takes the identity pool as an input.
+
+### Deprecated
+- The Cognito identity pool, its authenticated role (no permissions) and the `IdentityPoolId` output of
+  VocCoreStack are unused and will be removed in a later release. VocCoreStack keeps exporting the pool id for
+  this release only, so the deployed VocApiStack can drop its import first (CloudFormation refuses to delete an
+  export that is still imported).
+
+### Upgrade notes
+- Deploy every stack together (`npm run deploy:infra`), as usual: VocCoreStack keeps the export, VocApiStack drops
+  the import. Nothing to change in `cdk.context.json`. A local `frontend/.env` may keep `VITE_IDENTITY_POOL_ID`;
+  it is ignored.
+
 ## [5.61.00] - 2026-10-31
 
 Sign-in moves from the deprecated amazon-cognito-identity-js to Amplify v6, and the library is removed.

@@ -9,7 +9,7 @@ const { ENDPOINT, CONFIG } = vi.hoisted(() => ({
   ENDPOINT: 'https://api.example.com',
   CONFIG: {
     apiEndpoint: 'https://api.example.com',
-    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
+    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1' },
   },
 }))
 

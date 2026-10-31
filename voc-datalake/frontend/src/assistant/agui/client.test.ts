@@ -27,7 +27,7 @@ vi.mock('../../runtimeConfig', () => ({
   isWebSearchAvailable: vi.fn(() => false),
   getRuntimeConfig: vi.fn(() => ({
     apiEndpoint: 'https://api.example.com',
-    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
+    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1' },
   })),
 }))
 

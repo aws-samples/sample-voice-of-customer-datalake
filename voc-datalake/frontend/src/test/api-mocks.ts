@@ -36,7 +36,7 @@ export function runtimeConfigMock(apiEndpoint: string) {
     isConfigLoaded: vi.fn(() => true),
     getRuntimeConfig: vi.fn(() => ({
       apiEndpoint,
-      cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
+      cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1' },
     })),
   }
 }
@@ -65,6 +65,6 @@ export function loadRuntimeConfig(
   vi.mocked(mod.isConfigLoaded).mockReturnValue(true)
   vi.mocked(mod.getRuntimeConfig).mockReturnValue({
     apiEndpoint,
-    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1', identityPoolId: 'id-pool' },
+    cognito: { userPoolId: 'pool-1', clientId: 'client-1', region: 'us-east-1' },
   })
 }

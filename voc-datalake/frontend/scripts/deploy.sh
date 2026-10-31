@@ -58,7 +58,6 @@ DISTRIBUTION_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="Distri
 COGNITO_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="UserPoolId") | .OutputValue')
 COGNITO_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="UserPoolClientId") | .OutputValue')
 COGNITO_REGION=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoRegion") | .OutputValue // "us-west-2"')
-IDENTITY_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="IdentityPoolId") | .OutputValue')
 API_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')
 # "true" when the AgentCore web search gateway is deployed (drives the UI toggles)
 WEB_SEARCH_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="WebSearchAvailable") | .OutputValue // "false"')
@@ -92,7 +91,6 @@ echo "  API Endpoint: $API_ENDPOINT"
 echo "  Cognito Pool: $COGNITO_USER_POOL_ID"
 echo "  Cognito Client: $COGNITO_CLIENT_ID"
 echo "  Cognito Region: $COGNITO_REGION"
-echo "  Identity Pool: $IDENTITY_POOL_ID"
 echo "  Email: $EMAIL_AVAILABLE"
 echo "  Board Pool: ${BOARD_USER_POOL_ID:-none}"
 
@@ -113,7 +111,6 @@ jq -n \
   --arg userPoolId "$COGNITO_USER_POOL_ID" \
   --arg clientId "$COGNITO_CLIENT_ID" \
   --arg region "$COGNITO_REGION" \
-  --arg identityPoolId "$IDENTITY_POOL_ID" \
   --argjson webSearch "$([ "$WEB_SEARCH_AVAILABLE" = "true" ] && echo true || echo false)" \
   --argjson email "$([ "$EMAIL_AVAILABLE" = "true" ] && echo true || echo false)" \
   --arg boardUserPoolId "$BOARD_USER_POOL_ID" \
@@ -124,8 +121,7 @@ jq -n \
     cognito: {
       userPoolId: $userPoolId,
       clientId: $clientId,
-      region: $region,
-      identityPoolId: $identityPoolId
+      region: $region
     },
     features: {
       webSearch: $webSearch,

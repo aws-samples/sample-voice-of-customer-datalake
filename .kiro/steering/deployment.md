@@ -255,12 +255,12 @@ The frontend fetches configuration from CloudFormation outputs:
 - `VITE_COGNITO_USER_POOL_ID` - Cognito User Pool ID
 - `VITE_COGNITO_CLIENT_ID` - Cognito Client ID
 - `VITE_COGNITO_REGION` - AWS Region
-- `VITE_IDENTITY_POOL_ID` - Cognito Identity Pool ID
 
-> These names must match `frontend/src/runtimeConfig.ts` exactly. All five are
-> **required**: `RuntimeConfigSchema` rejects an empty `identityPoolId`, and the
-> fallback then blanks every Cognito value — the login screen shows
-> "Cognito not configured" even when the user pool and client id resolved fine.
+> These names must match `frontend/src/runtimeConfig.ts` exactly. The API endpoint,
+> user pool id and client id are **required**: `RuntimeConfigSchema` rejects an empty
+> one, and the fallback then blanks every Cognito value — the login screen shows
+> "Cognito not configured". There is no identity-pool variable since 5.62.00 (the
+> SPA uses no AWS credentials).
 
 **Local dev cannot use the deployed API.** `ALLOWED_ORIGIN` on the deployed API
 Lambdas is `https://<frontendDomain>` (`allowedOrigin = isDev ? '*' : ...` in

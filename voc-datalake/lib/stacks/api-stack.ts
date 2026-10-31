@@ -91,7 +91,6 @@ export interface VocApiStackProps extends VocStackProps {
   frontendDomainName: string;
   userPool: cognito.UserPool;
   userPoolClient: cognito.UserPoolClient;
-  identityPool: cognito.CfnIdentityPool;
   /** The board pool (boards and review links) and its client — on every deployment since 5.45.00 (core-board-auth.ts). */
   boardUserPool: cognito.IUserPool;
   boardUserPoolClient: cognito.IUserPoolClient;
@@ -155,7 +154,7 @@ export class VocApiStack extends VocStack {
 
     const {
       aggregatesTable, kmsKey, rawDataBucket, websiteBucket, frontendDistribution, frontendDomainName,
-      userPool, userPoolClient, identityPool, processingQueueUrl, processingQueueArn, secretsArn, brandName,
+      userPool, userPoolClient, processingQueueUrl, processingQueueArn, secretsArn, brandName,
     } = props;
 
     // Guard: fail fast (before any asset bundling) if frontend/dist is missing
@@ -342,7 +341,6 @@ export class VocApiStack extends VocStack {
         userPoolId: userPool.userPoolId,
         clientId: userPoolClient.userPoolClientId,
         region: this.region,
-        identityPoolId: identityPool.attrId
       },
       // Capability flags so the same frontend build can show/hide features
       // per environment (web search only exists when the gateway deployed).

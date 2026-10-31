@@ -52,7 +52,6 @@ const MOCK_CONFIG = {
     userPoolId: 'us-east-1_e2eAppMock',
     clientId: 'e2eappmockclient',
     region: 'us-east-1',
-    identityPoolId: 'us-east-1:00000000-0000-0000-0000-000000000000',
   },
   board: { userPoolId: 'us-east-1_e2eBoardMock', clientId: 'e2eboardmockclient' },
 }

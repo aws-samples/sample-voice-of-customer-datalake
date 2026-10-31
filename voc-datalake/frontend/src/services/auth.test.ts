@@ -21,7 +21,7 @@ const cognitoConfig = vi.hoisted(() => ({ userPoolId: 'us-east-1_test123', clien
 vi.mock('../runtimeConfig', () => ({
   getRuntimeConfig: () => ({
     apiEndpoint: 'https://api.example.com',
-    cognito: { ...cognitoConfig, region: 'us-east-1', identityPoolId: 'us-east-1:test-pool-id' },
+    cognito: { ...cognitoConfig, region: 'us-east-1' },
   }),
   isConfigLoaded: () => true,
   loadRuntimeConfig: vi.fn(),

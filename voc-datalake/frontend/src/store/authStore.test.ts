@@ -31,8 +31,8 @@ function stubCognito(configured: boolean) {
   mockGetRuntimeConfig.mockReturnValue({
     apiEndpoint: 'https://api.example.com',
     cognito: configured
-      ? { userPoolId: 'us-east-1_abc', clientId: 'client-123', region: 'us-east-1', identityPoolId: 'pool-1' }
-      : { userPoolId: '', clientId: '', region: '', identityPoolId: '' },
+      ? { userPoolId: 'us-east-1_abc', clientId: 'client-123', region: 'us-east-1' }
+      : { userPoolId: '', clientId: '', region: '' },
   })
 }
 

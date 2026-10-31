@@ -176,8 +176,8 @@ describe('frontend/scripts/update-env.sh', () => {
   const source = () => readFileSync(UPDATE_ENV_SH, 'utf8');
 
   it('writes every VITE_ var that runtimeConfig.ts requires', () => {
-    // RuntimeConfigSchema rejects an empty identityPoolId, and getEnvConfig's
-    // failure branch then BLANKS all four cognito values — so omitting one var
+    // RuntimeConfigSchema rejects an empty user pool or client id, and getEnvConfig's
+    // failure branch then BLANKS every cognito value — so omitting one var
     // makes the login screen claim "Cognito not configured" even when the user
     // pool and client id resolved fine. Any var read there must be written here.
     const runtimeConfig = readFileSync(RUNTIME_CONFIG_TS, 'utf8');
@@ -346,7 +346,7 @@ describe('runtime config.json keys', () => {
   it('reads real key sets (each parser sees nested keys), so equality is not vacuous', () => {
     for (const keys of [deployShConfigKeys(), schemaKeys()]) {
       expect(keys.length).toBeGreaterThanOrEqual(5);
-      expect(keys).toContain('cognito.identityPoolId');
+      expect(keys).toContain('cognito.clientId');
     }
   });
 

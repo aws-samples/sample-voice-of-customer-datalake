@@ -1031,9 +1031,8 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
 
   it('keeps the pool attachment and the federated trust policy intact', () => {
     // The removal above is a permission removal only. The pool, the role and the
-    // attachment stay — Amplify is configured from `identityPoolId` and the
-    // credential exchange needs an assumable role — so a change that deleted the
-    // role outright would make the two cases above vacuously green.
+    // attachment stay until a release deletes them on purpose, so a change that
+    // deleted the role outright would make the two cases above vacuously green.
     const template = synthCoreTemplate();
     const federated = soleFederatedTrustStatement(template);
 

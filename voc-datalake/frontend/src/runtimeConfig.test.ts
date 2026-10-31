@@ -55,7 +55,6 @@ describe('loadRuntimeConfig env fallback', () => {
           userPoolId: 'us-east-1_pool',
           clientId: 'client123',
           region: 'us-east-1',
-          identityPoolId: 'us-east-1:identity',
         },
       }),
     }))
@@ -64,6 +63,33 @@ describe('loadRuntimeConfig env fallback', () => {
     const config = await loadRuntimeConfig()
 
     expect(config.apiEndpoint).toBe('https://real-api.example.com')
+  })
+
+  it('loads a config.json from a deployment that still writes identityPoolId (the key is ignored)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        apiEndpoint: 'https://real-api.example.com',
+        cognito: { userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'us-east-1', identityPoolId: 'us-east-1:old' },
+      }),
+    }))
+
+    const { loadRuntimeConfig } = await import('./runtimeConfig')
+    const config = await loadRuntimeConfig()
+
+    expect(config.cognito).toStrictEqual({ userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'us-east-1' })
+  })
+
+  it('accepts the env config without VITE_IDENTITY_POOL_ID', async () => {
+    vi.stubEnv('VITE_API_ENDPOINT', 'http://localhost:9999')
+    vi.stubEnv('VITE_COGNITO_USER_POOL_ID', 'us-east-1_pool')
+    vi.stubEnv('VITE_COGNITO_CLIENT_ID', 'client123')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
+
+    const { loadRuntimeConfig } = await import('./runtimeConfig')
+    const config = await loadRuntimeConfig()
+
+    expect(config.cognito).toStrictEqual({ userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'us-east-1' })
   })
 })
 
@@ -77,7 +103,6 @@ describe('isWebSearchAvailable', () => {
       userPoolId: 'us-east-1_pool',
       clientId: 'client123',
       region: 'us-east-1',
-      identityPoolId: 'us-east-1:identity',
     },
   }
 
@@ -124,7 +149,6 @@ describe('isWebSearchAvailable', () => {
     vi.stubEnv('VITE_API_ENDPOINT', 'http://localhost:9999')
     vi.stubEnv('VITE_COGNITO_USER_POOL_ID', 'us-east-1_pool')
     vi.stubEnv('VITE_COGNITO_CLIENT_ID', 'client123')
-    vi.stubEnv('VITE_IDENTITY_POOL_ID', 'us-east-1:identity')
     vi.stubEnv('VITE_ENABLE_WEB_SEARCH', 'true')
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('config.json unavailable')))
 
@@ -154,7 +178,7 @@ describe('board pool and email capability', () => {
 
   const baseConfig = {
     apiEndpoint: 'https://real-api.example.com',
-    cognito: { userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'eu-west-1', identityPoolId: 'eu-west-1:identity' },
+    cognito: { userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'eu-west-1' },
   }
   const stubConfigJson = (config: Record<string, unknown>) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(config) }))

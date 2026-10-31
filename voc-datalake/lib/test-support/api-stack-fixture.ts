@@ -107,7 +107,6 @@ export function apiStackDependencyProps(
     userPoolClient: userPool.addClient('Client'),
     boardUserPool,
     boardUserPoolClient: boardUserPool.addClient('BoardClient'),
-    identityPool: new cognito.CfnIdentityPool(deps, 'IdentityPool', { allowUnauthenticatedIdentities: false }),
     processingQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/processing`,
     processingQueueArn: `arn:aws:sqs:${env.region}:${env.account}:processing`,
     secretsArn: sharedSecretArn(env),
