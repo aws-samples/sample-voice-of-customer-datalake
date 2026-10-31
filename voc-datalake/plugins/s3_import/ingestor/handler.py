@@ -246,7 +246,8 @@ class S3ImportIngestor(BaseIngestor):
             updates.update(status='error', errors=[type(error).__name__])
         self._update_source_run_status(updates)
 
-    def _record_file_run(self, bucket: str, key: str, started_at: str, counts: ImportCounts, report: FileReport) -> None:
+    def _record_file_run(self, bucket: str, key: str, started_at: str, counts: ImportCounts, report: FileReport,
+                         *, reprocess: bool = False) -> None:
         """One import-history record for this file (docs/import-history.md); never raises.
 
         Called from ``process_file``'s ``finally``: anything raised here would replace the import's own
@@ -254,7 +255,7 @@ class S3ImportIngestor(BaseIngestor):
         """
         try:
             record_import_run(self.aggregates_table, ImportRun(
-                method="s3", source=_get_source_from_key(key), actor=S3_UPLOAD_ACTOR, started_at=started_at,
+                method="s3", source=_get_source_from_key(key, reprocess=reprocess), actor=S3_UPLOAD_ACTOR, started_at=started_at,
                 counts=counts, source_id=self.source_platform, warnings=report.warnings, errors=report.errors,
                 raw_s3_key=f"s3://{bucket}/{key}", warnings_not_kept=report.warnings_not_kept,
             ))
@@ -262,9 +263,10 @@ class S3ImportIngestor(BaseIngestor):
             # Unexpected (the writer already absorbs write errors at warning level), so logged as an error.
             logger.exception("Import run record not written", extra={"key": key})
 
-    def _refuse_file(self, bucket: str, key: str, started_at: str, reason: str) -> int:
+    def _refuse_file(self, bucket: str, key: str, started_at: str, reason: str, *, reprocess: bool) -> int:
         """Record a file that was not read at all (empty or over the size limit) as a failed run; 0 imported."""
-        self._record_file_run(bucket, key, started_at, ImportCounts(received=0, imported=0), FileReport(errors=[reason]))
+        self._record_file_run(bucket, key, started_at, ImportCounts(received=0, imported=0), FileReport(errors=[reason]),
+                              reprocess=reprocess)
         return 0
 
     def process_file(self, bucket: str, key: str, *, reprocess: bool = False) -> int:
@@ -281,11 +283,12 @@ class S3ImportIngestor(BaseIngestor):
 
         if file_size == 0:
             logger.warning(f"{key}: empty file, skipping")
-            return self._refuse_file(bucket, key, started_at, "empty file")
+            return self._refuse_file(bucket, key, started_at, "empty file", reprocess=reprocess)
 
         if file_size > MAX_FILE_SIZE_BYTES:
             logger.error(f"{key}: {file_size / 1024 / 1024:.1f} MB exceeds {MAX_FILE_SIZE_MB} MB limit")
-            return self._refuse_file(bucket, key, started_at, f"{file_size / 1024 / 1024:.1f} MB exceeds the {MAX_FILE_SIZE_MB} MB limit")
+            return self._refuse_file(bucket, key, started_at, f"{file_size / 1024 / 1024:.1f} MB exceeds the {MAX_FILE_SIZE_MB} MB limit",
+                                     reprocess=reprocess)
 
         # Stream, parse, normalize, and send in batches
         source_name = _get_source_from_key(key, reprocess=reprocess)
@@ -324,7 +327,8 @@ class S3ImportIngestor(BaseIngestor):
             # metrics.  The exception is not swallowed.
             logger.info(f"Processed {key}: {total} items")
             metrics.add_metric(name="ItemsImported", unit="Count", value=total)
-            self._record_file_run(bucket, key, started_at, _file_counts(parsed, total, report, sent_all=sent_all), report)
+            self._record_file_run(bucket, key, started_at, _file_counts(parsed, total, report, sent_all=sent_all), report,
+                                  reprocess=reprocess)
 
         return total
 

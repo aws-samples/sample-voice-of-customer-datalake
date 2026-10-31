@@ -54,6 +54,23 @@ def test_a_file_records_its_counts_and_the_skipped_rows(mock_s3, ingestor, recor
 
 
 @patch(f"{HANDLER}.s3_client")
+def test_a_reprocessed_archived_file_is_recorded_under_its_original_folder(mock_s3, ingestor, recorded):
+    """The record carries the same label the rows were imported under, not the `processed` folder's."""
+    _serve(mock_s3, b"id,text\n1,Great\n")
+    ingestor.process_file("bucket", "processed/surveys/q3.csv", reprocess=True)
+    [run] = recorded
+    assert run.source == "S3 - surveys"
+
+
+@patch(f"{HANDLER}.s3_client")
+def test_a_refused_reprocessed_archived_file_is_recorded_under_its_original_folder(mock_s3, ingestor, recorded):
+    _serve(mock_s3, b"")
+    ingestor.process_file("bucket", "processed/surveys/q3.csv", reprocess=True)
+    [run] = recorded
+    assert run.source == "S3 - surveys"
+
+
+@patch(f"{HANDLER}.s3_client")
 def test_a_bad_jsonl_line_is_a_skipped_row_with_its_reason(mock_s3, ingestor, recorded):
     _serve(mock_s3, b'{"text": "ok"}\nnot json\n')
     ingestor.process_file("bucket", "web/a.jsonl")
