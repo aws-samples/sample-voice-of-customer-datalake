@@ -17,7 +17,8 @@ import { applyInferenceScopeEnv, inferenceScopeOf } from '../lib/utils/inference
 import { shouldDeployAiEnablement } from '../lib/utils/ai-enablement-default';
 import { validateDeploymentPrefix } from '../lib/utils/naming';
 import { recordOrEmpty, stringOr } from '../lib/utils/context';
-import { applyLambdaLogRetention } from '../lib/utils/log-retention';
+import { applyLambdaLogRetention, applyProtectedLogRetention } from '../lib/utils/log-retention';
+import { shouldProtectData } from '../lib/utils/data-protection';
 
 const app = new cdk.App();
 
@@ -278,6 +279,8 @@ tagStack(apiStack, 'Api');
 
 // Every Lambda (CDK's own provider functions included) logs to a group with a retention period.
 applyLambdaLogRetention(app);
+// Production (-c protectData=true): every log group is kept 365 days and retained on teardown.
+applyProtectedLogRetention(app, shouldProtectData(app.node.tryGetContext('protectData')));
 
 // Apply cdk-nag checks
 Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
