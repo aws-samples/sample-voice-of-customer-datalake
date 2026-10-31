@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const amplify = vi.hoisted(() => ({ associateWebAuthnCredential: vi.fn(), listWebAuthnCredentials: vi.fn() }))
+const amplify = vi.hoisted(() => ({ associateWebAuthnCredential: vi.fn(), listWebAuthnCredentials: vi.fn(), deleteWebAuthnCredential: vi.fn() }))
 vi.mock('aws-amplify/auth', () => amplify)
 
 const configureAmplify = vi.hoisted(() => vi.fn())
@@ -66,5 +66,23 @@ describe('passkeyAuth', () => {
     amplify.associateWebAuthnCredential.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'PasskeyRegistrationCanceled' }))
     const error: unknown = await passkeyAuth.register().catch((caught: unknown) => caught)
     expect(error instanceof PasskeyError && error.code).toBe('cancelled')
+  })
+
+  it('lists every page of passkeys, skipping a credential without an id', async () => {
+    const created = new Date('2026-10-01T10:00:00Z')
+    amplify.listWebAuthnCredentials
+      .mockResolvedValueOnce({ credentials: [{ credentialId: 'c1', friendlyCredentialName: 'Phone', createdAt: created }, { credentialId: undefined }], nextToken: 'n1' })
+      .mockResolvedValueOnce({ credentials: [{ credentialId: 'c2', friendlyCredentialName: undefined, createdAt: undefined }] })
+    await expect(passkeyAuth.list()).resolves.toStrictEqual([
+      { id: 'c1', name: 'Phone', createdAt: created },
+      { id: 'c2', name: undefined, createdAt: undefined },
+    ])
+    expect(amplify.listWebAuthnCredentials.mock.calls).toStrictEqual([[{ pageSize: 20, nextToken: undefined }], [{ pageSize: 20, nextToken: 'n1' }]])
+  })
+
+  it('removes a passkey by its credential id', async () => {
+    amplify.deleteWebAuthnCredential.mockResolvedValueOnce(undefined)
+    await passkeyAuth.remove('c1')
+    expect(amplify.deleteWebAuthnCredential).toHaveBeenCalledExactlyOnceWith({ credentialId: 'c1' })
   })
 })

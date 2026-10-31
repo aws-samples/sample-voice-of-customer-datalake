@@ -24,7 +24,8 @@ safer handling of customer text in prompts.
 
 ### Added
 - **Passkeys (opt-in).** After sign-in the app asks once whether to add a passkey (fingerprint, face or screen
-  lock); **Account → Profile → Passkey** keeps the action, and **Login** has *Sign in with a passkey*. The
+  lock); **Account → Profile → Passkey** lists the person's passkeys, adds one and removes one (a lost or
+  replaced device), and **Login** has *Sign in with a passkey*. The
   password keeps working; MFA is not enforced. The app user pool allows WebAuthn as a first factor, with the
   site's own domain as relying party and the choice-based `USER_AUTH` flow on the web client
   (`features.passkey` in `config.json`). See [docs/deployment.md → Passkeys](docs/deployment.md#passkeys).

@@ -57,7 +57,14 @@
     "section": {
       "title": "Passkey",
       "intro": "Melden Sie sich auf diesem Gerät mit Ihrem Fingerabdruck, Ihrem Gesicht oder der Bildschirmsperre an, statt mit Ihrem Passwort. Ihr Passwort funktioniert weiterhin.",
-      "added": "Passkey hinzugefügt. Beim nächsten Mal können Sie sich damit anmelden."
+      "added": "Passkey hinzugefügt. Beim nächsten Mal können Sie sich damit anmelden.",
+      "none": "Auf diesem Konto ist noch kein Passkey vorhanden.",
+      "unnamed": "Passkey",
+      "addedOn": "Hinzugefügt am {{date}}",
+      "remove": "{{name}} entfernen",
+      "removeTitle": "Diesen Passkey entfernen?",
+      "removeBody": "Damit können Sie sich auf keinem Gerät mehr anmelden, auf dem er gespeichert ist. Ihr Passwort und Ihre übrigen Passkeys funktionieren weiterhin.",
+      "removeConfirm": "Entfernen"
     },
     "errors": {
       "needUsername": "Geben Sie zuerst Ihren Benutzernamen oder Ihre E-Mail-Adresse ein und wählen Sie dann „Mit Passkey anmelden“.",

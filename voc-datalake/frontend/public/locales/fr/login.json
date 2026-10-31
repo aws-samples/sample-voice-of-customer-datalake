@@ -57,7 +57,14 @@
     "section": {
       "title": "Clé d'accès",
       "intro": "Connectez-vous sur cet appareil avec votre empreinte digitale, votre visage ou le verrouillage de votre écran, au lieu de votre mot de passe. Votre mot de passe reste valide.",
-      "added": "Clé d'accès ajoutée. Vous pourrez vous connecter avec elle la prochaine fois."
+      "added": "Clé d'accès ajoutée. Vous pourrez vous connecter avec elle la prochaine fois.",
+      "none": "Aucune clé d'accès n'est encore associée à ce compte.",
+      "unnamed": "Clé d'accès",
+      "addedOn": "Ajoutée le {{date}}",
+      "remove": "Supprimer {{name}}",
+      "removeTitle": "Supprimer cette clé d'accès ?",
+      "removeBody": "Elle ne permettra plus de vous connecter, sur aucun appareil qui la contient. Votre mot de passe et vos autres clés d'accès restent utilisables.",
+      "removeConfirm": "Supprimer"
     },
     "errors": {
       "needUsername": "Saisissez d'abord votre nom d'utilisateur ou votre e-mail, puis choisissez Se connecter avec une clé d'accès.",
