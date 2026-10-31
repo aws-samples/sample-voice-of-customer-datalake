@@ -4,6 +4,7 @@
 import http from 'http';
 import { randomBytes } from 'node:crypto';
 import { handleConnectRoutes } from './mock-connect.js';
+import { handleOAuthRoutes } from './mock-oauth.js';
 import {
   GITHUB_REFERENCE, WEBSITE_REFERENCE, draftedLogoUrl, duplicateMockReference, publicDesignSystem, routeDesignExtract, serveMockLogo,
 } from './mock-design-extract.js';
@@ -1318,7 +1319,8 @@ function handleParameterizedExtras(req, res, url) {
     || handleCategoryRoutes(req, res, url, send)
     || handleMemoryContextRoutes(req, res, url, send)
     || handleAgentsWorkflowsRoutes(req, res, url, send)
-    || handleConnectRoutes(req, res, url, send, collectJson);
+    || handleConnectRoutes(req, res, url, send, collectJson)
+    || handleOAuthRoutes(req, res, url, send, collectJson);
 }
 
 // ── Categories: config (with product/owners), access grants, reprocess jobs,

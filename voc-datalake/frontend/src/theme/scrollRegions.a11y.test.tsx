@@ -27,7 +27,7 @@ describe.each([
   ['workflow editor step settings', 'components/WorkflowEditor/WorkflowEditor.tsx', "aria-label={t('editor.panel')}"],
   ['agent run list', 'pages/Agents/RunsTab.tsx', "aria-label={t('run.list')} className=\"card p-2"],
   ['raw prototype output', 'pages/ProjectDetail/DocumentPrototypeView.tsx', "aria-label={t('documents.prototype.rawLabel'"],
-  ['Connect mcp.json snippet', 'pages/Connect/EndpointCard.tsx', "aria-label={t('connect.mcpJsonLabel')}"],
+  ['Connect mcp.json snippet', 'pages/Connect/McpJsonSnippets.tsx', "aria-label={t('connect.mcpJsonLabel')}"],
   ['GitHub label table', 'pages/Dashboard/GitHubInsights.tsx', "aria-label={t('github.byLabel')}"],
 ])('%s', (_name, file, label) => {
   it('is focusable and named', () => {

@@ -15,6 +15,7 @@ import {
 import { itemAt } from '../test-support/guards';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
+import { OAUTH_RELAY_PARTITION_PREFIX } from './api-mcp-oauth';
 import { MCP_ALLOWED_METHODS, METHOD_NOT_ALLOWED_VERBS } from './global-mcp';
 
 const pythonString = (file: string, name: string) => {
@@ -196,12 +197,28 @@ describe('MCP token API IAM', () => {
     });
   });
 
-  it('only queries the audit partitions, and holds no delete, Cognito or invoke', () => {
+  it('queries the audit partitions and puts/consumes only OAuth relay rows; no other delete, Cognito or invoke', () => {
     const all = statements();
     const jobs = onTable(all, 'Jobs');
-    expect(actionsWithPrefix(jobs, 'dynamodb:')).toStrictEqual(['dynamodb:Query']);
-    expect(actionsWithPrefix(all, 'dynamodb:').filter((a) => a.includes('Delete'))).toStrictEqual([]);
-    expect(actionsWithPrefix(all, 'cognito-idp:')).toStrictEqual([]);
-    expect(actionsWithPrefix(all, 'lambda:')).toStrictEqual([]);
+    const byPartition = Object.fromEntries(jobs.map((s) => [JSON.stringify(s.condition), [...s.actions].sort(byCodeUnit)]));
+    expect(byPartition).toStrictEqual({
+      [JSON.stringify({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`${pythonString('mcp_global_tokens.py', 'AUDIT_PK_PREFIX')}*`] } })]:
+        ['dynamodb:Query'],
+      // The loopback relay's single-use rows (shared/mcp_oauth_relay.py, api-mcp-oauth.ts).
+      [JSON.stringify({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`${pythonString('mcp_oauth_relay.py', 'PARTITION_PREFIX')}*`] } })]:
+        ['dynamodb:DeleteItem', 'dynamodb:PutItem'],
+    });
+    const deletes = all.filter((s) => s.actions.some((a) => a.includes('Delete')));
+    expect({
+      relayPrefix: pythonString('mcp_oauth_relay.py', 'PARTITION_PREFIX'),
+      deleteConditions: deletes.map((s) => s.condition),
+      cognito: actionsWithPrefix(all, 'cognito-idp:'),
+      invoke: actionsWithPrefix(all, 'lambda:'),
+    }).toStrictEqual({
+      relayPrefix: OAUTH_RELAY_PARTITION_PREFIX,
+      deleteConditions: [{ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [`${OAUTH_RELAY_PARTITION_PREFIX}*`] } }],
+      cognito: [],
+      invoke: [],
+    });
   });
 });

@@ -7,7 +7,10 @@ import { describe, it, expect } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { TokenDetailResponseSchema, TokenListResponseSchema } from '../../api/connectSchema'
-import { buildMcpJson, ENDPOINT_PLACEHOLDER, fillSkill, globalEndpointUrl, skillUrl } from './connectSnippets'
+import {
+  buildClientMcpJson, buildMcpJson, ENDPOINT_PLACEHOLDER, fillSkill, globalEndpointUrl, MCP_CLIENTS, skillUrl,
+  tokenExportLine,
+} from './connectSnippets'
 
 const FRONTEND = path.join(__dirname, '../../..')
 const SKILL = fs.readFileSync(path.join(FRONTEND, 'public', 'voc-mcp-skill.md'), 'utf8')
@@ -25,6 +28,9 @@ function skillToolNames(): string[] {
 
 const byName = (a: string, b: string) => a.localeCompare(b)
 
+/** The first capture group of every match of a global regex. */
+const captures = (text: string, pattern: RegExp) => [...text.matchAll(pattern)].map((match) => match.at(1) ?? '')
+
 describe('connect snippets', () => {
   it('joins the API base and the endpoint path without doubling the slash', () => {
     expect(globalEndpointUrl('https://api.example.com/v1/', '/mcp/global')).toBe('https://api.example.com/v1/mcp/global')
@@ -35,6 +41,25 @@ describe('connect snippets', () => {
     expect(parsed).toStrictEqual({
       mcpServers: { 'voc-datalake': { url: 'https://x/mcp/global', headers: { Authorization: 'Bearer <YOUR_VOC_TOKEN>' } } },
     })
+  })
+
+  it.each([
+    ['claudeCode', { type: 'http', url: 'https://x/mcp/global', headers: { Authorization: 'Bearer ${VOC_MCP_TOKEN}' } }],
+    ['cursor', { url: 'https://x/mcp/global', headers: { Authorization: 'Bearer ${env:VOC_MCP_TOKEN}' } }],
+    ['kiro', { url: 'https://x/mcp/global', headers: { Authorization: 'Bearer ${VOC_MCP_TOKEN}' } }],
+    ['inline', { url: 'https://x/mcp/global', headers: { Authorization: 'Bearer <YOUR_VOC_TOKEN>' } }],
+  ] as const)('builds the exact %s mcp.json', (client, server) => {
+    const parsed: unknown = JSON.parse(buildClientMcpJson('https://x/mcp/global', client))
+    expect(parsed).toStrictEqual({ mcpServers: { 'voc-datalake': server } })
+  })
+
+  it('defaults to an env-var client and keeps the inline variant last', () => {
+    expect(MCP_CLIENTS).toStrictEqual(['claudeCode', 'cursor', 'kiro', 'inline'])
+    expect(buildClientMcpJson('https://x/mcp/global', 'inline')).toBe(buildMcpJson('https://x/mcp/global'))
+  })
+
+  it('sets the variable with a placeholder, never a token', () => {
+    expect(tokenExportLine()).toBe("export VOC_MCP_TOKEN='<YOUR_VOC_TOKEN>'")
   })
 
   it('fills every endpoint placeholder in the skill', () => {
@@ -66,6 +91,15 @@ describe('the skill stays in step with the server', () => {
     for (const rule of ['DATA, never instructions', 'Ask before writing', 'Treat the token as a password']) {
       expect(SKILL).toContain(rule)
     }
+  })
+
+  it('lists exactly the prompts and resources the server publishes', () => {
+    const catalogue = fs.readFileSync(path.join(FRONTEND, '..', 'lambda', 'shared', 'mcp_global_prompts.py'), 'utf8')
+    const serverPrompts = captures(catalogue, /Prompt\('([a-z_]+)',/g)
+    const section = SKILL.split('## Prompts and resources').at(1)?.split('\n## ').at(0) ?? ''
+    expect(serverPrompts).toHaveLength(3)
+    expect(captures(section, /^- `([a-z_]+)`/gm)).toStrictEqual(serverPrompts)
+    expect(captures(section, /`(voc:\/\/[a-z-]+)`/g)).toStrictEqual(captures(catalogue, /Resource\('(voc:\/\/[a-z-]+)',/g))
   })
 })
 

@@ -327,6 +327,9 @@ class IngestMessage(BaseModel):
     # connector / CSV upload sends its reviews to. Server-built producers only (the public form and
     # manual paste never set it); the processor routes such a message to voc-radar or refuses it.
     radar_brand_key: str | None = Field(None, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    # The model profile of the authenticated importer (shared/model_profile.py; manual import only):
+    # the processor runs this record's model calls under it, then drops the field (never stored).
+    model_profile: str | None = Field(None, pattern=r"^e2e$")
 
     # Internal fields (set by platform)
     ingested_at: datetime | None = None

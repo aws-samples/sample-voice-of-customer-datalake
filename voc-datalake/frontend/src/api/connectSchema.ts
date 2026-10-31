@@ -15,6 +15,7 @@
  * @module api/connectSchema
  */
 import { z } from 'zod'
+import { OAuthSummarySchema } from './oauthSummarySchema'
 
 /** Mirrors VALID_SCOPES in shared/mcp_global_tokens.py. */
 export const CONNECT_SCOPES = ['read', 'write'] as const
@@ -40,9 +41,8 @@ export function isConnectScope(value: string): value is ConnectScope {
 const optionalText = z.string().nullable().optional().catch(undefined)
   .transform((value) => (value == null || value === '' ? undefined : value))
 
-const ConnectTokenSchema = z.object({
-  token_id: z.string().min(1),
-  name: z.string().catch(''),
+/** The lifecycle every MCP credential shares: a token here, an OAuth grant in oauthSchema.ts. */
+export const CREDENTIAL_LIFECYCLE_FIELDS = {
   scope: z.enum(CONNECT_SCOPES).catch('read'),
   project_id: optionalText,
   created_at: z.string().catch(''),
@@ -50,12 +50,18 @@ const ConnectTokenSchema = z.object({
   last_used_at: optionalText,
   revoked_at: optionalText,
   status: z.enum(TOKEN_STATUSES).catch('expired'),
+}
+
+const ConnectTokenSchema = z.object({
+  token_id: z.string().min(1),
+  name: z.string().catch(''),
+  ...CREDENTIAL_LIFECYCLE_FIELDS,
   can_run_agents: z.boolean().catch(false),
 })
 export type ConnectToken = z.infer<typeof ConnectTokenSchema>
 
 /** Rows that fail ``schema`` are dropped (a row without an id cannot be keyed or revoked). */
-function lenientRows<T>(schema: z.ZodType<T>) {
+export function lenientRows<T>(schema: z.ZodType<T>) {
   return (raw: unknown): T[] => {
     if (!Array.isArray(raw)) return []
     return raw.flatMap((row) => {
@@ -76,6 +82,9 @@ export const TokenListResponseSchema = z.object({
   endpoint_path: z.string().startsWith('/').catch('/mcp/global'),
   can_mint_agent_runner: z.boolean().catch(false),
   limits: LimitsSchema,
+  // -c mcpTokenMinting=false (docs/mcp.md): new tokens refused, existing ones still work.
+  minting_enabled: z.boolean().catch(true),
+  oauth: OAuthSummarySchema,
 })
 export type TokenListResponse = z.infer<typeof TokenListResponseSchema>
 

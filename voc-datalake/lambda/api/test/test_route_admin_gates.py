@@ -203,6 +203,12 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'feedback_form_handler.py', 'POST /feedback-forms/<form_id>/submit'),
     _open("caller's own data: a user mints and revokes only their own global MCP tokens",
           'mcp_tokens_handler.py', 'POST /connect/tokens', 'DELETE /connect/tokens/<token_id>'),
+    _open("caller's own data: a person approves an MCP OAuth sign-in for themselves (grant keyed by their own "
+          'Cognito sub, never admin, pin checked for view) and revokes only their own grants',
+          'mcp_oauth_consent_routes.py', 'POST /connect/oauth/consent', 'DELETE /connect/oauth/grants/<grant_id>'),
+    _open('public OAuth facade (docs/mcp.md "OAuth sign-in"): an MCP client has no credential yet; register stores '
+          'nothing, token/revoke forward to Cognito and only record chains of consented grants (throttled)',
+          'mcp_oauth_routes.py', 'POST /oauth/register', 'POST /oauth/token', 'POST /oauth/revoke'),
     _open('memory: personal = own, company = admin or memory reviewer, enforced by memory_policy',
           'memory_handler.py', 'POST /memory', 'PUT /memory/<memory_id>', 'POST /memory/<memory_id>/confirm',
           'POST /memory/<memory_id>/forget', 'POST /memory/<memory_id>/restore', 'POST /memory/merge',

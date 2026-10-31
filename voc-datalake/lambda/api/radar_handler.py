@@ -45,6 +45,7 @@ from shared.category_gate import scope_for_caller
 from shared.data_version import VersionRead, bump_radar_version
 from shared.exceptions import ConfigurationError, NotFoundError, ServiceError, ValidationError
 from shared.logging import logger, tracer
+from shared.model_profile import payload_fields
 from shared.project_gate import caller_from_event
 from shared.radar_all import all_brands_view
 from shared.radar_brands import (
@@ -381,7 +382,7 @@ def start_scan():
     brand = _scan_brand_from_body(json_body_value(app), brands)
     if not brands:
         raise ValidationError('No Radar brand yet: add the brands to track in Administration → Sources → Radar first')
-    payload: dict[str, Any] = {'mode': 'manual', 'requested_by': caller.subject}
+    payload: dict[str, Any] = {'mode': 'manual', 'requested_by': caller.subject, **payload_fields()}
     if brand:
         payload['brand'] = brand
     invoke_lambda_async(RADAR_SCAN_FUNCTION, payload)

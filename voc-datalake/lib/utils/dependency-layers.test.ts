@@ -23,6 +23,8 @@ import {
 const LayersSchema = z.looseObject({
   Properties: z.looseObject({ Layers: z.array(z.object({ Ref: z.string() })).optional() }),
 });
+/** The functions that VERIFY with the signing layer's cryptography: the global MCP endpoint (api-mcp-oauth.ts). */
+const SIGNING_LAYER_VERIFIER_IDS: readonly string[] = ['GlobalMcpGlobalMcpApi'];
 const byName = (a: string, b: string): number => a.localeCompare(b);
 
 /** A layer's requirements.txt lines, comments and blanks dropped. */
@@ -48,16 +50,17 @@ function functionsWith(template: Template, layer: string): string[] {
 const constructId = (logicalId: string): string => logicalId.replace(/[0-9A-F]{8}$/, '');
 
 describe('the signing layer (cryptography)', () => {
-  it('reaches exactly the functions that can sign CloudFront URLs, and nothing else', () => {
+  it('reaches exactly the functions that sign CloudFront URLs or verify MCP OAuth tokens, and nothing else', () => {
     const template = apiTemplate();
     const signing = layerId(template, 'SigningDepsLayer');
-    expect(functionsWith(template, signing).map(constructId)).toStrictEqual([...SIGNING_LAYER_FUNCTION_IDS].sort(byName));
+    expect(functionsWith(template, signing).map(constructId))
+      .toStrictEqual([...SIGNING_LAYER_FUNCTION_IDS, ...SIGNING_LAYER_VERIFIER_IDS].sort(byName));
   }, SYNTH_TIMEOUT_MS);
 
   it('those functions keep the shared API layer too', () => {
     const template = apiTemplate();
     const shared = new Set(functionsWith(template, layerId(template, 'ApiDepsLayer')).map(constructId));
-    for (const id of SIGNING_LAYER_FUNCTION_IDS) expect(shared.has(id), id).toBe(true);
+    for (const id of [...SIGNING_LAYER_FUNCTION_IDS, ...SIGNING_LAYER_VERIFIER_IDS]) expect(shared.has(id), id).toBe(true);
   }, SYNTH_TIMEOUT_MS);
 
   it('the processing stack carries no signing layer: none of its functions signs', () => {

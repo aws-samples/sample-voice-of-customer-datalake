@@ -46,7 +46,7 @@ from shared.mcp_delegate import DelegationUnavailable, DomainCall, DomainResult
 from shared.mcp_global_tools import TOOLS_BY_NAME, InvalidToolArgument
 from shared.mcp_tokens import mint_token
 from shared.test.instrumentation_fixtures import (
-    API_HANDLER_LAYERS,
+    HAND_WRITTEN_API_HANDLER_LAYERS,
     assert_tracer_wrapped,
     handler_layers,
 )
@@ -57,6 +57,8 @@ MINTED = mint_token()
 TOKEN_ID = MINTED.token_id
 BEARER = f'Bearer {MINTED.raw}'
 ALICE_SUB = 'alice-sub'
+CAPABILITIES = {'tools': {'listChanged': False}, 'prompts': {'listChanged': False},
+                'resources': {'listChanged': False}}
 LIST = TOOLS_BY_NAME['list_projects']
 GET_PROJECT = TOOLS_BY_NAME['get_project']
 CREATE = TOOLS_BY_NAME['create_document']
@@ -190,7 +192,7 @@ class TestEnvelope:
         assert counted.call_count == 1
 
     def test_the_instrumentation_wraps_the_handler_and_the_tool_call(self):
-        assert handler_layers(h.lambda_handler) == API_HANDLER_LAYERS
+        assert handler_layers(h.lambda_handler) == HAND_WRITTEN_API_HANDLER_LAYERS
         assert_tracer_wrapped(h, '_tools_call')
 
 
@@ -315,7 +317,7 @@ class TestProtocolVersion:
         assert response['statusCode'] == 200
         assert _body(response)['result'] == {
             'protocolVersion': answered,
-            'capabilities': {'tools': {'listChanged': False}},
+            'capabilities': CAPABILITIES,
             'serverInfo': {'name': 'voc-datalake-global', 'version': '1.0.0'},
             'instructions': (
                 'VoC Data Lake: customer feedback, metrics, categories, memory, research projects and '
@@ -878,7 +880,7 @@ class TestModernDiscovery:
         assert _body(response) == {'jsonrpc': '2.0', 'id': 7, 'result': {
             'resultType': 'complete',
             'supportedVersions': ['2026-07-28', '2025-11-25', '2025-06-18', '2024-11-05'],
-            'capabilities': {'tools': {'listChanged': False}},
+            'capabilities': CAPABILITIES,
             'instructions': h.SERVER_INSTRUCTIONS,
             '_meta': SERVER_INFO,
             'ttlMs': 3_600_000,

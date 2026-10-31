@@ -30,7 +30,8 @@
     "workflow": "工作流",
     "radar": "雷达",
     "featureRequests": "反馈看板",
-    "participants": "参与者"
+    "participants": "参与者",
+    "oauthConsent": "批准助手"
   },
   "cancel": "取消",
   "configureBrand": "配置品牌",
@@ -336,7 +337,43 @@
       "denied": "已拒绝",
       "failed": "失败"
     },
-    "shortcutTitle": "将外部助手连接到此项目"
+    "shortcutTitle": "将外部助手连接到此项目",
+    "mcpClientLabel": "客户端",
+    "mcpClient": {
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor",
+      "kiro": "Kiro",
+      "inline": "其他客户端"
+    },
+    "mcpFile": {
+      "claudeCode": "保存为项目根目录下的 .mcp.json。",
+      "cursor": "保存为项目中的 .cursor/mcp.json，或保存为适用于所有项目的 ~/.cursor/mcp.json。",
+      "kiro": "保存为工作区中的 .kiro/settings/mcp.json，或 ~/.kiro/settings/mcp.json。在 Kiro IDE 中，在 Mcp Approved Env Vars 下添加 VOC_MCP_TOKEN；Kiro CLI 从 shell 读取它。",
+      "inline": "适用于无法读取环境变量的客户端：令牌直接写在文件中，请勿提交或分享该文件。"
+    },
+    "mcpEnvHint": "此文件从环境变量 {{name}} 读取令牌，因此不包含任何机密。请在启动客户端的 shell 中使用下方的令牌设置它：",
+    "oauth": {
+      "title": "使用您的账户登录",
+      "body": "这些助手无需令牌即可连接：添加服务器后，助手会打开浏览器让您登录并批准其访问。它以您的身份操作，绝不会以管理员身份操作。",
+      "kiro": "Kiro (mcp.json)",
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor (mcp.json)",
+      "consentHint": "在批准页面上，您可以选择只读或读写，并可选择一个项目。随后在账户页面上再登录一次。",
+      "webUntested": "Web 助手可以使用相同的服务器 URL 登录。其登录尚未经过实际测试。",
+      "webNotConfigured": "此部署未设置 Web 助手（由运维人员添加其回调 URL）。",
+      "grantsTitle": "已登录的助手",
+      "grantsFailed": "无法加载已登录的助手。",
+      "grantsEmpty": "还没有助手使用您的账户登录。",
+      "revokeTitle": "要将此助手退出登录吗？",
+      "revokeBody": "“{{name}}”将在下一次请求时失去访问权限，需要重新登录并获得批准。",
+      "revokeNamed": "将 {{name}} 退出登录",
+      "mintingOff": "此部署无法创建个人令牌。现有令牌在过期或撤销前仍可使用；请改用您的账户登录。",
+      "status": {
+        "active": "有效",
+        "revoked": "已退出登录",
+        "expired": "已过期"
+      }
+    }
   },
   "header": {
     "title": "客户之声",
@@ -382,5 +419,21 @@
     "praise": "正面反馈，没有需要修复的问题",
     "question": "询问某样东西如何使用",
     "other": "以上都不是"
+  },
+  "oauthConsent": {
+    "title": "批准助手",
+    "asks": "{{client}} 请求以您的身份使用 VoC。",
+    "scope": {
+      "read": "只读：搜索反馈、指标、记忆和项目",
+      "write": "读写：还可以创建和更新文档"
+    },
+    "actsAs": "它获得您对项目和类别的访问权限，最多为编辑者，绝不会成为管理员。您可以随时在“连接”页面将其退出登录。",
+    "runsAgents": "作为管理员，您还允许它启动智能体运行（每次运行都会重新检查）。",
+    "approveFailed": "批准失败，请重试。",
+    "approve": "批准并登录",
+    "deny": "拒绝",
+    "invalid": "此登录请求无效。请从您的助手重新开始登录。",
+    "refused": "无法批准助手的请求：{{reason}}",
+    "back": "返回助手"
   }
 }

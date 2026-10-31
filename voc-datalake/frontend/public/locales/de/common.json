@@ -30,7 +30,8 @@
     "workflow": "Workflow",
     "radar": "Radar",
     "featureRequests": "Feedback-Boards",
-    "participants": "Teilnehmende"
+    "participants": "Teilnehmende",
+    "oauthConsent": "Assistent freigeben"
   },
   "cancel": "Abbrechen",
   "configureBrand": "Marke konfigurieren",
@@ -336,7 +337,43 @@
       "denied": "Abgelehnt",
       "failed": "Fehlgeschlagen"
     },
-    "shortcutTitle": "Einen externen Assistenten mit diesem Projekt verbinden"
+    "shortcutTitle": "Einen externen Assistenten mit diesem Projekt verbinden",
+    "mcpClientLabel": "Client",
+    "mcpClient": {
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor",
+      "kiro": "Kiro",
+      "inline": "Andere Clients"
+    },
+    "mcpFile": {
+      "claudeCode": "Als .mcp.json im Projektstamm speichern.",
+      "cursor": "Als .cursor/mcp.json im Projekt speichern, oder als ~/.cursor/mcp.json für alle Projekte.",
+      "kiro": "Als .kiro/settings/mcp.json im Workspace speichern, oder als ~/.kiro/settings/mcp.json. In der Kiro-IDE VOC_MCP_TOKEN unter Mcp Approved Env Vars hinzufügen; Kiro CLI liest sie aus der Shell.",
+      "inline": "Für Clients, die keine Umgebungsvariablen lesen: Das Token steht in der Datei, also nicht committen oder teilen."
+    },
+    "mcpEnvHint": "Diese Datei liest das Token aus der Umgebungsvariable {{name}} und enthält daher kein Geheimnis. Setzen Sie sie in der Shell, die den Client startet, mit einem Token von unten:",
+    "oauth": {
+      "title": "Mit Ihrem Konto anmelden",
+      "body": "Diese Assistenten verbinden sich ohne Token: Server hinzufügen, und der Assistent öffnet Ihren Browser zur Anmeldung und zur Freigabe des Zugriffs. Er handelt als Sie, nie als Administrator.",
+      "kiro": "Kiro (mcp.json)",
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor (mcp.json)",
+      "consentHint": "Auf dem Freigabebildschirm wählen Sie Nur Lesen oder Lesen und Schreiben und optional ein Projekt. Auf der folgenden Kontoseite melden Sie sich noch einmal an.",
+      "webUntested": "Web-Assistenten können sich mit derselben Server-URL anmelden. Ihre Anmeldung wurde noch nicht live getestet.",
+      "webNotConfigured": "Web-Assistenten sind in dieser Bereitstellung nicht eingerichtet (ein Betreiber fügt ihre Callback-URLs hinzu).",
+      "grantsTitle": "Angemeldete Assistenten",
+      "grantsFailed": "Ihre angemeldeten Assistenten konnten nicht geladen werden.",
+      "grantsEmpty": "Noch hat sich kein Assistent mit Ihrem Konto angemeldet.",
+      "revokeTitle": "Diesen Assistenten abmelden?",
+      "revokeBody": "„{{name}}“ verliert den Zugriff bei der nächsten Anfrage und muss sich erneut anmelden und freigegeben werden.",
+      "revokeNamed": "{{name}} abmelden",
+      "mintingOff": "In dieser Bereitstellung können keine persönlichen Token erstellt werden. Vorhandene Token funktionieren, bis sie ablaufen oder widerrufen werden; melden Sie sich stattdessen mit Ihrem Konto an.",
+      "status": {
+        "active": "Aktiv",
+        "revoked": "Abgemeldet",
+        "expired": "Abgelaufen"
+      }
+    }
   },
   "header": {
     "title": "Stimme des Kunden",
@@ -382,5 +419,21 @@
     "praise": "Positives Feedback ohne zu behebendes Problem",
     "question": "Fragt, wie etwas funktioniert",
     "other": "Nichts davon"
+  },
+  "oauthConsent": {
+    "title": "Assistent freigeben",
+    "asks": "{{client}} möchte VoC als Sie verwenden.",
+    "scope": {
+      "read": "Nur Lesen: Feedback, Kennzahlen, Gedächtnis und Projekte durchsuchen",
+      "write": "Lesen und Schreiben: außerdem Dokumente erstellen und aktualisieren"
+    },
+    "actsAs": "Er erhält Ihren Zugriff auf Projekte und Kategorien, höchstens als Bearbeiter, nie als Administrator. Sie können ihn jederzeit auf der Seite Verbinden abmelden.",
+    "runsAgents": "Als Administrator erlauben Sie ihm auch, Agentenläufe zu starten (bei jedem Lauf erneut geprüft).",
+    "approveFailed": "Die Freigabe ist fehlgeschlagen. Versuchen Sie es erneut.",
+    "approve": "Freigeben und anmelden",
+    "deny": "Ablehnen",
+    "invalid": "Diese Anmeldeanfrage ist ungültig. Starten Sie die Anmeldung erneut in Ihrem Assistenten.",
+    "refused": "Die Anfrage des Assistenten kann nicht freigegeben werden: {{reason}}",
+    "back": "Zurück zum Assistenten"
   }
 }

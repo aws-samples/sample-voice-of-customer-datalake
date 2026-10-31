@@ -11,6 +11,7 @@ import type { PluginManifest } from '../plugin-loader';
 import { apiGatewayRequestValidationSuppressions } from '../utils/nag-suppressions';
 import { apiAccessLogFormat } from './api-access-log';
 import type { ApiStackContext } from './api-context';
+import { MCP_OAUTH_METHOD_THROTTLE, mcpResourceMetadataUrl } from './api-mcp-oauth';
 import { GLOBAL_MCP_METHOD_THROTTLE } from './global-mcp';
 
 /**
@@ -486,6 +487,8 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
         // attempts/day against a 2^256 space). The per-project `/mcp/POST` and
         // `/mcp/{proxy+}` keys went with that server in 3.00.00.
         ...GLOBAL_MCP_METHOD_THROTTLE,
+        // The anonymous MCP OAuth facade and discovery documents (api-mcp-oauth.ts).
+        ...MCP_OAUTH_METHOD_THROTTLE,
         // Public unsubscribe (api-routes.ts): a recipient clicks once, a mail client's RFC 8058
         // one-click posts once. Each request is a token lookup and at most one write.
         [UNSUBSCRIBE_METHOD_KEY]: PUBLIC_UNSUBSCRIBE_THROTTLE,
@@ -526,6 +529,15 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   // — verified live 2026-08-18), so a dead MCP token is refused by its
   // authorizer instead (ACCESS_DENIED → 401 with the challenge, api-mcp.ts).
   // Pinned by 'unauthorized gateway response' in api-stack.test.ts.
+  //
+  // Since 5.61.00 the challenge also names the MCP endpoint's protected-resource
+  // metadata (RFC 9728), because a request to /mcp/global WITHOUT a credential
+  // gets THIS response (a TOKEN authorizer is never invoked without its identity
+  // source), and an MCP client starts OAuth sign-in from `resource_metadata`.
+  // Harmless to the SPA: it reads the status, never this header, and a browser
+  // prompts only for Basic/Digest challenges. No `error=` any more: RFC 6750 §3.1
+  // says a request that carried no credential gets none, and a refused MCP token
+  // is the MCP authorizer's ACCESS_DENIED (api-mcp.ts), which keeps `invalid_token`.
   api.addGatewayResponse('Unauthorized', {
     type: apigateway.ResponseType.UNAUTHORIZED,
     responseHeaders: {
@@ -535,7 +547,7 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
       // intermediary could cache the authorizer's 401 against the endpoint alone
       // and serve it to a request carrying a perfectly good credential.
       ...gatewayErrorCorsHeaders(allowedOrigin, ['Authorization']),
-      'WWW-Authenticate': '\'Bearer error="invalid_token"\'',
+      'WWW-Authenticate': `'Bearer resource_metadata="${mcpResourceMetadataUrl(restApiBaseUrl(stack, api))}"'`,
       'Access-Control-Expose-Headers': CORS_EXPOSE_HEADERS_VALUE,
     },
   });

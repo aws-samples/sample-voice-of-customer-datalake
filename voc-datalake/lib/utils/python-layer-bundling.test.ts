@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
-import { BUILD_VENV, BUILD_VENV_SETUP, LAYER_STRIP, layerStripSteps, pythonLayerCode } from './python-layer-bundling';
+import { BUILD_VENV, BUILD_VENV_SETUP, LAYER_BUILD_STAMP, LAYER_STRIP, layerStripSteps, pythonLayerCode } from './python-layer-bundling';
 
 // AssetCode keeps its constructor args in TypeScript-private fields, which
 // still exist at runtime; parse them with Zod instead of reaching in with
@@ -87,6 +87,7 @@ describe('pythonLayerCode', () => {
 
   it('excludes local build output so deploys never ship a stale nested copy', () => {
     expect(parsed.options.exclude).toContain('python');
+    expect(parsed.options.exclude).toContain(LAYER_BUILD_STAMP);
     expect(parsed.options.exclude).toContain('**/.DS_Store');
   });
 });
@@ -112,6 +113,10 @@ describe('lockstep with scripts/build-layers.sh', () => {
     expect(script).toContain('for layer_dir in "$LAYERS_DIR"/*/; do');
   });
 
+  it('manual builds write the stamp the CDK asset excludes', () => {
+    expect(script).toContain(`STAMP_NAME="${LAYER_BUILD_STAMP}"`);
+  });
+
   it('manual builds strip boto3/botocore too', () => {
     expect(script).toMatch(/rm -rf [^"]*\/python\/boto3 /);
     expect(script).toContain('/python/botocore');
@@ -123,7 +128,7 @@ describe('lockstep with scripts/build-layers.sh', () => {
 describe('layer source dirs', () => {
   // pythonLayerCode() deploys ONLY pip-installed dependencies. Anything else
   // placed in a layer dir would silently not ship — fail loudly instead.
-  const allowedEntries = new Set(['requirements.txt', 'python', 'README.md', '.DS_Store']);
+  const allowedEntries = new Set(['requirements.txt', 'python', LAYER_BUILD_STAMP, 'README.md', '.DS_Store']);
   const layersRoot = path.join(process.cwd(), 'lambda', 'layers');
 
   for (const layerDir of fs.readdirSync(layersRoot).filter((entry) => !entry.startsWith('.'))) {

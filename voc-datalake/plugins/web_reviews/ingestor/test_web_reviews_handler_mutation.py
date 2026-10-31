@@ -28,7 +28,7 @@ from test_web_reviews_handler import URL, WatermarkTable, ingestor, target_confi
 from _shared.base_ingestor import BaseIngestor, metrics
 from shared.test.clock import frozen_clock
 from shared.test.emf_fixtures import cold_start_metric_names
-from shared.test.instrumentation_fixtures import INSTRUMENTED_HANDLER_LAYERS, TRACER_SOURCE, handler_layers
+from shared.test.instrumentation_fixtures import HAND_WRITTEN_HANDLER_LAYERS, TRACER_SOURCE, handler_layers
 from web_reviews.ingestor import handler
 
 NOW = 1000.0
@@ -285,7 +285,7 @@ class TestRunForEvent:
 
 class TestTheLambdaInstrumentation:
     def test_the_handler_wears_the_shared_instrumentation_stack_in_order(self):
-        assert handler_layers(handler.lambda_handler) == INSTRUMENTED_HANDLER_LAYERS
+        assert handler_layers(handler.lambda_handler) == HAND_WRITTEN_HANDLER_LAYERS
 
     def test_the_cold_start_metric_is_flushed(self, capsys):
         context = SimpleNamespace(

@@ -56,6 +56,7 @@ from shared.import_runs import (
 )
 from shared.ingest_archive import DEFAULT_UPLOAD_SOURCE, prepare_messages, stamp_file_archive, upload_profile
 from shared.logging import logger, tracer
+from shared.model_profile import payload_fields
 from shared.producer_labels import message_labels
 from shared.radar_brands import radar_brand_setting, radar_stamp
 from shared.request_body import json_object_body
@@ -211,7 +212,7 @@ def start_parse():
 
     # Invoke async processing
     try:
-        invoke_lambda_async(MANUAL_IMPORT_PROCESSOR_FUNCTION, {'job_id': job_id})
+        invoke_lambda_async(MANUAL_IMPORT_PROCESSOR_FUNCTION, {'job_id': job_id, **payload_fields()})
     except Exception as e:
         logger.exception(f"Failed to invoke processor: {e}")
         # Update job status to failed
@@ -346,7 +347,7 @@ def _import_confirmed_reviews(job: dict, job_id: str, reviews: list[dict]) -> di
             if PROCESSING_QUEUE_URL:
                 sqs.send_message(
                     QueueUrl=PROCESSING_QUEUE_URL,
-                    MessageBody=json.dumps(message)
+                    MessageBody=json.dumps({**message, **payload_fields()})
                 )
             imported_count += 1
         except _AWS_WRITE_ERRORS as e:
@@ -490,7 +491,8 @@ def _send_items_to_sqs(messages: list[dict], label: str = 'row') -> tuple[int, l
     for start in range(0, len(messages), 10):
         chunk = messages[start:start + 10]
         entries: list[SendMessageBatchRequestEntryTypeDef] = [
-            {'Id': str(i), 'MessageBody': json.dumps(msg)}
+            # The importer's model profile rides each message (the processor scopes and drops it).
+            {'Id': str(i), 'MessageBody': json.dumps({**msg, **payload_fields()})}
             for i, msg in enumerate(chunk)
         ]
         try:

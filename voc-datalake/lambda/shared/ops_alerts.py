@@ -23,6 +23,9 @@ What is alarmed, and from where, comes from CDK as environment variables:
   math alarm SUMs their ``Errors`` (CloudWatch allows 10 metrics per alarm, so
   more ingestors than that split into further alarms). A math alarm is billed
   per metric, exactly like one alarm per ingestor, but notifies once.
+* ``OPS_ALERTS_MCP_SERVICE`` — the global MCP function's Powertools service name: four
+  spike alarms on its custom metrics (namespace ``VoC-MCP-Global``, ``MCP_ALARMS``), each
+  the Sum over one 5-minute period above its named threshold (docs/mcp.md → Alarms).
 """
 from __future__ import annotations
 
@@ -45,6 +48,15 @@ ITERATOR_AGE_THRESHOLD_MS: Final = 15 * 60 * 1000
 ITERATOR_AGE_PERIODS: Final = 3
 MAX_METRICS_PER_ALARM: Final = 10
 DELETE_BATCH: Final = 100
+
+# The global MCP endpoint's custom metrics (api/mcp_global_handler.py emits them with the
+# Powertools `service` dimension). Thresholds are per 5-minute period, so a single stale
+# client config or one refused tool never pages anybody; a scan, a broken deploy or a loop does.
+MCP_METRICS_NAMESPACE: Final = 'VoC-MCP-Global'
+MCP_AUTH_DENIED_THRESHOLD: Final = 50   # refused credentials (authorizer Deny, 401, 403 Origin)
+MCP_TOOL_DENIED_THRESHOLD: Final = 20   # scope / pin / admin / route 403 refusals of tool calls
+MCP_TOOL_FAILED_THRESHOLD: Final = 5    # tool calls a server fault stopped (-32603)
+MCP_RATE_LIMITED_THRESHOLD: Final = 30  # 429s from the per-token budget
 
 # Deliberately simple and linear (every repetition is bounded or separated by a
 # literal): a local part, one `@`, then two or more dot-separated domain labels.
@@ -70,6 +82,7 @@ class AlertTargets:
     processor_function: str
     aggregator_function: str
     ingestor_functions: tuple[str, ...]
+    mcp_service: str = ''
 
 
 def _csv(raw: str | None) -> list[str]:
@@ -99,6 +112,7 @@ def load_targets(env: Mapping[str, str] | None = None) -> AlertTargets | None:
         processor_function=source.get('OPS_ALERTS_PROCESSOR_FUNCTION', '').strip(),
         aggregator_function=source.get('OPS_ALERTS_AGGREGATOR_FUNCTION', '').strip(),
         ingestor_functions=tuple(_csv(source.get('OPS_ALERTS_INGESTOR_FUNCTIONS'))),
+        mcp_service=source.get('OPS_ALERTS_MCP_SERVICE', '').strip(),
     )
 
 
@@ -175,6 +189,28 @@ def _ingestor_alarm(targets: AlertTargets, slug: str, functions: list[str]) -> d
     }
 
 
+# slug, metric, threshold, what to check. docs/mcp.md → Alarms lists the same four.
+MCP_ALARMS: Final[tuple[tuple[str, str, int, str], ...]] = (
+    ('mcp-auth-denied', 'AuthDenied', MCP_AUTH_DENIED_THRESHOLD,
+     ('Many refused MCP credentials: a token scan, or clients still using revoked or expired tokens. '
+     'Check the global MCP function logs for the token ids.')),
+    ('mcp-tool-denied', 'ToolCall_denied', MCP_TOOL_DENIED_THRESHOLD,
+     'Many MCP tool calls were refused by scope, project pin or access. Check the token audit logs on Connect.'),
+    ('mcp-tool-failed', 'ToolCall_failed', MCP_TOOL_FAILED_THRESHOLD,
+     'MCP tool calls are failing with server errors. Check the global MCP function and the domain API logs.'),
+    ('mcp-rate-limited', 'RateLimited', MCP_RATE_LIMITED_THRESHOLD,
+     'MCP tokens are hitting the per-token rate limit: a client may be looping. Check the token audit logs.'),
+)
+
+
+def _mcp_alarm(targets: AlertTargets, slug: str, metric: str, threshold: int, description: str) -> dict[str, Any]:
+    return {
+        **_base(targets, slug, description),
+        **_single_metric(MCP_METRICS_NAMESPACE, metric, ('service', targets.mcp_service), 'Sum'),
+        'Threshold': threshold, 'EvaluationPeriods': 1, 'DatapointsToAlarm': 1,
+    }
+
+
 def alarm_definitions(targets: AlertTargets) -> list[dict[str, Any]]:
     """Every alarm alerting creates, as ``PutMetricAlarm`` arguments."""
     alarms = [_queue_alarm(targets, slug, queue) for slug, queue in targets.queues]
@@ -188,6 +224,8 @@ def alarm_definitions(targets: AlertTargets) -> list[dict[str, Any]]:
         chunk = ingestors[start:start + MAX_METRICS_PER_ALARM]
         number = start // MAX_METRICS_PER_ALARM + 1
         alarms.append(_ingestor_alarm(targets, 'ingestor-errors' if number == 1 else f'ingestor-errors-{number}', chunk))
+    if targets.mcp_service:
+        alarms.extend(_mcp_alarm(targets, *alarm) for alarm in MCP_ALARMS)
     return alarms
 
 

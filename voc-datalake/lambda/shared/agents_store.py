@@ -51,6 +51,7 @@ from shared.exceptions import ConflictError, NotFoundError, ServiceError, Valida
 from shared.indexes import AGENTS_LISTING_INDEX
 from shared.logging import logger
 from shared.model_config import ALLOWED_MODEL_IDS
+from shared.model_profile import payload_fields
 from shared.request_body import validated_text as _text
 from shared.row_ids import validated_row_id
 
@@ -908,6 +909,9 @@ def start_run(table: Any, agent: Mapping[str, Any], request: RunStart, *, now: d
         'started_at': stamp, 'workflow_id': agent.get('workflow_id') or workflow_schema.DEFAULT_WORKFLOW_ID,
         'workflow_revision': request.workflow_revision,
         'model_calls': 0, 'event_seq': 0,
+        # The starter's model profile (shared/model_profile.py; an e2e user's POST /agents/{id}/run), read
+        # back by the conductor and the node steps. A scheduled run has no request, so none.
+        **payload_fields(),
     }
     try:
         table.meta.client.transact_write_items(TransactItems=[

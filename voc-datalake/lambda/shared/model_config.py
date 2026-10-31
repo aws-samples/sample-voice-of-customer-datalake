@@ -32,6 +32,7 @@ import time
 
 from shared.aws import BEDROCK_MODEL_ID, get_dynamodb_resource
 from shared.logging import logger
+from shared.model_profile import E2E_PROFILE, active_profile
 
 MODEL_SETTINGS_PK = "SETTINGS#model"
 MODEL_SETTINGS_SK = "config"
@@ -209,6 +210,25 @@ _HAIKU45 = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 # lambda/stream/src/bedrock/model-fallback.ts (test_model_fallback_lockstep.py).
 MODEL_FALLBACK_ORDER = (_SONNET55, _SONNET5, _SONNET46, _HAIKU55, _HAIKU45)
 
+# --- Model profiles (shared/model_profile.py, 5.61.00) ------------------------
+# While a profile is in force (an e2e test user's request, or a job such a request
+# started) EVERY surface resolves to the profile's model, an explicit model id
+# included, and the capacity fallback stays on the profile's own models.
+# MUST stay in lockstep with PROFILE_MODELS in lambda/stream/src/bedrock/model-profile.ts.
+PROFILE_MODELS = {E2E_PROFILE: _HAIKU55}
+PROFILE_FALLBACKS = {E2E_PROFILE: (_HAIKU55, _HAIKU45)}
+
+
+def profile_model_id() -> str | None:
+    """The model every surface uses under the active profile, or None (no profile)."""
+    profile = active_profile()
+    return PROFILE_MODELS.get(profile) if profile else None
+
+
+def apply_model_profile(model_id: str) -> str:
+    """``model_id``, or the active profile's model when a profile is in force."""
+    return profile_model_id() or model_id
+
 # --- Surfaces ----------------------------------------------------------------
 # Every independently selectable AI surface with its built-in default (the
 # "Automatic" behaviour when the admin hasn't pinned a model). The default is
@@ -336,7 +356,12 @@ def fallback_chain(primary: str, surface: str = DEFAULT_SURFACE) -> tuple[str, .
     — de-duplicated, order kept. Only ``primary`` may be outside the allowlist (a
     legacy BEDROCK_MODEL_ID): every fallback is a model the stacks grant.
     """
-    candidates = [primary, surface_default(surface), *MODEL_FALLBACK_ORDER]
+    profile = active_profile()
+    profile_chain = PROFILE_FALLBACKS.get(profile) if profile else None
+    if profile_chain is not None:
+        candidates = [apply_model_profile(primary), *profile_chain]
+    else:
+        candidates = [primary, surface_default(surface), *MODEL_FALLBACK_ORDER]
     chain: list[str] = []
     for index, model in enumerate(candidates):
         allowed = index == 0 or model in ALLOWED_MODEL_IDS
@@ -452,9 +477,13 @@ def _allowlisted(model_id) -> str | None:
 def get_active_model_id(surface: str = DEFAULT_SURFACE) -> str:
     """Resolve the Bedrock model ID to use for a given AI surface.
 
-    Never raises. Precedence: per-surface override > legacy global override >
-    built-in surface default > BEDROCK_MODEL_ID.
+    Never raises. Precedence: active model profile (every surface) >
+    per-surface override > legacy global override > built-in surface default >
+    BEDROCK_MODEL_ID.
     """
+    forced = profile_model_id()
+    if forced:
+        return forced
     settings = _load_settings()
     surfaces = settings.get("surfaces")
     if isinstance(surfaces, dict):

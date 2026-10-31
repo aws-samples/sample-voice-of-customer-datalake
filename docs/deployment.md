@@ -32,7 +32,8 @@ From the project root:
 # Install all dependencies
 npm run install:all
 
-# Build Lambda layers (requires Docker; Finch users: CDK_DOCKER=finch npm run build:layers)
+# Build Lambda layers (requires Docker; Finch users: CDK_DOCKER=finch npm run build:layers).
+# Unchanged layers are skipped; FORCE_LAYER_BUILD=1 rebuilds them all (see "Faster deploys" below).
 npm run build:layers
 
 # Bootstrap CDK (first time only)
@@ -293,6 +294,37 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 ```bash
 npm run deploy:infra    # Deploy all CDK stacks, then refresh the API stage
 ```
+
+### Faster deploys: skip what did not change
+
+Two ways a deploy avoids redoing work:
+
+- **Layer builds skip unchanged layers.** `npm run build:layers` writes a stamp
+  (`lambda/layers/<layer>/.build-stamp`, gitignored) holding a SHA-256 of the
+  layer's `requirements*.txt`, the install recipe, the build image and the
+  platform. When the hash matches and the layer's `python/` dir exists, the layer
+  is skipped with one log line. A missing or unreadable stamp rebuilds it, and so
+  does a stamp older than 7 days (`LAYER_STAMP_MAX_AGE_DAYS=<days>` changes the
+  limit): a requirement without an exact pin (`>=`) is re-resolved at least once a
+  week instead of keeping the version of the first build.
+  `FORCE_LAYER_BUILD=1 npm run build:layers` (or `build-layers.sh --force`)
+  rebuilds every layer; do that after pulling a new build image, because the
+  `:latest` tag can move without the hash changing.
+- **Deploy only the stacks that changed (opt-in).**
+  `CDK_DEPLOY_CHANGED=1 npm run deploy:infra -- -c frontendDomain=example.com`
+  runs `cdk diff --all` once (with the `-c`/`--context` and `--profile`
+  arguments), then `cdk deploy --exclusively <changed stacks>`; CDK orders them
+  by dependency. The stage refresh (next section) then ALWAYS runs, also when
+  VocApiStack had no differences or no stack differs (nothing is deployed then):
+  an earlier deploy whose refresh never ran would otherwise keep removed routes
+  live until VocApiStack next changes. When `cdk diff` fails
+  or its output cannot be read with certainty (`scripts/cdk-changed-stacks.mjs`
+  cross-checks the per-stack results against the diff's own "Number of stacks
+  with differences"), the script falls back to the full deploy and the refresh.
+  Use it for whole-app deploys only: `--all` is replaced by the changed list, so
+  do not name stacks in the arguments. `cdk diff` reads the deployed templates,
+  so it needs the same read access as `cdk deploy`. The default (no variable)
+  is the full deploy.
 
 ### Refresh the API stage after every deploy (removed routes)
 
@@ -722,6 +754,7 @@ missing, the alarms themselves say whether alerting is on.
 | `aggregator-errors` | `voc-aggregation-processor` Lambda `Errors` | Sum > 0 over 5 minutes |
 | `aggregator-iterator-age` | `voc-aggregation-processor` `IteratorAge` | Max > 15 minutes for 3 consecutive 5-minute periods (dashboard metrics going stale) |
 | `ingestor-errors` | every enabled plugin ingestor's `Errors`, one metric-math `SUM` | Sum > 0 over 5 minutes (more than 10 ingestors split into `ingestor-errors-2`, …) |
+| `mcp-auth-denied`, `mcp-tool-denied`, `mcp-tool-failed`, `mcp-rate-limited` | `VoC-MCP-Global` metrics of `/mcp/global` | Sum over 5 minutes > 50 / 20 / 5 / 30 ([docs/mcp.md](mcp.md#alarms-and-concurrency)) |
 
 Missing data is never breaching, so an idle queue or function stays OK.
 
@@ -744,8 +777,8 @@ Every route is admin-only. Addresses are never logged.
 the time of writing), and the first 10 alarm metrics in an account each month are
 free. A metric-math alarm is billed per metric it reads, so the one ingestor `SUM`
 costs the same as one alarm per ingestor, but notifies once. With every alarm above
-and N enabled ingestors that is 8 + N alarm metrics: about $1.40 a month with 6
-ingestors, before the free tier. The topic's KMS key is about $1 per month whether
+and N enabled ingestors that is 12 + N alarm metrics (8 + N, plus the 4 MCP alarms): about
+$1.80 a month with 6 ingestors, before the free tier. The topic's KMS key is about $1 per month whether
 or not alerting is on; SNS email delivery is free at alarm volumes. Check current
 CloudWatch and KMS pricing for your region.
 
@@ -779,6 +812,15 @@ Every function's MemorySize follows the sizing policy in [lambda-sizing.md](lamb
 had traffic, run the read-only check (`voc-datalake/scripts/capacity/capacity-query.sh --hours 24`, or the
 `E2E_OPS=1` ops specs in `frontend/e2e`). AWS Lambda Power Tuning is the follow-up for a flagged function and
 needs owner approval — see the runbook there.
+
+### Reserved concurrency of the MCP endpoint (`-c mcpReservedConcurrency`)
+
+`voc-mcp-global-api` reserves 20 concurrent executions by default, taken from the account's unreserved
+Lambda pool, which must stay at 100 or more: an account whose concurrency quota is under 120 fails the
+VocApiStack deploy. Either raise the quota first, or deploy with `-c mcpReservedConcurrency=<n>` (a whole
+number; the quota must then be at least `n` + 100) or `-c mcpReservedConcurrency=0` (no reservation: the
+endpoint shares the unreserved pool). Anything else fails the synth. See
+[mcp.md → Alarms and concurrency](mcp.md#alarms-and-concurrency).
 
 ### What a Python Lambda bundle contains
 
@@ -1176,6 +1218,29 @@ aws bedrock-runtime converse --region us-east-1 \
   --model-id global.anthropic.claude-sonnet-4-6 \
   --messages '[{"role":"user","content":[{"text":"say ok"}]}]' \
   --inference-config '{"maxTokens":5}'
+```
+
+### E2E Test Users Run on Haiku 5.5 (the `e2e` Cognito group)
+
+VocCoreStack creates a Cognito group `e2e` next to `admins` and `users`. For a member, every model
+call the app makes on that user's behalf resolves to Claude Haiku 5.5 (`global.anthropic.claude-haiku-5-5`,
+mapped to `eu.` under `-c inferenceScope=eu`) on every surface, whatever is picked in Administration →
+AI models, and the capacity fallback stays on Haiku (then Haiku 4.5). It exists so the production e2e
+suite does not spend flagship-model money; real users and the admin picker are unaffected, and the
+image model (persona avatars) is not part of it. The group grants no permission.
+
+The profile is read only from verified data: the Cognito authorizer's `cognito:groups`, the claims the
+assistant stream forwards, the approver's groups the plan conductor re-reads in Cognito, and a
+`model_profile` field that a verified request stamped on a job (project jobs, assist jobs, agent runs,
+manual-import queue messages). A request body cannot set it. Logs: `[BEDROCK] Starting converse call
+… model_profile=e2e` in the Python Lambdas, `model profile applied` in `voc-chat-stream` / `voc-plan-step`.
+Not covered: background memory extraction, product-document extraction on upload, scheduled agent runs
+and global MCP token calls (no verified caller groups there).
+
+Add a test user once (admin only; the e2e suite's setup fails when a user is missing from the group):
+
+```bash
+aws cognito-idp admin-add-user-to-group --user-pool-id <UserPoolId> --username '<e2e user>' --group-name e2e
 ```
 
 ### Testing a Model Before Saving It (Administration → AI models)

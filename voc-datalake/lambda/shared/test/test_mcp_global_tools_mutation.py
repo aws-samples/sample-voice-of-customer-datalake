@@ -36,6 +36,7 @@ DAYS = {'type': 'integer', 'minimum': 0, 'maximum': 9999, 'default': 30,
         'description': 'Look-back window in days; 0 = all time.'}
 LIMIT = {'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': 20}
 FILTER = {'type': 'string', 'maxLength': 64}
+BOOL = {'type': 'boolean', 'default': False}
 ID = {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}
 PROJECT_ID = {**ID, 'description': 'Project id (from list_projects). Optional for a project-scoped token.'}
 TITLE = {'type': 'string', 'maxLength': 200}
@@ -58,23 +59,26 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
     'search_feedback': (
         'Search feedback',
         ('Search or list customer feedback (reviews, form submissions, imports) you can see. Give `query` '
-        '(2+ characters) for a text search, or only filters to list the newest items. Returns verbatims with '
-        'sentiment, category and urgency. Use it to ground any claim about what customers say.'),
+         '(2+ characters) for a text search, or only filters to list the newest items; `urgent: true` keeps '
+         'high-urgency items only. Returns verbatims with sentiment, category and urgency. Use it to ground any '
+         'claim about what customers say.'),
         _object({'query': {'type': 'string', 'maxLength': 500}, 'days': DAYS, 'limit': LIMIT,
-                 'category': FILTER, 'sentiment': FILTER, 'source': FILTER, **ITEM_FILTERS}),
+                 'category': FILTER, 'sentiment': FILTER, 'source': FILTER, 'urgent': BOOL, **ITEM_FILTERS}),
         False, False, False),
     'get_feedback': (
         'Get one feedback item',
-        'One feedback item in full, by `feedback_id` (from search_feedback).',
-        _object({'feedback_id': ID}, 'feedback_id'), False, False, False),
+        ('One feedback item in full, by `feedback_id` (from search_feedback); `include_similar: true` adds up to '
+        '5 similar items.'),
+        _object({'feedback_id': ID, 'include_similar': BOOL}, 'feedback_id'), False, False, False),
     'get_metrics': (
         'Get feedback metrics',
         ('Aggregated metrics over a window: `view` = summary (totals, average sentiment, urgent count, daily '
-        'series) or a breakdown by sentiment, categories, sources, personas or one dimension (`dimensions` + '
-        '`key`); every view takes the source / channel / tag / dims filters. Use it for trends and volumes '
-        'instead of counting search results.'),
+         'series), a breakdown by sentiment, categories, sources, personas or one dimension (`dimensions` + '
+         '`key`), `github` (GitHub issues per release and label) or `entities` (the filter values in use: '
+         'categories, sources, channels, tags, dimensions, with counts); every view takes the source / channel / '
+         'tag / dims filters. Use it for trends and volumes instead of counting search results.'),
         _object({'view': {'type': 'string', 'enum': ['summary', 'sentiment', 'categories', 'sources', 'personas',
-                                                     'dimensions'],
+                                                     'dimensions', 'github', 'entities'],
                           'default': 'summary'}, 'days': DAYS, 'key': FILTER, 'source': FILTER, **ITEM_FILTERS}),
         False, False, False),
     'list_categories': (
@@ -259,7 +263,7 @@ class TestEachToolBuildsItsRoute:
 
 class TestSearchFeedback:
     NO_FILTERS: ClassVar[dict] = {'days': 30, 'limit': 20, 'category': None, 'sentiment': None, 'source': None,
-                                  **NO_ITEM_FILTERS}
+                                  **NO_ITEM_FILTERS, 'urgent': None}
 
     def test_no_query_lists_with_the_default_filters(self):
         request = _build('search_feedback')
@@ -277,7 +281,7 @@ class TestSearchFeedback:
         request = _build('search_feedback', {'days': 0, 'limit': 100, 'category': ' billing ',
                                              'sentiment': 'negative', 'source': 'webscraper'})
         assert request.query == {'days': 0, 'limit': 100, 'category': 'billing', 'sentiment': 'negative',
-                                 'source': 'webscraper', **NO_ITEM_FILTERS}
+                                 'source': 'webscraper', **NO_ITEM_FILTERS, 'urgent': None}
 
     def test_item_filters_are_forwarded_and_an_empty_dims_is_no_filter(self):
         request = _build('search_feedback', {'query': 'late', 'channel': 'chat', 'tag': ' refund ',
@@ -308,7 +312,7 @@ class TestEveryRefusalNamesItsCause:
         ('search_feedback', {'source': 's' * 65}, 'source must be at most 64 characters'),
         ('get_metrics', {'days': 10000}, 'days must be an integer between 0 and 9999'),
         ('get_metrics', {'view': 'daily'},
-         'view must be one of: summary, sentiment, categories, sources, personas, dimensions'),
+         'view must be one of: summary, sentiment, categories, sources, personas, dimensions, github, entities'),
         ('get_metrics', {'view': 'dimensions'}, 'key is required'),
         ('get_metrics', {'view': 'dimensions', 'key': 'Product'},
          'key must be a dimension key (from list_dimensions)'),

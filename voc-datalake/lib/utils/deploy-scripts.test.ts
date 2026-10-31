@@ -243,6 +243,13 @@ describe('API stage refresh after deploy (R1)', () => {
     expect(refreshAt).toBeGreaterThan(deployAt);
   });
 
+  it('cdk-deploy.sh ends every path with the refresh, the changed-stacks mode included (never skipped)', () => {
+    const source = readFileSync(CDK_DEPLOY_SH, 'utf8');
+    const lines = source.trim().split('\n');
+    expect(lines.at(-1)).toBe('bash scripts/refresh-api-stage.sh');
+    expect(source).not.toMatch(/refresh not needed|api_deployed/);
+  });
+
   it('refresh-api-stage.sh creates a fresh deployment OF THE STAGE and nothing else', () => {
     const source = readFileSync(REFRESH_API_STAGE_SH, 'utf8');
     expect(source).toMatch(/^set -euo pipefail$/m);
@@ -350,10 +357,10 @@ describe('runtime config.json keys', () => {
     }
   });
 
-  it('reads the board and email flags from outputs a stack declares', () => {
+  it('reads the board, email and hosted-UI values from outputs a stack declares', () => {
     const deploy = readFileSync(DEPLOY_SH, 'utf8');
     const stacks = ['core-stack.ts', 'api-stack.ts'].map((f) => readFileSync(join(PROJECT_ROOT, 'lib', 'stacks', f), 'utf8')).join('\n');
-    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable']) {
+    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable', 'UserPoolDomain']) {
       expect(deploy).toContain(`select(.OutputKey=="${key}")`);
       expect(stacks).toMatch(new RegExp(`new cdk\\.CfnOutput\\(this, '${key}'`));
     }
