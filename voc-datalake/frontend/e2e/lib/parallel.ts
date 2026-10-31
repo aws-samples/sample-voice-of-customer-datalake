@@ -41,3 +41,35 @@ export function workerPlan(env: Readonly<Record<string, string | undefined>> = p
   const write = workerCount(env, 'E2E_WRITE_WORKERS', DEFAULT_WRITE_WORKERS)
   return { read, write, total: read + write }
 }
+
+/** run-sharded.sh's defaults per shard: the writing specs keep the 2 workers they had before the split. */
+const SHARD_WRITE_WORKERS = 2
+const SHARD_READ_WORKERS = 2
+
+/**
+ * Workers per shard for run-sharded.sh, from E2E_SHARD_WORKERS (the shard's `--workers`) and the
+ * per-project caps E2E_SHARD_WRITE_WORKERS / E2E_SHARD_READ_WORKERS:
+ * - no total: the caps (default 2 + 2) and total = their sum;
+ * - a total and no caps: writes get at most 2 and the read-only specs the rest, so the caps never
+ *   add up to more than the total (at a total of 1 both projects share the one worker);
+ * - a total and caps: a cap above the total is refused, the missing cap gets what is left (≥ 1).
+ */
+export function shardWorkerPlan(env: Readonly<Record<string, string | undefined>> = process.env): WorkerPlan {
+  const isSet = (name: string): boolean => (env[name]?.trim() ?? '') !== ''
+  if (!isSet('E2E_SHARD_WORKERS')) {
+    const write = workerCount(env, 'E2E_SHARD_WRITE_WORKERS', SHARD_WRITE_WORKERS)
+    const read = workerCount(env, 'E2E_SHARD_READ_WORKERS', SHARD_READ_WORKERS)
+    return { read, write, total: read + write }
+  }
+  const total = workerCount(env, 'E2E_SHARD_WORKERS', SHARD_WRITE_WORKERS + SHARD_READ_WORKERS)
+  const derivedWrite = Math.max(1, Math.min(SHARD_WRITE_WORKERS, total - 1))
+  const write = workerCount(env, 'E2E_SHARD_WRITE_WORKERS', derivedWrite)
+  const read = workerCount(env, 'E2E_SHARD_READ_WORKERS', Math.max(1, total - write))
+  refuseCapAboveTotal('E2E_SHARD_WRITE_WORKERS', write, total)
+  refuseCapAboveTotal('E2E_SHARD_READ_WORKERS', read, total)
+  return { read, write, total }
+}
+
+function refuseCapAboveTotal(name: string, cap: number, total: number): void {
+  if (cap > total) throw new Error(`${name}=${cap} is more than E2E_SHARD_WORKERS=${total}: lower it or raise the total`)
+}

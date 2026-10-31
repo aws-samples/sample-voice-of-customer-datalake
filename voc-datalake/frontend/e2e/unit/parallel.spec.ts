@@ -3,13 +3,16 @@
  * spec must really write nothing: no non-GET API call (the one stateless POST excepted), no ledger
  * entry, no assistant run. And the worker counts come from the env or fail loudly.
  */
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
-import { READ_ONLY_SPECS, READ_ONLY_SPEC_NAMES, workerPlan } from '../lib/parallel'
+import { READ_ONLY_SPECS, READ_ONLY_SPEC_NAMES, shardWorkerPlan, workerPlan } from '../lib/parallel'
 
-const TESTS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'tests')
+const E2E_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const TESTS_DIR = path.join(E2E_ROOT, 'tests')
 // POST /workflows/validate stores nothing (agents_handler); the only non-GET call a read-only spec may make.
 const STATELESS_POST = /apiCall\([^\n]*?(['"`])POST\1,\s*(['"`])\/workflows\/validate\2/g
 // Every lib/assistant.ts helper that starts (or counts, or resets) an assistant run, as in
@@ -56,4 +59,43 @@ test('workers: 4 read + 1 write by default, overridable, and a bad value is refu
   expect(workerPlan({ E2E_READ_WORKERS: '6', E2E_WRITE_WORKERS: '2' })).toStrictEqual({ read: 6, write: 2, total: 8 })
   expect(() => workerPlan({ E2E_READ_WORKERS: 'many' })).toThrow(/E2E_READ_WORKERS must be a whole number/)
   expect(() => workerPlan({ E2E_WRITE_WORKERS: '0' })).toThrow(/E2E_WRITE_WORKERS/)
+})
+
+test('shard workers: 2 + 2 by default, a total alone keeps writes at 2 at most and never exceeds the total', () => {
+  expect(shardWorkerPlan({})).toStrictEqual({ read: 2, write: 2, total: 4 })
+  expect(shardWorkerPlan({ E2E_SHARD_READ_WORKERS: '5' })).toStrictEqual({ read: 5, write: 2, total: 7 })
+  expect(shardWorkerPlan({ E2E_SHARD_WORKERS: '6' })).toStrictEqual({ read: 4, write: 2, total: 6 })
+  expect(shardWorkerPlan({ E2E_SHARD_WORKERS: '3' })).toStrictEqual({ read: 1, write: 2, total: 3 })
+  expect(shardWorkerPlan({ E2E_SHARD_WORKERS: '2' })).toStrictEqual({ read: 1, write: 1, total: 2 })
+  // One worker: both projects share it (Playwright's --workers=1 runs one test at a time).
+  expect(shardWorkerPlan({ E2E_SHARD_WORKERS: '1' })).toStrictEqual({ read: 1, write: 1, total: 1 })
+  for (const total of [2, 3, 4, 8, 16]) {
+    const plan = shardWorkerPlan({ E2E_SHARD_WORKERS: String(total) })
+    expect(plan.write, `total ${total}`).toBeLessThanOrEqual(2)
+    expect(plan.read + plan.write, `total ${total}`).toBeLessThanOrEqual(total)
+  }
+  // An explicit cap with a total: the other cap gets the rest.
+  expect(shardWorkerPlan({ E2E_SHARD_WORKERS: '8', E2E_SHARD_WRITE_WORKERS: '3' })).toStrictEqual({ read: 5, write: 3, total: 8 })
+  expect(shardWorkerPlan({ E2E_SHARD_WORKERS: '8', E2E_SHARD_READ_WORKERS: '7' })).toStrictEqual({ read: 7, write: 2, total: 8 })
+})
+
+test('shard workers: a cap above the total or a bad value is refused', () => {
+  expect(() => shardWorkerPlan({ E2E_SHARD_WORKERS: '2', E2E_SHARD_WRITE_WORKERS: '3' }))
+    .toThrow(/E2E_SHARD_WRITE_WORKERS=3 is more than E2E_SHARD_WORKERS=2/)
+  expect(() => shardWorkerPlan({ E2E_SHARD_WORKERS: '4', E2E_SHARD_READ_WORKERS: '9' }))
+    .toThrow(/E2E_SHARD_READ_WORKERS=9 is more than E2E_SHARD_WORKERS=4/)
+  expect(() => shardWorkerPlan({ E2E_SHARD_WORKERS: 'all' })).toThrow(/E2E_SHARD_WORKERS must be a whole number/)
+})
+
+test('run-sharded.sh takes its workers from shardWorkerPlan and stops on an inconsistent combination', () => {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'voc-e2e-shard-'))
+  const run = spawnSync('bash', ['scripts/run-sharded.sh', '1'], {
+    cwd: E2E_ROOT,
+    env: { ...process.env, E2E_SHARD_OUT: out, E2E_SHARD_WORKERS: '2', E2E_SHARD_WRITE_WORKERS: '3' },
+    encoding: 'utf8',
+  })
+  expect(run.status).toBe(2)
+  expect(run.stderr).toContain('E2E_SHARD_WRITE_WORKERS=3 is more than E2E_SHARD_WORKERS=2')
+  // Refused before any shard started.
+  expect(fs.existsSync(path.join(out, 'shard1'))).toBe(false)
 })
