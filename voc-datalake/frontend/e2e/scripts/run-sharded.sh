@@ -14,7 +14,8 @@
 #      E2E_TAG_RUN_ID  the test traffic tag shared by all shards (default e2e-[<track>-]<UTC yyyymmddThhmmssZ>)
 #      E2E_SHARD_WRITE_WORKERS  workers per shard for the specs that write (default 2, as before 5.63.00)
 #      E2E_SHARD_READ_WORKERS   workers per shard for the read-only specs (lib/parallel.ts; default 2)
-#      E2E_SHARD_WORKERS  total workers per shard (default read + write)
+#      E2E_SHARD_WORKERS  total workers per shard (default read + write; set alone, writes get at most 2
+#                         and the read-only specs the rest; a cap above it is refused)
 set -uo pipefail
 
 MAX_SHARDS=16
@@ -27,12 +28,17 @@ shift
 
 E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE="${E2E_SHARD_OUT:-$E2E_DIR/e2e-output/sharded-$(date +%s)}"
-WRITE_WORKERS="${E2E_SHARD_WRITE_WORKERS:-2}"
-READ_WORKERS="${E2E_SHARD_READ_WORKERS:-2}"
-WORKERS="${E2E_SHARD_WORKERS:-$((WRITE_WORKERS + READ_WORKERS))}"
+cd "$E2E_DIR" || exit 2
+# The worker arithmetic lives in lib/parallel.ts shardWorkerPlan (unit/parallel.spec.ts); a bad or
+# inconsistent combination stops here, before any shard starts.
+PLAN="$(node --experimental-strip-types --no-warnings --input-type=module -e '
+  const { shardWorkerPlan } = await import("./lib/parallel.ts")
+  try { const p = shardWorkerPlan(); process.stdout.write(`${p.write} ${p.read} ${p.total}`) }
+  catch (error) { process.stderr.write(`${error.message}\n`); process.exit(2) }')" || exit 2
+read -r WRITE_WORKERS READ_WORKERS WORKERS <<< "$PLAN"
+echo "workers per shard: $WORKERS ($WRITE_WORKERS writing, $READ_WORKERS read-only)"
 BLOBS="$BASE/blob"
 mkdir -p "$BLOBS"
-cd "$E2E_DIR" || exit 2
 
 # One distinct run id per shard (names stay `e2e-<run id>-…`, and with E2E_TRACK `e2e-<track>-<ms>-…`).
 STAMP="$(node -e 'process.stdout.write(String(Date.now()))')"
