@@ -45,5 +45,26 @@
     "title": "Ingrese Código de Verificación"
   },
   "showPassword": "Mostrar contraseña",
-  "hidePassword": "Ocultar contraseña"
+  "hidePassword": "Ocultar contraseña",
+  "passkey": {
+    "add": "Añadir una clave de acceso",
+    "signIn": "Iniciar sesión con una clave de acceso",
+    "offer": {
+      "title": "Inicia sesión más rápido con una clave de acceso",
+      "body": "Una clave de acceso te permite iniciar sesión en este dispositivo con tu huella dactilar, tu rostro o el bloqueo de pantalla en lugar de tu contraseña. No puede ser suplantada por phishing ni reutilizada en otro sitio.",
+      "notNow": "Ahora no"
+    },
+    "section": {
+      "title": "Clave de acceso",
+      "intro": "Inicia sesión en este dispositivo con tu huella dactilar, tu rostro o el bloqueo de pantalla en lugar de tu contraseña. Tu contraseña seguirá funcionando.",
+      "added": "Clave de acceso añadida. La próxima vez podrás iniciar sesión con ella."
+    },
+    "errors": {
+      "needUsername": "Introduce primero tu nombre de usuario o correo electrónico y luego elige Iniciar sesión con una clave de acceso.",
+      "cancelled": "La solicitud de clave de acceso se canceló o agotó el tiempo de espera. Inténtalo de nuevo cuando estés listo.",
+      "no_passkey": "No hay ninguna clave de acceso configurada para esta cuenta en este dispositivo. Inicia sesión con tu contraseña y luego añade una.",
+      "unsupported": "Este navegador no puede usar claves de acceso. Inicia sesión con tu contraseña.",
+      "unknown": "El paso de la clave de acceso ha fallado. Inténtalo de nuevo o inicia sesión con tu contraseña."
+    }
+  }
 }

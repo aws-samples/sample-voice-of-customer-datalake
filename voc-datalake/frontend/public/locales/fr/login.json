@@ -45,5 +45,26 @@
     "title": "Entrer le code de vérification"
   },
   "showPassword": "Afficher le mot de passe",
-  "hidePassword": "Masquer le mot de passe"
+  "hidePassword": "Masquer le mot de passe",
+  "passkey": {
+    "add": "Ajouter une clé d'accès",
+    "signIn": "Se connecter avec une clé d'accès",
+    "offer": {
+      "title": "Connectez-vous plus rapidement avec une clé d'accès",
+      "body": "Une clé d'accès vous permet de vous connecter sur cet appareil avec votre empreinte digitale, votre visage ou le verrouillage de votre écran, au lieu de votre mot de passe. Elle ne peut pas être détournée par hameçonnage ni réutilisée sur un autre site.",
+      "notNow": "Plus tard"
+    },
+    "section": {
+      "title": "Clé d'accès",
+      "intro": "Connectez-vous sur cet appareil avec votre empreinte digitale, votre visage ou le verrouillage de votre écran, au lieu de votre mot de passe. Votre mot de passe reste valide.",
+      "added": "Clé d'accès ajoutée. Vous pourrez vous connecter avec elle la prochaine fois."
+    },
+    "errors": {
+      "needUsername": "Saisissez d'abord votre nom d'utilisateur ou votre e-mail, puis choisissez Se connecter avec une clé d'accès.",
+      "cancelled": "La demande de clé d'accès a été annulée ou a expiré. Réessayez lorsque vous êtes prêt.",
+      "no_passkey": "Aucune clé d'accès n'est configurée pour ce compte sur cet appareil. Connectez-vous avec votre mot de passe, puis ajoutez-en une.",
+      "unsupported": "Ce navigateur ne peut pas utiliser les clés d'accès. Connectez-vous avec votre mot de passe.",
+      "unknown": "L'étape de la clé d'accès a échoué. Réessayez ou connectez-vous avec votre mot de passe."
+    }
+  }
 }

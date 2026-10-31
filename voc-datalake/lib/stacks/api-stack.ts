@@ -359,6 +359,8 @@ export class VocApiStack extends VocStack {
         webSearch: webSearch !== undefined,
         // Participant email (asks) can be sent: `-c emailFrom` is set.
         email: emailSenderOf(this.node) !== undefined,
+        // Opt-in passkeys: the app user pool allows WebAuthn sign-in (core-auth.ts), on every deployment.
+        passkey: true,
       },
       // The board pool (/board and /review): its ids and how it emails sign-in codes.
       ...boardRuntimeConfig(props, emailSenderOf(this.node) !== undefined),
