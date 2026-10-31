@@ -11,6 +11,7 @@ import { ACCESS_LOG_FIELDS } from './api-access-log';
 import { byCodeUnit } from '../utils/compare';
 import { apiTemplate } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { API_ENDPOINT_ACCESS_MODE, API_SECURITY_POLICY } from './api-tls';
 
 beforeAll(() => {
   apiTemplate();
@@ -48,15 +49,44 @@ describe('API stage access log', () => {
     ]);
   });
 
-  it('adds the real path, the user agent, the integration status and the gateway error message', () => {
+  it('adds the user agent, the integration status and the gateway error message', () => {
     const format = stageLogFormat();
-    expect(format['path']).toBe('$context.path');
     expect(format['userAgent']).toBe('$context.identity.userAgent');
     expect(format['integrationStatus']).toBe('$context.integration.status');
     expect(format['errorMessage']).toBe('$context.error.message');
   });
 
+  it('never logs the real path: it carries bearer ids such as the ballot session id (DATA-3)', () => {
+    expect(Object.values(stageLogFormat())).not.toContain('$context.path');
+  });
+
+  it('logs who made the request and the negotiated TLS version (OPS-7, EDGE-1)', () => {
+    const format = stageLogFormat();
+    expect([format['sub'], format['principalId'], format['tlsVersion']]).toStrictEqual([
+      '$context.authorizer.claims.sub', '$context.authorizer.principalId', '$context.tlsVersion',
+    ]);
+  });
+
   it('logs exactly the declared fields', () => {
     expect(stageLogFormat()).toStrictEqual(ACCESS_LOG_FIELDS);
+  });
+});
+
+describe('REST API transport and execution logging (WA SEC09-BP02 EDGE-1, DATA-2)', () => {
+  it('pins an enhanced TLS 1.2+ forward-secret policy on the execute-api endpoint', () => {
+    const apis = Object.values(apiTemplate().findResources('AWS::ApiGateway::RestApi'));
+    expect(apis).toHaveLength(1);
+    expect(apis[0]).toMatchObject({
+      Properties: { SecurityPolicy: API_SECURITY_POLICY, EndpointAccessMode: API_ENDPOINT_ACCESS_MODE },
+    });
+  });
+
+  it('writes execution logs for errors only, never request bodies', () => {
+    const [stage] = Object.values(apiTemplate().findResources('AWS::ApiGateway::Stage'));
+    expect(stage).toMatchObject({
+      Properties: { MethodSettings: expect.arrayContaining([expect.objectContaining({
+        HttpMethod: '*', ResourcePath: '/*', LoggingLevel: 'ERROR', DataTraceEnabled: false,
+      })]) },
+    });
   });
 });

@@ -10,6 +10,7 @@ import { NagSuppressions } from 'cdk-nag';
 import type { PluginManifest } from '../plugin-loader';
 import { apiGatewayRequestValidationSuppressions } from '../utils/nag-suppressions';
 import { apiAccessLogFormat } from './api-access-log';
+import { applyApiTlsPolicy } from './api-tls';
 import type { ApiStackContext } from './api-context';
 import { MCP_OAUTH_METHOD_THROTTLE, mcpResourceMetadataUrl } from './api-mcp-oauth';
 import { GLOBAL_MCP_METHOD_THROTTLE } from './global-mcp';
@@ -496,7 +497,9 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
         ...Object.fromEntries(REVIEW_METHOD_KEYS.map((key) => [key, REVIEW_THROTTLE])),
       },
       metricsEnabled: true,
-      loggingLevel: apigateway.MethodLoggingLevel.INFO,
+      // ERROR, not INFO (DATA-2): the access log already records every request, and execution logs go to a
+      // group API Gateway creates itself with no retention (docs/deployment.md → API Gateway execution logs).
+      loggingLevel: apigateway.MethodLoggingLevel.ERROR,
       dataTraceEnabled: false,
       accessLogDestination: new apigateway.LogGroupLogDestination(apiLogGroup),
       // The standard JSON fields + path, userAgent, integrationStatus, errorMessage (api-access-log.ts).
@@ -507,6 +510,7 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   });
 
   NagSuppressions.addResourceSuppressions(api, apiGatewayRequestValidationSuppressions, true);
+  applyApiTlsPolicy(api);
 
   // Gateway responses for CORS on errors
   api.addGatewayResponse('Default4XX', {
