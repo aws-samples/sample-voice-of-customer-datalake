@@ -98,6 +98,40 @@
       "medium": "中",
       "low": "低",
       "unrated": "未评级"
+    },
+    "profile": {
+      "title": "来源概况",
+      "description": "每个来源的反馈情况：评分、情绪和文本长度。",
+      "notProfiled": "此时间段内 {{share}} 的反馈在开始统计概况之前存储，未包含在内。重建该时间段的汇总数据即可加入。",
+      "facetGroup": "要显示的概况",
+      "tableCaption": "各来源的{{facet}}",
+      "profiled": "已统计",
+      "facets": {
+        "rating": "评分",
+        "sentiment": "情绪",
+        "length": "文本长度"
+      },
+      "rating": {
+        "5": "5 星",
+        "4": "4 星",
+        "3": "3 星",
+        "2": "2 星",
+        "1": "1 星",
+        "none": "无评分"
+      },
+      "sentiment": {
+        "positive": "正面",
+        "neutral": "中性",
+        "mixed": "混合",
+        "negative": "负面",
+        "other": "其他"
+      },
+      "length": {
+        "short": "少于 50 个字符",
+        "medium": "50–199 个字符",
+        "long": "200–999 个字符",
+        "very_long": "1,000 个字符及以上"
+      }
     }
   }
 }

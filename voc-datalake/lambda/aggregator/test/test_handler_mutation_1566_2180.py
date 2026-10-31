@@ -100,8 +100,8 @@ class TestEachPathLogsWhatItDid:
             'its aggregates have expired and must not be partially recreated')
 
     @pytest.mark.parametrize(('live', 'skipped'), [
-        ({DAY: False, NEXT_DAY: True}, f'Not decrementing 6 counter(s) on the aged-out {DAY}'),
-        ({DAY: True, NEXT_DAY: False}, f'Not incrementing 6 counter(s) on the aged-out {NEXT_DAY}'),
+        ({DAY: False, NEXT_DAY: True}, f'Not decrementing 9 counter(s) on the aged-out {DAY}'),
+        ({DAY: True, NEXT_DAY: False}, f'Not incrementing 9 counter(s) on the aged-out {NEXT_DAY}'),
     ])
     def test_the_dead_side_of_a_cross_day_edit_names_its_count_and_day(self, live, skipped):
         # A date edit moves every one of the item's six counters to the other day.
