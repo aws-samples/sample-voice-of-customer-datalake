@@ -25,6 +25,10 @@ const LayersSchema = z.looseObject({
 });
 const byName = (a: string, b: string): number => a.localeCompare(b);
 
+/** A layer's requirements.txt lines, comments and blanks dropped. */
+const requirements = (dir: string): string[] => fs.readFileSync(path.join(dir, 'requirements.txt'), 'utf8')
+  .split('\n').map((line) => line.split('#')[0]?.trim() ?? '').filter(Boolean);
+
 /** Logical id of the one layer whose id starts with `prefix`. */
 function layerId(template: Template, prefix: string): string {
   const ids = Object.keys(template.findResources('AWS::Lambda::LayerVersion')).filter((id) => id.startsWith(prefix));
@@ -71,12 +75,25 @@ describe('the signing layer (cryptography)', () => {
   });
 
   it('the split libraries are installed by their own layer and no longer by the shared ones', () => {
-    const requirements = (dir: string): string[] => fs.readFileSync(path.join(dir, 'requirements.txt'), 'utf8')
-      .split('\n').map((line) => line.split('#')[0]?.trim() ?? '').filter(Boolean);
     expect(requirements(SIGNING_LAYER_DIR)).toStrictEqual(['cryptography>=50.0.2']);
     expect(requirements(EMAIL_INTAKE_LAYER_DIR)).toStrictEqual(['lxml>=6.1.3']);
     expect(requirements('lambda/layers/processing-deps').join(' ')).not.toContain('cryptography');
     expect(requirements('lambda/layers/ingestion-deps').join(' ')).not.toContain('lxml');
+  });
+});
+
+// shared/ingest_schemas.py validates every processing-queue message in the ingestion Lambdas (writer) AND the
+// processor (reader), so the two layers must install the SAME pydantic: a floor in one could resolve to a newer
+// release than the other's pin, and the two sides would validate one message differently (5.60.01).
+describe('pydantic is one exact version in both layers that run the ingest schemas', () => {
+  const pins = (dir: string): string[] => requirements(dir).filter((line) => /^pydantic\b/.test(line));
+
+  it('pins pydantic exactly, to the same version, in the ingestion and processing layers', () => {
+    const ingestion = pins('lambda/layers/ingestion-deps');
+    const processing = pins('lambda/layers/processing-deps');
+    expect(ingestion).toHaveLength(1);
+    expect(ingestion[0]).toMatch(/^pydantic==\d+\.\d+\.\d+$/);
+    expect(processing).toStrictEqual(ingestion);
   });
 });
 
