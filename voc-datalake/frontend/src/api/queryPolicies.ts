@@ -112,6 +112,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'my-ai-mode': 'config', // the caller's way of working with AI (GET /users/me/ai-mode, admin-set)
   'my-context': 'config',
   'participants': 'standard', // lists, people, asks (an ask's detail polls itself while sending)
+  'passkey': 'config', // whether the signed-in person has a passkey (Cognito, read once for the sign-in offer)
   'persona-copy-sources': 'standard', // a project's "Copy from…" sources (library + the caller's projects)
   'prioritization-config': 'config', // the workspace scoring setup (metrics, weights)
   'prioritization-scores': 'standard',
