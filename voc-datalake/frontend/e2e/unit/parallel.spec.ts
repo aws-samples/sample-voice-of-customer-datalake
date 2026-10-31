@@ -12,7 +12,10 @@ import { READ_ONLY_SPECS, READ_ONLY_SPEC_NAMES, workerPlan } from '../lib/parall
 const TESTS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'tests')
 // POST /workflows/validate stores nothing (agents_handler); the only non-GET call a read-only spec may make.
 const STATELESS_POST = /apiCall\([^\n]*?'POST',\s*'\/workflows\/validate'/g
-const WRITES = /'(?:POST|PUT|PATCH|DELETE)'|recordCreated\(|askAssistant\(|\bask\(|sendOnly\(|approve\(/
+// Every lib/assistant.ts helper that starts (or counts, or resets) an assistant run, as in
+// unit/conversation-cap.spec.ts: a read-only spec calls none of them.
+const ASSISTANT_RUN_HELPERS = ['ask', 'askAssistant', 'sendOnly', 'approve', 'decline', 'newChat', 'countRun'] as const
+const WRITES = new RegExp(`'(?:POST|PUT|PATCH|DELETE)'|recordCreated\\(|\\b(?:${ASSISTANT_RUN_HELPERS.join('|')})\\(`)
 
 test('every listed spec exists and none of them writes', () => {
   const writing = READ_ONLY_SPEC_NAMES.filter((name) => {
@@ -20,6 +23,15 @@ test('every listed spec exists and none of them writes', () => {
     return WRITES.test(source.replace(STATELESS_POST, ''))
   })
   expect(writing).toStrictEqual([])
+})
+
+test('the write guard catches every assistant-run helper and each write verb', () => {
+  for (const helper of ASSISTANT_RUN_HELPERS) expect(WRITES.test(`await ${helper}(page)`), helper).toBe(true)
+  expect(WRITES.test("apiCall(request, 'DELETE', '/x')")).toBe(true)
+  expect(WRITES.test('recordCreated(ledger, id)')).toBe(true)
+  expect(WRITES.test("apiCall(request, 'GET', '/projects')")).toBe(false)
+  expect(WRITES.test('await page.getByRole("button", { name: "Decline" }).isVisible()')).toBe(false)
+  expect(WRITES.test('await openFloating(page)')).toBe(false)
 })
 
 test('the pattern matches exactly the listed specs', () => {
