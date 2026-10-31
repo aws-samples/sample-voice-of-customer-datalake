@@ -86,4 +86,27 @@ describe('Company → Personas', () => {
     expect(await screen.findByText(/An administrator fills it/)).toBeInTheDocument()
   })
 
+  it('says when the library cannot be read', async () => {
+    route({ 'GET /company-personas/jobs': () => ({ jobs: [] }) })
+    renderPersonasTab()
+    expect(await screen.findByRole('alert')).toHaveTextContent("The company personas couldn't be loaded.")
+  })
+
+  it('imports pasted text into the library and closes the dialog', async () => {
+    route({
+      'GET /company-personas': () => ({ personas: [FARAH], can_edit: true }),
+      'GET /company-personas/jobs': () => ({ jobs: [] }),
+      'POST /company-personas/import': () => ({ success: true, job_id: 'job_1', status: 'running', message: '' }),
+    })
+    const user = userEvent.setup()
+    renderPersonasTab()
+    await user.click(await screen.findByRole('button', { name: /Import Persona/ }))
+    await user.click(screen.getByRole('button', { name: /Paste content/i }))
+    await user.type(screen.getByRole('textbox', { name: 'Paste Persona Content' }), 'A frequent flyer who books every month')
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Import Persona/i }))
+
+    await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/company-personas/import', expect.objectContaining({ method: 'POST' })))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
 })
