@@ -54,7 +54,6 @@ MAX_SENDS_PER_SECOND: Final = 10
 # Stop with this much of the invocation left: one send plus the re-invoke fit easily.
 MIN_REMAINING_MS: Final = 10_000
 ERROR_ERASED: Final = 'erased'
-ERROR_DAILY_CAP: Final = 'daily_cap'
 ERROR_SEND: Final = 'send_error'
 _ERROR_CODE: Final = re.compile(r'^[A-Za-z][A-Za-z0-9_.]{0,63}\Z')
 
@@ -132,8 +131,8 @@ def _send_one(table: Any, ask: Mapping[str, Any], row: Mapping[str, Any], person
         _settle(table, ask_id, person_id, RCPT_FAILED, 'failed', error=ERROR_ERASED)
     elif not is_active(person):
         _settle(table, ask_id, person_id, RCPT_SKIPPED, 'skipped')
-    elif not claim_send(table, int(settings['daily_send_cap'])):
-        _settle(table, ask_id, person_id, RCPT_FAILED, 'failed', error=ERROR_DAILY_CAP)
+    elif (refusal := claim_send(table, int(settings['daily_send_cap']), str(ask.get('created_by') or ''))) is not None:
+        _settle(table, ask_id, person_id, RCPT_FAILED, 'failed', error=refusal)
     else:
         pacer.wait()
         code = _deliver(table, ask, person, str(settings['sender_name']))

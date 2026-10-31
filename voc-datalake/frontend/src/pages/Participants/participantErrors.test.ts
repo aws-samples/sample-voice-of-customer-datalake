@@ -17,6 +17,7 @@ describe('participantErrorMessage, from a backend-shaped error body', () => {
   it.each([
     [409, 'email_not_configured', 'participants:errors.emailNotConfigured'],
     [429, 'daily_cap', 'participants:errors.dailyCap'],
+    [429, 'sender_daily_cap', 'participants:errors.senderDailyCap'],
     [400, 'no_recipients', 'participants:errors.noRecipients'],
     [400, 'too_many_recipients', 'participants:errors.tooManyRecipients'],
     [400, 'external_not_allowed', 'participants:errors.externalNotAllowed'],
