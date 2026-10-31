@@ -96,7 +96,7 @@ describe('useCompanyPersonas', () => {
 
   it('does not refetch when a handled completion drops out of the jobs list', async () => {
     const now = new Date().toISOString()
-    const phase = { jobs: [
+    const phase: { jobs: Array<Partial<ProjectJob>> } = { jobs: [
       { job_id: 'job_1', job_type: 'generate_personas', status: 'completed', completed_at: now },
       { job_id: 'job_2', job_type: 'import_persona', status: 'completed', completed_at: now },
     ] }

@@ -35,9 +35,10 @@ export function useCompanyPersonas() {
     refetchInterval: (query) => jobsPollInterval(query.state.data?.jobs ?? [], jobStartedAt, Date.now()),
   })
 
-  // Refetch the library once per finished job: each poll tick inside the "recently completed"
-  // window brings a new `jobs.data`, and only a completion not seen before invalidates the list
-  // (a job leaving the window, or dropping out of a truncated list, never does). The set grows by
+  // Refetch the library when a job finishes: each poll tick inside the "recently completed"
+  // window brings a new `jobs.data`, and only completions not seen before invalidate the list,
+  // once per tick however many there are (a job leaving the window, or dropping out of a
+  // truncated list, never does). The set grows by
   // one key per finished job while the page is open: a handful, so it is not pruned.
   const handledCompletions = useRef(new Set<string>())
   useEffect(() => {
