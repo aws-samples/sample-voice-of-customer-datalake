@@ -32,6 +32,14 @@ function renderLogin() {
   return renderWithQueryClient(<TestRouter initialEntries={['/login']}><Login /></TestRouter>)
 }
 
+/** Render the page, type `username` and press the passkey button. */
+async function signInWithPasskeyAs(username: string) {
+  const user = userEvent.setup()
+  renderLogin()
+  await user.type(screen.getByPlaceholderText(/Enter your username/i), username)
+  await user.click(screen.getByRole('button', PASSKEY_BUTTON))
+}
+
 beforeEach(() => {
   mockCanUse.mockReturnValue(true)
   mockPasskeySignIn.mockResolvedValue(undefined)
@@ -53,10 +61,7 @@ describe('Login with a passkey', () => {
   })
 
   it('signs in with the typed username and continues where the person was going', async () => {
-    const user = userEvent.setup()
-    renderLogin()
-    await user.type(screen.getByPlaceholderText(/Enter your username/i), 'dana@example.com')
-    await user.click(screen.getByRole('button', PASSKEY_BUTTON))
+    await signInWithPasskeyAs('dana@example.com')
     expect(mockPasskeySignIn).toHaveBeenCalledExactlyOnceWith('dana@example.com')
     expect(mockNavigate).toHaveBeenCalledWith('/dashboard', { replace: true })
   })
@@ -67,20 +72,14 @@ describe('Login with a passkey', () => {
   ] as const)('explains a %s failure and stays on the page', async (code, text) => {
     mockPasskeySignIn.mockRejectedValue(new PasskeyError(code))
     mockNavigate.mockClear()
-    const user = userEvent.setup()
-    renderLogin()
-    await user.type(screen.getByPlaceholderText(/Enter your username/i), 'dana@example.com')
-    await user.click(screen.getByRole('button', PASSKEY_BUTTON))
+    await signInWithPasskeyAs('dana@example.com')
     expect(await screen.findByRole('alert')).toHaveTextContent(text)
     expect(mockNavigate).not.toHaveBeenCalled()
   })
 
   it('shows the set-new-password form when the account must still set its first password', async () => {
     mockPasskeySignIn.mockRejectedValue(new AuthChallengeError(NEW_PASSWORD_REQUIRED, 'New password required'))
-    const user = userEvent.setup()
-    renderLogin()
-    await user.type(screen.getByPlaceholderText(/Enter your username/i), 'dana@example.com')
-    await user.click(screen.getByRole('button', PASSKEY_BUTTON))
+    await signInWithPasskeyAs('dana@example.com')
     expect(await screen.findByRole('heading', { name: 'Set New Password' })).toBeVisible()
   })
 })
