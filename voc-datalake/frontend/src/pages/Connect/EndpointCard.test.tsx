@@ -1,6 +1,7 @@
 /**
  * EndpointCard's skill download (docs/mcp.md): the static skill is fetched,
- * the endpoint filled in and saved as a file; a failed fetch says so.
+ * the endpoint filled in and saved as a file, and its object URL revoked once
+ * the link was clicked; a failed fetch says so.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -55,6 +56,22 @@ describe('EndpointCard skill download', () => {
     expect(fetchMock).toHaveBeenCalledWith(SKILL_PATH)
     expect(await blobText(saved.blobs[0])).toBe(`Endpoint: ${ENDPOINT}`)
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('revokes the object URL once the link was clicked', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue(new Response(`Endpoint: ${ENDPOINT_PLACEHOLDER}`, { status: 200 }))
+    const events: string[] = []
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:skill')
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function record(this: HTMLAnchorElement) {
+      events.push(`click ${this.href}`)
+    })
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url) => { events.push(`revoke ${url}`) })
+    render(<EndpointCard endpointUrl={ENDPOINT} />)
+
+    await user.click(screen.getByRole('button', { name: 'Download skill' }))
+
+    await waitFor(() => expect(events).toStrictEqual(['click blob:skill', 'revoke blob:skill']))
   })
 
   it('says the download failed when the skill cannot be fetched', async () => {
