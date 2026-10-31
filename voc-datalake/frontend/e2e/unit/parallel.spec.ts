@@ -49,9 +49,13 @@ test('the write guard catches every assistant-run helper and each write verb', (
 })
 
 test('the pattern matches exactly the listed specs', () => {
-  expect(READ_ONLY_SPECS.test('tests/screens.spec.ts')).toBe(true)
+  expect(READ_ONLY_SPECS.test('tests/request-counts.spec.ts')).toBe(true)
   expect(READ_ONLY_SPECS.test('tests/writes.spec.ts')).toBe(false)
-  expect(READ_ONLY_SPECS.test('tests/screens.spec.ts.bak')).toBe(false)
+  expect(READ_ONLY_SPECS.test('tests/request-counts.spec.ts.bak')).toBe(false)
+  // They read entities a concurrent write spec may delete or totals it may change (lib/parallel.ts).
+  for (const racing of ['screens', 'api-sweep', 'dashboard-data', 'prioritization-requests']) {
+    expect(READ_ONLY_SPECS.test(`tests/${racing}.spec.ts`), racing).toBe(false)
+  }
 })
 
 test('workers: 4 read + 1 write by default, overridable, and a bad value is refused', () => {
