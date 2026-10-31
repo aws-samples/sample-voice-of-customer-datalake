@@ -17,7 +17,8 @@ const BANDS = ['low', 'medium', 'high'];
 const STAMP_CYCLE = ['high', null, 'low', 'medium'];
 let stamped = false;
 
-function stampBands(feedback) {
+/** Stamp the fixture bands once; mock-server.js calls it at startup so a filtered page never changes later. */
+export function stampBands(feedback) {
   if (stamped) return;
   stamped = true;
   feedback.forEach((item, index) => {

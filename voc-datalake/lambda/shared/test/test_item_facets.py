@@ -4,10 +4,13 @@ Ported from PR #429 (@aws-bryan): one value means what it always meant, a comma 
 means any of its values, and a malformed list is refused.
 """
 import pytest
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Attr, ConditionExpressionBuilder
 
 from shared.item_facets import MAX_FACET_VALUE_CHARS, MAX_FACET_VALUES
 from shared.item_filters import ItemFilters, parse_item_filters
+
+DYNAMODB_MAX_EXPRESSION_CHARS = 4096
+DYNAMODB_MAX_IN_OPERANDS = 100
 
 WEB = {'source_platform': 'web', 'category': 'delivery', 'subcategory': 'late', 'sentiment_label': 'negative',
        'usefulness': 'high'}
@@ -84,6 +87,20 @@ def test_the_sources_push_down_as_eq_for_one_and_in_for_several():
     assert parse_item_filters({'source': 'web,app'}).source_condition() == \
         Attr('source_platform').is_in(['web', 'app'])
     assert ItemFilters().source_condition() is None
+
+
+def test_the_largest_lists_still_build_a_filter_expression_dynamodb_accepts():
+    # DynamoDB: at most 100 operands in one IN, and an expression string of at most 4 KB. The source list
+    # goes into a FilterExpression (a key condition takes no IN); the other facets join the row condition.
+    longest = 'x' * MAX_FACET_VALUE_CHARS
+    sources = ','.join(f'{longest[:-3]}{n:03d}' for n in range(MAX_FACET_VALUES))
+    filters = parse_item_filters({'source': sources, 'category': sources, 'sentiment': 'negative,mixed',
+                                  'usefulness': 'low,unrated'})
+    assert MAX_FACET_VALUES <= DYNAMODB_MAX_IN_OPERANDS  # one facet is one IN list
+    builder = ConditionExpressionBuilder()
+    for condition in (filters.source_condition(), filters.row_condition()):
+        assert condition is not None
+        assert len(builder.build_expression(condition).condition_expression) <= DYNAMODB_MAX_EXPRESSION_CHARS
 
 
 def test_the_other_facets_push_down_in_the_row_condition():

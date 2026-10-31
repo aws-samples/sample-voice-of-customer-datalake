@@ -29,6 +29,17 @@ const COMMA_LIST_FIELDS = new Set<FloorListField>(['source', 'category', 'subcat
 /** `usefulness=unrated` admits a review stored without a band (shared/usefulness.py USEFULNESS_UNRATED). */
 const USEFULNESS_UNRATED = 'unrated';
 
+/**
+ * The values the read routes accept for the closed-vocabulary fields (shared/item_facets.py
+ * SENTIMENT_VALUES / USEFULNESS_VALUES); any other value answers 400 there. A floor keeps only
+ * these, so a hand-edited URL (`?sentiment=all`) can neither turn every read into an error nor
+ * widen the floor: with no known value left the field admits nothing.
+ */
+const KNOWN_VALUES: Partial<Record<FloorListField, ReadonlySet<string>>> = {
+  sentiment: new Set(['positive', 'neutral', 'negative', 'mixed']),
+  usefulness: new Set(['low', 'medium', 'high', USEFULNESS_UNRATED]),
+};
+
 /** `dims=key:a|b` accepts either value; `~unset` accepts an item with no value (shared/item_filters.py). */
 export const DIMS_ANY_SEPARATOR = '|';
 const DIMS_UNSET_VALUE = '~unset';
@@ -55,7 +66,9 @@ function uniqueTrimmed(values: readonly string[]): string[] {
 }
 
 function listOf(field: FloorListField, raw: string): string[] {
-  return uniqueTrimmed(COMMA_LIST_FIELDS.has(field) ? raw.split(',') : [raw]);
+  const values = uniqueTrimmed(COMMA_LIST_FIELDS.has(field) ? raw.split(',') : [raw]);
+  const known = KNOWN_VALUES[field];
+  return known === undefined ? values : values.filter((value) => known.has(value));
 }
 
 /**

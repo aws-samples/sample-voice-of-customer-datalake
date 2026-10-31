@@ -4,7 +4,7 @@
  *
  * Read from `GET /metrics/sentiment`, the one existing count route that takes every filter the
  * panel offers (source, categories, the item filters: channel / tag / dims / rating / urgent) and
- * answers per sentiment. Several categories are ONE call (`category=a,b` is any of them, 5.62), and
+ * answers per sentiment. Several categories are ONE call (`category=a,b` is any of them, 5.64), and
  * a sentiment filter picks its bucket. `is_partial` makes the number a lower bound.
  *
  * @module pages/Chat/useScopeCount
