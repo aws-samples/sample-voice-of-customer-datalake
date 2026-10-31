@@ -38,7 +38,7 @@ export function isConnectScope(value: string): value is ConnectScope {
   return CONNECT_SCOPES.some((scope) => scope === value)
 }
 
-export const optionalText = z.string().nullable().optional().catch(undefined)
+const optionalText = z.string().nullable().optional().catch(undefined)
   .transform((value) => (value == null || value === '' ? undefined : value))
 
 /** The lifecycle every MCP credential shares: a token here, an OAuth grant in oauthSchema.ts. */
