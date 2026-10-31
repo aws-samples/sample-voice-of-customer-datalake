@@ -17,6 +17,18 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.57.03] - 2026-10-31
+
+A freshness report lists every dependency, Lambda runtime, toolchain and workflow pin that is behind its newest release.
+
+### Added
+
+- `npm run deps:freshness` (`scripts/dependency-freshness.mjs`): compares the six npm lockfiles, the Lambda layers'
+  and dev requirements, the Lambda runtimes the CDK app uses, the Node / Python lines and the workflows' pinned
+  actions and binaries with their newest releases, and classes each finding major, minor or patch. A report,
+  not a gate: run it weekly and before starting a feature; `--fail-on` makes it fail
+  ([docs/dependencies.md → Freshness check](docs/dependencies.md#freshness-check)).
+
 ## [5.57.02] - 2026-10-31
 
 Two bug fixes: job Lambdas can requeue themselves, and a person can no longer +1 a request twice by sending two +1s at once.

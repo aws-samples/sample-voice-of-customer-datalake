@@ -103,7 +103,7 @@ def tsc  repo                               "version: CHANGELOG ↔ package.json
 # scheduled-failure watch, and the pre-push hook's verdict parsing.
 def tsc  repo                               "node: coverage gate tests"          'cd "$ROOT" && node --test scripts/coverage/check-per-file-coverage.test.mjs'
 def tsc  repo                               "node: PR description check"         'cd "$ROOT" && node --test scripts/pr-checks/*.test.mjs'
-def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/scheduled-failure-watch.test.mjs'
+def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/scheduled-failure-watch.test.mjs'
 def tsc  repo                               "node: pre-push hook parsing"        'cd "$ROOT" && node --test scripts/git-hooks/pre-push.test.mjs'
 def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs'
 # Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build
