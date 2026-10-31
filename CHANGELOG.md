@@ -116,7 +116,7 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
 - Deploy VocProcessingStack before VocApiStack (the usual order): the processor must accept the new
   optional `model_profile` queue field before the manual-import Lambda starts sending it.
 - VocApiStack adds 25 resources (Cognito resource server, three app clients on the existing user pool, nine
-  routes): 378 of the 425 budget. Deploy with `npm run deploy:api` (or end with `scripts/refresh-api-stage.sh`).
+  routes): 384 of the 425 budget with every plugin. Deploy with `npm run deploy:api` (or end with `scripts/refresh-api-stage.sh`).
 - The new clients use the user pool's existing hosted-UI domain; nothing changes in VocCoreStack.
 - `resource` (RFC 8707) is dropped before Cognito unless `-c mcpOAuthResourceIndicator=true`; set it only on a
   pool whose hosted UI accepts resource binding.
