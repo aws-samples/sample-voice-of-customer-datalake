@@ -31,6 +31,7 @@ import {
 } from './mock-dimensions.js';
 import { cursorPage } from './mock-feedback-cursor.js';
 import { problemTree } from './mock-problems.js';
+import { facetedMetric, seedUsefulness, withoutParams } from './mock-facets.js';
 import { callerAccess, handleScopeRoutes, scopeAdmits, scopedCategoriesConfig, scopedMetric } from './mock-scope.js';
 import { handleProjectActionRoutes, startProjectAssistJob } from './mock-project-actions.js';
 import { handleCompanyPersonaRoutes } from './mock-company-personas.js';
@@ -120,17 +121,18 @@ const mockFeedback = [
 ];
 
 seedDimensionFixtures(mockFeedback);
+seedUsefulness(mockFeedback);
 
 /**
- * `source` + `channel` / `dims` / `tag` on top of the date window, as every
- * list / urgent / entities route applies them; `{error}` for a malformed `dims`.
+ * The source / category / sentiment / usefulness lists (mock-facets.js) + `channel` / `dims` /
+ * `tag` / stars on top of the date window, as every list / urgent / entities route applies
+ * them; `{error}` for a malformed filter.
  */
 function filterFeedbackRequest(items, searchParams) {
   const filter = attributeFilterOf(searchParams);
   if (filter.error) return { error: filter.error };
-  const source = searchParams?.get('source') || '';
   // A restricted caller (mock-scope.js) never receives another category's items.
-  return { items: filterByDateBasis(items, searchParams).filter((f) => scopeAdmits(f.category) && (!source || f.source_platform === source) && filter.admits(f)) };
+  return { items: filterByDateBasis(items, searchParams).filter((f) => scopeAdmits(f.category) && filter.admits(f)) };
 }
 
 const badDims = (error) => ({ __status: 400, body: { success: false, error } });
@@ -640,7 +642,8 @@ const handlers = {
     return { count: page.length, total: items.length, offset, limit, is_partial_window: false, items: page };
   },
   'GET /feedback/problems': (_body, searchParams) => {
-    const { items, error } = filterFeedbackRequest(mockFeedback, searchParams);
+    // The tree shapes its own category / subcategory (`uncategorized`, `general`).
+    const { items, error } = filterFeedbackRequest(mockFeedback, withoutParams(searchParams, ['category', 'subcategory']));
     return error ? badDims(error) : problemTree(items, searchParams);
   },
   'GET /feedback/urgent': (_body, searchParams) => {
@@ -694,7 +697,7 @@ const handlers = {
       ...entityExtras(items),
     };
   },
-  'GET /metrics/summary': () => ({
+  'GET /metrics/summary': (_body, searchParams) => facetedMetric('summary', searchParams, filterByDateBasis(mockFeedback, searchParams)) ?? ({
     period_days: 7,
     total_feedback: 1247,
     avg_sentiment: 0.12,
@@ -710,6 +713,8 @@ const handlers = {
     })).reverse(),
   }),
   'GET /metrics/sentiment': (_body, searchParams) => {
+    const faceted = facetedMetric('sentiment', searchParams, filterByDateBasis(mockFeedback, searchParams), { keepSingleCategory: true });
+    if (faceted) return faceted;
     const category = searchParams?.get('category');
     // `?category=` scopes the breakdown (metrics_handler: item path after the
     // caller's category filter); an unknown / hidden category answers zeros.
@@ -721,7 +726,7 @@ const handlers = {
       .map(([k, v]) => [k, Math.round((v / Math.max(total, 1)) * 1000) / 10]));
     return { period_days: Number(searchParams?.get('days')) || 7, total, is_partial: false, breakdown, percentages };
   },
-  'GET /metrics/categories': () => ({
+  'GET /metrics/categories': (_body, searchParams) => facetedMetric('categories', searchParams, filterByDateBasis(mockFeedback, searchParams)) ?? ({
     period_days: 7,
     categories: {
       delivery: 312,
@@ -737,7 +742,7 @@ const handlers = {
       other: 41,
     },
   }),
-  'GET /metrics/sources': () => ({
+  'GET /metrics/sources': (_body, searchParams) => facetedMetric('sources', searchParams, filterByDateBasis(mockFeedback, searchParams)) ?? ({
     period_days: 7,
     sources: {
       webscraper: 523,
