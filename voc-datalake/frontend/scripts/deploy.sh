@@ -61,6 +61,14 @@ COGNITO_REGION=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="Cognito
 IDENTITY_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="IdentityPoolId") | .OutputValue')
 # The hosted-UI host the MCP OAuth consent page may navigate to (empty: the SPA refuses that redirect).
 HOSTED_UI_DOMAIN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="UserPoolDomain") | .OutputValue // empty')
+# The host lib/stacks/api-mcp-oauth.ts cognitoHostedUiHost builds (lib/utils/deploy-scripts.test.ts pins this pattern).
+HOSTED_UI_HOST_PATTERN='^[a-z0-9-]+\.auth\.[a-z0-9-]+\.amazoncognito\.com$'
+if ! [[ "$HOSTED_UI_DOMAIN" =~ $HOSTED_UI_HOST_PATTERN ]]; then
+  echo "" >&2
+  echo "WARNING: VocCoreStack output UserPoolDomain is ${HOSTED_UI_DOMAIN:-missing}, not a <prefix>.auth.<region>.amazoncognito.com host." >&2
+  echo "WARNING: the MCP OAuth consent page will refuse every approval until VocCoreStack is redeployed (cdk deploy). Deploying the frontend anyway." >&2
+  echo "" >&2
+fi
 API_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')
 # "true" when the AgentCore web search gateway is deployed (drives the UI toggles)
 WEB_SEARCH_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="WebSearchAvailable") | .OutputValue // "false"')
