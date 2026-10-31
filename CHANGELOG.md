@@ -70,7 +70,8 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
 
 ### Changed
 
-- `voc-mcp-global-api` reserves 20 concurrent executions.
+- `voc-mcp-global-api` reserves 20 concurrent executions; `-c mcpReservedConcurrency=<n>` changes it, `0` = no
+  reservation ([docs/deployment.md](docs/deployment.md#reserved-concurrency-of-the-mcp-endpoint--c-mcpreservedconcurrency)).
 - For a 2026-07-28 client, an `Mcp-Name` header sent with `prompts/get` or `resources/read` must match the body's
   name or URI (refused with `-32020` otherwise); it stays optional there.
 - `npm run build:layers` skips a layer whose requirements, install recipe, build image and platform are
@@ -109,7 +110,8 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
 
 - The reserved concurrency (20) comes out of the account's unreserved Lambda pool, which must stay at 100 or
   more: an account whose Lambda concurrency quota is under 120 fails the VocApiStack deploy. Raise the quota
-  first (new accounts can start at 10).
+  first (new accounts can start at 10), or deploy with `-c mcpReservedConcurrency=0` (no reservation) or a
+  smaller number.
 - Where alerting is already on, turn it off and on again once to create the four MCP alarms;
   they add 4 alarm metrics (about $0.40 a month at list price). Two deployments in one account and region share
   the MCP metrics, so each one's MCP alarms count both.

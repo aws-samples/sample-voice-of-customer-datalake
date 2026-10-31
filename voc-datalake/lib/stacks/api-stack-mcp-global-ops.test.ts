@@ -5,9 +5,11 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { apiTemplate, functionIdForHandler, serviceEnvironment } from '../test-support/api-stack-template';
+import { apiTemplate, functionIdForHandler, serviceEnvironment, synthApiTemplate } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { GLOBAL_MCP_SERVICE_NAME } from '../utils/function-names';
+import type { Template } from 'aws-cdk-lib/assertions';
+import { nonNegativeIntegerContext } from '../utils/context-flag';
 import { GLOBAL_MCP_RESERVED_CONCURRENCY } from './global-mcp';
 
 beforeAll(() => {
@@ -21,9 +23,9 @@ function propertiesOf(resource: unknown): Record<string, unknown> | undefined {
   return typeof properties === 'object' && properties !== null ? { ...properties } : undefined;
 }
 
-function mcpFunctionProperties(): Record<string, unknown> {
-  const id = functionIdForHandler(apiTemplate(), 'mcp_global_handler.py');
-  const properties = propertiesOf(apiTemplate().toJSON().Resources?.[id]);
+function mcpFunctionProperties(template: Template = apiTemplate()): Record<string, unknown> {
+  const id = functionIdForHandler(template, 'mcp_global_handler.py');
+  const properties = propertiesOf(template.toJSON().Resources?.[id]);
   expect(properties, id).toBeDefined();
   return properties ?? {};
 }
@@ -32,6 +34,19 @@ describe('global MCP endpoint operations', () => {
   it('reserves exactly the named concurrency for the endpoint function', () => {
     expect(GLOBAL_MCP_RESERVED_CONCURRENCY).toBe(20);
     expect(mcpFunctionProperties().ReservedConcurrentExecutions).toBe(GLOBAL_MCP_RESERVED_CONCURRENCY);
+  });
+
+  it('takes -c mcpReservedConcurrency: another number, or 0 for no reservation at all (never a throttling 0)', () => {
+    expect(mcpFunctionProperties(synthApiTemplate({ mcpReservedConcurrency: '35' })).ReservedConcurrentExecutions).toBe(35);
+    const none = synthApiTemplate({ mcpReservedConcurrency: '0' });
+    expect(mcpFunctionProperties(none)).not.toHaveProperty('ReservedConcurrentExecutions');
+    expect(() => synthApiTemplate({ mcpReservedConcurrency: '-1' })).toThrow(/mcpReservedConcurrency/);
+  }, SYNTH_TIMEOUT_MS * 3);
+
+  it('parses the context strictly: absent = default, whole numbers only', () => {
+    const parse = (value: unknown) => nonNegativeIntegerContext(value, 'k', 20, 'usage');
+    expect([parse(undefined), parse(null), parse('0'), parse(' 12 '), parse(7)]).toStrictEqual([20, 20, 0, 12, 7]);
+    for (const bad of ['-1', '1.5', 'abc', '', -3, 2.5, true]) expect(() => parse(bad), String(bad)).toThrow(/Unrecognized k/);
   });
 
   it('gives no other API function a reservation', () => {
