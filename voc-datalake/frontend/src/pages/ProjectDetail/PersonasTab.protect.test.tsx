@@ -8,6 +8,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '../../test/query-client'
 import PersonasTab from './PersonasTab'
+import { projectPersonaScope } from './personaScope'
 import type { ProjectPersona } from '../../api/projectTypes'
 import type { ComponentProps } from 'react'
 
@@ -21,7 +22,7 @@ const grace: ProjectPersona = { persona_id: 'p-grace', name: 'Grace Okafor', tag
 
 function props(overrides: Partial<ComponentProps<typeof PersonasTab>> = {}): ComponentProps<typeof PersonasTab> {
   return {
-    projectId: 'proj_1', personas: [ada, grace], canEdit: true, selectedPersona: ada,
+    scope: projectPersonaScope('proj_1'), personas: [ada, grace], canEdit: true, selectedPersona: ada,
     onSelectPersona: vi.fn(), onEditPersona: vi.fn(), onDeletePersona: vi.fn(), onSaveNotes: vi.fn(),
     onGeneratePersonas: vi.fn(), onImportPersona: vi.fn(), isDeleting: false, isSavingNotes: false,
     ...overrides,
