@@ -169,8 +169,7 @@ class TestReplaceSemantics:
 
         result = generate_personas('proj-1', {'persona_count': 2})
 
-        batch = projects_table.batch_writer.return_value.__enter__.return_value
-        deleted = {c.kwargs['Key']['sk'] for c in batch.delete_item.call_args_list}
+        deleted = {c.kwargs['Key']['sk'] for c in projects_table.delete_item.call_args_list}
         assert deleted == {'PERSONA#old-1', 'PERSONA#old-2', 'PERSONA#old-3'}
 
         # Replace, not increment: the recount after the save finds the two new
