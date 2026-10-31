@@ -192,7 +192,7 @@
     "externalNotAllowed": "Seules les adresses des domaines de l'entreprise peuvent être ajoutées.",
     "invalidEmail": "Saisissez une adresse e-mail valide.",
     "unsubscribedPerson": "Cette personne s'est désinscrite.",
-    "senderDailyCap": "Vous pouvez envoyer jusqu'à 50 e-mails par jour. Envoyez à moins de personnes ou réessayez demain."
+    "senderDailyCap": "Vous avez atteint votre limite quotidienne d'e-mails. Envoyez à moins de personnes ou réessayez demain."
   },
   "settings": {
     "title": "E-mail aux participants",

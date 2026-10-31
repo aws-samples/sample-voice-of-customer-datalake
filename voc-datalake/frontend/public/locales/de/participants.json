@@ -188,7 +188,7 @@
     "externalNotAllowed": "Es dürfen nur Adressen aus den Domains des Unternehmens hinzugefügt werden.",
     "invalidEmail": "Geben Sie eine gültige E-Mail-Adresse ein.",
     "unsubscribedPerson": "Diese Person hat sich abgemeldet.",
-    "senderDailyCap": "Sie können täglich bis zu 50 E-Mails senden. Senden Sie an weniger Personen oder versuchen Sie es morgen erneut."
+    "senderDailyCap": "Sie haben Ihr persönliches tägliches E-Mail-Limit erreicht. Senden Sie an weniger Personen oder versuchen Sie es morgen erneut."
   },
   "settings": {
     "title": "E-Mail an Teilnehmende",

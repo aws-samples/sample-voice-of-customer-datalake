@@ -84,9 +84,24 @@ describe('the integrations Lambda is handed its plugin secret defaults', () => {
     return serviceEnvironment(template, 'voc-integrations-api');
   }
 
-  it('sets PLUGIN_SECRET_KEYS: the github_issues token and webhook secret are write-only (BE-5)', () => {
+  /** Every real plugin manifest on disk, by id (read here rather than listed, so a new plugin extends the guards). */
+  function manifestsOnDisk(): Array<[string, ReturnType<typeof ManifestSchema.parse>]> {
+    const pluginsDir = join(__dirname, '../../plugins');
+    return readdirSync(pluginsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('_'))
+      .filter((e) => existsSync(join(pluginsDir, e.name, 'manifest.json')))
+      .map((e) => e.name)
+      .sort(byCodeUnit)
+      .map((id) => [id, ManifestSchema.parse(JSON.parse(readFileSync(join(pluginsDir, id, 'manifest.json'), 'utf-8')))]);
+  }
+
+  it('sets PLUGIN_SECRET_KEYS to every config field a manifest marks secret, so none is ever returned (BE-5)', () => {
     const parsed = z.record(z.string(), z.array(z.string()))
       .parse(JSON.parse(z.string().parse(integrationsEnv().PLUGIN_SECRET_KEYS)));
+    const expected = Object.fromEntries(manifestsOnDisk()
+      .map(([id, manifest]) => [id, manifest.config.filter((field) => field.secret).map((field) => field.key)] as const)
+      .filter(([, keys]) => keys.length > 0));
+    expect(parsed).toStrictEqual(expected);
     expect(parsed.github_issues).toStrictEqual(['token', 'webhook_secret']);
   }, SYNTH_TIMEOUT_MS);
 
@@ -97,23 +112,11 @@ describe('the integrations Lambda is handed its plugin secret defaults', () => {
     const parsed = z.record(z.string(), z.record(z.string(), z.string()))
       .parse(JSON.parse(z.string().parse(raw)));
 
-    // Every real plugin on disk must be present. Read from the manifests rather
-    // than listed here, so adding a plugin extends the guard for free.
-    const pluginsDir = join(__dirname, '../../plugins');
-    const onDisk = readdirSync(pluginsDir, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && !e.name.startsWith('_'))
-      .filter((e) => existsSync(join(pluginsDir, e.name, 'manifest.json')))
-      .map((e) => e.name)
-      .sort(byCodeUnit);
-
-    expect(Object.keys(parsed).sort(byCodeUnit)).toStrictEqual(onDisk);
-
-    // And the values must be the manifests' own declared defaults, since that is
-    // the baseline the handler compares stored values against.
-    for (const id of onDisk) {
-      const manifest = ManifestSchema.parse(
-        JSON.parse(readFileSync(join(pluginsDir, id, 'manifest.json'), 'utf-8')),
-      );
+    // Every real plugin on disk must be present, with the manifest's own declared
+    // defaults, since that is the baseline the handler compares stored values against.
+    const manifests = manifestsOnDisk();
+    expect(Object.keys(parsed).sort(byCodeUnit)).toStrictEqual(manifests.map(([id]) => id));
+    for (const [id, manifest] of manifests) {
       expect(parsed[id]).toStrictEqual(manifest.secrets ?? {});
     }
   });

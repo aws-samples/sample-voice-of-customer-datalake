@@ -188,7 +188,7 @@
     "externalNotAllowed": "只能添加公司域名下的邮箱地址。",
     "invalidEmail": "请输入有效的邮箱地址。",
     "unsubscribedPerson": "此人员已退订。",
-    "senderDailyCap": "每天最多可发送 50 封邮件。请减少收件人数量，或明天再试。"
+    "senderDailyCap": "您已达到个人每日邮件发送上限。请减少发送对象，或明天再试。"
   },
   "settings": {
     "title": "参与者邮件",
