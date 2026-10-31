@@ -26,6 +26,7 @@ import pytest
 from shared import exceptions
 from shared.exceptions import (
     ApiError,
+    AuthenticationError,
     AuthorizationError,
     ConfigurationError,
     ConflictError,
@@ -46,6 +47,7 @@ STATUS_TABLE = [
     (ConfigurationError, 500),
     (SecretUnreadableError, 500),
     (ServiceError, 500),
+    (AuthenticationError, 401),
     (AuthorizationError, 403),
     (ConflictError, 409),
     (PayloadTooLargeError, 413),
@@ -138,6 +140,7 @@ class TestEveryRowIsAnApiError:
             ConfigurationError: ApiError,
             SecretUnreadableError: ConfigurationError,
             ServiceError: ApiError,
+            AuthenticationError: ApiError,
             AuthorizationError: ApiError,
             ConflictError: ApiError,
             PayloadTooLargeError: ApiError,

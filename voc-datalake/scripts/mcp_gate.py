@@ -200,11 +200,12 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_gate_audit': 29,
     'test_python_runtime_lockstep': 4,
     # MCP OAuth sign-in (5.58.00, docs/mcp.md "OAuth sign-in").
-    'test_global_mcp_oauth_e2e': 17,
-    'test_mcp_oauth_facade': 50,
-    'test_mcp_credentials': 23,
+    'test_global_mcp_oauth_e2e': 18,
+    'test_mcp_oauth_facade': 51,
+    'test_mcp_credentials': 25,
     'test_mcp_oauth_config': 39,
     'test_mcp_oauth_jwt': 35,
+    'test_mcp_oauth_jwt_parts': 16,
 }
 
 
