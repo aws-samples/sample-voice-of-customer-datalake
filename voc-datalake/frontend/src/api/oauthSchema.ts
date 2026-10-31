@@ -4,8 +4,9 @@
  *
  * Lenient like connectSchema.ts: a malformed grant row is dropped, an unknown scope reads as `read`
  * and an unknown status as expired, so the UI never shows a sign-in as wider or more alive than the
- * backend treats it. A redirect the browser is about to follow must be an http(s) URL, else it is
- * refused (the backend only ever answers its own Cognito or a validated client redirect).
+ * backend treats it. A redirect the browser is about to follow must be an http(s) URL here; oauthApi
+ * then checks its destination (api/oauthRedirect.ts: the hosted UI, a loopback, or the request's own
+ * callback) before the page may follow it.
  *
  * @module api/oauthSchema
  */
