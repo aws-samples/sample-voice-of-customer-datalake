@@ -39,6 +39,7 @@ import { createVerificationFixtureProvider } from './api-fixture-provider';
 import { createApiGateway, restApiBaseUrl } from './api-gateway';
 import { createJobLambdas } from './api-job-lambdas';
 import { createMcpApi } from './api-mcp';
+import { cognitoHostedUiHost } from './api-mcp-oauth';
 import { createProjectsLambda } from './api-projects-lambda';
 import { addApiRoutes } from './api-routes';
 import { createRadarLambda } from './api-radar-lambda';
@@ -345,7 +346,9 @@ export class VocApiStack extends VocStack {
         userPoolId: userPool.userPoolId,
         clientId: userPoolClient.userPoolClientId,
         region: this.region,
-        identityPoolId: identityPool.attrId
+        identityPoolId: identityPool.attrId,
+        // The hosted UI the MCP OAuth consent page may send the browser to (docs/mcp.md → OAuth sign-in).
+        hostedUiDomain: cognitoHostedUiHost(props.userPoolDomainPrefix, this.region),
       },
       // Capability flags so the same frontend build can show/hide features
       // per environment (web search only exists when the gateway deployed).

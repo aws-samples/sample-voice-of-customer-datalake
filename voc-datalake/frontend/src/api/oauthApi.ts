@@ -1,7 +1,8 @@
 /**
  * @fileoverview MCP OAuth sign-in API (docs/mcp.md → "OAuth sign-in"): the consent screen and
  * "my sign-ins" on the Connect page (`/connect/oauth/*`, lambda/shared/mcp_oauth_consent_routes.py).
- * Every response is parsed through api/oauthSchema.ts.
+ * Every response is parsed through api/oauthSchema.ts, and every redirect the page will follow is checked
+ * against api/oauthRedirect.ts (hosted UI, loopback, or the client's own callback) before it is returned.
  *
  * @module api/oauthApi
  */
@@ -12,6 +13,9 @@ import {
   ConsentApprovalSchema, ConsentDescriptionSchema, GrantListResponseSchema, GrantRevokeResponseSchema,
 } from './oauthSchema'
 import type { ConsentDescription, OAuthGrant } from './oauthSchema'
+import { clientRedirectUriOf, requireAllowedOAuthRedirect } from './oauthRedirect'
+import type { OAuthRedirectPolicy } from './oauthRedirect'
+import { getHostedUiOrigin } from '../runtimeConfig'
 
 const CONSENT_PATH = '/connect/oauth/consent'
 const GRANTS_PATH = '/connect/oauth/grants'
@@ -24,6 +28,16 @@ export function oauthConsentKey(authorizeQuery: string) {
   return ['connect', 'oauth', 'consent', authorizeQuery] as const
 }
 
+function redirectPolicy(authorizeQuery: string): OAuthRedirectPolicy {
+  return { hostedUiOrigin: getHostedUiOrigin(), clientRedirectUri: clientRedirectUriOf(authorizeQuery) }
+}
+
+/** The description with its redirect checked; an untrusted one throws (the page's error state). */
+function checkedDescription(consent: ConsentDescription, policy: OAuthRedirectPolicy): ConsentDescription {
+  if (consent.refused) return { ...consent, redirect_to: requireAllowedOAuthRedirect(consent.redirect_to, policy) }
+  return { ...consent, deny_redirect: requireAllowedOAuthRedirect(consent.deny_redirect, policy) }
+}
+
 export interface ConsentChoice {
   /** The MCP client's authorization query, exactly as it arrived on the consent page. */
   authorize_query: string
@@ -32,12 +46,14 @@ export interface ConsentChoice {
 }
 
 export const oauthApi = {
-  describeConsent: async (authorizeQuery: string): Promise<ConsentDescription> =>
+  describeConsent: async (authorizeQuery: string): Promise<ConsentDescription> => checkedDescription(
     ConsentDescriptionSchema.parse(await fetchApi<unknown>(
       `${CONSENT_PATH}?authorize_query=${encodeURIComponent(authorizeQuery)}`)),
+    redirectPolicy(authorizeQuery)),
 
-  approveConsent: async (choice: ConsentChoice): Promise<string> =>
+  approveConsent: async (choice: ConsentChoice): Promise<string> => requireAllowedOAuthRedirect(
     ConsentApprovalSchema.parse(await fetchApi<unknown>(CONSENT_PATH, post(choice))).redirect_to,
+    redirectPolicy(choice.authorize_query)),
 
   listGrants: async (): Promise<OAuthGrant[]> =>
     GrantListResponseSchema.parse(await fetchApi<unknown>(GRANTS_PATH)).grants,

@@ -59,6 +59,8 @@ COGNITO_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="U
 COGNITO_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="UserPoolClientId") | .OutputValue')
 COGNITO_REGION=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoRegion") | .OutputValue // "us-west-2"')
 IDENTITY_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="IdentityPoolId") | .OutputValue')
+# The hosted-UI host the MCP OAuth consent page may navigate to (empty: the SPA refuses that redirect).
+HOSTED_UI_DOMAIN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="UserPoolDomain") | .OutputValue // empty')
 API_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')
 # "true" when the AgentCore web search gateway is deployed (drives the UI toggles)
 WEB_SEARCH_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="WebSearchAvailable") | .OutputValue // "false"')
@@ -114,6 +116,7 @@ jq -n \
   --arg clientId "$COGNITO_CLIENT_ID" \
   --arg region "$COGNITO_REGION" \
   --arg identityPoolId "$IDENTITY_POOL_ID" \
+  --arg hostedUiDomain "$HOSTED_UI_DOMAIN" \
   --argjson webSearch "$([ "$WEB_SEARCH_AVAILABLE" = "true" ] && echo true || echo false)" \
   --argjson email "$([ "$EMAIL_AVAILABLE" = "true" ] && echo true || echo false)" \
   --arg boardUserPoolId "$BOARD_USER_POOL_ID" \
@@ -125,7 +128,8 @@ jq -n \
       userPoolId: $userPoolId,
       clientId: $clientId,
       region: $region,
-      identityPoolId: $identityPoolId
+      identityPoolId: $identityPoolId,
+      hostedUiDomain: $hostedUiDomain
     },
     features: {
       webSearch: $webSearch,

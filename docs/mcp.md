@@ -315,6 +315,14 @@ before any key), signature by a key of the pool's JWKS (fetched from the fixed i
 grant for (sub, client) active and the token's `origin_jti` one of its recorded chains, the
 username the grant's, and the person still current in Cognito. Tokens are never logged.
 
+**Where the consent page sends the browser** (`frontend/src/api/oauthRedirect.ts`). Before it follows
+the consent API's answer (Approve, Deny, or a refused request) the SPA checks it and shows its error state
+otherwise: the configured hosted UI (`cognito.hostedUiDomain` in `config.json`, written by the CDK deploy
+and `deploy:frontend` from VocCoreStack's `UserPoolDomain`), an RFC 8252 loopback `http://127.0.0.1`,
+`localhost` or `[::1]` with a port, or the exact https callback (origin and path) the assistant's own
+request named. A `config.json` without the hosted UI (written before 5.61.00) refuses the approval until
+the next deploy.
+
 **Revocation is immediate.** Connect lists the person's signed-in assistants (one per client) with
 revoke (`GET /connect/oauth/grants`, `DELETE /connect/oauth/grants/{grant_id}`). Revoking marks the
 grant and empties its chains, so the next request of every access token is a 401, even one
