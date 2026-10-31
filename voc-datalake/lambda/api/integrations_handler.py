@@ -502,15 +502,17 @@ def get_credentials(source: str):
     for key in requested_keys:
         _validate_credential_key(key)
 
+    # Which keys are write-only, before the secret is read at all: unknown means a 500, never values.
+    write_only_by_source = _write_only_fields()
+    if write_only_by_source is None:
+        raise ConfigurationError('Plugin secret keys not configured')
+    write_only = write_only_by_source.get(source, frozenset())
+
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)
         secrets = json.loads(response.get('SecretString', '{}'))
 
         prefix = f"{source}_"
-        write_only_by_source = _write_only_fields()
-        if write_only_by_source is None:
-            raise ConfigurationError('Plugin secret keys not configured')
-        write_only = write_only_by_source.get(source, frozenset())
         result = {}
         for key in requested_keys:
             prefixed_key = f"{prefix}{key}"
