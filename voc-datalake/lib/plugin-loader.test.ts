@@ -490,6 +490,17 @@ describe('Plugin Loader', () => {
       expect(manifest.secrets).toStrictEqual({ a: '1' });
     });
 
+    it('secretConfigKeysByPlugin lists the config keys marked secret, omitting plugins with none (BE-5)', async () => {
+      const { secretConfigKeysByPlugin } = await import('./plugin-loader');
+      const field = (key: string, secret: boolean) => ({ key, label: key, type: 'text', secret });
+      const plugins = await manifests(
+        { id: 'gh', config: [field('repos', false), field('token', true), field('webhook_secret', true)] },
+        { id: 'plain', config: [field('app_name', false)] },
+      );
+
+      expect(secretConfigKeysByPlugin(plugins)).toStrictEqual({ gh: ['token', 'webhook_secret'] });
+    });
+
     it('getEnabledPlugins filters by enabled sources', async () => {
       const { getEnabledPlugins } = await import('./plugin-loader');
 

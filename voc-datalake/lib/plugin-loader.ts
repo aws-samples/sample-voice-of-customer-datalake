@@ -437,6 +437,17 @@ export function aggregateSecretsByPlugin(
   return byPlugin;
 }
 
+/**
+ * The config keys each plugin's manifest marks `secret` (`{plugin_id: [key, ...]}`, plugins with none
+ * omitted). `GET /integrations/{source}/credentials` never returns their values (BE-5): a token or a
+ * webhook HMAC secret is write-only once saved.
+ */
+export function secretConfigKeysByPlugin(plugins: PluginManifest[]): Record<string, string[]> {
+  return Object.fromEntries(plugins
+    .map((plugin) => [plugin.id, plugin.config.filter((field) => field.secret).map((field) => field.key)] as const)
+    .filter(([, keys]) => keys.length > 0));
+}
+
 export function getPluginsWithIngestor(plugins: PluginManifest[]): PluginManifest[] {
   return plugins.filter(p => p.infrastructure.ingestor?.enabled);
 }
