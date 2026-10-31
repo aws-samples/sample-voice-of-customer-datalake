@@ -1,14 +1,12 @@
 /**
  * @fileoverview Authentication state management using Zustand with localStorage persistence.
  *
- * Security model:
- * - Short-lived tokens (access, ID) persisted in localStorage for cross-tab UX
- * - Refresh token kept in memory only (never persisted) to limit XSS blast radius
- * - Non-secret data (user info, auth state) persisted in localStorage
+ * What it holds:
+ * - The short-lived tokens (access, ID), mirrored from Amplify's token store for synchronous reads
+ * - User info and auth state
  *
- * When a new tab opens with expired short-lived tokens, the auth service
- * falls back to Cognito's getSession() which uses Cognito's own cookies
- * for silent re-authentication — no re-login needed.
+ * The refresh token is NOT here: Amplify keeps it in its own token store (services/auth.ts) and
+ * refreshes with it, also in a new tab whose short-lived tokens have expired.
  *
  * @module store/authStore
  */
@@ -48,8 +46,6 @@ interface AuthState {
   accessToken: string | null
   /** JWT ID token containing user claims */
   idToken: string | null
-  /** Refresh token for obtaining new access tokens */
-  refreshToken: string | null
   /** Whether the user is currently authenticated */
   isAuthenticated: boolean
   /** Whether the session has been validated/refreshed after page load */
@@ -60,7 +56,6 @@ interface AuthState {
   setTokens: (tokens: {
     accessToken: string;
     idToken: string;
-    refreshToken: string
   }) => void
   /** Clear all auth state and tokens */
   logout: () => void
@@ -86,7 +81,6 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       accessToken: null,
       idToken: null,
-      refreshToken: null,
       isAuthenticated: false,
       sessionReady: false,
       setUser: (user) => set({
@@ -96,7 +90,6 @@ export const useAuthStore = create<AuthState>()(
       setTokens: (tokens) => set({
         accessToken: tokens.accessToken,
         idToken: tokens.idToken,
-        refreshToken: tokens.refreshToken,
         isAuthenticated: true,
         // Tokens only ever arrive from Cognito — sign-in, the new-password
         // challenge, or a refresh — so this is the one moment a session
@@ -110,7 +103,6 @@ export const useAuthStore = create<AuthState>()(
         user: null,
         accessToken: null,
         idToken: null,
-        refreshToken: null,
         isAuthenticated: false,
         sessionReady: false,
       }),
@@ -118,9 +110,6 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'voc-auth',
       // Persist short-lived tokens + user info in localStorage for cross-tab UX.
-      // refreshToken is deliberately excluded — it stays in memory only.
-      // This limits XSS blast radius: stolen access/ID tokens expire in ~1hr,
-      // while the 30-day refresh token is never written to disk.
       partialize: (state): z.infer<typeof PersistedAuthSchema> => ({
         user: state.user,
         accessToken: state.accessToken,

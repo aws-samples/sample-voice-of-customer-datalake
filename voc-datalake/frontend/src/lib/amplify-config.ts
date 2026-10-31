@@ -1,10 +1,10 @@
 /**
- * Amplify configuration for AWS IAM request signing.
- * 
- * We use Amplify ONLY for:
- * - Credential exchange (JWT → AWS credentials via Identity Pool)
- * 
- * We keep existing amazon-cognito-identity-js for user authentication.
+ * Amplify v6 configuration for signing in to the app user pool (services/auth.ts).
+ *
+ * Only the user pool is configured. No identity pool: nothing in the SPA uses AWS credentials
+ * (every API call carries the Cognito ID token), so a session never calls Cognito Identity.
+ * The board pool (feedback boards, review links) is NOT Amplify's: services/boardAuth.ts keeps it
+ * apart, since Amplify holds one user pool per page.
  */
 import { Amplify } from 'aws-amplify'
 import { getRuntimeConfig } from '../runtimeConfig'
@@ -16,9 +16,9 @@ export function configureAmplify(): void {
   if (amplifyState.configured) return
 
   const cfg = getRuntimeConfig()
-  
-  if (!cfg.cognito.userPoolId || !cfg.cognito.clientId || !cfg.cognito.identityPoolId) {
-    console.warn('Amplify configuration incomplete - streaming API will not work')
+
+  if (cfg.cognito.userPoolId === '' || cfg.cognito.clientId === '') {
+    console.warn('Cognito not configured - sign-in is unavailable')
     return
   }
 
@@ -27,12 +27,11 @@ export function configureAmplify(): void {
       Cognito: {
         userPoolId: cfg.cognito.userPoolId,
         userPoolClientId: cfg.cognito.clientId,
-        identityPoolId: cfg.cognito.identityPoolId,
         loginWith: {
           email: true,
         },
-      }
-    }
+      },
+    },
   }, { ssr: false })
 
   amplifyState.configured = true

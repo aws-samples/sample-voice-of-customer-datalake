@@ -12,26 +12,11 @@
  * the component (and so the mocked modules), which a mock factory must not.
  */
 import { vi } from 'vitest'
-import { CognitoAccessToken, CognitoIdToken, CognitoUserSession } from 'amazon-cognito-identity-js'
-
-/**
- * A real (token-less) session for `refreshSession` to resolve with.
- *
- * ProtectedRoute never reads the resolved session — only whether the store
- * holds tokens afterwards — so empty tokens are honest, and they keep the
- * stub's type identical to the service's `Promise<CognitoUserSession>`.
- */
-export function emptySession(): CognitoUserSession {
-  return new CognitoUserSession({
-    IdToken: new CognitoIdToken({ IdToken: '' }),
-    AccessToken: new CognitoAccessToken({ AccessToken: '' }),
-  })
-}
 
 /** `services/auth`: configured by default; refresh and sign-out are bare spies. */
 export const authService = {
   isConfigured: vi.fn(() => true),
-  refreshSession: vi.fn(() => Promise.resolve(emptySession())),
+  refreshSession: vi.fn((): Promise<void> => Promise.resolve()),
   signOut: vi.fn(),
 }
 

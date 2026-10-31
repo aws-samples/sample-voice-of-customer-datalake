@@ -131,3 +131,20 @@ export function tokensOf(body: unknown): AuthTokens | null {
   const parsed = authResultSchema.safeParse(body)
   return parsed.success ? parsed.data.AuthenticationResult : null
 }
+
+/** A REFRESH_TOKEN_AUTH answer: new ID and access tokens, and a new refresh token only when the pool rotates them. */
+const refreshResultSchema = z.object({
+  AuthenticationResult: z.object({
+    IdToken: z.string().min(1),
+    AccessToken: z.string().min(1),
+    RefreshToken: z.string().min(1).optional().catch(undefined),
+  }),
+})
+
+/** The tokens of a refresh answer (keeping `refreshToken` when Cognito sent no new one), or null. */
+export function refreshedTokensOf(body: unknown, refreshToken: string): AuthTokens | null {
+  const parsed = refreshResultSchema.safeParse(body)
+  if (!parsed.success) return null
+  const result = parsed.data.AuthenticationResult
+  return { IdToken: result.IdToken, AccessToken: result.AccessToken, RefreshToken: result.RefreshToken ?? refreshToken }
+}

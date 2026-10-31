@@ -3,7 +3,8 @@
  * docs/feature-requests.md -> Sign-in, docs/document-review.md).
  *
  * Every sign-in is an emailed code (also delivered as a link), with plain `fetch` calls to the
- * regional Cognito endpoint (no new dependency). Which code depends on the person and the pool's
+ * regional Cognito endpoint (no SDK). The signed-in session is kept and refreshed by
+ * services/boardSession.ts. Which code depends on the person and the pool's
  * mode (`board.signIn` in config.json, lib/stacks/core-board-auth.ts):
  *
  * - **New person** (both modes): `SignUp` with a random password nobody keeps (`ClientMetadata`
@@ -26,10 +27,6 @@
  *
  * @module services/boardAuth
  */
-import {
-  CognitoAccessToken, CognitoIdToken, CognitoRefreshToken, CognitoUser, CognitoUserPool, CognitoUserSession,
-  type ICognitoStorage,
-} from 'amazon-cognito-identity-js'
 import { z } from 'zod'
 import { isValidSlug } from '../api/boardFields'
 import { looksLikeEmail } from '../utils/looksLikeEmail'
@@ -38,6 +35,7 @@ import {
   tokensOf,
 } from './boardCognito'
 import type { AuthTokens, Challenge } from './boardCognito'
+import { createBoardSession, type SessionStorage } from './boardSession'
 import type { BoardPoolConfig } from '../runtimeConfig'
 import { nullOnRejection } from '../lib/rejections'
 
@@ -85,24 +83,8 @@ export interface BoardAuthDeps {
   /** Injected for tests; defaults to the global `fetch`. */
   readonly fetchImpl?: typeof fetch
   /** Where the pending sign-in and the Cognito session live; defaults to localStorage. */
-  readonly storage?: ICognitoStorage
+  readonly storage?: SessionStorage
   readonly now?: () => number
-}
-
-function cachedSession(user: CognitoUser): Promise<CognitoUserSession | null> {
-  return new Promise((resolve) => {
-    user.getSession((error: Error | null, session: CognitoUserSession | null) => {
-      resolve(error ? null : session)
-    })
-  })
-}
-
-function refreshedSession(user: CognitoUser, session: CognitoUserSession): Promise<CognitoUserSession | null> {
-  return new Promise((resolve) => {
-    user.refreshSession(session.getRefreshToken(), (error: unknown, refreshed: CognitoUserSession | null) => {
-      resolve(error ? null : refreshed)
-    })
-  })
 }
 
 /** The target fields a pending sign-in keeps (only well-formed ones). */
@@ -126,7 +108,6 @@ export function createBoardAuth(deps: BoardAuthDeps) {
   const mode = deps.pool.signIn ?? 'email_otp'
   const clientId = deps.pool.clientId
   const endpoint = `https://cognito-idp.${deps.pool.region}.amazonaws.com/`
-  const userPool = new CognitoUserPool({ UserPoolId: deps.pool.userPoolId, ClientId: clientId, Storage: storage })
 
   /** One Cognito call: the parsed body, or a thrown CognitoRefusal / BoardAuthError. */
   async function call(target: string, payload: object): Promise<unknown> {
@@ -142,6 +123,8 @@ export function createBoardAuth(deps: BoardAuthDeps) {
     if (!response.ok) throw new CognitoRefusal(body)
     return body
   }
+
+  const session = createBoardSession({ clientId, storage, now, call })
 
   /** The same call, every refusal mapped to the reason shown. */
   const cognito = (target: string, payload: object) =>
@@ -172,21 +155,9 @@ export function createBoardAuth(deps: BoardAuthDeps) {
   }
 
   function keepSession(email: string, tokens: AuthTokens): string {
-    const session = new CognitoUserSession({
-      IdToken: new CognitoIdToken({ IdToken: tokens.IdToken }),
-      AccessToken: new CognitoAccessToken({ AccessToken: tokens.AccessToken }),
-      RefreshToken: new CognitoRefreshToken({ RefreshToken: tokens.RefreshToken }),
-    })
-    new CognitoUser({ Username: email, Pool: userPool, Storage: storage }).setSignInUserSession(session)
+    session.save(email, tokens)
     storage.removeItem(PENDING_OTP_KEY)
     return email
-  }
-
-  async function currentSession(forceRefresh: boolean): Promise<CognitoUserSession | null> {
-    const user = userPool.getCurrentUser()
-    if (!user) return null
-    const session = await cachedSession(user)
-    return session && forceRefresh ? refreshedSession(user, session) : session
   }
 
   function challengeOf(body: unknown): Challenge {
@@ -339,21 +310,18 @@ export function createBoardAuth(deps: BoardAuthDeps) {
     },
 
     /** The signed-in board user's ID token, refreshed when expired (or when forced); null when signed out. */
-    async getIdToken(forceRefresh = false): Promise<string | null> {
-      const session = await currentSession(forceRefresh)
-      return session ? session.getIdToken().getJwtToken() : null
+    getIdToken(forceRefresh = false): Promise<string | null> {
+      return session.idToken(forceRefresh)
     },
 
     /** The signed-in board user's email, or null. */
-    async currentEmail(): Promise<string | null> {
-      const session = await currentSession(false)
-      const email: unknown = session?.getIdToken().decodePayload()['email']
-      return typeof email === 'string' && email !== '' ? email : null
+    currentEmail(): Promise<string | null> {
+      return session.email()
     },
 
     /** Forget the board session in this browser. */
     signOut(): void {
-      userPool.getCurrentUser()?.signOut()
+      session.clear()
       storage.removeItem(PENDING_OTP_KEY)
     },
   }

@@ -14,10 +14,11 @@ const mockCompleteNewPassword = vi.fn<(...args: unknown[]) => unknown>()
 const mockForgotPassword = vi.fn<(...args: unknown[]) => unknown>()
 const mockConfirmPassword = vi.fn<(...args: unknown[]) => unknown>()
 
-vi.mock('../../services/auth', () => ({
+vi.mock('../../services/auth', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../services/auth')>(),
   authService: {
     signIn: (username: string, password: string) => mockSignIn(username, password),
-    completeNewPassword: (user: unknown, password: string) => mockCompleteNewPassword(user, password),
+    completeNewPassword: (password: string) => mockCompleteNewPassword(password),
     forgotPassword: (username: string) => mockForgotPassword(username),
     confirmPassword: (username: string, code: string, password: string) => mockConfirmPassword(username, code, password),
   },
@@ -39,6 +40,7 @@ vi.mock('react-router-dom', async () => {
 })
 
 import Login from './Login'
+import { AuthChallengeError, NEW_PASSWORD_REQUIRED, UNSUPPORTED_SIGN_IN_STEP } from '../../services/auth'
 
 
 type User = ReturnType<typeof userEvent.setup>
@@ -65,11 +67,7 @@ async function renderAndSignIn(password: string) {
 
 /** Sign in against a NewPasswordRequired challenge and land on the new-password form. */
 async function expectNewPasswordChallenge() {
-  const mockCognitoUser = { username: 'testuser' }
-  mockSignIn.mockRejectedValue({ 
-    code: 'NewPasswordRequired', 
-    cognitoUser: mockCognitoUser 
-  })
+  mockSignIn.mockRejectedValue(new AuthChallengeError(NEW_PASSWORD_REQUIRED, 'New password required'))
   const user = await renderAndSignIn('temppassword')
   await waitFor(() => {
     expect(screen.getByText(/Set New Password/i)).toBeInTheDocument()
@@ -207,6 +205,15 @@ describe('Login', () => {
       await waitFor(() => {
         expect(screen.getByText('Invalid credentials')).toBeInTheDocument()
       })
+    })
+
+    it('shows the translated failure, not the service detail, for a step the page does not offer', async () => {
+      mockSignIn.mockRejectedValue(new AuthChallengeError(UNSUPPORTED_SIGN_IN_STEP, 'Sign-in needs a step this page does not support (X)'))
+
+      await renderAndSignIn('password123')
+
+      expect(await screen.findByText('Login failed')).toBeInTheDocument()
+      expect(screen.queryByText(/does not support/)).not.toBeInTheDocument()
     })
 
     it('disables submit button while loading', async () => {

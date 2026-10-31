@@ -17,6 +17,34 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.61.00] - 2026-10-31
+
+Sign-in moves from the deprecated amazon-cognito-identity-js to Amplify v6, and the library is removed.
+
+### Changed
+- App sign-in (`/login`, the first-login new-password step, forgot password, Account → Change password, and the
+  silent token refresh behind every API call and the assistant stream) runs on Amplify v6 (`aws-amplify/auth`).
+  The screens and messages are unchanged. Amplify keeps the session under the same
+  `CognitoIdentityServiceProvider.<client id>.*` localStorage keys the former library used, so people signed in
+  before the upgrade stay signed in.
+- Signing out now also revokes the refresh token at Cognito (Amplify's `signOut`), so a copied refresh token stops
+  working at sign-out instead of at its expiry. Sign-out still clears the browser at once when the revoke cannot
+  reach Cognito.
+- The SPA no longer calls the Cognito identity pool on sign-in and on every refresh: nothing in the app uses AWS
+  credentials (every API call carries the Cognito ID token). The identity pool and `VITE_IDENTITY_POOL_ID` stay
+  as they are.
+- Feedback boards and document review links (the board pool) keep their own session, now stored and refreshed by
+  `services/boardSession.ts` (Cognito `REFRESH_TOKEN_AUTH`, one refresh at a time) under the same keys as before,
+  so board users stay signed in too. A refresh Cognito refuses signs the board user out; a network failure keeps
+  the session for the next try.
+
+### Removed
+- The `amazon-cognito-identity-js` dependency.
+
+### Fixed
+- The frontend docs no longer claim the app's refresh token is kept in memory only: the former library already
+  stored it in localStorage, as Amplify does now. `authStore` no longer carries an unused `refreshToken` field.
+
 ## [5.60.02] - 2026-10-31
 
 Review follow-ups to company personas (5.60.00).
