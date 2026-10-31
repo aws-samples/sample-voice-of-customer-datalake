@@ -1,7 +1,8 @@
 /**
  * @fileoverview Unified filter bar for the Categories page (issue #198 UX
  * rationalization). Merges the previously scattered controls — free-text
- * search, source select, urgent-only toggle, min-rating — into one card,
+ * search, source and usefulness selectors (several values = any of them;
+ * the shared facet selectors), urgent-only toggle, min-rating — into one card,
  * with a clear-all button next to everything it clears.
  *
  * Sentiment is intentionally NOT here: the Overall Sentiment gauge legend
@@ -15,15 +16,20 @@ import { Search, Star, X } from 'lucide-react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { useDisplayLabels } from '../../hooks/useDisplayLabels'
+import type { UsefulnessFacet } from '../../api/feedbackFacets'
+import { SourceFacetSelect, UsefulnessFacetSelect } from '../../components/FacetMultiSelect/FacetSelects'
 import type { RatingDirection, RatingFilter } from './types'
 
 interface FilterBarProps {
   readonly searchText: string
   readonly onSearchChange: (value: string) => void
-  readonly selectedSource: string | null
-  readonly onSourceChange: (source: string | null) => void
-  readonly allSources: string[]
+  readonly selectedSources: readonly string[]
+  readonly onToggleSource: (source: string) => void
+  readonly onClearSources: () => void
+  readonly allSources: readonly string[]
+  readonly selectedUsefulness: readonly UsefulnessFacet[]
+  readonly onToggleUsefulness: (value: string) => void
+  readonly onClearUsefulness: () => void
   readonly showUrgentOnly: boolean
   readonly onUrgentChange: (value: boolean) => void
   readonly ratingFilter: RatingFilter
@@ -37,9 +43,13 @@ interface FilterBarProps {
 export function FilterBar({
   searchText,
   onSearchChange,
-  selectedSource,
-  onSourceChange,
+  selectedSources,
+  onToggleSource,
+  onClearSources,
   allSources,
+  selectedUsefulness,
+  onToggleUsefulness,
+  onClearUsefulness,
   showUrgentOnly,
   onUrgentChange,
   ratingFilter,
@@ -49,7 +59,6 @@ export function FilterBar({
   children,
 }: FilterBarProps) {
   const { t } = useTranslation('categories')
-  const labels = useDisplayLabels()
   return (
     <div className="card !p-4 sm:!p-6">
       <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4">
@@ -65,17 +74,8 @@ export function FilterBar({
           />
         </div>
         <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-          <select
-            value={selectedSource ?? ''}
-            onChange={(e) => onSourceChange(e.target.value || null)}
-            aria-label={t('filterBySource')}
-            className="select w-auto"
-          >
-            <option value="">{t('allSources')}</option>
-            {allSources.map(source => (
-              <option key={source} value={source}>{labels.source(source)}</option>
-            ))}
-          </select>
+          <SourceFacetSelect options={allSources} selected={selectedSources} onToggle={onToggleSource} onClear={onClearSources} />
+          <UsefulnessFacetSelect selected={selectedUsefulness} onToggle={onToggleUsefulness} onClear={onClearUsefulness} />
           <RatingPicker ratingFilter={ratingFilter} onRatingFilterChange={onRatingFilterChange} />
           <label className="flex items-center gap-2 min-h-9 cursor-pointer whitespace-nowrap">
             <input

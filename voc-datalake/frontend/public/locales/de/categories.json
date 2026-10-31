@@ -92,9 +92,7 @@
     "shownOf": "{{count, number}} von {{total, number}} angezeigt",
     "loading": "Bewertungen werden geladen…",
     "subcategoryChip": "Unterkategorie: {{name}}",
-    "removeSubcategory": "Filter {{name}} entfernen",
-    "refinedMoreBelow_one": "{{count, number}} Treffer in den ersten {{loaded, number}} Bewertungen · Unten mehr laden",
-    "refinedMoreBelow_other": "{{count, number}} Treffer in den ersten {{loaded, number}} Bewertungen · Unten mehr laden"
+    "removeSubcategory": "Filter {{name}} entfernen"
   },
   "uncategorised": "Ohne Kategorie",
   "uncategorisedHint": "Bewertungen dieses Zeitraums ohne passende Kategorie"

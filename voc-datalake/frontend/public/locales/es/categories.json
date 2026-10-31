@@ -96,10 +96,7 @@
     "shownOf": "{{count, number}} mostradas de {{total, number}}",
     "loading": "Cargando reseñas…",
     "subcategoryChip": "Subcategoría: {{name}}",
-    "removeSubcategory": "Quitar el filtro {{name}}",
-    "refinedMoreBelow_one": "{{count, number}} coincidencia en las primeras {{loaded, number}} reseñas · Carga más abajo",
-    "refinedMoreBelow_many": "{{count, number}} coincidencias en las primeras {{loaded, number}} reseñas · Carga más abajo",
-    "refinedMoreBelow_other": "{{count, number}} coincidencias en las primeras {{loaded, number}} reseñas · Carga más abajo"
+    "removeSubcategory": "Quitar el filtro {{name}}"
   },
   "uncategorised": "Sin categoría",
   "uncategorisedHint": "Reseñas de este periodo sin ninguna categoría"
