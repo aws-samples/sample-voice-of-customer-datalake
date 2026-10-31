@@ -2,7 +2,8 @@
  * @fileoverview "Data quality" on the Data Explorer's processed tab: how useful each source's feedback
  * is (the heuristic usefulness band, docs/data-quality.md) over the selected time range, with the share
  * of reviews stored before the band existed shown as "Not rated". A source producing mostly low-content
- * feedback is the signal that a scraper is misconfigured or a form field is skipped.
+ * feedback is the signal that a scraper is misconfigured or a form field is skipped. Below it, each source's
+ * profile: star ratings, sentiment and text length (DataQualitySectionProfile.tsx).
  * @module pages/DataExplorer/DataQualitySection
  */
 import { useQuery } from '@tanstack/react-query'
@@ -17,6 +18,7 @@ import { failedReads } from '../../utils/failedReads'
 import { formatPercent } from '../../utils/numberFormat'
 import { useAppSourceLabel } from './useAppSourceLabel'
 import { CHART_MAX_SOURCES, QualityChart, QualityTable } from './DataQualityViews'
+import DataQualitySectionProfile from './DataQualitySectionProfile'
 import { shareOf } from '../../api/dataQualitySchema'
 import type { DataQuality } from '../../api/dataQualitySchema'
 
@@ -39,6 +41,7 @@ function QualityBody({ data }: Readonly<{ data: DataQuality }>) {
         <p className="text-xs text-muted">{t('dataQuality.chartTop', { count: CHART_MAX_SOURCES })}</p>
       )}
       <QualityTable sources={data.sources} sourceName={sourceName} overall={data.overall} />
+      <DataQualitySectionProfile sources={data.sources} overall={data.overall} sourceName={sourceName} />
       {data.isPartial && <p className="text-xs text-muted">{t('dataQuality.partial')}</p>}
     </div>
   )

@@ -22,3 +22,14 @@ CHANNEL_PREFIX: Final = 'METRIC#daily_channel#'
 # have no row: a reader takes them as the source's ``SOURCE_PREFIX`` total minus its banded rows).
 USEFULNESS_PREFIX: Final = 'METRIC#daily_usefulness#'
 USEFULNESS_METRIC_TYPE: Final = 'usefulness'
+# The per-source profile (``shared.source_profile``): ``<PREFIX><source_platform>#<value>`` per facet, one
+# metric type each so a window's read stays one small index query per facet. Days before the counters
+# existed have no row: a reader takes the source total minus the rating rows as "not profiled".
+PROFILE_RATING_PREFIX: Final = 'METRIC#daily_profile_rating#'
+PROFILE_SENTIMENT_PREFIX: Final = 'METRIC#daily_profile_sentiment#'
+PROFILE_LENGTH_PREFIX: Final = 'METRIC#daily_profile_length#'
+PROFILE_METRIC_TYPES: Final = {
+    PROFILE_RATING_PREFIX: 'profile_rating',
+    PROFILE_SENTIMENT_PREFIX: 'profile_sentiment',
+    PROFILE_LENGTH_PREFIX: 'profile_length',
+}
