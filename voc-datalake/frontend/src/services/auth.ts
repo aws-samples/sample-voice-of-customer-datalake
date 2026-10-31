@@ -9,9 +9,12 @@
  *
  * Security features:
  * - Short-lived tokens persisted in localStorage for cross-tab UX
- * - Refresh token kept in memory only (never persisted to disk)
+ * - The app store keeps the refresh token in memory only, but the Cognito SDK
+ *   keeps its own copy in localStorage (origin-scoped), which is what lets a
+ *   new tab or a reload stay signed in; sign-out revokes it at Cognito
  * - Automatic token refresh 5 minutes before expiration
- * - Fallback to Cognito getSession() for tabs without in-memory refresh token
+ * - Fallback to Cognito getSession() (the SDK's stored tokens) for tabs without
+ *   the in-memory refresh token
  * - Graceful handling of expired sessions
  *
  * @module services/auth
@@ -236,17 +239,20 @@ export const authService = {
   },
 
   /**
-   * Signs out the current user and clears all stored tokens.
+   * Signs out the current user: the app state is cleared at once, and the
+   * refresh token is revoked at Cognito (RevokeToken) before the SDK's stored
+   * copy is removed, so a copied token stops working too. When revocation is
+   * not possible (no valid session, offline) the local copy is still removed.
    */
   signOut: (): void => {
-    const userPool = getUserPool()
-    if (userPool) {
-      const cognitoUser = userPool.getCurrentUser()
-      if (cognitoUser) {
-        cognitoUser.signOut()
-      }
-    }
+    const cognitoUser = getUserPool()?.getCurrentUser()
     useAuthStore.getState().logout()
+    if (!cognitoUser) return
+    cognitoUser.signOut((err?: Error) => {
+      // The SDK clears its storage only after a revocation attempt, never when
+      // the session lookup itself fails: clear it here in that case.
+      if (err) cognitoUser.signOut()
+    })
   },
 
   /**

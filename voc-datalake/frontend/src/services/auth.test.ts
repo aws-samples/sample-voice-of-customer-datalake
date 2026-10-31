@@ -150,6 +150,19 @@ describe('authService', () => {
       authService.signOut()
       expect(mockLogout).toHaveBeenCalledWith()
     })
+
+    it('asks the SDK to revoke the refresh token at Cognito', () => {
+      mockSignOut.mockImplementationOnce((callback?: (err?: Error) => void) => { callback?.() })
+      authService.signOut()
+      expect(mockSignOut).toHaveBeenCalledExactlyOnceWith(expect.any(Function))
+    })
+
+    it('still clears the SDK storage when revocation fails', () => {
+      mockSignOut.mockImplementationOnce((callback?: (err?: Error) => void) => { callback?.(new Error('offline')) })
+      authService.signOut()
+      expect(mockSignOut).toHaveBeenCalledTimes(2)
+      expect(mockSignOut).toHaveBeenLastCalledWith()
+    })
   })
 
   describe('forgotPassword', () => {
