@@ -116,19 +116,20 @@ describe('web search on, no use case form (the default)', () => {
 }, SYNTH_TIMEOUT_MS);
 
 describe('a use case form to submit (a deployer passes their own block)', () => {
-  it('makes Core, which creates the model agreements, wait for the submission', () => {
-    const stacks = stackArtifacts(synthApp({ enableWebSearch: false, anthropicUseCase: USE_CASE }, APP_REGION));
+  // Synthesized while the suite is collected, like the cases above: a whole-app synth on a
+  // loaded machine can outlast any one test's timeout.
+  const submitted = stackArtifacts(synthApp({ enableWebSearch: false, anthropicUseCase: USE_CASE }, APP_REGION));
+  const skipped = stackArtifacts(synthApp(
+    { enableWebSearch: false, anthropicUseCase: USE_CASE, skipUseCaseSubmission: true },
+    APP_REGION,
+  ));
 
-    expect(stacks.VocWebSearchStack?.environment).toBe(usEast1Env);
-    expect(stacks.VocCoreStack?.dependsOn).toContain('VocWebSearchStack');
-  }, SYNTH_TIMEOUT_MS);
+  it('makes Core, which creates the model agreements, wait for the submission', () => {
+    expect(submitted.VocWebSearchStack?.environment).toBe(usEast1Env);
+    expect(submitted.VocCoreStack?.dependsOn).toContain('VocWebSearchStack');
+  });
 
   it('submits nothing, and creates no us-east-1 stack, when the submission is skipped', () => {
-    const stacks = stackArtifacts(synthApp(
-      { enableWebSearch: false, anthropicUseCase: USE_CASE, skipUseCaseSubmission: true },
-      APP_REGION,
-    ));
-
-    expect(Object.keys(stacks)).not.toContain('VocWebSearchStack');
-  }, SYNTH_TIMEOUT_MS);
+    expect(Object.keys(skipped)).not.toContain('VocWebSearchStack');
+  });
 });
