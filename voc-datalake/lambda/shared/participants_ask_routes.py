@@ -27,7 +27,10 @@ from shared.engagement_identity import can_view_project, require_project_access,
 from shared.exceptions import ConflictError, NotFoundError, TooManyRequestsError, ValidationError
 from shared.logging import logger, tracer
 from shared.participants_asks import (
+    DAILY_CAP_REFUSAL,
     MAX_RECIPIENTS,
+    PER_SENDER_DAILY_CAP,
+    SENDER_CAP_REFUSAL,
     UNSUBSCRIBE_SK,
     ask_view,
     create_ask,
@@ -36,6 +39,7 @@ from shared.participants_asks import (
     recipient_rows,
     resolve_token,
     sent_today,
+    sent_today_by,
 )
 from shared.participants_intake import collect_people
 from shared.participants_lists import (
@@ -202,12 +206,14 @@ def _ask_fields(body: Mapping[str, Any], event: dict[str, Any]) -> dict[str, Any
     return fields
 
 
-def _check_capacity(table: Any, active: int) -> None:
+def _check_capacity(table: Any, active: int, sender: str) -> None:
     if not active:
         raise ValidationError('no_recipients')
+    if sent_today_by(table, sender) + active > PER_SENDER_DAILY_CAP:
+        raise TooManyRequestsError(SENDER_CAP_REFUSAL)
     settings = load_settings(table, engagement_config.brand_name())
     if sent_today(table) + active > int(settings['daily_send_cap']):
-        raise TooManyRequestsError('daily_cap')
+        raise TooManyRequestsError(DAILY_CAP_REFUSAL)
 
 
 @app.post('/participants/asks')
@@ -226,8 +232,9 @@ def post_ask():
         raise NotFoundError(PERSON_NOT_FOUND)
     recipients = [pid for pid in recipients if pid in people]
     active = sum(1 for pid in recipients if is_active(people[pid]))
-    _check_capacity(table, active)
-    ask = create_ask(table, fields, recipients, get_caller_subject(event))
+    sender = get_caller_subject(event)
+    _check_capacity(table, active, sender)
+    ask = create_ask(table, fields, recipients, sender)
     participants_send.start(ask['ask_id'])
     logger.info('Ask created', extra={'ask_id': ask['ask_id'], 'recipients': len(recipients), 'active': active})
     return created({'ask': ask_view(ask)}, status_code=202)

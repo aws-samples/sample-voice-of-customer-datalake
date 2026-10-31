@@ -187,7 +187,8 @@
     "tooManyRecipients": "1 回の依頼で送信できるのは最大 500 人までです。",
     "externalNotAllowed": "追加できるのは会社のドメインのアドレスだけです。",
     "invalidEmail": "有効なメールアドレスを入力してください。",
-    "unsubscribedPerson": "この人は配信を停止しています。"
+    "unsubscribedPerson": "この人は配信を停止しています。",
+    "senderDailyCap": "1日に送信できるメールは最大50通です。送信先の人数を減らすか、明日もう一度お試しください。"
   },
   "settings": {
     "title": "参加者へのメール",
