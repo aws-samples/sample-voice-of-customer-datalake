@@ -59,6 +59,60 @@ Not covered, because no review reaches their prompt: prototypes (built from a PR
 
 `source_feedback_ids` on a persona (the first 20 reviews fetched) is **display-only** and kept for older readers: it is not the corpus, and nothing in the app reads it. Artefacts generated before the field reached their path have no `input_feedback_ids` and show no corpus line: personas before 5.25.00; PRDs, PR/FAQs, merged documents and fallback research reports before 5.49.00. Imported and hand-made ones never have it.
 
+### How many reviews match: the wizards' live count
+
+The persona and research wizards show a line at the foot of their feedback-filters step: **"About N reviews match"**
+within a second, then **"N reviews match"** once the exact count arrives (ported from #429 by @aws-bryan). The persona
+wizard adds whether the personas read all of them or an even sample of its item limit. A zero says so before a model
+run is spent on nothing.
+
+`POST /projects/{id}/feedback-preview` `{sources, categories, sentiments, days, date_basis, mode, purpose}` answers
+`{matched, matched_is_lower_bound, estimated, sample_limit}` (edit access, under the existing projects proxy; code in
+`lambda/shared/persona_feedback_preview.py`):
+
+- `mode: exact` is the generation's own read: the same window, filters and caller's category scope, through the same
+  pool code (`shared.feedback` `context_request` / `read_context_pool`), so the number and the run cannot disagree. It
+  stops after 20 seconds (API Gateway allows 29) and then answers a lower bound, shown as "At least N".
+- `mode: estimate` scans four pages of the feedback-id index (rows in hash order, so a random sample), keeps the rows
+  the same predicate admits and scales by the index's item count, rounded to two significant figures. A sample with
+  fewer than 20 matches answers `matched: null`, and the line waits for the exact count.
+- `purpose: personas | research`: only `personas` has a `sample_limit` (the persona item limit for the configured model).
+- Answers are reused for five minutes per container, keyed on the project, the selection (click order ignored) and the
+  caller's category scope. A cached exact count also answers an estimate. A lower bound is never cached.
+
+The document wizard is not wired: document generation ignores the sentiment filter, so the same count would describe
+a different read.
+
+### Which reviews a persona cites
+
+The persona prompt numbers its reviews (`### Review 1`, …) and asks the model to cite its evidence as `Review #N` in
+`supporting_evidence`. At generation those numbers are resolved to the ids of that prompt's order and stored as
+`evidence_feedback_ids` on the persona (`lambda/shared/persona_evidence.py`, ported from #429 by @aws-bryan): distinct,
+in first-cited order, never past the reviews the model read, at most 500. `supporting_evidence` stays as the model
+wrote it, so a reference that names no review it read (prose, a number past the truncated prompt) is kept as text.
+
+In the persona header the corpus line adds "cites N of them", and **Show reviews** opens on a **Cited** view, with
+**All used** (`input_feedback_ids`) one click away. Personas generated before this have no Cited view. Research
+reports have no `supporting_evidence`, so they have none either.
+
+### Protected personas
+
+A lock in the persona header (edit access) marks a persona **protected** (`PUT /projects/{id}/personas/{persona_id}/protection`
+`{protected: true|false}`, a real boolean or 400, 404 for an unknown persona; ported from #429 by @aws-bryan). The
+list shows a lock on it and its header a "Protected" badge. The ordinary persona edit cannot change the flag.
+
+The wizard's add-or-replace choice is unchanged. **Add** keeps every persona as before. **Replace** now deletes only
+the unprotected ones (`lambda/shared/persona_replace.py`):
+
+- every page of the project's personas is read, and each unprotected one is deleted on its own, conditional on still
+  being unprotected, so a persona protected while the run is going is kept;
+- a delete that fails for another reason is logged and the rest still go; only the deleted personas' avatar images
+  are removed, and the project's persona count is recounted from what remains;
+- the model is told about the protected personas the same way an add run describes the kept ones
+  (`shared/persona_overlap.py`), and a new persona with a protected one's name is dropped
+  (`duplicate_names_dropped` in the job result);
+- the wizard's hint and confirmation count only the personas it deletes and say how many protected ones stay.
+
 ## Managed Document Versions
 
 PRDs, PR/FAQs, and prototypes are version-managed. Documents with the same type and base title form a persistent series named `Title (v1)`, `Title (v2)`, and so on.
