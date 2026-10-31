@@ -39,8 +39,9 @@ pytestmark = pytest.mark.slow
 logger = logging.getLogger(__name__)
 
 # The walk itself (paging 30,000 slim rows through the fake) plus the tally. Generous: the gate
-# runs pytest in parallel workers; measured well under 2 s per route on a laptop.
-ROUTE_CPU_SECONDS_BOUND = 6.0
+# runs pytest in parallel workers; measured well under 2 s per route on a laptop. 10 s (owner-approved,
+# 5.56.00) leaves a shared CI runner room. Marked `timing`: runs apart, untraced.
+ROUTE_CPU_SECONDS_BOUND = 10.0
 HIDDEN_TYPES = frozenset({'feature_request', 'praise'})
 
 # Each aggregate route and the number its answer reports for the reviews it counted.
@@ -83,6 +84,7 @@ def _problems_only(big_day: list[dict[str, Any]]) -> int:
 
 
 class TestThirtyThousandReviewsInOneImportDay:
+    @pytest.mark.timing
     @pytest.mark.parametrize(('path', 'extra', 'counted'), AGGREGATE_ROUTES)
     def test_the_review_basis_with_a_dims_filter_counts_the_whole_day(
             self, world, api_gateway_event, lambda_context, big_day, path, extra, counted):
@@ -103,6 +105,7 @@ class TestThirtyThousandReviewsInOneImportDay:
                              {'days': '0', 'date_basis': 'review', **extra})
         assert (counted(body), body['is_partial']) == (REVIEWS_IN_ONE_DAY, False)
 
+    @pytest.mark.timing
     @pytest.mark.usefixtures('world')
     def test_the_list_route_keeps_its_five_thousand_row_window(
             self, api_gateway_event, lambda_context, monkeypatch):

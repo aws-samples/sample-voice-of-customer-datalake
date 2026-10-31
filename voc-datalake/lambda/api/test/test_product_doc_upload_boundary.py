@@ -407,8 +407,7 @@ class TestAHostileDeclaredSizeIsNeverMaterialised:
             _create({'filename': 'screen.png', 'content_type': 'image/png',
                      'size_bytes': 1000})
 
-    # A time budget measures the code, not the coverage tracer: no_cover runs it untraced (docs/coverage-gate.md).
-    @pytest.mark.no_cover
+    @pytest.mark.timing
     def test_a_hostile_size_is_refused_inside_a_time_budget(self):
         """Belt and braces, and it survives a rewrite that no longer routes through
         the patched name.
@@ -437,7 +436,7 @@ class TestAHostileDeclaredSizeIsNeverMaterialised:
         assert product_context._declared_size('1E+1000000') is None
         assert time.perf_counter() - started < 5.0
 
-    @pytest.mark.no_cover
+    @pytest.mark.timing
     def test_a_long_numeric_string_is_refused_by_the_same_bound(self):
         """The parse itself needs no length limit, which is worth recording: a
         10 MB numeric string (the API Gateway body limit, so the worst case a

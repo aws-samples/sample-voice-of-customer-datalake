@@ -53,8 +53,9 @@ PAGE_BYTES = 1024 * 1024
 # A stored review: its text, translation, entities and model output. 2 KB is a typical item.
 REVIEW_TEXT_CHARS = 1_400
 # API Gateway gives 29 s and the walk may use 20 s of it, so building the tree must fit in what
-# is left with room to spare. Measured on CPU time (see `_timed_problems`), generously.
-TREE_CPU_SECONDS_BOUND = 6.0
+# is left with room to spare. Measured on CPU time (see `_timed_problems`), generously: about 1.2 s on a laptop;
+# 10 s (owner-approved, 5.56.00) leaves a shared CI runner room. Marked `timing`: runs apart, untraced.
+TREE_CPU_SECONDS_BOUND = 10.0
 # Lambda answers a synchronous invoke with at most 6 MB.
 RESPONSE_BYTES_BOUND = 6 * 1024 * 1024
 # The SPA's default type filter ("Problems only").
@@ -273,8 +274,7 @@ class TestThirtyThousandReviewsInOneImportDay:
         assert 'partial_reason' not in run.body
         assert sum(run.body['type_counts'].values()) == REVIEWS_IN_ONE_DAY
 
-    # A CPU budget measures the route, not the coverage tracer: no_cover runs it untraced (docs/coverage-gate.md).
-    @pytest.mark.no_cover
+    @pytest.mark.timing
     @pytest.mark.parametrize('similarity', ['med', 'low'])
     def test_the_similarity_merge_finishes_well_within_the_time_left_after_the_walk(
             self, world, api_gateway_event, lambda_context, similarity):
@@ -283,6 +283,7 @@ class TestThirtyThousandReviewsInOneImportDay:
         assert run.cpu_seconds < TREE_CPU_SECONDS_BOUND
         assert (run.body['feedback_count'], run.body['is_partial']) == (REVIEWS_IN_ONE_DAY, False)
 
+    @pytest.mark.timing
     def test_the_answer_stays_bounded_with_every_total_exact(self, world, api_gateway_event, lambda_context):
         run = _timed_problems(api_gateway_event, lambda_context, days='0', similarity='off')
         _report('all time, similarity off (widest tree)', world, run)

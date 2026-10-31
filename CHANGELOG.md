@@ -32,6 +32,17 @@ Import history: every import writes a run record that administrators can browse 
   from 1), and a large S3 file keeps at most 200 warnings in memory while still counting every skipped row.
   See [docs/import-history.md](docs/import-history.md).
 
+### Changed
+- Tests that bound their own running time are marked `@pytest.mark.timing`: the gate runs them after the
+  parallel suite, in one process and without coverage tracing, and a new `check_timing_tests` step fails on
+  an unmarked one ([docs/coverage-gate.md](docs/coverage-gate.md#tests-that-assert-a-time-budget)). The
+  capacity tests allow 10 s of CPU (was 6 s), and the Service Quotas tests use a 1 s slow-call stand-in.
+- Frontend specs wait up to 5 s for an element (`findBy*`, `waitFor`), not 1 s.
+
+### Fixed
+- Timing tests no longer fail on a shared CI runner because of coverage tracing or the gate lanes running
+  beside them; the feedback-sampling tests no longer stop their walk after one day under coverage.
+
 ### Security
 
 - Import history records never copy customer values: the CSV warning for a non-numeric rating no longer quotes the

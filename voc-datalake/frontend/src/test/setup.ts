@@ -4,9 +4,14 @@
  */
 import '@testing-library/jest-dom'
 import { vi, afterEach } from 'vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
+
+// findBy* / waitFor give up after 1 s by default. On a shared CI runner (and beside the other gate lanes) a
+// lazy dialog took longer than that to mount, and the test failed with nothing wrong (5.56.00). 5 s keeps a
+// genuinely missing element a fast failure, well inside the per-test timeout (vitest.config.ts).
+configure({ asyncUtilTimeout: 5000 })
 
 // Initialize i18next for tests with inline English translations.
 // Avoids the HTTP backend so tests don't make network calls and so component

@@ -46,6 +46,18 @@ def pytest_configure(config: pytest.Config) -> None:
     config.stash[_TRAVELLER] = traveller
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """A ``timing`` test (it bounds its own running time) also runs untraced: coverage tracing slows tight loops
+    several times over, so the bound would measure the tracer instead of the code (docs/coverage-gate.md).
+
+    Only when coverage is on: pytest-cov 7 crashes on a ``no_cover`` test under ``--no-cov`` (no controller to pause)."""
+    if config.getoption('no_cov', default=False):
+        return
+    for item in items:
+        if item.get_closest_marker('timing') is not None:
+            item.add_marker(pytest.mark.no_cover)
+
+
 def pytest_unconfigure(config: pytest.Config) -> None:
     """Release process-wide resources the suite opened, once every test has run: the clock and the X-Ray socket."""
     traveller = config.stash.get(_TRAVELLER, None)
