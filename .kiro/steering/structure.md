@@ -519,6 +519,8 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | POST | `/projects/{id}/personas/{persona_id}/promote` | Copy a persona into the company library (edit + admin) → 201 `{success, persona}` |
 | GET | `/projects/{id}/personas/copy-sources` | The company library + the OTHER projects the caller owns or is a member of, with personas (view) |
 | POST | `/projects/{id}/personas/copy` | Copy `{source: {scope: company} \| {scope: project, project_id}, persona_ids: [1–20]}` in (edit) → 201 `{success, personas}`; notes never copied, avatars copied |
+| POST | `/projects/{id}/feedback-preview` | The persona / research wizards' live count `{sources, categories, sentiments, days, date_basis, mode: estimate\|exact, purpose: personas\|research}` → `{matched, matched_is_lower_bound, estimated, sample_limit}`: exact = the generation's own read (20 s budget, then a lower bound), estimate = a scaled feedback-id-index sample; cached 5 min per project + selection + scope (`shared/persona_feedback_preview.py`, docs/project-workspace.md) |
+| PUT | `/projects/{id}/personas/{persona_id}/protection` | `{protected: bool}` (400 otherwise, 404 unknown persona): a replace regeneration keeps a protected persona and tells the model about it (`shared/persona_replace.py`) |
 | POST | `/projects/{id}/research` | Run research job (Step Functions) |
 | POST | `/projects/{id}/documents` | Create a custom document, or a hand-written PR/FAQ / PRD from a blank template (`document_type: prfaq\|prd`, `{title, content?, create_id?}`, `origin: human`) |
 | — | (project chat) | Now the unified AI assistant at `POST /chat/stream` with `forwardedProps.page.projectId` |
