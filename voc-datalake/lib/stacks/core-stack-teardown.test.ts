@@ -106,6 +106,7 @@ describe('-c protectData=true: customer data survives stack deletion (production
   it.each([
     ...DATA_TABLES.map((id) => ['AWS::DynamoDB::Table', id] as const),
     ['AWS::S3::Bucket', 'RawDataBucket'],
+    ['AWS::S3::Bucket', 'AccessLogsBucket'], // the audit trail of who read the data
     ['AWS::KMS::Key', 'VocKmsKey'],
     ['AWS::SecretsManager::Secret', 'DesignIntegrationsSecret'],
     ['AWS::Cognito::UserPool', 'VocUserPool'],
@@ -128,8 +129,7 @@ describe('-c protectData=true: customer data survives stack deletion (production
     expect(autoDelete).toStrictEqual([]);
   });
 
-  it('still deletes the website and access-log buckets with the stack (they hold no customer data)', () => {
+  it('still deletes the website bucket with the stack (it holds no customer data)', () => {
     expect(byConstructId('AWS::S3::Bucket', 'WebsiteBucket').DeletionPolicy).toBe('Delete');
-    expect(byConstructId('AWS::S3::Bucket', 'AccessLogsBucket').DeletionPolicy).toBe('Delete');
   });
 });
