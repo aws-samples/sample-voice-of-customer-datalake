@@ -92,11 +92,14 @@ class TestLegacyClient:
 
     def test_a_prompt_get_is_audited_without_its_arguments(self, world):
         minted = world.mint('alice', scope='read')
-        world.client(minted).request('prompts/get', {'name': 'weekly_summary', 'arguments': {'days': '14'}})
+        # A free-text value no timestamp or id can contain, so its absence proves the arguments were not stored.
+        secret_value = 'zz-argument-value-not-audited'
+        world.client(minted).request('prompts/get', {'name': 'prfaq_from_feedback', 'arguments': {'topic': secret_value}})
         (event,) = world.audit('alice', minted['token_id'])
-        assert (event['tool'], event['outcome']) == ('prompt:weekly_summary', 'ok')
-        # The argument's NAME, not its value: an audit row carries a timestamp, so "14" can be its minute.
-        assert 'days' not in json.dumps(event)
+        assert (event['tool'], event['outcome']) == ('prompt:prfaq_from_feedback', 'ok')
+        audited = json.dumps(event)
+        assert secret_value not in audited
+        assert 'topic' not in audited
 
     def test_a_resource_is_read_through_the_settings_route_as_the_minter(self, world, settings):
         minted = world.mint('alice', scope='read')

@@ -120,4 +120,23 @@ describe('Account PasskeySection', () => {
     await user.click(screen.getByRole('button', { name: 'Remove' }))
     await waitFor(() => expect(mockRemove).toHaveBeenCalledExactlyOnceWith('c1'))
   })
+
+  it('shows no alert when the passkey list cannot be read, and still offers to add one', async () => {
+    mockList.mockRejectedValue(new Error('older pool'))
+    renderWithQueryClient(<PasskeySection />)
+    await waitFor(() => expect(mockList).toHaveBeenCalledWith())
+    expect(screen.getByRole('button', { name: 'Add a passkey' })).toBeEnabled()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('drops the "added" line once a passkey is removed', async () => {
+    mockList.mockResolvedValue([{ id: 'c1', name: 'iCloud Keychain', createdAt: new Date('2026-10-01T10:00:00Z') }])
+    const user = userEvent.setup()
+    renderWithQueryClient(<PasskeySection />)
+    await user.click(screen.getByRole('button', { name: 'Add a passkey' }))
+    expect(await screen.findByRole('status')).toHaveTextContent(/Passkey added/)
+    await user.click(await screen.findByRole('button', { name: 'Remove iCloud Keychain' }))
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+  })
 })

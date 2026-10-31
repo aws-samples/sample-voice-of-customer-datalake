@@ -48,7 +48,8 @@ export default function PasskeySection() {
   const [removing, setRemoving] = useState<PasskeyInfo | null>(null)
   if (!canUsePasskeys()) return null
   const passkeys = list.data ?? []
-  const failure = register.error ?? remove.error ?? list.error
+  // Only an action the person took shows an alert; a list that cannot be read leaves the add-only view.
+  const failure = register.error ?? remove.error
   return (
     <Section icon={KeyRound} title={t('passkey.section.title')} description={t('passkey.section.intro')}>
       {passkeys.length > 0 ? (
@@ -74,7 +75,9 @@ export default function PasskeySection() {
         variant="danger"
         isLoading={remove.isPending}
         onConfirm={() => {
-          if (removing) remove.mutate(removing.id, { onSettled: () => setRemoving(null) })
+          if (!removing) return
+          register.reset()
+          remove.mutate(removing.id, { onSettled: () => setRemoving(null) })
         }}
         onCancel={() => setRemoving(null)}
       />

@@ -58,12 +58,12 @@
       "title": "Clave de acceso",
       "intro": "Inicia sesión en este dispositivo con tu huella dactilar, tu rostro o el bloqueo de pantalla en lugar de tu contraseña. Tu contraseña seguirá funcionando.",
       "added": "Clave de acceso añadida. La próxima vez podrás iniciar sesión con ella.",
-      "none": "Todavía no hay ninguna passkey en esta cuenta.",
-      "unnamed": "Passkey",
+      "none": "Todavía no hay ninguna clave de acceso en esta cuenta.",
+      "unnamed": "Clave de acceso",
       "addedOn": "Añadida el {{date}}",
       "remove": "Eliminar {{name}}",
-      "removeTitle": "¿Eliminar esta passkey?",
-      "removeBody": "Ya no podrá iniciar sesión contigo en ningún dispositivo que la tenga. Tu contraseña y tus otras passkeys seguirán funcionando.",
+      "removeTitle": "¿Eliminar esta clave de acceso?",
+      "removeBody": "Ya no podrás iniciar sesión con ella en ningún dispositivo que la tenga. Tu contraseña y tus otras claves de acceso seguirán funcionando.",
       "removeConfirm": "Eliminar"
     },
     "errors": {
