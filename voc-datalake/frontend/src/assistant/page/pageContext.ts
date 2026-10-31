@@ -66,6 +66,8 @@ export const PAGE_PATTERNS: readonly PagePattern[] = [
   { route: 'feature-requests', kind: 'other' },
   // One feedback board (/feature-requests/:slug): no assistant pack in this release either.
   { route: 'feature-requests/:slug', kind: 'other' },
+  // MCP OAuth consent (docs/mcp.md → "OAuth sign-in"): approve an assistant's sign-in; no assistant pack.
+  { route: 'oauth/authorize', kind: 'other', label: 'connect' },
 ]
 
 type PageFilterKey = (typeof PAGE_FILTER_KEYS)[number]

@@ -30,7 +30,8 @@
     "workflow": "워크플로",
     "radar": "레이더",
     "featureRequests": "피드백 보드",
-    "participants": "참여자"
+    "participants": "참여자",
+    "oauthConsent": "어시스턴트 승인"
   },
   "cancel": "취소",
   "configureBrand": "브랜드 설정",

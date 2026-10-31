@@ -30,7 +30,8 @@
     "workflow": "工作流",
     "radar": "雷达",
     "featureRequests": "反馈看板",
-    "participants": "参与者"
+    "participants": "参与者",
+    "oauthConsent": "批准助手"
   },
   "cancel": "取消",
   "configureBrand": "配置品牌",
