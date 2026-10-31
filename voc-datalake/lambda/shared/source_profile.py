@@ -21,6 +21,7 @@ from collections.abc import Callable, Iterable, Mapping
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Final
 
+from shared.item_facets import SENTIMENT_VALUES as ITEM_SENTIMENT_VALUES
 from shared.metric_keys import (
     PROFILE_LENGTH_PREFIX,
     PROFILE_METRIC_TYPES,
@@ -29,7 +30,7 @@ from shared.metric_keys import (
 )
 
 RATING_VALUES: Final = ('1', '2', '3', '4', '5', 'none')
-KNOWN_SENTIMENTS: Final = ('positive', 'neutral', 'negative', 'mixed')
+KNOWN_SENTIMENTS: Final = ITEM_SENTIMENT_VALUES
 SENTIMENT_VALUES: Final = (*KNOWN_SENTIMENTS, 'other')
 LENGTH_VALUES: Final = ('short', 'medium', 'long', 'very_long')
 #: Upper bounds (exclusive, characters) of every length bucket but the last.
