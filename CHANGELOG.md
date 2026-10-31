@@ -100,7 +100,7 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
   function). The Cognito authorizer accepts a token of any client of the pool, so an MCP client's token could
   otherwise have called every route with the person's full rights.
 - The MCP OAuth consent page follows a redirect only to the deployment's Cognito hosted UI, a loopback
-  callback (`127.0.0.1`, `localhost`, `[::1]` with a port) or the exact https callback the assistant's request
+  callback (`127.0.0.1`, `localhost`, `[::1]` with a port from 1024 to 65535) or the exact https callback the assistant's request
   named; anything else shows the page's error. `config.json` gains `cognito.hostedUiDomain`
   ([docs/mcp.md → OAuth sign-in](docs/mcp.md#oauth-sign-in)).
 - A consent opens its sign-in window for that one authorize request only: the token exchange's `code_verifier`
