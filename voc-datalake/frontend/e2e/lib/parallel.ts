@@ -8,9 +8,24 @@
  * A spec belongs here only when it creates, changes and deletes nothing on the deployment: no
  * ledger entry, no settings write, no assistant run (each run saves a conversation). The unit spec
  * `unit/parallel.spec.ts` re-reads every listed spec for write calls.
+ *
+ * Writing nothing is not enough: a listed spec also must not depend on data a concurrent write spec
+ * changes (same deployment, same e2e users). It may not assert deployment-wide counts or lists, nor
+ * open an entity it picked from a list (the newest is often a write spec's own `e2e-<run id>-*`
+ * item, deleted mid-run). Such specs run in the writing projects instead:
+ * - `screens` and `api-sweep` open / GET the first project, agent, form… a list returns, and a
+ *   real id that vanishes is a failure (a 4xx in api-sweep, a missing page in screens);
+ * - `dashboard-data` compares the UI with an all-time total read just before (an import or erasure
+ *   in between flips the empty-workspace branch);
+ * - `prioritization-requests` matches the batch reads with one `GET /projects` (a project created
+ *   meanwhile and a list refetch makes them differ).
+ * The ones kept assert only their own page's requests or an injected failure, whatever the data.
  */
 export const READ_ONLY_SPEC_NAMES: readonly string[] = [
-  'screens', 'api-sweep', 'prioritization-requests', 'request-counts', 'dashboard-data', 'error-states',
+  // Counts the GETs its own page load makes, per endpoint; none of them grows with the data.
+  'request-counts',
+  // Every case injects the failure it checks; the copy it asserts does not depend on the data.
+  'error-states',
   // POST /workflows/validate stores nothing (README).
   'workflow-custom-arrows',
 ]

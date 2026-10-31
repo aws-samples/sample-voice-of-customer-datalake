@@ -67,7 +67,11 @@ aws cognito-idp admin-add-user-to-group --user-pool-id <UserPoolId> --username '
 
 ### Workers (5.63)
 
-The specs that only read (`lib/parallel.ts`: `screens`, `api-sweep`, `prioritization-requests`, `request-counts`, `dashboard-data`, `error-states`, `workflow-custom-arrows`) run in the projects `admin-read` and `user-read`, fully parallel, with up to `E2E_READ_WORKERS` workers (default 4). Every spec that writes (creates entities, changes the caller's own settings or memory, or runs the assistant) stays in `admin` / `user`, `E2E_WRITE_WORKERS` workers (default 1, so they run one at a time as before). `unit/parallel.spec.ts` fails when a listed spec gains a write call.
+The specs that only read and depend on no data a write can change (`lib/parallel.ts`: `request-counts`, `error-states`, `workflow-custom-arrows`) run in the projects `admin-read` and `user-read`, fully parallel, with up to `E2E_READ_WORKERS` workers (default 4). Every spec that writes (creates entities, changes the caller's own settings or memory, or runs the assistant) stays in `admin` / `user`, `E2E_WRITE_WORKERS` workers (default 1, so they run one at a time as before). `unit/parallel.spec.ts` fails when a listed spec gains a write call.
+
+A read-only spec runs beside the writing ones on the same deployment and users, so it is listed only when no concurrent write can change what it asserts: no deployment-wide counts or lists, and no entity picked from a list (the newest is often a write spec's own `e2e-<run id>-*` item, deleted mid-run). `screens`, `api-sweep`, `dashboard-data` and `prioritization-requests` read such data, so they stay in `admin` / `user`. When in doubt, a spec stays out of the list.
+
+`run-sharded.sh` takes its per-shard counts from `shardWorkerPlan` (`lib/parallel.ts`): `E2E_SHARD_WRITE_WORKERS` (default 2) + `E2E_SHARD_READ_WORKERS` (default 2). With only `E2E_SHARD_WORKERS` set, the writing specs get at most 2 and the read-only ones the rest; a cap above `E2E_SHARD_WORKERS` is refused before any shard starts.
 
 ### One conversation per spec
 
