@@ -4,26 +4,18 @@
  * (security review of 5.58.00; lambda/shared/app_clients.py refuses every other client with a 401).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
 import { renderCfnString } from '../test-support/cfn-render';
-import { apiTemplate, readRepoFile } from '../test-support/api-stack-template';
+import { LambdaEnvSchema, apiTemplate, readRepoFile } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { APP_CLIENT_IDS_ENV, isApiHandler } from './app-client-env';
-
-const FunctionSchema = z.object({
-  Properties: z.object({
-    Handler: z.string().optional(),
-    Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }).optional(),
-  }),
-});
 
 interface FunctionEnv { id: string; handler: string; value: string | undefined }
 
 function functionEnvs(): FunctionEnv[] {
   const functions = apiTemplate().findResources('AWS::Lambda::Function');
   return Object.entries(functions).map(([id, resource]) => {
-    const { Handler, Environment } = FunctionSchema.parse(resource).Properties;
+    const { Handler, Environment } = LambdaEnvSchema.parse(resource).Properties;
     const value = Environment?.Variables[APP_CLIENT_IDS_ENV];
     return { id, handler: Handler ?? '', value: value === undefined ? undefined : renderCfnString(value) };
   });
