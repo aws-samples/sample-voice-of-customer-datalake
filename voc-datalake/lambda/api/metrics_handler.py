@@ -58,7 +58,7 @@ from shared.indexes import (
     FEEDBACK_BY_ID_INDEX,
     FEEDBACK_BY_URGENCY_INDEX,
 )
-from shared.item_facets import any_of
+from shared.item_facets import SENTIMENT_VALUES, any_of
 from shared.item_filters import NO_ITEM_FILTERS, ItemFilters, parse_item_filters
 from shared.logging import logger, tracer
 from shared.metric_keys import (
@@ -716,7 +716,7 @@ def _entities_payload(category_counts: dict, issues: dict, persona_counts: dict,
 
 # `/feedback/entities` lists at most this many tags (the most frequent).
 MAX_ENTITY_TAGS = 50
-SENTIMENT_LABELS = ('positive', 'neutral', 'negative', 'mixed')
+SENTIMENT_LABELS = SENTIMENT_VALUES
 
 
 def _dimensions_config() -> list[dict[str, Any]]:

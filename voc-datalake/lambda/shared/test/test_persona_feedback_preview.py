@@ -62,7 +62,7 @@ def _rows() -> list[dict]:
         _review(n, offset) for offset in range(1, OLDER_DAYS + 1) for n in range(OLDER_ROWS)]
 
 
-def _index(name: str, hash_key: str, range_key: str | None = None) -> dict:
+def _index(name: str, hash_key: str, range_key: str | None = None) -> Any:
     schema = [{'AttributeName': hash_key, 'KeyType': 'HASH'}]
     if range_key:
         schema.append({'AttributeName': range_key, 'KeyType': 'RANGE'})
