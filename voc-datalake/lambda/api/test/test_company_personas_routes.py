@@ -107,6 +107,13 @@ class TestTheContainerIsNotAProject:
 
         assert call(method, path, claims, body={'name': 'x'}) == (404, NOT_FOUND)
 
+    @pytest.mark.parametrize('claims', [ADMIN, STRANGER])
+    @pytest.mark.parametrize('path', ['/projects/company%5Fpersonas', '/projects/company%5Fpersonas/documents'])
+    def test_a_percent_encoded_id_never_reaches_the_container(self, call, world, claims, path):
+        world['table'].put_item(Item={'pk': f'PROJECT#{CONTAINER}', 'sk': 'META', 'owner_sub': 'system:company'})
+
+        assert call('GET', path, claims)[0] == 404
+
     def test_the_batch_read_drops_it(self, call):
         _promote(call)
 
@@ -144,6 +151,17 @@ class TestLibraryReads:
 
     def test_an_empty_library_reads_as_empty(self, call):
         assert call('GET', '/company-personas', STRANGER) == (200, {'personas': [], 'can_edit': False})
+
+    def test_storage_keys_are_never_returned_and_only_admins_see_who_copied(self, call):
+        _promote(call)
+
+        reader = call('GET', '/company-personas', STRANGER)[1]['personas'][0]
+        admin = call('GET', '/company-personas', ADMIN)[1]['personas'][0]
+
+        assert not {'pk', 'sk', 'gsi1pk', 'gsi1sk'} & (set(reader) | set(admin))
+        assert 'copied_by' not in reader['copied_from']
+        assert reader['copied_from']['project_id'] == 'p1'
+        assert admin['copied_from']['copied_by'] == 'admin-sub'
 
 
 class TestLibraryWritesAreAdminOnly:

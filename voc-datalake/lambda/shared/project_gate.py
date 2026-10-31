@@ -16,6 +16,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import project_access
 from shared.api import get_caller_groups
+from shared.company_personas import is_company_container
 from shared.exceptions import AuthorizationError, NotFoundError, ServiceError
 from shared.logging import logger
 from shared.project_access import Caller, ProjectAccess
@@ -60,7 +61,12 @@ def read_gate_meta(table: Any, project_id: str) -> dict | None:
     A failed read raises ServiceError (a JSON 500) rather than leaking a raw
     boto error: the gate must neither answer "missing" nor "allowed" on a
     transient failure.
+
+    The company persona library's reserved container is never a project: it reads as
+    missing here, so every gate that reads META (and every non-admin) answers it 404.
     """
+    if is_company_container(project_id):
+        return None
     try:
         response = table.get_item(
             **project_access.meta_gate_read(project_id, PROJECT_DELETION_ATTRIBUTE)

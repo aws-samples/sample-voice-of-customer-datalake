@@ -351,6 +351,7 @@
       "sourceEmpty": "Cette source n'a aucune persona.",
       "failed": "Les personas n'ont pas pu être copiées. Réessayez.",
       "cancel": "Annuler",
+      "submitNone": "Copier",
       "submit_one": "Copier {{count, number}} persona",
       "submit_many": "Copier {{count, number}} personas",
       "submit_other": "Copier {{count, number}} personas"

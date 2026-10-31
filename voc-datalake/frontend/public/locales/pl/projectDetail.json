@@ -377,6 +377,7 @@
       "sourceEmpty": "To źródło nie ma person.",
       "failed": "Nie udało się skopiować person. Spróbuj ponownie.",
       "cancel": "Anuluj",
+      "submitNone": "Kopiuj",
       "submit_one": "Kopiuj {{count, number}} personę",
       "submit_few": "Kopiuj {{count, number}} persony",
       "submit_many": "Kopiuj {{count, number}} person",

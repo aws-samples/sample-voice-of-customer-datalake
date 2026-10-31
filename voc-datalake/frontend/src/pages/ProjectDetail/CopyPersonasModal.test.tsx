@@ -52,7 +52,7 @@ describe('CopyPersonasModal', () => {
     await user.click(await screen.findByRole('checkbox', { name: /Frequent-Flyer Farah/ }))
     expect(screen.getByRole('button', { name: 'Copy 1 persona' })).toBeEnabled()
     await user.click(screen.getByRole('checkbox', { name: /Frequent-Flyer Farah/ }))
-    expect(screen.getByRole('button', { name: 'Copy 0 personas' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled()
   })
 
   it('copies from the library with the contract body, then closes', async () => {
