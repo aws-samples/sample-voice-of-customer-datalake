@@ -875,6 +875,9 @@
       },
       {
         "path": "/feedback/problems?days=0&date_basis=review&dims=feedback_type%3Abug%7Cservice_failure%7Cperformance%7Cusability%7Cpricing_billing%7Csupport_experience%7C~unset"
+      },
+      {
+        "path": "/feedback/problems?days=30&source=webscraper,manual_import&usefulness=high"
       }
     ]
   },
@@ -1158,6 +1161,9 @@
       },
       {
         "path": "/feedback?days=30&rating_min=4"
+      },
+      {
+        "path": "/feedback?days=7&source=webscraper,manual_import&category=delivery,other&sentiment=negative,mixed&usefulness=high,unrated"
       }
     ]
   },
@@ -1214,6 +1220,9 @@
       },
       {
         "path": "/feedback/urgent?days=30&limit=1&rating_min=1&next_token=eyJvIjoxfQ"
+      },
+      {
+        "path": "/feedback/urgent?days=7&limit=5&source=webscraper,manual_import"
       }
     ]
   },
@@ -1283,6 +1292,9 @@
     "probes": [
       {
         "path": "/metrics/categories?days=7"
+      },
+      {
+        "path": "/metrics/categories?days=7&sentiment=negative,mixed"
       }
     ]
   },
@@ -1306,6 +1318,9 @@
       },
       {
         "path": "/metrics/sentiment?days=7&category=customer_support"
+      },
+      {
+        "path": "/metrics/sentiment?days=7&category=delivery,pricing&sentiment=negative"
       }
     ]
   },
@@ -1316,6 +1331,9 @@
     "probes": [
       {
         "path": "/metrics/sources?days=7"
+      },
+      {
+        "path": "/metrics/sources?days=7&usefulness=low"
       }
     ]
   },
@@ -1326,6 +1344,9 @@
     "probes": [
       {
         "path": "/metrics/summary?days=7"
+      },
+      {
+        "path": "/metrics/summary?days=7&source=webscraper,manual_import&usefulness=high,unrated"
       }
     ]
   },

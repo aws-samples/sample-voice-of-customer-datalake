@@ -18,6 +18,7 @@
 // Wired into mock-server.js by handleDomainModules.
 
 import { createHash, randomBytes } from 'node:crypto';
+import { facetFilterOf } from './mock-facets.js';
 import { feedbackTypeDimension, isBuiltinDimension, stampFeedbackTypes } from './mock-feedback-types.js';
 
 const MAX_DIMENSIONS = 10;
@@ -208,6 +209,9 @@ function dimensionAdmits(actual, wanted) {
 }
 
 export function attributeFilterOf(searchParams) {
+  // source / category / subcategory / sentiment / usefulness lists (mock-facets.js).
+  const facets = facetFilterOf(searchParams);
+  if (facets.error) return { error: facets.error };
   const channel = searchParams?.get('channel') || '';
   const tag = (searchParams?.get('tag') || '').toLowerCase();
   const rawDims = searchParams?.get('dims') || '';
@@ -220,7 +224,7 @@ export function attributeFilterOf(searchParams) {
   const ratingError = min.error ?? max.error;
   if (ratingError) return { error: ratingError };
   return {
-    admits: (item) => (!channel || item.source_channel === channel)
+    admits: (item) => facets.admits(item) && (!channel || item.source_channel === channel)
       && (!tag || (item.tags || []).some((t) => t.toLowerCase() === tag))
       && pairs.every(([key, value]) => dimensionAdmits((item.dimensions || {})[key], value))
       && ratingAdmits(item, min.value, max.value),
