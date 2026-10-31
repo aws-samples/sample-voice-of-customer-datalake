@@ -44,7 +44,8 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
   profile comes only from verified Cognito groups or a job record a verified request wrote
   ([docs/deployment.md → E2E Test Users Run on Haiku 5.5](docs/deployment.md#e2e-test-users-run-on-haiku-55-the-e2e-cognito-group)).
 - `CDK_DEPLOY_CHANGED=1 npm run deploy:infra` runs `cdk diff` once and deploys only the stacks with
-  differences (`--exclusively`), still refreshing the API stage whenever VocApiStack is among them; it
+  differences (`--exclusively`), always ending with the API stage refresh (also when VocApiStack did not
+  change or nothing did, so an earlier interrupted refresh never leaves removed routes live); it
   falls back to the full deploy when the diff fails or cannot be read. The default deploy is unchanged
   ([docs/deployment.md → Faster deploys](docs/deployment.md#faster-deploys-skip-what-did-not-change)).
 - e2e suite: the read-only specs run in their own fully parallel projects (`admin-read`, `user-read`,
@@ -74,7 +75,8 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
   name or URI (refused with `-32020` otherwise); it stays optional there.
 - `npm run build:layers` skips a layer whose requirements, install recipe, build image and platform are
   unchanged since its last build (a `.build-stamp` next to `python/`); `FORCE_LAYER_BUILD=1` or `--force`
-  rebuilds every layer.
+  rebuilds every layer. A stamp older than 7 days rebuilds anyway (`LAYER_STAMP_MAX_AGE_DAYS`), so
+  dependencies without an exact pin are re-resolved at least weekly.
 - Plan steps now read the approver's Cognito groups on every step (they used to only for admin-only
   steps), so an approver in `e2e` runs on Haiku 5.5. An ordinary step still runs when that lookup fails.
 - e2e setup fails fast when a test user is not in the `e2e` group (`E2E_ALLOW_FULL_MODELS=1` downgrades
@@ -89,6 +91,15 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
 - MCP OAuth access tokens are verified in full on every request (RS256 only, issuer, access token, MCP client,
   expiry, audience when present) and accepted only from a sign-in the person approved; refresh tokens are never
   stored. The tokens API role gains Put/Delete on the jobs table's `MCPOAUTH#` relay rows only.
+- MCP OAuth clients get no app session: their Cognito clients allow only the `<mcp url>/read|write` scopes (no
+  `openid`, so no ID token) and no SRP or password sign-in, and `POST /oauth/token` never returns an `id_token`
+  ([docs/mcp.md → OAuth sign-in](docs/mcp.md#oauth-sign-in)).
+- Every REST API Lambda and the assistant stream (`/chat/stream`) answer 401 to a Cognito token issued to any app
+  client but the SPA's web client and the board pool's client (new env `APP_CLIENT_IDS` on every VocApiStack
+  function). The Cognito authorizer accepts a token of any client of the pool, so an MCP client's token could
+  otherwise have called every route with the person's full rights.
+- A consent opens its sign-in window for that one authorize request only: the token exchange's `code_verifier`
+  must match the consented PKCE `code_challenge` before a sign-in is recorded.
 
 ### Upgrade notes
 
@@ -110,6 +121,9 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
 - `resource` (RFC 8707) is dropped before Cognito unless `-c mcpOAuthResourceIndicator=true`; set it only on a
   pool whose hosted UI accepts resource binding.
 - Before announcing OAuth to users, run the live-test runbook in docs/mcp.md.
+- A consent approved but not yet completed while this release deploys must be approved again (the grant has no
+  stored challenge). Requests to the REST API with a token of another app client of the user pool (a script
+  signing in through its own client) now get 401; use the SPA's client (`UserPoolClientId`).
 
 ## [5.60.01] - 2026-10-31
 
