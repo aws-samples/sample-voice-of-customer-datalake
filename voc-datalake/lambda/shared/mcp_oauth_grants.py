@@ -16,6 +16,10 @@ partition, the ``run_agent`` admin re-check and the per-request ``AdminGetUser``
 * ``chain_open_until`` — consent opens a 10-minute window in which the token facade may record ONE new
   chain from an authorization code. A code obtained without consent (or long after it) records nothing
   and is refused.
+* ``consent_challenge_sha256`` — the SHA-256 of the consented authorize request's PKCE ``code_challenge``.
+  The window records a chain only for a code exchanged with THAT request's ``code_verifier``, so a second
+  authorization started (by anyone) while the window is open cannot take the consent over. Cleared with
+  the window.
 
 Effective scope per request = the grant's scope narrowed by the token's scopes: ``write`` only when the
 grant says ``write`` AND the token carries ``<resource>/write``.
@@ -23,7 +27,9 @@ grant says ``write`` AND the token carries ``<resource>/write``.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any, Final, TypeGuard
@@ -60,8 +66,29 @@ def is_active_grant_of(row: dict | None, *, sub: str, client_id: str, now: datet
     return gt.token_status(row, now) == gt.STATUS_ACTIVE
 
 
+def _sha256_hex(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def s256_challenge(code_verifier: str) -> str:
+    """RFC 7636 S256: BASE64URL(SHA256(ASCII(code_verifier))) without padding."""
+    digest = hashlib.sha256(code_verifier.encode('ascii', errors='replace')).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()
+
+
+def verifier_matches_consent(row: Mapping[str, Any], code_verifier: object) -> bool:
+    """``code_verifier`` belongs to the authorize request this grant's consent approved (S256).
+
+    False for a grant without the stored hash (consented before it existed): the person approves again.
+    """
+    stored = row.get('consent_challenge_sha256')
+    if not isinstance(stored, str) or not stored or not isinstance(code_verifier, str) or not code_verifier:
+        return False
+    return hmac.compare_digest(_sha256_hex(s256_challenge(code_verifier)), stored)
+
+
 def grant_item(*, subject: str, username: str, is_admin: bool, client_id: str, client_kind: str,
-               scope: str, project_id: str | None, now: datetime) -> dict[str, Any]:
+               scope: str, project_id: str | None, code_challenge: str, now: datetime) -> dict[str, Any]:
     """A fresh grant (a re-consent REPLACES the row: earlier chains and any revocation are gone)."""
     gid = grant_id(subject, client_id)
     item: dict[str, Any] = {
@@ -79,6 +106,7 @@ def grant_item(*, subject: str, username: str, is_admin: bool, client_id: str, c
         'created_at': now.isoformat(),
         'expires_at': (now + timedelta(days=GRANT_LIFETIME_DAYS)).isoformat(),
         'chain_open_until': (now + timedelta(minutes=CHAIN_WINDOW_MINUTES)).isoformat(),
+        'consent_challenge_sha256': _sha256_hex(code_challenge),
         'origin_jtis': [],
     }
     if project_id:

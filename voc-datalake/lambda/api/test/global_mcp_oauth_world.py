@@ -9,6 +9,8 @@ presented to ``/mcp/global`` like any client would. Only Cognito and its JWKS ar
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import secrets
 import time
@@ -26,7 +28,14 @@ import mcp_tokens_handler
 from shared import mcp_oauth_consent_routes, mcp_oauth_routes
 from shared.test.mcp_oauth_fixtures import CLIENTS, COGNITO_DOMAIN, FRONTEND, RESOURCE, jwks_cache, oauth_env, sign
 
-CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
+
+def s256(verifier: str) -> str:
+    """RFC 7636 S256, written out here so the tests do not check the code with itself."""
+    return base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+
+
+VERIFIER = 'v' * 43
+CHALLENGE = s256(VERIFIER)
 LOOPBACK = {'kiro': 'http://127.0.0.1:{port}/oauth/callback', 'claude-code': 'http://localhost:{port}/callback',
             'cursor': 'http://127.0.0.1:{port}/callback'}
 
@@ -65,7 +74,8 @@ class FakeCognito:
         params = {k: v[0] for k, v in parse_qs(urlsplit(authorize_url).query).items()}
         code = secrets.token_urlsafe(24)
         self.codes[code] = {'username': username, 'client_id': params['client_id'], 'scope': params['scope'],
-                            'redirect_uri': params['redirect_uri'], 'origin_jti': secrets.token_hex(8)}
+                            'redirect_uri': params['redirect_uri'], 'origin_jti': secrets.token_hex(8),
+                            'code_challenge': params['code_challenge']}
         return {'code': code, 'state': params['state']}
 
     def access_token(self, grant: dict, **overrides: Any) -> str:
@@ -88,12 +98,16 @@ class FakeCognito:
             grant = self.codes.pop(data['code'], None)
             if grant is None or grant['redirect_uri'] != data['redirect_uri'] or grant['client_id'] != data['client_id']:
                 return FakeResponse(400, {'error': 'invalid_grant'})
+            if s256(data.get('code_verifier', '')) != grant['code_challenge']:  # Cognito checks PKCE itself
+                return FakeResponse(400, {'error': 'invalid_grant'})
         else:
             grant = self.refresh.get(data['refresh_token'])
             if grant is None or data['refresh_token'] in self.revoked:
                 return FakeResponse(400, {'error': 'invalid_grant'})
         refresh_token = data.get('refresh_token') or secrets.token_urlsafe(24)
         self.refresh[refresh_token] = grant
+        # A real Cognito answers an ID token only for `openid`; the fake always does, so the facade's
+        # stripping is what keeps it from the client (test_mcp_oauth_facade.py pins it).
         return FakeResponse(200, {'access_token': self.access_token(grant), 'id_token': 'id', 'token_type': 'Bearer',
                                   'expires_in': 3600, 'refresh_token': refresh_token})
 
@@ -188,7 +202,7 @@ class OAuthWorld:
         back = {k: v[0] for k, v in parse_qs(location.query).items()}
         _expect(back['state'] == 'client-state')
         answer = self.exchange({'grant_type': 'authorization_code', 'client_id': client_id, 'code': back['code'],
-                                'redirect_uri': redirect_uri, 'code_verifier': 'v' * 43})
+                                'redirect_uri': redirect_uri, 'code_verifier': VERIFIER})
         _expect(answer.status == 200, answer.body)
         return SignIn(answer.body['access_token'], answer.body['refresh_token'], client_id, answer.body)
 
@@ -211,4 +225,4 @@ def oauth_world(lambda_context: Any) -> Generator[OAuthWorld, None, None]:
         yield OAuthWorld(world, cognito)
 
 
-__all__ = ['CLIENTS', 'OAuthWorld', 'anonymous', 'oauth_world']
+__all__ = ['CHALLENGE', 'CLIENTS', 'VERIFIER', 'OAuthWorld', 'anonymous', 'oauth_world', 's256']
