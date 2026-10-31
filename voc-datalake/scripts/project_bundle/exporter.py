@@ -34,6 +34,9 @@ SHARE_INDEX_SK = 'SHARE'
 TOMBSTONE_STATUSES = frozenset({'deleting', 'deleted'})
 TOMBSTONE_ATTRIBUTE = 'deletion_started_at'
 FIXTURE_ATTRIBUTE = 'verification_fixture_id'
+# A META row with a `kind` is a reserved container, not a project: the company persona library
+# (`PROJECT#company_personas`, lambda/shared/company_personas.py). It is never exported.
+CONTAINER_ATTRIBUTE = 'kind'
 # Credential-shaped rows are never exported, wherever they sit.
 CREDENTIAL_ATTRIBUTES = frozenset({'token_hash', 'secret_hash'})
 CREDENTIAL_SK_PREFIXES = ('TOKEN#', 'MCPTOKEN', 'APITOKEN')
@@ -67,10 +70,10 @@ def _partition(table: Any, pk: str) -> list[dict[str, Any]]:
 
 
 def live_project_ids(table: Any) -> list[str]:
-    """Every project whose META is neither a tombstone nor a verification fixture (`--all`)."""
+    """Every project whose META is not a tombstone, a verification fixture or a reserved container (`--all`)."""
     metas = _paged(table.scan, FilterExpression=Attr('sk').eq('META') & Attr('pk').begins_with('PROJECT#'))
     return sorted(str(meta['pk']).removeprefix('PROJECT#') for meta in metas
-                  if not is_tombstone(meta) and FIXTURE_ATTRIBUTE not in meta)
+                  if not is_tombstone(meta) and FIXTURE_ATTRIBUTE not in meta and CONTAINER_ATTRIBUTE not in meta)
 
 
 def comment_rows(table: Any, project_ids: Iterable[str]) -> dict[str, list[dict[str, Any]]]:
@@ -140,6 +143,8 @@ def _meta(table: Any, project_id: str) -> dict[str, Any]:
         raise ExportError(f'project {project_id} does not exist on the source deployment')
     if is_tombstone(meta):
         raise ExportError(f'project {project_id} is deleted (tombstone); nothing to export')
+    if CONTAINER_ATTRIBUTE in meta:
+        raise ExportError(f'{project_id} is a reserved container ({meta[CONTAINER_ATTRIBUTE]}), not a project')
     return meta
 
 
