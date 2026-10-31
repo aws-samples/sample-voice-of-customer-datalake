@@ -57,7 +57,7 @@ const RuntimeConfigSchema = z.object({
     webSearch: z.boolean().optional(),
     /** Participant email sending is configured (`-c emailFrom`); the UI explains it is off otherwise. */
     email: z.boolean().optional(),
-    /** The app user pool allows passkey sign-in (5.62); older deployments omit it and the UI offers none. */
+    /** The app user pool allows passkey sign-in (5.64); older deployments omit it and the UI offers none. */
     passkey: z.boolean().optional(),
   }).optional(),
   /**
@@ -125,7 +125,7 @@ export function isWebSearchAvailable(): boolean {
 }
 
 /**
- * Whether the app user pool takes passkeys (`features.passkey`, set by every deployment since 5.62).
+ * Whether the app user pool takes passkeys (`features.passkey`, set by every deployment since 5.64).
  * Says nothing about the browser: services/passkey.ts `passkeySupported()` checks that.
  * Safe to call before config load (returns false).
  */
