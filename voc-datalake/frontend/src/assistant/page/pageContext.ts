@@ -76,8 +76,8 @@ type PageFilterKey = (typeof PAGE_FILTER_KEYS)[number]
  * the open category). The Dashboard has no URL filters: its time range is `forwardedProps.days`.
  */
 const PAGE_FILTERS: Partial<Record<PageKind, readonly PageFilterKey[]>> = {
-  categories: ['q', 'source', 'sentiment', 'category', 'subcategory', 'rating', 'rating_dir', 'urgent', 'channel', 'dims', 'tag'],
-  problems: ['source', 'category', 'subcategory', 'urgent', 'resolved', 'similarity'],
+  categories: ['q', 'source', 'sentiment', 'usefulness', 'category', 'subcategory', 'rating', 'rating_dir', 'urgent', 'channel', 'dims', 'tag'],
+  problems: ['source', 'usefulness', 'category', 'subcategory', 'urgent', 'resolved', 'similarity'],
 }
 
 /** The page's non-empty filters, each cut to the contract bound; undefined when none is set. */
