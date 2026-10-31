@@ -30,7 +30,8 @@
     "workflow": "Workflow",
     "radar": "Radar",
     "featureRequests": "Feedback-Boards",
-    "participants": "Teilnehmende"
+    "participants": "Teilnehmende",
+    "oauthConsent": "Assistent freigeben"
   },
   "cancel": "Abbrechen",
   "configureBrand": "Marke konfigurieren",

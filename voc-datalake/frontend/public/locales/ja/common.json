@@ -30,7 +30,8 @@
     "workflow": "ワークフロー",
     "radar": "レーダー",
     "featureRequests": "フィードバックボード",
-    "participants": "参加者"
+    "participants": "参加者",
+    "oauthConsent": "アシスタントを承認"
   },
   "cancel": "キャンセル",
   "configureBrand": "ブランドを設定",

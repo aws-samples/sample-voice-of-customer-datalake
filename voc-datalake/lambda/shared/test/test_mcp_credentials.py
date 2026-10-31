@@ -29,8 +29,11 @@ def _check(token, row, *, minter_current=True, cache=None):
         loaded.append(token_id)
         return row
 
+    # Checked at the moment of the call: the token was signed just now (access_claims reads the clock), and
+    # NOW is fixed at import, possibly minutes earlier under a loaded parallel run (past the iat leeway).
     with oauth_env():
-        result = authenticate_oauth(token, load_row=load, minter_current=lambda _r: minter_current, now=NOW,
+        result = authenticate_oauth(token, load_row=load, minter_current=lambda _r: minter_current,
+                                    now=datetime.now(UTC),
                                     cache=cache or jwks_cache())
     return result, loaded
 
@@ -103,7 +106,7 @@ def test_a_jwks_fault_is_a_backend_fault():
 def test_oauth_off_refuses_every_jwt():
     with oauth_env(MCP_OAUTH_CLIENTS=''):
         assert authenticate_oauth(sign(access_claims()), load_row=lambda _t: _grant(),
-                                  minter_current=lambda _r: True, now=NOW, cache=jwks_cache()) is None
+                                  minter_current=lambda _r: True, now=datetime.now(UTC), cache=jwks_cache()) is None
 
 
 def test_only_compact_jws_shapes_are_routed_to_oauth():
