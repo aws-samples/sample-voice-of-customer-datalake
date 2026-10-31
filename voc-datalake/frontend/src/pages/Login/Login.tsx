@@ -10,7 +10,6 @@
  * @module pages/Login
  */
 
-import { type CognitoUser } from 'amazon-cognito-identity-js'
 import {
   useState, type SyntheticEvent,
 } from 'react'
@@ -19,7 +18,7 @@ import {
   useNavigate, useLocation,
 } from 'react-router-dom'
 import KiroGhost from '../../components/KiroGhost/KiroGhost'
-import { authService } from '../../services/auth'
+import { AuthChallengeError, authService, isNewPasswordChallenge } from '../../services/auth'
 import { isSessionExpiredRedirect } from '../../services/sessionExpiry'
 import { LANDING_STATE } from '../../utils/landing'
 import {
@@ -33,9 +32,7 @@ import {
 type AuthMode = 'login' | 'newPassword' | 'forgotPassword' | 'confirmPassword'
 
 interface CognitoError {
-  code?: string
   message?: string
-  cognitoUser?: CognitoUser
 }
 
 function isCognitoError(err: unknown): err is CognitoError {
@@ -50,7 +47,10 @@ function getFromPath(state: unknown): string {
   return '/'
 }
 
+/** Cognito's own message when it gave one; the translated fallback otherwise. */
 function extractErrorMessage(err: unknown, fallback: string): string {
+  // The service's own sign-in errors (an unsupported step, no session) carry developer English.
+  if (err instanceof AuthChallengeError) return fallback
   if (isCognitoError(err) && err.message != null && err.message !== '') {
     return err.message
   }
@@ -184,7 +184,8 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [cognitoUser, setCognitoUser] = useState<CognitoUser | null>(null)
+  /** A sign-in waiting for its new password (Amplify keeps the challenge itself). */
+  const [challengePending, setChallengePending] = useState(false)
 
   /*
    * Arriving here because a session died is not the same as arriving here to
@@ -206,8 +207,8 @@ export default function Login() {
       await authService.signIn(username, password)
       continueAfterSignIn()
     } catch (err: unknown) {
-      if (isCognitoError(err) && err.code === 'NewPasswordRequired') {
-        setCognitoUser(err.cognitoUser ?? null)
+      if (isNewPasswordChallenge(err)) {
+        setChallengePending(true)
         setMode('newPassword')
         setError(null)
       } else {
@@ -232,7 +233,7 @@ export default function Login() {
       return
     }
 
-    if (cognitoUser == null) {
+    if (!challengePending) {
       setError(t('errors.sessionExpired'))
       setMode('login')
       return
@@ -241,7 +242,7 @@ export default function Login() {
     setIsLoading(true)
 
     try {
-      await authService.completeNewPassword(cognitoUser, newPassword)
+      await authService.completeNewPassword(newPassword)
       continueAfterSignIn()
     } catch (err: unknown) {
       setError(extractErrorMessage(err, t('errors.failedNewPassword')))

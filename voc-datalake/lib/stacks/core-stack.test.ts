@@ -1107,7 +1107,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
  * in the URL fragment (browser history / Referer leakage) and cannot be
  * protected by PKCE — OAuth 2.1 drops it entirely.
  *
- * The application signs in via SRP (amazon-cognito-identity-js) and never
+ * The application signs in via SRP (Amplify v6, aws-amplify/auth) and never
  * uses the hosted-UI redirect flow, so disabling it is safe. A repository-
  * wide search at the time of writing found core-stack.ts to be the only
  * file referencing the implicit flow or the hosted-UI domain.

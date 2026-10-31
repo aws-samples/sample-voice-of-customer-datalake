@@ -1,7 +1,7 @@
 /**
  * @fileoverview Who is signed in to the feature-request board's own pool, in this tab.
  *
- * The tokens are NOT here: amazon-cognito-identity-js keeps the board session (under its own
+ * The tokens are NOT here: services/boardSession.ts keeps the board session (under its own
  * `CognitoIdentityServiceProvider.<board client id>.*` keys, apart from the app pool's) and refreshes it.
  * This store only says whether there is one and whose it is, so the board shell can render.
  *

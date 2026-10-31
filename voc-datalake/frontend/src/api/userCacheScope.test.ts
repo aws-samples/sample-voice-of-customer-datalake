@@ -41,7 +41,7 @@ describe('bindQueryCacheToUser', () => {
 
   it('keeps the cache across a session refresh for the same user', () => {
     useAuthStore.getState().setUser({ ...alice, groups: ['users'] })
-    useAuthStore.getState().setTokens({ accessToken: 'a', idToken: 'i', refreshToken: 'r' })
+    useAuthStore.getState().setTokens({ accessToken: 'a', idToken: 'i' })
     expect(cached()).toBe(true)
   })
 
