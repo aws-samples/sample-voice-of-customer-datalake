@@ -41,7 +41,7 @@ export function partitionOf(region: string): string {
 }
 
 /** Strip the `global.` cross-region prefix to get the foundation-model id. */
-function toFoundationModelId(inferenceProfileId: string): string {
+export function toFoundationModelId(inferenceProfileId: string): string {
   return inferenceProfileId.replace(/^global\./, '');
 }
 

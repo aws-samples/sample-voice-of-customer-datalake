@@ -8,6 +8,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { claudeInvokeStatements, e2eProfileModels, missingModelGrants } from './test-support/bedrock-grants';
 import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from './test-support/synth-app';
 
 const StatementSchema = z.object({ Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown() });
@@ -74,6 +75,12 @@ describe('inferenceScope=eu', () => {
   it('grants no global. inference profile anywhere, and the eu. profiles instead', () => {
     expect(allTemplatesText).not.toMatch(/inference-profile\/global\./);
     expect(allTemplatesText).toContain('inference-profile/eu.anthropic.claude-sonnet-5-5');
+  });
+
+  it('names the e2e profile models (Haiku 5.5 + its capacity fallback) as eu. profile and foundation model in every Claude grant', () => {
+    const statements = claudeInvokeStatements(eu);
+    expect(statements.length).toBeGreaterThan(5);
+    expect(missingModelGrants(statements, e2eProfileModels(), 'eu')).toStrictEqual([]);
   });
 
   it('does not deploy the web-search gateway, nor hand any Lambda its URL', () => {

@@ -34,6 +34,21 @@ export function pythonIntConstant(name: string, ...pathSegments: string[]): numb
 }
 
 /**
+ * Read a single-quoted string constant out of a Python or TypeScript source file in this repo:
+ * `NAME = '…'`, `NAME: Final = '…'`, `const NAME = '…'` or `export const NAME = '…'`, at the start of a
+ * line. Throws, like {@link pythonIntConstant}, when the constant is absent or no longer a literal.
+ */
+export function sourceStringConstant(name: string, ...pathSegments: string[]): string {
+  const source = readFileSync(join(__dirname, '..', '..', ...pathSegments), 'utf-8');
+  const pattern = new RegExp(`^(?:export\\s+)?(?:const\\s+)?${name}(?::\\s*Final)?\\s*=\\s*'([^']+)'`, 'm');
+  const matched = pattern.exec(source)?.[1];
+  if (matched === undefined) {
+    throw new Error(`could not read ${name} from ${pathSegments.join('/')}: renamed, inlined or no longer a string literal`);
+  }
+  return matched;
+}
+
+/**
  * How much of an invocation must remain after a Bedrock read timeout fires.
  *
  * A budget that merely lands under the caller's ceiling is not enough: the point

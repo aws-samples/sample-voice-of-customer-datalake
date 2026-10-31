@@ -8,19 +8,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
+import { sourceStringConstant } from '../test-support/cross-language-invariants';
 import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
 import { byCodeUnit } from '../utils/compare';
 
 const LAMBDA = join(__dirname, '..', '..', 'lambda');
 const HAIKU55 = 'global.anthropic.claude-haiku-5-5';
 
-/** The string literal assigned to `name` at the start of a line (Python `NAME: Final = '…'`, TS `export const NAME = '…'`). */
-function literal(file: string, name: string): string {
-  const source = readFileSync(join(LAMBDA, file), 'utf8');
-  const match = new RegExp(`^(?:export\\s+)?(?:const\\s+)?${name}(?::\\s*Final)?\\s*=\\s*'([^']+)'`, 'm').exec(source);
-  if (!match?.[1]) throw new Error(`could not read ${name} from ${file}`);
-  return match[1];
-}
+/** The string literal assigned to `name` at the start of a line of `lambda/<file>`. */
+const literal = (file: string, name: string): string => sourceStringConstant(name, 'lambda', ...file.split('/'));
 
 describe('the e2e Cognito group', () => {
   const template = synthCoreTemplate();
