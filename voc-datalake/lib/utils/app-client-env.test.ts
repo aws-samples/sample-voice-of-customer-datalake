@@ -1,7 +1,7 @@
 /**
  * `APP_CLIENT_IDS` (app-client-env.ts): every VocApiStack function knows the only app clients whose tokens
  * the REST API accepts — the SPA's web client and the board pool's client, never an MCP OAuth client
- * (security review of 5.58.00; lambda/shared/app_clients.py refuses every other client with a 401).
+ * (security review of 5.61.00; lambda/shared/app_clients.py refuses every other client with a 401).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
