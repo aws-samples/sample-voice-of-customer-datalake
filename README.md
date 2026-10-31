@@ -181,6 +181,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Source Policies](docs/source-policies.md) | Source profiles, PII redaction, restricted sources, retention and erasure |
 | [Kiro Design System](docs/kiro-design-system.md) | Frontend themes, colours, typography, components, motion and UI rules (ported from KiroCrew) |
 | [Project Workspace](docs/project-workspace.md) | Managed artifacts, prioritization, room voting, and MCP access |
+| [Moving projects between deployments](docs/project-export.md) | `project-export.py` / `project-import.py`: what is carried, owner remapping by email, `--new-ids`, `--dry-run` |
 | [Prioritization Scoring](docs/prioritization.md) | The workspace scoring setup: metrics, weights, directions, the composite formula, templates, routes |
 | [Kiro ACP Browser Bridge](docs/kiro-acp-browser-bridge.md) | Send work from a browser to a local `kiro-cli` over ACP (`tools/kiro-acp-bridge`), options and threat model |
 | [Plugin Architecture](docs/plugin-architecture.md) | Technical plugin system design |
