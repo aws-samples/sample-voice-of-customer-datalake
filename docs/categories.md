@@ -141,6 +141,36 @@ Not available through the assistant, on purpose: deleting a user, password reset
 flags (fallback owner, memory reviewer) — use Administration → Privacy & access → Users. These tools are not on the global
 MCP server (`/mcp/global`).
 
+## Filtering by several values
+
+The read routes (`/feedback`, `/feedback/urgent`, `/feedback/search`, `/feedback/entities`,
+`/feedback/problems` and every `/metrics/*` view) take one value or a comma-separated list for
+`source`, `category`, `subcategory`, `sentiment` and `usefulness`. A list means **any** of its
+values; different filters combine with AND (`source=web,app&sentiment=negative` = negative reviews
+from either source). One value means exactly what it always meant. Ported from PR #429
+(@aws-bryan); the code is `lambda/shared/item_facets.py`, used through `ItemFilters`.
+
+| Parameter | Values |
+|---|---|
+| `source` | Source ids. Pushed down to DynamoDB as `=` (one) or `IN` (several) |
+| `category` | Category names; `other` is the "Other" row (every review no configured category claims) |
+| `subcategory` | Subcategory ids |
+| `sentiment` | `positive`, `neutral`, `negative`, `mixed`; anything else is a 400 |
+| `usefulness` | `low`, `medium`, `high` (the stored band, [data-quality.md](data-quality.md)) and `unrated`, the explicit value for a review without a band. A band never matches an unscored review |
+
+A list holds at most 50 values of at most 128 characters; past that, or with an unknown sentiment
+or band, the route answers 400. The caller's [category and source access](#category-access-who-sees-which-reviews)
+is applied after these filters, so a list that names a hidden category or source only drops it:
+it never widens what the caller sees. `/feedback/problems` keeps `category` and `subcategory` for
+its own tree (a review with no category is `uncategorized` there).
+
+The Dashboard, Categories and Problem Analysis pages keep these filters in the URL under the same
+keys (`/categories?category=delivery,other&usefulness=high`), through one shared model
+(`frontend/src/api/feedbackFacets.ts`), so a filtered page is a shareable link. The Categories list
+sends every selection to the server, so its counts and pages are exact; nothing is refined in the
+browser. A filtered Dashboard window with no reviews says so and offers **Clear filters** instead
+of the "no feedback yet" state.
+
 ## Correcting a review's category
 
 `PUT /feedback/{id}/category` with body `{category, subcategory?}` — from the
