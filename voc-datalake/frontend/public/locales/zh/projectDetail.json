@@ -350,7 +350,12 @@
       "submitNone": "复制",
       "submit_one": "复制 {{count, number}} 个用户画像",
       "submit_other": "复制 {{count, number}} 个用户画像"
-    }
+    },
+    "protect": "保护此角色：替换角色时保留它",
+    "unprotect": "取消保护此角色",
+    "protected": "已保护",
+    "protectedHint": "新的生成替换此项目的角色时仍会保留",
+    "protectFailed": "无法更改保护状态，请重试。"
   },
   "personaSections": {
     "ageRange": "年龄",
@@ -559,7 +564,9 @@
     "personaReplaceConfirmMessage_other": "这将删除项目现有的 {{count, number}} 个用户画像（包括所有修改和头像），并生成 {{n, number}} 个新画像。此操作无法撤销。",
     "submitReplacePersonas": "删除并生成",
     "submitRemixDocuments": "重新组合文档",
-    "workingBackwards": "反向工作法"
+    "workingBackwards": "反向工作法",
+    "personaReplaceKeepsProtected_one": "将保留 {{count, number}} 个受保护的角色。",
+    "personaReplaceKeepsProtected_other": "将保留 {{count, number}} 个受保护的角色。"
   },
   "header": {
     "back": "返回项目列表",

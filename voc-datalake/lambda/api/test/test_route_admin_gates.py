@@ -222,6 +222,7 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'DELETE /projects/<project_id>/members/<member_sub>', 'POST /projects/<project_id>/owner',
           'POST /projects/<project_id>/personas/import',
           'PUT /projects/<project_id>/personas/<persona_id>', 'DELETE /projects/<project_id>/personas/<persona_id>',
+          'PUT /projects/<project_id>/personas/<persona_id>/protection',
           'POST /projects/<project_id>/personas/<persona_id>/notes',
           'POST /projects/<project_id>/personas/<persona_id>/regenerate-avatar',
           'POST /projects/<project_id>/personas/generate', 'POST /projects/<project_id>/research',

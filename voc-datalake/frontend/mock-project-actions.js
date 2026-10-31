@@ -395,18 +395,16 @@ function generatedPersonas(shared, count, kept = []) {
  * Returns [the new personas saved, how many were dropped].
  */
 function savePersonaSet(detail, generated, keep) {
-  if (!keep) {
-    detail.personas.splice(0, detail.personas.length, ...generated);
-    return [generated, 0];
-  }
-  const seen = new Set(detail.personas.map((p) => personaNameKey(p.name)).filter(Boolean));
+  // Add keeps every persona; replace keeps the protected ones (#429). A new name repeating a kept one is dropped.
+  const kept = keep ? detail.personas : detail.personas.filter((p) => p.protected === true);
+  const seen = new Set(kept.map((p) => personaNameKey(p.name)).filter(Boolean));
   const added = generated.filter((p) => {
     const key = personaNameKey(p.name);
     if (key && seen.has(key)) return false;
     if (key) seen.add(key);
     return true;
   });
-  detail.personas.push(...added);
+  detail.personas.splice(0, detail.personas.length, ...kept, ...added);
   return [added, generated.length - added.length];
 }
 

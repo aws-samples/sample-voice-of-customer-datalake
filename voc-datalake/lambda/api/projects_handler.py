@@ -619,6 +619,13 @@ def api_update_persona(project_id: str, persona_id: str):
     return update_persona(project_id, persona_id, json_object_body(app))
 
 
+@app.put("/projects/<project_id>/personas/<persona_id>/protection")
+@tracer.capture_method
+def api_set_persona_protection(project_id: str, persona_id: str):
+    """Protect a persona (or release it): a replace regeneration keeps a protected one."""
+    return projects.set_persona_protection(project_id, persona_id, json_object_body(app))
+
+
 @app.delete("/projects/<project_id>/personas/<persona_id>")
 @tracer.capture_method
 def api_delete_persona(project_id: str, persona_id: str):

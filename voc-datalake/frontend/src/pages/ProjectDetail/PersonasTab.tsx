@@ -3,13 +3,14 @@
  */
 import clsx from 'clsx'
 import {
-  Users, Sparkles, Upload, Copy,
+  Users, Sparkles, Upload, Copy, Lock,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import PersonaAvatar from './PersonaAvatar'
 import PersonasEmptyCard from './PersonasEmptyCard'
 import PersonaDetailView from './PersonaDetailView'
+import { usePersonaProtection } from './usePersonaProtection'
 import type { NoteItem } from './types'
 import type { PersonaScope } from './personaScope'
 import type { ProjectPersona } from '../../api/projectTypes'
@@ -52,6 +53,14 @@ export default function PersonasTab({
   isSavingNotes,
 }: PersonasTabProps) {
   const { t } = useTranslation('projectDetail')
+  // Protection exists only on a project's personas (the company library is only ever added to).
+  const projectProtection = usePersonaProtection(scope.kind === 'project' ? scope.projectId : '')
+  const protection = scope.kind === 'project' ? projectProtection : undefined
+  // The selected persona as the project last loaded it, not the click-time copy: a protect
+  // toggle then shows the saved state as soon as the project refetches (#429).
+  const shownPersona = selectedPersona === null
+    ? null
+    : personas.find((p) => p.persona_id === selectedPersona.persona_id) ?? selectedPersona
 
   return (
     <div className="space-y-4">
@@ -112,7 +121,12 @@ export default function PersonasTab({
                           broke the page outline (h1 → h4).
                           The name wraps (it is the button's label and must be whole);
                           the tagline keeps two lines with its full text as a tooltip. */}
-                      <p className="font-medium break-words hyphens-auto text-sm lg:text-base text-text-strong" data-testid="persona-list-name">{p.name}</p>
+                      <p className="font-medium break-words hyphens-auto text-sm lg:text-base text-text-strong" data-testid="persona-list-name">
+                        {p.name}
+                        {p.protected === true
+                          ? <Lock size={12} className="inline ml-1 text-muted" aria-label={t('personas.protected')} />
+                          : null}
+                      </p>
                       <p id={`persona-tagline-${p.persona_id}`} className={clsx('text-xs line-clamp-2 break-words', selected ? 'text-text' : 'text-muted')} title={p.tagline}>{p.tagline}</p>
                     </div>
                   </div>
@@ -123,13 +137,14 @@ export default function PersonasTab({
 
           {/* Persona Detail */}
           <div className="lg:col-span-2 bg-card rounded-xl border overflow-hidden">
-            {selectedPersona ? (
+            {shownPersona ? (
               <PersonaDetailView
                 // Remounted per persona: a pending or failed avatar regeneration
                 // belongs to the persona it was started for.
-                key={selectedPersona.persona_id}
+                key={shownPersona.persona_id}
                 scope={scope}
-                persona={selectedPersona}
+                persona={shownPersona}
+                protection={protection}
                 canEdit={canEdit}
                 onEdit={onEditPersona}
                 onDelete={onDeletePersona}
