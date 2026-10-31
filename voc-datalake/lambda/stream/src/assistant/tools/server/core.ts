@@ -38,7 +38,7 @@ const metricsInput = z.object({
 type MetricsArgs = z.infer<typeof metricsInput>;
 
 /** What every metric route filters on besides the window; `sentiment` also takes one category. */
-const METRIC_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set(['source', 'channel', 'tag', 'dims', 'rating', 'urgent']);
+const METRIC_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set(['source', 'usefulness', 'channel', 'tag', 'dims', 'rating', 'urgent']);
 const SENTIMENT_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set([...METRIC_FLOOR_FIELDS, 'category']);
 const GITHUB_SOURCE = 'github_issues';
 

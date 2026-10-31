@@ -225,8 +225,8 @@ export const ALL_TIME_DAYS = 0
  * not here: it travels as `forwardedProps.days` / `dateBasis` on every page.
  */
 export const PAGE_FILTER_KEYS = [
-  'q', 'category', 'subcategory', 'source', 'sentiment', 'rating', 'rating_dir', 'urgent', 'channel', 'dims', 'tag',
-  'resolved', 'similarity',
+  'q', 'category', 'subcategory', 'source', 'sentiment', 'usefulness', 'rating', 'rating_dir', 'urgent', 'channel', 'dims',
+  'tag', 'resolved', 'similarity',
 ] as const
 export const MAX_PAGE_FILTER_CHARS = 200
 
