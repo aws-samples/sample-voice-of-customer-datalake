@@ -8,8 +8,10 @@
  *    no trailing slash) with the scopes `read` and `write` (`<mcp url>/read`, `<mcp url>/write`).
  *  - One public PKCE app client per client kind: Kiro, Claude Code, Cursor and — only when
  *    `-c mcpOAuthWebCallbacks` lists callbacks — one for web assistants (untested until signed in live).
- *    Authorization code only, `openid` + the two scopes, 1 h access/ID tokens, 30-day refresh tokens,
- *    token revocation, no user-existence errors, no secret. Callbacks: the relay URL
+ *    Authorization code only (no SRP / password / custom auth flow), ONLY the two MCP scopes — no
+ *    `openid`, so Cognito issues no ID token and the client never holds an app session (the main API
+ *    refuses any token not issued to the SPA's own client, shared/app_clients.py) — 1 h access tokens,
+ *    30-day refresh tokens, token revocation, no user-existence errors, no secret. Callbacks: the relay URL
  *    (`<api>/v1/oauth/callback`) for every desktop client, plus Cursor's web callback
  *    (`-c mcpOAuthCursorCallbacks`, default its documented one) and the web list.
  *  - The anonymous facade routes on `voc-mcp-tokens-api` (`INTENTIONALLY_PUBLIC_OAUTH_ROUTES` in
@@ -39,6 +41,10 @@ export const OAUTH_RELAY_PARTITION_PREFIX = 'MCPOAUTH#';
 export const DEFAULT_CURSOR_WEB_CALLBACKS = ['https://www.cursor.com/agents/mcp/oauth/callback'];
 export const MCP_OAUTH_REFRESH_DAYS = 30;
 const MAX_CALLBACKS = 10;
+/** No SRP, password, custom or choice-based sign-in on an MCP client (pinned by api-mcp-oauth.test.ts). */
+const MCP_CLIENT_AUTH_FLOWS: cognito.AuthFlow = {
+  userSrp: false, userPassword: false, adminUserPassword: false, custom: false, user: false,
+};
 
 /** Client kinds = CLIENT_KINDS in shared/mcp_oauth_config.py. */
 export type McpOAuthClientKind = 'kiro' | 'claude-code' | 'cursor' | 'web';
@@ -118,7 +124,7 @@ export class McpOAuth {
       userPoolResourceServerName: props.uniqueName('voc-mcp'),
       scopes: [read, write],
     });
-    const scopes = [cognito.OAuthScope.OPENID, ...[read, write].map((s) => cognito.OAuthScope.resourceServer(this.resourceServer, s))];
+    const scopes = [read, write].map((s) => cognito.OAuthScope.resourceServer(this.resourceServer, s));
     const relayUrl = `${props.apiBaseUrl}/oauth/callback`;
     const context = (key: string): unknown => stack.node.tryGetContext(key);
     const cursorCallbacks = callbackListContext(context('mcpOAuthCursorCallbacks'), 'mcpOAuthCursorCallbacks', DEFAULT_CURSOR_WEB_CALLBACKS);
@@ -138,7 +144,8 @@ export class McpOAuth {
       userPool: this.props.userPool,
       userPoolClientName: this.props.uniqueName(name),
       generateSecret: false,
-      authFlows: { userSrp: true },
+      // Hosted-UI authorization code only: every explicit flow off leaves ALLOW_REFRESH_TOKEN_AUTH alone.
+      authFlows: MCP_CLIENT_AUTH_FLOWS,
       oAuth: { flows: { authorizationCodeGrant: true }, scopes, callbackUrls, logoutUrls: callbackUrls },
       supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.COGNITO],
       accessTokenValidity: cdk.Duration.hours(1),

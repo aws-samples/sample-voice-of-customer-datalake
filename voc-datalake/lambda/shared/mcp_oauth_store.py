@@ -49,7 +49,7 @@ def record_chain(table: Any, row: dict, origin_jti: str) -> bool:
     """Add ``origin_jti`` to the grant's chains and close its consent window; False when the row moved."""
     return _conditional(lambda: table.update_item(
         Key=_key(str(row['token_id'])),
-        UpdateExpression='SET origin_jtis = :chains REMOVE chain_open_until',
+        UpdateExpression='SET origin_jtis = :chains REMOVE chain_open_until, consent_challenge_sha256',
         ConditionExpression='attribute_not_exists(revoked_at) AND chain_open_until = :seen',
         ExpressionAttributeValues={':chains': grants.with_chain(row, origin_jti), ':seen': row.get('chain_open_until')},
     ))
@@ -59,7 +59,7 @@ def revoke_grant(table: Any, token_id: str, subject: str, now: datetime) -> bool
     """Revoke the caller's own grant at once (every chain refused); False when absent, foreign or revoked."""
     return _conditional(lambda: table.update_item(
         Key=_key(token_id),
-        UpdateExpression='SET revoked_at = :now, origin_jtis = :none REMOVE chain_open_until',
+        UpdateExpression='SET revoked_at = :now, origin_jtis = :none REMOVE chain_open_until, consent_challenge_sha256',
         ConditionExpression='attribute_exists(sk) AND #kind = :grant AND created_by = :me AND attribute_not_exists(revoked_at)',
         ExpressionAttributeNames={'#kind': 'kind'},
         ExpressionAttributeValues={':now': now.isoformat(), ':none': [], ':grant': grants.KIND_OAUTH_GRANT,
