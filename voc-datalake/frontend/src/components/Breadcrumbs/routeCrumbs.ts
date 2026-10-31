@@ -62,6 +62,9 @@ export const SEGMENT_CRUMBS: Readonly<Partial<Record<string, RouteCrumb>>> = {
   // `/agents/workflows/:id` — the library is the Workflows tab of /agents, so the crumb links there.
   'workflows': { labelKey: 'common:breadcrumbs.workflows', path: '/agents?tab=workflows' },
   'connect': { labelKey: 'common:breadcrumbs.connect' },
+  // `/oauth/authorize`, the MCP sign-in consent: its parent is Connect, where the sign-in is managed.
+  'oauth': { labelKey: 'common:breadcrumbs.connect', path: '/connect' },
+  'authorize': { labelKey: 'common:breadcrumbs.oauthConsent' },
   'account': { labelKey: 'common:breadcrumbs.account' },
   'admin': { labelKey: 'common:breadcrumbs.admin' },
   // Redirects to /admin; labelled for the redirect's instant.

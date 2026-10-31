@@ -30,6 +30,7 @@ const REGISTERED: Readonly<Record<string, string>> = {
   AgentDetail: 'the config Save bar',
   PasswordSection: 'Account → Change password',
   MintTokenForm: 'Connect → Create token',
+  OAuthConsent: 'MCP sign-in consent → Approve / Deny',
   MemoryImports: 'Memory → Import',
   SourceCardSections: 'Administration → Sources → Data sources → Save to secrets / Test',
   ReprocessPanel: 'Administration → Taxonomy → Categories → Start reprocess',
