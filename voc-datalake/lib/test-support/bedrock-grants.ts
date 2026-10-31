@@ -13,19 +13,13 @@
 import { z } from 'zod';
 
 import { sourceStringConstant } from './cross-language-invariants';
+import { IamPolicySchema, statementActions } from './iam-statements';
 import type { SynthResult } from './synth-app';
 import type { InferenceScope } from '../utils/inference-scope';
 import { scopedModelId, toFoundationModelId } from '../utils/model-allowlist';
 
-const StatementSchema = z.object({
-  Effect: z.string().optional(),
-  Action: z.union([z.string(), z.array(z.string())]),
-  Resource: z.unknown(),
-});
-const PolicyResourceSchema = z.object({
-  Type: z.enum(['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy']),
-  Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(StatementSchema) }) }),
-});
+const POLICY_TYPES: readonly string[] = ['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy'];
+const PolicyTypeSchema = z.object({ Type: z.string() });
 const ResourcesSchema = z.object({ Resources: z.record(z.string(), z.unknown()) });
 
 export interface ClaudeInvokeStatement {
@@ -42,12 +36,13 @@ export function claudeInvokeStatements(result: SynthResult): ClaudeInvokeStateme
   return result.stackNames.flatMap((stack) => {
     const resources = ResourcesSchema.parse(result.template(stack)).Resources;
     return Object.entries(resources).flatMap(([id, resource]) => {
-      const policy = PolicyResourceSchema.safeParse(resource);
+      if (!POLICY_TYPES.includes(PolicyTypeSchema.safeParse(resource).data?.Type ?? '')) return [];
+      const policy = IamPolicySchema.safeParse(resource);
       if (!policy.success) return [];
       return policy.data.Properties.PolicyDocument.Statement.flatMap((statement, index) => {
         const resourceText = JSON.stringify(statement.Resource);
         const grants = (statement.Effect ?? 'Allow') === 'Allow'
-          && [statement.Action].flat().some(isInvoke)
+          && statementActions(statement).some(isInvoke)
           && resourceText.includes('anthropic.claude');
         return grants ? [{ where: `${stack}/${id}#${index}`, resource: resourceText }] : [];
       });
@@ -56,7 +51,7 @@ export function claudeInvokeStatements(result: SynthResult): ClaudeInvokeStateme
 }
 
 /** The ARN tails (inference profile under `scope`, foundation model) a statement must name for `modelId`. */
-export function requiredModelArnTails(modelId: string, scope: InferenceScope): string[] {
+function requiredModelArnTails(modelId: string, scope: InferenceScope): string[] {
   return [`inference-profile/${scopedModelId(modelId, scope)}`, `foundation-model/${toFoundationModelId(modelId)}`];
 }
 
