@@ -537,7 +537,7 @@
   {
     "file": "api/companyPersonasApi.ts",
     "method": "POST",
-    "call": "`/projects/${projectId}/personas/${encodeURIComponent(personaId)}/promote`",
+    "call": "`/projects/${encodeURIComponent(projectId)}/personas/${encodeURIComponent(personaId)}/promote`",
     "probes": [
       {
         "path": "/projects/proj_1/personas/persona_2/promote"
@@ -547,7 +547,7 @@
   {
     "file": "api/companyPersonasApi.ts",
     "method": "GET",
-    "call": "`/projects/${projectId}/personas/copy-sources`",
+    "call": "`/projects/${encodeURIComponent(projectId)}/personas/copy-sources`",
     "probes": [
       {
         "path": "/projects/proj_1/personas/copy-sources"
@@ -557,7 +557,7 @@
   {
     "file": "api/companyPersonasApi.ts",
     "method": "POST",
-    "call": "`/projects/${projectId}/personas/copy`",
+    "call": "`/projects/${encodeURIComponent(projectId)}/personas/copy`",
     "probes": [
       {
         "path": "/projects/proj_1/personas/copy",

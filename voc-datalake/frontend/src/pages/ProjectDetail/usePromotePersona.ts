@@ -10,10 +10,16 @@ import { copySourcesRootKey } from './useCopyPersonas'
 /** Where the promote notice links: Knowledge → Company, Personas tab. */
 export const COMPANY_PERSONAS_PATH = '/company?tab=personas'
 
-export function usePromotePersona({ projectId, personaId }: Readonly<{ projectId: string; personaId: string }>) {
+/**
+ * ``projectId`` is null outside a project (the company library offers no promote): the
+ * request then refuses before any call, so `/projects//personas/…` can never be sent.
+ */
+export function usePromotePersona({ projectId, personaId }: Readonly<{ projectId: string | null; personaId: string }>) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => companyPersonasApi.promotePersona(projectId, personaId),
+    mutationFn: () => projectId === null || projectId === ''
+      ? Promise.reject(new Error('Only a project persona can be promoted'))
+      : companyPersonasApi.promotePersona(projectId, personaId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: companyPersonasKey() })
       void queryClient.invalidateQueries({ queryKey: copySourcesRootKey() })

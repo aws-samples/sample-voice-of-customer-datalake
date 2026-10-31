@@ -53,7 +53,7 @@ export type PersonaCopySource = { scope: 'company' } | { scope: 'project'; proje
 
 const BASE = '/company-personas'
 
-/** One library persona's path; ids are encoded once, here. */
+/** One library persona's path; ids are encoded once, here (the project-side paths encode the project id inline). */
 const personaPath = (personaId: string) => `${BASE}/${encodeURIComponent(personaId)}`
 
 export const companyPersonasKey = () => ['company-personas'] as const
@@ -98,12 +98,12 @@ export const companyPersonasApi = {
    * is not read: the library list is refetched instead.
    */
   promotePersona: async (projectId: string, personaId: string): Promise<void> => {
-    await fetchApi<unknown>(`/projects/${projectId}/personas/${encodeURIComponent(personaId)}/promote`, post())
+    await fetchApi<unknown>(`/projects/${encodeURIComponent(projectId)}/personas/${encodeURIComponent(personaId)}/promote`, post())
   },
 
   getPersonaCopySources: async (projectId: string): Promise<PersonaCopySources> =>
-    normalizeCopySources(await fetchApi<unknown>(`/projects/${projectId}/personas/copy-sources`)),
+    normalizeCopySources(await fetchApi<unknown>(`/projects/${encodeURIComponent(projectId)}/personas/copy-sources`)),
 
   copyPersonas: async (projectId: string, body: { source: PersonaCopySource; persona_ids: string[] }): Promise<{ personas: ProjectPersona[] }> =>
-    normalizeCopyAnswer(await fetchApi<unknown>(`/projects/${projectId}/personas/copy`, post(body))),
+    normalizeCopyAnswer(await fetchApi<unknown>(`/projects/${encodeURIComponent(projectId)}/personas/copy`, post(body))),
 }

@@ -28,7 +28,7 @@ function wrapper() {
   function Wrapper({ children }: Readonly<{ children: ReactNode }>) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>
   }
-  return { Wrapper, invalidate }
+  return { Wrapper, invalidate, client }
 }
 
 function sentBody(path: string, method: string): unknown {
@@ -64,18 +64,29 @@ describe('useCompanyPersonas', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['company-persona-jobs'] })
   })
 
-  it('refetches the library when a job has just completed', async () => {
+  it('refetches the library once per finished job, not on every later poll', async () => {
+    const completedAt = new Date().toISOString()
+    const progressOf = vi.fn<() => number>().mockReturnValueOnce(10).mockReturnValue(60)
     route({
       'GET /company-personas': () => ({ personas: [], can_edit: false }),
       'GET /company-personas/jobs': () => ({
-        jobs: [{ job_id: 'job_1', job_type: 'generate_personas', status: 'completed', completed_at: new Date().toISOString() }],
+        jobs: [
+          { job_id: 'job_1', job_type: 'generate_personas', status: 'completed', completed_at: completedAt },
+          { job_id: 'job_2', job_type: 'import_persona', status: 'running', progress: progressOf() },
+        ],
       }),
     })
-    const { Wrapper, invalidate } = wrapper()
+    const { Wrapper, invalidate, client } = wrapper()
     const { result } = renderHook(() => useCompanyPersonas(), { wrapper: Wrapper })
+    const libraryRefetches = () => invalidate.mock.calls.filter(([filters]) => filters?.queryKey?.[0] === 'company-personas')
 
-    await waitFor(() => expect(result.current.jobs).toHaveLength(1))
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['company-personas'] }))
+    await waitFor(() => expect(result.current.jobs).toHaveLength(2))
+    await waitFor(() => expect(libraryRefetches()).toHaveLength(1))
+
+    await act(() => client.refetchQueries({ queryKey: ['company-persona-jobs'] }))
+    await waitFor(() => expect(result.current.jobs[1]?.progress).toBe(60))
+
+    expect(libraryRefetches()).toHaveLength(1)
   })
 })
 
