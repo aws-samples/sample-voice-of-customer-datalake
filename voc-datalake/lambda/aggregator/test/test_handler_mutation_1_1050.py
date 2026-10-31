@@ -309,9 +309,9 @@ class TestTheHandlerReportsPerRecordThroughItsBatchProcessor:
             response = lambda_handler(self._event((sample_dynamodb_stream_record, '111')), lambda_context)
 
         assert response == {'batchItemFailures': []}
-        # six counters (no urgent row for a low-urgency item) plus the running average,
-        # then ONE data_version bump for the batch (shared/data_version.py)
-        assert table.update_item.call_count == 8
+        # six counters (no urgent row for a low-urgency item), the three profile rows and the
+        # running average, then ONE data_version bump for the batch (shared/data_version.py)
+        assert table.update_item.call_count == 11
         assert table.update_item.call_args.kwargs['Key'] == {'pk': 'METRIC#meta', 'sk': 'data_version'}
 
     def test_a_record_that_fails_is_reported_by_its_sequence_number_alone(
@@ -361,6 +361,9 @@ class TestAnItemMissingEveryDimensionBucketsUnderTheDefaults:
             ('METRIC#daily_sentiment#neutral', 'count'),
             ('METRIC#persona#unknown', 'count'),
             ('METRIC#category_sentiment#other#neutral', 'count'),
+            ('METRIC#daily_profile_rating#unknown#none', 'count'),
+            ('METRIC#daily_profile_sentiment#unknown#neutral', 'count'),
+            ('METRIC#daily_profile_length#unknown#short', 'count'),
         ]
 
     def test_a_populated_urgent_item_names_every_bucket_from_its_fields(self):
@@ -377,6 +380,9 @@ class TestAnItemMissingEveryDimensionBucketsUnderTheDefaults:
             ('METRIC#persona#churn_risk', 'count'),
             ('METRIC#urgent', 'count'),
             ('METRIC#category_sentiment#billing#negative', 'count'),
+            ('METRIC#daily_profile_rating#webscraper#none', 'count'),
+            ('METRIC#daily_profile_sentiment#webscraper#negative', 'count'),
+            ('METRIC#daily_profile_length#webscraper#short', 'count'),
         ]
 
 

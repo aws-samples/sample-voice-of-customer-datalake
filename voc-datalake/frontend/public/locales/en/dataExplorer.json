@@ -98,6 +98,40 @@
       "medium": "Medium",
       "low": "Low",
       "unrated": "Not rated"
+    },
+    "profile": {
+      "title": "Source profile",
+      "description": "What each source's feedback looks like: how it is rated, its sentiment and how long its text is.",
+      "notProfiled": "{{share}} of the feedback in this range was stored before the profile was counted and is not included. Rebuilding the aggregates for the range adds it.",
+      "facetGroup": "Profile to show",
+      "tableCaption": "{{facet}} per source",
+      "profiled": "Profiled",
+      "facets": {
+        "rating": "Rating",
+        "sentiment": "Sentiment",
+        "length": "Text length"
+      },
+      "rating": {
+        "5": "5 stars",
+        "4": "4 stars",
+        "3": "3 stars",
+        "2": "2 stars",
+        "1": "1 star",
+        "none": "No rating"
+      },
+      "sentiment": {
+        "positive": "Positive",
+        "neutral": "Neutral",
+        "mixed": "Mixed",
+        "negative": "Negative",
+        "other": "Other"
+      },
+      "length": {
+        "short": "Under 50 characters",
+        "medium": "50–199 characters",
+        "long": "200–999 characters",
+        "very_long": "1,000+ characters"
+      }
     }
   }
 }

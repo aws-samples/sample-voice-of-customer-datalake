@@ -100,6 +100,40 @@
       "medium": "Średnia",
       "low": "Niska",
       "unrated": "Bez oceny"
+    },
+    "profile": {
+      "title": "Profil źródła",
+      "description": "Jak wyglądają opinie z każdego źródła: jak są oceniane, jaki mają wydźwięk i jak długi jest ich tekst.",
+      "notProfiled": "{{share}} opinii z tego okresu zapisano, zanim profil był liczony, więc nie są uwzględnione. Odbudowanie agregatów dla tego okresu je dodaje.",
+      "facetGroup": "Wyświetlany profil",
+      "tableCaption": "{{facet}} według źródła",
+      "profiled": "Z profilem",
+      "facets": {
+        "rating": "Ocena",
+        "sentiment": "Wydźwięk",
+        "length": "Długość tekstu"
+      },
+      "rating": {
+        "5": "5 gwiazdek",
+        "4": "4 gwiazdki",
+        "3": "3 gwiazdki",
+        "2": "2 gwiazdki",
+        "1": "1 gwiazdka",
+        "none": "Bez oceny"
+      },
+      "sentiment": {
+        "positive": "Pozytywny",
+        "neutral": "Neutralny",
+        "mixed": "Mieszany",
+        "negative": "Negatywny",
+        "other": "Inny"
+      },
+      "length": {
+        "short": "Poniżej 50 znaków",
+        "medium": "50–199 znaków",
+        "long": "200–999 znaków",
+        "very_long": "1000 znaków lub więcej"
+      }
     }
   }
 }
