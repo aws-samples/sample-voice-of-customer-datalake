@@ -270,6 +270,7 @@ from shared.metric_keys import (
     DIMENSION_PREFIX,
     DIMENSION_SENTIMENT_METRIC_TYPE,
     DIMENSION_SENTIMENT_PREFIX,
+    PROFILE_METRIC_TYPES,
     SENTIMENT_AVG_PK,
     SENTIMENT_PREFIX,
     SOURCE_PREFIX,
@@ -278,6 +279,7 @@ from shared.metric_keys import (
     USEFULNESS_METRIC_TYPE,
     USEFULNESS_PREFIX,
 )
+from shared.source_profile import profile_counter_pks
 from shared.timestamps import now_iso
 from shared.usefulness import USEFULNESS_UNRATED, stored_band
 
@@ -610,7 +612,7 @@ def get_metric_type(pk: str) -> str | None:
         return 'channel'
     if pk.startswith(USEFULNESS_PREFIX):
         return USEFULNESS_METRIC_TYPE
-    return None
+    return next((kind for prefix, kind in PROFILE_METRIC_TYPES.items() if pk.startswith(prefix)), None)
 
 
 def _error_response(error: ClientError) -> Mapping[str, Any] | None:
@@ -1126,6 +1128,10 @@ def counter_dimensions(item: dict) -> list[tuple[str, str]]:
 
     # Category + sentiment combo
     dimensions.append((f'METRIC#category_sentiment#{category}#{sentiment_label}', 'count'))
+    # The per-source profile (shared/source_profile.py): rating, sentiment and text-length
+    # rows, one each, for every item. Days before these rows existed have none; a decrement
+    # for such an item is refused like any absent row, so no counter goes negative.
+    dimensions.extend((pk, 'count') for pk in profile_counter_pks(item))
 
     # Per-subcategory daily count, read by the agent heartbeat's threshold trigger.
     # The second conditional dimension: an item with no usable subcategory has no

@@ -15,7 +15,7 @@ from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import ConditionBase, Key
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import category_access, data_quality, other_category, release_watch
+from shared import category_access, data_quality, other_category, release_watch, source_profile
 from shared import category_scope_query as scope_query
 from shared.api import (
     DATE_BASIS_IMPORTED,
@@ -1963,19 +1963,24 @@ def get_dimension_metrics():
 
 
 def _quality_row_read() -> SlimRead:
-    """The aggregate routes' slim read plus the stored ``usefulness`` band."""
+    """The aggregate routes' slim read plus the stored band and the profile's fields."""
     read = _aggregate_row_read()
-    return replace(read, fields=(*read.fields, USEFULNESS_FIELD))
+    extra = tuple(f for f in (USEFULNESS_FIELD, *source_profile.ITEM_FIELDS) if f not in read.fields)
+    return replace(read, fields=(*read.fields, *extra))  # a repeated path is a ValidationException
 
 
 def _quality_from_counters(days: int) -> tuple[dict[str, Any], bool]:
-    """The distribution from the per-source and per-source-band daily counters (two index reads)."""
+    """The distribution and profile from the daily counters (one index read per metric type)."""
     current_date = datetime.now(UTC)
-    (sources, sources_partial), (bands, bands_partial) = concurrently(
-        lambda: _metric_type_totals('source', SOURCE_PREFIX, days, current_date),
-        lambda: _metric_type_totals(USEFULNESS_METRIC_TYPE, USEFULNESS_PREFIX, days, current_date),
-    )
-    return data_quality.from_counters(sources, bands), sources_partial or bands_partial
+    reads = [('source', SOURCE_PREFIX), (USEFULNESS_METRIC_TYPE, USEFULNESS_PREFIX),
+             *((source_profile.PROFILE_METRIC_TYPES[prefix], prefix) for prefix in source_profile.FACET_PREFIXES.values())]
+    (sources, sources_partial), (bands, bands_partial), *profile_reads = ordered_map(
+        lambda read: _metric_type_totals(read[0], read[1], days, current_date), reads)
+    profile_rows = dict(zip(source_profile.FACET_PREFIXES, (totals for totals, _ in profile_reads), strict=True))
+    result = source_profile.attach(data_quality.from_counters(sources, bands),
+                                   source_profile.from_counter_rows(profile_rows))
+    is_partial = sources_partial or bands_partial or any(partial for _, partial in profile_reads)
+    return result, is_partial
 
 
 @app.get("/metrics/data-quality")
@@ -1992,7 +1997,8 @@ def get_data_quality_metrics():
     scope = _caller_scope()
     if date_basis == DATE_BASIS_REVIEW or not scope.all:
         items, is_partial = _scoped_window_items(days, date_basis, scope, read=_quality_row_read())
-        result = data_quality.from_items(items)
+        result = source_profile.attach(data_quality.from_items(items),
+                                       source_profile.from_items(items, data_quality.source_of))
     else:
         result, is_partial = _quality_from_counters(days)
     return {
