@@ -252,6 +252,16 @@ class TestRefusals:
         assert _export(world, OTHER_PID) == 2
         assert 'tombstone' in capsys.readouterr().err
 
+    def test_the_company_persona_library_is_never_exported(self, world, capsys):
+        # A META with a `kind` is a reserved container (lambda/shared/company_personas.py), not a project.
+        world['tables']['src-p'].put_item(Item={'pk': 'PROJECT#company_personas', 'sk': 'META',
+                                                'kind': 'company_personas', 'project_id': 'company_personas'})
+        assert _export(world, 'company_personas') == 2
+        assert 'reserved container' in capsys.readouterr().err
+        listed = sys.modules['project_bundle.exporter'].live_project_ids(world['tables']['src-p'])
+        assert 'company_personas' not in listed
+        assert PID in listed
+
     def test_a_newer_bundle_version_and_an_escaping_object_key_are_refused(self, world, capsys):
         _export(world, PID)
         manifest_path = world['bundle'] / 'manifest.json'
