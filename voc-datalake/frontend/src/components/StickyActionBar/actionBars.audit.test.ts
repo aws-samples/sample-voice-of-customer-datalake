@@ -62,6 +62,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
   Agents: 'New agent is a page-header action',
   WorkflowEditor: 'Save sits in the editor toolbar above the canvas, top of the page, next to Save as',
   RunDecisionForm: 'Make the decision sits in the decision card at the top of the selected run, above the graph, left-aligned',
+  AddPasskeyButton: 'a one-action card button (the passkey offer above the page, Account → Passkey), no form to save',
   EndpointCard: 'Download skill is a card action at the top of Connect',
   Dashboard: 'header action',
   DashboardEmptyState: 'empty-state CTA, centred',
