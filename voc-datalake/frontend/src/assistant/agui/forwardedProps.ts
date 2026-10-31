@@ -1,7 +1,8 @@
 /**
  * @fileoverview `forwardedProps` for a run: the page the user is on, the global
  * time range / date basis, the UI language, the web-search opt-in and the
- * personas / documents the message mentions (`@`, `#`; project pages only).
+ * personas / documents the message mentions (`@`, `#`; project pages only) and, on `/chat`, the
+ * filter panel's scope (a floor the stream's feedback tools cannot widen).
  *
  * Validated against the contract schema before it leaves the SPA, so a page
  * context that would be rejected server-side (an over-long title, say) is
@@ -12,8 +13,8 @@
 import { ALL_TIME_CUSTOM_DAYS, MAX_CUSTOM_DAYS } from '../../api/baseUrl'
 import { getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
-import { forwardedPropsSchema, mentionsSchema, pageContextSchema } from '../contract'
-import type { ForwardedProps, Mentions, PageContext } from '../contract'
+import { chatScopeSchema, forwardedPropsSchema, mentionsSchema, pageContextSchema } from '../contract'
+import type { ChatScope, ForwardedProps, Mentions, PageContext } from '../contract'
 
 const MAX_TITLE = 120
 const MAX_PATH = 200
@@ -36,6 +37,15 @@ export interface ForwardedPropsInput {
   useWebSearch: boolean
   /** The personas / documents mentioned in this message (project pages only). */
   mentions?: Mentions
+  /** The /chat filter panel's scope (chatScopeStore); sent from the chat page only. */
+  scope?: ChatScope
+}
+
+/** The scope only travels from `/chat`, and only when it passes the contract. */
+function scopeFor(page: PageContext, scope: ChatScope | undefined): { scope?: ChatScope } {
+  if (scope === undefined || page.kind !== 'chat') return {}
+  const parsed = chatScopeSchema.safeParse(scope)
+  return parsed.success ? { scope: parsed.data } : {}
 }
 
 /** Mentions only travel from a project page, and only when they pass the contract. */
@@ -46,13 +56,14 @@ function mentionsFor(page: PageContext, mentions: Mentions | undefined): { menti
   return { mentions: parsed.data }
 }
 
-export function buildForwardedProps({ page, language, useWebSearch, mentions }: ForwardedPropsInput): ForwardedProps {
+export function buildForwardedProps({ page, language, useWebSearch, mentions, scope }: ForwardedPropsInput): ForwardedProps {
   const { timeRange, customDays, dateBasis } = useConfigStore.getState()
   const range = getDateRangeParams(timeRange, customDays, dateBasis)
   const clampedPage = clampPageContext(page)
   const candidate: ForwardedProps = {
     page: clampedPage,
     ...mentionsFor(clampedPage, mentions),
+    ...scopeFor(clampedPage, scope),
     ...(range.days !== undefined ? { days: Math.min(MAX_CUSTOM_DAYS, Math.max(ALL_TIME_CUSTOM_DAYS, range.days)) } : {}),
     dateBasis: range.date_basis ?? 'imported',
     ...(language !== undefined && language !== '' ? { responseLanguage: language.slice(0, MAX_LANGUAGE) } : {}),
