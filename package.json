@@ -1,6 +1,6 @@
 {
   "name": "voice-of-customer-datalake",
-  "version": "5.57.2",
+  "version": "5.57.3",
   "description": "Voice of the Customer Data Lake - Unified customer feedback intelligence platform",
   "private": true,
   "scripts": {
@@ -30,6 +30,7 @@
     "validate": "bash scripts/validate.sh",
     "validate:codeql": "bash scripts/codeql.sh",
     "check:mock": "npm run check:mock --prefix voc-datalake/frontend",
+    "deps:freshness": "node scripts/dependency-freshness.mjs",
     "check:i18n": "cd voc-datalake/frontend && node scripts/i18n-check.test.mjs && node --test scripts/set-nested.test.mjs && node scripts/i18n-check.mjs",
     "quality:baseline": "bash scripts/quality-baseline.sh",
     "mutation:report": "bash scripts/mutation-report.sh",

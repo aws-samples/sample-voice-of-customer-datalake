@@ -1,7 +1,8 @@
 # Dependencies: updates, licenses, vulnerabilities
 
-Four automated controls keep the dependency trees current and reviewable. This page says what each one
-does, what makes it fail, and what to do when it does.
+Four automated controls keep the dependency trees current and reviewable, and one report shows how far behind
+the newest releases everything is. This page says what each one does, what makes it fail, and what to do when
+it does.
 
 | Control | Where | Runs | Fails on |
 |---|---|---|---|
@@ -9,6 +10,7 @@ does, what makes it fail, and what to do when it does.
 | License gate | `.github/workflows/dependency-review.yml` + `.github/dependency-review-config.yml` | Every pull request | A changed dependency whose license is not allowed |
 | Vulnerability audit | `.github/workflows/dependency-audit.yml` + `scripts/dependency-audit.mjs` | Pull requests touching dependencies, weekly, by hand | A known advisory above the bar (below) |
 | Scheduled failure watch | `.github/workflows/scheduled-failure-watch.yml` + `scripts/scheduled-failure-watch.mjs` | After each scheduled run | Never; it opens and closes an issue |
+| Freshness check | `scripts/dependency-freshness.mjs` (`npm run deps:freshness`) | By hand: weekly, and before starting a feature | Never by default (`--fail-on` makes it) |
 
 Dependabot security alerts (repository setting) and CodeQL stay on as before; these controls add to them.
 Every third-party action in `.github/workflows/` is pinned to a full commit SHA with a `# vX.Y.Z` comment,
@@ -112,6 +114,29 @@ feature of a library we only use as a parser) or no fix exists yet. Add an entry
 `reason` says why the risk does not apply or what is blocking the fix, and `expires` is at most 90 days ahead.
 An expired or malformed entry fails the audit, so every ignore is looked at again. An entry that matched
 nothing is printed as `UNUSED`: delete it.
+
+## Freshness check
+
+Dependabot proposes minor and patch updates only, and covers neither the Lambda runtimes, the Node / Python
+lines nor the binaries pinned in the workflows. `npm run deps:freshness` (from the repo root, after `npm ci`
+in each package so `npm outdated` can read the installed trees) lists everything that is behind its newest
+release:
+
+| Area | Compared | With |
+|---|---|---|
+| `npm` | every package of the six lockfiles (root, `voc-datalake`, `frontend`, `frontend/e2e`, `lambda/stream`, `tools/kiro-acp-bridge`) | the npm registry's `latest` (not the in-range `wanted`) |
+| `pip` / `pip floor` | each `==` pin, and each `>=` / `~=` floor, in the four Lambda layers and `requirements-dev.txt` | PyPI. A floor is only informational: a fresh layer build already installs the newest release it allows |
+| `Lambda runtime` | every `Runtime.PYTHON_3_x` / `Runtime.NODEJS_x_X` in `voc-datalake/lib` | the newest runtime the installed `aws-cdk-lib` knows |
+| `toolchain` | `engines.node`, `.python-version`, the workflows' `node-version` / `python-version` | the newest Node LTS line and Python line (endoflife.date) |
+| `GitHub Action`, `workflow tool` | each SHA-pinned `uses:` (its `# vX` comment) and `GITLEAKS_VERSION`, `ACTIONLINT_VERSION`, `ZIZMOR_VERSION` | the repository's latest GitHub release (`GITHUB_TOKEN` or `gh auth token` raises the API limit) |
+
+Each line is classed `major`, `minor` or `patch`, majors first. Majors are upgraded deliberately, one at a
+time on their own release branch (the reason Dependabot ignores them). A newer Python line than the Lambda
+runtime does not mean Lambda supports it yet: the `Lambda runtime` line is the one that says so.
+
+`--json` prints the findings as JSON; `--fail-on major|minor|patch` exits 1 when a finding at or above that
+level exists. Exit 2 means a check could not run (no network, a directory without `node_modules`); it is
+listed under **Not checked**, so a short report never hides an unchecked area.
 
 ## Scheduled failure watch
 
