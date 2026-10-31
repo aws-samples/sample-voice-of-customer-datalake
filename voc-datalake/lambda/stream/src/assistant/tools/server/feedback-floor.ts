@@ -20,11 +20,14 @@ import { CHAT_SCOPE_MAX_ITEMS, type ForwardedProps, type PageContext } from '../
 type PageFilters = NonNullable<PageContext['filters']>;
 
 /** The list-valued fields of a floor, by their PAGE_FILTER_KEYS / tool-argument name. */
-export const FLOOR_LIST_FIELDS = ['source', 'category', 'subcategory', 'sentiment', 'channel', 'tag'] as const;
+export const FLOOR_LIST_FIELDS = ['source', 'category', 'subcategory', 'sentiment', 'usefulness', 'channel', 'tag'] as const;
 export type FloorListField = (typeof FLOOR_LIST_FIELDS)[number];
 
 /** Fields whose page value may name several choices, comma-separated (`?category=a,b`). */
-const COMMA_LIST_FIELDS = new Set<FloorListField>(['source', 'category', 'subcategory', 'sentiment']);
+const COMMA_LIST_FIELDS = new Set<FloorListField>(['source', 'category', 'subcategory', 'sentiment', 'usefulness']);
+
+/** `usefulness=unrated` admits a review stored without a band (shared/usefulness.py USEFULNESS_UNRATED). */
+const USEFULNESS_UNRATED = 'unrated';
 
 /** `dims=key:a|b` accepts either value; `~unset` accepts an item with no value (shared/item_filters.py). */
 export const DIMS_ANY_SEPARATOR = '|';
@@ -159,6 +162,8 @@ export interface FloorItem {
   category?: string;
   subcategory?: string;
   sentiment_label?: string;
+  /** The stored usefulness band (`low` / `medium` / `high`); absent = unrated. */
+  usefulness?: string | null;
   source_channel?: string | null;
   tags?: string[] | null;
   dimensions?: Record<string, string> | null;
@@ -169,7 +174,7 @@ export interface FloorItem {
   problem_summary?: string;
 }
 
-const ITEM_FIELD: Record<Exclude<FloorListField, 'tag'>, keyof FloorItem> = {
+const ITEM_FIELD: Record<Exclude<FloorListField, 'tag' | 'usefulness'>, keyof FloorItem> = {
   source: 'source_platform',
   category: 'category',
   subcategory: 'subcategory',
@@ -181,6 +186,10 @@ function admitsList(item: FloorItem, field: FloorListField, allowed: readonly st
   if (field === 'tag') {
     const tags = (item.tags ?? []).map((tag) => tag.toLowerCase());
     return allowed.some((tag) => tags.includes(tag.toLowerCase()));
+  }
+  if (field === 'usefulness') {
+    const band = typeof item.usefulness === 'string' && item.usefulness !== '' ? item.usefulness : USEFULNESS_UNRATED;
+    return allowed.includes(band);
   }
   const value = item[ITEM_FIELD[field]];
   return typeof value === 'string' && allowed.includes(value);

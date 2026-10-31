@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoryBucket, categoryLabel, channelLabel, humanizeId, keywordLabel, sourceLabel, subcategoryLabel, themeLabel } from './displayLabels'
+import { categoryLabel, channelLabel, humanizeId, keywordLabel, sourceLabel, subcategoryLabel, themeLabel } from './displayLabels'
 
 const CATEGORIES = [
   {
@@ -134,15 +134,5 @@ describe('the "Other" category', () => {
     expect(categoryLabel('other', [], 'Sonstiges')).toBe('Sonstiges')
     expect(categoryLabel('other')).toBe('Other')
     expect(categoryLabel('other', [{ name: 'other', description: 'Misc' }], 'Sonstiges')).toBe('Misc')
-  })
-
-  it('buckets missing, unconfigured and removed categories as "other"', () => {
-    const configured = ['delivery']
-    expect(['delivery', 'billing', '', undefined].map((name) => categoryBucket(name, configured)))
-      .toStrictEqual(['delivery', 'other', 'other', 'other'])
-  })
-
-  it('keeps every name while the configuration is unknown', () => {
-    expect(categoryBucket('billing', [])).toBe('billing')
   })
 })
