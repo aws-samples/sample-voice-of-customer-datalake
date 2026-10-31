@@ -180,13 +180,6 @@
         "voc-datalake/frontend/src/pages/ProjectDetail/ProductFormFields.tsx"
       ],
       "reason": "a LabeledField + native select row of the workflow editor, the token form and the Product tab's lifecycle field: different options, state and i18n keys"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/pages/DataExplorer/DataQualitySectionProfile.tsx",
-        "voc-datalake/frontend/src/pages/Radar/NewsKind.tsx"
-      ],
-      "reason": "two aria-pressed chip groups with different styles (buttons vs badges) and label sources; a shared component would need both as props"
     }
   ]
 }
