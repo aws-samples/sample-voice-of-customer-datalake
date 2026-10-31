@@ -613,6 +613,12 @@
     "range": "{{from, number}}–{{to, number}} de {{total, number}}",
     "previous": "Anterior",
     "next": "Próxima",
-    "close": "Fechar"
+    "close": "Fechar",
+    "citedSummary_one": "cita {{count, number}} delas",
+    "citedSummary_other": "cita {{count, number}} delas",
+    "viewLabel": "Quais avaliações",
+    "viewCited": "Citadas ({{n, number}})",
+    "viewUsed": "Todas as usadas ({{n, number}})",
+    "citedNote": "As avaliações que as evidências da persona nomeiam. Uma citação que não nomeia nenhuma avaliação lida é mantida apenas como texto."
   }
 }
