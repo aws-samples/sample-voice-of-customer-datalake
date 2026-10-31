@@ -58,12 +58,12 @@
       "title": "Passkey",
       "intro": "Entre neste dispositivo com sua impressão digital, reconhecimento facial ou bloqueio de tela, em vez da senha. Sua senha continua funcionando.",
       "added": "Passkey adicionada. Na próxima vez, você pode entrar com ela.",
-      "none": "Nenhuma chave de acesso nesta conta ainda.",
-      "unnamed": "Chave de acesso",
+      "none": "Nenhuma passkey nesta conta ainda.",
+      "unnamed": "Passkey",
       "addedOn": "Adicionada em {{date}}",
       "remove": "Remover {{name}}",
-      "removeTitle": "Remover esta chave de acesso?",
-      "removeBody": "Ela não poderá mais fazer login, em nenhum dispositivo que a contenha. Sua senha e suas outras chaves de acesso continuam funcionando.",
+      "removeTitle": "Remover esta passkey?",
+      "removeBody": "Não será mais possível entrar com ela em nenhum dispositivo que a contenha. Sua senha e suas outras passkeys continuam funcionando.",
       "removeConfirm": "Remover"
     },
     "errors": {
