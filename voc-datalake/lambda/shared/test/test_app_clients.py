@@ -1,6 +1,6 @@
 """The main API refuses Cognito tokens issued to any app client but the SPA's (shared/app_clients.py).
 
-Security review of 5.58.00: an MCP OAuth client's token (same user pool) passes API Gateway's Cognito
+Security review of 5.61.00: an MCP OAuth client's token (same user pool) passes API Gateway's Cognito
 authorizer, so every handler must refuse it itself, or an MCP client would act with the person's full
 (admin) rights on every REST route.
 """
