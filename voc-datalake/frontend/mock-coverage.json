@@ -2349,6 +2349,25 @@
   },
   {
     "file": "api/projectsApi.ts",
+    "method": "PUT",
+    "call": "`/projects/${encodeURIComponent(projectId)}/personas/${encodeURIComponent(personaId)}/protection`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/personas/persona_1/protection",
+        "body": {
+          "protected": true
+        }
+      },
+      {
+        "path": "/projects/proj_1/personas/persona_1/protection",
+        "body": {
+          "protected": false
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
     "method": "POST",
     "call": "`/projects/${encodeURIComponent(projectId)}/feedback-preview`",
     "probes": [

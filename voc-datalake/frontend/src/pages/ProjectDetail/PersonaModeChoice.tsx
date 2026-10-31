@@ -5,8 +5,12 @@
  * (the default, non-destructive) keeps them and writes different ones next to them;
  * `replace` deletes them first, so its confirmation is a danger dialog that counts
  * what goes. A project with no personas sees neither the choice nor the warning.
+ *
+ * Protected personas (#429) survive a replace: its hint and its confirmation count only the
+ * unprotected ones, and say how many protected ones stay.
  */
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import RadioCard from '../../components/RadioCard/RadioCard'
 import type { PersonaGenerationMode } from './types'
@@ -19,11 +23,21 @@ const MODES: ReadonlyArray<{ value: PersonaGenerationMode; titleKey: string; hin
 interface PersonaModeChoiceProps {
   /** How many personas the project has now; 0 renders nothing. */
   readonly existingCount: number
+  /** How many of them are protected, which a replace keeps (#429). */
+  readonly protectedCount?: number
   readonly mode: PersonaGenerationMode
   readonly onChange: (mode: PersonaGenerationMode) => void
 }
 
-export function PersonaModeChoice({ existingCount, mode, onChange }: PersonaModeChoiceProps) {
+/** A replace's hint: what it deletes (the unprotected personas), then what it keeps. */
+function replaceHint(t: TFunction, existingCount: number, protectedCount: number): string {
+  const deleted = existingCount - protectedCount
+  const kept = protectedCount > 0 ? t('wizards.personaReplaceKeepsProtected', { count: protectedCount }) : ''
+  if (deleted === 0) return kept
+  return [t('wizards.personaModeReplaceHint', { count: deleted }), kept].filter(Boolean).join(' ')
+}
+
+export function PersonaModeChoice({ existingCount, protectedCount = 0, mode, onChange }: PersonaModeChoiceProps) {
   const { t } = useTranslation('projectDetail')
   if (existingCount === 0) return null
   return (
@@ -37,7 +51,7 @@ export function PersonaModeChoice({ existingCount, mode, onChange }: PersonaMode
           checked={mode === m.value}
           onSelect={onChange}
           title={t(m.titleKey)}
-          hint={t(m.hintKey, { count: existingCount })}
+          hint={m.value === 'replace' ? replaceHint(t, existingCount, protectedCount) : t(m.hintKey, { count: existingCount })}
         />
       ))}
     </fieldset>
@@ -47,6 +61,8 @@ export function PersonaModeChoice({ existingCount, mode, onChange }: PersonaMode
 interface PersonaGenerateConfirmProps {
   readonly isOpen: boolean
   readonly existingCount: number
+  /** How many of them are protected, which a replace keeps (#429). */
+  readonly protectedCount?: number
   readonly mode: PersonaGenerationMode
   /** How many personas the run writes. */
   readonly personaCount: number
@@ -56,18 +72,22 @@ interface PersonaGenerateConfirmProps {
 
 /** The ask before a generation starts; a replace that deletes personas is a danger dialog. */
 export function PersonaGenerateConfirm({
-  isOpen, existingCount, mode, personaCount, onConfirm, onCancel,
+  isOpen, existingCount, protectedCount = 0, mode, personaCount, onConfirm, onCancel,
 }: PersonaGenerateConfirmProps) {
   const { t } = useTranslation('projectDetail')
-  const replacing = mode === 'replace' && existingCount > 0
+  const deleted = existingCount - protectedCount
+  const replacing = mode === 'replace' && deleted > 0
+  const kept = mode === 'replace' && protectedCount > 0
+    ? ` ${t('wizards.personaReplaceKeepsProtected', { count: protectedCount })}`
+    : ''
   return (
     <ConfirmModal
       isOpen={isOpen}
       variant={replacing ? 'danger' : 'info'}
       title={t(replacing ? 'wizards.personaReplaceConfirmTitle' : 'wizards.personaConfirmTitle')}
-      message={replacing
-        ? t('wizards.personaReplaceConfirmMessage', { count: existingCount, n: personaCount })
-        : t('wizards.personaConfirmMessage', { n: personaCount })}
+      message={(replacing
+        ? t('wizards.personaReplaceConfirmMessage', { count: deleted, n: personaCount })
+        : t('wizards.personaConfirmMessage', { n: personaCount })) + kept}
       confirmLabel={t(replacing ? 'wizards.submitReplacePersonas' : 'wizards.submitGeneratePersonas')}
       onConfirm={onConfirm}
       onCancel={onCancel}

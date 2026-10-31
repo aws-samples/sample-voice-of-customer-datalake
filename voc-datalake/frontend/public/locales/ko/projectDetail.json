@@ -350,7 +350,12 @@
       "submitNone": "복사",
       "submit_one": "페르소나 {{count, number}}개 복사",
       "submit_other": "페르소나 {{count, number}}개 복사"
-    }
+    },
+    "protect": "이 페르소나 보호: 페르소나를 교체할 때 유지",
+    "unprotect": "이 페르소나 보호 해제",
+    "protected": "보호됨",
+    "protectedHint": "새 생성이 이 프로젝트의 페르소나를 교체해도 유지됩니다",
+    "protectFailed": "보호 설정을 변경하지 못했습니다. 다시 시도하세요."
   },
   "personaSections": {
     "ageRange": "나이",
@@ -559,7 +564,9 @@
     "personaReplaceConfirmMessage_other": "프로젝트의 기존 페르소나 {{count, number}}개가 수정 내용과 아바타까지 삭제되고, 새 페르소나 {{n, number}}개가 작성됩니다. 되돌릴 수 없습니다.",
     "submitReplacePersonas": "삭제 후 생성",
     "submitRemixDocuments": "문서 리믹스",
-    "workingBackwards": "역방향 작업"
+    "workingBackwards": "역방향 작업",
+    "personaReplaceKeepsProtected_one": "보호된 페르소나 {{count, number}}개는 유지됩니다.",
+    "personaReplaceKeepsProtected_other": "보호된 페르소나 {{count, number}}개는 유지됩니다."
   },
   "header": {
     "back": "프로젝트 목록으로 돌아가기",
