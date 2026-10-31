@@ -313,6 +313,27 @@ def test_a_deployment_cap_refusal_gives_the_sender_claim_back(world, lambda_cont
     assert _send_counts(world) == {'COUNT': 2, f'SENDER#{ADMIN["sub"]}': 2}
 
 
+def test_an_ask_without_a_sender_counts_against_the_deployment_cap_only(world):
+    from shared.participants_asks import claim_send
+    assert claim_send(world.participants, 5, '') is None
+    assert _send_counts(world) == {'COUNT': 1}
+
+
+def test_a_failing_deployment_claim_gives_the_sender_claim_back_and_propagates(world, monkeypatch):
+    from shared import participants_asks
+    real = participants_asks._claim
+
+    def deployment_claim_fails(table, key, cap, now):
+        if key['sk'] == 'COUNT':
+            raise ClientError({'Error': {'Code': 'InternalServerError', 'Message': 'x'}}, 'UpdateItem')
+        return real(table, key, cap, now)
+
+    monkeypatch.setattr(participants_asks, '_claim', deployment_claim_fails)
+    with pytest.raises(ClientError):
+        participants_asks.claim_send(world.participants, 5, 'sub-1')
+    assert _send_counts(world) == {'SENDER#sub-1': 0}
+
+
 def test_the_job_continues_with_a_cursor(world, lambda_context, monkeypatch):
     monkeypatch.setattr(participants_send, 'SEND_BATCH', 2)
     ids = _people(lambda_context, 'a@example.com', 'b@example.com', 'c@example.com')

@@ -101,6 +101,18 @@ def _fresh_plugin_secret_defaults():
     handler = sys.modules.get('integrations_handler')
     if handler is not None:
         handler._plugin_secret_defaults.cache_clear()
+        handler._write_only_fields.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _plugin_secret_keys_env(monkeypatch):
+    """PLUGIN_SECRET_KEYS as CDK sets it on the integrations Lambda (from the same manifests).
+
+    The credentials GET fails closed without it (returns no values), so every test sees the
+    deployed shape unless it sets its own.
+    """
+    from plugin_manifests import PLUGIN_SECRET_KEYS
+    monkeypatch.setenv('PLUGIN_SECRET_KEYS', json.dumps(PLUGIN_SECRET_KEYS))
 
 
 @pytest.fixture
