@@ -47,7 +47,7 @@ async function loadFreshConfig() {
   return loadRuntimeConfig()
 }
 
-describe('loadRuntimeConfig env fallback', () => {
+describe('loadRuntimeConfig: config.json and the env fallback', () => {
   useFreshRuntimeConfigModule()
 
   it.each([

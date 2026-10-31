@@ -334,19 +334,34 @@ function schemaKeys(): string[] {
   return walk(root, '').sort(byCodeUnit);
 }
 
+/**
+ * Keys both writers still emit for browsers on a cached older bundle, which RuntimeConfigSchema no
+ * longer reads. Each leaves with the resource it names (5.62.00: the identity pool, kept one more release).
+ */
+const TRANSITIONAL_CONFIG_KEYS = ['cognito.identityPoolId'];
+
 describe('runtime config.json keys', () => {
   it('deploy.sh writes exactly what the CDK deploy writes (every option on) and RuntimeConfigSchema reads', () => {
     const stack = buildApiStack({ emailFrom: 'noreply@voc.example.com' });
     const cdkKeys = leafKeys(stack.runtimeConfig);
     const schema = schemaKeys();
     expect(deployShConfigKeys(), 'deploy.sh vs the CDK runtimeConfig').toStrictEqual(cdkKeys);
-    expect(schema, 'RuntimeConfigSchema vs the CDK runtimeConfig').toStrictEqual(cdkKeys);
+    expect(schema, 'RuntimeConfigSchema vs the CDK runtimeConfig (less the transitional keys)')
+      .toStrictEqual(cdkKeys.filter((key) => !TRANSITIONAL_CONFIG_KEYS.includes(key)));
+  }, SYNTH_TIMEOUT_MS);
+
+  it('lists only transitional keys the writers still emit and the schema no longer reads', () => {
+    const cdkKeys = leafKeys(buildApiStack({ emailFrom: 'noreply@voc.example.com' }).runtimeConfig);
+    for (const key of TRANSITIONAL_CONFIG_KEYS) {
+      expect(cdkKeys, `${key} is still written`).toContain(key);
+      expect(schemaKeys(), `${key} is no longer read`).not.toContain(key);
+    }
   }, SYNTH_TIMEOUT_MS);
 
   it('reads real key sets (each parser sees nested keys), so equality is not vacuous', () => {
     for (const keys of [deployShConfigKeys(), schemaKeys()]) {
       expect(keys.length).toBeGreaterThanOrEqual(5);
-      expect(keys).toContain('cognito.clientId');
+      expect(keys).toContain('cognito.region');
     }
   });
 

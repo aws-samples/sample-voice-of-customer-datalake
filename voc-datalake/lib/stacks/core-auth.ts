@@ -362,12 +362,12 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   });
 
   // NO PERMISSIONS BY DESIGN: since 5.61.00 the SPA configures Amplify with the
-  // user pool only, and since 5.62.00 config.json carries no identityPoolId, so
-  // nothing exchanges a User Pool session for Identity Pool credentials. Chat
-  // streams over `POST /chat/stream` behind the Cognito authorizer, and private
-  // CDN paths use signed URLs the API mints. The pool and role stay until the
-  // release that deletes them (CoreStack keeps the pool id export for the
-  // deployed ApiStack meanwhile). See issue #254.
+  // user pool only, and since 5.62.00 it no longer reads identityPoolId (config.json
+  // still carries it for one release, for cached older pages), so nothing exchanges
+  // a User Pool session for Identity Pool credentials. Chat streams over
+  // `POST /chat/stream` behind the Cognito authorizer, and private CDN paths use
+  // signed URLs the API mints. The pool and role stay until the release that
+  // deletes them (CHANGELOG 5.62.00, Deprecated). See issue #254.
 
   // Attach role to Identity Pool
   new cognito.CfnIdentityPoolRoleAttachment(stack, 'IdentityPoolRoleAttachment', {
