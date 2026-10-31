@@ -9,17 +9,26 @@ import { credentialStatus, isoIn } from './mock-credentials.js';
 const MOCK_OAUTH_CLIENTS = { kiro: 'mock-kiro-client', 'claude-code': 'mock-claude-client', cursor: 'mock-cursor-client' };
 const CLIENT_NAMES = { kiro: 'Kiro', 'claude-code': 'Claude Code', cursor: 'Cursor', web: 'Web assistant' };
 const LOOPBACK_PATHS = { kiro: '/oauth/callback', 'claude-code': '/callback', cursor: '/callback' };
+/**
+ * The grant id a new consent gets per client kind, in the real `oag_<40 hex>` shape
+ * (shared/mcp_oauth_grants.py derives it from the sub and the client id: one per person and client).
+ */
+const MOCK_GRANT_IDS = {
+  kiro: 'oag_0123456789abcdef0123456789abcdef01234567',
+  'claude-code': 'oag_c1a0de00c0de00c1a0de00c0de00c1a0de00c0de',
+  cursor: 'oag_fedcba9876543210fedcba9876543210fedcba98',
+};
 const CONSENT_ROUTE = /^\/connect\/oauth\/consent$/;
 const GRANT_ROUTE = /^\/connect\/oauth\/grants(?:\/([^/]+))?$/;
 
 const grants = [
   {
-    grant_id: 'oag_0123456789abcdef0123456789abcdef01234567', client_kind: 'kiro', client_name: 'Kiro',
+    grant_id: MOCK_GRANT_IDS.kiro, client_kind: 'kiro', client_name: 'Kiro',
     scope: 'write', project_id: null, created_at: isoIn(-3), expires_at: isoIn(87), last_used_at: isoIn(-0.1),
     revoked_at: null, signed_in: true,
   },
   // Sparse legacy-shaped row (no scope, no status): keeps the Zod defaults exercised.
-  { grant_id: 'oag_fedcba9876543210fedcba9876543210fedcba98', client_name: 'Cursor', created_at: isoIn(-40) },
+  { grant_id: MOCK_GRANT_IDS.cursor, client_name: 'Cursor', created_at: isoIn(-40) },
 ];
 
 const view = (grant) => ({ ...grant, status: credentialStatus(grant) });
@@ -65,9 +74,9 @@ function routeConsent(method, url, body) {
   if (body?.scope !== 'read' && body?.scope !== 'write') {
     return [400, { success: false, error: 'scope is required and must be one of: read, write' }];
   }
-  const grant = grants.find((g) => g.client_kind === request.kind);
+  const grant = grants.find((g) => g.grant_id === MOCK_GRANT_IDS[request.kind]);
   const fresh = {
-    grant_id: grant?.grant_id ?? `oag_mock${request.kind.replaceAll('-', '')}`, client_kind: request.kind,
+    grant_id: MOCK_GRANT_IDS[request.kind], client_kind: request.kind,
     client_name: CLIENT_NAMES[request.kind], scope: body.scope, project_id: body.project_id || null,
     created_at: new Date().toISOString(), expires_at: isoIn(90), last_used_at: null, revoked_at: null, signed_in: false,
   };
