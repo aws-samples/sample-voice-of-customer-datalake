@@ -17,6 +17,8 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.62.00] - 2026-10-31
+
 ## [5.64.00] - 2026-10-31
 
 The SPA no longer reads the Cognito identity pool, which nothing has used since 5.61.00.
@@ -173,7 +175,6 @@ safer handling of customer text in prompts.
   before queueing (429 `sender_daily_cap`) and again on every send; the deployment cap (default 500) still applies.
 
 ### Changed
-- **Sign-out revokes the refresh token** at Cognito, so a copied token stops working too.
 - **API Gateway** uses the enhanced TLS 1.2+ forward-secret policy `SecurityPolicy_TLS12_PFS_2025_EDGE`
   (endpoint access mode BASIC). Execution logs are at ERROR (were INFO). The access log no longer records the
   request path (a ballot link's id is a bearer value) and adds `sub`, `principalId` and `tlsVersion`.
@@ -229,6 +230,8 @@ safer handling of customer text in prompts.
 - **Deploy order:** `npm run deploy:infra` (all stacks, then the API stage refresh), then `npm run deploy:frontend`.
 - **Deployment test user:** set `VOC_TEST_PASS` before `scripts/test-api.sh`, and disable the test user after
   validating.
+
+## [5.61.00] - 2026-10-31
 
 Sign-in moves from the deprecated amazon-cognito-identity-js to Amplify v6, and the library is removed.
 

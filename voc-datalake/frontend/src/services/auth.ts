@@ -19,7 +19,7 @@
 
 import {
   confirmResetPassword, confirmSignIn, fetchAuthSession, resetPassword, signIn as amplifySignIn,
-  signOut as amplifySignOut, updatePassword, type SignInOutput,
+  signOut as amplifySignOut, updatePassword, type SignInInput, type SignInOutput,
 } from 'aws-amplify/auth'
 import { configureAmplify } from '../lib/amplify-config'
 import { AuthError, ConfigError } from '../lib/errors'
@@ -28,6 +28,7 @@ import { ignoreRejection } from '../lib/rejections'
 import { getRuntimeConfig } from '../runtimeConfig'
 import { useAuthStore } from '../store/authStore'
 import type { User } from '../store/authStore'
+import { PasskeyError, toPasskeyError } from './passkey'
 
 /** The code of the first-login challenge (the new-password form). */
 export const NEW_PASSWORD_REQUIRED = 'NewPasswordRequired'
@@ -137,6 +138,20 @@ const isAlreadySignedIn = (error: unknown): boolean =>
   error instanceof Error && error.name === 'UserAlreadyAuthenticatedException'
 
 /**
+ * Amplify's sign-in; when Amplify still holds a session (authStore was cleared without a sign-out)
+ * that session is signed out first and the sign-in tried once more.
+ */
+async function signInFresh(input: SignInInput): Promise<SignInOutput> {
+  try {
+    return await amplifySignIn(input)
+  } catch (error) {
+    if (!isAlreadySignedIn(error)) throw error
+    await startSignOut()
+    return amplifySignIn(input)
+  }
+}
+
+/**
  * Authentication service for the app user pool.
  */
 export const authService = {
@@ -154,13 +169,26 @@ export const authService = {
   signIn: async (username: string, password: string): Promise<void> => {
     requireConfigured()
     await signOutState.pending
-    try {
-      await finishSignIn(await amplifySignIn({ username, password }))
-    } catch (error) {
-      if (!isAlreadySignedIn(error)) throw error
-      await startSignOut()
-      await finishSignIn(await amplifySignIn({ username, password }))
-    }
+    await finishSignIn(await signInFresh({ username, password }))
+  },
+
+  /**
+   * Signs in with a passkey: Amplify's choice-based `USER_AUTH` flow preferring `WEB_AUTHN` asks the
+   * browser for the passkey and answers Cognito's challenge. On success the tokens are in authStore,
+   * exactly as after a password sign-in.
+   * @throws PasskeyError: `no_passkey` when Cognito offers another challenge (none is registered),
+   *   `cancelled` / `unsupported` / `unknown` for the browser or service failure
+   */
+  signInWithPasskey: async (username: string): Promise<void> => {
+    requireConfigured()
+    await signOutState.pending
+    const output = await signInFresh({
+      username: username.trim(),
+      options: { authFlowType: 'USER_AUTH', preferredChallenge: 'WEB_AUTHN' },
+    }).catch((error: unknown) => { throw toPasskeyError(error) })
+    // Without a passkey Cognito offers the other first factors instead of WebAuthn.
+    if (output.nextStep.signInStep !== 'DONE') throw new PasskeyError('no_passkey')
+    await finishSignIn(output)
   },
 
   /**
