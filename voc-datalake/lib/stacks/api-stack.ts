@@ -382,7 +382,7 @@ export class VocApiStack extends VocStack {
     }
 
     // Only the SPA's and the board pool's tokens reach the REST handlers (an MCP OAuth client's token of the
-    // same pool is refused, shared/app_clients.py; security review of 5.58.00).
+    // same pool is refused, shared/app_clients.py; security review of 5.61.00).
     applyAppClientEnv(this, [userPoolClient.userPoolClientId, props.boardUserPoolClient.userPoolClientId],
       [assistant.chatStreamLambda]);
 
