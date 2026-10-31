@@ -200,6 +200,9 @@ safer handling of customer text in prompts.
 - Localhost is allowed only for a `-c environment=dev` deployment: the app client's OAuth redirect URLs and the
   raw bucket's CORS origins.
 - `scripts/test-api.sh` has no default test password: set `VOC_TEST_PASS`.
+- `frontend/scripts/fix-i18n.mjs` translates only the delta: keys missing or empty in a target locale (write the
+  English first). `--ns` and `--keys` narrow a run further; `--recheck-english` brings back the old full pass over
+  values still identical to English.
 
 ### Fixed
 - A file reprocessed from `processed/` in the S3 import keeps its original folder's source label in the import

@@ -30,12 +30,39 @@ export function resolveEnValue(enData, rawValue) {
   return rawValue
 }
 
-/** The target locales: every `--lang <code>` given, else all of `known`. An unknown code throws. */
-export function selectedLanguages(argv, known) {
-  const picked = argv.flatMap((arg, i) => (arg === '--lang' && argv[i + 1] ? [argv[i + 1]] : []))
-  const unknown = picked.filter((lang) => !known.includes(lang))
-  if (unknown.length > 0) throw new Error(`unknown --lang ${unknown.join(', ')} (known: ${known.join(', ')})`)
+/** Every value given after `flag` (repeatable; `--ns a --ns b` or `--ns a,b`), else all of `known`. Unknown throws. */
+function selectedValues(argv, flag, known) {
+  const picked = argv.flatMap((arg, i) => (arg === flag && argv[i + 1] ? argv[i + 1].split(',') : []))
+    .map((value) => value.trim()).filter(Boolean)
+  const unknown = picked.filter((value) => !known.includes(value))
+  if (unknown.length > 0) throw new Error(`unknown ${flag} ${unknown.join(', ')} (known: ${known.join(', ')})`)
   return picked.length > 0 ? picked : known
+}
+
+/**
+ * The run's choices from the command line:
+ * - `--lang <code>` / `--ns <namespace>`: only these locales / catalogues (default: all);
+ * - `--keys <a.b,c.d>`: only these dotted keys (and their plural forms and list items);
+ * - `--recheck-english`: also retranslate values still identical to English. Off by default,
+ *   so a run translates only the delta: keys that are missing or empty in a target locale.
+ */
+export function parseOptions(argv, { languages, namespaces }) {
+  const keys = argv.flatMap((arg, i) => (arg === '--keys' && argv[i + 1] ? argv[i + 1].split(',') : []))
+    .map((key) => key.trim()).filter(Boolean)
+  return {
+    languages: selectedValues(argv, '--lang', languages),
+    namespaces: selectedValues(argv, '--ns', namespaces),
+    keys: keys.length > 0 ? keys : null,
+    recheckEnglish: argv.includes('--recheck-english'),
+  }
+}
+
+/** Whether `key` is selected: no `--keys` selects all; else the key itself, a plural form or a list item / subkey of one. */
+export function keySelected(key, keys) {
+  if (keys === null) return true
+  return keys.some((selected) => key === selected
+    || key.startsWith(`${selected}.`)
+    || (key.startsWith(selected) && /^_(zero|one|two|few|many|other)$/.test(key.slice(selected.length))))
 }
 
 /**
