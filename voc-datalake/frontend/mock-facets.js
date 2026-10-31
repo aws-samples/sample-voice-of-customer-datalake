@@ -112,12 +112,16 @@ const METRICS = {
  * route keeps its static fixture). `keepSingleCategory`: a lone `category` is the route's own
  * scope (the Categories gauge's `/metrics/sentiment?category=`), not a facet.
  */
+/** The read routes' window when `days` is absent (shared.api effective_window_days); `0` stays all time. */
+const DEFAULT_WINDOW_DAYS = 30;
+
 export function facetedMetric(metric, params, items, { keepSingleCategory = false } = {}) {
   const filter = facetFilterOf(params);
   if (filter.error) return { __status: 400, body: { success: false, error: filter.error } };
   const { category, ...others } = filter.lists;
   const onlyOneCategory = category.length === 1 && Object.values(others).every((values) => values.length === 0);
   if (!filter.active || (keepSingleCategory && onlyOneCategory)) return null;
-  const days = Number(params?.get('days')) || 7;
+  const raw = params?.get('days');
+  const days = raw === null || raw === undefined || raw.trim() === '' ? DEFAULT_WINDOW_DAYS : Number(raw);
   return METRICS[metric](items.filter(filter.admits), days);
 }

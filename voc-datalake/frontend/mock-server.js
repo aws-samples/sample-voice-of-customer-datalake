@@ -24,7 +24,7 @@ import { handleDecisionRoutes } from './mock-decisions.js';
 import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
 import { handleFeatureRequestRoutes } from './mock-feature-requests.js';
-import { handleDataQualityRoutes } from './mock-data-quality.js';
+import { handleDataQualityRoutes, stampBands } from './mock-data-quality.js';
 import { handlePersonaRoutes } from './mock-personas.js';
 import { radarBrandError } from './mock-radar-brands.js';
 import {
@@ -123,6 +123,7 @@ const mockFeedback = [
 
 seedDimensionFixtures(mockFeedback);
 seedUsefulness(mockFeedback);
+stampBands(mockFeedback);
 
 /**
  * The source / category / sentiment / usefulness lists (mock-facets.js) + `channel` / `dims` /

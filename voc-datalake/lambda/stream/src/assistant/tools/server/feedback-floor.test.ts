@@ -85,6 +85,19 @@ describe('intersectFloors / floorForRun', () => {
   });
 });
 
+describe('closed-vocabulary fields', () => {
+  it('keeps only the sentiments and usefulness bands the routes accept', () => {
+    expect(floorFromFilters({ sentiment: 'negative,all', usefulness: 'high,great' }).lists)
+      .toStrictEqual({ sentiment: ['negative'], usefulness: ['high'] });
+  });
+
+  it('admits nothing when no value is known, rather than reading everything', () => {
+    const floor = floorFromFilters({ sentiment: 'all' });
+    expect(floor.lists.sentiment).toStrictEqual([]);
+    expect(admitsFloor(floor, ITEM)).toBe(false);
+  });
+});
+
 describe('admitsFloor', () => {
   it('admits everything without a floor', () => {
     expect(admitsFloor(NO_FLOOR, {})).toBe(true);

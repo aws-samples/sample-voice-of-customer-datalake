@@ -142,7 +142,7 @@ if (shouldDeployAiEnablement(deployWebSearch, useCaseToSubmit)) {
     // it was its own us-east-1 stack. CDK only emits the SSM cross-region
     // machinery when the regions actually differ, so this only *permits* it.
     crossRegionReferences: true,
-    description: 'VoC Data Lake - AI Enablement (web search gateway, Bedrock model access) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
+    description: 'VoC Data Lake - AI Enablement (web search gateway, Anthropic use-case form) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
     deployWebSearch,
     anthropicUseCase: useCaseToSubmit,
   });

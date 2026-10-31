@@ -637,8 +637,8 @@ faults and degraded paths only; a 5xx is ERROR. Each group carries `source`:
 **Not covered:** the CDK provider / custom-resource handlers (`*Provider*`, bucket
 notifications, auto-delete, BucketDeployment — framework code, not the app). The
 Bedrock model-agreement Lambda is in `VocCoreStack` and IS covered, under the function
-name `image-model-access` (its construct id): a refused or failed agreement shows there
-as a warning.
+name `image-model-access` (its construct id, kept for logical-id stability; despite the name it
+also accepts the Claude agreements): a refused or failed agreement shows there as a warning.
 
 - **Routes** (all admin-only, 403 otherwise, `Cache-Control: no-store`, every returned
   text through the regex PII redaction, results never logged):
