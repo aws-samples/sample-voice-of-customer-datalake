@@ -76,7 +76,7 @@ WEB_SEARCH_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="We
 # (boards and review links) exists on every deployment since 5.45.00; an older stack without it
 # leaves the board block out of config.json. BoardSignInMode: email_otp (SES) or code.
 EMAIL_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="EmailAvailable") | .OutputValue // "false"')
-# "true" when the app user pool allows passkeys (5.64.00); an older stack has no output.
+# "true" when the app user pool allows passkeys (5.65.00); an older stack has no output.
 PASSKEY_AVAILABLE=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="PasskeyAvailable") | .OutputValue // "false"')
 BOARD_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolId") | .OutputValue // empty')
 BOARD_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolClientId") | .OutputValue // empty')
