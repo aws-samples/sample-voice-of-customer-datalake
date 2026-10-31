@@ -346,8 +346,8 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   // Cognito triggers, a few GetItems / one string render each (unmeasured, new in 5.33.00).
   'voc-board-pre-sign-up': 128,
   'voc-board-custom-message': 128,
-  // The image model's agreement (ImageModelAccess, bedrock-access-stack.ts; 5.45.00): deploy-time custom
-  // resource, the CDK default like the Claude agreement provider in VocWebSearchStack.
+  // The model agreements (BedrockModelAgreements under the id ImageModelAccess, bedrock-access-stack.ts):
+  // deploy-time custom resource for the image model (5.45.00) and every Claude model, the CDK default.
   'VocCoreStack/ImageModelAccessModelAgreementLambda252AEB5F': null,
   'VocCoreStack/ImageModelAccessModelAgreementProviderframeworkonEvent9F14CFC9': null,
   // VocIngestionStack (plugins enabled in cdk.context.json)
@@ -377,8 +377,6 @@ export const UNCHANGED: Readonly<Record<string, number | null>> = {
   // Radar release scan: web search + a few model calls per brand, I/O-bound; unmeasured, new in 5.04.00.
   'voc-radar-scan': 512,
   // VocWebSearchStack
-  'VocWebSearchStack/BedrockModelAccessModelAgreementLambda6BECE77F': null,
-  'VocWebSearchStack/BedrockModelAccessModelAgreementProviderframeworkonEventBFFB8E4D': null,
   'VocWebSearchStack/AWS679f53fac002430cb0da5b7982bd22872D164C4C': 512,
 };
 

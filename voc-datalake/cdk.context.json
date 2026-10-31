@@ -33,12 +33,5 @@
     "connect": true,
     "settings": true
   },
-  "skipUseCaseSubmission": false,
-  "anthropicUseCase": {
-    "companyName": "Amazon Web Services",
-    "companyWebsite": "https://aws.amazon.com",
-    "intendedUsers": "0",
-    "industryOption": "Technology",
-    "useCases": "Analyzing customer feedback to identify product improvement opportunities, sentiment analysis, and generating insights from voice of customer data."
-  }
+  "skipUseCaseSubmission": false
 }
