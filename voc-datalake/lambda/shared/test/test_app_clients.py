@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from aws_lambda_powertools.utilities.typing import LambdaContext
 
 from shared.api import create_api_resolver
 from shared.app_clients import APP_CLIENT_IDS_ENV, issuing_client, require_app_client
@@ -53,7 +54,7 @@ def _resolve(claims: dict | None, env: dict = ENV) -> dict:
         return {'ok': True}
 
     with patch.dict('os.environ', env):
-        return app.resolve(_event(claims), {})
+        return app.resolve(_event(claims), LambdaContext())
 
 
 def _status(claims: dict | None, env: dict = ENV) -> int:
