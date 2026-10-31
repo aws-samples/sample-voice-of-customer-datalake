@@ -192,8 +192,8 @@ def _ingestor_alarm(targets: AlertTargets, slug: str, functions: list[str]) -> d
 # slug, metric, threshold, what to check. docs/mcp.md → Alarms lists the same four.
 MCP_ALARMS: Final[tuple[tuple[str, str, int, str], ...]] = (
     ('mcp-auth-denied', 'AuthDenied', MCP_AUTH_DENIED_THRESHOLD,
-     'Many refused MCP credentials: a token scan, or clients still using revoked or expired tokens. '
-     'Check the global MCP function logs for the token ids.'),
+     ('Many refused MCP credentials: a token scan, or clients still using revoked or expired tokens. '
+     'Check the global MCP function logs for the token ids.')),
     ('mcp-tool-denied', 'ToolCall_denied', MCP_TOOL_DENIED_THRESHOLD,
      'Many MCP tool calls were refused by scope, project pin or access. Check the token audit logs on Connect.'),
     ('mcp-tool-failed', 'ToolCall_failed', MCP_TOOL_FAILED_THRESHOLD,
