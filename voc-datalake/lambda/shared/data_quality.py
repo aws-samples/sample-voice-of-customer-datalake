@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any, Final
 
+from shared.metric_keys import source_keyed_counts
 from shared.usefulness import USEFULNESS_BANDS, USEFULNESS_UNRATED, stored_band
 
 __all__ = ['from_counters', 'from_items', 'source_of']
@@ -60,10 +61,9 @@ def from_counters(source_totals: Mapping[str, int], band_rows: Mapping[str, int]
     row whose last segment is not a band is ignored.
     """
     bands: dict[str, dict[str, int]] = {}
-    for key, count in band_rows.items():
-        source, _, band = key.rpartition('#')
-        if source and band in USEFULNESS_BANDS:
-            _add(bands, source, band, int(count))
+    for source, band, count in source_keyed_counts(band_rows):
+        if band in USEFULNESS_BANDS:
+            _add(bands, source, band, count)
     return distribution(source_totals, bands)
 
 

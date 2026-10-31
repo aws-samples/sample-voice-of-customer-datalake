@@ -13,6 +13,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
+import { noCleanup } from '../../hooks/noCleanup'
 
 interface FacetMultiSelectProps<T extends string> {
   /** What the facet filters, e.g. "Source": the button's and the group's accessible name. */
@@ -36,8 +37,6 @@ function useSummary<T extends string>(props: FacetMultiSelectProps<T>, display: 
   if (selected.length === 1 && only !== undefined) return display(only)
   return t('facetFilters.selectedCount', { count: selected.length })
 }
-
-const noCleanup = () => {}
 
 /** Close on Escape (focus back to the button) and on a pointer press outside `root`. */
 function useDismiss(open: boolean, close: () => void, root: React.RefObject<HTMLDivElement | null>,
