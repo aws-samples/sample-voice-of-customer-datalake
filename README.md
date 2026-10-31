@@ -168,6 +168,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Assistant Plan Mode](docs/assistant-plan-mode.md) | Multi-step requests the assistant proposes and runs after approval |
 | [Persona Generation](docs/persona-generation.md) | Add personas next to the existing ones or replace them; how additive runs avoid repeating them |
 | [Assistant Mentions](docs/assistant-mentions.md) | `@persona`, `@all` and `#document` in the project assistant: personas review tagged documents |
+| [Assistant Chat Scope](docs/assistant-chat-scope.md) | The /chat filter panel and the filter floor: on-screen filters the assistant's feedback tools cannot read past, and the 1,000-review cap |
 | [Memory](docs/memory.md) | Company and personal memory: extraction, review, retention |
 | [Problem Analysis](docs/problem-analysis.md) | How /problems counts the whole window: `GET /feedback/problems`, grouping, partial and truncated answers |
 | [Account or Administration](docs/account-vs-admin.md) | Where a setting lives: the six Administration tabs, the Account page, and what moves between them |
