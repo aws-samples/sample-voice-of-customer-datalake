@@ -1,6 +1,6 @@
 /**
- * @fileoverview The Problem Analysis filter card: the review-type chips, source, category
- * and subcategory selects (the subcategory list narrows to the chosen category), the
+ * @fileoverview The Problem Analysis filter card: the review-type chips, the shared source
+ * and usefulness selectors (several values = any of them), the category and subcategory selects (the subcategory list narrows to the chosen category), the
  * urgent-only and show-resolved toggles, Clear, Similarity and Expand / Collapse all.
  * The period is the header's. State lives in the URL (`useProblemFilters`).
  * @module pages/ProblemAnalysis/ProblemFiltersBar
@@ -9,6 +9,8 @@ import { Filter, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import OptionSelect from '../../components/OptionSelect/OptionSelect'
+import { SourceFacetSelect, UsefulnessFacetSelect } from '../../components/FacetMultiSelect/FacetSelects'
+import { toggleFacetValue } from '../../api/feedbackFacets'
 import { SimilaritySelect } from './SimilaritySelect'
 import type { ProblemFiltersApi } from './useProblemFilters'
 import { ProblemTypeChips } from './ProblemTypeChips'
@@ -46,8 +48,12 @@ export function ProblemFiltersBar({ filters, sources, categories, subcategories,
         <ProblemTypeChips value={filters.types} onChange={(types) => filters.update({ types })} counts={typeCounts} />
         <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
           <Filter size={16} className="hidden sm:block text-muted flex-shrink-0" aria-hidden="true" />
-          <OptionSelect className={SELECT} label={t('filters.source')} allLabel={t('filters.allSources')} value={filters.source}
-            options={sources} display={labels.source} onChange={(source) => filters.update({ source })} />
+          <SourceFacetSelect options={sources} selected={filters.sources}
+            onToggle={(source) => filters.update({ sources: toggleFacetValue(filters.sources, source) })}
+            onClear={() => filters.update({ sources: [] })} />
+          <UsefulnessFacetSelect selected={filters.usefulness}
+            onToggle={(band) => filters.update({ usefulness: toggleFacetValue(filters.usefulness, band) })}
+            onClear={() => filters.update({ usefulness: [] })} />
           <OptionSelect className={SELECT} label={t('filters.category')} allLabel={t('filters.allCategories')} value={filters.category}
             options={categories} display={labels.category} onChange={(category) => filters.update({ category })} />
           <OptionSelect className={SELECT} label={t('filters.subcategory')} allLabel={t('filters.allSubcategories')} value={filters.subcategory}

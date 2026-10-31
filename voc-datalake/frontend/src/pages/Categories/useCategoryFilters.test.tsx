@@ -30,17 +30,25 @@ describe('useCategoryFilters', () => {
 
     it('initializes source from ?source=', () => {
       const { result } = renderFiltersWithUrl(['/categories?source=webscraper'])
-      expect(result.current.filters.selectedSource).toBe('webscraper')
+      expect(result.current.filters.selectedSources).toStrictEqual(['webscraper'])
+    })
+
+    it('initializes several sources, sentiments and usefulness bands from comma lists', () => {
+      const { result } = renderFiltersWithUrl(['/categories?source=webscraper,app&sentiment=negative,mixed&usefulness=high,unrated'])
+      const { selectedSources, selectedSentiments, selectedUsefulness } = result.current.filters
+      expect({ selectedSources, selectedSentiments, selectedUsefulness }).toStrictEqual({
+        selectedSources: ['webscraper', 'app'], selectedSentiments: ['negative', 'mixed'], selectedUsefulness: ['high', 'unrated'],
+      })
     })
 
     it('initializes sentiment from ?sentiment=', () => {
       const { result } = renderFiltersWithUrl(['/categories?sentiment=negative'])
-      expect(result.current.filters.sentimentFilter).toBe('negative')
+      expect(result.current.filters.selectedSentiments).toStrictEqual(['negative'])
     })
 
-    it('falls back to "all" for an invalid sentiment value', () => {
+    it('drops an invalid sentiment value (no sentiment filter)', () => {
       const { result } = renderFiltersWithUrl(['/categories?sentiment=bogus'])
-      expect(result.current.filters.sentimentFilter).toBe('all')
+      expect(result.current.filters.selectedSentiments).toStrictEqual([])
     })
 
     it('initializes a single category from ?category= (deep-link selects one row)', () => {
@@ -66,7 +74,10 @@ describe('useCategoryFilters', () => {
 
       act(() => {
         result.current.filters.setSearchText('refund')
-        result.current.filters.setSelectedSource('webscraper')
+        result.current.filters.toggleFacet('sources', 'webscraper')
+      })
+      act(() => {
+        result.current.filters.toggleFacet('usefulness', 'high')
       })
       act(() => {
         result.current.filters.toggleCategory('delivery')
@@ -76,6 +87,7 @@ describe('useCategoryFilters', () => {
       expect(result.current.searchParams.get('q')).toBe('refund')
       expect(result.current.searchParams.get('source')).toBe('webscraper')
       expect(result.current.searchParams.get('category')).toBe('delivery,pricing')
+      expect(result.current.searchParams.get('usefulness')).toBe('high')
     })
 
     it('keeps ?review= and reviewBrand (the review modal) when it mirrors filters', () => {
@@ -124,7 +136,7 @@ describe('useCategoryFilters', () => {
       })
 
       expect(result.current.filters.selectedCategories).toStrictEqual([])
-      expect(result.current.filters.sentimentFilter).toBe('all')
+      expect(result.current.filters.selectedSentiments).toStrictEqual([])
     })
 
     it('restores filters on browser back navigation', () => {
@@ -195,12 +207,12 @@ describe('useCategoryFilters', () => {
         result.current.filters.clearFilters()
       })
 
-      const { searchText, selectedCategories, selectedSource, sentimentFilter, ratingFilter, showUrgentOnly } = result.current.filters
-      expect({ searchText, selectedCategories, selectedSource, sentimentFilter, ratingFilter, showUrgentOnly }).toStrictEqual({
+      const { searchText, selectedCategories, selectedSources, selectedSentiments, ratingFilter, showUrgentOnly } = result.current.filters
+      expect({ searchText, selectedCategories, selectedSources, selectedSentiments, ratingFilter, showUrgentOnly }).toStrictEqual({
         searchText: '',
         selectedCategories: [],
-        selectedSource: null,
-        sentimentFilter: 'all',
+        selectedSources: [],
+        selectedSentiments: [],
         ratingFilter: { value: 0, direction: 'up' },
         showUrgentOnly: false,
       })

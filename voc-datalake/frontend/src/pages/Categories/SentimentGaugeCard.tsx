@@ -3,7 +3,7 @@ import { useId } from 'react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import type { SentimentData, SentimentFilter } from './types'
+import type { SentimentData } from './types'
 import { netFromCounts, sentimentShare, sentimentShareText, sentimentTone, sentimentWords } from '../../components/SentimentWords/sentimentWords'
 import { sentimentCssVar } from '../../lib/sentiment'
 import { formatPercent } from '../../utils/numberFormat'
@@ -44,8 +44,10 @@ function gaugeShareNumber(net: number, percentages: Readonly<Partial<Record<stri
 
 interface SentimentGaugeProps {
   readonly sentimentData: SentimentData[]
-  readonly sentimentFilter: SentimentFilter
-  readonly onSentimentFilterChange: (filter: SentimentFilter) => void
+  /** The selected sentiments (any of them; empty = all). */
+  readonly selectedSentiments: readonly string[]
+  /** Select or deselect one sentiment (several may be selected). */
+  readonly onToggleSentiment: (sentiment: string) => void
   /** Keyed by sentiment label; a label the breakdown did not report has no entry. */
   readonly percentages: Readonly<Partial<Record<string, number>>>
   /** Display label of the one category the breakdown is scoped to (title "Sentiment · <label>"); null/absent = every category. */
@@ -136,26 +138,23 @@ function GaugeSummary({ net, sentimentData, percentages }: GaugeDataProps & Read
   )
 }
 
-const FILTER_VALUES: readonly SentimentFilter[] = ['positive', 'negative', 'neutral', 'mixed']
+type ChipProps = Readonly<Pick<SentimentGaugeProps, 'sentimentData' | 'selectedSentiments' | 'onToggleSentiment'>>
 
-function filterValueOf(name: string): SentimentFilter {
-  return FILTER_VALUES.find((value) => value === name) ?? 'all'
-}
-
-type ChipProps = Readonly<Pick<SentimentGaugeProps, 'sentimentData' | 'sentimentFilter' | 'onSentimentFilterChange'>>
-
-/** The legend doubles as the sentiment filter; a long label (de "Neutrale Stimmung") wraps inside its chip. */
-function SentimentFilterChips({ sentimentData, sentimentFilter, onSentimentFilterChange }: ChipProps) {
+/**
+ * The legend doubles as the sentiment filter: each chip toggles its sentiment, and several
+ * pressed chips mean any of them. A long label (de "Neutrale Stimmung") wraps inside its chip.
+ */
+function SentimentFilterChips({ sentimentData, selectedSentiments, onToggleSentiment }: ChipProps) {
   const { t, i18n } = useTranslation('categories')
   return (
     <div data-testid="sentiment-chips" className="flex flex-wrap justify-center gap-1.5 mt-3 max-w-[min(100%,17.5rem)] mx-auto">
       {sentimentData.map(s => {
-        const pressed = sentimentFilter === s.name
+        const pressed = selectedSentiments.includes(s.name)
         return (
           <button
             key={s.name}
             type="button"
-            onClick={() => onSentimentFilterChange(pressed ? 'all' : filterValueOf(s.name))}
+            onClick={() => onToggleSentiment(s.name)}
             aria-pressed={pressed}
             className={clsx(
               'flex max-w-full items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs transition-colors active:scale-95 focus-ring',
@@ -186,8 +185,8 @@ function GaugeSkeleton() {
 
 export function SentimentGauge({
   sentimentData,
-  sentimentFilter,
-  onSentimentFilterChange,
+  selectedSentiments,
+  onToggleSentiment,
   percentages,
   scopeLabel = null,
   isLoading = false,
@@ -203,7 +202,7 @@ export function SentimentGauge({
       {isLoading ? <GaugeSkeleton /> : (
         <>
           <GaugeSummary net={net} sentimentData={sentimentData} percentages={percentages} />
-          <SentimentFilterChips sentimentData={sentimentData} sentimentFilter={sentimentFilter} onSentimentFilterChange={onSentimentFilterChange} />
+          <SentimentFilterChips sentimentData={sentimentData} selectedSentiments={selectedSentiments} onToggleSentiment={onToggleSentiment} />
         </>
       )}
     </section>

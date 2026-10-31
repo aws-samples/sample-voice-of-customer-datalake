@@ -7,16 +7,17 @@ import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { NO_FAILED_READS, type FailedReads } from '../../utils/failedReads'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { ratingFilterLabel } from './types'
-import type { ViewMode, SentimentFilter, RatingFilter } from './types'
+import type { ViewMode, RatingFilter } from './types'
 
 interface FeedbackResultsProps {
   readonly filteredFeedback: FeedbackItem[]
   readonly feedbackLoading: boolean
   readonly viewMode: ViewMode
   readonly onViewModeChange: (mode: ViewMode) => void
-  readonly selectedSource: string | null
-  readonly selectedCategories: string[]
-  readonly sentimentFilter: SentimentFilter
+  readonly selectedSources: readonly string[]
+  readonly selectedCategories: readonly string[]
+  readonly selectedSentiments: readonly string[]
+  readonly selectedUsefulness: readonly string[]
   readonly ratingFilter: RatingFilter
   /** CSV export of the currently filtered items. PDF export lives in the page-level filter bar. */
   readonly onExport: () => void
@@ -26,8 +27,6 @@ interface FeedbackResultsProps {
   readonly isPartialWindow: boolean
   /** True when more pages can be loaded (list endpoint only). */
   readonly hasMore: boolean
-  /** Reviews loaded before a client-side refinement; null/absent when nothing is refined here. */
-  readonly loadedCount?: number | null
   readonly onLoadMore: () => void
   readonly isLoadingMore: boolean
   /** The list read failed with nothing to show; absent = it did not. */
@@ -37,10 +36,10 @@ interface FeedbackResultsProps {
 }
 
 /** Which sentence the count line says. */
-type CountCopy = 'allShown' | 'moreBelow' | 'refinedMoreBelow' | 'truncated' | 'shownOf'
+type CountCopy = 'allShown' | 'moreBelow' | 'truncated' | 'shownOf'
 
-function countCopyOf(itemCount: number, totalCount: number, isPartialWindow: boolean, hasMore: boolean, refined: boolean): CountCopy {
-  if (hasMore) return refined ? 'refinedMoreBelow' : 'moreBelow'
+function countCopyOf(itemCount: number, totalCount: number, isPartialWindow: boolean, hasMore: boolean): CountCopy {
+  if (hasMore) return 'moreBelow'
   if (isPartialWindow && totalCount > itemCount) return 'truncated'
   return totalCount > itemCount ? 'shownOf' : 'allShown'
 }
@@ -57,16 +56,15 @@ function ResultsCountLine({
   isPartialWindow,
   hasMore,
   isLoading,
-  loadedCount = null,
-}: Readonly<{ itemCount: number; totalCount: number; isPartialWindow: boolean; hasMore: boolean; isLoading: boolean; loadedCount?: number | null }>) {
+}: Readonly<{ itemCount: number; totalCount: number; isPartialWindow: boolean; hasMore: boolean; isLoading: boolean }>) {
   const { t } = useTranslation('categories')
   if (isLoading) {
     return <span data-testid="results-count-skeleton" aria-hidden="true" className="block h-4 w-32 mt-1 rounded-sm bg-bg-hover animate-pulse" />
   }
-  const copy = countCopyOf(itemCount, totalCount, isPartialWindow, hasMore, loadedCount !== null)
+  const copy = countCopyOf(itemCount, totalCount, isPartialWindow, hasMore)
   return (
     <p className={clsx('text-xs sm:text-sm', copy === 'truncated' ? 'text-warn' : 'text-muted')}>
-      {t(`results.${copy}`, { count: itemCount, total: totalCount, loaded: loadedCount ?? itemCount })}
+      {t(`results.${copy}`, { count: itemCount, total: totalCount })}
     </p>
   )
 }
@@ -86,28 +84,21 @@ function SubcategoryChip({ subcategory, parent, onClear }: Readonly<{ subcategor
   )
 }
 
-function ActiveFiltersLine({
-  selectedSource,
-  selectedCategories,
-  sentimentFilter,
-  ratingFilter,
-}: Readonly<{
-  selectedSource: string | null
-  selectedCategories: string[]
-  sentimentFilter: SentimentFilter
-  ratingFilter: RatingFilter
-}>) {
-  const { t } = useTranslation(['common', 'categories'])
+type ActiveFilters = Pick<FeedbackResultsProps,
+  'selectedSources' | 'selectedCategories' | 'selectedSentiments' | 'selectedUsefulness' | 'ratingFilter'>
+
+/** "Source: Web, App • Delivery • Negative • High usefulness • 3+ stars": one part per set filter. */
+function ActiveFiltersLine({ selectedSources, selectedCategories, selectedSentiments, selectedUsefulness, ratingFilter }: Readonly<ActiveFilters>) {
+  const { t } = useTranslation(['common', 'categories', 'components'])
   const labels = useDisplayLabels()
-  const sentimentText = sentimentFilter !== 'all' ? t(`categories:${sentimentFilter}`) : null
-  return (
-    <p className="text-xs sm:text-sm text-muted break-words">
-      {selectedSource && t('categories:sourceFilterLabel', { source: labels.source(selectedSource) })}
-      {selectedCategories.length > 0 && `${selectedSource ? ' • ' : ''}${selectedCategories.map(labels.category).join(', ')}`}
-      {sentimentText && ` • ${sentimentText}`}
-      {ratingFilter.value > 0 && ` • ${ratingFilterLabel(ratingFilter, t)}`}
-    </p>
-  )
+  const parts = [
+    selectedSources.length > 0 ? t('categories:sourceFilterLabel', { source: selectedSources.map(labels.source).join(', ') }) : '',
+    selectedCategories.map(labels.category).join(', '),
+    selectedSentiments.map((value) => t(`categories:${value}`)).join(', '),
+    selectedUsefulness.map((value) => t(`components:facetFilters.usefulnessValues.${value}`)).join(', '),
+    ratingFilter.value > 0 ? ratingFilterLabel(ratingFilter, t) : '',
+  ].filter(Boolean)
+  return <p className="text-xs sm:text-sm text-muted break-words">{parts.join(' • ')}</p>
 }
 
 export function FeedbackResults({
@@ -115,15 +106,15 @@ export function FeedbackResults({
   feedbackLoading,
   viewMode,
   onViewModeChange,
-  selectedSource,
+  selectedSources,
   selectedCategories,
-  sentimentFilter,
+  selectedSentiments,
+  selectedUsefulness,
   ratingFilter,
   onExport,
   totalCount,
   isPartialWindow,
   hasMore,
-  loadedCount = null,
   onLoadMore,
   isLoadingMore,
   failure = NO_FAILED_READS,
@@ -143,13 +134,13 @@ export function FeedbackResults({
             isPartialWindow={isPartialWindow}
             hasMore={hasMore}
             isLoading={feedbackLoading}
-            loadedCount={loadedCount}
           />
           {subcategory && <SubcategoryChip subcategory={subcategory.id} parent={selectedCategories.at(0)} onClear={subcategory.onClear} />}
           <ActiveFiltersLine
-            selectedSource={selectedSource}
+            selectedSources={selectedSources}
             selectedCategories={selectedCategories}
-            sentimentFilter={sentimentFilter}
+            selectedSentiments={selectedSentiments}
+            selectedUsefulness={selectedUsefulness}
             ratingFilter={ratingFilter}
           />
         </div>

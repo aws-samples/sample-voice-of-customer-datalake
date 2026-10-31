@@ -65,7 +65,10 @@ export interface ProblemTreeResponse {
 }
 
 export interface ProblemTreeParams extends DateRangeParams {
+  /** One source or a comma list (any of them). */
   source?: string | null
+  /** Usefulness bands, comma list (`api/feedbackFacets.ts`). */
+  usefulness?: string
   category?: string | null
   subcategory?: string | null
   urgentOnly?: boolean
@@ -158,6 +161,7 @@ export function problemTreeSearch(params: ProblemTreeParams): string {
     ['days', params.days === undefined ? undefined : String(params.days)],
     ['date_basis', params.date_basis],
     ['source', params.source ?? undefined],
+    ['usefulness', params.usefulness],
     ['category', params.category ?? undefined],
     ['subcategory', params.subcategory ?? undefined],
     ['urgent', params.urgentOnly === true ? '1' : undefined],

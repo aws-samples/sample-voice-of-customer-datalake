@@ -96,10 +96,7 @@
     "shownOf": "{{count, number}} affichés sur {{total, number}}",
     "loading": "Chargement des avis…",
     "subcategoryChip": "Sous-catégorie : {{name}}",
-    "removeSubcategory": "Retirer le filtre {{name}}",
-    "refinedMoreBelow_one": "{{count, number}} correspondance dans les {{loaded, number}} premiers avis · Chargez la suite plus bas",
-    "refinedMoreBelow_many": "{{count, number}} correspondances dans les {{loaded, number}} premiers avis · Chargez la suite plus bas",
-    "refinedMoreBelow_other": "{{count, number}} correspondances dans les {{loaded, number}} premiers avis · Chargez la suite plus bas"
+    "removeSubcategory": "Retirer le filtre {{name}}"
   },
   "uncategorised": "Sans catégorie",
   "uncategorisedHint": "Avis de cette période qu'aucune catégorie ne couvre"

@@ -9,9 +9,13 @@ import type { RatingFilter } from './types'
 const defaultProps: ComponentProps<typeof FilterBar> = {
   searchText: '',
   onSearchChange: vi.fn(),
-  selectedSource: null,
-  onSourceChange: vi.fn(),
+  selectedSources: [],
+  onToggleSource: vi.fn(),
+  onClearSources: vi.fn(),
   allSources: ['webscraper', 'manual_import'],
+  selectedUsefulness: [],
+  onToggleUsefulness: vi.fn(),
+  onClearUsefulness: vi.fn(),
   showUrgentOnly: false,
   onUrgentChange: vi.fn(),
   ratingFilter: { value: 0, direction: 'up' },
@@ -26,7 +30,8 @@ describe('FilterBar', () => {
 
     expect([
       screen.getByPlaceholderText('Search feedback...'),
-      screen.getByRole('combobox', { name: /filter by source/i }),
+      screen.getByRole('button', { name: 'Source: All sources' }),
+      screen.getByRole('button', { name: 'Usefulness: Any usefulness' }),
       screen.getByRole('group', { name: /star rating/i }),
       screen.getByRole('radiogroup', { name: /rating direction/i }),
       screen.getByText('Urgent only'),
@@ -42,29 +47,35 @@ describe('FilterBar', () => {
     expect(onSearchChange).toHaveBeenCalledWith('s')
   })
 
-  it('labels each source option while keeping the stored id as its value', () => {
-    render(<FilterBar {...defaultProps} />)
+  it('lists each source by its label and toggles the stored id', async () => {
+    const user = userEvent.setup()
+    const onToggleSource = vi.fn()
+    render(<FilterBar {...defaultProps} onToggleSource={onToggleSource} />)
 
-    expect(screen.getByRole('option', { name: 'Manual import' })).toHaveValue('manual_import')
+    await user.click(screen.getByRole('button', { name: 'Source: All sources' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Manual import' }))
+    expect(onToggleSource).toHaveBeenCalledWith('manual_import')
   })
 
-  it('selects a source and maps the empty option back to null', async () => {
+  it('names several selected sources by their count and clears them', async () => {
     const user = userEvent.setup()
-    const onSourceChange = vi.fn()
-    render(<FilterBar {...defaultProps} onSourceChange={onSourceChange} />)
+    const onClearSources = vi.fn()
+    render(<FilterBar {...defaultProps} selectedSources={['webscraper', 'manual_import']} onClearSources={onClearSources} />)
 
-    const select = screen.getByRole('combobox', { name: /filter by source/i })
-    await user.selectOptions(select, 'webscraper')
-    expect(onSourceChange).toHaveBeenCalledWith('webscraper')
+    await user.click(screen.getByRole('button', { name: 'Source: 2 selected' }))
+    expect(screen.getByRole('checkbox', { name: 'Manual import' })).toBeChecked()
+    await user.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(onClearSources).toHaveBeenCalledWith()
   })
 
-  it('resets the source to null when All Sources is picked', async () => {
+  it('toggles a usefulness band, unscored included', async () => {
     const user = userEvent.setup()
-    const onSourceChange = vi.fn()
-    render(<FilterBar {...defaultProps} selectedSource="webscraper" onSourceChange={onSourceChange} />)
+    const onToggleUsefulness = vi.fn()
+    render(<FilterBar {...defaultProps} onToggleUsefulness={onToggleUsefulness} />)
 
-    await user.selectOptions(screen.getByRole('combobox', { name: /filter by source/i }), '')
-    expect(onSourceChange).toHaveBeenCalledWith(null)
+    await user.click(screen.getByRole('button', { name: 'Usefulness: Any usefulness' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Not scored' }))
+    expect(onToggleUsefulness).toHaveBeenCalledWith('unrated')
   })
 
   it('toggles urgent-only', async () => {

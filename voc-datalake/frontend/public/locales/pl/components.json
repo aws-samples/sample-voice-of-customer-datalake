@@ -716,5 +716,42 @@
     "trendUp": "Wzrost o {{percent}}",
     "trendDown": "Spadek o {{percent}}",
     "trendNeutral": "Bez zmian ({{percent}})"
+  },
+  "facetFilters": {
+    "groupLabel": "Filtry opinii",
+    "source": "Źródło",
+    "allSources": "Wszystkie źródła",
+    "category": "Kategoria",
+    "allCategories": "Wszystkie kategorie",
+    "sentiment": "Nastawienie",
+    "allSentiments": "Każde nastawienie",
+    "sentiments": {
+      "positive": "Pozytywne",
+      "neutral": "Neutralne",
+      "negative": "Negatywne",
+      "mixed": "Mieszane"
+    },
+    "usefulness": "Przydatność",
+    "allUsefulness": "Dowolna przydatność",
+    "usefulnessValues": {
+      "high": "Wysoka przydatność",
+      "medium": "Średnia przydatność",
+      "low": "Niska przydatność",
+      "unrated": "Bez oceny"
+    },
+    "usefulnessShort": {
+      "high": "Wysoka",
+      "medium": "Średnia",
+      "low": "Niska"
+    },
+    "usefulnessBadge": "Przydatność: {{band}}",
+    "selectedCount_one": "Wybrano {{count, number}}",
+    "selectedCount_few": "Wybrano {{count, number}}",
+    "selectedCount_many": "Wybrano {{count, number}}",
+    "selectedCount_other": "Wybrano {{count, number}}",
+    "clear": "Wyczyść",
+    "clearAll": "Wyczyść filtry",
+    "noMatchTitle": "Żadna opinia nie pasuje do tych filtrów",
+    "noMatchHint": "Zmień lub wyczyść filtry albo wybierz dłuższy okres."
   }
 }

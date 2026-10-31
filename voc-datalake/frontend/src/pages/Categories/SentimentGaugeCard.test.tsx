@@ -17,8 +17,8 @@ const mockSentimentData: SentimentData[] = [
 
 const defaultProps: ComponentProps<typeof SentimentGauge> = {
   sentimentData: mockSentimentData,
-  sentimentFilter: 'all',
-  onSentimentFilterChange: vi.fn(),
+  selectedSentiments: [],
+  onToggleSentiment: vi.fn(),
   percentages: { positive: 60, neutral: 25, negative: 15 },
 }
 
@@ -49,26 +49,33 @@ describe('SentimentGauge', () => {
     expect(screen.getByRole('button', { name: /negative/i })).toHaveTextContent('15%')
   })
 
-  it('calls onSentimentFilterChange when filter clicked', async () => {
+  it('toggles a sentiment when its chip is clicked', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
-    render(<SentimentGauge {...defaultProps} onSentimentFilterChange={onChange} />)
+    render(<SentimentGauge {...defaultProps} onToggleSentiment={onChange} />)
 
     await user.click(screen.getByRole('button', { name: /positive/i }))
     expect(onChange).toHaveBeenCalledWith('positive')
   })
 
-  it('toggles filter off when same filter clicked', async () => {
+  it('toggles a selected sentiment off with the same chip', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
-    render(<SentimentGauge {...defaultProps} sentimentFilter="positive" onSentimentFilterChange={onChange} />)
+    render(<SentimentGauge {...defaultProps} selectedSentiments={['positive']} onToggleSentiment={onChange} />)
 
     await user.click(screen.getByRole('button', { name: /positive/i }))
-    expect(onChange).toHaveBeenCalledWith('all')
+    expect(onChange).toHaveBeenCalledWith('positive')
+  })
+
+  it('presses every selected chip (several sentiments = any of them)', () => {
+    render(<SentimentGauge {...defaultProps} selectedSentiments={['positive', 'negative']} />)
+
+    expect(screen.getByRole('button', { name: /positive/i })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /negative/i })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('highlights active filter', () => {
-    render(<SentimentGauge {...defaultProps} sentimentFilter="negative" />)
+    render(<SentimentGauge {...defaultProps} selectedSentiments={['negative']} />)
 
     const negativeButton = screen.getByRole('button', { name: /negative/i })
     // Selected legend chip = accent-subtle fill + accent ring (same selected
