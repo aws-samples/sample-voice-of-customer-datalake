@@ -185,7 +185,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     description: 'VoC users with standard access',
   });
 
-  // The production e2e test users (owner decision, 5.62.00): every model call the app makes for a
+  // The production e2e test users (owner decision, 5.63.00): every model call the app makes for a
   // member resolves to Haiku 5.5 (lambda/shared/model_profile.py, lambda/stream/src/bedrock/model-profile.ts).
   // Grants no access by itself; membership is admin-only (`aws cognito-idp admin-add-user-to-group`).
   new cognito.CfnUserPoolGroup(stack, 'E2eGroup', {

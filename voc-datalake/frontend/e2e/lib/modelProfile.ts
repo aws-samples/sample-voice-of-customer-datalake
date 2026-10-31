@@ -1,5 +1,5 @@
 /**
- * The e2e users must be in the Cognito group `e2e` (5.62.00, owner decision): the app then runs
+ * The e2e users must be in the Cognito group `e2e` (5.63.00, owner decision): the app then runs
  * every model call made for them on Claude Haiku 5.5 (lambda/shared/model_profile.py), so a full
  * run does not spend flagship-model money. A user outside the group would run on the admin's
  * models, so setup fails fast; `E2E_ALLOW_FULL_MODELS=1` downgrades that to a loud warning.
