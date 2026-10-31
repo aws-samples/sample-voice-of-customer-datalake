@@ -65,14 +65,14 @@ export const GLOBAL_MCP_METHOD_THROTTLE: Record<string, apigateway.MethodDeploym
 export const GLOBAL_MCP_RESERVED_CONCURRENCY = 20;
 
 /** The context key overriding {@link GLOBAL_MCP_RESERVED_CONCURRENCY}: `-c mcpReservedConcurrency=<n>`, 0 = none. */
-export const MCP_RESERVED_CONCURRENCY_CONTEXT = 'mcpReservedConcurrency';
+const MCP_RESERVED_CONCURRENCY_CONTEXT = 'mcpReservedConcurrency';
 
 /**
  * The endpoint's reservation from `-c mcpReservedConcurrency` (default 20), or undefined for 0: no
  * reservation (the function then shares the account's unreserved pool; a reservation of 0 would throttle
  * every request instead).
  */
-export function mcpReservedConcurrency(scope: Construct): number | undefined {
+function mcpReservedConcurrency(scope: Construct): number | undefined {
   const reserved = nonNegativeIntegerContext(scope.node.tryGetContext(MCP_RESERVED_CONCURRENCY_CONTEXT),
     MCP_RESERVED_CONCURRENCY_CONTEXT, GLOBAL_MCP_RESERVED_CONCURRENCY,
     'Use -c mcpReservedConcurrency=<whole number>, 0 for no reservation.');
