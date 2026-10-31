@@ -35,6 +35,10 @@ const LANG_NAMES = {
   es: 'Spanish', fr: 'French', de: 'German',
   ko: 'Korean', pt: 'Portuguese', ja: 'Japanese', zh: 'Simplified Chinese', pl: 'Polish',
 }
+// The address the existing catalogue uses, so a new string matches it (a review caught "Du" in 5.61.00).
+const LANG_STYLE = {
+  de: 'Address the reader formally with "Sie" (Sie / Ihr / Ihnen), never "du", as the rest of the German UI does',
+}
 // Haiku 5.5 through the global cross-region profile (the app's own allowlist id). It rejects
 // `temperature` (like Sonnet 5.x and every Opus), so the request body sets none.
 const MODEL_ID = 'global.anthropic.claude-haiku-5-5'
@@ -204,7 +208,7 @@ RULES:
 - Keep technical terms as-is: JSON, PDF, CSV, URL, API, S3, PRD, PR-FAQ, DynamoDB, CloudWatch, SSE, Markdown
 - Keep file extensions and code references as-is: .json, mcp.json, Authorization
 - For plural forms (keys ending _zero, _one, _two, _few, _many, _other): write the ${langName} grammatical form for that CLDR plural category and keep {{count}} in it. A key may arrive whose English text is the _other form (e.g. a ${langName} _few or _many form English does not have): still give the correct ${langName} form for that category
-- Use natural, professional ${langName} appropriate for a B2B SaaS dashboard — avoid overly formal or literal translations
+- Use natural, professional ${langName} appropriate for a B2B SaaS dashboard — avoid overly formal or literal translations${LANG_STYLE[targetLang] ? `\n- ${LANG_STYLE[targetLang]}` : ''}
 - For UI actions (buttons, labels), prefer concise wording that fits in compact UI elements
 - Do NOT add markdown fences or any text outside the JSON
 

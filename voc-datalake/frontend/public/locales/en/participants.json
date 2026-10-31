@@ -183,7 +183,7 @@
     "throttled": "Too many requests. Wait a moment and try again.",
     "emailNotConfigured": "Email sending is not configured for this deployment.",
     "dailyCap": "Today's sending limit would be exceeded. Send to fewer people or try again tomorrow.",
-    "senderDailyCap": "You can send up to 50 emails a day. Send to fewer people or try again tomorrow.",
+    "senderDailyCap": "You have reached your own daily email limit. Send to fewer people or try again tomorrow.",
     "noRecipients": "No one to send to: the chosen lists are empty.",
     "tooManyRecipients": "An ask can reach at most 500 people.",
     "externalNotAllowed": "Only addresses at the company's domains may be added.",

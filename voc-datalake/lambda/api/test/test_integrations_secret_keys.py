@@ -56,8 +56,8 @@ def test_an_absent_or_malformed_variable_is_unreadable(monkeypatch, raw):
 
 
 @pytest.mark.usefixtures('plugin_secret_defaults')
-def test_an_unreadable_variable_fails_closed_returning_no_value(monkeypatch, api_gateway_event, lambda_context):
+def test_an_unreadable_variable_fails_closed_with_a_500(monkeypatch, api_gateway_event, lambda_context):
     monkeypatch.delenv(h.WRITE_ONLY_FIELDS_ENV_VAR)
     response, body = _get(api_gateway_event, lambda_context, 'token,repos')
-    assert response['statusCode'] == 200
-    assert body == {}
+    assert response['statusCode'] == 500
+    assert 'ghp_real_token' not in json.dumps(body)
