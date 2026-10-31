@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [5.64.00] - 2026-10-31
+## [5.65.00] - 2026-10-31
 
 Security hardening from a Well-Architected security review: opt-in passkeys, tighter IAM, logs and edge, and
 safer handling of customer text in prompts.
