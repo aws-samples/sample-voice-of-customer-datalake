@@ -184,9 +184,12 @@ function PrototypeFeedbackButton({
   )
 }
 
-// ── Legacy prototype actions: blob-based open/download for pre-migration docs ──
+// ── Legacy prototype actions: download only, for pre-migration docs ──
 // Only pre-migration prototypes (no `prototype_url`) hit this path; new
 // prototypes use plain <a href> links to their stable CDN URL instead.
+// There is deliberately no "Open in new tab" here (WA SEC11, FE-3): a `blob:` URL
+// has the APP's origin, so model-written HTML opened that way would run beside the
+// signed-in session. A downloaded file opens as `file://`, with no access to the app.
 
 function LegacyHtmlActions({
   html, safeName,
@@ -209,23 +212,10 @@ function LegacyHtmlActions({
     a.click()
     URL.revokeObjectURL(blobUrl)
   }, [html, safeName])
-  const onOpenInNewTab = useCallback(() => {
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const blobUrl = URL.createObjectURL(blob)
-    window.open(blobUrl, '_blank', 'noopener,noreferrer')
-    // Revoke after a tick so the new tab has time to load.
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
-  }, [html])
-
   return (
-    <>
-      <button onClick={onOpenInNewTab} className="link">
-        {t('prototypeLink.openNewTab')}
-      </button>
-      <button onClick={onDownloadHtml} className="link">
-        {t('prototypeLink.downloadHtml')}
-      </button>
-    </>
+    <button onClick={onDownloadHtml} className="link">
+      {t('prototypeLink.downloadHtml')}
+    </button>
   )
 }
 
