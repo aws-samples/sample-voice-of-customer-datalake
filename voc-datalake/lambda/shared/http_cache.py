@@ -128,6 +128,13 @@ def _revalidatable(response: Mapping[str, Any], headers: Mapping[str, Any]) -> b
             and isinstance(response.get('body'), str) and _is_json(headers))
 
 
+def mark_nosniff(response: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
+    """`X-Content-Type-Options: nosniff` on every API answer (EDGE-8): a JSON error that echoes
+    input is never sniffed as HTML. Every method and status, unlike the caching headers."""
+    _set(_response_headers(response), 'X-Content-Type-Options', 'nosniff')
+    return response
+
+
 def apply(event: Mapping[str, Any], response: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
     """Add the caching headers to a GET's proxy response (and turn a matching revalidation into 304)."""
     if str(event.get('httpMethod') or '').upper() != 'GET':
