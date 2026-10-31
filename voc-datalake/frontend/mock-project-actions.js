@@ -150,20 +150,23 @@ function addVersionedDocument(shared, detail, type, requestedTitle, fields) {
 const feedbackCount = (shared) => (Array.isArray(shared.mockFeedback) ? shared.mockFeedback.length : 0);
 
 /**
- * The F1 pre-check of POST .../personas/generate and .../research
+ * The fixture feedback a body's filters match: the F1 pre-check of POST .../personas/generate
+ * and .../research, and the wizards' live count (mock-personas.js)
  * (projects.ensure_persona_feedback / ensure_research_feedback): does any fixture
  * item match the body's sources / categories / sentiments? An empty or absent list
  * matches everything, as in shared/feedback.py. `days` is not applied: the fixture's
  * dates are static, and windowing them would make every page empty over time.
  */
-function anyFeedbackMatches(shared, body) {
+export function matchingFeedback(shared, body) {
   const [sources, categories, sentiments] = ['sources', 'categories', 'sentiments'].map((f) => stringList(body[f]));
   const keep = (values, value) => values.length === 0 || values.includes(value);
   const items = Array.isArray(shared.mockFeedback) ? shared.mockFeedback : [];
-  return items.some((item) => keep(sources, item.source_platform)
+  return items.filter((item) => keep(sources, item.source_platform)
     && keep(categories, item.category)
     && keep(sentiments, item.sentiment_label));
 }
+
+const anyFeedbackMatches = (shared, body) => matchingFeedback(shared, body).length > 0;
 
 const PERSONA_NO_FEEDBACK_MESSAGE = 'No feedback data found for the given filters';
 const RESEARCH_NO_FEEDBACK_MESSAGE = 'No feedback data found matching the filters. Try adjusting your filter criteria.';

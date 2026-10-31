@@ -2350,6 +2350,31 @@
   {
     "file": "api/projectsApi.ts",
     "method": "POST",
+    "call": "`/projects/${encodeURIComponent(projectId)}/feedback-preview`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/feedback-preview",
+        "body": {
+          "mode": "estimate",
+          "purpose": "personas",
+          "sources": [],
+          "categories": [],
+          "sentiments": [],
+          "days": 30
+        }
+      },
+      {
+        "path": "/projects/proj_1/feedback-preview",
+        "body": {
+          "mode": "exact",
+          "purpose": "research"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
     "call": "`/projects/${projectId}/personas/import`",
     "probes": [
       {
