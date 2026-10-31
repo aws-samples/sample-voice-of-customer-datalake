@@ -98,6 +98,10 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
   client but the SPA's web client and the board pool's client (new env `APP_CLIENT_IDS` on every VocApiStack
   function). The Cognito authorizer accepts a token of any client of the pool, so an MCP client's token could
   otherwise have called every route with the person's full rights.
+- The MCP OAuth consent page follows a redirect only to the deployment's Cognito hosted UI, a loopback
+  callback (`127.0.0.1`, `localhost`, `[::1]` with a port) or the exact https callback the assistant's request
+  named; anything else shows the page's error. `config.json` gains `cognito.hostedUiDomain`
+  ([docs/mcp.md → OAuth sign-in](docs/mcp.md#oauth-sign-in)).
 - A consent opens its sign-in window for that one authorize request only: the token exchange's `code_verifier`
   must match the consented PKCE `code_challenge` before a sign-in is recorded.
 
@@ -117,7 +121,9 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
   optional `model_profile` queue field before the manual-import Lambda starts sending it.
 - VocApiStack adds 25 resources (Cognito resource server, three app clients on the existing user pool, nine
   routes): 384 of the 425 budget with every plugin. Deploy with `npm run deploy:api` (or end with `scripts/refresh-api-stage.sh`).
-- The new clients use the user pool's existing hosted-UI domain; nothing changes in VocCoreStack.
+- The new clients use the user pool's existing hosted-UI domain; nothing changes in VocCoreStack. Deploy
+  VocApiStack (or run `npm run deploy:frontend`) so `config.json` names it: until then the consent page refuses
+  to send the browser to the sign-in.
 - `resource` (RFC 8707) is dropped before Cognito unless `-c mcpOAuthResourceIndicator=true`; set it only on a
   pool whose hosted UI accepts resource binding.
 - Before announcing OAuth to users, run the live-test runbook in docs/mcp.md.

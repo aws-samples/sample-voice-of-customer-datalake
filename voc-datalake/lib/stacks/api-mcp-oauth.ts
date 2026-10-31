@@ -40,6 +40,15 @@ export const OAUTH_RELAY_PARTITION_PREFIX = 'MCPOAUTH#';
 /** Cursor's documented web callback (it signs in through its website in practice, agent-mail live test). */
 export const DEFAULT_CURSOR_WEB_CALLBACKS = ['https://www.cursor.com/agents/mcp/oauth/callback'];
 export const MCP_OAUTH_REFRESH_DAYS = 30;
+
+/**
+ * The user pool's hosted-UI host (VocCoreStack's `UserPoolDomain` output names the same one): the
+ * MCP functions' `COGNITO_DOMAIN_URL`, and `cognito.hostedUiDomain` in the SPA's config.json, the only
+ * non-loopback origin besides the client's own callback the consent page navigates to.
+ */
+export function cognitoHostedUiHost(domainPrefix: string, region: string): string {
+  return `${domainPrefix}.auth.${region}.amazoncognito.com`;
+}
 const MAX_CALLBACKS = 10;
 /** No SRP, password, custom or choice-based sign-in on an MCP client (pinned by api-mcp-oauth.test.ts). */
 const MCP_CLIENT_AUTH_FLOWS: cognito.AuthFlow = {
@@ -165,7 +174,7 @@ export class McpOAuth {
       MCP_OAUTH_CLIENTS: stack.toJsonString(clientIds),
       MCP_OAUTH_CURSOR_CALLBACKS: JSON.stringify(cursorCallbacks),
       MCP_OAUTH_WEB_CALLBACKS: JSON.stringify(webCallbacks),
-      COGNITO_DOMAIN_URL: `https://${props.userPoolDomainPrefix}.auth.${stack.region}.amazoncognito.com`,
+      COGNITO_DOMAIN_URL: `https://${cognitoHostedUiHost(props.userPoolDomainPrefix, stack.region)}`,
       COGNITO_ISSUER: `https://cognito-idp.${stack.region}.${stack.urlSuffix}/${props.userPool.userPoolId}`,
       FRONTEND_URL: `https://${props.frontendDomainName}`,
       // RFC 8707 `resource`: dropped before Cognito unless the pool is known to accept it (docs/mcp.md).
