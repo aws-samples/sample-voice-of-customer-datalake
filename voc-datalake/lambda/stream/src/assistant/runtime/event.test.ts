@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { APP_CLIENT_IDS_ENV, requireAppClient } from './app-client.js';
 import { extractCallerClaims, getBodyText, isAdminCaller, parseGroups, parseLambdaEvent } from './event.js';
 
 function eventWithClaims(claims: Record<string, unknown>) {
@@ -6,6 +7,22 @@ function eventWithClaims(claims: Record<string, unknown>) {
 }
 
 describe('extractCallerClaims', () => {
+  beforeEach(() => { vi.stubEnv(APP_CLIENT_IDS_ENV, 'client,board-client'); });
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('refuses a token of another app client of the pool (an MCP OAuth client) with a 401', () => {
+    for (const token of [{ token_use: 'id', aud: 'kiro-client' }, { token_use: 'access', client_id: 'kiro-client' }]) {
+      expect(() => extractCallerClaims(eventWithClaims({ sub: 'abc', 'cognito:groups': '[admins]', ...token })))
+        .toThrow(expect.objectContaining({ statusCode: 401, message: 'This sign-in is not valid for this API' }));
+    }
+  });
+
+  it('accepts the SPA web client and the board client, as ID or access token', () => {
+    for (const token of [{ token_use: 'id', aud: 'client' }, { token_use: 'access', client_id: 'board-client' }]) {
+      expect(extractCallerClaims(eventWithClaims({ sub: 'abc', ...token })).sub).toBe('abc');
+    }
+  });
+
   it('forwards only sub, groups, username and email', () => {
     const claims = extractCallerClaims(eventWithClaims({
       sub: 'abc', 'cognito:groups': 'admins', 'cognito:username': 'jane', email: 'j@example.com', 'custom:x': 'y', aud: 'client',
@@ -21,6 +38,30 @@ describe('extractCallerClaims', () => {
 
   it('ignores non-string claim values', () => {
     expect(extractCallerClaims(eventWithClaims({ sub: 's', email: 42 }))).toStrictEqual({ sub: 's' });
+  });
+});
+
+describe('requireAppClient', () => {
+  const env = { [APP_CLIENT_IDS_ENV]: ' web , board ' };
+
+  it.each([
+    [{ token_use: 'id' }],
+    [{ token_use: 'access', client_id: '' }],
+    [{ aud: ['web'] }],
+  ])('refuses a token without a usable issuing client: %j', (claims) => {
+    expect(() => requireAppClient(claims, env)).toThrow('not valid for this API');
+  });
+
+  it('refuses every token while APP_CLIENT_IDS is unset (fails closed)', () => {
+    expect(() => requireAppClient({ token_use: 'id', aud: 'web' }, {})).toThrow('not valid for this API');
+  });
+
+  it('prefers client_id over a resource audience', () => {
+    expect(() => requireAppClient({ token_use: 'access', client_id: 'web', aud: 'https://api.example/mcp' }, env)).not.toThrow();
+  });
+
+  it('does not judge claims our own Lambdas forward (no token markers)', () => {
+    expect(() => requireAppClient({ sub: 's', 'cognito:groups': 'admins' }, {})).not.toThrow();
   });
 });
 
