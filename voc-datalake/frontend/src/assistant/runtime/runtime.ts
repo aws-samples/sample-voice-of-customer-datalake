@@ -15,6 +15,7 @@
  */
 import { buildRunInput, newId, runAgent } from '../agui/client'
 import { buildForwardedProps } from '../agui/forwardedProps'
+import { chatScopeFor } from '../store/chatScopeStore'
 import { allInterruptsResolved } from '../thread/reducer'
 import { buildResume } from '../thread/resume'
 import { toWireMessages } from '../thread/wire'
@@ -179,7 +180,9 @@ async function executeRun(threadId: string, env: RunEnvironment, { resume, befor
     runId,
     // Stryker disable next-line ArrayDeclaration: toWireMessages keeps only user/assistant/tool messages, so a non-message placeholder is dropped and the wire list is [] either way
     messages: toWireMessages(started?.messages ?? []),
-    forwardedProps: buildForwardedProps({ page: env.page, language: env.language, useWebSearch: env.useWebSearch, mentions }),
+    forwardedProps: buildForwardedProps({
+      page: env.page, language: env.language, useWebSearch: env.useWebSearch, mentions, scope: chatScopeFor(threadId),
+    }),
     resume,
   })
   const seen = { serverSaved: false }

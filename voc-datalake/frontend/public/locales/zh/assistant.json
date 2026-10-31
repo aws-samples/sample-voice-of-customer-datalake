@@ -302,5 +302,43 @@
     "insertPersona": "提及用户画像",
     "insertDocument": "标记文档",
     "allCapped": "@all 会询问 {{total, number}} 个用户画像中的前 {{max, number}} 个：{{names}}。"
+  },
+  "scope": {
+    "title": "反馈范围",
+    "allFeedback": "全部反馈",
+    "activeFilters_one": "{{count}} 个筛选条件",
+    "activeFilters_other": "{{count}} 个筛选条件",
+    "count_one": "{{formatted}} 条评价",
+    "count_other": "{{formatted}} 条评价",
+    "countPartial_one": "{{formatted}}+ 条评价",
+    "countPartial_other": "{{formatted}}+ 条评价",
+    "counting": "正在统计评价…",
+    "countUnavailable": "无法获取评价数量",
+    "overCap": "此范围内的评价超过 {{max}} 条。助手每次搜索最多读取 {{max}} 条，因此部分反馈会被遗漏。请缩小筛选条件以获得完整的回答。",
+    "clear": "清除筛选",
+    "timeRange": "时间范围",
+    "source": "来源",
+    "anySource": "所有来源",
+    "sentiment": "情绪",
+    "anySentiment": "所有情绪",
+    "sentiments": {
+      "positive": "正面",
+      "neutral": "中性",
+      "negative": "负面",
+      "mixed": "混合"
+    },
+    "rating": "评分",
+    "anyRating": "所有评分",
+    "ratingAtLeast_one": "至少 {{count}} 星",
+    "ratingAtLeast_other": "至少 {{count}} 星",
+    "ratingAtMost_one": "最多 {{count}} 星",
+    "ratingAtMost_other": "最多 {{count}} 星",
+    "channel": "渠道",
+    "anyChannel": "所有渠道",
+    "tag": "标签",
+    "anyTag": "所有标签",
+    "urgentOnly": "仅紧急",
+    "categories": "类别",
+    "noCategories": "此时间范围内没有类别。"
   }
 }
