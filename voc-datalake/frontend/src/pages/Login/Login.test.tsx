@@ -40,7 +40,7 @@ vi.mock('react-router-dom', async () => {
 })
 
 import Login from './Login'
-import { AuthChallengeError, NEW_PASSWORD_REQUIRED } from '../../services/auth'
+import { AuthChallengeError, NEW_PASSWORD_REQUIRED, UNSUPPORTED_SIGN_IN_STEP } from '../../services/auth'
 
 
 type User = ReturnType<typeof userEvent.setup>
@@ -205,6 +205,15 @@ describe('Login', () => {
       await waitFor(() => {
         expect(screen.getByText('Invalid credentials')).toBeInTheDocument()
       })
+    })
+
+    it('shows the translated failure, not the service detail, for a step the page does not offer', async () => {
+      mockSignIn.mockRejectedValue(new AuthChallengeError(UNSUPPORTED_SIGN_IN_STEP, 'Sign-in needs a step this page does not support (X)'))
+
+      await renderAndSignIn('password123')
+
+      expect(await screen.findByText('Login failed')).toBeInTheDocument()
+      expect(screen.queryByText(/does not support/)).not.toBeInTheDocument()
     })
 
     it('disables submit button while loading', async () => {

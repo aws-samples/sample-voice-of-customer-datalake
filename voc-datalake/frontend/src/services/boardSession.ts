@@ -85,7 +85,11 @@ export function createBoardSession({ clientId, storage, now, call }: BoardSessio
     }
   }
 
-  /** One refresh at a time: concurrent readers share it (a rotated refresh token is used once). */
+  /**
+   * One refresh at a time: concurrent readers share it (a rotated refresh token is used once). A
+   * forced read that arrives while a refresh is in flight joins it: that refresh is already newer
+   * than the tokens the caller saw.
+   */
   function sharedRefresh(user: string): Promise<string | null> {
     inflight.refresh ??= refresh(user).finally(() => { inflight.refresh = null })
     return inflight.refresh
@@ -99,6 +103,7 @@ export function createBoardSession({ clientId, storage, now, call }: BoardSessio
     return sharedRefresh(user)
   }
 
+  /** Reads through `idToken()`, so an expired token is refreshed first, as the former library's getSession() did. */
   async function email(): Promise<string | null> {
     const token = await idToken()
     const claim = token === null ? undefined : jwtPayload(token)['email']

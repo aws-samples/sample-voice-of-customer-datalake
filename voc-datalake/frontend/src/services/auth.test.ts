@@ -27,10 +27,16 @@ vi.mock('../runtimeConfig', () => ({
   loadRuntimeConfig: vi.fn(),
 }))
 
+const configureAmplify = vi.hoisted(() => vi.fn())
+vi.mock('../lib/amplify-config', () => ({ configureAmplify }))
+
 const store = vi.hoisted(() => ({ setUser: vi.fn(), setTokens: vi.fn(), logout: vi.fn(), idToken: 'stored-id' }))
 vi.mock('../store/authStore', () => ({ useAuthStore: { getState: () => store } }))
 
-import { AuthChallengeError, NEW_PASSWORD_REQUIRED, authService } from './auth'
+import {
+  AuthChallengeError, NO_SESSION_AFTER_SIGN_IN, UNSUPPORTED_SIGN_IN_STEP, authService,
+  isNewPasswordChallenge,
+} from './auth'
 
 const ID_TOKEN = fakeJwt({ sub: 'sub-123', 'cognito:username': 'alice', email: 'a@example.com', 'cognito:groups': ['users'] })
 const ACCESS_TOKEN = fakeJwt({ token_use: 'access' })
@@ -84,6 +90,27 @@ describe('signIn', () => {
     })
   })
 
+  it('configures Amplify before signing in, whatever ran first', async () => {
+    amplify.signIn.mockImplementation(() => {
+      expect(configureAmplify).toHaveBeenCalledWith()
+      return Promise.resolve(DONE)
+    })
+
+    await authService.signIn('alice', 'password123')
+
+    expect(amplify.signIn).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a DONE sign-in that left no tokens, as its own error', async () => {
+    amplify.signIn.mockResolvedValue(DONE)
+    amplify.fetchAuthSession.mockResolvedValue({ tokens: undefined })
+
+    const error = await rejectionOf(authService.signIn('alice', 'password123'))
+
+    expect(error).toHaveProperty('code', NO_SESSION_AFTER_SIGN_IN)
+    expect(store.setTokens).not.toHaveBeenCalled()
+  })
+
   it('rejects with the Cognito error when sign-in fails', async () => {
     const refused = Object.assign(new Error('Incorrect username or password.'), { name: 'NotAuthorizedException' })
     amplify.signIn.mockRejectedValue(refused)
@@ -98,14 +125,17 @@ describe('signIn', () => {
     const error = await rejectionOf(authService.signIn('alice', 'temporary'))
 
     expect(error).toBeInstanceOf(AuthChallengeError)
-    expect(error).toHaveProperty('code', NEW_PASSWORD_REQUIRED)
+    expect(isNewPasswordChallenge(error)).toBe(true)
     expect(store.setTokens).not.toHaveBeenCalled()
   })
 
   it('refuses a step the page does not offer (MFA)', async () => {
     amplify.signIn.mockResolvedValue(TOTP)
 
-    await expect(authService.signIn('alice', 'password123')).rejects.toThrow('CONFIRM_SIGN_IN_WITH_TOTP_CODE')
+    const error = await rejectionOf(authService.signIn('alice', 'password123'))
+
+    expect(error).toHaveProperty('code', UNSUPPORTED_SIGN_IN_STEP)
+    expect(isNewPasswordChallenge(error)).toBe(false)
     expect(store.setTokens).not.toHaveBeenCalled()
   })
 

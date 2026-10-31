@@ -18,7 +18,7 @@ import {
   useNavigate, useLocation,
 } from 'react-router-dom'
 import KiroGhost from '../../components/KiroGhost/KiroGhost'
-import { authService, isNewPasswordChallenge } from '../../services/auth'
+import { AuthChallengeError, authService, isNewPasswordChallenge } from '../../services/auth'
 import { isSessionExpiredRedirect } from '../../services/sessionExpiry'
 import { LANDING_STATE } from '../../utils/landing'
 import {
@@ -47,7 +47,10 @@ function getFromPath(state: unknown): string {
   return '/'
 }
 
+/** Cognito's own message when it gave one; the translated fallback otherwise. */
 function extractErrorMessage(err: unknown, fallback: string): string {
+  // The service's own sign-in errors (an unsupported step, no session) carry developer English.
+  if (err instanceof AuthChallengeError) return fallback
   if (isCognitoError(err) && err.message != null && err.message !== '') {
     return err.message
   }

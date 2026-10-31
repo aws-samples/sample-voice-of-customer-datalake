@@ -103,7 +103,7 @@ export const useAuthStore = create<AuthState>()(
         user: null,
         accessToken: null,
         idToken: null,
-          isAuthenticated: false,
+        isAuthenticated: false,
         sessionReady: false,
       }),
     }),

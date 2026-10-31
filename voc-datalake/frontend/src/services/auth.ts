@@ -21,6 +21,7 @@ import {
   confirmResetPassword, confirmSignIn, fetchAuthSession, resetPassword, signIn as amplifySignIn,
   signOut as amplifySignOut, updatePassword, type SignInOutput,
 } from 'aws-amplify/auth'
+import { configureAmplify } from '../lib/amplify-config'
 import { AuthError, ConfigError } from '../lib/errors'
 import { jwtPayload } from '../lib/jwt'
 import { ignoreRejection } from '../lib/rejections'
@@ -30,6 +31,10 @@ import type { User } from '../store/authStore'
 
 /** The code of the first-login challenge (the new-password form). */
 export const NEW_PASSWORD_REQUIRED = 'NewPasswordRequired'
+/** A sign-in step the page does not offer (MFA, a sign-up confirmation, a reset): Login shows its generic failure. */
+export const UNSUPPORTED_SIGN_IN_STEP = 'UnsupportedSignInStep'
+/** Cognito answered DONE but Amplify holds no tokens afterwards. */
+export const NO_SESSION_AFTER_SIGN_IN = 'NoSessionAfterSignIn'
 
 /** An AuthError carrying the code Login switches on. */
 export class AuthChallengeError extends AuthError {
@@ -81,8 +86,10 @@ const isConfigured = (): boolean => {
   return cfg.cognito.userPoolId !== '' && cfg.cognito.clientId !== ''
 }
 
+/** Throws a ConfigError without a pool; else makes sure Amplify is configured (idempotent), whatever ran first. */
 const requireConfigured = (): void => {
   if (!isConfigured()) throw new ConfigError('Cognito not configured')
+  configureAmplify()
 }
 
 /**
@@ -117,9 +124,12 @@ async function finishSignIn(output: SignInOutput): Promise<void> {
   if (step === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED') {
     throw new AuthChallengeError(NEW_PASSWORD_REQUIRED, 'New password required')
   }
-  if (step !== 'DONE' || !(await storeCurrentTokens(false))) {
+  if (step !== 'DONE') {
     // MFA, a sign-up confirmation or a reset are not offered by the app pool's sign-in page.
-    throw new AuthError(`Sign-in needs a step this page does not support (${step})`)
+    throw new AuthChallengeError(UNSUPPORTED_SIGN_IN_STEP, `Sign-in needs a step this page does not support (${step})`)
+  }
+  if (!(await storeCurrentTokens(false))) {
+    throw new AuthChallengeError(NO_SESSION_AFTER_SIGN_IN, 'Sign-in finished without a session')
   }
 }
 
@@ -158,6 +168,7 @@ export const authService = {
    * (Amplify keeps that challenge in memory, so it must be the same page load).
    */
   completeNewPassword: async (newPassword: string): Promise<void> => {
+    requireConfigured()
     await finishSignIn(await confirmSignIn({ challengeResponse: newPassword }))
   },
 
@@ -167,7 +178,9 @@ export const authService = {
    */
   signOut: (): void => {
     useAuthStore.getState().logout()
-    if (isConfigured()) void startSignOut()
+    if (!isConfigured()) return
+    configureAmplify()
+    void startSignOut()
   },
 
   /**
