@@ -10,7 +10,9 @@ an :class:`AuthorizeRequest` or raises:
 
 PKCE is REQUIRED (S256 only). ``resource`` (RFC 8707), when sent, must name the MCP URL; whether it is
 passed on to Cognito is the deployment's choice (``forward_resource``). The scope Cognito sees is the one
-the person CONSENTED to (``cognito_authorize_url``), never more than the client asked for.
+the person CONSENTED to (``cognito_authorize_url``), never more than the client asked for, and ONLY the MCP
+scopes: ``openid`` / ``profile`` / ``email`` in a request are accepted and dropped, so Cognito issues no ID
+token (an ID token is an app session; the MCP clients are not allowed those scopes either).
 """
 
 from __future__ import annotations
@@ -138,7 +140,7 @@ def cognito_authorize_url(request: AuthorizeRequest, config: OAuthConfig, *, con
     With a relay the redirect is the relay URL and ``state`` is the relay id (the client's own state is
     stored with the relay row); without one both pass through unchanged.
     """
-    scopes = ['openid', config.scope('read')]
+    scopes = [config.scope('read')]
     if consented_scope == 'write':
         scopes.append(config.scope('write'))
     params: dict[str, str | None] = {

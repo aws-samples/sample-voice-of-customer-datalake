@@ -62,7 +62,7 @@ class Registration:
             'grant_types': list(GRANT_TYPES),
             'response_types': list(RESPONSE_TYPES),
             'token_endpoint_auth_method': 'none',
-            'scope': ' '.join(['openid', *config.scopes_supported]),
+            'scope': ' '.join(config.scopes_supported),
         }
 
 

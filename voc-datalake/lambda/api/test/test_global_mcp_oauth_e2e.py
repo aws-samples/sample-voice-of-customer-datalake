@@ -9,13 +9,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from global_mcp_oauth_world import anonymous, oauth_world
+from global_mcp_oauth_world import CHALLENGE, VERIFIER, anonymous, oauth_world, s256
 from global_mcp_world import ALPHA, BETA, McpClient, tool_payload
 from test_global_mcp_e2e import READ_TOOLS, WRITE_TOOLS
 
 import mcp_global_handler
 from shared import mcp_global_tokens as gt
 from shared import mcp_oauth_grants as grants
+from shared.test.mcp_oauth_fixtures import CLIENTS, CURSOR_WEB_CALLBACK
 
 
 @pytest.fixture
@@ -164,9 +165,31 @@ class TestChainIsBoundToConsent:
         relayed = oauth.call(anonymous('GET', '/oauth/callback', query=delivered))
         code = relayed.headers['Location'].split('code=')[1].split('&')[0]
         answer = oauth.exchange({'grant_type': 'authorization_code', 'client_id': client_id, 'code': code,
-                                 'redirect_uri': redirect_uri, 'code_verifier': 'v' * 43})
+                                 'redirect_uri': redirect_uri, 'code_verifier': VERIFIER})
         assert answer.status == 400
         assert answer.body['error'] == 'invalid_grant'
+
+    def test_the_window_records_only_the_consented_authorize_request(self, oauth):
+        # Cursor's web callback needs no relay, so the hosted-UI URL can be replayed with another challenge.
+        query = oauth.authorize_query(CLIENTS['cursor'], CURSOR_WEB_CALLBACK)
+        _, approved = oauth.consent('alice', query)
+        other_verifier = 'w' * 43
+        other_url = approved['redirect_to'].replace(f'code_challenge={CHALLENGE}', f'code_challenge={s256(other_verifier)}')
+        assert other_url != approved['redirect_to']
+        foreign = oauth.cognito.sign_in(other_url, 'alice')
+        refused = oauth.exchange({'grant_type': 'authorization_code', 'client_id': CLIENTS['cursor'],
+                                  'code': foreign['code'], 'redirect_uri': CURSOR_WEB_CALLBACK,
+                                  'code_verifier': other_verifier})
+        assert (refused.status, refused.body['error']) == (400, 'invalid_grant')
+        assert oauth.cognito.revoked  # Cognito's fresh refresh token is revoked at once
+        assert _grant_row(oauth, 'alice', CLIENTS['cursor'])['origin_jtis'] == []
+        mine = oauth.cognito.sign_in(approved['redirect_to'], 'alice')
+        accepted = oauth.exchange({'grant_type': 'authorization_code', 'client_id': CLIENTS['cursor'],
+                                   'code': mine['code'], 'redirect_uri': CURSOR_WEB_CALLBACK, 'code_verifier': VERIFIER})
+        assert accepted.status == 200
+        row = _grant_row(oauth, 'alice', CLIENTS['cursor'])
+        assert len(row['origin_jtis']) == 1
+        assert 'consent_challenge_sha256' not in row  # cleared with the window
 
     def test_the_chain_is_recorded_once_per_consent(self, oauth):
         signed_in = oauth.sign_in('alice')

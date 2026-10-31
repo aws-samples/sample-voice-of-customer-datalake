@@ -132,7 +132,8 @@ def approve_consent():
     now = _now()
     store.put_grant(_projects(), grants.grant_item(
         subject=caller.subject, username=caller.username, is_admin=caller.is_admin, client_id=request.client_id,
-        client_kind=request.kind, scope=scope, project_id=project_id, now=now))
+        client_kind=request.kind, scope=scope, project_id=project_id, code_challenge=request.code_challenge,
+        now=now))
     relay_id = None
     if request.uses_relay:
         relay_id = relay.new_relay_id()
