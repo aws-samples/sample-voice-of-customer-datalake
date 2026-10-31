@@ -31,17 +31,13 @@ from shared.other_category import OTHER, matches_category, other_condition
 from shared.usefulness import USEFULNESS_BANDS, USEFULNESS_FIELD, USEFULNESS_UNRATED, stored_band
 
 __all__ = [
-    'MAX_FACET_VALUES',
-    'MAX_FACET_VALUE_CHARS',
     'SENTIMENT_VALUES',
     'USEFULNESS_VALUES',
     'any_of',
     'category_admits',
-    'category_condition',
     'facet_condition',
     'parse_facet',
     'usefulness_admits',
-    'usefulness_condition',
 ]
 
 MAX_FACET_VALUES: Final = 50
