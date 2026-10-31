@@ -6,6 +6,7 @@ import type { DocumentDerivation } from './derivation'
 // The credential vocabulary lives with its schema for the same reason: the
 // declared type and the runtime validation cannot drift apart.
 import type { CategoryOverride } from './feedbackSchema'
+import type { UsefulnessBand } from './feedbackFacets'
 
 export interface FeedbackItem {
   feedback_id: string
@@ -51,6 +52,8 @@ export interface FeedbackItem {
   tags?: string[]
   /** The source's PII policy when it was stored; absent = allow. */
   pii_policy?: PiiPolicy
+  /** The stored usefulness band (`shared/usefulness.py`); absent = not scored yet. */
+  usefulness?: UsefulnessBand
 }
 
 /** Where a CSV column goes on upload: a field, `metadata`, `ignore`, or `dimension:<key>`. */
@@ -84,6 +87,8 @@ export interface ItemFilterParams extends AttributeFilters {
   rating_max?: number
   /** `1`: only `urgency: 'high'` items. */
   urgent?: 1
+  /** Usefulness bands, comma-separated any-of; `unrated` = no stored band (`api/feedbackFacets.ts`). */
+  usefulness?: string
 }
 
 /**
@@ -105,9 +110,12 @@ export type DateBasis = 'imported' | 'review'
 export interface FeedbackFilters extends Omit<ItemFilterParams, 'urgent'> {
   days?: number
   date_basis?: DateBasis
+  /** `source` / `category` / `sentiment`: one value or a comma-separated any-of list. */
   source?: string
   category?: string
   sentiment?: string
+  /** One subcategory or a comma list. */
+  subcategory?: string
 }
 
 /** Query parameters of the cursor-paged `/feedback/urgent` and `/feedback/search`. */

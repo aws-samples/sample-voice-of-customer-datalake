@@ -680,5 +680,40 @@
     "trendUp": "Increased by {{percent}}",
     "trendDown": "Decreased by {{percent}}",
     "trendNeutral": "No change ({{percent}})"
+  },
+  "facetFilters": {
+    "groupLabel": "Feedback filters",
+    "source": "Source",
+    "allSources": "All sources",
+    "category": "Category",
+    "allCategories": "All categories",
+    "sentiment": "Sentiment",
+    "allSentiments": "All sentiments",
+    "sentiments": {
+      "positive": "Positive",
+      "neutral": "Neutral",
+      "negative": "Negative",
+      "mixed": "Mixed"
+    },
+    "usefulness": "Usefulness",
+    "allUsefulness": "Any usefulness",
+    "usefulnessValues": {
+      "high": "High usefulness",
+      "medium": "Medium usefulness",
+      "low": "Low usefulness",
+      "unrated": "Not scored"
+    },
+    "usefulnessShort": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "usefulnessBadge": "Usefulness: {{band}}",
+    "selectedCount_one": "{{count, number}} selected",
+    "selectedCount_other": "{{count, number}} selected",
+    "clear": "Clear",
+    "clearAll": "Clear filters",
+    "noMatchTitle": "No feedback matches these filters",
+    "noMatchHint": "Change or clear the filters, or choose a longer time range."
   }
 }

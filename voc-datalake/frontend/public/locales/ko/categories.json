@@ -96,9 +96,7 @@
     "shownOf": "{{total, number}}개 중 {{count, number}}개 표시",
     "loading": "리뷰를 불러오는 중…",
     "subcategoryChip": "하위 카테고리: {{name}}",
-    "removeSubcategory": "{{name}} 필터 제거",
-    "refinedMoreBelow_one": "처음 {{loaded, number}}개 리뷰 중 {{count, number}}개 일치 · 아래에서 더 불러오기",
-    "refinedMoreBelow_other": "처음 {{loaded, number}}개 리뷰 중 {{count, number}}개 일치 · 아래에서 더 불러오기"
+    "removeSubcategory": "{{name}} 필터 제거"
   },
   "uncategorised": "미분류",
   "uncategorisedHint": "이 기간 중 어느 카테고리에도 해당하지 않은 리뷰"

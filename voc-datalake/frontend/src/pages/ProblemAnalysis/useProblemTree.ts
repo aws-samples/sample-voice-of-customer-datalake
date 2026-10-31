@@ -42,12 +42,15 @@ export interface ProblemTree extends ProblemTreeResponse {
   retry: () => void
 }
 
-type TreeFilters = Pick<ProblemFilters, 'source' | 'category' | 'subcategory' | 'urgentOnly' | 'similarity' | 'types'>
+type TreeFilters = Pick<ProblemFilters, 'sources' | 'usefulness' | 'category' | 'subcategory' | 'urgentOnly' | 'similarity' | 'types'>
 
 /** The tree for the header's period and date basis (`dateParams`) and the page filters. */
 export function useProblemTree(dateParams: DateRangeParams, filters: TreeFilters, apiEndpoint: string): ProblemTree {
-  const { source, category, subcategory, urgentOnly, similarity, types } = filters
-  const params = { ...dateParams, source, category, subcategory, urgentOnly, similarity, dims: typeSelectionDims(types) }
+  const { sources, usefulness, category, subcategory, urgentOnly, similarity, types } = filters
+  const params = {
+    ...dateParams, source: sources.length > 0 ? sources.join(',') : null, category, subcategory, urgentOnly, similarity,
+    dims: typeSelectionDims(types), ...(usefulness.length > 0 ? { usefulness: usefulness.join(',') } : {}),
+  }
   const query = useQuery({
     queryKey: ['feedback-problems', params],
     queryFn: () => getProblemTree(params),

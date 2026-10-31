@@ -175,6 +175,14 @@ describe('ProblemAnalysis', () => {
       expect(await screen.findByRole('status')).toHaveTextContent(/back to Mar 14, 2026 only/)
     })
 
+    it('sends a multi-source, usefulness link to the server as comma lists', async () => {
+      render(<ProblemAnalysis />, { wrapper: createQueryWrapper(['/problems?source=webscraper,app&usefulness=high,unrated']) })
+
+      await waitFor(() => expect(getProblemTree).toHaveBeenLastCalledWith(expect.objectContaining({
+        source: 'webscraper,app', usefulness: 'high,unrated',
+      })))
+    })
+
     it('sends the filters a shared link carries to the server', async () => {
       render(<ProblemAnalysis />, { wrapper: createQueryWrapper(['/problems?source=webscraper&category=delivery&subcategory=shipping_speed&urgent=1&similarity=high']) })
 
@@ -197,8 +205,8 @@ describe('source filtering', () => {
     it('renders source filter dropdown with available sources', async () => {
       await renderLoadedPage()
 
-      const sourceSelect = screen.getByRole('combobox', { name: 'Source' })
-      expect(sourceSelect.querySelector('option[value=""]')).toBeInTheDocument()
+      // The shared multi-value source selector (several sources = any of them).
+      expect(screen.getByRole('button', { name: 'Source: All sources' })).toHaveAttribute('aria-expanded', 'false')
     })
   })
 })

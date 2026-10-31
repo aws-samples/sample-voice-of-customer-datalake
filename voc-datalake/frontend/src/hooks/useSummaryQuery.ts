@@ -26,10 +26,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { DateRangeParams } from '../api/client'
+import { EMPTY_FACETS, facetQueryParams, facetsKey, hasActiveFacets } from '../api/feedbackFacets'
+import type { FeedbackFacets } from '../api/feedbackFacets'
 
-/** Query key for the summary of a given window. Single source of truth. */
-const summaryQueryKey = (dateParams: DateRangeParams) =>
-  ['summary', dateParams] as const
+/**
+ * Query key for the summary of a given window. Single source of truth. The unfiltered key
+ * stays `['summary', dateParams]` (the sidebar badge's); facets add their stable form.
+ */
+const summaryQueryKey = (dateParams: DateRangeParams, facets: FeedbackFacets) =>
+  hasActiveFacets(facets) ? ['summary', dateParams, facetsKey(facets)] as const : ['summary', dateParams] as const
 
 /**
  * Fetch the metrics summary for `dateParams`.
@@ -40,11 +45,14 @@ const summaryQueryKey = (dateParams: DateRangeParams) =>
  *   store is rehydrated from persisted localStorage: an older persisted shape can
  *   deliver `undefined` here regardless of the declared type, and `.length` on
  *   that would throw.
+ * @param facets the Dashboard's source / category / sentiment / usefulness filters (none = unfiltered)
  */
-export function useSummaryQuery(dateParams: DateRangeParams, apiEndpoint: string | undefined) {
+export function useSummaryQuery(
+  dateParams: DateRangeParams, apiEndpoint: string | undefined, facets: FeedbackFacets = EMPTY_FACETS,
+) {
   return useQuery({
-    queryKey: summaryQueryKey(dateParams),
-    queryFn: () => api.getSummary(dateParams),
+    queryKey: summaryQueryKey(dateParams, facets),
+    queryFn: () => api.getSummary(dateParams, undefined, facetQueryParams(facets)),
     enabled: !!apiEndpoint,
   })
 }

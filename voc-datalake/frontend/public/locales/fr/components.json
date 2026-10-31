@@ -690,5 +690,40 @@
     "trendUp": "En hausse de {{percent}}",
     "trendDown": "En baisse de {{percent}}",
     "trendNeutral": "Aucun changement ({{percent}})"
+  },
+  "facetFilters": {
+    "groupLabel": "Filtres des retours",
+    "source": "Source",
+    "allSources": "Toutes les sources",
+    "category": "Catégorie",
+    "allCategories": "Toutes les catégories",
+    "sentiment": "Sentiment",
+    "allSentiments": "Tous les sentiments",
+    "sentiments": {
+      "positive": "Positif",
+      "neutral": "Neutre",
+      "negative": "Négatif",
+      "mixed": "Mitigé"
+    },
+    "usefulness": "Utilité",
+    "allUsefulness": "Toute utilité",
+    "usefulnessValues": {
+      "high": "Utilité élevée",
+      "medium": "Utilité moyenne",
+      "low": "Utilité faible",
+      "unrated": "Non évalué"
+    },
+    "usefulnessShort": {
+      "high": "Élevée",
+      "medium": "Moyenne",
+      "low": "Faible"
+    },
+    "usefulnessBadge": "Utilité : {{band}}",
+    "selectedCount_one": "{{count, number}} sélectionné",
+    "selectedCount_other": "{{count, number}} sélectionnés",
+    "clear": "Effacer",
+    "clearAll": "Effacer les filtres",
+    "noMatchTitle": "Aucun retour ne correspond à ces filtres",
+    "noMatchHint": "Modifiez ou effacez les filtres, ou choisissez une période plus longue."
   }
 }
