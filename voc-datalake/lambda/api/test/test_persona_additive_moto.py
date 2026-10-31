@@ -5,13 +5,11 @@ new ones next to them, tells the model about the kept ones, and drops a new pers
 name repeats a kept one. Each test fails if one mode behaves like the other.
 """
 from collections.abc import Iterator
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
 from unittest.mock import patch
 
 import pytest
-from moto import mock_aws
-from moto_helpers import projects_module_world
+from moto_helpers import PersonaWorld, mocked_projects_table, seed_project_personas
 from persona_fakes import PERSONA_STEP, PLAN_STEP, FakePersonaModel, one_item_corpus
 
 import projects
@@ -23,31 +21,19 @@ KEPT_HEADING = '## PERSONAS THIS PROJECT KEEPS'
 
 
 @dataclass
-class World:
-    projects: Any
-    avatar_for: list[str]
+class World(PersonaWorld):
+    avatar_for: list[str] = field(default_factory=list)
 
     def seed(self, kept: dict[str, str]) -> None:
         """META plus one reviewed persona per ``{persona_id: name}``."""
-        self.projects.put_item(Item={'pk': f'PROJECT#{PROJECT}', 'sk': 'META', 'project_id': PROJECT})
-        for persona_id, name in kept.items():
-            self.projects.put_item(Item={
-                'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#{persona_id}', 'persona_id': persona_id,
-                'name': name, 'tagline': f'The reviewed {name}', 'research_notes': 'edited by a person',
-            })
-
-    def personas(self) -> dict[str, dict]:
-        rows = self.projects.query(
-            KeyConditionExpression='pk = :pk AND begins_with(sk, :p)',
-            ExpressionAttributeValues={':pk': f'PROJECT#{PROJECT}', ':p': 'PERSONA#'},
-        )['Items']
-        return {row['persona_id']: row for row in rows}
+        seed_project_personas(self.projects, PROJECT, {
+            persona_id: {'name': name, 'research_notes': 'edited by a person'} for persona_id, name in kept.items()})
 
 
 @pytest.fixture
 def world() -> Iterator[World]:
-    with mock_aws(), projects_module_world(BUCKET) as (projects_table, _jobs, _s3):
-        yield World(projects=projects_table, avatar_for=[])
+    with mocked_projects_table(BUCKET) as table:
+        yield World(projects=table, project_id=PROJECT)
 
 
 def _generate(world: World, filters: dict, model: FakePersonaModel | None = None) -> tuple[dict, FakePersonaModel]:

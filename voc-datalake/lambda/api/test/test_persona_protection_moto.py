@@ -6,13 +6,11 @@ persona named like a protected one, and the project count is what remains.
 """
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
-from moto import mock_aws
-from moto_helpers import projects_module_world
+from moto_helpers import PersonaWorld, mocked_projects_table, seed_project_personas
 from persona_fakes import PERSONA_STEP, PLAN_STEP, FakePersonaModel, one_item_corpus
 
 import projects
@@ -26,33 +24,22 @@ KEPT_HEADING = '## PERSONAS THIS PROJECT KEEPS'
 
 
 @dataclass
-class World:
-    projects: Any
-
+class World(PersonaWorld):
     def seed(self, personas: dict[str, tuple[str, bool]]) -> None:
         """META plus one persona per ``{persona_id: (name, protected)}``."""
-        self.projects.put_item(Item={'pk': f'PROJECT#{PROJECT}', 'sk': 'META', 'project_id': PROJECT})
-        for persona_id, (name, protected) in personas.items():
-            self.projects.put_item(Item={
-                'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#{persona_id}', 'persona_id': persona_id,
-                'name': name, 'tagline': f'The reviewed {name}', **({'protected': True} if protected else {}),
-            })
-
-    def personas(self) -> dict[str, dict]:
-        rows = self.projects.query(
-            KeyConditionExpression='pk = :pk AND begins_with(sk, :p)',
-            ExpressionAttributeValues={':pk': f'PROJECT#{PROJECT}', ':p': 'PERSONA#'},
-        )['Items']
-        return {row['persona_id']: row for row in rows}
+        seed_project_personas(self.projects, PROJECT, {
+            persona_id: {'name': name, **({'protected': True} if protected else {})}
+            for persona_id, (name, protected) in personas.items()})
 
     def persona_count(self) -> int:
-        return int(self.projects.get_item(Key={'pk': f'PROJECT#{PROJECT}', 'sk': 'META'})['Item']['persona_count'])
+        item = self.projects.get_item(Key={'pk': f'PROJECT#{PROJECT}', 'sk': 'META'}).get('Item') or {}
+        return int(str(item.get('persona_count', 0)))
 
 
 @pytest.fixture
 def world() -> Iterator[World]:
-    with mock_aws(), projects_module_world(BUCKET) as (projects_table, _jobs, _s3):
-        yield World(projects=projects_table)
+    with mocked_projects_table(BUCKET) as table:
+        yield World(projects=table, project_id=PROJECT)
 
 
 def _replace(names: list[str] = NEW_NAMES) -> tuple[dict, FakePersonaModel]:

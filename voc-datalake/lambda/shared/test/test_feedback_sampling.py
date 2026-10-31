@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
@@ -33,7 +32,8 @@ from shared.feedback_sampling import (
     sample_evenly,
     spread_order,
 )
-from shared.time_budget import WalkBudget
+from shared.test.walk_fixtures import day as walk_day
+from shared.test.walk_fixtures import unhurried_walks
 
 BIG_DAY = 1_500     # the bulk import, today
 SMALL_DAY = 50      # each of the six older days
@@ -42,27 +42,13 @@ LIMIT = 120
 # The walk's wall-clock budget (shared/time_budget.py, 20 s) is not what these tests are about: under coverage
 # tracing a moto walk of this table runs about three times slower and stopped after the first day (5.56.00 gate),
 # turning a "covers every day" assertion into a budget one. Same reason as `_finish_reads_regardless_of_load`.
-UNHURRIED_WALK_SECONDS = 600
-
-
-class _UnhurriedWalkBudget(WalkBudget):
-    """`WalkBudget` with a default the tests cannot hit; an explicit `seconds` (the probe's) is kept."""
-
-    def __init__(self, seconds: float = UNHURRIED_WALK_SECONDS, **kwargs: Any) -> None:
-        super().__init__(seconds=seconds, **kwargs)
-
-
 @pytest.fixture(autouse=True)
 def _walks_finish_regardless_of_load(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr('shared.feedback.WalkBudget', _UnhurriedWalkBudget)
-
-
-def _day(offset: int) -> str:
-    return (datetime.now(UTC) - timedelta(days=offset)).strftime('%Y-%m-%d')
+    unhurried_walks(monkeypatch)
 
 
 def _review(n: int, offset: int) -> dict:
-    day = _day(offset)
+    day = walk_day(offset)
     category = 'delivery' if n % 2 else 'billing'
     sentiment = 'negative' if n % 3 == 0 else 'positive'
     return {
@@ -129,10 +115,10 @@ class TestTheSampleCoversTheWholeWindow:
         assert len(items) == LIMIT
         per_day = _days(items)
         # The old read stopped inside today (3 x limit rows), so it held ONE day.
-        assert set(per_day) == {_day(offset) for offset in range(OLDER_DAYS + 1)}
-        assert abs(per_day[_day(0)] - LIMIT * BIG_DAY / total) <= 1
+        assert set(per_day) == {walk_day(offset) for offset in range(OLDER_DAYS + 1)}
+        assert abs(per_day[walk_day(0)] - LIMIT * BIG_DAY / total) <= 1
         for offset in range(1, OLDER_DAYS + 1):
-            assert abs(per_day[_day(offset)] - LIMIT * SMALL_DAY / total) <= 1
+            assert abs(per_day[walk_day(offset)] - LIMIT * SMALL_DAY / total) <= 1
 
     def test_every_prefix_of_the_sample_covers_the_window(self, table):
         """Regression (live, 5.25.00 pre-release): 872 reviews were sampled over 7 days, the model
@@ -149,7 +135,7 @@ class TestTheSampleCoversTheWholeWindow:
         assert items == get_feedback_context(table, {'days': 7}, limit=LIMIT)
 
     def test_a_shorter_window_samples_only_its_days(self, table):
-        assert set(_days(query_feedback_by_date(table, days=2, limit=LIMIT))) == {_day(0), _day(1)}
+        assert set(_days(query_feedback_by_date(table, days=2, limit=LIMIT))) == {walk_day(0), walk_day(1)}
 
 
 class TestFiltersAndScopeStillApply:
@@ -183,7 +169,7 @@ class TestFiltersAndScopeStillApply:
     def test_dims_tag_and_review_basis_filter_in_memory(self, table):
         assert get_feedback_context(table, {'days': 7, 'tag': 'vip'}, limit=LIMIT) == []
         items = get_feedback_context(table, {'days': 3, 'date_basis': 'review'}, limit=LIMIT)
-        assert set(_days(items)) == {_day(0), _day(1), _day(2)}
+        assert set(_days(items)) == {walk_day(0), walk_day(1), walk_day(2)}
 
 
 def _finish_reads_regardless_of_load(monkeypatch) -> None:

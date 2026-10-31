@@ -6,7 +6,6 @@ the real index shapes; the estimate's scaling and the cache are checked with a s
 from __future__ import annotations
 
 from collections import OrderedDict
-from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -17,6 +16,8 @@ from moto import mock_aws
 from shared import persona_feedback_preview as preview
 from shared.category_access import CategoryScope, scope_to_config
 from shared.feedback import get_feedback_context
+from shared.test.walk_fixtures import day as walk_day
+from shared.test.walk_fixtures import unhurried_walks
 from shared.time_budget import WalkBudget
 
 TODAY_ROWS = 300
@@ -24,28 +25,16 @@ OLDER_ROWS = 40
 OLDER_DAYS = 5
 
 
-class _UnhurriedWalkBudget(WalkBudget):
-    """Coverage tracing slows a moto walk; the budget is not what these tests are about."""
-
-    def __init__(self, seconds: float = 600, **kwargs: Any) -> None:
-        super().__init__(seconds=max(seconds, 600), **kwargs)
-
-
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr('shared.feedback.WalkBudget', _UnhurriedWalkBudget)
-    monkeypatch.setattr(preview, 'WalkBudget', _UnhurriedWalkBudget)
+    unhurried_walks(monkeypatch, preview, floor_explicit=True)
     # A fresh container: no cached answer and no cached index count leaks between tests.
     monkeypatch.setattr(preview, '_cache', OrderedDict())
     monkeypatch.setattr(preview, '_index_counts', {})
 
 
-def _day(offset: int) -> str:
-    return (datetime.now(UTC) - timedelta(days=offset)).strftime('%Y-%m-%d')
-
-
 def _review(n: int, offset: int) -> dict:
-    day = _day(offset)
+    day = walk_day(offset)
     category = 'delivery' if n % 2 else 'billing'
     return {
         'pk': f'SOURCE#{"web" if n % 3 else "app_store"}', 'sk': f'FEEDBACK#r{offset}-{n:04d}',
@@ -141,8 +130,8 @@ class TestTheEstimate:
     def test_the_day_walk_floor_is_the_newest_days_with_data(self):
         request = MagicMock(days=400, max_dated_days=2, by_category=False)
         request.extra.channel = None
-        sample = [{'date': _day(0)}, {'date': _day(3)}, {'date': _day(9)}]
-        assert preview.import_floor(request, sample) == _day(3)
+        sample = [{'date': walk_day(0)}, {'date': walk_day(3)}, {'date': walk_day(9)}]
+        assert preview.import_floor(request, sample) == walk_day(3)
 
 
 def _stub_table(rows: list[dict], *, item_count: int) -> MagicMock:
