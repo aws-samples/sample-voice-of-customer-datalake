@@ -2616,6 +2616,22 @@
             "Labels": "tags"
           }
         }
+      },
+      {
+        "path": "/scrapers/manual/csv-upload",
+        "body": {
+          "csv_text": "id,text\n1,Login fails\n",
+          "dataset_name": "Example Air reviews",
+          "dry_run": true
+        }
+      },
+      {
+        "path": "/scrapers/manual/csv-upload",
+        "body": {
+          "csv_text": "id,text\n1,Login fails\n",
+          "dataset_name": "Example Air reviews",
+          "apply_updates": true
+        }
       }
     ]
   },
