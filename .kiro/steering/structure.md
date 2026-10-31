@@ -230,7 +230,11 @@ voice-of-customer-datalake/       # Root repository
 | GET | `/metrics/github` | GitHub Issues per release and per label (counts, 👍 weight, sentiment, top complaints, new since the last release); `/feedback` also takes `version` and `label` filters |
 
 `days` is 0–9999 everywhere; `0` = all time. A review-date window's cutoff is the REQUESTED window
-(none for all time), never the import history the walk is clamped to. Every route that takes `source` also
+(none for all time), never the import history the walk is clamped to. `source`, `category`, `subcategory`,
+`sentiment` and `usefulness` (`low|medium|high`, `unrated` = no stored band) take one value or a comma list
+meaning any of them (`shared/item_facets.py`; ≤ 50 values of ≤ 128 chars, an unknown sentiment or band is a 400;
+sources pushed down as `=` / `IN`; `/feedback/problems` leaves `category` / `subcategory` to its tree;
+docs/categories.md → Filtering by several values). Every route that takes `source` also
 takes `channel`, `dims=key:value,…` (400 when malformed; `key:a|b` = either value, `~unset` = no value), `tag`, `rating_min`/`rating_max` and `urgent=1`
 (only high-urgency items; the Categories page's breakdowns send its rating and urgent filters). Every route enforces the caller's
 category access (no `CATEGORY_ACCESS` row = all; admins and a category's owners
