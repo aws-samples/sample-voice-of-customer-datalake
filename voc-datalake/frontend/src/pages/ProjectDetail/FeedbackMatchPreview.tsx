@@ -24,7 +24,7 @@ import type { FeedbackPreview, FeedbackPreviewMode, FeedbackPreviewPurpose } fro
 import type { ContextConfig } from '../../components/DataSourceWizard/types'
 
 /** How long the filters must be still before the count is re-requested. */
-export const FEEDBACK_PREVIEW_DEBOUNCE_MS = 500
+const FEEDBACK_PREVIEW_DEBOUNCE_MS = 500
 /** The server reuses a count for five minutes (`CACHE_SECONDS`); the SPA keeps it as long. */
 const PREVIEW_STALE_MS = 5 * 60_000
 

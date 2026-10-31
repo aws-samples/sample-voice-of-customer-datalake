@@ -17,6 +17,7 @@ import { collectCallSites, manifestProblems, probeFailure, siteKey } from './che
 // The dev mock's restricted-caller switch (mock-scope.js) is part of the same mock contract;
 // importing its suite runs it in this step (node --test runs the suites a test file imports).
 import './mock-scope.test.mjs'
+import './mock-faceted-scope.test.mjs'
 
 /** A throwaway `src/` with the given files, removed after the suite. */
 function fakeSrc(files) {
