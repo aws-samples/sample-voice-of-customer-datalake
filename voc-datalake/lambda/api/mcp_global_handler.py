@@ -141,6 +141,7 @@ def _response(status: int, body: dict | None = None, *, allow: str | None = None
         # The answer depends on the credential; no shared cache may reuse it.
         'Cache-Control': 'private, no-store',
         'Vary': 'Authorization',
+        'X-Content-Type-Options': 'nosniff',
     }
     if allow:
         headers['Allow'] = allow

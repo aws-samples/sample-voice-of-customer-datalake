@@ -353,7 +353,7 @@ describe('runtime config.json keys', () => {
   it('reads the board and email flags from outputs a stack declares', () => {
     const deploy = readFileSync(DEPLOY_SH, 'utf8');
     const stacks = ['core-stack.ts', 'api-stack.ts'].map((f) => readFileSync(join(PROJECT_ROOT, 'lib', 'stacks', f), 'utf8')).join('\n');
-    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable']) {
+    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable', 'PasskeyAvailable']) {
       expect(deploy).toContain(`select(.OutputKey=="${key}")`);
       expect(stacks).toMatch(new RegExp(`new cdk\\.CfnOutput\\(this, '${key}'`));
     }

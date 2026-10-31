@@ -36,7 +36,8 @@ safer handling of customer text in prompts.
 - **API Gateway** uses the enhanced TLS 1.2+ forward-secret policy `SecurityPolicy_TLS12_PFS_2025_EDGE`
   (endpoint access mode BASIC). Execution logs are at ERROR (were INFO). The access log no longer records the
   request path (a ballot link's id is a bearer value) and adds `sub`, `principalId` and `tlsVersion`.
-- Every API answer and gateway error carries `X-Content-Type-Options: nosniff`.
+- Every app API answer (the shared resolver behind every `/…` domain route, and `/mcp/global`) and every gateway
+  error carries `X-Content-Type-Options: nosniff`.
 - **SPA headers:** CSP adds `form-action 'self'` and drops the unused Lambda Function URL source; `X-XSS-Protection: 0`
   and a `Permissions-Policy` are added. A legacy inline-HTML prototype is offered as a download only, and its
   preview frame can no longer submit forms.

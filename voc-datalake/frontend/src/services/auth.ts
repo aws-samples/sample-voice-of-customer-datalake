@@ -263,13 +263,14 @@ export const authService = {
    */
   signOut: (): void => {
     const cognitoUser = getUserPool()?.getCurrentUser()
-    useAuthStore.getState().logout()
-    if (!cognitoUser) return
-    cognitoUser.signOut((err?: Error) => {
+    // Revocation starts first: the SDK reads its own stored session synchronously at the start of
+    // signOut(cb); the app store is cleared right after, without waiting for Cognito.
+    cognitoUser?.signOut((err?: Error) => {
       // The SDK clears its storage only after a revocation attempt, never when
       // the session lookup itself fails: clear it here in that case.
       if (err) cognitoUser.signOut()
     })
+    useAuthStore.getState().logout()
   },
 
   /**

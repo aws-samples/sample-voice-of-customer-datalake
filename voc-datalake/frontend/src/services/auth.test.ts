@@ -186,6 +186,11 @@ describe('authService', () => {
       expect(mockSignOut).toHaveBeenCalledExactlyOnceWith(expect.any(Function))
     })
 
+    it('starts the revocation before the app state is cleared', () => {
+      authService.signOut()
+      expect(mockSignOut.mock.invocationCallOrder[0]).toBeLessThan(mockLogout.mock.invocationCallOrder[0] ?? 0)
+    })
+
     it('still clears the SDK storage when revocation fails', () => {
       mockSignOut.mockImplementationOnce((callback?: (err?: Error) => void) => { callback?.(new Error('offline')) })
       authService.signOut()

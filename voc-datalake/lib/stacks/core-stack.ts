@@ -554,6 +554,9 @@ export class VocCoreStack extends VocStack {
     new cdk.CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID for frontend' });
     new cdk.CfnOutput(this, 'UserPoolDomain', { value: `${auth.domainPrefix}.auth.${this.region}.amazoncognito.com`, description: 'Cognito User Pool Domain' });
     new cdk.CfnOutput(this, 'CognitoRegion', { value: this.region, description: 'AWS Region for Cognito' });
+    // The app pool takes passkeys (core-auth.ts); frontend/scripts/deploy.sh reads a missing output as
+    // `features.passkey: false`, so a frontend-only deploy over an older stack offers none.
+    new cdk.CfnOutput(this, 'PasskeyAvailable', { value: 'true', description: 'The app user pool allows passkey sign-in (drives the frontend features.passkey flag)' });
     new cdk.CfnOutput(this, 'IdentityPoolId', { value: this.identityPool.ref, description: 'Cognito Identity Pool ID for AWS IAM auth' });
     new cdk.CfnOutput(this, 'InitialAdminPassword', { 
       value: auth.initialAdminPassword, 
