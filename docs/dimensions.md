@@ -115,6 +115,7 @@ filters, next to `source` (`/metrics/github` is GitHub Issues only and ignores `
 | `channel=<source_channel>` | Exact match |
 | `tag=<tag>` | Item `tags` contains it, ignoring case |
 | `dims=<key>:<value>[,<key>:<value>…]` | Every pair must match (AND), ≤ 10 pairs. A malformed value answers 400. `<key>:<a>\|<b>` accepts either value (OR within a key), and the choice `~unset` accepts an item with no value for the key (Problem Analysis' type filter: `feedback_type:bug\|service_failure\|~unset`) |
+| `source`, `category`, `subcategory`, `sentiment`, `usefulness` | One value, or a comma list meaning any of them (`source=web,app`). `usefulness` is the stored band (`low`, `medium`, `high`); `unrated` matches a review without one. See [categories.md → Filtering by several values](categories.md#filtering-by-several-values) |
 
 These are post-query filters: like `sentiment`, they force the item-scan path.
 
