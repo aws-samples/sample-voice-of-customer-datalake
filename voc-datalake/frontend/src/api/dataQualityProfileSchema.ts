@@ -18,7 +18,7 @@ export const PROFILE_VALUES: Readonly<Record<ProfileFacet, readonly string[]>> =
 }
 
 /** One facet's count per value id: every id of `PROFILE_VALUES[facet]` is present. */
-export type FacetCounts = Readonly<Record<string, number>>
+type FacetCounts = Readonly<Record<string, number>>
 
 export interface SourceProfile {
   /** Reviews counted in the profile; reviews stored before the counters existed are not. */
