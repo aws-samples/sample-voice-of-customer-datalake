@@ -26,7 +26,7 @@ vi.mock('../../api/prioritizationConfigApi', async (importOriginal) => ({
 import { ScoringSetupButton } from './ScoringSetupButton'
 
 // The dialog and view are lazy-loaded: the FIRST open pays their cold module transform, which on a loaded runner
-// under coverage took longer than a test's own wait (5.57.04). Load both here, under the hook timeout, so every
+// under coverage took longer than a test's own wait (5.60.01). Load both here, under the hook timeout, so every
 // test's `findBy*` measures the open itself.
 beforeAll(async () => {
   await Promise.all([import('./ScoringSetupDialog'), import('./ScoringSetupView')])

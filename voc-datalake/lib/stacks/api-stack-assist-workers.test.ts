@@ -155,12 +155,23 @@ describe.each(['SettingsApi', 'ScrapersApi'])('%s writes assist job rows', (api)
 });
 
 describe('the AI assistant stream runs for 15 minutes', () => {
-  it('gives the chat-stream Lambda a 900 s timeout', () => {
+  const chatStreamProperties = () => {
     const matches = Object.entries(apiTemplate().findResources('AWS::Lambda::Function'))
       .filter(([logicalId]) => /^ChatStreamApi[0-9A-F]{8}$/.test(logicalId));
-    expect(matches).toHaveLength(1);
-    expect(z.object({ Properties: z.object({ Timeout: z.number() }) }).parse(itemAt(matches, 0)[1]).Properties.Timeout)
-      .toBe(900);
+    if (matches.length !== 1) throw new Error(`expected one ChatStreamApi function, found ${matches.length}`);
+    return z.object({
+      Properties: z.object({ Timeout: z.number(), Runtime: z.string(), Architectures: z.array(z.string()) }),
+    }).parse(itemAt(matches, 0)[1]).Properties;
+  };
+
+  it('gives the chat-stream Lambda a 900 s timeout', () => {
+    expect(chatStreamProperties().Timeout).toBe(900);
+  });
+
+  // Same runtime as voc-plan-step (plan-runtime.test.ts), which is bundled from the same package.
+  it('runs the chat-stream Lambda on ARM64 Node.js 24', () => {
+    const { Runtime, Architectures } = chatStreamProperties();
+    expect([Runtime, Architectures]).toStrictEqual(['nodejs24.x', ['arm64']]);
   });
 
   it('lets the /chat/stream integration wait 900000 ms', () => {
