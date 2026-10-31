@@ -3,7 +3,7 @@
 Two moto "deployments" (tables + bucket each) and a fake Cognito directory per target pool
 (moto's Cognito backend needs a package the CI requirements do not carry). The scripts are
 loaded by path because `scripts/` is not a package; `resolve` (CloudFormation outputs) is
-replaced by the two fixed deployments. Ported from PR #429 by @aws-bryan, whose round-trip
+replaced (in `project_bundle.cli`) by the two fixed deployments. Ported from PR #429 by @aws-bryan, whose round-trip
 tests covered the Decimal codec.
 """
 import json
@@ -135,8 +135,7 @@ def world(scripts: dict[str, ModuleType], monkeypatch: pytest.MonkeyPatch, tmp_p
         _seed_source(tables['src-p'], tables['src-a'], s3)
         deployments = {'src': deployment('src-p', 'src-a', 'src-bucket', 'pool-src', SRC_API),
                        'tgt': deployment('tgt-p', 'tgt-a', 'tgt-bucket', 'pool-tgt', TGT_API)}
-        for module in scripts.values():
-            monkeypatch.setattr(module, 'resolve', lambda _session, prefix: deployments[prefix])
+        monkeypatch.setattr(sys.modules['project_bundle.cli'], 'resolve', lambda _session, prefix: deployments[prefix])
         cognito = FakeCognito({'owner@example.com': ('owner-tgt', 'sub-tgt-owner'),
                                'editor@example.com': ('ed-tgt', 'sub-tgt-editor'),
                                'admin@example.com': ('admin-tgt', 'sub-tgt-admin')})
@@ -148,12 +147,12 @@ def _export(world: dict[str, Any], *projects: str) -> int:
     argv = ['--prefix', 'src', '--region', REGION, '--out', str(world['bundle'])]
     for project in projects:
         argv += ['--project', project]
-    return world['scripts']['export'].main(argv, session=world['session'])
+    return world['scripts']['export'].export_main(argv, session=world['session'])
 
 
 def _import(world: dict[str, Any], *extra: str) -> int:
     argv = ['--prefix', 'tgt', '--region', REGION, '--bundle', str(world['bundle']), *extra]
-    return world['scripts']['import'].main(argv, session=world['session'])
+    return world['scripts']['import'].import_main(argv, session=world['session'])
 
 
 def _rows(table: Any) -> list[dict[str, Any]]:
