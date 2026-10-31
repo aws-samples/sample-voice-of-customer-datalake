@@ -355,19 +355,20 @@ def _plugin_secret_defaults() -> dict[str, dict[str, str]]:
 
 
 @cache
-def _write_only_fields() -> dict[str, frozenset[str]]:
+def _write_only_fields() -> dict[str, frozenset[str]] | None:
     """Parse PLUGIN_SECRET_KEYS into {plugin_id: {config keys the manifest marks secret}}.
 
     The credentials GET never returns these values (BE-5). CDK always writes the
-    variable; an absent or malformed one reads as "no secret keys", logged.
+    variable; an absent or malformed one is None, and the GET then fails CLOSED:
+    it returns no value at all rather than risk returning a secret.
     """
     try:
-        parsed = json.loads(os.environ.get(WRITE_ONLY_FIELDS_ENV_VAR, "") or "{}")
+        parsed = json.loads(os.environ.get(WRITE_ONLY_FIELDS_ENV_VAR, ""))
     except ValueError:
         parsed = None
     if not isinstance(parsed, dict):
-        logger.warning("PLUGIN_SECRET_KEYS is not a JSON object; treating no key as secret")
-        return {}
+        logger.error("PLUGIN_SECRET_KEYS is absent or not a JSON object; the credentials GET returns no values")
+        return None
     return {
         source: frozenset(key for key in keys if isinstance(key, str))
         for source, keys in parsed.items()
@@ -506,7 +507,10 @@ def get_credentials(source: str):
         secrets = json.loads(response.get('SecretString', '{}'))
 
         prefix = f"{source}_"
-        write_only = _write_only_fields().get(source, frozenset())
+        write_only_by_source = _write_only_fields()
+        if write_only_by_source is None:
+            return {}
+        write_only = write_only_by_source.get(source, frozenset())
         result = {}
         for key in requested_keys:
             prefixed_key = f"{prefix}{key}"

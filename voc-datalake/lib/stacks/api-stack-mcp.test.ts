@@ -84,6 +84,12 @@ describe('the integrations Lambda is handed its plugin secret defaults', () => {
     return serviceEnvironment(template, 'voc-integrations-api');
   }
 
+  it('sets PLUGIN_SECRET_KEYS: the github_issues token and webhook secret are write-only (BE-5)', () => {
+    const parsed = z.record(z.string(), z.array(z.string()))
+      .parse(JSON.parse(z.string().parse(integrationsEnv().PLUGIN_SECRET_KEYS)));
+    expect(parsed.github_issues).toStrictEqual(['token', 'webhook_secret']);
+  }, SYNTH_TIMEOUT_MS);
+
   it('sets PLUGIN_SECRET_DEFAULTS to a plugin-keyed map of declared defaults', () => {
     const raw = integrationsEnv().PLUGIN_SECRET_DEFAULTS;
     expect(typeof raw).toBe('string');

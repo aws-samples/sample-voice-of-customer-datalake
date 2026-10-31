@@ -14,6 +14,8 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 from shared.batch_get import batch_get_all
 from shared.digests import sha256_hex
 from shared.dynamo_paging import iter_query, query_all
@@ -26,6 +28,7 @@ from shared.engagement_common import (
 )
 from shared.exceptions import ServiceError
 from shared.indexes import PARTICIPANTS_LISTING_INDEX
+from shared.logging import logger
 from shared.participants_store import remember_token
 
 ASK_PREFIX: Final = 'ask'
@@ -251,15 +254,31 @@ def claim_send(table: Any, cap: int, sender: str) -> str | None:
 
     None when it was counted; otherwise the cap that refused it (``'sender_daily_cap'`` or
     ``'daily_cap'``), with nothing left counted: a sender claim the deployment cap then refuses
-    is given back.
+    (or fails on) is given back. An ask without a sender (created before 5.61) counts against the
+    deployment cap only, never one shared empty-sender bucket.
     """
     now = _today()
     day = now.date().isoformat()
+    if not sender:
+        return None if _claim(table, _count_key(day), cap, now) else DAILY_CAP_REFUSAL
     sender_key = _sender_count_key(day, sender)
     if not _claim(table, sender_key, PER_SENDER_DAILY_CAP, now):
         return SENDER_CAP_REFUSAL
-    if _claim(table, _count_key(day), cap, now):
+    try:
+        counted = _claim(table, _count_key(day), cap, now)
+    except Exception:
+        _give_back(table, sender_key)
+        raise
+    if counted:
         return None
-    table.update_item(Key=sender_key, UpdateExpression='ADD #c :minus', ExpressionAttributeNames={'#c': 'count'},
-                      ExpressionAttributeValues={':minus': -1})
+    _give_back(table, sender_key)
     return DAILY_CAP_REFUSAL
+
+
+def _give_back(table: Any, sender_key: Mapping[str, str]) -> None:
+    """Undo one sender claim; a failure only leaves that sender one email short today (logged)."""
+    try:
+        table.update_item(Key=dict(sender_key), UpdateExpression='ADD #c :minus',
+                          ExpressionAttributeNames={'#c': 'count'}, ExpressionAttributeValues={':minus': -1})
+    except (ClientError, BotoCoreError):
+        logger.warning('Could not give back a sender send claim', extra={'day_key': sender_key.get('pk')})

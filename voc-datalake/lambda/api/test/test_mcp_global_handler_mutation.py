@@ -69,7 +69,7 @@ ADMIN_REFUSAL = 'run_agent needs a token minted by an administrator who is still
 CORS = {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, MCP-Protocol-Version, Mcp-Method, Mcp-Name',
         'Access-Control-Expose-Headers': 'WWW-Authenticate, Allow, Vary, Retry-After',
-        'Cache-Control': 'private, no-store', 'Vary': 'Authorization'}
+        'Cache-Control': 'private, no-store', 'Vary': 'Authorization', 'X-Content-Type-Options': 'nosniff'}
 
 
 def _row(**extra: Any) -> dict:

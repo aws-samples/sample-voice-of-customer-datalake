@@ -406,7 +406,7 @@ describe('runtime config.json keys', () => {
   it('reads the board, email and hosted-UI values from outputs a stack declares', () => {
     const deploy = readFileSync(DEPLOY_SH, 'utf8');
     const stacks = ['core-stack.ts', 'api-stack.ts'].map((f) => readFileSync(join(PROJECT_ROOT, 'lib', 'stacks', f), 'utf8')).join('\n');
-    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable', 'UserPoolDomain']) {
+    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable', 'UserPoolDomain', 'PasskeyAvailable']) {
       expect(deploy).toContain(`select(.OutputKey=="${key}")`);
       expect(stacks).toMatch(new RegExp(`new cdk\\.CfnOutput\\(this, '${key}'`));
     }
