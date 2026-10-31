@@ -16,7 +16,9 @@ import { getProjectRoute, getSettingsRoute, seg, serverTool, syncServerTool, win
 import { summarizeProject } from './project-shape.js';
 import { readCategoryScope, readVisibleCategories } from './category-access.js';
 import { breakdownLabels, labelResult, readCategoryLabeller } from './category-labels.js';
-import { DIMENSION_KEY_PATTERN, ITEM_FILTER_PROPERTIES, itemFilterQuery, itemFilterShape } from './item-filters.js';
+import { DIMENSION_KEY_PATTERN, ITEM_FILTER_PROPERTIES, itemFilterShape } from './item-filters.js';
+import { floorForRun, isEmptyFloor, readLimitForRun, type FeedbackFloor } from './feedback-floor.js';
+import { floorQuery, type FloorQuery, type RouteFloorField } from './floor-args.js';
 
 const METRICS = ['summary', 'sentiment', 'categories', 'sources', 'personas', 'github', 'dimensions'] as const;
 /** Every metric route takes channel / tags / dims; all but github (always github_issues) take `source`. */
@@ -35,11 +37,32 @@ const metricsInput = z.object({
 
 type MetricsArgs = z.infer<typeof metricsInput>;
 
-function metricsQuery(ctx: AssistantRunContext, args: MetricsArgs) {
+/** What every metric route filters on besides the window; `sentiment` also takes one category. */
+const METRIC_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set(['source', 'channel', 'tag', 'dims', 'rating', 'urgent']);
+const SENTIMENT_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set([...METRIC_FLOOR_FIELDS, 'category']);
+const GITHUB_SOURCE = 'github_issues';
+
+/**
+ * The metric's filters under the user's floor (floor-args.ts). github reads GitHub Issues only, so it
+ * is checked as `source=github_issues` (a floor without that source matches nothing) and sends none.
+ */
+function metricsFloor(ctx: AssistantRunContext, args: MetricsArgs) {
+  const unsourced = UNSOURCED_METRICS.has(args.metric);
+  const outcome = floorQuery(
+    floorForRun(ctx.page, ctx.props),
+    { source: unsourced ? GITHUB_SOURCE : args.source, channel: args.channel, tag: args.tag, dims: args.dims },
+    'get_metrics',
+    args.metric === 'sentiment' ? SENTIMENT_FLOOR_FIELDS : METRIC_FLOOR_FIELDS,
+  );
+  if (outcome.kind === 'query' && unsourced) return { kind: 'query' as const, query: { ...outcome.query, source: undefined } };
+  return outcome;
+}
+
+function metricsQuery(ctx: AssistantRunContext, args: MetricsArgs, floored: FloorQuery) {
   return {
     ...windowQuery(ctx, args.days),
-    source: UNSOURCED_METRICS.has(args.metric) ? undefined : args.source,
-    ...itemFilterQuery(args),
+    source: floored.source,
+    ...floored,
     key: args.metric === 'dimensions' ? args.key : undefined,
   };
 }
@@ -85,6 +108,13 @@ const projectsListSchema = z.object({
   projects: z.array(z.unknown()).transform((items) => items.filter(isRecord)),
 }).catch({ projects: [] });
 
+/** The floor and reading cap search_feedback runs under; nothing when the user set neither (today's call). */
+function flooredSearch(ctx: AssistantRunContext): { floor?: FeedbackFloor; readLimit?: number } {
+  const floor = floorForRun(ctx.page, ctx.props);
+  const readLimit = readLimitForRun(ctx.props);
+  return { ...(isEmptyFloor(floor) ? {} : { floor }), ...(readLimit === undefined ? {} : { readLimit }) };
+}
+
 function searchFeedbackTool(deps: ToolDeps): ServerToolDefinition {
   return serverTool('search_feedback', 'core', searchFeedbackSpec(), async (input, ctx) => {
     // Before any read: a scope that cannot be read fails the tool (closed).
@@ -95,6 +125,7 @@ function searchFeedbackTool(deps: ToolDeps): ServerToolDefinition {
       days: ctx.props.days,
       dateBasis: ctx.props.dateBasis,
       categoryLabel: (id) => labels.category(id),
+      ...flooredSearch(ctx),
     });
     return { content: withinBudget(result.formatted), sources: toFeedbackSources(result.items.slice(0, 5)) };
   });
@@ -120,13 +151,15 @@ function getMetricsTool(deps: ToolDeps): ServerToolDefinition {
   );
   return serverTool('get_metrics', 'core', spec, async (input, ctx) => {
     const args = parseToolInput(metricsInput, input);
+    const floored = metricsFloor(ctx, args);
+    if (floored.kind === 'empty') return { content: floored.content };
     const body = await deps.invoke({
       fn: 'metrics',
       method: 'GET',
       path: `/metrics/${args.metric}`,
       resource: '/metrics/{proxy+}',
       pathParameters: { proxy: args.metric },
-      query: metricsQuery(ctx, args),
+      query: metricsQuery(ctx, args, floored.query),
     }, ctx.claims);
     const partial = isRecord(body) && body.is_partial === true
       ? '\n⚠️ is_partial=true: the figures are a lower bound for this window — say so.'

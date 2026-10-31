@@ -14,6 +14,7 @@ import { readSourceRun } from '../../tools/source-runs.js';
 import type { FeedbackItem } from '../../tools/feedback-scan.js';
 import type { CategoryScope } from '../../tools/category-scope.js';
 import { getInternalApiInvoker, type ApiInvoker } from './internal-api.js';
+import type { FeedbackFloor } from './server/feedback-floor.js';
 
 interface SearchFilters {
   /** The caller's readable categories — required, so no call site reads every category by default. */
@@ -22,6 +23,10 @@ interface SearchFilters {
   dateBasis?: 'imported' | 'review';
   /** Category id → display label, shown beside the id in the formatted result. */
   categoryLabel?: (id: string) => string;
+  /** The user's on-screen filters, a floor the model's arguments cannot widen (server/feedback-floor.ts). */
+  floor?: FeedbackFloor;
+  /** At most this many matching reviews are used (the /chat panel's `limit`). */
+  readLimit?: number;
 }
 
 export interface ToolDeps {

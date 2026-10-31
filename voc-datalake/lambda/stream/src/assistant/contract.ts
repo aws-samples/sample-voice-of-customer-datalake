@@ -316,6 +316,21 @@ export const PAGE_FILTER_KEYS = [
 ] as const;
 export const MAX_PAGE_FILTER_CHARS = 200;
 
+/** One filter set in the PAGE_FILTER_KEYS vocabulary: a page's URL filters, or the /chat panel's scope. */
+export const pageFiltersSchema = z.partialRecord(z.enum(PAGE_FILTER_KEYS), z.string().min(1).max(MAX_PAGE_FILTER_CHARS));
+
+/**
+ * The /chat filter panel (docs/assistant-chat-scope.md): `filters` is a hard floor on every
+ * feedback-reading tool (the model narrows within it, never past it), and `limit` caps how many
+ * reviews one feedback read may use (default and maximum CHAT_SCOPE_MAX_ITEMS).
+ */
+export const CHAT_SCOPE_MAX_ITEMS = 1000;
+export const chatScopeSchema = z.object({
+  filters: pageFiltersSchema.optional(),
+  limit: z.number().int().min(1).max(CHAT_SCOPE_MAX_ITEMS).optional(),
+});
+export type ChatScope = z.infer<typeof chatScopeSchema>;
+
 export const pageContextSchema = z.object({
   kind: z.enum(PAGE_KINDS),
   /** Router pathname, e.g. `/projects/abc`. Informational only. */
@@ -329,7 +344,7 @@ export const pageContextSchema = z.object({
   /** Human title of the entity on screen (project name, …), ≤120 chars. */
   title: z.string().max(120).optional(),
   /** Active page filters (PAGE_FILTER_KEYS); user-typed values, so they reach the model as data only. */
-  filters: z.partialRecord(z.enum(PAGE_FILTER_KEYS), z.string().min(1).max(MAX_PAGE_FILTER_CHARS)).optional(),
+  filters: pageFiltersSchema.optional(),
 });
 export type PageContext = z.infer<typeof pageContextSchema>;
 
@@ -372,6 +387,8 @@ export const forwardedPropsSchema = z.object({
   responseLanguage: z.string().max(16).optional(),
   /** Opt-in public web search; ignored when the gateway is not deployed. */
   useWebSearch: z.boolean().optional(),
+  /** The /chat filter panel's scope (chatScopeSchema); the page filters are a floor too. */
+  scope: chatScopeSchema.optional(),
 });
 export type ForwardedProps = z.infer<typeof forwardedPropsSchema>;
 
