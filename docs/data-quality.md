@@ -91,7 +91,7 @@ sk = YYYY-MM-DD    count
 
 | Facet | Buckets |
 |---|---|
-| Rating | Whole stars, rounded half up (4.5 = 5); `none` for no rating or a value outside 0–5 |
+| Rating | Whole stars, rounded half up (4.5 = 5), at least 1 (0.3 = 1); `none` for no rating, 0 or less, or above 5 |
 | Sentiment | The stored `sentiment_label`; `neutral` when absent (the aggregator's default), `other` for any other label |
 | Text length | Characters of the stored `original_text` (after the source's privacy policy): `short` < 50, `medium` < 200, `long` < 1000, `very_long` otherwise |
 
