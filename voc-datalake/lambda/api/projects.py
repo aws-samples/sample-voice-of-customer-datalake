@@ -17,7 +17,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared import category_access, draft_intent, persona_overlap, persona_save, project_access
+from shared import category_access, draft_intent, persona_overlap, persona_replace, persona_save, project_access
 from shared.api import MAX_PERSONAS_PER_GENERATION, validate_days
 from shared.avatar import (
     avatar_key_from_uri,
@@ -2271,23 +2271,24 @@ def _clear_existing_personas(project_id: str) -> None:
 
     Re-running generation must not accumulate duplicates (e.g. "김지수" x2): each
     generation used to append a fresh set, and @all roundtable chat would have the
-    same persona answer multiple times. Best effort — a failure is logged and the
-    generation continues. The removed personas' avatar objects go with them.
+    same persona answer multiple times. Best effort: every page of personas is read
+    and each is deleted on its own (``shared.persona_replace``), so one failed delete
+    is logged and the rest still go. Only the personas actually deleted take their
+    avatar objects with them.
     """
     try:
-        existing = projects_table.query(
-            KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}')
-            & Key('sk').begins_with('PERSONA#'),
-            ProjectionExpression='pk, sk',
-        ).get('Items', [])
-        if existing:
-            with projects_table.batch_writer() as batch:
-                for it in existing:
-                    batch.delete_item(Key={'pk': it['pk'], 'sk': it['sk']})
-            logger.info(f"[PERSONA] Cleared {len(existing)} existing persona(s) before regeneration")
-            _sweep_removed_persona_avatars(project_id, _persona_ids_of(existing))
+        cleared = persona_replace.clear_personas(projects_table, project_id)
     except Exception:
-        logger.exception("[PERSONA] Failed to clear existing personas (continuing)")
+        logger.exception("[PERSONA] Failed to read the existing personas to clear (continuing)")
+        return
+    if cleared.failed:
+        logger.warning(
+            f"[PERSONA] {len(cleared.failed)} persona(s) could not be deleted before regeneration; kept",
+            extra={'project_id': project_id, 'failed': cleared.failed},
+        )
+    if cleared.deleted:
+        logger.info(f"[PERSONA] Cleared {len(cleared.deleted)} existing persona(s) before regeneration")
+        _sweep_removed_persona_avatars(project_id, _persona_ids_of([{'sk': sk} for sk in cleared.deleted]))
 
 
 def _source_breakdown(feedback_items: list[dict]) -> dict[str, int]:
