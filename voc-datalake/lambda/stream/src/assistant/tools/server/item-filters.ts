@@ -33,12 +33,6 @@ export const itemFilterShape = {
   dims: dimsFilterSchema.optional(),
 };
 
-export interface ItemFilterArgs {
-  channel?: string;
-  tag?: string;
-  dims?: Record<string, string>;
-}
-
 const DIMS_PROPERTY: DocumentType = {
   type: 'object',
   maxProperties: MAX_DIMENSION_FILTERS,
@@ -57,9 +51,4 @@ export const ITEM_FILTER_PROPERTIES: JsonSchemaProperties = {
 export function serializeDims(dims: Readonly<Record<string, string>> | undefined): string | undefined {
   const pairs = Object.entries(dims ?? {}).map(([key, value]) => `${key}:${value}`);
   return pairs.length > 0 ? pairs.join(',') : undefined;
-}
-
-/** The query parameters for the filters (undefined ones are dropped by the invoke layer). */
-export function itemFilterQuery(args: ItemFilterArgs): { channel?: string; tag?: string; dims?: string } {
-  return { channel: args.channel, tag: args.tag, dims: serializeDims(args.dims) };
 }
