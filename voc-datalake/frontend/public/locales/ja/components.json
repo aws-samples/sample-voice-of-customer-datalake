@@ -233,7 +233,21 @@
     "sentiments": "センチメント",
     "sources": "ソース",
     "stepOf": "ステップ {{step}} / {{total, number}}",
-    "timeRange": "時間範囲"
+    "timeRange": "時間範囲",
+    "feedbackPreview": {
+      "counting": "一致するレビューを数えています…",
+      "matches_one": "{{count, number}}件のレビューが一致",
+      "matches_other": "{{count, number}}件のレビューが一致",
+      "matchesAtLeast_one": "少なくとも{{count, number}}件のレビューが一致",
+      "matchesAtLeast_other": "少なくとも{{count, number}}件のレビューが一致",
+      "matchesEstimated_one": "約{{count, number}}件のレビューが一致",
+      "matchesEstimated_other": "約{{count, number}}件のレビューが一致",
+      "sampled": "ペルソナ生成では、そのうち{{limit, number}}件を均等に抽出して読み込みます。",
+      "usesAll": "ペルソナ生成では、すべてを読み込みます。",
+      "confirming": "正確な件数を確認しています…",
+      "noMatches": "これらのフィルターに一致するレビューはありません。条件を広げないと、実行時に読み込むデータがありません。",
+      "error": "一致するレビューを数えられませんでした。"
+    }
   },
   "documentExport": {
     "copied": "コピーしました！",

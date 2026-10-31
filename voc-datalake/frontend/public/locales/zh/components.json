@@ -233,7 +233,21 @@
     "sentiments": "情感",
     "sources": "来源",
     "stepOf": "第 {{step}} 步，共 {{total, number}} 步",
-    "timeRange": "时间范围"
+    "timeRange": "时间范围",
+    "feedbackPreview": {
+      "counting": "正在统计匹配的评论…",
+      "matches_one": "{{count, number}} 条评论匹配",
+      "matches_other": "{{count, number}} 条评论匹配",
+      "matchesAtLeast_one": "至少 {{count, number}} 条评论匹配",
+      "matchesAtLeast_other": "至少 {{count, number}} 条评论匹配",
+      "matchesEstimated_one": "约 {{count, number}} 条评论匹配",
+      "matchesEstimated_other": "约 {{count, number}} 条评论匹配",
+      "sampled": "角色生成将从中均匀抽取 {{limit, number}} 条进行读取。",
+      "usesAll": "角色生成将读取全部评论。",
+      "confirming": "正在确认准确数量…",
+      "noMatches": "没有评论匹配这些筛选条件。请放宽条件，否则运行时将没有可读取的内容。",
+      "error": "无法统计匹配的评论。"
+    }
   },
   "documentExport": {
     "copied": "已复制！",
