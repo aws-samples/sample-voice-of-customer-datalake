@@ -280,6 +280,13 @@ the SPA sends no save of its own (it would be refused 409) and adopts the server
 user turn's `<context>` block names the page it was sent from. The assistant's page context carries the
 Categories / Problem Analysis URL filters as `page.filters` (`PAGE_FILTER_KEYS`; values in the
 `<context>` data block), and `search_feedback` takes an explicit `days`.
+**Filter floor + chat scope** (#429 port, docs/assistant-chat-scope.md): a /chat run also carries
+`forwardedProps.scope = {filters?: <PAGE_FILTER_KEYS → string>, limit?: 1–1000}` (`chatScopeSchema`,
+lockstepped; the SPA sends it from /chat only, from the filter panel above the composer). `page.filters`
+and `scope.filters` intersect into a floor (`tools/server/feedback-floor.ts`) that `search_feedback`,
+`list_feedback`, `get_urgent_feedback`, `get_entities` and `get_metrics` cannot widen: a model argument
+outside it matches nothing, a filter a route cannot apply is refused; `limit` (default 1000) caps the
+reviews one read uses. The panel's live count reads `GET /metrics/sentiment`.
 **Mentions** (5.46, docs/assistant-mentions.md): on a project page the composer's `@` / `#` lists put
 `forwardedProps.mentions = {personas?: [ids] | 'all', documents?: [{document_id, version?}]}` (≤ 6 / ≤ 3,
 `mentionsSchema`, lockstepped; refused off a project page). Before the model's turn the stream runs a persona
