@@ -302,7 +302,7 @@ export default function Login() {
     setError(null)
     setMessage(null)
     if (username.trim() === '') {
-      setError(t('passkey.errors.needUsername'))
+      setError(t('login:passkey.errors.needUsername'))
       return
     }
     setIsLoading(true)

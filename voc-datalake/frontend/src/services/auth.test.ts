@@ -178,10 +178,15 @@ describe('signInWithPasskey', () => {
     expect(store.setTokens).toHaveBeenCalledWith({ accessToken: ACCESS_TOKEN, idToken: ID_TOKEN })
   })
 
-  it('is no_passkey when Cognito offers another first factor instead, storing nothing', async () => {
+  it('is no_passkey when Cognito offers another first factor instead, abandoning that sign-in', async () => {
     amplify.signIn.mockResolvedValue({ isSignedIn: false, nextStep: { signInStep: 'CONTINUE_SIGN_IN_WITH_FIRST_FACTOR_SELECTION', availableChallenges: ['PASSWORD'] } })
     expect(await rejectionOf(authService.signInWithPasskey('alice'))).toHaveProperty('code', 'no_passkey')
-    expect(store.setTokens).not.toHaveBeenCalled()
+    expect([store.setTokens.mock.calls.length, amplify.signOut.mock.calls.length]).toStrictEqual([0, 1])
+  })
+
+  it('answers a new-password step as the password sign-in does, not as no_passkey', async () => {
+    amplify.signIn.mockResolvedValue(NEW_PASSWORD)
+    expect(isNewPasswordChallenge(await rejectionOf(authService.signInWithPasskey('alice')))).toBe(true)
   })
 
   it.each([

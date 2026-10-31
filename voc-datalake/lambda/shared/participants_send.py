@@ -31,6 +31,7 @@ from shared.participants_asks import (
     ASK_FAILED,
     ASK_SENDING,
     ASK_SENT,
+    CAP_SENDER_FIELD,
     RCPT_FAILED,
     RCPT_QUEUED,
     RCPT_SENT,
@@ -131,7 +132,7 @@ def _send_one(table: Any, ask: Mapping[str, Any], row: Mapping[str, Any], person
         _settle(table, ask_id, person_id, RCPT_FAILED, 'failed', error=ERROR_ERASED)
     elif not is_active(person):
         _settle(table, ask_id, person_id, RCPT_SKIPPED, 'skipped')
-    elif (refusal := claim_send(table, int(settings['daily_send_cap']), str(ask.get('created_by') or ''))) is not None:
+    elif (refusal := claim_send(table, int(settings['daily_send_cap']), str(ask.get(CAP_SENDER_FIELD) or ''))) is not None:
         _settle(table, ask_id, person_id, RCPT_FAILED, 'failed', error=refusal)
     else:
         pacer.wait()
