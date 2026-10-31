@@ -4,7 +4,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { renderProtected } from './protectedRoute-fixtures'
-import { emptySession } from './protectedRoute-mock-fixtures'
 import { authService } from '../../services/auth'
 import { endExpiredSession } from '../../services/sessionExpiry'
 
@@ -46,7 +45,7 @@ describe('ProtectedRoute', () => {
     // are re-pointed explicitly — otherwise a case that sets one of them
     // leaks its state into every case after it.
     mockGetState.mockReturnValue({ isAuthenticated: true })
-    vi.mocked(authService.refreshSession).mockResolvedValue(emptySession())
+    vi.mocked(authService.refreshSession).mockResolvedValue()
   })
 
   describe('when Cognito is configured', () => {
@@ -107,7 +106,7 @@ describe('ProtectedRoute', () => {
         .mockImplementationOnce(() => {
           // Stand in for setTokens releasing the gate on a real refresh.
           mockGetState.mockReturnValue({ isAuthenticated: true, sessionReady: true })
-          return Promise.resolve(emptySession())
+          return Promise.resolve()
         })
 
       renderProtected()
@@ -141,7 +140,7 @@ describe('ProtectedRoute', () => {
     it('ends the session if a refresh resolves without producing tokens', async () => {
       // Only setTokens releases the gate, so a resolve that left sessionReady
       // false would otherwise hang on the loader forever.
-      vi.mocked(authService.refreshSession).mockResolvedValue(emptySession())
+      vi.mocked(authService.refreshSession).mockResolvedValue()
       mockGetState.mockReturnValue({ isAuthenticated: true, sessionReady: false })
 
       renderProtected()

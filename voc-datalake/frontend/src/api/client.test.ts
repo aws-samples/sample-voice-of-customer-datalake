@@ -5,7 +5,6 @@
  * `client.endpoints.test.ts`.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { CognitoAccessToken, CognitoIdToken, CognitoUserSession } from 'amazon-cognito-identity-js'
 import {
   expectFetchedWith, fetchMock, installFetchMock, mockFailureOnce, mockJsonOnce, mockStatusOnce,
   requestHeaders, requestUrl,
@@ -86,17 +85,11 @@ import { SESSION_EXPIRED_PATH, resetSessionExpiryForTests } from '../services/se
 
 const EMPTY_PAGE = { count: 0, items: [] }
 
-/** The session a successful refresh resolves with (only its type matters to the client). */
-const REFRESHED_SESSION = new CognitoUserSession({
-  IdToken: new CognitoIdToken({ IdToken: 'fresh-token' }),
-  AccessToken: new CognitoAccessToken({ AccessToken: 'fresh-access-token' }),
-})
-
 /** Make the next refresh re-point `getIdToken` at a fresh token, as Cognito does. */
 function refreshIssuesFreshToken(): void {
   vi.mocked(authService.refreshSession).mockImplementationOnce(() => {
     vi.mocked(authService.getIdToken).mockReturnValue('fresh-token')
-    return Promise.resolve(REFRESHED_SESSION)
+    return Promise.resolve()
   })
 }
 

@@ -8,6 +8,7 @@ import { PENDING_OTP_KEY, createBoardAuth } from './boardAuth'
 import { BoardAuthError } from './boardCognito'
 import type { BoardPoolConfig } from '../runtimeConfig'
 import { parsedJson } from '@test/jsonText'
+import { fakeJwt } from '@test/fakeJwt'
 
 const OTP_POOL: BoardPoolConfig = { userPoolId: 'us-east-1_board', clientId: 'boardclient', region: 'us-east-1', signIn: 'email_otp' }
 const CODE_POOL: BoardPoolConfig = { ...OTP_POOL, signIn: 'code' }
@@ -15,11 +16,9 @@ const NOW = 1_800_000_000_000
 const SHARE_ID = `shr_${'a'.repeat(32)}`
 const REVIEW_PATH = `/review/${SHARE_ID}`
 
-/** An unsigned JWT the library can decode; `exp` an hour after NOW. */
-function fakeJwt(claims: Record<string, unknown>): string {
-  const encode = (value: object) => btoa(JSON.stringify(value)).replaceAll('=', '').replaceAll('+', '-').replaceAll('/', '_')
-  return `${encode({ alg: 'none' })}.${encode({ exp: Math.floor(NOW / 1000) + 3600, iat: Math.floor(NOW / 1000), ...claims })}.sig`
-}
+/** An unsigned JWT; `exp` an hour after NOW. */
+const jwt = (claims: Record<string, unknown>): string =>
+  fakeJwt({ exp: Math.floor(NOW / 1000) + 3600, iat: Math.floor(NOW / 1000), ...claims })
 
 function memoryStorage() {
   const items = new Map<string, string>()
@@ -42,8 +41,8 @@ const TOKENS: Answer = {
   status: 200,
   body: {
     AuthenticationResult: {
-      IdToken: fakeJwt({ email: 'dana@example.com', token_use: 'id' }),
-      AccessToken: fakeJwt({ token_use: 'access' }),
+      IdToken: jwt({ email: 'dana@example.com', token_use: 'id' }),
+      AccessToken: jwt({ token_use: 'access' }),
       RefreshToken: 'refresh-token',
     },
   },

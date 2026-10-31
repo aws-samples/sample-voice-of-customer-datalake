@@ -150,7 +150,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
         // implicitCodeGrant is disabled: it is deprecated in OAuth 2.1, returns
         // tokens in the URL fragment (browser history / Referer leakage), and
         // cannot be protected by PKCE. The app signs in via SRP
-        // (amazon-cognito-identity-js) and never uses the hosted-UI redirect
+        // (Amplify v6, aws-amplify/auth) and never uses the hosted-UI redirect
         // flow, so nothing here depends on it.
         implicitCodeGrant: false,
       },

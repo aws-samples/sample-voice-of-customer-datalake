@@ -172,7 +172,7 @@ def lambda_handler(event, context):
 | clsx | ^2.1.1 | Conditional classes |
 | react-markdown | ^10.1.0 | Markdown rendering |
 | remark-gfm | ^4.0.1 | GitHub Flavored Markdown |
-| amazon-cognito-identity-js | ^6.3.12 | Cognito authentication |
+| aws-amplify | ^6.22.2 | Cognito sign-in for the app user pool (`aws-amplify/auth`); the board pool uses plain Cognito calls (`services/boardAuth.ts`, `services/boardSession.ts`) |
 | Zod | ^4.3.5 | Runtime validation (frontend) |
 | TypeScript | ~5.9.3 | Type safety |
 | Vitest | ^3.2.3 | Testing framework (frontend) |

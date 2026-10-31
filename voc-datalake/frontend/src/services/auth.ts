@@ -1,39 +1,46 @@
 /**
- * @fileoverview AWS Cognito authentication service.
+ * @fileoverview Sign-in to the app user pool with Amplify v6 (`aws-amplify/auth`).
  *
- * Provides authentication operations using Amazon Cognito User Pools:
- * - Sign in with username/password
- * - Token refresh with automatic expiration handling
- * - Password reset flow (forgot password + confirmation)
- * - New password challenge handling (first login)
+ * - Sign in with username/password (SRP), including the first-login new-password challenge
+ * - Token refresh (Amplify refreshes with the refresh token it keeps, de-duplicating
+ *   concurrent refreshes)
+ * - Password reset (forgot password + confirmation) and password change
  *
- * Security features:
- * - Short-lived tokens persisted in localStorage for cross-tab UX
- * - Refresh token kept in memory only (never persisted to disk)
- * - Automatic token refresh 5 minutes before expiration
- * - Fallback to Cognito getSession() for tabs without in-memory refresh token
- * - Graceful handling of expired sessions
+ * Where tokens live:
+ * - Amplify's token store (localStorage, `CognitoIdentityServiceProvider.<client id>.*` keys, the
+ *   same keys the former amazon-cognito-identity-js session used, so a session signed in before
+ *   the migration keeps working) holds the ID, access and refresh tokens. A new tab refreshes
+ *   from there without signing in again.
+ * - `authStore` mirrors the short-lived ID and access tokens and the user they identify, for
+ *   synchronous reads (`getIdToken`) and rendering. It never holds the refresh token.
  *
  * @module services/auth
  */
 
 import {
-  CognitoUserPool,
-  CognitoUser,
-  AuthenticationDetails,
-  type CognitoUserSession,
-  CognitoRefreshToken,
-} from 'amazon-cognito-identity-js'
-import { fetchAuthSession } from 'aws-amplify/auth'
-import {
-  AuthError, ConfigError,
-} from '../lib/errors'
-import { isRecord } from '../lib/typeGuards'
+  confirmResetPassword, confirmSignIn, fetchAuthSession, resetPassword, signIn as amplifySignIn,
+  signOut as amplifySignOut, updatePassword, type SignInOutput,
+} from 'aws-amplify/auth'
+import { AuthError, ConfigError } from '../lib/errors'
+import { jwtPayload } from '../lib/jwt'
+import { ignoreRejection } from '../lib/rejections'
 import { getRuntimeConfig } from '../runtimeConfig'
 import { useAuthStore } from '../store/authStore'
 import type { User } from '../store/authStore'
 
-// Type guards for JWT payload validation
+/** The error code Login reads to switch to the new-password form. */
+export const NEW_PASSWORD_REQUIRED = 'NewPasswordRequired'
+
+/** An AuthError carrying the code Login switches on. */
+export class AuthChallengeError extends AuthError {
+  readonly code: string
+  constructor(code: string, message: string) {
+    super(message)
+    this.name = 'AuthChallengeError'
+    this.code = code
+  }
+}
+
 function isString(value: unknown): value is string {
   return typeof value === 'string'
 }
@@ -43,52 +50,12 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 /**
- * Gets the Cognito User Pool instance.
- * @returns CognitoUserPool instance or null if not configured
- */
-const getUserPool = (): CognitoUserPool | null => {
-  const cfg = getRuntimeConfig()
-  if (cfg.cognito.userPoolId === '' || cfg.cognito.clientId === '') {
-    return null
-  }
-  return new CognitoUserPool({
-    UserPoolId: cfg.cognito.userPoolId,
-    ClientId: cfg.cognito.clientId,
-  })
-}
-
-/**
- * Parses a JWT token to extract its payload.
- * @param token - The JWT token string
- * @returns Decoded payload object or empty object on error
- */
-const parseJwt = (token: string): Record<string, unknown> => {
-  try {
-    const base64Url = token.split('.').at(1) ?? ''
-    const base64 = base64Url.replaceAll('-', '+').replaceAll('_', '/')
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join(''),
-    )
-    const parsed: unknown = JSON.parse(jsonPayload)
-    if (isRecord(parsed)) {
-      return parsed
-    }
-    return {}
-  } catch {
-    return {}
-  }
-}
-
-/**
  * Extracts user information from a Cognito ID token.
  * @param idToken - The JWT ID token from Cognito
- * @returns User object with username, email, name, and groups
+ * @returns User object with username, email, name, groups and sub
  */
 const extractUser = (idToken: string): User => {
-  const payload = parseJwt(idToken)
+  const payload = jwtPayload(idToken)
   const username = payload['cognito:username']
   const email = payload['email']
   const name = payload['name']
@@ -104,290 +71,140 @@ const extractUser = (idToken: string): User => {
   }
 }
 
-/**
- * The User Pool, or a thrown ConfigError when Cognito is not configured.
- * Called inside a `new Promise` executor, the throw becomes that promise's
- * rejection.
- */
-const requireUserPool = (): CognitoUserPool => {
-  const userPool = getUserPool()
-  if (!userPool) throw new ConfigError('Cognito not configured')
-  return userPool
+const isConfigured = (): boolean => {
+  const cfg = getRuntimeConfig()
+  return cfg.cognito.userPoolId !== '' && cfg.cognito.clientId !== ''
 }
 
-/** A CognitoUser handle for `username` in `userPool` (no session yet). */
-const cognitoUserFor = (username: string, userPool: CognitoUserPool): CognitoUser =>
-  new CognitoUser({ Username: username, Pool: userPool })
+const requireConfigured = (): void => {
+  if (!isConfigured()) throw new ConfigError('Cognito not configured')
+}
 
 /**
- * Stores a freshly issued session's tokens and the user they identify.
- * Every successful sign-in, challenge completion and refresh ends here.
+ * Copies the tokens Amplify holds into authStore. `forceRefresh` asks Cognito for new ones first.
+ * @returns whether there was a session to copy
  */
-const storeSession = (session: CognitoUserSession): void => {
-  const idToken = session.getIdToken().getJwtToken()
-  useAuthStore.getState().setTokens({
-    accessToken: session.getAccessToken().getJwtToken(),
-    idToken,
-    refreshToken: session.getRefreshToken().getToken(),
-  })
+async function storeCurrentTokens(forceRefresh: boolean): Promise<boolean> {
+  const { tokens } = await fetchAuthSession({ forceRefresh })
+  if (tokens?.idToken === undefined) return false
+  const idToken = tokens.idToken.toString()
+  useAuthStore.getState().setTokens({ accessToken: tokens.accessToken.toString(), idToken })
   useAuthStore.getState().setUser(extractUser(idToken))
+  return true
 }
 
-/** An `onFailure` callback that rejects with `err`, wrapping non-Error values in AuthError. */
-const rejectWith = (reject: (reason: Error) => void) => (err: unknown): void => {
-  reject(err instanceof Error ? err : new AuthError(String(err)))
-}
+/** The sign-out still talking to Cognito (revoking the refresh token); a sign-in waits for it. */
+const signOutState: { pending: Promise<void> } = { pending: Promise.resolve() }
 
 /**
- * Authentication service for AWS Cognito operations.
+ * Amplify's local sign-out, never rejecting: Amplify clears its local tokens even when revoking the
+ * refresh token fails (offline), and a failed revoke leaves nothing to show the user.
+ */
+function startSignOut(): Promise<void> {
+  const pending = signOutState.pending.then(() => amplifySignOut()).catch(ignoreRejection)
+  signOutState.pending = pending
+  return pending
+}
+
+/** Turns a sign-in step into a stored session, or the error Login shows. */
+async function finishSignIn(output: SignInOutput): Promise<void> {
+  const step = output.nextStep.signInStep
+  if (step === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED') {
+    throw new AuthChallengeError(NEW_PASSWORD_REQUIRED, 'New password required')
+  }
+  if (step !== 'DONE' || !(await storeCurrentTokens(false))) {
+    // MFA, a sign-up confirmation or a reset are not offered by the app pool's sign-in page.
+    throw new AuthError(`Sign-in needs a step this page does not support (${step})`)
+  }
+}
+
+const isAlreadySignedIn = (error: unknown): boolean =>
+  error instanceof Error && error.name === 'UserAlreadyAuthenticatedException'
+
+/**
+ * Authentication service for the app user pool.
  */
 export const authService = {
-  /**
-   * Checks if Cognito is properly configured with User Pool ID and Client ID.
-   * @returns true if Cognito environment variables are set
-   */
-  isConfigured: (): boolean => {
-    const cfg = getRuntimeConfig()
-    return cfg.cognito.userPoolId !== '' && cfg.cognito.clientId !== ''
-  },
+  /** Whether the user pool id and client id are set. */
+  isConfigured,
 
   /**
-   * Syncs the current Cognito session with Amplify.
-   * This allows Amplify to exchange JWT tokens for AWS credentials.
+   * Signs in with username (or email) and password. On success the tokens are in authStore.
+   * A session Amplify still holds (the store was cleared without a sign-out) is signed out first.
    *
-   * Call this after:
-   * - Successful sign in
-   * - Token refresh
+   * @throws AuthChallengeError with code `NewPasswordRequired` when the password must change first
+   *   (finish with `completeNewPassword`)
+   * @throws the Cognito error (its `message` is shown) when sign-in fails
    */
-  syncAmplifySession: async (): Promise<void> => {
+  signIn: async (username: string, password: string): Promise<void> => {
+    requireConfigured()
+    await signOutState.pending
     try {
-      // Force Amplify to fetch fresh credentials from Identity Pool
-      await fetchAuthSession({ forceRefresh: true })
+      await finishSignIn(await amplifySignIn({ username, password }))
     } catch (error) {
-      console.error('Failed to sync Amplify session:', error)
-      // Non-fatal - streaming API will fail but rest of app works
+      if (!isAlreadySignedIn(error)) throw error
+      await startSignOut()
+      await finishSignIn(await amplifySignIn({ username, password }))
     }
   },
 
   /**
-   * Authenticates a user with username and password.
-   * On success, stores tokens in authStore and returns the session.
-   *
-   * @param username - Cognito username or email
-   * @param password - User's password
-   * @returns Promise resolving to CognitoUserSession
-   * @throws Error with code 'NewPasswordRequired' if password change needed
-   * @throws Error if authentication fails
+   * Answers the new-password challenge of the sign-in that just threw `NewPasswordRequired`
+   * (Amplify keeps that challenge in memory, so it must be the same page load).
    */
-  signIn: (username: string, password: string): Promise<CognitoUserSession> => {
-    return new Promise((resolve, reject) => {
-      const cognitoUser = cognitoUserFor(username, requireUserPool())
-
-      const authDetails = new AuthenticationDetails({
-        Username: username,
-        Password: password,
-      })
-
-      cognitoUser.authenticateUser(authDetails, {
-        onSuccess: (session) => {
-          storeSession(session)
-
-          // Sync session with Amplify for IAM signing
-          void authService.syncAmplifySession()
-
-          resolve(session)
-        },
-        onFailure: rejectWith(reject),
-        newPasswordRequired: (userAttributes: Record<string, unknown>) => {
-          // Handle new password required (first login)
-          const error = new AuthError('New password required')
-          Object.assign(error, {
-            code: 'NewPasswordRequired',
-            userAttributes,
-            cognitoUser,
-          })
-          reject(error)
-        },
-      })
-    })
+  completeNewPassword: async (newPassword: string): Promise<void> => {
+    await finishSignIn(await confirmSignIn({ challengeResponse: newPassword }))
   },
 
   /**
-   * Completes the new password challenge for first-time login.
-   *
-   * @param cognitoUser - CognitoUser instance from signIn rejection
-   * @param newPassword - The new password to set
-   * @returns Promise resolving to CognitoUserSession
-   * @throws Error if password change fails
-   */
-  completeNewPassword: (
-    cognitoUser: CognitoUser,
-    newPassword: string,
-  ): Promise<CognitoUserSession> => {
-    return new Promise((resolve, reject) => {
-      cognitoUser.completeNewPasswordChallenge(newPassword, {}, {
-        onSuccess: (session) => {
-          storeSession(session)
-          resolve(session)
-        },
-        onFailure: rejectWith(reject),
-      })
-    })
-  },
-
-  /**
-   * Signs out the current user and clears all stored tokens.
+   * Signs out: authStore is cleared at once; Amplify revokes the refresh token and clears its
+   * own storage in the background (a sign-in started meanwhile waits for it).
    */
   signOut: (): void => {
-    const userPool = getUserPool()
-    if (userPool) {
-      const cognitoUser = userPool.getCurrentUser()
-      if (cognitoUser) {
-        cognitoUser.signOut()
-      }
-    }
     useAuthStore.getState().logout()
+    if (isConfigured()) void startSignOut()
   },
 
   /**
-   * Refreshes the current session using the stored refresh token.
-   * If no refresh token is in memory (e.g., new tab), falls back to
-   * Cognito's getSession() which uses Cognito's own cookies for
-   * silent re-authentication.
-   * Updates all tokens in authStore on success.
-   *
-   * @returns Promise resolving to new CognitoUserSession
-   * @throws Error if refresh fails (triggers logout)
+   * Gets new tokens from Cognito with the refresh token Amplify holds (also in a new tab).
+   * @throws AuthError, after clearing authStore, when there is no session to refresh or Cognito
+   *   refuses it (also for a transport failure, which callers treat the same way)
    */
-  refreshSession: (): Promise<CognitoUserSession> => {
-    return new Promise((resolve, reject) => {
-      const userPool = requireUserPool()
-
-      const cognitoUser = userPool.getCurrentUser()
-      if (!cognitoUser) {
-        useAuthStore.getState().logout()
-        reject(new AuthError('No current user'))
-        return
-      }
-
-      const refreshToken = useAuthStore.getState().refreshToken
-
-      /**
-       * Handles a successful session by extracting tokens and updating the store.
-       */
-      const handleSession = async (session: CognitoUserSession) => {
-        storeSession(session)
-
-        await authService.syncAmplifySession()
-
-        resolve(session)
-      }
-
-      /** Shared callback for both refresh paths; `fallbackMessage` names the path that failed. */
-      const onRefreshed = (fallbackMessage: string) =>
-        (err: Error | null, session: CognitoUserSession | null) => {
-          if (err || !session) {
-            useAuthStore.getState().logout()
-            reject(err ?? new AuthError(fallbackMessage))
-            return
-          }
-          void handleSession(session)
-        }
-
-      if (refreshToken != null && refreshToken !== '') {
-        // Primary path: use the in-memory refresh token
-        cognitoUser.refreshSession(
-          new CognitoRefreshToken({ RefreshToken: refreshToken }),
-          onRefreshed('Session refresh failed'),
-        )
-      } else {
-        // Fallback: no refresh token in memory (new tab).
-        // Cognito SDK's getSession() uses its own cookies to silently
-        // re-authenticate without requiring the refresh token from our store.
-        cognitoUser.getSession(onRefreshed('No session available — please sign in again'))
-      }
+  refreshSession: async (): Promise<void> => {
+    requireConfigured()
+    const refreshed = await storeCurrentTokens(true).catch((error: unknown) => {
+      useAuthStore.getState().logout()
+      throw error instanceof Error ? error : new AuthError(String(error))
     })
+    if (!refreshed) {
+      useAuthStore.getState().logout()
+      throw new AuthError('No session available — please sign in again')
+    }
   },
 
-  /**
-   * Gets the current ID token from the auth store.
-   * @returns ID token string or null if not authenticated
-   */
+  /** The current ID token from authStore, or null when signed out. */
   getIdToken: (): string | null => {
     return useAuthStore.getState().idToken
   },
 
-  /**
-   * Initiates the forgot password flow, sending a verification code to the user's email.
-   *
-   * @param username - Cognito username or email
-   * @returns Promise resolving when code is sent
-   * @throws Error if request fails
-   */
-  forgotPassword: (username: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      cognitoUserFor(username, requireUserPool()).forgotPassword({
-        onSuccess: () => resolve(),
-        onFailure: (err) => reject(err),
-      })
-    })
+  /** Emails a verification code for a password reset. */
+  forgotPassword: async (username: string): Promise<void> => {
+    requireConfigured()
+    await resetPassword({ username })
+  },
+
+  /** Sets a new password with the emailed verification code. */
+  confirmPassword: async (username: string, code: string, newPassword: string): Promise<void> => {
+    requireConfigured()
+    await confirmResetPassword({ username, confirmationCode: code, newPassword })
   },
 
   /**
-   * Confirms a password reset using the verification code.
-   *
-   * @param username - Cognito username or email
-   * @param code - Verification code from email
-   * @param newPassword - New password to set
-   * @returns Promise resolving when password is reset
-   * @throws Error if confirmation fails
+   * Changes the signed-in user's password.
+   * @throws the Cognito error (e.g. "Incorrect username or password.") when the change fails
    */
-  confirmPassword: (
-    username: string,
-    code: string,
-    newPassword: string,
-  ): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      cognitoUserFor(username, requireUserPool()).confirmPassword(code, newPassword, {
-        onSuccess: () => resolve(),
-        onFailure: (err) => reject(err),
-      })
-    })
-  },
-
-  /**
-   * Changes the current user's password.
-   *
-   * @param oldPassword - Current password
-   * @param newPassword - New password to set
-   * @returns Promise resolving when password is changed
-   * @throws Error if change fails (e.g., incorrect current password)
-   */
-  changePassword: (oldPassword: string, newPassword: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const cognitoUser = requireUserPool().getCurrentUser()
-      if (!cognitoUser) {
-        reject(new AuthError('No current user'))
-        return
-      }
-
-      // Need to get session first
-      cognitoUser.getSession(
-        (err: Error | null, session: CognitoUserSession | null) => {
-          if (err || !session) {
-            reject(err ?? new AuthError('No session'))
-            return
-          }
-
-          cognitoUser.changePassword(oldPassword, newPassword, (changeErr) => {
-            if (changeErr) {
-              reject(changeErr)
-              return
-            }
-            resolve()
-          })
-        },
-      )
-    })
+  changePassword: async (oldPassword: string, newPassword: string): Promise<void> => {
+    requireConfigured()
+    await updatePassword({ oldPassword, newPassword })
   },
 }

@@ -19,7 +19,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { renderProtected } from './protectedRoute-fixtures'
-import { emptySession } from './protectedRoute-mock-fixtures'
 import { useAuthStore } from '../../store/authStore'
 import { authService } from '../../services/auth'
 import { endExpiredSession } from '../../services/sessionExpiry'
@@ -36,7 +35,6 @@ function restoreUnvalidatedSession() {
     user: { username: 'u', email: 'u@example.com', groups: [] },
     accessToken: 'restored-access',
     idToken: 'restored-id',
-    refreshToken: null,
     isAuthenticated: true,
     sessionReady: false,
   })
@@ -71,9 +69,8 @@ describe('ProtectedRoute against the real auth store', () => {
       useAuthStore.getState().setTokens({
         accessToken: 'fresh-access',
         idToken: 'fresh-id',
-        refreshToken: 'fresh-refresh',
       })
-      return Promise.resolve(emptySession())
+      return Promise.resolve()
     })
 
     renderProtected()
@@ -85,7 +82,7 @@ describe('ProtectedRoute against the real auth store', () => {
   it('does not revalidate a session that is already validated', () => {
     restoreUnvalidatedSession()
     useAuthStore.getState().setTokens({
-      accessToken: 'a', idToken: 'b', refreshToken: 'c',
+      accessToken: 'a', idToken: 'b',
     })
 
     renderProtected()

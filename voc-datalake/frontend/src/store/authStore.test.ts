@@ -40,7 +40,7 @@ function stubCognito(configured: boolean) {
 function signInThenLogout() {
   const { setUser, setTokens, logout } = useAuthStore.getState()
   setUser({ username: 'test', email: 'test@example.com', groups: ['admins'] })
-  setTokens({ accessToken: 'access', idToken: 'id', refreshToken: 'refresh' })
+  setTokens({ accessToken: 'access', idToken: 'id' })
   logout()
 }
 
@@ -79,19 +79,17 @@ describe('authStore', () => {
   })
 
   describe('setTokens', () => {
-    it('stores all token types', () => {
+    it('stores the access and ID tokens', () => {
       const { setTokens } = useAuthStore.getState()
 
       setTokens({
         accessToken: 'access-token-123',
         idToken: 'id-token-456',
-        refreshToken: 'refresh-token-789',
       })
 
       const state = useAuthStore.getState()
       expect(state.accessToken).toBe('access-token-123')
       expect(state.idToken).toBe('id-token-456')
-      expect(state.refreshToken).toBe('refresh-token-789')
       expect(state.isAuthenticated).toBe(true)
     })
 
@@ -109,7 +107,6 @@ describe('authStore', () => {
       setTokens({
         accessToken: 'access',
         idToken: 'id',
-        refreshToken: 'refresh',
       })
 
       expect(useAuthStore.getState().sessionReady).toBe(true)
@@ -124,7 +121,6 @@ describe('authStore', () => {
       expect(state.user).toBeNull()
       expect(state.accessToken).toBeNull()
       expect(state.idToken).toBeNull()
-      expect(state.refreshToken).toBeNull()
     })
 
     it('resets authenticated state on logout', () => {
@@ -137,7 +133,7 @@ describe('authStore', () => {
     it('un-validates the session so the next page load revalidates', () => {
       const { setTokens, logout } = useAuthStore.getState()
 
-      setTokens({ accessToken: 'access', idToken: 'id', refreshToken: 'refresh' })
+      setTokens({ accessToken: 'access', idToken: 'id' })
       logout()
 
       expect(useAuthStore.getState().sessionReady).toBe(false)
@@ -159,7 +155,7 @@ describe('authStore', () => {
     it('persists identity but not the validated flag', () => {
       const { setUser, setTokens } = useAuthStore.getState()
       setUser({ username: 'test', email: 'test@example.com', groups: [] })
-      setTokens({ accessToken: 'access', idToken: 'id', refreshToken: 'refresh' })
+      setTokens({ accessToken: 'access', idToken: 'id' })
 
       /*
        * The suite's localStorage is a spy that stores nothing (see
@@ -176,7 +172,7 @@ describe('authStore', () => {
       expect(sortedStrings(Object.keys(shape.state))).toStrictEqual([
         'accessToken', 'idToken', 'isAuthenticated', 'user',
       ])
-      // The refresh token is memory-only by design; see the store's docblock.
+      // The refresh token lives in Amplify's token store, never here; see the store's docblock.
       expect(shape.state).not.toHaveProperty('refreshToken')
       expect(shape.state).not.toHaveProperty('sessionReady')
     })

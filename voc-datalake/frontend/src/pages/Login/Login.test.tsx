@@ -15,9 +15,10 @@ const mockForgotPassword = vi.fn<(...args: unknown[]) => unknown>()
 const mockConfirmPassword = vi.fn<(...args: unknown[]) => unknown>()
 
 vi.mock('../../services/auth', () => ({
+  NEW_PASSWORD_REQUIRED: 'NewPasswordRequired',
   authService: {
     signIn: (username: string, password: string) => mockSignIn(username, password),
-    completeNewPassword: (user: unknown, password: string) => mockCompleteNewPassword(user, password),
+    completeNewPassword: (password: string) => mockCompleteNewPassword(password),
     forgotPassword: (username: string) => mockForgotPassword(username),
     confirmPassword: (username: string, code: string, password: string) => mockConfirmPassword(username, code, password),
   },
@@ -65,11 +66,7 @@ async function renderAndSignIn(password: string) {
 
 /** Sign in against a NewPasswordRequired challenge and land on the new-password form. */
 async function expectNewPasswordChallenge() {
-  const mockCognitoUser = { username: 'testuser' }
-  mockSignIn.mockRejectedValue({ 
-    code: 'NewPasswordRequired', 
-    cognitoUser: mockCognitoUser 
-  })
+  mockSignIn.mockRejectedValue({ code: 'NewPasswordRequired' })
   const user = await renderAndSignIn('temppassword')
   await waitFor(() => {
     expect(screen.getByText(/Set New Password/i)).toBeInTheDocument()
