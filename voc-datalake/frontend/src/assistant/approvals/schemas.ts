@@ -22,9 +22,12 @@ import { MAX_ID_LENGTH } from '../contract'
 
 /**
  * A server-minted identifier used as a URL path segment. The charset excludes
- * `/`, `?`, `#` and `%` so a model cannot steer a write to another route.
+ * `/`, `?`, `#` and `%` so a model cannot steer a write to another route, and
+ * `.` or `..` alone is refused: a browser's URL parser resolves
+ * `/projects/P/documents/..` to `/projects/P/`, so a delete would hit the project.
  */
-export const idSchema = z.string().trim().min(1).max(MAX_ID_LENGTH).regex(/^[\w.:-]+$/, 'Invalid identifier')
+const ID_PATTERN = /^(?!\.{1,2}$)[\w.:-]+$/
+export const idSchema = z.string().trim().min(1).max(MAX_ID_LENGTH).regex(ID_PATTERN, 'Invalid identifier')
 
 const idList = z.array(idSchema).max(20)
 export const nonEmpty = (max: number) => z.string().trim().min(1).max(max)
