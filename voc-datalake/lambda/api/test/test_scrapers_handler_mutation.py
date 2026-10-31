@@ -757,6 +757,12 @@ class TestTheFetch:
         with patch.object(h._SAFE_OPENER, 'open', return_value=_page(b'caf\xc3\xa9 \xff!')):
             assert h._fetch_html('https://a.example/') == 'café !'
 
+    def test_at_most_the_page_cap_is_read(self):
+        page = _page(b'<html></html>')
+        with patch.object(h._SAFE_OPENER, 'open', return_value=page):
+            h._fetch_html('https://a.example/')
+        page.read.assert_called_once_with(h.MAX_PAGE_BYTES)
+
     def test_a_url_error_that_is_not_a_blocked_destination_propagates(self):
         failure = urllib.error.URLError(OSError('timed out'))
         with (

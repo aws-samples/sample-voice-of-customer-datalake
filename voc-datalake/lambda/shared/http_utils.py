@@ -101,6 +101,10 @@ def _raise_if_retryable(response: requests.Response) -> None:
 # --- Policy-checked fetch for user-configured URLs (SSRF, issue #244) ---------
 
 MAX_REDIRECT_HOPS = 5
+# The most of one scraped HTML page that is read (BE-8): a hostile or broken site cannot make a
+# scraper or assist Lambda download (and hold in memory) an unbounded body. Real review pages are
+# well under 1 MB; what lies past the cap is not read.
+MAX_PAGE_BYTES = 5 * 1024 * 1024
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 # Dropped when a redirect leaves the original origin, as requests itself would.
 _CROSS_ORIGIN_SENSITIVE_HEADERS = frozenset({'authorization', 'cookie', 'proxy-authorization'})

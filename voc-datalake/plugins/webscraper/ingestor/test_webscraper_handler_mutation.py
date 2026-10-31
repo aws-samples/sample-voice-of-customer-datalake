@@ -482,12 +482,13 @@ class TestFetchSoup:
             mock.return_value.text = '<p class="x">hi</p>'
             yield mock
 
-    def test_sends_browser_headers_plus_site_root_referer_with_a_15s_timeout(self, ingestor, fetch):
+    def test_sends_browser_headers_plus_site_root_referer_with_a_15s_timeout_and_the_page_cap(self, ingestor, fetch):
         soup = ingestor._fetch_soup('https://shop.example.com/reviews?page=2')
         fetch.assert_called_once_with(
             'https://shop.example.com/reviews?page=2',
             headers={**ingestor.headers, 'Referer': 'https://shop.example.com/'},
             timeout=15,
+            max_bytes=5 * 1024 * 1024,
         )
         fetch.return_value.raise_for_status.assert_called_once_with()
         assert soup.select_one('.x').get_text() == 'hi'
