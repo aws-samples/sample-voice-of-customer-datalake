@@ -18,6 +18,7 @@ import {
 } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
+import { RenderedStringRecordSchema } from '../test-support/cfn-render';
 import { itemAt } from '../test-support/guards';
 
 // Synthesize the shared default template once, outside any single case's 5s
@@ -29,7 +30,8 @@ beforeAll(() => {
 const GatewayResponseSchema = z.object({
   Properties: z.object({
     ResponseType: z.string(),
-    ResponseParameters: z.record(z.string(), z.string()).optional(),
+    // A challenge names the MCP resource metadata URL, which embeds the API id (an Fn::Join).
+    ResponseParameters: RenderedStringRecordSchema.optional(),
   }),
 });
 
@@ -599,7 +601,11 @@ describe('unauthorized gateway response', () => {
       .find((p) => p.ResponseType === 'UNAUTHORIZED');
     expect(unauthorized, 'no UNAUTHORIZED gateway response in the template').toBeDefined();
     const params = unauthorized?.ResponseParameters ?? {};
-    expect(params['gatewayresponse.header.WWW-Authenticate']).toBe('\'Bearer error="invalid_token"\'');
+    // Since 5.63.00: the MCP endpoint's protected-resource metadata, which an MCP client signs in from when it
+    // sent no credential (a TOKEN authorizer is not invoked without its header, so THIS is that 401). No
+    // `error=`: the request carried no credential (RFC 6750 §3.1). The SPA never reads this header.
+    expect((params['gatewayresponse.header.WWW-Authenticate'] ?? '').replace(/\{Ref:VocAnalyticsApi[0-9A-F]{8}\}/, '{api}'))
+      .toBe('\'Bearer resource_metadata="https://{api}.execute-api.us-east-1.{Ref:AWS::URLSuffix}/v1/.well-known/oauth-protected-resource/mcp/global"\'');
     // The challenge must be READABLE, which is the property this line is about —
     // asserted as membership rather than as the whole list, because the list also
     // carries `Content-Type` and `Vary` and pinning it exactly made this test fail

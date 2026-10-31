@@ -12,7 +12,12 @@
 #
 # Env: E2E_SHARD_OUT  base directory (default e2e/e2e-output/sharded-<epoch s>)
 #      E2E_TAG_RUN_ID  the test traffic tag shared by all shards (default e2e-[<track>-]<UTC yyyymmddThhmmssZ>)
-#      E2E_SHARD_WORKERS  workers per shard (default 2; each shard drives the deployment serially otherwise)
+#      E2E_SHARD_WRITE_WORKERS  workers per shard for the specs that write (default 2, as before 5.63.00)
+#      E2E_SHARD_READ_WORKERS   workers per shard for the read-only specs (lib/parallel.ts; default 2)
+#      E2E_SHARD_WORKERS  total workers per shard (default read + write; set alone, writes get at most 2
+#                         and the read-only specs the rest; a cap above it is refused)
+# Needs Node 22.12+ (the repo's floor, root package.json engines): the worker plan is read from
+# lib/parallel.ts with `node --experimental-strip-types`, which older Node rejects as an unknown flag.
 set -uo pipefail
 
 MAX_SHARDS=16
@@ -25,10 +30,17 @@ shift
 
 E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE="${E2E_SHARD_OUT:-$E2E_DIR/e2e-output/sharded-$(date +%s)}"
-WORKERS="${E2E_SHARD_WORKERS:-2}"
+cd "$E2E_DIR" || exit 2
+# The worker arithmetic lives in lib/parallel.ts shardWorkerPlan (unit/parallel.spec.ts); a bad or
+# inconsistent combination stops here, before any shard starts.
+PLAN="$(node --experimental-strip-types --no-warnings --input-type=module -e '
+  const { shardWorkerPlan } = await import("./lib/parallel.ts")
+  try { const p = shardWorkerPlan(); process.stdout.write(`${p.write} ${p.read} ${p.total}`) }
+  catch (error) { process.stderr.write(`${error.message}\n`); process.exit(2) }')" || exit 2
+read -r WRITE_WORKERS READ_WORKERS WORKERS <<< "$PLAN"
+echo "workers per shard: $WORKERS ($WRITE_WORKERS writing, $READ_WORKERS read-only)"
 BLOBS="$BASE/blob"
 mkdir -p "$BLOBS"
-cd "$E2E_DIR" || exit 2
 
 # One distinct run id per shard (names stay `e2e-<run id>-…`, and with E2E_TRACK `e2e-<track>-<ms>-…`).
 STAMP="$(node -e 'process.stdout.write(String(Date.now()))')"
@@ -48,6 +60,8 @@ for ((i = 1; i <= N; i++)); do
   [[ -n "${E2E_TRACK:-}" ]] && RUN_ID="$E2E_TRACK-$RUN_ID"
   (
     export E2E_OUT="$OUT" E2E_RUN_ID="$RUN_ID" E2E_TAG_RUN_ID="$TAG_RUN_ID"
+    # The per-project caps playwright.config.ts applies (lib/parallel.ts); --workers is the shard's total.
+    export E2E_WRITE_WORKERS="$WRITE_WORKERS" E2E_READ_WORKERS="$READ_WORKERS"
     export PLAYWRIGHT_JSON_OUTPUT_NAME="$OUT/results.json"
     # Its own blob directory: the blob reporter empties its output directory when it starts.
     export PLAYWRIGHT_BLOB_OUTPUT_DIR="$OUT/blob" PLAYWRIGHT_BLOB_OUTPUT_NAME="report-$i.zip"

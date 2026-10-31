@@ -27,6 +27,7 @@ __pycache__/
 # Lambda layers (built artifacts)
 voc-datalake/lambda/layers/*/python/
 !voc-datalake/lambda/layers/*/python/.gitkeep
+voc-datalake/lambda/layers/*/.build-stamp
 
 # IDE
 .idea/

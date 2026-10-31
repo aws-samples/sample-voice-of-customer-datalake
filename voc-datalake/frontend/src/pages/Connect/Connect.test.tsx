@@ -39,7 +39,8 @@ const REVOKED = { ...ACTIVE, token_id: 'tok_fedcba9876543210', name: 'Old', stat
 function listing(tokens: unknown[] = [ACTIVE], extra: Record<string, unknown> = {}) {
   return {
     tokens, endpoint_path: '/mcp/global', can_mint_agent_runner: false,
-    limits: { default_expiry_days: 30, max_expiry_days: 90, max_active_tokens: 20 }, ...extra,
+    limits: { default_expiry_days: 30, max_expiry_days: 90, max_active_tokens: 20 },
+    minting_enabled: true, oauth: { enabled: false, clients: [] }, ...extra,
   }
 }
 
@@ -55,16 +56,35 @@ beforeEach(() => {
 })
 
 describe('Connect', () => {
-  it('shows the global endpoint and an mcp.json that carries no real token', async () => {
+  it('shows the global endpoint and, by default, an mcp.json that reads the token from the environment', async () => {
     renderConnect()
 
     expect(await screen.findByTestId('connect-endpoint')).toHaveTextContent('https://api.example.com/v1/mcp/global')
+    expect(screen.getByRole('button', { name: 'Claude Code' })).toHaveAttribute('aria-pressed', 'true')
     const snippet = screen.getByTestId('connect-mcp-json').textContent
-    expect(JSON.parse(snippet)).toStrictEqual({
+    expect(snippet.includes('VOC_MCP_TOKEN') && !snippet.includes('<YOUR_VOC_TOKEN>')).toBe(true)
+    expect(screen.getByRole('link', { name: /Open skill/ })).toHaveAttribute('href', '/voc-mcp-skill.md')
+  })
+
+  it('tells where the default file goes and how to set the variable', async () => {
+    renderConnect()
+    expect(await screen.findByTestId('connect-mcp-file')).toHaveTextContent('.mcp.json in the project root')
+    expect(screen.getByTestId('connect-env-line')).toHaveTextContent("export VOC_MCP_TOKEN='<YOUR_VOC_TOKEN>'")
+  })
+
+  it('switches client, and the inline variant carries a placeholder, never a real token', async () => {
+    const user = userEvent.setup()
+    renderConnect()
+    await user.click(await screen.findByRole('button', { name: 'Kiro' }))
+    expect(screen.getByTestId('connect-mcp-file')).toHaveTextContent('Mcp Approved Env Vars')
+
+    await user.click(screen.getByRole('button', { name: 'Other clients' }))
+    expect(screen.getByRole('button', { name: 'Other clients' })).toHaveAttribute('aria-pressed', 'true')
+    expect(JSON.parse(screen.getByTestId('connect-mcp-json').textContent)).toStrictEqual({
       mcpServers: { 'voc-datalake': { url: 'https://api.example.com/v1/mcp/global',
         headers: { Authorization: 'Bearer <YOUR_VOC_TOKEN>' } } },
     })
-    expect(screen.getByRole('link', { name: /Open skill/ })).toHaveAttribute('href', '/voc-mcp-skill.md')
+    expect(screen.queryByTestId('connect-env-line')).toBeNull()
   })
 
   /** Render, wait for the form, and have the mint answer a fresh raw token. */

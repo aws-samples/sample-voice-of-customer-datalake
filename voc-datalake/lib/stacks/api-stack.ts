@@ -15,6 +15,7 @@ import * as path from 'path';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 import { getEnabledPlugins, getPluginsWithWebhook, capitalize, pluginDirectoryIds, type PluginManifest } from '../plugin-loader';
+import { applyAppClientEnv } from '../utils/app-client-env';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, cdkAssetsSuppressions } from '../utils/nag-suppressions';
 import { imageModelArn } from '../utils/model-allowlist';
@@ -38,6 +39,7 @@ import { createVerificationFixtureProvider } from './api-fixture-provider';
 import { createApiGateway, restApiBaseUrl } from './api-gateway';
 import { createJobLambdas } from './api-job-lambdas';
 import { createMcpApi } from './api-mcp';
+import { cognitoHostedUiHost } from './api-mcp-oauth';
 import { createProjectsLambda } from './api-projects-lambda';
 import { addApiRoutes } from './api-routes';
 import { createRadarLambda } from './api-radar-lambda';
@@ -95,6 +97,8 @@ export interface VocApiStackProps extends VocStackProps {
   /** The board pool (boards and review links) and its client — on every deployment since 5.45.00 (core-board-auth.ts). */
   boardUserPool: cognito.IUserPool;
   boardUserPoolClient: cognito.IUserPoolClient;
+  /** The app pool's hosted-UI domain prefix: MCP OAuth forwards sign-in and token calls there (api-mcp-oauth.ts). */
+  userPoolDomainPrefix: string;
 
   // Ingestion stack resources
   processingQueueUrl: string;
@@ -274,7 +278,7 @@ export class VocApiStack extends VocStack {
       s3ImportIngestorDeployed: s3ImportIngestorDeployed(getEnabledPlugins(data.allPlugins, props.enabledSources)),
     });
     // cryptography only where live code can sign CloudFront URLs (py_layers derives the set).
-    attachSigningLayer(this);
+    const signingLayer = attachSigningLayer(this);
 
 
     // ============================================
@@ -327,7 +331,7 @@ export class VocApiStack extends VocStack {
       settingsLambda: data.settingsLambda,
       memoryLambda: assistant.memoryLambda,
       agentsLambda: assistant.agentsLambda,
-    });
+    }, signingLayer);
     const { webSearch } = assistant;
 
 
@@ -342,10 +346,12 @@ export class VocApiStack extends VocStack {
         userPoolId: userPool.userPoolId,
         clientId: userPoolClient.userPoolClientId,
         region: this.region,
-        // TRANSITIONAL (5.62.00): the SPA no longer reads it, but a browser may still run a cached
-        // pre-5.62 bundle whose schema requires it (index.html carries no Cache-Control here). Removed
+        // TRANSITIONAL (5.64.00): the SPA no longer reads it, but a browser may still run a cached
+        // pre-5.64 bundle whose schema requires it (index.html carries no Cache-Control here). Removed
         // with the identity pool (lib/utils/deploy-scripts.test.ts TRANSITIONAL_CONFIG_KEYS).
-        identityPoolId: identityPool.attrId
+        identityPoolId: identityPool.attrId,
+        // The hosted UI the MCP OAuth consent page may send the browser to (docs/mcp.md → OAuth sign-in).
+        hostedUiDomain: cognitoHostedUiHost(props.userPoolDomainPrefix, this.region),
       },
       // Capability flags so the same frontend build can show/hide features
       // per environment (web search only exists when the gateway deployed).
@@ -380,6 +386,11 @@ export class VocApiStack extends VocStack {
         NagSuppressions.addResourceSuppressions(child, [...cdkCustomResourceSuppressions, ...cdkAssetsSuppressions], true);
       }
     }
+
+    // Only the SPA's and the board pool's tokens reach the REST handlers (an MCP OAuth client's token of the
+    // same pool is refused, shared/app_clients.py; security review of 5.63.00).
+    applyAppClientEnv(this, [userPoolClient.userPoolClientId, props.boardUserPoolClient.userPoolClientId],
+      [assistant.chatStreamLambda]);
 
     // ============================================
     // OUTPUTS

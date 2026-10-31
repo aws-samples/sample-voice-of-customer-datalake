@@ -237,3 +237,37 @@ describe('board pool and email capability', () => {
     expect(getBoardPoolConfig()).toBeNull()
   })
 })
+
+describe('the Cognito hosted UI (MCP OAuth consent redirects)', () => {
+  useFreshRuntimeConfigModule()
+
+  const cognito = { userPoolId: 'us-east-1_pool', clientId: 'client123', region: 'us-east-1', identityPoolId: 'us-east-1:identity' }
+  const load = async (hostedUiDomain: unknown) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, json: () => Promise.resolve({ apiEndpoint: 'https://real-api.example.com', cognito: { ...cognito, hostedUiDomain } }),
+    }))
+    const module = await import('./runtimeConfig')
+    const config = await module.loadRuntimeConfig()
+    return { origin: module.getHostedUiOrigin(), config }
+  }
+
+  it('is null before the config loads', async () => {
+    const { getHostedUiOrigin } = await import('./runtimeConfig')
+    expect(getHostedUiOrigin()).toBeNull()
+  })
+
+  it('answers the https origin of the configured host', async () => {
+    const { origin } = await load('voc-example.auth.us-east-1.amazoncognito.com')
+    expect(origin).toBe('https://voc-example.auth.us-east-1.amazoncognito.com')
+  })
+
+  // Refused, not normalised: a bare domain prefix (no dots), a scheme, a trailing slash or a path.
+  it.each([undefined, '', 'voc-example', 'https://voc.auth.us-east-1.amazoncognito.com', 'voc.auth.us-east-1.amazoncognito.com/', 'evil.example.com/path', 7])(
+    'reads %s as no hosted UI, keeping the rest of config.json',
+    async (value) => {
+      const { origin, config } = await load(value)
+      expect(origin).toBeNull()
+      expect(config.cognito.userPoolId).toBe('us-east-1_pool')
+    },
+  )
+})

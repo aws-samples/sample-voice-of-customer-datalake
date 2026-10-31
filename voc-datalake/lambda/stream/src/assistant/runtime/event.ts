@@ -7,10 +7,12 @@
  * or comma-separated (`"admins,users"`), depending on the integration.
  *
  * Identity fails closed: no usable `sub` is an UnauthorizedError, never an
- * anonymous run.
+ * anonymous run, and neither is a token issued to another app client of the
+ * pool (an MCP OAuth client, app-client.ts).
  */
 import { z } from 'zod';
 import type { CallerClaims } from '../types.js';
+import { requireAppClient } from './app-client.js';
 import { UnauthorizedError } from './errors.js';
 
 const lambdaEventSchema = z.object({
@@ -49,6 +51,8 @@ export function extractCallerClaims(event: LambdaEvent): CallerClaims {
   if (!sub) {
     throw new UnauthorizedError('Authenticated user identity is required');
   }
+  // Before any claim is trusted: a token of an MCP OAuth client (same pool) is not an app session.
+  requireAppClient(claims);
   const groups = claimString(claims, 'cognito:groups');
   const username = claimString(claims, 'cognito:username');
   const email = claimString(claims, 'email');

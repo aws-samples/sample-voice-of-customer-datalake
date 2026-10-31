@@ -1,6 +1,6 @@
 /**
  * @fileoverview The Connect page's "how to connect" card: the global MCP
- * endpoint URL, a ready `mcp.json`, and the skill (stable link + a download with
+ * endpoint URL, a ready `mcp.json` per client (McpJsonSnippets), and the skill (stable link + a download with
  * this deployment's endpoint filled in). None of them carries a real token.
  *
  * @module pages/Connect/EndpointCard
@@ -9,8 +9,9 @@ import { Download, ExternalLink } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
-import { buildMcpJson, fillSkill, SKILL_FILE_NAME, SKILL_PATH, skillUrl } from './connectSnippets'
+import { fillSkill, SKILL_FILE_NAME, SKILL_PATH, skillUrl } from './connectSnippets'
 import { CopyButton } from './CopyButton'
+import { McpJsonSnippets } from './McpJsonSnippets'
 
 /** Fetch the static skill, fill in the endpoint, and save it as a file. */
 async function downloadSkill(endpointUrl: string): Promise<void> {
@@ -28,7 +29,6 @@ export function EndpointCard({ endpointUrl }: Readonly<{ endpointUrl: string }>)
   const { t } = useTranslation('common')
   const { copy, copiedKey } = useCopyToClipboard()
   const [downloadFailed, setDownloadFailed] = useState(false)
-  const mcpJson = buildMcpJson(endpointUrl)
   const onDownload = () => {
     setDownloadFailed(false)
     downloadSkill(endpointUrl).catch(() => setDownloadFailed(true))
@@ -44,17 +44,7 @@ export function EndpointCard({ endpointUrl }: Readonly<{ endpointUrl: string }>)
           <CopyButton text={endpointUrl} copyKey="endpoint" copiedKey={copiedKey} onCopy={copy} />
         </div>
       </div>
-      <div className="space-y-1">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[12px] font-medium text-muted">{t('connect.mcpJsonLabel')}</p>
-          <CopyButton text={mcpJson} copyKey="mcpJson" copiedKey={copiedKey} onCopy={copy} />
-        </div>
-        {/* Focusable and named: it scrolls sideways on a phone, and a scroll region
-            with nothing focusable inside cannot be scrolled from the keyboard
-            (axe scrollable-region-focusable, design audit). */}
-        <pre tabIndex={0} role="region" aria-label={t('connect.mcpJsonLabel')} className="overflow-x-auto rounded-md bg-bg-hover p-3 text-[12px] focus-ring" data-testid="connect-mcp-json">{mcpJson}</pre>
-        <p className="text-[12px] text-muted">{t('connect.mcpJsonHint')}</p>
-      </div>
+      <McpJsonSnippets endpointUrl={endpointUrl} />
       <div className="space-y-2">
         <p className="text-[12px] font-medium text-muted">{t('connect.skillLabel')}</p>
         <p className="text-sm text-text">{t('connect.skillBody')}</p>

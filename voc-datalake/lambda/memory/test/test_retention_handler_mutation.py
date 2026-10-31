@@ -280,6 +280,7 @@ class TestTheHandlerWiring:
         assert logger.get_current_keys()['function_name'] == 'voc-memory-worker'
 
     def test_the_handler_is_wrapped_by_logger_tracer_and_metrics_in_that_order(self):
+        # `instrumented_handler` puts the model profile scope innermost (shared/model_profile.py).
         chain: list[str] = []
         func: Any = retention.lambda_handler
         while func is not None:
@@ -287,4 +288,4 @@ class TestTheHandlerWiring:
             func = vars(func).get('__wrapped__')
         assert chain == [os.path.join('logging', 'logger.py'), os.path.join('tracing', 'tracer.py'),
                          os.path.join('provider', 'base.py'), os.path.join('shared', 'invocation_cost.py'),
-                         os.path.join('retention', 'handler.py')]
+                         os.path.join('shared', 'model_profile.py'), os.path.join('retention', 'handler.py')]

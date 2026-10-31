@@ -91,6 +91,7 @@ from shared import (
     document_review_routes,
     document_series,
     draft_intent,
+    model_profile,
     persona_copy_routes,
     project_access,
     project_gate,
@@ -402,6 +403,9 @@ def _started_job(
     _require_project_exists(project_id)
     if precheck is not None:
         precheck()
+    # The job config carries the starter's model profile (and never a client-sent one), so the job
+    # Lambda / every Step Functions step runs on the same models as the request (shared/model_profile.py).
+    model_profile.stamp_config(config)
     job_id, _ = create_job(
         project_id, job_type, config_key, config,
         initiated_by=_request_caller().subject, **kwargs,

@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [5.62.00] - 2026-10-31
+## [5.64.00] - 2026-10-31
 
 The SPA no longer reads the Cognito identity pool, which nothing has used since 5.61.00.
 
@@ -27,7 +27,7 @@ The SPA no longer reads the Cognito identity pool, which nothing has used since 
 
 ### Deprecated
 - `cognito.identityPoolId` in `config.json` is still written (by VocApiStack and `npm run deploy:frontend`) for this
-  release only: a browser on a cached pre-5.62 page still requires it. The next release stops writing it, and the
+  release only: a browser on a cached pre-5.64 page still requires it. The next release stops writing it, and the
   one after deletes the unused identity pool, its authenticated role (no permissions) and VocCoreStack's
   `IdentityPoolId` output. VocCoreStack already exports the pool id explicitly, so the release that drops
   VocApiStack's import can deploy (CloudFormation refuses to delete an export that is still imported).
@@ -35,6 +35,128 @@ The SPA no longer reads the Cognito identity pool, which nothing has used since 
 ### Upgrade notes
 - Deploy every stack together (`npm run deploy:infra`), as usual. Nothing to change in `cdk.context.json`. A local
   `frontend/.env` may keep `VITE_IDENTITY_POOL_ID`; it is ignored.
+
+## [5.63.00] - 2026-10-31
+
+Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the app through the existing tools, MCP prompts and resources, alarms and env-var config snippets; and faster, cheaper releases (skipped layer builds, changed-stacks deploys, a parallel production e2e run on Claude Haiku 5.5).
+
+### Added
+
+- MCP prompts on `/mcp/global`: `weekly_summary`, `triage_urgent` and `prfaq_from_feedback`. A read-only token's
+  PR/FAQ prompt drafts in the chat; only a write token's mentions saving it, after the user confirms
+  ([docs/mcp.md](docs/mcp.md#prompts-and-resources)).
+- MCP resources: `voc://categories` and `voc://company-context`, read through the settings routes as the token's
+  minter. Both protocol eras advertise the new capabilities; each prompt or resource read is audited like a tool
+  call (`prompt:<name>` / `resource:<uri>`, never the arguments).
+- Existing MCP tools reach more of the app: `get_metrics` gains `view=github` (GitHub issues per release and
+  label) and `view=entities` (the filter values in use with counts), `search_feedback` takes `urgent: true`, and
+  `get_feedback` takes `include_similar: true` (up to 5 slim similar items).
+- Four runtime alarms for `/mcp/global` (refused credentials, denied tool calls, failed tool calls, rate limiting),
+  created with the other alarms when an admin turns alerting on in Administration → System → Logs → Alerts
+  ([docs/mcp.md](docs/mcp.md#alarms-and-concurrency)). The endpoint now emits an `AuthDenied` metric.
+- Connect: the `mcp.json` card has one snippet per client. Claude Code, Cursor and Kiro (the default tabs) read the
+  token from `VOC_MCP_TOKEN`, so the file holds no secret; "Other clients" keeps the pasted-token variant.
+- Cognito group `e2e` (VocCoreStack). For a member, every model call the app makes for that user, on
+  every AI surface (assistant and plan steps, API routes, project and assist jobs, manual-import
+  enrichment, agent runs the user starts), resolves to Claude Haiku 5.5, with the capacity fallback kept
+  on Haiku. Real users and the admin model picker are unaffected; the image model is not part of it. The
+  profile comes only from verified Cognito groups or a job record a verified request wrote
+  ([docs/deployment.md → E2E Test Users Run on Haiku 5.5](docs/deployment.md#e2e-test-users-run-on-haiku-55-the-e2e-cognito-group)).
+- `CDK_DEPLOY_CHANGED=1 npm run deploy:infra` runs `cdk diff` once and deploys only the stacks with
+  differences (`--exclusively`), always ending with the API stage refresh (also when VocApiStack did not
+  change or nothing did, so an earlier interrupted refresh never leaves removed routes live); it
+  falls back to the full deploy when the diff fails or cannot be read. The default deploy is unchanged
+  ([docs/deployment.md → Faster deploys](docs/deployment.md#faster-deploys-skip-what-did-not-change)).
+- e2e suite: the read-only specs run in their own fully parallel projects (`admin-read`, `user-read`,
+  `E2E_READ_WORKERS`, default 4) while the writing specs stay one at a time (`E2E_WRITE_WORKERS`); only specs
+  that depend on no data a write can change are listed (`request-counts`, `error-states`,
+  `workflow-custom-arrows`). `run-sharded.sh` with only `E2E_SHARD_WORKERS` gives the writing specs at most 2
+  workers and the read-only ones the rest, and refuses a per-project cap above that total; an
+  assistant conversation is capped at 8 runs per spec page so each model call's context stays small
+  (`voc-datalake/frontend/e2e/README.md`).
+- OAuth sign-in for `POST /mcp/global` ([docs/mcp.md → OAuth sign-in](docs/mcp.md#oauth-sign-in)): discovery
+  documents under `/v1/.well-known/` (protected-resource and authorization-server metadata), a registration
+  facade that answers pre-registered public PKCE clients, `GET /oauth/authorize`, a loopback relay
+  (`GET /oauth/callback`, any port) and token/revocation facades (`POST /oauth/token`, `POST /oauth/revoke`).
+  The nine routes are anonymous by design and throttled per method.
+- Consent page `/oauth/authorize`: the signed-in person sees which assistant asks, chooses read only or read and
+  write and an optional project, then signs in. The assistant acts as that person exactly like a personal token:
+  never admin, at most editor, `run_agent` only for an administrator and re-checked per call, every tool call
+  audited.
+- Connect page: "Sign in with your account" snippets per client (no token in them) and "Signed-in assistants"
+  with revoke; revoking refuses the assistant's next request.
+- Web assistants (Claude.ai, ChatGPT, Amazon Quick) can be given callback URLs with `-c mcpOAuthWebCallbacks`;
+  their sign-in is untested until signed in live.
+- `-c mcpTokenMinting=false` turns minting of personal tokens off (Connect hides the form, `POST /connect/tokens`
+  answers 403); existing tokens keep working until they expire or are revoked.
+
+### Changed
+
+- `voc-mcp-global-api` reserves 20 concurrent executions; `-c mcpReservedConcurrency=<n>` changes it, `0` = no
+  reservation ([docs/deployment.md](docs/deployment.md#reserved-concurrency-of-the-mcp-endpoint--c-mcpreservedconcurrency)).
+- For a 2026-07-28 client, an `Mcp-Name` header sent with `prompts/get` or `resources/read` must match the body's
+  name or URI (refused with `-32020` otherwise); it stays optional there.
+- `npm run build:layers` skips a layer whose requirements, install recipe, build image and platform are
+  unchanged since its last build (a `.build-stamp` next to `python/`); `FORCE_LAYER_BUILD=1` or `--force`
+  rebuilds every layer. A stamp older than 7 days rebuilds anyway (`LAYER_STAMP_MAX_AGE_DAYS`), so
+  dependencies without an exact pin are re-resolved at least weekly.
+- Plan steps now read the approver's Cognito groups on every step (they used to only for admin-only
+  steps), so an approver in `e2e` runs on Haiku 5.5. An ordinary step still runs when that lookup fails.
+- e2e setup fails fast when a test user is not in the `e2e` group (`E2E_ALLOW_FULL_MODELS=1` downgrades
+  it to a warning).
+- A 401 from `/mcp/global` names the protected-resource metadata in `WWW-Authenticate` (`resource_metadata=…`).
+  The API-wide 401 for a request without credentials now carries `Bearer resource_metadata="…"` instead of
+  `Bearer error="invalid_token"`; the SPA does not read it.
+- Signing in from a deep link keeps the link's query string (the consent page needs it).
+
+### Security
+
+- MCP OAuth access tokens are verified in full on every request (RS256 only, issuer, access token, MCP client,
+  expiry, audience when present) and accepted only from a sign-in the person approved; refresh tokens are never
+  stored. The tokens API role gains Put/Delete on the jobs table's `MCPOAUTH#` relay rows only.
+- MCP OAuth clients get no app session: their Cognito clients allow only the `<mcp url>/read|write` scopes (no
+  `openid`, so no ID token) and no SRP or password sign-in, and `POST /oauth/token` never returns an `id_token`
+  ([docs/mcp.md → OAuth sign-in](docs/mcp.md#oauth-sign-in)).
+- Every REST API Lambda and the assistant stream (`/chat/stream`) answer 401 to a Cognito token issued to any app
+  client but the SPA's web client and the board pool's client (new env `APP_CLIENT_IDS` on every VocApiStack
+  function). The Cognito authorizer accepts a token of any client of the pool, so an MCP client's token could
+  otherwise have called every route with the person's full rights.
+- The MCP OAuth consent page follows a redirect only to the deployment's Cognito hosted UI, a loopback
+  callback (`127.0.0.1`, `localhost`, `[::1]` with a port from 1024 to 65535) or the exact https callback the assistant's request
+  named; anything else shows the page's error. `config.json` gains `cognito.hostedUiDomain`
+  ([docs/mcp.md → OAuth sign-in](docs/mcp.md#oauth-sign-in)). `npm run deploy:frontend` prints a WARNING (and
+  still deploys) when VocCoreStack's `UserPoolDomain` output is missing or not a
+  `<prefix>.auth.<region>.amazoncognito.com` host: until VocCoreStack is redeployed the consent page refuses every approval.
+- A consent opens its sign-in window for that one authorize request only: the token exchange's `code_verifier`
+  must match the consented PKCE `code_challenge` before a sign-in is recorded.
+
+### Upgrade notes
+
+- The reserved concurrency (20) comes out of the account's unreserved Lambda pool, which must stay at 100 or
+  more: an account whose Lambda concurrency quota is under 120 fails the VocApiStack deploy. Raise the quota
+  first (new accounts can start at 10), or deploy with `-c mcpReservedConcurrency=0` (no reservation) or a
+  smaller number.
+- Where alerting is already on, turn it off and on again once to create the four MCP alarms;
+  they add 4 alarm metrics (about $0.40 a month at list price). Two deployments in one account and region share
+  the MCP metrics, so each one's MCP alarms count both.
+- Kiro IDE users of the env-var snippet must approve `VOC_MCP_TOKEN` under Settings → Mcp Approved Env Vars.
+- Deploy VocCoreStack to create the `e2e` group, then add each e2e test user once (admin only):
+  `aws cognito-idp admin-add-user-to-group --user-pool-id <UserPoolId> --username '<e2e user>' --group-name e2e`.
+  The users must sign in again to get a token with the group. Without it the e2e setup stops.
+- Deploy VocProcessingStack before VocApiStack (the usual order): the processor must accept the new
+  optional `model_profile` queue field before the manual-import Lambda starts sending it.
+- VocApiStack adds 25 resources (Cognito resource server, three app clients on the existing user pool, nine
+  routes): 384 with every plugin, under this release's ceiling of 388 and the stack's fixed gate of 425
+  (500 minus 75 headroom). Deploy with `npm run deploy:api` (or end with `scripts/refresh-api-stage.sh`).
+- The new clients use the user pool's existing hosted-UI domain; nothing changes in VocCoreStack. Deploy
+  VocApiStack (or run `npm run deploy:frontend`) so `config.json` names it: until then the consent page refuses
+  to send the browser to the sign-in.
+- `resource` (RFC 8707) is dropped before Cognito unless `-c mcpOAuthResourceIndicator=true`; set it only on a
+  pool whose hosted UI accepts resource binding.
+- Before announcing OAuth to users, run the live-test runbook in docs/mcp.md.
+- A consent approved but not yet completed while this release deploys must be approved again (the grant has no
+  stored challenge). Requests to the REST API with a token of another app client of the user pool (a script
+  signing in through its own client) now get 401; use the SPA's client (`UserPoolClientId`).
 
 ## [5.61.00] - 2026-10-31
 

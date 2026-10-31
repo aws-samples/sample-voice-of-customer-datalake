@@ -45,6 +45,10 @@ NO_STORE_PATTERNS: Final = tuple(re.compile(pattern) for pattern in (
     r'^/scrapers/[^/]+/status$',
     r'^/(sources|integrations)/status$',
     r'^/connect/tokens(/|$)',
+    # MCP OAuth: consent, "my sign-ins", the facade and its discovery documents (docs/mcp.md).
+    r'^/connect/oauth(/|$)',
+    r'^/oauth/',
+    r'^/\.well-known/',
     r'^/memory/imports(/|$)',
     r'^/voting-sessions(/[^/]+)?$',
     r'^/logs/system(/|$)',

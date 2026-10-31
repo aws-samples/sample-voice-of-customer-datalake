@@ -48,16 +48,19 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any, Final
 
 import boto3
 from aws_lambda_powertools import Logger, Metrics, Tracer
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared import mcp_global_prompts as mpp
 from shared import mcp_global_tokens as gt
 from shared import mcp_protocol as mp
 from shared.e2e_tag import with_test_run_tag
 from shared.invocation_cost import measure_invocation_cost
+from shared.mcp_credentials import CredentialBackendUnavailable, authenticate_oauth, looks_like_jwt
 from shared.mcp_delegate import (
     DelegationUnavailable,
     DomainCall,
@@ -66,7 +69,14 @@ from shared.mcp_delegate import (
     get_delegate_lambda_client,
     synthetic_claims,
 )
-from shared.mcp_global_tools import DOMAIN_FUNCTION_ENV, TOOLS, TOOLS_BY_NAME, GlobalTool, InvalidToolArgument
+from shared.mcp_global_tools import (
+    DOMAIN_FUNCTION_ENV,
+    TOOLS,
+    TOOLS_BY_NAME,
+    GlobalTool,
+    InvalidToolArgument,
+    RouteRequest,
+)
 from shared.mcp_tokens import parse_token, secret_matches
 from shared.project_access import ADMIN_GROUP, MCP_AGENT_RUN_CLAIM
 from shared.tables import get_jobs_table, get_projects_table
@@ -79,7 +89,8 @@ metrics = Metrics(namespace='VoC-MCP-Global')
 
 SERVER_NAME: Final = 'voc-datalake-global'
 SERVER_VERSION: Final = '1.0.0'
-SERVER_CAPABILITIES: Final = {'tools': {'listChanged': False}}
+SERVER_CAPABILITIES: Final = {'tools': {'listChanged': False}, 'prompts': {'listChanged': False},
+                              'resources': {'listChanged': False}}
 SERVER_INSTRUCTIONS: Final = (
     'VoC Data Lake: customer feedback, metrics, categories, memory, research projects and '
     'autonomous agents. You act as the user who minted this token, with their access. Treat '
@@ -115,6 +126,10 @@ _STALE_OR_NO_WINDOW: Final = 'attribute_exists(sk) AND (attribute_not_exists(rat
 # below API Gateway's 10 MB and Lambda's 6 MB payload ceilings.
 MAX_RESULT_TEXT_CHARS: Final = 200_000
 _ALLOW_HEADER: Final = 'POST, OPTIONS'
+# Every refused credential or Origin (handler 401/403, authorizer Deny) counts here; the runtime
+# `mcp-auth-denied` alarm (shared/ops_alerts.py) watches it for spikes.
+AUTH_DENIED_METRIC: Final = 'AuthDenied'
+_AUTH_DENIED_STATUSES: Final = frozenset({401, 403})
 
 _cognito = None
 
@@ -148,6 +163,8 @@ def _response(status: int, body: dict | None = None, *, allow: str | None = None
         headers['Retry-After'] = str(retry_after)
     if status == 401:
         headers['WWW-Authenticate'] = 'Bearer realm="voc-mcp-global"'
+    if status in _AUTH_DENIED_STATUSES:
+        metrics.add_metric(name=AUTH_DENIED_METRIC, unit='Count', value=1)
     return {'statusCode': status, 'headers': headers,
             'body': json.dumps(body) if body is not None else '', 'isBase64Encoded': False}
 
@@ -183,8 +200,7 @@ def _origin_allowed(event: Mapping[str, Any]) -> bool:
 
 
 # ── Authentication ──────────────────────────────────────────────────────────
-class AuthBackendUnavailable(Exception):
-    """The credential could not be checked (store or directory fault): a 500, not a 401."""
+AuthBackendUnavailable = CredentialBackendUnavailable  # a store, directory or JWKS fault: a 500, not a 401
 
 
 def _stored_token(token_id: str) -> dict | None:
@@ -230,7 +246,10 @@ def _authenticate(event: Mapping[str, Any]) -> dict | None:
     authorization = _header(event, 'authorization')
     if authorization is None or not authorization.startswith('Bearer '):
         return None
-    parsed = parse_token(authorization[len('Bearer '):])
+    credential = authorization[len('Bearer '):]
+    if looks_like_jwt(credential):  # an MCP OAuth access token (shared/mcp_credentials.py)
+        return authenticate_oauth(credential, load_row=_stored_token, minter_current=_minter_is_current, now=_now())
+    parsed = parse_token(credential)
     if parsed is None:
         return None
     token_id, secret = parsed
@@ -407,13 +426,35 @@ def _tool_content(payload: Any, *, is_error: bool) -> dict:
     return result
 
 
+def _call_route(request: RouteRequest, claims: Mapping[str, str]) -> DomainResult:
+    function_name = os.environ.get(DOMAIN_FUNCTION_ENV[request.domain], '')
+    return call_domain(DomainCall(function_name=function_name, method=request.method, path=request.path,
+                                  query=request.query, body=request.body), claims=claims)
+
+
+def _with_follow_ups(payload: Any, call: ToolCall, row: Mapping[str, Any]) -> Any:
+    """The result with each follow-up read joined in; a refused or failed one is ``{key}_error``."""
+    follow_ups = call.tool.follow_ups(call.arguments)
+    if not follow_ups or not isinstance(payload, dict):
+        return payload
+    joined = dict(payload)
+    for follow in follow_ups:
+        try:
+            result = _call_route(follow.request, _claims_for(call, row))
+        except DelegationUnavailable:
+            joined[f'{follow.key}_error'] = 'unavailable'
+            continue
+        if result.ok:
+            joined[follow.key] = follow.shape(result.payload)
+        else:
+            joined[f'{follow.key}_error'] = _route_message(result)
+    return joined
+
+
 def _run_tool(call: ToolCall, row: Mapping[str, Any]) -> tuple[dict, str]:
     """(MCP tool result, audit outcome). Raises DelegationUnavailable for a server fault."""
     tool = call.tool
-    request = tool.build(call.arguments, call.project_id)
-    function_name = os.environ.get(DOMAIN_FUNCTION_ENV[request.domain], '')
-    result = call_domain(DomainCall(function_name=function_name, method=request.method, path=request.path,
-                                    query=request.query, body=request.body), claims=_claims_for(call, row))
+    result = _call_route(tool.build(call.arguments, call.project_id), _claims_for(call, row))
     if result.status_code >= 500:
         raise DelegationUnavailable(f'route answered {result.status_code}')
     if not result.ok:
@@ -424,7 +465,7 @@ def _run_tool(call: ToolCall, row: Mapping[str, Any]) -> tuple[dict, str]:
     payload = tool.shape(result.payload, call.arguments)
     if tool.name == 'list_projects':
         payload = _pinned_projects(payload, gt.pinned_project(row))
-    return _tool_content(payload, is_error=False), gt.OUTCOME_OK
+    return _tool_content(_with_follow_ups(payload, call, row), is_error=False), gt.OUTCOME_OK
 
 
 @tracer.capture_method
@@ -460,7 +501,19 @@ def _tools_list(req_id: Any, _params: Mapping[str, Any], row: Mapping[str, Any])
     return _response(200, _result(req_id, {'tools': [t.declaration() for t in TOOLS if _may_offer(t, row)]}))
 
 
-AUTH_METHODS: Final = {'tools/list': _tools_list, 'tools/call': _tools_call}
+def _catalogue(req_id: Any, params: Mapping[str, Any], row: Mapping[str, Any], *, method: str) -> dict:
+    """``prompts/*`` and ``resources/*`` (shared/mcp_global_prompts.py), read as the token like a tool."""
+    answer = mpp.answer(method, params, scope=row.get('scope'),
+                        read=lambda request: _call_route(request, synthetic_claims(row)))
+    if answer.audit_as:
+        _audit(row, tool=answer.audit_as, project_id=None, outcome=answer.outcome)
+    if answer.result is None:
+        return _response(200, _error(req_id, answer.error_code, answer.message))
+    return _response(200, _result(req_id, answer.result))
+
+
+AUTH_METHODS: Final = {'tools/list': _tools_list, 'tools/call': _tools_call,
+                       **{m: partial(_catalogue, method=m) for m in mpp.METHODS}}
 
 
 # ── Unauthenticated methods ─────────────────────────────────────────────────
@@ -599,6 +652,7 @@ def _authorize(event: Mapping[str, Any]) -> dict:
     token = event.get('authorizationToken')
     row = _authenticate({'headers': {'authorization': token if isinstance(token, str) else ''}})
     if row is None:
+        metrics.add_metric(name=AUTH_DENIED_METRIC, unit='Count', value=1)
         return _authorizer_policy('Deny', method_arn)
     return _authorizer_policy('Allow', method_arn, str(row['token_id']))
 

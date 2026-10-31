@@ -13,6 +13,7 @@
  * drift of the order, the cooldown, the error codes or the message patterns.
  */
 import { ALLOWED_MODEL_IDS } from './model-override.js';
+import { applyModelProfile, PROFILE_FALLBACKS, type ModelProfile } from './model-profile.js';
 import { METRIC_NAMESPACE } from '../lib/metric-namespace.js';
 
 /**
@@ -61,9 +62,14 @@ const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
   /not authorized to perform: bedrock:invoke/,
 ];
 
-/** The configured model first, then the chat default, then the order — de-duplicated. */
-export function fallbackChain(primary: string): string[] {
-  const candidates = [primary, CHAT_SURFACE_DEFAULT, ...MODEL_FALLBACK_ORDER];
+/**
+ * The configured model first, then the chat default, then the order — de-duplicated. Under a model
+ * profile (model-profile.ts): the profile's model, then the profile's own fallbacks only.
+ */
+export function fallbackChain(primary: string, profile?: ModelProfile): string[] {
+  const candidates = profile === undefined
+    ? [primary, CHAT_SURFACE_DEFAULT, ...MODEL_FALLBACK_ORDER]
+    : [applyModelProfile(primary, profile), ...PROFILE_FALLBACKS[profile]];
   return candidates.filter(
     (model, index) => (index === 0 || ALLOWED_MODEL_IDS.has(model)) && candidates.indexOf(model) === index,
   );

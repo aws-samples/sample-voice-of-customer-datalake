@@ -36,6 +36,12 @@ export const SIGNING_LAYER_FUNCTION_IDS: readonly string[] = [
   'ProjectsApi', 'ProjectsAssistWorker', 'PersonaGeneratorJob', 'PersonaImporterJob', 'DocumentGeneratorJob',
 ];
 
+/*
+ * The same cryptography also VERIFIES RS256 signatures on the global MCP endpoint (`shared/mcp_oauth_jwt.py`,
+ * MCP OAuth access tokens): api-mcp-oauth.ts attaches the layer that attachSigningLayer returns to that one
+ * function (pinned in dependency-layers.test.ts).
+ */
+
 /** lxml: the HTML parser the inbound-email intake hands to BeautifulSoup (`email_intake/mime.py`). */
 export const EMAIL_INTAKE_LAYER_DIR = 'lambda/layers/email-intake-deps';
 

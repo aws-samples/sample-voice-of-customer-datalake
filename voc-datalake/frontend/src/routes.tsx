@@ -49,6 +49,8 @@ const AgentDetail = lazy(() => import('./pages/Agents/AgentDetail'))
 const WorkflowPage = lazy(() => import('./pages/Agents/WorkflowPage'))
 const Account = lazy(() => import('./pages/Account/Account'))
 const Connect = lazy(() => import('./pages/Connect/Connect'))
+// MCP OAuth consent (docs/mcp.md): where an assistant's sign-in lands, behind ProtectedRoute.
+const OAuthConsent = lazy(() => import('./pages/OAuthConsent/OAuthConsent'))
 const Radar = lazy(() => import('./pages/Radar/Radar'))
 const Participants = lazy(() => import('./pages/Participants/Participants'))
 const FeatureRequests = lazy(() => import('./pages/FeatureRequests/FeatureRequests'))
@@ -161,6 +163,7 @@ export const routes: RouteObject[] = [
       // A library workflow on its own, outside any agent (Workflow library → Open / New workflow).
       { path: 'agents/workflows/:workflowId', ...page(<WorkflowPage />) },
       { path: 'connect', ...page(<Connect />) },
+      { path: 'oauth/authorize', ...page(<OAuthConsent />) },
       { path: 'account', ...page(<Account />) },
       // Administration (was Settings): admins only. The old
       // path keeps working — links, bookmarks and `?tab=` deep links redirect.

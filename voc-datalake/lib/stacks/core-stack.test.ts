@@ -775,12 +775,12 @@ describe('VocCoreStack CloudFront private asset paths (issue #229)', () => {
 });
 
 /**
- * 5.62.00 transition: VocApiStack stopped importing the identity pool id, but the DEPLOYED VocApiStack
+ * 5.64.00 transition: VocApiStack stopped importing the identity pool id, but the DEPLOYED VocApiStack
  * still imports it until its own update, and VocCoreStack deploys first. Without the explicit
  * `exportValue` CDK drops the export with its last consumer and CloudFormation refuses the Core update
  * ("export ... is in use"). Remove this case together with the pool.
  */
-describe('VocCoreStack keeps the identity pool id export for the deployed VocApiStack (5.62.00)', () => {
+describe('VocCoreStack keeps the identity pool id export for the deployed VocApiStack (5.64.00)', () => {
   it('exports the pool id under the name the deployed VocApiStack imports', () => {
     // `<stack name>:` + the name CDK derives from the pool's logical id; the real app's
     // `VocCoreStack:ExportsOutputFnGetAttVocIdentityPoolId9B6189CA` is pinned in baseline.json.

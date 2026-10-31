@@ -7,6 +7,7 @@
  */
 import { Handshake, Megaphone, Newspaper, Rocket, Tag } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import PressedChoices from '../../components/PressedChoices/PressedChoices'
 import { RADAR_NEWS_KINDS } from '../../api/radarNewsFields'
 import type { LucideIcon } from 'lucide-react'
 import { useNewsKindLabel } from './newsKindLabel'
@@ -50,13 +51,8 @@ export function NewsKindFilter({ value, onChange }: Readonly<{ value: NewsKindCh
   const { t } = useTranslation('radar')
   const label = useNewsKindLabel()
   return (
-    <div role="group" aria-label={t('releases.filterLabel')} className="flex flex-wrap gap-1.5 mb-3">
-      {CHOICES.map((choice) => (
-        <button key={choice} type="button" aria-pressed={value === choice} onClick={() => onChange(choice)}
-          className={value === choice ? 'badge badge-accent' : 'badge badge-muted hover:text-text'}>
-          {choice === 'all' ? t('releases.kindAll') : label(choice)}
-        </button>
-      ))}
-    </div>
+    <PressedChoices label={t('releases.filterLabel')} choices={CHOICES} value={value} onChange={onChange}
+      display={(choice) => (choice === 'all' ? t('releases.kindAll') : label(choice))}
+      className="flex flex-wrap gap-1.5 mb-3" pressedClassName="badge badge-accent" idleClassName="badge badge-muted hover:text-text" />
   )
 }

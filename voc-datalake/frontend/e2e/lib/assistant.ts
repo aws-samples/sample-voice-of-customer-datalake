@@ -44,7 +44,37 @@ export async function openFloating(page: Page): Promise<Locator> {
 /** "New chat" in the panel header; the /chat sidebar labels the same action "New conversation". */
 export async function newChat(page: Page): Promise<void> {
   await visible(page.getByRole('button', { name: /^(New chat|New conversation)$/ })).click()
+  // The click started the new conversation: reset before the assertion, so a failed composer check cannot
+  // leave the old count on the page.
+  resetRunCount(page)
   await expect(composer(page)).toHaveValue('')
+}
+
+/**
+ * Every model call of a run sees the WHOLE conversation, so a spec that kept one conversation
+ * going would grow every later call's context (owner: keep each call well under 100k tokens).
+ * Each spec therefore starts its own: a test's page is a fresh context whose persisted assistant
+ * state (the active thread) lib/context.ts strips per spec file, and `newChat` starts another one
+ * inside a test. This cap pins it: more runs (sends, approvals, declines) than this on one page
+ * without a `newChat` fail the spec instead of quietly piling up context.
+ */
+export const MAX_RUNS_PER_CONVERSATION = 8
+
+const runsByPage = new WeakMap<Page, number>()
+
+/** Count one assistant run on `page`'s conversation; throws past MAX_RUNS_PER_CONVERSATION. */
+export function countRun(page: Page): number {
+  const runs = (runsByPage.get(page) ?? 0) + 1
+  if (runs > MAX_RUNS_PER_CONVERSATION) {
+    throw new Error(`more than ${MAX_RUNS_PER_CONVERSATION} assistant runs in one conversation: call newChat(page) first`)
+  }
+  runsByPage.set(page, runs)
+  return runs
+}
+
+/** A new conversation starts on `page` (newChat does this). */
+export function resetRunCount(page: Page): void {
+  runsByPage.set(page, 0)
 }
 
 const sameApi = (url: URL): boolean => url.origin === new URL(apiUrl()).origin
@@ -81,6 +111,7 @@ const saveAfter = (page: Page): Promise<Response | null> =>
 
 /** Sends a message without waiting for the run (the mid-stream reload test). Returns the run's index. */
 export async function sendOnly(page: Page, text: string): Promise<number> {
+  countRun(page)
   const index = (await streamRuns(page)).length
   await composer(page).fill(text)
   await sendButton(page).click()
@@ -103,6 +134,7 @@ export const lastApprovalCard = (page: Page): Locator => page.getByTestId('appro
 export async function approve(page: Page, writeMatcher: (r: Response) => boolean): Promise<AskResult & { write: Response | null }> {
   const card = lastApprovalCard(page)
   await expect(card).toBeVisible()
+  countRun(page)
   const index = (await streamRuns(page)).length
   const write = page.waitForResponse(writeMatcher, { timeout: 60_000 }).catch(() => null)
   const saved = saveAfter(page)
@@ -115,6 +147,7 @@ export async function approve(page: Page, writeMatcher: (r: Response) => boolean
 /** Declines the newest card and waits for the resume run. */
 export async function decline(page: Page): Promise<AskResult> {
   const card = lastApprovalCard(page)
+  countRun(page)
   const index = (await streamRuns(page)).length
   const saved = saveAfter(page)
   await card.getByRole('button', { name: 'Decline', exact: true }).click()
@@ -203,6 +236,7 @@ const logText = async (page: Page): Promise<string> => (await conversationLog(pa
  */
 export async function askAssistant(page: Page, prompt: string, options: { timeoutMs: number; approveMax?: number }): Promise<AssistantTurn> {
   const box = await openFloating(page)
+  countRun(page)
   const before = await logText(page)
   await box.fill(prompt)
   const streamDone = page.waitForEvent('requestfinished', { predicate: isStream, timeout: options.timeoutMs }).catch(() => null)

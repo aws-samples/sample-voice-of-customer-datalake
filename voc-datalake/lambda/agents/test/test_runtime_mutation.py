@@ -35,6 +35,7 @@ from agents.graph import SCHEMA, WorkflowError, WorkflowGraph
 from agents.nodes.base import NodeContext, NodeFailure
 from shared.agents_store import BUILTIN_REVISION
 from shared.mcp_delegate import DelegationUnavailable
+from shared.model_profile import active_profile
 from shared.workflow_schema import DEFAULT_WORKFLOW_ID, default_template
 
 CUSTOM = {
@@ -166,7 +167,7 @@ class TestBuildContextResult:
         assert (ctx.node.id, ctx.node.type, ctx.node.role) == ('w', 'custom_llm', 'reviewer')
         assert ctx.envelope == ''
         assert ctx.claims == CLAIMS
-        fake.agent_claims.assert_called_once_with(CUSTOM_AGENT)
+        fake.agent_claims.assert_called_once_with(CUSTOM_AGENT, model_profile=None)
         fake.get_mate.assert_not_called()
 
     @pytest.mark.parametrize('seq', [None, '2', 2.0])
@@ -193,8 +194,10 @@ class TestBuildContextResult:
         assert _Store(CUSTOM_AGENT, RUNNING, mate).build({**EVENT, 'mate_seq': 1}).envelope == envelope
 
 
-def _run(event: dict, error: BaseException | None = None, result: Any = None) -> tuple[dict, MagicMock]:
+def _run(event: dict, error: BaseException | None = None, result: Any = None,
+         run: dict | None = None) -> tuple[dict, MagicMock]:
     ctx = MagicMock(spec=NodeContext)
+    ctx.run = run or {}
     step = MagicMock(side_effect=error, return_value=result)
     with patch('agents.runtime.build_context', return_value=ctx) as build:
         out = runtime.run_step(event, step)
@@ -210,6 +213,14 @@ def _failed(node_id: str, error: str, detail: str | None = None) -> dict:
 
 
 class TestRunStep:
+    def test_the_step_runs_in_the_run_rows_model_profile_and_it_ends_with_the_step(self):
+        seen: list[str | None] = []
+        with patch('agents.runtime.build_context') as build:
+            build.return_value = MagicMock(spec=NodeContext, run={'model_profile': 'e2e'})
+            runtime.run_step({'node_id': 'n1'}, lambda _ctx: seen.append(active_profile()) or {'status': 'done'})
+        assert seen == ['e2e']
+        assert active_profile() is None
+
     def test_the_step_result_is_returned_json_safe(self):
         out, _ = _run({'node_id': 'n1'}, result={'node_id': 'n1', 'status': 'done', 'n': Decimal('3')})
         assert out == {'node_id': 'n1', 'status': 'done', 'n': 3}

@@ -13,11 +13,13 @@ from typing import Any
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver, CORSConfig, Response, content_types
 
 from shared import http_cache
+from shared.app_clients import require_app_client
 from shared.category_override import redact_category_overrides
 from shared.e2e_tag import with_test_run_tag
 from shared.earliest_date import parse_iso_date
 from shared.exceptions import (
     ApiError,
+    AuthenticationError,
     AuthorizationError,
     ConfigurationError,
     ConflictError,
@@ -39,6 +41,7 @@ from shared.feedback import (  # noqa: F401 — re-export
 )
 from shared.invocation_cost import measure_invocation_cost
 from shared.logging import logger, metrics, tracer
+from shared.model_profile import profile_for_groups, profile_from_job_event, with_model_profile
 from shared.project_access import ADMIN_GROUP
 
 
@@ -361,9 +364,15 @@ def create_api_resolver(allowed_origin: str | None = None) -> APIGatewayRestReso
 
     # Register exception handlers for consistent error responses
     _register_exception_handlers(app)
-    app.use(middlewares=[_redact_response_overrides])
+    app.use(middlewares=[_app_clients_only, _redact_response_overrides])
 
     return app
+
+
+def _app_clients_only(app: APIGatewayRestResolver, next_middleware):
+    """401 for a Cognito token issued to any app client but the SPA's / board's (``shared.app_clients``)."""
+    require_app_client(app.current_event.raw_event)
+    return next_middleware(app)
 
 
 def _redact_response_overrides(app: APIGatewayRestResolver, next_middleware):
@@ -415,6 +424,8 @@ _EXCEPTION_ANSWERS: tuple[tuple[type[ApiError], int | None, str, str, bool], ...
     (ServiceError, 500, 'exception', 'Service error', False),
     # An expected refusal (role / project access), not a fault: INFO, like every 4xx above.
     (AuthorizationError, 403, 'info', 'Authorization error', False),
+    # A token of a foreign app client (an MCP OAuth client): refused like the authorizer would.
+    (AuthenticationError, 401, 'info', 'Authentication error', False),
     (ConflictError, 409, 'info', 'Conflict error', False),
     # A client-side sizing problem, not a fault: logged at INFO (no stack
     # trace) and answered with BOTH keys, because callers parse `error ?? message`.
@@ -442,6 +453,12 @@ def _exception_answer(status_code: int | None, log_level: str, label: str,
     return answer
 
 
+def _invocation_model_profile(event: object) -> str | None:
+    """The model profile of an API invocation: verified Cognito groups first, then an internal event's field."""
+    groups = get_caller_groups(event) if isinstance(event, dict) else []
+    return profile_for_groups(groups) or profile_from_job_event(event)
+
+
 def api_handler(func):
     """
     Combined decorator for Lambda API handlers.
@@ -460,8 +477,11 @@ def api_handler(func):
         @api_handler
         def lambda_handler(event, context):
             return app.resolve(event, context)
+
+    Innermost of all: the model profile (shared/model_profile.py) — from the verified
+    ``cognito:groups`` claim, or the stamped field of an internal (assist / job) event.
     """
-    measured = measure_invocation_cost(func)
+    measured = measure_invocation_cost(with_model_profile(_invocation_model_profile)(func))
     return with_test_run_tag(logger)(logger.inject_lambda_context(
         tracer.capture_lambda_handler(
             metrics.log_metrics(capture_cold_start_metric=True)(measured))))

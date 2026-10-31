@@ -38,7 +38,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
 from shared import mcp_global_tokens as gt
-from shared import mcp_tokens, project_access, project_gate
+from shared import mcp_oauth_consent_routes, mcp_oauth_routes, mcp_tokens, project_gate
 from shared.api import api_handler, create_api_resolver
 from shared.batch_get import batch_get_all
 from shared.dynamo_paging import query_all
@@ -50,6 +50,8 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.logging import logger, tracer
+from shared.mcp_oauth_config import token_minting_enabled
+from shared.mcp_oauth_consent_routes import oauth_summary
 from shared.project_access import Caller
 from shared.request_body import json_object_body
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
@@ -57,11 +59,16 @@ from shared.tables import configured_table, get_jobs_table, get_projects_table
 from shared.warm_init import warm_at_init
 
 TOKEN_NOT_FOUND = 'Token not found'
+MINTING_DISABLED = 'Minting MCP tokens is turned off on this deployment; sign in with OAuth instead'
 # The endpoint every global token is for, relative to the API base URL. Returned
 # by the list route so the Connect page never hard-codes it.
 GLOBAL_ENDPOINT_PATH = '/mcp/global'
 
 app = create_api_resolver()
+# MCP OAuth sign-in (docs/mcp.md → "OAuth sign-in"): the anonymous facade + discovery, and the
+# Cognito-authenticated consent API and "my sign-ins" under /connect/oauth.
+app.include_router(mcp_oauth_routes.app)
+app.include_router(mcp_oauth_consent_routes.app)
 
 
 def _now() -> datetime:
@@ -70,10 +77,7 @@ def _now() -> datetime:
 
 def _caller() -> Caller:
     """A real signed-in person, or 403 — a credential cannot manage credentials."""
-    caller = project_gate.caller_from_event(app.current_event.raw_event)
-    if caller.delegated or not caller.subject:
-        raise AuthorizationError('Only a signed-in user can manage MCP tokens')
-    return caller
+    return project_gate.require_person(app.current_event.raw_event, 'Only a signed-in user can manage MCP tokens')
 
 
 def _projects_table() -> Any:
@@ -186,23 +190,8 @@ def _token_expiry(body: dict, now: datetime) -> str:
 
 
 def _token_project(body: dict, caller: Caller) -> str | None:
-    """The optional project pin, which the minter must be able to view.
-
-    Checked for admins too (who skip the access gate), so a pin always names a
-    project that exists.
-    """
-    project_id = body.get('project_id')
-    if project_id is None or project_id == '':
-        return None
-    if not gt.is_path_id(project_id):
-        raise ValidationError('project_id is not a valid project id')
-    table = _projects_table()
-    project_gate.require_project_level(
-        lambda: project_gate.read_gate_meta(table, project_id), caller, project_access.LEVEL_VIEW,
-    )
-    if caller.is_admin and not project_gate.read_gate_meta(table, project_id):
-        raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
-    return str(project_id)
+    """The optional project pin, which the minter must be able to view (shared with OAuth consent)."""
+    return project_gate.require_viewable_pin(_projects_table(), body.get('project_id'), caller)
 
 
 def _require_room_for_another(caller: Caller, now: datetime) -> None:
@@ -246,6 +235,9 @@ def list_tokens():
             'max_expiry_days': gt.MAX_EXPIRY_DAYS,
             'max_active_tokens': gt.MAX_ACTIVE_TOKENS_PER_USER,
         },
+        # -c mcpTokenMinting=false: existing tokens keep working, new ones cannot be minted.
+        'minting_enabled': token_minting_enabled(),
+        'oauth': oauth_summary(),
     }
 
 
@@ -253,6 +245,8 @@ def list_tokens():
 @tracer.capture_method
 def mint_token():
     caller = _caller()
+    if not token_minting_enabled():
+        raise AuthorizationError(MINTING_DISABLED)
     body = json_object_body(app)
     now = _now()
     name = _token_name(body)

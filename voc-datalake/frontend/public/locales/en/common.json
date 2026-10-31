@@ -30,7 +30,8 @@
     "workflow": "Workflow",
     "radar": "Radar",
     "featureRequests": "Feedback boards",
-    "participants": "Participants"
+    "participants": "Participants",
+    "oauthConsent": "Approve an assistant"
   },
   "cancel": "Cancel",
   "configureBrand": "Configure brand",
@@ -336,7 +337,43 @@
       "denied": "Denied",
       "failed": "Failed"
     },
-    "shortcutTitle": "Connect an external assistant to this project"
+    "shortcutTitle": "Connect an external assistant to this project",
+    "mcpClientLabel": "Client",
+    "mcpClient": {
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor",
+      "kiro": "Kiro",
+      "inline": "Other clients"
+    },
+    "mcpFile": {
+      "claudeCode": "Save as .mcp.json in the project root.",
+      "cursor": "Save as .cursor/mcp.json in the project, or ~/.cursor/mcp.json for every project.",
+      "kiro": "Save as .kiro/settings/mcp.json in the workspace, or ~/.kiro/settings/mcp.json. In the Kiro IDE, add VOC_MCP_TOKEN to the Mcp Approved Env Vars setting; Kiro CLI reads it from the shell.",
+      "inline": "For clients that cannot read environment variables: the token is pasted into the file, so do not commit or share it."
+    },
+    "mcpEnvHint": "This file reads the token from the {{name}} environment variable, so it holds no secret. Set it in the shell that starts the client, with a token from below:",
+    "oauth": {
+      "title": "Sign in with your account",
+      "body": "These assistants connect with no token: add the server, and the assistant opens your browser to sign in and approve its access. It acts as you, never as an administrator.",
+      "kiro": "Kiro (mcp.json)",
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor (mcp.json)",
+      "consentHint": "On the approval screen you choose read only or read and write, and optionally one project. You sign in once more on the account page that follows.",
+      "webUntested": "Web assistants can sign in with the same server URL. Their sign-in has not been tested live yet.",
+      "webNotConfigured": "Web assistants are not set up on this deployment (an operator adds their callback URLs).",
+      "grantsTitle": "Signed-in assistants",
+      "grantsFailed": "Could not load your signed-in assistants.",
+      "grantsEmpty": "No assistant has signed in with your account yet.",
+      "revokeTitle": "Sign this assistant out?",
+      "revokeBody": "“{{name}}” loses access at its next request and has to sign in and be approved again.",
+      "revokeNamed": "Sign out {{name}}",
+      "mintingOff": "Personal tokens cannot be created on this deployment. Existing tokens keep working until they expire or are revoked; sign in with your account instead.",
+      "status": {
+        "active": "Active",
+        "revoked": "Signed out",
+        "expired": "Expired"
+      }
+    }
   },
   "header": {
     "title": "Voice of the Customer",
@@ -382,5 +419,21 @@
     "praise": "Positive feedback with no problem to fix",
     "question": "Asks how something works",
     "other": "None of the above"
+  },
+  "oauthConsent": {
+    "title": "Approve an assistant",
+    "asks": "{{client}} asks to use VoC as you.",
+    "scope": {
+      "read": "Read only: search feedback, metrics, memory and projects",
+      "write": "Read and write: also create and update documents"
+    },
+    "actsAs": "It gets your access to projects and categories, at most as an editor, never as an administrator. You can sign it out on the Connect page at any time.",
+    "runsAgents": "As an administrator, you also let it start agent runs (checked again on every run).",
+    "approveFailed": "The approval failed. Try again.",
+    "approve": "Approve and sign in",
+    "deny": "Deny",
+    "invalid": "This sign-in request is not valid. Start the sign-in again from your assistant.",
+    "refused": "The assistant’s request cannot be approved: {{reason}}",
+    "back": "Back to the assistant"
   }
 }

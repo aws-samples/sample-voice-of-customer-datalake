@@ -30,7 +30,8 @@
     "workflow": "Workflow",
     "radar": "Radar",
     "featureRequests": "Tableaux de retours",
-    "participants": "Participants"
+    "participants": "Participants",
+    "oauthConsent": "Approuver un assistant"
   },
   "cancel": "Annuler",
   "configureBrand": "Configurer la marque",
@@ -340,7 +341,43 @@
       "denied": "Refusé",
       "failed": "Échec"
     },
-    "shortcutTitle": "Connecter un assistant externe à ce projet"
+    "shortcutTitle": "Connecter un assistant externe à ce projet",
+    "mcpClientLabel": "Client",
+    "mcpClient": {
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor",
+      "kiro": "Kiro",
+      "inline": "Autres clients"
+    },
+    "mcpFile": {
+      "claudeCode": "Enregistrez-le sous .mcp.json à la racine du projet.",
+      "cursor": "Enregistrez-le sous .cursor/mcp.json dans le projet, ou ~/.cursor/mcp.json pour tous les projets.",
+      "kiro": "Enregistrez-le sous .kiro/settings/mcp.json dans l'espace de travail, ou ~/.kiro/settings/mcp.json. Dans l'IDE Kiro, ajoutez VOC_MCP_TOKEN sous Mcp Approved Env Vars ; Kiro CLI la lit depuis le shell.",
+      "inline": "Pour les clients qui ne lisent pas les variables d'environnement : le jeton est collé dans le fichier, ne le committez pas et ne le partagez pas."
+    },
+    "mcpEnvHint": "Ce fichier lit le jeton dans la variable d'environnement {{name}} : il ne contient aucun secret. Définissez-la dans le shell qui lance le client, avec un jeton ci-dessous :",
+    "oauth": {
+      "title": "Se connecter avec votre compte",
+      "body": "Ces assistants se connectent sans jeton : ajoutez le serveur, et l’assistant ouvre votre navigateur pour vous connecter et approuver son accès. Il agit en votre nom, jamais en administrateur.",
+      "kiro": "Kiro (mcp.json)",
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor (mcp.json)",
+      "consentHint": "Sur l’écran d’approbation, vous choisissez lecture seule ou lecture et écriture, et éventuellement un projet. Vous vous reconnectez sur la page de compte qui suit.",
+      "webUntested": "Les assistants web peuvent se connecter avec la même URL de serveur. Leur connexion n’a pas encore été testée en direct.",
+      "webNotConfigured": "Les assistants web ne sont pas configurés sur ce déploiement (un opérateur ajoute leurs URL de rappel).",
+      "grantsTitle": "Assistants connectés",
+      "grantsFailed": "Impossible de charger vos assistants connectés.",
+      "grantsEmpty": "Aucun assistant ne s’est encore connecté avec votre compte.",
+      "revokeTitle": "Déconnecter cet assistant ?",
+      "revokeBody": "« {{name}} » perd l’accès à sa prochaine requête et doit se reconnecter et être approuvé à nouveau.",
+      "revokeNamed": "Déconnecter {{name}}",
+      "mintingOff": "Les jetons personnels ne peuvent pas être créés sur ce déploiement. Les jetons existants fonctionnent jusqu’à leur expiration ou révocation ; connectez-vous plutôt avec votre compte.",
+      "status": {
+        "active": "Actif",
+        "revoked": "Déconnecté",
+        "expired": "Expiré"
+      }
+    }
   },
   "header": {
     "title": "Voix du client",
@@ -386,5 +423,21 @@
     "praise": "Retour positif sans problème à corriger",
     "question": "Demande comment quelque chose fonctionne",
     "other": "Aucun des types ci-dessus"
+  },
+  "oauthConsent": {
+    "title": "Approuver un assistant",
+    "asks": "{{client}} demande à utiliser VoC en votre nom.",
+    "scope": {
+      "read": "Lecture seule : rechercher les retours, les indicateurs, la mémoire et les projets",
+      "write": "Lecture et écriture : également créer et modifier des documents"
+    },
+    "actsAs": "Il reçoit votre accès aux projets et aux catégories, au plus en tant qu’éditeur, jamais en administrateur. Vous pouvez le déconnecter à tout moment sur la page Connecter.",
+    "runsAgents": "En tant qu’administrateur, vous l’autorisez aussi à lancer des exécutions d’agents (vérifié à chaque exécution).",
+    "approveFailed": "L’approbation a échoué. Réessayez.",
+    "approve": "Approuver et se connecter",
+    "deny": "Refuser",
+    "invalid": "Cette demande de connexion n’est pas valide. Relancez la connexion depuis votre assistant.",
+    "refused": "La demande de l’assistant ne peut pas être approuvée : {{reason}}",
+    "back": "Retour à l’assistant"
   }
 }

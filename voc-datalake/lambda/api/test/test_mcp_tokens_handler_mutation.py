@@ -507,6 +507,8 @@ class TestList:
             'endpoint_path': '/mcp/global',
             'can_mint_agent_runner': False,
             'limits': {'default_expiry_days': 30, 'max_expiry_days': 90, 'max_active_tokens': 20},
+            'minting_enabled': True,
+            'oauth': {'enabled': False, 'clients': []},
         }
         assert root['can_mint_agent_runner'] is True
         assert h.GLOBAL_ENDPOINT_PATH == '/mcp/global'

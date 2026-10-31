@@ -7,6 +7,21 @@
 #   CONTAINER_CMD=finch ./scripts/build-layers.sh
 #   CDK_DOCKER=finch    ./scripts/build-layers.sh
 # (Finch is a drop-in replacement for `docker run` for this use case.)
+#
+# Unchanged layers are skipped: each built layer gets a stamp file
+# (<layer>/.build-stamp, gitignored, excluded from the CDK asset) holding a
+# SHA-256 of everything that determines the build — the layer's
+# requirements*.txt, the install recipe below, the build image (Python
+# version) and the platform. Same hash and a built python/ dir → the layer is
+# skipped with one log line. A missing or unreadable stamp rebuilds, and so
+# does a stamp older than 7 days (LAYER_STAMP_MAX_AGE_DAYS): a requirements
+# line without an exact pin (`>=`) would otherwise keep the version it
+# resolved to on the first build forever, missing every later fix. Force a
+# full rebuild with either of:
+#   FORCE_LAYER_BUILD=1 ./scripts/build-layers.sh
+#   ./scripts/build-layers.sh --force
+# (The `:latest` image tag can move without the hash changing; force a rebuild
+# after pulling a new build image.)
 
 set -e
 
@@ -14,7 +29,24 @@ CONTAINER_CMD="${CONTAINER_CMD:-${CDK_DOCKER:-docker}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-LAYERS_DIR="$PROJECT_ROOT/lambda/layers"
+# LAYERS_DIR is overridable for lib/utils/build-layers-script.test.ts only.
+LAYERS_DIR="${LAYERS_DIR:-$PROJECT_ROOT/lambda/layers}"
+STAMP_NAME=".build-stamp"
+# Bump to invalidate every stamp when the stamp format itself changes.
+STAMP_FORMAT="1"
+# A stamp older than this rebuilds anyway, so unpinned dependencies are re-resolved at least weekly.
+STAMP_MAX_AGE_DAYS="${LAYER_STAMP_MAX_AGE_DAYS:-7}"
+case "$STAMP_MAX_AGE_DAYS" in
+  ''|*[!0-9]*) echo "LAYER_STAMP_MAX_AGE_DAYS must be a whole number of days" >&2; exit 2 ;;
+esac
+
+FORCE="${FORCE_LAYER_BUILD:-0}"
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    *) echo "Unknown argument: $arg (supported: --force)" >&2; exit 2 ;;
+  esac
+done
 
 echo "Building Lambda layers using $CONTAINER_CMD (ARM64/Graviton for Lambda)..."
 echo "Project root: $PROJECT_ROOT"
@@ -58,21 +90,73 @@ install_layer_deps() {
            && rm -rf /var/task/python/boto3 /var/task/python/boto3-* /var/task/python/botocore /var/task/python/botocore-* /var/task/python/s3transfer /var/task/python/s3transfer-* /var/task/python/jmespath /var/task/python/jmespath-* /var/task/python/dateutil /var/task/python/python_dateutil-* /var/task/python/six.py /var/task/python/six-* /var/task/python/urllib3 /var/task/python/urllib3-* /var/task/python/bin /var/task/python/*-stubs && find /var/task/python -name "*.pyi" -type f -delete && find /var/task/python -mindepth 2 -type d -name tests -prune -exec rm -rf {} +'
 }
 
+sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1
+  else shasum -a 256 | cut -d' ' -f1
+  fi
+}
+
+# The build hash of one layer: stamp format, image, platform, the recipe
+# (install_layer_deps as bash prints it) and every requirements*.txt (name +
+# content, in sorted order).
+layer_build_hash() {
+  local layer_dir="$1" req
+  {
+    echo "format=$STAMP_FORMAT"
+    echo "image=$DOCKER_IMAGE"
+    echo "platform=$PLATFORM"
+    declare -f install_layer_deps
+    for req in "$layer_dir"/requirements*.txt; do
+      [ -f "$req" ] || continue
+      echo "file=$(basename "$req")"
+      cat "$req"
+    done
+  } | sha256_stdin
+}
+
+# True when the stamp was written more than STAMP_MAX_AGE_DAYS ago (find -mmin: GNU and BSD).
+stamp_is_expired() {
+  local stamp="$1"
+  [ -n "$(find "$stamp" -mmin +$((STAMP_MAX_AGE_DAYS * 1440)) 2>/dev/null)" ]
+}
+
+# True when the layer was built from exactly this hash, recently enough, and its output is there.
+layer_is_current() {
+  local layer_dir="$1" want="$2" have
+  [ "$FORCE" = "1" ] && return 1
+  [ -d "$layer_dir/python" ] || return 1
+  [ -f "$layer_dir/$STAMP_NAME" ] || return 1
+  if stamp_is_expired "$layer_dir/$STAMP_NAME"; then
+    echo "~ $(basename "$layer_dir") layer stamp is older than $STAMP_MAX_AGE_DAYS days, rebuilding"
+    return 1
+  fi
+  have="$(head -n 1 "$layer_dir/$STAMP_NAME" 2>/dev/null || true)"
+  [ "$have" = "$want" ]
+}
+
 # Every layer dir with a requirements.txt (processing-deps, ingestion-deps,
 # signing-deps, email-intake-deps: lib/utils/dependency-layers.ts).
 for layer_dir in "$LAYERS_DIR"/*/; do
   layer_dir="${layer_dir%/}"
   [ -f "$layer_dir/requirements.txt" ] || continue
   name="$(basename "$layer_dir")"
+  hash="$(layer_build_hash "$layer_dir")"
+  if layer_is_current "$layer_dir" "$hash"; then
+    echo "= $name layer unchanged (build hash ${hash:0:12}), skipped; FORCE_LAYER_BUILD=1 rebuilds"
+    continue
+  fi
   echo ""
   echo "=== Building $name layer ==="
+  # The stamp goes first, so a failed build never leaves a stamp claiming success.
+  rm -f "$layer_dir/$STAMP_NAME"
   rm -rf "$layer_dir/python"
   mkdir -p "$layer_dir/python"
   install_layer_deps "$layer_dir"
+  echo "$hash" > "$layer_dir/$STAMP_NAME"
   echo "✓ $name layer built successfully"
   echo "  Size: $(du -sh "$layer_dir/python" | cut -f1)"
 done
 
 echo ""
-echo "=== All layers built successfully ==="
+echo "=== All layers built (or already current) ==="
 echo "You can now deploy with: npx cdk deploy --all"

@@ -20,7 +20,9 @@ import { projectsKey } from '../../api/projectQueryKeys'
 import { useConfigStore } from '../../store/configStore'
 import { globalEndpointUrl } from './connectSnippets'
 import { EndpointCard } from './EndpointCard'
+import { GrantList } from './GrantList'
 import { MintTokenForm } from './MintTokenForm'
+import { OAuthSignInCard } from './OAuthSignInCard'
 import { TokenList } from './TokenList'
 import type { ProjectChoice } from './MintTokenForm'
 
@@ -44,8 +46,17 @@ function ConnectBody({ apiEndpoint }: Readonly<{ apiEndpoint: string }>) {
   return (
     <>
       <EndpointCard endpointUrl={globalEndpointUrl(apiEndpoint, tokens.data.endpoint_path)} />
-      <MintTokenForm projects={projects} initialProjectId={searchParams.get('project') ?? ''}
-        canMintAgentRunner={tokens.data.can_mint_agent_runner} />
+      {/* MCP OAuth sign-in (docs/mcp.md): snippets with no token, and the assistants signed in as me. */}
+      {tokens.data.oauth.enabled && (
+        <>
+          <OAuthSignInCard endpointUrl={globalEndpointUrl(apiEndpoint, tokens.data.endpoint_path)} oauth={tokens.data.oauth} />
+          <GrantList />
+        </>
+      )}
+      {tokens.data.minting_enabled
+        ? <MintTokenForm projects={projects} initialProjectId={searchParams.get('project') ?? ''}
+          canMintAgentRunner={tokens.data.can_mint_agent_runner} />
+        : <p className="card text-sm text-muted" data-testid="connect-minting-off">{t('connect.oauth.mintingOff')}</p>}
       <TokenList tokens={tokens.data.tokens} projectNames={projectNames} />
     </>
   )

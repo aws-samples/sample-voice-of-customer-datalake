@@ -15,3 +15,15 @@ export function booleanContextFlag(contextValue: unknown, key: string, defaultVa
   }
   throw new Error(`Unrecognized ${key} context value: ${JSON.stringify(contextValue)}. ${usage}`);
 }
+
+/**
+ * Strict parsing of a non-negative whole-number CDK context value (`-c key=20`, or a JSON number in
+ * cdk.context.json). Absent = `defaultValue`; anything but digits (a sign, a fraction, `abc`) throws at
+ * synth, so a typo never deploys a different number than the operator meant.
+ */
+export function nonNegativeIntegerContext(contextValue: unknown, key: string, defaultValue: number, usage: string): number {
+  if (contextValue === undefined || contextValue === null) return defaultValue;
+  if (typeof contextValue === 'number' && Number.isSafeInteger(contextValue) && contextValue >= 0) return contextValue;
+  if (typeof contextValue === 'string' && /^\d{1,9}$/.test(contextValue.trim())) return Number(contextValue.trim());
+  throw new Error(`Unrecognized ${key} context value: ${JSON.stringify(contextValue)}. ${usage}`);
+}

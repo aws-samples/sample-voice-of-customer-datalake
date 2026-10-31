@@ -59,6 +59,16 @@ COGNITO_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="U
 COGNITO_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="UserPoolClientId") | .OutputValue')
 COGNITO_REGION=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoRegion") | .OutputValue // "us-west-2"')
 IDENTITY_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="IdentityPoolId") | .OutputValue')
+# The hosted-UI host the MCP OAuth consent page may navigate to (empty: the SPA refuses that redirect).
+HOSTED_UI_DOMAIN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="UserPoolDomain") | .OutputValue // empty')
+# The host lib/stacks/api-mcp-oauth.ts cognitoHostedUiHost builds (lib/utils/deploy-scripts.test.ts pins this pattern).
+HOSTED_UI_HOST_PATTERN='^[a-z0-9-]+\.auth\.[a-z0-9-]+\.amazoncognito\.com$'
+if ! [[ "$HOSTED_UI_DOMAIN" =~ $HOSTED_UI_HOST_PATTERN ]]; then
+  echo "" >&2
+  echo "WARNING: VocCoreStack output UserPoolDomain is ${HOSTED_UI_DOMAIN:-missing}, not a <prefix>.auth.<region>.amazoncognito.com host." >&2
+  echo "WARNING: the MCP OAuth consent page will refuse every approval until VocCoreStack is redeployed (cdk deploy). Deploying the frontend anyway." >&2
+  echo "" >&2
+fi
 API_ENDPOINT=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiEndpoint") | .OutputValue')
 # "true" when the AgentCore web search gateway is deployed (drives the UI toggles)
 WEB_SEARCH_AVAILABLE=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="WebSearchAvailable") | .OutputValue // "false"')
@@ -86,7 +96,7 @@ if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "null" ]; then
   exit 1
 fi
 
-# TRANSITIONAL (5.62.00): an empty value would break a cached pre-5.62 page just like a missing key.
+# TRANSITIONAL (5.64.00): an empty value would break a cached pre-5.64 page just like a missing key.
 if [ -z "$IDENTITY_POOL_ID" ] || [ "$IDENTITY_POOL_ID" = "null" ]; then
   echo "Error: Could not fetch IdentityPoolId from $CORE_STACK"
   exit 1
@@ -111,7 +121,7 @@ npm run build
 echo ""
 echo "Step 3: Generating runtime config.json..."
 
-# cognito.identityPoolId is TRANSITIONAL (5.62.00): the SPA ignores it, but a cached pre-5.62 bundle
+# cognito.identityPoolId is TRANSITIONAL (5.64.00): the SPA ignores it, but a cached pre-5.64 bundle
 # still requires it. It goes with the identity pool (lib/utils/deploy-scripts.test.ts).
 # Use jq to properly escape values and generate valid JSON. The same shape the
 # CDK deploy writes (VocApiStack runtimeConfig) and RuntimeConfigSchema reads
@@ -122,6 +132,7 @@ jq -n \
   --arg clientId "$COGNITO_CLIENT_ID" \
   --arg region "$COGNITO_REGION" \
   --arg identityPoolId "$IDENTITY_POOL_ID" \
+  --arg hostedUiDomain "$HOSTED_UI_DOMAIN" \
   --argjson webSearch "$([ "$WEB_SEARCH_AVAILABLE" = "true" ] && echo true || echo false)" \
   --argjson email "$([ "$EMAIL_AVAILABLE" = "true" ] && echo true || echo false)" \
   --arg boardUserPoolId "$BOARD_USER_POOL_ID" \
@@ -133,7 +144,8 @@ jq -n \
       userPoolId: $userPoolId,
       clientId: $clientId,
       region: $region,
-      identityPoolId: $identityPoolId
+      identityPoolId: $identityPoolId,
+      hostedUiDomain: $hostedUiDomain
     },
     features: {
       webSearch: $webSearch,

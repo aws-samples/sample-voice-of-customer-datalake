@@ -6,6 +6,7 @@ import pytest
 from shared import mcp_protocol as mp
 
 MODERN_META = {'_meta': {'io.modelcontextprotocol/protocolVersion': '2026-07-28'}}
+MODERN_HEADER = {'mcp_protocol_version': '2026-07-28'}
 
 
 def _headers(**values: str):
@@ -38,6 +39,31 @@ class TestIsModern:
         assert mp.body_version(params) is None
         assert mp.is_modern(_headers(), 'tools/list', params) is False
 
+
+class TestNamedTargets:
+    """prompts/get and resources/read: an optional ``Mcp-Name`` must agree with ``name`` / ``uri``."""
+
+
+    @pytest.mark.parametrize(('method', 'params', 'name'), [
+        ('prompts/get', {'name': 'weekly_summary'}, 'weekly_summary'),
+        ('resources/read', {'uri': 'voc://categories'}, 'voc://categories'),
+        ('resources/read', {'uri': 'voc://categories'}, '=?base64?dm9jOi8vY2F0ZWdvcmllcw==?='),
+        ('resources/read', {'uri': 'voc://categories'}, None),
+    ])
+    def test_an_agreeing_or_absent_name_is_served(self, method, params, name):
+        headers = {**MODERN_HEADER, 'mcp_method': method, **({'mcp_name': name} if name else {})}
+        assert mp.is_modern(_headers(**headers), method, {**params, **MODERN_META}) is True
+
+    @pytest.mark.parametrize(('method', 'params'), [
+        ('prompts/get', {'name': 'weekly_summary'}),
+        ('resources/read', {'uri': 'voc://categories'}),
+    ])
+    def test_a_disagreeing_name_is_a_header_mismatch(self, method, params):
+        headers = _headers(**MODERN_HEADER, mcp_method=method, mcp_name='other')
+        with pytest.raises(mp.ProtocolRefusal) as refused:
+            mp.is_modern(headers, method, {**params, **MODERN_META})
+        assert refused.value.code == mp.HEADER_MISMATCH
+        assert "Mcp-Name header value 'other' does not match body value" in refused.value.message
 
 class TestDecodedHeaderValue:
     @pytest.mark.parametrize(('raw', 'decoded'), [

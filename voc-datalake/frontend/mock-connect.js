@@ -6,12 +6,13 @@
 
 import { randomBytes } from 'node:crypto';
 
+import { credentialStatus, isoIn } from './mock-credentials.js';
+import { mockOAuthSummary } from './mock-oauth.js';
+
 const CONNECT_ADMIN = process.env.MOCK_AGENTS_NON_ADMIN !== '1';
 const TOKEN_ROUTE = /^\/connect\/tokens(?:\/([^/]+))?$/;
-const DAY_MS = 86_400_000;
 /** `n` lowercase hex characters (n even), the shape of the real token parts. */
 const hex = (n) => randomBytes(n / 2).toString('hex');
-const isoIn = (days) => new Date(Date.now() + days * DAY_MS).toISOString();
 
 const tokens = [
   {
@@ -30,12 +31,9 @@ const audits = new Map([
   ]],
 ]);
 
-function statusOf(token) {
-  if (token.revoked_at) return 'revoked';
-  return token.expires_at && Date.parse(token.expires_at) > Date.now() ? 'active' : 'expired';
-}
-
-const view = (token) => ({ ...token, status: statusOf(token) });
+const view = (token) => ({ ...token, status: credentialStatus(token) });
+// MOCK_TOKEN_MINTING=0 shows the Connect page of a deployment with -c mcpTokenMinting=false.
+const MINTING_ENABLED = process.env.MOCK_TOKEN_MINTING !== '0';
 
 function mint(body) {
   const name = typeof body?.name === 'string' ? body.name.trim() : '';
@@ -62,7 +60,11 @@ function routeConnect(method, tokenId, body) {
       return [200, {
         tokens: tokens.map(view), endpoint_path: '/mcp/global', can_mint_agent_runner: CONNECT_ADMIN,
         limits: { default_expiry_days: 30, max_expiry_days: 90, max_active_tokens: 20 },
+        minting_enabled: MINTING_ENABLED, oauth: mockOAuthSummary(),
       }];
+    }
+    if (method === 'POST' && !MINTING_ENABLED) {
+      return [403, { success: false, error: 'Minting MCP tokens is turned off on this deployment; sign in with OAuth instead' }];
     }
     return method === 'POST' ? mint(body) : null;
   }

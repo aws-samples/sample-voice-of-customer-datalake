@@ -259,7 +259,7 @@ The frontend fetches configuration from CloudFormation outputs:
 > These names must match `frontend/src/runtimeConfig.ts` exactly. The API endpoint,
 > user pool id and client id are **required**: `RuntimeConfigSchema` rejects an empty
 > one, and the fallback then blanks every Cognito value — the login screen shows
-> "Cognito not configured". There is no identity-pool variable since 5.62.00 (the
+> "Cognito not configured". There is no identity-pool variable since 5.64.00 (the
 > SPA uses no AWS credentials).
 
 **Local dev cannot use the deployed API.** `ALLOWED_ORIGIN` on the deployed API

@@ -13,6 +13,8 @@ import { getEnvString } from './lib/env'
 
 // URL regex pattern for validation (replaces deprecated z.string().url())
 const urlPattern = /^https?:\/\/.+/
+// A bare DNS host (no scheme, port or path), as VocCoreStack's UserPoolDomain output writes it.
+const HOSTED_UI_HOST = /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/
 
 const BoardConfigSchema = z.object({
   userPoolId: z.string().min(1),
@@ -42,6 +44,12 @@ const RuntimeConfigSchema = z.object({
     userPoolId: z.string().min(1),
     clientId: z.string().min(1),
     region: z.string().min(1),
+    /**
+     * The user pool's hosted-UI host (`<prefix>.auth.<region>.amazoncognito.com`): the only origin besides
+     * a loopback or the client's own callback the MCP OAuth consent page navigates to (api/oauthRedirect.ts).
+     * Lenient: absent or malformed (an older config.json) = no hosted UI, so that redirect is refused.
+     */
+    hostedUiDomain: z.string().regex(HOSTED_UI_HOST).optional().catch(undefined),
   }),
   // Optional capability flags: deployments without a given capability omit
   // the flag (or the whole block) and the UI hides the feature.
@@ -122,6 +130,15 @@ export function getBoardPoolConfig(): BoardPoolConfig | null {
   const board = configState.config?.board
   if (!board) return null
   return { ...board, region: configState.config?.cognito.region ?? 'us-east-1' }
+}
+
+/**
+ * The Cognito hosted UI's origin (`https://<host>`), or null when the config names none (local dev, an
+ * older config.json) or is not loaded yet.
+ */
+export function getHostedUiOrigin(): string | null {
+  const host = configState.config?.cognito.hostedUiDomain
+  return host ? `https://${host}` : null
 }
 
 async function fetchConfig(): Promise<RuntimeConfig> {

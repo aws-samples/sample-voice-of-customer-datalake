@@ -17,14 +17,16 @@ Chromium revision 1243 must be present (`npx --prefix e2e playwright install chr
 
 ### Sharded run (~30 min)
 
-A serial run of the whole suite takes hours. `npm run e2e:prod:sharded -- 6` (or `bash e2e/scripts/run-sharded.sh 6 [playwright args]`) starts 6 Playwright shards in parallel, 2 workers each (`E2E_SHARD_WORKERS`), which finishes the full production suite in about 30 minutes. Each shard has its own `E2E_OUT` (`<base>/shard<i>`, base `E2E_SHARD_OUT`, default `e2e/e2e-output/sharded-<epoch s>`), so its own saved sessions, run id, ledger and cleanup teardown: no shard reads or deletes another's data. When all shards end, their blob reports are merged (`playwright merge-reports`) into one list on the console, `<base>/results.json` and `<base>/html/`; the exit code is 1 when any shard failed. Logs per shard: `<base>/shard<i>/run.log`.
+A serial run of the whole suite takes hours. `npm run e2e:prod:sharded -- 6` (or `bash e2e/scripts/run-sharded.sh 6 [playwright args]`) starts 6 Playwright shards in parallel, each with 2 workers for the writing specs (`E2E_SHARD_WRITE_WORKERS`) and 2 for the read-only ones (`E2E_SHARD_READ_WORKERS`; total `E2E_SHARD_WORKERS`, default their sum; see "Workers" below), which finishes the full production suite in about 30 minutes. Each shard has its own `E2E_OUT` (`<base>/shard<i>`, base `E2E_SHARD_OUT`, default `e2e/e2e-output/sharded-<epoch s>`), so its own saved sessions, run id, ledger and cleanup teardown: no shard reads or deletes another's data. When all shards end, their blob reports are merged (`playwright merge-reports`) into one list on the console, `<base>/results.json` and `<base>/html/`; the exit code is 1 when any shard failed. Logs per shard: `<base>/shard<i>/run.log`.
 
 | Env var | Meaning |
 |---|---|
 | `E2E_SITE` | CloudFront URL of the SPA |
 | `E2E_API` | API Gateway stage URL (`…/v1`) |
-| `E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD` | A user in the `admins` group |
-| `E2E_USER_USER` / `E2E_USER_PASSWORD` | A user in the `users` group |
+| `E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD` | A user in the `admins` group **and** the `e2e` group (see "Models: the `e2e` group") |
+| `E2E_USER_USER` / `E2E_USER_PASSWORD` | A user in the `users` group **and** the `e2e` group |
+| `E2E_ALLOW_FULL_MODELS=1` (optional) | Run even when a test user is not in `e2e` (setup then only warns; its model calls use the admin's models) |
+| `E2E_READ_WORKERS` / `E2E_WRITE_WORKERS` (optional) | Workers for the read-only projects (default 4) and for the writing ones (default 1); see "Workers" |
 | `E2E_OUT` (optional) | Evidence directory (default `e2e/e2e-output`) |
 | `E2E_AUTH_DIR` (optional) | Saved sessions (default `$E2E_OUT/.auth`, or `e2e/.auth` without `E2E_OUT`) |
 | `E2E_KEEP_AUTH=1` (optional) | Keep the saved sessions after the run (default: the cleanup deletes the run's own `.auth` folder) |
@@ -51,9 +53,34 @@ filter test_run = 'e2e-20261010T080000Z'
 
 The access log also carries `path` (the real path, ids included), `integrationStatus` and `errorMessage`. The TypeScript `voc-chat-stream` Lambda does not add `test_run` (filter its requests by the access log's `userAgent`).
 
+### Models: the `e2e` group (5.63)
+
+Both test users must be members of the Cognito group `e2e` (VocCoreStack creates it). For a member, every model call the app makes for that user, on every AI surface (the assistant and its plan steps, every API route, the research, persona, document, prototype, merge and manual-import jobs the user starts, and agent runs the user starts), resolves to Claude Haiku 5.5 (`global.anthropic.claude-haiku-5-5`; `eu.` with `-c inferenceScope=eu`), whatever an admin picked; the capacity fallback stays on Haiku. Real users keep their models, and the admin model picker is untouched. The profile comes only from the verified token's `cognito:groups` (or a job record a verified request wrote); nothing in a request body can turn it on. The image model (persona avatars) is not changed. Not covered (they have no verified caller to read the group from): the background memory extraction of finished sessions (Haiku 5.5 by default anyway), the product-document extraction that runs on an upload, scheduled agent runs, and calls made with a global MCP token (its synthetic claims carry no groups). API Lambda log lines of a profiled model call show `model_profile=e2e`; the stream Lambdas log one `model profile applied` line per run.
+
+Membership is admin-only and set once, outside CI (the suite never needs AWS write access):
+
+```bash
+aws cognito-idp admin-add-user-to-group --user-pool-id <UserPoolId> --username '<e2e user>' --group-name e2e
+```
+
+`setup` reads each user's `cognito:groups` from the ID token after login and **fails** when `e2e` is missing, printing that command (`lib/modelProfile.ts`). `E2E_ALLOW_FULL_MODELS=1` turns the failure into a loud warning. A token minted before the user joined the group lacks it: sign in again.
+
+### Workers (5.63)
+
+The specs that only read and depend on no data a write can change (`lib/parallel.ts`: `request-counts`, `error-states`, `workflow-custom-arrows`) run in the projects `admin-read` and `user-read`, fully parallel, with up to `E2E_READ_WORKERS` workers (default 4). Every spec that writes (creates entities, changes the caller's own settings or memory, or runs the assistant) stays in `admin` / `user`, `E2E_WRITE_WORKERS` workers (default 1, so they run one at a time as before). `unit/parallel.spec.ts` fails when a listed spec gains a write call.
+
+A read-only spec runs beside the writing ones on the same deployment and users, so it is listed only when no concurrent write can change what it asserts: no deployment-wide counts or lists, and no entity picked from a list (the newest is often a write spec's own `e2e-<run id>-*` item, deleted mid-run). `screens`, `api-sweep`, `dashboard-data` and `prioritization-requests` read such data, so they stay in `admin` / `user`. When in doubt, a spec stays out of the list.
+
+`run-sharded.sh` takes its per-shard counts from `shardWorkerPlan` (`lib/parallel.ts`): `E2E_SHARD_WRITE_WORKERS` (default 2) + `E2E_SHARD_READ_WORKERS` (default 2). With only `E2E_SHARD_WORKERS` set, the writing specs get at most 2 and the read-only ones the rest; a cap above `E2E_SHARD_WORKERS` is refused before any shard starts.
+
+### One conversation per spec
+
+Each model call sees the whole conversation, so the assistant specs never continue one across specs: lib/context.ts strips the persisted assistant state (the active thread) once per spec file, and every test page is a fresh context. Inside a spec, `lib/assistant.ts` counts the runs (sends, approvals, declines) of the page's conversation and throws past `MAX_RUNS_PER_CONVERSATION` (8) unless `newChat(page)` started a new one, which keeps each call's context far below 100k tokens. `unit/conversation-cap.spec.ts` pins both, and that every spec driving the assistant uses those helpers.
+
 ## Projects (in order)
 
-1. `setup`: real login through `/login` for both roles.
+1. `setup`: real login through `/login` for both roles; fails when a user is not in the `e2e` group (above).
+   `admin-read` / `user-read` run the read-only specs listed under "Workers" beside step 2.
 2. `admin` and `user`, each running these specs:
    - `screens.spec.ts`: every route and tab from `lib/inventory.ts`, in dark and light for admin and in dark for user. Admin-only routes must redirect the user.
    - `modals.spec.ts`: opens each modal, audits it, closes it the designed way, and proves it closed. The scraper and import dialogs are admin-only: as e2e-user their tiles must be disabled with "Admin access required".

@@ -112,6 +112,8 @@ export class VocCoreStack extends VocStack {
   /** The board pool (feedback boards and review links) and its client, on every deployment (core-board-auth.ts). */
   public readonly boardUserPool: cognito.UserPool;
   public readonly boardUserPoolClient: cognito.UserPoolClient;
+  /** The app pool's hosted-UI domain prefix (`<prefix>.auth.<region>.amazoncognito.com`); MCP OAuth forwards to it. */
+  public readonly userPoolDomainPrefix: string;
   /** How customer data is removed with the stacks (`-c protectData`). */
   public readonly dataProtection: DataProtection;
 
@@ -490,6 +492,7 @@ export class VocCoreStack extends VocStack {
     this.userPool = auth.userPool;
     this.userPoolClient = auth.userPoolClient;
     this.identityPool = auth.identityPool;
+    this.userPoolDomainPrefix = auth.domainPrefix;
     // The board pool: feedback boards and document review links (core-board-auth.ts), on every
     // deployment; `-c emailFrom` only chooses how it emails its sign-in codes.
     const board = createBoardAuth(buildContext, {
@@ -551,8 +554,8 @@ export class VocCoreStack extends VocStack {
     new cdk.CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId, description: 'Cognito User Pool Client ID for frontend' });
     new cdk.CfnOutput(this, 'UserPoolDomain', { value: `${auth.domainPrefix}.auth.${this.region}.amazoncognito.com`, description: 'Cognito User Pool Domain' });
     new cdk.CfnOutput(this, 'CognitoRegion', { value: this.region, description: 'AWS Region for Cognito' });
-    new cdk.CfnOutput(this, 'IdentityPoolId', { value: this.identityPool.ref, description: 'Cognito Identity Pool ID (unused by the app since 5.62.00)' });
-    // TRANSITIONAL (5.62.00): kept explicitly so the release that drops `identityPoolId` from config.json
+    new cdk.CfnOutput(this, 'IdentityPoolId', { value: this.identityPool.ref, description: 'Cognito Identity Pool ID (unused by the app since 5.64.00)' });
+    // TRANSITIONAL (5.64.00): kept explicitly so the release that drops `identityPoolId` from config.json
     // (VocApiStack's last import of it) can deploy: CDK would remove the export with its last consumer,
     // VocCoreStack deploys first, and CloudFormation refuses to delete an export still imported by the
     // deployed VocApiStack ("export in use"). Removed in the release after that, with the pool.

@@ -19,6 +19,7 @@ import { byCodeUnit } from './compare';
 import { buildApiStack } from '../test-support/api-stack-template';
 import { isRecord, itemAt } from '../test-support/guards';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { cognitoHostedUiHost } from '../stacks/api-mcp-oauth';
 
 const PROJECT_ROOT = join(__dirname, '..', '..');
 const UPDATE_ENV_SH = join(PROJECT_ROOT, 'frontend', 'scripts', 'update-env.sh');
@@ -243,6 +244,13 @@ describe('API stage refresh after deploy (R1)', () => {
     expect(refreshAt).toBeGreaterThan(deployAt);
   });
 
+  it('cdk-deploy.sh ends every path with the refresh, the changed-stacks mode included (never skipped)', () => {
+    const source = readFileSync(CDK_DEPLOY_SH, 'utf8');
+    const lines = source.trim().split('\n');
+    expect(lines.at(-1)).toBe('bash scripts/refresh-api-stage.sh');
+    expect(source).not.toMatch(/refresh not needed|api_deployed/);
+  });
+
   it('refresh-api-stage.sh creates a fresh deployment OF THE STAGE and nothing else', () => {
     const source = readFileSync(REFRESH_API_STAGE_SH, 'utf8');
     expect(source).toMatch(/^set -euo pipefail$/m);
@@ -336,7 +344,7 @@ function schemaKeys(): string[] {
 
 /**
  * Keys both writers still emit for browsers on a cached older bundle, which RuntimeConfigSchema no
- * longer reads. Each leaves with the resource it names (5.62.00: the identity pool, kept one more release).
+ * longer reads. Each leaves with the resource it names (5.64.00: the identity pool, kept one more release).
  */
 const TRANSITIONAL_CONFIG_KEYS = ['cognito.identityPoolId'];
 
@@ -348,6 +356,22 @@ const cdkConfigKeys = (() => {
     return cache.keys;
   };
 })();
+
+/** deploy.sh's HOSTED_UI_HOST_PATTERN (the bash ERE its UserPoolDomain warning tests). */
+function deployShHostedUiPattern(): string {
+  const pattern = /^HOSTED_UI_HOST_PATTERN='([^']+)'$/m.exec(readFileSync(DEPLOY_SH, 'utf8'))?.[1];
+  if (pattern === undefined) throw new Error('deploy.sh: no HOSTED_UI_HOST_PATTERN');
+  return pattern;
+}
+
+/** deploy.sh's `if ! [[ "$HOSTED_UI_DOMAIN" … ]]; then … fi` block. */
+function hostedUiWarningBlock(): string {
+  const deploy = readFileSync(DEPLOY_SH, 'utf8');
+  const start = deploy.indexOf('if ! [[ "$HOSTED_UI_DOMAIN"');
+  const end = deploy.indexOf('\nfi\n', start);
+  if (start < 0 || end < 0) throw new Error('deploy.sh: no UserPoolDomain warning block');
+  return deploy.slice(start, end);
+}
 
 describe('runtime config.json keys', () => {
   it('deploy.sh writes exactly what the CDK deploy writes (every option on) and RuntimeConfigSchema reads', () => {
@@ -372,12 +396,27 @@ describe('runtime config.json keys', () => {
     }
   });
 
-  it('reads the board and email flags from outputs a stack declares', () => {
+  it('reads the board, email and hosted-UI values from outputs a stack declares', () => {
     const deploy = readFileSync(DEPLOY_SH, 'utf8');
     const stacks = ['core-stack.ts', 'api-stack.ts'].map((f) => readFileSync(join(PROJECT_ROOT, 'lib', 'stacks', f), 'utf8')).join('\n');
-    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable']) {
+    for (const key of ['BoardUserPoolId', 'BoardUserPoolClientId', 'EmailAvailable', 'UserPoolDomain']) {
       expect(deploy).toContain(`select(.OutputKey=="${key}")`);
       expect(stacks).toMatch(new RegExp(`new cdk\\.CfnOutput\\(this, '${key}'`));
     }
+  });
+
+  it('checks UserPoolDomain against the host cognitoHostedUiHost builds (bare prefix, scheme, slash refused)', () => {
+    // The bash ERE uses only classes, `+` and escaped dots, so it reads the same as a JS RegExp.
+    const host = new RegExp(deployShHostedUiPattern());
+    expect(host.test(cognitoHostedUiHost('voc-example-111111111111', 'eu-west-1'))).toBe(true);
+    const refused = ['', 'voc-example', 'https://voc.auth.us-east-1.amazoncognito.com', 'voc.auth.us-east-1.amazoncognito.com/', 'voc.example.com'];
+    expect(refused.filter((value) => host.test(value))).toStrictEqual([]);
+  });
+
+  it('prints a WARNING for a missing or wrong UserPoolDomain and keeps deploying (no exit)', () => {
+    const block = hostedUiWarningBlock();
+    expect(block).toMatch(/^if ! \[\[ "\$HOSTED_UI_DOMAIN" =~ \$HOSTED_UI_HOST_PATTERN \]\]; then/);
+    expect(block).toContain('echo "WARNING: VocCoreStack output UserPoolDomain is ${HOSTED_UI_DOMAIN:-missing}');
+    expect(block).not.toMatch(/\bexit\b/);
   });
 });

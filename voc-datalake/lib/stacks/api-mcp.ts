@@ -7,7 +7,8 @@ import * as cdk from 'aws-cdk-lib';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import type { ApiStackContext } from './api-context';
-import { BROWSER_PREFLIGHT, CORS_EXPOSE_HEADERS_VALUE, gatewayErrorCorsHeaders, type ApiGateway } from './api-gateway';
+import { BROWSER_PREFLIGHT, CORS_EXPOSE_HEADERS_VALUE, gatewayErrorCorsHeaders, restApiBaseUrl, type ApiGateway } from './api-gateway';
+import { addMcpOAuth, mcpResourceMetadataUrl } from './api-mcp-oauth';
 import { GlobalMcp } from './global-mcp';
 
 /** The domain Lambdas MCP tools delegate to. */
@@ -23,8 +24,16 @@ export interface McpDelegates {
 export const MCP_UNAUTHORIZED_BODY =
   '{"jsonrpc": "2.0", "id": null, "error": {"code": -32001, "message": "Unauthorized: invalid, expired or revoked token"}}';
 
-/** The challenge a refused MCP credential gets (RFC 6750 §3), realm as the handler names it. */
-export const MCP_BEARER_CHALLENGE = 'Bearer realm="voc-mcp-global", error="invalid_token"';
+/** The challenge's scheme and realm, as the handler names it (pinned by test_global_mcp_authorizer.py). */
+const MCP_BEARER_CHALLENGE = 'Bearer realm="voc-mcp-global"';
+
+/**
+ * The challenge a refused MCP credential gets (RFC 6750 §3), naming the protected-resource
+ * metadata (RFC 9728) an MCP client starts OAuth sign-in from (api-mcp-oauth.ts).
+ */
+export function mcpBearerChallenge(resourceMetadataUrl: string): string {
+  return `${MCP_BEARER_CHALLENGE}, resource_metadata="${resourceMetadataUrl}", error="invalid_token"`;
+}
 
 /**
  * The `/mcp/global` token authorizer: the global MCP function itself (`_authorize` in
@@ -53,13 +62,13 @@ function mcpAuthorizerOptions(stack: cdk.Stack, handler: lambda.IFunction): apig
  * API's only Lambda authorizer and the API has no resource policy, so only it can raise one
  * (pinned by 'access denied gateway response' in api-stack-mcp.test.ts).
  */
-function mcpAccessDeniedResponse(api: apigateway.RestApi, allowedOrigin: string): void {
+function mcpAccessDeniedResponse(api: apigateway.RestApi, allowedOrigin: string, resourceMetadataUrl: string): void {
   api.addGatewayResponse('McpAccessDenied', {
     type: apigateway.ResponseType.ACCESS_DENIED,
     statusCode: '401',
     responseHeaders: {
       ...gatewayErrorCorsHeaders(allowedOrigin, ['Authorization']),
-      'WWW-Authenticate': `'${MCP_BEARER_CHALLENGE}'`,
+      'WWW-Authenticate': `'${mcpBearerChallenge(resourceMetadataUrl)}'`,
       'Access-Control-Expose-Headers': CORS_EXPOSE_HEADERS_VALUE,
       'Cache-Control': "'private, no-store'",
     },
@@ -67,7 +76,8 @@ function mcpAccessDeniedResponse(api: apigateway.RestApi, allowedOrigin: string)
   });
 }
 
-export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegates: McpDelegates): GlobalMcp {
+export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegates: McpDelegates,
+  signingLayer: lambda.ILayerVersion): GlobalMcp {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const { api, authMethodOptions } = gateway;
   const { metricsLambda, projectsLambda, settingsLambda, memoryLambda, agentsLambda } = delegates;
@@ -76,13 +86,14 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
   // The per-project MCP server (`POST /mcp`, `/mcp/{proxy+}`, voc-mcp-api and its
   // role) was retired in 3.00.00. What stays is the `/mcp` resource as the parent
   // of `/mcp/global`; its authorizer is the global function (mcpAuthorizerOptions).
-  mcpAccessDeniedResponse(api, allowedOrigin);
+  const apiBaseUrl = restApiBaseUrl(stack, api);
+  mcpAccessDeniedResponse(api, allowedOrigin, mcpResourceMetadataUrl(apiBaseUrl));
 
   // No method of its own: `/mcp` only parents `/mcp/global` (global-mcp.ts).
   const mcpResource = api.root.addResource('mcp');
 
   // Global MCP endpoint (/mcp/global) + personal token API (/connect/tokens) — global-mcp.ts.
-  return new GlobalMcp(stack, 'GlobalMcp', {
+  const globalMcp = new GlobalMcp(stack, 'GlobalMcp', {
     uniqueName: (baseName) => ctx.uniqueName(baseName),
     createApiLambdaCode, apiLayer, allowedOrigin, mcpResource, authMethodOptions, browserPreflight: BROWSER_PREFLIGHT,
     mcpMethodOptionsFor: (handler) => mcpAuthorizerOptions(stack, handler),
@@ -92,4 +103,11 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
       PROJECTS_FUNCTION: projectsLambda, AGENTS_FUNCTION: agentsLambda,
     },
   });
+  // OAuth sign-in for the same endpoint (api-mcp-oauth.ts, docs/mcp.md "OAuth sign-in").
+  addMcpOAuth(stack, {
+    api, apiBaseUrl, userPool, userPoolDomainPrefix: ctx.props.userPoolDomainPrefix,
+    frontendDomainName: ctx.props.frontendDomainName, jobsTable, globalMcp, signingLayer,
+    uniqueName: (baseName) => ctx.uniqueName(baseName),
+  });
+  return globalMcp;
 }
