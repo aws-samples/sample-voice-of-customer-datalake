@@ -28,7 +28,7 @@ import { getRuntimeConfig } from '../runtimeConfig'
 import { useAuthStore } from '../store/authStore'
 import type { User } from '../store/authStore'
 
-/** The error code Login reads to switch to the new-password form. */
+/** The code of the first-login challenge (the new-password form). */
 export const NEW_PASSWORD_REQUIRED = 'NewPasswordRequired'
 
 /** An AuthError carrying the code Login switches on. */
@@ -39,6 +39,11 @@ export class AuthChallengeError extends AuthError {
     this.name = 'AuthChallengeError'
     this.code = code
   }
+}
+
+/** Whether a `signIn` rejection is the first-login challenge (answer it with `completeNewPassword`). */
+export function isNewPasswordChallenge(error: unknown): boolean {
+  return error instanceof AuthChallengeError && error.code === NEW_PASSWORD_REQUIRED
 }
 
 function isString(value: unknown): value is string {

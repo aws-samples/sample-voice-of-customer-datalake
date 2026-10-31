@@ -14,8 +14,8 @@ const mockCompleteNewPassword = vi.fn<(...args: unknown[]) => unknown>()
 const mockForgotPassword = vi.fn<(...args: unknown[]) => unknown>()
 const mockConfirmPassword = vi.fn<(...args: unknown[]) => unknown>()
 
-vi.mock('../../services/auth', () => ({
-  NEW_PASSWORD_REQUIRED: 'NewPasswordRequired',
+vi.mock('../../services/auth', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../services/auth')>(),
   authService: {
     signIn: (username: string, password: string) => mockSignIn(username, password),
     completeNewPassword: (password: string) => mockCompleteNewPassword(password),
@@ -40,6 +40,7 @@ vi.mock('react-router-dom', async () => {
 })
 
 import Login from './Login'
+import { AuthChallengeError, NEW_PASSWORD_REQUIRED } from '../../services/auth'
 
 
 type User = ReturnType<typeof userEvent.setup>
@@ -66,7 +67,7 @@ async function renderAndSignIn(password: string) {
 
 /** Sign in against a NewPasswordRequired challenge and land on the new-password form. */
 async function expectNewPasswordChallenge() {
-  mockSignIn.mockRejectedValue({ code: 'NewPasswordRequired' })
+  mockSignIn.mockRejectedValue(new AuthChallengeError(NEW_PASSWORD_REQUIRED, 'New password required'))
   const user = await renderAndSignIn('temppassword')
   await waitFor(() => {
     expect(screen.getByText(/Set New Password/i)).toBeInTheDocument()

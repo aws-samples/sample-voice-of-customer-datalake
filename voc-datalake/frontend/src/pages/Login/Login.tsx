@@ -18,7 +18,7 @@ import {
   useNavigate, useLocation,
 } from 'react-router-dom'
 import KiroGhost from '../../components/KiroGhost/KiroGhost'
-import { NEW_PASSWORD_REQUIRED, authService } from '../../services/auth'
+import { authService, isNewPasswordChallenge } from '../../services/auth'
 import { isSessionExpiredRedirect } from '../../services/sessionExpiry'
 import { LANDING_STATE } from '../../utils/landing'
 import {
@@ -32,7 +32,6 @@ import {
 type AuthMode = 'login' | 'newPassword' | 'forgotPassword' | 'confirmPassword'
 
 interface CognitoError {
-  code?: string
   message?: string
 }
 
@@ -205,7 +204,7 @@ export default function Login() {
       await authService.signIn(username, password)
       continueAfterSignIn()
     } catch (err: unknown) {
-      if (isCognitoError(err) && err.code === NEW_PASSWORD_REQUIRED) {
+      if (isNewPasswordChallenge(err)) {
         setChallengePending(true)
         setMode('newPassword')
         setError(null)
