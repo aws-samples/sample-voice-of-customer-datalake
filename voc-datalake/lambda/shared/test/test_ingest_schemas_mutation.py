@@ -139,7 +139,7 @@ class TestEveryStringBoundIsExact:
             'language': None, 'brand_name': None, 'brand_handles_matched': None, 'metadata': None,
             'dimensions': None, 'tags': None, 'pii_policy_applied': None, 'radar_brand_key': None,
             'issue_attributes': None, 'ingested_at': None, 's3_raw_uri': None, 'raw_data': None,
-            'is_webhook': None, 'is_update': None, 'is_deleted': None,
+            'is_webhook': None, 'is_update': None, 'is_deleted': None, 'model_profile': None,
         }
 
     def test_source_platform_may_be_256_characters_and_257_is_refused_before_normalising(self):
