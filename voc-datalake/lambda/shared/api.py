@@ -333,7 +333,8 @@ def create_cors_config(allowed_origin: str | None = None) -> CORSConfig:
 
 
 class CachingRestResolver(APIGatewayRestResolver):
-    """The REST resolver plus HTTP revalidation of GET answers (``shared.http_cache``).
+    """The REST resolver plus HTTP revalidation of GET answers (``shared.http_cache``)
+    and ``nosniff`` on every answer.
 
     Applied to the finished proxy response, so the ETag hashes the exact body sent
     and a matching ``If-None-Match`` becomes a bodiless 304 (docs/caching.md).
@@ -342,6 +343,7 @@ class CachingRestResolver(APIGatewayRestResolver):
     def resolve(self, event: Mapping[str, Any], context: Any) -> dict[str, Any]:
         response = super().resolve(event, context)
         http_cache.apply(event, response)
+        http_cache.mark_nosniff(response)
         return response
 
 
