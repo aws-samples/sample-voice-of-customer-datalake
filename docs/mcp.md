@@ -419,6 +419,11 @@ throttled and API Gateway answers with a 5xx. The 20 come out of the account's
 unreserved pool, which Lambda keeps at 100 or more, so the account's concurrency quota must be at least 120
 or the deploy fails. It is the only reservation in the app; `docs/lambda-sizing.md` covers memory only.
 
+`-c mcpReservedConcurrency=<n>` changes the number (a whole number, checked at synth; default 20). `0` means
+no reservation at all: the function then shares the unreserved pool like every other Lambda, which is the
+setting for an account whose quota is under 120 (new accounts can start at 10). The quota rule above becomes
+`n` + 100.
+
 ## Testing
 
 `lambda/api/test/test_global_mcp_e2e.py` drives the handler as an external MCP client
