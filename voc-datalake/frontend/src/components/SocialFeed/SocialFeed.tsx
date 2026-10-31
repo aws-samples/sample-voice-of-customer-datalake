@@ -26,6 +26,7 @@ import { SourceIcon } from '../SourceIcon/SourceIcon'
 import { formatDate } from '../../utils/dateUtils'
 import { cleanReviewText } from '../../utils/cleanReviewText'
 import { metricsKeys } from '../../api/queryKeys'
+import { httpHref } from '../../utils/httpHref'
 
 const SOURCE_COLORS: Record<string, string> = {
   webscraper: 'border-l-chart-2', web_scrape: 'border-l-chart-2',
@@ -34,6 +35,7 @@ const SOURCE_COLORS: Record<string, string> = {
 
 function FeedItem({ item }: Readonly<{ item: FeedbackItem }>) {
   const { t, i18n } = useTranslation('components')
+  const sourceHref = httpHref(item.source_url)
   const labels = useDisplayLabels()
   // Only non-empty strings, so only an unknown platform falls back.
   const borderColor = SOURCE_COLORS[item.source_platform] ?? 'border-l-border-strong'
@@ -69,9 +71,9 @@ function FeedItem({ item }: Readonly<{ item: FeedbackItem }>) {
                 <MessageCircle size={12} aria-hidden="true" />
                 {t('feedbackCard.details')}
               </ReviewLink>
-              {item.source_url && (
+              {sourceHref && (
                 <a
-                  href={item.source_url}
+                  href={sourceHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 link focus-ring rounded-sm"

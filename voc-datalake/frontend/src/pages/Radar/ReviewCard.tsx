@@ -14,6 +14,7 @@ import { hostOf } from './radarFormat'
 import { formatCalendarDay } from '../../utils/dateUtils'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import type { RadarReview } from '../../api/radarSchema'
+import { httpHref } from '../../utils/httpHref'
 
 /** Longer texts start clamped. */
 const CLAMP_CHARS = 360
@@ -40,8 +41,10 @@ function ReviewText({ text }: Readonly<{ text: string }>) {
 
 function SourceLink({ url }: Readonly<{ url: string }>) {
   const { t } = useTranslation('radar')
+  const href = httpHref(url)
+  if (href === undefined) return null
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="link text-xs inline-flex items-center gap-1">
+    <a href={href} target="_blank" rel="noopener noreferrer" className="link text-xs inline-flex items-center gap-1">
       <ExternalLink size={12} aria-hidden="true" />{t('reviews.source', { host: hostOf(url) })}
     </a>
   )

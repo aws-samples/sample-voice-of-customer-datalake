@@ -17,6 +17,7 @@ import { citationLabel, uniqueCitations } from './radarFormat'
 import { formatCalendarDay } from '../../utils/dateUtils'
 import type { RadarBrandRef, RadarRelease } from '../../api/radarSchema'
 import type { NewsKindChoice } from './NewsKind'
+import { httpHref } from '../../utils/httpHref'
 
 /** A release, with the brand it is about when the feed mixes brands. */
 type TimelineRelease = RadarRelease & { readonly brand?: RadarBrandRef }
@@ -24,13 +25,16 @@ type OnBrand = (key: string) => void
 
 function Citations({ release }: Readonly<{ release: RadarRelease }>) {
   const { t } = useTranslation('radar')
+  // Only web links are listed: a citation that is not an http(s) URL is dropped (FE-7).
+  const citations = uniqueCitations(release.urls, release.titles)
+    .flatMap(({ url, title }) => { const href = httpHref(url); return href === undefined ? [] : [{ url, href, title }] })
   return (
     <ul className="flex flex-wrap gap-x-3 gap-y-1 mt-1" aria-label={t('releases.sources')}>
-      {uniqueCitations(release.urls, release.titles).map(({ url, title }) => (
+      {citations.map(({ url, href, title }) => (
         // A citation label is often a URL path ("example-air.example/changelog/2026-…"):
         // it may break anywhere so it never pushes the page wider (390 px / 200 %).
         <li key={url} className="min-w-0 max-w-full">
-          <a href={url} target="_blank" rel="noopener noreferrer"
+          <a href={href} target="_blank" rel="noopener noreferrer"
             className="link text-xs inline-flex max-w-full items-center gap-1">
             <span data-testid="citation-label" className="min-w-0 [overflow-wrap:anywhere]">{citationLabel(url, title)}</span>
             <ExternalLink size={12} className="flex-shrink-0" aria-hidden="true" />
