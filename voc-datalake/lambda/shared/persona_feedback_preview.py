@@ -89,12 +89,6 @@ def _store(key: str, now: float, result: dict[str, Any]) -> None:
         _cache.popitem(last=False)  # insertion order is age order
 
 
-def clear_cache() -> None:
-    """Forget every cached answer (tests)."""
-    _cache.clear()
-    _index_counts.clear()
-
-
 def _answer(matched: int | None, *, lower_bound: bool, estimated: bool) -> dict[str, Any]:
     return {'matched': matched, 'matched_is_lower_bound': lower_bound, 'estimated': estimated}
 
