@@ -3083,7 +3083,7 @@ class TestARedeliveredArrivalMovesNothing:
         # The denominator: an assertion that both states are EMPTY would pass with
         # the handler doing nothing at all.
         assert after_first['METRIC#daily_total'] == Decimal(1)
-        assert len(after_first) == 7, after_first
+        assert len(after_first) == 10, after_first  # 7 + the three profile rows
 
     def test_the_second_delivery_of_a_record_writes_nothing_at_all(
         self, deduped_tables, sample_feedback_item
@@ -3643,7 +3643,7 @@ class TestTheTransactionIsAnArrivalAndOnlyAnArrival:
         # The denominator, so an implementation that wrote nothing on both paths could
         # not satisfy the equality.
         assert transactional['METRIC#daily_total'] == Decimal(1), transactional
-        assert len(transactional) == 7, transactional
+        assert len(transactional) == 10, transactional  # 7 + the three profile rows
 
 
 class TestAWriteConflictIsRetriedRatherThanReported:
