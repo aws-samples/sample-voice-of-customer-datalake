@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
 import { createTestQueryClient } from '@test/query-client'
 import { fetchApi, resetFetchApi, routeFetchApi as route } from '@test/fetchApiRoutes'
 import { defaultContextConfig } from '../../components/DataSourceWizard/types'
-import type { ProjectPersona } from '../../api/projectTypes'
+import type { ProjectJob, ProjectPersona } from '../../api/projectTypes'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
@@ -32,7 +32,7 @@ function wrapper() {
 }
 
 /** The library hook over an empty, read-only library whose jobs list is ``jobs()`` on every poll. */
-function renderLibrary(jobs: () => unknown[]) {
+function renderLibrary(jobs: () => Array<Partial<ProjectJob>>) {
   route({
     'GET /company-personas': () => ({ personas: [], can_edit: false }),
     'GET /company-personas/jobs': () => ({ jobs: jobs() }),
