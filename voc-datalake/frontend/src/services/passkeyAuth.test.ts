@@ -1,72 +1,70 @@
 /**
- * The app's passkey actions bound to its own pool and session: what each hands the passkey client,
- * and that a sign-in's tokens are adopted like a password sign-in's.
+ * The passkey actions against a mocked Amplify: registration and the "has a passkey" read call Amplify
+ * once it is configured, and every failure becomes a PasskeyError the UI can name.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const client = { signIn: vi.fn(), register: vi.fn(), hasPasskey: vi.fn() }
-const mockCreateClient = vi.fn<(deps: unknown) => typeof client>(() => client)
-const mockSupported = vi.fn(() => true)
-vi.mock('./passkey', () => ({
-  createPasskeyClient: (deps: unknown) => mockCreateClient(deps),
-  passkeySupported: () => mockSupported(),
-}))
+const amplify = vi.hoisted(() => ({ associateWebAuthnCredential: vi.fn(), listWebAuthnCredentials: vi.fn() }))
+vi.mock('aws-amplify/auth', () => amplify)
 
-const mockAdoptTokens = vi.fn<(tokens: unknown) => void>()
-vi.mock('./auth', () => ({ authService: { adoptTokens: (tokens: unknown) => { mockAdoptTokens(tokens) } } }))
+const configureAmplify = vi.hoisted(() => vi.fn())
+vi.mock('../lib/amplify-config', () => ({ configureAmplify }))
 
-const mockAvailable = vi.fn(() => true)
-vi.mock('../runtimeConfig', () => ({
-  getRuntimeConfig: () => ({ cognito: { region: 'us-east-1', clientId: 'webclient', userPoolId: 'p', identityPoolId: 'i' } }),
-  isPasskeyAvailable: () => mockAvailable(),
-}))
+const signInWithPasskey = vi.hoisted(() => vi.fn<(username: string) => Promise<void>>())
+vi.mock('./auth', () => ({ authService: { signInWithPasskey } }))
 
-const authState: { accessToken: string | null } = { accessToken: 'access-token' }
-vi.mock('../store/authStore', () => ({ useAuthStore: { getState: () => authState } }))
+const available = vi.hoisted(() => ({ value: true }))
+vi.mock('../runtimeConfig', () => ({ isPasskeyAvailable: () => available.value }))
 
 import { canUsePasskeys, passkeyAuth } from './passkeyAuth'
-
-const TOKENS = { IdToken: 'id', AccessToken: 'access', RefreshToken: 'refresh' }
+import { PasskeyError } from './passkey'
 
 beforeEach(() => {
-  authState.accessToken = 'access-token'
-  mockAvailable.mockReturnValue(true)
-  mockSupported.mockReturnValue(true)
+  vi.clearAllMocks()
+  available.value = true
+  vi.stubGlobal('PublicKeyCredential', class {})
+  vi.stubGlobal('navigator', { credentials: {} })
 })
 
 describe('canUsePasskeys', () => {
-  it.each([
-    [true, true, true],
-    [false, true, false],
-    [true, false, false],
-  ])('is %s && %s = %s (the deployment takes passkeys and the browser can make them)', (available, supported, expected) => {
-    mockAvailable.mockReturnValue(available)
-    mockSupported.mockReturnValue(supported)
-    expect(canUsePasskeys()).toBe(expected)
+  it('needs both the deployment and a WebAuthn browser', () => {
+    expect(canUsePasskeys()).toBe(true)
+    available.value = false
+    expect(canUsePasskeys()).toBe(false)
+    available.value = true
+    vi.stubGlobal('PublicKeyCredential', undefined)
+    expect(canUsePasskeys()).toBe(false)
   })
 })
 
 describe('passkeyAuth', () => {
-  it('signs in with the trimmed username on the app pool client and adopts the tokens', async () => {
-    client.signIn.mockResolvedValueOnce(TOKENS)
-    await passkeyAuth.signIn('  dana@example.com ')
-    expect(mockCreateClient).toHaveBeenLastCalledWith({ region: 'us-east-1', clientId: 'webclient' })
-    expect(client.signIn).toHaveBeenCalledExactlyOnceWith('dana@example.com')
-    expect(mockAdoptTokens).toHaveBeenCalledExactlyOnceWith(TOKENS)
+  it('signs in through the auth service', async () => {
+    signInWithPasskey.mockResolvedValueOnce(undefined)
+    await passkeyAuth.signIn('dana@example.com')
+    expect(signInWithPasskey).toHaveBeenCalledExactlyOnceWith('dana@example.com')
   })
 
-  it('registers and checks passkeys with the signed-in access token', async () => {
-    client.register.mockResolvedValueOnce(undefined)
-    client.hasPasskey.mockResolvedValueOnce(true)
+  it('registers with Amplify once it is configured', async () => {
+    amplify.associateWebAuthnCredential.mockImplementationOnce(() => {
+      expect(configureAmplify).toHaveBeenCalledWith()
+      return Promise.resolve()
+    })
     await passkeyAuth.register()
-    await expect(passkeyAuth.hasPasskey()).resolves.toBe(true)
-    expect([client.register.mock.calls, client.hasPasskey.mock.calls]).toStrictEqual([[['access-token']], [['access-token']]])
+    expect(amplify.associateWebAuthnCredential).toHaveBeenCalledExactlyOnceWith()
   })
 
-  it.each([null, ''])('refuses without an access token (%j), calling nothing', (token) => {
-    authState.accessToken = token
-    client.register.mockClear()
-    expect(() => passkeyAuth.register()).toThrow('Not signed in')
-    expect(client.register).not.toHaveBeenCalled()
+  it.each([
+    [[{ credentialId: 'c1' }], true],
+    [[], false],
+  ])('reads one credential to tell whether the person has a passkey (%j -> %s)', async (credentials, expected) => {
+    amplify.listWebAuthnCredentials.mockResolvedValueOnce({ credentials })
+    await expect(passkeyAuth.hasPasskey()).resolves.toBe(expected)
+    expect(amplify.listWebAuthnCredentials).toHaveBeenCalledExactlyOnceWith({ pageSize: 1 })
+  })
+
+  it('turns a cancelled registration into a cancelled PasskeyError', async () => {
+    amplify.associateWebAuthnCredential.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'PasskeyRegistrationCanceled' }))
+    const error: unknown = await passkeyAuth.register().catch((caught: unknown) => caught)
+    expect(error instanceof PasskeyError && error.code).toBe('cancelled')
   })
 })

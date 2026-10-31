@@ -168,6 +168,40 @@ describe('signIn', () => {
   })
 })
 
+describe('signInWithPasskey', () => {
+  const passkeyInput = { username: 'alice', options: { authFlowType: 'USER_AUTH', preferredChallenge: 'WEB_AUTHN' } }
+
+  it('signs in through USER_AUTH preferring WEB_AUTHN (username trimmed) and stores the session', async () => {
+    amplify.signIn.mockResolvedValue(DONE)
+    await authService.signInWithPasskey('  alice ')
+    expect(amplify.signIn).toHaveBeenCalledExactlyOnceWith(passkeyInput)
+    expect(store.setTokens).toHaveBeenCalledWith({ accessToken: ACCESS_TOKEN, idToken: ID_TOKEN })
+  })
+
+  it('is no_passkey when Cognito offers another first factor instead, storing nothing', async () => {
+    amplify.signIn.mockResolvedValue({ isSignedIn: false, nextStep: { signInStep: 'CONTINUE_SIGN_IN_WITH_FIRST_FACTOR_SELECTION', availableChallenges: ['PASSWORD'] } })
+    expect(await rejectionOf(authService.signInWithPasskey('alice'))).toHaveProperty('code', 'no_passkey')
+    expect(store.setTokens).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['PasskeyAuthenticationCanceled', 'cancelled'],
+    ['PasskeyNotSupported', 'unsupported'],
+    ['NotAuthorizedException', 'unknown'],
+  ])('names Amplify\'s %s as %s', async (name, code) => {
+    amplify.signIn.mockRejectedValue(Object.assign(new Error('x'), { name }))
+    expect(await rejectionOf(authService.signInWithPasskey('alice'))).toHaveProperty('code', code)
+  })
+
+  it('signs a session Amplify still holds out first, then tries once more', async () => {
+    amplify.signIn
+      .mockRejectedValueOnce(Object.assign(new Error('held'), { name: 'UserAlreadyAuthenticatedException' }))
+      .mockResolvedValueOnce(DONE)
+    await authService.signInWithPasskey('alice')
+    expect([amplify.signOut.mock.calls.length, amplify.signIn.mock.calls.length]).toStrictEqual([1, 2])
+  })
+})
+
 describe('completeNewPassword', () => {
   it('answers the challenge and stores the session', async () => {
     amplify.confirmSignIn.mockResolvedValue(DONE)

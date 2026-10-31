@@ -102,7 +102,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     },
     accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
     // Opt-in passkeys (docs/deployment.md -> Passkeys): after sign-in the SPA offers to register one
-    // (StartWebAuthnRegistration), and Login can then sign in with it (USER_AUTH, WEB_AUTHN). A password
+    // (Amplify associateWebAuthnCredential), and Login can then sign in with it (USER_AUTH, WEB_AUTHN). A password
     // stays the other first factor. Passkeys need the Essentials plan (the default for new pools; set here
     // so an older Lite pool moves too). The relying party is the site the SPA is served from.
     featurePlan: cognito.FeaturePlan.ESSENTIALS,
