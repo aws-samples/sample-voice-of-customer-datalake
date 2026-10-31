@@ -813,6 +813,15 @@ had traffic, run the read-only check (`voc-datalake/scripts/capacity/capacity-qu
 `E2E_OPS=1` ops specs in `frontend/e2e`). AWS Lambda Power Tuning is the follow-up for a flagged function and
 needs owner approval — see the runbook there.
 
+### Reserved concurrency of the MCP endpoint (`-c mcpReservedConcurrency`)
+
+`voc-mcp-global-api` reserves 20 concurrent executions by default, taken from the account's unreserved
+Lambda pool, which must stay at 100 or more: an account whose concurrency quota is under 120 fails the
+VocApiStack deploy. Either raise the quota first, or deploy with `-c mcpReservedConcurrency=<n>` (a whole
+number; the quota must then be at least `n` + 100) or `-c mcpReservedConcurrency=0` (no reservation: the
+endpoint shares the unreserved pool). Anything else fails the synth. See
+[mcp.md → Alarms and concurrency](mcp.md#alarms-and-concurrency).
+
 ### What a Python Lambda bundle contains
 
 Every Python function's code asset is built by one helper, `pythonLambdaAsset` in
