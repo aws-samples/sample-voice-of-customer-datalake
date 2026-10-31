@@ -945,15 +945,39 @@ With it on (lib/utils/data-protection.ts):
 - every DynamoDB table and the user pool get **deletion protection**, which also
   blocks a delete from the console, the CLI or an SDK;
 - the raw-data bucket has **no auto-delete provider**, so neither a teardown nor
-  a rename (a changed `deploymentPrefix`) can empty it.
+  a rename (a changed `deploymentPrefix`) can empty it;
+- every Lambda and API log group keeps **365 days** (the AWS Config
+  `cw-loggroup-retention-period-check` and Security Hub CloudWatch.16 default)
+  and is **retained** on stack deletion, and the S3 server access-log bucket is
+  kept too: they are the record of who touched the data (demo deployments keep
+  14 days and delete them);
+- every stack gets CloudFormation **termination protection**.
 
 Only the value `true` or `false` is accepted; anything else (a typo) fails the
 synth rather than deploying an unprotected stack. Turning it on for an existing
 deployment changes deletion policies and protection only, nothing is replaced.
 To tear down a protected deployment on purpose, deploy once with
-`-c protectData=false` (or remove deletion protection by hand), then delete the
-stacks. The website and access-log buckets and the operational queues hold no
-customer data and are always deleted with their stacks.
+`-c protectData=false` (or remove deletion protection by hand), turn termination
+protection off (`aws cloudformation update-termination-protection
+--no-enable-termination-protection --stack-name <stack>`), then delete the
+stacks; the retained log groups and access-log bucket are left to delete by hand.
+The website bucket and the operational queues hold no customer data and are
+always deleted with their stacks.
+
+### Passkeys
+
+The app user pool offers **opt-in passkeys** (WebAuthn): after sign-in the app
+asks each person once whether to add one, **Account → Profile → Passkey** adds
+one later, and **Login** has *Sign in with a passkey* (type the username or email
+first). The password keeps working and MFA is not enforced. In the stack
+(`lib/stacks/core-auth.ts`): the pool is on the **Essentials** plan, allows
+`PASSWORD` and `WEB_AUTHN` as first factors with user verification required, and
+its relying party is the site's own domain (the CloudFront domain, or your
+`frontendDomain`); the web client has the `USER_AUTH` flow. `config.json`
+carries `features.passkey: true`, and the SPA offers nothing in a browser
+without WebAuthn. Essentials bills about $0.015 per monthly active user after the
+first 10,000, which are free. A passkey is bound to the domain: moving the site
+to another domain means everyone adds a new one.
 
 ## Frontend Deployment
 

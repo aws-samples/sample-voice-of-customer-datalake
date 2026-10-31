@@ -17,6 +17,74 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.61.00] - 2026-10-31
+
+Security hardening from a Well-Architected security review: opt-in passkeys, tighter IAM, logs and edge, and
+safer handling of customer text in prompts.
+
+### Added
+- **Passkeys (opt-in).** After sign-in the app asks once whether to add a passkey (fingerprint, face or screen
+  lock); **Account → Profile → Passkey** keeps the action, and **Login** has *Sign in with a passkey*. The
+  password keeps working; MFA is not enforced. The app user pool allows WebAuthn as a first factor, with the
+  site's own domain as relying party and the choice-based `USER_AUTH` flow on the web client
+  (`features.passkey` in `config.json`). See [docs/deployment.md → Passkeys](docs/deployment.md#passkeys).
+- **Per-sender email cap.** One person's asks (`POST /participants/asks`) send at most 50 emails a UTC day, checked
+  before queueing (429 `sender_daily_cap`) and again on every send; the deployment cap (default 500) still applies.
+
+### Changed
+- **Sign-out revokes the refresh token** at Cognito, so a copied token stops working too.
+- **API Gateway** uses the enhanced TLS 1.2+ forward-secret policy `SecurityPolicy_TLS12_PFS_2025_EDGE`
+  (endpoint access mode BASIC). Execution logs are at ERROR (were INFO). The access log no longer records the
+  request path (a ballot link's id is a bearer value) and adds `sub`, `principalId` and `tlsVersion`.
+- Every API answer and gateway error carries `X-Content-Type-Options: nosniff`.
+- **SPA headers:** CSP adds `form-action 'self'` and drops the unused Lambda Function URL source; `X-XSS-Protection: 0`
+  and a `Permissions-Policy` are added. A legacy inline-HTML prototype is offered as a download only, and its
+  preview frame can no longer submit forms.
+- **Feedback form themes** accept hex colours and a pixel radius only, on save and again in the widget; a stored
+  non-hex colour falls back to the default.
+- The **feedback processor** runs at most 20 invocations at once, so a flood of widget submissions cannot take the
+  account's Lambda concurrency.
+- **IAM:** ingestors and manual import may only write `raw/*` (no read, no delete); the S3 import ingestor only
+  reads its bucket. `GET /integrations/{source}/credentials` never returns a value the plugin marks secret (the
+  GitHub token and webhook secret are write-only once saved).
+- **Prompts:** review text in the enrichment prompt and memory-extraction transcripts are fenced as data, and the
+  AI assistant treats tool results as data, never as instructions. Dot-only ids are refused at the assistant's
+  tool and approval boundaries.
+- **Memory:** memory routes by id and the review queue's linked memories follow the reader's category access.
+- **Links built from stored data** (a review's source, a release citation, a design reference) render only for
+  http(s) URLs.
+- A scraped page is read up to 5 MB (web scraper and *Analyze URL*). A failed manual-import start stores a fixed
+  reason, and an unparseable model answer is logged by its length, never its content.
+- Localhost is allowed only for a `-c environment=dev` deployment: the app client's OAuth redirect URLs and the
+  raw bucket's CORS origins.
+- `scripts/test-api.sh` has no default test password: set `VOC_TEST_PASS`.
+
+### Fixed
+- A file reprocessed from `processed/` in the S3 import keeps its original folder's source label in the import
+  history.
+
+### Security
+- **protectData deployments** keep Lambda and API log groups 365 days and retain them on stack deletion, keep the
+  S3 access-log bucket, and turn on CloudFormation termination protection on every stack. Demo deployments keep
+  14-day logs and delete everything with the stack.
+- `scratch/` copies in the raw bucket expire after 2 days; files staged in the S3 import bucket expire after 90 days.
+
+### Upgrade notes
+- **Cognito feature plan.** The app user pool is set to the **Essentials** plan (needed for passkeys). Pools created
+  since November 2024 already are; an older Lite pool moves on deploy. The first 10,000 monthly active users are
+  free, then Essentials is about $0.015 per user.
+- **TLS.** Clients that cannot negotiate TLS 1.2 with a forward-secret cipher can no longer reach the API. Check
+  `tlsVersion` in the access log before moving to the STRICT endpoint access mode later.
+- **Execution log group.** The existing `API-Gateway-Execution-Logs_<api id>/v1` group is not managed by the stack;
+  set its retention once: `aws logs put-retention-policy --log-group-name API-Gateway-Execution-Logs_<api id>/v1
+  --retention-in-days 14` (365 with protectData).
+- **Tearing down a protectData deployment** now needs termination protection turned off first
+  (`aws cloudformation update-termination-protection --no-enable-termination-protection --stack-name <stack>`),
+  and the retained log groups and access-log bucket are left behind to delete by hand.
+- **Deploy order:** `npm run deploy:infra` (all stacks, then the API stage refresh), then `npm run deploy:frontend`.
+- **Deployment test user:** set `VOC_TEST_PASS` before `scripts/test-api.sh`, and disable the test user after
+  validating.
+
 ## [5.60.01] - 2026-10-31
 
 Every dependency, Lambda runtime and layer moves to its newest release within its current major, starting from
@@ -50,7 +118,6 @@ what `npm run deps:freshness` (5.57.03) lists.
 - Rebuild the Lambda layers before deploying (`./scripts/build-layers.sh`): the processing and ingestion layers
   pin pydantic 2.14.2.
 - Deploying updates the `voc-chat-stream` and `voc-plan-step` functions to the `nodejs24.x` runtime in place.
-
 ## [5.60.00] - 2026-10-31
 
 Company personas: a persona library on the Company page that projects copy from and promote into.
