@@ -649,6 +649,14 @@
     "range": "{{from, number}}–{{to, number}} z {{total, number}}",
     "previous": "Poprzednie",
     "next": "Następne",
-    "close": "Zamknij"
+    "close": "Zamknij",
+    "citedSummary_one": "cytuje {{count, number}} z nich",
+    "citedSummary_few": "cytuje {{count, number}} z nich",
+    "citedSummary_many": "cytuje {{count, number}} z nich",
+    "citedSummary_other": "cytuje {{count, number}} z nich",
+    "viewLabel": "Które opinie",
+    "viewCited": "Cytowane ({{n, number}})",
+    "viewUsed": "Wszystkie użyte ({{n, number}})",
+    "citedNote": "Opinie, które wskazują dowody persony. Cytat, który nie wskazuje żadnej przeczytanej opinii, zostaje zachowany tylko jako tekst."
   }
 }

@@ -613,6 +613,12 @@
     "range": "{{from, number}}–{{to, number}} sur {{total, number}}",
     "previous": "Précédent",
     "next": "Suivant",
-    "close": "Fermer"
+    "close": "Fermer",
+    "citedSummary_one": "en cite {{count, number}}",
+    "citedSummary_other": "en cite {{count, number}}",
+    "viewLabel": "Quels avis",
+    "viewCited": "Cités ({{n, number}})",
+    "viewUsed": "Tous les avis utilisés ({{n, number}})",
+    "citedNote": "Les avis que nomment les éléments probants de la persona. Une citation qui ne nomme aucun avis lu est conservée sous forme de texte uniquement."
   }
 }

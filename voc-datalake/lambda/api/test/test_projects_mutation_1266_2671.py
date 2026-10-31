@@ -591,15 +591,17 @@ class TestTheScannerStartsOutsideAString:
 
 
 class TestClearingExistingPersonas:
-    def _clear(self, items: list[dict]) -> tuple[MagicMock, MagicMock]:
-        table, batch = _table_with_batch()
+    """Every page, one delete per persona (the paging and failure cases: test_persona_replace_clear.py)."""
+
+    def _clear(self, items: list[dict]) -> MagicMock:
+        table = MagicMock()
         table.query.return_value = {'Items': items}
         with patch.object(projects, 'projects_table', table):
             projects._clear_existing_personas('proj-1')
-        return table, batch
+        return table
 
     def test_the_query_projects_only_the_keys_of_the_projects_personas(self):
-        table, _batch = self._clear([])
+        table = self._clear([])
         table.query.assert_called_once_with(
             KeyConditionExpression=Key('pk').eq('PROJECT#proj-1') & Key('sk').begins_with('PERSONA#'),
             ProjectionExpression='pk, sk',
@@ -610,13 +612,13 @@ class TestClearingExistingPersonas:
             {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#persona_1'},
             {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#persona_2'},
         ]
-        _table, batch = self._clear(rows)
-        assert batch.delete_item.call_args_list == [call(Key=row) for row in rows]
+        table = self._clear(rows)
+        assert table.delete_item.call_args_list == [call(Key=row) for row in rows]
         log.info.assert_called_once_with('[PERSONA] Cleared 2 existing persona(s) before regeneration')
 
-    def test_no_personas_means_no_batch_and_no_log(self, log):
-        table, _batch = self._clear([])
-        table.batch_writer.assert_not_called()
+    def test_no_personas_means_no_delete_and_no_log(self, log):
+        table = self._clear([])
+        table.delete_item.assert_not_called()
         log.info.assert_not_called()
 
     def test_a_failed_read_is_logged_with_its_traceback_and_generation_continues(self, log):
@@ -624,7 +626,8 @@ class TestClearingExistingPersonas:
         table.query.side_effect = RuntimeError('throttled')
         with patch.object(projects, 'projects_table', table):
             assert projects._clear_existing_personas('proj-1') is None
-        log.exception.assert_called_once_with('[PERSONA] Failed to clear existing personas (continuing)')
+        log.exception.assert_called_once_with(
+            '[PERSONA] Failed to read the existing personas to clear (continuing)')
 
 
 def test_the_source_breakdown_counts_each_platform_and_names_the_missing_one_unknown():
@@ -653,7 +656,8 @@ class TestBuildingThePersonaItems:
     def test_a_full_persona_is_stored_field_for_field(self):
         persona = {
             'name': 'AdaMoreno', 'tagline': 'Careful planner', 'confidence': 'high',
-            'feedback_count': 9, 'identity': {'age': 36}, **PERSONA_SECTIONS, 'supporting_evidence': ['e'],
+            'feedback_count': 9, 'identity': {'age': 36}, **PERSONA_SECTIONS,
+            'supporting_evidence': ['e', 'Review #3', 'Review #22'],
         }
         [(persona_id, returned, item)] = self._build([persona])
         assert persona_id == 'persona_20260304050607_a1b2c3d4_0'
@@ -671,10 +675,12 @@ class TestBuildingThePersonaItems:
             'identity': {'age': 36},
             **PERSONA_SECTIONS,
             'research_notes': [],
-            'supporting_evidence': ['e'],
+            'supporting_evidence': ['e', 'Review #3', 'Review #22'],
             'source_breakdown': {'webscraper': 22},
             'source_feedback_ids': [f'fb-{i}' for i in range(20)],
             'input_feedback_ids': ['fb-3', 'fb-1'],
+            # Review #3 is the third item (fb-2); #22 has no id, 'e' cites nothing (#429).
+            'evidence_feedback_ids': ['fb-2'],
             'date_basis': 'review',
             'avatar_url': None,
             'avatar_prompt': None,
@@ -961,6 +967,7 @@ class TestGeneratePersonasOrchestration(_Generation):
             date_basis='review',
             # The items the persona-writing step read (2 of the 3 fetched), in prompt order.
             input_ids=['fb-1', 'fb-2'],
+            items_seen=2,
         )
         stubs['_attach_avatars'].assert_called_once_with('proj-1', self.ITEMS, update_progress)
         stubs['_save_personas'].assert_called_once_with('proj-1', self.ITEMS, '2026-03-04T05:06:07+00:00')
