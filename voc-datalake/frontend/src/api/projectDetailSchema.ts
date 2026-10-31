@@ -136,6 +136,8 @@ const ProjectPersonaSchema = z.looseObject({
   input_feedback_ids: optionalStringArray,
   copied_from: copiedFromSchema,
   evidence_feedback_ids: optionalStringArray,
+  /** Kept by a replace regeneration (#429); only a literal true protects. */
+  protected: z.boolean().optional().catch(undefined),
 })
 
 /** One persona row, or null when it has no usable id (company library, copy answers). */

@@ -16,8 +16,10 @@ from repeating the old one:
    (not renamed: a suffixed "Ada Moreno 2" would still answer as the same person). The
    job reports how many were dropped.
 
-The replace path (the default) uses none of this; a name repeated inside one run's new set
-is already dropped by the plan step (``projects._plan_entries``).
+The replace path (the default) applies both to the personas it keeps, the protected ones
+(``shared.persona_replace``, ported from #429 by @aws-bryan): ``read_existing_personas(...,
+only_protected=True)``. A name repeated inside one run's new set is already dropped by the plan
+step (``projects._plan_entries``).
 """
 from __future__ import annotations
 
@@ -29,6 +31,7 @@ from typing import Any
 from boto3.dynamodb.conditions import Key
 
 from shared.dynamo_paging import iter_query
+from shared.persona_replace import PROTECTED_FIELD, is_protected
 from shared.prompt_safety import neutralise_tags
 
 #: The newest personas projected into the prompt.
@@ -42,7 +45,7 @@ MAX_FIELD_CHARS = 100
 MAX_PAIN_POINTS = 2
 
 # Every attribute aliased: ``name`` and ``identity`` are DynamoDB reserved words.
-_PROJECTED_ATTRIBUTES = ('name', 'tagline', 'identity', 'goals_motivations', 'pain_points')
+_PROJECTED_ATTRIBUTES = ('name', 'tagline', 'identity', 'goals_motivations', 'pain_points', PROTECTED_FIELD)
 _ATTRIBUTE_NAMES = {f'#a{i}': attribute for i, attribute in enumerate(_PROJECTED_ATTRIBUTES)}
 
 
@@ -142,13 +145,14 @@ def _describe_existing(rows: Iterable[dict]) -> ExistingPersonas:
     return ExistingPersonas(keys, _existing_personas_section(_bounded_projection(ordered)), names)
 
 
-def read_existing_personas(table: Any, project_id: str) -> ExistingPersonas:
-    """The project's current personas (every page), described for an additive generation."""
-    return _describe_existing(iter_query(table, {
+def read_existing_personas(table: Any, project_id: str, *, only_protected: bool = False) -> ExistingPersonas:
+    """The personas a generation keeps (every page): all of them when adding, the protected ones when replacing."""
+    rows = iter_query(table, {
         'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#'),
         'ProjectionExpression': ', '.join(_ATTRIBUTE_NAMES),
         'ExpressionAttributeNames': dict(_ATTRIBUTE_NAMES),
-    }))
+    })
+    return _describe_existing(row for row in rows if not only_protected or is_protected(row))
 
 
 def drop_name_clashes(personas: list[dict], taken: frozenset[str]) -> tuple[list[dict], int]:
