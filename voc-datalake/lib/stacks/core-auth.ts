@@ -25,6 +25,7 @@ import {
 } from '../utils/nag-suppressions';
 import type { CoreBuildContext } from './core-cdn';
 import { retainOnReplace } from '../utils/retain-on-replace';
+import { isDevDeployment } from '../utils/context';
 
 export interface CoreAuth {
   userPool: cognito.UserPool;
@@ -57,14 +58,12 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   // COGNITO AUTH
   // ============================================
 
-  // Build callback URLs
-  const callbackUrls = ['http://localhost:5173', 'http://localhost:5173/callback'];
-  const logoutUrls = ['http://localhost:5173'];
-  callbackUrls.push(`https://${frontendDomainName}`);
-  callbackUrls.push(`https://${frontendDomainName}/callback`);
-  logoutUrls.push(`https://${frontendDomainName}`);
-
+  // OAuth URLs: the deployed site, plus the Vite dev server only for a dev deployment
+  // (IAM-8: a production client accepts no redirect to the operator's machine).
   const signInUrl = `https://${frontendDomainName}`;
+  const origins = [...(isDevDeployment(stack.node) ? ['http://localhost:5173'] : []), signInUrl];
+  const callbackUrls = origins.flatMap((origin) => [origin, `${origin}/callback`]);
+  const logoutUrls = origins;
 
   // Custom Message Lambda Trigger
   const customMessageLambda = new lambda.Function(stack, 'CustomMessageLambda', {
