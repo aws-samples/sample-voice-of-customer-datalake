@@ -21,7 +21,7 @@ export type SentimentFacet = (typeof SENTIMENT_FACET_VALUES)[number]
 export const USEFULNESS_BANDS = ['high', 'medium', 'low'] as const
 export type UsefulnessBand = (typeof USEFULNESS_BANDS)[number]
 /** The filter value for a review without a stored band. Never stored. */
-export const USEFULNESS_UNRATED = 'unrated'
+const USEFULNESS_UNRATED = 'unrated'
 export const USEFULNESS_FACET_VALUES = [...USEFULNESS_BANDS, USEFULNESS_UNRATED] as const
 export type UsefulnessFacet = (typeof USEFULNESS_FACET_VALUES)[number]
 
@@ -57,11 +57,11 @@ export interface FacetQueryParams {
   usefulness?: string
 }
 
-export function isSentimentFacet(value: string): value is SentimentFacet {
+function isSentimentFacet(value: string): value is SentimentFacet {
   return SENTIMENT_FACET_VALUES.some((known) => known === value)
 }
 
-export function isUsefulnessFacet(value: string): value is UsefulnessFacet {
+function isUsefulnessFacet(value: string): value is UsefulnessFacet {
   return USEFULNESS_FACET_VALUES.some((known) => known === value)
 }
 
