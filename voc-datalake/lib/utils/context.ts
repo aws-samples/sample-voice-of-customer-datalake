@@ -16,3 +16,18 @@ export function recordOrEmpty(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value));
 }
+
+/** The construct tree's context reader (any construct's `node`). */
+interface ContextReader {
+  tryGetContext(key: string): unknown;
+}
+
+/**
+ * Whether this is a local-development deployment (`-c environment=dev|development`; anything else, or
+ * nothing, is production). Only a dev deployment opens localhost: API CORS `*`, the raw bucket's
+ * localhost origins, and the app client's localhost OAuth URLs.
+ */
+export function isDevDeployment(node: ContextReader): boolean {
+  const environment = stringOr(node.tryGetContext('environment'), 'production');
+  return environment === 'dev' || environment === 'development';
+}

@@ -27,7 +27,7 @@ import {
   rootPluginAssetExcludes,
 } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
-import { stringOr } from '../utils/context';
+import { isDevDeployment } from '../utils/context';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import type { ApiStackContext } from './api-context';
 import { createAssistantLambdas } from './api-assistant-lambdas';
@@ -172,8 +172,7 @@ export class VocApiStack extends VocStack {
 
     // CORS configuration - defaults to production
     // Set context environment=dev to allow localhost for local development
-    const environment = stringOr(this.node.tryGetContext('environment'), 'production');
-    const isDev = environment === 'dev' || environment === 'development';
+    const isDev = isDevDeployment(this.node);
 
     if (isDev) {
       console.log('WARNING: Deploying in DEV mode with CORS=* for local development');
