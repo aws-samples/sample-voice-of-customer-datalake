@@ -38,6 +38,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
+import { nonNegativeIntegerContext } from '../utils/context-flag';
 import { GLOBAL_MCP_SERVICE_NAME } from '../utils/function-names';
 import { snapStartAlias, snapStartFunctionProps } from '../utils/snapstart';
 import { workerRole } from '../utils/worker-lambda';
@@ -62,6 +63,21 @@ export const GLOBAL_MCP_METHOD_THROTTLE: Record<string, apigateway.MethodDeploym
  * unreserved concurrency (which must stay at least 100), so the account quota must be 120 or more.
  */
 export const GLOBAL_MCP_RESERVED_CONCURRENCY = 20;
+
+/** The context key overriding {@link GLOBAL_MCP_RESERVED_CONCURRENCY}: `-c mcpReservedConcurrency=<n>`, 0 = none. */
+export const MCP_RESERVED_CONCURRENCY_CONTEXT = 'mcpReservedConcurrency';
+
+/**
+ * The endpoint's reservation from `-c mcpReservedConcurrency` (default 20), or undefined for 0: no
+ * reservation (the function then shares the account's unreserved pool; a reservation of 0 would throttle
+ * every request instead).
+ */
+export function mcpReservedConcurrency(scope: Construct): number | undefined {
+  const reserved = nonNegativeIntegerContext(scope.node.tryGetContext(MCP_RESERVED_CONCURRENCY_CONTEXT),
+    MCP_RESERVED_CONCURRENCY_CONTEXT, GLOBAL_MCP_RESERVED_CONCURRENCY,
+    'Use -c mcpReservedConcurrency=<whole number>, 0 for no reservation.');
+  return reserved === 0 ? undefined : reserved;
+}
 
 /** The env key each domain's function name arrives in (= DOMAIN_FUNCTION_ENV in mcp_global_tools.py). */
 type GlobalMcpDomainFunctions = Record<
@@ -168,7 +184,7 @@ export class GlobalMcp extends Construct {
       JOBS_TABLE: jobsTable.tableName,
       USER_POOL_ID: userPool.userPoolId,
       ...functionNames,
-    }, 512, { reservedConcurrentExecutions: GLOBAL_MCP_RESERVED_CONCURRENCY }); // CPU: 80.7 % p95 at 256 MB, 2026-10-18 (lib/sizing/policy.ts)
+    }, 512, { reservedConcurrentExecutions: mcpReservedConcurrency(this) }); // CPU: 80.7 % p95 at 256 MB, 2026-10-18 (lib/sizing/policy.ts)
   }
 
   private createTokensFunction(): lambda.Function {
