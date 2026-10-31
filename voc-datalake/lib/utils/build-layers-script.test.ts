@@ -46,6 +46,12 @@ function builds(): string[] {
   return names.sort(byCodeUnit);
 }
 
+/** Back-date a layer's build stamp by `days`. */
+function ageStamp(name: string, days: number): void {
+  const when = Date.now() / 1000 - days * 24 * 60 * 60;
+  utimesSync(join(layers, name, LAYER_BUILD_STAMP), when, when);
+}
+
 function addLayer(name: string, requirements: string): void {
   mkdirSync(join(layers, name), { recursive: true });
   writeFileSync(join(layers, name, 'requirements.txt'), requirements);
@@ -119,19 +125,18 @@ describe('scripts/build-layers.sh skip-unchanged', () => {
   it('rebuilds a layer whose stamp is older than 7 days (unpinned deps are re-resolved)', () => {
     run();
     builds();
-    const day = 24 * 60 * 60;
-    const age = (name: string, days: number): void => {
-      const when = Date.now() / 1000 - days * day;
-      utimesSync(join(layers, name, LAYER_BUILD_STAMP), when, when);
-    };
-    age('alpha-deps', 8);
-    age('beta-deps', 6);
+    ageStamp('alpha-deps', 8);
+    ageStamp('beta-deps', 6);
     expect(run()).toMatch(/alpha-deps layer stamp is older than 7 days, rebuilding/);
     expect(builds()).toStrictEqual(['alpha-deps']);
     run();
     expect(builds()).toStrictEqual([]); // the rebuild wrote a fresh stamp
+  });
 
-    age('beta-deps', 2);
+  it('takes the stamp age limit from LAYER_STAMP_MAX_AGE_DAYS, a whole number of days', () => {
+    run();
+    builds();
+    ageStamp('beta-deps', 2);
     run({ LAYER_STAMP_MAX_AGE_DAYS: '1' });
     expect(builds()).toStrictEqual(['beta-deps']);
     expect(() => run({ LAYER_STAMP_MAX_AGE_DAYS: 'week' })).toThrow(/whole number of days/);

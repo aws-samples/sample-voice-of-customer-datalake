@@ -28,7 +28,7 @@ worker. Code that handles several callers in one invocation (an SQS batch) opens
 one scope per record.
 """
 import functools
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager
 from typing import Any, Final
 
@@ -108,7 +108,7 @@ def payload_fields() -> dict[str, str]:
 
 
 @contextmanager
-def model_profile_scope(profile: object) -> Iterator[str | None]:
+def model_profile_scope(profile: object) -> Generator[str | None]:
     """Run the block with ``profile`` in force (None or an unknown value = no profile).
 
     Restores the previous value on exit, so a warm container never carries one
