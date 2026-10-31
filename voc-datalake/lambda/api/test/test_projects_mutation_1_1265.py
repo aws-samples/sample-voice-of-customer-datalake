@@ -716,17 +716,16 @@ class TestFencedJson:
     @pytest.mark.parametrize('raw', [None, ''])
     def test_nothing_is_logged_as_unparseable_with_an_empty_raw(self, log, raw):
         assert projects._fenced_json(raw, 'Bad reply') == {}
-        log.warning.assert_called_once_with('Bad reply raw=')
+        log.warning.assert_called_once_with('Bad reply (not JSON, 0 chars)')
 
-    def test_unparseable_text_is_logged_with_exactly_its_first_200_characters(self, log):
+    def test_unparseable_text_is_logged_by_its_length_never_its_content(self, log):
         assert projects._fenced_json('x' * 250, 'Bad reply') == {}
-        log.warning.assert_called_once_with('Bad reply raw=' + 'x' * 200)
+        log.warning.assert_called_once_with('Bad reply (not JSON, 250 chars)')
 
-    def test_a_non_object_is_logged_as_such_with_exactly_its_first_200_characters(self, log):
+    def test_a_non_object_is_logged_by_its_type_never_its_content(self, log):
         raw = json.dumps(list(range(100)))
-        assert len(raw) > 200
         assert projects._fenced_json(raw, 'Bad reply') == {}
-        log.warning.assert_called_once_with('Bad reply (not a JSON object) raw=' + raw[:200])
+        log.warning.assert_called_once_with('Bad reply (not a JSON object: list)')
 
 
 # ---------------------------------------------------------------------------
