@@ -14,6 +14,7 @@ import { ALL_TIME_CUSTOM_DAYS, MAX_CUSTOM_DAYS } from '../../api/baseUrl'
 import { getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
 import { chatScopeSchema, forwardedPropsSchema, mentionsSchema, pageContextSchema } from '../contract'
+import { REFUSED_SCOPE } from '../store/chatScopeStore'
 import type { ChatScope, ForwardedProps, Mentions, PageContext } from '../contract'
 
 const MAX_TITLE = 120
@@ -41,11 +42,11 @@ export interface ForwardedPropsInput {
   scope?: ChatScope
 }
 
-/** The scope only travels from `/chat`, and only when it passes the contract. */
+/** The scope only travels from `/chat`; one the contract refuses becomes a scope that admits nothing. */
 function scopeFor(page: PageContext, scope: ChatScope | undefined): { scope?: ChatScope } {
   if (scope === undefined || page.kind !== 'chat') return {}
   const parsed = chatScopeSchema.safeParse(scope)
-  return parsed.success ? { scope: parsed.data } : {}
+  return { scope: parsed.success ? parsed.data : REFUSED_SCOPE }
 }
 
 /** Mentions only travel from a project page, and only when they pass the contract. */
@@ -70,5 +71,7 @@ export function buildForwardedProps({ page, language, useWebSearch, mentions, sc
     ...(useWebSearch ? { useWebSearch: true } : {}),
   }
   const parsed = forwardedPropsSchema.safeParse(candidate)
-  return parsed.success ? parsed.data : { page: candidate.page }
+  if (parsed.success) return parsed.data
+  // The minimal fallback keeps a /chat run floored: dropping its scope would read past the user's filters.
+  return { page: candidate.page, ...(candidate.scope === undefined ? {} : { scope: REFUSED_SCOPE }) }
 }

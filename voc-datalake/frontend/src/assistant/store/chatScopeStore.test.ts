@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { buildForwardedProps } from '../agui/forwardedProps'
-import { chatScopeFor, useChatScopeStore } from './chatScopeStore'
+import { REFUSED_SCOPE, chatScopeFor, useChatScopeStore } from './chatScopeStore'
 import { CHAT_SCOPE_MAX_ITEMS, MAX_PAGE_FILTER_CHARS } from '../contract'
 import type { ChatScope, PageContext } from '../contract'
 
@@ -25,9 +25,15 @@ describe('chatScopeStore', () => {
     expect(chatScopeFor('b')).toStrictEqual({})
   })
 
-  it('falls back to an empty scope (the cap only) when the filters would be refused', () => {
+  it('cuts an overlong value to the bound instead of dropping the floor', () => {
     useChatScopeStore.getState().setFilters('a', { tag: 'x'.repeat(MAX_PAGE_FILTER_CHARS + 1) })
-    expect(chatScopeFor('a')).toStrictEqual({})
+    expect(chatScopeFor('a')).toStrictEqual({ filters: { tag: 'x'.repeat(MAX_PAGE_FILTER_CHARS) } })
+  })
+
+  it('carries a full 50-value category list whole', () => {
+    const categories = Array.from({ length: 50 }, (_, n) => `${'c'.repeat(125)}${String(n).padStart(3, '0')}`).join(',')
+    useChatScopeStore.getState().setFilters('a', { category: categories })
+    expect(chatScopeFor('a')).toStrictEqual({ filters: { category: categories } })
   })
 })
 
@@ -42,7 +48,7 @@ describe('forwardedProps.scope', () => {
       .toBeUndefined()
   })
 
-  it('leaves out a scope the stream would refuse', () => {
-    expect(scopeSent(CHAT, { limit: CHAT_SCOPE_MAX_ITEMS + 1 })).toBeUndefined()
+  it('sends a scope that admits nothing in place of one the stream would refuse (never no floor)', () => {
+    expect(scopeSent(CHAT, { limit: CHAT_SCOPE_MAX_ITEMS + 1 })).toStrictEqual(REFUSED_SCOPE)
   })
 })

@@ -9,7 +9,9 @@ import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
 import { VocApiStack } from '../lib/stacks/api-stack';
 import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
-import { AnthropicUseCaseSchema, AnthropicUseCaseConfig, BedrockModelAgreements } from '../lib/stacks/bedrock-access-stack';
+import {
+  AnthropicUseCaseSchema, AnthropicUseCaseConfig, BedrockModelAgreements, ModelAgreementRetrySchema,
+} from '../lib/stacks/bedrock-access-stack';
 import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
 import { suppressReviewedResourceStar } from '../lib/utils/nag-resource-star';
 import { shouldDeployWebSearchInScope } from '../lib/utils/web-search-default';
@@ -181,7 +183,15 @@ tagStack(coreStack, 'Core');
 // the persona-avatar image model. Hosted by Core because it always exists, deploys
 // first and runs in the app region. The id is the construct's earlier name
 // (image agreement only), kept so that resource keeps its logical id.
-BedrockModelAgreements.addTo(coreStack, 'ImageModelAccess');
+// `-c modelAgreementRetry=<value>` re-attempts every agreement on the next deploy (a new value
+// each time; docs/deployment.md → "Retry a refused agreement").
+const modelAgreementRetry = ModelAgreementRetrySchema.safeParse(app.node.tryGetContext('modelAgreementRetry'));
+if (!modelAgreementRetry.success) {
+  cdk.Annotations.of(coreStack).addWarningV2('voc:modelAgreementRetry',
+    'modelAgreementRetry must be 1-64 letters, digits, dots, dashes or underscores; ignored');
+}
+BedrockModelAgreements.addTo(coreStack, 'ImageModelAccess',
+  { retry: modelAgreementRetry.success ? modelAgreementRetry.data : undefined });
 // The form goes in before Core's agreements are attempted, as it did when both
 // lived in one construct. Only when there IS a form: otherwise Core must not wait
 // on (or, with `cdk deploy VocCoreStack`, drag in) a us-east-1 stack.

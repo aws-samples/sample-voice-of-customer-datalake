@@ -230,6 +230,18 @@ export class AnthropicUseCaseSubmission extends Construct {
  * Update and Delete leave the account's agreements alone, so moving or removing a
  * resource revokes nothing. Administration → AI models shows what is usable.
  */
+/** `-c modelAgreementRetry`: absent, or a short token (a new one re-attempts the agreements). */
+export const ModelAgreementRetrySchema = z.string().regex(/^[\w.-]{1,64}$/).optional();
+
+export interface ModelAgreementOptions {
+  /**
+   * `-c modelAgreementRetry=<value>`: any new value re-attempts every agreement on the next deploy
+   * (best effort, like the first attempt). Use it after filing the use-case form in the console, or
+   * after fixing what refused an agreement. Absent = nothing re-runs.
+   */
+  readonly retry?: string;
+}
+
 export class BedrockModelAgreements extends Construct {
   /**
    * Adds the agreements to `scope`. bin/voc-datalake.ts passes the id
@@ -238,13 +250,13 @@ export class BedrockModelAgreements extends Construct {
    * ids, log group names and service token: CloudFormation refuses to change a
    * custom resource's ServiceToken.
    */
-  public static addTo(scope: Construct, id: string): BedrockModelAgreements {
-    return new BedrockModelAgreements(scope, id);
+  public static addTo(scope: Construct, id: string, options: ModelAgreementOptions = {}): BedrockModelAgreements {
+    return new BedrockModelAgreements(scope, id, options);
   }
 
-  private constructor(scope: Construct, id: string) {
+  private constructor(scope: Construct, id: string, options: ModelAgreementOptions) {
     super(scope, id);
-    const agreements = new ModelAgreementProvider(this);
+    const agreements = new ModelAgreementProvider(this, options.retry);
     agreements.agree(this, 'ImageModelAgreement', IMAGE_MODEL_ID, IMAGE_MODEL_REGION);
     // Where the app runs. Passed as a property rather than read by the handler, so the
     // template states it.
@@ -265,7 +277,7 @@ export class BedrockModelAgreements extends Construct {
 class ModelAgreementProvider {
   private readonly serviceToken: string;
 
-  constructor(host: Construct) {
+  constructor(host: Construct, private readonly retry?: string) {
 
     // Lambda function to fetch offer token and create agreement
     const modelAgreementLambda = new lambda.Function(host, 'ModelAgreementLambda', {
@@ -345,7 +357,9 @@ class ModelAgreementProvider {
   public agree(scope: Construct, id: string, modelId: string, region: string): cdk.CustomResource {
     return new cdk.CustomResource(scope, id, {
       serviceToken: this.serviceToken,
-      properties: { modelId, region, bestEffort: 'true' },
+      // A changed `retry` (-c modelAgreementRetry) makes CloudFormation send an Update, which the
+      // handler treats as a new attempt; without it the properties never change and nothing re-runs.
+      properties: { modelId, region, bestEffort: 'true', ...(this.retry === undefined ? {} : { retry: this.retry }) },
     });
   }
 
@@ -420,7 +434,8 @@ def _handle(event):
     Create one Bedrock model agreement.
     
     On Create: Fetches offer token and creates agreement (accepts EULA)
-    On Update: No-op (agreements persist)
+    On Update: The same attempt (CloudFormation sends one only when a property changed, e.g.
+               -c modelAgreementRetry), so a refused agreement can be retried after the cause is fixed
     On Delete: No-op (agreements persist after stack deletion)
     """
     request_type = event.get('RequestType', '')
@@ -430,8 +445,8 @@ def _handle(event):
     
     logger.info(f"Request type: {request_type}, Model: {model_id}, Region: {region}")
     
-    # Only process Create requests
-    if request_type != 'Create':
+    # Delete leaves the account's agreement in place; Create and Update attempt it
+    if request_type not in ('Create', 'Update'):
         logger.info(f"Skipping {request_type} request - agreements persist")
         return {
             'PhysicalResourceId': f'model-agreement-{model_id}',

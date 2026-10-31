@@ -364,12 +364,23 @@ def test_best_effort_keeps_the_success_statuses(best_effort):
     assert existing(_event(best_effort=best_effort), None)['Data']['status'] == 'ALREADY_EXISTS'
 
 
-def test_best_effort_skips_update_and_delete_so_nothing_is_revoked():
+def test_a_delete_leaves_the_accounts_agreement_in_place():
     """Moving the agreements from VocWebSearchStack to VocCoreStack deletes the old resources;
     a Delete must leave the account's agreement in place."""
     handler, calls = _load_handler()
 
-    results = [handler({**_event(best_effort=True), 'RequestType': kind}, None) for kind in ('Update', 'Delete')]
+    result = handler({**_event(best_effort=True), 'RequestType': 'Delete'}, None)
 
-    assert [r['Data']['status'] for r in results] == ['SKIPPED', 'SKIPPED']
+    assert result['Data']['status'] == 'SKIPPED'
     assert calls['create'] == 0
+
+
+def test_an_update_attempts_the_agreement_again():
+    """CloudFormation sends an Update only when a property changed (`-c modelAgreementRetry`): that is
+    the lever to retry an agreement that was refused on the first deploy."""
+    handler, calls = _load_handler()
+
+    result = handler({**_event(best_effort=True), 'RequestType': 'Update'}, None)
+
+    assert result['Data']['status'] == 'CREATED'
+    assert calls['create'] == 1

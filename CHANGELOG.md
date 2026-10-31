@@ -23,6 +23,10 @@ Ideas from @aws-bryan's PR #429 rebuilt on the current platform: model agreement
 
 ### Added
 
+- `-c modelAgreementRetry=<value>`: a deploy with a new value attempts every Bedrock model agreement again (best
+  effort, like the first attempt), for example after filing the use-case form in the console
+  ([docs/deployment.md → Retry a refused agreement](docs/deployment.md)). Without it a refused agreement was never
+  retried. (ported from #429 by @aws-bryan)
 - AI Chat (`/chat`) has a filter panel above the composer: time range, source, categories, sentiment, rating,
   channel, tag and "Urgent only". It shows a live count of the matching reviews and a non-blocking warning when
   the scope holds more than 1,000 reviews, the most one assistant search reads. The scope belongs to the
@@ -88,7 +92,8 @@ Ideas from @aws-bryan's PR #429 rebuilt on the current platform: model agreement
   the AI Chat panel's scope are a floor for `search_feedback`, `list_feedback`, `get_urgent_feedback`,
   `get_entities` and `get_metrics`: the assistant can narrow within them, an argument outside them returns
   nothing, and a filter a tool cannot apply makes it refuse rather than widen. A Usefulness filter is part of the
-  floor too (`unrated` = reviews without a band). Without filters the assistant reads as before ([docs/assistant-chat-scope.md](docs/assistant-chat-scope.md)). (ported from #429 by @aws-bryan)
+  floor too (`unrated` = reviews without a band). A long filter (up to 50 values) reaches the assistant whole, and filters
+  that cannot be sent make the assistant read nothing rather than everything. Without filters the assistant reads as before ([docs/assistant-chat-scope.md](docs/assistant-chat-scope.md)). (ported from #429 by @aws-bryan)
 - Categories: choosing several categories, sources or sentiments (the sentiment chips now multi-select) and a
   subcategory filters on the server, so the list's counts and pages are exact. Before, extra categories and the
   subcategory were filtered in the browser over the loaded page only. Problem Analysis takes several sources
