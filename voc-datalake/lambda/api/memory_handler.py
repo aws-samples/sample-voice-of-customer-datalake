@@ -231,8 +231,10 @@ def _retention(body: dict, kind: str, today) -> tuple[str, str | None]:
 
 
 def _memory_or_404(memory_id: str, caller: Caller) -> dict:
+    """The memory ``caller`` may read, by id; 404 when it is missing OR hidden by the caller's category
+    access (WA SEC08-BP04, BE-3): the same rule as the listing, so an id is no way around it."""
     item = store.locate(get_memory_table(), memory_id, caller.subject or None)
-    if item is None:
+    if item is None or not _visible([item], _reader(caller)):
         raise NotFoundError(MEMORY_NOT_FOUND)
     return item
 
@@ -411,10 +413,16 @@ def merge_memories():
 
 
 # ── Review queue ─────────────────────────────────────────────────────────────
-def _review_entry(table, item: dict) -> dict:
-    linked: list[Mapping[str, Any]] = list(store.linked_items(table, item))
+def _review_entry(table, item: dict, reader: tuple[CategoryScope, HiddenNames | None]) -> dict:
+    """One review-queue entry. Linked memories the reader may not see are left out, and so are their ids
+    from ``conflicts_with`` (BE-3): the queue never reveals a hidden memory, nor that one exists."""
+    linked: list[dict] = _visible(list(store.linked_items(table, item)), reader)
+    view = store.public_view(item)
+    if not reader[0].categories_all:
+        visible_ids = {other.get('memory_id') for other in linked}
+        view['conflicts_with'] = [mid for mid in view.get('conflicts_with') or [] if mid in visible_ids]
     return {
-        'memory': store.public_view(item),
+        'memory': view,
         'linked': [store.public_view(other) for other in linked],
         'suggestion': policy.suggest_resolution(item, linked),
     }
@@ -432,8 +440,9 @@ def review_queue():
     for status in (policy.STATUS_CONFLICT, policy.STATUS_PROPOSED):
         items += store.list_personal(table, caller.subject, status, kind=None, q=None)
     # A restricted memory reviewer curates only what they may read.
-    items = _visible(items, _reader(caller))[:MAX_REVIEW_ITEMS]
-    return {'items': [_review_entry(table, item) for item in items], 'count': len(items)}
+    reader = _reader(caller)
+    items = _visible(items, reader)[:MAX_REVIEW_ITEMS]
+    return {'items': [_review_entry(table, item, reader) for item in items], 'count': len(items)}
 
 
 def _clear_link(table, item: dict, other_id: str, now: datetime) -> None:
