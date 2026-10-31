@@ -43,7 +43,7 @@ TEXT_FIELD: Final = 'original_text'
 #: The stored fields the item path reads (the route adds them to its slim read).
 ITEM_FIELDS: Final = ('rating', 'sentiment_label', TEXT_FIELD)
 
-__all__ = ['FACETS', 'FACET_PREFIXES', 'ITEM_FIELDS', 'PROFILE_METRIC_TYPES', 'attach', 'from_counter_rows', 'from_items',
+__all__ = ['FACET_PREFIXES', 'ITEM_FIELDS', 'PROFILE_METRIC_TYPES', 'attach', 'from_counter_rows', 'from_items',
            'profile_counter_pks']
 
 
