@@ -382,7 +382,12 @@
       "submit_few": "Kopiuj {{count, number}} persony",
       "submit_many": "Kopiuj {{count, number}} person",
       "submit_other": "Kopiuj {{count, number}} persony"
-    }
+    },
+    "protect": "Chroń tę personę: zachowaj ją przy zastępowaniu person",
+    "unprotect": "Przestań chronić tę personę",
+    "protected": "Chroniona",
+    "protectedHint": "Zostaje, gdy nowe generowanie zastępuje persony tego projektu",
+    "protectFailed": "Nie udało się zmienić ochrony. Spróbuj ponownie."
   },
   "personaSections": {
     "ageRange": "Wiek",
@@ -599,7 +604,11 @@
     "personaReplaceConfirmMessage_other": "Zostanie usunięte {{count, number}} istniejącej persony projektu, razem ze zmianami i awatarami, i powstanie nowy zestaw (liczba person: {{n, number}}). Tego nie można cofnąć.",
     "submitReplacePersonas": "Usuń i wygeneruj",
     "submitRemixDocuments": "Remiksuj dokumenty",
-    "workingBackwards": "Working Backwards"
+    "workingBackwards": "Working Backwards",
+    "personaReplaceKeepsProtected_one": "{{count, number}} chroniona persona zostaje zachowana.",
+    "personaReplaceKeepsProtected_few": "{{count, number}} chronione persony zostają zachowane.",
+    "personaReplaceKeepsProtected_many": "{{count, number}} chronionych person zostaje zachowanych.",
+    "personaReplaceKeepsProtected_other": "{{count, number}} chronionych person zostaje zachowanych."
   },
   "header": {
     "back": "Wróć do projektów",

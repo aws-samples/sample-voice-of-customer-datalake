@@ -355,7 +355,12 @@
       "submit_one": "Copiar {{count, number}} persona",
       "submit_many": "Copiar {{count, number}} personas",
       "submit_other": "Copiar {{count, number}} personas"
-    }
+    },
+    "protect": "Proteger esta persona: conservarla cuando se reemplacen las personas",
+    "unprotect": "Dejar de proteger esta persona",
+    "protected": "Protegida",
+    "protectedHint": "Se conserva cuando una nueva generación reemplaza las personas de este proyecto",
+    "protectFailed": "No se pudo cambiar la protección. Inténtelo de nuevo."
   },
   "personaSections": {
     "ageRange": "Edad",
@@ -565,7 +570,9 @@
     "personaReplaceConfirmMessage_other": "Se eliminarán las {{count, number}} personas existentes del proyecto, con sus cambios y avatares, y se escribirá un conjunto nuevo de {{n, number}}. No se puede deshacer.",
     "submitReplacePersonas": "Eliminar y generar",
     "submitRemixDocuments": "Remezlar Documentos",
-    "workingBackwards": "Trabajar hacia Atrás"
+    "workingBackwards": "Trabajar hacia Atrás",
+    "personaReplaceKeepsProtected_one": "Se conserva {{count, number}} persona protegida.",
+    "personaReplaceKeepsProtected_other": "Se conservan las {{count, number}} personas protegidas."
   },
   "header": {
     "back": "Volver a los proyectos",

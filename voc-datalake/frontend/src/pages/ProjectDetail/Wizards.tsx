@@ -120,6 +120,7 @@ export function PersonaWizard({
   // Generating reads the feedback in scope with the AI for minutes: asked first, like PR/FAQ and prototype.
   const [confirming, setConfirming] = useState(false)
   const mode = additiveOnly ? 'add' : personaConfig.mode
+  const protectedCount = personas.filter((p) => p.protected === true).length
   return (
     <>
     <DataSourceWizard
@@ -160,6 +161,7 @@ export function PersonaWizard({
           {additiveOnly ? null : (
             <PersonaModeChoice
               existingCount={personas.length}
+              protectedCount={protectedCount}
               mode={personaConfig.mode}
               onChange={(next) => onPersonaConfigChange({ ...personaConfig, mode: next })}
             />
@@ -175,6 +177,7 @@ export function PersonaWizard({
     <PersonaGenerateConfirm
       isOpen={confirming}
       existingCount={personas.length}
+      protectedCount={protectedCount}
       mode={mode}
       personaCount={personaConfig.personaCount}
       onConfirm={() => { setConfirming(false); onSubmit() }}
