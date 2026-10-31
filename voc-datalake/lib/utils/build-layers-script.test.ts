@@ -5,7 +5,7 @@
  * container runtime that records each build and writes a python/ dir, so no Docker is needed.
  */
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -114,6 +114,27 @@ describe('scripts/build-layers.sh skip-unchanged', () => {
     rmSync(join(layers, 'alpha-deps', 'python'), { recursive: true });
     run();
     expect(builds()).toStrictEqual(['alpha-deps']);
+  });
+
+  it('rebuilds a layer whose stamp is older than 7 days (unpinned deps are re-resolved)', () => {
+    run();
+    builds();
+    const day = 24 * 60 * 60;
+    const age = (name: string, days: number): void => {
+      const when = Date.now() / 1000 - days * day;
+      utimesSync(join(layers, name, LAYER_BUILD_STAMP), when, when);
+    };
+    age('alpha-deps', 8);
+    age('beta-deps', 6);
+    expect(run()).toMatch(/alpha-deps layer stamp is older than 7 days, rebuilding/);
+    expect(builds()).toStrictEqual(['alpha-deps']);
+    run();
+    expect(builds()).toStrictEqual([]); // the rebuild wrote a fresh stamp
+
+    age('beta-deps', 2);
+    run({ LAYER_STAMP_MAX_AGE_DAYS: '1' });
+    expect(builds()).toStrictEqual(['beta-deps']);
+    expect(() => run({ LAYER_STAMP_MAX_AGE_DAYS: 'week' })).toThrow(/whole number of days/);
   });
 
   it('leaves no stamp when the build fails, so the next run retries', () => {
