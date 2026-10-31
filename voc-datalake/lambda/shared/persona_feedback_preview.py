@@ -151,11 +151,15 @@ def import_floor(request: Any, sample: Sequence[Mapping[str, Any]]) -> str:
     return cutoff
 
 
-def _round_significant(value: float, digits: int = 2) -> int:
+#: Significant digits an estimate keeps.
+ESTIMATE_SIGNIFICANT_DIGITS = 2
+
+
+def _round_significant(value: float) -> int:
     """28,202 -> 28,000: an estimate does not claim precision it does not have."""
     if value < 1:
         return 0
-    step = 10 ** max(math.floor(math.log10(value)) - (digits - 1), 0)
+    step = 10 ** max(math.floor(math.log10(value)) - (ESTIMATE_SIGNIFICANT_DIGITS - 1), 0)
     return int(round(value / step) * step)
 
 

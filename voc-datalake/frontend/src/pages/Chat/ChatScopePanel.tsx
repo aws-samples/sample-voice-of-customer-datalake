@@ -61,7 +61,7 @@ function OverCapWarning() {
   return (
     <p role="status" className="mt-2 flex items-start gap-1.5 rounded-md border border-warn/30 bg-warn-subtle px-2.5 py-1.5 text-[12px] text-warn">
       <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
-      <span>{t('scope.overCap', { max: CHAT_SCOPE_MAX_ITEMS.toLocaleString() })}</span>
+      <span>{t('scope.overCap', { max: CHAT_SCOPE_MAX_ITEMS })}</span>
     </p>
   )
 }
