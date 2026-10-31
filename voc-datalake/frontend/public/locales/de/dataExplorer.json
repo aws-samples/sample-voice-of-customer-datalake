@@ -98,6 +98,40 @@
       "medium": "Mittel",
       "low": "Niedrig",
       "unrated": "Nicht bewertet"
+    },
+    "profile": {
+      "title": "Quellenprofil",
+      "description": "Wie das Feedback jeder Quelle aussieht: wie es bewertet ist, seine Stimmung und wie lang sein Text ist.",
+      "notProfiled": "{{share}} des Feedbacks in diesem Zeitraum wurde gespeichert, bevor das Profil gezählt wurde, und ist nicht enthalten. Ein Neuaufbau der Aggregate für den Zeitraum ergänzt es.",
+      "facetGroup": "Angezeigtes Profil",
+      "tableCaption": "{{facet}} pro Quelle",
+      "profiled": "Erfasst",
+      "facets": {
+        "rating": "Bewertung",
+        "sentiment": "Stimmung",
+        "length": "Textlänge"
+      },
+      "rating": {
+        "5": "5 Sterne",
+        "4": "4 Sterne",
+        "3": "3 Sterne",
+        "2": "2 Sterne",
+        "1": "1 Stern",
+        "none": "Keine Bewertung"
+      },
+      "sentiment": {
+        "positive": "Positiv",
+        "neutral": "Neutral",
+        "mixed": "Gemischt",
+        "negative": "Negativ",
+        "other": "Sonstige"
+      },
+      "length": {
+        "short": "Unter 50 Zeichen",
+        "medium": "50–199 Zeichen",
+        "long": "200–999 Zeichen",
+        "very_long": "1.000 Zeichen oder mehr"
+      }
     }
   }
 }

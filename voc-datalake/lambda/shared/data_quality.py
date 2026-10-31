@@ -13,7 +13,7 @@ from typing import Any, Final
 
 from shared.usefulness import USEFULNESS_BANDS, USEFULNESS_UNRATED, stored_band
 
-__all__ = ['from_counters', 'from_items']
+__all__ = ['from_counters', 'from_items', 'source_of']
 
 #: Every count a source (and the overall row) carries, in display order.
 QUALITY_FIELDS: Final = (*USEFULNESS_BANDS, USEFULNESS_UNRATED, 'total')
@@ -33,7 +33,7 @@ def _add(bands: dict[str, dict[str, int]], source: str, band: str, count: int) -
     per_source[band] = per_source.get(band, 0) + count
 
 
-def _source_of(item: Mapping[str, Any]) -> str:
+def source_of(item: Mapping[str, Any]) -> str:
     source = item.get('source_platform')
     return source if isinstance(source, str) and source else 'unknown'
 
@@ -72,7 +72,7 @@ def from_items(items: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     totals: dict[str, int] = {}
     bands: dict[str, dict[str, int]] = {}
     for item in items:
-        source = _source_of(item)
+        source = source_of(item)
         totals[source] = totals.get(source, 0) + 1
         band = stored_band(item)
         if band != USEFULNESS_UNRATED:

@@ -5,6 +5,7 @@ import { renderWithQueryClient } from '../../test/query-client'
 import { configStoreModule } from '../Categories/categories-fixtures'
 import enCommon from '../../../public/locales/en/common.json'
 import type { DataQuality } from '../../api/dataQualitySchema'
+import { emptyProfile } from '../../api/dataQualityProfileSchema'
 
 const api = vi.hoisted(() => ({ getDataQuality: vi.fn() }))
 vi.mock('../../api/dataQualityApi', () => ({
@@ -34,7 +35,7 @@ vi.mock('recharts', () => {
 import DataQualitySection from './DataQualitySection'
 
 const counts = (high: number, medium: number, low: number, unrated: number) =>
-  ({ high, medium, low, unrated, total: high + medium + low + unrated })
+  ({ high, medium, low, unrated, total: high + medium + low + unrated, profile: emptyProfile() })
 
 function quality(sources: DataQuality['sources'], isPartial = false): DataQuality {
   const overall = sources.reduce((acc, s) => counts(acc.high + s.high, acc.medium + s.medium, acc.low + s.low,
@@ -57,6 +58,7 @@ describe('DataQualitySection', () => {
     renderWithQueryClient(<DataQualitySection />)
 
     const table = await screen.findByRole('table', { name: 'Feedback usefulness per source' })
+    expect(screen.getByTestId('data-quality-profile')).toBeInTheDocument()
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toStrictEqual(
       ['Source', 'High', 'Medium', 'Low', 'Not rated', 'Total'])
     expect(within(table).getByRole('row', { name: /Label web/ })).toHaveTextContent('3(38%)0(0%)1(13%)4(50%)8')

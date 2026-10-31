@@ -98,6 +98,40 @@
       "medium": "Media",
       "low": "Baja",
       "unrated": "Sin valorar"
+    },
+    "profile": {
+      "title": "Perfil de la fuente",
+      "description": "Cómo son los comentarios de cada fuente: su valoración, su sentimiento y la longitud de su texto.",
+      "notProfiled": "El {{share}} de los comentarios de este periodo se guardó antes de que se contara el perfil y no está incluido. Reconstruir los agregados del periodo lo añade.",
+      "facetGroup": "Perfil que se muestra",
+      "tableCaption": "{{facet}} por fuente",
+      "profiled": "Con perfil",
+      "facets": {
+        "rating": "Valoración",
+        "sentiment": "Sentimiento",
+        "length": "Longitud del texto"
+      },
+      "rating": {
+        "5": "5 estrellas",
+        "4": "4 estrellas",
+        "3": "3 estrellas",
+        "2": "2 estrellas",
+        "1": "1 estrella",
+        "none": "Sin valoración"
+      },
+      "sentiment": {
+        "positive": "Positivo",
+        "neutral": "Neutral",
+        "mixed": "Mixto",
+        "negative": "Negativo",
+        "other": "Otro"
+      },
+      "length": {
+        "short": "Menos de 50 caracteres",
+        "medium": "50–199 caracteres",
+        "long": "200–999 caracteres",
+        "very_long": "1000 caracteres o más"
+      }
     }
   }
 }

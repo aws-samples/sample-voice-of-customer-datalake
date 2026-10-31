@@ -98,6 +98,40 @@
       "medium": "보통",
       "low": "낮음",
       "unrated": "평가 안 됨"
+    },
+    "profile": {
+      "title": "소스 프로필",
+      "description": "각 소스의 피드백 특성: 평점, 감정, 텍스트 길이.",
+      "notProfiled": "이 기간 피드백의 {{share}}는 프로필 집계 전에 저장되어 포함되지 않습니다. 이 기간의 집계를 다시 빌드하면 추가됩니다.",
+      "facetGroup": "표시할 프로필",
+      "tableCaption": "소스별 {{facet}}",
+      "profiled": "집계됨",
+      "facets": {
+        "rating": "평점",
+        "sentiment": "감정",
+        "length": "텍스트 길이"
+      },
+      "rating": {
+        "5": "별 5개",
+        "4": "별 4개",
+        "3": "별 3개",
+        "2": "별 2개",
+        "1": "별 1개",
+        "none": "평점 없음"
+      },
+      "sentiment": {
+        "positive": "긍정",
+        "neutral": "중립",
+        "mixed": "혼합",
+        "negative": "부정",
+        "other": "기타"
+      },
+      "length": {
+        "short": "50자 미만",
+        "medium": "50~199자",
+        "long": "200~999자",
+        "very_long": "1,000자 이상"
+      }
     }
   }
 }

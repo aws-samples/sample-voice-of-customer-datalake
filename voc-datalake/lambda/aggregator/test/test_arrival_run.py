@@ -143,8 +143,8 @@ def test_a_bulk_import_batch_writes_the_same_aggregates_in_two_transactions_inst
     # (transactions, aggregate-row writes, transactions touching METRIC#daily_total).
     before = (len(one.sent), _aggregate_row_writes(one), _hot_row_transactions(one))
     after = (len(joint.sent), _aggregate_row_writes(joint), _hot_row_transactions(joint))
-    assert before == (100, 839, 100)
-    assert after == (2, 64, 2)
+    assert before == (100, 1139, 100)  # 3 profile rows per arrival (rating, sentiment, length)
+    assert after == (2, 100, 2)
     assert all(len(items) <= 100 for items in joint.sent)
 
 
