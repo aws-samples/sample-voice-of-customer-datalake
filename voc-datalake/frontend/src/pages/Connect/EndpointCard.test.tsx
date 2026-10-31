@@ -36,6 +36,12 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+/** Render the card and press "Download skill". */
+async function renderAndDownload(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  render(<EndpointCard endpointUrl={ENDPOINT} />)
+  await user.click(screen.getByRole('button', { name: 'Download skill' }))
+}
+
 describe('EndpointCard skill download', () => {
   it('saves the skill with this deployment\u2019s endpoint filled in', async () => {
     const user = userEvent.setup()
@@ -48,9 +54,7 @@ describe('EndpointCard skill download', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function record(this: HTMLAnchorElement) {
       saved.download = this.download
     })
-    render(<EndpointCard endpointUrl={ENDPOINT} />)
-
-    await user.click(screen.getByRole('button', { name: 'Download skill' }))
+    await renderAndDownload(user)
 
     await waitFor(() => expect(saved.download).toBe(SKILL_FILE_NAME))
     expect(fetchMock).toHaveBeenCalledWith(SKILL_PATH)
@@ -67,9 +71,7 @@ describe('EndpointCard skill download', () => {
       events.push(`click ${this.href}`)
     })
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url) => { events.push(`revoke ${url}`) })
-    render(<EndpointCard endpointUrl={ENDPOINT} />)
-
-    await user.click(screen.getByRole('button', { name: 'Download skill' }))
+    await renderAndDownload(user)
 
     await waitFor(() => expect(events).toStrictEqual(['click blob:skill', 'revoke blob:skill']))
   })
@@ -77,9 +79,7 @@ describe('EndpointCard skill download', () => {
   it('says the download failed when the skill cannot be fetched', async () => {
     const user = userEvent.setup()
     fetchMock.mockResolvedValue(new Response('', { status: 404 }))
-    render(<EndpointCard endpointUrl={ENDPOINT} />)
-
-    await user.click(screen.getByRole('button', { name: 'Download skill' }))
+    await renderAndDownload(user)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not download the skill. Try again.')
   })
