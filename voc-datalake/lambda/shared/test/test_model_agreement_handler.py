@@ -5,10 +5,16 @@ The handler lives as an inline Python string inside
 has no import path of its own. These tests extract that string and ``exec`` it
 with a stubbed boto3, which is the only way to exercise its branches.
 
-Fail-on-revert intent: a Private-Marketplace ``AccessDeniedException`` on
-CreateFoundationModelAgreement must NOT fail the stack (the whole point of the
-non-fatal branch), while every other error must still raise. Reverting either
-half turns one of these red.
+Fail-on-revert intent, in two parts:
+
+- Strict mode (a resource without ``bestEffort``): a Private-Marketplace
+  ``AccessDeniedException`` on CreateFoundationModelAgreement and a transient
+  network failure must NOT fail the stack, while every other error must still
+  raise.
+- Best-effort mode (``bestEffort: 'true'``, which every agreement the app creates
+  sets, BedrockModelAgreements in VocCoreStack): NO error fails the deploy, since
+  a raise there rolls back the stack holding every table. Every error class is
+  reported as UNAVAILABLE with its code. (Ported from PR #429 by @aws-bryan.)
 
 Precedent for reading a TS file from a Python test:
 ``test_avatar_image_model_lockstep.py``.
@@ -118,7 +124,8 @@ class _FakeBotocore(types.ModuleType):
 
 def _load_handler(*, create_raises: Exception | None = None,
                   availability_raises: Exception | None = None,
-                  offers_raises: Exception | None = None):
+                  offers_raises: Exception | None = None,
+                  offer_list: list | None = None):
     """exec the extracted handler with boto3/botocore stubbed out."""
     calls: dict[str, int] = {'create': 0}
 
@@ -132,7 +139,7 @@ def _load_handler(*, create_raises: Exception | None = None,
     def offers(**_kwargs):
         if offers_raises is not None:
             raise offers_raises
-        return {'offers': [{'offerToken': 'tok'}]}
+        return {'offers': [{'offerToken': 'tok'}] if offer_list is None else offer_list}
 
     def create(**_kwargs):
         calls['create'] += 1
@@ -180,9 +187,11 @@ def _load_handler(*, create_raises: Exception | None = None,
                 sys.modules[key] = value
 
 
-def _event():
-    return {'RequestType': 'Create', 'ResourceProperties': {'modelId': 'anthropic.claude-sonnet-5',
-                                                            'region': 'us-east-1'}}
+def _event(*, best_effort: bool = False):
+    properties = {'modelId': 'anthropic.claude-sonnet-5', 'region': 'us-east-1'}
+    if best_effort:
+        properties['bestEffort'] = 'true'
+    return {'RequestType': 'Create', 'ResourceProperties': properties}
 
 
 def test_access_denied_is_non_fatal_and_reported():
@@ -286,3 +295,81 @@ def test_any_other_botocore_error_still_fails_the_deploy(stage, error):
 
     with pytest.raises(error):
         handler(_event(), None)
+
+
+@pytest.mark.parametrize('offer_list', [[], [{}], [{'offerToken': ''}]])
+@pytest.mark.parametrize('best_effort', [False, True])
+def test_no_usable_offer_is_reported_without_attempting_the_agreement(offer_list, best_effort):
+    """An offer without a token is as unusable as no offer: NO_OFFERS, never a raise."""
+    handler, calls = _load_handler(offer_list=offer_list)
+
+    result = handler(_event(best_effort=best_effort), None)
+
+    assert calls['create'] == 0
+    assert result['Data']['status'] == 'NO_OFFERS'
+
+
+# ── Best effort: every agreement in VocCoreStack ─────────────────────────────────────────────
+
+_BEST_EFFORT_FAILURES = [
+    # (stage, error, the errorCode reported)
+    ('create', _FakeClientError('AccessDeniedException', 'private marketplace'), 'AccessDeniedException'),
+    ('availability', _FakeClientError('AccessDeniedException', 'own role'), 'AccessDeniedException'),
+    ('offers', _FakeClientError('AccessDeniedException', 'own role'), 'AccessDeniedException'),
+    ('create', _FakeClientError('ThrottlingException', 'slow down'), 'ThrottlingException'),
+    ('availability', _FakeClientError('ThrottlingException', 'slow down'), 'ThrottlingException'),
+    ('availability', _FakeClientError('ValidationException', 'model not supported in this region'),
+     'ValidationException'),
+    ('create', _FakeClientError('ResourceNotFoundException', 'no such model'), 'ResourceNotFoundException'),
+    ('create', _FakeEndpointConnectionError('Could not connect'), '_FakeEndpointConnectionError'),
+    ('availability', _FakeReadTimeoutError('timed out'), '_FakeReadTimeoutError'),
+    ('offers', _FakeParamValidationError('bad model id'), '_FakeParamValidationError'),
+    ('create', _FakeNoCredentialsError('no credentials'), '_FakeNoCredentialsError'),
+]
+
+
+@pytest.mark.parametrize(('stage', 'error', 'code'), _BEST_EFFORT_FAILURES)
+def test_best_effort_reports_every_error_class_instead_of_rolling_back_core(stage, error, code):
+    """Access denied, throttling, a model not in the region, a dropped connection, even a
+    broken role: in VocCoreStack each is reported, never raised."""
+    handler, _ = _load_handler(**{f'{stage}_raises': error})
+
+    result = handler(_event(best_effort=True), None)
+
+    assert result['Data'] == {'status': 'UNAVAILABLE', 'modelId': 'anthropic.claude-sonnet-5', 'errorCode': code}
+    assert result['PhysicalResourceId'] == 'model-agreement-anthropic.claude-sonnet-5'
+
+
+@pytest.mark.parametrize(('stage', 'error', 'code'), [
+    ('create', _FakeClientError('ThrottlingException', 'slow down'), 'ThrottlingException'),
+    ('availability', _FakeClientError('AccessDeniedException', 'own role'), 'AccessDeniedException'),
+])
+def test_the_same_errors_still_raise_without_best_effort(stage, error, code):
+    """The flag is what absorbs them: a resource without it keeps the strict rules."""
+    handler, _ = _load_handler(**{f'{stage}_raises': error})
+
+    with pytest.raises(_FakeClientError) as raised:
+        handler(_event(), None)
+
+    assert raised.value.response['Error']['Code'] == code
+
+
+@pytest.mark.parametrize('best_effort', [False, True])
+def test_best_effort_keeps_the_success_statuses(best_effort):
+    """Best effort only changes what a failure does: created and existing agreements read the same."""
+    created, _ = _load_handler()
+    existing, _ = _load_handler(create_raises=_FakeConflict())
+
+    assert created(_event(best_effort=best_effort), None)['Data']['status'] == 'CREATED'
+    assert existing(_event(best_effort=best_effort), None)['Data']['status'] == 'ALREADY_EXISTS'
+
+
+def test_best_effort_skips_update_and_delete_so_nothing_is_revoked():
+    """Moving the agreements from VocWebSearchStack to VocCoreStack deletes the old resources;
+    a Delete must leave the account's agreement in place."""
+    handler, calls = _load_handler()
+
+    results = [handler({**_event(best_effort=True), 'RequestType': kind}, None) for kind in ('Update', 'Delete')]
+
+    assert [r['Data']['status'] for r in results] == ['SKIPPED', 'SKIPPED']
+    assert calls['create'] == 0
