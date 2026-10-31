@@ -10,7 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { companyPersonaJobsKey, companyPersonasApi, companyPersonasKey } from '../../api/companyPersonasApi'
-import { hasRecentlyCompletedJob } from '../ProjectDetail/jobCompletion'
+import { recentlyCompletedJobs } from '../ProjectDetail/jobCompletion'
 import { jobsPollInterval } from '../ProjectDetail/useProjectData'
 import type { PersonaToolConfig } from '../ProjectDetail/types'
 import type { ContextConfig } from '../../components/DataSourceWizard/types'
@@ -36,18 +36,15 @@ export function useCompanyPersonas() {
   })
 
   // Refetch the library once per finished job: each poll tick inside the "recently completed"
-  // window brings a new `jobs.data`, which must not invalidate the list again.
-  const handledCompletion = useRef<string | null>(null)
+  // window brings a new `jobs.data`, and only a completion not seen before invalidates the list
+  // (a job leaving the window, or dropping out of a truncated list, never does).
+  const handledCompletions = useRef(new Set<string>())
   useEffect(() => {
-    const finished = jobs.data?.jobs ?? []
-    if (!hasRecentlyCompletedJob(finished, Date.now())) return
-    const latest = finished
-      .filter((job) => job.status === 'completed')
+    const fresh = recentlyCompletedJobs(jobs.data?.jobs ?? [], Date.now())
       .map((job) => `${job.job_id}@${job.completed_at ?? ''}`)
-      .sort((a, b) => a.localeCompare(b))
-      .join(',')
-    if (latest === handledCompletion.current) return
-    handledCompletion.current = latest
+      .filter((key) => !handledCompletions.current.has(key))
+    if (fresh.length === 0) return
+    for (const key of fresh) handledCompletions.current.add(key)
     void queryClient.invalidateQueries({ queryKey: companyPersonasKey() })
   }, [jobs.data, queryClient])
 
