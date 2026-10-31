@@ -102,7 +102,9 @@ Global MCP server: OAuth sign-in for Kiro, Claude Code and Cursor, more of the a
 - The MCP OAuth consent page follows a redirect only to the deployment's Cognito hosted UI, a loopback
   callback (`127.0.0.1`, `localhost`, `[::1]` with a port from 1024 to 65535) or the exact https callback the assistant's request
   named; anything else shows the page's error. `config.json` gains `cognito.hostedUiDomain`
-  ([docs/mcp.md → OAuth sign-in](docs/mcp.md#oauth-sign-in)).
+  ([docs/mcp.md → OAuth sign-in](docs/mcp.md#oauth-sign-in)). `npm run deploy:frontend` prints a WARNING (and
+  still deploys) when VocCoreStack's `UserPoolDomain` output is missing or not a
+  `<prefix>.auth.<region>.amazoncognito.com` host: until VocCoreStack is redeployed the consent page refuses every approval.
 - A consent opens its sign-in window for that one authorize request only: the token exchange's `code_verifier`
   must match the consented PKCE `code_challenge` before a sign-in is recorded.
 

@@ -238,7 +238,8 @@ describe('the Cognito hosted UI (MCP OAuth consent redirects)', () => {
     expect(origin).toBe('https://voc-example.auth.us-east-1.amazoncognito.com')
   })
 
-  it.each([undefined, '', 'https://voc.auth.us-east-1.amazoncognito.com', 'evil.example.com/path', 7])(
+  // Refused, not normalised: a bare domain prefix (no dots), a scheme, a trailing slash or a path.
+  it.each([undefined, '', 'voc-example', 'https://voc.auth.us-east-1.amazoncognito.com', 'voc.auth.us-east-1.amazoncognito.com/', 'evil.example.com/path', 7])(
     'reads %s as no hosted UI, keeping the rest of config.json',
     async (value) => {
       const { origin, config } = await load(value)
