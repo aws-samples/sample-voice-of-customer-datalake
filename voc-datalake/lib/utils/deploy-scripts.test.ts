@@ -389,6 +389,13 @@ describe('runtime config.json keys', () => {
     }
   }, SYNTH_TIMEOUT_MS);
 
+  it('deploy.sh refuses an empty IdentityPoolId exactly while cognito.identityPoolId is transitional', () => {
+    // The guard keeps a cached older page working; left behind after the key goes, it would fail
+    // `deploy:frontend` once the pool and its output are deleted.
+    const guarded = readFileSync(DEPLOY_SH, 'utf8').includes('Error: Could not fetch IdentityPoolId from $CORE_STACK');
+    expect(guarded, 'the IdentityPoolId guard in deploy.sh').toBe(TRANSITIONAL_CONFIG_KEYS.includes('cognito.identityPoolId'));
+  });
+
   it('reads real key sets (each parser sees nested keys), so equality is not vacuous', () => {
     for (const keys of [deployShConfigKeys(), schemaKeys()]) {
       expect(keys.length).toBeGreaterThanOrEqual(5);
