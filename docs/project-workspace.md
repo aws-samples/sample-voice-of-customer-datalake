@@ -198,6 +198,9 @@ Project objects returned by list, get, and create carry computed `visibility`, `
 
 An MCP token acts as the user who minted it — never as an admin, and never above editor — and its read reach still applies on top. Tokens cannot create projects.
 
+To copy a project to another deployment (owner and members remapped by email), see
+[Moving projects between deployments](project-export.md).
+
 ## Company personas
 
 The **Company** page (`/company`) has a **Personas** tab (`?tab=personas`) beside Vision and Design system: one shared library of personas for the whole workspace. Every signed-in user reads it; **only admins write it** (generate, import, edit, notes, regenerate the avatar, delete, and promote a project persona into it). Company personas are not filtered by category access.
