@@ -89,7 +89,12 @@ def _pairs(raw: str) -> tuple[tuple[str, str], ...]:
 
 
 def _common_prefix(values: list[str]) -> str:
-    return os.path.commonprefix(values) if values else ''
+    """The longest STRING prefix every value shares (log group prefixes are compared as text, not as paths)."""
+    if not values:
+        return ''
+    first, last = min(values), max(values)
+    shared = next((i for i, (a, b) in enumerate(zip(first, last, strict=False)) if a != b), len(first))
+    return first[:shared]
 
 
 @dataclass(frozen=True)

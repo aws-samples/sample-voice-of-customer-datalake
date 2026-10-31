@@ -2672,7 +2672,7 @@ def generate_personas(
 
 def _persona_generation_failure(error: Exception, corpus: _PersonaCorpus, elapsed: float) -> ServiceError:
     """The user-facing error for a failed generation (logged with its traceback)."""
-    logger.exception(f"[PERSONA] FAILED after {elapsed:.2f}s: {type(error).__name__}: {error}")
+    logger.exception(f"[PERSONA] FAILED after {elapsed:.2f}s: {type(error).__name__}: {error}")  # noqa: LOG004 — only called from an except handler, which supplies the traceback
     # Bedrock reports an oversized prompt as a ValidationException. Name the
     # knob in that case instead of the generic "try again", which sends an
     # operator into an identical retry: a context that does not fit will not

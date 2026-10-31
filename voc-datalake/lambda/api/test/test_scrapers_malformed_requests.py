@@ -91,8 +91,8 @@ def test_any_other_error_status_from_the_site_is_the_callers_refusal_naming_it(
         outcome = _analyze_when_the_fetch_fails(api_gateway_event, lambda_context, answered, 'https://public.example/')
     assert outcome == (
         'failed',
-        f'The site refused the request (HTTP {status}), so its selectors cannot be analyzed. '
-        'Check that the URL is correct and opens in a browser.',
+        (f'The site refused the request (HTTP {status}), so its selectors cannot be analyzed. '
+        'Check that the URL is correct and opens in a browser.'),
         0,
     )
     worker_log.info.assert_called_once_with('Assist ended with a user-facing refusal',
@@ -128,7 +128,7 @@ def test_a_site_that_refuses_plain_http_is_the_callers_refusal_with_what_to_use_
     job_status, error, calls = _analyze_when_the_fetch_fails(api_gateway_event, lambda_context, refused, 'https://public.example/')
     assert (job_status, error, calls) == (
         'failed',
-        f'The site refused a plain HTTP request (HTTP {status}), so its selectors cannot be analyzed. '
-        'Sites that block plain fetches can be read with the Web Reviews connector (managed browser) instead.',
+        (f'The site refused a plain HTTP request (HTTP {status}), so its selectors cannot be analyzed. '
+        'Sites that block plain fetches can be read with the Web Reviews connector (managed browser) instead.'),
         0,
     )

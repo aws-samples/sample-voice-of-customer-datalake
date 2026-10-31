@@ -373,7 +373,7 @@ def _process_records(ingestor: S3ImportIngestor, records: list, *, reprocess: bo
 
 def _failed_reprocess(error: Exception) -> dict:
     """The answer to a reprocess whose run row was closed as `error`."""
-    logger.exception(f"Reprocess failed: {type(error).__name__}")
+    logger.exception(f"Reprocess failed: {type(error).__name__}")  # noqa: LOG004 — only called from an except handler, which supplies the traceback
     metrics.add_metric(name="ReprocessFailed", unit="Count", value=1)
     return {"status": "error", "error": type(error).__name__}
 

@@ -8,9 +8,9 @@
 # (scripts/audit/py_layers.py resolves every layer against this venv: a missing or
 # differently-pinned one is a `version-mismatch` finding.)
 #
-pytest>=8.0.0
-pytest-cov>=6.0.0
-pytest-mock>=3.14.0
+pytest>=9.2.0
+pytest-cov>=7.1.0
+pytest-mock>=3.17.0
 # Parallel pytest: scripts/validate.sh runs `pytest -n <workers> --dist loadgroup` (pinned exactly, like
 # the other gate tools, so the gate's behaviour does not move with whatever pip resolves).
 # Tests that must share one process are marked `@pytest.mark.xdist_group('<name>')`.
@@ -20,9 +20,9 @@ pytest-xdist==3.8.0
 # The suite's clock is moved to 12:00 UTC of the run's own day (conftest.py), so a run that crosses
 # midnight UTC cannot split "today" between a fixture and the handler under test. Pinned exactly.
 time-machine==3.6.0
-moto[dynamodb,s3,sqs,secretsmanager]>=5.0.0
-boto3>=1.35.0
-boto3-stubs[dynamodb,s3,sqs,secretsmanager,bedrock-runtime]>=1.35.0
+moto[dynamodb,s3,sqs,secretsmanager]>=5.2.5
+boto3>=1.43.123
+boto3-stubs[dynamodb,s3,sqs,secretsmanager,bedrock-runtime]>=1.43.123
 
 # Lambda Powertools (same as production)
 aws-lambda-powertools==3.38.0
@@ -33,7 +33,7 @@ aws-lambda-powertools==3.38.0
 # enables more rules by default between minors (5 findings under 0.15.11, 513
 # under 0.16.10 on the same tree), so an uncapped pin made the gate's count move
 # with whatever pip resolved. ruff.toml now selects its rules explicitly as well.
-ruff==0.15.11
+ruff==0.17.3
 # Dead code: functions, classes and variables nothing uses (config in pyproject.toml).
 vulture==2.16
 # mutmut 2.x on purpose: it mutates the named file in place and runs the tests you give it

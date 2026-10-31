@@ -21,22 +21,16 @@ import { projectKey } from '../../api/projectQueryKeys'
 import type { ProjectDocument } from '../../api/types'
 import { documentRevision, latestDocument } from './documentEdit'
 import type { DocumentConflict } from './DocumentModal'
+import type { DocumentDraft, DocumentUpdate } from './useProjectData'
 import type { useDocModalState } from './useModalState'
-
-interface UpdateVariables {
-  docId: string
-  title?: string
-  content: string
-  expectedRevision?: number
-}
 
 interface DocumentSaveDeps {
   /** The page's route id (undefined only before the route resolved). */
   readonly projectId: string | undefined
   readonly queryClient: QueryClient
   readonly docModal: ReturnType<typeof useDocModalState>
-  readonly updateDoc: (variables: UpdateVariables) => Promise<unknown>
-  readonly createDoc: (variables: { title: string; content: string }) => Promise<unknown>
+  readonly updateDoc: (variables: DocumentUpdate) => Promise<unknown>
+  readonly createDoc: (variables: DocumentDraft) => Promise<unknown>
 }
 
 export interface DocumentSave {
@@ -82,7 +76,7 @@ export function useDocumentSave({ projectId = '', queryClient, docModal, updateD
 
   const loadLatest = useCallback(async () => {
     if (editingDoc === null) return
-    const fresh = await queryClient.fetchQuery({
+    const fresh = await queryClient.query({
       queryKey: projectKey(projectId), queryFn: () => projectsApi.getProject(projectId), staleTime: 0,
     })
     setConflict(false)

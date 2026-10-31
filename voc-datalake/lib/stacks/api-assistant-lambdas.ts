@@ -168,7 +168,7 @@ export function createAssistantLambdas(
     // Lambda's deps) and `npm ci` fails with EUSAGE at bundling time.
     depsLockFilePath: path.join(__dirname, '../../lambda/stream/package-lock.json'),
     handler: 'handler',
-    runtime: lambda.Runtime.NODEJS_22_X,
+    runtime: lambda.Runtime.NODEJS_24_X,
     architecture: lambda.Architecture.ARM_64,
     memorySize: 1024,
     timeout: CHAT_STREAM_TIMEOUT,
@@ -306,10 +306,6 @@ export function createAssistantLambdas(
       resources: [webSearch.gatewayArn],
     }));
   }
-
-  NagSuppressions.addResourceSuppressions(chatStreamLambda, [
-    { id: 'AwsSolutions-L1', reason: 'Node.js 22 is the target runtime for the streaming Lambda — latest stable LTS' },
-  ], true);
 
   // S3 Import API (api-s3-import-lambda.ts)
   const s3ImportLambda = createS3ImportLambda(ctx, options.s3ImportIngestorDeployed);

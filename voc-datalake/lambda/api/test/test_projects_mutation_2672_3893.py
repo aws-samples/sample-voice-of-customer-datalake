@@ -1455,8 +1455,8 @@ class TestOwnerTransferUpdate:
     def test_a_previous_owner_and_a_non_admin_caller(self):
         assert projects._owner_transfer_update(PREVIOUS, NEW_OWNER, OWNER, NOW) == (
             f'{TRANSFER_SET}, #members.#prev = :prev_entry REMOVE #members.#new',
-            'owner_sub = :prev_sub AND (attribute_exists(#members.#new) OR size(#members) < :max) '
-            'AND owner_sub = :caller_sub',
+            ('owner_sub = :prev_sub AND (attribute_exists(#members.#new) OR size(#members) < :max) '
+            'AND owner_sub = :caller_sub'),
             {'#members': 'members', '#new': 'new-sub', '#prev': 'owner-sub'},
             {':new_sub': 'new-sub', ':new_username': 'sam', ':new_email': 'sam@example.com',
              ':now': NOW, ':prev_entry': PREV_ENTRY, ':prev_sub': 'owner-sub', ':max': CAP,

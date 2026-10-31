@@ -795,10 +795,10 @@ def _on_client_error(
     error_code = error.response.get('Error', {}).get('Code', '')
     error_message = error.response.get('Error', {}).get('Message', str(error))
 
-    logger.exception(f"[BEDROCK] ClientError for step '{step_name}' after {attempt_elapsed:.2f}s: {error_code} - {error_message}")
+    logger.exception(f"[BEDROCK] ClientError for step '{step_name}' after {attempt_elapsed:.2f}s: {error_code} - {error_message}")  # noqa: LOG004 — only called from an except handler, which supplies the traceback
 
     if error_code not in RETRYABLE_ERROR_CODES:
-        logger.exception(f"[BEDROCK] Non-retryable error for step '{step_name}': {error_code} - {error_message}")
+        logger.exception(f"[BEDROCK] Non-retryable error for step '{step_name}': {error_code} - {error_message}")  # noqa: LOG004 — only called from an except handler, which supplies the traceback
         raise error
     if attempt < max_retries - 1:
         delay = _calculate_backoff(attempt)
@@ -808,7 +808,7 @@ def _on_client_error(
         )
         time.sleep(delay)
         return
-    logger.exception(f"[BEDROCK] Step '{step_name}' throttled after {max_retries} attempts")
+    logger.exception(f"[BEDROCK] Step '{step_name}' throttled after {max_retries} attempts")  # noqa: LOG004 — only called from an except handler, which supplies the traceback
     if raise_on_throttle:
         raise BedrockThrottlingError(
             f"Bedrock throttled after {max_retries} retries for step '{step_name}'"

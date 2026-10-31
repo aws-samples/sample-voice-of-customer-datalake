@@ -121,14 +121,14 @@ describe('retries', () => {
   it('fetches a 404 exactly once through the app client', async () => {
     const client = createAppQueryClient()
     const queryFn = vi.fn(() => Promise.reject(new ApiError(404)))
-    await expect(client.fetchQuery({ queryKey: ['project', 'gone'], queryFn, retryDelay: 0 })).rejects.toThrow('404')
+    await expect(client.query({ queryKey: ['project', 'gone'], queryFn, retryDelay: 0 })).rejects.toThrow('404')
     expect(queryFn).toHaveBeenCalledTimes(1)
   })
 
   it('fetches a 500 twice through the app client', async () => {
     const client = createAppQueryClient()
     const queryFn = vi.fn(() => Promise.reject(new ApiError(500)))
-    await expect(client.fetchQuery({ queryKey: ['project', 'flaky'], queryFn, retryDelay: 0 })).rejects.toThrow('500')
+    await expect(client.query({ queryKey: ['project', 'flaky'], queryFn, retryDelay: 0 })).rejects.toThrow('500')
     expect(queryFn).toHaveBeenCalledTimes(2)
   })
 })

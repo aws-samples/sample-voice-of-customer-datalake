@@ -220,7 +220,7 @@ def get_agents_table() -> Any:
 
 
 def _service_error(what: str, exc: Exception) -> ServiceError:
-    logger.exception(f'Agents store: {what} failed', extra={'error_type': type(exc).__name__})
+    logger.exception(f'Agents store: {what} failed', extra={'error_type': type(exc).__name__})  # noqa: LOG004 — only called from an except handler, which supplies the traceback
     return ServiceError(f'Could not {what}. Please retry.')
 
 

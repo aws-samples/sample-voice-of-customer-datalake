@@ -20,6 +20,7 @@ import { DEFAULT_WORKFLOW_ID, workflowsApi, workflowsKeys } from '../../api/work
 import type { QueryClient } from '@tanstack/react-query'
 import { modelSettingsKey } from '../../api/queryKeys'
 import { noCleanup } from '../../hooks/noCleanup'
+import { prefetch } from '../../lib/prefetch'
 
 /** How long after the agent loads the idle prefetch waits (lets the first paint settle). */
 const IDLE_PREFETCH_MS = 400
@@ -34,22 +35,22 @@ interface Target {
 
 type Prefetch = (client: QueryClient, target: Target) => Promise<unknown>
 
-const workflowDetail: Prefetch = (client, { workflowId }) => client.prefetchQuery({
+const workflowDetail: Prefetch = (client, { workflowId }) => prefetch(client, {
   queryKey: workflowsKeys.detail(workflowId), queryFn: () => workflowsApi.get(workflowId), staleTime: PREFETCH_FRESH_MS,
 })
-const workflowList = (client: QueryClient) => client.prefetchQuery({
+const workflowList = (client: QueryClient) => prefetch(client, {
   queryKey: workflowsKeys.list(), queryFn: workflowsApi.list, staleTime: PREFETCH_FRESH_MS,
 })
 
 const PREFETCH: Readonly<Record<string, Prefetch>> = {
   runs: (client, target) => Promise.all([
-    client.prefetchQuery({ queryKey: agentsKeys.runs(target.agentId), queryFn: () => agentsApi.listRuns(target.agentId), staleTime: PREFETCH_FRESH_MS }),
+    prefetch(client, { queryKey: agentsKeys.runs(target.agentId), queryFn: () => agentsApi.listRuns(target.agentId), staleTime: PREFETCH_FRESH_MS }),
     workflowDetail(client, target),
   ]),
   workflow: (client, target) => Promise.all([workflowDetail(client, target), target.isAdmin ? workflowList(client) : null]),
   settings: (client) => workflowList(client),
-  personas: (client) => client.prefetchQuery({ queryKey: projectsKey(), queryFn: projectsApi.getProjects, staleTime: PREFETCH_FRESH_MS }),
-  models: (client) => client.prefetchQuery({
+  personas: (client) => prefetch(client, { queryKey: projectsKey(), queryFn: projectsApi.getProjects, staleTime: PREFETCH_FRESH_MS }),
+  models: (client) => prefetch(client, {
     queryKey: modelSettingsKey(), queryFn: () => api.getModelSettings(), retry: false, staleTime: PREFETCH_FRESH_MS,
   }),
 }

@@ -93,8 +93,8 @@ def test_a_product_name_is_matched_as_a_word():
     ("body", "expected"),
     [
         (
-            "```\nTraceback (most recent call last):\n  File \"/srv/app/x.py\", line 12, in run\n"
-            "ValueError: invalid literal for int() with base 10: 'abc'\n```",
+            ("```\nTraceback (most recent call last):\n  File \"/srv/app/x.py\", line 12, in run\n"
+            "ValueError: invalid literal for int() with base 10: 'abc'\n```"),
             "valueerror: invalid literal for int() with base <n>: <str>",
         ),
         (

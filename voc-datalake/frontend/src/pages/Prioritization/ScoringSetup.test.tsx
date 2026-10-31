@@ -2,7 +2,7 @@
  * The Scoring setup: admins edit the workspace metrics (save with base_version, 409 →
  * reload), everyone else reads "How scoring works".
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -24,6 +24,13 @@ vi.mock('../../api/prioritizationConfigApi', async (importOriginal) => ({
 }))
 
 import { ScoringSetupButton } from './ScoringSetupButton'
+
+// The dialog and view are lazy-loaded: the FIRST open pays their cold module transform, which on a loaded runner
+// under coverage took longer than a test's own wait (5.57.04). Load both here, under the hook timeout, so every
+// test's `findBy*` measures the open itself.
+beforeAll(async () => {
+  await Promise.all([import('./ScoringSetupDialog'), import('./ScoringSetupView')])
+})
 
 const p = (key: string, options?: Record<string, unknown>) => i18n.t(`prioritization:${key}`, options)
 /** A metric card's heading: its position and its name. */

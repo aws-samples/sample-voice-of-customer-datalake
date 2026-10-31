@@ -19,6 +19,7 @@ on:
   workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows:
       - dependency audit
+      - dependency freshness
     types:
       - completed
 
