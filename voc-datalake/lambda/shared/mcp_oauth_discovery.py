@@ -46,7 +46,8 @@ def authorization_server_metadata(config: OAuthConfig) -> dict[str, Any]:
         'code_challenge_methods_supported': ['S256'],
         'token_endpoint_auth_methods_supported': ['none'],
         'revocation_endpoint_auth_methods_supported': ['none'],
-        'scopes_supported': ['openid', *config.scopes_supported],
+        # The MCP scopes only: no `openid`, the facade never hands out an ID token.
+        'scopes_supported': list(config.scopes_supported),
         'subject_types_supported': ['public'],
         'id_token_signing_alg_values_supported': ['RS256'],
     }
