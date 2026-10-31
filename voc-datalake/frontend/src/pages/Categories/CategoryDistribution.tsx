@@ -39,13 +39,13 @@ interface CategoryDistributionProps {
   /** Optional lookback window (days) shown in the header. */
   readonly periodDays?: number
   /** Categories currently filtering the feedback list. */
-  readonly selectedCategories: string[]
+  readonly selectedCategories: readonly string[]
   /** Toggles a category in/out of the filter selection. */
   readonly onToggleCategory: (category: string) => void
 }
 
 /** Top rows plus any selected category ranked below the fold, and "Other" (the remainder, always last). */
-function visibleWhileCollapsed(categoryData: CategoryData[], selectedCategories: string[]): CategoryData[] {
+function visibleWhileCollapsed(categoryData: CategoryData[], selectedCategories: readonly string[]): CategoryData[] {
   return categoryData.filter(
     (category, index) => index < MAX_COLLAPSED_ROWS || selectedCategories.includes(category.name)
       || category.name === OTHER_CATEGORY

@@ -20,13 +20,22 @@ const mockGetSentiment = vi.fn<(...args: unknown[]) => unknown>()
 const mockGetCategories = vi.fn<(...args: unknown[]) => unknown>()
 const mockGetSources = vi.fn<(...args: unknown[]) => unknown>()
 const mockGetUrgentFeedback = vi.fn<(...args: unknown[]) => unknown>()
+// The facet params each metrics read sent (the third argument; the second for sources).
+const mockSummaryFilters = vi.fn<(filters: unknown) => void>()
+const mockSourcesFilters = vi.fn<(filters: unknown) => void>()
 
 vi.mock('../../api/client', () => ({
   api: {
-    getSummary: (days: number, source?: string) => mockGetSummary(days, source),
+    getSummary: (days: number, source?: string, filters?: unknown) => {
+      mockSummaryFilters(filters)
+      return mockGetSummary(days, source)
+    },
     getSentiment: (days: number, source?: string) => mockGetSentiment(days, source),
     getCategories: (days: number, source?: string) => mockGetCategories(days, source),
-    getSources: (days: number) => mockGetSources(days),
+    getSources: (days: number, filters?: unknown) => {
+      mockSourcesFilters(filters)
+      return mockGetSources(days)
+    },
     getUrgentFeedback: (params: unknown) => mockGetUrgentFeedback(params),
   },
   getDateRangeParams: () => ({ days: 7 }),
@@ -95,10 +104,11 @@ vi.mock('recharts', () => ({
 
 import Dashboard from './Dashboard'
 import { clickLoadFailedRetry } from '@test/loadFailed'
+import { at } from '@test/defined'
 
 /** Renders `ui` (the page by default) with a no-retry query client inside its router. */
-function renderDashboard(ui: React.ReactElement = <Dashboard />) {
-  return renderWithQueryClient(<TestRouter initialEntries={['/']}>{ui}</TestRouter>)
+function renderDashboard(ui: React.ReactElement = <Dashboard />, url = '/') {
+  return renderWithQueryClient(<TestRouter initialEntries={[url]}>{ui}</TestRouter>)
 }
 
 describe('Dashboard', () => {
@@ -615,5 +625,54 @@ describe('a restricted or regular viewer (owner rule 2026-10-21)', () => {
     renderDashboard()
     await screen.findByText('Reviews and sentiment per day')
     expect(screen.queryByRole('note')).toBeNull()
+  })
+})
+
+describe('Dashboard filters (source, category, sentiment, usefulness; ported from #429)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetSentiment.mockResolvedValue({ breakdown: {}, percentages: {} })
+    mockGetCategories.mockResolvedValue({ categories: { delivery: 5 } })
+    mockGetSources.mockResolvedValue({ sources: { webscraper: 4, manual_import: 1 } })
+    mockGetUrgentFeedback.mockResolvedValue({ count: 0, items: [] })
+    mockGetSummary.mockResolvedValue({
+      total_feedback: 5, avg_sentiment: 0, urgent_count: 0,
+      daily_totals: [{ date: '2025-01-01', count: 5 }], daily_sentiment: [],
+    })
+  })
+
+  it('sends the filters a shared link carries to every read, as comma lists', async () => {
+    renderDashboard(<Dashboard />, '/?source=webscraper,manual_import&usefulness=high,unrated')
+    const sent = { source: 'webscraper,manual_import', usefulness: 'high,unrated' }
+    await waitFor(() => expect(mockSummaryFilters).toHaveBeenCalledWith(sent))
+    await waitFor(() => expect(mockSourcesFilters).toHaveBeenCalledWith(sent))
+    expect(mockGetUrgentFeedback).toHaveBeenCalledWith(expect.objectContaining(sent))
+    expect(await screen.findByRole('button', { name: 'Source: 2 selected' })).toBeInTheDocument()
+  })
+
+  it('reads unfiltered without a filter (the badge shares that summary)', async () => {
+    renderDashboard()
+    await waitFor(() => expect(mockSummaryFilters).toHaveBeenCalledWith({}))
+    await waitFor(() => expect(mockSourcesFilters).toHaveBeenCalledWith({}))
+    expect(mockSummaryFilters).not.toHaveBeenCalledWith(expect.objectContaining({ source: 'webscraper' }))
+  })
+
+  it('keeps the filters and offers to clear them when a filter matches nothing', async () => {
+    const user = userEvent.setup()
+    mockGetSummary.mockResolvedValue({ total_feedback: 0, avg_sentiment: 0, urgent_count: 0, daily_totals: [], daily_sentiment: [] })
+    renderDashboard(<Dashboard />, '/?sentiment=mixed')
+
+    expect(await screen.findByText('No feedback matches these filters')).toBeInTheDocument()
+    expect(screen.queryByText('Reviews and sentiment per day')).toBeNull()
+    await user.click(at(screen.getAllByRole('button', { name: 'Clear filters' }), 0))
+    await waitFor(() => expect(mockSummaryFilters).toHaveBeenLastCalledWith({}))
+  })
+
+  it('narrows the view from the source selector', async () => {
+    const user = userEvent.setup()
+    renderDashboard()
+    await user.click(await screen.findByRole('button', { name: 'Source: All sources' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Web scraper' }))
+    await waitFor(() => expect(mockSummaryFilters).toHaveBeenLastCalledWith({ source: 'webscraper' }))
   })
 })

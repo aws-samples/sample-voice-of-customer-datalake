@@ -247,11 +247,8 @@ describe('Categories', () => {
       const user = userEvent.setup()
       renderCategories()
 
-      await waitFor(() => {
-        expect(screen.getByRole('combobox')).toBeInTheDocument()
-      })
-
-      await user.selectOptions(screen.getByRole('combobox'), 'webscraper')
+      await user.click(await screen.findByRole('button', { name: 'Source: All sources' }))
+      await user.click(await screen.findByRole('checkbox', { name: 'Web scraper' }))
 
       await waitFor(() => {
         expect(categoriesApiMocks.getCategories).toHaveBeenCalledWith({ days: 7 }, 'webscraper', {})

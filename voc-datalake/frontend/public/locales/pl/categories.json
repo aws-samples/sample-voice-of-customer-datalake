@@ -24,12 +24,8 @@
     "loading": "Wczytywanie opinii…",
     "subcategoryChip": "Podkategoria: {{name}}",
     "removeSubcategory": "Usuń filtr {{name}}",
-    "refinedMoreBelow_one": "{{count, number}} dopasowanie w pierwszych {{loaded, number}} opiniach · Wczytaj więcej poniżej",
-    "refinedMoreBelow_other": "{{count, number}} dopasowań w pierwszych {{loaded, number}} opiniach · Wczytaj więcej poniżej",
     "allShown_few": "{{count, number}} recenzje",
-    "allShown_many": "{{count, number}} recenzji",
-    "refinedMoreBelow_few": "{{count, number}} dopasowania w pierwszych {{loaded, number}} recenzjach · Wczytaj więcej poniżej",
-    "refinedMoreBelow_many": "{{count, number}} dopasowań w pierwszych {{loaded, number}} recenzjach · Wczytaj więcej poniżej"
+    "allShown_many": "{{count, number}} recenzji"
   },
   "allSentiments": "Wszystkie nastroje",
   "allSources": "Wszystkie źródła",
