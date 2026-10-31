@@ -319,9 +319,13 @@ username the grant's, and the person still current in Cognito. Tokens are never 
 the consent API's answer (Approve, Deny, or a refused request) the SPA checks it and shows its error state
 otherwise: the configured hosted UI (`cognito.hostedUiDomain` in `config.json`, written by the CDK deploy
 and `deploy:frontend` from VocCoreStack's `UserPoolDomain`), an RFC 8252 loopback `http://127.0.0.1`,
-`localhost` or `[::1]` with a port, or the exact https callback (origin and path) the assistant's own
-request named. A `config.json` without the hosted UI (written before 5.61.00) refuses the approval until
-the next deploy.
+`localhost` or `[::1]` with a port from 1024 to 65535 (the server relay's rule), or the exact https
+callback (origin and path) the assistant's own request named. That last check only proves the backend
+sent the browser where the request asked; it does not vet the callback itself. The control on which
+callbacks a client may use is the backend's client and redirect validation (`GET /oauth/authorize` in
+`shared/mcp_oauth_authorize.py`, and the `POST /oauth/register` facade in `shared/mcp_oauth_register.py`),
+which answers a plain 400 before the consent page for an unknown client or redirect. A `config.json`
+without the hosted UI (written before 5.61.00) refuses the approval until the next deploy.
 
 **Revocation is immediate.** Connect lists the person's signed-in assistants (one per client) with
 revoke (`GET /connect/oauth/grants`, `DELETE /connect/oauth/grants/{grant_id}`). Revoking marks the

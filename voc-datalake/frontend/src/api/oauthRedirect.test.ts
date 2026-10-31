@@ -32,6 +32,8 @@ describe('isAllowedOAuthRedirect', () => {
     'http://127.0.0.1:53111/oauth/callback?error=access_denied',
     'http://localhost:8080/callback',
     'http://[::1]:4000/callback?code=x',
+    'http://127.0.0.1:1024/oauth/callback',
+    'http://127.0.0.1:65535/oauth/callback',
     `${WEB_CALLBACK}?error=access_denied&state=s`,
   ])('allows %s', (url) => {
     expect(isAllowedOAuthRedirect(url, POLICY)).toBe(true)
@@ -43,6 +45,10 @@ describe('isAllowedOAuthRedirect', () => {
     overHttp(`${HOSTED}/oauth2/authorize`),
     'https://voc-example.auth.us-east-1.amazoncognito.com.evil.example.com/oauth2/authorize',
     'http://127.0.0.1/oauth/callback',
+    // Outside 1024-65535, the server relay's range: a privileged port, one too low, one out of range.
+    'http://127.0.0.1:80/oauth/callback',
+    'http://localhost:1023/callback',
+    'http://127.0.0.1:70000/oauth/callback',
     'https://127.0.0.1:53111/oauth/callback',
     overHttp('https://192.168.1.10:53111/callback'),
     'https://assistant.example.com/other',
