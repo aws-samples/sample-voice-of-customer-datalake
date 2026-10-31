@@ -38,21 +38,25 @@ def assert_handler_wrapped(module: ModuleType) -> None:
 
 
 
-# The wrappers `shared.invocation_cost.instrumented_handler` puts on a handler, outermost first, each
-# named by the tail of the file that defines it.
-_INSTRUMENTED_WRAPPERS = (
+# The four Powertools/cost decorators, outermost first, each named by the tail of the file that
+# defines it. A handler that writes them by hand (the plugin ingestors, the global MCP handler) wears
+# exactly these.
+_POWERTOOLS_WRAPPERS = (
     os.path.join('logging', 'logger.py'),
     TRACER_SOURCE,
     os.path.join('metrics', 'provider', 'base.py'),
     os.path.join('shared', 'invocation_cost.py'),
-    # Innermost: the model profile scope (shared/model_profile.py, an e2e user's models).
-    os.path.join('shared', 'model_profile.py'),
 )
-INSTRUMENTED_HANDLER_LAYERS = (*_INSTRUMENTED_WRAPPERS, 'lambda_handler')
+HAND_WRITTEN_HANDLER_LAYERS = (*_POWERTOOLS_WRAPPERS, 'lambda_handler')
+# `shared.invocation_cost.instrumented_handler` and `shared.api.api_handler` add the model profile
+# scope innermost (shared/model_profile.py, an e2e user's models).
+_MODEL_PROFILE_WRAPPER = os.path.join('shared', 'model_profile.py')
+INSTRUMENTED_HANDLER_LAYERS = (*_POWERTOOLS_WRAPPERS, _MODEL_PROFILE_WRAPPER, 'lambda_handler')
 # An API entry point adds `shared.e2e_tag.with_test_run_tag` outermost (`test_run` on e2e traffic).
 _E2E_TAG_WRAPPER = os.path.join('shared', 'e2e_tag.py')
 API_HANDLER_LAYERS = (_E2E_TAG_WRAPPER, *INSTRUMENTED_HANDLER_LAYERS)
-_KNOWN_WRAPPERS = (_E2E_TAG_WRAPPER, *_INSTRUMENTED_WRAPPERS)
+HAND_WRITTEN_API_HANDLER_LAYERS = (_E2E_TAG_WRAPPER, *HAND_WRITTEN_HANDLER_LAYERS)
+_KNOWN_WRAPPERS = (_E2E_TAG_WRAPPER, *_POWERTOOLS_WRAPPERS, _MODEL_PROFILE_WRAPPER)
 
 
 def handler_layers(function: Callable) -> tuple[str, ...]:
