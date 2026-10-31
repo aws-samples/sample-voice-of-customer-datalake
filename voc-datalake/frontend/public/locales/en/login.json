@@ -57,7 +57,14 @@
     "section": {
       "title": "Passkey",
       "intro": "Sign in on this device with your fingerprint, face or screen lock instead of your password. Your password keeps working.",
-      "added": "Passkey added. You can sign in with it next time."
+      "added": "Passkey added. You can sign in with it next time.",
+      "none": "No passkey on this account yet.",
+      "unnamed": "Passkey",
+      "addedOn": "Added {{date}}",
+      "remove": "Remove {{name}}",
+      "removeTitle": "Remove this passkey?",
+      "removeBody": "It can no longer sign you in, on any device that holds it. Your password and your other passkeys keep working.",
+      "removeConfirm": "Remove"
     },
     "errors": {
       "needUsername": "Enter your username or email first, then choose Sign in with a passkey.",

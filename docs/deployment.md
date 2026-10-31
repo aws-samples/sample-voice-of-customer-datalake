@@ -1009,8 +1009,9 @@ always deleted with their stacks.
 ### Passkeys
 
 The app user pool offers **opt-in passkeys** (WebAuthn): after sign-in the app
-asks each person once whether to add one, **Account → Profile → Passkey** adds
-one later, and **Login** has *Sign in with a passkey* (type the username or email
+asks each person once whether to add one, **Account → Profile → Passkey** lists
+theirs, adds one later and removes one (a lost or replaced device; Amplify
+`deleteWebAuthnCredential`, the person's own token), and **Login** has *Sign in with a passkey* (type the username or email
 first). The password keeps working and MFA is not enforced. In the stack
 (`lib/stacks/core-auth.ts`): the pool is on the **Essentials** plan, allows
 `PASSWORD` and `WEB_AUTHN` as first factors with user verification required, and

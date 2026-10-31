@@ -1,5 +1,6 @@
 /**
- * @fileoverview The passkey offer after sign-in and the "add a passkey" action (services/passkeyAuth.ts).
+ * @fileoverview The passkey offer after sign-in, and the Account page's passkey list with its add and
+ * remove actions (services/passkeyAuth.ts).
  *
  * The offer is asked once per person and browser: "Add a passkey" or "Not now" both record an answer
  * in localStorage (`voc-passkey-offer:<sub>`), and a person who already has a passkey is never asked.
@@ -12,8 +13,8 @@ import { useAuthStore } from '../../store/authStore'
 
 const OFFER_KEY_PREFIX = 'voc-passkey-offer:'
 
-/** The query key of "does the signed-in person have a passkey". */
-const passkeyQueryKey = (sub: string) => ['passkey', 'has', sub] as const
+/** Every passkey query of one person: whether they have one, and the list. */
+const passkeyRootKey = (sub: string) => ['passkey', sub] as const
 
 function offerKey(sub: string): string {
   return `${OFFER_KEY_PREFIX}${sub}`
@@ -36,27 +37,48 @@ function recordAnswer(sub: string, answer: 'added' | 'declined'): void {
   }
 }
 
-/** Registers a passkey for the signed-in person; on success the "has a passkey" answer is refreshed. */
-export function useRegisterPasskey() {
+/** A passkey mutation that refreshes the person's passkey queries when it succeeds. */
+function usePasskeyMutation<T>(run: (arg: T) => Promise<void>, onDone?: (sub: string) => void) {
   const sub = useAuthStore((state) => state.user?.sub)
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => passkeyAuth.register(),
+    mutationFn: run,
     onSuccess: () => {
       if (sub === undefined) return
-      recordAnswer(sub, 'added')
-      void queryClient.invalidateQueries({ queryKey: passkeyQueryKey(sub) })
+      onDone?.(sub)
+      void queryClient.invalidateQueries({ queryKey: passkeyRootKey(sub) })
     },
   })
 }
 
-/** Whether to show the offer now, and how to decline it. */
-export function usePasskeyOffer(): { readonly show: boolean; readonly decline: () => void } {
+/** Registers a passkey for the signed-in person (and answers the offer). */
+export function useRegisterPasskey() {
+  return usePasskeyMutation<void>(() => passkeyAuth.register(), (sub) => recordAnswer(sub, 'added'))
+}
+
+/** Removes one of the signed-in person's passkeys. */
+export function useRemovePasskey() {
+  return usePasskeyMutation((id: string) => passkeyAuth.remove(id))
+}
+
+/** The signed-in person's passkeys (none read where passkeys cannot be used). */
+export function usePasskeyList() {
   const sub = useAuthStore((state) => state.user?.sub)
-  const [declined, setDeclined] = useState(false)
-  const eligible = sub !== undefined && !declined && canUsePasskeys() && !answered(sub)
+  return useQuery({
+    queryKey: [...passkeyRootKey(sub ?? ''), 'list'],
+    queryFn: () => passkeyAuth.list(),
+    enabled: sub !== undefined && canUsePasskeys(),
+    retry: false,
+  })
+}
+
+/** Whether to show the offer now, how to decline it, and how to close it once a passkey is added. */
+export function usePasskeyOffer(): { readonly show: boolean; readonly decline: () => void; readonly close: () => void } {
+  const sub = useAuthStore((state) => state.user?.sub)
+  const [closed, setClosed] = useState(false)
+  const eligible = sub !== undefined && !closed && canUsePasskeys() && !answered(sub)
   const { data: hasPasskey } = useQuery({
-    queryKey: passkeyQueryKey(sub ?? ''),
+    queryKey: [...passkeyRootKey(sub ?? ''), 'has'],
     queryFn: () => passkeyAuth.hasPasskey(),
     enabled: eligible,
     staleTime: Infinity,
@@ -66,7 +88,9 @@ export function usePasskeyOffer(): { readonly show: boolean; readonly decline: (
     show: eligible && hasPasskey === false,
     decline: () => {
       if (sub !== undefined) recordAnswer(sub, 'declined')
-      setDeclined(true)
+      setClosed(true)
     },
+    // Closed at once, not when the "has a passkey" read comes back (it may be slow or fail).
+    close: () => setClosed(true),
   }
 }

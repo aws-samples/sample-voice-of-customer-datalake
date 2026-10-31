@@ -57,7 +57,14 @@
     "section": {
       "title": "Passkey",
       "intro": "Loguj się na tym urządzeniu za pomocą odcisku palca, rozpoznawania twarzy lub blokady ekranu zamiast hasła. Twoje hasło nadal będzie działać.",
-      "added": "Dodano passkey. Następnym razem możesz zalogować się przy jego użyciu."
+      "added": "Dodano passkey. Następnym razem możesz zalogować się przy jego użyciu.",
+      "none": "Na tym koncie nie ma jeszcze żadnego klucza dostępu.",
+      "unnamed": "Klucz dostępu",
+      "addedOn": "Dodano {{date}}",
+      "remove": "Usuń {{name}}",
+      "removeTitle": "Usunąć ten klucz dostępu?",
+      "removeBody": "Nie będzie już można się nim zalogować na żadnym urządzeniu, na którym jest zapisany. Hasło i pozostałe klucze dostępu nadal będą działać.",
+      "removeConfirm": "Usuń"
     },
     "errors": {
       "needUsername": "Najpierw wpisz nazwę użytkownika lub adres e-mail, a następnie wybierz opcję „Zaloguj się passkey”.",

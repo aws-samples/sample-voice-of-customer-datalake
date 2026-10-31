@@ -26,7 +26,7 @@ export default function PasskeyPrompt() {
         {register.isError ? <p role="alert" className="text-sm text-danger mt-1">{passkeyErrorText(t, register.error)}</p> : null}
       </div>
       <div className="flex flex-wrap gap-2">
-        <AddPasskeyButton pending={register.isPending} onAdd={() => register.mutate()} />
+        <AddPasskeyButton pending={register.isPending} onAdd={() => register.mutate(undefined, { onSuccess: offer.close })} />
         <button type="button" className="btn btn-secondary" disabled={register.isPending} onClick={offer.decline}>
           {t('passkey.offer.notNow')}
         </button>

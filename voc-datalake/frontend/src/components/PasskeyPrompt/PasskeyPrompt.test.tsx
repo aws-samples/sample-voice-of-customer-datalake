@@ -12,9 +12,14 @@ import { PasskeyError } from '../../services/passkey'
 const mockCanUse = vi.fn<() => boolean>()
 const mockHasPasskey = vi.fn<() => Promise<boolean>>()
 const mockRegister = vi.fn<() => Promise<void>>()
+const mockList = vi.fn<() => Promise<Array<{ id: string; name: string | undefined; createdAt: Date | undefined }>>>()
+const mockRemove = vi.fn<(id: string) => Promise<void>>()
 vi.mock('../../services/passkeyAuth', () => ({
   canUsePasskeys: () => mockCanUse(),
-  passkeyAuth: { hasPasskey: () => mockHasPasskey(), register: () => mockRegister() },
+  passkeyAuth: {
+    hasPasskey: () => mockHasPasskey(), register: () => mockRegister(),
+    list: () => mockList(), remove: (id: string) => mockRemove(id),
+  },
 }))
 
 import PasskeyPrompt from './PasskeyPrompt'
@@ -34,6 +39,8 @@ beforeEach(() => {
   mockCanUse.mockReturnValue(true)
   mockHasPasskey.mockResolvedValue(false)
   mockRegister.mockResolvedValue(undefined)
+  mockList.mockResolvedValue([])
+  mockRemove.mockResolvedValue(undefined)
   useAuthStore.getState().setUser({ username: 'dana', email: 'dana@example.com', groups: [], sub: SUB })
 })
 
@@ -72,6 +79,8 @@ describe('PasskeyPrompt', () => {
     await user.click(await screen.findByRole('button', { name: 'Add a passkey' }))
     await waitFor(() => expect(stored.get(OFFER_KEY)).toBe('added'))
     expect(mockRegister).toHaveBeenCalledExactlyOnceWith()
+    // Closed at once, even though the "has a passkey" read would still answer false.
+    expect(screen.queryByRole('region', OFFER)).toBeNull()
   })
 
   it('keeps the offer open with the reason when the browser prompt is cancelled', async () => {
@@ -96,5 +105,19 @@ describe('Account PasskeySection', () => {
     renderWithQueryClient(<PasskeySection />)
     await user.click(screen.getByRole('button', { name: 'Add a passkey' }))
     expect(await screen.findByRole('status')).toHaveTextContent(/Passkey added/)
+  })
+
+  it('says when the account has no passkey yet', async () => {
+    renderWithQueryClient(<PasskeySection />)
+    expect(await screen.findByText('No passkey on this account yet.')).toBeVisible()
+  })
+
+  it('lists the passkeys and removes one after a confirmation', async () => {
+    mockList.mockResolvedValue([{ id: 'c1', name: 'iCloud Keychain', createdAt: new Date('2026-10-01T10:00:00Z') }])
+    const user = userEvent.setup()
+    renderWithQueryClient(<PasskeySection />)
+    await user.click(await screen.findByRole('button', { name: 'Remove iCloud Keychain' }))
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(mockRemove).toHaveBeenCalledExactlyOnceWith('c1'))
   })
 })
