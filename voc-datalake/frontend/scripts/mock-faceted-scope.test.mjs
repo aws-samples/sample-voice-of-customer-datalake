@@ -48,7 +48,7 @@ describe('dev mock: faceted metric reads keep the caller scope', () => {
   before(async () => {
     const port = await freePort()
     base = `http://127.0.0.1:${port}`
-    child = spawn(process.execPath, ['mock-server.js'], { cwd: FRONTEND, env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] })
+    child = spawn(process.execPath, ['mock-server.js'], { cwd: FRONTEND, env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'ignore'] })
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('mock server did not start')), START_TIMEOUT_MS)
       child.stdout.on('data', (chunk) => {
@@ -70,8 +70,14 @@ describe('dev mock: faceted metric reads keep the caller scope', () => {
     try {
       const [, scoped] = await call('GET', '/metrics/categories?days=0&sentiment=positive,negative')
       assert.deepEqual(Object.keys(scoped.categories ?? {}), [allowed])
+      const ceiling = all.categories[allowed]
       const [, summary] = await call('GET', '/metrics/summary?days=0&sentiment=positive,negative')
-      assert.ok(summary.total_feedback <= all.categories[allowed], 'the total covers the allowed category only')
+      assert.ok(summary.total_feedback <= ceiling, 'the summary total covers the allowed category only')
+      const [, sentiment] = await call('GET', '/metrics/sentiment?days=0&sentiment=positive,negative')
+      assert.ok(sentiment.total <= ceiling, 'the sentiment total covers the allowed category only')
+      const [, sources] = await call('GET', '/metrics/sources?days=0&sentiment=positive,negative')
+      const sourceTotal = Object.values(sources.sources ?? {}).reduce((sum, n) => sum + Number(n), 0)
+      assert.ok(sourceTotal <= ceiling, 'the per-source counts cover the allowed category only')
     } finally {
       await call('PUT', '/__mock/scope', { categories: null })
     }
