@@ -143,7 +143,9 @@ export class IngestorRoles {
     watermarksTable.grantReadWriteData(role);
     aggregatesTable.grantReadWriteData(role);
     processingQueue.grantSendMessages(role);
-    rawDataBucket.grantReadWrite(role);
+    // Write-only under raw/ (IAM-1): ingestors only `put_object` raw/<source>/... (plugins/_shared/raw_archive.py).
+    // No read and no delete: only voc-retention may delete customer data (docs/source-policies.md).
+    rawDataBucket.grantPut(role, 'raw/*');
     kmsKey.grantEncryptDecrypt(role);
     apiSecrets.grantRead(role);
     role.addToPolicy(piiDetectionStatement()); // source PII policy (docs/source-policies.md)
