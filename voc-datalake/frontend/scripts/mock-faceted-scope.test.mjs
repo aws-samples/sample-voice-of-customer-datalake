@@ -61,23 +61,31 @@ describe('dev mock: faceted metric reads keep the caller scope', () => {
   after(() => { child?.kill() })
 
   it('counts only the allowed categories when a facet is set', async () => {
-    const [, all] = await call('GET', '/metrics/categories?days=0&sentiment=positive,negative')
-    const names = Object.keys(all.categories ?? {})
-    assert.ok(names.length >= 2, 'the fixtures span several categories')
+    const FACET = 'days=0&sentiment=positive,negative'
+    const totals = async () => {
+      const [, summary] = await call('GET', `/metrics/summary?${FACET}`)
+      const [, sentiment] = await call('GET', `/metrics/sentiment?${FACET}`)
+      const [, sources] = await call('GET', `/metrics/sources?${FACET}`)
+      const sourceTotal = Object.values(sources.sources ?? {}).reduce((sum, n) => sum + Number(n), 0)
+      return { summary: summary.total_feedback, sentiment: sentiment.total, sources: sourceTotal }
+    }
+    const [, all] = await call('GET', `/metrics/categories?${FACET}`)
+    const names = Object.keys(all.categories ?? {}).filter((name) => all.categories[name] > 0)
+    assert.ok(names.length >= 2, 'the faceted fixtures span several categories')
     const [allowed] = names
+    const unscoped = await totals()
     const [status] = await call('PUT', '/__mock/scope', { categories: [allowed] })
     assert.equal(status, 200)
     try {
-      const [, scoped] = await call('GET', '/metrics/categories?days=0&sentiment=positive,negative')
-      assert.deepEqual(Object.keys(scoped.categories ?? {}), [allowed])
-      const ceiling = all.categories[allowed]
-      const [, summary] = await call('GET', '/metrics/summary?days=0&sentiment=positive,negative')
-      assert.ok(summary.total_feedback <= ceiling, 'the summary total covers the allowed category only')
-      const [, sentiment] = await call('GET', '/metrics/sentiment?days=0&sentiment=positive,negative')
-      assert.ok(sentiment.total <= ceiling, 'the sentiment total covers the allowed category only')
-      const [, sources] = await call('GET', '/metrics/sources?days=0&sentiment=positive,negative')
-      const sourceTotal = Object.values(sources.sources ?? {}).reduce((sum, n) => sum + Number(n), 0)
-      assert.ok(sourceTotal <= ceiling, 'the per-source counts cover the allowed category only')
+      const [, scopedCategories] = await call('GET', `/metrics/categories?${FACET}`)
+      assert.deepEqual(Object.keys(scopedCategories.categories ?? {}), [allowed])
+      const scoped = await totals()
+      // A leak would answer the unscoped number: every scoped total is strictly smaller, and none exceeds
+      // the allowed category's own count.
+      for (const key of ['summary', 'sentiment', 'sources']) {
+        assert.ok(scoped[key] < unscoped[key], `${key}: ${scoped[key]} < ${unscoped[key]}`)
+        assert.ok(scoped[key] <= all.categories[allowed], `${key} covers the allowed category only`)
+      }
     } finally {
       await call('PUT', '/__mock/scope', { categories: null })
     }
