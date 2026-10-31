@@ -53,4 +53,10 @@ def test_field_annotations_resolve():
         'rating_min': int | None,
         'rating_max': int | None,
         'urgent': bool,
+        'sources': tuple[str, ...],
+        'categories': tuple[str, ...],
+        'subcategories': tuple[str, ...],
+        'sentiments': tuple[str, ...],
+        'usefulness': tuple[str, ...],
+        'configured_categories': frozenset[str] | None,
     }

@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from aws_lambda_powertools.event_handler.exceptions import NotFoundError
-from boto3.dynamodb.conditions import Attr, ConditionBase, Key
+from boto3.dynamodb.conditions import ConditionBase, Key
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import category_access, data_quality, other_category, release_watch
@@ -58,6 +58,7 @@ from shared.indexes import (
     FEEDBACK_BY_ID_INDEX,
     FEEDBACK_BY_URGENCY_INDEX,
 )
+from shared.item_facets import any_of
 from shared.item_filters import NO_ITEM_FILTERS, ItemFilters, parse_item_filters
 from shared.logging import logger, tracer
 from shared.metric_keys import (
@@ -211,7 +212,7 @@ def _query_partition(
     index_name: str,
     key_expr,
     max_matched: int,
-    source: str | None = None,
+    sources: tuple[str, ...] = (),
     scope: CategoryScope | None = None,
     row_condition: ConditionBase | None = None,
     read: SlimRead | None = None,
@@ -231,9 +232,9 @@ def _query_partition(
     Returns ``(items, has_more)``. A single query returns at most one page
     (bounded by DynamoDB's 1MB / the Limit parameter), so without paging a
     partition dominated by one source starves in-memory filters for every
-    other source (issue #99). When ``source`` is given it is applied as a
-    server-side FilterExpression, so matching rows are found no matter how
-    deep they sit in the partition.
+    other source (issue #99). When ``sources`` are given they are applied as a
+    server-side FilterExpression (``=`` for one, ``IN`` for several), so matching
+    rows are found no matter how deep they sit in the partition.
 
     Paging stops once ``max_matched`` matching rows are collected or
     ``MAX_SCANNED_PER_PARTITION`` rows have been examined.
@@ -243,7 +244,7 @@ def _query_partition(
     last_key = None
     has_more = False
     row_filter = scope_query.combine(
-        Attr('source_platform').eq(source) if source else None, scope_query.scope_filter(scope), row_condition)
+        any_of('source_platform', sources), scope_query.scope_filter(scope), row_condition)
     max_scanned = read.max_scanned_per_partition if read else MAX_SCANNED_PER_PARTITION
     while True:
         kwargs: dict[str, Any] = {
@@ -276,7 +277,7 @@ def _scan_recent_items(
     days: int,
     per_day_limit: int | None = None,
     soft_cap: int | None = None,
-    source: str | None = None,
+    sources: tuple[str, ...] = (),
     row_condition: ConditionBase | None = None,
     scope: CategoryScope | None = None,
     read: SlimRead | None = None,
@@ -291,8 +292,8 @@ def _scan_recent_items(
     allowed, or the soft cap ended the scan with days still unread) — i.e.
     the result is a sample, not the complete window.
 
-    Each day partition is paged (see :func:`_query_partition`); ``source``
-    is pushed down as a server-side filter so dominated partitions can't
+    Each day partition is paged (see :func:`_query_partition`); ``sources``
+    are pushed down as a server-side filter so dominated partitions can't
     starve source-filtered results. ``per_day_limit`` bounds each day for
     sampling callers (search); by default a day may use the entire
     remaining budget. The default ``soft_cap`` (read at call time) matches ``/feedback``'s
@@ -329,7 +330,7 @@ def _scan_recent_items(
             FEEDBACK_BY_DATE_INDEX,
             Key('gsi1pk').eq(f'DATE#{date}'),
             max_matched=min(per_day_limit, remaining) if per_day_limit else remaining,
-            source=source,
+            sources=sources,
             scope=scope,
             row_condition=row_condition,
             read=read,
@@ -349,7 +350,7 @@ def _scan_recent_items(
 
 
 def _scan_window_items(
-    days: int, date_basis: str, source: str | None = None, scope: CategoryScope | None = None,
+    days: int, date_basis: str, scope: CategoryScope | None = None,
     extra: ItemFilters = NO_ITEM_FILTERS, slim: bool = False, read: SlimRead | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Collect items whose basis date falls within the last `days` days.
@@ -361,12 +362,13 @@ def _scan_window_items(
     window is post-filtered down to items actually written within it (see the
     containment note above).
     """
-    channel_rows = _channel_rows(days, extra.channel, source, scope) if slim and extra.channel else None
+    channel_rows = _channel_rows(days, extra, scope) if slim else None
     if channel_rows is not None:
         items, is_partial = channel_rows
     else:
         items, is_partial = _scan_recent_items(
-            days, source=source, scope=scope, row_condition=extra.row_condition(), read=read)
+            days, sources=extra.sources, scope=scope, row_condition=extra.row_condition(),
+            read=_read_with_filters(read, extra))
     if date_basis == DATE_BASIS_REVIEW:
         cutoff = _basis_cutoff(days)
         items = [i for i in items if basis_date(i, date_basis) >= cutoff] if cutoff else items
@@ -387,26 +389,30 @@ def _caller_scope() -> CategoryScope:
 
 
 def _channel_rows(
-    days: int, channel: str, source: str | None, scope: CategoryScope | None,
+    days: int, extra: ItemFilters, scope: CategoryScope | None,
 ) -> tuple[list[dict[str, Any]], bool] | None:
-    """The window's rows of ``channel`` from ``gsi5-by-channel`` (slim: ``CHANNEL_INDEX_FIELDS``).
+    """The window's rows of ``extra.channel`` from ``gsi5-by-channel`` (slim: ``CHANNEL_INDEX_FIELDS``).
 
-    ``source`` and the caller's scope are pushed down as on the day walk. ``None`` when the
-    index does not exist yet (a deployment mid-upgrade): the caller falls back to the day walk.
+    The sources and the caller's scope are pushed down as on the day walk. ``None`` without a
+    channel filter, when the filters read an attribute the index does not project
+    (``usefulness``), or when the index does not exist yet (a deployment mid-upgrade): the
+    caller then walks the days.
     """
+    if not extra.channel or not extra.channel_index_serves:
+        return None
     if scope is not None and scope_query.admits_nothing(scope):
         return [], False
-    row_filter = scope_query.combine(
-        Attr('source_platform').eq(source) if source else None, scope_query.scope_filter(scope))
+    row_filter = scope_query.combine(extra.source_condition(), scope_query.scope_filter(scope))
     try:
-        return walk_channel(_feedback_table(), channel, window_cutoff(days), _walk_budget(), row_filter=row_filter)
+        return walk_channel(
+            _feedback_table(), extra.channel, window_cutoff(days), _walk_budget(), row_filter=row_filter)
     except ChannelIndexUnavailable:
         logger.warning('gsi5-by-channel unavailable; channel filter falls back to the day walk')
         return None
 
 
 def _scoped_window_items(
-    days: int, date_basis: str, scope: CategoryScope, source: str | None = None,
+    days: int, date_basis: str, scope: CategoryScope,
     extra: ItemFilters | None = None, slim: bool = True, read: SlimRead | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """:func:`_scan_window_items`, then the caller's category filter (and ``extra``).
@@ -424,9 +430,16 @@ def _scoped_window_items(
     if slim and read is None:
         read = _aggregate_row_read()
     items, is_partial = _scan_window_items(
-        days, date_basis, source=source, scope=scope, extra=extra or NO_ITEM_FILTERS, slim=slim, read=read)
+        days, date_basis, scope=scope, extra=extra or NO_ITEM_FILTERS, slim=slim, read=read)
     items = extra.filter(items) if extra is not None else items
     return category_access.filter_items(scope, items), is_partial
+
+
+def _read_with_filters(read: SlimRead | None, extra: ItemFilters) -> SlimRead | None:
+    """``read`` plus the stored ``usefulness`` band when a usefulness filter must see it (None = full rows)."""
+    if read is None or not extra.usefulness or USEFULNESS_FIELD in read.fields:
+        return read
+    return replace(read, fields=(*read.fields, USEFULNESS_FIELD))
 
 
 def _query_metric_window(
@@ -607,10 +620,11 @@ def _persona_bucket(item: dict) -> str:
 class _ItemFilters:
     """The post-query filters `/feedback/urgent` and `/feedback/search` share.
 
-    Both read the same four query parameters, both derive the same days-long window
+    Both read the same query parameters, both derive the same days-long window
     ending today (the one `/feedback` and `/metrics/*` use), and both drop an item
-    the same way: outside the window on the selected basis, or not matching a given
-    source / sentiment / category. One definition, so the two routes cannot drift.
+    the same way: outside the window on the selected basis, or not matching the
+    item filters (source / category / sentiment / usefulness lists among them,
+    shared/item_filters.py). One definition, so the two routes cannot drift.
     """
 
     def __init__(
@@ -618,13 +632,10 @@ class _ItemFilters:
     ):
         self.scope = scope
         self.date_basis = validate_date_basis(params.get('date_basis'))
-        self.source = params.get('source')
-        self.sentiment = params.get('sentiment')
-        self.category = params.get('category')
         # Issue-tracker filters (github_issues items only; see shared/github_metrics.py).
         self.version = params.get('version')
         self.label = params.get('label')
-        # channel / dims / tag (shared/item_filters.py).
+        # source / category / sentiment / usefulness lists, channel / dims / tag / stars / urgent.
         self.extra = _extra_filters(params)
         # `cutoff_date` bounds the index read (import timestamps, the clamped walk);
         # `basis_cutoff` is the requested window on the selected basis ('' = all time).
@@ -636,27 +647,22 @@ class _ItemFilters:
             return False
         if not category_access.admits_item(self.scope, item):
             return False
-        if self.source and item.get('source_platform') != self.source:
-            return False
-        if self.sentiment and item.get('sentiment_label') != self.sentiment:
-            return False
         if not matches_issue_filters(item, self.version, self.label):
             return False
-        if not self.extra.admits(item):
-            return False
-        return not self.category or other_category.matches_category(item, self.category, self._configured())
-
-    def _configured(self) -> list[str]:
-        # Read only when a category filter needs it (cached per container in shared.api).
-        return _configured_category_names()
+        return self.extra.admits(item)
 
 
 def _extra_filters(params: Mapping[str, Any] | None) -> ItemFilters:
-    """The request's ``channel`` / ``dims`` / ``tag`` filters; 400 on a malformed ``dims``."""
+    """The request's item filters (shared/item_filters.py); 400 on a malformed one.
+
+    A category list is bound to the configured categories (read only then; cached per
+    container in shared.api), so ``category=other`` means the "Other" row.
+    """
     try:
-        return parse_item_filters(params)
+        filters = parse_item_filters(params)
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
+    return filters.with_configured(_configured_category_names()) if filters.categories else filters
 
 
 def _ranked(counts: dict) -> dict:
@@ -913,9 +919,6 @@ def list_feedback():
 
     days = _window_days(params, default=7)
     date_basis = validate_date_basis(params.get('date_basis'))
-    source = params.get('source')
-    category = params.get('category')
-    sentiment = params.get('sentiment')
     version = params.get('version')
     label = params.get('label')
     extra = _extra_filters(params)
@@ -931,7 +934,7 @@ def list_feedback():
     #
     # - Without post-query filters, a small overshoot beyond offset+limit is
     #   enough to paginate, and `total` is an intentionally windowed lower bound.
-    # - With post-query filters (source/sentiment/category), stopping at that
+    # - With post-query filters (source/sentiment/category/...), stopping at that
     #   small overshoot would undercount the filtered `total` and spuriously set
     #   `is_partial_window` (e.g. "2 of 2+"): the candidates that survive the
     #   filter are a small subset of the scanned window. In that case we scan the
@@ -939,8 +942,7 @@ def list_feedback():
     #   `is_partial_window` only trips on genuine cap truncation.
     scope = _caller_scope()
     has_post_filter = (
-        bool(source) or bool(sentiment) or bool(category)
-        or bool(version) or bool(label)
+        bool(version) or bool(label)
         or extra.active
         or date_basis == DATE_BASIS_REVIEW
         or not scope.all
@@ -950,14 +952,15 @@ def list_feedback():
         else max((offset + limit) * 2, MIN_CANDIDATE_CAP)
     )
 
-    # `category=other` lists every review outside the configuration
-    # (shared/other_category.py), which no single category partition holds, so it
-    # walks the days with that condition pushed down instead.
+    # ONE named category (no source) reads its own partition. `category=other` lists every
+    # review outside the configuration (shared/other_category.py), which no single category
+    # partition holds, and several categories span several partitions, so those walk the
+    # days with the category condition pushed down (`ItemFilters.row_condition`) instead.
     # A channel filter reads the channel's own key range (gsi5-by-channel, slim rows); the
     # page's full items are fetched below. None = the index is not there yet: walk as before.
-    channel_rows = _channel_rows(days, extra.channel, source, scope) if extra.channel else None
-    by_category_index = (
-        channel_rows is None and bool(category) and not source and category != other_category.OTHER)
+    channel_rows = _channel_rows(days, extra, scope)
+    by_category_index = channel_rows is None and _one_category_partition(extra)
+    read = _read_with_filters(_metric_row_read(), extra)
     if channel_rows is not None:
         candidates, window_truncated = channel_rows
     elif by_category_index:
@@ -965,18 +968,15 @@ def list_feedback():
         # paging still matters because one query returns at most one page.
         candidates, window_truncated = _query_partition(
             FEEDBACK_BY_CATEGORY_INDEX,
-            Key('gsi2pk').eq(f'CATEGORY#{category}'),
+            Key('gsi2pk').eq(f'CATEGORY#{extra.categories[0]}'),
             max_matched=candidate_cap,
-            row_condition=extra.row_condition(),
-            read=_metric_row_read(),
+            # The partition IS the category; the rows are still re-checked in memory below.
+            row_condition=replace(extra, categories=()).row_condition(),
+            read=read,
         )
     else:
-        other = (
-            other_category.other_condition(_configured_category_names())
-            if category == other_category.OTHER else None
-        )
-        row_condition = scope_query.combine(other, extra.row_condition())
-        candidates, window_truncated = _walk_feedback_days(days, candidate_cap, source, row_condition)
+        candidates, window_truncated = _walk_feedback_days(
+            days, candidate_cap, extra.sources, extra.row_condition(), read)
 
     if date_basis == DATE_BASIS_REVIEW or by_category_index:
         # The `days` window applies to the selected basis date. The date-loop
@@ -991,13 +991,6 @@ def list_feedback():
         cutoff = _basis_cutoff(days)
         if cutoff:
             candidates = [c for c in candidates if basis_date(c, date_basis) >= cutoff]
-    if source:
-        candidates = [i for i in candidates if i.get('source_platform') == source]
-    if category and not by_category_index:
-        configured = _configured_category_names()
-        candidates = [i for i in candidates if other_category.matches_category(i, category, configured)]
-    if sentiment:
-        candidates = [i for i in candidates if i.get('sentiment_label') == sentiment]
     if version or label:
         candidates = [i for i in candidates if matches_issue_filters(i, version, label)]
     candidates = extra.filter(candidates)
@@ -1020,12 +1013,18 @@ def list_feedback():
     }
 
 
+def _one_category_partition(extra: ItemFilters) -> bool:
+    """True when `/feedback` can read one `gsi2-by-category` partition: one named category, no source."""
+    return len(extra.categories) == 1 and not extra.sources and extra.categories[0] != other_category.OTHER
+
+
 def _walk_feedback_days(
-    days: int, candidate_cap: int, source: str | None, row_condition: ConditionBase | None = None,
+    days: int, candidate_cap: int, sources: tuple[str, ...], row_condition: ConditionBase | None = None,
+    read: SlimRead | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """`/feedback`'s day-by-day walk of `gsi1-by-date`: `(candidates, window_truncated)`.
 
-    `source` and `row_condition` are pushed down as FilterExpressions so a day
+    `sources` and `row_condition` are pushed down as FilterExpressions so a day
     dominated by other rows cannot fill the page and starve the in-memory
     filters (issue #99); the walk stops at `candidate_cap` or the time budget.
     """
@@ -1037,9 +1036,9 @@ def _walk_feedback_days(
             FEEDBACK_BY_DATE_INDEX,
             Key('gsi1pk').eq(f'DATE#{date}'),
             max_matched=candidate_cap - len(candidates),
-            source=source,
+            sources=sources,
             row_condition=row_condition,
-            read=_metric_row_read(),
+            read=read or _metric_row_read(),
         )
         candidates.extend(day_items)
         if len(candidates) >= candidate_cap:
@@ -1082,7 +1081,7 @@ def get_urgent_feedback():
     has_post_filters = _urgent_has_post_filters(filters)
     key_expr = Key('gsi3pk').eq(URGENT_PARTITION) & Key('gsi3sk').gte(filters.cutoff_date)
     page = read_urgent_page(
-        lambda key, rows: _urgency_query(key_expr, filters.source, key, rows),
+        lambda key, rows: _urgency_query(key_expr, filters.extra.sources, key, rows),
         _batch_get_feedback,
         filters.admits,
         limit=limit,
@@ -1095,7 +1094,7 @@ def get_urgent_feedback():
                     extra={'limit': limit, 'returned': len(page.items)})
     total = None
     if start_key is None:
-        total = _urgent_total(page, key_expr, filters.source, counted=not has_post_filters)
+        total = _urgent_total(page, key_expr, filters.extra.sources, counted=not has_post_filters)
     return {
         'count': len(page.items),
         'total': total,
@@ -1108,12 +1107,12 @@ def get_urgent_feedback():
 def _urgent_has_post_filters(filters: _ItemFilters) -> bool:
     """True when an item must be read in full to be admitted.
 
-    `source` is pushed down as a FilterExpression (`source_platform` is projected
-    into the index), so it is not one.
+    The sources are pushed down as a FilterExpression (`source_platform` is projected
+    into the index), so they are not one.
     """
     return bool(
-        filters.sentiment or filters.category or filters.version or filters.label
-        or filters.extra.active
+        filters.version or filters.label
+        or filters.extra.without_sources().active
         or filters.date_basis == DATE_BASIS_REVIEW
         or not filters.scope.all
     )
@@ -1132,24 +1131,27 @@ def _urgent_start_key(token: object, cutoff_date: str) -> dict[str, str] | None:
     return key
 
 
-def _urgency_kwargs(key_expr, source: str | None, start_key: Mapping[str, Any] | None) -> dict[str, Any]:
-    """The urgency-index Query arguments every urgent read shares (source pushed down)."""
+def _urgency_kwargs(key_expr, sources: tuple[str, ...], start_key: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The urgency-index Query arguments every urgent read shares (sources pushed down)."""
     kwargs: dict[str, Any] = {'IndexName': FEEDBACK_BY_URGENCY_INDEX, 'KeyConditionExpression': key_expr}
-    if source:
-        kwargs['FilterExpression'] = Attr('source_platform').eq(source)
+    source_filter = any_of('source_platform', sources)
+    if source_filter is not None:
+        kwargs['FilterExpression'] = source_filter
     if start_key:
         kwargs['ExclusiveStartKey'] = dict(start_key)
     return kwargs
 
 
-def _urgency_query(key_expr, source: str | None, start_key: Mapping[str, str] | None, rows: int) -> Mapping[str, Any]:
+def _urgency_query(
+    key_expr, sources: tuple[str, ...], start_key: Mapping[str, str] | None, rows: int,
+) -> Mapping[str, Any]:
     """One newest-first page of the urgency index."""
     return _feedback_table().query(
-        **_urgency_kwargs(key_expr, source, start_key), Limit=rows, ScanIndexForward=False,
+        **_urgency_kwargs(key_expr, sources, start_key), Limit=rows, ScanIndexForward=False,
     )
 
 
-def _urgent_total(page: UrgentPage, key_expr, source: str | None, *, counted: bool) -> int | None:
+def _urgent_total(page: UrgentPage, key_expr, sources: tuple[str, ...], *, counted: bool) -> int | None:
     """The first page's window total: exact when known, None when it would need every item read."""
     if page.next_key is None:
         return len(page.items)
@@ -1159,7 +1161,7 @@ def _urgent_total(page: UrgentPage, key_expr, source: str | None, *, counted: bo
     scanned = 0
     start_key = None
     while True:
-        response = _feedback_table().query(**_urgency_kwargs(key_expr, source, start_key), Select='COUNT')
+        response = _feedback_table().query(**_urgency_kwargs(key_expr, sources, start_key), Select='COUNT')
         total += int(response.get('Count', 0))
         scanned += int(response.get('ScannedCount', 0))
         start_key = response.get('LastEvaluatedKey')
@@ -1216,7 +1218,6 @@ def get_entities():
     params = app.current_event.query_string_parameters or {}
     days = _window_days(params, default=7)
     limit = validate_limit(params.get('limit'), default=100, max_val=200)
-    source = params.get('source')
     date_basis = validate_date_basis(params.get('date_basis'))
 
     current_date = datetime.now(UTC)
@@ -1228,8 +1229,8 @@ def get_entities():
     # and the review-date basis require computing entities from raw items. So
     # does a category-restricted caller (the source/persona/total aggregates
     # count every category) and a channel / dims / tag filter.
-    if source or extra.active or date_basis == DATE_BASIS_REVIEW or not scope.all:
-        items, is_partial = _scoped_window_items(days, date_basis, scope, source=source, extra=extra)
+    if extra.active or date_basis == DATE_BASIS_REVIEW or not scope.all:
+        items, is_partial = _scoped_window_items(days, date_basis, scope, extra=extra)
 
         category_counts = _tally(items, 'category', 'other')
         source_counts = _tally(items, 'source_platform', 'unknown')
@@ -1362,7 +1363,7 @@ def search_feedback():
     # would only make an incomplete answer slower and no more honest.
     candidates, window_truncated = _scan_recent_items(
         days, per_day_limit=300, soft_cap=CANDIDATES_SOFT_CAP,
-        source=filters.source, row_condition=filters.extra.row_condition(),
+        sources=filters.extra.sources, row_condition=filters.extra.row_condition(),
     )
 
     # Every match in the scanned window is counted (the candidates are already in
@@ -1433,9 +1434,11 @@ def get_problems():
         raise ValidationError(str(exc)) from exc
     days = _window_days(params, default=30)
     date_basis = validate_date_basis(params.get('date_basis'))
+    # `category` / `subcategory` shape the tree (`ProblemQuery`: no category is `uncategorized`,
+    # no subcategory `general`), so the item filters leave them to it.
+    extra = replace(_extra_filters(params), categories=(), subcategories=())
     items, is_partial = _scoped_window_items(
-        days, date_basis, _caller_scope(), source=params.get('source'), extra=_extra_filters(params),
-        slim=False, read=PROBLEM_READ)
+        days, date_basis, _caller_scope(), extra=extra, slim=False, read=_read_with_filters(PROBLEM_READ, extra))
     described = {'kind': 'days', 'days': app.context.get('requested_days'), 'walk_days': days,
                  'date_basis': date_basis}
     return {'period_days': days, 'is_partial': is_partial, **_walk_partial_fields(),
@@ -1526,7 +1529,6 @@ def _summary_from_items(
     date_basis: str = DATE_BASIS_REVIEW,
     scope: CategoryScope = category_access.UNRESTRICTED,
     extra: ItemFilters | None = None,
-    source: str | None = None,
 ) -> tuple[list[dict], list[dict], int, bool]:
     """Summary inputs bucketed by review date from raw feedback.
 
@@ -1541,7 +1543,7 @@ def _summary_from_items(
     describe the same window; `is_partial` is set when the scan truncated
     and the numbers are a lower bound.
     """
-    items, is_partial = _scoped_window_items(days, date_basis, scope, source=source, extra=extra)
+    items, is_partial = _scoped_window_items(days, date_basis, scope, extra=extra)
 
     daily_counts: dict[str, int] = {}
     daily_sentiment: dict[str, dict[str, float]] = {}
@@ -1580,18 +1582,17 @@ class _MetricRequest:
 
     ``from_items`` is True when the answer must be computed from raw items: the
     aggregates are bucketed by import date, count every category and source, and
-    are not keyed by ``source`` / ``channel`` / ``dims`` / ``tag``.
+    are not keyed by any item filter (source, category, sentiment, usefulness, channel, ...).
     """
     days: int
     date_basis: str
     scope: CategoryScope
-    source: str | None
     extra: ItemFilters
 
     @property
     def filtered(self) -> bool:
-        """True when a source / channel / dims / tag filter or the review-date basis narrows the request."""
-        return bool(self.source or self.extra.active or self.date_basis == DATE_BASIS_REVIEW)
+        """True when an item filter or the review-date basis narrows the request."""
+        return bool(self.extra.active or self.date_basis == DATE_BASIS_REVIEW)
 
     @property
     def from_items(self) -> bool:
@@ -1610,12 +1611,12 @@ class _MetricRequest:
 
     def window_items(self) -> tuple[list[dict[str, Any]], bool]:
         """The caller's visible, filtered items of the window (``_scoped_window_items``)."""
-        return _scoped_window_items(self.days, self.date_basis, self.scope, source=self.source, extra=self.extra)
+        return _scoped_window_items(self.days, self.date_basis, self.scope, extra=self.extra)
 
 
 def _metric_request() -> _MetricRequest:
     params, days, date_basis = _metrics_window()
-    return _MetricRequest(days, date_basis, _caller_scope(), params.get('source'), _extra_filters(params))
+    return _MetricRequest(days, date_basis, _caller_scope(), _extra_filters(params))
 
 
 def _configured_category_names() -> list[str]:
@@ -1705,7 +1706,7 @@ def get_summary():
         totals, sentiment_data, urgent_count, is_partial = _summary_for_restricted_categories(request)
     elif request.from_items:
         totals, sentiment_data, urgent_count, is_partial = _summary_from_items(
-            days, request.date_basis, request.scope, extra=request.extra, source=request.source)
+            days, request.date_basis, request.scope, extra=request.extra)
     else:
         totals, sentiment_data, urgent_count, is_partial = _summary_from_aggregates(days)
 
@@ -1761,24 +1762,19 @@ def _summary_from_aggregates(days: int) -> tuple[list[dict], list[dict], int, bo
 def get_sentiment_metrics():
     """Get sentiment breakdown.
 
-    ``category`` narrows the breakdown to one category (the Categories page's
-    "Sentiment · <category>" card). It takes the item path, AFTER the caller's
-    category filter, so a category the caller may not see answers all zeros —
+    ``category`` (one or a list, like every item filter) narrows the breakdown (the
+    Categories page's "Sentiment · <category>" card). It takes the item path, AFTER the
+    caller's category filter, so a category the caller may not see answers all zeros —
     the same as any other empty window, never a hint that it exists.
     """
     params, days, date_basis = _metrics_window()
-    source = params.get('source')
-    category = params.get('category') or None
     extra = _extra_filters(params)
     scope = _caller_scope()
 
     sentiments = ['positive', 'neutral', 'negative', 'mixed']
 
-    if source or category or extra.active or date_basis == DATE_BASIS_REVIEW or not scope.all:
-        items, is_partial = _scoped_window_items(days, date_basis, scope, source=source, extra=extra)
-        if category:
-            configured = _configured_category_names()
-            items = [item for item in items if other_category.matches_category(item, category, configured)]
+    if extra.active or date_basis == DATE_BASIS_REVIEW or not scope.all:
+        items, is_partial = _scoped_window_items(days, date_basis, scope, extra=extra)
 
         result = dict.fromkeys(sentiments, 0)
         for item in items:
@@ -1945,12 +1941,11 @@ def get_dimension_metrics():
     dimension = next((d for d in _dimensions_config() if d['key'] == key), None)
     if not isinstance(key, str) or dimension is None:
         raise ValidationError('key must name a configured dimension')
-    source = params.get('source')
     extra = _extra_filters(params)
     scope = _caller_scope()
 
-    if source or extra.active or date_basis == DATE_BASIS_REVIEW or not scope.all:
-        items, is_partial = _scoped_window_items(days, date_basis, scope, source=source, extra=extra)
+    if extra.active or date_basis == DATE_BASIS_REVIEW or not scope.all:
+        items, is_partial = _scoped_window_items(days, date_basis, scope, extra=extra)
         by_value, unassigned = _dimension_from_items(key, items)
     else:
         by_value, unassigned, is_partial = _dimension_from_aggregates(key, days)
@@ -2022,8 +2017,8 @@ def get_github_metrics():
     """
     params, days, date_basis = _metrics_window()
     repo = params.get('repo')
-    items, is_partial = _scoped_window_items(
-        days, date_basis, _caller_scope(), source=GITHUB_SOURCE, extra=_extra_filters(params))
+    extra = replace(_extra_filters(params), sources=(GITHUB_SOURCE,))
+    items, is_partial = _scoped_window_items(days, date_basis, _caller_scope(), extra=extra)
     if repo:
         items = [i for i in items if issue_attributes(i).get('repo') == repo]
     return {
@@ -2085,8 +2080,7 @@ def get_release_watch():
     keywords = _optional_text(params, 'q', RELEASE_WATCH_MAX_LABEL).split()[:RELEASE_WATCH_MAX_KEYWORDS]
     # Keyword matching reads the review text, which gsi5-by-channel does not project.
     items, is_partial = _scoped_window_items(
-        lookback + window, DATE_BASIS_IMPORTED, _caller_scope(),
-        source=params.get('source'), extra=_extra_filters(params), slim=False)
+        lookback + window, DATE_BASIS_IMPORTED, _caller_scope(), extra=_extra_filters(params), slim=False)
     items = [i for i in items if (not category or i.get('category') == category)
              and release_watch.matches_keywords(i, keywords)]
     since = (today - timedelta(days=days - 1)).strftime('%Y-%m-%d')
