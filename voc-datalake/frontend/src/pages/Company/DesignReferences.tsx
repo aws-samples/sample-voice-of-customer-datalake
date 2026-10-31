@@ -25,6 +25,7 @@ import { GroupLabel } from './ContextParts'
 import { hasDesign } from './designDraftSummary'
 import ReferenceDesignPreview from './ReferenceDesignPreview'
 import type { PreviewActions } from './ReferenceDesignPreview'
+import { httpHref } from '../../utils/httpHref'
 
 // lucide's brand marks (Figma, Github) are deprecated; neutral glyphs instead.
 const KIND_ICONS: Record<ReferenceKind, LucideIcon> = { website: Globe, screenshot: Image, html: FileCode, figma: Frame, github: GitBranch }
@@ -155,11 +156,12 @@ function RowActions({ reference, canEdit, refreshing, onRefresh, onArchive }: Re
   onArchive: () => void
 }>) {
   const { t } = useTranslation('settings')
+  const linkHref = httpHref(reference.url)
   const isLink = !UPLOAD_KINDS.has(reference.kind)
   return (
     <>
-      {reference.url ? (
-        <a href={reference.url} target="_blank" rel="noopener noreferrer" className="icon-btn" aria-label={t('designSystem.openLink')} title={t('designSystem.openLink')}>
+      {linkHref ? (
+        <a href={linkHref} target="_blank" rel="noopener noreferrer" className="icon-btn" aria-label={t('designSystem.openLink')} title={t('designSystem.openLink')}>
           <ExternalLink size={16} />
         </a>
       ) : null}

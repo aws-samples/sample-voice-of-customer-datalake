@@ -33,6 +33,7 @@ import clsx from 'clsx'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import type { DisplayLabels } from '../../hooks/useDisplayLabels'
 import { ignoreRejection } from '../../lib/rejections'
+import { httpHref } from '../../utils/httpHref'
 
 interface FeedbackCardProps {
   feedback: FeedbackItem
@@ -206,6 +207,7 @@ interface CardFooterProps {
 
 function CardFooter({ feedback, onCopy }: Readonly<CardFooterProps>) {
   const { t, i18n } = useTranslation('components')
+  const sourceHref = httpHref(feedback.source_url)
   return (
     <div className="flex flex-wrap items-center justify-between pt-3 border-t border-border gap-2">
       <span
@@ -226,9 +228,9 @@ function CardFooter({ feedback, onCopy }: Readonly<CardFooterProps>) {
           <MessageCircle size={14} aria-hidden="true" />
           {t('feedbackCard.details')}
         </ReviewLink>
-        {feedback.source_url && (
+        {sourceHref && (
           <a
-            href={feedback.source_url}
+            href={sourceHref}
             target="_blank"
             rel="noopener noreferrer"
             className="icon-btn"
