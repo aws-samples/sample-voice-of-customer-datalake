@@ -25,7 +25,7 @@ import { createRadarScanWorker } from './radar-scan-worker';
 import { createRetentionWorker } from './retention-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
-import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_TIMEOUT } from './processor-timing';
+import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT } from './processor-timing';
 
 export interface VocProcessingStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;
@@ -193,6 +193,7 @@ export class VocProcessingStack extends VocStack {
       batchSize: 10,
       maxBatchingWindow: PROCESSOR_BATCHING_WINDOW,
       reportBatchItemFailures: true,
+      maxConcurrency: PROCESSOR_MAX_CONCURRENCY,
     }));
 
 
