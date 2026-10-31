@@ -53,7 +53,7 @@ filter test_run = 'e2e-20261010T080000Z'
 
 The access log also carries `path` (the real path, ids included), `integrationStatus` and `errorMessage`. The TypeScript `voc-chat-stream` Lambda does not add `test_run` (filter its requests by the access log's `userAgent`).
 
-### Models: the `e2e` group (5.61)
+### Models: the `e2e` group (5.63)
 
 Both test users must be members of the Cognito group `e2e` (VocCoreStack creates it). For a member, every model call the app makes for that user, on every AI surface (the assistant and its plan steps, every API route, the research, persona, document, prototype, merge and manual-import jobs the user starts, and agent runs the user starts), resolves to Claude Haiku 5.5 (`global.anthropic.claude-haiku-5-5`; `eu.` with `-c inferenceScope=eu`), whatever an admin picked; the capacity fallback stays on Haiku. Real users keep their models, and the admin model picker is untouched. The profile comes only from the verified token's `cognito:groups` (or a job record a verified request wrote); nothing in a request body can turn it on. The image model (persona avatars) is not changed. Not covered (they have no verified caller to read the group from): the background memory extraction of finished sessions (Haiku 5.5 by default anyway), the product-document extraction that runs on an upload, scheduled agent runs, and calls made with a global MCP token (its synthetic claims carry no groups). API Lambda log lines of a profiled model call show `model_profile=e2e`; the stream Lambdas log one `model profile applied` line per run.
 
@@ -65,7 +65,7 @@ aws cognito-idp admin-add-user-to-group --user-pool-id <UserPoolId> --username '
 
 `setup` reads each user's `cognito:groups` from the ID token after login and **fails** when `e2e` is missing, printing that command (`lib/modelProfile.ts`). `E2E_ALLOW_FULL_MODELS=1` turns the failure into a loud warning. A token minted before the user joined the group lacks it: sign in again.
 
-### Workers (5.61)
+### Workers (5.63)
 
 The specs that only read (`lib/parallel.ts`: `screens`, `api-sweep`, `prioritization-requests`, `request-counts`, `dashboard-data`, `error-states`, `workflow-custom-arrows`) run in the projects `admin-read` and `user-read`, fully parallel, with up to `E2E_READ_WORKERS` workers (default 4). Every spec that writes (creates entities, changes the caller's own settings or memory, or runs the assistant) stays in `admin` / `user`, `E2E_WRITE_WORKERS` workers (default 1, so they run one at a time as before). `unit/parallel.spec.ts` fails when a listed spec gains a write call.
 

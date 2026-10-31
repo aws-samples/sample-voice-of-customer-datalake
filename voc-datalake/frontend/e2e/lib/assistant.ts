@@ -44,8 +44,10 @@ export async function openFloating(page: Page): Promise<Locator> {
 /** "New chat" in the panel header; the /chat sidebar labels the same action "New conversation". */
 export async function newChat(page: Page): Promise<void> {
   await visible(page.getByRole('button', { name: /^(New chat|New conversation)$/ })).click()
-  await expect(composer(page)).toHaveValue('')
+  // The click started the new conversation: reset before the assertion, so a failed composer check cannot
+  // leave the old count on the page.
   resetRunCount(page)
+  await expect(composer(page)).toHaveValue('')
 }
 
 /**
