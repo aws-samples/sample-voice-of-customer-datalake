@@ -29,6 +29,8 @@ import { PromotePersonaButton, PromoteStatus } from './PromotePersonaButton'
 import { usePromotePersona } from './usePromotePersona'
 import { useIsAdmin } from '../../store/authStore'
 import type { PersonaScope } from './personaScope'
+import { PersonaProtectStatus, PersonaProtectToggle } from './PersonaProtectToggle'
+import type { PersonaProtection } from './usePersonaProtection'
 import type { NoteItem } from './types'
 import type { ProjectPersona } from '../../api/projectTypes'
 
@@ -43,11 +45,43 @@ interface PersonaDetailViewProps {
   readonly onSaveNotes: (notes: NoteItem[]) => void
   readonly isDeleting: boolean
   readonly isSavingNotes: boolean
+  /** The tab's protect toggle (#429); absent = no toggle and no badge. */
+  readonly protection?: PersonaProtection
+}
+
+/** The header's left side: avatar, name, tagline, confidence, protection, corpus and copy origin. */
+function PersonaHeaderIdentity({ persona, shown, protection }: {
+  readonly persona: ProjectPersona
+  /** The persona with a just-regenerated avatar URL, when there is one. */
+  readonly shown: ProjectPersona
+  readonly protection?: PersonaProtection
+}) {
+  const { t } = useTranslation('projectDetail')
+  return (
+    <div className="flex items-center gap-3 sm:gap-4">
+      <PersonaAvatar persona={shown} size="lg" />
+      <div className="min-w-0">
+        <h2 className="text-lg sm:text-xl font-bold tracking-tight text-text-strong truncate" title={persona.name}>{persona.name}</h2>
+        <p className="text-text text-sm line-clamp-2">{persona.tagline}</p>
+        {persona.confidence == null ? null : <span className={clsx('badge mt-1.5', getConfidenceClass(persona.confidence))}>
+          {t('personas.confidence', { level: persona.confidence })}
+          {persona.feedback_count == null ? '' : <> · <span className="font-mono">{t('personas.reviews', { count: persona.feedback_count })}</span></>}
+        </span>}
+        {protection ? (
+          <PersonaProtectStatus personaId={persona.persona_id} isProtected={persona.protected === true} protection={protection} />
+        ) : null}
+        <FeedbackCorpus feedbackIds={persona.input_feedback_ids} citedIds={persona.evidence_feedback_ids}
+          className="mt-1.5" />
+        <CopiedFromLine copiedFrom={persona.copied_from} />
+      </div>
+    </div>
+  )
 }
 
 export default function PersonaDetailView({
   scope,
   persona,
+  protection,
   canEdit,
   onEdit,
   onDelete,
@@ -66,25 +100,15 @@ export default function PersonaDetailView({
       {/* Header with Avatar */}
       <div className="p-4 sm:p-6 border-b border-border bg-bg-accent">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="flex items-center gap-3 sm:gap-4">
-            <PersonaAvatar persona={shown} size="lg" />
-            <div className="min-w-0">
-              <h2 className="text-lg sm:text-xl font-bold tracking-tight text-text-strong truncate" title={persona.name}>{persona.name}</h2>
-              <p className="text-text text-sm line-clamp-2">{persona.tagline}</p>
-              {persona.confidence == null ? null : <span className={clsx('badge mt-1.5', getConfidenceClass(persona.confidence))}>
-                {t('personas.confidence', { level: persona.confidence })}
-                {persona.feedback_count == null ? '' : <> · <span className="font-mono">{t('personas.reviews', { count: persona.feedback_count })}</span></>}
-              </span>}
-              <FeedbackCorpus feedbackIds={persona.input_feedback_ids}
-                className="mt-1.5" />
-              <CopiedFromLine copiedFrom={persona.copied_from} />
-            </div>
-          </div>
+          <PersonaHeaderIdentity persona={persona} shown={shown} protection={protection} />
           <div className="flex items-center gap-1 self-end sm:self-start">
             <PersonaExportMenu persona={persona} />
             {canEdit ? (
               <>
                 {canPromote ? <PromotePersonaButton promote={promote} /> : null}
+                {protection ? (
+                  <PersonaProtectToggle personaId={persona.persona_id} isProtected={persona.protected === true} protection={protection} />
+                ) : null}
                 <RegenerateAvatarButton avatar={avatar} />
                 <button
                   type="button"

@@ -17,6 +17,7 @@ import { lenientList } from '../../api/lenientFields'
 import { projectsApi } from '../../api/projectsApi'
 import { serverReason } from '../../lib/errors'
 import { PersonaGenerateConfirm, PersonaModeChoice } from './PersonaModeChoice'
+import FeedbackMatchPreview from './FeedbackMatchPreview'
 import DataSourceWizard from '../../components/DataSourceWizard/DataSourceWizard'
 import ContextSummary from '../../components/DataSourceWizard/ContextSummary'
 import { documentTypeLabel } from '../../components/DocumentTypeBadge/documentTypes'
@@ -52,6 +53,8 @@ const isSuggestion = (item: unknown): item is z.infer<typeof SuggestionSchema> =
 const suggestionList = lenientList(isSuggestion)
 
 interface PersonaWizardProps {
+  /** The project whose feedback scope the match count reads; absent in the company library (no count). */
+  readonly projectId?: string
   readonly personas: ProjectPersona[]
   readonly documents: ProjectDocument[]
   readonly contextConfig: ContextConfig
@@ -110,13 +113,14 @@ function FinalStepSummary({ contextConfig, personas, documents, startError, chil
 }
 
 export function PersonaWizard({
-  personas, documents, contextConfig, personaConfig, generating, startError, onContextChange, onPersonaConfigChange, onClose, onSubmit,
+  projectId, personas, documents, contextConfig, personaConfig, generating, startError, onContextChange, onPersonaConfigChange, onClose, onSubmit,
   additiveOnly = false,
 }: PersonaWizardProps) {
   const { t } = useTranslation('projectDetail')
   // Generating reads the feedback in scope with the AI for minutes: asked first, like PR/FAQ and prototype.
   const [confirming, setConfirming] = useState(false)
   const mode = additiveOnly ? 'add' : personaConfig.mode
+  const protectedCount = personas.filter((p) => p.protected === true).length
   return (
     <>
     <DataSourceWizard
@@ -134,6 +138,10 @@ export function PersonaWizard({
       // sequence, since this is exactly where someone would look for "use my
       // research".
       hideDataSources={PERSONA_HIDDEN_DATA_SOURCES}
+      // Generation samples the matching feedback: say how much matches while the filters are chosen.
+      feedbackStepFooter={projectId
+        ? <FeedbackMatchPreview projectId={projectId} contextConfig={contextConfig} purpose="personas" />
+        : undefined}
       renderFinalStep={() => (
         <FinalStepSummary contextConfig={contextConfig} personas={personas} documents={documents} startError={startError}>
           <div>
@@ -153,6 +161,7 @@ export function PersonaWizard({
           {additiveOnly ? null : (
             <PersonaModeChoice
               existingCount={personas.length}
+              protectedCount={protectedCount}
               mode={personaConfig.mode}
               onChange={(next) => onPersonaConfigChange({ ...personaConfig, mode: next })}
             />
@@ -168,6 +177,7 @@ export function PersonaWizard({
     <PersonaGenerateConfirm
       isOpen={confirming}
       existingCount={personas.length}
+      protectedCount={protectedCount}
       mode={mode}
       personaCount={personaConfig.personaCount}
       onConfirm={() => { setConfirming(false); onSubmit() }}
@@ -250,6 +260,7 @@ export function ResearchWizard({
       contextConfig={contextConfig}
       onContextChange={onContextChange}
       extraDataSources={extraDataSources}
+      feedbackStepFooter={<FeedbackMatchPreview projectId={projectId} contextConfig={contextConfig} purpose="research" />}
       renderFinalStep={() => (
         <FinalStepSummary contextConfig={contextConfig} personas={personas} documents={documents} startError={startError}>
           <div>

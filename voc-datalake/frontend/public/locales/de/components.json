@@ -233,7 +233,21 @@
     "sentiments": "Stimmungen",
     "sources": "Quellen",
     "stepOf": "Schritt {{step}} von {{total, number}}",
-    "timeRange": "Zeitraum"
+    "timeRange": "Zeitraum",
+    "feedbackPreview": {
+      "counting": "Passende Bewertungen werden gezählt…",
+      "matches_one": "{{count, number}} Bewertung passt",
+      "matches_other": "{{count, number}} Bewertungen passen",
+      "matchesAtLeast_one": "Mindestens {{count, number}} Bewertung passt",
+      "matchesAtLeast_other": "Mindestens {{count, number}} Bewertungen passen",
+      "matchesEstimated_one": "Etwa {{count, number}} Bewertung passt",
+      "matchesEstimated_other": "Etwa {{count, number}} Bewertungen passen",
+      "sampled": "Die Persona-Generierung liest eine gleichmäßige Stichprobe von {{limit, number}} davon.",
+      "usesAll": "Die Persona-Generierung liest alle davon.",
+      "confirming": "Genaue Anzahl wird bestätigt…",
+      "noMatches": "Keine Bewertungen passen zu diesen Filtern. Erweitern Sie sie, sonst hat der Lauf nichts zu lesen.",
+      "error": "Die passenden Bewertungen konnten nicht gezählt werden."
+    }
   },
   "documentExport": {
     "copied": "Kopiert!",
@@ -680,5 +694,40 @@
     "trendUp": "Gestiegen um {{percent}}",
     "trendDown": "Gesunken um {{percent}}",
     "trendNeutral": "Keine Änderung ({{percent}})"
+  },
+  "facetFilters": {
+    "groupLabel": "Feedback-Filter",
+    "source": "Quelle",
+    "allSources": "Alle Quellen",
+    "category": "Kategorie",
+    "allCategories": "Alle Kategorien",
+    "sentiment": "Stimmung",
+    "allSentiments": "Alle Stimmungen",
+    "sentiments": {
+      "positive": "Positiv",
+      "neutral": "Neutral",
+      "negative": "Negativ",
+      "mixed": "Gemischt"
+    },
+    "usefulness": "Nützlichkeit",
+    "allUsefulness": "Jede Nützlichkeit",
+    "usefulnessValues": {
+      "high": "Hohe Nützlichkeit",
+      "medium": "Mittlere Nützlichkeit",
+      "low": "Geringe Nützlichkeit",
+      "unrated": "Nicht bewertet"
+    },
+    "usefulnessShort": {
+      "high": "Hoch",
+      "medium": "Mittel",
+      "low": "Gering"
+    },
+    "usefulnessBadge": "Nützlichkeit: {{band}}",
+    "selectedCount_one": "{{count, number}} ausgewählt",
+    "selectedCount_other": "{{count, number}} ausgewählt",
+    "clear": "Zurücksetzen",
+    "clearAll": "Filter zurücksetzen",
+    "noMatchTitle": "Kein Feedback entspricht diesen Filtern",
+    "noMatchHint": "Ändern oder entfernen Sie die Filter oder wählen Sie einen längeren Zeitraum."
   }
 }

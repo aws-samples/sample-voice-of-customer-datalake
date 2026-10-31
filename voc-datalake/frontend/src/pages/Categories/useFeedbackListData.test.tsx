@@ -4,14 +4,10 @@ import { categoriesApiMocks, clientApiModule, createQueryWrapper } from './categ
 
 vi.mock('../../api/client', () => clientApiModule())
 
-// The configured categories the "Other" refinement compares against.
-const configured = vi.hoisted(() => ({ names: ['delivery', 'pricing', 'billing'] }))
-vi.mock('../../hooks/useCategories', () => ({
-  useCategoriesConfig: () => ({ data: { categories: configured.names.map((name) => ({ name })) } }),
-}))
-
 import { useFeedbackListData } from './useFeedbackListData'
 import type { CategoryFiltersState } from './useCategoryFilters'
+import { EMPTY_FACETS } from '../../api/feedbackFacets'
+import type { FeedbackFacets } from '../../api/feedbackFacets'
 import { at } from '@test/defined'
 
 const mockGetFeedback = categoriesApiMocks.getFeedback
@@ -21,12 +17,20 @@ const mockGetUrgentFeedback = categoriesApiMocks.getUrgentFeedback
 const API_ENDPOINT = 'https://api.example.com'
 const DATE_PARAMS = { days: 7 }
 
+/** The state the page derives from `facets` (the selected lists mirror it). */
+function withFacets(facets: Partial<FeedbackFacets>): Pick<CategoryFiltersState,
+  'facets' | 'selectedCategories' | 'selectedSources' | 'selectedSentiments' | 'selectedUsefulness'> {
+  const all = { ...EMPTY_FACETS, ...facets }
+  return {
+    facets: all, selectedCategories: all.categories, selectedSources: all.sources,
+    selectedSentiments: all.sentiments, selectedUsefulness: all.usefulness,
+  }
+}
+
 const baseFilters: CategoryFiltersState = {
   searchText: '',
-  selectedCategories: [],
+  ...withFacets({}),
   subcategory: null,
-  selectedSource: null,
-  sentimentFilter: 'all',
   ratingFilter: { value: 0, direction: 'up' },
   showUrgentOnly: false,
   channel: null,
@@ -127,7 +131,7 @@ describe('useFeedbackListData', () => {
 
   describe('server params', () => {
     it('passes a single selected category to the server', async () => {
-      renderData({ ...baseFilters, selectedCategories: ['delivery'] })
+      renderData({ ...baseFilters, ...withFacets({ categories: ['delivery'] }) })
       await waitFor(() =>
         expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ category: 'delivery' }))
       )
@@ -140,11 +144,25 @@ describe('useFeedbackListData', () => {
       )
     })
 
-    it('omits the category param for multi-select (refined client-side)', async () => {
-      renderData({ ...baseFilters, selectedCategories: ['delivery', 'pricing'] })
-      await waitFor(() =>
-        expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ category: undefined }))
-      )
+    it('sends several categories, sources, sentiments and bands as comma lists (server-side exact)', async () => {
+      renderData({ ...baseFilters, ...withFacets({
+        categories: ['delivery', 'other'], sources: ['webscraper', 'app'], sentiments: ['negative', 'mixed'],
+        usefulness: ['high', 'unrated'],
+      }) })
+      await waitFor(() => expect(mockGetFeedback).toHaveBeenCalledWith({
+        days: 7, limit: 100, offset: 0, category: 'delivery,other', source: 'webscraper,app',
+        sentiment: 'negative,mixed', usefulness: 'high,unrated',
+      }))
+    })
+
+    it('sends the lists to search and urgent too', async () => {
+      const facets = withFacets({ categories: ['delivery', 'pricing'], usefulness: ['low'] })
+      renderData({ ...baseFilters, ...facets, searchText: 'slow' })
+      renderData({ ...baseFilters, ...facets, showUrgentOnly: true })
+      await waitFor(() => expect(mockSearchFeedback).toHaveBeenCalledWith(
+        expect.objectContaining({ category: 'delivery,pricing', usefulness: 'low' })))
+      await waitFor(() => expect(mockGetUrgentFeedback).toHaveBeenCalledWith(
+        expect.objectContaining({ category: 'delivery,pricing', usefulness: 'low' })))
     })
   })
 
@@ -173,37 +191,16 @@ describe('useFeedbackListData', () => {
     })
   })
 
-  describe('client-side refinements', () => {
-    it('applies multi-category filtering client-side', async () => {
+  describe('no browser-side refinement', () => {
+    it('shows exactly what the server answered for several categories, and its total', async () => {
       mockGetFeedback.mockResolvedValue({
-        count: 2,
-        items: [
-          makeItem({ feedback_id: 'a', category: 'delivery' }),
-          makeItem({ feedback_id: 'b', category: 'billing' }),
-        ],
+        count: 2, total: 40,
+        items: [makeItem({ feedback_id: 'a', category: 'delivery' }), makeItem({ feedback_id: 'b', category: 'customer_support' })],
       })
-      const { result } = renderData({ ...baseFilters, selectedCategories: ['delivery', 'pricing'] })
+      const { result } = renderData({ ...baseFilters, ...withFacets({ categories: ['delivery', 'other'] }) })
 
-      await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(1))
-      expect(at(result.current.filteredFeedback, 0).feedback_id).toBe('a')
-    })
-
-    // The "Other" row counts every review outside the configured categories; selecting
-    // it with another row keeps those reviews, a removed category's included.
-    it('keeps uncategorised and removed-category reviews when "Other" is one of several selected rows', async () => {
-      mockGetFeedback.mockResolvedValue({
-        count: 4,
-        items: [
-          makeItem({ feedback_id: 'a', category: 'delivery' }),
-          makeItem({ feedback_id: 'b', category: 'billing' }),
-          makeItem({ feedback_id: 'c', category: 'other' }),
-          makeItem({ feedback_id: 'd', category: 'customer_support' }),
-        ],
-      })
-      const { result } = renderData({ ...baseFilters, selectedCategories: ['delivery', 'other'] })
-
-      await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(3))
-      expect(result.current.filteredFeedback.map((item) => item.feedback_id)).toStrictEqual(['a', 'c', 'd'])
+      await waitFor(() => expect(result.current.filteredFeedback.map((item) => item.feedback_id)).toStrictEqual(['a', 'b']))
+      expect(result.current.totalCount).toBe(40)
     })
   })
 
@@ -285,22 +282,21 @@ describe('the subcategory filter (a tag chip opens it; it used to search the raw
     ],
   }
 
-  it('narrows the list to the subcategory inside its category, without a text search', async () => {
+  it('sends the subcategory to the server inside its category, without a text search', async () => {
     mockGetFeedback.mockResolvedValue(page)
-    const { result } = renderData({ ...baseFilters, selectedCategories: ['support'], subcategory: 'support_quality' })
+    const { result } = renderData({ ...baseFilters, ...withFacets({ categories: ['support'] }), subcategory: 'support_quality' })
 
-    await waitFor(() => expect(result.current.filteredFeedback.map((i) => i.feedback_id)).toStrictEqual(['a', 'c']))
-    expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ category: 'support' }))
+    await waitFor(() => expect(result.current.filteredFeedback).toHaveLength(3))
+    expect(mockGetFeedback).toHaveBeenCalledWith(expect.objectContaining({ category: 'support', subcategory: 'support_quality' }))
     expect(mockSearchFeedback).not.toHaveBeenCalled()
   })
 
-  it('counts what it shows, a lower bound while more pages remain', async () => {
+  it('counts the server total, not the loaded rows', async () => {
     mockGetFeedback.mockResolvedValue({ ...page, total: 9 })
     const { result } = renderData({ ...baseFilters, subcategory: 'support_quality' })
 
-    await waitFor(() => expect(result.current.totalCount).toBe(2))
+    await waitFor(() => expect(result.current.totalCount).toBe(9))
     expect(result.current.hasMore).toBe(true)
-    expect(result.current.isPartialWindow).toBe(true)
   })
 })
 

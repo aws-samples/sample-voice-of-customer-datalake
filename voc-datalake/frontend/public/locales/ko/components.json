@@ -233,7 +233,21 @@
     "sentiments": "감정",
     "sources": "출처",
     "stepOf": "{{step}} / {{total, number}} 단계",
-    "timeRange": "시간 범위"
+    "timeRange": "시간 범위",
+    "feedbackPreview": {
+      "counting": "일치하는 리뷰를 세는 중…",
+      "matches_one": "리뷰 {{count, number}}개 일치",
+      "matches_other": "리뷰 {{count, number}}개 일치",
+      "matchesAtLeast_one": "리뷰 최소 {{count, number}}개 일치",
+      "matchesAtLeast_other": "리뷰 최소 {{count, number}}개 일치",
+      "matchesEstimated_one": "리뷰 약 {{count, number}}개 일치",
+      "matchesEstimated_other": "리뷰 약 {{count, number}}개 일치",
+      "sampled": "페르소나 생성은 그중 {{limit, number}}개를 고르게 샘플링해 읽습니다.",
+      "usesAll": "페르소나 생성은 모두 읽습니다.",
+      "confirming": "정확한 개수를 확인하는 중…",
+      "noMatches": "이 필터와 일치하는 리뷰가 없습니다. 필터를 넓히지 않으면 실행 시 읽을 데이터가 없습니다.",
+      "error": "일치하는 리뷰를 셀 수 없습니다."
+    }
   },
   "documentExport": {
     "copied": "복사됨!",
@@ -680,5 +694,40 @@
     "trendUp": "{{percent}} 증가",
     "trendDown": "{{percent}} 감소",
     "trendNeutral": "변화 없음({{percent}})"
+  },
+  "facetFilters": {
+    "groupLabel": "피드백 필터",
+    "source": "소스",
+    "allSources": "모든 소스",
+    "category": "카테고리",
+    "allCategories": "모든 카테고리",
+    "sentiment": "감정",
+    "allSentiments": "모든 감정",
+    "sentiments": {
+      "positive": "긍정",
+      "neutral": "중립",
+      "negative": "부정",
+      "mixed": "혼합"
+    },
+    "usefulness": "유용성",
+    "allUsefulness": "모든 유용성",
+    "usefulnessValues": {
+      "high": "유용성 높음",
+      "medium": "유용성 보통",
+      "low": "유용성 낮음",
+      "unrated": "평가 안 됨"
+    },
+    "usefulnessShort": {
+      "high": "높음",
+      "medium": "보통",
+      "low": "낮음"
+    },
+    "usefulnessBadge": "유용성: {{band}}",
+    "selectedCount_one": "{{count, number}}개 선택됨",
+    "selectedCount_other": "{{count, number}}개 선택됨",
+    "clear": "지우기",
+    "clearAll": "필터 지우기",
+    "noMatchTitle": "이 필터와 일치하는 피드백이 없습니다",
+    "noMatchHint": "필터를 변경하거나 지우거나 더 긴 기간을 선택하세요."
   }
 }

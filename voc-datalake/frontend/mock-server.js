@@ -24,12 +24,14 @@ import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
 import { handleFeatureRequestRoutes } from './mock-feature-requests.js';
 import { handleDataQualityRoutes } from './mock-data-quality.js';
+import { handlePersonaRoutes } from './mock-personas.js';
 import { radarBrandError } from './mock-radar-brands.js';
 import {
   attributeFilterOf, dimensionsConfig, entityExtras, handleDimensionRoutes, seedDimensionFixtures, sourceProfiles,
 } from './mock-dimensions.js';
 import { cursorPage } from './mock-feedback-cursor.js';
 import { problemTree } from './mock-problems.js';
+import { facetedMetric, seedUsefulness, withoutParams } from './mock-facets.js';
 import { callerAccess, handleScopeRoutes, scopeAdmits, scopedCategoriesConfig, scopedMetric } from './mock-scope.js';
 import { handleProjectActionRoutes, startProjectAssistJob } from './mock-project-actions.js';
 import { handleCompanyPersonaRoutes } from './mock-company-personas.js';
@@ -119,17 +121,18 @@ const mockFeedback = [
 ];
 
 seedDimensionFixtures(mockFeedback);
+seedUsefulness(mockFeedback);
 
 /**
- * `source` + `channel` / `dims` / `tag` on top of the date window, as every
- * list / urgent / entities route applies them; `{error}` for a malformed `dims`.
+ * The source / category / sentiment / usefulness lists (mock-facets.js) + `channel` / `dims` /
+ * `tag` / stars on top of the date window, as every list / urgent / entities route applies
+ * them; `{error}` for a malformed filter.
  */
 function filterFeedbackRequest(items, searchParams) {
   const filter = attributeFilterOf(searchParams);
   if (filter.error) return { error: filter.error };
-  const source = searchParams?.get('source') || '';
   // A restricted caller (mock-scope.js) never receives another category's items.
-  return { items: filterByDateBasis(items, searchParams).filter((f) => scopeAdmits(f.category) && (!source || f.source_platform === source) && filter.admits(f)) };
+  return { items: filterByDateBasis(items, searchParams).filter((f) => scopeAdmits(f.category) && filter.admits(f)) };
 }
 
 const badDims = (error) => ({ __status: 400, body: { success: false, error } });
@@ -639,7 +642,8 @@ const handlers = {
     return { count: page.length, total: items.length, offset, limit, is_partial_window: false, items: page };
   },
   'GET /feedback/problems': (_body, searchParams) => {
-    const { items, error } = filterFeedbackRequest(mockFeedback, searchParams);
+    // The tree shapes its own category / subcategory (`uncategorized`, `general`).
+    const { items, error } = filterFeedbackRequest(mockFeedback, withoutParams(searchParams, ['category', 'subcategory']));
     return error ? badDims(error) : problemTree(items, searchParams);
   },
   'GET /feedback/urgent': (_body, searchParams) => {
@@ -693,7 +697,7 @@ const handlers = {
       ...entityExtras(items),
     };
   },
-  'GET /metrics/summary': () => ({
+  'GET /metrics/summary': (_body, searchParams) => facetedMetric('summary', searchParams, filterByDateBasis(mockFeedback, searchParams)) ?? ({
     period_days: 7,
     total_feedback: 1247,
     avg_sentiment: 0.12,
@@ -709,6 +713,8 @@ const handlers = {
     })).reverse(),
   }),
   'GET /metrics/sentiment': (_body, searchParams) => {
+    const faceted = facetedMetric('sentiment', searchParams, filterByDateBasis(mockFeedback, searchParams), { keepSingleCategory: true });
+    if (faceted) return faceted;
     const category = searchParams?.get('category');
     // `?category=` scopes the breakdown (metrics_handler: item path after the
     // caller's category filter); an unknown / hidden category answers zeros.
@@ -720,7 +726,7 @@ const handlers = {
       .map(([k, v]) => [k, Math.round((v / Math.max(total, 1)) * 1000) / 10]));
     return { period_days: Number(searchParams?.get('days')) || 7, total, is_partial: false, breakdown, percentages };
   },
-  'GET /metrics/categories': () => ({
+  'GET /metrics/categories': (_body, searchParams) => facetedMetric('categories', searchParams, filterByDateBasis(mockFeedback, searchParams)) ?? ({
     period_days: 7,
     categories: {
       delivery: 312,
@@ -736,7 +742,7 @@ const handlers = {
       other: 41,
     },
   }),
-  'GET /metrics/sources': () => ({
+  'GET /metrics/sources': (_body, searchParams) => facetedMetric('sources', searchParams, filterByDateBasis(mockFeedback, searchParams)) ?? ({
     period_days: 7,
     sources: {
       webscraper: 523,
@@ -1298,6 +1304,7 @@ function handleDomainModules(req, res, url) {
     || handleFormRoutes(req, res, url, send, shared)
     || handleDocumentReviewRoutes(req, res, url, send, shared)
     || handleCompanyPersonaRoutes(req, res, url, send, shared)
+    || handlePersonaRoutes(req, res, url, send, shared)
     || handleProjectActionRoutes(req, res, url, send, shared)
     || handleOnboardingRoutes(req, res, url, send, shared)
     || handleBriefingRoutes(req, res, url, send, shared)
@@ -1642,6 +1649,9 @@ const mockProjectDetails = {
         feedback_count: 14,
         // The corpus (#236): ids only. 'fb_erased' has no review, so the list shows it unavailable.
         input_feedback_ids: ['1', '3', '2', 'fb_erased'],
+        // The reviews its supporting evidence cites (#429): the persona menu's "Cited" view.
+        supporting_evidence: ['Review #2', 'Review #1', 'Mostly weekday orders'],
+        evidence_feedback_ids: ['3', '1'],
         goals: ['Get orders delivered before the promised date', 'Track packages without contacting support'],
         frustrations: ['Late deliveries with no proactive updates', 'Support wait times'],
         quote: 'If the app just told me the truth about delivery dates, I would stop refreshing it every hour.',

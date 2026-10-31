@@ -240,7 +240,21 @@
     "sentiments": "Sentimentos",
     "sources": "Fontes",
     "stepOf": "Etapa {{step}} de {{total, number}}",
-    "timeRange": "Intervalo de Tempo"
+    "timeRange": "Intervalo de Tempo",
+    "feedbackPreview": {
+      "counting": "Contando as avaliações correspondentes…",
+      "matches_one": "{{count, number}} avaliação corresponde",
+      "matches_other": "{{count, number}} avaliações correspondem",
+      "matchesAtLeast_one": "Pelo menos {{count, number}} avaliação corresponde",
+      "matchesAtLeast_other": "Pelo menos {{count, number}} avaliações correspondem",
+      "matchesEstimated_one": "Cerca de {{count, number}} avaliação corresponde",
+      "matchesEstimated_other": "Cerca de {{count, number}} avaliações correspondem",
+      "sampled": "A geração de personas lê uma amostra uniforme de {{limit, number}} delas.",
+      "usesAll": "A geração de personas lê todas elas.",
+      "confirming": "Confirmando a contagem exata…",
+      "noMatches": "Nenhuma avaliação corresponde a estes filtros. Amplie-os, ou a execução não terá nada para ler.",
+      "error": "Não foi possível contar as avaliações correspondentes."
+    }
   },
   "documentExport": {
     "copied": "Copiado!",
@@ -690,5 +704,40 @@
     "trendUp": "Aumentou {{percent}}",
     "trendDown": "Diminuiu {{percent}}",
     "trendNeutral": "Sem alteração ({{percent}})"
+  },
+  "facetFilters": {
+    "groupLabel": "Filtros de feedback",
+    "source": "Fonte",
+    "allSources": "Todas as fontes",
+    "category": "Categoria",
+    "allCategories": "Todas as categorias",
+    "sentiment": "Sentimento",
+    "allSentiments": "Todos os sentimentos",
+    "sentiments": {
+      "positive": "Positivo",
+      "neutral": "Neutro",
+      "negative": "Negativo",
+      "mixed": "Misto"
+    },
+    "usefulness": "Utilidade",
+    "allUsefulness": "Qualquer utilidade",
+    "usefulnessValues": {
+      "high": "Utilidade alta",
+      "medium": "Utilidade média",
+      "low": "Utilidade baixa",
+      "unrated": "Sem pontuação"
+    },
+    "usefulnessShort": {
+      "high": "Alta",
+      "medium": "Média",
+      "low": "Baixa"
+    },
+    "usefulnessBadge": "Utilidade: {{band}}",
+    "selectedCount_one": "{{count, number}} selecionado",
+    "selectedCount_other": "{{count, number}} selecionados",
+    "clear": "Limpar",
+    "clearAll": "Limpar filtros",
+    "noMatchTitle": "Nenhum feedback corresponde a estes filtros",
+    "noMatchHint": "Altere ou limpe os filtros, ou escolha um período mais longo."
   }
 }

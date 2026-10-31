@@ -28,6 +28,9 @@ vi.mock('../../api/client', () => wizardApiClientMock())
 vi.mock('../../api/projectsApi', () => ({
   projectsApi: {
     suggestResearchQuestions: vi.fn().mockResolvedValue({ suggestions: [] }),
+    previewFeedback: vi.fn().mockResolvedValue({
+      matched: 12, matched_is_lower_bound: false, sample_limit: 145, estimated: false,
+    }),
   },
 }))
 vi.mock('../../store/configStore', () => wizardConfigStoreMock())
@@ -46,6 +49,7 @@ const documents: ProjectDocument[] = [
 
 function personaProps() {
   return {
+    projectId: 'proj-1',
     personas,
     documents,
     contextConfig: defaultContextConfig,

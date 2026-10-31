@@ -350,7 +350,12 @@
       "submitNone": "Copy",
       "submit_one": "Copy {{count, number}} persona",
       "submit_other": "Copy {{count, number}} personas"
-    }
+    },
+    "protect": "Protect this persona: keep it when personas are replaced",
+    "unprotect": "Stop protecting this persona",
+    "protected": "Protected",
+    "protectedHint": "Kept when a new generation replaces this project's personas",
+    "protectFailed": "Could not change the protection. Try again."
   },
   "personaSections": {
     "ageRange": "Age",
@@ -559,7 +564,9 @@
     "personaReplaceConfirmMessage_other": "This deletes the project's {{count, number}} existing personas, including any edits and their avatars, and writes a new set of {{n, number}}. It cannot be undone.",
     "submitReplacePersonas": "Delete and generate",
     "submitRemixDocuments": "Remix Documents",
-    "workingBackwards": "Working Backwards"
+    "workingBackwards": "Working Backwards",
+    "personaReplaceKeepsProtected_one": "The {{count, number}} protected persona is kept.",
+    "personaReplaceKeepsProtected_other": "The {{count, number}} protected personas are kept."
   },
   "header": {
     "back": "Back to projects",
@@ -607,6 +614,12 @@
     "range": "{{from, number}}–{{to, number}} of {{total, number}}",
     "previous": "Previous",
     "next": "Next",
-    "close": "Close"
+    "close": "Close",
+    "citedSummary_one": "cites {{count, number}} of them",
+    "citedSummary_other": "cites {{count, number}} of them",
+    "viewLabel": "Which reviews",
+    "viewCited": "Cited ({{n, number}})",
+    "viewUsed": "All used ({{n, number}})",
+    "citedNote": "The reviews the persona's supporting evidence names. A citation that named no review it read is kept as text only."
   }
 }

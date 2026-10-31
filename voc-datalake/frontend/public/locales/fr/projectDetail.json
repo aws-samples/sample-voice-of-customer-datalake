@@ -355,7 +355,12 @@
       "submit_one": "Copier {{count, number}} persona",
       "submit_many": "Copier {{count, number}} personas",
       "submit_other": "Copier {{count, number}} personas"
-    }
+    },
+    "protect": "Protéger cette persona : la conserver lors du remplacement des personas",
+    "unprotect": "Ne plus protéger cette persona",
+    "protected": "Protégée",
+    "protectedHint": "Conservée lorsqu’une nouvelle génération remplace les personas de ce projet",
+    "protectFailed": "Impossible de modifier la protection. Réessayez."
   },
   "personaSections": {
     "ageRange": "Âge",
@@ -565,7 +570,9 @@
     "personaReplaceConfirmMessage_other": "Les {{count, number}} personas existants du projet seront supprimés, avec leurs modifications et leurs avatars, et un nouvel ensemble de {{n, number}} sera écrit. Action irréversible.",
     "submitReplacePersonas": "Supprimer et générer",
     "submitRemixDocuments": "Remixer les documents",
-    "workingBackwards": "Raisonnement inversé"
+    "workingBackwards": "Raisonnement inversé",
+    "personaReplaceKeepsProtected_one": "La {{count, number}} persona protégée est conservée.",
+    "personaReplaceKeepsProtected_other": "Les {{count, number}} personas protégées sont conservées."
   },
   "header": {
     "back": "Retour aux projets",
@@ -613,6 +620,12 @@
     "range": "{{from, number}}–{{to, number}} sur {{total, number}}",
     "previous": "Précédent",
     "next": "Suivant",
-    "close": "Fermer"
+    "close": "Fermer",
+    "citedSummary_one": "en cite {{count, number}}",
+    "citedSummary_other": "en cite {{count, number}}",
+    "viewLabel": "Quels avis",
+    "viewCited": "Cités ({{n, number}})",
+    "viewUsed": "Tous les avis utilisés ({{n, number}})",
+    "citedNote": "Les avis que nomment les éléments probants de la persona. Une citation qui ne nomme aucun avis lu est conservée sous forme de texte uniquement."
   }
 }

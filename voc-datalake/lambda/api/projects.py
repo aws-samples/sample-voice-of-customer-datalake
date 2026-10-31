@@ -17,7 +17,15 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared import category_access, draft_intent, persona_overlap, persona_save, project_access
+from shared import (
+    category_access,
+    draft_intent,
+    persona_feedback_preview,
+    persona_overlap,
+    persona_replace,
+    persona_save,
+    project_access,
+)
 from shared.api import MAX_PERSONAS_PER_GENERATION, validate_days
 from shared.avatar import (
     avatar_key_from_uri,
@@ -86,6 +94,7 @@ from shared.indexes import PROJECTS_BY_TYPE_INDEX
 from shared.logging import logger, metrics, tracer
 from shared.model_config import get_active_model_id, surface_context_window_tokens
 from shared.persona_context import personas_prompt_context
+from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, resolve_evidence_ids
 from shared.persona_knowledge import PERSONA_KNOWLEDGE_STEP, persona_knowledge_fields, with_persona_knowledge
 from shared.project_access import Caller
 from shared.project_writes import (
@@ -331,6 +340,26 @@ def get_scoped_feedback_context(
 
 projects_table = get_projects_table()
 feedback_table = get_feedback_table()
+
+
+#: What a wizard's live count is for: the persona wizard also says how many of the matches
+#: the generation reads (its sample limit); research sizes its own read, so it gets none.
+FEEDBACK_PREVIEW_PURPOSES = ('personas', 'research')
+
+
+def preview_feedback(project_id: str, filters: dict, mode: object, purpose: object) -> dict:
+    """``POST /projects/{id}/feedback-preview``: how many reviews the wizard's filters match.
+
+    ``filters`` is built like the generation route's (the caller's category scope
+    included), so the count is the generation's own read (shared/persona_feedback_preview.py).
+    """
+    if not isinstance(mode, str) or mode not in persona_feedback_preview.PREVIEW_MODES:
+        raise ValidationError(f"mode must be one of: {', '.join(persona_feedback_preview.PREVIEW_MODES)}")
+    if purpose not in FEEDBACK_PREVIEW_PURPOSES:
+        raise ValidationError(f"purpose must be one of: {', '.join(FEEDBACK_PREVIEW_PURPOSES)}")
+    answer = persona_feedback_preview.preview_feedback(feedback_table, project_id, filters, mode)
+    sample_limit = persona_context_budget()[1] if purpose == 'personas' else None
+    return {**answer, 'sample_limit': sample_limit}
 
 
 def fix_persona_name(name: str) -> str:
@@ -2271,23 +2300,26 @@ def _clear_existing_personas(project_id: str) -> None:
 
     Re-running generation must not accumulate duplicates (e.g. "김지수" x2): each
     generation used to append a fresh set, and @all roundtable chat would have the
-    same persona answer multiple times. Best effort — a failure is logged and the
-    generation continues. The removed personas' avatar objects go with them.
+    same persona answer multiple times. Best effort: every page of personas is read
+    and each is deleted on its own (``shared.persona_replace``), so one failed delete
+    is logged and the rest still go. Only the personas actually deleted take their
+    avatar objects with them. Protected personas are kept (``shared.persona_replace``).
     """
     try:
-        existing = projects_table.query(
-            KeyConditionExpression=Key('pk').eq(f'PROJECT#{project_id}')
-            & Key('sk').begins_with('PERSONA#'),
-            ProjectionExpression='pk, sk',
-        ).get('Items', [])
-        if existing:
-            with projects_table.batch_writer() as batch:
-                for it in existing:
-                    batch.delete_item(Key={'pk': it['pk'], 'sk': it['sk']})
-            logger.info(f"[PERSONA] Cleared {len(existing)} existing persona(s) before regeneration")
-            _sweep_removed_persona_avatars(project_id, _persona_ids_of(existing))
+        cleared = persona_replace.clear_personas(projects_table, project_id)
     except Exception:
-        logger.exception("[PERSONA] Failed to clear existing personas (continuing)")
+        logger.exception("[PERSONA] Failed to read the existing personas to clear (continuing)")
+        return
+    if cleared.protected:
+        logger.info(f"[PERSONA] Kept {len(cleared.protected)} protected persona(s)")
+    if cleared.failed:
+        logger.warning(
+            f"[PERSONA] {len(cleared.failed)} persona(s) could not be deleted before regeneration; kept",
+            extra={'project_id': project_id, 'failed': cleared.failed},
+        )
+    if cleared.deleted:
+        logger.info(f"[PERSONA] Cleared {len(cleared.deleted)} existing persona(s) before regeneration")
+        _sweep_removed_persona_avatars(project_id, _persona_ids_of([{'sk': sk} for sk in cleared.deleted]))
 
 
 def _source_breakdown(feedback_items: list[dict]) -> dict[str, int]:
@@ -2302,7 +2334,7 @@ def _source_breakdown(feedback_items: list[dict]) -> dict[str, int]:
 def _build_persona_items(
     project_id: str, personas_data: list, feedback_items: list[dict], *,
     persona_count: int, source_breakdown: dict[str, int], llm_time: int, now_dt: datetime,
-    model_id: str, date_basis: str, input_ids: list[str] | None = None,
+    model_id: str, date_basis: str, input_ids: list[str] | None = None, items_seen: int | None = None,
 ) -> list[tuple[str, dict, dict]]:
     """``(persona_id, parsed persona, item to store)`` per persona, in parsed order.
 
@@ -2353,6 +2385,12 @@ def _build_persona_items(
             # Every review the persona-writing step read, in prompt order (#236): the
             # corpus behind the persona, an even sample across the chosen window.
             'input_feedback_ids': list(input_ids or []),
+            # The reviews its ``supporting_evidence`` cites ("Review #N", numbered in prompt
+            # order), resolved while that order still exists (shared/persona_evidence.py).
+            EVIDENCE_FEEDBACK_IDS_FIELD: resolve_evidence_ids(
+                persona.get('supporting_evidence'), feedback_items,
+                len(feedback_items) if items_seen is None else items_seen,
+            ),
             # Which dates the corpus window applied to, so two generations of one
             # project that differ only by basis can be told apart (#258).
             'date_basis': date_basis,
@@ -2493,15 +2531,17 @@ def _save_personas(project_id: str, persona_items: list[tuple[str, dict, dict]],
 
 
 def _kept_personas(project_id: str, filters: dict) -> persona_overlap.ExistingPersonas:
-    """Additive mode: the personas the project keeps, described for the prompt (#353).
+    """The personas the project keeps, described for the prompt: every one in additive mode (#353),
+    the protected ones in replace mode (ported from #429 by @aws-bryan).
 
-    Replace mode, or a failed read, is no description: the read is best effort like
-    the names-to-avoid list, and the name post-check then has nothing to compare.
+    A failed read is no description: the read is best effort like the names-to-avoid list,
+    and the name post-check then has nothing to compare. The clear re-reads protection for
+    itself, so a failed read here never deletes a protected persona.
     """
-    if not _is_additive(filters):
-        return persona_overlap.NO_EXISTING_PERSONAS
     try:
-        return persona_overlap.read_existing_personas(projects_table, project_id)
+        return persona_overlap.read_existing_personas(
+            projects_table, project_id, only_protected=not _is_additive(filters),
+        )
     except Exception:
         logger.exception("[PERSONA] Could not read the kept personas (continuing)")
         return persona_overlap.NO_EXISTING_PERSONAS
@@ -2510,14 +2550,15 @@ def _kept_personas(project_id: str, filters: dict) -> persona_overlap.ExistingPe
 def _personas_to_add(
     project_id: str, filters: dict, personas: list[dict], kept: persona_overlap.ExistingPersonas,
 ) -> tuple[list[dict], int]:
-    """``(the personas to save, name clashes dropped)``; replace mode clears the old set first.
+    """``(the personas to save, name clashes dropped)``; replace mode clears the unprotected set first.
 
-    A repeat inside the new set cannot reach here in either mode: ``_plan_entries`` drops a
-    repeated planned name and ``_write_one_persona`` pins each persona to its planned name.
+    A new persona whose name repeats a kept one (every persona when adding, a protected one
+    when replacing) is dropped. A repeat inside the new set cannot reach here in either mode:
+    ``_plan_entries`` drops a repeated planned name and ``_write_one_persona`` pins each
+    persona to its planned name.
     """
     if not _is_additive(filters):
         _clear_existing_personas(project_id)
-        return personas, 0
     kept_personas, clashes = persona_overlap.drop_name_clashes(personas, kept.name_keys)
     if clashes:
         logger.warning(
@@ -2609,6 +2650,7 @@ def generate_personas(
             llm_time=llm_time, now_dt=now_dt, model_id=model_id,
             date_basis=validate_date_basis(filters.get('date_basis')),
             input_ids=input_feedback_ids(feedback_items, feedback_items_used),
+            items_seen=feedback_items_used,
         )
         for _pid, _persona, persona_item in persona_items:
             persona_item.update(persona_knowledge_fields(knowledge, feedback_items_used))
@@ -3446,6 +3488,20 @@ def add_persona_note(project_id: str, persona_id: str, body: dict) -> dict:
         logger.exception(f"Failed to add persona note: {e}")
         raise ServiceError('Failed to add note') from e
     return {'success': True, 'note': new_note}
+
+
+def set_persona_protection(project_id: str, persona_id: str, body: dict) -> dict:
+    """``PUT /projects/{id}/personas/{pid}/protection``: a protected persona survives a replace run.
+
+    ``protected`` must be a real boolean: ``"false"`` read as truthy would protect a persona the
+    caller meant to release, and it would then survive every regeneration (ported from #429 by
+    @aws-bryan). 404 for a persona the project does not have.
+    """
+    protected = body.get('protected')
+    if not isinstance(protected, bool):
+        raise ValidationError('protected must be true or false')
+    persona_replace.set_protection(projects_table, project_id, persona_id, protected, now_iso())
+    return {'success': True, 'persona_id': persona_id, 'protected': protected}
 
 
 def require_persona(project_id: str, persona_id: str) -> None:

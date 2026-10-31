@@ -672,6 +672,20 @@ def feedback_context_exists(feedback_table, filters: dict) -> bool:
     return bool(pool.rows) or pool.capped
 
 
+def context_request(feedback_table, filters: dict) -> _PoolRequest | None:
+    """The read :func:`get_feedback_context` makes for ``filters``; None when it can match nothing.
+
+    For the wizards' live count (``shared/persona_feedback_preview.py``): the same window,
+    partitions and predicate the generation's sample is drawn from.
+    """
+    return _pool_request(feedback_table, **_context_query_args(filters))
+
+
+def read_context_pool(feedback_table, request: _PoolRequest, *, budget: WalkBudget) -> FeedbackPool:
+    """Every row ``request`` matches (projected), the pool the generation samples from, within ``budget``."""
+    return _read_matching_pool(feedback_table, request, budget=budget)
+
+
 def get_feedback_context(feedback_table, filters: dict, limit: int = 50) -> list[dict]:
     """Get feedback items based on filters for LLM context.
 

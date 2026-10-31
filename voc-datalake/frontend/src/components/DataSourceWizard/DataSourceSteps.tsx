@@ -4,6 +4,7 @@
  */
 
 import { Loader2 } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SENTIMENTS } from '../../constants/filters'
 import clsx from 'clsx'
@@ -194,6 +195,8 @@ interface FeedbackFiltersStepProps {
   readonly sources: string[]
   readonly categories: ReadonlyArray<CategoryOption>
   readonly loadingCategories: boolean
+  /** Caller-supplied content after the filters (the live match count); unwrapped, so it may be sticky. */
+  readonly footer?: ReactNode
 }
 
 export function FeedbackFiltersStep({
@@ -202,6 +205,7 @@ export function FeedbackFiltersStep({
   sources,
   categories,
   loadingCategories,
+  footer,
 }: FeedbackFiltersStepProps) {
   const { t } = useTranslation('components')
   const sentimentLabels = useSentimentLabels()
@@ -292,6 +296,8 @@ export function FeedbackFiltersStep({
           <option value={ALL_TIME_CUSTOM_DAYS}>{t('components:dataSourceWizard.allTime')}</option>
         </select>
       </div>
+
+      {footer}
     </div>
   )
 }

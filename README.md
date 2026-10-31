@@ -168,6 +168,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Assistant Plan Mode](docs/assistant-plan-mode.md) | Multi-step requests the assistant proposes and runs after approval |
 | [Persona Generation](docs/persona-generation.md) | Add personas next to the existing ones or replace them; how additive runs avoid repeating them |
 | [Assistant Mentions](docs/assistant-mentions.md) | `@persona`, `@all` and `#document` in the project assistant: personas review tagged documents |
+| [Assistant Chat Scope](docs/assistant-chat-scope.md) | The /chat filter panel and the filter floor: on-screen filters the assistant's feedback tools cannot read past, and the 1,000-review cap |
 | [Memory](docs/memory.md) | Company and personal memory: extraction, review, retention |
 | [Problem Analysis](docs/problem-analysis.md) | How /problems counts the whole window: `GET /feedback/problems`, grouping, partial and truncated answers |
 | [Account or Administration](docs/account-vs-admin.md) | Where a setting lives: the six Administration tabs, the Account page, and what moves between them |
@@ -180,6 +181,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Source Policies](docs/source-policies.md) | Source profiles, PII redaction, restricted sources, retention and erasure |
 | [Kiro Design System](docs/kiro-design-system.md) | Frontend themes, colours, typography, components, motion and UI rules (ported from KiroCrew) |
 | [Project Workspace](docs/project-workspace.md) | Managed artifacts, prioritization, room voting, and MCP access |
+| [Moving projects between deployments](docs/project-export.md) | `project-export.py` / `project-import.py`: what is carried, owner remapping by email, `--new-ids`, `--dry-run` |
 | [Prioritization Scoring](docs/prioritization.md) | The workspace scoring setup: metrics, weights, directions, the composite formula, templates, routes |
 | [Kiro ACP Browser Bridge](docs/kiro-acp-browser-bridge.md) | Send work from a browser to a local `kiro-cli` over ACP (`tools/kiro-acp-bridge`), options and threat model |
 | [Plugin Architecture](docs/plugin-architecture.md) | Technical plugin system design |

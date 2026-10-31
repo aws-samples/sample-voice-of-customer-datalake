@@ -302,5 +302,43 @@
     "insertPersona": "Mention a persona",
     "insertDocument": "Tag a document",
     "allCapped": "@all asks the first {{max, number}} of {{total, number}} personas: {{names}}."
+  },
+  "scope": {
+    "title": "Feedback scope",
+    "allFeedback": "All feedback",
+    "activeFilters_one": "{{count}} filter",
+    "activeFilters_other": "{{count}} filters",
+    "count_one": "{{formatted}} review",
+    "count_other": "{{formatted}} reviews",
+    "countPartial_one": "{{formatted}}+ review",
+    "countPartial_other": "{{formatted}}+ reviews",
+    "counting": "Counting reviews…",
+    "countUnavailable": "Review count unavailable",
+    "overCap": "This scope has more than {{max}} reviews. The assistant reads at most {{max}} per search, so some feedback is left out. Narrow the filters for a complete answer.",
+    "clear": "Clear filters",
+    "timeRange": "Time range",
+    "source": "Source",
+    "anySource": "Any source",
+    "sentiment": "Sentiment",
+    "anySentiment": "Any sentiment",
+    "sentiments": {
+      "positive": "Positive",
+      "neutral": "Neutral",
+      "negative": "Negative",
+      "mixed": "Mixed"
+    },
+    "rating": "Rating",
+    "anyRating": "Any rating",
+    "ratingAtLeast_one": "At least {{count}} star",
+    "ratingAtLeast_other": "At least {{count}} stars",
+    "ratingAtMost_one": "At most {{count}} star",
+    "ratingAtMost_other": "At most {{count}} stars",
+    "channel": "Channel",
+    "anyChannel": "Any channel",
+    "tag": "Tag",
+    "anyTag": "Any tag",
+    "urgentOnly": "Urgent only",
+    "categories": "Categories",
+    "noCategories": "No categories in this time range."
   }
 }

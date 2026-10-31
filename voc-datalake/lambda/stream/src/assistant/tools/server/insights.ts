@@ -11,7 +11,9 @@ import type { JsonSchemaProperties } from '../spec.js';
 import { recordsAt, summarizeFeedback, toFeedbackSources } from './feedback-shape.js';
 import { serverTool, windowQuery } from './common.js';
 import { labelResult } from './category-labels.js';
-import { ITEM_FILTER_PROPERTIES, itemFilterQuery, itemFilterShape } from './item-filters.js';
+import { ITEM_FILTER_PROPERTIES, itemFilterShape } from './item-filters.js';
+import { floorForRun, readLimitForRun } from './feedback-floor.js';
+import { floorQuery, type FloorQueryOutcome, type RouteFloorField } from './floor-args.js';
 
 const filterString = z.string().trim().min(1).max(100).optional();
 const SENTIMENTS = ['positive', 'negative', 'neutral', 'mixed'] as const;
@@ -45,17 +47,23 @@ const FILTER_PROPERTIES: JsonSchemaProperties = {
   ...ITEM_FILTER_PROPERTIES,
 };
 
-/** The window, page size and every filter of a /feedback or /feedback/urgent read. */
-function feedbackListQuery(ctx: AssistantRunContext, args: z.infer<typeof urgentInput>, defaultLimit: number) {
-  return {
-    ...windowQuery(ctx),
-    limit: args.limit ?? defaultLimit,
-    source: args.source,
-    category: args.category,
-    sentiment: args.sentiment,
-    ...itemFilterQuery(args),
-  };
+/** What /feedback and /feedback/urgent filter on; /feedback/entities takes no category or sentiment. */
+const LIST_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set(['source', 'category', 'sentiment', 'channel', 'tag', 'dims', 'rating', 'urgent']);
+const ENTITIES_FLOOR_FIELDS: ReadonlySet<RouteFloorField> = new Set(['source', 'channel', 'tag', 'dims', 'rating', 'urgent']);
+
+/** The tool's filters under the user's floor (floor-args.ts): the query to send, or an empty answer. */
+function flooredFilters(ctx: AssistantRunContext, args: z.infer<typeof listInput>, tool: string, fields: ReadonlySet<RouteFloorField>): FloorQueryOutcome {
+  return floorQuery(floorForRun(ctx.page, ctx.props), args, tool, fields);
 }
+
+/** The page size within the /chat panel's reading cap; 0 = the cap is already spent at this offset. */
+function cappedLimit(ctx: AssistantRunContext, limit: number, offset = 0): number {
+  const cap = readLimitForRun(ctx.props);
+  return cap === undefined ? limit : Math.max(0, Math.min(limit, cap - offset));
+}
+
+const CAP_SPENT = '\nThe user\u2019s chat scope caps a read at this many reviews, so no further page is read. Say so, '
+  + 'and suggest narrowing the filters.\n';
 
 function getUrgentFeedbackTool(deps: ToolDeps): ServerToolDefinition {
   const spec = toolSpec(
@@ -66,12 +74,14 @@ function getUrgentFeedbackTool(deps: ToolDeps): ServerToolDefinition {
   );
   return serverTool('get_urgent_feedback', 'insights', spec, async (input, ctx) => {
     const args = parseToolInput(urgentInput, input);
+    const floored = flooredFilters(ctx, args, 'get_urgent_feedback', LIST_FLOOR_FIELDS);
+    if (floored.kind === 'empty') return { content: floored.content };
     const body = await deps.invoke({
       fn: 'metrics',
       method: 'GET',
       path: '/feedback/urgent',
       resource: '/feedback/urgent',
-      query: feedbackListQuery(ctx, args, 15),
+      query: { ...windowQuery(ctx), limit: cappedLimit(ctx, args.limit ?? 15), ...floored.query },
     }, ctx.claims);
     const items = recordsAt(body, 'items');
     return {
@@ -96,12 +106,16 @@ function listFeedbackTool(deps: ToolDeps): ServerToolDefinition {
   );
   return serverTool('list_feedback', 'insights', spec, async (input, ctx) => {
     const args = parseToolInput(listInput, input);
+    const floored = flooredFilters(ctx, args, 'list_feedback', LIST_FLOOR_FIELDS);
+    if (floored.kind === 'empty') return { content: floored.content };
+    const limit = cappedLimit(ctx, args.limit ?? 20, args.offset);
+    if (limit === 0) return { content: jsonResult({ returned: 0, items: [] }) + CAP_SPENT };
     const body = await deps.invoke({
       fn: 'metrics',
       method: 'GET',
       path: '/feedback',
       resource: '/feedback',
-      query: { ...feedbackListQuery(ctx, args, 20), offset: args.offset },
+      query: { ...windowQuery(ctx), limit, ...floored.query, offset: args.offset },
     }, ctx.claims);
     const items = recordsAt(body, 'items');
     const meta = isRecord(body) ? { total: body.total, offset: body.offset, is_partial_window: body.is_partial_window } : {};
@@ -122,12 +136,14 @@ function getEntitiesTool(deps: ToolDeps): ServerToolDefinition {
   );
   return serverTool('get_entities', 'insights', spec, async (input, ctx) => {
     const args = parseToolInput(entitiesInput, input);
+    const floored = flooredFilters(ctx, args, 'get_entities', ENTITIES_FLOOR_FIELDS);
+    if (floored.kind === 'empty') return { content: floored.content };
     const body = await deps.invoke({
       fn: 'metrics',
       method: 'GET',
       path: '/feedback/entities',
       resource: '/feedback/entities',
-      query: { ...windowQuery(ctx), source: args.source, ...itemFilterQuery(args) },
+      query: { ...windowQuery(ctx), ...floored.query },
     }, ctx.claims);
     return { content: jsonResult(body) };
   });

@@ -95,8 +95,8 @@ function AnalyticsCards({ analytics, filters }: Readonly<{ analytics: CategoryAn
       />
       <SentimentGauge
         sentimentData={analytics.gauge.sentimentData}
-        sentimentFilter={filters.sentimentFilter}
-        onSentimentFilterChange={filters.setSentimentFilter}
+        selectedSentiments={filters.selectedSentiments}
+        onToggleSentiment={(value) => filters.toggleFacet('sentiments', value)}
         percentages={analytics.gauge.percentages}
         scopeLabel={analytics.gauge.scopeCategory === null ? null : labels.category(analytics.gauge.scopeCategory)}
         isLoading={analytics.gauge.isLoading}
@@ -116,11 +116,12 @@ export default function Categories() {
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
 
   const filters = useCategoryFilters()
+  const labels = useDisplayLabels()
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
 
   const { data: dimensionsConfig } = useDimensionsConfig()
   const analytics = useCategoryAnalytics(
-    dateParams, filters.selectedSource, config.apiEndpoint, breakdownFiltersOf(filters), filters.selectedCategories,
+    dateParams, filters.selectedSources, config.apiEndpoint, breakdownFiltersOf(filters), filters.selectedCategories,
   )
   const feedback = useFeedbackListData(dateParams, filters, config.apiEndpoint)
 
@@ -134,7 +135,7 @@ export default function Categories() {
     totalIssues: analytics.totalIssues,
     avgSentiment: analytics.avgSentiment,
     timeRange: getTimeRangeLabel(timeRange, customDays, dateBasis),
-    selectedSource: filters.selectedSource,
+    selectedSource: filters.selectedSources.length > 0 ? filters.selectedSources.map(labels.source).join(', ') : null,
     items: feedback.filteredFeedback,
   }))
 
@@ -163,9 +164,13 @@ export default function Categories() {
       <FilterBar
         searchText={filters.searchText}
         onSearchChange={filters.setSearchText}
-        selectedSource={filters.selectedSource}
-        onSourceChange={filters.setSelectedSource}
+        selectedSources={filters.selectedSources}
+        onToggleSource={(value) => filters.toggleFacet('sources', value)}
+        onClearSources={() => filters.clearFacet('sources')}
         allSources={analytics.allSources}
+        selectedUsefulness={filters.selectedUsefulness}
+        onToggleUsefulness={(value) => filters.toggleFacet('usefulness', value)}
+        onClearUsefulness={() => filters.clearFacet('usefulness')}
         showUrgentOnly={filters.showUrgentOnly}
         onUrgentChange={filters.setShowUrgentOnly}
         ratingFilter={filters.ratingFilter}
@@ -197,15 +202,15 @@ export default function Categories() {
         feedbackLoading={feedback.isLoading}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        selectedSource={filters.selectedSource}
+        selectedSources={filters.selectedSources}
         selectedCategories={filters.selectedCategories}
-        sentimentFilter={filters.sentimentFilter}
+        selectedSentiments={filters.selectedSentiments}
+        selectedUsefulness={filters.selectedUsefulness}
         ratingFilter={filters.ratingFilter}
         onExport={exportCsv}
         totalCount={feedback.totalCount}
         isPartialWindow={feedback.isPartialWindow}
         hasMore={feedback.hasMore}
-        loadedCount={feedback.loadedCount}
         onLoadMore={feedback.loadMore}
         isLoadingMore={feedback.isLoadingMore}
         failure={feedback.failure}

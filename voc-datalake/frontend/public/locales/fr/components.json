@@ -240,7 +240,21 @@
     "sentiments": "Tonalités",
     "sources": "Canaux",
     "stepOf": "Étape {{step}} sur {{total, number}}",
-    "timeRange": "Plage horaire"
+    "timeRange": "Plage horaire",
+    "feedbackPreview": {
+      "counting": "Comptage des avis correspondants…",
+      "matches_one": "{{count, number}} avis correspond",
+      "matches_other": "{{count, number}} avis correspondent",
+      "matchesAtLeast_one": "Au moins {{count, number}} avis correspond",
+      "matchesAtLeast_other": "Au moins {{count, number}} avis correspondent",
+      "matchesEstimated_one": "Environ {{count, number}} avis correspond",
+      "matchesEstimated_other": "Environ {{count, number}} avis correspondent",
+      "sampled": "La génération de personas en lit un échantillon régulier de {{limit, number}}.",
+      "usesAll": "La génération de personas les lit tous.",
+      "confirming": "Confirmation du nombre exact…",
+      "noMatches": "Aucun avis ne correspond à ces filtres. Élargissez-les, sinon l’exécution n’aura rien à lire.",
+      "error": "Impossible de compter les avis correspondants."
+    }
   },
   "documentExport": {
     "copied": "Copié !",
@@ -690,5 +704,40 @@
     "trendUp": "En hausse de {{percent}}",
     "trendDown": "En baisse de {{percent}}",
     "trendNeutral": "Aucun changement ({{percent}})"
+  },
+  "facetFilters": {
+    "groupLabel": "Filtres des retours",
+    "source": "Source",
+    "allSources": "Toutes les sources",
+    "category": "Catégorie",
+    "allCategories": "Toutes les catégories",
+    "sentiment": "Sentiment",
+    "allSentiments": "Tous les sentiments",
+    "sentiments": {
+      "positive": "Positif",
+      "neutral": "Neutre",
+      "negative": "Négatif",
+      "mixed": "Mitigé"
+    },
+    "usefulness": "Utilité",
+    "allUsefulness": "Toute utilité",
+    "usefulnessValues": {
+      "high": "Utilité élevée",
+      "medium": "Utilité moyenne",
+      "low": "Utilité faible",
+      "unrated": "Non évalué"
+    },
+    "usefulnessShort": {
+      "high": "Élevée",
+      "medium": "Moyenne",
+      "low": "Faible"
+    },
+    "usefulnessBadge": "Utilité : {{band}}",
+    "selectedCount_one": "{{count, number}} sélectionné",
+    "selectedCount_other": "{{count, number}} sélectionnés",
+    "clear": "Effacer",
+    "clearAll": "Effacer les filtres",
+    "noMatchTitle": "Aucun retour ne correspond à ces filtres",
+    "noMatchHint": "Modifiez ou effacez les filtres, ou choisissez une période plus longue."
   }
 }

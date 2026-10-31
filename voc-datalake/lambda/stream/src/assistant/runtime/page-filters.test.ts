@@ -4,9 +4,11 @@
  * the user turn, neutralised; the system block only carries the rule for using them.
  */
 import { describe, expect, it } from 'vitest';
-import { MAX_PAGE_FILTER_CHARS, pageContextSchema, type PageContext } from '../contract.js';
+import {
+  CHAT_SCOPE_MAX_ITEMS, MAX_PAGE_FILTER_CHARS, chatScopeSchema, forwardedPropsSchema, pageContextSchema, type PageContext,
+} from '../contract.js';
 import { buildPageContextBlock } from './page-context.js';
-import { buildDynamicPrompt } from './system-prompt.js';
+import { FILTERED_PAGE_RULE, buildDynamicPrompt } from './system-prompt.js';
 
 const NOW = new Date('2026-10-25T00:00:00Z');
 const FILTERED: PageContext = {
@@ -30,16 +32,28 @@ describe('filters on screen', () => {
     expect(block.match(/<\/context>/gu)).toHaveLength(1);
   });
 
-  it('tells the model to apply them, without their values in the system block', () => {
+  it('tells the model the tools apply them, without their values in the system block', () => {
     const prompt = promptFor(FILTERED);
-    expect(prompt).toContain('The page on screen is filtered');
-    expect(prompt).toContain('urgent=1 is urgency="high"');
+    expect(prompt).toContain(FILTERED_PAGE_RULE);
+    expect(prompt).toContain('cannot read past them');
     expect(prompt).not.toContain('billing');
+  });
+
+  it('lists the chat panel scope in the <context> block and states its reading cap', () => {
+    const page: PageContext = { kind: 'chat', path: '/chat' };
+    const scope = { filters: { source: 'webscraper' }, limit: 200 };
+    expect(buildPageContextBlock({ page, scope })).toContain(
+      'Filters set in the chat filter panel (the feedback this conversation may read):\n- source: "webscraper"',
+    );
+    const prompt = buildDynamicPrompt({ page, props: { page, scope }, isAdmin: false, now: NOW });
+    expect(prompt).toContain(FILTERED_PAGE_RULE);
+    expect(prompt).toContain('caps each feedback read at 200 reviews');
   });
 
   it('says nothing about filters on an unfiltered page', () => {
     const page: PageContext = { kind: 'categories', path: '/categories' };
-    expect(promptFor(page)).not.toContain('filtered');
+    expect(promptFor(page)).not.toContain(FILTERED_PAGE_RULE);
+    expect(promptFor(page)).not.toContain('caps each feedback read');
     expect(buildPageContextBlock({ page })).not.toContain('Filters set on the page');
   });
 
@@ -49,4 +63,15 @@ describe('filters on screen', () => {
     expect(pageContextSchema.safeParse({ ...FILTERED, filters: { tag: '' } }).success).toBe(false);
     expect(pageContextSchema.safeParse({ ...FILTERED, filters: { password: 'x' } }).success).toBe(false);
   });
+
+  it('accepts a chat panel scope in the same filter vocabulary', () => {
+    expect(chatScopeSchema.safeParse({ filters: { category: 'billing,delivery', urgent: '1' }, limit: CHAT_SCOPE_MAX_ITEMS }).success).toBe(true);
+    expect(forwardedPropsSchema.safeParse({ page: FILTERED, scope: { limit: 10 } }).success).toBe(true);
+  });
+
+  it.each([{ limit: CHAT_SCOPE_MAX_ITEMS + 1 }, { limit: 0 }, { filters: { password: 'x' } }])(
+    'refuses the chat panel scope %j', (scope) => {
+      expect(chatScopeSchema.safeParse(scope).success).toBe(false);
+    },
+  );
 });

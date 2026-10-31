@@ -2,11 +2,12 @@
  * @fileoverview URL-synced filter state for the Categories page.
  *
  * Owns every user-adjustable feedback filter and mirrors the shareable
- * subset (q / source / sentiment / category / subcategory / rating / urgent / channel / dims / tag)
+ * subset (q / source / sentiment / category / usefulness / subcategory / rating / urgent / channel / dims / tag)
  * to the URL so links are
  * shareable and FeedbackDetail tag-clicks can deep-link into a pre-filtered
- * Categories view. Multi-select categories are encoded comma-separated
- * (`?category=a,b`); single-value deep-links simply select one chip.
+ * Categories view. The facets (source, category, sentiment, usefulness) are read and
+ * written by `api/feedbackFacets.ts`, the Dashboard's and Problem Analysis' model: a comma
+ * list (`?category=a,b`) means any of them, and the server filters it exactly.
  *
  * The default state (nothing selected) browses ALL feedback — there is no
  * separate "All" toggle. Selecting categories narrows the list; deselecting
@@ -18,26 +19,12 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { parseDims, serializeDims } from '../../api/dimensionsSchema'
+import { EMPTY_FACETS, FACET_PARAMS, facetEntries, readFacets, toggleFacetValue } from '../../api/feedbackFacets'
+import type { FacetName, FeedbackFacets, SentimentFacet, UsefulnessFacet } from '../../api/feedbackFacets'
 import type { AttributeFilters, ItemFilterParams } from '../../api/types'
 import { withOwnedParams } from '../../utils/searchParams'
 import { ANY_RATING_FILTER } from './types'
-import type { RatingDirection, RatingFilter, SentimentFilter } from './types'
-
-const SENTIMENT_VALUES: readonly SentimentFilter[] = ['all', 'positive', 'negative', 'neutral', 'mixed']
-
-function isSentimentFilter(value: string): value is SentimentFilter {
-  return SENTIMENT_VALUES.some((v) => v === value)
-}
-
-function parseSentimentParam(value: string | null): SentimentFilter {
-  if (value !== null && isSentimentFilter(value)) return value
-  return 'all'
-}
-
-function parseCategoriesParam(value: string | null): string[] {
-  if (value === null || value === '') return []
-  return value.split(',').map((s) => s.trim()).filter(Boolean)
-}
+import type { RatingDirection, RatingFilter } from './types'
 
 /** `?rating=1…5` (+ `rating_dir=below`); anything else is "any rating". */
 function parseRatingParams(searchParams: URLSearchParams): RatingFilter {
@@ -56,11 +43,14 @@ function nonEmptyParam(searchParams: URLSearchParams, name: string): string | nu
 /** Read-only snapshot of the current filter values. */
 export interface CategoryFiltersState {
   searchText: string
-  selectedCategories: string[]
-  /** One subcategory id (refined client-side: the list routes take no subcategory), or null. */
+  /** The facet lists (any of each; empty = all), as `api/feedbackFacets.ts` reads them. */
+  facets: FeedbackFacets
+  selectedCategories: readonly string[]
+  selectedSources: readonly string[]
+  selectedSentiments: readonly SentimentFacet[]
+  selectedUsefulness: readonly UsefulnessFacet[]
+  /** One subcategory id (a server filter on every list route), or null. */
   subcategory: string | null
-  selectedSource: string | null
-  sentimentFilter: SentimentFilter
   ratingFilter: RatingFilter
   showUrgentOnly: boolean
   /** Exact `source_channel`, or null for every channel. */
@@ -96,12 +86,13 @@ export function ratingParamsOf(filter: RatingFilter): Pick<ItemFilterParams, 'ra
  * the list shows (5.34.00: rating and urgent changed only the list).
  */
 export function breakdownFiltersOf(
-  state: Pick<CategoryFiltersState, 'channel' | 'dimensionFilter' | 'tag' | 'ratingFilter' | 'showUrgentOnly'>,
+  state: Pick<CategoryFiltersState, 'channel' | 'dimensionFilter' | 'tag' | 'ratingFilter' | 'showUrgentOnly' | 'selectedUsefulness'>,
 ): ItemFilterParams {
   return {
     ...attributeFiltersOf(state),
     ...ratingParamsOf(state.ratingFilter),
     ...(state.showUrgentOnly ? { urgent: 1 } : {}),
+    ...(state.selectedUsefulness.length > 0 ? { usefulness: state.selectedUsefulness.join(',') } : {}),
   }
 }
 
@@ -110,8 +101,9 @@ export interface CategoryFiltersApi extends CategoryFiltersState {
   setSearchText: (value: string) => void
   toggleCategory: (category: string) => void
   setSubcategory: (value: string | null) => void
-  setSelectedSource: (value: string | null) => void
-  setSentimentFilter: (value: SentimentFilter) => void
+  /** Check or uncheck one value of a facet list. */
+  toggleFacet: (name: FacetName, value: string) => void
+  clearFacet: (name: FacetName) => void
   setRatingFilter: (value: RatingFilter) => void
   setShowUrgentOnly: (value: boolean) => void
   setChannel: (value: string | null) => void
@@ -124,10 +116,8 @@ export interface CategoryFiltersApi extends CategoryFiltersState {
 function computeHasActiveFilters(state: CategoryFiltersState): boolean {
   return (
     state.searchText !== '' ||
-    state.selectedCategories.length > 0 ||
+    facetEntries(state.facets).length > 0 ||
     state.subcategory !== null ||
-    state.selectedSource !== null ||
-    state.sentimentFilter !== 'all' ||
     state.ratingFilter.value > 0 ||
     state.showUrgentOnly ||
     Object.keys(attributeFiltersOf(state)).length > 0
@@ -136,24 +126,21 @@ function computeHasActiveFilters(state: CategoryFiltersState): boolean {
 
 /** The URL-synced subset of the filter state. */
 type ShareableFilters = Pick<CategoryFiltersState,
-  'searchText' | 'selectedSource' | 'sentimentFilter' | 'selectedCategories' | 'subcategory' | 'ratingFilter'
-  | 'showUrgentOnly' | 'channel' | 'dimensionFilter' | 'tag'>
+  'searchText' | 'facets' | 'subcategory' | 'ratingFilter' | 'showUrgentOnly' | 'channel' | 'dimensionFilter' | 'tag'>
 
 /**
  * Every query key this hook writes (plus the dropped legacy `all`). Anything
  * else in the URL — the review modal's `review` / `reviewBrand` — is kept.
  */
 const OWNED_PARAMS: readonly string[] = [
-  'q', 'source', 'sentiment', 'category', 'subcategory', 'rating', 'rating_dir', 'urgent', 'channel', 'dims', 'tag', 'all',
+  'q', ...Object.values(FACET_PARAMS), 'subcategory', 'rating', 'rating_dir', 'urgent', 'channel', 'dims', 'tag', 'all',
 ]
 
 /** Canonical query string for the URL-synced subset of the filter state. */
 function buildShareableParams(filters: ShareableFilters): URLSearchParams {
   const params = new URLSearchParams()
   if (filters.searchText) params.set('q', filters.searchText)
-  if (filters.selectedSource) params.set('source', filters.selectedSource)
-  if (filters.sentimentFilter !== 'all') params.set('sentiment', filters.sentimentFilter)
-  if (filters.selectedCategories.length > 0) params.set('category', filters.selectedCategories.join(','))
+  for (const [key, value] of facetEntries(filters.facets)) params.set(key, value)
   if (filters.subcategory !== null) params.set('subcategory', filters.subcategory)
   if (filters.ratingFilter.value > 0) params.set('rating', String(filters.ratingFilter.value))
   if (filters.ratingFilter.value > 0 && filters.ratingFilter.direction === 'below') params.set('rating_dir', 'below')
@@ -170,9 +157,7 @@ function buildShareableParams(filters: ShareableFilters): URLSearchParams {
 function readShareableParams(searchParams: URLSearchParams): ShareableFilters {
   return {
     searchText: searchParams.get('q') ?? '',
-    selectedSource: searchParams.get('source'),
-    sentimentFilter: parseSentimentParam(searchParams.get('sentiment')),
-    selectedCategories: parseCategoriesParam(searchParams.get('category')),
+    facets: readFacets(searchParams),
     subcategory: nonEmptyParam(searchParams, 'subcategory'),
     ratingFilter: parseRatingParams(searchParams),
     showUrgentOnly: searchParams.get('urgent') === '1',
@@ -186,13 +171,7 @@ export function useCategoryFilters(): CategoryFiltersApi {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [searchText, setSearchText] = useState(searchParams.get('q') ?? '')
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(() =>
-    parseCategoriesParam(searchParams.get('category'))
-  )
-  const [selectedSource, setSelectedSource] = useState<string | null>(searchParams.get('source'))
-  const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>(() =>
-    parseSentimentParam(searchParams.get('sentiment'))
-  )
+  const [facets, setFacets] = useState<FeedbackFacets>(() => readFacets(searchParams))
   const [subcategory, setSubcategory] = useState<string | null>(() => nonEmptyParam(searchParams, 'subcategory'))
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>(() => parseRatingParams(searchParams))
   const [showUrgentOnly, setShowUrgentOnly] = useState(() => searchParams.get('urgent') === '1')
@@ -200,8 +179,7 @@ export function useCategoryFilters(): CategoryFiltersApi {
   const [dimensionFilter, setDimensionFilter] = useState<Record<string, string>>(() => parseDims(searchParams.get('dims')))
   const [tag, setTag] = useState<string | null>(() => nonEmptyParam(searchParams, 'tag'))
   const shareable: ShareableFilters = {
-    searchText, selectedSource, sentimentFilter, selectedCategories, subcategory, ratingFilter, showUrgentOnly,
-    channel, dimensionFilter, tag,
+    searchText, facets, subcategory, ratingFilter, showUrgentOnly, channel, dimensionFilter, tag,
   }
 
   // Canonical form of what the URL says vs. what the state says. When they
@@ -218,9 +196,7 @@ export function useCategoryFilters(): CategoryFiltersApi {
     if (urlSnapshot !== stateSnapshot) {
       const fromUrl = readShareableParams(searchParams)
       setSearchText(fromUrl.searchText)
-      setSelectedSource(fromUrl.selectedSource)
-      setSentimentFilter(fromUrl.sentimentFilter)
-      setSelectedCategories(fromUrl.selectedCategories)
+      setFacets(fromUrl.facets)
       setSubcategory(fromUrl.subcategory)
       setRatingFilter(fromUrl.ratingFilter)
       setShowUrgentOnly(fromUrl.showUrgentOnly)
@@ -239,18 +215,18 @@ export function useCategoryFilters(): CategoryFiltersApi {
     setSearchParams((current) => withOwnedParams(current, OWNED_PARAMS, new URLSearchParams(stateSnapshot)), { replace: true })
   }, [stateSnapshot, setSearchParams])
 
-  const toggleCategory = (category: string) => {
-    setSelectedCategories((prev) =>
-      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
-    )
+  // Validated on the way back in: the URL mirror reads every value through `readFacets`.
+  const toggleFacet = (name: FacetName, value: string) => {
+    setFacets((prev) => readFacets(new URLSearchParams(facetEntries({
+      ...prev, [name]: toggleFacetValue<string>(prev[name], value),
+    }))))
   }
+  const clearFacet = (name: FacetName) => setFacets((prev) => ({ ...prev, [name]: [] }))
 
   const clearFilters = () => {
     setSearchText('')
-    setSelectedCategories([])
+    setFacets(EMPTY_FACETS)
     setSubcategory(null)
-    setSelectedSource(null)
-    setSentimentFilter('all')
     setRatingFilter(ANY_RATING_FILTER)
     setShowUrgentOnly(false)
     setChannel(null)
@@ -258,15 +234,21 @@ export function useCategoryFilters(): CategoryFiltersApi {
     setTag(null)
   }
 
-  const state: CategoryFiltersState = shareable
+  const state: CategoryFiltersState = {
+    ...shareable,
+    selectedCategories: facets.categories,
+    selectedSources: facets.sources,
+    selectedSentiments: facets.sentiments,
+    selectedUsefulness: facets.usefulness,
+  }
 
   return {
     ...state,
     setSearchText,
-    toggleCategory,
+    toggleCategory: (category) => toggleFacet('categories', category),
     setSubcategory,
-    setSelectedSource,
-    setSentimentFilter,
+    toggleFacet,
+    clearFacet,
     setRatingFilter,
     setShowUrgentOnly,
     setChannel,

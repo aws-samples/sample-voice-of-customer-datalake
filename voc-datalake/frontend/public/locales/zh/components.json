@@ -233,7 +233,21 @@
     "sentiments": "情感",
     "sources": "来源",
     "stepOf": "第 {{step}} 步，共 {{total, number}} 步",
-    "timeRange": "时间范围"
+    "timeRange": "时间范围",
+    "feedbackPreview": {
+      "counting": "正在统计匹配的评论…",
+      "matches_one": "{{count, number}} 条评论匹配",
+      "matches_other": "{{count, number}} 条评论匹配",
+      "matchesAtLeast_one": "至少 {{count, number}} 条评论匹配",
+      "matchesAtLeast_other": "至少 {{count, number}} 条评论匹配",
+      "matchesEstimated_one": "约 {{count, number}} 条评论匹配",
+      "matchesEstimated_other": "约 {{count, number}} 条评论匹配",
+      "sampled": "角色生成将从中均匀抽取 {{limit, number}} 条进行读取。",
+      "usesAll": "角色生成将读取全部评论。",
+      "confirming": "正在确认准确数量…",
+      "noMatches": "没有评论匹配这些筛选条件。请放宽条件，否则运行时将没有可读取的内容。",
+      "error": "无法统计匹配的评论。"
+    }
   },
   "documentExport": {
     "copied": "已复制！",
@@ -680,5 +694,40 @@
     "trendUp": "增加了 {{percent}}",
     "trendDown": "减少了 {{percent}}",
     "trendNeutral": "无变化（{{percent}}）"
+  },
+  "facetFilters": {
+    "groupLabel": "反馈筛选",
+    "source": "来源",
+    "allSources": "所有来源",
+    "category": "类别",
+    "allCategories": "所有类别",
+    "sentiment": "情绪",
+    "allSentiments": "所有情绪",
+    "sentiments": {
+      "positive": "正面",
+      "neutral": "中性",
+      "negative": "负面",
+      "mixed": "混合"
+    },
+    "usefulness": "有用性",
+    "allUsefulness": "任意有用性",
+    "usefulnessValues": {
+      "high": "有用性高",
+      "medium": "有用性中",
+      "low": "有用性低",
+      "unrated": "未评分"
+    },
+    "usefulnessShort": {
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    },
+    "usefulnessBadge": "有用性：{{band}}",
+    "selectedCount_one": "已选 {{count, number}} 项",
+    "selectedCount_other": "已选 {{count, number}} 项",
+    "clear": "清除",
+    "clearAll": "清除筛选",
+    "noMatchTitle": "没有符合这些筛选条件的反馈",
+    "noMatchHint": "请更改或清除筛选条件，或选择更长的时间范围。"
   }
 }

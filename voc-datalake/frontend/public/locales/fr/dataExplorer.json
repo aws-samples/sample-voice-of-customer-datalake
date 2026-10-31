@@ -98,6 +98,40 @@
       "medium": "Moyenne",
       "low": "Faible",
       "unrated": "Non évalué"
+    },
+    "profile": {
+      "title": "Profil de la source",
+      "description": "À quoi ressemblent les avis de chaque source : leur note, leur sentiment et la longueur de leur texte.",
+      "notProfiled": "{{share}} des avis de cette période ont été enregistrés avant le décompte du profil et n’y figurent pas. Reconstruire les agrégats de la période les ajoute.",
+      "facetGroup": "Profil affiché",
+      "tableCaption": "{{facet}} par source",
+      "profiled": "Avec profil",
+      "facets": {
+        "rating": "Note",
+        "sentiment": "Sentiment",
+        "length": "Longueur du texte"
+      },
+      "rating": {
+        "5": "5 étoiles",
+        "4": "4 étoiles",
+        "3": "3 étoiles",
+        "2": "2 étoiles",
+        "1": "1 étoile",
+        "none": "Sans note"
+      },
+      "sentiment": {
+        "positive": "Positif",
+        "neutral": "Neutre",
+        "mixed": "Mitigé",
+        "negative": "Négatif",
+        "other": "Autre"
+      },
+      "length": {
+        "short": "Moins de 50 caractères",
+        "medium": "50 à 199 caractères",
+        "long": "200 à 999 caractères",
+        "very_long": "1 000 caractères ou plus"
+      }
     }
   }
 }

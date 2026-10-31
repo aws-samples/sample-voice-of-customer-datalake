@@ -233,7 +233,21 @@
     "sentiments": "センチメント",
     "sources": "ソース",
     "stepOf": "ステップ {{step}} / {{total, number}}",
-    "timeRange": "時間範囲"
+    "timeRange": "時間範囲",
+    "feedbackPreview": {
+      "counting": "一致するレビューを数えています…",
+      "matches_one": "{{count, number}}件のレビューが一致",
+      "matches_other": "{{count, number}}件のレビューが一致",
+      "matchesAtLeast_one": "少なくとも{{count, number}}件のレビューが一致",
+      "matchesAtLeast_other": "少なくとも{{count, number}}件のレビューが一致",
+      "matchesEstimated_one": "約{{count, number}}件のレビューが一致",
+      "matchesEstimated_other": "約{{count, number}}件のレビューが一致",
+      "sampled": "ペルソナ生成では、そのうち{{limit, number}}件を均等に抽出して読み込みます。",
+      "usesAll": "ペルソナ生成では、すべてを読み込みます。",
+      "confirming": "正確な件数を確認しています…",
+      "noMatches": "これらのフィルターに一致するレビューはありません。条件を広げないと、実行時に読み込むデータがありません。",
+      "error": "一致するレビューを数えられませんでした。"
+    }
   },
   "documentExport": {
     "copied": "コピーしました！",
@@ -680,5 +694,40 @@
     "trendUp": "{{percent}} 増加",
     "trendDown": "{{percent}} 減少",
     "trendNeutral": "変化なし（{{percent}}）"
+  },
+  "facetFilters": {
+    "groupLabel": "フィードバックのフィルター",
+    "source": "ソース",
+    "allSources": "すべてのソース",
+    "category": "カテゴリ",
+    "allCategories": "すべてのカテゴリ",
+    "sentiment": "センチメント",
+    "allSentiments": "すべてのセンチメント",
+    "sentiments": {
+      "positive": "ポジティブ",
+      "neutral": "ニュートラル",
+      "negative": "ネガティブ",
+      "mixed": "混在"
+    },
+    "usefulness": "有用性",
+    "allUsefulness": "すべての有用性",
+    "usefulnessValues": {
+      "high": "有用性: 高",
+      "medium": "有用性: 中",
+      "low": "有用性: 低",
+      "unrated": "未評価"
+    },
+    "usefulnessShort": {
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    },
+    "usefulnessBadge": "有用性: {{band}}",
+    "selectedCount_one": "{{count, number}} 件選択",
+    "selectedCount_other": "{{count, number}} 件選択",
+    "clear": "クリア",
+    "clearAll": "フィルターをクリア",
+    "noMatchTitle": "これらのフィルターに一致するフィードバックはありません",
+    "noMatchHint": "フィルターを変更またはクリアするか、より長い期間を選択してください。"
   }
 }

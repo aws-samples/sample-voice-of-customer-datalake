@@ -76,6 +76,37 @@ the band (or a reprocess that rates an unrated review) moves it like any other c
 and increment are the symmetric difference of the two images. The counters start at deploy time; days
 before that have no band rows, so their reviews read as unrated until a reprocess rates them.
 
+## Per-source profile
+
+Next to the band, each source has a **profile** (`lambda/shared/source_profile.py`; ported from PR #429
+by @aws-bryan): how its reviews are rated, their sentiment, and how long their text is. No model call, no
+worker: the aggregator keeps three more daily counters per review, one per facet.
+
+```
+pk = METRIC#daily_profile_rating#<source_platform>#<1|2|3|4|5|none>                   metric_type = profile_rating
+pk = METRIC#daily_profile_sentiment#<source_platform>#<positive|neutral|negative|mixed|other>  metric_type = profile_sentiment
+pk = METRIC#daily_profile_length#<source_platform>#<short|medium|long|very_long>     metric_type = profile_length
+sk = YYYY-MM-DD    count
+```
+
+| Facet | Buckets |
+|---|---|
+| Rating | Whole stars, rounded half up (4.5 = 5), at least 1 (0.3 = 1); `none` for no rating, 0 or less, or above 5 |
+| Sentiment | The stored `sentiment_label`; `neutral` when absent (the aggregator's default), `other` for any other label |
+| Text length | Characters of the stored `original_text` (after the source's privacy policy): `short` < 50, `medium` < 200, `long` < 1000, `very_long` otherwise |
+
+Every profiled review has exactly one row per facet, so `profiled` (the sum of a source's rating rows)
+is how many of its reviews the profile covers.
+
+**Older days lack the profile.** The counters start when this release is deployed. Reviews stored
+before then have no profile rows: the API counts them in `total` but not in `profiled`, and the Data
+Explorer says how much of the range that is. A MODIFY or REMOVE of such a review is safe: its
+decrement finds no row and is refused like any absent counter (nothing goes negative), and the increment
+of a MODIFY counts the review from then on. The one inexact case is a review stored on the deploy day
+itself and edited later that day, which can move one count between buckets. To fill a window, run
+`scripts/retention/rebuild_aggregates.py` for it (docs/processing-pipeline.md): it recomputes every
+counter, the profile rows included, from the stored reviews.
+
 ## `GET /metrics/data-quality`
 
 On the metrics Lambda (`metrics_handler.py`, served by the `/metrics/{proxy+}` route), Cognito, read-only.
@@ -90,20 +121,28 @@ On the metrics Lambda (`metrics_handler.py`, served by the `/metrics/{proxy+}` r
   "period_days": 30,
   "is_partial": false,
   "sources": [
-    {"source": "webscraper", "low": 12, "medium": 40, "high": 31, "unrated": 120, "total": 203}
+    {"source": "webscraper", "low": 12, "medium": 40, "high": 31, "unrated": 120, "total": 203,
+     "profile": {"profiled": 150,
+                 "rating": {"1": 20, "2": 10, "3": 15, "4": 40, "5": 55, "none": 10},
+                 "sentiment": {"positive": 80, "neutral": 30, "negative": 35, "mixed": 5, "other": 0},
+                 "length": {"short": 60, "medium": 70, "long": 18, "very_long": 2}}}
   ],
-  "overall": {"low": 12, "medium": 40, "high": 31, "unrated": 120, "total": 203}
+  "overall": {"low": 12, "medium": 40, "high": 31, "unrated": 120, "total": 203, "profile": {"profiled": 150, "…": "…"}}
 }
 ```
+
+`profile` is additive: a client that reads only the band fields is unaffected.
 
 Busiest source first, ties by name; a source with nothing in the window is left out. `unrated` is the
 source's total (`METRIC#daily_source#<source>`) minus its banded rows, never below zero.
 
-- **Counters** answer a caller who sees every category and source, on the import-date basis: two
-  `gsi1-by-metric-type` reads, no feedback walk. `is_partial` when either read left rows behind.
+- **Counters** answer a caller who sees every category and source, on the import-date basis: five
+  `gsi1-by-metric-type` reads (sources, bands, and one per profile facet), no feedback walk. `is_partial`
+  when any read left rows behind.
 - **Items** answer a caller with a category or source rule, or the `review` basis, exactly like the
-  sibling `/metrics/*` routes: the window's visible reviews are walked (projected, `usefulness`
-  included) and counted. A walk stopped by its time budget says so (`is_partial`, `partial_reason`).
+  sibling `/metrics/*` routes: the window's visible reviews are walked (projected, `usefulness`,
+  `rating`, `sentiment_label` and `original_text` included) and counted. On this path every review is
+  profiled, older ones too. A walk stopped by its time budget says so (`is_partial`, `partial_reason`).
 
 The route is memoized like its siblings and keyed on the data version (docs/caching.md), so a write
 batch refreshes it.
@@ -113,7 +152,9 @@ batch refreshes it.
 The **Data quality** section sits on the Processed Feedback tab of the Data Explorer (admins only) and
 follows the header's time range. It shows a stacked bar per source (the 8 busiest) and a table of every
 source with each band's count and share, an all-sources row, and the not-rated share with a pointer to
-the reprocess when there is any.
+the reprocess when there is any. Below it, **Source profile** shows one facet at a time (Rating,
+Sentiment, Text length): per source, each bucket's count and its share of the profiled reviews, and a
+note with the share of the range stored before the profile was counted.
 
 ## In the LLM context
 

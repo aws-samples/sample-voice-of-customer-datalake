@@ -233,7 +233,21 @@
     "sentiments": "Sentiments",
     "sources": "Sources",
     "stepOf": "Step {{step}} of {{total, number}}",
-    "timeRange": "Time Range"
+    "timeRange": "Time Range",
+    "feedbackPreview": {
+      "counting": "Counting matching reviews…",
+      "matches_one": "{{count, number}} review matches",
+      "matches_other": "{{count, number}} reviews match",
+      "matchesAtLeast_one": "At least {{count, number}} review matches",
+      "matchesAtLeast_other": "At least {{count, number}} reviews match",
+      "matchesEstimated_one": "About {{count, number}} review matches",
+      "matchesEstimated_other": "About {{count, number}} reviews match",
+      "sampled": "Persona generation reads an even sample of {{limit, number}} of them.",
+      "usesAll": "Persona generation reads all of them.",
+      "confirming": "Confirming the exact count…",
+      "noMatches": "No reviews match these filters. Widen them, or the run has nothing to read.",
+      "error": "Could not count the matching reviews."
+    }
   },
   "documentExport": {
     "copied": "Copied!",
@@ -680,5 +694,40 @@
     "trendUp": "Increased by {{percent}}",
     "trendDown": "Decreased by {{percent}}",
     "trendNeutral": "No change ({{percent}})"
+  },
+  "facetFilters": {
+    "groupLabel": "Feedback filters",
+    "source": "Source",
+    "allSources": "All sources",
+    "category": "Category",
+    "allCategories": "All categories",
+    "sentiment": "Sentiment",
+    "allSentiments": "All sentiments",
+    "sentiments": {
+      "positive": "Positive",
+      "neutral": "Neutral",
+      "negative": "Negative",
+      "mixed": "Mixed"
+    },
+    "usefulness": "Usefulness",
+    "allUsefulness": "Any usefulness",
+    "usefulnessValues": {
+      "high": "High usefulness",
+      "medium": "Medium usefulness",
+      "low": "Low usefulness",
+      "unrated": "Not scored"
+    },
+    "usefulnessShort": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "usefulnessBadge": "Usefulness: {{band}}",
+    "selectedCount_one": "{{count, number}} selected",
+    "selectedCount_other": "{{count, number}} selected",
+    "clear": "Clear",
+    "clearAll": "Clear filters",
+    "noMatchTitle": "No feedback matches these filters",
+    "noMatchHint": "Change or clear the filters, or choose a longer time range."
   }
 }

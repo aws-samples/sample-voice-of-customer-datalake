@@ -98,6 +98,40 @@
       "medium": "Média",
       "low": "Baixa",
       "unrated": "Não avaliado"
+    },
+    "profile": {
+      "title": "Perfil da fonte",
+      "description": "Como é o feedback de cada fonte: a avaliação, o sentimento e o tamanho do texto.",
+      "notProfiled": "{{share}} do feedback deste período foi armazenado antes de o perfil ser contado e não está incluído. Reconstruir os agregados do período o inclui.",
+      "facetGroup": "Perfil exibido",
+      "tableCaption": "{{facet}} por fonte",
+      "profiled": "Com perfil",
+      "facets": {
+        "rating": "Avaliação",
+        "sentiment": "Sentimento",
+        "length": "Tamanho do texto"
+      },
+      "rating": {
+        "5": "5 estrelas",
+        "4": "4 estrelas",
+        "3": "3 estrelas",
+        "2": "2 estrelas",
+        "1": "1 estrela",
+        "none": "Sem avaliação"
+      },
+      "sentiment": {
+        "positive": "Positivo",
+        "neutral": "Neutro",
+        "mixed": "Misto",
+        "negative": "Negativo",
+        "other": "Outro"
+      },
+      "length": {
+        "short": "Menos de 50 caracteres",
+        "medium": "50–199 caracteres",
+        "long": "200–999 caracteres",
+        "very_long": "1.000 caracteres ou mais"
+      }
     }
   }
 }

@@ -10,16 +10,17 @@
  * @module pages/Dashboard
  */
 
-import { useQuery } from '@tanstack/react-query'
 import { Zap, FileDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { accountTabPath } from '../Account/accountSections'
-import { api, getDateRangeParams } from '../../api/client'
+import { getDateRangeParams } from '../../api/client'
+import type { DateRangeParams } from '../../api/client'
+import type { DateBasis } from '../../api/types'
 import { useConfigStore } from '../../store/configStore'
 import SocialFeed from '../../components/SocialFeed/SocialFeed'
 import { generateDashboardPDF } from './dashboardPdfGenerator'
 import { activeSourceCount, buildPDFExportData } from './dashboardData'
-import { MetricsGrid, SentimentChart, UrgentFeedback, URGENT_PREVIEW_LIMIT } from './DashboardSections'
+import { MetricsGrid, SentimentChart, UrgentFeedback } from './DashboardSections'
 import PartialCountsNote from './PartialCountsNote'
 import DashboardCard from './DashboardCard'
 import GitHubInsights from './GitHubInsights'
@@ -31,9 +32,11 @@ import DashboardWindowEmpty from './DashboardWindowEmpty'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import ScopeNotice from '../../components/ScopeNotice/ScopeNotice'
 import { failedReads, type FailedReads } from '../../utils/failedReads'
-import { useSummaryQuery } from '../../hooks/useSummaryQuery'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
-import { metricsKeys } from '../../api/queryKeys'
+import { hasActiveFacets } from '../../api/feedbackFacets'
+import { useFacetParams } from '../../hooks/useFacetParams'
+import { useDashboardData } from './useDashboardData'
+import { DashboardFilters, FilteredEmpty } from './DashboardFilters'
 
 function NotConfiguredState() {
   const { t } = useTranslation(['dashboard', 'common'])
@@ -71,6 +74,49 @@ function SummaryLoadFailed({ failure }: Readonly<{ failure: FailedReads }>) {
   )
 }
 
+interface DashboardBodyProps {
+  readonly dateParams: DateRangeParams
+  readonly dateBasis: DateBasis
+  readonly data: ReturnType<typeof useDashboardData>
+  readonly sourcesCount: number
+}
+
+/** The cards, charts and lists (the filtered reads; the GitHub, dimension and social cards are unfiltered). */
+function DashboardBody({ dateParams, dateBasis, data, sourcesCount }: DashboardBodyProps) {
+  const { t } = useTranslation('dashboard')
+  const { summaryQuery: { data: summary }, sentiment, categories, sources, urgentFeedback } = data
+  return (
+    <>
+      <MetricsGrid summary={summary} sentiment={sentiment} activeSources={sourcesCount} />
+      <PartialCountsNote summary={summary} dateBasis={dateBasis} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <TrendChart summary={summary} />
+        <SentimentChart sentiment={sentiment} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <CategoryChart categories={categories} />
+        <SourceChart sources={sources} />
+      </div>
+
+      <GitHubInsights dateParams={dateParams} sources={sources} />
+
+      <DimensionBreakdown dateParams={dateParams} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
+        <DashboardCard
+          icon={<Zap className="text-accent-text flex-shrink-0" size={18} aria-hidden="true" />}
+          title={t('liveSocialFeed')}
+        >
+          <SocialFeed limit={8} showFilters={true} />
+        </DashboardCard>
+        <UrgentFeedback items={urgentFeedback?.items} aggregateTotal={summary?.urgent_count} />
+      </div>
+    </>
+  )
+}
+
 export default function Dashboard() {
   const { t } = useTranslation(['common', 'dashboard'])
   const labels = useDisplayLabels()
@@ -78,41 +124,15 @@ export default function Dashboard() {
   const dateParams = getDateRangeParams(timeRange, customDays, dateBasis)
   const isConfigured = !!config.apiEndpoint
 
-  // Shared with the sidebar urgent badge via useSummaryQuery so the two cannot
-  // resolve to different cache entries (see that module).
-  // Takes the endpoint rather than `isConfigured`: the hook owns both the query
-  // key and its enabling condition, so callers cannot make them disagree.
-  const summaryQuery = useSummaryQuery(dateParams, config.apiEndpoint)
+  // The facet filters live in the URL (`?source=a,b&usefulness=high`). With none set, every
+  // read is the unfiltered one: the summary shares the sidebar badge's cache entry
+  // (useSummaryQuery), so the badge and the "Urgent Issues" card cannot disagree.
+  const facetParams = useFacetParams()
+  const filtered = hasActiveFacets(facetParams.facets)
+  const data = useDashboardData(dateParams, config.apiEndpoint, facetParams.facets)
+  const { summaryQuery, sentiment, categories, sources, urgentFeedback } = data
   const { data: summary, isLoading: summaryLoading } = summaryQuery
   const summaryFailure = failedReads([summaryQuery])
-
-  const { data: sentiment } = useQuery({
-    queryKey: metricsKeys.sentiment(dateParams),
-    queryFn: () => api.getSentiment(dateParams),
-    enabled: isConfigured,
-  })
-
-  const { data: categories } = useQuery({
-    queryKey: metricsKeys.categories(dateParams),
-    queryFn: () => api.getCategories(dateParams),
-    enabled: isConfigured,
-  })
-
-  const { data: sources } = useQuery({
-    queryKey: metricsKeys.sources(dateParams),
-    queryFn: () => api.getSources(dateParams),
-    enabled: isConfigured,
-  })
-
-  // `limit` MUST stay in the query key: /feedback/urgent returns a different
-  // payload per limit, so a key that omits it lets two callers with different
-  // limits collide on one cache entry (which is how the sidebar badge used to
-  // render this list's page size).
-  const { data: urgentFeedback } = useQuery({
-    queryKey: ['urgent', dateParams, URGENT_PREVIEW_LIMIT],
-    queryFn: () => api.getUrgentFeedback({ ...dateParams, limit: URGENT_PREVIEW_LIMIT }),
-    enabled: isConfigured,
-  })
 
   if (!isConfigured) {
     return <NotConfiguredState />
@@ -132,7 +152,8 @@ export default function Dashboard() {
   // No feedback in this range: DashboardWindowEmpty checks the all-time total
   // and shows the welcome state only when the workspace truly has none, else
   // the newest feedback date with a one-click "Show all time" (E2E F4).
-  if ((summary?.total_feedback ?? 0) === 0) {
+  // A FILTERED window with nothing in it keeps the page and its filters (DashboardFilters).
+  if (!filtered && (summary?.total_feedback ?? 0) === 0) {
     return <DashboardWindowEmpty dateParams={dateParams} apiEndpoint={config.apiEndpoint} loading={<LoadingState />} />
   }
 
@@ -174,32 +195,11 @@ export default function Dashboard() {
         </button>
       </div>
 
-      <MetricsGrid summary={summary} sentiment={sentiment} activeSources={sourcesCount} />
-      <PartialCountsNote summary={summary} dateBasis={dateBasis} />
+      <DashboardFilters params={facetParams} sourceOptions={data.sourceOptions} categoryOptions={data.categoryOptions} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        <TrendChart summary={summary} />
-        <SentimentChart sentiment={sentiment} />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        <CategoryChart categories={categories} />
-        <SourceChart sources={sources} />
-      </div>
-
-      <GitHubInsights dateParams={dateParams} sources={sources} />
-
-      <DimensionBreakdown dateParams={dateParams} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
-        <DashboardCard
-          icon={<Zap className="text-accent-text flex-shrink-0" size={18} aria-hidden="true" />}
-          title={t('dashboard:liveSocialFeed')}
-        >
-          <SocialFeed limit={8} showFilters={true} />
-        </DashboardCard>
-        <UrgentFeedback items={urgentFeedback?.items} aggregateTotal={summary?.urgent_count} />
-      </div>
+      {(summary?.total_feedback ?? 0) === 0
+        ? <FilteredEmpty onClear={facetParams.clearAll} />
+        : <DashboardBody dateParams={dateParams} dateBasis={dateBasis} data={data} sourcesCount={sourcesCount} />}
     </div>
   )
 }

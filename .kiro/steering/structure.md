@@ -230,7 +230,11 @@ voice-of-customer-datalake/       # Root repository
 | GET | `/metrics/github` | GitHub Issues per release and per label (counts, 👍 weight, sentiment, top complaints, new since the last release); `/feedback` also takes `version` and `label` filters |
 
 `days` is 0–9999 everywhere; `0` = all time. A review-date window's cutoff is the REQUESTED window
-(none for all time), never the import history the walk is clamped to. Every route that takes `source` also
+(none for all time), never the import history the walk is clamped to. `source`, `category`, `subcategory`,
+`sentiment` and `usefulness` (`low|medium|high`, `unrated` = no stored band) take one value or a comma list
+meaning any of them (`shared/item_facets.py`; ≤ 50 values of ≤ 128 chars, an unknown sentiment or band is a 400;
+sources pushed down as `=` / `IN`; `/feedback/problems` leaves `category` / `subcategory` to its tree;
+docs/categories.md → Filtering by several values). Every route that takes `source` also
 takes `channel`, `dims=key:value,…` (400 when malformed; `key:a|b` = either value, `~unset` = no value), `tag`, `rating_min`/`rating_max` and `urgent=1`
 (only high-urgency items; the Categories page's breakdowns send its rating and urgent filters). Every route enforces the caller's
 category access (no `CATEGORY_ACCESS` row = all; admins and a category's owners
@@ -280,6 +284,13 @@ the SPA sends no save of its own (it would be refused 409) and adopts the server
 user turn's `<context>` block names the page it was sent from. The assistant's page context carries the
 Categories / Problem Analysis URL filters as `page.filters` (`PAGE_FILTER_KEYS`; values in the
 `<context>` data block), and `search_feedback` takes an explicit `days`.
+**Filter floor + chat scope** (#429 port, docs/assistant-chat-scope.md): a /chat run also carries
+`forwardedProps.scope = {filters?: <PAGE_FILTER_KEYS → string>, limit?: 1–1000}` (`chatScopeSchema`,
+lockstepped; the SPA sends it from /chat only, from the filter panel above the composer). `page.filters`
+and `scope.filters` intersect into a floor (`tools/server/feedback-floor.ts`) that `search_feedback`,
+`list_feedback`, `get_urgent_feedback`, `get_entities` and `get_metrics` cannot widen: a model argument
+outside it matches nothing, a filter a route cannot apply is refused; `limit` (default 1000) caps the
+reviews one read uses. The panel's live count reads `GET /metrics/sentiment`.
 **Mentions** (5.46, docs/assistant-mentions.md): on a project page the composer's `@` / `#` lists put
 `forwardedProps.mentions = {personas?: [ids] | 'all', documents?: [{document_id, version?}]}` (≤ 6 / ≤ 3,
 `mentionsSchema`, lockstepped; refused off a project page). Before the model's turn the stream runs a persona
@@ -505,6 +516,8 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | PUT | `/projects/{id}` | Update project |
 | DELETE | `/projects/{id}` | Delete project (manage) |
 | POST | `/projects/{id}/personas/generate` | Generate personas from feedback; `keep_existing_personas: true` adds next to the existing ones (name clashes dropped), absent/false replaces them (docs/persona-generation.md) |
+| POST | `/projects/{id}/feedback-preview` | The persona / research wizards' live count `{sources, categories, sentiments, days, date_basis, mode: estimate\|exact, purpose: personas\|research}` → `{matched, matched_is_lower_bound, estimated, sample_limit}`: exact = the generation's own read (20 s budget, then a lower bound), estimate = a scaled feedback-id-index sample; cached 5 min per project + selection + scope (`shared/persona_feedback_preview.py`, docs/project-workspace.md) |
+| PUT | `/projects/{id}/personas/{persona_id}/protection` | `{protected: bool}` (400 otherwise, 404 unknown persona): a replace regeneration keeps a protected persona and tells the model about it (`shared/persona_replace.py`) |
 | POST | `/projects/{id}/research` | Run research job (Step Functions) |
 | POST | `/projects/{id}/documents` | Create a custom document, or a hand-written PR/FAQ / PRD from a blank template (`document_type: prfaq\|prd`, `{title, content?, create_id?}`, `origin: human`) |
 | — | (project chat) | Now the unified AI assistant at `POST /chat/stream` with `forwardedProps.page.projectId` |

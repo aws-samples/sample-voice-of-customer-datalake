@@ -15,6 +15,8 @@ import {
   parseDocumentBrief, parsePrfaqAnswers, parseRegeneratedAvatar, parseResearchSuggestions,
 } from './assistResults'
 import { normalizeAddPersonaNoteResponse } from './personaNoteSchema'
+import { normalizeFeedbackPreview } from './feedbackPreviewSchema'
+import type { FeedbackPreview, FeedbackPreviewMode, FeedbackPreviewPurpose } from './feedbackPreviewSchema'
 import type { AddPersonaNoteResponse } from './personaNoteSchema'
 import type { AiDraftFilters } from './aiDraft'
 import type {
@@ -59,6 +61,14 @@ function withoutAssistJobs(answer: { success: boolean; jobs: ProjectJob[] }) {
   return Array.isArray(answer.jobs)
     ? { ...answer, jobs: answer.jobs.filter((job) => !isAssistJobType(job.job_type)) }
     : answer
+}
+
+/** The feedback filters a wizard's live count reads (the generation request's own fields). */
+export interface FeedbackPreviewBody {
+  readonly sources: readonly string[]
+  readonly categories: readonly string[]
+  readonly sentiments: readonly string[]
+  readonly days: number
 }
 
 export const projectsApi = {
@@ -152,6 +162,23 @@ export const projectsApi = {
       status: string;
       message: string;
     }>(`/projects/${projectId}/personas/generate`, post({ ...getDateBasisBodyParams(), ...filters })),
+
+  /**
+   * How many reviews a persona / research run with these filters would read (the wizards'
+   * live count). Built like `generatePersonas`' body, so the count is the run's own read.
+   */
+  previewFeedback: async (projectId: string, body: FeedbackPreviewBody, mode: FeedbackPreviewMode,
+    purpose: FeedbackPreviewPurpose): Promise<FeedbackPreview> => normalizeFeedbackPreview(
+    await fetchApi<unknown>(`/projects/${encodeURIComponent(projectId)}/feedback-preview`,
+      post({ ...getDateBasisBodyParams(), ...body, mode, purpose })),
+  ),
+
+  /** Protect a persona (or release it): a replace regeneration keeps a protected one (#429). */
+  setPersonaProtected: (projectId: string, personaId: string, isProtected: boolean) =>
+    fetchApi<unknown>(
+      `/projects/${encodeURIComponent(projectId)}/personas/${encodeURIComponent(personaId)}/protection`,
+      put({ protected: isProtected }),
+    ),
 
   updatePersona: (projectId: string, personaId: string, data: Partial<Omit<ProjectPersona, 'persona_id' | 'created_at'>>) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/personas/${personaId}`, put(data)),

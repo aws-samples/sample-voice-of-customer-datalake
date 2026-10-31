@@ -350,7 +350,12 @@
       "submitNone": "コピー",
       "submit_one": "{{count, number}}件のペルソナをコピー",
       "submit_other": "{{count, number}}件のペルソナをコピー"
-    }
+    },
+    "protect": "このペルソナを保護：ペルソナを置き換えるときに残す",
+    "unprotect": "このペルソナの保護を解除",
+    "protected": "保護中",
+    "protectedHint": "新しい生成でこのプロジェクトのペルソナを置き換えても残ります",
+    "protectFailed": "保護を変更できませんでした。もう一度お試しください。"
   },
   "personaSections": {
     "ageRange": "年齢",
@@ -559,7 +564,9 @@
     "personaReplaceConfirmMessage_other": "プロジェクトの既存ペルソナ{{count, number}}件が編集内容やアバターごと削除され、新しいペルソナが{{n, number}}件作成されます。元に戻すことはできません。",
     "submitReplacePersonas": "削除して生成",
     "submitRemixDocuments": "ドキュメントをリミックス",
-    "workingBackwards": "ワーキングバックワーズ"
+    "workingBackwards": "ワーキングバックワーズ",
+    "personaReplaceKeepsProtected_one": "保護された{{count, number}}件のペルソナは残ります。",
+    "personaReplaceKeepsProtected_other": "保護された{{count, number}}件のペルソナは残ります。"
   },
   "header": {
     "back": "プロジェクト一覧に戻る",
@@ -607,6 +614,12 @@
     "range": "{{total, number}}件中 {{from, number}}–{{to, number}}件",
     "previous": "前へ",
     "next": "次へ",
-    "close": "閉じる"
+    "close": "閉じる",
+    "citedSummary_one": "うち{{count, number}}件を引用",
+    "citedSummary_other": "うち{{count, number}}件を引用",
+    "viewLabel": "表示するレビュー",
+    "viewCited": "引用 ({{n, number}})",
+    "viewUsed": "使用したすべて ({{n, number}})",
+    "citedNote": "ペルソナの根拠が示しているレビューです。読み込んだレビューを示していない引用は、テキストとしてのみ残ります。"
   }
 }

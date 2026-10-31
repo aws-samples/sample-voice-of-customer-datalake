@@ -13,7 +13,7 @@
  *
  * @module assistant/components/AssistantPanel
  */
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
@@ -121,11 +121,15 @@ function ConversationBody({ thread, page, restoring, onDraft, onRegenerate }: Re
   return <EmptyState kind={page.kind} onPick={onDraft} />
 }
 
+/** Rendered between the conversation and the composer, for one conversation (the /chat filter panel). */
+export type ComposerAccessory = (threadId: string) => ReactNode
+
 /** The conversation in view: messages, approval cards, error, composer. */
-function ConversationPane({ column, draft, onDraft }: Readonly<{
+function ConversationPane({ column, draft, onDraft, accessory }: Readonly<{
   column: string | undefined
   draft: string | undefined
   onDraft: (text: string) => void
+  accessory?: ComposerAccessory
 }>) {
   const { t } = useTranslation('assistant')
   const { thread, page, send, stop, resolve, regenerate, webSearchAvailable } = useAssistant()
@@ -144,6 +148,7 @@ function ConversationPane({ column, draft, onDraft }: Readonly<{
           {errorText !== null && <p role="alert" className="mt-3 rounded-lg border border-danger/30 bg-danger-subtle px-3 py-2 text-[12px] text-danger">{errorText}</p>}
         </div>
       </div>
+      {accessory !== undefined && <div className={column}>{accessory(thread.threadId)}</div>}
       <Composer
         threadId={thread.threadId}
         streaming={thread.status === 'streaming'}
@@ -161,8 +166,10 @@ function ConversationPane({ column, draft, onDraft }: Readonly<{
   )
 }
 
-export default function AssistantPanel({ variant, anchor, onResetPosition }: Readonly<{
+export default function AssistantPanel({ variant, anchor, onResetPosition, composerAccessory }: Readonly<{
   variant: PanelVariant
+  /** Page only: shown above the composer of the conversation in view. */
+  composerAccessory?: ComposerAccessory
   /** Floating only: where the card sits beside the launcher. */
   anchor?: PanelAnchor
   /** Floating only, when the launcher was moved: put it back in its corner. */
@@ -246,7 +253,13 @@ export default function AssistantPanel({ variant, anchor, onResetPosition }: Rea
       <div className="flex min-h-0 flex-1">
         {wide && <SessionsSidebar id={sidebarId} onNewChat={startNewChat} onPick={pick} />}
         {/* Keyed by thread: switching conversations resets scroll and composer state. */}
-        <ConversationPane key={thread.threadId} column={wide ? WIDE_COLUMN : undefined} draft={draft} onDraft={setDraft} />
+        <ConversationPane
+          key={thread.threadId}
+          column={wide ? WIDE_COLUMN : undefined}
+          draft={draft}
+          onDraft={setDraft}
+          accessory={composerAccessory}
+        />
       </div>
       {showSessions && <SessionsDrawer onClose={() => setShowSessions(false)} onOpen={pick} />}
     </div>
