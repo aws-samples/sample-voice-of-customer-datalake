@@ -12,7 +12,7 @@
  * block (memory-recall.ts) uses the same neutralising and the same injection.
  */
 import type { Message } from '@aws-sdk/client-bedrock-runtime';
-import type { PageContext } from '../contract.js';
+import type { ChatScope, PageContext } from '../contract.js';
 import type { ProjectPreload } from './preload.js';
 
 const FENCE = '```';
@@ -45,6 +45,8 @@ export function oneLine(value: string): string {
 export interface PageContextInput {
   page: PageContext;
   projectPreload?: ProjectPreload;
+  /** The /chat filter panel's scope (forwardedProps.scope); its filters are listed like the page's. */
+  scope?: ChatScope;
 }
 
 /**
@@ -52,11 +54,13 @@ export interface PageContextInput {
  * text, a tag), so they sit here as data, never in the system block; keys come from the
  * contract's PAGE_FILTER_KEYS allowlist.
  */
-function filterLines(filters: PageContext['filters']): string[] {
+function filterLines(filters: PageContext['filters'], heading = 'Filters set on the page (what the user sees on screen):'): string[] {
   const entries = Object.entries(filters ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string');
   if (entries.length === 0) return [];
-  return ['Filters set on the page (what the user sees on screen):', ...entries.map(([key, value]) => `- ${key}: ${oneLine(value)}`)];
+  return [heading, ...entries.map(([key, value]) => `- ${key}: ${oneLine(value)}`)];
 }
+
+const SCOPE_HEADING = 'Filters set in the chat filter panel (the feedback this conversation may read):';
 
 /**
  * The `<context>` block of one user turn. It always opens by naming the page the message was
@@ -64,11 +68,11 @@ function filterLines(filters: PageContext['filters']): string[] {
  * new page's context as a contradiction of the earlier answer and retracted it), so the model can
  * tell that the page changed rather than that an earlier answer was wrong.
  */
-export function buildPageContextBlock({ page, projectPreload }: PageContextInput): string {
+export function buildPageContextBlock({ page, projectPreload, scope }: PageContextInput): string {
   const lines: string[] = [`Page when this message was sent: the ${page.kind} page (path ${oneLine(page.path)}).`];
   if (page.title) lines.push(`Page title: ${oneLine(page.title)}`);
   if (page.tab) lines.push(`Active tab: ${oneLine(page.tab)}`);
-  lines.push(...filterLines(page.filters));
+  lines.push(...filterLines(page.filters), ...filterLines(scope?.filters, SCOPE_HEADING));
   if (projectPreload?.status === 'loaded') {
     lines.push('Current project (preloaded with get_project):', `${FENCE}json`, neutralise(projectPreload.summary), FENCE);
   }
