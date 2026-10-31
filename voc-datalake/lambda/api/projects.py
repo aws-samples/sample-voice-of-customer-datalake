@@ -94,6 +94,7 @@ from shared.indexes import PROJECTS_BY_TYPE_INDEX
 from shared.logging import logger, metrics, tracer
 from shared.model_config import get_active_model_id, surface_context_window_tokens
 from shared.persona_context import personas_prompt_context
+from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD, resolve_evidence_ids
 from shared.persona_knowledge import PERSONA_KNOWLEDGE_STEP, persona_knowledge_fields, with_persona_knowledge
 from shared.project_access import Caller
 from shared.project_writes import (
@@ -2332,7 +2333,7 @@ def _source_breakdown(feedback_items: list[dict]) -> dict[str, int]:
 def _build_persona_items(
     project_id: str, personas_data: list, feedback_items: list[dict], *,
     persona_count: int, source_breakdown: dict[str, int], llm_time: int, now_dt: datetime,
-    model_id: str, date_basis: str, input_ids: list[str] | None = None,
+    model_id: str, date_basis: str, input_ids: list[str] | None = None, items_seen: int | None = None,
 ) -> list[tuple[str, dict, dict]]:
     """``(persona_id, parsed persona, item to store)`` per persona, in parsed order.
 
@@ -2383,6 +2384,12 @@ def _build_persona_items(
             # Every review the persona-writing step read, in prompt order (#236): the
             # corpus behind the persona, an even sample across the chosen window.
             'input_feedback_ids': list(input_ids or []),
+            # The reviews its ``supporting_evidence`` cites ("Review #N", numbered in prompt
+            # order), resolved while that order still exists (shared/persona_evidence.py).
+            EVIDENCE_FEEDBACK_IDS_FIELD: resolve_evidence_ids(
+                persona.get('supporting_evidence'), feedback_items,
+                len(feedback_items) if items_seen is None else items_seen,
+            ),
             # Which dates the corpus window applied to, so two generations of one
             # project that differ only by basis can be told apart (#258).
             'date_basis': date_basis,
@@ -2639,6 +2646,7 @@ def generate_personas(
             llm_time=llm_time, now_dt=now_dt, model_id=model_id,
             date_basis=validate_date_basis(filters.get('date_basis')),
             input_ids=input_feedback_ids(feedback_items, feedback_items_used),
+            items_seen=feedback_items_used,
         )
         for _pid, _persona, persona_item in persona_items:
             persona_item.update(persona_knowledge_fields(knowledge, feedback_items_used))

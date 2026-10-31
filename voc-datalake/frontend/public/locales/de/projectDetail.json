@@ -607,6 +607,12 @@
     "range": "{{from, number}}–{{to, number}} von {{total, number}}",
     "previous": "Zurück",
     "next": "Weiter",
-    "close": "Schließen"
+    "close": "Schließen",
+    "citedSummary_one": "zitiert {{count, number}} davon",
+    "citedSummary_other": "zitiert {{count, number}} davon",
+    "viewLabel": "Welche Bewertungen",
+    "viewCited": "Zitiert ({{n, number}})",
+    "viewUsed": "Alle verwendeten ({{n, number}})",
+    "citedNote": "Die Bewertungen, die die Belege der Persona nennen. Ein Verweis auf keine gelesene Bewertung bleibt nur als Text erhalten."
   }
 }

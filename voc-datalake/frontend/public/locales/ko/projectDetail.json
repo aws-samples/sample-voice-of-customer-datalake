@@ -607,6 +607,12 @@
     "range": "{{total, number}}개 중 {{from, number}}–{{to, number}}",
     "previous": "이전",
     "next": "다음",
-    "close": "닫기"
+    "close": "닫기",
+    "citedSummary_one": "그중 {{count, number}}개 인용",
+    "citedSummary_other": "그중 {{count, number}}개 인용",
+    "viewLabel": "표시할 리뷰",
+    "viewCited": "인용됨 ({{n, number}})",
+    "viewUsed": "사용된 전체 ({{n, number}})",
+    "citedNote": "페르소나의 근거가 가리키는 리뷰입니다. 읽은 리뷰를 가리키지 않는 인용은 텍스트로만 남습니다."
   }
 }
