@@ -139,7 +139,7 @@ export function HtmlPrototypeFrame({
     <iframe
       title={orFallback(title, 'Prototype')}
       srcDoc={html}
-      sandbox="allow-scripts allow-popups allow-forms"
+      sandbox={PROTOTYPE_FRAME_SANDBOX}
       className={className ?? 'w-full h-full border-0'}
     />
   )

@@ -72,7 +72,7 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
         // the /prototypes/* behavior's own PrototypeHeadersPolicy (script-src 'unsafe-inline')
         // still governs script execution inside that framed document; this only permits the
         // cross-document load itself.
-        contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com https://*.lambda-url.${cdk.Stack.of(stack).region}.on.aws; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
+        contentSecurityPolicy: `default-src 'none'; font-src 'self' data:; img-src 'self' data:; script-src 'self';manifest-src 'self'; style-src 'unsafe-inline' 'self'; style-src-elem 'unsafe-inline' 'self'; object-src 'none'; frame-src 'self'; connect-src 'self' https://*.amazoncognito.com https://*.amazonaws.com; form-action 'self'; upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'none';`,
         override: true,
       },
       contentTypeOptions: { override: true },
@@ -84,7 +84,18 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
         preload: true,
         override: true,
       },
-      xssProtection: { protection: true, modeBlock: true, override: true },
+      // `X-XSS-Protection: 0` (EDGE-6): the legacy filter is gone from current browsers and, where it still
+      // runs, could itself leak data; OWASP and MDN advise turning it off and relying on the CSP above.
+      xssProtection: { protection: false, override: true },
+    },
+    customHeadersBehavior: {
+      customHeaders: [{
+        // Nothing in the app uses these features (passkeys need only publickey-credentials, left at its
+        // same-origin default); denying them limits what an injected script or framed page could ask for.
+        header: 'Permissions-Policy',
+        value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()',
+        override: true,
+      }],
     },
   });
 
