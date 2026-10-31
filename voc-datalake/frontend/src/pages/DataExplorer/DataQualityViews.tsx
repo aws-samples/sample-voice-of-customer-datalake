@@ -68,6 +68,7 @@ export function QualityChart({ sources, sourceName }: ViewProps) {
   )
 }
 
+/** A count and its share of `total`, right-aligned. */
 function CountCell({ count, total }: Readonly<{ count: number; total: number }>) {
   const { i18n } = useTranslation()
   return (
@@ -78,14 +79,24 @@ function CountCell({ count, total }: Readonly<{ count: number; total: number }>)
   )
 }
 
-function QualityRow({ label, counts, strong = false }: Readonly<{ label: string; counts: QualityCounts; strong?: boolean }>) {
+/** One table row: a label, each count with its share of `total`, then the total (the band and profile tables). */
+export function CountRow({ label, counts, total, strong = false }: Readonly<{
+  label: string; counts: ReadonlyArray<readonly [string, number]>; total: number; strong?: boolean
+}>) {
   const { i18n } = useTranslation()
   return (
     <tr className={clsx('border-t border-border', strong && 'font-semibold')}>
       <th scope="row" className="px-3 py-2 text-left font-medium text-text-strong">{label}</th>
-      {QUALITY_BANDS.map((band) => <CountCell key={band} count={counts[band]} total={counts.total} />)}
-      <td className="px-3 py-2 text-right tabular-nums">{formatCount(counts.total, i18n.language)}</td>
+      {counts.map(([key, count]) => <CountCell key={key} count={count} total={total} />)}
+      <td className="px-3 py-2 text-right tabular-nums">{formatCount(total, i18n.language)}</td>
     </tr>
+  )
+}
+
+function QualityRow({ label, counts, strong = false }: Readonly<{ label: string; counts: QualityCounts; strong?: boolean }>) {
+  return (
+    <CountRow label={label} counts={QUALITY_BANDS.map((band): [string, number] => [band, counts[band]])}
+      total={counts.total} strong={strong} />
   )
 }
 
