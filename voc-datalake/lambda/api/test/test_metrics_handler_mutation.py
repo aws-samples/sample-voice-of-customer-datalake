@@ -76,6 +76,11 @@ def _one_partition_per_day(days: int) -> list:
 _STORED = StoredReviews()
 
 
+def _from_web(items: list[dict]) -> list[dict]:
+    """``items`` as the source-filtered walk returns them (every row of ``source=web``)."""
+    return [{**item, 'source_platform': 'web'} for item in items]
+
+
 def _page(items: list[dict], *, scanned: int | None = None, more: bool = False) -> dict:
     """One `Table.query` response; `scanned` sets `ScannedCount`, `more` leaves a cursor open."""
     page: dict = {'Items': items}
@@ -189,10 +194,10 @@ class TestTheWalkHelpersAreTraced:
 
 
 class TestOnePartitionPage:
-    def _query(self, fb, pages, max_matched=10, source=None):
+    def _query(self, fb, pages, max_matched=10, sources=()):
         fb.query.side_effect = pages
         return metrics_handler._query_partition(
-            FEEDBACK_BY_DATE_INDEX, Key('gsi1pk').eq('DATE#2026-03-10'), max_matched=max_matched, source=source)
+            FEEDBACK_BY_DATE_INDEX, Key('gsi1pk').eq('DATE#2026-03-10'), max_matched=max_matched, sources=sources)
 
     def test_the_read_is_a_500_row_page_newest_first_with_no_filter_by_default(self, fb):
         items, has_more = self._query(fb, [_page(_rows(2))])
@@ -206,8 +211,12 @@ class TestOnePartitionPage:
         assert has_more is False
 
     def test_a_source_is_pushed_down_as_a_server_side_filter(self, fb):
-        self._query(fb, [_page([])], source='webscraper')
+        self._query(fb, [_page([])], sources=('webscraper',))
         assert fb.query.call_args.kwargs['FilterExpression'] == Attr('source_platform').eq('webscraper')
+
+    def test_several_sources_are_pushed_down_as_one_in(self, fb):
+        self._query(fb, [_page([])], sources=('webscraper', 'app'))
+        assert fb.query.call_args.kwargs['FilterExpression'] == Attr('source_platform').is_in(['webscraper', 'app'])
 
     def test_the_second_page_resumes_from_the_first_pages_cursor(self, fb):
         first = _page(_rows(1), more=True)
@@ -449,11 +458,12 @@ class TestEachItemFilterOnItsOwn:
         assert filters.admits({'date': today_utc(), 'category': 'billing'}) is False
 
     def test_the_filters_read_exactly_these_query_keys(self):
-        params = {'source': 's', 'sentiment': 'n', 'category': 'c', 'version': 'v', 'label': 'l',
+        params = {'source': 's', 'sentiment': 'negative', 'category': 'c', 'version': 'v', 'label': 'l',
                   'date_basis': 'review'}
         filters = metrics_handler._ItemFilters(params, 3)
-        assert (filters.source, filters.sentiment, filters.category, filters.version, filters.label) == (
-            's', 'n', 'c', 'v', 'l')
+        extra = filters.extra
+        assert (extra.sources, extra.sentiments, extra.categories, filters.version, filters.label) == (
+            ('s',), ('negative',), ('c',), 'v', 'l')
         assert filters.date_basis == 'review'
         assert filters.cutoff_date == _days_ago(2)
         assert filters.scope is UNRESTRICTED
@@ -649,8 +659,8 @@ class TestListFeedbackReadsItsPartitions:
     def test_the_category_partition_keeps_the_cutoff_day_and_drops_the_day_before(self, fb, api_gateway_event,
                                                                                   lambda_context):
         fb.query.return_value = _page([
-            {'pk': 'p', 'sk': 'edge', 'feedback_id': 'edge', 'date': _days_ago(2)},
-            {'pk': 'p', 'sk': 'old', 'feedback_id': 'old', 'date': _days_ago(3)},
+            {'pk': 'p', 'sk': 'edge', 'feedback_id': 'edge', 'date': _days_ago(2), 'category': 'delivery'},
+            {'pk': 'p', 'sk': 'old', 'feedback_id': 'old', 'date': _days_ago(3), 'category': 'delivery'},
         ])
         _, body = _get(api_gateway_event, lambda_context, '/feedback', category='delivery', days=3)
         assert _ids(body) == ['edge']
@@ -774,7 +784,7 @@ class TestEntitiesFromTheScan:
     def test_an_item_without_the_fields_lands_in_other_unknown_and_unknown(self, fb, api_gateway_event,
                                                                           lambda_context):
         fb.query.return_value = _page([{'date': today_utc()}])
-        _, body = _get(api_gateway_event, lambda_context, '/feedback/entities', source='web', days=1)
+        _, body = _get(api_gateway_event, lambda_context, '/feedback/entities', date_basis='review', days=1)
         assert body['feedback_count'] == 1
         assert body['entities']['categories'] == {'other': 1}
         assert body['entities']['sources'] == {'unknown': 1}
@@ -1041,17 +1051,17 @@ class TestSummaryFromTheAggregates:
 @pytest.mark.usefixtures('agg')
 class TestSentimentBreakdown:
     def test_the_scan_branch_counts_each_label_and_defaults_to_neutral(self, fb, api_gateway_event, lambda_context):
-        fb.query.return_value = _page([
+        fb.query.return_value = _page(_from_web([
             {'date': today_utc(), 'sentiment_label': 'negative'}, {'date': today_utc(), 'sentiment_label': 'negative'},
             {'date': today_utc()}, {'date': today_utc(), 'sentiment_label': 'odd'},
-        ])
+        ]))
         _, body = _get(api_gateway_event, lambda_context, '/metrics/sentiment', source='web', days=1)
         assert body['breakdown'] == {'positive': 0, 'neutral': 1, 'negative': 2, 'mixed': 0}
         assert body['total'] == 3
         assert body['percentages'] == {'positive': 0.0, 'neutral': 33.3, 'negative': 66.7, 'mixed': 0.0}
 
     def test_one_item_is_one_hundred_percent(self, fb, api_gateway_event, lambda_context):
-        fb.query.return_value = _page([{'date': today_utc(), 'sentiment_label': 'positive'}])
+        fb.query.return_value = _page([{'date': today_utc(), 'sentiment_label': 'positive', 'source_platform': 'web'}])
         _, body = _get(api_gateway_event, lambda_context, '/metrics/sentiment', source='web', days=1)
         assert body['percentages'] == {'positive': 100.0, 'neutral': 0.0, 'negative': 0.0, 'mixed': 0.0}
 
@@ -1079,9 +1089,9 @@ class TestCategoryBreakdown:
 
     @pytest.mark.usefixtures('agg')
     def test_the_scan_branch_buckets_an_uncategorised_item_as_other(self, fb, api_gateway_event, lambda_context):
-        fb.query.return_value = _page([
+        fb.query.return_value = _page(_from_web([
             {'date': today_utc()}, {'date': today_utc(), 'category': 'delivery'}, {'date': today_utc(), 'category': 'delivery'},
-        ])
+        ]))
         _, body = _get(api_gateway_event, lambda_context, '/metrics/categories', source='web', days=1)
         assert body['categories'] == {'delivery': 2, 'other': 1}
 
