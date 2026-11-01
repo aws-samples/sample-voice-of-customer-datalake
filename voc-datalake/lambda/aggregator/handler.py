@@ -222,6 +222,7 @@ Known residuals
   once the legacy rows are gone, and strictly smaller than the over-count above.
 """
 import os
+import re
 import secrets
 import sys
 import time
@@ -238,7 +239,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType
 from aws_lambda_powertools.utilities.batch.exceptions import ExceptionInfo
 from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord
-from boto3.dynamodb.types import DYNAMODB_CONTEXT
+from boto3.dynamodb.types import DYNAMODB_CONTEXT, TypeDeserializer
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
@@ -2144,12 +2145,26 @@ def _rebucket_average(
     return int(reversed_) + int(applied)
 
 
-_WIRE_TYPES: Final = frozenset({'S', 'N', 'B', 'M', 'L', 'BOOL', 'NULL', 'SS', 'NS', 'BS'})
+# A raw DynamoDB attribute value is a one-key dict naming its type, whose payload has that type's
+# Python shape (and an N payload is a number). Checking the payload too keeps a deserialized
+# one-key map such as {'N': 'north'} from being read as a number (boto3 would answer NaN).
+_WIRE_PAYLOAD_TYPES: Final[dict[str, tuple[type, ...]]] = {
+    'S': (str,), 'N': (str,), 'B': (bytes, bytearray, str), 'BOOL': (bool,), 'NULL': (bool,),
+    'M': (dict,), 'L': (list,), 'SS': (list,), 'NS': (list,), 'BS': (list,),
+}
+_DESERIALIZER: Final = TypeDeserializer()
+_WIRE_NUMBER_RE: Final = re.compile(r'^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\Z')
 
 
 def _is_wire_value(value: object) -> bool:
-    """A raw DynamoDB attribute value: a one-key dict naming its type (``{'S': 'text'}``)."""
-    return isinstance(value, dict) and len(value) == 1 and next(iter(value)) in _WIRE_TYPES
+    """A raw DynamoDB attribute value (``{'S': 'text'}``, ``{'M': {...}}``), not a deserialized one."""
+    if not isinstance(value, dict) or len(value) != 1:
+        return False
+    (tag, payload), = value.items()
+    expected = _WIRE_PAYLOAD_TYPES.get(tag)
+    if expected is None or not isinstance(payload, expected):
+        return False
+    return tag != 'N' or bool(_WIRE_NUMBER_RE.match(payload))
 
 
 def deserialize_image(image: dict) -> dict:
@@ -2157,26 +2172,24 @@ def deserialize_image(image: dict) -> dict:
 
     Two shapes arrive: Powertools' ``DynamoDBRecord`` hands over an image it has ALREADY
     deserialized (``record.dynamodb.new_image``, the production path), and tests and older
-    callers pass the raw wire format. Each value is unwrapped only when it IS a wire value
-    (a one-key dict naming a DynamoDB type); any other value is kept as it is. Treating
-    every dict as a wire value instead read a deserialized map attribute (the review's
-    ``dimensions = {'feedback_type': 'bug'}``) as a malformed one and dropped it, which is
-    how the per-dimension counters were never written before 5.67.01.
+    callers pass the raw wire format. A value is deserialized (by boto3's TypeDeserializer,
+    nested maps and lists included) only when it IS a wire value; any other value is kept as
+    it is. Treating every dict as a wire value instead read a deserialized map attribute (the
+    review's ``dimensions = {'feedback_type': 'bug'}``) as a malformed one and dropped it,
+    which is how the per-dimension counters were never written before 5.67.01. A wire value
+    boto3 cannot read is kept as it came, never silently dropped.
     """
     item = {}
     for key, value in image.items():
         if not _is_wire_value(value):
             item[key] = value
-        elif 'S' in value:
-            item[key] = value['S']
-        elif 'N' in value:
-            item[key] = Decimal(value['N'])
-        elif 'M' in value:
-            item[key] = value['M']
-        elif 'L' in value:
-            item[key] = value['L']
-        elif 'BOOL' in value:
-            item[key] = value['BOOL']
+            continue
+        try:
+            item[key] = _DESERIALIZER.deserialize(value)
+        except (TypeError, ValueError, KeyError, AttributeError, ArithmeticError):
+            logger.warning("Stream image attribute is not a readable DynamoDB value; kept as is",
+                           extra={'attribute': key})
+            item[key] = value
     return item
 
 

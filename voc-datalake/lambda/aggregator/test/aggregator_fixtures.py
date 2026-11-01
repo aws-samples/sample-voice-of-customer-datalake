@@ -29,25 +29,10 @@ def conditional_check_failure(item: dict | None = None, operation: str = 'Update
     return ClientError(error_response, operation)
 
 
-def to_stream_image(item: dict) -> dict:
-    """Serialize a plain dict the way a stream image arrives (maps and lists nested, like DynamoDB)."""
-    out = {}
-    for key, value in item.items():
-        if isinstance(value, bool):
-            out[key] = {'BOOL': value}
-        elif isinstance(value, (int, float, Decimal)):
-            out[key] = {'N': str(value)}
-        elif isinstance(value, (dict, list)):
-            out[key] = _SERIALIZER.serialize(_decimals(value))
-        else:
-            out[key] = {'S': str(value)}
-    return out
-
-
 _SERIALIZER = TypeSerializer()
 
 
-def _decimals(value):
+def _decimals(value: Any) -> Any:
     """boto3 refuses floats: nested numbers travel as Decimal, as DynamoDB stores them."""
     if isinstance(value, float):
         return Decimal(str(value))
@@ -56,6 +41,12 @@ def _decimals(value):
     if isinstance(value, list):
         return [_decimals(v) for v in value]
     return value
+
+
+def to_stream_image(item: dict) -> dict:
+    """Serialize a plain dict the way a stream image arrives: DynamoDB's wire format, nested
+    maps and lists included (``None`` is ``{'NULL': True}``)."""
+    return {key: _SERIALIZER.serialize(_decimals(value)) for key, value in item.items()}
 
 
 def stream_record(event_name: str, *, new=None, old=None, user_identity=None,
