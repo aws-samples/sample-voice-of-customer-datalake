@@ -39,6 +39,8 @@ Cleanup after the public docs pass: stale texts, a wrong plural and the dev mock
 - Code comments, test titles and the agent steering files describe design choices and their reasons instead of
   internal decision notes. The steering files no longer show the `-c frontendDomain` deploy option, which has no
   effect, and list Home at `/` and the Dashboard at `/dashboard`.
+- `VocIngestionStack` no longer falls back to a `frontendDomain` context value for the S3 import bucket's CORS
+  origin. The stack always receives the CloudFront domain from `VocCoreStack`, so deployed stacks do not change.
 - The frontend's mock tests (`scripts/mock-corpus.test.mjs`, `mock-faceted-scope.test.mjs`, `mock-scope.test.mjs`)
   run in the quality gate's mock coverage step.
 
