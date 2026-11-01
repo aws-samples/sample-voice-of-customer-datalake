@@ -56,6 +56,9 @@ The schemas are `pageFiltersSchema` and `chatScopeSchema` in
 `voc-datalake/frontend/src/assistant/contract.ts` (the lockstep test compares them). The SPA sends
 `scope` only from `/chat`. A scope the contract would refuse is sent as one that admits nothing
 (`sentiment: 'none'`): the run reads no feedback rather than reading without the user's filters.
+`'none'` is not a sentiment, so the floor's sentiment list is empty and every floored tool answers
+empty before it calls a route (`floorQuery` in `floor-args.ts`); the routes' strict sentiment check
+never sees it.
 
 ## How the tools apply the floor
 

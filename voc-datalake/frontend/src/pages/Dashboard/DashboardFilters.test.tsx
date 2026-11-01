@@ -37,7 +37,7 @@ describe('DashboardFilters', () => {
     ['Usefulness: High usefulness', 'usefulness'],
   ])('clears one facet from the %s panel', async (trigger, facet) => {
     const user = userEvent.setup()
-    const params = renderFilters({ sources: ['web'], categories: ['delivery'], sentiments: ['negative'], usefulness: ['high'] })
+    const params = renderFilters({ ...EMPTY_FACETS, sources: ['web'], categories: ['delivery'], sentiments: ['negative'], usefulness: ['high'] })
     await user.click(screen.getByRole('button', { name: trigger }))
     await user.click(screen.getByRole('button', { name: 'Clear' }))
     expect(params.clearFacet).toHaveBeenCalledWith(facet)
@@ -47,7 +47,7 @@ describe('DashboardFilters', () => {
     const user = userEvent.setup()
     const params = renderFilters({ ...EMPTY_FACETS, sources: ['web'] })
     await user.click(screen.getByRole('button', { name: 'Clear filters' }))
-    expect(params.clearAll).toHaveBeenCalledWith(expect.anything())
+    expect(params.clearAll).toHaveBeenCalledTimes(1)
   })
 
   it('has no "Clear filters" with nothing filtered', () => {
