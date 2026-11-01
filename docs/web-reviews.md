@@ -1,18 +1,19 @@
 # Web reviews (generic review-page plugin)
 
-The `web_reviews` plugin reads customer reviews from **public review pages** — a Trustpilot company page, a
-TripAdvisor listing, an airline forum — with a managed browser, and imports them through the normal pipeline
-(source policy, raw archive, processing queue). It is site-agnostic: nothing in it knows a particular site.
+The `web_reviews` plugin reads customer reviews from **public review pages**, such as a company page on a review
+site, a travel listing or a forum, with a managed browser. It imports them through the normal pipeline (source
+policy, raw archive, processing queue). It is site-agnostic: nothing in it knows a particular site. Administrators
+add pages; every page becomes its own source.
 
 It is **on by default** (`pluginStatus.web_reviews: true` in `voc-datalake/cdk.context.json`) and does nothing
 until an administrator adds a page.
 
 ## Adding pages
 
-- **Scrapers → Data sources → Web Reviews**: add a page with a name, its `https` URL, how much to read
-  (*Max pages*, 0-100, default 10; *Max reviews*, 0-5,000, default 0 — see [Reading modes](#reading-modes)) and a
-  run frequency (manual only by default). Each page gets a card with Run now, Edit,
-  Delete and the last run's status.
+- **Data sources** (`/scrapers`) → **New source** → **A website link** → **Review page**: add a page with a name,
+  its `https` URL, how much to read (pages per run, 0-100, default 10; reviews per run, 0-5,000, default 0; see
+  [Reading modes](#reading-modes)) and a run frequency (manual only by default). Each page is listed under
+  **Review pages** with Run now, Edit, Delete and the last run's status.
 - **AI assistant** (administrators): `create_app_connector` with `source: "web_reviews"`, `url` and optionally
   `max_pages` / `max_reviews`, approved on a card. In plan mode the assistant can find review pages with web search
   (`plan_lookup`), list each chosen URL as its own write on the plan card, then `run_source web_reviews` and wait
@@ -60,8 +61,8 @@ run (see [Backfill across runs](#backfill-across-runs)).
 3. **Extraction.** schema.org JSON-LD `Review` / `UserReview` objects first (top-level arrays, `@graph`, nested
    under a Product's `review`; rating normalised to 1-5 with `bestRating` / `worstRating`; author, date, title,
    body). Without JSON-LD, the page's visible text (at most 160,000 characters) goes to the `enrichment` model
-   (Administration → AI models) in chunks of at most 40,000 characters — at most four, cut on line boundaries, each
-   repeating about 1,000 characters of the one before — one model call per chunk, each as a delimited data block
+   (Administration → AI models) in chunks of at most 40,000 characters (at most four, cut on line boundaries, each
+   repeating about 1,000 characters of the one before), one model call per chunk, each as a delimited data block
    with an instruction never to follow instructions inside it. The model answers JSON Lines, one review per
    line, so a reply cut off at the output cap keeps every complete line; the chunks' reviews are merged and a
    review read twice (same text and date) is kept once. Every review is validated (text 1-5,000 characters,
@@ -75,10 +76,10 @@ run (see [Backfill across runs](#backfill-across-runs)).
    read on, `channel` the target's name, `author` / `title` when the page has them, `metadata` = the target name
    and page number.
 5. **Watermark.** Per target, the newest review date seen; a review older than that date minus one day is not
-   sent again (undated reviews always are — their id deduplicates them). It only ever moves forward.
+   sent again (undated reviews always are; their id deduplicates them). It only ever moves forward.
 6. **Page cache.** Per page, the sha256 of its JSON-LD and visible text is kept as a watermark
    (`target_<id>_page_<sha256(url)[:16]>`). When a regular (not resuming) run finds a page exactly as it was, the
-   page counts as having no new review — no extraction, no model call — and the read stops there as on any page
+   page counts as having no new review (no extraction, no model call), and the read stops there as on any page
    without a new review. The check applies to every page alike (a JSON-LD page never costs a model call, so
    there it only saves parsing). The hash is written after the page's reviews were taken, and only when it
    changed: at most one watermark write per page.
@@ -91,18 +92,17 @@ exists and the target's own limits are not reached, the plugin stores a cursor (
 scheduled, starts that target at the cursor: it counts pages and reviews from it (so `max_pages` / `max_reviews`
 apply to the whole backfill), treats every review as new (these are older pages; the deterministic review id and
 the processor's idempotency drop any repeat) and does not stop on a page without a new review. A page cut at the
-run's cap is read again from its start. The cursor is cleared when the target finishes for any other reason — a
-limit reached, no next page, blocked, redirected off-host, or an error — and is ignored (and cleared) when the
+run's cap is read again from its start. The cursor is cleared when the target finishes for any other reason (a
+limit reached, no next page, blocked, redirected off-host, or an error), and it is ignored (and cleared) when the
 target's limits were lowered below it. The run log says `resuming at page N` for a resumed target.
 
 ## Sources per connector
 
 Every target is its own source, `web_<site>_<app_name>`: the site is the page host's registrable name (`www.`,
-`m.` and the country/second-level suffix dropped — `www.trustpilot.com`, `uk.trustpilot.com` and
-`www.tripadvisor.co.uk` are `trustpilot`, `trustpilot` and `tripadvisor`), the name is the target's `app_name`
-lower-cased with every other character run as `_`. So app_name "Example Air" on a www.trustpilot.com page is
-`web_trustpilot_example_air`, and two brands read from one site no longer share a source (an id longer than 48
-characters keeps its start plus a short hash).
+`m.` and the country/second-level suffix dropped: `www.ratings.example`, `uk.ratings.example` and
+`www.ratings.co.uk` are all `ratings`), the name is the target's `app_name` lower-cased with every other character
+run as `_`. So app_name "Example Air" on a `www.ratings.example` page is `web_ratings_example_air`, and two brands
+read from one site do not share a source (an id longer than 48 characters keeps its start plus a short hash).
 
 The label is minted **once**, by `POST /integrations/web_reviews/apps` when the target is created, and stored on
 it as `source_id`; a client-supplied `source_id` is ignored, and editing the target (a rename, a new URL) keeps the
@@ -121,10 +121,9 @@ the run completes with an error per target, `"<target>: blocked by <vendor>"`, s
 DataDome, HUMAN (PerimeterX, "press & hold"), Cloudflare challenges, AWS WAF challenges, Reddit's network
 security page, CAPTCHAs, an HTTP 4xx/5xx main document, and a short "access denied" page.
 
-Measured on 2026-10-14 from AWS (AgentCore Browser): **readable** — Trustpilot (JSON-LD, ~20 reviews per page),
-TripAdvisor, airlines-inform.com; **blocked** — Yelp (DataDome, HTTP 403), ConsumerAffairs (HUMAN "press &
-hold"), Reddit (requires login or its API). Web Bot Auth signing does not change this for these sites and is not
-used. Respect each site's terms of use when you add it.
+In testing from AWS, review sites that publish JSON-LD review markup were readable (about 20 reviews per page),
+while sites behind DataDome or HUMAN bot protection, or that require a login, were blocked. The plugin does not
+use Web Bot Auth signing. Respect each site's terms of use when you add it.
 
 ## Cost
 
