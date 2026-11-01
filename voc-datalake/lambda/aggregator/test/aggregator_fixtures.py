@@ -38,8 +38,10 @@ def _decimals(value: Any) -> Any:
         return Decimal(str(value))
     if isinstance(value, dict):
         return {k: _decimals(v) for k, v in value.items()}
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_decimals(v) for v in value]
+    if isinstance(value, (set, frozenset)):
+        return {_decimals(v) for v in value}
     return value
 
 

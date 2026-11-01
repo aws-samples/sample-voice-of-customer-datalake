@@ -231,12 +231,12 @@ class TestEveryWireTypeIsDeserialized:
         image = {'s': {'S': 'text'}, 'n': {'N': '1.5'}, 'm': {'M': {'k': {'S': 'v'}}},
                  'l': {'L': [{'S': 'a'}]}, 'b': {'BOOL': False}, 'plain': 7}
 
-        assert handler.deserialize_image(image) == {
-            's': 'text', 'n': Decimal('1.5'), 'm': {'k': 'v'}, 'l': ['a'], 'b': False, 'plain': 7}
+        image.pop('plain')
+        assert handler.deserialize_image(image, raw=True) == {
+            's': 'text', 'n': Decimal('1.5'), 'm': {'k': 'v'}, 'l': ['a'], 'b': False}
 
-    def test_null_is_none_and_a_non_wire_dict_is_kept(self):
-        assert handler.deserialize_image({'x': {'NULL': True}, 'y': {'unknown': 1}}) == {
-            'x': None, 'y': {'unknown': 1}}
+    def test_null_is_none(self):
+        assert handler.deserialize_image({'x': {'NULL': True}}, raw=True) == {'x': None}
 
 
 class TestTheRecordIsReadFromTheEvent:

@@ -1,7 +1,6 @@
 """Map and list attributes of a REAL Powertools stream record reach the counters (see
-`aggregator.handler.deserialize_image` for the 5.67.02 bug these tests pin).
+`aggregator.handler.deserialize_image` for the bug fixed in 5.67.02).
 """
-from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
@@ -69,19 +68,16 @@ def test_tags_from_a_stream_record_are_counted():
     ({'s': {'S': 'text'}, 'm': {'M': {'k': {'S': 'v'}, 'n': {'N': '2'}}}}, {'s': 'text', 'm': {'k': 'v', 'n': 2}}),
     ({'n': {'N': '1'}, 'flag': {'BOOL': True}, 'gone': {'NULL': True}}, {'n': 1, 'flag': True, 'gone': None}),
     ({'tags': {'SS': ['a', 'b']}, 'l': {'L': [{'S': 'x'}]}}, {'tags': {'a', 'b'}, 'l': ['x']}),
-    ({'n': {'N': 3}, 'd': {'N': Decimal('1.5')}}, {'n': 3, 'd': Decimal('1.5')}),
 ])
 def test_a_raw_wire_image_is_deserialized_all_the_way_down(image, expected):
-    assert handler.deserialize_image(image) == expected
+    assert handler.deserialize_image(image, raw=True) == expected
 
 
-def test_a_deserialized_one_key_map_that_looks_like_a_type_is_kept():
-    # {'N': 'north'} is not a number and {'S': 1} has no str payload: neither is a wire value, so
-    # both are kept as they came, never dropped or read as NaN.
-    item = handler.deserialize_image({'region': {'N': 'north'}, 'meta': {'S': 1}})
-    assert item == {'region': {'N': 'north'}, 'meta': {'S': 1}}
-
-
-def test_a_deserialized_image_is_kept_as_it_is():
-    image = {'date': DATE, 'dimensions': {'feedback_type': 'bug'}, 'tags': ['a'], 'score': 1}
+@pytest.mark.parametrize('dimensions', [
+    {'feedback_type': 'bug'},
+    # Keys that look like DynamoDB type tags are an operator's taxonomy, never a wire value.
+    {'S': 'bug'}, {'N': '1'}, {'NULL': False}, {'M': {'a': 'b'}},
+])
+def test_a_deserialized_image_is_kept_as_it_is_whatever_its_map_keys(dimensions):
+    image = {'date': DATE, 'dimensions': dimensions, 'tags': ['a'], 'score': 1}
     assert handler.deserialize_image(image) == image

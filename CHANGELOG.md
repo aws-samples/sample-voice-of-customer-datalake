@@ -32,7 +32,7 @@ Fix: the per-dimension counters are written again, so the Dashboard's "By dimens
 ### Upgrade notes
 
 - Reviews typed or tagged before this release are still missing from the counters. Rebuild them from the
-  feedback table with `scripts/retention/rebuild_aggregates.py --from <first date> --apply` (dry run first,
+  feedback table with `voc-datalake/scripts/retention/rebuild_aggregates.py --from <first date> --apply` (dry run first,
   without `--apply`). It writes absolute values and also resets stale rows to 0
   ([docs/processing-pipeline.md → Rebuilding aggregates](docs/processing-pipeline.md#rebuilding-aggregates-for-a-window)).
 
