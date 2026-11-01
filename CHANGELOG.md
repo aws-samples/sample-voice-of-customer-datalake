@@ -17,6 +17,28 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.66.02] - 2026-11-01
+
+Documentation for public readers: the README and every guide in `docs/` checked against the code, with new screenshots.
+
+### Changed
+
+- **README**: features grouped by what you do with them (collect, understand, act, extend, operate), including
+  Home and the morning brief, Problem Analysis, room votes, Radar, feedback boards, participants, the email inbox,
+  review links and ways of working. The Quick Start now installs every package and creates the Python environment
+  that `npm run deploy:all` checks first. The documentation index lists every guide, grouped by topic.
+- **Screenshots**: retaken from the local mock, with new ones for Home, Problem Analysis, Radar and feedback boards.
+  The architecture diagram adds the email intake, the feedback boards' user pool, outgoing email and the scheduled
+  Radar scan.
+- **Deployment guide** ([docs/deployment.md](docs/deployment.md)): a reference table of every `-c` deploy option.
+  `-c frontendDomain` is no longer shown: the app always uses its CloudFront domain, so the option had no effect.
+- **Plugin guides**: [docs/plugin-architecture.md](docs/plugin-architecture.md) rewritten as a reference of the
+  current plugin system, and [docs/getting-started-plugins.md](docs/getting-started-plugins.md) as a tutorial
+  tested end to end.
+- **Feature guides**: user guide first, then reference, in the agents, plan mode, MCP, memory, projects,
+  prioritization, boards and data source guides. UI paths, limits, routes and defaults match the current release.
+  Internal history and process notes are removed.
+
 ## [5.66.01] - 2026-11-01
 
 Dependency upkeep: one held lint plugin and one updated.
