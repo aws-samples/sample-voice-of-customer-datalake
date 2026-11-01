@@ -1,19 +1,19 @@
 # Participants
 
-Lists of people the team can email to ask for feedback: employees, paid participants, beta customers, sales
-people, customers. People can be brought into a project (directly or through a list), and an **ask** emails
+Participants are the people a product team can email to ask for feedback: employees, paid participants, beta
+customers, sales people, customers. Every signed-in user can keep lists of them. People can be brought into a project (directly or through a list), and an **ask** emails
 them a feedback form or a link. Answers to a form link are attributed to the person and the ask.
 
-Pages: **LISTEN → Participants** (`/participants`), and a project's participants. The unsubscribe page is
-`/unsubscribe` (public).
+Pages: **Participants** in the sidebar (Validate section, `/participants`), and a project's **Participants** tab
+(`/projects/{id}?tab=participants`). The unsubscribe page is `/unsubscribe` (public).
 
 ## Setup
 
 | What | Where |
 |---|---|
-| Sending email | Deploy with `-c emailFrom=noreply@your-domain.example`. The SES identity of that domain must be **verified**, and the account **out of the SES sandbox** in the deployment region; otherwise SES refuses every send. Without `emailFrom`, everything works except asks (`409 email_not_configured`) and the feedback boards' own sign-in. |
+| Sending email | Deploy with `-c emailFrom=noreply@your-domain.example`. The SES identity of that domain must be **verified**, and the account **out of the SES sandbox** in the deployment region; otherwise SES refuses every send. Without `emailFrom`, everything works except asks (`409 email_not_configured`); the feedback boards' sign-in then uses Cognito's own sender ([feature-requests.md](feature-requests.md#sign-in-a-separate-user-pool)). |
 | External people, daily cap, sender name | Administration → Privacy & access → Users → participant email card, or `PUT /participants/settings` (admin) |
-| Company domains | Administration → Privacy & access → **Boards** (moved there in 5.36, same setting), or `PUT /participants/settings` (admin) |
+| Company domains | Administration → Privacy & access → **Boards**, or `PUT /participants/settings` (admin) |
 
 Settings (`SETTINGS` / `engagement` in the participants table):
 
@@ -140,5 +140,5 @@ Table `voc-participants-<suffix>` (pk/sk, index `gsi1`, TTL `ttl`, the Core KMS 
 - **Erasure** (`DELETE /participants/people/{id}`, admin) deletes the person, the email guard, every
   membership (both sides, `member_count` adjusted), the project links, every token and the person's ask mirrors.
   Each recipient row keeps only `person_id` and its status, so an ask's counts stay correct while nothing on it
-  identifies the person. Answers already submitted are feedback data: erase them with Administration → Privacy
-  ([docs/source-policies.md](source-policies.md)).
+  identifies the person. Answers already submitted are feedback data: erase them with Administration → Privacy &
+  access → Source policies ([source-policies.md](source-policies.md)).
