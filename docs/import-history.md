@@ -5,14 +5,14 @@ and the warnings and errors the import returned. Administrators read the records
 **Import history** section at the bottom of the Data sources page (`/scrapers`), and through two
 admin-only API routes. Records are kept for **90 days**.
 
-The record is the audit trail only. Re-processing a run (#144) and deleting a run's data (#143)
-are separate features; both can target a run once it has an id.
+The record is an audit trail: reading it changes nothing. To run one S3 import file through the
+ingestor again, see [data-lake-structure.md → Reprocessing a file](data-lake-structure.md#reprocessing-a-file).
 
 ## What writes a record
 
 | Entry point | Method | Source label | Actor |
 |---|---|---|---|
-| `POST /scrapers/manual/confirm` (paste a review page, then confirm) | `paste` | the detected origin (`g2`, a domain) | the caller's Cognito sub and email |
+| `POST /scrapers/manual/confirm` (paste a review page, then confirm) | `paste` | the detected origin (for example a review site's domain) | the caller's Cognito sub and email |
 | `POST /scrapers/manual/csv-upload` | `csv` | the upload's `default_source` (default `csv_upload`) | the caller |
 | `POST /scrapers/manual/json-upload` | `json` | the source profile id (`manual_import` by default) | the caller |
 | The AI assistant's `import_reviews` (it calls json-upload with `import_origin: 'assistant'`) | `assistant` | the source name the user gave (`source_label`, at most 120 characters, control characters removed; the profile id when blank) | the approving user |
@@ -65,8 +65,8 @@ expired rows up to a few days late; the routes hide a row past its `ttl`.
 
 Writing the record never fails an import. A DynamoDB error is logged as a warning
 (`Import run record not written`) and the import answers as before. The writer is
-`lambda/shared/import_runs.py`, shared by the manual-import Lambda and the S3 import ingestor
-(both already held read/write access to `voc-aggregates`; no IAM change).
+`lambda/shared/import_runs.py`, shared by the manual-import Lambda and the S3 import ingestor,
+which both have read/write access to `voc-aggregates`.
 
 ## API
 
@@ -86,7 +86,5 @@ Both routes are on the manual-import Lambda and admin-only (its module middlewar
   their own run rows: `SOURCE_RUN#{source}` (manual "Run now" of a plugin) and `SCRAPER_RUN#{id}`
   (`GET /scrapers/{id}/status`, latest run only).
 
-Possible follow-ups: show plugin and scraper runs in the same history, keep more than the latest
-scraper run, stamp `run_id` on each imported feedback item so "which run created these records" is
-one lookup (today it is the raw file for CSV and JSON uploads, and `manual_import_job_id` for pastes),
-and record who uploaded an S3 file (the presigned upload could carry the uploader as object metadata).
+To find which run created a feedback item, use the archived raw file for CSV and JSON uploads
+(`raw_s3_key`) and the item's `manual_import_job_id` for pastes; items do not carry a `run_id`.
