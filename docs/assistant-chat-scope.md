@@ -3,7 +3,7 @@
 The filters a user has on screen limit what the AI assistant reads. They act as a **floor**: the
 assistant can narrow within them, but it never reads feedback outside them. This applies to the
 filters of the Categories and Problem Analysis pages, and to the filter panel on the AI Chat page
-(`/chat`). The design comes from PR #429 by @aws-bryan.
+(`/chat`). The design was contributed by @aws-bryan.
 
 ## The filter panel on /chat
 
@@ -24,10 +24,10 @@ at once). The choices list what the time window holds (`GET /feedback/entities`)
 The scope belongs to one conversation and lives in the browser tab's memory: a new conversation,
 or a reload, starts with no filters. It is sent with every turn of that conversation.
 
-The count is read from `GET /metrics/sentiment`, the existing count route that takes every filter
-the panel offers. A sentiment filter reads its bucket, and several categories are one call (`category=a,b` is any
-of them). No new API route was added. A Usefulness filter set on Categories or Problem Analysis is part
-of the floor (`unrated` = a review without a band); the panel itself has no Usefulness control yet.
+The count is read from `GET /metrics/sentiment`, the count route that takes every filter the panel
+offers. A sentiment filter reads its bucket, and several categories are one call (`category=a,b` is any
+of them). A Usefulness filter set on Categories or Problem Analysis is part of the floor (`unrated` = a
+review without a band); the panel itself has no Usefulness control.
 
 ## The wire contract
 
@@ -80,10 +80,10 @@ part of the floor: they change how Problem Analysis groups reviews, not which re
   every one of them; category and sentiment on `get_entities` and most metrics), the tool refuses
   and points to `search_feedback`, rather than read past the user's filters. `list_feedback` stops
   paging at the scope's `limit`.
-- With no page filters and no scope, every tool behaves as before.
+- With no page filters and no scope, there is no floor and the tools read with the model's arguments only.
 
-The caller's category and source access is applied as well, as before (`GET /feedback/access`); the
-floor only narrows further.
+The caller's category and source access always applies as well (`GET /feedback/access`); the floor
+only narrows further.
 
 The filter values are user data. They appear in the `<context>` block of the user turn ("Filters
 set on the page" and "Filters set in the chat filter panel"), never in the system prompt; the system
