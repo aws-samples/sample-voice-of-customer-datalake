@@ -27,6 +27,8 @@
     {"key": "frontend:src/api/designSystemApi.ts#CreatedReference.reference", "reason": "Decoder output; the create-reference envelope is validated here (wire/decoder class: a decoded wire shape is kept whole)."},
     {"key": "frontend:src/assistant/approvals/registry.ts#ToolSpec.Preview.page", "reason": "Shared `{args, page}` preview signature: every preview gets the page, only some read it (cosmetic)."},
     {"key": "frontend:src/api/projectsApi.ts#projectsApi.createProject.success", "reason": "Envelope member of the create answer (fetchApi<{success; project}> wire type)."},
-    {"key": "frontend:vendorChunkGroups.ts#*", "reason": "Build helper read by vite.config.ts (the Rolldown vendor chunk groups); the frontend program is tsconfig.test.json, which covers src/ only, so the config's read is invisible here and only vendorChunkGroups.test.ts shows."}
+    {"key": "frontend:vendorChunkGroups.ts#vendorChunkGroups", "reason": "Build helper at voc-datalake/frontend/vendorChunkGroups.ts (beside vite.config.ts, not under src/), read by vite.config.ts; the frontend program is tsconfig.test.json, which covers src/ only, so only vendorChunkGroups.test.ts shows."},
+    {"key": "frontend:vendorChunkGroups.ts#isInPackage", "reason": "Module-private helper of vendorChunkGroups (same file, same reason)."},
+    {"key": "frontend:vendorChunkGroups.ts#VendorChunkGroup", "reason": "Return type of vendorChunkGroups (same file, same reason)."}
   ]
 }

@@ -41,7 +41,7 @@ current LTS line). The deployed Lambdas and the API do not change.
 - **CI** runs Node 26 instead of 22, and `actions/checkout`, `setup-node`, `setup-python` and `upload-artifact`
   move to v7 (still pinned by commit SHA).
 - **Held on purpose**, with the reasons in [docs/dependencies.md → Held updates](docs/dependencies.md#held-updates):
-  `jsdom` 26 (newer versions break 61 accessible-name assertions through a `dom-accessibility-api` bug),
+  `jsdom` held at 26 (27 and later break 61 accessible-name assertions through a `dom-accessibility-api` bug),
   `cdk-nag` 2 (v3 removes the suppression API this app uses), knip 6.44.1 in the frontend, and mutmut 2.
 
 ### Upgrade notes
