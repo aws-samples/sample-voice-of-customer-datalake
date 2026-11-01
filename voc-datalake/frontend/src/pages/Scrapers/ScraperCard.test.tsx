@@ -173,7 +173,7 @@ describe('ScraperCard admin gate on Run and Delete', () => {
     it('does not delete the scraper', async () => {
       renderCard(withUrl(), false)
 
-      await expectAdminGatedButton('lucide-trash2', onDelete)
+      await expectAdminGatedButton('lucide-trash-2', onDelete)
     })
   })
 
@@ -187,7 +187,7 @@ describe('ScraperCard admin gate on Run and Delete', () => {
     it('deletes the scraper', async () => {
       renderCard(withUrl(), true)
 
-      await expectEnabledButtonFires('lucide-trash2', onDelete)
+      await expectEnabledButtonFires('lucide-trash-2', onDelete)
     })
   })
 
