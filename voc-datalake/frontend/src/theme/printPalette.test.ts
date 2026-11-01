@@ -80,11 +80,9 @@ describe('KIRO_LIGHT_TINT_HEX', () => {
 })
 
 /** Every PDF / print renderer: the files that style with inline hex because CSS variables do not reach print. */
-const PRINT_FILES = [
-  ...readdirSync(resolve(__dirname, '..'), { recursive: true, encoding: 'utf8' })
-    .filter((rel) => /PDF[A-Za-z]*\.tsx$|pdfParts\.tsx$|BreakdownTable\.tsx$|printUtils\.ts$|lib\/sentiment\.ts$/.test(rel))
-    .filter((rel) => !rel.includes('.test.')),
-]
+const PRINT_FILES = readdirSync(resolve(__dirname, '..'), { recursive: true, encoding: 'utf8' })
+  .filter((rel) => /PDF[A-Za-z]*\.tsx$|pdfParts\.tsx$|BreakdownTable\.tsx$|printUtils\.ts$|lib\/sentiment\.ts$/.test(rel))
+  .filter((rel) => !rel.includes('.test.'))
 
 describe('PDF / print colours (E2E F12)', () => {
   const tokenHexes = PRINT_TOKENS.map((token) => lightToken(token))
