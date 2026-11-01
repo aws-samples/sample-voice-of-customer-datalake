@@ -1,6 +1,6 @@
 # The morning brief
 
-Home is each user's own morning brief: a greeting, three metric tiles, the brief's cards,
+Home (`/`) is each user's own morning brief: a greeting, three metric tiles, the brief's cards,
 "Things to do", the setup checklist and "How it works". The brief's settings live on
 **Account → Morning brief** (`/account?tab=briefing`), with every other personal preference
 ([Account or Administration](account-vs-admin.md)). The brief is
@@ -31,6 +31,18 @@ Refresh means no model call and no build.
 - **Brief settings** live on Account → Morning brief. Until the reader subscribes it shows
   the Subscribe control (pick the hour, then Subscribe) and the brief language; once subscribed:
   on/off (off unsubscribes), time, brief language, custom instructions and email.
+- **Collapsible sections**: "Your setup checklist" and "How it works" have a
+  chevron heading and start expanded. The checklist's and "How it works"' **Skip** are stored per
+  user (`PUT /settings/my-onboarding {state: skipped}` / `{guide: skipped}`): a skipped section
+  starts collapsed on every browser, and expanding it un-skips it (`state: active` /
+  `guide: open`). "Hide for now" (one-day snooze) and "Don't show again" still take the checklist
+  off Home; the hero's "Show setup checklist" brings it back.
+
+`GET|PUT /settings/my-onboarding` (`lambda/shared/onboarding.py`): `{state: active | hidden |
+dismissed | skipped, start_page: home | dashboard, guide: open | skipped, subscribe_prompt: shown |
+dismissed, dismiss_decision_run: <agent run id>}`, each optional, at least one; a PUT changes only
+the fields it names. The GET adds `hidden_until`, `updated_at`, `visible` (computed on the server
+clock), `dismissed_decision_runs` (the 50 newest closed run ids) and the first-run `signals`.
 
 ## Which language
 
@@ -47,22 +59,10 @@ brief language. The preferences row carries `language` and `language_source`:
   too). It wins for Refresh, the scheduled brief and the email. **Same as the app (<language>)**
   goes back to `ui`.
 
-A row stored before 5.17 has no `language_source` and counts as `ui`: Subscribe wrote every such
+A row stored by a release before 5.17.00 has no `language_source` and counts as `ui`: Subscribe wrote every such
 row with the reader's UI language, or the row holds the `en` default. A `PUT` naming `language`
 without `language_source` is an explicit choice (`chosen`). The scheduled worker has nobody in
 front of the screen and always uses the stored language.
-- **Collapsible sections**: "Your setup checklist" and "How it works" have a
-  chevron heading and start expanded. The checklist's and "How it works"' **Skip** are stored per
-  user (`PUT /settings/my-onboarding {state: skipped}` / `{guide: skipped}`): a skipped section
-  starts collapsed on every browser, and expanding it un-skips it (`state: active` /
-  `guide: open`). "Hide for now" (one-day snooze) and "Don't show again" still take the checklist
-  off Home; the hero's "Show setup checklist" brings it back.
-
-`GET|PUT /settings/my-onboarding` (`lambda/shared/onboarding.py`): `{state: active | hidden |
-dismissed | skipped, start_page: home | dashboard, guide: open | skipped, subscribe_prompt: shown |
-dismissed, dismiss_decision_run: <agent run id>}`, each optional, at least one; a PUT changes only
-the fields it names. The GET adds `hidden_until`, `updated_at`, `visible` (computed on the server
-clock), `dismissed_decision_runs` (the 50 newest closed run ids) and the first-run `signals`.
 
 ## How a brief is built
 
@@ -208,12 +208,12 @@ The draft lives in memory only (`useAssistantUiStore.pendingDraft`) and is never
   anywhere. Its exact DynamoDB grants are pinned in `lib/stacks/memory-agents-dynamodb-grants.json`
   and enforced on every backend test.
 
-## Live test
+## Try it
 
 1. Sign in, open Home, press **Refresh**. The button shows "Generating...", and the cards appear
    when the build ends (polled every 3 seconds).
 2. Press **Refresh** again at once: "Your brief is up to date."
-   Switch the app to Polski (Account → Language & theme) and press **Refresh**: the brief is
+   Switch the app to Polski (Account → Preferences → Language & theme) and press **Refresh**: the brief is
    rebuilt in Polish. On Account → Morning brief, **Brief language** reads "Taki jak w aplikacji
    (Polski)"; pick English, press Refresh on Home: the brief stays English.
 3. Press **Investigate** on a card. The assistant opens a new conversation with the prompt
