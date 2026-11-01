@@ -167,7 +167,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   }
 
   const integrationsLambda = new lambda.Function(stack, 'IntegrationsApi', {
-    ...snapStartFunctionProps(), // GET /sources/status cold start (lib/utils/snapstart.ts)
+    ...snapStartFunctionProps(stack), // GET /sources/status cold start (lib/utils/snapstart.ts)
     functionName: ctx.uniqueName(INTEGRATIONS_API_FUNCTION_BASE_NAME),
     runtime: lambda.Runtime.PYTHON_3_14,
     architecture: lambda.Architecture.ARM_64,

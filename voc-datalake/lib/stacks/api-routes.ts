@@ -7,7 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NagSuppressions } from 'cdk-nag';
 import type { PluginManifest } from '../plugin-loader';
-import { snapStartAlias } from '../utils/snapstart';
+import { snapStartInvokeTarget } from '../utils/snapstart';
 import {
   publicBallotEndpointSuppressions,
   publicFeedbackEndpointSuppressions,
@@ -40,15 +40,15 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   } = targets;
 
   // Lambda integrations — every one frugal (see frugalIntegration below).
-  // SnapStart functions are integrated through their published `live` alias —
-  // `$LATEST` is never snapshotted (lib/utils/snapstart.ts).
+  // The SnapStart-listed functions integrate the plain function by default and their published
+  // `live` alias with `-c snapStart=true` — `$LATEST` is never snapshotted (lib/utils/snapstart.ts).
   const metricsIntegration = frugalIntegration(metricsLambda);
   const feedbackEditIntegration = frugalIntegration(feedbackEditLambda);
-  const integrationsIntegration = frugalIntegration(snapStartAlias(integrationsLambda));
+  const integrationsIntegration = frugalIntegration(snapStartInvokeTarget(integrationsLambda));
   const scrapersIntegration = frugalIntegration(scrapersLambda);
   const settingsIntegration = frugalIntegration(settingsLambda);
   const usersIntegration = frugalIntegration(usersLambda);
-  const feedbackFormIntegration = frugalIntegration(snapStartAlias(feedbackFormLambda));
+  const feedbackFormIntegration = frugalIntegration(snapStartInvokeTarget(feedbackFormLambda));
   const chatIntegration = frugalIntegration(chatLambda);
   const chatStreamIntegration = frugalIntegration(chatStreamLambda);
   const projectsIntegration = frugalIntegration(projectsLambda);
@@ -57,7 +57,7 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   const s3ImportIntegration = frugalIntegration(s3ImportLambda);
   const dataExplorerIntegration = frugalIntegration(dataExplorerLambda);
   const ballotsIntegration = frugalIntegration(ballotsLambda);
-  const memoryIntegration = frugalIntegration(snapStartAlias(memoryLambda));
+  const memoryIntegration = frugalIntegration(snapStartInvokeTarget(memoryLambda));
   const agentsIntegration = frugalIntegration(agentsLambda);
 
   // ============================================

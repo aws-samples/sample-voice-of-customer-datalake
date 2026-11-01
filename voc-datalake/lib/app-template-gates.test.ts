@@ -29,6 +29,7 @@ import { z } from 'zod';
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
 import { claudeInvokeStatements, e2eProfileModels, missingModelGrants } from './test-support/bedrock-grants';
 import { cleanupAssemblyDirs, diagnostics, synthApp, type SynthResult } from './test-support/synth-app';
+import { TemplateResourcesSchema } from './test-support/template-resources';
 import { byCodeUnit } from './utils/compare';
 import { RESOURCE_STAR_ACTIONS, isReviewedResourceStarAction } from './utils/resource-star-actions';
 
@@ -39,15 +40,11 @@ const SHAPES: { readonly default: SynthResult; readonly allFeatures: SynthResult
 };
 afterAll(cleanupAssemblyDirs);
 
-const ResourcesSchema = z.record(z.string(), z.object({
-  Type: z.string(),
-  Properties: z.record(z.string(), z.unknown()).optional().transform((p) => p ?? {}),
-}));
 const OutputsSchema = z.record(z.string(), z.object({ Value: z.unknown(), Export: z.object({ Name: z.unknown() }).optional() }));
 
 interface StackTemplate {
   readonly stack: string;
-  readonly resources: z.infer<typeof ResourcesSchema>;
+  readonly resources: z.infer<typeof TemplateResourcesSchema>;
   readonly outputs: z.infer<typeof OutputsSchema>;
 }
 
@@ -56,7 +53,7 @@ function stacksOf(result: SynthResult): StackTemplate[] {
     const template = result.template(stack);
     return {
       stack,
-      resources: ResourcesSchema.parse(template.Resources ?? {}),
+      resources: TemplateResourcesSchema.parse(template.Resources ?? {}),
       outputs: OutputsSchema.parse(template.Outputs ?? {}),
     };
   });

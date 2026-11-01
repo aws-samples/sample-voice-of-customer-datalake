@@ -105,8 +105,8 @@ judged. Re-measure after a run that exercises it (ingestion, research, document 
 
 **Cost of a raise.** Lambda bills duration in GB-seconds, so doubling memory doubles the per-call charge when the
 duration does not change, and costs less when the calls get faster: +100 % for a doubling, +50 % for 1,024 → 1,536,
-+73 % for 1,024 → 1,769. For most functions here that is cents to a few dollars a month. A SnapStart function also
-pays a cache charge proportional to its memory (below).
++73 % for 1,024 → 1,769. For most functions here that is cents to a few dollars a month. A SnapStart function
+(opt-in, below) also pays a cache charge proportional to its memory.
 
 ## AWS Lambda Power Tuning
 
@@ -204,13 +204,13 @@ as relative; Lambda runs 3.14 on Graviton.
    `aws_xray_sdk.core`.
 2. **botocore's model directory scans, 200–260 ms, are kept.** The first client or resource per model
    type calls `Loader.list_available_services`, which lists every service directory in botocore's data path.
-   Patching the loader would mean changing private internals of the runtime-managed botocore. SnapStart (below)
-   absorbs the cost instead.
+   Patching the loader would mean changing private internals of the runtime-managed botocore. With SnapStart
+   (opt-in, below) the snapshot absorbs the cost; without it, the first request pays it.
 3. **boto3 itself (140–160 ms), Powertools' event handler, and pydantic for `enable_validation=True`
    (90–110 ms) are kept.** boto3 comes with the runtime, and validation is behaviour (typed parameters and 422s).
 4. **Module-level clients (180–300 ms of the handler's own time) are kept.** Each slow route needs the
    client it builds. Init is billed like Duration, so making them lazy would only move the cost into the first
-   request. Under SnapStart, work at import is free on restore.
+   request. Under SnapStart (opt-in), work at import is free on restore.
 
 The API bundles ship only `api/<handler>.py` + `shared/` + prompts and static files (`createApiLambdaCode`).
 No API bundle ships or imports `plugins/` or another handler.
@@ -248,12 +248,29 @@ dependencies) and lxml (12 MB) now go only to the functions that use them.
   certifi: 1.8 MB together) are each under the 2 MB size at which `py_layers` calls a library a split candidate.
 
 <a id="snapstart-on-for-the-four-slow-apis"></a>
+<a id="snapstart-off-by-default"></a>
 
-### SnapStart: on for four APIs
+### SnapStart: off by default, opt-in for four APIs
 
-SnapStart replaces a cold start with a restore from a snapshot taken at deploy time (restore p50 about
-460–500 ms). It supports Python 3.12 and later on x86_64 and arm64 in most commercial Regions (check the AWS docs
+SnapStart is **off by default**. It is a fixed monthly cost (the snapshot cache below bills for as long as a version
+is active, used or not), and this project runs fully serverless with no fixed cost by default
+([TENETS.md](../TENETS.md), tenet 7). We would rather a first request wait a couple of seconds longer and make the
+function start faster (the import trimming above, right-sized memory) than pay to hide a slow start. SnapStart, like
+provisioned concurrency, can come later, once the functions are well architected. The opt-in flags are where that lands: a
+deployment that chooses performance over the lowest bill turns them on, and the default stays the cost-optimised
+sample.
+
+**Opting in.** Deploy with `-c snapStart=true` (or `"snapStart": true` in `voc-datalake/cdk.context.json`); absent or
+`false` = off, anything else fails the synth. `lib/utils/snapstart.ts` is the one place the flag is read. With it off,
+the four functions below have no `SnapStart` property, no version and no alias, and API Gateway integrates the plain
+function like every other API Lambda. The lib/fixed-cost-guard.test.ts gate fails the CDK suite if SnapStart (or
+any other fixed-cost resource) appears in a default synth.
+
+**Why someone might opt in.** SnapStart replaces a cold start with a restore from a snapshot taken at deploy time
+(restore p50 about 460–500 ms, measured on these four APIs while it was on). It supports Python 3.12 and later on x86_64 and arm64 in most commercial Regions (check the AWS docs
 for your Region), and is not compatible with provisioned concurrency, EFS, or ephemeral storage over 512 MB.
+
+What `-c snapStart=true` deploys:
 
 - **Functions:** `IntegrationsApi`, `FeedbackFormApi`, `MemoryApi` and `McpTokensApi`
   (`lib/utils/snapstart.ts`, `SNAPSTART_FUNCTION_IDS`), the APIs whose first request was slowest.
@@ -263,9 +280,11 @@ for your Region), and is not compatible with provisioned concurrency, EFS, or ep
   invoke runs `$LATEST`, which is never snapshotted. Internal callers that invoke these functions by name
   (the AI assistant, MCP, agents) still run `$LATEST`, so their behaviour and IAM are unchanged and they
   pay a normal cold start.
-- **Resource budget:** each function adds two resources to VocApiStack, which must stay at least 75 resources under
-  CloudFormation's 500 limit (`api-stack-snapstart.test.ts`). SnapStart for every API Lambda does not fit.
-- **Priming:** `shared/snapstart.py` runs, in a before-snapshot hook, the table or client factories the slow
+- **Resource budget:** each function adds two resources to VocApiStack (+8 in all), which must stay at least 75
+  resources under CloudFormation's 500 limit with the flag on (`api-stack-snapstart.test.ts` measures that shape).
+  SnapStart for every API Lambda does not fit.
+- **Priming:** `shared/snapstart.py` registers the hooks in all four handlers either way; Lambda calls them only when
+  SnapStart takes a snapshot. It runs, in a before-snapshot hook, the table or client factories the slow
   route would otherwise build on its first request: memory and aggregates tables (memory), projects and jobs
   tables (tokens), the plugin-defaults parse (integrations). Feedback forms builds its clients at import. The
   factories make no network call, and a failing factory is logged, never fatal. Two more warmers run in all four
@@ -291,7 +310,7 @@ for your Region), and is not compatible with provisioned concurrency, EFS, or ep
   - Python's hash seed is shared across restores. That is accepted: it matters only for hash-flooding
     resistance on untrusted dict keys.
 
-**Cost.** Published Lambda prices (check the pricing page for your Region):
+**Cost with `-c snapStart=true`.** Published Lambda prices (check the pricing page for your Region):
 
 - **Cache:** $0.0000015046 per GB-s for as long as a version is active, with a 3-hour minimum per
   published version. At the current sizes (integrations 1,769 MB, memory 1,536 MB, feedback forms and MCP tokens
@@ -301,7 +320,7 @@ for your Region), and is not compatible with provisioned concurrency, EFS, or ep
 - **Deploys:** a code change publishes a new version, and CloudFormation waits for its snapshot, adding a
   few minutes per function.
 
-**Verifying after a deploy (read-only).** A restored invocation's REPORT line has `Restore Duration` in
+**Verifying after a deploy with the flag on (read-only).** A restored invocation's REPORT line has `Restore Duration` in
 place of `Init Duration`:
 
 ```
@@ -312,14 +331,20 @@ filter @type = "REPORT" and @message like /Restore Duration/
 
 API Gateway requests should show restores. Calls by unqualified name still show Init.
 
-**Rollback:** remove the id from `SNAPSTART_FUNCTION_IDS`, the matching `snapStartFunctionProps()` spread and
-`snapStartAlias()` call. The integration falls back to the function.
+**Turning it off again:** deploy without the flag (or with `-c snapStart=false`). CloudFormation deletes the four
+versions (their `DeletionPolicy` is `Delete`, so no snapshot keeps billing) and the `live` aliases, and API Gateway
+integrates the functions again. To drop one function only, remove its id from `SNAPSTART_FUNCTION_IDS` and the
+matching `snapStartFunctionProps()` spread and `snapStartInvokeTarget()` call.
 
 ### Provisioned concurrency: not used
+
+Provisioned concurrency is a fixed cost too ([TENETS.md](../TENETS.md), tenet 7), and the fixed-cost gate fails a
+synth that adds it. Reserved concurrency is different: it only caps a function's share of the account pool and
+costs nothing (the MCP endpoint keeps its 20, `-c mcpReservedConcurrency`).
 
 Provisioned concurrency (PC) keeps environments initialised (a start in tens of milliseconds), but it cannot be
 combined with SnapStart on the same version and it bills for every hour it exists: $0.0000033334 per GB-s on Arm,
 730 hours a month, plus a lower duration rate while it serves. One PC at 1,024 MB costs about $8.76 a month, so one
 PC on each of the four SnapStart functions at their current sizes would be about $46 a month. One PC covers one
 concurrent request; a burst beyond it cold-starts, which SnapStart then no longer covers for that version. The
-sample therefore relies on SnapStart. Confirm prices in the AWS Pricing Calculator before adding PC yourself.
+sample therefore uses neither by default. Confirm prices in the AWS Pricing Calculator before adding PC yourself.

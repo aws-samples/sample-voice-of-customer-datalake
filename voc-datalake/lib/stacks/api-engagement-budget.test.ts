@@ -19,11 +19,16 @@
  * permission and alias). Explicit routes rather than two proxies (14 fewer) so the anonymous surface is
  * pinned route by route. With 5.60.00's company persona routes underneath, the all-plugins synth is 384.
  * The ceiling stays 388 (the 378 + 10 set before the rebase; 384 is under it); the 425 gate is unchanged.
+ *
+ * 5.69.00 turned SnapStart off by default (TENETS.md, tenet 7): the default all-plugins synth drops the
+ * four versions and aliases (384 → 376). The ceiling is held by the LARGEST shape, `-c snapStart=true`
+ * (384, the old one), so opting in can never push the stack over it.
  */
 import { describe, expect, it } from 'vitest';
 
 import { apiTemplateAllPlugins, discoverPluginIds, synthApiTemplate } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { SNAPSTART_CONTEXT_KEY } from '../utils/snapstart';
 
 /** The release ceiling after 5.63.00 (MCP OAuth): 378 + 10, set before the rebase onto 5.60.00; the synth is 384. */
 const ENGAGEMENT_RELEASE_CEILING = 388;
@@ -38,6 +43,14 @@ describe('VocApiStack resource budget with the engagement API', () => {
     console.info(`VocApiStack resources, all plugins: ${count}`);
     expect(count).toBeLessThanOrEqual(ENGAGEMENT_RELEASE_CEILING);
   }, SYNTH_TIMEOUT_MS);
+
+  it('keeps every-plugin synth with -c snapStart=true (+ a version and an alias for four functions) under it too', () => {
+    const withSnapStart = synthApiTemplate({ [SNAPSTART_CONTEXT_KEY]: 'true' }, discoverPluginIds());
+    const count = resourceCount(withSnapStart.toJSON().Resources);
+    console.info(`VocApiStack resources, all plugins + snapStart: ${count}`);
+    expect(count).toBeLessThanOrEqual(ENGAGEMENT_RELEASE_CEILING);
+    expect(count - resourceCount(apiTemplateAllPlugins().toJSON().Resources)).toBe(8);
+  }, SYNTH_TIMEOUT_MS * 2);
 
   it('adds no resource with -c emailFrom (the board authorizer is on every deployment since 5.45.00)', () => {
     const withEmail = synthApiTemplate({ emailFrom: 'noreply@voc.example.com' }, discoverPluginIds());

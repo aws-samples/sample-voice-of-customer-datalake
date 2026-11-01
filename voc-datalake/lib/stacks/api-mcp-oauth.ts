@@ -194,7 +194,7 @@ export class McpOAuth {
 
   private wireRoutes(): void {
     const { api, globalMcp } = this.props;
-    const integration = new apigateway.LambdaIntegration(globalMcp.tokensAlias,
+    const integration = new apigateway.LambdaIntegration(globalMcp.tokensInvokeTarget,
       { proxy: true, scopePermissionToMethod: false });
     const anonymous = (resource: apigateway.IResource, verb: string): void => {
       const method = resource.addMethod(verb, integration, { authorizationType: apigateway.AuthorizationType.NONE });
