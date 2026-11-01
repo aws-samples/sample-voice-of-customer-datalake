@@ -62,7 +62,7 @@ describe('AgentDetail — a last run that needs a decision', () => {
     routes({ ...AGENT, stats: { last_run_status: 'needs_human' } })
     renderDetail('/agents/ag_1?tab=instructions')
     const banner = await screen.findByText('The last run of this agent needs your decision.')
-    await userEvent.click(within(banner.parentElement ?? banner).getByRole('button', { name: 'Review the run' }))
+    await userEvent.click(within(banner.closest('[role="status"]') ?? banner).getByRole('button', { name: 'Review the run' }))
     expect(await screen.findByRole('tab', { name: /Runs/, selected: true })).toBeInTheDocument()
     expect(screen.queryByText('The last run of this agent needs your decision.')).not.toBeInTheDocument()
   })
