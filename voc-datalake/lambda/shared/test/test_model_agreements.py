@@ -100,6 +100,12 @@ class TestWithAccess:
 
         elapsed = time.monotonic() - started
         release.set()
+        # The abandoned read finishes on its own and fills the cache; wait for it so it cannot land
+        # after the fixture's clear (deterministic, bounded).
+        deadline = time.monotonic() + 5
+        while HAIKU45.removeprefix('global.') not in image_model_status._access_cache and time.monotonic() < deadline:
+            time.sleep(0.01)
+        image_model_status._access_cache.clear()
         assert [row['access']['status'] for row in rows] == ['available', 'unknown']
         assert elapsed < 2
 

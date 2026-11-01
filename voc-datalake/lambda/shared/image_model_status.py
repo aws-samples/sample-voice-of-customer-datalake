@@ -152,6 +152,12 @@ def _client(service: Literal['bedrock', 'bedrock-runtime'], region: str) -> Any:
     return boto3.client(service, region_name=region, config=config)
 
 
+def prime_control_client(region: str) -> None:
+    """Create the cached control-plane client before threads share it (``boto3.client`` is not
+    thread-safe to create; the cached client is safe to use from several threads)."""
+    _client('bedrock', region)
+
+
 def image_access(model_id: str, region: str) -> ImageAccess:
     """The account's access to the image model in its region (cached 5 minutes). Never raises."""
     cached = _access_cache.get(model_id)

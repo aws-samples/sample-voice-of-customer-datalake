@@ -16,11 +16,16 @@ MAX_URLS_PER_SCRAPER: Final = 25
 
 
 def scraper_list_error(raw: str, configs: object) -> str | None:
-    """Why a whole ``webscraper_configs`` value (``raw``, parsed as ``configs``) must not be stored, else None."""
+    """Why a whole ``webscraper_configs`` value (``raw``, parsed as ``configs``) must not be stored, else None.
+
+    The list bounds only. ``POST /scrapers`` also checks each scraper's own shape (its id pattern,
+    8 KiB per scraper, field lengths) because it stores one edited scraper; for the whole list the
+    48 KiB total is what protects the shared secret, and the ingestor ignores what it cannot read.
+    """
     if len(raw.encode()) > MAX_WEBSCRAPER_CONFIGS_BYTES:
         return f'configs may be at most {MAX_WEBSCRAPER_CONFIGS_BYTES} bytes'
     if not isinstance(configs, list) or not all(isinstance(config, dict) for config in configs):
-        return 'configs must be a JSON array of scraper configurations.'
+        return 'configs must be a JSON array of scraper configurations'
     if len(configs) > MAX_SCRAPERS:
         return f'At most {MAX_SCRAPERS} scrapers are allowed'
     for config in configs:

@@ -162,7 +162,7 @@ def _validate_webscraper_configs(source: str, body: dict) -> None:
     try:
         configs = json.loads(raw)
     except ValueError as exc:
-        raise ValidationError('configs must be a JSON array of scraper configurations.') from exc
+        raise ValidationError('configs must be a JSON array of scraper configurations') from exc
     error = scraper_list_error(raw, configs)
     if error:
         raise ValidationError(error)
