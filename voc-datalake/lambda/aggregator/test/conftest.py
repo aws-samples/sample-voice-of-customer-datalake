@@ -173,15 +173,11 @@ def sample_pre_deploy_feedback_item():
 
 @pytest.fixture
 def sample_dynamodb_stream_record(sample_feedback_item):
-    """Create a sample DynamoDB stream record."""
-    # Convert to DynamoDB format
-    def to_dynamodb_format(item):
-        return to_stream_image(item)
-
+    """Create a sample DynamoDB stream record (the item in DynamoDB's wire format)."""
     return {
         'eventName': 'INSERT',
         'dynamodb': {
-            'NewImage': to_dynamodb_format(sample_feedback_item)
+            'NewImage': to_stream_image(sample_feedback_item)
         }
     }
 
