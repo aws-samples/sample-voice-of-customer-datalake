@@ -31,7 +31,10 @@ export const KINDS = Object.freeze({
 /**
  * Paths shaped like a secret: never sent to a model (an untracked `.env`, key or credentials file that is not
  * gitignored). Wide on purpose; review.mjs NAMES every changed path it leaves out, in the output and in the prompt,
- * so a legitimate file caught here (a `credentials.py`) is visible, never silently unreviewed.
+ * so a legitimate file caught here (a `credentials.py`) is visible, never silently unreviewed. The agents cannot
+ * read them either, enforced by the tools and not the prompt: Kiro's agents deny each glob under any folder in
+ * `toolsSettings.fs_read.deniedPaths` (pinned against this list by review.test.mjs), and Claude Code gets a Read
+ * deny rule for each (CLAUDE_DENY_RULES) and no Grep (a search would print matching lines of a denied file).
  */
 export const SECRET_PATHS = Object.freeze([
   '*.env', '*.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*id_rsa*', '*id_ed25519*',
@@ -91,13 +94,16 @@ export function chooseRunner({ mode, ci, has }) {
 }
 
 /** Claude Code's allow rules: reads inside the repository (the working directory) only; `dontAsk` denies the rest. */
-export const CLAUDE_READ_RULES = 'Read(./**),Grep(./**),Glob(./**)'
+export const CLAUDE_READ_RULES = 'Read(./**),Glob(./**)'
+/** Claude Code's deny rules (deny wins over allow): no read of a secret-shaped path. */
+export const CLAUDE_DENY_RULES = SECRET_PATHS.map((glob) => `Read(./**/${glob})`).join(',')
 
 /**
  * The command for a runner. The prompt goes on stdin (no argument-size limit). Both are read-only AND limited to the
  * repository: Kiro's agent (.kiro/agents/<agent>.json) has only the read tool with `allowedPaths: ['./**']` and
- * nothing trusted, so a read outside needs an approval no-interactive mode cannot give; Claude Code gets only Read,
- * Grep and Glob in `dontAsk` mode with repository-scoped allow rules, no MCP servers and no saved session. The diff is
+ * nothing trusted, so a read outside needs an approval no-interactive mode cannot give; Claude Code gets only Read
+ * and Glob in `dontAsk` mode with repository-scoped allow rules, no MCP servers and no saved session. Neither can
+ * read a SECRET_PATHS file. The diff is
  * untrusted input, so an instruction in it can never reach a shell, a write, or a file such as ~/.aws/credentials.
  */
 export function runnerCommand(runner, { agent, systemPrompt, model }) {
@@ -111,8 +117,8 @@ export function runnerCommand(runner, { agent, systemPrompt, model }) {
   if (runner === 'claude') {
     return {
       command: BINARIES.claude,
-      args: ['-p', '--append-system-prompt', systemPrompt, '--tools', 'Read,Grep,Glob',
-        '--permission-mode', 'dontAsk', '--allowedTools', CLAUDE_READ_RULES,
+      args: ['-p', '--append-system-prompt', systemPrompt, '--tools', 'Read,Glob',
+        '--permission-mode', 'dontAsk', '--allowedTools', CLAUDE_READ_RULES, '--disallowedTools', CLAUDE_DENY_RULES,
         '--strict-mcp-config', '--no-session-persistence', '--output-format', 'text', ...modelArgs],
     }
   }

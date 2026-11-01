@@ -15,6 +15,20 @@
     "fs_read": {
       "allowedPaths": [
         "./**"
+      ],
+      "deniedPaths": [
+        "**/*.env",
+        "**/*.env.*",
+        "**/*.pem",
+        "**/*.key",
+        "**/*.p12",
+        "**/*.pfx",
+        "**/*id_rsa*",
+        "**/*id_ed25519*",
+        "**/*credentials*",
+        "**/*.secret*",
+        "**/*.npmrc",
+        "**/*.netrc"
       ]
     }
   }

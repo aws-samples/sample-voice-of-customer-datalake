@@ -4,7 +4,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { buildPrompt, capDiff, chooseRunner, KINDS, onPath, parseVerdict, runnerCommand } from './lib.mjs'
+import { buildPrompt, capDiff, chooseRunner, KINDS, onPath, parseVerdict, runnerCommand, SECRET_PATHS } from './lib.mjs'
 import { isCi, kindFromArgs } from './review.mjs'
 
 const ROOT = join(import.meta.dirname, '..', '..')
@@ -40,10 +40,12 @@ test('both runners are read-only and take the prompt on stdin', () => {
   assert.ok(!kiro.args.some((arg) => /trust-all/.test(arg)))
   const claude = runnerCommand('claude', { agent: 'tenets-reviewer', systemPrompt: 'S', model: 'm' })
   assert.equal(claude.command, 'claude')
-  assert.deepEqual(claude.args.slice(claude.args.indexOf('--tools'), claude.args.indexOf('--tools') + 2), ['--tools', 'Read,Grep,Glob'])
+  assert.deepEqual(claude.args.slice(claude.args.indexOf('--tools'), claude.args.indexOf('--tools') + 2), ['--tools', 'Read,Glob'])
   assert.ok(claude.args.includes('--strict-mcp-config'))
   assert.deepEqual(claude.args.slice(claude.args.indexOf('--permission-mode'), claude.args.indexOf('--permission-mode') + 4),
-    ['--permission-mode', 'dontAsk', '--allowedTools', 'Read(./**),Grep(./**),Glob(./**)'])
+    ['--permission-mode', 'dontAsk', '--allowedTools', 'Read(./**),Glob(./**)'])
+  assert.deepEqual(claude.args[claude.args.indexOf('--disallowedTools') + 1].split(','), SECRET_PATHS.map((glob) => `Read(./**/${glob})`))
+  assert.equal(claude.args[claude.args.indexOf('--tools') + 1], 'Read,Glob')
   assert.deepEqual(claude.args.slice(-2), ['--model', 'm'])
   assert.throws(() => runnerCommand('other', { agent: 'x', systemPrompt: 'S' }), /unknown runner/)
 })
@@ -270,14 +272,18 @@ test('the commit review sends the commit messages and uses its own agent and cac
 })
 
 // Verified live with kiro-cli 2.37 (5.72.01): an agent with tools ['read'], nothing in allowedTools and
-// toolsSettings.fs_read.allowedPaths ['./**'] reads ./ files without a prompt, and a read of /tmp/… fails in
-// --no-interactive with "tool permission approval is not supported". This pins that configuration.
+// toolsSettings.fs_read.allowedPaths ['./**'] reads ./ files without a prompt; a read of /tmp/… fails in
+// --no-interactive with "tool permission approval is not supported"; a read matching deniedPaths fails with "the
+// arguments supplied are forbidden". Claude Code (dontAsk, the rules above) DENIED a read outside ./ and of a
+// Read-denied ./.env. This pins those configurations.
 test('both Kiro review agents can read only inside the repository, and trust nothing', () => {
   for (const agent of ['tenets-reviewer', 'commit-reviewer']) {
     const config = JSON.parse(readFileSync(join(ROOT, `.kiro/agents/${agent}.json`), 'utf8'))
     assert.deepEqual(config.tools, ['read', 'thinking'], agent)
     assert.deepEqual(config.allowedTools, ['thinking'], agent)
-    assert.deepEqual(config.toolsSettings, { fs_read: { allowedPaths: ['./**'] } }, agent)
+    assert.deepEqual(config.toolsSettings, {
+      fs_read: { allowedPaths: ['./**'], deniedPaths: SECRET_PATHS.map((glob) => `**/${glob}`) },
+    }, agent)
     assert.equal(config.prompt, `file://./prompts/${agent}.md`)
   }
 })
@@ -387,7 +393,12 @@ setInterval(() => {}, 1000)
     const code = await new Promise((resolve) => child.on('exit', (exitCode) => resolve(exitCode)))
     assert.equal(code, 130)
     assert.ok(Date.now() - started < 9000, 'the review exited after the escalation')
-    assert.throws(() => process.kill(agentPid, 0), /ESRCH/, 'the agent is gone')
+    // The kill and the exit share a tick: give the system a moment to reap the agent before asserting it is gone.
+    let alive = true
+    for (let i = 0; i < 30 && alive; i++) {
+      try { process.kill(agentPid, 0); await new Promise((r) => setTimeout(r, 100)) } catch { alive = false }
+    }
+    assert.equal(alive, false, 'the agent is gone')
   } finally {
     rmSync(box.dir, { recursive: true, force: true })
   }

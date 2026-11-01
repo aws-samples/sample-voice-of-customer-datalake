@@ -77,14 +77,18 @@ function runAgent({ command, args }, prompt, { cwd, timeoutMs }) {
     const timer = setTimeout(() => { timedOut = true; stop() }, timeoutMs)
     // A Ctrl-C or kill of this script reaches the agent's group too (it no longer shares ours): SIGTERM, then exit
     // when the agent has closed, or SIGKILL its group and exit after 5 s.
+    // A second signal while waiting SIGKILLs the group at once.
+    let signalled = false
     const onSignal = (signal) => {
       const code = signal === 'SIGINT' ? 130 : 143
+      if (signalled) { signalGroup('SIGKILL'); process.exit(code) }
+      signalled = true
       signalGroup('SIGTERM')
       child.once('close', () => process.exit(code))
       setTimeout(() => { signalGroup('SIGKILL'); process.exit(code) }, 5000)
     }
-    process.once('SIGINT', onSignal)
-    process.once('SIGTERM', onSignal)
+    process.on('SIGINT', onSignal)
+    process.on('SIGTERM', onSignal)
     const done = () => { clearTimeout(timer); process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal) }
     child.stdout.on('data', (chunk) => { output += chunk })
     child.stderr.on('data', (chunk) => { output += chunk; stderr += chunk })
