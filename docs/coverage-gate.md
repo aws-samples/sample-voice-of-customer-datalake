@@ -51,6 +51,9 @@ three use 80 %.
    decimals, so no rounding can trip it.
 3. **A baseline row is stale**: the file reaches the floor now (it graduated), is gone from the report (deleted,
    renamed, no longer measured), or has nothing to measure. Run the refresh below and commit the shorter file.
+   A **local** `scripts/validate.sh` deletes a graduated row itself (`--prune-graduated`), names it and passes, so
+   the shorter baseline goes into the commit before the push; on GitHub Actions the step never edits files, and a
+   graduated row still fails there. The 80 % floor is unchanged: no file is ever asked for more.
 
 It exits 2 (cannot run) on any malformed input: a missing, unreadable or wrongly shaped report, a report with no
 files, a report path outside the repository, a malformed, unsorted or duplicated baseline row. It fails closed.

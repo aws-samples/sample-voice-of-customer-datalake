@@ -19,13 +19,15 @@
  * Reads coverage.py JSON (`--format py`: `files[path].summary`, statements) or vitest's v8 `json-summary`
  * (`--format vitest`: `coverage-summary.json`, lines). A file with nothing to measure (0 statements) is skipped.
  *
- *   node scripts/coverage/check-per-file-coverage.mjs --suite <python|frontend|stream> [--update-baseline | --init]
+ *   node scripts/coverage/check-per-file-coverage.mjs --suite <python|frontend|stream> [--update-baseline | --prune-graduated | --init]
  *   node scripts/coverage/check-per-file-coverage.mjs --format py|vitest --report <f> --baseline <f> --floor <n>
- *        [--base <dir>] [--update-baseline | --init]
+ *        [--base <dir>] [--update-baseline | --prune-graduated | --init]
  *
  * --suite reads scripts/coverage/suites.json, the ONE place each suite's floor is set (human-owned).
  * --update-baseline only DELETES rows (stale, as in (c)); every surviving line is copied verbatim, and it can never
- *   add a path or rewrite a rate. --init writes a new baseline (every file now under the floor) and refuses when
+ *   add a path or rewrite a rate. --prune-graduated deletes only the rows whose file now reaches the floor (the
+ *   one stale case a test change causes) and says which; `scripts/validate.sh` passes it on local runs, never on
+ *   CI, so a graduation is fixed (and committed) before the push instead of failing the CI run. --init writes a new baseline (every file now under the floor) and refuses when
  *   the file exists: it is for the gate's first run, not for accepting new uncovered files.
  *
  * Limits: it judges line/statement rates only (not branches), and only the files the report lists, so what is
@@ -133,13 +135,14 @@ export function parseBaseline(text) {
   return rows
 }
 
-/** Findings of one check: {belowFloor, regressed, stale} (each a list of messages), plus the stale paths. */
+/** Findings of one check: {belowFloor, regressed, stale} (each a list of messages), plus the stale and graduated paths. */
 export function evaluate(files, rows, floor) {
   const baselined = new Map(rows.map((row) => [row.path, row]))
   const belowFloor = []
   const regressed = []
   const stale = []
   const stalePaths = new Set()
+  const graduatedPaths = new Set()
   const markStale = (path, why) => { stale.push(`${path}: ${why}`); stalePaths.add(path) }
   for (const [path, { covered, total }] of files) {
     if (total === 0) {
@@ -154,12 +157,13 @@ export function evaluate(files, rows, floor) {
       regressed.push(`${path}: ${rate.toFixed(2)}% (${covered}/${total}) fell below its recorded ${row.rate.toFixed(2)}%`)
     } else if (rate >= floor) {
       markStale(path, `reaches the floor now (${rate.toFixed(2)}%): graduated`)
+      graduatedPaths.add(path)
     }
   }
   for (const row of rows) {
     if (!files.has(row.path)) markStale(row.path, 'not in the report (deleted, renamed or no longer measured)')
   }
-  return { belowFloor, regressed, stale, stalePaths }
+  return { belowFloor, regressed, stale, stalePaths, graduatedPaths }
 }
 
 /** The baseline text without the stale rows; every other line (header included) is kept byte for byte. */
@@ -195,7 +199,7 @@ export function initBaseline(files, floor, refresh) {
 }
 
 const FLAGS = new Set(['--suite', '--format', '--report', '--baseline', '--floor', '--base'])
-const SWITCHES = new Set(['--update-baseline', '--init'])
+const SWITCHES = new Set(['--update-baseline', '--prune-graduated', '--init'])
 
 /** Command-line options; --suite fills in the rest from suites.json and cannot be mixed with them. */
 export function parseArgs(argv, suites) {
@@ -206,7 +210,9 @@ export function parseArgs(argv, suites) {
     else if (FLAGS.has(arg) && i + 1 < argv.length) { options[arg.slice(2)] = argv[i + 1]; i += 1 }
     else throw new InputError(`unknown or incomplete option ${JSON.stringify(arg)} (see the header of this script)`)
   }
-  if (options['update-baseline'] && options.init) throw new InputError('--update-baseline and --init are exclusive')
+  if ([options['update-baseline'], options['prune-graduated'], options.init].filter(Boolean).length > 1) {
+    throw new InputError('--update-baseline, --prune-graduated and --init are exclusive')
+  }
   if (options.suite !== undefined) {
     const explicit = [...FLAGS].filter((flag) => flag !== '--suite' && options[flag.slice(2)] !== undefined)
     if (explicit.length > 0) throw new InputError(`--suite sets every value itself; drop ${explicit.join(', ')}`)
@@ -261,6 +267,13 @@ export function main(argv, { repoRoot = ROOT, log = console.log, error = console
       if (result.stalePaths.size > 0) writeFileSync(baselinePath, shrinkBaseline(text, result.stalePaths))
       log(`coverage ${label}: removed ${result.stalePaths.size} stale row(s) from ${options.baseline}`)
       rows = rows.filter((row) => !result.stalePaths.has(row.path))
+      result = evaluate(files, rows, options.floor)
+    } else if (options['prune-graduated'] && result.graduatedPaths.size > 0) {
+      const graduated = [...result.graduatedPaths].sort()
+      writeFileSync(baselinePath, shrinkBaseline(text, result.graduatedPaths))
+      log(`coverage ${label}: removed ${graduated.length} graduated row(s) from ${options.baseline} (they reach the ${options.floor}% floor now; commit this change):`)
+      for (const path of graduated) log(`  ${path}`)
+      rows = rows.filter((row) => !result.graduatedPaths.has(row.path))
       result = evaluate(files, rows, options.floor)
     }
     printFindings(`files below the ${options.floor}% floor and not in ${options.baseline} (add tests)`, result.belowFloor, log)

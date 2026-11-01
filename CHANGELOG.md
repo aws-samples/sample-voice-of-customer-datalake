@@ -29,6 +29,10 @@ The quality-gate CI run takes as long as its slowest lane instead of all of them
 - **`scripts/validate.sh`**: a `--lane <lanes>` option (only those lanes' steps; the lanes partition every step),
   the frontend vitest suite in its own `web` lane, and ESLint on worker threads (`--concurrency auto`) for the CDK,
   frontend and stream packages, which also shortens local runs.
+- **A local gate run deletes a graduated coverage-baseline row itself** (`check-per-file-coverage.mjs
+  --prune-graduated`, passed by `scripts/validate.sh` off CI): a listed file that reaches the 80 % floor no longer
+  fails the step locally; its row is removed and named, to commit with the change. CI stays strict and the floor is
+  unchanged. See [coverage gate](docs/coverage-gate.md).
 
 ## [5.67.00] - 2026-11-01
 
