@@ -126,6 +126,12 @@ class TestGetCredentials:
 
 
 
+def _put_webscraper_configs(event, context, configs: str):
+    """PUT /integrations/webscraper/credentials with one `configs` value."""
+    return call_route(lambda_handler, event, context, method='PUT', path='/integrations/webscraper/credentials',
+                      path_params={'source': 'webscraper'}, body={'configs': configs})
+
+
 class TestUpdateCredentials:
     """Tests for PUT /integrations/<source>/credentials endpoint."""
 
@@ -142,11 +148,7 @@ class TestUpdateCredentials:
         blocked = {'http://169.254.169.254/latest/meta-data', 'http://10.0.0.5/'}
         with patch('integrations_handler.validate_url',
                    side_effect=lambda url: (url not in blocked, 'private address')):
-            response, body = call_route(
-                lambda_handler, api_gateway_event, lambda_context,
-                method='PUT', path='/integrations/webscraper/credentials',
-                path_params={'source': 'webscraper'}, body={'configs': configs},
-            )
+            response, body = _put_webscraper_configs(api_gateway_event, lambda_context, configs)
 
         assert response['statusCode'] == 400
         assert 'Scraper URL rejected' in json.dumps(body)
@@ -157,11 +159,7 @@ class TestUpdateCredentials:
     def test_refuses_webscraper_configs_that_are_not_a_list_of_scrapers(
         self, mock_secrets, configs, api_gateway_event, lambda_context,
     ):
-        response, _body = call_route(
-            lambda_handler, api_gateway_event, lambda_context,
-            method='PUT', path='/integrations/webscraper/credentials',
-            path_params={'source': 'webscraper'}, body={'configs': configs},
-        )
+        response, _body = _put_webscraper_configs(api_gateway_event, lambda_context, configs)
 
         assert response['statusCode'] == 400
         mock_secrets.put_secret_value.assert_not_called()
@@ -173,11 +171,7 @@ class TestUpdateCredentials:
         mock_secrets.get_secret_value.return_value = {'SecretString': '{}'}
         configs = '[{"id": "s1", "base_url": "https://reviews.example.com/p/1"}]'
         with patch('integrations_handler.validate_url', return_value=(True, '')) as check:
-            response, _body = call_route(
-                lambda_handler, api_gateway_event, lambda_context,
-                method='PUT', path='/integrations/webscraper/credentials',
-                path_params={'source': 'webscraper'}, body={'configs': configs},
-            )
+            response, _body = _put_webscraper_configs(api_gateway_event, lambda_context, configs)
 
         assert response['statusCode'] == 200
         check.assert_called_once_with('https://reviews.example.com/p/1')
