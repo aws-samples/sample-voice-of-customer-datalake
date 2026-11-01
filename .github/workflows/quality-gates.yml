@@ -2,9 +2,10 @@
 # main. CI calls that script and nothing else, so a green local `npm run validate` is a
 # green run here. Gates not enforced yet are counted by scripts/quality-baseline.sh instead.
 #
-# One job per validate.sh lane (`--lane <name>`, the five lanes partition every step), so the lanes run
+# One job per validate.sh lane (`--lane <name>`; validate.sh's six lanes partition every step), so the lanes run
 # on separate runners instead of sharing one 4-vCPU machine: the run takes as long as its slowest lane
-# (~25 min) instead of the sum (~50 min). The `sec` lane (CodeQL) is not run here: the repository's
+# (~25 min) instead of the sum (~50 min). The `sec` lane (CodeQL) is not run here: its one step already skipped
+# itself on GitHub Actions (`GITHUB_ACTIONS` set; no CodeQL CLI on the runner), and the repository's
 # CodeQL code scanning covers it. The last job keeps the single `scripts/validate.sh` check.
 name: quality gates
 
@@ -73,6 +74,7 @@ jobs:
             -r lambda/layers/email-intake-deps/requirements.txt
 
       - name: Install gitleaks (the working-tree secret scan, scripts/gitleaks-tree.sh)
+        if: ${{ matrix.lane == 'lint' }}
         env:
           GITLEAKS_VERSION: 8.30.1
           # Committed digest (release checksums file and GitHub's asset digest agree); bump with the version.
@@ -90,6 +92,7 @@ jobs:
       # file fetched from the same release, which an attacker able to replace the asset could replace too).
       # Bump: update the version + digest together, and ACTIONLINT_VERSION / ZIZMOR_VERSION in the script.
       - name: Install actionlint + zizmor (GitHub Actions lint, scripts/actions-lint.sh)
+        if: ${{ matrix.lane == 'lint' }}
         env:
           ACTIONLINT_VERSION: 1.7.12
           ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
@@ -134,6 +137,8 @@ jobs:
       - name: Every lane passed
         env:
           LANES_RESULT: ${{ needs.lane.result }}
+          LANE_JOBS: ${{ toJSON(needs.lane) }}
         run: |
           echo "lanes: $LANES_RESULT"
+          echo "$LANE_JOBS"
           test "$LANES_RESULT" = success
