@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config'
-import { changelogPlugin } from './changelogPlugin'
+import { changelogPlugin } from './changelogPlugin.ts'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
@@ -21,12 +21,6 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['node_modules', 'dist'],
     testTimeout: 10000,
-    // Reuse single jsdom environment across all tests
-    poolOptions: {
-      forks: {
-        singleFork: true,
-      },
-    },
     // The per-file coverage gate (docs/coverage-gate.md) reads this through scripts/validate.sh, which adds
     // `--coverage.enabled --coverage.reporter=json-summary` on the command line.
     coverage: {
@@ -52,8 +46,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@test': path.resolve(__dirname, './src/test'),
+      '@': path.resolve(import.meta.dirname, './src'),
+      '@test': path.resolve(import.meta.dirname, './src/test'),
     },
   },
 })
