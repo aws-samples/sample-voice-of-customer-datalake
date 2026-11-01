@@ -12,7 +12,7 @@ it does.
 | Scheduled failure watch | `.github/workflows/scheduled-failure-watch.yml` + `scripts/scheduled-failure-watch.mjs` | After each scheduled run | Never; it opens and closes an issue |
 | Freshness check | `scripts/dependency-freshness.mjs` (`npm run deps:freshness`) | By hand: weekly, and before starting a feature | Never by default (`--fail-on` makes it) |
 
-Dependabot security alerts (repository setting) and CodeQL stay on as before; these controls add to them.
+Dependabot security alerts (repository setting) and CodeQL stay on; these controls add to them.
 Every third-party action in `.github/workflows/` is pinned to a full commit SHA with a `# vX.Y.Z` comment,
 and Dependabot updates both.
 
@@ -39,13 +39,13 @@ same failing grouped pull request every week.
 
 | Package | Held from | Why | Lift it with |
 |---|---|---|---|
-| `@vitest/eslint-plugin` | 1.6.28 | A patch release that raises its `typescript` peer to `>= 6.0.0`; every package is on TypeScript 5.9, so `npm ci` fails with `ERESOLVE` (#500) | The TypeScript 6+ upgrade (a major, on its own branch) |
+| `@vitest/eslint-plugin` | 1.6.28 | A patch release that raises its `typescript` peer to `>= 6.0.0`; every package is on TypeScript 5.9, so `npm ci` fails with `ERESOLVE` | The TypeScript 6+ upgrade (a major, on its own branch) |
 
 ### Merging a Dependabot pull request
 
 Every Dependabot pull request **fails `version: CHANGELOG ↔ package.json`** in the quality gates. That is
 intended: every change on `main` bumps the version and records itself in `CHANGELOG.md`
-(`.kiro/steering/changelog.md`). To merge one:
+([CONTRIBUTING.md → Versioning](../CONTRIBUTING.md#versioning-and-the-changelog)). To merge one:
 
 1. Read the update and its upstream release notes.
 2. Check out the branch, add a patch release section under `## [Unreleased]` in `CHANGELOG.md` (a
@@ -73,7 +73,7 @@ and the Python Software Foundation license; the config file explains each. The r
    modify. Strong copyleft (GPL, AGPL) in shipped code does not.
 3. If it does, add the package to `allow-dependencies-licenses` as a purl (`pkg:npm/<name>`,
    `pkg:pypi/<name>`) with a comment: the license, where the package runs (shipped or development only), and
-   why that is acceptable. The owner reviews that line in the pull request.
+   why that is acceptable. A maintainer reviews that line in the pull request.
 
 ## Vulnerability audit
 
