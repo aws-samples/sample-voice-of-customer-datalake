@@ -58,6 +58,32 @@ describe('ProblemAnalysisPDFContent', () => {
   })
 })
 
+describe('the header subtitle', () => {
+  it('names only the filters that are set, then the urgent-only switch', () => {
+    render(
+      <ProblemAnalysisPDFContent
+        resolvedLabel="Resolved"
+        categories={makeCategories()}
+        timeRange="Last 7 days"
+        filters={{ source: 'webscraper', category: '', subcategory: null, urgentOnly: true }}
+      />,
+    )
+    expect(screen.getByText('Time range: Last 7 days • Source: webscraper • Urgent only')).toBeInTheDocument()
+  })
+
+  it('is the time range alone when no filter is set', () => {
+    render(
+      <ProblemAnalysisPDFContent
+        resolvedLabel="Resolved"
+        categories={makeCategories()}
+        timeRange="Last 7 days"
+        filters={{ source: null, urgentOnly: false }}
+      />,
+    )
+    expect(screen.getByText('Time range: Last 7 days')).toBeInTheDocument()
+  })
+})
+
 /** The server lists only the largest problems; the PDF must still report every one (sweep 16, 5.25.02). */
 describe('a truncated tree', () => {
   function truncated(): ProblemAnalysisPDFProps['categories'] {
