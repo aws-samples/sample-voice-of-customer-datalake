@@ -1,6 +1,11 @@
 # Runs scripts/validate.sh, every quality gate in the repo, on each pull request and on pushes to
 # main. CI calls that script and nothing else, so a green local `npm run validate` is a
 # green run here. Gates not enforced yet are counted by scripts/quality-baseline.sh instead.
+#
+# One job per validate.sh lane (`--lane <name>`, the five lanes partition every step), so the lanes run
+# on separate runners instead of sharing one 4-vCPU machine: the run takes as long as its slowest lane
+# (~25 min) instead of the sum (~50 min). The `sec` lane (CodeQL) is not run here: the repository's
+# CodeQL code scanning covers it. The last job keeps the single `scripts/validate.sh` check.
 name: quality gates
 
 on:
@@ -17,10 +22,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: scripts/validate.sh
+  lane:
+    name: validate (${{ matrix.lane }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      # Every lane reports, so one run shows every failing gate.
+      fail-fast: false
+      matrix:
+        lane: [py, tsc, lint, test, web]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -96,16 +106,34 @@ jobs:
           echo "${ZIZMOR_SHA256}  /tmp/${zz}" | sha256sum --check --strict -
           tar -xzf "/tmp/${zz}" -C "$HOME/.local/bin" zizmor
 
-      # --pytest-first: pytest runs alone, then the other lanes. On this 4-vCPU runner the lanes beside it pushed a
-      # test that bounds its own CPU time over its bound (docs/coverage-gate.md); about 10 minutes longer.
-      - name: Validate
-        run: bash scripts/validate.sh --pytest-first
+      # One lane per job: pytest has the py job's runner to itself (its lane runs one step at a time), which is
+      # why --pytest-first is no longer needed here (docs/coverage-gate.md); so the py job gives it every vCPU.
+      - name: Validate (one lane)
+        env:
+          LANE: ${{ matrix.lane }}
+          VALIDATE_PYTEST_WORKERS: '4'
+        run: bash scripts/validate.sh --lane "$LANE"
 
       # The pending gates' counts (scripts/quality-baseline.sh), so a PR that raises one shows it in its
       # own log. A measurement, not a gate: it never fails the job, and it runs even when Validate failed.
       - name: Quality baseline (informational)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.lane == 'tsc' }}
         continue-on-error: true
         run: |
           bash scripts/quality-baseline.sh | tee "$RUNNER_TEMP/baseline.txt"
           { echo '```text'; cat "$RUNNER_TEMP/baseline.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  # The one check a PR shows for the gate (and the name branch rules and scripts read): green only when every lane is.
+  validate:
+    name: scripts/validate.sh
+    needs: lane
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every lane passed
+        env:
+          LANES_RESULT: ${{ needs.lane.result }}
+        run: |
+          echo "lanes: $LANES_RESULT"
+          test "$LANES_RESULT" = success

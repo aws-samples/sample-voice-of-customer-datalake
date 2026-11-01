@@ -17,6 +17,19 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.67.01] - 2026-11-01
+
+The quality-gate CI run takes as long as its slowest lane instead of all of them in a row.
+
+### Changed
+- **CI runs one job per gate lane** (`.github/workflows/quality-gates.yml`): `validate (py|tsc|lint|test|web)` run on
+  separate runners with `scripts/validate.sh --lane <name>`, and the `scripts/validate.sh` check is a final job that
+  is green only when every lane is. pytest has the py job to itself, so CI no longer needs `--pytest-first` and gives
+  it 4 workers. See [CONTRIBUTING](CONTRIBUTING.md#how-validatesh-runs).
+- **`scripts/validate.sh`**: a `--lane <lanes>` option (only those lanes' steps; the lanes partition every step),
+  the frontend vitest suite in its own `web` lane, and ESLint on worker threads (`--concurrency auto`) for the CDK,
+  frontend and stream packages, which also shortens local runs.
+
 ## [5.67.00] - 2026-11-01
 
 Review-type pills on the Categories page, and pills that do what a reader expects on both pages.

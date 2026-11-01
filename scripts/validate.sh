@@ -14,8 +14,9 @@
 #   bash scripts/validate.sh --serial         every step one after another (the old behaviour)
 #   bash scripts/validate.sh --keep-going     do not stop the other lanes when a step fails
 #   bash scripts/validate.sh --only python,cdk   only the steps tagged with one of these groups
+#   bash scripts/validate.sh --lane py,tsc    only the steps of these lanes (CI runs one lane per job)
 #   bash scripts/validate.sh --list           print the steps (lane, groups, name) and exit
-#   bash scripts/validate.sh --pytest-first   run the pytest step alone, then every other lane (CI uses this)
+#   bash scripts/validate.sh --pytest-first   run the pytest step alone, then every other lane (for a loaded machine)
 #   bash scripts/validate.sh --dry-run        schedule and report every step with its command replaced by a no-op
 #
 # Groups (used by scripts/validate-affected.sh): python, frontend, cdk, stream = every step of that
@@ -55,17 +56,19 @@ VALIDATE_VITEST_TIMEOUT_MS="${VALIDATE_VITEST_TIMEOUT_MS:-30000}"
 export ROOT CDK FRONTEND STREAM KNIP_PROD TSC_CACHE PYTHON_BIN PATH VALIDATE_PYTEST_WORKERS VALIDATE_VITEST_TIMEOUT_MS CPUS
 
 # ---- Options ----
-SERIAL=0; FAIL_FAST=1; ONLY=""; LIST=0; PYTEST_FIRST=0; DRY_RUN=0
+SERIAL=0; FAIL_FAST=1; ONLY=""; LANE_ONLY=""; LIST=0; PYTEST_FIRST=0; DRY_RUN=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --serial) SERIAL=1 ;;
     --keep-going) FAIL_FAST=0 ;;
     --only) ONLY="${2:?--only needs a comma-separated group list}"; shift ;;
     --only=*) ONLY="${1#--only=}" ;;
+    --lane) LANE_ONLY="${2:?--lane needs a comma-separated lane list}"; shift ;;
+    --lane=*) LANE_ONLY="${1#--lane=}" ;;
     --list) LIST=1 ;;
     --pytest-first) PYTEST_FIRST=1 ;;
     --dry-run) DRY_RUN=1 ;;
-    -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) printf 'validate: unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
   esac
   shift
@@ -73,9 +76,12 @@ done
 
 # ---- Steps: lane | groups | name | command (run with `bash -euo pipefail -c`) ----
 # Lanes (measured: their critical paths are about equal): py (Python lint, types, pytest-xdist),
-# tsc (type checks, knip, small node checks, most code-audit detectors), lint (eslint — single-threaded,
-# typed — jscpd, gitleaks, ts_reachability), test (vite build, the synth-based audit detectors, then the
-# vitest suites: the CDK stacks and the audit synth stage frontend/dist as an asset); sec (CodeQL).
+# tsc (type checks, knip, small node checks, most code-audit detectors), lint (eslint — typed, on
+# `--concurrency auto` worker threads — jscpd, gitleaks, ts_reachability), test (vite build, the
+# synth-based audit detectors, then the CDK and stream vitest suites: the CDK stacks and the audit synth
+# stage frontend/dist as an asset), web (the frontend vitest suite, which needs no build); sec (CodeQL).
+# CI runs each lane as its own job (.github/workflows/quality-gates.yml, `--lane <name>`), so a lane's
+# steps never share a runner with another lane's.
 S_LANE=(); S_GROUPS=(); S_NAME=(); S_CMD=()
 def() { S_LANE+=("$1"); S_GROUPS+=("$2"); S_NAME+=("$3"); S_CMD+=("$4"); }
 
@@ -120,9 +126,9 @@ def tsc  frontend,frontend-static           "tsc: frontend specs"               
 def tsc  stream,stream-static               "tsc: stream Lambda"                 'cd "$STREAM" && npx tsc --noEmit --incremental --tsBuildInfoFile "$TSC_CACHE/stream.tsbuildinfo"'
 def tsc  cdk,cdk-static                     "tsc: CDK app"                       'cd "$CDK" && npx tsc -p tsconfig.json --noEmit --incremental --tsBuildInfoFile "$TSC_CACHE/cdk.tsbuildinfo"'
 def tsc  cdk,cdk-static                     "tsc: CDK scripts + configs"         'cd "$CDK" && npx tsc -p tsconfig.tools.json'
-def lint cdk,cdk-static                     "eslint: CDK app"                    'cd "$CDK" && npx eslint . --max-warnings 0'
-def lint frontend,frontend-static           "eslint: frontend"                   'cd "$FRONTEND" && npx eslint . --max-warnings 0'
-def lint stream,stream-static               "eslint: stream Lambda"              'cd "$STREAM" && npx eslint . --max-warnings 0'
+def lint cdk,cdk-static                     "eslint: CDK app"                    'cd "$CDK" && npx eslint . --max-warnings 0 --concurrency auto'
+def lint frontend,frontend-static           "eslint: frontend"                   'cd "$FRONTEND" && npx eslint . --max-warnings 0 --concurrency auto'
+def lint stream,stream-static               "eslint: stream Lambda"              'cd "$STREAM" && npx eslint . --max-warnings 0 --concurrency auto'
 # The gate code itself (eslint-rules/eslint.config.mjs): no package config can reach outside its directory.
 def lint repo,cdk,cdk-static                 "eslint: gate rules (eslint-rules/)"  'cd "$ROOT/eslint-rules" && "$CDK/node_modules/.bin/eslint" . --max-warnings 0'
 def tsc  cdk,cdk-static                     "knip: CDK app"                      'cd "$CDK" && npx knip --no-progress'
@@ -154,7 +160,7 @@ def test frontend,frontend-static,cdk,cdk-tests,audit,audit-py-synth "vite build
 def test audit,audit-py-synth               "audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function" 'cd "$ROOT" && rc=0 && for d in scripts/audit/py_reachability.py scripts/audit/py_env_contract.py scripts/audit/py_iam_contract.py scripts/audit/py_layers.py scripts/audit/py_sfn_errors.py scripts/audit/py_shared_constants.py scripts/audit/py_doc_refs.py "scripts/audit/clones_struct.py --kind function"; do "$PYTHON_BIN" $d || { r=$?; echo "audit: $d exited $r"; [ "$r" -gt "$rc" ] && rc=$r; }; done; exit "$rc"'
 def test cdk,cdk-tests                      "vitest: CDK app"                    'cd "$CDK" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --hookTimeout "$VALIDATE_VITEST_TIMEOUT_MS"'
 def test stream,stream-tests                "vitest: stream Lambda"              'cd "$STREAM" && rm -rf "$ROOT/.cache/coverage/stream" && npx vitest run --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/stream" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite stream'
-def test frontend,frontend-tests            "vitest: frontend"                   'cd "$FRONTEND" && rm -rf "$ROOT/.cache/coverage/frontend" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/frontend" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite frontend'
+def web  frontend,frontend-tests            "vitest: frontend"                   'cd "$FRONTEND" && rm -rf "$ROOT/.cache/coverage/frontend" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/frontend" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite frontend'
 
 # Code-audit detectors (scripts/audit/, docs/code-audit.md): dead code, renamed clones and re-implemented
 # helpers the gates above cannot see. Each exits 0 clean, 1 findings, 2 cannot run, and any non-zero exit
@@ -189,9 +195,16 @@ def tsc  audit,audit-tools                  "audit: detector lint (ruff + pyrigh
 def tsc  audit,audit-tools                  "audit: every detector has a step"   'cd "$ROOT" && missing="" && defs="$(grep "^def " scripts/validate.sh)" && for d in $(bash scripts/audit/run-all.sh --list); do grep -qF "$d" <<<"$defs" || missing="$missing $d"; done && [ -z "$missing" ] || { echo "detectors with no scripts/validate.sh step:$missing"; exit 1; }'
 
 # ---- Selection ----
+# The lane each step is defined in: --lane selects by it, also after --serial / --pytest-first move steps.
+S_HOME=("${S_LANE[@]}")
 selected() {  # step index -> 0 when it runs in this invocation
-  [[ -z "$ONLY" ]] && return 0
   local want have
+  if [[ -n "$LANE_ONLY" ]]; then
+    local in_lane=1
+    for want in ${LANE_ONLY//,/ }; do [[ "$want" == "${S_HOME[$1]}" ]] && in_lane=0; done
+    [[ "$in_lane" -eq 0 ]] || return 1
+  fi
+  [[ -z "$ONLY" ]] && return 0
   for want in ${ONLY//,/ }; do
     for have in ${S_GROUPS[$1]//,/ }; do [[ "$want" == "$have" ]] && return 0; done
   done
@@ -200,6 +213,11 @@ selected() {  # step index -> 0 when it runs in this invocation
 if [[ -n "$ONLY" ]]; then
   for want in ${ONLY//,/ }; do
     case "$want" in python|frontend|cdk|stream|python-static|frontend-static|cdk-static|stream-static|python-tests|frontend-tests|cdk-tests|stream-tests|bridge|repo|codeql|audit|audit-py-synth|audit-callers|audit-patterns|audit-clones-py|audit-clones-ts|audit-ts|audit-unions|audit-locale|audit-tools) ;; *) printf 'validate: unknown group %s\n' "$want" >&2; exit 2 ;; esac
+  done
+fi
+if [[ -n "$LANE_ONLY" ]]; then
+  for want in ${LANE_ONLY//,/ }; do
+    case "$want" in py|tsc|lint|test|web|sec) ;; *) printf 'validate: unknown lane %s\n' "$want" >&2; exit 2 ;; esac
   done
 fi
 if [[ "$LIST" -eq 1 ]]; then
@@ -274,7 +292,7 @@ for lane in $(printf '%s\n' "${S_LANE[@]}" | awk '!seen[$0]++'); do
     fi
   done
 done
-if [[ "${#LANES[@]}" -eq 0 && "$HAS_FIRST" -eq 0 ]]; then printf 'validate: no step matches --only %s\n' "$ONLY" >&2; exit 2; fi
+if [[ "${#LANES[@]}" -eq 0 && "$HAS_FIRST" -eq 0 ]]; then printf 'validate: no step matches --only %s --lane %s\n' "$ONLY" "$LANE_ONLY" >&2; exit 2; fi
 T_ALL=$(date +%s)
 FIRST_NOTE=""; [[ "$HAS_FIRST" -eq 1 ]] && FIRST_NOTE=" after pytest alone"
 printf 'validate: %s lane(s) [%s]%s, pytest workers %s, logs in %s\n' "${#LANES[@]}" "${LANES[*]:-}" "$FIRST_NOTE" "$VALIDATE_PYTEST_WORKERS" "$LOG_DIR"
