@@ -86,7 +86,7 @@ written when a suite fails.
 ## Tests that assert a time budget
 
 A test that bounds its own running time (`elapsed < N`) measures the machine as much as the code. Coverage tracing
-slows tight Python loops several times over, and on CI the 4-vCPU runner is shared with the other gate lanes and
+slows tight Python loops several times over, and on CI the 4-vCPU runner was once shared with the other gate lanes and
 the other pytest workers. Such tests went over their bounds there with nothing wrong in the code (for example a
 capacity test bounded at 6 s that took 9 s, and a store test bounded at 0.25 s that took 0.33 s).
 
@@ -96,9 +96,9 @@ So a test that bounds its time is marked `@pytest.mark.timing` (on the test, its
 - `conftest.py` adds `no_cover` to it, so it runs untraced wherever it runs.
 - The `pytest` step of `scripts/validate.sh` leaves it out of the parallel, traced run (`-m "not timing"`) and runs
   every `timing` test afterwards in ONE process, untraced (`-p no:xdist --no-cov -m timing`).
-- CI runs `validate.sh --pytest-first`, so that whole step, the separate timing run included, has the runner to
-  itself; the other lanes start once it has passed (about 10 minutes of CI time). Locally the lanes run together;
-  `--pytest-first` reproduces CI's order.
+- CI runs each `validate.sh` lane as its own job (`--lane py`, …), so the `pytest` step, the separate timing run
+  included, has the py job's runner to itself (its lane runs one step at a time) with 4 workers. Locally the lanes
+  run together; `--pytest-first` gives pytest the machine to itself first when a local run is loaded.
 - `voc-datalake/scripts/check_timing_tests.py` (the `check_timing_tests` step) fails on a test that reads `time.perf_counter`,
   `monotonic` or `process_time` (directly or through a helper in its module) and asserts an ordering, unless it is
   marked.

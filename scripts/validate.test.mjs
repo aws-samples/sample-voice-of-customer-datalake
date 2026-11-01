@@ -74,3 +74,43 @@ describe('validate.sh without --pytest-first', () => {
     assert.ok(lines.some((l) => /\[py +\] ok +pytest/.test(l)));
   });
 });
+
+/** The steps a dry run started, by name. */
+const startedSteps = (lines) => lines.flatMap((l) => /\] start +(.+)$/.exec(l)?.[1] ?? []);
+
+describe('validate.sh --lane (CI runs one lane per job)', () => {
+  it('runs only the steps defined in the named lane', () => {
+    const { status, lines } = dryRun(['--lane', 'web']);
+    assert.equal(status, 0, lines.join('\n'));
+    assert.deepEqual(startedSteps(lines), ['vitest: frontend']);
+  });
+
+  it('takes several lanes, and every step belongs to exactly one lane', () => {
+    const all = startedSteps(dryRun([]).lines).sort();
+    const byLane = ['py', 'tsc', 'lint', 'test', 'web', 'sec'].flatMap((lane) => startedSteps(dryRun(['--lane', lane]).lines));
+    assert.deepEqual(byLane.sort(), all);
+    assert.deepEqual(startedSteps(dryRun(['--lane', 'py,web']).lines).sort(),
+      [...startedSteps(dryRun(['--lane', 'py']).lines), 'vitest: frontend'].sort());
+  });
+
+  it('keeps pytest in the py lane under --pytest-first and --serial', () => {
+    for (const extra of [['--pytest-first'], ['--serial']]) {
+      const { status, lines } = dryRun([...extra, '--lane', 'py']);
+      assert.equal(status, 0, lines.join('\n'));
+      assert.ok(startedSteps(lines).includes('pytest'), `${extra.join(' ')}: ${lines.join('\n')}`);
+    }
+  });
+
+  it('combines with --only: a step must be in the lane AND one of the groups', () => {
+    const { status, lines } = dryRun(['--lane', 'lint', '--only', 'frontend']);
+    assert.equal(status, 0, lines.join('\n'));
+    assert.deepEqual(startedSteps(lines), ['eslint: frontend']);
+  });
+
+  it('refuses an unknown lane', () => {
+    const { status, lines } = dryRun(['--lane', 'nope']);
+    assert.equal(status, 2);
+    assert.ok(lines.some((l) => l.includes('unknown lane nope')));
+  });
+});
+

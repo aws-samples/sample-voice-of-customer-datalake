@@ -110,14 +110,15 @@ behind its newest release, so the work starts from current versions.
   it is never skipped; CI runs it again on the pull request.
 
 ### How validate.sh runs
-The steps run in five parallel lanes: `py` (ruff, vulture, pyright, pytest with pytest-xdist), `tsc` (type checks,
-knip, small node checks, most code-audit detectors), `lint` (ESLint, jscpd, gitleaks, `ts_reachability`), `test` (vite build, the synth-based audit detectors, then the CDK,
-stream and frontend vitest suites), `sec` (CodeQL). The first failing step stops the other lanes and its log tail is printed; every run ends with a table
+The steps run in six parallel lanes: `py` (ruff, vulture, pyright, pytest with pytest-xdist), `tsc` (type checks,
+knip, small node checks, most code-audit detectors), `lint` (ESLint on worker threads, `--concurrency auto`, jscpd, gitleaks, `ts_reachability`), `test` (vite build, the synth-based audit detectors, then the CDK
+and stream vitest suites), `web` (the frontend vitest suite), `sec` (CodeQL). CI runs each lane except `sec` as its own job on its own
+runner (`--lane <name>`; the repository's CodeQL code scanning stands in for `sec`), and a final `scripts/validate.sh` job is green only when every lane is. The first failing step stops the other lanes and its log tail is printed; every run ends with a table
 of each step's status and duration, and every step's full log is in `.cache/validate/logs/<run>/`. Options:
 `--serial` (one step after another), `--keep-going` (let the other lanes finish after a failure), `--only <groups>`,
-`--list`, `--pytest-first` (pytest alone, then the other lanes; CI runs this, see
-[docs/coverage-gate.md](docs/coverage-gate.md#tests-that-assert-a-time-budget)), `--dry-run` (every command a no-op,
-to test the runner). `VALIDATE_PYTEST_WORKERS` sets the pytest-xdist worker count (default: CPUs − 4).
+`--lane <lanes>` (only those lanes' steps, as one CI job runs them), `--list`, `--pytest-first` (pytest alone, then the
+other lanes, see [docs/coverage-gate.md](docs/coverage-gate.md#tests-that-assert-a-time-budget)), `--dry-run` (every
+command a no-op, to test the runner). `VALIDATE_PYTEST_WORKERS` sets the pytest-xdist worker count (default: CPUs − 4).
 
 pytest runs in several processes in any order, so a test must not depend on another test having run or on a
 fixed path; tests that must share one process are marked `@pytest.mark.xdist_group('<name>')`. Parametrize ids
