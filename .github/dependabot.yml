@@ -79,6 +79,12 @@ updates:
       - dependency-name: "*"
         update-types:
           - version-update:semver-major
+      # Held (5.66.01): 1.6.28 is a patch release that raises its TypeScript peer to >= 6, and every
+      # package is on TypeScript 5.9, so `npm ci` fails with ERESOLVE (#500). Remove this rule with the
+      # TypeScript 6+ upgrade (docs/dependencies.md → Held updates).
+      - dependency-name: "@vitest/eslint-plugin"
+        versions:
+          - ">= 1.6.28"
     groups:
       npm-minor-and-patch:
         update-types:
