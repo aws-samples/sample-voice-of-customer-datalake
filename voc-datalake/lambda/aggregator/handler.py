@@ -2152,7 +2152,7 @@ def deserialize_image(image: dict) -> dict:
     them as DynamoDB wire values dropped every review's ``dimensions``). The copy is deep, so no
     later step can change the record's own image.
     """
-    return copy.deepcopy(dict(image))
+    return copy.deepcopy(image)
 
 
 def is_ttl_expiry(record: DynamoDBRecord) -> bool:
