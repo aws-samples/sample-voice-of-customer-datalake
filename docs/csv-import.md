@@ -3,7 +3,7 @@
 An administrator imports feedback from a spreadsheet on **Data sources → New source →
 Spreadsheet (CSV)** (`POST /scrapers/manual/csv-upload`, admin-only, `manual_import_handler.py`).
 This page covers how each row is identified, and how a corrected file updates the rows it
-imported before instead of adding them a second time (issue #411). Column mapping and
+imported before instead of adding them a second time. Column mapping and
 dimension columns are in [dimensions.md](dimensions.md); the source profile and its PII
 policy are in [source-policies.md](source-policies.md).
 
@@ -136,7 +136,7 @@ the text, title, author or metadata; when anything stored changes, the row is re
 file's current text. CSV messages carry no language, so the redaction is the
 deterministic pattern set (`shared/pii_redaction.py`).
 
-## Decisions (issue #411)
+## Design choices
 
 1. The namespace is an explicit, optional dataset name, not the file name.
 2. `csv-row-v2` applies only to rows with an id under a dataset name; everything else keeps
