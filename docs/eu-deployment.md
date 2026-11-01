@@ -1,11 +1,14 @@
 # EU deployment
 
-Deploy with `-c inferenceScope=eu` to keep model inference inside the EU:
+An EU deployment keeps every Bedrock model call inside EU regions. It is for operators with EU data-residency
+requirements. Deploy with `-c inferenceScope=eu`, with the AWS region set to an EU region:
 
 ```bash
-npm run deploy:infra -- -c inferenceScope=eu --context frontendDomain=<domain>
-# with CDK_DEFAULT_REGION / AWS_REGION set to an EU region, e.g. eu-central-1
+AWS_REGION=eu-central-1 npm run deploy:infra -- -c inferenceScope=eu
 ```
+
+Set the region with `AWS_REGION`, `AWS_DEFAULT_REGION` or `--profile`. The CDK CLI overwrites
+`CDK_DEFAULT_REGION` itself, so exporting that variable has no effect. Pass the same flag on every later deploy.
 
 `inferenceScope` takes `global` (the default) or `eu`. Any other value fails the synth.
 
@@ -36,10 +39,9 @@ npm run deploy:infra -- -c inferenceScope=eu --context frontendDomain=<domain>
 
 ## Model availability
 
-Checked with
+Every allowlisted model has an `eu.` profile (checked with
 `aws bedrock list-inference-profiles --region eu-central-1 --query "inferenceProfileSummaries[].inferenceProfileId"`
-(and the same in eu-west-1; Opus 5.5 and Haiku 5.5 checked in eu-central-1 on 2026-10-08).
-Every allowlisted model has an `eu.` profile:
+and the same in eu-west-1 in October 2026; Opus 5.5 and Haiku 5.5 were checked in eu-central-1 only):
 
 | Canonical id (picker) | EU profile |
 |---|---|
@@ -82,14 +84,13 @@ For sources where names in free text matter, use `pii: summary_only`.
 - Request Bedrock model access in that region.
 - Cognito, DynamoDB, S3, Lambda, Step Functions, SQS, API Gateway and KMS all run in the
   deployment region.
-- CloudFront is a global edge service. It serves the static SPA and avatar images, not
+- CloudFront is a global edge service. It serves the static SPA and generated prototypes, not
   feedback data.
 
-## Not verified here
-
-- Bedrock service tiers (`SURFACE_SERVICE_TIERS`) on `eu.` profiles.
-- A full EU deploy.
+## Limits of the testing
 
 The synth, the IAM grants and the call-time mapping are covered by tests:
 `lib/app-inference-scope.test.ts`, `lib/utils/inference-scope.test.ts`,
 `lambda/shared/test/test_inference_scope.py` and the stream `model-override.test.ts`.
+Bedrock service tiers (`SURFACE_SERVICE_TIERS`, the Flex tier used for memory extraction) have not been
+tested on `eu.` profiles. Check a full EU deployment in your own account before relying on it.
