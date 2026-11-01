@@ -122,7 +122,6 @@ const mockFeedback = [
   },
 ];
 
-
 /**
  * The source / category / sentiment / usefulness lists (mock-facets.js) + `channel` / `dims` /
  * `tag` / stars on top of the date window, as every list / urgent / entities route applies
@@ -154,6 +153,9 @@ const MOCK_CATEGORY_SENTIMENT = {
 // Per-source totals of `GET /metrics/sources`; they add up to the summary's 1,247 too.
 const MOCK_SOURCE_COUNTS = { webscraper: 523, manual_import: 412, s3_import: 248, github_issues: 64 };
 const MOCK_URGENT_COUNT = 23;
+// The summary's total: every review the category fixture counts (the sources above add up to it too).
+const MOCK_TOTAL_FEEDBACK = Object.values(MOCK_CATEGORY_SENTIMENT)
+  .reduce((sum, split) => sum + Object.values(split).reduce((a, b) => a + b, 0), 0);
 
 // The generated corpus (mock-feedback-corpus.js) brings the list up to the fixtures, so a page
 // never shows "1,247 reviews" over a list of three. Seeded before the dimension, usefulness and
@@ -714,7 +716,7 @@ const handlers = {
   },
   'GET /metrics/summary': (_body, searchParams) => facetedMetric('summary', searchParams, filterByDateBasis(mockFeedback, searchParams)) ?? ({
     period_days: 7,
-    total_feedback: 1247,
+    total_feedback: MOCK_TOTAL_FEEDBACK,
     avg_sentiment: 0.12,
     urgent_count: MOCK_URGENT_COUNT,
     daily_totals: Array.from({ length: 7 }, (_, i) => ({

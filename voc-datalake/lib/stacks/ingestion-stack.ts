@@ -99,7 +99,8 @@ export interface VocIngestionStackProps extends VocStackProps {
     brandName: string;
     enabledSources: string[];
   };
-  frontendDomain?: string;
+  /** The app's CloudFront domain (VocCoreStack); the S3 import bucket's CORS allows it. */
+  frontendDomain: string;
 }
 
 export class VocIngestionStack extends VocStack {

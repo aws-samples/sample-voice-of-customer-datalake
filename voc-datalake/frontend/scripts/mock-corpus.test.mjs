@@ -71,6 +71,13 @@ describe('dev mock: review corpus and dims lists', () => {
     const [status] = await get('/feedback?days=0&dims=feedback_type:bug%7Cbad%20value')
     assert.equal(status, 400)
   })
+
+  // dimension_config._MAX_DIMS_CHOICES: every configured value (200) plus ~unset.
+  it('refuses a dims list longer than 201 choices, like the real route', async () => {
+    const list = (n) => encodeURIComponent('feedback_type:' + Array.from({ length: n }, (_, i) => `v${i}`).join('|'))
+    assert.equal((await get(`/feedback?days=0&dims=${list(201)}`))[0], 200)
+    assert.equal((await get(`/feedback?days=0&dims=${list(202)}`))[0], 400)
+  })
 })
 
 describe('corpusFeedback', () => {
@@ -89,6 +96,16 @@ describe('corpusFeedback', () => {
     assert.deepEqual(items.map((item) => item.feedback_id), ['8', '9', '10'])
     assert.deepEqual(countBy(items, 'sentiment_label'), { positive: 1, negative: 2 })
     assert.deepEqual(countBy([...handWritten, ...items], 'source_platform'), input.sourceCounts)
+  })
+
+  it('marks exactly the urgent quota, spread over the negative reviews', () => {
+    const many = corpusFeedback({
+      ...input, categorySentiment: { delivery: { positive: 0, neutral: 0, negative: 40, mixed: 0 } },
+      sourceCounts: { web: 41 }, urgentTotal: 6,
+    })
+    const urgent = many.filter((item) => item.urgency === 'high')
+    assert.equal(urgent.length, 5)
+    assert.ok(Number(urgent.at(-1).feedback_id) - Number(urgent[0].feedback_id) > 20, 'spread, not the first five')
   })
 
   it('returns the same reviews for the same input', () => {
