@@ -1,5 +1,12 @@
 {
   "aiModel": {
+    "accessStatus": {
+      "available": "Disponible",
+      "no_access": "Sin acceso",
+      "not_subscribed": "Sin suscripción",
+      "not_in_region": "No disponible en esta región",
+      "unknown": "Desconocido"
+    },
     "image": {
       "title": "Generación de imágenes (avatares de personas)",
       "description": "El modelo de imagen que dibuja los avatares de las personas. Lo fija el despliegue, no se elige aquí; el despliegue solicita su acceso.",
@@ -11,13 +18,6 @@
       "quotaPending": "Leyendo de Service Quotas, vuelve a comprobarlo en un minuto",
       "avatarsOff": "Los avatares están desactivados en este despliegue (ámbito de inferencia UE), así que este modelo no se usa.",
       "testTitle": "Generar una imagen de prueba pequeña con {{model}}. Cada clic cuesta unos centavos de dólar; la imagen no se guarda.",
-      "status": {
-        "available": "Disponible",
-        "no_access": "Sin acceso",
-        "not_subscribed": "Sin suscripción",
-        "not_in_region": "No disponible en esta región",
-        "unknown": "Desconocido"
-      },
       "hint": {
         "no_access": "Esta cuenta o sus roles no pueden usar el modelo. Revisa las políticas de la organización (SCP) para Bedrock y AWS Marketplace y vuelve a desplegar.",
         "not_subscribed": "Falta el acuerdo o la suscripción de Marketplace del modelo. Vuelve a desplegar (el despliegue la solicita) o acéptalo en la consola de Bedrock, en Acceso a modelos.",

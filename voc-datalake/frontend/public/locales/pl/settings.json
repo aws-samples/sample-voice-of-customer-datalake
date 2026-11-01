@@ -1,5 +1,12 @@
 {
   "aiModel": {
+    "accessStatus": {
+      "available": "Dostępny",
+      "no_access": "Brak dostępu",
+      "not_subscribed": "Brak subskrypcji",
+      "not_in_region": "Niedostępny w tym regionie",
+      "unknown": "Nieznany"
+    },
     "image": {
       "title": "Generowanie obrazów (awatary person)",
       "description": "Model obrazu, który rysuje awatary person. Ustala go wdrożenie, nie wybiera się go tutaj; wdrożenie wnioskuje o dostęp.",
@@ -11,13 +18,6 @@
       "quotaPending": "Odczyt z Service Quotas, sprawdź ponownie za minutę",
       "avatarsOff": "Awatary są wyłączone w tym wdrożeniu (zakres wnioskowania UE), więc ten model nie jest używany.",
       "testTitle": "Wygeneruj jeden mały obraz testowy modelem {{model}}. Każde kliknięcie kosztuje kilka centów USD; obraz nie jest zapisywany.",
-      "status": {
-        "available": "Dostępny",
-        "no_access": "Brak dostępu",
-        "not_subscribed": "Brak subskrypcji",
-        "not_in_region": "Niedostępny w tym regionie",
-        "unknown": "Nieznany"
-      },
       "hint": {
         "no_access": "To konto lub jego role nie mogą używać modelu. Sprawdź zasady organizacji (SCP) dla Bedrock i AWS Marketplace, a potem wdróż ponownie.",
         "not_subscribed": "Brakuje umowy lub subskrypcji Marketplace dla modelu. Wdróż ponownie (wdrożenie o nią wnioskuje) albo zaakceptuj ją w konsoli Bedrock w sekcji Dostęp do modeli.",

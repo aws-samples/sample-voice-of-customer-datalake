@@ -1,5 +1,12 @@
 {
   "aiModel": {
+    "accessStatus": {
+      "available": "Available",
+      "no_access": "No access",
+      "not_subscribed": "Not subscribed",
+      "not_in_region": "Not in this region",
+      "unknown": "Unknown"
+    },
     "image": {
       "title": "Image generation (persona avatars)",
       "description": "The image model that draws persona avatars. Set by the deployment, not a choice here; the deploy requests its access.",
@@ -11,13 +18,6 @@
       "quotaPending": "Reading from Service Quotas, check again in a minute",
       "avatarsOff": "Avatars are switched off in this deployment (EU inference scope), so this model is not used.",
       "testTitle": "Generate one small test image with {{model}}. Each click costs a few US cents; the image is not stored.",
-      "status": {
-        "available": "Available",
-        "no_access": "No access",
-        "not_subscribed": "Not subscribed",
-        "not_in_region": "Not in this region",
-        "unknown": "Unknown"
-      },
       "hint": {
         "no_access": "This account or its roles may not use the model. Check the organization's policies (SCPs) for Bedrock and AWS Marketplace, then redeploy.",
         "not_subscribed": "The model's agreement or Marketplace subscription is missing. Redeploy (the deploy requests it), or accept it in the Bedrock console under Model access.",
