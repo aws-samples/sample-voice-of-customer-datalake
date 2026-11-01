@@ -22,6 +22,7 @@ from shared.aws import is_conditional_check_failure
 from shared.engagement_identity import BoardViewer
 from shared.exceptions import TooManyRequestsError
 from shared.feature_boards_audience import audience_of
+from shared.logging import logger
 
 MAX_REQUESTS_PER_POSTER: Final = 20
 MAX_SUPPORTS_PER_POSTER: Final = 100
@@ -68,14 +69,40 @@ def charge_request(table: Any, board: dict[str, Any], viewer: BoardViewer) -> No
         raise
 
 
-def charge_support(table: Any, board: dict[str, Any], viewer: BoardViewer) -> None:
-    """Count one new +1 on an ``anyone`` board, or 429 ``rate_limited``."""
+def charge_support(table: Any, board: dict[str, Any], viewer: BoardViewer) -> dict[str, str] | None:
+    """Count one new +1 on an ``anyone`` board, or 429 ``rate_limited``. Returns the counter's key
+    (for ``refund_support``), None when the board is not limited."""
     if not is_limited(board, viewer):
-        return
-    update = _increment(rate_key(str(board['board_id']), viewer.email, _day()), 'supports', MAX_SUPPORTS_PER_POSTER)
+        return None
+    key = rate_key(str(board['board_id']), viewer.email, _day())
     try:
-        table.update_item(**update)
+        table.update_item(**_increment(key, 'supports', MAX_SUPPORTS_PER_POSTER))
     except ClientError as error:
         if is_conditional_check_failure(error):
             raise TooManyRequestsError(RATE_LIMITED) from error
         raise
+    return key
+
+
+def refund_support(table: Any, key: dict[str, str] | None) -> None:
+    """Give back the +1 ``charge_support`` counted under ``key`` when the +1 itself was not stored (a
+    concurrent +1 of the same person won, or the write failed): a refused +1 never uses up the
+    day's limit. The key is the charged one, so a charge just before midnight is refunded on its
+    own day.
+
+    Best effort: never below zero, and a failed refund is logged, never raised (the caller is
+    already answering the write's own error).
+    """
+    if key is None:
+        return
+    try:
+        table.update_item(
+            Key=key,
+            UpdateExpression='ADD #c :minus',
+            ConditionExpression='#c > :zero',
+            ExpressionAttributeNames={'#c': 'supports'},
+            ExpressionAttributeValues={':minus': -1, ':zero': 0},
+        )
+    except ClientError as error:
+        if not is_conditional_check_failure(error):
+            logger.warning('Could not refund a +1 rate charge', extra={'pk': key['pk']})

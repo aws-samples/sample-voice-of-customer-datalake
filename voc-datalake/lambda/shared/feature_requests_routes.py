@@ -27,7 +27,7 @@ from shared.engagement_identity import BoardViewer, require_board_admin, require
 from shared.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationError
 from shared.feature_board_fields import description_required, field_values, fields_of, statuses_of, validate_status
 from shared.feature_boards_access import BoardScope, scope_for, scope_from_event
-from shared.feature_boards_limits import charge_request, charge_support
+from shared.feature_boards_limits import charge_request, charge_support, refund_support
 from shared.feature_boards_store import board_view, is_paused
 from shared.feature_requests_promote import promote
 from shared.feature_requests_store import (
@@ -254,9 +254,15 @@ def post_support(request_id: str):
     _not_yet_supporting(scope.table, request_id, scope.viewer.email)
     body = json_object_body(app)
     fields = {**field_values(board, 'support', body), 'name': poster_name(body) or scope.viewer.name}
-    charge_support(scope.table, board, scope.viewer)
+    charge = charge_support(scope.table, board, scope.viewer)
     support = new_support(request_id, fields, scope.viewer.email, is_reporter=False)
-    put_support(scope.table, support)
+    try:
+        put_support(scope.table, support)
+    except Exception:
+        # The +1 was not stored (a concurrent +1 of the same person won, or the write failed):
+        # it must not use up the person's daily limit on an `anyone` board.
+        refund_support(scope.table, charge)
+        raise
     return created({'support': support_view(support), 'request': _recomputed(scope, request_id, board)})
 
 
