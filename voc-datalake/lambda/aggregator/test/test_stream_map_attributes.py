@@ -1,5 +1,5 @@
 """Map and list attributes of a REAL Powertools stream record reach the counters (see
-`aggregator.handler.deserialize_image` for the bug fixed in 5.67.02).
+`aggregator.handler.deserialize_image` for the bug fixed in 5.68.01).
 """
 from unittest.mock import patch
 
