@@ -18,6 +18,7 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 import { useMockServer } from './mock-server-harness.mjs'
+import { readFileSync } from 'node:fs'
 import { corpusFeedback } from '../mock-feedback-corpus.js'
 
 const PAGE = 100
@@ -72,11 +73,15 @@ describe('dev mock: review corpus and dims lists', () => {
     assert.equal(status, 400)
   })
 
-  // dimension_config._MAX_DIMS_CHOICES: every configured value (200) plus ~unset.
-  it('refuses a dims list longer than 201 choices, like the real route', async () => {
+  // The bound is read from the real validator, so the mock cannot drift from it: every configured value plus ~unset.
+  it('refuses a dims list one choice longer than the real route allows (dimension_config._MAX_DIMS_CHOICES)', async () => {
+    const source = readFileSync(new URL('../../lambda/shared/dimension_config.py', import.meta.url), 'utf8')
+    const values = Number(/^MAX_DIMENSION_VALUES: Final = (\d+)$/m.exec(source)?.[1])
+    assert.ok(values > 0, 'MAX_DIMENSION_VALUES not found in dimension_config.py')
+    assert.match(source, /^_MAX_DIMS_CHOICES: Final = MAX_DIMENSION_VALUES \+ 1$/m)
     const list = (n) => encodeURIComponent('feedback_type:' + Array.from({ length: n }, (_, i) => `v${i}`).join('|'))
-    assert.equal((await get(`/feedback?days=0&dims=${list(201)}`))[0], 200)
-    assert.equal((await get(`/feedback?days=0&dims=${list(202)}`))[0], 400)
+    assert.equal((await get(`/feedback?days=0&dims=${list(values + 1)}`))[0], 200)
+    assert.equal((await get(`/feedback?days=0&dims=${list(values + 2)}`))[0], 400)
   })
 })
 
