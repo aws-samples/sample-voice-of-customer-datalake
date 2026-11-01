@@ -115,6 +115,10 @@ class TestWithAccess:
         rows = model_agreements.with_access([_row(OPUS55), _row(HAIKU45)])
 
         assert [row['access']['status'] for row in rows] == ['unknown', 'unknown']
+        # The new branch, not image_access's own handling (which catches only ClientError/BotoCoreError):
+        # one build attempt, no read.
+        assert bedrock.factory.call_count == 1
+        bedrock.get_foundation_model_availability.assert_not_called()
 
     def test_no_rows_reads_nothing(self, bedrock):
         assert model_agreements.with_access([]) == []
