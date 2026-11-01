@@ -1,5 +1,12 @@
 {
   "aiModel": {
+    "accessStatus": {
+      "available": "Verfügbar",
+      "no_access": "Kein Zugriff",
+      "not_subscribed": "Nicht abonniert",
+      "not_in_region": "Nicht in dieser Region",
+      "unknown": "Unbekannt"
+    },
     "image": {
       "title": "Bildgenerierung (Persona-Avatare)",
       "description": "Das Bildmodell, das Persona-Avatare zeichnet. Es wird vom Deployment festgelegt und ist hier nicht wählbar; das Deployment beantragt den Zugriff.",
@@ -11,13 +18,6 @@
       "quotaPending": "Wird aus Service Quotas gelesen, in einer Minute erneut prüfen",
       "avatarsOff": "Avatare sind in diesem Deployment ausgeschaltet (EU-Inferenzbereich), daher wird dieses Modell nicht verwendet.",
       "testTitle": "Ein kleines Testbild mit {{model}} erzeugen. Jeder Klick kostet einige US-Cent; das Bild wird nicht gespeichert.",
-      "status": {
-        "available": "Verfügbar",
-        "no_access": "Kein Zugriff",
-        "not_subscribed": "Nicht abonniert",
-        "not_in_region": "Nicht in dieser Region",
-        "unknown": "Unbekannt"
-      },
       "hint": {
         "no_access": "Dieses Konto oder seine Rollen dürfen das Modell nicht nutzen. Prüfen Sie die Richtlinien der Organisation (SCPs) für Bedrock und AWS Marketplace und deployen Sie erneut.",
         "not_subscribed": "Die Vereinbarung oder das Marketplace-Abonnement des Modells fehlt. Erneut deployen (das Deployment beantragt es) oder in der Bedrock-Konsole unter Modellzugriff akzeptieren.",

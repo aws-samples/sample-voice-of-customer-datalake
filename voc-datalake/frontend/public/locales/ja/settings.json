@@ -1,5 +1,12 @@
 {
   "aiModel": {
+    "accessStatus": {
+      "available": "利用可能",
+      "no_access": "アクセスなし",
+      "not_subscribed": "未サブスクライブ",
+      "not_in_region": "このリージョンでは提供なし",
+      "unknown": "不明"
+    },
     "image": {
       "title": "画像生成（ペルソナのアバター）",
       "description": "ペルソナのアバターを描く画像モデルです。デプロイで決まり、ここでは選べません。アクセスはデプロイ時に申請されます。",
@@ -11,13 +18,6 @@
       "quotaPending": "Service Quotas から読み込み中です。1 分後にもう一度確認してください",
       "avatarsOff": "このデプロイではアバターがオフです（EU 推論スコープ）。そのため、このモデルは使われません。",
       "testTitle": "{{model}} で小さなテスト画像を 1 枚生成します。1 回のクリックで数セント（米ドル）かかります。画像は保存されません。",
-      "status": {
-        "available": "利用可能",
-        "no_access": "アクセスなし",
-        "not_subscribed": "未サブスクライブ",
-        "not_in_region": "このリージョンでは提供なし",
-        "unknown": "不明"
-      },
       "hint": {
         "no_access": "このアカウントまたはそのロールはモデルを使用できません。Bedrock と AWS Marketplace に関する組織のポリシー（SCP）を確認してから、再デプロイしてください。",
         "not_subscribed": "モデルの契約または Marketplace のサブスクリプションがありません。再デプロイする（デプロイが申請します）か、Bedrock コンソールの「モデルアクセス」で承諾してください。",

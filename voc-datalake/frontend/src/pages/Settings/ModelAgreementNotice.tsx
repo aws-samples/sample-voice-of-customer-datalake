@@ -72,7 +72,7 @@ function BlockedModelItem({ model, tests }: { readonly model: BlockedModel; read
       className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
       <div className="min-w-0 text-sm">
         <span className="text-text-strong">{model.label}</span>{' '}
-        <span className="badge badge-danger">{t(`aiModel.image.status.${model.status}`)}</span>
+        <span className="badge badge-danger">{t(`aiModel.accessStatus.${model.status}`)}</span>
         <p className="text-xs text-muted">{t(`aiModel.agreement.hint.${model.status}`)}</p>
         {(result !== undefined || testing) && <ModelTestPill result={result} testing={testing} compact />}
       </div>

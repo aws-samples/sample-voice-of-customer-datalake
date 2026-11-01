@@ -1,5 +1,12 @@
 {
   "aiModel": {
+    "accessStatus": {
+      "available": "Disponível",
+      "no_access": "Sem acesso",
+      "not_subscribed": "Sem assinatura",
+      "not_in_region": "Indisponível nesta região",
+      "unknown": "Desconhecido"
+    },
     "image": {
       "title": "Geração de imagens (avatares de personas)",
       "description": "O modelo de imagem que desenha os avatares das personas. É definido pela implantação e não se escolhe aqui; a implantação solicita o acesso.",
@@ -11,13 +18,6 @@
       "quotaPending": "Lendo do Service Quotas, verifique de novo em um minuto",
       "avatarsOff": "Os avatares estão desativados nesta implantação (escopo de inferência UE), então este modelo não é usado.",
       "testTitle": "Gerar uma pequena imagem de teste com {{model}}. Cada clique custa alguns centavos de dólar; a imagem não é guardada.",
-      "status": {
-        "available": "Disponível",
-        "no_access": "Sem acesso",
-        "not_subscribed": "Sem assinatura",
-        "not_in_region": "Indisponível nesta região",
-        "unknown": "Desconhecido"
-      },
       "hint": {
         "no_access": "Esta conta ou as suas funções não podem usar o modelo. Verifique as políticas da organização (SCPs) para Bedrock e AWS Marketplace e implante de novo.",
         "not_subscribed": "Falta o contrato ou a assinatura do Marketplace do modelo. Implante de novo (a implantação a solicita) ou aceite-o no console do Bedrock, em Acesso a modelos.",

@@ -1,5 +1,12 @@
 {
   "aiModel": {
+    "accessStatus": {
+      "available": "Disponible",
+      "no_access": "Pas d’accès",
+      "not_subscribed": "Non abonné",
+      "not_in_region": "Absent de cette région",
+      "unknown": "Inconnu"
+    },
     "image": {
       "title": "Génération d’images (avatars des personas)",
       "description": "Le modèle d’image qui dessine les avatars des personas. Il est fixé par le déploiement et ne se choisit pas ici ; le déploiement demande son accès.",
@@ -11,13 +18,6 @@
       "quotaPending": "Lecture dans Service Quotas, revérifiez dans une minute",
       "avatarsOff": "Les avatars sont désactivés dans ce déploiement (périmètre d’inférence UE) : ce modèle n’est donc pas utilisé.",
       "testTitle": "Générer une petite image de test avec {{model}}. Chaque clic coûte quelques cents US ; l’image n’est pas conservée.",
-      "status": {
-        "available": "Disponible",
-        "no_access": "Pas d’accès",
-        "not_subscribed": "Non abonné",
-        "not_in_region": "Absent de cette région",
-        "unknown": "Inconnu"
-      },
       "hint": {
         "no_access": "Ce compte ou ses rôles ne peuvent pas utiliser le modèle. Vérifiez les politiques de l’organisation (SCP) pour Bedrock et AWS Marketplace, puis redéployez.",
         "not_subscribed": "L’accord ou l’abonnement Marketplace du modèle manque. Redéployez (le déploiement le demande) ou acceptez-le dans la console Bedrock, sous Accès aux modèles.",

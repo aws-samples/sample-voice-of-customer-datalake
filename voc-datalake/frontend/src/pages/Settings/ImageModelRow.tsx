@@ -86,7 +86,7 @@ function AccessStatus({ image }: { readonly image: ImageModelCapacity | null }) 
   return (
     <span className="inline-flex flex-col gap-0.5 min-w-0" data-access={status}>
       <span className={`badge badge-${meta.tone} inline-flex items-center gap-1 self-start`}>
-        <Icon size={12} aria-hidden="true" /> {t(`aiModel.image.status.${status}`)}
+        <Icon size={12} aria-hidden="true" /> {t(`aiModel.accessStatus.${status}`)}
       </span>
       {status !== 'available' && <span className="text-xs text-muted">{t(`aiModel.image.hint.${status}`)}</span>}
     </span>

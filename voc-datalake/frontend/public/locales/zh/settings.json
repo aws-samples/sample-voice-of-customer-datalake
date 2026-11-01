@@ -1,5 +1,12 @@
 {
   "aiModel": {
+    "accessStatus": {
+      "available": "可用",
+      "no_access": "无访问权限",
+      "not_subscribed": "未订阅",
+      "not_in_region": "此区域不提供",
+      "unknown": "未知"
+    },
     "image": {
       "title": "图像生成（角色头像）",
       "description": "绘制角色头像的图像模型。由部署决定，此处不可选择；部署时会申请其访问权限。",
@@ -11,13 +18,6 @@
       "quotaPending": "正在从 Service Quotas 读取，请一分钟后再查看",
       "avatarsOff": "此部署已关闭头像（EU 推理范围），因此不使用此模型。",
       "testTitle": "用 {{model}} 生成一张小测试图像。每次点击花费几美分；图像不会保存。",
-      "status": {
-        "available": "可用",
-        "no_access": "无访问权限",
-        "not_subscribed": "未订阅",
-        "not_in_region": "此区域不提供",
-        "unknown": "未知"
-      },
       "hint": {
         "no_access": "此账户或其角色无法使用该模型。请检查组织针对 Bedrock 和 AWS Marketplace 的策略（SCP），然后重新部署。",
         "not_subscribed": "缺少该模型的协议或 Marketplace 订阅。请重新部署（部署时会申请），或在 Bedrock 控制台的“模型访问”中接受。",
