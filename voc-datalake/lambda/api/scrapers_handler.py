@@ -84,6 +84,7 @@ from shared.url_policy import (
     PRIVATE_ADDRESS_ERROR,
     BlockedDestinationError,
     connect_to_validated_address,
+    scraper_url_error,
     validate_url,
 )
 
@@ -237,31 +238,6 @@ def list_scrapers():
     return {'scrapers': configs}
 
 
-def _scraper_url_error(scraper: dict) -> str | None:
-    """Why `scraper` must not be saved because of a URL it would fetch, else None.
-
-    Checks exactly the fields the ingestor fetches (`_get_urls_to_scrape`):
-    `base_url` (an empty one is the UI's "not configured yet" state) and every
-    entry of `urls`. Pagination only appends a query parameter to `base_url`,
-    so its pages share the host judged here. The message names the URL so the
-    caller can tell which entry failed.
-    """
-    base_url = scraper.get('base_url')
-    if base_url is not None and not isinstance(base_url, str):
-        return 'base_url must be a string'
-    urls = scraper.get('urls')
-    if urls is None:
-        urls = []
-    if not isinstance(urls, list) or not all(isinstance(u, str) for u in urls):
-        return 'urls must be a list of strings'
-    candidates = ([base_url] if base_url else []) + urls
-    for url in candidates:
-        is_valid, error = validate_url(url)
-        if not is_valid:
-            return f'Scraper URL rejected ({url}): {error}'
-    return None
-
-
 # --- Bounds on the save route ---------------------------------------------------
 # `POST /scrapers` (admin-only) writes the shared API-credentials secret, so what
 # one save may put there is bounded even for an admin: a typo or a runaway client
@@ -307,7 +283,7 @@ def _text_fields_error(scraper: dict) -> str | None:
 
 
 def _url_fields_error(scraper: dict) -> str | None:
-    """Count and length only; the URL policy itself is `_scraper_url_error`."""
+    """Count and length only; the URL policy itself is `shared.url_policy.scraper_url_error`."""
     urls = scraper.get('urls')
     if isinstance(urls, list) and len(urls) > MAX_URLS_PER_SCRAPER:
         return f'A scraper may list at most {MAX_URLS_PER_SCRAPER} urls'
@@ -374,7 +350,7 @@ def _validated_scraper(body: object) -> dict:
         raise ValidationError('No scraper config provided')
     if not isinstance(scraper, dict):
         raise ValidationError('Scraper config must be an object')
-    error = _scraper_shape_error(scraper) or _scraper_url_error(scraper)
+    error = _scraper_shape_error(scraper) or scraper_url_error(scraper, validate_url)
     if error is not None:
         raise ValidationError(error)
     # Dimension defaults and tags the ingestor stamps on every message it sends.

@@ -129,6 +129,61 @@ class TestGetCredentials:
 class TestUpdateCredentials:
     """Tests for PUT /integrations/<source>/credentials endpoint."""
 
+    @pytest.mark.parametrize('configs', [
+        '[{"id": "s1", "base_url": "http://169.254.169.254/latest/meta-data"}]',
+        '[{"id": "s1", "base_url": "", "urls": ["https://ok.example.com", "http://10.0.0.5/"]}]',
+    ])
+    @patch('integrations_handler.secretsmanager')
+    def test_refuses_webscraper_configs_with_a_blocked_url(
+        self, mock_secrets, configs, api_gateway_event, lambda_context,
+    ):
+        """#27: the scraper list saved here is fetched by the ingestor, so every URL in it is
+        judged like POST /scrapers judges it, before anything is written."""
+        blocked = {'http://169.254.169.254/latest/meta-data', 'http://10.0.0.5/'}
+        with patch('integrations_handler.validate_url',
+                   side_effect=lambda url: (url not in blocked, 'private address')):
+            response, body = call_route(
+                lambda_handler, api_gateway_event, lambda_context,
+                method='PUT', path='/integrations/webscraper/credentials',
+                path_params={'source': 'webscraper'}, body={'configs': configs},
+            )
+
+        assert response['statusCode'] == 400
+        assert 'Scraper URL rejected' in json.dumps(body)
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @pytest.mark.parametrize('configs', ['not json', '{"id": "s1"}', '["s1"]'])
+    @patch('integrations_handler.secretsmanager')
+    def test_refuses_webscraper_configs_that_are_not_a_list_of_scrapers(
+        self, mock_secrets, configs, api_gateway_event, lambda_context,
+    ):
+        response, _body = call_route(
+            lambda_handler, api_gateway_event, lambda_context,
+            method='PUT', path='/integrations/webscraper/credentials',
+            path_params={'source': 'webscraper'}, body={'configs': configs},
+        )
+
+        assert response['statusCode'] == 400
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @patch('integrations_handler.secretsmanager')
+    def test_saves_webscraper_configs_whose_urls_pass_the_policy(
+        self, mock_secrets, api_gateway_event, lambda_context,
+    ):
+        mock_secrets.get_secret_value.return_value = {'SecretString': '{}'}
+        configs = '[{"id": "s1", "base_url": "https://reviews.example.com/p/1"}]'
+        with patch('integrations_handler.validate_url', return_value=(True, '')) as check:
+            response, _body = call_route(
+                lambda_handler, api_gateway_event, lambda_context,
+                method='PUT', path='/integrations/webscraper/credentials',
+                path_params={'source': 'webscraper'}, body={'configs': configs},
+            )
+
+        assert response['statusCode'] == 200
+        check.assert_called_once_with('https://reviews.example.com/p/1')
+        stored = json.loads(mock_secrets.put_secret_value.call_args.kwargs['SecretString'])
+        assert stored['webscraper_configs'] == configs
+
     @patch('integrations_handler.secretsmanager')
     def test_updates_credentials_successfully(
         self, mock_secrets, api_gateway_event, lambda_context
