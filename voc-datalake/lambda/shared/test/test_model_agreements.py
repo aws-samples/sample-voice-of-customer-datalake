@@ -109,6 +109,13 @@ class TestWithAccess:
         assert [row['access']['status'] for row in rows] == ['available', 'unknown']
         assert elapsed < 2
 
+    def test_a_client_that_cannot_be_built_reads_every_row_unknown(self, bedrock):
+        bedrock.factory.side_effect = ValueError('no endpoint for region')
+
+        rows = model_agreements.with_access([_row(OPUS55), _row(HAIKU45)])
+
+        assert [row['access']['status'] for row in rows] == ['unknown', 'unknown']
+
     def test_no_rows_reads_nothing(self, bedrock):
         assert model_agreements.with_access([]) == []
         bedrock.get_foundation_model_availability.assert_not_called()
