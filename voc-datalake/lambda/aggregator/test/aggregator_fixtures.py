@@ -47,7 +47,8 @@ def _decimals(value: Any) -> Any:
 
 def to_stream_image(item: dict) -> dict:
     """Serialize a plain dict the way a stream image arrives: DynamoDB's wire format, nested
-    maps and lists included (``None`` is ``{'NULL': True}``)."""
+    maps and lists included (``None`` is ``{'NULL': True}``). Like DynamoDB, boto3's serializer
+    refuses an empty set; leave such a field out of a fixture item."""
     return {key: _SERIALIZER.serialize(_decimals(value)) for key, value in item.items()}
 
 

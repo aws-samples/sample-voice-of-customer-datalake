@@ -55,22 +55,21 @@ def test_a_modify_that_changes_the_type_moves_both_value_rows(writes):
     }
 
 
-def test_tags_from_a_stream_record_are_counted():
-    stream = stream_record('INSERT', new={**BASE, 'tags': ['Beta', 'vip']}).dynamodb
-    assert stream is not None
-    assert stream.new_image is not None
-    item = handler.deserialize_image(stream.new_image)
-    assert item['tags'] == ['Beta', 'vip']
-    assert (f'{handler.TAG_PREFIX}beta', 'count') in handler.counter_dimensions(item)
+def test_an_insert_hands_the_counters_its_type_and_tags():
+    with patch.object(handler, 'process_new_feedback', return_value=True) as process:
+        handler.record_handler(stream_record('INSERT', new={**BASE, **TYPED, 'tags': ['Beta', 'vip']}))
+
+    item = process.call_args.args[0]
+    counters = set(handler.counter_dimensions(item))
+    assert {(pk, field) for pk, _date, field in TYPE_COUNTERS} <= counters
+    assert {(f'{handler.TAG_PREFIX}beta', 'count'), (f'{handler.TAG_PREFIX}vip', 'count')} <= counters
 
 
-@pytest.mark.parametrize(('image', 'expected'), [
-    ({'s': {'S': 'text'}, 'm': {'M': {'k': {'S': 'v'}, 'n': {'N': '2'}}}}, {'s': 'text', 'm': {'k': 'v', 'n': 2}}),
-    ({'n': {'N': '1'}, 'flag': {'BOOL': True}, 'gone': {'NULL': True}}, {'n': 1, 'flag': True, 'gone': None}),
-    ({'tags': {'SS': ['a', 'b']}, 'l': {'L': [{'S': 'x'}]}}, {'tags': {'a', 'b'}, 'l': ['x']}),
-])
-def test_a_raw_wire_image_is_deserialized_all_the_way_down(image, expected):
-    assert handler.deserialize_image(image, raw=True) == expected
+def test_a_modify_that_changes_the_tags_moves_their_rows(writes):
+    handler.record_handler(stream_record('MODIFY', old={**BASE, 'tags': ['beta']}, new={**BASE, 'tags': ['vip']}))
+
+    assert {key for sign, key in writes if sign == -1} == {(f'{handler.TAG_PREFIX}beta', DATE, 'count')}
+    assert {key for sign, key in writes if sign == 1} == {(f'{handler.TAG_PREFIX}vip', DATE, 'count')}
 
 
 @pytest.mark.parametrize('dimensions', [

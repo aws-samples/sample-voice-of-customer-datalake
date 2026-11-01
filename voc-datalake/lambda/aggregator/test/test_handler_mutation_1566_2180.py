@@ -227,16 +227,24 @@ class TestTheAverageRebucketCountsBothHalves:
 
 
 class TestEveryWireTypeIsDeserialized:
-    def test_each_raw_type_unwraps_to_its_value(self):
-        image = {'s': {'S': 'text'}, 'n': {'N': '1.5'}, 'm': {'M': {'k': {'S': 'v'}}},
-                 'l': {'L': [{'S': 'a'}]}, 'b': {'BOOL': False}, 'plain': 7}
+    """Powertools deserializes the wire format; deserialize_image keeps what it hands over."""
 
-        image.pop('plain')
-        assert handler.deserialize_image(image, raw=True) == {
-            's': 'text', 'n': Decimal('1.5'), 'm': {'k': 'v'}, 'l': ['a'], 'b': False}
+    def test_each_wire_type_arrives_as_its_value(self):
+        record = DynamoDBRecord({'eventName': 'INSERT', 'dynamodb': {'NewImage': {
+            's': {'S': 'text'}, 'n': {'N': '1.5'}, 'm': {'M': {'k': {'S': 'v'}}},
+            'l': {'L': [{'S': 'a'}]}, 'b': {'BOOL': False}, 'x': {'NULL': True},
+        }}})
+        assert record.dynamodb is not None
+        assert record.dynamodb.new_image is not None
+        assert handler.deserialize_image(record.dynamodb.new_image) == {
+            's': 'text', 'n': Decimal('1.5'), 'm': {'k': 'v'}, 'l': ['a'], 'b': False, 'x': None}
 
-    def test_null_is_none(self):
-        assert handler.deserialize_image({'x': {'NULL': True}}, raw=True) == {'x': None}
+    def test_the_copy_does_not_share_nested_values_with_the_record(self):
+        image = {'dimensions': {'feedback_type': 'bug'}, 'tags': ['a']}
+        item = handler.deserialize_image(image)
+        item['dimensions']['feedback_type'] = 'praise'
+        item['tags'].append('b')
+        assert image == {'dimensions': {'feedback_type': 'bug'}, 'tags': ['a']}
 
 
 class TestTheRecordIsReadFromTheEvent:
