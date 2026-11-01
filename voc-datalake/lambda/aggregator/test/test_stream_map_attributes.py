@@ -1,6 +1,7 @@
 """Map and list attributes of a REAL Powertools stream record reach the counters (see
 `aggregator.handler.deserialize_image` for the 5.67.01 bug these tests pin).
 """
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
@@ -65,6 +66,7 @@ def test_tags_from_a_stream_record_are_counted():
     ({'s': {'S': 'text'}, 'm': {'M': {'k': {'S': 'v'}, 'n': {'N': '2'}}}}, {'s': 'text', 'm': {'k': 'v', 'n': 2}}),
     ({'n': {'N': '1'}, 'flag': {'BOOL': True}, 'gone': {'NULL': True}}, {'n': 1, 'flag': True, 'gone': None}),
     ({'tags': {'SS': ['a', 'b']}, 'l': {'L': [{'S': 'x'}]}}, {'tags': {'a', 'b'}, 'l': ['x']}),
+    ({'n': {'N': 3}, 'd': {'N': Decimal('1.5')}}, {'n': 3, 'd': Decimal('1.5')}),
 ])
 def test_a_raw_wire_image_is_deserialized_all_the_way_down(image, expected):
     assert handler.deserialize_image(image) == expected

@@ -2149,7 +2149,7 @@ def _rebucket_average(
 # Python shape (and an N payload is a number). Checking the payload too keeps a deserialized
 # one-key map such as {'N': 'north'} from being read as a number (boto3 would answer NaN).
 _WIRE_PAYLOAD_TYPES: Final[dict[str, tuple[type, ...]]] = {
-    'S': (str,), 'N': (str,), 'B': (bytes, bytearray, str), 'BOOL': (bool,), 'NULL': (bool,),
+    'S': (str,), 'N': (str, int, Decimal), 'B': (bytes, bytearray, str),
     'M': (dict,), 'L': (list,), 'SS': (list,), 'NS': (list,), 'BS': (list,),
 }
 _DESERIALIZER: Final = TypeDeserializer()
@@ -2161,10 +2161,14 @@ def _is_wire_value(value: object) -> bool:
     if not isinstance(value, dict) or len(value) != 1:
         return False
     (tag, payload), = value.items()
+    if tag in ('BOOL', 'NULL'):
+        return isinstance(payload, bool)
     expected = _WIRE_PAYLOAD_TYPES.get(tag)
-    if expected is None or not isinstance(payload, expected):
+    if expected is None or isinstance(payload, bool) or not isinstance(payload, expected):
         return False
-    return tag != 'N' or bool(_WIRE_NUMBER_RE.match(payload))
+    if tag == 'N' and isinstance(payload, str):
+        return bool(_WIRE_NUMBER_RE.match(payload))
+    return True
 
 
 def deserialize_image(image: dict) -> dict:
