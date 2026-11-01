@@ -29,14 +29,22 @@ export const KINDS = Object.freeze({
 })
 
 /**
+ * Paths shaped like a secret: never sent to a model (an untracked `.env`, key or credentials file that is not
+ * gitignored). Wide on purpose; review.mjs NAMES every changed path it leaves out, in the output and in the prompt,
+ * so a legitimate file caught here (a `credentials.py`) is visible, never silently unreviewed.
+ */
+export const SECRET_PATHS = Object.freeze([
+  '*.env', '*.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*id_rsa*', '*id_ed25519*',
+  '*credentials*', '*.secret*', '*.npmrc', '*.netrc',
+])
+
+/**
  * The files sent for review: every tracked or new file (code, config, requirements, gate settings, docs), except
- * lockfiles, translations, build output, images, and anything shaped like a secret (an untracked `.env`, key or
- * credentials file that is not gitignored must never reach a model).
+ * lockfiles, translations, build output, images and SECRET_PATHS.
  */
 export const REVIEW_PATHSPEC = Object.freeze([
   '.',
-  ':!*.env', ':!*.env.*', ':!*.pem', ':!*.key', ':!*.p12', ':!*.pfx', ':!*id_rsa*', ':!*id_ed25519*',
-  ':!*credentials*', ':!*.secret*', ':!*.npmrc', ':!*.netrc',
+  ...SECRET_PATHS.map((glob) => `:!${glob}`),
   ':!*package-lock.json', ':!*/node_modules/*', ':!*/dist/*', ':!*/cdk.out/*', ':!*/public/locales/*',
   ':!*/coverage_html/*', ':!*/.ruff_cache/*',
   ':!*.png', ':!*.jpg', ':!*.jpeg', ':!*.gif', ':!*.webp', ':!*.ico', ':!*.pdf', ':!*.drawio',
@@ -124,7 +132,7 @@ const fenced = (tag, body, attrs = '') => [`<${tag}${attrs}>`, body.trim() || '(
  * The user prompt: the kind's context (TENETS.md for both; the commit messages for `commit`), what changed, and the
  * diff, each fenced and labelled as data.
  */
-export function buildPrompt({ kind, tenets, commits, base, files, diff, truncated }) {
+export function buildPrompt({ kind, tenets, commits, base, files, diff, truncated, omitted = [] }) {
   const ask = kind === 'commit'
     ? 'Review this change as a pull request review would.'
     : 'Check this change against the tenets.'
@@ -136,6 +144,9 @@ export function buildPrompt({ kind, tenets, commits, base, files, diff, truncate
     ...fenced('tenets', tenets, ' file="TENETS.md"'),
     ...(kind === 'commit' ? fenced('commits', commits ?? '') : []),
     ...fenced('changed-files', files, ` base="${base}"`),
+    ...(omitted.length > 0
+      ? fenced('not-sent', `${omitted.join('\n')}\n(changed, but named like a secret: not sent and not to be read; say so if the change seems to depend on them)`)
+      : []),
     ...fenced('git-diff', diff),
     note,
   ].join('\n')

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -318,6 +318,9 @@ test('secret-shaped untracked files and the cache are never sent', () => {
     const { stdin } = called(box.dir)
     assert.doesNotMatch(stdin, /SECRET-VALUE-123/)
     assert.match(stdin, /new\.ts \(new, untracked\)/)
+    // Named, never sent: a legitimate file caught by the wide patterns stays visible.
+    assert.match(result.stdout, /not sent \(named like a secret; review them yourself\): .*aws-credentials\.json/)
+    assert.match(stdin, /<not-sent>\n[^<]*deploy\.pem/)
   } finally {
     rmSync(box.dir, { recursive: true, force: true })
   }
@@ -358,6 +361,33 @@ test('cached answers older than 30 days are pruned', () => {
     utimesSync(old, longAgo, longAgo)
     review(box)
     assert.equal(existsSync(old), false)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
+test('Ctrl-C stops an agent that ignores SIGTERM, within the 5 s escalation', async () => {
+  const box = scratch({})
+  try {
+    const pidFile = join(box.dir, 'agent.pid')
+    writeFileSync(join(box.bin, 'kiro-cli'), `#!/usr/bin/env node
+require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid))
+process.on('SIGTERM', () => {})
+process.stdin.resume()
+setInterval(() => {}, 1000)
+`)
+    chmodSync(join(box.bin, 'kiro-cli'), 0o755)
+    const child = spawn(process.execPath, [join(ROOT, 'scripts/ai-review/review.mjs'), '--kind', 'tenets'], {
+      cwd: box.repo, env: { PATH: box.bin, HOME: box.dir }, stdio: 'ignore',
+    })
+    for (let i = 0; i < 100 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 100))
+    const agentPid = Number(readFileSync(pidFile, 'utf8'))
+    const started = Date.now()
+    child.kill('SIGINT')
+    const code = await new Promise((resolve) => child.on('exit', (exitCode) => resolve(exitCode)))
+    assert.equal(code, 130)
+    assert.ok(Date.now() - started < 9000, 'the review exited after the escalation')
+    assert.throws(() => process.kill(agentPid, 0), /ESRCH/, 'the agent is gone')
   } finally {
     rmSync(box.dir, { recursive: true, force: true })
   }

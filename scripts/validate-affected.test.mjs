@@ -112,7 +112,7 @@ describe('validate-affected path mapping (5.49.00 gates)', () => {
 });
 
 describe('validate-affected never selects the AI reviews (a model call per branch)', () => {
-  it('leaves out the tenets and commit groups, also when everything runs', () => {
+  it('leaves out the tenets and commit groups, also for a path that selects every group', () => {
     for (const path of ['scripts/ai-review/review.mjs', '.kiro/agents/commit-reviewer.json',
       'TENETS.md', 'some-new-top-level/file.txt', '.github/workflows/quality-gates.yml']) {
       const groups = groupsFor(path);
@@ -121,4 +121,3 @@ describe('validate-affected never selects the AI reviews (a model call per branc
     }
   });
 });
-

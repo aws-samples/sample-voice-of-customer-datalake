@@ -26,7 +26,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { buildPrompt, capDiff, chooseRunner, KINDS, onPath, parseVerdict, REVIEW_PATHSPEC, runnerCommand } from './lib.mjs'
+import { buildPrompt, capDiff, chooseRunner, KINDS, onPath, parseVerdict, REVIEW_PATHSPEC, runnerCommand, SECRET_PATHS } from './lib.mjs'
 
 function git(root, args, okStatuses = [0]) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
@@ -55,7 +55,12 @@ function collectChange(root, base) {
     ...untracked.map((file) => ` ${file} (new, untracked)`),
   ].join('\n')
   const commits = git(root, ['log', '--no-color', '--format=%h %s%n%b', `${base}..HEAD`]) ?? ''
-  return { diff: [tracked, ...added].join('\n').trim(), files, commits }
+  // Names only: the changed paths SECRET_PATHS kept out of the diff.
+  const omitted = [
+    ...(git(root, ['diff', '--name-only', base, '--', ...SECRET_PATHS]) ?? '').split('\n'),
+    ...(git(root, ['ls-files', '--others', '--exclude-standard', '--', ...SECRET_PATHS]) ?? '').split('\n'),
+  ].filter(Boolean)
+  return { diff: [tracked, ...added].join('\n').trim(), files, commits, omitted: [...new Set(omitted)] }
 }
 
 /** Runs the agent with the prompt on stdin: `{output, stderr, code, timedOut}`. */
@@ -70,8 +75,14 @@ function runAgent({ command, args }, prompt, { cwd, timeoutMs }) {
     // SIGTERM first; an agent that ignores it gets SIGKILL 5 s later (the step must end).
     const stop = () => { signalGroup('SIGTERM'); setTimeout(() => signalGroup('SIGKILL'), 5000).unref() }
     const timer = setTimeout(() => { timedOut = true; stop() }, timeoutMs)
-    // A Ctrl-C or kill of this script reaches the agent's group too (it no longer shares ours).
-    const onSignal = (signal) => { stop(); process.exit(signal === 'SIGINT' ? 130 : 143) }
+    // A Ctrl-C or kill of this script reaches the agent's group too (it no longer shares ours): SIGTERM, then exit
+    // when the agent has closed, or SIGKILL its group and exit after 5 s.
+    const onSignal = (signal) => {
+      const code = signal === 'SIGINT' ? 130 : 143
+      signalGroup('SIGTERM')
+      child.once('close', () => process.exit(code))
+      setTimeout(() => { signalGroup('SIGKILL'); process.exit(code) }, 5000)
+    }
     process.once('SIGINT', onSignal)
     process.once('SIGTERM', onSignal)
     const done = () => { clearTimeout(timer); process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal) }
@@ -135,13 +146,14 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
 
   const base = reviewBase(root, env)
   if (!base) { say('skipped: no base to diff against (fetch origin/main or set AI_REVIEW_BASE)'); return 0 }
-  const { diff, files, commits } = collectChange(root, base)
+  const { diff, files, commits, omitted } = collectChange(root, base)
+  if (omitted.length > 0) say(`not sent (named like a secret; review them yourself): ${omitted.join(', ')}`)
   if (!diff) { say(`nothing to review since ${base.slice(0, 8)}`); return 0 }
 
   const systemPrompt = readFileSync(join(root, `.kiro/agents/prompts/${kind.agent}.md`), 'utf8')
   const tenets = readFileSync(join(root, 'TENETS.md'), 'utf8')
   const { text, truncated } = capDiff(diff)
-  const prompt = buildPrompt({ kind: kindName, tenets, commits, base: base.slice(0, 12), files, diff: text, truncated })
+  const prompt = buildPrompt({ kind: kindName, tenets, commits, base: base.slice(0, 12), files, diff: text, truncated, omitted })
 
   const cacheDir = join(root, '.cache', 'ai-review')
   const key = createHash('sha256').update(`${kindName}\n${choice.runner}\n${env.AI_REVIEW_MODEL ?? ''}\n${systemPrompt}\n${prompt}`).digest('hex')
