@@ -36,6 +36,17 @@ export function NewsKindBadge({ kind }: Readonly<{ kind: RadarNewsKind }>) {
   )
 }
 
+/** The kind as a small icon (its name is the tooltip and the accessible text): compact release rows. */
+export function NewsKindIcon({ kind }: Readonly<{ kind: RadarNewsKind }>) {
+  const label = useNewsKindLabel()
+  const Icon = KIND_ICONS[kind]
+  return (
+    <span className="inline-flex text-muted shrink-0" title={label(kind)} data-testid="news-kind">
+      <Icon size={14} aria-hidden="true" /><span className="sr-only">{label(kind)}</span>
+    </span>
+  )
+}
+
 /** "via Exa" / "via feed", only when our own web search is not among the item's sources. */
 export function FoundViaMarker({ foundVia }: Readonly<{ foundVia: readonly RadarFoundVia[] }>) {
   const { t } = useTranslation('radar')

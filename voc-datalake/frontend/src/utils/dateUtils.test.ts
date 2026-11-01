@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { formatCalendarDay, formatDate, formatDateTime, formatTime, getTimeRangeLabel } from './dateUtils'
+import { formatCalendarDay, formatCalendarMonth, formatDate, formatDateTime, formatTime, getTimeRangeLabel } from './dateUtils'
 
 describe('formatDate', () => {
   // Noon UTC: the same calendar day in every CI time zone.
@@ -105,6 +105,22 @@ describe('formatDateTime', () => {
     const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
     expect(formatDateTime(ISO, 'pl', '', 'short')).toBe(new Intl.DateTimeFormat('pl', options).format(new Date(ISO)))
     expect(formatDateTime(ISO, 'en', '', 'short')).not.toContain('2026')
+  })
+})
+
+describe('formatCalendarMonth', () => {
+  it('writes a month heading in the reader\'s language', () => {
+    expect(formatCalendarMonth('2026-10', 'en')).toBe('October 2026')
+    expect(formatCalendarMonth('2026-10', 'de')).toBe('Oktober 2026')
+  })
+
+  it('answers the input when it is not a YYYY-MM month', () => {
+    expect(formatCalendarMonth('2026-13', 'en')).toBe('2026-13')
+    expect(formatCalendarMonth('soon', '')).toBe('soon')
+  })
+
+  it('falls back to English without a language', () => {
+    expect(formatCalendarMonth('2026-01', '')).toBe('January 2026')
   })
 })
 

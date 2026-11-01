@@ -110,17 +110,32 @@ const ReleasesSchema = z.object({ releases: parsedList(ReleaseSchema) }).catch({
 
 const SideSchema = z.object({ volume: count, positive_share: share, negative_share: share })
 
+/** Under this many of their reviews in a category, the comparison gives no verdict (radar_handler `too_few`). */
+export const RADAR_COMPARE_MIN_REVIEWS = 10
+
+/**
+ * `too_few`: their volume is under the threshold, so the row carries no verdict. An older API
+ * omits it: it is derived from their volume, and a verdict on such a row is dropped.
+ */
 const CompareRowSchema = z.object({
   category: z.string().min(1),
   theirs: SideSchema,
   ours: SideSchema.nullable().catch(null),
   verdict: z.enum(['they_are_better', 'we_are_better', 'even']).nullable().catch(null),
+  too_few: z.boolean().optional().catch(undefined),
+}).transform((row) => {
+  const tooFew = row.too_few ?? row.theirs.volume < RADAR_COMPARE_MIN_REVIEWS
+  return { ...row, too_few: tooFew, verdict: tooFew ? null : row.verdict }
 })
+
+/** Both sides over the whole window; null when the API does not send it (an older API) or it is malformed. */
+const OverallSchema = z.object({ theirs: SideSchema, ours: SideSchema.nullable().catch(null) }).nullable().catch(null)
 
 const CompareSchema = z.object({
   categories: parsedList(CompareRowSchema),
   ours_available: z.boolean().catch(false),
-}).catch({ categories: [], ours_available: false })
+  overall: OverallSchema,
+}).catch({ categories: [], ours_available: false, overall: null })
 
 export const RADAR_SENTIMENTS = ['positive', 'negative', 'neutral', 'mixed'] as const
 export type RadarSentiment = typeof RADAR_SENTIMENTS[number]
@@ -210,6 +225,7 @@ export type RadarTheme = z.infer<typeof ThemeSchema>
 export type RadarRelease = z.infer<typeof ReleaseSchema>
 export type RadarCompareRow = z.infer<typeof CompareRowSchema>
 export type RadarCompare = z.infer<typeof CompareSchema>
+export type RadarCompareSide = z.infer<typeof SideSchema>
 export type RadarReview = z.infer<typeof ReviewSchema>
 export type RadarReviewsPage = z.infer<typeof ReviewsPageSchema>
 export type RadarBrandEntry = z.infer<typeof BrandEntrySchema>

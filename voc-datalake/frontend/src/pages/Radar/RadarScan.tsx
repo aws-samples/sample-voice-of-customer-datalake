@@ -6,12 +6,13 @@
  * @module pages/Radar/RadarScan
  */
 import { useMutation } from '@tanstack/react-query'
+import type { UseMutationResult } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { radarApi } from '../../api/radarApi'
-import { formatDateTime } from '../../utils/dateUtils'
+import { formatDate, formatDateTime } from '../../utils/dateUtils'
 import type { RadarScan } from '../../api/radarSchema'
 
 /** "2 brands, 12 searches, 3 new releases, 1 merged", each count pluralized on its own. */
@@ -36,23 +37,72 @@ export function LastScan({ scan }: Readonly<{ scan: RadarScan | null }>) {
   )
 }
 
+type ScanMutation = UseMutationResult<unknown, Error, void>
+
+/** POST /radar/scan for every tracked brand (admin-only server-side). */
+const useScanMutation = (): ScanMutation => useMutation({ mutationFn: () => radarApi.startScan() })
+
 /** "Scan now" for every tracked brand, with what it does (described by the hint) and whether it started. */
 export function ScanNow() {
   const { t } = useTranslation('radar')
   const hintId = useId()
-  const scan = useMutation({ mutationFn: () => radarApi.startScan() })
+  const scan = useScanMutation()
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" className="btn btn-secondary btn-sm" disabled={scan.isPending} aria-describedby={hintId}
-          onClick={() => scan.mutate()}>
-          <RefreshCw size={14} aria-hidden="true" className={scan.isPending ? 'animate-spin' : undefined} />
-          {t('settings.scanNow')}
-        </button>
-        {scan.isSuccess ? <p role="status" className="text-xs text-ok">{t('settings.scanStarted')}</p> : null}
-        {scan.isError ? <p role="alert" className="text-xs text-danger">{t('settings.scanFailed')}</p> : null}
+        <ScanButton scan={scan} hintId={hintId} />
+        <ScanOutcome scan={scan} />
       </div>
       <p id={hintId} className="text-xs text-muted">{t('settings.scanNowHint')}</p>
+    </div>
+  )
+}
+
+function ScanButton({ scan, hintId, title }: Readonly<{ scan: ScanMutation; hintId: string; title?: string }>) {
+  const { t } = useTranslation('radar')
+  return (
+    <button type="button" className="btn btn-secondary btn-sm" disabled={scan.isPending} aria-describedby={hintId}
+      title={title} onClick={() => scan.mutate()}>
+      <RefreshCw size={14} aria-hidden="true" className={scan.isPending ? 'animate-spin' : undefined} />
+      {t('settings.scanNow')}
+    </button>
+  )
+}
+
+function ScanOutcome({ scan }: Readonly<{ scan: ScanMutation }>) {
+  const { t } = useTranslation('radar')
+  if (scan.isSuccess) return <p role="status" className="text-xs text-ok">{t('settings.scanStarted')}</p>
+  if (scan.isError) return <p role="alert" className="text-xs text-danger">{t('settings.scanFailed')}</p>
+  return null
+}
+
+/** "Last scan Oct 30" (or "No scan yet"), with the full status and counts in its tooltip. */
+function scanWhen(scan: RadarScan | null, t: TFunction<'radar'>, language: string): { text: string; detail: string } {
+  if (scan === null) return { text: t('scanLine.never'), detail: t('settings.neverScanned') }
+  const finished = scan.finished_at ?? scan.started_at
+  const full = t('settings.lastScan', { status: t(`settings.status.${scan.status}`), when: formatDateTime(finished, language) })
+  return {
+    text: t('scanLine.last', { when: formatDate(finished, language, '', 'short') }),
+    detail: scan.status === 'completed' ? `${full} (${scanCounts(scan, t)})` : full,
+  }
+}
+
+/**
+ * The Radar page header's one admin line: "Last scan Oct 30 · Scan now". What the scan does is the
+ * button's tooltip and accessible description; the full last-scan status is the date's tooltip.
+ */
+export function ScanStatusLine({ scan: last }: Readonly<{ scan: RadarScan | null }>) {
+  const { t, i18n } = useTranslation('radar')
+  const hintId = useId()
+  const scan = useScanMutation()
+  const when = scanWhen(last, t, i18n.language)
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text min-w-0">
+      <span title={when.detail} data-testid="radar-last-scan">{when.text}</span>
+      <span aria-hidden="true" className="text-muted">·</span>
+      <ScanButton scan={scan} hintId={hintId} title={t('settings.scanNowHint')} />
+      <span id={hintId} className="sr-only">{t('settings.scanNowHint')}</span>
+      <ScanOutcome scan={scan} />
     </div>
   )
 }

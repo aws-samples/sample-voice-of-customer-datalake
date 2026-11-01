@@ -12,7 +12,7 @@ import { defined } from '@test/defined'
 import { sortedStrings } from '@test/stringLists'
 import radarPl from '../../../public/locales/pl/radar.json'
 import dashboardPl from '../../../public/locales/pl/dashboard.json'
-import BrandSentiment from './BrandSentiment'
+import RadarSummary from './RadarSummary'
 import CompareTable from './CompareTable'
 import { normalizeRadarPage } from '../../api/radarSchema'
 
@@ -41,7 +41,7 @@ describe('Radar in Polish', () => {
   })
 
   it('writes the brand totals with a plural count and the Polish decimal comma', () => {
-    renderWithQueryClient(<MemoryRouter><BrandSentiment detail={DETAIL} onRead={vi.fn()} /></MemoryRouter>)
+    renderWithQueryClient(<MemoryRouter><RadarSummary detail={DETAIL} compare={COMPARE} releases={[]} days={90} onRead={vi.fn()} /></MemoryRouter>)
     expect(screen.getByText(/^3 opinie · .*\(\+0,08\)$/u)).toBeInTheDocument()
   })
 

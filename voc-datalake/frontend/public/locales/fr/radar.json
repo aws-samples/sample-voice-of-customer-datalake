@@ -19,26 +19,43 @@
     "reviews_one": "{{count, number}} avis",
     "reviews_other": "{{count, number}} avis",
     "noReviews": "Aucun avis sur cette période",
-    "sentimentWords": "{{words}} ({{value}})"
+    "sentimentWords": "{{words}} ({{value}})",
+    "reviews_many": "{{count, number}} avis"
   },
   "trend": {
     "title": "Évolution du sentiment",
     "empty": "Aucun avis sur cette période pour le moment.",
     "sentiment": "Sentiment moyen",
-    "reviews": "Avis"
+    "reviews": "Avis",
+    "legend": "Légende",
+    "tooFew_one": "Seulement {{count, number}} avis sur cette période : trop peu pour une tendance.",
+    "tooFew_other": "Seulement {{count, number}} avis sur cette période : trop peu pour une tendance.",
+    "readThem_one": "Lire cet avis",
+    "readThem_other": "Lire les avis",
+    "tooFew_many": "Seulement {{count, number}} avis sur cette période : trop peu pour une tendance.",
+    "readThem_many": "Lire les avis"
   },
   "themes": {
     "love": "Ce que leurs clients aiment",
     "hate": "Ce que leurs clients détestent",
     "empty": "Rien ne ressort pour le moment.",
-    "sampled": "Lu à partir des avis les plus récents de cette période."
+    "sampled": "Lu à partir des avis les plus récents de cette période.",
+    "count_one": "{{count, number}} avis",
+    "count_other": "{{count, number}} avis",
+    "countLabel_one": "Lire l'avis sur {{theme}}",
+    "countLabel_other": "Lire les {{count, number}} avis sur {{theme}}",
+    "groupLabel_one": "Lire l'avis dans {{category}}",
+    "groupLabel_other": "Lire les {{count, number}} avis dans {{category}}",
+    "general": "Général",
+    "count_many": "{{count, number}} avis",
+    "countLabel_many": "Lire les {{count, number}} avis sur {{theme}}",
+    "groupLabel_many": "Lire les {{count, number}} avis dans {{category}}"
   },
   "releases": {
     "title": "Actualités et lancements",
     "empty": "Aucune actualité trouvée pour l’instant. Les actualités et lancements viennent de l’analyse planifiée ou de « Analyser maintenant ».",
     "official": "Officiel",
     "thirdParty": "Presse et avis",
-    "undated": "Date non publiée, trouvée pour la première fois le",
     "mentions_one": "{{count, number}} mention",
     "mentions_other": "{{count, number}} mentions",
     "sources": "Sources",
@@ -53,7 +70,13 @@
     "kindAll": "Tout",
     "kindEmpty": "Rien du type « {{kind}} » dans cette liste. Choisissez « Tout » pour tout afficher.",
     "viaExa": "via Exa",
-    "viaFeed": "via flux"
+    "viaFeed": "via flux",
+    "firstFound": "première mention le",
+    "showAll_one": "Voir tout ({{count, number}})",
+    "showAll_other": "Voir tout ({{count, number}})",
+    "showFewer": "Voir moins",
+    "mentions_many": "{{count, number}} mentions",
+    "showAll_many": "Voir tout ({{count, number}})"
   },
   "compare": {
     "title": "Par rapport à nous",
@@ -70,10 +93,12 @@
     "they_are_better": "Ils font mieux",
     "we_are_better": "Nous faisons mieux",
     "even": "À égalité",
-    "fewReviews": "Peu d'avis (moins de {{min, number}}) : à lire avec prudence",
     "openOurs_one": "Ouvrir notre avis en {{category}} dans Catégories",
     "openOurs_other": "Ouvrir nos {{count, number}} avis en {{category}} dans Catégories",
-    "openOurs_many": "Ouvrir nos {{count, number}} avis en {{category}} dans Catégories"
+    "openOurs_many": "Ouvrir nos {{count, number}} avis en {{category}} dans Catégories",
+    "tooFew": "Pas assez d'avis pour comparer",
+    "footnote": "Une catégorie nécessite au moins {{min, number}} de leurs avis sur cette période pour obtenir un verdict. En dessous, elle affiche « Pas assez d'avis pour comparer ».",
+    "volume_many": "{{count, number}} avis"
   },
   "brands": {
     "hint": "Les marques que Radar suit : l’analyse des actualités cherche chacune sur le web (dans sa langue, et ses flux d’actualités s’il y en a), et les sources que vous marquez comme source Radar sur la page Sources de données apportent ses avis.",
@@ -139,7 +164,8 @@
     "step2": "Sur la page Sources de données, cochez « Source Radar » sur un scraper, une page Web Reviews, un connecteur d'application ou un import CSV/JSON, puis choisissez la marque. Ses avis vont uniquement dans Radar, jamais dans vos tableaux de bord.",
     "step3Title": "Actualités et lancements",
     "step3": "Une recherche web des actualités de chaque marque (lancements, nouvelles fonctionnalités, promotions, partenariats, actualité de l’entreprise), dans sa langue et via ses flux d’actualités, s’exécute automatiquement selon la fréquence ci-dessous (vérifiée chaque jour), ou maintenant avec « Analyser maintenant ». La première analyse remonte à 90 jours.",
-    "configure": "Configurer"
+    "configure": "Configurer",
+    "reviews_many": "{{count, number}} avis en 90 jours"
   },
   "settings": {
     "title": "Radar",
@@ -175,7 +201,11 @@
       "failed": "échouée",
       "skipped": "ignorée"
     },
-    "scanNowHint": "Recherche maintenant sur le web et sur les domaines propres à chaque marque ses lancements et actualités, sans attendre la planification. Cela prend quelques minutes et consomme des recherches web."
+    "scanNowHint": "Recherche maintenant sur le web et sur les domaines propres à chaque marque ses lancements et actualités, sans attendre la planification. Cela prend quelques minutes et consomme des recherches web.",
+    "scanBrands_many": "{{count, number}} marques",
+    "scanQueries_many": "{{count, number}} recherches",
+    "scanAdded_many": "{{count, number}} nouvelles versions",
+    "scanMerged_many": "{{count, number}} fusionnées"
   },
   "nav": {
     "label": "Radar"
@@ -211,16 +241,15 @@
     "rating": "Note {{value}}",
     "source": "Source : {{host}}",
     "problem": "Problème :",
-    "readAll": "Lire tous les avis",
-    "readTheme_one": "Lire l'avis",
-    "readTheme_other": "Lire les {{count, number}} avis",
     "openTheme": "Ouvre les avis de {{theme}}",
     "readDay": "Lire les avis d'un jour",
     "dayEntry_one": "{{day}} : {{count, number}} avis",
     "dayEntry_other": "{{day}} : {{count, number}} avis",
     "readTheirs_one": "Lire leur avis en {{category}}",
     "readTheirs_other": "Lire leurs {{count, number}} avis en {{category}}",
-    "noSubcategoryChip": "Sans sous-catégorie"
+    "noSubcategoryChip": "Sans sous-catégorie",
+    "dayEntry_many": "{{day}} : {{count, number}} avis",
+    "readTheirs_many": "Lire leurs {{count, number}} avis sur {{category}}"
   },
   "all": {
     "option": "Toutes les marques",
@@ -255,5 +284,41 @@
     "invalidKey": "Utilisez 8 à 200 lettres, chiffres, - ou _.",
     "removeTitle": "Supprimer la clé Exa ?",
     "removeMessage": "Radar cesse d’interroger Exa. Sa propre recherche web continue, et les actualités déjà trouvées sont conservées."
+  },
+  "summary": {
+    "title": "Synthèse",
+    "sentimentLabel": "Leur sentiment par rapport au vôtre",
+    "sentimentUnknown": "Comparaison impossible pour le moment : les parts globales ne sont pas disponibles.",
+    "sentimentTooFew_one": "Seulement {{count, number}} de leurs avis : trop peu pour comparer",
+    "sentimentTooFew_other": "Seulement {{count, number}} de leurs avis : trop peu pour comparer",
+    "sentimentNoOurs": "{{theirs}} positifs pour eux ; vos propres avis ne sont pas disponibles pour la comparaison",
+    "sentimentCompare": "{{theirs}} positifs pour eux, {{ours}} pour vous",
+    "sentimentVolumes": "{{theirs}} · {{ours}}",
+    "theirReviews_one": "{{count, number}} de leurs avis",
+    "theirReviews_other": "{{count, number}} de leurs avis",
+    "ourReviews_one": "{{count, number}} des vôtres",
+    "ourReviews_other": "{{count, number}} des vôtres",
+    "releasesLabel": "Nouvelles versions",
+    "releasesCount_one": "{{count, number}} au cours des {{days, number}} derniers jours",
+    "releasesCount_other": "{{count, number}} au cours des {{days, number}} derniers jours",
+    "releasesNewest": "Dernière : {{title}}",
+    "gapLabel": "Écart le plus important",
+    "gapNone": "Pas encore assez d'avis pour comparer",
+    "gapTheyLead_one": "Ils devancent sur {{category}} de {{count, number}} point",
+    "gapTheyLead_other": "Ils devancent sur {{category}} de {{count, number}} points",
+    "gapYouLead_one": "Vous devancez sur {{category}} de {{count, number}} point",
+    "gapYouLead_other": "Vous devancez sur {{category}} de {{count, number}} points",
+    "gapEven": "Vous êtes à égalité sur {{category}}",
+    "gapRead": "Lire leurs avis sur {{category}}",
+    "sentimentTooFew_many": "Seulement {{count, number}} de leurs avis : trop peu pour comparer",
+    "theirReviews_many": "{{count, number}} de leurs avis",
+    "ourReviews_many": "{{count, number}} de vos avis",
+    "releasesCount_many": "{{count, number}} de versions sur les {{days, number}} derniers jours",
+    "gapTheyLead_many": "Ils mènent sur {{category}} avec {{count, number}} de points d'avance",
+    "gapYouLead_many": "Vous menez sur {{category}} avec {{count, number}} de points d'avance"
+  },
+  "scanLine": {
+    "last": "Dernière analyse {{when}}",
+    "never": "Aucune analyse pour le moment"
   }
 }

@@ -25,20 +25,31 @@
     "title": "情感趋势",
     "empty": "此时间范围内暂无评论。",
     "sentiment": "平均情感",
-    "reviews": "评论"
+    "reviews": "评论",
+    "legend": "图例",
+    "tooFew_one": "此时段内仅有 {{count, number}} 条评价，数量过少，无法生成趋势。",
+    "tooFew_other": "此时段内仅有 {{count, number}} 条评价，数量过少，无法生成趋势。",
+    "readThem_one": "查看该评价",
+    "readThem_other": "查看这些评价"
   },
   "themes": {
     "love": "其客户喜欢的",
     "hate": "其客户不喜欢的",
     "empty": "暂无突出内容。",
-    "sampled": "根据此时间范围内最新的评论得出。"
+    "sampled": "根据此时间范围内最新的评论得出。",
+    "count_one": "{{count, number}} 条评价",
+    "count_other": "{{count, number}} 条评价",
+    "countLabel_one": "查看关于“{{theme}}”的评价",
+    "countLabel_other": "查看关于“{{theme}}”的 {{count, number}} 条评价",
+    "groupLabel_one": "查看“{{category}}”中的评价",
+    "groupLabel_other": "查看“{{category}}”中的全部 {{count, number}} 条评价",
+    "general": "综合"
   },
   "releases": {
     "title": "新闻与发布",
     "empty": "尚未找到新闻。新闻与发布来自定时扫描或“立即扫描”。",
     "official": "官方",
     "thirdParty": "媒体与评论",
-    "undated": "未公布日期，首次发现于",
     "mentions_one": "{{count, number}} 次提及",
     "mentions_other": "{{count, number}} 次提及",
     "sources": "出处",
@@ -53,7 +64,11 @@
     "kindAll": "全部",
     "kindEmpty": "此列表中没有“{{kind}}”类型的内容。选择“全部”查看所有条目。",
     "viaExa": "来自 Exa",
-    "viaFeed": "来自订阅源"
+    "viaFeed": "来自订阅源",
+    "firstFound": "首次发现于",
+    "showAll_one": "显示全部 {{count, number}} 项",
+    "showAll_other": "显示全部 {{count, number}} 项",
+    "showFewer": "收起"
   },
   "compare": {
     "title": "与我们对比",
@@ -70,9 +85,10 @@
     "they_are_better": "对方更好",
     "we_are_better": "我们更好",
     "even": "持平",
-    "fewReviews": "评论较少（不足 {{min, number}} 条）：仅供参考",
     "openOurs_one": "在“类别”中打开 {{category}} 的 {{count, number}} 条我方评论",
-    "openOurs_other": "在“类别”中打开 {{category}} 的 {{count, number}} 条我方评论"
+    "openOurs_other": "在“类别”中打开 {{category}} 的 {{count, number}} 条我方评论",
+    "tooFew": "评价数量不足，无法对比",
+    "footnote": "某个类别需要在此时段内获得至少 {{min, number}} 条对方评价，才能给出对比结论。低于此数量时，将显示“评价数量不足，无法对比”。"
   },
   "brands": {
     "hint": "Radar 跟踪的品牌：新闻扫描会在网上搜索每个品牌（使用其语言，并读取已设置的新闻订阅源），您在“数据源”页面标记为 Radar 来源的数据源会导入其评论。",
@@ -210,9 +226,6 @@
     "rating": "评分 {{value}}",
     "source": "来源：{{host}}",
     "problem": "问题：",
-    "readAll": "阅读全部评价",
-    "readTheme_one": "阅读这条评价",
-    "readTheme_other": "阅读这 {{count, number}} 条评价",
     "openTheme": "打开 {{theme}} 的评论",
     "readDay": "按日期阅读评价",
     "dayEntry_one": "{{day}}：{{count, number}} 条评价",
@@ -254,5 +267,35 @@
     "invalidKey": "请使用 8-200 个字母、数字、- 或 _。",
     "removeTitle": "移除 Exa 密钥？",
     "removeMessage": "Radar 将停止搜索 Exa。其自身的网络搜索继续运行，已找到的新闻会保留。"
+  },
+  "summary": {
+    "title": "概览",
+    "sentimentLabel": "对方与你的情感对比",
+    "sentimentUnknown": "暂时无法对比：整体占比数据不可用。",
+    "sentimentTooFew_one": "对方仅有 {{count, number}} 条评价，数量不足，无法对比",
+    "sentimentTooFew_other": "对方仅有 {{count, number}} 条评价，数量不足，无法对比",
+    "sentimentNoOurs": "对方好评率 {{theirs}}；你的评价数据不可用，无法对比",
+    "sentimentCompare": "对方好评率 {{theirs}}，你的为 {{ours}}",
+    "sentimentVolumes": "{{theirs}} · {{ours}}",
+    "theirReviews_one": "对方 {{count, number}} 条评价",
+    "theirReviews_other": "对方 {{count, number}} 条评价",
+    "ourReviews_one": "你的 {{count, number}} 条评价",
+    "ourReviews_other": "你的 {{count, number}} 条评价",
+    "releasesLabel": "近期发布",
+    "releasesCount_one": "最近 {{days, number}} 天内 {{count, number}} 项",
+    "releasesCount_other": "最近 {{days, number}} 天内 {{count, number}} 项",
+    "releasesNewest": "最新：{{title}}",
+    "gapLabel": "最大差距",
+    "gapNone": "评价数据不足，暂无法对比",
+    "gapTheyLead_one": "在“{{category}}”上对方领先 {{count, number}} 分",
+    "gapTheyLead_other": "在“{{category}}”上对方领先 {{count, number}} 分",
+    "gapYouLead_one": "在“{{category}}”上你领先 {{count, number}} 分",
+    "gapYouLead_other": "在“{{category}}”上你领先 {{count, number}} 分",
+    "gapEven": "你在“{{category}}”上与对方持平",
+    "gapRead": "查看对方在“{{category}}”中的评价"
+  },
+  "scanLine": {
+    "last": "上次扫描：{{when}}",
+    "never": "尚未扫描"
   }
 }
