@@ -17,6 +17,31 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.67.00] - 2026-11-01
+
+Review-type pills on the Categories page, and pills that do what a reader expects on both pages.
+
+### Added
+- **Categories → review types**: the Problems page's review-type pills (Problems only, All types, one pill per
+  type with its count, and how many reviews are not typed yet) now filter the Categories list and every
+  breakdown card. The page opens on every type; the choice is in the URL (`/categories?types=feature_request`).
+  They replace the single-value "Feedback type" select among the dimension filters; an old link with
+  `dims=feedback_type:<value>` opens as that one pill. See [categories](docs/categories.md#review-types).
+
+### Changed
+- **Problem Analysis → review types**: **Clear** now unpresses every type pill (every type, no type filter)
+  along with the other filters, so Clear is offered on the default Problems only view. A click on a type pill
+  while Problems only shows selects only that type (one click for "only feature requests"); later clicks add
+  or remove pills, and turning off the last pill is every type, not Problems only. The page still opens on
+  Problems only, and old `types=` links read as before. See
+  [problem analysis](docs/problem-analysis.md#review-types).
+
+### Upgrade notes
+- Frontend only: no API, stack or data change. While most reviews have no type yet, a type choice changes
+  little on either page, because untyped reviews always stay in view; run **Administration → Taxonomy →
+  Dimensions → Classify review types for existing reviews** to type stored reviews (one enrichment-model call
+  per review).
+
 ## [5.66.03] - 2026-11-01
 
 Cleanup after the public docs pass: stale texts, a wrong plural and the dev mock's data.

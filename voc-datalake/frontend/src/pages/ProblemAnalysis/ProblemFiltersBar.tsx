@@ -13,7 +13,7 @@ import { SourceFacetSelect, UsefulnessFacetSelect } from '../../components/Facet
 import { toggleFacetValue } from '../../api/feedbackFacets'
 import { SimilaritySelect } from './SimilaritySelect'
 import type { ProblemFiltersApi } from './useProblemFilters'
-import { ProblemTypeChips } from './ProblemTypeChips'
+import { ReviewTypeChips } from '../../components/ReviewTypeFilter/ReviewTypeChips'
 
 interface ProblemFiltersBarProps {
   readonly filters: ProblemFiltersApi
@@ -45,7 +45,7 @@ export function ProblemFiltersBar({ filters, sources, categories, subcategories,
   return (
     <div className="card">
       <div className="flex flex-col gap-3 sm:gap-4">
-        <ProblemTypeChips value={filters.types} onChange={(types) => filters.update({ types })} counts={typeCounts} />
+        <ReviewTypeChips value={filters.types} onChange={(types) => filters.update({ types })} counts={typeCounts} />
         <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
           <Filter size={16} className="hidden sm:block text-muted flex-shrink-0" aria-hidden="true" />
           <SourceFacetSelect options={sources} selected={filters.sources}

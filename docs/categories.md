@@ -171,6 +171,24 @@ sends every selection to the server, so its counts and pages are exact; nothing 
 browser. A filtered Dashboard window with no reviews says so and offers **Clear filters** instead
 of the "no feedback yet" state.
 
+## Review types
+
+The Categories page filters by review type with the same pills as Problem Analysis
+([problem-analysis.md → Review types](problem-analysis.md#review-types)): **Problems only**,
+**All types**, then one pill per type with its count in the window, and a line saying how many
+reviews are not typed yet. Here the default is **every type** (no pill pressed), and
+**Clear filters** unpresses every pill. While Problems only shows or no pill is pressed, a click
+on a type selects only that type; later clicks add or remove pills. The type filter narrows the
+list and every breakdown card, like the other filters.
+
+- URL: `types=feature_request` or `types=bug,praise` (absent or `all` = every type). An old link
+  with `dims=feedback_type:<value>` (the select the pills replaced) opens as that one pill.
+- Server: the pills go out inside `dims` as `feedback_type:a|b|~unset`, after any configured
+  dimension pairs. Untyped reviews (`~unset`) always stay in view, so while few reviews are typed
+  a type choice changes little; classify them in Administration → Taxonomy → Dimensions.
+- The counts come from the unfiltered window (`/feedback/entities` → `dimensions.feedback_type`,
+  untyped = the window total minus the typed reviews), so they do not change as you pick pills.
+
 ## Correcting a review's category
 
 `PUT /feedback/{id}/category` with body `{category, subcategory?}` — from the

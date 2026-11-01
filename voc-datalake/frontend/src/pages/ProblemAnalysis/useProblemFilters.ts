@@ -4,12 +4,14 @@
  * lists, any of them; read and written by `api/feedbackFacets.ts` like the Dashboard and
  * Categories), `category`,
  * `subcategory`, `urgent=1`, `resolved=1`, `similarity` (low|med|high|off;
- * absent = the default, med) and `types` (absent = Problems only; `all`; or a comma
- * list, `feedbackTypes.ts`). The period and date basis are the header's, like every
+ * absent = the default, med) and `types` (absent = Problems only, the page's default;
+ * `all` = no type filter; or a comma list, `components/ReviewTypeFilter/reviewTypeSelection.ts`). The period and date basis are the header's, like every
  * other page. The URL IS the state: each setter rewrites only
  * these keys (replace, not push), so the review modal's `?review=` survives.
  *
- * Choosing a category clears the subcategory: one names the other.
+ * Choosing a category clears the subcategory: one names the other. Clear removes every narrowing
+ * filter, the review types included (no pill pressed = every type), so Clear is offered on the
+ * default view too: Problems only is a filter.
  *
  * @module pages/ProblemAnalysis/useProblemFilters
  */
@@ -17,8 +19,8 @@ import { useSearchParams } from 'react-router-dom'
 import { EMPTY_FACETS, facetEntries, readFacets } from '../../api/feedbackFacets'
 import type { UsefulnessFacet } from '../../api/feedbackFacets'
 import { withOwnedParams } from '../../utils/searchParams'
-import { isProblemsOnly, readTypeSelection, writeTypeSelection } from './feedbackTypes'
-import type { TypeSelection } from './feedbackTypes'
+import { ALL_TYPES, PROBLEM_TYPES, isAllTypes, readTypeSelection, writeTypeSelection } from '../../components/ReviewTypeFilter/reviewTypeSelection'
+import type { TypeSelection } from '../../components/ReviewTypeFilter/reviewTypeSelection'
 
 /** How aggressively near-duplicate problems merge, by its URL token. */
 const SIMILARITY_LEVELS = { low: 0.2, med: 0.4, high: 0.6, off: 1.0 } as const
@@ -71,7 +73,7 @@ function readProblemFilters(params: URLSearchParams): ProblemFilters {
     urgentOnly: params.get('urgent') === '1',
     showResolved: params.get('resolved') === '1',
     similarity: isSimilarityLevel(similarity) ? similarity : DEFAULT_SIMILARITY,
-    types: readTypeSelection(params.get('types')),
+    types: readTypeSelection(params.get('types'), PROBLEM_TYPES),
   }
 }
 
@@ -86,7 +88,7 @@ function writeProblemFilters(filters: ProblemFilters): URLSearchParams {
     ['urgent', filters.urgentOnly ? '1' : null],
     ['resolved', filters.showResolved ? '1' : null],
     ['similarity', filters.similarity === DEFAULT_SIMILARITY ? null : filters.similarity],
-    ['types', writeTypeSelection(filters.types)],
+    ['types', writeTypeSelection(filters.types, PROBLEM_TYPES)],
   ]
   return new URLSearchParams(entries.filter((entry): entry is [string, string] => entry[1] !== null))
 }
@@ -102,10 +104,10 @@ export function useProblemFilters(): ProblemFiltersApi {
     const categoryChanged = change.category !== undefined && change.category !== filters.category
     write({ ...filters, ...(categoryChanged ? { subcategory: null } : {}), ...change })
   }
-  // Clear resets the narrowing filters; Similarity is a view setting and stays.
-  const clear = () => write({ ...readProblemFilters(new URLSearchParams()), similarity: filters.similarity })
+  // Clear resets the narrowing filters, the review types to none (every type); Similarity is a view setting and stays.
+  const clear = () => write({ ...readProblemFilters(new URLSearchParams()), types: ALL_TYPES, similarity: filters.similarity })
 
   const anyActive = filters.sources.length > 0 || filters.usefulness.length > 0 || filters.category !== null || filters.subcategory !== null
-    || filters.urgentOnly || filters.showResolved || !isProblemsOnly(filters.types)
+    || filters.urgentOnly || filters.showResolved || !isAllTypes(filters.types)
   return { ...filters, update, clear, anyActive }
 }

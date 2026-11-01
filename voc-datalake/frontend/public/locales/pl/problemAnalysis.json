@@ -66,14 +66,6 @@
     "examplesFailed": "Nie udało się wczytać przykładowych recenzji."
   },
   "configureApi": "Skonfiguruj adres API w sekcji Administracja → Ogólne",
-  "types": {
-    "label": "Typy opinii",
-    "problemsOnly": "Tylko problemy",
-    "problemsOnlyHint": "Błędy, awarie usługi, wydajność, użyteczność, ceny i rozliczenia oraz obsługa klienta. Prośby o funkcje, pochwały, pytania i inne opinie są ukryte.",
-    "allTypes": "Wszystkie typy",
-    "untyped": "Opinie bez typu: {{n, number}} (nadal widoczne)",
-    "untypedHint": "Opinie zapisane przed wprowadzeniem typów nie mają typu, dopóki administrator nie sklasyfikuje ich w Administracja → Taksonomia. Pozostają widoczne przy każdym filtrze typu."
-  },
   "title": "Analiza problemów",
   "subtitle": "Powtarzające się problemy klientów pogrupowane według kategorii, wraz z prawdopodobnymi przyczynami źródłowymi"
 }

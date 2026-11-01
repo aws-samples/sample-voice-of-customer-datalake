@@ -326,16 +326,42 @@ describe('ProblemAnalysis period and review types', () => {
     expect(screen.getByRole('button', { name: 'All types' })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('adds a type to the filter when its chip is turned on, keeping untyped reviews', async () => {
+  it('selects only that type when its pill is clicked while Problems only shows, keeping untyped reviews', async () => {
     const user = userEvent.setup()
     await renderLoadedPage()
 
     await user.click(screen.getByRole('button', { name: /^Feature request/ }))
 
     await waitFor(() => expect(getProblemTree).toHaveBeenLastCalledWith(expect.objectContaining({
-      dims: 'feedback_type:bug|service_failure|performance|usability|pricing_billing|support_experience|feature_request|~unset',
+      dims: 'feedback_type:feature_request|~unset',
     })))
     expect(screen.getByRole('button', { name: 'Problems only' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /^Bug/ })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('adds a second type with a later click', async () => {
+    const user = userEvent.setup()
+    await renderLoadedPage()
+
+    await user.click(screen.getByRole('button', { name: /^Feature request/ }))
+    await user.click(screen.getByRole('button', { name: /^Praise/ }))
+
+    await waitFor(() => expect(getProblemTree).toHaveBeenLastCalledWith(expect.objectContaining({
+      dims: 'feedback_type:feature_request|praise|~unset',
+    })))
+  })
+
+  it('Clear unpresses every type pill and sends no type filter', async () => {
+    const user = userEvent.setup()
+    await renderLoadedPage()
+
+    await user.click(screen.getByRole('button', { name: 'Clear' }))
+
+    await waitFor(() => expect(getProblemTree).toHaveBeenLastCalledWith(expect.objectContaining({ dims: undefined })))
+    for (const name of [/^Bug/, /^Feature request/, 'Problems only']) {
+      expect(screen.getByRole('button', { name })).toHaveAttribute('aria-pressed', 'false')
+    }
+    expect(screen.getByRole('button', { name: 'All types' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('shows each type count and how many reviews are not typed yet', async () => {

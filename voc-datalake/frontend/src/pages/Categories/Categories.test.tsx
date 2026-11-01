@@ -22,6 +22,7 @@ vi.mock('../../components/ScopeNotice/useViewerScope', (importOriginal) =>
   import('@test/viewerScopeMock').then((m) => m.viewerScopeModule(importOriginal)))
 
 import Categories from './Categories'
+import { dimensionsApi } from '../../api/dimensionsApi'
 import { resetViewerScope, viewerScope } from '@test/viewerScopeMock'
 
 const mockCategoriesData = {
@@ -335,6 +336,58 @@ describe('Categories', () => {
     it('says nothing to an unrestricted viewer', async () => {
       await renderUntilText('Trending Keywords')
       expect(screen.queryByRole('note')).toBeNull()
+    })
+  })
+
+  describe('review type pills', () => {
+    const typedEntities = {
+      ...mockEntitiesData,
+      feedback_count: 30,
+      entities: { ...mockEntitiesData.entities, dimensions: { feedback_type: { bug: 12, feature_request: 5 } } },
+    }
+
+    it('shows the pills with each type count and how many reviews are not typed yet, no pill pressed', async () => {
+      categoriesApiMocks.getEntities.mockResolvedValue(typedEntities)
+      await renderUntilText('Reviews not typed yet: 13 (kept in view)')
+
+      expect(screen.getByRole('button', { name: /^Bug/ })).toHaveTextContent('12')
+      expect(screen.getByRole('button', { name: /^Feature request/ })).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.getByRole('button', { name: 'All types' })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('narrows the list and the breakdowns to one type with one click, keeping untyped reviews', async () => {
+      categoriesApiMocks.getEntities.mockResolvedValue(typedEntities)
+      const user = await renderUntilTextWithUser('Reviews not typed yet: 13 (kept in view)')
+
+      await user.click(screen.getByRole('button', { name: /^Feature request/ }))
+
+      const dims = 'feedback_type:feature_request|~unset'
+      await waitFor(() => expect(categoriesApiMocks.getFeedback).toHaveBeenLastCalledWith(expect.objectContaining({ dims })))
+      expect(categoriesApiMocks.getCategories).toHaveBeenLastCalledWith(expect.anything(), undefined, expect.objectContaining({ dims }))
+      expect(screen.getByRole('button', { name: /^Feature request/ })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('opens ?types=bug with that pill pressed, and Clear filters unpresses it', async () => {
+      const user = await renderUntilTextWithUser('Trending Keywords', '/categories?types=bug')
+      expect(screen.getByRole('button', { name: /^Bug/ })).toHaveAttribute('aria-pressed', 'true')
+
+      await user.click(screen.getByRole('button', { name: enCategories.clearFilters }))
+
+      expect(screen.getByRole('button', { name: /^Bug/ })).toHaveAttribute('aria-pressed', 'false')
+      await waitFor(() => expect(categoriesApiMocks.getFeedback.mock.lastCall?.[0]).not.toHaveProperty('dims'))
+    })
+
+    it('keeps a select for a configured dimension but none for the review type (the pills replace it)', async () => {
+      vi.spyOn(dimensionsApi, 'getConfig').mockResolvedValue({
+        dimensions: [
+          { key: 'feedback_type', label: 'Review type', infer: true, builtin: true, values: [{ name: 'bug' }, { name: 'praise' }] },
+          { key: 'product', label: 'Product', infer: false, values: [{ name: 'web_shop' }] },
+        ],
+      })
+      await renderUntilText('Trending Keywords')
+
+      expect(await screen.findByRole('combobox', { name: 'Product' })).toBeInTheDocument()
+      expect(screen.queryByRole('combobox', { name: enCommon.feedbackDimension.label })).toBeNull()
     })
   })
 })

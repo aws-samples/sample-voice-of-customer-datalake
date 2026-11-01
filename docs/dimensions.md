@@ -74,7 +74,9 @@ One primary type per review:
   `feedbackTypeDescriptions.<value>`); the API stores and filters on the value names
   (`dims=feedback_type:bug`).
 - The Problems page's default "Problems only" set is `bug`, `service_failure`, `performance`,
-  `usability`, `pricing_billing`, `support_experience` (`PROBLEM_TYPES`).
+  `usability`, `pricing_billing`, `support_experience` (`PROBLEM_TYPES`). Problem Analysis and
+  Categories filter by type with the same pills (`types` in the URL, sent as
+  `dims=feedback_type:a|b|~unset`); on Categories the type is not one of the dimension selects.
 
 ## Where a value comes from
 

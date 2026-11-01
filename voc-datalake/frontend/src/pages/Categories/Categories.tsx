@@ -24,6 +24,8 @@ import { generateCategoriesPDF } from './categoriesPdfGenerator'
 import { breakdownFiltersOf, useCategoryFilters } from './useCategoryFilters'
 import { AttributeFilterControls } from './AttributeFilterControls'
 import { useDimensionsConfig } from '../../hooks/useDimensions'
+import { BUILTIN_DIMENSION_KEYS } from '../../api/feedbackTypes'
+import { ReviewTypeChips } from '../../components/ReviewTypeFilter/ReviewTypeChips'
 import type { CategoryFiltersApi } from './useCategoryFilters'
 import { useFeedbackListData } from './useFeedbackListData'
 import { useCategoryAnalytics } from './useCategoryAnalytics'
@@ -178,6 +180,9 @@ export default function Categories() {
         hasActiveFilters={filters.hasActiveFilters}
         onClearFilters={filters.clearFilters}
       >
+        <div className="mt-3 pt-3 border-t border-border">
+          <ReviewTypeChips value={filters.types} onChange={filters.setTypes} counts={analytics.typeCounts} />
+        </div>
         <AttributeFilterControls
           channels={analytics.allChannels}
           channel={filters.channel}
@@ -185,7 +190,8 @@ export default function Categories() {
           tags={analytics.allTags}
           tag={filters.tag}
           onTagChange={filters.setTag}
-          dimensions={dimensionsConfig?.dimensions ?? []}
+          // The review type has its own pills above; the selects are for the configured dimensions.
+          dimensions={(dimensionsConfig?.dimensions ?? []).filter((d) => !BUILTIN_DIMENSION_KEYS.has(d.key))}
           dimensionFilter={filters.dimensionFilter}
           onDimensionFilterChange={filters.setDimensionFilter}
         />
