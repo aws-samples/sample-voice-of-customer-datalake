@@ -5,7 +5,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  CHAT_SCOPE_MAX_ITEMS, MAX_PAGE_FILTER_CHARS, chatScopeSchema, forwardedPropsSchema, pageContextSchema, type PageContext,
+  CHAT_SCOPE_MAX_ITEMS, FACET_FILTER_KEYS, MAX_FACET_FILTER_CHARS, MAX_PAGE_FILTER_CHARS, PAGE_FILTER_KEYS, boundedFilterValue,
+  chatScopeSchema, forwardedPropsSchema, pageContextSchema, pageFiltersSchema, type PageContext,
 } from '../contract.js';
 import { buildPageContextBlock } from './page-context.js';
 import { FILTERED_PAGE_RULE, buildDynamicPrompt } from './system-prompt.js';
@@ -74,4 +75,22 @@ describe('filters on screen', () => {
       expect(chatScopeSchema.safeParse(scope).success).toBe(false);
     },
   );
+});
+
+describe('filter value bounds', () => {
+  it('names every PAGE_FILTER_KEYS key in the schema, and nothing else', () => {
+    expect(new Set(Object.keys(pageFiltersSchema.shape))).toStrictEqual(new Set(PAGE_FILTER_KEYS));
+  });
+
+  it('lets a facet list run to the facet bound and keeps free text short', () => {
+    const list = 'x'.repeat(MAX_FACET_FILTER_CHARS);
+    expect(FACET_FILTER_KEYS.every((key) => pageFiltersSchema.safeParse({ [key]: list }).success)).toBe(true);
+    expect(pageFiltersSchema.safeParse({ q: 'x'.repeat(MAX_PAGE_FILTER_CHARS + 1) }).success).toBe(false);
+  });
+
+  it('cuts a facet list after its last whole value', () => {
+    const value = `${'a'.repeat(MAX_FACET_FILTER_CHARS - 2)},delivery-late`;
+    expect(boundedFilterValue('category', value)).toBe('a'.repeat(MAX_FACET_FILTER_CHARS - 2));
+    expect(boundedFilterValue('q', 'x'.repeat(MAX_PAGE_FILTER_CHARS + 5))).toHaveLength(MAX_PAGE_FILTER_CHARS);
+  });
 });

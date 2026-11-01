@@ -41,7 +41,9 @@ Analysis, `page.filters` holds the page's URL filters. A run from `/chat` also c
 
 - `filters` uses the same keys and spelling as `page.filters` (`PAGE_FILTER_KEYS`: `q`, `category`,
   `subcategory`, `source`, `sentiment`, `usefulness`, `rating`, `rating_dir`, `urgent`, `channel`, `dims`, `tag`;
-  each value a string of at most 200 characters). A comma list (`category=a,b`) means any of the
+  each value a string: at most 6,500 characters for the comma-list facets `source`, `category`,
+  `subcategory`, `sentiment` and `usefulness` (a full 50-value list), at most 200 for the rest). An
+  overlong facet list is cut after its last whole value, so the cut only narrows. A comma list (`category=a,b`) means any of the
   values, as on the Categories page. `dims` is `key:value,…` with `key:a|b` for either value and
   `~unset` for no value.
 - `limit` caps how many matching reviews one feedback read may use: 1 to 1,000, default 1,000. A
@@ -52,7 +54,8 @@ Analysis, `page.filters` holds the page's URL filters. A run from `/chat` also c
 The schemas are `pageFiltersSchema` and `chatScopeSchema` in
 `voc-datalake/lambda/stream/src/assistant/contract.ts`, mirrored in
 `voc-datalake/frontend/src/assistant/contract.ts` (the lockstep test compares them). The SPA sends
-`scope` only from `/chat`; a scope the contract would refuse is left out instead of failing the run.
+`scope` only from `/chat`. A scope the contract would refuse is sent as one that admits nothing
+(`sentiment: 'none'`): the run reads no feedback rather than reading without the user's filters.
 
 ## How the tools apply the floor
 

@@ -76,8 +76,8 @@ Ideas from @aws-bryan's PR #429 rebuilt on the current platform: model agreement
 ### Changed
 
 - The Claude model agreements (EULA + Marketplace subscription per allowlisted model) are now created by
-  `VocCoreStack` in the app's region, best effort, on the first deploy that includes them (a later deploy does not
-  retry one): a refused agreement, a model not offered in
+  `VocCoreStack` in the app's region, best effort, on the first deploy that includes them (and again on a deploy
+  with a new `-c modelAgreementRetry`): a refused agreement, a model not offered in
   the region, throttling or a dropped connection is logged in the agreement Lambda's log group and reported, and
   never fails or rolls back the deploy. They used to be created by the us-east-1 `VocWebSearchStack`, and only
   alongside the use-case form. With web search off (`-c enableWebSearch=false`) and no form, no stack deploys to
@@ -92,8 +92,8 @@ Ideas from @aws-bryan's PR #429 rebuilt on the current platform: model agreement
   the AI Chat panel's scope are a floor for `search_feedback`, `list_feedback`, `get_urgent_feedback`,
   `get_entities` and `get_metrics`: the assistant can narrow within them, an argument outside them returns
   nothing, and a filter a tool cannot apply makes it refuse rather than widen. A Usefulness filter is part of the
-  floor too (`unrated` = reviews without a band). A long filter (up to 50 values) reaches the assistant whole, and filters
-  that cannot be sent make the assistant read nothing rather than everything. Without filters the assistant reads as before ([docs/assistant-chat-scope.md](docs/assistant-chat-scope.md)). (ported from #429 by @aws-bryan)
+  floor too (`unrated` = reviews without a band). A long filter list (up to 50 values) reaches the assistant whole, and
+  filters that cannot be sent make the assistant read nothing rather than everything. Without filters the assistant reads as before ([docs/assistant-chat-scope.md](docs/assistant-chat-scope.md)). (ported from #429 by @aws-bryan)
 - Categories: choosing several categories, sources or sentiments (the sentiment chips now multi-select) and a
   subcategory filters on the server, so the list's counts and pages are exact. Before, extra categories and the
   subcategory were filtered in the browser over the loaded page only. Problem Analysis takes several sources
@@ -111,6 +111,10 @@ Ideas from @aws-bryan's PR #429 rebuilt on the current platform: model agreement
 
 ### Upgrade notes
 
+- `anthropicUseCase`: the docs now match what the deploy has always validated. `intendedUsers` is an index (`"0"`
+  internal users, `"1"` external customers, `"2"` both; default `"0"`) and `industryOption` one of a fixed list
+  (default `Technology`). A block written from the old docs with a sentence in `intendedUsers` is skipped with a
+  synth warning, as before; use the index ([docs/deployment.md](docs/deployment.md)).
 - An unknown `sentiment` value on the read routes (`/feedback`, `/metrics/*`, `/feedback/entities`,
   `/feedback/problems`) now answers 400 instead of an empty result, like the other facets. A saved link or an
   API caller sending a value other than `positive`, `neutral`, `negative` or `mixed` (for example `sentiment=all`)

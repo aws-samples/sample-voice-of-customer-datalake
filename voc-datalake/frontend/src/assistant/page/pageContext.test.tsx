@@ -75,6 +75,12 @@ describe('pageContextFromLocation', () => {
       const page = pageContextFromLocation({ pathname: '/categories', search: `?q=${'x'.repeat(MAX_PAGE_FILTER_CHARS + 1)}` })
       expect(page.filters?.q).toBe('x'.repeat(MAX_PAGE_FILTER_CHARS))
     })
+
+    it('keeps a long category list whole up to the facet bound', () => {
+      const categories = Array.from({ length: 50 }, (_, n) => `cat${n}`).join(',')
+      const page = pageContextFromLocation({ pathname: '/categories', search: `?category=${categories}` })
+      expect(page.filters?.category).toBe(categories)
+    })
   })
 
   it('has a pattern for every protected route in routes.tsx', () => {
