@@ -17,6 +17,17 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.72.00] - 2026-11-01
+
+The AI assistant no longer sets up review sources it cannot back up: app ids are checked against the store, and review-page URLs must come from a web search result.
+
+### Added
+
+- Before an iOS or Android connector's approval card, the assistant checks the store. An App Store id is looked up in the 40 storefronts the iOS connector reads; a Google Play package is checked on its store page. An app the store does not have is refused before any card, and the assistant is told to find the real id with `find_app_store_app` or to ask you. The card names the app and its developer as the store lists them, so you can see it is the right company's app. A store that cannot be read refuses nothing, and the card says so. Plan steps that create an app connector run the same check ([docs/scrapers.md](docs/scrapers.md#with-the-ai-assistant-administrators)).
+
+### Changed
+
+- When asked to find review sources for a brand or its competitors, the assistant searches each review site separately and proposes only a URL copied from a search result that names that company, checking it is not a look-alike company with a similar name. It never builds a review-page URL from a name, and says "no page found" for a site that has none. Competitors are named from search results, with their source ([docs/web-reviews.md](docs/web-reviews.md)).
 ## [5.70.00] - 2026-11-01
 
 Project tenets in TENETS.md, checked on every pull request, in the CDK suite and by the reviewers; SnapStart is now opt-in.
