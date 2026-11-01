@@ -58,7 +58,7 @@ These are KiroCrew's UI rules (`website/AGENTS.md`, `website/AUTOSDE.yaml`, `web
 | 12 | KiroCrew uses Framer Motion for enter/exit/layout animation and forbids new CSS `@keyframes`. | **Deviation:** VoC has no Framer; motion is CSS-only via the `--animate-*` tokens. Don't add new keyframes without adding a token |
 | 13 | **MUST** keep user-facing strings in i18n catalogs (`public/locales/*`). | Existing VoC rule (`npm run i18n:check`) |
 | 14 | **MUST** respect `prefers-reduced-motion` (handled globally — don't override it). | Adopted |
-| 15 | **MUST** tone a badge or chip by **meaning**, never to tell labels apart: a descriptive label (category, subcategory, journey stage, persona, dimension value, tag, source, version, count) is `badge-muted`; at most ONE label per row — its primary classification — is `badge-accent`; `ok` / `warn` / `danger` / `info` / `aim` are for **state** only. See [Labels vs status](#labels-vs-status). | Adopted (3.14.01 feedback surfaces, 3.14.02 the rest of the app); `theme/badgeTones.test.ts` pins them |
+| 15 | **MUST** tone a badge or chip by **meaning**, never to tell labels apart: a descriptive label (category, subcategory, journey stage, persona, dimension value, tag, source, version, count) is `badge-muted`; at most ONE label per row — its primary classification — is `badge-accent`; `ok` / `warn` / `danger` / `info` / `aim` are for **state** only. See [Labels vs status](#labels-vs-status). | Adopted; `theme/badgeTones.test.ts` pins them |
 
 ## Themes
 
@@ -191,7 +191,7 @@ So, in VoC (rule 15):
 
 **Worked example — the feedback card** (`components/FeedbackCard/FeedbackCard.tsx` `CardTags`, `components/FeedbackDimensions/FeedbackDimensionChips.tsx`, `components/CategoryChangeControl` `ManualCategoryBadge`), 3.14.00 → 3.14.01:
 
-| Label | Before | After |
+| Label | Without the rule | With the rule |
 |---|---|---|
 | category | `badge-accent` | `badge-accent` — the one emphasised label |
 | "Changed by …" (hand-set category) | `badge-info` | `badge-info` — provenance **state**, kept small as icon (`UserPen`) + text; the previous category and the date stay in its `title` |
@@ -202,11 +202,11 @@ So, in VoC (rule 15):
 | tag | `badge-muted` + `Hash` | unchanged |
 | sentiment · Urgent · Redacted / Summary only | status tones | unchanged |
 
-Before, a card with a subcategory, a persona and two dimensions painted five labels in four tones (accent, aim, muted, info) next to its status badges — the "Christmas tree" of 2026-10-09. After, it shows one accent label, grey labels, and colour only where there is state. The same pass went over the detail page's **Tags & filters** chips (`pages/FeedbackDetail/FeedbackDetail.tsx`: subcategory and persona to neutral, the category chip stays accent), the Problem Analysis `+N` similar-problems count (`badge-info` → `badge-muted`), the feedback-form type pill (`badge-info` → `badge-muted`), a scraper template's extraction method ("JSON-LD", `badge-ok` → `badge-muted`) and a company objective's horizon (`badge-aim` → `badge-muted`). Rows that already toned by state were left as they are (`pages/Memory/MemoryCard.tsx`: status by state, kind = the one accent, `aim` only for an AI-written memory; `pages/Connect/TokenList.tsx`; `pages/FeedbackDetail/FeedbackDetailSections.tsx`).
+With the rule, a card with a subcategory, a persona and two dimensions shows one accent label, grey labels, and colour only where there is state, instead of five labels in four tones. The same applies to the detail page's **Tags & filters** chips (`pages/FeedbackDetail/FeedbackDetail.tsx`: subcategory and persona neutral, the category chip accent), the Problem Analysis `+N` similar-problems count (`badge-muted`), the feedback-form type pill (`badge-muted`), a scraper template's extraction method ("JSON-LD", `badge-muted`) and a company objective's horizon (`badge-muted`). Rows that tone by state keep their tones (`pages/Memory/MemoryCard.tsx`: status by state, kind = the one accent, `aim` only for an AI-written memory; `pages/Connect/TokenList.tsx`; `pages/FeedbackDetail/FeedbackDetailSections.tsx`).
 
-**The rest of the app (3.14.02).** The same rule, where a *kind* was still painted as if it were a state:
+**The rest of the app.** The same rule, where a *kind* would otherwise be painted as if it were a state:
 
-| Surface | Before | After |
+| Surface | Avoid | Use |
 |---|---|---|
 | document type (`components/DocumentTypeBadge`, the Documents rail, lineage footers, the wizard's document picker, Prioritization rows) | a tone per type — PRD `info`, PR/FAQ `ok`, research `warn`, custom `aim`, report `accent`, prototype `warn` — in three separate maps | one `badge-muted` pill; the type's lucide icon (FileText, Newspaper, Search, FilePen, FileBarChart, Hammer — the same glyphs `NodeTypeIcon` uses) and its text tell them apart |
 | source tiles on the Scrapers page (`pages/Scrapers/SourceDialogHeader.tsx` `ToneTile`, `TemplateSelector`, every source dialog header) | a tone per kind of source — paste `warn`, JSON `info`, CSV `ok`, synthetic `aim`, scraper `ok`, app `accent` | every source tile is `accent` (a source is the page's one emphasis); `SourceTone` is `accent \| muted`, and `muted` is the one STATE a tile carries, a paused scraper |
