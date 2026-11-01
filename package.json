@@ -1,6 +1,6 @@
 {
   "name": "voice-of-customer-datalake",
-  "version": "5.72.0",
+  "version": "5.72.1",
   "description": "Voice of the Customer Data Lake - Unified customer feedback intelligence platform",
   "private": true,
   "scripts": {
@@ -28,6 +28,11 @@
     "test:coverage": "npm run test:coverage --prefix voc-datalake/frontend",
     "check": "npm run lint && npm run typecheck:all && npm run test && npm run check:mock && npm run check:i18n && npm run build && npm run test:cdk && npm run test:stream && npm run test:backend",
     "validate": "bash scripts/validate.sh",
+    "validate:affected": "bash scripts/validate-affected.sh",
+    "validate:failed": "bash scripts/validate.sh --failed",
+    "validate:test": "bash scripts/validate.sh --only python-tests,frontend-tests,cdk-tests,stream-tests",
+    "validate:tenets": "bash scripts/validate.sh --only tenets",
+    "validate:commit": "bash scripts/validate.sh --only commit",
     "validate:codeql": "bash scripts/codeql.sh",
     "check:mock": "npm run check:mock --prefix voc-datalake/frontend",
     "deps:freshness": "node scripts/dependency-freshness.mjs",

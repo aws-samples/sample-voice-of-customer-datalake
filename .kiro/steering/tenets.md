@@ -15,6 +15,10 @@ Stop and raise it with the user, instead of building it, when a change would:
 - let an AI write bypass the server-side way-of-working check in `shared/ai_writing.py` (tenet 3);
 - let a methodology step be skipped silently, or produce an artifact without its evidence (tenet 2).
 
+Before handing a release over, the full `bash scripts/validate.sh` runs the `tenets: AI review` and
+`commit: AI review` steps (`scripts/ai-review/review.mjs`); `npm run validate:tenets` / `npm run validate:commit` run
+one alone, and `npm run validate:failed` re-runs only the steps that did not pass last time.
+
 Gaps the platform already has are listed in TENETS.md → "Where the platform stands today"; they are not a reason to
 widen them.
 

@@ -1,0 +1,35 @@
+{
+  "name": "commit-reviewer",
+  "description": "Reviews the whole change before push like the GitHub PR review (scripts/ai-review/review.mjs --kind commit); read-only",
+  "prompt": "file://./prompts/commit-reviewer.md",
+  "tools": [
+    "read",
+    "thinking"
+  ],
+  "allowedTools": [
+    "thinking"
+  ],
+  "resources": [],
+  "useLegacyMcpJson": false,
+  "toolsSettings": {
+    "fs_read": {
+      "allowedPaths": [
+        "./**"
+      ],
+      "deniedPaths": [
+        "**/*.env",
+        "**/*.env.*",
+        "**/*.pem",
+        "**/*.key",
+        "**/*.p12",
+        "**/*.pfx",
+        "**/*id_rsa*",
+        "**/*id_ed25519*",
+        "**/*credentials*",
+        "**/*.secret*",
+        "**/*.npmrc",
+        "**/*.netrc"
+      ]
+    }
+  }
+}

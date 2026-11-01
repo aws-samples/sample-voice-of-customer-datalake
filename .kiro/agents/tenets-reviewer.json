@@ -1,0 +1,35 @@
+{
+  "name": "tenets-reviewer",
+  "description": "Checks a change against TENETS.md (scripts/ai-review/review.mjs --kind tenets, a validate.sh step); read-only",
+  "prompt": "file://./prompts/tenets-reviewer.md",
+  "tools": [
+    "read",
+    "thinking"
+  ],
+  "allowedTools": [
+    "thinking"
+  ],
+  "resources": [],
+  "useLegacyMcpJson": false,
+  "toolsSettings": {
+    "fs_read": {
+      "allowedPaths": [
+        "./**"
+      ],
+      "deniedPaths": [
+        "**/*.env",
+        "**/*.env.*",
+        "**/*.pem",
+        "**/*.key",
+        "**/*.p12",
+        "**/*.pfx",
+        "**/*id_rsa*",
+        "**/*id_ed25519*",
+        "**/*credentials*",
+        "**/*.secret*",
+        "**/*.npmrc",
+        "**/*.netrc"
+      ]
+    }
+  }
+}

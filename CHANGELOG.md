@@ -17,6 +17,16 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.72.01] - 2026-11-01
+
+`scripts/validate.sh` reviews the change with the developer's own coding agent, against TENETS.md and like the GitHub PR review, and can re-run only what failed.
+
+### Added
+
+- Two AI review steps in `scripts/validate.sh` (`scripts/ai-review/review.mjs`): `tenets: AI review` checks the change since `origin/main` against TENETS.md, and `commit: AI review` reviews the whole change with its commit messages, as the GitHub pull request review does, so its findings are fixed before the push. They use `kiro-cli`, or `claude` (Claude Code) when kiro-cli is not installed, with the developer's own sign-in; the repository holds no credential. A grounded `VIOLATION` / `MUST-FIX` fails the step. Without either CLI, without a sign-in, or on CI, the step is skipped with a notice. `AI_REVIEW=off|kiro|claude` overrides the choice, and answers are cached per change in `.cache/ai-review/` ([CONTRIBUTING.md](CONTRIBUTING.md#ai-reviews-in-validatesh)).
+- `bash scripts/validate.sh --failed` re-runs only the steps that did not pass in the last run.
+- npm shortcuts: `validate:affected`, `validate:failed`, `validate:test` (the four test suites), `validate:tenets`, `validate:commit` ([CONTRIBUTING.md](CONTRIBUTING.md#running-part-of-the-gate)).
+
 ## [5.72.00] - 2026-11-01
 
 The AI assistant no longer sets up review sources it cannot back up: app ids are checked against the store, and review-page URLs must come from a web search result.

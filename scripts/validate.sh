@@ -18,15 +18,19 @@
 #   bash scripts/validate.sh --list           print the steps (lane, groups, name) and exit
 #   bash scripts/validate.sh --pytest-first   run the pytest step alone, then every other lane (for a loaded machine)
 #   bash scripts/validate.sh --dry-run        schedule and report every step with its command replaced by a no-op
+#   bash scripts/validate.sh --failed         only the steps that did not pass in the last run (FAIL, stopped, not-run)
 #
 # Groups (used by scripts/validate-affected.sh): python, frontend, cdk, stream = every step of that
 # package; <package>-static = its lint/type/dead-code steps; <package>-tests = its test suite
-# (cdk-tests includes the vite build it needs); bridge; repo (version, gitleaks, jscpd); codeql;
+# (cdk-tests includes the vite build it needs); bridge; repo (version, gitleaks, jscpd); codeql; tenets, commit (the
+# local AI reviews, scripts/ai-review/: against TENETS.md, and of the whole change; need kiro-cli or claude, else skipped);
 # audit = every code-audit detector step, or one family: audit-py-synth, audit-callers, audit-patterns,
 # audit-clones-py, audit-clones-ts, audit-ts, audit-unions, audit-locale, audit-tools (docs/code-audit.md).
 # Env: VALIDATE_PYTEST_WORKERS (pytest-xdist workers; default: CPUs - 4, at least 2),
-#      VALIDATE_LOG_DIR (default .cache/validate/logs/<timestamp>), PYTHON_BIN,
-#      VALIDATE_SKIP_CODEQL=1 (skip the CodeQL step), CODEQL_THREADS (default: half the CPUs).
+#      VALIDATE_LOG_DIR (default $VALIDATE_LOG_ROOT/<timestamp>), PYTHON_BIN,
+#      VALIDATE_SKIP_CODEQL=1 (skip the CodeQL step), CODEQL_THREADS (default: half the CPUs),
+#      AI_REVIEW=auto|kiro|claude|off (the AI reviews; scripts/ai-review/review.mjs),
+#      VALIDATE_LOG_ROOT (where runs are logged and --failed looks for the newest one; default .cache/validate/logs).
 #
 # bash 3.2 (macOS /bin/bash) compatible on purpose: no associative arrays, no `wait -n`.
 set -euo pipefail
@@ -59,7 +63,7 @@ if [[ -n "${GITHUB_ACTIONS:-}" ]]; then COVERAGE_PRUNE=""; else COVERAGE_PRUNE="
 export ROOT CDK FRONTEND STREAM KNIP_PROD TSC_CACHE PYTHON_BIN PATH VALIDATE_PYTEST_WORKERS VALIDATE_VITEST_TIMEOUT_MS CPUS COVERAGE_PRUNE
 
 # ---- Options ----
-SERIAL=0; FAIL_FAST=1; ONLY=""; LANE_ONLY=""; LIST=0; PYTEST_FIRST=0; DRY_RUN=0
+SERIAL=0; FAIL_FAST=1; ONLY=""; LANE_ONLY=""; LIST=0; PYTEST_FIRST=0; DRY_RUN=0; FAILED_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --serial) SERIAL=1 ;;
@@ -71,7 +75,8 @@ while [[ $# -gt 0 ]]; do
     --list) LIST=1 ;;
     --pytest-first) PYTEST_FIRST=1 ;;
     --dry-run) DRY_RUN=1 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    --failed) FAILED_ONLY=1 ;;
+    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
     *) printf 'validate: unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
   esac
   shift
@@ -112,6 +117,14 @@ def tsc  repo                               "version: CHANGELOG ↔ package.json
 # scheduled-failure watch, and the pre-push hook's verdict parsing.
 def tsc  repo                               "node: coverage gate tests"          'cd "$ROOT" && node --test scripts/coverage/check-per-file-coverage.test.mjs'
 def tsc  repo                               "node: PR description check"         'cd "$ROOT" && node --test scripts/pr-checks/*.test.mjs'
+def tsc  repo                               "node: AI review tests"              'cd "$ROOT" && node --test scripts/ai-review/*.test.mjs'
+# Two reviews of the change since origin/main by the developer's OWN coding agent (kiro-cli, else claude;
+# scripts/ai-review/review.mjs): against TENETS.md, and a whole-change review like the GitHub PR review, so its
+# findings are fixed before the push. No credential lives in the repository: neither CLI installed, not signed in,
+# or CI = skipped with a notice. A complete VIOLATION / MUST-FIX fails; AI_REVIEW=off skips both. Their own groups
+# (`tenets`, `commit`), so validate-affected.sh never spends a model call; they run in the full gate, once per release.
+def tsc  tenets                             "tenets: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind tenets'
+def lint commit                             "commit: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind commit'
 def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/scheduled-failure-watch.test.mjs'
 def tsc  repo                               "node: pre-push hook parsing"        'cd "$ROOT" && node --test scripts/git-hooks/pre-push.test.mjs'
 def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs'
@@ -210,6 +223,9 @@ selected() {  # step index -> 0 when it runs in this invocation
     for want in ${LANE_ONLY//,/ }; do [[ "$want" == "${S_HOME[$1]}" ]] && in_lane=0; done
     [[ "$in_lane" -eq 0 ]] || return 1
   fi
+  if [[ "$FAILED_ONLY" -eq 1 ]]; then
+    grep -qxF "${S_NAME[$1]}" <<<"$RERUN" || return 1
+  fi
   [[ -z "$ONLY" ]] && return 0
   for want in ${ONLY//,/ }; do
     for have in ${S_GROUPS[$1]//,/ }; do [[ "$want" == "$have" ]] && return 0; done
@@ -218,8 +234,32 @@ selected() {  # step index -> 0 when it runs in this invocation
 }
 if [[ -n "$ONLY" ]]; then
   for want in ${ONLY//,/ }; do
-    case "$want" in python|frontend|cdk|stream|python-static|frontend-static|cdk-static|stream-static|python-tests|frontend-tests|cdk-tests|stream-tests|bridge|repo|codeql|audit|audit-py-synth|audit-callers|audit-patterns|audit-clones-py|audit-clones-ts|audit-ts|audit-unions|audit-locale|audit-tools) ;; *) printf 'validate: unknown group %s\n' "$want" >&2; exit 2 ;; esac
+    case "$want" in python|frontend|cdk|stream|tenets|commit|python-static|frontend-static|cdk-static|stream-static|python-tests|frontend-tests|cdk-tests|stream-tests|bridge|repo|codeql|audit|audit-py-synth|audit-callers|audit-patterns|audit-clones-py|audit-clones-ts|audit-ts|audit-unions|audit-locale|audit-tools) ;; *) printf 'validate: unknown group %s\n' "$want" >&2; exit 2 ;; esac
   done
+fi
+# --failed: the step names whose last status was not ok, from the newest earlier run's timings.tsv. That run's own
+# selection is the scope: a step it did not select is not re-run, and a narrower run in between (an --only of one
+# group) is the newest one, so it hides the failures of the full run before it. Steps that passed stay passed only as far as the
+# fix did not touch them: the full run before the push is still the gate.
+LOG_ROOT="${VALIDATE_LOG_ROOT:-$ROOT/.cache/validate/logs}"
+RERUN=""
+if [[ "$FAILED_ONLY" -eq 1 ]]; then
+  # A dry run (marker file `dry-run`) never counts; an interrupted run writes no timings.tsv, so the run before it
+  # is used, and the banner below names it and its age.
+  LAST_RUN=""
+  while IFS= read -r t; do
+    [[ -e "${t%/timings.tsv}/dry-run" && "$DRY_RUN" -eq 0 ]] && continue
+    LAST_RUN="${t%/timings.tsv}"; break
+  done < <(ls -1t "$LOG_ROOT"/*/timings.tsv 2>/dev/null || true)
+  if [[ -z "$LAST_RUN" ]]; then
+    printf 'validate: --failed needs an earlier run (none under %s)\n' "$LOG_ROOT" >&2; exit 2
+  fi
+  RERUN="$(awk -F'\t' '$1 != "ok" { print $4 }' "$LAST_RUN/timings.tsv")"
+  if [[ -z "$RERUN" ]]; then
+    printf 'validate: every step of the last run (%s) passed; nothing to re-run\n' "$LAST_RUN"; exit 0
+  fi
+  AGE_MIN="$(node -e 'console.log(Math.floor((Date.now() - require("fs").statSync(process.argv[1]).mtimeMs) / 60000))' "$LAST_RUN/timings.tsv")"
+  printf 'validate: re-running the %s step(s) that did not pass in %s (finished %s min ago)\n' "$(printf '%s\n' "$RERUN" | wc -l | tr -d ' ')" "$LAST_RUN" "$AGE_MIN"
 fi
 if [[ -n "$LANE_ONLY" ]]; then
   for want in ${LANE_ONLY//,/ }; do
@@ -249,8 +289,9 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 fi
 
 # ---- Run ----
-LOG_DIR="${VALIDATE_LOG_DIR:-$ROOT/.cache/validate/logs/$(date +%Y%m%d-%H%M%S)}"
+LOG_DIR="${VALIDATE_LOG_DIR:-$LOG_ROOT/$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$LOG_DIR" "$TSC_CACHE"
+[[ "$DRY_RUN" -eq 1 ]] && : > "$LOG_DIR/dry-run"   # --failed ignores dry runs (outside a dry run itself)
 RESULTS="$LOG_DIR/results.tsv"   # index \t exit code \t seconds
 STARTED="$LOG_DIR/started.tsv"   # index
 : > "$RESULTS"; : > "$STARTED"
