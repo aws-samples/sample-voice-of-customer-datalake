@@ -208,11 +208,17 @@ function dimensionAdmits(actual, wanted) {
   return choices.includes(actual);
 }
 
-/** One `dims` pair's value: a dimension value, or a `|` list of them, each well-formed (dimension_config._is_dims_value). */
+/**
+ * One `dims` pair's value: a dimension value, or a `|` list of them, each well-formed, exactly like
+ * `dimension_config._is_dims_value`: empty choices (`a||b`) are skipped, and a list holds at most
+ * every configured value plus `~unset` (`_MAX_DIMS_CHOICES = MAX_DIMENSION_VALUES + 1`).
+ */
+const MAX_DIMS_CHOICES = MAX_VALUES + 1;
+
 function isDimsValue(value) {
   if (VALUE_RE.test(value)) return true;
   const choices = value.split('|').filter(Boolean);
-  return choices.length > 0 && choices.length <= MAX_VALUES + 1 && choices.every((choice) => VALUE_RE.test(choice));
+  return choices.length > 0 && choices.length <= MAX_DIMS_CHOICES && choices.every((choice) => VALUE_RE.test(choice));
 }
 
 export function attributeFilterOf(searchParams) {

@@ -27,8 +27,6 @@ const WINDOW_DAYS = 7;
 const HOURS_SPREAD = 11;
 /** Days a review may be written before it was imported. */
 const WRITTEN_BEFORE_DAYS = 3;
-/** Every URGENT_EVERY-th generated review is a candidate for "high" urgency, while the quota lasts. */
-const URGENT_EVERY = 9;
 
 /** What each category's reviews talk about: the subcategories they file under and their phrases. */
 const TOPICS = {
@@ -187,11 +185,21 @@ export function corpusFeedback({ categorySentiment, sourceCounts, urgentTotal, h
   const plan = Object.entries(left).flatMap(([category, split]) =>
     SENTIMENTS.flatMap((sentiment) => Array.from({ length: split[sentiment] ?? 0 }, () => [category, sentiment])));
   const sources = sourceSequence(sourceCounts, handWritten, plan.length);
-  let urgentLeft = Math.max(urgentTotal - handWritten.filter((item) => item.urgency === 'high').length, 0);
+  const urgentQuota = Math.max(urgentTotal - handWritten.filter((item) => item.urgency === 'high').length, 0);
+  // The urgent reviews are spread evenly over the negative ones, so exactly the quota is marked
+  // (when there are that many negatives) whatever the fixture holds.
+  const negatives = plan.filter(([, sentiment]) => sentiment === 'negative').length;
+  const stride = urgentQuota > 0 ? Math.max(Math.floor(negatives / urgentQuota), 1) : Infinity;
+  let negativeIndex = 0;
+  let urgentLeft = urgentQuota;
   let nextId = handWritten.reduce((max, item) => Math.max(max, Number(item.feedback_id) || 0), 0) + 1;
 
   return plan.map(([category, sentiment], index) => {
-    const urgent = sentiment === 'negative' && urgentLeft > 0 && index % URGENT_EVERY === 0;
+    let urgent = false;
+    if (sentiment === 'negative') {
+      urgent = urgentLeft > 0 && negativeIndex % stride === 0;
+      negativeIndex += 1;
+    }
     if (urgent) urgentLeft -= 1;
     return reviewAt({ id: nextId++, category, sentiment, source: sources[index], urgent, index, now });
   });

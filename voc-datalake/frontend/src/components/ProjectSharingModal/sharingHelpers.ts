@@ -61,8 +61,9 @@ export function personLabel(person: PersonRef): string {
  * On a public project every signed-in user can open the sharing dialog, and the
  * member list is not the place for them to harvest addresses. A member without a
  * name or a human username therefore shows as their sub to a non-manager —
- * unlovely, but not a disclosure. (The server still returns every email to every
- * member; only this label hides it.)
+ * unlovely, but not a disclosure. (The server drops the emails for a non-manager
+ * too, `_without_emails_unless_manager` in lambda/api/projects.py; this label is the
+ * client-side half.)
  */
 export function publicPersonLabel(person: Pick<PersonRef, 'username' | 'sub' | 'name'>): string {
   const name = humanName(person)
