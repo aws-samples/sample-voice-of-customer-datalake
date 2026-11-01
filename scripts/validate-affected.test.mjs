@@ -110,3 +110,15 @@ describe('validate-affected path mapping (5.49.00 gates)', () => {
     assert.deepEqual(groupsFor('voc-datalake/pyrightconfig.production.json'), ['python', 'repo']);
   });
 });
+
+describe('validate-affected never selects the AI reviews (a model call per branch)', () => {
+  it('leaves out the tenets and commit groups, also when everything runs', () => {
+    for (const path of ['scripts/ai-review/review.mjs', '.kiro/agents/commit-reviewer.json',
+      'TENETS.md', 'some-new-top-level/file.txt', '.github/workflows/quality-gates.yml']) {
+      const groups = groupsFor(path);
+      assert.ok(groups.includes('repo'), path);
+      assert.ok(!groups.includes('tenets') && !groups.includes('commit'), `${path}: ${groups.join(',')}`);
+    }
+  });
+});
+

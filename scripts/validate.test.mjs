@@ -172,4 +172,3 @@ describe('validate.sh --failed (re-run only what did not pass last time)', () =>
     assert.match(result.stderr, /--failed needs an earlier run/);
   });
 });
-

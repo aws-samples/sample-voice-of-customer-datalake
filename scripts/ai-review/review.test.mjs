@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { buildPrompt, capDiff, chooseRunner, KINDS, onPath, parseVerdict, runnerCommand } from './lib.mjs'
@@ -269,6 +269,9 @@ test('the commit review sends the commit messages and uses its own agent and cac
   }
 })
 
+// Verified live with kiro-cli 2.37 (5.72.01): an agent with tools ['read'], nothing in allowedTools and
+// toolsSettings.fs_read.allowedPaths ['./**'] reads ./ files without a prompt, and a read of /tmp/… fails in
+// --no-interactive with "tool permission approval is not supported". This pins that configuration.
 test('both Kiro review agents can read only inside the repository, and trust nothing', () => {
   for (const agent of ['tenets-reviewer', 'commit-reviewer']) {
     const config = JSON.parse(readFileSync(join(ROOT, `.kiro/agents/${agent}.json`), 'utf8'))
@@ -302,4 +305,60 @@ test('CI is GITHUB_ACTIONS or a truthy CI', () => {
   assert.equal(isCi({ CI: 'false' }), false)
   assert.equal(isCi({ CI: '0' }), false)
   assert.equal(isCi({}), false)
+})
+
+test('secret-shaped untracked files and the cache are never sent', () => {
+  const box = scratch({ claude: 'REVIEW-VERDICT: tenets PASS\n' })
+  try {
+    for (const name of ['.env', 'prod.env.local', 'deploy.pem', 'aws-credentials.json', 'id_rsa']) {
+      writeFileSync(join(box.repo, name), 'SECRET-VALUE-123\n')
+    }
+    const result = review(box)
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    const { stdin } = called(box.dir)
+    assert.doesNotMatch(stdin, /SECRET-VALUE-123/)
+    assert.match(stdin, /new\.ts \(new, untracked\)/)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
+test('an agent that exits non-zero without a verdict is a loud skip naming the exit code and its first error', () => {
+  const box = scratch({})
+  try {
+    writeFileSync(join(box.bin, 'kiro-cli'), "#!/usr/bin/env node\nprocess.stdin.resume()\nprocess.stdin.on('end', () => { console.error('error: unexpected argument --wrap'); process.exit(2) })\n")
+    chmodSync(join(box.bin, 'kiro-cli'), 0o755)
+    const result = review(box)
+    assert.equal(result.status, 0)
+    assert.match(result.stdout, /skipped: the agent exited 2 without a verdict \(error: unexpected argument --wrap\)/)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
+test('an incomplete blocking item says why it does not block', () => {
+  const box = scratch({ claude: `${VIOLATION.replace(/\nOutcome:.*/, '')}\nREVIEW-VERDICT: tenets BLOCK\n` })
+  try {
+    const result = review(box)
+    assert.equal(result.status, 0)
+    assert.match(result.stdout, /VIOLATION tenet 7 at voc-datalake\/lib\/x\.ts:12: a NAT gateway on by default \(no Outcome: not blocking\)/)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
+test('cached answers older than 30 days are pruned', () => {
+  const box = scratch({ claude: 'REVIEW-VERDICT: tenets PASS\n' })
+  try {
+    const cache = join(box.repo, '.cache', 'ai-review')
+    mkdirSync(cache, { recursive: true })
+    const old = join(cache, 'tenets-old.txt')
+    writeFileSync(old, 'REVIEW-VERDICT: tenets PASS\n')
+    const longAgo = new Date(Date.now() - 31 * 86_400_000)
+    utimesSync(old, longAgo, longAgo)
+    review(box)
+    assert.equal(existsSync(old), false)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
 })

@@ -32,7 +32,7 @@
     "validate:failed": "bash scripts/validate.sh --failed",
     "validate:test": "bash scripts/validate.sh --only python-tests,frontend-tests,cdk-tests,stream-tests",
     "validate:tenets": "bash scripts/validate.sh --only tenets",
-    "validate:commit": "bash scripts/validate.sh --only review",
+    "validate:commit": "bash scripts/validate.sh --only commit",
     "validate:codeql": "bash scripts/codeql.sh",
     "check:mock": "npm run check:mock --prefix voc-datalake/frontend",
     "deps:freshness": "node scripts/dependency-freshness.mjs",

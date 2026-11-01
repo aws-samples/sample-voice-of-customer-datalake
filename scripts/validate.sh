@@ -22,7 +22,7 @@
 #
 # Groups (used by scripts/validate-affected.sh): python, frontend, cdk, stream = every step of that
 # package; <package>-static = its lint/type/dead-code steps; <package>-tests = its test suite
-# (cdk-tests includes the vite build it needs); bridge; repo (version, gitleaks, jscpd); codeql; tenets, review (the
+# (cdk-tests includes the vite build it needs); bridge; repo (version, gitleaks, jscpd); codeql; tenets, commit (the
 # local AI reviews, scripts/ai-review/: against TENETS.md, and of the whole change; need kiro-cli or claude, else skipped);
 # audit = every code-audit detector step, or one family: audit-py-synth, audit-callers, audit-patterns,
 # audit-clones-py, audit-clones-ts, audit-ts, audit-unions, audit-locale, audit-tools (docs/code-audit.md).
@@ -122,9 +122,9 @@ def tsc  repo                               "node: AI review tests"             
 # scripts/ai-review/review.mjs): against TENETS.md, and a whole-change review like the GitHub PR review, so its
 # findings are fixed before the push. No credential lives in the repository: neither CLI installed, not signed in,
 # or CI = skipped with a notice. A complete VIOLATION / MUST-FIX fails; AI_REVIEW=off skips both. Their own groups
-# (`tenets`, `review`), so validate-affected.sh never spends a model call; they run in the full gate, once per release.
+# (`tenets`, `commit`), so validate-affected.sh never spends a model call; they run in the full gate, once per release.
 def tsc  tenets                             "tenets: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind tenets'
-def lint review                             "commit: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind commit'
+def lint commit                             "commit: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind commit'
 def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/scheduled-failure-watch.test.mjs'
 def tsc  repo                               "node: pre-push hook parsing"        'cd "$ROOT" && node --test scripts/git-hooks/pre-push.test.mjs'
 def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs'
@@ -234,7 +234,7 @@ selected() {  # step index -> 0 when it runs in this invocation
 }
 if [[ -n "$ONLY" ]]; then
   for want in ${ONLY//,/ }; do
-    case "$want" in python|frontend|cdk|stream|tenets|review|python-static|frontend-static|cdk-static|stream-static|python-tests|frontend-tests|cdk-tests|stream-tests|bridge|repo|codeql|audit|audit-py-synth|audit-callers|audit-patterns|audit-clones-py|audit-clones-ts|audit-ts|audit-unions|audit-locale|audit-tools) ;; *) printf 'validate: unknown group %s\n' "$want" >&2; exit 2 ;; esac
+    case "$want" in python|frontend|cdk|stream|tenets|commit|python-static|frontend-static|cdk-static|stream-static|python-tests|frontend-tests|cdk-tests|stream-tests|bridge|repo|codeql|audit|audit-py-synth|audit-callers|audit-patterns|audit-clones-py|audit-clones-ts|audit-ts|audit-unions|audit-locale|audit-tools) ;; *) printf 'validate: unknown group %s\n' "$want" >&2; exit 2 ;; esac
   done
 fi
 # --failed: the step names whose last status was not ok, from the newest earlier run's timings.tsv. That run's own

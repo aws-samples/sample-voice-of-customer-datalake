@@ -112,7 +112,7 @@ in, a timeout, or CI = the step prints why and passes, so the gate runs on every
   `commit-reviewer.json`, the read tool with `allowedPaths: ['./**']` and nothing trusted; Claude Code: Read, Grep and
   Glob in `dontAsk` mode with repository-scoped allow rules, no MCP servers). The diff is treated as data. They are
   language models: a PASS is not proof, and two runs can differ. `validate-affected.sh` never runs them (groups
-  `tenets` and `review`).
+  `tenets` and `commit`).
 
 ### Running part of the gate
 

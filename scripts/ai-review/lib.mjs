@@ -30,10 +30,13 @@ export const KINDS = Object.freeze({
 
 /**
  * The files sent for review: every tracked or new file (code, config, requirements, gate settings, docs), except
- * lockfiles, translations, build output and images.
+ * lockfiles, translations, build output, images, and anything shaped like a secret (an untracked `.env`, key or
+ * credentials file that is not gitignored must never reach a model).
  */
 export const REVIEW_PATHSPEC = Object.freeze([
   '.',
+  ':!*.env', ':!*.env.*', ':!*.pem', ':!*.key', ':!*.p12', ':!*.pfx', ':!*id_rsa*', ':!*id_ed25519*',
+  ':!*credentials*', ':!*.secret*', ':!*.npmrc', ':!*.netrc',
   ':!*package-lock.json', ':!*/node_modules/*', ':!*/dist/*', ':!*/cdk.out/*', ':!*/public/locales/*',
   ':!*/coverage_html/*', ':!*/.ruff_cache/*',
   ':!*.png', ':!*.jpg', ':!*.jpeg', ':!*.gif', ':!*.webp', ':!*.ico', ':!*.pdf', ':!*.drawio',
@@ -42,7 +45,10 @@ export const REVIEW_PATHSPEC = Object.freeze([
 /** Diff characters sent inline; past this the agent gets the file list and reads the rest with its tools. */
 export const MAX_DIFF_CHARS = 150_000
 
-/** Whether `name` is an executable file in one of PATH's directories (no dependency on `which`). */
+/**
+ * Whether `name` is an executable file in one of PATH's directories (no dependency on `which`). Exact names only
+ * (no `.cmd` / `.exe`): the gate is bash, so Windows shims are out of scope.
+ */
 export function onPath(name, pathValue) {
   return String(pathValue ?? '').split(delimiter).filter(Boolean).some((dir) => {
     try {
