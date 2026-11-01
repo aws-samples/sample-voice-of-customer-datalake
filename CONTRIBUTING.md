@@ -91,7 +91,7 @@ working tree (`scripts/gitleaks-tree.sh`; install gitleaks 8.30+, e.g. `brew ins
 security-and-quality queries over JS/TS and Python with zero errors and warnings (`scripts/codeql.sh`; install the
 CLI with `brew install codeql`; about 5 minutes; skipped on GitHub Actions, where code scanning runs the same
 analysis on every PR), the code-audit detectors in `scripts/audit/` (dead code, renamed clones and re-implemented
-helpers; one `audit: …` step each, plus their own tests and lint — [docs/code-audit.md](docs/code-audit.md#in-the-gate)),
+helpers; one `audit: …` step each, plus their own tests and lint: [docs/code-audit.md](docs/code-audit.md#in-the-gate)),
 pytest and vitest with a per-file coverage floor and a shrink-only baseline ([docs/coverage-gate.md](docs/coverage-gate.md)),
 and actionlint + zizmor over `.github/workflows` (`scripts/actions-lint.sh`; install both, e.g. `brew install actionlint zizmor`).
 CI (`.github/workflows/quality-gates.yml`) runs that script and nothing else. Each gate allows zero findings.
@@ -110,7 +110,7 @@ behind its newest release, so the work starts from current versions.
   it is never skipped; CI runs it again on the pull request.
 
 ### How validate.sh runs
-The steps run in five parallel lanes — `py` (ruff, vulture, pyright, pytest with pytest-xdist), `tsc` (type checks,
+The steps run in five parallel lanes: `py` (ruff, vulture, pyright, pytest with pytest-xdist), `tsc` (type checks,
 knip, small node checks, most code-audit detectors), `lint` (ESLint, jscpd, gitleaks, `ts_reachability`), `test` (vite build, the synth-based audit detectors, then the CDK,
 stream and frontend vitest suites), `sec` (CodeQL). The first failing step stops the other lanes and its log tail is printed; every run ends with a table
 of each step's status and duration, and every step's full log is in `.cache/validate/logs/<run>/`. Options:
