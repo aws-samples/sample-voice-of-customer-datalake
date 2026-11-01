@@ -3,10 +3,8 @@
 Two operator scripts copy research projects from one deployment to another: a demo to
 production, one region to another, or a prefixed copy to its sibling in the same account.
 They run on your machine with your own AWS credentials. No API route or Lambda is involved,
-and nothing is sent anywhere except the two deployments you name.
-
-Ported from PR #429 by @aws-bryan (`export_projects.py`, `import_projects.py`,
-`migrate_projects.py`).
+and nothing is sent anywhere except the two deployments you name. The scripts are based on a
+contribution by @aws-bryan.
 
 ## Before you start
 
