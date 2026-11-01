@@ -25,20 +25,31 @@
     "title": "センチメントの推移",
     "empty": "この期間のレビューはまだありません。",
     "sentiment": "平均センチメント",
-    "reviews": "レビュー"
+    "reviews": "レビュー",
+    "legend": "凡例",
+    "tooFew_one": "この期間のレビューは{{count, number}}件のみのため、トレンドを表示するには不十分です。",
+    "tooFew_other": "この期間のレビューは{{count, number}}件のみのため、トレンドを表示するには不十分です。",
+    "readThem_one": "レビューを読む",
+    "readThem_other": "レビューを読む"
   },
   "themes": {
     "love": "顧客が好むこと",
     "hate": "顧客が嫌うこと",
     "empty": "まだ目立つものはありません。",
-    "sampled": "この期間の最新レビューから読み取りました。"
+    "sampled": "この期間の最新レビューから読み取りました。",
+    "count_one": "{{count, number}}件のレビュー",
+    "count_other": "{{count, number}}件のレビュー",
+    "countLabel_one": "{{theme}}に関するレビューを読む",
+    "countLabel_other": "{{theme}}に関する{{count, number}}件のレビューを読む",
+    "groupLabel_one": "{{category}}のレビュー{{count, number}}件をすべて読む",
+    "groupLabel_other": "{{category}}のレビュー{{count, number}}件をすべて読む",
+    "general": "全般"
   },
   "releases": {
     "title": "ニュースとリリース",
     "empty": "まだニュースは見つかっていません。ニュースとリリースは定期スキャンまたは「今すぐスキャン」で取得されます。",
     "official": "公式",
     "thirdParty": "報道とレビュー",
-    "undated": "公開日不明・初回検出日",
     "mentions_one": "{{count, number}} 件の言及",
     "mentions_other": "{{count, number}} 件の言及",
     "sources": "出典",
@@ -53,7 +64,11 @@
     "kindAll": "すべて",
     "kindEmpty": "この一覧に「{{kind}}」はありません。すべての項目を見るには「すべて」を選んでください。",
     "viaExa": "Exa 経由",
-    "viaFeed": "フィード経由"
+    "viaFeed": "フィード経由",
+    "firstFound": "初回検出",
+    "showAll_one": "すべて表示（{{count, number}}件）",
+    "showAll_other": "すべて表示（{{count, number}}件）",
+    "showFewer": "表示を減らす"
   },
   "compare": {
     "title": "自社との比較",
@@ -70,9 +85,10 @@
     "they_are_better": "他社が優勢",
     "we_are_better": "自社が優勢",
     "even": "互角",
-    "fewReviews": "レビューが少数（{{min, number}} 件未満）: 参考程度にご覧ください",
     "openOurs_one": "カテゴリで {{category}} の自社レビュー {{count, number}} 件を開く",
-    "openOurs_other": "カテゴリで {{category}} の自社レビュー {{count, number}} 件を開く"
+    "openOurs_other": "カテゴリで {{category}} の自社レビュー {{count, number}} 件を開く",
+    "tooFew": "比較するにはレビューが不足しています",
+    "footnote": "判定には、この期間で同じカテゴリの競合レビューが最低{{min, number}}件必要です。それ未満の場合は「比較するにはレビューが不足しています」と表示されます。"
   },
   "brands": {
     "hint": "Radar が追跡するブランド：ニューススキャンが各ブランドを Web で検索し（そのブランドの言語で、設定されていればニュースフィードも）、データソースページで Radar ソースに指定したソースがそのレビューを取り込みます。",
@@ -210,9 +226,6 @@
     "rating": "評価 {{value}}",
     "source": "出典: {{host}}",
     "problem": "問題:",
-    "readAll": "すべてのレビューを読む",
-    "readTheme_one": "レビューを読む",
-    "readTheme_other": "{{count, number}} 件のレビューを読む",
     "openTheme": "{{theme}} のレビューを開きます",
     "readDay": "日別のレビューを読む",
     "dayEntry_one": "{{day}}: {{count, number}} 件のレビュー",
@@ -254,5 +267,35 @@
     "invalidKey": "8〜200 文字の英字、数字、- または _ を使ってください。",
     "removeTitle": "Exa キーを削除しますか？",
     "removeMessage": "Radar は Exa の検索をやめます。Radar 自身の Web 検索は続き、見つかったニュースはそのまま残ります。"
+  },
+  "summary": {
+    "title": "サマリー",
+    "sentimentLabel": "競合と自社のセンチメント比較",
+    "sentimentUnknown": "全体の割合がまだ取得できないため、比較できません。",
+    "sentimentTooFew_one": "競合のレビューは{{count, number}}件のみのため、比較するには不十分です",
+    "sentimentTooFew_other": "競合のレビューは{{count, number}}件のみのため、比較するには不十分です",
+    "sentimentNoOurs": "競合のポジティブ率は{{theirs}}です。自社のレビューがないため比較できません",
+    "sentimentCompare": "競合のポジティブ率 {{theirs}}、自社 {{ours}}",
+    "sentimentVolumes": "{{theirs}} · {{ours}}",
+    "theirReviews_one": "競合のレビュー{{count, number}}件",
+    "theirReviews_other": "競合のレビュー{{count, number}}件",
+    "ourReviews_one": "自社のレビュー{{count, number}}件",
+    "ourReviews_other": "自社のレビュー{{count, number}}件",
+    "releasesLabel": "新機能リリース",
+    "releasesCount_one": "直近{{days, number}}日間で{{count, number}}件",
+    "releasesCount_other": "直近{{days, number}}日間で{{count, number}}件",
+    "releasesNewest": "最新: {{title}}",
+    "gapLabel": "最大の差",
+    "gapNone": "比較できるレビューがまだ不足しています",
+    "gapTheyLead_one": "{{category}}で競合が{{count, number}}ポイントリード",
+    "gapTheyLead_other": "{{category}}で競合が{{count, number}}ポイントリード",
+    "gapYouLead_one": "{{category}}で自社が{{count, number}}ポイントリード",
+    "gapYouLead_other": "{{category}}で自社が{{count, number}}ポイントリード",
+    "gapEven": "{{category}}では自社と競合が同水準です",
+    "gapRead": "{{category}}の競合レビューを読む"
+  },
+  "scanLine": {
+    "last": "最終スキャン {{when}}",
+    "never": "スキャンはまだありません"
   }
 }

@@ -2,11 +2,11 @@
  * @fileoverview Us against one brand, per category of OUR taxonomy: positive
  * share and volume on both sides, and who is better (GET /radar/brands/{brand}/compare).
  * Their cell opens their reviews in that category (ReviewsModal); ours opens our own
- * Categories page filtered to it. A verdict drawn from fewer than {@link FEW_REVIEWS}
- * reviews on either side carries a "few reviews" caution.
+ * Categories page filtered to it. A row with fewer than RADAR_COMPARE_MIN_REVIEWS of their reviews
+ * (`too_few`) gives no verdict: it says so in neutral text, and ONE footnote under the table explains why.
  * @module pages/Radar/CompareTable
  */
-import { AlertTriangle, Scale } from 'lucide-react'
+import { Scale } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import type { ReactNode } from 'react'
@@ -14,13 +14,20 @@ import SectionTitle from './SectionTitle'
 import { percent } from './radarFormat'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import type { RadarReviewFilter } from '../../api/radarApi'
+import { RADAR_COMPARE_MIN_REVIEWS } from '../../api/radarSchema'
 import type { RadarCompare, RadarCompareRow } from '../../api/radarSchema'
+import type { Tone } from '../../theme/tones'
 
-const VERDICT_TONE: Record<NonNullable<RadarCompareRow['verdict']>, string> = {
-  they_are_better: 'text-danger',
-  we_are_better: 'text-ok',
-  even: 'text-muted',
+type VerdictTone = Extract<Tone, 'ok' | 'warn' | 'muted'>
+
+/** Their lead is a heads-up (warn), never an alarm; ours is good news; even is neutral. */
+const VERDICT_TONE: Record<NonNullable<RadarCompareRow['verdict']>, VerdictTone> = {
+  they_are_better: 'warn',
+  we_are_better: 'ok',
+  even: 'muted',
 }
+
+const TONE_TEXT: Record<VerdictTone, string> = { ok: 'text-ok', warn: 'text-warn', muted: 'text-muted' }
 
 function Side({ side }: Readonly<{ side: RadarCompareRow['theirs'] | null }>) {
   const { t, i18n } = useTranslation('radar')
@@ -31,13 +38,6 @@ function Side({ side }: Readonly<{ side: RadarCompareRow['theirs'] | null }>) {
       <span className="block text-xs text-muted">{t('compare.volume', { count: side.volume })}</span>
     </span>
   )
-}
-
-/** Under this many reviews on either side, a verdict is a hint, not a finding. */
-const FEW_REVIEWS = 10
-
-function hasFewReviews(row: RadarCompareRow): boolean {
-  return row.theirs.volume < FEW_REVIEWS || (row.ours?.volume ?? 0) < FEW_REVIEWS
 }
 
 /** Our side, linking to our Categories page in that category. */
@@ -55,18 +55,9 @@ function OurSide({ row, label }: Readonly<{ row: RadarCompareRow; label: string 
 
 function Verdict({ row }: Readonly<{ row: RadarCompareRow }>) {
   const { t } = useTranslation('radar')
+  if (row.too_few) return <span className="text-muted" data-testid="compare-too-few">{t('compare.tooFew')}</span>
   if (row.verdict === null) return <span className="text-muted">{t('compare.noData')}</span>
-  return (
-    <span>
-      <span className={VERDICT_TONE[row.verdict]}>{t(`compare.${row.verdict}`)}</span>
-      {hasFewReviews(row) ? (
-        <span className="mt-0.5 flex items-start gap-1 text-xs text-warn">
-          <AlertTriangle size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
-          <span className="min-w-0">{t('compare.fewReviews', { min: FEW_REVIEWS })}</span>
-        </span>
-      ) : null}
-    </span>
-  )
+  return <span className={`font-medium ${TONE_TEXT[VERDICT_TONE[row.verdict]]}`}>{t(`compare.${row.verdict}`)}</span>
 }
 
 function TheirSide({ row, label, onRead }: Readonly<{ row: RadarCompareRow; label: string; onRead: (filter: RadarReviewFilter) => void }>) {
@@ -118,9 +109,9 @@ export default function CompareTable({ compare, onRead }: Readonly<{
   const { t } = useTranslation('radar')
   const labels = useDisplayLabels()
   return (
-    <section className="card @container min-w-0" aria-labelledby="radar-compare">
+    <section id="radar-compare-section" className="card @container min-w-0" aria-labelledby="radar-compare">
       <SectionTitle id="radar-compare" icon={Scale}>{t('compare.title')}</SectionTitle>
-      {compare.ours_available ? null : <p className="text-xs text-warn mb-2">{t('compare.unavailable')}</p>}
+      {compare.ours_available ? null : <p className="text-sm text-warn mb-2">{t('compare.unavailable')}</p>}
       {compare.categories.length === 0 ? <p className="text-sm text-muted">{t('compare.empty')}</p> : (
         <table role="table" className={COMPARE_LAYOUT.table}>
           <thead role="rowgroup" className={COMPARE_LAYOUT.head}>
@@ -146,6 +137,9 @@ export default function CompareTable({ compare, onRead }: Readonly<{
           </tbody>
         </table>
       )}
+      {compare.categories.some((row) => row.too_few) ? (
+        <p className="text-xs text-text mt-3" data-testid="compare-footnote">{t('compare.footnote', { min: RADAR_COMPARE_MIN_REVIEWS })}</p>
+      ) : null}
     </section>
   )
 }

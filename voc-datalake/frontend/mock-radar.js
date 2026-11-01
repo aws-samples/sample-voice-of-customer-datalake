@@ -4,9 +4,10 @@
 // lambda/api/radar_handler.py wire shape ({success: false, error} on 400/404). Brands are the
 // brand list (mock-radar-brands.js) then the legacy source-profile brands, merged by key.
 // Stateful for the life of the mock process. Wired into mock-server.js by handleDomainModules.
-// The reviews routes live in mock-radar-reviews.js.
+// The reviews routes live in mock-radar-reviews.js, the news and releases in mock-radar-news.js.
 
 import { brandListRoute, effectiveBrands } from './mock-radar-brands.js';
+import { releases } from './mock-radar-news.js';
 import { radarReview, radarReviews } from './mock-radar-reviews.js';
 
 const CADENCES = ['daily', 'weekly', 'monthly'];
@@ -40,59 +41,35 @@ function detail(brand, days) {
     brand, days, total: 28, avg_sentiment: 0.12, sentiment: SENTIMENT, trend: trend(days), sampled: false,
     love: [
       { category: 'delivery', subcategory: 'speed', count: 8, quotes: ['Arrived a day early.', 'Fastest delivery I have had.'] },
+      { category: 'delivery', subcategory: 'tracking', count: 4, quotes: ['The live map is great.', 'Arrived a day early.'] },
       { category: 'product_quality', subcategory: null, count: 5, quotes: ['Sturdy and well made.'] },
     ],
     hate: [
-      { category: 'customer_support', subcategory: 'response_time', count: 6, quotes: ['Waited a week for an answer.'] },
+      { category: 'customer_support', subcategory: 'response_time', count: 6, quotes: ['Waited a week for an answer.', 'Nobody answers the chat.'] },
+      { category: 'customer_support', subcategory: 'resolution', count: 2, quotes: ['My refund never came.'] },
       { category: 'pricing', subcategory: null, count: 3, quotes: ['Too expensive for what it is.'] },
     ],
   };
 }
 
-/** One more news item of `brand`: a kind other than a release, found by web search, Exa or a feed. */
-function newsItem(brand, { id, kind, via, ago, feature, url, title, official = true }) {
-  return {
-    release_id: id, brand: brand.key, brand_label: brand.label, feature, release_date: daysAgo(ago), date_approximate: false,
-    summary: `${brand.label}: ${feature.toLowerCase()}.`, urls: [url], titles: [title],
-    source_kind: official ? 'official' : 'third_party', mentions: 1,
-    first_seen: `${daysAgo(ago)}T05:45:00Z`, last_seen: `${daysAgo(ago)}T05:45:00Z`, kind, found_via: via,
-  };
-}
-
-function releases(brand) {
-  const domain = brand.domains[0] ?? 'acme.example';
-  return {
-    brand, days: 365, releases: [
-      {
-        release_id: 'r1', brand: brand.key, brand_label: brand.label, feature: 'Same-day delivery in five more cities',
-        release_date: daysAgo(12), date_approximate: false, summary: `${brand.label} extended same-day delivery to five more cities.`,
-        urls: [`https://${domain}/news/same-day`, 'https://news.example.com/acme-same-day'],
-        titles: ['Same-day delivery expands', 'Acme speeds up deliveries'], source_kind: 'official', mentions: 3,
-        first_seen: `${daysAgo(11)}T05:45:00Z`, last_seen: `${daysAgo(2)}T05:45:00Z`, kind: 'release', found_via: ['web'],
-      },
-      newsItem(brand, { id: 'r3', kind: 'promotion', via: ['exa'], ago: 20, feature: 'Half-price first month on the premium plan',
-        url: `https://${domain}/offers/premium`, title: 'Premium plan offer' }),
-      newsItem(brand, { id: 'r4', kind: 'partnership', via: ['feed'], ago: 30, feature: 'Partnership with Example Air for lounge deliveries',
-        url: `https://${domain}/news/example-air`, title: 'Working with Example Air' }),
-      newsItem(brand, { id: 'r5', kind: 'announcement', via: ['web', 'exa'], ago: 35, feature: 'Opening a second warehouse',
-        url: 'https://news.example.com/acme-warehouse', title: 'Acme opens a warehouse', official: false }),
-      {
-        release_id: 'r2', brand: brand.key, brand_label: brand.label, feature: 'Loyalty points on subscriptions',
-        release_date: daysAgo(40), date_approximate: true, summary: 'Subscriptions now earn loyalty points, per press coverage.',
-        urls: ['https://reviews.example.org/acme-loyalty'], titles: ['Acme adds loyalty points'], source_kind: 'third_party', mentions: 1,
-        first_seen: `${daysAgo(40)}T05:45:00Z`, last_seen: `${daysAgo(40)}T05:45:00Z`, kind: 'news', found_via: ['web'],
-      },
-    ],
-  };
-}
+/** Under this many of their reviews a category gives no verdict (radar_handler `too_few`). */
+const COMPARE_MIN_REVIEWS = 10;
 
 function compare(brand, days) {
   const side = (volume, positive) => ({ volume, positive_share: positive, negative_share: Number((1 - positive - 0.1).toFixed(3)) });
+  const row = (category, theirs, ours, verdict) => {
+    const tooFew = theirs.volume < COMPARE_MIN_REVIEWS;
+    return { category, theirs, ours, too_few: tooFew, verdict: tooFew ? null : verdict };
+  };
   return {
-    brand, days, ours_available: true, categories: [
-      { category: 'delivery', theirs: side(10, 0.8), ours: side(42, 0.55), verdict: 'they_are_better' },
-      { category: 'customer_support', theirs: side(8, 0.2), ours: side(30, 0.5), verdict: 'we_are_better' },
-      { category: 'pricing', theirs: side(5, 0.4), ours: side(18, 0.44), verdict: 'even' },
+    brand, days, ours_available: true,
+    overall: { theirs: side(28, 0.5), ours: side(120, 0.55) },
+    categories: [
+      row('delivery', side(12, 0.8), side(42, 0.55), 'they_are_better'),
+      row('customer_support', side(11, 0.2), side(30, 0.5), 'we_are_better'),
+      row('pricing', side(5, 0.4), side(18, 0.44), 'even'),
+      row('product_quality', side(3, 0.67), side(25, 0.6), 'they_are_better'),
+      row('billing', side(2, 0), null, null),
     ],
   };
 }

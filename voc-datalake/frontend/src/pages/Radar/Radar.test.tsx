@@ -1,6 +1,7 @@
 /**
  * Radar page: the empty state explains how to add a Radar source; with a brand, one
- * aggregated view shows its trend, love / hate themes, cited releases and the comparison.
+ * aggregated view shows, in order, the summary strip, the comparison, love / hate themes,
+ * cited releases and the trend. Admins get one "Last scan · Scan now" line in the header.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
@@ -17,6 +18,13 @@ function routeReleases(releases: unknown[]): void {
     'GET /radar': () => ({ brands: [brand('acme', 'Acme')], last_scan: null, settings: {} }),
     'GET /radar/brands/acme/page': () => ({ detail: DETAIL, releases: { releases }, compare: COMPARE }),
   }, { ignoreQuery: true })
+}
+
+/** Open a release row (its title is a disclosure) and answer its row. */
+async function openRelease(feature: string): Promise<HTMLElement> {
+  const toggle = await screen.findByRole('button', { name: feature })
+  await userEvent.setup().click(toggle)
+  return toggle.closest('li') ?? document.body
 }
 
 beforeEach(() => {
@@ -47,15 +55,34 @@ describe('Radar page', () => {
     expect(await screen.findByRole('link', { name: 'Configure' })).toHaveAttribute('href', '/admin?tab=sources&section=radar')
   })
 
-  it('lets an admin start the release and news scan from the Radar page, and says what it does', async () => {
+  it('gives an admin one scan line in the header, with what the scan does as its description', async () => {
     route([brand('acme', 'Acme')], { 'POST /radar/scan': () => ({ success: true, status: 'started' }) })
     renderPage()
     const scan = await screen.findByRole('button', { name: 'Scan now' })
     expect(scan).toHaveAccessibleDescription(/each brand's own domains for its releases and news/)
-    expect(screen.getByText('No scan has run yet.')).toBeInTheDocument()
-    await userEvent.setup().click(scan)
+    expect(scan).toHaveAttribute('title', expect.stringMatching(/without waiting for the schedule/))
+    expect(screen.getByTestId('radar-last-scan')).toHaveTextContent('No scan yet')
+  })
+
+  it('starts the scan from the header line and says it has started', async () => {
+    route([brand('acme', 'Acme')], { 'POST /radar/scan': () => ({ success: true, status: 'started' }) })
+    renderPage()
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Scan now' }))
     expect(await screen.findByText(/The scan has started/)).toBeInTheDocument()
     expect(fetchApi).toHaveBeenCalledWith('/radar/scan', expect.objectContaining({ method: 'POST', body: '{}' }))
+  })
+
+  it('dates the last scan short, with its status and counts in the tooltip', async () => {
+    route([brand('acme', 'Acme')], {
+      'GET /radar': () => ({
+        brands: [brand('acme', 'Acme')], settings: {},
+        last_scan: { status: 'completed', finished_at: '2026-10-30T09:00:00Z', brands: 1, queries: 15, added: 0, merged: 0 },
+      }),
+    })
+    renderPage()
+    const last = await screen.findByTestId('radar-last-scan')
+    expect(last).toHaveTextContent('Last scan Oct 30')
+    expect(last).toHaveAttribute('title', expect.stringMatching(/^Last scan: completed, .*\(1 brand, 15 searches, 0 new releases, 0 merged\)$/))
   })
 
   it('offers no scan to a non-admin', async () => {
@@ -64,6 +91,7 @@ describe('Radar page', () => {
     renderPage()
     await screen.findByRole('heading', { name: 'What their customers love' })
     expect(screen.queryByRole('button', { name: 'Scan now' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('radar-last-scan')).not.toBeInTheDocument()
   })
 
   it('offers no scan to an admin before any brand is tracked (the setup guide comes first)', async () => {
@@ -73,57 +101,88 @@ describe('Radar page', () => {
     expect(screen.queryByRole('button', { name: 'Scan now' })).not.toBeInTheDocument()
   })
 
-  it('shows the first brand: love and hate themes with their counts and quotes', async () => {
+  it('reads top to bottom: summary, comparison, love and hate, news, trend', async () => {
     route([brand('acme', 'Acme')])
     renderPage()
-    const love = (await screen.findByRole('heading', { name: 'What their customers love' })).parentElement
-    expect(within(love ?? document.body).getByText('Ease of use / Installation setup')).toBeInTheDocument()
-    expect(within(love ?? document.body).getByText('Arrived early')).toBeInTheDocument()
-    expect(screen.getByText('Billing')).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'What their customers love' })
+    const order = ['Summary', 'Compared with us', 'What their customers love / What their customers hate', 'News and releases', 'Sentiment trend']
+    const regions = screen.getAllByRole('region').map((region) => region.getAttribute('aria-label') ?? region.querySelector('h2')?.textContent)
+    expect(regions.filter((name) => order.includes(name ?? ''))).toStrictEqual(order)
   })
 
-  it('cites every release with a link to its source', async () => {
+  it('shows the first brand: love and hate themes under their categories, with counts and quotes', async () => {
     route([brand('acme', 'Acme')])
     renderPage()
-    const link = await screen.findByRole('link', { name: /Dark mode is here/ })
+    const love = within((await screen.findByRole('heading', { name: 'What their customers love' })).parentElement ?? document.body)
+    expect(love.getByRole('heading', { name: 'Ease of use' })).toBeInTheDocument()
+    expect(love.getByText('Installation setup')).toBeInTheDocument()
+    expect(love.getByText('Arrived early')).toBeInTheDocument()
+  })
+
+  it('shows a category whose only theme has no subcategory as one heading with its quotes, no "General" row', async () => {
+    route([brand('acme', 'Acme')])
+    renderPage()
+    const hate = within((await screen.findByRole('heading', { name: 'What their customers hate' })).parentElement ?? document.body)
+    expect(hate.getByRole('heading', { name: 'Billing' })).toBeInTheDocument()
+    expect(hate.queryByText('General')).not.toBeInTheDocument()
+  })
+
+  it('keeps a release row closed until its title is pressed', async () => {
+    route([brand('acme', 'Acme')])
+    renderPage()
+    const toggle = await screen.findByRole('button', { name: 'Dark mode' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('link', { name: /Dark mode is here/ })).not.toBeInTheDocument()
+    await openRelease('Dark mode')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('cites every release with a link to its source, once the row is opened', async () => {
+    route([brand('acme', 'Acme')])
+    renderPage()
+    const row = within(await openRelease('Dark mode'))
+    const link = row.getByRole('link', { name: /Dark mode is here/ })
     expect(link).toHaveAttribute('href', 'https://acme.example/news')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
-    expect(screen.getByText('Official')).toBeInTheDocument()
+    expect(row.getByText('Shipped dark mode.')).toBeInTheDocument()
   })
 
-  it('labels an undated release with the day it was first found, not as an approximate release day', async () => {
+  it('names the site of the first citation on the row, and badges an official one', async () => {
+    route([brand('acme', 'Acme')])
+    renderPage()
+    const row = within((await screen.findByRole('button', { name: 'Dark mode' })).closest('li') ?? document.body)
+    expect(row.getByTestId('release-site')).toHaveTextContent('acme.example')
+    expect(row.getByText('Official')).toHaveClass('badge')
+  })
+
+  it('labels an undated release with the day it was first found, muted, not as an approximate release day', async () => {
     routeReleases([
       { ...RELEASES.releases[0], release_id: 'r2', feature: 'Inbox', release_date: '2026-10-25', date_approximate: true },
       RELEASES.releases[0],
     ])
     renderPage()
-    const undated = (await screen.findByRole('heading', { name: 'Inbox' })).closest('li')
-    expect(undated).toHaveTextContent(/Date not published, first found Oct 25/)
-    const dated = screen.getByRole('heading', { name: 'Dark mode' }).closest('li')
-    expect(dated).not.toHaveTextContent(/Date not published/)
+    const undated = (await screen.findByRole('button', { name: 'Inbox' })).closest('li')
+    expect(undated).toHaveTextContent(/first found Oct 25, 2026/)
+    expect(within(undated ?? document.body).getByText(/first found/)).toHaveClass('text-muted')
+    expect(screen.getByRole('button', { name: 'Dark mode' }).closest('li')).not.toHaveTextContent(/first found/)
   })
 
-  it('compares us with them per category', async () => {
-    route([brand('acme', 'Acme')])
-    renderPage()
-    const row = (await screen.findByRole('rowheader', { name: 'Ease of use' })).closest('tr')
-    expect(within(row ?? document.body).getByText('They are better')).toBeInTheDocument()
-    expect(within(row ?? document.body).getByText('80% positive')).toBeInTheDocument()
-  })
-
-  it('cautions a verdict drawn from fewer than 10 reviews, and links our side to our Categories', async () => {
+  it('compares us with them per category, and says plainly when a row has too few of their reviews', async () => {
     route([brand('acme', 'Acme')])
     renderPage()
     const row = within((await screen.findByRole('rowheader', { name: 'Ease of use' })).closest('tr') ?? document.body)
-    expect(row.getByText('Few reviews (under 10): read with care')).toBeInTheDocument()
+    expect(row.getByText('80% positive')).toBeInTheDocument()
+    expect(row.getByText('Not enough reviews to compare')).toHaveClass('text-muted')
+    expect(row.queryByText('They are better')).not.toBeInTheDocument()
     expect(row.getByRole('link', { name: 'Open our 9 reviews in Ease of use in Categories' })).toHaveAttribute('href', '/categories?category=ease_of_use')
   })
 
-  it('offers the header\'s windows by the header\'s names, plus a year, opening on 90 days', async () => {
+  it('names every window the same way, opening on the last 90 days', async () => {
     route([brand('acme', 'Acme')])
     renderPage()
     const select = await screen.findByRole('combobox', { name: 'Window' })
-    expect([...select.querySelectorAll('option')].map((o) => o.textContent)).toStrictEqual(['7 Days', '30 Days', '90 Days', 'Last 365 days'])
+    expect([...select.querySelectorAll('option')].map((o) => o.textContent))
+      .toStrictEqual(['Last 7 days', 'Last 30 days', 'Last 90 days', 'Last 365 days'])
     expect(select).toHaveValue('90')
   })
 
@@ -133,7 +192,7 @@ describe('Radar page', () => {
       urls: ['http://www.acme.example/news/', 'https://acme.example/news', 'https://press.example/a'], titles: ['Dark mode is here', 'Dup', 'Press'],
     }])
     renderPage()
-    const sources = await screen.findByRole('list', { name: 'Sources' })
+    const sources = within(await openRelease('Dark mode')).getByRole('list', { name: 'Sources' })
     const links = within(sources).getAllByRole('link')
     expect(links.map((a) => a.getAttribute('href'))).toStrictEqual(['https://www.acme.example/news/', 'https://press.example/a'])
   })
@@ -142,7 +201,7 @@ describe('Radar page', () => {
   it('lets a URL-like citation label break anywhere inside the page width', async () => {
     route([brand('acme', 'Acme')])
     renderPage()
-    await screen.findByRole('link', { name: /Dark mode is here/ })
+    await openRelease('Dark mode')
     const label = screen.getAllByTestId('citation-label').at(0)
     expect(label).toHaveClass('min-w-0', '[overflow-wrap:anywhere]')
     expect(label?.closest('a')).toHaveClass('max-w-full')
@@ -151,7 +210,7 @@ describe('Radar page', () => {
   it('switches brand from the selector', async () => {
     route([brand('acme', 'Acme'), brand('globex', 'Globex')])
     renderPage()
-    await screen.findByRole('link', { name: /Dark mode is here/ })
+    await screen.findByRole('button', { name: 'Dark mode' })
     await userEvent.setup().selectOptions(screen.getByLabelText('Brand'), 'globex')
     expect(await screen.findByText(/No news found yet/)).toBeInTheDocument()
     expect(fetchApi).toHaveBeenCalledWith('/radar/brands/globex/page?days=90', undefined)
@@ -167,7 +226,7 @@ describe('Radar page', () => {
   it('keeps ?brand= in step with the selector, keeping the other params', async () => {
     route([brand('acme', 'Acme'), brand('globex', 'Globex')])
     renderPage('/radar?brand=acme&review=fb_1')
-    await screen.findByRole('link', { name: /Dark mode is here/ })
+    await screen.findByRole('button', { name: 'Dark mode' })
     await userEvent.setup().selectOptions(screen.getByLabelText('Brand'), 'globex')
     expect(screen.getByTestId('search')).toHaveTextContent('?review=fb_1&brand=globex')
   })

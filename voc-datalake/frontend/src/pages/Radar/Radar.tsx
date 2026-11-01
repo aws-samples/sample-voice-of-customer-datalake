@@ -1,8 +1,9 @@
 /**
  * @fileoverview Radar (docs/radar.md): other brands tracked by Radar sources,
  * kept apart from our own feedback. One aggregated view per brand (a brand
- * selector, not a wall of cards): sentiment trend, what their customers love
- * and hate, their releases with citations, and how we compare per category.
+ * selector, not a wall of cards), in reading order: a summary strip (their sentiment against ours,
+ * new releases, the biggest gap), how we compare per category, what their customers love and hate,
+ * their releases with citations, and last the sentiment trend.
  * With two brands or more, "All brands" (`?brand=all`) shows them side by side (AllBrandsView).
  *
  * @module pages/Radar
@@ -17,12 +18,14 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { radarApi, radarKeys } from '../../api/radarApi'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
 import AllBrandsView from './AllBrandsView'
-import BrandSentiment from './BrandSentiment'
 import CompareTable from './CompareTable'
 import RadarEmptyState from './RadarEmptyState'
 import { RadarLoadFailed, RadarLoading } from './RadarQueryState'
-import { LastScan, ScanNow } from './RadarScan'
+import { ScanStatusLine } from './RadarScan'
+import RadarSummary from './RadarSummary'
+import RadarThemes from './RadarThemes'
 import ReleasesTimeline from './ReleasesTimeline'
+import TrendChart from './TrendChart'
 import ReviewsModal from './ReviewsModal'
 import { useIsAdmin } from '../../store/authStore'
 import { useCategoriesConfig } from '../../hooks/useCategories'
@@ -30,7 +33,7 @@ import { useSourceProfiles } from '../../hooks/useDimensions'
 import { DEFAULT_RADAR_WINDOW, RADAR_SETUP_PATH, RADAR_WINDOWS } from './radarFormat'
 import { ALL_BRANDS, allBrandsQuery, brandPageQuery } from './radarQueries'
 import type { RadarReviewFilter } from '../../api/radarApi'
-import type { RadarBrandSummary } from '../../api/radarSchema'
+import type { RadarBrandSummary, RadarOverview } from '../../api/radarSchema'
 
 function BrandView({ brand, days }: Readonly<{ brand: string; days: number }>) {
   const page = useQuery(brandPageQuery(brand, days))
@@ -39,11 +42,14 @@ function BrandView({ brand, days }: Readonly<{ brand: string; days: number }>) {
   if (page.isLoading) return <RadarLoading />
   const detail = page.data?.detail
   if (page.isError || !page.data || !detail) return <RadarLoadFailed query={page} />
+  const { releases, compare } = page.data
   return (
     <div className="space-y-4 sm:space-y-6">
-      <BrandSentiment detail={detail} onRead={setReading} />
-      <ReleasesTimeline releases={page.data.releases} />
-      <CompareTable compare={page.data.compare} onRead={setReading} />
+      <RadarSummary detail={detail} compare={compare} releases={releases} days={days} onRead={setReading} />
+      <CompareTable compare={compare} onRead={setReading} />
+      <RadarThemes detail={detail} onRead={setReading} />
+      <ReleasesTimeline releases={releases} />
+      <TrendChart trend={detail.trend} days={days} onDay={(day) => setReading({ day })} onReadAll={() => setReading({})} />
       {reading === null ? null : (
         <ReviewsModal brand={detail.brand} days={days} initialFilter={reading} onClose={() => setReading(null)} />
       )}
@@ -68,15 +74,8 @@ function useEarlyReads(): void {
   useSourceProfiles()
 }
 
-/** The header's own label for a preset of the same length; a year (no header preset) reads "Last 365 days". */
-const WINDOW_LABEL_KEY: Readonly<Partial<Record<number, string>>> = {
-  7: 'common:timeRange.7dFull', 30: 'common:timeRange.30dFull', 90: 'common:timeRange.90dFull',
-}
-
-function windowLabel(days: number, t: TFunction): string {
-  const key = WINDOW_LABEL_KEY[days]
-  return key === undefined ? t('radar:windowDays', { count: days }) : t(key)
-}
+/** Every window reads the same way: "Last 7 days" … "Last 365 days". */
+const windowLabel = (days: number, t: TFunction<'radar'>): string => t('windowDays', { count: days })
 
 function Pickers({ brands, brand, days, onBrand, onDays }: Readonly<{
   brands: readonly RadarBrandSummary[]; brand: string; days: number
@@ -144,17 +143,36 @@ function useChosenWindow(): readonly [number, (days: number) => void] {
 function RadarBody({ brands }: Readonly<{ brands: readonly RadarBrandSummary[] }>) {
   const { t } = useTranslation('radar')
   const [brand, choose] = useChosenBrand(brands)
-  // The header's window choices and names ("7 Days", "30 Days", "90 Days", plus a year).
+  // The windows: the header's presets plus a year, all named "Last N days".
   const [days, setDays] = useChosenWindow()
   if (brand === '') return <RadarEmptyState />
   return (
     <>
       <Pickers brands={brands} brand={brand} days={days} onBrand={choose} onDays={setDays} />
-      <p className="text-xs text-muted flex items-center gap-2"><Info size={14} aria-hidden="true" />{t('notice')}</p>
+      <p className="text-xs text-muted flex items-start gap-1.5 min-w-0"><Info size={12} className="mt-0.5 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{t('notice')}</span></p>
       {brand === ALL_BRANDS
         ? <AllBrandsView days={days} onBrand={choose} />
         : <BrandView key={brand} brand={brand} days={days} />}
     </>
+  )
+}
+
+/**
+ * The header's admin corner: "Configure", and once a brand is tracked one status line,
+ * "Last scan Oct 30 · Scan now" (POST /radar/scan is admin-only).
+ */
+function AdminControls({ overview }: Readonly<{ overview: RadarOverview | undefined }>) {
+  const { t } = useTranslation('radar')
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 min-w-0">
+      {overview !== undefined && overview.brands.length > 0 ? (
+        <section aria-label={t('settings.scanNow')} className="min-w-0"><ScanStatusLine scan={overview.last_scan} /></section>
+      ) : null}
+      <Link to={RADAR_SETUP_PATH} className="btn btn-ghost btn-sm">
+        <Settings size={14} aria-hidden="true" />
+        {t('setup.configure')}
+      </Link>
+    </div>
   )
 }
 
@@ -167,20 +185,8 @@ export default function Radar() {
     <div className="max-w-5xl mx-auto min-w-0 w-full space-y-4 sm:space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageTitle title={t('title')} subtitle={t('subtitle')} />
-        {isAdmin ? (
-          <Link to={RADAR_SETUP_PATH} className="btn btn-ghost btn-sm">
-            <Settings size={14} aria-hidden="true" />
-            {t('setup.configure')}
-          </Link>
-        ) : null}
+        {isAdmin ? <AdminControls overview={overview.data} /> : null}
       </div>
-      {/* Admins start the release / news scan here too, not only in Administration (POST /radar/scan is admin-only). */}
-      {isAdmin && overview.data && overview.data.brands.length > 0 ? (
-        <section aria-label={t('settings.scanNow')} className="space-y-1">
-          <ScanNow />
-          <LastScan scan={overview.data.last_scan} />
-        </section>
-      ) : null}
       {overview.isLoading ? <RadarLoading /> : null}
       {overview.isError ? <RadarLoadFailed query={overview} /> : null}
       {overview.data ? <RadarBody brands={overview.data.brands} /> : null}

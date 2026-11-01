@@ -152,3 +152,14 @@ export function formatCalendarDay(day: string, language: string, style: 'short' 
     : { month: 'short', day: 'numeric', year: 'numeric' }
   return new Intl.DateTimeFormat(language || 'en', options).format(value)
 }
+
+const CALENDAR_MONTH = /^\d{4}-(?:0[1-9]|1[0-2])$/u
+
+/**
+ * A `YYYY-MM` month in the reader's locale ("October 2026", de "Oktober 2026"), for month headings.
+ * Read as a LOCAL date (its first day); `fallback` (the input) when it is not such a month.
+ */
+export function formatCalendarMonth(month: string, language: string): string {
+  if (!CALENDAR_MONTH.test(month)) return month
+  return new Intl.DateTimeFormat(language || 'en', { month: 'long', year: 'numeric' }).format(parseISO(`${month}-01`))
+}

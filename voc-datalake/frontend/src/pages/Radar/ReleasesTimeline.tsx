@@ -1,130 +1,98 @@
 /**
- * @fileoverview News and releases, newest first, each with its kind and its citations (titles +
- * links), above them a kind filter (client-side; NewsKind).
- * Web search results must keep their sources (AgentCore acceptable use), so every
- * release links what it was found in — each page once, over https (`uniqueCitations`).
- * One brand's releases on the brand view; on "All brands" the combined feed, where
- * each release also names its brand (a chip that opens that brand).
+ * @fileoverview News and releases as compact rows (ReleaseRow), newest first, above them a kind
+ * filter (client-side; NewsKind). The newest {@link COLLAPSED_RELEASES} show first, then "Show all N";
+ * expanded, the list is grouped by month under month headings.
+ * One brand's releases on the brand view; on "All brands" the combined feed, where each release
+ * also names its brand (a chip that opens that brand).
  * @module pages/Radar/ReleasesTimeline
  */
-import { ExternalLink, Rocket } from 'lucide-react'
+import { Rocket } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FoundViaMarker, NewsKindBadge, NewsKindFilter } from './NewsKind'
+import { NewsKindFilter } from './NewsKind'
 import { useNewsKindLabel } from './newsKindLabel'
+import ReleaseRow from './ReleaseRow'
 import SectionTitle from './SectionTitle'
-import { citationLabel, uniqueCitations } from './radarFormat'
-import { formatCalendarDay } from '../../utils/dateUtils'
-import type { RadarBrandRef, RadarRelease } from '../../api/radarSchema'
+import { groupByMonth } from './radarGroups'
+import { newestFirst } from './radarReads'
+import { formatCalendarMonth } from '../../utils/dateUtils'
 import type { NewsKindChoice } from './NewsKind'
-import { httpHref } from '../../utils/httpHref'
+import type { OnBrand, TimelineRelease } from './ReleaseRow'
 
-/** A release, with the brand it is about when the feed mixes brands. */
-type TimelineRelease = RadarRelease & { readonly brand?: RadarBrandRef }
-type OnBrand = (key: string) => void
+/** How many rows show before "Show all N". */
+const COLLAPSED_RELEASES = 5
 
-function Citations({ release }: Readonly<{ release: RadarRelease }>) {
-  const { t } = useTranslation('radar')
-  // Only web links are listed: a citation that is not an http(s) URL is dropped (FE-7).
-  const citations = uniqueCitations(release.urls, release.titles)
-    .flatMap(({ url, title }) => { const href = httpHref(url); return href === undefined ? [] : [{ url, href, title }] })
+const rowKey = (release: TimelineRelease) => `${release.brand?.key ?? ''}/${release.release_id}`
+
+function Rows({ releases, onBrand }: Readonly<{ releases: readonly TimelineRelease[]; onBrand?: OnBrand }>) {
   return (
-    <ul className="flex flex-wrap gap-x-3 gap-y-1 mt-1" aria-label={t('releases.sources')}>
-      {citations.map(({ url, href, title }) => (
-        // A citation label is often a URL path ("example-air.example/changelog/2026-…"):
-        // it may break anywhere so it never pushes the page wider (390 px / 200 %).
-        <li key={url} className="min-w-0 max-w-full">
-          <a href={href} target="_blank" rel="noopener noreferrer"
-            className="link text-xs inline-flex max-w-full items-center gap-1">
-            <span data-testid="citation-label" className="min-w-0 [overflow-wrap:anywhere]">{citationLabel(url, title)}</span>
-            <ExternalLink size={12} className="flex-shrink-0" aria-hidden="true" />
-          </a>
-        </li>
+    <ol className="min-w-0">
+      {releases.map((release) => <ReleaseRow key={rowKey(release)} release={release} onBrand={onBrand} />)}
+    </ol>
+  )
+}
+
+function ByMonth({ releases, onBrand }: Readonly<{ releases: readonly TimelineRelease[]; onBrand?: OnBrand }>) {
+  const { i18n } = useTranslation('radar')
+  return (
+    <div className="space-y-3">
+      {groupByMonth(releases).map(({ month, items }) => (
+        <div key={month} className="min-w-0">
+          <h3 className="text-xs font-semibold uppercase tracking-[.04em] text-text mb-1" data-testid="release-month">
+            {formatCalendarMonth(month, i18n.language)}
+          </h3>
+          <Rows releases={items} onBrand={onBrand} />
+        </div>
       ))}
-    </ul>
+    </div>
   )
 }
 
-/** A brand chip: a long brand name wraps inside the chip, never past the card. */
-const BRAND_CHIP = 'badge badge-muted font-medium text-text-strong max-w-full [overflow-wrap:anywhere]'
-
-/** The brand a release of the combined feed is about: a chip that opens that brand's view. */
-function BrandChip({ brand, onBrand }: Readonly<{ brand: RadarBrandRef; onBrand?: OnBrand }>) {
-  const { t } = useTranslation('radar')
-  if (onBrand === undefined) return <span className={BRAND_CHIP} data-testid="release-brand">{brand.label}</span>
-  return (
-    <button type="button" className={`${BRAND_CHIP} hover:text-accent`} data-testid="release-brand"
-      aria-label={t('all.openBrand', { brand: brand.label })} onClick={() => onBrand(brand.key)}>
-      {brand.label}
-    </button>
-  )
-}
-
-function ReleaseItem({ release, onBrand }: Readonly<{ release: TimelineRelease; onBrand?: OnBrand }>) {
-  const { t, i18n } = useTranslation('radar')
-  return (
-    <li data-testid="radar-release">
-      <p className="text-xs text-muted flex flex-wrap items-center gap-2">
-        {release.brand === undefined ? null : <BrandChip brand={release.brand} onBrand={onBrand} />}
-        <NewsKindBadge kind={release.kind} />
-        {/* An undated release carries the day the scan first found it: say so, not "approximate". */}
-        <span>
-          {release.date_approximate ? `${t('releases.undated')} ` : null}
-          <time dateTime={release.release_date}>{formatCalendarDay(release.release_date, i18n.language)}</time>
-        </span>
-        <span className={release.source_kind === 'official' ? 'badge-accent' : 'badge-muted'}>
-          {release.source_kind === 'official' ? t('releases.official') : t('releases.thirdParty')}
-        </span>
-        <span>{t('releases.mentions', { count: release.mentions })}</span>
-        <FoundViaMarker foundVia={release.found_via} />
-      </p>
-      <h3 className="text-sm font-semibold text-text-strong mt-1 break-words">{release.feature}</h3>
-      {release.summary === '' ? null : <p className="text-sm text-text mt-1">{release.summary}</p>}
-      <Citations release={release} />
-    </li>
-  )
-}
-
-/** The items of the chosen kind, or a line saying there are none of it. */
+/** The items of the chosen kind (newest 5, or all by month), or a line saying there are none of it. */
 function ReleaseList({ releases, kind, onBrand }: Readonly<{ releases: readonly TimelineRelease[]; kind: NewsKindChoice; onBrand?: OnBrand }>) {
   const { t } = useTranslation('radar')
   const kindLabel = useNewsKindLabel()
-  if (releases.length === 0 && kind !== 'all') {
-    return <p className="text-sm text-muted">{t('releases.kindEmpty', { kind: kindLabel(kind) })}</p>
-  }
+  const [expanded, setExpanded] = useState(false)
+  // Empty only for one kind: the section itself says when there is no news at all.
+  if (releases.length === 0) return kind === 'all' ? null : <p className="text-sm text-muted">{t('releases.kindEmpty', { kind: kindLabel(kind) })}</p>
+  const more = releases.length > COLLAPSED_RELEASES
   return (
-    <ol className="space-y-4 border-l border-border pl-4">
-      {releases.map((release) => (
-        <ReleaseItem key={`${release.brand?.key ?? ''}/${release.release_id}`} release={release} onBrand={onBrand} />
-      ))}
-    </ol>
+    <>
+      {expanded ? <ByMonth releases={releases} onBrand={onBrand} /> : <Rows releases={releases.slice(0, COLLAPSED_RELEASES)} onBrand={onBrand} />}
+      {more ? (
+        <button type="button" className="btn btn-secondary btn-sm mt-2" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          {expanded ? t('releases.showFewer') : t('releases.showAll', { count: releases.length })}
+        </button>
+      ) : null}
+    </>
   )
 }
 
 export default function ReleasesTimeline({ releases, id = 'radar-releases', title, note, onBrand }: Readonly<{
   releases: readonly TimelineRelease[]
-  /** The heading's id (two timelines never share one). */
+  /** The heading's id (two timelines never share one); the summary strip links to the default one. */
   id?: string
   /** The heading; "News and releases" when not given. */
   title?: string
-  /** A muted line under the list (the combined feed's "Showing the newest 100 of N"). */
+  /** A line under the list (the combined feed's "Showing the newest 100 of N"). */
   note?: string
   /** Opens a brand from its chip (the combined feed only). */
   onBrand?: OnBrand
 }>) {
   const { t } = useTranslation('radar')
   const [kind, setKind] = useState<NewsKindChoice>('all')
+  const shown = newestFirst(kind === 'all' ? releases : releases.filter((release) => release.kind === kind))
   return (
-    <section className="card min-w-0" aria-labelledby={id}>
+    <section className="card min-w-0 scroll-mt-4" aria-labelledby={id}>
       <SectionTitle id={id} icon={Rocket}>{title ?? t('releases.title')}</SectionTitle>
       {releases.length === 0 ? <p className="text-sm text-muted">{t('releases.empty')}</p> : (
         <>
           <NewsKindFilter value={kind} onChange={setKind} />
-          <ReleaseList releases={kind === 'all' ? releases : releases.filter((release) => release.kind === kind)} kind={kind}
-            onBrand={onBrand} />
+          {/* A new kind starts collapsed again (its own list). */}
+          <ReleaseList key={kind} releases={shown} kind={kind} onBrand={onBrand} />
         </>
       )}
-      {note === undefined ? null : <p className="text-xs text-muted mt-3">{note}</p>}
+      {note === undefined ? null : <p className="text-xs text-text mt-3">{note}</p>}
     </section>
   )
 }

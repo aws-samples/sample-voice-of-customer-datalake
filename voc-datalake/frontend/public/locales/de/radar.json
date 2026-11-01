@@ -25,20 +25,31 @@
     "title": "Stimmungsverlauf",
     "empty": "Noch keine Bewertungen in diesem Zeitraum.",
     "sentiment": "Durchschnittliche Stimmung",
-    "reviews": "Bewertungen"
+    "reviews": "Bewertungen",
+    "legend": "Legende",
+    "tooFew_one": "Nur {{count, number}} Bewertung in diesem Zeitraum: zu wenig für einen Trend.",
+    "tooFew_other": "Nur {{count, number}} Bewertungen in diesem Zeitraum: zu wenig für einen Trend.",
+    "readThem_one": "Bewertung lesen",
+    "readThem_other": "Bewertungen lesen"
   },
   "themes": {
     "love": "Was ihre Kunden lieben",
     "hate": "Was ihre Kunden hassen",
     "empty": "Noch fällt nichts auf.",
-    "sampled": "Aus den neuesten Bewertungen dieses Zeitraums gelesen."
+    "sampled": "Aus den neuesten Bewertungen dieses Zeitraums gelesen.",
+    "count_one": "{{count, number}} Bewertung",
+    "count_other": "{{count, number}} Bewertungen",
+    "countLabel_one": "Bewertung zu {{theme}} lesen",
+    "countLabel_other": "{{count, number}} Bewertungen zu {{theme}} lesen",
+    "groupLabel_one": "Bewertung in {{category}} lesen",
+    "groupLabel_other": "Alle {{count, number}} Bewertungen in {{category}} lesen",
+    "general": "Allgemein"
   },
   "releases": {
     "title": "Neuigkeiten und Releases",
     "empty": "Noch keine Neuigkeiten gefunden. Neuigkeiten und Releases kommen aus dem geplanten Scan oder aus „Jetzt scannen“.",
     "official": "Offiziell",
     "thirdParty": "Presse und Bewertungen",
-    "undated": "Datum nicht veröffentlicht, zuerst gefunden am",
     "mentions_one": "{{count, number}} Erwähnung",
     "mentions_other": "{{count, number}} Erwähnungen",
     "sources": "Quellen",
@@ -53,7 +64,11 @@
     "kindAll": "Alle",
     "kindEmpty": "Nichts der Art „{{kind}}“ in dieser Liste. Wählen Sie „Alle“, um jeden Eintrag zu sehen.",
     "viaExa": "über Exa",
-    "viaFeed": "über Feed"
+    "viaFeed": "über Feed",
+    "firstFound": "erstmals gefunden",
+    "showAll_one": "Alle {{count, number}} anzeigen",
+    "showAll_other": "Alle {{count, number}} anzeigen",
+    "showFewer": "Weniger anzeigen"
   },
   "compare": {
     "title": "Im Vergleich mit uns",
@@ -70,9 +85,10 @@
     "they_are_better": "Sie sind besser",
     "we_are_better": "Wir sind besser",
     "even": "Gleichauf",
-    "fewReviews": "Wenige Bewertungen (unter {{min, number}}): mit Vorsicht lesen",
     "openOurs_one": "Unsere Bewertung in {{category}} unter Kategorien öffnen",
-    "openOurs_other": "Unsere {{count, number}} Bewertungen in {{category}} unter Kategorien öffnen"
+    "openOurs_other": "Unsere {{count, number}} Bewertungen in {{category}} unter Kategorien öffnen",
+    "tooFew": "Zu wenige Bewertungen für einen Vergleich",
+    "footnote": "Eine Kategorie benötigt mindestens {{min, number}} ihrer Bewertungen in diesem Zeitraum für ein Ergebnis. Darunter steht „Zu wenige Bewertungen für einen Vergleich“."
   },
   "brands": {
     "hint": "Die Marken, denen Radar folgt: Der News-Scan durchsucht das Web nach jeder Marke (in ihrer Sprache und, falls angegeben, ihre News-Feeds), und die Quellen, die Sie auf der Seite „Datenquellen“ als Radar-Quelle markieren, liefern ihre Bewertungen.",
@@ -210,9 +226,6 @@
     "rating": "Bewertet mit {{value}}",
     "source": "Quelle: {{host}}",
     "problem": "Problem:",
-    "readAll": "Alle Bewertungen lesen",
-    "readTheme_one": "Die Bewertung lesen",
-    "readTheme_other": "Die {{count, number}} Bewertungen lesen",
     "openTheme": "Öffnet die Bewertungen zu {{theme}}",
     "readDay": "Bewertungen eines Tages lesen",
     "dayEntry_one": "{{day}}: {{count, number}} Bewertung",
@@ -254,5 +267,35 @@
     "invalidKey": "Verwenden Sie 8-200 Buchstaben, Ziffern, - oder _.",
     "removeTitle": "Exa-Schlüssel entfernen?",
     "removeMessage": "Radar durchsucht Exa nicht mehr. Die eigene Websuche läuft weiter, und bereits gefundene Neuigkeiten bleiben erhalten."
+  },
+  "summary": {
+    "title": "Übersicht",
+    "sentimentLabel": "Stimmung der anderen im Vergleich zu Ihrer",
+    "sentimentUnknown": "Noch kein Vergleich möglich: Die Gesamtanteile sind nicht verfügbar.",
+    "sentimentTooFew_one": "Nur {{count, number}} ihrer Bewertung: zu wenig für einen Vergleich",
+    "sentimentTooFew_other": "Nur {{count, number}} ihrer Bewertungen: zu wenig für einen Vergleich",
+    "sentimentNoOurs": "{{theirs}} positiv bei den anderen; Ihre eigenen Bewertungen sind für einen Vergleich nicht verfügbar",
+    "sentimentCompare": "{{theirs}} positiv bei den anderen, {{ours}} bei Ihnen",
+    "sentimentVolumes": "{{theirs}} · {{ours}}",
+    "theirReviews_one": "{{count, number}} ihrer Bewertung",
+    "theirReviews_other": "{{count, number}} ihrer Bewertungen",
+    "ourReviews_one": "{{count, number}} Ihrer Bewertung",
+    "ourReviews_other": "{{count, number}} Ihrer Bewertungen",
+    "releasesLabel": "Neue Releases",
+    "releasesCount_one": "{{count, number}} in den letzten {{days, number}} Tagen",
+    "releasesCount_other": "{{count, number}} in den letzten {{days, number}} Tagen",
+    "releasesNewest": "Neueste: {{title}}",
+    "gapLabel": "Größte Lücke",
+    "gapNone": "Noch nicht genug Bewertungen für einen Vergleich",
+    "gapTheyLead_one": "Die anderen liegen bei {{category}} um {{count, number}} Punkt vorn",
+    "gapTheyLead_other": "Die anderen liegen bei {{category}} um {{count, number}} Punkte vorn",
+    "gapYouLead_one": "Sie liegen bei {{category}} um {{count, number}} Punkt vorn",
+    "gapYouLead_other": "Sie liegen bei {{category}} um {{count, number}} Punkte vorn",
+    "gapEven": "Bei {{category}} liegen Sie gleichauf",
+    "gapRead": "Bewertungen der anderen in {{category}} lesen"
+  },
+  "scanLine": {
+    "last": "Letzter Scan {{when}}",
+    "never": "Noch kein Scan"
   }
 }

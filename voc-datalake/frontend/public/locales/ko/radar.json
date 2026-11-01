@@ -25,20 +25,31 @@
     "title": "감성 추이",
     "empty": "이 기간에는 아직 리뷰가 없습니다.",
     "sentiment": "평균 감성",
-    "reviews": "리뷰"
+    "reviews": "리뷰",
+    "legend": "범례",
+    "tooFew_one": "이 기간의 리뷰는 {{count, number}}건뿐이라 추세를 보기에 부족합니다.",
+    "tooFew_other": "이 기간의 리뷰는 {{count, number}}건뿐이라 추세를 보기에 부족합니다.",
+    "readThem_one": "리뷰 읽기",
+    "readThem_other": "리뷰 읽기"
   },
   "themes": {
     "love": "고객이 좋아하는 점",
     "hate": "고객이 싫어하는 점",
     "empty": "아직 두드러진 내용이 없습니다.",
-    "sampled": "이 기간의 최신 리뷰에서 읽었습니다."
+    "sampled": "이 기간의 최신 리뷰에서 읽었습니다.",
+    "count_one": "리뷰 {{count, number}}건",
+    "count_other": "리뷰 {{count, number}}건",
+    "countLabel_one": "{{theme}} 관련 리뷰 {{count, number}}건 읽기",
+    "countLabel_other": "{{theme}} 관련 리뷰 {{count, number}}건 읽기",
+    "groupLabel_one": "{{category}} 리뷰 {{count, number}}건 읽기",
+    "groupLabel_other": "{{category}} 리뷰 전체 {{count, number}}건 읽기",
+    "general": "일반"
   },
   "releases": {
     "title": "뉴스 및 출시",
     "empty": "아직 찾은 뉴스가 없습니다. 뉴스와 출시 정보는 예약된 스캔 또는 지금 스캔으로 가져옵니다.",
     "official": "공식",
     "thirdParty": "언론 및 리뷰",
-    "undated": "게시일 미공개 · 처음 발견한 날짜",
     "mentions_one": "언급 {{count, number}}회",
     "mentions_other": "언급 {{count, number}}회",
     "sources": "출처",
@@ -53,7 +64,11 @@
     "kindAll": "전체",
     "kindEmpty": "이 목록에 “{{kind}}” 유형이 없습니다. 모든 항목을 보려면 전체를 선택하세요.",
     "viaExa": "Exa 경유",
-    "viaFeed": "피드 경유"
+    "viaFeed": "피드 경유",
+    "firstFound": "처음 발견됨",
+    "showAll_one": "{{count, number}}개 모두 보기",
+    "showAll_other": "{{count, number}}개 모두 보기",
+    "showFewer": "접기"
   },
   "compare": {
     "title": "자사와 비교",
@@ -70,9 +85,10 @@
     "they_are_better": "경쟁사가 우세",
     "we_are_better": "자사가 우세",
     "even": "비슷함",
-    "fewReviews": "리뷰가 적음({{min, number}}개 미만): 참고용으로만 보세요",
     "openOurs_one": "카테고리에서 {{category}}의 자사 리뷰 {{count, number}}개 열기",
-    "openOurs_other": "카테고리에서 {{category}}의 자사 리뷰 {{count, number}}개 열기"
+    "openOurs_other": "카테고리에서 {{category}}의 자사 리뷰 {{count, number}}개 열기",
+    "tooFew": "비교하기에 리뷰가 부족합니다",
+    "footnote": "판정을 내리려면 각 카테고리에 이 기간 동안 경쟁사 리뷰가 최소 {{min, number}}건 있어야 합니다. 그보다 적으면 \"비교하기에 리뷰가 부족합니다\"로 표시됩니다."
   },
   "brands": {
     "hint": "Radar가 추적하는 브랜드입니다. 뉴스 스캔이 각 브랜드를 웹에서 검색하고(해당 언어로, 설정된 경우 뉴스 피드도), 데이터 소스 페이지에서 Radar 소스로 표시한 소스가 리뷰를 가져옵니다.",
@@ -210,9 +226,6 @@
     "rating": "평점 {{value}}",
     "source": "출처: {{host}}",
     "problem": "문제:",
-    "readAll": "모든 리뷰 읽기",
-    "readTheme_one": "리뷰 읽기",
-    "readTheme_other": "리뷰 {{count, number}}개 읽기",
     "openTheme": "{{theme}} 리뷰를 엽니다",
     "readDay": "날짜별 리뷰 읽기",
     "dayEntry_one": "{{day}}: 리뷰 {{count, number}}개",
@@ -254,5 +267,35 @@
     "invalidKey": "영문자, 숫자, - 또는 _ 8~200자를 사용하세요.",
     "removeTitle": "Exa 키를 제거할까요?",
     "removeMessage": "Radar가 Exa 검색을 중단합니다. 자체 웹 검색은 계속되며 이미 찾은 뉴스는 유지됩니다."
+  },
+  "summary": {
+    "title": "요약",
+    "sentimentLabel": "경쟁사 감성 vs 자사",
+    "sentimentUnknown": "아직 비교할 수 없습니다. 전체 비율을 확인할 수 없습니다.",
+    "sentimentTooFew_one": "경쟁사 리뷰가 {{count, number}}건뿐이라 비교하기에 부족합니다",
+    "sentimentTooFew_other": "경쟁사 리뷰가 {{count, number}}건뿐이라 비교하기에 부족합니다",
+    "sentimentNoOurs": "경쟁사 긍정 {{theirs}}, 비교할 자사 리뷰가 없습니다",
+    "sentimentCompare": "경쟁사 긍정 {{theirs}}, 자사 {{ours}}",
+    "sentimentVolumes": "{{theirs}} · {{ours}}",
+    "theirReviews_one": "경쟁사 리뷰 {{count, number}}건",
+    "theirReviews_other": "경쟁사 리뷰 {{count, number}}건",
+    "ourReviews_one": "자사 리뷰 {{count, number}}건",
+    "ourReviews_other": "자사 리뷰 {{count, number}}건",
+    "releasesLabel": "신규 릴리스",
+    "releasesCount_one": "최근 {{days, number}}일간 {{count, number}}건",
+    "releasesCount_other": "최근 {{days, number}}일간 {{count, number}}건",
+    "releasesNewest": "최신: {{title}}",
+    "gapLabel": "최대 격차",
+    "gapNone": "아직 비교하기에 리뷰가 부족합니다",
+    "gapTheyLead_one": "{{category}}에서 경쟁사가 {{count, number}}점 앞섭니다",
+    "gapTheyLead_other": "{{category}}에서 경쟁사가 {{count, number}}점 앞섭니다",
+    "gapYouLead_one": "{{category}}에서 자사가 {{count, number}}점 앞섭니다",
+    "gapYouLead_other": "{{category}}에서 자사가 {{count, number}}점 앞섭니다",
+    "gapEven": "{{category}}에서 자사와 경쟁사가 동점입니다",
+    "gapRead": "{{category}} 관련 경쟁사 리뷰 읽기"
+  },
+  "scanLine": {
+    "last": "마지막 스캔 {{when}}",
+    "never": "아직 스캔 없음"
   }
 }

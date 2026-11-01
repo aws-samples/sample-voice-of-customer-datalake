@@ -25,20 +25,31 @@
     "title": "Sentiment trend",
     "empty": "No reviews in this window yet.",
     "sentiment": "Average sentiment",
-    "reviews": "Reviews"
+    "reviews": "Reviews",
+    "legend": "Legend",
+    "tooFew_one": "Only {{count, number}} review in this window: too few for a trend.",
+    "tooFew_other": "Only {{count, number}} reviews in this window: too few for a trend.",
+    "readThem_one": "Read it",
+    "readThem_other": "Read them"
   },
   "themes": {
     "love": "What their customers love",
     "hate": "What their customers hate",
     "empty": "Nothing stands out yet.",
-    "sampled": "Read from the newest reviews of this window."
+    "sampled": "Read from the newest reviews of this window.",
+    "count_one": "{{count, number}} review",
+    "count_other": "{{count, number}} reviews",
+    "countLabel_one": "Read the review of {{theme}}",
+    "countLabel_other": "Read the {{count, number}} reviews of {{theme}}",
+    "groupLabel_one": "Read the review in {{category}}",
+    "groupLabel_other": "Read all {{count, number}} reviews in {{category}}",
+    "general": "General"
   },
   "releases": {
     "title": "News and releases",
     "empty": "No news found yet. News and releases come from the scheduled scan or Scan now.",
     "official": "Official",
     "thirdParty": "Press and reviews",
-    "undated": "Date not published, first found",
     "mentions_one": "{{count, number}} mention",
     "mentions_other": "{{count, number}} mentions",
     "sources": "Sources",
@@ -53,7 +64,11 @@
     "kindAll": "All",
     "kindEmpty": "Nothing of the kind “{{kind}}” in this list. Choose All to see every item.",
     "viaExa": "via Exa",
-    "viaFeed": "via feed"
+    "viaFeed": "via feed",
+    "firstFound": "first found",
+    "showAll_one": "Show all {{count, number}}",
+    "showAll_other": "Show all {{count, number}}",
+    "showFewer": "Show fewer"
   },
   "compare": {
     "title": "Compared with us",
@@ -70,9 +85,10 @@
     "they_are_better": "They are better",
     "we_are_better": "We are better",
     "even": "Even",
-    "fewReviews": "Few reviews (under {{min, number}}): read with care",
     "openOurs_one": "Open our review in {{category}} in Categories",
-    "openOurs_other": "Open our {{count, number}} reviews in {{category}} in Categories"
+    "openOurs_other": "Open our {{count, number}} reviews in {{category}} in Categories",
+    "tooFew": "Not enough reviews to compare",
+    "footnote": "A category needs at least {{min, number}} of their reviews in this window for a verdict. Below that, it reads \"Not enough reviews to compare\"."
   },
   "brands": {
     "hint": "The brands Radar follows: the news scan searches the web for each one (in its language, and its news feeds if set), and the sources you mark as a Radar source on the Data sources page bring in its reviews.",
@@ -210,9 +226,6 @@
     "rating": "Rated {{value}}",
     "source": "Source: {{host}}",
     "problem": "Problem:",
-    "readAll": "Read all reviews",
-    "readTheme_one": "Read the review",
-    "readTheme_other": "Read the {{count, number}} reviews",
     "openTheme": "Opens the reviews of {{theme}}",
     "readDay": "Read a day's reviews",
     "dayEntry_one": "{{day}}: {{count, number}} review",
@@ -254,5 +267,35 @@
     "invalidKey": "Use 8-200 letters, digits, - or _.",
     "removeTitle": "Remove the Exa key?",
     "removeMessage": "Radar stops searching Exa. Its own web search keeps running, and the news already found is kept."
+  },
+  "summary": {
+    "title": "Summary",
+    "sentimentLabel": "Their sentiment against yours",
+    "sentimentUnknown": "Cannot compare yet: the overall shares are not available.",
+    "sentimentTooFew_one": "Only {{count, number}} of their reviews: too few to compare",
+    "sentimentTooFew_other": "Only {{count, number}} of their reviews: too few to compare",
+    "sentimentNoOurs": "{{theirs}} positive for them; your own reviews are not available to compare",
+    "sentimentCompare": "{{theirs}} positive for them, {{ours}} for you",
+    "sentimentVolumes": "{{theirs}} · {{ours}}",
+    "theirReviews_one": "{{count, number}} of their reviews",
+    "theirReviews_other": "{{count, number}} of their reviews",
+    "ourReviews_one": "{{count, number}} of yours",
+    "ourReviews_other": "{{count, number}} of yours",
+    "releasesLabel": "New releases",
+    "releasesCount_one": "{{count, number}} in the last {{days, number}} days",
+    "releasesCount_other": "{{count, number}} in the last {{days, number}} days",
+    "releasesNewest": "Newest: {{title}}",
+    "gapLabel": "Biggest gap",
+    "gapNone": "Not enough reviews to compare yet",
+    "gapTheyLead_one": "They lead on {{category}} by {{count, number}} point",
+    "gapTheyLead_other": "They lead on {{category}} by {{count, number}} points",
+    "gapYouLead_one": "You lead on {{category}} by {{count, number}} point",
+    "gapYouLead_other": "You lead on {{category}} by {{count, number}} points",
+    "gapEven": "You are even on {{category}}",
+    "gapRead": "Read their reviews in {{category}}"
+  },
+  "scanLine": {
+    "last": "Last scan {{when}}",
+    "never": "No scan yet"
   }
 }

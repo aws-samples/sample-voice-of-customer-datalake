@@ -19,26 +19,43 @@
     "reviews_one": "{{count, number}} avaliação",
     "reviews_other": "{{count, number}} avaliações",
     "noReviews": "Nenhuma avaliação neste período",
-    "sentimentWords": "{{words}} ({{value}})"
+    "sentimentWords": "{{words}} ({{value}})",
+    "reviews_many": "{{count, number}} avaliações"
   },
   "trend": {
     "title": "Tendência de sentimento",
     "empty": "Ainda não há avaliações neste período.",
     "sentiment": "Sentimento médio",
-    "reviews": "Avaliações"
+    "reviews": "Avaliações",
+    "legend": "Legenda",
+    "tooFew_one": "Apenas {{count, number}} avaliação nesta janela: poucas para uma tendência.",
+    "tooFew_other": "Apenas {{count, number}} avaliações nesta janela: poucas para uma tendência.",
+    "readThem_one": "Ler",
+    "readThem_other": "Ler todas",
+    "tooFew_many": "Apenas {{count, number}} avaliações nesta janela: poucas para uma tendência.",
+    "readThem_many": "Ler todas"
   },
   "themes": {
     "love": "O que os clientes delas amam",
     "hate": "O que os clientes delas odeiam",
     "empty": "Nada se destaca ainda.",
-    "sampled": "Lido das avaliações mais recentes deste período."
+    "sampled": "Lido das avaliações mais recentes deste período.",
+    "count_one": "{{count, number}} avaliação",
+    "count_other": "{{count, number}} avaliações",
+    "countLabel_one": "Ler a avaliação sobre {{theme}}",
+    "countLabel_other": "Ler as {{count, number}} avaliações sobre {{theme}}",
+    "groupLabel_one": "Ler a avaliação em {{category}}",
+    "groupLabel_other": "Ler todas as {{count, number}} avaliações em {{category}}",
+    "general": "Geral",
+    "count_many": "{{count, number}} avaliações",
+    "countLabel_many": "Ler as {{count, number}} avaliações sobre {{theme}}",
+    "groupLabel_many": "Ler todas as {{count, number}} avaliações em {{category}}"
   },
   "releases": {
     "title": "Notícias e lançamentos",
     "empty": "Nenhuma notícia encontrada ainda. Notícias e lançamentos vêm da varredura agendada ou de “Verificar agora”.",
     "official": "Oficial",
     "thirdParty": "Imprensa e avaliações",
-    "undated": "Data não publicada, encontrada pela primeira vez em",
     "mentions_one": "{{count, number}} menção",
     "mentions_other": "{{count, number}} menções",
     "sources": "Fontes",
@@ -53,7 +70,13 @@
     "kindAll": "Tudo",
     "kindEmpty": "Nada do tipo “{{kind}}” nesta lista. Escolha “Tudo” para ver todos os itens.",
     "viaExa": "via Exa",
-    "viaFeed": "via feed"
+    "viaFeed": "via feed",
+    "firstFound": "primeira detecção em",
+    "showAll_one": "Mostrar todos ({{count, number}})",
+    "showAll_other": "Mostrar todos os {{count, number}}",
+    "showFewer": "Mostrar menos",
+    "mentions_many": "{{count, number}} menções",
+    "showAll_many": "Mostrar todos os {{count, number}}"
   },
   "compare": {
     "title": "Comparado conosco",
@@ -70,10 +93,12 @@
     "they_are_better": "Eles são melhores",
     "we_are_better": "Nós somos melhores",
     "even": "Empate",
-    "fewReviews": "Poucas avaliações (menos de {{min, number}}): leia com cautela",
     "openOurs_one": "Abrir a nossa avaliação de {{category}} em Categorias",
     "openOurs_other": "Abrir as nossas {{count, number}} avaliações de {{category}} em Categorias",
-    "openOurs_many": "Abrir as nossas {{count, number}} avaliações de {{category}} em Categorias"
+    "openOurs_many": "Abrir as nossas {{count, number}} avaliações de {{category}} em Categorias",
+    "tooFew": "Avaliações insuficientes para comparar",
+    "footnote": "Uma categoria precisa de pelo menos {{min, number}} avaliações deles nesta janela para ter um veredito. Abaixo disso, aparece \"Avaliações insuficientes para comparar\".",
+    "volume_many": "{{count, number}} avaliações"
   },
   "brands": {
     "hint": "As marcas que o Radar acompanha: a varredura de notícias pesquisa cada uma na web (no idioma dela, e nos feeds de notícias, se houver), e as fontes que você marca como fonte do Radar na página Fontes de dados trazem as avaliações.",
@@ -139,7 +164,8 @@
     "step2": "Na página Fontes de dados, marque \"Fonte do Radar\" num scraper, numa página do Web Reviews, num conector de apps ou numa importação CSV/JSON, e escolha a marca. As avaliações vão só para o Radar, nunca para os seus painéis.",
     "step3Title": "Notícias e lançamentos",
     "step3": "Uma pesquisa na web das notícias de cada marca (lançamentos, novos recursos, promoções, parcerias, notícias da empresa), no idioma da marca e pelos feeds de notícias, roda automaticamente na frequência abaixo (verificada diariamente) ou agora com “Verificar agora”. A primeira varredura olha os últimos 90 dias.",
-    "configure": "Configurar"
+    "configure": "Configurar",
+    "reviews_many": "{{count, number}} avaliações em 90 dias"
   },
   "settings": {
     "title": "Radar",
@@ -175,7 +201,11 @@
       "failed": "com falha",
       "skipped": "ignorada"
     },
-    "scanNowHint": "Pesquisa agora na web e nos domínios próprios de cada marca os seus lançamentos e novidades, sem esperar pelo agendamento. Demora alguns minutos e usa pesquisas na web."
+    "scanNowHint": "Pesquisa agora na web e nos domínios próprios de cada marca os seus lançamentos e novidades, sem esperar pelo agendamento. Demora alguns minutos e usa pesquisas na web.",
+    "scanBrands_many": "{{count, number}} marcas",
+    "scanQueries_many": "{{count, number}} buscas",
+    "scanAdded_many": "{{count, number}} novos lançamentos",
+    "scanMerged_many": "{{count, number}} mesclados"
   },
   "nav": {
     "label": "Radar"
@@ -211,16 +241,15 @@
     "rating": "Nota {{value}}",
     "source": "Fonte: {{host}}",
     "problem": "Problema:",
-    "readAll": "Ler todas as avaliações",
-    "readTheme_one": "Ler a avaliação",
-    "readTheme_other": "Ler as {{count, number}} avaliações",
     "openTheme": "Abre as avaliações de {{theme}}",
     "readDay": "Ler as avaliações de um dia",
     "dayEntry_one": "{{day}}: {{count, number}} avaliação",
     "dayEntry_other": "{{day}}: {{count, number}} avaliações",
     "readTheirs_one": "Ler a avaliação deles em {{category}}",
     "readTheirs_other": "Ler as {{count, number}} avaliações deles em {{category}}",
-    "noSubcategoryChip": "Sem subcategoria"
+    "noSubcategoryChip": "Sem subcategoria",
+    "dayEntry_many": "{{day}}: {{count, number}} avaliações",
+    "readTheirs_many": "Ler as {{count, number}} avaliações deles em {{category}}"
   },
   "all": {
     "option": "Todas as marcas",
@@ -255,5 +284,41 @@
     "invalidKey": "Use de 8 a 200 letras, dígitos, - ou _.",
     "removeTitle": "Remover a chave do Exa?",
     "removeMessage": "O Radar para de pesquisar no Exa. A pesquisa na web própria continua, e as notícias já encontradas são mantidas."
+  },
+  "summary": {
+    "title": "Resumo",
+    "sentimentLabel": "Sentimento deles versus o seu",
+    "sentimentUnknown": "Ainda não é possível comparar: os percentuais gerais não estão disponíveis.",
+    "sentimentTooFew_one": "Apenas {{count, number}} avaliação deles: insuficiente para comparar",
+    "sentimentTooFew_other": "Apenas {{count, number}} avaliações deles: insuficientes para comparar",
+    "sentimentNoOurs": "{{theirs}} positivas para eles; as suas próprias avaliações não estão disponíveis para comparação",
+    "sentimentCompare": "{{theirs}} positivas para eles, {{ours}} para você",
+    "sentimentVolumes": "{{theirs}} · {{ours}}",
+    "theirReviews_one": "{{count, number}} avaliação deles",
+    "theirReviews_other": "{{count, number}} avaliações deles",
+    "ourReviews_one": "{{count, number}} sua",
+    "ourReviews_other": "{{count, number}} suas",
+    "releasesLabel": "Novos lançamentos",
+    "releasesCount_one": "{{count, number}} nos últimos {{days, number}} dias",
+    "releasesCount_other": "{{count, number}} nos últimos {{days, number}} dias",
+    "releasesNewest": "Mais recente: {{title}}",
+    "gapLabel": "Maior diferença",
+    "gapNone": "Ainda não há avaliações suficientes para comparar",
+    "gapTheyLead_one": "Eles lideram em {{category}} por {{count, number}} ponto",
+    "gapTheyLead_other": "Eles lideram em {{category}} por {{count, number}} pontos",
+    "gapYouLead_one": "Você lidera em {{category}} por {{count, number}} ponto",
+    "gapYouLead_other": "Você lidera em {{category}} por {{count, number}} pontos",
+    "gapEven": "Você está empatado em {{category}}",
+    "gapRead": "Leia as avaliações deles em {{category}}",
+    "sentimentTooFew_many": "Apenas {{count, number}} de avaliações deles: poucas para comparar",
+    "theirReviews_many": "{{count, number}} de avaliações deles",
+    "ourReviews_many": "{{count, number}} de suas avaliações",
+    "releasesCount_many": "{{count, number}} de lançamentos nos últimos {{days, number}} dias",
+    "gapTheyLead_many": "Eles lideram em {{category}} por {{count, number}} de pontos",
+    "gapYouLead_many": "Você lidera em {{category}} por {{count, number}} de pontos"
+  },
+  "scanLine": {
+    "last": "Última varredura {{when}}",
+    "never": "Nenhuma varredura ainda"
   }
 }
