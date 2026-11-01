@@ -10,7 +10,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '@test/query-client'
 import { defined } from '@test/defined'
 import RadarSummary from './RadarSummary'
-import { normalizeRadarPage } from '../../api/radarSchema'
+import { RADAR_PAGE_RELEASES_CAP, normalizeRadarPage } from '../../api/radarSchema'
 import type { RadarRelease } from '../../api/radarSchema'
 
 const side = (volume: number, positive: number | null) => ({ volume, positive_share: positive, negative_share: 0.1 })
@@ -86,6 +86,15 @@ describe('Radar summary strip', () => {
     expect(tile).toHaveTextContent('1 in the last 90 days')
     expect(tile).toHaveTextContent('Newest: Seat maps')
     expect(tile).toHaveAttribute('href', '#radar-releases')
+  })
+
+  it('says "at least" when the page brought its full release cap and every one is in the window', () => {
+    const full = Array.from({ length: RADAR_PAGE_RELEASES_CAP }, (_, i) => ({
+      release_id: `r${i}`, feature: `Feature ${i}`, release_date: today, date_approximate: false, summary: '', urls: [], titles: [],
+      source_kind: 'official' as const, mentions: 1, kind: 'release' as const, found_via: ['web' as const],
+    }))
+    renderSummary(COMPARED, { releases: full })
+    expect(screen.getByRole('link', { name: /New releases/ })).toHaveTextContent(`At least ${RADAR_PAGE_RELEASES_CAP} in the last 90 days`)
   })
 
   it('says none, without a link, when the window has no release', () => {

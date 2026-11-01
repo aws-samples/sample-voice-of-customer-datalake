@@ -40,8 +40,8 @@ function CountLink({ count, label, onClick }: Readonly<{ count: number; label: s
 /** A theme's quotes; each opens the theme's reviews. */
 function Quotes({ quotes, theme, onOpen }: Readonly<{ quotes: readonly string[]; theme: string; onOpen: () => void }>) {
   const { t } = useTranslation('radar')
-  return quotes.map((quote) => (
-    <button key={quote} type="button" onClick={onOpen}
+  return quotes.map((quote, index) => (
+    <button key={`${index}:${quote}`} type="button" onClick={onOpen}
       className="block w-full text-left text-sm text-text mt-1 border-l-2 border-border pl-2 break-words hover:text-accent-text">
       {quote}<span className="sr-only"> {t('reviews.openTheme', { theme })}</span>
     </button>

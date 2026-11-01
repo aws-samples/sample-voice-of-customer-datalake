@@ -315,7 +315,10 @@
     "ourReviews_many": "{{count, number}} de vos avis",
     "releasesCount_many": "{{count, number}} de versions sur les {{days, number}} derniers jours",
     "gapTheyLead_many": "Ils mènent sur {{category}} avec {{count, number}} de points d'avance",
-    "gapYouLead_many": "Vous menez sur {{category}} avec {{count, number}} de points d'avance"
+    "gapYouLead_many": "Vous menez sur {{category}} avec {{count, number}} de points d'avance",
+    "releasesCountAtLeast_one": "Au moins {{count, number}} au cours des {{days, number}} derniers jours",
+    "releasesCountAtLeast_other": "Au moins {{count, number}} au cours des {{days, number}} derniers jours",
+    "releasesCountAtLeast_many": "Au moins {{count, number}} au cours des {{days, number}} derniers jours"
   },
   "scanLine": {
     "last": "Dernière analyse {{when}}",

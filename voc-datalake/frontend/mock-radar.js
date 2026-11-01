@@ -53,6 +53,7 @@ function detail(brand, days) {
 }
 
 /** Under this many of their reviews a category gives no verdict (radar_handler `too_few`). */
+// RADAR_COMPARE_MIN_REVIEWS in src/api/radarSchema.ts (= MIN_COMPARE_REVIEWS in shared/radar_views.py), lockstepped.
 const COMPARE_MIN_REVIEWS = 10;
 
 function compare(brand, days) {

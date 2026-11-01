@@ -14,6 +14,7 @@ import { biggestGap, readOverall, releasesInWindow } from './radarReads'
 import { sentimentWords, signedAverage } from '../../components/SentimentWords/sentimentWords'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import type { RadarReviewFilter } from '../../api/radarApi'
+import { RADAR_PAGE_RELEASES_CAP } from '../../api/radarSchema'
 import type { RadarCompare, RadarDetail, RadarRelease } from '../../api/radarSchema'
 
 type OnRead = (filter: RadarReviewFilter) => void
@@ -91,9 +92,12 @@ function ReleasesTile({ releases, days }: Readonly<{ releases: readonly RadarRel
   const { t } = useTranslation('radar')
   const recent = releasesInWindow(releases, days)
   const newest = recent.at(0)
+  // The page brings at most RADAR_PAGE_RELEASES_CAP releases, newest first: when every one of them is in the
+  // window, older ones in the window may exist, so the count is a lower bound and says so.
+  const capped = releases.length >= RADAR_PAGE_RELEASES_CAP && recent.length === releases.length
   return (
     <Tile icon={Rocket} label={t('summary.releasesLabel')} href={newest === undefined ? undefined : `#${RELEASES_SECTION_ID}`}>
-      <Headline>{t('summary.releasesCount', { count: recent.length, days })}</Headline>
+      <Headline>{t(capped ? 'summary.releasesCountAtLeast' : 'summary.releasesCount', { count: recent.length, days })}</Headline>
       {newest === undefined ? null : <Meta>{t('summary.releasesNewest', { title: newest.feature })}</Meta>}
     </Tile>
   )

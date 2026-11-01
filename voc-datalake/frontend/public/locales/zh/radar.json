@@ -292,7 +292,9 @@
     "gapYouLead_one": "在“{{category}}”上你领先 {{count, number}} 分",
     "gapYouLead_other": "在“{{category}}”上你领先 {{count, number}} 分",
     "gapEven": "你在“{{category}}”上与对方持平",
-    "gapRead": "查看对方在“{{category}}”中的评价"
+    "gapRead": "查看对方在“{{category}}”中的评价",
+    "releasesCountAtLeast_one": "过去 {{days, number}} 天内至少 {{count, number}} 次",
+    "releasesCountAtLeast_other": "过去 {{days, number}} 天内至少 {{count, number}} 次"
   },
   "scanLine": {
     "last": "上次扫描：{{when}}",

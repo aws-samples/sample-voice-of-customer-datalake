@@ -338,7 +338,11 @@
     "gapTheyLead_few": "Konkurenci prowadzą pod względem {{category}} o {{count, number}} punkty",
     "gapTheyLead_many": "Konkurenci prowadzą pod względem {{category}} o {{count, number}} punktów",
     "gapYouLead_few": "Ty prowadzisz pod względem {{category}} o {{count, number}} punkty",
-    "gapYouLead_many": "Ty prowadzisz pod względem {{category}} o {{count, number}} punktów"
+    "gapYouLead_many": "Ty prowadzisz pod względem {{category}} o {{count, number}} punktów",
+    "releasesCountAtLeast_one": "Co najmniej {{count, number}} wydanie w ciągu ostatnich {{days, number}} dni",
+    "releasesCountAtLeast_other": "Co najmniej {{count, number}} wydania w ciągu ostatnich {{days, number}} dni",
+    "releasesCountAtLeast_few": "Co najmniej {{count, number}} wydania w ciągu ostatnich {{days, number}} dni",
+    "releasesCountAtLeast_many": "Co najmniej {{count, number}} wydań w ciągu ostatnich {{days, number}} dni"
   },
   "scanLine": {
     "last": "Ostatnie skanowanie: {{when}}",

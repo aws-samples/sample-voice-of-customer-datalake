@@ -292,7 +292,9 @@
     "gapYouLead_one": "{{category}}에서 자사가 {{count, number}}점 앞섭니다",
     "gapYouLead_other": "{{category}}에서 자사가 {{count, number}}점 앞섭니다",
     "gapEven": "{{category}}에서 자사와 경쟁사가 동점입니다",
-    "gapRead": "{{category}} 관련 경쟁사 리뷰 읽기"
+    "gapRead": "{{category}} 관련 경쟁사 리뷰 읽기",
+    "releasesCountAtLeast_one": "최근 {{days, number}}일 동안 최소 {{count, number}}개 릴리스",
+    "releasesCountAtLeast_other": "최근 {{days, number}}일 동안 최소 {{count, number}}개 릴리스"
   },
   "scanLine": {
     "last": "마지막 스캔 {{when}}",

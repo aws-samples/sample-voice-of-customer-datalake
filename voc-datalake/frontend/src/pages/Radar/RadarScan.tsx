@@ -5,13 +5,13 @@
  * ignoring the cadence (docs/radar.md).
  * @module pages/Radar/RadarScan
  */
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { UseMutationResult } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { radarApi } from '../../api/radarApi'
+import { radarApi, radarKeys } from '../../api/radarApi'
 import { formatDate, formatDateTime } from '../../utils/dateUtils'
 import type { RadarScan } from '../../api/radarSchema'
 
@@ -39,8 +39,14 @@ export function LastScan({ scan }: Readonly<{ scan: RadarScan | null }>) {
 
 type ScanMutation = UseMutationResult<unknown, Error, void>
 
-/** POST /radar/scan for every tracked brand (admin-only server-side). */
-const useScanMutation = (): ScanMutation => useMutation({ mutationFn: () => radarApi.startScan() })
+/** POST /radar/scan for every tracked brand (admin-only server-side); the overview (its last scan) is re-read after. */
+function useScanMutation(): ScanMutation {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => radarApi.startScan(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: radarKeys.overview() }),
+  })
+}
 
 /** "Scan now" for every tracked brand, with what it does (described by the hint) and whether it started. */
 export function ScanNow() {

@@ -292,7 +292,9 @@
     "gapYouLead_one": "{{category}}で自社が{{count, number}}ポイントリード",
     "gapYouLead_other": "{{category}}で自社が{{count, number}}ポイントリード",
     "gapEven": "{{category}}では自社と競合が同水準です",
-    "gapRead": "{{category}}の競合レビューを読む"
+    "gapRead": "{{category}}の競合レビューを読む",
+    "releasesCountAtLeast_one": "直近{{days, number}}日間で少なくとも{{count, number}}件",
+    "releasesCountAtLeast_other": "直近{{days, number}}日間で少なくとも{{count, number}}件"
   },
   "scanLine": {
     "last": "最終スキャン {{when}}",
