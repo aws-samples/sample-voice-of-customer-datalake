@@ -82,7 +82,7 @@ describe('AppConfigCard', () => {
     it('does not delete the app config', async () => {
       renderCard(false)
 
-      await expectAdminGatedButton('lucide-trash2', onDelete)
+      await expectAdminGatedButton('lucide-trash-2', onDelete)
     })
   })
 
@@ -101,7 +101,7 @@ describe('AppConfigCard', () => {
     it('deletes the app config', async () => {
       renderCard(true)
 
-      await expectEnabledButtonFires('lucide-trash2', onDelete, 'Delete')
+      await expectEnabledButtonFires('lucide-trash-2', onDelete, 'Delete')
     })
   })
 
