@@ -48,7 +48,7 @@ knip / vulture / the `scripts/audit/` detectors. Do not repeat them.
      adding one? Name the deletion.
    - Provenance: is the requirement DERIVED (it follows from something you can point at: a reported defect, a test
      that fails without it, an AWS limit such as the 20 KB IAM policy size or the 29 s API Gateway timeout, a
-     documented owner decision in `.kiro/steering/` or `docs/`, a protocol rule) or INHERITED (its only support is
+     documented design decision in `.kiro/steering/` or `docs/`, a protocol rule) or INHERITED (its only support is
      "for consistency", "mirrors the other handler", "for flexibility", "so we can later", "it is how it is usually
      done")? Symmetry with a twin is always inherited: the twin may be wrong, or right for a reason that does not
      hold here.
@@ -80,9 +80,9 @@ knip / vulture / the `scripts/audit/` detectors. Do not repeat them.
 
 ## Decisions you do not relitigate
 
-A change mandated by a documented invariant or an owner decision is derived by definition. In this repository
+A change mandated by a documented invariant or design decision is derived by definition. In this repository
 those include: the Lambda-per-domain split (20 KB IAM policy limit), the five-stack cap (a downstream packaging
-consumer), no WAF (cost), admin-only scraper / brand / import writes (owner decision 2026-10-08), assist twins for
+consumer), no WAF (cost), admin-only scraper / brand / import writes (#242: shared secrets, config and Bedrock spend), assist twins for
 every model-backed route (29 s REST limit), every frontend API call mocked and listed in `mock-coverage.json`, the
 human-owned quality gates, a CHANGELOG entry and version bump per change, Zod normalisation at every list/query
 boundary. Do not question them; do not count their mandated pieces as speculative surface.

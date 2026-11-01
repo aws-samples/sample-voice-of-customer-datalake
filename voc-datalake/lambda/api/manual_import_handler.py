@@ -2,7 +2,7 @@
 Manual Import API Lambda - Handles /scrapers/manual/*
 Lets an admin paste raw review text and have it parsed by LLM, or upload CSV / JSON rows.
 
-ADMIN ONLY, every route (owner decision 2026-10-08, #242 follow-up): each one writes
+ADMIN ONLY, every route (#242): each one writes
 feedback content into the pipeline (the raw archive and the enrichment queue that
 Bedrock drains) or reads a parse job of it, so importing data is an administrator's
 action, like configuring a scraper. Enforced by one resolver middleware

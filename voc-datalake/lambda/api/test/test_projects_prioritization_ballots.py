@@ -2166,9 +2166,9 @@ class TestTheResponseIsThreeMapsKeyedByRow:
         #333 keyed a signed-in ballot `BALLOT#{document_id}#user:{sub}` and #340
         keyed a room ballot `BALLOT#{document_id}#anon:{ballot_id}`. Both were live
         when this change was written, and the first key segment is now read as a ROW
-        id, so neither resolves. No migration is provided: the product owner decided
-        (2026-08-18) that the handful of ballots cast under the old key are
-        expendable, in preference to carrying a re-key nothing will need again.
+        id, so neither resolves. No migration is provided: the handful of ballots cast under the old key
+        are treated as expendable, in preference to carrying a re-key nothing
+        will need again.
 
         The distinction this pins is that the drop is TOTAL: absent from `scores`,
         from `aggregates` and from `rows`, on a 200. A future reader wondering whether

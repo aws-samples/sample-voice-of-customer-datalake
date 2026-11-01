@@ -7,7 +7,7 @@
  * one document and the build would read another — the exact defect the feature was
  * built to remove.
  *
- * Added after review round 1 on PR #320: the backend has
+ * Added with PR #320: the backend has
  * `test_a_tie_on_created_at_resolves_on_id_descending`, the frontend only covered
  * the distinct-date case, and `ordinalByType`'s tie test is a different code path.
  * So the "ties included" claim in the PR body was untested on this side.

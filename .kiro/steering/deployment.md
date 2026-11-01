@@ -43,10 +43,10 @@ npm run deploy:all   # Deploys all CDK stacks + frontend
 
 ## Quality Checks
 
-> **The gate process (owner decision, 2026-10-07): validate ONCE per release.** Agents and track branches
+> **The gate process: validate ONCE per release** (the full gate is slow, so it runs once, on the release branch). Agents and track branches
 > fix things WITHOUT the full gate: they run the single tool they need while iterating and
 > `bash scripts/validate-affected.sh [<base>]` (only the `validate.sh` steps for the paths they changed;
-> `--explain` shows the mapping) before handing over. The full `bash scripts/validate.sh` runs ONCE, on the
+> `--explain` shows the mapping) before handing their branch on. The full `bash scripts/validate.sh` runs ONCE, on the
 > release branch (cut from `main`, see changelog.md → Branches and PRs), just before it is pushed for its PR —
 > never skipped; CI runs it again on the PR. It runs its steps in five parallel lanes, stops at the first failure
 > (printing that step's log tail; full logs in
@@ -263,7 +263,7 @@ The frontend fetches configuration from CloudFormation outputs:
 > SPA uses no AWS credentials).
 
 **Local dev cannot use the deployed API.** `ALLOWED_ORIGIN` on the deployed API
-Lambdas is `https://<frontendDomain>` (`allowedOrigin = isDev ? '*' : ...` in
+Lambdas is `https://<the CloudFront domain>` (`coreStack.frontendDomainName`; `allowedOrigin = isDev ? '*' : ...` in
 api-stack.ts), so a dev server on `localhost:5173` is refused by CORS. For local
 work run `npm run mock` (localhost:3001) and accept that it exercises the UI
 only; real UI-plus-API integration is testable only against the deployed site.

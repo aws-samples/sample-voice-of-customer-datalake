@@ -2,7 +2,7 @@
  * When the Background Jobs panel stops polling.
  *
  * The panel's whole reliability rests on this decision. Polling that stops too
- * early is the defect the U9 handover exists to fix: a job started outside a
+ * early is the defect the U9 hand-off exists to fix: a job started outside a
  * wizard is invisible until something else happens to refetch.
  *
  * The interesting cases are all about elapsed time, so they are asserted on the

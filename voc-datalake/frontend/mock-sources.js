@@ -960,7 +960,7 @@ function importCsvPlan(shared, { csvText, sourceId, defaultSource, radar, plan, 
 
 // ── /s3-import/* (s3_import_handler.py) + the mock presigned PUT ─────────────
 // Every /s3-import/* and /scrapers/manual/* route is ADMIN-ONLY in the real API (module
-// middleware, owner decision 2026-10-08); the mock does not model roles and always
+// middleware, #242); the mock does not model roles and always
 // answers as the admin the DEV session is.
 
 const UPLOAD_PATH = '/mock-s3-import-upload/';

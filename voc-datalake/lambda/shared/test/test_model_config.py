@@ -114,7 +114,7 @@ class TestSurfaceDefaults:
 
     def test_agent_surfaces_defaults(self):
         """Conductor + final reviewer decide and verify (Opus 5.5); crewmates and
-        the persona panel do the work (Sonnet 5.5) — owner decision A8."""
+        the persona panel do the work (Sonnet 5.5)."""
         assert surface_default('agent_orchestrator') == OPUS55
         assert surface_default('agent_reviewer') == OPUS55
         assert surface_default('agent_worker') == SONNET55

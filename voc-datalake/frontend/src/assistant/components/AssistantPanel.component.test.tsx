@@ -214,7 +214,7 @@ describe('AssistantPanel', () => {
     })
   })
 
-  // Regression (backlog "Agent 1 #5"): the panel and sessions-drawer X buttons are
+  // Regression: the panel and sessions-drawer X buttons are
   // DialogClose with their own labels, so they never collide with an approval
   // card's "Dismiss".
   describe('close buttons are labelled "Close", never "Dismiss"', () => {

@@ -99,7 +99,7 @@ _PROFANITY: Final = frozenset({
 _PROFANITY_RE: Final = re.compile(r"[a-z']+")
 
 # Judgments about people: "X is stupid", "the PM is useless". Refused outright —
-# no rewording rescues them, and they are exactly what the owner said to drop.
+# no rewording rescues them, and they are never worth keeping as memory.
 _PERSON_JUDGMENT_RE: Final = re.compile(
     r'\b(is|are|was|were|being|seems?|so)\s+(an?\s+)?(stupid|idiot|idiots|dumb|moron|morons|useless|incompetent|'
     r'lazy|clueless|pathetic|worthless|annoying|terrible\s+person|jerk|fool|fools)\b'

@@ -47,7 +47,7 @@ const context = (fields: Partial<ProductContext> = {}): ProductContext => ({
 
 const renderPage = renderProjectDetailPage
 
-describe('ProjectDetail product-context handover', () => {
+describe('ProjectDetail product-context hand-off', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useConfigStore.setState({ config: { ...useConfigStore.getState().config, apiEndpoint: 'https://api.example.com/v1' } })

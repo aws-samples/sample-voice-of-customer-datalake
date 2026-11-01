@@ -26,7 +26,7 @@ interface HeaderProps {
   readonly saving: boolean
   readonly saveFailed: boolean
   readonly onSave: () => void
-  /** False for a non-admin: `PUT /settings/brand` is admin-only (owner decision 2026-10-08, #242). */
+  /** False for a non-admin: `PUT /settings/brand` is admin-only (#242). */
   readonly canSave: boolean
   /** The brand form's Save: shown on General only, the one tab whose edits it saves. */
   readonly showSave: boolean

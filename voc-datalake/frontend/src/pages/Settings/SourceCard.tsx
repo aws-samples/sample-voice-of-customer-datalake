@@ -156,7 +156,7 @@ export default function SourceCard({ manifest, apiEndpoint, isAdmin }: SourceCar
               <h4 className="text-sm font-semibold text-text mb-2 sm:mb-3 flex items-center gap-2">
                 {t('sourceCard.fileExplorer')}
               </h4>
-              {/* Every /s3-import/* route is admin-only (owner decision 2026-10-08): a
+              {/* Every /s3-import/* route is admin-only (#242): a
                   non-admin is told so instead of an explorer whose every call 403s. */}
               {isAdmin
                 ? <S3ImportExplorer />

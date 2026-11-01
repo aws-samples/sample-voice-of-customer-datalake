@@ -325,7 +325,7 @@ breaker's state lives in voc-aggregates (`CIRCUIT#<plugin>` / `TRIPPED`).
 | POST | `/scrapers/analyze-url` | AI selector detection (admin) → 202 `{success, job_id, status:'pending'}` (assist job, below) |
 | GET | `/scrapers/jobs/{job_id}` | Poll an analyze-url assist job (its starter only; 404 otherwise) |
 
-Every scraper write and analyze-url is admin-only (owner decision 2026-10-08: they write the
+Every scraper write and analyze-url is admin-only (they write the
 shared API-credentials secret, drive scheduled scraping and spend Bedrock); the reads stay open to
 every signed-in user. MCP tokens and agents are never admin. See `docs/scrapers.md`.
 
@@ -359,13 +359,13 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/settings/brand` | Get brand configuration (any signed-in user) |
-| PUT | `/settings/brand` | Save brand configuration — admin-only (owner decision 2026-10-08, #242); the Admin page's brand form is read-only for non-admins |
-| GET | `/settings/model` | Per-surface model overrides + allowlist + `image_model: {id, label, region, avatars_enabled}` (the fixed persona-avatar model, `shared/image_model_status.py`) (any signed-in user — the agent detail Models tab reads it; NOT admin-gated, pending an owner decision on that caller) |
+| PUT | `/settings/brand` | Save brand configuration — admin-only (#242: shared deployment config every AI surface reads); the Admin page's brand form is read-only for non-admins |
+| GET | `/settings/model` | Per-surface model overrides + allowlist + `image_model: {id, label, region, avatars_enabled}` (the fixed persona-avatar model, `shared/image_model_status.py`) (any signed-in user — the agent detail Models tab reads it; NOT admin-gated, so that read keeps working for non-admins) |
 | POST | `/settings/model/test` | Test one model `{model_id}` (admin; 400 unless allowlisted or the image model): ONE minimal Converse to exactly that model, no fallback (the image model: ONE small image, nothing stored, a few cents) → `{model_id, invoked_id, status: available\|no_access\|not_in_region\|no_capacity\|throttled\|not_ready\|unavailable\|error, ok, latency_ms, message, quota, checked_at}` (`shared/model_capacity.py`) |
 | GET | `/settings/model/capacity` | Every allowlisted model's tokens-per-minute quota from Service Quotas `{models: [{model_id, label, quota}], image: {…image_model, access: {status: available\|no_access\|not_subscribed\|not_in_region\|unknown, …}, quota: {name, value, unit: 'requests_per_minute'}\|null, quota_state: fresh\|stale\|pending\|unknown}}` (admin; no model call; stored in aggregates `SETTINGS#model_quotas`, 10 min in memory; older than 1 h it answers at once with `quota.stale: true` while the `voc-settings-assist` twin re-reads it by quota code (async `model_quota_refresh`); also stale on a Service Quotas throttle; the image quota lives in `SETTINGS#image_model_quota`, refreshed by the twin via `image_model_quota_refresh` — docs/deployment.md) |
 | GET | `/settings/categories` | Get category configuration |
 | PUT | `/settings/categories` | Save category configuration — admin-only; categories carry `product` + `owners` |
-| POST | `/settings/categories/generate` | AI-generate categories — admin-only (Bedrock spend; owner decision 2026-10-08, #242); the AI panel is hidden for non-admins. 202 + assist job (see Scrapers → Assist jobs) |
+| POST | `/settings/categories/generate` | AI-generate categories — admin-only (Bedrock spend, #242); the AI panel is hidden for non-admins. 202 + assist job (see Scrapers → Assist jobs) |
 | GET | `/settings/jobs/{job_id}` | Poll a categories assist job (its starter only; 404 otherwise) |
 | POST | `/settings/categories/reprocess` | Start a reprocess job `{mode: processed\|raw\|dimensions, days, include_manual?}` (admin) → 202 `{job}`, 409 if one is active |
 | GET | `/settings/categories/reprocess` | Latest reprocess job |
@@ -610,7 +610,7 @@ the app pool). Assistant tools on `/participants` (pack `participants`, card-onl
 | POST | `/logs/alerts/recipients` | Add an SNS email recipient (admin; pending until confirmed) |
 | POST | `/logs/alerts/recipients/remove` | Remove an email recipient (admin) |
 
-### Manual Import (manual_import_handler.py) — ADMIN ONLY, every route (module middleware; owner decision 2026-10-08, #242)
+### Manual Import (manual_import_handler.py) — ADMIN ONLY, every route (module middleware, #242: importing writes customer data)
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/scrapers/manual/parse` | Start an LLM parse of pasted review text (admin) |
@@ -625,7 +625,7 @@ Paste confirm, CSV and JSON upload (incl. the assistant's `import_reviews`, tagg
 S3 import ingestor (one per file) write a run record through `lambda/shared/import_runs.py`; a failed write never
 fails the import.
 
-### S3 Import (s3_import_handler.py) — ADMIN ONLY, every route (module middleware; owner decision 2026-10-08, #242)
+### S3 Import (s3_import_handler.py) — ADMIN ONLY, every route (module middleware, #242: importing writes customer data)
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/s3-import/sources` | Source folders + bucket name (admin) |

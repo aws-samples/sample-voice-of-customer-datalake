@@ -459,7 +459,7 @@ describe('Scrapers', () => {
     })
   })
 
-  describe('per role (owner decision 2026-10-08: create, edit, analyze, run and delete are admin-only)', () => {
+  describe('per role (create, edit, analyze, run and delete are admin-only)', () => {
     it('the control: an admin creates and saves a scraper from New Source', async () => {
       const user = await openTemplateSelector()
       await user.click(screen.getByText('Select Template'))

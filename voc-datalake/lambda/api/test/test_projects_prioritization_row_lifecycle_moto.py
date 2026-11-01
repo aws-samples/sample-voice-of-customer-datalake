@@ -301,7 +301,7 @@ class TestTheRowLifecycleAgainstARealTable:
     @mock_aws
     def test_a_row_balloted_before_the_mark_existed_is_refused_too(self, lambda_context):
         """THE UPGRADE PATH, against the real implementation — the exact reproduction
-        review round 3 ran: a row and a reviewer ballot in the shape the previously
+        of the defect: a row and a reviewer ballot in the shape the previously
         deployed code wrote (real values, no `first_ballot_at`, no `ballot_writes`),
         which recomposed with a 200 before the guard existed.
 

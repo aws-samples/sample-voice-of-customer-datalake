@@ -97,7 +97,7 @@ describe('ordinalByType', () => {
   })
 
   it('skips an entry with an id but no usable type', () => {
-    // Added in review round 2: the id-less case was covered, this one was not.
+    // The id-less case is covered separately; this one needs its own test.
     // Without the type guard such records all group under '', so unrelated
     // malformed documents would share one sequence and inflate each other.
     const ordinals = ordinalByType([

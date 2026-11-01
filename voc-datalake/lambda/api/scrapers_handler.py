@@ -2,8 +2,7 @@
 Scrapers API Lambda - Handles /scrapers/*
 Manages web scraper configurations and runs.
 
-Gates (owner decision, 2026-10-08 — reverses the 2026-10-04 one that opened save
-and analyze to every user):
+Gates (writes and analyze are admin-only; reads stay open):
 
 | Route | Who |
 |---|---|
@@ -425,8 +424,7 @@ def _upserted_configs(configs: list, scraper: dict) -> list:
 def save_scraper():
     """Create or update a scraper configuration. ADMIN-ONLY.
 
-    Owner decision (2026-10-08), reversing the 2026-10-04 one that let every
-    signed-in user save: the save rewrites `webscraper_configs` in the shared
+    Admin-only: the save rewrites `webscraper_configs` in the shared
     API-credentials secret, and a saved scraper drives the scheduled ingestor —
     third-party fetches plus Bedrock enrichment of every review it finds. The gate
     runs before the body is read, so a non-admin's 403 reads and writes no secret.
@@ -655,8 +653,7 @@ ANALYZE_URL_FAILURE = 'Failed to analyze URL'
 def analyze_url():
     """Start auto-detecting CSS selectors for a URL with the model → 202. ADMIN-ONLY.
 
-    Owner decision (2026-10-08), reversing the 2026-10-04 / #244 one that left it
-    open: it exists only to fill in the scraper editor, which is admin-only, and
+    Admin-only: it exists only to fill in the scraper editor, which is admin-only, and
     every call is an outbound fetch of a caller-chosen URL plus a Bedrock call
     (spend). The gate runs before the body is read, so a non-admin's 403 fetches
     nothing and calls no model. Its URL protection is unchanged: `validate_url`

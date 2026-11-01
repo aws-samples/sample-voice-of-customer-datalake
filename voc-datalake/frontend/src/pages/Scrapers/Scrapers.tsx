@@ -165,8 +165,8 @@ function ScrapersContent({
 }
 
 /**
- * The paste / JSON / CSV import modals. Importing data is admin-only (owner decision
- * 2026-10-08, `/scrapers/manual/*`): a non-admin never mounts them, so a manual-import
+ * The paste / JSON / CSV import modals. Importing data is admin-only
+ * (`/scrapers/manual/*`, #242): a non-admin never mounts them, so a manual-import
  * modal left open in the persisted store cannot reappear for one either.
  */
 function ImportModals({ isAdmin, showJsonUpload, showCsvUpload, onCloseJson, onCloseCsv }: Readonly<{

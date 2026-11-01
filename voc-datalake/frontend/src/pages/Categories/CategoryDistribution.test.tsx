@@ -230,7 +230,7 @@ describe('CategoryDistribution row reflow', () => {
   })
 })
 
-// Owner decision 3a (2026-10-21): reviews outside the configured categories are an "Other" row.
+// Reviews outside the configured categories are an "Other" row (shared/other_category.py).
 describe('CategoryDistribution "Other" row', () => {
   const withOther: CategoryData[] = [
     { name: 'app', value: 30, color: '#8b5cf6' },

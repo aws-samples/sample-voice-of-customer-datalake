@@ -276,7 +276,7 @@ class TestLambdaHandler:
 
 class TestLogValidationFailureRow:
     """The row is readable by every signed-in user: identity, redacted errors and the
-    record's shape — never a raw preview (owner decision 3, 2026-10-04)."""
+    record's shape — never a raw preview."""
 
     @pytest.mark.usefixtures('fixed_clock')
     @patch('processor.handler.aggregates_table')

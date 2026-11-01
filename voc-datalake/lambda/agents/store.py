@@ -373,8 +373,8 @@ def reserve_model_call(agent: dict, run_id: str, max_calls: int) -> int:
     return _counter_value(response['Attributes']['model_calls'])
 
 
-#: Public web searches one run may execute, across all of its steps (owner decision
-#: 2026-10-17: agent steps search the web by default, capped per run). Counted on the
+#: Public web searches one run may execute, across all of its steps (agent
+#: steps search the web by default, so the spend is capped per run). Counted on the
 #: RUN row as ``web_queries``, beside ``model_calls``.
 MAX_WEB_QUERIES_PER_RUN = 10
 

@@ -1,5 +1,5 @@
 /**
- * The e2e model profile for the stream Lambdas (owner decision, 5.63.00). MIRRORS
+ * The e2e model profile for the stream Lambdas (since 5.63.00). MIRRORS
  * lambda/shared/model_profile.py and model_config.py's PROFILE_MODELS / PROFILE_FALLBACKS
  * (lib/stacks/core-e2e-group.test.ts reads this file).
  *

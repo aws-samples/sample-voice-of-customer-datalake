@@ -85,7 +85,7 @@ describe('useProblemResolution per-key pending', () => {
   })
 
   it('surfaces an early failure even when a later toggle succeeds', async () => {
-    // Regression (review round 1): mutation.isError only reflects the LATEST
+    // Regression: mutation.isError only reflects the LATEST
     // mutate() call, so key A's failure was masked once key B succeeded.
     const [failing, succeeding] = holdTwoToggles()
     const { result } = renderResolution()

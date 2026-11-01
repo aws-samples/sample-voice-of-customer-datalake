@@ -1,4 +1,4 @@
-"""`POST /scrapers` is admin-only (owner decision, 2026-10-08) and writes the shared
+"""`POST /scrapers` is admin-only and writes the shared
 API-credentials secret, so what one save may store is bounded — for an admin too.
 
 The bound-by-bound cases (each refusal's exact message, and the accepted side of

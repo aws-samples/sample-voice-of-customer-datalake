@@ -11,7 +11,7 @@
 # Choices, and why:
 # - weekly, Monday 06:00 UTC: one review batch a week instead of a trickle.
 # - groups: one pull request per directory for every minor and patch update together.
-# - ignore semver-major (owner decision, 5.57.01): a major changes an API or a default, so it is upgraded
+# - ignore semver-major (since 5.57.01): a major changes an API or a default, so it is upgraded
 #   deliberately, one at a time (docs/dependencies.md). The first weekly run opened 22 major pull requests
 #   at once. `update-types` in an ignore rule applies to version updates only: security updates still
 #   arrive, majors included.

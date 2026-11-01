@@ -69,7 +69,7 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'DELETE /workflows/<workflow_id>',
     }),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
-    # Company personas (owner decision, 5.60.00): only admins write the library; promote copies into it.
+    # Company personas (since 5.60.00): only admins write the shared library; promote copies into it.
     'company_personas_routes.py': frozenset({
         'POST /company-personas/generate', 'POST /company-personas/import',
         'PUT /company-personas/<persona_id>', 'DELETE /company-personas/<persona_id>',
@@ -81,7 +81,7 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'PUT /feature-requests/<request_id>/status', 'DELETE /feature-requests/<request_id>',
         'POST /feature-requests/<request_id>/promote',
     }),
-    # Feedback boards (docs/feature-requests.md, owner decision 2026-10-26): only admins create, configure and delete.
+    # Feedback boards (docs/feature-requests.md): only admins create, configure and delete.
     'feature_boards_routes.py': frozenset({
         'POST /feature-requests/boards', 'PUT /feature-requests/boards/<board_ref>',
         'DELETE /feature-requests/boards/<board_ref>',
@@ -96,7 +96,7 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         # Alerting (Settings → Logs → Alerts): creates/deletes billed CloudWatch alarms and SNS recipients.
         'PUT /logs/alerts', 'POST /logs/alerts/recipients', 'POST /logs/alerts/recipients/remove',
     }),
-    # Owner decision 2026-10-08 (#242 follow-up): importing data is admin-only (module middleware).
+    # #242: importing data is admin-only (module middleware).
     'manual_import_handler.py': frozenset({
         'POST /scrapers/manual/parse', 'POST /scrapers/manual/confirm',
         'POST /scrapers/manual/csv-upload', 'POST /scrapers/manual/json-upload',
@@ -114,7 +114,7 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     'radar_handler.py': frozenset({'PUT /radar/settings', 'POST /radar/scan', 'PUT /radar/brands'}),
     # Radar's Exa key (docs/radar.md): a paid third-party search account's credential.
     'radar_exa_routes.py': frozenset({'PUT /radar/settings/exa-key', 'DELETE /radar/settings/exa-key'}),
-    's3_import_handler.py': frozenset({  # owner decision 2026-10-08 (#242 follow-up), module middleware
+    's3_import_handler.py': frozenset({  # #242, module middleware
         'POST /s3-import/sources', 'POST /s3-import/upload-url', 'DELETE /s3-import/file/<key>',
         'POST /s3-import/reprocess',  # re-runs a file through the ingestor (issue #144)
     }),
@@ -124,9 +124,9 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
     }),
     'settings_handler.py': frozenset({
         'PUT /settings/model', 'POST /settings/model/test',
-        'PUT /settings/brand',  # owner decision 2026-10-08, #242
+        'PUT /settings/brand',  # #242: shared deployment config
         'PUT /settings/categories',
-        'POST /settings/categories/generate',  # owner decision 2026-10-08, #242 (Bedrock spend)
+        'POST /settings/categories/generate',  # #242 (Bedrock spend)
         'POST /settings/categories/reprocess', 'POST /settings/categories/reprocess/<job_id>/cancel',
         'PUT /settings/company-context', 'PUT /settings/design-system/integrations',
         'POST /settings/design-system/logo', 'PUT /settings/design-system',
@@ -190,13 +190,13 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'DELETE /participants/projects/<project_id>/people/<person_id>', 'POST /participants/asks'),
     _open('public one-click unsubscribe (RFC 8058): a token from the email, always 200 (throttled)',
           'participants_ask_routes.py', 'POST /unsubscribe'),
-    _open('feedback boards: any user of a board files requests and +1s (no moderation, owner decision 2026-10-26); '
+    _open('feedback boards: any user of a board files requests and +1s (no moderation by design); '
           'edits are the owner or an admin',
           'feature_requests_routes.py', 'POST /feature-requests', 'PUT /feature-requests/<request_id>',
           'POST /feature-requests/<request_id>/supports',
           'PUT /feature-requests/<request_id>/supports/<support_id>',
           'DELETE /feature-requests/<request_id>/supports/<support_id>'),
-    _open('feedback forms: any signed-in user manages forms (owner decision 2026-10-04)',
+    _open('feedback forms: any signed-in user manages forms (by design: forms carry no per-form owner)',
           'feedback_form_handler.py', 'POST /feedback-forms', 'PUT /feedback-forms/<form_id>',
           'DELETE /feedback-forms/<form_id>'),
     _open('public widget route: the embeddable form posts from the customer site (throttled)',
@@ -255,7 +255,7 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'POST /projects/<project_id>/documents/<document_id>/share',
           'DELETE /projects/<project_id>/documents/<document_id>/share'),
     _open('copy personas into a project: edit on the target project, and the source is the library or a '
-          'project the caller owns or is a member of (owner decision, 5.60.00)',
+          'project the caller owns or is a member of (since 5.60.00)',
           'persona_copy_routes.py', 'POST /projects/<project_id>/personas/copy'),
     _open("review link reviewers: the link's audience and the verified email decide, rate-limited per day",
           'document_review_routes.py', 'POST /review/<share_id>/comments',
@@ -269,7 +269,7 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'settings_handler.py', 'PUT /settings/resolved-problems'),
     _open("caller's own data: personal context and onboarding preference, self only",
           'settings_handler.py', 'PUT /settings/my-context', 'PUT /settings/my-onboarding'),
-    _open("caller's own morning brief: preferences, refresh (no cap, owner decision) and card states, self only",
+    _open("caller's own morning brief: preferences, refresh (deliberately uncapped) and card states, self only",
           'settings_handler.py', 'PUT /settings/my-briefing', 'POST /settings/my-briefing/refresh',
           'PUT /settings/my-briefing/cards'),
 )
@@ -459,12 +459,12 @@ def test_only_the_recorded_handlers_are_not_resolvers():
 
 
 # ── Reads gated by decision ──────────────────────────────────────────────────
-# The inventory above covers writes only. These reads were closed by an owner decision and are
+# The inventory above covers writes only. These reads are deliberately admin-only and are
 # pinned so they cannot silently reopen. `GET /settings/model` is deliberately NOT here: the
 # agent detail page's Models tab (open to every signed-in user, read-only for non-admins) reads
-# its allowlist through that route, so gating it is pending an owner decision on that caller.
+# its allowlist through that route, so it stays open to every signed-in user.
 ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
-    # Owner decision 2026-10-08 (#242 follow-up): the import bucket and parse jobs are admin-only.
+    # #242: the import bucket and parse jobs are admin-only.
     's3_import_handler.py': frozenset({
         'GET /s3-import/sources', 'GET /s3-import/files', 'GET /s3-import/reprocess/<run_id>',
     }),

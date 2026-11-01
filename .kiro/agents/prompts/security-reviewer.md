@@ -78,7 +78,7 @@ Ground every finding in one of these. They are documented in `.kiro/steering/str
 
 Deliberate decisions you must NOT flag: no WAF is deployed (a cost decision, documented); pay-per-use and on-demand
 billing choices; the three feedback-form routes, ballots and unsubscribe being public; `ALLOWED_ORIGIN` being `*`
-only in dev; `GET /settings/model` being open to any signed-in user (pending an owner decision, documented).
+only in dev; `GET /settings/model` being open to any signed-in user (the agent detail Models tab reads it, documented).
 
 ## The reverse direction: a tightening that refuses legitimate work
 

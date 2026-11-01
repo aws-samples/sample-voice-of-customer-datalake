@@ -1,7 +1,6 @@
 """The gates on `scrapers_handler`'s routes: every write and analyze is admin-only.
 
-OWNER DECISION (2026-10-08), reversing the 2026-10-04 one that opened save and
-analyze to every user: `POST /scrapers` (save — create AND update),
+`POST /scrapers` (save — create AND update),
 `POST /scrapers/analyze-url`, `DELETE /scrapers/<id>` and `POST /scrapers/<id>/run`
 are admin-only; the reads (list, templates, status, runs) stay open. Save still
 keeps its input bounds for an admin (`test_scrapers_save_bounds.py`), and an
@@ -16,7 +15,7 @@ covers `scrapers_handler` ONLY. `/scrapers/*` is served by TWO Lambdas — seven
 routes under the same prefix live in `manual_import_handler`
 (`/scrapers/manual/parse`, `.../parse/<job_id>`, `.../confirm`, `.../csv-upload`,
 `.../json-upload`, and since #237 the read-only `.../history` and `.../history/<run_id>`).
-Before the owner decision of 2026-10-08 (#242 follow-up) none
+Before #242 none
 of them called `require_admin`; measured then as a caller whose only
 `cognito:groups` claim is `users`:
 
@@ -30,7 +29,7 @@ module can notice a sibling serving the same prefix. `TestTheInventoryIsOneHandl
 asserts the boundary explicitly so a reader inherits a known scope rather than a
 false one.
 
-Those five are now admin-only too, by that owner decision: importing content
+Those five are now admin-only too (#242): importing content
 (manual paste, CSV, JSON — and S3 import in `s3_import_handler`) is an
 administrator's action. They are gated differently from the nine here — by ONE
 resolver middleware in `manual_import_handler` (`shared.api.admins_only`) rather than a call
@@ -141,7 +140,7 @@ class TestANonAdminCannotWriteTheSharedSecret:
     def test_a_non_admin_save_is_refused_and_reads_and_writes_no_secret(
         self, mock_secrets, mock_put, mock_validate, api_gateway_event, lambda_context
     ):
-        """Owner decision 2026-10-08. Removing the admin gate fails here."""
+        """Save is admin-only. Removing the admin gate fails here."""
         from scrapers_handler import lambda_handler
 
         response = lambda_handler(_non_admin_event(
@@ -434,7 +433,7 @@ def _route_functions(module=None) -> dict[str, ast.FunctionDef]:
     return route_functions(module or _handler_module())
 
 
-# The admin-only routes (owner decision 2026-10-08): the ones that write a Secrets
+# The admin-only routes: the ones that write a Secrets
 # Manager value, invoke the webscraper, or fetch a URL and call Bedrock. Listed
 # explicitly because "who may call this route?" is a judgement no parse can make.
 SCRAPER_ADMIN_ROUTES = {
@@ -579,7 +578,7 @@ class TestTheInventoryIsOneHandlers:
         )
 
     def test_they_are_gated_by_the_module_middleware_not_per_route(self):
-        """The state the docstring above describes, pinned (owner decision 2026-10-08).
+        """The state the docstring above describes, pinned (#242).
 
         The gate is ONE `app.use(middlewares=[admins_only])` (shared.api) whose body calls
         `require_admin` unconditionally; no route repeats it. Dropping the

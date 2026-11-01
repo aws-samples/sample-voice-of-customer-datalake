@@ -2,7 +2,7 @@
 S3 Import API Lambda - File explorer for S3 import bucket.
 Dedicated Lambda to avoid 20KB IAM policy limit on OpsApi.
 
-ADMIN ONLY, every route (owner decision 2026-10-08, #242 follow-up): uploading a
+ADMIN ONLY, every route (#242): uploading a
 file here ingests every row in it into the feedback pipeline (the bucket's
 object-created trigger runs the `s3_import` ingestor, which enqueues each row for
 Bedrock enrichment), and the listings expose the import bucket's name and every

@@ -1,5 +1,5 @@
 /**
- * The prototype build gate and jobs-panel handover, now that the control is step 5
+ * The prototype build gate and jobs-panel hand-off, now that the control is step 5
  * of the Overview card grid rather than a lone button in the project tab row.
  *
  * Ported wholesale from BuildPrototypeButton.test.tsx (deleted with the component)
@@ -8,7 +8,7 @@
  * - **U12, the confirm gate.** A synchronous window.confirm physically could not
  *   start a build without consent. The ConfirmModal state that replaced it can, if
  *   the wiring regresses — and the operation is billable and runs for minutes.
- * - **U9, the handover.** The control does not wait for the build. It hands off to
+ * - **U9, the hand-off.** The control does not wait for the build. It hands off to
  *   the Background Jobs panel, which is the only thing that reports progress and
  *   failure, so failing to hand off makes a multi-minute billable build invisible.
  *
@@ -351,7 +351,7 @@ describe('prototype card rebuild guard', () => {
   })
 })
 
-describe('prototype card handover to the jobs panel (U9)', () => {
+describe('prototype card hand-off to the jobs panel (U9)', () => {
   beforeEach(resetPrototypeMocks)
 
   it('announces the started job once the build request succeeds', async () => {

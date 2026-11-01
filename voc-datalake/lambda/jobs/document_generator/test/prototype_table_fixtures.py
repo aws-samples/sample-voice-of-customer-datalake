@@ -26,7 +26,7 @@ def wire_projects_table(mock_dynamodb, *, prd_pages=(), prfaq_pages=(), document
     everything — harmless while every PR/FAQ page was empty, but the first test to
     give the PR/FAQ query real items would have seen the id resolve and then
     `_document_by_id('PRFAQ#…')` return nothing: a silently source-less build that
-    reads like a product bug (found in review round 2).
+    reads like a product bug.
 
     `query.side_effect` is assembled PRD-then-PR/FAQ, matching the production call
     order. Order-dependence is deliberate — one shared `return_value` answers the

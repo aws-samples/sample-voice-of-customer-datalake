@@ -19,7 +19,7 @@ THE SCANNER IS GONE AND MUST NOT COME BACK (issue #381). This file used to carry
 — for one reason: `client.ts` and `projectsApi.ts` spelled `'prd' | 'prfaq'` INLINE
 inside their `generateDocument` signatures, so the contract existed in three places
 and checking the two inline copies meant locating a method by name inside an object
-literal and delimiting its parameter list by bracket balance. Every review round on
+literal and delimiting its parameter list by bracket balance. Every review of
 that scanner found another shape of legal TypeScript it mis-read; none found a defect
 in the contract. Both signatures now take `GenerateDocumentBody`, which removes that
 drift axis rather than testing it. Nothing here should ever again try to decide what
@@ -36,7 +36,7 @@ This file is now WELL OVER 1.5x the scanner it replaced, and about TWO THIRDS of
 prose — this docstring, the test docstrings and the comments — against a body of code
 that is `_without_comments`, `_doc_type_union` and the pin matcher with their shape
 fixtures, plus the text assertions keeping two type-level pins and their four controls
-present. So the claim that the file was short was false for two review rounds, and it
+present. So the claim that the file is short has been false before, and it
 is not becoming true.
 
 NO EXACT "NOW" FIGURE IS GIVEN HERE, and that is the fix rather than an omission. Three
@@ -904,8 +904,8 @@ def _without_comments(source: str, blank_strings: bool = False) -> str:
     each of those used to cost.
 
     🔑 `blank_strings` additionally blanks STRING and TEMPLATE bodies, and exists
-    because "commentary is not a declaration" has a second half this file missed for
-    seven review rounds: a STRING is not a declaration either. Comments were the only
+    because "commentary is not a declaration" has a second half this file long missed:
+    a STRING is not a declaration either. Comments were the only
     thing blanked, so every text guard here could be satisfied by a decoy inside a
     template literal — which survives stripping, survives `noUnusedLocals` once
     exported, and can carry newlines, so it also redirects an index computed with
@@ -2299,7 +2299,7 @@ class TestDocTypeLockstep:
             respelling USES the shared name, so neither `noUnusedLocals` nor the name
             assertion above sees it.
 
-        Text, not a parse — but text with four lessons in it, one per review round,
+        Text, not a parse — but text with four lessons in it, one per earlier weak version,
         which is why what it requires is now each WHOLE DECLARATION, matched against
         code rather than against anything that merely contains the same characters.
         Each weaker version was satisfiable while the pin did nothing:
