@@ -29,6 +29,8 @@ test('touchedIds reads the leading id list in any case and separator, and ignore
   assert.deepEqual(touchedIds('7.'), ['7'])
   assert.deepEqual(touchedIds('3, D1.'), ['3', 'D1'])
   assert.deepEqual(touchedIds('7 2026 cost review'), ['7'])
+  // A bare space is not a separator: whatever follows the first unseparated id is prose (form-only check).
+  assert.deepEqual(touchedIds('6 7'), ['6'])
   assert.deepEqual(touchedIds('7 (SnapStart opt-in, see #242)'), ['7'])
   assert.deepEqual(touchedIds('6, 7: shipped in 5.70.00'), ['6', '7'])
   assert.deepEqual(touchedIds('see 5.70.00'), [])
