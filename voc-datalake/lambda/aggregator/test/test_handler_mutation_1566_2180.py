@@ -228,14 +228,15 @@ class TestTheAverageRebucketCountsBothHalves:
 
 class TestEveryWireTypeIsDeserialized:
     def test_each_raw_type_unwraps_to_its_value(self):
-        image = {'s': {'S': 'text'}, 'n': {'N': '1.5'}, 'm': {'M': {'k': 'v'}},
-                 'l': {'L': ['a']}, 'b': {'BOOL': False}, 'plain': 7}
+        image = {'s': {'S': 'text'}, 'n': {'N': '1.5'}, 'm': {'M': {'k': {'S': 'v'}}},
+                 'l': {'L': [{'S': 'a'}]}, 'b': {'BOOL': False}, 'plain': 7}
 
         assert handler.deserialize_image(image) == {
             's': 'text', 'n': Decimal('1.5'), 'm': {'k': 'v'}, 'l': ['a'], 'b': False, 'plain': 7}
 
-    def test_an_unknown_wire_type_is_dropped(self):
-        assert handler.deserialize_image({'x': {'NULL': True}}) == {}
+    def test_null_is_none_and_a_non_wire_dict_is_kept(self):
+        assert handler.deserialize_image({'x': {'NULL': True}, 'y': {'unknown': 1}}) == {
+            'x': None, 'y': {'unknown': 1}}
 
 
 class TestTheRecordIsReadFromTheEvent:

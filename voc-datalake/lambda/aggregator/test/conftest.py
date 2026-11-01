@@ -4,6 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from aggregator.test.aggregator_fixtures import to_stream_image
+
 
 def pytest_configure(config):
     config.addinivalue_line(
@@ -174,19 +176,7 @@ def sample_dynamodb_stream_record(sample_feedback_item):
     """Create a sample DynamoDB stream record."""
     # Convert to DynamoDB format
     def to_dynamodb_format(item):
-        result = {}
-        for key, value in item.items():
-            if isinstance(value, str):
-                result[key] = {'S': value}
-            elif isinstance(value, Decimal):
-                result[key] = {'N': str(value)}
-            elif isinstance(value, dict):
-                result[key] = {'M': value}
-            elif isinstance(value, list):
-                result[key] = {'L': value}
-            elif isinstance(value, bool):
-                result[key] = {'BOOL': value}
-        return result
+        return to_stream_image(item)
 
     return {
         'eventName': 'INSERT',
