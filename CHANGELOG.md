@@ -17,6 +17,38 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.69.00] - 2026-11-01
+
+Administration shows Claude models the account cannot call yet, with small fixes from the backlog.
+
+### Added
+
+- **Model agreements** (Administration → AI models): every Claude model the account cannot call yet (its agreement
+  is missing, it has no access, or it is not offered in the region) is listed with what to do and a **Test**
+  button. `GET /settings/model/capacity` rows now carry `access`, read live with `GetFoundationModelAvailability`
+  (the settings Lambda already holds that permission), so an agreement accepted later in the Bedrock console clears
+  the notice without a redeploy. See [docs/deployment.md → Model agreements](docs/deployment.md#model-agreements-every-deploy-in-the-app-region-best-effort).
+
+### Changed
+
+- Empty states, notices and load-failure banners on Agents, the Dashboard, Feedback Forms, Memory, Projects and
+  every list that shows a failed read now share one component. Copy and screen-reader roles are unchanged; spacing
+  and icon tiles are consistent.
+
+### Fixed
+
+- **Feedback boards**: on a board open to anyone, a +1 that is not stored (the person's other +1 landed first, or
+  the write failed) no longer uses up that person's daily +1 limit.
+- **Quality gate**: the threaded document-version tests no longer fail now and then. The test database (moto)
+  restored a pre-transaction copy of the table when a transaction failed, which could undo another thread's
+  write; the tests now commit transactions one at a time, as DynamoDB does.
+
+### Security
+
+- `PUT /integrations/webscraper/credentials` checks every URL in a `configs` value against the outbound URL policy,
+  as `POST /scrapers` does, and refuses a scraper that would fetch a private or blocked address (#27). The route is
+  admin-only and the ingestor already re-checked each URL at fetch time; this closes the write path too.
+
 ## [5.68.01] - 2026-11-01
 
 Fix: the per-dimension counters are written again, so the Dashboard's "By dimension" and `/metrics/dimensions` count review types.
