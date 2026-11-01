@@ -167,6 +167,10 @@ The same checks run locally and on GitHub, so a green local run means a green pi
   Data Explorer has no delete route.
 - **Server-side AI mode** (tenet 3): `voc-datalake/lambda/shared/ai_writing.py` refuses AI writes the person's way of
   working does not allow, on every path (REST, assistant, agents, MCP).
+- **Tenets AI review** (`scripts/ai-review/review.mjs --kind tenets`, the `tenets: AI review` step of
+  `scripts/validate.sh`): the developer's own coding agent (`kiro-cli`, else `claude`) reads the change since
+  `origin/main` against this file and fails the step on a grounded violation. It holds no credential; without either
+  CLI, or on CI, it is skipped ([CONTRIBUTING.md](CONTRIBUTING.md#ai-reviews-in-validatesh)).
 - **Reviews**: the pre-push AI review (`scripts/git-hooks/pre-push`, `.kiro/agents/`) and every Kiro agent working in
   this repository (`.kiro/steering/tenets.md`) check a change against these tenets and report a violation as a
   blocking finding.

@@ -14,9 +14,9 @@ after(() => rmSync(logRoot, { recursive: true, force: true }));
 
 let runs = 0;
 /** Progress lines and exit status of a dry run with `args`; `fail` names the step that exits 1. */
-function dryRun(args, fail = '') {
+function dryRun(args, fail = '', extraEnv = {}) {
   runs += 1;
-  const env = { ...process.env, VALIDATE_LOG_DIR: join(logRoot, String(runs)), VALIDATE_DRY_RUN_FAIL: fail };
+  const env = { ...process.env, VALIDATE_LOG_DIR: join(logRoot, String(runs)), VALIDATE_DRY_RUN_FAIL: fail, ...extraEnv };
   const result = spawnSync('/bin/bash', [SCRIPT, '--dry-run', ...args], { encoding: 'utf8', env });
   return { status: result.status, lines: `${result.stdout}${result.stderr}`.split('\n') };
 }
@@ -133,3 +133,43 @@ describe('validate.sh coverage baseline mode (local prunes graduated rows, CI st
     assert.match(banner(local), /graduated rows pruned \(local\)/);
   });
 });
+
+describe('validate.sh --failed (re-run only what did not pass last time)', () => {
+  const failedRoot = join(logRoot, 'failed');
+  /** A dry run whose logs go under failedRoot, the root --failed reads the last run from. */
+  const runIn = (args, fail = '') => dryRun(args, fail, {
+    VALIDATE_LOG_ROOT: failedRoot, VALIDATE_LOG_DIR: join(failedRoot, String(runs + 1).padStart(3, '0')),
+  });
+
+  it('needs an earlier run', () => {
+    const { status, lines } = runIn(['--failed']);
+    assert.equal(status, 2);
+    assert.ok(lines.some((l) => l.includes('--failed needs an earlier run')));
+  });
+
+  it('re-runs the failed step and the rest of its lane, not the steps that passed, until nothing is left', () => {
+    const first = runIn(['--lane', 'py,web', '--keep-going'], 'ruff');
+    assert.equal(first.status, 1);
+    const pyLane = spawnSync('/bin/bash', [SCRIPT, '--list', '--lane', 'py'], { encoding: 'utf8' }).stdout
+      .split('\n').filter(Boolean).map((line) => line.trim().split(/\s+/).slice(2).join(' ')); // lane, groups, name
+    const again = runIn(['--failed']);
+    assert.equal(again.status, 0, again.lines.join('\n'));
+    assert.ok(again.lines.some((l) => l.includes(`re-running the ${pyLane.length} step(s)`)), again.lines.join('\n'));
+    assert.deepEqual(startedSteps(again.lines).sort(), [...pyLane].sort());
+    assert.ok(!startedSteps(again.lines).includes('vitest: frontend'), 'a step that passed is not re-run');
+    const done = runIn(['--failed']);
+    assert.equal(done.status, 0);
+    assert.ok(done.lines.some((l) => l.includes('nothing to re-run')));
+  });
+
+  it('ignores dry runs when the run itself is real', () => {
+    const own = join(logRoot, 'dry-only');
+    runs += 1;
+    spawnSync('/bin/bash', [SCRIPT, '--dry-run', '--lane', 'web'], { encoding: 'utf8', env: { ...process.env, VALIDATE_LOG_ROOT: own, VALIDATE_LOG_DIR: join(own, 'a'), VALIDATE_DRY_RUN_FAIL: 'vitest: frontend' } });
+    const env = { ...process.env, VALIDATE_LOG_ROOT: own };
+    const result = spawnSync('/bin/bash', [SCRIPT, '--failed', '--list'], { encoding: 'utf8', env });
+    assert.equal(result.status, 2, result.stdout + result.stderr);
+    assert.match(result.stderr, /--failed needs an earlier run/);
+  });
+});
+

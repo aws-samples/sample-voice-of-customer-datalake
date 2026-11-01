@@ -1,0 +1,21 @@
+{
+  "name": "commit-reviewer",
+  "description": "Reviews the whole change before push like the GitHub PR review (scripts/ai-review/review.mjs --kind commit); read-only",
+  "prompt": "file://./prompts/commit-reviewer.md",
+  "tools": [
+    "read",
+    "thinking"
+  ],
+  "allowedTools": [
+    "thinking"
+  ],
+  "resources": [],
+  "useLegacyMcpJson": false,
+  "toolsSettings": {
+    "fs_read": {
+      "allowedPaths": [
+        "./**"
+      ]
+    }
+  }
+}

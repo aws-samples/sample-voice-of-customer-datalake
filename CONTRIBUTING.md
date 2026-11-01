@@ -89,6 +89,45 @@ description names the tenets it touches (`## Tenets`, `Tenets touched: <ids> | n
 check), the CDK suite fails on a new fixed monthly cost that is on by default (tenet 7), and the pre-push and Kiro
 reviewers report a tenet violation as blocking.
 
+### AI reviews in `validate.sh`
+
+Two steps of the full gate ask YOUR coding agent to read the change since `origin/main` (the working tree, untracked
+files included), so their findings are fixed before the push instead of one round per push on GitHub:
+
+- `tenets: AI review` (`npm run validate:tenets`): does the change move the platform away from a tenet? A complete
+  `VIOLATION` (a tenet id, a trigger and an outcome) fails the step; a `CONCERN` only prints.
+- `commit: AI review` (`npm run validate:commit`): a review of the whole change, with its commit messages, like the
+  GitHub pull request review. A complete `MUST-FIX` (a trigger and an outcome) fails the step; `SHOULD-FIX` and `NIT`
+  only print.
+
+Both live in `scripts/ai-review/review.mjs` (`--kind tenets|commit`). They use `kiro-cli` when it is installed, else
+`claude` (Claude Code), with your own sign-in: no key or token lives in the repository. Neither installed, not signed
+in, a timeout, or CI = the step prints why and passes, so the gate runs on every machine.
+
+- `AI_REVIEW=kiro|claude` forces one CLI (and fails when it is missing); `AI_REVIEW=off` skips both steps.
+- `AI_REVIEW_MODEL=<id>` passes `--model`; `AI_REVIEW_TIMEOUT=<seconds>` (default 600) bounds a run;
+  `AI_REVIEW_BASE=<ref>` diffs against another base.
+- The same change is reviewed once: answers are cached in `.cache/ai-review/` (`AI_REVIEW_CACHE=0` re-runs).
+- The agents can only read, and only inside the repository (Kiro: `.kiro/agents/tenets-reviewer.json` and
+  `commit-reviewer.json`, the read tool with `allowedPaths: ['./**']` and nothing trusted; Claude Code: Read, Grep and
+  Glob in `dontAsk` mode with repository-scoped allow rules, no MCP servers). The diff is treated as data. They are
+  language models: a PASS is not proof, and two runs can differ. `validate-affected.sh` never runs them (groups
+  `tenets` and `review`).
+
+### Running part of the gate
+
+| Command | Runs |
+|---|---|
+| `npm run validate` | every step (the release gate, once per release) |
+| `npm run validate:affected` | only the steps for the paths you changed (`scripts/validate-affected.sh`) |
+| `npm run validate:failed` | only the steps that did not pass in the last run (`validate.sh --failed`: FAIL, stopped or not-run); repeat until it says nothing is left |
+| `npm run validate:test` | the four test suites (pytest, frontend, CDK, stream vitest) |
+| `npm run validate:tenets`, `npm run validate:commit` | one AI review |
+
+`--failed` reads the newest run, so a narrower run in between (say `npm run validate:test`) hides the failures of the
+full run before it. It also trusts that a fix did not break a step that already passed; the full run before the push
+is still the gate.
+
 ## Quality gates
 `npm run validate` (`scripts/validate.sh`) runs every gate: ruff, vulture (dead code), pyright, a check that every
 pytest test asserts, tsc for each TypeScript program (all with `noUncheckedIndexedAccess`, specs included), ESLint in

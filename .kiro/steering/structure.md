@@ -11,6 +11,7 @@ voice-of-customer-datalake/       # Root repository
 ├── scripts/                      # Repo-wide tooling
 │   ├── validate.sh               # Every quality gate (CI runs only this); validate-affected.sh = changed paths only
 │   ├── check-version.mjs         # CHANGELOG ↔ package.json version check
+│   ├── ai-review/                # Local AI reviews in validate.sh (tenets, whole change) via kiro-cli or claude
 │   ├── dev-with-mock.mjs         # `npm run dev`: mock API + Vite
 │   ├── codeql*.{sh,mjs,yml}, gitleaks-tree.sh, knip-production.mjs, quality-baseline.sh
 │   ├── mutation-*                # Per-module mutation programme (planner, rounds, done lists, brief)
