@@ -3,6 +3,7 @@
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -25,6 +26,30 @@ from shared.test.moto_tables import create_projects_table_with_meta
 def projects_table():
     with mock_aws():
         yield create_projects_table_with_meta('test-projects')
+
+
+@contextmanager
+def serialized_transactions(table, before=None):
+    """Run the table's TransactWriteItems one at a time, as DynamoDB commits them.
+
+    moto does not: it backs each table up before a transaction and puts the backup back when
+    a condition fails, with no lock, so a transaction that fails in one thread can restore a
+    copy taken before another thread's commit and silently undo it (a lost assignment row,
+    then a second version for the same document). That made the threaded tests below flaky on
+    CI. ``before(**kwargs)``, when given, runs outside the lock (a test's barrier).
+    """
+    client = table.meta.client
+    original = client.transact_write_items
+    lock = threading.Lock()
+
+    def serialized(**kwargs):
+        if before is not None:
+            before(**kwargs)
+        with lock:
+            return original(**kwargs)
+
+    with patch.object(client, 'transact_write_items', side_effect=serialized):
+        yield
 
 
 def fields(created_at: str = '2026-09-01T10:00:00+00:00') -> dict:
@@ -255,29 +280,22 @@ def test_retries_a_transient_transaction_conflict_once(projects_table):
 
 
 def test_competing_allocations_receive_unique_versions(projects_table):
-    client = projects_table.meta.client
-    original = client.transact_write_items
     barrier = threading.Barrier(2)
     call_lock = threading.Lock()
-    # DynamoDB serializes transactions; moto does not (two transactions released together by the
-    # barrier can each fail the other's condition and both roll back, which made this test flaky on
-    # CI). The barrier still makes both writers observe the same counter first; this lock only
-    # stands in for DynamoDB's serializable commit.
-    transaction_lock = threading.Lock()
     calls = 0
 
-    def synchronize_first_attempts(**kwargs):
+    def synchronize_first_attempts(**_kwargs):
+        # Both writers observe the same counter first; serialized_transactions then commits them
+        # one at a time, as DynamoDB does.
         nonlocal calls
         with call_lock:
             calls += 1
             current_call = calls
         if current_call <= 2:
             barrier.wait(timeout=5)
-        with transaction_lock:
-            return original(**kwargs)
 
     with (
-        patch.object(client, 'transact_write_items', side_effect=synchronize_first_attempts),
+        serialized_transactions(projects_table, before=synchronize_first_attempts),
         patch('shared.document_versions.time.sleep'),
         ThreadPoolExecutor(max_workers=2) as pool,
     ):
@@ -401,6 +419,7 @@ def test_concurrent_first_reads_wait_and_return_the_same_persisted_identity(
         return original_persist(*args, **kwargs)
 
     with (
+        serialized_transactions(projects_table),
         patch(
             'shared.document_versions._persist_legacy_identity',
             side_effect=pause_first_writer,
@@ -826,6 +845,7 @@ def test_fresh_allocation_waits_for_active_legacy_migration(projects_table):
         return original_persist_identity(*args, **kwargs)
 
     with (
+        serialized_transactions(projects_table),
         patch(
             'shared.document_versions._persist_legacy_identity',
             side_effect=pause_after_lease,
