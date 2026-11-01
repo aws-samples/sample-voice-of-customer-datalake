@@ -112,6 +112,8 @@ const SideSchema = z.object({ volume: count, positive_share: share, negative_sha
 
 /** Under this many of their reviews in a category, the comparison gives no verdict (radar_handler `too_few`). */
 export const RADAR_COMPARE_MIN_REVIEWS = 10
+/** At most this many releases come with a brand's page (`MAX_RELEASES` in lambda/api/radar_handler.py, lockstepped). */
+export const RADAR_PAGE_RELEASES_CAP = 50
 
 /**
  * `too_few`: their volume is under the threshold, so the row carries no verdict. An older API

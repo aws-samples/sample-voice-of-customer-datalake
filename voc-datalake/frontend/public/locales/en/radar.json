@@ -284,6 +284,8 @@
     "releasesLabel": "New releases",
     "releasesCount_one": "{{count, number}} in the last {{days, number}} days",
     "releasesCount_other": "{{count, number}} in the last {{days, number}} days",
+    "releasesCountAtLeast_one": "At least {{count, number}} in the last {{days, number}} days",
+    "releasesCountAtLeast_other": "At least {{count, number}} in the last {{days, number}} days",
     "releasesNewest": "Newest: {{title}}",
     "gapLabel": "Biggest gap",
     "gapNone": "Not enough reviews to compare yet",

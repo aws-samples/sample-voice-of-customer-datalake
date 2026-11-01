@@ -292,7 +292,9 @@
     "gapYouLead_one": "Sie liegen bei {{category}} um {{count, number}} Punkt vorn",
     "gapYouLead_other": "Sie liegen bei {{category}} um {{count, number}} Punkte vorn",
     "gapEven": "Bei {{category}} liegen Sie gleichauf",
-    "gapRead": "Bewertungen der anderen in {{category}} lesen"
+    "gapRead": "Bewertungen der anderen in {{category}} lesen",
+    "releasesCountAtLeast_one": "Mindestens {{count, number}} in den letzten {{days, number}} Tagen",
+    "releasesCountAtLeast_other": "Mindestens {{count, number}} in den letzten {{days, number}} Tagen"
   },
   "scanLine": {
     "last": "Letzter Scan {{when}}",

@@ -109,7 +109,7 @@ export default function CompareTable({ compare, onRead }: Readonly<{
   const { t } = useTranslation('radar')
   const labels = useDisplayLabels()
   return (
-    <section id="radar-compare-section" className="card @container min-w-0" aria-labelledby="radar-compare">
+    <section className="card @container min-w-0" aria-labelledby="radar-compare">
       <SectionTitle id="radar-compare" icon={Scale}>{t('compare.title')}</SectionTitle>
       {compare.ours_available ? null : <p className="text-sm text-warn mb-2">{t('compare.unavailable')}</p>}
       {compare.categories.length === 0 ? <p className="text-sm text-muted">{t('compare.empty')}</p> : (

@@ -4,7 +4,7 @@
  * cited releases and the trend. Admins get one "Last scan · Scan now" line in the header.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -70,6 +70,16 @@ describe('Radar page', () => {
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Scan now' }))
     expect(await screen.findByText(/The scan has started/)).toBeInTheDocument()
     expect(fetchApi).toHaveBeenCalledWith('/radar/scan', expect.objectContaining({ method: 'POST', body: '{}' }))
+  })
+
+  it('reads the overview again after a started scan, so the header line follows', async () => {
+    route([brand('acme', 'Acme')], { 'POST /radar/scan': () => ({ success: true, status: 'started' }) })
+    renderPage()
+    await screen.findByRole('button', { name: 'Scan now' })
+    const overviewReads = () => fetchApi.mock.calls.filter(([path]) => path === '/radar').length
+    const before = overviewReads()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Scan now' }))
+    await waitFor(() => expect(overviewReads()).toBeGreaterThan(before))
   })
 
   it('dates the last scan short, with its status and counts in the tooltip', async () => {

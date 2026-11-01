@@ -315,7 +315,10 @@
     "ourReviews_many": "{{count, number}} de suas avaliações",
     "releasesCount_many": "{{count, number}} de lançamentos nos últimos {{days, number}} dias",
     "gapTheyLead_many": "Eles lideram em {{category}} por {{count, number}} de pontos",
-    "gapYouLead_many": "Você lidera em {{category}} por {{count, number}} de pontos"
+    "gapYouLead_many": "Você lidera em {{category}} por {{count, number}} de pontos",
+    "releasesCountAtLeast_one": "Pelo menos {{count, number}} nos últimos {{days, number}} dias",
+    "releasesCountAtLeast_other": "Pelo menos {{count, number}} nos últimos {{days, number}} dias",
+    "releasesCountAtLeast_many": "Pelo menos {{count, number}} nos últimos {{days, number}} dias"
   },
   "scanLine": {
     "last": "Última varredura {{when}}",
