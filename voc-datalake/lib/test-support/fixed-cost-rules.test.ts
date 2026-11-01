@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { FIXED_COST_REMEDY, fixedCostFindings } from './fixed-cost-rules';
+import { COUNTED_FIXED_COSTS, countedFixedCostFindings, FIXED_COST_REMEDY, fixedCostFindings } from './fixed-cost-rules';
 
 /** Findings for a one-resource template. */
 const findingsFor = (Type: string, Properties: Record<string, unknown> = {}) => (
@@ -91,5 +91,34 @@ describe('VPC endpoints', () => {
     expect(findingsFor('AWS::EC2::VPCEndpoint', { VpcEndpointType: 'GatewayLoadBalancer' })[0]?.message)
       .toContain('a Gateway Load Balancer VPC endpoint');
     expect(findingsFor('AWS::EC2::VPCEndpoint', { VpcEndpointType: 'toString' })).toStrictEqual([]);
+  });
+});
+
+describe('countedFixedCostFindings', () => {
+  const stackWith = (stack: string, types: readonly string[]) => ({
+    stack, template: { Resources: Object.fromEntries(types.map((type, n) => [`R${n}`, { Type: type, Properties: {} }])) },
+  });
+  const atBaseline = COUNTED_FIXED_COSTS.flatMap(({ type, baseline }) => Array.from({ length: baseline }, () => type));
+
+  it('pins the baselines: one KMS key, three secrets', () => {
+    expect(COUNTED_FIXED_COSTS.map(({ type, baseline }) => [type, baseline])).toStrictEqual([
+      ['AWS::KMS::Key', 1], ['AWS::SecretsManager::Secret', 3],
+    ]);
+  });
+
+  it('passes the baseline itself', () => {
+    expect(countedFixedCostFindings([stackWith('A', atBaseline)])).toStrictEqual([]);
+  });
+
+  it('names every resource of a type that grew, and says to reuse the existing one or make it opt-in', () => {
+    const findings = countedFixedCostFindings([stackWith('A', atBaseline), stackWith('B', ['AWS::KMS::Key'])]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatch(/^2 customer-managed KMS keys \(AWS::KMS::Key\) in the default synth, baseline 1: A\/R0, B\/R0 — .*reuse the existing one, or make the new one opt-in/);
+  });
+
+  it('asks for a lower baseline when a type shrank, so it cannot grow back', () => {
+    const findings = countedFixedCostFindings([stackWith('A', atBaseline.filter((type) => type !== 'AWS::SecretsManager::Secret'))]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatch(/^0 Secrets Manager secrets .*below the baseline 3 — lower `baseline` in COUNTED_FIXED_COSTS/);
   });
 });

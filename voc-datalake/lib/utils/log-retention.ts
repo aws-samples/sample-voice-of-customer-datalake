@@ -1,7 +1,7 @@
 /**
  * Every Lambda function gets a managed log group with a retention period.
  *
- * Our own functions set one (`logs.RetentionDays.TWO_WEEKS`, lib/utils/worker-lambda.ts and the api-*
+ * Our own functions set one (`LOG_RETENTION` below, used by lib/utils/worker-lambda.ts and the api-*
  * builders), but the functions CDK creates for us — custom resource providers (S3 auto-delete, cross-region
  * export reader/writer), the bucket-notifications handler, BucketDeployment's singleton — set no
  * `LoggingConfig`. Lambda then creates `/aws/lambda/<name>` itself on first invocation with NO retention,
@@ -19,7 +19,13 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import type { IConstruct } from 'constructs';
 
-const RETENTION = logs.RetentionDays.TWO_WEEKS;
+/**
+ * How long EVERY operational log is kept: Lambda, API Gateway access and Step Functions log groups alike
+ * (owner decision 2026-11-01: 30 days for every operational log, kept simple, one number). Audit evidence
+ * lives in DynamoDB audit rows (`AUDIT#retention`, the MCP token audit, the erasure jobs), not in logs.
+ * Every `logs.LogGroup` in lib/ uses this constant; do not pick a number per group.
+ */
+export const LOG_RETENTION = logs.RetentionDays.ONE_MONTH;
 
 /**
  * A Lambda function that names no log group: an L1 `CfnFunction` without `loggingConfig`, or a
@@ -36,7 +42,7 @@ class LambdaLogRetentionAspect implements cdk.IAspect {
     if (fn === undefined) return;
     // Path-unique id: several CDK providers share a short id ('Resource', 'Handler') in one stack.
     const group = new logs.LogGroup(fn.stack, `${cdk.Names.uniqueId(fn)}LogGroup`, {
-      retention: RETENTION,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
     fn.addPropertyOverride('LoggingConfig.LogGroup', group.logGroupName);
@@ -49,19 +55,19 @@ export function applyLambdaLogRetention(scope: IConstruct): void {
 }
 
 /**
- * Production log retention (`-c protectData=true`, WA SEC04-BP01 / SEC10-BP03, finding OPS-6).
+ * Production log retention (`protectData`, on by default; WA SEC04-BP01 / SEC10-BP03, finding OPS-6).
  *
- * Demos and workshops keep two weeks and delete their logs with the stacks. A protected deployment keeps
- * every log group 365 days (the AWS Config `cw-loggroup-retention-period-check` and Security Hub
- * `CloudWatch.16` default) and RETAINS it on stack deletion, so an incident found weeks later, or a
- * teardown, still has its evidence. Storage is pay-per-use; nothing is billed for the setting itself.
+ * A protected deployment keeps the same 30 days as every other log (`LOG_RETENTION`; owner decision
+ * 2026-11-01: one retention for every operational log, kept simple; audit evidence lives in DynamoDB
+ * audit rows, not in logs; until 5.73.00 this was 365 days), but RETAINS each log group on stack
+ * deletion, so a teardown does not erase the last 30 days of evidence. An unprotected deployment
+ * (`-c protectData=false`, demos) deletes its log groups with the stacks. Storage is pay-per-use;
+ * nothing is billed for the setting itself.
  */
-export const PROTECTED_LOG_RETENTION_DAYS = 365;
-
 class ProtectedLogRetentionAspect implements cdk.IAspect {
   visit(node: IConstruct): void {
     if (!(node instanceof logs.CfnLogGroup)) return;
-    node.retentionInDays = PROTECTED_LOG_RETENTION_DAYS;
+    node.retentionInDays = LOG_RETENTION;
     node.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
   }
 }

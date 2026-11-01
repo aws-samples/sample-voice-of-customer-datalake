@@ -11,6 +11,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import { createPrivateVersionedBucket } from './core-buckets';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import {
@@ -113,13 +114,15 @@ export class VocIngestionStack extends VocStack {
   private ingestorRoles!: IngestorRoles;
 
   // Created on first use, so a deployment with no scheduled plugin gets no
-  // queue or key it never writes to.
+  // queue it never writes to. Encrypted with the Core key (`scheduleDlqKey`).
   private scheduleDlq?: sqs.Queue;
+  private readonly scheduleDlqKey: kms.IKey;
 
   constructor(scope: Construct, id: string, props: VocIngestionStackProps) {
     super(scope, id, props);
 
     const { watermarksTable, aggregatesTable, rawDataBucket, accessLogsBucket, kmsKey, config } = props;
+    this.scheduleDlqKey = kmsKey;
 
 
 
@@ -323,6 +326,7 @@ export class VocIngestionStack extends VocStack {
   private scheduleDeadLetterQueue(): sqs.Queue {
     this.scheduleDlq ??= createScheduleDeadLetterQueue(this, {
       queueName: this.uniqueName(INGEST_SCHEDULE_DLQ_BASE_NAME),
+      key: this.scheduleDlqKey,
       denyInsecureTransport,
     });
     return this.scheduleDlq;
@@ -439,7 +443,7 @@ export class VocIngestionStack extends VocStack {
       layers: [dependenciesLayer],
       logGroup: new logs.LogGroup(this, `IngestorLogs${capitalize(plugin.id)}`, {
         logGroupName: this.uniqueName(`/aws/lambda/voc-ingestor-${plugin.id}`),
-        retention: logs.RetentionDays.TWO_WEEKS,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });

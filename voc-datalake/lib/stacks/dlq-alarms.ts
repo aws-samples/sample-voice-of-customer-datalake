@@ -65,6 +65,8 @@ export interface AlarmTopicProps {
    * deployment's alarms. Every runtime alarm is named `uniqueName(OPS_ALERT_ALARM_BASE_NAME)-<slug>`.
    */
   alarmNamePrefix: string;
+  /** The Core data key: the deployment's one customer-managed key encrypts the topic too. */
+  key: kms.IKey;
 }
 
 /** Base of every alarm name (`voc-…`); run through the owning stack's `prefixed()`. */
@@ -93,43 +95,51 @@ function alarmPublishStatement(topic: sns.ITopic, alarmNamePrefix: string): iam.
     resources: [topic.topicArn],
     conditions: {
       StringEquals: { 'aws:SourceAccount': stack.account },
-      ArnLike: {
-        'aws:SourceArn': `arn:${stack.partition}:cloudwatch:${stack.region}:${stack.account}:alarm:${alarmNamePrefix}*`,
-      },
+      ArnLike: { 'aws:SourceArn': alarmSourceArnPattern(stack, alarmNamePrefix) },
     },
   });
 }
 
+/** ARN pattern of this deployment's alarms: `arn:…:cloudwatch:<region>:<account>:alarm:<alarmNamePrefix>*`. */
+function alarmSourceArnPattern(stack: cdk.Stack, alarmNamePrefix: string): string {
+  return `arn:${stack.partition}:cloudwatch:${stack.region}:${stack.account}:alarm:${alarmNamePrefix}*`;
+}
+
 /**
- * The KMS-encrypted, TLS-only alarm topic (VocCoreStack only).
+ * The KMS-encrypted, TLS-only alarm topic (VocCoreStack only), under the Core data key.
  *
- * Its own CMK: CloudWatch publishes as the cloudwatch.amazonaws.com service
- * principal, which cannot use the AWS-managed `alias/aws/sns` key, and admitting
- * it to the Core data key would widen that key for every table and
- * bucket it protects.
+ * One customer-managed key for the whole deployment (owner decision, the tenet 7
+ * baseline: a key costs about $1 a month, so the deployment has exactly one).
+ * CloudWatch publishes as the cloudwatch.amazonaws.com service principal, which
+ * cannot use the AWS-managed `alias/aws/sns` key, so the Core key's policy admits
+ * it, and only narrowly: `kms:Decrypt` / `kms:GenerateDataKey*`, only for alarm
+ * calls from this account (`aws:SourceAccount`) and from this deployment's
+ * alarms (`aws:SourceArn`, the same alarm-name prefix the topic policy uses).
+ * These are the confused-deputy conditions the SNS guide documents for
+ * service-principal publishers
+ * (https://docs.aws.amazon.com/sns/latest/dg/sns-key-management.html); SNS
+ * documents no encryption-context key, so none is relied on.
  */
 export function createAlarmTopic(scope: Construct, id: string, props: AlarmTopicProps): void {
   // A plain construct with the same id keeps every logical id the class form had.
   const construct = new Construct(scope, id);
   const stack = cdk.Stack.of(construct);
 
-  const key = new kms.Key(construct, 'Key', {
-    description: 'Encrypts the VoC operational alarm topic',
-    enableKeyRotation: true,
-    removalPolicy: cdk.RemovalPolicy.DESTROY,
-  });
-  key.addToResourcePolicy(new iam.PolicyStatement({
+  props.key.addToResourcePolicy(new iam.PolicyStatement({
     sid: ALARM_PUBLISH_SID,
     principals: [new iam.ServicePrincipal('cloudwatch.amazonaws.com')],
     actions: ['kms:Decrypt', 'kms:GenerateDataKey*'],
     resources: ['*'],
-    conditions: { StringEquals: { 'aws:SourceAccount': stack.account } },
+    conditions: {
+      StringEquals: { 'aws:SourceAccount': stack.account },
+      ArnLike: { 'aws:SourceArn': alarmSourceArnPattern(stack, props.alarmNamePrefix) },
+    },
   }));
 
   const topic = new sns.Topic(construct, 'Topic', {
     topicName: props.topicName,
     displayName: 'VoC operational alarms',
-    masterKey: key,
+    masterKey: props.key,
     enforceSSL: true,
   });
   // The key grant above is not enough: the topic policy must Allow too.

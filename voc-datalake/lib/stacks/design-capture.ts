@@ -25,6 +25,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import { NagSuppressions } from 'cdk-nag';
 import { stackModelArns } from '../utils/model-allowlist';
@@ -127,7 +128,7 @@ export function createDesignCapture(stack: cdk.Stack, props: DesignCaptureProps)
     layers: [layer],
     logGroup: new logs.LogGroup(stack, 'DesignCaptureLogs', {
       logGroupName,
-      retention: logs.RetentionDays.TWO_WEEKS,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });

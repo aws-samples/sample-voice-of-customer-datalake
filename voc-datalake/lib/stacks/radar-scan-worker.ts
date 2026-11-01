@@ -25,6 +25,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import { Construct } from 'constructs';
 
 import { RADAR_SCAN_FUNCTION_BASE_NAME } from '../utils/function-names';
@@ -110,7 +111,7 @@ export function createRadarScanWorker(scope: Construct, id: string, props: Radar
     layers: [props.layer],
     logGroup: new logs.LogGroup(worker, 'RadarScanLogs', {
       logGroupName: `/aws/lambda/${functionName}`,
-      retention: logs.RetentionDays.TWO_WEEKS,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });

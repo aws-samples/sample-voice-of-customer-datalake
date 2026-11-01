@@ -22,6 +22,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { z } from 'zod';
@@ -141,7 +142,7 @@ export class AnthropicUseCaseSubmission extends Construct {
 
     // Create log group for custom resources
     const logGroup = new logs.LogGroup(this, 'BedrockAccessLogGroup', {
-      retention: logs.RetentionDays.ONE_WEEK,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
@@ -288,7 +289,7 @@ class ModelAgreementProvider {
       code: lambda.Code.fromInline(this.getModelAgreementLambdaCode()),
       description: 'Creates Bedrock model agreements by fetching offer tokens and accepting EULA',
       logGroup: new logs.LogGroup(host, 'ModelAgreementLambdaLogs', {
-        retention: logs.RetentionDays.ONE_WEEK,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
@@ -313,7 +314,7 @@ class ModelAgreementProvider {
     const modelAgreementProvider = new cr.Provider(host, 'ModelAgreementProvider', {
       onEventHandler: modelAgreementLambda,
       logGroup: new logs.LogGroup(host, 'ModelAgreementProviderLogs', {
-        retention: logs.RetentionDays.ONE_WEEK,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });

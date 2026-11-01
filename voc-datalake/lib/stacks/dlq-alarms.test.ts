@@ -16,9 +16,10 @@ import { z } from 'zod';
 
 import { VocCoreStack } from './core-stack';
 import {
-  ALARM_NAME_PREFIX, ALARM_PUBLISH_SID, ALARM_TOPIC_BASE_NAME, API_ASYNC_FAILURES_QUEUE_BASE_NAME, OPS_ALERT_ALARM_BASE_NAME,
-  opsAlertsWiring,
+  ALARM_NAME_PREFIX, ALARM_PUBLISH_SID, ALARM_TOPIC_BASE_NAME, API_ASYNC_FAILURES_QUEUE_BASE_NAME, INGEST_SCHEDULE_DLQ_BASE_NAME,
+  OPS_ALERT_ALARM_BASE_NAME, opsAlertsWiring,
 } from './dlq-alarms';
+import { EVENTBRIDGE_DLQ_KEY_SID } from './ingestion-schedule-dlq';
 import { apiTemplateAllPlugins, discoverPluginIds, policyStatementsOf, serviceEnvironment } from '../test-support/api-stack-template';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
@@ -99,16 +100,53 @@ describe('VocCoreStack alarm topic', () => {
     expect(JSON.stringify(topic().props.TopicName)).toContain(`${ALARM_TOPIC_BASE_NAME}-`);
   });
 
-  it('is encrypted with its own CMK that CloudWatch may use', () => {
+  /** The Core key's policy statements (the deployment's one customer-managed key). */
+  function coreKeyStatements(t: Template): Record<string, unknown>[] {
+    const keys = Object.entries(t.findResources('AWS::KMS::Key'));
+    expect(keys.map(([logicalId]) => logicalId), 'the Core stack holds exactly one KMS key').toHaveLength(1);
+    return z.object({ Properties: z.object({ KeyPolicy: z.object({ Statement: z.array(z.record(z.string(), z.unknown())) }) }) })
+      .parse(itemAt(keys, 0)[1]).Properties.KeyPolicy.Statement;
+  }
+
+  it('is encrypted with the Core key, the deployment\'s one CMK', () => {
     const { KmsMasterKeyId } = topic().props;
     const keyId = z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.literal('Arn')]) }).parse(KmsMasterKeyId)['Fn::GetAtt'][0];
-    expect(keyId).toMatch(/^OpsAlarmsKey/);
-    const key = z.object({ Properties: z.object({ EnableKeyRotation: z.boolean(), KeyPolicy: z.unknown() }) })
-      .parse(template.findResources('AWS::KMS::Key')[keyId]).Properties;
-    expect(key.EnableKeyRotation).toBe(true);
-    const policy = JSON.stringify(key.KeyPolicy);
-    expect(policy).toContain('cloudwatch.amazonaws.com');
-    expect(policy).toContain('kms:GenerateDataKey*');
+    expect(keyId).toMatch(/^VocKmsKey/);
+  });
+
+  it('lets CloudWatch use the Core key only for this account\'s voc-* alarms', () => {
+    expect(coreKeyStatements(template).filter((s) => s.Sid === ALARM_PUBLISH_SID)).toStrictEqual([{
+      Sid: ALARM_PUBLISH_SID,
+      Effect: 'Allow',
+      Principal: { Service: 'cloudwatch.amazonaws.com' },
+      Action: ['kms:Decrypt', 'kms:GenerateDataKey*'],
+      Resource: '*',
+      Condition: {
+        StringEquals: { 'aws:SourceAccount': SYNTH_ACCOUNT },
+        ArnLike: { 'aws:SourceArn': `arn:aws:cloudwatch:${SYNTH_REGION}:${SYNTH_ACCOUNT}:alarm:voc-*` },
+      },
+    }]);
+  });
+
+  it('scopes the CloudWatch key grant to the deployment prefix', () => {
+    const grant = coreKeyStatements(synthCoreTemplate({}, 'stg')).find((s) => s.Sid === ALARM_PUBLISH_SID);
+    expect(JSON.stringify(grant)).toContain(':alarm:stg-voc-*');
+  });
+
+  it('lets EventBridge use the Core key only for the schedule DLQ of this account (moved from its own key)', () => {
+    const grants = coreKeyStatements(template).filter((s) => s.Sid === EVENTBRIDGE_DLQ_KEY_SID);
+    expect(grants).toHaveLength(1);
+    const grant = z.object({
+      Principal: z.object({ Service: z.literal('events.amazonaws.com') }),
+      Action: z.array(z.string()),
+      Condition: z.object({ StringEquals: z.object({ 'kms:EncryptionContext:aws:sqs:arn': z.unknown(), 'aws:SourceAccount': z.unknown() }).strict() }).strict(),
+    }).parse(itemAt(grants, 0));
+    expect({ actions: [...grant.Action].sort(byCodeUnit), account: grant.Condition.StringEquals['aws:SourceAccount'] })
+      .toStrictEqual({ actions: ['kms:Decrypt', 'kms:GenerateDataKey'], account: SYNTH_ACCOUNT });
+    // The queue ARN is built from the fixed name, so Core holds no reference to VocIngestionStack.
+    const contextArn = JSON.stringify(grant.Condition.StringEquals['kms:EncryptionContext:aws:sqs:arn']);
+    expect(contextArn).toContain(`${INGEST_SCHEDULE_DLQ_BASE_NAME}-`);
+    expect(contextArn).not.toContain('Fn::ImportValue');
   });
 
   it('denies non-TLS publishes (enforceSSL)', () => {

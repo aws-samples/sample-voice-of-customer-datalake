@@ -23,7 +23,6 @@ import {
 import { itemAt } from '../test-support/guards';
 import { capitalize } from '../plugin-loader';
 import { synthIngestionStacks, synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
-import { byCodeUnit } from '../utils/compare';
 import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
 
 
@@ -127,7 +126,7 @@ const RuleSchema = z.object({
 const QueueSchema = z.object({
   Properties: z.object({
     QueueName: z.unknown(),
-    KmsMasterKeyId: GetAttSchema,
+    KmsMasterKeyId: z.unknown(),
   }),
 });
 /** `{ 'Fn::Join': ['', parts] }` — a name built from the account/region pseudo parameters. */
@@ -169,44 +168,19 @@ describe('VocIngestionStack scheduled ingestion dead-letter queue', () => {
     }
   });
 
-  /** The schedule DLQ's Properties and the Properties of the CMK it is encrypted with. */
-  const scheduleDlqAndKey = () => {
+  /** The schedule DLQ's Properties and the logical id of the key it is encrypted with. */
+  const scheduleDlq = () => {
     const queue = QueueSchema.parse(template.findResources('AWS::SQS::Queue')[
       itemAt(logicalIdsStartingWith(template, 'AWS::SQS::Queue', 'IngestScheduleDLQ'), 0)
     ]).Properties;
-    const [keyId] = queue.KmsMasterKeyId['Fn::GetAtt'];
-    const KeySchema = z.object({
-      Properties: z.object({
-        EnableKeyRotation: z.boolean(),
-        KeyPolicy: z.object({ Statement: z.array(z.looseObject({ Sid: z.string().optional() })) }),
-      }),
-    });
-    return { queue, keyId, key: KeySchema.parse(template.findResources('AWS::KMS::Key')[keyId]).Properties };
+    return { queue, keyRef: queue.KmsMasterKeyId };
   };
 
-  it('encrypts the DLQ with its own rotated CMK', () => {
-    const { keyId, key } = scheduleDlqAndKey();
-    expect(keyId).toMatch(/^IngestScheduleDLQKey/);
-    expect(key.EnableKeyRotation).toBe(true);
-  });
-
-  it('admits EventBridge to that CMK for this queue and account only', () => {
-    const { queue, key } = scheduleDlqAndKey();
-    const grant = z.object({
-      Principal: z.object({ Service: z.literal('events.amazonaws.com') }),
-      Action: z.array(z.string()),
-      Condition: z.object({
-        StringEquals: z.object({
-          'kms:EncryptionContext:aws:sqs:arn': JoinSchema,
-          'aws:SourceAccount': z.unknown(),
-        }),
-      }),
-    }).parse(key.KeyPolicy.Statement.find((s) => s.Sid === 'AllowEventBridgeToDeadLetter'));
-    expect([...grant.Action].sort(byCodeUnit)).toStrictEqual(['kms:Decrypt', 'kms:GenerateDataKey']);
-    expect(grant.Condition.StringEquals['aws:SourceAccount']).toBe(SYNTH_ACCOUNT);
-    // The context ARN must name THIS queue, and only it.
-    expect(flattenJoin(grant.Condition.StringEquals['kms:EncryptionContext:aws:sqs:arn']))
-      .toBe(`arn:aws:sqs:${SYNTH_REGION}:${SYNTH_ACCOUNT}:${flattenJoin(queue.QueueName)}`);
+  it('encrypts the DLQ with the Core key and creates no key of its own', () => {
+    // One customer-managed key per deployment (tenet 7 baseline): the EventBridge grant
+    // lives on the Core key's policy (dlq-alarms.test.ts pins that statement).
+    expect(JSON.stringify(scheduleDlq().keyRef)).not.toContain('IngestScheduleDLQKey');
+    expect(Object.keys(template.findResources('AWS::KMS::Key'))).toStrictEqual([]);
   });
 
   it('lets only the schedule rules send to the DLQ, over TLS', () => {
@@ -226,10 +200,9 @@ describe('VocIngestionStack scheduled ingestion dead-letter queue', () => {
     })).not.toThrow();
   });
 
-  it('creates no DLQ or key when no plugin is scheduled', () => {
+  it('creates no DLQ when no plugin is scheduled', () => {
     const bare = synthIngestionTemplate();
     expect(logicalIdsStartingWith(bare, 'AWS::SQS::Queue', 'IngestScheduleDLQ')).toHaveLength(0);
-    expect(logicalIdsStartingWith(bare, 'AWS::KMS::Key', 'IngestScheduleDLQKey')).toHaveLength(0);
   });
 });
 

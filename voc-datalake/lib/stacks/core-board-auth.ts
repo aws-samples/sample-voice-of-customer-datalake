@@ -38,7 +38,7 @@ import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/l
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import type { EmailSender } from '../utils/email-sender';
 import type { CoreBuildContext } from './core-cdn';
-import { USER_POOL_STANDARD_ATTRIBUTES, twoWeekLogGroup } from './core-auth';
+import { USER_POOL_STANDARD_ATTRIBUTES, lambdaLogGroup } from './core-auth';
 
 /** Base physical names of the two trigger functions (lib/sizing/policy.ts sizes them). */
 const BOARD_PRE_SIGN_UP_FUNCTION_BASE_NAME = 'voc-board-pre-sign-up';
@@ -123,7 +123,7 @@ function boardTriggerCode(): lambda.Code {
   });
 }
 
-/** One board trigger (stdlib + boto3, no layer), Python 3.14 ARM64, two-week logs. */
+/** One board trigger (stdlib + boto3, no layer), Python 3.14 ARM64, 30-day logs. */
 function boardTrigger(
   ctx: CoreBuildContext,
   id: string,
@@ -141,7 +141,7 @@ function boardTrigger(
     timeout: BOARD_TRIGGER_TIMEOUT,
     description: spec.description,
     environment: { ...spec.environment, LOG_LEVEL: 'INFO' },
-    logGroup: twoWeekLogGroup(ctx.stack, `${id}Logs`),
+    logGroup: lambdaLogGroup(ctx.stack, `${id}Logs`),
   });
 }
 

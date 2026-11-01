@@ -31,6 +31,7 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import { Construct } from 'constructs';
 
 import {
@@ -126,7 +127,7 @@ export function createPlanStepFunction(scope: Construct, props: PlanStepProps): 
     },
     logGroup: new logs.LogGroup(scope, 'PlanStepLogs', {
       logGroupName: `/aws/lambda/${functionName}`,
-      retention: logs.RetentionDays.TWO_WEEKS,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });

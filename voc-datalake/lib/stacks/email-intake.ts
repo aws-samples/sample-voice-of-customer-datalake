@@ -25,6 +25,7 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaEvents from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ses from 'aws-cdk-lib/aws-ses';
@@ -230,7 +231,7 @@ function intakeFunction(scope: Construct, props: EmailIntakeProps, bucket: s3.Bu
     },
     logGroup: new logs.LogGroup(scope, 'EmailIntakeLogs', {
       logGroupName: props.names.logGroup,
-      retention: logs.RetentionDays.TWO_WEEKS,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });
