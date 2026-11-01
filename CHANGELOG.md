@@ -45,8 +45,9 @@ current LTS line). The deployed Lambdas and the API do not change.
   `cdk-nag` 2 (v3 removes the suppression API this app uses), knip 6.44.1 in the frontend, and mutmut 2.
 
 ### Upgrade notes
-- Local development still needs Node.js 22.12 or later; CI now tests on Node 26 only. Run `npm ci` in every
-  package after pulling (the lockfiles changed).
+- Local development needs Node.js 22.18+ or 24.11+ (root `package.json` `engines`, was 22.12+): ESLint 10 needs
+  22.13+ and its Babel dependency (`@babel/code-frame`) 22.18+ / 24.11+; older releases get npm `EBADENGINE`
+  warnings. CI now tests on Node 26 only. Run `npm ci` in every package after pulling (the lockfiles changed).
 
 ## [5.72.01] - 2026-11-01
 
