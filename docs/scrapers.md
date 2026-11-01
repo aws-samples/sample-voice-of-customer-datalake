@@ -127,20 +127,20 @@ The route still applies `shared/url_policy` with DNS resolution. The bounds are 
 `frontend/src/assistant/approvals/scraperSchemas.lockstep.test.ts`.
 
 **Store check for apps (5.72.00).** Before an iOS or Android connector's card, the assistant's server looks the app
-up: the App Store id with Apple's Lookup API in the 40 storefronts the iOS connector reads (US first; the others only
-when the US store does not have it, at most four at a time because Apple throttles the API, stopping at the first
-store that has it), the package name on its Google Play page. An id counts as not existing only when every storefront
-was asked and at most four of them could not be read. When the store answers that no such
-app exists, the call is refused before any card, and the assistant is told to find the real id with
-`find_app_store_app` or to ask you, so an invented id never becomes a connector whose every run fails. When the app is
-found, the card's line names it as the store does, with its developer (e.g. "App Store: 'Example Air: Flights' by
-'Example Air Group'"), so you can check it is the right company's app. Those two values come from the app's publisher,
-so they are shown quoted, on one line, without control characters and at most 60 characters long. A store that cannot be read (time-out, an HTTP
-error) refuses nothing; the card then says the store could not be checked. A plan step that creates an app connector
-runs the same check and fails without writing. Review web pages are not checked this way: review sites answer
-automated requests with a bot challenge (HTTP 403) whether the page exists or not, so the assistant is instead
-instructed to propose only a URL copied from a web search result that names the company, never one built from a
-name, and to say when no page was found.
+up: the App Store id with Apple's Lookup API in the 40 storefronts the iOS connector reads (US first; the others
+only when the US store does not have it, at most four at a time because Apple throttles the API, stopping at the
+first store that has it), the package name on its Google Play page. An id counts as not existing only when every
+storefront was asked and at most four of them could not be read. When the store answers that no such app exists, the
+call is refused before any card, and the assistant is told to find the real id with `find_app_store_app` or to ask
+you, so an invented id never becomes a connector whose every run fails. When the app is found, the card's line names
+it as the store does, with its developer (e.g. "App Store: 'Example Air: Flights' by 'Example Air Group'"), so you
+can check it is the right company's app. Those two values come from the app's publisher, so they are shown quoted,
+on one line, without control characters and at most 60 characters long. A store that cannot be read (time-out, an
+HTTP error) refuses nothing; the card then says the store could not be checked. A plan step that creates an app
+connector runs the same check and fails without writing. Review web pages are not checked this way: review sites
+answer automated requests with a bot challenge (HTTP 403) whether the page exists or not, so the assistant is
+instead instructed to propose only a URL copied from a web search result that names the company, never one built
+from a name, and to say when no page was found.
 
 These tools are not on the global MCP server (`/mcp/global`).
 

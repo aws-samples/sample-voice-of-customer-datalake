@@ -24,8 +24,8 @@ const STORE_NAME: Record<Platform, string> = { ios: 'App Store', android: 'Googl
 
 /** The store and id a connector reads, or undefined for a web-reviews page. */
 export function storeIdentity(args: StoreArgs): { platform: Platform; id: string } | undefined {
-  const id = args.source === 'app_reviews_ios' ? args.app_id : args.package_name;
-  if (id === undefined || id.trim() === '') return undefined;
+  const id = (args.source === 'app_reviews_ios' ? args.app_id : args.package_name)?.trim();
+  if (id === undefined || id === '') return undefined;
   if (args.source === 'app_reviews_ios') return { platform: 'ios', id };
   return args.source === 'app_reviews_android' ? { platform: 'android', id } : undefined;
 }
@@ -35,11 +35,12 @@ export const STORE_TEXT_MAX = 60;
 
 /**
  * A store-supplied name for the card: publishers control it, so control and format characters (newlines,
- * bidirectional overrides) become spaces, whitespace collapses, and it is quoted and clipped (`q`), so it reads
- * as one quoted value after "App Store:" and can never look like another line of the card.
+ * bidirectional overrides) become spaces, a straight quote becomes a typographic one (it cannot close the
+ * quoting), whitespace collapses, and it is quoted and clipped (`q`), so it reads as one quoted value after
+ * "App Store:" and can never look like another line of the card.
  */
 export function storeText(value: string): string {
-  return q(value.replaceAll(/[\p{Cc}\p{Cf}]/gu, ' '), STORE_TEXT_MAX);
+  return q(value.replaceAll(/[\p{Cc}\p{Cf}]/gu, ' ').replaceAll("'", '\u2019'), STORE_TEXT_MAX);
 }
 
 const lookups = new WeakMap<AssistantRunContext, Map<string, Promise<StoreAppLookup>>>();
