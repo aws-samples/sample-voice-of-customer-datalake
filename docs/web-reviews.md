@@ -101,7 +101,7 @@ target's limits were lowered below it. The run log says `resuming at page N` for
 Every target is its own source, `web_<site>_<app_name>`: the site is the page host's registrable name (`www.`,
 `m.` and the country/second-level suffix dropped: `www.ratings.example`, `uk.ratings.example` and
 `www.ratings.co.uk` are all `ratings`), the name is the target's `app_name` lower-cased with every other character
-run as `_`. So app_name "Example Air" on a `www.ratings.example` page is `web_ratings_example_air`, and two brands
+run as `_`. So app_name "Example Air" on a www.ratings.example page is `web_ratings_example_air`, and two brands
 read from one site do not share a source (an id longer than 48 characters keeps its start plus a short hash).
 
 The label is minted **once**, by `POST /integrations/web_reviews/apps` when the target is created, and stored on
