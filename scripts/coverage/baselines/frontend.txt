@@ -62,7 +62,6 @@ voc-datalake/frontend/src/pages/Participants/rejectReason.ts 50.00   # 2/4
 voc-datalake/frontend/src/pages/Prioritization/ScoringMetricEditor.tsx 57.14   # 16/28
 voc-datalake/frontend/src/pages/Prioritization/previewMarkdown.ts 50.00   # 2/4
 voc-datalake/frontend/src/pages/ProblemAnalysis/ProblemAnalysis.tsx 77.35   # 41/53
-voc-datalake/frontend/src/pages/ProblemAnalysis/ProblemAnalysisPDFContent.tsx 75.86   # 22/29
 voc-datalake/frontend/src/pages/ProblemAnalysis/problemAnalysisPdfGenerator.tsx 50.00   # 1/2
 voc-datalake/frontend/src/pages/ProblemAnalysis/problemGrouping.ts 57.14   # 4/7
 voc-datalake/frontend/src/pages/ProjectDetail/DocumentPrototypeView.tsx 64.40   # 38/59
