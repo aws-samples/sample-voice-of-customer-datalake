@@ -10,10 +10,14 @@ The screenshots come from the local mock (`npm run dev`), which serves fictional
 
 | | |
 |---|---|
-| ![AI assistant](docs/images/screenshots/assistant.jpg) | ![Categories](docs/images/screenshots/categories.jpg) |
-| **AI assistant**: one page-aware assistant on every page. It answers from your feedback and cites the reviews it used. | **Categories**: feedback by category, sentiment, keyword and source, filtered by channel, product, user type and tags. |
+| ![Home](docs/images/screenshots/home.jpg) | ![AI assistant](docs/images/screenshots/assistant.jpg) |
+| **Home**: each user's morning brief, with the reviews of the last 7 days, urgent issues and agent runs that need a decision. | **AI assistant**: one page-aware assistant on every page. It answers from your feedback and cites the reviews it used. |
+| ![Categories](docs/images/screenshots/categories.jpg) | ![Problem Analysis](docs/images/screenshots/problems.jpg) |
+| **Categories**: feedback by category, sentiment, keyword and source, filtered by channel, product, user type and tags. | **Problem Analysis**: recurring problems grouped by category and subcategory, with review counts, urgency and sentiment for each. |
 | ![Project](docs/images/screenshots/project.jpg) | ![Autonomous agents](docs/images/screenshots/agents.jpg) |
-| **Projects**: describe the product, then generate personas, research, PRD / PR-FAQ documents and a clickable prototype from the evidence. | **Autonomous agents**: agents watch their feedback scope and, when a trigger fires, run a workflow from reviews to a reviewed prototype. |
+| **Projects**: describe the product, then generate personas, research, PRD / PR-FAQ documents and a clickable prototype from the evidence. | **Autonomous agents**: agents watch their feedback scope and run a workflow when a trigger fires; approved assistant plans run here too. |
+| ![Radar](docs/images/screenshots/radar.jpg) | ![Feedback boards](docs/images/screenshots/boards.jpg) |
+| **Radar**: other brands' reviews and news, kept apart from your own feedback, with a sentiment trend per brand. | **Feedback boards**: teams and customers file requests and +1 them; this sales board totals the revenue committed and at risk. |
 
 ## ✨ Features
 
