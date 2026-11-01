@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
-import { ABORT_MULTIPART_DAYS, ACCESS_LOGS_NONCURRENT_VERSION_DAYS } from './core-buckets';
+import { ABORT_MULTIPART_DAYS, ACCESS_LOGS_EXPIRATION_DAYS, ACCESS_LOGS_NONCURRENT_VERSION_DAYS } from './core-buckets';
 import { SCRATCH_EXPIRATION_DAYS } from './core-buckets';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { itemAt, recordAt, valueAt } from '../test-support/guards';
@@ -153,7 +153,8 @@ describe('VocCoreStack synth context', () => {
       statementCount('AWS::IAM::Policy', 'CdnSigningKeysLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
       because('the CDN signing-key role'),
     ).toBe(1);
-    expect(statementCount('AWS::KMS::Key', 'VocKmsKey', 'KeyPolicy'), because('the KMS key')).toBe(5);
+    // 5 + the CloudWatch alarm-topic grant + the EventBridge schedule-DLQ grant (one key since 5.73.00).
+    expect(statementCount('AWS::KMS::Key', 'VocKmsKey', 'KeyPolicy'), because('the KMS key')).toBe(7);
   });
 });
 
@@ -471,7 +472,7 @@ describe('VocCoreStack S3 server access logging', () => {
     // self-targets — so this is a declined option, not an impossible one. It is
     // declined because log deliveries themselves generate access log records:
     // the bucket would grow on its own writes, against a lifecycle rule that is
-    // UNPREFIXED and expires everything at 90 days, and buy no visibility that
+    // UNPREFIXED and expires everything at 30 days, and buy no visibility that
     // the four producer prefixes do not already give.
     //
     // No suppression is missing either. cdk-nag's AwsSolutions-S1 has a fallback
@@ -496,13 +497,13 @@ describe('VocCoreStack S3 server access logging', () => {
     expect(accessLogs.Properties ?? {}).not.toHaveProperty('LoggingConfiguration');
   });
 
-  it('expires everything in the access-logs bucket at 90 days, with no prefix', () => {
+  it('expires everything in the access-logs bucket at 30 days, with no prefix', () => {
     // The premise two comments in this block rest on, and the reason adding a
     // fourth producer needed no lifecycle change at all: the rule is BUCKET-WIDE,
     // so `website-bucket/` — and `raw-data-bucket/`, `s3-import-bucket/`,
-    // `cloudfront-frontend/` — inherit the 90-day expiry without a rule of their
+    // `cloudfront-frontend/` — inherit the 30-day expiry without a rule of their
     // own. The absence of `Prefix` is the load-bearing half. Add a prefix-scoped
-    // rule (the plausible next step: "keep CloudFront logs 30 days, S3 logs 90")
+    // rule (the plausible next step: "keep CloudFront logs 7 days, S3 logs 30")
     // and every unlisted prefix accumulates forever, which is invisible in a diff
     // and would silently falsify both the comment above and this PR's claim that
     // the destination needed no changes.
@@ -514,7 +515,7 @@ describe('VocCoreStack S3 server access logging', () => {
     const rules = LifecycleSchema.parse(accessLogs.Properties?.LifecycleConfiguration).Rules;
     expect(rules, 'expected exactly one lifecycle rule on the access-logs bucket').toHaveLength(1);
     expect(itemAt(rules, 0)).toStrictEqual({
-      ExpirationInDays: 90,
+      ExpirationInDays: ACCESS_LOGS_EXPIRATION_DAYS,
       Status: 'Enabled',
       NoncurrentVersionExpiration: { NoncurrentDays: ACCESS_LOGS_NONCURRENT_VERSION_DAYS },
       AbortIncompleteMultipartUpload: { DaysAfterInitiation: ABORT_MULTIPART_DAYS },

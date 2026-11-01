@@ -305,7 +305,7 @@ tagStack(apiStack, 'Api');
 
 // Every Lambda (CDK's own provider functions included) logs to a group with a retention period.
 applyLambdaLogRetention(app);
-// Production (-c protectData=true): every log group is kept 365 days and retained on teardown.
+// Protected deployments (-c protectData, on by default): every log group is retained on teardown (30 days, like every log).
 applyProtectedLogRetention(app, shouldProtectData(app.node.tryGetContext('protectData')));
 
 // Apply cdk-nag checks

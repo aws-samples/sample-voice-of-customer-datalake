@@ -18,11 +18,15 @@
  * OPT_IN_FIXED_COSTS (test-support/fixed-cost-rules.ts) names the opt-in flags that legitimately add a fixed cost when turned on, and
  * exactly what they add. Each is synthesized with its flag and must produce those findings and no
  * others, which also proves the gate fires on a real template.
+ *
+ * COUNTED_FIXED_COSTS (same file) holds the default synth to its per-resource monthly costs: exactly one
+ * customer-managed KMS key (the accepted baseline) and the known Secrets Manager baseline, which may only shrink.
  */
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
-import { FIXED_COST_REMEDY, fixedCostFindings, OPT_IN_FIXED_COSTS, type FixedCostFinding } from './test-support/fixed-cost-rules';
+import { countedFixedCostFindings, FIXED_COST_REMEDY, fixedCostFindings, OPT_IN_FIXED_COSTS, type FixedCostFinding } from './test-support/fixed-cost-rules';
+import { itemAt } from './test-support/guards';
 import { cleanupAssemblyDirs, synthApp, type SynthResult } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
 
@@ -45,6 +49,16 @@ describe.each(SHAPES)('the %s synth', (_shape, result) => {
     expect(findingsOf(result).map((finding) => finding.message)).toStrictEqual([]);
   });
 });
+
+describe('the default synth\'s per-resource monthly costs (COUNTED_FIXED_COSTS)', () => {
+  const [, defaultSynth] = itemAt(SHAPES, 0);
+  const templates = defaultSynth.stackNames.map((stack) => ({ stack, template: defaultSynth.template(stack) }));
+
+  it('holds exactly one KMS key and no more secrets than the baseline: reuse the Core key, lower a baseline that shrank', () => {
+    expect(countedFixedCostFindings(templates)).toStrictEqual([]);
+  });
+});
+
 
 describe.each(OPT_IN_SHAPES)('opt-in -c %s=true', (_flag, result, expected) => {
   it('adds exactly the fixed costs it is allowed to, and the gate names each one', () => {

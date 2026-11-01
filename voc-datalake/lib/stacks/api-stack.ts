@@ -6,6 +6,7 @@ import * as lambdaDestinations from 'aws-cdk-lib/aws-lambda-destinations';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
@@ -429,7 +430,7 @@ export class VocApiStack extends VocStack {
   private createLogGroup(id: string, name: string): logs.LogGroup {
     return new logs.LogGroup(this, id, {
       logGroupName: `/aws/lambda/${name}`,
-      retention: logs.RetentionDays.TWO_WEEKS,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
   }

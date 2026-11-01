@@ -82,7 +82,7 @@ export function functionArnByName(ctx: ApiStackContext, functionName: string): s
  * what makes it a worker:
  * - its own MemorySize, pinned in lib/sizing/policy.ts (the API function's was
  *   raised on 2026-10-18 from REST-path evidence that does not cover the twin);
- * - its own name and log group (same two-week retention as every API Lambda);
+ * - its own name and log group (same 30-day retention as every API Lambda);
  * - a 15-minute timeout;
  * - `retryAttempts: 0` — one assist is one model call, neither cheap nor
  *   idempotent; a hidden re-drive would re-pay for it and overwrite the job row

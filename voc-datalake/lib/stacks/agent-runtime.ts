@@ -35,6 +35,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
@@ -266,7 +267,7 @@ export class AgentRuntime extends Construct {
       logs: {
         destination: new logs.LogGroup(this, 'AgentRunStateMachineLogs', {
           logGroupName: uniqueName('/aws/stepfunctions/voc-agent-run'),
-          retention: logs.RetentionDays.TWO_WEEKS,
+          retention: LOG_RETENTION,
           removalPolicy: cdk.RemovalPolicy.DESTROY,
         }),
         level: sfn.LogLevel.ALL,

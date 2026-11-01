@@ -11,6 +11,7 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -43,10 +44,10 @@ export const USER_POOL_STANDARD_ATTRIBUTES: cognito.StandardAttributes = {
   fullname: { required: false, mutable: true },
 };
 
-/** A trigger's or handler's own log group: two weeks, deleted with the stack. */
-export function twoWeekLogGroup(stack: cdk.Stack, id: string): logs.LogGroup {
+/** A trigger's or handler's own log group: `LOG_RETENTION` (30 days), deleted with the stack. */
+export function lambdaLogGroup(stack: cdk.Stack, id: string): logs.LogGroup {
   return new logs.LogGroup(stack, id, {
-    retention: logs.RetentionDays.TWO_WEEKS,
+    retention: LOG_RETENTION,
     removalPolicy: cdk.RemovalPolicy.DESTROY,
   });
 }
@@ -73,7 +74,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     code: lambda.Code.fromInline(customMessageLambdaCode(signInUrl)),
     timeout: cdk.Duration.seconds(10),
     description: 'Customizes Cognito email messages for different scenarios',
-    logGroup: twoWeekLogGroup(stack, 'CustomMessageLambdaLogs'),
+    logGroup: lambdaLogGroup(stack, 'CustomMessageLambdaLogs'),
   });
 
   // Cognito User Pool
@@ -239,7 +240,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     // default change and against anyone raising it while debugging.
     frameworkLambdaLoggingLevel: lambda.ApplicationLogLevel.FATAL,
     logGroup: new logs.LogGroup(stack, 'AdminBootstrapProviderLogs', {
-      retention: logs.RetentionDays.ONE_WEEK,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });
@@ -309,7 +310,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     const modelPinProvider = new cr.Provider(stack, 'ModelPinProvider', {
       onEventHandler: modelPinLambda,
       logGroup: new logs.LogGroup(stack, 'ModelPinProviderLogs', {
-        retention: logs.RetentionDays.ONE_WEEK,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
@@ -420,7 +421,7 @@ function createInlineCustomResourceHandler(
     ),
     timeout: cdk.Duration.minutes(1),
     description: handler.description,
-    logGroup: twoWeekLogGroup(ctx.stack, `${id}Logs`),
+    logGroup: lambdaLogGroup(ctx.stack, `${id}Logs`),
   });
 }
 

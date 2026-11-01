@@ -48,7 +48,7 @@ describe('VocCoreStack bucket versioning', () => {
       website: WEBSITE_NONCURRENT_VERSION_DAYS,
       accessLogs: ACCESS_LOGS_NONCURRENT_VERSION_DAYS,
       abortMultipart: ABORT_MULTIPART_DAYS,
-    }).toStrictEqual({ raw: 90, website: 30, accessLogs: 7, abortMultipart: 7 });
+    }).toStrictEqual({ raw: 90, website: 30, accessLogs: 30, abortMultipart: 7 });
   });
 
   it.each([

@@ -98,13 +98,13 @@ describe.each(TWINS)('the $twin twin of $api', ({ api, twin, name }) => {
     expect(JSON.stringify(t.FunctionName)).toContain(`"${name}-"`);
   });
 
-  it('logs to its own two-week log group', () => {
+  it('logs to its own 30-day log group', () => {
     const a = fn(api).props;
     const t = fn(twin).props;
     expect(t.LoggingConfig.LogGroup.Ref).not.toBe(a.LoggingConfig.LogGroup.Ref);
     const group = LogGroupSchema.parse(apiTemplate().toJSON().Resources[t.LoggingConfig.LogGroup.Ref]).Properties;
     expect(JSON.stringify(group.LogGroupName)).toContain(`/aws/lambda/${name}-`);
-    expect(group.RetentionInDays).toBe(14);
+    expect(group.RetentionInDays).toBe(30);
   });
 
   it('is never retried by Lambda and drops a start older than an hour', () => {

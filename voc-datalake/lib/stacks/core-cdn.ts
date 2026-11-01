@@ -11,6 +11,7 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as cr from 'aws-cdk-lib/custom-resources';
@@ -220,7 +221,7 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
     memorySize: 256,
     description: 'Generates the CloudFront URL-signing keypair once, then reuses it',
     logGroup: new logs.LogGroup(stack, 'CdnSigningKeysLambdaLogs', {
-      retention: logs.RetentionDays.TWO_WEEKS,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });
@@ -256,7 +257,7 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
     // future field added to Data cannot leak by default.
     frameworkLambdaLoggingLevel: lambda.ApplicationLogLevel.FATAL,
     logGroup: new logs.LogGroup(stack, 'CdnSigningKeysProviderLogs', {
-      retention: logs.RetentionDays.ONE_WEEK,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });

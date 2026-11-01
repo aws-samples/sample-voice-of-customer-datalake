@@ -6,6 +6,7 @@
 import * as cdk from 'aws-cdk-lib';
 import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import type { Construct } from 'constructs';
@@ -171,7 +172,7 @@ export function createResearchStateMachine(
     logs: {
       destination: new logs.LogGroup(scope, 'ResearchStateMachineLogs', {
         logGroupName: uniqueName('/aws/stepfunctions/voc-research-workflow'),
-        retention: logs.RetentionDays.TWO_WEEKS,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
       level: sfn.LogLevel.ALL,

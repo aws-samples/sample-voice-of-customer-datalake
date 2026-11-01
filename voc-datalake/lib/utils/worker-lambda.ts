@@ -1,7 +1,7 @@
 /**
  * Shared shape of the memory and autonomous-agent worker Lambdas
  * (VocProcessingStack): Python 3.14 on Graviton, the processing layer, a
- * two-week log group, its own least-privilege role.
+ * 30-day log group, its own least-privilege role.
  *
  * The bundle keeps the worker tree's directory structure and puts `shared/`
  * beside it, so the handler string is path-style (`memory/extractor/handler.lambda_handler`
@@ -16,6 +16,7 @@ import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from './log-retention';
 import { Construct } from 'constructs';
 
 import { PY_LAMBDA_ASSET_EXCLUDES } from './lambda-asset-excludes';
@@ -123,7 +124,7 @@ export function createWorkerFunction(scope: Construct, id: string, spec: WorkerF
     layers: [spec.layer],
     logGroup: new logs.LogGroup(scope, `${id}Logs`, {
       logGroupName: `/aws/lambda/${spec.functionName}`,
-      retention: logs.RetentionDays.TWO_WEEKS,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });
