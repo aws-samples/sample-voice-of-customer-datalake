@@ -1,11 +1,13 @@
 """Requests and +1s on feedback boards: fields per template, statuses, totals, rate limits, promote."""
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from engagement_fixtures import ADMIN, BOARD, BOARD_POOL, ISSUER, PUBLIC_PROJECT, USER, call, engagement_world, ok
 
 from shared import feature_boards_limits
-from shared.exceptions import NotFoundError
+from shared.exceptions import ConflictError, NotFoundError
 from shared.feature_boards_store import SEEDED_BOARD_ID
 from shared.feature_requests_store import create_request
 from shared.participants_settings import SETTINGS_KEY
@@ -207,6 +209,25 @@ def test_anyone_boards_cap_supports_per_poster(world, lambda_context):
     assert rows
     assert all(int(row['ttl']) > 0 for row in rows)
     assert not any('two@anywhere.example' in row['pk'] for row in rows)
+
+
+@pytest.mark.usefixtures('small_limits')
+def test_a_plus_one_that_loses_the_race_gives_its_charge_back(world, lambda_context):
+    """Two +1s of one person at once both pass the read check; the conditional put refuses the
+    second (409). Its rate charge is refunded, so the person's one +1 for the day stays usable."""
+    board = _board(lambda_context, 'blank', audience={'mode': 'anyone'})
+    request_id = _post(lambda_context, board, {}, claims=STRANGER_1)['request']['request_id']
+    path = f'/feature-requests/{request_id}/supports'
+    # The lost race: the read check passed, then the person's other +1 landed first.
+    with patch('shared.feature_requests_routes.put_support', side_effect=ConflictError('already_supported')):
+        status, body = call(lambda_context, 'POST', path, claims=STRANGER_2, body={'fields': {}})
+
+    assert (status, body['error']) == (409, 'already_supported')
+    charges = [int(row['supports']) for row in world.requests.scan()['Items']
+               if row['pk'].startswith('RATE#') and 'supports' in row]
+    assert charges == [0]
+    # The day's only +1 (the limit is 1 here) is still available.
+    ok(lambda_context, 'POST', path, 201, claims=STRANGER_2, body={'fields': {}})
 
 
 def test_a_request_on_a_board_deleted_meanwhile_is_404(world):

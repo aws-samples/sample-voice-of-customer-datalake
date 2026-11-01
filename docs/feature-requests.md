@@ -119,7 +119,9 @@ A board open to any email has no moderation, so it is capped instead (`lambda/sh
 per poster per board per UTC day at most **20 new requests** and **100 +1s**; per board at most **500 new requests**
 a day. Over a limit the route answers **429 `rate_limited`**. Admins are not limited, nor are boards of the other
 audiences. The counters are rows `RATE#{board_id}#{sha256(email)}#{day}` / `COUNT` (the board-wide one uses `*`)
-with a `ttl` two days out; a new request charges the poster and the board in one transaction.
+with a `ttl` two days out; a new request charges the poster and the board in one transaction. A +1 that is not
+stored (the person's other +1 landed first, `409 already_supported`, or the write failed) gives its charge back, so
+it does not use up the day's limit.
 
 ## Sign-in: a separate user pool
 
