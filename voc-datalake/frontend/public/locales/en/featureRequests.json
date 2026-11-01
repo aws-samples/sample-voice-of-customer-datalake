@@ -245,7 +245,11 @@
     "audience": {
       "company": "People at your company",
       "list": "Invited domains and people",
-      "listCounts": "{{domains}} domains, {{people}} people",
+      "listCounts": "{{domains}}, {{people}}",
+      "listDomains_one": "{{count, number}} domain",
+      "listDomains_other": "{{count, number}} domains",
+      "listPeople_one": "{{count, number}} person",
+      "listPeople_other": "{{count, number}} people",
       "anyone": "Anyone with a verified email"
     },
     "open": "Open",

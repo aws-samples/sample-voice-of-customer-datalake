@@ -245,7 +245,11 @@
     "audience": {
       "company": "Personen in Ihrem Unternehmen",
       "list": "Eingeladene Domains und Personen",
-      "listCounts": "{{domains}} Domains, {{people}} Personen",
+      "listCounts": "{{domains}}, {{people}}",
+      "listDomains_one": "{{count, number}} Domain",
+      "listDomains_other": "{{count, number}} Domains",
+      "listPeople_one": "{{count, number}} Person",
+      "listPeople_other": "{{count, number}} Personen",
       "anyone": "Alle mit bestätigter E-Mail"
     },
     "open": "Öffnen",

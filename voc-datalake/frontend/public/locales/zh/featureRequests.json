@@ -245,7 +245,11 @@
     "audience": {
       "company": "公司内部人员",
       "list": "受邀的域名和人员",
-      "listCounts": "{{domains}} 个域名，{{people}} 人",
+      "listCounts": "{{domains}}，{{people}}",
+      "listDomains_one": "{{count, number}} 个域名",
+      "listDomains_other": "{{count, number}} 个域名",
+      "listPeople_one": "{{count, number}} 人",
+      "listPeople_other": "{{count, number}} 人",
       "anyone": "任何拥有已验证邮箱的人"
     },
     "open": "打开",

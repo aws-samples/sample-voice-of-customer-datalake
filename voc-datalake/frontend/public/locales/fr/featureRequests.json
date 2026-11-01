@@ -248,7 +248,13 @@
     "audience": {
       "company": "Les personnes de votre entreprise",
       "list": "Domaines et personnes invités",
-      "listCounts": "{{domains}} domaines, {{people}} personnes",
+      "listCounts": "{{domains}}, {{people}}",
+      "listDomains_one": "{{count, number}} domaine",
+      "listDomains_other": "{{count, number}} domaines",
+      "listDomains_many": "{{count, number}} domaines",
+      "listPeople_one": "{{count, number}} personne",
+      "listPeople_other": "{{count, number}} personnes",
+      "listPeople_many": "{{count, number}} personnes",
       "anyone": "Toute personne avec un e-mail vérifié"
     },
     "open": "Ouvrir",
