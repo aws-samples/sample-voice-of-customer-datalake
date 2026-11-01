@@ -11,7 +11,7 @@
     "title": "Aucune marque sur le Radar pour le moment",
     "body": "Une source Radar collecte les avis d'une autre marque sans les mélanger à vos propres chiffres.",
     "step1": "Ouvrez Administration → Sources → Radar et ajoutez la marque avec les domaines de son propre site.",
-    "step2": "Sur la page Scrapers, cochez « Source Radar » sur le scraper ou le connecteur d'avis qui collecte ses avis, puis choisissez la marque.",
+    "step2": "Sur la page Sources de données, cochez « Source Radar » sur le scraper ou le connecteur d'avis qui collecte ses avis, puis choisissez la marque.",
     "step3": "Les nouveaux avis de cette source apparaissent ici. Les lancements apparaissent après la prochaine analyse, ou cliquez sur Analyser maintenant dans Administration → Sources → Radar.",
     "openSetup": "Configurer Radar"
   },

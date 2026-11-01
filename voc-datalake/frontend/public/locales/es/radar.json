@@ -11,7 +11,7 @@
     "title": "Todavía no hay ninguna marca en el Radar",
     "body": "Una fuente de Radar recopila reseñas de otra marca sin mezclarlas con sus propias cifras.",
     "step1": "Abra Administración → Fuentes → Radar y añada la marca con los dominios de su propio sitio web.",
-    "step2": "En la página Scrapers, marque \"Fuente de Radar\" en el scraper o el conector de reseñas que recoge sus reseñas y elija la marca.",
+    "step2": "En la página Fuentes de datos, marque \"Fuente de Radar\" en el scraper o el conector de reseñas que recoge sus reseñas y elija la marca.",
     "step3": "Las nuevas reseñas de esa fuente aparecen aquí. Los lanzamientos aparecen tras el próximo análisis, o pulse Analizar ahora en Administración → Fuentes → Radar.",
     "openSetup": "Configurar Radar"
   },

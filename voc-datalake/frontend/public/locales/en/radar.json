@@ -11,7 +11,7 @@
     "title": "No brand on the Radar yet",
     "body": "A Radar source collects reviews of another brand without mixing them into your own numbers.",
     "step1": "Open Administration → Sources → Radar and add the brand with its own website domains.",
-    "step2": "On the Scrapers page, tick \"Radar source\" on the scraper or review connector that collects its reviews, and choose the brand.",
+    "step2": "On the Data sources page, tick \"Radar source\" on the scraper or review connector that collects its reviews, and choose the brand.",
     "step3": "New reviews from that source appear here. Releases appear after the next scan, or press Scan now in Administration → Sources → Radar.",
     "openSetup": "Set up Radar"
   },
