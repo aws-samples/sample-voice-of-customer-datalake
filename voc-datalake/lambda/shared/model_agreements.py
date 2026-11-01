@@ -21,6 +21,7 @@ from typing import Final
 import boto3
 
 from shared.image_model_status import ImageAccess, image_access, prime_control_client
+from shared.logging import logger
 from shared.model_capacity import ModelCapacity
 from shared.model_config import GLOBAL_PROFILE_PREFIX
 
@@ -61,7 +62,11 @@ def with_access(rows: list[ModelCapacity]) -> list[ModelCapacityWithAccess]:
     if not rows:
         return []
     region = app_region()
-    prime_control_client(region)
+    try:
+        prime_control_client(region)
+    except Exception:  # never raises: a client that cannot be built reads every row as unknown
+        logger.warning('Bedrock control-plane client unavailable; model access reads unknown', exc_info=True)
+        return [{**row, 'access': _unread()} for row in rows]
     pool = ThreadPoolExecutor(max_workers=min(len(rows), MAX_PARALLEL_READS))
     futures = [pool.submit(image_access, foundation_model_id(row['model_id']), region) for row in rows]
     wait(futures, timeout=ACCESS_BUDGET_SECONDS)

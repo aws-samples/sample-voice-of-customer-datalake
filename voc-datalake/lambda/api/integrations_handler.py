@@ -27,7 +27,7 @@ from shared.plugin_circuit import clear_circuit, closed_circuit, read_circuits
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_body_value, json_object_body
-from shared.scraper_limits import scraper_list_error
+from shared.scraper_limits import INVALID_CONFIGS, scraper_list_error
 from shared.snapstart import api_route_warmer, botocore_model_warmer, register_snapshot_hooks
 from shared.timestamps import now_iso
 from shared.url_policy import scraper_url_error, validate_url
@@ -162,7 +162,7 @@ def _validate_webscraper_configs(source: str, body: dict) -> None:
     try:
         configs = json.loads(raw)
     except ValueError as exc:
-        raise ValidationError('configs must be a JSON array of scraper configurations') from exc
+        raise ValidationError(INVALID_CONFIGS) from exc
     error = scraper_list_error(raw, configs)
     if error:
         raise ValidationError(error)

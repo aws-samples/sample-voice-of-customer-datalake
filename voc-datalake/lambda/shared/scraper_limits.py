@@ -13,6 +13,7 @@ MAX_SCRAPERS: Final = 50
 # it: otherwise scraper configs could lock integration credentials out of the secret.
 MAX_WEBSCRAPER_CONFIGS_BYTES: Final = 48 * 1024
 MAX_URLS_PER_SCRAPER: Final = 25
+INVALID_CONFIGS: Final = 'configs must be a JSON array of scraper configurations'
 
 
 def scraper_list_error(raw: str, configs: object) -> str | None:
@@ -25,7 +26,7 @@ def scraper_list_error(raw: str, configs: object) -> str | None:
     if len(raw.encode()) > MAX_WEBSCRAPER_CONFIGS_BYTES:
         return f'configs may be at most {MAX_WEBSCRAPER_CONFIGS_BYTES} bytes'
     if not isinstance(configs, list) or not all(isinstance(config, dict) for config in configs):
-        return 'configs must be a JSON array of scraper configurations'
+        return INVALID_CONFIGS
     if len(configs) > MAX_SCRAPERS:
         return f'At most {MAX_SCRAPERS} scrapers are allowed'
     for config in configs:
