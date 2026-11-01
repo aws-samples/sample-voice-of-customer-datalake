@@ -17,6 +17,39 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.68.00] - 2026-11-01
+
+The Radar page leads with the answer, and its releases and comparisons say only what the data supports.
+
+### Changed
+- **Radar page layout** (`/radar`): a summary strip comes first (their sentiment against yours, new releases in the
+  window, the biggest gap), then **Compared with us**, love / hate, the releases and the sentiment trend last. Love /
+  hate is grouped by top-level category with counts and up to 2 quotes per theme, each quote shown once per column.
+  Releases are compact rows (title, date, site, Official): the newest 5, then **Show all N** by month, details on
+  click. The trend has labelled axes, a legend, straight lines and the whole window, and below 10 reviews a sentence
+  replaces it. The admin scan block is one status line (last scan, **Scan now**) beside **Configure**; every window
+  reads "Last N days"; content text is 14 px. See [Radar](docs/radar.md#the-radar-page).
+- **Compared with us needs 10 of their reviews** (`GET /radar/brands/{brand}/compare` and `/page`): a category with
+  fewer reads "Not enough reviews to compare" (`too_few: true`, `verdict: null`) with one footnote, instead of a
+  verdict from 1 or 2 reviews; the morning brief's "where they beat us" card follows the same rule. The response gains
+  `overall: {theirs, ours}`, the whole window per side (the summary strip's tile).
+- **One release per name**: a news item with the same headline as a stored release of the brand merges into it at any
+  date, and the releases route folds older same-name records into one (citations unioned, mentions summed). The All
+  brands release counts count distinct names.
+
+### Fixed
+- **Radar release links named another story**: an index page (a changelog or news list, or a page several releases
+  cite) no longer shows the title of whichever story headed it when searched; it shows its site and path.
+- **Radar releases cited unrelated pages**: a link is kept only when it is on the brand's own domains or its title or
+  address names the brand (or one of its search terms). The scan drops the others before filing, and stored releases
+  show only the links that pass. See [Radar → News](docs/radar.md#news-web-search-exa-and-the-brands-feeds).
+
+### Upgrade notes
+- No migration: older release records read merged and filtered on the way out; nothing stored is rewritten or deleted.
+  Deploy as usual (`npm run deploy:infra`): the API and SPA (`VocApiStack`) and the scan and morning brief workers
+  (`VocProcessingStack`) change; the scan applies the new rules from its next run. No new permission: the Radar API
+  already reads the aggregates table.
+
 ## [5.67.01] - 2026-11-01
 
 The quality-gate CI run takes as long as its slowest lane instead of all of them in a row.
