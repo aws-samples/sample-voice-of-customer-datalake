@@ -1,9 +1,28 @@
-# Prioritization scoring setup
+# Prioritization
 
-The Prioritization page ranks rows (a project's set of documents) of every project against each
-other. How a row is scored is **one setup for the whole workspace**: administrators choose the
-metrics, everyone scores with them. Per-person metrics could not add up to a team score, so there
-are none (the model most product-discovery tools use).
+The Prioritization page (`/prioritization`) ranks proposals from every project against each other. A **row** is
+one project's concrete set of scorable documents (for example a PR/FAQ, a PRD and a prototype). Everyone on the team
+scores rows on the same metrics, and the page shows each row's team score. Administrators choose the metrics, once
+for the whole workspace: per-person metrics could not add up to a team score, so there are none (the model most
+product-discovery tools use).
+
+## Using the page
+
+- **Score a row.** Open a row, preview its documents and the collected feedback, set each metric from 1 to 5, add
+  notes, and press **Save Scores**. Scoring needs view access to the row's project. The board hides rows whose
+  project you cannot view (admins see every row).
+- **Compose rows.** **Add row** picks the documents a new row holds; **Edit documents** changes a row. Both need edit
+  access to the project. A row is locked once its first score lands, so later regeneration cannot change what
+  reviewers scored: add another row to score a different combination. A project's only default row cannot be deleted.
+  An admin can delete a row with at most 98 ballots; the row and its ballots go together.
+- **Run a room vote.** **Open a room vote** (edit access) puts a public link and QR code on screen. Everyone in the
+  room submits one anonymous ballot from their phone, with an optional name, at `/vote/{session_id}`; the ballots count
+  toward the team score. A vote accepts up to 200 ballots, expires on its own, and ends with **Close the vote**. While
+  a vote is open, opening another for the same row returns the open one.
+- **Lineage labels.** A row shows whether its documents form one coherent chain, have missing lineage, or cross
+  generations ([Keep both versions](#keep-both-versions-lineage-acknowledgement)). A locked row may be marked stale
+  when a newer combination of the same document types exists; it stays scorable.
+- **Scoring setup.** **Scoring setup** (admins) edits the metrics; everyone else sees **How scoring works**.
 
 ## The model
 
@@ -79,7 +98,7 @@ voc-aggregates, partition `PRIORITIZATION`:
 
 - `sk=CONFIG`: `{axes: [Axis], config_version, updated_at, updated_by}` (`updated_by` = the
   admin's name or username, never the email).
-- Ballots unchanged: `sk=BALLOT#{row}#user:{sub}` or `BALLOT#{row}#anon:{id}`, each metric a
+- Ballots: `sk=BALLOT#{row}#user:{sub}` or `BALLOT#{row}#anon:{id}`, each metric a
   top-level number named by its id. An archived metric's values stay on the ballot.
 - A row (`sk=ROW#{row}`) may carry `lineage_ack = {document_ids (sorted), acknowledged_at,
   acknowledged_by}`: "Keep both versions", below. `acknowledged_by` is never published.
@@ -91,7 +110,7 @@ voc-aggregates, partition `PRIORITIZATION`:
 | GET | `/projects/prioritization` | signed-in | adds `axes` (as configured, archived ones included with `archived: true`) and `config_version`; `scores` and `aggregates` carry active metrics only; each aggregate has the per-metric means (top-level, keyed by id), `axis_counts`, `reviewer_count`, `score_spread`, `composite` (`null` when nothing weighted was scored) |
 | GET | `/projects/prioritization/config` | signed-in | `{axes, config_version, updated_at, updated_by}` |
 | PUT | `/projects/prioritization/config` | **admins** | body `{axes: AxisInput[], base_version}` (an axis without `builtin`; a new one without `id`) → 200 `{success, axes, config_version, updated_at, updated_by}`; 400 with a plain message (1–8 metrics in use, at least one with a weight above 0, at most 20 including archived, unknown id, a metric left out — "archive it instead", a name missing or too long, a bad weight or direction); 403 for a non-admin; 409 when `base_version` is not the stored version (someone else saved: reload) |
-| PATCH | `/projects/prioritization` | signed-in | scores active metric ids only (1–5, clamped as before; 0/null = leave unchanged); an archived or unknown metric id → 400 |
+| PATCH | `/projects/prioritization` | signed-in | scores active metric ids only (1–5, clamped; 0/null = leave unchanged); an archived or unknown metric id → 400 |
 | GET | `/voting-sessions/{id}/config` | public | adds `axes: [{id, label, description, low_label, high_label, direction, builtin}]` — active metrics, no weights (`[]` for a closed or unknown room) |
 | POST | `/voting-sessions/{id}/submit` | public | scores active metric ids only; an archived or unknown id → 400 `reason: invalid` |
 

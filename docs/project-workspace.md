@@ -1,6 +1,15 @@
-# Project Workspace
+# Project workspace
 
-The Projects workspace turns customer feedback into research artifacts, lets teams compare concrete artifact combinations, and is reachable by external agents through the app-wide MCP server on **Connect** ([mcp.md](mcp.md)). Projects are private to their owner and invited members by default; see [Sharing and permissions](#sharing-and-permissions).
+A project turns customer feedback into research artifacts: personas, research reports, PRDs, PR/FAQs, product
+reports and prototypes. Product teams use it to work from evidence, compare concrete combinations of artifacts on
+the Prioritization board, and hand the result to an external agent through the app-wide MCP server on **Connect**
+([mcp.md](mcp.md)). Projects are private to their owner and invited members by default; see
+[Sharing and permissions](#sharing-and-permissions).
+
+Open **Projects** in the sidebar (`/projects`). A project page (`/projects/{id}`) has these tabs (`?tab=`):
+**Overview**, **Personas**, **Product**, **Documents**, **Decisions** ([decision records](decisions-and-release-watch.md))
+and **Participants** ([participants](participants.md)). The AI assistant knows which project you are on and can use
+its personas and documents ([mentions](assistant-mentions.md)).
 
 ## Workflow
 
@@ -11,7 +20,7 @@ The Projects workspace turns customer feedback into research artifacts, lets tea
 5. Compose project artifacts into Prioritization rows and collect ballots.
 6. Hand the project to an external agent: **Connect via MCP** in the project header opens Connect with a token pinned to the project, and a PRD or PR/FAQ's export menu still offers **Copy to Kiro**.
 
-Long-running research, persona, document, merge, and prototype operations run as background jobs. Their status appears in the project. The `list_jobs` MCP tool returns only the newest 50 jobs and has no continuation token or partial-result flag.
+Long-running research, persona, document, merge, and prototype operations run as background jobs. Their status appears in the project.
 
 ## Product tab
 
@@ -33,16 +42,13 @@ metrics, constraints and known limitations, non-goals, anything else. After the 
 the approved values at once. The questions live in one place, the assistant's guidance
 (`lambda/stream/src/assistant/tools/product-interview.ts`), offered only when the caller may edit the project.
 
-The embedded interview chat this tab had before (and its route `POST /projects/{id}/product-context/interview`)
-was removed: the assistant bubble does the same job, with its approval cards.
-
 ## Which feedback a generation reads
 
-A persona, research or document job can put only a few hundred reviews in front of the model (the limit follows the model's context window), while the chosen window often matches tens of thousands. The job therefore reads EVERY review the window and filters match — sources, categories, sentiments, channel, dimensions, tag, the date basis and your category/source access — and takes an **even sample** across them, so each day (and source, category, …) is represented in proportion to how much of the match it holds. The sample is deterministic: the same filters over the same data pick the same reviews. Previously the read took the newest reviews only, so one big import day could become the whole corpus.
+A persona, research or document job can put only a few hundred reviews in front of the model (the limit follows the model's context window), while the chosen window often matches tens of thousands. The job therefore reads EVERY review the window and filters match — sources, categories, sentiments, channel, dimensions, tag, the date basis and your category/source access — and takes an **even sample** across them, so each day (and source, category, …) is represented in proportion to how much of the match it holds. The sample is deterministic: the same filters over the same data pick the same reviews, and one big import day cannot become the whole corpus.
 
 Limits: the window read covers at most 90 days that hold feedback (within 400 calendar days for "All time"), at most 50,000 matching reviews and about 20 seconds of reading. Past either of the last two the sample covers the newest part of the window only, and the job's log line `[FEEDBACK] Sampled N of M matching reviews (at least; the read was capped)` says so. A channel filter reads the channel index (`gsi5-by-channel`), so a small channel inside a big import is found in full.
 
-**The corpus is stored with the result** (issue #236). Every artefact generated from feedback carries `input_feedback_ids`: the ids of the reviews its prompts held, in prompt order, at most 500 (`MAX_INPUT_FEEDBACK_IDS`, `lambda/shared/feedback_sampling.py`). That covers:
+**The corpus is stored with the result.** Every artefact generated from feedback carries `input_feedback_ids`: the ids of the reviews its prompts held, in prompt order, at most 500 (`MAX_INPUT_FEEDBACK_IDS`, `lambda/shared/feedback_sampling.py`). That covers:
 
 | Artefact | Written by | Ids stored |
 |---|---|---|
@@ -53,16 +59,18 @@ Limits: the window read covers at most 90 days that hold feedback (within 400 ca
 
 Not covered, because no review reaches their prompt: prototypes (built from a PRD / PR/FAQ and tester pins), avatar regeneration, persona import, the product report. The suggestion routes (PR/FAQ autofill, suggest-brief, suggest-questions) read feedback but store no artefact. The job result keeps only the counts (`feedback_items_used`, `context_truncated`); the id list lives on the artefact. An edit of a PRD / PR/FAQ is a new version that keeps its predecessor's ids.
 
-**Ids only, never review text** (a design decision): copying customer text into project rows would put it out of reach of source retention and erasure ([source policies](source-policies.md#what-erasure-does-not-reach)). A review erased or deleted since simply shows as unavailable.
+**Ids only, never review text**: copying customer text into project rows would put it out of reach of source retention and erasure ([source policies](source-policies.md#what-erasure-does-not-reach)). A review erased or deleted since simply shows as unavailable.
 
 **In the UI**, a persona's header and a document's provenance footer show "Written from N reviews" with **Show reviews**, which opens the list ten at a time. Each review is read by id (`GET /feedback/{id}`, so the caller's category and source access applies) and opens in the review modal; one that is gone or outside the caller's access shows as unavailable.
 
-`source_feedback_ids` on a persona (the first 20 reviews fetched) is **display-only** and kept for older readers: it is not the corpus, and nothing in the app reads it. Artefacts generated before the field reached their path have no `input_feedback_ids` and show no corpus line: personas before 5.25.00; PRDs, PR/FAQs, merged documents and fallback research reports before 5.49.00. Imported and hand-made ones never have it.
+`source_feedback_ids` on a persona (the first 20 reviews fetched) is **display-only** and kept for older readers: it is not the corpus, and nothing in the app reads it. Artefacts generated by older releases have no `input_feedback_ids` and show no corpus line: personas before 5.25.00; PRDs, PR/FAQs, merged documents and fallback research reports before 5.49.00. Imported and hand-made ones never have it.
 
 ### How many reviews match: the wizards' live count
 
+The live count, cited evidence and protected personas below were contributed by @aws-bryan.
+
 The persona and research wizards show a line at the foot of their feedback-filters step: **"About N reviews match"**
-within a second, then **"N reviews match"** once the exact count arrives (ported from #429 by @aws-bryan). The persona
+within a second, then **"N reviews match"** once the exact count arrives. The persona
 wizard adds whether the personas read all of them or an even sample of its item limit. A zero says so before a model
 run is spent on nothing.
 
@@ -87,22 +95,22 @@ a different read.
 
 The persona prompt numbers its reviews (`### Review 1`, …) and asks the model to cite its evidence as `Review #N` in
 `supporting_evidence`. At generation those numbers are resolved to the ids of that prompt's order and stored as
-`evidence_feedback_ids` on the persona (`lambda/shared/persona_evidence.py`, ported from #429 by @aws-bryan): distinct,
+`evidence_feedback_ids` on the persona (`lambda/shared/persona_evidence.py`): distinct,
 in first-cited order, never past the reviews the model read, at most 500. `supporting_evidence` stays as the model
 wrote it, so a reference that names no review it read (prose, a number past the truncated prompt) is kept as text.
 
 In the persona header the corpus line adds "cites N of them", and **Show reviews** opens on a **Cited** view, with
-**All used** (`input_feedback_ids`) one click away. Personas generated before this have no Cited view. Research
+**All used** (`input_feedback_ids`) one click away. Personas generated by older releases have no Cited view. Research
 reports have no `supporting_evidence`, so they have none either.
 
 ### Protected personas
 
 A lock in the persona header (edit access) marks a persona **protected** (`PUT /projects/{id}/personas/{persona_id}/protection`
-`{protected: true|false}`, a real boolean or 400, 404 for an unknown persona; ported from #429 by @aws-bryan). The
+`{protected: true|false}`, a real boolean or 400, 404 for an unknown persona). The
 list shows a lock on it and its header a "Protected" badge. The ordinary persona edit cannot change the flag.
 
-The wizard's add-or-replace choice is unchanged. **Add** keeps every persona as before. **Replace** now deletes only
-the unprotected ones (`lambda/shared/persona_replace.py`):
+In the wizard's add-or-replace choice ([persona generation](persona-generation.md)), **Add** keeps every persona and
+**Replace** deletes only the unprotected ones (`lambda/shared/persona_replace.py`):
 
 - every page of the project's personas is read, and each unprotected one is deleted on its own, conditional on still
   being unprotected, so a persona protected while the run is going is kept;
@@ -133,25 +141,18 @@ PRDs, PR/FAQs, and prototypes are version-managed. Documents with the same type 
 
 Version counters and allocation-history records are platform-managed. Do not delete rows under the `DOCUMENT_VERSIONS#PROJECT#<id>` partition; see [Data Lake Structure](data-lake-structure.md#projects-table).
 
-## Prioritization Rows
+## Prioritization rows
 
-A Prioritization row is a concrete set of scorable documents from one project, not a moving pointer to “the latest” artifacts.
-
-- Any authenticated reviewer can compose another row from a project's scorable documents.
-- A row can be recomposed only before its first value-bearing ballot. A stamp-only/all-null save does not freeze it. Once a score lands, the selected document IDs stay fixed so later regeneration cannot change what reviewers scored.
-- Admin deletion is available only when the row is not the project's sole default row and has at most 98 ballots. The server deletes an eligible row and those ballots atomically. A room session can accept up to 200 ballots, so a larger row must be retained; the delete endpoint refuses it rather than partially cleaning it up.
-- Room voting creates a time-limited session and QR code so participants can score from their own devices.
-- Rows follow their project's permissions: creating or recomposing a row and opening a room session need edit access to the row's project, scoring needs view access, and the board hides rows whose project you cannot view (admins see every row).
-- Lineage indicators distinguish a coherent document chain, missing lineage, and cross-generation selections.
-- A frozen row may be marked stale when a strictly newer, non-contradictory combination of the same document types exists. This is advice, not a gate: the row remains visible and scorable.
-
-When a frozen row is stale, add a new row for the newer combination instead of mutating the row whose ballots describe the older artifacts.
+A Prioritization row is a concrete set of scorable documents from one project, not a moving pointer to "the latest"
+artifacts. Once a score lands, the row's document ids stay fixed; when a newer combination exists, add a new row
+instead of changing the one whose ballots describe the older artifacts. Composing, scoring, room votes and lineage
+labels are described in [prioritization.md](prioritization.md).
 
 ## Sharing and permissions
 
 Every project has a visibility, an owner, and an optional list of invited members. The policy lives in `lambda/shared/project_access.py` and is enforced centrally by the Projects API.
 
-- **Public** — every signed-in user can view and edit the project. This is the pre-permissions behaviour.
+- **Public** — every signed-in user can view and edit the project.
 - **Private** — only the owner, invited members, and workspace admins (the Cognito `admins` group) can see it. To anyone else the project does not exist: list results omit it and direct requests return `404 Project not found`.
 
 New projects are **private** by default and owned by their creator. Only callers with *manage* access can change a project's sharing.
@@ -165,7 +166,7 @@ New projects are **private** by default and owned by their creator. Only callers
 
 *Manage* covers changing visibility, inviting, re-roling and removing members, transferring ownership, and deleting the project. On a public project every signed-in user is effectively an editor; a viewer invitation does not lower that. A caller who can view but not act gets `403` (`You do not have permission to edit this project` / `... to manage this project`). Members may always remove themselves.
 
-**Legacy projects** created before this feature have no owner and no visibility. They read as public, so nobody loses access on upgrade, and only admins can manage them until an admin transfers ownership to a user.
+**Legacy projects** created by releases before project permissions have no owner and no visibility. They read as public, so nobody loses access on upgrade, and only admins can manage them until an admin transfers ownership to a user.
 
 **Editing from the list.** On `/projects`, each card the caller can *edit* has an **Edit** button. It is decided by the `access.can_edit` that `GET /projects` returns for every row, and a row without `access` gets no button. The dialog changes the name and description (`PUT /projects/{id}`, edit level; a blank name is a `400`). Callers who can *manage* the project also get the visibility choice (`PUT /projects/{id}/visibility`). Only the fields that changed are sent, so an editor's rename never makes the manage-level call. The card updates immediately and rolls back if the save fails.
 
@@ -234,10 +235,11 @@ External assistants reach projects through the **global MCP server** (`POST {api
 
 The project header's **Connect via MCP** link opens `/connect?project={id}`, which pre-selects that project as the token's pin. An old `?tab=mcp` link opens the Overview tab.
 
-### Removed: the per-project Export / MCP tab
+### Upgrading from a release before 3.00.00
 
-The project page no longer has an **Export / MCP** tab. It used to mint and revoke per-project tokens, show a per-project `mcp.json`, copy a Kiro "autoseed" context bundle, and edit the project's Kiro export prompt. Since 3.00.00 the backend behind it is retired too:
-
-- **Per-project MCP server — removed.** `POST {api}/mcp` and its token routes (`GET`/`POST /projects/{id}/api-tokens`, `DELETE /projects/{id}/api-tokens/{token_id}`) are gone; per-project tokens and the `mcp.json` files that carry them stop working (a per-project token is a 401 at `/mcp/global`). Mint a global token on Connect instead.
-- **`GET /projects/{id}/autoseed`** — removed (404).
-- **Kiro export prompt.** **Copy to Kiro** in a document's export menu always pastes the backend's instructions (`kiro_default_export_prompt` on `GET /projects/{id}`). A prompt saved on a project before 3.00.00 stays stored but is never read or returned, and `POST /projects` and `PUT /projects/{id}` ignore a `kiro_export_prompt` field.
+The project page no longer has an **Export / MCP** tab, and the per-project MCP server behind it is gone:
+`POST {api}/mcp`, the `/projects/{id}/api-tokens` routes and `GET /projects/{id}/autoseed` answer 404, and a
+per-project token is a 401 at `/mcp/global`. Mint a global token on Connect instead. **Copy to Kiro** in a document's
+export menu always pastes the backend's instructions (`kiro_default_export_prompt` on `GET /projects/{id}`); a Kiro
+export prompt saved on a project by an older release is never read, and `POST /projects` and `PUT /projects/{id}`
+ignore a `kiro_export_prompt` field.
