@@ -245,7 +245,11 @@
     "audience": {
       "company": "회사 내 사람",
       "list": "초대된 도메인과 사람",
-      "listCounts": "도메인 {{domains}}개, {{people}}명",
+      "listCounts": "{{domains}}, {{people}}",
+      "listDomains_one": "도메인 {{count, number}}개",
+      "listDomains_other": "도메인 {{count, number}}개",
+      "listPeople_one": "{{count, number}}명",
+      "listPeople_other": "{{count, number}}명",
       "anyone": "인증된 이메일이 있는 누구나"
     },
     "open": "열기",

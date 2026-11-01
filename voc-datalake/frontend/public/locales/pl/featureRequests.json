@@ -251,7 +251,15 @@
     "audience": {
       "company": "Osoby z Twojej firmy",
       "list": "Zaproszone domeny i osoby",
-      "listCounts": "Domeny: {{domains}}, osoby: {{people}}",
+      "listCounts": "{{domains}}, {{people}}",
+      "listDomains_one": "{{count, number}} domena",
+      "listDomains_few": "{{count, number}} domeny",
+      "listDomains_many": "{{count, number}} domen",
+      "listDomains_other": "{{count, number}} domeny",
+      "listPeople_one": "{{count, number}} osoba",
+      "listPeople_few": "{{count, number}} osoby",
+      "listPeople_many": "{{count, number}} osób",
+      "listPeople_other": "{{count, number}} osoby",
       "anyone": "Każdy ze zweryfikowanym e-mailem"
     },
     "open": "Otwórz",

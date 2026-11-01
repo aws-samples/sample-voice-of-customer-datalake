@@ -66,11 +66,11 @@ describe('the board cards', () => {
     expect(sales.getByText('3')).toBeInTheDocument()
   })
 
-  it('names a list audience by its counts for an admin, and an open one in words', async () => {
+  it('names a list audience by its counts for an admin (singular for one), and an open one in words', async () => {
     renderPage(ADMIN)
     const service = await card('brd_service')
     expect(service.getByText('Customer service issues', { selector: '.badge' })).toBeInTheDocument()
-    expect(service.getByText('1 domains, 2 people')).toBeInTheDocument()
+    expect(service.getByText('1 domain, 2 people')).toBeInTheDocument()
     expect((await card('brd_beta')).getByText('Anyone with a verified email')).toBeInTheDocument()
   })
 

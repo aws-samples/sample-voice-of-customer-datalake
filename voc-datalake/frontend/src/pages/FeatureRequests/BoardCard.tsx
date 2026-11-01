@@ -19,12 +19,12 @@ import { AUDIENCE_LABELS, TEMPLATE_LABELS } from './boardLabels'
 
 /** Who may use the board, in words; an admin also reads how many domains and people a list holds. */
 function useAudienceText(board: FeatureBoard): string {
-  const { t, i18n } = useTranslation('featureRequests')
+  const { t } = useTranslation('featureRequests')
   const { mode, domains, emails } = board.audience
   if (mode !== 'list' || (domains === undefined && emails === undefined)) return t(AUDIENCE_LABELS[mode].labelKey)
   return t('boards.audience.listCounts', {
-    domains: formatCount(domains?.length ?? 0, i18n.language),
-    people: formatCount(emails?.length ?? 0, i18n.language),
+    domains: t('boards.audience.listDomains', { count: domains?.length ?? 0 }),
+    people: t('boards.audience.listPeople', { count: emails?.length ?? 0 }),
   })
 }
 

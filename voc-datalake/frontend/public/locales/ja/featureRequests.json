@@ -245,7 +245,11 @@
     "audience": {
       "company": "社内の人",
       "list": "招待されたドメインと人",
-      "listCounts": "{{domains}} ドメイン、{{people}} 人",
+      "listCounts": "{{domains}}、{{people}}",
+      "listDomains_one": "{{count, number}} ドメイン",
+      "listDomains_other": "{{count, number}} ドメイン",
+      "listPeople_one": "{{count, number}} 人",
+      "listPeople_other": "{{count, number}} 人",
       "anyone": "確認済みメールを持つ誰でも"
     },
     "open": "開く",
