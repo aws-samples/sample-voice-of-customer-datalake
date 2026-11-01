@@ -2180,7 +2180,7 @@ def deserialize_image(image: dict) -> dict:
     nested maps and lists included) only when it IS a wire value; any other value is kept as
     it is. Treating every dict as a wire value instead read a deserialized map attribute (the
     review's ``dimensions = {'feedback_type': 'bug'}``) as a malformed one and dropped it,
-    which is how the per-dimension counters were never written before 5.67.01. A wire value
+    which is how the per-dimension counters were never written before 5.67.02. A wire value
     boto3 cannot read is kept as it came, never silently dropped.
     """
     item = {}
