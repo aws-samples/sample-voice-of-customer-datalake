@@ -106,7 +106,7 @@ updates:
       - dependency-name: "*"
         update-types:
           - version-update:semver-major
-      # Held (5.71.00): knip 6.44.1 reports the three compile-time `export type` pins in
+      # Held (5.73.00): knip 6.44.1 reports the three compile-time `export type` pins in
       # src/api/projectsApi.ts as unused exported types; test_doc_type_lockstep.py needs them exported
       # there, and silencing knip for that file is a gate decision (docs/dependencies.md → Held updates).
       - dependency-name: "knip"
