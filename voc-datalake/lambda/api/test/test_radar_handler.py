@@ -116,11 +116,21 @@ def test_an_unknown_or_hidden_brand_is_a_404(tables, lambda_context):
 
 
 def test_compare_puts_us_against_them_per_category(tables, lambda_context):
+    radar, _ = tables
+    # Ten of their reviews in a category is enough for a verdict (MIN_COMPARE_REVIEWS).
+    for n in range(10, 18):
+        store_item(radar, 'acme', radar_item(_review(n, 'positive', 'delivery', f'Quick {n}'), 'acme', 'Acme'))
     status, body, _ = _call(tables, lambda_context, 'GET', '/radar/brands/acme/compare')
     assert status == 200
     delivery = next(row for row in body['categories'] if row['category'] == 'delivery')
-    assert (delivery['theirs']['volume'], delivery['ours']['volume']) == (2, 4)
-    assert delivery['verdict'] == 'they_are_better'
+    assert (delivery['theirs']['volume'], delivery['ours']['volume']) == (10, 4)
+    assert (delivery['too_few'], delivery['verdict']) == (False, 'they_are_better')
+
+
+def test_a_category_with_two_of_their_reviews_has_no_verdict(tables, lambda_context):
+    _, body, _ = _call(tables, lambda_context, 'GET', '/radar/brands/acme/compare')
+    delivery = next(row for row in body['categories'] if row['category'] == 'delivery')
+    assert (delivery['theirs']['volume'], delivery['too_few'], delivery['verdict']) == (2, True, None)
 
 
 def test_a_restricted_caller_gets_no_us_side_and_only_their_categories(tables, lambda_context):
@@ -209,3 +219,23 @@ def test_the_cached_overview_follows_new_radar_reviews(tables, lambda_context):
     assert _call(tables, lambda_context, 'GET', '/radar')[1]['brands'][0]['total'] == 3
     bump_radar_version(radar)
     assert _call(tables, lambda_context, 'GET', '/radar')[1]['brands'][0]['total'] == 4
+
+
+def test_compare_and_page_carry_the_overall_row(tables, lambda_context):
+    _, aggregates = tables
+    for label, count in (('positive', 6), ('negative', 2)):
+        aggregates.put_item(Item={'pk': f'METRIC#daily_sentiment#{label}', 'sk': _today(), 'count': count})
+    expected = {'theirs': {'volume': 3, 'positive_share': 0.667, 'negative_share': 0.333},
+                'ours': {'volume': 8, 'positive_share': 0.75, 'negative_share': 0.25}}
+    assert _call(tables, lambda_context, 'GET', '/radar/brands/acme/compare')[1]['overall'] == expected
+    assert _call(tables, lambda_context, 'GET', '/radar/brands/acme/page')[1]['compare']['overall'] == expected
+
+
+def test_releases_hide_sources_that_do_not_name_the_brand(tables, lambda_context):
+    radar, _ = tables
+    store_candidate(radar, ReleaseCandidate('acme', 'Acme', 'Loops', 'Shipped.', _today(),
+                                            ('https://acme.com/loops', 'https://tools.example/ai-controls'),
+                                            ('Loops', 'Four layers of AI controls')),
+                    [1.0] + [0.0] * 1023, datetime.now(UTC).date(), 'now')
+    _, body, _ = _call(tables, lambda_context, 'GET', '/radar/brands/acme/releases')
+    assert [(r['urls'], r['titles']) for r in body['releases']] == [(['https://acme.com/loops'], ['Loops'])]

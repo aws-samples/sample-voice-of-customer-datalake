@@ -252,7 +252,7 @@ def _detail_body(scope: CategoryScope, brand: RadarBrand, days: int) -> dict[str
 def _releases_body(brand: RadarBrand, days: int) -> dict[str, Any]:
     start, _ = window(days, datetime.now(UTC).date())
     return {'brand': brand_view(brand), 'days': days,
-            'releases': list_releases(get_radar_table(), brand.key, start, MAX_RELEASES)}
+            'releases': list_releases(get_radar_table(), brand.key, start, MAX_RELEASES, brand.citation_match)}
 
 
 def _compare_body(scope: CategoryScope, brands: list[RadarBrand], brand: RadarBrand, days: int) -> dict[str, Any]:

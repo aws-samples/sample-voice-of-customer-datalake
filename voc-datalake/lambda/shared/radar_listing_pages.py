@@ -21,19 +21,23 @@ same-page merge (the embedding match still may). Rules, on the normalised URL (`
 7. **A hub**: a page that two or more stored records of the brand already cite
    (``HUB_MIN_RECORDS``) is an index, whatever its path: a third story does not merge on it.
 
-Rules 1-6 are ``is_listing_page``; rule 7 needs the stored records and lives in ``radar_releases``.
+Rules 1-6 are ``is_listing_page``; rule 7 needs the stored records: ``radar_releases`` applies it to
+a merge, and ``hub_pages`` to the records an API read returns. ``index_titles`` blanks the title of
+an index citation on the way out (its stored title is whichever story headed the page that day).
 Pure functions; never raises.
 """
 
 from __future__ import annotations
 
 import re
+from collections import Counter
+from collections.abc import Collection, Iterable
 from typing import Final
 from urllib.parse import parse_qsl, urlsplit
 
-from shared.radar_citations import normalise_url
+from shared.radar_citations import normalise_url, page_key
 
-__all__ = ['HUB_MIN_RECORDS', 'is_listing_page']
+__all__ = ['HUB_MIN_RECORDS', 'hub_pages', 'index_titles', 'is_listing_page']
 
 #: A page this many stored records of one brand already cite is an index (rule 7).
 HUB_MIN_RECORDS: Final = 2
@@ -101,3 +105,26 @@ def is_listing_page(url: object) -> bool:
         # The home page; with a query (``/?p=123``) it is a CMS's link to one post.
         return not parts.query
     return _listing_path(segments)
+
+
+def hub_pages(citations: Iterable[Iterable[object]]) -> set[str]:
+    """The pages (``page_key``) at least ``HUB_MIN_RECORDS`` of the given records' citation lists cite (rule 7)."""
+    counts = Counter(key for urls in citations for key in {page_key(url) for url in urls} if key is not None)
+    return {key for key, count in counts.items() if count >= HUB_MIN_RECORDS}
+
+
+def index_titles(urls: Iterable[object], titles: Iterable[object], hubs: Collection[str] = ()) -> list[str]:
+    """``titles`` (aligned with ``urls``) with ``''`` for every citation of an index page.
+
+    An index page (a listing, rules 1-6, or a hub, rule 7: ``hubs``) has no title of its own: the
+    title search stored is whatever entry headed the page that day, so every record citing a
+    changelog index read "Coding sessions on mobile". ``''`` makes the page show the link's host
+    and path instead. A story page keeps its title.
+    """
+    shown = list(titles)
+    out: list[str] = []
+    for index, url in enumerate(urls):
+        title = shown[index] if index < len(shown) else ''
+        index_page = is_listing_page(url) or page_key(url) in hubs
+        out.append('' if index_page or not isinstance(title, str) else title)
+    return out

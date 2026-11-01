@@ -1,8 +1,9 @@
 """What the Radar page and the ``get_radar`` assistant tool read (docs/radar.md).
 
 Every view is computed from the ``voc-radar`` table, except the "us" side of
-the comparison, which comes from OUR aggregates (``METRIC#category_sentiment#…``)
-and only for categories the caller may see. A caller whose source access hides
+the comparison, which comes from OUR aggregates (``METRIC#category_sentiment#…`` per
+category, ``METRIC#daily_sentiment#…`` for the overall row) and only for categories
+the caller may see. A caller whose source access hides
 one of OUR sources gets no "us" side at all (``ours_visible``): the aggregates
 are not split by source, so they could not be narrowed honestly.
 
@@ -19,6 +20,7 @@ from typing import Any, Final
 
 from shared import category_access
 from shared.category_access import CategoryScope
+from shared.metric_keys import SENTIMENT_PREFIX
 from shared.pii_redaction import redact_text
 from shared.radar_counts import ReviewCounts, review_counts, side_view
 from shared.radar_reviews import same_review_key
@@ -39,6 +41,9 @@ MAX_COMPARE_CATEGORIES: Final = 12
 OTHER_CATEGORY: Final = 'other'
 # A category is "better" for one side when its positive share leads by this much.
 BETTER_MARGIN: Final = Decimal('0.1')
+#: Fewer of THEIR reviews than this in a category is too few to call a winner: the row says
+#: ``too_few`` and has no verdict ("They are better" from two reviews was a coin toss).
+MIN_COMPARE_REVIEWS: Final = 10
 
 
 def window(days: int, today: date) -> tuple[date, date]:
@@ -123,18 +128,29 @@ def themes(table: Any, brand: str, start: date, end: date, scope: CategoryScope)
         counts[polarity][label] += 1
         quote = _quote(item)
         bucket = quotes[(polarity, label)]
-        # The same text reviewed twice (a repost, a second import) is one quote, not two.
-        if quote and quote not in bucket and len(bucket) < MAX_QUOTES:
+        # The same text reviewed twice (a repost, a second import) is one quote, not two. Every
+        # distinct quote is kept here: ``_ranked`` may skip some already shown under a higher theme.
+        if quote and quote not in bucket:
             bucket.append(quote)
+    return {'love': _ranked(counts['positive'], quotes, 'positive'),
+            'hate': _ranked(counts['negative'], quotes, 'negative'), 'sampled': len(items) >= MAX_THEME_ITEMS}
 
-    def ranked(polarity: str) -> list[dict[str, Any]]:
-        return [
-            {'category': category, 'subcategory': subcategory, 'count': count,
-             'quotes': quotes[(polarity, (category, subcategory))]}
-            for (category, subcategory), count in counts[polarity].most_common(MAX_THEMES)
-        ]
 
-    return {'love': ranked('positive'), 'hate': ranked('negative'), 'sampled': len(items) >= MAX_THEME_ITEMS}
+def _ranked(counts: Counter[tuple[str, str | None]], quotes: Mapping[tuple[str, tuple[str, str | None]], list[str]],
+            polarity: str) -> list[dict[str, Any]]:
+    """The top ``MAX_THEMES`` themes of one column, each with at most ``MAX_QUOTES`` quotes.
+
+    A quote is shown once per column: two stored copies of one text filed under different
+    subcategories made it appear under two themes, so a later (lower-ranked) theme skips a quote
+    an earlier one already shows.
+    """
+    shown: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for (category, subcategory), count in counts.most_common(MAX_THEMES):
+        picked = [quote for quote in quotes.get((polarity, (category, subcategory)), []) if quote not in shown][:MAX_QUOTES]
+        shown.update(picked)
+        out.append({'category': category, 'subcategory': subcategory, 'count': count, 'quotes': picked})
+    return out
 
 
 def _rounded(value: Decimal | None) -> float | None:
@@ -189,15 +205,17 @@ def _their_sides(radar_table: Any, brand: str, categories: list[str], start: dat
 
 def compare(radar_table: Any, aggregates_table: Any, brand: str, categories: Iterable[str],
             start: date, end: date, scope: CategoryScope, *, ours_available: bool) -> dict[str, Any]:
-    """Per category, their sentiment and volume against ours: ``{categories: [...], ours_available}``.
+    """Per category, their sentiment and volume against ours: ``{categories: [...], ours_available, overall}``.
 
     Only the categories the brand has reviews in (at most ``MAX_COMPARE_CATEGORIES``,
     busiest first) and the caller may see. ``verdict`` is ``they_are_better`` /
     ``we_are_better`` / ``even`` by positive share (``BETTER_MARGIN``), or None
-    when either side has no reviews. Their side counts DISTINCT reviews (the list's
+    when either side has no reviews or the row is ``too_few`` (fewer than
+    ``MIN_COMPARE_REVIEWS`` of theirs). Their side counts DISTINCT reviews (the list's
     own walk, ``review_counts``), as the header and the list do; a window too large
     to walk, or a walk that found no stored review (counters older than the review
-    rows), keeps the counters.
+    rows), keeps the counters. ``overall`` is ``{theirs, ours}``: the whole window as
+    one side each (same counting as the rows; ``ours`` None without ``ours_available``).
     """
     counts = review_counts(radar_table, brand, start, end, scope)
     counted = counts if counts.complete and counts.items else None
@@ -210,10 +228,53 @@ def compare(radar_table: Any, aggregates_table: Any, brand: str, categories: Ite
     rows = []
     for category in busiest[:MAX_COMPARE_CATEGORIES]:
         theirs = theirs_by_category[category]
-        ours = _side(aggregates_table, lambda label, c=category: f'METRIC#category_sentiment#{c}#{label}',
+        ours = _side(aggregates_table, lambda label, c=category: _our_category_pk(c, label),
                      start, end) if ours_available else None
-        rows.append({'category': category, 'theirs': theirs, 'ours': ours, 'verdict': _verdict(theirs, ours)})
-    return {'categories': rows, 'ours_available': ours_available}
+        too_few = int(theirs['volume']) < MIN_COMPARE_REVIEWS
+        rows.append({'category': category, 'theirs': theirs, 'ours': ours, 'too_few': too_few,
+                     'verdict': None if too_few else _verdict(theirs, ours)})
+    overall = {'theirs': _their_overall(radar_table, brand, visible, start, end, scope, counted),
+               'ours': _our_overall(aggregates_table, visible, start, end, scope) if ours_available else None}
+    return {'categories': rows, 'ours_available': ours_available, 'overall': overall}
+
+
+def _our_category_pk(category: str, label: str) -> str:
+    return f'METRIC#category_sentiment#{category}#{label}'
+
+
+def _category_sum(table: Any, pk_of: Callable[[str, str], str], categories: Iterable[str], start: date,
+                  end: date) -> dict[str, Any]:
+    """One side summed over ``categories``' per-category sentiment counters (``pk_of(category, label)``)."""
+    names = list(categories)
+    return side_view({label: sum(int(sum_counter(table, pk_of(category, label), start, end)) for category in names)
+                      for label in SENTIMENT_LABELS})
+
+
+def _their_overall(radar_table: Any, brand: str, visible: list[str], start: date, end: date, scope: CategoryScope,
+                   counted: ReviewCounts | None) -> dict[str, Any]:
+    """The brand's whole window as one side: the distinct reviews when walked (as the rows), else its counters.
+
+    A caller with a category restriction gets only the ``visible`` categories, from the
+    per-category counters, so the total never counts reviews it cannot open.
+    """
+    if counted is not None:
+        return side_view(counted.totals()['sentiment'])
+    if scope.categories_all:
+        return _side(radar_table, lambda label: counter_pk(brand, f'daily_sentiment#{label}'), start, end)
+    return _category_sum(radar_table, lambda c, label: counter_pk(brand, f'category_sentiment#{c}#{label}'),
+                         visible, start, end)
+
+
+def _our_overall(aggregates_table: Any, visible: list[str], start: date, end: date,
+                 scope: CategoryScope) -> dict[str, Any]:
+    """OUR feedback's whole window as one side (the ``SENTIMENT_PREFIX`` daily counters).
+
+    A caller with a category restriction gets the sum of the ``visible`` categories instead
+    (``METRIC#category_sentiment#…``), as the metrics API narrows every number to that scope.
+    """
+    if scope.categories_all:
+        return _side(aggregates_table, lambda label: f'{SENTIMENT_PREFIX}{label}', start, end)
+    return _category_sum(aggregates_table, _our_category_pk, visible, start, end)
 
 
 def configured_category_names(categories_config: Iterable[Any]) -> list[str]:

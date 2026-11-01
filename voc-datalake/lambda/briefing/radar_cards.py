@@ -142,7 +142,8 @@ def safe_urls(raw: object) -> tuple[str, ...]:
 
 
 def _new_releases(read: RadarRead, brand: RadarBrand, since: datetime, today: date) -> list[dict[str, Any]]:
-    rows = list_releases(read.table, brand.key, today - timedelta(days=RELEASE_QUERY_DAYS), MAX_RELEASES_READ)
+    rows = list_releases(read.table, brand.key, today - timedelta(days=RELEASE_QUERY_DAYS), MAX_RELEASES_READ,
+                         brand.citation_match)
     fresh = []
     for row in rows:
         seen = parse_datetime(row.get('first_seen'))

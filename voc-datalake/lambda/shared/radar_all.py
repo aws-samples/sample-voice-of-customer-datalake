@@ -52,7 +52,7 @@ def all_brands_view(table: Any, brands: Iterable[RadarBrand], scope: CategorySco
     feed: list[dict[str, Any]] = []
     total = 0
     for brand in brands:
-        releases = list_releases(table, brand.key, start, cap)  # newest release_date first
+        releases = list_releases(table, brand.key, start, cap, brand.citation_match)  # newest release_date first
         # Fewer than the cap is every row; at the cap, a COUNT query says how many there really are.
         released = len(releases) if len(releases) < cap else count_releases(table, brand.key, start)
         total += released

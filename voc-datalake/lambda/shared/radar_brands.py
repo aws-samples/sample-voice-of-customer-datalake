@@ -31,6 +31,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final, TypeGuard
 
+from shared.radar_brand_citations import BrandMatch
 from shared.radar_brand_fields import brand_language, effective_language, feed_urls
 from shared.radar_brand_terms import EXCLUDE_TERMS, SEARCH_TERMS, brand_terms
 
@@ -87,6 +88,11 @@ class RadarBrand:
     @property
     def effective_language(self) -> str:
         return effective_language(self.language, self.domains)
+
+    @property
+    def citation_match(self) -> BrandMatch:
+        """What a cited page must be on or name to be shown under this brand (shared/radar_brand_citations.py)."""
+        return BrandMatch(label=self.label, terms=self.search_terms, domains=self.domains)
 
 
 def brand_view(brand: RadarBrand) -> dict[str, Any]:
