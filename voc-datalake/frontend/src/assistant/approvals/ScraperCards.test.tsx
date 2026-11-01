@@ -103,7 +103,7 @@ describe('create_scraper card', () => {
       pagination: { enabled: false, param: 'page', max_pages: 1, start: 1 },
     } }]])
     expect(invalidate.mock.calls.map(([f]) => f?.queryKey)).toContainEqual(['scrapers'])
-    expect(screen.getByRole('link', { name: 'Open this scraper on the Scrapers page' })).toHaveAttribute('href', '/scrapers#scraper-acme')
+    expect(screen.getByRole('link', { name: 'Open this scraper on the Data sources page' })).toHaveAttribute('href', '/scrapers#scraper-acme')
   })
 
   it('refuses an id that exists right before executing, and saves nothing', async () => {

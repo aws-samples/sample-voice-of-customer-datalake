@@ -29,8 +29,8 @@
       "declined": "已拒绝",
       "expired": "已过期"
     },
-    "openScraper": "在抓取器页面打开此抓取器",
-    "openScrapers": "打开抓取器页面",
+    "openScraper": "在数据源页面打开此抓取器",
+    "openScrapers": "打开数据源页面",
     "openUsers": "打开 隐私与访问 → 用户",
     "approvePlan": "批准并运行",
     "change": "修改",

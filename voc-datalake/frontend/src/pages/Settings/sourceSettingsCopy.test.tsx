@@ -26,6 +26,9 @@ describe('Administration → Sources copy', () => {
 
   it.each([
     ['setup.step2', 'radar'],
+    ['empty.step2', 'radar'],
+    ['card.openScraper', 'assistantTools'],
+    ['card.openScrapers', 'assistantTools'],
     ['brands.hint', 'radar'],
     ['sourcesManager.radarLegacyHint', 'components'],
   ])('%s names the Data sources page, not the old Scrapers page', (key, ns) => {

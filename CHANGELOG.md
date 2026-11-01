@@ -24,7 +24,8 @@ Cleanup after the public docs pass: stale texts, a wrong plural and the dev mock
 ### Fixed
 
 - **Feedback boards**: a list board's card says "1 domain, 2 people" instead of "1 domains", in every UI language.
-- **Radar**: the empty state's second step names the Data sources page (it said "Scrapers page").
+- **Data sources page name**: the Radar empty state and the assistant's "Open on the Data sources page" links name
+  the page by its current name (they said "Scrapers page").
 - **Dev mock** (`npm run dev`):
   - Problem Analysis loads with its default filters. The mock refused a `dims` value listing several choices,
     which the real API accepts.

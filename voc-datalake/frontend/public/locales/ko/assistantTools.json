@@ -29,8 +29,8 @@
       "declined": "거절됨",
       "expired": "만료됨"
     },
-    "openScraper": "스크레이퍼 페이지에서 이 스크레이퍼 열기",
-    "openScrapers": "스크레이퍼 페이지 열기",
+    "openScraper": "데이터 소스 페이지에서 이 스크레이퍼 열기",
+    "openScrapers": "데이터 소스 페이지 열기",
     "openUsers": "개인정보 및 액세스 → 사용자 열기",
     "approvePlan": "승인하고 실행",
     "change": "변경",

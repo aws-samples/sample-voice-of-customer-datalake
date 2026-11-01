@@ -29,8 +29,8 @@
       "declined": "却下済み",
       "expired": "期限切れ"
     },
-    "openScraper": "スクレイパーページでこのスクレイパーを開く",
-    "openScrapers": "スクレイパーページを開く",
+    "openScraper": "データソースページでこのスクレイパーを開く",
+    "openScrapers": "データソースページを開く",
     "openUsers": "プライバシーとアクセス → ユーザーを開く",
     "approvePlan": "承認して実行",
     "change": "変更",
