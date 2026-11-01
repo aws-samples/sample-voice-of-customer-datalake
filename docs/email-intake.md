@@ -2,8 +2,10 @@
 
 Customers, staff and partners can email feedback to the platform: `feedback@`, `ideas@`, `bugs@`
 and `reviews@` your inbox domain. Each email is checked, deduplicated, its attachments are read, and
-it becomes at most one feedback item with source `email_intake`. The inbox is **off by default**:
-without `-c inboundEmailDomain` nothing is deployed and nothing costs anything.
+it becomes at most one feedback item with source `email_intake`. An operator turns the inbox on at
+deploy time; administrators then watch it and set its caps in **Administration → Sources → Email inbox**.
+The inbox is **off by default**: without `-c inboundEmailDomain` nothing is deployed and nothing costs
+anything.
 
 ## How it works
 
@@ -24,7 +26,7 @@ any sender ─► MX ─► Amazon SES receiving (spam + virus scan)
            original kept under inbound-raw/<item id>/message.eml for 90 days
 ```
 
-The ingest contract (`IngestMessage`) is unchanged. An email item carries:
+Email items use the standard ingest contract (`IngestMessage`). An email item carries:
 
 | Field | Value |
 |---|---|
@@ -46,10 +48,10 @@ The ingest contract (`IngestMessage`) is unchanged. An email item carries:
 | `[question]` | `question` |
 | `[praise]`, `[kudos]` | `praise` |
 
-A subject tag wins over the alias. `feedback_type` is a built-in dimension on every deployment
-(5.45.00, [dimensions.md → Feedback type](dimensions.md#feedback-type-built-in)); the model infers it
-when nothing else sets it, so the inbox no longer needs a "Create dimension" step (the old
-`POST /settings/email-inbox/feedback-type-dimension` answers `created: false`). Mail to any other
+A subject tag wins over the alias. `feedback_type` is a built-in dimension on every deployment since
+5.45.00 ([dimensions.md → Feedback type](dimensions.md#feedback-type-built-in)); the model infers it
+when nothing else sets it, so the inbox needs no "Create dimension" step. The older
+`POST /settings/email-inbox/feedback-type-dimension` route still exists and answers `created: false`. Mail to any other
 local part at the domain is accepted on the channel of that local part.
 
 ## Guards
@@ -148,11 +150,11 @@ Set the budget to 0 to read no attachments and gate no replies at all (every suc
   subject, text, attachment summaries and every metadata value are replaced before archive or queue,
   and the author is dropped ([source-policies.md](source-policies.md)). Saving a profile for
   `email_intake` in Administration → Privacy & access → Source policies replaces that default.
-- **The one exception** to "the redacted message is the only copy" (owner decision, plan Q6 option a):
-  the original email, attachments included, is kept under `inbound-raw/<item id>/message.eml` in the
+- **The one exception** to "the redacted message is the only copy": the original email, attachments included, is kept under `inbound-raw/<item id>/message.eml` in the
   inbound bucket for **90 days** (lifecycle rule), KMS-encrypted, never public, reachable only by the
   intake Lambda and account administrators. `metadata.attachments_key` points to it. Dropped and
-  deduplicated emails keep no copy. An erasure (`POST /settings/erasure`) does not reach this prefix;
+  deduplicated emails keep no copy. The copy keeps the full attachments, which the item only
+  summarises, available for those 90 days. An erasure (`POST /settings/erasure`) does not reach this prefix;
   it expires on its own.
 - Customer data under `pii: redact` keeps no sender address, so an erasure by email cannot match it
   (there is nothing to match); under `allow` the lower-cased address is kept and erasure finds it.
@@ -204,8 +206,8 @@ npm run deploy:infra -- -c inboundEmailDomain=voc.example.com \
      `InboundEmailDkimRecord1..3`; give them to your DNS admin.
    - No domain yet: `voc-datalake/scripts/register-domain.sh <domain>` prints the Route 53 Domains
      registration command (about USD 15 a year for common TLDs). It never buys anything itself:
-     registration costs money, needs contact details and sends a verification email, so the owner runs
-     it once.
+     registration costs money, needs contact details and sends a verification email, so you run it
+     yourself, once.
 4. **Verify the domain in SES.** CDK creates the SES domain identity (Easy DKIM) for the inbox domain;
    with a zone it verifies on its own within minutes. A verified parent domain already covers sending
    from a subdomain; the subdomain identity makes receiving explicit. If the identity already exists,
@@ -241,5 +243,5 @@ and records are removed. An own rule set is deleted with it (deactivate it first
 |---|---|
 | CDK | `lib/stacks/email-intake.ts` (flags: `lib/utils/inbound-email.ts`), VocIngestionStack |
 | Worker | `lambda/email_intake/` (`handler.py`, `intake.py`, `guards.py`, `mime.py`, `text_cleanup.py`, `state.py`, `model_calls.py`, `compose.py`); tests and `.eml` fixtures in `lambda/email_intake/test/` |
-| Settings API | `GET` / `PUT /settings/email-inbox`, `POST /settings/email-inbox/feedback-type-dimension` (admin; `settings_handler.py`, `shared/email_intake_settings.py`) |
+| Settings API | `GET` / `PUT /settings/email-inbox`, `POST /settings/email-inbox/feedback-type-dimension` (kept for older clients, answers `created: false`) (admin; `settings_handler.py`, `shared/email_intake_settings.py`) |
 | UI | `frontend/src/pages/Settings/EmailInboxCard.tsx` (Administration → Sources → Email inbox) |
