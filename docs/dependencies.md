@@ -31,6 +31,16 @@ requirements files (`voc-datalake/requirements-dev.txt` and the four `voc-datala
 - **Cooldown of 7 days**: a release is proposed only once it is a week old, so a malicious or broken release
   that is pulled within days never reaches a lockfile. Security updates are not delayed.
 
+### Held updates
+
+A minor or patch release that cannot be installed is held by its own `ignore` rule in
+`.github/dependabot.yml`, with the reason and the change that lifts it. Otherwise Dependabot reopens the
+same failing grouped pull request every week.
+
+| Package | Held from | Why | Lift it with |
+|---|---|---|---|
+| `@vitest/eslint-plugin` | 1.6.28 | A patch release that raises its `typescript` peer to `>= 6.0.0`; every package is on TypeScript 5.9, so `npm ci` fails with `ERESOLVE` (#500) | The TypeScript 6+ upgrade (a major, on its own branch) |
+
 ### Merging a Dependabot pull request
 
 Every Dependabot pull request **fails `version: CHANGELOG ↔ package.json`** in the quality gates. That is
