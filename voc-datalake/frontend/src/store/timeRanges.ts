@@ -18,6 +18,6 @@ export const TIME_RANGES = ['24h', '48h', '7d', '14d', '30d', '90d', 'custom', '
 /** A time-range token the config store holds. */
 export type TimeRange = typeof TIME_RANGES[number]
 
-/** The app's default window: the last 14 days by imported date (owner decision, 5.47.00; was 7 days). */
+/** The app's default window: the last 14 days by imported date (since 5.47.00). */
 export const DEFAULT_TIME_RANGE: TimeRange = '14d'
 export const DEFAULT_DATE_BASIS: DateBasis = 'imported'

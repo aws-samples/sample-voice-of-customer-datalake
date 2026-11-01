@@ -612,7 +612,7 @@ describe('Settings without admin access', () => {
     expect(screen.getByTestId('logs-section')).toBeInTheDocument()
   })
 
-  // PUT /settings/brand is admin-only (owner decision 2026-10-08, #242).
+  // PUT /settings/brand is admin-only (#242): the brand profile is shared deployment config.
   it('shows the brand form read-only to a non-admin', async () => {
     const SettingsNonAdmin = await importSettingsAs(false)
 

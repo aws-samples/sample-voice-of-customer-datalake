@@ -19,11 +19,12 @@
  * The routes: `POST`/`DELETE /integrations/{source}/apps`,
  * `POST /sources/{source}/run`, `PUT /sources/{source}/enable|disable`,
  * `POST /scrapers` (save), `POST /scrapers/analyze-url`, `DELETE /scrapers/{id}`
- * plus `POST /scrapers/{id}/run` (all admin-only by owner decision 2026-10-08, so
+ * plus `POST /scrapers/{id}/run` (all admin-only: they write the shared scraper
+ * credentials secret, drive scheduled scraping and spend Bedrock; so
  * `ScraperEditor` opens read-only and `TemplateSelector` disables the scraper
  * templates for a non-admin), `DELETE /logs/validation/{source}`, and
- * `PUT /settings/brand` (the Settings header Save; owner decision 2026-10-08, #242), and every
- * `/scrapers/manual/*` and `/s3-import/*` route (owner decision 2026-10-08, #242 follow-up:
+ * `PUT /settings/brand` (the Settings header Save; #242: shared deployment config), and every
+ * `/scrapers/manual/*` and `/s3-import/*` route (#242: importing writes customer data;
  * `TemplateSelector`'s paste / JSON / CSV / S3 import tiles, `SourceCard`'s S3 file explorer). None of
  * them were once gated — a `users`-group caller could write the shared API-credentials secret and
  * invoke an ingestor — so the gate is the SERVER's and this string is only the

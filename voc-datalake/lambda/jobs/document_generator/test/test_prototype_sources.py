@@ -152,8 +152,8 @@ class TestNewestDocumentOfAType:
     def test_ranks_a_row_whose_id_lives_only_in_its_sort_key(
         self, mock_dynamodb, mock_converse, sample_job_event, lambda_context,
     ):
-        """The `sk` fallback in `_document_id_of`, which review round 3 correctly
-        noted was untested.
+        """The `sk` fallback in `_document_id_of`, which had no test
+        of its own.
 
         The ranking read is PROJECTED, so a row carrying no `document_id` attribute
         has no `content` to fall back on either — without the fallback it is

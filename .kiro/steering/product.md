@@ -73,7 +73,8 @@ Voice of the Customer (VoC) Data Lake is a **fully serverless** AWS platform for
 | Page | Path | Description |
 |------|------|-------------|
 | Login | `/login` | Cognito authentication |
-| Dashboard | `/` | Overview with charts, metrics, live social feed, urgent issues |
+| Home | `/` | The morning brief: what changed since the last visit |
+| Dashboard | `/dashboard` | Overview with charts, metrics, live social feed, urgent issues |
 | Feedback Detail | `/feedback/:id` | Single feedback item with full details |
 | Categories | `/categories` | Category breakdown, analysis, and consolidated feedback list (All view, search, urgent filter) |
 | Problem Analysis | `/problems` | Problem analysis dashboard |

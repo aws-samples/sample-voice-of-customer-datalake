@@ -156,7 +156,7 @@ class MessageRejectedError(Exception):
 
 
 # `LOGS#validation#…` / `LOGS#processing#…` rows are read back by `GET /logs/*`,
-# which EVERY signed-in user may call (owner decision, 2026-10-04). So a row holds
+# which EVERY signed-in user may call. So a row holds
 # no customer content: no raw-record preview (it carried submitter_email/name and
 # the review text), no `str(e)` (exception text embeds whatever the failing call
 # saw — record values, model output, request ids), and no pydantic `msg` (custom

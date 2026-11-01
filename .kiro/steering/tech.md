@@ -184,7 +184,8 @@ The main pages (a selection: `frontend/src/pages/` has 25 page folders; the rout
 | Page | Route | Features |
 |------|-------|----------|
 | Login | `/login` | Cognito authentication |
-| Dashboard | `/` | Charts, metrics, social feed, urgent issues |
+| Home | `/` | Morning brief |
+| Dashboard | `/dashboard` | Charts, metrics, social feed, urgent issues |
 | Feedback Detail | `/feedback/:id` | Single item with similar feedback |
 | Categories | `/categories` | Category breakdown, feedback list (All/search/urgent), filters |
 | Problem Analysis | `/problems` | Problem analysis dashboard |

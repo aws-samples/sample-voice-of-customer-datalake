@@ -153,8 +153,8 @@ describe('revising a prototype keeps the spec it was built from', () => {
     // prototype built from June's PRD would quietly re-base it on September's — a
     // revision that changes the spec as well as the feedback. The project holds a
     // newer PRD precisely so a regression has something wrong to pick.
-    // Both inherited sources must be PRESENT in the project: since review round 1
-    // an id that no longer resolves is dropped to '', so a fixture that omits the
+    // Both inherited sources must be PRESENT in the project: an id that no longer
+    // resolves is dropped to '', so a fixture that omits the
     // PR/FAQ it claims is inherited would assert the fallback, not the inheritance.
     renderTab([
       built,
@@ -186,7 +186,7 @@ describe('a prototype stays revisable after its source is deleted', () => {
   beforeEach(resetPrototypeMocks)
 
   it('drops an inherited source id that is no longer in the project', async () => {
-    // Found in review round 1 on PR #320. Inheriting the base prototype's sources
+    // From PR #320. Inheriting the base prototype's sources
     // keeps a revision on the same spec — but the API refuses an id it cannot
     // resolve, so a prototype whose PRD was deleted afterwards would send a dead
     // id on every attempt and could never be revised again. Blank instead: the
@@ -211,7 +211,7 @@ describe('a prototype stays revisable after its source is deleted', () => {
   })
 
   it('says so, rather than re-basing the revision silently', async () => {
-    // Review round 2: the fallback is justified, but an unexplained change of spec
+    // The fallback is justified, but an unexplained change of spec
     // is the behaviour this whole flow exists to remove. So the panel says it.
     const user = userEvent.setup()
     const orphaned = doc({

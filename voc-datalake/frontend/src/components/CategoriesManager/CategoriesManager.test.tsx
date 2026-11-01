@@ -280,7 +280,7 @@ describe('CategoriesManager', () => {
       expect(screen.getByText('AI Category Suggestions')).toBeInTheDocument()
     })
 
-    // POST /settings/categories/generate is admin-only (owner decision 2026-10-08, #242).
+    // POST /settings/categories/generate is admin-only (#242): every call spends Bedrock.
     it('hides AI generation from a non-admin and never calls the generate route', async () => {
       authState.isAdmin = false
       await renderEmpty()

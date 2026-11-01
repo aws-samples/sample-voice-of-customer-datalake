@@ -30,8 +30,8 @@ interface ScraperEditorProps {
   readonly template?: ScraperTemplate | null
   /**
    * Whether the current user is an admin. Save (`POST /scrapers`) and Auto-detect
-   * (`POST /scrapers/analyze-url`) are admin-only server-side — owner decision
-   * (2026-10-08). A non-admin still opens the editor to READ a configuration (the
+   * (`POST /scrapers/analyze-url`) are admin-only server-side: save writes the
+   * shared scraper credentials secret and Auto-detect spends Bedrock. A non-admin still opens the editor to READ a configuration (the
    * list route serves it to them), so every field is disabled, Save and
    * Auto-detect carry the admin-only title, and a notice says why.
    */

@@ -8,7 +8,7 @@
  * (there is no in-editor switch), so the "create scraper from JSON-LD" flow from
  * the issue is covered via the template prop.
  *
- * Read-only for a non-admin (owner decision, 2026-10-08): `POST /scrapers` and
+ * Read-only for a non-admin: `POST /scrapers` and
  * `POST /scrapers/analyze-url` are admin-only server-side, so for a non-admin the
  * editor disables every field, Save and Auto-detect (admin-only title), shows a
  * notice, and sends neither request. Each locked case has an admin positive

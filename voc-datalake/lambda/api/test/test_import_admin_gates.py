@@ -1,4 +1,4 @@
-"""S3 import and manual import are admin-only, every route (owner decision 2026-10-08, #242 follow-up).
+"""S3 import and manual import are admin-only, every route (#242): importing writes customer data.
 
 Both modules gate through one resolver middleware (`shared.api.admins_only`), so the refusal
 must come BEFORE the route touches anything: a non-admin gets 403 and the S3, SQS,

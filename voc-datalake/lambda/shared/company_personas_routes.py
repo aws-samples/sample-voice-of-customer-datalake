@@ -1,7 +1,7 @@
 """The company persona library API, ``/company-personas`` (docs/project-workspace.md → Company personas).
 
 Included by ``api/projects_handler.py`` and served by the projects Lambda. Every signed-in user
-reads the library; every write is a non-delegated admin's (owner decision). The writes run the
+reads the library; every write is a non-delegated admin's (the library is shared). The writes run the
 SAME code the project persona routes run, on the reserved container
 (``shared.company_personas.COMPANY_PERSONAS_CONTAINER``): the handler hands those functions in
 through ``configure`` (``PersonaOps``), because an API bundle ships only the handler, ``projects.py``

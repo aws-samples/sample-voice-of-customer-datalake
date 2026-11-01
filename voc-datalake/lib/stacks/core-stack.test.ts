@@ -1415,8 +1415,7 @@ describe('DynamoDB TTL, as the verification fixture relies on it', () => {
 });
 
 /**
- * Runtime keeps everything, teardown removes everything (owner decision
- * 2026-10-17, #248). Feedback items carry no TTL, so nothing is deleted while
+ * Runtime keeps everything, teardown removes everything (#248). Feedback items carry no TTL, so nothing is deleted while
  * the platform runs; deleting the stack is a full cleanup: every table, the raw
  * bucket (emptied of every object version first) and the KMS key go with it.
  * No table carries deletion protection (it would block that teardown) and

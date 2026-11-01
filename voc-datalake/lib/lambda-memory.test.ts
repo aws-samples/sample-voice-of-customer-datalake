@@ -185,8 +185,8 @@ describe('Lambda memory sizes (sizing policy: peak memory and CPU ≤ 60 %, ever
       expect(powerTuningPin(stem, record.superseded?.toMb ?? record.pinnedMb)).toBeNull();
     });
 
-  // Owner decision 2026-10-20: the eight over 60 % CPU in the 24 h window were doubled — exactly ×2, not a rung.
-  it('the 2026-10-20 doubling covers exactly the eight functions the owner named', () => {
+  // 2026-10-20: the eight over 60 % CPU in the 24 h window were doubled — exactly ×2, not a rung.
+  it('the 2026-10-20 doubling covers exactly the eight functions over the CPU ceiling', () => {
     expect(Object.keys(DOUBLED_2026_10_20).sort(byCodeUnit)).toStrictEqual([
       'voc-agent-heartbeat', 'voc-briefing', 'voc-integrations-api', 'voc-logs-api', 'voc-memory-scanner',
       'voc-metrics-api', 'voc-projects-api', 'voc-radar-api',
@@ -205,7 +205,7 @@ describe('Lambda memory sizes (sizing policy: peak memory and CPU ≤ 60 %, ever
     expect(MEMORY_STEPS_MB).toContain(fromMb);
   });
 
-  // Owner decision 2026-10-23: Python runs one core, so a size above one vCPU buys no speed (policy.ts).
+  // Since 2026-10-23: Python runs one core, so a size above one vCPU buys no speed (policy.ts).
   it.each(Object.entries(synthesizedPythonSizes()))('Python function %s is at most one vCPU (%s MB)', (key, memorySize) => {
     expect(memorySize ?? 128, key).toBeLessThanOrEqual(MB_PER_VCPU);
   });

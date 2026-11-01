@@ -153,7 +153,7 @@ class TestTheColdStartModuleState:
         assert h.EXTRACTION_METHODS == ('css', 'jsonld')
 
     def test_the_non_admin_schedule_policy_is_gone(self):
-        """Owner decision 2026-10-08: save is admin-only, so nothing rewrites a schedule."""
+        """Save is admin-only, so nothing rewrites a schedule."""
         assert not hasattr(h, 'NON_ADMIN_DEFAULT_SCHEDULE')
         assert not hasattr(h, '_apply_schedule_policy')
 

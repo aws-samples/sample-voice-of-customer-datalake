@@ -19,7 +19,7 @@ const DEFAULT_PERSONA_CONFIG: PersonaToolConfig = {
 const DEFAULT_RESEARCH_CONFIG: ResearchToolConfig = {
   question: '',
   title: '',
-  // Pre-ticked (owner decision 2026-10-17): research grounds itself on the
+  // Pre-ticked: research grounds itself on the
   // public web by default. The card only shows when the gateway is deployed,
   // and the backend skips the search when it is not.
   useWebSearch: true,

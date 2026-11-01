@@ -2,7 +2,7 @@
  * @fileoverview "AI Category Suggestions": generate a taxonomy from a company
  * description via `POST /settings/categories/generate`.
  *
- * Admin-only (owner decision 2026-10-08, #242): every call spends Bedrock and
+ * Admin-only (#242): every call spends Bedrock and
  * its result replaces the admin-only categories config, so `CategoriesManager`
  * renders this panel only for admins. The server's 403 is the boundary; hiding
  * the panel only keeps a non-admin from meeting it.

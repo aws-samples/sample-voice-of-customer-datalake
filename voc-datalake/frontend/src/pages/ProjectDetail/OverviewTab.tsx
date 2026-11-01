@@ -190,7 +190,7 @@ export default function OverviewTab({
           // The heading names the artifact ("Clickable Prototype") the way the
           // product card does, so the button underneath can keep the verb — and
           // keep the exact accessible name the tab-row button had, which is what
-          // lets the existing gate and handover tests carry over unchanged.
+          // lets the existing gate and hand-off tests carry over unchanged.
           title={t('overview.prototype')}
           description={t('overview.prototypeDesc')}
           stateLabel={steps.prototype.hasOutput

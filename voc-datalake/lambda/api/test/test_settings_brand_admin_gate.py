@@ -1,6 +1,6 @@
 """`PUT /settings/brand` and `POST /settings/categories/generate` are admin-only.
 
-Owner decision 2026-10-08 (#242): the brand profile is shared deployment
+#242: the brand profile is shared deployment
 configuration every AI surface reads, and category generation spends Bedrock to
 feed the admin-only categories editor. A non-admin is refused with 403 BEFORE
 the body is parsed, anything is written or Bedrock is called; an admin keeps

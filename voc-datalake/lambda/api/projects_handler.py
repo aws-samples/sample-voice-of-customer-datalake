@@ -757,7 +757,7 @@ def api_run_research(project_id: str):
         'selected_persona_ids': body.get('selected_persona_ids', []),
         'selected_document_ids': body.get('selected_document_ids', []),
         'response_language': body.get('response_language'),
-        # ON when omitted (owner decision 2026-10-17: research grounds itself on
+        # ON when omitted (research grounds itself on
         # the public web by default; skipped when the gateway is not deployed).
         # Otherwise strict boolean (mirrors the stream side's Zod validation):
         # an explicit false, null or the string "false" keeps it off.

@@ -82,7 +82,7 @@ class TestParseRejectsMalformed:
     def test_legacy_token_is_refused(self):
         """`voc_<64 hex>` was the old format; it is deliberately not accepted.
 
-        Owner decision 2026-08-18: no legacy tokens were in production use, and
+        No legacy tokens were in production use, and
         a stray one fails closed with a 401 that re-minting fixes. If this test
         ever needs deleting, that is a policy change, not a cleanup.
         """

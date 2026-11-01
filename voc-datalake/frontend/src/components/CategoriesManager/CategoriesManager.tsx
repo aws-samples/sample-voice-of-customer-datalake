@@ -180,7 +180,7 @@ export default function CategoriesManager() {
 
   return (
     <div className="space-y-6">
-      {/* AI generation spends Bedrock: admin-only (owner decision 2026-10-08, #242). */}
+      {/* AI generation spends Bedrock: admin-only (#242). */}
       {isAdmin && (
         // The LLM response is a wire boundary too — normalize before saving.
         <CategoryGeneratePanel onGenerated={(generated) => saveMutation.mutate(normalizeCategories(generated))} />

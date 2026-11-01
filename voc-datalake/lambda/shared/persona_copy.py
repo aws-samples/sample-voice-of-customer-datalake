@@ -1,6 +1,6 @@
 """Copying personas between containers: a project, or the company library (shared.company_personas).
 
-Copy, never link (owner decision): each copy is an independent persona with a new id, its own
+Copy, never link (so editing one never changes another): each copy is an independent persona with a new id, its own
 avatar object and ``copied_from`` provenance. Research notes are never copied in either direction.
 
 The avatar is COPIED to the new persona's own key and stamped with the target container as its

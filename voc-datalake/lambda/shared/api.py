@@ -302,7 +302,7 @@ def admins_only(app: APIGatewayRestResolver, next_middleware: Callable[[APIGatew
     """Resolver middleware: every route of the module that installs it is admin-only (403 otherwise).
 
     ``app.use(middlewares=[admins_only])`` gates a whole module, so a route added later is gated without having
-    to remember the check (the data explorer, manual import and S3 import handlers; owner decision 2026-10-08).
+    to remember the check (the data explorer, manual import and S3 import handlers).
     """
     require_admin(app.current_event.raw_event)
     return next_middleware(app)

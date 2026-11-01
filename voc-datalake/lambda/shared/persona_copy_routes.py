@@ -12,7 +12,7 @@ promote POST = edit):
   projects (201 ``{success, personas}``).
 
 A source project the caller neither owns nor is a member of is a 404 like a missing one, also when
-it is public and for an admin (owner decision: membership, not visibility, makes a source).
+it is public and for an admin (by design: membership, not visibility, makes a source).
 """
 from __future__ import annotations
 

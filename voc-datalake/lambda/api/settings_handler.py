@@ -611,7 +611,7 @@ def save_brand_settings():
 
     The brand name, handles, hashtags and tracked URLs are shared deployment
     configuration every AI surface reads, so only admins may change them
-    (owner decision 2026-10-08, #242). The gate runs before the body is
+    (#242). The gate runs before the body is
     parsed or anything is written. GET /settings/brand stays open.
     """
     require_admin(app.current_event.raw_event)
@@ -718,8 +718,8 @@ def generate_categories():
     """Start generating category suggestions from a company description (admin only) → 202.
 
     Each call spends Bedrock, and the suggestions only feed the admin-only
-    categories editor, so only admins may run it (owner decision 2026-10-08,
-    #242). The gate and the required-field check answer synchronously, before
+    categories editor, so only admins may run it
+    (#242). The gate and the required-field check answer synchronously, before
     any job exists; the model call runs in the settings worker
     (``generate_categories_work``) and the caller polls
     ``GET /settings/jobs/{job_id}`` for the old body.

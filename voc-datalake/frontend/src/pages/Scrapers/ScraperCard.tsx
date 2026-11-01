@@ -162,8 +162,8 @@ function ScraperCardHeader({
  * The card's action row. `POST /scrapers/{id}/run` and `DELETE /scrapers/{id}` are
  * admin-gated server-side, so those two controls are disabled for a non-admin rather
  * than issuing a request that 403s. Edit stays enabled so a non-admin can READ the
- * configuration: save (`POST /scrapers`) is admin-only too (owner decision
- * 2026-10-08), so `ScraperEditor.tsx` opens read-only for them.
+ * configuration: save (`POST /scrapers`) is admin-only too (it writes the shared
+ * scraper credentials secret), so `ScraperEditor.tsx` opens read-only for them.
  */
 function ScraperCardActions({
   scraper, isRunning, isAdmin, onRun, onEdit, onDelete,

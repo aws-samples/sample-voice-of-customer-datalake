@@ -22,10 +22,10 @@ import SourceDialogHeader, { ToneTile } from './SourceDialogHeader'
 import { buildSourceMenu, type SourceEntry, type SourceGroup, type SourceGroupId } from './sourceMenu'
 
 interface TemplateSelectorProps {
-  /** Creating a web scraper (`POST /scrapers`) is admin-only — owner decision
-   *  (2026-10-08) — so the scraper templates are disabled for a non-admin, with
-   *  the admin-only title and a note. Importing data is admin-only too (owner
-   *  decision 2026-10-08, #242 follow-up: `/scrapers/manual/*` and `/s3-import/*`),
+  /** Creating a web scraper (`POST /scrapers`) is admin-only (it writes the shared
+   *  scraper credentials secret), so the scraper templates are disabled for a non-admin, with
+   *  the admin-only title and a note. Importing data is admin-only too
+   *  (#242: `/scrapers/manual/*` and `/s3-import/*`),
    *  so the manual-input tiles (paste, JSON, CSV) and the S3 import plugin tile are
    *  disabled the same way. App sources and synthetic data are unaffected. */
   readonly isAdmin: boolean

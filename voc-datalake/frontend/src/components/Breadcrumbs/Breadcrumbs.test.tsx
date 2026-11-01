@@ -160,7 +160,7 @@ describe('Breadcrumbs', () => {
    * fetch fails, and the assertion covers TanStack semantics that are version
    * sensitive rather than ours.
    */
-  describe('handover from the page that owns the record', () => {
+  describe('hand-off from the page that owns the record', () => {
     function ProjectPageProbe() {
       const { data } = useProjectData({ id: PROJECT_ID, apiEndpoint: 'https://api.example.com' })
       return <div data-testid="page">{data?.project.name ?? 'page loading'}</div>

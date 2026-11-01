@@ -65,7 +65,7 @@ const renderProjectDetail = renderProjectDetailPage
 /**
  * Mounts the page, waits for the first jobs poll, then starts a prototype build
  * through the wizard. Returns how many times the jobs list had been fetched
- * BEFORE the build, so a test can tell a handover refetch from the initial load.
+ * BEFORE the build, so a test can tell a hand-off refetch from the initial load.
  */
 async function startBuildFromIdlePage() {
   const user = userEvent.setup()
@@ -80,7 +80,7 @@ async function startBuildFromIdlePage() {
   return callsBeforeBuild
 }
 
-describe('ProjectDetail job handover (U9)', () => {
+describe('ProjectDetail job hand-off (U9)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     // The real store, not a mock: re-pointing a mocked zustand hook does not
@@ -96,7 +96,7 @@ describe('ProjectDetail job handover (U9)', () => {
     const callsBeforeBuild = await startBuildFromIdlePage()
 
     await waitFor(() => expect(mockBuildPrototype).toHaveBeenCalledTimes(1))
-    // Without the handover this stays at 1 forever: refetchInterval is 0 while
+    // Without the hand-off this stays at 1 forever: refetchInterval is 0 while
     // no job is known to be running.
     await waitFor(() => expect(mockGetJobs.mock.calls.length).toBeGreaterThan(callsBeforeBuild))
   })

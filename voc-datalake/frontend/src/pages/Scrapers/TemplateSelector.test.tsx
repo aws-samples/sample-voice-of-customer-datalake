@@ -1,7 +1,7 @@
 /**
- * Web scraper templates are admin-only (owner decision 2026-10-08: `POST /scrapers`
- * is admin-gated), and so is importing data (owner decision 2026-10-08, #242
- * follow-up: `/scrapers/manual/*` and `/s3-import/*`): the paste / JSON / CSV tiles
+ * Web scraper templates are admin-only (`POST /scrapers`
+ * is admin-gated), and so is importing data (#242:
+ * `/scrapers/manual/*` and `/s3-import/*`): the paste / JSON / CSV tiles
  * and the S3 import plugin tile are disabled for a non-admin. App sources stay open.
  *
  * "Add Data Source" lists only plugins that are deployed. A plugin switched off

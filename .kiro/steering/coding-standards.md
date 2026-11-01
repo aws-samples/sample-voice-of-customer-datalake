@@ -739,7 +739,7 @@ curl -N -X POST "${API_URL%/}/chat/stream" \
 ### Deployment Checklist
 
 1. Build Lambda layers with Docker: `./scripts/build-layers.sh`
-2. Deploy stacks: `npm run deploy:infra -- --context frontendDomain=<domain>` (from the repo root;
+2. Deploy stacks: `npm run deploy:infra` (from the repo root;
    it ends with `scripts/refresh-api-stage.sh` — after a bare `npx cdk deploy --all` run
    `bash voc-datalake/scripts/refresh-api-stage.sh` yourself, or removed routes stay live)
    — a clean synth/deploy prints **zero warnings**; treat new warnings as

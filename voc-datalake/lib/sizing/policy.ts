@@ -113,14 +113,14 @@ export function memoryCeilingPct(stem: string): number {
 
 // The 2026-10-18 measurement every raise of that date cites (docs/lambda-sizing.md):
 // Production, 2026-10-04 → 2026-10-18, `scripts/capacity/capacity-query.sh --hours 336`; figures are the
-// CPU p95 share over calls ≥ 100 ms at the old size unless noted. Owner decision 2026-10-18: raise every
+// CPU p95 share over calls ≥ 100 ms at the old size unless noted. The rule since 2026-10-18: raise every
 // function over the new 60 % ceiling (or with peak memory near it) one step, Power Tuning pins included.
 
 /**
- * Owner decision 2026-10-20 ("owner: double under the 60 % CPU rule"): DOUBLE the memory of every function over
+ * 2026-10-20: DOUBLE the memory of every function over
  * the 60 % CPU ceiling in the 24 h window 2026-10-19T03:31Z → 2026-10-20T03:31Z, every invocation at the size it
  * was doubled from (docs/lambda-sizing.md "Doubled under the 60 % rule"); RAISED_FOR_CPU took
- * twice it. Not rungs of MEMORY_STEPS_MB: a doubling is the owner's number, not "one
+ * twice it. Not rungs of MEMORY_STEPS_MB: a doubling is a fixed ×2, not "one
  * step". Above 1,769 MB a single-threaded handler gets no more CPU, so for the share above one vCPU the doubling
  * lowers the measured share rather than speeding the code: re-measure, and Power Tune or make the code cheaper
  * if one still breaches.
@@ -137,7 +137,7 @@ export const DOUBLED_2026_10_20: Readonly<Record<string, number>> = {
 };
 
 /**
- * Owner decision 2026-10-23 (5.27.00): no single-threaded Python function sits above one vCPU. Every Python
+ * Since 5.27.00: no single-threaded Python function sits above one vCPU. Every Python
  * handler runs one core (the GIL; `shared/concurrency.py` threads only overlap network waits), so memory above
  * 1,769 MB bought no speed: the 2026-10-20 doubling only lowered the measured share. The CPU behind those
  * breaches was made cheaper instead (docs/lambda-sizing.md "Back to one vCPU"): clients built during INIT
@@ -160,9 +160,9 @@ function cappedOn20261023(stem: string): number {
  * Raised for CPU per the capacity evidence (2.17.00; the 3.00.00 production check,
  * voc-e2e/verify/3.00.00/CAPACITY-REPORT.md; the 2026-10-18 check above): each was over
  * the ceiling of its day and went up one rung (two where one still left it over); the eight in
- * DOUBLED_2026_10_20 were then doubled by the owner on 2026-10-20, and brought back to one vCPU on 2026-10-23
+ * DOUBLED_2026_10_20 were then doubled on 2026-10-20, and brought back to one vCPU on 2026-10-23
  * (CAPPED_AT_ONE_VCPU_2026_10_23).
- * Upsize-only (owner decision 2026-10-07): nothing is lowered towards a Power Tuning pick.
+ * Upsize-only: nothing is lowered towards a Power Tuning pick, so a resize never slows a function.
  *
  * The six marked [PT] were sized by AWS Lambda Power Tuning on 2026-10-06; those pins
  * (POWER_TUNED below) were superseded on 2026-10-18 and no longer waive the CPU rule.
@@ -267,7 +267,7 @@ const PT_2026_10_06: Pick<PowerTuningRecord, 'date' | 'method'> = {
   method: 'balanced; production, read-only GET payloads as e2e-admin, 30 calls per size',
 };
 
-/** Owner decision 2026-10-18: raise the six pinned APIs one step regardless of their curves. */
+/** 2026-10-18: raise the six pinned APIs one step regardless of their curves (CPU over the 60 % ceiling). */
 const raisedOn20261018 = (toMb: number): PowerTuningSupersession => ({
   date: '2026-10-18',
   toMb,
