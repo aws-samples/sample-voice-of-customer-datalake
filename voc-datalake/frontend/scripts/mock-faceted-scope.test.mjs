@@ -12,20 +12,13 @@
  */
 
 import { strict as assert } from 'node:assert'
-import { spawn } from 'node:child_process'
-import { after, before, describe, it } from 'node:test'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { freePort } from './check-mock-coverage.mjs'
+import { describe, it } from 'node:test'
+import { useMockServer } from './mock-server-harness.mjs'
 
-const FRONTEND = join(dirname(fileURLToPath(import.meta.url)), '..')
-const START_TIMEOUT_MS = 20_000
-
-let child
-let base
+const mock = useMockServer()
 
 async function call(method, path, body) {
-  const response = await fetch(`${base}${path}`, {
+  const response = await fetch(`${mock.base}${path}`, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -34,21 +27,6 @@ async function call(method, path, body) {
 }
 
 describe('dev mock: faceted metric reads keep the caller scope', () => {
-  before(async () => {
-    const port = await freePort()
-    base = `http://127.0.0.1:${port}`
-    child = spawn(process.execPath, ['mock-server.js'], { cwd: FRONTEND, env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'ignore'] })
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('mock server did not start')), START_TIMEOUT_MS)
-      child.stdout.on('data', (chunk) => {
-        if (String(chunk).includes('Mock API server running')) { clearTimeout(timer); resolve() }
-      })
-      child.once('exit', (code) => { clearTimeout(timer); reject(new Error(`mock server exited ${code}`)) })
-    })
-  })
-
-  after(() => { child?.kill() })
-
   it('counts only the allowed categories when a facet is set', async () => {
     const FACET = 'days=0&sentiment=positive,negative'
     const totals = async () => {

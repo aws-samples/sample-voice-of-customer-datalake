@@ -16,22 +16,16 @@
  */
 
 import { strict as assert } from 'node:assert'
-import { spawn } from 'node:child_process'
-import { after, before, describe, it } from 'node:test'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { freePort } from './check-mock-coverage.mjs'
+import { describe, it } from 'node:test'
+import { useMockServer } from './mock-server-harness.mjs'
 import { corpusFeedback } from '../mock-feedback-corpus.js'
 
-const FRONTEND = join(dirname(fileURLToPath(import.meta.url)), '..')
-const START_TIMEOUT_MS = 20_000
 const PAGE = 100
 
-let child
-let base
+const mock = useMockServer()
 
 async function get(path) {
-  const response = await fetch(`${base}${path}`)
+  const response = await fetch(`${mock.base}${path}`)
   return [response.status, await response.json()]
 }
 
@@ -49,21 +43,6 @@ async function allFeedback(query = '') {
 const countBy = (items, field) => items.reduce((acc, item) => ({ ...acc, [item[field]]: (acc[item[field]] ?? 0) + 1 }), {})
 
 describe('dev mock: review corpus and dims lists', () => {
-  before(async () => {
-    const port = await freePort()
-    base = `http://127.0.0.1:${port}`
-    child = spawn(process.execPath, ['mock-server.js'], { cwd: FRONTEND, env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'ignore'] })
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('mock server did not start')), START_TIMEOUT_MS)
-      child.stdout.on('data', (chunk) => {
-        if (String(chunk).includes('Mock API server running')) { clearTimeout(timer); resolve() }
-      })
-      child.once('exit', (code) => { clearTimeout(timer); reject(new Error(`mock server exited ${code}`)) })
-    })
-  })
-
-  after(() => { child?.kill() })
-
   it('lists as many reviews as the summary counts, per category, per source and urgent', async () => {
     const items = await allFeedback()
     const [, summary] = await get('/metrics/summary?days=7')
@@ -78,7 +57,8 @@ describe('dev mock: review corpus and dims lists', () => {
   it("accepts Problem Analysis's default dims list (longer than one value may be), and filters by any choice", async () => {
     const choices = ['bug', 'service_failure', 'performance', 'usability', 'pricing_billing', 'support_experience', '~unset']
     assert.ok(choices.join('|').length > 64, 'the list must be longer than one dimension value may be')
-    const [status, body] = await get(`/feedback?days=0&limit=100&dims=${encodeURIComponent(`feedback_type:${choices.join('|')}`)}`)
+    const dims = encodeURIComponent(`feedback_type:${choices.join('|')}`)
+    const [status, body] = await get(`/feedback?days=0&limit=100&dims=${dims}`)
     assert.equal(status, 200)
     assert.ok(body.items.length > 0)
     for (const item of body.items) {
