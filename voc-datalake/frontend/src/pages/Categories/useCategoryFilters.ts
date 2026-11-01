@@ -209,8 +209,9 @@ export function useCategoryFilters(): CategoryFiltersApi {
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>(() => parseRatingParams(searchParams))
   const [showUrgentOnly, setShowUrgentOnly] = useState(() => searchParams.get('urgent') === '1')
   const [channel, setChannel] = useState<string | null>(() => nonEmptyParam(searchParams, 'channel'))
-  const [dimensionFilter, setDimensionFilter] = useState<Record<string, string>>(() => readDimsAndTypes(searchParams).dimensionFilter)
-  const [types, setTypes] = useState<TypeSelection>(() => readDimsAndTypes(searchParams).types)
+  const [initialDims] = useState(() => readDimsAndTypes(searchParams))
+  const [dimensionFilter, setDimensionFilter] = useState<Record<string, string>>(initialDims.dimensionFilter)
+  const [types, setTypes] = useState<TypeSelection>(initialDims.types)
   const [tag, setTag] = useState<string | null>(() => nonEmptyParam(searchParams, 'tag'))
   const shareable: ShareableFilters = {
     searchText, facets, subcategory, ratingFilter, showUrgentOnly, channel, dimensionFilter, types, tag,

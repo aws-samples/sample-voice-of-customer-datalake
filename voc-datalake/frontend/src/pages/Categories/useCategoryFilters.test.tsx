@@ -293,6 +293,12 @@ describe('useCategoryFilters', () => {
       expect(result.current.filters.hasActiveFilters).toBe(true)
     })
 
+    it('counts a type choice alone as an active filter, so Clear filters is offered', () => {
+      const { result } = renderFiltersWithUrl()
+      act(() => result.current.filters.setTypes(['bug']))
+      expect(result.current.filters.hasActiveFilters).toBe(true)
+    })
+
     it('reads ?types=feature_request as that one pill', () => {
       const { result } = renderFiltersWithUrl(['/categories?types=feature_request'])
       expect(result.current.filters.types).toStrictEqual(['feature_request'])

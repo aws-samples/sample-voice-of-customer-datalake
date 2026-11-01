@@ -24,7 +24,7 @@ import { generateCategoriesPDF } from './categoriesPdfGenerator'
 import { breakdownFiltersOf, useCategoryFilters } from './useCategoryFilters'
 import { AttributeFilterControls } from './AttributeFilterControls'
 import { useDimensionsConfig } from '../../hooks/useDimensions'
-import { BUILTIN_DIMENSION_KEYS } from '../../api/feedbackTypes'
+import { FEEDBACK_TYPE_KEY } from '../../api/feedbackTypes'
 import { ReviewTypeChips } from '../../components/ReviewTypeFilter/ReviewTypeChips'
 import type { CategoryFiltersApi } from './useCategoryFilters'
 import { useFeedbackListData } from './useFeedbackListData'
@@ -190,8 +190,8 @@ export default function Categories() {
           tags={analytics.allTags}
           tag={filters.tag}
           onTagChange={filters.setTag}
-          // The review type has its own pills above; the selects are for the configured dimensions.
-          dimensions={(dimensionsConfig?.dimensions ?? []).filter((d) => !BUILTIN_DIMENSION_KEYS.has(d.key))}
+          // The review type has its own pills above; every other dimension keeps its select.
+          dimensions={(dimensionsConfig?.dimensions ?? []).filter((d) => d.key !== FEEDBACK_TYPE_KEY)}
           dimensionFilter={filters.dimensionFilter}
           onDimensionFilterChange={filters.setDimensionFilter}
         />
