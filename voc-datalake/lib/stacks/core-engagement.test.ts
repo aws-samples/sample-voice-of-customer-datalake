@@ -110,14 +110,14 @@ describe.each([
     expect(props().TimeToLiveSpecification).toStrictEqual({ AttributeName: ttl, Enabled: true });
   });
 
-  it('is deleted with the stack by default, but kept on replacement', () => {
-    const table = TableSchema.parse(tableNamed(coreDefault(), baseName).resource);
+  it('is deleted with the stack under -c protectData=false (demos), but kept on replacement', () => {
+    const table = TableSchema.parse(tableNamed(synthCoreTemplate({ protectData: false }), baseName).resource);
     expect([table.DeletionPolicy, table.UpdateReplacePolicy]).toStrictEqual(['Delete', 'Retain']);
     expect(table.Properties.DeletionProtectionEnabled).toBeFalsy();
   });
 
-  it('is kept and deletion-protected with -c protectData=true', () => {
-    const table = TableSchema.parse(tableNamed(synthCoreTemplate({ protectData: true }), baseName).resource);
+  it('is kept and deletion-protected by default (protectData on)', () => {
+    const table = TableSchema.parse(tableNamed(coreDefault(), baseName).resource);
     expect([table.DeletionPolicy, table.UpdateReplacePolicy]).toStrictEqual(['RetainExceptOnCreate', 'Retain']);
     expect(table.Properties.DeletionProtectionEnabled).toBe(true);
   });

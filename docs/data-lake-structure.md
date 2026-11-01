@@ -54,8 +54,9 @@ The bucket is versioned and KMS-encrypted. Ingestor roles may only put objects u
 cannot read or delete. Only `voc-retention` deletes raw objects, for an opt-in per-source retention
 period or an erasure request. The Data Explorer (admin-only) can create a new object but refuses
 (409) to overwrite an existing key under `raw/`. An overwritten object's previous version is kept
-for 90 days. Deleting the stack empties the bucket (every version) and deletes it; back up first
-([Deployment → Teardown](deployment.md#teardown-deletes-everything-back-up-first)).
+for 90 days. The bucket is kept when the stacks are deleted (`protectData`, the default); under
+`-c protectData=false` deleting the stack empties the bucket (every version) and deletes it; back up first
+([Deployment → Teardown](deployment.md#teardown-with--c-protectdatafalse-back-up-first)).
 
 Other prefixes in the same bucket store project uploads, extracted product context, persona avatars
 (`avatars/<project_id>/<persona_id>.png`) and generated prototype assets. `scratch/` holds working
@@ -235,12 +236,12 @@ Projects UI/API → Jobs → Bedrock → Projects table + S3 artifact assets
 
 ## Retention
 
-Customer data is not deleted while the platform runs, apart from opt-in per-source retention and erasure requests ([Source policies](source-policies.md)). Deleting the stacks deletes all of it; back up first ([Deployment → Teardown](deployment.md#teardown-deletes-everything-back-up-first)). Details and the migration for existing deployments: [Deployment → Data Retention](deployment.md#data-retention-nothing-is-ever-deleted).
+Customer data is not deleted while the platform runs, apart from opt-in per-source retention and erasure requests ([Source policies](source-policies.md)). Deleting the stacks keeps it by default (`protectData`); under `-c protectData=false` it deletes all of it; back up first ([Deployment → Teardown](deployment.md#teardown-with--c-protectdatafalse-back-up-first)). Details and the migration for existing deployments: [Deployment → Data Retention](deployment.md#data-retention-nothing-is-ever-deleted).
 
-- **S3 raw data:** kept under `raw/` while the platform runs, unless a source's retention or an erasure removes it; previous versions of overwritten objects are kept 90 days; the bucket is deleted with the stack. Project assets in the same bucket are managed by the project APIs.
-- **Feedback:** no expiry unless a source profile sets `retention_days`; the table is deleted with the stack.
-- **Daily aggregate metrics:** no expiry; the table is deleted with the stack.
-- **Projects:** no expiry; the table is deleted with the stack.
+- **S3 raw data:** kept under `raw/` while the platform runs, unless a source's retention or an erasure removes it; previous versions of overwritten objects are kept 90 days; the bucket is deleted with the stack only under `-c protectData=false`. Project assets in the same bucket are managed by the project APIs.
+- **Feedback:** no expiry unless a source profile sets `retention_days`; the table is deleted with the stack only under `-c protectData=false`.
+- **Daily aggregate metrics:** no expiry; the table is deleted with the stack only under `-c protectData=false`.
+- **Projects:** no expiry; the table is deleted with the stack only under `-c protectData=false`.
 - **Processing logs:** seven-day TTL.
 - **Jobs and idempotency:** item-specific TTL appropriate to progress visibility or retry guarantees.
 - **Conversations:** no automatic expiry on current writes; delete through the application/API when no longer needed.

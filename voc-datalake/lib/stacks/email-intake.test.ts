@@ -191,14 +191,14 @@ describe('email inbox: data protection', () => {
     return { entry, ingestion };
   };
 
-  it('keeps the original emails on stack deletion under -c protectData=true', () => {
-    const { entry } = inboundBucket({ protectData: 'true' });
+  it('keeps the original emails on stack deletion by default (protectData on)', () => {
+    const { entry } = inboundBucket({});
     expect(entry?.DeletionPolicy).toBe('RetainExceptOnCreate');
     expect(JSON.stringify(entry?.Properties?.Tags ?? [])).not.toContain('aws-cdk:auto-delete-objects');
   });
 
-  it('is emptied and deleted with the stack without protectData (demos)', () => {
-    const { entry } = inboundBucket({});
+  it('is emptied and deleted with the stack under -c protectData=false (demos)', () => {
+    const { entry } = inboundBucket({ protectData: 'false' });
     expect(entry?.DeletionPolicy).toBe('Delete');
     expect(JSON.stringify(entry?.Properties?.Tags ?? [])).toContain('aws-cdk:auto-delete-objects');
   });
