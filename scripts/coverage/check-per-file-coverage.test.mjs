@@ -154,17 +154,26 @@ test('end to end: --init once, the check passes, a second --init refuses', () =>
   }
 })
 
+/** Rows of a baseline with one regressed, one vanished and one graduated file (MIXED_REPORT below). */
+const DOWN_ROW = 'voc-datalake/lambda/down.py 50.00   # 5/10'
+const GONE_ROW = 'voc-datalake/lambda/gone.py 10.00   # 1/10'
+const UP_ROW = 'voc-datalake/lambda/up.py 10.00   # 1/10'
+const MIXED_REPORT = { 'lambda/up.py': [9, 10], 'lambda/down.py': [1, 10], 'lambda/new.py': [1, 10] }
+
+/** The two findings MIXED_REPORT always leaves: a new file under the floor and a regressed baselined one. */
+function assertMixedFindings(lines) {
+  assert.ok(lines.some((line) => line.includes('new.py: 10.00% (1/10) is below the 80% floor')))
+  assert.ok(lines.some((line) => line.includes('down.py: 10.00% (1/10) fell below its recorded 50.00%')))
+}
+
 test('end to end: --update-baseline only deletes, and a remaining regression still fails', () => {
-  const repo = fixtureRepo({ 'lambda/up.py': [9, 10], 'lambda/down.py': [1, 10], 'lambda/new.py': [1, 10] })
+  const repo = fixtureRepo(MIXED_REPORT)
   try {
-    const before = baseline('voc-datalake/lambda/down.py 50.00   # 5/10', 'voc-datalake/lambda/gone.py 10.00   # 1/10', 'voc-datalake/lambda/up.py 10.00   # 1/10')
-    writeFileSync(repo.baselineFile, before)
+    writeFileSync(repo.baselineFile, baseline(DOWN_ROW, GONE_ROW, UP_ROW))
     assert.equal(repo.run(), 1)
     assert.equal(repo.run('--update-baseline'), 1)
-    const after = readFileSync(repo.baselineFile, 'utf8')
-    assert.equal(after, baseline('voc-datalake/lambda/down.py 50.00   # 5/10'))
-    assert.ok(repo.lines.some((line) => line.includes('new.py: 10.00% (1/10) is below the 80% floor')))
-    assert.ok(repo.lines.some((line) => line.includes('down.py: 10.00% (1/10) fell below its recorded 50.00%')))
+    assert.equal(readFileSync(repo.baselineFile, 'utf8'), baseline(DOWN_ROW))
+    assertMixedFindings(repo.lines)
   } finally {
     repo.cleanup()
   }
@@ -185,16 +194,13 @@ test('end to end: --prune-graduated deletes only rows that reach the floor, name
 })
 
 test('end to end: --prune-graduated keeps every other stale row and finding failing', () => {
-  const repo = fixtureRepo({ 'lambda/up.py': [9, 10], 'lambda/down.py': [1, 10], 'lambda/new.py': [1, 10] })
+  const repo = fixtureRepo(MIXED_REPORT)
   try {
-    writeFileSync(repo.baselineFile, baseline(
-      'voc-datalake/lambda/down.py 50.00   # 5/10', 'voc-datalake/lambda/gone.py 10.00   # 1/10', 'voc-datalake/lambda/up.py 10.00   # 1/10'))
+    writeFileSync(repo.baselineFile, baseline(DOWN_ROW, GONE_ROW, UP_ROW))
     assert.equal(repo.run('--prune-graduated'), 1)
-    assert.equal(readFileSync(repo.baselineFile, 'utf8'), baseline(
-      'voc-datalake/lambda/down.py 50.00   # 5/10', 'voc-datalake/lambda/gone.py 10.00   # 1/10'))
+    assert.equal(readFileSync(repo.baselineFile, 'utf8'), baseline(DOWN_ROW, GONE_ROW))
     assert.ok(repo.lines.some((line) => line.includes('gone.py: not in the report')))
-    assert.ok(repo.lines.some((line) => line.includes('new.py: 10.00% (1/10) is below the 80% floor')))
-    assert.ok(repo.lines.some((line) => line.includes('down.py: 10.00% (1/10) fell below its recorded 50.00%')))
+    assertMixedFindings(repo.lines)
   } finally {
     repo.cleanup()
   }
