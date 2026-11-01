@@ -28,5 +28,5 @@
     "allowUnusedLabels": false,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["vite.config.ts", "changelogPlugin.ts", "vendorChunks.json"]
+  "include": ["vite.config.ts", "changelogPlugin.ts", "vendorChunkGroups.ts", "vendorChunks.json"]
 }
