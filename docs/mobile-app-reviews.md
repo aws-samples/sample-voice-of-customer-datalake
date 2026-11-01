@@ -1,6 +1,8 @@
 # Mobile App Reviews Plugins
 
-Collect customer reviews from the Apple App Store and Google Play Store using two dedicated plugins.
+Two plugins collect customer reviews of your apps from the Apple App Store and Google Play. An administrator adds
+each app on the **Data sources** page; the plugins then fetch new reviews on the app's schedule or on demand and
+send them through the normal processing pipeline. Neither store needs an API key.
 
 ## Overview
 
@@ -11,11 +13,11 @@ The mobile app reviews feature consists of two separate plugins:
 | iOS App Reviews | `plugins/app_reviews_ios/` | Apple App Store | `app_reviews_ios` |
 | Android App Reviews | `plugins/app_reviews_android/` | Google Play Store | `app_reviews_android` |
 
-Each plugin is independent — its own Lambda, schedule, secrets, watermarks, and circuit breaker. If one platform has issues, the other continues running.
+Each plugin is independent: its own Lambda, schedule, secrets, watermarks and circuit breaker. If one platform has issues, the other continues running.
 
 ## Plugin Structure
 
-Each plugin handler subclasses `BaseIngestor` from `_shared/base_ingestor.py`. The import pattern follows the existing webscraper convention:
+Each plugin handler subclasses `BaseIngestor` from `_shared/base_ingestor.py`, like the webscraper plugin:
 
 ```python
 from _shared.base_ingestor import BaseIngestor, logger, tracer, metrics
@@ -40,41 +42,42 @@ plugins/
         └── models.py           # App config validation (AndroidAppConfig dataclass)
 ```
 
-Both plugins follow the same conventions as the existing `webscraper` plugin:
+Both plugins follow the same conventions as the `webscraper` plugin:
 - `manifest.json` at the plugin root drives CDK infrastructure and frontend UI
 - All Python code lives under `ingestor/` for correct Lambda bundling
 - Each handler subclasses `_shared/base_ingestor.py`
 - Lambda bundling copies plugin code + `_shared/` + `lambda/shared/` (see `ingestion-stack.ts`)
 
-## Scrapers Page UI
+## Data Sources Page UI
 
-Both plugins appear as cards on the **Scrapers** page (**Data Sources**), reached from **Scrapers** in the sidebar — rendered dynamically from their manifests. Open a card (or **New Source** → the plugin) to manage its apps. **Each plugin supports multiple apps**: add, edit, and delete several apps per plugin from the **Configured Apps** list (stored as a JSON array in Secrets Manager via the `/integrations/{source}/apps` CRUD endpoints).
+Both plugins appear as cards on the **Data sources** page (`/scrapers`), rendered from their manifests. Add an
+app with **New source** → **An app** → **iPhone app (App Store)** or **Android app (Google Play)**, or open the
+plugin's card. **Each plugin supports multiple apps**: add, edit and delete apps from the **Configured Apps**
+list. The apps are stored as a JSON array in the plugin's Secrets Manager entry through the
+`/integrations/{source}/apps` endpoints.
 
 ### iOS Plugin Settings
 
-The iOS plugin card shows these config fields:
-
 | Field | Key | Type | Default | Description |
 |-------|-----|------|---------|-------------|
-| App Name | `app_name` | text | — | Logical app name (required) |
-| App Store ID | `app_id` | text | — | Apple App Store numeric ID (required) |
-| Review Sort Order | `sort_by` | select | `most_recent` | `most_recent` (the only option — see [Sort Order](#sort-order)) |
-| Max Countries Per Run | `max_countries_per_run` | text | `40` | Limit country iteration |
+| App Name | `app_name` | text | none | Logical app name (required) |
+| App Store ID | `app_id` | text | none | Apple App Store numeric ID (required), for example `1234567890` |
+| Review Sort Order | `sort_by` | select | `most_recent` | `most_recent` (the only option, see [Sort Order](#sort-order)) |
 | Max Reviews Per Run | `max_reviews_per_run` | text | `500` | Max reviews to collect per run |
-| Run Frequency | `frequency_minutes` | select | `1440` (Daily) | Schedule override |
+| Run Frequency | `frequency_minutes` | select | the plugin's top-level value (60) | See below |
 
 ### Android Plugin Settings
 
-The Android plugin card shows these config fields:
-
 | Field | Key | Type | Default | Description |
 |-------|-----|------|---------|-------------|
-| App Name | `app_name` | text | — | Logical app name (required) |
-| Package Name | `package_name` | text | — | Android package name (required) |
+| App Name | `app_name` | text | none | Logical app name (required) |
+| Package Name | `package_name` | text | none | Android package name (required), for example `com.example.air` |
 | Review Sort Order | `sort_by` | select | `newest` | `newest` or `rating` |
-| Max Countries Per Run | `max_countries_per_run` | text | `20` | Limit country iteration |
 | Max Reviews Per Run | `max_reviews_per_run` | text | `500` | Max reviews to collect per run |
-| Run Frequency | `frequency_minutes` | select | `1440` (Daily) | Schedule override |
+| Run Frequency | `frequency_minutes` | select | the plugin's top-level value (60) | See below |
+
+An Android app entry may also carry `lang` and `country` (not shown in the form). With either set, the plugin
+reads that one locale, for example `ko` / `kr` for a Korean app, because Google Play filters reviews by language.
 
 ### Run Frequency Options
 
@@ -82,8 +85,7 @@ Both plugins offer the same frequency options via a select dropdown. **Each app 
 Run Frequency is honoured**: the ingestor's EventBridge rule ticks every 30 minutes, and on each
 scheduled tick an app runs only when its own `frequency_minutes` has elapsed since its
 `{app_name}_last_run` (`0` = manual runs only). An app connector saved without one falls back to
-the plugin's top-level `frequency_minutes` (default 60). Before 5.44 every app ran on the top-level
-value and the per-app choice was ignored. The same holds for **Review Sort Order** (`sort_by`):
+the plugin's top-level `frequency_minutes` (default 60). The same holds for **Review Sort Order** (`sort_by`):
 the app connector's value wins over the top-level one. "Run now" always runs, whatever the frequency.
 
 | Value | Label |
@@ -100,21 +102,24 @@ the app connector's value wins over the top-level one. "Run now" always runs, wh
 ### Sort Order
 
 **iOS options:**
-- `most_recent` — Fetch newest reviews first (the default and only option)
+- `most_recent`: fetch the newest reviews first (the default and only option)
 
 There is no "most critical" sort: Apple's customer-reviews RSS feed answers HTTP 500 for
-`sortby=mostcritical`, so that option was removed. Filter by rating after ingestion instead.
+`sortby=mostcritical`. A config saved with `most_critical` falls back to `most_recent`. Filter by rating after
+ingestion instead.
 
 **Android options:**
-- `newest` — Fetch newest reviews first (default, recommended)
-- `rating` — Fetch by rating (maps to `Sort.MOST_RELEVANT`)
+- `newest`: fetch the newest reviews first (default, recommended)
+- `rating`: fetch by relevance (maps to `Sort.MOST_RELEVANT`)
 
-### Countries Per Run
+### Storefronts Per Run
 
-The `max_countries_per_run` field caps how many storefront countries the plugin iterates through per Lambda invocation. This controls the tradeoff between global coverage and Lambda execution time.
-
-- iOS default: 40 countries (~50 reviews each = ~2000 candidates before dedup)
-- Android default: 20 countries (Play Store reviews are more globally pooled)
+- **iOS** reads every storefront in `countries.py` (40) on every run, in shuffled order. Each App Store
+  storefront serves its own reviews, so each one adds coverage.
+- **Android** reads one locale per run: the app's `lang` / `country` when set, otherwise English (`en`) in one
+  storefront picked at random from `countries.py`. Google Play serves largely the same reviews in every country,
+  so more countries would only fetch duplicates. The library pages through the reviews until it has
+  `max_reviews_per_run`.
 
 ### Credentials Storage
 
@@ -124,18 +129,15 @@ Credentials are stored in AWS Secrets Manager with keys namespaced by source plu
 
 ### Strategy
 
-For the configured app, the plugin:
+For each configured app, the plugin:
 
-1. Loads the list of supported storefront country codes from `countries.py`
-2. Shuffles the country list (so we don't always stall on the same countries if time runs out)
-3. Limits to `max_countries_per_run` countries
-4. Iterates through countries, fetching the most recent reviews from each
-5. Merges all reviews across countries into a single dict keyed by composite ID
-6. Deduplicates by stable review ID (same review in multiple storefronts gets one entry)
-7. Sorts by date descending
-8. Keeps only the top N reviews based on `max_reviews_per_run`
-9. Filters out reviews older than the watermark
-10. Yields each review to the base ingestor pipeline
+1. Picks the storefronts to read (above), shuffled so that a run short of time does not always miss the same ones
+2. Fetches the most recent reviews from each storefront
+3. Merges the reviews into one set keyed by composite ID, so a review shown in several storefronts counts once
+4. Sorts by date, newest first
+5. Keeps the newest `max_reviews_per_run`
+6. Filters out reviews older than the watermark
+7. Yields each review to the base ingestor pipeline
 
 ### iOS Collection
 
@@ -145,7 +147,7 @@ The iOS plugin uses `app-store-web-scraper` which wraps Apple's undocumented iTu
 https://itunes.apple.com/{country}/rss/customerreviews/page={page}/id={app_id}/sortby=mostrecent/json
 ```
 
-- Returns up to 50 reviews per page, max 10 pages = 500 reviews per country
+- Returns up to 50 reviews per page, max 10 pages = 500 reviews per country (at most `max_reviews_per_run`)
 - Built-in session with connection pooling, rate-limit delays (500ms + 200ms jitter), and retry backoff (3 retries, factor 2, max 10s)
 - No authentication required
 - Sorted by most recent by default
@@ -163,7 +165,7 @@ session = AppStoreSession(
     retries_backoff_max=10,
 )
 
-app = AppStoreEntry(app_id=123456789, country="ch", session=session)
+app = AppStoreEntry(app_id=1234567890, country="ch", session=session)
 
 for review in app.reviews(limit=50):
     print(review.id, review.date, review.rating, review.title, review.review)
@@ -185,7 +187,8 @@ result, continuation_token = reviews(
 )
 ```
 
-- Fetches 100 reviews per country per request
+- Pages with the library's continuation token, 200 reviews per request, until `max_reviews_per_run` is reached or
+  the reviews run out
 - Supports `Sort.NEWEST` and `Sort.MOST_RELEVANT`
 - Country and language parameters filter by storefront
 - No authentication required
@@ -213,21 +216,20 @@ Each plugin uses the existing `BaseIngestor` watermark mechanism with keys scope
 ### Incremental Logic
 
 1. On a scheduled run, check `{app_name}_last_run` against the app's `frequency_minutes` (the app
-   connector's own value, else the plugin's top-level one; `0` = manual runs only) — skip if not due yet
+   connector's own value, else the plugin's top-level one; `0` = manual runs only); skip if not due yet
 2. Load the watermark `{app_name}_last_published_at`
-3. Collect and deduplicate reviews across countries (each storefront's outcome is tallied — see Error Handling)
+3. Collect and deduplicate reviews across countries (each storefront's outcome is tallied, see Error Handling)
 4. Compare the candidate count with `{app_name}_last_count`, warn on a drop to 0, store the new count
 5. Skip reviews with date ≤ watermark
 6. Yield remaining reviews to the pipeline
 7. Update watermark to the newest review date from this run
 8. Update `{app_name}_last_run` to current time
 
-### Long runs continue in parts (5.47.00)
+### Long runs continue in parts
 
-One iOS app walks ~40 storefronts (90–110 s), so a run over ten apps (a "Run all" on the Data
-sources page, or a scheduled tick where many apps are due) used to pass the ingestor's 15-minute
-Lambda timeout (Android: 10 minutes) and leave the run row at `running`. A run now checks its
-remaining time before each app (`plugins/_shared/app_reviews_parts.py`). When less than the reserve
+One iOS app walks 40 storefronts (90-110 s), so a run over ten apps (a "Run all" on the Data
+sources page, or a scheduled tick where many apps are due) would pass the ingestor's 15-minute
+Lambda timeout (Android: 10 minutes). A run therefore checks its remaining time before each app (`plugins/_shared/app_reviews_parts.py`). When less than the reserve
 is left (at least 240 s, or 1.5× the slowest app of this invocation), it stops, sends what it
 collected, and starts a new invocation of its **own** function asynchronously with the apps still to
 do and the totals so far. Every invocation (a "part") runs at least one app, so N apps take at most
@@ -256,7 +258,7 @@ N parts; ten iOS apps take two.
 ### Tradeoffs
 
 - The iTunes RSS endpoint (iOS) returns max 10 pages × 50 reviews = 500 reviews per country. For most apps this covers recent reviews well. Very high-volume apps in a single country may miss some reviews between runs.
-- The Play Store scraper (Android) fetches 100 reviews per country. Deeper fetching is possible but capped by `max_reviews_per_run` and Lambda timeout.
+- The Play Store scraper (Android) reads one locale, up to `max_reviews_per_run` reviews, within the Lambda timeout.
 - Watermarks are best-effort. If a review's date is backdated by the store, it may be missed.
 
 ## Output Format
@@ -267,18 +269,18 @@ Each yielded review follows the VoC pipeline's expected schema.
 
 ```python
 {
-    "id": "ios_123456789_12345678",
+    "id": "ios_1234567890_12345678",
     "channel": "app_review_ios",
     "text": "Great app!\n\nLove the new features",  # title + "\n\n" + body
     "title": "Great app!",
     "rating": 5,
     "created_at": "2026-03-06T14:30:00+00:00",
-    "url": "https://apps.apple.com/app/id123456789",
+    "url": "https://apps.apple.com/app/id1234567890",
     "author": "HappyUser123",
-    "brand_handles_matched": ["VoC Analytics"],
-    "source_platform_override": "example_air_ios",  # {app_name}_ios
-    "app_name": "example_air",
-    "app_identifier": "123456789",
+    "brand_handles_matched": ["Example Air"],
+    "source_platform_override": "Example Air_iOS",  # {app_name}_iOS
+    "app_name": "Example Air",
+    "app_identifier": "1234567890",
     "country": "us",
     "developer_response": "Thanks for the feedback!",
 }
@@ -296,9 +298,9 @@ Each yielded review follows the VoC pipeline's expected schema.
     "created_at": "2026-03-06T14:30:00+00:00",
     "url": "https://play.google.com/store/apps/details?id=com.example.air",
     "author": "HappyUser123",
-    "brand_handles_matched": ["VoC Analytics"],
-    "source_platform_override": "example_air_android",  # {app_name}_android
-    "app_name": "example_air",
+    "brand_handles_matched": ["Example Air"],
+    "source_platform_override": "Example Air_Android",  # {app_name}_Android
+    "app_name": "Example Air",
     "app_identifier": "com.example.air",
     "country": "us",
     "app_version": "24.3.1",
@@ -308,7 +310,7 @@ Each yielded review follows the VoC pipeline's expected schema.
 }
 ```
 
-The `source_platform_override` field causes `BaseIngestor.normalize_item()` to use the app-specific name for S3 partitioning instead of the generic plugin ID.
+The `source_platform_override` field makes `BaseIngestor.normalize_item()` use the app-specific name as the item's source (`source_platform`, also the S3 partition) instead of the plugin ID. `brand_handles_matched` holds the deployment's `brandName` (CDK context, default `MyBrand`).
 
 ## Supported Countries
 
@@ -316,13 +318,11 @@ The `source_platform_override` field causes `BaseIngestor.normalize_item()` to u
 
 US, GB, DE, FR, JP, AU, CA, IT, ES, NL, BR, MX, IN, KR, SE, NO, DK, FI, CH, AT, BE, PT, PL, CZ, RU, TR, SA, AE, ZA, SG, HK, TW, TH, MY, PH, ID, VN, CO, CL, AR
 
-### Play Store Countries (20 countries)
+### Play Store Countries (20 countries, one picked per run)
 
 US, GB, DE, FR, JP, AU, CA, IT, ES, NL, BR, MX, IN, KR, SE, RU, TR, SA, ZA, SG
 
-### Overriding Countries
-
-Set `max_countries_per_run` in the plugin card on the Scrapers page to limit iteration. Countries are shuffled each run for fair coverage over time.
+To read one specific Android locale, set the app entry's `lang` and `country`.
 
 ## Error Handling
 
@@ -339,7 +339,7 @@ Set `max_countries_per_run` in the plugin card on the Scrapers page to limit ite
     (urllib3, after the session's retries); an empty storefront is not a failure. Android counts its one
     locale (`<lang>-<country>`) the same way. Causes are an HTTP status or an exception type, never a URL;
   - WARNING `<platform> <app>: no reviews from any storefront (the previous run fetched N)` when an app
-    that had reviews last run (watermark `{app_name}_last_count`) gets none now — typically the store is
+    that had reviews last run (watermark `{app_name}_last_count`) gets none now; typically the store is
     blocking or failing requests, or the app id changed.
 - A manual run ("Run now") also records those problems in its run row's `errors` (shown on the Data
   sources page), one short line per app: `<app>: 3 storefronts failed (HTTP 403 x3)`,
@@ -353,7 +353,6 @@ Set `max_countries_per_run` in the plugin card on the Scrapers page to limit ite
 
 ### iOS: `app-store-web-scraper`
 
-- Actively maintained (last release Jun 2024)
 - Built-in session management with connection pooling via `urllib3.PoolManager`
 - Configurable rate-limit delays with jitter to avoid Apple throttling
 - Retry logic with exponential backoff
@@ -372,7 +371,7 @@ Set `max_countries_per_run` in the plugin card on the Scrapers page to limit ite
 Both packages are in the ingestion Lambda layer (`lambda/layers/ingestion-deps/requirements.txt`):
 
 ```
-app-store-web-scraper>=0.3.0
+app-store-web-scraper>=0.2.0
 google-play-scraper>=1.2.7
 ```
 
@@ -392,23 +391,24 @@ Neither package requires native C extensions, so they work on ARM64 (Graviton) w
 }
 ```
 
-2. Deploy:
+2. Deploy (from the repository root; `deploy:infra` ends with the API stage refresh, see
+   [deployment.md](deployment.md)):
 
 ```bash
 npm run generate:config
-cdk deploy --all
+npm run deploy:infra
 ```
 
-3. On the **Scrapers** page, open each plugin card and add one or more apps (App Name, Package Name / App Store ID)
+3. On the **Data sources** page, add one or more apps (App Name, Package Name / App Store ID).
 
-4. Enable the schedule via the toggle in the plugin card
+4. Enable the schedule with the toggle on the plugin card.
 
 ## Assumptions & Limitations
 
-- **Multiple apps per plugin**: each plugin supports several app configurations, managed from the **Configured Apps** list on the Scrapers page and persisted as a JSON array via the `/integrations/{source}/apps` CRUD endpoints.
-- **Implementation prerequisite**: none for validation: `source_platform` is checked by pattern in `lambda/shared/ingest_schemas.py`, so no per-plugin source list is needed. Secret filtering no longer needs a per-plugin list either: `_shared/plugin_secrets.py` returns only the plugin's own `<plugin_id>_*` namespace and raises a configuration error when that namespace is empty, so the `_get_known_prefixes()` list this bullet used to also require is gone (issue #251).
+- **Multiple apps per plugin**: each plugin supports several app configurations, managed from the **Configured Apps** list on the Data sources page and persisted as a JSON array via the `/integrations/{source}/apps` endpoints.
+- **Secrets and sources**: `_shared/plugin_secrets.py` returns only the plugin's own `<plugin_id>_*` secret namespace and raises a configuration error when it is empty. `source_platform` is validated by pattern in `lambda/shared/ingest_schemas.py`, so a new app needs no source list.
 - **Unofficial APIs**: Both plugins use unofficial/public endpoints. These can change without notice. The circuit breaker will auto-disable the plugin if endpoints break.
-- **Rate limiting**: Apple and Google may rate-limit aggressive scraping. `app-store-web-scraper` has built-in delays with jitter. For Google, the country shuffle and configurable `max_countries_per_run` help manage request volume.
+- **Rate limiting**: Apple and Google may rate-limit aggressive scraping. `app-store-web-scraper` has built-in delays with jitter. For Google, one locale per run keeps the request volume low.
 - **iOS review depth**: Max 500 reviews per country (10 pages × 50). High-volume apps may miss reviews between runs if the schedule is too infrequent.
 - **No authentication**: Neither source requires API keys. The plugins use public endpoints only.
 - **Review language**: Reviews are returned in their original language. The VoC processing pipeline handles translation via Amazon Translate.
