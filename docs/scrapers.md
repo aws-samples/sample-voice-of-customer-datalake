@@ -256,7 +256,9 @@ Scraped data follows the standard processing pipeline:
 1. **Extraction**: the ingestor fetches and parses the pages.
 2. **Normalization**: each review is converted to the standard feedback format, and the source policy
    ([source-policies.md](source-policies.md)) is applied.
-3. **Archive**: the raw item is written to the S3 raw data bucket (`raw/webscraper/...`).
+3. **Archive**: the raw item is written to the S3 raw data bucket under the scraper's source, `raw/<scraper name>/...`.
+   Each scraper's reviews carry the scraper's **name** as their source (`source_platform`), not `webscraper`;
+   see [source-policies.md](source-policies.md) for what that means for source profiles.
 4. **Queue**: the item is sent to the SQS processing queue with its S3 reference.
 5. **Enrichment and storage**: the processor adds language, sentiment, category and other fields with Comprehend
    and Bedrock, then writes the item to `voc-feedback`.
@@ -264,7 +266,7 @@ Scraped data follows the standard processing pipeline:
 ## Deduplication
 
 Each scraped review gets a deterministic id, `scraper_<scraper id>_<hash>`, where the hash is the first 16 hex
-characters of the SHA-256 of the page URL and the first 100 characters of the review text. The same review
+characters of the SHA-256 of the review's URL and the first 100 characters of the review text. The same review
 scraped again on another day gets the same id, so it is stored once.
 
 ## Security
