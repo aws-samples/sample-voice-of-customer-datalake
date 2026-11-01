@@ -64,8 +64,8 @@ stays coach-only.
 
 The round is part of the conversation the stream Lambda saves while it runs. Each card's speaker
 (persona id, name, avatar) is stored in its own result, so the cards come back after a reload.
-Saved tool results are cut to 4,000 characters, but a persona result is shortened inside its JSON instead,
-so it stays valid and the cards survive a reload: the answers are cut evenly within 32,000 characters (6,000 in the one-turn retry after a 413), and avatar URLs
+Saved tool results are cut to 4,000 characters. A persona result is shortened inside its JSON instead, so it
+stays valid and the cards survive a reload. Its answers are cut evenly within 32,000 characters (6,000 in the one-turn retry after a 413), and avatar URLs
 go first when space is short. The SPA (`sessions/personaResult.ts`) and the stream Lambda
 (`session/persona-result.ts`) store it identically, pinned by `personaResult.lockstep.test.ts`.
 
