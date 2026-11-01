@@ -31,7 +31,7 @@ from functools import lru_cache
 from typing import Final
 from urllib.parse import urlsplit
 
-__all__ = ['BrandMatch', 'brand_citations', 'keeps_citation', 'names_brand', 'on_domains']
+__all__ = ['BrandMatch', 'brand_citations', 'keeps_citation', 'on_domains']
 
 _NOT_WORD: Final = re.compile(r'[\W_]+')
 
