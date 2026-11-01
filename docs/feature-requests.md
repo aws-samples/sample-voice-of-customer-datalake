@@ -7,12 +7,23 @@ one by its link. Everyone who may use a board sees every request and every suppo
 everyone who supported it (and every contact they named) becomes a [participant](participants.md) of that project,
 ready to be emailed for feedback.
 
-Pages: **LISTEN → Feedback boards** (`/feature-requests`, old links keep working) lists the boards as cards for app
+Pages: **Feedback boards** in the sidebar (Listen section, `/feature-requests`) lists the boards as cards for app
 users; `/feature-requests/{slug}` is one board. People who only use boards sign in at `/board` (the boards they
 may use; one board opens directly) and `/board/{slug}`. An open request is `?request=<id>`; the list's search,
 status filter and sort are `?q=`, `?status=` and `?sort=`. Admins create and configure boards in
 **Administration → Privacy & access → Boards** (`/admin?tab=access&section=boards`), which also holds the company
 domains.
+
+## Using a board
+
+1. **Set it up** (admin): in Administration → Privacy & access → Boards, create a board from a template (below),
+   choose its audience, and copy its share link (`/board/{slug}`).
+2. **Post**: anyone the board admits files a request with a title, a description and the board's fields. Their
+   own +1 is created with it.
+3. **Support**: others add a +1 with the fields the board asks for (for example the customer and the deal at
+   risk), or edit their own +1. One +1 per person per request.
+4. **Triage** (admin): set a request's status, delete requests or +1s, pause or archive the board.
+5. **Promote** (admin): turn a request into a project's participants list, ready for an ask.
 
 ## Templates and fields
 
@@ -108,7 +119,7 @@ A board open to any email has no moderation, so it is capped instead (`lambda/sh
 per poster per board per UTC day at most **20 new requests** and **100 +1s**; per board at most **500 new requests**
 a day. Over a limit the route answers **429 `rate_limited`**. Admins are not limited, nor are boards of the other
 audiences. The counters are rows `RATE#{board_id}#{sha256(email)}#{day}` / `COUNT` (the board-wide one uses `*`)
-with a `ttl` two days out (the table's TTL attribute, enabled in 5.36.00 as an in-place update); a new request charges the poster and the board in one transaction.
+with a `ttl` two days out; a new request charges the poster and the board in one transaction.
 
 ## Sign-in: a separate user pool
 
@@ -125,10 +136,9 @@ person's sign-in code ([deployment.md](deployment.md#participant-email-and-the-f
   `{company, anyone, domains, emails}` (the union over the non-archived boards; `company`: some board admits the
   company domains). Every board save, archive and delete rewrites that row, so the trigger never reads the boards.
   A review link is one more item read (`DOCSHARE#{id}` / `META` in the projects table). Without the row (no board
-  saved yet) the company domains alone decide, as before boards. Everyone else is refused with `domain_not_allowed`.
-- **No auto-confirm (5.45.00):** a new account is confirmed only by the code Cognito emails to it. Before, the
-  trigger confirmed every admitted sign-up at once, so a sign-up that chose its own password could sign in as an
-  address it did not own (the pool must allow the password factor). Accounts created that way before 5.45.00 stay.
+  saved yet) the company domains alone decide. Everyone else is refused with `domain_not_allowed`.
+- **No auto-confirm:** a new account is confirmed only by the code Cognito emails to it, so a sign-up cannot
+  claim an address it does not own. Accounts that releases before 5.45.00 confirmed automatically stay.
 - **An `anyone` board lets any email address sign up** to the board pool. Such an account can only ever reach the
   board routes (below), and only the boards that admit it.
 - A refused sign-up appears as ONE `[ERROR] SignUpRefusedError: domain_not_allowed` line (with the runtime's
@@ -211,11 +221,11 @@ Table `voc-feature-requests-<suffix>` (pk/sk, index `gsi1`, the Core KMS key, po
 
 | pk | sk | Item |
 |---|---|---|
-| `BOARD#{id}` | `META` | `brd_` + 8 hex (the seeded board: `brd_sales`), slug, name, description, template, fields, statuses, audience, archived, paused (+ paused_at, paused_by while paused; absent on boards from before 5.48 = not paused), request_count, created/updated; gsi1pk `BOARDS`, gsi1sk the lower-cased name |
+| `BOARD#{id}` | `META` | `brd_` + 8 hex (the seeded board: `brd_sales`), slug, name, description, template, fields, statuses, audience, archived, paused (+ paused_at, paused_by while paused; absent = not paused), request_count, created/updated; gsi1pk `BOARDS`, gsi1sk the lower-cased name |
 | `SLUG#{slug}` | `BOARD` | board_id: the slug's uniqueness guard, written in one transaction with META |
 | `BOARDS#SEEDED` | `META` | nothing but the key: the Sales board was seeded (no gsi1pk, never listed); never seed again |
 | `FR#{id}` | `META` | title, description, status, `board_id` (absent = the seeded board), `fields`, reporter email and name, totals, project_id?, list_id?, `version` (conditional writes); gsi1pk `FRS` |
-| `FR#{id}` | `SUP#{id}` | email, name, the +1's field values, is_reporter, created/updated. Since 5.54.01 the id is `sup_` + the first 16 hex of sha256(request id, lowercased email); older supports keep random ids |
+| `FR#{id}` | `SUP#{id}` | email, name, the +1's field values, is_reporter, created/updated. The id is `sup_` + the first 16 hex of sha256(request id, lowercased email); supports from releases before 5.54.01 keep random ids |
 | `RATE#{board_id}#{hash}#{day}` | `COUNT` | `requests`, `supports` counters of an `anyone` board, `ttl` |
 
 The participants table holds the derived sign-up row `SETTINGS` / `board_audience` (above).
