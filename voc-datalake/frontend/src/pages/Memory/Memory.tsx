@@ -29,6 +29,7 @@ import { useIsAdmin } from '../../store/authStore'
 import { useConfigStore } from '../../store/configStore'
 import { memoryApi, memoryKeys } from '../../api/memoryApi'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
+import Notice from '../../components/Notice/Notice'
 import { formatCount } from '../../utils/numberFormat'
 import MemoryList from './MemoryList'
 import MemoryReview from './MemoryReview'
@@ -86,10 +87,8 @@ function useCanCurate(enabled: boolean) {
 function ReviewLoadFailed({ onRetry }: Readonly<{ onRetry: () => void }>) {
   const { t } = useTranslation('memory')
   return (
-    <div role="alert" className="card text-sm text-danger bg-danger-subtle border-danger/30 flex flex-wrap items-center justify-between gap-2">
-      <span className="flex items-center gap-2"><AlertCircle size={16} /> {t('reviewLoadFailed')}</span>
-      <button type="button" onClick={onRetry} className="btn btn-secondary btn-sm">{t('retry')}</button>
-    </div>
+    <Notice variant="banner" tone="danger" role="alert" icon={AlertCircle} text={t('reviewLoadFailed')}
+      action={{ label: t('retry'), onClick: onRetry }} />
   )
 }
 

@@ -23,6 +23,7 @@ import DialogClose from '../../components/DialogClose/DialogClose'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import ModalShell from '../../components/ModalShell/ModalShell'
 import VisibilityChoice from '../../components/VisibilityChoice/VisibilityChoice'
+import Notice from '../../components/Notice/Notice'
 import { useConfigStore } from '../../store/configStore'
 import EditProjectModal from './EditProjectModal'
 import { ProjectCard, ProjectsLoadingSkeleton } from './ProjectCard'
@@ -101,20 +102,8 @@ interface EmptyStateProps { onCreateClick: () => void }
 function EmptyState({ onCreateClick }: Readonly<EmptyStateProps>) {
   const { t } = useTranslation('projects')
   return (
-    <div className="card text-center py-12 sm:py-16">
-      <div className="w-12 h-12 mx-auto mb-4 rounded-lg bg-accent-subtle flex items-center justify-center">
-        <Briefcase size={20} className="text-accent-text" aria-hidden />
-      </div>
-      <h2 className="text-base font-semibold tracking-tight text-text-strong mb-1">{t('emptyState.title')}</h2>
-      <p className="text-sm text-muted mb-5 px-4">{t('emptyState.description')}</p>
-      <button
-        onClick={onCreateClick}
-        className="btn btn-secondary"
-      >
-        <Plus size={16} aria-hidden />
-        {t('emptyState.createButton')}
-      </button>
-    </div>
+    <Notice variant="empty" icon={Briefcase} title={t('emptyState.title')} text={t('emptyState.description')}
+      action={{ label: t('emptyState.createButton'), icon: Plus, onClick: onCreateClick }} />
   )
 }
 

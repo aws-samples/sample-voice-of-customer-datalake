@@ -12,6 +12,7 @@
 import { FilterX, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { hasActiveFacets } from '../../api/feedbackFacets'
+import Notice from '../../components/Notice/Notice'
 import {
   CategoryFacetSelect, SentimentFacetSelect, SourceFacetSelect, UsefulnessFacetSelect,
 } from '../../components/FacetMultiSelect/FacetSelects'
@@ -52,11 +53,7 @@ export function DashboardFilters({ params, sourceOptions, categoryOptions }: Das
 export function FilteredEmpty({ onClear }: Readonly<{ onClear: () => void }>) {
   const { t } = useTranslation('components')
   return (
-    <div className="card flex flex-col items-center gap-3 py-10 text-center" role="status">
-      <FilterX size={28} className="text-muted" aria-hidden="true" />
-      <p className="font-medium text-text-strong">{t('facetFilters.noMatchTitle')}</p>
-      <p className="text-sm text-muted">{t('facetFilters.noMatchHint')}</p>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={onClear}>{t('facetFilters.clearAll')}</button>
-    </div>
+    <Notice variant="empty" role="status" icon={FilterX} title={t('facetFilters.noMatchTitle')}
+      text={t('facetFilters.noMatchHint')} action={{ label: t('facetFilters.clearAll'), onClick: onClear }} />
   )
 }
