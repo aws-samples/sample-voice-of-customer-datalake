@@ -255,6 +255,28 @@ describe('Categories', () => {
       })
     })
 
+    it('clears a chosen source from its panel', async () => {
+      const user = userEvent.setup()
+      renderCategories('/categories?source=webscraper')
+
+      await user.click(await screen.findByRole('button', { name: 'Source: Web scraper' }))
+      await user.click(screen.getByRole('button', { name: 'Clear' }))
+
+      expect(await screen.findByRole('button', { name: 'Source: All sources' })).toBeInTheDocument()
+    })
+
+    it('toggles and clears a usefulness band', async () => {
+      const user = userEvent.setup()
+      renderCategories()
+
+      await user.click(await screen.findByRole('button', { name: 'Usefulness: Any usefulness' }))
+      await user.click(screen.getByRole('checkbox', { name: 'High usefulness' }))
+      // Choosing re-renders the page from the URL, which closes the panel: reopen it to clear.
+      await user.click(await screen.findByRole('button', { name: 'Usefulness: High usefulness' }))
+      await user.click(screen.getByRole('button', { name: 'Clear' }))
+      expect(await screen.findByRole('button', { name: 'Usefulness: Any usefulness' })).toBeInTheDocument()
+    })
+
     it('clears all filters back to browse-all', async () => {
       const user = await renderUntilTextWithUser('Clear filters', '/categories?category=delivery')
 
