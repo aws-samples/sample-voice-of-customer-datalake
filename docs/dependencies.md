@@ -39,7 +39,15 @@ same failing grouped pull request every week.
 
 | Package | Held from | Why | Lift it with |
 |---|---|---|---|
-| `@vitest/eslint-plugin` | 1.6.28 | A patch release that raises its `typescript` peer to `>= 6.0.0`; every package is on TypeScript 5.9, so `npm ci` fails with `ERESOLVE` | The TypeScript 6+ upgrade (a major, on its own branch) |
+| `knip` (frontend) | 6.44.1 | It reports the three compile-time `export type` pins in `frontend/src/api/projectsApi.ts` (`GenerateDocument…`) as unused exported types. `test_doc_type_lockstep.py` requires them exported in that file, and an `ignoreIssues` entry for it is a gate decision. The CDK app and the stream Lambda run 6.44.1 already | An owner decision: accept `"src/api/projectsApi.ts": ["types"]` in `frontend/knip.jsonc`, or move the pins somewhere the lockstep test can read |
+
+Majors held back on purpose (not a Dependabot rule, since Dependabot proposes no majors):
+
+| Package | Held at | Why | Lift it with |
+|---|---|---|---|
+| `jsdom` (frontend) | 26.1.0 | jsdom 27+ computes `display: inline` for spans, and `dom-accessibility-api` (through 0.7.1) then trims the text of an inline child, so an accessible name like "Draft with AI — title" loses its space. Browsers keep it; 61 frontend tests fail on the name | An upstream fix in `dom-accessibility-api`, or markup without the space inside an inline span |
+| `cdk-nag` | 2.38.2 | v3 replaces the Aspect with a policy-validation plugin and removes `NagSuppressions`, `NagPackSuppression`, regex `appliesTo` and `INagLogger`; every suppression (about 54 calls, 30 regex entries) and `lib/nag-suppressions.test.ts` would need a rewrite, and v3 writes no `*-NagReport.csv` | A planned rewrite of the suppressions to `Validations.of(x).acknowledge(...)` |
+| `mutmut` / `whatthepatch` | 2.5.1 / 0.0.6 | Pinned to 2.x on purpose (`requirements-dev.txt`): `scripts/mutate-python.sh` relies on 2.x mutating the named file in place; mutmut 3 is a rewrite with another CLI, and `whatthepatch` is pinned to mutmut 2's `patch` extra | A port of `scripts/mutate-python.sh` to mutmut 3 |
 
 ### Merging a Dependabot pull request
 
