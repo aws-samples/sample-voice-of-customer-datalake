@@ -58,6 +58,16 @@ const ACCEPTED = [
     prefix: 'voc-datalake/lambda/shared/workflow_schema.py',
     reason: 'extractor false positive: `unchanged` is assigned unconditionally on the line before the one flagged (`diff_definitions` return)',
   },
+  {
+    rule: 'py/call/wrong-arguments',
+    prefix: 'voc-datalake/lambda/shared/mcp_oauth_exchange.py',
+    reason: 'false positive: `post` is a dataclass FIELD whose default is the plain function `post_to_cognito`; the dataclass stores it on the instance, so `self.post(config, path, form)` is never a bound call with an extra `self`',
+  },
+  {
+    rule: 'py/call/wrong-arguments',
+    prefix: 'voc-datalake/lambda/shared/mcp_oauth_jwt.py',
+    reason: 'false positive: `fetch` is a dataclass FIELD defaulting to the plain function `_fetch_jwks`, stored on the instance, so `self.fetch(url)` passes exactly one argument',
+  },
 ];
 
 function acceptedBy(ruleId, file) {
