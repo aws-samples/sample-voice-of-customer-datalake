@@ -312,6 +312,11 @@ describe('useCategoryFilters', () => {
       expect(result.current.searchParams.get('dims')).toBe('product:web_shop')
     })
 
+    it("opens a dims pair in the request's own form (feedback_type:a|b|~unset) as those pills, never as every type", () => {
+      const { result } = renderFiltersWithUrl(['/categories?dims=feedback_type:bug|praise|~unset'])
+      expect([result.current.filters.types, result.current.searchParams.get('types')]).toStrictEqual([['bug', 'praise'], 'bug,praise'])
+    })
+
     it('lets ?types win over an old feedback_type pair', () => {
       const { result } = renderFiltersWithUrl(['/categories?types=bug&dims=feedback_type:praise'])
       expect([result.current.filters.types, result.current.filters.dimensionFilter]).toStrictEqual([['bug'], {}])

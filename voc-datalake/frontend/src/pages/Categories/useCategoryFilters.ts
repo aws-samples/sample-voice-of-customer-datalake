@@ -162,8 +162,10 @@ const OWNED_PARAMS: readonly string[] = [
  */
 function readDimsAndTypes(searchParams: URLSearchParams): Pick<ShareableFilters, 'dimensionFilter' | 'types'> {
   const { [FEEDBACK_TYPE_KEY]: legacyType, ...dimensionFilter } = parseDims(searchParams.get('dims'))
-  // An unknown legacy value reads as every type, like an unreadable `types`.
-  return { dimensionFilter, types: readTypeSelection(searchParams.get('types') ?? legacyType ?? null, ALL_TYPES) }
+  // A `dims` pair may name several values (`bug|praise|~unset`, the form the request itself sends): every type it
+  // names is a pill, `~unset` is implied anyway. An unknown legacy value reads as every type, like an unreadable `types`.
+  const legacyTypes = legacyType?.split('|').join(',') ?? null
+  return { dimensionFilter, types: readTypeSelection(searchParams.get('types') ?? legacyTypes, ALL_TYPES) }
 }
 
 /** Canonical query string for the URL-synced subset of the filter state. */
