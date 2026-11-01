@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus, Loader2, ClipboardList } from 'lucide-react'
 import type { FeedbackForm } from '../../api/types'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import Notice from '../../components/Notice/Notice'
 import FormCard from './FormCard'
 import type { FormCardHandlers } from './FormCard'
 
@@ -33,23 +34,6 @@ function FormCards({ forms, handlers }: Readonly<{ forms: readonly FeedbackForm[
           statsRefreshing={handlers.statsRefreshing}
         />
       ))}
-    </div>
-  )
-}
-
-function EmptyForms({ onCreateNew }: Readonly<{ onCreateNew: () => void }>) {
-  const { t } = useTranslation('feedbackForms')
-  return (
-    <div className="card text-center py-12">
-      <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-accent-subtle flex items-center justify-center">
-        <ClipboardList size={20} className="text-accent-text" aria-hidden="true" />
-      </div>
-      <h2 className="text-base font-semibold tracking-tight text-text-strong mb-1">{t('empty.title')}</h2>
-      <p className="text-sm text-muted mb-4">{t('empty.description')}</p>
-      <button onClick={onCreateNew} className="btn btn-primary">
-        <Plus size={16} aria-hidden="true" />
-        {t('empty.createButton')}
-      </button>
     </div>
   )
 }
@@ -97,7 +81,10 @@ export default function FormsListContent({
   const system = all.filter(isSystemForm)
   return (
     <div className="space-y-4">
-      {own.length > 0 ? <FormCards forms={own} handlers={handlers} /> : <EmptyForms onCreateNew={onCreateNew} />}
+      {own.length > 0
+        ? <FormCards forms={own} handlers={handlers} />
+        : <Notice variant="empty" icon={ClipboardList} title={t('empty.title')} text={t('empty.description')}
+            action={{ label: t('empty.createButton'), icon: Plus, emphasis: 'primary', onClick: onCreateNew }} />}
       <SystemForms forms={system} handlers={handlers} />
     </div>
   )

@@ -7,11 +7,13 @@
  * a false statement about their data, made exactly when they cannot check it
  * (e2e network.spec.ts, P3). An alert, so it is announced; the retry refetches
  * the query and the page recovers in place once the network is back.
+ * The danger banner of the shared Notice.
  *
  * @module components/LoadFailed
  */
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import Notice from '../Notice/Notice'
 
 export default function LoadFailed({ onRetry, retrying, message }: Readonly<{
   onRetry: () => void
@@ -22,15 +24,7 @@ export default function LoadFailed({ onRetry, retrying, message }: Readonly<{
 }>) {
   const { t } = useTranslation('common')
   return (
-    <div role="alert" className="card flex flex-col sm:flex-row sm:items-center gap-3 border-danger/30 bg-danger-subtle text-sm text-danger">
-      <span className="flex flex-1 items-center gap-2">
-        <AlertCircle size={16} aria-hidden="true" className="flex-shrink-0" />
-        {message ?? t('loadFailed.message')}
-      </span>
-      <button type="button" onClick={() => onRetry()} disabled={retrying} className="btn btn-secondary btn-sm justify-center">
-        <RefreshCw size={14} aria-hidden="true" className={retrying ? 'animate-spin' : undefined} />
-        {t('loadFailed.retry')}
-      </button>
-    </div>
+    <Notice variant="banner" tone="danger" role="alert" icon={AlertCircle} text={message ?? t('loadFailed.message')}
+      action={{ label: t('loadFailed.retry'), icon: RefreshCw, onClick: onRetry, busy: retrying }} />
   )
 }

@@ -99,17 +99,6 @@
     },
     {
       "files": [
-        "voc-datalake/frontend/src/pages/Agents/AgentDetail.tsx",
-        "voc-datalake/frontend/src/pages/Dashboard/DashboardFilters.tsx",
-        "voc-datalake/frontend/src/pages/FeedbackForms/FormCard.tsx",
-        "voc-datalake/frontend/src/pages/FeedbackForms/FormsList.tsx",
-        "voc-datalake/frontend/src/pages/Memory/Memory.tsx",
-        "voc-datalake/frontend/src/pages/Projects/Projects.tsx"
-      ],
-      "reason": "one notice shape (icon, title, text, optional action) with page-specific copy and meaning: the no-forms and no-projects empty states, the Dashboard's no-match card, the needs-decision banner, the disabled-form notice and the load-failed notice"
-    },
-    {
-      "files": [
         "voc-datalake/frontend/src/pages/Login/LoginSharedComponents.tsx",
         "voc-datalake/frontend/src/pages/ProjectDetail/PersonaEditModal.tsx"
       ],

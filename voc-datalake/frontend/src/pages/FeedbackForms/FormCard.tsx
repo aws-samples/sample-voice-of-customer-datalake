@@ -15,6 +15,7 @@ import type { FormStats } from '../../api/feedbackFormStatsSchema'
 import { normalizeFormTheme } from './formSchema'
 import { defaultFormConfig } from './formTemplates'
 import Switch from '../../components/Switch/Switch'
+import Notice from '../../components/Notice/Notice'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import SubmissionsModal from './SubmissionsModal'
@@ -178,14 +179,8 @@ function DisabledNotice({ enabled, onEnable }: Readonly<{ enabled: boolean; onEn
   const { t } = useTranslation('feedbackForms')
   if (enabled) return null
   return (
-    <div role="note" className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg border border-warn/30 bg-warn-subtle">
-      <PowerOff size={16} className="text-warn flex-shrink-0" aria-hidden="true" />
-      <p className="text-sm text-text flex-1">{t('card.disabledNotice')}</p>
-      <button type="button" onClick={onEnable} className="btn btn-primary btn-sm self-start sm:self-auto">
-        <Power size={14} aria-hidden="true" />
-        {t('createdDisabled.enable')}
-      </button>
-    </div>
+    <Notice variant="banner" tone="warn" role="note" className="mb-4" icon={PowerOff} text={t('card.disabledNotice')}
+      action={{ label: t('createdDisabled.enable'), icon: Power, emphasis: 'primary', onClick: onEnable }} />
   )
 }
 

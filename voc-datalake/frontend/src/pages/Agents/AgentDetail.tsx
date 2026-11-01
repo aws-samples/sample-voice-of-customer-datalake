@@ -26,6 +26,7 @@ import { TriggersSection } from './AgentTriggers'
 import { RunsTab } from './RunsTab'
 import { changedFields, checkUpdate, draftOf, DRAFT_KEYS } from './agentDraft'
 import { rebaseDraft } from '../../components/UnsavedChangesGuard/rebaseDraft'
+import Notice from '../../components/Notice/Notice'
 import { useAgent, useAgentMutations } from './useAgents'
 import { useAgentTabPrefetch } from './useAgentTabPrefetch'
 import type { ComponentType } from 'react'
@@ -183,11 +184,8 @@ function Header({ agent, isAdmin }: Readonly<{ agent: Agent; isAdmin: boolean }>
 function NeedsDecisionBanner({ onReview }: Readonly<{ onReview: () => void }>) {
   const { t } = useTranslation('agents')
   return (
-    <div role="status" className="flex flex-wrap items-center gap-2 rounded-md border border-warn/30 bg-warn-subtle px-3 py-2 text-sm text-text">
-      <Hand size={14} className="text-warn" aria-hidden="true" />
-      <span className="mr-auto">{t('decision.banner')}</span>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={onReview}>{t('decision.reviewRun')}</button>
-    </div>
+    <Notice variant="banner" tone="warn" role="status" icon={Hand} text={t('decision.banner')}
+      action={{ label: t('decision.reviewRun'), onClick: onReview }} />
   )
 }
 
