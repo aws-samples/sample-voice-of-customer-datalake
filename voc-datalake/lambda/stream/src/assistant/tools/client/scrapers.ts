@@ -163,7 +163,6 @@ function connectorSummary(args: CreateAppConnectorArgs): string {
   return `Add ${CONNECTOR_LABEL[args.source]} connector ${q(args.app_name)} (${identifier})${radarSuffix(args.radar_brand)}.`;
 }
 
-
 export function createScraperClientTools(deps: ToolDeps): ClientToolDefinition[] {
   return [createScraper(deps), updateScraper(deps), createAppConnector(deps)];
 }

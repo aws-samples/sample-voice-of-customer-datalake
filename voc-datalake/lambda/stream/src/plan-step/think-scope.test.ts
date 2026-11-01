@@ -15,7 +15,7 @@ describe('think steps and category names (owner rule 2026-10-21)', () => {
         return Promise.resolve({ output: { message: { role: 'assistant', content: [{ text: 'Done.' }] } }, stopReason: 'end_turn', $metadata: {}, metrics: undefined, usage: undefined });
       },
       resolveModel: () => Promise.resolve('global.anthropic.claude-sonnet-5-5'),
-      lookupStoreApp: () => Promise.resolve({ status: 'found', app: { name: '', developer: '', url: '' } }),
+      lookupStoreApp: () => Promise.resolve({ status: 'found', app: { name: '', developer: '' } }),
     }, {
       step: { id: 's1', pack: 'core', kind: 'think', title: 'Summarise', think: { brief: 'Summarise the complaints.' } },
       ctx: fakeContext(), context: '', modelId: 'global.anthropic.claude-sonnet-5-5',

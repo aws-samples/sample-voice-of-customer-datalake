@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { FetchFn } from './app-store-search.js';
 import {
-  IOS_STOREFRONTS, appStoreLookupUrl, lookupAppStoreApp, lookupPlayApp, lookupStoreApp, playAppUrl, playPageDetails,
+  IOS_STOREFRONTS, MAX_FAILED_STOREFRONTS, appStoreLookupUrl, lookupAppStoreApp, lookupPlayApp, lookupStoreApp, playAppUrl, playPageDetails,
 } from './store-app-lookup.js';
 
 const APP_ID = '1234567890';
@@ -42,16 +42,18 @@ describe('lookupAppStoreApp', () => {
   it('returns the app with its developer after one US lookup when the US store has it', async () => {
     const { calls, fetchFn } = storefronts(() => new Response(lookupBody(true)));
     await expect(lookupAppStoreApp(APP_ID, fetchFn)).resolves.toStrictEqual({
-      status: 'found', app: { name: 'Example Air', developer: 'Example Air Group', url: `https://apps.apple.com/us/app/id${APP_ID}` },
+      status: 'found', app: { name: 'Example Air', developer: 'Example Air Group' },
     });
     expect(calls.map((call) => call.url.searchParams.get('country'))).toStrictEqual(['us']);
     expect(calls[0]?.init.redirect).toBe('error');
   });
 
-  it('finds an app sold only outside the US by asking every other storefront', async () => {
+  it('finds an app sold only outside the US by asking the other storefronts, and stops after the hit', async () => {
     const { calls, fetchFn } = storefronts((country) => new Response(lookupBody(country === 'pl')));
     await expect(lookupAppStoreApp(APP_ID, fetchFn)).resolves.toMatchObject({ status: 'found', app: { name: 'Example Air' } });
-    expect(calls).toHaveLength(IOS_STOREFRONTS.length);
+    const asked = calls.map((call) => call.url.searchParams.get('country'));
+    expect(asked).toContain('pl');
+    expect(asked.length).toBeLessThan(IOS_STOREFRONTS.length);
   });
 
   it('is missing only when every storefront answered without it', async () => {
@@ -75,24 +77,45 @@ describe('lookupAppStoreApp', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('is unknown when one other storefront fails and none has the app', async () => {
-    const { fetchFn } = storefronts((country) => (country === 'jp' ? new Response('', { status: 500 }) : new Response(lookupBody(false))));
-    await expect(lookupAppStoreApp(APP_ID, fetchFn)).resolves.toStrictEqual({ status: 'unknown', reason: 'The App Store answered HTTP 500' });
+  it('stays missing when a few storefronts are throttled and every other one answered without the app', async () => {
+    const { fetchFn } = storefronts((country) => (country === 'jp' ? new Response('', { status: 429 }) : new Response(lookupBody(false))));
+    await expect(lookupAppStoreApp(APP_ID, fetchFn)).resolves.toStrictEqual({ status: 'missing' });
   });
 
-  it('cancels the other storefronts once one has the app', async () => {
-    const signals: AbortSignal[] = [];
+  it(`is unknown when more than ${MAX_FAILED_STOREFRONTS} storefronts fail`, async () => {
+    const failing = new Set<string>(IOS_STOREFRONTS.slice(1, MAX_FAILED_STOREFRONTS + 2));
+    const { fetchFn } = storefronts((country) => (failing.has(country) ? new Response('', { status: 429 }) : new Response(lookupBody(false))));
+    await expect(lookupAppStoreApp(APP_ID, fetchFn)).resolves.toStrictEqual({ status: 'unknown', reason: 'The App Store answered HTTP 429' });
+  });
+
+  it('never has more than four storefront lookups in flight after a US miss', async () => {
+    const live = { now: 0, peak: 0 };
+    const fetchFn: FetchFn = async () => {
+      live.now += 1;
+      live.peak = Math.max(live.peak, live.now);
+      await new Promise((resolve) => { setTimeout(resolve, 1); });
+      live.now -= 1;
+      return new Response(lookupBody(false));
+    };
+    await expect(lookupAppStoreApp(APP_ID, fetchFn)).resolves.toStrictEqual({ status: 'missing' });
+    expect(live.peak).toBe(4);
+  });
+
+  it('stops asking, and cancels the lookups in flight, once one storefront has the app', async () => {
+    const asked: string[] = [];
+    const cancelled: string[] = [];
     const fetchFn: FetchFn = (url, init) => {
-      signals.push(init.signal);
-      const country = url.searchParams.get('country');
+      const country = url.searchParams.get('country') ?? '';
+      asked.push(country);
       if (country === 'us') return Promise.resolve(new Response(lookupBody(false)));
       if (country === 'gb') return Promise.resolve(new Response(lookupBody(true)));
       return new Promise((_resolve, reject) => {
-        init.signal.addEventListener('abort', () => { reject(new Error('aborted')); });
+        init.signal.addEventListener('abort', () => { cancelled.push(country); reject(new Error('aborted')); });
       });
     };
     await expect(lookupAppStoreApp(APP_ID, fetchFn)).resolves.toMatchObject({ status: 'found' });
-    expect(signals.slice(1).every((signal) => signal.aborted)).toBe(true);
+    expect(asked).toStrictEqual(['us', 'gb', 'de', 'fr', 'jp']);
+    expect(cancelled).toStrictEqual(['de', 'fr', 'jp']);
   });
 });
 
@@ -120,7 +143,7 @@ describe('lookupPlayApp', () => {
     const { fetchFn } = playAnswering(new Response(PLAY_PAGE));
     await expect(lookupPlayApp('com.example.air', fetchFn)).resolves.toStrictEqual({
       status: 'found',
-      app: { name: 'Example Air', developer: 'Example Air Group', url: 'https://play.google.com/store/apps/details?id=com.example.air&hl=en&gl=us' },
+      app: { name: 'Example Air', developer: 'Example Air Group' },
     });
   });
 
