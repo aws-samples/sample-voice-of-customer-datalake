@@ -1,11 +1,5 @@
-"""Map and list attributes of a REAL Powertools stream record reach the counters.
-
-`DynamoDBRecord.dynamodb.new_image` is already deserialized, so a review's
-`dimensions` arrives as `{'feedback_type': 'bug'}`. `deserialize_image` used to read
-every dict value as a raw wire value, found no type key in it and dropped the field:
-the per-dimension counters (`/metrics/dimensions`, the Dashboard's "By dimension") were
-never written, by an arrival or by the type backfill, while scalar fields such as the
-usefulness band moved as expected.
+"""Map and list attributes of a REAL Powertools stream record reach the counters (see
+`aggregator.handler.deserialize_image` for the 5.67.01 bug these tests pin).
 """
 from unittest.mock import patch
 
@@ -68,11 +62,19 @@ def test_tags_from_a_stream_record_are_counted():
 
 
 @pytest.mark.parametrize(('image', 'expected'), [
-    ({'s': {'S': 'text'}, 'm': {'M': {'k': 'v'}}}, {'s': 'text', 'm': {'k': 'v'}}),
-    ({'n': {'N': '1'}, 'flag': {'BOOL': True}}, {'n': 1, 'flag': True}),
+    ({'s': {'S': 'text'}, 'm': {'M': {'k': {'S': 'v'}, 'n': {'N': '2'}}}}, {'s': 'text', 'm': {'k': 'v', 'n': 2}}),
+    ({'n': {'N': '1'}, 'flag': {'BOOL': True}, 'gone': {'NULL': True}}, {'n': 1, 'flag': True, 'gone': None}),
+    ({'tags': {'SS': ['a', 'b']}, 'l': {'L': [{'S': 'x'}]}}, {'tags': {'a', 'b'}, 'l': ['x']}),
 ])
-def test_a_raw_wire_image_is_still_unwrapped(image, expected):
+def test_a_raw_wire_image_is_deserialized_all_the_way_down(image, expected):
     assert handler.deserialize_image(image) == expected
+
+
+def test_a_deserialized_one_key_map_that_looks_like_a_type_is_kept():
+    # {'N': 'north'} is not a number and {'S': 1} has no str payload: neither is a wire value, so
+    # both are kept as they came, never dropped or read as NaN.
+    item = handler.deserialize_image({'region': {'N': 'north'}, 'meta': {'S': 1}})
+    assert item == {'region': {'N': 'north'}, 'meta': {'S': 1}}
 
 
 def test_a_deserialized_image_is_kept_as_it_is():
