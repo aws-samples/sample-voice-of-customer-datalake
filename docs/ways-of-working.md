@@ -45,7 +45,7 @@ create_id?}`. Without `content`, the server's blank template is used (English he
   asked to write, it declines in one sentence and coaches instead. `generate_document` is not
   offered when neither type is unlocked. `merge_documents` into a locked type and `update_document`
   on a locked PR/FAQ or PRD are refused before any approval card. Asking personas
-  (`consult_personas`) is unchanged, and so are `@persona` / `@all` mentions on a project page:
+  (`consult_personas`) stays available, and so do `@persona` / `@all` mentions on a project page:
   the personas only review and comment, so they answer in every way of working, and the
   assistant's own short reply after them still follows this person's way of working
   ([assistant-mentions.md](assistant-mentions.md)).
