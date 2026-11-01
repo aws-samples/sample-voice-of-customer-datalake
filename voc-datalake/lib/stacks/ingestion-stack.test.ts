@@ -404,8 +404,9 @@ describe('VocIngestionStack S3 import bucket CORS', () => {
     expect(origins({ frontendDomain: 'other.example.invalid' })).not.toContain('https://other.example.invalid');
   });
 
-  it('refuses an empty frontend domain instead of allowing https://', () => {
+  it('refuses an empty or padded frontend domain instead of allowing https://', () => {
     expect(() => synthIngestionStacks([], {}, '')).toThrow(/frontend \(CloudFront\) domain/);
     expect(() => synthIngestionStacks([], {}, '  ')).toThrow(/frontend \(CloudFront\) domain/);
+    expect(() => synthIngestionStacks([], {}, ' app.example.invalid ')).toThrow(/frontend \(CloudFront\) domain/);
   });
 });

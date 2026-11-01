@@ -201,8 +201,9 @@ export class VocIngestionStack extends VocStack {
   // ============================================
 
   private buildCorsOrigins(frontendDomain: string): string[] {
-    // An empty domain would allow `https://`; the stack is always given the CloudFront domain.
-    if (frontendDomain.trim() === '') throw new Error('VocIngestionStack needs the frontend (CloudFront) domain');
+    // An empty or padded domain would allow `https://` or a broken origin; the stack is always given the
+    // CloudFront domain (a CDK token while synthesizing, which holds no whitespace either).
+    if (!/^\S+$/.test(frontendDomain)) throw new Error('VocIngestionStack needs the frontend (CloudFront) domain');
     return [`https://${frontendDomain}`, 'http://localhost:5173', 'http://localhost:3000'];
   }
 
