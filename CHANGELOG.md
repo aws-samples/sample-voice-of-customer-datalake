@@ -28,6 +28,7 @@ The AI assistant no longer sets up review sources it cannot back up: app ids are
 ### Changed
 
 - When asked to find review sources for a brand or its competitors, the assistant searches each review site separately and proposes only a URL copied from a search result that names that company, checking it is not a look-alike company with a similar name. It never builds a review-page URL from a name, and says "no page found" for a site that has none. Competitors are named from search results, with their source ([docs/web-reviews.md](docs/web-reviews.md)).
+
 ## [5.70.00] - 2026-11-01
 
 Project tenets in TENETS.md, checked on every pull request, in the CDK suite and by the reviewers; SnapStart is now opt-in.

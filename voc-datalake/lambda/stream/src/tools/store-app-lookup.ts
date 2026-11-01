@@ -29,8 +29,19 @@ export const IOS_STOREFRONTS = [
 
 const LOOKUP_URL = 'https://itunes.apple.com/lookup';
 const PLAY_APP_URL = 'https://play.google.com/store/apps/details';
-/** One budget for the whole lookup (every storefront in parallel / the one Play page). */
-const STORE_LOOKUP_TIMEOUT_MS = 4000;
+/** One budget for the whole lookup (every storefront / the one Play page). */
+const STORE_LOOKUP_TIMEOUT_MS = 6000;
+/**
+ * Storefront lookups in flight at once after a US miss. Apple throttles its Lookup API per source address, so
+ * the fan-out stays small: 39 storefronts take about ten rounds of ~150 ms.
+ */
+const MAX_LOOKUPS_IN_FLIGHT = 4;
+/**
+ * A US miss is `missing` when every other storefront was asked, none has the app and at most this many of
+ * them failed (a throttled 429, a 5xx): a few unreadable storefronts do not hide that the app does not exist.
+ * More failures than this (or the budget running out) is `unknown`.
+ */
+export const MAX_FAILED_STOREFRONTS = 4;
 const LOOKUP_MAX_BYTES = 256_000;
 /** A Play app page is ~1.2 MB and its JSON-LD sits near the end. */
 const PLAY_PAGE_MAX_BYTES = 3_000_000;
@@ -38,7 +49,6 @@ const PLAY_PAGE_MAX_BYTES = 3_000_000;
 interface StoreApp {
   name: string;
   developer: string;
-  url: string;
 }
 
 export type StoreAppLookup =
@@ -48,11 +58,13 @@ export type StoreAppLookup =
 
 type Attempt = { kind: 'found'; app: StoreApp } | { kind: 'missing' } | { kind: 'failed'; reason: string };
 
-function settle(attempts: readonly Attempt[]): StoreAppLookup {
+function settle(attempts: readonly Attempt[], expected: number, tolerated: number): StoreAppLookup {
   const found = attempts.find((attempt) => attempt.kind === 'found');
   if (found !== undefined) return { status: 'found', app: found.app };
-  const failed = attempts.find((attempt) => attempt.kind === 'failed');
-  return failed === undefined ? { status: 'missing' } : { status: 'unknown', reason: failed.reason };
+  const failed = attempts.filter((attempt) => attempt.kind === 'failed');
+  if (attempts.length === expected && failed.length <= tolerated) return { status: 'missing' };
+  const first = failed[0];
+  return { status: 'unknown', reason: first?.kind === 'failed' ? first.reason : 'The App Store lookup ran out of time' };
 }
 
 function reason(error: unknown, fallback: string): string {
@@ -74,27 +86,41 @@ async function lookupInStorefront(appId: string, country: string, signal: AbortS
     if (!response.ok) return { kind: 'failed', reason: `The App Store answered HTTP ${response.status}` };
     const apps = parseApps(await cappedText(response, LOOKUP_MAX_BYTES, 'The App Store answer is too large'));
     const app = apps.find((candidate) => candidate.id === appId);
-    return app === undefined ? { kind: 'missing' } : { kind: 'found', app: { name: app.name, developer: app.developer, url: app.url } };
+    return app === undefined ? { kind: 'missing' } : { kind: 'found', app: { name: app.name, developer: app.developer } };
   } catch (error) {
     if (error instanceof SyntaxError) return { kind: 'failed', reason: 'The App Store answered with something that is not JSON' };
     return { kind: 'failed', reason: reason(error, 'The App Store could not be reached') };
   }
 }
 
-/** Look `appId` up in the US store, then (only when it has no such app) in every other storefront at once. */
+/** Ask `countries` with at most MAX_LOOKUPS_IN_FLIGHT at once; stop asking once one has the app or time is up. */
+async function lookupInStorefronts(appId: string, countries: readonly string[], signal: AbortSignal, fetchFn: FetchFn): Promise<Attempt[]> {
+  const queue = [...countries];
+  const attempts: Attempt[] = [];
+  const firstHit = new AbortController();
+  const shared = AbortSignal.any([firstHit.signal, signal]);
+  // A call, not a property read: the flag changes while a lookup is awaited.
+  const stopped = (): boolean => shared.aborted;
+  const worker = async (): Promise<void> => {
+    const country = queue.shift();
+    if (country === undefined || stopped()) return;
+    const attempt = await lookupInStorefront(appId, country, shared, fetchFn);
+    // An attempt cut short by the stop is not an answer (only a hit is kept).
+    if (!stopped() || attempt.kind === 'found') attempts.push(attempt);
+    if (attempt.kind === 'found') firstHit.abort();
+    await worker();
+  };
+  await Promise.all(Array.from({ length: MAX_LOOKUPS_IN_FLIGHT }, worker));
+  return attempts;
+}
+
+/** Look `appId` up in the US store, then (only when it has no such app) in the other storefronts. */
 export async function lookupAppStoreApp(appId: string, fetchFn: FetchFn = fetch): Promise<StoreAppLookup> {
   const signal = AbortSignal.timeout(STORE_LOOKUP_TIMEOUT_MS);
   const [first, ...others] = IOS_STOREFRONTS;
   const inFirst = await lookupInStorefront(appId, first, signal, fetchFn);
-  if (inFirst.kind !== 'missing') return settle([inFirst]);
-  const firstHit = new AbortController();
-  const othersSignal = AbortSignal.any([firstHit.signal, signal]);
-  const attempts = await Promise.all(others.map(async (country) => {
-    const attempt = await lookupInStorefront(appId, country, othersSignal, fetchFn);
-    if (attempt.kind === 'found') firstHit.abort();
-    return attempt;
-  }));
-  return settle(attempts);
+  if (inFirst.kind !== 'missing') return settle([inFirst], 1, 0);
+  return settle(await lookupInStorefronts(appId, others, signal, fetchFn), others.length, MAX_FAILED_STOREFRONTS);
 }
 
 /** The https URL of a Play app page; the host and path never come from input. */
@@ -153,7 +179,7 @@ export async function lookupPlayApp(packageName: string, fetchFn: FetchFn = fetc
   if (response.status === 404) return { status: 'missing' };
   if (!response.ok) return { status: 'unknown', reason: `Google Play answered HTTP ${response.status}` };
   const details = playPageDetails(await pageTextOrEmpty(response));
-  return { status: 'found', app: { name: details?.name ?? '', developer: details?.developer ?? '', url: url.toString() } };
+  return { status: 'found', app: { name: details?.name ?? '', developer: details?.developer ?? '' } };
 }
 
 /** The lookup for a connector's store: the App Store id (iOS) or the Google Play package (Android). */

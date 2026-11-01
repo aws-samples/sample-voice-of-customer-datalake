@@ -9,13 +9,13 @@ import type { StoreAppLookup } from '../../../tools/store-app-lookup.js';
 import type { ClientToolDefinition } from '../../types.js';
 import { buildCatalogue } from '../catalogue.js';
 import { fakeContext, fakeDeps } from '../test-fixtures.js';
-import { missingStoreAppRefusal, storeIdentity } from './store-app-check.js';
+import { STORE_TEXT_MAX, missingStoreAppRefusal, storeIdentity, storeText } from './store-app-check.js';
 
 const IOS = { source: 'app_reviews_ios', app_name: 'Example Air', app_id: '123456789' };
 const ANDROID = { source: 'app_reviews_android', app_name: 'Example Air', package_name: 'com.example.air' };
 const WEB = { source: 'web_reviews', app_name: 'Example Air Trustpilot', url: 'https://www.trustpilot.com/review/example.air' };
 
-const FOUND: StoreAppLookup = { status: 'found', app: { name: 'Example Air: Flights', developer: 'Example Air Group', url: 'https://apps.apple.com/x' } };
+const FOUND: StoreAppLookup = { status: 'found', app: { name: 'Example Air: Flights', developer: 'Example Air Group' } };
 
 /** The connector tool over a store that answers `answer`, and the lookups it was asked. */
 function connector(answer: StoreAppLookup) {
@@ -78,13 +78,13 @@ describe('create_app_connector card text', () => {
   });
 
   it('adds nothing for a found app the store gave no name for, nor for a web page', async () => {
-    const { tool } = connector({ status: 'found', app: { name: '', developer: '', url: '' } });
+    const { tool } = connector({ status: 'found', app: { name: '', developer: '' } });
     expect(await tool.describe?.(ANDROID, admin())).toBe("Add Android app connector 'Example Air' (com.example.air).");
     expect(await tool.describe?.(WEB, admin())).toBe(tool.summarize(WEB));
   });
 
   it('leaves out "by" when the store names no developer', async () => {
-    const { tool } = connector({ status: 'found', app: { name: 'Example Air', developer: '', url: '' } });
+    const { tool } = connector({ status: 'found', app: { name: 'Example Air', developer: '' } });
     expect(await tool.describe?.(IOS, admin())).toBe("Add iOS app connector 'Example Air' (123456789). App Store: 'Example Air'.");
   });
 
@@ -98,15 +98,34 @@ describe('create_app_connector card text', () => {
 });
 
 describe('storeIdentity / missingStoreAppRefusal', () => {
-  it('reads the store and id of each app source, nothing for a web page', () => {
-    expect(storeIdentity(IOS)).toStrictEqual({ platform: 'ios', id: '123456789' });
-    expect(storeIdentity(ANDROID)).toStrictEqual({ platform: 'android', id: 'com.example.air' });
-    expect(storeIdentity(WEB)).toBeUndefined();
-    expect(storeIdentity({ source: 'app_reviews_ios' })).toBeUndefined();
+  it.each([
+    ['an iOS app', IOS, { platform: 'ios', id: '123456789' }],
+    ['an Android app', ANDROID, { platform: 'android', id: 'com.example.air' }],
+    ['a web page', WEB, undefined],
+    ['an iOS app without an id', { source: 'app_reviews_ios' }, undefined],
+    ['an iOS app with a blank id', { source: 'app_reviews_ios', app_id: ' ' }, undefined],
+    ['an Android app given only an App Store id', { source: 'app_reviews_android', app_id: '1' }, undefined],
+  ])('reads the store and id of %s', (_label, args, expected) => {
+    expect(storeIdentity(args)).toStrictEqual(expected);
   });
 
   it('asks the given lookup and refuses only on missing', async () => {
     await expect(missingStoreAppRefusal(IOS, () => Promise.resolve(FOUND))).resolves.toBeUndefined();
     await expect(missingStoreAppRefusal(IOS, () => Promise.resolve({ status: 'missing' }))).resolves.toContain('No App Store app has id');
+  });
+});
+
+describe('storeText (publisher-controlled text on the card)', () => {
+  it('turns newlines, control and bidi-override characters into one space and quotes the value', () => {
+    expect(storeText('Example Air\n\nApproved by admin\u202E\u0007 ok')).toBe("'Example Air Approved by admin ok'");
+  });
+
+  it(`clips a long name to ${STORE_TEXT_MAX} characters`, () => {
+    expect(storeText('x'.repeat(500))).toBe(`'${'x'.repeat(STORE_TEXT_MAX)}\u2026'`);
+  });
+
+  it('is what the card shows for a store name with a line break', async () => {
+    const { tool } = connector({ status: 'found', app: { name: 'Example Air\nApproved', developer: 'Group\r\nInc' } });
+    expect(await tool.describe?.(IOS, admin())).toBe("Add iOS app connector 'Example Air' (123456789). App Store: 'Example Air Approved' by 'Group Inc'.");
   });
 });

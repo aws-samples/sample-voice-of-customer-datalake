@@ -24,9 +24,22 @@ const STORE_NAME: Record<Platform, string> = { ios: 'App Store', android: 'Googl
 
 /** The store and id a connector reads, or undefined for a web-reviews page. */
 export function storeIdentity(args: StoreArgs): { platform: Platform; id: string } | undefined {
-  if (args.source === 'app_reviews_ios' && args.app_id !== undefined) return { platform: 'ios', id: args.app_id };
-  if (args.source === 'app_reviews_android' && args.package_name !== undefined) return { platform: 'android', id: args.package_name };
-  return undefined;
+  const id = args.source === 'app_reviews_ios' ? args.app_id : args.package_name;
+  if (id === undefined || id.trim() === '') return undefined;
+  if (args.source === 'app_reviews_ios') return { platform: 'ios', id };
+  return args.source === 'app_reviews_android' ? { platform: 'android', id } : undefined;
+}
+
+/** The longest store name or developer shown on the card. */
+export const STORE_TEXT_MAX = 60;
+
+/**
+ * A store-supplied name for the card: publishers control it, so control and format characters (newlines,
+ * bidirectional overrides) become spaces, whitespace collapses, and it is quoted and clipped (`q`), so it reads
+ * as one quoted value after "App Store:" and can never look like another line of the card.
+ */
+export function storeText(value: string): string {
+  return q(value.replaceAll(/[\p{Cc}\p{Cf}]/gu, ' '), STORE_TEXT_MAX);
 }
 
 const lookups = new WeakMap<AssistantRunContext, Map<string, Promise<StoreAppLookup>>>();
@@ -77,6 +90,6 @@ export async function storeAppNote(deps: ToolDeps, ctx: AssistantRunContext, arg
   const result = await lookup(deps, ctx, identity.platform, identity.id);
   if (result.status === 'unknown') return ` ${store} could not be checked (${result.reason}).`;
   if (result.status !== 'found' || result.app.name === '') return '';
-  const developer = result.app.developer === '' ? '' : ` by ${q(result.app.developer)}`;
-  return ` ${store}: ${q(result.app.name)}${developer}.`;
+  const developer = result.app.developer === '' ? '' : ` by ${storeText(result.app.developer)}`;
+  return ` ${store}: ${storeText(result.app.name)}${developer}.`;
 }

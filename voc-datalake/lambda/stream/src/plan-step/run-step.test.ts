@@ -47,7 +47,7 @@ function harness(routes: Record<string, unknown> = {}, answers: ConverseCommandO
         return next === undefined ? Promise.reject(new Error('no answer queued')) : Promise.resolve(next);
       },
       resolveModel: () => Promise.resolve('global.anthropic.claude-sonnet-5-5'),
-      lookupStoreApp: () => Promise.resolve({ status: 'found', app: { name: '', developer: '', url: '' } }),
+      lookupStoreApp: () => Promise.resolve({ status: 'found', app: { name: '', developer: '' } }),
     },
   };
 }
