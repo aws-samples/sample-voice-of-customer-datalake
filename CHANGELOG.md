@@ -17,6 +17,23 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.74.00] - 2026-11-01
+
+Safer defaults: customer data survives a stack delete unless a demo opts out, every operational log keeps 30 days, and the deployment has one customer-managed KMS key.
+
+### Changed
+
+- `protectData` is on by default (`voc-datalake/lib/utils/data-protection.ts`): the data tables, the raw-data bucket, the KMS key, the `voc/design-integrations` secret and the Cognito user pool are kept when the stacks are deleted or a resource is replaced, tables and the user pool get deletion protection, the raw bucket has no auto-delete provider, log groups and the access-log bucket are retained, and every stack gets termination protection. Demos, workshops and temporary environments deploy with `-c protectData=false` ([docs/deployment.md](docs/deployment.md#production-protectdata)).
+- Every operational log keeps 30 days: every Lambda log group (CDK's own provider functions included), the API Gateway access log, the Step Functions logs (`LOG_RETENTION` in `lib/utils/log-retention.ts`), in protected and unprotected deployments alike, and the S3 server access-log bucket expires current objects and noncurrent versions after 30 days. Before, Lambda and API logs kept 14 days (7 for some providers, 365 under `protectData=true`), and access logs 90 days (noncurrent versions 7). Audit evidence stays in the DynamoDB audit rows.
+- One customer-managed KMS key per deployment: the operational alarm topic (`voc-ops-alarms-…`) and the scheduled-ingestion dead-letter queue (`voc-ingest-schedule-dlq-…`) are encrypted with the Core key instead of keys of their own. The Core key's policy admits CloudWatch only for this account's `voc-*` alarms (`aws:SourceAccount` + `aws:SourceArn`) and EventBridge only under the SQS encryption context of that one queue.
+- The fixed-cost gate (`voc-datalake/lib/fixed-cost-guard.test.ts`) also counts the resources billed per resource per month in the default synth: exactly one KMS key, and the known baseline of three Secrets Manager secrets, which may only shrink ([docs/deployment.md](docs/deployment.md)).
+
+### Upgrade notes
+
+- **protectData flips to on.** An existing deployment that never set `protectData` switches, on its next deploy, its data tables, raw-data bucket, user pool, KMS key, design-integrations secret, log groups and access-log bucket to `RetainExceptOnCreate` / `Retain`, turns on DynamoDB and Cognito deletion protection, removes the raw bucket's auto-delete provider and turns on termination protection. Nothing is replaced. To keep a demo's one-step teardown, deploy with `-c protectData=false` (or `"protectData": false` in `cdk.context.json`) and keep passing it: the value must be deployed BEFORE `cdk destroy`, or the retained resources stay in the account. A redeploy into the same account and region after a protected teardown fails while those fixed-name resources exist: delete them by hand or deploy with a different `-c deploymentPrefix` ([docs/deployment.md](docs/deployment.md#production-protectdata)).
+- **Log retention.** The deploy sets every existing log group to 30 days. Groups that kept 365 days lose their events older than 30 days (CloudWatch removes them shortly after the change); groups that kept 7 or 14 days keep their events longer from now on. Access-log objects older than 30 days are expired by the S3 lifecycle within a day or two. Export anything you need to keep longer before deploying. The cross-region export provider groups still need the one-time `aws logs put-retention-policy ... --retention-in-days 30` ([docs/deployment.md](docs/deployment.md#log-retention-of-cdks-own-provider-lambdas)).
+- **Two KMS keys go away.** The alarm topic and the schedule DLQ switch to the Core key in place (no replacement; the DLQ and topic names stay). CloudFormation then deletes the old `OpsAlarmsKey…` (VocCoreStack) and `IngestScheduleDLQKey…` (VocIngestionStack) keys, which KMS schedules for deletion with the default 30-day pending window. A key pending deletion cannot decrypt, so a message already in the schedule DLQ (encrypted under the old key) cannot be read after the deploy: inspect or re-drive it first (Administration → System → Logs shows the failure queues). The 30-day window outlasts the DLQ's 14-day message retention, so if one is found later, `aws kms cancel-key-deletion` and `aws kms enable-key` on the old key make it readable until it expires; then schedule the key's deletion again.
+
 ## [5.73.01] - 2026-11-01
 
 TENETS.md now describes the code as it is, and four tenets say what was decided about erasure, AI modes, Gold and the one KMS key.
