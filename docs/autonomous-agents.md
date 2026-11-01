@@ -1,16 +1,41 @@
-# Autonomous agents — crews that go from reviews to a prototype
+# Autonomous agents
 
-An **agent** watches the reviews in its scope (all, or some categories/subcategories) and, when a trigger fires,
-runs a **workflow**: aggregate the problems, pick or create a project, choose or generate personas, research,
-write a PR/FAQ and PRD, have the personas review them until they agree, build a prototype with the company design
-system, review that, and hand the result to the right owner. Admins create and enable agents (up to ~10); anyone
-can read the agents whose scope they can see. Notifications are in-app only.
+An **agent** watches the reviews in its scope (all, or some categories and subcategories) and, when a trigger
+fires, runs a **workflow**: aggregate the problems, pick or create a project, choose or generate personas,
+research, write a PR/FAQ and PRD, have the personas review them until they agree, build a prototype with the
+company design system, review that, and hand the result to the right owner. Administrators create, edit and enable
+agents. Any signed-in user can read the agents whose whole scope their category access covers. Notifications are
+in-app only.
 
-The crew model is KiroCrew's: a **conductor** decides and verifies but never does the work; **crewmates**
+The crew model follows KiroCrew: a **conductor** decides and verifies but never does the work. **Crewmates**
 (worker, reviewer, persona) are Bedrock tool loops with their own transcript, and they talk only through the
-conductor (`[sent by conductor]` envelopes). Default models: conductor and final reviewer Opus 5.5, workers and
-personas Sonnet 5.5 — all overridable per surface (`agent_orchestrator`, `agent_worker`, `agent_reviewer`,
-`agent_persona`) in Administration → AI models (`/admin?tab=ai`), and per agent.
+conductor (`[sent by conductor]` envelopes). Default models: conductor and final reviewer Claude Opus 5.5, workers
+and personas Claude Sonnet 5.5. Each is overridable per surface (`agent_orchestrator`, `agent_worker`,
+`agent_reviewer`, `agent_persona`) in Administration → AI models (`/admin?tab=ai`), and per agent.
+
+## Using agents
+
+Open the agents page from the sidebar (`/agents`, titled **Autonomous agents**). It lists the agents you can see,
+each with its status and its spend (scheduled runs today, model calls this month); a run that waits for a person
+shows **Needs your decision**. Administrators also get **New agent**, an **Agents** / **Workflows** switch for the
+workflow library, and Rename and Delete on each row. The **Plans** section lists the multi-step requests you
+approved in the AI assistant ([plan mode](assistant-plan-mode.md)).
+
+An agent's page has an **Enabled** switch and these tabs:
+
+| Tab | What you set or see |
+|---|---|
+| Settings | name, description, workflow, output visibility (private or public), scope (all reviews, or chosen categories and subcategories) |
+| Triggers | up to 5 triggers (below) |
+| Personas | up to 6 fixed personas picked from projects, and whether the agent may generate new personas when none fit |
+| Instructions | free-text instructions (up to 8,000 characters) that reach every writing step |
+| Models | a model per role (planner, worker, reviewer, persona), overriding the deployment default |
+| Budget | scheduled runs per day (at most 2), model calls per run (10–500, default 150), monthly model-call cap (default 5,000, or none) |
+| Workflow | the agent's workflow in the editor (below) |
+| Runs | each run's journal, what it produced, and the decision a paused run needs ([below](#when-a-run-needs-a-human)) |
+
+A new agent is created **disabled** with its own editable copy of the "Reviews → Prototype" workflow. It never runs,
+and costs nothing, until an administrator enables it. **Run now** starts a run at once.
 
 ## Default agent
 
@@ -57,10 +82,10 @@ Building a workflow by hand (the built-in can be rebuilt from an empty canvas, p
   `fail` out of a final review, otherwise none ("Always", the default path). A **custom step** (`custom_llm`)
   reports no verdict, so it offers no pass / fail arrows and cannot be the reviewer of a `review_pass` loop; a save
   or `POST /workflows/validate` with a `pass` / `fail` arrow out of one is refused (400, the error names the step).
-  Workflows saved before 3.00.00 may still hold such arrows: they are read as what the runtime always did with
-  them — the `pass` arrow becomes a plain arrow, a `fail` arrow (never taken) is dropped, and a `pass` arrow beside
-  a plain one (also never taken) is dropped — so those workflows keep running unchanged and re-save cleanly. Edit
-  a condition on the arrow or in the step's "Arrows out".
+  Workflows saved by releases before 3.00.00 may still hold such arrows. They are read the way the runtime always
+  treated them: the `pass` arrow becomes a plain arrow, and a `fail` arrow or a `pass` arrow beside a plain one (both
+  never taken) is dropped, so those workflows keep running unchanged and re-save cleanly. Edit a condition on the
+  arrow or in the step's "Arrows out".
 - **Loops.** A step joins a new or existing loop from its settings ("Add to loop"), or select several steps and
   "Group as a loop". Click a loop's frame label on the canvas (or Tab to the frame and press Enter) to set its
   exit condition (`persona_agreement` / `review_pass`), max rounds (1–5) and member steps.
@@ -76,7 +101,7 @@ Building a workflow by hand (the built-in can be rebuilt from an empty canvas, p
   - a passing arrow back inside — "an 'agreed' arrow must leave the loop" — or a failing arrow out — "a
     'not_agreed' arrow must stay inside the loop";
   - an unlabelled arrow out of the review — "label each arrow of this review 'agreed' or 'not_agreed'" (it is taken
-    on every outcome without its own arrow, which is how a loop went round until the 120-step limit);
+    on every outcome, so the loop would go round until the 120-step limit);
   - an arrow from any other loop step to a step outside the loop — "only the loop's review can leave the loop"
     (it would run beside the loop as a fan-out).
 
@@ -117,7 +142,7 @@ Project rules: the agent may create a project, reuse one **it created itself** (
 `created_by_agent` on create; no update can set it), matched on `description` + the agent-kept `purpose`, and
 duplicate documents into another project — never merge, move or delete. A project the agent did not create (its
 owner's own, or a private one it was shared into) is never offered for reuse, however similar its name: the run
-creates a new project instead (5.35.00; a run once reused a tester's project). An agent run never removes
+creates a new project instead. An agent run never removes
 personas: it sends `keep_existing_personas: true` to `POST /projects/{id}/personas/generate`, so new personas are
 added beside the existing ones (and any edit a person made to them is kept; [persona generation](persona-generation.md)). Handoff owner = the first
 owner of the dominant category (other owners as editors); none → the admin flagged **fallback owner**.
@@ -125,8 +150,7 @@ owner of the dominant category (other owners as editors); none → the admin fla
 ## What the steps read and send
 
 - **Review window.** Every step reads the reviews of the last 30 days (`DEFAULT_REVIEW_DAYS`,
-  `agents/nodes/base.py`) unless its `days` param says otherwise — the aggregate step too (it read 7 before
-  5.35.00, so a category with 108 reviews in 30 days was summarised from 1). The aggregate step reads
+  `agents/nodes/base.py`) unless its `days` param says otherwise, the aggregate step included. The aggregate step reads
   `GET /feedback` page by page (100 per page, up to 20 pages per scoped category) until the route's `total`, and
   `review_count` counts them all; at most 60 of them reach the analysis prompt. The aggregate also keeps `quotes`:
   up to two short quotes (220 characters, cut on a whole word) from the reviews each problem cites.
@@ -144,11 +168,11 @@ owner of the dominant category (other owners as editors); none → the admin fla
   when the instructions ask for short documents ("short", "brief", "concise" and their equivalents in the nine
   languages). The budget is split over the steps that write the document (`shared/document_writer_brief.py`) and
   overrides the templates' own length guidance. The writer context reaches the first (analysis) step AND every step
-  that writes the document (press release, both FAQs, the PRD document): until 5.35.02 those steps read only the
-  previous step's output, so an Internal FAQ grounded in 108 reviews said it had "no customer feedback". The PR/FAQ
+  that writes the document (press release, both FAQs, the PRD document), so each section is grounded in the same
+  reviews. The PR/FAQ
   templates ask for the document's own neutral voice (never "I") and for the evidence's counts and quotes, naming a
-  figure the evidence lacks as one to measure. The PR/FAQ heading is the document title; before 5.35.00 it was
-  the feature idea, so every agent PR/FAQ began with the writer's prompt. The document generator also strips any
+  figure the evidence lacks as one to measure. The PR/FAQ heading is the document title, never the feature idea.
+  The document generator also strips any
   DATA block from what it stores, whatever echoed it.
 - **Research title.** "Research: <run title>", the run title cut at 80 characters on a whole word with "…"
   (`shared/text_clip.py`), then the creation stamp.
@@ -233,7 +257,7 @@ decided) or the agent already has another active run. The run view carries `need
 
 - **stop** — the run becomes `completed` (its `finished_at` kept, no execution started), journalled "Closed by
   {username}: {note or 'no further action'}." Its pause reason (`error`) is removed — a completed run carries no
-  error, and the run view answers `error: null` for one closed in 5.35.02 or earlier — while the journal keeps the pause.
+  error, and the run view answers `error: null` for one closed by an older release, while the journal keeps the pause.
 - **accept** / **another_round** — one transaction takes the agent's run lock and moves the run back to `queued`
   (`resume = {decision, note}`, `resume_count + 1`), then a new execution `{run_id}-r{resume_count}` starts. The
   conductor continues from the stopped review instead of from start: `accept` takes the review's passing arrow
@@ -356,20 +380,16 @@ approval). An approved plan that has not started within 24 h is `expired` — wr
 The Projects and Memory API names come from `lib/utils/function-names.ts`, which both stacks use: Processing deploys
 before Api, so a construct reference would be a cycle. `voc-plan-step`'s delegate names come from the same file.
 
-## Planned: in-prototype feedback loop (not built yet)
+## Prototype tester pins
 
-When a run builds a prototype, the agent should be able to collect feedback on it from real users and rework it:
+When a run builds a prototype, testers can drop pins on it and leave threaded comments through the prototype's pin
+form ([feedback-forms.md → Prototype pin forms](feedback-forms.md#prototype-pin-forms-form_type-prototype_pin)). Two
+workflow steps use them:
 
-- the agent creates a **feedback form** of a new type, `prototype_review`, linked to the project and prototype, and
-  the prototype embeds it as a floating "Feedback" button (Qualtrics-style) instead of a static form;
-- a reviewer can **drop a pin** on the page — a point or a DOM element/container — and leave a comment there,
-  Figma/Google-Docs style; pins are threaded and resolvable;
-- each submission captures the context the agent needs to find and fix the issue: page URL and route, the pinned
-  element's CSS selector + bounding box + nearby text, viewport size, user agent, recent console errors and failed
-  network requests, plus an optional screenshot of the pinned region;
-- submissions flow into the agent's run (a new trigger, e.g. `{kind: 'prototype_feedback', min_new}`) so the
-  conductor can schedule `revise_prototype` with the pinned comments as DATA blocks, then mark pins resolved.
-
-Infra notes for whoever builds it: the submit route stays one of the throttled public widget routes (it is reached
-from the prototype, not the app), console/network capture must be opt-in and size-capped, and screenshots go to
-the raw bucket under the prototype's prefix (keep-all).
+- **`collect_prototype_feedback`** reads the open pins on the run's prototype through the Projects API, as the
+  agent (`agents/pins.py`). Pins the injection screen flagged are left out for a person and counted. Nothing is
+  written to the project; the pins reach the next revision only through the run context. When the pins cannot be
+  read, the revision continues from the review alone.
+- **`revise_prototype`** builds a new revision with the pins as DATA and marks the pins it addressed as
+  `addressed`. The conductor resolves addressed pins only after a later review passes (the persona panel agreed on
+  the prototype, or the final review passed). Until then a person sees them as addressed, not resolved.
