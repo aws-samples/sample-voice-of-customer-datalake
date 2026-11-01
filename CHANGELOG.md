@@ -17,6 +17,31 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.66.03] - 2026-11-01
+
+Cleanup after the public docs pass: stale texts, a wrong plural and the dev mock's data.
+
+### Fixed
+
+- **Feedback boards**: a list board's card says "1 domain, 2 people" instead of "1 domains", in every UI language.
+- **Radar**: the empty state's second step names the Data sources page (it said "Scrapers page").
+- **Dev mock** (`npm run dev`):
+  - Problem Analysis loads with its default filters. The mock refused a `dims` value listing several choices,
+    which the real API accepts.
+  - The mock now holds 1,247 fictional reviews that match its metric fixtures per category, sentiment, source and
+    urgency. Lists, charts and Problem Analysis agree with each other (before, Categories counted 1,247 reviews
+    over a list of 3).
+
+### Changed
+
+- The scheduled-failure watch no longer lists a "dependency freshness" workflow, which does not exist (the
+  freshness check runs by hand, `npm run deps:freshness`).
+- Code comments, test titles and the agent steering files describe design choices and their reasons instead of
+  internal decision notes. The steering files no longer show the `-c frontendDomain` deploy option, which has no
+  effect, and list Home at `/` and the Dashboard at `/dashboard`.
+- The frontend's mock tests (`scripts/mock-corpus.test.mjs`, `mock-faceted-scope.test.mjs`, `mock-scope.test.mjs`)
+  run in the quality gate's mock coverage step.
+
 ## [5.66.02] - 2026-11-01
 
 Documentation for public readers: the README and every guide in `docs/` checked against the code, with new screenshots.
