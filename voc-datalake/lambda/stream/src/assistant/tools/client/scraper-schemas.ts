@@ -7,7 +7,7 @@
  *   - scrapers: `lambda/api/scrapers_handler.py` `_scraper_shape_error`
  *     (id pattern, text fields ≤ 500, ≤ 25 urls of ≤ 2048 chars, pagination
  *     bounds, `frequency_minutes` 0–43,200, ≤ 8 KiB per config) and
- *     `_scraper_url_error` (`shared/url_policy.validate_url`). Here a URL must
+ *     `scraper_url_error` (`shared/url_policy.py`). Here a URL must
  *     also be https, name a dotted host that is not an IP literal or localhost,
  *     and carry no credentials — the route re-checks with DNS resolution;
  *   - app connectors: `integrations_handler.save_app_config` (requires

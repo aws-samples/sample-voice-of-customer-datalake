@@ -29,6 +29,7 @@ from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_body_value, json_object_body
 from shared.snapstart import api_route_warmer, botocore_model_warmer, register_snapshot_hooks
 from shared.timestamps import now_iso
+from shared.url_policy import scraper_url_error, validate_url
 from shared.warm_init import warm_at_init
 from shared.web_review_targets import PLUGIN_ID as WEB_REVIEWS_PLUGIN
 from shared.web_review_targets import TargetError, target_source_id, validated_target
@@ -136,6 +137,34 @@ def _validate_credential_key(key: object) -> None:
         raise ValidationError(
             f"Invalid credential key {preview}: keys {PLUGIN_IDENTIFIER_RULES}."
         )
+
+
+#: The credentials key the webscraper ingestor reads its scraper list from (``webscraper_configs``).
+WEBSCRAPER_SOURCE = 'webscraper'
+WEBSCRAPER_CONFIGS_KEY = 'configs'
+
+
+def _validate_webscraper_configs(source: str, body: dict) -> None:
+    """Refuse a ``webscraper`` ``configs`` value whose scrapers would fetch a blocked URL.
+
+    ``POST /scrapers`` checks every URL it saves (``shared.url_policy.scraper_url_error``,
+    #244); this route writes the same ``webscraper_configs`` value, so it applies the same check
+    (and the ingestor still re-checks each URL at fetch time). An empty value is skipped below,
+    like any other key.
+    """
+    raw = body.get(WEBSCRAPER_CONFIGS_KEY) if source == WEBSCRAPER_SOURCE else None
+    if not raw:
+        return
+    try:
+        configs = json.loads(raw)
+    except ValueError as exc:
+        raise ValidationError('configs must be a JSON array of scraper configurations.') from exc
+    if not isinstance(configs, list) or not all(isinstance(config, dict) for config in configs):
+        raise ValidationError('configs must be a JSON array of scraper configurations.')
+    for config in configs:
+        error = scraper_url_error(config, validate_url)
+        if error:
+            raise ValidationError(error)
 
 
 def _validate_source(source: object) -> None:
@@ -582,6 +611,7 @@ def update_credentials(source: str):
             raise ValidationError(
                 f"Value for key {key[:40]!r} must be a string."
             )
+    _validate_webscraper_configs(source, body)
 
     try:
         response = secretsmanager.get_secret_value(SecretId=SECRETS_ARN)

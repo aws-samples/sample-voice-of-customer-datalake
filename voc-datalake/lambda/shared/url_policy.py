@@ -25,6 +25,7 @@ and that address is what is judged.
 import ipaddress
 import socket
 import time
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 from shared.logging import logger
@@ -274,3 +275,32 @@ def validate_url(url: object) -> tuple[bool, str]:
     if error is not None:
         return False, error
     return True, ''
+
+
+def scraper_url_error(
+    scraper: dict, check_url: Callable[[object], tuple[bool, str]] = validate_url,
+) -> str | None:
+    """Why a web scraper config must not be saved because of a URL it would fetch, else None.
+
+    Checks exactly the fields the webscraper ingestor fetches (`_get_urls_to_scrape`):
+    `base_url` (an empty one is the UI's "not configured yet" state) and every entry of `urls`.
+    Pagination only appends a query parameter to `base_url`, so its pages share the host judged
+    here. The message names the URL so the caller can tell which entry failed. Every route that
+    writes `webscraper_configs` applies it (`POST /scrapers`, `PUT /integrations/webscraper/
+    credentials`); the ingestor re-checks each URL at fetch time. ``check_url`` is the policy
+    check, ``validate_url`` unless a caller passes its own reference to it.
+    """
+    base_url = scraper.get('base_url')
+    if base_url is not None and not isinstance(base_url, str):
+        return 'base_url must be a string'
+    urls = scraper.get('urls')
+    if urls is None:
+        urls = []
+    if not isinstance(urls, list) or not all(isinstance(u, str) for u in urls):
+        return 'urls must be a list of strings'
+    candidates = ([base_url] if base_url else []) + urls
+    for url in candidates:
+        is_valid, error = check_url(url)
+        if not is_valid:
+            return f'Scraper URL rejected ({url}): {error}'
+    return None

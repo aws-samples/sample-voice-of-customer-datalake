@@ -378,14 +378,14 @@ class TestWritingCredentials:
 
     def test_a_secret_without_secretstring_is_written_from_empty(self, route, secrets, put):
         secrets.get_secret_value.return_value = {}
-        status, _body = route('PUT', '/integrations/webscraper/credentials', body={'configs': '[1]'})
+        status, _body = route('PUT', '/integrations/webscraper/credentials', body={'configs': '[]'})
         assert status == 200
-        assert _written(put) == {'webscraper_configs': '[1]'}
+        assert _written(put) == {'webscraper_configs': '[]'}
 
     def test_a_failed_write_is_a_500_logged_with_the_cause(self, route, put, logger):
         error = aws_error('denied')
         put.side_effect = error
-        assert route('PUT', '/integrations/webscraper/credentials', body={'configs': 'x'}) == (
+        assert route('PUT', '/integrations/webscraper/credentials', body={'api_key': 'x'}) == (
             500, {'success': False, 'error': 'Failed to update credentials'},
         )
         logger.exception.assert_called_once_with(f'Failed to update credentials: {error}')
