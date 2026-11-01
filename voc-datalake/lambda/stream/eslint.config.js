@@ -127,7 +127,7 @@ export default tseslint.config(
       'unicorn/prefer-includes': 'error',
       'unicorn/prefer-number-properties': 'error',
       'unicorn/prefer-string-starts-ends-with': 'error',
-      'unicorn/no-array-for-each': 'error',
+      'unicorn/no-for-each': 'error',
       'unicorn/no-useless-undefined': 'error',
 
       // ── Naming conventions ──
