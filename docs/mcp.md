@@ -303,7 +303,7 @@ consented scopes; per request the grant's scope is narrowed again by the token's
 **No app session for an MCP client.** The MCP app clients are allowed ONLY the two MCP scopes (no
 `openid`, `email` or `profile`) and no SRP, password or custom auth flow (hosted-UI authorization
 code + refresh only), so Cognito issues them no ID token; `openid` in a client's request is accepted
-and dropped, discovery and registration no longer advertise it, and the token facade never passes an
+and dropped, discovery and registration do not advertise it, and the token facade never passes an
 `id_token` on in any case. The access token still carries `username` (Cognito sets it without
 `openid`); the person's groups are read from Cognito per request, never from the token. As defence in
 depth, every REST API Lambda and the assistant stream refuse, with a 401, a token issued to any app

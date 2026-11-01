@@ -91,7 +91,7 @@ existence does not leak. Non-admins see a board's audience mode only, never its 
 
 Only admins create, configure, pause, archive and delete boards.
 
-**Pause** is the temporary stop: a paused board stays visible to its audience exactly as before (they still
+**Pause** is the temporary stop: a paused board stays visible to its audience (they still
 sign in, it still counts in the sign-up audience, its requests and +1s stay readable), but nobody can post a
 request, add or change a +1, or edit a request until an admin resumes it. Every such write answers
 **409 `board_paused`**, admins' own included. Admins can still triage a paused board: change a status, delete a
