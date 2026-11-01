@@ -230,3 +230,14 @@ def test_a_real_build_reads_radar_inside_the_worker_roles_grants(world, radar, m
     assert brief is not None
     kinds = [c['kind'] for c in brief['cards']]
     assert [k for k in kinds if k.startswith('radar_')] == ['radar_release', 'radar_beats_us']
+
+
+def test_a_lead_on_a_handful_of_their_reviews_is_no_card(world, radar):
+    """compare gives a too_few row no verdict, so two glowing reviews never 'beat us'."""
+    _beats_us(world, radar)
+    for ago in range(2):
+        _counter(radar, 'daily_category#billing', _day(ago), 1)
+        _counter(radar, 'category_sentiment#billing#positive', _day(ago), 1)
+        world.counter('METRIC#category_sentiment#billing#negative', _day(ago), 5)
+    [card] = radar_cards.beats_us_cards(_ctx(world, radar))
+    assert card.facts['categories'] == ['shipping']

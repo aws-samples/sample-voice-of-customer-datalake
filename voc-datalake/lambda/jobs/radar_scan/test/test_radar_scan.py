@@ -156,9 +156,9 @@ class TestExtract:
         ctx = _ctx(pages=1, fetch=fetch, today=date(2026, 10, 1))
         with patch.object(extract, 'converse', return_value=answer):
             found = extract.extract_candidates(
-                [_result(1, 'https://x.example/a'), _result(2, 'https://x.example/b')], ctx)
+                [_result(1, 'https://x.example/acme-a'), _result(2, 'https://x.example/acme-b')], ctx)
         assert [c.release_date for c in found] == ['2026-09-02', None]
-        fetch.assert_called_once_with('https://x.example/a', timeout=extract.PAGE_TIMEOUT_SECONDS,
+        fetch.assert_called_once_with('https://x.example/acme-a', timeout=extract.PAGE_TIMEOUT_SECONDS,
                                       max_bytes=extract.MAX_PAGE_BYTES)
 
     def test_an_undated_release_takes_the_date_written_in_its_cited_url(self):
@@ -230,7 +230,7 @@ class TestReleaseDedupe:
 
     def test_far_apart_or_different_features_stay_separate(self, table):
         store_candidate(table, self._candidate('Dark mode', day='2026-01-01'), _unit(0), _today(), 'now')
-        store_candidate(table, self._candidate('Dark mode', day='2026-06-01', url='https://news.example/2'), _unit(0),
+        store_candidate(table, self._candidate('Dark theme', day='2026-06-01', url='https://news.example/2'), _unit(0),
                         _today(), 'now')
         store_candidate(table, self._candidate('Payments', day='2026-06-02', url='https://news.example/3'), _unit(1),
                         _today(), 'now')

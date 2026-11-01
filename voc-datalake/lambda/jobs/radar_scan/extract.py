@@ -19,6 +19,9 @@ publication date is read from the page metadata (code, no model call).
 
 Citations go through ``shared.radar_citations.clean_citations``: one per page, https
 first, never a machine feed. A release whose only sources are feeds is not filed.
+Before anything else, a cited result that is neither on the brand's own domains nor names the
+brand (label or search terms) in its title or URL is dropped (``shared.radar_brand_citations``):
+it neither dates the release nor is shown, and a release left with no source is not filed.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ from shared.converse import converse
 from shared.http_utils import UnsafeURLError
 from shared.logging import logger
 from shared.prompt_safety import data_block
+from shared.radar_brand_citations import BrandMatch, keeps_citation
 from shared.radar_citations import clean_citations
 from shared.radar_releases import ReleaseCandidate, news_kind, source_kind
 from shared.web_search import format_web_results_for_llm
@@ -167,6 +171,13 @@ class ExtractContext:
     today: date
     pages: Budget
     fetch: Callable[..., Any]
+    #: The brand's search terms: a cited page naming one of them (or the label) is about the brand.
+    search_terms: tuple[str, ...] = ()
+
+    @property
+    def match(self) -> BrandMatch:
+        """The brand as ``keeps_citation`` reads it (the API's ``RadarBrand.citation_match``)."""
+        return BrandMatch(label=self.brand_label, terms=self.search_terms, domains=self.domains)
 
 
 def _candidate(entry: object, ctx: ExtractContext, results: list[dict[str, Any]], via: str) -> ReleaseCandidate | None:
@@ -175,6 +186,10 @@ def _candidate(entry: object, ctx: ExtractContext, results: list[dict[str, Any]]
     feature = ' '.join(str(entry.get('feature') or '').split())[:MAX_FEATURE_CHARS]
     cited = _cited(entry, results)
     if not feature or not cited:
+        return None
+    cited = [result for result in cited if keeps_citation(result['url'], result.get('title'), ctx.match)]
+    if not cited:
+        logger.info('Radar: a release cited only pages that do not name the brand; it is not filed')
         return None
     today = ctx.today
     release_date = (_valid_day(entry.get('release_date'), today) or _valid_day(cited[0].get('published_date'), today)

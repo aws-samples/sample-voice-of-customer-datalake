@@ -154,15 +154,20 @@ def test_a_label_merely_containing_all_is_still_allowed():
         == ['All Star', 'Allbirds']
 
 
-def test_count_releases_follows_every_page_and_reads_no_item():
+def test_count_releases_follows_every_page_reads_only_the_name_and_counts_one_per_feature():
     from unittest.mock import MagicMock
 
     from shared.radar_releases import count_releases
 
     table = MagicMock()
-    table.query.side_effect = [{'Count': 250, 'LastEvaluatedKey': {'sk': 'x'}}, {'Count': 7}]
-    assert count_releases(table, 'acme', datetime(2026, 1, 1, tzinfo=UTC).date()) == 257
+    table.query.side_effect = [
+        {'Items': [{'feature': 'Loops'}, {'feature': 'Agent'}], 'LastEvaluatedKey': {'sk': 'x'}},
+        {'Items': [{'feature': ' loops.'}, {'feature': 'Dark mode'}, {}]},
+    ]
+    # Loops twice is one row (the read-time collapse); a record without a name is one of its own.
+    assert count_releases(table, 'acme', datetime(2026, 1, 1, tzinfo=UTC).date()) == 4
     first, second = (call.kwargs for call in table.query.call_args_list)
-    assert first['Select'] == second['Select'] == 'COUNT'
+    assert first['ProjectionExpression'] == second['ProjectionExpression'] == '#f'
+    assert first['ExpressionAttributeNames'] == {'#f': 'feature'}
     assert 'ExclusiveStartKey' not in first
     assert second['ExclusiveStartKey'] == {'sk': 'x'}

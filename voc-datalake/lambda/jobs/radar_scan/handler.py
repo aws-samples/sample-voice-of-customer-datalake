@@ -123,7 +123,8 @@ def _scan(event: dict[str, Any], context: Any, table: Any, brands: list[RadarBra
             logger.warning('Radar: stopping the scan early, the time budget is nearly spent')
             break
         ctx = ExtractContext(brand=brand.key, brand_label=brand.label, domains=brand.domains,
-                             today=now.date(), pages=pages, fetch=fetch_public_url)
+                             today=now.date(), pages=pages, fetch=fetch_public_url,
+                             search_terms=brand.search_terms)
         window = _window(table, brand, now)
         stats = scan_brand(brand, window=window, budget=Budget(share), ctx=ctx, table=table,
                            now_iso=now_iso, sources=sources)

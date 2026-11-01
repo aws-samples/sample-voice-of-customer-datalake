@@ -23,7 +23,6 @@
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/import_runs.py", "scope": "list_import_runs", "reason": "one page plus an encoded client cursor (GET /scrapers/manual/history)"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/memory_store.py", "scope": "list_company", "reason": "one page plus a client cursor"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/memory_store.py", "scope": "count_status", "reason": "Select COUNT: sums each page's Count, there are no items for iter_query to yield"},
-    {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/radar_releases.py", "scope": "list_releases", "reason": "reads whole pages until at least `limit` rows, then re-sorts the views; max_items would stop mid-page and change which releases rank first"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/radar_store.py", "scope": "recent_items", "reason": "one budget shared across several partitions with a per-page Limit of what is left"},
     {"rule": "dynamo-paging-loop", "path": "voc-datalake/lambda/shared/urgent_pages.py", "scope": "read_urgent_page", "reason": "a client-cursor page walk that hydrates rows and stops when the page is full"},
 
