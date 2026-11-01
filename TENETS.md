@@ -9,7 +9,9 @@ PRD and prototype. It is a teaching tool today and is designed so it could becom
 
 - **They are ranked.** When two tenets conflict, the higher one wins.
 - **They are ours unless we know better ones.** To change a tenet, open a pull request that edits this file and
-  explains why. Tenets are never changed as a side effect of another change.
+  explains why. Tenets are never changed as a side effect of another change. The same pull request adds the new
+  id to `TENET_IDS` in `scripts/pr-checks/tenets.mjs`; because the PR check runs `main`'s copy of that script, the
+  pull request that adds a tenet names only ids `main` already knows, and the new id is accepted once it merges.
 - **They decide arguments.** If a tenet can't settle a real design disagreement, rewrite it until it can.
 - **Every pull request names the tenets it touches** (see [Pull request checklist](#pull-request-checklist)).
 - **They are checked, not just read.** See [How the tenets are enforced](#how-the-tenets-are-enforced).
@@ -158,7 +160,7 @@ The same checks run locally and on GitHub, so a green local run means a green pi
   `## Tenets` section with a `Tenets touched:` line naming the tenets it touches (`1`–`7`, `D1`–`D7`) or `none`.
 - **No fixed cost by default** (tenet 7, `voc-datalake/lib/fixed-cost-guard.test.ts`, part of `scripts/validate.sh`):
   the default synth of every stack fails on a WAF, SnapStart, provisioned concurrency or capacity, a NAT gateway, an
-  always-on database, cache or container, an API Gateway cache, a CloudFront dedicated IP or a created hosted zone.
+  Elastic IP, an interface VPC endpoint, an always-on database, cache, cluster or container, a Global Accelerator, an API Gateway cache, a CloudFront dedicated IP or a created hosted zone.
   Opt-in flags list exactly the fixed costs they add.
 - **Data deletion** (D5): a delete of customer data needs the `voc-retention` role; every mutating API route is
   classified admin-only or open-by-decision (`voc-datalake/lambda/api/test/test_route_admin_gates.py`), and the

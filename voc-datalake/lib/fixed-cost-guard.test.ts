@@ -4,9 +4,10 @@
  * Synthesizes the WHOLE app (bin/voc-datalake.ts, every stack) in the default shape and in the
  * all-features shape (test-support/all-features-context.ts: every context-gated feature on, data
  * protection included) and fails on any resource or setting that bills whether or not the platform is
- * used: WAF, SnapStart, provisioned concurrency, NAT gateways, EC2 instances, ECS services, RDS,
- * ElastiCache, OpenSearch, PROVISIONED DynamoDB or Kinesis capacity, an API Gateway cache cluster, a
- * CloudFront dedicated IP, a hosted zone the app creates (rules: test-support/fixed-cost-rules.ts).
+ * used: WAF, SnapStart, provisioned concurrency, NAT gateways, Elastic IPs, interface VPC endpoints, EC2
+ * instances, ECS services, RDS, ElastiCache, DAX, OpenSearch, MSK, Redshift, DocumentDB, Neptune, Global
+ * Accelerator, PROVISIONED DynamoDB or Kinesis capacity, an API Gateway cache cluster, a CloudFront
+ * dedicated IP, a hosted zone the app creates (rules: test-support/fixed-cost-rules.ts).
  * Each finding names the resource and says "fixed monthly cost: off by default (TENETS.md, tenet 7);
  * make it opt-in behind a context flag".
  *
@@ -14,34 +15,16 @@
  * function's share of the account pool); the MCP endpoint keeps its 20 (`-c mcpReservedConcurrency`).
  * Record sets in an EXISTING hosted zone (the inbound-email intake imports its zone by id) are fine.
  *
- * OPT_IN_FIXED_COSTS names the opt-in flags that legitimately add a fixed cost when turned on, and
+ * OPT_IN_FIXED_COSTS (test-support/fixed-cost-rules.ts) names the opt-in flags that legitimately add a fixed cost when turned on, and
  * exactly what they add. Each is synthesized with its flag and must produce those findings and no
  * others, which also proves the gate fires on a real template.
  */
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
-import { FIXED_COST_REMEDY, fixedCostFindings, type FixedCostFinding } from './test-support/fixed-cost-rules';
+import { FIXED_COST_REMEDY, fixedCostFindings, OPT_IN_FIXED_COSTS, type FixedCostFinding } from './test-support/fixed-cost-rules';
 import { cleanupAssemblyDirs, synthApp, type SynthResult } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
-import { PERFORMANCE_TIER_CONTEXT_KEY } from './utils/performance-tier';
-import { SNAPSTART_CONTEXT_KEY, SNAPSTART_FUNCTION_IDS } from './utils/snapstart';
-
-/** An opt-in flag allowed to add a fixed cost: its context, and the `<type> <logical id pattern>` findings it adds. */
-interface OptInFixedCost {
-  readonly context: Readonly<Record<string, unknown>>;
-  readonly expected: readonly RegExp[];
-}
-
-const SNAPSTART_FINDINGS = SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::Lambda::Function (GlobalMcp)?${id}[0-9A-F]{8}$`));
-
-const OPT_IN_FIXED_COSTS: Readonly<Record<string, OptInFixedCost>> = {
-  // `-c snapStart=true` (lib/utils/snapstart.ts): the four cold-start-bound API Lambdas.
-  snapStart: { context: { [SNAPSTART_CONTEXT_KEY]: 'true' }, expected: SNAPSTART_FINDINGS },
-  // `-c performanceTier=true` (lib/utils/performance-tier.ts): every fixed-cost performance feature;
-  // today exactly SnapStart. A new performance feature adds its findings HERE.
-  performanceTier: { context: { [PERFORMANCE_TIER_CONTEXT_KEY]: 'true' }, expected: SNAPSTART_FINDINGS },
-};
 
 // Module-level synths like lib/app-template-gates.test.ts (~8-10 s each, out of process).
 const SHAPES: readonly (readonly [string, SynthResult])[] = [
@@ -67,8 +50,9 @@ describe.each(OPT_IN_SHAPES)('opt-in -c %s=true', (_flag, result, expected) => {
   it('adds exactly the fixed costs it is allowed to, and the gate names each one', () => {
     const findings = findingsOf(result);
     const keys = findings.map((finding) => `${finding.type} ${finding.logicalId}`).sort(byCodeUnit);
-    expect(keys).toHaveLength(expected.length);
-    expect(expected.filter((pattern) => !keys.some((key) => pattern.test(key)))).toStrictEqual([]);
+    // One-to-one: every finding matches exactly one expected pattern, and every pattern exactly one finding.
+    expect(keys.filter((key) => expected.filter((pattern) => pattern.test(key)).length !== 1)).toStrictEqual([]);
+    expect(expected.filter((pattern) => keys.filter((key) => pattern.test(key)).length !== 1)).toStrictEqual([]);
     expect(findings.filter((finding) => !finding.message.endsWith(FIXED_COST_REMEDY))).toStrictEqual([]);
   });
 });

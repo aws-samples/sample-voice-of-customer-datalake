@@ -12,6 +12,8 @@
  * `-c mcpReservedConcurrency`). Record sets in an EXISTING hosted zone (the inbound-email intake
  * imports its zone by id) are pay-per-query too.
  */
+import { PERFORMANCE_TIER_CONTEXT_KEY } from '../utils/performance-tier';
+import { SNAPSTART_CONTEXT_KEY, SNAPSTART_FUNCTION_IDS } from '../utils/snapstart';
 import { isRecord } from './guards';
 import { TemplateResourcesSchema } from './template-resources';
 
@@ -35,6 +37,13 @@ const FIXED_COST_TYPES: readonly (readonly [string, string])[] = [
   ['AWS::ElastiCache::', 'an ElastiCache cluster (hourly)'],
   ['AWS::OpenSearchService::Domain', 'an OpenSearch domain (hourly)'],
   ['AWS::Elasticsearch::Domain', 'an Elasticsearch domain (hourly)'],
+  ['AWS::EC2::EIP', 'an Elastic IP (public IPv4, hourly)'],
+  ['AWS::MSK::', 'an MSK (Kafka) cluster (hourly)'],
+  ['AWS::Redshift::', 'a Redshift cluster resource (hourly)'],
+  ['AWS::DocDB::', 'a DocumentDB cluster resource (hourly)'],
+  ['AWS::Neptune::', 'a Neptune cluster resource (hourly)'],
+  ['AWS::GlobalAccelerator::', 'a Global Accelerator (hourly)'],
+  ['AWS::DAX::', 'a DynamoDB Accelerator (DAX) cluster (hourly)'],
   ['AWS::Route53::HostedZone', 'a hosted zone created by the app (monthly; import an existing zone by id instead)'],
 ];
 
@@ -48,6 +57,14 @@ const recordAt = (properties: Properties, key: string): Properties => {
 };
 
 const byType: Rule = (type) => FIXED_COST_TYPES.find(([pattern]) => matchesType(type, pattern))?.[1];
+
+// Interface and Gateway Load Balancer endpoints bill per hour per AZ; a Gateway endpoint (S3, DynamoDB, the
+// CloudFormation default type) is free.
+const interfaceEndpoint: Rule = (type, properties) => (
+  type === 'AWS::EC2::VPCEndpoint'
+    && (properties.VpcEndpointType === 'Interface' || properties.VpcEndpointType === 'GatewayLoadBalancer')
+    ? 'an interface VPC endpoint (hourly per AZ)' : undefined
+);
 
 const snapStart: Rule = (type, properties) => (
   (type === 'AWS::Lambda::Function' || type === 'AWS::Lambda::Version')
@@ -100,7 +117,7 @@ const cloudFrontDedicatedIp: Rule = (type, properties) => (
 );
 
 const RULES: readonly Rule[] = [
-  byType, snapStart, provisionedConcurrency, dynamoProvisioned, kinesisProvisioned, apiGatewayCache, cloudFrontDedicatedIp,
+  byType, interfaceEndpoint, snapStart, provisionedConcurrency, dynamoProvisioned, kinesisProvisioned, apiGatewayCache, cloudFrontDedicatedIp,
 ];
 
 /** One fixed-cost finding: where, and the message the gate prints. */
@@ -122,3 +139,23 @@ export function fixedCostFindings(stack: string, template: Record<string, unknow
       message: `${stack}/${logicalId} (${Type}): ${reason} — ${FIXED_COST_REMEDY}`,
     })));
 }
+
+/** An opt-in flag allowed to add a fixed cost: its context, and the `<type> <logical id pattern>` findings it adds. */
+export interface OptInFixedCost {
+  readonly context: Readonly<Record<string, unknown>>;
+  readonly expected: readonly RegExp[];
+}
+
+const SNAPSTART_FINDINGS = SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::Lambda::Function (GlobalMcp)?${id}[0-9A-F]{8}$`));
+
+/**
+ * THE registry of opt-in fixed costs (TENETS.md, tenet 7): every context flag that may add a fixed monthly cost,
+ * and exactly what it adds. lib/fixed-cost-guard.test.ts synthesizes each and requires those findings and no
+ * others. A new fixed-cost performance feature gets its own entry AND adds its findings to `performanceTier`.
+ */
+export const OPT_IN_FIXED_COSTS: Readonly<Record<string, OptInFixedCost>> = {
+  // `-c snapStart=true` (lib/utils/snapstart.ts): the four cold-start-bound API Lambdas.
+  snapStart: { context: { [SNAPSTART_CONTEXT_KEY]: 'true' }, expected: SNAPSTART_FINDINGS },
+  // `-c performanceTier=true` (lib/utils/performance-tier.ts): every fixed-cost performance feature; today exactly SnapStart.
+  performanceTier: { context: { [PERFORMANCE_TIER_CONTEXT_KEY]: 'true' }, expected: SNAPSTART_FINDINGS },
+};

@@ -38,6 +38,15 @@ const FIXED_COST: readonly (readonly [string, string, Record<string, unknown>])[
     DistributionConfig: { ViewerCertificate: { SslSupportMethod: 'vip' } },
   }],
   ['a hosted zone', 'AWS::Route53::HostedZone', {}],
+  ['an Elastic IP', 'AWS::EC2::EIP', {}],
+  ['an interface VPC endpoint', 'AWS::EC2::VPCEndpoint', { VpcEndpointType: 'Interface' }],
+  ['a Gateway Load Balancer endpoint', 'AWS::EC2::VPCEndpoint', { VpcEndpointType: 'GatewayLoadBalancer' }],
+  ['an MSK cluster', 'AWS::MSK::Cluster', {}],
+  ['a Redshift cluster', 'AWS::Redshift::Cluster', {}],
+  ['a DocumentDB cluster', 'AWS::DocDB::DBCluster', {}],
+  ['a Neptune cluster', 'AWS::Neptune::DBCluster', {}],
+  ['a Global Accelerator', 'AWS::GlobalAccelerator::Accelerator', {}],
+  ['a DAX cluster', 'AWS::DAX::Cluster', {}],
 ];
 
 const FREE: readonly (readonly [string, string, Record<string, unknown>])[] = [
@@ -50,6 +59,8 @@ const FREE: readonly (readonly [string, string, Record<string, unknown>])[] = [
   ['CloudFront with SNI', 'AWS::CloudFront::Distribution', {
     DistributionConfig: { ViewerCertificate: { SslSupportMethod: 'sni-only' } },
   }],
+  ['a gateway VPC endpoint (the default type)', 'AWS::EC2::VPCEndpoint', {}],
+  ['an explicit gateway VPC endpoint', 'AWS::EC2::VPCEndpoint', { VpcEndpointType: 'Gateway' }],
   ['a record set in an existing zone', 'AWS::Route53::RecordSet', { HostedZoneId: 'Z0123456789EXAMPLE' }],
 ];
 

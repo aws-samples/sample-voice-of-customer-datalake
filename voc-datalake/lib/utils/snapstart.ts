@@ -3,7 +3,7 @@
  * (docs/lambda-sizing.md, "SnapStart: off by default").
  *
  * OFF BY DEFAULT. SnapStart is a fixed monthly cost (a snapshot cache charge for
- * as long as a version is active, ~$12/month for these four), and this project
+ * as long as a version is active, about $20 a month for these four at their sizes), and this project
  * runs fully serverless with no fixed cost by default (../../../TENETS.md, tenet 7):
  * we make a cold start faster rather than pay to hide it. `-c snapStart=true`
  * turns it on for exactly SNAPSTART_FUNCTION_IDS; {@link snapStartEnabled} is the
@@ -49,10 +49,13 @@ const SNAPSTART_PUBLISH_WARNING = '@aws-cdk/aws-lambda:snapStartRequirePublish';
  * performance feature at once. The only read of the snapStart flag.
  */
 export function snapStartEnabled(scope: IConstruct): boolean {
-  return performanceTierEnabled(scope) || booleanContextFlag(
+  // Both flags are read before they are combined, so a typo in one is refused even when the other is on.
+  const own = booleanContextFlag(
     scope.node.tryGetContext(SNAPSTART_CONTEXT_KEY), SNAPSTART_CONTEXT_KEY, false,
     `Use true/false (off by default: a fixed monthly cost, TENETS.md tenet 7; opt in with -c ${SNAPSTART_CONTEXT_KEY}=true).`,
   );
+  const tier = performanceTierEnabled(scope);
+  return tier || own;
 }
 
 /**

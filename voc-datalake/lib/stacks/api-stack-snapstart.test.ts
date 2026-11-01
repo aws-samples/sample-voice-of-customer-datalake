@@ -212,6 +212,7 @@ describe('the snapStart context flag', () => {
   it('refuses a typo rather than deploying the opposite', () => {
     expect(() => snapStartEnabled(appWith({ snapStart: 'ture' }))).toThrow(/Unrecognized snapStart context value/);
     expect(() => snapStartEnabled(appWith({ performanceTier: 'yes' }))).toThrow(/Unrecognized performanceTier context value/);
+    expect(() => snapStartEnabled(appWith({ performanceTier: 'true', snapStart: 'ture' }))).toThrow(/Unrecognized snapStart context value/);
   });
 
   it('is on with the performance tier, which turns on every fixed-cost performance feature', () => {

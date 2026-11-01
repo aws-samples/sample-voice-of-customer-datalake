@@ -786,10 +786,10 @@ four functions) and `api-stack-invoke-permissions.test.ts` check these rules.
 
 **No fixed cost by default (for contributors).** `lib/fixed-cost-guard.test.ts` synthesizes every stack, in the default
 and the all-features shape, and fails on any resource or setting that bills whether or not the platform is used: WAF,
-SnapStart, provisioned concurrency, NAT gateways, EC2 instances, ECS services, RDS, ElastiCache, OpenSearch,
-PROVISIONED DynamoDB or Kinesis capacity, an API Gateway cache cluster, a CloudFront dedicated IP, or a hosted zone
-the app creates ([TENETS.md](../TENETS.md), tenet 7). Such a feature goes behind an opt-in context flag, listed in the
-test's `OPT_IN_FIXED_COSTS` with exactly what it adds (today: `snapStart`, and `performanceTier`, which turns it on).
+SnapStart, provisioned concurrency, NAT gateways, Elastic IPs, interface VPC endpoints, EC2 instances, ECS services,
+RDS, ElastiCache, DAX, OpenSearch, MSK, Redshift, DocumentDB, Neptune, Global Accelerator, PROVISIONED DynamoDB or Kinesis capacity, an API Gateway cache cluster, a CloudFront dedicated IP, or a hosted zone
+the app creates ([TENETS.md](../TENETS.md), tenet 7). Such a feature goes behind an opt-in context flag, listed in
+`OPT_IN_FIXED_COSTS` (`lib/test-support/fixed-cost-rules.ts`) with exactly what it adds (today: `snapStart`, and `performanceTier`, which turns it on).
 A new performance feature reads `performanceTierEnabled` (`lib/utils/performance-tier.ts`) as well as its own flag. Lambda reserved concurrency costs nothing
 and is allowed.
 

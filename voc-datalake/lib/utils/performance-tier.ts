@@ -7,7 +7,7 @@
  * speed sets `-c performanceTier=true`, and every performance feature reads this flag (besides its
  * own flag) so the operator does not have to know them one by one. Today that is SnapStart on the
  * cold-start-bound API Lambdas (lib/utils/snapstart.ts); a new fixed-cost performance feature joins
- * here AND in lib/fixed-cost-guard.test.ts (OPT_IN_FIXED_COSTS), so the gate keeps the default clean.
+ * here AND in OPT_IN_FIXED_COSTS (lib/test-support/fixed-cost-rules.ts), so the gate keeps the default clean.
  *
  * Run as a managed service, this tier would be on by default; that is a deployment's decision, so
  * the repository default stays off.

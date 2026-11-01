@@ -23,21 +23,28 @@ test('the TENETS.md checklist and the PR template both carry the Tenets section 
   assert.match(TEMPLATE, /TENETS\.md#pull-request-checklist/)
 })
 
-test('touchedIds reads numbers and D-ids in any case and separator', () => {
+test('touchedIds reads the leading id list in any case and separator, and ignores the prose after it', () => {
   assert.deepEqual(touchedIds('3, d1 and D4; 7'), ['3', 'D1', 'D4', '7'])
+  assert.deepEqual(touchedIds('3 D1 & 7'), ['3', 'D1', '7'])
+  assert.deepEqual(touchedIds('7 (SnapStart opt-in, see #242)'), ['7'])
+  assert.deepEqual(touchedIds('6, 7: shipped in 5.70.00'), ['6', '7'])
+  assert.deepEqual(touchedIds('see 5.70.00'), [])
+  assert.deepEqual(touchedIds('5.70.00'), [])
 })
 
 test('a section naming real tenets, or none, passes', () => {
   assert.deepEqual(problems('## Tenets\n\nTenets touched: 3, 7, D4'), [])
   assert.deepEqual(problems('## Tenets\n\nTenets touched: none'), [])
   assert.deepEqual(problems('## Tenets\n\n**Tenets touched:** None — docs only'), [])
+  assert.deepEqual(problems('## Tenets\n\nTenets touched: 7 (SnapStart opt-in, see #242)'), [])
 })
 
 test('a missing section, a missing or doubled line, an empty value or an unknown id fails', () => {
   assert.match(problems('## Release\n\n5.69.00 (minor)')[0], /missing section "## Tenets"/)
   assert.match(problems('## Tenets\n\nwe kept them')[0], /exactly one line/)
   assert.match(problems('## Tenets\n\nTenets touched: 1\n\nTenets touched: 2')[0], /exactly one line/)
-  assert.match(problems('## Tenets\n\nTenets touched: <!-- e.g. 3 -->')[0], /names no tenet/)
+  assert.match(problems('## Tenets\n\nTenets touched: <!-- e.g. 3 -->')[0], /must start with tenet ids/)
+  assert.match(problems('## Tenets\n\nTenets touched: data and cost')[0], /must start with tenet ids/)
   assert.match(problems('## Tenets\n\nTenets touched: 3, 8, D9')[0], /8, D9 is not a tenet/)
 })
 

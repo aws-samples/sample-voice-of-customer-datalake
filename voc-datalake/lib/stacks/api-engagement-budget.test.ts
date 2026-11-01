@@ -20,7 +20,7 @@
  * pinned route by route. With 5.60.00's company persona routes underneath, the all-plugins synth is 384.
  * The ceiling stays 388 (the 378 + 10 set before the rebase; 384 is under it); the 425 gate is unchanged.
  *
- * 5.69.00 turned SnapStart off by default (TENETS.md, tenet 7): the default all-plugins synth drops the
+ * 5.70.00 turned SnapStart off by default (TENETS.md, tenet 7): the default all-plugins synth drops the
  * four versions and aliases (384 → 376). The ceiling is held by the LARGEST shape, `-c snapStart=true`
  * (384, the old one), so opting in can never push the stack over it.
  */

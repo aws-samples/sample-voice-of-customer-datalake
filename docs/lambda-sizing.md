@@ -280,7 +280,7 @@ Not in the tier yet, and why: SnapStart on further functions and provisioned con
 cold-start and traffic data to pick the functions and the numbers; DynamoDB Accelerator (DAX) runs inside a VPC, a
 fixed cost of its own, and the read caches ([caching.md](caching.md)) cover the hot reads today. A feature that joins
 the tier gets its own context flag, reads `performanceTierEnabled(scope)` too, and is listed in `OPT_IN_FIXED_COSTS`
-(`lib/fixed-cost-guard.test.ts`) with exactly the resources it adds.
+(`lib/test-support/fixed-cost-rules.ts`, checked by `lib/fixed-cost-guard.test.ts`) with exactly the resources it adds.
 
 **Why someone might opt in.** SnapStart replaces a cold start with a restore from a snapshot taken at deploy time
 (restore p50 about 460–500 ms, measured on these four APIs while it was on). It supports Python 3.12 and later on x86_64 and arm64 in most commercial Regions (check the AWS docs
