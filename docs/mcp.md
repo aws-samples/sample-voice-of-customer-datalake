@@ -1,58 +1,83 @@
 # MCP access for external assistants
 
-VoC exposes ONE MCP server, `POST {api}/mcp/global`. It speaks MCP
-over Streamable HTTP (JSON responses, no SSE stream, no sessions) and authenticates with a
-bearer token minted on **Connect → MCP & skills** (`/connect`). A project's header link
-**Connect via MCP** opens `/connect?project={id}` with that project pre-selected as the
-token's pin.
+VoC exposes one MCP server so that an external assistant (Kiro, Claude Code, Cursor, Copilot or any other MCP
+client) can read feedback, metrics, categories, memory, company context, projects and agent runs, write project
+documents and, for administrators, run autonomous agents. The server is `POST {api}/mcp/global`. It speaks MCP over
+Streamable HTTP (JSON responses, no SSE stream, no sessions). Every signed-in user can connect an assistant; the
+assistant always acts as that user, never as an administrator.
 
-**Protocol versions (dual-era, since 5.03.00).** The server speaks `2026-07-28` and the
-legacy `2025-11-25`, `2025-06-18` and `2024-11-05` (`lambda/shared/mcp_protocol.py`):
+There are two ways to connect:
 
-- **Legacy clients** (Kiro, Claude Code, Copilot today) are unchanged: `initialize`, then
-  requests with the negotiated `MCP-Protocol-Version` header; `ping` still answers.
-- **2026-07-28 clients** skip the handshake. Each request carries
-  `params._meta["io.modelcontextprotocol/protocolVersion"]` and mirrors it, the method and
-  (for `tools/call`) the tool name into `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name`
-  (the `=?base64?…?=` form is decoded). A missing or disagreeing header is a `HeaderMismatch`
-  (`-32020`, HTTP 400), refused before the credential is read. `server/discover` returns the
-  supported versions, capabilities and instructions (public, cacheable for an hour); every
-  result carries `resultType` and the server identity in `_meta`, and `tools/list` adds
-  `ttlMs` (5 minutes) with `cacheScope: "private"` because the list depends on the token.
-  `initialize` and `ping` are not modern methods (404).
-- **An unknown version**, in the header or in `_meta`, is an `UnsupportedProtocolVersionError`
-  (`-32022`, HTTP 400) whose `data.supported` lists all four versions and `data.requested`
-  echoes the one asked for.
-- **`GET` and `DELETE`** on the endpoint answer `405 Method Not Allowed` with
-  `Allow: POST, OPTIONS` (an API Gateway mock behind the same token authorizer, no Lambda).
-  They used to get API Gateway's own 403.
+- **Sign in with your account (OAuth).** Kiro, Claude Code and Cursor need only the server URL. The assistant opens
+  your browser, you approve it on VoC's consent screen and sign in. No token is copied.
+- **A personal token.** Any MCP client that can send an `Authorization` header works. You create the token on the
+  Connect page and put it in the client's `mcp.json`.
 
-**The per-project MCP server was retired in 3.00.00.** `POST {api}/mcp`, `/mcp/{proxy+}`
-(including `GET /mcp/autoseed/{project_id}`), the per-project token routes
-(`GET`/`POST /projects/{id}/api-tokens`, `DELETE /projects/{id}/api-tokens/{token_id}`)
-and `GET /projects/{id}/autoseed` are gone, together with the `voc-mcp-api` Lambda and its
-role. Per-project tokens and the `mcp.json` configs that carry them stop working: their
-rows stay in the projects table's `MCPTOKEN` partition, unused, and the global server —
-whose role can read only `MCPGTOKEN` — answers such a token with a 401. Mint a global
-token on Connect instead. See [project-workspace.md](project-workspace.md#mcp-access).
+## Set up an assistant
 
-**The 401 challenge header.** A refused credential (a token that is unknown, wrong, revoked,
-expired, per-project or whose minter is disabled; an OAuth access token that fails any check
-in [OAuth sign-in](#oauth-sign-in)) gets `401` with `WWW-Authenticate: Bearer
-realm="voc-mcp-global", resource_metadata="{api}/.well-known/oauth-protected-resource/mcp/global",
-error="invalid_token"` and the JSON-RPC error
-`{"jsonrpc": "2.0", "id": null, "error": {"code": -32001, …}}`. API Gateway REST renames a
-Lambda-proxy response's `WWW-Authenticate` to `x-amzn-Remapped-WWW-Authenticate`, so the
-refusal is not the handler's: the endpoint's token authorizer is the global MCP function
-itself (`_authorize`, the same credential check, never cached), and its Deny is answered by
-the `ACCESS_DENIED` gateway response (`lib/stacks/api-mcp.ts`), which sets the header as
-given. `id` is `null` because the gateway cannot read the request. A request with no
-`Authorization` header gets the API-wide 401, which since 5.63.00 carries
-`Bearer resource_metadata="…"` with no `error` (RFC 6750 §3.1: the request carried no
-credential); the SPA never reads that header. An OAuth client starts its sign-in from
-`resource_metadata`; a token user mints a new token on Connect. Cost: each request
-invokes the function twice (authorizer, then handler), and the handler checks again, so a
-credential revoked between the two is still refused.
+Open **Connect → MCP & skills** in the sidebar (`/connect`). A project's **Connect via MCP** link opens
+`/connect?project={id}` with that project pre-selected as the token's pin. The page shows, from top to bottom:
+
+1. **Connect an assistant**: the deployment's **Global MCP endpoint** (`{api}/mcp/global`), a ready `mcp.json`,
+   and the **skill** (Download skill / Open skill).
+2. **Sign in with your account** and **Signed-in assistants** (the OAuth path, below).
+3. **Create a token** and **My tokens** (the token path, below).
+
+### With OAuth sign-in (Kiro, Claude Code, Cursor)
+
+1. Copy the snippet for your client from **Sign in with your account**:
+   - Kiro and Cursor: `{"mcpServers": {"voc-datalake": {"url": "<api>/mcp/global"}}}` in `mcp.json`, with no
+     `headers`.
+   - Claude Code: `claude mcp add --transport http voc-datalake <api>/mcp/global`, then `/mcp` in a session.
+2. Start the client. It finds the sign-in from the server's 401 answer, registers, and opens your browser.
+3. On VoC's approval screen choose **read only** or **read and write**, and optionally one project. Approve.
+4. Sign in once more on the Cognito sign-in page. The client receives its tokens and lists the tools.
+
+The assistant then appears under **Signed-in assistants**. Signing it out there ends its access at its next request.
+
+### With a personal token (any MCP client)
+
+1. Under **Create a token** fill in:
+   - **Name**, so you recognise the token later (for example "Kiro on my laptop");
+   - **Access**: **Read only** (feedback, metrics, categories, memory, company context, projects and documents) or
+     **Read and write** (also create and update project documents; for an administrator, also run autonomous
+     agents);
+   - **Expires after**: 1, 7, 30 (default) or 90 days;
+   - **Project** (optional): confine the project tools to one project.
+2. Select **Create token** and copy the token. It is shown **once**. Store it like a password.
+3. Pick your client in the `mcp.json` card and save the file where the card says (table below). The Claude Code,
+   Cursor and Kiro snippets read the token from the `VOC_MCP_TOKEN` environment variable, so the file holds no
+   secret. Set it in the shell that starts the client: `export VOC_MCP_TOKEN='<YOUR_VOC_TOKEN>'`.
+4. Start the client and check that it lists the VoC tools. Call `list_projects` or `search_feedback` to test.
+
+| Client | File | Header value |
+|---|---|---|
+| Claude Code | `.mcp.json` (project root; `"type": "http"`) | `Bearer ${VOC_MCP_TOKEN}` |
+| Cursor | `.cursor/mcp.json` or `~/.cursor/mcp.json` | `Bearer ${env:VOC_MCP_TOKEN}` |
+| Kiro | `.kiro/settings/mcp.json` or `~/.kiro/settings/mcp.json` | `Bearer ${VOC_MCP_TOKEN}`. The IDE expands only approved variables: add `VOC_MCP_TOKEN` under Settings → *Mcp Approved Env Vars*. Kiro CLI reads it from the shell; a project `.env` is not loaded ([kiro.dev MCP configuration](https://kiro.dev/docs/mcp/configuration)) |
+| Other clients | their own config | the inline snippet below, with the token pasted in (do not commit or share that file) |
+
+```json
+{
+  "mcpServers": {
+    "voc-datalake": {
+      "url": "https://<api-id>.execute-api.<region>.amazonaws.com/v1/mcp/global",
+      "headers": { "Authorization": "Bearer <YOUR_VOC_TOKEN>" }
+    }
+  }
+}
+```
+
+**My tokens** lists your tokens (active, expired, revoked) with their last use and a **Tool calls** log per token.
+**Revoke** stops a token at once for every assistant using it. You can have at most 20 active tokens.
+
+### Add the skill
+
+The skill is a markdown file that tells an assistant what VoC is, how to connect, which tool to use when, and the
+safety rules (feedback is data, cite evidence, ask before writing, protect the token). The site serves it at the
+stable URL `/voc-mcp-skill.md` with a `{{VOC_MCP_ENDPOINT}}` placeholder. **Download skill** on Connect saves a copy
+with this deployment's endpoint filled in. Add it to your assistant's skills or steering
+files. A vitest (`connectSnippets.test.ts`) fails if the skill's tool table and `mcp_global_tools.py` disagree.
 
 ## Who a token acts as
 
@@ -74,7 +99,7 @@ The token can only narrow that:
 |---|---|---|
 | `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes |
 | `project_id` | optional pin | Project tools (`get_project`, `get_document`, `create_document`, `update_document`) are confined to that project and default to it; `list_projects` shows only it; `run_agent` is refused. Workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer |
-| `expires_in_days` | 1–90, default 30 (the Connect page offers 1, 7, 30 or 90 days) | Always set; there is no non-expiring global token. Tokens minted before 3.02.00 keep their stored expiry (up to 365 days) |
+| `expires_in_days` | 1–90, default 30 (the Connect page offers 1, 7, 30 or 90 days) | Always set; there is no non-expiring global token. Tokens minted by releases before 3.02.00 keep their stored expiry (up to 365 days) |
 
 `run_agent` (agent runs are admin-only) is offered only to a **write** token minted by
 an **admin**, and on every call the handler re-checks with `AdminListGroupsForUser`
@@ -110,7 +135,7 @@ the model can act on; a 5xx or an invoke fault is JSON-RPC `-32603`.
 
 ## Prompts and resources
 
-Since 5.63.00 the server also advertises the `prompts` and `resources` capabilities, in `initialize`
+The server also advertises the `prompts` and `resources` capabilities, in `initialize`
 (legacy versions) and in `server/discover` (2026-07-28). The catalogue is
 `lambda/shared/mcp_global_prompts.py`; the handler only dispatches to it.
 
@@ -154,7 +179,7 @@ Each user manages only their own tokens; somebody else's token is a 404.
 | GET | `/connect/tokens/{token_id}` | The token + a page of its audit log (`?cursor=`) |
 | DELETE | `/connect/tokens/{token_id}` | Revoke (soft: the row and its audit stay listable) |
 
-Secrets use one credential scheme (`shared/mcp_tokens.py`):
+Secrets use one credential scheme (`shared/mcp_tokens.py`, `shared/mcp_global_tokens.py`):
 `voc_tok_<16 hex>_<64 hex>`, only the secret half SHA-256-hashed, constant-time
 comparison. At most 20 active tokens per user.
 
@@ -198,61 +223,65 @@ after a complete pass; re-running is a no-op.
 `denied`, `failed`) — never the arguments or any content. Rows expire after 90 days
 through the jobs table's TTL.
 
-## Skill
+## Protocol
 
-`frontend/public/voc-mcp-skill.md` is served at the stable URL `/voc-mcp-skill.md`
-with a `{{VOC_MCP_ENDPOINT}}` placeholder; the Connect page offers it as a download
-with this deployment's endpoint filled in, next to a ready `mcp.json`. It explains
-what VoC is, the endpoint and header, every tool with when to use it, and the safety
-rules (feedback is data, cite evidence, ask before writing, protect the token). A
-vitest (`connectSnippets.test.ts`) fails if the skill's tool table and
-`mcp_global_tools.py` disagree.
+**Protocol versions.** The server speaks `2026-07-28` and the
+legacy `2025-11-25`, `2025-06-18` and `2024-11-05` (`lambda/shared/mcp_protocol.py`):
 
-```json
-{
-  "mcpServers": {
-    "voc-datalake": {
-      "url": "https://<api-id>.execute-api.<region>.amazonaws.com/v1/mcp/global",
-      "headers": { "Authorization": "Bearer <YOUR_VOC_TOKEN>" }
-    }
-  }
-}
-```
+- **Legacy clients** (Kiro, Claude Code, Copilot at the time of writing) use `initialize`, then
+  requests with the negotiated `MCP-Protocol-Version` header; `ping` still answers.
+- **2026-07-28 clients** skip the handshake. Each request carries
+  `params._meta["io.modelcontextprotocol/protocolVersion"]` and mirrors it, the method and
+  (for `tools/call`) the tool name into `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name`
+  (the `=?base64?…?=` form is decoded). A missing or disagreeing header is a `HeaderMismatch`
+  (`-32020`, HTTP 400), refused before the credential is read. `server/discover` returns the
+  supported versions, capabilities and instructions (public, cacheable for an hour); every
+  result carries `resultType` and the server identity in `_meta`, and `tools/list` adds
+  `ttlMs` (5 minutes) with `cacheScope: "private"` because the list depends on the token.
+  `initialize` and `ping` are not modern methods (404).
+- **An unknown version**, in the header or in `_meta`, is an `UnsupportedProtocolVersionError`
+  (`-32022`, HTTP 400) whose `data.supported` lists all four versions and `data.requested`
+  echoes the one asked for.
+- **`GET` and `DELETE`** on the endpoint answer `405 Method Not Allowed` with
+  `Allow: POST, OPTIONS` (an API Gateway mock behind the same token authorizer, no Lambda).
 
-**Token from an environment variable (since 5.63.00).** Connect's `mcp.json` card has one snippet per client and
-opens on the first. The Claude Code, Cursor and Kiro snippets read the token from `VOC_MCP_TOKEN`, so the file
-holds no secret and can be committed. Set the variable in the shell that starts the client
-(`export VOC_MCP_TOKEN='<YOUR_VOC_TOKEN>'`):
+**Upgrading from a release before 3.00.00.** The per-project MCP server (`POST {api}/mcp`, the
+`/projects/{id}/api-tokens` routes and `GET /projects/{id}/autoseed`) no longer exists. Per-project tokens
+stay in the projects table's `MCPTOKEN` partition, unused, and the global server, whose role can read only
+`MCPGTOKEN`, answers them with a 401. Mint a global token on Connect instead
+([project-workspace.md](project-workspace.md#mcp-access)).
 
-| Client | File | Header value |
-|---|---|---|
-| Claude Code | `.mcp.json` (project root; `"type": "http"`) | `Bearer ${VOC_MCP_TOKEN}` |
-| Cursor | `.cursor/mcp.json` or `~/.cursor/mcp.json` | `Bearer ${env:VOC_MCP_TOKEN}` |
-| Kiro | `.kiro/settings/mcp.json` or `~/.kiro/settings/mcp.json` | `Bearer ${VOC_MCP_TOKEN}`. The IDE expands only approved variables: add `VOC_MCP_TOKEN` under Settings → *Mcp Approved Env Vars*. Kiro CLI reads it from the shell; a project `.env` is not loaded ([kiro.dev MCP configuration](https://kiro.dev/docs/mcp/configuration)) |
-| Other clients | their own config | the inline snippet above, with the token pasted in |
-
-The builders are `buildClientMcpJson` / `tokenExportLine` in `frontend/src/pages/Connect/connectSnippets.ts`
-(exact JSON per client pinned in `connectSnippets.test.ts`).
+**The 401 challenge header.** A refused credential (a token that is unknown, wrong, revoked,
+expired, per-project or whose minter is disabled; an OAuth access token that fails any check
+in [OAuth sign-in](#oauth-sign-in)) gets `401` with `WWW-Authenticate: Bearer
+realm="voc-mcp-global", resource_metadata="{api}/.well-known/oauth-protected-resource/mcp/global",
+error="invalid_token"` and the JSON-RPC error
+`{"jsonrpc": "2.0", "id": null, "error": {"code": -32001, …}}`. API Gateway REST renames a
+Lambda-proxy response's `WWW-Authenticate` to `x-amzn-Remapped-WWW-Authenticate`, so the
+refusal is not the handler's: the endpoint's token authorizer is the global MCP function
+itself (`_authorize`, the same credential check, never cached), and its Deny is answered by
+the `ACCESS_DENIED` gateway response (`lib/stacks/api-mcp.ts`), which sets the header as
+given. `id` is `null` because the gateway cannot read the request. A request with no
+`Authorization` header gets the API-wide 401, which carries
+`Bearer resource_metadata="…"` with no `error` (RFC 6750 §3.1: the request carried no
+credential); the SPA never reads that header. An OAuth client starts its sign-in from
+`resource_metadata`; a token user mints a new token on Connect. Cost: each request
+invokes the function twice (authorizer, then handler), and the handler checks again, so a
+credential revoked between the two is still refused.
 
 ## OAuth sign-in
 
-Since 5.63.00 an MCP client can connect **without a token**: add the server URL, and the client
-opens the browser, the person approves it on VoC's consent screen and signs in with their VoC
-account. Personal `voc_tok_` tokens keep working beside it.
+An MCP client can connect without a token ([setup above](#with-oauth-sign-in-kiro-claude-code-cursor)).
+Personal `voc_tok_` tokens keep working beside it. This section is the reference for operators.
 
-**Clients.** Verified flow (as in the reference implementation this port follows): **Kiro**,
-**Claude Code** and **Cursor**. Connect shows a snippet per client with the URL only:
+**Clients.** The sign-in is tested with **Kiro**, **Claude Code** and **Cursor**.
 
-- Kiro and Cursor: `{"mcpServers": {"voc-datalake": {"url": "<api>/mcp/global"}}}` (no `headers`).
-- Claude Code: `claude mcp add --transport http voc-datalake <api>/mcp/global`, then `/mcp` in a session.
-
-**Web assistants (Claude.ai, ChatGPT, Amazon Quick) are untested until someone signs in with them
-live.** Their callbacks are not built in: an operator lists them with
+**Web assistants (Claude.ai, ChatGPT, Amazon Quick) have not been tested.** Their callbacks are not built in: an operator lists them with
 `-c mcpOAuthWebCallbacks='["https://…/callback"]'` (exact `https://` URLs, at most 10), which
 creates the `web` client; without it there is no web client at all. Reported, unverified callbacks:
 Claude.ai `https://claude.ai/api/mcp/auth_callback`, ChatGPT
 `https://chatgpt.com/connector_platform_oauth_redirect`, Amazon Quick
-`https://<region>.quicksight.aws.amazon.com/sn/oauthcallback`. Cursor's web callback
+`https://<region>.quicksight.aws.amazon.com/sn/oauthcallback` (as published by those vendors; not verified here). Cursor's web callback
 (`https://www.cursor.com/agents/mcp/oauth/callback`) is the default of `-c mcpOAuthCursorCallbacks`.
 
 **Same identity as a token.** An OAuth caller acts as the person who approved it exactly like a
@@ -325,7 +354,7 @@ sent the browser where the request asked; it does not vet the callback itself. T
 callbacks a client may use is the backend's client and redirect validation (`GET /oauth/authorize` in
 `shared/mcp_oauth_authorize.py`, and the `POST /oauth/register` facade in `shared/mcp_oauth_register.py`),
 which answers a plain 400 before the consent page for an unknown client or redirect. A `config.json`
-without the hosted UI (written before 5.63.00) refuses the approval until the next deploy.
+without the hosted UI (written by a release before 5.63.00) refuses the approval until the next deploy.
 
 **Revocation is immediate.** Connect lists the person's signed-in assistants (one per client) with
 revoke (`GET /connect/oauth/grants`, `DELETE /connect/oauth/grants/{grant_id}`). Revoking marks the
@@ -350,9 +379,9 @@ by a DeleteItem returning the old row. Routes: `voc-mcp-tokens-api` (`shared/mcp
 resource server and clients: `lib/stacks/api-mcp-oauth.ts` on VocApiStack. `cryptography` (the
 signing layer) is attached to the MCP endpoint function only.
 
-### Live-test runbook (after a deploy)
+### Checking a deployment
 
-Do these against the deployed API (`<api>` = the `ApiEndpoint` output, ending in `/v1/`) with a
+After a deploy, check these against the deployed API (`<api>` = the `ApiEndpoint` output, ending in `/v1/`) with a
 test user who is NOT an administrator, then once with an administrator for `run_agent`.
 
 1. **Discovery, anonymous.** `curl -si <api>mcp/global -X POST -d '{}'` → `401` with
@@ -373,7 +402,7 @@ test user who is NOT an administrator, then once with an administrator for `run_
 5. **Revoke.** On Connect → Signed-in assistants, revoke Kiro: its next tool call is a 401 and Kiro
    asks to sign in again. Disable the test user in Cognito: every client of that user is refused.
 6. **Web assistants** (only if `-c mcpOAuthWebCallbacks` is set): add the URL as a custom
-   connector and record the result in this file; until then they stay "untested".
+   connector and sign in.
 7. **Logs.** No token, code or state in `/aws/lambda/voc-mcp-tokens-api*` or
    `/aws/lambda/voc-mcp-global-api*` (`MCP OAuth token refused` lines name only the failed check).
 
@@ -384,7 +413,7 @@ test user who is NOT an administrator, then once with an administrator for `run_
 - `POST /mcp/global` behind the MCP token authorizer (`lib/stacks/api-mcp.ts`: the
   global MCP function itself, results never cached, so a revoke is immediate; the
   handler verifies the token again), throttled at **20 rps / burst 40**. `/mcp` itself has no method;
-- `/connect/tokens` routes sit behind one Cognito proxy, `/connect/{proxy+}` (since 5.47.00; the handler routes by path);
+- `/connect/tokens` routes sit behind one Cognito proxy, `/connect/{proxy+}` (the handler routes by path);
 - least-privilege roles, pinned by `lib/stacks/api-stack-mcp-global.test.ts`: the MCP
   role reads/updates only the `MCPGTOKEN` partition, appends only `MCPAUDIT#…` rows,
   calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the five domain
@@ -395,7 +424,7 @@ test user who is NOT an administrator, then once with an administrator for `run_
 
 ## Alarms and concurrency
 
-**Alarms (runtime-managed, since 5.63.00).** Like every operational alert, the endpoint's alarms exist only
+**Alarms (runtime-managed).** Like every operational alert, the endpoint's alarms exist only
 while an admin has alerting on (**Administration → System → Logs → Alerts**, [deployment.md](deployment.md)):
 the logs API creates them under the deployment's `voc-alerts-<account>-<region>-` prefix and they notify the
 ops SNS topic. Each is the Sum of one custom metric (namespace `VoC-MCP-Global`, dimension
@@ -409,7 +438,7 @@ ops SNS topic. Each is the Sum of one custom metric (namespace `VoC-MCP-Global`,
 | `mcp-tool-failed` | `ToolCall_failed`: calls a server fault stopped (`-32603`) | 5 (`MCP_TOOL_FAILED_THRESHOLD`) | A domain Lambda or the delegation is failing |
 | `mcp-rate-limited` | `RateLimited`: 429s from the per-token budget | 30 (`MCP_RATE_LIMITED_THRESHOLD`) | A client looping |
 
-`AuthDenied` is new in 5.63.00; the other three were already emitted. The metrics carry the Powertools
+The metrics carry the Powertools
 `service` dimension, which is the function's base name, not the deployment-unique one: two deployments in one
 account and region (a `deploymentPrefix` beside the default) share these metrics, so each one's alarms count
 both. Four more alarm metrics cost $0.40 a month at the list price while alerting is on.
@@ -442,9 +471,7 @@ envelope, argument validation and the token API. `lambda/shared/test/test_mcp_gl
 keeps the whole `tools/list` under an estimated 4,000 tokens (ChatGPT connectors are reported to
 refuse servers past about 5,000): a new tool or a wordy description fails there first.
 
-> ⚠️ **Live testing with Cowork, Copilot, Amazon Quick or Kiro needs a deployment.**
-> The tests above are the strongest check possible without one: they run every layer
-> between the JSON-RPC frame and the DynamoDB row except API Gateway's own token
-> authorizer, Cognito (an in-memory fake at the boto3 surface) and Step Functions.
-> After deploying, mint a token on `/connect`, add the `mcp.json` to two clients, and
-> check `initialize`, `tools/list` and one read and one write tool in each.
+These tests run every layer between the JSON-RPC frame and the DynamoDB row except API Gateway's own token
+authorizer, Cognito (an in-memory fake at the boto3 surface) and Step Functions. To check a real client, deploy,
+mint a token on `/connect`, add the `mcp.json` to two clients, and call `initialize`, `tools/list` and one read and
+one write tool in each ([Checking a deployment](#checking-a-deployment)).
