@@ -5,7 +5,6 @@
 #   node scripts/coverage/check-per-file-coverage.mjs --suite frontend --update-baseline
 # A new or renamed file is a new path: it reaches the floor, or the owner decides. Do not edit rates by hand.
 # Format: <repo-relative path> <line rate when recorded>   # <covered>/<total>
-voc-datalake/frontend/src/api/builtinDimensionLabels.ts 33.33   # 2/6
 voc-datalake/frontend/src/api/decisionsApi.ts 33.33   # 3/9
 voc-datalake/frontend/src/api/documentReviewApi.ts 69.56   # 16/23
 voc-datalake/frontend/src/api/feedbackFormStatsSchema.ts 66.66   # 10/15
