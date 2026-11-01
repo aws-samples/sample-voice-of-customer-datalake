@@ -208,6 +208,13 @@ function dimensionAdmits(actual, wanted) {
   return choices.includes(actual);
 }
 
+/** One `dims` pair's value: a dimension value, or a `|` list of them, each well-formed (dimension_config._is_dims_value). */
+function isDimsValue(value) {
+  if (VALUE_RE.test(value)) return true;
+  const choices = value.split('|').filter(Boolean);
+  return choices.length > 0 && choices.length <= MAX_VALUES + 1 && choices.every((choice) => VALUE_RE.test(choice));
+}
+
 export function attributeFilterOf(searchParams) {
   // source / category / subcategory / sentiment / usefulness lists (mock-facets.js).
   const facets = facetFilterOf(searchParams);
@@ -216,7 +223,7 @@ export function attributeFilterOf(searchParams) {
   const tag = (searchParams?.get('tag') || '').toLowerCase();
   const rawDims = searchParams?.get('dims') || '';
   const pairs = rawDims ? rawDims.split(',').map((pair) => pair.split(':')) : [];
-  if (pairs.length > MAX_DIMENSIONS || pairs.some((p) => p.length !== 2 || !KEY_RE.test(p[0]) || !VALUE_RE.test(p[1]))) {
+  if (pairs.length > MAX_DIMENSIONS || pairs.some((p) => p.length !== 2 || !KEY_RE.test(p[0]) || !isDimsValue(p[1]))) {
     return { error: 'dims must be key:value pairs separated by commas' };
   }
   const min = starsParam(searchParams, 'rating_min');
