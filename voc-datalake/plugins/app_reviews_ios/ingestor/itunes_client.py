@@ -29,8 +29,8 @@ _MAX_CONSECUTIVE_EMPTY = 3
 # RSS feed's `sortby=` path segment. Anything else falls back to the default,
 # so a misconfigured value degrades to "most recent" rather than to an error feed.
 #
-# There is deliberately no "most critical" option. Checked against the live
-# public feed (app 284882215, us, page 1, JSON): `sortby=mostrecent` and
+# There is deliberately no "most critical" option. Checked against the
+# public RSS feed (an app id, us, page 1, JSON): `sortby=mostrecent` and
 # `sortby=mosthelpful` answer 200 with entries, while `sortby=mostcritical`
 # answers HTTP 500 exactly like a made-up value (`sortby=bogusvalue`) — Apple
 # does not support it. Configs saved with the old `most_critical` value fall

@@ -94,8 +94,8 @@ class TestParsedReviewShape:
 class TestRequestedPages:
     def test_the_exact_rss_path(self):
         assert (
-            itunes_client._rss_path("kr", "284882215", 3, "mostrecent")
-            == "/kr/rss/customerreviews/page=3/id=284882215/sortby=mostrecent/json"
+            itunes_client._rss_path("kr", "1234567890", 3, "mostrecent")
+            == "/kr/rss/customerreviews/page=3/id=1234567890/sortby=mostrecent/json"
         )
 
     def test_paging_starts_at_page_1_and_stops_at_page_10(self):
@@ -174,9 +174,9 @@ class TestWarningLines:
             _page(None), _page(None), _page(None),
         ]
         with patch.object(itunes_client, "logger") as logger:
-            _reviews("284882215", "kr", session, limit=500)
+            _reviews("1234567890", "kr", session, limit=500)
         logger.warning.assert_called_once_with(
-            "iOS RSS page 2 failed for app 284882215 in kr: HTTP 503"
+            "iOS RSS page 2 failed for app 1234567890 in kr: HTTP 503"
         )
 
     def test_a_connection_failure_is_logged_with_app_country_and_cause(self):
@@ -186,10 +186,10 @@ class TestWarningLines:
             urllib3.exceptions.ProtocolError("connection reset"),
         ]
         with patch.object(itunes_client, "logger") as logger:
-            result = _reviews("284882215", "us", session, limit=500)
+            result = _reviews("1234567890", "us", session, limit=500)
         assert [review["id"] for review in result] == ["0"]
         logger.warning.assert_called_once_with(
-            "Failed to fetch iOS reviews for app 284882215 in us: connection reset"
+            "Failed to fetch iOS reviews for app 1234567890 in us: connection reset"
         )
 
 
