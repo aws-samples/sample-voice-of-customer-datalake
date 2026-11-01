@@ -110,7 +110,7 @@ refused before any card appears.
 | `analyze_scraper_url` | read | Calls `POST /scrapers/analyze-url` to suggest CSS selectors for a public https page, then polls `GET /scrapers/jobs/{job_id}` until the suggestion is ready. Only the model sees the suggestion. Nothing is saved. |
 | `create_scraper` | write | A new web scraper, saved with `POST /scrapers`. It is saved disabled with no schedule unless you asked for one. A create never overwrites: an existing id is refused before the card, and again right before saving. |
 | `update_scraper` | write | Changes fields of an existing scraper. The card reads the stored scraper and shows a before → after diff, with unchanged fields collapsed. Approving saves that merge. If the scraper changed since the card was shown, the save is refused. |
-| `create_app_connector` | write | Adds an iOS (`app_reviews_ios`, App Store id) or Android (`app_reviews_android`, package name) app, or a public review page (`web_reviews`, https `url`, `max_pages` 0-100, default 10, 0 = every page; `max_reviews` 0-5000, default 0 = no limit; [web-reviews.md](web-reviews.md)), with `POST /integrations/{source}/apps`. Defaults: 500 reviews per run (apps), manual runs only. An app or page that is already configured (same name or identifier) is refused. |
+| `create_app_connector` | write | Adds an iOS (`app_reviews_ios`, App Store id) or Android (`app_reviews_android`, package name) app, or a public review page (`web_reviews`, https `url`, `max_pages` 0-100, default 10, 0 = every page; `max_reviews` 0-5000, default 0 = no limit; [web-reviews.md](web-reviews.md)), with `POST /integrations/{source}/apps`. Defaults: 500 reviews per run (apps), manual runs only. An app or page that is already configured (same name or identifier) is refused. Before the card, an app's store is checked (below). |
 | `run_scraper` | write | Starts a run. This is a separate step with its own approval, offered after a create. |
 
 The card is deterministic and contains no text written by the model. It has a fixed table of every field that will
@@ -125,6 +125,19 @@ both check them. URLs must also be https, with a public host name: no IP literal
 The route still applies `shared/url_policy` with DNS resolution. The bounds are pinned on both sides and against
 `scrapers_handler.py` and the app-review manifests by
 `frontend/src/assistant/approvals/scraperSchemas.lockstep.test.ts`.
+
+**Store check for apps (5.72.00).** Before an iOS or Android connector's card, the assistant's server looks the app
+up: the App Store id with Apple's Lookup API in the 40 storefronts the iOS connector reads (US first, the others only
+when the US store does not have it), the package name on its Google Play page. When the store answers that no such
+app exists, the call is refused before any card, and the assistant is told to find the real id with
+`find_app_store_app` or to ask you, so an invented id never becomes a connector whose every run fails. When the app is
+found, the card's line names it as the store does, with its developer (e.g. "App Store: 'Example Air: Flights' by
+'Example Air Group'"), so you can check it is the right company's app. A store that cannot be read (time-out, an HTTP
+error) refuses nothing; the card then says the store could not be checked. A plan step that creates an app connector
+runs the same check and fails without writing. Review web pages are not checked this way: review sites answer
+automated requests with a bot challenge (HTTP 403) whether the page exists or not, so the assistant is instead
+instructed to propose only a URL copied from a web search result that names the company, never one built from a
+name, and to say when no page was found.
 
 These tools are not on the global MCP server (`/mcp/global`).
 

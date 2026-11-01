@@ -10,6 +10,7 @@ import { resolveAvatarUrl } from '../../context/avatar-url.js';
 import { executeSearchFeedback } from '../../tools/search-feedback.js';
 import { executeWebSearch, type WebSource } from '../../tools/web-search.js';
 import { searchAppStore, type AppStoreApp } from '../../tools/app-store-search.js';
+import { lookupStoreApp, type StoreAppLookup } from '../../tools/store-app-lookup.js';
 import { readSourceRun } from '../../tools/source-runs.js';
 import type { FeedbackItem } from '../../tools/feedback-scan.js';
 import type { CategoryScope } from '../../tools/category-scope.js';
@@ -39,6 +40,8 @@ export interface ToolDeps {
   fallbackModelId: string | undefined;
   /** Apple's iTunes Search API (find_app_store_app; fixed host, bounded). */
   searchAppStore(term: string, country: string): Promise<AppStoreApp[]>;
+  /** Does this App Store id / Google Play package exist (create_app_connector's precheck; fixed hosts, bounded)? */
+  lookupStoreApp(platform: 'ios' | 'android', id: string): Promise<StoreAppLookup>;
   /** A `SOURCE_RUN#{source}` row of the aggregates table (get_source_run); newest when no execution id. */
   readSourceRun(source: string, executionId?: string): Promise<Record<string, unknown> | undefined>;
   /** Wall clock (epoch ms) and a pause, for tools that poll a background job. */
@@ -62,6 +65,7 @@ function createDefaultDeps(): ToolDeps {
     resolveAvatar: resolveAvatarUrl,
     fallbackModelId: process.env.BEDROCK_MODEL_ID,
     searchAppStore: (term, country) => searchAppStore(term, country),
+    lookupStoreApp,
     readSourceRun: (source, executionId) => readSourceRun(docClient, aggregatesTable, source, executionId),
     nowMs: () => Date.now(),
     sleep: (ms) => new Promise((resolve) => {

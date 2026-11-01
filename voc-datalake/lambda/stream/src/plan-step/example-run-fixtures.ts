@@ -133,6 +133,7 @@ function stubDeps(spec: RunSpec, requests: ApiCall[]): PlanStepDeps {
       return next === undefined ? Promise.reject(new FixtureError('no model answer scripted')) : Promise.resolve(next);
     },
     resolveModel: () => Promise.resolve('global.anthropic.claude-sonnet-5-5'),
+    lookupStoreApp: () => Promise.resolve({ status: 'found', app: { name: '', developer: '', url: '' } }),
   };
 }
 
