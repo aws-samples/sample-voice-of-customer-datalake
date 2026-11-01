@@ -38,6 +38,8 @@ Documentation for public readers: the README and every guide in `docs/` checked 
 - **Feature guides**: user guide first, then reference, in the agents, plan mode, MCP, memory, projects,
   prioritization, boards and data source guides. UI paths, limits, routes and defaults match the current release.
   Internal history and process notes are removed.
+- **Code comments and fixtures**: the iOS review client's comment and its tests use a fictional App Store id
+  (`1234567890`); no behaviour changes.
 
 ## [5.66.01] - 2026-11-01
 

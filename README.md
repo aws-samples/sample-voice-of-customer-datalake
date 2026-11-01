@@ -83,7 +83,7 @@ The infrastructure is five CDK stacks: `VocCoreStack` (tables, buckets, Cognito,
 
 ## 🚀 Quick Start
 
-You need the AWS CLI with credentials, Node.js 22.12+, Python 3.12+ and Docker or Finch.
+You need the AWS CLI with credentials, Node.js 22.12+, Python 3.12+ for the local tooling (the Lambdas run Python 3.14) and Docker or Finch.
 
 ```bash
 # Clone and install
