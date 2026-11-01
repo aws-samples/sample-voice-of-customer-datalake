@@ -8,6 +8,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
@@ -180,7 +181,7 @@ export class VocProcessingStack extends VocStack {
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'ProcessorLogs', {
         logGroupName: this.uniqueName('/aws/lambda/voc-feedback-processor'),
-        retention: logs.RetentionDays.TWO_WEEKS,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
@@ -238,7 +239,7 @@ export class VocProcessingStack extends VocStack {
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'AggregatorLogs', {
         logGroupName: this.uniqueName('/aws/lambda/voc-aggregation-processor'),
-        retention: logs.RetentionDays.TWO_WEEKS,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
@@ -421,7 +422,7 @@ export class VocProcessingStack extends VocStack {
       layers: [processingLayer],
       logGroup: new logs.LogGroup(this, 'ResearchStepLogs', {
         logGroupName: this.uniqueName('/aws/lambda/voc-research-step'),
-        retention: logs.RetentionDays.TWO_WEEKS,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
@@ -543,7 +544,7 @@ export class VocProcessingStack extends VocStack {
       layers: [deps.processingLayer],
       logGroup: new logs.LogGroup(this, 'CategoryReprocessLogs', {
         logGroupName: this.uniqueName(`/aws/lambda/${CATEGORY_REPROCESS_FUNCTION_BASE_NAME}`),
-        retention: logs.RetentionDays.TWO_WEEKS,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });

@@ -87,7 +87,7 @@ const fn = new lambda.Function(this, 'MyFunction', {
   layers: [dependenciesLayer],
   logGroup: new logs.LogGroup(this, 'MyFunctionLogs', {
     logGroupName: '/aws/lambda/my-function',
-    retention: logs.RetentionDays.TWO_WEEKS,
+    retention: LOG_RETENTION, // lib/utils/log-retention.ts: 30 days, every log group
     removalPolicy: cdk.RemovalPolicy.DESTROY,
   }),
   reservedConcurrentExecutions: 50,  // Cost control

@@ -216,7 +216,7 @@ The bases are listed below.
 |----------|-------------------|
 | Lambda | `voc-ingestor-<id>`, Python 3.14, arm64, handler `handler.lambda_handler`, manifest timeout and memory, the `ingestion-deps` layer (`requests`, `aws-lambda-powertools`, `beautifulsoup4`, app-review scrapers) |
 | Bundle | `plugins/<id>/ingestor/*` at the root, plus `plugins/_shared/` as `_shared` and `lambda/shared/` as `shared`; tests and caches pruned |
-| Log group | `/aws/lambda/voc-ingestor-<id>`, 14-day retention |
+| Log group | `/aws/lambda/voc-ingestor-<id>`, 30-day retention |
 | Schedule | `voc-ingest-<id>-schedule`, created disabled; 2 delivery retries, events older than 1 hour dropped to `voc-ingest-schedule-dlq` |
 | Environment | `WATERMARKS_TABLE`, `PROCESSING_QUEUE_URL`, `RAW_DATA_BUCKET`, `SECRETS_ARN`, `BRAND_NAME`, `SOURCE_PLATFORM` (= id), `AGGREGATES_TABLE`, `INGEST_SCHEDULE_RULE_NAME` (scheduled plugins only), PII-redaction settings |
 

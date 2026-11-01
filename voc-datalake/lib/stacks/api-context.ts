@@ -23,7 +23,7 @@ export interface ApiStackContext {
   apiCode: (handlerFileName: string) => lambda.Code;
   /** A Lambda role with only the basic execution policy. */
   role: (id: string) => iam.Role;
-  /** `/aws/lambda/<name>`, two weeks, destroyed with the stack. */
+  /** `/aws/lambda/<name>`, 30 days (`LOG_RETENTION`), destroyed with the stack. */
   logGroup: (id: string, name: string) => logs.LogGroup;
   uniqueName: (baseName: string) => string;
   uniqueNamePattern: (baseNameTemplate: string) => string;

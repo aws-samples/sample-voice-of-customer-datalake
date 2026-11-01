@@ -87,7 +87,7 @@ function grantQueuePeek(ctx: ApiStackContext, role: iam.Role, inputs: LogsDiagno
     actions: ['sqs:GetQueueUrl', 'sqs:GetQueueAttributes', 'sqs:ReceiveMessage'],
     resources: queueArns,
   }));
-  // The queues' CMKs (the Core key, and the schedule DLQ's own key in VocIngestionStack) decrypt
+  // The queues' CMK (the Core key, the deployment's one customer-managed key) decrypts
   // ONLY through SQS and ONLY for these queues: no key ARN crosses a stack.
   role.addToPolicy(new iam.PolicyStatement({
     actions: ['kms:Decrypt'],

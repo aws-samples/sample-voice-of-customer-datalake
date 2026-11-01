@@ -8,34 +8,39 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as kms from 'aws-cdk-lib/aws-kms';
+import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { NagSuppressions } from 'cdk-nag';
+
+/** Sid of the Core key-policy statement that lets EventBridge write to the schedule DLQ. */
+export const EVENTBRIDGE_DLQ_KEY_SID = 'AllowEventBridgeToDeadLetter';
 
 export interface ScheduleDeadLetterQueueProps {
   /** Physical name: the stack's `uniqueName(INGEST_SCHEDULE_DLQ_BASE_NAME)` (alerting watches it, dlq-alarms.ts). */
   queueName: string;
+  /** The Core data key: the deployment's one customer-managed key. */
+  key: kms.IKey;
   /** The stack's TLS-only queue policy, shared with its other queues. */
   denyInsecureTransport: (queue: sqs.Queue) => void;
 }
 
 /**
- * Its own CMK rather than the Core key: EventBridge writes as the
- * events.amazonaws.com service principal, so the KEY POLICY must admit it, and
- * granting that on the Core key would edit VocCoreStack's key policy
- * from this stack. The grant is scoped by the SQS encryption context to this
- * one queue's ARN, built from its fixed name (a token reference would close a
- * key → queue → rule → key cycle) and by source account.
+ * The Core key's policy statement for EventBridge → the schedule DLQ (VocCoreStack only).
+ *
+ * One customer-managed key for the whole deployment (owner decision, the tenet 7
+ * baseline). EventBridge writes as the events.amazonaws.com service principal, so
+ * the KEY POLICY must admit it, and the key lives in VocCoreStack: the statement is
+ * added there, from the queue's fixed physical name (the same `uniqueName()` the
+ * Ingestion stack gives it), never from an Ingestion token, so no cross-stack
+ * reference or key → queue → rule → key cycle appears. Least privilege: only
+ * `kms:GenerateDataKey` / `kms:Decrypt`, only under the SQS encryption context of
+ * that one queue's ARN, only from this account. A deployment with no scheduled
+ * plugin has no such queue, and the statement then matches nothing.
  */
-export function createScheduleDeadLetterQueue(stack: cdk.Stack, props: ScheduleDeadLetterQueueProps): sqs.Queue {
-  const { queueName } = props;
-  const key = new kms.Key(stack, 'IngestScheduleDLQKey', {
-    description: 'Encrypts the scheduled-ingestion EventBridge dead-letter queue',
-    enableKeyRotation: true,
-    removalPolicy: cdk.RemovalPolicy.DESTROY,
-  });
+export function allowEventBridgeToScheduleDlq(key: kms.Key, queueName: string): void {
+  const stack = cdk.Stack.of(key);
   key.addToResourcePolicy(new iam.PolicyStatement({
-    sid: 'AllowEventBridgeToDeadLetter',
+    sid: EVENTBRIDGE_DLQ_KEY_SID,
     principals: [new iam.ServicePrincipal('events.amazonaws.com')],
     actions: ['kms:GenerateDataKey', 'kms:Decrypt'],
     resources: ['*'],
@@ -46,11 +51,14 @@ export function createScheduleDeadLetterQueue(stack: cdk.Stack, props: ScheduleD
       },
     },
   }));
+}
 
+/** The DLQ itself, encrypted with the Core key (its EventBridge grant: `allowEventBridgeToScheduleDlq`). */
+export function createScheduleDeadLetterQueue(stack: cdk.Stack, props: ScheduleDeadLetterQueueProps): sqs.Queue {
   const dlq = new sqs.Queue(stack, 'IngestScheduleDLQ', {
-    queueName,
+    queueName: props.queueName,
     encryption: sqs.QueueEncryption.KMS,
-    encryptionMasterKey: key,
+    encryptionMasterKey: props.key,
     retentionPeriod: cdk.Duration.days(14),
     removalPolicy: cdk.RemovalPolicy.DESTROY,
   });

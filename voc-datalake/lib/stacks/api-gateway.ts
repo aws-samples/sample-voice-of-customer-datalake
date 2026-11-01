@@ -6,6 +6,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import { NagSuppressions } from 'cdk-nag';
 import type { PluginManifest } from '../plugin-loader';
 import { apiGatewayRequestValidationSuppressions } from '../utils/nag-suppressions';
@@ -361,7 +362,7 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   // API Gateway CloudWatch Logs
   const apiLogGroup = new logs.LogGroup(stack, 'ApiGatewayLogs', {
     logGroupName: `/aws/apigateway/${ctx.uniqueName('voc-analytics-api')}`,
-    retention: logs.RetentionDays.TWO_WEEKS,
+    retention: LOG_RETENTION,
     removalPolicy: cdk.RemovalPolicy.DESTROY,
   });
 

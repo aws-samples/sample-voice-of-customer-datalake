@@ -7,6 +7,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
 import { Construct } from 'constructs';
@@ -22,7 +23,8 @@ import { createCoreCdn, type CoreBuildContext } from './core-cdn';
 import { createCoreBuckets } from './core-buckets';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { dataProtectionOf, type DataProtection } from '../utils/data-protection';
-import { ALARM_NAME_PREFIX, ALARM_TOPIC_BASE_NAME, API_ASYNC_FAILURES_QUEUE_BASE_NAME, createAlarmTopic, createApiAsyncFailureQueue } from './dlq-alarms';
+import { ALARM_NAME_PREFIX, ALARM_TOPIC_BASE_NAME, API_ASYNC_FAILURES_QUEUE_BASE_NAME, INGEST_SCHEDULE_DLQ_BASE_NAME, createAlarmTopic, createApiAsyncFailureQueue } from './dlq-alarms';
+import { allowEventBridgeToScheduleDlq } from './ingestion-schedule-dlq';
 
 /**
  * Days KMS waits before deleting the data key once the stack is deleted (KMS
@@ -156,7 +158,11 @@ export class VocCoreStack extends VocStack {
     createAlarmTopic(this, 'OpsAlarms', {
       topicName: this.uniqueName(ALARM_TOPIC_BASE_NAME),
       alarmNamePrefix: this.prefixed(ALARM_NAME_PREFIX),
+      key: this.kmsKey,
     });
+    // VocIngestionStack's schedule DLQ is encrypted with this key too; its EventBridge grant is added
+    // HERE, built from the queue's fixed name, so the Ingestion stack never edits this key's policy.
+    allowEventBridgeToScheduleDlq(this.kmsKey, this.uniqueName(INGEST_SCHEDULE_DLQ_BASE_NAME));
     // VocApiStack's async-invoke failure queue (#253) lives HERE:
     // that stack is 3 resources under CloudFormation's 500 ceiling with every
     // plugin on. Its Lambdas address the queue by this name (api-stack.ts).
@@ -416,7 +422,7 @@ export class VocCoreStack extends VocStack {
         LOG_LEVEL: 'INFO',
       },
       logGroup: new logs.LogGroup(this, 'ProductDocExtractorLambdaLogs', {
-        retention: logs.RetentionDays.TWO_WEEKS,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });

@@ -153,6 +153,64 @@ export interface OptInFixedCost {
   readonly expected: readonly RegExp[];
 }
 
+/** A resource type with a small monthly price per resource, held to a fixed count in the default synth. */
+export interface CountedFixedCost {
+  readonly type: string;
+  /** How many the default synth (every stack together) holds today: the ceiling, and a ratchet. */
+  readonly baseline: number;
+  readonly what: string;
+}
+
+/**
+ * Resource types billed per resource per month (TENETS.md, tenet 7), counted over every stack of the DEFAULT synth.
+ * The count may never grow, and the gate also fails when it shrinks, so the number here is lowered in the same
+ * change: the set can only get smaller.
+ *
+ * - `AWS::KMS::Key`: exactly ONE, the Core data key (about $1 a month), the accepted baseline. Every other
+ *   encrypted resource uses it, with a narrow key-policy statement for a service principal (the alarm topic's
+ *   CloudWatch grant, the schedule DLQ's EventBridge grant: lib/stacks/dlq-alarms.ts, ingestion-schedule-dlq.ts).
+ * - `AWS::SecretsManager::Secret`: 3 today (about $0.40 a month each), a known baseline: the plugin-credentials
+ *   secret (lib/stacks/ingestion-stack.ts) and the design-integrations and CDN signing-key secrets
+ *   (lib/stacks/core-cdn.ts). A later release moves them to SSM Parameter Store (SecureString, no monthly fee) and
+ *   brings this number to zero.
+ */
+export const COUNTED_FIXED_COSTS: readonly CountedFixedCost[] = [
+  { type: 'AWS::KMS::Key', baseline: 1, what: 'customer-managed KMS keys' },
+  { type: 'AWS::SecretsManager::Secret', baseline: 3, what: 'Secrets Manager secrets' },
+];
+
+/** One stack's synthesized template, as the counting gate reads it. */
+export interface StackTemplate {
+  readonly stack: string;
+  readonly template: Record<string, unknown>;
+}
+
+/** The logical ids (`<stack>/<id>`) of every `type` resource across `templates`. */
+function resourcesOfType(templates: readonly StackTemplate[], type: string): string[] {
+  return templates.flatMap(({ stack, template }) => Object.entries(TemplateResourcesSchema.parse(template.Resources ?? {}))
+    .filter(([, resource]) => resource.Type === type)
+    .map(([logicalId]) => `${stack}/${logicalId}`));
+}
+
+/**
+ * One message per counted type whose default-synth count is not its baseline, saying what to do:
+ * above it, reuse the existing resource or make the new one opt-in; below it, lower the baseline.
+ */
+export function countedFixedCostFindings(templates: readonly StackTemplate[]): string[] {
+  return COUNTED_FIXED_COSTS.flatMap(({ type, baseline, what }) => {
+    const found = resourcesOfType(templates, type);
+    if (found.length > baseline) {
+      return [`${found.length} ${what} (${type}) in the default synth, baseline ${baseline}: ${found.join(', ')} — `
+        + `each bills monthly (TENETS.md, tenet 7); reuse the existing one, or make the new one opt-in behind a context flag`];
+    }
+    if (found.length < baseline) {
+      return [`${found.length} ${what} (${type}) in the default synth, below the baseline ${baseline} — `
+        + 'lower `baseline` in COUNTED_FIXED_COSTS (lib/test-support/fixed-cost-rules.ts) to the new count, so it cannot grow back'];
+    }
+    return [];
+  });
+}
+
 const SNAPSTART_FINDINGS = SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::Lambda::Function (GlobalMcp)?${id}[0-9A-F]{8}$`));
 
 /**

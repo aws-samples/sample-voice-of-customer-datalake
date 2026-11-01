@@ -29,6 +29,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
@@ -131,7 +132,7 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
     layers: [props.layer],
     logGroup: new logs.LogGroup(worker, 'RetentionLogs', {
       logGroupName: `/aws/lambda/${functionName}`,
-      retention: logs.RetentionDays.TWO_WEEKS,
+      retention: LOG_RETENTION,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     }),
   });

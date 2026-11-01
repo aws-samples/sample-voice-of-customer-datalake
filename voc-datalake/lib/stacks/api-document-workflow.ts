@@ -5,6 +5,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { LOG_RETENTION } from '../utils/log-retention';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import type { ApiStackContext } from './api-context';
@@ -139,7 +140,7 @@ export function createDocumentStateMachine(ctx: ApiStackContext, documentStepLam
     logs: {
       destination: new logs.LogGroup(stack, 'DocumentStateMachineLogs', {
         logGroupName: ctx.uniqueName('/aws/stepfunctions/voc-document-workflow'),
-        retention: logs.RetentionDays.TWO_WEEKS,
+        retention: LOG_RETENTION,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
       level: sfn.LogLevel.ALL,

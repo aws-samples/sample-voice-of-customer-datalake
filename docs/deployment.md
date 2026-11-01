@@ -64,8 +64,9 @@ running the checks, build the frontend first (the API stack uploads `frontend/di
 
 Before the first deploy, read [Anthropic Model Access](#anthropic-model-access-first-time-setup). Web search is on by
 default and deploys a stack to us-east-1, so a deployment in another region also needs
-`cdk bootstrap aws://ACCOUNT_ID/us-east-1` ([Web Search](#web-search-amazon-bedrock-agentcore)). A production
-deployment should set [`protectData`](#production-protectdata).
+`cdk bootstrap aws://ACCOUNT_ID/us-east-1` ([Web Search](#web-search-amazon-bedrock-agentcore)). Customer data is
+kept when the stacks are deleted ([`protectData`](#production-protectdata) is on by default); a demo that should
+leave nothing behind deploys with `-c protectData=false`.
 
 ## Deploy Options Reference
 
@@ -76,7 +77,7 @@ or set it in `voc-datalake/cdk.context.json`. An invalid value fails the synth.
 |-----|---------|--------|
 | `pluginStatus` | every built-in plugin on (committed file) | Which data source plugins deploy ([Configuration](#configuration)) |
 | `menuStatus` | every menu item on (committed file) | Which pages the menu shows ([Configuration](#configuration)) |
-| `protectData` | `false` | `true` keeps data resources on stack deletion and adds deletion and termination protection ([Production: protectData](#production-protectdata)) |
+| `protectData` | `true` | Keeps data resources on stack deletion and adds deletion and termination protection; `false` (demos) deletes them with the stacks ([Production: protectData](#production-protectdata)) |
 | `inferenceScope` | `global` | `eu` keeps Bedrock inference in EU regions ([eu-deployment.md](eu-deployment.md)) |
 | `enableWebSearch` | `true` | `false` removes the web search gateway and its us-east-1 stack ([Web Search](#web-search-amazon-bedrock-agentcore)) |
 | `anthropicUseCase` | none | Your own Anthropic use-case form, filed by the deploy ([Submit the form from CDK](#submit-the-form-from-cdk-instead-opt-in)) |
@@ -332,7 +333,7 @@ Two ways a deploy avoids redoing work:
   rebuilds every layer; do that after pulling a new build image, because the
   `:latest` tag can move without the hash changing.
 - **Deploy only the stacks that changed (opt-in).**
-  `CDK_DEPLOY_CHANGED=1 npm run deploy:infra -- -c protectData=true`
+  `CDK_DEPLOY_CHANGED=1 npm run deploy:infra -- -c inferenceScope=eu`
   runs `cdk diff --all` once (with the `-c`/`--context` and `--profile`
   arguments), then `cdk deploy --exclusively <changed stacks>`; CDK orders them
   by dependency. The stage refresh (next section) then ALWAYS runs, also when
@@ -353,7 +354,7 @@ Every deploy command (`npm run deploy:infra` at the root, `npm run deploy` and
 `npm run deploy:api` in `voc-datalake/`) runs `voc-datalake/scripts/cdk-deploy.sh`:
 `cdk deploy <args>` and then `scripts/refresh-api-stage.sh`, which creates a fresh
 deployment of the `v1` stage. Arguments pass through
-(`npm run deploy:infra -- -c protectData=true`).
+(`npm run deploy:infra -- -c protectData=false`).
 
 Why: when a route is removed from `lib/stacks/api-routes.ts`, CloudFormation
 creates the new `AWS::ApiGateway::Deployment` (a snapshot of the API) during the
@@ -632,7 +633,7 @@ for both reasons (SES console → Configuration → Suppression list). An addres
 mailed again. A recipient's unsubscribe link marks the person `unsubscribed`, and every later
 ask skips them.
 
-Turning the flag off later removes the board pool and its users (with `-c protectData=true`
+Turning the flag off later removes the board pool and its users (with `protectData` on, the default,
 the pool is retained, detached from the stack).
 
 ### System errors (Administration → System → Logs → System errors)
@@ -707,12 +708,12 @@ or failed agreement shows there as a warning.
   `cloudwatch:GetMetricData` on `*` (no resource type); `sqs:GetQueueUrl`,
   `sqs:GetQueueAttributes`, `sqs:ReceiveMessage` on exactly the failure queues (no delete);
   `kms:Decrypt` conditioned on `kms:ViaService` = SQS and the SQS encryption context of
-  exactly those queues (the schedule DLQ has its own key in VocIngestionStack; no key ARN
-  crosses a stack). No new resource and no cross-stack export.
+  exactly those queues (every queue uses the Core key, the deployment's one customer-managed key;
+  no key ARN crosses a stack). No new resource and no cross-stack export.
 - **Cost:** Logs Insights bills per GB scanned (check CloudWatch pricing); each page load
   or refresh runs one search over the chosen window (30 days on a busy deployment scans
   the most), and each "Show the whole request" a 40-minute search of one group. Lines
-  older than a log group's retention (two weeks for most) are gone.
+  older than a log group's retention (30 days) are gone.
 
 ### Operational alerts (Administration → System → Logs → Alerts)
 
@@ -745,7 +746,8 @@ missing, the alarms themselves say whether alerting is on.
 Missing data is never breaching, so an idle queue or function stays OK.
 
 **Recipients.** All alarms notify ONE SNS topic, `voc-ops-alarms-<account>-<region>`,
-created in VocCoreStack (its own rotating KMS key that CloudWatch may use, TLS-only
+created in VocCoreStack (encrypted with the Core KMS key, whose policy lets CloudWatch
+use it only for this deployment's `voc-*` alarms in this account; TLS-only
 publishes). Add or remove email addresses on the same card (at most 10). AWS mails
 each address a confirmation link; the card shows **Pending confirmation** until it
 is clicked, and nothing is delivered before then. A pending address added on the
@@ -764,8 +766,8 @@ the time of writing), and the first 10 alarm metrics in an account each month ar
 free. A metric-math alarm is billed per metric it reads, so the one ingestor `SUM`
 costs the same as one alarm per ingestor, but notifies once. With every alarm above
 and N enabled ingestors that is 12 + N alarm metrics (8 + N, plus the 4 MCP alarms): about
-$1.80 a month with 6 ingestors, before the free tier. The topic's KMS key is about $1 per month whether
-or not alerting is on; SNS email delivery is free at alarm volumes. Check current
+$1.80 a month with 6 ingestors, before the free tier. The topic adds no KMS key (it uses the Core key, the
+deployment's one customer-managed key); SNS email delivery is free at alarm volumes. Check current
 CloudWatch and KMS pricing for your region.
 
 **Upgrading from a release that deployed the alarms with CDK (before 5.00.00).** The next deploy deletes the
@@ -791,7 +793,10 @@ RDS, ElastiCache, DAX, OpenSearch, MSK, Redshift, DocumentDB, Neptune, Global Ac
 the app creates ([TENETS.md](../TENETS.md), tenet 7). Such a feature goes behind an opt-in context flag, listed in
 `OPT_IN_FIXED_COSTS` (`lib/test-support/fixed-cost-rules.ts`) with exactly what it adds (today: `snapStart`, and `performanceTier`, which turns it on).
 A new performance feature reads `performanceTierEnabled` (`lib/utils/performance-tier.ts`) as well as its own flag. Lambda reserved concurrency costs nothing
-and is allowed.
+and is allowed. The same gate counts the resources billed per resource per month (`COUNTED_FIXED_COSTS`): the default
+synth holds exactly one customer-managed KMS key (the Core key; reuse it, with a narrow key-policy statement for a
+service principal) and the known baseline of three Secrets Manager secrets, which a later release moves to SSM
+Parameter Store. A count above its baseline fails; a count below it fails too, until the baseline is lowered.
 
 ### Lambda sizing and post-deploy capacity check
 
@@ -840,9 +845,10 @@ deleting the stacks is the one way to remove everything:
   `s3:DeleteObject*` or `dynamodb:DeleteItem`, and `PUT /data-explorer/s3`
   refuses to overwrite an existing object under `raw/`. Category corrections and
   reprocessing update items in place.
-- **Deleted with the stack.** Unless `protectData` is set, the data tables, the raw-data
-  bucket (`voc-raw-data-…`) and the KMS key that encrypts them are deleted with the
-  stacks: see [Teardown deletes everything](#teardown-deletes-everything-back-up-first).
+- **Kept when the stacks are deleted.** `protectData` is on by default: the data tables, the
+  raw-data bucket (`voc-raw-data-…`) and the KMS key that encrypts them stay in the account.
+  Only a deployment with `-c protectData=false` deletes them with the stacks: see
+  [Teardown](#teardown-with--c-protectdatafalse-back-up-first).
 
 ### Upgrading from a release with a 90-day TTL (before 2.03.00)
 
@@ -876,12 +882,24 @@ one, and the memory scanner starts learning from assistant sessions that have be
 15-minute tick. See [Memory](memory.md), [Autonomous agents](autonomous-agents.md) and
 [Company context](company-context.md).
 
-### Teardown deletes everything: back up first
+### Teardown with -c protectData=false: back up first
+
+By default (`protectData` on, [below](#production-protectdata)) deleting the stacks
+leaves the customer data in the account. A deployment that should leave nothing
+behind (a demo, a workshop) runs with `-c protectData=false`, and **that value must
+be deployed BEFORE the stacks are deleted**: CloudFormation applies the deletion
+policies of the template it last deployed, so a `cdk destroy` of a stack deployed
+with the default keeps its tables, the raw-data bucket, the user pool and the KMS
+key, whatever `-c` the destroy itself gets:
+
+```bash
+npm run deploy:infra -- -c protectData=false   # switches the deletion policies, replaces nothing
+npm run destroy                                # now a full cleanup
+```
 
 Deleting the stacks (`npm run destroy`, `cdk destroy --all`, or deleting them in
-the CloudFormation console) is a **full cleanup** unless `protectData` is set
-([below](#production-protectdata)): no customer data is left behind
-in the account. With the Core stack go the customer-data tables
+the CloudFormation console) after such a deploy is a **full cleanup**: no customer
+data is left behind in the account. With the Core stack go the customer-data tables
 (`voc-feedback`, `voc-aggregates`, `voc-projects`, `voc-memory`, `voc-agents`,
 `voc-participants`, `voc-feature-requests`), the operational tables, the `voc/design-integrations` secret, every bucket and
 the KMS key:
@@ -947,17 +965,18 @@ are deleted. Releases before 5.00.00 retained the customer-data resources, so a
 stack deleted earlier may have left them in the account: delete those by hand
 once you no longer need them.
 
-`lib/stacks/core-stack-teardown.test.ts` checks these policies, with and without `protectData`.
+`lib/stacks/core-stack-teardown.test.ts` checks these policies, with `protectData` on (the default) and off.
 
 ### Production: protectData
 
-**Deploying for production? Set `protectData`.** The full-cleanup default above is
-right for demos, workshops and temporary environments; a production deployment
-should keep its data whatever happens to the stacks:
+**`protectData` is on by default (since 5.73.00).** Every deployment keeps its data
+whatever happens to the stacks; only a demo, workshop or temporary environment
+turns it off:
 
 ```bash
-npm run deploy:infra -- -c protectData=true
-# or in voc-datalake/cdk.context.json: { "protectData": true }
+npm run deploy:infra                             # protected (the default)
+npm run deploy:infra -- -c protectData=false     # a demo: data is deleted with the stacks
+# or in voc-datalake/cdk.context.json: { "protectData": false }
 ```
 
 With it on (lib/utils/data-protection.ts):
@@ -970,23 +989,34 @@ With it on (lib/utils/data-protection.ts):
   blocks a delete from the console, the CLI or an SDK;
 - the raw-data bucket has **no auto-delete provider**, so neither a teardown nor
   a rename (a changed `deploymentPrefix`) can empty it;
-- every Lambda and API log group keeps **365 days** (the AWS Config
-  `cw-loggroup-retention-period-check` and Security Hub CloudWatch.16 default)
-  and is **retained** on stack deletion, and the S3 server access-log bucket is
-  kept too: they are the record of who touched the data (demo deployments keep
-  14 days and delete them);
+- every Lambda, API Gateway and Step Functions log group is **retained** on stack
+  deletion, and the S3 server access-log bucket is kept too. Every log keeps
+  **30 days** in every deployment (owner decision 2026-11-01: one retention for
+  every operational log; audit evidence lives in DynamoDB audit rows such as
+  `AUDIT#retention` and the MCP token audit, not in logs); an unprotected
+  deployment deletes its log groups with the stacks;
 - every stack gets CloudFormation **termination protection**.
 
 Only the value `true` or `false` is accepted; anything else (a typo) fails the
-synth rather than deploying an unprotected stack. Turning it on for an existing
-deployment changes deletion policies and protection only, nothing is replaced.
+synth rather than guessing. Switching an existing deployment either way changes
+deletion policies and protection only, nothing is replaced.
+
 To tear down a protected deployment on purpose, deploy once with
 `-c protectData=false` (or remove deletion protection by hand), turn termination
 protection off (`aws cloudformation update-termination-protection
 --no-enable-termination-protection --stack-name <stack>`), then delete the
-stacks; the retained log groups and access-log bucket are left to delete by hand.
-The website bucket and the operational queues hold no customer data and are
+stacks. The website bucket and the operational queues hold no customer data and are
 always deleted with their stacks.
+
+**A redeploy after a protected teardown.** If the stacks were deleted while
+protected, the retained resources stay under their fixed names (tables, the
+raw-data and access-log buckets, the user pool, the KMS key alias, the
+`voc/design-integrations` secret, the log groups). A new deploy into the same
+account and region then fails while they exist ("already exists"). Either delete
+them by hand once you no longer need them (turn off DynamoDB and Cognito deletion
+protection first; the KMS key is scheduled for deletion with
+`aws kms schedule-key-deletion`), or deploy the new copy with a different
+`-c deploymentPrefix=<prefix>`, which gives every resource a new name.
 
 ### Passkeys
 
@@ -1613,13 +1643,15 @@ aws cloudfront create-invalidation \
 
 ### Log retention of CDK's own provider Lambdas
 
-Every Lambda logs to a log group with a 14-day retention (`lib/utils/log-retention.ts`, pinned by
-`lib/utils/log-retention.test.ts`), including the functions CDK creates for you (S3 auto-delete, bucket
-notifications, the website `BucketDeployment`). Two kinds need one manual step:
+Every log group keeps 30 days (`LOG_RETENTION` in `lib/utils/log-retention.ts`, pinned by
+`lib/utils/log-retention.test.ts`): every Lambda, including the functions CDK creates for you (S3 auto-delete, bucket
+notifications, the website `BucketDeployment`), the API Gateway access log and the Step Functions logs. The S3
+server access-log bucket expires its objects (and their noncurrent versions) after 30 days too. Two kinds need one
+manual step:
 
 - **Cross-region export reader/writer** (`crossRegionReferences`): CDK adds them after the retention aspect runs,
   so Lambda creates `/aws/lambda/<Stack>-CustomCrossRegionExport…` with no retention on their first deploy. Set it
-  once: `aws logs put-retention-policy --log-group-name <group> --retention-in-days 14`.
+  once: `aws logs put-retention-policy --log-group-name <group> --retention-in-days 30`.
 - **Deployments from before 5.25.04**: the provider functions logged to groups Lambda created, with no retention.
   After this release they log to the new stack-owned groups; the old `/aws/lambda/<Stack>-Custom…`,
   `-BucketNotificationsHandler…` and `-CustomCDKBucketDeployment…` groups are left behind. Give them a retention (as
@@ -1649,4 +1681,4 @@ aws cloudformation describe-stacks \
 | `npm run dev:frontend` | Start only the frontend dev server (no mock) |
 | `npm run cdk:diff` | Preview infrastructure changes |
 | `npm run cdk:synth` | Generate CloudFormation templates |
-| `npm run destroy` | Destroy all stacks, customer data included: back up first (see [Teardown deletes everything](#teardown-deletes-everything-back-up-first)) |
+| `npm run destroy` | Destroy all stacks; customer data is kept unless the last deploy used `-c protectData=false` (then it is deleted: back up first, see [Teardown](#teardown-with--c-protectdatafalse-back-up-first)) |

@@ -37,11 +37,13 @@ export const SCRATCH_EXPIRATION_DAYS = 2;
  */
 export const WEBSITE_NONCURRENT_VERSION_DAYS = 30;
 /**
- * Access logs already expire at 90 days; a noncurrent version (an overwritten or
- * deleted log object) only needs a week's grace for investigation.
+ * Access logs are operational logs and keep 30 days like every other log (owner
+ * decision 2026-11-01, lib/utils/log-retention.ts `LOG_RETENTION`): current objects
+ * expire at 30 days, and a noncurrent version (an overwritten or deleted log object)
+ * gets the same 30 days, one number for the whole bucket.
  */
-export const ACCESS_LOGS_NONCURRENT_VERSION_DAYS = 7;
-const ACCESS_LOGS_EXPIRATION_DAYS = 90;
+export const ACCESS_LOGS_EXPIRATION_DAYS = 30;
+export const ACCESS_LOGS_NONCURRENT_VERSION_DAYS = 30;
 /** Abandoned multipart parts are billed until aborted (S3 cost best practice). */
 export const ABORT_MULTIPART_DAYS = 7;
 
@@ -135,7 +137,7 @@ export function createCoreBuckets(
     removalPolicy: protection.removalPolicy,
     autoDeleteObjects: protection.autoDeleteObjects,
     // ONE unprefixed rule (core-stack.test.ts pins why no prefix): current
-    // versions expire at 90 days, which also lets S3 remove the resulting
+    // versions expire at 30 days, which also lets S3 remove the resulting
     // expired delete markers itself, so no separate marker rule is needed
     // (https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html).
     lifecycleRules: [{
