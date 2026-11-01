@@ -24,6 +24,7 @@ import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
 import { FIXED_COST_REMEDY, fixedCostFindings, type FixedCostFinding } from './test-support/fixed-cost-rules';
 import { cleanupAssemblyDirs, synthApp, type SynthResult } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
+import { PERFORMANCE_TIER_CONTEXT_KEY } from './utils/performance-tier';
 import { SNAPSTART_CONTEXT_KEY, SNAPSTART_FUNCTION_IDS } from './utils/snapstart';
 
 /** An opt-in flag allowed to add a fixed cost: its context, and the `<type> <logical id pattern>` findings it adds. */
@@ -32,12 +33,14 @@ interface OptInFixedCost {
   readonly expected: readonly RegExp[];
 }
 
+const SNAPSTART_FINDINGS = SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::Lambda::Function (GlobalMcp)?${id}[0-9A-F]{8}$`));
+
 const OPT_IN_FIXED_COSTS: Readonly<Record<string, OptInFixedCost>> = {
   // `-c snapStart=true` (lib/utils/snapstart.ts): the four cold-start-bound API Lambdas.
-  snapStart: {
-    context: { [SNAPSTART_CONTEXT_KEY]: 'true' },
-    expected: SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::Lambda::Function (GlobalMcp)?${id}[0-9A-F]{8}$`)),
-  },
+  snapStart: { context: { [SNAPSTART_CONTEXT_KEY]: 'true' }, expected: SNAPSTART_FINDINGS },
+  // `-c performanceTier=true` (lib/utils/performance-tier.ts): every fixed-cost performance feature;
+  // today exactly SnapStart. A new performance feature adds its findings HERE.
+  performanceTier: { context: { [PERFORMANCE_TIER_CONTEXT_KEY]: 'true' }, expected: SNAPSTART_FINDINGS },
 };
 
 // Module-level synths like lib/app-template-gates.test.ts (~8-10 s each, out of process).

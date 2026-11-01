@@ -52,6 +52,15 @@ or one line:
 Siblings: none -- <how you looked, e.g. the grep you ran>
 -->
 
+## Tenets
+
+<!--
+Check the change against TENETS.md (https://github.com/aws-samples/sample-voice-of-customer-datalake/blob/main/TENETS.md#pull-request-checklist).
+Name the tenets it touches (1-7, D1-D7) on ONE line, or "none". A change may not move the platform further
+from a tenet; when it touches one, say how it keeps it (a new fixed cost must be opt-in, tenet 7).
+-->
+Tenets touched: <!-- e.g. 3, 7, D4 | none -->
+
 ## Release
 
 <!-- The CHANGELOG.md section this PR adds and its bump kind (.kiro/steering/changelog.md), e.g. "5.49.00 (minor)". -->

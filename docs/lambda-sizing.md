@@ -266,6 +266,22 @@ the four functions below have no `SnapStart` property, no version and no alias, 
 function like every other API Lambda. The lib/fixed-cost-guard.test.ts gate fails the CDK suite if SnapStart (or
 any other fixed-cost resource) appears in a default synth.
 
+<a id="the-performance-tier--c-performancetier"></a>
+
+#### The performance tier (`-c performanceTier`)
+
+`-c performanceTier=true` is the one switch for a deployment that chooses performance over the lowest bill, for
+example the platform run as a managed service instead of a proof of concept. It turns on every opt-in feature that
+carries a fixed monthly cost. Today that is SnapStart for the four functions below (the same as `-c snapStart=true`).
+Absent or `false` leaves each feature to its own flag; anything else fails the synth
+(`lib/utils/performance-tier.ts`).
+
+Not in the tier yet, and why: SnapStart on further functions and provisioned concurrency need production
+cold-start and traffic data to pick the functions and the numbers; DynamoDB Accelerator (DAX) runs inside a VPC, a
+fixed cost of its own, and the read caches ([caching.md](caching.md)) cover the hot reads today. A feature that joins
+the tier gets its own context flag, reads `performanceTierEnabled(scope)` too, and is listed in `OPT_IN_FIXED_COSTS`
+(`lib/fixed-cost-guard.test.ts`) with exactly the resources it adds.
+
 **Why someone might opt in.** SnapStart replaces a cold start with a restore from a snapshot taken at deploy time
 (restore p50 about 460–500 ms, measured on these four APIs while it was on). It supports Python 3.12 and later on x86_64 and arm64 in most commercial Regions (check the AWS docs
 for your Region), and is not compatible with provisioned concurrency, EFS, or ephemeral storage over 512 MB.

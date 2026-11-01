@@ -25,6 +25,7 @@ import { pathToFileURL } from 'node:url'
 import { contentLines, findSection, plainLine, sections } from './markdown.mjs'
 import { addedReleases, addsGroup } from './changelog.mjs'
 import { proofProblems, siblingProblems } from './fix-rules.mjs'
+import { tenetsProblems } from './tenets.mjs'
 
 export const REQUIRED_SECTIONS = Object.freeze([
   'Goal', 'Why it matters', 'Not a goal', 'What changed', 'Backwards compatibility', 'Tests', 'Release',
@@ -90,6 +91,7 @@ export function checkPrBody({ body, title, draft, author, changedFiles = null, h
     if (section !== null && contentLines(section).length === 0) errors.push(`${name}: the section is empty`)
   }
   if (findSection(all, 'Goal') !== null) errors.push(...goalProblems(all))
+  errors.push(...tenetsProblems(all))
   const added = addedReleases(baseChangelog, headChangelog)
   if (added === null) notices.push('CHANGELOG.md of the PR head is unknown: fix and breaking-change rules not applied')
   else if (added.length === 0) notices.push('CHANGELOG.md gains no release section; every PR to main adds one (.kiro/steering/changelog.md)')

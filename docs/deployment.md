@@ -87,6 +87,7 @@ or set it in `voc-datalake/cdk.context.json`. An invalid value fails the synth.
 | `inboundEmailDomain` (+ `inboundEmailHostedZoneId`, `inboundEmailHostedZoneName`, `inboundEmailRuleSet`, `inboundEmailCreateIdentity`) | none | Receives feedback by email through SES ([email-intake.md](email-intake.md)) |
 | `deploymentPrefix` | none | Namespaces a second copy in the same account and region ([Two Deployments](#two-deployments-in-one-account-and-region)) |
 | `mcpReservedConcurrency` | `20` | Reserved concurrency of the MCP endpoint ([below](#reserved-concurrency-of-the-mcp-endpoint--c-mcpreservedconcurrency)) |
+| `performanceTier` | `false` | `true` turns on every performance feature that carries a fixed monthly cost (today: `snapStart`); for a deployment that runs as a managed service rather than a sample ([lambda-sizing.md](lambda-sizing.md#the-performance-tier--c-performancetier)) |
 | `snapStart` | `false` | `true` turns on Lambda SnapStart for the four cold-start-bound APIs (a fixed monthly cache charge, about $20; off by default per [TENETS.md](../TENETS.md), tenet 7) ([lambda-sizing.md](lambda-sizing.md#snapstart-off-by-default)) |
 | `mcpTokenMinting`, `mcpOAuthCursorCallbacks`, `mcpOAuthWebCallbacks`, `mcpOAuthResourceIndicator` | see [mcp.md](mcp.md) | MCP token minting and OAuth client settings |
 | `brandName` | `MyBrand` (`VoC Analytics` in the committed file) | Brand name stamped on feedback forms and their submissions |
@@ -788,7 +789,8 @@ and the all-features shape, and fails on any resource or setting that bills whet
 SnapStart, provisioned concurrency, NAT gateways, EC2 instances, ECS services, RDS, ElastiCache, OpenSearch,
 PROVISIONED DynamoDB or Kinesis capacity, an API Gateway cache cluster, a CloudFront dedicated IP, or a hosted zone
 the app creates ([TENETS.md](../TENETS.md), tenet 7). Such a feature goes behind an opt-in context flag, listed in the
-test's `OPT_IN_FIXED_COSTS` with exactly what it adds (today: `snapStart`). Lambda reserved concurrency costs nothing
+test's `OPT_IN_FIXED_COSTS` with exactly what it adds (today: `snapStart`, and `performanceTier`, which turns it on).
+A new performance feature reads `performanceTierEnabled` (`lib/utils/performance-tier.ts`) as well as its own flag. Lambda reserved concurrency costs nothing
 and is allowed.
 
 ### Lambda sizing and post-deploy capacity check

@@ -16,12 +16,13 @@ const changelogWith = (groups) => BASE_LOG.replace('## [Unreleased]\n', `## [Unr
 const TREE = new Set(['voc-datalake/lambda/shared/test/test_clock.py', 'voc-datalake/lambda/shared/clock.py', 'voc-datalake/lambda/api/metrics_handler.py', 'docs/caching.md'])
 const CHANGED = new Set(['voc-datalake/lambda/shared/clock.py', 'voc-datalake/lambda/shared/test/test_clock.py', 'CHANGELOG.md'])
 
-function body({ goal = '**Goal:** reports stop losing rows uploaded close to midnight', compat = 'Compatible: no route or stored shape changes', tests = 'bash scripts/validate.sh passed.', sweep = null, release = '5.49.00 (minor)' } = {}) {
+function body({ goal = '**Goal:** reports stop losing rows uploaded close to midnight', compat = 'Compatible: no route or stored shape changes', tests = 'bash scripts/validate.sh passed.', sweep = null, release = '5.49.00 (minor)', tenets = 'Tenets touched: none' } = {}) {
   const parts = [
     '## Goal', goal, '## Why it matters', 'Operators saw gaps.', '## Not a goal', 'None.',
     '## What changed', 'symptom -> cause -> change', '## Backwards compatibility', compat, '## Tests', tests,
   ]
   if (sweep !== null) parts.push('## Sibling sweep', sweep)
+  if (tenets !== null) parts.push('## Tenets', tenets)
   parts.push('## Release', release)
   return parts.join('\n\n')
 }

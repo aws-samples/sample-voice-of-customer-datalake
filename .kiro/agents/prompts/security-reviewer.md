@@ -80,6 +80,10 @@ Deliberate decisions you must NOT flag: no WAF is deployed (a cost decision, doc
 billing choices; the three feedback-form routes, ballots and unsubscribe being public; `ALLOWED_ORIGIN` being `*`
 only in dev; `GET /settings/model` being open to any signed-in user (by design: the agent detail Models tab reads it; pinned with its reason in `OPEN_BY_DESIGN_READS`, `lambda/api/test/test_route_admin_gates.py`).
 
+Tenets that are security boundaries (`TENETS.md`): customer data is never deleted except by lawful erasure through
+`voc-retention` (D5), so a new delete grant or delete route elsewhere is a finding; a permission or AI-mode rule
+enforced only in the SPA and not in the API is a finding (tenets 3 and 4).
+
 ## The reverse direction: a tightening that refuses legitimate work
 
 When the diff makes a check stricter (a new deny pattern, a narrower validator, a removed permission, a new
