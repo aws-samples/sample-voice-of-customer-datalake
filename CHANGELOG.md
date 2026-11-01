@@ -17,6 +17,37 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.73.00] - 2026-11-01
+
+The build and test toolchain moves to TypeScript 6, Vite 8, Vitest 5 and ESLint 10, and CI to Node 26 (the
+current LTS line). The deployed Lambdas and the API do not change.
+
+### Changed
+- **TypeScript 6.0.3** in the CDK app, the frontend, the assistant stream Lambda and the e2e suite (not 7.x:
+  `typescript-eslint` supports TypeScript below 6.1). The CDK and stream `tsconfig.json` files now list
+  `"types": ["node"]` (TypeScript 6 includes no `@types` package by default), the frontend drops the deprecated
+  `baseUrl`, and the CDK app's `lib` is ES2022.
+- **Frontend build on Vite 8** (Rolldown) with `@vitejs/plugin-react` 6. The vendor chunks of
+  `vendorChunks.json` are now Rolldown code-splitting groups: each vendor's first-load part and its lazy part are
+  separate chunks (for example `react-dom/server`, used only by the print exports, no longer loads on every first
+  visit). The first-load JavaScript is about 5% smaller (948 KB, 292 KB gzipped); the whole `dist/` is 108 KB larger,
+  spread over 24 more files.
+- **Frontend libraries**: `i18next` 26, `react-i18next` 17, `lucide-react` 1.66 (same icons), plus in-range
+  updates.
+- **Test and lint tooling**: Vitest 5.0.5 with every `@vitest/*` package at the same version, ESLint 10 in the
+  CDK app and the frontend (the stream Lambda was on it already), `eslint-plugin-unicorn` 79 (its removed
+  `no-array-for-each` rule is `no-for-each` now), `@testing-library/jest-dom` 7, `globals` 17, knip 6.44.1 in the
+  CDK app and the stream Lambda, `@types/node` 24 everywhere (the Lambdas run Node 24).
+- **CI** runs Node 26 instead of 22, and `actions/checkout`, `setup-node`, `setup-python` and `upload-artifact`
+  move to v7 (still pinned by commit SHA).
+- **Held on purpose**, with the reasons in [docs/dependencies.md → Held updates](docs/dependencies.md#held-updates):
+  `jsdom` 26 (newer versions break 61 accessible-name assertions through a `dom-accessibility-api` bug),
+  `cdk-nag` 2 (v3 removes the suppression API this app uses), knip 6.44.1 in the frontend, and mutmut 2.
+
+### Upgrade notes
+- Local development still needs Node.js 22.12 or later; CI now tests on Node 26 only. Run `npm ci` in every
+  package after pulling (the lockfiles changed).
+
 ## [5.72.01] - 2026-11-01
 
 `scripts/validate.sh` reviews the change with the developer's own coding agent, against TENETS.md and like the GitHub PR review, and can re-run only what failed.
