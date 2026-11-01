@@ -32,8 +32,9 @@ const PLAY_APP_URL = 'https://play.google.com/store/apps/details';
 /** One budget for the whole lookup (every storefront / the one Play page). */
 const STORE_LOOKUP_TIMEOUT_MS = 6000;
 /**
- * Storefront lookups in flight at once after a US miss. Apple throttles its Lookup API per source address, so
- * the fan-out stays small: 39 storefronts take about ten rounds of ~150 ms.
+ * Storefront lookups in flight at once after a US miss. This bounds parallelism, not Apple's per-address rate
+ * limit: the fan-out is still ~39 requests in a second or two, so a throttled run can end `unknown` (the card
+ * then says the store could not be checked). The fan-out runs only for an id the US store does not list.
  */
 const MAX_LOOKUPS_IN_FLIGHT = 4;
 /**
