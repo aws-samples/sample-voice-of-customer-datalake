@@ -215,7 +215,7 @@ Any task error ─▶ RecordFailure (conductor, action 'fail') ─▶ Fail
 - Projects are named by their name, never by their id ("Created the project "Faster checkout" for Billing"). The name is read once per run and cached in the run context (`project_names`, `agents/event_text.py`). A name that cannot be read shows as "the project".
 - Categories and sources use their labels (`shared/display_labels.py`). Documents are spelled PR/FAQ, PRD, prototype and research report.
 - The review analysis prompt gives each review as `Label [id]`. The model answers with ids, and the problem keeps the configured label (`category_label`) for later steps.
-- A handoff writes `Agent "<name>" run of <day>: …` into the project purpose. It no longer writes the run id.
+- A handoff writes `Agent "<name>" run of <day>: …` into the project purpose, never the run id.
 
 Contract with the conductor (`agents/conductor/handler.lambda_handler`):
 
