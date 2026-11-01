@@ -366,10 +366,11 @@ for i in "${!S_NAME[@]}"; do
   printf '%s\t%s\t%s\t%s\n' "$status" "$dur" "${S_LANE[$i]}" "${S_NAME[$i]}" >> "$LOG_DIR/timings.tsv"
 done
 printf '%-8s %6s  wall clock\n' total "$TOTAL"
-# A local run may have deleted graduated coverage-baseline rows (--prune-graduated): say so where it is read, at the end.
-PRUNED="$(cd "$ROOT" && git status --porcelain -- scripts/coverage/baselines 2>/dev/null || true)"
-if [[ -n "$COVERAGE_PRUNE" && -n "$PRUNED" ]]; then
-  printf '\nvalidate: COMMIT the pruned coverage baseline (graduated rows were deleted; CI fails without them):\n%s\n' "$PRUNED"
+# A local run may have deleted graduated coverage-baseline rows (--prune-graduated): say so where it is read, at the
+# end. Read from THIS run's step logs (the line check-per-file-coverage.mjs prints when it deletes), not from git.
+PRUNED="$(awk '/graduated row\(s\) from/ { keep = 1; print; next } keep && /^  / { print; next } { keep = 0 }' "$LOG_DIR"/*.log 2>/dev/null || true)"
+if [[ -n "$PRUNED" ]]; then
+  printf '\nvalidate: COMMIT the pruned coverage baseline (CI fails without it):\n%s\n' "$PRUNED"
 fi
 
 if [[ "$FAILED" -ne 0 ]]; then
