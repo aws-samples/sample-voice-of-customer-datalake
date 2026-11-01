@@ -378,3 +378,29 @@ describe('VocIngestionStack s3_import ingestor bucket check', () => {
     expect(updates.some((statement) => JSON.stringify(statement.Resource).includes('Aggregates'))).toBe(true);
   });
 });
+
+const CorsBucketSchema = z.object({
+  Properties: z.object({
+    CorsConfiguration: z.object({ CorsRules: z.array(z.object({ AllowedOrigins: z.array(z.string()) }).loose()) }),
+  }),
+});
+
+// The browser uploads staged files straight to the bucket, so its CORS origin is the app's own CloudFront
+// domain (the frontendDomain prop, bin/voc-datalake.ts). A `-c frontendDomain=` context value once overrode
+// an empty prop; nothing passes one, and it is not a deploy option.
+describe('VocIngestionStack S3 import bucket CORS', () => {
+  const origins = (context: Record<string, unknown> = {}) => {
+    const buckets = Object.entries(synthIngestionTemplate([], context).findResources('AWS::S3::Bucket'))
+      .filter(([logicalId]) => logicalId.startsWith('S3ImportBucket'));
+    return CorsBucketSchema.parse(itemAt(buckets, 0)[1]).Properties.CorsConfiguration.CorsRules
+      .flatMap((rule) => rule.AllowedOrigins);
+  };
+
+  it('allows the frontend domain and the local dev servers', () => {
+    expect(origins()).toStrictEqual(['https://app.example.invalid', 'http://localhost:5173', 'http://localhost:3000']);
+  });
+
+  it('ignores a frontendDomain context value', () => {
+    expect(origins({ frontendDomain: 'other.example.invalid' })).not.toContain('https://other.example.invalid');
+  });
+});

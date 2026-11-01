@@ -128,10 +128,8 @@ export class VocIngestionStack extends VocStack {
     const enabledPlugins = getEnabledPlugins(allPlugins, config.enabledSources);
 
     // CORS allowed origins
-    const frontendDomain = props.frontendDomain !== undefined && props.frontendDomain !== ''
-      ? props.frontendDomain
-      : this.node.tryGetContext('frontendDomain');
-    const corsAllowedOrigins = this.buildCorsOrigins(frontendDomain);
+    // The CloudFront domain from VocCoreStack (bin/voc-datalake.ts); there is no context override.
+    const corsAllowedOrigins = this.buildCorsOrigins(props.frontendDomain);
 
     // S3 Import Bucket
     this.s3ImportBucket = this.createS3ImportBucket(kmsKey, accessLogsBucket, corsAllowedOrigins);
