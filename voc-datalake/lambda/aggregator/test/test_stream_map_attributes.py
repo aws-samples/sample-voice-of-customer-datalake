@@ -1,5 +1,5 @@
 """Map and list attributes of a REAL Powertools stream record reach the counters (see
-`aggregator.handler.deserialize_image` for the 5.67.01 bug these tests pin).
+`aggregator.handler.deserialize_image` for the 5.67.02 bug these tests pin).
 """
 from decimal import Decimal
 from unittest.mock import patch
