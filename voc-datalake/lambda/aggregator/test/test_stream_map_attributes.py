@@ -57,7 +57,10 @@ def test_a_modify_that_changes_the_type_moves_both_value_rows(writes):
 
 
 def test_tags_from_a_stream_record_are_counted():
-    item = handler.deserialize_image(stream_record('INSERT', new={**BASE, 'tags': ['Beta', 'vip']}).dynamodb.new_image)
+    stream = stream_record('INSERT', new={**BASE, 'tags': ['Beta', 'vip']}).dynamodb
+    assert stream is not None
+    assert stream.new_image is not None
+    item = handler.deserialize_image(stream.new_image)
     assert item['tags'] == ['Beta', 'vip']
     assert (f'{handler.TAG_PREFIX}beta', 'count') in handler.counter_dimensions(item)
 
