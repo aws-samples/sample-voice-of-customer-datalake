@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.68.01] - 2026-11-01
+
+Fix: the per-dimension counters are written again, so the Dashboard's "By dimension" and `/metrics/dimensions` count review types.
+
+### Fixed
+
+- **Dimension and tag counters**: the aggregator dropped every map and list attribute of a stream record, so a
+  review's `dimensions` (the review type included) and `tags` never reached their daily counters. The Dashboard's
+  "By dimension" card and `GET /metrics/dimensions` showed every value at 0 with all reviews unassigned, even
+  after Administration → Taxonomy → Dimensions → "Classify review types" had typed them. New and edited reviews
+  are counted from this release on.
+
+### Upgrade notes
+
+- Reviews typed or tagged before this release are still missing from the counters. Rebuild them from the
+  feedback table with `voc-datalake/scripts/retention/rebuild_aggregates.py --from <first date> --apply` (dry run first,
+  without `--apply`). It writes absolute values and also resets stale rows to 0
+  ([docs/processing-pipeline.md → Rebuilding aggregates](docs/processing-pipeline.md#rebuilding-aggregates-for-a-window)).
+
 ## [5.68.00] - 2026-11-01
 
 The Radar page leads with the answer, and its releases and comparisons say only what the data supports.
