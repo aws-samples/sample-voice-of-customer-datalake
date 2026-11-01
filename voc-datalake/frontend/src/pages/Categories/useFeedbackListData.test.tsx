@@ -35,6 +35,7 @@ const baseFilters: CategoryFiltersState = {
   showUrgentOnly: false,
   channel: null,
   dimensionFilter: {},
+  types: [],
   tag: null,
 }
 

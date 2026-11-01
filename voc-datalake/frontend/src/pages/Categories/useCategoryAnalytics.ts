@@ -20,6 +20,8 @@ import { failedReads, type FailedReads } from '../../utils/failedReads'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { rankCategoryEntries } from '../../utils/categoryOrder'
 import { metricsKeys } from '../../api/queryKeys'
+import { FEEDBACK_TYPE_KEY } from '../../api/feedbackTypes'
+import { typeCountsFrom } from '../../components/ReviewTypeFilter/reviewTypeSelection'
 
 /**
  * Words that say nothing on their own in a review keyword cloud: English
@@ -92,6 +94,8 @@ export interface CategoryAnalytics extends FailedReads {
   /** Channels and tags seen in the window (unfiltered), largest first — the filter options. */
   allChannels: string[]
   allTags: string[]
+  /** Reviews per review type in the window (unfiltered, like the options above), plus `untyped`. */
+  typeCounts: Record<string, number>
   totalIssues: number
   /** Reviews in the window with no category (sentiment total − categorised), so the bars sum to the total. */
   uncategorised: number
@@ -167,6 +171,10 @@ export function useCategoryAnalytics(
   const extras = useMemo(() => normalizeEntityExtras(allEntities), [allEntities])
   const allChannels = useMemo(() => rankedNames(extras.channels), [extras])
   const allTags = useMemo(() => rankedNames(extras.tags), [extras])
+  const typeCounts = useMemo(
+    () => typeCountsFrom(extras.dimensions[FEEDBACK_TYPE_KEY] ?? {}, allEntities?.feedback_count ?? 0),
+    [extras, allEntities],
+  )
 
   // Belt-and-braces over the backend's per-category filtering: a category the
   // caller cannot see never becomes a filter chip, even from a stale cache.
@@ -206,6 +214,7 @@ export function useCategoryAnalytics(
     allSources,
     allChannels,
     allTags,
+    typeCounts,
     totalIssues: categorised + uncategorised,
     uncategorised,
     avgSentiment,

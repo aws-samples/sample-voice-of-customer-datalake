@@ -88,14 +88,25 @@ on the next filter change), and the server ignores a `latest` it is still sent.
 
 ## Review types
 
-The review-type chips filter by review type (the built-in `feedback_type` dimension,
-[dimensions.md](dimensions.md)). **Problems only** is the default: bug, service failure,
-performance, usability, pricing and billing, support experience. Feature requests, praise,
-questions and other reviews are hidden until you turn them on, or pick **All types**. Each
-chip shows its count in the window. Reviews with no type yet (stored before review types
-existed) are always kept in view, and the page says how many: an administrator classifies them
-with the reprocess job in Administration → Taxonomy. The choice is in the URL (`types=all` or
-`types=bug,praise`; absent = Problems only).
+The review-type pills filter by review type (the built-in `feedback_type` dimension,
+[dimensions.md](dimensions.md)). The Categories page has the same pills
+([categories.md](categories.md#review-types)); the component is
+`frontend/src/components/ReviewTypeFilter/`.
+
+- **Problems only** is this page's default: bug, service failure, performance, usability,
+  pricing and billing, support experience. Feature requests, praise, questions and other
+  reviews are hidden.
+- **All types** is no type filter: no type pill is pressed. **Clear** goes there too, with
+  the other filters, so Clear is offered on the default view (Problems only is a filter).
+- **One type in one click**: while Problems only shows (or no pill is pressed), a click on a
+  type pill selects only that type. Later clicks add or remove pills; turning off the last one
+  is no type filter again, not Problems only.
+- Each pill shows its count in the window. Reviews with no type yet (stored before review types
+  existed) are always kept in view, and the page says how many: an administrator classifies them
+  with the reprocess job in Administration → Taxonomy. While most reviews are untyped, a type
+  choice changes little, because those reviews stay in every view.
+- The choice is in the URL: absent = Problems only, `types=all` = every type,
+  `types=bug,praise` = those types.
 
 ## Grouping
 

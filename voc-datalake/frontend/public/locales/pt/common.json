@@ -439,5 +439,13 @@
     "invalid": "Esta solicitação de login não é válida. Inicie o login novamente pelo assistente.",
     "refused": "A solicitação do assistente não pode ser aprovada: {{reason}}",
     "back": "Voltar ao assistente"
+  },
+  "reviewTypeFilter": {
+    "label": "Tipos de avaliação",
+    "problemsOnly": "Só problemas",
+    "problemsOnlyHint": "Bugs, falhas de serviço, desempenho, usabilidade, preços e cobrança, e experiência de suporte. Pedidos de recursos, elogios, perguntas e outras avaliações ficam ocultos.",
+    "allTypes": "Todos os tipos",
+    "untyped": "Avaliações ainda sem tipo: {{n, number}} (continuam visíveis)",
+    "untypedHint": "Avaliações guardadas antes de existirem os tipos não têm tipo até que um administrador as classifique em Administração → Taxonomia. Continuam visíveis com qualquer filtro de tipo."
   }
 }

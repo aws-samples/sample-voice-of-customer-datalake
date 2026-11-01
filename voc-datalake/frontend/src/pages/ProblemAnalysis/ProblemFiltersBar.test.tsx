@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { UserEvent } from '@testing-library/user-event'
-import { FEEDBACK_TYPES, PROBLEM_TYPES } from './feedbackTypes'
+import { ALL_TYPES, PROBLEM_TYPES } from '../../components/ReviewTypeFilter/reviewTypeSelection'
 import { ProblemFiltersBar } from './ProblemFiltersBar'
 import type { ProblemFilters, ProblemFiltersApi } from './useProblemFilters'
 
@@ -67,7 +67,8 @@ describe('ProblemFiltersBar', () => {
     user.click(screen.getByRole(role, { name }))
 
   it.each<[string, (user: UserEvent) => Promise<void>, Partial<ProblemFilters>]>([
-    ['the All types chip', click('button', 'All types'), { types: FEEDBACK_TYPES }],
+    ['the All types chip', click('button', 'All types'), { types: ALL_TYPES }],
+    ['a type pill while Problems only shows (only that type)', click('button', /^Feature request/), { types: ['feature_request'] }],
     ['the category select', select('Category', 'delivery'), { category: 'delivery' }],
     ['the subcategory select', select('Subcategory', 'late'), { subcategory: 'late' }],
     ['the urgent-only toggle', click('checkbox', 'Urgent only'), { urgentOnly: true }],

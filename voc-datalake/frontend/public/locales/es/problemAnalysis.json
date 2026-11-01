@@ -58,14 +58,6 @@
     "examplesLoading": "Cargando reseñas de ejemplo…",
     "examplesFailed": "No se pudieron cargar las reseñas de ejemplo."
   },
-  "types": {
-    "label": "Tipos de reseña",
-    "problemsOnly": "Solo problemas",
-    "problemsOnlyHint": "Errores, fallos del servicio, rendimiento, usabilidad, precios y facturación, y experiencia de soporte. Se ocultan las solicitudes de funciones, los elogios, las preguntas y otras reseñas.",
-    "allTypes": "Todos los tipos",
-    "untyped": "Reseñas aún sin tipo: {{n, number}} (se siguen mostrando)",
-    "untypedHint": "Las reseñas guardadas antes de que existieran los tipos no tienen tipo hasta que un administrador las clasifique en Administración → Taxonomía. Siguen visibles con cualquier filtro de tipo."
-  },
   "title": "Análisis de problemas",
   "subtitle": "Problemas recurrentes de clientes agrupados por categoría, con sus causas probables"
 }

@@ -435,5 +435,13 @@
     "invalid": "Diese Anmeldeanfrage ist ungültig. Starten Sie die Anmeldung erneut in Ihrem Assistenten.",
     "refused": "Die Anfrage des Assistenten kann nicht freigegeben werden: {{reason}}",
     "back": "Zurück zum Assistenten"
+  },
+  "reviewTypeFilter": {
+    "label": "Bewertungsarten",
+    "problemsOnly": "Nur Probleme",
+    "problemsOnlyHint": "Fehler, Dienstausfälle, Leistung, Bedienbarkeit, Preise und Abrechnung sowie Support-Erfahrung. Funktionswünsche, Lob, Fragen und sonstige Bewertungen werden ausgeblendet.",
+    "allTypes": "Alle Arten",
+    "untyped": "Noch nicht typisierte Bewertungen: {{n, number}} (bleiben sichtbar)",
+    "untypedHint": "Bewertungen, die vor Einführung der Bewertungsarten gespeichert wurden, haben keine Art, bis ein Administrator sie unter Administration → Taxonomie klassifiziert. Sie bleiben bei jedem Artenfilter sichtbar."
   }
 }

@@ -439,5 +439,13 @@
     "invalid": "Cette demande de connexion n’est pas valide. Relancez la connexion depuis votre assistant.",
     "refused": "La demande de l’assistant ne peut pas être approuvée : {{reason}}",
     "back": "Retour à l’assistant"
+  },
+  "reviewTypeFilter": {
+    "label": "Types d’avis",
+    "problemsOnly": "Problèmes uniquement",
+    "problemsOnlyHint": "Bugs, pannes de service, performances, ergonomie, prix et facturation, et expérience du support. Les demandes de fonctionnalités, éloges, questions et autres avis sont masqués.",
+    "allTypes": "Tous les types",
+    "untyped": "Avis pas encore typés : {{n, number}} (toujours affichés)",
+    "untypedHint": "Les avis enregistrés avant l’existence des types n’ont pas de type tant qu’un administrateur ne les a pas classés dans Administration → Taxonomie. Ils restent visibles avec tous les filtres de type."
   }
 }

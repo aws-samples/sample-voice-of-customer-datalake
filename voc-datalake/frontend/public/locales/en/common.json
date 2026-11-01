@@ -435,5 +435,13 @@
     "invalid": "This sign-in request is not valid. Start the sign-in again from your assistant.",
     "refused": "The assistant’s request cannot be approved: {{reason}}",
     "back": "Back to the assistant"
+  },
+  "reviewTypeFilter": {
+    "label": "Review types",
+    "problemsOnly": "Problems only",
+    "problemsOnlyHint": "Bugs, service failures, performance, usability, pricing and billing, and support experience. Feature requests, praise, questions and other reviews are hidden.",
+    "allTypes": "All types",
+    "untyped": "Reviews not typed yet: {{n, number}} (kept in view)",
+    "untypedHint": "Reviews stored before review types existed have no type until an administrator classifies them in Administration → Taxonomy. They stay in view under every type filter."
   }
 }

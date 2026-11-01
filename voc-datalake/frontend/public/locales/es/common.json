@@ -439,5 +439,13 @@
     "invalid": "Esta solicitud de inicio de sesión no es válida. Vuelve a iniciar sesión desde tu asistente.",
     "refused": "La solicitud del asistente no se puede aprobar: {{reason}}",
     "back": "Volver al asistente"
+  },
+  "reviewTypeFilter": {
+    "label": "Tipos de reseña",
+    "problemsOnly": "Solo problemas",
+    "problemsOnlyHint": "Errores, fallos del servicio, rendimiento, usabilidad, precios y facturación, y experiencia de soporte. Se ocultan las solicitudes de funciones, los elogios, las preguntas y otras reseñas.",
+    "allTypes": "Todos los tipos",
+    "untyped": "Reseñas aún sin tipo: {{n, number}} (se siguen mostrando)",
+    "untypedHint": "Las reseñas guardadas antes de que existieran los tipos no tienen tipo hasta que un administrador las clasifique en Administración → Taxonomía. Siguen visibles con cualquier filtro de tipo."
   }
 }

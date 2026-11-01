@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { MemoryRouter, useNavigate, useSearchParams } from 'react-router-dom'
-import { useCategoryFilters } from './useCategoryFilters'
+import { attributeFiltersOf, useCategoryFilters } from './useCategoryFilters'
 
 function createWrapper(initialEntries = ['/categories']) {
   return ({ children }: { children: React.ReactNode }) => (
@@ -272,6 +272,49 @@ describe('useCategoryFilters', () => {
       expect(result.current.searchParams.toString()).toBe('dims=module%3Acheckout%2Cproduct%3Aweb_shop&tag=vip')
       act(() => result.current.filters.clearFilters())
       expect([...result.current.searchParams.keys()]).toStrictEqual([])
+    })
+  })
+
+  describe('review types', () => {
+    it('opens on every type: no pill pressed, nothing in the URL, nothing sent', () => {
+      const { result } = renderFiltersWithUrl()
+      expect([result.current.filters.types, attributeFiltersOf(result.current.filters).dims, result.current.filters.hasActiveFilters])
+        .toStrictEqual([[], undefined, false])
+    })
+
+    it('mirrors a choice to ?types and sends it inside dims after the configured dimensions, keeping untyped reviews', () => {
+      const { result } = renderFiltersWithUrl()
+      act(() => result.current.filters.setDimensionFilter({ product: 'web_shop' }))
+      act(() => result.current.filters.setTypes(['bug', 'feature_request']))
+      expect(result.current.searchParams.get('types')).toBe('bug,feature_request')
+      expect(result.current.searchParams.get('dims')).toBe('product:web_shop')
+      expect(attributeFiltersOf(result.current.filters).dims)
+        .toBe('product:web_shop,feedback_type:bug|feature_request|~unset')
+      expect(result.current.filters.hasActiveFilters).toBe(true)
+    })
+
+    it('reads ?types=feature_request as that one pill', () => {
+      const { result } = renderFiltersWithUrl(['/categories?types=feature_request'])
+      expect(result.current.filters.types).toStrictEqual(['feature_request'])
+    })
+
+    it("opens an old link's dims=feedback_type:<value> as that one pill, not as a dimension pair", () => {
+      const { result } = renderFiltersWithUrl(['/categories?dims=feedback_type:praise,product:web_shop'])
+      const { types, dimensionFilter } = result.current.filters
+      expect({ types, dimensionFilter }).toStrictEqual({ types: ['praise'], dimensionFilter: { product: 'web_shop' } })
+      expect(result.current.searchParams.get('types')).toBe('praise')
+      expect(result.current.searchParams.get('dims')).toBe('product:web_shop')
+    })
+
+    it('lets ?types win over an old feedback_type pair', () => {
+      const { result } = renderFiltersWithUrl(['/categories?types=bug&dims=feedback_type:praise'])
+      expect([result.current.filters.types, result.current.filters.dimensionFilter]).toStrictEqual([['bug'], {}])
+    })
+
+    it('Clear unpresses every pill', () => {
+      const { result } = renderFiltersWithUrl(['/categories?types=bug,praise'])
+      act(() => result.current.filters.clearFilters())
+      expect([result.current.filters.types, result.current.searchParams.get('types')]).toStrictEqual([[], null])
     })
   })
 })

@@ -58,14 +58,6 @@
     "examplesLoading": "Carregando avaliações de exemplo…",
     "examplesFailed": "Não foi possível carregar as avaliações de exemplo."
   },
-  "types": {
-    "label": "Tipos de avaliação",
-    "problemsOnly": "Só problemas",
-    "problemsOnlyHint": "Bugs, falhas de serviço, desempenho, usabilidade, preços e cobrança, e experiência de suporte. Pedidos de recursos, elogios, perguntas e outras avaliações ficam ocultos.",
-    "allTypes": "Todos os tipos",
-    "untyped": "Avaliações ainda sem tipo: {{n, number}} (continuam visíveis)",
-    "untypedHint": "Avaliações guardadas antes de existirem os tipos não têm tipo até que um administrador as classifique em Administração → Taxonomia. Continuam visíveis com qualquer filtro de tipo."
-  },
   "title": "Análise de problemas",
   "subtitle": "Problemas recorrentes de clientes agrupados por categoria, com causas prováveis"
 }

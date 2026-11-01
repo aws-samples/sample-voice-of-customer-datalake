@@ -2,12 +2,17 @@
  * @fileoverview URL-synced filter state for the Categories page.
  *
  * Owns every user-adjustable feedback filter and mirrors the shareable
- * subset (q / source / sentiment / category / usefulness / subcategory / rating / urgent / channel / dims / tag)
- * to the URL so links are
+ * subset (q / source / sentiment / category / usefulness / subcategory / rating / urgent / channel / dims / tag /
+ * types) to the URL so links are
  * shareable and FeedbackDetail tag-clicks can deep-link into a pre-filtered
  * Categories view. The facets (source, category, sentiment, usefulness) are read and
  * written by `api/feedbackFacets.ts`, the Dashboard's and Problem Analysis' model: a comma
  * list (`?category=a,b`) means any of them, and the server filters it exactly.
+ *
+ * Review types (`types`, `components/ReviewTypeFilter/reviewTypeSelection.ts`) are the pills above the
+ * other attribute filters: absent = every type (this page's default), and they reach the server inside
+ * `dims` (`feedback_type:a|b|~unset`) next to the configured dimensions. An old link's
+ * `dims=feedback_type:<value>` (the single-value select this replaced) opens as that one pill.
  *
  * The default state (nothing selected) browses ALL feedback — there is no
  * separate "All" toggle. Selecting categories narrows the list; deselecting
@@ -23,6 +28,11 @@ import { EMPTY_FACETS, FACET_PARAMS, facetEntries, readFacets, toggleFacetValue 
 import type { FacetName, FeedbackFacets, SentimentFacet, UsefulnessFacet } from '../../api/feedbackFacets'
 import type { AttributeFilters, ItemFilterParams } from '../../api/types'
 import { withOwnedParams } from '../../utils/searchParams'
+import { FEEDBACK_TYPE_KEY } from '../../api/feedbackTypes'
+import {
+  ALL_TYPES, readTypeSelection, typeSelectionDims, writeTypeSelection,
+} from '../../components/ReviewTypeFilter/reviewTypeSelection'
+import type { TypeSelection } from '../../components/ReviewTypeFilter/reviewTypeSelection'
 import { ANY_RATING_FILTER } from './types'
 import type { RatingDirection, RatingFilter } from './types'
 
@@ -55,8 +65,10 @@ export interface CategoryFiltersState {
   showUrgentOnly: boolean
   /** Exact `source_channel`, or null for every channel. */
   channel: string | null
-  /** `{dimension key: value}`; every pair must match. */
+  /** `{dimension key: value}` for the configured dimensions (never `feedback_type`); every pair must match. */
   dimensionFilter: Record<string, string>
+  /** The pressed review-type pills; empty = every type. */
+  types: TypeSelection
   /** One tag (matched ignoring case), or null. */
   tag: string | null
 }
@@ -64,9 +76,16 @@ export interface CategoryFiltersState {
 /** Every key of {@link AttributeFilters}, in the order they go on the URL. */
 const ATTRIBUTE_FILTER_KEYS: readonly (keyof AttributeFilters)[] = ['channel', 'dims', 'tag']
 
+/** The `dims` value: the configured dimensions' pairs, then the review types (`key:a|b` cannot go through serializeDims). */
+function dimsOf(state: Pick<CategoryFiltersState, 'dimensionFilter' | 'types'>): string | undefined {
+  const parts = [serializeDims(state.dimensionFilter), typeSelectionDims(state.types)]
+    .filter((part): part is string => part !== undefined)
+  return parts.length === 0 ? undefined : parts.join(',')
+}
+
 /** The `channel` / `dims` / `tag` query parameters of a filter state (absent when unset). */
-export function attributeFiltersOf(state: Pick<CategoryFiltersState, 'channel' | 'dimensionFilter' | 'tag'>): AttributeFilters {
-  const dims = serializeDims(state.dimensionFilter)
+export function attributeFiltersOf(state: Pick<CategoryFiltersState, 'channel' | 'dimensionFilter' | 'types' | 'tag'>): AttributeFilters {
+  const dims = dimsOf(state)
   return {
     ...(state.channel === null ? {} : { channel: state.channel }),
     ...(dims === undefined ? {} : { dims }),
@@ -86,7 +105,7 @@ export function ratingParamsOf(filter: RatingFilter): Pick<ItemFilterParams, 'ra
  * the list shows (5.34.00: rating and urgent changed only the list).
  */
 export function breakdownFiltersOf(
-  state: Pick<CategoryFiltersState, 'channel' | 'dimensionFilter' | 'tag' | 'ratingFilter' | 'showUrgentOnly' | 'selectedUsefulness'>,
+  state: Pick<CategoryFiltersState, 'channel' | 'dimensionFilter' | 'types' | 'tag' | 'ratingFilter' | 'showUrgentOnly' | 'selectedUsefulness'>,
 ): ItemFilterParams {
   return {
     ...attributeFiltersOf(state),
@@ -108,6 +127,7 @@ export interface CategoryFiltersApi extends CategoryFiltersState {
   setShowUrgentOnly: (value: boolean) => void
   setChannel: (value: string | null) => void
   setDimensionFilter: (value: Record<string, string>) => void
+  setTypes: (value: TypeSelection) => void
   setTag: (value: string | null) => void
   clearFilters: () => void
   hasActiveFilters: boolean
@@ -126,15 +146,25 @@ function computeHasActiveFilters(state: CategoryFiltersState): boolean {
 
 /** The URL-synced subset of the filter state. */
 type ShareableFilters = Pick<CategoryFiltersState,
-  'searchText' | 'facets' | 'subcategory' | 'ratingFilter' | 'showUrgentOnly' | 'channel' | 'dimensionFilter' | 'tag'>
+  'searchText' | 'facets' | 'subcategory' | 'ratingFilter' | 'showUrgentOnly' | 'channel' | 'dimensionFilter' | 'types' | 'tag'>
 
 /**
  * Every query key this hook writes (plus the dropped legacy `all`). Anything
  * else in the URL — the review modal's `review` / `reviewBrand` — is kept.
  */
 const OWNED_PARAMS: readonly string[] = [
-  'q', ...Object.values(FACET_PARAMS), 'subcategory', 'rating', 'rating_dir', 'urgent', 'channel', 'dims', 'tag', 'all',
+  'q', ...Object.values(FACET_PARAMS), 'subcategory', 'rating', 'rating_dir', 'urgent', 'channel', 'dims', 'tag', 'types', 'all',
 ]
+
+/**
+ * The configured-dimension pairs and the review types a URL says. `types` wins; without it, an old
+ * link's `dims=feedback_type:<value>` becomes that one pill. `feedback_type` never stays a dimension pair.
+ */
+function readDimsAndTypes(searchParams: URLSearchParams): Pick<ShareableFilters, 'dimensionFilter' | 'types'> {
+  const { [FEEDBACK_TYPE_KEY]: legacyType, ...dimensionFilter } = parseDims(searchParams.get('dims'))
+  // An unknown legacy value reads as every type, like an unreadable `types`.
+  return { dimensionFilter, types: readTypeSelection(searchParams.get('types') ?? legacyType ?? null, ALL_TYPES) }
+}
 
 /** Canonical query string for the URL-synced subset of the filter state. */
 function buildShareableParams(filters: ShareableFilters): URLSearchParams {
@@ -145,11 +175,14 @@ function buildShareableParams(filters: ShareableFilters): URLSearchParams {
   if (filters.ratingFilter.value > 0) params.set('rating', String(filters.ratingFilter.value))
   if (filters.ratingFilter.value > 0 && filters.ratingFilter.direction === 'below') params.set('rating_dir', 'below')
   if (filters.showUrgentOnly) params.set('urgent', '1')
-  const attributes = attributeFiltersOf(filters)
+  // The URL keeps the types as `types` (readable, shareable); only the server request folds them into `dims`.
+  const attributes = attributeFiltersOf({ ...filters, types: ALL_TYPES })
   for (const key of ATTRIBUTE_FILTER_KEYS) {
     const value = attributes[key]
     if (value !== undefined) params.set(key, value)
   }
+  const types = writeTypeSelection(filters.types, ALL_TYPES)
+  if (types !== null) params.set('types', types)
   return params
 }
 
@@ -162,7 +195,7 @@ function readShareableParams(searchParams: URLSearchParams): ShareableFilters {
     ratingFilter: parseRatingParams(searchParams),
     showUrgentOnly: searchParams.get('urgent') === '1',
     channel: nonEmptyParam(searchParams, 'channel'),
-    dimensionFilter: parseDims(searchParams.get('dims')),
+    ...readDimsAndTypes(searchParams),
     tag: nonEmptyParam(searchParams, 'tag'),
   }
 }
@@ -176,10 +209,11 @@ export function useCategoryFilters(): CategoryFiltersApi {
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>(() => parseRatingParams(searchParams))
   const [showUrgentOnly, setShowUrgentOnly] = useState(() => searchParams.get('urgent') === '1')
   const [channel, setChannel] = useState<string | null>(() => nonEmptyParam(searchParams, 'channel'))
-  const [dimensionFilter, setDimensionFilter] = useState<Record<string, string>>(() => parseDims(searchParams.get('dims')))
+  const [dimensionFilter, setDimensionFilter] = useState<Record<string, string>>(() => readDimsAndTypes(searchParams).dimensionFilter)
+  const [types, setTypes] = useState<TypeSelection>(() => readDimsAndTypes(searchParams).types)
   const [tag, setTag] = useState<string | null>(() => nonEmptyParam(searchParams, 'tag'))
   const shareable: ShareableFilters = {
-    searchText, facets, subcategory, ratingFilter, showUrgentOnly, channel, dimensionFilter, tag,
+    searchText, facets, subcategory, ratingFilter, showUrgentOnly, channel, dimensionFilter, types, tag,
   }
 
   // Canonical form of what the URL says vs. what the state says. When they
@@ -202,6 +236,7 @@ export function useCategoryFilters(): CategoryFiltersApi {
       setShowUrgentOnly(fromUrl.showUrgentOnly)
       setChannel(fromUrl.channel)
       setDimensionFilter(fromUrl.dimensionFilter)
+      setTypes(fromUrl.types)
       setTag(fromUrl.tag)
     }
   }
@@ -231,6 +266,7 @@ export function useCategoryFilters(): CategoryFiltersApi {
     setShowUrgentOnly(false)
     setChannel(null)
     setDimensionFilter({})
+    setTypes(ALL_TYPES)
     setTag(null)
   }
 
@@ -253,6 +289,7 @@ export function useCategoryFilters(): CategoryFiltersApi {
     setShowUrgentOnly,
     setChannel,
     setDimensionFilter,
+    setTypes,
     setTag,
     clearFilters,
     hasActiveFilters: computeHasActiveFilters(state),

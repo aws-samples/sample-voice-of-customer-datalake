@@ -15,7 +15,7 @@ import type { DateRangeParams } from '../../api/client'
 import { getProblemTree } from '../../api/problemsApi'
 import type { ProblemTreeResponse } from '../../api/problemsApi'
 import type { ProblemFilters } from './useProblemFilters'
-import { typeSelectionDims } from './feedbackTypes'
+import { typeSelectionDims } from '../../components/ReviewTypeFilter/reviewTypeSelection'
 
 /** How long a tree counts as fresh: the server reads a whole window per request. */
 const TREE_STALE_MS = 5 * 60 * 1000
