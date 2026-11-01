@@ -128,7 +128,8 @@ A first visit to a page pays for the app shell download and for each Lambda's co
   (156 KB) load on demand.
 
 With these, the JavaScript fetched before any page chunk (entry plus `modulepreload`s, measured on a local build)
-went from 1,699 KB to 937 KB (516 → 291 KB gzipped).
+went from 1,699 KB to 937 KB (516 → 291 KB gzipped). On Vite 8 (5.73.00, Rolldown code-splitting groups) it is
+950 KB (293 KB gzipped), against 1,003 KB on the last Vite 7 build.
 
 Pages that already make one round of requests (Participants, Data Explorer) are left with the cold start. Lambda
 SnapStart would cut it to a restore (p50 460–500 ms, measured on the four APIs that support it), but it is a fixed

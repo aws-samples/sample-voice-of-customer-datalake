@@ -30,7 +30,7 @@ current LTS line). The deployed Lambdas and the API do not change.
 - **Frontend build on Vite 8** (Rolldown) with `@vitejs/plugin-react` 6. The vendor chunks of
   `vendorChunks.json` are now Rolldown code-splitting groups: each vendor's first-load part and its lazy part are
   separate chunks (for example `react-dom/server`, used only by the print exports, no longer loads on every first
-  visit). The first-load JavaScript is about 5% smaller (948 KB, 292 KB gzipped); the whole `dist/` is 108 KB larger,
+  visit). The first-load JavaScript is about 5% smaller (950 KB, 293 KB gzipped); the whole `dist/` is 108 KB larger,
   spread over 24 more files.
 - **Frontend libraries**: `i18next` 26, `react-i18next` 17, `lucide-react` 1.66 (same icons), plus in-range
   updates.
