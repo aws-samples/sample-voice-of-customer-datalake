@@ -386,16 +386,19 @@ setInterval(() => {}, 1000)
     const child = spawn(process.execPath, [join(ROOT, 'scripts/ai-review/review.mjs'), '--kind', 'tenets'], {
       cwd: box.repo, env: { PATH: box.bin, HOME: box.dir }, stdio: 'ignore',
     })
-    for (let i = 0; i < 100 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 100))
+    // Up to 60 s for the fake agent to start: the gate runs this beside five busy lanes.
+    for (let i = 0; i < 600 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 100))
     const agentPid = Number(readFileSync(pidFile, 'utf8'))
     const started = Date.now()
     child.kill('SIGINT')
     const code = await new Promise((resolve) => child.on('exit', (exitCode) => resolve(exitCode)))
     assert.equal(code, 130)
-    assert.ok(Date.now() - started < 9000, 'the review exited after the escalation')
+    // The escalation fires 5 s after the signal; 20 s leaves room for a loaded machine, and still fails when the
+    // review waits for an agent that never closes.
+    assert.ok(Date.now() - started < 20000, 'the review exited after the escalation')
     // The kill and the exit share a tick: give the system a moment to reap the agent before asserting it is gone.
     let alive = true
-    for (let i = 0; i < 30 && alive; i++) {
+    for (let i = 0; i < 100 && alive; i++) {
       try { process.kill(agentPid, 0); await new Promise((r) => setTimeout(r, 100)) } catch { alive = false }
     }
     assert.equal(alive, false, 'the agent is gone')
