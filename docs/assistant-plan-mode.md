@@ -150,7 +150,7 @@ The feedback a job reads is pinned with `sources` (optional on `generate_persona
   NFKC-normalised by `ingest_schemas.py`). The connector `app_name: "ExampleAir iOS"` is
   `sources: ["ExampleAir iOS_iOS"]`.
 - A `web_reviews` connector's reviews carry `"web_<site>_<app_name>"`, minted once when the connector is created and
-  stored on it as `source_id` (app name "Example Air" on a `www.trustpilot.com` page is `web_trustpilot_example_air`;
+  stored on it as `source_id` (app_name "Example Air" on a www.trustpilot.com page is `web_trustpilot_example_air`;
   [web-reviews.md](web-reviews.md)). To import reviews from the web, the assistant finds review pages with
   `web_search` (through `plan_lookup`), lists each chosen URL as a literal
   `create_app_connector {source: "web_reviews", url, app_name}` write, then adds `run_source web_reviews` and a
