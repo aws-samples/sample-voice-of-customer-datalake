@@ -31,6 +31,7 @@ import {
   attributeFilterOf, dimensionsConfig, entityExtras, handleDimensionRoutes, seedDimensionFixtures, sourceProfiles,
 } from './mock-dimensions.js';
 import { cursorPage } from './mock-feedback-cursor.js';
+import { corpusFeedback } from './mock-feedback-corpus.js';
 import { problemTree } from './mock-problems.js';
 import { facetedMetric, seedUsefulness, withoutParams } from './mock-facets.js';
 import { callerAccess, handleScopeRoutes, scopeAdmits, scopedCategoriesConfig, scopedMetric } from './mock-scope.js';
@@ -121,9 +122,6 @@ const mockFeedback = [
   },
 ];
 
-seedDimensionFixtures(mockFeedback);
-seedUsefulness(mockFeedback);
-stampBands(mockFeedback);
 
 /**
  * The source / category / sentiment / usefulness lists (mock-facets.js) + `channel` / `dims` /
@@ -152,6 +150,21 @@ const MOCK_CATEGORY_SENTIMENT = {
   returns: { positive: 20, neutral: 10, negative: 15, mixed: 1 },
   other: { positive: 8, neutral: 20, negative: 11, mixed: 2 },
 };
+
+// Per-source totals of `GET /metrics/sources`; they add up to the summary's 1,247 too.
+const MOCK_SOURCE_COUNTS = { webscraper: 523, manual_import: 412, s3_import: 248, github_issues: 64 };
+const MOCK_URGENT_COUNT = 23;
+
+// The generated corpus (mock-feedback-corpus.js) brings the list up to the fixtures, so a page
+// never shows "1,247 reviews" over a list of three. Seeded before the dimension, usefulness and
+// type stamps so every review carries them.
+mockFeedback.push(...corpusFeedback({
+  categorySentiment: MOCK_CATEGORY_SENTIMENT, sourceCounts: MOCK_SOURCE_COUNTS,
+  urgentTotal: MOCK_URGENT_COUNT, handWritten: [...mockFeedback],
+}));
+seedDimensionFixtures(mockFeedback);
+seedUsefulness(mockFeedback);
+stampBands(mockFeedback);
 
 // Mirrors the real API's date_basis semantics (see metrics_handler.py):
 // 'review' filters by source_created_at (when the customer wrote it),
@@ -703,7 +716,7 @@ const handlers = {
     period_days: 7,
     total_feedback: 1247,
     avg_sentiment: 0.12,
-    urgent_count: 23,
+    urgent_count: MOCK_URGENT_COUNT,
     daily_totals: Array.from({ length: 7 }, (_, i) => ({
       date: new Date(Date.now() - i * 86400000).toISOString().split('T')[0],
       count: Math.floor(Math.random() * 200) + 100,
@@ -746,12 +759,7 @@ const handlers = {
   }),
   'GET /metrics/sources': (_body, searchParams) => facetedMetric('sources', searchParams, filterByDateBasis(mockFeedback, searchParams)) ?? ({
     period_days: 7,
-    sources: {
-      webscraper: 523,
-      manual_import: 412,
-      s3_import: 312,
-      github_issues: 64,
-    },
+    sources: { ...MOCK_SOURCE_COUNTS },
   }),
   // GitHub Issues per release / label (lambda/shared/github_metrics.py). One row is
   // deliberately sparse (no sentiment, no lists) so the Zod normalizer in

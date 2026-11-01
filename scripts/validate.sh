@@ -135,7 +135,7 @@ def tsc  frontend,frontend-static           "node: frontend i18n script tests"  
 # Every key the source uses exists in English, and no locale misses/adds keys (untranslated values only warn).
 def tsc  frontend,frontend-static           "node: frontend i18n audit"          'cd "$FRONTEND" && { out="$(node scripts/i18n-check.mjs)" || { printf "%s\n" "$out"; exit 1; }; }'
 # Every fetchApi call site in the SPA has a dev-mock route that answers it (frontend/mock-coverage.json).
-def tsc  frontend,frontend-static           "node: frontend mock coverage"       'cd "$FRONTEND" && node --test scripts/check-mock-coverage.test.mjs && node scripts/check-mock-coverage.mjs'
+def tsc  frontend,frontend-static           "node: frontend mock coverage"       'cd "$FRONTEND" && node --test scripts/check-mock-coverage.test.mjs scripts/mock-corpus.test.mjs scripts/mock-faceted-scope.test.mjs scripts/mock-scope.test.mjs && node scripts/check-mock-coverage.mjs'
 # Duplication across code and tests, whole repo (.jscpd.json: threshold 0). The SPA's
 # assistant/contract.ts and approvals/schemas.ts are excluded there on purpose: they mirror the stream
 # Lambda's contract/allowlists line for line and the *.lockstep.test.ts specs prove they agree.
