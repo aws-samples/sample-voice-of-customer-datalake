@@ -1,14 +1,32 @@
 # Company context, personal objectives and the design system
 
-What the AI surfaces know about the company: its **vision and objectives** (company-wide), each user's
-**own objectives and KPIs**, and the **design system** prototypes must follow. All travel as DATA blocks in the user
-prompt (`<company_context>`, `<design_system>`) — never as system prompt:
+This page covers what the AI features know about your company: its **vision and objectives** (company-wide), each
+user's **own objectives and KPIs**, the **design system** prototypes follow, and the **company personas** projects
+copy from. Everyone can read them; administrators edit the company-wide parts.
+
+## Where to edit them
+
+| What | Where | Who edits |
+|---|---|---|
+| Vision and company objectives | **Company** in the sidebar (Knowledge section, `/company`) → **Vision & objectives** | admins |
+| Design system (tokens, guidelines, components, logo, references) | Company → **Design system** (`/company?tab=design`) | admins |
+| Company personas | Company → **Personas** (`/company?tab=personas`; [project-workspace.md](project-workspace.md#company-personas)) | admins |
+| My objectives and KPIs | **Account → Objectives** (`/account?tab=objectives`) | each user, for themselves |
+| Figma and GitHub tokens for design references | Administration → Sources → Integrations ([below](#getting-the-figma-and-github-tokens)) | admins |
+
+A project's **Product** tab (`/projects/{id}?tab=product`) describes that one product. It shows the company context
+and design system it inherits, read-only, with a link to the Company page.
+
+## How the AI uses them
+
+All of them travel as DATA blocks in the user prompt (`<company_context>`, `<design_system>`), never as system
+prompt:
 
 - **Research, PR/FAQ, PRD, prototypes, personas and agent steps** (shared outputs) get the company vision and
   company objectives — never anyone's own objectives — together with the company memories
   (`lambda/shared/grounding.py`, policy SHARED; see docs/memory.md → "Who recalls what"). Only **prototypes** get
-  the design system: research, PR/FAQs, PRDs and personas never read it (it describes how a prototype looks; in a
-  written document the model took reference summaries for requirements). For a prototype it is a choice: the Build prototype dialog's "Also read"
+  the design system: research, PR/FAQs, PRDs and personas never read it, because it describes how a prototype looks
+  and a written document would otherwise treat reference summaries as requirements. For a prototype it is a choice: the Build prototype dialog's "Also read"
   list has a **Design system** box (on by default when one is set up; disabled with a link to Knowledge → Design
   system when none is), sent as `use_design_system` on `POST /projects/{id}/build-prototype` — absent means on,
   so the agents runtime, the assistant and MCP keep reading it. The prototype's "Built from" footer says when it
@@ -36,7 +54,7 @@ prompt (`<company_context>`, `<design_system>`) — never as system prompt:
 Every editor on the Company page and on Account → Objectives (vision & objectives, design system, my objectives)
 offers **Discard changes** beside Save while it holds unsaved edits: it drops the draft and shows the saved value again.
 
-My objectives & KPIs (Company and Account → Objectives) checks the draft before Save with the server's rules: a row
+My objectives & KPIs (Account → Objectives) checks the draft before Save with the server's rules: a row
 left blank is dropped, any other objective needs a title and any other KPI a name and a target (each text capped as
 on the server). A refused field is marked and explained in place and nothing is sent; a 400 naming a field
 (`objectives[0].kpis[0].target is required`) is shown on that field.
@@ -150,7 +168,7 @@ bytes (`png_check.py`: a PNG, ≤ 2 MB, at least 8 px a side, not fully transpar
 `company-context/design/logo_preview_<ref id>.png`; the logo is recorded as
 `{source_url: <the SVG's URL>, content_type: image/png, rendered: true}` (GET adds `preview_url`). Any failure
 (decode timeout, no size, not a PNG, too large, empty or blank, a CDP error) just means no rendered logo — the
-raster candidate is used as before and the capture is unaffected; the capture log gets one `SVG logo not
+raster candidate is used and the capture is unaffected; the capture log gets one `SVG logo not
 rendered` line with a short reason. The SVG's bytes are downloaded once more through the SSRF-guarded fetch
 (≤ 1 MB, an SVG by its bytes) only to keep the sanitised copy (below); the PNG is still drawn from the URL. **An inline `<svg>` logo**
 (markup in the header, no image URL) is read only when the page names no header logo image: one more evaluate
@@ -164,8 +182,8 @@ logo" (≤ 2 MB, type decided by its bytes) to `company-context/design/logo_prev
 returns `logo.preview_url`, a short-lived signed URL like `logo_url` (the key itself never leaves the API); any
 failure just leaves it absent. A reference's `fetched_at` is the time its read FINISHED, ready or failed.
 
-**Every copy is local (5.48).** The owner's rule is "keep all copies local, do not rely on the web": what a
-reference shows comes from the private raw bucket, and the stored design names a web address only as provenance
+**Every copy is local.** What a reference shows comes from the private raw bucket, so a design never breaks or
+leaks a request when the source site changes; the stored design names a web address only as provenance
 (`source_url`).
 
 - **The sanitised SVG beside the PNG.** Whenever an SVG logo is drawn (a website's header / og-image `.svg`, an
@@ -174,7 +192,7 @@ reference shows comes from the private raw bucket, and the stored design names a
   `logo.svg_preview_url`. It can never run as a document: the object carries `Content-Type: image/svg+xml` and
   `Content-Disposition: attachment`, the signed URL asks S3 for the same two response headers
   (`shared/design_assets.py`), it is served from the bucket's origin, never the app's, and the reference preview
-  offers it only as a **Download SVG** link. The model still reads the PNG. The sanitiser now also carries the file's
+  offers it only as a **Download SVG** link. The model reads the PNG. The sanitiser also carries the file's
   own `<style>` sheet over before dropping it (`shared/design_svg_style.py`): simple `.class` and element rules
   become presentation attributes (a class rule over a type rule, never over the element's own `style`), checked like
   every other attribute, so a tool-exported logo keeps its colours in both the PNG and the copy.
@@ -188,13 +206,13 @@ reference shows comes from the private raw bucket, and the stored design names a
   records `icons: [{kind, sizes, content_type, key, source_url, svg_key?}]`; GET swaps the keys for signed `url` /
   `svg_url`, and the reference preview shows them as thumbnails. Without a bucket nothing is fetched.
 - **Nothing else is hotlinked.** Component snippets already keep `img src` only as a `data:` image and CSS without
-  `url()` (`shared/html_sanitizer.py`, `shared/design_components.py`); the guidelines now lose every remote image
+  `url()` (`shared/html_sanitizer.py`, `shared/design_components.py`); the guidelines lose every remote image
   (`![alt](https://…)` keeps its alt text, an `<img>` tag goes; links stay, nothing loads them). **Fonts are family
   names only:** no font file is ever copied (font licences rarely allow redistribution).
 
 | Kind | How it is read | Runs on |
 |---|---|---|
-| `website` | The AWS-managed AgentCore browser opens the page (one session, at most 120 s). ONE in-page evaluate reads the `:root` custom properties, the computed styles of body/headings/links/buttons/inputs/nav/header/footer/cards, the most-used colours, lengths and fonts, logo candidates (header image, touch icon, `og:image`) and **component samples**: per kind (buttons grouped as filled / outlined / text, links, inputs/textareas/selects, cards with a border or shadow, nav/header, `[role=tab]`, badges/chips/pill spans, tables, dialogs) up to 3 visible, distinct elements with their computed styles in the component keys and a trimmed `outerHTML` (≤ 600), plus the `:hover` / `:focus-visible` rules of same-origin stylesheets (`:hover` cannot be computed; cross-origin sheets are skipped). Filled buttons are sampled one per background (at most two, so an outlined / text button keeps a slot) and named `primary` (a coloured fill), `inverse` (light neutral) or `neutral` (dark): a purple call-to-action and a white nav button are two variants. State rules are read when their selector names a known kind OR a class a sample carries; their `var(--x)` values are resolved through the page's `:root` properties, and a rule goes on a sample only when its SUBJECT (the compound after the last combinator; pseudo-elements excluded) matches that element — all its classes on the element, its tag the element's tag; `.site-nav a:hover` is skipped (the ancestry is unknown). Then ONE vision call with up to THREE screenshots (`lambda/design_capture/page_shots.py`, `shared/design_vision.py`): the page above the fold, the header region (≤ 240 px tall; the top 160 px without a header element) and the footer region (scrolled to, ≤ 600 px tall; skipped when it already sits in the first screen), each clipped and scaled by the browser so the model reads it without resizing it (longest side ≤ 1568 px, ≤ 1.15 megapixels, at most 2×), as PNG when ≤ 1.5 MB and otherwise the same clip as a JPEG at quality 90; the prompt names each image, a header or footer failure only drops that image, and about 2,700 input tokens of images go in for a typical page (≤ 3,550; the single JPEG before was about 1,600). The model returns components grounded in the measured values. **The measured components win over the model's** (`shared/component_overlay.py`, by component name; a variant matches by name, else by background): their styles and focus keys override the model's, their hover REPLACES it (hover is invisible in a screenshot, so only a CSS rule is evidence — a model-guessed hover is dropped), the model's other variants follow (≤ 8), the model's description is kept and a measured snippet fills a missing `example_html`. Spacing tokens never come from layout: the page reports its centring margins (computed left = right > 0, e.g. `margin: auto` around a max-width column) and a spacing value equal to one (± 0.5 px), or a fractional px the page never measured, is dropped (`page_spacing.py`) | `voc-design-capture` (VocIngestionStack, 5 min) |
+| `website` | The AWS-managed AgentCore browser opens the page (one session, at most 120 s). ONE in-page evaluate reads the `:root` custom properties, the computed styles of body/headings/links/buttons/inputs/nav/header/footer/cards, the most-used colours, lengths and fonts, logo candidates (header image, touch icon, `og:image`) and **component samples**: per kind (buttons grouped as filled / outlined / text, links, inputs/textareas/selects, cards with a border or shadow, nav/header, `[role=tab]`, badges/chips/pill spans, tables, dialogs) up to 3 visible, distinct elements with their computed styles in the component keys and a trimmed `outerHTML` (≤ 600), plus the `:hover` / `:focus-visible` rules of same-origin stylesheets (`:hover` cannot be computed; cross-origin sheets are skipped). Filled buttons are sampled one per background (at most two, so an outlined / text button keeps a slot) and named `primary` (a coloured fill), `inverse` (light neutral) or `neutral` (dark): a purple call-to-action and a white nav button are two variants. State rules are read when their selector names a known kind OR a class a sample carries; their `var(--x)` values are resolved through the page's `:root` properties, and a rule goes on a sample only when its SUBJECT (the compound after the last combinator; pseudo-elements excluded) matches that element — all its classes on the element, its tag the element's tag; `.site-nav a:hover` is skipped (the ancestry is unknown). Then ONE vision call with up to THREE screenshots (`lambda/design_capture/page_shots.py`, `shared/design_vision.py`): the page above the fold, the header region (≤ 240 px tall; the top 160 px without a header element) and the footer region (scrolled to, ≤ 600 px tall; skipped when it already sits in the first screen), each clipped and scaled by the browser so the model reads it without resizing it (longest side ≤ 1568 px, ≤ 1.15 megapixels, at most 2×), as PNG when ≤ 1.5 MB and otherwise the same clip as a JPEG at quality 90; the prompt names each image, a header or footer failure only drops that image, and about 2,700 input tokens of images go in for a typical page (≤ 3,550). The model returns components grounded in the measured values. **The measured components win over the model's** (`shared/component_overlay.py`, by component name; a variant matches by name, else by background): their styles and focus keys override the model's, their hover REPLACES it (hover is invisible in a screenshot, so only a CSS rule is evidence — a model-guessed hover is dropped), the model's other variants follow (≤ 8), the model's description is kept and a measured snippet fills a missing `example_html`. Spacing tokens never come from layout: the page reports its centring margins (computed left = right > 0, e.g. `margin: auto` around a max-width column) and a spacing value equal to one (± 0.5 px), or a fractional px the page never measured, is dropped (`page_spacing.py`) | `voc-design-capture` (VocIngestionStack, 5 min) |
 | `github` | ONE `git/trees/{ref}?recursive=1` call ranks the whole tree: token files, Tailwind v4 theme/palette CSS, font faces, Tailwind configs, entry CSS, design docs and `.kiro/steering/*design*` (up to 12 files × 20k; the README only when nothing else exists). CSS custom properties are parsed without a model. Up to 8 UI component sources are read too (`components/ui.tsx`, then `components/ui/{button,input,card,badge,tabs,dialog,select,…}.*`; a source that fails is skipped): `cva()` variant maps, class-string maps and `a ? '…' : '…'` chains become variants, and the common Tailwind utilities are resolved to the parsed tokens without a model (`bg-accent` → the accent colour, `rounded-lg` → `--radius-lg` or 0.5rem, `px-4` → 16px, `text-sm`, `font-semibold`, `w-9` → 36px, `shadow-[…var(--x)]`, `hover:`; `shared/tailwind_components.py`). `shadow-sm` / `shadow` / `shadow-2xl` take the repository's own `--shadow-sm` / `--shadow` / `--shadow-2xl` when it defines one (resolved through its `var()`s), Tailwind v4's default otherwise; `color-mix(in srgb|oklch, …)` with literal colours and `transparent` is computed to an `rgba()` / `#hex` (`shared/css_color_mix.py`; anything else is kept as written). Plain CSS component classes are read the same
 way (`shared/css_component_rules.py`): `.btn { @apply …; }`, `.btn-ghost { background: …; color: var(--x) }`,
 `.btn-primary:not(:disabled):hover`, `.input:focus-visible { outline: …; border-color: …; box-shadow: … }` (the whole focus ring), `.badge-ok` … `.badge-aim` (every tone a variant), `.tab-active`,
@@ -209,7 +227,7 @@ themes (`[data-theme="…"]`, `:root[data-mode=light]`, `html.dark` / `.dark`, `
 are kept as a `## Theme variants (read from the CSS)` section of `guidelines_md`: per theme a table of every
 colour token whose value differs from the default (`shared/css_theme_modes.py`), which the generators read with
 the rest of the guidelines. A text call then returns the components in the shape above; **the parsed components win over its version** the same way as a website's measured ones (`shared/component_overlay.py`). Logo: the best `*logo*` PNG/WebP (a `raw.githubusercontent.com` URL) | `voc-settings-assist` |
-| `figma`, `html`, `screenshot` | As before, but the model now answers with the structured design too (HTML also has its CSS custom properties parsed) | `voc-settings-assist` |
+| `figma`, `html`, `screenshot` | One model call reads the Figma file, the uploaded HTML or the screenshot and answers with the summary and the structured design (HTML also has its CSS custom properties parsed) | `voc-settings-assist` |
 
 **Security of the live-website path.** The URL must be https and passes the SSRF guard (`shared/url_policy.py`
 `validate_url`: resolved, every address public) when the reference is created and again in the worker. After
@@ -227,7 +245,7 @@ failure a `reason` code and the `http_status`. Page text and statistics reach th
 and returns the draft without saving: a token with the same name (role, for typography) is replaced in place,
 new ones are appended up to 40 per group; components merge by name the same way (same name — any case —
 replaced, new appended, ≤ 30); the guidelines gain a `## From <reference title>` section with the reference's own
-guidelines (or take them as they are when there are none yet) — components are no longer listed there. `changes`
+guidelines (or take them as they are when there are none yet). `changes`
 counts `{added, replaced}` per token group and for `components`, plus `guidelines_added`. The admin reviews it in the editor and saves with the usual
 `PUT /settings/design-system`. 409 when the reference has no extracted design yet or is archived.
 
@@ -269,7 +287,7 @@ VocApiStack).
 ## Getting the Figma and GitHub tokens
 
 Administration → Sources → Integrations (`/admin?tab=sources&section=integrations`) carries the same steps in-page (a "Setup help"
-disclosure per token, in every locale). Summary, checked against the providers' docs:
+disclosure per token, in every locale). Summary:
 
 | Token | Needed for | Where to create it | Grant | Sent only to |
 |---|---|---|---|---|
@@ -284,34 +302,3 @@ the token was not granted). Fix it and click **Fetch again**. Both tokens act as
 expiry, rotate before it lapses, and revoke at the provider if one leaks. The design-system GitHub token is
 separate from the GitHub Issues data-source token ([github-issues.md](github-issues.md)); do not reuse one for
 the other.
-
-## Navigation proposal (for the frontend tracks)
-
-Company context, memory, the design system and a project's **Product** tab (`/projects/{id}?tab=product`) all
-answer one question — what does the AI know about our company and product — so they belong together. Settings is
-reduced to administration.
-
-| Section | Items | Who |
-|---|---|---|
-| Insights | Dashboard, Categories, Problems, Prioritization | all |
-| Ideation | Projects, **Autonomous agents**, AI chat | all (agent writes: admins) |
-| **Knowledge** (new) | **Memory** (Company · Personal · Needs review · Imports), **Company** (vision, objectives — read for all, edit admins), **Design system** (read for all, edit admins), **My objectives & KPIs** | all; review tab admins + memory reviewers |
-| Data | Data explorer (admins), Scrapers, Feedback forms | as today |
-| Settings | Administration (5.09 tabs): General, Sources (data sources, integrations incl. Figma/GitHub tokens, email inbox, Radar), Taxonomy, Privacy & access (source policies, users incl. the two flags), AI models, System · Account: profile, **Connect AI tools** | Administration: admins; Account: everyone |
-
-A project's **Product** tab stays per project (it describes that product: the description, filled by hand or by the AI assistant's guided interview, docs, report) but shows the
-company context and design system it inherits, read-only, with a link to Knowledge — and can promote its findings
-to company memory through `POST /memory/imports`.
-
-## One MCP connection for the whole app
-
-> Built: the global MCP on **Connect** ([mcp.md](mcp.md)). The per-project MCP tab has since been removed;
-> the project header links to Connect with the project pre-selected. The original proposal follows.
-
-A project's **MCP** tab (`/projects/{id}?tab=mcp`) used to mint a token for that project. Proposal: one per-user MCP
-endpoint for the whole software under Account → **MCP tokens** (`/account?tab=access`, shipped), whose tools follow the user's own
-access (projects by membership, reviews by category access, memory by scope) — the same delegated-principal model
-the MCP and agent identities already use (never admin, capped at editor). The project tab becomes a shortcut that
-pre-selects that project. Alongside the token, the page offers a downloadable **skill** (a link + instructions) so
-Claude Cowork, GitHub Copilot or Amazon Quick can open it, connect over MCP and work from outside. Infra impact: the
-MCP Lambda's delegation list (today metrics + projects) would gain the memory and agents APIs.
