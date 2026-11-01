@@ -226,7 +226,7 @@ class TestTheAverageRebucketCountsBothHalves:
             name=handler.DECLINED_METRIC, unit='Count', value=1)
 
 
-class TestEveryWireTypeIsDeserialized:
+class TestThePowertoolsImageIsCopied:
     """Powertools deserializes the wire format; deserialize_image keeps what it hands over."""
 
     def test_each_wire_type_arrives_as_its_value(self):
