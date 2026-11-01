@@ -82,6 +82,7 @@ class TestWithAccess:
 
         assert row['access']['status'] == 'unknown'
 
+    @pytest.mark.timing  # bounds its own running time (docs/coverage-gate.md)
     def test_a_read_still_running_at_the_budget_answers_unknown_without_holding_the_answer(
         self, bedrock, monkeypatch,
     ):
