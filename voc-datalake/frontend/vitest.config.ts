@@ -36,7 +36,8 @@ export default defineConfig({
         'node_modules/',
         'dist/',
         'public/',
-        'src/test/',
+        // A glob: Vitest 5 no longer reads a bare directory ('src/test/') as everything under it.
+        'src/test/**',
         '**/*.d.ts',
         '**/*.config.*',
         '**/main.tsx',
