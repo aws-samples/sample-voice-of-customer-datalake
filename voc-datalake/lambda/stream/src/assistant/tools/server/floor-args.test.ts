@@ -39,6 +39,13 @@ describe('floorQuery', () => {
     expect(() => floorQuery(floorFromFilters({ usefulness: 'high' }), {}, 'list_feedback', LIST_FIELDS)).toThrow(/usefulness/);
   });
 
+  it('answers empty, never a refusal or a call, for a floor that admits nothing (a refused chat scope)', () => {
+    const refused = floorFromFilters({ sentiment: 'none' });
+    const metricsFields = new Set(['source', 'channel', 'tag', 'dims', 'rating', 'urgent'] as const);
+    expect(floorQuery(refused, {}, 'get_metrics', metricsFields).kind).toBe('empty');
+    expect(floorQuery(refused, {}, 'list_feedback', LIST_FIELDS).kind).toBe('empty');
+  });
+
   it('answers empty for an argument outside the floor (intersected, not obeyed)', () => {
     const outcome = floorQuery(floorFromFilters({ source: 'webscraper' }), { source: 'manual_import' }, 'list_feedback', LIST_FIELDS);
     expect(outcome.kind).toBe('empty');

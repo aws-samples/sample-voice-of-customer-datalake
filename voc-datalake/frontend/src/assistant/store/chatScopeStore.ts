@@ -9,10 +9,14 @@
  * @module assistant/store/chatScopeStore
  */
 import { create } from 'zustand'
-import { MAX_PAGE_FILTER_CHARS, chatScopeSchema } from '../contract'
-import type { ChatScope, PAGE_FILTER_KEYS } from '../contract'
+import { PAGE_FILTER_KEYS, boundedFilterValue, chatScopeSchema } from '../contract'
+import type { ChatScope } from '../contract'
 
 export type ScopeFilterKey = (typeof PAGE_FILTER_KEYS)[number]
+
+function isFilterKey(key: string): key is ScopeFilterKey {
+  return PAGE_FILTER_KEYS.some((known) => known === key)
+}
 export type ScopeFilters = Partial<Record<ScopeFilterKey, string>>
 
 interface ChatScopeState {
@@ -51,9 +55,9 @@ export function useScopeFilters(threadId: string): ScopeFilters {
  */
 export function chatScopeFor(threadId: string): ChatScope {
   const filters = useChatScopeStore.getState().byThread[threadId] ?? NO_FILTERS
-  // Each value is cut to the contract bound, like page.filters: a cut list only narrows the floor,
-  // while dropping the filters would send a run with none (fail open).
-  const bounded = Object.fromEntries(Object.entries(filters).map(([key, value]) => [key, value.slice(0, MAX_PAGE_FILTER_CHARS)]))
+  // Each value is cut to its key's bound, like page.filters (a facet list after its last whole value, so
+  // the cut only narrows); dropping the filters instead would send a run with none (fail open).
+  const bounded = Object.fromEntries(Object.entries(filters).map(([key, value]) => [key, isFilterKey(key) ? boundedFilterValue(key, value) : value]))
   const parsed = chatScopeSchema.safeParse(Object.keys(bounded).length > 0 ? { filters: bounded } : {})
   return parsed.success ? parsed.data : REFUSED_SCOPE
 }

@@ -11,7 +11,7 @@
  */
 import { matchPath } from 'react-router-dom'
 import { reviewFromSearch } from '../../hooks/useReviewModal'
-import { MAX_ID_LENGTH, MAX_PAGE_FILTER_CHARS } from '../contract'
+import { MAX_ID_LENGTH, boundedFilterValue } from '../contract'
 import type { PAGE_FILTER_KEYS, PageContext, PageKind } from '../contract'
 
 interface PagePattern {
@@ -86,7 +86,7 @@ const PAGE_FILTERS: Partial<Record<PageKind, readonly PageFilterKey[]>> = {
 function filtersFrom(kind: PageKind, search: string): PageContext['filters'] {
   const params = new URLSearchParams(search)
   const entries: [PageFilterKey, string][] = (PAGE_FILTERS[kind] ?? []).flatMap((key): [PageFilterKey, string][] => {
-    const value = params.get(key)?.trim().slice(0, MAX_PAGE_FILTER_CHARS) ?? ''
+    const value = boundedFilterValue(key, params.get(key)?.trim() ?? '')
     return value === '' ? [] : [[key, value]]
   })
   return entries.length === 0 ? undefined : Object.fromEntries(entries)

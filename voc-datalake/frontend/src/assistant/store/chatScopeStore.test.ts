@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { buildForwardedProps } from '../agui/forwardedProps'
 import { REFUSED_SCOPE, chatScopeFor, useChatScopeStore } from './chatScopeStore'
-import { CHAT_SCOPE_MAX_ITEMS, MAX_PAGE_FILTER_CHARS } from '../contract'
+import { CHAT_SCOPE_MAX_ITEMS, MAX_FACET_FILTER_CHARS, MAX_PAGE_FILTER_CHARS } from '../contract'
 import type { ChatScope, PageContext } from '../contract'
 
 const CHAT: PageContext = { kind: 'chat', path: '/chat' }
@@ -28,6 +28,15 @@ describe('chatScopeStore', () => {
   it('cuts an overlong value to the bound instead of dropping the floor', () => {
     useChatScopeStore.getState().setFilters('a', { tag: 'x'.repeat(MAX_PAGE_FILTER_CHARS + 1) })
     expect(chatScopeFor('a')).toStrictEqual({ filters: { tag: 'x'.repeat(MAX_PAGE_FILTER_CHARS) } })
+  })
+
+  it('cuts an overlong facet list after its last whole value, never inside one', () => {
+    const whole = Array.from({ length: 50 }, (_, n) => `${'c'.repeat(125)}${String(n).padStart(3, '0')}`)
+    const tooLong = [...whole, 'delivery-late'].join(',') + 'x'.repeat(MAX_FACET_FILTER_CHARS)
+    useChatScopeStore.getState().setFilters('a', { category: tooLong })
+    const sent = chatScopeFor('a').filters?.category ?? ''
+    expect(sent.length).toBeLessThanOrEqual(MAX_FACET_FILTER_CHARS)
+    expect(sent.split(',').every((value) => whole.includes(value))).toBe(true)
   })
 
   it('carries a full 50-value category list whole', () => {

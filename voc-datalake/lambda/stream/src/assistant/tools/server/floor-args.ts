@@ -168,6 +168,9 @@ export function floorQuery(
   tool: string,
   supported: ReadonlySet<RouteFloorField>,
 ): FloorQueryOutcome {
+  // A field whose allowed list is empty admits nothing (two floors that exclude each other, or a scope
+  // the contract refused): answer empty before asking whether the route could filter on it.
+  if (Object.values(floor.lists).some((allowed) => allowed.length === 0)) return emptyOutcome(floor, args);
   checkSupported(floor, tool, supported);
   const query: FloorQuery = {};
   for (const field of QUERY_LIST_FIELDS) {

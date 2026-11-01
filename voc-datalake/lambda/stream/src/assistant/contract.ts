@@ -314,15 +314,45 @@ export const PAGE_FILTER_KEYS = [
   'q', 'category', 'subcategory', 'source', 'sentiment', 'usefulness', 'rating', 'rating_dir', 'urgent', 'channel', 'dims',
   'tag', 'resolved', 'similarity',
 ] as const;
+/** Free-text and scalar filter values (`q`, `tag`, `dims`, `rating`, …): at most this many characters. */
+export const MAX_PAGE_FILTER_CHARS = 200;
+/** The comma-list facets the read routes take as any-of (shared/item_facets.py). */
+export const FACET_FILTER_KEYS = ['source', 'category', 'subcategory', 'sentiment', 'usefulness'] as const;
+const FACET_KEYS: ReadonlySet<string> = new Set(FACET_FILTER_KEYS);
 /**
- * The longest filter value: a full facet list, MAX_FACET_VALUES (50) values of MAX_FACET_VALUE_CHARS
- * (128) plus their commas (shared/item_facets.py; pinned by page-filters.test.ts). A shorter bound let an
- * on-screen list fail the contract, and a filter set that fails it must never reach the run as no floor.
+ * The longest facet value: a full list, MAX_FACET_VALUES (50) values of MAX_FACET_VALUE_CHARS (128) plus
+ * their commas (shared/item_facets.py; pinned by test_page_filter_bound_lockstep.py). A shorter bound let an
+ * on-screen list fail the contract; only the facets get it, so free text stays short in every turn's context.
  */
-export const MAX_PAGE_FILTER_CHARS = 6500;
+export const MAX_FACET_FILTER_CHARS = 6500;
+
+/**
+ * `value` within its key's bound. A facet list is cut after its last whole value (a cut inside a value
+ * could leave a shorter name that matches another category); other values are cut at the bound.
+ */
+export function boundedFilterValue(key: (typeof PAGE_FILTER_KEYS)[number], value: string): string {
+  const max = maxFilterChars(key);
+  if (value.length <= max) return value;
+  const cut = value.slice(0, max);
+  if (!FACET_KEYS.has(key)) return cut;
+  const lastComma = cut.lastIndexOf(',');
+  return lastComma > 0 ? cut.slice(0, lastComma) : '';
+}
+
+/** The bound of one filter key's value. */
+export function maxFilterChars(key: (typeof PAGE_FILTER_KEYS)[number]): number {
+  return FACET_KEYS.has(key) ? MAX_FACET_FILTER_CHARS : MAX_PAGE_FILTER_CHARS;
+}
+
+const facetValue = z.string().min(1).max(MAX_FACET_FILTER_CHARS).optional();
+const textValue = z.string().min(1).max(MAX_PAGE_FILTER_CHARS).optional();
 
 /** One filter set in the PAGE_FILTER_KEYS vocabulary: a page's URL filters, or the /chat panel's scope. */
-export const pageFiltersSchema = z.partialRecord(z.enum(PAGE_FILTER_KEYS), z.string().min(1).max(MAX_PAGE_FILTER_CHARS));
+export const pageFiltersSchema = z.object({
+  q: textValue, category: facetValue, subcategory: facetValue, source: facetValue, sentiment: facetValue,
+  usefulness: facetValue, rating: textValue, rating_dir: textValue, urgent: textValue, channel: textValue,
+  dims: textValue, tag: textValue, resolved: textValue, similarity: textValue,
+}).strict();
 
 /**
  * The /chat filter panel (docs/assistant-chat-scope.md): `filters` is a hard floor on every

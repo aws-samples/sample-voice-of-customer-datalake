@@ -2,8 +2,8 @@
 
 `shared/item_facets.py` lets one facet carry ``MAX_FACET_VALUES`` values of up to
 ``MAX_FACET_VALUE_CHARS`` each (the Categories page and the /chat panel send them as one
-comma list). The assistant contract (`MAX_PAGE_FILTER_CHARS`, in the stream Lambda and its
-SPA mirror) bounds each `page.filters` / `scope.filters` value. A bound below the longest list
+comma list). The assistant contract (`MAX_FACET_FILTER_CHARS`, in the stream Lambda and its
+SPA mirror) bounds each facet value of `page.filters` / `scope.filters`. A bound below the longest list
 made an on-screen filter fail the contract, and a scope the contract refuses must never reach
 a run as no floor at all (PR #505 review). Same pattern as `test_lookback_window_lockstep.py`:
 parse the TypeScript source and assert the property.
@@ -19,12 +19,12 @@ CONTRACTS = (
     'lambda/stream/src/assistant/contract.ts',
     'frontend/src/assistant/contract.ts',
 )
-_BOUND = re.compile(r'^export const MAX_PAGE_FILTER_CHARS = (\d[\d_]*);?$', re.MULTILINE)
+_BOUND = re.compile(r'^export const MAX_FACET_FILTER_CHARS = (\d[\d_]*);?$', re.MULTILINE)
 
 
 def _bound(path: str) -> int:
     match = _BOUND.search((repo_root() / path).read_text(encoding='utf-8'))
-    assert match is not None, f'MAX_PAGE_FILTER_CHARS not found in {path}: renamed or no longer a literal'
+    assert match is not None, f'MAX_FACET_FILTER_CHARS not found in {path}: renamed or no longer a literal'
     return int(match.group(1).replace('_', ''))
 
 
