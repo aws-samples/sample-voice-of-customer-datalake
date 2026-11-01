@@ -17,6 +17,24 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.73.01] - 2026-11-01
+
+TENETS.md now describes the code as it is, and four tenets say what was decided about erasure, AI modes, Gold and the one KMS key.
+
+### Changed
+
+- **Tenet 3**: the three ways of working (Human-driven, AI-assisted, AI-driven) apply to writing the PR/FAQ and the PRD; an AI may not file that text under another document type. Personas, research and prototypes are AI-backed in every mode, and ingestion, browsing, metrics and hand-written documents work without a model ([TENETS.md](TENETS.md#3-teach-before-you-accelerate-ai-is-a-dial-not-a-dependency)).
+- **Tenet 7**: one customer-managed KMS key (about $1 a month) is the accepted fixed-cost baseline, because tenet 6 ranks higher.
+- **D1**: an item received again with new content is stored as a new raw version next to the old one.
+- **D2**: Gold is derived data only; configuration, access rules, votes, the documents people write and the audit trail are primary data, kept and protected. A *redact* or *summary only* source keeps no unredacted copy (privacy over a full Bronze copy).
+- **D5**: customer data (raw items and the feedback derived from them) is deleted only for a legal obligation, an erasure request or a declared retention limit, each with its legal basis, logged and tombstoned. Workspace artifacts (projects, personas, documents, boards, lists, conversations) are deleted when their owner deletes them, and the deletion is recorded.
+- **Where the platform stands today** lists the gaps found by a full audit of the code against every tenet: Bronze files are overwritten on re-ingest and old versions expire after 90 days, the missing raw copies and connector version, the methodology and AI-mode gaps, MCP coverage, the delete permissions, `protectData` off by default, and the KMS keys and secrets the cost guard does not count. The enforcement section no longer claims that only `voc-retention` holds a delete permission, or that the AI-mode check covers every path.
+- The reviewer prompts (`.kiro/steering/tenets.md`, `.kiro/agents/prompts/security-reviewer.md`) and [docs/source-policies.md](docs/source-policies.md#retention-and-erasure) follow the new D5 and tenet 3 wording.
+
+### Fixed
+
+- The steering notes no longer describe the raw bucket as immutable, and give the global MCP token expiry as 1–90 days (it was written as up to 365).
+
 ## [5.73.00] - 2026-11-01
 
 The build and test toolchain moves to TypeScript 6, Vite 8, Vitest 5 and ESLint 10, and CI to Node 26 (the

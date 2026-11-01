@@ -189,7 +189,7 @@ voice-of-customer-datalake/       # Root repository
 
 | Bucket | Structure | Purpose |
 |--------|-----------|---------|
-| `voc-raw-data-{account}-{region}` | `raw/{source}/{year}/{month}/{day}/{id}.json` | Raw scraped/ingested data archival — immutable, never deleted while the platform runs; bucket deleted with the stack |
+| `voc-raw-data-{account}-{region}` | `raw/{source}/{year}/{month}/{day}/{id}.json` | Raw scraped/ingested data archival — never deleted while the platform runs outside `voc-retention` (but NOT yet write-once: an item received again overwrites its file, see TENETS.md → D1); bucket deleted with the stack unless `protectData` |
 | `voc-raw-data-{account}-{region}` | `avatars/{project_id}/{persona_id}.png` | AI-generated persona avatars |
 
 ### DynamoDB Tables
@@ -659,7 +659,7 @@ fails the import.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/mcp/global` | global MCP token | JSON-RPC MCP server for the whole app (throttled 20 rps / 40); acts as the minting user — their project + category access, never admin, ≤ editor |
-| GET/POST | `/connect/tokens` | Cognito | List my tokens / mint one (`read` or `write` scope, expiry ≤ 365 days, optional project pin) |
+| GET/POST | `/connect/tokens` | Cognito | List my tokens / mint one (`read` or `write` scope, expiry 1–90 days, optional project pin) |
 | GET | `/connect/tokens/{token_id}` | Cognito | One token and its audit log (tool, time, project, outcome — never arguments) |
 | DELETE | `/connect/tokens/{token_id}` | Cognito | Revoke (soft; the row is kept) |
 
