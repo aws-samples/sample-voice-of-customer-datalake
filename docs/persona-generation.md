@@ -1,19 +1,24 @@
 # Persona generation: add or replace
 
-`POST /projects/{id}/personas/generate` starts a background job (the persona-generator Lambda) that writes
-personas from the feedback in scope. Since #353 a run either **adds** personas next to the project's current
-ones or **replaces** them. Both modes stay explicit, because guessing wrong would destroy personas someone
-reviewed.
+Persona generation writes a project's personas from the feedback in scope. A run either **adds** personas
+next to the project's current ones or **replaces** them. The mode is always explicit, because guessing wrong
+would destroy personas someone reviewed. `POST /projects/{id}/personas/generate` starts the run as a background
+job (the persona-generator Lambda); the project page, the AI assistant and the autonomous agents all call it.
+How to pick the feedback a run reads is in [project-workspace.md](project-workspace.md#which-feedback-a-generation-reads).
 
 ## The request field
 
 | `keep_existing_personas` | Mode | What happens to the current personas |
 |---|---|---|
-| absent / `false` (API default, unchanged) | replace | Deleted, with their avatar objects, just before the new set is saved, so a re-run never piles up duplicates (`_clear_existing_personas`). |
+| absent / `false` (API default) | replace | Deleted, with their avatar objects, just before the new set is saved, so a re-run never piles up duplicates (`_clear_existing_personas`, `shared/persona_replace.py`). A **protected** persona is kept, and the model is told about it. |
 | `true` | add | Kept untouched, including any edits and avatars. The new personas are saved beside them. |
 
 Any other value is a 400 (`keep_existing_personas must be true or false, got str`). `persona_count` on the
 project is recounted from its rows after every save, so it is right in both modes.
+
+Protect a persona on its card in the project (`PUT /projects/{id}/personas/{persona_id}/protection
+{protected: true|false}`) to keep it through replace runs. Each delete is conditional on the row still being
+unprotected, so a persona protected while a run is under way survives.
 
 ## Who sends what
 
@@ -27,14 +32,14 @@ project is recounted from its rows after every save, so it is right in both mode
   the project's N existing personas". An approved plan step builds the same request (`write-requests-project.ts`).
 - **Autonomous agents** always add (`lambda/agents/nodes/generate_personas.py`), see
   [autonomous agents](autonomous-agents.md).
-- **API and scripts**: unchanged. Without the field a run replaces.
+- **API and scripts**: without the field a run replaces.
 
 ## How additive runs avoid repeating the kept personas
 
 The model gets two blocks of quoted data (any DATA-block tag defanged), on the plan step and on every
 per-persona call:
 
-1. **Names already used** (every mode, #240). The newest 30 names, each cut to 60 characters, which the
+1. **Names already used** (every mode). The newest 30 names, each cut to 60 characters, which the
    model must not reuse.
 2. **Personas this project keeps** (add mode only, `lambda/shared/persona_overlap.py`). A short
    projection of each kept persona: name, tagline, occupation, primary goal and the first two pain points,
