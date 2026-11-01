@@ -15,18 +15,22 @@ The settings role already holds that action (account-level, ``*``; lib/stacks/ap
 """
 from __future__ import annotations
 
-import os
-import time
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import Final
+
+import boto3
 
 from shared.image_model_status import ImageAccess, image_access
 from shared.model_capacity import ModelCapacity
+from shared.model_config import GLOBAL_PROFILE_PREFIX
 
-# The reads are sequential (one boto3 client, cached per region); past this many seconds the
-# remaining rows answer `unknown` at once, so a slow Bedrock control plane cannot hold the
-# settings Lambda (30 s) for every model in turn. The next request reads them (cache: 5 min).
+# The reads run side by side; whatever has not answered after this many seconds reads `unknown`
+# (the next request reads it again; the cache keeps answers 5 minutes). That bounds the whole call,
+# also a read that hangs in botocore's own connect/read timeouts, well inside the settings Lambda's
+# 30 s.
 ACCESS_BUDGET_SECONDS: Final = 8.0
-_PROFILE_PREFIX: Final = 'global.'
+MAX_PARALLEL_READS: Final = 8
+DEFAULT_REGION: Final = 'us-east-1'
 
 
 class ModelCapacityWithAccess(ModelCapacity):
@@ -36,28 +40,35 @@ class ModelCapacityWithAccess(ModelCapacity):
 def foundation_model_id(model_id: str) -> str:
     """The foundation-model id of an allowlisted inference profile (``global.`` stripped), the id
     the agreement is on (lib/utils/model-allowlist.ts ``toFoundationModelId``)."""
-    return model_id.removeprefix(_PROFILE_PREFIX)
+    return model_id.removeprefix(GLOBAL_PROFILE_PREFIX)
 
 
 def app_region() -> str:
     """The region the deploy created the Claude agreements in: the Lambda's own."""
-    return os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION') or 'us-east-1'
+    return boto3.session.Session().region_name or DEFAULT_REGION
 
 
 def _unread() -> ImageAccess:
-    """A row past the budget: not read this time (``checked_at`` empty)."""
+    """A row not read within the budget (``checked_at`` empty)."""
     return {'status': 'unknown', 'agreement': '', 'authorization': '', 'entitlement': '',
             'region_availability': '', 'checked_at': ''}
 
 
 def with_access(rows: list[ModelCapacity]) -> list[ModelCapacityWithAccess]:
     """``rows`` with each model's ``access`` (status ``available | no_access | not_subscribed |
-    not_in_region | unknown``). Never raises."""
+    not_in_region | unknown``). Never raises; returns within about ACCESS_BUDGET_SECONDS."""
+    if not rows:
+        return []
     region = app_region()
-    deadline = time.monotonic() + ACCESS_BUDGET_SECONDS
-    result: list[ModelCapacityWithAccess] = []
-    for row in rows:
-        model_id = foundation_model_id(row['model_id'])
-        access = image_access(model_id, region) if time.monotonic() < deadline else _unread()
-        result.append({'model_id': row['model_id'], 'label': row['label'], 'quota': row['quota'], 'access': access})
-    return result
+    pool = ThreadPoolExecutor(max_workers=min(len(rows), MAX_PARALLEL_READS))
+    futures = [pool.submit(image_access, foundation_model_id(row['model_id']), region) for row in rows]
+    wait(futures, timeout=ACCESS_BUDGET_SECONDS)
+    # A read still running is abandoned, not awaited: the answer must not wait for it.
+    pool.shutdown(wait=False, cancel_futures=True)
+    return [{**row, 'access': _answer(future)} for row, future in zip(rows, futures, strict=True)]
+
+
+def _answer(future: Future[ImageAccess]) -> ImageAccess:
+    if not future.done() or future.cancelled() or future.exception() is not None:
+        return _unread()
+    return future.result()

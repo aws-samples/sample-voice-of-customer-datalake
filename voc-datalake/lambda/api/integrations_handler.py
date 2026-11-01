@@ -27,6 +27,7 @@ from shared.plugin_circuit import clear_circuit, closed_circuit, read_circuits
 from shared.plugin_identity import PLUGIN_IDENTIFIER_RULES, is_valid_plugin_identifier
 from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_body_value, json_object_body
+from shared.scraper_limits import scraper_list_error
 from shared.snapstart import api_route_warmer, botocore_model_warmer, register_snapshot_hooks
 from shared.timestamps import now_iso
 from shared.url_policy import scraper_url_error, validate_url
@@ -139,18 +140,21 @@ def _validate_credential_key(key: object) -> None:
         )
 
 
-#: The credentials key the webscraper ingestor reads its scraper list from (``webscraper_configs``).
 WEBSCRAPER_SOURCE = 'webscraper'
+#: The credentials key the webscraper ingestor reads its scraper list from (``webscraper_configs``).
 WEBSCRAPER_CONFIGS_KEY = 'configs'
 
 
 def _validate_webscraper_configs(source: str, body: dict) -> None:
-    """Refuse a ``webscraper`` ``configs`` value whose scrapers would fetch a blocked URL.
+    """Refuse a ``webscraper`` ``configs`` value that is too large or whose scrapers would fetch a
+    blocked URL.
 
-    ``POST /scrapers`` checks every URL it saves (``shared.url_policy.scraper_url_error``,
-    #244); this route writes the same ``webscraper_configs`` value, so it applies the same check
-    (and the ingestor still re-checks each URL at fetch time). An empty value is skipped below,
-    like any other key.
+    ``POST /scrapers`` bounds what it stores (``shared.scraper_limits``) and checks every URL
+    (``shared.url_policy.scraper_url_error``, #244); this route writes the same
+    ``webscraper_configs`` value, so it applies the list bounds first (cheap, so the per-URL DNS
+    checks run over a bounded list) and then the URL policy. The ingestor still re-checks each URL
+    at fetch time. An empty value is skipped below, like any other key. ``source`` has already
+    passed ``_validate_source_parameter`` (lowercase only).
     """
     raw = body.get(WEBSCRAPER_CONFIGS_KEY) if source == WEBSCRAPER_SOURCE else None
     if not raw:
@@ -159,8 +163,9 @@ def _validate_webscraper_configs(source: str, body: dict) -> None:
         configs = json.loads(raw)
     except ValueError as exc:
         raise ValidationError('configs must be a JSON array of scraper configurations.') from exc
-    if not isinstance(configs, list) or not all(isinstance(config, dict) for config in configs):
-        raise ValidationError('configs must be a JSON array of scraper configurations.')
+    error = scraper_list_error(raw, configs)
+    if error:
+        raise ValidationError(error)
     for config in configs:
         error = scraper_url_error(config, validate_url)
         if error:

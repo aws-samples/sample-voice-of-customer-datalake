@@ -106,3 +106,5 @@ def refund_support(table: Any, key: dict[str, str] | None) -> None:
     except ClientError as error:
         if not is_conditional_check_failure(error):
             logger.warning('Could not refund a +1 rate charge', extra={'pk': key['pk']})
+    except Exception:  # noqa: BLE001 — best effort: the caller is re-raising the write's own error
+        logger.warning('Could not refund a +1 rate charge', extra={'pk': key['pk']})
