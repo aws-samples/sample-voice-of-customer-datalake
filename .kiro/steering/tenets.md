@@ -10,9 +10,11 @@ Stop and raise it with the user, instead of building it, when a change would:
   database, cache or container (tenet 7). A performance feature is opt-in behind its own `-c` flag, also turned on by
   `-c performanceTier=true` (`lib/utils/performance-tier.ts`), and listed in `OPT_IN_FIXED_COSTS` in
   `voc-datalake/lib/test-support/fixed-cost-rules.ts` (checked by `lib/fixed-cost-guard.test.ts`). Prefer making the Lambda faster over paying to hide a slow one;
-- delete or overwrite customer data outside lawful erasure through `voc-retention` (D1, D5);
+- delete or overwrite customer data (raw items and the feedback records derived from them) outside a legal
+  obligation carried out by `voc-retention`, or delete a workspace artifact without recording it (D1, D5);
 - enforce a rule, permission or AI mode only in the SPA, and not in the API / MCP (tenets 3 and 4);
-- let an AI write bypass the server-side way-of-working check in `shared/ai_writing.py` (tenet 3);
+- let an AI write bypass the server-side way-of-working check in `shared/ai_writing.py`, including by filing PR/FAQ or
+  PRD text under another document type (tenet 3);
 - let a methodology step be skipped silently, or produce an artifact without its evidence (tenet 2).
 
 Before handing a release over, the full `bash scripts/validate.sh` runs the `tenets: AI review` and

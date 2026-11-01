@@ -34,10 +34,14 @@ shortcut or client skips a step without telling the user. Every artifact cites t
 
 ### 3. Teach before you accelerate. AI is a dial, not a dependency.
 
-Every workflow supports three modes: **Human-driven**, **AI-assisted** and **AI-driven**. AI can be switched off
-completely and the tool still works end to end, so people learn the methodology by hand before they get full AI
-enablement. The steps are the same in every mode; AI changes the speed, never the path. The server enforces the
-mode, not the UI.
+Writing the product documents, the PR/FAQ and the PRD, supports three modes: **Human-driven**, **AI-assisted** and
+**AI-driven**, so people learn to write them by hand before they get full AI enablement. The steps are the same in
+every mode; AI changes the speed, never the path. The server enforces the mode, not the UI, and an AI never gets
+around it by filing the same text under another document type.
+
+Personas, research and prototypes are AI-backed by design, in every mode: people review, edit and correct what the AI
+produced, and a persona can also be imported from a file. Everything else keeps working without AI: ingestion,
+browsing, metrics and the hand-written documents do not wait for a model.
 
 ### 4. Headless by design. The methodology lives in the server, not the screen.
 
@@ -69,6 +73,8 @@ Performance features that carry a fixed cost are **opt-in**: a deployment choose
 managed service, that tier would be on by default, because we would operate it. Architecturally we build for the service either way (tenet 6); only the bill is opt-in.
 
 Lambda **reserved** concurrency is free (it only caps a function's share of the account) and is allowed by default.
+The one accepted baseline is a single customer-managed KMS key (about $1 a month): encryption under a key the
+deployment controls is part of tenet 6, which ranks higher.
 
 ---
 
@@ -79,6 +85,7 @@ These put Tenet 1 into practice. For these, the default answer to "can we make a
 ### D1. Immutable and append-only.
 
 Nothing is overwritten. Corrections, re-categorisations and manual edits create a new version and keep the previous
+one. This holds in Bronze too: an item received again with new content is stored as a new version next to the old
 one. The history of a record is part of the record.
 
 ### D2. Three tiers, each with a contract.
@@ -88,6 +95,12 @@ one. The history of a record is part of the record.
 | **Bronze** (raw) | Every item exactly as received, plus ingestion metadata (source, time, connector version) | Write-once. Never edited, never redacted after the fact. Partitioned by source and date. |
 | **Silver** (conformed) | Cleaned, de-duplicated, normalised records in one canonical schema: language, translation, PII handling, category, sentiment, tags, dimensions | Versioned. Every record carries the pipeline version, model and prompt version, and mode (human or AI) that produced it. |
 | **Gold** (curated) | Business-ready data: metrics, aggregates, evidence sets, ontology entities, and the inputs to personas, PR/FAQs and PRDs | Always derived. Can be thrown away and rebuilt from Silver at any time. |
+
+Data that is not derived from feedback is not Gold: configuration, access rules, votes, the artifacts people write
+and the audit trail are primary data. They are kept, never thrown away, and protected like Silver.
+
+Privacy wins over a full Bronze copy: a source whose profile says *redact* or *summary only* keeps no unredacted
+copy, so it can be replayed only from its redacted form (tenet 6 over D2, by decision).
 
 ### D3. Replay Raw → Gold at any time.
 
@@ -101,11 +114,16 @@ Every write records who or what made it (user, agent or pipeline), when, why, an
 number or document sentence can be traced back to the Silver and Bronze records behind it, and any raw item can be
 traced forward to everything derived from it.
 
-### D5. Data is never removed. Lawful erasure is the only exception.
+### D5. Data is never removed. A legal obligation is the only exception.
 
-The lake is the single source of truth, so it does not delete data. The only exception is a legally required
-erasure (for example under GDPR). An erasure is explicit, approved and logged, leaves a tombstone, and reaches every
-derived copy of the item, because lineage tells us where those copies are.
+The lake is the single source of truth, so it does not delete customer data: the raw items in Bronze and the Silver
+records derived from them. The only exception is a legal obligation, either a person's erasure request (for example
+under GDPR) or a retention limit the deployment is bound to (a contract, a data-processing agreement, a privacy
+policy). Either one states its legal basis, is approved and logged, leaves a tombstone, and reaches every derived copy
+of the item, because lineage tells us where those copies are.
+
+The workspace artifacts people create (projects, personas, documents, boards, lists, conversations) belong to them:
+deleting one really deletes it, the deletion is recorded (D4), and an artifact that cited it says so.
 
 ### D6. Flexible pipelines, fixed contracts.
 
@@ -142,13 +160,18 @@ tenet; closing a gap is a change of its own. Known gaps (2026-11):
 
 | Tenet | Today | Gap |
 | --- | --- | --- |
-| D1 | Raw items in S3 (`raw/`) are write-once and never deleted while the platform runs. | Processed records in `voc-feedback` are updated in place (category corrections, reprocessing, dimensions): the previous value is not kept as a version. |
-| D2 | Bronze = the S3 raw bucket; Silver = `voc-feedback`; Gold = `voc-aggregates` (rebuildable with `voc-datalake/scripts/retention/rebuild_aggregates.py`). | Silver records do not yet carry pipeline / model / prompt versions or the mode that produced them. |
-| D3 | The category reprocess job replays processed or raw data for a window (`POST /settings/categories/reprocess`). | No side-by-side comparison of old and new outputs; aggregates are rebuilt by an operator script, not a feature. |
-| D4 | Category and dimension sources (`category_source`, `dimension_sources`), the retention audit, MCP token audit. | No uniform actor / reason / version record on every write; no end-to-end lineage from a document sentence back to raw items. |
-| D5 | Only `voc-retention` deletes customer data, and only for an opt-in retention window or an erasure request (hashed, audited). | Retention by source profile is a delete outside lawful erasure; erasure does not yet leave a tombstone in every derived copy. |
+| 2 | Persona generation and research refuse when no feedback matches; generated personas store the reviews they came from. | PR/FAQ and PRD generation read feedback only when the client asks for it; the step order is neither enforced nor reported (a PRD without a PR/FAQ, a prototype from a PR/FAQ alone); agent workflows and plans can skip steps; hand-written documents cannot cite evidence; imported personas carry none. |
+| 3 | `shared/ai_writing.py` refuses a PR/FAQ or PRD the person's way of working does not allow, on REST, agent, plan and MCP paths. | An AI can save PR/FAQ-shaped text as a `custom` document (MCP `create_document`, the agent `custom_llm` node, a merge into `custom`); in the assistant's chat the Human-driven rule is a prompt instruction only; when Bedrock is throttled or unavailable, new feedback goes to the dead-letter queue instead of being stored unenriched. |
+| 4 | Every capability has a REST route; `/mcp/global` delegates to them with the minter's access. | MCP has no tools for generating personas, PR/FAQs, PRDs, research or prototypes, nor for imports, sources, feedback edits, Prioritization, boards or Radar; some rules hold only in the web app (an admin changing their own role, scraper create-never-overwrites, the methodology warnings). |
+| 5 | Plugin roles, schedules and secrets come from the manifest. | Source-specific behaviour is hard-coded in the platform (`github_issues`, `webscraper`); the queue schema rejects unknown fields, empty text and a 0 rating; a new plugin fails the gate until it has frontend copy keys. |
+| 6 | Customer-managed KMS, one least-privilege role per Lambda, everything in CDK. | Data is deleted with the stacks unless `-c protectData=true` (the default is `false`); one deployment is one tenant; feedback forms have no owner; many roles hold `grantReadWriteData` where they read; cost is visible per stack only; the plugin-credentials secret uses the AWS-managed key. |
+| 7 | No WAF, SnapStart, provisioned capacity, NAT gateway or always-on database, cache or container is on by default (`voc-datalake/lib/fixed-cost-guard.test.ts`); `-c performanceTier=true` turns on SnapStart for four APIs. | Three customer-managed KMS keys and three Secrets Manager secrets cost about $4 a month on an idle deployment, and the guard does not count them; the memory scanner scans the whole conversations table every 15 minutes. The tier has no provisioned concurrency, no further SnapStart functions and no DAX yet: those wait for production cold-start and traffic data ([docs/lambda-sizing.md](docs/lambda-sizing.md#the-performance-tier--c-performancetier)). |
+| D1 | Raw items are never deleted while the platform runs (outside `voc-retention`). | Raw keys are fixed per item and written without a condition, so an item received again (a CSV dataset correction, an edited GitHub issue) replaces its file, and the bucket deletes the previous version after 90 days. Processed records in `voc-feedback` are updated in place (category corrections, reprocessing, dimensions, Data Explorer edits): the previous value is not kept as a version. Persona edits overwrite the persona. |
+| D2 | Bronze = the S3 raw bucket (`raw/`); Silver = `voc-feedback`; Gold = the `METRIC#*` rows of `voc-aggregates` (rebuildable with `voc-datalake/scripts/retention/rebuild_aggregates.py`). | Bronze: no connector version in the raw envelope; feedback-form submissions and feature-board requests have no raw copy; most plugins archive their mapped item, not the payload received; email and S3-import originals expire after 90 days. Silver records do not carry a pipeline version or the mode that produced them, `prompt_version` has never been bumped, and `model_name` names the requested model, not the one that answered. `voc-aggregates` also holds primary data (votes, settings, access rules, the erasure audit); Radar counters have no rebuild; a redelivered stream event can decrement a counter twice. |
+| D3 | The category reprocess job replays processed or raw data for a window (`POST /settings/categories/reprocess`). | Only a window of days can be replayed, up to 50,000 items; a "raw" replay of an import or upload source falls back to the stored text; no side-by-side comparison of old and new outputs; aggregates are rebuilt by an operator script, not a feature. |
+| D4 | Category and dimension sources (`category_source`, `dimension_sources`), the retention audit, MCP token audit, import history. | No uniform actor / reason / version record on every write, and REST writes have no audit trail; plan and agent writes are stored under the approving person, like a human edit; the MCP audit and the import history expire after 90 days; no end-to-end lineage from a document sentence back to raw items. |
+| D5 | Only `voc-retention` deletes feedback and raw items, for an opt-in retention window or an erasure request (hashed, audited). | Neither asks for a legal basis; no tombstone; erasure does not reach Radar, whole-file CSV/JSON archives or derived copies; the processing role and others hold delete permissions their code never uses; participant erasure runs outside `voc-retention` with no audit row; workspace deletes are not recorded. |
 | D7 | Dimensions, tags and categories are configured and documented (`docs/dimensions.md`). | No data catalogue or shared ontology yet. |
-| 7 | Nothing with a fixed monthly cost is on by default (`voc-datalake/lib/fixed-cost-guard.test.ts`); `-c performanceTier=true` turns on SnapStart for four APIs. | The tier has no provisioned concurrency, no further SnapStart functions and no DAX yet: those wait for production cold-start and traffic data ([docs/lambda-sizing.md](docs/lambda-sizing.md#the-performance-tier--c-performancetier)). |
 
 ---
 
@@ -162,11 +185,12 @@ The same checks run locally and on GitHub, so a green local run means a green pi
   the default synth of every stack fails on a WAF, SnapStart, provisioned concurrency or capacity, a NAT gateway, an
   Elastic IP, an interface VPC endpoint, an always-on database, cache, cluster or container, a Global Accelerator, an API Gateway cache, a CloudFront dedicated IP or a created hosted zone.
   Opt-in flags list exactly the fixed costs they add.
-- **Data deletion** (D5): a delete of customer data needs the `voc-retention` role; every mutating API route is
+- **Data deletion** (D5): `voc-datalake/lib/customer-data-deletes.test.ts` pins every role that may delete from
+  `voc-feedback` or `raw/` (`voc-retention`, plus legacy grants that can only shrink); every mutating API route is
   classified admin-only or open-by-decision (`voc-datalake/lambda/api/test/test_route_admin_gates.py`), and the
   Data Explorer has no delete route.
-- **Server-side AI mode** (tenet 3): `voc-datalake/lambda/shared/ai_writing.py` refuses AI writes the person's way of
-  working does not allow, on every path (REST, assistant, agents, MCP).
+- **Server-side AI mode** (tenet 3): `voc-datalake/lambda/shared/ai_writing.py` refuses a PR/FAQ or PRD the person's
+  way of working does not allow, on the REST, agent, plan and MCP paths.
 - **Tenets AI review** (`scripts/ai-review/review.mjs --kind tenets`, the `tenets: AI review` step of
   `scripts/validate.sh`): the developer's own coding agent (`kiro-cli`, else `claude`) reads the change since
   `origin/main` against this file and fails the step on a grounded violation. It holds no credential; without either
@@ -191,9 +215,9 @@ Tenets touched: <!-- e.g. 3, D1, D4 — or "none" -->
 - [ ] Data: nothing in Bronze is changed or deleted; Silver changes create new versions (D1, D2)
 - [ ] Replay: the change can be reprocessed from Bronze and records its pipeline/model version (D3)
 - [ ] Audit: new writes record actor, time, reason and version (D4)
-- [ ] No new delete path for customer data outside lawful erasure (D5)
+- [ ] No new delete path for customer data outside a legal obligation; workspace deletes are recorded (D5)
 - [ ] Methodology: no step can be skipped silently; artifacts cite their evidence (2)
-- [ ] AI modes: works with AI off; the mode is enforced server-side (3)
+- [ ] AI modes: PR/FAQ and PRD writing follows the person's mode, enforced server-side; the rest works without AI (3)
 - [ ] Headless: available and enforced via the API/MCP, not only the UI (4)
 - [ ] Cost: no new fixed monthly cost by default; a performance feature is opt-in behind a flag (7)
 - [ ] Trade-off: if this weakens a lower tenet to serve a higher one, explain it here

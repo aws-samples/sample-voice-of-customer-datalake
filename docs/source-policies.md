@@ -123,8 +123,10 @@ assistant and MCP tokens act as the calling user, so the same rules apply to the
 ## Retention and erasure
 
 Customer data is never deleted, with one exception: the opt-in worker **`voc-retention`**
-(`lambda/jobs/retention/handler.py`, in VocProcessingStack). It is the only role in the app
-with a delete permission on customer data, and `lib/customer-data-deletes.test.ts` pins that.
+(`lambda/jobs/retention/handler.py`, in VocProcessingStack), which carries out a legal obligation
+(TENETS.md → D5). It is the only code that deletes feedback items or raw archives, and
+`lib/customer-data-deletes.test.ts` pins every role that may (it plus legacy grants that are
+never used and can only shrink).
 
 | Mode | Trigger | Deletes |
 |---|---|---|
