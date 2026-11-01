@@ -1,9 +1,10 @@
 # Data quality: the usefulness band
 
-"Great!" and a 300-word account of a specific failure used to weigh the same everywhere. Every
-review now carries a **usefulness** band, `low`, `medium` or `high`, and the Data Explorer shows how
-the bands spread over each source. A source that produces mostly `low` feedback is the usual sign of
-a misconfigured scraper or a form field people skip.
+"Great!" and a 300-word account of a specific failure should not weigh the same. Every review
+carries a **usefulness** band, `low`, `medium` or `high`, and the Data Explorer shows administrators
+how the bands spread over each source, next to a profile of each source's ratings, sentiment and
+text length. A source that produces mostly `low` feedback is the usual sign of a misconfigured
+scraper or a form field people skip.
 
 ## How the band is computed
 
@@ -40,7 +41,8 @@ category reprocess mode.
 
 ## Backfill: optional field, "Not rated"
 
-Decision (issue #238): the field is optional. Reviews stored before the band existed have no
+The field is optional, so no migration is needed. Reviews stored before the band existed (before
+5.54.00) have no
 `usefulness` and count as **unrated** everywhere: the API answers them as `unrated`, the Data Explorer
 shows them as "Not rated", the aggregator writes no band row for them, and the LLM-context sample
 ranks them last among equals but never drops them.
@@ -78,8 +80,8 @@ before that have no band rows, so their reviews read as unrated until a reproces
 
 ## Per-source profile
 
-Next to the band, each source has a **profile** (`lambda/shared/source_profile.py`; ported from PR #429
-by @aws-bryan): how its reviews are rated, their sentiment, and how long their text is. No model call, no
+Next to the band, each source has a **profile** (`lambda/shared/source_profile.py`; contributed by
+@aws-bryan): how its reviews are rated, their sentiment, and how long their text is. No model call, no
 worker: the aggregator keeps three more daily counters per review, one per facet.
 
 ```
@@ -98,13 +100,14 @@ sk = YYYY-MM-DD    count
 Every profiled review has exactly one row per facet, so `profiled` (the sum of a source's rating rows)
 is how many of its reviews the profile covers.
 
-**Older days lack the profile.** The counters start when this release is deployed. Reviews stored
+**Older days lack the profile.** The counters start when 5.66.00 (the release that added them) is
+deployed. Reviews stored
 before then have no profile rows: the API counts them in `total` but not in `profiled`, and the Data
 Explorer says how much of the range that is. A MODIFY or REMOVE of such a review is safe: its
 decrement finds no row and is refused like any absent counter (nothing goes negative), and the increment
 of a MODIFY counts the review from then on. The one inexact case is a review stored on the deploy day
 itself and edited later that day, which can move one count between buckets. To fill a window, run
-`scripts/retention/rebuild_aggregates.py` for it (docs/processing-pipeline.md): it recomputes every
+`scripts/retention/rebuild_aggregates.py` for it ([processing-pipeline.md](processing-pipeline.md)): it recomputes every
 counter, the profile rows included, from the stored reviews.
 
 ## `GET /metrics/data-quality`
@@ -144,7 +147,7 @@ source's total (`METRIC#daily_source#<source>`) minus its banded rows, never bel
   `rating`, `sentiment_label` and `original_text` included) and counted. On this path every review is
   profiled, older ones too. A walk stopped by its time budget says so (`is_partial`, `partial_reason`).
 
-The route is memoized like its siblings and keyed on the data version (docs/caching.md), so a write
+The route is memoized like its siblings and keyed on the data version ([caching.md](caching.md)), so a write
 batch refreshes it.
 
 ## In the Data Explorer
