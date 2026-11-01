@@ -51,22 +51,21 @@ documents and its own profile. Then the assistant adds a short synthesis.
    a repeat of the cards. Tagged documents with no persona mentioned are listed for the model to read
    with `get_documents`.
 
-The `consult_personas` tool also takes `document_ids` (up to 3) now, so the model can ground a
+The `consult_personas` tool also takes `document_ids` (up to 3), so the model can ground a
 roundtable on documents itself.
 
 ## Ways of working
 
 Persona replies are review only, so they are allowed in every way of working
 ([ways-of-working.md](ways-of-working.md)). A Human-driven person's assistant turn after the round
-stays coach-only, as before.
+stays coach-only.
 
 ## Saved conversations
 
 The round is part of the conversation the stream Lambda saves while it runs. Each card's speaker
 (persona id, name, avatar) is stored in its own result, so the cards come back after a reload.
-Saved tool results are cut to 4,000 characters, and a persona result used to be cut into invalid JSON,
-which made the cards vanish after a reload. A persona result is now shortened inside its JSON instead: the
-answers are cut evenly within 32,000 characters (6,000 in the one-turn retry after a 413), and avatar URLs
+Saved tool results are cut to 4,000 characters, but a persona result is shortened inside its JSON instead,
+so it stays valid and the cards survive a reload: the answers are cut evenly within 32,000 characters (6,000 in the one-turn retry after a 413), and avatar URLs
 go first when space is short. The SPA (`sessions/personaResult.ts`) and the stream Lambda
 (`session/persona-result.ts`) store it identically, pinned by `personaResult.lockstep.test.ts`.
 
