@@ -137,8 +137,6 @@ jobs:
       - name: Every lane passed
         env:
           LANES_RESULT: ${{ needs.lane.result }}
-          LANE_JOBS: ${{ toJSON(needs.lane) }}
         run: |
-          echo "lanes: $LANES_RESULT"
-          echo "$LANE_JOBS"
+          echo "lanes: $LANES_RESULT (each lane's own result is its validate (<lane>) check above)"
           test "$LANES_RESULT" = success

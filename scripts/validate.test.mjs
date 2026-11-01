@@ -115,22 +115,21 @@ describe('validate.sh --lane (CI runs one lane per job)', () => {
 });
 
 describe('validate.sh coverage baseline mode (local prunes graduated rows, CI stays strict)', () => {
+  /** The first line (the banner) of a dry run of the web lane with `env` replacing process.env. */
   const banner = (env) => {
+    runs += 1;
     const result = spawnSync('/bin/bash', [SCRIPT, '--dry-run', '--lane', 'web'], {
-      encoding: 'utf8', env: { ...process.env, VALIDATE_LOG_DIR: join(logRoot, `banner-${runs += 1}`), ...env },
-    })
-    return result.stdout.split('\n')[0]
-  }
-  it('is strict on GitHub Actions', () => {
-    assert.match(banner({ GITHUB_ACTIONS: 'true' }), /coverage baseline strict \(CI\)/)
-  })
-  it('prunes graduated rows on a local run', () => {
-    const env = { ...process.env }
-    delete env.GITHUB_ACTIONS
-    const result = spawnSync('/bin/bash', [SCRIPT, '--dry-run', '--lane', 'web'], {
-      encoding: 'utf8', env: { ...env, VALIDATE_LOG_DIR: join(logRoot, `banner-${runs += 1}`) },
-    })
-    assert.match(result.stdout.split('\n')[0], /graduated rows pruned \(local\)/)
-  })
-})
+      encoding: 'utf8', env: { ...env, VALIDATE_LOG_DIR: join(logRoot, `banner-${runs}`) },
+    });
+    return result.stdout.split('\n')[0];
+  };
 
+  it('is strict on GitHub Actions', () => {
+    assert.match(banner({ ...process.env, GITHUB_ACTIONS: 'true' }), /coverage baseline strict \(CI\)/);
+  });
+
+  it('prunes graduated rows on a local run', () => {
+    const { GITHUB_ACTIONS: _ci, ...local } = process.env;
+    assert.match(banner(local), /graduated rows pruned \(local\)/);
+  });
+});
