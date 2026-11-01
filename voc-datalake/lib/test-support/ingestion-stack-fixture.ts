@@ -18,7 +18,7 @@ export function synthIngestionTemplate(enabledSources: string[] = [], context: R
 
 /** The ingestion template and the dependency stack's (whose key policy the inbox extends). */
 export function synthIngestionStacks(
-  enabledSources: string[] = [], context: Record<string, unknown> = {},
+  enabledSources: string[] = [], context: Record<string, unknown> = {}, frontendDomain = 'app.example.invalid',
 ): { ingestion: Template; deps: Template } {
   const env = { account: SYNTH_ACCOUNT, region: SYNTH_REGION };
   const app = new cdk.App({
@@ -33,7 +33,7 @@ export function synthIngestionStacks(
     accessLogsBucket: fixtureBucket(deps, 'AccessLogs'),
     kmsKey: new kms.Key(deps, 'Key'),
     config: { brandName: 'Test', enabledSources },
-    frontendDomain: 'app.example.invalid',
+    frontendDomain,
   });
   return { ingestion: Template.fromStack(stack), deps: Template.fromStack(deps) };
 }

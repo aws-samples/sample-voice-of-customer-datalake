@@ -22,7 +22,7 @@ import {
 } from './ingestion-stack';
 import { itemAt } from '../test-support/guards';
 import { capitalize } from '../plugin-loader';
-import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
+import { synthIngestionStacks, synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { byCodeUnit } from '../utils/compare';
 import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
 
@@ -402,5 +402,10 @@ describe('VocIngestionStack S3 import bucket CORS', () => {
 
   it('ignores a frontendDomain context value', () => {
     expect(origins({ frontendDomain: 'other.example.invalid' })).not.toContain('https://other.example.invalid');
+  });
+
+  it('refuses an empty frontend domain instead of allowing https://', () => {
+    expect(() => synthIngestionStacks([], {}, '')).toThrow(/frontend \(CloudFront\) domain/);
+    expect(() => synthIngestionStacks([], {}, '  ')).toThrow(/frontend \(CloudFront\) domain/);
   });
 });

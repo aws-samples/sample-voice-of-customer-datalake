@@ -200,12 +200,10 @@ export class VocIngestionStack extends VocStack {
   // Helper Methods
   // ============================================
 
-  private buildCorsOrigins(frontendDomain: string | undefined): string[] {
-    const devOrigins = ['http://localhost:5173', 'http://localhost:3000'];
-    if (frontendDomain) {
-      return [`https://${frontendDomain}`, ...devOrigins];
-    }
-    return devOrigins;
+  private buildCorsOrigins(frontendDomain: string): string[] {
+    // An empty domain would allow `https://`; the stack is always given the CloudFront domain.
+    if (frontendDomain.trim() === '') throw new Error('VocIngestionStack needs the frontend (CloudFront) domain');
+    return [`https://${frontendDomain}`, 'http://localhost:5173', 'http://localhost:3000'];
   }
 
   private createEmailInbox(deps: {

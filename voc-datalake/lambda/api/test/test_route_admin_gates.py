@@ -460,9 +460,8 @@ def test_only_the_recorded_handlers_are_not_resolvers():
 
 # ── Reads gated by decision ──────────────────────────────────────────────────
 # The inventory above covers writes only. These reads are deliberately admin-only and are
-# pinned so they cannot silently reopen. `GET /settings/model` is deliberately NOT here: the
-# agent detail page's Models tab (open to every signed-in user, read-only for non-admins) reads
-# its allowlist through that route, so it stays open to every signed-in user.
+# pinned so they cannot silently reopen. The reads in OPEN_BY_DESIGN_READS are pinned the other
+# way: open to every signed-in user, each with its reason, so gating one is a visible decision.
 ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
     # #242: the import bucket and parse jobs are admin-only.
     's3_import_handler.py': frozenset({
@@ -481,6 +480,23 @@ ADMIN_ONLY_READS: dict[str, frozenset[str]] = {
 def test_every_admin_only_read_exists_and_carries_its_gate(handler, route):
     reads = routes_with_gates((API_DIR / handler).read_text(encoding='utf-8'), frozenset({'get'}))
     assert reads.get(route) is True, f'{handler} {route} is missing or lost its admin gate'
+
+
+OPEN_BY_DESIGN_READS: dict[tuple[str, str], str] = {
+    ('settings_handler.py', 'GET /settings/model'): (
+        'The agent detail page\'s Models tab (every signed-in user, read-only for non-admins) reads '
+        'the allowlist here; the answer is the per-surface model ids, the allowlist and the image '
+        'model\'s status: no secret, no user data. Writes and the model test stay admin-only.'
+    ),
+}
+
+
+@pytest.mark.parametrize(('handler', 'route'), sorted(OPEN_BY_DESIGN_READS))
+def test_every_open_by_design_read_exists_without_an_admin_gate(handler, route):
+    assert OPEN_BY_DESIGN_READS[(handler, route)].strip(), 'an open read needs its reason'
+    reads = routes_with_gates((API_DIR / handler).read_text(encoding='utf-8'), frozenset({'get'}))
+    assert reads.get(route) is False, (
+        f'{handler} {route} is missing or now admin-gated: update OPEN_BY_DESIGN_READS deliberately')
 
 
 # ── The classifier itself ────────────────────────────────────────────────────

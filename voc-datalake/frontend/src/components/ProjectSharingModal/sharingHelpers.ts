@@ -62,8 +62,9 @@ export function personLabel(person: PersonRef): string {
  * member list is not the place for them to harvest addresses. A member without a
  * name or a human username therefore shows as their sub to a non-manager —
  * unlovely, but not a disclosure. (The server drops the emails for a non-manager
- * too, `_without_emails_unless_manager` in lambda/api/projects.py; this label is the
- * client-side half.)
+ * too, `_without_emails_unless_manager` in lambda/api/projects.py, pinned by
+ * TestEmailsAreForManagers in lambda/api/test/test_project_permissions.py; this label is
+ * the client-side half.)
  */
 export function publicPersonLabel(person: Pick<PersonRef, 'username' | 'sub' | 'name'>): string {
   const name = humanName(person)
