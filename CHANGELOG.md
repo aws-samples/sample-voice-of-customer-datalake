@@ -17,6 +17,19 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.66.01] - 2026-11-01
+
+Dependency upkeep: one held lint plugin and one updated.
+
+### Changed
+
+- The frontend's `eslint-plugin-react-refresh` is now 0.5.7 (was 0.4.26). Its stricter Fast Refresh check
+  flagged the route table, so the lazily loaded pages moved from `routes.tsx` into `lazyPages.ts`. Routes
+  and page loading are unchanged.
+- Dependabot no longer proposes `@vitest/eslint-plugin` 1.6.28 or later. That patch release requires
+  TypeScript 6 or later, and the platform is on TypeScript 5.9, so `npm ci` failed. The hold is lifted with
+  the TypeScript upgrade ([docs/dependencies.md → Held updates](docs/dependencies.md#held-updates)).
+
 ## [5.66.00] - 2026-10-31
 
 Ideas from @aws-bryan's PR #429 rebuilt on the current platform: model agreements without a shared use-case form, the assistant kept to the filters on screen, multi-value and usefulness filters, persona match counts, citations and protection, project export/import, and a per-source data profile.
