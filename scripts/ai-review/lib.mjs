@@ -35,6 +35,8 @@ export const KINDS = Object.freeze({
  * read them either, enforced by the tools and not the prompt: Kiro's agents deny each glob under any folder in
  * `toolsSettings.fs_read.deniedPaths` (pinned against this list by review.test.mjs), and Claude Code gets a Read
  * deny rule for each (CLAUDE_DENY_RULES) and no Grep (a search would print matching lines of a denied file).
+ * The globs match file names at any depth, a top-level `.env` included (verified live); a secret under a
+ * secret-shaped DIRECTORY with an ordinary file name (`secrets/config.json`) is not caught, so keep those gitignored.
  */
 export const SECRET_PATHS = Object.freeze([
   '*.env', '*.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*id_rsa*', '*id_ed25519*',

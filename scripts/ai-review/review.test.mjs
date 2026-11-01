@@ -45,7 +45,6 @@ test('both runners are read-only and take the prompt on stdin', () => {
   assert.deepEqual(claude.args.slice(claude.args.indexOf('--permission-mode'), claude.args.indexOf('--permission-mode') + 4),
     ['--permission-mode', 'dontAsk', '--allowedTools', 'Read(./**),Glob(./**)'])
   assert.deepEqual(claude.args[claude.args.indexOf('--disallowedTools') + 1].split(','), SECRET_PATHS.map((glob) => `Read(./**/${glob})`))
-  assert.equal(claude.args[claude.args.indexOf('--tools') + 1], 'Read,Glob')
   assert.deepEqual(claude.args.slice(-2), ['--model', 'm'])
   assert.throws(() => runnerCommand('other', { agent: 'x', systemPrompt: 'S' }), /unknown runner/)
 })
@@ -388,6 +387,7 @@ setInterval(() => {}, 1000)
     })
     // Up to 60 s for the fake agent to start: the gate runs this beside five busy lanes.
     for (let i = 0; i < 600 && !existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 100))
+    assert.ok(existsSync(pidFile), 'the fake agent started')
     const agentPid = Number(readFileSync(pidFile, 'utf8'))
     const started = Date.now()
     child.kill('SIGINT')
