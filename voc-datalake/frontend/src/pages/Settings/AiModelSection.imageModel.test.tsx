@@ -1,7 +1,10 @@
 /**
  * The read-only "Image generation (persona avatars)" row of Administration → AI models:
  * model, region, access status with its fix hint, requests-per-minute quota, and a Test that
- * "Test all models" leaves out (an image test costs a few cents).
+ * "Test all models" leaves out (an image test costs a few cents). Also the "Model agreements"
+ * notice: GET /settings/model/capacity text-model rows carry the same `access`
+ * (lambda/shared/model_agreements.py); a model whose agreement is missing is listed with what to
+ * do and a Test, while available / unknown models and an older API without `access` show nothing.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -141,5 +144,92 @@ describe('testing the image model', () => {
 
     await waitFor(() => expect(testModel).toHaveBeenCalledWith(SONNET55))
     expect(testModel).not.toHaveBeenCalledWith(IMAGE_ID)
+  })
+})
+
+const OPUS55 = 'global.anthropic.claude-opus-5-5'
+const HAIKU45 = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+
+const agreementSettings = {
+  available_models: [
+    { key: 'opus55', id: OPUS55, label: 'Claude Opus 5.5', description: 'Deepest' },
+    { key: 'haiku45', id: HAIKU45, label: 'Claude Haiku 4.5', description: 'Fast' },
+  ],
+  surfaces: [{ key: 'chat', default_id: OPUS55, selected: null }],
+  model_id: null,
+}
+
+function agreementAccess(status: ImageAccessStatus) {
+  return { status, agreement: '', authorization: '', entitlement: '', region_availability: '' }
+}
+
+function capacity(haikuAccess: ReturnType<typeof agreementAccess> | null) {
+  return {
+    models: [
+      { model_id: OPUS55, label: 'Claude Opus 5.5', quota: null, access: agreementAccess('available') },
+      { model_id: HAIKU45, label: 'Claude Haiku 4.5', quota: null, access: haikuAccess },
+    ],
+    image: null,
+  }
+}
+
+async function renderCard() {
+  renderWithQueryClient(<AiModelSection apiEndpoint="https://api.example.com" isAdmin />)
+  await waitFor(() => expect(screen.getByLabelText('AI Assistant')).toBeInTheDocument())
+}
+
+const notice = () => screen.findByRole('status', { name: 'Model agreements' })
+
+describe('AiModelSection — model agreements', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getSettings.mockResolvedValue(agreementSettings)
+  })
+
+  it('lists a model without an agreement, with the console and redeploy fix', async () => {
+    getCapacity.mockResolvedValue(capacity(agreementAccess('not_subscribed')))
+    await renderCard()
+
+    const items = within(await notice()).getAllByRole('listitem')
+    expect(items.map((item) => item.dataset.agreementModel)).toStrictEqual([HAIKU45])
+    expect(within(items[0] ?? document.body).getByText('Not subscribed')).toBeInTheDocument()
+    expect(items[0]).toHaveTextContent('Accept it in the Bedrock console under Model access')
+    expect(items[0]).toHaveTextContent('-c modelAgreementRetry=<new value>')
+  })
+
+  it('says what to do for a model the account may not use', async () => {
+    getCapacity.mockResolvedValue(capacity(agreementAccess('no_access')))
+    await renderCard()
+
+    expect(await notice()).toHaveTextContent("File Anthropic's use-case form in the Bedrock console")
+  })
+
+  it('Test checks exactly the listed model and shows its result in the notice', async () => {
+    getCapacity.mockResolvedValue(capacity(agreementAccess('not_subscribed')))
+    testModel.mockResolvedValue({
+      model_id: HAIKU45, invoked_id: HAIKU45, status: 'no_access', latency_ms: null, message: '', quota: null, checked_at: '',
+    })
+    const user = userEvent.setup()
+    await renderCard()
+
+    await user.click(within(await notice()).getByRole('button', { name: 'Test' }))
+
+    expect(testModel).toHaveBeenCalledExactlyOnceWith(HAIKU45)
+    expect(await within(await notice()).findByText('No access')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['every model available', agreementAccess('available')],
+    ['an unread (unknown) access', agreementAccess('unknown')],
+    ['an older API without access', null],
+  ])('shows no notice for %s', async (_case, haikuAccess) => {
+    getCapacity.mockResolvedValue(capacity(haikuAccess))
+    await renderCard()
+
+    await waitFor(() => expect(getCapacity).toHaveBeenCalledWith())
+    // Let the resolved capacity reach the card before asserting that nothing rendered.
+    await getCapacity.mock.results[0]?.value
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.queryByRole('status', { name: 'Model agreements' })).not.toBeInTheDocument()
   })
 })

@@ -5,11 +5,14 @@
  *
  * Lenient on purpose: an unknown `status` (a newer API) reads as `error`, a
  * malformed `quota` as unknown (null), and a capacity row without a model id is
- * dropped, so a surprising payload can degrade the pill but never crash the card.
+ * dropped, so a surprising payload can degrade the pill but never crash the card. A row's
+ * `access` (the model agreement, lambda/shared/model_agreements.py) is null when absent (an older
+ * API) or malformed.
  *
  * @module api/modelTestSchema
  */
 import { z } from 'zod'
+import { ImageAccessSchema } from './imageModelSchema'
 
 const MODEL_TEST_STATUSES = [
   'available', 'no_access', 'not_in_region', 'no_capacity', 'throttled', 'not_ready', 'unavailable', 'error',
@@ -53,6 +56,7 @@ const CapacityRowSchema = z.object({
   model_id: z.string(),
   label: z.string().catch(''),
   quota: LenientQuota,
+  access: ImageAccessSchema.nullable().catch(null),
 })
 
 export type ModelCapacityRow = z.infer<typeof CapacityRowSchema>

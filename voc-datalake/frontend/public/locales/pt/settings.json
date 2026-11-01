@@ -25,6 +25,15 @@
         "unknown": "Não foi possível ler o acesso. Use Testar para verificar o modelo diretamente."
       }
     },
+    "agreement": {
+      "title": "Acordos dos modelos",
+      "intro": "Estes modelos ainda não podem ser chamados nesta conta, por isso um recurso de IA que os usa falha com AccessDenied. A implantação solicita cada acordo, mas uma recusa não a interrompe.",
+      "hint": {
+        "not_subscribed": "Falta o acordo do modelo (EULA e assinatura do Marketplace). Aceite-o no console do Bedrock, em Acesso a modelos, ou reimplante com -c modelAgreementRetry=<new value>. Depois use Testar.",
+        "no_access": "Esta conta não pode usar o modelo. Envie o formulário de caso de uso da Anthropic no console do Bedrock e verifique as políticas da organização (SCPs) para Bedrock e AWS Marketplace; depois reimplante com -c modelAgreementRetry=<new value>.",
+        "not_in_region": "O modelo não é oferecido nesta região. Escolha outro modelo para os recursos de IA que o usam."
+      }
+    },
     "automaticOption": "Automático — {{model}}",
     "groupOther": "Outros modelos",
     "groupRecommended": "Recomendado",

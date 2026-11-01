@@ -402,10 +402,12 @@ class TestModelTestAndCapacityRoutes:
         assert lambda_handler(event, lambda_context)['statusCode'] == 403
         probe.assert_not_called()
 
+    @patch('settings_handler.model_agreements.with_access', side_effect=lambda rows: [
+        {**row, 'access': {'status': 'not_subscribed'}} for row in rows])
     @patch('settings_handler.image_model_status.image_capacity', return_value={'id': 'image', 'quota': None})
     @patch('settings_handler.model_capacity.capacity_overview')
-    def test_admin_capacity_returns_the_overview_and_the_image_model(
-            self, overview, image, api_gateway_event, lambda_context):
+    def test_admin_capacity_returns_the_overview_with_access_and_the_image_model(
+            self, overview, image, access, api_gateway_event, lambda_context):
         overview.return_value = [{'model_id': self.OPUS55, 'label': 'Claude Opus 5.5', 'quota': None}]
 
         response, body = call_route(
@@ -414,9 +416,11 @@ class TestModelTestAndCapacityRoutes:
         )
 
         assert response['statusCode'] == 200
-        assert body == {'models': [{'model_id': self.OPUS55, 'label': 'Claude Opus 5.5', 'quota': None}],
+        assert body == {'models': [{'model_id': self.OPUS55, 'label': 'Claude Opus 5.5', 'quota': None,
+                                    'access': {'status': 'not_subscribed'}}],
                         'image': {'id': 'image', 'quota': None}}
         image.assert_called_once_with()
+        access.assert_called_once_with(overview.return_value)
 
     @patch('settings_handler.model_capacity.run_refresh_event', return_value={'refreshed': True})
     def test_the_quota_refresh_event_runs_the_refresh_not_a_route(self, refresh, lambda_context):

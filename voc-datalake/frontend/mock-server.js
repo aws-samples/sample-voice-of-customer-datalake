@@ -271,6 +271,18 @@ function mockModelQuota(model) {
     tokens_per_minute: mockModelQuotaByKey[model.key] ?? 0,
   };
 }
+// The model whose agreement the mock deploy "failed" to create (GET /settings/model/capacity row
+// access not_subscribed; its test answers no_access).
+const MOCK_NO_AGREEMENT_MODEL = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
+// GetFoundationModelAvailability as shared/image_model_status.py maps it.
+function mockModelAccess(modelId) {
+  const missing = modelId === MOCK_NO_AGREEMENT_MODEL;
+  return {
+    status: missing ? 'not_subscribed' : 'available', agreement: missing ? 'NOT_AVAILABLE' : 'AVAILABLE',
+    authorization: 'AUTHORIZED', entitlement: 'AVAILABLE', region_availability: 'AVAILABLE',
+    checked_at: new Date().toISOString(),
+  };
+}
 const mockSurfaceDefaults = {
   chat: 'global.anthropic.claude-sonnet-5-5',
   documents: 'global.anthropic.claude-sonnet-5-5',
@@ -588,8 +600,15 @@ const handlers = {
       return { __status: 400, body: { success: false, message: 'model_id must be one of the allowlisted models' } };
     }
     const quota = mockModelQuota(model);
-    const noCapacity = quota.tokens_per_minute === 0;
     mockModelTestRuns += 1;
+    if (model.id === MOCK_NO_AGREEMENT_MODEL) {
+      return {
+        model_id: model.id, invoked_id: model.id, status: 'no_access', ok: false, latency_ms: null,
+        message: 'This account has no access to the model (model access, use case or agreement). (AccessDeniedException)',
+        quota, checked_at: new Date().toISOString(),
+      };
+    }
+    const noCapacity = quota.tokens_per_minute === 0;
     return {
       model_id: model.id,
       invoked_id: model.id,
@@ -604,13 +623,13 @@ const handlers = {
     };
   },
   'GET /settings/model/capacity': () => ({
-    models: mockAvailableModels.map((m) => ({ model_id: m.id, label: m.label, quota: mockModelQuota(m) })),
+    // Each row's agreement access (shared/model_agreements.py); MOCK_NO_AGREEMENT_MODEL has none.
+    models: mockAvailableModels.map((m) => ({
+      model_id: m.id, label: m.label, quota: mockModelQuota(m), access: mockModelAccess(m.id),
+    })),
     image: {
       ...mockImageModel,
-      access: {
-        status: 'available', agreement: 'AVAILABLE', authorization: 'AUTHORIZED',
-        entitlement: 'AVAILABLE', region_availability: 'AVAILABLE', checked_at: new Date().toISOString(),
-      },
+      access: mockModelAccess(mockImageModel.id),
       quota: { name: 'On-demand model inference requests per minute for Stability.ai Stable Image Core', value: 90, unit: 'requests_per_minute' },
       quota_state: 'fresh',
     },

@@ -25,6 +25,15 @@
         "unknown": "접근 상태를 읽을 수 없습니다. 테스트로 모델을 직접 확인하세요."
       }
     },
+    "agreement": {
+      "title": "모델 계약",
+      "intro": "이 모델들은 아직 이 계정에서 호출할 수 없으므로, 이를 사용하는 AI 기능은 AccessDenied로 실패합니다. 배포는 모든 계약을 요청하지만, 거부되더라도 배포가 멈추지 않습니다.",
+      "hint": {
+        "not_subscribed": "모델의 계약(EULA 및 Marketplace 구독)이 없습니다. Bedrock 콘솔의 모델 액세스에서 수락하거나 -c modelAgreementRetry=<new value>로 다시 배포하세요. 그런 다음 테스트를 사용하세요.",
+        "no_access": "이 계정은 이 모델을 사용할 수 없습니다. Bedrock 콘솔에서 Anthropic 사용 사례 양식을 제출하고 Bedrock 및 AWS Marketplace에 대한 조직 정책(SCP)을 확인한 다음 -c modelAgreementRetry=<new value>로 다시 배포하세요.",
+        "not_in_region": "이 리전에서는 이 모델을 제공하지 않습니다. 이 모델을 사용하는 AI 기능에 다른 모델을 선택하세요."
+      }
+    },
     "automaticOption": "자동 — {{model}}",
     "groupOther": "기타 모델",
     "groupRecommended": "권장",

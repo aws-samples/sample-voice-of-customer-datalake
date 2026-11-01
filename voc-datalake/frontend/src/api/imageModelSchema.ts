@@ -27,7 +27,8 @@ const ImageModelInfoSchema = z.object({
 
 export type ImageModelInfo = z.infer<typeof ImageModelInfoSchema>
 
-const ImageAccessSchema = z.object({
+/** The account's access to one model (GetFoundationModelAvailability), also on each text-model capacity row. */
+export const ImageAccessSchema = z.object({
   status: z.enum(ACCESS_STATUSES).catch('unknown'),
   agreement: z.string().catch(''),
   authorization: z.string().catch(''),

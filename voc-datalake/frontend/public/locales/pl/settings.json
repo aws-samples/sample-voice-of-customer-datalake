@@ -25,6 +25,15 @@
         "unknown": "Nie udało się odczytać dostępu. Użyj Testu, aby sprawdzić model bezpośrednio."
       }
     },
+    "agreement": {
+      "title": "Umowy modeli",
+      "intro": "Tych modeli nie można jeszcze wywołać na tym koncie, więc funkcja AI, która z nich korzysta, kończy się błędem AccessDenied. Wdrożenie wnioskuje o każdą umowę, ale odmowa go nie zatrzymuje.",
+      "hint": {
+        "not_subscribed": "Brakuje umowy modelu (EULA i subskrypcji Marketplace). Zaakceptuj ją w konsoli Bedrock w sekcji Dostęp do modeli albo wdróż ponownie z -c modelAgreementRetry=<new value>. Następnie użyj Testu.",
+        "no_access": "To konto nie może używać modelu. Złóż formularz przypadku użycia Anthropic w konsoli Bedrock i sprawdź zasady organizacji (SCP) dla Bedrock i AWS Marketplace, a potem wdróż ponownie z -c modelAgreementRetry=<new value>.",
+        "not_in_region": "Model nie jest oferowany w tym regionie. Wybierz inny model dla funkcji AI, które z niego korzystają."
+      }
+    },
     "surfaces": {
       "chat": {
         "description": "Pływający asystent świadomy kontekstu strony oraz pełnoekranowa strona czatu",

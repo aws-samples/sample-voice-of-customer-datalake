@@ -4,10 +4,12 @@
  * One row per allowlisted model: its last test result and its tokens-per-minute
  * quota. The quota column is filled before any test from the cheap capacity
  * overview (GET /settings/model/capacity, no model call), so an admin sees a
- * zero quota without spending a request. The run is sequential (useModelTests).
+ * zero quota without spending a request. The run is sequential (useModelTests). A model
+ * whose agreement is missing is listed above the table (ModelAgreementNotice).
  */
 import { useTranslation } from 'react-i18next'
 import { FlaskConical, History, Loader2 } from 'lucide-react'
+import ModelAgreementNotice from './ModelAgreementNotice'
 import ModelTestPill from './ModelTestPill'
 import { useModelTestFigures } from './modelTestStatus'
 import { useModelCapacity } from './useModelCapacity'
@@ -46,6 +48,7 @@ export default function ModelTestAllPanel({ models, tests }: ModelTestAllPanelPr
             : t('aiModel.test.all')}
         </button>
       </div>
+      <ModelAgreementNotice models={models} tests={tests} />
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

@@ -33,7 +33,24 @@ describe('normalizeModelCapacity', () => {
       models: [{ model_id: OPUS55, label: 'Claude Opus 5.5', quota: null }, { label: 'no id' }],
     })
 
-    expect(rows).toStrictEqual([{ model_id: OPUS55, label: 'Claude Opus 5.5', quota: null }])
+    expect(rows).toStrictEqual([{ model_id: OPUS55, label: 'Claude Opus 5.5', quota: null, access: null }])
+  })
+
+  it("keeps a row's agreement access, reads an unknown status as unknown and a malformed one as null", () => {
+    const access = {
+      status: 'not_subscribed', agreement: 'NOT_AVAILABLE', authorization: 'AUTHORIZED',
+      entitlement: 'AVAILABLE', region_availability: 'AVAILABLE',
+    }
+    const rows = normalizeModelCapacity({
+      models: [
+        { model_id: OPUS55, label: 'Opus', quota: null, access },
+        { model_id: 'b', label: 'B', quota: null, access: { ...access, status: 'brand_new' } },
+        { model_id: 'c', label: 'C', quota: null, access: 'broken' },
+      ],
+    })
+
+    expect(rows.map((row) => row.access?.status ?? null)).toStrictEqual(['not_subscribed', 'unknown', null])
+    expect(rows[0]?.access).toStrictEqual(access)
   })
 
   it('keeps the stale flag of a stored quota reading and drops a malformed one', () => {

@@ -25,6 +25,15 @@
         "unknown": "アクセス状況を読み取れませんでした。「テスト」でモデルを直接確認してください。"
       }
     },
+    "agreement": {
+      "title": "モデルの契約",
+      "intro": "これらのモデルはこのアカウントではまだ呼び出せないため、使用する AI 機能は AccessDenied で失敗します。デプロイはすべての契約を申請しますが、拒否されてもデプロイは止まりません。",
+      "hint": {
+        "not_subscribed": "モデルの契約（EULA と Marketplace のサブスクリプション）がありません。Bedrock コンソールの「モデルアクセス」で承諾するか、-c modelAgreementRetry=<new value> を付けて再デプロイしてください。その後「テスト」で確認してください。",
+        "no_access": "このアカウントはこのモデルを使用できません。Bedrock コンソールで Anthropic のユースケースフォームを提出し、Bedrock と AWS Marketplace に関する組織のポリシー（SCP）を確認してから、-c modelAgreementRetry=<new value> を付けて再デプロイしてください。",
+        "not_in_region": "このモデルはこのリージョンでは提供されていません。このモデルを使う AI 機能には別のモデルを選んでください。"
+      }
+    },
     "automaticOption": "自動 — {{model}}",
     "groupOther": "その他のモデル",
     "groupRecommended": "おすすめ",
