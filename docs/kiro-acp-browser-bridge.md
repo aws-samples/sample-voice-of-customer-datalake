@@ -1,8 +1,8 @@
 # Driving Kiro CLI from a Browser over ACP
 
-Research notes on driving a local `kiro-cli` from a web page through the Agent Client Protocol (ACP). This is a developer-tooling question. It is not part of the VoC deployment, and nothing here should be wired into the deployed VoC frontend (see [VoC-specific constraints](#voc-specific-constraints)).
+How to drive a local `kiro-cli` from a web page through the Agent Client Protocol (ACP), the security controls that requires, and the bridge this repository ships (`tools/kiro-acp-bridge`). It is for developers who want to send work to Kiro from a browser. The bridge is developer tooling: it is not part of the VoC deployment, and nothing here should be wired into the deployed VoC frontend (see [VoC-specific constraints](#voc-specific-constraints)).
 
-Researched October 2026 against `kiro-cli 2.27.1`.
+Written in October 2026 against `kiro-cli 2.27.1`.
 
 ## The problem
 
@@ -169,7 +169,7 @@ Don't build a transparent relay. Allowlist the browser→agent methods you actua
 The token and Origin check protect the door. These limit the damage once something gets through it.
 
 - Spawn the agent with a scrubbed environment (`PATH`, `HOME`, locale) so tokens in your shell env such as `AWS_*`, `GITHUB_TOKEN` and `*_API_KEY` aren't inherited. This does **not** stop the agent's tools reading `~/.aws/credentials` from disk.
-- For real isolation, run the bridge and `kiro-cli` in a container, devcontainer or separate OS user that only mounts the target workspace, and use least-privilege, short-lived AWS credentials there. This applies the [production safety rules](../.kiro/steering) in a different setting: the agent should never hold Admin or production credentials in a browser-driven session.
+- For real isolation, run the bridge and `kiro-cli` in a container, devcontainer or separate OS user that only mounts the target workspace, and use least-privilege, short-lived AWS credentials there. The agent should never hold Admin or production credentials in a browser-driven session.
 - Spawn the agent without a shell (`spawn(cmd, args)`, never `exec(string)`). Kill its whole process group when the socket closes, and add an idle timeout.
 
 ### S7. Do not advertise client filesystem or terminal capabilities
