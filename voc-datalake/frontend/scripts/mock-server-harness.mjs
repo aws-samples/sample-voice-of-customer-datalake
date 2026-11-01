@@ -16,7 +16,7 @@ const START_TIMEOUT_MS = 20_000
 const READY_LINE = 'Mock API server running'
 
 /** The running mock's base URL and a `stop()` that ends it. Rejects when it does not start in time. */
-export async function startMockServer() {
+async function startMockServer() {
   const port = await freePort()
   const child = spawn(process.execPath, ['mock-server.js'], {
     cwd: FRONTEND, env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'ignore'],

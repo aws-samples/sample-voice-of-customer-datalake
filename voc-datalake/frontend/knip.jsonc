@@ -2,14 +2,17 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // The files the bundler starts from: index.html is read for its <script> tags (src/main.tsx).
   // The two scripts are run by hand, not imported: fix-i18n.mjs is the Bedrock translation tool
-  // (src/i18n/options.test.ts parses it) and i18n-check.test.mjs, set-nested.test.mjs, fix-i18n-helpers.test.mjs and check-mock-coverage.test.mjs are run by validate.sh with node.
+  // (src/i18n/options.test.ts parses it) and i18n-check.test.mjs, set-nested.test.mjs, fix-i18n-helpers.test.mjs, check-mock-coverage.test.mjs and the mock-*.test.mjs files are run by validate.sh with node.
   "entry": [
     "index.html!",
     "scripts/fix-i18n.mjs",
     "scripts/i18n-check.test.mjs",
     "scripts/set-nested.test.mjs",
     "scripts/fix-i18n-helpers.test.mjs",
-    "scripts/check-mock-coverage.test.mjs"
+    "scripts/check-mock-coverage.test.mjs",
+    "scripts/mock-corpus.test.mjs",
+    "scripts/mock-faceted-scope.test.mjs",
+    "scripts/mock-scope.test.mjs"
   ],
   "project": [
     "src/**/*.{ts,tsx,css}!",
