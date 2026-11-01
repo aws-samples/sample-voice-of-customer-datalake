@@ -98,7 +98,7 @@ after side is shorter.
 
 ### Route (metrics Lambda, read-only)
 
-`GET /metrics/release-watch` is served by the Cognito `/metrics/{proxy+}` (since 5.47.00; it had its own resource before).
+`GET /metrics/release-watch` is served through the Cognito-authorized `/metrics/{proxy+}` resource.
 
 | Parameter | Meaning |
 |---|---|
@@ -135,6 +135,5 @@ words.
 
 ## Cost
 
-No new infrastructure beyond one API Gateway resource and method. Decision records are a few
-DynamoDB writes. Pursue costs what a PR/FAQ generation costs. Release watch reads feedback only
+Neither feature adds infrastructure. Decision records are a few DynamoDB writes. Pursue costs what a PR/FAQ generation costs. Release watch reads feedback only
 when somebody opens it.
