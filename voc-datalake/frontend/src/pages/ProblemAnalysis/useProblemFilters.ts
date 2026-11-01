@@ -5,7 +5,7 @@
  * Categories), `category`,
  * `subcategory`, `urgent=1`, `resolved=1`, `similarity` (low|med|high|off;
  * absent = the default, med) and `types` (absent = Problems only, the page's default;
- * `all` = no type filter; or a comma list, `components/ReviewTypeFilter/reviewTypeSelection.ts`). The period and date basis are the header's, like every
+ * `all` = no type filter; or a comma list: `components/ReviewTypeFilter/reviewTypeSelection.ts`). The period and date basis are the header's, like every
  * other page. The URL IS the state: each setter rewrites only
  * these keys (replace, not push), so the review modal's `?review=` survives.
  *
@@ -19,7 +19,9 @@ import { useSearchParams } from 'react-router-dom'
 import { EMPTY_FACETS, facetEntries, readFacets } from '../../api/feedbackFacets'
 import type { UsefulnessFacet } from '../../api/feedbackFacets'
 import { withOwnedParams } from '../../utils/searchParams'
-import { ALL_TYPES, PROBLEM_TYPES, isAllTypes, readTypeSelection, writeTypeSelection } from '../../components/ReviewTypeFilter/reviewTypeSelection'
+import {
+  ALL_TYPES, PROBLEM_TYPES, isAllTypes, readTypeSelection, writeTypeSelection,
+} from '../../components/ReviewTypeFilter/reviewTypeSelection'
 import type { TypeSelection } from '../../components/ReviewTypeFilter/reviewTypeSelection'
 
 /** How aggressively near-duplicate problems merge, by its URL token. */

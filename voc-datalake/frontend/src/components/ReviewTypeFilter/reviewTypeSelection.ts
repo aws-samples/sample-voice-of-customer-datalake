@@ -7,7 +7,9 @@
  * review), shown as "All types"; pressing all ten pills means the same. "Problems only" is a
  * preset: the six problem types. A click on a pill while a preset is showing selects only that
  * type (one click for "only feature requests"); later clicks add or remove pills, and removing
- * the last one goes back to no filter.
+ * the last one goes back to no filter. "Problems only" is recognised by its value, not kept as a mode:
+ * pressing those six pills one by one (or opening a link listing exactly them) reads as the preset, so
+ * the next click selects one type too. Kept on purpose: the URL then needs no separate preset flag.
  *
  * Each page has its own default: Problem Analysis opens on Problems only, Categories on every
  * type. An absent `types` is the page's default, `all` is no filter, a comma list is a choice.
