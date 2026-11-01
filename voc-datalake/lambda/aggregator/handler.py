@@ -2157,7 +2157,7 @@ def deserialize_image(image: dict, *, raw: bool = False) -> dict:
     ``{'M': {...}}``); every value is then deserialized by boto3, nested maps and lists
     included. The old version guessed per value and treated every dict as a wire value, so it
     dropped deserialized maps: the per-dimension and tag counters were never written before
-    5.67.02.
+    5.68.01.
     """
     if not raw:
         return dict(image)
