@@ -96,7 +96,7 @@ export default function ChatScopePanel({ threadId }: Readonly<{ threadId: string
         </button>
         <CountLabel {...count} />
         {active > 0 && (
-          <button type="button" className="min-h-9 text-[12px] text-accent-text hover:underline" onClick={() => onChange({})}>
+          <button type="button" className="link min-h-9 text-[12px]" onClick={() => onChange({})}>
             {t('scope.clear')}
           </button>
         )}

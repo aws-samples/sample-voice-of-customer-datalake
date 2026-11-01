@@ -75,6 +75,8 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'categories-feedback-search': 'feedbackData',
   'categories-feedback-urgent': 'feedbackData',
   'category-reprocess-job': 'live',
+  'chat-scope-count': 'feedbackData', // the /chat panel's live review count (pages/Chat/useScopeCount)
+  'chat-scope-options': 'feedbackData', // the /chat panel's source and category choices
   'company-context': 'config',
   'company-persona-jobs': 'live', // the library's generate / import jobs, polled while one runs (like project-jobs)
   'company-personas': 'standard', // Knowledge → Company → Personas (the shared persona library)
@@ -85,7 +87,6 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'data-quality': 'feedbackData', // Data Explorer usefulness distribution (/metrics/data-quality)
   'decision-review-search': 'feedbackData', // ProjectDetail decision evidence picker (/feedback/search)
   'design-system': 'config',
-  'inline-image': 'config', // a presigned image read as a data: URL (hooks/useInlineImage)
   'dimension-metrics': 'feedbackData',
   'dimensions-config': 'config',
   'document-comments': 'live', // margin comment threads of a PR/FAQ / PRD series (reviewers comment meanwhile)
@@ -96,6 +97,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'feedback': 'feedbackData',
   'feedback-access': 'config', // the caller's category/source scope
   'feedback-forms': 'standard',
+  'feedback-preview': 'feedbackData', // the persona / research wizards' live match count
   'feedback-problems': 'feedbackData',
   'feedback-similar': 'feedbackData',
   'form-stats': 'standard',
@@ -103,6 +105,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'generator-config': 'config',
   'githubMetrics': 'feedbackData',
   'import-history': 'standard', // import runs (Data sources → Import history); a finished upload invalidates it
+  'inline-image': 'config', // a presigned image read as a data: URL (hooks/useInlineImage)
   'integration-status': 'standard',
   'logs': 'config', // ['logs', 'alerts']: the alerting switch and recipients
   'logs-summary': 'live',
