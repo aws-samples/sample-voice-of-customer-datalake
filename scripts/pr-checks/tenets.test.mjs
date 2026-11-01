@@ -25,7 +25,10 @@ test('the TENETS.md checklist and the PR template both carry the Tenets section 
 
 test('touchedIds reads the leading id list in any case and separator, and ignores the prose after it', () => {
   assert.deepEqual(touchedIds('3, d1 and D4; 7'), ['3', 'D1', 'D4', '7'])
-  assert.deepEqual(touchedIds('3 D1 & 7'), ['3', 'D1', '7'])
+  assert.deepEqual(touchedIds('3 & D1'), ['3', 'D1'])
+  assert.deepEqual(touchedIds('7.'), ['7'])
+  assert.deepEqual(touchedIds('3, D1.'), ['3', 'D1'])
+  assert.deepEqual(touchedIds('7 2026 cost review'), ['7'])
   assert.deepEqual(touchedIds('7 (SnapStart opt-in, see #242)'), ['7'])
   assert.deepEqual(touchedIds('6, 7: shipped in 5.70.00'), ['6', '7'])
   assert.deepEqual(touchedIds('see 5.70.00'), [])

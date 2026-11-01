@@ -84,3 +84,12 @@ describe('fixedCostFindings', () => {
     expect(fixedCostFindings('EmptyStack', {})).toStrictEqual([]);
   });
 });
+
+describe('VPC endpoints', () => {
+  it('names the billed endpoint type in the finding', () => {
+    expect(findingsFor('AWS::EC2::VPCEndpoint', { VpcEndpointType: 'Interface' })[0]?.message).toContain('an interface VPC endpoint');
+    expect(findingsFor('AWS::EC2::VPCEndpoint', { VpcEndpointType: 'GatewayLoadBalancer' })[0]?.message)
+      .toContain('a Gateway Load Balancer VPC endpoint');
+    expect(findingsFor('AWS::EC2::VPCEndpoint', { VpcEndpointType: 'toString' })).toStrictEqual([]);
+  });
+});

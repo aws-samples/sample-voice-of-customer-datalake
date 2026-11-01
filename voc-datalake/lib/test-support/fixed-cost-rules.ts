@@ -25,7 +25,12 @@ type Properties = Record<string, unknown>;
 /** A rule: the reason a resource of this shape carries a fixed cost, or undefined when it does not. */
 type Rule = (type: string, properties: Properties) => string | undefined;
 
-/** Resource types that are a fixed cost by existing: `[type or type prefix ending in '::', what it is]`. */
+/**
+ * Resource types that are a fixed cost by existing: `[type or type prefix ending in '::', what it is]`.
+ * A prefix (`AWS::RDS::`, `AWS::Redshift::`, `AWS::DocDB::`, `AWS::Neptune::`, `AWS::MSK::`, …) also flags the
+ * service's free sub-resources (parameter and subnet groups). That is deliberate: they exist only beside a billed
+ * cluster, so flagging them fails safe.
+ */
 const FIXED_COST_TYPES: readonly (readonly [string, string])[] = [
   ['AWS::WAF::', 'a WAF (classic) resource'],
   ['AWS::WAFRegional::', 'a WAF (regional classic) resource'],
@@ -60,10 +65,12 @@ const byType: Rule = (type) => FIXED_COST_TYPES.find(([pattern]) => matchesType(
 
 // Interface and Gateway Load Balancer endpoints bill per hour per AZ; a Gateway endpoint (S3, DynamoDB, the
 // CloudFormation default type) is free.
+const BILLED_ENDPOINTS: ReadonlyMap<unknown, string> = new Map([
+  ['Interface', 'an interface VPC endpoint (hourly per AZ)'],
+  ['GatewayLoadBalancer', 'a Gateway Load Balancer VPC endpoint (hourly per AZ)'],
+]);
 const interfaceEndpoint: Rule = (type, properties) => (
-  type === 'AWS::EC2::VPCEndpoint'
-    && (properties.VpcEndpointType === 'Interface' || properties.VpcEndpointType === 'GatewayLoadBalancer')
-    ? 'an interface VPC endpoint (hourly per AZ)' : undefined
+  type === 'AWS::EC2::VPCEndpoint' ? BILLED_ENDPOINTS.get(properties.VpcEndpointType) : undefined
 );
 
 const snapStart: Rule = (type, properties) => (

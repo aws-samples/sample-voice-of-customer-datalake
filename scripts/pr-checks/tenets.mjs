@@ -17,9 +17,10 @@ export const TENET_IDS = Object.freeze(['1', '2', '3', '4', '5', '6', '7', 'D1',
 const TOUCHED = /^tenets touched:\s*(.*)$/i
 const NONE = /^none\b/i
 
-// The id list at the start of the value: ids separated by commas, semicolons, `and`, `&` or spaces. What follows
-// it (`7 (SnapStart opt-in, see #242)`) is prose, so a number there is never read as an id.
-const ID_LIST = /^D?\d+(?:(?:\s*[,;&]\s*|\s+and\s+|\s+)D?\d+)*(?![\w.])/i
+// The id list at the start of the value: ids separated by commas, semicolons, `&` or `and`. What follows it
+// (`7 (SnapStart opt-in, see #242)`, `7 2026 cost review`) is prose, so a number there is never read as an id. The
+// tail refuses a version (`5.70.00`) but allows a sentence-ending full stop (`3, D1.`).
+const ID_LIST = /^D?\d+(?:(?:\s*[,;&]\s*|\s+and\s+)D?\d+)*(?!\w|\.\d)/i
 
 /** The ids a `Tenets touched:` value starts with, in order: `3, D1 and d4 (why)` → `['3', 'D1', 'D4']`. */
 export function touchedIds(value) {
