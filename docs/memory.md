@@ -1,27 +1,42 @@
-# Memory — company and personal
+# Memory: company and personal
 
-The platform remembers what it learns — from assistant chats, project chats, agent runs and pages an admin
-imports — and recalls it in the AI surfaces listed under "Who recalls what" below (not all of them). Two scopes:
+The platform remembers what it learns from assistant chats, project chats, agent runs and pages a curator imports,
+and recalls it in the AI surfaces listed under [Who recalls what](#who-recalls-what). A memory is one short
+statement, such as "Our customers compare prices before checkout" or "I like short answers". There are two scopes:
 
 | Scope | Who sees it | Who can change it |
 |---|---|---|
-| **Company** | every signed-in user — except that a user restricted to some categories never sees a memory about, or naming, a category outside their access (see "Category access" below) | admins and users with the **memory reviewer** flag; anyone else's company add is stored as `proposed` |
+| **Company** | every signed-in user, except that a user restricted to some categories never sees a memory about, or naming, a category outside their access ([Category access](#category-access)) | curators: admins and users with the **memory reviewer** flag. Anyone else's company add is stored as `proposed` |
 | **Personal** | its owner only (admins never see its content) | its owner |
 
-On the Memory page, whoever can change a memory edits its statement inline (pencil, then Save or Cancel —
-`PUT /memory/{id}`; Cancel or Escape keeps the saved text). A company memory offers **+1** to anyone; your own
-personal memory offers **Still true** instead (the same `POST /memory/{id}/confirm`: it refreshes the memory
-against the 90-day decay and is never counted as a supporter).
+The extractor files generic knowledge about the product, customers or projects as **company** and anything
+specific to one user as **personal**. "I like you to reply in short" is personal; "Our customers demonstrated
+they compare prices before checkout" is company.
 
-Rule for the extractor (owner's examples, verbatim in the prompt): generic and valuable for the company — any
-product, customer or project knowledge — is **company**; specific to one user is **personal**.
-"I like you to reply in short" → personal. "Our customer demonstrated they xx and xx" → company.
+## Using the Memory page
+
+Open **Memory** in the sidebar (`/memory`). It has these tabs (`?tab=` deep-links one):
+
+| Tab | Who | What |
+|---|---|---|
+| Company | everyone | shared memories. Anyone can **+1** a memory (one supporter per person). Curators also edit, forget, restore and merge |
+| Personal | everyone | your own memories. **Still true** refreshes one against the 90-day decay without counting you as a supporter |
+| Needs review | curators | proposed company memories and conflicts side by side, with supporter counts and a suggested resolution: keep this one, keep both, merge into one, or keep the existing one |
+| Imports | curators | **Import a page**: paste a document or web page (up to 200,000 characters, optional source link); what it teaches is published under the usual confidence rules |
+
+**Add memory** stores a statement for the whole company or for you, with a retention: **Fades when unused**,
+**Long-term** or **Until a date**. A
+non-curator's company memory goes to review first. Before saving, the dialog shows which personal details will be
+hidden for privacy. Whoever can change a memory edits its statement inline (pencil, then Save or Cancel;
+`PUT /memory/{id}`). **Forget** archives a memory and stops automation from learning it again; **Restore** brings it
+back. **Merge selected** replaces several memories with one statement; the originals are archived and their
+supporters carry over.
 
 **Names, not ids.** A statement names categories, subcategories and sources the way the dashboard does, never by
 their ids. The extractor's prompt lists the configured categories as `Label (id: …)` lines (`shared/memory_categories.py`).
 A memory's `categories` stay **ids**, because category access is checked against them: the model's answer is
 mapped back to ids, whether it gave an id or a label, and anything else is dropped. Without a category config,
-the names the model saw in the text are kept, as before.
+the names the model saw in the text are kept.
 
 ## Category tags
 
@@ -40,7 +55,7 @@ same closed list — the configured categories, given to the model as `Label (id
 - A memory about the company in general (strategy, working style, customers as a whole) gets no tags.
 - A model failure never blocks a write: the name match is used alone. Without a category config, tags are kept as given.
 
-**Backfill** (memories written before 5.19 that have no tags): `voc-datalake/scripts/memory/backfill_categories.py`
+**Backfill** (memories written by releases before 5.19.00 have no tags): `voc-datalake/scripts/memory/backfill_categories.py`
 scans every memory without tags (company and personal, every status) and classifies it with the same
 function. Its default is a dry run: it prints id, scope/status, the first 80 characters and the proposed
 tags, then a summary (scanned, would be tagged, left untagged, model failures). `--apply` writes ONLY
@@ -78,7 +93,7 @@ checks, in order (`shared/memory_store.visible_to`, `shared/scope_names.py`):
    rule errs towards hiding.
 
 The same rule applies to the company context (vision paragraphs and company objectives) for restricted
-readers. Admins and unrestricted users see everything as before. If the categories configuration cannot be
+readers. Admins and unrestricted users see everything. If the categories configuration cannot be
 read, `GET /memory` answers 500 and prompt grounding includes no memory or company context for a restricted
 reader (fail closed).
 
@@ -92,7 +107,7 @@ EventBridge every 15 min ─▶ memory-scanner (finds idle sessions past their c
 EventBridge daily 03:15 UTC ─▶ memory-retention (decay / dated → archived; long_term never)
 ```
 
-Write rules (KiroCrew's): an automated write needs confidence ≥ 0.8 (else dropped, or `proposed` when
+Write rules (following KiroCrew): an automated write needs confidence ≥ 0.8 (else dropped, or `proposed` when
 company-relevant); user-explicit beats automated; an automated statement that contradicts an active
 user-explicit or confirmed memory becomes a `conflict` (both kept and linked); a forgotten (tombstoned) memory is
 never re-created by automation — a match goes to review; cosine ≥ 0.86 within a scope is a duplicate (+1
