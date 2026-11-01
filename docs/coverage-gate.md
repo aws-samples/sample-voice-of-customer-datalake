@@ -15,9 +15,9 @@ the handful of files that were under the floor when the gate started from gettin
 
 | Suite | Report | Measured files | Not measured |
 |---|---|---|---|
-| Python (`voc-datalake/`) | coverage.py JSON, statements | `lambda/`, `plugins/` | tests (`test/`, `tests/`, `test_*.py`, `*_test.py`, `conftest.py`), `plugins/_template/`, `lambda/layers/` — `scripts/coverage/python.coveragerc` |
-| Frontend | vitest v8 `json-summary`, lines | `frontend/src/**/*.{ts,tsx}` | specs, `*-fixtures.*`, `__fixtures__/`, `src/test/`, `*.d.ts`, `main.tsx` — the `coverage` block of `frontend/vitest.config.ts` |
-| Stream Lambda | vitest v8 `json-summary`, lines | `lambda/stream/src/**/*.ts` | `*.test.ts`, `*-fixtures.ts`, `__fixtures__/` — the `coverage` block of `lambda/stream/vitest.config.ts` |
+| Python (`voc-datalake/`) | coverage.py JSON, statements | `lambda/`, `plugins/` | tests (`test/`, `tests/`, `test_*.py`, `*_test.py`, `conftest.py`), `plugins/_template/`, `lambda/layers/` (`scripts/coverage/python.coveragerc`) |
+| Frontend | vitest v8 `json-summary`, lines | `frontend/src/**/*.{ts,tsx}` | specs, `*-fixtures.*`, `__fixtures__/`, `src/test/`, `*.d.ts`, `main.tsx` (the `coverage` block of `frontend/vitest.config.ts`) |
+| Stream Lambda | vitest v8 `json-summary`, lines | `lambda/stream/src/**/*.ts` | `*.test.ts`, `*-fixtures.ts`, `__fixtures__/` (the `coverage` block of `lambda/stream/vitest.config.ts`) |
 
 The frontend and stream configs list every source file (`coverage.include`), so a file no test imports reports
 0 % instead of disappearing from the report. A file with nothing to measure (types only, an empty `__init__.py`)
@@ -26,10 +26,10 @@ is skipped.
 ## The floor
 
 The floor is set once per suite in `scripts/coverage/suites.json`. Like every gate value
-(`eslint-rules/quality-gates.mjs`, max-lines, complexity), it is **human-owned**: never lower it to make a
+(`eslint-rules/quality-gates.mjs`, max-lines, complexity), it belongs to the maintainers: never lower it to make a
 change pass.
 
-It was chosen from the per-file line rates measured when the gate started (5.48.05 tree):
+It was chosen from the per-file line rates measured when the gate was introduced:
 
 | Suite | Files | Median | p25 | < 50 % | < 60 % | < 70 % | < 80 % |
 |---|---|---|---|---|---|---|---|
@@ -45,7 +45,7 @@ three use 80 %.
 `scripts/coverage/check-per-file-coverage.mjs` exits 1 when:
 
 1. **A file not in the baseline is below the floor.** Add tests until it reaches the floor. A new file and a
-   renamed file are both new paths to the gate: a rename keeps the file at the floor, or the owner decides.
+   renamed file are both new paths to the gate: a renamed file must reach the floor too.
 2. **A baselined file fell below the rate recorded for it** (by more than 0.1 point). Restore or add its tests.
    The 0.1 point absorbs the small moves a refactor of a large file makes; rates are recorded truncated to two
    decimals, so no rounding can trip it.
@@ -87,9 +87,8 @@ written when a suite fails.
 
 A test that bounds its own running time (`elapsed < N`) measures the machine as much as the code. Coverage tracing
 slows tight Python loops several times over, and on CI the 4-vCPU runner is shared with the other gate lanes and
-the other pytest workers. Such tests went over their bounds there with nothing wrong in the code (5.55.00: the
-Problem Analysis capacity test at 9 s, then 6.3 s, against 6 s; 5.56.00: the Service Quotas store at 0.33 s against
-0.25 s).
+the other pytest workers. Such tests went over their bounds there with nothing wrong in the code (for example a
+capacity test bounded at 6 s that took 9 s, and a store test bounded at 0.25 s that took 0.33 s).
 
 So a test that bounds its time is marked `@pytest.mark.timing` (on the test, its class or the module's
 `pytestmark`), and the gate treats it differently:
