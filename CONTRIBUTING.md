@@ -48,20 +48,45 @@ GitHub provides additional document on [forking a repository](https://help.githu
 [creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
 
 
+## Development setup
+From the repository root (Node.js 22.12+, Python 3.12+, Docker or Finch for layer builds):
+
+```bash
+npm run install:all                               # root, CDK and frontend packages
+npm install --prefix voc-datalake/lambda/stream   # the AI assistant Lambda
+cd voc-datalake && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt \
+  -r lambda/layers/ingestion-deps/requirements.txt -r lambda/layers/processing-deps/requirements.txt \
+  -r lambda/layers/signing-deps/requirements.txt -r lambda/layers/email-intake-deps/requirements.txt && cd ..
+npm run dev                                       # frontend + local mock API with sample data
+```
+
+Every frontend API call must also have a route in the local mock (`npm run check:mock` checks it); see
+[docs/deployment.md → Quality Checks](docs/deployment.md#quality-checks) for the individual scripts.
+
+
+## Branches and pull requests
+`main` is the only long-lived branch. Start each change from the current `main`, keep separate commits for
+separate changes, and open a pull request against `main`. Pull requests are rebase-merged once CI is green, so
+each commit lands on `main` as it is and `main` keeps a linear history: bring a branch up to date with
+`git rebase origin/main`, not a merge commit.
+
+
 ## Versioning and the changelog
-Every change that lands bumps the version and adds an entry to [CHANGELOG.md](CHANGELOG.md) in the same
-commit: **major** for a redesign or a breaking API/stack/data change, **minor** for new or changed
-behaviour, **patch** for fixes, tests, docs and tooling. The changelog writes releases as `2.09.00`; the
-three `package.json` files (root, `voc-datalake/`, `voc-datalake/frontend/`) carry the same number in
-strict SemVer (`2.9.0`, via `npm version 2.9.0 --no-git-tag-version`). `scripts/check-version.mjs`, a
-`validate.sh` step, fails when they disagree. Branches merged by someone else add their bullets under
-`[Unreleased]` and the merger cuts the release. The full rules are in `.kiro/steering/changelog.md`.
+Every pull request that lands on `main` bumps the version once and records its changes in
+[CHANGELOG.md](CHANGELOG.md), usually in its last commit: **major** for a redesign or a breaking API/stack/data
+change, **minor** for new or changed behaviour, **patch** for fixes, tests, docs and tooling. Several changes in
+one pull request take one bump, the highest kind among them. The changelog writes releases as `2.09.00` with
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) groups (Added, Changed, Deprecated, Removed, Fixed,
+Security, Upgrade notes); the three `package.json` files (root, `voc-datalake/`, `voc-datalake/frontend/`) carry
+the same number in strict SemVer (`2.9.0`, via `npm version 2.9.0 --no-git-tag-version` in each directory).
+`scripts/check-version.mjs`, a `validate.sh` step, fails when they disagree. Branches that feed a release branch
+add their bullets under `[Unreleased]`, and whoever merges them cuts the release.
 
 ## Quality gates
 `npm run validate` (`scripts/validate.sh`) runs every gate: ruff, vulture (dead code), pyright, a check that every
 pytest test asserts, tsc for each TypeScript program (all with `noUncheckedIndexedAccess`, specs included), ESLint in
 each package (`voc-datalake/`, `frontend/`, `lambda/stream/`, sharing `eslint-rules/quality-gates.mjs`; specs linted
-too, and `eslint-rules/` itself linted under the same rules), knip (default and `--production --strict`), jscpd over code and tests, the i18n audit (`npm run check:i18n` on its own: no missing, extra or empty locale keys, every source key in English; read-only — the frontend's `i18n:validate` also runs `i18next-parser`, which rewrites the locale files), a gitleaks scan of the
+too, and `eslint-rules/` itself linted under the same rules), knip (default and `--production --strict`), jscpd over code and tests, the i18n audit (`npm run check:i18n` on its own: no missing, extra or empty locale keys, every source key in English; it is read-only, while the frontend's `i18n:validate` also runs `i18next-parser`, which rewrites the locale files), a gitleaks scan of the
 working tree (`scripts/gitleaks-tree.sh`; install gitleaks 8.30+, e.g. `brew install gitleaks`), CodeQL's
 security-and-quality queries over JS/TS and Python with zero errors and warnings (`scripts/codeql.sh`; install the
 CLI with `brew install codeql`; about 5 minutes; skipped on GitHub Actions, where code scanning runs the same
@@ -76,14 +101,13 @@ need a release bump before they merge ([docs/dependencies.md](docs/dependencies.
 behind its newest release, so the work starts from current versions.
 
 ### When to run what
-- **Track, agent and mutation branches: the affected gates only.** `bash scripts/validate-affected.sh [<base>]`
-  (base defaults to `origin/main`) maps the changed paths — committed, uncommitted and untracked — to the steps that
+- **Topic branches: the affected gates only.** `bash scripts/validate-affected.sh [<base>]`
+  (base defaults to `origin/main`) maps the changed paths (committed, uncommitted and untracked) to the steps that
   matter for them, and `--explain` prints that mapping without running anything. While iterating, run the single
   tool you need (`ruff check <files>`, `pytest <test files>`, `npx vitest run <spec>`).
-- **The release branch: the full `scripts/validate.sh`, ONCE, just before it is pushed for its PR** (after any
-  topic branches are merged into it). It is the backstop for anything the affected mapping misses, so it is never
-  skipped; CI runs it again on the PR. Release branches start from `main` and reach it only through a rebase-merged
-  PR that keeps each commit (`.kiro/steering/changelog.md` → Branches and PRs).
+- **The release branch: the full `scripts/validate.sh`, once, just before it is pushed for its pull request**
+  (after any topic branches are merged into it). It is the backstop for anything the affected mapping misses, so
+  it is never skipped; CI runs it again on the pull request.
 
 ### How validate.sh runs
 The steps run in five parallel lanes — `py` (ruff, vulture, pyright, pytest with pytest-xdist), `tsc` (type checks,
@@ -103,16 +127,16 @@ and not installed in `.venv`, because installed it reorders every pytest run):
 `PYTHONPATH=/tmp/pytest-randomly .venv/bin/python -m pytest -o addopts= -p randomly -n 8` (the seed is printed;
 replay that order with the same command plus `--randomly-seed=<seed>`).
 
-Nothing is pending today. The mechanism stays for a NEW gate that arrives with existing findings: pend it in the
-`PENDING` block of `voc-datalake/ruff.toml` or a `PENDING_*` map of the package's `eslint.config`, count it in
-`scripts/quality-baseline.sh`, and move it into `validate.sh` in the change that brings it to zero. That list only
+A new gate that arrives with existing findings can be pended while its findings are fixed: list it in a
+`PENDING_*` map of the package's `eslint.config` (or the matching ruff configuration), count it in
+`scripts/quality-baseline.sh`, and move it into `validate.sh` in the change that brings it to zero. The list only
 shrinks:
 
 - Never add a pending entry, raise a limit (complexity 12, depth 3, 400 lines, 4 expects, 0 clones, vulture 60 %),
   or add a suppression comment (`eslint-disable`, `@ts-ignore`, blanket `# noqa`, `# type: ignore`). Fix the code
   or make the type tell the truth.
 - Export only what another module imports. A function or export that only a test uses is dead.
-- Before merging, run `npm run mutation:report -- origin/development` and resolve every survivor it prints: kill it with
+- Before merging, run `npm run mutation:report -- origin/main` and resolve every survivor it prints: kill it with
   a test, delete the statement it proves has no effect, or mark it equivalent with the reason.
 
 ### Code audit (in the gate)
