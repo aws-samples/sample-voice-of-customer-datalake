@@ -1,7 +1,7 @@
 # Code audit detectors
 
-Small scripts in `scripts/audit/` that find the dead and duplicated code the other gates miss: the patterns the
-5.26–5.28 audits found by hand, turned into something you can re-run. Every one is a step of `scripts/validate.sh`
+Small scripts in `scripts/audit/` that find the dead and duplicated code the other gates miss: the patterns that
+earlier manual audits found by hand, turned into something you can re-run. Every one is a step of `scripts/validate.sh`
 (see [In the gate](#in-the-gate)), so a change that adds a finding fails the gate. Run them before an audit or a
 clean-up too, inspect every finding, then delete, consolidate or allowlist it with a reason.
 
@@ -75,8 +75,7 @@ cannot outlive the code it excuses. The entry shape depends on the tool:
 | `patterns.py` | `{"rule", "path" (glob), "scope"?, "contains"?, "reason"}` | one finding of a rule; `scope` is the enclosing function, so the entry survives line shifts |
 
 Path globs use `**` for any directories and `*` within one segment. Keep clone globs to the exact files of the
-group, so a new copy elsewhere is still reported. A reason may start `OPEN (owner)` to mark a finding judged dead whose
-removal is a product decision; no allowlist holds one today.
+group, so a new copy elsewhere is still reported.
 
 ## Dead code
 
@@ -139,8 +138,8 @@ SPA `fetchApi` call site; `check:mock` keeps it complete) and the stream Lambda'
 `path:` literals in one object). A request is served by a Powertools route (the handlers' decorators and the routers
 a handler mounts with `include_router`) or by an EXPLICIT API Gateway method in `lib/stacks/*.ts` (the stream behind
 `/chat/stream`, webhooks, `/mcp/global`; the CDK route tests pin the Python ones to their handler). A `{proxy+}` is
-not a route: it passes the path to a Lambda that answers 404, which is how the Settings → Sources "Test" button
-failed from #115 until 5.34. Key: `POST /integrations/{}/test` (the call site's own path template).
+not a route: it passes the path to a Lambda that answers 404, so a button that calls such a path fails at run time
+although every deploy succeeds. Key: `POST /integrations/{}/test` (the call site's own path template).
 
 **Why the reference tools miss these.** vulture matches bare names repo-wide (one `.clear()` keeps every
 `clear`), counts `__all__` as a use and knows no entry points. Env names, grants, routes and attributes are strings
@@ -167,7 +166,8 @@ They load the repo's three programs (SPA `tsconfig.test.json`, stream `tsconfig.
   again with every spec as a root to tell `test-only`. Type-only members show with `--all-members`.
   `never-written` is the reverse of `write-only`, a dead knob: an optional member of an exported `*Options` /
   `*Props` / `*Deps` / `*Config` shape under `lib/` or `scripts/` that live code reads but that nothing, production or
-  test, sets and no other type's member flows into (5.34: `CollectOptions.maxPolls`, always its `?? 90`).
+  test, sets and no other type's member flows into (for example an options field always left at its `?? 90`
+  default).
 - **`ts_union_members.mjs`** (`never-produced`, `unused-member`). Every string literal is a produce, compare,
   key, decoder or table read; a producer counts when its contextual type is that union, a superset or a narrower
   union of its members. Template literals and Python f-strings are wildcards; backend Python / JSON strings produce.
@@ -180,8 +180,8 @@ They load the repo's three programs (SPA `tsconfig.test.json`, stream `tsconfig.
   sentence. A path-shaped token must resolve from the file's directory, a package root, the repo root, or as a
   suffix of a `git ls-files` path (a `.js` ESM specifier through its `.ts`); a test token, or any path in a
   sentence that claims a pin (`pinned by`, `lockstep`, `fails when`), is `missing-test`: a guard someone believes
-  in that does not exist (5.34 found two: `API_AGENT_LIMITS` and `API_WORKFLOW_LIMITS` named lockstep tests that
-  never existed, and the cron bound had drifted). In production files a backticked camel / snake identifier of 5+
+  in that does not exist (for example a comment naming a lockstep test that was never written). In production
+  files a backticked camel / snake identifier of 5+
   characters must appear in some code of the repo (identifiers and string literals of TS/JS, Python without
   comments, JSON incl. the locale catalogues, shell, YAML; never `scripts/audit/` itself). Skipped: URLs, globs,
   runtime artefacts (`config.json`, `mcp.json`), product names (`Node.js`), history clauses (`was`, `old`,
@@ -209,8 +209,7 @@ named in prose (allowlisted with the reason). For `ts_name_twins`: per-domain he
 purpose (`toDraft` in each editor's draft module).
 
 **Known false negatives.** `ts_locale_keys` counts any production literal equal to a key, so a key whose name is
-also an ordinary string elsewhere (`'issues'` in a stop-word list) looks reached: 5.34 found
-`categories:issues` / `issuesWithPercent` that way, unread by any `t()`.
+also an ordinary string elsewhere (`'issues'` in a stop-word list) looks reached even when no `t()` reads it.
 
 ### Contracts and stale pointers (`py_sfn_errors.py`, `py_dead_params.py`, `py_doc_refs.py`)
 
@@ -218,8 +217,8 @@ also an ordinary string elsewhere (`'issues'` in a stop-word list) looks reached
   pieces and `DefinitionSubstitutions` resolved), each Task joined to its Lambda, and every `ErrorEquals` name that
   is not `States.*` / `Lambda.*` / `Sandbox.*` must be the `__name__` of an exception class defined in that
   Lambda's bundle, or a builtin. A module-level alias (`Old = New`) does not count: Lambda reports
-  `type(error).__name__`. It found the research and document workflows retrying on `BedrockThrottlingException`
-  while the code raised `BedrockThrottlingError`, so the retry never fired (fixed in this release). Key
+  `type(error).__name__`. This catches a workflow that retries on `BedrockThrottlingException` while the code
+  raises `BedrockThrottlingError`, a retry that never fires. Key
   `<stack>/<state machine>::<error name>`.
 - **`py_dead_params.py`** (`dead-default`, `constant-arg`, `config-fallback`). For functions whose bare name is
   defined once in `lambda/` + `plugins/` (tests included), not decorated and never escaping as a value or a string,
@@ -287,7 +286,7 @@ differs (a limit, a message, a key) and decide: one helper, or a deliberate copy
 `plugins/_shared` vs `lambda/shared` are separate bundles; the SPA ↔ stream mirrors pinned by
 `*.lockstep.test.ts`); request validators with per-route limits and wording; small React components sharing
 Tailwind vocabulary; CDK builders repeating one construct per Lambda (the 20 KB IAM split). Tiny decorator-registered
-functions (the seven `shared/api.py` exception handlers of 5.28) sit under the size floor and in one file: they show
+functions (such as the `shared/api.py` exception handlers) sit under the size floor and in one file: they show
 with `--min-nodes 20 --same-file <file>`.
 
 ### `patterns.py`: known anti-patterns that already have a shared helper
@@ -359,8 +358,7 @@ Strings that tie a script, a doc or a config to the code they describe, which no
 **Finds** (`read-not-declared`, key = the output key) a CloudFormation output a `*.sh`, `*.mjs`, `*.js`, `*.ts`,
 `*.py`, `*.yml` or `*.md` file reads by key when no `new cdk.CfnOutput(<scope>, '<Key>'` in `voc-datalake/lib` or
 `bin` declares it. `describe-stacks` answers an unknown key with nothing, so the script falls back or writes an
-empty value and nothing fails: `deploy.sh` and `test-api.sh` read `ChatStreamUrl` for years after the stream moved
-behind API Gateway. A read is a jq / JMESPath `OutputKey==…` comparison, Python `.get('OutputKey') == '…'`, or a
+empty value and nothing fails. A read is a jq / JMESPath `OutputKey==…` comparison, Python `.get('OutputKey') == '…'`, or a
 literal argument of a helper that compares `OutputKey` to one of its parameters (`cfn_output "$STACK" ApiEndpoint`,
 `_stack_output(cf, stack, 'FeedbackTableName')`). A template-literal id (`` `InboundEmailDkimRecord${n}` ``)
 declares its prefix; `contains("X")` matches any declared key containing X. There is no reverse pass: most outputs
@@ -374,7 +372,7 @@ Cheap insurance, one pass (key in brackets):
 |---|---|
 | `context-undocumented` [`context:<key>`] | a key the CDK app reads (`tryGetContext('<key>')` or a `*_CONTEXT_KEY` constant) that no doc (`docs/`, `README.md`, `CONTRIBUTING.md`, `.kiro/steering/`) names |
 | `context-unread` [`context:<key>`] | a key `cdk.context.json` sets that no CDK TypeScript names |
-| `flag-module-unused` [`flag:<flag>`] | a `cdk.json` feature flag for a module nothing in `lib/` / `bin/` imports (5.34 dropped six `cdk init` leftovers; `app-baseline.test.ts` showed the templates unchanged) |
+| `flag-module-unused` [`flag:<flag>`] | a `cdk.json` feature flag for a module nothing in `lib/` / `bin/` imports (for example `cdk init` leftovers) |
 | `script-missing-file` [`<package.json>::<script>`] | an npm script naming a file that does not exist, after its `cd <dir> &&` steps |
 | `script-uncalled` [`<package.json>::<script>`] | an npm script no CI workflow, doc, hook, script or other npm script runs (lifecycle scripts excepted). A second spelling of a gate step drifts from the gate, and a bare `cdk deploy <Stack>` skips the API stage refresh; documented dev shortcuts (`watch`, `synth`, `diff`, `test:ui`, `i18n:*`) are allowlisted with a reason |
 | `script-file-orphan` [`<path>`] | a file under a `scripts/` directory whose name no other file mentions |
@@ -392,11 +390,8 @@ the git-ignored history notes are not read). Key `<doc>::<kind>::<target>`:
 | `handler-list` | a doc naming at least 5 `*_handler.py` files names one `lambda/api/` lacks (`extra:`), or, naming at least three quarters of them, omits one (`missing:`) |
 | `uncited-file` | a `*.md` file name no directory of the repo holds |
 
-Run on 5.34's base it found the steering's `GET /logs` / `GET /logs/errors` and `POST /integrations/{source}/test`
-rows, the handler tables missing `ballots`, `radar` and `s3_import`, three moved or never-created paths, the finished
-migration plan in `plugin-architecture.md`, and the uncommitted audit notes `code-audit.md` cited. What stays
-allowlisted names files of other repositories (the KiroCrew website the design system links to, a customer repository's UI
-component file) and an S3 prefix.
+What stays allowlisted names files of other repositories (for example the KiroCrew website the design system links
+to) and an S3 prefix.
 
 ### cdk-nag suppressions that suppress nothing (`voc-datalake/lib/nag-suppressions.test.ts`)
 
@@ -406,61 +401,23 @@ Not a script but a CDK test (it needs cdk-nag's own logger, which only an in-pro
 finding; the entry that consumed it is found the way cdk-nag picks it (the FIRST entry, resource-level before
 stack-level, whose rule matches and whose `appliesTo`, when it has one, matches the finding). An entry, or one
 `appliesTo` item, that consumed nothing in either synth fails the test. An entry is identified by rule, reason and
-item, so a list shared by several stacks is judged across all of them. 5.34 removed what it found: an IAM5 entry for
-a wildcard the bucket-notifications handler no longer has (and its IAM4 twin, shadowed by the shared
-basic-execution entry), the briefing DLQ's SQS3 entry (cdk-nag recognises a DLQ), two state-machine `:*` regexes
-for Lambdas invoked by exact ARN, and the Translate `Resource::*` entry that the Comprehend one always shadowed (one
-entry now names both); the product-doc extractor's narrow entry moved before the shared S3 list so its reason is the
-one used. Removing a suppression changes only template `Metadata`, so `baseline.json` was regenerated with the
-name inventory unchanged.
+item, so a list shared by several stacks is judged across all of them. Removing a suppression changes only
+template `Metadata`.
 
 Its sibling `voc-datalake/lib/utils/nag-suppressions.test.ts` checks the `{ regex }` items of
 `lib/utils/nag-suppressions.ts`: each compiles the way cdk-nag compiles it, is anchored (`^…$`), escapes every
-literal `.` before `Arn>` / `Name>` and every literal `*`, and accepts or refuses a table of finding ids. Until 5.34
-those regexes sat in single-quoted strings, which drop a backslash, so `\.` was any character, `/\*` was "zero or more
-slashes" and `:\*` matched the bare ARN: the raw bucket's `<RawDataBucket.Arn>/*` entry silently covered every
-prefix grant (`avatars/*`, `prototypes/*`, `memory-imports/*`, …). Those prefix grants now have their own entry, one
-anchored item per prefix.
-
-## Proof against the 5.26 → 5.28 audits
-
-Run on 5.28's base (`37fc16f6`, the state the hand audits read) with `--no-allowlist`. The three 5.28 hand audits
-(dead Python, dead TypeScript, duplicated code) were working notes and are not in the repo; each row says what they
-found:
-
-| 5.28 hand-audit finding | Caught by | Result |
-|---|---|---|
-| Dead Python: 11 dead names (`fetch_with_retry`, `read_earliest_date`, `DecimalEncoder`, …) | py_reachability | 11 / 11 |
-| Dead Python: six `plugins/_shared/__init__.py` re-exports | py_reachability `unused-reexport` | 6 / 6 |
-| Dead Python: six test-only members (`ResponseCache.clear`, `BatchBump.reset`, …) | py_reachability | 6 / 6 |
-| Uncalled routes: persona notes PUT + DELETE, `GET /data-explorer/stats`, `GET /memory/stats` | py_route_callers | 4 / 4 (+ one more 5.28 removed) |
-| routes held alive by dead SPA wrappers (`POST /projects/{id}/personas`, …) | ts_api_callers reports the wrappers; py_route_callers sees the routes once they are gone | 0 / 4 Python alone |
-| Dead Python: CDK env vars no code reads, and dead `os.environ.get` fallbacks | py_env_contract | all |
-| Unused grants (ChatApi feedback + aggregates, processor projects, webhook feedback) | py_iam_contract | 4 / 4 |
-| Stored attributes never read (`last_run_finished_at`, `approved_at`) | py_stored_attrs | 2 / 2 |
-| Dead TypeScript: declarations and members nothing live reads | ts_reachability | all but two cosmetic type-only ones |
-| Dead TypeScript: SPA API functions only specs call | ts_api_callers | all, with routes |
-| Dead TypeScript: union members nothing produces (`Tone 'aim'`, `OverviewStep 'remix'`) | ts_union_members | 2 / 2 |
-| Dead TypeScript: locale keys nothing reaches | ts_locale_keys | 48 / 48, plus 51 the hand audit missed |
-| Duplicates: five `plain()` copies, i18n script copies | clones_struct.py / .mjs | caught |
-| Duplicates: 25 drain loops, 3 inline admin checks, 4 raw Bedrock calls, 2 clipboard copies, 7 date formatters, 15 `toFixed`, 3,122 raw `{{count}}` lines | patterns.py | all |
-
-Not caught: the seven exception handlers (under the clone size floor), `useCopiedFlash` (a hook duplicate with no
-shared call to match), and counts rendered without `formatCount` in JSX. Found that no hand audit had: the
-`AVATARS_CDN_URL` env on the two persona jobs, and the memory extractor's missing queue env + grant (a page import
-longer than one chunk stopped after chunk 1; fixed).
-
-**On today's tree** every detector is clean; what remains is allowlisted with a reason: clones 22 (Python) and 48
-(TS, 24 of them lockstep mirrors), patterns 47 (cursors, budgets, caps, early exits, documented cases), and the
-dead-code detectors' lists of seams and lockstep pins.
+literal `.` before `Arn>` / `Name>` and every literal `*`, and accepts or refuses a table of finding ids. This
+matters because a regex written in a single-quoted string drops its backslashes: `\.` becomes any character and
+`/\*` "zero or more slashes", so one bucket entry could silently cover every prefix grant. Each prefix grant
+(`avatars/*`, `prototypes/*`, `memory-imports/*`, …) has its own anchored item.
 
 ## In the gate
 
-Owner decision: every detector, plus the detectors' own tests and lint, is a `scripts/validate.sh` step, and
+Every detector, plus the detectors' own tests and lint, is a `scripts/validate.sh` step, and
 each fails the gate on exit 1 (findings) or 2 (could not run). `bash scripts/validate.sh --list` shows them as
 `audit: …`.
 
-| Step | Lane | Group | Runs on a track branch (`validate-affected.sh`) when |
+| Step | Lane | Group | Runs on a topic branch (`validate-affected.sh`) when |
 |---|---|---|---|
 | `audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function` | test, right after the vite build | `audit-py-synth` | `lambda/` (layer requirement files included), `plugins/`, the CDK app (`lib/`, `bin/`, `cdk*.json`) change |
 | `audit: py_route_callers`, `audit: py_stored_attrs` | tsc | `audit-callers` | `lambda/`, `plugins/`, the SPA, the stream Lambda or `voc-datalake/schemas/` change |
@@ -468,7 +425,7 @@ each fails the gate on exit 1 (findings) or 2 (could not run). `bash scripts/val
 | `audit: clones_struct.py` | tsc | `audit-clones-py` | Python in `lambda/`, `plugins/`, `voc-datalake/scripts/` or `scripts/` changes |
 | `audit: py_dead_params` | tsc | `audit-clones-py` | the same |
 | `audit: clones_struct.mjs` | tsc | `audit-clones-ts` | the SPA, the stream, the CDK app, or `scripts/*.mjs` change |
-| `audit: stack_outputs` | tsc | `repo` | always (the `repo` group runs on every track branch; ~1 s) |
+| `audit: stack_outputs` | tsc | `repo` | always (the `repo` group runs on every topic branch; ~1 s) |
 | `audit: repo_contracts` | tsc | `repo` | always (~2 s) |
 | `audit: doc_contract` | tsc | `repo` | always (~2 s) |
 | `audit: ts_stale_refs`, `audit: ts_query_keys` | tsc | `audit-ts` | the SPA (mocks included), the stream or the CDK app change (a Python-only change that strands a TS comment is caught by the full gate) |
