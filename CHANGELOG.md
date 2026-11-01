@@ -42,6 +42,7 @@ Cleanup after the public docs pass: stale texts, a wrong plural and the dev mock
   effect, and list Home at `/` and the Dashboard at `/dashboard`.
 - `VocIngestionStack` no longer falls back to a `frontendDomain` context value for the S3 import bucket's CORS
   origin. The stack always receives the CloudFront domain from `VocCoreStack`, so deployed stacks do not change.
+  A missing, empty or padded domain now fails the synth instead of allowing `https://`.
 - The frontend's mock tests (`scripts/mock-corpus.test.mjs`, `mock-faceted-scope.test.mjs`, `mock-scope.test.mjs`)
   run in the quality gate's mock coverage step.
 
