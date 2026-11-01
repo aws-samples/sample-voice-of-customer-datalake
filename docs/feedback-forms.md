@@ -1,6 +1,8 @@
 # Feedback Forms
 
-Feedback Forms allow you to collect customer feedback directly through embeddable forms on your website or application.
+Feedback Forms collect customer feedback directly, through a form you embed on your website or in your
+application. Signed-in users create and manage forms on the **Feedback Forms** page; customers fill them in
+without signing in, and each submission goes through the same enrichment pipeline as every other source.
 
 ## Overview
 
@@ -15,8 +17,8 @@ The VoC platform provides a customizable feedback form system that:
 
 ### Via the Dashboard
 
-1. Navigate to **Feedback Forms** in the main sidebar
-2. Click **Create New Form**
+1. Open **Feedback Forms** in the sidebar.
+2. Click **Create Form** and choose a template.
 3. Configure the form settings:
    - **Name**: Internal identifier for the form
    - **Title**: Displayed heading on the form
@@ -26,10 +28,10 @@ The VoC platform provides a customizable feedback form system that:
      In the widget every rating button is named for screen readers by its value on the scale
      ("Good (4 of 5)", "3 stars of 5: Good", "7 of 10"), the buttons form a group named by the
      question, and the chosen one is `aria-pressed`.
-4. Save, then enable the form
+4. Save, then enable the form.
 
-New forms are created **disabled** on purpose: nothing is public until the owner
-says so. Until it is enabled, the form's link, iframe and embed render
+New forms are created **disabled** on purpose: nothing is public until someone
+enables the form. Until it is enabled, the form's link, iframe and embed render
 `Feedback form unavailable.`, and `POST /submit` refuses submissions. The page
 says this right after the create (a notice naming the form, with **Enable now**),
 and every disabled form's card repeats it with an **Enable now** button; the
@@ -52,7 +54,7 @@ toggle on the card does the same.
 | `subcategory` | Pre-assign subcategory |
 | `success_message` | Message shown after submission |
 | `theme` | Color and styling options |
-| `project_id` | Optional. The project this form collects feedback about. Empty string means the form validates nothing in particular — a standalone website survey. |
+| `project_id` | Optional. The project this form collects feedback about. Empty string means the form validates nothing in particular, for example a standalone website survey. |
 | `dimension_defaults` | Optional. `{key: value}` dimension values every submission gets ([dimensions.md](dimensions.md)). These **win** over the embed's `dimensions` option for every key they set |
 | `tags` | Optional. Tags every submission gets |
 | `document_id` | Optional. A specific PRD or PR/FAQ within that project. Empty string means the whole project, which is also what keeps the link alive across a regeneration (regenerating a document mints a new `document_id`). |
@@ -61,7 +63,7 @@ toggle on the card does the same.
 Prioritization page can show the ratings a form collected next to the document
 being scored. Both are accepted by `POST`/`PUT` and returned by
 the form list (`GET /feedback-forms`), but deliberately **never** by the public config
-endpoint — see the note in [API Endpoints](#api-endpoints).
+endpoint; see the note in [API Endpoints](#api-endpoints).
 
 ## Embedding Forms
 
@@ -100,7 +102,7 @@ The submitter's `email` is stored lower-cased, so an erasure by email matches ho
 was typed.
 
 There is no standalone `widget.js` script to load. That path is registered
-nowhere — not by the handler and not by the API — so a
+nowhere (not by the handler and not by the API), so a
 `<script src=".../widget.js">` tag never reaches the application at all and gets
 a `403 Missing Authentication Token` back from API Gateway, not the widget. The
 403 means "no such route" here rather than "not allowed": per-form paths are
@@ -180,7 +182,7 @@ knowing before you embed the widget, because they are observable from your page:
 
 `submit` is the tighter one because each submission enqueues a record that drives
 Comprehend, Translate and a Bedrock model invocation downstream. The two reads are
-cheap — one `get_item`, and a static HTML render — so they are held at the higher
+cheap (one `get_item`, and a static HTML render), so they are held at the higher
 pair, sized for widget page-view traffic rather than for submissions.
 
 These figures are **pinned against the synthesized template** by a lockstep case in
@@ -200,9 +202,9 @@ Two properties surprise people:
 
   | Route | What a 429 looks like |
   |-------|-----------------------|
-  | `GET /config` | The widget renders a flat `Failed to load form.` in the container, with no retry. The gateway's 429 carries your deployment's frontend origin, not `*`, so the widget on a customer's site cannot read it and treats it as a network failure (a dev deployment, whose origin is `*`, shows `Feedback form unavailable.` instead — the same message a disabled form produces) |
+  | `GET /config` | The widget renders a flat `Failed to load form.` in the container, with no retry. The gateway's 429 carries your deployment's frontend origin, not `*`, so the widget on a customer's site cannot read it and treats it as a network failure (a dev deployment, whose origin is `*`, shows `Feedback form unavailable.` instead, the same message a disabled form produces) |
   | `POST /submit` | An inline `Failed to submit. Please try again.` notice beside the arrows (an alert region, so it is announced; when the API refused the submission with a reason, e.g. a text past the length bound, that reason is shown instead), with the visitor's typed feedback still in the form. Retryable: pressing Next submits again and clears the notice |
-  | `GET /iframe` | No widget code runs at all — the browser navigates here directly, so this is a raw API Gateway error page inside your `<iframe>`, i.e. a broken frame |
+  | `GET /iframe` | No widget code runs at all: the browser navigates here directly, so this is a raw API Gateway error page inside your `<iframe>`, i.e. a broken frame |
 
   If a busy page shows any of these intermittently, suspect the rate limit before
   the form's state; the fix is raising the number in `api-gateway.ts`, not a change
@@ -212,10 +214,10 @@ Two properties surprise people:
 
 Submitted feedback follows the same processing pipeline as other data sources:
 
-1. **Submission** → Form validates and sends to SQS queue
-2. **Processing** → Lambda enriches with LLM analysis
-3. **Storage** → Saved to DynamoDB with full metadata
-4. **Display** → Appears in dashboard with `feedback_form` source
+1. **Submission**: the route validates the body, applies the source policy and sends the item to the SQS queue.
+2. **Processing**: the processor enriches it (Comprehend, Translate, Bedrock).
+3. **Storage**: the item is saved to `voc-feedback` with its metadata.
+4. **Display**: it appears in the dashboard with the `feedback_form` source.
 
 The `source_channel` field identifies which form the feedback came from (e.g., `form_abc123`).
 
@@ -280,10 +282,11 @@ caps in `shared/prototype_pins.py`.
 
 ## Access to form management
 
-Any authenticated user may create, update and delete feedback forms. This is the
-owner's decision, because the Feedback Forms page is open to every user. The routes
-are deliberately not admin-gated, and they have no per-form ownership check. The
-public routes are protected by the input validation above.
+Any authenticated user may create, update and delete any feedback form and read its
+submissions. The routes are deliberately not admin-gated, because the Feedback Forms
+page is open to every user, and they have no per-form ownership check. Give app
+accounts only to people you trust with every form. The public routes are protected
+by the input validation above.
 
 ## CORS Configuration
 
@@ -321,25 +324,25 @@ in the widget and again on the server. On the server that includes the tester's
 comment itself, before it is stored (injection screening still reads what was typed).
 
 **Where a pin goes.** Two paths, both ending at the **existing public submit route**
-of the prototype's own form, under that route's existing rate limit (20 rps / 40,
-shared across every form). The limits did not change.
+of the prototype's own form, under that route's rate limit (20 rps / 40,
+shared across every form).
 
 - **Inside the app** (the VoC prototype viewer frames the prototype), the widget hands
   the pin to its host frame with `postMessage`, targeted at the app's origin. The
-  viewer accepts it only from its own frame's window (with origin `null` — the
-  sandbox below — or its own), validates the message and submits it. Answers and
+  viewer accepts it only from its own frame's window (with origin `null`, because of
+  the sandbox below, or its own), validates the message and submits it. Answers and
   markers go back on a private `MessageChannel` port the widget hands over with its
   `ready` message, because nothing can address an opaque-origin window by origin.
   A prototype built before 3.09.01 has no port: its pins are still stored, but it
   shows no "saved" notice and no markers in the app until it is regenerated.
-- **Escape** (5.35, #386): a key pressed inside the frame never reaches the app, so the
+- **Escape**: a key pressed inside the frame never reaches the app, so the
   widget forwards an Escape it does not use itself (no pin being picked, no widget
   panel open) as `{source: 'voc-pin-widget', type: 'escape'}`, posted the same way.
   A dialog around the frame (the Prioritization Enlarge overlay, `ModalShell`'s
   `useFrameEscape`) closes on it, accepting it only from a frame inside that dialog,
   with the prototype's origin and that exact payload. `document.open()` erases the
   widget's listeners; a MutationObserver re-attaches them, so a prototype that
-  rewrites its page stays closable. A prototype built before 5.35 sends nothing until
+  rewrites its page stays closable. A prototype built before 5.35.00 sends nothing until
   it is regenerated; the overlay's Close button always works.
 - **Opened standalone** (a prototype URL in its own tab), the widget posts the pin
   directly to `https://<api>/v1/feedback-forms/<its form_id>/submit`. The request
@@ -385,8 +388,8 @@ prototype's own form.
 The document generator gets the API base from `PIN_SUBMIT_API_BASE`, which the
 stack builds from the RestApi id. Without it (local or mock development), the widget
 works only inside the app. A prototype opened standalone then shows a notice
-saying where to open it. The same notice appears on prototypes built before this
-change.
+saying where to open it. The same notice appears on prototypes built before
+standalone pins existed.
 
 **Storage.** A pin goes to the aggregates table (`PINS#{form_id}` / `PIN#{pin_id}`).
 The public route's Lambda already had read-write access there, and it is deliberately
