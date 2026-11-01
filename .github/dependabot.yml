@@ -53,7 +53,7 @@ updates:
           - patch
 
   - package-ecosystem: npm
-    # One entry per lockfile: the five platform packages and the isolated Playwright suite. The frontend
+    # One entry per lockfile: four of the five platform packages and the isolated Playwright suite. The frontend
     # has its own entry below, so its knip hold applies there only.
     directories:
       - /
