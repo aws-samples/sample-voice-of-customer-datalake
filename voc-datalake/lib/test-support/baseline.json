@@ -178,7 +178,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "1b3ef52a2cd3308d319f71a0202a4276de802c94e2a16825657e236e9298ec73",
+      "templateSha256": "ea1781d4aea536142446cc8f60ac8cf554d45b364815ae78bdfb4a03e7dee448",
       "names": {
         "physicalNames": [
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
@@ -424,7 +424,7 @@
       }
     },
     "VocWebSearchStack": {
-      "templateSha256": "ad5f9cc6017e22b24c5f5a80684c750d3f82d797e0282dc33411b87bed8fd010",
+      "templateSha256": "afeff0ff5c31169d4c808f6683e460be35ed85d61c82d30567fb6bc34e457732",
       "names": {
         "physicalNames": [
           "AWS::BedrockAgentCore::Gateway Name = voc-web-search-<AWS::AccountId>-<AWS::Region>"
