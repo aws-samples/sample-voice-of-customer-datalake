@@ -3,8 +3,8 @@
 `plugins/github_issues/` ingests issues and their comments from GitHub repositories as feedback,
 with the software version each report is about, so the Dashboard can show trends per release
 and per label. It is **enabled** in the shipped `voc-datalake/cdk.context.json` (`"github_issues": true`
-under `pluginStatus`) and stays idle — "nothing to fetch", no GitHub call — until a token and at
-least one repository are saved. Set it to `false` to deploy without its two Lambdas.
+under `pluginStatus`) and stays idle ("nothing to fetch", no GitHub call) until an administrator
+saves a token and at least one repository. Set it to `false` to deploy without its two Lambdas.
 
 ## Setup
 
@@ -13,13 +13,14 @@ least one repository are saved. Set it to `false` to deploy without its two Lamb
    - *Repository access*: only the repositories you will list.
    - *Repository permissions*: **Issues: Read-only** and **Metadata: Read-only** (GitHub adds
      Metadata automatically). Nothing else, and no account permissions.
-   - Pick an expiry and put a reminder on it — an expired token shows up as failed runs
+   - Pick an expiry and put a reminder on it: an expired token shows up as failed runs
      (`GitHub 401`) and, after five in a row, a circuit-broken schedule.
 2. Deploy with `"github_issues": true` in `pluginStatus` (the default; `npm run generate:config`
-   regenerates the frontend manifest after any change), and fill in the plugin's fields in the
-   Settings UI:
+   regenerates the frontend manifest after any change), and fill in the plugin's fields in
+   **Administration → Sources → Source settings** (`/admin?tab=sources&section=plugins`; the
+   **GitHub Issues** entry on the Data sources page links there):
    - **Repositories**: one per line, up to 20. `owner/name`, or any GitHub URL inside the
-     repository — `https://github.com/owner/name`, `…/name/issues`, `…/name/issues/42`,
+     repository: `https://github.com/owner/name`, `…/name/issues`, `…/name/issues/42`,
      `…/name/pulls`, a `.git` clone URL. Only the first two path segments count. An entry that
      names no GitHub repository (another host, a bare `a/b/c`, a typo) is ignored and logged as
      a warning on every run, so it shows up in the plugin's logs rather than as silence.
@@ -46,9 +47,10 @@ least one repository are saved. Set it to `false` to deploy without its two Lamb
 
 ### Sizing a large repository
 
-Every ingested item costs one Bedrock call plus Comprehend in the processor, so the filters above
-— not GitHub's quota — are the main cost control. Measured against `kirodotdev/KiroCrew` (6,571
-issues, 10,907 pull requests) with the plugin's own client:
+Every ingested item costs one Bedrock call plus Comprehend in the processor, so the filters above,
+not GitHub's quota, are the main cost control. As an example, a measurement with the plugin's own
+client against a public open-source repository with about 6,600 issues and 10,900 pull requests
+(`kirodotdev/KiroCrew`) gave:
 
 | | Value |
 |---|---|
@@ -59,8 +61,8 @@ issues, 10,907 pull requests) with the plugin's own client:
 | Full backfill, no filters | ~16,500 items, ~6,400 requests |
 | Per run | the 1,500-item cap is reached after ~550 requests (~3.5 min) |
 
-So a full unfiltered backfill completes over ~11 scheduled runs (~5–6 hours) and uses roughly
-1,100 requests an hour — well inside a token's 5,000. A start date and `OWNER, MEMBER,
+For that repository, a full unfiltered backfill completes over ~11 scheduled runs (~5-6 hours) and
+uses roughly 1,100 requests an hour, well inside a token's 5,000. A start date and `OWNER, MEMBER,
 COLLABORATOR` are what shrink it.
 3. Enable the schedule (every 30 minutes). "Run now" works as for every source.
 
@@ -72,13 +74,13 @@ to approve the token). Read-only **Issues** + **Metadata** is still all that is 
 things to know:
 
 - GitHub answers **404**, not 403, for a repository the token cannot see. The ingestor logs
-  "not found or not visible to the token", skips that repository and carries on with the others
-  — so a missing grant shows as a repository with no data, not a failed run.
+  "not found or not visible to the token", skips that repository and carries on with the others,
+  so a missing grant shows as a repository with no data, not a failed run.
 - Issue text from a private repository becomes ordinary feedback in the data lake: visible on
   the Dashboard, in search and to the assistant for every user whose category access covers its
   category. Restrict categories (Administration → Taxonomy → Categories, user category access) if that matters.
 
-The design-system GitHub token (`voc/design-integrations`) is deliberately **not** reused: it
+The design-system GitHub token (`voc/design-integrations`, [company-context.md](company-context.md)) is deliberately **not** reused: it
 lives in a different secret with different readers, and a separate, issues-only token keeps both
 blast radiuses small.
 
@@ -100,7 +102,7 @@ reading it:
 
 | Check | Refusal |
 |---|---|
-| A webhook secret is configured | 503 — fail closed, never "accept unsigned" |
+| A webhook secret is configured | 503: fail closed, never "accept unsigned" |
 | Body at most 1 MB | 413 |
 | `X-Hub-Signature-256` present and equal to `sha256=` + HMAC-SHA256(raw body, secret), constant-time compare | 401 |
 
@@ -124,7 +126,7 @@ categorised and scored on their own and carry their own version mention.
 
 ### Updates to issues already ingested
 
-A stored issue or comment is **refreshed in place** when a newer copy of it arrives — from the
+A stored issue or comment is **refreshed in place** when a newer copy of it arrives, from the
 webhook (`labeled`, `unlabeled`, `closed`, `reopened`, `milestoned`, `edited`, …) or from the next
 poll (the listing is by `updated_at`, so any change re-lists the issue). The processor
 (`lambda/shared/source_updates.py`, called from `lambda/processor/handler.py`) compares the copy's
@@ -192,7 +194,7 @@ two reports of one bug produce the same values and cluster. Validated by
 | `plus_one`, `reactions_total` | 👍 count and all reactions; the UI's **reach** is `1 + plus_one` |
 | `author_association` | `OWNER`, `MEMBER`, `CONTRIBUTOR`, `NONE`, … |
 | `comment_count`, `updated_at` | issue only / as on GitHub for an issue; for a comment, the later of its own and its issue's (it carries the issue's thread fields), which is what orders an in-place refresh |
-| `linked_prs` | PR numbers the text links (`github.com/<repo>/pull/N`, `PR #N`); a bare `#N` is not counted — it may be an issue. GitHub's own linked-PR relation lives in the timeline API (one extra request per issue) and is not read |
+| `linked_prs` | PR numbers the text links (`github.com/<repo>/pull/N`, `PR #N`); a bare `#N` is not counted, because it may be an issue. GitHub's own linked-PR relation lives in the timeline API (one extra request per issue) and is not read |
 | `software_version`, `version_source` | see below |
 | `component` | an `area:` / `component:` / `scope:` label, else an issue-form *Component* / *Area* field |
 | `error_signature` | the first error line (code blocks first), lower-cased, with numbers, quoted strings, paths, URLs, hex and UUIDs masked: `TypeError: Cannot read properties of undefined (reading 'id')` → `typeerror: cannot read properties of undefined (reading <str>)` |
@@ -204,7 +206,7 @@ two reports of one bug produce the same values and cluster. Validated by
 would split one release's trend across fake versions):
 
 1. **Issue form**: a `### … Version` section (`### Version`, `### Kiro version`, `### App
-   version`) whose answer contains a version — not one naming the environment (`### OS version`,
+   version`) whose answer contains a version, but not one naming the environment (`### OS version`,
    `### Node version`).
 2. **Labels**: `v1.2.3`, `version:1.2`, `version/1.2`.
 3. **Body**: `version: x.y.z` (unless the word before is an environment, as in `Node version:
@@ -219,13 +221,13 @@ mention wins; otherwise it inherits its issue's version.
 REST, not GraphQL: the REST issues endpoint supports `since=` and conditional requests, and a
 304 answer does not count against the quota, which GraphQL cannot offer. Per repository, per run:
 
-- `GET /repos/{repo}/issues?state=all&sort=updated&direction=asc&since=<watermark>` — oldest
+- `GET /repos/{repo}/issues?state=all&sort=updated&direction=asc&since=<watermark>`: oldest
   change first, so the watermark advances issue by issue; `Link: rel="next"` pagination.
-- `If-None-Match` with the ETag of the last listing made at the same `since` — an unchanged
+- `If-None-Match` with the ETag of the last listing made at the same `since`: an unchanged
   repository costs one free 304.
 - For each changed issue with comments: `GET …/issues/{n}/comments`, all of them (a new
   comment bumps its issue's `updated_at`, so every new comment is seen, and every stored comment
-  gets its issue's current labels / state — see "Updates to issues already ingested"). Usually the
+  gets its issue's current labels / state; see "Updates to issues already ingested"). Usually the
   same single request as a `since=` listing; a long thread re-sends all its comments, which count
   against the per-run item cap but cost no model call unless their text changed (a comment's text starts with `Re: <issue title>`, so retitling an issue re-enriches its comments).
 - The watermark (`github_issues#repo#<owner/name>` in the watermarks table) stores `since`, the
@@ -233,8 +235,8 @@ REST, not GraphQL: the REST issues endpoint supports `since=` and conditional re
   committed **only after** every item of the run reached the processing queue, so a failed run
   re-fetches instead of skipping.
 
-The run **never sleeps**. It stops early — successfully, keeping its progress, resuming next
-run — on a 403/429 with `Retry-After` or an exhausted quota, when fewer than 25 requests of quota
+The run **never sleeps**. It stops early (successfully, keeping its progress, resuming next
+run) on a 403/429 with `Retry-After` or an exhausted quota, when fewer than 25 requests of quota
 remain, when less than ~20 seconds of the Lambda's budget is left (60 s is kept back for the
 final queue send), or after 1,500 items. A 404 skips that repository; a 401 (bad or expired
 token) or a 5xx fails the run and counts against the circuit breaker.
@@ -249,16 +251,15 @@ addresses. A GitHub App (up to 15,000/hour, not tied to a person) is not support
 
 **Why per-issue comment fetches, not the repository-wide comments listing.**
 `GET /repos/{repo}/issues/comments` would cut a backfill's requests by ~13× (≈300 pages instead
-of ≈6,200 calls for KiroCrew). But each repository-wide comment carries only its issue's URL, so
-mapping it needs the parent issue (title, labels, version), which a resumed run may not have seen
-— one extra request per uncached parent, which gives most of the saving back. And requests are
+of ≈6,200 calls for the example repository above). But each repository-wide comment carries only
+its issue's URL, so mapping it needs the parent issue (title, labels, version), which a resumed run
+may not have seen: one extra request per uncached parent, which gives most of the saving back. And requests are
 not the bottleneck: the item cap and the processor's per-item model call are.
 
 ## Pull-request discussions
 
 Not ingested. PR review threads are mostly code review, not customer voice, and would dilute the
-trends. PR numbers an issue links are kept in `linked_prs`. Adding them later is a second
-listing (`GET /repos/{repo}/pulls` + review comments) behind its own toggle.
+trends. PR numbers an issue links are kept in `linked_prs`.
 
 ## Where it shows up
 
