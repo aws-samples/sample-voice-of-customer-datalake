@@ -4,7 +4,7 @@
  * Split from App.tsx so the table can be imported without constructing a router:
  * `createBrowserRouter` runs at App.tsx's module scope, and the breadcrumb tests
  * need the routes, not a router. Importing this module has no side effects — the
- * page imports are lazy and nothing here runs at load.
+ * pages come lazy from `lazyPages.ts` and nothing here runs at load.
  *
  * Breadcrumbs' route tables are held to this one by `route coverage` in
  * Breadcrumbs.test.tsx: every layout route needs a label and every `:param` route
@@ -14,7 +14,7 @@
  *
  * @module routes
  */
-import { lazy, Suspense } from 'react'
+import { Suspense } from 'react'
 import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router-dom'
 import FeedbackRedirect from './components/FeedbackRedirect'
@@ -26,38 +26,13 @@ import PageLoader from './components/PageLoader/PageLoader'
 import RouteErrorBoundary from './components/RouteErrorBoundary'
 import NotFound from './components/RouteErrorBoundary/NotFound'
 import Login from './pages/Login/Login'
-
-// Lazy load pages for better code splitting
-const Home = lazy(() => import('./pages/Home/Home'))
-const Dashboard = lazy(() => import('./pages/Dashboard/Dashboard'))
-const FeedbackDetail = lazy(() => import('./pages/FeedbackDetail/FeedbackDetail'))
-const Categories = lazy(() => import('./pages/Categories/Categories'))
-const ProblemAnalysis = lazy(() => import('./pages/ProblemAnalysis/ProblemAnalysis'))
-const Settings = lazy(() => import('./pages/Settings/Settings'))
-const Scrapers = lazy(() => import('./pages/Scrapers/Scrapers'))
-const Chat = lazy(() => import('./pages/Chat/Chat'))
-const Projects = lazy(() => import('./pages/Projects/Projects'))
-const ProjectDetail = lazy(() => import('./pages/ProjectDetail/ProjectDetail'))
-const Prioritization = lazy(() => import('./pages/Prioritization/Prioritization'))
-const FeedbackForms = lazy(() => import('./pages/FeedbackForms/FeedbackForms'))
-const DataExplorer = lazy(() => import('./pages/DataExplorer/DataExplorer'))
-const Vote = lazy(() => import('./pages/Vote/Vote'))
-const Memory = lazy(() => import('./pages/Memory/Memory'))
-const Company = lazy(() => import('./pages/Company/Company'))
-const Agents = lazy(() => import('./pages/Agents/Agents'))
-const AgentDetail = lazy(() => import('./pages/Agents/AgentDetail'))
-const WorkflowPage = lazy(() => import('./pages/Agents/WorkflowPage'))
-const Account = lazy(() => import('./pages/Account/Account'))
-const Connect = lazy(() => import('./pages/Connect/Connect'))
-// MCP OAuth consent (docs/mcp.md): where an assistant's sign-in lands, behind ProtectedRoute.
-const OAuthConsent = lazy(() => import('./pages/OAuthConsent/OAuthConsent'))
-const Radar = lazy(() => import('./pages/Radar/Radar'))
-const Participants = lazy(() => import('./pages/Participants/Participants'))
-const FeatureRequests = lazy(() => import('./pages/FeatureRequests/FeatureRequests'))
-const FeatureBoardPage = lazy(() => import('./pages/FeatureRequests/BoardPage'))
-const Board = lazy(() => import('./pages/Board/Board'))
-const Unsubscribe = lazy(() => import('./pages/Unsubscribe/Unsubscribe'))
-const Review = lazy(() => import('./pages/Review/Review'))
+import {
+  Home, Dashboard, FeedbackDetail, Categories, ProblemAnalysis, Settings,
+  Scrapers, Chat, Projects, ProjectDetail, Prioritization, FeedbackForms,
+  DataExplorer, Vote, Memory, Company, Agents, AgentDetail,
+  WorkflowPage, Account, Connect, OAuthConsent, Radar, Participants,
+  FeatureRequests, FeatureBoardPage, Board, Unsubscribe, Review,
+} from './lazyPages'
 
 // Lazy pages share the same suspense fallback and, per issue #173, a
 // route-scoped error boundary: a render error in one page replaces only

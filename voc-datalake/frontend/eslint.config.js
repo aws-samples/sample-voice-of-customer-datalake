@@ -4,7 +4,7 @@ import sonarjs from 'eslint-plugin-sonarjs'
 import unicorn from 'eslint-plugin-unicorn'
 import vitest from '@vitest/eslint-plugin'
 import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
+import { reactRefresh } from 'eslint-plugin-react-refresh'
 import globals from 'globals'
 import noReExports from '../../eslint-rules/no-re-exports.mjs'
 import {
@@ -49,7 +49,7 @@ export default tseslint.config(
     files: ['**/*.ts', '**/*.tsx'],
     plugins: {
       'react-hooks': reactHooks,
-      'react-refresh': reactRefresh,
+      'react-refresh': reactRefresh.plugin,
       unicorn,
       custom: { rules: { 'no-re-exports': noReExports } },
     },
