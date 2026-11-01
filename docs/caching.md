@@ -1,9 +1,10 @@
 # Read caching
 
 When no new reviews arrive, the dashboards ask the same questions again and again.
-The API now remembers its answers and works out whether they are still current,
+The API remembers its answers and works out whether they are still current,
 without any cache service to pay for. There is no API Gateway cache cluster,
-ElastiCache or DAX: everything is pay-per-use DynamoDB plus Lambda memory.
+ElastiCache or DAX: everything is pay-per-use DynamoDB plus Lambda memory. This page is for
+operators and contributors who need to know how fresh an answer is and how to check it.
 
 There are three layers:
 
@@ -60,8 +61,8 @@ Hits are deep copies, so later framework steps cannot change a stored entry.
 
 **Settings reads are deliberately not memoized.** Each public settings GET
 (`/settings/brand`, `/categories`, `/dimensions`, `/sources`, `/model`) is a single
-`GetItem`. Checking freshness would cost the same read, so there is nothing to save
-(the default followed: do not add a cache whose check costs as much as a miss). They
+`GetItem`. Checking freshness would cost the same read, so a cache would save
+nothing. They
 still get the HTTP revalidation below, and their saves bump `config_version`, which
 the metrics and Radar entries depend on.
 
@@ -100,45 +101,38 @@ the metrics and Radar entries depend on.
 
 ## IAM
 
-- Only the `UpdateItem` grants the bumps need were added, each pinned by
+- The bumps need `UpdateItem`, and each grant added for them is pinned by
   `dynamodb:LeadingKeys` to the version partition: feedback edit, data explorer and
   users on aggregates `METRIC#meta`, and the Radar API and Radar scan on Radar
   `SETTINGS#radar`.
-- The Radar API also gained `BatchGetItem` on both tables.
-- Every other writer already held `UpdateItem` (the processing role, reprocess,
-  retention and settings). The metrics role already had `BatchGetItem`.
-- The grants are pinned by `lib/stacks/api-stack-cache-versions.test.ts`.
+- The Radar API holds `BatchGetItem` on both tables.
+- Every other writer already holds `UpdateItem` (the processing role, reprocess,
+  retention and settings). The metrics role holds `BatchGetItem`.
+- `lib/stacks/api-stack-cache-versions.test.ts` checks these grants.
 
 ## First load
 
-The 5.34.00 live test timed first loads at about 10 s on Radar, 8.9 s on Participants and 8 s on Data
-Explorer. CloudWatch REPORT lines for those loads (read-only, 7 days to 2026-10-25) put the API side at
-1.6–4.5 s, nearly all of it Lambda Init: warm invocations of the three functions ran p50 11–48 ms and
-p95 104–440 ms, and every first call paid an Init Duration of 1.1–1.8 s. The rest was the browser
-fetching the app shell. Three causes were ours:
+A first visit to a page pays for the app shell download and for each Lambda's cold start (Init of about
+1.1–1.8 s in testing, against warm invocations of tens of milliseconds). Three design choices keep that small:
 
-- **Radar asked for one brand in three parallel requests.** After `GET /radar` it called the detail,
-  `/releases` and `/compare` together. A cold `voc-radar-api` serves one request per environment, so the
-  third request often started a SECOND environment and paid a second Init (05:00 UTC load: 1.29 s, then
-  1.42 s, one after the other). The page now reads `GET /radar/brands/{brand}/page` (the three answers in
-  one, memoized like its parts). A `?brand=` link starts that read beside `/radar`, and the categories
-  config and source profiles used for labels start at mount instead of after the first render.
-  Pinned by `Radar.requests.test.tsx` and `test_radar_brand_page.py`.
-- **The app shell imported the charts library.** `clsx` is a dependency of `recharts`, so Rollup put it
-  in `vendor-recharts`. The shell uses `clsx`, so every first load fetched and ran 389 KB of charts
-  (114 KB gzipped), on pages that draw none. `vendorChunks.json` (vite.config.ts) lists `clsx` beside React, and
-  `vendorChunks.test.ts` fails when another shared dependency is left unlisted.
-- **The floating assistant panel was in the shell.** It renders only once opened, but `AssistantRoot`
-  imported it, and with it `react-markdown` (156 KB). It is now a lazy chunk. Pinned by `bootGraph.test.ts`,
-  which walks the static imports from `main.tsx`.
+- **Radar reads a brand in one request.** `GET /radar/brands/{brand}/page` returns the brand detail, its
+  releases and the comparison in one answer, memoized like its parts. Three parallel requests to a cold
+  `voc-radar-api` could start a second execution environment and pay a second Init. A `?brand=` link starts that
+  read beside `/radar`, and the categories config and source profiles used for labels start at mount instead of
+  after the first render. `Radar.requests.test.tsx` and `test_radar_brand_page.py` cover it.
+- **The app shell does not import the charts library.** `clsx` is a dependency of `recharts`, so Rollup would put
+  it in `vendor-recharts`, and every first load would fetch 389 KB of charts (114 KB gzipped). `vendorChunks.json`
+  (read by `vite.config.ts`) lists `clsx` beside React, and `vendorChunks.test.ts` fails when another shared
+  dependency is left unlisted.
+- **The floating assistant panel is a lazy chunk.** It renders only once opened, so it and `react-markdown`
+  (156 KB) load on demand.
 
-JS fetched before any page chunk (entry plus `modulepreload`s; measured on local builds of 5.34.00 and of
-this change): 1,699 KB → 937 KB (516 → 291 KB gzipped).
+With these, the JavaScript fetched before any page chunk (entry plus `modulepreload`s, measured on a local build)
+went from 1,699 KB to 937 KB (516 → 291 KB gzipped).
 
-Not changed: Participants (one `GET /participants/lists`) and Data Explorer (the buckets and S3 listing,
-in parallel) already make one round of requests. What is left for them is Init. SnapStart would cut a cold
-start to a restore (p50 460–500 ms on the four SnapStart APIs, docs/lambda-sizing.md) but adds a monthly
-cache charge, so it is an owner decision.
+Pages that already make one round of requests (Participants, Data Explorer) are left with the cold start. Lambda
+SnapStart would cut it to a restore (p50 460–500 ms on the APIs that use it, [lambda-sizing.md](lambda-sizing.md)),
+but adds a monthly cache charge, so it is not enabled for them.
 
 ## Expected savings
 
@@ -150,10 +144,10 @@ cache charge, so it is an owner decision.
     reviews (128 RCU per 1 MB page). A hit saves about **97–99 %+** of that, cuts
     latency from hundreds of milliseconds to tens, and frees the Lambda's CPU.
   - Unrestricted routes served from the aggregates read a few RCU (one bounded
-    `Query`). There a hit is roughly even with today: the strongly consistent
-    version read costs 3 RCU against the old 0.5 RCU watermark read, which is the
+    `Query`). There a hit costs about the same as no cache: the strongly consistent
+    version read costs 3 RCU against a 0.5 RCU eventually consistent watermark read, which is the
     price of seeing your own writes straight away.
-- **A miss** costs 2.5 RCU more than before, again because the version read is
+- **A miss** costs 2.5 RCU more than an uncached read, again because the version read is
   strongly consistent.
 - **Hit rate.** This is an estimate, not measured: every ingestion batch bumps
   `data_version`. Between scheduled ingests, or overnight, repeated navigation (Home,
@@ -185,8 +179,8 @@ curl -s -D - -o /dev/null -H "Authorization: Bearer $TOKEN" -H "If-None-Match: $
 curl -s -D - -o /dev/null -H "Authorization: Bearer $TOKEN" "${API%/}/chat/conversations/_list" \
   | grep -i cache-control                              # private, no-store
 
-# 4. The counters (read-only)
-aws dynamodb batch-get-item --request-items '{"voc-aggregates":{"Keys":[
+# 4. The counters (read-only; the table name is the AggregatesTableName output of VocCoreStack)
+aws dynamodb batch-get-item --request-items '{"voc-aggregates-<account>-<region>":{"Keys":[
   {"pk":{"S":"METRIC#meta"},"sk":{"S":"data_version"}},
   {"pk":{"S":"METRIC#meta"},"sk":{"S":"config_version"}}]}}'
 ```
