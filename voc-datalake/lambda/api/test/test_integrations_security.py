@@ -89,6 +89,7 @@ from plugin_manifests import (
 
 from integrations_handler import MAX_CREDENTIAL_KEYS_PER_REQUEST
 from shared.plugin_identity import is_valid_plugin_identifier
+from shared.scraper_limits import MAX_SCRAPERS, MAX_WEBSCRAPER_CONFIGS_BYTES
 
 # The `cognito:groups` claim of a caller with no admin group membership.
 NON_ADMIN = 'users'
@@ -860,11 +861,11 @@ class TestValueValidation:
         Regression guard: reintroducing a per-value cap below the service limit
         turns this 200 into a 400.
         """
-        # Within the list bounds (shared/scraper_limits.py: ≤ 50 scrapers, ≤ 48 KiB) yet past 4 KiB.
+        # Within the list bounds (shared/scraper_limits.py) yet past 4 KiB, so only a per-value cap can refuse it.
         big_configs = json.dumps([
-            {'id': f's{i}', 'name': f'Scraper {i} ' + 'x' * 150, 'url': 'https://e.test'} for i in range(40)
+            {'id': f's{i}', 'name': f'Scraper {i} ' + 'x' * 150, 'url': 'https://e.test'} for i in range(MAX_SCRAPERS)
         ])
-        assert len(big_configs) > 4096, 'fixture must exceed the cap this test retires'
+        assert 4096 < len(big_configs) <= MAX_WEBSCRAPER_CONFIGS_BYTES, 'fixture must exceed the retired cap only'
 
         mock_secrets.get_secret_value.return_value = secret_string({})
 
