@@ -3,7 +3,9 @@
 Not every feedback source can be handled the same way. A sales CSV can be read by everyone.
 A support-ticket export usually holds names, email addresses and phone numbers: only a few
 people should see it, personal data should be redacted, and it should be deleted after a
-fixed time or on request. A **source profile** sets this up per source.
+fixed time or on request. A **source profile** sets this up per source. Administrators
+manage profiles; the rules then apply to every ingestion path, every reader and the AI
+assistant.
 
 ## Source profiles
 
@@ -12,8 +14,8 @@ stored in `voc-aggregates` as `pk=SETTINGS#sources, sk=config`, up to 50 of them
 
 | Field | Values | Default |
 |---|---|---|
-| `id` | `^[a-z0-9][a-z0-9_-]{0,47}$`. It is the item's `source_platform`: a plugin id (`github_issues`, …), a web scraper's **name** (see below), `feedback_form`, `manual_import`, or an import source an admin defines such as `sales_csv` or `support_tickets` | — |
-| `label` | Display name | — |
+| `id` | `^[a-z0-9][a-z0-9_-]{0,47}$`. It is the item's `source_platform`: a plugin id (`github_issues`, …), a web scraper's **name** (see below), `feedback_form`, `manual_import`, or an import source an admin defines such as `sales_csv` or `support_tickets` | none (required) |
+| `label` | Display name | none |
 | `pii` | `allow` \| `redact` \| `summary_only` | `allow` |
 | `retention_days` | `null` (keep forever) or 30–3650 | `null` |
 | `restricted` | Hidden from users without an explicit grant | `false` |
@@ -25,7 +27,7 @@ A source with no profile gets the defaults: PII allowed, kept forever, not restr
 **Web scrapers.** A scraper's reviews do not carry the plugin id `webscraper`: each scraper
 writes its own **name** (`name` in its config; the page's host name when it has none) as
 `source_platform`, so a `webscraper` profile never matches anything. To give a scraper a
-profile, name the scraper in the id format (for example `trustpilot_reviews`) and create a
+profile, name the scraper in the id format (for example `example_air_reviews`) and create a
 profile with exactly that id. A scraper whose name has spaces, capitals or dots (such as
 `Shop Reviews` or `www.example.com`) cannot have a profile until it is renamed, and renaming it
 changes the source of its new reviews only. **Administration → Privacy & access → Source policies** suggests the scraper names
@@ -44,7 +46,7 @@ explorer. This is `shared/source_policy.apply_source_policy`.
 - **`redact`**:
   - `text`, `title` and every string `metadata` value are redacted, and `author` is dropped.
   - Regex rules replace email addresses, phone numbers (E.164 and common EU/US formats),
-    IBANs, payment cards (Luhn-checked, with an issuer prefix that issues that length — a 13-digit timestamp or order id is kept) and IPv4/IPv6 addresses with `[EMAIL]`, `[PHONE]`,
+    IBANs, payment cards (Luhn-checked, with an issuer prefix that issues that length, so a 13-digit timestamp or order id is kept) and IPv4/IPv6 addresses with `[EMAIL]`, `[PHONE]`,
     `[IBAN]`, `[CARD]` and `[IP]`.
   - Amazon Comprehend `DetectPiiEntities` additionally replaces names and addresses with
     `[NAME]` / `[ADDRESS]`. This runs only when `PII_COMPREHEND=1` (set on every ingestion
@@ -81,7 +83,7 @@ stored item's own per-item archive, so retention still deletes it with the item.
 
 An item is visible only if **both** of these rules admit it:
 
-1. **The category rule.** This is unchanged; see [categories.md](categories.md).
+1. **The category rule**, described in [categories.md](categories.md).
 2. **The source rule.** It comes from the caller's `CATEGORY_ACCESS` row
    (`pk=CATEGORY_ACCESS, sk=USER#{sub}`), field `sources`:
 
@@ -128,7 +130,7 @@ with a delete permission on customer data, and `lib/customer-data-deletes.test.t
 |---|---|---|
 | `retention` | Daily schedule, 04:15 UTC | Items of sources whose profile sets `retention_days`, with `date` older than the cutoff |
 | `erase` | `POST /settings/erasure` (admin) | Items where `field == value`. `field` is `author`, `source_id`, `csv_row_id` or `email` (`metadata.email` / `metadata.submitter_email`); optionally limited to one `source`, which is **required** for `source_id` and `csv_row_id` (an id is unique only within its source; 400 without it) |
-| `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy & access → Sources → **Delete all data from a source** | Every item whose `source_platform` is the source, then every object version left under `raw/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)) |
+| `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy & access → Source policies → **Delete all data from a source** | Every item whose `source_platform` is the source, then every object version left under `raw/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)) |
 
 How it works:
 
