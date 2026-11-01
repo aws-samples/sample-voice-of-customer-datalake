@@ -241,8 +241,15 @@ const FACET_KEYS: ReadonlySet<string> = new Set(FACET_FILTER_KEYS)
 export const MAX_FACET_FILTER_CHARS = 6500
 
 /**
+ * The value an overlong single facet value becomes: no review has it, so the floor admits nothing.
+ * Dropping the value instead would remove the user's filter from the floor (fail open).
+ */
+export const NO_MATCH_FILTER_VALUE = '~none'
+
+/**
  * `value` within its key's bound. A facet list is cut after its last whole value (a cut inside a value
- * could leave a shorter name that matches another category); other values are cut at the bound.
+ * could leave a shorter name that matches another category), a single overlong facet value becomes
+ * NO_MATCH_FILTER_VALUE; other values are cut at the bound.
  */
 export function boundedFilterValue(key: (typeof PAGE_FILTER_KEYS)[number], value: string): string {
   const max = maxFilterChars(key)
@@ -250,7 +257,7 @@ export function boundedFilterValue(key: (typeof PAGE_FILTER_KEYS)[number], value
   const cut = value.slice(0, max)
   if (!FACET_KEYS.has(key)) return cut
   const lastComma = cut.lastIndexOf(',')
-  return lastComma > 0 ? cut.slice(0, lastComma) : ''
+  return lastComma > 0 ? cut.slice(0, lastComma) : NO_MATCH_FILTER_VALUE
 }
 
 /** The bound of one filter key's value. */

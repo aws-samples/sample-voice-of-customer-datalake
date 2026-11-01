@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TestRouter } from '@test/TestRouter'
 import { agentsKeys } from '../../api/agentsApi'
 import { routes } from '../../routes'
-import { MAX_PAGE_FILTER_CHARS } from '../contract'
+import { MAX_FACET_FILTER_CHARS, MAX_PAGE_FILTER_CHARS, NO_MATCH_FILTER_VALUE } from '../contract'
 import { PAGE_PATTERNS, pageContextFromLocation } from './pageContext'
 import { usePageContext } from './usePageContext'
 import type { ReactNode } from 'react'
@@ -74,6 +74,11 @@ describe('pageContextFromLocation', () => {
     it('cuts a value to the contract bound', () => {
       const page = pageContextFromLocation({ pathname: '/categories', search: `?q=${'x'.repeat(MAX_PAGE_FILTER_CHARS + 1)}` })
       expect(page.filters?.q).toBe('x'.repeat(MAX_PAGE_FILTER_CHARS))
+    })
+
+    it('keeps an overlong single category as a value nothing matches, so the floor stays', () => {
+      const page = pageContextFromLocation({ pathname: '/categories', search: `?category=${'c'.repeat(MAX_FACET_FILTER_CHARS + 1)}` })
+      expect(page.filters?.category).toBe(NO_MATCH_FILTER_VALUE)
     })
 
     it('keeps a long category list whole up to the facet bound', () => {

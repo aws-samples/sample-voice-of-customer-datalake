@@ -39,6 +39,12 @@ describe('floorQuery', () => {
     expect(() => floorQuery(floorFromFilters({ usefulness: 'high' }), {}, 'list_feedback', LIST_FIELDS)).toThrow(/usefulness/);
   });
 
+  it('still calls the route when the user set no filter (an empty floor holds no list)', () => {
+    expect(floorFromFilters({}).lists).toStrictEqual({});
+    expect(floorQuery(floorFromFilters({}), { category: 'delivery' }, 'list_feedback', LIST_FIELDS))
+      .toStrictEqual({ kind: 'query', query: { category: 'delivery' } });
+  });
+
   it('answers empty, never a refusal or a call, for a floor that admits nothing (a refused chat scope)', () => {
     const refused = floorFromFilters({ sentiment: 'none' });
     const metricsFields = new Set(['source', 'channel', 'tag', 'dims', 'rating', 'urgent'] as const);
