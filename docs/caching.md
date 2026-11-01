@@ -120,7 +120,7 @@ A first visit to a page pays for the app shell download and for each Lambda's co
   `voc-radar-api` could start a second execution environment and pay a second Init. A `?brand=` link starts that
   read beside `/radar`, and the categories config and source profiles used for labels start at mount instead of
   after the first render. `Radar.requests.test.tsx` and `test_radar_brand_page.py` cover it.
-- **The app shell does not import the charts library.** `clsx` is a dependency of `recharts`, so Rollup would put
+- **The app shell does not import the charts library.** `clsx` is a dependency of `recharts`, so the bundler would put
   it in `vendor-recharts`, and every first load would fetch 389 KB of charts (114 KB gzipped). `vendorChunks.json`
   (read by `vite.config.ts`) lists `clsx` beside React, and `vendorChunks.test.ts` fails when another shared
   dependency is left unlisted.

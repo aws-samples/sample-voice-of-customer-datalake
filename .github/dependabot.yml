@@ -79,12 +79,14 @@ updates:
       - dependency-name: "*"
         update-types:
           - version-update:semver-major
-      # Held (5.66.01): 1.6.28 is a patch release that raises its TypeScript peer to >= 6, and every
-      # package is on TypeScript 5.9, so `npm ci` fails with ERESOLVE (#500). Remove this rule with the
-      # TypeScript 6+ upgrade (docs/dependencies.md → Held updates).
-      - dependency-name: "@vitest/eslint-plugin"
+      # Held (5.69.00): knip 6.44.1 reports the three compile-time `export type` pins in
+      # frontend/src/api/projectsApi.ts as unused exported types; test_doc_type_lockstep.py needs them
+      # exported there, and silencing knip for that file is a gate decision (docs/dependencies.md → Held
+      # updates). The CDK and stream packages are already on 6.44.1; this rule stops later knip releases
+      # in every directory until it is lifted.
+      - dependency-name: "knip"
         versions:
-          - ">= 1.6.28"
+          - ">= 6.44.1"
     groups:
       npm-minor-and-patch:
         update-types:

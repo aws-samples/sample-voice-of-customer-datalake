@@ -7,7 +7,7 @@ protection, the frontend deployment, diagnostics, and troubleshooting.
 ## Prerequisites
 
 - **AWS CLI** configured with credentials for the target account
-- **Node.js** 22.12+ and npm
+- **Node.js** 22.12+ and npm (CI runs Node 26, the current LTS line)
 - **Python** 3.12+ for the local lint and tests (the Lambdas run Python 3.14; their code and layers are built in
   containers)
 - **Docker or Finch** for the Lambda layers and CDK asset bundling
@@ -1467,13 +1467,13 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '26'
           
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           

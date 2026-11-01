@@ -203,7 +203,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 |-------|-------------|
 | Infrastructure | AWS CDK 2 (TypeScript, 5 stacks), Lambda on ARM64 (Python 3.14; Node.js 24 for the AI assistant), DynamoDB, S3, SQS, API Gateway, Step Functions, EventBridge, CloudFront |
 | AI/ML | Amazon Bedrock (Claude), Bedrock AgentCore (web search, browser), Comprehend, Translate |
-| Frontend | React 19, Vite 7, Tailwind CSS 4, Zustand, TanStack Query, i18next, AWS Amplify (Cognito sign-in) |
+| Frontend | React 19, Vite 8, Tailwind CSS 4, Zustand, TanStack Query, i18next, AWS Amplify (Cognito sign-in) |
 | Security | Cognito, IAM, KMS, Secrets Manager, signed CloudFront URLs |
 
 ## 📚 Documentation
