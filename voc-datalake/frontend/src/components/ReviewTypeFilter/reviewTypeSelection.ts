@@ -37,7 +37,7 @@ export const PROBLEM_TYPES: readonly FeedbackType[] = [
 export type TypeSelection = readonly FeedbackType[]
 
 /** No type filter. */
-export const ALL_TYPES: TypeSelection = []
+export const ALL_TYPES: TypeSelection = Object.freeze([])
 
 /** `type_counts`' bucket for reviews with no type yet. */
 export const UNTYPED_COUNT_KEY = 'untyped'
