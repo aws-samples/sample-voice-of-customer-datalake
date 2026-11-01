@@ -3,7 +3,8 @@
 /**
  * Tests for the dev mock's caller scope (mock-scope.js): what a restricted mock
  * caller receives from GET /feedback/access, GET /settings/categories and the
- * metric reads, and the runtime PUT /__mock/scope switch.
+ * metric reads, and the runtime PUT /__mock/scope switch. It calls mock-scope.js's
+ * helpers directly and starts no server (the server-booting specs use mock-server-harness.mjs).
  *
  * Run: node --test scripts/mock-scope.test.mjs
  */
