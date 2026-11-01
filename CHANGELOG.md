@@ -28,6 +28,9 @@ Fix: the per-dimension counters are written again, so the Dashboard's "By dimens
   "By dimension" card and `GET /metrics/dimensions` showed every value at 0 with all reviews unassigned, even
   after Administration → Taxonomy → Dimensions → "Classify review types" had typed them. New and edited reviews
   are counted from this release on.
+- **Quality gate in CI**: the code-audit detector tests synthesize the CDK app, which stages the built
+  frontend, but since CI split the gate into one job per lane (5.67.01) they ran in the `tsc` lane, where nothing
+  builds the frontend, and failed with `CannotFindAsset`. They now run in the `test` lane after the vite build.
 
 ### Upgrade notes
 
