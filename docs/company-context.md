@@ -70,7 +70,7 @@ sanitised `.svg` beside it), and a website reference's copied icons (everything 
 SVG (≤ 1 MB): the browser draws it to a PNG (longest side 1024 px, transparent background) and uploads only that PNG, so
 the API still never receives an SVG; an SVG the browser cannot convert (some browsers refuse one with a
 `<foreignObject>`, or one without a size) is explained with "export it as PNG and upload that". Figma and GitHub tokens live
-in the Secrets Manager secret `voc/design-integrations-<account>-<region>` (Core stack, KMS, deleted with the stack), JSON
+in the Secrets Manager secret `voc/design-integrations-<account>-<region>` (Core stack, KMS, kept on stack deletion unless `-c protectData=false`), JSON
 `{figma_token?, github_token?}`.
 
 Infrastructure: the settings role gains `secretsmanager:GetSecretValue`/`PutSecretValue` on that one secret and

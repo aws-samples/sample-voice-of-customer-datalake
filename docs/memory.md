@@ -120,7 +120,7 @@ supporter, once per person). Every write is screened for prompt injection, and m
 Retrieval: `cosine × (1 + ln(1+supporters)) × exp(-0.01 × days since reinforced/used) × 1.2 if aligned with a
 company objective`, top 8 (company + the caller's personal), updating `last_used_at`.
 
-## Storage — `voc-memory` (Core stack, on-demand, KMS, PITR, deleted with the stack)
+## Storage — `voc-memory` (Core stack, on-demand, KMS, PITR, kept on stack deletion unless `-c protectData=false`)
 
 | pk | sk | Row |
 |---|---|---|

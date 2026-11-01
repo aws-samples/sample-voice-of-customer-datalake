@@ -207,11 +207,12 @@ npm run build
 
 ### Production data protection
 
-Deleting the stacks deletes all customer data by default (demos and temporary
-environments). **Production deployments set `-c protectData=true`** (or
-`"protectData": true` in `cdk.context.json`): data resources are kept on stack
-deletion and replacement, tables and the user pool get deletion protection, and
-the raw bucket loses its auto-delete provider. See docs/deployment.md
+Customer data is kept when the stacks are deleted, by default (`protectData` is on since
+5.73.00): data resources are kept on stack deletion and replacement, tables and the user
+pool get deletion protection, and the raw bucket has no auto-delete provider. **Demos and
+temporary environments deploy with `-c protectData=false`** (or `"protectData": false` in
+`cdk.context.json`), and must deploy that value BEFORE `cdk destroy`, or the retained
+resources stay (and block a redeploy of the same names). See docs/deployment.md
 "Production: protectData" (single source of truth: `lib/utils/data-protection.ts`).
 
 ### Plugin Status

@@ -1,21 +1,25 @@
 /**
- * `-c protectData` parsing: off unless explicitly true, and a typo fails the synth.
+ * `-c protectData` parsing: on unless explicitly false (since 5.73.00), and a typo fails the synth.
  */
 import * as cdk from 'aws-cdk-lib';
 import { describe, expect, it } from 'vitest';
 import { dataProtection, shouldProtectData } from './data-protection';
 
 describe('shouldProtectData', () => {
-  it.each([undefined, null, false, 'false', ' FALSE '])('leaves data deletable with the stack for %j', (value) => {
+  it.each([false, 'false', ' FALSE '])('leaves data deletable with the stack for %j', (value) => {
     expect(shouldProtectData(value)).toBe(false);
   });
 
-  it.each([true, 'true', ' True '])('protects data for %j', (value) => {
+  it.each([undefined, null, true, 'true', ' True '])('protects data for %j (the default when absent)', (value) => {
     expect(shouldProtectData(value)).toBe(true);
   });
 
-  it.each(['ture', 'yes', '1', 1, {}])('refuses %j instead of silently deploying unprotected', (value) => {
+  it.each(['ture', 'flase', 'yes', '1', 1, {}])('refuses %j instead of guessing', (value) => {
     expect(() => shouldProtectData(value)).toThrow(/Unrecognized protectData context value/);
+  });
+
+  it('tells a demo how to opt out in its error message', () => {
+    expect(() => shouldProtectData('nope')).toThrow(/-c protectData=false/);
   });
 });
 

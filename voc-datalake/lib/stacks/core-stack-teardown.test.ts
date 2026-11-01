@@ -1,7 +1,8 @@
 /**
  * What deleting (or replacing) VocCoreStack does to customer data, in both modes:
- * the default full cleanup and `-c protectData=true` for production
- * (lib/utils/data-protection.ts, docs/deployment.md "Teardown deletes everything").
+ * the default (`protectData` on since 5.73.00: data survives the stacks) and
+ * `-c protectData=false` for demos (a full cleanup)
+ * (lib/utils/data-protection.ts, docs/deployment.md "Teardown").
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Template } from 'aws-cdk-lib/assertions';
@@ -24,9 +25,9 @@ function policyResource(template: Template, type: string, constructId: string): 
   return DeletionPoliciesSchema.parse(itemAt(entries, 0)[1]);
 }
 
-describe('customer data: kept while the platform runs, deleted with the stack', () => {
+describe('-c protectData=false: customer data kept while the platform runs, deleted with the stack (demos)', () => {
   let template: Template;
-  beforeAll(() => { template = synthCoreTemplate(); });
+  beforeAll(() => { template = synthCoreTemplate({ protectData: false }); });
 
   const byConstructId = (type: string, constructId: string) => policyResource(template, type, constructId);
   const ALL_TABLES = [
@@ -96,9 +97,9 @@ describe('customer data: kept while the platform runs, deleted with the stack', 
   });
 });
 
-describe('-c protectData=true: customer data survives stack deletion (production)', () => {
+describe('protectData (the default; -c protectData=true says the same): customer data survives stack deletion', () => {
   let template: Template;
-  beforeAll(() => { template = synthCoreTemplate({ protectData: 'true' }); });
+  beforeAll(() => { template = synthCoreTemplate(); });
 
   const byConstructId = (type: string, constructId: string) => policyResource(template, type, constructId);
   const DATA_TABLES = ['FeedbackTable', 'AggregatesTable', 'ProjectsTable', 'MemoryTable', 'AgentsTable', 'RadarTable', 'ConversationsTable'];

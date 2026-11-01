@@ -1,19 +1,20 @@
 /**
  * `protectData` — SINGLE SOURCE OF TRUTH for what happens to customer data when the stacks are deleted
- * (docs/deployment.md, "Teardown deletes everything" and "Production: protectData").
+ * (docs/deployment.md, "Production: protectData" and "Teardown").
  *
- * Default (off): deleting the stacks is a full cleanup — right for demos, workshops and temporary
- * environments, which must not leave billed data behind.
- *
- * `-c protectData=true` (production): the data tables, the raw-data bucket, the KMS key, the
+ * Default (on, since 5.73.00): the data tables, the raw-data bucket, the KMS key, the
  * design-integrations secret and the Cognito user pool use `RETAIN_ON_UPDATE_OR_DELETE`
  * (CloudFormation `RetainExceptOnCreate`: kept on stack deletion and on replacement, but a failed
  * FIRST create still rolls back cleanly), DynamoDB tables and the user pool get deletion protection
  * (which also blocks a console or API delete), and the raw bucket has no auto-delete provider — so
- * no rename can empty it either.
+ * no rename can empty it either. Customer data is never lost to a stack delete by accident (D1, D5).
+ *
+ * `-c protectData=false` (demos, workshops, temporary environments): deleting the stacks is a full
+ * cleanup. A teardown that should delete the data deploys with `-c protectData=false` FIRST, then
+ * destroys; otherwise the retained, fixed-name resources stay and block a redeploy of the same names.
  *
  * CLI context arrives as strings; anything other than true/false throws at synth, so a typo such as
- * `-c protectData=ture` cannot silently deploy an unprotected production stack.
+ * `-c protectData=flase` cannot silently deploy an unprotected stack.
  */
 import * as cdk from 'aws-cdk-lib';
 import type { IConstruct } from 'constructs';
@@ -23,8 +24,8 @@ const PROTECT_DATA_CONTEXT_KEY = 'protectData';
 
 export function shouldProtectData(contextValue: unknown): boolean {
   return booleanContextFlag(
-    contextValue, PROTECT_DATA_CONTEXT_KEY, false,
-    `Use true/false (data is deleted with the stacks by default; production sets -c ${PROTECT_DATA_CONTEXT_KEY}=true).`,
+    contextValue, PROTECT_DATA_CONTEXT_KEY, true,
+    `Use true/false (data is kept when the stacks are deleted by default; a demo that should delete it sets -c ${PROTECT_DATA_CONTEXT_KEY}=false).`,
   );
 }
 
