@@ -222,7 +222,6 @@ Known residuals
   once the legacy rows are gone, and strictly smaller than the over-count above.
 """
 import os
-import re
 import secrets
 import sys
 import time
@@ -2145,56 +2144,24 @@ def _rebucket_average(
     return int(reversed_) + int(applied)
 
 
-# A raw DynamoDB attribute value is a one-key dict naming its type, whose payload has that type's
-# Python shape (and an N payload is a number). Checking the payload too keeps a deserialized
-# one-key map such as {'N': 'north'} from being read as a number (boto3 would answer NaN).
-_WIRE_PAYLOAD_TYPES: Final[dict[str, tuple[type, ...]]] = {
-    'S': (str,), 'N': (str, int, Decimal), 'B': (bytes, bytearray, str),
-    'M': (dict,), 'L': (list,), 'SS': (list,), 'NS': (list,), 'BS': (list,),
-}
 _DESERIALIZER: Final = TypeDeserializer()
-_WIRE_NUMBER_RE: Final = re.compile(r'^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\Z')
 
 
-def _is_wire_value(value: object) -> bool:
-    """A raw DynamoDB attribute value (``{'S': 'text'}``, ``{'M': {...}}``), not a deserialized one."""
-    if not isinstance(value, dict) or len(value) != 1:
-        return False
-    (tag, payload), = value.items()
-    if tag in ('BOOL', 'NULL'):
-        return isinstance(payload, bool)
-    expected = _WIRE_PAYLOAD_TYPES.get(tag)
-    if expected is None or isinstance(payload, bool) or not isinstance(payload, expected):
-        return False
-    if tag == 'N' and isinstance(payload, str):
-        return bool(_WIRE_NUMBER_RE.match(payload))
-    return True
+def deserialize_image(image: dict, *, raw: bool = False) -> dict:
+    """A stream image as a plain dict.
 
-
-def deserialize_image(image: dict) -> dict:
-    """Convert a stream image to a plain dict.
-
-    Two shapes arrive: Powertools' ``DynamoDBRecord`` hands over an image it has ALREADY
-    deserialized (``record.dynamodb.new_image``, the production path), and tests and older
-    callers pass the raw wire format. A value is deserialized (by boto3's TypeDeserializer,
-    nested maps and lists included) only when it IS a wire value; any other value is kept as
-    it is. Treating every dict as a wire value instead read a deserialized map attribute (the
-    review's ``dimensions = {'feedback_type': 'bug'}``) as a malformed one and dropped it,
-    which is how the per-dimension counters were never written before 5.67.02. A wire value
-    boto3 cannot read is kept as it came, never silently dropped.
+    The production path passes ``record.dynamodb.new_image`` / ``old_image``, which
+    Powertools' ``DynamoDBRecord`` has ALREADY deserialized: it is copied as it is, so a map
+    attribute such as ``dimensions = {'feedback_type': 'bug'}`` reaches the counters whatever
+    its keys are. ``raw=True`` is for a caller holding DynamoDB's wire format (``{'S': ...}``,
+    ``{'M': {...}}``); every value is then deserialized by boto3, nested maps and lists
+    included. The old version guessed per value and treated every dict as a wire value, so it
+    dropped deserialized maps: the per-dimension and tag counters were never written before
+    5.67.02.
     """
-    item = {}
-    for key, value in image.items():
-        if not _is_wire_value(value):
-            item[key] = value
-            continue
-        try:
-            item[key] = _DESERIALIZER.deserialize(value)
-        except (TypeError, ValueError, KeyError, AttributeError, ArithmeticError):
-            logger.warning("Stream image attribute is not a readable DynamoDB value; kept as is",
-                           extra={'attribute': key})
-            item[key] = value
-    return item
+    if not raw:
+        return dict(image)
+    return {key: _DESERIALIZER.deserialize(value) for key, value in image.items()}
 
 
 def is_ttl_expiry(record: DynamoDBRecord) -> bool:

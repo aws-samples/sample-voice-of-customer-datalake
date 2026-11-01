@@ -784,19 +784,13 @@ class TestRecordHandler:
 
     @patch('aggregator.handler.process_new_feedback')
     def test_converts_dynamodb_format_to_dict(self, mock_process):
-        """Converts DynamoDB format to regular dict."""
+        """The stream's wire format reaches process_new_feedback as a plain dict (Powertools deserializes it)."""
         from aggregator.handler import record_handler
+        from aggregator.test.aggregator_fixtures import stream_record
 
-        record = MagicMock()
-        record.event_name = 'INSERT'
-        record.dynamodb = MagicMock()
-        record.dynamodb.new_image = {
-            'date': {'S': '2025-01-15'},
-            'source_platform': {'S': 'webscraper'},
-            'sentiment_score': {'N': '0.85'},
-        }
-
-        record_handler(record)
+        record_handler(stream_record('INSERT', new={
+            'date': '2025-01-15', 'source_platform': 'webscraper', 'sentiment_score': Decimal('0.85'),
+        }))
 
         # Check the item passed to process_new_feedback
         call_args = mock_process.call_args
