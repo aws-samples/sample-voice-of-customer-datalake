@@ -99,7 +99,7 @@ So a test that bounds its time is marked `@pytest.mark.timing` (on the test, its
 - CI runs `validate.sh --pytest-first`, so that whole step, the separate timing run included, has the runner to
   itself; the other lanes start once it has passed (about 10 minutes of CI time). Locally the lanes run together;
   `--pytest-first` reproduces CI's order.
-- `scripts/check_timing_tests.py` (the `check_timing_tests` step) fails on a test that reads `time.perf_counter`,
+- `voc-datalake/scripts/check_timing_tests.py` (the `check_timing_tests` step) fails on a test that reads `time.perf_counter`,
   `monotonic` or `process_time` (directly or through a helper in its module) and asserts an ordering, unless it is
   marked.
 
