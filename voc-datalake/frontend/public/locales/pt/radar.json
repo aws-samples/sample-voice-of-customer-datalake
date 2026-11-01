@@ -11,7 +11,7 @@
     "title": "Ainda não há nenhuma marca no Radar",
     "body": "Uma fonte do Radar coleta avaliações de outra marca sem misturá-las com os seus próprios números.",
     "step1": "Abra Administração → Fontes → Radar e adicione a marca com os domínios do próprio site.",
-    "step2": "Na página Scrapers, marque \"Fonte do Radar\" no scraper ou no conector de avaliações que coleta as avaliações dela e escolha a marca.",
+    "step2": "Na página Fontes de dados, marque \"Fonte do Radar\" no scraper ou no conector de avaliações que coleta as avaliações dela e escolha a marca.",
     "step3": "As novas avaliações dessa fonte aparecem aqui. Os lançamentos aparecem após a próxima varredura, ou clique em Varrer agora em Administração → Fontes → Radar.",
     "openSetup": "Configurar o Radar"
   },

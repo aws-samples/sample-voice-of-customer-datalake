@@ -11,7 +11,7 @@
     "title": "Noch keine Marke auf dem Radar",
     "body": "Eine Radar-Quelle sammelt Bewertungen einer anderen Marke, ohne sie mit Ihren eigenen Zahlen zu vermischen.",
     "step1": "Öffnen Sie Administration → Quellen → Radar und fügen Sie die Marke mit den Domains ihrer eigenen Website hinzu.",
-    "step2": "Aktivieren Sie auf der Seite Scraper „Radar-Quelle“ beim Scraper oder Bewertungs-Connector, der ihre Bewertungen sammelt, und wählen Sie die Marke.",
+    "step2": "Aktivieren Sie auf der Seite Datenquellen „Radar-Quelle“ beim Scraper oder Bewertungs-Connector, der ihre Bewertungen sammelt, und wählen Sie die Marke.",
     "step3": "Neue Bewertungen dieser Quelle erscheinen hier. Veröffentlichungen erscheinen nach dem nächsten Scan, oder klicken Sie unter Administration → Quellen → Radar auf Jetzt scannen.",
     "openSetup": "Radar einrichten"
   },

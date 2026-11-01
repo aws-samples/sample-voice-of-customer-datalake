@@ -10,7 +10,7 @@
     "title": "Brak marek na Radar",
     "body": "Źródło Radar zbiera opinie o innej marce, nie mieszając ich z Twoimi wynikami.",
     "step1": "Otwórz Administracja → Źródła → Radar i dodaj markę wraz z jej własnymi domenami witryn.",
-    "step2": "Na stronie Scrapery zaznacz „Źródło Radar” przy scraperze lub łączniku opinii, który zbiera jej opinie, i wybierz markę.",
+    "step2": "Na stronie Źródła danych zaznacz „Źródło Radar” przy scraperze lub łączniku opinii, który zbiera jej opinie, i wybierz markę.",
     "step3": "Nowe opinie z tego źródła pojawią się tutaj. Premiery pojawią się po następnym skanowaniu lub po kliknięciu Skanuj teraz w Administracja → Źródła → Radar.",
     "openSetup": "Skonfiguruj Radar"
   },
