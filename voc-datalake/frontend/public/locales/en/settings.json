@@ -25,6 +25,15 @@
         "unknown": "Access could not be read. Use Test to check the model directly."
       }
     },
+    "agreement": {
+      "title": "Model agreements",
+      "intro": "These models cannot be called in this account yet, so an AI feature that uses them fails with AccessDenied. The deploy requests every agreement, but a refused one does not stop it.",
+      "hint": {
+        "not_subscribed": "The model's agreement (EULA and Marketplace subscription) is missing. Accept it in the Bedrock console under Model access, or redeploy with -c modelAgreementRetry=<new value>. Then use Test.",
+        "no_access": "This account may not use the model. File Anthropic's use-case form in the Bedrock console and check the organization's policies (SCPs) for Bedrock and AWS Marketplace, then redeploy with -c modelAgreementRetry=<new value>.",
+        "not_in_region": "The model is not offered in this region. Choose another model for the AI features that use it."
+      }
+    },
     "automaticOption": "Automatic — {{model}}",
     "groupOther": "Other models",
     "groupRecommended": "Recommended",

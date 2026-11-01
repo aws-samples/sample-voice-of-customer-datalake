@@ -34,6 +34,7 @@ from shared import (
     extracted_design,
     image_model_quota,
     image_model_status,
+    model_agreements,
     model_capacity,
     onboarding,
     reference_urls,
@@ -279,10 +280,12 @@ def run_model_test():
 @app.get("/settings/model/capacity")
 @tracer.capture_method
 def get_model_capacity():
-    """Every allowlisted model with its tokens-per-minute quota, plus the image model's access
-    and requests-per-minute quota (no model call). Admin-only."""
+    """Every allowlisted model with its tokens-per-minute quota and agreement access
+    (shared/model_agreements.py), plus the image model's access and requests-per-minute quota
+    (no model call). Admin-only."""
     require_admin(app.current_event.raw_event)
-    return {'models': model_capacity.capacity_overview(), 'image': image_model_status.image_capacity()}
+    models = model_agreements.with_access(model_capacity.capacity_overview())
+    return {'models': models, 'image': image_model_status.image_capacity()}
 
 
 def _load_model_item() -> dict:

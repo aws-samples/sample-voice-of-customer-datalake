@@ -25,6 +25,15 @@
         "unknown": "Der Zugriff konnte nicht gelesen werden. Prüfen Sie das Modell direkt mit Testen."
       }
     },
+    "agreement": {
+      "title": "Modellvereinbarungen",
+      "intro": "Diese Modelle können in diesem Konto noch nicht aufgerufen werden, daher schlägt eine KI-Funktion, die sie nutzt, mit AccessDenied fehl. Das Deployment beantragt jede Vereinbarung, eine abgelehnte hält es aber nicht auf.",
+      "hint": {
+        "not_subscribed": "Die Vereinbarung des Modells (EULA und Marketplace-Abonnement) fehlt. Akzeptieren Sie sie in der Bedrock-Konsole unter Modellzugriff oder deployen Sie erneut mit -c modelAgreementRetry=<new value>. Danach Test verwenden.",
+        "no_access": "Dieses Konto darf das Modell nicht nutzen. Reichen Sie das Anthropic-Anwendungsfallformular in der Bedrock-Konsole ein und prüfen Sie die Richtlinien der Organisation (SCPs) für Bedrock und AWS Marketplace, dann erneut deployen mit -c modelAgreementRetry=<new value>.",
+        "not_in_region": "Das Modell wird in dieser Region nicht angeboten. Wählen Sie für die KI-Funktionen, die es nutzen, ein anderes Modell."
+      }
+    },
     "automaticOption": "Automatisch — {{model}}",
     "groupOther": "Weitere Modelle",
     "groupRecommended": "Empfohlen",

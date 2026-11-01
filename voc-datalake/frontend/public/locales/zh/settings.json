@@ -25,6 +25,15 @@
         "unknown": "无法读取访问状态。请使用“测试”直接检查模型。"
       }
     },
+    "agreement": {
+      "title": "模型协议",
+      "intro": "这些模型目前还无法在此账户中调用，因此使用它们的 AI 功能会以 AccessDenied 失败。部署会申请每个协议，但被拒绝不会中断部署。",
+      "hint": {
+        "not_subscribed": "缺少该模型的协议（EULA 和 Marketplace 订阅）。请在 Bedrock 控制台的“模型访问”中接受，或使用 -c modelAgreementRetry=<new value> 重新部署。然后使用“测试”确认。",
+        "no_access": "此账户无法使用该模型。请在 Bedrock 控制台提交 Anthropic 用例表单，并检查组织针对 Bedrock 和 AWS Marketplace 的策略（SCP），然后使用 -c modelAgreementRetry=<new value> 重新部署。",
+        "not_in_region": "此区域不提供该模型。请为使用它的 AI 功能选择其他模型。"
+      }
+    },
     "automaticOption": "自动 — {{model}}",
     "groupOther": "其他模型",
     "groupRecommended": "推荐",

@@ -216,6 +216,13 @@ rolls back the deploy. Each resource runs when it is created, and a later deploy
 does not repeat it on its own. Administration → AI models shows which models answer
 (each row's **Test** button, below).
 
+**See a missing agreement.** Administration → AI models lists every Claude model the account
+cannot call yet under **Model agreements**, with what is missing (no agreement, no access, not
+offered in the region), what to do, and a **Test** button. `GET /settings/model/capacity` reads
+each model's live state with `GetFoundationModelAvailability` in the app region
+(`lambda/shared/model_agreements.py`, cached 5 minutes, the same read as the image model's row),
+so an agreement accepted later in the Bedrock console clears the notice without a redeploy.
+
 **Retry a refused agreement.** After filing the use-case form in the console, or fixing
 what refused it (a Private Marketplace rule, a missing permission), deploy once with a
 new value of `-c modelAgreementRetry` (for example the date:
