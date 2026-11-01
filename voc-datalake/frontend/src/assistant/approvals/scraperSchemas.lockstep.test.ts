@@ -25,16 +25,22 @@ const ROOT = join(__dirname, '../../../..')
 const read = (path: string) => readFileSync(join(ROOT, path), 'utf8')
 const stream = read('lambda/stream/src/assistant/tools/client/scraper-schemas.ts')
 const handler = read('lambda/api/scrapers_handler.py')
+// The list bounds both scraper routes share (POST /scrapers, PUT /integrations/webscraper/credentials).
+const scraperLimits = read('lambda/shared/scraper_limits.py')
 const rowIds = read('lambda/shared/row_ids.py')
 const integrations = read('lambda/api/integrations_handler.py')
 
 const streamList = (name: string) => constStringList(stream, name)
 const streamNumbers = (name: string) => constNumberRecord(stream, name)
 
-/** `NAME = <int expression>` in scrapers_handler.py, evaluated (`8 * 1024`, `30 * 24 * 60`, `10_000`). */
+/**
+ * `NAME = <int expression>` (or `NAME: Final = …`) in scrapers_handler.py or shared/scraper_limits.py,
+ * evaluated (`8 * 1024`, `30 * 24 * 60`, `10_000`).
+ */
 function pythonInt(name: string): number {
-  const match = new RegExp(`^${name} = ([\\d_ *]+)$`, 'm').exec(handler)
-  if (match === null) throw new Error(`${name} not found in scrapers_handler.py`)
+  const pattern = new RegExp(`^${name}(?:: Final)? = ([\\d_ *]+)$`, 'm')
+  const match = pattern.exec(handler) ?? pattern.exec(scraperLimits)
+  if (match === null) throw new Error(`${name} not found in scrapers_handler.py or shared/scraper_limits.py`)
   return at(match, 1).split('*').map((part) => Number(part.trim().replaceAll('_', ''))).reduce((a, b) => a * b, 1)
 }
 
