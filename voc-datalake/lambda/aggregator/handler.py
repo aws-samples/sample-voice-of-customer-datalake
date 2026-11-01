@@ -233,7 +233,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, localcontext
 from enum import Enum
 from itertools import groupby
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict
 
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType
 from aws_lambda_powertools.utilities.batch.exceptions import ExceptionInfo
@@ -2144,28 +2144,39 @@ def _rebucket_average(
     return int(reversed_) + int(applied)
 
 
+_WIRE_TYPES: Final = frozenset({'S', 'N', 'B', 'M', 'L', 'BOOL', 'NULL', 'SS', 'NS', 'BS'})
+
+
+def _is_wire_value(value: object) -> bool:
+    """A raw DynamoDB attribute value: a one-key dict naming its type (``{'S': 'text'}``)."""
+    return isinstance(value, dict) and len(value) == 1 and next(iter(value)) in _WIRE_TYPES
+
+
 def deserialize_image(image: dict) -> dict:
     """Convert a stream image to a plain dict.
 
-    Powertools may already have deserialized it, so both formats are accepted.
+    Two shapes arrive: Powertools' ``DynamoDBRecord`` hands over an image it has ALREADY
+    deserialized (``record.dynamodb.new_image``, the production path), and tests and older
+    callers pass the raw wire format. Each value is unwrapped only when it IS a wire value
+    (a one-key dict naming a DynamoDB type); any other value is kept as it is. Treating
+    every dict as a wire value instead read a deserialized map attribute (the review's
+    ``dimensions = {'feedback_type': 'bug'}``) as a malformed one and dropped it, which is
+    how the per-dimension counters were never written before 5.67.01.
     """
     item = {}
     for key, value in image.items():
-        if isinstance(value, dict):
-            # Raw DynamoDB format
-            if 'S' in value:
-                item[key] = value['S']
-            elif 'N' in value:
-                item[key] = Decimal(value['N'])
-            elif 'M' in value:
-                item[key] = value['M']
-            elif 'L' in value:
-                item[key] = value['L']
-            elif 'BOOL' in value:
-                item[key] = value['BOOL']
-        else:
-            # Already deserialized
+        if not _is_wire_value(value):
             item[key] = value
+        elif 'S' in value:
+            item[key] = value['S']
+        elif 'N' in value:
+            item[key] = Decimal(value['N'])
+        elif 'M' in value:
+            item[key] = value['M']
+        elif 'L' in value:
+            item[key] = value['L']
+        elif 'BOOL' in value:
+            item[key] = value['BOOL']
     return item
 
 
