@@ -1,5 +1,5 @@
 {
-  "vendor-react": ["react", "react-dom", "react-router-dom", "clsx"],
+  "vendor-react": ["react", "react-dom", "react-router-dom", "react-router", "clsx"],
   "vendor-recharts": ["recharts"],
   "vendor-icons": ["lucide-react"],
   "vendor-query": ["@tanstack/react-query"],
