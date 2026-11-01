@@ -105,5 +105,5 @@ All in the projects table:
 | Link | `DOCSHARE#{share_id}` / `META` | Audience, expiry, revoked; `ttl` 30 days past expiry |
 | Reviewer's daily writes | `DCRATE#{share_id}#{email digest}` / `{day}` | `ttl` 2 days |
 
-Deleting a document or a project does not delete its threads yet. They are unreachable once
-the series has no version left.
+Deleting a document or a project does not delete its threads. They are unreachable once the
+series has no version left.
