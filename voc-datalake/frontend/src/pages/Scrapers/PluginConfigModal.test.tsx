@@ -286,7 +286,7 @@ describe('PluginConfigModal', () => {
       // is one delete button per app; the two apps are the loaded fixture.
       const perApp = screen.getAllByRole('button')
         .filter((el) => el.getAttribute('title') === ADMIN_ONLY_TITLE
-          && el.querySelector('svg.lucide-trash2') !== null)
+          && el.querySelector('svg.lucide-trash-2') !== null)
       expect(perApp).toHaveLength(2)
 
       await user.click(at(perApp, 0))
