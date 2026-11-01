@@ -26,6 +26,7 @@
     {"key": "frontend:src/pages/DataExplorer/dataExplorerSchema.ts#S3Listing.prefix", "reason": "Decoder output of the S3 listing (wire/decoder class: the 5.28 audit kept decoded wire shapes whole)."},
     {"key": "frontend:src/api/designSystemApi.ts#CreatedReference.reference", "reason": "Decoder output; the create-reference envelope is validated here (wire/decoder class: a decoded wire shape is kept whole)."},
     {"key": "frontend:src/assistant/approvals/registry.ts#ToolSpec.Preview.page", "reason": "Shared `{args, page}` preview signature: every preview gets the page, only some read it (cosmetic)."},
-    {"key": "frontend:src/api/projectsApi.ts#projectsApi.createProject.success", "reason": "Envelope member of the create answer (fetchApi<{success; project}> wire type)."}
+    {"key": "frontend:src/api/projectsApi.ts#projectsApi.createProject.success", "reason": "Envelope member of the create answer (fetchApi<{success; project}> wire type)."},
+    {"key": "frontend:vendorChunkGroups.ts#*", "reason": "Build helper read by vite.config.ts (the Rolldown vendor chunk groups); the frontend program is tsconfig.test.json, which covers src/ only, so the config's read is invisible here and only vendorChunkGroups.test.ts shows."}
   ]
 }
