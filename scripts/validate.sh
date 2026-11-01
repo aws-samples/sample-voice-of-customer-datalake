@@ -53,7 +53,10 @@ fi
 # load alone could cross 5 s. A per-test timeout is not an assertion: nothing a test checks changes.
 # The same value covers hooks: a file's beforeAll synth (default 10 s) timed out under CI load once (5.48.05).
 VALIDATE_VITEST_TIMEOUT_MS="${VALIDATE_VITEST_TIMEOUT_MS:-30000}"
-export ROOT CDK FRONTEND STREAM KNIP_PROD TSC_CACHE PYTHON_BIN PATH VALIDATE_PYTEST_WORKERS VALIDATE_VITEST_TIMEOUT_MS CPUS
+# Locally a baseline row whose file now reaches the coverage floor is deleted (and named) instead of failing the
+# step, so the one-line fix lands in the commit; CI cannot edit files and stays strict (docs/coverage-gate.md).
+if [[ -n "${GITHUB_ACTIONS:-}" ]]; then COVERAGE_PRUNE=""; else COVERAGE_PRUNE="--prune-graduated"; fi
+export ROOT CDK FRONTEND STREAM KNIP_PROD TSC_CACHE PYTHON_BIN PATH VALIDATE_PYTEST_WORKERS VALIDATE_VITEST_TIMEOUT_MS CPUS COVERAGE_PRUNE
 
 # ---- Options ----
 SERIAL=0; FAIL_FAST=1; ONLY=""; LANE_ONLY=""; LIST=0; PYTEST_FIRST=0; DRY_RUN=0
@@ -101,7 +104,7 @@ def py   python,python-static               "check_timing_tests"                
 # Coverage is gated per file (docs/coverage-gate.md): the check runs after the suite.
 # Tests marked `timing` (they bound their own running time) are left out of that parallel, traced run and
 # run after it in ONE process, untraced, so neither the tracer nor the other workers decide their result.
-def py   python,python-tests                "pytest"                             'cd "$CDK" && mkdir -p "$ROOT/.cache/coverage" && rm -f "$ROOT"/.cache/coverage/python.coverage* "$ROOT/.cache/coverage/python.json" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider -n "$VALIDATE_PYTEST_WORKERS" --dist loadgroup -m "not timing" --cov-config="$ROOT/scripts/coverage/python.coveragerc" --cov-report=term-missing:skip-covered --cov-report=html:"$ROOT/.cache/coverage/python-html" --cov-report=json:"$ROOT/.cache/coverage/python.json" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite python && cd "$CDK" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider -p no:xdist --no-cov -m timing'
+def py   python,python-tests                "pytest"                             'cd "$CDK" && mkdir -p "$ROOT/.cache/coverage" && rm -f "$ROOT"/.cache/coverage/python.coverage* "$ROOT/.cache/coverage/python.json" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider -n "$VALIDATE_PYTEST_WORKERS" --dist loadgroup -m "not timing" --cov-config="$ROOT/scripts/coverage/python.coveragerc" --cov-report=term-missing:skip-covered --cov-report=html:"$ROOT/.cache/coverage/python-html" --cov-report=json:"$ROOT/.cache/coverage/python.json" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs $COVERAGE_PRUNE --suite python && cd "$CDK" && "$PYTHON_BIN" -m pytest -q --no-header --tb=short -p no:cacheprovider -p no:xdist --no-cov -m timing'
 
 # Release bookkeeping: CHANGELOG.md's newest release = the version in every platform package.json.
 def tsc  repo                               "version: CHANGELOG ↔ package.json"  'cd "$ROOT" && node --test scripts/check-version.test.mjs scripts/validate-affected.test.mjs && node scripts/check-version.mjs'
@@ -159,8 +162,8 @@ def test frontend,frontend-static,cdk,cdk-tests,audit,audit-py-synth "vite build
 # group for that reason, and comes before the vitest suites so a failing suite cannot leave it unrun.
 def test audit,audit-py-synth               "audit: py_reachability + py_env_contract + py_iam_contract + py_layers + py_sfn_errors + py_shared_constants + py_doc_refs + clones_struct.py --kind function" 'cd "$ROOT" && rc=0 && for d in scripts/audit/py_reachability.py scripts/audit/py_env_contract.py scripts/audit/py_iam_contract.py scripts/audit/py_layers.py scripts/audit/py_sfn_errors.py scripts/audit/py_shared_constants.py scripts/audit/py_doc_refs.py "scripts/audit/clones_struct.py --kind function"; do "$PYTHON_BIN" $d || { r=$?; echo "audit: $d exited $r"; [ "$r" -gt "$rc" ] && rc=$r; }; done; exit "$rc"'
 def test cdk,cdk-tests                      "vitest: CDK app"                    'cd "$CDK" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --hookTimeout "$VALIDATE_VITEST_TIMEOUT_MS"'
-def test stream,stream-tests                "vitest: stream Lambda"              'cd "$STREAM" && rm -rf "$ROOT/.cache/coverage/stream" && npx vitest run --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/stream" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite stream'
-def web  frontend,frontend-tests            "vitest: frontend"                   'cd "$FRONTEND" && rm -rf "$ROOT/.cache/coverage/frontend" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/frontend" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs --suite frontend'
+def test stream,stream-tests                "vitest: stream Lambda"              'cd "$STREAM" && rm -rf "$ROOT/.cache/coverage/stream" && npx vitest run --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/stream" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs $COVERAGE_PRUNE --suite stream'
+def web  frontend,frontend-tests            "vitest: frontend"                   'cd "$FRONTEND" && rm -rf "$ROOT/.cache/coverage/frontend" && npx vitest run --testTimeout "$VALIDATE_VITEST_TIMEOUT_MS" --coverage.enabled --coverage.reporter=json-summary --coverage.reportsDirectory="$ROOT/.cache/coverage/frontend" && cd "$ROOT" && node scripts/coverage/check-per-file-coverage.mjs $COVERAGE_PRUNE --suite frontend'
 
 # Code-audit detectors (scripts/audit/, docs/code-audit.md): dead code, renamed clones and re-implemented
 # helpers the gates above cannot see. Each exits 0 clean, 1 findings, 2 cannot run, and any non-zero exit

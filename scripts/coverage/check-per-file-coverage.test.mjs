@@ -121,6 +121,8 @@ test('options: --suite supplies every value and cannot be mixed with explicit on
   assert.throws(() => parseArgs(['--format', 'py', '--report', 'r', '--baseline', 'b'], {}), /--floor is required/)
   assert.throws(() => parseArgs(['--format', 'py', '--report', 'r', '--baseline', 'b', '--floor', '0'], {}), /percentage/)
   assert.throws(() => parseArgs(['--init', '--update-baseline'], {}), /exclusive/)
+  assert.throws(() => parseArgs(['--prune-graduated', '--update-baseline'], {}), /exclusive/)
+  assert.throws(() => parseArgs(['--prune-graduated', '--init'], {}), /exclusive/)
   assert.throws(() => parseArgs(['--accept-new'], {}), /unknown or incomplete option/)
   assert.throws(() => parseArgs(['--report'], {}), /unknown or incomplete option/)
 })
@@ -163,6 +165,49 @@ test('end to end: --update-baseline only deletes, and a remaining regression sti
     assert.equal(after, baseline('voc-datalake/lambda/down.py 50.00   # 5/10'))
     assert.ok(repo.lines.some((line) => line.includes('new.py: 10.00% (1/10) is below the 80% floor')))
     assert.ok(repo.lines.some((line) => line.includes('down.py: 10.00% (1/10) fell below its recorded 50.00%')))
+  } finally {
+    repo.cleanup()
+  }
+})
+
+test('end to end: --prune-graduated deletes only rows that reach the floor, names them and then passes', () => {
+  const repo = fixtureRepo({ 'lambda/up.py': [9, 10], 'lambda/low.py': [3, 10] })
+  try {
+    const before = baseline('voc-datalake/lambda/low.py 30.00   # 3/10', 'voc-datalake/lambda/up.py 10.00   # 1/10')
+    writeFileSync(repo.baselineFile, before)
+    assert.equal(repo.run('--prune-graduated'), 0)
+    assert.equal(readFileSync(repo.baselineFile, 'utf8'), baseline('voc-datalake/lambda/low.py 30.00   # 3/10'))
+    assert.ok(repo.lines.some((line) => /removed 1 graduated row\(s\).*commit this change/.test(line)))
+    assert.ok(repo.lines.includes('  voc-datalake/lambda/up.py'))
+  } finally {
+    repo.cleanup()
+  }
+})
+
+test('end to end: --prune-graduated keeps every other stale row and finding failing', () => {
+  const repo = fixtureRepo({ 'lambda/up.py': [9, 10], 'lambda/down.py': [1, 10], 'lambda/new.py': [1, 10] })
+  try {
+    writeFileSync(repo.baselineFile, baseline(
+      'voc-datalake/lambda/down.py 50.00   # 5/10', 'voc-datalake/lambda/gone.py 10.00   # 1/10', 'voc-datalake/lambda/up.py 10.00   # 1/10'))
+    assert.equal(repo.run('--prune-graduated'), 1)
+    assert.equal(readFileSync(repo.baselineFile, 'utf8'), baseline(
+      'voc-datalake/lambda/down.py 50.00   # 5/10', 'voc-datalake/lambda/gone.py 10.00   # 1/10'))
+    assert.ok(repo.lines.some((line) => line.includes('gone.py: not in the report')))
+    assert.ok(repo.lines.some((line) => line.includes('new.py: 10.00% (1/10) is below the 80% floor')))
+    assert.ok(repo.lines.some((line) => line.includes('down.py: 10.00% (1/10) fell below its recorded 50.00%')))
+  } finally {
+    repo.cleanup()
+  }
+})
+
+test('end to end: --prune-graduated writes nothing when no row graduated', () => {
+  const repo = fixtureRepo({ 'lambda/low.py': [3, 10] })
+  try {
+    const before = baseline('voc-datalake/lambda/low.py 30.00   # 3/10')
+    writeFileSync(repo.baselineFile, before)
+    assert.equal(repo.run('--prune-graduated'), 0)
+    assert.equal(readFileSync(repo.baselineFile, 'utf8'), before)
+    assert.ok(!repo.lines.some((line) => line.includes('graduated row')))
   } finally {
     repo.cleanup()
   }
