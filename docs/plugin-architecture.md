@@ -1,1123 +1,95 @@
 # Plugin Architecture for Data Source Connectors
 
-## Overview
+Every feedback source that the platform polls, receives by webhook or reads from an S3 upload is a
+**plugin**: a folder under `voc-datalake/plugins/` with a `manifest.json` and the Python code of its
+Lambda functions. The manifest drives both the infrastructure CDK deploys and the settings card the
+web app shows. This document is the reference for plugin authors and operators: the manifest
+schema, what CDK builds, the base classes, the message contract with the processing queue, secrets,
+runtime controls and observability. For a step-by-step walkthrough, start with
+[Getting Started with Data Source Plugins](getting-started-plugins.md).
 
-This document describes the plugin-based architecture for VoC data source connectors. The goal is to make connectors modular, self-contained, and easy to add or remove without modifying core platform code.
+Not every source is a plugin. Manual paste and CSV/JSON import, feedback forms, the email inbox and
+Radar scans have their own handlers and write to the same processing queue.
 
-## Why a Plugin Architecture?
-
-### Current Problems
-
-1. **Tight coupling**: Data sources are hardcoded across multiple files:
-   - `sourceConfig.ts` (frontend UI configuration)
-   - `ingestion-stack.ts` (CDK infrastructure)
-   - `api-stack.ts` (webhook routes)
-   - `cdk.context.json` (enabled sources list)
-
-2. **Difficult to contribute**: Adding a new connector requires changes in 4+ files across frontend and backend.
-
-3. **No single source of truth**: UI fields, infrastructure config, and secrets are defined separately.
-
-### Benefits of Plugin Architecture
-
-1. **Self-contained**: Each connector lives in its own folder with everything it needs.
-2. **Single source of truth**: One `manifest.json` drives both infrastructure deployment and UI rendering.
-3. **Easy to contribute**: Drop a folder, deploy, done.
-4. **Open source friendly**: Community can contribute connectors without understanding the whole platform.
-5. **Enable/disable without redeploy**: Runtime toggle via Settings UI.
-
----
-
-## Architecture Overview
+## How it works
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Plugin Folder                                │
-│  plugins/{connector-id}/                                            │
-│  ├── manifest.json      ← Single source of truth                    │
-│  ├── ingestor/          ← Polling Lambda (optional)                 │
-│  │   └── handler.py                                                 │
-│  └── webhook/           ← Webhook Lambda (optional)                 │
-│      └── handler.py                                                 │
-└─────────────────────────────────────────────────────────────────────┘
+plugins/<id>/manifest.json ──► lib/plugin-loader.ts (Zod validation, cross-plugin checks)
                                    │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      CDK Plugin Loader                              │
-│  - Scans plugins/ folder                                            │
-│  - Validates manifests with Zod                                     │
-│  - Creates Lambda functions                                         │
-│  - Creates EventBridge schedules                                    │
-│  - Creates API Gateway webhook routes                               │
-│  - Aggregates secrets template                                      │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      Frontend Build                                  │
-│  - Extracts UI-relevant fields from manifests                       │
-│  - Generates manifests.json bundle                                  │
-│  - Settings page renders dynamically from manifests                 │
-└─────────────────────────────────────────────────────────────────────┘
+          ┌────────────────────────┼─────────────────────────────┐
+          ▼                        ▼                             ▼
+  VocIngestionStack           VocApiStack                 scripts/generate-manifests.ts
+  ingestor Lambda,            webhook Lambda +            frontend/src/plugins/manifests.json
+  schedule (disabled),        POST /webhooks/<id>         (UI fields + enabled flag)
+  S3 trigger, shared secret
+          │                        │
+          └──────────┬─────────────┘
+                     ▼
+     raw/<id>/… in the raw bucket  +  voc-processing-queue  ──►  processor (docs/processing-pipeline.md)
 ```
 
----
+1. **Synth time.** `loadPlugins()` reads every folder under `plugins/` that does not start with `_`,
+   validates its manifest and fails the synth on any error. `pluginStatus` in `cdk.context.json`
+   decides which plugins get AWS resources.
+2. **Deploy time.** CDK creates the ingestor Lambda, its EventBridge schedule (created **disabled**),
+   the webhook route and the S3 trigger that the manifest declares. Every plugin's declared secret
+   keys seed one shared Secrets Manager secret.
+3. **Build time.** `npm run generate:manifests` writes the UI-relevant part of each manifest, plus an
+   `enabled` flag from `pluginStatus`, to `frontend/src/plugins/manifests.json`. The SPA's
+   `prebuild` runs it.
+4. **Run time.** An administrator saves credentials and turns the schedule on in
+   **Administration → Sources → Source settings**. The ingestor fetches items, archives each raw
+   item to S3 and sends normalized messages to the processing queue.
 
-## Folder Structure
+Adding a plugin, or changing which plugins are enabled, needs a deploy. Turning a deployed
+plugin's schedule on or off does not.
+
+## Folder layout
 
 ```
-voc-datalake/
-├── plugins/
-│   ├── _shared/                      # Shared code for all plugins
-│   │   ├── base_ingestor.py          # Base class for polling ingestors
-│   │   ├── base_webhook.py           # Base class for webhook handlers
-│   │   └── __init__.py
-│   │
-│   ├── _template/                    # Starter template for new plugins
-│   │   ├── manifest.json
-│   │   ├── ingestor/
-│   │   │   └── handler.py
-│   │   └── README.md
-│   │
-│   ├── webscraper/                   # Web scraper plugin
-│   │   ├── manifest.json
-│   │   └── ingestor/
-│   │       └── handler.py
-│   │
-│   └── web_reviews/                  # Generic review pages via the AgentCore managed browser (docs/web-reviews.md)
-│       ├── manifest.json             # ingestor.bedrock + ingestor.browser capabilities
-│       └── ingestor/                 # handler, CDP client, page reader, JSON-LD / LLM extraction
-│           └── handler.py
-│
-├── lib/
-│   ├── plugin-loader.ts              # Discovers and validates plugins
-│   └── stacks/
-│       ├── ingestion-stack.ts        # Uses plugin loader
-│       └── api-stack.ts              # Uses plugin loader for webhooks
-│
-└── frontend/src/
-    ├── plugins/
-    │   └── manifests.json            # Generated at build time
-    └── pages/Settings/
-        ├── Settings.tsx              # Reads from manifests.json
-        └── SourceCard.tsx            # Renders based on manifest config
+voc-datalake/plugins/
+├── _shared/              # Code bundled into every plugin Lambda (base classes, secrets, archive, queue)
+├── _template/            # Starter plugin: manifest.json, ingestor/handler.py, README.md
+├── conftest.py           # pytest setup for plugin tests (paths, fake environment, no AWS calls)
+└── <plugin_id>/
+    ├── manifest.json     # Required
+    ├── ingestor/         # Polling or S3-triggered Lambda: handler.py (+ any modules it imports)
+    ├── webhook/          # Webhook Lambda: handler.py
+    └── test/             # pytest tests (optional; pruned from the deployed bundle)
 ```
 
----
+Folders starting with `_` are never loaded as plugins. A plugin folder without `manifest.json` is
+skipped with a warning.
 
-## The Manifest File
+### Bundled plugins
 
-The `manifest.json` is the single source of truth for each plugin. It defines:
+| Plugin id | Kind | Default schedule | Extras | Guide |
+|-----------|------|------------------|--------|-------|
+| `webscraper` | Ingestor | `rate(15 minutes)` | | [scrapers.md](scrapers.md) |
+| `app_reviews_ios` | Ingestor | `rate(30 minutes)` | Continues long runs in a new invocation of its own function | [mobile-app-reviews.md](mobile-app-reviews.md) |
+| `app_reviews_android` | Ingestor | `rate(30 minutes)` | Same as iOS | [mobile-app-reviews.md](mobile-app-reviews.md) |
+| `github_issues` | Ingestor + webhook | `rate(30 minutes)` | Signed webhook `POST /webhooks/github_issues` | [github-issues.md](github-issues.md) |
+| `web_reviews` | Ingestor | `rate(15 minutes)` | `bedrock` + `browser` capabilities | [web-reviews.md](web-reviews.md) |
+| `s3_import` | S3-triggered ingestor | none | `.csv`, `.json`, `.jsonl` uploads to the import bucket | [data-lake-structure.md](data-lake-structure.md) |
+| `synthetic_reviews` | On-demand ingestor | none | `bedrock` capability; category `synthetic` | [README](../voc-datalake/plugins/synthetic_reviews/README.md) |
 
-- **Identity**: Name, icon, description
-- **Infrastructure**: What AWS resources to deploy
-- **Configuration**: What fields the user needs to fill in
-- **Secrets**: What credentials to store in Secrets Manager
-- **Setup instructions**: How to configure the external service
+All seven are enabled in the committed `cdk.context.json`. A plugin with no credentials or targets
+configured runs and finds nothing.
 
-### Manifest Schema
+## The manifest
+
+`lib/plugin-loader.ts` defines the schema (`ManifestSchema`). The template's manifest is a
+complete minimal example:
 
 ```json
-{
-  "id": "webscraper",
-  "name": "Web Scraper",
-  "icon": "Web",
-  "description": "Extract reviews from web pages using CSS selectors or JSON-LD",
-  "category": "import",
-  
-  "infrastructure": {
-    "ingestor": {
-      "enabled": true,
-      "schedule": "rate(30 minutes)",
-      "timeout": 300,
-      "memory": 512
-    }
-  },
-  
-  "config": [
-    {
-      "key": "configs",
-      "label": "Scraper Configurations",
-      "type": "textarea",
-      "required": false,
-      "secret": true
-    }
-  ],
-  
-  "setup": {
-    "title": "Web Scraper Setup",
-    "color": "blue",
-    "steps": [
-      "Navigate to the Scrapers page in the dashboard",
-      "Create a new scraper configuration",
-      "Enter the URL to scrape and configure CSS selectors",
-      "Test the scraper to verify extraction works",
-      "Enable the scraper to run on schedule"
-    ]
-  },
-  
-  "secrets": {
-    "webscraper_configs": "[]"
-  }
-}
-```
-
-### Field Definitions
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | Yes | Unique identifier, used in folder name and AWS resource names |
-| `name` | string | Yes | Display name in UI |
-| `icon` | string | Yes | Icon word, mapped to a lucide icon: `Web`, `iOS`, `Android`, `GitHub`, `Package`, `Synthetic`, `Plugin` (see `frontend/src/components/SourceIcon/sourceIcons.ts`). An unknown word falls back to `Package` for `import` plugins, otherwise `Plug`. Never an emoji — `frontend/src/noEmoji.test.ts` fails on one |
-| `description` | string | No | Short description shown in UI |
-| `category` | enum | No | One of: `reviews`, `social`, `import`, `search`, `scraper` |
-| `infrastructure` | object | Yes | AWS resources to deploy |
-| `config` | array | Yes | Configuration fields for UI |
-| `webhooks` | array | No | Webhook endpoints to display in UI |
-| `setup` | object | No | Setup instructions for UI |
-| `secrets` | object | No | Secret keys to add to Secrets Manager template |
-
-### Infrastructure Options
-
-#### Ingestor (Polling Lambda)
-
-```json
-"ingestor": {
-  "enabled": true,
-  "schedule": "rate(5 minutes)",  // EventBridge schedule expression
-  "timeout": 120,                  // Lambda timeout in seconds
-  "memory": 256                    // Lambda memory in MB
-}
-```
-
-- If `schedule` is omitted, no EventBridge rule is created (useful for S3-triggered lambdas)
-- Schedule is created but **disabled by default** - user enables via Settings UI
-
-#### Webhook (API Gateway Route)
-
-```json
-"webhook": {
-  "enabled": true,
-  "path": "/webhooks/{plugin}",  // API Gateway path (plugin ID substituted)
-  "methods": ["POST"]            // HTTP methods to allow
-}
-```
-
-- Creates a Lambda function and API Gateway integration
-- No authentication (webhooks must be accessible by external services)
-- Webhook URL is displayed in Administration → Sources → Data sources for user to copy
-
-#### S3 Trigger
-
-```json
-"s3Trigger": {
-  "enabled": true,
-  "suffixes": [".csv", ".json", ".jsonl"]
-}
-```
-
-- Triggers Lambda when files with matching suffixes are uploaded to S3 import bucket
-- No schedule needed - event-driven
-
-### Config Field Types
-
-| Type | Renders As | Use Case |
-|------|-----------|----------|
-| `text` | Single line input | IDs, names, non-sensitive values |
-| `password` | Masked input with show/hide | API keys, tokens, secrets |
-| `textarea` | Multi-line input | Lists of IDs, JSON configs |
-| `select` | Dropdown | Predefined options |
-
-### Config Field Properties
-
-```json
-{
-  "key": "api_key",           // Key used in secrets/config storage
-  "label": "API Key",         // Display label in UI
-  "type": "password",         // Input type
-  "required": true,           // Show as required in UI
-  "placeholder": "Enter...",  // Placeholder text
-  "secret": true              // Store in Secrets Manager (vs. config)
-}
-```
-
----
-
-## Example Manifests
-
-### Web Scraper Plugin
-
-The webscraper plugin extracts reviews from web pages using CSS selectors or JSON-LD structured data.
-
-```json
-{
-  "id": "webscraper",
-  "name": "Web Scraper",
-  "icon": "Web",
-  "description": "Extract reviews from web pages using CSS selectors or JSON-LD",
-  "category": "import",
-  
-  "infrastructure": {
-    "ingestor": {
-      "enabled": true,
-      "schedule": "rate(30 minutes)",
-      "timeout": 300,
-      "memory": 512
-    }
-  },
-  
-  "config": [
-    {
-      "key": "configs",
-      "label": "Scraper Configurations",
-      "type": "textarea",
-      "required": false,
-      "secret": true
-    }
-  ],
-  
-  "setup": {
-    "title": "Web Scraper Setup",
-    "color": "blue",
-    "steps": [
-      "Navigate to the Scrapers page in the dashboard",
-      "Create a new scraper configuration",
-      "Enter the URL to scrape and configure CSS selectors",
-      "Test the scraper to verify extraction works",
-      "Enable the scraper to run on schedule"
-    ]
-  },
-  
-  "secrets": {
-    "webscraper_configs": "[]"
-  }
-}
-```
-
-### Custom Plugin Template
-
-Use the `_template` folder as a starting point for creating new plugins:
-
-```json
-{
-  "id": "my_custom_source",
-  "name": "My Custom Source",
-  "icon": "Plugin",
-  "description": "Custom data source connector",
-  "category": "import",
-  
-  "infrastructure": {
-    "ingestor": {
-      "enabled": true,
-      "schedule": "rate(15 minutes)",
-      "timeout": 120,
-      "memory": 256
-    }
-  },
-  
-  "config": [
-    {
-      "key": "api_key",
-      "label": "API Key",
-      "type": "password",
-      "required": true,
-      "secret": true
-    }
-  ],
-  
-  "setup": {
-    "title": "Custom Source Setup",
-    "color": "blue",
-    "steps": [
-      "Obtain API credentials from your data source",
-      "Enter the API key above",
-      "Enable the integration"
-    ]
-  },
-  
-  "secrets": {
-    "my_custom_source_api_key": ""
-  }
-}
-```
-
----
-
-## CDK Implementation
-
-### Plugin Loader
-
-The plugin loader scans the `plugins/` directory, validates manifests, and provides them to CDK stacks.
-
-```typescript
-// lib/plugin-loader.ts
-import * as fs from 'fs';
-import * as path from 'path';
-import { z } from 'zod';
-
-// ============================================
-// Zod Schema for Manifest Validation
-// ============================================
-
-const ConfigFieldSchema = z.object({
-  key: z.string(),
-  label: z.string(),
-  type: z.enum(['text', 'password', 'textarea', 'select']),
-  required: z.boolean().optional().default(false),
-  placeholder: z.string().optional(),
-  secret: z.boolean().optional().default(false),
-  options: z.array(z.object({
-    value: z.string(),
-    label: z.string(),
-  })).optional(),
-});
-
-const WebhookInfoSchema = z.object({
-  name: z.string(),
-  events: z.array(z.string()),
-  docUrl: z.string().url().optional(),
-});
-
-const SetupSchema = z.object({
-  title: z.string(),
-  color: z.enum(['blue', 'orange', 'green', 'gray']).optional().default('blue'),
-  steps: z.array(z.string()),
-});
-
-const IngestorInfraSchema = z.object({
-  enabled: z.boolean(),
-  schedule: z.string().optional(),
-  timeout: z.number().min(1).max(900).default(120),
-  memory: z.number().min(128).max(10240).default(256),
-});
-
-const WebhookInfraSchema = z.object({
-  enabled: z.boolean(),
-  path: z.string(),
-  methods: z.array(z.string()).default(['POST']),
-});
-
-const S3TriggerSchema = z.object({
-  enabled: z.boolean(),
-  suffixes: z.array(z.string()),
-});
-
-const InfrastructureSchema = z.object({
-  ingestor: IngestorInfraSchema.optional(),
-  webhook: WebhookInfraSchema.optional(),
-  s3Trigger: S3TriggerSchema.optional(),
-});
-
-const ManifestSchema = z.object({
-  id: z.string().regex(/^[a-z0-9_]+$/, 'ID must be lowercase alphanumeric with underscores'),
-  name: z.string(),
-  icon: z.string(),
-  description: z.string().optional(),
-  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper']).optional(),
-  infrastructure: InfrastructureSchema,
-  config: z.array(ConfigFieldSchema).default([]),
-  webhooks: z.array(WebhookInfoSchema).optional(),
-  setup: SetupSchema.optional(),
-  secrets: z.record(z.string()).optional(),
-});
-
-export type PluginManifest = z.infer<typeof ManifestSchema>;
-
-// ============================================
-// Plugin Discovery
-// ============================================
-
-export function loadPlugins(pluginsDir: string): PluginManifest[] {
-  const plugins: PluginManifest[] = [];
-  const errors: string[] = [];
-  
-  if (!fs.existsSync(pluginsDir)) {
-    console.warn(`Plugins directory not found: ${pluginsDir}`);
-    return plugins;
-  }
-  
-  const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
-  
-  for (const entry of entries) {
-    // Skip non-directories and special folders
-    if (!entry.isDirectory()) continue;
-    if (entry.name.startsWith('_')) continue;
-    
-    const manifestPath = path.join(pluginsDir, entry.name, 'manifest.json');
-    
-    if (!fs.existsSync(manifestPath)) {
-      console.warn(`No manifest.json found in plugins/${entry.name}, skipping`);
-      continue;
-    }
-    
-    try {
-      const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-      const parsed = ManifestSchema.parse(raw);
-      
-      // Validate folder name matches manifest ID
-      if (parsed.id !== entry.name) {
-        errors.push(`Plugin folder '${entry.name}' does not match manifest id '${parsed.id}'`);
-        continue;
-      }
-      
-      plugins.push(parsed);
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        errors.push(`Invalid manifest in plugins/${entry.name}: ${err.message}`);
-      } else {
-        errors.push(`Failed to load plugins/${entry.name}: ${err}`);
-      }
-    }
-  }
-  
-  if (errors.length > 0) {
-    console.error('Plugin loading errors:');
-    errors.forEach(e => console.error(`  - ${e}`));
-    throw new Error(`Failed to load ${errors.length} plugin(s)`);
-  }
-  
-  console.log(`Loaded ${plugins.length} plugins: ${plugins.map(p => p.id).join(', ')}`);
-  return plugins;
-}
-
-// ============================================
-// Helper Functions
-// ============================================
-
-export function getEnabledPlugins(
-  plugins: PluginManifest[], 
-  enabledSources: string[]
-): PluginManifest[] {
-  return plugins.filter(p => enabledSources.includes(p.id));
-}
-
-export function aggregateSecrets(plugins: PluginManifest[]): Record<string, string> {
-  const secrets: Record<string, string> = {};
-  for (const plugin of plugins) {
-    if (plugin.secrets) {
-      Object.assign(secrets, plugin.secrets);
-    }
-  }
-  return secrets;
-}
-
-export function getPluginsWithIngestor(plugins: PluginManifest[]): PluginManifest[] {
-  return plugins.filter(p => p.infrastructure.ingestor?.enabled);
-}
-
-export function getPluginsWithWebhook(plugins: PluginManifest[]): PluginManifest[] {
-  return plugins.filter(p => p.infrastructure.webhook?.enabled);
-}
-
-export function getPluginsWithS3Trigger(plugins: PluginManifest[]): PluginManifest[] {
-  return plugins.filter(p => p.infrastructure.s3Trigger?.enabled);
-}
-```
-
----
-
-### Ingestion Stack Changes
-
-The ingestion stack uses the plugin loader to dynamically create resources.
-
-```typescript
-// lib/stacks/ingestion-stack.ts (key changes)
-import * as path from 'path';
-import { 
-  loadPlugins, 
-  getEnabledPlugins, 
-  aggregateSecrets,
-  PluginManifest 
-} from '../plugin-loader';
-
-export class VocIngestionStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props: VocIngestionStackProps) {
-    super(scope, id, props);
-    
-    // ============================================
-    // Load Plugins
-    // ============================================
-    const pluginsDir = path.join(__dirname, '../../plugins');
-    const allPlugins = loadPlugins(pluginsDir);
-    const enabledPlugins = getEnabledPlugins(allPlugins, props.config.enabledSources);
-    
-    // ============================================
-    // Secrets Manager - Aggregate from all plugins
-    // ============================================
-    const secretsTemplate = aggregateSecrets(allPlugins);
-    
-    const apiSecrets = new secretsmanager.Secret(this, 'VocApiSecrets', {
-      secretName: uniqueName('voc-datalake/api-credentials'),
-      description: 'API credentials for VoC data sources',
-      generateSecretString: {
-        secretStringTemplate: JSON.stringify(secretsTemplate),
-        generateStringKey: 'placeholder',
-      },
-    });
-    
-    // ============================================
-    // Create Lambda for each enabled plugin
-    // ============================================
-    for (const plugin of enabledPlugins) {
-      this.createPluginResources(plugin, {
-        role: ingestionRole,
-        commonEnv,
-        dependenciesLayer,
-        s3ImportBucket: this.s3ImportBucket,
-      });
-    }
-  }
-  
-  private createPluginResources(
-    plugin: PluginManifest,
-    context: {
-      role: iam.Role;
-      commonEnv: Record<string, string>;
-      dependenciesLayer: lambda.LayerVersion;
-      s3ImportBucket: s3.Bucket;
-    }
-  ) {
-    const { role, commonEnv, dependenciesLayer, s3ImportBucket } = context;
-    const infra = plugin.infrastructure;
-    
-    // ============================================
-    // Ingestor Lambda
-    // ============================================
-    if (infra.ingestor?.enabled) {
-      // Bundle plugin code with shared modules
-      // pythonLambdaAsset (lib/utils/python-lambda-asset.ts) is the one way to build a Python
-      // asset: Python 3.14 / arm64, and every bundle ends by pruning tests and caches.
-      const ingestorCode = pythonLambdaAsset('.', {
-        exclude: rootPluginAssetExcludes(plugin.id, allPluginIds),
-        copy: [
-          'mkdir -p /asset-output',
-          `cp -r /asset-input/plugins/${plugin.id}/ingestor/* /asset-output/`,
-          'cp -r /asset-input/plugins/_shared /asset-output/',
-          'cp -r /asset-input/lambda/shared /asset-output/',
-        ],
-      });
-      
-      const fn = new lambda.Function(this, `Ingestor${this.capitalize(plugin.id)}`, {
-        functionName: `voc-ingestor-${plugin.id}`,
-        runtime: lambda.Runtime.PYTHON_3_14,
-        architecture: lambda.Architecture.ARM_64,
-        handler: 'handler.lambda_handler',
-        code: ingestorCode,
-        role: role,
-        timeout: cdk.Duration.seconds(infra.ingestor.timeout),
-        memorySize: infra.ingestor.memory,
-        environment: {
-          ...commonEnv,
-          SOURCE_PLATFORM: plugin.id,
-        },
-        layers: [dependenciesLayer],
-      });
-      
-      this.ingestionLambdas.set(plugin.id, fn);
-      
-      // EventBridge schedule (if defined)
-      if (infra.ingestor.schedule) {
-        new events.Rule(this, `Schedule${this.capitalize(plugin.id)}`, {
-          ruleName: `voc-ingest-${plugin.id}-schedule`,
-          schedule: events.Schedule.expression(infra.ingestor.schedule),
-          targets: [new targets.LambdaFunction(fn, { retryAttempts: 2 })],
-          enabled: false,  // Disabled by default - enable via Settings UI
-        });
-      }
-      
-      // S3 trigger (if defined)
-      if (infra.s3Trigger?.enabled) {
-        s3ImportBucket.grantReadWrite(fn);
-        for (const suffix of infra.s3Trigger.suffixes) {
-          s3ImportBucket.addEventNotification(
-            s3.EventType.OBJECT_CREATED,
-            new s3n.LambdaDestination(fn),
-            { suffix }
-          );
-        }
-      }
-    }
-  }
-  
-  private capitalize(str: string): string {
-    return str.charAt(0).toUpperCase() + str.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-  }
-}
-```
-
-### Analytics Stack Changes (Webhooks)
-
-```typescript
-// lib/stacks/api-stack.ts (key changes)
-import { loadPlugins, getEnabledPlugins, getPluginsWithWebhook } from '../plugin-loader';
-
-export class VocApiStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props: VocApiStackProps) {
-    super(scope, id, props);
-    
-    // Load plugins
-    const pluginsDir = path.join(__dirname, '../../plugins');
-    const allPlugins = loadPlugins(pluginsDir);
-    const enabledPlugins = getEnabledPlugins(allPlugins, props.config.enabledSources);
-    const webhookPlugins = getPluginsWithWebhook(enabledPlugins);
-    
-    // Create webhook routes
-    const webhooksResource = this.api.root.addResource('webhooks');
-    
-    for (const plugin of webhookPlugins) {
-      this.createWebhookRoute(plugin, webhooksResource, webhookRole);
-    }
-  }
-  
-  private createWebhookRoute(
-    plugin: PluginManifest,
-    webhooksResource: apigateway.Resource,
-    role: iam.Role
-  ) {
-    const webhookConfig = plugin.infrastructure.webhook!;
-    
-    // Bundle webhook handler
-    const webhookCode = pythonLambdaAsset('.', {
-      exclude: rootPluginAssetExcludes(plugin.id, pluginIds),
-      copy: [
-        'mkdir -p /asset-output',
-        `cp -r /asset-input/plugins/${plugin.id}/webhook/* /asset-output/`,
-        'cp -r /asset-input/plugins/_shared /asset-output/',
-        'cp -r /asset-input/lambda/shared /asset-output/',
-      ],
-    });
-    
-    const webhookFn = new lambda.Function(this, `Webhook${this.capitalize(plugin.id)}`, {
-      functionName: `voc-webhook-${plugin.id}`,
-      runtime: lambda.Runtime.PYTHON_3_14,
-      architecture: lambda.Architecture.ARM_64,
-      handler: 'handler.lambda_handler',
-      code: webhookCode,
-      role: role,
-      timeout: cdk.Duration.seconds(30),
-      environment: {
-        PROCESSING_QUEUE_URL: this.processingQueueUrl,
-        FEEDBACK_TABLE: this.feedbackTable.tableName,
-        BRAND_NAME: this.brandName,
-      },
-    });
-    
-    // Create API Gateway resource and method
-    const pluginResource = webhooksResource.addResource(plugin.id);
-    const integration = new apigateway.LambdaIntegration(webhookFn);
-    
-    for (const method of webhookConfig.methods) {
-      pluginResource.addMethod(method, integration);  // No auth - external webhook
-    }
-    
-    // Output webhook URL
-    new cdk.CfnOutput(this, `${this.capitalize(plugin.id)}WebhookUrl`, {
-      value: `${this.api.url}webhooks/${plugin.id}`,
-    });
-  }
-}
-```
-
----
-
-## Frontend Implementation
-
-### Build-Time Manifest Generation
-
-At build time, extract UI-relevant fields from manifests and bundle for frontend.
-
-```typescript
-// scripts/generate-manifests.ts
-import * as fs from 'fs';
-import * as path from 'path';
-import { loadPlugins } from '../lib/plugin-loader';
-
-const pluginsDir = path.join(__dirname, '../plugins');
-const outputPath = path.join(__dirname, '../frontend/src/plugins/manifests.json');
-
-const plugins = loadPlugins(pluginsDir);
-
-// Extract only UI-relevant fields
-const frontendManifests = plugins.map(plugin => ({
-  id: plugin.id,
-  name: plugin.name,
-  icon: plugin.icon,
-  description: plugin.description,
-  category: plugin.category,
-  config: plugin.config,
-  webhooks: plugin.webhooks,
-  setup: plugin.setup,
-  hasIngestor: !!plugin.infrastructure.ingestor?.enabled,
-  hasWebhook: !!plugin.infrastructure.webhook?.enabled,
-  hasS3Trigger: !!plugin.infrastructure.s3Trigger?.enabled,
-}));
-
-// Ensure directory exists
-fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-
-// Write manifests
-fs.writeFileSync(outputPath, JSON.stringify(frontendManifests, null, 2));
-
-console.log(`Generated ${frontendManifests.length} plugin manifests to ${outputPath}`);
-```
-
-Add to `package.json`:
-
-```json
-{
-  "scripts": {
-    "generate:manifests": "ts-node scripts/generate-manifests.ts",
-    "prebuild": "npm run generate:manifests",
-    "build": "vite build"
-  }
-}
-```
-
-### Frontend Manifest Types
-
-```typescript
-// frontend/src/plugins/types.ts
-import { z } from 'zod';
-
-export const ConfigFieldSchema = z.object({
-  key: z.string(),
-  label: z.string(),
-  type: z.enum(['text', 'password', 'textarea', 'select']),
-  required: z.boolean().optional(),
-  placeholder: z.string().optional(),
-  secret: z.boolean().optional(),
-  options: z.array(z.object({
-    value: z.string(),
-    label: z.string(),
-  })).optional(),
-});
-
-export const WebhookInfoSchema = z.object({
-  name: z.string(),
-  events: z.array(z.string()),
-  docUrl: z.string().optional(),
-});
-
-export const SetupSchema = z.object({
-  title: z.string(),
-  color: z.enum(['blue', 'orange', 'green', 'gray']).optional(),
-  steps: z.array(z.string()),
-});
-
-export const PluginManifestSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  icon: z.string(),
-  description: z.string().optional(),
-  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper']).optional(),
-  config: z.array(ConfigFieldSchema),
-  webhooks: z.array(WebhookInfoSchema).optional(),
-  setup: SetupSchema.optional(),
-  hasIngestor: z.boolean(),
-  hasWebhook: z.boolean(),
-  hasS3Trigger: z.boolean(),
-});
-
-export type PluginManifest = z.infer<typeof PluginManifestSchema>;
-export type ConfigField = z.infer<typeof ConfigFieldSchema>;
-export type WebhookInfo = z.infer<typeof WebhookInfoSchema>;
-export type SetupInfo = z.infer<typeof SetupSchema>;
-
-// Runtime validation
-export function validateManifests(data: unknown): PluginManifest[] {
-  const schema = z.array(PluginManifestSchema);
-  return schema.parse(data);
-}
-```
-
-### Loading Manifests
-
-```typescript
-// frontend/src/plugins/index.ts
-import rawManifests from './manifests.json';
-import { validateManifests, PluginManifest } from './types';
-
-// Validate at runtime
-let manifests: PluginManifest[];
-try {
-  manifests = validateManifests(rawManifests);
-} catch (err) {
-  console.error('Invalid plugin manifests:', err);
-  manifests = [];
-}
-
-export function getPluginManifests(): PluginManifest[] {
-  return manifests;
-}
-
-export function getPluginById(id: string): PluginManifest | undefined {
-  return manifests.find(m => m.id === id);
-}
-
-export function getPluginsByCategory(category: string): PluginManifest[] {
-  return manifests.filter(m => m.category === category);
-}
-```
-
-### Updated Settings Page
-
-```tsx
-// frontend/src/pages/Settings/Settings.tsx
-import { getPluginManifests } from '../../plugins';
-import SourceCard from './SourceCard';
-
-function DataSourcesSection({ apiEndpoint }: { apiEndpoint: string }) {
-  const manifests = getPluginManifests();
-  
-  return (
-    <div className="card">
-      <h2 className="text-lg font-semibold mb-2">Data Sources & Integrations</h2>
-      <p className="text-sm text-gray-500 mb-4">
-        Configure API credentials, webhooks, and enable/disable data source schedules.
-      </p>
-      
-      {!apiEndpoint && (
-        <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">
-          <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-          <span>Configure the API endpoint above to manage data sources.</span>
-        </div>
-      )}
-      
-      <div className="space-y-3 sm:space-y-4">
-        {manifests.map(manifest => (
-          <SourceCard 
-            key={manifest.id} 
-            manifest={manifest} 
-            apiEndpoint={apiEndpoint} 
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-```
-
-### Updated SourceCard Component
-
-```tsx
-// frontend/src/pages/Settings/SourceCard.tsx
-import type { PluginManifest, ConfigField } from '../../plugins/types';
-
-interface SourceCardProps {
-  readonly manifest: PluginManifest;
-  readonly apiEndpoint: string;
-}
-
-export default function SourceCard({ manifest, apiEndpoint }: SourceCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [credentials, setCredentials] = useState<Record<string, string>>({});
-  // ... other state
-  
-  return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <SourceCardHeader
-        manifest={manifest}
-        isExpanded={isExpanded}
-        onToggleExpand={() => setIsExpanded(!isExpanded)}
-        // ... other props
-      />
-      
-      {isExpanded && (
-        <div className="p-3 sm:p-4 border-t border-gray-200 space-y-4">
-          {/* Webhooks section - only if manifest has webhooks */}
-          {manifest.webhooks && manifest.webhooks.length > 0 && (
-            <WebhooksSection
-              webhooks={manifest.webhooks}
-              sourceKey={manifest.id}
-              webhookBaseUrl={`${apiEndpoint}webhooks/`}
-            />
-          )}
-          
-          {/* Config fields - dynamically rendered from manifest */}
-          {manifest.config.length > 0 && (
-            <CredentialsSection
-              fields={manifest.config}
-              credentials={credentials}
-              onCredentialsChange={setCredentials}
-              // ... other props
-            />
-          )}
-          
-          {/* Setup instructions - only if manifest has setup */}
-          {manifest.setup && (
-            <SetupInstructionsSection setup={manifest.setup} />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Dynamic field rendering based on config type
-function ConfigFieldInput({ 
-  field, 
-  value, 
-  showSecrets, 
-  onChange 
-}: {
-  field: ConfigField;
-  value: string;
-  showSecrets: boolean;
-  onChange: (value: string) => void;
-}) {
-  const placeholder = field.placeholder ?? `Enter ${field.label.toLowerCase()}`;
-  
-  switch (field.type) {
-    case 'textarea':
-      return (
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="input text-sm min-h-[80px]"
-        />
-      );
-    
-    case 'select':
-      return (
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="input text-sm"
-        >
-          <option value="">Select...</option>
-          {field.options?.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      );
-    
-    case 'password':
-      return (
-        <input
-          type={showSecrets ? 'text' : 'password'}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="input text-sm"
-        />
-      );
-    
-    default:
-      return (
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="input text-sm"
-        />
-      );
-  }
-}
-```
-
----
-
-## Enable/Disable Flow
-
-### How It Works
-
-1. **Deploy time**: `enabledSources` in `cdk.context.json` controls which plugins get AWS resources
-2. **Runtime**: Settings UI toggles EventBridge rules on/off via API
-3. **No redeploy needed** to enable/disable a deployed plugin
-
-### Configuration
-
-```json
-// cdk.context.json
-{
-  "brandName": "MyBrand",
-  "primaryLanguage": "en",
-  "enabledSources": [
-    "webscraper"
-  ]
-}
-```
-
-### API Endpoints for Enable/Disable
-
-```
-POST /sources/{sourceId}/enable   → Enables EventBridge schedule
-POST /sources/{sourceId}/disable  → Disables EventBridge schedule
-GET  /sources/status              → Returns status of all sources
-```
-
-### Backend Implementation
-
-```python
-# lambda/api/sources_handler.py
-import boto3
-
-events = boto3.client('events')
-
-def enable_source(source_id: str) -> dict:
-    """Enable the EventBridge schedule for a source."""
-    rule_name = f'voc-ingest-{source_id}-schedule'
-    
-    try:
-        events.enable_rule(Name=rule_name)
-        return {'enabled': True, 'source': source_id}
-    except events.exceptions.ResourceNotFoundException:
-        return {'error': f'Source {source_id} not found', 'enabled': False}
-
-def disable_source(source_id: str) -> dict:
-    """Disable the EventBridge schedule for a source."""
-    rule_name = f'voc-ingest-{source_id}-schedule'
-    
-    try:
-        events.disable_rule(Name=rule_name)
-        return {'enabled': False, 'source': source_id}
-    except events.exceptions.ResourceNotFoundException:
-        return {'error': f'Source {source_id} not found', 'enabled': False}
-
-def get_sources_status() -> dict:
-    """Get enabled/disabled status of all sources."""
-    # List all voc-ingest-* rules
-    response = events.list_rules(NamePrefix='voc-ingest-')
-    
-    sources = {}
-    for rule in response.get('Rules', []):
-        # Extract source ID from rule name: voc-ingest-{source}-schedule
-        parts = rule['Name'].split('-')
-        if len(parts) >= 3:
-            source_id = parts[2]
-            sources[source_id] = {
-                'enabled': rule['State'] == 'ENABLED',
-                'schedule': rule.get('ScheduleExpression', ''),
-            }
-    
-    return {'sources': sources}
-```
-
----
-
-## Creating a New Plugin
-
-### Step-by-Step Guide
-
-1. **Create the folder structure**
-
-```bash
-mkdir -p plugins/my_source/ingestor
-```
-
-2. **Create the manifest**
-
-```json
-// plugins/my_source/manifest.json
 {
   "id": "my_source",
   "name": "My Source",
   "icon": "Plugin",
-  "description": "Fetches data from My Source API",
+  "description": "Template for creating new plugins",
   "category": "reviews",
-  
+  "version": "1.0.0",
+
   "infrastructure": {
     "ingestor": {
       "enabled": true,
@@ -1126,2581 +98,508 @@ mkdir -p plugins/my_source/ingestor
       "memory": 256
     }
   },
-  
+
   "config": [
-    {
-      "key": "api_key",
-      "label": "API Key",
-      "type": "password",
-      "required": true,
-      "secret": true
-    }
+    { "key": "api_key", "label": "API Key", "type": "password", "required": true, "secret": true }
   ],
-  
+
   "setup": {
     "title": "My Source Setup",
     "color": "blue",
-    "steps": [
-      "Go to My Source developer portal",
-      "Create an API key",
-      "Paste the key above"
-    ]
+    "steps": ["Go to My Source developer portal", "Create an API key", "Paste the key above"]
   },
-  
+
   "secrets": {
-    "my_source_api_key": ""
+    "api_key": ""
   }
 }
 ```
 
-3. **Create the handler**
+### Top-level fields
+
+| Field | Required | Rules | Purpose |
+|-------|----------|-------|---------|
+| `id` | Yes | 1-32 chars, `^[a-z][a-z0-9_]*$`, equal to the folder name | Names the Lambda, schedule, log group, raw prefix, secret namespace and `source_platform` |
+| `name` | Yes | Safe string (below) | English fallback for the card title |
+| `icon` | Yes | ≤ 64 chars | Icon word (see [Icons](#icons-and-translations)) |
+| `description` | No | Safe string | English fallback for the card description |
+| `category` | No | `reviews`, `social`, `import`, `search`, `scraper`, `synthetic` | Grouping; `synthetic` plugins are offered as on-demand generators |
+| `infrastructure` | Yes | Object, below | What CDK deploys |
+| `config` | No (default `[]`) | ≤ 20 fields | Fields of the settings form |
+| `webhooks` | No | ≤ 5 entries `{name, events (≤ 10), docUrl?}` | Webhook information shown on the card |
+| `setup` | No | `{title, color?, steps (≤ 15)}`; color `blue`, `orange`, `green` or `gray` | Setup instructions on the card |
+| `secrets` | Yes in practice | Keys match `^[a-z][a-z0-9_]*$` (≤ 64), values are strings | Keys and default values seeded into the shared secret ([Secrets](#secrets)) |
+| `version` | No | `X.Y.Z` | Shown in the UI manifest |
+| `minPlatformVersion` | No | `X.Y.Z` | Format-checked only; not compared with the platform version |
+| `integrity` | No | `{ingestor?, webhook?}` as `sha256-<hex>` | Optional code hashes ([Tooling](#tooling)) |
+
+A **safe string** is at most 256 characters, has no control characters and does not contain
+`<script`, `javascript:` or `data:`. Labels, placeholders, setup steps and webhook names follow the
+same rule.
+
+### `infrastructure.ingestor`
+
+| Field | Default | Rules | Effect |
+|-------|---------|-------|--------|
+| `enabled` | (required) | boolean | Creates the ingestor Lambda |
+| `schedule` | none | `rate(<n> minute(s)\|hour(s)\|day(s))` or `cron(...)` | Creates an EventBridge rule, disabled at deploy |
+| `timeout` | 120 | 1-900 seconds | Lambda timeout |
+| `memory` | 256 | 128-1024 MB | Lambda memory |
+| `bedrock` | false | boolean | Dedicated role with `bedrock:InvokeModel` on the curated model allowlist |
+| `browser` | false | boolean | Dedicated role with sessions of the AgentCore managed browser `aws.browser.v1` |
+
+The `cron(...)` pattern admits only digits, spaces and `, - * /`. EventBridge cron expressions need
+`?` in one of the day fields, so in practice use `rate(...)`. Without `schedule` the ingestor runs
+only when invoked: by **Run now**, by an S3 trigger, or by the API (`s3_import` reprocess,
+`synthetic_reviews` generation).
+
+### `infrastructure.webhook`
+
+| Field | Default | Rules |
+|-------|---------|-------|
+| `enabled` | (required) | boolean |
+| `path` | (required) | ≤ 128 chars, starts with `/`, lowercase letters, digits, `-`, `_`, `/`; no `..` or `//` |
+| `methods` | `["POST"]` | Up to 4 of `GET`, `POST`, `PUT`, `DELETE` |
+| `signatureHeader` | none | `[A-Za-z0-9-]+`, ≤ 64 chars |
+| `signatureMethod` | none | `[a-z_]+`, ≤ 32 chars |
+
+The route is always `/webhooks/<id>`, whatever `path` says. `signatureHeader` and
+`signatureMethod` are validated but CDK does not act on them: the handler verifies the request
+([Writing a webhook](#writing-a-webhook)). Set `path` to `/webhooks/<id>` so the manifest matches
+the route.
+
+### `infrastructure.s3Trigger`
+
+| Field | Rules | Effect |
+|-------|-------|--------|
+| `enabled` | boolean | Invokes the plugin's ingestor on `ObjectCreated` in the S3 import bucket |
+| `suffixes` | Up to 5, each `^\.[a-z0-9]+$` and ≤ 10 chars | One event notification per suffix |
+
+The trigger needs an enabled ingestor. The ingestor gets read access to the import bucket and
+`S3_IMPORT_BUCKET`, and must ignore records for any other bucket.
+
+### `config` fields
+
+| Property | Rules | Purpose |
+|----------|-------|---------|
+| `key` | `^[a-z][a-z0-9_]*$`, ≤ 64 | Stored as `<id>_<key>` in the shared secret |
+| `label` | Safe string | Field label |
+| `type` | `text`, `password`, `textarea`, `select` | Input type (`password` is masked with show/hide) |
+| `required` | default false | Shown as required |
+| `placeholder` | Safe string | Placeholder text |
+| `secret` | default false | Write-only once saved: `GET /integrations/<source>/credentials` never returns its value |
+| `options` | `[{value, label}]` | Choices of a `select` |
+
+`PUT /integrations/<source>/credentials` saves every config value to the shared secret as
+`<id>_<key>`, whether or not it is `secret`. Declare in `secrets` the keys your code reads, with
+their defaults, so the namespace exists from the first deploy.
+
+### Cross-plugin rules
+
+- The folder name must equal `id`.
+- No plugin id may be a prefix of another followed by `_` (`app_reviews` next to `app_reviews_ios`
+  fails the synth). Secret keys are namespaced `<id>_<key>`, so the shorter id would also receive
+  the longer one's keys.
+- Keep scheduled plugin ids short. The schedule rule is named
+  `[<prefix>-]voc-ingest-<id>-schedule-<account>-<region>` and EventBridge allows 64 characters.
+  In us-east-1 that leaves 21 characters for the id with no deployment prefix. The synth reports
+  the budget when a name does not fit ([deployment.md](deployment.md)).
+
+## What CDK builds
+
+Physical names go through the stack's `uniqueName()`: `[<deploymentPrefix>-]<base>-<account>-<region>`.
+The bases are listed below.
+
+### Ingestor (VocIngestionStack)
+
+| Resource | Base name / value |
+|----------|-------------------|
+| Lambda | `voc-ingestor-<id>`, Python 3.14, arm64, handler `handler.lambda_handler`, manifest timeout and memory, the `ingestion-deps` layer (`requests`, `aws-lambda-powertools`, `beautifulsoup4`, app-review scrapers) |
+| Bundle | `plugins/<id>/ingestor/*` at the root, plus `plugins/_shared/` as `_shared` and `lambda/shared/` as `shared`; tests and caches pruned |
+| Log group | `/aws/lambda/voc-ingestor-<id>`, 14-day retention |
+| Schedule | `voc-ingest-<id>-schedule`, created disabled; 2 delivery retries, events older than 1 hour dropped to `voc-ingest-schedule-dlq` |
+| Environment | `WATERMARKS_TABLE`, `PROCESSING_QUEUE_URL`, `RAW_DATA_BUCKET`, `SECRETS_ARN`, `BRAND_NAME`, `SOURCE_PLATFORM` (= id), `AGGREGATES_TABLE`, `INGEST_SCHEDULE_RULE_NAME` (scheduled plugins only), PII-redaction settings |
+
+The schedule retries cover delivery only (a throttled or unreachable function). A failure inside
+the ingestor is handled by the [circuit breaker](#circuit-breaker).
+
+**Roles** (`lib/stacks/ingestion-roles.ts`). Every ingestor role gets the same base grants:
+read/write on the watermarks and aggregates tables, `sqs:SendMessage` on the processing queue,
+`s3:PutObject` under `raw/*` of the raw bucket (no read, no delete), KMS encrypt/decrypt, read of
+the shared secret and `comprehend:DetectPiiEntities`. Plugins that need nothing else share one
+role. A plugin gets its own role when it has:
+
+- a schedule: `events:DisableRule` on exactly its own rule, for the circuit breaker;
+- `bedrock: true`: `bedrock:InvokeModel` on the allowlisted models (call them through
+  `shared/converse.py`, which resolves the model per surface);
+- `browser: true`: `bedrock-agentcore:StartBrowserSession` / `StopBrowserSession` on
+  `aws.browser.v1`, and `ConnectBrowserAutomationStream` on `*` (that action has no resource type).
+
+`app_reviews_ios` and `app_reviews_android` also get `lambda:InvokeFunction` on their own function,
+to continue a long run.
+
+A plugin cannot declare IAM policies, tables, buckets, VPC settings or raw CloudFormation. Anything
+beyond the capabilities above needs a change to the stack code.
+
+### Webhook (VocApiStack)
+
+| Resource | Value |
+|----------|-------|
+| Lambda | `voc-webhook-<id>`, Python 3.14, arm64, 30-second timeout, 256 MB (512 MB for `github_issues`), the API layer |
+| Bundle | `plugins/<id>/webhook/*` plus `_shared` and `shared`, like an ingestor |
+| Route | `/webhooks/<id>` for each manifest method, no authorizer, no CORS preflight |
+| Throttle | 10 requests per second, burst 20, per route |
+| Environment | `PROCESSING_QUEUE_URL`, `SECRETS_ARN`, `BRAND_NAME`, `SOURCE_PLATFORM`, `RAW_DATA_BUCKET`, `AGGREGATES_TABLE`, PII-redaction settings |
+
+All webhook Lambdas share one role: KMS, `sqs:SendMessage` on the processing queue,
+`secretsmanager:GetSecretValue` on the shared secret, `dynamodb:GetItem` on the aggregates table
+(the source profile), Comprehend PII detection and `s3:PutObject` on `raw/<id>/*` for each enabled
+webhook plugin. Webhooks have no feedback-table access.
+
+### S3 trigger and the shared secret
+
+- **S3 trigger:** `ObjectCreated` notifications on the import bucket `voc-import` for each suffix.
+  The bucket is versioned, KMS-encrypted and expires staged files after 90 days
+  ([data-lake-structure.md](data-lake-structure.md)).
+- **Shared secret:** `voc-datalake/api-credentials` (with the account/region suffix), seeded with
+  every loaded plugin's `secrets` as `<id>_<key>`, plus `webscraper_configs: "[]"`. The ingestion
+  stack outputs `ApiSecretsArn`, `LoadedPlugins` and `EnabledPlugins`.
+
+## Writing an ingestor
+
+An ingestor subclasses `BaseIngestor` (`plugins/_shared/base_ingestor.py`) and implements one
+generator, `fetch_new_items()`:
 
 ```python
-# plugins/my_source/ingestor/handler.py
-"""
-My Source Ingestor - Fetches data from My Source API.
-"""
-from typing import Generator
-from base_ingestor import BaseIngestor, logger, tracer, metrics
+import os
+import sys
+from collections.abc import Generator
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from shared.invocation_cost import measure_invocation_cost
 
 
 class MySourceIngestor(BaseIngestor):
-    """Ingestor for My Source API."""
-    
-    def __init__(self):
-        super().__init__()
-        self.api_key = self.secrets.get('my_source_api_key', '')
-    
+    def __init__(self, execution_id: str | None = None):
+        super().__init__(execution_id=execution_id)
+        self.api_key = self.secrets.get("api_key", "")  # bare key, prefix stripped
+
     def fetch_new_items(self) -> Generator[dict, None, None]:
-        """Fetch new items from My Source."""
         if not self.api_key:
-            logger.warning("No My Source API key configured")
+            logger.warning("No API key configured for My Source")
             return
-        
-        # Get watermark for incremental fetching
-        last_id = self.get_watermark('last_id')
-        
-        # TODO: Implement your API fetching logic here
-        # Example:
-        # response = requests.get(
-        #     'https://api.mysource.com/reviews',
-        #     headers={'Authorization': f'Bearer {self.api_key}'},
-        #     params={'since_id': last_id}
-        # )
-        # 
-        # for item in response.json()['reviews']:
-        #     yield {
-        #         'id': item['id'],
-        #         'text': item['content'],
-        #         'rating': item['score'],
-        #         'created_at': item['created_at'],
-        #         'url': item['url'],
-        #     }
-        
-        pass
+        last_id = self.get_watermark("last_id")
+        ...  # call the source's API and yield one dict per item
 
 
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 @metrics.log_metrics(capture_cold_start_metric=True)
+@measure_invocation_cost
 def lambda_handler(event, context):
-    """Lambda entry point."""
-    ingestor = MySourceIngestor()
-    return ingestor.run()
+    execution_id = event.get("execution_id") if isinstance(event, dict) else None
+    return MySourceIngestor(execution_id=execution_id).run()
 ```
 
-4. **Add to enabled sources**
+Pass `execution_id` into the constructor. On a manual run the constructor clears the cached secret
+before reading it, so credentials saved a moment earlier are used. Assigning `execution_id` after
+construction skips that, and `plugins/test_manual_run_guard.py` fails on it.
 
-```json
-// cdk.context.json
-{
-  "enabledSources": [
-    "webscraper",
-    "my_source"  // Add your new source
-  ]
-}
+### What `BaseIngestor` provides
+
+| Member | Behaviour |
+|--------|-----------|
+| `self.secrets` | This plugin's keys from the shared secret, prefix stripped. Read in `__init__` |
+| `self.source_platform` | The plugin id (`SOURCE_PLATFORM`) |
+| `get_watermark(key, default=None)` / `set_watermark(key, value)` | String values in the watermarks table under `<id>#<key>`. A read or write error is logged, not raised |
+| `normalize_item(item)` | Archives the raw item and builds the queue message (below) |
+| `send_to_queue(items)` | Applies the source policy, sends in batches, retries failed entries and raises if any item could not be queued. Returns the confirmed count |
+| `run()` | The whole run, below |
+
+`run()` does the following:
+
+1. Returns `{"status": "skipped", "reason": "circuit_breaker_open"}` when the breaker is open.
+2. On a manual run, writes `status: running` to the `SOURCE_RUN#<id>` row.
+3. Iterates `fetch_new_items()`, normalizes each item and sends a batch to SQS every 100 items.
+4. Sets the `last_id` watermark to the id of the **last item yielded**. Order your items, or manage
+   your own watermark keys, if "last" is not "newest" for your source.
+5. On success: clears the circuit breaker, writes `completed` with `items_found`, returns
+   `{"status": "success", "items_processed": n}`.
+6. On an exception: emits `IngestionErrors`, writes `error` with the exception **type** only
+   (the run row is visible to every signed-in user; the full message stays in the logs), records a
+   circuit-breaker failure and re-raises.
+
+A construction failure (for example, no secret key under the plugin's prefix) is reported the same
+way before it propagates. See [Secrets](#secrets).
+
+### Item fields
+
+`fetch_new_items()` yields plain dicts:
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `id` | Yes | Stable id from the source, ≤ 256 chars. The processor de-duplicates on `source_platform` + `id` |
+| `text` | Yes | The feedback, ≤ 50,000 chars. A message without text is dropped |
+| `created_at` | Recommended | ISO 8601. Missing or unparseable values fall back to the ingestion time. More than one day in the future is refused |
+| `rating` | No | Number from 1 to 10 |
+| `url` | No | `http://` or `https://`, ≤ 4,096 chars. Stored as the item's `source_url` |
+| `channel` | No | Sub-channel such as `review` or `comment` (default `unknown`), ≤ 128 chars |
+| `author` | No | Trimmed, cut at 256 chars |
+| `title` | No | Trimmed, cut at 500 chars |
+| `brand_handles_matched` | No | Up to 10 strings |
+| `dimensions` / `tags` | No | Values the source already knows; the processor keeps only what the dimensions config admits ([dimensions.md](dimensions.md)) |
+| `issue_attributes` | No | Issue-tracker fields (`github_issues`) |
+| `source_platform_override` | No | Archive and send under a different source id |
+
+A `url` that still contains a control character, an invisible format character or a Unicode
+line/paragraph separator after trimming fails validation and dead-letters the item. Percent-encoded
+characters such as `%0A` are fine.
+
+### Normalization, archive and source policy
+
+`normalize_item()` produces the message the processor validates: `id`, `source_platform`,
+`source_channel`, `url`, `text`, `rating`, `created_at`, `ingested_at`, `brand_name`,
+`brand_handles_matched`, the optional fields above, and `s3_raw_uri`. It first writes the raw item
+to `raw/<id>/<yyyy>/<mm>/<dd>/<item id>.json`, partitioned by the item's own `created_at` date, so a
+re-ingest overwrites the same object. If the S3 write fails, the item is sent inline in `raw_data`
+instead, so the feedback is not lost.
+
+Before archiving and before queueing, the source's profile applies its PII policy (`allow`, `redact`
+or `summary_only`, [source-policies.md](source-policies.md)). A `redact` or `summary_only` source
+keeps no raw copy. If the profiles cannot be read, the run fails and is retried rather than
+archiving under the default.
+
+## Writing a webhook
+
+A webhook subclasses `BaseWebhook` (`plugins/_shared/base_webhook.py`) and implements
+`parse_webhook_payload(body, headers) -> list[dict]`, returning items in the same shape as an
+ingestor yields. `handle(event, context)` decodes the body, calls the parser, normalizes
+(`source_channel` defaults to `webhook`, `is_webhook: true`) and queues the items.
+
+`handle()` performs **no authentication**. The route is public, so the plugin's `lambda_handler`
+must verify the request before calling it. `github_issues` is the reference implementation
+(`plugins/github_issues/webhook/handler.py`):
+
+- no `webhook_secret` configured: 503, every delivery refused;
+- body over 1,000,000 bytes: 413;
+- `X-Hub-Signature-256` missing or not equal, under `hmac.compare_digest`, to
+  `sha256=` + HMAC-SHA256 of the exact body: 401.
+
+Each refusal emits a `webhook.rejected` audit event and the `WebhookRejected` metric. A verified
+delivery answers 200, an invalid JSON body 400, an unreadable source policy 503 and any other
+failure 500. A webhook that wants a raw archive copy calls `archive_raw_item()`
+(`_shared/raw_archive.py`) in its `normalize_item()`, as `github_issues` does.
+
+A webhook has no manual run, and providers stop retrying after a while. While its secret is
+missing or mis-prefixed, every delivery fails with a 5xx. Pair a webhook with a scheduled ingestor
+that polls the same items, as `github_issues` does, so the processor's de-duplication fills any gap.
+
+## The queue message contract
+
+The processor validates every message against `IngestMessage` in `lambda/shared/ingest_schemas.py`
+(Pydantic, unknown fields forbidden). A message that fails is logged to the `LOGS#validation#<source>`
+rows read by `GET /logs/validation`, counted in `ValidationFailures` and goes to
+`voc-processing-dlq` after three receives.
+
+| Limit | Value |
+|-------|-------|
+| `id` | 1-256 chars, not blank after control characters are stripped |
+| `source_platform` | 1-256 chars |
+| `text` | 1-50,000 chars; control characters removed, 3+ newlines collapsed to 2 |
+| `rating` | 1-10 |
+| `url`, `source_url` | ≤ 4,096 chars, `http(s)://` only |
+| `source_channel` / `channel` | ≤ 128 chars |
+| `language` | `xx` or `xx-XX` |
+| `brand_handles_matched` | ≤ 10 entries |
+| `dimensions` | ≤ 10 entries; keys ≤ 32, values ≤ 64 chars |
+| `metadata` | Fixed set of typed keys (`MessageMetadata`), not an arbitrary object |
+| `s3_raw_uri` | ≤ 512 chars |
+
+The base classes build conforming messages. Code that builds messages by hand must stay inside
+these limits.
+
+## Secrets
+
+All plugins share one Secrets Manager secret. Every ingestor role and the webhook role can read the
+whole secret, so the namespace is the boundary between plugins:
+
+- CDK stores each manifest key as `<id>_<key>`. Declare keys by their **bare** name; a key written
+  pre-prefixed in the manifest is stored twice-prefixed and never found.
+- `filter_plugin_secrets()` (`_shared/plugin_secrets.py`) returns only the keys that start with
+  `<id>_`, with the prefix removed. Both base classes call it from `__init__`.
+- It **fails closed**. A missing or malformed plugin identity, a secret that is not a JSON object,
+  or no key under the prefix raises `ConfigurationError`. The error names the plugin and the
+  expected prefix, never a value or another plugin's keys. The log line starts with
+  `Refusing to load plugin secrets`.
+
+Consequences for plugin authors:
+
+- **Declare at least one key in `secrets`.** A plugin with none cannot construct.
+  `plugins/_shared/test/test_plugin_secret_isolation.py` fails on such a manifest. If a plugin
+  needs no configuration, declare one key anyway, or override `_load_secrets()` to return `{}`.
+  Not reading `self.secrets` does not help: the read happens in `__init__`.
+- **An empty secret payload is treated as a read failure.** `get_secret` swallows client errors
+  into `{}`, so the base classes evict the cached value and raise `SecretUnreadableError`. That
+  error is reported (run row, `plugin.failed` audit event) but not counted by the circuit breaker,
+  so a few Secrets Manager throttles cannot disable a healthy plugin's schedule. Misconfigurations
+  are counted.
+- **A scheduled run leaves no run row**, so for a scheduled plugin the only signals of a secret
+  problem are the log line and the audit event. Create a CloudWatch metric filter and alarm on
+  `Refusing to load plugin secrets` in the plugin's log group; no stack creates one.
+
+Two guards stop one plugin from reading another's keys through a prefix collision. The loader
+refuses a manifest id that is a prefix of another. The integrations API accepts only the
+manifest-derived plugin ids as `<source>` on every route, so a request cannot store
+`app_reviews_ios_app_id` by addressing an invented source `app_reviews`. Neither guard removes keys
+stored before an upgrade; delete such keys by hand.
+
+### Routes that touch plugin resources
+
+`<source>` reaches a secret key, an ingestor function name and a schedule rule name. Writes are
+admin-only because they change a shared secret, spend a third-party API's quota or stop ingestion.
+
+| Route | Admin | Purpose |
+|-------|-------|---------|
+| `GET /integrations/status` | No | Which sources have credentials |
+| `GET`/`PUT /integrations/<source>/credentials` | Yes | Read (secret fields omitted) and save config values |
+| `GET /integrations/<source>/apps` | No | List app/page configs of a multi-target source (public ids and display names only) |
+| `POST /integrations/<source>/apps`, `DELETE /integrations/<source>/apps/<app_id>` | Yes | Add or remove one target |
+| `POST /sources/<source>/run` | Yes | **Run now**: async invoke with `{execution_id}` (and `app_id` when given) |
+| `GET /sources/status` | No | Schedule state, latest run and `circuit` per source (`last_error` for admins only) |
+| `PUT /sources/<source>/enable` | Yes | Close a tripped breaker, then enable the schedule |
+| `PUT /sources/<source>/disable` | Yes | Disable the schedule |
+| `POST /sources/<source>/reset` | Yes | Close a tripped breaker without enabling the schedule |
+
+`POST /sources/<source>/run` writes the `SOURCE_RUN#<source>` row (`status: running`) before it
+invokes the ingestor; the settings card polls it until `completed` or `error`. Scraper writes
+(`POST`/`DELETE /scrapers`, `POST /scrapers/{id}/run`, `POST /scrapers/analyze-url`) are admin-only
+for the same reasons ([scrapers.md](scrapers.md)).
+
+## Circuit breaker
+
+`plugins/_shared/circuit_breaker.py` stops a plugin that keeps failing.
+
+- **Trip:** 5 counted failures within 15 minutes. State lives in the aggregates table: one
+  `FAILURES#<id>` / `<iso timestamp>` row per failure (24-hour TTL) and, while tripped,
+  `CIRCUIT#<id>` / `TRIPPED` with `tripped_at`, `failure_count` and `last_error` (≤ 500 chars).
+- **On trip,** three independent steps run, each logged and metered on failure without skipping
+  the others: write the `TRIPPED` row, call `events:DisableRule` on the plugin's own schedule
+  (scheduled plugins only), emit a `plugin.disabled` audit event. Failure metrics:
+  `CircuitBreakerTripRecordFailed`, `CircuitBreakerScheduleDisableFailed`.
+- **While tripped,** every run returns `skipped` at once. A successful run deletes the row.
+- **Recovery:** the source card in **Administration → Sources → Source settings** shows "Paused
+  after repeated failures" with the time, count and reason. Turning the source back on
+  (`PUT /sources/<source>/enable`) closes the breaker and enables the schedule; **Reset**
+  (`POST /sources/<source>/reset`) only closes the breaker. Failure rows are kept, so a plugin that
+  is still broken trips again on its next failure.
+
+## Observability
+
+**Logs.** Each Lambda logs JSON through Powertools to its own log group, including one
+`invocation_cost` line per invocation from `measure_invocation_cost`.
+
+**Audit events.** `_shared/audit.py` writes each event as one log line with the message `AUDIT` and
+an `audit_event` object (`timestamp`, `action`, `plugin_id`, `success`, `details`). The base classes
+emit `plugin.invoked`, `message.ingested` (per item), `plugin.completed`, `plugin.failed`,
+`plugin.disabled` (circuit breaker), `webhook.received` and `webhook.rejected`. Example Logs
+Insights queries:
+
+```
+# Failed runs of every plugin in the selected log groups
+fields @timestamp, audit_event.plugin_id, audit_event.details.error_type
+| filter message = "AUDIT" and audit_event.action = "plugin.failed"
+| sort @timestamp desc
+
+# Rejected webhook deliveries by reason
+fields @timestamp, audit_event.details.reason
+| filter message = "AUDIT" and audit_event.action = "webhook.rejected"
+| stats count() by audit_event.details.reason
 ```
 
-5. **Translate its name and description**
+**Metrics** (CloudWatch namespace `VoC`): `ItemsIngested`, `IngestionErrors`,
+`WebhookItemsIngested`, `WebhookErrors`, `WebhookRejected` and the two circuit-breaker metrics.
 
-The manifest's `name` and `description` are English. The app shows the copy from the locale
-files instead: add `pluginCopy.<camelCaseId>.name` / `.description` to
-`frontend/public/locales/<lang>/settings.json` in all nine locales and the id to
-`PLUGIN_COPY_KEYS` in `frontend/src/plugins/pluginCopy.ts` (`pluginCopy.test.tsx` fails for a
-manifest without keys; the manifest text is only the fallback).
+**Alarms.** No alarm is deployed by CDK. An administrator turns alerting on in
+**Administration → System → Logs → Alerts**; the logs API then creates alarms on ingestor errors,
+the processing DLQ and the schedule DLQ, among others, and sends them to one SNS topic
+([deployment.md](deployment.md)). Per-request diagnosis is under
+**Administration → System → Logs → System errors**.
 
-6. **Deploy**
+## Frontend
 
-```bash
-cdk deploy VocIngestionStack
-```
+`scripts/generate-manifests.ts` writes, for every loaded plugin: `id`, `name`, `icon`,
+`description`, `category`, `config`, `webhooks`, `setup`, `version`, `hasIngestor`, `hasWebhook`,
+`hasS3Trigger` and `enabled` (from `pluginStatus`). `frontend/src/plugins/index.ts` validates the
+file with Zod at load and exposes `getPluginManifests()`, `getEnabledPlugins()` and
+`getSyntheticPlugins()`.
 
----
+The UI is driven by the manifest; a plugin cannot ship its own components. Enabled plugins appear
+as cards in **Administration → Sources → Source settings** (`SourceCard`): the config form, the
+webhook URL (`<api>/webhooks/<id>`) when `webhooks` is set, setup steps, the schedule toggle,
+**Run now**, run history and the circuit-breaker notice. The **Data sources** page (`/scrapers`)
+lists sources too, and offers `synthetic` plugins as generators.
 
-## Message Schema (Output Contract)
+### Icons and translations
 
-All plugins must output messages in this format to the SQS processing queue.
+`icon` is a word mapped to a lucide icon in `frontend/src/components/SourceIcon/sourceIcons.ts`:
+`Web`, `iOS`, `Android`, `GitHub`, `Package`, `Synthetic` or `Plugin`. An unknown word falls back to
+`Package` for `import` plugins and `Plug` otherwise. Emoji are not allowed
+(`frontend/src/noEmoji.test.ts`).
 
-### Required Fields
+The card shows the plugin's name and description from the locale files, not the manifest. Add
+`pluginCopy.<camelCaseId>.name` and `.description` to `frontend/public/locales/<lang>/settings.json`
+in all nine locales (`de`, `en`, `es`, `fr`, `ja`, `ko`, `pl`, `pt`, `zh`), and the id to
+`PLUGIN_COPY_KEYS` in `frontend/src/plugins/pluginCopy.ts`. `pluginCopy.test.tsx` fails for a
+manifest without them.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Unique identifier from the source (used for deduplication) |
-| `source_platform` | string | Plugin ID (e.g., `webscraper`) |
-| `text` | string | The feedback content |
-| `created_at` | string | ISO 8601 timestamp |
+## Tooling
 
-### Optional Fields
+Run these from the repository root (they forward to `voc-datalake/`):
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `rating` | number | Rating 1-5 (if applicable) |
-| `url` | string | Source URL |
-| `channel` | string | Sub-channel (e.g., `review`, `comment`, `mention`) |
-| `author` | string | Author name/handle |
-| `title` | string | Review title (if applicable) |
-| `language` | string | ISO language code |
-| `brand_handles_matched` | string[] | Which brand handles were matched |
-| `metadata` | object | Plugin-specific additional data |
+| Command | What it does |
+|---------|--------------|
+| `npm run validate:plugins` | Loads and validates every manifest, prints a summary; `--verify-integrity` (run in `voc-datalake/`: `npx ts-node scripts/validate-plugins.ts --verify-integrity`) also checks recorded hashes |
+| `npm run generate:manifests` | Regenerates `frontend/src/plugins/manifests.json` |
+| `npm run generate:config` | `generate:manifests` plus the menu config |
+| `cd voc-datalake && npm run generate:integrity [-- <id>]` | Writes `integrity` hashes into manifests |
 
-### Example Message
+An integrity hash is the SHA-256 of every `.py` file under `ingestor/` or `webhook/` (sorted,
+`__pycache__` excluded). The synth does not verify hashes, and no bundled manifest records one; use
+them when you review third-party plugin code and want to detect later edits.
 
-```json
-{
-  "id": "review_abc123",
-  "source_platform": "webscraper",
-  "channel": "review",
-  "text": "Great product! Fast shipping and excellent quality.",
-  "rating": 5,
-  "created_at": "2026-01-08T10:30:00Z",
-  "url": "https://example.com/reviews/abc123",
-  "author": "John D.",
-  "title": "Excellent experience",
-  "language": "en",
-  "brand_handles_matched": ["MyBrand"],
-  "metadata": {
-    "is_verified": true,
-    "location_id": "loc_123"
-  }
-}
-```
+Plugin tests are pytest files under the plugin folder. `plugins/conftest.py` sets fake environment
+variables and blocks real AWS calls. Run one plugin's tests with
+`cd voc-datalake && .venv/bin/python -m pytest plugins/<id> -q`.
 
-### Validation
+## Security model
 
-The processor Lambda validates incoming messages:
+| Layer | Control |
+|-------|---------|
+| Manifest | Zod schema with identifier, path and string allowlists; timeout ≤ 900 s, memory ≤ 1,024 MB; schedule not more often than once a minute; id prefix collisions refused |
+| IAM | Base grants only; Bedrock, browser and `DisableRule` only on a dedicated role; raw bucket write-only under `raw/` |
+| Secrets | `<id>_` namespace, fail-closed filter, admin-only writes, `secret` fields write-only |
+| Webhooks | Public route with a 10 rps / 20 burst throttle; signature verified in the handler before parsing |
+| Queue | Pydantic validation of every message; invalid messages logged and dead-lettered |
+| Data | Source PII policy applied before archive and queue; only `voc-retention` deletes customer data |
+| Runtime | Circuit breaker, audit log lines, runtime-created alarms |
 
-```python
-def validate_message(msg: dict) -> tuple[bool, list[str]]:
-    """Validate a message against the schema."""
-    errors = []
-    
-    # Required fields
-    if not msg.get('id'):
-        errors.append('Missing required field: id')
-    if not msg.get('source_platform'):
-        errors.append('Missing required field: source_platform')
-    if not msg.get('text'):
-        errors.append('Missing required field: text')
-    if not msg.get('created_at'):
-        errors.append('Missing required field: created_at')
-    
-    # Validate created_at format
-    if msg.get('created_at'):
-        try:
-            datetime.fromisoformat(msg['created_at'].replace('Z', '+00:00'))
-        except ValueError:
-            errors.append('Invalid created_at format (must be ISO 8601)')
-    
-    # Validate rating range
-    if msg.get('rating') is not None:
-        if not isinstance(msg['rating'], (int, float)) or not 1 <= msg['rating'] <= 5:
-            errors.append('Rating must be a number between 1 and 5')
-    
-    return len(errors) == 0, errors
-```
-
----
-
-## Testing
-
-### Manifest Validation
-
-```bash
-# Validate all manifests at build time
-npm run generate:manifests
-```
-
-### Plugin Handler Testing
-
-```bash
-# Test individual plugin
-cd plugins/webscraper/ingestor
-python -m pytest test_handler.py
-```
-
-### Integration Testing
-
-```bash
-# Deploy to dev environment
-cdk deploy --context enabledSources='["webscraper"]'
-
-# Test via Settings UI
-# 1. Enable the source
-# 2. Check CloudWatch logs for Lambda execution
-# 3. Verify data appears in feedback table
-```
-
----
+Review a community plugin's code before you enable it. Every ingestor role can read the whole
+shared secret, so the namespace filter protects against mistakes, not against code written to read
+other plugins' keys.
 
 ## FAQ
 
-### Q: Do I need to redeploy to add a new plugin?
+**Do I need to redeploy to add a plugin?** Yes. A deploy creates its Lambda, schedule and secret
+keys. Turning an existing schedule on or off does not need a deploy.
 
-**A:** Yes, adding a new plugin requires `cdk deploy` to create the Lambda and EventBridge resources. However, enabling/disabling an existing plugin does not require redeployment.
+**Can a plugin have no Lambda?** A plugin needs an ingestor or a webhook to receive data. A
+manifest without either loads, but nothing ingests for it.
 
-### Q: Can I have a plugin without a Lambda?
+**Where are credentials stored?** In the `voc-datalake/api-credentials-<account>-<region>` secret
+(prefixed when you deploy with `deploymentPrefix`). The `ApiSecretsArn` output of the ingestion
+stack names it.
 
-**A:** Not currently. Every plugin needs at least an ingestor Lambda. For webhook-only sources, the ingestor can be a no-op that just validates credentials.
-
-### Q: How do I test a plugin locally?
-
-**A:** You can run the handler directly:
-
-```python
-# In plugins/my_source/ingestor/
-python -c "from handler import MySourceIngestor; i = MySourceIngestor(); print(list(i.fetch_new_items()))"
-```
-
-### Q: Where are credentials stored?
-
-**A:** All credentials are stored in AWS Secrets Manager under `voc-datalake/api-credentials-{hash}`, where `{hash}` is a deployment-specific suffix derived from your AWS account ID and region. The secrets template is aggregated from all plugin manifests at deploy time. You can find the exact secret name in the CloudFormation outputs of the VocIngestionStack.
-
-### Q: Can plugins have custom UI components?
-
-**A:** No, the UI is data-driven from the manifest. All plugins use the same SourceCard component with dynamic field rendering. This keeps the architecture simple and consistent.
-
-
----
-
-## SQS Message Validation Layer
-
-### Why Validation Matters
-
-Since plugins can be contributed by the community, we cannot blindly trust the data they send. A validation layer acts as a gatekeeper between plugins and the core processing pipeline.
-
-```
-┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────┐
-│   Plugin    │ ──▶ │  SQS Queue      │ ──▶ │  Validator      │ ──▶ │  Processor  │
-│  (any src)  │     │  (raw messages) │     │  (gatekeeper)   │     │  (trusted)  │
-└─────────────┘     └─────────────────┘     └─────────────────┘     └─────────────┘
-                                                    │
-                                                    ▼ (invalid)
-                                            ┌─────────────────┐
-                                            │  DLQ + Metrics  │
-                                            └─────────────────┘
-```
-
-### Validation Strategy
-
-1. **Schema validation**: Required fields, types, formats
-2. **Sanitization**: Strip dangerous content, limit sizes
-3. **Rate limiting**: Prevent a single plugin from flooding the queue
-4. **Source verification**: Validate source_platform matches known plugins
-
-### Implementation
-
-```python
-# lambda/processor/validator.py
-"""
-Message Validator - Validates all incoming messages before processing.
-This is the security boundary between untrusted plugin output and trusted processing.
-"""
-import re
-from datetime import datetime
-from typing import Any
-from zod_python import z  # Or use pydantic/jsonschema
-
-# ============================================
-# Schema Definition
-# ============================================
-
-# Maximum sizes to prevent abuse
-MAX_TEXT_LENGTH = 50_000  # 50KB max for feedback text
-MAX_ID_LENGTH = 256
-MAX_URL_LENGTH = 2048
-MAX_METADATA_SIZE = 10_000  # 10KB max for metadata JSON
-
-# Known plugin IDs (loaded from manifests at deploy time)
-KNOWN_SOURCES = {
-    'webscraper', 'manual_import', 's3_import'
-}
-
-class ValidationError(Exception):
-    """Raised when message validation fails."""
-    def __init__(self, errors: list[str]):
-        self.errors = errors
-        super().__init__(f"Validation failed: {', '.join(errors)}")
-
-
-def validate_message(msg: dict) -> dict:
-    """
-    Validate and sanitize an incoming message.
-    
-    Returns the sanitized message if valid.
-    Raises ValidationError if invalid.
-    """
-    errors: list[str] = []
-    
-    # ============================================
-    # Required Fields
-    # ============================================
-    
-    # id - required, string, max length
-    msg_id = msg.get('id')
-    if not msg_id:
-        errors.append('Missing required field: id')
-    elif not isinstance(msg_id, str):
-        errors.append('Field id must be a string')
-    elif len(msg_id) > MAX_ID_LENGTH:
-        errors.append(f'Field id exceeds max length ({MAX_ID_LENGTH})')
-    
-    # source_platform - required, must be known
-    source = msg.get('source_platform')
-    if not source:
-        errors.append('Missing required field: source_platform')
-    elif not isinstance(source, str):
-        errors.append('Field source_platform must be a string')
-    elif source not in KNOWN_SOURCES:
-        errors.append(f'Unknown source_platform: {source}')
-    
-    # text - required, string, max length
-    text = msg.get('text')
-    if not text:
-        errors.append('Missing required field: text')
-    elif not isinstance(text, str):
-        errors.append('Field text must be a string')
-    elif len(text) > MAX_TEXT_LENGTH:
-        errors.append(f'Field text exceeds max length ({MAX_TEXT_LENGTH})')
-    
-    # created_at - required, valid ISO 8601
-    created_at = msg.get('created_at')
-    if not created_at:
-        errors.append('Missing required field: created_at')
-    elif not isinstance(created_at, str):
-        errors.append('Field created_at must be a string')
-    else:
-        try:
-            # Normalize and validate ISO format
-            parsed = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-            # Reject dates too far in the future (likely errors)
-            if parsed.year > datetime.now().year + 1:
-                errors.append('Field created_at is too far in the future')
-        except ValueError:
-            errors.append('Field created_at must be valid ISO 8601 format')
-    
-    # ============================================
-    # Optional Fields
-    # ============================================
-    
-    # rating - optional, number 1-5
-    rating = msg.get('rating')
-    if rating is not None:
-        if not isinstance(rating, (int, float)):
-            errors.append('Field rating must be a number')
-        elif not 1 <= rating <= 5:
-            errors.append('Field rating must be between 1 and 5')
-    
-    # url - optional, valid URL format, max length
-    url = msg.get('url')
-    if url is not None:
-        if not isinstance(url, str):
-            errors.append('Field url must be a string')
-        elif len(url) > MAX_URL_LENGTH:
-            errors.append(f'Field url exceeds max length ({MAX_URL_LENGTH})')
-        elif url and not url.startswith(('http://', 'https://')):
-            errors.append('Field url must be a valid HTTP(S) URL')
-    
-    # channel - optional, string
-    channel = msg.get('channel')
-    if channel is not None and not isinstance(channel, str):
-        errors.append('Field channel must be a string')
-    
-    # metadata - optional, object, max size
-    metadata = msg.get('metadata')
-    if metadata is not None:
-        if not isinstance(metadata, dict):
-            errors.append('Field metadata must be an object')
-        else:
-            import json
-            metadata_size = len(json.dumps(metadata))
-            if metadata_size > MAX_METADATA_SIZE:
-                errors.append(f'Field metadata exceeds max size ({MAX_METADATA_SIZE} bytes)')
-    
-    # ============================================
-    # Fail if any errors
-    # ============================================
-    
-    if errors:
-        raise ValidationError(errors)
-    
-    # ============================================
-    # Sanitize and return
-    # ============================================
-    
-    return sanitize_message(msg)
-
-
-def sanitize_message(msg: dict) -> dict:
-    """
-    Sanitize a validated message.
-    - Strip control characters from text
-    - Normalize whitespace
-    - Remove any unexpected fields
-    """
-    # Allowed fields only (whitelist approach)
-    allowed_fields = {
-        'id', 'source_platform', 'source_channel', 'text', 'rating',
-        'created_at', 'url', 'channel', 'author', 'title', 'language',
-        'brand_handles_matched', 'metadata', 'is_update', 'ingested_at',
-        's3_raw_uri', 'raw_data'
-    }
-    
-    sanitized = {k: v for k, v in msg.items() if k in allowed_fields}
-    
-    # Sanitize text - remove control characters except newlines/tabs
-    if 'text' in sanitized:
-        text = sanitized['text']
-        # Remove control chars except \n, \r, \t
-        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
-        # Normalize excessive whitespace
-        text = re.sub(r'\n{3,}', '\n\n', text)
-        sanitized['text'] = text.strip()
-    
-    # Sanitize title similarly
-    if 'title' in sanitized and sanitized['title']:
-        title = sanitized['title']
-        title = re.sub(r'[\x00-\x1f\x7f]', '', title)
-        sanitized['title'] = title.strip()
-    
-    return sanitized
-```
-
-### Integration with Processor
-
-```python
-# lambda/processor/handler.py
-from validator import validate_message, ValidationError
-from shared.logging import logger, metrics
-
-def process_message(record: dict) -> dict:
-    """Process a single SQS message."""
-    body = json.loads(record['body'])
-    
-    # ============================================
-    # Validation Gate
-    # ============================================
-    try:
-        validated = validate_message(body)
-    except ValidationError as e:
-        logger.warning(f"Message validation failed: {e.errors}", extra={
-            'source': body.get('source_platform', 'unknown'),
-            'message_id': body.get('id', 'unknown'),
-            'errors': e.errors,
-        })
-        metrics.add_metric(name="ValidationFailures", unit="Count", value=1)
-        # Don't raise - message goes to DLQ after max retries
-        # Or explicitly send to DLQ for invalid messages
-        return {'status': 'invalid', 'errors': e.errors}
-    
-    # ============================================
-    # Process validated message
-    # ============================================
-    # ... rest of processing logic with trusted data
-```
-
-### Metrics and Alerting
-
-Track validation failures to detect misbehaving plugins:
-
-```python
-# CloudWatch metrics emitted by validator
-metrics.add_metric(name="ValidationFailures", unit="Count", value=1, dimensions={
-    'source_platform': source,
-    'error_type': 'missing_field'  # or 'invalid_format', 'unknown_source', etc.
-})
-```
-
-Create CloudWatch alarms:
-- Alert if validation failure rate > 5% for any source
-- Alert if unknown source_platform appears (potential security issue)
-- Alert if message size limits are hit frequently
-
----
-
-## Infrastructure Isolation
-
-### The Problem
-
-If plugins can define arbitrary infrastructure, they could:
-- Accidentally break core platform resources
-- Create security vulnerabilities
-- Cause unexpected costs
-- Conflict with other plugins
-
-### Solution: Constrained Plugin Infrastructure
-
-Plugins don't define raw CDK/CloudFormation. Instead, they declare **what they need** in the manifest, and the platform creates resources using **controlled templates**.
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Plugin Manifest                                  │
-│  "I need: polling Lambda, webhook endpoint, these secrets"          │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Platform CDK (Controlled)                        │
-│  - Creates Lambda with fixed role, VPC, limits                      │
-│  - Creates API Gateway route under /webhooks/{id}                   │
-│  - Adds secrets to shared Secrets Manager                           │
-│  - All resources tagged and named consistently                      │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Isolated Plugin Resources                        │
-│  - Lambda: voc-ingestor-{plugin-id}                                 │
-│  - Schedule: voc-ingest-{plugin-id}-schedule                        │
-│  - Logs: /aws/lambda/voc-ingestor-{plugin-id}                       │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### What Plugins CAN Declare
-
-| Resource | Manifest Field | Platform Creates |
-|----------|---------------|------------------|
-| Polling Lambda | `infrastructure.ingestor` | Lambda with shared role, fixed limits |
-| Webhook Lambda | `infrastructure.webhook` | Lambda + API Gateway route |
-| S3 Trigger | `infrastructure.s3Trigger` | S3 event notification |
-| Secrets | `secrets` | Entries in shared Secrets Manager |
-| Schedule | `infrastructure.ingestor.schedule` | EventBridge rule (disabled by default) |
-
-### What Plugins CANNOT Do
-
-- Create IAM roles or policies
-- Create DynamoDB tables
-- Create S3 buckets
-- Create VPCs or security groups
-- Access resources outside the plugin sandbox
-- Define arbitrary CloudFormation
-
-### Resource Boundaries
-
-#### Shared Resources (Read/Write via Platform)
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Shared Resources                                 │
-│                                                                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │
-│  │ SQS Queue   │  │ Secrets Mgr │  │ Raw S3      │                 │
-│  │ (write)     │  │ (read)      │  │ (write)     │                 │
-│  └─────────────┘  └─────────────┘  └─────────────┘                 │
-│         ▲               ▲               ▲                           │
-│         │               │               │                           │
-│  ┌──────┴───────────────┴───────────────┴──────┐                   │
-│  │           Shared IAM Role                    │                   │
-│  │  - sqs:SendMessage (processing queue only)   │                   │
-│  │  - secretsmanager:GetSecretValue             │                   │
-│  │  - s3:PutObject (raw bucket only)            │                   │
-│  │  - dynamodb:* (watermarks table only)        │                   │
-│  └──────────────────────────────────────────────┘                   │
-│                          ▲                                          │
-│         ┌────────────────┼────────────────┐                        │
-│         │                │                │                        │
-│  ┌──────┴─────┐  ┌───────┴──────┐  ┌─────┴──────┐                 │
-│  │ Plugin A   │  │ Plugin B     │  │ Plugin C   │                 │
-│  │ Lambda     │  │ Lambda       │  │ Lambda     │                 │
-│  └────────────┘  └──────────────┘  └────────────┘                 │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-#### Per-Plugin Resources (Isolated)
-
-Each plugin gets its own:
-- Lambda function (isolated execution)
-- CloudWatch Log Group (isolated logs)
-- EventBridge Rule (isolated schedule)
-- Webhook route (isolated endpoint)
-
-### IAM Role Design
-
-All plugin Lambdas share a single, tightly-scoped IAM role:
-
-```typescript
-// lib/stacks/ingestion-stack.ts
-const pluginRole = new iam.Role(this, 'PluginLambdaRole', {
-  assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-  managedPolicies: [
-    iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-  ],
-});
-
-// Minimal permissions - only what plugins need
-pluginRole.addToPolicy(new iam.PolicyStatement({
-  sid: 'SendToProcessingQueue',
-  effect: iam.Effect.ALLOW,
-  actions: ['sqs:SendMessage', 'sqs:SendMessageBatch'],
-  resources: [processingQueue.queueArn],
-}));
-
-pluginRole.addToPolicy(new iam.PolicyStatement({
-  sid: 'ReadSecrets',
-  effect: iam.Effect.ALLOW,
-  actions: ['secretsmanager:GetSecretValue'],
-  resources: [apiSecrets.secretArn],
-}));
-
-pluginRole.addToPolicy(new iam.PolicyStatement({
-  sid: 'WriteRawData',
-  effect: iam.Effect.ALLOW,
-  actions: ['s3:PutObject'],
-  resources: [`${rawDataBucket.bucketArn}/raw/*`],
-}));
-
-pluginRole.addToPolicy(new iam.PolicyStatement({
-  sid: 'ManageWatermarks',
-  effect: iam.Effect.ALLOW,
-  actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
-  resources: [watermarksTable.tableArn],
-}));
-
-// KMS for encryption
-kmsKey.grantEncryptDecrypt(pluginRole);
-```
-
-### Lambda Constraints
-
-All plugin Lambdas are created with fixed constraints:
-
-```typescript
-function createPluginLambda(plugin: PluginManifest, role: iam.Role): lambda.Function {
-  const infra = plugin.infrastructure.ingestor!;
-  
-  return new lambda.Function(this, `Ingestor${plugin.id}`, {
-    functionName: `voc-ingestor-${plugin.id}`,
-    runtime: lambda.Runtime.PYTHON_3_14,
-    architecture: lambda.Architecture.ARM_64,
-    handler: 'handler.lambda_handler',
-    role: role,  // Shared role - no custom permissions
-    
-    // Constrained limits
-    timeout: cdk.Duration.seconds(Math.min(infra.timeout, 300)),  // Max 5 min
-    memorySize: Math.min(infra.memory, 1024),  // Max 1GB
-    
-    // No VPC access (plugins don't need it)
-    vpc: undefined,
-    
-    // Reserved concurrency to prevent runaway costs
-    reservedConcurrentExecutions: 10,
-    
-    // Environment - only safe variables
-    environment: {
-      SOURCE_PLATFORM: plugin.id,
-      PROCESSING_QUEUE_URL: processingQueue.queueUrl,
-      WATERMARKS_TABLE: watermarksTable.tableName,
-      RAW_DATA_BUCKET: rawDataBucket.bucketName,
-      SECRETS_ARN: apiSecrets.secretArn,
-      BRAND_NAME: config.brandName,
-      // No sensitive values directly in env
-    },
-  });
-}
-```
-
-### Webhook Isolation
-
-Webhook endpoints are isolated under `/webhooks/{plugin-id}`:
-
-```typescript
-// All webhooks under /webhooks prefix
-const webhooksResource = api.root.addResource('webhooks');
-
-for (const plugin of webhookPlugins) {
-  // Each plugin gets its own sub-resource
-  const pluginResource = webhooksResource.addResource(plugin.id);
-  
-  // Only POST allowed (or as specified in manifest)
-  for (const method of plugin.infrastructure.webhook!.methods) {
-    pluginResource.addMethod(method, integration, {
-      // No authorization (external webhooks)
-      authorizationType: apigateway.AuthorizationType.NONE,
-      // But we can add request validation
-      requestValidator: requestValidator,
-    });
-  }
-}
-```
-
-### Secrets Isolation
-
-Plugins share a single Secrets Manager secret, but each plugin only accesses its own keys:
-
-`BaseIngestor._load_secrets()` and `BaseWebhook._load_secrets()` both delegate to one
-helper, `plugins/_shared/plugin_secrets.py`:
-
-```python
-# In plugins/_shared/plugin_secrets.py
-def filter_plugin_secrets(plugin_id: str, all_secrets: Mapping) -> dict:
-    """Return plugin_id's namespaced keys, prefix stripped — or raise."""
-    prefix = f"{plugin_id}_"
-    scoped = {
-        key[len(prefix):]: value
-        for key, value in all_secrets.items()
-        if key.startswith(prefix) and len(key) > len(prefix)
-    }
-    if not scoped:
-        raise ConfigurationError(...)  # names plugin_id and prefix, nothing else
-    return scoped
-```
-
-This means:
-- `webscraper` plugin sees: `configs`
-- Each plugin can only access its own secrets
-
-**It fails closed** (issue #251). A prefix matching zero keys — a typo'd plugin id, an
-unknown identity, an empty secret — raises a `ConfigurationError` naming the plugin and
-the expected prefix. It used to return the *complete* shared secret in that case, on the
-theory that a plugin predating prefixing had not been migrated yet; the effect was that
-the isolation boundary held only while every plugin's prefix was correct, and a typo
-produced the maximally permissive outcome. All ingestion Lambdas share one IAM role, so
-nothing else was catching it.
-
-The error and its log name the identity and the expected prefix only — never a secret
-value, and never another plugin's key names.
-
-Three consequences of failing closed are worth knowing before you write a plugin:
-
-- **Every plugin must declare at least one key** in its manifest's `secrets` block. CDK
-  seeds the declared keys at deploy time; a plugin declaring none has no `<id>_*` key to
-  find, so its Lambda raises at construction on the first invocation. Pinned in CI by
-  `test_plugin_secret_isolation.py::TestTheDeployTimeInvariantsThisBoundaryNeeds`, so a
-  zero-secret manifest fails a test run rather than a production invocation.
-- **A construction failure still reports.** `_load_secrets()` runs in `__init__`, so the
-  raise never reaches `run()`'s `except`. `BaseIngestor` therefore reports it itself
-  (`_report_construction_failure`): the `SOURCE_RUN#` record moves to `status: 'error'`,
-  a `plugin.failed` audit event is emitted, and the circuit breaker records the failure —
-  **unless the secret was merely unreadable rather than misconfigured**, which is reported
-  but deliberately *not* counted (see "A transient Secrets Manager failure" below for why,
-  and for the alarm that exemption depends on). Without any of this, a manual "Run now"
-  would show a permanent "Running..." spinner — the UI polls until a terminal status and
-  the API writes `'running'` before invoking.
-- **A webhook Lambda returns 5xx for every delivery** while its secret is missing or
-  mis-prefixed, and most providers drop events after their retries expire. There is no
-  manual run to recover a webhook, so watch the plugin's log group for
-  `Refusing to load plugin secrets` and alarm on it; the shared-secret read is
-  load-bearing for a webhook in a way it is not for a scheduled ingestor.
-
-A transient Secrets Manager failure is *not* one of these cases, and two things keep it
-from becoming one. `get_secret` is cached and swallows a failed read into `{}`, so both
-`_load_secrets()` implementations evict the cache entry before refusing on an empty
-payload — the next invocation re-reads rather than the warm container staying wedged
-against a memoized failure. And because a failed read and a genuinely empty secret are
-indistinguishable from the plugin's side, that branch raises `SecretUnreadableError` (a
-`ConfigurationError` subclass) and `_report_construction_failure` **does not count it
-against the circuit breaker**. Counting it would let five AWS-side blips inside the
-breaker's 15-minute window call `_trip_breaker`, which disables the plugin's EventBridge
-schedule — and only an admin turning the source back on in Administration → Sources → Data sources (or the Reset action)
-recovers it, so a healthy plugin's ingestion would stop until an operator noticed. Only the auto-disable is withheld: the `plugin.failed` audit
-event still fires, and the run record does too on a manual run (on a scheduled one there is
-none to move — see the next paragraph). A malformed identity, a namespace that matches
-nothing, or a secret whose body is not a JSON object is someone's mistake, stays a plain
-`ConfigurationError`, and still counts — those never self-heal, and retrying them forever is
-what the breaker exists to stop.
-
-Each of those three reporting steps is guarded **independently**, which matters more than it
-looks: `CircuitBreaker.record_failure` resolves its DynamoDB resource in the `self.table`
-property, *above* its own `try`, so a failure building that resource escapes it. Under a
-single shared `try` that failure skipped every later step, losing the `plugin.failed` event
-in exactly the correlated case where the same DynamoDB trouble breaks both — and on a
-scheduled run that event is the only signal there is.
-
-**Alarm on the refusal log line.** That is not advice, it is the escalation path this
-exemption relies on. On a *manual* run the `SOURCE_RUN#` record clears the UI's spinner and
-carries the message. On a **scheduled** run there is no such record — `_update_source_run_status`
-is a no-op without an `execution_id` — so the only signals are the
-`Refusing to load plugin secrets` log line and the `plugin.failed` audit event, which is a
-CloudWatch log line (`logger.info("AUDIT", …)`) and nothing more. No stack creates a metric filter or alarm
-either. So a scheduled plugin with an unreadable secret is silently not ingesting, and the
-one mechanism that used to make that state visible in the console — the breaker disabling
-the rule — is now deliberately withheld. The trade is still the right one, but it moves the
-escalation from the breaker to your alarms, which means the alarm has to exist.
-
-One limitation the prefix scan cannot see: if a plugin id were ever a **prefix** of
-another (`app_reviews` alongside `app_reviews_ios`), the shorter one would also receive the
-longer one's keys. A plugin Lambda holds no list of its siblings by design, so this is
-refused at the two places that do see more than one id — and both are needed, because they
-close different entrances:
-
-- `loadPlugins` rejects a **manifest** id that is a prefix of another's, at synth time,
-  the only place the whole id set is known.
-- Every route taking a `<source>` path parameter restricts it to those same
-  manifest-derived ids (`_validate_source_parameter`, which applies both the form check and
-  `_validate_source_is_a_known_plugin`). The loader's guard cannot see a source invented in
-  a request: `source='app_reviews'` with key `ios_app_id` stored `app_reviews_ios_app_id`,
-  which `app_reviews_ios`'s next run consumed as its own `app_id`. A colliding *stored key*
-  needs no colliding manifest to exist. That check fails open if `PLUGIN_SECRET_DEFAULTS` is
-  unavailable, so one bad environment variable cannot break credential management
-  outright — the form check still applies.
-
-Neither guard is retroactive. A key already stored by a pre-upgrade write survives, and the
-plugin whose namespace it landed in still reads it; delete such keys by hand.
-
-#### Which `<source>` routes need admin
-
-`source` reaches three kinds of resource name, and the routes that WRITE one are admin-gated:
-a Secrets Manager key (`<source>_configs`), an ingestor Lambda name
-(`voc-ingestor-<source>`), and an EventBridge rule name (`voc-ingest-<source>-schedule`).
-
-| Route | `require_admin` | Why |
-|-------|-----------------|-----|
-| `GET`/`PUT /integrations/<source>/credentials` | yes | reads and writes credentials |
-| `POST`/`DELETE /integrations/<source>/apps` | yes | writes the shared secret |
-| `POST /sources/<source>/run` | yes | billed third-party fetch, invocable in a loop |
-| `PUT /sources/<source>/enable\|disable` | yes | disabling silently stops ingestion |
-| `GET /integrations/<source>/apps` | **no** | the Scrapers page lists configs for everyone; a config holds a public app-store id and a display name, not a credential |
-
-The gate is the server's. The Scrapers page and Administration → Sources → Data sources also disable the
-corresponding controls for a non-admin so the reason is visible on hover rather than arriving
-as a 403, but that is presentation only. Both properties are pinned by an `ast` pass over the
-route decorators in `test_integrations_security.py`, so a route added later is asserted rather
-than forgotten — which is how the five unguarded ones came to look like deliberate scoping.
-
-#### The same split applies to `scrapers_handler`
-
-`scrapers_handler` writes the **same** shared secret, so it carries the same rule and its own
-`ast` pass (`test_scrapers_security.py`). Gating one handler and not the other would make the
-boundary depend on which handler a write arrived through rather than on what it changed.
-
-Titled for the **handler**, not for `/scrapers/*`: that URL prefix is served by two Lambdas, and
-this table covers one of them. `manual_import_handler` owns `/scrapers/manual/*` and is listed
-separately below.
-
-| Route | `require_admin` | Why |
-|-------|-----------------|-----|
-| `POST /scrapers` | yes | writes `webscraper_configs` on the shared secret — the URLs the ingestor fetches |
-| `DELETE /scrapers/<scraper_id>` | yes | same write, and destructive |
-| `POST /scrapers/<scraper_id>/run` | yes | billed third-party fetch, invocable in a loop |
-| `GET /scrapers`, `.../status`, `/scrapers/templates` | **no** | the Scrapers page renders these for everyone |
-| `POST /scrapers/analyze-url` | yes | outbound fetch of a caller-chosen URL plus a Bedrock call; exists only for the admin-only editor (owner decision 2026-10-08) |
-
-`scraper_id` is deliberately **not** allowlisted the way `<source>` is. It is not a plugin id
-and reaches no secret key or function name — only a `SCRAPER_RUN#` partition and the invoke
-payload, where the webscraper matches it against its own configured list, so an unknown id is a
-run that finds nothing. The admin gate is what bounds who can write those partitions.
-
-#### `/scrapers/manual/*` is a second handler, gated by a module middleware
-
-| Route | admin-only | Why |
-|-------|-----------------|-----|
-| `POST /scrapers/manual/parse`, `.../confirm`, `.../csv-upload`, `.../json-upload` | **yes** (middleware) | writes feedback **content** into the pipeline (S3 + the enrichment queue) |
-| `GET /scrapers/manual/parse/<job_id>` | **yes** (middleware) | reads a parse job of that content |
-
-Owner decision 2026-10-08 (#242 follow-up): importing data is an administrator's action, across
-every import path at once — these routes and every `/s3-import/*` route (`s3_import_handler`) —
-so the boundary does not depend on which page a write came from. Feedback forms (create/edit/delete
-and the public submit) stay open by a separate decision. Each import module installs one
-`app.use(middlewares=[_admins_only])` rather than a per-route call, so a route added later is gated
-by default.
-
-Asserted, not merely written down: `test_scrapers_security.py::TestTheInventoryIsOneHandlers` pins
-this handler's route inventory and its middleware; `test_route_admin_gates.py` lists the writes as
-`ADMIN_ONLY` and the reads in `ADMIN_ONLY_READS`; `test_import_admin_gates.py` asserts a non-admin's
-403 comes before any AWS call. The `ast` pass cannot see across module boundaries, which is why the
-scope needs stating at all.
-
-### Cost Controls
-
-#### Per-Plugin Limits
-
-| Resource | Limit | Enforced By |
-|----------|-------|-------------|
-| Lambda timeout | 5 minutes max | CDK validation |
-| Lambda memory | 1GB max | CDK validation |
-| Lambda concurrency | 10 concurrent | Reserved concurrency |
-| Schedule frequency | 1 minute min | CDK validation |
-| Message size | 256KB | SQS limit |
-
-#### Manifest Validation
-
-```typescript
-// lib/plugin-loader.ts
-function validateManifestLimits(manifest: PluginManifest): void {
-  const infra = manifest.infrastructure;
-  
-  if (infra.ingestor) {
-    if (infra.ingestor.timeout > 300) {
-      throw new Error(`Plugin ${manifest.id}: timeout cannot exceed 300 seconds`);
-    }
-    if (infra.ingestor.memory > 1024) {
-      throw new Error(`Plugin ${manifest.id}: memory cannot exceed 1024 MB`);
-    }
-    if (infra.ingestor.schedule) {
-      // Validate schedule isn't too frequent
-      const schedule = infra.ingestor.schedule;
-      if (schedule.includes('rate(') && schedule.includes('second')) {
-        throw new Error(`Plugin ${manifest.id}: schedule cannot be more frequent than 1 minute`);
-      }
-    }
-  }
-}
-```
-
-### Monitoring and Alerts
-
-Track plugin behavior to detect issues:
-
-```typescript
-// Per-plugin CloudWatch alarms
-for (const plugin of enabledPlugins) {
-  // Error rate alarm
-  new cloudwatch.Alarm(this, `${plugin.id}ErrorAlarm`, {
-    metric: fn.metricErrors(),
-    threshold: 10,
-    evaluationPeriods: 3,
-    alarmDescription: `Plugin ${plugin.id} error rate too high`,
-  });
-  
-  // Duration alarm (approaching timeout)
-  new cloudwatch.Alarm(this, `${plugin.id}DurationAlarm`, {
-    metric: fn.metricDuration(),
-    threshold: infra.ingestor!.timeout * 1000 * 0.8,  // 80% of timeout
-    evaluationPeriods: 3,
-    alarmDescription: `Plugin ${plugin.id} approaching timeout`,
-  });
-  
-  // Invocation spike alarm
-  new cloudwatch.Alarm(this, `${plugin.id}InvocationAlarm`, {
-    metric: fn.metricInvocations(),
-    threshold: 1000,  // Per 5 minutes
-    evaluationPeriods: 1,
-    alarmDescription: `Plugin ${plugin.id} invocation spike`,
-  });
-}
-```
-
-### Plugin Review Process (for Open Source)
-
-Before merging a community plugin:
-
-1. **Manifest review**: Check for reasonable limits, valid schema
-2. **Code review**: No malicious code, follows patterns
-3. **Test execution**: Run in isolated test environment
-4. **Security scan**: Check for hardcoded secrets, unsafe operations
-
-```yaml
-# .github/workflows/plugin-review.yml
-name: Plugin Review
-on:
-  pull_request:
-    paths:
-      - 'plugins/**'
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Validate manifests
-        run: npm run validate:manifests
-      
-      - name: Lint plugin code
-        run: |
-          for dir in plugins/*/; do
-            if [ -f "$dir/ingestor/handler.py" ]; then
-              pylint "$dir/ingestor/handler.py"
-            fi
-          done
-      
-      - name: Security scan
-        run: |
-          # Check for hardcoded secrets
-          grep -r "api_key\s*=" plugins/ && exit 1 || true
-          # Check for unsafe imports
-          grep -r "import os\|import subprocess" plugins/ && echo "Review required" || true
-      
-      - name: Test plugin
-        run: |
-          for dir in plugins/*/; do
-            if [ -f "$dir/ingestor/test_handler.py" ]; then
-              pytest "$dir/ingestor/test_handler.py"
-            fi
-          done
-```
-
----
-
-## Summary: Security Model
-
-| Layer | Protection |
-|-------|------------|
-| **Manifest** | Schema validation, limit enforcement |
-| **IAM** | Shared role with minimal permissions |
-| **Lambda** | Fixed runtime, memory, timeout limits |
-| **SQS** | Message validation before processing |
-| **Secrets** | Prefix-based isolation |
-| **API Gateway** | Isolated webhook routes |
-| **Monitoring** | Per-plugin alarms and metrics |
-| **Review** | PR checks for community plugins |
-
-This ensures plugins can only:
-- Read their own secrets
-- Write to the processing queue
-- Store raw data in S3
-- Manage their own watermarks
-
-They cannot:
-- Access other plugins' data
-- Modify core infrastructure
-- Create new AWS resources
-- Exceed cost/performance limits
-
-
----
-
-## Cost Allocation and Observability
-
-### Cost Tagging Strategy
-
-Every resource created for a plugin gets tagged for cost allocation and tracking.
-
-#### Tag Schema
-
-| Tag | Value | Purpose |
-|-----|-------|---------|
-| `Project` | `VoC-DataLake` | Top-level project identification |
-| `Feature` | `Plugin` | Distinguishes plugin costs from core platform |
-| `Plugin` | `{plugin-id}` | Identifies specific plugin (e.g., `webscraper`) |
-| `PluginCategory` | `{category}` | Groups plugins (e.g., `reviews`, `social`) |
-| `Environment` | `dev`/`staging`/`prod` | Environment separation |
-| `ManagedBy` | `CDK` | Infrastructure management |
-
-#### Implementation
-
-```typescript
-// lib/stacks/ingestion-stack.ts
-import { Tags } from 'aws-cdk-lib';
-
-function tagPluginResources(
-  construct: Construct, 
-  plugin: PluginManifest,
-  environment: string
-): void {
-  Tags.of(construct).add('Project', 'VoC-DataLake');
-  Tags.of(construct).add('Feature', 'Plugin');
-  Tags.of(construct).add('Plugin', plugin.id);
-  Tags.of(construct).add('PluginCategory', plugin.category || 'uncategorized');
-  Tags.of(construct).add('Environment', environment);
-  Tags.of(construct).add('ManagedBy', 'CDK');
-}
-
-// Apply to all plugin resources
-for (const plugin of enabledPlugins) {
-  const fn = createPluginLambda(plugin, role);
-  tagPluginResources(fn, plugin, environment);
-  
-  if (plugin.infrastructure.ingestor?.schedule) {
-    const rule = createScheduleRule(plugin, fn);
-    tagPluginResources(rule, plugin, environment);
-  }
-  
-  // Log group
-  const logGroup = new logs.LogGroup(this, `Logs${plugin.id}`, {
-    logGroupName: `/aws/lambda/voc-ingestor-${plugin.id}`,
-    retention: logs.RetentionDays.TWO_WEEKS,
-  });
-  tagPluginResources(logGroup, plugin, environment);
-}
-```
-
-#### AWS Cost Explorer Setup
-
-1. **Activate tags** in AWS Billing Console:
-   - Go to Billing → Cost Allocation Tags
-   - Activate: `Plugin`, `PluginCategory`, `Feature`
-
-2. **Create Cost Reports**:
-   - Group by `Plugin` tag to see per-plugin costs
-   - Filter by `Feature=Plugin` to see total plugin costs vs core platform
-
-3. **Set Budgets**:
-   - Per-plugin budget alerts
-   - Total plugins budget cap
-
-```typescript
-// Optional: Create budget alerts per plugin
-import * as budgets from 'aws-cdk-lib/aws-budgets';
-
-for (const plugin of enabledPlugins) {
-  new budgets.CfnBudget(this, `Budget${plugin.id}`, {
-    budget: {
-      budgetName: `voc-plugin-${plugin.id}-monthly`,
-      budgetType: 'COST',
-      timeUnit: 'MONTHLY',
-      budgetLimit: {
-        amount: 50,  // $50/month per plugin default
-        unit: 'USD',
-      },
-      costFilters: {
-        TagKeyValue: [`user:Plugin$${plugin.id}`],
-      },
-    },
-    notificationsWithSubscribers: [{
-      notification: {
-        notificationType: 'ACTUAL',
-        comparisonOperator: 'GREATER_THAN',
-        threshold: 80,  // Alert at 80%
-      },
-      subscribers: [{
-        subscriptionType: 'EMAIL',
-        address: 'alerts@example.com',
-      }],
-    }],
-  });
-}
-```
-
----
-
-## Monitoring and Alerting
-
-### CloudWatch Dashboard
-
-Create a dedicated dashboard for plugin observability:
-
-```typescript
-// lib/stacks/ingestion-stack.ts
-import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-
-const dashboard = new cloudwatch.Dashboard(this, 'PluginDashboard', {
-  dashboardName: 'VoC-Plugins-Overview',
-});
-
-// Add widgets for each plugin
-for (const plugin of enabledPlugins) {
-  const fn = this.ingestionLambdas.get(plugin.id)!;
-  
-  // Plugin section header
-  dashboard.addWidgets(
-    new cloudwatch.TextWidget({
-      markdown: `# ${plugin.icon} ${plugin.name}`,
-      width: 24,
-      height: 1,
-    })
-  );
-  
-  // Metrics row
-  dashboard.addWidgets(
-    // Invocations
-    new cloudwatch.GraphWidget({
-      title: `${plugin.id} - Invocations`,
-      left: [fn.metricInvocations()],
-      width: 6,
-    }),
-    // Errors
-    new cloudwatch.GraphWidget({
-      title: `${plugin.id} - Errors`,
-      left: [fn.metricErrors()],
-      width: 6,
-    }),
-    // Duration
-    new cloudwatch.GraphWidget({
-      title: `${plugin.id} - Duration`,
-      left: [fn.metricDuration()],
-      width: 6,
-    }),
-    // Throttles
-    new cloudwatch.GraphWidget({
-      title: `${plugin.id} - Throttles`,
-      left: [fn.metricThrottles()],
-      width: 6,
-    })
-  );
-}
-
-// Summary widgets
-dashboard.addWidgets(
-  new cloudwatch.TextWidget({
-    markdown: '# 📊 Summary',
-    width: 24,
-    height: 1,
-  }),
-  // Total messages processed
-  new cloudwatch.SingleValueWidget({
-    title: 'Total Messages Ingested (24h)',
-    metrics: [new cloudwatch.Metric({
-      namespace: 'VoC/Ingestion',
-      metricName: 'ItemsIngested',
-      statistic: 'Sum',
-      period: cdk.Duration.hours(24),
-    })],
-    width: 8,
-  }),
-  // Validation failures
-  new cloudwatch.SingleValueWidget({
-    title: 'Validation Failures (24h)',
-    metrics: [new cloudwatch.Metric({
-      namespace: 'VoC/Processing',
-      metricName: 'ValidationFailures',
-      statistic: 'Sum',
-      period: cdk.Duration.hours(24),
-    })],
-    width: 8,
-  }),
-  // Active plugins
-  new cloudwatch.SingleValueWidget({
-    title: 'Active Plugins',
-    metrics: [new cloudwatch.Metric({
-      namespace: 'VoC/Plugins',
-      metricName: 'ActivePlugins',
-      statistic: 'Maximum',
-      period: cdk.Duration.hours(1),
-    })],
-    width: 8,
-  })
-);
-```
-
-### Per-Plugin Alarms
-
-```typescript
-// lib/plugin-alarms.ts
-import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-import * as sns from 'aws-cdk-lib/aws-sns';
-
-export function createPluginAlarms(
-  scope: Construct,
-  plugin: PluginManifest,
-  fn: lambda.Function,
-  alertTopic: sns.Topic
-): void {
-  const alarmNamePrefix = `VoC-Plugin-${plugin.id}`;
-  
-  // ============================================
-  // Error Rate Alarm
-  // ============================================
-  const errorAlarm = new cloudwatch.Alarm(scope, `${plugin.id}ErrorAlarm`, {
-    alarmName: `${alarmNamePrefix}-HighErrorRate`,
-    alarmDescription: `Plugin ${plugin.name} error rate exceeds threshold`,
-    metric: fn.metricErrors({
-      period: cdk.Duration.minutes(5),
-      statistic: 'Sum',
-    }),
-    threshold: 5,
-    evaluationPeriods: 2,
-    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-  });
-  errorAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alertTopic));
-  
-  // ============================================
-  // Duration Alarm (approaching timeout)
-  // ============================================
-  const timeoutMs = (plugin.infrastructure.ingestor?.timeout || 120) * 1000;
-  const durationAlarm = new cloudwatch.Alarm(scope, `${plugin.id}DurationAlarm`, {
-    alarmName: `${alarmNamePrefix}-HighDuration`,
-    alarmDescription: `Plugin ${plugin.name} execution time approaching timeout`,
-    metric: fn.metricDuration({
-      period: cdk.Duration.minutes(5),
-      statistic: 'p95',
-    }),
-    threshold: timeoutMs * 0.8,  // 80% of timeout
-    evaluationPeriods: 3,
-    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-  });
-  durationAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alertTopic));
-  
-  // ============================================
-  // Throttle Alarm
-  // ============================================
-  const throttleAlarm = new cloudwatch.Alarm(scope, `${plugin.id}ThrottleAlarm`, {
-    alarmName: `${alarmNamePrefix}-Throttled`,
-    alarmDescription: `Plugin ${plugin.name} is being throttled`,
-    metric: fn.metricThrottles({
-      period: cdk.Duration.minutes(5),
-      statistic: 'Sum',
-    }),
-    threshold: 1,
-    evaluationPeriods: 1,
-    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-  });
-  throttleAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alertTopic));
-  
-  // ============================================
-  // No Invocations Alarm (plugin stopped working)
-  // ============================================
-  if (plugin.infrastructure.ingestor?.schedule) {
-    const noInvocationsAlarm = new cloudwatch.Alarm(scope, `${plugin.id}NoInvocationsAlarm`, {
-      alarmName: `${alarmNamePrefix}-NoInvocations`,
-      alarmDescription: `Plugin ${plugin.name} has not run in expected timeframe`,
-      metric: fn.metricInvocations({
-        period: cdk.Duration.hours(1),
-        statistic: 'Sum',
-      }),
-      threshold: 0,
-      evaluationPeriods: 2,
-      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_OR_EQUAL_TO_THRESHOLD,
-      treatMissingData: cloudwatch.TreatMissingData.BREACHING,
-    });
-    noInvocationsAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alertTopic));
-  }
-  
-  // ============================================
-  // Validation Failures Alarm (plugin sending bad data)
-  // ============================================
-  const validationAlarm = new cloudwatch.Alarm(scope, `${plugin.id}ValidationAlarm`, {
-    alarmName: `${alarmNamePrefix}-ValidationFailures`,
-    alarmDescription: `Plugin ${plugin.name} sending invalid messages`,
-    metric: new cloudwatch.Metric({
-      namespace: 'VoC/Processing',
-      metricName: 'ValidationFailures',
-      dimensionsMap: { source_platform: plugin.id },
-      period: cdk.Duration.minutes(15),
-      statistic: 'Sum',
-    }),
-    threshold: 10,
-    evaluationPeriods: 1,
-    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-  });
-  validationAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alertTopic));
-}
-```
-
-### Custom Metrics from Plugins
-
-Plugins emit standardized metrics via the shared `metrics` utility:
-
-```python
-# plugins/_shared/base_ingestor.py
-from shared.logging import metrics
-
-class BaseIngestor:
-    def run(self) -> dict:
-        """Main execution with metrics."""
-        try:
-            items = list(self.fetch_new_items())
-            
-            # Emit plugin-specific metrics
-            metrics.add_metric(
-                name="ItemsIngested",
-                unit="Count",
-                value=len(items),
-                dimensions={'source_platform': self.source_platform}
-            )
-            
-            if items:
-                self.send_to_queue(items)
-            
-            return {"status": "success", "items_processed": len(items)}
-            
-        except Exception as e:
-            metrics.add_metric(
-                name="IngestionErrors",
-                unit="Count",
-                value=1,
-                dimensions={'source_platform': self.source_platform}
-            )
-            raise
-```
-
-### Metric Namespace Structure
-
-```
-VoC/
-├── Ingestion/
-│   ├── ItemsIngested          (dimensions: source_platform)
-│   ├── IngestionErrors        (dimensions: source_platform)
-│   └── IngestionDuration      (dimensions: source_platform)
-│
-├── Processing/
-│   ├── MessagesProcessed      (dimensions: source_platform)
-│   ├── ValidationFailures     (dimensions: source_platform, error_type)
-│   └── ProcessingDuration     (dimensions: source_platform)
-│
-├── Webhooks/
-│   ├── WebhookReceived        (dimensions: source_platform)
-│   ├── WebhookErrors          (dimensions: source_platform)
-│   └── WebhookLatency         (dimensions: source_platform)
-│
-└── Plugins/
-    ├── ActivePlugins          (count of enabled plugins)
-    └── PluginHealth           (dimensions: source_platform, status)
-```
-
-### Log Insights Queries
-
-Pre-built queries for troubleshooting:
-
-```
-# Errors by plugin (last 24h)
-fields @timestamp, @message, source_platform
-| filter @message like /ERROR/
-| stats count() by source_platform
-| sort count desc
-
-# Slow executions by plugin
-fields @timestamp, @duration, source_platform
-| filter @duration > 10000
-| stats avg(@duration), max(@duration), count() by source_platform
-
-# Validation failures breakdown
-fields @timestamp, @message, source_platform, errors
-| filter @message like /Validation failed/
-| stats count() by source_platform, errors
-
-# Items ingested per plugin per hour
-fields @timestamp, source_platform, items_processed
-| filter @message like /items_processed/
-| stats sum(items_processed) by bin(1h), source_platform
-```
-
-### Alert Routing
-
-Route alerts based on severity and plugin:
-
-```typescript
-// lib/stacks/ingestion-stack.ts
-import * as sns from 'aws-cdk-lib/aws-sns';
-import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
-
-// Critical alerts (errors, throttles)
-const criticalTopic = new sns.Topic(this, 'PluginCriticalAlerts', {
-  topicName: 'voc-plugin-critical-alerts',
-  displayName: 'VoC Plugin Critical Alerts',
-});
-criticalTopic.addSubscription(
-  new subscriptions.EmailSubscription('oncall@example.com')
-);
-
-// Warning alerts (high duration, no invocations)
-const warningTopic = new sns.Topic(this, 'PluginWarningAlerts', {
-  topicName: 'voc-plugin-warning-alerts',
-  displayName: 'VoC Plugin Warning Alerts',
-});
-warningTopic.addSubscription(
-  new subscriptions.EmailSubscription('team@example.com')
-);
-
-// Per-plugin Slack channels (optional)
-for (const plugin of enabledPlugins) {
-  const pluginTopic = new sns.Topic(this, `PluginAlerts${plugin.id}`, {
-    topicName: `voc-plugin-${plugin.id}-alerts`,
-  });
-  // Could route to plugin-specific Slack channel
-}
-```
-
-### Health Check Endpoint
-
-API endpoint to check plugin health:
-
-```python
-# lambda/api/plugin_health_handler.py
-def get_plugin_health() -> dict:
-    """Get health status of all plugins."""
-    events = boto3.client('events')
-    cloudwatch = boto3.client('cloudwatch')
-    
-    plugins = {}
-    
-    # Get all plugin schedules
-    rules = events.list_rules(NamePrefix='voc-ingest-')
-    
-    for rule in rules.get('Rules', []):
-        plugin_id = rule['Name'].replace('voc-ingest-', '').replace('-schedule', '')
-        
-        # Get recent metrics
-        errors = cloudwatch.get_metric_statistics(
-            Namespace='AWS/Lambda',
-            MetricName='Errors',
-            Dimensions=[{'Name': 'FunctionName', 'Value': f'voc-ingestor-{plugin_id}'}],
-            StartTime=datetime.utcnow() - timedelta(hours=1),
-            EndTime=datetime.utcnow(),
-            Period=3600,
-            Statistics=['Sum']
-        )
-        
-        invocations = cloudwatch.get_metric_statistics(
-            Namespace='AWS/Lambda',
-            MetricName='Invocations',
-            Dimensions=[{'Name': 'FunctionName', 'Value': f'voc-ingestor-{plugin_id}'}],
-            StartTime=datetime.utcnow() - timedelta(hours=1),
-            EndTime=datetime.utcnow(),
-            Period=3600,
-            Statistics=['Sum']
-        )
-        
-        error_count = errors['Datapoints'][0]['Sum'] if errors['Datapoints'] else 0
-        invocation_count = invocations['Datapoints'][0]['Sum'] if invocations['Datapoints'] else 0
-        
-        # Determine health status
-        if rule['State'] != 'ENABLED':
-            status = 'disabled'
-        elif error_count > 0 and invocation_count > 0 and error_count / invocation_count > 0.1:
-            status = 'unhealthy'
-        elif invocation_count == 0:
-            status = 'inactive'
-        else:
-            status = 'healthy'
-        
-        plugins[plugin_id] = {
-            'status': status,
-            'enabled': rule['State'] == 'ENABLED',
-            'schedule': rule.get('ScheduleExpression', ''),
-            'last_hour': {
-                'invocations': int(invocation_count),
-                'errors': int(error_count),
-            }
-        }
-    
-    return {
-        'plugins': plugins,
-        'summary': {
-            'total': len(plugins),
-            'healthy': sum(1 for p in plugins.values() if p['status'] == 'healthy'),
-            'unhealthy': sum(1 for p in plugins.values() if p['status'] == 'unhealthy'),
-            'disabled': sum(1 for p in plugins.values() if p['status'] == 'disabled'),
-        }
-    }
-```
-
-### Frontend Health Display
-
-Show plugin health in Settings UI:
-
-```tsx
-// frontend/src/pages/Settings/PluginHealthBadge.tsx
-type HealthStatus = 'healthy' | 'unhealthy' | 'inactive' | 'disabled';
-
-const statusConfig: Record<HealthStatus, { color: string; icon: ReactNode; label: string }> = {
-  healthy: { color: 'green', icon: <CheckCircle2 size={14} />, label: 'Healthy' },
-  unhealthy: { color: 'red', icon: <AlertCircle size={14} />, label: 'Unhealthy' },
-  inactive: { color: 'yellow', icon: <Clock size={14} />, label: 'Inactive' },
-  disabled: { color: 'gray', icon: <Pause size={14} />, label: 'Disabled' },
-};
-
-function PluginHealthBadge({ status }: { status: HealthStatus }) {
-  const config = statusConfig[status];
-  return (
-    <span className={`flex items-center gap-1 text-xs text-${config.color}-600`}>
-      {config.icon}
-      {config.label}
-    </span>
-  );
-}
-```
-
----
-
-## Summary: Observability Stack
-
-| Component | Purpose |
-|-----------|---------|
-| **Cost Tags** | Track spend per plugin via AWS Cost Explorer |
-| **Budgets** | Alert when plugin costs exceed threshold |
-| **Dashboard** | Visual overview of all plugin metrics |
-| **Alarms** | Automated alerts for errors, throttles, timeouts |
-| **Custom Metrics** | Plugin-specific metrics (items ingested, etc.) |
-| **Log Insights** | Pre-built queries for troubleshooting |
-| **Health API** | Programmatic health check endpoint |
-| **Health UI** | Visual health status in Settings page |
-
-This gives you full visibility into:
-- How much each plugin costs
-- Whether plugins are working correctly
-- When plugins need attention
-- Historical trends and patterns
-
-
----
-
-## Security Hardening
-
-### Issue Tracker
-
-| Priority | Issue | Status |
-|----------|-------|--------|
-| 🔴 Critical | Secrets not isolated at IAM level | Addressed below |
-| 🔴 Critical | No webhook authentication | Addressed below |
-| 🔴 Critical | Manifest injection risks | Addressed below |
-| 🟠 High | No code integrity verification | Addressed below |
-| 🟠 High | Metadata allows arbitrary objects | Addressed below |
-| 🟠 High | No audit logging | Addressed below |
-| 🟡 Medium | No versioning | Addressed below |
-| 🟡 Medium | No circuit breaker | Addressed below |
-| 🟡 Medium | No resource tagging | Already addressed in Cost Allocation section |
-| 🟢 Low | Manual Python validation | Addressed below |
-
----
-
-### 🔴 Critical: Per-Plugin Secrets Isolation
-
-**Problem**: All plugins share one Secrets Manager secret. A compromised plugin could read other plugins' credentials.
-
-**Solution**: One secret per plugin with IAM conditions.
-
-```typescript
-// lib/stacks/ingestion-stack.ts
-for (const plugin of enabledPlugins) {
-  // Create dedicated secret for each plugin
-  const pluginSecret = new secretsmanager.Secret(this, `Secret${plugin.id}`, {
-    secretName: `voc-datalake/plugins/${plugin.id}`,
-    description: `Credentials for ${plugin.name} plugin`,
-    generateSecretString: {
-      secretStringTemplate: JSON.stringify(plugin.secrets || {}),
-      generateStringKey: 'placeholder',
-    },
-  });
-  
-  // Tag for cost allocation
-  Tags.of(pluginSecret).add('Plugin', plugin.id);
-  
-  // Create plugin-specific role with access only to its secret
-  const pluginRole = new iam.Role(this, `Role${plugin.id}`, {
-    assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-    roleName: `voc-plugin-${plugin.id}-role`,
-    managedPolicies: [
-      iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-    ],
-  });
-  
-  // Grant access ONLY to this plugin's secret
-  pluginSecret.grantRead(pluginRole);
-  
-  // Shared resources with scoped access
-  pluginRole.addToPolicy(new iam.PolicyStatement({
-    sid: 'SendToProcessingQueue',
-    actions: ['sqs:SendMessage', 'sqs:SendMessageBatch'],
-    resources: [processingQueue.queueArn],
-  }));
-  
-  pluginRole.addToPolicy(new iam.PolicyStatement({
-    sid: 'WriteRawData',
-    actions: ['s3:PutObject'],
-    resources: [`${rawDataBucket.bucketArn}/raw/${plugin.id}/*`],  // Scoped to plugin prefix
-  }));
-  
-  pluginRole.addToPolicy(new iam.PolicyStatement({
-    sid: 'ManageWatermarks',
-    actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
-    resources: [watermarksTable.tableArn],
-    conditions: {
-      'ForAllValues:StringLike': {
-        'dynamodb:LeadingKeys': [`${plugin.id}#*`],  // Scoped to plugin prefix
-      },
-    },
-  }));
-  
-  // Create Lambda with plugin-specific role
-  const fn = new lambda.Function(this, `Ingestor${plugin.id}`, {
-    role: pluginRole,  // Dedicated role, not shared
-    environment: {
-      SECRETS_ARN: pluginSecret.secretArn,  // Only this plugin's secret
-      // ...
-    },
-    // ...
-  });
-}
-```
-
----
-
-### 🔴 Critical: Webhook Signature Verification
-
-**Problem**: Webhook endpoints are publicly accessible. Without signature verification, anyone can send fake events.
-
-**Solution**: Always verify webhook signatures in your handler before processing events. Each provider has its own signing method: consult your provider's documentation for the specific implementation details.
-
----
-
-### 🔴 Critical: Manifest Input Sanitization
-
-**Problem**: Manifest values could contain injection attacks (path traversal, command injection).
-
-**Solution**: Strict validation with allowlists and sanitization.
-
-```typescript
-// lib/plugin-loader.ts
-import { z } from 'zod';
-
-// Strict ID pattern - only lowercase alphanumeric and underscores
-const PluginIdSchema = z.string()
-  .min(1)
-  .max(32)
-  .regex(/^[a-z][a-z0-9_]*$/, 'ID must start with letter, contain only lowercase alphanumeric and underscores');
-
-// Safe path pattern - no traversal
-const SafePathSchema = z.string()
-  .max(128)
-  .regex(/^\/[a-z0-9\-_\/]*$/, 'Path must start with / and contain only safe characters')
-  .refine(path => !path.includes('..'), 'Path traversal not allowed')
-  .refine(path => !path.includes('//'), 'Double slashes not allowed');
-
-// Safe string - no control characters or dangerous patterns
-const SafeStringSchema = z.string()
-  .max(256)
-  .refine(s => !/[\x00-\x1f\x7f]/.test(s), 'Control characters not allowed')
-  .refine(s => !/<script|javascript:|data:/i.test(s), 'Potentially dangerous content');
-
-// Icon - only emoji or safe SVG path
-const IconSchema = z.string()
-  .max(64)
-  .refine(s => {
-    // Allow emoji (most are in these ranges)
-    const isEmoji = /^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]+$/u.test(s);
-    // Or safe relative path to SVG
-    const isSafePath = /^[a-z0-9\-_]+\.svg$/.test(s);
-    return isEmoji || isSafePath;
-  }, 'Icon must be emoji or safe SVG filename');
-
-// Schedule expression - only safe EventBridge patterns
-const ScheduleSchema = z.string()
-  .regex(/^rate\(\d+\s+(minute|minutes|hour|hours|day|days)\)$|^cron\([0-9,\-\*\/\s]+\)$/, 
-    'Invalid schedule expression');
-
-// Config key - safe identifier
-const ConfigKeySchema = z.string()
-  .min(1)
-  .max(64)
-  .regex(/^[a-z][a-z0-9_]*$/, 'Config key must be safe identifier');
-
-// Full manifest schema with strict validation
-const StrictManifestSchema = z.object({
-  id: PluginIdSchema,
-  name: SafeStringSchema,
-  icon: IconSchema,
-  description: SafeStringSchema.optional(),
-  category: z.enum(['reviews', 'social', 'import', 'search', 'scraper']).optional(),
-  
-  infrastructure: z.object({
-    ingestor: z.object({
-      enabled: z.boolean(),
-      schedule: ScheduleSchema.optional(),
-      timeout: z.number().int().min(1).max(300),
-      memory: z.number().int().min(128).max(1024),
-    }).optional(),
-    webhook: z.object({
-      enabled: z.boolean(),
-      path: SafePathSchema,
-      methods: z.array(z.enum(['GET', 'POST', 'PUT', 'DELETE'])).max(4),
-      signatureHeader: z.string().max(64).regex(/^[A-Za-z0-9\-]+$/).optional(),
-      signatureMethod: z.string().max(32).regex(/^[a-z_]+$/).optional(),
-    }).optional(),
-    s3Trigger: z.object({
-      enabled: z.boolean(),
-      suffixes: z.array(z.string().regex(/^\.[a-z0-9]+$/).max(10)).max(5),
-    }).optional(),
-  }),
-  
-  config: z.array(z.object({
-    key: ConfigKeySchema,
-    label: SafeStringSchema,
-    type: z.enum(['text', 'password', 'textarea', 'select']),
-    required: z.boolean().optional(),
-    placeholder: SafeStringSchema.optional(),
-    secret: z.boolean().optional(),
-  })).max(20),
-  
-  webhooks: z.array(z.object({
-    name: SafeStringSchema,
-    events: z.array(SafeStringSchema).max(10),
-    docUrl: z.string().url().max(256).optional(),
-  })).max(5).optional(),
-  
-  setup: z.object({
-    title: SafeStringSchema,
-    color: z.enum(['blue', 'orange', 'green', 'gray']).optional(),
-    steps: z.array(SafeStringSchema).max(10),
-  }).optional(),
-  
-  secrets: z.record(ConfigKeySchema, z.string().max(0)).max(10).optional(),  // Values must be empty in manifest
-  
-  version: z.string().regex(/^\d+\.\d+\.\d+$/, 'Version must be semver').optional(),
-});
-
-export function loadAndValidateManifest(manifestPath: string): PluginManifest {
-  const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  
-  // Strict validation
-  const result = StrictManifestSchema.safeParse(raw);
-  
-  if (!result.success) {
-    const errors = result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`);
-    throw new Error(`Invalid manifest: ${errors.join(', ')}`);
-  }
-  
-  return result.data;
-}
-```
-
----
-
-### 🟠 High: Code Integrity Verification
-
-**Problem**: No way to verify plugin code hasn't been tampered with.
-
-**Solution**: SHA256 hash of plugin code stored in manifest and verified at deploy time.
-
-```json
-// manifest.json with integrity hash
-{
-  "id": "webscraper",
-  "version": "1.2.0",
-  "integrity": {
-    "ingestor": "sha256-a1b2c3d4e5f6...",
-    "webhook": "sha256-f6e5d4c3b2a1..."
-  }
-}
-```
-
-```typescript
-// lib/plugin-loader.ts
-import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
-
-function computeDirectoryHash(dirPath: string): string {
-  /**
-   * Compute SHA256 hash of all Python files in a directory.
-   * Files are sorted for deterministic hashing.
-   */
-  const files: string[] = [];
-  
-  function collectFiles(dir: string) {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory() && !entry.name.startsWith('__')) {
-        collectFiles(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith('.py')) {
-        files.push(fullPath);
-      }
-    }
-  }
-  
-  collectFiles(dirPath);
-  files.sort();
-  
-  const hash = crypto.createHash('sha256');
-  for (const file of files) {
-    const content = fs.readFileSync(file);
-    hash.update(content);
-  }
-  
-  return 'sha256-' + hash.digest('hex');
-}
-
-function verifyPluginIntegrity(plugin: PluginManifest, pluginsDir: string): void {
-  const pluginDir = path.join(pluginsDir, plugin.id);
-  
-  // Verify ingestor code
-  if (plugin.infrastructure.ingestor?.enabled) {
-    const ingestorDir = path.join(pluginDir, 'ingestor');
-    const actualHash = computeDirectoryHash(ingestorDir);
-    const expectedHash = plugin.integrity?.ingestor;
-    
-    if (!expectedHash) {
-      throw new Error(`Plugin ${plugin.id}: missing integrity hash for ingestor`);
-    }
-    
-    if (actualHash !== expectedHash) {
-      throw new Error(
-        `Plugin ${plugin.id}: ingestor code integrity check failed.\n` +
-        `Expected: ${expectedHash}\n` +
-        `Actual: ${actualHash}`
-      );
-    }
-  }
-  
-  // Verify webhook code
-  if (plugin.infrastructure.webhook?.enabled) {
-    const webhookDir = path.join(pluginDir, 'webhook');
-    const actualHash = computeDirectoryHash(webhookDir);
-    const expectedHash = plugin.integrity?.webhook;
-    
-    if (!expectedHash) {
-      throw new Error(`Plugin ${plugin.id}: missing integrity hash for webhook`);
-    }
-    
-    if (actualHash !== expectedHash) {
-      throw new Error(
-        `Plugin ${plugin.id}: webhook code integrity check failed.\n` +
-        `Expected: ${expectedHash}\n` +
-        `Actual: ${actualHash}`
-      );
-    }
-  }
-  
-  console.log(`✓ Plugin ${plugin.id} integrity verified`);
-}
-
-// Script to generate integrity hashes
-// Run: npx ts-node scripts/generate-integrity.ts
-export function generateIntegrityHashes(pluginId: string, pluginsDir: string): void {
-  const pluginDir = path.join(pluginsDir, pluginId);
-  const manifestPath = path.join(pluginDir, 'manifest.json');
-  
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  
-  manifest.integrity = {};
-  
-  const ingestorDir = path.join(pluginDir, 'ingestor');
-  if (fs.existsSync(ingestorDir)) {
-    manifest.integrity.ingestor = computeDirectoryHash(ingestorDir);
-  }
-  
-  const webhookDir = path.join(pluginDir, 'webhook');
-  if (fs.existsSync(webhookDir)) {
-    manifest.integrity.webhook = computeDirectoryHash(webhookDir);
-  }
-  
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-  console.log(`Updated integrity hashes for ${pluginId}`);
-}
-```
-
-**CI/CD integration:**
-
-```yaml
-# .github/workflows/plugin-integrity.yml
-name: Verify Plugin Integrity
-on:
-  pull_request:
-    paths:
-      - 'plugins/**'
-
-jobs:
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Verify integrity hashes
-        run: |
-          npm run verify:integrity
-          
-      - name: Check for uncommitted hash changes
-        run: |
-          git diff --exit-code plugins/*/manifest.json || \
-            (echo "ERROR: Integrity hashes out of date. Run 'npm run generate:integrity'" && exit 1)
-```
-
----
-
-### 🟠 High: Restrict Metadata to Primitives
-
-**Problem**: `metadata` field allows arbitrary nested objects, potential for abuse.
-
-**Solution**: Restrict to flat object with primitive values only.
-
-```typescript
-// Strict metadata schema - primitives only, no nesting
-const MetadataValueSchema = z.union([
-  z.string().max(1000),
-  z.number(),
-  z.boolean(),
-  z.null(),
-]);
-
-const MetadataSchema = z.record(
-  z.string().max(64).regex(/^[a-z_][a-z0-9_]*$/),  // Safe keys only
-  MetadataValueSchema
-).refine(
-  obj => Object.keys(obj).length <= 20,
-  'Metadata cannot have more than 20 keys'
-);
-
-// In message validation
-const MessageSchema = z.object({
-  // ... other fields
-  metadata: MetadataSchema.optional(),
-});
-```
-
-```python
-# lambda/processor/validator.py
-def validate_metadata(metadata: dict) -> tuple[bool, list[str]]:
-    """Validate metadata is flat with primitive values only."""
-    errors = []
-    
-    if not isinstance(metadata, dict):
-        return False, ['metadata must be an object']
-    
-    if len(metadata) > 20:
-        errors.append('metadata cannot have more than 20 keys')
-    
-    for key, value in metadata.items():
-        # Validate key
-        if not isinstance(key, str):
-            errors.append(f'metadata key must be string, got {type(key)}')
-            continue
-        if len(key) > 64:
-            errors.append(f'metadata key "{key[:20]}..." exceeds max length')
-        if not re.match(r'^[a-z_][a-z0-9_]*$', key):
-            errors.append(f'metadata key "{key}" contains invalid characters')
-        
-        # Validate value - primitives only
-        if value is None:
-            continue
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, (int, float)):
-            continue
-        if isinstance(value, str):
-            if len(value) > 1000:
-                errors.append(f'metadata value for "{key}" exceeds max length')
-            continue
-        
-        # Reject nested objects, arrays, etc.
-        errors.append(f'metadata value for "{key}" must be primitive (string, number, boolean, null)')
-    
-    return len(errors) == 0, errors
-```
-
----
-
-### 🟠 High: Audit Logging
-
-**Problem**: No structured audit trail for plugin operations.
-
-**Solution**: Emit structured audit events to CloudWatch Logs. (An optional EventBridge
-copy behind an `AUDIT_EVENT_BUS` variable was removed: no stack ever created the bus or set
-the variable, so it never ran.)
-
-```python
-# plugins/_shared/audit.py
-"""
-Structured audit logging for plugin operations.
-"""
-from datetime import datetime, timezone
-from typing import Literal
-from dataclasses import dataclass, asdict
-
-from shared.logging import logger
-
-AuditAction = Literal[
-    'plugin.invoked',
-    'plugin.completed',
-    'plugin.failed',
-    'plugin.enabled',
-    'plugin.disabled',
-    'webhook.received',
-    'webhook.verified',
-    'webhook.rejected',
-    'message.ingested',
-    'message.validated',
-    'message.rejected',
-    'secret.accessed',
-    'config.updated',
-]
-
-@dataclass
-class AuditEvent:
-    """Structured audit event."""
-    timestamp: str
-    action: AuditAction
-    plugin_id: str
-    success: bool
-    details: dict
-    request_id: str = ''
-    user_id: str = ''
-    ip_address: str = ''
-    
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-
-def emit_audit_event(
-    action: AuditAction,
-    plugin_id: str,
-    success: bool,
-    details: dict = None,
-    request_id: str = '',
-    user_id: str = '',
-    ip_address: str = '',
-) -> None:
-    """
-    Emit a structured audit event.
-    
-    Events are:
-    1. Logged to CloudWatch (always)
-    2. Sent to EventBridge (if configured)
-    """
-    event = AuditEvent(
-        timestamp=datetime.now(timezone.utc).isoformat(),
-        action=action,
-        plugin_id=plugin_id,
-        success=success,
-        details=details or {},
-        request_id=request_id,
-        user_id=user_id,
-        ip_address=ip_address,
-    )
-    
-    # The one destination: CloudWatch
-    logger.info('AUDIT', extra={'audit_event': event.to_dict()})
-
-
-# Usage in base_ingestor.py
-class BaseIngestor:
-    def run(self) -> dict:
-        emit_audit_event('plugin.invoked', self.source_platform, True)
-        
-        try:
-            items = list(self.fetch_new_items())
-            
-            for item in items:
-                emit_audit_event('message.ingested', self.source_platform, True, {
-                    'message_id': item.get('id'),
-                })
-            
-            self.send_to_queue(items)
-            
-            emit_audit_event('plugin.completed', self.source_platform, True, {
-                'items_processed': len(items),
-            })
-            
-            return {"status": "success", "items_processed": len(items)}
-            
-        except Exception as e:
-            emit_audit_event('plugin.failed', self.source_platform, False, {
-                'error': str(e),
-                'error_type': type(e).__name__,
-            })
-            raise
-```
-
-**Log Insights query for audit events:**
-
-```
-# All audit events for a plugin
-fields @timestamp, audit_event.action, audit_event.success, audit_event.details
-| filter audit_event.plugin_id = 'webscraper'
-| sort @timestamp desc
-| limit 100
-
-# Failed operations across all plugins
-fields @timestamp, audit_event.plugin_id, audit_event.action, audit_event.details.error
-| filter audit_event.success = false
-| sort @timestamp desc
-
-# Webhook rejections (potential attacks)
-fields @timestamp, audit_event.plugin_id, audit_event.details.ip_address, audit_event.details.reason
-| filter audit_event.action = 'webhook.rejected'
-| stats count() by audit_event.details.ip_address
-| sort count desc
-```
-
----
-
-### 🟡 Medium: Plugin Versioning
-
-**Problem**: No way to track plugin versions or manage upgrades.
-
-**Solution**: Require semver in manifest, track in DynamoDB.
-
-```json
-// manifest.json
-{
-  "id": "webscraper",
-  "version": "1.2.0",
-  "minPlatformVersion": "2.0.0",
-  // ...
-}
-```
-
-```typescript
-// lib/plugin-loader.ts
-import * as semver from 'semver';
-
-const PLATFORM_VERSION = '2.1.0';  // Current platform version
-
-function validatePluginVersion(plugin: PluginManifest): void {
-  // Version is required
-  if (!plugin.version) {
-    throw new Error(`Plugin ${plugin.id}: version is required`);
-  }
-  
-  // Must be valid semver
-  if (!semver.valid(plugin.version)) {
-    throw new Error(`Plugin ${plugin.id}: invalid version "${plugin.version}"`);
-  }
-  
-  // Check platform compatibility
-  if (plugin.minPlatformVersion) {
-    if (!semver.gte(PLATFORM_VERSION, plugin.minPlatformVersion)) {
-      throw new Error(
-        `Plugin ${plugin.id} requires platform version ${plugin.minPlatformVersion}, ` +
-        `but current version is ${PLATFORM_VERSION}`
-      );
-    }
-  }
-}
-```
-
-**Version tracking in DynamoDB:**
-
-```python
-# Track deployed plugin versions
-def record_plugin_deployment(plugin_id: str, version: str) -> None:
-    """Record plugin deployment for version tracking."""
-    table = dynamodb.Table(os.environ['PLUGINS_TABLE'])
-    
-    table.put_item(Item={
-        'pk': f'PLUGIN#{plugin_id}',
-        'sk': f'VERSION#{version}',
-        'deployed_at': datetime.now(timezone.utc).isoformat(),
-        'deployed_by': os.environ.get('DEPLOYED_BY', 'cdk'),
-    })
-    
-    # Update current version pointer
-    table.update_item(
-        Key={'pk': f'PLUGIN#{plugin_id}', 'sk': 'CURRENT'},
-        UpdateExpression='SET version = :v, updated_at = :t',
-        ExpressionAttributeValues={
-            ':v': version,
-            ':t': datetime.now(timezone.utc).isoformat(),
-        }
-    )
-```
-
----
-
-### 🟡 Medium: Circuit Breaker
-
-**Problem**: A failing plugin keeps running and wasting resources.
-
-**Solution**: Auto-disable plugins after repeated failures.
-
-**As deployed** (the sketch below predates these details):
-
-- 5 failures (`FAILURE_THRESHOLD`) inside 15 minutes (`WINDOW_MINUTES`, both constants in
-  `plugins/_shared/circuit_breaker.py`) trip the breaker. The state lives in the **aggregates** table (`pk`/`sk`, TTL
-  `ttl`): one `FAILURES#<plugin>` / `<iso timestamp>` row per counted failure (24 h TTL) and,
-  while tripped, `CIRCUIT#<plugin>` / `TRIPPED` (`tripped_at`, `failure_count`, `last_error`
-  cut at 500 characters). Every later run stops at that row (`status: skipped`,
-  `reason: circuit_breaker_open`); a successful run deletes it.
-- Before this fix the breaker addressed the **watermarks** table, whose only key is `source`, with
-  `pk`/`sk` keys. Every query, get and delete was a `ValidationException` (caught and logged as
-  a warning), so a deployed breaker never counted a failure and never tripped. There is no
-  stale state to migrate.
-- A trip runs three **independent** steps, each logged and metered on failure without skipping
-  the others: write the `TRIPPED` row first (it is what stops the runs and what Settings
-  shows), then `events:DisableRule` on the plugin's own schedule, then the `plugin.disabled`
-  audit event. Metrics (namespace `VoC`): `CircuitBreakerTripRecordFailed`,
-  `CircuitBreakerScheduleDisableFailed`.
-- The rule name comes from `INGEST_SCHEDULE_RULE_NAME`, which `lib/stacks/ingestion-stack.ts`
-  sets from the same string that names the rule — with or without a `deploymentPrefix`. An
-  unscheduled plugin has no such variable: it disables nothing and only records the trip.
-- Each scheduled ingestor runs as its own role (`lib/stacks/ingestion-roles.ts`), granted
-  `events:DisableRule` on exactly its own rule ARN — never a wildcard, never on the role the
-  unscheduled ingestors share — so no plugin can switch off a sibling's schedule.
-- **Recovery** is one admin action in Administration → Sources → Data sources, where a tripped source shows
-  "Paused after repeated failures" (when, how many failures, a short reason):
-  - **Turn the source back on.** `PUT /sources/{source}/enable` deletes the `TRIPPED` row and
-    then enables the schedule.
-  - **Reset.** `POST /sources/{source}/reset` deletes the `TRIPPED` row *without* enabling the
-    schedule (for a "Run now" first, or an unscheduled plugin). It answers the source's schedule
-    state and a closed `circuit`.
-
-  Both are admin-only and validate `source` as a known plugin (`integrations_handler.py`,
-  behind the existing `/sources/{source}/{proxy+}` route; the row access is in
-  `lambda/shared/plugin_circuit.py`). `GET /sources/status` reports each source's
-  `circuit: {tripped, tripped_at, failure_count, last_error}` in one strongly consistent batch
-  read; `last_error` is the plugin exception's free text, so only admins get it (`null` for
-  everyone else, the same rule as the run-status rows). A failed read degrades only the
-  `circuit` entries (closed, plus `error`). Failure rows are not cleared: a reset within the
-  window of a still-broken plugin trips again on its next failure, which is the point.
-
-```python
-# plugins/_shared/circuit_breaker.py
-"""
-Circuit breaker pattern for plugins.
-Auto-disables plugins after repeated failures.
-"""
-import os
-from datetime import datetime, timezone, timedelta
-from shared.aws import get_dynamodb_resource, get_eventbridge_client
-
-FAILURE_THRESHOLD = 5
-WINDOW_MINUTES = 15
-
-dynamodb = get_dynamodb_resource()
-events = get_eventbridge_client()
-
-
-class CircuitBreaker:
-    def __init__(self, plugin_id: str):
-        self.plugin_id = plugin_id
-        self.table = dynamodb.Table(os.environ['AGGREGATES_TABLE'])
-    
-    def record_failure(self, error: str) -> None:
-        """Record a failure. May trigger circuit breaker."""
-        now = datetime.now(timezone.utc)
-        window_start = now - timedelta(minutes=WINDOW_MINUTES)
-        
-        # Get recent failures
-        response = self.table.query(
-            KeyConditionExpression='pk = :pk AND sk BETWEEN :start AND :end',
-            ExpressionAttributeValues={
-                ':pk': f'FAILURES#{self.plugin_id}',
-                ':start': window_start.isoformat(),
-                ':end': now.isoformat(),
-            }
-        )
-        
-        recent_failures = len(response.get('Items', []))
-        
-        # Record this failure
-        self.table.put_item(Item={
-            'pk': f'FAILURES#{self.plugin_id}',
-            'sk': now.isoformat(),
-            'error': error[:500],  # Truncate
-            'ttl': int((now + timedelta(hours=24)).timestamp()),  # Auto-cleanup
-        })
-        
-        # Check if threshold exceeded
-        if recent_failures + 1 >= FAILURE_THRESHOLD:
-            self._trip_breaker(recent_failures + 1, error)
-    
-    def _trip_breaker(self, failure_count: int, last_error: str) -> None:
-        """Disable the plugin schedule."""
-        rule_name = f'voc-ingest-{self.plugin_id}-schedule'
-        
-        try:
-            events.disable_rule(Name=rule_name)
-            
-            # Record the trip
-            self.table.put_item(Item={
-                'pk': f'CIRCUIT#{self.plugin_id}',
-                'sk': 'TRIPPED',
-                'tripped_at': datetime.now(timezone.utc).isoformat(),
-                'failure_count': failure_count,
-                'last_error': last_error[:500],
-            })
-            
-            # Emit audit event
-            from audit import emit_audit_event
-            emit_audit_event('plugin.disabled', self.plugin_id, True, {
-                'reason': 'circuit_breaker',
-                'failure_count': failure_count,
-                'last_error': last_error,
-            })
-            
-            print(f"CIRCUIT BREAKER: Disabled {self.plugin_id} after {failure_count} failures")
-            
-        except Exception as e:
-            print(f"Failed to trip circuit breaker: {e}")
-    
-    def record_success(self) -> None:
-        """Record a success. Resets failure count."""
-        # Clear the circuit breaker state on success
-        self.table.delete_item(
-            Key={'pk': f'CIRCUIT#{self.plugin_id}', 'sk': 'TRIPPED'}
-        )
-    
-    def is_open(self) -> bool:
-        """Check if circuit breaker is open (plugin disabled)."""
-        response = self.table.get_item(
-            Key={'pk': f'CIRCUIT#{self.plugin_id}', 'sk': 'TRIPPED'}
-        )
-        return 'Item' in response
-
-
-# Integration with base_ingestor.py
-class BaseIngestor:
-    def __init__(self):
-        # ...
-        self.circuit_breaker = CircuitBreaker(self.source_platform)
-    
-    def run(self) -> dict:
-        # Check circuit breaker before running
-        if self.circuit_breaker.is_open():
-            logger.warning(f"Circuit breaker open for {self.source_platform}, skipping")
-            return {"status": "skipped", "reason": "circuit_breaker_open"}
-        
-        try:
-            items = list(self.fetch_new_items())
-            self.send_to_queue(items)
-            
-            # Record success
-            self.circuit_breaker.record_success()
-            
-            return {"status": "success", "items_processed": len(items)}
-            
-        except Exception as e:
-            # Record failure
-            self.circuit_breaker.record_failure(str(e))
-            raise
-```
-
-**Recovery** — the real routes (see "As deployed" above), not a separate plugin handler:
-
-```text
-PUT  /sources/{source}/enable   admin  delete CIRCUIT#<source>/TRIPPED, then enable the schedule
-POST /sources/{source}/reset    admin  delete CIRCUIT#<source>/TRIPPED, schedule unchanged
-GET  /sources/status            any    per source: circuit {tripped, tripped_at, failure_count, last_error}
-```
-
----
-
-### 🟢 Low: Pydantic Validation
-
-**Problem**: Manual Python validation is error-prone.
-
-**Solution**: Use Pydantic for runtime validation with automatic error messages.
-
-```python
-# lambda/shared/ingest_schemas.py
-"""
-Pydantic schemas for message validation.
-"""
-from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, Field, field_validator, model_validator
-import re
-
-
-class MessageMetadata(BaseModel):
-    """Flat metadata with primitive values only."""
-    model_config = {'extra': 'forbid'}  # No extra fields allowed
-    
-    # Define known metadata fields explicitly
-    is_verified: Optional[bool] = None
-    location_id: Optional[str] = Field(None, max_length=64)
-    reference_id: Optional[str] = Field(None, max_length=64)
-    reply_count: Optional[int] = Field(None, ge=0)
-    like_count: Optional[int] = Field(None, ge=0)
-    
-    @field_validator('location_id', 'reference_id')
-    @classmethod
-    def validate_safe_string(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        if re.search(r'[\x00-\x1f\x7f]', v):
-            raise ValueError('Control characters not allowed')
-        return v
-
-
-class IngestMessage(BaseModel):
-    """Schema for messages sent to processing queue."""
-    model_config = {'extra': 'forbid'}
-    
-    # Required fields
-    id: str = Field(..., min_length=1, max_length=256)
-    source_platform: str = Field(..., pattern=r'^[a-z][a-z0-9_]*$')
-    text: str = Field(..., min_length=1, max_length=50_000)
-    created_at: datetime
-    
-    # Optional fields
-    rating: Optional[float] = Field(None, ge=1, le=5)
-    url: Optional[str] = Field(None, max_length=2048)
-    channel: Optional[str] = Field(None, max_length=64)
-    author: Optional[str] = Field(None, max_length=256)
-    title: Optional[str] = Field(None, max_length=500)
-    language: Optional[str] = Field(None, pattern=r'^[a-z]{2}(-[A-Z]{2})?$')
-    brand_handles_matched: Optional[list[str]] = Field(None, max_length=10)
-    metadata: Optional[MessageMetadata] = None
-    
-    # Internal fields (set by platform)
-    ingested_at: Optional[datetime] = None
-    s3_raw_uri: Optional[str] = None
-    
-    @field_validator('id', 'source_platform', 'channel', 'author', 'title')
-    @classmethod
-    def sanitize_string(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        # Remove control characters
-        v = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', v)
-        return v.strip()
-    
-    @field_validator('text')
-    @classmethod
-    def sanitize_text(cls, v: str) -> str:
-        # Remove control characters except newlines/tabs
-        v = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', v)
-        # Normalize excessive newlines
-        v = re.sub(r'\n{3,}', '\n\n', v)
-        return v.strip()
-    
-    @field_validator('url')
-    @classmethod
-    def validate_url(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        if not v.startswith(('http://', 'https://')):
-            raise ValueError('URL must start with http:// or https://')
-        return v
-    
-    @model_validator(mode='after')
-    def validate_created_at_not_future(self) -> 'IngestMessage':
-        if self.created_at > datetime.now(self.created_at.tzinfo) + timedelta(days=1):
-            raise ValueError('created_at cannot be more than 1 day in the future')
-        return self
-
-
-# Usage in processor
-from pydantic import ValidationError
-
-def validate_message(raw: dict) -> IngestMessage:
-    """Validate and parse a raw message."""
-    try:
-        return IngestMessage.model_validate(raw)
-    except ValidationError as e:
-        # Convert to our error format
-        errors = [f"{err['loc']}: {err['msg']}" for err in e.errors()]
-        raise MessageValidationError(errors)
-```
-
-**Benefits of Pydantic:**
-- Automatic type coercion (string dates → datetime)
-- Clear error messages with field paths
-- JSON Schema generation for documentation
-- Serialization/deserialization built-in
-- IDE autocomplete support
-
----
-
-## Security Checklist
-
-Before deploying a plugin, verify:
-
-- [ ] Manifest passes strict schema validation
-- [ ] Code integrity hash matches
-- [ ] No hardcoded secrets in code
-- [ ] Webhook signature verification implemented (if webhook)
-- [ ] All config keys use safe identifiers
-- [ ] Version follows semver
-- [ ] Tests pass
-- [ ] Code review completed (for community plugins)
-
-```bash
-# Run all security checks
-npm run security:check -- --plugin=webscraper
-
-# Output:
-# ✓ Manifest schema valid
-# ✓ Code integrity verified
-# ✓ No hardcoded secrets found
-# ✓ Webhook signature verification present
-# ✓ Config keys valid
-# ✓ Version valid (1.2.0)
-# ✓ Tests pass (12/12)
-# 
-# Plugin webscraper passed all security checks
-```
+**How do I disable a plugin completely?** Set it to `false` in `pluginStatus` and deploy. Its
+Lambda and schedule are removed and its card is hidden; its secret keys stay.
