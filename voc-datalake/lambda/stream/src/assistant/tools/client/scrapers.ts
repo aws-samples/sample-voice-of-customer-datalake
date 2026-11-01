@@ -26,8 +26,10 @@ import {
 } from './scraper-schemas.js';
 import { MAX_LABEL_TAGS } from './allowlists.js';
 import { radarBrandProblem } from './radar.js';
+import { storeAppNote, storeAppRefusal } from './store-app-check.js';
 import { defineClientTool, q, stringProperty } from './define.js';
 import type { JsonSchemaProperties } from '../spec.js';
+import type { z } from 'zod';
 
 const urlProperty = (description: string) => ({ type: 'string', maxLength: SCRAPER_LIMITS.maxUrlLength, description });
 const selector = (description: string) => stringProperty(description, SCRAPER_LIMITS.maxTextField);
@@ -114,6 +116,8 @@ function updateScraper(deps: ToolDeps): ClientToolDefinition {
   });
 }
 
+type CreateAppConnectorArgs = z.infer<typeof createAppConnectorArgsSchema>;
+
 const CONNECTOR_LABEL = { app_reviews_ios: 'iOS app', app_reviews_android: 'Android app', web_reviews: 'web reviews' } as const;
 
 const createAppConnector = (deps: ToolDeps) => defineClientTool({
@@ -132,7 +136,7 @@ const createAppConnector = (deps: ToolDeps) => defineClientTool({
     app_name: stringProperty('Short name (letters, digits, spaces, ".", "_", "-").', APP_CONNECTOR_LIMITS.maxAppName),
     app_id: stringProperty('iOS only: numeric App Store id.', APP_CONNECTOR_LIMITS.maxAppIdLength),
     package_name: stringProperty('Android only: package name.', APP_CONNECTOR_LIMITS.maxPackageName),
-    url: urlProperty('web_reviews only: the review page (https).'),
+    url: urlProperty('web_reviews only: the review page (https), copied from a web_search result that names the company; never built from a name.'),
     sort_by: { type: 'string', enum: ['most_recent', 'newest', 'rating'], description: 'iOS: most_recent. Android: newest or rating.' },
     max_reviews_per_run: { type: 'integer', minimum: 1, maximum: APP_CONNECTOR_LIMITS.maxReviewsPerRun, description: 'Apps only: cap per run.' },
     max_pages: {
@@ -149,12 +153,15 @@ const createAppConnector = (deps: ToolDeps) => defineClientTool({
   },
   required: ['source', 'app_name'],
   schema: createAppConnectorArgsSchema,
-  precheck: (args, ctx) => radarBrandProblem(deps, ctx, args.radar_brand),
-  summarize: (args) => {
-    const identifier = args.app_id ?? args.package_name ?? args.url ?? '';
-    return `Add ${CONNECTOR_LABEL[args.source]} connector ${q(args.app_name)} (${identifier})${radarSuffix(args.radar_brand)}.`;
-  },
+  precheck: async (args, ctx) => (await radarBrandProblem(deps, ctx, args.radar_brand)) ?? storeAppRefusal(deps, ctx, args),
+  summarize: connectorSummary,
+  describe: async (args, ctx) => connectorSummary(args) + await storeAppNote(deps, ctx, args),
 });
+
+function connectorSummary(args: CreateAppConnectorArgs): string {
+  const identifier = args.app_id ?? args.package_name ?? args.url ?? '';
+  return `Add ${CONNECTOR_LABEL[args.source]} connector ${q(args.app_name)} (${identifier})${radarSuffix(args.radar_brand)}.`;
+}
 
 
 export function createScraperClientTools(deps: ToolDeps): ClientToolDefinition[] {

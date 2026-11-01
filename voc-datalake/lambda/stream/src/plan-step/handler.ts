@@ -25,6 +25,7 @@ import { resolveModelOverride } from '../bedrock/model-override.js';
 import { getDefaultCatalogue } from '../assistant/tools/catalogue.js';
 import { functionNamesFromEnv, invokeDomainRoute } from '../assistant/tools/internal-api.js';
 import { PLAN_STEP_SURFACE, type PlanStepDeps } from './deps.js';
+import { lookupStoreApp } from '../tools/store-app-lookup.js';
 import type { PlanStepAnswer } from './event.js';
 import { runPlanStep } from './run-step.js';
 import { invocationDeadlineMs } from '../lib/lambda-deadline.js';
@@ -48,6 +49,7 @@ const deps: PlanStepDeps = {
   },
   converse: (command) => getBedrockClient(PLAN_STEP_BEDROCK_TIMEOUT_MS).send(command),
   resolveModel: async () => (await resolveModelOverride(docClient, AGGREGATES_TABLE, PLAN_STEP_SURFACE)) ?? AGENT_WORKER_DEFAULT,
+  lookupStoreApp,
 };
 
 export async function handler(event: unknown, context?: unknown): Promise<PlanStepAnswer> {

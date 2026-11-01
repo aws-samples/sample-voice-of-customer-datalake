@@ -47,6 +47,7 @@ function harness(routes: Record<string, unknown> = {}, answers: ConverseCommandO
         return next === undefined ? Promise.reject(new Error('no answer queued')) : Promise.resolve(next);
       },
       resolveModel: () => Promise.resolve('global.anthropic.claude-sonnet-5-5'),
+      lookupStoreApp: () => Promise.resolve({ status: 'found', app: { name: '', developer: '', url: '' } }),
     },
   };
 }
@@ -201,6 +202,25 @@ describe('preconditions, fallbacks and admin gating', () => {
   it('creates the connector and reports its config id', async () => {
     const h = harness({ 'GET /integrations/app_reviews_ios/apps': { apps: [] }, 'POST /integrations/app_reviews_ios/apps': { success: true, app: { id: 'app_7' } } });
     expect(await runPlanStep(event(connector, { claims: ADMIN_CLAIMS }), h.deps)).toMatchObject({ status: 'done', outputs: { app_config_id: 'app_7' }, model_calls: 0 });
+  });
+
+  it('fails without any API call when the store has no such app (an invented id never becomes a connector)', async () => {
+    const h = harness({ 'GET /integrations/app_reviews_ios/apps': { apps: [] }, 'POST /integrations/app_reviews_ios/apps': { success: true, app: { id: 'app_7' } } });
+    const asked: string[] = [];
+    h.deps.lookupStoreApp = (platform, id) => {
+      asked.push(`${platform}:${id}`);
+      return Promise.resolve({ status: 'missing' });
+    };
+    expect(await runPlanStep(event(connector, { claims: ADMIN_CLAIMS }), h.deps))
+      .toMatchObject({ status: 'failed', error: expect.stringContaining('No App Store app has id 1234567890') });
+    expect(asked).toStrictEqual(['ios:1234567890']);
+    expect(h.calls).toStrictEqual([]);
+  });
+
+  it('still creates the connector when the store could not be read', async () => {
+    const h = harness({ 'GET /integrations/app_reviews_ios/apps': { apps: [] }, 'POST /integrations/app_reviews_ios/apps': { success: true, app: { id: 'app_7' } } });
+    h.deps.lookupStoreApp = () => Promise.resolve({ status: 'unknown', reason: 'The App Store answered HTTP 503' });
+    expect(await runPlanStep(event(connector, { claims: ADMIN_CLAIMS }), h.deps)).toMatchObject({ status: 'done', outputs: { app_config_id: 'app_7' } });
   });
 
   it('files a refused company-memory edit as a proposal', async () => {

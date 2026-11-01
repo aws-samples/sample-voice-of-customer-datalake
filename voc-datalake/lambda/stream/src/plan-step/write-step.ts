@@ -21,6 +21,7 @@ import { preconditionFor, settlePrecondition, type PreconditionOutcome } from '.
 import { PLAN_STEP_WRITE_TOOLS, buildWriteRequest, extractOutputs, forbiddenFallback } from '../assistant/plan/write-requests.js';
 import type { WriteEnv } from '../assistant/plan/write-routes.js';
 import { describeIssues } from '../assistant/tools/spec.js';
+import { missingStoreAppRefusal } from '../assistant/tools/client/store-app-check.js';
 import { describeToolError, isAssistantToolError } from '../assistant/tools/errors.js';
 import type { CallerClaims, ClientToolDefinition } from '../assistant/types.js';
 import { failed, type PendingWrite, type PlanStepEvent, type PlanStepResult } from './event.js';
@@ -77,8 +78,16 @@ async function filledArgs(deps: PlanStepDeps, c: WriteContext, resolvedArgs: Rec
   return withFreeValues(resolvedArgs, values);
 }
 
-/** Run the write: precondition, request (403 fallback), outputs. */
+/** The store fields of a create_app_connector's args (already parsed by the tool's own schema). */
+function storeArgs(args: Record<string, unknown>): { source: string; app_id?: string; package_name?: string } {
+  const field = (name: string) => (typeof args[name] === 'string' ? { [name]: args[name] } : {});
+  return { source: typeof args.source === 'string' ? args.source : '', ...field('app_id'), ...field('package_name') };
+}
+
+/** Run the write: a create_app_connector's store check, precondition, request (403 fallback), outputs. */
 async function execute(deps: PlanStepDeps, c: WriteContext, toolName: string, args: Record<string, unknown>): Promise<PlanStepResult> {
+  const missingApp = toolName === 'create_app_connector' ? await missingStoreAppRefusal(storeArgs(args), deps.lookupStoreApp) : undefined;
+  if (missingApp !== undefined) return failed(missingApp);
   const read = preconditionFor(toolName, args);
   const outcome: PreconditionOutcome = read === undefined ? NO_PRECONDITION : settlePrecondition(toolName, args, await deps.invoke(read, c.claims));
   if (!outcome.ok) return failed(outcome.refusal);

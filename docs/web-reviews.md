@@ -17,7 +17,9 @@ until an administrator adds a page.
 - **AI assistant** (administrators): `create_app_connector` with `source: "web_reviews"`, `url` and optionally
   `max_pages` / `max_reviews`, approved on a card. In plan mode the assistant can find review pages with web search
   (`plan_lookup`), list each chosen URL as its own write on the plan card, then `run_source web_reviews` and wait
-  for the run ([assistant-plan-mode.md](assistant-plan-mode.md)).
+  for the run ([assistant-plan-mode.md](assistant-plan-mode.md)). It proposes only a URL copied from a web search
+  result that names the company (one search per site), never a URL built from a name, and says when a site has no
+  page for it ([scrapers.md → With the AI assistant](scrapers.md#with-the-ai-assistant-administrators)).
 - **API**: `POST /integrations/web_reviews/apps` with `{"app": {"app_name", "url", "max_pages"?,
   "max_reviews"?, "frequency_minutes"?, "enabled"?}}` (admin). The target is validated before it is saved
   (`lambda/shared/web_review_targets.py`): https only, the host must resolve to public addresses only (the shared

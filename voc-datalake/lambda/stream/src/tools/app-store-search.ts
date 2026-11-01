@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import { ServiceError } from '../lib/errors.js';
+import { cappedText } from './capped-body.js';
 
 const APP_STORE_SEARCH_URL = 'https://itunes.apple.com/search';
 const APP_STORE_TIMEOUT_MS = 5000;
@@ -47,30 +48,8 @@ export function appStoreSearchUrl(term: string, country: string): URL {
 
 const TOO_LARGE = 'The App Store answer is too large';
 
-/** Read the stream chunk by chunk; cancel it and refuse as soon as it passes `cap` bytes. */
-async function readCapped(reader: ReadableStreamDefaultReader<Uint8Array>, cap: number, chunks: readonly Uint8Array[] = [], total = 0): Promise<readonly Uint8Array[]> {
-  const { done, value } = await reader.read();
-  if (done) return chunks;
-  const next = total + value.byteLength;
-  if (next > cap) {
-    // A failed cancel changes nothing: the refusal below is the answer either way.
-    await reader.cancel().then(() => true, () => false);
-    throw new ServiceError(TOO_LARGE);
-  }
-  return readCapped(reader, cap, [...chunks, value], next);
-}
-
-/** The response body as text, refused past APP_STORE_MAX_BYTES (declared, or counted while it streams). */
-async function cappedText(response: Response): Promise<string> {
-  const declared = Number(response.headers.get('content-length') ?? '0');
-  if (declared > APP_STORE_MAX_BYTES) throw new ServiceError(TOO_LARGE);
-  if (response.body === null) return '';
-  const chunks = await readCapped(response.body.getReader(), APP_STORE_MAX_BYTES);
-  const decoder = new TextDecoder();
-  return chunks.map((chunk) => decoder.decode(chunk, { stream: true })).join('') + decoder.decode();
-}
-
-function parseApps(text: string): AppStoreApp[] {
+/** The `results` of an iTunes Search or Lookup answer as apps (results without an apps.apple.com link are dropped). */
+export function parseApps(text: string): AppStoreApp[] {
   const parsed = searchSchema.safeParse(JSON.parse(text));
   if (!parsed.success) throw new ServiceError('The App Store answered in an unexpected shape');
   return parsed.data.results.flatMap((raw) => {
@@ -90,7 +69,7 @@ export async function searchAppStore(term: string, country: string, fetchFn: Fet
     throw new ServiceError('The App Store could not be reached');
   });
   if (!response.ok) throw new ServiceError(`The App Store answered HTTP ${response.status}`);
-  const text = await cappedText(response);
+  const text = await cappedText(response, APP_STORE_MAX_BYTES, TOO_LARGE);
   try {
     return parseApps(text).slice(0, APP_STORE_RESULT_LIMIT);
   } catch (error) {

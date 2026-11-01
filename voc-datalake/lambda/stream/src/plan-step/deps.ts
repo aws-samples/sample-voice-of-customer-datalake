@@ -6,12 +6,14 @@
  *     (writes too) — the plan-step write invoker; reads of think-step tools go
  *     through the catalogue's own read-only invoker instead;
  *   - `catalogue`: the assistant tool catalogue (tool definitions exist once);
- *   - `converse` + `resolveModel`: Bedrock Converse on the `agent_worker` surface.
+ *   - `converse` + `resolveModel`: Bedrock Converse on the `agent_worker` surface;
+ *   - `lookupStoreApp`: does an App Store id / Google Play package exist (create_app_connector, #38).
  */
 import { ConverseCommand, type ConverseCommandOutput, type Message, type SystemContentBlock, type Tool } from '@aws-sdk/client-bedrock-runtime';
 import type { AssistantToolDefinition, CallerClaims } from '../assistant/types.js';
 import type { ApiCall } from '../assistant/tools/internal-api.js';
 import { invocationModelId } from '../bedrock/model-override.js';
+import type { StoreLookupFn } from '../assistant/tools/client/store-app-check.js';
 
 export interface PlanStepDeps {
   invoke(call: ApiCall, claims: CallerClaims): Promise<unknown>;
@@ -19,6 +21,7 @@ export interface PlanStepDeps {
   converse(command: ConverseCommand): Promise<ConverseCommandOutput>;
   /** The `agent_worker` model (admin override, else the surface default). */
   resolveModel(): Promise<string>;
+  lookupStoreApp: StoreLookupFn;
 }
 
 /** The step agents' surface in the admin model picker (shared/model_config.py). */

@@ -48,6 +48,8 @@ export function fakeDeps(routes: Record<string, unknown> = {}, overrides: Partia
     resolveAvatar: () => Promise.resolve(UNSET.value),
     fallbackModelId: undefined,
     searchAppStore: () => Promise.resolve([]),
+    // Found, without details: a connector test that does not stub the store sees no extra card text.
+    lookupStoreApp: () => Promise.resolve({ status: 'found', app: { name: '', developer: '', url: '' } }),
     readSourceRun: () => Promise.resolve(UNSET_ROW.value),
     // A fixed clock and an instant pause: a polling tool's loop runs without real waits.
     nowMs: () => 1_000_000,

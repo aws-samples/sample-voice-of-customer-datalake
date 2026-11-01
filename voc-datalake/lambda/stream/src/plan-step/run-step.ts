@@ -89,6 +89,7 @@ function counted(deps: PlanStepDeps): { deps: PlanStepDeps; calls: () => number 
       invoke: (call, claims) => deps.invoke(call, claims),
       catalogue: deps.catalogue,
       resolveModel: () => deps.resolveModel(),
+      lookupStoreApp: (platform, id) => deps.lookupStoreApp(platform, id),
       converse: (command) => {
         tally.calls += 1;
         return deps.converse(command);

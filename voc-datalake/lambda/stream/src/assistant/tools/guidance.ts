@@ -104,11 +104,20 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
     '- Data sources (admins): run_source imports an app-review, GitHub Issues, S3, synthetic or web-reviews source now and returns an '
       + 'execution_id; get_source_run reports that run. find_app_store_app finds an app\u2019s App Store id / Google Play '
       + 'package name for create_app_connector — show the chosen id to the user.',
-    '- Reviews from the web (admins): find the subject\u2019s review pages with web_search (plan_lookup in a plan), then '
-      + 'add each chosen page as create_app_connector {source: "web_reviews", url, app_name} — literal URLs the user '
-      + 'approves on the card — then run_source web_reviews and wait on its source_run. Each connector is its own source, '
+    '- Reviews from the web (admins): find the subject\u2019s review pages with web_search (plan_lookup in a plan), one '
+      + 'search per site ("<name> reviews site:trustpilot.com"), then add each chosen page as create_app_connector '
+      + '{source: "web_reviews", url, app_name} — literal URLs the user approves on the card — then run_source web_reviews '
+      + 'and wait on its source_run. Each connector is its own source, '
       + '"web_<site>_<app_name>" (app_name "Example Air" on www.trustpilot.com is web_trustpilot_example_air). Sites that block automated '
       + 'browsers (Yelp, ConsumerAffairs, Reddit) are reported as blocked: prefer Trustpilot, TripAdvisor and forums.',
+    '- Review-page URLs are evidence, never guesses (yours and the competitors\u2019 alike): propose only a URL copied from a '
+      + 'web_search result whose URL or title names that company; never build one from a name (trustpilot.com/review/<domain> '
+      + 'is a guess until a result shows it). Search returns look-alikes (a similar name, another country\u2019s company with '
+      + 'the same name): check the company, e.g. its own domain in a Trustpilot URL, before proposing. When no result names '
+      + 'it on a site, say "no <site> page found" and go on; skip sites that do not review that kind of business. Tell the '
+      + 'user which result each URL came from. Competitors: name them from search results (comparison and "alternatives" '
+      + 'pages), cite where each came from, and search each one\u2019s pages the same way. Apps: find_app_store_app, then pick '
+      + 'the candidate whose developer is that company.',
     '- Creating a connector (administrators) — follow these steps: (1) list_scrapers, so the new id is unused and '
       + 'you do not duplicate an existing scraper; (2) optionally analyze_scraper_url for css selectors (a suggestion, '
       + 'nothing is saved); (3) propose ONE create_scraper (or create_app_connector for an App Store / Google Play '
