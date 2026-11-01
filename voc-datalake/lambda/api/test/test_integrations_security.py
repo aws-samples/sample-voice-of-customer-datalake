@@ -860,7 +860,10 @@ class TestValueValidation:
         Regression guard: reintroducing a per-value cap below the service limit
         turns this 200 into a 400.
         """
-        big_configs = json.dumps([{'id': f's{i}', 'url': 'https://e.test'} for i in range(400)])
+        # Within the list bounds (shared/scraper_limits.py: ≤ 50 scrapers, ≤ 48 KiB) yet past 4 KiB.
+        big_configs = json.dumps([
+            {'id': f's{i}', 'name': f'Scraper {i} ' + 'x' * 150, 'url': 'https://e.test'} for i in range(40)
+        ])
         assert len(big_configs) > 4096, 'fixture must exceed the cap this test retires'
 
         mock_secrets.get_secret_value.return_value = secret_string({})
