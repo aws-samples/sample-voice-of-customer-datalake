@@ -90,6 +90,15 @@ User interface (frontend diffs only)
 - Numbers in metrics, tables and counters without `tabular-nums`, so columns jitter as values change.
 - A new `fetchApi` call with no dev-mock route and no `mock-coverage.json` entry is caught by `check:mock`; skip it.
 
+Tenets (`TENETS.md`, ranked; a lower tenet yields to a higher one)
+- A change that moves the platform further from a tenet is a BLOCKING item under the same grounding rule as any
+  other (trigger, call path, outcome). The ones a diff can show: a new fixed monthly cost on by default, not behind
+  an opt-in flag and listed in `OPT_IN_FIXED_COSTS` (tenet 7); a new delete or overwrite of customer data outside
+  `voc-retention` erasure (D1, D5); a rule enforced only in the UI and not by the API (4); an AI write that skips
+  the server-side way-of-working check in `shared/ai_writing.py` (3); a methodology step that can be skipped
+  silently (2). A gap TENETS.md already lists under "Where the platform stands today" is not a finding unless the
+  diff widens it.
+
 ## Method
 
 1. Enumerate every changed file in the chunk and read each one at the working tree.

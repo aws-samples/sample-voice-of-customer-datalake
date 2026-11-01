@@ -7,6 +7,10 @@
  * suppression audit, the template gates) synthesize this shape as well. It mirrors the audit synth's
  * GATED_CONTEXT (scripts/audit/py_assembly.py) plus data protection.
  *
+ * Every feature here is FREE when idle. The opt-in fixed costs (`snapStart`, `performanceTier`) are deliberately
+ * left out: lib/fixed-cost-guard.test.ts requires this shape to have no fixed cost, and synthesizes each of them
+ * on its own (OPT_IN_FIXED_COSTS in test-support/fixed-cost-rules.ts).
+ *
  * Not a superset of the default shape (measured: the default synth carries VocWebSearchStack model-access
  * grants this one does not), so suites synthesize both shapes rather than this one alone.
  */

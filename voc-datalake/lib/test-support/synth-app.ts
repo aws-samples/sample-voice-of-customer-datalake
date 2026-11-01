@@ -432,7 +432,7 @@ export function readAssembly(outdir: string): SynthResult {
     canonicalTemplate: (stackName) => raw(stackName)
       .replace(/\b[0-9a-f]{64}\b/g, '<ASSET_HASH>')
       // A Lambda version's logical id is `<fn>CurrentVersion<8 HEX><32-hex code hash>`
-      // (SnapStart functions, lib/utils/snapstart.ts): the suffix digests the code,
+      // (SnapStart functions with -c snapStart=true, lib/utils/snapstart.ts): the suffix digests the code,
       // so it moves with every Python edit exactly like an asset hash.
       .replace(/(CurrentVersion[0-9A-F]{8})[0-9a-f]{32}\b/g, '$1<CODE_HASH>'),
   };

@@ -87,6 +87,8 @@ or set it in `voc-datalake/cdk.context.json`. An invalid value fails the synth.
 | `inboundEmailDomain` (+ `inboundEmailHostedZoneId`, `inboundEmailHostedZoneName`, `inboundEmailRuleSet`, `inboundEmailCreateIdentity`) | none | Receives feedback by email through SES ([email-intake.md](email-intake.md)) |
 | `deploymentPrefix` | none | Namespaces a second copy in the same account and region ([Two Deployments](#two-deployments-in-one-account-and-region)) |
 | `mcpReservedConcurrency` | `20` | Reserved concurrency of the MCP endpoint ([below](#reserved-concurrency-of-the-mcp-endpoint--c-mcpreservedconcurrency)) |
+| `performanceTier` | `false` | `true` turns on every performance feature that carries a fixed monthly cost (today: `snapStart`); for a deployment that runs as a managed service rather than a sample ([lambda-sizing.md](lambda-sizing.md#the-performance-tier--c-performancetier)) |
+| `snapStart` | `false` | `true` turns on Lambda SnapStart for the four cold-start-bound APIs (a fixed monthly cache charge, about $20; off by default per [TENETS.md](../TENETS.md), tenet 7) ([lambda-sizing.md](lambda-sizing.md#snapstart-off-by-default)) |
 | `mcpTokenMinting`, `mcpOAuthCursorCallbacks`, `mcpOAuthWebCallbacks`, `mcpOAuthResourceIndicator` | see [mcp.md](mcp.md) | MCP token minting and OAuth client settings |
 | `brandName` | `MyBrand` (`VoC Analytics` in the committed file) | Brand name stamped on feedback forms and their submissions |
 | `primaryLanguage` | `en` | Language that enrichment translates feedback into |
@@ -778,8 +780,18 @@ RestApi rather than CDK's default of two per method (`frugalIntegration` in `lib
 preflights exist only on resources that serve a browser method, and several route families sit behind a
 `{proxy+}`. Never put a `{proxy+}` beside an existing `{param}` (or the reverse): API Gateway allows one variable
 path part per level, and CloudFormation creates before it deletes, so the update fails.
-`lib/stacks/api-stack-cors-preflight.test.ts`, `api-stack-snapstart.test.ts` (at least 75 resources of headroom)
-and `api-stack-invoke-permissions.test.ts` check these rules.
+`lib/stacks/api-stack-cors-preflight.test.ts`, `api-stack-snapstart.test.ts` (at least 75 resources of headroom,
+measured in the largest shape: every plugin on and `-c snapStart=true`, which adds a version and an alias for each of
+four functions) and `api-stack-invoke-permissions.test.ts` check these rules.
+
+**No fixed cost by default (for contributors).** `lib/fixed-cost-guard.test.ts` synthesizes every stack, in the default
+and the all-features shape, and fails on any resource or setting that bills whether or not the platform is used: WAF,
+SnapStart, provisioned concurrency, NAT gateways, Elastic IPs, interface VPC endpoints, EC2 instances, ECS services,
+RDS, ElastiCache, DAX, OpenSearch, MSK, Redshift, DocumentDB, Neptune, Global Accelerator, PROVISIONED DynamoDB or Kinesis capacity, an API Gateway cache cluster, a CloudFront dedicated IP, or a hosted zone
+the app creates ([TENETS.md](../TENETS.md), tenet 7). Such a feature goes behind an opt-in context flag, listed in
+`OPT_IN_FIXED_COSTS` (`lib/test-support/fixed-cost-rules.ts`) with exactly what it adds (today: `snapStart`, and `performanceTier`, which turns it on).
+A new performance feature reads `performanceTierEnabled` (`lib/utils/performance-tier.ts`) as well as its own flag. Lambda reserved concurrency costs nothing
+and is allowed.
 
 ### Lambda sizing and post-deploy capacity check
 

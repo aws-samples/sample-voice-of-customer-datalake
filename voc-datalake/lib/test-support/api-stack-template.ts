@@ -255,7 +255,7 @@ function jsonChildren(value: unknown): unknown[] {
  *
  *  CDK renders the URI as an `Fn::Join` whose parts include
  *  `{ 'Fn::GetAtt': [<function logical id>, 'Arn'] }` — or, for a SnapStart
- *  function integrated through its published alias (lib/utils/snapstart.ts),
+ *  function integrated through its published alias (`-c snapStart=true`, lib/utils/snapstart.ts),
  *  `{ Ref: <alias logical id> }`, resolved here to the alias's function. A MOCK
  *  integration (CORS preflight) has no URI and yields `undefined`. */
 function integrationFunctionId(uri: unknown, aliasFunctions: ReadonlyMap<string, string>): string | undefined {

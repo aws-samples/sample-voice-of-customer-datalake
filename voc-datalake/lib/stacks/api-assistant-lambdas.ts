@@ -83,7 +83,7 @@ export function createAssistantLambdas(
   }));
 
   const memoryLambda = new lambda.Function(stack, 'MemoryApi', {
-    ...snapStartFunctionProps(), // GET /memory cold start (lib/utils/snapstart.ts)
+    ...snapStartFunctionProps(stack), // GET /memory cold start (lib/utils/snapstart.ts)
     // Shared constant: the agent conductor invokes this by name (retrieve).
     functionName: ctx.uniqueName(MEMORY_API_FUNCTION_BASE_NAME),
     runtime: lambda.Runtime.PYTHON_3_14,

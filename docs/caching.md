@@ -131,8 +131,9 @@ With these, the JavaScript fetched before any page chunk (entry plus `moduleprel
 went from 1,699 KB to 937 KB (516 → 291 KB gzipped).
 
 Pages that already make one round of requests (Participants, Data Explorer) are left with the cold start. Lambda
-SnapStart would cut it to a restore (p50 460–500 ms on the APIs that use it, [lambda-sizing.md](lambda-sizing.md)),
-but adds a monthly cache charge, so it is not enabled for them.
+SnapStart would cut it to a restore (p50 460–500 ms, measured on the four APIs that support it), but it is a fixed
+monthly cache charge, so it is off by default ([TENETS.md](../TENETS.md), tenet 7) and opt-in with
+`-c snapStart=true` for those four only ([lambda-sizing.md](lambda-sizing.md#snapstart-off-by-default)).
 
 ## Expected savings
 

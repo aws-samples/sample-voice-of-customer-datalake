@@ -40,7 +40,7 @@ import { Construct } from 'constructs';
 
 import { nonNegativeIntegerContext } from '../utils/context-flag';
 import { GLOBAL_MCP_SERVICE_NAME } from '../utils/function-names';
-import { snapStartAlias, snapStartFunctionProps } from '../utils/snapstart';
+import { snapStartFunctionProps, snapStartInvokeTarget } from '../utils/snapstart';
 import { workerRole } from '../utils/worker-lambda';
 
 /** Must equal GLOBAL_TOKEN_PK / AUDIT_PK_PREFIX in lambda/shared/mcp_global_tokens.py (pinned by a test). */
@@ -119,14 +119,14 @@ export function leadingKeys(table: dynamodb.ITable, actions: string[], operator:
 export class GlobalMcp extends Construct {
   public readonly mcpFunction: lambda.Function;
   public readonly tokensFunction: lambda.Function;
-  /** The tokens function's published `live` alias (SnapStart): every route integrates through it. */
-  public readonly tokensAlias: lambda.IFunction;
+  /** What every tokens route integrates: the function, or its `live` alias with `-c snapStart=true` (lib/utils/snapstart.ts). */
+  public readonly tokensInvokeTarget: lambda.IFunction;
 
   constructor(scope: Construct, id: string, private readonly props: GlobalMcpProps) {
     super(scope, id);
     this.mcpFunction = this.createMcpFunction();
     this.tokensFunction = this.createTokensFunction();
-    this.tokensAlias = snapStartAlias(this.tokensFunction);
+    this.tokensInvokeTarget = snapStartInvokeTarget(this.tokensFunction);
     this.wireRoutes();
   }
 
@@ -201,7 +201,7 @@ export class GlobalMcp extends Construct {
     return this.pythonFunction('McpTokensApi', 'voc-mcp-tokens-api', 'mcp_tokens_handler.py', role, {
       PROJECTS_TABLE: projectsTable.tableName,
       JOBS_TABLE: jobsTable.tableName,
-    }, 1024, snapStartFunctionProps()); // 1024: CPU-bound (98 % p95 at 512 MB, docs/lambda-sizing.md); SnapStart: GET /connect/tokens cold start
+    }, 1024, snapStartFunctionProps(this)); // 1024: CPU-bound (98 % p95 at 512 MB, docs/lambda-sizing.md); SnapStart (opt-in): GET /connect/tokens cold start
   }
 
   private wireRoutes(): void {
@@ -228,8 +228,8 @@ export class GlobalMcp extends Construct {
     // (GET/POST /connect/tokens), one token with its audit log (GET .../{token_id}), revoke (DELETE).
     // The handler routes by path and answers 404 to anything else. `defaultMethodOptions` keeps the
     // authorizer on the proxy (a proxy without it is AuthorizationType.NONE).
-    // Through the published `live` alias: SnapStart never snapshots `$LATEST`.
-    const tokensIntegration = new apigateway.LambdaIntegration(this.tokensAlias, integrationOptions);
+    // With -c snapStart=true, through the published `live` alias: SnapStart never snapshots `$LATEST`.
+    const tokensIntegration = new apigateway.LambdaIntegration(this.tokensInvokeTarget, integrationOptions);
     apiRoot.addResource('connect')
       .addProxy({ defaultIntegration: tokensIntegration, anyMethod: true, defaultMethodOptions: authMethodOptions })
       .addCorsPreflight(browserPreflight);

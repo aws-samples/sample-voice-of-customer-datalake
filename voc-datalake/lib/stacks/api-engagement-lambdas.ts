@@ -127,7 +127,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   }));
 
   const feedbackFormLambda = new lambda.Function(stack, 'FeedbackFormApi', {
-    ...snapStartFunctionProps(), // GET /feedback-forms cold start (lib/utils/snapstart.ts)
+    ...snapStartFunctionProps(stack), // GET /feedback-forms cold start (lib/utils/snapstart.ts)
     functionName: ctx.uniqueName(FEEDBACK_FORM_API_FUNCTION_BASE_NAME),
     runtime: lambda.Runtime.PYTHON_3_14,
     architecture: lambda.Architecture.ARM_64,

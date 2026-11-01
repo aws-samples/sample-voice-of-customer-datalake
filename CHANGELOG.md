@@ -17,6 +17,27 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.70.00] - 2026-11-01
+
+Project tenets in TENETS.md, checked on every pull request, in the CDK suite and by the reviewers; SnapStart is now opt-in.
+
+### Added
+
+- `TENETS.md` (linked from the README and CONTRIBUTING.md): the ranked product tenets 1–7 (new tenet 7: fully serverless, cost-optimised by default, performance by choice), the data lake tenets D1–D7, where the platform stands against each today, and the pull request checklist.
+- The PR description check requires a `## Tenets` section with one line `Tenets touched: <ids> | none`; the PR template carries it. The ids are pinned against TENETS.md by a test in `scripts/validate.sh`.
+- A fixed-cost gate in the CDK suite (`voc-datalake/lib/fixed-cost-guard.test.ts`): a default synth fails on a WAF, SnapStart, provisioned concurrency or capacity, a NAT gateway, an Elastic IP, an interface VPC endpoint, an always-on database, cache, cluster or container (RDS, ElastiCache, DAX, OpenSearch, MSK, Redshift, DocumentDB, Neptune, EC2, ECS), a Global Accelerator, an API Gateway cache, a CloudFront dedicated IP or a created hosted zone. Opt-in flags list exactly what they add ([docs/deployment.md](docs/deployment.md)).
+- `-c performanceTier=true`: one switch for a deployment that chooses performance over the lowest bill; today it turns on SnapStart ([docs/lambda-sizing.md](docs/lambda-sizing.md#the-performance-tier--c-performancetier)).
+- The pre-push and Kiro reviewers (`.kiro/agents/`, `.kiro/steering/tenets.md`) check changes against TENETS.md and report a violation as blocking.
+
+### Changed
+
+- Lambda SnapStart is off by default for the four APIs that had it (integrations, feedback forms, memory, MCP tokens): API Gateway integrates the plain functions. Opt in with `-c snapStart=true` or `-c performanceTier=true` ([docs/lambda-sizing.md](docs/lambda-sizing.md#snapstart-off-by-default)).
+
+### Upgrade notes
+
+- A default deploy removes the four SnapStart versions and `live` aliases from VocApiStack and replaces their invoke permissions; the first request after an idle period on those four APIs takes a normal cold start again, and the snapshot cache charge (about $20 a month) stops. Deploy with `-c snapStart=true` (or `"snapStart": true` in `cdk.context.json`) to keep SnapStart.
+- Pull request descriptions now need a `## Tenets` section (the check is advisory until `PR_CHECK_ENFORCED` is turned on).
+
 ## [5.69.00] - 2026-11-01
 
 Administration shows Claude models the account cannot call yet, with small fixes from the backlog.

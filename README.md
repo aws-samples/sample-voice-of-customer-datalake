@@ -2,6 +2,8 @@
 
 A serverless AWS sample that collects customer feedback from review sites, app stores, GitHub, imports, forms, email and feedback boards, and enriches every review with Amazon Bedrock, Comprehend and Translate. Product teams then explore the feedback on dashboards and a per-user morning brief, turn it into personas, research, PR/FAQs, PRDs and prototypes, and prioritize the work together. An AI assistant on every page, autonomous agents and an MCP server for external AI tools work on the same data, each with the permissions of the person they act for.
 
+Every change is held to the project's [Tenets](TENETS.md): data first, the methodology prevails, AI as a dial, headless by design, fully serverless with no fixed cost by default.
+
 ![Dashboard](docs/images/screenshots/dashboard.jpg)
 
 ## 📸 Screenshots
@@ -205,6 +207,8 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | Security | Cognito, IAM, KMS, Secrets Manager, signed CloudFront URLs |
 
 ## 📚 Documentation
+
+[TENETS.md](TENETS.md) lists the ranked product tenets and the data lake tenets every change is checked against, where the platform stands against each, and the pull request checklist.
 
 ### Deploy and operate
 

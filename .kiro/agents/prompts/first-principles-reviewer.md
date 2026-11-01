@@ -85,7 +85,8 @@ those include: the Lambda-per-domain split (20 KB IAM policy limit), the five-st
 consumer), no WAF (cost), admin-only scraper / brand / import writes (#242: shared secrets, config and Bedrock spend), assist twins for
 every model-backed route (29 s REST limit), every frontend API call mocked and listed in `mock-coverage.json`, the
 human-owned quality gates, a CHANGELOG entry and version bump per change, Zod normalisation at every list/query
-boundary. Do not question them; do not count their mandated pieces as speculative surface.
+boundary, and the tenets in `TENETS.md` (for example: no fixed monthly cost by default, performance features
+opt-in behind a flag). Do not question them; do not count their mandated pieces as speculative surface.
 
 Do not reason from an assumed user count in either direction ("a sample has one user, so this guard is
 unnecessary" or "it will be multi-tenant one day"). Judge each item by the harm it removes and the boundary it

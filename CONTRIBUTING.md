@@ -82,6 +82,13 @@ the same number in strict SemVer (`2.9.0`, via `npm version 2.9.0 --no-git-tag-v
 `scripts/check-version.mjs`, a `validate.sh` step, fails when they disagree. Branches that feed a release branch
 add their bullets under `[Unreleased]`, and whoever merges them cuts the release.
 
+## Tenets
+
+Read [TENETS.md](TENETS.md) before you design a change. Every change is checked against it: the pull request
+description names the tenets it touches (`## Tenets`, `Tenets touched: <ids> | none`, checked by the PR description
+check), the CDK suite fails on a new fixed monthly cost that is on by default (tenet 7), and the pre-push and Kiro
+reviewers report a tenet violation as blocking.
+
 ## Quality gates
 `npm run validate` (`scripts/validate.sh`) runs every gate: ruff, vulture (dead code), pyright, a check that every
 pytest test asserts, tsc for each TypeScript program (all with `noUncheckedIndexedAccess`, specs included), ESLint in
