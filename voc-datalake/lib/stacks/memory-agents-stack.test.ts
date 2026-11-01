@@ -453,7 +453,8 @@ describe('memory + agents DynamoDB grants (memory-agents-dynamodb-grants.json)',
 describe('memory + agents storage (VocCoreStack)', () => {
   let template: Template;
   beforeAll(() => {
-    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
+    // -c protectData=false: these cases pin the unprotected (demo) teardown shape.
+    const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], protectData: false } });
     template = Template.fromStack(new VocCoreStack(app, 'TestCore', { env: ENV }));
   });
 

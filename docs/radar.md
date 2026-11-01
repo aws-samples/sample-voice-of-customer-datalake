@@ -60,7 +60,7 @@ Table layout (`lambda/shared/radar_store.py`, `lambda/shared/radar_releases.py`)
 | `SETTINGS#radar` | `config` | the scan settings (Administration -> Sources -> Radar) |
 | `SETTINGS#radar` | `brands` | the brand list `{brands: [{label, domains, language?, feed_urls?, search_terms?, exclude_terms?}], updated_at, updated_by}` (`lambda/shared/radar_brands.py`, `radar_brand_fields.py`, `radar_brand_terms.py`) |
 
-The `voc-radar` table is in VocCoreStack: on demand, KMS, point-in-time recovery, retained on replacement, and protected by `-c protectData=true` like the other data tables.
+The `voc-radar` table is in VocCoreStack: on demand, KMS, point-in-time recovery, retained on replacement, and protected by `-c protectData` (on by default) like the other data tables.
 
 ## News: web search, Exa and the brand's feeds
 

@@ -65,7 +65,7 @@ The screenshots come from the local mock (`npm run dev`), which serves fictional
 - **Model choice**: a Claude model per AI surface over a curated allowlist, a Test button per model, and automatic fallback when a model has no capacity ([Deployment Guide](docs/deployment.md#pinning-all-ai-surfaces-to-one-model))
 - **Privacy controls**: per-user category and source access, per-source PII redaction, restricted sources, retention and erasure ([Source Policies](docs/source-policies.md))
 - **Diagnostics**: system errors, failure queues and opt-in CloudWatch alarms in Administration → System → Logs ([Deployment Guide](docs/deployment.md#system-errors-administration--system--logs--system-errors))
-- **Deployment options**: `protectData` for production, EU-only inference, several copies in one account ([Deployment Guide](docs/deployment.md), [EU Deployment](docs/eu-deployment.md))
+- **Deployment options**: customer data kept on teardown by default (`protectData=false` for demos), EU-only inference, several copies in one account ([Deployment Guide](docs/deployment.md), [EU Deployment](docs/eu-deployment.md))
 - **Security**: Cognito sign-in with opt-in passkeys, least-privilege IAM per Lambda, a customer-managed KMS key, signed CloudFront URLs and Secrets Manager
 - **Nine UI languages**: English, Spanish, French, German, Portuguese, Japanese, Chinese, Korean and Polish, chosen on the Account page
 
@@ -160,11 +160,11 @@ Plugins and menu items are switched on or off in `voc-datalake/cdk.context.json`
 
 After a change, run `npm run generate:config`, then deploy: a plugin change needs `npm run deploy:all`, a menu-only change `npm run deploy:frontend`.
 
-Common deploy options, passed as `-c <key>=<value>` (for example `npm run deploy:infra -- -c protectData=true`):
+Common deploy options, passed as `-c <key>=<value>` (for example `npm run deploy:infra -- -c inferenceScope=eu`):
 
 | Option | Effect |
 |--------|--------|
-| `protectData=true` | Keep tables, buckets, the KMS key and the user pool when the stacks are deleted. Use it for production |
+| `protectData=false` | Delete tables, buckets, the KMS key and the user pool with the stacks (demos). The default (`true`) keeps them; deploy with `false` before a teardown that should delete them ([Deployment Guide](docs/deployment.md#production-protectdata)) |
 | `inferenceScope=eu` | Keep Bedrock inference in EU regions ([EU Deployment](docs/eu-deployment.md)) |
 | `enableWebSearch=false` | Don't deploy the web search gateway (no us-east-1 stack) |
 | `emailFrom=<address>` | Send participant asks and board sign-in codes through Amazon SES |

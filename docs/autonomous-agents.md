@@ -270,7 +270,7 @@ decided) or the agent already has another active run. The run view carries `need
   judges a resumed run's staleness (24 h) from `resumed_at`. The memory extractor is queued again when the resumed
   run finishes; duplicates of what the first stop taught are merged (same supporter, no extra weight).
 
-## Storage — `voc-agents` (Core stack, on-demand, KMS, PITR, deleted with the stack)
+## Storage — `voc-agents` (Core stack, on-demand, KMS, PITR, kept on stack deletion unless `-c protectData=false`)
 
 | pk | sk | Row |
 |---|---|---|
@@ -285,8 +285,8 @@ decided) or the agent already has another active run. The run view carries `need
 
 Index: `gsi1-by-agents-listing`. Agents are archived, never deleted. The table (`createEncryptedTable` in
 `core-stack.ts`) is encrypted with the stack's customer-managed KMS key, has point-in-time recovery and is
-kept while the platform runs (no TTL) and deleted with the stack (pinned by
-`lib/stacks/memory-agents-stack.test.ts`; back up first, [Deployment → Teardown](deployment.md#teardown-deletes-everything-back-up-first)); plan rows inherit that.
+kept while the platform runs (no TTL), kept on stack deletion by default (`protectData`) and deleted with the stack only
+under `-c protectData=false` (pinned by `lib/stacks/memory-agents-stack.test.ts`; back up first, [Deployment → Teardown](deployment.md#teardown-with--c-protectdatafalse-back-up-first)); plan rows inherit that.
 
 ## Plans — approved assistant plans on the same runtime
 
