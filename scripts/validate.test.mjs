@@ -114,3 +114,23 @@ describe('validate.sh --lane (CI runs one lane per job)', () => {
   });
 });
 
+describe('validate.sh coverage baseline mode (local prunes graduated rows, CI stays strict)', () => {
+  const banner = (env) => {
+    const result = spawnSync('/bin/bash', [SCRIPT, '--dry-run', '--lane', 'web'], {
+      encoding: 'utf8', env: { ...process.env, VALIDATE_LOG_DIR: join(logRoot, `banner-${runs += 1}`), ...env },
+    })
+    return result.stdout.split('\n')[0]
+  }
+  it('is strict on GitHub Actions', () => {
+    assert.match(banner({ GITHUB_ACTIONS: 'true' }), /coverage baseline strict \(CI\)/)
+  })
+  it('prunes graduated rows on a local run', () => {
+    const env = { ...process.env }
+    delete env.GITHUB_ACTIONS
+    const result = spawnSync('/bin/bash', [SCRIPT, '--dry-run', '--lane', 'web'], {
+      encoding: 'utf8', env: { ...env, VALIDATE_LOG_DIR: join(logRoot, `banner-${runs += 1}`) },
+    })
+    assert.match(result.stdout.split('\n')[0], /graduated rows pruned \(local\)/)
+  })
+})
+

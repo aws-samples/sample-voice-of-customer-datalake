@@ -295,10 +295,13 @@ for lane in $(printf '%s\n' "${S_LANE[@]}" | awk '!seen[$0]++'); do
     fi
   done
 done
-if [[ "${#LANES[@]}" -eq 0 && "$HAS_FIRST" -eq 0 ]]; then printf 'validate: no step matches --only %s --lane %s\n' "$ONLY" "$LANE_ONLY" >&2; exit 2; fi
+if [[ "${#LANES[@]}" -eq 0 && "$HAS_FIRST" -eq 0 ]]; then
+  printf 'validate: no step matches%s%s\n' "${ONLY:+ --only $ONLY}" "${LANE_ONLY:+ --lane $LANE_ONLY}" >&2; exit 2
+fi
 T_ALL=$(date +%s)
 FIRST_NOTE=""; [[ "$HAS_FIRST" -eq 1 ]] && FIRST_NOTE=" after pytest alone"
-printf 'validate: %s lane(s) [%s]%s, pytest workers %s, logs in %s\n' "${#LANES[@]}" "${LANES[*]:-}" "$FIRST_NOTE" "$VALIDATE_PYTEST_WORKERS" "$LOG_DIR"
+COVERAGE_NOTE="coverage baseline strict (CI)"; [[ -n "$COVERAGE_PRUNE" ]] && COVERAGE_NOTE="coverage baseline: graduated rows pruned (local)"
+printf 'validate: %s lane(s) [%s]%s, pytest workers %s, %s, logs in %s\n' "${#LANES[@]}" "${LANES[*]:-}" "$FIRST_NOTE" "$VALIDATE_PYTEST_WORKERS" "$COVERAGE_NOTE" "$LOG_DIR"
 PIDS=(); DONE=()
 stop_all() { local p; for p in "${PIDS[@]+"${PIDS[@]}"}"; do kill_tree "$p"; done; }   # bash 3.2 + set -u: empty-safe
 FAILED=0; STOPPED=0
@@ -363,6 +366,11 @@ for i in "${!S_NAME[@]}"; do
   printf '%s\t%s\t%s\t%s\n' "$status" "$dur" "${S_LANE[$i]}" "${S_NAME[$i]}" >> "$LOG_DIR/timings.tsv"
 done
 printf '%-8s %6s  wall clock\n' total "$TOTAL"
+# A local run may have deleted graduated coverage-baseline rows (--prune-graduated): say so where it is read, at the end.
+PRUNED="$(cd "$ROOT" && git status --porcelain -- scripts/coverage/baselines 2>/dev/null || true)"
+if [[ -n "$COVERAGE_PRUNE" && -n "$PRUNED" ]]; then
+  printf '\nvalidate: COMMIT the pruned coverage baseline (graduated rows were deleted; CI fails without them):\n%s\n' "$PRUNED"
+fi
 
 if [[ "$FAILED" -ne 0 ]]; then
   while IFS=$'\t' read -r i rc _dur; do
