@@ -153,8 +153,9 @@ def lint repo                               "jscpd"                             
 def lint repo                               "actions: actionlint + zizmor"       'cd "$ROOT" && node --test scripts/actions-lint.test.mjs && bash scripts/actions-lint.sh'
 def tsc  bridge                             "node: kiro-acp-bridge tests"        'cd "$ROOT/tools/kiro-acp-bridge" && node --test test/*.test.mjs'
 
-# Tests that need the built SPA: the CDK stacks stage frontend/dist as an asset. Built once per run.
-def test frontend,frontend-static,cdk,cdk-tests,audit,audit-py-synth "vite build: frontend" 'cd "$FRONTEND" && npx vite build --logLevel warn'
+# Tests that need the built SPA: the CDK stacks stage frontend/dist as an asset. Built once per run. Its groups
+# include those of every step that synthesizes the app (audit-py-synth, audit-tools), so `--only <group>` builds it too.
+def test frontend,frontend-static,cdk,cdk-tests,audit,audit-py-synth,audit-tools "vite build: frontend" 'cd "$FRONTEND" && npx vite build --logLevel warn'
 # Code audit (the detectors are described below): the CDK-contract and bundle-aware detectors share one offline synth,
 # cached in .cache/audit/ (py_assembly.py). They run in ONE step, one after another (every one runs; the
 # worst exit wins), so the cache is built once and no two synths ever write it at the same time. The synth
