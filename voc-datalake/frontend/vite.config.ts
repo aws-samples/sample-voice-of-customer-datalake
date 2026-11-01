@@ -4,12 +4,13 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
-import { changelogPlugin } from './changelogPlugin'
+import { changelogPlugin } from './changelogPlugin.ts'
 /**
- * Rollup `manualChunks`: which vendor packages share a chunk. A package the app imports directly that is
- * ALSO a dependency of a listed package lands in that package's chunk unless it is listed itself: `clsx`
- * (every page's class helper) is a recharts dependency, so the app shell imported 389 KB of charts on every
- * first load until it was listed beside React. `src/build/vendorChunks.test.ts` fails when another shared
+ * Which vendor packages share a chunk (Rolldown `codeSplitting.groups`, built by `vendorChunkGroups` below).
+ * A group also captures its packages' dependencies, so a package the app imports directly that is ALSO a
+ * dependency of a listed package lands in that package's chunk unless it is listed itself: `clsx` (every
+ * page's class helper) is a recharts dependency, so the app shell imported 389 KB of charts on every first
+ * load until it was listed beside React. `src/build/vendorChunks.test.ts` fails when another shared
  * dependency is left out (docs/caching.md, "First load").
  */
 import VENDOR_CHUNKS from './vendorChunks.json' with { type: 'json' }
@@ -132,6 +133,38 @@ function findUp(name: string): string | null {
   return step(process.cwd(), 0)
 }
 
+/** True when a module id lives in `pkg`'s folder under some node_modules (either path separator). */
+function isInPackage(moduleId: string, pkg: string): boolean {
+  return moduleId.replaceAll('\\', '/').includes(`/node_modules/${pkg}/`)
+}
+
+/** The fields of a Rolldown `codeSplitting.groups` entry this config sets. */
+interface VendorChunkGroup {
+  readonly name: string
+  readonly test: (moduleId: string) => boolean
+  readonly priority: number
+  readonly tags?: ['$initial']
+}
+
+/**
+ * Two Rolldown code-splitting groups per vendorChunks.json entry, both named after it. The first takes the
+ * package modules the app shell loads (`$initial`) and is claimed first, so a package shared by two vendors
+ * lands in the one the shell needs; the second takes the rest. A lazily imported entry of a shell package
+ * (`react-dom/server`, used only by the print exports) then gets a lazy chunk of its own instead of riding
+ * in `vendor-react` on every first load. Within a tier, the earlier entry wins, so React (listed first)
+ * never rides in a later vendor's chunk. Each group also captures its packages' dependencies.
+ */
+function vendorChunkGroups(chunks: Readonly<Record<string, readonly string[]>>): VendorChunkGroup[] {
+  const entries = Object.entries(chunks)
+  const groupsFor = (tier: 'initial' | 'lazy'): VendorChunkGroup[] => entries.map(([name, packages]) => ({
+    name,
+    test: (moduleId: string) => packages.some((pkg) => isInPackage(moduleId, pkg)),
+    priority: tier === 'initial' ? 1 : 0,
+    ...(tier === 'initial' ? { tags: ['$initial'] } : {}),
+  }))
+  return [...groupsFor('initial'), ...groupsFor('lazy')]
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), changelogPlugin()],
   define: {
@@ -147,10 +180,10 @@ export default defineConfig({
     'import.meta.env.BUILD_TIME': JSON.stringify(new Date().toISOString()),
   },
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         // vendorChunks.json (see its import above): clsx sits beside React, not in the recharts chunk.
-        manualChunks: VENDOR_CHUNKS,
+        codeSplitting: { groups: vendorChunkGroups(VENDOR_CHUNKS) },
       },
     },
   },

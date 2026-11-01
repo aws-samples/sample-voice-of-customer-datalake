@@ -1,8 +1,8 @@
 /**
- * vendorChunks.json (vite.config.ts `manualChunks`): a package the app imports itself never rides
+ * vendorChunks.json (vite.config.ts `codeSplitting.groups`): a package the app imports itself never rides
  * inside another vendor's chunk.
  *
- * Rollup puts an unlisted dependency of a listed package into that package's chunk. When the
+ * The bundler puts an unlisted dependency of a listed package into that package's chunk. When the
  * app imports the same dependency, every page that uses it loads the whole chunk: `clsx`
  * inside `vendor-recharts` made the app shell import 389 KB of charts on every first load.
  */

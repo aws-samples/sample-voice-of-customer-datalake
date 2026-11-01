@@ -142,7 +142,7 @@ describe('Account — tab bar with deep links', () => {
     const paths = Object.keys(sources)
     expect(paths.length).toBeGreaterThan(100)
     expect(paths.filter((path) => path.includes('UserProfileModal'))).toStrictEqual([])
-    expect(Object.entries(sources).filter(([, text]) => String(text).includes('UserProfileModal')).map(([path]) => path)).toStrictEqual([])
+    expect(Object.entries(sources).filter(([, text]) => text.includes('UserProfileModal')).map(([path]) => path)).toStrictEqual([])
   })
 })
 
