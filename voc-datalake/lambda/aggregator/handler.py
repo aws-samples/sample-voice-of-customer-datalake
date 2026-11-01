@@ -221,6 +221,7 @@ Known residuals
   same condition (at most one count, in a row that is ageing out), self-limiting
   once the legacy rows are gone, and strictly smaller than the over-count above.
 """
+import copy
 import os
 import secrets
 import sys
@@ -233,12 +234,12 @@ from datetime import UTC, datetime
 from decimal import Decimal, localcontext
 from enum import Enum
 from itertools import groupby
-from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType
 from aws_lambda_powertools.utilities.batch.exceptions import ExceptionInfo
 from aws_lambda_powertools.utilities.data_classes.dynamo_db_stream_event import DynamoDBRecord
-from boto3.dynamodb.types import DYNAMODB_CONTEXT, TypeDeserializer
+from boto3.dynamodb.types import DYNAMODB_CONTEXT
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.aws import get_dynamodb_resource, is_conditional_check_failure
@@ -2144,24 +2145,14 @@ def _rebucket_average(
     return int(reversed_) + int(applied)
 
 
-_DESERIALIZER: Final = TypeDeserializer()
+def deserialize_image(image: dict) -> dict:
+    """A copy of a stream image Powertools has already deserialized (``record.dynamodb.new_image``).
 
-
-def deserialize_image(image: dict, *, raw: bool = False) -> dict:
-    """A stream image as a plain dict.
-
-    The production path passes ``record.dynamodb.new_image`` / ``old_image``, which
-    Powertools' ``DynamoDBRecord`` has ALREADY deserialized: it is copied as it is, so a map
-    attribute such as ``dimensions = {'feedback_type': 'bug'}`` reaches the counters whatever
-    its keys are. ``raw=True`` is for a caller holding DynamoDB's wire format (``{'S': ...}``,
-    ``{'M': {...}}``); every value is then deserialized by boto3, nested maps and lists
-    included. The old version guessed per value and treated every dict as a wire value, so it
-    dropped deserialized maps: the per-dimension and tag counters were never written before
-    5.68.01.
+    Values are taken as they are, map and list attributes included (see CHANGELOG 5.68.01: reading
+    them as DynamoDB wire values dropped every review's ``dimensions``). The copy is deep, so no
+    later step can change the record's own image.
     """
-    if not raw:
-        return dict(image)
-    return {key: _DESERIALIZER.deserialize(value) for key, value in image.items()}
+    return copy.deepcopy(dict(image))
 
 
 def is_ttl_expiry(record: DynamoDBRecord) -> bool:
