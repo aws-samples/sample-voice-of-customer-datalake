@@ -292,7 +292,7 @@ SURFACE_SERVICE_TIERS = {
 # Mirrored by lib/utils/model-allowlist.ts::scopedModelId and the stream
 # Lambda's invocationModelId (model-override.ts).
 INFERENCE_SCOPE_ENV = "BEDROCK_INFERENCE_SCOPE"
-_GLOBAL_PREFIX = "global."
+GLOBAL_PROFILE_PREFIX = "global."
 _SCOPE_PREFIXES = {"eu": "eu."}
 
 
@@ -312,9 +312,9 @@ def invocation_model_id(model_id: str) -> str:
     already-scoped id) is returned unchanged, so the mapping is idempotent.
     """
     prefix = _SCOPE_PREFIXES.get(inference_scope())
-    if prefix is None or not model_id.startswith(_GLOBAL_PREFIX):
+    if prefix is None or not model_id.startswith(GLOBAL_PROFILE_PREFIX):
         return model_id
-    return prefix + model_id[len(_GLOBAL_PREFIX):]
+    return prefix + model_id[len(GLOBAL_PROFILE_PREFIX):]
 
 
 def _scope_model_id_param(params: dict[str, object], **_kwargs: object) -> None:

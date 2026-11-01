@@ -45,8 +45,9 @@ Administration shows Claude models the account cannot call yet, with small fixes
 
 ### Security
 
-- `PUT /integrations/webscraper/credentials` checks every URL in a `configs` value against the outbound URL policy,
-  as `POST /scrapers` does, and refuses a scraper that would fetch a private or blocked address (#27). The route is
+- `PUT /integrations/webscraper/credentials` checks a `configs` value like `POST /scrapers` does: at most 50
+  scrapers, 25 URLs each and 48 KiB in all, and every URL against the outbound URL policy, so a scraper that would
+  fetch a private or blocked address is refused (#27). The route is
   admin-only and the ingestor already re-checked each URL at fetch time; this closes the write path too.
 
 ## [5.68.01] - 2026-11-01

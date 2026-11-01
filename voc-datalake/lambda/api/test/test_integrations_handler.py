@@ -10,6 +10,7 @@ from handler_events_fixtures import call_route
 from integrations_fixtures import CLOSED_CIRCUIT
 
 from integrations_handler import lambda_handler
+from shared.scraper_limits import MAX_SCRAPERS, MAX_URLS_PER_SCRAPER, MAX_WEBSCRAPER_CONFIGS_BYTES
 
 
 class TestGetIntegrationStatus:
@@ -152,6 +153,22 @@ class TestUpdateCredentials:
 
         assert response['statusCode'] == 400
         assert 'Scraper URL rejected' in json.dumps(body)
+        mock_secrets.put_secret_value.assert_not_called()
+
+    @pytest.mark.parametrize('configs', [
+        json.dumps([{'id': f's{i}'} for i in range(MAX_SCRAPERS + 1)]),
+        json.dumps([{'id': 's1', 'urls': [f'https://ok.example.com/{i}' for i in range(MAX_URLS_PER_SCRAPER + 1)]}]),
+        json.dumps([{'id': 's1', 'note': 'x' * MAX_WEBSCRAPER_CONFIGS_BYTES}]),
+    ], ids=['too-many-scrapers', 'too-many-urls', 'too-large'])
+    @patch('integrations_handler.secretsmanager')
+    def test_refuses_an_oversized_webscraper_configs_value_before_any_url_check(
+        self, mock_secrets, configs, api_gateway_event, lambda_context,
+    ):
+        with patch('integrations_handler.validate_url', return_value=(True, '')) as check:
+            response, _body = _put_webscraper_configs(api_gateway_event, lambda_context, configs)
+
+        assert response['statusCode'] == 400
+        check.assert_not_called()
         mock_secrets.put_secret_value.assert_not_called()
 
     @pytest.mark.parametrize('configs', ['not json', '{"id": "s1"}', '["s1"]'])

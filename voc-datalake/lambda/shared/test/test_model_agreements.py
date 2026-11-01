@@ -3,7 +3,10 @@
 The Bedrock control-plane client is a MagicMock patched at ``boto3.client`` in
 shared.image_model_status (whose cached ``image_access`` read this module reuses).
 """
+import threading
+import time
 from collections.abc import Iterator
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,6 +40,7 @@ def _clean_caches() -> Iterator[None]:
 @pytest.fixture
 def bedrock(monkeypatch) -> Iterator[MagicMock]:
     monkeypatch.setenv('AWS_REGION', 'eu-central-1')
+    monkeypatch.setenv('AWS_DEFAULT_REGION', 'eu-central-1')
     client = MagicMock()
     with patch.object(image_model_status.boto3, 'client', return_value=client) as factory:
         client.factory = factory
@@ -78,15 +82,38 @@ class TestWithAccess:
 
         assert row['access']['status'] == 'unknown'
 
-    def test_rows_past_the_time_budget_answer_unknown_without_a_call(self, bedrock, monkeypatch):
-        bedrock.get_foundation_model_availability.return_value = AVAILABLE
-        clock = iter([0.0, 1.0, model_agreements.ACCESS_BUDGET_SECONDS + 1])
-        monkeypatch.setattr(model_agreements.time, 'monotonic', lambda: next(clock))
+    def test_a_read_still_running_at_the_budget_answers_unknown_without_holding_the_answer(
+        self, bedrock, monkeypatch,
+    ):
+        release = threading.Event()
+
+        def availability(modelId):
+            if modelId == HAIKU45.removeprefix('global.'):
+                release.wait(timeout=5)  # hangs past the budget
+            return AVAILABLE
+
+        bedrock.get_foundation_model_availability.side_effect = availability
+        monkeypatch.setattr(model_agreements, 'ACCESS_BUDGET_SECONDS', 0.2)
+        started = time.monotonic()
 
         rows = model_agreements.with_access([_row(OPUS55), _row(HAIKU45)])
 
+        elapsed = time.monotonic() - started
+        release.set()
         assert [row['access']['status'] for row in rows] == ['available', 'unknown']
-        assert bedrock.get_foundation_model_availability.call_count == 1
+        assert elapsed < 2
+
+    def test_no_rows_reads_nothing(self, bedrock):
+        assert model_agreements.with_access([]) == []
+        bedrock.get_foundation_model_availability.assert_not_called()
+
+    def test_the_row_keeps_fields_this_module_does_not_name(self, bedrock):
+        bedrock.get_foundation_model_availability.return_value = AVAILABLE
+        row: dict[str, object] = {**_row(OPUS55), 'extra': 1}
+
+        [enriched] = model_agreements.with_access([cast('ModelCapacity', row)])
+
+        assert dict(enriched).get('extra') == 1
 
 
 class TestHelpers:
@@ -94,7 +121,10 @@ class TestHelpers:
         assert model_agreements.foundation_model_id(OPUS55) == 'anthropic.claude-opus-5-5'
         assert model_agreements.foundation_model_id('anthropic.claude-x') == 'anthropic.claude-x'
 
-    def test_app_region_falls_back_to_the_default_region(self, monkeypatch):
-        monkeypatch.delenv('AWS_REGION', raising=False)
+    def test_app_region_is_the_sessions_region(self, monkeypatch):
         monkeypatch.setenv('AWS_DEFAULT_REGION', 'ap-southeast-2')
         assert model_agreements.app_region() == 'ap-southeast-2'
+
+    def test_app_region_without_a_configured_region_is_the_default(self, monkeypatch):
+        monkeypatch.setattr(model_agreements.boto3.session, 'Session', lambda: MagicMock(region_name=None))
+        assert model_agreements.app_region() == model_agreements.DEFAULT_REGION

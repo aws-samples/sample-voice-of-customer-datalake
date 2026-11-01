@@ -77,6 +77,7 @@ from shared.producer_labels import normalise_label_fields
 from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_object_body
 from shared.row_ids import OPAQUE_ID_RE
+from shared.scraper_limits import MAX_SCRAPERS, MAX_URLS_PER_SCRAPER, MAX_WEBSCRAPER_CONFIGS_BYTES
 from shared.scraper_run_errors import redacted_scraper_errors
 from shared.tables import get_aggregates_table
 from shared.timestamps import now_iso
@@ -243,14 +244,9 @@ def list_scrapers():
 # one save may put there is bounded even for an admin: a typo or a runaway client
 # must not lock integration credentials out of the secret.
 # The editor already stays inside all of these (its max-pages input is max=50).
-MAX_SCRAPERS = 50
+# MAX_SCRAPERS, MAX_WEBSCRAPER_CONFIGS_BYTES and MAX_URLS_PER_SCRAPER live in shared.scraper_limits
+# (the credentials route writes the same value).
 MAX_SCRAPER_BYTES = 8 * 1024
-# The whole `webscraper_configs` value. Secrets Manager caps the secret at 64 KiB
-# (`SECRET_STRING_MAX_BYTES`) and integration credentials share it, so scrapers
-# alone may not fill it — otherwise scraper configs could lock integration
-# credentials out of the secret.
-MAX_WEBSCRAPER_CONFIGS_BYTES = 48 * 1024
-MAX_URLS_PER_SCRAPER = 25
 MAX_URL_LENGTH = 2048
 MAX_TEXT_FIELD_LENGTH = 500
 MAX_PAGINATION_PARAM_LENGTH = 64

@@ -36,7 +36,9 @@ def serialized_transactions(table, before=None):
     a condition fails, with no lock, so a transaction that fails in one thread can restore a
     copy taken before another thread's commit and silently undo it (a lost assignment row,
     then a second version for the same document). That made the threaded tests below flaky on
-    CI. ``before(**kwargs)``, when given, runs outside the lock (a test's barrier).
+    CI. ``before(**kwargs)``, when given, runs outside the lock (a test's barrier). Only
+    transactions are serialized: a single-item write racing a failing transaction could still be
+    undone, and these tests make none from their threads.
     """
     client = table.meta.client
     original = client.transact_write_items
