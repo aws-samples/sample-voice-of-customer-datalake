@@ -225,8 +225,9 @@ describe('cdk-nag acknowledgements', () => {
     it('declares no acknowledgement that covers nothing in either shape', () => {
       const declared = new Set(shapes.flatMap((shape) => [...shape.declared]));
       const used = new Set(shapes.flatMap((shape) => [...shape.used]));
-      // Vacuity: the recorder saw the app's acknowledgements and the findings they cover.
-      expect(Math.min(declared.size, used.size)).toBeGreaterThan(100);
+      // Vacuity: the recorder saw the app's acknowledgements and the findings they cover (90 of each once
+      // lib/utils/exact-grants.ts made the grant-wildcard acknowledgements unnecessary).
+      expect(Math.min(declared.size, used.size)).toBeGreaterThan(50);
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

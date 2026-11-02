@@ -13,7 +13,7 @@ import * as path from 'path';
 import { Construct } from 'constructs';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, stackModelArns } from '../utils/model-allowlist';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
-import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { isDevDeployment } from '../utils/context';
 import { createCoreAuth } from './core-auth';
@@ -466,8 +466,8 @@ export class VocCoreStack extends VocStack {
     // bin/voc-datalake.ts gives this stack only the basic-execution and
     // cdk-assets suppressions, so everything the grants above generate has to be
     // suppressed HERE rather than by widening the stack-level set: prefix-scoped
-    // S3 object ARNs, the DynamoDB index/* wildcards, the KMS grant wildcards
-    // and the Bedrock cross-region foundation-model ARNs.
+    // S3 object ARNs and the Bedrock cross-region foundation-model ARNs (the grant
+    // wildcards are rewritten to exact actions by lib/utils/exact-grants.ts).
     acknowledgeNag(productDocExtractor, [
       {
         id: 'AwsSolutions-IAM5',
@@ -476,9 +476,6 @@ export class VocCoreStack extends VocStack {
           .map((keys) => resourceFinding(this.rawDataBucket.arnForObjects(keys))),
       },
       ...lambdaBasicExecutionRoleSuppressions,
-      ...s3BucketSuppressions,
-      ...dynamoDbGsiSuppressions([this.projectsTable, this.aggregatesTable]),
-      ...kmsEncryptionSuppressions,
       ...bedrockModelSuppressions,
     ]);
     // addEventNotification synthesizes a CDK-managed custom-resource Lambda that
