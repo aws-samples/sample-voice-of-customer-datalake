@@ -79,7 +79,6 @@ function designCaptureRole(stack: cdk.Stack, props: DesignCaptureProps): iam.Rol
   const { aggregatesTable, kmsKey, rawDataBucket } = props;
   const role = new iam.Role(stack, 'DesignCaptureRole', {
     assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-    managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
   });
   for (const statement of managedBrowserStatements(stack)) role.addToPolicy(statement);
   role.addToPolicy(new iam.PolicyStatement({ actions: ['bedrock:InvokeModel'], resources: stackModelArns(stack) }));

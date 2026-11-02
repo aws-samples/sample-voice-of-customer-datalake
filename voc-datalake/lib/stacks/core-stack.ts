@@ -13,7 +13,7 @@ import * as path from 'path';
 import { Construct } from 'constructs';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, stackModelArns } from '../utils/model-allowlist';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
-import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { isDevDeployment } from '../utils/context';
 import { createCoreAuth } from './core-auth';
@@ -475,7 +475,6 @@ export class VocCoreStack extends VocStack {
         findings: [productDocReadKeys, productDocWriteKeys]
           .map((keys) => resourceFinding(this.rawDataBucket.arnForObjects(keys))),
       },
-      ...lambdaBasicExecutionRoleSuppressions,
       ...bedrockModelSuppressions,
     ]);
     // addEventNotification synthesizes a CDK-managed custom-resource Lambda that
@@ -485,7 +484,7 @@ export class VocCoreStack extends VocStack {
     // no IAM5 entry; lib/nag-suppressions.test.ts fails on one that matches nothing.)
     acknowledgeNag(
       this.node.findChild('BucketNotificationsHandler050a0587b7544547bf325f094a3db834'),
-      [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
+      cdkCustomResourceSuppressions,
     );
 
 

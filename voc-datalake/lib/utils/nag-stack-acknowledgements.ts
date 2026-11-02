@@ -15,8 +15,7 @@ import type { VocIngestionStack } from '../stacks/ingestion-stack';
 import type { VocProcessingStack } from '../stacks/processing-stack-consolidated';
 import { acknowledgeNag } from './nag-ack';
 import {
-  apiGatewayPushToCloudwatchLogsRoleSuppressions, bedrockModelSuppressions, lambdaBasicExecutionRoleSuppressions,
-  rawDataPrefixSuppressions, s3ObjectSuppressions,
+  bedrockModelSuppressions, rawDataPrefixSuppressions, s3ObjectSuppressions,
 } from './nag-suppressions';
 
 export interface CoreStacks {
@@ -28,23 +27,18 @@ export interface CoreStacks {
 
 export function acknowledgeStackFindings({ core, ingestion, processing, api }: CoreStacks): void {
   const raw = core.rawDataBucket;
-  acknowledgeNag(core, lambdaBasicExecutionRoleSuppressions);
   acknowledgeNag(ingestion, [
-    ...lambdaBasicExecutionRoleSuppressions,
     ...s3ObjectSuppressions([raw.arnForObjects('raw/*'), ingestion.s3ImportBucket.arnForObjects('*')]),
     ...rawDataPrefixSuppressions(raw, [
       'company-context/design/logo_preview_*', 'company-context/design/icons_*', 'raw/email_intake/*',
     ]),
   ]);
   acknowledgeNag(processing, [
-    ...lambdaBasicExecutionRoleSuppressions,
     ...s3ObjectSuppressions([raw.arnForObjects('raw/*')]),
     ...rawDataPrefixSuppressions(raw, ['memory-imports/*', 'prototypes/*', 'scratch/research_jobs/*']),
     ...bedrockModelSuppressions,
   ]);
   acknowledgeNag(api, [
-    ...lambdaBasicExecutionRoleSuppressions,
-    ...apiGatewayPushToCloudwatchLogsRoleSuppressions,
     ...s3ObjectSuppressions([
       raw.arnForObjects('*'), raw.arnForObjects('raw/*'), ingestion.s3ImportBucket.arnForObjects('*'),
       core.websiteBucket.arnForObjects('*'),

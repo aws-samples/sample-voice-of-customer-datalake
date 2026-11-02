@@ -7,8 +7,9 @@
  * `LoggingConfig`. Lambda then creates `/aws/lambda/<name>` itself on first invocation with NO retention,
  * so their logs never expire (found in the 5.25.03 logging audit: 7 such groups in production).
  *
- * The aspect gives every such function a stack-owned log group with our retention. Their roles already
- * hold the basic execution policy (logs:CreateLogStream / PutLogEvents on any group), so no grant is needed.
+ * The aspect gives every such function a stack-owned log group with our retention, and then lets EVERY
+ * function's role write to its own group only (lib/utils/lambda-log-grants.ts: CreateLogStream + PutLogEvents on
+ * that group, in place of the AWSLambdaBasicExecutionRole managed policy, cdk-nag AwsSolutions-IAM4).
  *
  * Not reachable: the cross-region export reader/writer providers (`crossRegionReferences`), which CDK adds
  * while synthesizing, after aspects ran. They run only during a deploy; their `/aws/lambda/...` groups need
@@ -18,6 +19,8 @@ import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import type { IConstruct } from 'constructs';
+
+import { grantOwnLogGroupWrites, namedLogGroupArn } from './lambda-log-grants';
 
 /**
  * How long EVERY operational log is kept: Lambda, API Gateway access and Step Functions log groups alike
@@ -38,6 +41,13 @@ function withoutLogGroup(node: IConstruct): cdk.CfnResource | undefined {
 
 class LambdaLogRetentionAspect implements cdk.IAspect {
   visit(node: IConstruct): void {
+    if (node instanceof lambda.CfnFunction) {
+      const named = namedLogGroupArn(node);
+      if (named !== undefined) {
+        grantOwnLogGroupWrites(node, named);
+        return;
+      }
+    }
     const fn = withoutLogGroup(node);
     if (fn === undefined) return;
     // Path-unique id: several CDK providers share a short id ('Resource', 'Handler') in one stack.
@@ -46,6 +56,7 @@ class LambdaLogRetentionAspect implements cdk.IAspect {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
     fn.addPropertyOverride('LoggingConfig.LogGroup', group.logGroupName);
+    grantOwnLogGroupWrites(fn, group.logGroupArn);
   }
 }
 

@@ -28,7 +28,7 @@ import { Construct } from 'constructs';
 import { z } from 'zod';
 import { ALLOWED_FOUNDATION_MODEL_IDS, IMAGE_MODEL_ID, IMAGE_MODEL_REGION } from '../utils/model-allowlist';
 import { acknowledgeNag } from '../utils/nag-ack';
-import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, pluginSystemSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 
 /**
  * Valid industry options for Anthropic use case form.
@@ -310,13 +310,13 @@ class ModelAgreementProvider {
     
     // The CDK Provider framework invokes ModelAgreementLambda by qualified ARN (`<...Arn>:*`).
     acknowledgeNag(modelAgreementProvider, [
-      ...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions,
+      ...cdkCustomResourceSuppressions,
       ...pluginSystemSuppressions([modelAgreementLambda]),
     ]);
     
     // Suppress for ModelAgreementLambda
     acknowledgeNag(modelAgreementLambda, [
-      ...lambdaBasicExecutionRoleSuppressions, ...bedrockAgreementSuppressions, ...marketplaceSuppressions,
+      ...bedrockAgreementSuppressions, ...marketplaceSuppressions,
     ]);
 
     this.serviceToken = modelAgreementProvider.serviceToken;

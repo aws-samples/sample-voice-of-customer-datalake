@@ -23,24 +23,6 @@ export const cdkCustomResourceSuppressions: NagAck[] = [
   },
 ];
 
-// AWSLambdaBasicExecutionRole - AWS managed policy for Lambda CloudWatch logging
-export const lambdaBasicExecutionRoleSuppressions: NagAck[] = [
-  {
-    id: 'AwsSolutions-IAM4',
-    reason: 'AWSLambdaBasicExecutionRole is AWS-recommended managed policy for Lambda CloudWatch logging with minimal permissions',
-    findings: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'],
-  },
-];
-
-// AmazonAPIGatewayPushToCloudWatchLogs - AWS managed policy for API Gateway to publish logs to CloudWatch 
-export const apiGatewayPushToCloudwatchLogsRoleSuppressions: NagAck[] = [
-  {
-    id: 'AwsSolutions-IAM4',
-    reason: 'AmazonAPIGatewayPushToCloudWatchLogs is AWS-recommended managed policy for API Gateway to push to CloudWatch logging with minimal permissions',
-    findings: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs'],
-  },
-];
-
 // CloudFront distributions using default certificate
 export const cloudfrontDefaultCertSuppressions: NagAck[] = [
   {
@@ -315,15 +297,14 @@ export const publicUnsubscribeEndpointSuppressions: NagAck[] = [
 ];
 
 /**
- * The CDK Provider framework's onEvent function (`<provider>/framework-onEvent`): CDK owns its runtime and
- * basic-execution role, and it invokes `handler` by qualified ARN (`<HandlerArn>:*`). `name` is the handler's
+ * The CDK Provider framework's onEvent function (`<provider>/framework-onEvent`): CDK owns its runtime (its
+ * role writes only its own log group, lib/utils/lambda-log-grants.ts), and it invokes `handler` by qualified ARN (`<HandlerArn>:*`). `name` is the handler's
  * construct id and `sameAs` the construct id of another handler acknowledged the same way, both for the
  * reason text only.
  */
 export function providerFrameworkSuppressions(handler: lambda.IFunction, name: string, sameAs: string): NagAck[] {
   return [
     ...cdkCustomResourceSuppressions,
-    ...lambdaBasicExecutionRoleSuppressions,
     {
       id: 'AwsSolutions-IAM5',
       reason: `The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to ${name} only (same pattern as ${sameAs}).`,
@@ -333,13 +314,13 @@ export function providerFrameworkSuppressions(handler: lambda.IFunction, name: s
 }
 
 /**
- * Acknowledge the CDK-managed runtime and policy findings on the singleton
+ * Acknowledge the CDK-managed runtime finding on the singleton
  * `AwsCustomResource` provider Lambda (`AWS<uuid>` and its ServiceRole) when the
  * stack has one. A stack without the singleton gets no acknowledgement and no error.
  */
 export function suppressAwsCustomResourceProvider(stack: Stack): void {
   const provider = stack.node.tryFindChild(`AWS${AwsCustomResource.PROVIDER_FUNCTION_UUID.split('-').join('')}`);
   if (provider !== undefined) {
-    acknowledgeNag(provider, [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions]);
+    acknowledgeNag(provider, cdkCustomResourceSuppressions);
   }
 }

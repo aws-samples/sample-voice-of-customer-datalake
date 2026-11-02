@@ -18,7 +18,7 @@
  *     provider, a model pin, Bedrock model access, data protection), so a feature-gated one counts.
  *
  * An acknowledgement is identified by its id and reason, not by the construct it sits on: a shared list
- * (`lambdaBasicExecutionRoleSuppressions` on every provider and stack) is judged across all of them, so it
+ * (`cdkCustomResourceSuppressions` on every provider) is judged across all of them, so it
  * is used when any one placement needs it.
  */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';

@@ -20,7 +20,6 @@ import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import {
   cognitoPlusOffSuppressions,
   cognitoSecuritySuppressions,
-  lambdaBasicExecutionRoleSuppressions,
   providerFrameworkSuppressions,
 } from '../utils/nag-suppressions';
 import type { CoreBuildContext } from './core-cdn';
@@ -260,7 +259,6 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   });
   adminBootstrap.node.addDependency(adminGroup);
 
-  acknowledgeNag(adminBootstrapLambda, lambdaBasicExecutionRoleSuppressions);
   acknowledgeNag(
     adminBootstrapProvider.node.findChild('framework-onEvent'),
     providerFrameworkSuppressions(adminBootstrapLambda, 'AdminBootstrapLambda', 'ModelAgreementLambda'),
@@ -319,8 +317,6 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
 
     new cdk.CfnOutput(stack, 'DefaultModelPin', { value: defaultModelId });
 
-    // grantWriteData()'s index and KMS wildcards are rewritten to exact grants by lib/utils/exact-grants.ts.
-    acknowledgeNag(modelPinLambda, lambdaBasicExecutionRoleSuppressions);
     acknowledgeNag(
       modelPinProvider.node.findChild('framework-onEvent'),
       providerFrameworkSuppressions(modelPinLambda, 'ModelPinLambda', 'AdminBootstrapLambda'),
