@@ -477,7 +477,10 @@ function ActionCard({
         className={clsx('btn w-full', stateLabel == null && 'mt-auto', isNext ? 'btn-primary' : 'btn-secondary')}
       >
         {buttonIcon}
-        {configureLabel == null ? null : <span className="hidden sm:inline">{configureLabel}</span>}{buttonLabel}
+        {/* The flex gap is the visible separator; the space text node (which a flex
+            container renders as nothing) carries it into the accessible name, since a name
+            computation trims the span's own trailing space. */}
+        {configureLabel == null ? null : <><span className="hidden sm:inline">{configureLabel.trimEnd()}</span>{' '}</>}{buttonLabel}
       </button>
       {hint == null ? null : <p className="text-xs text-warn mt-2 text-center">{hint}</p>}
       {/* Rendered raw, with no wrapper of its own: it sits with `hint` and
