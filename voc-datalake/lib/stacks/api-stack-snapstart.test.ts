@@ -239,9 +239,12 @@ describe('snapStartInvokeTarget', () => {
 });
 
 describe('VocApiStack resource budget', () => {
-  it(`keeps at least ${RESOURCE_HEADROOM} resources of headroom under the ${CLOUDFORMATION_RESOURCE_LIMIT} ceiling, SnapStart on`, () => {
-    const count = Object.keys(snapStartOnAllPlugins().toJSON().Resources ?? {}).length;
-    expect(count, `VocApiStack (all plugins, snapStart=true) has ${count} resources`)
+  // The largest shape is the performance tier: SnapStart's versions and aliases plus the API's web ACL and its
+  // stage association (lib/utils/waf.ts).
+  it(`keeps at least ${RESOURCE_HEADROOM} resources of headroom under the ${CLOUDFORMATION_RESOURCE_LIMIT} ceiling, performance tier on`, () => {
+    const tier = synthApiTemplate({ performanceTier: 'true' }, discoverPluginIds());
+    const count = Object.keys(tier.toJSON().Resources ?? {}).length;
+    expect(count, `VocApiStack (all plugins, performanceTier=true) has ${count} resources`)
       .toBeLessThanOrEqual(CLOUDFORMATION_RESOURCE_LIMIT - RESOURCE_HEADROOM);
-  });
+  }, SYNTH_TIMEOUT_MS);
 });

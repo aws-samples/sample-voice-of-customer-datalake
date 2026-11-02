@@ -30,7 +30,6 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import { acknowledgeNagOnResource } from '../utils/nag-ack';
-import { publicBodyValidation } from './api-request-validation';
 
 import { booleanContextFlag } from '../utils/context-flag';
 import type { GlobalMcp } from './global-mcp';
@@ -213,7 +212,9 @@ export class McpOAuth {
     const oauth = api.root.addResource('oauth');
     // The RFC 7591 JSON body is validated at the gateway (api-request-validation.ts); `token` and `revoke`
     // take urlencoded forms (RFC 6749 / RFC 7009), which a JSON-schema model cannot validate.
-    anonymous(oauth.addResource('register'), 'POST', publicBodyValidation(api, 'OAuthClientRegistration'));
+    // No gateway model: the handler answers RFC 7591 §3.2.2 errors (invalid_client_metadata,
+    // invalid_redirect_uri) and logs the client's public metadata, which a gateway 400 would lose.
+    anonymous(oauth.addResource('register'), 'POST');
     anonymous(oauth.addResource('authorize'), 'GET');
     anonymous(oauth.addResource('callback'), 'GET');
     anonymous(oauth.addResource('token'), 'POST');

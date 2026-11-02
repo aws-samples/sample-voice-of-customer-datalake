@@ -1,8 +1,8 @@
 /**
  * API Gateway request validation on the public write routes (api-request-validation.ts, cdk-nag APIG2).
  *
- * Pins: ONE validator (body + parameters) on the RestApi; a model on EXACTLY the three public JSON write
- * routes and on no other method (signed-in routes, `/unsubscribe`, `/oauth/token`, `/oauth/revoke` stay
+ * Pins: ONE validator (body + parameters) on the RestApi; a model on EXACTLY the two public JSON write
+ * routes and on no other method (signed-in routes, `/unsubscribe`, the `/oauth/*` facade stay
  * unvalidated at the gateway); each model's exact draft-4 schema; the bounds lockstepped with the Python
  * constants they mirror; the BAD_REQUEST_BODY gateway response's CORS headers and body.
  */
@@ -19,8 +19,7 @@ import { pythonIntConstant } from '../test-support/cross-language-invariants';
 import { gatewayResponseOfType } from '../test-support/gateway-responses';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import {
-  FEEDBACK_SUBMISSION_BOUNDS, OAUTH_REGISTER_AUTH_METHOD, OAUTH_REGISTER_BOUNDS, OAUTH_REGISTER_GRANT_TYPES,
-  OAUTH_REGISTER_RESPONSE_TYPES,
+  FEEDBACK_SUBMISSION_BOUNDS,
 } from './api-request-models';
 import { VALIDATION_ERROR_TEMPLATE } from './api-request-validation';
 
@@ -33,13 +32,11 @@ beforeAll(() => {
 const ROOT = join(__dirname, '..', '..');
 const FORM_HANDLER = ['lambda', 'api', 'feedback_form_handler.py'];
 const BALLOTS_HANDLER = ['lambda', 'api', 'ballots_handler.py'];
-const REGISTER = ['lambda', 'shared', 'mcp_oauth_register.py'];
 const DRAFT4 = 'http://json-schema.org/draft-04/schema#';
 
 const VALIDATED_ROUTES: Record<string, string> = {
   'POST /feedback-forms/{form_id}/submit': 'FeedbackFormSubmission',
   'POST /voting-sessions/{session_id}/submit': 'BallotSubmission',
-  'POST /oauth/register': 'OAuthClientRegistration',
 };
 
 const ValidatorSchema = z.object({
@@ -129,19 +126,7 @@ describe('the models (JSON Schema draft 4, never stricter than the handler)', ()
     });
   });
 
-  it('OAuth client registration (RFC 7591)', () => {
-    expect(schemas().OAuthClientRegistration).toStrictEqual({
-      $schema: DRAFT4, title: 'OAuthClientRegistration', type: 'object', required: ['redirect_uris'],
-      properties: {
-        redirect_uris: { type: 'array', minItems: 1, maxItems: 10, items: { type: 'string' } },
-        token_endpoint_auth_method: { enum: ['none'] },
-        grant_types: { type: 'array', minItems: 1, items: { enum: ['authorization_code', 'refresh_token'] } },
-        response_types: { type: 'array', minItems: 1, items: { enum: ['code'] } },
-      },
-    });
-  });
-
-  it('no model refuses extra fields (widget participant_token, pin bodies, RFC 7591 metadata)', () => {
+  it('no model refuses extra fields (widget participant_token, pin bodies)', () => {
     for (const schema of Object.values(schemas())) {
       expect(z.object({ additionalProperties: z.unknown().optional() }).parse(schema).additionalProperties).toBeUndefined();
     }
@@ -170,18 +155,6 @@ function pythonStringTuple(name: string, ...segments: string[]): string[] {
 describe('lockstep with the handlers', () => {
   it.each(Object.entries(FEEDBACK_SUBMISSION_BOUNDS))('feedback_form_handler.%s', (name, value) => {
     expect(pythonIntConstant(name, ...FORM_HANDLER)).toBe(value);
-  });
-
-  it('mcp_oauth_register: redirect URI count, grant and response types', () => {
-    expect(pythonIntConstant('MAX_REDIRECT_URIS', ...REGISTER)).toBe(OAUTH_REGISTER_BOUNDS.MAX_REDIRECT_URIS);
-    expect(pythonStringTuple('GRANT_TYPES', ...REGISTER)).toStrictEqual([...OAUTH_REGISTER_GRANT_TYPES]);
-    expect(pythonStringTuple('RESPONSE_TYPES', ...REGISTER)).toStrictEqual([...OAUTH_REGISTER_RESPONSE_TYPES]);
-  });
-
-  it('mcp_oauth_register: the only accepted auth method is the public-client one', () => {
-    const source = readFileSync(join(ROOT, ...REGISTER), 'utf8');
-    expect(source).toContain(`body.get('token_endpoint_auth_method', '${OAUTH_REGISTER_AUTH_METHOD}')`);
-    expect(source).toContain(`if method != '${OAUTH_REGISTER_AUTH_METHOD}':`);
   });
 
   it('ballots_handler: `notes` is a submission field the handler reads as text', () => {
