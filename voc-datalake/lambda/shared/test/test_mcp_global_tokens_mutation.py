@@ -20,7 +20,7 @@ tell apart:
   outcome is recorded and shown as ``failed``; ``can_run_agents`` needs BOTH the
   admin mint and the ``write`` scope.
 * the audit row as a WHOLE: its exact key set, the ``<iso>#<8 hex>`` sort key, the
-  truncated tool name, the ``ttl`` as an int epoch 90 days out, and the
+  truncated tool name, NO ``ttl`` (an audit trail does not expire), and the
   ``project_id`` attribute that is present only for a path-safe id.
 """
 from __future__ import annotations
@@ -50,7 +50,6 @@ class TestStorageKeysAreSpelledExactly:
 
 class TestBoundsAreTheDocumentedNumbers:
     def test_audit_bounds(self):
-        assert gt.AUDIT_RETENTION_DAYS == 90
         assert gt.AUDIT_PAGE_SIZE == 50
 
     def test_lifetime_and_cap_bounds(self):
@@ -264,13 +263,11 @@ class TestAuditItemRecordsExactlyFourFacts:
             'at': '2026-01-15T12:00:00+00:00',
             'outcome': 'ok',
             'project_id': 'proj_1',
-            'ttl': int(datetime(2026, 4, 15, 12, 0, 0, tzinfo=UTC).timestamp()),
         }
 
-    def test_ttl_is_an_int_epoch_ninety_days_out(self):
+    def test_a_new_row_carries_no_ttl_so_the_jobs_table_never_expires_it(self):
         item = gt.audit_item('tok_1', tool='t', project_id=None, outcome='ok', now=NOW)
-        assert item['ttl'] == 1776254400
-        assert type(item['ttl']) is int
+        assert 'ttl' not in item
 
     def test_two_rows_in_the_same_microsecond_get_different_sort_keys(self):
         first = gt.audit_item('tok_1', tool='t', project_id=None, outcome='ok', now=NOW)

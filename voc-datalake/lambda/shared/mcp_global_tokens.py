@@ -29,9 +29,10 @@ Revocation is a SOFT revoke (``revoked_at``) so the token and its audit trail st
 listable; authentication refuses a revoked row exactly like an expired one.
 
 Audit rows record one ``tools/call`` each — tool name, time, project id and
-outcome, NEVER the arguments or any content — in the jobs table, whose ``ttl``
-attribute expires them after ``AUDIT_RETENTION_DAYS`` (the projects table has no
-TTL, and adding one would change a live retained table).
+outcome, NEVER the arguments or any content — in the jobs table. An audit trail
+does not expire (owner decision, 2026-11-01), so a new row carries no ``ttl``;
+rows written by earlier releases keep the 90-day ``ttl`` they were written with and still
+expire on it.
 """
 
 from __future__ import annotations
@@ -54,9 +55,9 @@ from shared.timestamps import parse_iso
 # of the projects listing index.
 GLOBAL_TOKEN_PK: Final = 'MCPGTOKEN'
 
-# Jobs table (it has a TTL). One partition per token, newest-first by sort key.
+# Jobs table. One partition per token, newest-first by sort key. Audit rows carry
+# no ``ttl`` (the table has one, so a row with it would expire): kept for good.
 AUDIT_PK_PREFIX: Final = 'MCPAUDIT#'
-AUDIT_RETENTION_DAYS: Final = 90
 AUDIT_PAGE_SIZE: Final = 50
 
 
@@ -233,7 +234,6 @@ def audit_item(token_id: str, *, tool: str, project_id: str | None, outcome: str
         'tool': tool[:_MAX_TOOL_NAME_LENGTH],
         'at': at,
         'outcome': outcome if outcome in OUTCOMES else OUTCOME_FAILED,
-        'ttl': int((now + timedelta(days=AUDIT_RETENTION_DAYS)).timestamp()),
     }
     if project_id and is_path_id(project_id):
         item['project_id'] = project_id
