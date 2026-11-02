@@ -67,6 +67,7 @@ export function applyLambdaLogRetention(scope: IConstruct): void {
 class ProtectedLogRetentionAspect implements cdk.IAspect {
   visit(node: IConstruct): void {
     if (!(node instanceof logs.CfnLogGroup)) return;
+    // Every group already gets LOG_RETENTION; this also catches a group created without it (belt and braces).
     node.retentionInDays = LOG_RETENTION;
     node.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
   }

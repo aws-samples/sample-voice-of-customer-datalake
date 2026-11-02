@@ -162,7 +162,8 @@ export interface CountedFixedCost {
 }
 
 /**
- * Resource types billed per resource per month (TENETS.md, tenet 7), counted over every stack of the DEFAULT synth.
+ * Resource types billed per resource per month (TENETS.md, tenet 7), counted over every stack of the default synth
+ * and of the all-features synth (lib/fixed-cost-guard.test.ts; both hold the same numbers today).
  * The count may never grow, and the gate also fails when it shrinks, so the number here is lowered in the same
  * change: the set can only get smaller.
  *
@@ -174,8 +175,9 @@ export interface CountedFixedCost {
  *   (lib/stacks/core-cdn.ts). A later release moves them to SSM Parameter Store (SecureString, no monthly fee) and
  *   brings this number to zero.
  *
- * Only the default synth is counted: an opt-in flag or a plugin that adds a key or a secret is not held to these
- * numbers yet (the opt-in registries above list hourly-priced resources only).
+ * The single-flag opt-in shapes (`snapStart`, `performanceTier`) are not counted: their registries above list
+ * hourly-priced resources only. Every free context-gated feature is in the all-features synth, so a key or secret
+ * one of those adds still fails here.
  */
 export const COUNTED_FIXED_COSTS: readonly CountedFixedCost[] = [
   { type: 'AWS::KMS::Key', baseline: 1, what: 'customer-managed KMS keys' },

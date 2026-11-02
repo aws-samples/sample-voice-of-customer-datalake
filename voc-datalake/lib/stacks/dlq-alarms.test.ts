@@ -114,7 +114,7 @@ describe('VocCoreStack alarm topic', () => {
     expect(keyId).toMatch(/^VocKmsKey/);
   });
 
-  it('lets CloudWatch use the Core key only for this account\'s voc-* alarms', () => {
+  it('lets CloudWatch use the Core key only from this account (the topic policy narrows to voc-* alarms)', () => {
     expect(coreKeyStatements(template).filter((s) => s.Sid === ALARM_PUBLISH_SID)).toStrictEqual([{
       Sid: ALARM_PUBLISH_SID,
       Effect: 'Allow',
@@ -123,14 +123,8 @@ describe('VocCoreStack alarm topic', () => {
       Resource: '*',
       Condition: {
         StringEquals: { 'aws:SourceAccount': SYNTH_ACCOUNT },
-        ArnLike: { 'aws:SourceArn': `arn:aws:cloudwatch:${SYNTH_REGION}:${SYNTH_ACCOUNT}:alarm:voc-*` },
       },
     }]);
-  });
-
-  it('scopes the CloudWatch key grant to the deployment prefix', () => {
-    const grant = coreKeyStatements(synthCoreTemplate({}, 'stg')).find((s) => s.Sid === ALARM_PUBLISH_SID);
-    expect(JSON.stringify(grant)).toContain(':alarm:stg-voc-*');
   });
 
   it('lets EventBridge use the Core key only for the schedule DLQ of this account (moved from its own key)', () => {

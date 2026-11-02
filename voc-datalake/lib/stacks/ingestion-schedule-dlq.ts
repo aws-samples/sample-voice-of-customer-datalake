@@ -4,7 +4,8 @@
  * ingestor drops the tick silently. One queue for every schedule rule; the stack
  * creates it on first use, so a deployment with no scheduled plugin gets none.
  *
- * Resources are created on the stack itself (logical ids `IngestScheduleDLQ*`).
+ * Resources are created on the stack itself (logical ids `IngestScheduleDLQ*`). The queue is encrypted with the
+ * Core key, whose EventBridge grant (`allowEventBridgeToScheduleDlq`, below) is added by VocCoreStack, not here.
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
