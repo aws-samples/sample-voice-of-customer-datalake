@@ -64,8 +64,8 @@ export function addRequestValidationResponse(api: apigateway.RestApi, corsHeader
 function validatorOf(api: apigateway.RestApi): apigateway.IRequestValidator {
   const existing = api.node.tryFindChild(VALIDATOR_ID);
   if (existing instanceof apigateway.RequestValidator) return existing;
+  // No name: an API-scoped resource needs none, and an unnamed one adds no physical name to prefix.
   return api.addRequestValidator(VALIDATOR_ID, {
-    requestValidatorName: 'voc-public-body-validator',
     validateRequestBody: true,
     validateRequestParameters: true,
   });

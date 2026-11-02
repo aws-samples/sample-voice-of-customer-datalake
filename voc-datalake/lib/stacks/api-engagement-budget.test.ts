@@ -23,6 +23,11 @@
  * 5.70.00 turned SnapStart off by default (TENETS.md, tenet 7): the default all-plugins synth drops the
  * four versions and aliases (384 → 376). The ceiling is held by the LARGEST shape, `-c snapStart=true`
  * (384, the old one), so opting in can never push the stack over it.
+ *
+ * 5.77.00 (API Gateway request validation, api-request-validation.ts, cdk-nag APIG2) spends 5: one
+ * RequestValidator, three JSON-schema models (widget submit, ballot submit, OAuth register) and the
+ * BAD_REQUEST_BODY gateway response. The snapStart shape was AT the 388 ceiling (388), so it moves to 393;
+ * the 425 gate is unchanged.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -30,8 +35,8 @@ import { apiTemplateAllPlugins, discoverPluginIds, synthApiTemplate } from '../t
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { SNAPSTART_CONTEXT_KEY } from '../utils/snapstart';
 
-/** The release ceiling after 5.63.00 (MCP OAuth): 378 + 10, set before the rebase onto 5.60.00; the synth is 384. */
-const ENGAGEMENT_RELEASE_CEILING = 388;
+/** The release ceiling: 388 after 5.63.00 (MCP OAuth), + 5 in 5.77.00 (request validation); the snapStart synth is 393. */
+const ENGAGEMENT_RELEASE_CEILING = 393;
 
 function resourceCount(resources: Record<string, unknown> | undefined): number {
   return Object.keys(resources ?? {}).length;
