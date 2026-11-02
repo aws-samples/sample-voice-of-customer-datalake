@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 from shared.archive_keys import archive_key_stem
-from shared.retention import item_raw_key, retention_cutoffs
+from shared.retention import ItemRawObjects, item_raw_objects, retention_cutoffs
 
 B = 'bkt'
 
@@ -25,7 +25,24 @@ B = 'bkt'
     ('s3://bkt/raw/web/2026/01/01/r1.json', '', None),
 ])
 def test_item_raw_key(uri, source_id, expected):
-    assert item_raw_key({'s3_raw_uri': uri, 'source_id': source_id}, B) == expected
+    found = item_raw_objects({'s3_raw_uri': uri, 'source_id': source_id}, B)
+    assert (found.key if found else None) == expected
+
+
+@pytest.mark.parametrize('key', ['raw/web/2026/01/01/r1.json', 'raw/web/2026/01/01/r1/0123456789abcdef.json'])
+def test_either_layout_names_the_legacy_key_and_the_folder(key):
+    assert item_raw_objects({'s3_raw_uri': f's3://{B}/{key}', 'source_id': 'r1'}, B) == ItemRawObjects(
+        key='raw/web/2026/01/01/r1.json', folder='raw/web/2026/01/01/r1/')
+
+
+@pytest.mark.parametrize('key', [
+    'raw/web/2026/01/01/other/0123456789abcdef.json',     # another item's folder
+    'raw/web/2026/01/01/a_b/0123456789abcdef.json',       # `a_b`'s folder, not `a/b`'s
+    'raw/csv_upload/2026/01/01/r1/0123456789abcdef.json',
+])
+def test_a_versioned_key_of_another_item_is_not_this_ones(key):
+    source_id = 'a/b' if '/a_b/' in key else 'r1'
+    assert item_raw_objects({'s3_raw_uri': f's3://{B}/{key}', 'source_id': source_id}, B) is None
 
 
 def test_ids_that_once_shared_a_key_each_match_only_their_own_archive():
@@ -34,13 +51,16 @@ def test_ids_that_once_shared_a_key_each_match_only_their_own_archive():
     for first, second in [('a/b', 'a_b'), ('q' * 64 + '1', 'q' * 64 + '2')]:
         first_key, second_key = (f'raw/web/2026/01/01/{archive_key_stem(i)}.json' for i in (first, second))
         assert first_key != second_key
-        assert item_raw_key({'s3_raw_uri': f's3://{B}/{first_key}', 'source_id': first}, B) == first_key
-        assert item_raw_key({'s3_raw_uri': f's3://{B}/{second_key}', 'source_id': first}, B) is None
+        found = item_raw_objects({'s3_raw_uri': f's3://{B}/{first_key}', 'source_id': first}, B)
+        assert found is not None
+        assert found.key == first_key
+        assert item_raw_objects({'s3_raw_uri': f's3://{B}/{second_key}', 'source_id': first}, B) is None
 
 
 def test_writer_and_matcher_agree_on_the_hashed_stem():
     key = f'raw/web/2026/01/01/h.{hashlib.sha256(b"a/b").hexdigest()}.json'
-    assert item_raw_key({'s3_raw_uri': f's3://{B}/{key}', 'source_id': 'a/b'}, B) == key
+    assert item_raw_objects({'s3_raw_uri': f's3://{B}/{key}', 'source_id': 'a/b'}, B) == ItemRawObjects(
+        key=key, folder=key.removesuffix('.json') + '/')
 
 
 def test_cutoffs_only_for_profiles_with_a_retention_period():

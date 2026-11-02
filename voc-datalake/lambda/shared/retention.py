@@ -21,12 +21,18 @@ partition alone cannot tell sources apart, so the worker scans with the
 ``source_platform`` filter exactly like the retention mode does.
 
 An item is removed with DeleteItem (the aggregator's stream REMOVE path moves
-its counters) and its per-item raw archive (every version) is removed with it.
-A raw object is deleted only when it is that item's OWN archive: under
-``raw/``, in the configured bucket, outside the whole-upload archives
-(``raw/csv_upload/``, ``raw/json_upload/``), and named after the item's
-``source_id`` the way every per-item archive is (``plugins/_shared/raw_archive``,
-``shared/ingest_archive``). A whole-file archive shared by many items never
+its counters) and its per-item raw archive is removed with it, in BOTH layouts
+(``shared/raw_versions.py``): every version of the legacy object
+``raw/{source}/{y}/{m}/{d}/{stem}.json`` and every object (all versions, all
+delete markers) under the item's folder ``raw/{source}/{y}/{m}/{d}/{stem}/``,
+whichever of the two its ``s3_raw_uri`` names. A raw object is deleted only
+when it is that item's OWN archive: under ``raw/``, in the configured bucket,
+outside the whole-upload archives (``raw/csv_upload/``, ``raw/json_upload/``),
+and named after the item's ``source_id`` the way every per-item archive is
+(``plugins/_shared/raw_archive``, ``shared/ingest_archive``). An API-side item
+received again on a later day (a new ingest-date folder) leaves its older folder
+to the whole-source erasure; a correction (CSV dataset update) writes into the
+stored item's own folder, so it goes with the item. A whole-file archive shared by many items never
 matches, so it is never touched (documented limitation: those sources keep
 their uploaded files; give them a retention period or a non-allow policy so
 they archive per item).
@@ -37,7 +43,8 @@ SHA-256 (``value_hash``, ``shared.digests.sha256_hex``).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Final
 from urllib.parse import urlparse
@@ -46,11 +53,14 @@ from boto3.dynamodb.conditions import Attr, ConditionBase
 
 from shared.archive_keys import archive_key_stem
 from shared.logging import logger
+from shared.raw_versions import parse_item_key
 
 __all__ = [
+    'ItemRawObjects',
     'delete_item',
     'delete_raw_prefix_page',
     'erase_filter',
+    'item_raw_objects',
     'raw_source_prefix',
     'retention_cutoffs',
     'retention_filter',
@@ -112,8 +122,16 @@ def erase_filter(field: str, value: str, source: str | None) -> ConditionBase:
     return condition & Attr('source_platform').eq(source) if source and field != SOURCE_FIELD else condition
 
 
-def item_raw_key(item: Mapping[str, Any], bucket: str) -> str | None:
-    """The key of ``item``'s own per-item raw archive in ``bucket``, or None (see module doc)."""
+@dataclass(frozen=True)
+class ItemRawObjects:
+    """One item's own raw objects: an exact key (its legacy archive) and, in the versioned layout, its folder."""
+
+    key: str
+    folder: str | None
+
+
+def _own_raw_key(item: Mapping[str, Any], bucket: str) -> tuple[str, str] | None:
+    """``(key, source_id)`` of ``item``'s ``s3_raw_uri`` when it may be its own archive (see module doc)."""
     uri = item.get('s3_raw_uri')
     source_id = item.get('source_id')
     if not isinstance(uri, str) or not bucket or not isinstance(source_id, str) or not source_id:
@@ -124,40 +142,69 @@ def item_raw_key(item: Mapping[str, Any], bucket: str) -> str | None:
         return None
     if key.startswith(_WHOLE_UPLOAD_PREFIXES) or '..' in key.split('/'):
         return None
-    stem = key.rpartition('/')[2].removesuffix('.json')
-    # The writers' collision-free stem only (see shared/archive_keys.py).
-    return key if stem == archive_key_stem(source_id) else None
+    return key, source_id
 
 
-def _delete_all_versions(s3: Any, bucket: str, key: str) -> bool:
-    """Delete every version and delete marker of exactly ``key``; True when any existed."""
-    deleted = False
+def item_raw_objects(item: Mapping[str, Any], bucket: str) -> ItemRawObjects | None:
+    """``item``'s own raw objects in ``bucket`` in BOTH layouts, or None (see module doc).
+
+    A per-item archive key (``shared.raw_versions.parse_item_key``), legacy
+    ``.../{stem}.json`` or versioned ``.../{stem}/{sha16}.json``, names the legacy key
+    AND the folder holding every version, whichever of the two the item references.
+    Any other key under ``raw/`` whose file stem is the item's is that exact key only,
+    as before. The stem must be the writers' collision-free one (``shared/archive_keys.py``).
+    """
+    own = _own_raw_key(item, bucket)
+    if own is None:
+        return None
+    key, source_id = own
+    stem = archive_key_stem(source_id)
+    archive = parse_item_key(key)
+    if archive is not None:
+        return ItemRawObjects(key=archive.legacy_key, folder=archive.folder) if archive.stem == stem else None
+    return ItemRawObjects(key=key, folder=None) if key.rpartition('/')[2].removesuffix('.json') == stem else None
+
+
+def _delete_versions(s3: Any, bucket: str, prefix: str, matches: Callable[[str], bool]) -> int:
+    """Delete every version and delete marker under ``prefix`` whose key ``matches``; the files deleted.
+
+    The count is of distinct keys that still had a version holding data (a delete
+    marker alone is no file).
+    """
+    files: set[str] = set()
     paginator = s3.get_paginator('list_object_versions')
-    for page in paginator.paginate(Bucket=bucket, Prefix=key):
-        versions = [
-            {'Key': entry['Key'], 'VersionId': entry['VersionId']}
-            for entry in [*page.get('Versions', []), *page.get('DeleteMarkers', [])]
-            if entry.get('Key') == key and entry.get('VersionId')
-        ]
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        data = [entry for entry in page.get('Versions', []) if _selected(entry, matches)]
+        markers = [entry for entry in page.get('DeleteMarkers', []) if _selected(entry, matches)]
+        versions = [{'Key': entry['Key'], 'VersionId': entry['VersionId']} for entry in [*data, *markers]]
         for start in range(0, len(versions), _MAX_VERSIONS_PER_DELETE):
             response = s3.delete_objects(
                 Bucket=bucket, Delete={'Objects': versions[start:start + _MAX_VERSIONS_PER_DELETE], 'Quiet': True})
             if response.get('Errors'):
                 raise RuntimeError(f'{len(response["Errors"])} raw object versions could not be deleted')
-            deleted = True
-    return deleted
+        files.update(str(entry['Key']) for entry in data)
+    return len(files)
+
+
+def _selected(entry: Mapping[str, Any], matches: Callable[[str], bool]) -> bool:
+    return matches(str(entry.get('Key', ''))) and bool(entry.get('VersionId'))
 
 
 def delete_item(feedback_table: Any, s3: Any, bucket: str, item: Mapping[str, Any]) -> tuple[int, int]:
-    """Delete one feedback item and its own raw archive; ``(items deleted, objects deleted)``.
+    """Delete one feedback item and its own raw objects; ``(items deleted, raw files deleted)``.
 
-    The raw archive goes first: if that fails the item stays, so a retry finds
-    it again (deleting the item first would orphan the object for good).
+    Every version of the legacy key and every object (all versions) under the item's
+    folder go. The raw objects go first: if that fails the item stays, so a retry finds
+    it again (deleting the item first would orphan the objects for good).
     """
     objects = 0
-    key = item_raw_key(item, bucket)
-    if key is not None and _delete_all_versions(s3, bucket, key):
-        objects = 1
+    targets = item_raw_objects(item, bucket)
+    if targets is not None:
+        legacy = targets.key
+        objects = _delete_versions(s3, bucket, legacy, lambda key: key == legacy)
+        folder = targets.folder
+        if folder is not None:
+            objects += _delete_versions(s3, bucket, folder, lambda key: key.startswith(folder))
     feedback_table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
     logger.debug('Deleted one feedback item under its retention / erasure rule')
     return 1, objects
