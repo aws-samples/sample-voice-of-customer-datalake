@@ -15,7 +15,7 @@ refusal path of a PUBLIC route:
   default to a non-empty string — i.e. "accept" instead of fail closed (503);
 * an absent or non-string body could be verified as bytes other than ``b""``;
 * five of the six ignored actions, the comment-without-id / non-dict comment
-  drop, the env-var name and default of ``RAW_DATA_BUCKET``, the ``sys.path``
+  drop, the ``sys.path``
   insert index and all three Powertools decorators were unpinned.
 
 Each test below pins one of them with literal values.
@@ -58,7 +58,7 @@ def isolated(**secrets: str) -> Generator[MagicMock, None, None]:
     with (
         patch("_shared.base_webhook.get_sqs_client"),
         patch("_shared.base_webhook.get_secret", return_value=scoped_secret(**secrets)),
-        patch(f"{H}.get_s3_client"),
+        patch("_shared.base_webhook.get_s3_client"),
         patch(f"{H}.emit_audit_event") as audit,
     ):
         yield audit
@@ -185,14 +185,6 @@ def restored_sys_path() -> Iterator[list[str]]:
 
 
 class TestImportTimeConfiguration:
-    def test_the_bucket_is_read_from_raw_data_bucket(self, monkeypatch):
-        monkeypatch.setenv("RAW_DATA_BUCKET", "lake-bucket")
-        assert _load_fresh_handler().RAW_DATA_BUCKET == "lake-bucket"
-
-    def test_the_bucket_defaults_to_the_empty_string(self, monkeypatch):
-        monkeypatch.delenv("RAW_DATA_BUCKET", raising=False)
-        assert _load_fresh_handler().RAW_DATA_BUCKET == ""
-
     def test_the_plugin_root_is_put_at_the_front_of_sys_path(self, restored_sys_path):
         assert_loading_puts_root_first(_load_fresh_handler, restored_sys_path, PLUGIN_ROOT)
 

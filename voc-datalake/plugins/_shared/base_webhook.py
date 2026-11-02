@@ -11,13 +11,14 @@ from typing import Any
 # Add shared module to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.aws import clear_secret_cache, get_secret, get_sqs_client
+from shared.aws import clear_secret_cache, get_s3_client, get_secret, get_sqs_client
 from shared.logging import logger, metrics, tracer
 from shared.source_profiles import SourceProfilesUnavailable
 
 from .audit import emit_audit_event
 from .normalized_item import normalized_item_fields
 from .plugin_secrets import filter_plugin_secrets
+from .raw_archive import WEBHOOK, archive_raw_item
 from .source_policy_gate import policy_messages
 from .sqs_utils import send_messages_to_queue
 
@@ -28,6 +29,8 @@ PROCESSING_QUEUE_URL = os.environ.get("PROCESSING_QUEUE_URL", "")
 SECRETS_ARN = os.environ.get("SECRETS_ARN", "")
 BRAND_NAME = os.environ.get("BRAND_NAME", "")
 SOURCE_PLATFORM = os.environ.get("SOURCE_PLATFORM", "")
+# The raw archive (``raw/<plugin>/…``, ``_shared/raw_archive.py``): every webhook archives what it receives.
+RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
 
 
 class BaseWebhook(ABC):
@@ -38,6 +41,7 @@ class BaseWebhook(ABC):
         self.brand_name = BRAND_NAME
         self.secrets = self._load_secrets()
         self._sqs = get_sqs_client()
+        self._s3 = get_s3_client()
 
     def _load_secrets(self) -> dict:
         """Load this plugin's secrets from the shared secret, prefix stripped.
@@ -85,9 +89,18 @@ class BaseWebhook(ABC):
             List of normalized items ready for the processing queue
         """
 
-    def normalize_item(self, item: dict) -> dict:
-        """Normalize item to common schema."""
-        return {
+    def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
+        """Archive the delivered item (and the provider's own payload, *raw_content*) and normalize it.
+
+        Same archive as every ingestor (``archive_raw_item``, connector ``webhook_<plugin>``):
+        write-once, skipped for a redact / summary-only source. The item travels inline
+        (``raw_data``) only when the archive write failed or was not allowed, and the
+        source policy drops that copy for a non-allow source (``shared/source_policy.py``).
+        """
+        uri = archive_raw_item(
+            self._s3, RAW_DATA_BUCKET, self.source_platform, item, raw_content, transport=WEBHOOK,
+        )
+        normalized = {
             **normalized_item_fields(
                 item,
                 source_platform=self.source_platform,
@@ -95,8 +108,11 @@ class BaseWebhook(ABC):
                 brand_name=self.brand_name,
             ),
             "is_webhook": True,
-            "raw_data": item,
+            "raw_data": None if uri else item,
         }
+        if uri:
+            normalized["s3_raw_uri"] = uri
+        return normalized
 
     def send_to_queue(self, items: list[dict]) -> int:
         """Send items to SQS processing queue.

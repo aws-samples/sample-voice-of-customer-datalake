@@ -46,6 +46,7 @@ def webhook_aws():
     """
     with (
         patch('_shared.base_webhook.get_sqs_client') as get_sqs,
+        patch('_shared.base_webhook.get_s3_client'),
         patch(
             '_shared.base_webhook.get_secret', return_value=scoped_secret()
         ) as get_secret,
