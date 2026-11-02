@@ -105,13 +105,20 @@ def _reprocessable_key(key: str) -> str:
     return _deletable_key(key)
 
 
+# A staged file expires from the import bucket (an inbox, VocIngestionStack IMPORT_STAGED_EXPIRATION_DAYS);
+# the durable copy of the original is the raw lake's (plugins/s3_import: raw/s3_import/..., when the
+# s3_import source profile keeps whole files), so a gone file is re-uploaded, not reprocessed.
+STAGED_FILE_GONE = ('Staged files expire after 90 days; the original is kept in the raw lake under raw/s3_import/ '
+                    'when the s3_import source keeps raw copies. Upload it again to import it.')
+
+
 def _require_reprocessable_object(key: str) -> None:
     """NotFoundError when *key* holds nothing; ValidationError when the ingestor would skip it."""
     try:
         head = s3_client.head_object(Bucket=S3_IMPORT_BUCKET, Key=key)
     except ClientError as e:
         if is_missing_s3_object(e):
-            raise NotFoundError(f'File not found: {key}') from e
+            raise NotFoundError(f'File not found: {key}. {STAGED_FILE_GONE}') from e
         logger.exception(f"Failed to read the file to reprocess: {e}")
         raise ServiceError(s3_import_runs.START_FAILED) from e
     size = head.get('ContentLength', 0)

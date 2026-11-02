@@ -141,9 +141,12 @@ class TestStartingAReprocess:
             self, api_gateway_event, lambda_context, s3, table, invoke):
         s3.head_object.side_effect = _missing()
 
-        status, _ = _reprocess(api_gateway_event, lambda_context, {'key': 'reviews/gone.csv'})
+        status, body = _reprocess(api_gateway_event, lambda_context, {'key': 'reviews/gone.csv'})
 
         assert status == 404
+        # Names where the original went: the staged copy expires, the raw lake keeps it.
+        assert body['error'] == f'File not found: reviews/gone.csv. {h.STAGED_FILE_GONE}'
+        assert 'raw/s3_import/' in h.STAGED_FILE_GONE
         table.put_item.assert_not_called()
         invoke.assert_not_called()
 
