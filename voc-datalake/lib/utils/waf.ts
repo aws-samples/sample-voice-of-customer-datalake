@@ -82,7 +82,7 @@ interface WebAclOptions {
 }
 
 /** One web ACL: allow by default; IP reputation, a per-IP rate limit, Known bad inputs and the CRS block. */
-export function createWebAcl(scope: IConstruct, id: string, options: WebAclOptions): wafv2.CfnWebACL {
+function createWebAcl(scope: IConstruct, id: string, options: WebAclOptions): wafv2.CfnWebACL {
   // No Name: CloudFormation generates a unique one, so a prefixed second deployment never collides.
   return new wafv2.CfnWebACL(scope, id, {
     scope: options.scope,
