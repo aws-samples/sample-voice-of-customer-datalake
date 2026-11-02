@@ -17,6 +17,15 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.73.01] - 2026-11-02
+
+CI runs Node 24, the same line as the Lambdas.
+
+### Changed
+- **CI Node version**: every workflow (`quality-gates`, `dependency-audit`, `pr-description`, `scheduled-failure-watch`)
+  runs Node 24 instead of 26, the line the stream and plan-step Lambdas run (`nodejs24.x`), so the gate tests the
+  runtime that is deployed. Local development still needs Node.js 22.18+ or 24.11+ (root `package.json` `engines`).
+
 ## [5.73.00] - 2026-11-01
 
 The build and test toolchain moves to TypeScript 6, Vite 8, Vitest 5 and ESLint 10, and CI to Node 26 (the

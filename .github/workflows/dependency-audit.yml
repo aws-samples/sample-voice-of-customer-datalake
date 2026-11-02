@@ -53,7 +53,7 @@ jobs:
       # npm audit reads the lockfiles and asks the registry; no `npm ci` is needed.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '26'
+          node-version: '24'
 
       # 3.12 is the interpreter the gates use. The Lambda layers are resolved for their own target
       # (CPython 3.14, manylinux2014_aarch64) by the script's pip flags, whatever runs pip.
