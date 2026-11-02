@@ -1,7 +1,7 @@
 {
   "name": "voc-analytics-frontend",
   "private": true,
-  "version": "5.74.0",
+  "version": "5.75.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
