@@ -28,16 +28,22 @@ __all__ = ['FEEDBACK_FORM_SOURCE', 'SUBMITTED_FIELDS', 'archive_submission', 'su
 
 #: The feedback forms' source id, also the connector id of their raw copies.
 FEEDBACK_FORM_SOURCE: Final = 'feedback_form'
-#: The body fields the submit route validates and bounds (``feedback_form_handler._validated_submission``
-#: and ``_widget_dimensions``).
-SUBMITTED_FIELDS: Final = ('text', 'rating', 'page_url', 'custom_fields', 'dimensions')
+#: The optional body fields the submit route bounds (``feedback_form_handler._validated_submission``) and the
+#: copy keeps as sent; ``text`` and ``dimensions`` are kept as VALIDATED instead (``archive_submission``).
+SUBMITTED_FIELDS: Final = ('rating', 'page_url', 'custom_fields')
 #: Personal fields, each kept only when the form collects it (the form's flag).
 _COLLECTED_FIELDS: Final = (('email', 'collect_email'), ('name', 'collect_name'))
 
 
-def submitted_content(form: Mapping[str, Any], body: Mapping[str, Any]) -> dict[str, Any]:
-    """What the copy holds: the validated fields present in ``body``, plus email / name when ``form`` collects them."""
-    content = {field: body[field] for field in SUBMITTED_FIELDS if field in body}
+def submitted_content(form: Mapping[str, Any], body: Mapping[str, Any], text: str,
+                      dimensions: Mapping[str, str]) -> dict[str, Any]:
+    """What the copy holds: the route's VALIDATED values (``text`` stripped and length-checked,
+    ``dimensions`` after ``clean_dimensions``), the bounded optional fields present in ``body``, and
+    email / name only when ``form`` collects them. Never a value the validators did not bound."""
+    content: dict[str, Any] = {'text': text}
+    content.update({field: body[field] for field in SUBMITTED_FIELDS if field in body})
+    if dimensions:
+        content['dimensions'] = dict(dimensions)
     for field, flag in _COLLECTED_FIELDS:
         if form.get(flag) and field in body:
             content[field] = body[field]
@@ -45,9 +51,16 @@ def submitted_content(form: Mapping[str, Any], body: Mapping[str, Any]) -> dict[
 
 
 def archive_submission(form_id: str, form: Mapping[str, Any], feedback_id: str, body: Mapping[str, Any],
-                       profile: Mapping[str, Any], now: datetime) -> str | None:
-    """The ``s3://`` URI of the submission's raw copy; None when the policy forbids one or the write failed."""
+                       validated: tuple[str, Mapping[str, str]], profile: Mapping[str, Any],
+                       now: datetime) -> str | None:
+    """The ``s3://`` URI of the submission's raw copy; None when the policy forbids one or the write failed.
+
+    ``validated`` = ``(text, dimensions)`` as the route validated them (``_validated_submission``,
+    ``_widget_dimensions``): the copy keeps those, never the body's own ``text`` / ``dimensions``.
+    """
     if not raw_archive_allowed(profile):
         return None
+    text, dimensions = validated
     return app_json_copy(FEEDBACK_FORM_SOURCE, now.date(), archive_key_stem(feedback_id),
-                         {'form_id': form_id, 'submission': submitted_content(form, body)}, FEEDBACK_FORM_SOURCE)
+                         {'form_id': form_id, 'submission': submitted_content(form, body, text, dimensions)},
+                         FEEDBACK_FORM_SOURCE)

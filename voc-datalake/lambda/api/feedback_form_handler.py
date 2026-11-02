@@ -978,7 +978,7 @@ def submit_form_feedback(form_id: str):
         raise ValidationError('Feedback text is required')
     # The body as the widget sent it, kept only when the profile permits a raw copy
     # (shared/feedback_form_raw.py); a failed write is logged and the submission queued.
-    raw_uri = archive_submission(form_id, form, feedback_id, body, profile, now)
+    raw_uri = archive_submission(form_id, form, feedback_id, body, (text, widget_dimensions), profile, now)
     normalized_record = {**policed, 's3_raw_uri': raw_uri} if raw_uri else policed
 
     try:
