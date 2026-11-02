@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-import { Tags, Aspects } from 'aws-cdk-lib';
+import { Tags, Validations } from 'aws-cdk-lib';
 import { z } from 'zod';
-import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
+import { AwsSolutionsChecks } from 'cdk-nag';
 import { VocCoreStack } from '../lib/stacks/core-stack';
 import { VocIngestionStack } from '../lib/stacks/ingestion-stack';
 import { VocProcessingStack } from '../lib/stacks/processing-stack-consolidated';
@@ -12,7 +12,7 @@ import { VocWebSearchStack } from '../lib/stacks/web-search-stack';
 import {
   AnthropicUseCaseSchema, AnthropicUseCaseConfig, BedrockModelAgreements, ModelAgreementRetrySchema,
 } from '../lib/stacks/bedrock-access-stack';
-import { lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, pluginSystemSuppressions, cdkAssetsSuppressions, apiGatewayPushToCloudwatchLogsRoleSuppressions } from '../lib/utils/nag-suppressions';
+import { acknowledgeStackFindings } from '../lib/utils/nag-stack-acknowledgements';
 import { suppressReviewedResourceStar } from '../lib/utils/nag-resource-star';
 import { shouldDeployWebSearchInScope } from '../lib/utils/web-search-default';
 import { applyInferenceScopeEnv, inferenceScopeOf } from '../lib/utils/inference-scope';
@@ -308,22 +308,12 @@ applyLambdaLogRetention(app);
 // Protected deployments (-c protectData, on by default): every log group is retained on teardown (30 days, like every log).
 applyProtectedLogRetention(app, shouldProtectData(app.node.tryGetContext('protectData')));
 
-// Apply cdk-nag checks
-Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
+// cdk-nag (AwsSolutions) runs as a policy-validation plugin after synthesis: an unacknowledged finding,
+// error or warning, fails `cdk synth` and is listed in the assembly's validation report.
+Validations.of(app).addPlugins(new AwsSolutionsChecks(app, { verbose: true }));
 
-// Global suppressions.
-// VocWebSearchStack deliberately gets NONE: the gateway half has always passed
-// cdk-nag unsuppressed (its IAM is scoped to the concrete gateway ARN), and the
-// use-case half carries its own resource-scoped suppressions inside
-// AnthropicUseCaseSubmission. The plugin/Comprehend/Translate sets that used to be
-// applied to BedrockAccessStack at stack level were copy-paste — that stack
-// calls neither service — so they are dropped rather than inherited by the
-// gateway resources.
-NagSuppressions.addStackSuppressions(coreStack, [...lambdaBasicExecutionRoleSuppressions, ...cdkAssetsSuppressions], true);
-// Apply stack-level suppressions
-NagSuppressions.addStackSuppressions(ingestionStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions], true);
-NagSuppressions.addStackSuppressions(processingStack, [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions()], true);
-NagSuppressions.addStackSuppressions(apiStack, [...lambdaBasicExecutionRoleSuppressions, ...apiGatewayPushToCloudwatchLogsRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions, ...s3BucketSuppressions, ...bedrockModelSuppressions, ...pluginSystemSuppressions(), ...cdkAssetsSuppressions], true);
+// Stack-wide acknowledgements (lib/utils/nag-stack-acknowledgements.ts); VocWebSearchStack gets none.
+acknowledgeStackFindings({ core: coreStack, ingestion: ingestionStack, processing: processingStack, api: apiStack });
 // `Resource::*` is suppressed per POLICY, never stack-wide: only a policy whose every "*" action is on the
 // reviewed list (lib/utils/resource-star-actions.ts) gets it, so a new unscoped grant elsewhere is reported.
 // After every stack is built, so each policy document is complete when it is read.

@@ -11,7 +11,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNagOnResource } from '../utils/nag-ack';
 
 /** Sid of the Core key-policy statement that lets EventBridge write to the schedule DLQ. */
 export const EVENTBRIDGE_DLQ_KEY_SID = 'AllowEventBridgeToDeadLetter';
@@ -64,7 +64,7 @@ export function createScheduleDeadLetterQueue(stack: cdk.Stack, props: ScheduleD
     removalPolicy: cdk.RemovalPolicy.DESTROY,
   });
   props.denyInsecureTransport(dlq);
-  NagSuppressions.addResourceSuppressions(dlq, [{
+  acknowledgeNagOnResource(dlq, [{
     id: 'AwsSolutions-SQS3',
     reason: 'This queue IS the dead-letter queue of the ingestion schedule targets; nothing consumes it',
   }]);

@@ -17,7 +17,7 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import type { ApiStackContext } from './api-context';
 
 /**
@@ -53,28 +53,36 @@ function logGroupArn(stack: cdk.Stack, name: string): string {
   return stack.formatArn({ service: 'logs', resource: 'log-group', resourceName: name, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME });
 }
 
-function grantLogSearch(ctx: ApiStackContext, role: iam.Role, inputs: LogsDiagnosticsInputs): Record<string, string> {
+interface LogSearchGrant {
+  environment: Record<string, string>;
+  /** Every log-group ARN granted; those with a wildcard are the cdk-nag IAM5 findings. */
+  arns: string[];
+}
+
+function grantLogSearch(ctx: ApiStackContext, role: iam.Role, inputs: LogsDiagnosticsInputs): LogSearchGrant {
   const { stack } = ctx;
   const lambdaPattern = ctx.uniqueNamePattern('/aws/lambda/voc-*');
   const workflowPattern = ctx.uniqueNamePattern('/aws/stepfunctions/voc-*');
   const apiAccessLog = `/aws/apigateway/${ctx.uniqueName('voc-analytics-api')}`;
   const extras = Object.entries(CORE_LAMBDA_LOG_GROUPS)
     .map(([fn, constructId]) => [fn, `${inputs.coreStackName}-${constructId}`] as const);
-  role.addToPolicy(new iam.PolicyStatement({ actions: ['logs:DescribeLogGroups'], resources: [logGroupArn(stack, '*')] }));
-  role.addToPolicy(new iam.PolicyStatement({
-    actions: ['logs:StartQuery'],
-    resources: [
-      ...[lambdaPattern, workflowPattern, apiAccessLog].flatMap((name) => [logGroupArn(stack, name), logGroupArn(stack, `${name}:*`)]),
-      // `<prefix>*` already covers the `:*` stream form.
-      ...extras.map(([, prefix]) => logGroupArn(stack, `${prefix}*`)),
-    ],
-  }));
+  const allGroups = logGroupArn(stack, '*');
+  const queried = [
+    ...[lambdaPattern, workflowPattern, apiAccessLog].flatMap((name) => [logGroupArn(stack, name), logGroupArn(stack, `${name}:*`)]),
+    // `<prefix>*` already covers the `:*` stream form.
+    ...extras.map(([, prefix]) => logGroupArn(stack, `${prefix}*`)),
+  ];
+  role.addToPolicy(new iam.PolicyStatement({ actions: ['logs:DescribeLogGroups'], resources: [allGroups] }));
+  role.addToPolicy(new iam.PolicyStatement({ actions: ['logs:StartQuery'], resources: queried }));
   role.addToPolicy(new iam.PolicyStatement({ actions: ['logs:GetQueryResults', 'logs:StopQuery'], resources: ['*'] }));
   return {
-    SYSTEM_LOG_GROUP_PATTERN: lambdaPattern,
-    SYSTEM_WORKFLOW_LOG_GROUP_PATTERN: workflowPattern,
-    SYSTEM_API_ACCESS_LOG_GROUP: apiAccessLog,
-    SYSTEM_EXTRA_LOG_GROUPS: extras.map(([fn, prefix]) => `${fn}=${prefix}`).join(','),
+    environment: {
+      SYSTEM_LOG_GROUP_PATTERN: lambdaPattern,
+      SYSTEM_WORKFLOW_LOG_GROUP_PATTERN: workflowPattern,
+      SYSTEM_API_ACCESS_LOG_GROUP: apiAccessLog,
+      SYSTEM_EXTRA_LOG_GROUPS: extras.map(([fn, prefix]) => `${fn}=${prefix}`).join(','),
+    },
+    arns: [allGroups, ...queried],
   };
 }
 
@@ -103,22 +111,17 @@ function grantQueuePeek(ctx: ApiStackContext, role: iam.Role, inputs: LogsDiagno
 
 /** Grants the diagnostics reads to the LogsApi role; returns the env vars that name what it reads. */
 export function grantLogsDiagnostics(ctx: ApiStackContext, role: iam.Role, inputs: LogsDiagnosticsInputs): Record<string, string> {
-  const environment = grantLogSearch(ctx, role, inputs);
+  const { environment, arns } = grantLogSearch(ctx, role, inputs);
   grantQueuePeek(ctx, role, inputs);
-  NagSuppressions.addResourceSuppressions(role, [{
+  acknowledgeNag(role, [{
     id: 'AwsSolutions-IAM5',
     reason: 'System → Logs diagnostics (admin-only): DescribeLogGroups is a list call authorized against log-group:*; '
       + 'StartQuery is limited to this deployment\'s Lambda, Step Functions and API access log groups (name patterns) and '
       + 'to VocCoreStack\'s CloudFormation-named Lambda log groups (stack-name prefix + construct id); GetQueryResults, '
       + 'StopQuery and cloudwatch:GetMetricData support no resource type; kms:Decrypt is conditioned on kms:ViaService '
       + 'sqs and the SQS encryption context of exactly the failure queues.',
-    appliesTo: [
-      { regex: '/^Resource::arn:(?:<AWS::Partition>|[^:<]+):logs:(?:<AWS::Region>|[^:<]+):(?:<AWS::AccountId>|[^:<]+):log-group:\\*$/' },
-      { regex: '/^Resource::arn:(?:<AWS::Partition>|[^:<]+):logs:(?:<AWS::Region>|[^:<]+):(?:<AWS::AccountId>|[^:<]+):log-group:\\/aws\\/(lambda|stepfunctions)\\/(.+-)?voc-\\*-<AWS::AccountId>-<AWS::Region>(:\\*)?$/' },
-      { regex: '/^Resource::arn:(?:<AWS::Partition>|[^:<]+):logs:(?:<AWS::Region>|[^:<]+):(?:<AWS::AccountId>|[^:<]+):log-group:\\/aws\\/apigateway\\/(.+-)?voc-analytics-api-<AWS::AccountId>-<AWS::Region>:\\*$/' },
-      { regex: '/^Resource::arn:(?:<AWS::Partition>|[^:<]+):logs:(?:<AWS::Region>|[^:<]+):(?:<AWS::AccountId>|[^:<]+):log-group:[A-Za-z0-9-]+-[A-Za-z]+LambdaLogs\\*$/' },
-      'Resource::*',
-    ],
-  }], true);
+    // cdk-nag reports a granted resource only when it holds a wildcard.
+    findings: [...arns.filter((arn) => arn.includes('*')).map(resourceFinding), 'Resource::*'],
+  }]);
   return environment;
 }

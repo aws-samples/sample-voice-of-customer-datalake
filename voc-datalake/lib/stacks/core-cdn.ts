@@ -16,13 +16,13 @@ import type * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as path from 'path';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import {
   apiSecretsSuppressions,
-  cdkCustomResourceSuppressions,
   cdnSigningKeySuppressions,
   cloudfrontDefaultCertSuppressions,
   lambdaBasicExecutionRoleSuppressions,
+  providerFrameworkSuppressions,
 } from '../utils/nag-suppressions';
 import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
 import type { DataProtection } from '../utils/data-protection';
@@ -134,7 +134,7 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
     logBucket: accessLogsBucket,
     logFilePrefix: 'cloudfront-frontend/',
   });
-  NagSuppressions.addResourceSuppressions(frontendDistribution, cloudfrontDefaultCertSuppressions);
+  acknowledgeNagOnResource(frontendDistribution, cloudfrontDefaultCertSuppressions);
   const frontendDomainName = frontendDistribution.distributionDomainName;
 
   // Let CloudFront distinguish "missing object" from "not allowed" on the SPA
@@ -246,7 +246,7 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
     secretObjectValue: {},
     removalPolicy: ctx.dataProtection.removalPolicy,
   });
-  NagSuppressions.addResourceSuppressions(designIntegrationsSecret, apiSecretsSuppressions);
+  acknowledgeNagOnResource(designIntegrationsSecret, apiSecretsSuppressions);
   const designIntegrationsSecretArn = designIntegrationsSecret.secretArn;
 
   const cdnSigningKeysProvider = new cr.Provider(stack, 'CdnSigningKeysProvider', {
@@ -270,21 +270,11 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
     },
   });
 
-  NagSuppressions.addResourceSuppressions(cdnSigningSecret, cdnSigningKeySuppressions);
-  NagSuppressions.addResourceSuppressions(cdnSigningKeysLambda, lambdaBasicExecutionRoleSuppressions, true);
-  NagSuppressions.addResourceSuppressionsByPath(
-    stack,
-    `${stack.stackName}/CdnSigningKeysProvider/framework-onEvent`,
-    [
-      ...cdkCustomResourceSuppressions,
-      ...lambdaBasicExecutionRoleSuppressions,
-      {
-        id: 'AwsSolutions-IAM5',
-        reason: 'The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to CdnSigningKeysLambda only (same pattern as AdminBootstrapLambda).',
-        appliesTo: [{ regex: '/Resource::<.*CdnSigningKeysLambda.*\\.Arn>:\\*/' }],
-      },
-    ],
-    true
+  acknowledgeNagOnResource(cdnSigningSecret, cdnSigningKeySuppressions);
+  acknowledgeNag(cdnSigningKeysLambda, lambdaBasicExecutionRoleSuppressions);
+  acknowledgeNag(
+    cdnSigningKeysProvider.node.findChild('framework-onEvent'),
+    providerFrameworkSuppressions(cdnSigningKeysLambda, 'CdnSigningKeysLambda', 'AdminBootstrapLambda'),
   );
 
   // The L2 PublicKey validates the PEM prefix only for resolved strings, so

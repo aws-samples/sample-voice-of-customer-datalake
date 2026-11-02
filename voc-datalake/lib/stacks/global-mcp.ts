@@ -36,7 +36,7 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNagOnResource } from '../utils/nag-ack';
 import { Construct } from 'constructs';
 
 import { nonNegativeIntegerContext } from '../utils/context-flag';
@@ -220,7 +220,7 @@ export class GlobalMcp extends Construct {
     // A browser-based MCP client preflights its POST (the 405's `Allow` names OPTIONS).
     globalResource.addCorsPreflight(browserPreflight);
     const globalMethod = globalResource.addMethod('POST', mcpIntegration, mcpMethodOptions);
-    NagSuppressions.addResourceSuppressions(globalMethod, [
+    acknowledgeNagOnResource(globalMethod, [
       { id: 'AwsSolutions-COG4', reason: 'The global MCP endpoint uses the MCP bearer-token authorizer — MCP clients cannot use the Cognito auth flow; the authorizer and the handler verify the hashed token, its expiry/revocation and the minter on every request' },
     ]);
     this.wireMethodNotAllowed(globalResource, mcpMethodOptions);
@@ -268,7 +268,7 @@ export class GlobalMcp extends Construct {
         ...methodOptions,
         methodResponses: [{ statusCode: '405', responseParameters: headers }],
       });
-      NagSuppressions.addResourceSuppressions(method, [
+      acknowledgeNagOnResource(method, [
         { id: 'AwsSolutions-COG4', reason: 'Same MCP bearer-token authorizer as POST /mcp/global; a static 405 mock, no backend' },
       ]);
     }

@@ -24,7 +24,7 @@ import {
   pluginDirectoryIds,
   type PluginManifest,
 } from '../plugin-loader';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNagOnResource } from '../utils/nag-ack';
 import { apiSecretsSuppressions } from '../utils/nag-suppressions';
 import { dependencyLayer } from '../utils/dependency-layers';
 import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
@@ -303,7 +303,7 @@ export class VocIngestionStack extends VocStack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    NagSuppressions.addResourceSuppressions(secret, apiSecretsSuppressions);
+    acknowledgeNagOnResource(secret, apiSecretsSuppressions);
     return secret;
   }
 

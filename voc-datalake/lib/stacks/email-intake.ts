@@ -30,7 +30,7 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ses from 'aws-cdk-lib/aws-ses';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import type { Construct } from 'constructs';
 
 import { createPrivateVersionedBucket } from './core-buckets';
@@ -180,11 +180,13 @@ function intakeRole(scope: Construct, props: EmailIntakeProps, bucket: s3.Bucket
     assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
     managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
   });
+  const inboxObjects = bucket.arnForObjects(`${INBOUND_PREFIX}*`);
+  const rawInboxObjects = bucket.arnForObjects(`${INBOUND_RAW_PREFIX}*`);
   role.addToPolicy(new iam.PolicyStatement({
-    actions: ['s3:GetObject', 's3:DeleteObject'], resources: [bucket.arnForObjects(`${INBOUND_PREFIX}*`)],
+    actions: ['s3:GetObject', 's3:DeleteObject'], resources: [inboxObjects],
   }));
   role.addToPolicy(new iam.PolicyStatement({
-    actions: ['s3:PutObject'], resources: [bucket.arnForObjects(`${INBOUND_RAW_PREFIX}*`)],
+    actions: ['s3:PutObject'], resources: [rawInboxObjects],
   }));
   props.kmsKey.grantEncryptDecrypt(role);
   props.watermarksTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
@@ -193,15 +195,15 @@ function intakeRole(scope: Construct, props: EmailIntakeProps, bucket: s3.Bucket
   props.processingQueue.grantSendMessages(role);
   role.addToPolicy(new iam.PolicyStatement({ actions: ['bedrock:InvokeModel'], resources: stackModelArns(stack) }));
   role.addToPolicy(piiDetectionStatement());
-  NagSuppressions.addResourceSuppressions(role, [
+  acknowledgeNag(role, [
     ...bedrockModelSuppressions,
     {
       id: 'AwsSolutions-IAM5',
       reason: 'Object-level S3 actions are scoped to the inbox prefixes (inbound/*, inbound-raw/*) of the '
         + 'inbox bucket only',
-      appliesTo: [{ regex: '/^Resource::<InboundEmailBucket.*\\.Arn>/inbound(-raw)?/\\*$/g' }],
+      findings: [inboxObjects, rawInboxObjects].map(resourceFinding),
     },
-  ], true);
+  ]);
   return role;
 }
 

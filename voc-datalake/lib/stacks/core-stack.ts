@@ -12,7 +12,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, stackModelArns } from '../utils/model-allowlist';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag, acknowledgeNagOnResource, resourceFinding } from '../utils/nag-ack';
 import { idempotencyTableSuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { isDevDeployment } from '../utils/context';
@@ -342,7 +342,7 @@ export class VocCoreStack extends VocStack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       timeToLiveAttribute: 'expiration',
     });
-    NagSuppressions.addResourceSuppressions(this.idempotencyTable, idempotencyTableSuppressions);
+    acknowledgeNagOnResource(this.idempotencyTable, idempotencyTableSuppressions);
 
 
     // ============================================
@@ -430,8 +430,10 @@ export class VocCoreStack extends VocStack {
     // Prefix-scoped both ways, and asymmetrically: it reads only what users
     // upload and writes only where its own output goes. Without the narrower
     // write scope this role could overwrite any raw upload in the bucket.
-    this.rawDataBucket.grantRead(productDocExtractor, 'projects/*/product_docs/raw/*');
-    this.rawDataBucket.grantWrite(productDocExtractor, 'projects/*/product_docs/extracted/*');
+    const productDocReadKeys = 'projects/*/product_docs/raw/*';
+    const productDocWriteKeys = 'projects/*/product_docs/extracted/*';
+    this.rawDataBucket.grantRead(productDocExtractor, productDocReadKeys);
+    this.rawDataBucket.grantWrite(productDocExtractor, productDocWriteKeys);
     this.projectsTable.grantReadWriteData(productDocExtractor);
     this.aggregatesTable.grantReadData(productDocExtractor);
     this.kmsKey.grantEncryptDecrypt(productDocExtractor);
@@ -461,36 +463,27 @@ export class VocCoreStack extends VocStack {
     // suppressed HERE rather than by widening the stack-level set: prefix-scoped
     // S3 object ARNs, the DynamoDB index/* wildcards, the KMS grant wildcards
     // and the Bedrock cross-region foundation-model ARNs.
-    NagSuppressions.addResourceSuppressions(
-      productDocExtractor,
-      [
-        // First, so its reason (not the shared S3 list's broader bucket-wide one) is what suppresses the
-        // two prefix grants: cdk-nag uses the first entry that matches a finding.
-        {
-          id: 'AwsSolutions-IAM5',
-          reason: 'Object-level S3 access is already narrowed to the two product-doc prefixes; the trailing wildcard is the object name, and the middle wildcard is the runtime project id.',
-          appliesTo: [
-            { regex: '/Resource::<.*RawDataBucket.*\\.Arn>/projects/\\*/product_docs/.*/' },
-          ],
-        },
-        ...lambdaBasicExecutionRoleSuppressions,
-        ...s3BucketSuppressions,
-        ...dynamoDbGsiSuppressions,
-        ...kmsEncryptionSuppressions,
-        ...bedrockModelSuppressions,
-      ],
-      true,
-    );
+    acknowledgeNag(productDocExtractor, [
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'Object-level S3 access is already narrowed to the two product-doc prefixes; the trailing wildcard is the object name, and the middle wildcard is the runtime project id.',
+        findings: [productDocReadKeys, productDocWriteKeys]
+          .map((keys) => resourceFinding(this.rawDataBucket.arnForObjects(keys))),
+      },
+      ...lambdaBasicExecutionRoleSuppressions,
+      ...s3BucketSuppressions,
+      ...dynamoDbGsiSuppressions([this.projectsTable, this.aggregatesTable]),
+      ...kmsEncryptionSuppressions,
+      ...bedrockModelSuppressions,
+    ]);
     // addEventNotification synthesizes a CDK-managed custom-resource Lambda that
     // configures the bucket notification. Same treatment as the cr.Provider
     // frameworks above: CDK owns its runtime and its basic-execution role.
     // (Its PutBucketNotification grant no longer carries a wildcard, so it needs
     // no IAM5 entry; lib/nag-suppressions.test.ts fails on one that matches nothing.)
-    NagSuppressions.addResourceSuppressionsByPath(
-      this,
-      `${this.stackName}/BucketNotificationsHandler050a0587b7544547bf325f094a3db834`,
+    acknowledgeNag(
+      this.node.findChild('BucketNotificationsHandler050a0587b7544547bf325f094a3db834'),
       [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions],
-      true,
     );
 
 
@@ -517,7 +510,7 @@ export class VocCoreStack extends VocStack {
     
     // Suppress CDK custom resource Lambda runtime warnings
     // The AwsCustomResource construct creates a singleton Lambda with a deterministic UUID
-    suppressAwsCustomResourceProvider(this, this.stackName);
+    suppressAwsCustomResourceProvider(this);
 
     // ============================================
     // OUTPUTS

@@ -19,14 +19,15 @@
  * which reads the final synthesized templates, is the gate that still catches it. Only `iam.Policy`
  * documents are read; CDK puts every role grant in one.
  */
-import { CfnResource, type Stack } from 'aws-cdk-lib';
+import type { Stack } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { NagSuppressions } from 'cdk-nag';
 import { z } from 'zod';
 
 import { byCodeUnit } from './compare';
+import { acknowledgeNag, isNagAcknowledged } from './nag-ack';
 import { RESOURCE_STAR_ACTIONS, isReviewedResourceStarAction } from './resource-star-actions';
 
+const RULE = 'AwsSolutions-IAM5';
 const RESOURCE_STAR_FINDING = 'Resource::*';
 const REASON_PREFIX = 'Resource::* holds only reviewed actions that cannot be scoped (lib/utils/resource-star-actions.ts): ';
 
@@ -39,9 +40,6 @@ const StatementSchema = z.object({
   Condition: z.unknown().optional(),
 });
 const DocumentSchema = z.object({ Statement: z.array(StatementSchema).optional() });
-const NagMetadataSchema = z.object({
-  rules_to_suppress: z.array(z.object({ id: z.string(), applies_to: z.array(z.unknown()).optional() })).optional(),
-}).optional();
 
 const isStar = (resource: unknown) => resource === '*' || (Array.isArray(resource) && resource.includes('*'));
 
@@ -69,13 +67,9 @@ function reviewedStarActions(policy: iam.Policy): string[] | null {
   return [...actions].sort(byCodeUnit);
 }
 
-/** Whether the policy's CloudFormation resource already has an IAM5 suppression covering `Resource::*`. */
+/** Whether the policy's CloudFormation resource already has `Resource::*` acknowledged (on it or an ancestor). */
 function alreadySuppressed(policy: iam.Policy): boolean {
-  const cfn = policy.node.defaultChild;
-  if (!(cfn instanceof CfnResource)) return false;
-  const entries = NagMetadataSchema.parse(cfn.getMetadata('cdk_nag'))?.rules_to_suppress ?? [];
-  return entries.some((entry) => entry.id === 'AwsSolutions-IAM5'
-    && (entry.applies_to === undefined || entry.applies_to.includes(RESOURCE_STAR_FINDING)));
+  return isNagAcknowledged(policy.node.defaultChild ?? policy, `${RULE}[${RESOURCE_STAR_FINDING}]`);
 }
 
 /** Suppress `Resource::*` on every policy of `stack` whose `"*"` grants are all reviewed. */
@@ -85,10 +79,10 @@ export function suppressReviewedResourceStar(stack: Stack): void {
     const actions = reviewedStarActions(construct);
     if (actions === null || actions.length === 0) continue;
     const reasons = [...new Set(actions.map((action) => RESOURCE_STAR_ACTIONS[action]?.reason ?? ''))];
-    NagSuppressions.addResourceSuppressions(construct, [{
-      id: 'AwsSolutions-IAM5',
+    acknowledgeNag(construct, [{
+      id: RULE,
       reason: `${REASON_PREFIX}${actions.join(', ')}. ${reasons.join(' | ')}`,
-      appliesTo: [RESOURCE_STAR_FINDING],
-    }], true);
+      findings: [RESOURCE_STAR_FINDING],
+    }]);
   }
 }

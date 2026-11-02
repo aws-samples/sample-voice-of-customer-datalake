@@ -9,13 +9,15 @@
  * to keep their pool untouched; greenfield keeps case-insensitive sign-in.
  */
 import { describe, it, expect } from 'vitest';
+import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { ABORT_MULTIPART_DAYS, ACCESS_LOGS_EXPIRATION_DAYS, ACCESS_LOGS_NONCURRENT_VERSION_DAYS } from './core-buckets';
 import { SCRATCH_EXPIRATION_DAYS } from './core-buckets';
-import { synthCoreTemplate } from '../test-support/core-stack-fixture';
+import { buildCoreStack, synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { itemAt, recordAt, valueAt } from '../test-support/guards';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
+import { acknowledgementCovering, acknowledgementsOn } from '../utils/nag-ack';
 import {
   BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS,
   pythonIntConstant,
@@ -333,11 +335,6 @@ describe('VocCoreStack S3 server access logging', () => {
     }),
   });
 
-  /** Suppression ids on a resource, or none when the metadata block is absent. */
-  const NagMetadataSchema = z.object({
-    cdk_nag: z.object({ rules_to_suppress: z.array(z.object({ id: z.string() })) }).optional(),
-  });
-
   /** A bucket policy resource, down to the statement list this block reads. */
   const PolicyResourceSchema = z.object({
     Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(z.unknown()) }) }),
@@ -485,8 +482,8 @@ describe('VocCoreStack S3 server access logging', () => {
     // `cloudfront-frontend/` prefix never counts because a distribution is not a
     // CfnBucket. So two of the FOUR producers in total — three buckets plus the
     // distribution — satisfy the rule, this bucket is
-    // compliant by construction and raises no finding —
-    // AwsSolutions-VocCoreStack-NagReport.csv records it as `Compliant`. Worth
+    // compliant by construction and raises no finding (the cdk-nag 2 report recorded
+    // it as `Compliant`). Worth
     // stating because the tempting wrong conclusion is that some suppression
     // elsewhere is quietly covering it; none is. Move RawDataBucket to another
     // stack and only WebsiteBucket would remain — move both and the rule starts
@@ -522,18 +519,19 @@ describe('VocCoreStack S3 server access logging', () => {
     });
   });
 
-  it('carries no AwsSolutions-S1 suppression on the website bucket', () => {
+  it('carries no AwsSolutions-S1 acknowledgement on the website bucket', () => {
     // The retired suppression described the missing property above. With the
-    // property present the rule no longer fires, so a suppression would be dead
+    // property present the rule no longer fires, so an acknowledgement would be dead
     // metadata that a later audit has to re-litigate.
     //
-    // Narrowed to this one rule on purpose: a future suppression on this bucket
+    // Narrowed to this one rule on purpose: a future acknowledgement on this bucket
     // for some OTHER finding is a legitimate act, and it must not fail a case
-    // whose whole subject is AwsSolutions-S1.
-    const [, website] = bucketByLogicalIdPrefix(synthCoreTemplate(), 'WebsiteBucket');
+    // whose whole subject is AwsSolutions-S1. Read on the bucket's CfnBucket and
+    // its ancestors, which is where cdk-nag 3 looks.
+    const { websiteBucket } = buildCoreStack();
+    const cfn = websiteBucket.node.defaultChild ?? websiteBucket;
 
-    const suppressions = NagMetadataSchema.parse(website.Metadata ?? {}).cdk_nag?.rules_to_suppress ?? [];
-    expect(suppressions.map((rule) => rule.id)).not.toContain('AwsSolutions-S1');
+    expect(acknowledgementCovering(cfn, 'AwsSolutions-S1')).toBeUndefined();
   });
 });
 
@@ -1106,18 +1104,21 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     ).toBe('authenticated');
   });
 
-  it('leaves no AwsSolutions-IAM5 suppression on the role with no wildcard left to suppress', () => {
-    // The grant's blanket suppression (no `appliesTo`) was removed with it. A
-    // suppression that outlives its finding is worse than none: it silences
-    // whatever wildcard the next edit adds here, and cdk-nag would not complain.
+  it('leaves no AwsSolutions-IAM5 acknowledgement over the role with no wildcard left to acknowledge', () => {
+    // The grant's blanket suppression was removed with it. An acknowledgement
+    // that outlives its finding is worse than none: it silences whatever
+    // identical wildcard the next edit adds here, and cdk-nag would not complain.
     //
-    // SCOPE: this reads the suppressions attached to the ROLE RESOURCE. A
-    // stack-level one (`NagSuppressions.addStackSuppressions`) or one on an
-    // ancestor construct lands elsewhere in the template and is not seen here.
-    const template = synthCoreTemplate();
-    const role = authenticatedRole(template);
+    // SCOPE: the role's CfnRole and every ancestor (the role construct, the
+    // stack, the app) — everything cdk-nag 3 consults for a finding on it.
+    const stack = buildCoreStack();
+    const logicalId = authenticatedRoleLogicalId(Template.fromStack(stack));
+    const role = stack.node.findAll()
+      .find((construct) => construct instanceof cdk.CfnElement && stack.getLogicalId(construct) === logicalId);
+    if (role === undefined) throw new Error(`no construct renders ${logicalId}`);
 
-    expect(JSON.stringify(role.Metadata ?? {})).not.toContain('AwsSolutions-IAM5');
+    const acknowledged = role.node.scopes.flatMap(acknowledgementsOn).map((ack) => ack.id);
+    expect(acknowledged.filter((id) => id.startsWith('AwsSolutions-IAM5'))).toStrictEqual([]);
   });
 });
 

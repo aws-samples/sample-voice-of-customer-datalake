@@ -20,7 +20,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNagOnResource } from '../utils/nag-ack';
 import { Construct } from 'constructs';
 import type { PluginManifest } from '../plugin-loader';
 import { MEMORY_EXTRACT_DLQ_BASE_NAME } from './memory-workers';
@@ -168,7 +168,7 @@ export function createApiAsyncFailureQueue(scope: Construct, id: string, queueNa
     enforceSSL: true,
     removalPolicy: cdk.RemovalPolicy.DESTROY,
   });
-  NagSuppressions.addResourceSuppressions(queue, [{
+  acknowledgeNagOnResource(queue, [{
     id: 'AwsSolutions-SQS3',
     reason: 'This queue IS the terminal failure record (a Lambda async on-failure destination); nothing consumes it, so it has no DLQ of its own',
   }]);
@@ -206,6 +206,8 @@ interface OpsAlertsInputs {
 interface OpsAlertsWiring {
   environment: Record<string, string>;
   statements: iam.PolicyStatement[];
+  /** The two alarm ARNs the statements grant on; both end in a wildcard (see OPS_ALERTS_NAG_REASON). */
+  alarmArns: string[];
 }
 
 /** `slug=queueName` for every failure queue this deployment has. */
@@ -237,6 +239,11 @@ export function opsAlertsWiring(inputs: OpsAlertsInputs): OpsAlertsWiring {
   const ingestors = inputs.enabledPlugins
     .filter((p) => p.infrastructure.ingestor?.enabled)
     .map((p) => uniqueName(ingestorFunctionBaseName(p.id)));
+  const alarmArn = (resourceName: string) => stack.formatArn({
+    service: 'cloudwatch', resource: 'alarm', resourceName, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+  });
+  const prefixedAlarms = alarmArn(`${alarmPrefix}-*`);
+  const allAlarms = alarmArn('*');
   return {
     environment: {
       OPS_ALERTS_TOPIC_ARN: topicArn,
@@ -251,24 +258,21 @@ export function opsAlertsWiring(inputs: OpsAlertsInputs): OpsAlertsWiring {
     statements: [
       new iam.PolicyStatement({
         actions: ['cloudwatch:PutMetricAlarm', 'cloudwatch:DeleteAlarms'],
-        resources: [stack.formatArn({
-          service: 'cloudwatch', resource: 'alarm', resourceName: `${alarmPrefix}-*`, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
-        })],
+        resources: [prefixedAlarms],
       }),
       // DescribeAlarms is a LIST call: CloudWatch authorizes it against `alarm:*` even with an
       // AlarmNamePrefix (a prefix-scoped grant answers AccessDenied, seen live in 5.01.00). It
       // only reads alarm metadata; the writes above stay pinned to the deployment's prefix.
       new iam.PolicyStatement({
         actions: ['cloudwatch:DescribeAlarms'],
-        resources: [stack.formatArn({
-          service: 'cloudwatch', resource: 'alarm', resourceName: '*', arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
-        })],
+        resources: [allAlarms],
       }),
       new iam.PolicyStatement({
         actions: ['sns:Subscribe', 'sns:Unsubscribe', 'sns:ListSubscriptionsByTopic'],
         resources: [topicArn],
       }),
     ],
+    alarmArns: [prefixedAlarms, allAlarms],
   };
 }
 

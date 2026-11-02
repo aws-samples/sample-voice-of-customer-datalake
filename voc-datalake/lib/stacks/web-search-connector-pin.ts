@@ -24,7 +24,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as bedrockagentcore from 'aws-cdk-lib/aws-bedrockagentcore';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cr from 'aws-cdk-lib/custom-resources';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag } from '../utils/nag-ack';
 
 import { cdkCustomResourceSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 
@@ -72,6 +72,6 @@ export function pinWebSearchConnector(stack: cdk.Stack, { gateway, target, targe
     installLatestAwsSdk: true,
   });
   pin.node.addDependency(target);
-  NagSuppressions.addResourceSuppressions(pin, [...cdkCustomResourceSuppressions], true);
-  suppressAwsCustomResourceProvider(stack, stack.node.id);
+  acknowledgeNag(pin, cdkCustomResourceSuppressions);
+  suppressAwsCustomResourceProvider(stack);
 }

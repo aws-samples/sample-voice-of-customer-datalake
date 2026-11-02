@@ -14,7 +14,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as path from 'path';
 import { Construct } from 'constructs';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag } from '../utils/nag-ack';
 import { getEnabledPlugins, getPluginsWithWebhook, capitalize, pluginDirectoryIds, type PluginManifest } from '../plugin-loader';
 import { applyAppClientEnv } from '../utils/app-client-env';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
@@ -385,7 +385,7 @@ export class VocApiStack extends VocStack {
     // Find and suppress the CDK-managed custom resource (hash-based ID)
     for (const child of this.node.findAll()) {
       if (child.node.id.startsWith('Custom::CDKBucketDeployment')) {
-        NagSuppressions.addResourceSuppressions(child, [...cdkCustomResourceSuppressions, ...cdkAssetsSuppressions], true);
+        acknowledgeNag(child, [...cdkCustomResourceSuppressions, ...cdkAssetsSuppressions(child)]);
       }
     }
 

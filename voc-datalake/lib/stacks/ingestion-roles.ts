@@ -27,7 +27,7 @@ import type * as kms from 'aws-cdk-lib/aws-kms';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import type * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import type * as sqs from 'aws-cdk-lib/aws-sqs';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag, type NagAck } from '../utils/nag-ack';
 import { capitalize } from '../plugin-loader';
 import { stackModelArns } from '../utils/model-allowlist';
 import { bedrockModelSuppressions } from '../utils/nag-suppressions';
@@ -65,12 +65,12 @@ export const BROWSER_SESSION_ACTIONS = ['bedrock-agentcore:StartBrowserSession',
 export const BROWSER_STREAM_ACTION = 'bedrock-agentcore:ConnectBrowserAutomationStream';
 
 /** The cdk-nag reason for the stream connect on `*`, on every browser-capable role. */
-export const BROWSER_STREAM_SUPPRESSION = {
+export const BROWSER_STREAM_SUPPRESSION: NagAck = {
   id: 'AwsSolutions-IAM5',
   reason: 'bedrock-agentcore:ConnectBrowserAutomationStream has no resource type in the service '
     + 'authorization reference, so it can only be granted on "*"; Start/StopBrowserSession are scoped '
     + 'to the AWS-managed aws.browser.v1',
-  appliesTo: ['Resource::*'],
+  findings: ['Resource::*'],
 };
 
 /** The statements a browser-capable role is given (web_reviews ingestor, voc-design-capture). */
@@ -110,12 +110,12 @@ export class IngestorRoles {
 
       // The stack-level suppressions in bin/ cover the base grants but not Bedrock,
       // so attach the Bedrock model suppression to this dedicated role explicitly.
-      NagSuppressions.addResourceSuppressions(role, bedrockModelSuppressions, true);
+      acknowledgeNag(role, bedrockModelSuppressions);
     }
 
     if (browser) {
       for (const statement of managedBrowserStatements(this.stack)) role.addToPolicy(statement);
-      NagSuppressions.addResourceSuppressions(role, [BROWSER_STREAM_SUPPRESSION], true);
+      acknowledgeNag(role, [BROWSER_STREAM_SUPPRESSION]);
     }
 
     if (scheduleRuleName) {

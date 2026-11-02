@@ -1,135 +1,117 @@
 /**
- * Every cdk-nag suppression the app declares still suppresses something.
+ * Every cdk-nag finding is acknowledged, and every acknowledgement the app declares still covers a finding.
  *
- * A suppression outlives the resource or the finding it was written for: the resource is removed, a grant is
- * narrowed, an `appliesTo` names an ARN pattern the stack no longer renders. It then silences nothing today
- * and, worse, silences the NEXT finding of that rule on that resource without anyone reviewing it. Nothing
- * else notices: cdk-nag reports findings, never suppressions that matched none.
+ * An acknowledgement outlives the resource or the finding it was written for: the resource is removed, a
+ * grant is narrowed, a rendered ARN stops matching. It then covers nothing today and, worse, covers the NEXT
+ * identical finding on that construct without anyone reviewing it. Nothing else notices: cdk-nag 3 reports
+ * findings, never acknowledgements that matched none.
  *
- * How. The real app (`bin/voc-datalake.ts`) is synthesized IN PROCESS with `AwsSolutionsChecks` given one
- * extra logger (`additionalLoggers`, cdk-nag's `INagLogger`). Every `onSuppressed` / `onSuppressedError` call
- * names the resource, the rule and the finding; the suppression that consumed it is found the way cdk-nag
- * picks it (`NagPack.ignoreRule`: the FIRST entry, resource-level before stack-level, whose `id` is the rule
- * and whose `appliesTo` — when it has one — matches the finding). An entry, or one `appliesTo` item of it,
- * that consumed nothing in EITHER synth shape is unused:
+ * How. The real app (`bin/voc-datalake.ts`) is synthesized IN PROCESS with `AwsSolutionsChecks` replaced by a
+ * subclass that records every finding cdk-nag computes (its `applyRule`, before the acknowledgement check):
+ * the resource and the id (`AwsSolutions-IAM5[<finding>]`, or the bare rule). The acknowledgement covering
+ * a finding is found the way cdk-nag looks (lib/utils/nag-ack.ts `acknowledgementCovering`: the resource,
+ * then its ancestors), nearest first. A declared acknowledgement that covered nothing in EITHER synth shape
+ * is unused:
  *
  *   - the default deploy, and
  *   - every context-gated feature on (inbound email, participant email + the board pool, the fixture
- *     provider, a model pin, Bedrock model access, data protection), so a feature-gated suppression counts.
+ *     provider, a model pin, Bedrock model access, data protection), so a feature-gated one counts.
  *
- * An entry is identified by its rule, reason and `appliesTo` item, not by where it was applied: a shared list
- * (`dynamoDbGsiSuppressions` on three stacks, `lambdaBasicExecutionRoleSuppressions` on every stack) is judged
- * across all of them, so it is used when any one stack needs it.
+ * An acknowledgement is identified by its id and reason, not by the construct it sits on: a shared list
+ * (`lambdaBasicExecutionRoleSuppressions` on every provider and stack) is judged across all of them, so it
+ * is used when any one placement needs it.
  */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { type CfnResource, Stack } from 'aws-cdk-lib';
-import type { INagLogger, NagLoggerSuppressedData, NagLoggerSuppressedErrorData, NagPackProps } from 'cdk-nag';
+import type { CfnResource } from 'aws-cdk-lib';
+import type { IApplyRule } from 'cdk-nag';
+import type { IConstruct } from 'constructs';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
 
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
 import { isRecord } from './test-support/guards';
 import { SYNTH_ACCOUNT, SYNTH_REGION, SYNTH_TIMEOUT_MS } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
+import { acknowledgementCovering, acknowledgementsOn, MIN_REASON_LENGTH } from './utils/nag-ack';
 
-const VALIDATION_FAILURE_ID = 'CdkNagValidationFailure';
 const PROJECT_ROOT = join(__dirname, '..');
+const PACK = 'AwsSolutions-';
 
-/** What one suppressed finding needs to find the entry that consumed it. */
-interface Consumed {
+/** One finding cdk-nag computed: the resource and the id an acknowledgement must name. */
+interface Finding {
   readonly resource: CfnResource;
-  readonly ruleId: string;
-  readonly findingId: string;
-  readonly validationFailure: boolean;
+  readonly id: string;
 }
 
-const recorder = vi.hoisted(() => ({ consumed: new Array<Consumed>(), resources: new Set<CfnResource>() }));
+const recorder = vi.hoisted(() => ({ findings: new Array<Finding>(), roots: new Array<IConstruct>() }));
 
 vi.mock('cdk-nag', async (importOriginal) => {
   const original = await importOriginal<typeof import('cdk-nag')>();
-  const seen = (data: { resource: CfnResource }) => { recorder.resources.add(data.resource); };
-  const logger: INagLogger = {
-    onCompliance: seen,
-    onNonCompliance: seen,
-    onNotApplicable: seen,
-    onError: seen,
-    onSuppressed: (data: NagLoggerSuppressedData) => {
-      seen(data);
-      recorder.consumed.push({ resource: data.resource, ruleId: data.ruleId, findingId: data.findingId, validationFailure: false });
-    },
-    onSuppressedError: (data: NagLoggerSuppressedErrorData) => {
-      seen(data);
-      recorder.consumed.push({ resource: data.resource, ruleId: data.ruleId, findingId: '', validationFailure: true });
-    },
+  /** The ids cdk-nag 3.0.2 derives from a rule result (`NagPack.applyRule`). */
+  const idsOf = (ruleId: string, params: IApplyRule): string[] => {
+    try {
+      const result = params.rule(params.node);
+      if (result === original.NagRuleCompliance.NON_COMPLIANT) return [ruleId];
+      return Array.isArray(result) ? result.map((finding) => `${ruleId}[${finding}]`) : [];
+    } catch {
+      return [ruleId]; // a rule that throws is reported (and acknowledged) by its bare id
+    }
   };
   class RecordingChecks extends original.AwsSolutionsChecks {
-    constructor(props?: NagPackProps) {
-      super({ ...props, additionalLoggers: [...(props?.additionalLoggers ?? []), logger] });
+    override validateScope(scope: IConstruct) {
+      recorder.roots.push(scope);
+      return super.validateScope(scope);
+    }
+    protected override applyRule(params: IApplyRule): void {
+      const ruleId = `${this.readPackName}-${params.ruleSuffixOverride ? params.ruleSuffixOverride : params.rule.name}`;
+      for (const id of idsOf(ruleId, params)) recorder.findings.push({ resource: params.node, id });
+      super.applyRule(params);
     }
   }
   return { ...original, AwsSolutionsChecks: RecordingChecks };
 });
 
-// ── suppressions as cdk-nag reads them ────────────────────────────────
+// ── judging ───────────────────────────────────────────────────────────
 
-const AppliesToSchema = z.union([z.string(), z.object({ regex: z.string() })]);
-const SuppressionSchema = z.object({
-  id: z.string(),
-  reason: z.string(),
-  applies_to: z.array(AppliesToSchema).optional(),
-  is_reason_encoded: z.boolean().optional(),
-});
-type Suppression = z.infer<typeof SuppressionSchema>;
-type AppliesTo = z.infer<typeof AppliesToSchema>;
+const unitKey = (id: string, reason: string) => `${id} :: ${reason.slice(0, 70)}`;
 
-const MetadataSchema = z.object({ rules_to_suppress: z.array(SuppressionSchema).optional() }).optional();
-
-/** Resource-level then stack-level entries, in the order cdk-nag tries them (`NagSuppressionHelper.getSuppressions`). */
-function suppressionsOf(resource: CfnResource): Suppression[] {
-  const own = MetadataSchema.parse(resource.getMetadata('cdk_nag'))?.rules_to_suppress ?? [];
-  const metadata: unknown = Stack.of(resource).templateOptions.metadata;
-  const stack = MetadataSchema.parse(isRecord(metadata) ? metadata.cdk_nag : undefined)?.rules_to_suppress ?? [];
-  return [...own, ...stack];
+interface Judged {
+  /** Every acknowledgement of a pack rule the app declares. */
+  readonly declared: Set<string>;
+  /** The acknowledgements that covered a finding. */
+  readonly used: Set<string>;
+  /** Findings no acknowledgement covers (`<path> <id>`). */
+  readonly unacknowledged: string[];
+  /** Declared acknowledgements whose reason is too short (`<path> <id>`). */
+  readonly reasonless: string[];
 }
 
-const reasonOf = (s: Suppression) => (s.is_reason_encoded ? Buffer.from(s.reason, 'base64').toString() : s.reason);
-
-function itemMatches(item: AppliesTo, findingId: string): boolean {
-  if (typeof item === 'string') return item === findingId;
-  // cdk-nag's `toRegEx`: `/<source>/<flags>`, split at the LAST slash.
-  const first = item.regex.indexOf('/');
-  const last = item.regex.lastIndexOf('/');
-  return first >= 0 && last > first && new RegExp(item.regex.slice(first + 1, last), item.regex.slice(last + 1)).test(findingId);
-}
-
-/** The `appliesTo` items of `s` that make it apply (all of `s` when it has none), or null (`doesApply`). */
-function applyingItems(s: Suppression, ruleId: string, findingId: string): AppliesTo[] | null {
-  if (s.id !== ruleId) return null;
-  if (!s.applies_to) return [];
-  const hits = findingId ? s.applies_to.filter((item) => itemMatches(item, findingId)) : [];
-  return hits.length ? hits : null;
-}
-
-const itemText = (item: AppliesTo) => (typeof item === 'string' ? item : `regex ${item.regex}`);
-/** One judged unit: an entry without `appliesTo`, or one `appliesTo` item of an entry. */
-const unitKey = (s: Suppression, item?: AppliesTo) =>
-  [s.id, reasonOf(s).slice(0, 70), ...(item === undefined ? [] : [itemText(item)])].join(' :: ');
-
-function unitsOf(s: Suppression): string[] {
-  return s.applies_to ? s.applies_to.map((item) => unitKey(s, item)) : [unitKey(s)];
-}
-
-/** The units the FIRST applying entry consumes (`NagPack.ignoreRule`). */
-function consumedUnits(c: Consumed): string[] {
-  for (const s of suppressionsOf(c.resource)) {
-    const items = applyingItems(s, c.ruleId, c.findingId)
-      ?? (c.validationFailure ? applyingItems(s, VALIDATION_FAILURE_ID, c.ruleId) : null);
-    if (items !== null) return items.length ? items.map((item) => unitKey(s, item)) : [unitKey(s)];
+function judged(): Judged {
+  const declared = new Set<string>();
+  const reasonless: string[] = [];
+  for (const root of recorder.roots) {
+    for (const construct of root.node.findAll()) {
+      for (const ack of acknowledgementsOn(construct).filter(({ id }) => id.startsWith(PACK))) {
+        declared.add(unitKey(ack.id, ack.reason));
+        if (ack.reason.trim().length < MIN_REASON_LENGTH) reasonless.push(`${construct.node.path} ${ack.id}`);
+      }
+    }
   }
-  return [];
+  const used = new Set<string>();
+  const unacknowledged: string[] = [];
+  for (const { resource, id } of recorder.findings) {
+    const covering = acknowledgementCovering(resource, id);
+    if (covering) used.add(unitKey(id, covering.reason));
+    else unacknowledged.push(`${resource.node.path} ${id}`);
+  }
+  return { declared, used, unacknowledged, reasonless };
+}
+
+function resetRecorder(): void {
+  recorder.findings.length = 0;
+  recorder.roots.length = 0;
 }
 
 // ── the two synth shapes ──────────────────────────────────────────────
@@ -150,22 +132,8 @@ function committedContext(): Record<string, unknown> {
 const outdirs: string[] = [];
 afterAll(() => { for (const dir of outdirs) rmSync(dir, { recursive: true, force: true }); });
 
-/** [declared units, consumed units] of what the recording logger saw since the last reset. */
-function judged(): [Set<string>, Set<string>] {
-  const declared = new Set<string>();
-  for (const resource of recorder.resources) {
-    for (const s of suppressionsOf(resource)) unitsOf(s).forEach((u) => declared.add(u));
-  }
-  return [declared, new Set(recorder.consumed.flatMap(consumedUnits))];
-}
-
-function resetRecorder(): void {
-  recorder.consumed.length = 0;
-  recorder.resources.clear();
-}
-
 /** Run bin/voc-datalake.ts in process with `context`. */
-async function synthShape(context: Record<string, unknown>): Promise<[Set<string>, Set<string>]> {
+async function synthShape(context: Record<string, unknown>): Promise<Judged> {
   resetRecorder();
   const outdir = mkdtempSync(join(tmpdir(), 'voc-nag-'));
   outdirs.push(outdir);
@@ -179,38 +147,57 @@ async function synthShape(context: Record<string, unknown>): Promise<[Set<string
   return judged();
 }
 
-describe('cdk-nag suppressions', () => {
-  it('reports a planted suppression that matches nothing, and not one that does (or its shadowed twin)', async () => {
+const unusedOf = ({ declared, used }: Pick<Judged, 'declared' | 'used'>) =>
+  [...declared].filter((unit) => !used.has(unit)).sort(byCodeUnit);
+
+describe('cdk-nag acknowledgements', () => {
+  it('reports a planted acknowledgement that covers nothing, and a shadowed one, but not one that covers', async () => {
     resetRecorder();
-    const { App, Aspects, Stack: StackOf } = await import('aws-cdk-lib');
+    const { App, Stack, Validations } = await import('aws-cdk-lib');
+    const sqs = await import('aws-cdk-lib/aws-sqs');
+    const nag = await import('cdk-nag');
+    const { acknowledgeNag, acknowledgeNagOnResource } = await import('./utils/nag-ack');
+    const app = new App({ outdir: mkdtempSync(join(tmpdir(), 'voc-nag-fx-')) });
+    outdirs.push(app.outdir);
+    const stack = new Stack(app, 'Fx');
+    const queue = new sqs.Queue(stack, 'Queue', { enforceSSL: true });
+    acknowledgeNagOnResource(queue, [
+      { id: 'AwsSolutions-SQS3', reason: 'A planted queue with no DLQ, on purpose' },
+      { id: 'AwsSolutions-S1', reason: 'A planted rule the queue is never checked for' },
+    ]);
+    acknowledgeNag(stack, [{ id: 'AwsSolutions-SQS3', reason: 'A planted stack-wide twin the queue one shadows' }]);
+    Validations.of(app).addPlugins(new nag.AwsSolutionsChecks(app));
+    app.synth();
+    const result = judged();
+    expect(result.unacknowledged).toStrictEqual([]);
+    expect(unusedOf(result)).toStrictEqual([
+      'AwsSolutions-S1 :: A planted rule the queue is never checked for',
+      'AwsSolutions-SQS3 :: A planted stack-wide twin the queue one shadows',
+    ]);
+  });
+
+  it('reports a finding nothing acknowledges', async () => {
+    resetRecorder();
+    const { App, Stack, Validations } = await import('aws-cdk-lib');
     const sqs = await import('aws-cdk-lib/aws-sqs');
     const nag = await import('cdk-nag');
     const app = new App({ outdir: mkdtempSync(join(tmpdir(), 'voc-nag-fx-')) });
     outdirs.push(app.outdir);
-    const stack = new StackOf(app, 'Fx');
-    const queue = new sqs.Queue(stack, 'Queue', { enforceSSL: true });
-    nag.NagSuppressions.addResourceSuppressions(queue, [
-      { id: 'AwsSolutions-SQS3', reason: 'A planted queue with no DLQ, on purpose' },
-      { id: 'AwsSolutions-SQS3', reason: 'A planted second entry the first one shadows' },
-      { id: 'AwsSolutions-S1', reason: 'A planted rule the queue is never checked for' },
-    ]);
-    Aspects.of(app).add(new nag.AwsSolutionsChecks());
-    app.synth();
-    const [declared, used] = judged();
-    expect([...declared].filter((unit) => !used.has(unit)).sort(byCodeUnit)).toStrictEqual([
-      'AwsSolutions-S1 :: A planted rule the queue is never checked for',
-      'AwsSolutions-SQS3 :: A planted second entry the first one shadows',
-    ]);
+    new sqs.Queue(new Stack(app, 'Fx'), 'Queue', { enforceSSL: true });
+    Validations.of(app).addPlugins(new nag.AwsSolutionsChecks(app));
+    expect(() => app.synth()).toThrow(/AwsSolutions-SQS3/);
+    expect(judged().unacknowledged).toStrictEqual(['Fx/Queue/Resource AwsSolutions-SQS3']);
   });
 
-  it('every suppression (and every appliesTo item) suppresses a finding in the default or the all-features synth', async () => {
-    const [declaredDefault, usedDefault] = await synthShape({});
-    const [declaredAll, usedAll] = await synthShape(ALL_FEATURES_CONTEXT);
-    const declared = new Set([...declaredDefault, ...declaredAll]);
-    const used = new Set([...usedDefault, ...usedAll]);
-    // Vacuity: the logger saw the app's suppressions and the findings they consume.
-    expect(declared.size).toBeGreaterThan(50);
-    expect(used.size).toBeGreaterThan(50);
-    expect([...declared].filter((unit) => !used.has(unit)).sort(byCodeUnit)).toStrictEqual([]);
+  it('acknowledges every finding, with a reason, and every acknowledgement covers one in the default or the all-features synth', async () => {
+    const shapes = [await synthShape({}), await synthShape(ALL_FEATURES_CONTEXT)];
+    const declared = new Set(shapes.flatMap((shape) => [...shape.declared]));
+    const used = new Set(shapes.flatMap((shape) => [...shape.used]));
+    // Vacuity: the recorder saw the app's acknowledgements and the findings they cover.
+    expect(declared.size).toBeGreaterThan(100);
+    expect(used.size).toBeGreaterThan(100);
+    expect(shapes.flatMap((shape) => shape.unacknowledged)).toStrictEqual([]);
+    expect(shapes.flatMap((shape) => shape.reasonless)).toStrictEqual([]);
+    expect(unusedOf({ declared, used })).toStrictEqual([]);
   }, SYNTH_TIMEOUT_MS * 2);
 });

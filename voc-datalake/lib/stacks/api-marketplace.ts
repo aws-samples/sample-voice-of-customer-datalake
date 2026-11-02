@@ -5,7 +5,7 @@
  * the Projects API and the persona generator / importer jobs.
  */
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag } from '../utils/nag-ack';
 import type { IConstruct } from 'constructs';
 import { IMAGE_MODEL_MARKETPLACE_PRODUCT_ID, imageModelArn } from '../utils/model-allowlist';
 import { bedrockAgreementSuppressions, marketplaceSuppressions } from '../utils/nag-suppressions';
@@ -36,7 +36,7 @@ export function grantMarketplaceSubscription(principal: iam.IGrantable & IConstr
       'ForAnyValue:StringEquals': { 'aws-marketplace:ProductId': [IMAGE_MODEL_MARKETPLACE_PRODUCT_ID] },
     },
   }));
-  NagSuppressions.addResourceSuppressions(principal, marketplaceSuppressions, true);
+  acknowledgeNag(principal, marketplaceSuppressions);
 }
 
 /**
@@ -52,5 +52,5 @@ export function grantImageModelProbe(role: iam.Role): void {
   role.addToPolicy(new iam.PolicyStatement({ actions: ['bedrock:InvokeModel'], resources: [imageModelArn()] }));
   role.addToPolicy(new iam.PolicyStatement({ actions: ['bedrock:GetFoundationModelAvailability'], resources: ['*'] }));
   grantMarketplaceSubscription(role);
-  NagSuppressions.addResourceSuppressions(role, bedrockAgreementSuppressions, true);
+  acknowledgeNag(role, bedrockAgreementSuppressions);
 }

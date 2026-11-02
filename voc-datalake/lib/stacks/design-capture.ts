@@ -27,7 +27,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag } from '../utils/nag-ack';
 import { stackModelArns } from '../utils/model-allowlist';
 import { bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
@@ -101,7 +101,7 @@ function designCaptureRole(stack: cdk.Stack, props: DesignCaptureProps): iam.Rol
     resources: [rawDataBucket.arnForObjects(`${LOGO_PREVIEW_PREFIX}*`), rawDataBucket.arnForObjects(`${DESIGN_ICONS_PREFIX}*`)],
   }));
   kmsKey.grantEncryptDecrypt(role);
-  NagSuppressions.addResourceSuppressions(role, [BROWSER_STREAM_SUPPRESSION, ...bedrockModelSuppressions], true);
+  acknowledgeNag(role, [BROWSER_STREAM_SUPPRESSION, ...bedrockModelSuppressions]);
   return role;
 }
 

@@ -7,6 +7,8 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { stackModelArns } from '../utils/model-allowlist';
+import { acknowledgeNag } from '../utils/nag-ack';
+import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
 import { grantInvokeByName } from '../utils/worker-lambda';
 import {
@@ -287,5 +289,10 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   const documentStateMachine = createDocumentStateMachine(ctx, documentGeneratorLambda);
   documentStateMachine.grantStartExecution(projectsRole);
   for (const fn of projectsFunctions) fn.addEnvironment('DOCUMENT_STATE_MACHINE_ARN', documentStateMachine.stateMachineArn);
+  // Stack-wide, as before: the Projects role invokes every job by qualified ARN and the document workflow
+  // invokes its generator the same way (`<FunctionArn>:*`).
+  acknowledgeNag(stack, pluginSystemSuppressions([
+    personaGeneratorLambda, documentGeneratorLambda, documentMergerLambda, personaImporterLambda,
+  ]));
   return { documentGeneratorLambda };
 }

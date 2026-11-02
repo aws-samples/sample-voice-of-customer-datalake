@@ -117,7 +117,6 @@ export function buildApiStack(
   context: Record<string, unknown> = {},
   enabledSources: string[] = [],
   deploymentPrefix?: string,
-  aspects: cdk.IAspect[] = [],
 ): VocApiStack {
   // Skip asset bundling (Docker) and the frontend-freshness guard — template
   // assertions only need structure, and the check would make the suite depend
@@ -142,9 +141,6 @@ export function buildApiStack(
     brandName: 'TestBrand',
     enabledSources,
   });
-
-  // Added after construction but before any synth, which is when aspects run.
-  for (const aspect of aspects) cdk.Aspects.of(app).add(aspect);
   return stack;
 }
 

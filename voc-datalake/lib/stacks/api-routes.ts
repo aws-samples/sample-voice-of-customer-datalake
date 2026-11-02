@@ -5,7 +5,7 @@
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNagOnResource } from '../utils/nag-ack';
 import type { PluginManifest } from '../plugin-loader';
 import { snapStartInvokeTarget } from '../utils/snapstart';
 import {
@@ -234,7 +234,7 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
       cors(feedbackFormItem.addResource('iframe')).addMethod('GET', feedbackFormIntegration),
     ];
     for (const publicMethod of publicFeedbackFormMethods) {
-      NagSuppressions.addResourceSuppressions(publicMethod, publicFeedbackEndpointSuppressions);
+      acknowledgeNagOnResource(publicMethod, publicFeedbackEndpointSuppressions);
     }
   }
 
@@ -289,7 +289,7 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   // INTENTIONALLY_PUBLIC_ROUTES (test-support/api-stack-template.ts); throttled 5 rps / 10 by
   // UNSUBSCRIBE_METHOD_KEY in api-gateway.ts.
   const unsubscribeMethod = cors(api.root.addResource('unsubscribe')).addMethod('POST', engagementIntegration);
-  NagSuppressions.addResourceSuppressions(unsubscribeMethod, publicUnsubscribeEndpointSuppressions);
+  acknowledgeNagOnResource(unsubscribeMethod, publicUnsubscribeEndpointSuppressions);
 
   // /voting-sessions/* — a room scores one document from their phones.
   //
@@ -331,7 +331,7 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
     cors(votingSessionItem.addResource('submit')).addMethod('POST', ballotsIntegration),
   ];
   for (const publicMethod of publicBallotMethods) {
-    NagSuppressions.addResourceSuppressions(publicMethod, publicBallotEndpointSuppressions);
+    acknowledgeNagOnResource(publicMethod, publicBallotEndpointSuppressions);
   }
 
 
@@ -344,7 +344,7 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
     const pluginResource = webhooksResource.addResource(plugin.id);
     for (const method of plugin.infrastructure.webhook.methods) {
       const webhookMethod = pluginResource.addMethod(method, webhookIntegration);
-      NagSuppressions.addResourceSuppressions(webhookMethod, publicWebhookEndpointSuppressions);
+      acknowledgeNagOnResource(webhookMethod, publicWebhookEndpointSuppressions);
     }
   }
 }

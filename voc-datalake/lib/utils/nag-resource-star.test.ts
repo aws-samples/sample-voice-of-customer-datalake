@@ -1,44 +1,40 @@
 /**
- * suppressReviewedResourceStar puts the IAM5 `Resource::*` suppression on exactly the policies whose every
- * `"*"` action is reviewed (resource-star-actions.ts), and nowhere else. Read through the CfnPolicy's own
- * `cdk_nag` metadata, which is what cdk-nag consults.
+ * suppressReviewedResourceStar acknowledges the IAM5 `Resource::*` finding on exactly the policies whose every
+ * `"*"` action is reviewed (resource-star-actions.ts), and nowhere else. Read through the acknowledgements
+ * on the CfnPolicy and its ancestors, which is what cdk-nag consults.
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { NagSuppressions } from 'cdk-nag';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
+import { acknowledgeNag, acknowledgementsOn } from './nag-ack';
 import { suppressReviewedResourceStar } from './nag-resource-star';
 
-const MetadataSchema = z.object({
-  rules_to_suppress: z.array(z.object({ id: z.string(), reason: z.string(), applies_to: z.array(z.unknown()).optional() })),
-}).optional();
+const RESOURCE_STAR = 'AwsSolutions-IAM5[Resource::*]';
 
-/** One role with the given statements, the helper applied; the IAM5 entries on its default policy. */
+/** One role with the given statements, the helper applied; the `Resource::*` acknowledgements over its policy. */
 function suppressionsFor(statements: iam.PolicyStatement[], presuppress = false) {
   const stack = new cdk.Stack(new cdk.App(), 'Probe');
   const role = new iam.Role(stack, 'Role', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') });
   statements.forEach((s) => role.addToPolicy(s));
   if (presuppress) {
-    NagSuppressions.addResourceSuppressions(role, [
-      { id: 'AwsSolutions-IAM5', reason: 'A hand-written reason the helper must not shadow', appliesTo: ['Resource::*'] },
-    ], true);
+    acknowledgeNag(role, [
+      { id: 'AwsSolutions-IAM5', reason: 'A hand-written reason the helper must not shadow', findings: ['Resource::*'] },
+    ]);
   }
   suppressReviewedResourceStar(stack);
   const policy = role.node.findChild('DefaultPolicy').node.defaultChild;
   if (!(policy instanceof cdk.CfnResource)) throw new Error('no CfnPolicy');
-  return (MetadataSchema.parse(policy.getMetadata('cdk_nag'))?.rules_to_suppress ?? []).filter((e) => e.id === 'AwsSolutions-IAM5');
+  return policy.node.scopes.flatMap(acknowledgementsOn).filter((ack) => ack.id === RESOURCE_STAR);
 }
 
 const star = (actions: string[], conditions?: Record<string, unknown>) =>
   new iam.PolicyStatement({ actions, resources: ['*'], ...(conditions ? { conditions } : {}) });
 
 describe('suppressReviewedResourceStar', () => {
-  it('suppresses a policy whose "*" actions are all reviewed, naming them in the reason', () => {
+  it('acknowledges a policy whose "*" actions are all reviewed, naming them in the reason', () => {
     const entries = suppressionsFor([star(['comprehend:DetectSentiment']), star(['translate:TranslateText'])]);
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.applies_to).toStrictEqual(['Resource::*']);
     expect(entries[0]?.reason).toContain('comprehend:DetectSentiment, translate:TranslateText');
   });
 
@@ -64,7 +60,7 @@ describe('suppressReviewedResourceStar', () => {
     expect(suppressionsFor([scoped])).toStrictEqual([]);
   });
 
-  it('keeps a hand-written Resource::* suppression first and adds none of its own', () => {
+  it('keeps a hand-written Resource::* acknowledgement on the role and adds none of its own', () => {
     const entries = suppressionsFor([star(['comprehend:DetectSentiment'])], true);
     expect(entries.map((e) => e.reason)).toStrictEqual(['A hand-written reason the helper must not shadow']);
   });
