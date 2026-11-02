@@ -29,10 +29,10 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.logging import logger
 from shared.raw_versions import DIGEST_CHARS, Connector, content_digest, item_folder, put_raw_version, version_key
-from shared.source_policy import raw_archive_allowed
+from shared.source_policy import ARCHIVE_NONE, archive_mode
 from shared.source_profiles import SourceProfilesUnavailable, cached_source_profile_strict
 
-__all__ = ['RawTarget', 'bytes_copy', 'bytes_digest', 'json_copy', 'source_permits_raw_copy']
+__all__ = ['RawTarget', 'bytes_copy', 'bytes_digest', 'json_copy', 'source_archive_mode', 'source_permits_raw_copy']
 
 _AWS_ERRORS = (ClientError, BotoCoreError)
 
@@ -50,14 +50,22 @@ class RawTarget:
         return version_key(item_folder(self.source, self.day, self.stem), digest, extension)
 
 
-def source_permits_raw_copy(source: str) -> bool:
-    """True when ``source``'s profile permits a raw copy. Read strictly: an unreadable profile is
-    False (logged), so nothing is archived under the allow default. Never raises."""
+def source_archive_mode(source: str) -> str:
+    """``source``'s archive mode (``shared.source_policy.archive_mode``: ``none`` / ``item`` / ``file``).
+
+    Read strictly: an unreadable profile is ``none`` (logged), so nothing is archived under the
+    allow default. Never raises.
+    """
     try:
-        return raw_archive_allowed(cached_source_profile_strict(source))
+        return archive_mode(cached_source_profile_strict(source))
     except SourceProfilesUnavailable:
         logger.warning('Raw copy not written: the source policy is unreadable', extra={'source': source})
-        return False
+        return ARCHIVE_NONE
+
+
+def source_permits_raw_copy(source: str) -> bool:
+    """True when ``source``'s profile permits a raw copy (see ``source_archive_mode``). Never raises."""
+    return source_archive_mode(source) != ARCHIVE_NONE
 
 
 def bytes_digest(body: bytes) -> str:

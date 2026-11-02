@@ -453,7 +453,7 @@ class TestLambdaHandlerIsWrapped:
         try:
             with offline_ingestor_construction(), patch.object(
                 handler.S3ImportIngestor, "send_to_queue", side_effect=len
-            ), patch.object(handler.S3ImportIngestor, "normalize_item", side_effect=lambda item: item):
+            ), patch.object(handler.S3ImportIngestor, "normalize_item", side_effect=lambda item, _raw=None: item):
                 lambda_handler(_s3_event(("aws:s3", "b", "surveys/data.csv")), _context())
         finally:
             out = capsys.readouterr().out

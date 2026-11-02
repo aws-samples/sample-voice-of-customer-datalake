@@ -2,6 +2,10 @@
 S3 Import Ingestor - Imports feedback from S3 bucket files (CSV, JSON, JSONL).
 Triggered by S3 events when files are uploaded.
 Folder name becomes the source: {folder}/file.csv -> source = "S3 - {folder}"
+
+Raw copies: the staged file as uploaded goes to ``raw/s3_import/...`` before it is read
+(``_shared/raw_original.py``, only when the s3_import source keeps whole files), and each item's
+own archive carries its source row (the CSV row / JSON object, ``raw_content``).
 """
 
 import csv
@@ -16,6 +20,7 @@ from dataclasses import dataclass, field
 import boto3
 
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.raw_original import archive_original
 from shared.import_runs import MAX_MESSAGES, S3_UPLOAD_ACTOR, ImportCounts, ImportRun, record_import_run
 from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
@@ -32,6 +37,10 @@ MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 # Where an operator archives ingested files by hand (`processed/<folder>/<file>`).
 PROCESSED_FOLDER = "processed"
+
+# The parsed row an item came from, carried to its raw archive (``raw_content``) and popped before
+# the item is normalized: an internal key no file field can collide with.
+RAW_ROW_KEY = "_s3_import_row"
 
 # What normalizing one parsed row can raise: AttributeError for a JSON row that is
 # not an object (no `.get`), TypeError/ValueError for a value of an unexpected
@@ -127,6 +136,14 @@ def _normalize_row(row: dict, source_name: str, default_channel: str) -> dict | 
     }
 
 
+def _row_item(row: dict, source_name: str, default_channel: str) -> dict | None:
+    """``_normalize_row`` plus the source row under ``RAW_ROW_KEY`` (None when the row has no text)."""
+    item = _normalize_row(row, source_name, default_channel)
+    if item is not None:
+        item[RAW_ROW_KEY] = row
+    return item
+
+
 def _parse_csv(stream, source_name: str, report: FileReport | None = None) -> Generator[dict, None, None]:
     """Parse CSV content, yielding normalized items (dropped rows are noted on ``report``)."""
     report = report if report is not None else FileReport()
@@ -150,7 +167,7 @@ def _parse_csv(stream, source_name: str, report: FileReport | None = None) -> Ge
     for row_num, row in enumerate(reader, start=2):
         data_row = row_num - 1
         try:
-            item = _normalize_row(row, source_name, "csv_import")
+            item = _row_item(row, source_name, "csv_import")
             if item:
                 yield item
             else:
@@ -171,7 +188,7 @@ def _parse_jsonl(stream, source_name: str, report: FileReport | None = None) -> 
             continue
         try:
             row = json.loads(line)
-            item = _normalize_row(row, source_name, "json_import")
+            item = _row_item(row, source_name, "json_import")
             if item:
                 yield item
             else:
@@ -197,7 +214,7 @@ def _parse_json(stream, source_name: str, report: FileReport | None = None) -> G
     items = data if isinstance(data, list) else [data]
     for idx, row in enumerate(items):
         try:
-            item = _normalize_row(row, source_name, "json_import")
+            item = _row_item(row, source_name, "json_import")
             if item:
                 yield item
             else:
@@ -293,7 +310,10 @@ class S3ImportIngestor(BaseIngestor):
         # Stream, parse, normalize, and send in batches
         source_name = _get_source_from_key(key, reprocess=reprocess)
         response = s3_client.get_object(Bucket=bucket, Key=key)
-        stream = response["Body"]
+        # Read whole (at most MAX_FILE_SIZE_MB): the original goes to the raw lake before parsing.
+        body = response["Body"].read()
+        archive_original(s3_client, os.environ.get("RAW_DATA_BUCKET", ""), key, body)
+        stream = io.BytesIO(body)
 
         report = FileReport()
         batch: list[dict] = []
@@ -304,7 +324,8 @@ class S3ImportIngestor(BaseIngestor):
         try:
             for item in parser(stream, source_name, report):
                 parsed += 1
-                normalized = self.normalize_item(item)
+                row = item.pop(RAW_ROW_KEY, None)
+                normalized = self.normalize_item(item, json.dumps(row, default=str) if row is not None else None)
                 batch.append(normalized)
                 if len(batch) >= 100:
                     # Count what SQS confirmed, not what was attempted:
