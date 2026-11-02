@@ -57,9 +57,10 @@ AWS WAF and the Cognito Plus plan become opt-ins.
 - A Claude call that does not go through an allowlisted `global.` / `eu.` inference profile, or from another Region,
   is now denied. An SCP or permissions boundary must allow `aws:RequestedRegion` `unspecified` for global inference
   (AWS requirement).
-- Lambda log groups are no longer created on first invocation: do not delete one by hand (a deploy recreates it).
-  During the upgrade deploy a function may drop log lines for a few seconds, between its role losing the managed
-  policy and its inline log grant landing.
+- Lambda log groups are no longer created on first invocation: do not delete one by hand. Nothing recreates it
+  (CloudFormation does not restore a resource deleted outside it), so that function's logs stop; recreate the group
+  with the same name. During the upgrade deploy a function, and API Gateway's logging through the account role, may
+  drop log lines for a few seconds, between a role losing its managed policy and its inline grant landing.
 - WAF outside us-east-1 needs the us-east-1 CDK bootstrap.
 - **A deployment already on `-c performanceTier=true`** gets two web ACLs (about $18 a month) and the Cognito Plus
   plan (no 10,000-MAU free tier) on its next deploy, and outside us-east-1 needs the us-east-1 bootstrap. To keep only
