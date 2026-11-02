@@ -188,7 +188,11 @@ class TestTheSecretRead:
 class TestTheDelegations:
     def test_normalize_item_uses_the_webhook_channel_and_carries_the_raw_item(self):
         item = {'id': 'a'}
-        with patch('_shared.base_webhook.normalized_item_fields', return_value={'id': 'a', 'x': 1}) as fields:
+        # No archive (whatever RAW_DATA_BUCKET the process carries): the item travels inline.
+        with (
+            patch('_shared.base_webhook.normalized_item_fields', return_value={'id': 'a', 'x': 1}) as fields,
+            patch('_shared.base_webhook.archive_raw_item', return_value=None),
+        ):
             result = webhook_parsing().normalize_item(item)
 
         fields.assert_called_once_with(
