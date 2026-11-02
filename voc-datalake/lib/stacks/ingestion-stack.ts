@@ -185,7 +185,7 @@ export class VocIngestionStack extends VocStack {
     });
 
     // The email inbox: only with -c inboundEmailDomain (docs/email-intake.md)
-    this.createEmailInbox({ watermarksTable, aggregatesTable, accessLogsBucket, kmsKey, layer: dependenciesLayer });
+    this.createEmailInbox({ watermarksTable, aggregatesTable, accessLogsBucket, rawDataBucket, kmsKey, layer: dependenciesLayer });
 
     // Expose secrets ARN for other stacks
     this.secretsArn = apiSecrets.secretArn;
@@ -213,7 +213,7 @@ export class VocIngestionStack extends VocStack {
 
   private createEmailInbox(deps: {
     watermarksTable: dynamodb.Table; aggregatesTable: dynamodb.Table; accessLogsBucket: s3.Bucket;
-    kmsKey: kms.Key; layer: lambda.LayerVersion;
+    rawDataBucket: s3.Bucket; kmsKey: kms.Key; layer: lambda.LayerVersion;
   }): void {
     const config = inboundEmailConfig(this.node);
     if (config === undefined) return;

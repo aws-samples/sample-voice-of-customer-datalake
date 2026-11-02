@@ -42,6 +42,7 @@ import { EMAIL_INTAKE_LAYER_DIR, dependencyLayer } from '../utils/dependency-lay
 import { stackModelArns } from '../utils/model-allowlist';
 import { bedrockModelSuppressions } from '../utils/nag-suppressions';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
+import { appVersion } from '../utils/connector-version';
 
 /** `inbound/` and `inbound-raw/` keep an email this many days (plan Q6, option a). */
 export const INBOUND_RETENTION_DAYS = 90;
@@ -56,6 +57,8 @@ const INTAKE_BATCH_SIZE = 5;
 /** The prefix SES writes; the S3 notification, the bucket policy and the Lambda all key on it. */
 const INBOUND_PREFIX = 'inbound/';
 const INBOUND_RAW_PREFIX = 'inbound-raw/';
+/** The email source's folder in the raw lake (its source id, `email_intake`, so a whole-source erasure sweeps it). */
+const RAW_EMAIL_PREFIX = 'raw/email_intake/';
 const HANDLER = 'email_intake/handler.lambda_handler';
 /**
  * This bundle's own excludes, after the shared lists: re-include its tree (the shared list drops
@@ -90,6 +93,8 @@ export interface EmailIntakeProps {
   readonly names: EmailIntakeNames;
   readonly kmsKey: kms.Key;
   readonly accessLogsBucket: s3.IBucket;
+  /** The raw lake: an email of a raw-permitted source is kept under raw/email_intake/ (lambda/email_intake/raw_keep.py). */
+  readonly rawDataBucket: s3.IBucket;
   readonly watermarksTable: dynamodb.ITable;
   readonly aggregatesTable: dynamodb.ITable;
   readonly processingQueue: sqs.IQueue;
@@ -189,6 +194,8 @@ function intakeRole(scope: Construct, props: EmailIntakeProps, bucket: s3.Bucket
     actions: ['s3:PutObject'], resources: [rawInboxObjects],
   }));
   props.kmsKey.grantEncryptDecrypt(role);
+  // The raw-lake copy (write-once, only when the email source permits one): put under its own prefix only.
+  props.rawDataBucket.grantPut(role, `${RAW_EMAIL_PREFIX}*`);
   props.watermarksTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
   // Caps row, the day's counters, the source profiles and the model picker's settings.
   props.aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
@@ -227,6 +234,9 @@ function intakeFunction(scope: Construct, props: EmailIntakeProps, bucket: s3.Bu
       PROCESSING_QUEUE_URL: props.processingQueue.queueUrl,
       INTAKE_QUEUE_URL: queue.queueUrl,
       INBOUND_EMAIL_DOMAIN: props.config.domain,
+      // The raw-lake copy and its connector-version (lambda/email_intake/raw_keep.py).
+      RAW_DATA_BUCKET: props.rawDataBucket.bucketName,
+      APP_VERSION: appVersion(),
       POWERTOOLS_SERVICE_NAME: 'voc-email-intake',
       LOG_LEVEL: 'INFO',
       ...PII_REDACTION_ENV,
