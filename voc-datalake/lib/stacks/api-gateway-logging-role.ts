@@ -39,10 +39,11 @@ export const EXECUTION_LOG_GROUP_PREFIX = 'API-Gateway-Execution-Logs_';
 
 /**
  * The access-log group of every VoC deployment in this account and region. `uniqueName` puts a deployment
- * prefix on the `voc` segment (lib/utils/naming.ts), hence the `*` in front of it.
+ * prefix on the `voc` segment (lib/utils/naming.ts), hence the `*` in front of it. Account and region are the
+ * same pseudo-parameters `uniqueName` uses.
  */
-export function accessLogGroupPattern(stack: cdk.Stack, accessLogBaseName: string): string {
-  return `/aws/apigateway/*${accessLogBaseName}-${stack.account}-${stack.region}`;
+export function accessLogGroupPattern(accessLogBaseName: string): string {
+  return `/aws/apigateway/*${accessLogBaseName}-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}`;
 }
 
 function logGroupArn(stack: cdk.Stack, name: string): string {
@@ -59,7 +60,7 @@ export function scopeApiGatewayLoggingRole(api: apigateway.RestApi, accessLogBas
   }
   const stack = cdk.Stack.of(api);
   const executionLogs = logGroupArn(stack, `${EXECUTION_LOG_GROUP_PREFIX}*`);
-  const accessGroup = logGroupArn(stack, accessLogGroupPattern(stack, accessLogBaseName));
+  const accessGroup = logGroupArn(stack, accessLogGroupPattern(accessLogBaseName));
   const accessStreams = `${accessGroup}:*`;
   removeAwsManagedPolicy(cfn, API_GATEWAY_PUSH_TO_LOGS_POLICY);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
