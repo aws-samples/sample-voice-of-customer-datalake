@@ -30,10 +30,7 @@ TENETS.md now describes the code as it is, and four tenets say what was decided 
 - **D5**: customer data (raw items and the feedback derived from them) is deleted only for a legal obligation, an erasure request or a declared retention limit, each with its legal basis, logged and tombstoned. Workspace artifacts (projects, personas, documents, boards, lists, conversations) are deleted when their owner deletes them, and the deletion is recorded.
 - **Where the platform stands today** lists the gaps found by a full audit of the code against every tenet: Bronze files are overwritten on re-ingest and old versions expire after 90 days, the missing raw copies and connector version, the methodology and AI-mode gaps, MCP coverage, the delete permissions, `protectData` off by default, and the KMS keys and secrets the cost guard does not count. The enforcement section no longer claims that only `voc-retention` holds a delete permission, or that the AI-mode check covers every path.
 - The reviewer prompts (`.kiro/steering/tenets.md`, `.kiro/agents/prompts/security-reviewer.md`) and [docs/source-policies.md](docs/source-policies.md#retention-and-erasure) follow the new D5 and tenet 3 wording.
-
-### Fixed
-
-- The steering notes no longer describe the raw bucket as immutable, and give the global MCP token expiry as 1–90 days (it was written as up to 365).
+- The steering notes no longer describe the raw bucket as immutable, and give the global MCP token expiry as 1–90 days, the bound the mint route enforces (`MAX_EXPIRY_DAYS` in `voc-datalake/lambda/shared/mcp_global_tokens.py`; it was written as up to 365).
 
 ## [5.73.00] - 2026-11-01
 
