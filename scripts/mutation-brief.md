@@ -33,8 +33,8 @@ export PATH="$PWD/.venv/bin:$PATH" PYTHON_BIN="$PWD/.venv/bin/python"
 bash scripts/mutate-python.sh [--lines <from>-<to>] <module.py> <test files...>
 ```
 Paths are relative to `voc-datalake/`. The script runs your tests unmutated first (they must pass),
-then mutmut 3 in a stage (`voc-datalake/.cache/mutmut/`, rebuilt by every run; your files are never
-edited), then prints every mutant that was not killed and a count per status. After the run finished,
+then mutmut 3 in a stage outside the repository (`$TMPDIR/mutate-python-<n>/`, rebuilt by every run;
+your files are never edited), then prints every mutant that was not killed and a count per status. After the run finished,
 `bash scripts/mutate-python.sh show <name>` prints one survivor's diff (`results`, `browse` also work).
 mutmut runs, per mutant, only the tests among the files you pass that call the mutated function: pass
 the files that exercise the module (the plan lists the files that import it; add one you find, drop

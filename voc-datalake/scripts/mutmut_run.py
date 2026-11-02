@@ -9,14 +9,15 @@ under (one per line) to <names-out>. mutmut 3 links a test to a mutant by the mo
 shell script needs that name to build the stage. It exits with pytest's exit code.
 
 Any other command is mutmut's own CLI (``run``, ``results``, ``show``, ``browse``). ``--only-lines``
-makes ``run`` mutate only those lines of that file. mutmut 3 has no line filter of its own; it does
-skip every line outside a file's set when ``mutate_only_covered_lines`` hands it one (the set comes
-from coverage.py there), so this sets that set to the chosen lines instead of measuring coverage.
+makes ``run`` mutate only those lines of that file. mutmut 3 has no line filter of its own; with
+``mutate_only_covered_lines`` it skips every line outside the set coverage.py reports for a file, so
+this hands it the chosen lines as that set instead of measuring coverage.
 """
 from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 # pytest.ini's addopts turn on coverage for the whole suite; a mutation run needs none of it.
@@ -56,15 +57,21 @@ def baseline(names_out: str, module: str, tests: list[str]) -> int:
 
 
 def limit_mutations_to(path: str, lines: set[int]) -> None:
-    """Make the next ``mutmut run`` in this process mutate only *lines* of *path* (relative to the stage)."""
+    """Make the next ``mutmut run`` in this process mutate only *lines* of *path* (relative to the stage).
+
+    Needs ``mutate_only_covered_lines = true`` in the stage's config: mutmut then asks ``gather_coverage``
+    for the lines to mutate, and this answers with the chosen ones instead of running coverage.py.
+    """
     import mutmut.__main__ as mutmut_main
-    from mutmut.state import state
+    from mutmut.code_coverage import CoverageInfo
 
-    def chosen_lines_only() -> None:
-        # The key format of get_covered_lines_for_file: the absolute path of the file's copy in mutants/.
-        state()._covered_lines = {str((Path('mutants') / path).absolute()): lines}
+    def chosen_lines(_runner: object, source_files: Iterable[Path]) -> CoverageInfo:
+        # Keyed like get_covered_lines_for_file reads it: the absolute path of the file's copy in mutants/.
+        return CoverageInfo(covered_lines={str((Path('mutants') / file).absolute()): lines
+                                           for file in source_files if str(file) == path})
 
-    mutmut_main.store_lines_covered_by_tests = chosen_lines_only
+    # Through the module's namespace: `run` looks gather_coverage up there when it builds the mutants.
+    mutmut_main.__dict__['gather_coverage'] = chosen_lines
 
 
 def main(argv: list[str]) -> int:

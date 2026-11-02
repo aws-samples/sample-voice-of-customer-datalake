@@ -15,10 +15,12 @@
 #
 # mutmut 3 never edits the source tree. It mutates a copy in `mutants/` below its working directory and
 # names each mutant after the module's IMPORT name (`shared.llm_json.x_first_json_object__mutmut_1`), so
-# the run happens in a stage, .cache/mutmut/ (gitignored, rebuilt by every run): `src/` is a copy of
-# voc-datalake's Python tree (lambda/ and plugins/ as git lists them, untracked files included, and the
-# top-level files; every other entry is a symlink to the real one), and `mutants` points at the copy of
-# the directory the tests import the module from (lambda/ for `shared.*`, lambda/api/ for a handler, ...).
+# the run happens in a stage outside the repository ($TMPDIR/mutate-python-<checksum of this checkout>,
+# rebuilt by every run): `repo/voc-datalake/` is a copy of voc-datalake's Python tree (lambda/ and plugins/
+# as git lists them, untracked files included, and the top-level files; every other entry, and the
+# repository root's, is a symlink to the real one), and `mutants` points at the copy of the directory the
+# tests import the module from (lambda/ for `shared.*`, lambda/api/ for a handler, ...).
+# MUTMUT_RUNNER_TIMEOUT (default 120 s) bounds each mutant; MUTMUT_MAX_CHILDREN (default 1) runs mutants in parallel.
 # mutmut 3 mutates only function and method bodies, and skips decorated functions (except
 # @staticmethod/@classmethod): module-level code and e.g. `@app.get` routes get no mutants.
 set -euo pipefail
@@ -26,7 +28,10 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ROOT="$PWD"
 PYTHON="${PYTHON_BIN:-python}"
 DRIVER="$ROOT/scripts/mutmut_run.py"
-STAGE="$ROOT/.cache/mutmut"
+# Outside the repository, so no linter or detector ever walks into the copy; one fixed stage per checkout.
+TMP_BASE="${TMPDIR:-/tmp}"
+STAGE="${TMP_BASE%/}/mutate-python-$(cksum <<<"$ROOT" | cut -d' ' -f1)"
+COPY="$STAGE/repo/voc-datalake"   # the copy keeps the repository's layout around voc-datalake/
 
 case "${1:-}" in
   show|results|browse)
@@ -96,20 +101,26 @@ UP=""                                      # from the import root back to voc-da
 if [[ -n "$IMPORT_ROOT" ]]; then UP="$(sed -E 's|[^/]+|..|g' <<<"$IMPORT_ROOT")/"; fi
 
 # ---- The stage ----
-if [[ "$STAGE" != */.cache/mutmut ]]; then echo "Unexpected stage path $STAGE" >&2; exit 2; fi
+if [[ "$(basename "$STAGE")" != mutate-python-* ]]; then echo "Unexpected stage path $STAGE" >&2; exit 2; fi
 rm -rf -- "$STAGE"
-mkdir -p "$STAGE/src"
+mkdir -p "$COPY"
 # Copies keep their mtime: mutmut mutates a copy only while it is not newer than its source.
 git ls-files -z --cached --others --exclude-standard -- lambda plugins ':(glob)*' \
   ':(exclude)lambda/stream' ':(exclude)lambda/layers' \
   | while IFS= read -r -d '' file; do [[ -f "$file" ]] && printf '%s\0' "$file"; done \
-  | tar -c --null -T - -f - | tar -x -p -f - -C "$STAGE/src"
-for entry in "$ROOT"/* "$ROOT"/.[!.]*; do
-  name="$(basename "$entry")"
-  [[ -e "$entry" && ! -e "$STAGE/src/$name" && "$name" != .cache ]] && ln -s "$entry" "$STAGE/src/$name"
-done
-for entry in lambda/stream lambda/layers; do [[ -e "$entry" ]] && ln -s "$ROOT/$entry" "$STAGE/src/$entry"; done
-ln -s "src/${IMPORT_ROOT:-.}" "$STAGE/mutants"
+  | tar -c --null -T - -f - | tar -x -p -f - -C "$COPY"
+link_rest() {   # <real dir> <copy dir> [names to leave out]: symlink every entry the copy does not have
+  local real="$1" copy="$2" entry name; shift 2
+  for entry in "$real"/* "$real"/.[!.]*; do
+    name="$(basename "$entry")"
+    [[ -e "$entry" && ! -e "$copy/$name" && " $* " != *" $name "* ]] && ln -s "$entry" "$copy/$name"
+  done
+  return 0
+}
+link_rest "$ROOT" "$COPY" .cache
+link_rest "$(dirname "$ROOT")" "$STAGE/repo" .git .cache
+for entry in lambda/stream lambda/layers; do [[ -e "$entry" ]] && ln -s "$ROOT/$entry" "$COPY/$entry"; done
+ln -s "repo/voc-datalake/${IMPORT_ROOT:-.}" "$STAGE/mutants"
 # mutmut reads the source from <stage>/<source path>: the real module, through a symlink.
 ln -s "$ROOT/${IMPORT_ROOT:+$IMPORT_ROOT/}${SOURCE_PATH%%/*}" "$STAGE/${SOURCE_PATH%%/*}"
 
@@ -130,6 +141,7 @@ RUNNER_TIMEOUT="${MUTMUT_RUNNER_TIMEOUT:-120}"
   echo "timeout_multiplier = 1.0"
   echo "timeout_constant = $RUNNER_TIMEOUT.0"
   echo "use_git_change_detection = false"
+  if [[ -n "$ONLY_LINES" ]]; then echo "mutate_only_covered_lines = true   # the lines scripts/mutmut_run.py --only-lines names"; fi
 } > "$STAGE/pyproject.toml"
 
 echo "==> Mutating ${PATCH_RANGE:+the lines changed in $PATCH_RANGE of }${LINE_RANGE:+lines $LINE_RANGE of }$MODULE (as $NAME)"
