@@ -13,6 +13,7 @@ import { AGENTS_API_FUNCTION_BASE_NAME, MEMORY_API_FUNCTION_BASE_NAME } from '..
 import { snapStartFunctionProps } from '../utils/snapstart';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
+import { appVersion } from '../utils/connector-version';
 import type { ApiStackContext } from './api-context';
 import { createS3ImportLambda } from './api-s3-import-lambda';
 
@@ -346,6 +347,8 @@ export function createAssistantLambdas(
     memorySize: 1024, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
     environment: {
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
+      // The connector-version of a raw object it creates (connector `data_explorer`, lambda/shared/raw_versions.py).
+      APP_VERSION: appVersion(),
       FEEDBACK_TABLE: feedbackTable.tableName,
       AGGREGATES_TABLE: aggregatesTable.tableName,
       PROCESSING_QUEUE_URL: processingQueueUrl,
