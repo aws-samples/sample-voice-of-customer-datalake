@@ -220,8 +220,9 @@ after a complete pass; re-running is a no-op.
 
 **Audit log.** Every `tools/call` by a valid token writes one row to the jobs table
 (`MCPAUDIT#{token_id}`): tool name, time, project id and outcome (`ok`, `error`,
-`denied`, `failed`) — never the arguments or any content. Rows expire after 90 days
-through the jobs table's TTL.
+`denied`, `failed`) — never the arguments or any content. An audit trail does not expire: a
+row carries no `ttl`, so the jobs table's TTL never removes it. Rows written by releases before
+audit trails stopped expiring still carry a 90-day `ttl` and expire on it.
 
 ## Protocol
 
