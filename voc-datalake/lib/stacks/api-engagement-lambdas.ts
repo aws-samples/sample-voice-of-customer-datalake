@@ -13,6 +13,7 @@ import { snapStartFunctionProps } from '../utils/snapstart';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
 import { FEEDBACK_FORM_API_FUNCTION_BASE_NAME, USERS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
+import { appVersion } from '../utils/connector-version';
 import type { ApiStackContext } from './api-context';
 import { OPS_ALERTS_NAG_REASON, opsAlertsWiring } from './dlq-alarms';
 import { grantLogsDiagnostics } from './api-logs-diagnostics';
@@ -34,7 +35,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const {
     feedbackTable, aggregatesTable, projectsTable, conversationsTable, kmsKey, userPool, processingQueueUrl,
-    processingQueueArn, brandName, participantsTable,
+    processingQueueArn, brandName, participantsTable, rawDataBucket,
   } = ctx.props;
 
   // Logs API — also runs alerting (Settings → Logs → Alerts): it creates and
@@ -115,6 +116,9 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   feedbackFormRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
   // A submission gets its source's PII policy before it is queued.
   feedbackFormRole.addToPolicy(piiDetectionStatement());
+  // The submission as the widget sent it (lambda/shared/feedback_form_raw.py): write-once, under the
+  // feedback_form source's own prefix only (the source id is fixed, not per form). No read, no delete.
+  rawDataBucket.grantPut(feedbackFormRole, 'raw/feedback_form/*');
   // Participant attribution (lambda/api/feedback_form_participants.py): a submit carrying an ask's
   // response token reads that token row and marks the recipient (and the ask's count) responded.
   // Two single-item actions on the table itself — no index, no query, no delete.
@@ -139,6 +143,9 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
       PROCESSING_QUEUE_URL: processingQueueUrl,
       PARTICIPANTS_TABLE: participantsTable.tableName,
       BRAND_NAME: brandName,
+      // The raw copy of each submission and its connector-version (lambda/shared/feedback_form_raw.py).
+      RAW_DATA_BUCKET: rawDataBucket.bucketName,
+      APP_VERSION: appVersion(),
       ...PII_REDACTION_ENV,
       // '*', DELIBERATELY, and the one Lambda in this stack that gets it rather
       // than `allowedOrigin`. The three public routes below

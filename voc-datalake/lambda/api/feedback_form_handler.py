@@ -29,6 +29,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.feedback_form_participants import record_response, resolve_participant
+from shared.feedback_form_raw import archive_submission
 from shared.form_theme import validate_theme
 
 if TYPE_CHECKING:
@@ -969,14 +970,17 @@ def submit_form_feedback(form_id: str):
         # the form leaves unset, so a page cannot relabel a form's product etc.
         **message_labels({**widget_dimensions, **(form.get('dimension_defaults') or {})}, form.get('tags')),
     }
-    # The feedback_form source profile's PII policy, before anything is queued.
-    # There is no raw archive on this path, so nothing else needs gating. Strict:
-    # an unreadable policy answers 503 (the widget can retry) rather than queueing
-    # under the allow default.
-    policed = apply_source_policy(normalized_record, cached_source_profile_strict(FEEDBACK_FORM_SOURCE))
+    # The feedback_form source profile's PII policy, before anything is archived or
+    # queued. Strict: an unreadable policy answers 503 (the widget can retry) rather
+    # than archiving or queueing under the allow default.
+    profile = cached_source_profile_strict(FEEDBACK_FORM_SOURCE)
+    policed = apply_source_policy(normalized_record, profile)
     if policed is None:
         raise ValidationError('Feedback text is required')
-    normalized_record = policed
+    # The body as the widget sent it, kept only when the profile permits a raw copy
+    # (shared/feedback_form_raw.py); a failed write is logged and the submission queued.
+    raw_uri = archive_submission(FEEDBACK_FORM_SOURCE, form_id, feedback_id, body, profile, now)
+    normalized_record = {**policed, 's3_raw_uri': raw_uri} if raw_uri else policed
 
     try:
         sqs.send_message(
