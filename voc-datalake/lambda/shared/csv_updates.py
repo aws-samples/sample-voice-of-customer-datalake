@@ -21,8 +21,10 @@ as a duplicate, so a corrected spreadsheet amends its rows rather than doubling 
   created or deleted.
 * A failed model call (``enrichment_failed``) writes the row's own fields only and keeps the
   stored text, enrichment and digest, as an issue refresh keeps them.
-* ``s3_raw_uri`` follows the newest archive and is never removed: the API rewrites a
-  per-item archive at the stored key, so retention still finds (and deletes) it.
+* ``s3_raw_uri`` follows the newest archive and is never removed: the API writes the
+  correction as a NEW object in the stored item's own folder (``shared/raw_versions.py``;
+  the old version stays next to it, never overwritten), so retention still finds the
+  folder and deletes every version with the item.
 """
 from __future__ import annotations
 

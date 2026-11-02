@@ -51,8 +51,9 @@ def test_item_mode_archives_each_message_under_its_source():
     assert mode == 'item'
     # 'a/1' is not filename-safe, so it is archived under its sha256 stem (shared/archive_keys.py).
     a_stem = 'h.' + hashlib.sha256(b'a/1').hexdigest()
-    assert [m['s3_raw_uri'] for m in out] == [f's3://bkt/raw/sales_csv/2026/01/15/{a_stem}.json',
-                                              's3://bkt/raw/sales_csv/2026/01/15/b.json']
+    folders = [m['s3_raw_uri'].rpartition('/')[0] for m in out]
+    assert folders == [f's3://bkt/raw/sales_csv/2026/01/15/{a_stem}', 's3://bkt/raw/sales_csv/2026/01/15/b']
+    assert sorted(m['s3_raw_uri'] for m in out) == [f"s3://bkt/{key}" for key in _keys(s3)]
     assert s3.put_object.call_count == 2
 
 
@@ -84,7 +85,8 @@ def test_a_failed_item_write_leaves_that_uri_empty():
     s3.put_object.side_effect = [ClientError({'Error': {'Code': 'X'}}, 'PutObject'), None]
     messages = _messages()
     archive_per_item(s3, 'bkt', 'src', messages, NOW)
-    assert [m['s3_raw_uri'] for m in messages] == [None, 's3://bkt/raw/src/2026/01/15/b.json']
+    assert messages[0]['s3_raw_uri'] is None
+    assert messages[1]['s3_raw_uri'].startswith('s3://bkt/raw/src/2026/01/15/b/')
 
 
 def test_without_a_bucket_nothing_is_archived():
@@ -97,24 +99,36 @@ def _keys(s3) -> list[str]:
     return sorted(c.kwargs['Key'] for c in s3.put_object.call_args_list)
 
 
-def test_an_update_rewrites_the_stored_items_own_archive():
-    """A confirmed CSV correction (issue #411) keeps ONE archive, which retention deletes with the item."""
+def _key_of(s3, folder: str) -> str:
+    matches = [key for key in _keys(s3) if key.startswith(folder)]
+    assert len(matches) == 1, _keys(s3)
+    return matches[0]
+
+
+@pytest.mark.parametrize('stored', [
+    's3://bkt/raw/sales_csv/2025/12/01/b.json',                     # a legacy archive: its folder is .../b/
+    's3://bkt/raw/sales_csv/2025/12/01/b/0123456789abcdef.json',    # a versioned one: its own folder
+])
+def test_an_update_is_a_new_version_in_the_stored_items_folder(stored):
+    """A confirmed CSV correction (issue #411) never overwrites: a new object next to the stored one."""
     s3 = MagicMock()
-    stored = 's3://bkt/raw/sales_csv/2025/12/01/b.json'
     out, _ = prepare_messages(s3, 'bkt', _messages(), profile_for(_PROFILES, 'sales_csv'), NOW, {'b': stored})
-    assert 'raw/sales_csv/2025/12/01/b.json' in _keys(s3)
-    assert 'raw/sales_csv/2026/01/15/b.json' not in _keys(s3)
-    assert out[1]['s3_raw_uri'] == stored
+    key = _key_of(s3, 'raw/sales_csv/2025/12/01/b/')
+    assert f's3://bkt/{key}' != stored
+    assert not [k for k in _keys(s3) if k.startswith('raw/sales_csv/2026/01/15/b')]
+    assert out[1]['s3_raw_uri'] == f's3://bkt/{key}'
     assert out[0]['s3_raw_uri'].startswith('s3://bkt/raw/sales_csv/2026/01/15/')
+    assert all(c.kwargs['IfNoneMatch'] == '*' for c in s3.put_object.call_args_list)
 
 
 @pytest.mark.parametrize('stored', [
     's3://other-bucket/raw/sales_csv/2025/12/01/b.json',   # another bucket
     's3://bkt/raw/support_tickets/2025/12/01/b.json',      # another source's archive
     's3://bkt/raw/csv_upload/2025/12/01/upload.csv',       # a whole-file archive
+    's3://bkt/raw/sales_csv/2025/12/01/b/not-a-digest.json',  # not a version file
     'not-a-uri',
 ])
-def test_an_archive_that_is_not_the_items_own_is_never_rewritten(stored):
+def test_an_archive_that_is_not_the_items_own_is_never_a_correction_target(stored):
     s3 = MagicMock()
     prepare_messages(s3, 'bkt', _messages(), profile_for(_PROFILES, 'sales_csv'), NOW, {'b': stored})
-    assert 'raw/sales_csv/2026/01/15/b.json' in _keys(s3)
+    _key_of(s3, 'raw/sales_csv/2026/01/15/b/')

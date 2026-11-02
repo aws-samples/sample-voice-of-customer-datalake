@@ -59,7 +59,7 @@ class CsvDatasetPlan:
     v1_rows: list[dict[str, Any]] = field(default_factory=list)
 
     def archive_rewrites(self) -> dict[str, str]:
-        """Changed row id -> its stored item's raw archive (``shared.ingest_archive`` rewrites it in place)."""
+        """Changed row id -> its stored item's raw archive (``shared.ingest_archive`` files the new version in its folder)."""
         return {item['id']: stored['s3_raw_uri'] for item, stored in self.changed if stored.get('s3_raw_uri')}
 
     def counts(self) -> dict[str, int]:
