@@ -1,6 +1,6 @@
 /**
  * @fileoverview "Import history" on the Data sources page: every paste, CSV, JSON,
- * assistant and S3 import of the last 90 days, newest first, with who ran it, its
+ * assistant and S3 import (kept for good: an audit trail), newest first, with who ran it, its
  * counts and status; a row opens its warnings and errors (docs/import-history.md).
  * Admin-only, like the imports (the page mounts it for admins only).
  * @module pages/Scrapers/ImportHistory
