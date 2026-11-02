@@ -65,8 +65,11 @@ export interface AlarmTopicProps {
    * deployment's alarms. Every runtime alarm is named `uniqueName(OPS_ALERT_ALARM_BASE_NAME)-<slug>`.
    */
   alarmNamePrefix: string;
-  /** The Core data key: the deployment's one customer-managed key encrypts the topic too. */
-  key: kms.IKey;
+  /**
+   * The Core data key: the deployment's one customer-managed key encrypts the topic too. A concrete
+   * `kms.Key`, because `addToResourcePolicy` on an imported key silently adds nothing.
+   */
+  key: kms.Key;
 }
 
 /** Base of every alarm name (`voc-…`); run through the owning stack's `prefixed()`. */
@@ -112,16 +115,17 @@ function alarmSourceArnPattern(stack: cdk.Stack, alarmNamePrefix: string): strin
  * baseline: a key costs about $1 a month, so the deployment has exactly one).
  * CloudWatch publishes as the cloudwatch.amazonaws.com service principal, which
  * cannot use the AWS-managed `alias/aws/sns` key, so the Core key's policy admits
- * it, and only narrowly: `kms:Decrypt` / `kms:GenerateDataKey*`, only for alarm
- * calls from this account (`aws:SourceAccount`) and from this deployment's
- * alarms (`aws:SourceArn`, the same alarm-name prefix the topic policy uses).
- * These are the confused-deputy conditions the SNS guide documents for
- * service-principal publishers
- * (https://docs.aws.amazon.com/sns/latest/dg/sns-key-management.html); SNS
- * documents no encryption-context key, so none is relied on. This reverses the
- * earlier choice of a separate key on purpose: the statement is `Resource: '*'` on
- * the key that protects every table and bucket, and that widening is accepted,
- * bounded by the two conditions above.
+ * it: `kms:Decrypt` / `kms:GenerateDataKey*`, only for calls from this account
+ * (`aws:SourceAccount`), the condition the separate alarm key carried in
+ * production before. The topic policy (above) additionally limits publishing to
+ * this deployment's alarms (`aws:SourceArn`). Narrowing the KEY statement by
+ * `aws:SourceArn` too is a follow-up once a deployed alarm proves CloudWatch sends
+ * that key on its KMS calls: if it did not, every notification would stop with no
+ * synth or test failure. SNS documents no encryption-context key
+ * (https://docs.aws.amazon.com/sns/latest/dg/sns-key-management.html), so none is
+ * relied on. This reverses the earlier choice of a separate key on purpose: the
+ * statement is `Resource: '*'` on the key that protects every table and bucket,
+ * and that widening is accepted, bounded by the service principal and the account.
  */
 export function createAlarmTopic(scope: Construct, id: string, props: AlarmTopicProps): void {
   // A plain construct with the same id keeps every logical id the class form had.
@@ -135,7 +139,6 @@ export function createAlarmTopic(scope: Construct, id: string, props: AlarmTopic
     resources: ['*'],
     conditions: {
       StringEquals: { 'aws:SourceAccount': stack.account },
-      ArnLike: { 'aws:SourceArn': alarmSourceArnPattern(stack, props.alarmNamePrefix) },
     },
   }));
 

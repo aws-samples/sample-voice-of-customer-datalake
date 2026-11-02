@@ -26,7 +26,6 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
 import { countedFixedCostFindings, FIXED_COST_REMEDY, fixedCostFindings, OPT_IN_FIXED_COSTS, type FixedCostFinding } from './test-support/fixed-cost-rules';
-import { itemAt } from './test-support/guards';
 import { cleanupAssemblyDirs, synthApp, type SynthResult } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
 
@@ -48,13 +47,9 @@ describe.each(SHAPES)('the %s synth', (_shape, result) => {
     expect(result.stackNames.length, 'expected the whole app').toBeGreaterThanOrEqual(4);
     expect(findingsOf(result).map((finding) => finding.message)).toStrictEqual([]);
   });
-});
 
-describe('the default synth\'s per-resource monthly costs (COUNTED_FIXED_COSTS)', () => {
-  const [, defaultSynth] = itemAt(SHAPES, 0);
-  const templates = defaultSynth.stackNames.map((stack) => ({ stack, template: defaultSynth.template(stack) }));
-
-  it('holds exactly one KMS key and no more secrets than the baseline: reuse the Core key, lower a baseline that shrank', () => {
+  it('holds exactly one KMS key and no more secrets than the baseline (COUNTED_FIXED_COSTS): reuse the Core key, lower a baseline that shrank', () => {
+    const templates = result.stackNames.map((stack) => ({ stack, template: result.template(stack) }));
     expect(countedFixedCostFindings(templates)).toStrictEqual([]);
   });
 });
