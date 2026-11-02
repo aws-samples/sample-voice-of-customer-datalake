@@ -24,7 +24,7 @@ import { booleanContextFlag } from './context-flag';
 export const PERFORMANCE_TIER_CONTEXT_KEY = 'performanceTier';
 
 /** Whether this app opted in to the performance tier. The only read of the flag. */
-export function performanceTierEnabled(scope: IConstruct): boolean {
+function performanceTierEnabled(scope: IConstruct): boolean {
   return booleanContextFlag(
     scope.node.tryGetContext(PERFORMANCE_TIER_CONTEXT_KEY), PERFORMANCE_TIER_CONTEXT_KEY, false,
     `Use true/false (off by default: fixed monthly costs, TENETS.md tenet 7; opt in with -c ${PERFORMANCE_TIER_CONTEXT_KEY}=true).`,
