@@ -602,7 +602,10 @@ describe('ImportPersonaModal image input paths', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('.gif, .jpg, .png, .webp')
     // The earlier good selection survived — a refusal must not throw work away.
     expect(screen.getByText('good.png')).toBeInTheDocument()
-    expect(importButton()).toBeEnabled()
+    // Awaited: the name shows before the file's content is read in, so under load the
+    // button can still be waiting for that read. A refusal that cleared the content
+    // would leave it disabled for good, and this would time out.
+    await waitFor(() => expect(importButton()).toBeEnabled())
   })
 
   it('refuses a dropped folder, which arrives with no content type at all', async () => {

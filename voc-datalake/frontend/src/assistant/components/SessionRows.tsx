@@ -20,7 +20,7 @@ import {
   AlertCircle, Circle, Hand, Loader2, MessageSquare, Pencil, Trash2, X,
 } from 'lucide-react'
 import clsx from 'clsx'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { closeThread } from '../runtime/runtime'
 import type { ThreadSlot } from '../store/assistantStore'
 import type { SessionSummary } from '../sessions/schema'
@@ -34,6 +34,9 @@ import type { MoreMenuItem } from './MoreMenu'
 import type { TFunction } from 'i18next'
 
 // Stryker disable next-line StringLiteral: layout-only classes, no behaviour to observe
+/** The status icon's wrapper is a flex box (see OpenRow). */
+const STATUS_WRAPPER_STYLE: CSSProperties = { display: 'flex' }
+
 const ROW_CLASS = 'group flex items-center gap-1 rounded-md transition-colors'
 // Stryker disable next-line StringLiteral: hover styling only (jsdom applies no :hover)
 const ROW_HOVER_CLASS = 'hover:bg-bg-hover'
@@ -165,7 +168,10 @@ export function OpenRow({ slot, active, title, editTitle, actions }: Readonly<{
             aria-current={active || undefined}
             className="flex min-w-0 flex-1 items-start gap-2 px-2 py-1.5 text-left"
           >
-            <span className="mt-0.5 flex flex-shrink-0"><StatusIcon state={state} /></span>
+            {/* The `flex` class, stated inline too: a name computation separates a
+                non-inline child with a space ("Running First question"), and jsdom
+                applies no Tailwind CSS, so without it the test DOM reads "RunningFirst". */}
+            <span className="mt-0.5 flex flex-shrink-0" style={STATUS_WRAPPER_STYLE}><StatusIcon state={state} /></span>
             <span className={clsx(TITLE_CLASS, state === 'unread' && 'font-semibold')} title={title}>{title}</span>
           </button>
         )}

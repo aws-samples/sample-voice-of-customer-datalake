@@ -71,8 +71,10 @@ function Sources({ links }: Readonly<{ links: readonly CardLink[] }>) {
             <a href={link.href} target="_blank" rel="noopener noreferrer"
               className="link inline-flex items-center gap-1 text-sm">
               <ExternalLink size={12} aria-hidden="true" />
-              {link.host}
-              <span className="sr-only">{` (${t('cards.newTab')})`}</span>
+              {/* The space stays outside the hidden span (an accessible name trims each
+                  element's text); in the inline-flex link it renders nothing. */}
+              {link.host}{' '}
+              <span className="sr-only">{`(${t('cards.newTab')})`}</span>
             </a>
           </li>
         ))}

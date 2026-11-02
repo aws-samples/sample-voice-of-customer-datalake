@@ -22,11 +22,14 @@ import { ExternalLink } from 'lucide-react'
 import { classifyHref } from './safeHref'
 import ReviewLink from '../../components/ReviewLink/ReviewLink'
 import { leaveFullscreenOnPlainClick } from '../../hooks/useRouteNavigate'
-import type { ComponentPropsWithoutRef, ReactNode } from 'react'
+import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from 'react'
 
 const LINK_CLASS = 'text-accent-text underline decoration-accent-text/45 hover:decoration-accent-text'
 
 type AnchorProps = ComponentPropsWithoutRef<'a'>
+
+/** The hidden "(opens in a new tab)" suffix's display; see ExternalAnchor. */
+const SR_SUFFIX_STYLE: CSSProperties = { display: 'block' }
 
 /** A bare URL is shown at most this long. */
 const MAX_URL_TEXT = 48
@@ -52,7 +55,12 @@ function ExternalAnchor({ href, host, children }: Readonly<{ href: string; host:
     <a href={href} target="_blank" rel="noopener noreferrer nofollow" title={href} className={LINK_CLASS}>
       {bare ? shortUrlText(href) : children}
       <ExternalLink size={12} className="ml-0.5 inline-block align-baseline" aria-hidden />
-      <span className="sr-only"> {t('message.externalLink', { host: host.replace(/^www\./u, '') })}</span>
+      {/* `display: block` is what a browser computes anyway (`sr-only` is absolutely
+          positioned, which blockifies the span). Stating it keeps the space before the
+          suffix in the accessible name everywhere: a name computation trims an inline
+          span's own text, and jsdom applies no Tailwind CSS. A space outside the span
+          would show as an underlined gap in this inline link. */}
+      <span className="sr-only" style={SR_SUFFIX_STYLE}> {t('message.externalLink', { host: host.replace(/^www\./u, '') })}</span>
     </a>
   )
 }

@@ -39,7 +39,10 @@ function describedBy(notes: ReadonlyArray<readonly [id: string, text: string | n
 /** Spinner + "Drafting…" while busy, else the AI mark + "Draft with AI" / "Improve with AI". */
 function ButtonContent({ busy, hasText, subject }: Readonly<{ busy: boolean; hasText: boolean; subject: string }>) {
   const { t } = useTranslation('components')
-  const target = <span className="sr-only"> — {subject}</span>
+  // The space is a text node of its own, outside the hidden span: an accessible-name
+  // computation trims each element's text, so a space inside the span is lost in jsdom.
+  // In the inline-flex button a whitespace-only text node renders nothing.
+  const target = <>{' '}<span className="sr-only">— {subject}</span></>
   if (busy) return <><Loader2 size={14} aria-hidden="true" className="animate-spin" />{t('aiDraftButton.drafting')}{target}</>
   return (
     <>
