@@ -244,3 +244,21 @@ deal names, amounts, booking references, contact emails). All of it is visible t
 design. Nothing on a board reaches the rest of the app until an admin promotes a request; promoted people are then
 ordinary participants, with the unsubscribe and erasure of [participants](participants.md#privacy). Deleting a
 request deletes its supports. Rate-limit rows keep only a hash of the poster's email and expire.
+
+## Raw copies
+
+What people file is also kept in the raw lake, write-once (`lambda/shared/feature_requests_raw.py`, connector
+`feature_requests`):
+
+- a request on create and on every edit of its title, description or fields:
+  `raw/feature_requests/{y}/{m}/{d}/<request id>/<sha16>.json` (the request's own creation day), holding the
+  request id, board, title, description, field values, `reporter_email` and `reporter_name`;
+- a +1 on create and on every edit: its own folder `raw/feature_requests/{y}/{m}/{d}/<support id>/<sha16>.json`
+  (the support id is stable per person and request), holding its field values, name and email.
+
+Nothing more than the row stores: no status, totals or bookkeeping, so an admin's triage writes no new version.
+The copies are governed by the `feature_requests` source profile (Administration → Privacy & access → Source
+policies): under `redact` or `summary_only` none is written. Deleting a request or a +1 does not delete its raw copies
+(the raw lake keeps history); a whole-source erasure of `feature_requests` removes them (configure the profile first so
+the erasure accepts the source). An erasure by email does NOT reach them: it scans `voc-feedback`, and boards are not a
+feedback source. Board requests are NOT queued into `voc-feedback`: that is a product decision not made yet.

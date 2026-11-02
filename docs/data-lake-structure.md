@@ -48,8 +48,25 @@ raw/webscraper/2025/11/02/abc123def456.json                    ← a legacy obje
 
 Every new raw object carries S3 user metadata `connector` and `connector-version`: the plugin id and
 its manifest `version` for an ingestor (`webhook_<plugin>` for a webhook), or the API writer
-(`manual_import`, `csv_upload`, `json_upload`) and the platform release. A source whose PII policy is
+(`manual_import`, `csv_upload`, `json_upload`, `feedback_form`, `feature_requests`, `email_intake`,
+`data_explorer`, `processor`) and the platform release. A source whose PII policy is
 `redact` or `summary_only` keeps no raw copy ([source-policies.md](source-policies.md)).
+
+### Every ingested source has a raw copy
+
+| Writer | Where | What | Connector |
+|---|---|---|---|
+| Plugin ingestors and webhooks | `raw/<source>/…/<item>/<sha16>.json` | The mapped item and the payload received (`raw_content`): the App Store RSS entry, the Google Play review, the scraped review element's outer HTML or the JSON-LD `Review` object, the import file's row, the GitHub issue/comment. Bounded at 256 KB, cut with a marker (`plugins/_shared/raw_source.py`) | `<plugin>` / `webhook_<plugin>` |
+| Feedback forms (`POST /feedback-forms/{id}/submit`) | `raw/feedback_form/…/<feedback id>/<sha16>.json` | `{form_id, submission}`: the body as the widget sent it, before the source policy | `feedback_form` |
+| Feedback boards ([feature-requests.md](feature-requests.md#raw-copies)) | `raw/feature_requests/…/<request id \| support id>/<sha16>.json` | A request on create and every content edit; a +1 on create and every edit. Not queued into `voc-feedback` | `feature_requests` |
+| Email inbox ([email-intake.md](email-intake.md#raw-copies)) | `raw/email_intake/…/<item id>/<sha16>.eml` | The email as received; filtered mail too, with metadata `drop-reason` | `email_intake` |
+| S3 import originals | `raw/s3_import/…/<file stem>/<sha16>.<csv\|json\|jsonl>` | The staged file as uploaded, metadata `original-key`; only when the `s3_import` profile keeps whole files (allow, no retention period) | `s3_import` |
+| The processor | `raw/<source>/…/<item>/<sha16>.json` (the processing day) | A message's inline `raw_data`, when its producer's archive write failed (`lambda/shared/raw_fallback.py`) | `processor` |
+
+Each copy is written only when the source's profile permits one (strict read: an unreadable profile
+writes nothing) and a failed write is logged, never a lost item (`lambda/shared/raw_copy.py`). The
+originals of a file (S3 import) or of a mail are deleted by a whole-source erasure of their source; an
+email's copy also goes with its item (its `s3_raw_uri`).
 
 The raw envelope written by ingestors and webhooks (`plugins/_shared/raw_archive.py`) is:
 
@@ -142,7 +159,7 @@ such as every source or persona counter. Common key families include:
 | `SOURCE_RUN#<source>` / `<execution id>` | Manual and reprocess runs of a plugin ingestor |
 | `SCRAPER_RUN#<scraper id>` | Scraper run state |
 | `CIRCUIT#<plugin>` / `TRIPPED`, `FAILURES#<plugin>` | Plugin circuit breaker ([plugin-architecture.md](plugin-architecture.md#circuit-breaker)) |
-| `IMPORT_RUN`, `IMPORT_RUN#<run id>` | Import history (90-day TTL, [import-history.md](import-history.md)) |
+| `IMPORT_RUN`, `IMPORT_RUN#<run id>` | Import history (kept, no TTL; rows from earlier releases keep their 90-day TTL, [import-history.md](import-history.md)) |
 | `PRIORITIZATION` / `ROW#<id>` | Prioritization rows ([prioritization.md](prioritization.md)) |
 
 Metric rows are kept indefinitely (no `ttl`). The table keeps TTL enabled for its operational rows (logs, circuit-breaker failures, import history, voting sessions). Settings and other durable configuration rows omit TTL. See [Processing Pipeline](processing-pipeline.md#rebuilding-aggregates-for-a-window) before repairing counters.
@@ -191,7 +208,10 @@ The S3 import bucket (`voc-import-<account>-<region>`, `VocIngestionStack` outpu
 `.jsonl` file uploaded under `<source>/` triggers the `s3_import` ingestor, which queues each row for
 processing under the source `S3 - <source>`. The bucket is versioned (an overwrite or delete is
 recoverable for 7 days), staged files expire 90 days after upload, and `processed/` is reserved
-(moved to Glacier after 30 days). Administrators use the file explorer on the **S3 Bulk Import**
+(moved to Glacier after 30 days). The import bucket is an inbox, not the archive: before a file is read,
+its original goes to the raw lake (`raw/s3_import/…`, above) when the `s3_import` profile keeps whole
+files. Reprocess works on staged files only: once a file has expired, `POST /s3-import/reprocess`
+answers 404 naming the raw copy, and the file is uploaded again from it. Administrators use the file explorer on the **S3 Bulk Import**
 card in **Administration → Sources → Source settings**. Its API (`s3_import_handler.py`) is
 **admin-only on every route**, because an upload ingests its rows into the pipeline and the listings
 expose the bucket name and every staged file.
@@ -203,7 +223,7 @@ expose the bucket name and every staged file.
 | GET | `/s3-import/files` | Admin | List `.csv` / `.json` / `.jsonl` files (`?source=`, `?include_processed=true`) |
 | POST | `/s3-import/upload-url` | Admin | Presign a create-only PUT for `<source>/<file>`: 409 when the key holds a file, and the URL is signed with `If-None-Match: *` (S3 answers 412 to an overwrite). The PUT must send the returned `upload_headers`. To replace a file, delete it first |
 | DELETE | `/s3-import/file/{key}` | Admin | Delete one staged file. 400 unless the key is exactly `<source>/<file.csv\|.json\|.jsonl>`: no leading `/`, no `..`, never `processed/` |
-| POST | `/s3-import/reprocess` | Admin | Re-run one file through the `s3_import` ingestor, body `{key}` → **202** `{success, run}`. The key is `<source>/<file>` (validated as for delete) or `processed/<source>/<file>`; 400 for any other key, an empty file or one over the ingestor's 50 MB limit, 404 when the key holds nothing |
+| POST | `/s3-import/reprocess` | Admin | Re-run one file through the `s3_import` ingestor, body `{key}` → **202** `{success, run}`. The key is `<source>/<file>` (validated as for delete) or `processed/<source>/<file>`; 400 for any other key, an empty file or one over the ingestor's 50 MB limit, 404 when the key holds nothing (the message says the staged copy expires and where the raw copy is) |
 | GET | `/s3-import/reprocess/{run_id}` | Admin | One reprocess run `{run: {run_id, key, status: running\|completed\|error, items_found, started_at, completed_at, errors}}`; 404 when unknown |
 
 ### Reprocessing a file
