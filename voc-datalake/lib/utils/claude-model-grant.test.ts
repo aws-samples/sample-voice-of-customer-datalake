@@ -48,14 +48,23 @@ function managedPolicies(template: Template): [string, z.infer<typeof ManagedPol
 const firstPolicyStatements = (template: Template) =>
   managedPolicies(template).find(([id]) => id.startsWith('ClaudeInvokePolicy0'))?.[1].Properties.PolicyDocument.Statement;
 
-/** Parts 1 and 2 as synthesized: the profiles, then `regional` through those profiles only. */
-const profileAndRegionalParts = (profiles: string[], regional: string[]) => [
-  { Sid: 'ClaudeProfiles', Effect: 'Allow', Action: 'bedrock:InvokeModel', Resource: profiles },
-  {
-    Sid: 'ClaudeRegionalModels', Effect: 'Allow', Action: 'bedrock:InvokeModel', Resource: regional,
-    Condition: { StringEquals: { 'bedrock:InferenceProfileArn': profiles } },
-  },
-];
+/**
+ * Parts 1 and 2 as synthesized: the profiles, then `regional` through those profiles only; with `requesting`
+ * (global scope) both also carry `aws:RequestedRegion` = that region, as the global doc's example does.
+ */
+const profileAndRegionalParts = (profiles: string[], regional: string[], requesting?: string) => {
+  const inRegion = requesting === undefined ? {} : { 'aws:RequestedRegion': requesting };
+  return [
+    {
+      Sid: 'ClaudeProfiles', Effect: 'Allow', Action: 'bedrock:InvokeModel', Resource: profiles,
+      ...(requesting === undefined ? {} : { Condition: { StringEquals: inRegion } }),
+    },
+    {
+      Sid: 'ClaudeRegionalModels', Effect: 'Allow', Action: 'bedrock:InvokeModel', Resource: regional,
+      Condition: { StringEquals: { ...inRegion, 'bedrock:InferenceProfileArn': profiles } },
+    },
+  ];
+};
 
 const models = ALLOWED_MODEL_IDS.slice(0, MODELS_PER_POLICY);
 const profileArn = (region: string, prefix: string, id: string) =>
@@ -67,7 +76,7 @@ describe('grantClaudeModels, global scope (default)', () => {
 
   it('grants the first policy\'s models in exactly the three documented parts', () => {
     expect(firstPolicyStatements(template)).toStrictEqual([
-      ...profileAndRegionalParts(profiles, models.map((id) => `arn:aws:bedrock:us-east-1::foundation-model/${toFoundationModelId(id)}`)),
+      ...profileAndRegionalParts(profiles, models.map((id) => `arn:aws:bedrock:us-east-1::foundation-model/${toFoundationModelId(id)}`), 'us-east-1'),
       {
         Sid: 'ClaudeGlobalModels', Effect: 'Allow', Action: 'bedrock:InvokeModel',
         Resource: models.map((id) => `arn:aws:bedrock:::foundation-model/${toFoundationModelId(id)}`),

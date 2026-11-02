@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "b8a2947822c3dae44f0f3f3ea87fc5e7c1ba1d4c0523fa73c7d721c75296787f",
+      "templateSha256": "b52bfc45fd222f199496fd4fc05e5a058ddb7a2c300b98c1c1b38e6cd8b2de8e",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -178,7 +178,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "5eaf1b91ea2c31b61e365ff535efeb22248d5a2990748aba5c01bb2c3143cd9c",
+      "templateSha256": "df5e66fa08b5a26497d23c9c0a4d51660bca2e733ca7eeeb0a07834e1af0ef24",
       "names": {
         "physicalNames": [
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
@@ -266,7 +266,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "f1d8c97a01f54cc75f4b9dff920e1dac989b3a5d3dc86975ef2341f122f33dbf",
+      "templateSha256": "a4a9af59210d96c86277426971723fdb5dec9a122982b4adc84c74afe09d2d61",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -324,7 +324,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "26b22f1f905ae38fdabd5b91e1eec9a71f5e8e293d806110231ef4bae4681079",
+      "templateSha256": "c27637664ebe000d6e0ffb7403a31c05e78013a918daec17ec5ff99c0505f224",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -424,7 +424,7 @@
       }
     },
     "VocWebSearchStack": {
-      "templateSha256": "89c8bcecc7a04c4b3ce6921a7ee56ac9c4f5e2d447252e6582d8bfb219d49304",
+      "templateSha256": "983944efddf5ef9887275b96187fe9494e404c160edb27a6ee16ef8460176237",
       "names": {
         "physicalNames": [
           "AWS::BedrockAgentCore::Gateway Name = voc-web-search-<AWS::AccountId>-<AWS::Region>"
