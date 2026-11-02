@@ -25,6 +25,7 @@ import {
   type PluginManifest,
 } from '../plugin-loader';
 import { acknowledgeNagOnResource } from '../utils/nag-ack';
+import { pluginVersion } from '../utils/connector-version';
 import { apiSecretsSuppressions } from '../utils/nag-suppressions';
 import { dependencyLayer } from '../utils/dependency-layers';
 import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
@@ -400,6 +401,8 @@ export class VocIngestionStack extends VocStack {
     const lambdaEnv: Record<string, string> = {
       ...commonEnv,
       SOURCE_PLATFORM: plugin.id,
+      // The connector-version on every raw object the plugin archives (plugins/_shared/raw_archive.py).
+      PLUGIN_VERSION: pluginVersion(plugin),
       ...(scheduleRuleName ? { INGEST_SCHEDULE_RULE_NAME: scheduleRuleName } : {}),
     };
 

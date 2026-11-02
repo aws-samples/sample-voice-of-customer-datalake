@@ -28,6 +28,7 @@ import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/ca
 import { briefingApiWiring } from './briefing-worker';
 import { grantImageModelProbe } from './api-marketplace';
 import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
+import { appVersion } from '../utils/connector-version';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailSettingsEnv } from '../utils/inbound-email';
 
 export interface DataLambdas {
@@ -276,6 +277,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       PROCESSING_QUEUE_URL: processingQueueUrl,
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       MANUAL_IMPORT_PROCESSOR_FUNCTION: manualImportProcessorName,
+      // The connector-version on every raw object this Lambda writes (shared/raw_versions.py).
+      APP_VERSION: appVersion(),
       ...PII_REDACTION_ENV,
       ALLOWED_ORIGIN: allowedOrigin,
       POWERTOOLS_SERVICE_NAME: 'voc-manual-import-api',

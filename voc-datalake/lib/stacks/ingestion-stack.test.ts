@@ -329,6 +329,19 @@ describe('VocIngestionStack s3_import ingestor bucket check', () => {
     expect(ingestorEnv('s3_import')[S3_IMPORT_BUCKET_ENV]).toStrictEqual({ Ref: bucketId });
   });
 
+  // The raw archive records the plugin's manifest version as each object's connector-version
+  // (plugins/_shared/raw_archive.py `plugin_connector`).
+  it.each(['webscraper', 's3_import'])('%s carries its manifest version as PLUGIN_VERSION', (pluginId) => {
+    const manifest = z.object({ version: z.string() }).parse(JSON.parse(
+      readFileSync(join(__dirname, '..', '..', 'plugins', pluginId, 'manifest.json'), 'utf8')));
+    expect(ingestorEnv(pluginId)['PLUGIN_VERSION']).toBe(manifest.version);
+  });
+
+  it('PLUGIN_VERSION is the variable the raw archive reads', () => {
+    const source = readFileSync(join(__dirname, '..', '..', 'plugins', '_shared', 'raw_archive.py'), 'utf8');
+    expect(source).toContain('os.environ.get("PLUGIN_VERSION")');
+  });
+
   it('sets no import bucket on an ingestor without an S3 trigger', () => {
     expect(ingestorEnv('webscraper')).not.toHaveProperty(S3_IMPORT_BUCKET_ENV);
   });
