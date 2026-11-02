@@ -25,7 +25,7 @@ import hmac
 import json
 import os
 import sys
-from typing import Any
+from typing import Any, override
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -40,11 +40,8 @@ from _shared.github_mapping import (
     issue_item,
     issue_labels,
 )
-from _shared.raw_archive import WEBHOOK, archive_raw_item
-from shared.aws import get_s3_client
 from shared.invocation_cost import measure_invocation_cost
 
-RAW_DATA_BUCKET = os.environ.get("RAW_DATA_BUCKET", "")
 #: GitHub caps deliveries at 25 MB, but an issue or comment event is a few KB;
 #: anything near this is not a delivery this plugin needs to read.
 MAX_BODY_BYTES = 1_000_000
@@ -85,7 +82,6 @@ class GitHubIssuesWebhook(BaseWebhook):
         # Never logged, never echoed in a response.
         self._webhook_secret = str(self.secrets.get("webhook_secret", "")).strip()
         self.config = GitHubSourceConfig.from_secrets(self.secrets)
-        self._s3 = get_s3_client()
 
     def rejection(self, event: dict) -> dict | None:
         """The refusal for an unauthenticated or oversized request, else None."""
@@ -127,19 +123,13 @@ class GitHubIssuesWebhook(BaseWebhook):
             return []
         return [comment_item(comment, repo, issue, self.config.product_names)]
 
-    def normalize_item(self, item: dict) -> dict:
-        """Archive the delivery's issue/comment object to S3 like every source; send only the mapped item."""
+    @override
+    def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
+        """Archive the delivery's issue/comment object as the raw content; send only the mapped item."""
         payload = item.pop(RAW_PAYLOAD_KEY, None)
-        uri = archive_raw_item(
-            self._s3, RAW_DATA_BUCKET, self.source_platform, item,
-            json.dumps(payload, default=str) if payload is not None else None,
-            transport=WEBHOOK,
-        )
-        normalized = super().normalize_item(item)
-        if uri:
-            normalized["s3_raw_uri"] = uri
-            normalized["raw_data"] = None
-        return normalized
+        if payload is not None:
+            raw_content = json.dumps(payload, default=str)
+        return super().normalize_item(item, raw_content)
 
 
 @logger.inject_lambda_context

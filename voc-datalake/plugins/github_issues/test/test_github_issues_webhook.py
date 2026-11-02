@@ -27,7 +27,7 @@ def github_webhook(**secrets):
     with (
         patch("_shared.base_webhook.get_sqs_client", return_value=sqs),
         patch("_shared.base_webhook.get_secret", return_value=scoped_secret(**values)),
-        patch("github_issues.webhook.handler.get_s3_client") as s3,
+        patch("_shared.base_webhook.get_s3_client") as s3,
         patch("github_issues.webhook.handler.emit_audit_event") as audit,
     ):
         from github_issues.webhook.handler import lambda_handler
@@ -156,7 +156,7 @@ class TestEvents:
 
 
 def test_the_payload_is_archived_to_s3_and_not_sent_inline():
-    with patch("github_issues.webhook.handler.RAW_DATA_BUCKET", "raw-bucket"), \
+    with patch("_shared.base_webhook.RAW_DATA_BUCKET", "raw-bucket"), \
             github_webhook() as (handler, sqs, s3, _audit):
         call(handler, delivery(issues_payload()))
 

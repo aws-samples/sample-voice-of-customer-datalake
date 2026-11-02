@@ -5,7 +5,7 @@ outcomes (a 200 with the confirmed count, a 400 on bad JSON, a 500 on a failure,
 secrets filtered to the plugin's namespace), but a mutation run found what they
 could not see, everything pinned only by exact values:
 
-* the IMPORT-TIME contract: each of the four settings is read from the variable
+* the IMPORT-TIME contract: each of the five settings is read from the variable
   of that exact name and defaults to ``''``; the plugins root goes to the FRONT
   of ``sys.path``; the public names a plugin handler imports;
 * the CLASS shape: ``parse_webhook_payload`` is abstract and ``handle`` is
@@ -45,7 +45,7 @@ PLUGINS_ROOT = str(MODULE_PATH.parents[1])
 PLATFORM = 'test_source'
 BRAND = 'TestBrand'
 CLIENT_IP = '198.51.100.7'
-ENV_SETTINGS = ('PROCESSING_QUEUE_URL', 'SECRETS_ARN', 'BRAND_NAME', 'SOURCE_PLATFORM')
+ENV_SETTINGS = ('PROCESSING_QUEUE_URL', 'SECRETS_ARN', 'BRAND_NAME', 'SOURCE_PLATFORM', 'RAW_DATA_BUCKET')
 
 
 def _load_fresh_module():
@@ -195,6 +195,27 @@ class TestTheDelegations:
             item, source_platform=PLATFORM, default_channel='webhook', brand_name=BRAND,
         )
         assert result == {'id': 'a', 'x': 1, 'is_webhook': True, 'raw_data': item}
+
+    def test_normalize_item_archives_the_item_and_its_payload_as_a_webhook(self):
+        item = {'id': 'a', 'text': 't'}
+        with (
+            patch.object(base_webhook, 'RAW_DATA_BUCKET', 'lake'),
+            patch('_shared.base_webhook.archive_raw_item', return_value='s3://lake/raw/x.json') as archive,
+        ):
+            webhook = webhook_parsing()
+            result = webhook.normalize_item(item, '{"provider": 1}')
+
+        archive.assert_called_once_with(webhook._s3, 'lake', PLATFORM, item, '{"provider": 1}', transport='webhook')
+        assert result['s3_raw_uri'] == 's3://lake/raw/x.json'
+        assert result['raw_data'] is None
+
+    def test_a_failed_or_refused_archive_sends_the_item_inline_without_a_uri(self):
+        item = {'id': 'a'}
+        with patch('_shared.base_webhook.archive_raw_item', return_value=None):
+            result = webhook_parsing().normalize_item(item)
+
+        assert result['raw_data'] == item
+        assert 's3_raw_uri' not in result
 
     def test_send_to_queue_names_the_queue_the_metric_and_the_log_label(self, webhook_aws):
         items = [{'id': 'a'}]
