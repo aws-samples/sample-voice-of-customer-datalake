@@ -28,7 +28,7 @@ import { join } from 'node:path';
 import type { CfnResource } from 'aws-cdk-lib';
 import type { IApplyRule } from 'cdk-nag';
 import type { IConstruct } from 'constructs';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
 import { isRecord } from './test-support/guards';
@@ -65,7 +65,7 @@ vi.mock('cdk-nag', async (importOriginal) => {
       return super.validateScope(scope);
     }
     protected override applyRule(params: IApplyRule): void {
-      const ruleId = `${this.readPackName}-${params.ruleSuffixOverride ? params.ruleSuffixOverride : params.rule.name}`;
+      const ruleId = `${this.readPackName}-${params.ruleSuffixOverride ?? params.rule.name}`;
       for (const id of idsOf(ruleId, params)) recorder.findings.push({ resource: params.node, id });
       super.applyRule(params);
     }
@@ -88,16 +88,22 @@ interface Judged {
   readonly reasonless: string[];
 }
 
+/** The pack-rule acknowledgements recorded on `construct`, as units, plus those whose reason is too short. */
+function declaredOn(construct: IConstruct): { units: string[]; reasonless: string[] } {
+  const acks = acknowledgementsOn(construct).filter(({ id }) => id.startsWith(PACK));
+  return {
+    units: acks.map((ack) => unitKey(ack.id, ack.reason)),
+    reasonless: acks.filter((ack) => ack.reason.trim().length < MIN_REASON_LENGTH).map((ack) => `${construct.node.path} ${ack.id}`),
+  };
+}
+
 function judged(): Judged {
   const declared = new Set<string>();
   const reasonless: string[] = [];
-  for (const root of recorder.roots) {
-    for (const construct of root.node.findAll()) {
-      for (const ack of acknowledgementsOn(construct).filter(({ id }) => id.startsWith(PACK))) {
-        declared.add(unitKey(ack.id, ack.reason));
-        if (ack.reason.trim().length < MIN_REASON_LENGTH) reasonless.push(`${construct.node.path} ${ack.id}`);
-      }
-    }
+  for (const construct of recorder.roots.flatMap((root) => root.node.findAll())) {
+    const found = declaredOn(construct);
+    found.units.forEach((unit) => declared.add(unit));
+    reasonless.push(...found.reasonless);
   }
   const used = new Set<string>();
   const unacknowledged: string[] = [];
@@ -189,15 +195,23 @@ describe('cdk-nag acknowledgements', () => {
     expect(judged().unacknowledged).toStrictEqual(['Fx/Queue/Resource AwsSolutions-SQS3']);
   });
 
-  it('acknowledges every finding, with a reason, and every acknowledgement covers one in the default or the all-features synth', async () => {
-    const shapes = [await synthShape({}), await synthShape(ALL_FEATURES_CONTEXT)];
-    const declared = new Set(shapes.flatMap((shape) => [...shape.declared]));
-    const used = new Set(shapes.flatMap((shape) => [...shape.used]));
-    // Vacuity: the recorder saw the app's acknowledgements and the findings they cover.
-    expect(declared.size).toBeGreaterThan(100);
-    expect(used.size).toBeGreaterThan(100);
-    expect(shapes.flatMap((shape) => shape.unacknowledged)).toStrictEqual([]);
-    expect(shapes.flatMap((shape) => shape.reasonless)).toStrictEqual([]);
-    expect(unusedOf({ declared, used })).toStrictEqual([]);
-  }, SYNTH_TIMEOUT_MS * 2);
+  describe('over the default and the all-features synth', () => {
+    let shapes: Judged[] = [];
+    beforeAll(async () => {
+      shapes = [await synthShape({}), await synthShape(ALL_FEATURES_CONTEXT)];
+    }, SYNTH_TIMEOUT_MS * 2);
+
+    it('acknowledges every finding, each with a reason', () => {
+      expect(shapes.flatMap((shape) => shape.unacknowledged)).toStrictEqual([]);
+      expect(shapes.flatMap((shape) => shape.reasonless)).toStrictEqual([]);
+    });
+
+    it('declares no acknowledgement that covers nothing in either shape', () => {
+      const declared = new Set(shapes.flatMap((shape) => [...shape.declared]));
+      const used = new Set(shapes.flatMap((shape) => [...shape.used]));
+      // Vacuity: the recorder saw the app's acknowledgements and the findings they cover.
+      expect(Math.min(declared.size, used.size)).toBeGreaterThan(100);
+      expect(unusedOf({ declared, used })).toStrictEqual([]);
+    });
+  });
 });

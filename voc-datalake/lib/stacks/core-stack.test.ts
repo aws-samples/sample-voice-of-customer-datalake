@@ -31,6 +31,14 @@ import { SYNTH_ACCOUNT, cdkJsonContextStrict, committedFeatureFlags } from '../t
 import { byCodeUnit } from '../utils/compare';
 import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
 
+/** The construct of `stack` that renders the resource `logicalId`. */
+function constructRendering(stack: cdk.Stack, logicalId: string): cdk.CfnElement {
+  const found = stack.node.findAll()
+    .find((construct): construct is cdk.CfnElement => construct instanceof cdk.CfnElement && stack.getLogicalId(construct) === logicalId);
+  if (found === undefined) throw new Error(`no construct renders ${logicalId}`);
+  return found;
+}
+
 /**
  * cdk.json's CDK feature flags, resolved once for every case in this file.
  *
@@ -1112,10 +1120,7 @@ describe('VocCoreStack Identity Pool authenticated role (issue #254)', () => {
     // SCOPE: the role's CfnRole and every ancestor (the role construct, the
     // stack, the app) — everything cdk-nag 3 consults for a finding on it.
     const stack = buildCoreStack();
-    const logicalId = authenticatedRoleLogicalId(Template.fromStack(stack));
-    const role = stack.node.findAll()
-      .find((construct) => construct instanceof cdk.CfnElement && stack.getLogicalId(construct) === logicalId);
-    if (role === undefined) throw new Error(`no construct renders ${logicalId}`);
+    const role = constructRendering(stack, authenticatedRoleLogicalId(Template.fromStack(stack)));
 
     const acknowledged = role.node.scopes.flatMap(acknowledgementsOn).map((ack) => ack.id);
     expect(acknowledged.filter((id) => id.startsWith('AwsSolutions-IAM5'))).toStrictEqual([]);
