@@ -17,6 +17,49 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.77.00] - 2026-11-02
+
+Most cdk-nag findings are fixed in the infrastructure instead of acknowledged (588 → 121 in the default synth), and
+AWS WAF and the Cognito Plus plan become opt-ins.
+
+### Added
+- **`-c enableWaf=true`**: AWS WAF on the SPA's CloudFront distribution (a CLOUDFRONT-scope web ACL in
+  `VocWebSearchStack`, us-east-1, read by `VocCoreStack` through a cross-region reference) and on the API's `v1`
+  stage: AWS managed IP reputation, known bad inputs and core rule set, plus a per-IP rate limit. About $9 a month
+  per web ACL ($18 for both) plus $0.60 per million requests. Two body rules only count on the API (large imports
+  and stored HTML are legitimate). See [docs/deployment.md](docs/deployment.md).
+- **`-c cognitoPlus=true`**: both user pools on the Cognito Plus plan with threat protection in audit mode (it
+  scores sign-ins and never blocks one). $0.020 per monthly active user, no free tier.
+- `-c performanceTier=true` now turns on both opt-ins too (it already turned on SnapStart).
+
+### Changed
+- **Exact IAM grants** (`voc-datalake/lib/utils/exact-grants.ts`): no identity policy carries CDK's grant wildcards
+  any more. KMS grants list the exact actions (`kms:GenerateDataKey`, `kms:Decrypt`, …); the DynamoDB-only KMS
+  actions are allowed only through DynamoDB. S3 grants list the actions the code calls (`s3:GetObject`,
+  `s3:ListBucket`, `s3:DeleteObject`, …). DynamoDB grants name each index instead of `<table>/index/*`.
+- **Lambda logging**: no role uses `AWSLambdaBasicExecutionRole`; each function's role writes only its own log group
+  (`logs:CreateLogStream`, `logs:PutLogEvents`) and cannot create log groups. The API Gateway account logging role
+  has an inline policy instead of `AmazonAPIGatewayPushToCloudWatchLogs`.
+- **Claude model grants** use AWS's documented cross-Region shape (inference profile, in-Region model, Region-agnostic
+  model, with `bedrock:InferenceProfileArn` and `aws:RequestedRegion` conditions) in shared customer-managed policies
+  per stack; no Region wildcard. With `-c inferenceScope=eu` they list the `eu.` profiles' destination Regions
+  ([docs/eu-deployment.md](docs/eu-deployment.md)).
+- **Point-in-time recovery** on the idempotency table (usage-based cost).
+- **Board user pool password policy**: 16 characters with every character class (board sign-in is by email code;
+  the SPA's generated password already meets it).
+
+### Security
+- 467 acknowledged cdk-nag findings are fixed rather than accepted; every remaining acknowledgement is a wildcard
+  AWS requires, a public route by design, or a paid opt-in that is off ([docs/code-audit.md](docs/code-audit.md)).
+
+### Upgrade notes
+- Deploy every stack (`npm run deploy:infra`): IAM policies change in place; no resource is replaced.
+- A Claude call that does not go through an allowlisted `global.` / `eu.` inference profile, or from another Region,
+  is now denied. An SCP or permissions boundary must allow `aws:RequestedRegion` `unspecified` for global inference
+  (AWS requirement).
+- Lambda log groups are no longer created on first invocation: do not delete one by hand (a deploy recreates it).
+- WAF outside us-east-1 needs the us-east-1 CDK bootstrap; to turn WAF off again, deploy `VocCoreStack` first.
+
 ## [5.76.00] - 2026-11-02
 
 The raw data lake keeps history: raw objects are write-once and versioned, name the connector that wrote them, nothing under `raw/` expires, every ingested source keeps a raw copy when its policy allows one, and audit trails no longer expire.
