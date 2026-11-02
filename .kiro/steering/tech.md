@@ -4,7 +4,7 @@
 
 - **Language**: TypeScript
 - **CDK Version**: 2.275.0 (exact) per `voc-datalake/package.json` (the `aws-cdk` CLI is pinned exactly too, as a devDependency; assembly schema 54+)
-- **Runtime**: Node.js 22.18+ or 24.11+ (root `package.json` `engines`)
+- **Runtime**: Node.js 22.22.2+ or 24.15+ (root `package.json` `engines`)
 - **Entry Point**: `bin/voc-datalake.ts`
 
 ### AWS Services (All Serverless)

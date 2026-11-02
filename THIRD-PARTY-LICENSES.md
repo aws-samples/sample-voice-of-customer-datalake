@@ -35,7 +35,7 @@
 [aws-cdk-lib@2.236.0](https://github.com/aws/aws-cdk) - Apache-2.0
 [balanced-match@1.0.2](https://github.com/juliangruber/balanced-match) - MIT
 [brace-expansion@1.1.12](https://github.com/juliangruber/brace-expansion) - MIT
-[cdk-nag@2.37.55](https://github.com/cdklabs/cdk-nag) - Apache-2.0
+[cdk-nag@3.0.2](https://github.com/cdklabs/cdk-nag) - Apache-2.0
 [chai@6.2.2](https://github.com/chaijs/chai) - MIT
 [color-convert@2.0.1](https://github.com/Qix-/color-convert) - MIT
 [color-name@1.1.4](https://github.com/colorjs/color-name) - MIT

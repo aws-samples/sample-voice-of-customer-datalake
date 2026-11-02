@@ -49,7 +49,7 @@ GitHub provides additional document on [forking a repository](https://help.githu
 
 
 ## Development setup
-From the repository root (Node.js 22.18+ or 24.11+, Python 3.12+ for the local tooling (the Lambdas run Python 3.14), Docker or Finch for layer builds):
+From the repository root (Node.js 22.22.2+ or 24.15+, Python 3.12+ for the local tooling (the Lambdas run Python 3.14), Docker or Finch for layer builds):
 
 ```bash
 npm run install:all                               # root, CDK and frontend packages
