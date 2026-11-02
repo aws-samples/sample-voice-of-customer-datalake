@@ -32,6 +32,7 @@ paths = [
   '''(^|/)__pycache__/''',
   '''(^|/)\.(ruff|mypy|pytest)_cache/''',
   '''(^|/)\.mutmut-cache''',
+  '''(^|/)mutants/''',
   '''(^|/)\.stryker-tmp/''',
   '''(^|/)reports/''',
   '''(^|/)test-results/''',
