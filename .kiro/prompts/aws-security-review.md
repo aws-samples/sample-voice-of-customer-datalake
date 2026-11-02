@@ -263,7 +263,7 @@ explicitly in `lib/stacks/api-routes.ts`.
   `GET /feedback-forms/{id}/iframe` (the embeddable widget runs on the customer's own site).
   Every other route under `/feedback-forms` requires Cognito; `api-stack.test.ts` enforces this.
   - Mitigated by: Rate limiting, input validation
-- **No WAF**: none is deployed (cost decision; cdk-nag suppressions in `lib/utils/nag-suppressions.ts` record it).
+- **No WAF**: none is deployed (cost decision; cdk-nag acknowledgements in `lib/utils/nag-suppressions.ts` record it).
   Throttling limits rate only — it does not filter SQL injection / XSS payloads. Recommend AWS WAF for production.
 - **Bedrock Global Inference Profile**: Uses cross-region inference for availability
   - Ensure IAM scoped to specific inference profile ARN
@@ -280,7 +280,7 @@ voc-datalake/
 │   ├── api-gateway.ts                # Stage, throttles, CORS, Cognito authorizer (no WAF)
 │   ├── api-routes.ts                 # Every route + its auth (explicit, no {proxy+} defaults)
 │   └── web-search-stack.ts           # AgentCore web-search gateway, Bedrock model access
-├── lib/utils/nag-suppressions.ts     # cdk-nag suppressions and their reasons
+├── lib/utils/nag-suppressions.ts     # cdk-nag acknowledgements (Validations) and their reasons
 ├── plugins/                          # Data source plugins (_shared, _template, webscraper, github_issues, web_reviews)
 ├── lambda/
 │   ├── processor/, aggregator/       # SQS + DynamoDB Streams consumers

@@ -393,23 +393,24 @@ the git-ignored history notes are not read). Key `<doc>::<kind>::<target>`:
 What stays allowlisted names files of other repositories (for example the KiroCrew website the design system links
 to) and an S3 prefix.
 
-### cdk-nag suppressions that suppress nothing (`voc-datalake/lib/nag-suppressions.test.ts`)
+### cdk-nag acknowledgements that acknowledge nothing (`voc-datalake/lib/nag-suppressions.test.ts`)
 
-Not a script but a CDK test (it needs cdk-nag's own logger, which only an in-process synth offers), so it runs in
-`test:cdk`. It synthesizes `bin/voc-datalake.ts` twice, the default deploy and every context-gated feature on, with
-`AwsSolutionsChecks` given one extra `additionalLoggers` entry. Each `onSuppressed` names the resource, rule and
-finding; the entry that consumed it is found the way cdk-nag picks it (the FIRST entry, resource-level before
-stack-level, whose rule matches and whose `appliesTo`, when it has one, matches the finding). An entry, or one
-`appliesTo` item, that consumed nothing in either synth fails the test. An entry is identified by rule, reason and
-item, so a list shared by several stacks is judged across all of them. Removing a suppression changes only
-template `Metadata`.
+Not a script but a CDK test (it needs cdk-nag's rule engine in process), so it runs in `test:cdk`. It synthesizes
+`bin/voc-datalake.ts` twice, the default deploy and every context-gated feature on, with `AwsSolutionsChecks`
+replaced by a subclass whose `applyRule` records every finding cdk-nag 3 computes (the resource and the id,
+`AwsSolutions-IAM5[<finding>]` or the bare rule) before its acknowledgement check. The acknowledgement covering a
+finding is found the way cdk-nag looks: on the resource, then its ancestors, nearest first
+(`lib/utils/nag-ack.ts` `acknowledgementCovering`). It fails on an unacknowledged finding, an acknowledgement
+without a reason, and a declared acknowledgement that covered nothing in either synth. An acknowledgement is
+identified by its id and reason, so a list shared by several stacks is judged across all of them.
 
-Its sibling `voc-datalake/lib/utils/nag-suppressions.test.ts` checks the `{ regex }` items of
-`lib/utils/nag-suppressions.ts`: each compiles the way cdk-nag compiles it, is anchored (`^…$`), escapes every
-literal `.` before `Arn>` / `Name>` and every literal `*`, and accepts or refuses a table of finding ids. This
-matters because a regex written in a single-quoted string drops its backslashes: `\.` becomes any character and
-`/\*` "zero or more slashes", so one bucket entry could silently cover every prefix grant. Each prefix grant
-(`avatars/*`, `prototypes/*`, `memory-imports/*`, …) has its own anchored item.
+cdk-nag 3 acknowledges each finding exactly (no prefix or regex form). A resource finding is written as the SAME
+ARN expression the grant uses (`resourceFinding(arn)`), and `nag-ack.ts` renders it the way cdk-nag reports it
+from the acknowledging stack (an own resource as `<LogicalId.Arn>`, another stack's as its export name), so no id
+hardcodes a logical-id hash, an account, a region or a deployment prefix. Its sibling
+`voc-datalake/lib/utils/nag-suppressions.test.ts` pins the list builders: a table index grant renders in its own
+stack and through the export in another, each object grant and raw-bucket prefix is named exactly (never the
+bucket or another prefix), and `acknowledgeNag` refuses a missing reason or an empty finding list.
 
 ## In the gate
 
