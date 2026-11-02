@@ -26,8 +26,8 @@ AWS WAF and the Cognito Plus plan become opt-ins.
 - **`-c enableWaf=true`**: AWS WAF on the SPA's CloudFront distribution (a CLOUDFRONT-scope web ACL in
   `VocWebSearchStack`, us-east-1, read by `VocCoreStack` through a cross-region reference) and on the API's `v1`
   stage: AWS managed IP reputation, known bad inputs and core rule set, plus a per-IP rate limit. About $9 a month
-  per web ACL ($18 for both) plus $0.60 per million requests. Three core-rule-set rules only count on the API (long
-  `?ids=` lists, large imports and stored HTML are legitimate). See [docs/deployment.md](docs/deployment.md).
+  per web ACL ($18 for both) plus $0.60 per million requests. Six core-rule-set rules only count on the API (long
+  `?ids=` lists, large imports and stored text are legitimate). See [docs/deployment.md](docs/deployment.md).
 - **`-c cognitoPlus=true`**: both user pools on the Cognito Plus plan with threat protection in audit mode (it
   scores sign-ins and never blocks one). $0.020 per monthly active user, no free tier.
 - `-c performanceTier=true` now turns on both opt-ins too (it already turned on SnapStart).
@@ -60,15 +60,18 @@ AWS WAF and the Cognito Plus plan become opt-ins.
 - Lambda log groups are no longer created on first invocation: do not delete one by hand (a deploy recreates it).
   During the upgrade deploy a function may drop log lines for a few seconds, between its role losing the managed
   policy and its inline log grant landing.
-- WAF outside us-east-1 needs the us-east-1 CDK bootstrap; to turn WAF off again, deploy `VocCoreStack` first.
+- WAF outside us-east-1 needs the us-east-1 CDK bootstrap.
 - **A deployment already on `-c performanceTier=true`** gets two web ACLs (about $18 a month) and the Cognito Plus
   plan (no 10,000-MAU free tier) on its next deploy, and outside us-east-1 needs the us-east-1 bootstrap. To keep only
   SnapStart, deploy with `-c snapStart=true` instead, or leave features out of the tier with `-c enableWaf=false` /
   `-c cognitoPlus=false` (a feature's own flag now overrides the tier).
 - `-c inferenceScope=eu` now refuses, at synth, a region that is not a source Region of the `eu.` profiles (listed in
   [docs/eu-deployment.md](docs/eu-deployment.md)): the grant has to name the profiles' destination Regions.
-- With WAF on, three AWS core-rule-set rules only count on the API (`SizeRestrictions_QUERYSTRING`,
-  `SizeRestrictions_BODY`, `CrossSiteScripting_BODY`): `GET /projects?ids=`, imports and stored HTML are legitimate.
+- With WAF on, six AWS core-rule-set rules only count on the API (`SizeRestrictions_QUERYSTRING`,
+  `SizeRestrictions_BODY`, `CrossSiteScripting_BODY`, `GenericLFI_BODY`, `GenericRFI_BODY`, `EC2MetaDataSSRF_BODY`):
+  long `?ids=` lists, imports and stored text that quotes HTML, paths or URLs are legitimate.
+- Turning WAF off: deploy `VocCoreStack` first; if `VocWebSearchStack` held only the web ACL, delete it in us-east-1
+  afterwards (docs/deployment.md → AWS WAF).
 
 ## [5.76.00] - 2026-11-02
 

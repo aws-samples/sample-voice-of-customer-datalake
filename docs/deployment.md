@@ -1067,16 +1067,21 @@ shares it: on the API, 5,000 requests is about 16 a second for everyone together
 and chat sessions run. A blocked caller gets a bare 403 that names no limit. Raise `WAF_RATE_LIMIT_PER_5_MIN` in
 `voc-datalake/lib/utils/waf.ts` for a large team.
 
-On the API three CRS rules only count, because the API legitimately carries what they block:
+On the API six CRS rules only count, because the API legitimately carries what they block:
 `SizeRestrictions_QUERYSTRING` (query strings over 2 KB: `GET /projects?ids=` takes up to 200 ids),
-`SizeRestrictions_BODY` (bodies over 8 KB: CSV and JSON imports, conversation saves, documents) and
-`CrossSiteScripting_BODY` (stored
+`SizeRestrictions_BODY` (bodies over 8 KB: CSV and JSON imports, conversation saves, documents),
+`GenericLFI_BODY`, `GenericRFI_BODY` and `EC2MetaDataSSRF_BODY` (`../`, URLs with an IPv4 host and
+`169.254.169.254` inside stored text, which the chat resends on every turn) and `CrossSiteScripting_BODY` (stored
 documents, prototypes, reviews and assistant answers contain HTML). No WAF logging is configured: only CloudWatch
 metrics and sampled requests. With WAF on, `VocWebSearchStack` is created even when web search is off and no use-case
 form is filed, and `VocCoreStack` reads the CloudFront ACL's ARN from it: a CloudFormation export when the app region
 is us-east-1, CDK's SSM-backed cross-region reference otherwise (the same mechanism the API and processing stacks use
 for the web-search gateway; the account needs a us-east-1 bootstrap). To turn WAF off again, deploy `VocCoreStack`
 first (it stops reading the ARN), then the rest; a single `--all` run can stop on "export in use".
+If `VocWebSearchStack` existed only for the web ACL (web search off with `-c enableWebSearch=false`, no use-case
+form, or an `inferenceScope=eu` deployment), the app no longer builds it once WAF is off, so `cdk deploy --all`
+leaves it, and its paid ACL, in place: delete it yourself afterwards,
+`aws cloudformation delete-stack --region us-east-1 --stack-name <prefix->VocWebSearchStack`.
 
 Price ([AWS WAF pricing](https://aws.amazon.com/waf/pricing/)): $5.00 per web ACL and $1.00 per rule or managed rule
 group per month (prorated hourly), plus $0.60 per million requests. Each ACL holds four billed rules, so about

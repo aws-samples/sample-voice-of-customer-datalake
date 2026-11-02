@@ -262,7 +262,7 @@ describe('the settings Lambda can test models and read their quotas', () => {
 
   it('may invoke every allowlisted model (POST /settings/model/test calls Converse on it)', () => {
     // The text models' profile statements (one per shared Claude policy, lib/utils/claude-model-grant.ts;
-    // their other parts: api-claude-grant-iam.test.ts); the image model's own one (ARN only) is pinned in
+    // their other parts: lib/utils/claude-model-grant.test.ts); the image model's own one (ARN only) is pinned in
     // api-settings-image-model-iam.test.ts.
     const grant = claudeRoleGrantOf('Api', apiTemplate().toJSON(), ROLE);
     const profiles = grant.statements.filter((s) => s.resources.some((arn) => arn.includes(':inference-profile/')));
