@@ -80,7 +80,7 @@ describe('ImportHistory', () => {
   it('says so when there is no import yet', async () => {
     list.mockResolvedValue(page([]))
     renderWithQueryClient(<ImportHistory />)
-    expect(await screen.findByText('No imports in the last 90 days.')).toBeInTheDocument()
+    expect(await screen.findByText('No imports yet.')).toBeInTheDocument()
   })
 
   it('loads the next page with the cursor the first page returned', async () => {

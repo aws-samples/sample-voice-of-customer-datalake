@@ -463,8 +463,8 @@
   },
   "importHistory": {
     "title": "Historia importów",
-    "subtitle": "Każdy import przez wklejenie, z pliku, przez asystenta AI lub z S3 z ostatnich 90 dni, od najnowszego. Wybierz import, aby zobaczyć jego ostrzeżenia.",
-    "empty": "Brak importów w ostatnich 90 dniach.",
+    "subtitle": "Każdy import przez wklejenie, z pliku, przez asystenta AI lub z S3, od najnowszego. Wybierz import, aby zobaczyć jego ostrzeżenia.",
+    "empty": "Nie ma jeszcze importów.",
     "loadMore": "Wczytaj więcej",
     "actorS3": "Przesłanie do S3 (przesyłający nieznany)",
     "openRun": "Otwórz import {{method}} z {{source}}",

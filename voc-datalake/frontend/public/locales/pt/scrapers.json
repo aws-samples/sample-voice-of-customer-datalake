@@ -433,8 +433,8 @@
   },
   "importHistory": {
     "title": "Histórico de importações",
-    "subtitle": "Cada importação colada, por arquivo, pelo assistente ou do S3 dos últimos 90 dias, da mais recente para a mais antiga. Selecione uma para ver seus avisos.",
-    "empty": "Nenhuma importação nos últimos 90 dias.",
+    "subtitle": "Cada importação colada, por arquivo, pelo assistente ou do S3, da mais recente para a mais antiga. Selecione uma para ver seus avisos.",
+    "empty": "Nenhuma importação ainda.",
     "loadMore": "Carregar mais",
     "actorS3": "Envio ao S3 (autor desconhecido)",
     "openRun": "Abrir a importação {{method}} de {{source}}",

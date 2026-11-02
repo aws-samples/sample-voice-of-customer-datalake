@@ -413,8 +413,8 @@
   },
   "importHistory": {
     "title": "Import history",
-    "subtitle": "Every paste, file upload, assistant and S3 import of the last 90 days, newest first. Select a run to see its warnings.",
-    "empty": "No imports in the last 90 days.",
+    "subtitle": "Every paste, file upload, assistant and S3 import, newest first. Select a run to see its warnings.",
+    "empty": "No imports yet.",
     "loadMore": "Load more",
     "actorS3": "S3 upload (uploader unknown)",
     "openRun": "Open the {{method}} import from {{source}}",

@@ -413,8 +413,8 @@
   },
   "importHistory": {
     "title": "Importverlauf",
-    "subtitle": "Jeder Import per Einfügen, Datei, KI-Assistent oder S3 der letzten 90 Tage, der neueste zuerst. Wählen Sie einen aus, um seine Warnungen zu sehen.",
-    "empty": "Keine Importe in den letzten 90 Tagen.",
+    "subtitle": "Jeder Import per Einfügen, Datei, KI-Assistent oder S3, der neueste zuerst. Wählen Sie einen aus, um seine Warnungen zu sehen.",
+    "empty": "Noch keine Importe.",
     "loadMore": "Mehr laden",
     "actorS3": "S3-Upload (hochladende Person unbekannt)",
     "openRun": "{{method}}-Import aus {{source}} öffnen",

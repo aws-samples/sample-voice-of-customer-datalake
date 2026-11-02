@@ -433,8 +433,8 @@
   },
   "importHistory": {
     "title": "Historique des imports",
-    "subtitle": "Chaque import collé, par fichier, par l’assistant ou depuis S3 des 90 derniers jours, du plus récent au plus ancien. Sélectionnez-en un pour voir ses avertissements.",
-    "empty": "Aucun import au cours des 90 derniers jours.",
+    "subtitle": "Chaque import collé, par fichier, par l’assistant ou depuis S3, du plus récent au plus ancien. Sélectionnez-en un pour voir ses avertissements.",
+    "empty": "Aucun import pour le moment.",
     "loadMore": "Charger plus",
     "actorS3": "Dépôt S3 (auteur inconnu)",
     "openRun": "Ouvrir l’import {{method}} de {{source}}",
