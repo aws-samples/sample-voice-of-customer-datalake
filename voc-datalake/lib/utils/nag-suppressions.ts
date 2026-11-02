@@ -5,7 +5,6 @@ import { AwsCustomResource } from 'aws-cdk-lib/custom-resources';
 import type { IConstruct } from 'constructs';
 
 import { COGNITO_PLUS_OPT_IN_HINT } from './cognito-plus';
-import { bedrockFoundationModelSuppressionTargets } from './model-allowlist';
 import { acknowledgeNag, type NagAck, resourceFinding } from './nag-ack';
 import { WAF_OPT_IN_HINT } from './waf';
 
@@ -140,20 +139,6 @@ export function rawDataPrefixSuppressions(rawDataBucket: s3.IBucket, prefixes: r
     findings: prefixes.map((prefix) => resourceFinding(rawDataBucket.arnForObjects(prefix))),
   }];
 }
-
-// Bedrock foundation model ARNs - region wildcard required
-export const bedrockModelSuppressions: NagAck[] = [
-  {
-    id: 'AwsSolutions-IAM5',
-    reason: 'Bedrock foundation model ARNs require region wildcard as models are cross-region resources',
-    // DERIVED from lib/utils/model-allowlist.ts (every grantable model: the
-    // picker allowlist plus fallback safety nets) so a model added there can
-    // never leave a stale or missing suppression behind. Only the
-    // foundation-model ARNs carry a region wildcard; the inference-profile
-    // ARNs are region/account-scoped and need no suppression.
-    findings: bedrockFoundationModelSuppressionTargets(),
-  },
-];
 
 // Dynamic plugin system - Lambda version/alias wildcards (`<FunctionArn>:*`) of the named functions.
 //

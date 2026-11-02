@@ -26,7 +26,8 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
-import { stackModelArns, embeddingModelArn } from '../utils/model-allowlist';
+import { grantClaudeModels } from '../utils/claude-model-grant';
+import { embeddingModelArn } from '../utils/model-allowlist';
 import { createWorkerFunction, scheduleWorker, workerRole } from '../utils/worker-lambda';
 
 /** Extractor ceiling; the queue's visibility timeout is derived from it. */
@@ -98,11 +99,12 @@ export class MemoryWorkers extends Construct {
     kmsKey.grantEncryptDecrypt(role);
     // A page import longer than one chunk re-queues its next chunk (extractor _enqueue).
     this.extractQueue.grantSendMessages(role);
+    // 'memory' is a picker surface (repointable), plus the fixed embedder (in-Region, exact ARN).
+    grantClaudeModels(role, 'invoke');
     role.addToPolicy(new iam.PolicyStatement({
-      sid: 'BedrockInvoke',
+      sid: 'BedrockInvokeEmbedding',
       actions: ['bedrock:InvokeModel'],
-      // 'memory' is a picker surface (repointable), plus the fixed embedder.
-      resources: [...stackModelArns(this), embeddingModelArn(region)],
+      resources: [embeddingModelArn(region)],
     }));
 
     const fn = createWorkerFunction(this, 'MemoryExtractor', {

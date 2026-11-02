@@ -12,6 +12,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { type NormalizedStatement, roleStatements } from '../test-support/iam-statements';
 import { SYNTH_REGION } from '../test-support/synth-app';
+import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
+import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
 import { BROWSER_SESSION_ACTIONS, BROWSER_STREAM_ACTION } from './ingestion-roles';
 
 const AGENTCORE = 'bedrock-agentcore:';
@@ -42,7 +44,8 @@ describe('VocIngestionStack AgentCore browser grants', () => {
   });
 
   it('keeps the Bedrock model grant the bedrock capability gives', () => {
-    expect(webReviews().some((s) => s.actions.includes('bedrock:InvokeModel'))).toBe(true);
+    const grant = claudeRoleGrantOf('Ingestion', template.toJSON(), 'IngestorRoleWebReviews');
+    expect(missingModelGrants([grant], ALLOWED_MODEL_IDS, 'global')).toStrictEqual([]);
   });
 
   it('gives no other ingestor role any AgentCore action', () => {

@@ -26,7 +26,6 @@ import * as path from 'path';
 
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -40,7 +39,7 @@ import {
   PLAN_STEP_FUNCTION_BASE_NAME, PROJECTS_API_FUNCTION_BASE_NAME, SCRAPERS_API_FUNCTION_BASE_NAME,
   SETTINGS_API_FUNCTION_BASE_NAME,
 } from '../utils/function-names';
-import { stackModelArns } from '../utils/model-allowlist';
+import { grantClaudeModels } from '../utils/claude-model-grant';
 import { grantInvokeByName, workerRole } from '../utils/worker-lambda';
 
 const STREAM_ROOT = path.join(__dirname, '../../lambda/stream');
@@ -81,11 +80,7 @@ export function createPlanStepFunction(scope: Construct, props: PlanStepProps): 
   aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query');
   feedbackTable.grantReadData(role);
   kmsKey.grantDecrypt(role);
-  role.addToPolicy(new iam.PolicyStatement({
-    sid: 'BedrockInvoke',
-    actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-    resources: stackModelArns(cdk.Stack.of(scope)),
-  }));
+  grantClaudeModels(role, 'stream');
   const delegates = Object.fromEntries(
     Object.entries(PLAN_STEP_DELEGATES).map(([env, base]) => [env, uniqueName(base)]),
   );

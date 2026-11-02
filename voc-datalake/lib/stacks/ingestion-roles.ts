@@ -29,8 +29,7 @@ import type * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import type * as sqs from 'aws-cdk-lib/aws-sqs';
 import { acknowledgeNag, type NagAck } from '../utils/nag-ack';
 import { capitalize } from '../plugin-loader';
-import { stackModelArns } from '../utils/model-allowlist';
-import { bedrockModelSuppressions } from '../utils/nag-suppressions';
+import { grantClaudeModels } from '../utils/claude-model-grant';
 import { piiDetectionStatement } from '../utils/pii-redaction';
 
 /** What every ingestor role is granted: watermarks, aggregates, queue, raw bucket, KMS, secrets, Comprehend PII detection. */
@@ -103,14 +102,7 @@ export class IngestorRoles {
     const role = this.newRole(`IngestorRole${capitalize(pluginId)}`);
 
     if (bedrock) {
-      role.addToPolicy(new iam.PolicyStatement({
-        actions: ['bedrock:InvokeModel'],
-        resources: stackModelArns(this.stack),
-      }));
-
-      // The stack-level suppressions in bin/ cover the base grants but not Bedrock,
-      // so attach the Bedrock model suppression to this dedicated role explicitly.
-      acknowledgeNag(role, bedrockModelSuppressions);
+      grantClaudeModels(role, 'invoke');
     }
 
     if (browser) {

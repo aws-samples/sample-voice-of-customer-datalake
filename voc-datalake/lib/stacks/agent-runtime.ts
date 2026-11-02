@@ -44,7 +44,7 @@ import { Construct } from 'constructs';
 import {
   MEMORY_API_FUNCTION_BASE_NAME, METRICS_API_FUNCTION_BASE_NAME, PROJECTS_API_FUNCTION_BASE_NAME,
 } from '../utils/function-names';
-import { stackModelArns } from '../utils/model-allowlist';
+import { grantClaudeModels } from '../utils/claude-model-grant';
 import { createWorkerFunction, grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
 import { createPlanStepFunction } from './plan-step-lambda';
 
@@ -123,16 +123,6 @@ export class AgentRuntime extends Construct {
     this.createHeartbeat(this.stateMachine);
   }
 
-  private bedrockStatement(): iam.PolicyStatement {
-    // agent_* surfaces are picker surfaces (and per-agent overrides), so every
-    // allowlisted model, like every other Bedrock caller here (issue #96).
-    return new iam.PolicyStatement({
-      sid: 'BedrockInvoke',
-      actions: ['bedrock:InvokeModel'],
-      resources: stackModelArns(this),
-    });
-  }
-
   /**
    * One runtime Lambda: its role (voc-agents rows without DeleteItem, the
    * aggregates actions it reads, KMS, Bedrock on the allowlist, and invoke on
@@ -145,7 +135,9 @@ export class AgentRuntime extends Construct {
     agentsTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
     aggregatesTable.grant(role, ...spec.aggregatesActions);
     kmsKey.grantEncryptDecrypt(role);
-    role.addToPolicy(this.bedrockStatement());
+    // agent_* surfaces are picker surfaces (and per-agent overrides), so every
+    // allowlisted model, like every other Bedrock caller here (issue #96).
+    grantClaudeModels(role, 'invoke');
     spec.grant?.(role);
     const apis = Object.fromEntries(Object.entries(spec.invokes).map(([env, base]) => [env, uniqueName(base)]));
     grantInvokeByName(cdk.Stack.of(this), role, Object.values(apis), spec.invokeSid);

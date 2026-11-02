@@ -11,7 +11,9 @@ import { z } from 'zod';
 
 import { IamPolicySchema, managedPolicies, statementActions } from '../test-support/iam-statements';
 import type { IamStatement } from '../test-support/iam-statements';
-import { ALLOWED_FOUNDATION_MODEL_IDS, ALLOWED_MODEL_IDS, IMAGE_MODEL_MARKETPLACE_PRODUCT_ID, imageModelArn } from '../utils/model-allowlist';
+import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
+import { MODELS_PER_POLICY } from '../utils/claude-model-grant';
+import { ALLOWED_MODEL_IDS, IMAGE_MODEL_MARKETPLACE_PRODUCT_ID, imageModelArn } from '../utils/model-allowlist';
 import { allowedActions as allowedActionsOf, roleStatements as readRoleStatements } from '../test-support/iam-statements';
 import {
   LambdaEnvSchema, apiMethods, apiTemplate, apiTemplateDev, apiTemplatePrefixed, buildApiStack, functionIdForHandler, nonOptions,
@@ -259,13 +261,13 @@ describe('the settings Lambda can test models and read their quotas', () => {
   const ROLE = 'SettingsLambdaRole';
 
   it('may invoke every allowlisted model (POST /settings/model/test calls Converse on it)', () => {
-    // The text models' statement; the image model's own one (ARN only) is pinned in
+    // The text models' profile statements (one per shared Claude policy, lib/utils/claude-model-grant.ts;
+    // their other parts: api-claude-grant-iam.test.ts); the image model's own one (ARN only) is pinned in
     // api-settings-image-model-iam.test.ts.
-    const invoke = roleStatements(apiTemplate(), ROLE)
-      .filter((s) => s.actions.includes('bedrock:InvokeModel') && s.resource.includes('inference-profile/'));
-    expect(invoke).toHaveLength(1);
-    const resource = itemAt(invoke, 0).resource;
-    for (const modelId of ALLOWED_MODEL_IDS) expect(resource).toContain(`inference-profile/${modelId}`);
+    const grant = claudeRoleGrantOf('Api', apiTemplate().toJSON(), ROLE);
+    const profiles = grant.statements.filter((s) => s.resources.some((arn) => arn.includes(':inference-profile/')));
+    expect(profiles).toHaveLength(Math.ceil(ALLOWED_MODEL_IDS.length / MODELS_PER_POLICY));
+    expect(missingModelGrants([grant], ALLOWED_MODEL_IDS, 'global')).toStrictEqual([]);
   });
 
   it('holds ListServiceQuotas on * and GetServiceQuota on Bedrock quotas only, no other Service Quotas action', () => {
@@ -674,38 +676,5 @@ describe('Marketplace image model access (issue #274)', () => {
     for (const statement of viewOnly) {
       expect(actionsOf(statement)).toStrictEqual(['aws-marketplace:ViewSubscriptions']);
     }
-  });
-});
-
-describe('Projects Bedrock grant (customer-managed policy, 3.07.00)', () => {
-  // Moved out of the role's default inline policy for the 10,240-char inline
-  // quota. Pinned so a move back, or a policy that drops a model, is noticed.
-  const projectsRoleId = () => {
-    const ids = Object.keys(apiTemplate().findResources('AWS::IAM::Role')).filter((id) => id.startsWith('ProjectsLambdaRole'));
-    expect(ids).toHaveLength(1);
-    return itemAt(ids, 0);
-  };
-  const bedrockResources = (policies: z.infer<typeof IamPolicySchema>['Properties'][]) => policies
-    .flatMap((policy) => policy.PolicyDocument.Statement)
-    .filter((statement) => statementActions(statement).includes('bedrock:InvokeModel'))
-    .map((statement) => JSON.stringify(statement.Resource))
-    .join(' ');
-
-  it('grants every allowlisted model and the avatar model from one managed policy on the role', () => {
-    const roleId = projectsRoleId();
-    const attached = managedPolicies(apiTemplate())
-      .filter((policy) => (policy.Roles ?? []).some((role) => JSON.stringify(role).includes(roleId)));
-    expect(attached).toHaveLength(1);
-    const granted = bedrockResources(attached);
-    expect(ALLOWED_FOUNDATION_MODEL_IDS.filter((id) => !granted.includes(`foundation-model/${id}`))).toStrictEqual([]);
-    expect(granted).toContain(imageModelArn());
-  });
-
-  it('keeps Bedrock out of the default inline policy', () => {
-    const inline = Object.entries(apiTemplate().findResources('AWS::IAM::Policy'))
-      .filter(([id]) => id.startsWith('ProjectsLambdaRoleDefaultPolicy'))
-      .map(([, resource]) => IamPolicySchema.parse(resource).Properties);
-    expect(inline).toHaveLength(1);
-    expect(bedrockResources(inline)).toBe('');
   });
 });

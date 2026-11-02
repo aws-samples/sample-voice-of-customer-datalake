@@ -10,7 +10,7 @@ import * as path from 'path';
 import { acknowledgeNag } from '../utils/nag-ack';
 import { loadPlugins, aggregateSecretsByPlugin, getEnabledPlugins, getPluginsWithIngestor, secretConfigKeysByPlugin, type PluginManifest } from '../plugin-loader';
 import { serviceQuotasReadSuppressions } from '../utils/nag-suppressions';
-import { stackModelArns } from '../utils/model-allowlist';
+import { grantClaudeModels } from '../utils/claude-model-grant';
 import { SOURCE_PLACEHOLDER } from '../utils/naming';
 import {
   FEEDBACK_EDIT_API_FUNCTION_BASE_NAME, INTEGRATIONS_API_FUNCTION_BASE_NAME, METRICS_API_FUNCTION_BASE_NAME,
@@ -210,10 +210,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     actions: ['lambda:InvokeFunction'],
     resources: [functionArnByName(ctx, webscraperFunctionName)],
   }));
-  scrapersRole.addToPolicy(new iam.PolicyStatement({
-    actions: ['bedrock:InvokeModel'],
-    resources: stackModelArns(stack),
-  }));
+  grantClaudeModels(scrapersRole, 'invoke');
   // No Marketplace grant: the scrapers API invokes only allowlisted TEXT models,
   // never the Marketplace-listed image model (lib/stacks/api-marketplace.ts).
 
@@ -292,10 +289,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   const manualImportProcessorRole = ctx.role('ManualImportProcessorRole');
   aggregatesTable.grantReadWriteData(manualImportProcessorRole);
   kmsKey.grantEncryptDecrypt(manualImportProcessorRole);
-  manualImportProcessorRole.addToPolicy(new iam.PolicyStatement({
-    actions: ['bedrock:InvokeModel'],
-    resources: stackModelArns(stack),
-  }));
+  grantClaudeModels(manualImportProcessorRole, 'invoke');
 
   new lambda.Function(stack, 'ManualImportProcessor', {
     functionName: manualImportProcessorName,
@@ -340,10 +334,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // Assist jobs (category generation):
   // the job row in the jobs table (shared/assist_jobs.py).
   jobsTable.grant(settingsRole, ...ASSIST_JOB_TABLE_ACTIONS);
-  settingsRole.addToPolicy(new iam.PolicyStatement({
-    actions: ['bedrock:InvokeModel'],
-    resources: stackModelArns(stack),
-  }));
+  grantClaudeModels(settingsRole, 'invoke');
   // POST /settings/model/test and GET /settings/model/capacity read the account's
   // Bedrock tokens-per-minute quotas (shared/model_capacity.py). Read-only, and
   // ListServiceQuotas supports no resource-level permission, hence `*`.

@@ -8,9 +8,9 @@
  *
  * A model that is selectable but not invocable AccessDenies the whole surface,
  * so every bedrock:InvokeModel* grant across the stacks (api, processing,
- * ingestion) is built from allowlistedModelArns(), the BedrockAccessStack
- * agreements from ALLOWED_FOUNDATION_MODEL_IDS, and the cdk-nag suppressions
- * from bedrockFoundationModelSuppressionTargets() — all derived from the one
+ * ingestion) is built from allowlistedModelArns() (by lib/utils/claude-model-grant.ts,
+ * with no Region wildcard, so no cdk-nag acknowledgement) and the BedrockAccessStack
+ * agreements from ALLOWED_FOUNDATION_MODEL_IDS — both derived from the one
  * list below.
  *
  * Note on Opus 5 and Opus 4.8: each is a selectable model in its own right AND
@@ -101,45 +101,81 @@ export const EU_PROFILE_MODEL_IDS: readonly string[] = [
 ];
 
 /**
- * IAM resource ARNs granting bedrock:InvokeModel* on every allowlisted model:
- * the region/account-scoped inference-profile ARN for `scope` (`global.` or
- * `eu.` — an EU deployment is granted ONLY the `eu.` profiles) plus the
- * cross-region foundation-model ARN each profile can route to.
+ * Destination Regions of the `eu.` inference profiles, by SOURCE Region (the region the app deploys to).
  *
- * The foundation-model ARN keeps a region wildcard (models are cross-region
- * resources) — see bedrockModelSuppressions in lib/utils/nag-suppressions.ts,
- * which derives its targets from this same list.
+ * Source: the "Geo: EU" table on each allowlisted model's card in the Bedrock user guide
+ * (https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-<model>.html, read
+ * 2026-11 for all eight models; the table was identical for every one, so ONE table serves the allowlist).
+ * Geographic cross-Region inference authorizes the foundation model in EVERY destination Region
+ * (https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html), so a
+ * destination AWS adds later is an AccessDenied on the calls routed there until it is listed here.
+ * Re-check with `aws bedrock get-inference-profile --region <source> --inference-profile-identifier
+ * eu.<model>` (`models[].modelArn`). A model whose table differs needs its own entry before it is added
+ * to EU_PROFILE_MODEL_IDS.
  */
-export function allowlistedModelArns(region: string, account: string, scope: InferenceScope): string[] {
-  const arns: string[] = [];
-  // eu: only models with a verified `eu.` profile (the rest are excluded in the EU).
+const EU_CORE_DESTINATIONS = ['eu-central-1', 'eu-north-1', 'eu-south-1', 'eu-south-2', 'eu-west-1', 'eu-west-3'] as const;
+export const EU_PROFILE_DESTINATION_REGIONS: Readonly<Record<string, readonly string[]>> = {
+  'eu-central-1': EU_CORE_DESTINATIONS,
+  'eu-central-2': [...EU_CORE_DESTINATIONS, 'eu-central-2'],
+  'eu-north-1': EU_CORE_DESTINATIONS,
+  'eu-south-1': EU_CORE_DESTINATIONS,
+  'eu-south-2': EU_CORE_DESTINATIONS,
+  'eu-west-1': EU_CORE_DESTINATIONS,
+  'eu-west-2': [...EU_CORE_DESTINATIONS, 'eu-west-2'],
+  'eu-west-3': EU_CORE_DESTINATIONS,
+};
+
+/** The `eu.` profiles' destination Regions from `region`; throws for a region with no `eu.` profiles (or a token). */
+export function euProfileDestinations(region: string): readonly string[] {
+  const destinations = cdk.Token.isUnresolved(region) ? undefined : EU_PROFILE_DESTINATION_REGIONS[region];
+  if (destinations === undefined) {
+    throw new Error(
+      `-c inferenceScope=eu needs the app deployed to an EU source Region of the eu. inference profiles `
+      + `(${Object.keys(EU_PROFILE_DESTINATION_REGIONS).join(', ')}); got ${cdk.Token.isUnresolved(region) ? 'an unresolved region' : region}. `
+      + 'See docs/eu-deployment.md.',
+    );
+  }
+  return destinations;
+}
+
+/**
+ * The IAM resources one allowlisted Claude model needs under `scope`, in the three parts AWS documents for
+ * cross-Region inference (global: .../global-cross-region-inference.html; eu: .../geographic-cross-region-inference.html):
+ *  - `profile`: the inference profile in the app region, the `modelId` the code sends (no condition);
+ *  - `regionalModels`: the foundation model in the app region (global) or in every destination Region of
+ *    the `eu.` profile (eu), granted only with `bedrock:InferenceProfileArn` = `profile`;
+ *  - `globalModel`: the Region-agnostic `arn:…:bedrock:::foundation-model/<model>` (global only), granted with
+ *    `aws:RequestedRegion` = `unspecified` and the same profile condition.
+ * No Region wildcard anywhere.
+ */
+export interface ClaudeModelArns {
+  readonly profile: string;
+  readonly regionalModels: readonly string[];
+  readonly globalModel?: string;
+}
+
+/** {@link ClaudeModelArns} for every allowlisted model (eu: only those with a verified `eu.` profile). */
+export function allowlistedModelArns(region: string, account: string, scope: InferenceScope): ClaudeModelArns[] {
   const models = scope === 'eu' ? ALLOWED_MODEL_IDS.filter((id) => EU_PROFILE_MODEL_IDS.includes(id)) : ALLOWED_MODEL_IDS;
   const partition = partitionOf(region);
-  for (const id of models) {
-    arns.push(`arn:${partition}:bedrock:${region}:${account}:inference-profile/${scopedModelId(id, scope)}`);
-    arns.push(`arn:${partition}:bedrock:*::foundation-model/${toFoundationModelId(id)}`);
-  }
-  return arns;
+  const modelRegions = scope === 'eu' ? euProfileDestinations(region) : [region];
+  return models.map((id) => {
+    const model = toFoundationModelId(id);
+    const profile = `arn:${partition}:bedrock:${region}:${account}:inference-profile/${scopedModelId(id, scope)}`;
+    const regionalModels = modelRegions.map((r) => `arn:${partition}:bedrock:${r}::foundation-model/${model}`);
+    return scope === 'eu'
+      ? { profile, regionalModels }
+      : { profile, regionalModels, globalModel: `arn:${partition}:bedrock:::foundation-model/${model}` };
+  });
 }
 
 /**
- * {@link allowlistedModelArns} for the stack `scope` lives in, under the app's
- * inference scope (`-c inferenceScope`). What every grant site uses.
+ * {@link allowlistedModelArns} for the stack `scope` lives in, under the app's inference scope
+ * (`-c inferenceScope`). The grant itself is built by lib/utils/claude-model-grant.ts.
  */
-export function stackModelArns(scope: IConstruct): string[] {
+export function stackModelArns(scope: IConstruct): ClaudeModelArns[] {
   const stack = cdk.Stack.of(scope);
   return allowlistedModelArns(stack.region, stack.account, inferenceScopeOf(stack));
-}
-
-/**
- * cdk-nag `AwsSolutions-IAM5` finding ids for the wildcard-region foundation-model ARNs
- * produced by allowlistedModelArns(). Derived rather than hand-listed so a
- * model added above can't leave a stale or missing acknowledgement behind.
- */
-export function bedrockFoundationModelSuppressionTargets(): string[] {
-  return ALLOWED_FOUNDATION_MODEL_IDS.map(
-    (id) => `Resource::arn:aws:bedrock:*::foundation-model/${id}`,
-  );
 }
 
 /**

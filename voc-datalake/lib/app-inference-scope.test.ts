@@ -8,12 +8,12 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { claudeInvokeStatements, e2eProfileModels, missingModelGrants } from './test-support/bedrock-grants';
+import { claudeRoleGrants, e2eProfileModels, missingModelGrants } from './test-support/bedrock-grants';
 import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from './test-support/synth-app';
 
 const StatementSchema = z.object({ Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown() });
 const PolicySchema = z.object({
-  Type: z.literal('AWS::IAM::Policy'),
+  Type: z.enum(['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy']),
   Properties: z.object({
     Roles: z.array(z.object({ Ref: z.string() })).optional(),
     PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
@@ -28,7 +28,9 @@ const FunctionSchema = z.object({
 });
 const TemplateSchema = z.object({ Resources: z.record(z.string(), z.unknown()) });
 
-const eu = synthApp({ inferenceScope: 'eu' });
+// An EU source Region of the eu. profiles: the grant lists that region's destination Regions.
+const EU_REGION = 'eu-central-1';
+const eu = synthApp({ inferenceScope: 'eu' }, EU_REGION);
 afterAll(cleanupAssemblyDirs);
 
 // Every template of the eu synth as one searchable text (for "nowhere" assertions).
@@ -36,7 +38,7 @@ const allTemplatesText = eu.stackNames.map((stack) => JSON.stringify(eu.template
 
 const resourcesOf = (stack: string) => Object.entries(TemplateSchema.parse(eu.template(stack)).Resources);
 
-/** Role logical ids (per stack) whose policy may invoke a Bedrock model. */
+/** Role logical ids (per stack) whose inline or managed policy may invoke a Bedrock model. */
 function bedrockRoles(stack: string): Set<string> {
   return new Set(resourcesOf(stack).flatMap(([, resource]) => {
     const policy = PolicySchema.safeParse(resource);
@@ -77,10 +79,15 @@ describe('inferenceScope=eu', () => {
     expect(allTemplatesText).toContain('inference-profile/eu.anthropic.claude-sonnet-5-5');
   });
 
-  it('names the e2e profile models (Haiku 5.5 + its capacity fallback) as eu. profile and foundation model in every Claude grant', () => {
-    const statements = claudeInvokeStatements(eu);
-    expect(statements.length).toBeGreaterThan(5);
-    expect(missingModelGrants(statements, e2eProfileModels(), 'eu')).toStrictEqual([]);
+  it('grants every Claude-invoking role the e2e profile models (Haiku 5.5 + its capacity fallback) as eu. profile and as foundation model in each destination Region', () => {
+    const grants = claudeRoleGrants(eu);
+    expect(grants.length).toBeGreaterThan(20);
+    expect(missingModelGrants(grants, e2eProfileModels(), 'eu', EU_REGION)).toStrictEqual([]);
+  });
+
+  it('grants no Region-agnostic (global) foundation model and no Region wildcard on any Bedrock model', () => {
+    expect(allTemplatesText).not.toContain('arn:aws:bedrock:::foundation-model/');
+    expect(allTemplatesText).not.toMatch(/arn:aws:bedrock:\*/);
   });
 
   it('does not deploy the web-search gateway, nor hand any Lambda its URL', () => {
@@ -95,6 +102,10 @@ describe('inferenceScope validation', () => {
   }, SYNTH_TIMEOUT_MS);
 
   it('rejects an explicit enableWebSearch=true with eu', () => {
-    expect(() => synthApp({ inferenceScope: 'eu', enableWebSearch: true })).toThrow(/cannot be combined with inferenceScope=eu/);
+    expect(() => synthApp({ inferenceScope: 'eu', enableWebSearch: true }, EU_REGION)).toThrow(/cannot be combined with inferenceScope=eu/);
+  }, SYNTH_TIMEOUT_MS);
+
+  it('rejects eu in a region with no eu. inference profiles (every Claude call would fail)', () => {
+    expect(() => synthApp({ inferenceScope: 'eu' })).toThrow(/needs the app deployed to an EU source Region/);
   }, SYNTH_TIMEOUT_MS);
 });

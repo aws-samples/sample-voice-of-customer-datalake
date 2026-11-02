@@ -8,7 +8,8 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as path from 'path';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
-import { stackModelArns, embeddingModelArn } from '../utils/model-allowlist';
+import { grantClaudeModels, grantClaudeModelsToFunction } from '../utils/claude-model-grant';
+import { embeddingModelArn } from '../utils/model-allowlist';
 import { AGENTS_API_FUNCTION_BASE_NAME, MEMORY_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { snapStartFunctionProps } from '../utils/snapstart';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
@@ -77,10 +78,11 @@ export function createAssistantLambdas(
   memoryRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [memoryExtractQueueArn] }));
   rawDataBucket.grantRead(memoryRole, 'memory-imports/*');
   rawDataBucket.grantPut(memoryRole, 'memory-imports/*');
+  // 'memory' surface (review suggestions, screening) + the fixed embedder (in-Region, exact ARN).
+  grantClaudeModels(memoryRole, 'invoke');
   memoryRole.addToPolicy(new iam.PolicyStatement({
     actions: ['bedrock:InvokeModel'],
-    // 'memory' surface (review suggestions, screening) + the fixed embedder.
-    resources: [...stackModelArns(stack), embeddingModelArn(stack.region)],
+    resources: [embeddingModelArn(stack.region)],
   }));
 
   const memoryLambda = new lambda.Function(stack, 'MemoryApi', {
@@ -246,10 +248,7 @@ export function createAssistantLambdas(
 
   // Bedrock permissions — InvokeModelWithResponseStream. Grant every
   // allowlisted model so the 'chat' surface can be repointed via the picker.
-  chatStreamLambda.addToRolePolicy(new iam.PolicyStatement({
-    actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-    resources: stackModelArns(stack),
-  }));
+  grantClaudeModelsToFunction(chatStreamLambda, 'stream');
   // No Marketplace grant: the assistant converses with allowlisted TEXT models
   // only and merely signs existing avatar URLs; it never invokes the image model.
   // Signs the persona avatar URLs emitted in the persona_turn SSE event.

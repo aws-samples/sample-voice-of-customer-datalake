@@ -10,6 +10,8 @@ import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture'
 import { apiTemplate, apiTemplatePrefixed, policyStatementsOf, serviceEnvironment } from '../test-support/api-stack-template';
 import { itemAt } from '../test-support/guards';
 import { SYNTH_REGION, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
+import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
+import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
 import { PY_LAMBDA_ASSET_EXCLUDES, rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
 import {
   DESIGN_CAPTURE_MEMORY_MB, DESIGN_CAPTURE_TIMEOUT, DESIGN_ICONS_PREFIX, DESIGN_SYSTEM_PARTITION, LOGO_PREVIEW_PREFIX,
@@ -88,9 +90,9 @@ describe('voc-design-capture in VocIngestionStack', () => {
 
   it('invokes allowlisted models only and touches no secret, queue or other function', () => {
     const actions = statements().flatMap((s) => s.actions);
-    expect(actions).toContain('bedrock:InvokeModel');
-    expect(statements().filter((s) => s.actions.includes('bedrock:InvokeModel')).map((s) => s.resource).join())
-      .not.toContain('"*"');
+    const grant = claudeRoleGrantOf('Ingestion', template.toJSON(), 'DesignCaptureRole');
+    expect(missingModelGrants([grant], ALLOWED_MODEL_IDS, 'global')).toStrictEqual([]);
+    expect(grant.statements.flatMap((s) => s.resources).filter((arn) => arn.includes('*'))).toStrictEqual([]);
     expect(actions.filter((a) => /^(secretsmanager|sqs|lambda):/.test(a))).toStrictEqual([]);
   });
 

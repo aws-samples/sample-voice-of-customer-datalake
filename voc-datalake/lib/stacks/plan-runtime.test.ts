@@ -11,11 +11,13 @@ import { Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
 import { itemAt } from '../test-support/guards';
 import { roleStatements, type NormalizedStatement } from '../test-support/iam-statements';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { byCodeUnit } from '../utils/compare';
 import { USERS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
+import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
 import { PLAN_STEP_DELEGATES } from './plan-step-lambda';
 
 /** The fields of one synthesized function these assertions read. */
@@ -89,9 +91,13 @@ describe('voc-plan-step (VocProcessingStack)', () => {
   });
 
   it('invokes Bedrock on the allowlisted models only', () => {
-    const bedrock = policyOf(template, 'AgentRuntimePlanStepRole').filter((s) => s.actions.some((a) => a.startsWith('bedrock:')));
-    expect(actions(bedrock, 'bedrock:')).toStrictEqual(['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream']);
-    expect(bedrock.map((s) => s.resource).join(' ')).not.toMatch(/foundation-model\/\*|inference-profile\/\*/);
+    // Through the stack's shared Claude policies (lib/utils/claude-model-grant.ts), the streaming variant.
+    expect(policyOf(template, 'AgentRuntimePlanStepRole').filter((s) => s.actions.some((a) => a.startsWith('bedrock:')))).toStrictEqual([]);
+    const grant = claudeRoleGrantOf('Processing', template.toJSON(), 'AgentRuntimePlanStepRole');
+    expect(missingModelGrants([grant], ALLOWED_MODEL_IDS, 'global')).toStrictEqual([]);
+    expect(grant.statements.flatMap((s) => s.resources).filter((arn) => arn.includes('*'))).toStrictEqual([]);
+    expect([...new Set(grant.statements.flatMap((s) => s.actions))].sort(byCodeUnit))
+      .toStrictEqual(['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream']);
   });
 
   it('is invoked by the state machine, never by the conductor', () => {

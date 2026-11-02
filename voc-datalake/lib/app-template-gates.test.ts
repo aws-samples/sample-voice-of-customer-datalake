@@ -17,9 +17,10 @@
  *    no CDK warning (the default synth is held to that by lib/app-baseline.test.ts), which is what proves the
  *    per-policy `Resource::*` acknowledgement (lib/utils/nag-resource-star.ts) still covers every reviewed grant
  *    once the stack-wide one is gone.
- * 4. Every `bedrock:InvokeModel*` statement on a Claude model names the e2e profile's Haiku 5.5 and its
- *    capacity fallback, as `global.` inference profile and foundation model (test-support/bedrock-grants.ts;
- *    the `eu.` synth: lib/app-inference-scope.test.ts).
+ * 4. Every role with a `bedrock:InvokeModel*` grant on a Claude model holds the e2e profile's Haiku 5.5 and
+ *    its capacity fallback in all three cross-Region parts: `global.` profile, in-Region foundation model and
+ *    Region-agnostic foundation model, with their conditions (test-support/bedrock-grants.ts; the `eu.` synth:
+ *    lib/app-inference-scope.test.ts).
  *
  * What it cannot prove: that a reviewed reason is still true, or that a non-`"*"` resource is narrow
  * enough (`arn:...:*` patterns are the per-role suites' and cdk-nag's job).
@@ -28,7 +29,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
-import { claudeInvokeStatements, e2eProfileModels, missingModelGrants } from './test-support/bedrock-grants';
+import { claudeRoleGrants, e2eProfileModels, missingModelGrants } from './test-support/bedrock-grants';
 import { cleanupAssemblyDirs, diagnostics, synthApp, type SynthResult } from './test-support/synth-app';
 import { TemplateResourcesSchema } from './test-support/template-resources';
 import { byCodeUnit } from './utils/compare';
@@ -222,11 +223,12 @@ describe('the all-features synth', () => {
 // The e2e profile (Haiku 5.5 + its capacity fallback, docs: e2e/README.md "Models") applies to every
 // Bedrock caller, so every Claude grant must name both models (the eu. twin: app-inference-scope.test.ts).
 describe('Bedrock grants for the e2e profile models', () => {
-  it.each(Object.entries(SHAPES))('every Claude InvokeModel statement names their global. profile and foundation model (%s)', (_shape, result) => {
-    const statements = claudeInvokeStatements(result);
-    expect(statements.length).toBeGreaterThan(5);
-    expect(missingModelGrants(statements, e2eProfileModels(), 'global')).toStrictEqual([]);
-    // Not vacuous: an id that is only a prefix of a granted one (claude-haiku-5 of claude-haiku-5-5) is missing.
-    expect(missingModelGrants(statements, ['global.anthropic.claude-haiku-5'], 'global')).toHaveLength(2 * statements.length);
+  it.each(Object.entries(SHAPES))('every Claude-invoking role holds their global. profile, in-Region and global model parts (%s)', (_shape, result) => {
+    const grants = claudeRoleGrants(result);
+    expect(grants.length).toBeGreaterThan(20);
+    expect(missingModelGrants(grants, e2eProfileModels(), 'global')).toStrictEqual([]);
+    // Not vacuous: an id that is only a prefix of a granted one (claude-haiku-5 of claude-haiku-5-5) misses
+    // all three parts on every role.
+    expect(missingModelGrants(grants, ['global.anthropic.claude-haiku-5'], 'global')).toHaveLength(3 * grants.length);
   });
 });

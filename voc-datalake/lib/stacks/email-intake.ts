@@ -39,8 +39,7 @@ import type { InboundEmailConfig } from '../utils/inbound-email';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { EMAIL_INTAKE_LAYER_DIR, dependencyLayer } from '../utils/dependency-layers';
-import { stackModelArns } from '../utils/model-allowlist';
-import { bedrockModelSuppressions } from '../utils/nag-suppressions';
+import { grantClaudeModels } from '../utils/claude-model-grant';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
 import { appVersion } from '../utils/connector-version';
 
@@ -180,7 +179,6 @@ function intakeCode(): lambda.Code {
 }
 
 function intakeRole(scope: Construct, props: EmailIntakeProps, bucket: s3.Bucket): iam.Role {
-  const stack = cdk.Stack.of(scope);
   const role = new iam.Role(scope, 'EmailIntakeRole', {
     assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
   });
@@ -199,10 +197,9 @@ function intakeRole(scope: Construct, props: EmailIntakeProps, bucket: s3.Bucket
   // Caps row, the day's counters, the source profiles and the model picker's settings.
   props.aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
   props.processingQueue.grantSendMessages(role);
-  role.addToPolicy(new iam.PolicyStatement({ actions: ['bedrock:InvokeModel'], resources: stackModelArns(stack) }));
+  grantClaudeModels(role, 'invoke');
   role.addToPolicy(piiDetectionStatement());
   acknowledgeNag(role, [
-    ...bedrockModelSuppressions,
     {
       id: 'AwsSolutions-IAM5',
       reason: 'Object-level S3 actions are scoped to the inbox prefixes (inbound/*, inbound-raw/*) of the '

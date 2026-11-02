@@ -1,58 +1,124 @@
 /**
- * Test support: the Bedrock `InvokeModel*` statements on Claude models of a whole-app synth, and the
- * model ARNs one of them misses.
+ * Test support: the Bedrock `InvokeModel*` grants on Claude models of a whole-app synth, per role, and the
+ * parts of a model's grant one of them misses.
  *
- * A caller's model is resolved at call time (the admin's pick, the e2e profile, a capacity fallback), so
- * EVERY statement that grants a Claude model must grant each model a caller can land on: its
- * inference-profile ARN (`global.` or, with `-c inferenceScope=eu`, `eu.`) AND the foundation-model ARN
- * the profile routes to. A statement that grants a subset AccessDenies exactly the calls that fall
- * through to the missing model, which only shows in production.
+ * A caller's model is resolved at call time (the admin's pick, the e2e profile, a capacity fallback), so EVERY
+ * role that may invoke a Claude model must hold each model a caller can land on, in all the parts AWS
+ * authorizes for cross-Region inference (lib/utils/claude-model-grant.ts):
+ *  - the inference profile in the app region (`global.`, or `eu.` with `-c inferenceScope=eu`), with no
+ *    `bedrock:InferenceProfileArn` condition (Bedrock does not set that key on the profile evaluation);
+ *  - the foundation model in the app region (global) or in every destination Region of the `eu.` profile,
+ *    with `bedrock:InferenceProfileArn` naming that profile;
+ *  - global only: the Region-agnostic `arn:aws:bedrock:::foundation-model/<model>`, with
+ *    `aws:RequestedRegion` = `unspecified` and the same profile condition.
+ * A role missing a part AccessDenies exactly the calls that need it, which only shows in production.
  *
- * Not a `*.test.ts` file, so vitest never runs it as a suite.
+ * Statements are read from inline (`AWS::IAM::Policy`) AND customer-managed (`AWS::IAM::ManagedPolicy`)
+ * policies, attributed to every role in their `Roles`. Not a `*.test.ts` file, so vitest never runs it.
  */
 import { z } from 'zod';
 
 import { sourceStringConstant } from './cross-language-invariants';
-import { IamPolicySchema, statementActions } from './iam-statements';
-import type { SynthResult } from './synth-app';
+import { SYNTH_ACCOUNT, SYNTH_REGION, type SynthResult } from './synth-app';
 import type { InferenceScope } from '../utils/inference-scope';
-import { scopedModelId, toFoundationModelId } from '../utils/model-allowlist';
+import { euProfileDestinations, scopedModelId, toFoundationModelId } from '../utils/model-allowlist';
 
-const POLICY_TYPES: readonly string[] = ['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy'];
-const PolicyTypeSchema = z.object({ Type: z.string() });
+const StringListSchema = z.union([z.string(), z.array(z.string())]).transform((v) => [v].flat());
+const StatementSchema = z.object({
+  Effect: z.string().optional(),
+  Action: StringListSchema,
+  Resource: z.unknown(),
+  Condition: z.object({ StringEquals: z.record(z.string(), StringListSchema).optional() }).optional(),
+});
+const PolicySchema = z.object({
+  Type: z.enum(['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy']),
+  Properties: z.object({
+    Roles: z.array(z.object({ Ref: z.string() })).optional(),
+    PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
+  }),
+});
 const ResourcesSchema = z.object({ Resources: z.record(z.string(), z.unknown()) });
 
-export interface ClaudeInvokeStatement {
-  /** `<stack>/<policy logical id>#<statement index>`. */
+/** One Allow statement, reduced to what the parts check reads. */
+export interface ClaudeStatement {
+  readonly actions: readonly string[];
+  /** Literal resource ARNs (a token-built ARN would not be a plain string and never matches). */
+  readonly resources: readonly string[];
+  /** `StringEquals` condition values by key. */
+  readonly stringEquals: Readonly<Record<string, readonly string[]>>;
+}
+
+export interface ClaudeRoleGrant {
+  /** `<stack>/<role logical id>`. */
   readonly where: string;
-  /** The statement's `Resource`, serialized. */
-  readonly resource: string;
+  readonly statements: readonly ClaudeStatement[];
 }
 
-const isInvoke = (action: string): boolean => action.startsWith('bedrock:InvokeModel');
+const resourceStrings = (resource: unknown): string[] => [resource].flat().filter((r) => typeof r === 'string');
 
-/** Every Allow statement in the app that grants `bedrock:InvokeModel*` on at least one Claude model. */
-export function claudeInvokeStatements(result: SynthResult): ClaudeInvokeStatement[] {
-  return result.stackNames.flatMap((stack) => {
-    const resources = ResourcesSchema.parse(result.template(stack)).Resources;
-    return Object.entries(resources).flatMap(([id, resource]) => {
-      if (!POLICY_TYPES.includes(PolicyTypeSchema.safeParse(resource).data?.Type ?? '')) return [];
-      const policy = IamPolicySchema.safeParse(resource);
-      if (!policy.success) return [];
-      return policy.data.Properties.PolicyDocument.Statement.flatMap((statement, index) => {
-        const resourceText = JSON.stringify(statement.Resource);
-        const grants = (statement.Effect ?? 'Allow') === 'Allow'
-          && statementActions(statement).some(isInvoke)
-          && resourceText.includes('anthropic.claude');
-        return grants ? [{ where: `${stack}/${id}#${index}`, resource: resourceText }] : [];
-      });
-    });
-  });
+/**
+ * Every role of one synthesized template (`Template.toJSON()` or a cloud-assembly template) holding a
+ * `bedrock:InvokeModel*` Allow on at least one Claude model, with those statements.
+ */
+export function claudeRoleGrantsOfTemplate(stack: string, template: unknown): ClaudeRoleGrant[] {
+  const byRole = new Map<string, ClaudeStatement[]>();
+  for (const resource of Object.values(ResourcesSchema.parse(template).Resources)) {
+    const policy = PolicySchema.safeParse(resource);
+    if (!policy.success) continue;
+    const statements = policy.data.Properties.PolicyDocument.Statement
+      .filter((s) => (s.Effect ?? 'Allow') === 'Allow' && s.Action.some((a) => a.startsWith('bedrock:InvokeModel')))
+      .map((s) => ({ actions: s.Action, resources: resourceStrings(s.Resource), stringEquals: s.Condition?.StringEquals ?? {} }))
+      .filter((s) => s.resources.some((r) => r.includes('anthropic.claude')));
+    if (statements.length === 0) continue;
+    for (const role of policy.data.Properties.Roles ?? []) {
+      byRole.set(role.Ref, [...(byRole.get(role.Ref) ?? []), ...statements]);
+    }
+  }
+  return [...byRole].map(([role, statements]) => ({ where: `${stack}/${role}`, statements }));
 }
 
-/** The ARN tails (inference profile under `scope`, foundation model) a statement must name for `modelId`. */
-function requiredModelArnTails(modelId: string, scope: InferenceScope): string[] {
-  return [`inference-profile/${scopedModelId(modelId, scope)}`, `foundation-model/${toFoundationModelId(modelId)}`];
+/** {@link claudeRoleGrantsOfTemplate} over every stack of a whole-app synth. */
+export function claudeRoleGrants(result: SynthResult): ClaudeRoleGrant[] {
+  return result.stackNames.flatMap((stack) => claudeRoleGrantsOfTemplate(stack, result.template(stack)));
+}
+
+/** The one role grant whose role logical id starts with `rolePrefix` (throws unless exactly one). */
+export function claudeRoleGrantOf(stack: string, template: unknown, rolePrefix: string): ClaudeRoleGrant {
+  const found = claudeRoleGrantsOfTemplate(stack, template).filter((g) => g.where.startsWith(`${stack}/${rolePrefix}`));
+  const [grant, ...rest] = found;
+  if (grant === undefined || rest.length > 0) throw new Error(`expected one Claude grant for ${rolePrefix}, found ${found.length}`);
+  return grant;
+}
+
+interface RequiredPart {
+  readonly label: string;
+  readonly arn: string;
+  readonly stringEquals: Readonly<Record<string, string>>;
+}
+
+/** The parts (ARN + the `StringEquals` values its statement must carry) of `modelId`'s grant under `scope`. */
+function requiredParts(modelId: string, scope: InferenceScope, region: string, account: string): RequiredPart[] {
+  const model = toFoundationModelId(modelId);
+  const profile = `arn:aws:bedrock:${region}:${account}:inference-profile/${scopedModelId(modelId, scope)}`;
+  const viaProfile = { 'bedrock:InferenceProfileArn': profile };
+  const regions = scope === 'eu' ? euProfileDestinations(region) : [region];
+  return [
+    { label: `profile ${profile}`, arn: profile, stringEquals: {} },
+    ...regions.map((r) => ({ label: `${r} model ${model}`, arn: `arn:aws:bedrock:${r}::foundation-model/${model}`, stringEquals: viaProfile })),
+    ...(scope === 'eu' ? [] : [{
+      label: `global model ${model}`,
+      arn: `arn:aws:bedrock:::foundation-model/${model}`,
+      stringEquals: { 'aws:RequestedRegion': 'unspecified', ...viaProfile },
+    }]),
+  ];
+}
+
+/** Whether `statement` grants `part`: names the ARN exactly, carries its conditions, and no profile condition on a profile. */
+function grantsPart(statement: ClaudeStatement, part: RequiredPart): boolean {
+  if (!statement.resources.includes(part.arn)) return false;
+  const required = Object.entries(part.stringEquals);
+  if (required.length === 0) return statement.stringEquals['bedrock:InferenceProfileArn'] === undefined;
+  return required.every(([key, value]) => statement.stringEquals[key]?.includes(value) === true);
 }
 
 /**
@@ -66,13 +132,17 @@ export function e2eProfileModels(): string[] {
 }
 
 /**
- * `<where>: <ARN tail>` for every Claude invoke statement that misses one of `modelIds`' ARNs under
- * `scope`. A tail must END a resource string (followed by its closing quote), so `claude-haiku-5-5`
- * is not satisfied by a longer id that merely starts with it.
+ * `<where>: <part>` for every role grant that misses a part of one of `modelIds`' grants under `scope`. An ARN
+ * must match exactly, so `claude-haiku-5` is not satisfied by `claude-haiku-5-5`.
  */
-export function missingModelGrants(statements: readonly ClaudeInvokeStatement[], modelIds: readonly string[], scope: InferenceScope): string[] {
-  const tails = modelIds.flatMap((id) => requiredModelArnTails(id, scope));
-  return statements.flatMap((statement) => tails
-    .filter((tail) => !statement.resource.includes(`${tail}"`))
-    .map((tail) => `${statement.where}: ${tail}`));
+export function missingModelGrants(
+  grants: readonly ClaudeRoleGrant[],
+  modelIds: readonly string[],
+  scope: InferenceScope,
+  region: string = SYNTH_REGION,
+): string[] {
+  const parts = modelIds.flatMap((id) => requiredParts(id, scope, region, SYNTH_ACCOUNT));
+  return grants.flatMap((grant) => parts
+    .filter((part) => !grant.statements.some((statement) => grantsPart(statement, part)))
+    .map((part) => `${grant.where}: ${part.label}`));
 }
