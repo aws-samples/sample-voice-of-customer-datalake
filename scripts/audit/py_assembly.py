@@ -39,8 +39,9 @@ CAPTURE = Path(__file__).resolve().parent / 'py_capture_bundling.cjs'
 SYNTH_ACCOUNT = '111111111111'
 SYNTH_REGION = 'us-east-1'
 # The gated synth's region: `inferenceScope: 'eu'` below needs an EU source Region of the eu. inference
-# profiles (lib/utils/model-allowlist.ts euProfileDestinations), and refuses us-east-1 at synth.
-GATED_REGION = 'eu-central-1'
+# profiles (lib/utils/model-allowlist.ts euProfileDestinations), and refuses us-east-1 at synth. eu-west-1 is
+# as long as us-east-1, so the prefixed names stay within the 64-character limits the default region meets.
+GATED_REGION = 'eu-west-1'
 GATED_PREFIX = 'b'  # a one-letter prefix: plugin rule names hit the 64-char limit otherwise
 # Context that switches on every optional Lambda (each key is a `tryGetContext` in bin/ or lib/).
 GATED_CONTEXT: dict[str, object] = {
