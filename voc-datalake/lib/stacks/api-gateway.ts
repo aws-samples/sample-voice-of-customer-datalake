@@ -9,7 +9,8 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
 import { acknowledgeNag } from '../utils/nag-ack';
 import type { PluginManifest } from '../plugin-loader';
-import { apiGatewayRequestValidationSuppressions } from '../utils/nag-suppressions';
+import { apiGatewayRequestValidationSuppressions, apiWafOffSuppressions } from '../utils/nag-suppressions';
+import { protectApiStage, wafEnabled } from '../utils/waf';
 import { apiAccessLogFormat } from './api-access-log';
 import { applyApiTlsPolicy } from './api-tls';
 import type { ApiStackContext } from './api-context';
@@ -513,6 +514,9 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   });
 
   acknowledgeNag(api, apiGatewayRequestValidationSuppressions);
+  // Opt-in AWS WAF on the stage (`-c enableWaf=true` / performanceTier, lib/utils/waf.ts); off = acknowledged.
+  if (wafEnabled(stack)) protectApiStage(stack, api);
+  else acknowledgeNag(api, apiWafOffSuppressions);
   applyApiTlsPolicy(api);
 
   // Gateway responses for CORS on errors

@@ -20,6 +20,7 @@ import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import {
   apiSecretsSuppressions,
   cdnSigningKeySuppressions,
+  cloudFrontWafOffSuppressions,
   cloudfrontDefaultCertSuppressions,
   lambdaBasicExecutionRoleSuppressions,
   providerFrameworkSuppressions,
@@ -41,6 +42,11 @@ export interface CdnInputs {
   rawDataBucket: s3.Bucket;
   websiteBucket: s3.Bucket;
   accessLogsBucket: s3.Bucket;
+  /**
+   * The CLOUDFRONT-scope web ACL (VocWebSearchStack, us-east-1) the SPA distribution is associated with: only
+   * with `-c enableWaf=true` / performanceTier (lib/utils/waf.ts). Absent = no WAF (the default, tenet 7).
+   */
+  webAclArn?: string;
 }
 
 export interface CoreCdn {
@@ -55,7 +61,7 @@ export interface CoreCdn {
 
 export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn {
   const { stack } = ctx;
-  const { kmsKey, rawDataBucket, websiteBucket, accessLogsBucket } = inputs;
+  const { kmsKey, rawDataBucket, websiteBucket, accessLogsBucket, webAclArn } = inputs;
 
   // ============================================
   // CLOUDFRONT DISTRIBUTIONS
@@ -133,8 +139,11 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
     enableLogging: true,
     logBucket: accessLogsBucket,
     logFilePrefix: 'cloudfront-frontend/',
+    webAclId: webAclArn,
   });
-  acknowledgeNagOnResource(frontendDistribution, cloudfrontDefaultCertSuppressions);
+  acknowledgeNagOnResource(frontendDistribution, [
+    ...cloudfrontDefaultCertSuppressions, ...(webAclArn === undefined ? cloudFrontWafOffSuppressions : []),
+  ]);
   const frontendDomainName = frontendDistribution.distributionDomainName;
 
   // Let CloudFront distinguish "missing object" from "not allowed" on the SPA

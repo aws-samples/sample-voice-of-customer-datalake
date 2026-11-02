@@ -32,7 +32,8 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { acknowledgeNagOnResource } from '../utils/nag-ack';
-import { cognitoSecuritySuppressions } from '../utils/nag-suppressions';
+import { boardPoolMfaSuppressions, cognitoPlusOffSuppressions } from '../utils/nag-suppressions';
+import { cognitoPlusEnabled, userPoolFeaturePlan } from '../utils/cognito-plus';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
@@ -213,8 +214,9 @@ export function createBoardAuth(ctx: CoreBuildContext, inputs: BoardAuthInputs):
       requireDigits: true,
       requireSymbols: true,
     },
-    // Choice-based (USER_AUTH) sign-in, and Email OTP with a sender; both need the Essentials plan.
-    featurePlan: cognito.FeaturePlan.ESSENTIALS,
+    // Choice-based (USER_AUTH) sign-in, and Email OTP with a sender; both need the Essentials plan
+    // (or Plus with `-c cognitoPlus=true` / performanceTier, lib/utils/cognito-plus.ts).
+    ...userPoolFeaturePlan(stack),
     mfa: cognito.Mfa.OFF,
     ...signInSettings(sender),
     removalPolicy: ctx.dataProtection.removalPolicy,
@@ -223,7 +225,9 @@ export function createBoardAuth(ctx: CoreBuildContext, inputs: BoardAuthInputs):
   });
   // Kept if a change ever forces a replacement: a board user's email keys their supports.
   retainOnReplace(userPool);
-  acknowledgeNagOnResource(userPool, cognitoSecuritySuppressions);
+  acknowledgeNagOnResource(userPool, [
+    ...boardPoolMfaSuppressions, ...(cognitoPlusEnabled(stack) ? [] : cognitoPlusOffSuppressions),
+  ]);
 
   const userPoolClient = userPool.addClient('VocBoardWebClient', {
     userPoolClientName: ctx.uniqueName('voc-board-web-client'),

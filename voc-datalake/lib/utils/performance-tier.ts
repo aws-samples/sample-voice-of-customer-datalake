@@ -1,13 +1,18 @@
 /**
- * The performance tier: ONE opt-in that turns on every fixed-cost performance feature at once
- * (TENETS.md, tenet 7: cost-optimised by default, performance by choice).
+ * The performance tier: ONE opt-in that turns on every paid optimisation at once (TENETS.md, tenet 7:
+ * cost-optimised by default, performance by choice). Despite the name it now covers the paid SECURITY features
+ * too; the flag keeps its name so existing deployments and docs keep working.
  *
  * As a GitHub sample and proof of concept the platform runs with no fixed monthly cost: a cold
- * start is made faster, not hidden behind a paid feature. A deployment that would rather pay for
- * speed sets `-c performanceTier=true`, and every performance feature reads this flag (besides its
- * own flag) so the operator does not have to know them one by one. Today that is SnapStart on the
- * cold-start-bound API Lambdas (lib/utils/snapstart.ts); a new fixed-cost performance feature joins
- * here AND in OPT_IN_FIXED_COSTS (lib/test-support/fixed-cost-rules.ts), so the gate keeps the default clean.
+ * start is made faster, not hidden behind a paid feature. A deployment that would rather pay sets
+ * `-c performanceTier=true`, and every such feature reads this flag (besides its own flag) so the
+ * operator does not have to know them one by one:
+ * - SnapStart on the cold-start-bound API Lambdas (`-c snapStart=true`, lib/utils/snapstart.ts) — fixed cost;
+ * - AWS WAF on the SPA distribution and the API stage (`-c enableWaf=true`, lib/utils/waf.ts) — fixed cost;
+ * - the Cognito Plus plan with threat protection on both user pools (`-c cognitoPlus=true`,
+ *   lib/utils/cognito-plus.ts) — per active user, no fixed cost.
+ * A new fixed-cost feature joins here AND in OPT_IN_FIXED_COSTS (lib/test-support/fixed-cost-rules.ts), so the gate
+ * keeps the default clean.
  *
  * Run as a managed service, this tier would be on by default; that is a deployment's decision, so
  * the repository default stays off.
@@ -24,4 +29,16 @@ export function performanceTierEnabled(scope: IConstruct): boolean {
     scope.node.tryGetContext(PERFORMANCE_TIER_CONTEXT_KEY), PERFORMANCE_TIER_CONTEXT_KEY, false,
     `Use true/false (off by default: fixed monthly costs, TENETS.md tenet 7; opt in with -c ${PERFORMANCE_TIER_CONTEXT_KEY}=true).`,
   );
+}
+
+/**
+ * A feature in the tier with its own flag too: on when `-c <key>=true` OR the performance tier is on. Both flags are
+ * read before they are combined, so a typo in either is refused even when the other is on.
+ */
+export function enabledByOwnFlagOrTier(scope: IConstruct, key: string, why: string): boolean {
+  const own = booleanContextFlag(
+    scope.node.tryGetContext(key), key, false, `Use true/false (off by default: ${why}; opt in with -c ${key}=true).`,
+  );
+  const tier = performanceTierEnabled(scope);
+  return tier || own;
 }

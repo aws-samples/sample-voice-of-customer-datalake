@@ -205,6 +205,14 @@ describe('VocWebSearchStack — the both-halves-off invariant is enforced, not j
     // reach even if a caller skips shouldDeployAiEnablement().
     expect(() => construct({ deployWebSearch: false })).toThrow(/both halves are disabled/);
   });
+
+  it('holds only the CLOUDFRONT web ACL when that is all it is asked for (-c enableWaf=true, lib/utils/waf.ts)', () => {
+    const stack = construct({ deployWebSearch: false, cloudFrontWebAcl: true });
+    const resources = z.record(z.string(), z.object({ Type: z.string() })).parse(Template.fromStack(stack).toJSON().Resources);
+    expect(Object.values(resources).map((resource) => resource.Type)).toStrictEqual(['AWS::WAFv2::WebACL']);
+    expect(stack.frontendWebAclArn).toBeDefined();
+    expect(stack.gatewayUrl).toBeUndefined();
+  });
 });
 
 describe('shouldDeployAiEnablement', () => {
@@ -220,5 +228,10 @@ describe('shouldDeployAiEnablement', () => {
     // stack, which the workshop converter turns into an
     // invalid `Resources: {}`.
     expect(shouldDeployAiEnablement(false, undefined)).toBe(false);
+    expect(shouldDeployAiEnablement(false, undefined, false)).toBe(false);
+  });
+
+  it('constructs the stack for the opt-in CloudFront web ACL alone', () => {
+    expect(shouldDeployAiEnablement(false, undefined, true)).toBe(true);
   });
 });
