@@ -126,21 +126,26 @@ function iamPattern(pattern: string): RegExp {
 
 describe('Lambda and API Gateway log grants (AwsSolutions-IAM4)', () => {
   let synth: SynthResult;
-  let all: SynthResult;
-  beforeAll(() => {
-    synth = synthApp();
-    all = synthApp({ ...ALL_FEATURES_CONTEXT });
-  }, SYNTH_TIMEOUT_MS * 2);
+  // One whole-app synth per hook (the all-features one below), so each gets the per-synth timeout.
+  beforeAll(() => { synth = synthApp(); }, SYNTH_TIMEOUT_MS);
   afterAll(() => { cleanupAssemblyDirs(); });
 
-  it('gives every function, CDK-created ones included, writes to its own log group only (both shapes)', () => {
+  it('gives every function, CDK-created ones included, writes to its own log group only', () => {
     expect(functionProblems(synth)).toStrictEqual([]);
-    expect(functionProblems(all)).toStrictEqual([]);
   });
 
-  it('leaves no AWS managed policy on any role (both shapes)', () => {
+  it('leaves no AWS managed policy on any role', () => {
     expect(rolesWithManagedPolicies(synth)).toStrictEqual([]);
-    expect(rolesWithManagedPolicies(all)).toStrictEqual([]);
+  });
+
+  describe('with every context-gated feature on', () => {
+    let all: SynthResult;
+    beforeAll(() => { all = synthApp({ ...ALL_FEATURES_CONTEXT }); }, SYNTH_TIMEOUT_MS);
+
+    it('gives every function writes to its own log group only, and no role a managed policy', () => {
+      expect(functionProblems(all)).toStrictEqual([]);
+      expect(rolesWithManagedPolicies(all)).toStrictEqual([]);
+    });
   });
 
   it('pins an API Lambda, the stream Lambda and the plan-step Lambda to their own groups', () => {
