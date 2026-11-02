@@ -19,9 +19,17 @@ import {
   actionsWithPrefix, RefSchema,
 } from '../test-support/api-stack-template';
 import { acknowledgementCovering } from '../utils/nag-ack';
+import type { IConstruct } from 'constructs';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
 import { itemAt } from '../test-support/guards';
+
+/** A role construct's DefaultPolicy CloudFormation resource. */
+function defaultPolicyResource(role: IConstruct): IConstruct {
+  const policy = role.node.findChild('DefaultPolicy').node.defaultChild;
+  if (policy === undefined) throw new Error(`${role.node.path} has no DefaultPolicy resource`);
+  return policy;
+}
 
 // Synthesize the shared default template once, outside any single case's 5s
 // budget: the first case to call apiTemplate() would otherwise pay for it.
@@ -271,9 +279,7 @@ describe('the settings Lambda can test models and read their quotas', () => {
 
   it('documents the read-only wildcards with scoped cdk-nag acknowledgements', () => {
     // Read where cdk-nag 3 looks: the role's DefaultPolicy resource and its ancestors.
-    const role = buildApiStack().node.findChild(ROLE);
-    const policy = role.node.findChild('DefaultPolicy').node.defaultChild;
-    if (policy === undefined) throw new Error(`${ROLE} has no DefaultPolicy resource`);
+    const policy = defaultPolicyResource(buildApiStack().node.findChild(ROLE));
     expect(acknowledgementCovering(policy, 'AwsSolutions-IAM5[Resource::*]')?.reason)
       .toContain('servicequotas:ListServiceQuotas supports no resource-level permission');
     expect(acknowledgementCovering(

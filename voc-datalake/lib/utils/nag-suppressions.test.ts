@@ -27,7 +27,7 @@ function fixture() {
   const producer = new cdk.Stack(app, 'pfx-Producer', { env });
   const consumer = new cdk.Stack(app, 'pfx-Consumer', { env });
   const table = new dynamodb.Table(producer, 'Feedback', { partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING } });
-  const bucket = new s3.Bucket(producer, 'Raw');
+  const bucket = new s3.Bucket(producer, 'Raw', { enforceSSL: true, versioned: true });
   const fn = new lambda.Function(consumer, 'Job', {
     runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
   });
