@@ -44,6 +44,8 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from shared.archive_keys import archive_key_stem
+
 __all__ = [
     'CONNECTOR_META',
     'CONNECTOR_VERSION_META',
@@ -55,6 +57,7 @@ __all__ = [
     'content_digest',
     'folder_of',
     'item_folder',
+    'item_stem',
     'parse_item_key',
     'put_raw_version',
     'version_key',
@@ -110,6 +113,12 @@ def content_digest(content: object, default: Callable[[Any], Any] = str) -> str:
 def item_folder(source: str, day: date, stem: str) -> str:
     """``raw/{source}/{YYYY}/{MM}/{DD}/{stem}/``: the folder holding every version of one item."""
     return f'{RAW_PREFIX}{source}/{day.year}/{day.month:02d}/{day.day:02d}/{stem}/'
+
+
+def item_stem(item_id: object, digest: str) -> str:
+    """The folder stem of one item: its id's collision-free stem, or ``noid-{digest}`` (its content)
+    for an item without an id, so items without ids never share a folder (nor an erasure)."""
+    return archive_key_stem(item_id) if isinstance(item_id, str) and item_id else f'noid-{digest}'
 
 
 def version_key(folder: str, digest: str, extension: str = _JSON_SUFFIX) -> str:

@@ -15,9 +15,11 @@ reporter (email, name); a +1's field values, name and email. Not the status, tot
 row's bookkeeping, so an admin's triage writes no new version.
 
 Boards are not a feedback source: nothing here is queued into voc-feedback (a product decision
-not made yet). The ``feature_requests`` source profile governs the copy: under a redact /
-summary-only profile none is written (privacy wins), and an unreadable profile writes none. A
-failed write is logged; the request or +1 is stored all the same.
+not made yet). The copy is OPT-IN: written only when an admin has saved a ``feature_requests``
+source profile that permits one (the copies hold reporters' and supporters' emails, which an
+erasure by email does not reach yet). Under a redact / summary-only profile none is written
+(privacy wins), and an unreadable profile writes none. A failed write is logged; the request or
++1 is stored all the same.
 """
 
 from __future__ import annotations
@@ -48,7 +50,8 @@ def _day(created_at: object) -> date:
 
 
 def _archive(item_id: object, content: Mapping[str, Any]) -> str | None:
-    if not isinstance(item_id, str) or not item_id or not source_permits_raw_copy(FEATURE_REQUESTS_SOURCE):
+    if not isinstance(item_id, str) or not item_id or not source_permits_raw_copy(
+            FEATURE_REQUESTS_SOURCE, require_profile=True):
         return None
     return app_json_copy(FEATURE_REQUESTS_SOURCE, _day(content.get('created_at')), archive_key_stem(item_id),
                          dict(content), FEATURE_REQUESTS_SOURCE)

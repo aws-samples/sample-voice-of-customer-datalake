@@ -258,3 +258,12 @@ def cached_source_profile_strict(source_id: str) -> dict[str, Any]:
     if failed:
         raise SourceProfilesUnavailable
     return profile_for(profiles, source_id)
+
+
+def source_profile_configured(source_id: str) -> bool:
+    """True when an admin has saved a profile for ``source_id`` (not just the defaults); raises when
+    the read failed, like ``cached_source_profile_strict``. For writers whose copy is opt-in."""
+    profiles, failed = _cached_profiles()
+    if failed:
+        raise SourceProfilesUnavailable
+    return any(profile.get('id') == source_id for profile in profiles)

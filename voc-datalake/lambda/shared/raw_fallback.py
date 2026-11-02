@@ -21,14 +21,13 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Final
 
-from shared.archive_keys import archive_key_stem
 from shared.logging import logger
 from shared.raw_copy import app_json_copy, source_permits_raw_copy
+from shared.raw_versions import content_digest, item_stem
 
 __all__ = ['PROCESSOR_CONNECTOR', 'archive_inline_raw']
 
 PROCESSOR_CONNECTOR: Final = 'processor'
-_NO_ID_STEM: Final = 'item'
 
 
 def archive_inline_raw(raw_record: Mapping[str, Any], now: datetime) -> str | None:
@@ -40,8 +39,7 @@ def archive_inline_raw(raw_record: Mapping[str, Any], now: datetime) -> str | No
         return None
     if not source_permits_raw_copy(source):
         return None
-    item_id = raw_record.get('id')
-    stem = archive_key_stem(item_id) if isinstance(item_id, str) and item_id else _NO_ID_STEM
+    stem = item_stem(raw_record.get('id'), content_digest(raw))
     uri = app_json_copy(source, now.date(), stem, raw, PROCESSOR_CONNECTOR)
     if uri:
         logger.info('Archived inline raw data in the processor', extra={'source': source})

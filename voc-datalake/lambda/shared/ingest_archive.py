@@ -24,7 +24,6 @@ from typing import Any, Final
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.api import decimal_default
-from shared.archive_keys import archive_key_stem
 from shared.concurrency import ordered_map
 from shared.exceptions import ValidationError
 from shared.logging import logger
@@ -35,6 +34,7 @@ from shared.raw_versions import (
     content_digest,
     folder_of,
     item_folder,
+    item_stem,
     put_raw_version,
     version_key,
 )
@@ -84,11 +84,6 @@ def policy_applied(messages: list[dict[str, Any]], profile: Mapping[str, Any]) -
     return out
 
 
-def _key_id(message_id: object) -> str:
-    """The archive file stem (``shared.archive_keys``); ``item`` for a message without an id."""
-    return archive_key_stem(message_id) if message_id not in (None, '') else 'item'
-
-
 def _stored_folder(bucket: str, source_id: str, uri: object) -> str | None:
     """The item folder of ``uri`` when it is a per-item archive of ``source_id`` in ``bucket``; else None.
 
@@ -105,9 +100,10 @@ def _stored_folder(bucket: str, source_id: str, uri: object) -> str | None:
 def _archive_one(s3: Any, bucket: str, source_id: str, now: datetime, message: dict[str, Any],
                  rewrite_uris: Mapping[str, str], connector: Connector) -> str | None:
     body = {k: v for k, v in message.items() if k != 's3_raw_uri'}
+    digest = content_digest(body, default=decimal_default)
     folder = _stored_folder(bucket, source_id, rewrite_uris.get(str(message.get('id')))) or item_folder(
-        source_id, now, _key_id(message.get('id')))
-    key = version_key(folder, content_digest(body, default=decimal_default))
+        source_id, now, item_stem(message.get('id'), digest))
+    key = version_key(folder, digest)
     try:
         put_raw_version(s3, bucket, key, json.dumps(body, default=decimal_default), connector)
     except _AWS_ERRORS as e:
