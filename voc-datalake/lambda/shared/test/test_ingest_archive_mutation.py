@@ -3,8 +3,9 @@
 `test_ingest_archive.py` pins the archive modes and the resulting
 ``s3_raw_uri`` values, but a mutation run found what it cannot see:
 
-* the S3 WRITE itself: the exact ``put_object`` call (bucket, key, the JSON
-  body without the stale ``s3_raw_uri``, ``ContentType``). The earlier tests
+* the S3 WRITE itself: the exact ``put_object`` call (bucket, the versioned
+  key, the JSON body without the stale ``s3_raw_uri``, ``ContentType``, the
+  ``If-None-Match`` condition and the connector metadata). The earlier tests
   only counted calls, so an empty or wrong body still passed.
 * the ``item`` stem for a message whose id is missing or empty (an empty id
   must not be hashed into ``h.<sha256('')>``).
@@ -12,8 +13,11 @@
 * the WORDING of both upload refusals (``str(exc)`` is the 400 body the import
   UI shows) and of the two log lines an operator searches for.
 """
+import hashlib
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -54,21 +58,39 @@ class TestEveryRefusalNamesItsCause:
 
 
 class TestThePerItemWrite:
-    def test_the_put_object_call_is_exact(self) -> None:
+    def test_the_put_object_call_is_exact(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('APP_VERSION', '9.1.0')
         s3 = MagicMock()
         messages = [{'id': 'r1', 'text': 'hi', 'rating': Decimal('4.5'), 's3_raw_uri': 'stale'}]
-        archive_per_item(s3, 'bkt', 'src', messages, NOW)
+        archive_per_item(s3, 'bkt', 'src', messages, NOW, connector_id='csv_upload')
+        body = '{"id": "r1", "text": "hi", "rating": 4.5}'
+        digest = hashlib.sha256(b'{"id": "r1", "rating": 4.5, "text": "hi"}').hexdigest()[:16]
+        key = f'raw/src/2026/03/07/r1/{digest}.json'
         s3.put_object.assert_called_once_with(
-            Bucket='bkt', Key='raw/src/2026/03/07/r1.json',
-            Body='{"id": "r1", "text": "hi", "rating": 4.5}', ContentType='application/json')
-        assert messages[0]['s3_raw_uri'] == 's3://bkt/raw/src/2026/03/07/r1.json'
+            Bucket='bkt', Key=key, Body=body, ContentType='application/json', IfNoneMatch='*',
+            Metadata={'connector': 'csv_upload', 'connector-version': '9.1.0'})
+        assert messages[0]['s3_raw_uri'] == f's3://bkt/{key}'
+
+    def test_the_default_writer_is_manual_import(self) -> None:
+        s3 = MagicMock()
+        archive_per_item(s3, 'bkt', 'src', [{'id': 'r1'}], NOW)
+        assert s3.put_object.call_args.kwargs['Metadata']['connector'] == 'manual_import'
+
+    def test_already_archived_content_keeps_its_uri(self) -> None:
+        s3 = MagicMock()
+        response: Any = {'Error': {'Code': 'PreconditionFailed'}, 'ResponseMetadata': {'HTTPStatusCode': 412}}
+        s3.put_object.side_effect = ClientError(response, 'PutObject')
+        messages = [{'id': 'r1', 'text': 'hi'}]
+        archive_per_item(s3, 'bkt', 'src', messages, NOW)
+        assert messages[0]['s3_raw_uri'] == f"s3://bkt/{s3.put_object.call_args.kwargs['Key']}"
 
     @pytest.mark.parametrize('message', [{'text': 'no id'}, {'id': None, 'text': 'x'}, {'id': '', 'text': 'x'}])
     def test_a_message_without_an_id_is_archived_as_item(self, message: dict) -> None:
         s3 = MagicMock()
         archive_per_item(s3, 'bkt', 'src', [message], NOW)
-        assert s3.put_object.call_args.kwargs['Key'] == 'raw/src/2026/03/07/item.json'
-        assert message['s3_raw_uri'] == 's3://bkt/raw/src/2026/03/07/item.json'
+        key = s3.put_object.call_args.kwargs['Key']
+        assert re.fullmatch(r'raw/src/2026/03/07/item/[0-9a-f]{16}\.json', key)
+        assert message['s3_raw_uri'] == f's3://bkt/{key}'
 
     def test_at_most_sixteen_writes_run_at_once(self) -> None:
         spy = MagicMock(wraps=concurrency.ordered_map)

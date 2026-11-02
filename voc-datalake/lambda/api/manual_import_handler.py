@@ -59,6 +59,7 @@ from shared.logging import logger, tracer
 from shared.model_profile import payload_fields
 from shared.producer_labels import message_labels
 from shared.radar_brands import radar_brand_setting, radar_stamp
+from shared.raw_versions import app_connector, put_raw_version
 from shared.request_body import json_object_body
 from shared.timestamps import now_iso
 
@@ -97,6 +98,10 @@ MANUAL_IMPORT_PROCESSOR_FUNCTION = os.environ.get('MANUAL_IMPORT_PROCESSOR_FUNCT
 # What an S3/SQS write raises. The archive and enqueue steps degrade on exactly
 # these (the row is reported, the request still answers); anything else is a bug.
 _AWS_WRITE_ERRORS = (ClientError, BotoCoreError)
+# The writer ids recorded on every raw object this Lambda writes (``connector`` metadata, shared/raw_versions.py).
+_PASTE_WRITER = DEFAULT_UPLOAD_SOURCE
+_CSV_WRITER = 'csv_upload'
+_JSON_WRITER = 'json_upload'
 # What a DynamoDB read of stored rows raises (the CSV dataset preview answers 503 on it).
 _AWS_READ_ERRORS = (ClientError, BotoCoreError)
 
@@ -295,12 +300,8 @@ def _archive_confirmed_import(job: dict, job_id: str, reviews: list[dict], user_
         'imported_by': user_id
     }
     try:
-        s3.put_object(
-            Bucket=RAW_DATA_BUCKET,
-            Key=s3_key,
-            Body=json.dumps(s3_data, default=decimal_default),
-            ContentType='application/json'
-        )
+        put_raw_version(s3, RAW_DATA_BUCKET, s3_key, json.dumps(s3_data, default=decimal_default),
+                        app_connector(_PASTE_WRITER))
     except _AWS_WRITE_ERRORS as e:
         logger.warning(f"Failed to store to S3: {e}")
         return None
@@ -336,7 +337,7 @@ def _import_confirmed_reviews(job: dict, job_id: str, reviews: list[dict]) -> di
     messages, mode = prepare_messages(
         s3, RAW_DATA_BUCKET,
         [_confirmed_review_message(review, idx, job, job_id, None) for idx, review in enumerate(reviews)],
-        profile, now,
+        profile, now, connector_id=_PASTE_WRITER,
     )
     s3_uri = stamp_file_archive(
         messages, mode, lambda: _archive_confirmed_import(job, job_id, reviews, _caller_user_id(), now))
@@ -764,12 +765,10 @@ def _archive_csv_file(
         return None
     s3_key = f"raw/csv_upload/{now.year}/{now.month:02d}/{now.day:02d}/{job_id}.csv"
     try:
-        s3.put_object(
-            Bucket=RAW_DATA_BUCKET,
-            Key=s3_key,
-            Body=csv_text.encode('utf-8'),
-            ContentType='text/csv; charset=utf-8',
-            Metadata={'uploaded_by': user_id, 'default_source': default_source, 'source_id': source_id},
+        put_raw_version(
+            s3, RAW_DATA_BUCKET, s3_key, csv_text.encode('utf-8'), app_connector(_CSV_WRITER),
+            content_type='text/csv; charset=utf-8',
+            metadata={'uploaded_by': user_id, 'default_source': default_source, 'source_id': source_id},
         )
     except _AWS_WRITE_ERRORS as e:
         logger.warning(f"Failed to store CSV upload to S3: {e}")
@@ -821,7 +820,7 @@ def csv_upload():
 
     messages, mode = prepare_messages(s3, RAW_DATA_BUCKET,
                                       [_csv_message(item, profile['id'], radar) for item in queued], profile, now,
-                                      plan.archive_rewrites())
+                                      plan.archive_rewrites(), connector_id=_CSV_WRITER)
     s3_uri = stamp_file_archive(
         messages, mode, lambda: _archive_csv_file(csv_text, job_id, user_id, default_source, profile['id'], now))
     imported_count, send_errors = _send_items_to_sqs(messages)
@@ -911,17 +910,12 @@ def _archive_json_file(items: list, job_id: str, user_id: str, now: datetime) ->
         return None
     s3_key = f"raw/json_upload/{now.year}/{now.month:02d}/{now.day:02d}/{job_id}.json"
     try:
-        s3.put_object(
-            Bucket=RAW_DATA_BUCKET,
-            Key=s3_key,
-            Body=json.dumps({
-                'job_id': job_id,
-                'items': items,
-                'uploaded_at': now.isoformat(),
-                'uploaded_by': user_id,
-            }, default=decimal_default),
-            ContentType='application/json',
-        )
+        put_raw_version(s3, RAW_DATA_BUCKET, s3_key, json.dumps({
+            'job_id': job_id,
+            'items': items,
+            'uploaded_at': now.isoformat(),
+            'uploaded_by': user_id,
+        }, default=decimal_default), app_connector(_JSON_WRITER))
     except (*_AWS_WRITE_ERRORS, TypeError, ValueError) as e:
         # TypeError/ValueError: an item json.dumps cannot serialise.
         logger.warning(f"Failed to store JSON upload to S3: {e}")
@@ -953,7 +947,8 @@ def json_upload():
     # send_message would exceed the API Gateway 29s window; batching keeps
     # large uploads inside it.
     messages, mode = prepare_messages(
-        s3, RAW_DATA_BUCKET, [_json_upload_message(item, None, profile['id'], radar) for item in items], profile, now)
+        s3, RAW_DATA_BUCKET, [_json_upload_message(item, None, profile['id'], radar) for item in items], profile, now,
+        connector_id=_JSON_WRITER)
     s3_uri = stamp_file_archive(messages, mode, lambda: _archive_json_file(items, job_id, user_id, now))
 
     imported_count, send_errors = _send_items_to_sqs(messages, label='item')

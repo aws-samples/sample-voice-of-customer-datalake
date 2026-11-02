@@ -582,6 +582,8 @@ class TestConfirmImport:
                 'imported_by': 'test-user-id',
             }),
             ContentType='application/json',
+            IfNoneMatch='*',
+            Metadata={'connector': 'manual_import', 'connector-version': 'unknown'},
         )
 
     def test_one_queue_message_per_review_numbered_from_zero(self, api_gateway_event, lambda_context):
@@ -910,7 +912,9 @@ class TestCsvUpload(_WiredUploads):
             Key=key,
             Body=csv_text.encode('utf-8'),
             ContentType='text/csv; charset=utf-8',
-            Metadata={'uploaded_by': 'test-user-id', 'default_source': 'shop', 'source_id': 'manual_import'},
+            IfNoneMatch='*',
+            Metadata={'uploaded_by': 'test-user-id', 'default_source': 'shop', 'source_id': 'manual_import',
+                      'connector': 'csv_upload', 'connector-version': 'unknown'},
         )
         assert body == {'success': True, 'imported_count': 1, 'total_rows': 1, 's3_uri': f's3://{BUCKET}/{key}'}
         assert self._sent() == [{
@@ -1071,6 +1075,8 @@ class TestJsonUpload(_WiredUploads):
             Key=key,
             Body=json.dumps({'job_id': FIXED_UUID, 'items': items, 'uploaded_at': NOW_ISO, 'uploaded_by': 'test-user-id'}),
             ContentType='application/json',
+            IfNoneMatch='*',
+            Metadata={'connector': 'json_upload', 'connector-version': 'unknown'},
         )
         assert body == {'success': True, 'imported_count': 2, 'total_items': 2, 's3_uri': f's3://{BUCKET}/{key}'}
         entries = self.sqs.send_message_batch.call_args.kwargs['Entries']

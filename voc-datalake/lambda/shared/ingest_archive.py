@@ -7,8 +7,9 @@ message, then archive only what ``archive_mode`` allows:
 
 - ``none``  (redact / summary-only): nothing is written; ``s3_raw_uri`` is None.
 - ``item``  (a retention period is set): one JSON per message at
-  ``raw/{source}/{y}/{m}/{d}/{id}.json``, which the retention worker deletes
-  with the item through its ``s3_raw_uri``.
+  ``raw/{source}/{y}/{m}/{d}/{id}/{sha16}.json`` (``shared/raw_versions.py``:
+  write-once, one folder per item holding every version), which the retention
+  worker deletes with the item through its ``s3_raw_uri``.
 - ``file``  (allow, keep forever): the caller may keep its whole-request
   archive (``raw/csv_upload/...``) as before.
 """
@@ -27,6 +28,15 @@ from shared.archive_keys import archive_key_stem
 from shared.concurrency import ordered_map
 from shared.exceptions import ValidationError
 from shared.logging import logger
+from shared.raw_versions import (
+    Connector,
+    app_connector,
+    content_digest,
+    folder_of,
+    item_folder,
+    put_raw_version,
+    version_key,
+)
 from shared.source_policy import ARCHIVE_FILE, ARCHIVE_ITEM, apply_source_policy, archive_mode
 from shared.source_profiles import SOURCE_ID_RE, SourceProfilesUnavailable, load_source_profiles, profile_for
 
@@ -78,42 +88,53 @@ def _key_id(message_id: object) -> str:
     return archive_key_stem(message_id) if message_id not in (None, '') else 'item'
 
 
-def _rewritten_key(bucket: str, source_id: str, uri: object) -> str | None:
-    """The key of ``uri`` when it is a per-item archive of ``source_id`` in ``bucket``; else None."""
+def _stored_folder(bucket: str, source_id: str, uri: object) -> str | None:
+    """The item folder of ``uri`` when it is a per-item archive of ``source_id`` in ``bucket``; else None.
+
+    Either layout: a legacy ``.../{stem}.json`` maps to ``.../{stem}/``, a versioned
+    ``.../{stem}/{sha16}.json`` to its own folder (``shared.raw_versions.folder_of``).
+    """
     prefix = f's3://{bucket}/'
-    if not isinstance(uri, str) or not uri.startswith(prefix) or not uri.endswith('.json'):
+    if not isinstance(uri, str) or not uri.startswith(prefix):
         return None
     key = uri.removeprefix(prefix)
-    return key if key.startswith(f'raw/{source_id}/') else None
+    return folder_of(key) if key.startswith(f'raw/{source_id}/') else None
 
 
 def _archive_one(s3: Any, bucket: str, source_id: str, now: datetime, message: dict[str, Any],
-                 rewrite_uris: Mapping[str, str]) -> str | None:
-    key = _rewritten_key(bucket, source_id, rewrite_uris.get(str(message.get('id')))) or (
-        f"raw/{source_id}/{now.year}/{now.month:02d}/{now.day:02d}/{_key_id(message.get('id'))}.json")
+                 rewrite_uris: Mapping[str, str], connector: Connector) -> str | None:
     body = {k: v for k, v in message.items() if k != 's3_raw_uri'}
+    folder = _stored_folder(bucket, source_id, rewrite_uris.get(str(message.get('id')))) or item_folder(
+        source_id, now, _key_id(message.get('id')))
+    key = version_key(folder, content_digest(body, default=decimal_default))
     try:
-        s3.put_object(Bucket=bucket, Key=key, Body=json.dumps(body, default=decimal_default),
-                      ContentType='application/json')
+        put_raw_version(s3, bucket, key, json.dumps(body, default=decimal_default), connector)
     except _AWS_ERRORS as e:
         logger.warning(f'Failed to archive one item to S3: {e}')
         return None
     return f's3://{bucket}/{key}'
 
 
-def archive_per_item(s3: Any, bucket: str, source_id: str, messages: list[dict[str, Any]], now: datetime,
-                     rewrite_uris: Mapping[str, str] | None = None) -> None:
+def archive_per_item(
+    s3: Any, bucket: str, source_id: str, messages: list[dict[str, Any]], now: datetime,
+    rewrite_uris: Mapping[str, str] | None = None, *, connector_id: str = DEFAULT_UPLOAD_SOURCE,
+) -> None:
     """Write one JSON per message and point its ``s3_raw_uri`` at it (None where a write failed).
 
-    ``rewrite_uris`` (message id -> the stored item's archive) writes an update of a stored
-    item over its own archive (a new version of the same key), so the item keeps ONE archive
-    that retention deletes with it, instead of leaving the old one behind.
+    Write-once (``shared/raw_versions.py``): a message whose content is already archived
+    gets that object's URI, a changed one a new object in the item's folder. ``rewrite_uris``
+    (message id -> the stored item's archive) files a CORRECTION of a stored item into that
+    item's own folder (a legacy ``.../{stem}.json`` archive's folder is ``.../{stem}/``),
+    so retention deletes the old and the new version with the item; the item then
+    references the newest version. ``connector_id`` names the writer in the object's
+    metadata (``manual_import``, ``csv_upload``, ``json_upload``, ...).
     """
     if not bucket:
         return
     rewrites = rewrite_uris or {}
-    uris = ordered_map(lambda message: _archive_one(s3, bucket, source_id, now, message, rewrites), messages,
-                       max_workers=_ARCHIVE_WORKERS)
+    connector = app_connector(connector_id)
+    uris = ordered_map(lambda message: _archive_one(s3, bucket, source_id, now, message, rewrites, connector),
+                       messages, max_workers=_ARCHIVE_WORKERS)
     for message, uri in zip(messages, uris, strict=True):  # pragma: no mutate  ordered_map returns one result per input
         message['s3_raw_uri'] = uri
 
@@ -133,18 +154,19 @@ def stamp_file_archive(
 
 def prepare_messages(
     s3: Any, bucket: str, messages: list[dict[str, Any]], profile: Mapping[str, Any], now: datetime,
-    rewrite_uris: Mapping[str, str] | None = None,
+    rewrite_uris: Mapping[str, str] | None = None, *, connector_id: str = DEFAULT_UPLOAD_SOURCE,
 ) -> tuple[list[dict[str, Any]], str]:
     """Apply the policy, archive per item when the profile asks for it; ``(messages, archive mode)``.
 
     With mode ``file`` nothing is archived here: the caller keeps (or writes)
     its whole-request archive and stamps its URI itself. With ``none`` every
-    ``s3_raw_uri`` is cleared.
+    ``s3_raw_uri`` is cleared. ``connector_id`` is the writer recorded on each archive.
     """
     mode = archive_mode(profile)
     out = policy_applied(messages, profile)
     if mode == ARCHIVE_ITEM:
-        archive_per_item(s3, bucket, str(profile.get('id') or DEFAULT_UPLOAD_SOURCE), out, now, rewrite_uris)
+        archive_per_item(s3, bucket, str(profile.get('id') or DEFAULT_UPLOAD_SOURCE), out, now, rewrite_uris,
+                         connector_id=connector_id)
     elif mode != ARCHIVE_FILE:
         for message in out:
             message['s3_raw_uri'] = None
