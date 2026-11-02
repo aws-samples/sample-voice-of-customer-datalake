@@ -29,6 +29,7 @@ from shared.concurrency import ordered_map
 from shared.exceptions import ValidationError
 from shared.logging import logger
 from shared.raw_versions import (
+    RAW_PREFIX,
     Connector,
     app_connector,
     content_digest,
@@ -94,11 +95,11 @@ def _stored_folder(bucket: str, source_id: str, uri: object) -> str | None:
     Either layout: a legacy ``.../{stem}.json`` maps to ``.../{stem}/``, a versioned
     ``.../{stem}/{sha16}.json`` to its own folder (``shared.raw_versions.folder_of``).
     """
-    prefix = f's3://{bucket}/'
-    if not isinstance(uri, str) or not uri.startswith(prefix):
+    if not isinstance(uri, str):
         return None
-    key = uri.removeprefix(prefix)
-    return folder_of(key) if key.startswith(f'raw/{source_id}/') else None
+    key = uri.removeprefix(f's3://{bucket}/')
+    in_source = key != uri and key.startswith(f'{RAW_PREFIX}{source_id}/')
+    return folder_of(key) if in_source else None
 
 
 def _archive_one(s3: Any, bucket: str, source_id: str, now: datetime, message: dict[str, Any],
