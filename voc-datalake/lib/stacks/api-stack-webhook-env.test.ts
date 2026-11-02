@@ -179,6 +179,10 @@ describe('webhook Lambda environment', () => {
     expect(webhookEnv().SOURCE_PLATFORM).toBe(WEBHOOK_PLUGIN_ID);
   });
 
+  it('carries PLUGIN_VERSION for its raw archives (unversioned when the manifest has none)', () => {
+    expect(webhookEnv().PLUGIN_VERSION).toBe('unversioned');
+  });
+
   it('carries no variable its code never reads (PLUGIN_ID, FEEDBACK_TABLE)', () => {
     expect(Object.keys(webhookEnv()).filter((key) => ['PLUGIN_ID', 'FEEDBACK_TABLE'].includes(key))).toStrictEqual([]);
   });

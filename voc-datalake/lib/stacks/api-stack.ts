@@ -16,6 +16,7 @@ import * as path from 'path';
 import { Construct } from 'constructs';
 import { acknowledgeNag } from '../utils/nag-ack';
 import { getEnabledPlugins, getPluginsWithWebhook, capitalize, pluginDirectoryIds, type PluginManifest } from '../plugin-loader';
+import { pluginVersion } from '../utils/connector-version';
 import { applyAppClientEnv } from '../utils/app-client-env';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
 import { cdkCustomResourceSuppressions, cdkAssetsSuppressions } from '../utils/nag-suppressions';
@@ -487,6 +488,8 @@ export class VocApiStack extends VocStack {
         // only PLUGIN_ID, which nothing reads, so every delivery would have
         // failed. Pinned by api-stack-webhook-env.test.ts.
         SOURCE_PLATFORM: plugin.id,
+        // The connector-version of its raw archives (connector `webhook_<plugin>`, _shared/raw_archive.py).
+        PLUGIN_VERSION: pluginVersion(plugin),
         // The raw archive (`raw/<plugin_id>/…`), written by `_shared/raw_archive.py`
         // like every ingestor's; the role may put only under this plugin's prefix.
         RAW_DATA_BUCKET: rawDataBucketName,

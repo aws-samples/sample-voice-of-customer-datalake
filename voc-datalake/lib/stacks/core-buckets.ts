@@ -11,10 +11,16 @@
  * unbounded storage growth. Same contract as the S3-import bucket
  * (ingestion-stack.ts `createS3ImportBucket`).
  *
+ * The ONE exception is the raw data lake's bronze layer, `raw/` (TENETS.md D1): it keeps
+ * history, so nothing under it ever expires, current or noncurrent, and a bucket-policy
+ * statement refuses any PutObject under it that could overwrite (no `If-None-Match`).
+ * Only voc-retention deletes there (lawful erasure / a declared retention period).
+ *
  * Resources are created directly on the stack passed in (not inside a child
  * construct), so their logical ids are exactly those VocCoreStack always had.
  */
 import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
@@ -22,12 +28,22 @@ import { retainOnReplace } from '../utils/retain-on-replace';
 import { dataProtection, type DataProtection } from '../utils/data-protection';
 
 /**
- * Raw data lake: noncurrent versions are recoverable for 90 days. Raw records
- * are written once and never overwritten, so a noncurrent version only exists
- * after a mistake (or a regenerated avatar/prototype/document); a quarter is
- * long enough to notice and restore customer data before it is purged.
+ * Raw data bucket, WORKSPACE prefixes only (not `raw/`): a noncurrent version (a regenerated
+ * avatar / prototype / document, an overwritten upload) is recoverable for 90 days; a quarter
+ * is long enough to notice and restore before it is purged.
  */
-export const RAW_NONCURRENT_VERSION_DAYS = 90;
+export const WORKSPACE_NONCURRENT_VERSION_DAYS = 90;
+/**
+ * Every prefix of the raw data bucket other than `raw/`, each with its own noncurrent-version
+ * rule (S3 lifecycle filters cannot say "everything but raw/"). `raw/` has none: the bronze
+ * layer keeps every version (TENETS.md D1). A new prefix must be added here, or its overwritten
+ * versions are kept forever; `core-buckets.test.ts` checks every grant on the bucket in lib/stacks.
+ */
+export const RAW_BUCKET_WORKSPACE_PREFIXES = [
+  'avatars/', 'company-context/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/',
+] as const;
+/** The bronze layer: written once (If-None-Match), never overwritten or expired. */
+export const RAW_LAYER_PREFIX = 'raw/';
 /** `scratch/` objects (workflow claim-checks) expire after this many days; no workflow runs longer than 2 h. */
 export const SCRATCH_EXPIRATION_DAYS = 2;
 /**
@@ -73,6 +89,46 @@ function versionHygieneRules(noncurrentDays: number): s3.LifecycleRule[] {
     },
     { id: 'remove-expired-delete-markers', expiredObjectDeleteMarker: true },
   ];
+}
+
+/**
+ * The raw data bucket's lifecycle: abandoned multipart uploads are aborted and expired delete
+ * markers removed bucket-wide (neither removes data), and noncurrent versions expire under each
+ * workspace prefix only — never under `raw/`.
+ */
+function rawBucketVersionRules(): s3.LifecycleRule[] {
+  return [
+    { id: 'abort-incomplete-uploads', abortIncompleteMultipartUploadAfter: cdk.Duration.days(ABORT_MULTIPART_DAYS) },
+    { id: 'remove-expired-delete-markers', expiredObjectDeleteMarker: true },
+    ...RAW_BUCKET_WORKSPACE_PREFIXES.map((prefix): s3.LifecycleRule => ({
+      id: `noncurrent-${prefix.replace(/\/$/, '')}`,
+      prefix,
+      noncurrentVersionExpiration: cdk.Duration.days(WORKSPACE_NONCURRENT_VERSION_DAYS),
+    })),
+  ];
+}
+
+/**
+ * Deny every PutObject / CompleteMultipartUpload under `raw/` that does not send `If-None-Match`,
+ * so no writer (ours or out-of-band) can overwrite a bronze object: a write either creates a new
+ * key or gets 412. Multipart parts (CreateMultipartUpload, UploadPart, UploadPartCopy) cannot carry
+ * the header and are exempted by `s3:ObjectCreationOperation`, as AWS documents
+ * (https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes-enforce.html). A
+ * consequence: CopyObject into `raw/` is impossible (403 without the header, 501 with it); nothing
+ * copies into `raw/`.
+ */
+function denyOverwritingRawWrites(bucket: s3.Bucket): void {
+  bucket.addToResourcePolicy(new iam.PolicyStatement({
+    sid: 'DenyRawWritesWithoutIfNoneMatch',
+    effect: iam.Effect.DENY,
+    principals: [new iam.AnyPrincipal()],
+    actions: ['s3:PutObject'],
+    resources: [bucket.arnForObjects(`${RAW_LAYER_PREFIX}*`)],
+    conditions: {
+      Null: { 's3:if-none-match': 'true' },
+      Bool: { 's3:ObjectCreationOperation': 'true' },
+    },
+  }));
 }
 
 /** What differs between the private, versioned data buckets. */
@@ -148,8 +204,9 @@ export function createCoreBuckets(
     objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
   });
 
-  // Raw customer data is immutable and never deleted while the platform runs;
-  // deleting the stack empties and deletes it (createPrivateVersionedBucket).
+  // Raw customer data is immutable and never deleted while the platform runs (only voc-retention
+  // deletes under raw/); deleting the stack empties and deletes it unless protectData keeps it
+  // (createPrivateVersionedBucket).
   const rawDataBucket = createPrivateVersionedBucket(scope, 'RawDataBucket', {
     bucketName: names.rawData,
     kmsKey,
@@ -157,7 +214,7 @@ export function createCoreBuckets(
     accessLogPrefix: 'raw-data-bucket/',
     protection,
     lifecycleRules: [
-      ...versionHygieneRules(RAW_NONCURRENT_VERSION_DAYS),
+      ...rawBucketVersionRules(),
       // Research / document workflow scratch copies of feedback-derived text (DATA-4): the workflows run at
       // most 2 h and delete their own on success; this removes what a failed or timed-out run left behind.
       { id: 'scratch-expiry', prefix: 'scratch/', expiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS) },
@@ -174,6 +231,8 @@ export function createCoreBuckets(
       maxAge: 3600,
     }],
   });
+
+  denyOverwritingRawWrites(rawDataBucket);
 
   // Frontend hosting bucket
   const websiteBucket = new s3.Bucket(scope, 'WebsiteBucket', {
