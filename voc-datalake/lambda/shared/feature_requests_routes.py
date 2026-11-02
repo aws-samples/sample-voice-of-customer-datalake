@@ -13,6 +13,9 @@ from before boards keeps working.
 A PAUSED board (``paused``) is read as before but answers 409 ``board_paused`` to every new request,
 +1 and edit, admins' included; admins still triage it (status, delete a request or a +1, promote).
 A request never changes board: an edit that names ``board`` / ``board_id`` is a 400.
+
+What a person files (a request, an edit of its content, a +1 and its edit) is also kept as a raw
+copy once stored (``shared.feature_requests_raw``, policy-gated, never queued into voc-feedback).
 """
 from __future__ import annotations
 
@@ -30,6 +33,7 @@ from shared.feature_boards_access import BoardScope, scope_for, scope_from_event
 from shared.feature_boards_limits import charge_request, charge_support, refund_support
 from shared.feature_boards_store import board_view, is_paused
 from shared.feature_requests_promote import promote
+from shared.feature_requests_raw import archive_request, archive_support
 from shared.feature_requests_store import (
     ALREADY_SUPPORTED,
     REQUEST_NOT_FOUND,
@@ -187,6 +191,8 @@ def post_request():
     status = statuses_of(board)[0]['key']
     meta, sup = create_request(scope.table, board, {**text, 'status': status, 'fields': values}, support,
                                (viewer.email, name))
+    archive_request(meta)
+    archive_support(sup)
     logger.info('Feature request created', extra={'request_id': meta['request_id'], 'board_id': board['board_id'],
                                                    'pool': viewer.pool})
     return created({'request': request_view(meta, _template(board)), 'supports': [support_view(sup)]})
@@ -216,6 +222,7 @@ def put_request(request_id: str):
     if not changes:
         raise ValidationError('Nothing to update: send title, description or fields')
     updated = update_request(scope.table, request_id, changes)
+    archive_request(updated)
     if 'fields' in changes:
         return {'request': _recomputed(scope, request_id, board)}
     return {'request': request_view(updated, _template(board))}
@@ -263,6 +270,7 @@ def post_support(request_id: str):
         # it must not use up the person's daily limit on an `anyone` board.
         refund_support(scope.table, charge)
         raise
+    archive_support(support)
     return created({'support': support_view(support), 'request': _recomputed(scope, request_id, board)})
 
 
@@ -279,7 +287,9 @@ def put_support_route(request_id: str, support_id: str):
     fields = {**field_values(board, 'support', body), 'name': poster_name(body) or str(current.get('name') or '')}
     keep = {key: current[key] for key in ('pk', 'sk', 'support_id', 'request_id', 'email', 'is_reporter',
                                           'created_at') if key in current}
-    put_support(scope.table, {**keep, **fields, 'updated_at': now_iso()}, replacing=True)
+    replaced = {**keep, **fields, 'updated_at': now_iso()}
+    put_support(scope.table, replaced, replacing=True)
+    archive_support(replaced)
     return {'request': _recomputed(scope, request_id, board)}
 
 

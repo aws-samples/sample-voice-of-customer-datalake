@@ -16,6 +16,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { emailSenderOf, type EmailSender } from '../utils/email-sender';
+import { appVersion } from '../utils/connector-version';
 import type { ApiStackContext } from './api-context';
 import { functionArnByName } from './api-assist-workers';
 
@@ -52,7 +53,7 @@ export function createParticipantsLambda(ctx: ApiStackContext): lambda.Function 
   const { stack, allowedOrigin, apiLayer, apiCode } = ctx;
   const {
     participantsTable, featureRequestsTable, projectsTable, aggregatesTable, kmsKey, userPool, boardUserPool,
-    frontendDomainName,
+    frontendDomainName, rawDataBucket,
   } = ctx.props;
   const sender = emailSenderOf(stack.node);
   const functionName = ctx.uniqueName(ENGAGEMENT_API_FUNCTION_BASE_NAME);
@@ -66,6 +67,9 @@ export function createParticipantsLambda(ctx: ApiStackContext): lambda.Function 
   // The brand name (default sender name): one item, no index.
   role.addToPolicy(new iam.PolicyStatement({ actions: ['dynamodb:GetItem'], resources: [aggregatesTable.tableArn] }));
   kmsKey.grantEncryptDecrypt(role);
+  // The boards' raw copies (lambda/shared/feature_requests_raw.py): write-once versions of each request
+  // and +1, under the feature_requests prefix only. No read, no delete.
+  rawDataBucket.grantPut(role, 'raw/feature_requests/*');
   if (sender !== undefined) role.addToPolicy(sesSendStatement(stack, sender));
   // The send continuation invokes this function by NAME: grantInvoke() would make the role's
   // policy depend on the function that depends on the role.
@@ -91,6 +95,9 @@ export function createParticipantsLambda(ctx: ApiStackContext): lambda.Function 
       FEATURE_REQUESTS_TABLE: featureRequestsTable.tableName,
       PROJECTS_TABLE: projectsTable.tableName,
       AGGREGATES_TABLE: aggregatesTable.tableName,
+      // The boards' raw copies and their connector-version (lambda/shared/feature_requests_raw.py).
+      RAW_DATA_BUCKET: rawDataBucket.bucketName,
+      APP_VERSION: appVersion(),
       // '' = email sending off (POST /participants/asks answers 409 email_not_configured).
       EMAIL_FROM: sender?.address ?? '',
       FRONTEND_URL: `https://${frontendDomainName}`,

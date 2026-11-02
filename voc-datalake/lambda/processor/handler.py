@@ -67,6 +67,7 @@ from shared.model_profile import PAYLOAD_KEY, model_profile_scope, profile_from_
 from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE
 from shared.radar_brands import brand_key
 from shared.radar_routing import BrandLabels
+from shared.raw_fallback import archive_inline_raw
 from shared.source_profiles import (
     PII_ALLOW,
     PII_SUMMARY_ONLY,
@@ -718,10 +719,12 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime) -> di
 
         'original_text': original_text,
         'rating': Decimal(str(raw_record['rating'])) if raw_record.get('rating') is not None else None,
-        # Where the immutable raw object lives (raw/{source}/{y}/{m}/{d}/{id}.json),
-        # so a raw-mode category reprocess can re-run enrichment from it. Absent
-        # (None-stripped below) when the ingestor could not archive the raw data.
-        's3_raw_uri': raw_record.get('s3_raw_uri'),
+        # Where the immutable raw object lives (raw/{source}/{y}/{m}/{d}/{id}/{sha16}.json),
+        # so a raw-mode category reprocess can re-run enrichment from it. A message that
+        # came with `raw_data` inline (the producer's archive write failed) is archived
+        # here once (shared/raw_fallback.py, policy-gated). Absent (None-stripped below)
+        # when there is still no copy.
+        's3_raw_uri': raw_record.get('s3_raw_uri') or archive_inline_raw(raw_record, now),
         # Issue-tracker fields (github_issues): version, labels, component, error
         # signature… computed by the plugin, validated by schemas.IssueAttributes,
         # read by GET /metrics/github and the /feedback version/label filters.

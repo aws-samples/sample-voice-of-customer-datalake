@@ -413,6 +413,22 @@ class TestProcessFeedback:
         assert ('s3_raw_uri' in result) is (expected is not None)
 
     @pytest.mark.usefixtures("happy_enrichment")
+    def test_inline_raw_data_is_archived_once_and_its_uri_persisted(self, sample_sqs_record):
+        """A message with `raw_data` and no `s3_raw_uri` (the producer's write failed) is archived
+        here (shared/raw_fallback.py); the new item references the copy."""
+        from processor.handler import process_feedback
+
+        sample_sqs_record['raw_data'] = {'id': 'r1', 'text': 'as received'}
+        sample_sqs_record.pop('s3_raw_uri', None)
+        uri = 's3://raw/raw/webscraper/2026/01/02/r1/0123456789abcdef.json'
+        with patch('processor.handler.archive_inline_raw', return_value=uri) as archive:
+            result = process_feedback(sample_sqs_record)
+
+        assert result is not None
+        assert result['s3_raw_uri'] == uri
+        assert archive.call_args.args[0]['raw_data'] == {'id': 'r1', 'text': 'as received'}
+
+    @pytest.mark.usefixtures("happy_enrichment")
     def test_persists_csv_row_id_when_sent(self, sample_sqs_record):
         """
         A CSV `id` column is unique only within its file, so it cannot key the
