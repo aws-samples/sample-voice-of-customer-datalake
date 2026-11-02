@@ -412,6 +412,21 @@ hardcodes a logical-id hash, an account, a region or a deployment prefix. Its si
 stack and through the export in another, each object grant and raw-bucket prefix is named exactly (never the
 bucket or another prefix), and `acknowledgeNag` refuses a missing reason or an empty finding list.
 
+**Fixed, not acknowledged (5.77.00).** Most findings are fixed in the infrastructure, so only what AWS or the
+design requires stays acknowledged (121 findings in the default synth, from 588):
+
+- `lib/utils/exact-grants.ts` rewrites CDK's grant wildcards after every stack is built: `kms:GenerateDataKey*` /
+  `kms:ReEncrypt*` and the S3 `GetObject*` / `List*` / `DeleteObject*` / `GetBucket*` / `Abort*` families become
+  the exact actions the code calls, and `<table>/index/*` becomes one ARN per index of that table. The
+  DynamoDB-only KMS actions are allowed only through DynamoDB (`kms:ViaService`).
+- `lib/utils/lambda-log-grants.ts`: no role carries `AWSLambdaBasicExecutionRole`; each function writes only its
+  own log group. `lib/stacks/api-gateway-logging-role.ts` replaces `AmazonAPIGatewayPushToCloudWatchLogs` on the
+  account-wide API Gateway role.
+- `lib/utils/claude-model-grant.ts`: Claude models are granted in AWS's documented three-part cross-Region shape
+  (profile, in-Region model, Region-agnostic model, each with its conditions), never with a Region wildcard.
+- Opt-ins (`-c enableWaf=true`, `-c cognitoPlus=true`, both on with `-c performanceTier=true`) satisfy CFR2,
+  APIG3 and COG8 when chosen; while off, their acknowledgement names the flag.
+
 ## In the gate
 
 Every detector, plus the detectors' own tests and lint, is a `scripts/validate.sh` step, and
