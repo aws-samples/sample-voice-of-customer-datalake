@@ -22,9 +22,8 @@ from datetime import datetime
 from typing import Any, Final
 
 from shared.archive_keys import archive_key_stem
-from shared.raw_copy import app_json_copy
+from shared.raw_copy import app_json_copy, source_permits_raw_copy
 from shared.source_policy import raw_archive_allowed
-from shared.source_profiles import source_profile_configured
 
 __all__ = ['FEEDBACK_FORM_SOURCE', 'archive_submission']
 
@@ -63,7 +62,7 @@ def archive_submission(form_id: str, form: Mapping[str, Any], feedback_id: str, 
     as the route validated them (``_validated_submission``, ``_widget_dimensions``): the copy keeps
     those, never the body's own ``text`` / ``dimensions``.
     """
-    if not raw_archive_allowed(profile) or not source_profile_configured(FEEDBACK_FORM_SOURCE):
+    if not raw_archive_allowed(profile) or not source_permits_raw_copy(FEEDBACK_FORM_SOURCE, require_profile=True):
         return None
     text, dimensions = validated
     return app_json_copy(FEEDBACK_FORM_SOURCE, now.date(), archive_key_stem(feedback_id),
