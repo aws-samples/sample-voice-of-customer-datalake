@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "a661aded9e96a2b09ef11d330d8986cc292f11132c63287f021202e727ef67a9",
+      "templateSha256": "dd4d660872f1478e41ce3b3a11e91ce5b857a5c7586dae98de8eea2fe4991919",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -178,7 +178,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "df5e66fa08b5a26497d23c9c0a4d51660bca2e733ca7eeeb0a07834e1af0ef24",
+      "templateSha256": "79db5f29d1ac2f57c274bb722bfe0abab2cbcd80b61b35b6d608440297b6abd5",
       "names": {
         "physicalNames": [
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
@@ -324,7 +324,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "1de7e06b4f2fb4b07c3cf9b7ff840533e20157abbbca079aa04dc063b894c0ae",
+      "templateSha256": "5dc49706d53b669ec45d61a93d2df395bf16e1cf0606a0385f8d4d6a038ee4af",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
