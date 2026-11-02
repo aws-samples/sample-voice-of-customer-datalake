@@ -20,7 +20,7 @@ contains no test that pins nothing, and the module carries no dead code.
    behaviour, e.g. a `>=` on a value that can never be equal) — justify each in the report; expect zero
    or one per module.
 5. Never `git stash`, `reset --hard`, `checkout -- .`, `clean`, `rm -rf`. Don't kill processes you did
-   not start. Never push. Never commit `*.bak`, `.mutmut-cache`, `html/`, `coverage_html/`.
+   not start. Never push. Never commit `mutants/`, `.cache/`, `html/`, `coverage_html/`.
 6. Commit after every green step (small commits, `test(<stem>): …`, `refactor(<stem>): …`). A stop can
    come any time; uncommitted work is lost.
 7. No behaviour change in the module except deleting code that nothing can observe (dead branches,
@@ -33,27 +33,32 @@ export PATH="$PWD/.venv/bin:$PATH" PYTHON_BIN="$PWD/.venv/bin/python"
 bash scripts/mutate-python.sh [--lines <from>-<to>] <module.py> <test files...>
 ```
 Paths are relative to `voc-datalake/`. The script runs your tests unmutated first (they must pass),
-then mutmut, then `mutmut results`. `mutmut show <id>` prints one survivor's diff — only AFTER the run
-finished (reading the cache during a run corrupts it). The runner is `pytest -x` on exactly the test
-files you pass: pass only the files that exercise the module (the plan lists the files that import
-it; add one you find, drop one that is unrelated) — the whole package suite per mutant is too slow.
+then mutmut 3 in a stage (`voc-datalake/.cache/mutmut/`, rebuilt by every run; your files are never
+edited), then prints every mutant that was not killed and a count per status. After the run finished,
+`bash scripts/mutate-python.sh show <name>` prints one survivor's diff (`results`, `browse` also work).
+mutmut runs, per mutant, only the tests among the files you pass that call the mutated function: pass
+the files that exercise the module (the plan lists the files that import it; add one you find, drop
+one that is unrelated) — the whole package suite is too slow to collect.
 
-Known mutmut 2.5 behaviour:
-- "suspicious" = killed, but the test run was slow; count it as killed.
-- A line with `f'{{{name}}}'` can crash mutmut's parser; apply that mutant by hand (edit, run tests,
-  restore) and treat it like any other.
-- `--lines` is inclusive; the hunk is read 0-based so the line just before your range may get mutated
-  too — kill it or ignore it, do not edit outside your slice for it.
-- An interrupted run leaves the mutant in the file; the script restores `<module>.bak`. If you abort by
-  hand: `mv <module>.bak <module>` and `git diff` must be clean for the module.
+Known mutmut 3 behaviour:
+- A mutant is named `<import name>.x_<function>__mutmut_<n>` (a method: `xǁ<Class>ǁ<method>__mutmut_<n>`).
+- Only function and method bodies are mutated. Module-level code and decorated functions (except `@staticmethod` / `@classmethod`, e.g. every `@app.get` route and
+  `@tracer.capture_method` helper) get no mutants: test such code directly, mutation will not find it.
+- "no tests" = no test you passed calls that function: a survivor. "timeout" and "suspicious" = killed.
+- The tests must import the module under ONE name (`shared.x`, not also `x`); the script names the
+  one it mutates and warns about the others, whose callers cannot kill a mutant.
+- `--lines` is inclusive and exact: a mutant belongs to the line its changed node starts on.
+- `# pragma: no mutate` on a line skips that line; `# pragma: no mutate block` (on a `def`/`if`/...
+  line) skips the whole statement. The reason goes after it, never starting with `block`, `start`
+  or `end`.
 - If a run of your slice takes longer than ~40 min, split it: run `--lines` on halves of your range.
-  Put your NEW test file first in the runner list (a killed mutant stops at the first failing test).
 - Pagination loops: a mocked table/client with `return_value` feeds an infinite-loop mutant forever and can
   eat all memory (MagicMock records every call). Use an exhaustible `side_effect=[page, ...]` so the mutant
-  dies on StopIteration. The runner kills a run after MUTMUT_RUNNER_TIMEOUT (default 120 s) regardless.
+  dies on StopIteration. A mutant is stopped after MUTMUT_RUNNER_TIMEOUT (default 120 s) plus its tests'
+  baseline time regardless.
 
 ## Long runs: detach and poll
-A tool call is cut after ~30 min, and a cut foreground run is lost (or leaves a mutant on disk). Run every
+A tool call is cut after ~30 min, and a cut foreground run is lost. Run every
 mutmut job that may take more than ~10 min detached, then poll:
 ```
 nohup bash scripts/mutate-python.sh --lines a-b <module> <tests...> > /tmp/<worktree-name>-run.log 2>&1 &
@@ -61,16 +66,15 @@ sleep 600; tail -5 /tmp/<worktree-name>-run.log      # repeat until "Results" ap
 ```
 Keep each `--lines` range small enough to finish in ~30 min (≈ 150 mutants for a moto-backed suite), commit
 after each range, and never start the next range before the previous one finished (one mutmut per worktree).
-Parallelism: the round already runs one mutmut per agent (eight at once), and each mutant is a short
-`pytest -x` on your few files, so do NOT add `-n` to the runner — worker start-up would cost more per
-mutant than it saves. The per-mutant runner timeout is `MUTMUT_RUNNER_TIMEOUT` (default 120 s; a timed-out
+Parallelism: the round already runs one mutmut per agent (eight at once), so the script tests one
+mutant at a time (`MUTMUT_MAX_CHILDREN`, default 1); do not raise it during a round. The per-mutant runner timeout is `MUTMUT_RUNNER_TIMEOUT` (default 120 s; a timed-out
 mutant counts as killed); raise it for one run only if your files' unmutated baseline takes over ~30 s.
 The standard does not change with any of this: 0 surviving mutants.
 
 ## Processes: only your own
-Never run an unscoped `pkill -f "mutmut run"` (or `pkill pytest`): seven other agents run mutmut at the same
+Never run an unscoped `pkill -f "mutmut_run.py"` (or `pkill pytest`): seven other agents run mutmut at the same
 time and you would end their runs. Kill only PIDs you started — record `$!` when you launch, or match your own
-worktree path: `pkill -f "/tmp/mut-1-N/.*mutmut run"`.
+worktree path: `pkill -f "/tmp/mut-1-N/.*mutmut_run.py"`.
 
 ## What to do with each survivor
 - A test can observe it → write the test in YOUR NEW FILE with literal expectations: the exact string,
