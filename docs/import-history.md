@@ -3,7 +3,8 @@
 Every import writes one **run record**: who imported what, from which file, how many rows landed,
 and the warnings and errors the import returned. Administrators read the records in the
 **Import history** section at the bottom of the Data sources page (`/scrapers`), and through two
-admin-only API routes. Records are kept for **90 days**.
+admin-only API routes. Records are kept for good: an audit trail does not expire. (Records written
+by releases before this rule still carry a 90-day `ttl` and expire on it, see Storage.)
 
 The record is an audit trail: reading it changes nothing. To run one S3 import file through the
 ingestor again, see [data-lake-structure.md → Reprocessing a file](data-lake-structure.md#reprocessing-a-file).
@@ -52,7 +53,7 @@ A CSV upload's response shows the first 20 warnings; the record keeps up to 200.
 
 ## Storage
 
-In `voc-aggregates`, two rows per run, both with `ttl` = 90 days after the run finished:
+In `voc-aggregates`, two rows per run, with no `ttl` (kept while the platform runs):
 
 | pk | sk | Holds |
 |---|---|---|
@@ -60,8 +61,9 @@ In `voc-aggregates`, two rows per run, both with `ttl` = 90 days after the run f
 | `IMPORT_RUN#{run_id}` | `RUN` | The detail: the summary fields plus `warnings` and `errors` |
 
 The detail row is written first, so a listed run always has a detail. One partition holds every
-summary row; imports are a few per day, far below a partition's write limit. DynamoDB deletes
-expired rows up to a few days late; the routes hide a row past its `ttl`.
+summary row; imports are a few per day, far below a partition's write limit. A row written by an
+earlier release still carries a `ttl` 90 days after its run finished, and DynamoDB deletes it then
+(up to a few days late; the routes hide a row past its `ttl`). No migration removes that `ttl`.
 
 Writing the record never fails an import. A DynamoDB error is logged as a warning
 (`Import run record not written`) and the import answers as before. The writer is

@@ -49,9 +49,10 @@ class TestRecord:
         record_import_run(table, _run(), now=NOW)
         assert [c.kwargs['Item']['sk'] for c in table.put_item.call_args_list] == ['RUN', f'2026-10-01T11:59:00+00:00#{RUN_ID}']
 
-    def test_both_rows_expire_after_90_days(self):
+    def test_neither_row_carries_a_ttl_so_the_history_never_expires(self):
         summary, detail = _written(_run())
-        assert summary['ttl'] == detail['ttl'] == int(NOW.timestamp()) + 90 * 24 * 3600
+        assert 'ttl' not in summary
+        assert 'ttl' not in detail
 
     def test_the_summary_carries_counts_but_not_the_message_lists(self):
         summary, detail = _written(_run(errors=['send failed']))
@@ -142,7 +143,15 @@ class TestList:
         assert list_import_runs(table, limit=1, cursor=cursor) == ([], None)
         assert table.query.call_args.kwargs['ExclusiveStartKey'] == {'pk': 'IMPORT_RUN', 'sk': '2026-10-02#b'}
 
-    def test_an_expired_row_dynamodb_has_not_deleted_yet_is_hidden(self):
+    def test_a_row_without_ttl_is_listed(self):
+        table = MagicMock()
+        row = _stored('2026-01-01', 'a')
+        del row['ttl']
+        table.query.return_value = {'Items': [row]}
+        runs, _ = list_import_runs(table, limit=10)
+        assert [r['run_id'] for r in runs] == ['a']
+
+    def test_a_legacy_row_past_its_ttl_dynamodb_has_not_deleted_yet_is_hidden(self):
         table = MagicMock()
         table.query.return_value = {'Items': [_stored('2026-01-01', 'a', ttl=Decimal(1))]}
         assert list_import_runs(table, limit=10) == ([], None)

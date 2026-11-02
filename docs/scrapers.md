@@ -213,7 +213,7 @@ because an import writes feedback straight into the enrichment pipeline:
 | POST | `/scrapers/manual/confirm` | Admin | Import the parsed reviews |
 | POST | `/scrapers/manual/csv-upload` | Admin | Import CSV rows (column mapping, source profile); with `dataset_name`, `dry_run` previews and `apply_updates` confirms in-place updates of a corrected re-upload ([csv-import.md](csv-import.md)) |
 | POST | `/scrapers/manual/json-upload` | Admin | Import JSON items |
-| GET | `/scrapers/manual/history` | Admin | Import runs of the last 90 days, newest first (`?limit=`, `?cursor=`); see [import-history.md](import-history.md) |
+| GET | `/scrapers/manual/history` | Admin | Import runs, newest first (`?limit=`, `?cursor=`); see [import-history.md](import-history.md) |
 | GET | `/scrapers/manual/history/{run_id}` | Admin | One import run with its warnings and errors |
 
 Every paste confirm, CSV upload, JSON upload (including the AI assistant's `import_reviews`) and S3
