@@ -227,7 +227,7 @@ describe('cdk-nag acknowledgements', () => {
       const used = new Set(shapes.flatMap((shape) => [...shape.used]));
       // Vacuity: the recorder saw the app's acknowledgements and the findings they cover. A floor, not a
       // target: fixing findings (the cdk-nag fix wave) removes acknowledgements, so it sits well below today's
-      // count (99 after the Bedrock grants lost their Region wildcard) and only catches a recorder that sees ~none.
+      // count and only catches a recorder that sees almost none.
       expect(Math.min(declared.size, used.size)).toBeGreaterThan(50);
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
