@@ -164,7 +164,11 @@ def test_the_payload_is_archived_to_s3_and_not_sent_inline():
     assert put["Bucket"] == "raw-bucket"
     # "acme/Kiro#7" is not filename-safe, so its archive stem is its sha256 (shared/archive_keys.py).
     stem = "h." + hashlib.sha256(b"acme/Kiro#7").hexdigest()
-    assert put["Key"] == f"raw/test_source/2026/01/01/{stem}.json"
+    folder, _, version = put["Key"].rpartition("/")
+    assert folder == f"raw/test_source/2026/01/01/{stem}"
+    assert len(version) == len("0123456789abcdef.json")
+    assert put["IfNoneMatch"] == "*"
+    assert put["Metadata"]["connector"] == "webhook_test_source"
     assert json.loads(json.loads(put["Body"])["raw_content"])["number"] == 7
     item = enqueued(sqs)[0]
     assert item["s3_raw_uri"].startswith("s3://raw-bucket/")

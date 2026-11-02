@@ -40,7 +40,7 @@ from _shared.github_mapping import (
     issue_item,
     issue_labels,
 )
-from _shared.raw_archive import archive_raw_item
+from _shared.raw_archive import WEBHOOK, archive_raw_item
 from shared.aws import get_s3_client
 from shared.invocation_cost import measure_invocation_cost
 
@@ -133,6 +133,7 @@ class GitHubIssuesWebhook(BaseWebhook):
         uri = archive_raw_item(
             self._s3, RAW_DATA_BUCKET, self.source_platform, item,
             json.dumps(payload, default=str) if payload is not None else None,
+            transport=WEBHOOK,
         )
         normalized = super().normalize_item(item)
         if uri:

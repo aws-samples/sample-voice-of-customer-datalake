@@ -40,8 +40,9 @@ def test_archive_raw_item_writes_nothing_for_a_redact_source():
 
 def test_archive_raw_item_still_writes_for_an_allow_source():
     s3 = MagicMock()
-    assert archive_raw_item(s3, 'bucket', 'other', {'id': 'x', 'created_at': '2026-01-15T00:00:00Z'}) == \
-        's3://bucket/raw/other/2026/01/15/x.json'
+    uri = archive_raw_item(s3, 'bucket', 'other', {'id': 'x', 'created_at': '2026-01-15T00:00:00Z'})
+    assert uri is not None
+    assert uri.startswith('s3://bucket/raw/other/2026/01/15/x/')
 
 
 def test_an_unreadable_policy_fails_closed_before_archive_or_queue():
