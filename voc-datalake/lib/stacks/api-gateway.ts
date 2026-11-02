@@ -13,6 +13,7 @@ import { apiGatewayRequestValidationSuppressions, apiWafOffSuppressions } from '
 import { protectApiStage, wafEnabled } from '../utils/waf';
 import { apiAccessLogFormat } from './api-access-log';
 import { applyApiTlsPolicy } from './api-tls';
+import { scopeApiGatewayLoggingRole } from './api-gateway-logging-role';
 import type { ApiStackContext } from './api-context';
 import { MCP_OAUTH_METHOD_THROTTLE, mcpResourceMetadataUrl } from './api-mcp-oauth';
 import { GLOBAL_MCP_METHOD_THROTTLE } from './global-mcp';
@@ -35,6 +36,9 @@ import { GLOBAL_MCP_METHOD_THROTTLE } from './global-mcp';
  * Kept in lockstep with the handler by 'mcp transport headers' in
  * api-stack-mcp.test.ts, which reads the handler's Allow-Headers out of its source.
  */
+/** The REST API's name and its access-log group's, before `uniqueName` (api-gateway-logging-role.ts reads it). */
+const API_NAME_BASE = 'voc-analytics-api';
+
 const MCP_TRANSPORT_HEADERS = ['MCP-Protocol-Version', 'Mcp-Method', 'Mcp-Name'];
 
 /**
@@ -362,13 +366,13 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
 
   // API Gateway CloudWatch Logs
   const apiLogGroup = new logs.LogGroup(stack, 'ApiGatewayLogs', {
-    logGroupName: `/aws/apigateway/${ctx.uniqueName('voc-analytics-api')}`,
+    logGroupName: `/aws/apigateway/${ctx.uniqueName(API_NAME_BASE)}`,
     retention: LOG_RETENTION,
     removalPolicy: cdk.RemovalPolicy.DESTROY,
   });
 
   const api = new apigateway.RestApi(stack, 'VocAnalyticsApi', {
-    restApiName: ctx.uniqueName('voc-analytics-api'),
+    restApiName: ctx.uniqueName(API_NAME_BASE),
     description: 'Voice of the Customer Analytics API v2',
     deployOptions: {
       stageName: API_STAGE_NAME,
@@ -517,6 +521,8 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   // Opt-in AWS WAF on the stage (`-c enableWaf=true` / performanceTier, lib/utils/waf.ts); off = acknowledged.
   if (wafEnabled(stack)) protectApiStage(stack, api);
   else acknowledgeNag(api, apiWafOffSuppressions);
+  // The account's API Gateway logging role: an inline policy in place of the managed one (IAM4).
+  scopeApiGatewayLoggingRole(api, API_NAME_BASE);
   applyApiTlsPolicy(api);
 
   // Gateway responses for CORS on errors

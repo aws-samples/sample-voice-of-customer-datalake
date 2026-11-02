@@ -10,8 +10,7 @@ import { Template } from 'aws-cdk-lib/assertions';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { z } from 'zod';
 
-import { acknowledgeNag } from '../utils/nag-ack';
-import { lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
+import { applyLambdaLogRetention } from '../utils/log-retention';
 import { BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS, pythonIntConstant } from '../test-support/cross-language-invariants';
 import { IamPolicySchema, isAttachedToRole, statementActions } from '../test-support/iam-statements';
 import type { IamStatement } from '../test-support/iam-statements';
@@ -514,11 +513,10 @@ describe('the optional invoker ARN narrows invoke to one principal', () => {
  */
 it('leaves no unacknowledged cdk-nag finding on the fixture provider', () => {
   const stack = buildApiStack({ enableVerificationFixtureProvider: true }, [], 'b');
-  // Mirror ONLY the acknowledgement bin/voc-datalake.ts applies for the shared
-  // createLambdaRole helper's AWSLambdaBasicExecutionRole. Deliberately not the
-  // rest of that file's list: every other rule — IAM5 wildcards above all —
-  // must still be able to fail this case.
-  acknowledgeNag(stack, lambdaBasicExecutionRoleSuppressions);
+  // Mirror ONLY the log aspect bin/voc-datalake.ts applies (each function's role writes its own log group,
+  // in place of AWSLambdaBasicExecutionRole). Deliberately none of bin's acknowledgements: every rule —
+  // IAM5 wildcards above all — must still be able to fail this case.
+  applyLambdaLogRetention(stack);
   Template.fromStack(stack); // synthesize first: cdk-nag 3 checks the prepared tree
   const violations = new AwsSolutionsChecks().validateScope(stack).violations;
   // Vacuity: the provider is in this shape, and every reported resource carries a construct path, so the

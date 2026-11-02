@@ -134,9 +134,6 @@ export class IngestorRoles {
   private newRole(id: string): iam.Role {
     const role = new iam.Role(this.stack, id, {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      ],
     });
 
     const { watermarksTable, aggregatesTable, processingQueue, rawDataBucket, kmsKey, apiSecrets } = this.grants;

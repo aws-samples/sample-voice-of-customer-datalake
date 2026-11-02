@@ -112,9 +112,6 @@ export class VocProcessingStack extends VocStack {
     // ============================================
     const processingRole = new iam.Role(this, 'ProcessingLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      ],
     });
 
     // Bedrock permissions
@@ -356,9 +353,6 @@ export class VocProcessingStack extends VocStack {
     // ============================================
     const researchRole = new iam.Role(this, 'ResearchLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      ],
     });
 
     feedbackTable.grantReadData(researchRole);
@@ -486,9 +480,6 @@ export class VocProcessingStack extends VocStack {
     const functionName = this.uniqueName(CATEGORY_REPROCESS_FUNCTION_BASE_NAME);
     const role = new iam.Role(this, 'CategoryReprocessRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      ],
     });
     deps.feedbackTable.grant(role, 'dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     // Category config + model-picker override (GetItem); the job row and its

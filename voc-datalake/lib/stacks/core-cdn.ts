@@ -22,7 +22,6 @@ import {
   cdnSigningKeySuppressions,
   cloudFrontWafOffSuppressions,
   cloudfrontDefaultCertSuppressions,
-  lambdaBasicExecutionRoleSuppressions,
   providerFrameworkSuppressions,
 } from '../utils/nag-suppressions';
 import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
@@ -280,7 +279,6 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
   });
 
   acknowledgeNagOnResource(cdnSigningSecret, cdnSigningKeySuppressions);
-  acknowledgeNag(cdnSigningKeysLambda, lambdaBasicExecutionRoleSuppressions);
   acknowledgeNag(
     cdnSigningKeysProvider.node.findChild('framework-onEvent'),
     providerFrameworkSuppressions(cdnSigningKeysLambda, 'CdnSigningKeysLambda', 'AdminBootstrapLambda'),

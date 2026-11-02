@@ -58,11 +58,10 @@ function workerLambdaCode(tree: WorkerTree): lambda.Code {
   });
 }
 
-/** A Lambda role with only the basic execution (logs) managed policy. */
+/** A Lambda role with no grant yet: its log writes come from lib/utils/lambda-log-grants.ts (its own group only). */
 export function workerRole(scope: Construct, id: string): iam.Role {
   return new iam.Role(scope, id, {
     assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-    managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
   });
 }
 

@@ -183,7 +183,6 @@ function intakeRole(scope: Construct, props: EmailIntakeProps, bucket: s3.Bucket
   const stack = cdk.Stack.of(scope);
   const role = new iam.Role(scope, 'EmailIntakeRole', {
     assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-    managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
   });
   const inboxObjects = bucket.arnForObjects(`${INBOUND_PREFIX}*`);
   const rawInboxObjects = bucket.arnForObjects(`${INBOUND_RAW_PREFIX}*`);

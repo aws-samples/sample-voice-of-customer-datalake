@@ -424,7 +424,6 @@ export class VocApiStack extends VocStack {
   private createLambdaRole(id: string): iam.Role {
     return new iam.Role(this, id, {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
     });
   }
 
