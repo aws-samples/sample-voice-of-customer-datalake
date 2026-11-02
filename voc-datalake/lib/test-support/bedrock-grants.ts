@@ -40,7 +40,7 @@ const PolicySchema = z.object({
 const ResourcesSchema = z.object({ Resources: z.record(z.string(), z.unknown()) });
 
 /** One Allow statement, reduced to what the parts check reads. */
-export interface ClaudeStatement {
+interface ClaudeStatement {
   readonly actions: readonly string[];
   /** Literal resource ARNs (a token-built ARN would not be a plain string and never matches). */
   readonly resources: readonly string[];
@@ -60,7 +60,7 @@ const resourceStrings = (resource: unknown): string[] => [resource].flat().filte
  * Every role of one synthesized template (`Template.toJSON()` or a cloud-assembly template) holding a
  * `bedrock:InvokeModel*` Allow on at least one Claude model, with those statements.
  */
-export function claudeRoleGrantsOfTemplate(stack: string, template: unknown): ClaudeRoleGrant[] {
+function claudeRoleGrantsOfTemplate(stack: string, template: unknown): ClaudeRoleGrant[] {
   const byRole = new Map<string, ClaudeStatement[]>();
   for (const resource of Object.values(ResourcesSchema.parse(template).Resources)) {
     const policy = PolicySchema.safeParse(resource);

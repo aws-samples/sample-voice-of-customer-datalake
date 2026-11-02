@@ -56,7 +56,7 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
 }
 
 /** The three-part statements for `models` (part 3 only when the scope has a global foundation model). */
-export function claudeModelStatements(models: readonly ClaudeModelArns[], actions: readonly string[]): iam.PolicyStatement[] {
+function claudeModelStatements(models: readonly ClaudeModelArns[], actions: readonly string[]): iam.PolicyStatement[] {
   const profiles = models.map((m) => m.profile);
   const viaProfile = { 'bedrock:InferenceProfileArn': profiles };
   const statements = [
