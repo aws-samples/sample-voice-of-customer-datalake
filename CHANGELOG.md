@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [5.74.00] - 2026-11-01
+## [5.74.00] - 2026-11-02
 
 Safer defaults: customer data survives a stack delete unless a demo opts out, every operational log keeps 30 days, and the deployment has one customer-managed KMS key.
 
