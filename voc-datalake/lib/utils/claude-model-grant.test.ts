@@ -44,6 +44,19 @@ function managedPolicies(template: Template): [string, z.infer<typeof ManagedPol
     .map(([id, resource]) => [id, ManagedPolicySchema.parse(resource)]);
 }
 
+/** The statements of the stack's first `invoke` Claude policy. */
+const firstPolicyStatements = (template: Template) =>
+  managedPolicies(template).find(([id]) => id.startsWith('ClaudeInvokePolicy0'))?.[1].Properties.PolicyDocument.Statement;
+
+/** Parts 1 and 2 as synthesized: the profiles, then `regional` through those profiles only. */
+const profileAndRegionalParts = (profiles: string[], regional: string[]) => [
+  { Sid: 'ClaudeProfiles', Effect: 'Allow', Action: 'bedrock:InvokeModel', Resource: profiles },
+  {
+    Sid: 'ClaudeRegionalModels', Effect: 'Allow', Action: 'bedrock:InvokeModel', Resource: regional,
+    Condition: { StringEquals: { 'bedrock:InferenceProfileArn': profiles } },
+  },
+];
+
 const models = ALLOWED_MODEL_IDS.slice(0, MODELS_PER_POLICY);
 const profileArn = (region: string, prefix: string, id: string) =>
   `arn:aws:bedrock:${region}:${ACCOUNT}:inference-profile/${prefix}${toFoundationModelId(id)}`;
@@ -53,14 +66,8 @@ describe('grantClaudeModels, global scope (default)', () => {
   const profiles = models.map((id) => profileArn('us-east-1', 'global.', id));
 
   it('grants the first policy\'s models in exactly the three documented parts', () => {
-    const first = managedPolicies(template).find(([id]) => id.startsWith('ClaudeInvokePolicy0'));
-    expect(first?.[1].Properties.PolicyDocument.Statement).toStrictEqual([
-      { Sid: 'ClaudeProfiles', Effect: 'Allow', Action: 'bedrock:InvokeModel', Resource: profiles },
-      {
-        Sid: 'ClaudeRegionalModels', Effect: 'Allow', Action: 'bedrock:InvokeModel',
-        Resource: models.map((id) => `arn:aws:bedrock:us-east-1::foundation-model/${toFoundationModelId(id)}`),
-        Condition: { StringEquals: { 'bedrock:InferenceProfileArn': profiles } },
-      },
+    expect(firstPolicyStatements(template)).toStrictEqual([
+      ...profileAndRegionalParts(profiles, models.map((id) => `arn:aws:bedrock:us-east-1::foundation-model/${toFoundationModelId(id)}`)),
       {
         Sid: 'ClaudeGlobalModels', Effect: 'Allow', Action: 'bedrock:InvokeModel',
         Resource: models.map((id) => `arn:aws:bedrock:::foundation-model/${toFoundationModelId(id)}`),
@@ -108,15 +115,10 @@ describe('grantClaudeModels, -c inferenceScope=eu', () => {
   const destinations = ['eu-central-1', 'eu-north-1', 'eu-south-1', 'eu-south-2', 'eu-west-1', 'eu-west-3'];
 
   it('grants the eu. profiles and each model in every destination Region, through those profiles only', () => {
-    const first = managedPolicies(template).find(([id]) => id.startsWith('ClaudeInvokePolicy0'));
-    expect(first?.[1].Properties.PolicyDocument.Statement).toStrictEqual([
-      { Sid: 'ClaudeProfiles', Effect: 'Allow', Action: 'bedrock:InvokeModel', Resource: profiles },
-      {
-        Sid: 'ClaudeRegionalModels', Effect: 'Allow', Action: 'bedrock:InvokeModel',
-        Resource: models.flatMap((id) => destinations.map((r) => `arn:aws:bedrock:${r}::foundation-model/${toFoundationModelId(id)}`)),
-        Condition: { StringEquals: { 'bedrock:InferenceProfileArn': profiles } },
-      },
-    ]);
+    expect(firstPolicyStatements(template)).toStrictEqual(profileAndRegionalParts(
+      profiles,
+      models.flatMap((id) => destinations.map((r) => `arn:aws:bedrock:${r}::foundation-model/${toFoundationModelId(id)}`)),
+    ));
   });
 
   it('grants no global. profile and no Region-agnostic model', () => {

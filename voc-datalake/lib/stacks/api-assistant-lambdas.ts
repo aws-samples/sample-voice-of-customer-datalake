@@ -9,7 +9,7 @@ import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as path from 'path';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { grantClaudeModels, grantClaudeModelsToFunction } from '../utils/claude-model-grant';
-import { embeddingModelArn } from '../utils/model-allowlist';
+import { grantEmbeddingModel } from '../utils/memory-recall-grant';
 import { AGENTS_API_FUNCTION_BASE_NAME, MEMORY_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { snapStartFunctionProps } from '../utils/snapstart';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
@@ -80,10 +80,7 @@ export function createAssistantLambdas(
   rawDataBucket.grantPut(memoryRole, 'memory-imports/*');
   // 'memory' surface (review suggestions, screening) + the fixed embedder (in-Region, exact ARN).
   grantClaudeModels(memoryRole, 'invoke');
-  memoryRole.addToPolicy(new iam.PolicyStatement({
-    actions: ['bedrock:InvokeModel'],
-    resources: [embeddingModelArn(stack.region)],
-  }));
+  grantEmbeddingModel(memoryRole, stack.region);
 
   const memoryLambda = new lambda.Function(stack, 'MemoryApi', {
     ...snapStartFunctionProps(stack), // GET /memory cold start (lib/utils/snapstart.ts)

@@ -28,7 +28,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
 import { grantClaudeModels } from '../utils/claude-model-grant';
-import { embeddingModelArn } from '../utils/model-allowlist';
+import { grantEmbeddingModel } from '../utils/memory-recall-grant';
 import { createWorkerFunction, scheduleWorker, workerRole } from '../utils/worker-lambda';
 
 /** Base physical name of the brief queue, function and topic (`uniqueName()` adds account + region). */
@@ -107,11 +107,7 @@ function grantBriefingReads(worker: Construct, props: BriefingWorkerProps, role:
   userPool.grant(role, 'cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser');
   // The 'utility' picker surface (repointable) and the memory embedder (in-Region, exact ARN).
   grantClaudeModels(role, 'invoke');
-  role.addToPolicy(new iam.PolicyStatement({
-    sid: 'BedrockInvokeEmbedding',
-    actions: ['bedrock:InvokeModel'],
-    resources: [embeddingModelArn(cdk.Stack.of(worker).region)],
-  }));
+  grantEmbeddingModel(role, cdk.Stack.of(worker).region);
 }
 
 function createBriefingFunction(worker: Construct, props: BriefingWorkerProps, queue: sqs.Queue, topic: sns.Topic): void {

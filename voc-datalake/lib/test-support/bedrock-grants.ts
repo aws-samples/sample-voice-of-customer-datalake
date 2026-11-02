@@ -30,7 +30,8 @@ const StatementSchema = z.object({
   Resource: z.unknown(),
   Condition: z.object({ StringEquals: z.record(z.string(), StringListSchema).optional() }).optional(),
 });
-const PolicySchema = z.object({
+/** An inline or customer-managed IAM policy resource, with `Action` as a list and `StringEquals` kept. */
+export const IamPolicyResourceSchema = z.object({
   Type: z.enum(['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy']),
   Properties: z.object({
     Roles: z.array(z.object({ Ref: z.string() })).optional(),
@@ -63,7 +64,7 @@ const resourceStrings = (resource: unknown): string[] => [resource].flat().filte
 function claudeRoleGrantsOfTemplate(stack: string, template: unknown): ClaudeRoleGrant[] {
   const byRole = new Map<string, ClaudeStatement[]>();
   for (const resource of Object.values(ResourcesSchema.parse(template).Resources)) {
-    const policy = PolicySchema.safeParse(resource);
+    const policy = IamPolicyResourceSchema.safeParse(resource);
     if (!policy.success) continue;
     const statements = policy.data.Properties.PolicyDocument.Statement
       .filter((s) => (s.Effect ?? 'Allow') === 'Allow' && s.Action.some((a) => a.startsWith('bedrock:InvokeModel')))

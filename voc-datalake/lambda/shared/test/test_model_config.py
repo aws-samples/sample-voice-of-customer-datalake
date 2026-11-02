@@ -282,24 +282,23 @@ class TestAllowlistLockstep:
                 f'model_config.py says {expected!r}'
             )
 
-    def test_nag_suppressions_are_derived_not_hardcoded(self):
-        """cdk-nag suppressions must DERIVE their foundation-model ARNs from
-        model-allowlist.ts, never re-hardcode them.
+    def test_nag_suppressions_hold_no_bedrock_model_acknowledgement(self):
+        """The Claude grant names every model ARN exactly (the documented
+        cross-Region three-part shape, lib/utils/claude-model-grant.ts), so
+        there is no Region-wildcard finding to acknowledge. A returning
+        foundation-model acknowledgement means a wildcard came back.
 
-        This replaces an older string-scrape assertion. A hand-listed set drifts
-        silently: add a model, forget the suppression, and synth fails with an
-        unsuppressed IAM5 finding at deploy time. The per-model value coverage
-        now lives in lib/utils/model-allowlist.test.ts, which checks the
-        suppression targets against the ARNs the policy actually emits.
+        The per-model coverage of the grant lives in
+        lib/utils/claude-model-grant.test.ts and lib/app-template-gates.test.ts.
         """
         nag_source = (
             self._repo_root() / 'lib' / 'utils' / 'nag-suppressions.ts'
         ).read_text()
-        assert 'bedrockFoundationModelSuppressionTargets' in nag_source, (
-            'bedrockModelSuppressions must call '
-            'bedrockFoundationModelSuppressionTargets() from model-allowlist.ts'
+        assert 'bedrockModelSuppressions' not in nag_source, (
+            'a Bedrock model acknowledgement is back: the Claude grant must not '
+            'carry a Region wildcard (lib/utils/claude-model-grant.ts)'
         )
-        # Guard the regression this replaces: no literal model ARNs.
+        # And no literal model ARNs.
         assert 'foundation-model/anthropic.' not in nag_source, (
             'foundation-model ARNs are hardcoded again — derive them instead'
         )
