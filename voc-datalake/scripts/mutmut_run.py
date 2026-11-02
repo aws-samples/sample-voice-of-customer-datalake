@@ -1,12 +1,18 @@
 """The Python half of scripts/mutate-python.sh (mutmut 3.x). Not a gate.
 
   python scripts/mutmut_run.py baseline <names-out> <module.py> <tests...>   # from voc-datalake/
+  git diff --unified=0 <range> -- <module.py> | python scripts/mutmut_run.py patch-spans
   python scripts/mutmut_run.py [--only-lines <path>:<from>-<to>[,...]] <mutmut command> [args...]   # from the stage
 
 ``baseline`` runs the tests unmutated in this process, then writes every name the module was imported
 under (one per line) to <names-out>. mutmut 3 links a test to a mutant by the module's import name
 (``shared.llm_json``), which it derives from the file's path below its working directory, so the
 shell script needs that name to build the stage. It exits with pytest's exit code.
+
+``patch-spans`` reads a ``git diff --unified=0`` on stdin and prints the new-side line spans of its hunks
+(``3-5,9-9``; nothing for a diff that only deletes). Only the ``@@`` headers are read, never the file
+names, so a diff whose paths are repo-root-relative (``voc-datalake/lambda/...``) scopes the same lines:
+mutmut 2's path matching is what made ``--patch`` produce no mutants.
 
 Any other command is mutmut's own CLI (``run``, ``results``, ``show``, ``browse``). ``--only-lines``
 makes ``run`` mutate only those lines of that file. mutmut 3 has no line filter of its own; with
@@ -16,12 +22,30 @@ this hands it the chosen lines as that set instead of measuring coverage.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections.abc import Iterable
 from pathlib import Path
 
 # pytest.ini's addopts turn on coverage for the whole suite; a mutation run needs none of it.
 PYTEST_OPTS = ['-o', 'addopts=', '-q', '-p', 'no:cacheprovider']
+
+
+HUNK_HEADER = re.compile(r'^@@ -[0-9,]+ \+(\d+)(?:,(\d+))? @@')
+
+
+def spans_from_diff(diff: str) -> str:
+    """Every hunk's new-side span of a unified diff as ``<from>-<to>[,...]``; a pure deletion (``+n,0``) adds none."""
+    spans: list[str] = []
+    for line in diff.splitlines():
+        match = HUNK_HEADER.match(line)
+        if match is None:
+            continue
+        start = int(match.group(1))
+        count = 1 if match.group(2) is None else int(match.group(2))
+        if count > 0:
+            spans.append(f'{start}-{start + count - 1}')
+    return ','.join(spans)
 
 
 def parse_line_spans(spec: str) -> set[int]:
@@ -75,6 +99,9 @@ def limit_mutations_to(path: str, lines: set[int]) -> None:
 
 
 def main(argv: list[str]) -> int:
+    if argv == ['patch-spans']:
+        print(spans_from_diff(sys.stdin.read()))
+        return 0
     if argv[:1] == ['baseline'] and len(argv) >= 4:
         return baseline(argv[1], argv[2], argv[3:])
     if argv[:1] == ['--only-lines'] and len(argv) >= 3:

@@ -194,6 +194,23 @@ describe('cdk-nag acknowledgements', () => {
     expect(judged().unacknowledged).toStrictEqual(['Fx/Queue/Resource AwsSolutions-SQS3']);
   });
 
+  it('records exactly the ids cdk-nag itself reports (bare rule and per-finding ids)', async () => {
+    // The recorder derives ids the way cdk-nag 3.0.2's applyRule does. If a release derives them differently,
+    // a stale acknowledgement could look used; this pins the recorder to cdk-nag's own violation report.
+    const { stack } = await queueFixture();
+    const iam = await import('aws-cdk-lib/aws-iam');
+    const sqs = await import('aws-cdk-lib/aws-sqs');
+    const nag = await import('cdk-nag');
+    new sqs.Queue(stack, 'Plain');
+    const role = new iam.Role(stack, 'Role', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') });
+    role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:Get*'], resources: ['*'] }));
+    resetRecorder();
+    const reported = new nag.AwsSolutionsChecks().validateScope(stack).violations.map((v) => v.ruleName);
+    const recorded = [...new Set(recorder.findings.map((finding) => finding.id))];
+    expect(reported).toStrictEqual(expect.arrayContaining(['AwsSolutions-SQS3', 'AwsSolutions-IAM5[Resource::*]']));
+    expect([...recorded].sort(byCodeUnit)).toStrictEqual([...new Set(reported)].sort(byCodeUnit));
+  });
+
   describe('over the default and the all-features synth', () => {
     let shapes: Judged[] = [];
     beforeAll(async () => {

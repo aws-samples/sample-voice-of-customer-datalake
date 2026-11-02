@@ -520,7 +520,14 @@ it('leaves no unacknowledged cdk-nag finding on the fixture provider', () => {
   // must still be able to fail this case.
   acknowledgeNag(stack, lambdaBasicExecutionRoleSuppressions);
   Template.fromStack(stack); // synthesize first: cdk-nag 3 checks the prepared tree
-  const provider = new AwsSolutionsChecks().validateScope(stack).violations
+  const violations = new AwsSolutionsChecks().validateScope(stack).violations;
+  // Vacuity: the provider is in this shape, and every reported resource carries a construct path, so the
+  // filter below cannot drop a provider finding for want of one (the rest of the app's acknowledgements are
+  // deliberately absent, so there are findings elsewhere in the stack).
+  const paths = violations.flatMap((violation) => violation.violatingResources.map((resource) => resource.constructPath));
+  expect(stack.node.findAll().some((c) => c.node.path.includes('VerificationFixtureProvider'))).toBe(true);
+  expect(paths.length > 0 && paths.every((path) => typeof path === 'string')).toBe(true);
+  const provider = violations
     .flatMap((violation) => violation.violatingResources
       .filter((resource) => resource.constructPath?.includes('VerificationFixtureProvider') === true)
       .map((resource) => `${resource.constructPath} ${violation.ruleName}`));

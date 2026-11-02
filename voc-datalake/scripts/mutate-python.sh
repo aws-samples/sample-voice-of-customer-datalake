@@ -58,10 +58,8 @@ TESTS=("$@")
 # ---- The lines to mutate (empty = the whole module), as <from>-<to>[,<from>-<to>...] ----
 ONLY_LINES=""
 if [[ -n "$PATCH_RANGE" ]]; then
-  # Every hunk's new-side span; a pure deletion (`+n,0`) adds no line.
-  ONLY_LINES="$(git diff --unified=0 --no-ext-diff "$PATCH_RANGE" -- "$MODULE" \
-    | sed -nE 's/^@@ -[0-9,]+ \+([0-9]+)(,([0-9]+))? @@.*/\1 \3/p' \
-    | awk '{ n = ($2 == "" ? 1 : $2); if (n > 0) printf "%s%d-%d", (c++ ? "," : ""), $1, $1 + n - 1 }')"
+  # Every hunk's new-side span; a pure deletion (`+n,0`) adds no line (scripts/mutmut_run.py spans_from_diff).
+  ONLY_LINES="$(git diff --unified=0 --no-ext-diff "$PATCH_RANGE" -- "$MODULE" | "$PYTHON" "$DRIVER" patch-spans)"
   if [[ -z "$ONLY_LINES" ]]; then
     echo "No lines of $MODULE changed in $PATCH_RANGE: nothing to mutate (drop --patch for the whole module)" >&2
     exit 2
