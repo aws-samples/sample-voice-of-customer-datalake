@@ -17,7 +17,9 @@ Cheapest first, so nothing is spent on mail that is dropped (docs/email-intake.m
    DEFERRED (left in ``inbound/``, retried the next day), never lost;
 8. the message goes through the source policy (``pii: redact`` by default) and the queue
    schema, the original is kept under ``inbound-raw/<item id>/`` (90-day lifecycle) and the
-   ``inbound/`` copy is deleted.
+   ``inbound/`` copy is deleted. When the source profile permits a raw copy (not by default:
+   ``pii: redact``), the email is also kept in the raw lake (``email_intake.raw_keep``), and so is
+   filtered mail (``FILTERED_REASONS``) with its ``drop-reason``.
 """
 from __future__ import annotations
 
@@ -31,6 +33,7 @@ from typing import Any, Final
 from botocore.exceptions import BotoCoreError, ClientError
 
 from email_intake import compose, guards, mime, model_calls, text_cleanup
+from email_intake.raw_keep import FILTERED_REASONS, keep_raw
 from email_intake.state import IntakeState
 from shared.converse import BedrockThrottlingError
 from shared.ingest_schemas import validate_message
@@ -82,6 +85,8 @@ class IntakeContext:
     bucket: str
     queue_url: str
     inbox_domain: str
+    #: The raw lake (``RAW_DATA_BUCKET``); '' = no raw copies.
+    raw_bucket: str = ''
 
 
 @dataclass(frozen=True)
@@ -259,6 +264,7 @@ class _Prepared:
     content: _Content
     content_hash: str
     item_id: str
+    raw: bytes
 
 
 def _prepare(raw: bytes, ctx: IntakeContext) -> _Prepared | Outcome:
@@ -282,7 +288,7 @@ def _prepare(raw: bytes, ctx: IntakeContext) -> _Prepared | Outcome:
     if not content.text and not parsed.attachments:
         return drop(ctx, 'no_text')
     content_hash = text_cleanup.content_hash(content.text or ' '.join(a.filename for a in parsed.attachments))
-    return _Prepared(parsed, sender, content, content_hash, _item_id(parsed, raw, content, content_hash))
+    return _Prepared(parsed, sender, content, content_hash, _item_id(parsed, raw, content, content_hash), raw)
 
 
 def _deduped(ctx: IntakeContext, prepared: _Prepared, thread_id: str, is_reply: bool) -> Outcome | None:
@@ -326,7 +332,11 @@ def _accept(ctx: IntakeContext, prepared: _Prepared, key: str, thread_id: str, i
         attachment_count=len(content.attachments), attachments_key=attachments_key if content.attachments else '',
         is_reply=is_reply, forwarded=content.forwarded, auth=_auth_verdicts(parsed.message),
     )
-    if not _queue(ctx, compose.build_message(item)):
+    message = compose.build_message(item)
+    raw_uri = keep_raw(ctx.s3, ctx.raw_bucket, prepared.raw, prepared.item_id)
+    if raw_uri:
+        message['s3_raw_uri'] = raw_uri
+    if not _queue(ctx, message):
         return drop(ctx, 'no_text')
     _remember(ctx, prepared, thread_id)
     ctx.state.count('accepted')
@@ -348,6 +358,14 @@ def process_email(raw: bytes, key: str, ctx: IntakeContext) -> Outcome:
     prepared = _prepare(raw, ctx)
     if isinstance(prepared, Outcome):
         return prepared
+    outcome = _decide(ctx, prepared, key)
+    if outcome.status != 'accepted' and outcome.reason in FILTERED_REASONS:
+        keep_raw(ctx.s3, ctx.raw_bucket, raw, prepared.item_id, outcome.reason)
+    return outcome
+
+
+def _decide(ctx: IntakeContext, prepared: _Prepared, key: str) -> Outcome:
+    raw = prepared.raw
     forward = _forward_duplicate(ctx, prepared)
     if forward is not None:
         return forward
