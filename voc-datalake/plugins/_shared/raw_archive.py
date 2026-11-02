@@ -1,10 +1,16 @@
 """
-The raw-data archive every source writes to: ``raw/{source}/{y}/{m}/{d}/{id}.json``.
+The raw-data archive every plugin writes to: ``raw/{source}/{y}/{m}/{d}/{stem}/{sha16}.json``.
 
 One implementation for both transports. ``BaseIngestor.store_raw_to_s3`` used to
 own this outright, so a webhook (which has no ingestor instance) could only
 forward its payload inline in the SQS message — the one source shape whose raw
 data never reached the lake. Both now call :func:`archive_raw_item`.
+
+The key layout, the content digest and the write-once put live in
+``shared/raw_versions.py`` (shipped in every plugin bundle), shared with the
+API-side writers: an item's folder holds every version of it, a re-ingest of
+identical content maps to the same key and writes nothing, and nothing under
+``raw/`` is ever overwritten.
 """
 
 import hashlib
@@ -17,14 +23,26 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.archive_keys import archive_key_stem
 from shared.logging import logger
+from shared.raw_versions import (
+    UNKNOWN_VERSION,
+    Connector,
+    content_digest,
+    item_folder,
+    put_raw_version,
+    version_key,
+)
 
 from .source_policy_gate import raw_archive_permitted
 
-__all__ = ["archive_raw_item"]
+__all__ = ["INGESTOR", "WEBHOOK", "archive_raw_item", "plugin_connector"]
+
+# The transports a plugin archives from; a webhook's connector id is ``webhook_<plugin>``.
+INGESTOR = "ingestor"
+WEBHOOK = "webhook"
 
 
 def raw_item_id(item: dict) -> str:
-    """A deterministic S3 file name for *item*, so a re-ingest overwrites, not duplicates.
+    """A deterministic folder name for *item*, so every version of it lands in one folder.
 
     Mirrors the processor's deduplication: the source id when there is one (as a
     collision-free stem, ``shared.archive_keys``), else a hash of created_at + text + url.
@@ -39,6 +57,16 @@ def raw_item_id(item: dict) -> str:
     text_hash = hashlib.sha256(text[:500].encode(), usedforsecurity=False).hexdigest()[:16] if text else ""
     content = f"{created_at}:{text_hash}:{url}"
     return hashlib.sha256(content.encode()).hexdigest()[:32]
+
+
+def plugin_connector(transport: str = INGESTOR) -> Connector:
+    """This Lambda's plugin (``SOURCE_PLATFORM``) at its manifest version (``PLUGIN_VERSION``).
+
+    Read per call, not at import, so one process archives under the env it runs with.
+    """
+    plugin_id = os.environ.get("SOURCE_PLATFORM", "") or "unknown"
+    connector_id = f"{WEBHOOK}_{plugin_id}" if transport == WEBHOOK else plugin_id
+    return Connector(connector_id, os.environ.get("PLUGIN_VERSION") or UNKNOWN_VERSION)
 
 
 def _partition_date(created_at: object, now: datetime) -> datetime:
@@ -57,8 +85,13 @@ def _partition_date(created_at: object, now: datetime) -> datetime:
 
 def archive_raw_item(
     s3, bucket: str, source_platform: str, item: dict, raw_content: str | None = None,
+    transport: str = INGESTOR,
 ) -> str | None:
     """Write *item* (and the source's own payload, *raw_content*) to the raw archive.
+
+    The key's digest covers ``{"raw_content", "raw_item"}`` only (never the envelope's
+    timestamps), so identical content is archived once: S3's 412 on the conditional put
+    returns the existing object's URI.
 
     Returns the ``s3://`` URI, or None when no bucket is configured or the write
     failed — a failed WRITE never raises, because losing the archive copy must not
@@ -78,25 +111,21 @@ def archive_raw_item(
         now = datetime.now(UTC)
         item_id = raw_item_id(item)
         partition_date = _partition_date(item.get("created_at"), now)
-        s3_key = (
-            f"raw/{source_platform}/{partition_date.year}/{partition_date.month:02d}/"
-            f"{partition_date.day:02d}/{item_id}.json"
-        )
+        connector = plugin_connector(transport)
+        digest = content_digest({"raw_content": raw_content, "raw_item": item})
+        s3_key = version_key(item_folder(source_platform, partition_date, item_id), digest)
         raw_payload = {
             "item_id": item_id,
             "source_platform": source_platform,
+            "connector": connector.envelope(),
+            "content_sha16": digest,
             "ingested_at": now.isoformat(),
             "partition_date": partition_date.strftime('%Y-%m-%d'),
             "raw_content": raw_content,
             "raw_item": item,
         }
-        s3.put_object(
-            Bucket=bucket,
-            Key=s3_key,
-            Body=json.dumps(raw_payload, default=str),
-            ContentType="application/json",
-        )
-        logger.info(f"Stored raw data to s3://{bucket}/{s3_key}")
+        written = put_raw_version(s3, bucket, s3_key, json.dumps(raw_payload, default=str), connector)
+        logger.info(f"{'Stored' if written else 'Already archived'} raw data at s3://{bucket}/{s3_key}")
     except Exception as e:
         logger.exception(f"Failed to store raw data to S3: {e}")
         return None

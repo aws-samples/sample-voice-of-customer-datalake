@@ -8,8 +8,9 @@ The only earlier coverage was indirect: `test_base_ingestor.py` checks that
 `put_object` is called once and that the URI starts with ``s3://test-bucket/``,
 and pins one content-hash id. A mutation run found everything else unseen:
 
-* the S3 KEY layout — ``raw/{source}/{yyyy}/{mm}/{dd}/{id}.json`` with
-  zero-padded month and day, partitioned by the item's own ``created_at``;
+* the S3 KEY layout — ``raw/{source}/{yyyy}/{mm}/{dd}/{id}/{sha16}.json`` with
+  zero-padded month and day, partitioned by the item's own ``created_at``
+  (the versioned, write-once layout of ``shared/raw_versions.py``);
 * the ``created_at`` normalisation (``Z`` → ``+00:00``, space → ``T``, a
   missing offset gets ``+00:00``) — on Python 3.12 ``fromisoformat`` accepts
   most inputs on its own, so only a lowercase ``z`` suffix tells the
@@ -27,14 +28,16 @@ and pins one content-hash id. A mutation run found everything else unseen:
 """
 import hashlib
 import json
+import re
 import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from _shared import raw_archive
 from _shared.raw_archive import archive_raw_item, raw_item_id
@@ -59,6 +62,18 @@ class _FrozenDatetime(datetime):
         return _NOW
 
 
+class _LaterDatetime(datetime):
+    """``datetime`` whose ``now`` is a year after ``_NOW``."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return datetime(2027, 1, 2, tzinfo=tz)
+
+
+def s3_body(s3: MagicMock) -> str:
+    return s3.put_object.call_args.kwargs["Body"]
+
+
 @pytest.fixture
 def logger() -> Iterator[MagicMock]:
     with patch.object(raw_archive, "logger") as mock_logger:
@@ -79,6 +94,11 @@ def _archive(item: dict, raw_content: str | None = None) -> tuple[str | None, Ma
     else:
         uri = archive_raw_item(s3, _BUCKET, _SOURCE, item, raw_content)
     return uri, s3
+
+
+def _version_of(folder: str, key: str) -> None:
+    """``key`` is one version file (16 hex chars) inside ``folder``."""
+    assert re.fullmatch(re.escape(folder) + r"[0-9a-f]{16}\.json", key), key
 
 
 def _written(s3: MagicMock) -> tuple[str, dict]:
@@ -171,16 +191,16 @@ class TestPartitionDate:
         uri, s3 = _archive({"id": "r1", "created_at": created_at})
 
         key, body = _written(s3)
-        assert key == "raw/webscraper/2024/03/05/r1.json"
+        _version_of("raw/webscraper/2024/03/05/r1/", key)
         assert body["partition_date"] == "2024-03-05"
-        assert uri == "s3://raw-bucket/raw/webscraper/2024/03/05/r1.json"
+        assert uri == f"s3://raw-bucket/{key}"
         logger.debug.assert_not_called()
 
     def test_an_unparseable_date_falls_back_to_now_and_says_so(self, logger):
         _uri, s3 = _archive({"id": "r1", "created_at": "March 5"})
 
         key, body = _written(s3)
-        assert key == "raw/webscraper/2026/01/02/r1.json"
+        _version_of("raw/webscraper/2026/01/02/r1/", key)
         assert body["partition_date"] == "2026-01-02"
         logger.debug.assert_called_once_with(
             "Could not parse created_at 'March 5': Invalid isoformat string: 'MarchT5+00:00'"
@@ -190,39 +210,112 @@ class TestPartitionDate:
     def test_a_missing_empty_or_non_string_date_uses_now(self, item, logger):
         _uri, s3 = _archive(item)
 
-        assert _written(s3)[0] == "raw/webscraper/2026/01/02/r1.json"
+        _version_of("raw/webscraper/2026/01/02/r1/", _written(s3)[0])
         logger.debug.assert_not_called()
 
 
 class TestArchivedObject:
-    def test_writes_every_field_and_returns_the_uri(self, logger, frozen_now):
+    def test_writes_every_field_and_returns_the_uri(self, logger, frozen_now, monkeypatch):
+        monkeypatch.setenv("SOURCE_PLATFORM", "webscraper")
+        monkeypatch.setenv("PLUGIN_VERSION", "1.2.3")
         stamp = datetime(2024, 3, 5, 10, 0, tzinfo=UTC)
         item = {"id": "r1", "created_at": "2024-03-05T10:00:00Z", "seen": stamp}
+        digest = hashlib.sha256(json.dumps(
+            {"raw_content": "<html>raw</html>", "raw_item": item}, sort_keys=True, default=str,
+        ).encode()).hexdigest()[:16]
+        key = f"raw/webscraper/2024/03/05/r1/{digest}.json"
 
         uri, s3 = _archive(item, "<html>raw</html>")
 
-        assert uri == "s3://raw-bucket/raw/webscraper/2024/03/05/r1.json"
+        assert uri == f"s3://raw-bucket/{key}"
         s3.put_object.assert_called_once()
         kwargs = s3.put_object.call_args.kwargs
         assert kwargs["Bucket"] == "raw-bucket"
+        assert kwargs["Key"] == key
         assert kwargs["ContentType"] == "application/json"
+        assert kwargs["IfNoneMatch"] == "*"
+        assert kwargs["Metadata"] == {"connector": "webscraper", "connector-version": "1.2.3"}
         assert json.loads(kwargs["Body"]) == {
             "item_id": "r1",
             "source_platform": "webscraper",
+            "connector": {"id": "webscraper", "version": "1.2.3"},
+            "content_sha16": digest,
             "ingested_at": "2026-01-02T03:04:05+00:00",
             "partition_date": "2024-03-05",
             "raw_content": "<html>raw</html>",
             "raw_item": {"id": "r1", "created_at": "2024-03-05T10:00:00Z", "seen": "2024-03-05 10:00:00+00:00"},
         }
         assert frozen_now == [UTC]
-        logger.info.assert_called_once_with(
-            "Stored raw data to s3://raw-bucket/raw/webscraper/2024/03/05/r1.json"
-        )
+        logger.info.assert_called_once_with(f"Stored raw data at s3://raw-bucket/{key}")
 
     def test_raw_content_defaults_to_null(self):
         _uri, s3 = _archive({"id": "r1"})
 
         assert _written(s3)[1]["raw_content"] is None
+
+
+class TestVersions:
+    def test_identical_content_maps_to_the_same_key(self):
+        _uri, first = _archive({"id": "r1", "text": "same"}, "payload")
+        _uri, second = _archive({"id": "r1", "text": "same"}, "payload")
+
+        assert _written(first)[0] == _written(second)[0]
+
+    @pytest.mark.parametrize(("item", "raw_content"), [
+        ({"id": "r1", "text": "edited"}, "payload"),
+        ({"id": "r1", "text": "same"}, "other payload"),
+    ])
+    def test_changed_content_is_a_new_version_in_the_same_folder(self, item, raw_content):
+        _uri, first = _archive({"id": "r1", "text": "same"}, "payload")
+        _uri, second = _archive(item, raw_content)
+
+        first_key, second_key = _written(first)[0], _written(second)[0]
+        assert first_key != second_key
+        assert first_key.rsplit("/", 1)[0] == second_key.rsplit("/", 1)[0] == "raw/webscraper/2026/01/02/r1"
+
+    def test_the_ingest_time_is_not_part_of_the_digest(self):
+        _uri, first = _archive({"id": "r1", "created_at": "2024-03-05"})
+        with patch.object(raw_archive, "datetime", _LaterDatetime):
+            _uri, second = _archive({"id": "r1", "created_at": "2024-03-05"})
+
+        assert json.loads(s3_body(first))["ingested_at"] != json.loads(s3_body(second))["ingested_at"]
+        assert _written(first)[0] == _written(second)[0]
+
+    def test_already_archived_content_returns_the_existing_uri(self, logger):
+        s3 = MagicMock()
+        response: Any = {"Error": {"Code": "PreconditionFailed"}, "ResponseMetadata": {"HTTPStatusCode": 412}}
+        s3.put_object.side_effect = ClientError(response, "PutObject")
+
+        uri = archive_raw_item(s3, _BUCKET, _SOURCE, {"id": "r1"})
+
+        key = s3.put_object.call_args.kwargs["Key"]
+        assert uri == f"s3://{_BUCKET}/{key}"
+        logger.info.assert_called_once_with(f"Already archived raw data at s3://{_BUCKET}/{key}")
+        logger.exception.assert_not_called()
+
+
+class TestConnector:
+    def test_a_webhook_names_itself_after_its_plugin(self, monkeypatch):
+        monkeypatch.setenv("SOURCE_PLATFORM", "github_issues")
+        monkeypatch.setenv("PLUGIN_VERSION", "1.0.0")
+        s3 = MagicMock()
+
+        archive_raw_item(s3, _BUCKET, "github_issues", {"id": "r1"}, transport=raw_archive.WEBHOOK)
+
+        assert s3.put_object.call_args.kwargs["Metadata"] == {
+            "connector": "webhook_github_issues", "connector-version": "1.0.0"}
+
+    def test_the_plugin_id_is_the_lambdas_not_the_items_source(self, monkeypatch):
+        monkeypatch.setenv("SOURCE_PLATFORM", "web_reviews")
+        monkeypatch.delenv("PLUGIN_VERSION", raising=False)
+
+        assert raw_archive.plugin_connector().metadata() == {"connector": "web_reviews", "connector-version": "unknown"}
+
+    def test_no_plugin_env_is_unknown(self, monkeypatch):
+        monkeypatch.delenv("SOURCE_PLATFORM", raising=False)
+        monkeypatch.setenv("PLUGIN_VERSION", "")
+
+        assert raw_archive.plugin_connector().envelope() == {"id": "unknown", "version": "unknown"}
 
 
 class TestNeverRaises:
