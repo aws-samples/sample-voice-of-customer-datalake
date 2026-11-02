@@ -109,8 +109,10 @@ export const EU_PROFILE_MODEL_IDS: readonly string[] = [
  * Geographic cross-Region inference authorizes the foundation model in EVERY destination Region
  * (https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html), so a
  * destination AWS adds later is an AccessDenied on the calls routed there until it is listed here.
- * Re-check with `aws bedrock get-inference-profile --region <source> --inference-profile-identifier
- * eu.<model>` (`models[].modelArn`). A model whose table differs needs its own entry before it is added
+ * Confirmed 2026-11-02 with `aws bedrock get-inference-profile --region <source> --inference-profile-identifier
+ * eu.<model>` (`models[].modelArn`) for all eight models from every source Region below except the opt-in
+ * eu-south-1 / eu-south-2 (not enabled in the test account; they rest on the model cards). A geographic
+ * profile's destination list does not change (inference-profiles-support.html). A model whose table differs needs its own entry before it is added
  * to EU_PROFILE_MODEL_IDS.
  */
 const EU_CORE_DESTINATIONS = ['eu-central-1', 'eu-north-1', 'eu-south-1', 'eu-south-2', 'eu-west-1', 'eu-west-3'] as const;
@@ -141,17 +143,23 @@ export function euProfileDestinations(region: string): readonly string[] {
 /**
  * The IAM resources one allowlisted Claude model needs under `scope`, in the three parts AWS documents for
  * cross-Region inference (global: .../global-cross-region-inference.html; eu: .../geographic-cross-region-inference.html):
- *  - `profile`: the inference profile in the app region, the `modelId` the code sends (no condition);
+ *  - `profile`: the inference profile in the app region, the `modelId` the code sends (global: with
+ *    `aws:RequestedRegion` = `requestingRegion`; no profile condition either way);
  *  - `regionalModels`: the foundation model in the app region (global) or in every destination Region of
- *    the `eu.` profile (eu), granted only with `bedrock:InferenceProfileArn` = `profile`;
+ *    the `eu.` profile (eu), granted only with `bedrock:InferenceProfileArn` = `profile` (global: and
+ *    `aws:RequestedRegion` = `requestingRegion`);
  *  - `globalModel`: the Region-agnostic `arn:…:bedrock:::foundation-model/<model>` (global only), granted with
  *    `aws:RequestedRegion` = `unspecified` and the same profile condition.
- * No Region wildcard anywhere.
+ * Global follows the global-cross-region-inference.html example condition for condition; eu follows the
+ * geographic-cross-region-inference.html example, which has no `aws:RequestedRegion` (the destination
+ * evaluations carry the destination Region). No Region wildcard anywhere.
  */
 export interface ClaudeModelArns {
   readonly profile: string;
   readonly regionalModels: readonly string[];
   readonly globalModel?: string;
+  /** Global only: the app region, the `aws:RequestedRegion` value of the profile and in-Region model parts. */
+  readonly requestingRegion?: string;
 }
 
 /** {@link ClaudeModelArns} for every allowlisted model (eu: only those with a verified `eu.` profile). */
@@ -165,7 +173,7 @@ export function allowlistedModelArns(region: string, account: string, scope: Inf
     const regionalModels = modelRegions.map((r) => `arn:${partition}:bedrock:${r}::foundation-model/${model}`);
     return scope === 'eu'
       ? { profile, regionalModels }
-      : { profile, regionalModels, globalModel: `arn:${partition}:bedrock:::foundation-model/${model}` };
+      : { profile, regionalModels, globalModel: `arn:${partition}:bedrock:::foundation-model/${model}`, requestingRegion: region };
   });
 }
 

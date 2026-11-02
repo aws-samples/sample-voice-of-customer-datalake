@@ -87,6 +87,7 @@ describe('allowlistedModelArns (global scope)', () => {
       profile: `arn:aws:bedrock:${REGION}:${ACCOUNT}:inference-profile/${OPUS48}`,
       regionalModels: [`arn:aws:bedrock:${REGION}::foundation-model/anthropic.claude-opus-4-8`],
       globalModel: 'arn:aws:bedrock:::foundation-model/anthropic.claude-opus-4-8',
+      requestingRegion: REGION,
     });
   });
 

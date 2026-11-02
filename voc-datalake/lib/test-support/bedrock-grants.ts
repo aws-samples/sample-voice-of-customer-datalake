@@ -7,8 +7,9 @@
  * authorizes for cross-Region inference (lib/utils/claude-model-grant.ts):
  *  - the inference profile in the app region (`global.`, or `eu.` with `-c inferenceScope=eu`), with no
  *    `bedrock:InferenceProfileArn` condition (Bedrock does not set that key on the profile evaluation);
+ *    global: with `aws:RequestedRegion` = the app region;
  *  - the foundation model in the app region (global) or in every destination Region of the `eu.` profile,
- *    with `bedrock:InferenceProfileArn` naming that profile;
+ *    with `bedrock:InferenceProfileArn` naming that profile (global: and `aws:RequestedRegion` = the app region);
  *  - global only: the Region-agnostic `arn:aws:bedrock:::foundation-model/<model>`, with
  *    `aws:RequestedRegion` = `unspecified` and the same profile condition.
  * A role missing a part AccessDenies exactly the calls that need it, which only shows in production.
@@ -103,9 +104,12 @@ function requiredParts(modelId: string, scope: InferenceScope, region: string, a
   const profile = `arn:aws:bedrock:${region}:${account}:inference-profile/${scopedModelId(modelId, scope)}`;
   const viaProfile = { 'bedrock:InferenceProfileArn': profile };
   const regions = scope === 'eu' ? euProfileDestinations(region) : [region];
+  const inRegion: Record<string, string> = scope === 'eu' ? {} : { 'aws:RequestedRegion': region };
   return [
-    { label: `profile ${profile}`, arn: profile, stringEquals: {} },
-    ...regions.map((r) => ({ label: `${r} model ${model}`, arn: `arn:aws:bedrock:${r}::foundation-model/${model}`, stringEquals: viaProfile })),
+    { label: `profile ${profile}`, arn: profile, stringEquals: inRegion },
+    ...regions.map((r) => ({
+      label: `${r} model ${model}`, arn: `arn:aws:bedrock:${r}::foundation-model/${model}`, stringEquals: { ...inRegion, ...viaProfile },
+    })),
     ...(scope === 'eu' ? [] : [{
       label: `global model ${model}`,
       arn: `arn:aws:bedrock:::foundation-model/${model}`,
@@ -114,11 +118,14 @@ function requiredParts(modelId: string, scope: InferenceScope, region: string, a
   ];
 }
 
-/** Whether `statement` grants `part`: names the ARN exactly, carries its conditions, and no profile condition on a profile. */
+/**
+ * Whether `statement` grants `part`: names the ARN exactly and carries exactly its `StringEquals` keys with its
+ * values (so a profile part carries no `bedrock:InferenceProfileArn`, which Bedrock never sets on it).
+ */
 function grantsPart(statement: ClaudeStatement, part: RequiredPart): boolean {
   if (!statement.resources.includes(part.arn)) return false;
   const required = Object.entries(part.stringEquals);
-  if (required.length === 0) return statement.stringEquals['bedrock:InferenceProfileArn'] === undefined;
+  if (Object.keys(statement.stringEquals).length !== required.length) return false;
   return required.every(([key, value]) => statement.stringEquals[key]?.includes(value) === true);
 }
 

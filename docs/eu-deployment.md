@@ -86,11 +86,15 @@ in every destination Region the profile can route to
 The grant lists those Regions explicitly (no Region wildcard), from the "Geo: EU" table on each model's card in
 the Bedrock user guide, in `EU_PROFILE_DESTINATION_REGIONS` (`lib/utils/model-allowlist.ts`). From every EU
 source Region the profiles route to `eu-central-1`, `eu-north-1`, `eu-south-1`, `eu-south-2`, `eu-west-1` and
-`eu-west-3`; from `eu-central-2` and `eu-west-2` also to the source Region itself. The synth refuses
-`inferenceScope=eu` in any other region.
+`eu-west-3`; from `eu-central-2` and `eu-west-2` also to the source Region itself (confirmed with
+`GetInferenceProfile` for all eight models from every EU source Region enabled in the test account; `eu-south-1`
+and `eu-south-2` are opt-in Regions and rest on the model cards). The synth refuses `inferenceScope=eu` in any
+other region.
 
-If AWS adds a destination Region to the `eu.` profiles, the calls Bedrock routes there fail with
-`AccessDeniedException` (on `foundation-model/<model>` in the new Region) until the table lists it. To update:
+AWS states that a geographic profile's destination list never changes (a new Region comes as a new profile;
+[Supported Regions and models for inference profiles](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html)).
+If it ever does, the calls Bedrock routes to the new Region fail with `AccessDeniedException` (on
+`foundation-model/<model>` there) until the table lists it. To check:
 
 ```bash
 aws bedrock get-inference-profile --region <your region> \

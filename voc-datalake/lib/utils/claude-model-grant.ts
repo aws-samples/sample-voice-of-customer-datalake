@@ -4,14 +4,14 @@
  *   https://docs.aws.amazon.com/bedrock/latest/userguide/global-cross-region-inference.html  (global, default)
  *   https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html (`-c inferenceScope=eu`)
  *
- *  1. `ClaudeProfiles`: the inference profiles in the app region (the `modelId` every caller sends). No condition:
- *     Bedrock does not populate `bedrock:InferenceProfileArn` on the profile evaluation.
+ *  1. `ClaudeProfiles`: the inference profiles in the app region (the `modelId` every caller sends). No
+ *     `bedrock:InferenceProfileArn` condition: Bedrock does not populate it on the profile evaluation.
  *  2. `ClaudeRegionalModels`: the foundation models in the app region (global) or in every destination Region of
  *     the `eu.` profiles (eu, model-allowlist.ts EU_PROFILE_DESTINATION_REGIONS), only through one of those profiles.
  *  3. `ClaudeGlobalModels` (global only): the Region-agnostic `arn:…:bedrock:::foundation-model/<model>`, for which
  *     Bedrock sets `aws:RequestedRegion` to `unspecified`, again only through one of the profiles.
- * The docs' example also puts `aws:RequestedRegion` = the app region on parts 1 and 2; both ARNs already name that
- * region, so the condition adds nothing and is left out (policy size).
+ * Global: parts 1 and 2 also carry `aws:RequestedRegion` = the app region, exactly as the global doc's example.
+ * Eu: no `aws:RequestedRegion`, exactly as the geographic doc's example.
  *
  * The statements live in customer-managed policies SHARED by every Bedrock role of a stack (one set per action
  * variant), not in each role's inline policy: three parts per model on ~23 roles would push the largest inline
@@ -55,17 +55,32 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
   return chunks;
 }
 
+/** The one `requestingRegion` of `models` (global scope), or undefined (eu); throws on a mix. */
+function requestingRegionOf(models: readonly ClaudeModelArns[]): string | undefined {
+  const regions = new Set(models.map((m) => m.requestingRegion));
+  const [region, ...rest] = regions;
+  if (rest.length > 0) throw new Error(`Claude grant models disagree on the requesting region: ${[...regions].join(', ')}`);
+  return region;
+}
+
 /** The three-part statements for `models` (part 3 only when the scope has a global foundation model). */
 function claudeModelStatements(models: readonly ClaudeModelArns[], actions: readonly string[]): iam.PolicyStatement[] {
   const profiles = models.map((m) => m.profile);
   const viaProfile = { 'bedrock:InferenceProfileArn': profiles };
+  const requesting = requestingRegionOf(models);
+  const inRegion = requesting === undefined ? {} : { 'aws:RequestedRegion': requesting };
   const statements = [
-    new iam.PolicyStatement({ sid: 'ClaudeProfiles', actions: [...actions], resources: profiles }),
+    new iam.PolicyStatement({
+      sid: 'ClaudeProfiles',
+      actions: [...actions],
+      resources: profiles,
+      ...(requesting === undefined ? {} : { conditions: { StringEquals: inRegion } }),
+    }),
     new iam.PolicyStatement({
       sid: 'ClaudeRegionalModels',
       actions: [...actions],
       resources: models.flatMap((m) => m.regionalModels),
-      conditions: { StringEquals: viaProfile },
+      conditions: { StringEquals: { ...inRegion, ...viaProfile } },
     }),
   ];
   const globalModels = models.flatMap((m) => (m.globalModel === undefined ? [] : [m.globalModel]));
