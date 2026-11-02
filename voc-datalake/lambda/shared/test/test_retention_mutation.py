@@ -20,10 +20,11 @@ from boto3.dynamodb.conditions import Attr
 
 from shared import retention
 from shared.retention import (
-    _delete_all_versions,
+    ItemRawObjects,
+    _delete_versions,
     delete_item,
     erase_filter,
-    item_raw_key,
+    item_raw_objects,
     retention_cutoffs,
     retention_filter,
 )
@@ -120,49 +121,69 @@ class TestItemRawKey:
         ({'s3_raw_uri': f's3://{BUCKET}/raw/web/../r1.json', 'source_id': 'r1'}, BUCKET, None),
     ])
     def test_only_the_items_own_archive(self, item: dict[str, Any], bucket: str, expected: str | None) -> None:
-        assert item_raw_key(item, bucket) == expected
+        found = item_raw_objects(item, bucket)
+        assert (found.key if found else None) == expected
+
+    def test_an_odd_depth_key_is_that_exact_key_only(self) -> None:
+        item = {'s3_raw_uri': f's3://{BUCKET}/raw/web/r1', 'source_id': 'r1'}
+        assert item_raw_objects(item, BUCKET) == ItemRawObjects(key='raw/web/r1', folder=None)
 
 
-class TestDeleteAllVersions:
-    def test_lists_exactly_the_key_and_deletes_only_its_versions_and_markers(self) -> None:
+def _exact(key: str):
+    return lambda listed: listed == key
+
+
+class TestDeleteVersions:
+    def test_lists_the_prefix_and_deletes_only_matching_versions_and_markers(self) -> None:
         s3 = _s3({'Versions': [_version(KEY, 'v1'), _version(f'{KEY}.bak', 'x'), _version(KEY, None)],
                   'DeleteMarkers': [_version(KEY, 'm1')]})
-        assert _delete_all_versions(s3, BUCKET, KEY) is True
+        assert _delete_versions(s3, BUCKET, KEY, _exact(KEY)) == 1
         s3.get_paginator.assert_called_once_with('list_object_versions')
         s3.get_paginator.return_value.paginate.assert_called_once_with(Bucket=BUCKET, Prefix=KEY)
         s3.delete_objects.assert_called_once_with(Bucket=BUCKET, Delete={
             'Objects': [{'Key': KEY, 'VersionId': 'v1'}, {'Key': KEY, 'VersionId': 'm1'}], 'Quiet': True})
 
-    @pytest.mark.parametrize('page', [{'Versions': [_version(KEY, 'v1')]}, {'DeleteMarkers': [_version(KEY, 'v1')]}])
-    def test_a_page_may_lack_either_list(self, page: dict[str, Any]) -> None:
-        s3 = _s3(page)
-        assert _delete_all_versions(s3, BUCKET, KEY) is True
+    def test_a_page_may_lack_either_list(self) -> None:
+        s3 = _s3({'Versions': [_version(KEY, 'v1')]})
+        assert _delete_versions(s3, BUCKET, KEY, _exact(KEY)) == 1
         s3.delete_objects.assert_called_once_with(
             Bucket=BUCKET, Delete={'Objects': [{'Key': KEY, 'VersionId': 'v1'}], 'Quiet': True})
 
-    def test_nothing_listed_is_false_and_deletes_nothing(self) -> None:
+    def test_a_delete_marker_alone_is_deleted_but_no_file(self) -> None:
+        s3 = _s3({'DeleteMarkers': [_version(KEY, 'm1')]})
+        assert _delete_versions(s3, BUCKET, KEY, _exact(KEY)) == 0
+        s3.delete_objects.assert_called_once_with(
+            Bucket=BUCKET, Delete={'Objects': [{'Key': KEY, 'VersionId': 'm1'}], 'Quiet': True})
+
+    def test_nothing_listed_is_zero_and_deletes_nothing(self) -> None:
         s3 = _s3({}, {'Versions': [_version('raw/other.json', 'v1')]})
-        assert _delete_all_versions(s3, BUCKET, KEY) is False
+        assert _delete_versions(s3, BUCKET, KEY, _exact(KEY)) == 0
         s3.delete_objects.assert_not_called()
+
+    def test_every_file_under_a_folder_counts_once(self) -> None:
+        folder = 'raw/web/2026/01/01/r1/'
+        a, b = f'{folder}0123456789abcdef.json', f'{folder}fedcba9876543210.json'
+        s3 = _s3({'Versions': [_version(a, 'v1'), _version(a, 'v2'), _version(b, 'v3')]})
+        assert _delete_versions(s3, BUCKET, folder, lambda key: key.startswith(folder)) == 2
 
     @pytest.mark.parametrize(('count', 'sizes'), [(1000, [1000]), (1001, [1000, 1]), (2001, [1000, 1000, 1])])
     def test_versions_are_deleted_in_batches_of_1000(self, count: int, sizes: list[int]) -> None:
         versions = [_version(KEY, f'v{n}') for n in range(count)]
         s3 = _s3({'Versions': versions})
-        assert _delete_all_versions(s3, BUCKET, KEY) is True
+        assert _delete_versions(s3, BUCKET, KEY, _exact(KEY)) == 1
         batches = [c.kwargs['Delete']['Objects'] for c in s3.delete_objects.call_args_list]
         assert [len(b) for b in batches] == sizes
         assert [o['VersionId'] for b in batches for o in b] == [f'v{n}' for n in range(count)]
 
     def test_every_page_is_deleted(self) -> None:
         s3 = _s3({'Versions': [_version(KEY, 'v1')]}, {'Versions': [_version(KEY, 'v2')]})
-        assert _delete_all_versions(s3, BUCKET, KEY) is True
+        assert _delete_versions(s3, BUCKET, KEY, _exact(KEY)) == 1
         assert s3.delete_objects.call_count == 2
 
     def test_a_partial_failure_raises_with_the_count(self) -> None:
         s3 = _s3({'Versions': [_version(KEY, 'v1')]}, responses=[{'Errors': [{'Key': KEY}, {'Key': KEY}]}])
         with pytest.raises(RuntimeError, match=r'^2 raw object versions could not be deleted$'):
-            _delete_all_versions(s3, BUCKET, KEY)
+            _delete_versions(s3, BUCKET, KEY, _exact(KEY))
 
 
 class TestDeleteItem:

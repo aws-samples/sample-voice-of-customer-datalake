@@ -1,9 +1,10 @@
-"""The file-name stem of a per-item raw archive (``raw/{source}/{y}/{m}/{d}/{stem}.json``).
+"""The stem of a per-item raw archive: its folder ``raw/{source}/{y}/{m}/{d}/{stem}/``
+(every version, ``shared/raw_versions.py``), or the legacy file ``.../{stem}.json``.
 
 One derivation for every writer (``plugins/_shared/raw_archive``,
 ``shared/ingest_archive``) and for the retention worker's matcher
-(``shared/retention.item_raw_key``), so the worker recognises exactly the
-object a writer produced for an item.
+(``shared/retention.item_raw_objects``), so the worker recognises exactly the
+objects a writer produced for an item.
 
 An id that is already filename-safe (letters, digits, ``-``, ``_``) and at most
 64 characters is its own stem — the whole id, so ``abc\\n`` is not (the pattern

@@ -51,6 +51,29 @@ def test_retention_deletes_only_old_items_of_retained_sources_and_every_raw_vers
     assert (audit['mode'], audit['deleted_items'], audit['cutoffs']) == ('retention', 1, {'tickets': days_ago(30)})
 
 
+@pytest.mark.parametrize('referenced', ['legacy', 'newest'])
+def test_retention_deletes_both_raw_layouts_of_an_item_with_every_version(aws, worker_context, referenced):
+    """A legacy `{stem}.json` and every version under `{stem}/` go, whichever the item references."""
+    _profiles(aws, {'id': 'tickets', 'retention_days': 30})
+    legacy = _seed(aws, 'old', 'tickets', days_ago(31))
+    folder = legacy.removesuffix('.json') + '/'
+    versions = [f'{folder}0123456789abcdef.json', f'{folder}fedcba9876543210.json']
+    for key in versions:
+        aws['s3'].put_object(Bucket=BUCKET, Key=key, Body=b'v', IfNoneMatch='*')
+    aws['s3'].delete_object(Bucket=BUCKET, Key=versions[0])  # a delete marker on top of a version
+    sibling = 'raw/tickets/2026/01/01/old2/0123456789abcdef.json'
+    aws['s3'].put_object(Bucket=BUCKET, Key=sibling, Body=b'other item')
+    if referenced == 'newest':
+        aws['feedback'].update_item(Key={'pk': 'SOURCE#tickets', 'sk': 'FEEDBACK#old'},
+                                    UpdateExpression='SET s3_raw_uri = :u',
+                                    ExpressionAttributeValues={':u': f's3://{BUCKET}/{versions[1]}'})
+    result = handler.handle_event({'mode': 'retention'}, worker_context)
+    assert (result['status'], result['deleted_items'], result['deleted_objects']) == ('completed', 1, 3)
+    assert _versions(aws, legacy) == 0
+    assert _versions(aws, folder) == 0
+    assert _versions(aws, sibling) == 1
+
+
 def test_retention_with_no_retained_source_deletes_nothing_but_audits(aws, worker_context):
     _profiles(aws, {'id': 'web'})
     _seed(aws, 'a', 'web', days_ago(4000))
