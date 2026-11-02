@@ -156,7 +156,7 @@ export interface OptInFixedCost {
 /** A resource type with a small monthly price per resource, held to a fixed count in every synthesized shape. */
 export interface CountedFixedCost {
   readonly type: string;
-  /** How many the default synth (every stack together) holds today: the ceiling, and a ratchet. */
+  /** How many every counted synth shape (every stack together) holds today: the ceiling, and a ratchet. */
   readonly baseline: number;
   readonly what: string;
 }
@@ -200,7 +200,8 @@ function resourcesOfType(templates: readonly StackTemplate[], type: string): str
 }
 
 /**
- * One message per counted type whose default-synth count is not its baseline, saying what to do:
+ * One message per counted type whose count in `templates` (one counted synth shape; the gate runs it on every
+ * counted synth shape) is not its baseline, saying what to do:
  * above it, reuse the existing resource or make the new one opt-in; below it, lower the baseline.
  */
 export function countedFixedCostFindings(templates: readonly StackTemplate[]): string[] {
