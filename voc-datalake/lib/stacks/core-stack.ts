@@ -12,8 +12,8 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, stackModelArns } from '../utils/model-allowlist';
-import { acknowledgeNag, acknowledgeNagOnResource, resourceFinding } from '../utils/nag-ack';
-import { idempotencyTableSuppressions, cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
+import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
+import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, dynamoDbGsiSuppressions, kmsEncryptionSuppressions, s3BucketSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { isDevDeployment } from '../utils/context';
 import { createCoreAuth } from './core-auth';
@@ -341,8 +341,10 @@ export class VocCoreStack extends VocStack {
       encryptionKey: this.kmsKey,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       timeToLiveAttribute: 'expiration',
+      // A Powertools cache (15-minute TTL), but recoverable like every other table (cdk-nag DDB3): PITR bills by
+      // table size (GB-month), and this table stays tiny, so it adds no fixed cost (TENETS.md tenet 7).
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
     });
-    acknowledgeNagOnResource(this.idempotencyTable, idempotencyTableSuppressions);
 
 
     // ============================================

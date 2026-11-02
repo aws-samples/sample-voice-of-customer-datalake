@@ -64,8 +64,8 @@ describe('-c protectData=false: customer data kept while the platform runs, dele
     expect(byConstructId('AWS::DynamoDB::Table', id).Properties.DeletionProtectionEnabled).toBeUndefined();
   });
 
-  // The idempotency table is a Powertools cache with no recovery value.
-  it.each(ALL_TABLES.filter((id) => id !== 'IdempotencyTable'))('keeps point-in-time recovery on %s', (id) => {
+  // Every table, the idempotency cache included (cdk-nag DDB3; PITR bills by size, no fixed cost).
+  it.each(ALL_TABLES)('keeps point-in-time recovery on %s', (id) => {
     expect(byConstructId('AWS::DynamoDB::Table', id).Properties.PointInTimeRecoverySpecification)
       .toStrictEqual({ PointInTimeRecoveryEnabled: true });
   });

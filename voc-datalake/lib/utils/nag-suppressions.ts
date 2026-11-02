@@ -22,14 +22,6 @@ export const cdkCustomResourceSuppressions: NagAck[] = [
   },
 ];
 
-// DynamoDB PITR for idempotency table
-export const idempotencyTableSuppressions: NagAck[] = [
-  {
-    id: 'AwsSolutions-DDB3',
-    reason: 'Idempotency table has 15-minute TTL - transient data does not require point-in-time recovery',
-  },
-];
-
 // AWSLambdaBasicExecutionRole - AWS managed policy for Lambda CloudWatch logging
 export const lambdaBasicExecutionRoleSuppressions: NagAck[] = [
   {
