@@ -114,7 +114,7 @@ describe('countedFixedCostFindings', () => {
   it('names every resource of a type that grew, and says to reuse the existing one or make it opt-in', () => {
     const findings = countedFixedCostFindings([stackWith('A', atBaseline), stackWith('B', ['AWS::KMS::Key'])]);
     expect(findings).toHaveLength(1);
-    expect(itemAt(findings, 0)).toMatch(/^2 customer-managed KMS keys \(AWS::KMS::Key\) in the default synth, baseline 1: A\/R0, B\/R0 — .*reuse the existing one, or make the new one opt-in/);
+    expect(itemAt(findings, 0)).toMatch(/^2 customer-managed KMS keys \(AWS::KMS::Key\) in the synth, baseline 1: A\/R0, B\/R0 — .*reuse the existing one, or make the new one opt-in/);
   });
 
   it('asks for a lower baseline when a type shrank, so it cannot grow back', () => {
