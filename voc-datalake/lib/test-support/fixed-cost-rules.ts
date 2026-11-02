@@ -153,7 +153,7 @@ export interface OptInFixedCost {
   readonly expected: readonly RegExp[];
 }
 
-/** A resource type with a small monthly price per resource, held to a fixed count in the default synth. */
+/** A resource type with a small monthly price per resource, held to a fixed count in every synthesized shape. */
 export interface CountedFixedCost {
   readonly type: string;
   /** How many the default synth (every stack together) holds today: the ceiling, and a ratchet. */
@@ -163,7 +163,9 @@ export interface CountedFixedCost {
 
 /**
  * Resource types billed per resource per month (TENETS.md, tenet 7), counted over every stack of the default synth
- * and of the all-features synth (lib/fixed-cost-guard.test.ts; both hold the same numbers today).
+ * and of the all-features synth (lib/fixed-cost-guard.test.ts), against ONE baseline on purpose: no context-gated
+ * feature may add a key or a secret either (reuse the Core key; put a credential in an existing secret, later in
+ * SSM Parameter Store). A feature that truly needs one is an owner decision that changes this rule.
  * The count may never grow, and the gate also fails when it shrinks, so the number here is lowered in the same
  * change: the set can only get smaller.
  *
@@ -205,11 +207,11 @@ export function countedFixedCostFindings(templates: readonly StackTemplate[]): s
   return COUNTED_FIXED_COSTS.flatMap(({ type, baseline, what }) => {
     const found = resourcesOfType(templates, type);
     if (found.length > baseline) {
-      return [`${found.length} ${what} (${type}) in the default synth, baseline ${baseline}: ${found.join(', ')} — `
+      return [`${found.length} ${what} (${type}) in the synth, baseline ${baseline}: ${found.join(', ')} — `
         + `each bills monthly (TENETS.md, tenet 7); reuse the existing one, or make the new one opt-in behind a context flag`];
     }
     if (found.length < baseline) {
-      return [`${found.length} ${what} (${type}) in the default synth, below the baseline ${baseline} — `
+      return [`${found.length} ${what} (${type}) in the synth, below the baseline ${baseline} — `
         + 'lower `baseline` in COUNTED_FIXED_COSTS (lib/test-support/fixed-cost-rules.ts) to the new count, so it cannot grow back'];
     }
     return [];

@@ -794,9 +794,10 @@ the app creates ([TENETS.md](../TENETS.md), tenet 7). Such a feature goes behind
 `OPT_IN_FIXED_COSTS` (`lib/test-support/fixed-cost-rules.ts`) with exactly what it adds (today: `snapStart`, and `performanceTier`, which turns it on).
 A new performance feature reads `performanceTierEnabled` (`lib/utils/performance-tier.ts`) as well as its own flag. Lambda reserved concurrency costs nothing
 and is allowed. The same gate counts the resources billed per resource per month (`COUNTED_FIXED_COSTS`): the default
-synth holds exactly one customer-managed KMS key (the Core key; reuse it, with a narrow key-policy statement for a
-service principal) and the known baseline of three Secrets Manager secrets, which a later release moves to SSM
-Parameter Store. A count above its baseline fails; a count below it fails too, until the baseline is lowered.
+synth and the all-features synth each hold exactly one customer-managed KMS key (the Core key; reuse it, with a narrow
+key-policy statement for a service principal) and the known baseline of three Secrets Manager secrets, which a later
+release moves to SSM Parameter Store. Both shapes share ONE baseline on purpose, so no context-gated feature may add a
+key or a secret either. A count above its baseline fails; a count below it fails too, until the baseline is lowered.
 
 ### Lambda sizing and post-deploy capacity check
 
