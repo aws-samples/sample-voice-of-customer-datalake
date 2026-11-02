@@ -13,6 +13,7 @@ import { Construct } from 'constructs';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { byCodeUnit } from './compare';
 import { applyExactGrants } from './exact-grants';
 
 const env = { account: '111111111111', region: 'us-east-1' };
@@ -42,7 +43,7 @@ function fixture() {
   table.addGlobalSecondaryIndex({ indexName: 'gsi2-by-category', partitionKey: { name: 'c', type: dynamodb.AttributeType.STRING } });
   table.addLocalSecondaryIndex({ indexName: 'lsi-by-score', sortKey: { name: 's', type: dynamodb.AttributeType.NUMBER } });
   const plain = new dynamodb.Table(producer, 'Plain', { partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING } });
-  const bucket = new s3.Bucket(producer, 'Raw', { encryptionKey: key, encryption: s3.BucketEncryption.KMS, enforceSSL: true });
+  const bucket = new s3.Bucket(producer, 'Raw', { encryptionKey: key, encryption: s3.BucketEncryption.KMS, enforceSSL: true, versioned: true });
   const fn = (scope: cdk.Stack, id: string) => new lambda.Function(scope, id, {
     runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
   });
@@ -97,7 +98,7 @@ describe('applyExactGrants', () => {
     bucket.grantReadWrite(fn(producer, 'Writer'));
     applyExactGrants(app);
     const list = statements(producer, 'WriterServiceRoleDefaultPolicy');
-    expect(allActions(list).sort()).toStrictEqual([
+    expect(allActions(list).sort(byCodeUnit)).toStrictEqual([
       'kms:Decrypt', 'kms:DescribeKey', 'kms:Encrypt', 'kms:GenerateDataKey', 's3:DeleteObject', 's3:GetObject', 's3:ListBucket',
       's3:PutObject', 's3:PutObjectLegalHold', 's3:PutObjectRetention', 's3:PutObjectTagging', 's3:PutObjectVersionTagging',
     ]);
@@ -105,9 +106,8 @@ describe('applyExactGrants', () => {
   });
 
   it('keeps a Deny wildcard and explicit delete actions as they are (the retention pattern)', () => {
-    const { app, producer, bucket, fn } = fixture();
-    const role = fn(producer, 'Eraser').role;
-    if (role === undefined) throw new Error('no role');
+    const { app, producer, bucket } = fixture();
+    const role = new iam.Role(producer, 'Eraser', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') });
     role.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ['s3:DeleteObject', 's3:DeleteObjectVersion'], resources: [bucket.arnForObjects('raw/*')],
     }));
@@ -115,7 +115,7 @@ describe('applyExactGrants', () => {
       effect: iam.Effect.DENY, actions: ['s3:DeleteObject*'], resources: [bucket.arnForObjects('raw/csv_upload/*')],
     }));
     applyExactGrants(app);
-    const list = statements(producer, 'EraserServiceRoleDefaultPolicy');
+    const list = statements(producer, 'EraserDefaultPolicy');
     expect(list.map((statement) => [statement.Effect, actionsOf(statement)])).toStrictEqual([
       ['Allow', ['s3:DeleteObject', 's3:DeleteObjectVersion']], ['Deny', ['s3:DeleteObject*']],
     ]);

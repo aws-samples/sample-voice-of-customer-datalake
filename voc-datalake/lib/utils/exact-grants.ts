@@ -5,9 +5,13 @@
  * What it rewrites, in `Allow` statements only (a `Deny` keeps its wildcard: a narrower deny is weaker):
  *
  *   - `kms:GenerateDataKey*` → `kms:GenerateDataKey`; `kms:ReEncrypt*` → nothing. S3 SSE-KMS, SQS SSE-KMS and
- *     Secrets Manager need only `kms:GenerateDataKey` + `kms:Decrypt` from the caller (sources in
- *     {@link KMS_SOURCES}). DynamoDB lists `kms:GenerateDataKeyWithoutPlaintext`, `kms:ReEncryptFrom` and
- *     `kms:ReEncryptTo` among the permissions it needs on a customer managed key, so a policy that grants any
+ *     Secrets Manager need only `kms:GenerateDataKey` + `kms:Decrypt` from the caller (S3:
+ *     https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html and
+ *     https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html; SQS:
+ *     https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-key-management.html;
+ *     Secrets Manager: https://docs.aws.amazon.com/secretsmanager/latest/userguide/security-encryption.html). DynamoDB lists `kms:GenerateDataKeyWithoutPlaintext`, `kms:ReEncryptFrom` and
+ *     `kms:ReEncryptTo` among the permissions it needs on a customer managed key
+ *     (https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/encryption.usagenotes.html), so a policy that grants any
  *     `dynamodb:` action keeps exactly those, ONLY through DynamoDB (`kms:ViaService`
  *     `dynamodb.<region>.amazonaws.com`): the role itself cannot call them. The asymmetric data-key-pair
  *     variants (`kms:GenerateDataKeyPair*`) are dropped: no integrated service uses them for SSE.
@@ -41,7 +45,7 @@ export type GrantWildcard =
   | 's3:GetObject*' | 's3:GetBucket*' | 's3:List*' | 's3:Abort*' | 's3:DeleteObject*';
 
 /** Actions a CDK handler needs beyond {@link EXACT_ACTIONS}, by the wildcard its grant used to carry them in. */
-export type GrantNeeds = Partial<Record<GrantWildcard, readonly string[]>>;
+type GrantNeeds = Partial<Record<GrantWildcard, readonly string[]>>;
 
 /** What each wildcard becomes for every role. */
 export const EXACT_ACTIONS: Readonly<Record<GrantWildcard, readonly string[]>> = {
@@ -55,18 +59,10 @@ export const EXACT_ACTIONS: Readonly<Record<GrantWildcard, readonly string[]>> =
 };
 
 /** What each KMS wildcard keeps for a role that uses DynamoDB, callable only through DynamoDB. */
-export const DYNAMODB_KMS_ACTIONS: Readonly<Partial<Record<GrantWildcard, readonly string[]>>> = {
+const DYNAMODB_KMS_ACTIONS: Readonly<Partial<Record<GrantWildcard, readonly string[]>>> = {
   'kms:GenerateDataKey*': ['kms:GenerateDataKeyWithoutPlaintext'],
   'kms:ReEncrypt*': ['kms:ReEncryptFrom', 'kms:ReEncryptTo'],
 };
-
-/** AWS documentation for the KMS lists above. */
-export const KMS_SOURCES = [
-  'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/encryption.usagenotes.html',
-  'https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html#require-sse-kms',
-  'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-key-management.html',
-  'https://docs.aws.amazon.com/secretsmanager/latest/userguide/security-encryption.html',
-] as const;
 
 /**
  * CDK-owned Lambda handlers (matched by the construct id CDK gives the singleton function) and what their own
@@ -75,7 +71,7 @@ export const KMS_SOURCES = [
  * or more in parts and aborts a failed one (s3:AbortMultipartUpload); s3:GetBucketLocation is kept because the
  * AWS CLI's region lookup is not ours to audit.
  */
-export const CDK_HANDLER_NEEDS: readonly { readonly idPrefix: string; readonly needs: GrantNeeds }[] = [
+const CDK_HANDLER_NEEDS: readonly { readonly idPrefix: string; readonly needs: GrantNeeds }[] = [
   {
     idPrefix: 'Custom::CDKBucketDeployment',
     needs: { 's3:GetBucket*': ['s3:GetBucketLocation', 's3:GetBucketTagging'], 's3:Abort*': ['s3:AbortMultipartUpload'] },
