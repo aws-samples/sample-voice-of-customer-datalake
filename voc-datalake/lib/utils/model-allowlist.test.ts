@@ -3,7 +3,7 @@
  *
  * The failure mode this protects against is silent and deploy-time: a model
  * that is selectable but not invocable AccessDenies the whole surface, and a
- * wildcard ARN without a matching cdk-nag suppression fails synth.
+ * Region-wildcard ARN would bring back the cdk-nag findings this shape removed.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -11,8 +11,9 @@ import {
   ALLOWED_FOUNDATION_MODEL_IDS,
   ALLOWED_MODEL_IDS,
   allowlistedModelArns,
-  bedrockFoundationModelSuppressionTargets,
+  EU_PROFILE_DESTINATION_REGIONS,
   EU_PROFILE_MODEL_IDS,
+  euProfileDestinations,
   IMAGE_MODEL_ID,
   IMAGE_MODEL_MARKETPLACE_PRODUCT_ID,
   IMAGE_MODEL_REGION,
@@ -76,51 +77,62 @@ describe('ALLOWED_FOUNDATION_MODEL_IDS', () => {
   });
 });
 
-describe('allowlistedModelArns', () => {
-  it('emits a profile ARN and a foundation-model ARN per model', () => {
-    const arns = allowlistedModelArns(REGION, ACCOUNT, 'global');
-    expect(arns).toHaveLength(ALLOWED_MODEL_IDS.length * 2);
+describe('allowlistedModelArns (global scope)', () => {
+  const arns = () => allowlistedModelArns(REGION, ACCOUNT, 'global');
+  const flat = () => arns().flatMap((m) => [m.profile, ...m.regionalModels, ...(m.globalModel === undefined ? [] : [m.globalModel])]);
+
+  it('emits the three documented parts per model: profile, in-Region model, Region-agnostic model', () => {
+    expect(arns()).toHaveLength(ALLOWED_MODEL_IDS.length);
+    expect(arns().find((m) => m.profile.endsWith(OPUS48))).toStrictEqual({
+      profile: `arn:aws:bedrock:${REGION}:${ACCOUNT}:inference-profile/${OPUS48}`,
+      regionalModels: [`arn:aws:bedrock:${REGION}::foundation-model/anthropic.claude-opus-4-8`],
+      globalModel: 'arn:aws:bedrock:::foundation-model/anthropic.claude-opus-4-8',
+    });
   });
 
-  it('grants invoke on the fallback model so a safety fallback cannot AccessDeny', () => {
-    const arns = allowlistedModelArns(REGION, ACCOUNT, 'global');
-    expect(arns).toContain(
-      `arn:aws:bedrock:${REGION}:${ACCOUNT}:inference-profile/${OPUS48}`,
-    );
-    expect(arns).toContain(
-      'arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-8',
-    );
-  });
-
-  it('confines the region wildcard to foundation-model ARNs', () => {
-    const arns = allowlistedModelArns(REGION, ACCOUNT, 'global');
-    for (const arn of arns.filter((a) => a.includes('inference-profile/'))) {
-      expect(arn).toContain(`:${REGION}:${ACCOUNT}:`);
-      expect(arn).not.toContain(':*:');
-    }
+  it('names no Region wildcard anywhere (no cdk-nag acknowledgement needed)', () => {
+    expect(flat().filter((arn) => arn.includes('*'))).toStrictEqual([]);
   });
 
   it('never leaves a global. prefix on a foundation-model ARN', () => {
-    const arns = allowlistedModelArns(REGION, ACCOUNT, 'global');
-    for (const arn of arns.filter((a) => a.includes('foundation-model/'))) {
-      expect(arn).not.toContain('foundation-model/global.');
-    }
+    expect(flat().filter((arn) => arn.includes('foundation-model/global.'))).toStrictEqual([]);
   });
 });
 
 describe('allowlistedModelArns under inferenceScope=eu', () => {
-  const euArns = () => allowlistedModelArns(REGION, ACCOUNT, 'eu');
+  const EU_REGION = 'eu-central-1';
+  const euArns = (region = EU_REGION) => allowlistedModelArns(region, ACCOUNT, 'eu');
 
   it('grants the eu. profile of every allowlisted model and no global. profile', () => {
-    const profiles = euArns().filter((a) => a.includes('inference-profile/'));
+    const profiles = euArns().map((m) => m.profile);
     expect(profiles).toStrictEqual(ALLOWED_MODEL_IDS.map((id) =>
-      `arn:aws:bedrock:${REGION}:${ACCOUNT}:inference-profile/${id.replace(/^global\./, 'eu.')}`));
-    expect(profiles.filter((a) => a.includes('/global.'))).toStrictEqual([]);
+      `arn:aws:bedrock:${EU_REGION}:${ACCOUNT}:inference-profile/${id.replace(/^global\./, 'eu.')}`));
   });
 
-  it('keeps the same foundation-model ARNs (the cdk-nag targets stay valid)', () => {
-    const foundation = (arns: string[]) => arns.filter((a) => a.includes('foundation-model/'));
-    expect(foundation(euArns())).toStrictEqual(foundation(allowlistedModelArns(REGION, ACCOUNT, 'global')));
+  it('grants each foundation model in every destination Region of the eu. profile, and no global model', () => {
+    const haiku = euArns().find((m) => m.profile.endsWith('eu.anthropic.claude-haiku-5-5'));
+    expect(haiku?.regionalModels).toStrictEqual(
+      ['eu-central-1', 'eu-north-1', 'eu-south-1', 'eu-south-2', 'eu-west-1', 'eu-west-3']
+        .map((r) => `arn:aws:bedrock:${r}::foundation-model/anthropic.claude-haiku-5-5`));
+    expect(euArns().filter((m) => m.globalModel !== undefined)).toStrictEqual([]);
+  });
+
+  it('adds the source Region where the AWS table routes to it (eu-west-2, eu-central-2)', () => {
+    for (const source of ['eu-west-2', 'eu-central-2']) {
+      expect(euProfileDestinations(source)).toContain(source);
+      expect(euArns(source)[0]?.regionalModels).toContain(`arn:aws:bedrock:${source}::foundation-model/${ALLOWED_FOUNDATION_MODEL_IDS[0] ?? ''}`);
+    }
+  });
+
+  it('routes every source Region to itself and stays inside the EU', () => {
+    for (const [source, destinations] of Object.entries(EU_PROFILE_DESTINATION_REGIONS)) {
+      expect(destinations).toContain(source);
+      expect(destinations.filter((r) => !r.startsWith('eu-'))).toStrictEqual([]);
+    }
+  });
+
+  it('refuses a region without eu. profiles at synth', () => {
+    expect(() => allowlistedModelArns('us-east-1', ACCOUNT, 'eu')).toThrow(/EU source Region/);
   });
 
   it('maps a canonical id to its eu. twin and leaves global alone', () => {
@@ -155,34 +167,10 @@ describe('avatar image model', () => {
   });
 
   it('pins the ARN to a single region rather than wildcarding it', () => {
-    // A region-pinned ARN needs no cdk-nag suppression, unlike the cross-region
-    // text-model ARNs.
+    // A region-pinned ARN needs no cdk-nag suppression.
     expect(imageModelArn()).toBe(
       `arn:aws:bedrock:${IMAGE_MODEL_REGION}::foundation-model/${IMAGE_MODEL_ID}`,
     );
     expect(imageModelArn()).not.toContain(':*:');
-  });
-
-  it('is excluded from the cdk-nag wildcard suppressions', () => {
-    // Those targets exist only for wildcard-region ARNs; adding the pinned
-    // image model would be a suppression with nothing to suppress.
-    for (const target of bedrockFoundationModelSuppressionTargets()) {
-      expect(target).not.toContain(IMAGE_MODEL_ID);
-    }
-  });
-});
-
-describe('bedrockFoundationModelSuppressionTargets', () => {
-  it('covers every wildcard ARN the policy actually emits', () => {
-    // An uncovered wildcard ARN fails synth with an unsuppressed IAM5 finding —
-    // the exact drift that hand-listing these used to cause.
-    const targets = bedrockFoundationModelSuppressionTargets();
-    const wildcardArns = allowlistedModelArns(REGION, ACCOUNT, 'global').filter((a) =>
-      a.includes('foundation-model/'),
-    );
-    expect(targets).toHaveLength(ALLOWED_MODEL_IDS.length);
-    for (const arn of wildcardArns) {
-      expect(targets).toContain(`Resource::${arn}`);
-    }
   });
 });

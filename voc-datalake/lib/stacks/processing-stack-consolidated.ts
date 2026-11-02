@@ -13,7 +13,7 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import { Construct } from 'constructs';
 import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
-import { stackModelArns } from '../utils/model-allowlist';
+import { grantClaudeModels } from '../utils/claude-model-grant';
 import { dependencyLayer } from '../utils/dependency-layers';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
@@ -117,11 +117,7 @@ export class VocProcessingStack extends VocStack {
     // Bedrock permissions
     // Enrichment defaults to Haiku but admins can repoint the 'enrichment'
     // surface via the picker, so grant every allowlisted model (issue #96).
-    processingRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'BedrockInvoke',
-      actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-      resources: stackModelArns(this),
-    }));
+    grantClaudeModels(processingRole, 'stream');
 
     // Comprehend + Translate permissions
     processingRole.addToPolicy(new iam.PolicyStatement({
@@ -365,10 +361,7 @@ export class VocProcessingStack extends VocStack {
 
     // Research is a 'documents' surface (defaults to Sonnet 5) and is
     // repointable via the picker, so grant every allowlisted model (issue #96).
-    researchRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel'],
-      resources: stackModelArns(this),
-    }));
+    grantClaudeModels(researchRole, 'invoke');
 
     // Same lambda/-rooted staging as processor/aggregator: root-based staging
     // hashed the entire CDK project (scripts/, schemas/, coverage output...)
@@ -490,11 +483,7 @@ export class VocProcessingStack extends VocStack {
     deps.rawDataBucket.grantRead(role, 'raw/*');
     deps.kmsKey.grantEncryptDecrypt(role);
     // 'enrichment'/'utilities' surfaces are repointable via the picker (issue #96).
-    role.addToPolicy(new iam.PolicyStatement({
-      sid: 'BedrockInvoke',
-      actions: ['bedrock:InvokeModel'],
-      resources: stackModelArns(this),
-    }));
+    grantClaudeModels(role, 'invoke');
     role.addToPolicy(new iam.PolicyStatement({
       sid: 'ComprehendAnalysis',
       actions: ['comprehend:DetectSentiment', 'comprehend:DetectDominantLanguage'],

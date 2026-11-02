@@ -28,6 +28,7 @@ import {
 // to `cdk synth` inside `synthApp()`, and its sole module-level work is a `join()`
 // on two path constants.
 import { SYNTH_ACCOUNT, cdkJsonContextStrict, committedFeatureFlags } from '../test-support/synth-app';
+import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
 import { byCodeUnit } from '../utils/compare';
 import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
 
@@ -155,10 +156,11 @@ describe('VocCoreStack synth context', () => {
       `${resource}'s statement count moved: either the synth context lost `
       + '@aws-cdk/aws-iam:minimizePolicies, or this policy gained a statement. Both want reading.';
 
+    // 5: the Claude grant lives in the stack's shared managed policies (lib/utils/claude-model-grant.ts).
     expect(
       statementCount('AWS::IAM::Policy', 'ProductDocExtractorLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
       because('the doc-extractor role'),
-    ).toBe(6);
+    ).toBe(5);
     expect(
       statementCount('AWS::IAM::Policy', 'CdnSigningKeysLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
       because('the CDN signing-key role'),
@@ -1293,16 +1295,12 @@ describe('VocCoreStack product doc extractor', () => {
   });
 
   it('grants Bedrock invoke on the allowlisted models only', () => {
-    const bedrockStatements = extractorPolicyStatements()
-      .filter((s) => s.Action === 'bedrock:InvokeModel');
-    expect(bedrockStatements).toHaveLength(1);
-
-    const resources = z.array(z.string()).parse(itemAt(bedrockStatements, 0).Resource);
-    // Every allowlisted model, and nothing that would let it reach another one.
-    for (const modelId of ALLOWED_MODEL_IDS) {
-      expect(resources.some((arn) => arn.includes(modelId))).toBe(true);
-    }
-    expect(resources.some((arn) => arn === '*' || arn.endsWith('foundation-model/*'))).toBe(false);
+    // The Claude grant is the stack's shared managed policies, not the inline policy.
+    expect(extractorPolicyStatements().filter((s) => JSON.stringify(s.Action).includes('bedrock:'))).toStrictEqual([]);
+    const grant = claudeRoleGrantOf('Core', synthCoreTemplate().toJSON(), 'ProductDocExtractorLambdaServiceRole');
+    // Every allowlisted model in all three parts, and nothing that would let it reach another one.
+    expect(missingModelGrants([grant], ALLOWED_MODEL_IDS, 'global')).toStrictEqual([]);
+    expect(grant.statements.flatMap((s) => s.resources).filter((arn) => arn.includes('*'))).toStrictEqual([]);
   });
 
   it('scopes the S3 write to the extracted/ prefix and never to raw/', () => {

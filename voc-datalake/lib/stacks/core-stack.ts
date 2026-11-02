@@ -8,12 +8,12 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
 import { Construct } from 'constructs';
-import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX, stackModelArns } from '../utils/model-allowlist';
+import { grantClaudeModelsToFunction } from '../utils/claude-model-grant';
+import { ALLOWED_MODEL_IDS, MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION_PX } from '../utils/model-allowlist';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
-import { cdkCustomResourceSuppressions, bedrockModelSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
+import { cdkCustomResourceSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { isDevDeployment } from '../utils/context';
 import { createCoreAuth } from './core-auth';
@@ -442,10 +442,7 @@ export class VocCoreStack extends VocStack {
     this.projectsTable.grantReadWriteData(productDocExtractor);
     this.aggregatesTable.grantReadData(productDocExtractor);
     this.kmsKey.grantEncryptDecrypt(productDocExtractor);
-    productDocExtractor.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel'],
-      resources: stackModelArns(this),
-    }));
+    grantClaudeModelsToFunction(productDocExtractor, 'invoke');
 
     // ONE notification rule, filtered on the broad `projects/` prefix. S3 allows
     // only one prefix per rule and rejects overlapping rules on the same event
@@ -466,8 +463,8 @@ export class VocCoreStack extends VocStack {
     // bin/voc-datalake.ts gives this stack only the basic-execution and
     // cdk-assets suppressions, so everything the grants above generate has to be
     // suppressed HERE rather than by widening the stack-level set: prefix-scoped
-    // S3 object ARNs and the Bedrock cross-region foundation-model ARNs (the grant
-    // wildcards are rewritten to exact actions by lib/utils/exact-grants.ts).
+    // S3 object ARNs (the grant wildcards are rewritten to exact actions by lib/utils/exact-grants.ts;
+    // the Claude grant names every model ARN exactly: lib/utils/claude-model-grant.ts).
     acknowledgeNag(productDocExtractor, [
       {
         id: 'AwsSolutions-IAM5',
@@ -475,7 +472,6 @@ export class VocCoreStack extends VocStack {
         findings: [productDocReadKeys, productDocWriteKeys]
           .map((keys) => resourceFinding(this.rawDataBucket.arnForObjects(keys))),
       },
-      ...bedrockModelSuppressions,
     ]);
     // addEventNotification synthesizes a CDK-managed custom-resource Lambda that
     // configures the bucket notification. Same treatment as the cr.Provider

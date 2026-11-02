@@ -28,8 +28,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import { acknowledgeNag } from '../utils/nag-ack';
-import { stackModelArns } from '../utils/model-allowlist';
-import { bedrockModelSuppressions } from '../utils/nag-suppressions';
+import { grantClaudeModels } from '../utils/claude-model-grant';
 import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { DESIGN_CAPTURE_FUNCTION_BASE_NAME } from '../utils/function-names';
@@ -81,7 +80,7 @@ function designCaptureRole(stack: cdk.Stack, props: DesignCaptureProps): iam.Rol
     assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
   });
   for (const statement of managedBrowserStatements(stack)) role.addToPolicy(statement);
-  role.addToPolicy(new iam.PolicyStatement({ actions: ['bedrock:InvokeModel'], resources: stackModelArns(stack) }));
+  grantClaudeModels(role, 'invoke');
   role.addToPolicy(new iam.PolicyStatement({
     sid: 'ReadDesignAndModelSettings',
     actions: ['dynamodb:GetItem'],
@@ -100,7 +99,7 @@ function designCaptureRole(stack: cdk.Stack, props: DesignCaptureProps): iam.Rol
     resources: [rawDataBucket.arnForObjects(`${LOGO_PREVIEW_PREFIX}*`), rawDataBucket.arnForObjects(`${DESIGN_ICONS_PREFIX}*`)],
   }));
   kmsKey.grantEncryptDecrypt(role);
-  acknowledgeNag(role, [BROWSER_STREAM_SUPPRESSION, ...bedrockModelSuppressions]);
+  acknowledgeNag(role, [BROWSER_STREAM_SUPPRESSION]);
   return role;
 }
 

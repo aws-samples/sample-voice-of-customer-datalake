@@ -15,7 +15,7 @@ import type { VocIngestionStack } from '../stacks/ingestion-stack';
 import type { VocProcessingStack } from '../stacks/processing-stack-consolidated';
 import { acknowledgeNag } from './nag-ack';
 import {
-  bedrockModelSuppressions, rawDataPrefixSuppressions, s3ObjectSuppressions,
+  rawDataPrefixSuppressions, s3ObjectSuppressions,
 } from './nag-suppressions';
 
 export interface CoreStacks {
@@ -36,7 +36,6 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
   acknowledgeNag(processing, [
     ...s3ObjectSuppressions([raw.arnForObjects('raw/*')]),
     ...rawDataPrefixSuppressions(raw, ['memory-imports/*', 'prototypes/*', 'scratch/research_jobs/*']),
-    ...bedrockModelSuppressions,
   ]);
   acknowledgeNag(api, [
     ...s3ObjectSuppressions([
@@ -48,6 +47,5 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       'memory-imports/*', 'projects/*/product_docs/*', 'projects/*/product_docs/extracted/*', 'prototypes/*',
       'raw/github_issues/*', 'raw/feedback_form/*', 'raw/feature_requests/*', 'scratch/document_jobs/*',
     ]),
-    ...bedrockModelSuppressions,
   ]);
 }

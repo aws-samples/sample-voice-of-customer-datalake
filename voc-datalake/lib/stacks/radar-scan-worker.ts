@@ -32,7 +32,8 @@ import { RADAR_SCAN_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { grantCacheVersionBump, RADAR_VERSION_PARTITION } from '../utils/cache-version-grants';
-import { embeddingModelArn, stackModelArns } from '../utils/model-allowlist';
+import { grantClaudeModels } from '../utils/claude-model-grant';
+import { embeddingModelArn } from '../utils/model-allowlist';
 import { radarExaParameterName, radarExaParameterStatement } from '../utils/radar-exa-parameter';
 import { scheduleWorker, workerRole } from '../utils/worker-lambda';
 
@@ -74,8 +75,10 @@ export function createRadarScanWorker(scope: Construct, id: string, props: Radar
 
   const role = workerRole(worker, 'RadarScanRole');
   // 'utilities' surface (release extraction, repointable via the picker) + the Titan embedder (dedupe).
-  const models = [...stackModelArns(worker), embeddingModelArn(region)];
-  role.addToPolicy(new iam.PolicyStatement({ sid: 'BedrockInvoke', actions: ['bedrock:InvokeModel'], resources: models }));
+  grantClaudeModels(role, 'invoke');
+  role.addToPolicy(new iam.PolicyStatement({
+    sid: 'BedrockInvokeEmbedding', actions: ['bedrock:InvokeModel'], resources: [embeddingModelArn(region)],
+  }));
   radarTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query');
   // The Radar version bump after the scan records its outcome (docs/caching.md).
   grantCacheVersionBump(radarTable, role, RADAR_VERSION_PARTITION);

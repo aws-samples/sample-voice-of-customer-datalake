@@ -5,7 +5,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import { stackModelArns } from '../utils/model-allowlist';
+import { grantClaudeModels } from '../utils/claude-model-grant';
 import { PROJECTS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import type { ApiStackContext } from './api-context';
 import { grantMarketplaceSubscription } from './api-marketplace';
@@ -37,23 +37,15 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   jobsTable.grantReadWriteData(projectsRole);
   kmsKey.grantEncryptDecrypt(projectsRole);
   projectsRole.addToPolicy(new iam.PolicyStatement({ actions: ['states:StartExecution'], resources: [researchStateMachine.stateMachineArn] }));
-  // The Bedrock grant gets its own customer-managed policy instead of the
-  // role's default inline policy: two ARNs per allowlisted model (eight models
-  // since 3.07.00) pushed that inline policy past 70% of the role's 10,240-char
-  // inline quota (api-stack-mcp.test.ts). Same statement, same resources — only
-  // where it is stored changes, so no permission is widened.
-  const projectsBedrockPolicy = new iam.ManagedPolicy(stack, 'ProjectsBedrockInvokePolicy', {
-    roles: [projectsRole],
-    statements: [new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-      resources: [
-        ...stackModelArns(stack),
-        // Persona avatar image generation. Single-sourced in model-allowlist.ts
-        // so the grant tracks the model through its EOL migration.
-        ctx.avatarImageModelArn,
-      ],
-    })],
-  });
+  // Claude models through the stack's shared customer-managed policies (lib/utils/claude-model-grant.ts),
+  // not the role's inline policy, which would pass 70% of its 10,240-char quota (api-stack-mcp.test.ts).
+  const projectsClaudePolicies = grantClaudeModels(projectsRole, 'stream');
+  // Persona avatar image generation: the in-Region image model, exact ARN. Single-sourced in
+  // model-allowlist.ts so the grant tracks the model through its EOL migration.
+  projectsRole.addToPolicy(new iam.PolicyStatement({
+    actions: ['bedrock:InvokeModel'],
+    resources: [ctx.avatarImageModelArn],
+  }));
   // The image model is a Marketplace listing (issue #274).
   grantMarketplaceSubscription(projectsRole);
 
@@ -130,12 +122,12 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   };
   const projectsLambda = new lambda.Function(stack, 'ProjectsApi', projectsProps);
   // Like the role's default policy, attached before the function can be invoked.
-  projectsLambda.node.addDependency(projectsBedrockPolicy);
+  projectsLambda.node.addDependency(...projectsClaudePolicies);
   const projectsAssistWorker = createAssistWorker(ctx, 'ProjectsAssistWorker', {
     // The twin keeps its own size: the 2026-10-18 raise was measured on the REST path (lib/sizing/policy.ts).
     baseName: PROJECTS_ASSIST_FUNCTION_BASE_NAME, apiProps: projectsProps, memorySize: 1024,
   });
-  projectsAssistWorker.node.addDependency(projectsBedrockPolicy);
+  projectsAssistWorker.node.addDependency(...projectsClaudePolicies);
 
   return { projectsLambda, projectsAssistWorker, projectsRole, projectTablesEnvironment };
 }

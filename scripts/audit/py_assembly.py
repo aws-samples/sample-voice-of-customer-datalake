@@ -38,6 +38,9 @@ CACHE_DIR = REPO / '.cache' / 'audit'
 CAPTURE = Path(__file__).resolve().parent / 'py_capture_bundling.cjs'
 SYNTH_ACCOUNT = '111111111111'
 SYNTH_REGION = 'us-east-1'
+# The gated synth's region: `inferenceScope: 'eu'` below needs an EU source Region of the eu. inference
+# profiles (lib/utils/model-allowlist.ts euProfileDestinations), and refuses us-east-1 at synth.
+GATED_REGION = 'eu-central-1'
 GATED_PREFIX = 'b'  # a one-letter prefix: plugin rule names hit the 64-char limit otherwise
 # Context that switches on every optional Lambda (each key is a `tryGetContext` in bin/ or lib/).
 GATED_CONTEXT: dict[str, object] = {
@@ -164,11 +167,11 @@ def _base_context(cdk_dir: Path) -> dict[str, object]:
     return {**cdk_json, **committed, 'aws:cdk:bundling-stacks': [], 'skipFrontendBuildCheck': True}
 
 
-def _synth(cdk_dir: Path, extra: dict[str, object]) -> tuple[dict[str, dict], list[dict]]:
+def _synth(cdk_dir: Path, extra: dict[str, object], region: str = SYNTH_REGION) -> tuple[dict[str, dict], list[dict]]:
     with tempfile.TemporaryDirectory(prefix='voc-audit-synth-') as outdir:
         capture_out = Path(outdir) / 'bundling.json'
         env = {**os.environ, 'TS_NODE_PREFER_TS_EXTS': 'true', 'CDK_OUTDIR': outdir,
-               'CDK_DEFAULT_ACCOUNT': SYNTH_ACCOUNT, 'CDK_DEFAULT_REGION': SYNTH_REGION,
+               'CDK_DEFAULT_ACCOUNT': SYNTH_ACCOUNT, 'CDK_DEFAULT_REGION': region,
                'CDK_CONTEXT_JSON': json.dumps({**_base_context(cdk_dir), **extra}),
                'VOC_AUDIT_BUNDLING_OUT': str(capture_out)}
         command = ['node', '-r', str(CAPTURE), '-r', 'ts-node/register', 'bin/voc-datalake.ts']
@@ -261,7 +264,7 @@ def load_assembly(cdk_dir: Path = CDK_DIR, *, refresh: bool = False, cache_dir: 
             return _decode(cached)
     templates, records = _synth(cdk_dir, {})
     functions = _functions(templates, records, cdk_dir)
-    gated_templates, gated_records = _synth(cdk_dir, GATED_CONTEXT)
+    gated_templates, gated_records = _synth(cdk_dir, GATED_CONTEXT, GATED_REGION)
     gated = _functions(gated_templates, gated_records, cdk_dir, GATED_PREFIX)
     layers = {**_layers(gated_templates, gated_records, cdk_dir, GATED_PREFIX), **_layers(templates, records, cdk_dir)}
     for fn in functions.values():

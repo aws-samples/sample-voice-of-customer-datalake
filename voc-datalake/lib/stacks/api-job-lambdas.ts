@@ -6,7 +6,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import { stackModelArns } from '../utils/model-allowlist';
+import { grantClaudeModels } from '../utils/claude-model-grant';
 import { acknowledgeNag } from '../utils/nag-ack';
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
@@ -65,10 +65,9 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
     });
   };
 
-  // Every allowlisted model (issue #96) so any AI surface can be repointed
-  // via the picker. Single source of truth kept in lockstep with
+  // Every allowlisted model (issue #96, grantClaudeModels) so any AI surface can be
+  // repointed via the picker. Single source of truth kept in lockstep with
   // lambda/shared/model_config.py and lambda/stream/src/bedrock/model-override.ts.
-  const claudeModelResources = stackModelArns(stack);
   // Persona avatar image model — see model-allowlist.ts for its EOL deadline.
   const avatarImageModelResource = ctx.avatarImageModelArn;
 
@@ -142,9 +141,10 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   jobsTable.grantReadWriteData(personaGeneratorRole);
   aggregatesTable.grantReadData(personaGeneratorRole);
   kmsKey.grantEncryptDecrypt(personaGeneratorRole);
+  grantClaudeModels(personaGeneratorRole, 'stream');
   personaGeneratorRole.addToPolicy(new iam.PolicyStatement({
-    actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-    resources: [...claudeModelResources, avatarImageModelResource],
+    actions: ['bedrock:InvokeModel'],
+    resources: [avatarImageModelResource],
   }));
   grantMarketplaceSubscription(personaGeneratorRole);
   rawDataBucket.grantReadWrite(personaGeneratorRole, 'avatars/*');
@@ -175,12 +175,9 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   // existing form. shared/prototype_pins.py::ensure_pin_form.
   aggregatesTable.grant(documentGeneratorRole, 'dynamodb:PutItem');
   kmsKey.grantEncryptDecrypt(documentGeneratorRole);
-  documentGeneratorRole.addToPolicy(new iam.PolicyStatement({
-    actions: ['bedrock:InvokeModel'],
-    // Opus 5.5 (the prototype-builder default) is part of the allowlist,
-    // so claudeModelResources already covers it — no separate grant needed.
-    resources: claudeModelResources,
-  }));
+  // Opus 5.5 (the prototype-builder default) is part of the allowlist,
+  // so the Claude grant already covers it — no separate grant needed.
+  grantClaudeModels(documentGeneratorRole, 'invoke');
   // Product context: read extracted product-doc text when generating PRD/PR-FAQ.
   rawDataBucket.grantRead(documentGeneratorRole, 'projects/*/product_docs/extracted/*');
   // Prototype HTML: write new prototypes + read prior ones (feedback-driven
@@ -212,10 +209,7 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   // Model picker: read the documents-surface override from aggregates.
   aggregatesTable.grantReadData(documentMergerRole);
   kmsKey.grantEncryptDecrypt(documentMergerRole);
-  documentMergerRole.addToPolicy(new iam.PolicyStatement({
-    actions: ['bedrock:InvokeModel'],
-    resources: claudeModelResources,
-  }));
+  grantClaudeModels(documentMergerRole, 'invoke');
 
   const documentMergerLambda = createJobLambda('DocumentMergerJob', {
     baseName: 'voc-job-document-merger',
@@ -235,9 +229,10 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   // Model picker: read the documents-surface override from aggregates.
   aggregatesTable.grantReadData(personaImporterRole);
   kmsKey.grantEncryptDecrypt(personaImporterRole);
+  grantClaudeModels(personaImporterRole, 'invoke');
   personaImporterRole.addToPolicy(new iam.PolicyStatement({
     actions: ['bedrock:InvokeModel'],
-    resources: [...claudeModelResources, avatarImageModelResource],
+    resources: [avatarImageModelResource],
   }));
   grantMarketplaceSubscription(personaImporterRole);
   rawDataBucket.grantReadWrite(personaImporterRole, 'avatars/*');
