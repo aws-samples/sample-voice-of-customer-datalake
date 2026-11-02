@@ -85,11 +85,14 @@ class TestThePerItemWrite:
         assert messages[0]['s3_raw_uri'] == f"s3://bkt/{s3.put_object.call_args.kwargs['Key']}"
 
     @pytest.mark.parametrize('message', [{'text': 'no id'}, {'id': None, 'text': 'x'}, {'id': '', 'text': 'x'}])
-    def test_a_message_without_an_id_is_archived_as_item(self, message: dict) -> None:
+    def test_a_message_without_an_id_is_archived_in_a_folder_named_after_its_content(self, message: dict) -> None:
         s3 = MagicMock()
         archive_per_item(s3, 'bkt', 'src', [message], NOW)
         key = s3.put_object.call_args.kwargs['Key']
-        assert re.fullmatch(r'raw/src/2026/03/07/item/[0-9a-f]{16}\.json', key)
+        # Never a shared constant folder: noid-{digest}/{digest}.json, the same digest twice.
+        match = re.fullmatch(r'raw/src/2026/03/07/noid-([0-9a-f]{16})/([0-9a-f]{16})\.json', key)
+        assert match is not None
+        assert match.group(1) == match.group(2)
         assert message['s3_raw_uri'] == f's3://bkt/{key}'
 
     def test_at_most_sixteen_writes_run_at_once(self) -> None:

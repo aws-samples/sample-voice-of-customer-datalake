@@ -31,7 +31,7 @@ from typing import Any, Final
 from shared.archive_keys import archive_key_stem
 from shared.raw_copy import app_json_copy, source_permits_raw_copy
 
-__all__ = ['FEATURE_REQUESTS_SOURCE', 'archive_request', 'archive_support']
+__all__ = ['archive_request', 'archive_support']
 
 FEATURE_REQUESTS_SOURCE: Final = 'feature_requests'
 REQUEST_CONTENT: Final = ('request_id', 'board_id', 'title', 'description', 'fields', 'reporter_email',

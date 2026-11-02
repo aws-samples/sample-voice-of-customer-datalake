@@ -32,7 +32,7 @@ from .github_text import (
 )
 from .raw_source import RAW_SOURCE_KEY
 
-__all__ = ["RAW_PAYLOAD_KEY", "comment_item", "is_bot", "is_pull_request", "issue_item", "issue_labels"]
+__all__ = ["comment_item", "is_bot", "is_pull_request", "issue_item", "issue_labels"]
 
 #: Key under which an item carries the untouched GitHub payload for the raw archive: the generic
 #: raw-source key, popped by ``BaseIngestor`` / ``BaseWebhook.normalize_item`` (``_shared/raw_source.py``),
