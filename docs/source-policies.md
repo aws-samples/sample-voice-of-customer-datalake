@@ -138,8 +138,13 @@ the other path is participant erasure (`DELETE /participants/people/{id}`), whic
 
 How it works:
 
-- Each deleted item's `s3_raw_uri` object goes with it, every version. Removing the item
-  from DynamoDB moves the aggregate counters through the aggregator's REMOVE path.
+- Each deleted item's raw objects go with it, every version and delete marker, in both layouts
+  ([data-lake-structure.md](data-lake-structure.md)): the legacy `…/<stem>.json` object and every
+  object under the item's folder `…/<stem>/` (one per archived content version), whichever of the
+  two its `s3_raw_uri` names. `deleted_objects` counts the files removed. An API-side item received
+  again on a later day lands in a new date folder; that older folder is removed by a whole-source
+  erasure, not by the item's. Removing the item from DynamoDB moves the aggregate counters through
+  the aggregator's REMOVE path.
 - The worker hands over to a fresh invocation of itself before its 15-minute timeout.
 - `POST /settings/erasure` answers 202 `{job}`. `GET /settings/erasure` lists the newest 20
   jobs, and the sources a whole-source erasure may name.

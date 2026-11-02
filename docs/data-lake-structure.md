@@ -9,26 +9,47 @@ Data Explorer, the S3 import bucket and what is retained. How items get there is
 
 ## S3 Raw Data Structure
 
-Raw feedback is partitioned by source and by the item's own date (`created_at`, or the archive
-time when the item has none):
+Raw feedback (the bronze layer, `raw/`) keeps history: nothing under it is ever overwritten or
+expired. It is partitioned by source and date (a plugin item's own `created_at`, or the archive time
+when it has none; the ingest date for an API-side upload), with ONE folder per item holding every
+version of it:
 
 ```
 s3://voc-raw-data-<account>-<region>/
 └── raw/
     └── {source_platform}/
-        └── {year}/{month}/{day}/{item_id}.json
+        └── {year}/{month}/{day}/
+            ├── {item_stem}/{sha16}.json   ← one object per distinct content (current layout)
+            └── {item_stem}.json           ← legacy single object, written before that
 ```
 
 Example paths:
 
 ```
-raw/webscraper/2026/01/08/abc123def456.json
-raw/feedback_form/2026/01/08/uuid-here.json
+raw/webscraper/2026/01/08/abc123def456/3f9a0c1d2e4b5a67.json
+raw/webscraper/2026/01/08/abc123def456/8b1e2f3a4c5d6e7f.json   ← the same review, edited at the source
+raw/webscraper/2025/11/02/abc123def456.json                    ← a legacy object, left as it was
 ```
 
-The file name derives from the item's source id (or a hash of its date, text and URL), so ingesting
-the same item again overwrites the same object. A source whose PII policy is `redact` or
-`summary_only` keeps no raw copy ([source-policies.md](source-policies.md)).
+- `{item_stem}` derives from the item's source id (or a hash of its date, text and URL;
+  `shared/archive_keys.py`).
+- `{sha16}` is the first 16 hex characters of the SHA-256 of the canonical JSON (sorted keys) of the
+  item's CONTENT: `{"raw_content", "raw_item"}` for a plugin, the queued message without `s3_raw_uri`
+  for an API-side writer. No timestamp is hashed, so ingesting identical content again maps to the
+  same key and writes nothing new; changed content is a new object next to the old one.
+- Every write sends `If-None-Match: *` (`lambda/shared/raw_versions.py`, the one helper every raw
+  writer uses). S3's 412 means "this content is already archived" (the writer returns that object's
+  URI); a 409 (a concurrent write of the same key) is retried once.
+- A correction of a stored item (a confirmed CSV dataset update, [csv-import.md](csv-import.md))
+  writes the new version into the stored item's own folder (for a legacy `{item_stem}.json`, the folder
+  `{item_stem}/` next to it), and the item's `s3_raw_uri` points at the newest version.
+- Legacy objects stay where they are; every reader (category reprocess reads `s3_raw_uri`) and the
+  erasure handle both layouts.
+
+Every new raw object carries S3 user metadata `connector` and `connector-version`: the plugin id and
+its manifest `version` for an ingestor (`webhook_<plugin>` for a webhook), or the API writer
+(`manual_import`, `csv_upload`, `json_upload`) and the platform release. A source whose PII policy is
+`redact` or `summary_only` keeps no raw copy ([source-policies.md](source-policies.md)).
 
 The raw envelope written by ingestors and webhooks (`plugins/_shared/raw_archive.py`) is:
 
@@ -36,6 +57,8 @@ The raw envelope written by ingestors and webhooks (`plugins/_shared/raw_archive
 {
   "item_id": "abc123def456",
   "source_platform": "webscraper",
+  "connector": {"id": "webscraper", "version": "1.0.0"},
+  "content_sha16": "3f9a0c1d2e4b5a67",
   "ingested_at": "2026-01-08T10:30:00Z",
   "partition_date": "2026-01-08",
   "raw_content": "Original API response (optional)",
@@ -52,9 +75,12 @@ The raw envelope written by ingestors and webhooks (`plugins/_shared/raw_archive
 
 The bucket is versioned and KMS-encrypted. Ingestor roles may only put objects under `raw/`: they
 cannot read or delete. Only `voc-retention` deletes raw objects, for an opt-in per-source retention
-period or an erasure request. The Data Explorer (admin-only) can create a new object but refuses
-(409) to overwrite an existing key under `raw/`. An overwritten object's previous version is kept
-for 90 days. The bucket is kept when the stacks are deleted (`protectData`, the default); under
+period or an erasure request. The bucket policy denies every PutObject under `raw/` that does not
+send `If-None-Match` (statement `DenyRawWritesWithoutIfNoneMatch`, `lib/stacks/core-buckets.ts`),
+so no writer, ours or a custom out-of-band one, can overwrite a raw object; a CopyObject into `raw/`
+is refused too. The Data Explorer (admin-only) can create a new object but refuses (409) to
+overwrite an existing key under `raw/`. No lifecycle rule expires anything under `raw/`, current or
+noncurrent; the other prefixes (below) keep a 90-day noncurrent-version expiry. The bucket is kept when the stacks are deleted (`protectData`, the default); under
 `-c protectData=false` deleting the stack empties the bucket (every version) and deletes it; back up first
 ([Deployment → Teardown](deployment.md#teardown-with--c-protectdatafalse-back-up-first)).
 
@@ -222,8 +248,9 @@ processing failure, or to restore rows after an accidental erasure.
   `running`. Press Reprocess again; the rows already queued are skipped as duplicates. A reprocess
   whose invocation crashes or times out (no `error` written) is still retried by Lambda under the same
   run id, and its `started_at` moves to the retry.
-- **Raw archive.** A row is archived under a key derived from its id and its date, so a re-run
-  overwrites the same object; a row with no date is archived under the day of the re-run.
+- **Raw archive.** A row is archived in a folder derived from its id and its date, under a key
+  derived from its content, so a re-run of an unchanged file writes nothing new and a changed row is a
+  new version next to the old one; a row with no date is archived under the day of the re-run.
 
 ## Data Flow
 
@@ -238,7 +265,7 @@ Projects UI/API → Jobs → Bedrock → Projects table + S3 artifact assets
 
 Customer data is not deleted while the platform runs, apart from opt-in per-source retention and erasure requests ([Source policies](source-policies.md)). Deleting the stacks keeps it by default (`protectData`); under `-c protectData=false` it deletes all of it; back up first ([Deployment → Teardown](deployment.md#teardown-with--c-protectdatafalse-back-up-first)). Details and the migration for existing deployments: [Deployment → Data Retention](deployment.md#data-retention-nothing-is-ever-deleted).
 
-- **S3 raw data:** kept under `raw/` while the platform runs, unless a source's retention or an erasure removes it; previous versions of overwritten objects are kept 90 days; the bucket is deleted with the stack only under `-c protectData=false`. Project assets in the same bucket are managed by the project APIs.
+- **S3 raw data:** kept under `raw/` while the platform runs, with every version, unless a source's retention or an erasure removes it (nothing there is overwritten or expires); previous versions of overwritten objects under the other prefixes are kept 90 days; the bucket is deleted with the stack only under `-c protectData=false`. Project assets in the same bucket are managed by the project APIs.
 - **Feedback:** no expiry unless a source profile sets `retention_days`; the table is deleted with the stack only under `-c protectData=false`.
 - **Daily aggregate metrics:** no expiry; the table is deleted with the stack only under `-c protectData=false`.
 - **Projects:** no expiry; the table is deleted with the stack only under `-c protectData=false`.
