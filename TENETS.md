@@ -185,7 +185,9 @@ The same checks run locally and on GitHub, so a green local run means a green pi
 - **No fixed cost by default** (tenet 7, `voc-datalake/lib/fixed-cost-guard.test.ts`, part of `scripts/validate.sh`):
   the default synth of every stack fails on a WAF, SnapStart, provisioned concurrency or capacity, a NAT gateway, an
   Elastic IP, an interface VPC endpoint, an always-on database, cache, cluster or container, a Global Accelerator, an API Gateway cache, a CloudFront dedicated IP or a created hosted zone.
-  Opt-in flags list exactly the fixed costs they add.
+  Opt-in flags list exactly the fixed costs they add. The same gate counts the resources billed per resource per
+  month: exactly one customer-managed KMS key, and the three Secrets Manager secrets as a baseline that can only
+  shrink (`COUNTED_FIXED_COSTS` in `voc-datalake/lib/test-support/fixed-cost-rules.ts`).
 - **Data deletion** (D5): `voc-datalake/lib/customer-data-deletes.test.ts` pins every role that may delete from
   `voc-feedback` or `raw/` (`voc-retention`, plus legacy grants that can only shrink); every mutating API route is
   classified admin-only or open-by-decision (`voc-datalake/lambda/api/test/test_route_admin_gates.py`), and the
