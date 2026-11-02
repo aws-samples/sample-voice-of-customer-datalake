@@ -12,7 +12,7 @@ Bounded: a payload longer than ``MAX_RAW_SOURCE_CHARS`` (256 KB) is cut there an
 
 import json
 
-__all__ = ["MAX_RAW_SOURCE_CHARS", "RAW_SOURCE_KEY", "TRUNCATION_MARKER", "pop_raw_source"]
+__all__ = ["RAW_SOURCE_KEY", "pop_raw_source"]
 
 RAW_SOURCE_KEY = "_raw_source"
 MAX_RAW_SOURCE_CHARS = 256 * 1024

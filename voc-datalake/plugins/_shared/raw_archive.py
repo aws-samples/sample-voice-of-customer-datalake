@@ -34,7 +34,7 @@ from shared.raw_versions import (
 
 from .source_policy_gate import raw_archive_permitted
 
-__all__ = ["INGESTOR", "WEBHOOK", "archive_raw_item", "plugin_connector"]
+__all__ = ["WEBHOOK", "archive_raw_item", "plugin_connector"]
 
 # The transports a plugin archives from; a webhook's connector id is ``webhook_<plugin>``.
 INGESTOR = "ingestor"

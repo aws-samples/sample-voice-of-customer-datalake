@@ -24,7 +24,7 @@ from shared.archive_keys import archive_key_stem
 from shared.raw_copy import app_json_copy
 from shared.source_policy import raw_archive_allowed
 
-__all__ = ['FEEDBACK_FORM_SOURCE', 'SUBMITTED_FIELDS', 'archive_submission', 'submitted_content']
+__all__ = ['FEEDBACK_FORM_SOURCE', 'archive_submission']
 
 #: The feedback forms' source id, also the connector id of their raw copies.
 FEEDBACK_FORM_SOURCE: Final = 'feedback_form'

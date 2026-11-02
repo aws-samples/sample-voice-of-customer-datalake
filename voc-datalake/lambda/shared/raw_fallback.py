@@ -25,7 +25,7 @@ from shared.logging import logger
 from shared.raw_copy import app_json_copy, source_permits_raw_copy
 from shared.raw_versions import content_digest, item_stem
 
-__all__ = ['PROCESSOR_CONNECTOR', 'archive_inline_raw']
+__all__ = ['archive_inline_raw']
 
 PROCESSOR_CONNECTOR: Final = 'processor'
 

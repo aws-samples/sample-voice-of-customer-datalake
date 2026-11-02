@@ -32,7 +32,7 @@ from shared.source_policy import ARCHIVE_FILE
 
 from .raw_archive import plugin_connector
 
-__all__ = ["S3_IMPORT_SOURCE", "archive_original"]
+__all__ = ["archive_original"]
 
 S3_IMPORT_SOURCE = "s3_import"
 PROCESSED_PREFIX = "processed/"

@@ -42,10 +42,7 @@ from shared.raw_versions import (
 from shared.source_policy import ARCHIVE_NONE, archive_mode
 from shared.source_profiles import SourceProfilesUnavailable, cached_source_profile_strict, source_profile_configured
 
-__all__ = [
-    'RawTarget', 'app_json_copy', 'bytes_copy', 'bytes_digest', 'json_copy', 'source_archive_mode',
-    'source_permits_raw_copy',
-]
+__all__ = ['RawTarget', 'app_json_copy', 'bytes_copy', 'source_archive_mode', 'source_permits_raw_copy']
 
 _AWS_ERRORS = (ClientError, BotoCoreError)
 
