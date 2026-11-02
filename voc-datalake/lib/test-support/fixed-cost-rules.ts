@@ -173,6 +173,9 @@ export interface CountedFixedCost {
  *   secret (lib/stacks/ingestion-stack.ts) and the design-integrations and CDN signing-key secrets
  *   (lib/stacks/core-cdn.ts). A later release moves them to SSM Parameter Store (SecureString, no monthly fee) and
  *   brings this number to zero.
+ *
+ * Only the default synth is counted: an opt-in flag or a plugin that adds a key or a secret is not held to these
+ * numbers yet (the opt-in registries above list hourly-priced resources only).
  */
 export const COUNTED_FIXED_COSTS: readonly CountedFixedCost[] = [
   { type: 'AWS::KMS::Key', baseline: 1, what: 'customer-managed KMS keys' },

@@ -1,5 +1,5 @@
 /**
- * `-c protectData` parsing: on unless explicitly false (since 5.73.00), and a typo fails the synth.
+ * `-c protectData` parsing: on unless explicitly false (since 5.74.00), and a typo fails the synth.
  */
 import * as cdk from 'aws-cdk-lib';
 import { describe, expect, it } from 'vitest';

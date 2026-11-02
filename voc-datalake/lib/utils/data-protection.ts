@@ -2,7 +2,7 @@
  * `protectData` — SINGLE SOURCE OF TRUTH for what happens to customer data when the stacks are deleted
  * (docs/deployment.md, "Production: protectData" and "Teardown").
  *
- * Default (on, since 5.73.00): the data tables, the raw-data bucket, the KMS key, the
+ * Default (on, since 5.74.00): the data tables, the raw-data bucket, the KMS key, the
  * design-integrations secret and the Cognito user pool use `RETAIN_ON_UPDATE_OR_DELETE`
  * (CloudFormation `RetainExceptOnCreate`: kept on stack deletion and on replacement, but a failed
  * FIRST create still rolls back cleanly), DynamoDB tables and the user pool get deletion protection

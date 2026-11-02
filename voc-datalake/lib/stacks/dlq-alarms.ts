@@ -118,7 +118,10 @@ function alarmSourceArnPattern(stack: cdk.Stack, alarmNamePrefix: string): strin
  * These are the confused-deputy conditions the SNS guide documents for
  * service-principal publishers
  * (https://docs.aws.amazon.com/sns/latest/dg/sns-key-management.html); SNS
- * documents no encryption-context key, so none is relied on.
+ * documents no encryption-context key, so none is relied on. This reverses the
+ * earlier choice of a separate key on purpose: the statement is `Resource: '*'` on
+ * the key that protects every table and bucket, and that widening is accepted,
+ * bounded by the two conditions above.
  */
 export function createAlarmTopic(scope: Construct, id: string, props: AlarmTopicProps): void {
   // A plain construct with the same id keeps every logical id the class form had.

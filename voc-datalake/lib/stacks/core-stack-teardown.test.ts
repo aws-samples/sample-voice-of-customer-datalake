@@ -1,6 +1,6 @@
 /**
  * What deleting (or replacing) VocCoreStack does to customer data, in both modes:
- * the default (`protectData` on since 5.73.00: data survives the stacks) and
+ * the default (`protectData` on since 5.74.00: data survives the stacks) and
  * `-c protectData=false` for demos (a full cleanup)
  * (lib/utils/data-protection.ts, docs/deployment.md "Teardown").
  */

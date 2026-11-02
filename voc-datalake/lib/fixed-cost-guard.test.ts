@@ -59,7 +59,6 @@ describe('the default synth\'s per-resource monthly costs (COUNTED_FIXED_COSTS)'
   });
 });
 
-
 describe.each(OPT_IN_SHAPES)('opt-in -c %s=true', (_flag, result, expected) => {
   it('adds exactly the fixed costs it is allowed to, and the gate names each one', () => {
     const findings = findingsOf(result);

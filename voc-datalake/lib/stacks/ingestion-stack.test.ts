@@ -125,7 +125,6 @@ const RuleSchema = z.object({
 });
 const QueueSchema = z.object({
   Properties: z.object({
-    QueueName: z.unknown(),
     KmsMasterKeyId: z.unknown(),
   }),
 });
@@ -168,18 +167,19 @@ describe('VocIngestionStack scheduled ingestion dead-letter queue', () => {
     }
   });
 
-  /** The schedule DLQ's Properties and the logical id of the key it is encrypted with. */
-  const scheduleDlq = () => {
-    const queue = QueueSchema.parse(template.findResources('AWS::SQS::Queue')[
-      itemAt(logicalIdsStartingWith(template, 'AWS::SQS::Queue', 'IngestScheduleDLQ'), 0)
-    ]).Properties;
-    return { queue, keyRef: queue.KmsMasterKeyId };
-  };
+  /** The key reference (`KmsMasterKeyId`) of the one queue whose logical id starts with `prefix`. */
+  const queueKeyRef = (prefix: string): unknown => QueueSchema.parse(template.findResources('AWS::SQS::Queue')[
+    itemAt(logicalIdsStartingWith(template, 'AWS::SQS::Queue', prefix), 0)
+  ]).Properties.KmsMasterKeyId;
 
   it('encrypts the DLQ with the Core key and creates no key of its own', () => {
     // One customer-managed key per deployment (tenet 7 baseline): the EventBridge grant
-    // lives on the Core key's policy (dlq-alarms.test.ts pins that statement).
-    expect(JSON.stringify(scheduleDlq().keyRef)).not.toContain('IngestScheduleDLQKey');
+    // lives on the Core key's policy (dlq-alarms.test.ts pins that statement and its queue ARN).
+    // Positive check: the DLQ names the very key the processing queue (Core key) uses, so dropping
+    // `encryptionMasterKey` or switching to SQS-managed SSE fails here.
+    const coreKeyRef = queueKeyRef('ProcessingQueue');
+    expect(coreKeyRef).toStrictEqual({ 'Fn::ImportValue': expect.stringContaining('Key') });
+    expect(queueKeyRef('IngestScheduleDLQ')).toStrictEqual(coreKeyRef);
     expect(Object.keys(template.findResources('AWS::KMS::Key'))).toStrictEqual([]);
   });
 
