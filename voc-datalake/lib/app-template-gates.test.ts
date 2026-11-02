@@ -13,9 +13,10 @@
  *    visibility timeout is at least 6 x the function timeout + the batching window (AWS Lambda,
  *    https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-configure.html). Cross-stack sources
  *    (`Fn::ImportValue`) are followed to the exporting stack.
- * 3. The all-features synth has no cdk-nag error or CDK warning (the default synth is held to that by
- *    lib/app-baseline.test.ts), which is what proves the per-policy `Resource::*` suppression
- *    (lib/utils/nag-resource-star.ts) still covers every reviewed grant once the stack-wide one is gone.
+ * 3. The all-features synth has no cdk-nag finding left unacknowledged (cdk-nag 3 fails the synth on one) and
+ *    no CDK warning (the default synth is held to that by lib/app-baseline.test.ts), which is what proves the
+ *    per-policy `Resource::*` acknowledgement (lib/utils/nag-resource-star.ts) still covers every reviewed grant
+ *    once the stack-wide one is gone.
  * 4. Every `bedrock:InvokeModel*` statement on a Claude model names the e2e profile's Haiku 5.5 and its
  *    capacity fallback, as `global.` inference profile and foundation model (test-support/bedrock-grants.ts;
  *    the `eu.` synth: lib/app-inference-scope.test.ts).
@@ -212,7 +213,7 @@ describe('SQS event sources', () => {
 // ── 3. The all-features synth is clean ───────────────────────────────
 
 describe('the all-features synth', () => {
-  it('reads real annotations and reports no cdk-nag error or CDK warning', () => {
+  it('synthesized (no unacknowledged cdk-nag finding), reads real annotations and reports no CDK warning', () => {
     expect(SHAPES.allFeatures.readsRealAnnotations).toBe(true);
     expect(diagnostics(SHAPES.allFeatures).map((d) => `${d.path}: ${d.data.slice(0, 160)}`)).toStrictEqual([]);
   });

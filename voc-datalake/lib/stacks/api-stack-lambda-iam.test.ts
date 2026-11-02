@@ -14,10 +14,11 @@ import type { IamStatement } from '../test-support/iam-statements';
 import { ALLOWED_FOUNDATION_MODEL_IDS, ALLOWED_MODEL_IDS, IMAGE_MODEL_MARKETPLACE_PRODUCT_ID, imageModelArn } from '../utils/model-allowlist';
 import { allowedActions as allowedActionsOf, roleStatements as readRoleStatements } from '../test-support/iam-statements';
 import {
-  LambdaEnvSchema, apiMethods, apiTemplate, apiTemplateDev, apiTemplatePrefixed, functionIdForHandler, nonOptions, resolveMethod,
-  methodThrottles, policyStatementsOf, serviceEnvironment, unwiredMethodKeys,
+  LambdaEnvSchema, apiMethods, apiTemplate, apiTemplateDev, apiTemplatePrefixed, buildApiStack, functionIdForHandler, nonOptions,
+  resolveMethod, methodThrottles, policyStatementsOf, serviceEnvironment, unwiredMethodKeys,
   actionsWithPrefix, RefSchema,
 } from '../test-support/api-stack-template';
+import { acknowledgementCovering } from '../utils/nag-ack';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
 import { itemAt } from '../test-support/guards';
@@ -268,12 +269,17 @@ describe('the settings Lambda can test models and read their quotas', () => {
     expect(itemAt(quotaStatements, 1).resource).toMatch(/:servicequotas:.*:bedrock\/\*/);
   });
 
-  it('documents the read-only wildcard with a scoped cdk-nag suppression', () => {
-    const roles = apiTemplate().findResources('AWS::IAM::Role');
-    const settingsRole = Object.entries(roles).find(([logicalId]) => logicalId.startsWith(ROLE));
-    expect(settingsRole, `no ${ROLE}`).toBeDefined();
-    expect(JSON.stringify(settingsRole?.[1])).toContain('servicequotas:ListServiceQuotas supports no resource-level permission');
-  });
+  it('documents the read-only wildcards with scoped cdk-nag acknowledgements', () => {
+    // Read where cdk-nag 3 looks: the role's DefaultPolicy resource and its ancestors.
+    const role = buildApiStack().node.findChild(ROLE);
+    const policy = role.node.findChild('DefaultPolicy').node.defaultChild;
+    if (policy === undefined) throw new Error(`${ROLE} has no DefaultPolicy resource`);
+    expect(acknowledgementCovering(policy, 'AwsSolutions-IAM5[Resource::*]')?.reason)
+      .toContain('servicequotas:ListServiceQuotas supports no resource-level permission');
+    expect(acknowledgementCovering(
+      policy, 'AwsSolutions-IAM5[Resource::arn:<AWS::Partition>:servicequotas:<AWS::Region>:<AWS::AccountId>:bedrock/*]',
+    )?.reason).toContain('servicequotas:GetServiceQuota is read-only');
+  }, SYNTH_TIMEOUT_MS);
 
   it('may list the raw bucket, so archiving a design reference can find its copied icons (5.48.00)', () => {
     // ListObjectsV2 is authorized by s3:ListBucket on the BUCKET ARN, not by an object grant. The

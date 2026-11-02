@@ -273,10 +273,11 @@ describe('a prefixed deployment', () => {
   });
 
   it('synthesizes with zero warnings', () => {
-    // Notably this covers the cdk-nag suppressions, whose `appliesTo` regexes
-    // quote the concrete ARN: a hardcoded `voc-ingestor-` there silently stops
-    // matching under a prefix and leaves a fresh IAM5 finding behind (at
-    // severity `aws:cdk:error`, not warning).
+    // A synth that returns has no unacknowledged cdk-nag finding either: cdk-nag 3
+    // fails the synth on one (a SynthFailure here). This covers the acknowledgements
+    // rendered from prefixed names (the logs-diagnostics and alerting ARNs, the
+    // cross-stack exports `<prefix>-VocCoreStack:Exports…`): a hardcoded name there
+    // would stop matching under a prefix and leave a fresh IAM5 finding behind.
     //
     // The collector this reads is itself guarded — see
     // lib/test-support/synth-app.test.ts. It has to be: an empty annotation

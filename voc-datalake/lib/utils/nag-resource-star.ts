@@ -1,21 +1,21 @@
 /**
- * cdk-nag `AwsSolutions-IAM5` `Resource::*`, suppressed per POLICY rather than per stack.
+ * cdk-nag `AwsSolutions-IAM5[Resource::*]`, acknowledged per POLICY rather than per stack.
  *
- * Why. The Comprehend/Translate suppression used to be a stack-level entry with `appliesTo: ['Resource::*']`
+ * Why. The Comprehend/Translate suppression used to be a stack-level `Resource::*` entry
  * on the Ingestion, Processing and API stacks. cdk-nag reports one `Resource::*` finding per policy whatever
  * the action, so that entry silenced EVERY `"*"` grant in those stacks: Step Functions log delivery, the
  * BucketDeployment invalidation, the event-source `ListStreams`, and whatever came next. This helper puts
- * the suppression only on a policy whose every `"*"` action is in the reviewed list
- * (resource-star-actions.ts), and its reason names those actions, so the nag report says what was accepted
- * and an unlisted `"*"` grant is reported.
+ * the acknowledgement only on a policy whose every `"*"` action is in the reviewed list
+ * (resource-star-actions.ts), and its reason names those actions, so the acknowledgement says what was
+ * accepted and an unlisted `"*"` grant is reported.
  *
- * Skipped: a policy that already carries its own IAM5 `Resource::*` suppression (the marketplace, Service
- * Quotas, logs diagnostics, browser and model-agreement grants keep their hand-written reasons; cdk-nag
- * would use the first entry anyway, leaving this one unused).
+ * Skipped: a policy whose `Resource::*` is already acknowledged on it or an ancestor (the marketplace,
+ * Service Quotas, logs diagnostics, browser and model-agreement grants keep their hand-written reasons;
+ * the nearer acknowledgement would leave this one unused).
  *
  * Limits: it reads each policy document when it is called, so call it after the stack is fully built. A
- * `"*"` statement added to an already-suppressed policy LATER (an Aspect, a grant made after this call) is
- * covered by that policy's suppression and cdk-nag stays quiet about it; lib/app-template-gates.test.ts,
+ * `"*"` statement added to an already-acknowledged policy LATER (an Aspect, a grant made after this call)
+ * is covered by that policy's acknowledgement and cdk-nag stays quiet about it; lib/app-template-gates.test.ts,
  * which reads the final synthesized templates, is the gate that still catches it. Only `iam.Policy`
  * documents are read; CDK puts every role grant in one.
  */
