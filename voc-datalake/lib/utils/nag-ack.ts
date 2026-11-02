@@ -85,15 +85,13 @@ export function acknowledgementsOn(construct: IConstruct): NagAcknowledgement[] 
 }
 
 /**
- * The construct (nearest first: `construct` itself, then its ancestors) whose acknowledgement covers `id`,
- * or undefined. cdk-nag skips a finding when any of them acknowledges it.
+ * The acknowledgement of `id` nearest to `construct` (`construct` itself, then its ancestors), or undefined.
+ * cdk-nag skips a finding when any of them acknowledges it.
  */
-export function acknowledgementCovering(
-  construct: IConstruct, id: string,
-): { readonly scope: IConstruct; readonly reason: string } | undefined {
+export function acknowledgementCovering(construct: IConstruct, id: string): NagAcknowledgement | undefined {
   for (const scope of [...construct.node.scopes].reverse()) {
     const found = acknowledgementsOn(scope).find((ack) => ack.id === id);
-    if (found) return { scope, reason: found.reason };
+    if (found) return found;
   }
   return undefined;
 }
