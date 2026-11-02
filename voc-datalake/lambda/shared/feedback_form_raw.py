@@ -10,28 +10,24 @@ deletes it with the item. A failed write is logged; the submission is still queu
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Final
 
 from shared.archive_keys import archive_key_stem
-from shared.aws import get_s3_client
-from shared.raw_copy import RawTarget, json_copy
-from shared.raw_versions import app_connector
+from shared.raw_copy import app_json_copy
 from shared.source_policy import raw_archive_allowed
 
-__all__ = ['FEEDBACK_FORM_CONNECTOR', 'archive_submission']
+__all__ = ['FEEDBACK_FORM_SOURCE', 'archive_submission']
 
-FEEDBACK_FORM_CONNECTOR: Final = 'feedback_form'
+#: The feedback forms' source id, also the connector id of their raw copies.
+FEEDBACK_FORM_SOURCE: Final = 'feedback_form'
 
 
-def archive_submission(source: str, form_id: str, feedback_id: str, body: Mapping[str, Any],
-                       profile: Mapping[str, Any], now: datetime) -> str | None:
+def archive_submission(form_id: str, feedback_id: str, body: Mapping[str, Any], profile: Mapping[str, Any],
+                       now: datetime) -> str | None:
     """The ``s3://`` URI of the submission's raw copy; None when the policy forbids one or the write failed."""
-    bucket = os.environ.get('RAW_DATA_BUCKET', '')
-    if not bucket or not raw_archive_allowed(profile):
+    if not raw_archive_allowed(profile):
         return None
-    target = RawTarget(bucket, source, now.date(), archive_key_stem(feedback_id))
-    return json_copy(get_s3_client(), target, {'form_id': form_id, 'submission': dict(body)},
-                     app_connector(FEEDBACK_FORM_CONNECTOR))
+    return app_json_copy(FEEDBACK_FORM_SOURCE, now.date(), archive_key_stem(feedback_id),
+                         {'form_id': form_id, 'submission': dict(body)}, FEEDBACK_FORM_SOURCE)

@@ -25,7 +25,7 @@ import hmac
 import json
 import os
 import sys
-from typing import Any, override
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -33,7 +33,6 @@ from _shared.audit import emit_audit_event
 from _shared.base_webhook import BaseWebhook, logger, metrics, tracer
 from _shared.github_config import GitHubSourceConfig
 from _shared.github_mapping import (
-    RAW_PAYLOAD_KEY,
     comment_item,
     is_bot,
     is_pull_request,
@@ -122,14 +121,6 @@ class GitHubIssuesWebhook(BaseWebhook):
         if not isinstance(comment, dict) or "id" not in comment or is_bot(comment) or not self.config.admits(comment):
             return []
         return [comment_item(comment, repo, issue, self.config.product_names)]
-
-    @override
-    def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
-        """Archive the delivery's issue/comment object as the raw content; send only the mapped item."""
-        payload = item.pop(RAW_PAYLOAD_KEY, None)
-        if payload is not None:
-            raw_content = json.dumps(payload, default=str)
-        return super().normalize_item(item, raw_content)
 
 
 @logger.inject_lambda_context

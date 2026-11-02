@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
@@ -27,12 +28,24 @@ from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared.aws import get_s3_client
 from shared.logging import logger
-from shared.raw_versions import DIGEST_CHARS, Connector, content_digest, item_folder, put_raw_version, version_key
+from shared.raw_versions import (
+    DIGEST_CHARS,
+    Connector,
+    app_connector,
+    content_digest,
+    item_folder,
+    put_raw_version,
+    version_key,
+)
 from shared.source_policy import ARCHIVE_NONE, archive_mode
 from shared.source_profiles import SourceProfilesUnavailable, cached_source_profile_strict
 
-__all__ = ['RawTarget', 'bytes_copy', 'bytes_digest', 'json_copy', 'source_archive_mode', 'source_permits_raw_copy']
+__all__ = [
+    'RawTarget', 'app_json_copy', 'bytes_copy', 'bytes_digest', 'json_copy', 'source_archive_mode',
+    'source_permits_raw_copy',
+]
 
 _AWS_ERRORS = (ClientError, BotoCoreError)
 
@@ -102,3 +115,12 @@ def bytes_copy(s3: Any, target: RawTarget, body: bytes, connector: Connector, *,
         return None
     key = target.key(bytes_digest(body), extension)
     return _write(s3, target, key, body, connector, content_type=content_type, metadata=metadata)
+
+
+def app_json_copy(source: str, day: date, stem: str, content: object, connector_id: str) -> str | None:
+    """An API-side writer's JSON copy in this Lambda's raw bucket (``RAW_DATA_BUCKET``), recorded as
+    ``connector_id`` at the app release (``APP_VERSION``); its URI, or None (no bucket, failed)."""
+    bucket = os.environ.get('RAW_DATA_BUCKET', '')
+    if not bucket:
+        return None
+    return json_copy(get_s3_client(), RawTarget(bucket, source, day, stem), content, app_connector(connector_id))

@@ -29,7 +29,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.feedback_form_participants import record_response, resolve_participant
-from shared.feedback_form_raw import archive_submission
+from shared.feedback_form_raw import FEEDBACK_FORM_SOURCE, archive_submission
 from shared.form_theme import validate_theme
 
 if TYPE_CHECKING:
@@ -348,7 +348,6 @@ def _validated_submission(body: dict) -> str:
 
 
 MAX_WIDGET_DIMENSIONS = 10
-FEEDBACK_FORM_SOURCE = 'feedback_form'
 
 
 def _widget_dimensions(body: dict) -> dict[str, str]:
@@ -979,7 +978,7 @@ def submit_form_feedback(form_id: str):
         raise ValidationError('Feedback text is required')
     # The body as the widget sent it, kept only when the profile permits a raw copy
     # (shared/feedback_form_raw.py); a failed write is logged and the submission queued.
-    raw_uri = archive_submission(FEEDBACK_FORM_SOURCE, form_id, feedback_id, body, profile, now)
+    raw_uri = archive_submission(form_id, feedback_id, body, profile, now)
     normalized_record = {**policed, 's3_raw_uri': raw_uri} if raw_uri else policed
 
     try:

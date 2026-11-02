@@ -2,19 +2,19 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
 
-import boto3
 import pytest
-from moto import mock_aws
 
 from shared.raw_fallback import archive_inline_raw
 from shared.raw_versions import content_digest
+from shared.test.raw_lake_fixtures import RAW_BUCKET, raw_keys, raw_lake
 from shared.test.source_profile_fixtures import seeded_source_profiles, unreadable_source_profiles
 
-BUCKET = 'raw-bucket'
+BUCKET = RAW_BUCKET
 NOW = datetime(2026, 3, 5, 12, tzinfo=UTC)
 RAW = {'id': 'r1', 'text': 'as received', 'rating': 4}
 
@@ -24,18 +24,13 @@ def _record(**overrides: Any) -> dict[str, Any]:
 
 
 @pytest.fixture
-def s3(monkeypatch: pytest.MonkeyPatch) -> Any:
-    monkeypatch.setenv('RAW_DATA_BUCKET', BUCKET)
-    monkeypatch.setenv('APP_VERSION', '9.1.0')
-    with mock_aws():
-        client = boto3.client('s3', region_name='us-east-1')
-        client.create_bucket(Bucket=BUCKET)
-        with patch('shared.raw_fallback.get_s3_client', return_value=client), seeded_source_profiles():
-            yield client
+def s3() -> Iterator[Any]:
+    with raw_lake() as client, seeded_source_profiles():
+        yield client
 
 
 def _keys(client: Any) -> list[str]:
-    return [o['Key'] for o in client.list_objects_v2(Bucket=BUCKET).get('Contents', [])]
+    return raw_keys(client)
 
 
 def test_writes_raw_data_in_the_items_folder_with_the_processor_connector(s3: Any) -> None:
@@ -78,12 +73,13 @@ def test_an_unreadable_policy_writes_nothing(s3: Any) -> None:
 
 def test_no_bucket_writes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv('RAW_DATA_BUCKET', raising=False)
-    with patch('shared.raw_fallback.get_s3_client') as client:
+    with patch('shared.raw_copy.get_s3_client') as client:
         assert archive_inline_raw(_record(), NOW) is None
     client.assert_not_called()
 
 
-def test_a_message_without_an_id_uses_the_item_stem(s3: Any) -> None:
+@pytest.mark.usefixtures('s3')
+def test_a_message_without_an_id_uses_the_item_stem() -> None:
     uri = archive_inline_raw(_record(id=''), NOW)
     assert uri is not None
     assert '/2026/03/05/item/' in uri
