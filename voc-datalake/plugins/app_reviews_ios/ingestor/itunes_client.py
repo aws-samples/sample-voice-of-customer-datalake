@@ -80,6 +80,8 @@ def _parse_entry(entry: dict) -> dict | None:
             "title": entry["title"]["label"],
             "review": entry["content"]["label"],
             "developer_response": None,
+            # The entry as the feed served it, for the item's raw archive (_shared/raw_source.py).
+            "rss_entry": entry,
         }
     except (KeyError, TypeError, ValueError):
         return None

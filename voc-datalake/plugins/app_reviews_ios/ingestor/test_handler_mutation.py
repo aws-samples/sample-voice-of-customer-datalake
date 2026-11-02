@@ -43,6 +43,7 @@ from aws_lambda_powertools.metrics.provider.cold_start import reset_cold_start_f
 
 from _shared.app_reviews_health import StorefrontFetch
 from _shared.base_ingestor import logger, metrics, tracer
+from _shared.raw_source import RAW_SOURCE_KEY
 from _shared.test.ingestor_fixtures import (
     offline_ingestor_construction,
     with_mock_circuit_breaker,
@@ -339,6 +340,7 @@ class TestFormatReview:
             "user_name": "jane",
             "country": "gb",
             "developer_response": "Thanks!",
+            "rss_entry": {"id": {"label": "r1"}},
         }) == {
             "id": "ios_123_r1",
             "channel": "app_review_ios",
@@ -354,6 +356,8 @@ class TestFormatReview:
             "app_identifier": "123",
             "country": "gb",
             "developer_response": "Thanks!",
+            # The feed entry as received, for the raw archive (_shared/raw_source.py).
+            RAW_SOURCE_KEY: {"id": {"label": "r1"}},
         }
 
     def test_a_bare_review_gets_every_default(self, fmt):
@@ -375,6 +379,7 @@ class TestFormatReview:
             "app_identifier": "123",
             "country": "",
             "developer_response": None,
+            RAW_SOURCE_KEY: None,
         }
         assert abs(datetime.fromisoformat(created_at) - datetime.now(UTC)).total_seconds() < 60
 

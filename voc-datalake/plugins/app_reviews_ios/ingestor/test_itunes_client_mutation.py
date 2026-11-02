@@ -68,6 +68,7 @@ class TestParsedReviewShape:
             "title": "title 7",
             "review": "review 7",
             "developer_response": None,
+            "rss_entry": _entry(7),
         }
 
     def test_a_numeric_id_is_stringified(self):

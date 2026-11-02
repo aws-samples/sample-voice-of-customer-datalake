@@ -31,6 +31,7 @@ from .circuit_breaker import CircuitBreaker
 from .normalized_item import normalized_item_fields
 from .plugin_secrets import filter_plugin_secrets
 from .raw_archive import archive_raw_item
+from .raw_source import pop_raw_source
 from .source_policy_gate import policy_messages
 from .sqs_utils import send_messages_to_queue
 
@@ -258,7 +259,14 @@ class BaseIngestor(ABC):
         return archive_raw_item(self._s3, RAW_DATA_BUCKET, source_platform, item, raw_content)
 
     def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
-        """Normalize item to common raw schema and store raw data to S3."""
+        """Normalize item to common raw schema and store raw data to S3.
+
+        The provider payload a plugin left on the item (``_shared/raw_source.py``) is popped here,
+        so it never travels, and archived as ``raw_content`` unless one was passed.
+        """
+        source_payload = pop_raw_source(item)
+        if raw_content is None:
+            raw_content = source_payload
         source_platform = (
             item.get("source_platform_override") or self.source_platform
         )
