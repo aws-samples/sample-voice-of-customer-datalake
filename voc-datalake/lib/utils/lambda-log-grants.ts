@@ -33,7 +33,7 @@ import { z } from 'zod';
 export const LAMBDA_BASIC_EXECUTION_POLICY = 'service-role/AWSLambdaBasicExecutionRole';
 
 /** What a function needs to write its own logs (see the module comment for the resource form). */
-export const LOG_WRITE_ACTIONS: readonly string[] = ['logs:CreateLogStream', 'logs:PutLogEvents'];
+const LOG_WRITE_ACTIONS: readonly string[] = ['logs:CreateLogStream', 'logs:PutLogEvents'];
 
 const ManagedPolicyListSchema = z.array(z.unknown()).optional();
 
