@@ -49,8 +49,12 @@ const BOARD_TRIGGER_MEMORY_MB = 128;
 const BOARD_TRIGGER_TIMEOUT = cdk.Duration.seconds(5);
 
 /**
- * The SPA signs up with a random password it never keeps (sign-in is the emailed code), so
- * the policy asks only for length: a character-class rule could refuse a random string.
+ * The SPA signs up with a random password it never keeps (sign-in is the emailed code). It is 32
+ * characters with at least one upper-case letter, lower-case letter, digit and Cognito-allowed symbol
+ * (frontend services/boardCognito.ts `randomBoardPassword`, pinned by its test), so the pool holds it to
+ * the app pool's character classes too (cdk-nag COG1) and 16 characters, twice the app pool's 8.
+ * The policy is checked only when a password is SET (sign-up, ConfirmForgotPassword), never at an
+ * EMAIL_OTP sign-in, so it cannot lock out an existing board user.
  */
 const BOARD_PASSWORD_MIN_LENGTH = 16;
 
@@ -204,10 +208,10 @@ export function createBoardAuth(ctx: CoreBuildContext, inputs: BoardAuthInputs):
     standardAttributes: USER_POOL_STANDARD_ATTRIBUTES,
     passwordPolicy: {
       minLength: BOARD_PASSWORD_MIN_LENGTH,
-      requireLowercase: false,
-      requireUppercase: false,
-      requireDigits: false,
-      requireSymbols: false,
+      requireLowercase: true,
+      requireUppercase: true,
+      requireDigits: true,
+      requireSymbols: true,
     },
     // Choice-based (USER_AUTH) sign-in, and Email OTP with a sender; both need the Essentials plan.
     featurePlan: cognito.FeaturePlan.ESSENTIALS,
@@ -219,13 +223,7 @@ export function createBoardAuth(ctx: CoreBuildContext, inputs: BoardAuthInputs):
   });
   // Kept if a change ever forces a replacement: a board user's email keys their supports.
   retainOnReplace(userPool);
-  acknowledgeNagOnResource(userPool, [
-    ...cognitoSecuritySuppressions,
-    {
-      id: 'AwsSolutions-COG1',
-      reason: 'Board users sign in with an emailed one-time code; the password Cognito requires is a random string the SPA generates and never keeps, so only a length rule applies (a character-class rule could refuse a random value)',
-    },
-  ]);
+  acknowledgeNagOnResource(userPool, cognitoSecuritySuppressions);
 
   const userPoolClient = userPool.addClient('VocBoardWebClient', {
     userPoolClientName: ctx.uniqueName('voc-board-web-client'),

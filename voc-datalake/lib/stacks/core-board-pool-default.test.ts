@@ -30,7 +30,10 @@ const BOARD_POOL_NAME = { 'Fn::Join': ['', Match.arrayWith(['voc-board-user-pool
 const PoolSchema = z.object({
   Properties: z.object({
     EmailConfiguration: z.object({ EmailSendingAccount: z.string(), From: z.string().optional() }),
-    Policies: z.object({ SignInPolicy: z.object({ AllowedFirstAuthFactors: z.array(z.string()) }) }),
+    Policies: z.object({
+      SignInPolicy: z.object({ AllowedFirstAuthFactors: z.array(z.string()) }),
+      PasswordPolicy: z.record(z.string(), z.unknown()),
+    }),
     AccountRecoverySetting: z.object({ RecoveryMechanisms: z.array(z.object({ Name: z.string(), Priority: z.number() })) }),
     AdminCreateUserConfig: z.object({ AllowAdminCreateUserOnly: z.boolean() }),
     UserPoolTier: z.string(),
@@ -81,6 +84,16 @@ describe('board pool without -c emailFrom', () => {
     const outputs = coreDefault().findOutputs('*');
     expect(['BoardUserPoolId', 'BoardUserPoolClientId', 'BoardSignInMode'].filter((key) => !(key in outputs))).toStrictEqual([]);
     expect(outputs.BoardSignInMode?.Value).toBe('code');
+  });
+});
+
+// cdk-nag COG1: the app pool's character classes, 16 characters. The SPA's throwaway password (32 characters, every
+// class: frontend services/boardCognito.test.ts) always passes it, and EMAIL_OTP sign-in never checks it.
+describe.each([['without', coreDefault], ['with', coreWithEmail]])('board pool password policy %s -c emailFrom', (_shape, template) => {
+  it('requires 16 characters with an upper-case letter, a lower-case letter, a digit and a symbol', () => {
+    expect(boardPool(template()).props.Policies.PasswordPolicy).toMatchObject({
+      MinimumLength: 16, RequireLowercase: true, RequireUppercase: true, RequireNumbers: true, RequireSymbols: true,
+    });
   });
 });
 
