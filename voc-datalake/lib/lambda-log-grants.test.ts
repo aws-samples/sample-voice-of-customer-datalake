@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { ALL_FEATURES_CONTEXT } from './test-support/all-features-context';
+import { apiTemplate, apiTemplatePrefixed } from './test-support/api-stack-template';
 import { cleanupAssemblyDirs, synthApp, SYNTH_ACCOUNT, SYNTH_REGION, SYNTH_TIMEOUT_MS } from './test-support/synth-app';
 import type { SynthResult } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
@@ -199,18 +200,21 @@ describe('Lambda and API Gateway log grants (AwsSolutions-IAM4)', () => {
     expect(api[account]?.DependsOn).toContain(policy);
   });
 
-  it('covers the access-log group each deployment really creates, prefixed or not', () => {
-    const prefixed = synthApp({ deploymentPrefix: 'b' });
-    const names = [synth, prefixed].map((result) => {
-      const stack = result.stackNames.find((name) => name.endsWith('VocApiStack')) ?? '';
-      const resources = resourcesOf(result, stack);
-      return flatten(resources[logicalIdStartingWith(resources, 'AWS::Logs::LogGroup', 'ApiGatewayLogs')]?.Properties?.LogGroupName);
-    });
+  it('covers the access-log group each deployment really creates, prefixed or not, with one pattern', () => {
+    // VocApiStack alone (in process): the API Gateway role is built with the stack, not by the app's aspect.
+    const shapes = [apiTemplate(), apiTemplatePrefixed()].map((template) => TemplateSchema.parse(template.toJSON()).Resources);
+    const names = shapes.map((resources) => flatten(
+      resources[logicalIdStartingWith(resources, 'AWS::Logs::LogGroup', 'ApiGatewayLogs')]?.Properties?.LogGroupName,
+    ));
+    const accessGrants = shapes.map((resources) => roleStatements(
+      resources, logicalIdStartingWith(resources, 'AWS::IAM::Role', 'VocAnalyticsApiCloudWatchRole'),
+    ).filter((statement) => statement.Sid === 'AccessLogs').map((statement) => flatten(statement.Resource)));
     const pattern = iamPattern(`/aws/apigateway/*voc-analytics-api-${SYNTH_ACCOUNT}-${SYNTH_REGION}`);
     expect(names).toStrictEqual([
       `/aws/apigateway/voc-analytics-api-${SYNTH_ACCOUNT}-${SYNTH_REGION}`,
       `/aws/apigateway/b-voc-analytics-api-${SYNTH_ACCOUNT}-${SYNTH_REGION}`,
     ]);
     expect(names.map((name) => pattern.test(String(name)))).toStrictEqual([true, true]);
+    expect(accessGrants[1]).toStrictEqual(accessGrants[0]);
   }, SYNTH_TIMEOUT_MS);
 });
