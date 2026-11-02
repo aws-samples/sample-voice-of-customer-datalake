@@ -54,6 +54,15 @@ class TestKeys:
     def test_version_key_sits_in_the_folder(self) -> None:
         assert version_key('raw/web/2026/03/05/r1/', '0123456789abcdef') == 'raw/web/2026/03/05/r1/0123456789abcdef.json'
 
+    def test_version_key_takes_the_extension_of_an_original(self) -> None:
+        assert version_key('raw/email_intake/2026/03/05/em_1/', '0123456789abcdef', '.eml') == (
+            'raw/email_intake/2026/03/05/em_1/0123456789abcdef.eml')
+
+    @pytest.mark.parametrize('extension', ['eml', '.EML', '.e/ml', '.', '.abcdefghijk'])
+    def test_version_key_refuses_a_malformed_extension(self, extension: str) -> None:
+        with pytest.raises(ValueError, match='Not a raw version extension'):
+            version_key('raw/web/2026/03/05/r1/', '0123456789abcdef', extension)
+
     def test_the_digest_is_sha256_of_the_sorted_json(self) -> None:
         content = {'b': 1, 'a': [2, 3]}
         expected = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:16]
@@ -72,6 +81,7 @@ class TestParseItemKey:
     @pytest.mark.parametrize('key', [
         'raw/web/2026/03/05/r1.json',
         'raw/web/2026/03/05/r1/0123456789abcdef.json',
+        'raw/web/2026/03/05/r1/0123456789abcdef.eml',
     ])
     def test_both_layouts_name_the_same_item(self, key: str) -> None:
         assert parse_item_key(key) == ItemArchive(
@@ -84,6 +94,8 @@ class TestParseItemKey:
         'raw/web/2026/03/r1.json',
         'raw/web/2026/03/05/r1/notadigest.json',
         'raw/web/2026/03/05/r1/0123456789ABCDEF.json',
+        'raw/web/2026/03/05/r1/0123456789abcdef.EML',
+        'raw/web/2026/03/05/r1/0123456789abcdef',
         'raw/web/2026/03/05/r1/0123456789abcdef.json/x',
         'raw/web/2026/03/05/../0123456789abcdef.json',
         'raw/web//03/05/r1.json',

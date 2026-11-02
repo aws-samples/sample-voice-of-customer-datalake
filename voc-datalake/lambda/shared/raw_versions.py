@@ -66,7 +66,11 @@ CONNECTOR_VERSION_META: Final = 'connector-version'
 UNKNOWN_VERSION: Final = 'unknown'
 DIGEST_CHARS: Final = 16
 _JSON_SUFFIX: Final = '.json'
-_VERSION_FILE_RE: Final = re.compile(rf'^[0-9a-f]{{{DIGEST_CHARS}}}\.json\Z')
+# A version file: the digest plus an extension (``.json`` for every item archive; an original
+# kept as received keeps its own: ``.eml`` for an email, ``.csv`` / ``.jsonl`` for an S3 import file).
+_EXTENSION: Final = r'\.[a-z0-9]{1,10}'
+_VERSION_FILE_RE: Final = re.compile(rf'^[0-9a-f]{{{DIGEST_CHARS}}}{_EXTENSION}\Z')
+_EXTENSION_RE: Final = re.compile(rf'^{_EXTENSION}\Z')
 # Path segments of a legacy key (the stem file is the sixth) and of a versioned key (stem folder + digest file).
 _LEGACY_PARTS: Final = 6
 _VERSIONED_PARTS: Final = 7
@@ -108,9 +112,15 @@ def item_folder(source: str, day: date, stem: str) -> str:
     return f'{RAW_PREFIX}{source}/{day.year}/{day.month:02d}/{day.day:02d}/{stem}/'
 
 
-def version_key(folder: str, digest: str) -> str:
-    """The key of one version (``digest`` = ``content_digest``) inside an item folder."""
-    return f'{folder}{digest}{_JSON_SUFFIX}'
+def version_key(folder: str, digest: str, extension: str = _JSON_SUFFIX) -> str:
+    """The key of one version (``digest`` = ``content_digest``) inside an item folder.
+
+    ``extension`` is ``.json`` unless the object is an original kept as received (``.eml``,
+    ``.csv``, ...): lower-case alphanumerics after the dot, anything else is a ``ValueError``.
+    """
+    if not _EXTENSION_RE.match(extension):
+        raise ValueError(f'Not a raw version extension: {extension!r}')
+    return f'{folder}{digest}{extension}'
 
 
 @dataclass(frozen=True)
