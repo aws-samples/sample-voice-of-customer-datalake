@@ -13,7 +13,8 @@
  *   group's `Arn` attribute, which CloudFormation returns WITH that `:*` (AWS::Logs::LogGroup return values).
  * - NOT `logs:CreateLogGroup`: the group exists before the function (the function's `LoggingConfig.LogGroup`
  *   references it, so CloudFormation creates the group first). A group deleted by hand is not recreated by
- *   Lambda any more; the function's logs stop until a deploy recreates it.
+ *   Lambda any more, nor by CloudFormation (it does not restore a resource deleted outside it): the function's
+ *   logs stop until the group is recreated with the same name.
  *
  * X-Ray (`tracing: ACTIVE`) grants are separate statements CDK adds; nothing here touches them.
  *

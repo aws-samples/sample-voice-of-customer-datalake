@@ -48,10 +48,11 @@ AWS WAF and the Cognito Plus plan become opt-ins.
   no version or alias: every caller (Step Functions tasks, CDK custom-resource providers, the Projects API's job
   starts) invokes it unqualified. A SnapStart function (`live` alias) keeps it.
 - **API Gateway request validation** on the public JSON write routes (`POST /feedback-forms/{form_id}/submit`,
-  `POST /voting-sessions/{session_id}/submit`, `POST /oauth/register`): a body that does not match what the
-  handler accepts is answered 400 at the gateway (`{success:false, reason:'invalid', error:'invalid_request', …}`,
-  with the usual CORS headers) before any Lambda runs. The models are never stricter than the handlers; the
-  form-encoded `POST /unsubscribe`, `POST /oauth/token` and `POST /oauth/revoke` are not modelled.
+  `POST /voting-sessions/{session_id}/submit`): a body that does not match what the handler accepts is answered
+  400 at the gateway (`{success:false, reason:'invalid', error:'invalid_request', …}`, with the usual CORS
+  headers) before any Lambda runs. The models are never stricter than the handlers. Not modelled: the form-encoded
+  `POST /unsubscribe`, `POST /oauth/token` and `POST /oauth/revoke`, and `POST /oauth/register` (its handler answers
+  the RFC 7591 error codes and logs the client).
 - **Point-in-time recovery** on the idempotency table (usage-based cost).
 - **Board user pool password policy**: 16 characters with every character class (board sign-in is by email code;
   the SPA's generated password already meets it).

@@ -24,10 +24,11 @@
  * four versions and aliases (384 → 376). The ceiling is held by the LARGEST shape, `-c snapStart=true`
  * (384, the old one), so opting in can never push the stack over it.
  *
- * 5.77.00 (API Gateway request validation, api-request-validation.ts, cdk-nag APIG2) spends 5: one
- * RequestValidator, three JSON-schema models (widget submit, ballot submit, OAuth register) and the
- * BAD_REQUEST_BODY gateway response. The snapStart shape was AT the 388 ceiling (388), so it moves to 393;
- * the 425 gate is unchanged.
+ * 5.77.00 (API Gateway request validation, api-request-validation.ts, cdk-nag APIG2) spends 4: one
+ * RequestValidator, two JSON-schema models (widget submit, ballot submit) and the BAD_REQUEST_BODY gateway
+ * response. The snapStart shape was AT the 388 ceiling (388), so it moves to 392; the 425 gate is unchanged. The
+ * largest shape is now `-c performanceTier=true` (SnapStart + the API's web ACL and its stage association, +2), so
+ * the ceiling is 394 and that shape is checked too.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -35,8 +36,11 @@ import { apiTemplateAllPlugins, discoverPluginIds, synthApiTemplate } from '../t
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { SNAPSTART_CONTEXT_KEY } from '../utils/snapstart';
 
-/** The release ceiling: 388 after 5.63.00 (MCP OAuth), + 5 in 5.77.00 (request validation); the snapStart synth is 393. */
-const ENGAGEMENT_RELEASE_CEILING = 393;
+/**
+ * The release ceiling: 388 after 5.63.00 (MCP OAuth), + 4 in 5.77.00 (request validation) + 2 for the opt-in API web
+ * ACL (5.77.00); the performance-tier synth is 394.
+ */
+const ENGAGEMENT_RELEASE_CEILING = 394;
 
 function resourceCount(resources: Record<string, unknown> | undefined): number {
   return Object.keys(resources ?? {}).length;
@@ -55,6 +59,13 @@ describe('VocApiStack resource budget with the engagement API', () => {
     console.info(`VocApiStack resources, all plugins + snapStart: ${count}`);
     expect(count).toBeLessThanOrEqual(ENGAGEMENT_RELEASE_CEILING);
     expect(count - resourceCount(apiTemplateAllPlugins().toJSON().Resources)).toBe(8);
+  }, SYNTH_TIMEOUT_MS * 2);
+
+  it('keeps every-plugin synth with -c performanceTier=true (SnapStart + the API web ACL) under it too', () => {
+    const tier = synthApiTemplate({ performanceTier: 'true' }, discoverPluginIds());
+    const count = resourceCount(tier.toJSON().Resources);
+    console.info(`VocApiStack resources, all plugins + performanceTier: ${count}`);
+    expect(count).toBeLessThanOrEqual(ENGAGEMENT_RELEASE_CEILING);
   }, SYNTH_TIMEOUT_MS * 2);
 
   it('adds no resource with -c emailFrom (the board authorizer is on every deployment since 5.45.00)', () => {

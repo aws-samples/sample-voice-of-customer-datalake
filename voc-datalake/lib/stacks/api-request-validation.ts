@@ -6,7 +6,6 @@
  *
  *   POST /feedback-forms/{form_id}/submit   the embeddable widget and the prototype pin widget
  *   POST /voting-sessions/{session_id}/submit  the ballot page
- *   POST /oauth/register                    MCP clients' dynamic client registration (RFC 7591)
  *
  * A junk body is refused at the gateway, before it costs a Lambda invocation; the handler still validates
  * everything (the models are never stricter than it, and sometimes looser). Deliberately NOT validated:
@@ -14,6 +13,9 @@
  *  - `POST /unsubscribe` ALWAYS answers 200, whatever the body (the answer never says whether a token was
  *    known), RFC 8058 one-click posts `List-Unsubscribe=One-Click` as a urlencoded form and the token rides
  *    in `?t=`, which wins over any body. Any model would refuse something the handler answers 200.
+ *  - `POST /oauth/register` (RFC 7591): the handler answers the registration error codes (§3.2.2,
+ *    invalid_client_metadata / invalid_redirect_uri) and logs the client's public metadata; a gateway 400
+ *    would answer a non-registration code and log nothing.
  *  - `POST /oauth/token`, `POST /oauth/revoke` take `application/x-www-form-urlencoded` (RFC 6749 §4.1.3,
  *    RFC 7009 §2.1). A model validates a JSON body; a form body is not JSON, so a model under that content
  *    type would refuse every legitimate request.
@@ -40,7 +42,7 @@ const JSON_CONTENT_TYPE = 'application/json';
  *  - `success: false` + `error` (a string): the widgets' and the SPA's error shape;
  *  - `reason: 'invalid'`: what the ballot page maps to its "this ballot could not be read" copy
  *    (ballots_handler REASON_INVALID), a permanent refusal rather than "try again";
- *  - `error: 'invalid_request'` + `error_description`: an OAuth error object (RFC 6749 §5.2 code).
+ *  - `error_description`: a sentence for a log or a developer console.
  * `$context.error.messageString` is the quoted, escaped "Invalid request body"; the unquoted
  * `validationErrorString` is NOT used, because it carries raw double quotes that would break the JSON.
  */
