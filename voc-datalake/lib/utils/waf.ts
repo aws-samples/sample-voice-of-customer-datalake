@@ -17,9 +17,12 @@
  *   they are; the rate-based rule is a per-IP backstop above them.
  *
  * Rules (AWS Managed Rules, https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-list.html):
- * the Amazon IP reputation list, a per-IP rate limit, Known bad inputs and the Core rule set (CRS). On the API six CRS
- * body rules and one query-string rule only COUNT, because this API legitimately carries what they block (stored text is
- * data the Lambdas never execute, fetch or open as a path):
+ * the Amazon IP reputation list, a per-IP rate limit, Known bad inputs and the Core rule set (CRS). On the API seven
+ * CRS rules only COUNT (five body rules, one query-string size rule, one query-argument rule), because this API
+ * legitimately carries what they block (stored text is data the Lambdas never execute, fetch or open as a path).
+ * GenericRFI_QUERYARGUMENTS matches a URL with an IPv4 host in a query value: an MCP client's RFC 8252 loopback
+ * callback (`/oauth/authorize?redirect_uri=http://127.0.0.1:<port>/callback`, api-mcp-oauth.ts) and the SPA's
+ * consent page that carries the same query, so it also counts on the CloudFront ACL.
  * SizeRestrictions_QUERYSTRING blocks a query string over 2 KB (`GET /projects?ids=` takes up to 200 project ids,
  * Prioritization's one-call read), SizeRestrictions_BODY blocks a body over 8 KB (CSV / JSON imports,
  * conversation saves up to ~350 KB, documents, the assistant's RunAgentInput), and
@@ -54,8 +57,11 @@ export const WAF_RATE_LIMIT_PER_5_MIN = { cloudFront: 10_000, api: 5_000 } as co
 /** The CRS rules that only count on the API (see the module comment). */
 export const API_COUNTED_CRS_RULES = [
   'SizeRestrictions_BODY', 'CrossSiteScripting_BODY', 'GenericLFI_BODY', 'GenericRFI_BODY', 'EC2MetaDataSSRF_BODY',
-  'SizeRestrictions_QUERYSTRING',
+  'SizeRestrictions_QUERYSTRING', 'GenericRFI_QUERYARGUMENTS',
 ] as const;
+
+/** The CRS rules that only count on the SPA distribution: the OAuth consent page carries the loopback callback. */
+export const CLOUDFRONT_COUNTED_CRS_RULES = ['GenericRFI_QUERYARGUMENTS'] as const;
 
 /** Whether this app opted in to AWS WAF: `-c enableWaf=true` or the performance tier. */
 export function wafEnabled(scope: IConstruct): boolean {
@@ -127,6 +133,7 @@ export function createCloudFrontWebAcl(stack: cdk.Stack): wafv2.CfnWebACL {
     scope: 'CLOUDFRONT',
     description: `VoC SPA CloudFront distribution, ${WAF_DESCRIPTION_SUFFIX}`,
     ratePer5Min: WAF_RATE_LIMIT_PER_5_MIN.cloudFront,
+    countedCrsRules: CLOUDFRONT_COUNTED_CRS_RULES,
   });
 }
 

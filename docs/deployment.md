@@ -1064,10 +1064,13 @@ rule (5-minute window):
 
 The rate limit counts requests per source IP over 5 minutes, so a team behind one egress IP (an office NAT, a VPN)
 shares it: on the API, 5,000 requests is about 16 a second for everyone together, and the SPA polls while assist jobs
-and chat sessions run. A blocked caller gets a bare 403 that names no limit. Raise `WAF_RATE_LIMIT_PER_5_MIN` in
-`voc-datalake/lib/utils/waf.ts` for a large team.
+and chat sessions run. A blocked caller gets a bare 403 that names no limit. The production e2e suite runs from ONE runner IP and makes
+thousands of API calls (about 1,000 of them deliberate 4xx), so against a WAF deployment it can hit the limit too.
+Raise `WAF_RATE_LIMIT_PER_5_MIN` in `voc-datalake/lib/utils/waf.ts` for a large team or before an e2e run.
 
-On the API six CRS rules only count, because the API legitimately carries what they block:
+On the API seven CRS rules only count, because the API legitimately carries what they block:
+`GenericRFI_QUERYARGUMENTS` (an MCP client's RFC 8252 loopback callback, `redirect_uri=http://127.0.0.1:<port>/…`,
+which the SPA's consent page carries too, so it also counts on the CloudFront ACL),
 `SizeRestrictions_QUERYSTRING` (query strings over 2 KB: `GET /projects?ids=` takes up to 200 ids),
 `SizeRestrictions_BODY` (bodies over 8 KB: CSV and JSON imports, conversation saves, documents),
 `GenericLFI_BODY`, `GenericRFI_BODY` and `EC2MetaDataSSRF_BODY` (`../`, URLs with an IPv4 host and

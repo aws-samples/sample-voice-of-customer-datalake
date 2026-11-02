@@ -16,7 +16,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS, type SynthResult } from './test-support/synth-app';
-import { API_COUNTED_CRS_RULES, WAF_RATE_LIMIT_PER_5_MIN } from './utils/waf';
+import { API_COUNTED_CRS_RULES, CLOUDFRONT_COUNTED_CRS_RULES, WAF_RATE_LIMIT_PER_5_MIN } from './utils/waf';
 
 const SHAPES = {
   default: synthApp(),
@@ -111,7 +111,7 @@ describe('-c performanceTier=true', () => {
   });
 
   it.each([
-    ['VocWebSearchStack', WAF_RATE_LIMIT_PER_5_MIN.cloudFront, []],
+    ['VocWebSearchStack', WAF_RATE_LIMIT_PER_5_MIN.cloudFront, [...CLOUDFRONT_COUNTED_CRS_RULES]],
     ['VocApiStack', WAF_RATE_LIMIT_PER_5_MIN.api, [...API_COUNTED_CRS_RULES]],
   ] as const)('%s web ACL: IP reputation, a per-IP rate limit, Known bad inputs and the CRS', (stack, limit, counted) => {
     const rules = webAclRules(tier, stack);
@@ -138,6 +138,15 @@ describe('-c performanceTier=true -c enableWaf=false', () => {
   it('adds no web ACL while the tier still moves the pools to Plus', () => {
     expect(stacksWithWebAcl(SHAPES.tierWithoutWaf)).toStrictEqual([]);
     expect(poolPlans(SHAPES.tierWithoutWaf)).toStrictEqual({ VocUserPool: ['PLUS', 'AUDIT'], VocBoardUserPool: ['PLUS', 'AUDIT'] });
+  });
+});
+
+describe('the MCP OAuth loopback callback (RFC 8252) with WAF on', () => {
+  it('only counts the query-argument RFI rule on both ACLs, so /oauth/authorize?redirect_uri=http://127.0.0.1:… passes', () => {
+    for (const stack of ['VocApiStack', 'VocWebSearchStack']) {
+      const crs = webAclRules(SHAPES.performanceTier, stack)[3]?.Statement.ManagedRuleGroupStatement;
+      expect((crs?.RuleActionOverrides ?? []).map((override) => override.Name)).toContain('GenericRFI_QUERYARGUMENTS');
+    }
   });
 });
 
