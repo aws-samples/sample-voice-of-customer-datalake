@@ -5,7 +5,8 @@ upload, JSON upload, which also serves the assistant's ``import_reviews``) and t
 S3 import ingestor, once per file. Read by ``GET /scrapers/manual/history`` and
 ``GET /scrapers/manual/history/{run_id}`` (admin-only, the manual-import Lambda).
 
-Two rows per run, both with ``ttl`` (90 days):
+Two rows per run, kept for good (an audit trail does not expire; a row written
+by an earlier release still carries the 90-day ``ttl`` it was written with, and expires on it):
 
 - the **summary** at ``pk IMPORT_RUN`` / ``sk {started_at}#{run_id}``: every field
   except the warning and error lists, so a newest-first Query of one partition
@@ -47,7 +48,6 @@ __all__ = [
 
 LIST_PK: Final = 'IMPORT_RUN'
 DETAIL_SK: Final = 'RUN'
-RUN_TTL_SECONDS: Final = 90 * 24 * 3600
 MAX_MESSAGES: Final = 200
 MAX_MESSAGE_CHARS: Final = 300
 MAX_LIST_LIMIT: Final = 100
@@ -161,7 +161,6 @@ def _rows(run: ImportRun, now: datetime) -> tuple[dict[str, Any], dict[str, Any]
         'truncated': warnings_cut or errors_cut,
         'raw_s3_key': run.raw_s3_key or '',
         'radar_brand': run.radar_brand,
-        'ttl': int(now.timestamp()) + RUN_TTL_SECONDS,
     }
     detail = {**summary, 'pk': f'{LIST_PK}#{run.run_id}', 'sk': DETAIL_SK, 'warnings': warnings, 'errors': errors}
     return summary, detail
@@ -239,7 +238,8 @@ def run_view(item: Mapping[str, Any], *, detail: bool = False) -> dict[str, Any]
 
 
 def _live(item: Mapping[str, Any], now_epoch: int) -> bool:
-    """False for a row past its TTL that DynamoDB has not deleted yet (that can take days)."""
+    """False for a legacy row past its TTL that DynamoDB has not deleted yet (that can take
+    days). Rows written since audit trails stopped expiring have no ``ttl``: always live."""
     ttl = as_count(item.get('ttl'))
     return ttl == 0 or ttl > now_epoch
 
