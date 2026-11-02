@@ -132,9 +132,9 @@ export function stackModelArns(scope: IConstruct): string[] {
 }
 
 /**
- * cdk-nag `appliesTo` entries for the wildcard-region foundation-model ARNs
+ * cdk-nag `AwsSolutions-IAM5` finding ids for the wildcard-region foundation-model ARNs
  * produced by allowlistedModelArns(). Derived rather than hand-listed so a
- * model added above can't leave a stale or missing suppression behind.
+ * model added above can't leave a stale or missing acknowledgement behind.
  */
 export function bedrockFoundationModelSuppressionTargets(): string[] {
   return ALLOWED_FOUNDATION_MODEL_IDS.map(

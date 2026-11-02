@@ -204,7 +204,8 @@ export interface SynthResult {
    */
   canonicalTemplate(stackName: string): string;
   /**
-   * Every diagnostic CDK and cdk-nag reported: warnings, errors and info.
+   * Every diagnostic CDK reported: warnings, errors and info. (cdk-nag 3 findings are not annotations: an
+   * unacknowledged one fails the synth, so it surfaces as a {@link SynthFailure} instead.)
    *
    * Read from the per-stack `<stack>.metadata.json` files, NOT from
    * `manifest.json`'s `artifacts[*].metadata`. Cloud assembly manifest v54
@@ -226,7 +227,7 @@ export interface SynthResult {
   readsRealAnnotations: boolean;
 }
 
-/** One CDK or cdk-nag annotation, located by the construct path that raised it. */
+/** One CDK annotation, located by the construct path that raised it. */
 export interface SynthAnnotation {
   /** Stack artifact id the annotation belongs to. */
   stack: string;
