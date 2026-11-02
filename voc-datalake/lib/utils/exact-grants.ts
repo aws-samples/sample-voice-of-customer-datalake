@@ -89,7 +89,6 @@ const StatementSchema = z.looseObject({
   Condition: z.unknown().optional(),
 });
 type Statement = z.infer<typeof StatementSchema>;
-const RenderedDocumentSchema = z.looseObject({ Statement: z.array(StatementSchema).optional() });
 const IndexListSchema = z.array(z.looseObject({ indexName: z.string() })).optional();
 
 const actionsOf = (statement: Statement): string[] =>
@@ -168,46 +167,65 @@ function rewriteResource(resource: unknown, context: IResolveContext): unknown {
 
 const isEmptyResource = (resource: unknown) => Array.isArray(resource) && resource.length === 0;
 
-interface Rewritten { readonly statement: Statement | null; readonly dynamoKms: readonly string[] }
+type RawStatement = Record<string, unknown>;
+interface Rewritten { readonly statement: RawStatement | null; readonly dynamoKms: readonly string[] }
 
-function rewriteStatement(statement: Statement, needs: readonly GrantNeeds[], context: IResolveContext): Rewritten {
-  if ((statement.Effect ?? 'Allow') !== 'Allow' || statement.Action === undefined) {
-    return { statement, dynamoKms: [] };
-  }
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** `raw` with Action and Resource replaced, every key in its place (an untouched template keeps its bytes). */
+const withReplaced = (raw: RawStatement, action: unknown, resource: unknown): RawStatement =>
+  Object.fromEntries(Object.entries(raw).map(([key, value]) => {
+    if (key === 'Action') return [key, action];
+    return key === 'Resource' ? [key, resource] : [key, value];
+  }));
+
+function rewriteStatement(raw: RawStatement, needs: readonly GrantNeeds[], context: IResolveContext): Rewritten {
+  const parsed = StatementSchema.safeParse(raw);
+  if (!parsed.success) return { statement: raw, dynamoKms: [] };
+  const statement = parsed.data;
+  if ((statement.Effect ?? 'Allow') !== 'Allow' || statement.Action === undefined) return { statement: raw, dynamoKms: [] };
   const extra = new Set<string>();
   const actions = exactActions(actionsOf(statement), needs, extra);
   const resource = rewriteResource(statement.Resource, context);
   // A statement with a condition keeps it on what it grants; its DynamoDB extras would need both conditions.
   const dynamoKms = statement.Condition === undefined ? [...extra] : [];
   if (actions.length === 0 || isEmptyResource(resource)) return { statement: null, dynamoKms };
-  return { statement: { ...statement, Action: actions.length === 1 ? actions[0] : actions, Resource: resource }, dynamoKms };
+  const action = typeof statement.Action === 'string' && actions.length === 1 ? actions[0] : actions;
+  const unchanged = JSON.stringify([action, resource]) === JSON.stringify([statement.Action, statement.Resource]);
+  return { statement: unchanged ? raw : withReplaced(raw, action, resource), dynamoKms };
 }
 
-const usesDynamoDb = (statements: readonly Statement[]) =>
-  statements.some((statement) => (statement.Effect ?? 'Allow') === 'Allow'
-    && actionsOf(statement).some((action) => action.startsWith('dynamodb:')));
+const usesDynamoDb = (statements: readonly unknown[]) => statements.some((raw) => {
+  const parsed = StatementSchema.safeParse(raw);
+  return parsed.success && (parsed.data.Effect ?? 'Allow') === 'Allow'
+    && actionsOf(parsed.data).some((action) => action.startsWith('dynamodb:'));
+});
 
 /** The rendered document with every grant wildcard replaced (see the module comment). */
 function rewriteRenderedDocument(rendered: unknown, policy: IConstruct, context: IResolveContext): unknown {
-  const parsed = RenderedDocumentSchema.safeParse(rendered);
-  if (!parsed.success || parsed.data.Statement === undefined) return rendered;
+  if (!isRecord(rendered) || !Array.isArray(rendered.Statement)) return rendered;
+  const statements: unknown[] = rendered.Statement;
   const needs = needsFor(policy);
-  const statements = parsed.data.Statement;
   const viaDynamoDb = usesDynamoDb(statements);
-  const out: Statement[] = [];
-  for (const statement of statements) {
-    const { statement: exact, dynamoKms } = rewriteStatement(statement, needs, context);
+  const out: unknown[] = [];
+  for (const raw of statements) {
+    if (!isRecord(raw)) {
+      out.push(raw);
+      continue;
+    }
+    const { statement: exact, dynamoKms } = rewriteStatement(raw, needs, context);
     if (exact !== null) out.push(exact);
     if (viaDynamoDb && dynamoKms.length > 0) {
       out.push({
-        Effect: 'Allow',
         Action: [...dynamoKms],
-        Resource: statement.Resource,
         Condition: { StringEquals: { 'kms:ViaService': `dynamodb.${Stack.of(policy).region}.amazonaws.com` } },
+        Effect: 'Allow',
+        Resource: raw.Resource,
       });
     }
   }
-  return { ...parsed.data, Statement: out };
+  return Object.fromEntries(Object.entries(rendered).map(([key, value]) => [key, key === 'Statement' ? out : value]));
 }
 
 /** A CfnPolicy document that renders the original and returns it with exact grants. */
