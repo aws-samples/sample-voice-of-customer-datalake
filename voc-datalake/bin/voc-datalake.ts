@@ -156,10 +156,10 @@ if (shouldDeployAiEnablement(deployWebSearch, useCaseToSubmit, deployWaf)) {
   });
   tagStack(webSearchStack, 'AiEnablement');
   if (inferenceScope === 'eu') {
-    // Only the use-case half can be here (web search is never deployed for eu).
+    // Only the use-case half and the opt-in CloudFront web ACL can be here (web search is never deployed for eu).
     cdk.Annotations.of(webSearchStack).addInfo(
-      'inferenceScope=eu: VocWebSearchStack carries only the account-level Anthropic use-case form, ' +
-      'submitted in us-east-1. No inference and no customer data go through it.',
+      'inferenceScope=eu: VocWebSearchStack carries only account-level items in us-east-1 (the Anthropic use-case ' +
+      'form, the opt-in CloudFront web ACL). No inference and no customer data go through it.',
     );
   }
   if (webSearchCrossRegion) {

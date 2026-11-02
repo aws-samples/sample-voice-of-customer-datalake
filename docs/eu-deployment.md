@@ -22,6 +22,7 @@ Set the region with `AWS_REGION`, `AWS_DEFAULT_REGION` or `--profile`. The CDK C
 | Web search (AgentCore gateway) | On by default | **Never deployed.** An explicit `-c enableWebSearch=true` throws, because the connector runs only in us-east-1 |
 | Persona avatars | Image model in us-west-2 | **Disabled** (`AVATARS_ENABLED=false`); personas have no avatar |
 | Anthropic use-case form (`anthropicUseCase`) | Opt-in: only with your own block (none is committed); otherwise filed in the Bedrock console | The same. With a block, `VocWebSearchStack` is created in us-east-1 for the account-level form only; no inference or customer data passes through it (the synth adds an info annotation). Without one, **no stack deploys to us-east-1** |
+| AWS WAF (`-c enableWaf=true`, opt-in) | The SPA distribution's `CLOUDFRONT` web ACL lives in `VocWebSearchStack`, us-east-1 | The same: CloudFront requires its web ACL in us-east-1, so this flag creates `VocWebSearchStack` there with only that ACL. It stores no request content (no WAF logging; metrics and sampled requests only). The API's web ACL stays in your EU app region ([deployment.md](deployment.md#aws-waf-and-cognito-plus-opt-in)) |
 | Model agreements (Claude) | Created by `VocCoreStack` on every deploy, in the app region, best effort | The same, in your EU app region |
 
 ### How the scope applies at runtime
