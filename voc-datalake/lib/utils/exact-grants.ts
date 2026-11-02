@@ -39,16 +39,8 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import type { IConstruct } from 'constructs';
 import { z } from 'zod';
 
-/** The grant wildcards this module replaces. */
-export type GrantWildcard =
-  | 'kms:GenerateDataKey*' | 'kms:ReEncrypt*'
-  | 's3:GetObject*' | 's3:GetBucket*' | 's3:List*' | 's3:Abort*' | 's3:DeleteObject*';
-
-/** Actions a CDK handler needs beyond {@link EXACT_ACTIONS}, by the wildcard its grant used to carry them in. */
-type GrantNeeds = Partial<Record<GrantWildcard, readonly string[]>>;
-
-/** What each wildcard becomes for every role. */
-export const EXACT_ACTIONS: Readonly<Record<GrantWildcard, readonly string[]>> = {
+/** What each grant wildcard this module replaces becomes, for every role. */
+export const EXACT_ACTIONS = {
   'kms:GenerateDataKey*': ['kms:GenerateDataKey'],
   'kms:ReEncrypt*': [],
   's3:GetObject*': ['s3:GetObject'],
@@ -56,7 +48,13 @@ export const EXACT_ACTIONS: Readonly<Record<GrantWildcard, readonly string[]>> =
   's3:List*': ['s3:ListBucket'],
   's3:Abort*': [],
   's3:DeleteObject*': ['s3:DeleteObject'],
-};
+} satisfies Readonly<Record<string, readonly string[]>>;
+
+/** The grant wildcards this module replaces. */
+type GrantWildcard = keyof typeof EXACT_ACTIONS;
+
+/** Actions a CDK handler needs beyond {@link EXACT_ACTIONS}, by the wildcard its grant used to carry them in. */
+type GrantNeeds = Partial<Record<GrantWildcard, readonly string[]>>;
 
 /** What each KMS wildcard keeps for a role that uses DynamoDB, callable only through DynamoDB. */
 const DYNAMODB_KMS_ACTIONS: Readonly<Partial<Record<GrantWildcard, readonly string[]>>> = {

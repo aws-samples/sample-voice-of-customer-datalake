@@ -7,7 +7,8 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { cleanupAssemblyDirs, synthApp } from './test-support/synth-app';
+import { cmkTableReadWriteKms, grantActions, GrantStatementSchema, kmsGrants, type GrantStatement } from './test-support/exact-grant-statements';
+import { cleanupAssemblyDirs, synthApp, SYNTH_REGION } from './test-support/synth-app';
 import { TemplateResourcesSchema } from './test-support/template-resources';
 import { byCodeUnit } from './utils/compare';
 import { EXACT_ACTIONS } from './utils/exact-grants';
@@ -16,14 +17,8 @@ import { EXACT_ACTIONS } from './utils/exact-grants';
 const RESULT = synthApp();
 afterAll(cleanupAssemblyDirs);
 
-const StatementSchema = z.looseObject({
-  Effect: z.string(),
-  Action: z.union([z.string(), z.array(z.string())]),
-  Resource: z.unknown(),
-  Condition: z.unknown().optional(),
-});
-type Statement = z.infer<typeof StatementSchema>;
-const DocumentSchema = z.object({ Statement: z.array(StatementSchema) });
+type Statement = GrantStatement;
+const DocumentSchema = z.object({ Statement: z.array(GrantStatementSchema) });
 const OutputsSchema = z.record(z.string(), z.object({ Value: z.unknown(), Export: z.object({ Name: z.string() }).optional() }));
 const GetAttSchema = z.object({ 'Fn::GetAtt': z.tuple([z.string(), z.literal('Arn')]) });
 const IndexesSchema = z.array(z.object({ IndexName: z.string() })).optional();
@@ -34,7 +29,7 @@ const ImportedIndexSchema = z.object({
 interface Located { readonly stack: string; readonly id: string; readonly statement: Statement }
 
 const resourcesOf = (stack: string) => TemplateResourcesSchema.parse(RESULT.template(stack).Resources ?? {});
-const actionsOf = (statement: Statement) => (typeof statement.Action === 'string' ? [statement.Action] : statement.Action);
+const actionsOf = grantActions;
 const listOf = (resource: unknown): unknown[] => (Array.isArray(resource) ? resource : [resource]);
 
 const STATEMENTS: Located[] = RESULT.stackNames.flatMap((stack) => Object.entries(resourcesOf(stack))
@@ -94,13 +89,7 @@ describe('exact grants over the app', () => {
   });
 
   it('a CMK-encrypted table read/write grant: exact KMS actions, the DynamoDB-only ones through DynamoDB', () => {
-    const kmsStatements = policy('VocApiStack', 'ManualImportProcessorRoleDefaultPolicy')
-      .filter((statement) => actionsOf(statement).some((action) => action.startsWith('kms:')));
-    expect(kmsStatements.map((statement) => [actionsOf(statement), statement.Condition ?? null])).toStrictEqual([
-      [['kms:Decrypt', 'kms:DescribeKey', 'kms:Encrypt', 'kms:GenerateDataKey'], null],
-      [['kms:GenerateDataKeyWithoutPlaintext', 'kms:ReEncryptFrom', 'kms:ReEncryptTo'],
-        { StringEquals: { 'kms:ViaService': 'dynamodb.us-east-1.amazonaws.com' } }],
-    ]);
+    expect(kmsGrants(policy('VocApiStack', 'ManualImportProcessorRoleDefaultPolicy'))).toStrictEqual(cmkTableReadWriteKms(SYNTH_REGION));
   });
 
   it('a raw-bucket read grant: s3:GetObject and s3:ListBucket only', () => {
