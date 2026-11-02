@@ -35,23 +35,17 @@ import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 export const API_GATEWAY_PUSH_TO_LOGS_POLICY = 'service-role/AmazonAPIGatewayPushToCloudWatchLogs';
 
 /** The prefix API Gateway gives every execution-log group it creates. */
-export const EXECUTION_LOG_GROUP_PREFIX = 'API-Gateway-Execution-Logs_';
-
-/**
- * The access-log group of every VoC deployment in this account and region. `uniqueName` puts a deployment
- * prefix on the `voc` segment (lib/utils/naming.ts), hence the `*` in front of it. Account and region are the
- * same pseudo-parameters `uniqueName` uses.
- */
-export function accessLogGroupPattern(accessLogBaseName: string): string {
-  return `/aws/apigateway/*${accessLogBaseName}-${cdk.Aws.ACCOUNT_ID}-${cdk.Aws.REGION}`;
-}
+const EXECUTION_LOG_GROUP_PREFIX = 'API-Gateway-Execution-Logs_';
 
 function logGroupArn(stack: cdk.Stack, name: string): string {
   return stack.formatArn({ service: 'logs', resource: 'log-group', resourceName: name, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME });
 }
 
-/** Replace the managed policy on the CloudWatch role CDK created for `api`. */
-export function scopeApiGatewayLoggingRole(api: apigateway.RestApi, accessLogBaseName: string): void {
+/**
+ * Replace the managed policy on the CloudWatch role CDK created for `api`. `accessLogGroups` is the name
+ * PATTERN of every VoC deployment's access-log group in this account and region (api-gateway.ts builds it).
+ */
+export function scopeApiGatewayLoggingRole(api: apigateway.RestApi, accessLogGroups: string): void {
   const role = api.node.tryFindChild('CloudWatchRole');
   const cfn = role?.node.defaultChild;
   const account = api.node.tryFindChild('Account');
@@ -60,7 +54,7 @@ export function scopeApiGatewayLoggingRole(api: apigateway.RestApi, accessLogBas
   }
   const stack = cdk.Stack.of(api);
   const executionLogs = logGroupArn(stack, `${EXECUTION_LOG_GROUP_PREFIX}*`);
-  const accessGroup = logGroupArn(stack, accessLogGroupPattern(accessLogBaseName));
+  const accessGroup = logGroupArn(stack, accessLogGroups);
   const accessStreams = `${accessGroup}:*`;
   removeAwsManagedPolicy(cfn, API_GATEWAY_PUSH_TO_LOGS_POLICY);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
