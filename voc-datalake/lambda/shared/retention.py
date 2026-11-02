@@ -53,7 +53,7 @@ from boto3.dynamodb.conditions import Attr, ConditionBase
 
 from shared.archive_keys import archive_key_stem
 from shared.logging import logger
-from shared.raw_versions import parse_item_key
+from shared.raw_versions import RAW_PREFIX, parse_item_key
 
 __all__ = [
     'ItemRawObjects',
@@ -75,7 +75,6 @@ ERASURE_JOB_PK: Final = 'JOB#erasure'
 ERASURE_JOB_PREFIX: Final = 'er_'
 _EMAIL_PATHS: Final = ('metadata.email', 'metadata.submitter_email')
 _FEEDBACK_SK_PREFIX: Final = 'FEEDBACK#'
-RAW_PREFIX: Final = 'raw/'
 _WHOLE_UPLOAD_PREFIXES: Final = ('raw/csv_upload/', 'raw/json_upload/')
 _MAX_VERSIONS_PER_DELETE: Final = 1000
 
