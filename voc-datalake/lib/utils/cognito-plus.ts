@@ -18,7 +18,7 @@ import type { IConstruct } from 'constructs';
 import { PERFORMANCE_TIER_CONTEXT_KEY, enabledByOwnFlagOrTier } from './performance-tier';
 
 /** `-c cognitoPlus=true` opts in; absent or false = Essentials. */
-export const COGNITO_PLUS_CONTEXT_KEY = 'cognitoPlus';
+const COGNITO_PLUS_CONTEXT_KEY = 'cognitoPlus';
 
 /** What the COG8 acknowledgement says while the opt-in is off. */
 export const COGNITO_PLUS_OPT_IN_HINT = `opt-in: -c ${COGNITO_PLUS_CONTEXT_KEY}=true / ${PERFORMANCE_TIER_CONTEXT_KEY}`;
