@@ -23,6 +23,7 @@ const SHAPES = {
   performanceTier: synthApp({ performanceTier: 'true' }),
   cognitoPlus: synthApp({ cognitoPlus: 'true' }),
   tierWithoutPlus: synthApp({ performanceTier: 'true', cognitoPlus: 'false' }),
+  tierWithoutWaf: synthApp({ performanceTier: 'true', enableWaf: 'false' }),
   wafOutsideUsEast1: synthApp({ enableWaf: 'true' }, 'eu-west-1'),
 } as const;
 afterAll(cleanupAssemblyDirs);
@@ -130,6 +131,13 @@ describe('-c performanceTier=true -c cognitoPlus=false', () => {
       VocUserPool: ['ESSENTIALS', undefined], VocBoardUserPool: ['ESSENTIALS', undefined],
     });
     expect(stacksWithWebAcl(SHAPES.tierWithoutPlus)).toStrictEqual(['VocApiStack', 'VocWebSearchStack']);
+  });
+});
+
+describe('-c performanceTier=true -c enableWaf=false', () => {
+  it('adds no web ACL while the tier still moves the pools to Plus', () => {
+    expect(stacksWithWebAcl(SHAPES.tierWithoutWaf)).toStrictEqual([]);
+    expect(poolPlans(SHAPES.tierWithoutWaf)).toStrictEqual({ VocUserPool: ['PLUS', 'AUDIT'], VocBoardUserPool: ['PLUS', 'AUDIT'] });
   });
 });
 

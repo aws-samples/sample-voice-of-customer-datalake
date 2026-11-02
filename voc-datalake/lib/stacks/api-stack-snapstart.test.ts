@@ -220,6 +220,10 @@ describe('the snapStart context flag', () => {
     expect(snapStartEnabled(appWith({ performanceTier: 'false', snapStart: 'true' }))).toBe(true);
     expect(snapStartEnabled(appWith({ performanceTier: 'false' }))).toBe(false);
   });
+
+  it('is left out of the tier by -c snapStart=false (the own flag decides when set)', () => {
+    expect(snapStartEnabled(appWith({ performanceTier: 'true', snapStart: 'false' }))).toBe(false);
+  });
 });
 
 describe('snapStartInvokeTarget', () => {

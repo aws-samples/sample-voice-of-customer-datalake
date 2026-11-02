@@ -41,7 +41,11 @@ export const WAF_OPT_IN_HINT = `opt-in: -c ${WAF_CONTEXT_KEY}=true / ${PERFORMAN
 /** A web ACL description allows only letters, digits, spaces and `+=:#@/-,.` (no parentheses). */
 const WAF_DESCRIPTION_SUFFIX = `opt-in -c ${WAF_CONTEXT_KEY}=true or ${PERFORMANCE_TIER_CONTEXT_KEY}=true`;
 
-/** Requests per IP per 5 minutes before the rate-based rule blocks (well above one person's use of the SPA). */
+/**
+ * Requests per IP per 5 minutes before the rate-based rule blocks: well above one person's use of the SPA, but an
+ * office behind ONE egress IP shares it (about 16 requests a second on the API; the SPA polls assist jobs and running
+ * chat sessions). A blocked caller gets a bare 403 (docs/deployment.md → AWS WAF); raise it for a large team.
+ */
 export const WAF_RATE_LIMIT_PER_5_MIN = { cloudFront: 10_000, api: 5_000 } as const;
 
 /** The CRS rules that only count on the API (see the module comment). */

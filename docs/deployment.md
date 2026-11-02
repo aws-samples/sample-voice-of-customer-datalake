@@ -1062,6 +1062,11 @@ rule (5-minute window):
 | `FrontendWebAcl` (scope `CLOUDFRONT`) | `VocWebSearchStack`, us-east-1 (CloudFront requires it there) | the SPA distribution, incl. `/avatars/*` and `/prototypes/*` | 10,000 requests |
 | `ApiWebAcl` (scope `REGIONAL`) | `VocApiStack`, the app region | the API `v1` stage (the per-method throttles stay) | 5,000 requests |
 
+The rate limit counts requests per source IP over 5 minutes, so a team behind one egress IP (an office NAT, a VPN)
+shares it: on the API, 5,000 requests is about 16 a second for everyone together, and the SPA polls while assist jobs
+and chat sessions run. A blocked caller gets a bare 403 that names no limit. Raise `WAF_RATE_LIMIT_PER_5_MIN` in
+`voc-datalake/lib/utils/waf.ts` for a large team.
+
 On the API three CRS rules only count, because the API legitimately carries what they block:
 `SizeRestrictions_QUERYSTRING` (query strings over 2 KB: `GET /projects?ids=` takes up to 200 ids),
 `SizeRestrictions_BODY` (bodies over 8 KB: CSV and JSON imports, conversation saves, documents) and

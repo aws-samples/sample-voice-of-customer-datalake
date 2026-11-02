@@ -29,8 +29,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import type { IConstruct } from 'constructs';
-import { booleanContextFlag } from './context-flag';
-import { performanceTierEnabled } from './performance-tier';
+import { enabledByOwnFlagOrTier } from './performance-tier';
 
 /** Construct ids of the functions that get SnapStart when it is on, in creation order. */
 export const SNAPSTART_FUNCTION_IDS = ['IntegrationsApi', 'FeedbackFormApi', 'MemoryApi', 'McpTokensApi'] as const;
@@ -45,17 +44,11 @@ const SNAPSTART_PUBLISH_WARNING = '@aws-cdk/aws-lambda:snapStartRequirePublish';
 
 /**
  * Whether this app opted in to SnapStart: `-c snapStart=true`, or the performance tier
- * (`-c performanceTier=true`, lib/utils/performance-tier.ts) that turns on every fixed-cost
- * performance feature at once. The only read of the snapStart flag.
+ * (`-c performanceTier=true`, lib/utils/performance-tier.ts) that turns on every paid optimisation at once,
+ * unless `-c snapStart=false` leaves it out. The only read of the snapStart flag.
  */
 export function snapStartEnabled(scope: IConstruct): boolean {
-  // Both flags are read before they are combined, so a typo in one is refused even when the other is on.
-  const own = booleanContextFlag(
-    scope.node.tryGetContext(SNAPSTART_CONTEXT_KEY), SNAPSTART_CONTEXT_KEY, false,
-    `Use true/false (off by default: a fixed monthly cost, TENETS.md tenet 7; opt in with -c ${SNAPSTART_CONTEXT_KEY}=true).`,
-  );
-  const tier = performanceTierEnabled(scope);
-  return tier || own;
+  return enabledByOwnFlagOrTier(scope, SNAPSTART_CONTEXT_KEY, 'a fixed monthly cost, TENETS.md tenet 7');
 }
 
 /**
