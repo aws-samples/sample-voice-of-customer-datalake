@@ -12,7 +12,8 @@ content maps to the same key and writes nothing new.
 
 A failed write NEVER raises (the feedback must not be lost because its copy was): it is logged and
 the caller gets None. Whether a copy may be written at all (the source policy: a redact /
-summary-only source keeps none) is the caller's check, made before calling.
+summary-only source keeps none) is the caller's check, made before calling; a writer that has
+no profile in hand asks ``source_permits_raw_copy``.
 """
 
 from __future__ import annotations
@@ -28,8 +29,10 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.logging import logger
 from shared.raw_versions import DIGEST_CHARS, Connector, content_digest, item_folder, put_raw_version, version_key
+from shared.source_policy import raw_archive_allowed
+from shared.source_profiles import SourceProfilesUnavailable, cached_source_profile_strict
 
-__all__ = ['RawTarget', 'bytes_copy', 'bytes_digest', 'json_copy']
+__all__ = ['RawTarget', 'bytes_copy', 'bytes_digest', 'json_copy', 'source_permits_raw_copy']
 
 _AWS_ERRORS = (ClientError, BotoCoreError)
 
@@ -45,6 +48,16 @@ class RawTarget:
 
     def key(self, digest: str, extension: str) -> str:
         return version_key(item_folder(self.source, self.day, self.stem), digest, extension)
+
+
+def source_permits_raw_copy(source: str) -> bool:
+    """True when ``source``'s profile permits a raw copy. Read strictly: an unreadable profile is
+    False (logged), so nothing is archived under the allow default. Never raises."""
+    try:
+        return raw_archive_allowed(cached_source_profile_strict(source))
+    except SourceProfilesUnavailable:
+        logger.warning('Raw copy not written: the source policy is unreadable', extra={'source': source})
+        return False
 
 
 def bytes_digest(body: bytes) -> str:

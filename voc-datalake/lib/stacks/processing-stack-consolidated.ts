@@ -27,6 +27,7 @@ import { createRetentionWorker } from './retention-worker';
 import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
 import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT } from './processor-timing';
+import { appVersion } from '../utils/connector-version';
 
 export interface VocProcessingStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;
@@ -145,6 +146,10 @@ export class VocProcessingStack extends VocStack {
     kmsKey.grantEncryptDecrypt(processingRole);
     // Radar reviews: the dedupe-marker read and one transaction of Put + counter Updates.
     props.radarTable.grant(processingRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
+    // The inline raw_data fallback (lambda/shared/raw_fallback.py): a message whose producer could not
+    // archive it is archived here, write-once under raw/ (the bucket policy refuses a put without
+    // If-None-Match). Put only: no read, no delete.
+    rawDataBucket.grantPut(processingRole, 'raw/*');
 
     // ============================================
     // FEEDBACK PROCESSOR LAMBDA
@@ -174,6 +179,9 @@ export class VocProcessingStack extends VocStack {
         // 'enrichment' surface defaults to Haiku, admins can override it).
         // Radar sources' reviews (another brand) go here, never to FEEDBACK_TABLE.
         RADAR_TABLE: props.radarTable.tableName,
+        // The inline raw_data fallback's bucket and connector-version (lambda/shared/raw_fallback.py).
+        RAW_DATA_BUCKET: rawDataBucket.bucketName,
+        APP_VERSION: appVersion(),
         POWERTOOLS_SERVICE_NAME: 'voc-processor',
         POWERTOOLS_IDEMPOTENCY_DISABLED: '0',
         LOG_LEVEL: 'INFO',
