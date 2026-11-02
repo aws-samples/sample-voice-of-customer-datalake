@@ -14,6 +14,7 @@ import {
 } from '../lib/stacks/bedrock-access-stack';
 import { acknowledgeStackFindings } from '../lib/utils/nag-stack-acknowledgements';
 import { suppressReviewedResourceStar } from '../lib/utils/nag-resource-star';
+import { applyExactGrants } from '../lib/utils/exact-grants';
 import { shouldDeployWebSearchInScope } from '../lib/utils/web-search-default';
 import { applyInferenceScopeEnv, inferenceScopeOf } from '../lib/utils/inference-scope';
 import { shouldDeployAiEnablement } from '../lib/utils/ai-enablement-default';
@@ -331,5 +332,9 @@ for (const stack of [ingestionStack, processingStack, apiStack]) suppressReviewe
 // inferenceScope=eu: BEDROCK_INFERENCE_SCOPE=eu + AVATARS_ENABLED=false on every
 // Lambda of every stack. A no-op for `global`, so default templates are unchanged.
 applyInferenceScopeEnv(app);
+
+// CDK grant wildcards (kms:GenerateDataKey*, s3:GetObject*, <table>/index/*, ...) become the exact actions and
+// index ARNs the platform uses, on every identity policy (lib/utils/exact-grants.ts).
+applyExactGrants(app);
 
 app.synth();
