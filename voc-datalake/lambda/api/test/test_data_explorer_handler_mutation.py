@@ -489,10 +489,13 @@ class TestSavingAnObject:
         assert body == {'success': False, 'error': 'content must be a string or a JSON object'}
         s3.put_object.assert_not_called()
 
-    def test_a_raw_key_adds_the_conditional_create_and_nothing_else(self, s3, api_gateway_event, lambda_context):
+    def test_a_raw_key_adds_the_conditional_create_and_the_connector_and_nothing_else(
+            self, s3, api_gateway_event, lambda_context, monkeypatch):
+        monkeypatch.setenv('APP_VERSION', '9.1.0')
         _put(api_gateway_event, lambda_context, '/data-explorer/s3', {'key': 'raw/a.json', 'content': 'x'})
         s3.put_object.assert_called_once_with(
-            Bucket=BUCKET, Key='raw/a.json', Body=b'x', ContentType='application/json', IfNoneMatch='*')
+            Bucket=BUCKET, Key='raw/a.json', Body=b'x', ContentType='application/json', IfNoneMatch='*',
+            Metadata={'connector': 'data_explorer', 'connector-version': '9.1.0'})
 
     def test_the_prototype_refusal_and_the_missing_key_refusal_are_worded_exactly(
             self, s3, api_gateway_event, lambda_context):

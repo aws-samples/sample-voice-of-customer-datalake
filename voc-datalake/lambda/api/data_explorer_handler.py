@@ -58,6 +58,7 @@ from shared.indexes import FEEDBACK_BY_ID_INDEX
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
 from shared.raw_object_summary import add_summaries
+from shared.raw_versions import app_connector
 from shared.request_body import json_object_body
 from shared.retention import RAW_PREFIX
 from shared.source_policy import apply_source_policy, raw_archive_allowed
@@ -297,6 +298,10 @@ def preview_s3_file():
     return preview
 
 
+# The connector a raw object created here records (shared/raw_versions.py), at the app release.
+DATA_EXPLORER_CONNECTOR = 'data_explorer'
+
+
 def _put_object(bucket_name: str, key: str, content: str) -> None:
     """Write one object; under `raw/` only if no object exists at `key` yet.
 
@@ -312,6 +317,8 @@ def _put_object(bucket_name: str, key: str, content: str) -> None:
     }
     if write_once:
         request['IfNoneMatch'] = '*'
+        # Who wrote this raw object (shared/raw_versions.py): every new raw object names its connector.
+        request['Metadata'] = app_connector(DATA_EXPLORER_CONNECTOR).metadata()
     try:
         s3_client.put_object(**request)
     except ClientError as e:
