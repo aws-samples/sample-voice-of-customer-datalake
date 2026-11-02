@@ -35,6 +35,11 @@ export const LAMBDA_BASIC_EXECUTION_POLICY = 'service-role/AWSLambdaBasicExecuti
 /** What a function needs to write its own logs (see the module comment for the resource form). */
 const LOG_WRITE_ACTIONS: readonly string[] = ['logs:CreateLogStream', 'logs:PutLogEvents'];
 
+/** `arn:…:logs:<region>:<account>:log-group:<name>` (`name` may end in `:*` or hold a `*` pattern). */
+export function logGroupArn(stack: cdk.Stack, name: string): string {
+  return stack.formatArn({ service: 'logs', resource: 'log-group', resourceName: name, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME });
+}
+
 const ManagedPolicyListSchema = z.array(z.unknown()).optional();
 
 /**
@@ -72,10 +77,7 @@ export function namedLogGroupArn(fn: lambda.CfnFunction): string | undefined {
   if (target instanceof logs.CfnLogGroup) return target.attrArn;
   if (!cdk.Token.isUnresolved(config.logGroup)) {
     // A group named literally (an imported group): the same `Arn` form CloudFormation returns.
-    return cdk.Stack.of(fn).formatArn({
-      service: 'logs', resource: 'log-group', resourceName: `${config.logGroup}:*`,
-      arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
-    });
+    return logGroupArn(cdk.Stack.of(fn), `${config.logGroup}:*`);
   }
   throw new Error(`${fn.node.path}: cannot tell which log group LoggingConfig.LogGroup names`);
 }

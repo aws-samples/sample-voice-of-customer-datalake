@@ -15,8 +15,8 @@
  *   (api-gateway.ts names it the same way);
  * - the failure queues alerting watches (OPS_ALERTS_QUEUES, dlq-alarms.ts): peeked, never consumed.
  */
-import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import { logGroupArn } from '../utils/lambda-log-grants';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import type { ApiStackContext } from './api-context';
 
@@ -47,10 +47,6 @@ export interface LogsDiagnosticsInputs {
 /** The queue names out of `slug=name,slug=name` (names carry account/region tokens, never `,` or `=`). */
 export function queueNamesOf(opsAlertsQueues: string): string[] {
   return opsAlertsQueues.split(',').map((pair) => pair.split('=')[1] ?? '').filter((name) => name !== '');
-}
-
-function logGroupArn(stack: cdk.Stack, name: string): string {
-  return stack.formatArn({ service: 'logs', resource: 'log-group', resourceName: name, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME });
 }
 
 interface LogSearchGrant {

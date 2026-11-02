@@ -28,7 +28,7 @@ import * as cdk from 'aws-cdk-lib';
 import type * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 
-import { removeAwsManagedPolicy } from '../utils/lambda-log-grants';
+import { logGroupArn, removeAwsManagedPolicy } from '../utils/lambda-log-grants';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 
 /** The managed policy replaced here. */
@@ -36,10 +36,6 @@ const API_GATEWAY_PUSH_TO_LOGS_POLICY = 'service-role/AmazonAPIGatewayPushToClou
 
 /** The prefix API Gateway gives every execution-log group it creates. */
 const EXECUTION_LOG_GROUP_PREFIX = 'API-Gateway-Execution-Logs_';
-
-function logGroupArn(stack: cdk.Stack, name: string): string {
-  return stack.formatArn({ service: 'logs', resource: 'log-group', resourceName: name, arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME });
-}
 
 /**
  * Replace the managed policy on the CloudWatch role CDK created for `api`. `accessLogGroups` is the name
