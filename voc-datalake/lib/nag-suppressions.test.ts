@@ -156,23 +156,29 @@ async function synthShape(context: Record<string, unknown>): Promise<Judged> {
 const unusedOf = ({ declared, used }: Pick<Judged, 'declared' | 'used'>) =>
   [...declared].filter((unit) => !used.has(unit)).sort(byCodeUnit);
 
+/** A one-queue app (no DLQ, so AwsSolutions-SQS3 fires) with the recording pack registered. */
+async function queueFixture() {
+  resetRecorder();
+  const { App, Stack, Validations } = await import('aws-cdk-lib');
+  const sqs = await import('aws-cdk-lib/aws-sqs');
+  const nag = await import('cdk-nag');
+  const app = new App({ outdir: mkdtempSync(join(tmpdir(), 'voc-nag-fx-')) });
+  outdirs.push(app.outdir);
+  const stack = new Stack(app, 'Fx');
+  const queue = new sqs.Queue(stack, 'Queue', { enforceSSL: true });
+  Validations.of(app).addPlugins(new nag.AwsSolutionsChecks(app));
+  return { app, stack, queue };
+}
+
 describe('cdk-nag acknowledgements', () => {
   it('reports a planted acknowledgement that covers nothing, and a shadowed one, but not one that covers', async () => {
-    resetRecorder();
-    const { App, Stack, Validations } = await import('aws-cdk-lib');
-    const sqs = await import('aws-cdk-lib/aws-sqs');
-    const nag = await import('cdk-nag');
+    const { app, stack, queue } = await queueFixture();
     const { acknowledgeNag, acknowledgeNagOnResource } = await import('./utils/nag-ack');
-    const app = new App({ outdir: mkdtempSync(join(tmpdir(), 'voc-nag-fx-')) });
-    outdirs.push(app.outdir);
-    const stack = new Stack(app, 'Fx');
-    const queue = new sqs.Queue(stack, 'Queue', { enforceSSL: true });
     acknowledgeNagOnResource(queue, [
       { id: 'AwsSolutions-SQS3', reason: 'A planted queue with no DLQ, on purpose' },
       { id: 'AwsSolutions-S1', reason: 'A planted rule the queue is never checked for' },
     ]);
     acknowledgeNag(stack, [{ id: 'AwsSolutions-SQS3', reason: 'A planted stack-wide twin the queue one shadows' }]);
-    Validations.of(app).addPlugins(new nag.AwsSolutionsChecks(app));
     app.synth();
     const result = judged();
     expect(result.unacknowledged).toStrictEqual([]);
@@ -183,14 +189,7 @@ describe('cdk-nag acknowledgements', () => {
   });
 
   it('reports a finding nothing acknowledges', async () => {
-    resetRecorder();
-    const { App, Stack, Validations } = await import('aws-cdk-lib');
-    const sqs = await import('aws-cdk-lib/aws-sqs');
-    const nag = await import('cdk-nag');
-    const app = new App({ outdir: mkdtempSync(join(tmpdir(), 'voc-nag-fx-')) });
-    outdirs.push(app.outdir);
-    new sqs.Queue(new Stack(app, 'Fx'), 'Queue', { enforceSSL: true });
-    Validations.of(app).addPlugins(new nag.AwsSolutionsChecks(app));
+    const { app } = await queueFixture();
     expect(() => app.synth()).toThrow(/AwsSolutions-SQS3/);
     expect(judged().unacknowledged).toStrictEqual(['Fx/Queue/Resource AwsSolutions-SQS3']);
   });
