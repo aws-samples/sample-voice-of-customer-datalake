@@ -33,10 +33,10 @@ import MoreMenu from './MoreMenu'
 import type { MoreMenuItem } from './MoreMenu'
 import type { TFunction } from 'i18next'
 
-// Stryker disable next-line StringLiteral: layout-only classes, no behaviour to observe
 /** The status icon's wrapper is a flex box (see OpenRow). */
 const STATUS_WRAPPER_STYLE: CSSProperties = { display: 'flex' }
 
+// Stryker disable next-line StringLiteral: layout-only classes, no behaviour to observe
 const ROW_CLASS = 'group flex items-center gap-1 rounded-md transition-colors'
 // Stryker disable next-line StringLiteral: hover styling only (jsdom applies no :hover)
 const ROW_HOVER_CLASS = 'hover:bg-bg-hover'

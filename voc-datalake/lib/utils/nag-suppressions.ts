@@ -334,15 +334,16 @@ export const publicUnsubscribeEndpointSuppressions: NagAck[] = [
 /**
  * The CDK Provider framework's onEvent function (`<provider>/framework-onEvent`): CDK owns its runtime and
  * basic-execution role, and it invokes `handler` by qualified ARN (`<HandlerArn>:*`). `name` is the handler's
- * construct id, for the reason text.
+ * construct id and `sameAs` the construct id of another handler acknowledged the same way, both for the
+ * reason text only.
  */
-export function providerFrameworkSuppressions(handler: lambda.IFunction, name: string, pattern: string): NagAck[] {
+export function providerFrameworkSuppressions(handler: lambda.IFunction, name: string, sameAs: string): NagAck[] {
   return [
     ...cdkCustomResourceSuppressions,
     ...lambdaBasicExecutionRoleSuppressions,
     {
       id: 'AwsSolutions-IAM5',
-      reason: `The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to ${name} only (same pattern as ${pattern}).`,
+      reason: `The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to ${name} only (same pattern as ${sameAs}).`,
       findings: [resourceFinding(`${handler.functionArn}:*`)],
     },
   ];
