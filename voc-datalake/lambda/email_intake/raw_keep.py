@@ -7,8 +7,8 @@ email's item references its copy (``s3_raw_uri``), so retention and erasure dele
 
 ONLY when the ``email_intake`` source profile permits a raw copy. Its default is ``pii: redact``
 (``shared/email_intake_settings.py``), so by default nothing is written here. Filtered mail of a
-raw-permitted source (a duplicate, a reply without news, a repeat in its thread) is kept the same
-way with the S3 metadata ``drop-reason``; mail over the sender cap is not, so the cap still bounds
+raw-permitted source (a repeat in its thread, a reply without news) is kept the same way with the
+S3 metadata ``drop-reason``; duplicates and mail over the sender cap are not, so the caps still bound
 storage. A failed write is logged; the email is decided all the same.
 """
 from __future__ import annotations
@@ -23,9 +23,11 @@ from shared.raw_versions import app_connector
 
 __all__ = ['FILTERED_REASONS', 'keep_raw']
 
-#: The outcomes whose email is kept with a ``drop-reason`` (spam, virus, automatic mail and the
-#: unreadable are never kept; nor is mail over the sender cap, so the cap still bounds storage).
-FILTERED_REASONS: Final = frozenset({'duplicate_message', 'forward_duplicate', 'seen_in_thread', 'no_new_info'})
+#: The outcomes whose email is kept with a ``drop-reason``: only those decided AFTER the sender is
+#: admitted under the caps (``intake._decide``), so the caps still bound storage. Duplicates
+#: (``duplicate_message``, ``forward_duplicate``) are decided before the caps and are not kept; nor
+#: are spam, virus, automatic or unreadable mail, nor mail over the sender cap.
+FILTERED_REASONS: Final = frozenset({'seen_in_thread', 'no_new_info'})
 DROP_REASON_META: Final = 'drop-reason'
 
 

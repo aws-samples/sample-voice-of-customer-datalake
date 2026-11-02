@@ -217,9 +217,9 @@ Submitted feedback follows the same processing pipeline as other data sources:
 1. **Submission**: the route validates the body, keeps the validated fields as sent in the raw lake
    (`raw/feedback_form/{y}/{m}/{d}/<feedback id>/<sha16>.json`, connector `feedback_form`; only when the
    `feedback_form` source profile permits a raw copy, [source-policies.md](source-policies.md)), applies the source
-   policy and sends the item, with `s3_raw_uri` naming that copy, to the SQS queue. The copy holds `text`, `rating`,
-   `page_url`, `custom_fields` and `dimensions`, plus `email` / `name` only when the form collects them; any other body
-   field and the participant link token are never kept. A failed raw write is logged and the
+   policy and sends the item, with `s3_raw_uri` naming that copy, to the SQS queue. The copy holds `text` and `dimensions` as
+   validated (stripped, cleaned), `rating`, `page_url` and `custom_fields`, plus `email` / `name` only when the form
+   collects them; any other body field and the participant link token are never kept. A failed raw write is logged and the
    submission is queued all the same.
 2. **Processing**: the processor enriches it (Comprehend, Translate, Bedrock).
 3. **Storage**: the item is saved to `voc-feedback` with its metadata.

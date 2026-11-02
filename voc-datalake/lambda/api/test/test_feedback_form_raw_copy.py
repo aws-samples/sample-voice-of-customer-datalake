@@ -74,6 +74,22 @@ def test_the_copy_keeps_only_validated_fields_never_extras_or_the_participant_to
     assert json.loads(raw_s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())['submission'] == BODY
 
 
+def test_text_and_dimensions_are_kept_as_validated_not_as_sent(
+    raw_s3, feedback_form_handler, api_gateway_event, lambda_context,
+):
+    # Padding around the text and a dimension value the cleaner drops must not reach the lake.
+    body = {**BODY, 'text': f"{' ' * 50_000}{BODY['text']}{' ' * 50_000}",
+            'dimensions': {'plan': 'pro', 'junk': {'nested': 'x' * 50_000}}}
+    _submit(feedback_form_handler, api_gateway_event, lambda_context, MagicMock(), body=body)
+
+    [key] = _objects(raw_s3)
+    obj = raw_s3.get_object(Bucket=BUCKET, Key=key)
+    submission = json.loads(obj['Body'].read())['submission']
+    assert submission['text'] == BODY['text']
+    assert submission['dimensions'] == {'plan': 'pro'}
+    assert obj['ContentLength'] < 2_000
+
+
 def test_email_and_name_are_kept_only_when_the_form_collects_them(
     raw_s3, feedback_form_handler, api_gateway_event, lambda_context,
 ):

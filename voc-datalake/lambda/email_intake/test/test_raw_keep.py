@@ -61,6 +61,16 @@ def test_spam_is_never_kept(aws, lake):
     assert _raw_objects(aws) == []
 
 
+def test_a_duplicate_is_not_kept_because_it_is_decided_before_the_sender_cap(aws, lake):
+    # Duplicates bypass the caps, so keeping them would let one sender grow the lake without bound.
+    with seeded_source_profiles(ALLOW):
+        run(aws, lake, 'new.eml')
+        outcome = run(aws, lake, 'new.eml', raw=fixture_bytes('new.eml') + b'\n')
+    assert outcome.reason == 'duplicate_message'
+    [key] = _raw_objects(aws)
+    assert 'drop-reason' not in aws['s3'].head_object(Bucket=RAW, Key=key)['Metadata']
+
+
 def test_the_inbox_bucket_is_untouched_by_the_raw_copy(aws, lake):
     with seeded_source_profiles(ALLOW):
         outcome = run(aws, lake, 'new.eml')
