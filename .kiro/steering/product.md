@@ -95,7 +95,7 @@ Note: Each page is organized in its own folder under `frontend/src/pages/` with 
 - **Pay-per-use**: DynamoDB on-demand, S3 storage, Lambda per-invocation
 - **Auto-scaling**: Handles traffic spikes automatically
 - **High availability**: Multi-AZ by default
-- **Security**: KMS encryption, IAM least-privilege, Secrets Manager, Cognito auth, API Gateway per-method throttling (no WAF is deployed — a cost decision; add one for production)
+- **Security**: KMS encryption, IAM least-privilege, Secrets Manager, Cognito auth, API Gateway per-method throttling (AWS WAF and Cognito Plus are opt-ins, `-c enableWaf=true` / `-c cognitoPlus=true`: off by default as a cost decision, recommended for production)
 - **Data Lake**: S3 raw data archival with partitioned structure for analytics
 
 ## Use Cases

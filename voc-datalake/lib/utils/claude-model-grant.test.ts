@@ -99,6 +99,18 @@ describe('grantClaudeModels, global scope (default)', () => {
     const dependsOn = z.object({ DependsOn: z.array(z.string()) }).parse(inline).DependsOn;
     expect(dependsOn.filter((id) => id.startsWith('ClaudeInvokePolicy'))).toHaveLength(managedPolicies(template).length);
   });
+
+  it('also orders a default policy created AFTER the Claude grant (the processing role\'s order)', () => {
+    const app = new cdk.App();
+    const stack = new cdk.Stack(app, 'Late', { env: { account: ACCOUNT, region: 'us-east-1' } });
+    const role = new iam.Role(stack, 'Late', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') });
+    grantClaudeModels(role, 'stream');
+    role.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: ['arn:aws:sqs:us-east-1:111111111111:q'] }));
+    const late = Template.fromStack(stack);
+    const [inline] = Object.values(late.findResources('AWS::IAM::Policy'));
+    const dependsOn = z.object({ DependsOn: z.array(z.string()) }).parse(inline).DependsOn;
+    expect(dependsOn.filter((id) => id.startsWith('ClaudeInvokeStreamPolicy'))).toHaveLength(managedPolicies(late).length);
+  });
 });
 
 describe('grantClaudeModels sharing', () => {

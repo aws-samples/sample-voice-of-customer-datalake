@@ -22,6 +22,7 @@ const SHAPES = {
   default: synthApp(),
   performanceTier: synthApp({ performanceTier: 'true' }),
   cognitoPlus: synthApp({ cognitoPlus: 'true' }),
+  tierWithoutPlus: synthApp({ performanceTier: 'true', cognitoPlus: 'false' }),
   wafOutsideUsEast1: synthApp({ enableWaf: 'true' }, 'eu-west-1'),
 } as const;
 afterAll(cleanupAssemblyDirs);
@@ -120,6 +121,15 @@ describe('-c performanceTier=true', () => {
     const crs = rules[3]?.Statement.ManagedRuleGroupStatement;
     expect((crs?.RuleActionOverrides ?? []).map((override) => [override.Name, override.ActionToUse]))
       .toStrictEqual(counted.map((name) => [name, { Count: {} }]));
+  });
+});
+
+describe('-c performanceTier=true -c cognitoPlus=false', () => {
+  it('leaves the pools on Essentials while the tier still adds the web ACLs (an own flag set to false wins)', () => {
+    expect(poolPlans(SHAPES.tierWithoutPlus)).toStrictEqual({
+      VocUserPool: ['ESSENTIALS', undefined], VocBoardUserPool: ['ESSENTIALS', undefined],
+    });
+    expect(stacksWithWebAcl(SHAPES.tierWithoutPlus)).toStrictEqual(['VocApiStack', 'VocWebSearchStack']);
   });
 });
 

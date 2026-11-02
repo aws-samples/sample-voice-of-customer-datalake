@@ -88,7 +88,7 @@ or set it in `voc-datalake/cdk.context.json`. An invalid value fails the synth.
 | `inboundEmailDomain` (+ `inboundEmailHostedZoneId`, `inboundEmailHostedZoneName`, `inboundEmailRuleSet`, `inboundEmailCreateIdentity`) | none | Receives feedback by email through SES ([email-intake.md](email-intake.md)) |
 | `deploymentPrefix` | none | Namespaces a second copy in the same account and region ([Two Deployments](#two-deployments-in-one-account-and-region)) |
 | `mcpReservedConcurrency` | `20` | Reserved concurrency of the MCP endpoint ([below](#reserved-concurrency-of-the-mcp-endpoint--c-mcpreservedconcurrency)) |
-| `performanceTier` | `false` | `true` turns on every paid optimisation at once: the fixed-cost performance features (`snapStart`) and the paid security features (`enableWaf`, `cognitoPlus`); for a deployment that runs as a managed service rather than a sample ([lambda-sizing.md](lambda-sizing.md#the-performance-tier--c-performancetier)) |
+| `performanceTier` | `false` | `true` turns on every paid optimisation at once: the fixed-cost performance features (`snapStart`) and the paid security features (`enableWaf`, `cognitoPlus`); a feature's own flag set to `false` leaves it out (e.g. `-c performanceTier=true -c cognitoPlus=false`); for a deployment that runs as a managed service rather than a sample ([lambda-sizing.md](lambda-sizing.md#the-performance-tier--c-performancetier)) |
 | `enableWaf` | `false` | `true` puts AWS WAF in front of the SPA distribution and the API stage (a fixed monthly cost, about $18 plus $0.60 per million requests; off by default per [TENETS.md](../TENETS.md), tenet 7) ([below](#aws-waf-and-cognito-plus-opt-in)) |
 | `cognitoPlus` | `false` | `true` moves both user pools to the Cognito Plus plan with threat protection in audit mode ($0.020 per monthly active user, no free tier) ([below](#aws-waf-and-cognito-plus-opt-in)) |
 | `snapStart` | `false` | `true` turns on Lambda SnapStart for the four cold-start-bound APIs (a fixed monthly cache charge, about $20; off by default per [TENETS.md](../TENETS.md), tenet 7) ([lambda-sizing.md](lambda-sizing.md#snapstart-off-by-default)) |
@@ -1062,8 +1062,10 @@ rule (5-minute window):
 | `FrontendWebAcl` (scope `CLOUDFRONT`) | `VocWebSearchStack`, us-east-1 (CloudFront requires it there) | the SPA distribution, incl. `/avatars/*` and `/prototypes/*` | 10,000 requests |
 | `ApiWebAcl` (scope `REGIONAL`) | `VocApiStack`, the app region | the API `v1` stage (the per-method throttles stay) | 5,000 requests |
 
-On the API two CRS rules only count, because the API legitimately carries what they block: `SizeRestrictions_BODY`
-(bodies over 8 KB: CSV and JSON imports, conversation saves, documents) and `CrossSiteScripting_BODY` (stored
+On the API three CRS rules only count, because the API legitimately carries what they block:
+`SizeRestrictions_QUERYSTRING` (query strings over 2 KB: `GET /projects?ids=` takes up to 200 ids),
+`SizeRestrictions_BODY` (bodies over 8 KB: CSV and JSON imports, conversation saves, documents) and
+`CrossSiteScripting_BODY` (stored
 documents, prototypes, reviews and assistant answers contain HTML). No WAF logging is configured: only CloudWatch
 metrics and sampled requests. With WAF on, `VocWebSearchStack` is created even when web search is off and no use-case
 form is filed, and `VocCoreStack` reads the CloudFront ACL's ARN from it: a CloudFormation export when the app region

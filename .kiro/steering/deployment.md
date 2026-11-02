@@ -112,7 +112,7 @@ The platform consists of 4 core stacks plus 1 AI-enablement stack.
 | `VocCoreStack` | DynamoDB tables, KMS, S3 buckets, Cognito, CloudFront | None |
 | `VocIngestionStack` | Plugin Lambdas, EventBridge schedules, SQS, Secrets | Core |
 | `VocProcessingStack` | Processor, Aggregator, Step Functions, Bedrock | Core, Ingestion |
-| `VocApiStack` | API Gateway (per-method throttles; no WAF — add one for production), API Lambdas, Webhooks | Core, Ingestion, Processing |
+| `VocApiStack` | API Gateway (per-method throttles; AWS WAF opt-in with `-c enableWaf=true`), API Lambdas, Webhooks | Core, Ingestion, Processing |
 | `VocWebSearchStack` (AI enablement, always us-east-1) | Two independently switchable halves: AgentCore web-search gateway (default-on, `-c enableWebSearch=false` opts out) + Bedrock model access / Anthropic use case (only when `anthropicUseCase` is set). Not created when both are off | None |
 
 ### Deploy All Stacks

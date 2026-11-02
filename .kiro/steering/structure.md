@@ -701,7 +701,7 @@ VocCoreStack (DynamoDB tables, S3 raw data bucket, KMS, Cognito, CloudFront)
        │           │
        │           └──▶ VocProcessingStack (Processor, Aggregator, Step Functions incl. voc-agent-run, category reprocess worker, voc-retention (the only customer-data delete role), memory workers + memory-extract queue, agent heartbeat/conductor/persona panel, Bedrock)
        │
-       ├──▶ VocApiStack (API Gateway + per-method throttles, API Lambdas, Webhooks; no WAF)
+       ├──▶ VocApiStack (API Gateway + per-method throttles, API Lambdas, Webhooks; WAF only with -c enableWaf=true)
        │           │
        │           └── Depends on: processingQueue, secretsArn, researchStateMachine, userPool
 
