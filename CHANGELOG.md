@@ -17,6 +17,16 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.73.02] - 2026-11-02
+
+CI runs Node 24, the same line as the Lambdas.
+
+### Changed
+- **CI Node version**: every workflow (`quality-gates`, `dependency-audit`, `pr-description`, `scheduled-failure-watch`)
+  runs Node 24 instead of 26, the line the stream and plan-step Lambdas run (`nodejs24.x`), so the gate tests the
+  runtime that is deployed. Local development still needs Node.js 22.18+ or 24.11+ (root `package.json` `engines`);
+  the 22 line is supported but not tested in CI.
+
 ## [5.73.01] - 2026-11-01
 
 TENETS.md now describes the code as it is, and four tenets say what was decided about erasure, AI modes, Gold and the one KMS key.

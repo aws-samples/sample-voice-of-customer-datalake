@@ -7,7 +7,7 @@ protection, the frontend deployment, diagnostics, and troubleshooting.
 ## Prerequisites
 
 - **AWS CLI** configured with credentials for the target account
-- **Node.js** 22.18+ or 24.11+ and npm (the lint and test tooling needs it; CI runs Node 26, the current LTS line)
+- **Node.js** 22.18+ or 24.11+ and npm (the lint and test tooling needs it; CI runs Node 24, matching the `nodejs24.x` Lambda runtime; the 22 line is supported but not tested in CI)
 - **Python** 3.12+ for the local lint and tests (the Lambdas run Python 3.14; their code and layers are built in
   containers)
 - **Docker or Finch** for the Lambda layers and CDK asset bundling
@@ -1471,7 +1471,7 @@ jobs:
       
       - uses: actions/setup-node@v7
         with:
-          node-version: '26'
+          node-version: '24'
           
       - uses: actions/setup-python@v7
         with:
