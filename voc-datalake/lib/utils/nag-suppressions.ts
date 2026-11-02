@@ -1,5 +1,4 @@
 import { ArnFormat, DefaultStackSynthesizer, Stack } from 'aws-cdk-lib';
-import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import { AwsCustomResource } from 'aws-cdk-lib/custom-resources';
 import type { IConstruct } from 'constructs';
@@ -140,20 +139,6 @@ export function rawDataPrefixSuppressions(rawDataBucket: s3.IBucket, prefixes: r
   }];
 }
 
-// Dynamic plugin system - Lambda version/alias wildcards (`<FunctionArn>:*`) of the named functions.
-//
-// There is NO EventBridge schedule-rule entry: the integrations role names each
-// plugin's rule exactly (lib/stacks/api-data-lambdas.ts), and the ingestors'
-// breaker grants name their own rule, so a reintroduced `rule/...-*` wildcard
-// must surface as an AwsSolutions-IAM5 finding rather than be suppressed here.
-export function pluginSystemSuppressions(functions: readonly lambda.IFunction[]): NagAck[] {
-  return [{
-    id: 'AwsSolutions-IAM5',
-    reason: 'Lambda version/alias wildcard required for Step Functions state machine invocations and async job Lambda invocations',
-    findings: functions.map((fn) => resourceFinding(`${fn.functionArn}:*`)),
-  }];
-}
-
 /**
  * CDK deployment assets: the object wildcard on the stack's bootstrap file-asset bucket
  * (`cdk-<qualifier>-assets-<account>-<region>`, DefaultStackSynthesizer's default name).
@@ -280,23 +265,6 @@ export const publicUnsubscribeEndpointSuppressions: NagAck[] = [
     reason: 'A participant who received an email has no Cognito identity, and a mail client posting the one-click unsubscribe cannot present one; the emailed token is the authorization',
   },
 ];
-
-/**
- * The CDK Provider framework's onEvent function (`<provider>/framework-onEvent`): CDK owns its runtime (its
- * role writes only its own log group, lib/utils/lambda-log-grants.ts), and it invokes `handler` by qualified ARN (`<HandlerArn>:*`). `name` is the handler's
- * construct id and `sameAs` the construct id of another handler acknowledged the same way, both for the
- * reason text only.
- */
-export function providerFrameworkSuppressions(handler: lambda.IFunction, name: string, sameAs: string): NagAck[] {
-  return [
-    ...cdkCustomResourceSuppressions,
-    {
-      id: 'AwsSolutions-IAM5',
-      reason: `The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to ${name} only (same pattern as ${sameAs}).`,
-      findings: [resourceFinding(`${handler.functionArn}:*`)],
-    },
-  ];
-}
 
 /**
  * Acknowledge the CDK-managed runtime finding on the singleton

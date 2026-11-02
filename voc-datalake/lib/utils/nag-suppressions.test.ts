@@ -8,14 +8,13 @@
  * app, that every rendered id matches a finding cdk-nag computes.
  */
 import * as cdk from 'aws-cdk-lib';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import type { IConstruct } from 'constructs';
 import { describe, expect, it } from 'vitest';
 
 import { acknowledgeNag, acknowledgementsOn, renderNagFinding, type NagAck } from './nag-ack';
 import {
-  cdkAssetsSuppressions, pluginSystemSuppressions, rawDataPrefixSuppressions,
+  cdkAssetsSuppressions, rawDataPrefixSuppressions,
   s3ObjectSuppressions,
 } from './nag-suppressions';
 
@@ -26,10 +25,7 @@ function fixture() {
   const producer = new cdk.Stack(app, 'pfx-Producer', { env });
   const consumer = new cdk.Stack(app, 'pfx-Consumer', { env });
   const bucket = new s3.Bucket(producer, 'Raw', { enforceSSL: true, versioned: true });
-  const fn = new lambda.Function(consumer, 'Job', {
-    runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
-  });
-  return { producer, consumer, bucket, fn };
+  return { producer, consumer, bucket };
 }
 
 /** The logical id of `construct`'s CloudFormation resource. */
@@ -58,11 +54,6 @@ describe('nag-suppressions.ts list builders', () => {
       .toStrictEqual([`Resource::${arn}/*`, `Resource::${arn}/raw/*`]);
     expect(rendered(producer, rawDataPrefixSuppressions(bucket, ['avatars/*', 'projects/*/product_docs/extracted/*'])))
       .toStrictEqual([`Resource::${arn}/avatars/*`, `Resource::${arn}/projects/*/product_docs/extracted/*`]);
-  });
-
-  it('names the version/alias wildcard of each function, not the bare ARN', () => {
-    const { consumer, fn } = fixture();
-    expect(rendered(consumer, pluginSystemSuppressions([fn]))).toStrictEqual([`Resource::<${logicalId(fn)}.Arn>:*`]);
   });
 
   it('names the stack\'s own bootstrap asset bucket', () => {

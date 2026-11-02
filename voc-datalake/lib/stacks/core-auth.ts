@@ -18,9 +18,9 @@ import * as path from 'path';
 import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
 import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import {
+  cdkCustomResourceSuppressions,
   cognitoPlusOffSuppressions,
   cognitoSecuritySuppressions,
-  providerFrameworkSuppressions,
 } from '../utils/nag-suppressions';
 import type { CoreBuildContext } from './core-cdn';
 import { retainOnReplace } from '../utils/retain-on-replace';
@@ -261,7 +261,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
 
   acknowledgeNag(
     adminBootstrapProvider.node.findChild('framework-onEvent'),
-    providerFrameworkSuppressions(adminBootstrapLambda, 'AdminBootstrapLambda', 'ModelAgreementLambda'),
+    cdkCustomResourceSuppressions,
   );
 
   // ============================================
@@ -319,7 +319,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
 
     acknowledgeNag(
       modelPinProvider.node.findChild('framework-onEvent'),
-      providerFrameworkSuppressions(modelPinLambda, 'ModelPinLambda', 'AdminBootstrapLambda'),
+      cdkCustomResourceSuppressions,
     );
   }
 

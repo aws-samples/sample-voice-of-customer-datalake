@@ -19,10 +19,10 @@ import * as path from 'path';
 import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import {
   apiSecretsSuppressions,
+  cdkCustomResourceSuppressions,
   cdnSigningKeySuppressions,
   cloudFrontWafOffSuppressions,
   cloudfrontDefaultCertSuppressions,
-  providerFrameworkSuppressions,
 } from '../utils/nag-suppressions';
 import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
 import type { DataProtection } from '../utils/data-protection';
@@ -281,7 +281,7 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
   acknowledgeNagOnResource(cdnSigningSecret, cdnSigningKeySuppressions);
   acknowledgeNag(
     cdnSigningKeysProvider.node.findChild('framework-onEvent'),
-    providerFrameworkSuppressions(cdnSigningKeysLambda, 'CdnSigningKeysLambda', 'AdminBootstrapLambda'),
+    cdkCustomResourceSuppressions,
   );
 
   // The L2 PublicKey validates the PEM prefix only for resolved strings, so
