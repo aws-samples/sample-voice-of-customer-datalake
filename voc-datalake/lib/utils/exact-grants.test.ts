@@ -13,20 +13,15 @@ import { Construct } from 'constructs';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { cmkTableReadWriteKms, grantActions, GrantStatementSchema, kmsGrants, type GrantStatement } from '../test-support/exact-grant-statements';
 import { byCodeUnit } from './compare';
 import { applyExactGrants } from './exact-grants';
 
 const env = { account: '111111111111', region: 'us-east-1' };
 
-const StatementSchema = z.looseObject({
-  Effect: z.string(),
-  Action: z.union([z.string(), z.array(z.string())]),
-  Resource: z.unknown(),
-  Condition: z.unknown().optional(),
-});
-type Statement = z.infer<typeof StatementSchema>;
+type Statement = GrantStatement;
 const PoliciesSchema = z.record(z.string(), z.object({
-  Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(StatementSchema) }) }),
+  Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(GrantStatementSchema) }) }),
 }));
 
 function fixture() {
@@ -57,7 +52,7 @@ function statements(stack: cdk.Stack, rolePrefix: string): Statement[] {
   return match[1].Properties.PolicyDocument.Statement;
 }
 
-const actionsOf = (statement: Statement) => (typeof statement.Action === 'string' ? [statement.Action] : statement.Action);
+const actionsOf = grantActions;
 const allActions = (list: readonly Statement[]) => list.flatMap(actionsOf);
 
 describe('applyExactGrants', () => {
@@ -69,12 +64,7 @@ describe('applyExactGrants', () => {
     applyExactGrants(app);
     const list = statements(consumer, 'JobServiceRoleDefaultPolicy');
 
-    const kmsStatements = list.filter((statement) => actionsOf(statement).some((action) => action.startsWith('kms:')));
-    expect(kmsStatements.map((statement) => [actionsOf(statement), statement.Condition ?? null])).toStrictEqual([
-      [['kms:Decrypt', 'kms:DescribeKey', 'kms:Encrypt', 'kms:GenerateDataKey'], null],
-      [['kms:GenerateDataKeyWithoutPlaintext', 'kms:ReEncryptFrom', 'kms:ReEncryptTo'],
-        { StringEquals: { 'kms:ViaService': 'dynamodb.us-east-1.amazonaws.com' } }],
-    ]);
+    expect(kmsGrants(list)).toStrictEqual(cmkTableReadWriteKms('us-east-1'));
     const exportOf = (id: string) => ({ 'Fn::ImportValue': expect.stringMatching(new RegExp(`^Producer:ExportsOutputFnGetAtt${id}`)) });
     const indexArn = (name: string) => ({ 'Fn::Join': ['', [exportOf('Feedback'), `/index/${name}`]] });
     const dynamo = list.find((statement) => actionsOf(statement).includes('dynamodb:PutItem'));
