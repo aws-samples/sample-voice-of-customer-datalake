@@ -149,6 +149,18 @@ describe('VocCoreStack alarm topic', () => {
     expect(contextArn).not.toContain('Fn::ImportValue');
   });
 
+  it('names in the Core key grant exactly the queue the Ingestion stack creates', () => {
+    // Core builds the ARN from the queue's fixed name; if either stack's uniqueName() inputs drift,
+    // EventBridge is denied GenerateDataKey and failed schedule events are lost with no synth error.
+    const grant = z.object({ Condition: z.object({ StringEquals: z.object({ 'kms:EncryptionContext:aws:sqs:arn': z.unknown() }) }) })
+      .parse(itemAt(coreKeyStatements(template).filter((s) => s.Sid === EVENTBRIDGE_DLQ_KEY_SID), 0));
+    const arn = rendered(grant.Condition.StringEquals['kms:EncryptionContext:aws:sqs:arn']);
+    const queueName = rendered(queueNameOf(synthIngestionTemplate(['webscraper']), 'IngestScheduleDLQ'));
+    expect(queueName).not.toContain('<?>');
+    // Core's region is concrete in the synth env, so its formatArn resolves the partition to `aws`.
+    expect(arn).toBe(`arn:aws:sqs:${SYNTH_REGION}:${SYNTH_ACCOUNT}:${queueName}`);
+  });
+
   it('denies non-TLS publishes (enforceSSL)', () => {
     const { id } = topic();
     const policies = Object.values(template.findResources('AWS::SNS::TopicPolicy'))

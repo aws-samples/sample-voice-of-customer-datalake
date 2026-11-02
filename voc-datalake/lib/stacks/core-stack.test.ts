@@ -153,7 +153,7 @@ describe('VocCoreStack synth context', () => {
       statementCount('AWS::IAM::Policy', 'CdnSigningKeysLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
       because('the CDN signing-key role'),
     ).toBe(1);
-    // 5 + the CloudWatch alarm-topic grant + the EventBridge schedule-DLQ grant (one key since 5.73.00).
+    // 5 + the CloudWatch alarm-topic grant + the EventBridge schedule-DLQ grant (one key since 5.74.00).
     expect(statementCount('AWS::KMS::Key', 'VocKmsKey', 'KeyPolicy'), because('the KMS key')).toBe(7);
   });
 });

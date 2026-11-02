@@ -969,7 +969,7 @@ once you no longer need them.
 
 ### Production: protectData
 
-**`protectData` is on by default (since 5.73.00).** Every deployment keeps its data
+**`protectData` is on by default (since 5.74.00).** Every deployment keeps its data
 whatever happens to the stacks; only a demo, workshop or temporary environment
 turns it off:
 
@@ -994,7 +994,10 @@ With it on (lib/utils/data-protection.ts):
   **30 days** in every deployment (owner decision 2026-11-01: one retention for
   every operational log; audit evidence lives in DynamoDB audit rows such as
   `AUDIT#retention` and the MCP token audit, not in logs); an unprotected
-  deployment deletes its log groups with the stacks;
+  deployment deletes its log groups with the stacks. Compliance checks that expect
+  a year, such as the AWS Config rule `cw-loggroup-retention-period-check` and the
+  Security Hub control `CloudWatch.16`, report these log groups as non-compliant
+  by design; a deployment that must pass them raises `LOG_RETENTION`;
 - every stack gets CloudFormation **termination protection**.
 
 Only the value `true` or `false` is accepted; anything else (a typo) fails the

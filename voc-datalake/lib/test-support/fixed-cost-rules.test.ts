@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { COUNTED_FIXED_COSTS, countedFixedCostFindings, FIXED_COST_REMEDY, fixedCostFindings } from './fixed-cost-rules';
+import { itemAt } from './guards';
 
 /** Findings for a one-resource template. */
 const findingsFor = (Type: string, Properties: Record<string, unknown> = {}) => (
@@ -113,12 +114,12 @@ describe('countedFixedCostFindings', () => {
   it('names every resource of a type that grew, and says to reuse the existing one or make it opt-in', () => {
     const findings = countedFixedCostFindings([stackWith('A', atBaseline), stackWith('B', ['AWS::KMS::Key'])]);
     expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatch(/^2 customer-managed KMS keys \(AWS::KMS::Key\) in the default synth, baseline 1: A\/R0, B\/R0 — .*reuse the existing one, or make the new one opt-in/);
+    expect(itemAt(findings, 0)).toMatch(/^2 customer-managed KMS keys \(AWS::KMS::Key\) in the default synth, baseline 1: A\/R0, B\/R0 — .*reuse the existing one, or make the new one opt-in/);
   });
 
   it('asks for a lower baseline when a type shrank, so it cannot grow back', () => {
     const findings = countedFixedCostFindings([stackWith('A', atBaseline.filter((type) => type !== 'AWS::SecretsManager::Secret'))]);
     expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatch(/^0 Secrets Manager secrets .*below the baseline 3 — lower `baseline` in COUNTED_FIXED_COSTS/);
+    expect(itemAt(findings, 0)).toMatch(/^0 Secrets Manager secrets .*below the baseline 3 — lower `baseline` in COUNTED_FIXED_COSTS/);
   });
 });

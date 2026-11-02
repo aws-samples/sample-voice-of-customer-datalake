@@ -59,7 +59,7 @@ export function applyLambdaLogRetention(scope: IConstruct): void {
  *
  * A protected deployment keeps the same 30 days as every other log (`LOG_RETENTION`; owner decision
  * 2026-11-01: one retention for every operational log, kept simple; audit evidence lives in DynamoDB
- * audit rows, not in logs; until 5.73.00 this was 365 days), but RETAINS each log group on stack
+ * audit rows, not in logs; until 5.74.00 this was 365 days), but RETAINS each log group on stack
  * deletion, so a teardown does not erase the last 30 days of evidence. An unprotected deployment
  * (`-c protectData=false`, demos) deletes its log groups with the stacks. Storage is pay-per-use;
  * nothing is billed for the setting itself.
