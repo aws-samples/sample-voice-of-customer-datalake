@@ -17,9 +17,9 @@
  * path the app suites use. (cdk-nag 3 findings are not annotations: an
  * unacknowledged one fails the synth itself, so a synth that returns has none.)
  *
- * It doubles as the unit-level guard that `pluginSystemSuppressions()` does not
- * cover an EventBridge schedule-rule wildcard: the integrations role names each
- * rule exactly, so a reintroduced wildcard must surface as a finding.
+ * It doubles as the unit-level guard that an EventBridge schedule-rule wildcard
+ * is reported: the integrations role names each rule exactly, so a reintroduced
+ * wildcard must surface as a finding.
  */
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -32,8 +32,6 @@ import { AwsSolutionsChecks } from 'cdk-nag';
 import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { acknowledgeNag } from '../utils/nag-ack';
-import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 import {
   cdkJsonContextStrict,
   cleanupAssemblyDirs,
@@ -48,8 +46,8 @@ import {
 } from './synth-app';
 
 /** A stack holding one schedule-rule wildcard grant — the shape the integrations role's EventBridge grant in
- * api-data-lambdas.ts had before it named each rule — plus a function whose qualified ARN the role invokes. */
-function scheduleRuleGrantStack(prefix: string | undefined, applySuppressions: boolean): { app: cdk.App; stack: cdk.Stack } {
+ * api-data-lambdas.ts had before it named each rule. */
+function scheduleRuleGrantStack(prefix: string | undefined): { app: cdk.App; stack: cdk.Stack } {
   const app = new cdk.App({ outdir: createAssemblyDir('voc-nag-') });
   const stack = new cdk.Stack(app, 'NagProbeStack', {
     env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION },
@@ -57,16 +55,11 @@ function scheduleRuleGrantStack(prefix: string | undefined, applySuppressions: b
   const role = new iam.Role(stack, 'ScheduleTogglerRole', {
     assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
   });
-  const job = new lambda.Function(stack, 'Job', {
-    runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
-  });
   const namePrefix = prefix ? `${prefix}-` : '';
   role.addToPolicy(new iam.PolicyStatement({
     actions: ['events:DisableRule'],
     resources: [`arn:aws:events:${SYNTH_REGION}:${SYNTH_ACCOUNT}:rule/${namePrefix}voc-ingest-*-schedule*`],
   }));
-  role.addToPolicy(new iam.PolicyStatement({ actions: ['lambda:InvokeFunction'], resources: [`${job.functionArn}:*`] }));
-  if (applySuppressions) acknowledgeNag(role, pluginSystemSuppressions([job]));
   return { app, stack };
 }
 
@@ -75,8 +68,8 @@ function scheduleRuleGrantStack(prefix: string | undefined, applySuppressions: b
 afterAll(cleanupAssemblyDirs);
 
 /** The IAM5 findings cdk-nag reports for the probe role (its `validateScope`, the documented test entry point). */
-function iam5Findings(prefix: string | undefined, applySuppressions: boolean): string[] {
-  const { app } = scheduleRuleGrantStack(prefix, applySuppressions);
+function iam5Findings(prefix: string | undefined): string[] {
+  const { app } = scheduleRuleGrantStack(prefix);
   return new AwsSolutionsChecks().validateScope(app).violations
     .filter((violation) => violation.ruleName.startsWith('AwsSolutions-IAM5['))
     .filter((violation) => violation.violatingResources.some((r) => r.constructPath?.includes('ScheduleTogglerRole') === true))
@@ -87,7 +80,7 @@ describe('the annotation collector', () => {
   it('reports a warning raised during synthesis', () => {
     // If this is empty, every zero-warnings assertion in the suite is vacuous —
     // which is precisely the state this file was written to end.
-    const { app, stack } = scheduleRuleGrantStack('b', false);
+    const { app, stack } = scheduleRuleGrantStack('b');
     cdk.Annotations.of(stack).addWarningV2('voc:probe', 'a deliberate probe warning');
     app.synth();
     const result = readAssembly(app.outdir);
@@ -98,27 +91,19 @@ describe('the annotation collector', () => {
   it('sees the annotations CDK always emits, so an empty list means a broken collector', () => {
     // `aws:cdk:logicalId` is on every resource in every assembly. Its absence
     // can only mean the collector is reading the wrong file.
-    const { app } = scheduleRuleGrantStack(undefined, false);
+    const { app } = scheduleRuleGrantStack(undefined);
     app.synth();
     expect(readAssembly(app.outdir).annotations.map((annotation) => annotation.type)).toContain('aws:cdk:logicalId');
   });
 });
 
-describe('pluginSystemSuppressions', () => {
-  it('acknowledges the function\'s version/alias wildcard and nothing else', () => {
-    const unacknowledged = iam5Findings(undefined, false);
-    const acknowledged = iam5Findings(undefined, true);
-    expect(unacknowledged.filter((id) => !acknowledged.includes(id))).toStrictEqual([
-      expect.stringMatching(/^AwsSolutions-IAM5\[Resource::<Job[0-9A-F]{8}\.Arn>:\*\]$/),
-    ]);
+describe('a schedule-rule wildcard grant', () => {
+  it('is reported on an unprefixed deployment', () => {
+    expect(iam5Findings(undefined).join('\n')).toContain('voc-ingest-*-schedule*');
   });
 
-  it('reports a schedule-rule wildcard on an unprefixed deployment', () => {
-    expect(iam5Findings(undefined, true).join('\n')).toContain('voc-ingest-*-schedule*');
-  });
-
-  it('reports a schedule-rule wildcard on a prefixed deployment', () => {
-    expect(iam5Findings('b', true).join('\n')).toContain('b-voc-ingest-*-schedule*');
+  it('is reported on a prefixed deployment', () => {
+    expect(iam5Findings('b').join('\n')).toContain('b-voc-ingest-*-schedule*');
   });
 });
 

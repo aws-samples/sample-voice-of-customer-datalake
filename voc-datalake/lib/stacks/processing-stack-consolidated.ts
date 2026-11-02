@@ -11,8 +11,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import { Construct } from 'constructs';
-import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
-import { pluginSystemSuppressions } from '../utils/nag-suppressions';
+import { acknowledgeNagOnResource } from '../utils/nag-ack';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { dependencyLayer } from '../utils/dependency-layers';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
@@ -425,7 +424,6 @@ export class VocProcessingStack extends VocStack {
 
     // Step Functions workflow
     this.researchStateMachine = createResearchStateMachine(this, (baseName) => this.uniqueName(baseName), researchStepLambda);
-    acknowledgeNag(this.researchStateMachine, pluginSystemSuppressions([researchStepLambda]));
 
     // ============================================
     // WEB SEARCH (AgentCore Gateway — see VocWebSearchStack)

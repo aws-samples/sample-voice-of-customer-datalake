@@ -22,6 +22,8 @@
  *     `s3:GetBucket*` and `s3:Abort*` → nothing (no code calls a GetBucket* API or uploads in parts: every
  *     writer is a single PutObject or a presigned PUT). CDK-owned handlers that do need some of them are
  *     listed in {@link CDK_HANDLER_NEEDS}.
+ *   - `<function arn>:*` next to `<function arn>` in a Lambda-only statement → dropped when the function has no
+ *     version or alias in the app (lib/utils/unqualified-invoke.ts): every caller invokes it unqualified.
  *   - `<table arn>/index/*` → one `<table arn>/index/<name>` per GSI / LSI of THAT table, read from its
  *     CfnTable (the resource token is followed back through its Reference, so a cross-stack grant keeps its
  *     export). A resource whose table cannot be found is left as it is, so cdk-nag still reports it.
@@ -38,6 +40,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type { IConstruct } from 'constructs';
 import { z } from 'zod';
+import { withoutUnusedQualifierWildcards } from './unqualified-invoke';
 
 /** What each grant wildcard this module replaces becomes, for every role. */
 export const EXACT_ACTIONS = {
@@ -178,14 +181,23 @@ const withReplaced = (raw: RawStatement, action: unknown, resource: unknown): Ra
     return key === 'Resource' ? [key, resource] : [key, value];
   }));
 
-function rewriteStatement(raw: RawStatement, needs: readonly GrantNeeds[], context: IResolveContext): Rewritten {
+/** `resource` without the version/alias wildcards no caller can need (lib/utils/unqualified-invoke.ts). */
+function withoutQualifierWildcards(resource: unknown, actions: readonly string[], root: IConstruct): unknown {
+  if (!Array.isArray(resource)) return resource;
+  const kept = withoutUnusedQualifierWildcards(resource, actions, root);
+  return kept.length === 1 ? kept[0] : kept;
+}
+
+function rewriteStatement(
+  raw: RawStatement, needs: readonly GrantNeeds[], context: IResolveContext, root: IConstruct,
+): Rewritten {
   const parsed = StatementSchema.safeParse(raw);
   if (!parsed.success) return { statement: raw, dynamoKms: [] };
   const statement = parsed.data;
   if ((statement.Effect ?? 'Allow') !== 'Allow' || statement.Action === undefined) return { statement: raw, dynamoKms: [] };
   const extra = new Set<string>();
   const actions = exactActions(actionsOf(statement), needs, extra);
-  const resource = rewriteResource(statement.Resource, context);
+  const resource = withoutQualifierWildcards(rewriteResource(statement.Resource, context), actions, root);
   // A statement with a condition keeps it on what it grants; its DynamoDB extras would need both conditions.
   const dynamoKms = statement.Condition === undefined ? [...extra] : [];
   if (actions.length === 0 || isEmptyResource(resource)) return { statement: null, dynamoKms };
@@ -212,7 +224,7 @@ function rewriteRenderedDocument(rendered: unknown, policy: IConstruct, context:
       out.push(raw);
       continue;
     }
-    const { statement: exact, dynamoKms } = rewriteStatement(raw, needs, context);
+    const { statement: exact, dynamoKms } = rewriteStatement(raw, needs, context, policy.node.root);
     if (exact !== null) out.push(exact);
     if (viaDynamoDb && dynamoKms.length > 0) {
       out.push({
