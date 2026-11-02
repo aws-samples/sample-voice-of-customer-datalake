@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -111,12 +111,12 @@ def _write(s3: Any, target: RawTarget, key: str, body: str | bytes, connector: C
 
 
 def json_copy(s3: Any, target: RawTarget, content: object, connector: Connector, *,
-              default: Callable[[Any], Any] = str, metadata: Mapping[str, str] | None = None) -> str | None:
+              metadata: Mapping[str, str] | None = None) -> str | None:
     """Write ``content`` as JSON (digest over its canonical JSON); its ``s3://`` URI, or None (no bucket, failed)."""
     if not target.bucket:
         return None
-    key = target.key(content_digest(content, default=default), '.json')
-    body = json.dumps(content, sort_keys=True, default=default)
+    key = target.key(content_digest(content, default=str), '.json')
+    body = json.dumps(content, sort_keys=True, default=str)
     return _write(s3, target, key, body, connector, content_type='application/json', metadata=metadata)
 
 
