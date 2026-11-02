@@ -8,17 +8,9 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { claudeRoleGrants, e2eProfileModels, missingModelGrants } from './test-support/bedrock-grants';
+import { claudeRoleGrants, e2eProfileModels, IamPolicyResourceSchema, missingModelGrants } from './test-support/bedrock-grants';
 import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from './test-support/synth-app';
 
-const StatementSchema = z.object({ Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown() });
-const PolicySchema = z.object({
-  Type: z.enum(['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy']),
-  Properties: z.object({
-    Roles: z.array(z.object({ Ref: z.string() })).optional(),
-    PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
-  }),
-});
 const FunctionSchema = z.object({
   Type: z.literal('AWS::Lambda::Function'),
   Properties: z.object({
@@ -41,10 +33,10 @@ const resourcesOf = (stack: string) => Object.entries(TemplateSchema.parse(eu.te
 /** Role logical ids (per stack) whose inline or managed policy may invoke a Bedrock model. */
 function bedrockRoles(stack: string): Set<string> {
   return new Set(resourcesOf(stack).flatMap(([, resource]) => {
-    const policy = PolicySchema.safeParse(resource);
+    const policy = IamPolicyResourceSchema.safeParse(resource);
     if (!policy.success) return [];
     const invokes = policy.data.Properties.PolicyDocument.Statement
-      .some((s) => [s.Action].flat().some((a) => a.startsWith('bedrock:InvokeModel')));
+      .some((s) => s.Action.some((a) => a.startsWith('bedrock:InvokeModel')));
     return invokes ? (policy.data.Properties.Roles ?? []).map((role) => role.Ref) : [];
   }));
 }

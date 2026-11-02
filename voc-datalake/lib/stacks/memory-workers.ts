@@ -18,7 +18,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as events from 'aws-cdk-lib/aws-events';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
@@ -27,7 +26,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
 import { grantClaudeModels } from '../utils/claude-model-grant';
-import { embeddingModelArn } from '../utils/model-allowlist';
+import { grantEmbeddingModel } from '../utils/memory-recall-grant';
 import { createWorkerFunction, scheduleWorker, workerRole } from '../utils/worker-lambda';
 
 /** Extractor ceiling; the queue's visibility timeout is derived from it. */
@@ -101,11 +100,7 @@ export class MemoryWorkers extends Construct {
     this.extractQueue.grantSendMessages(role);
     // 'memory' is a picker surface (repointable), plus the fixed embedder (in-Region, exact ARN).
     grantClaudeModels(role, 'invoke');
-    role.addToPolicy(new iam.PolicyStatement({
-      sid: 'BedrockInvokeEmbedding',
-      actions: ['bedrock:InvokeModel'],
-      resources: [embeddingModelArn(region)],
-    }));
+    grantEmbeddingModel(role, region);
 
     const fn = createWorkerFunction(this, 'MemoryExtractor', {
       tree: 'memory',

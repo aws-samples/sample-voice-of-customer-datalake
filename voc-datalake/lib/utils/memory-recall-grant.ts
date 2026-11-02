@@ -30,12 +30,17 @@ export interface MemoryRecallProps {
   region: string;
 }
 
+/** bedrock:InvokeModel on the Titan embedder, in-Region and invoked directly (no profile), so its exact ARN. */
+export function grantEmbeddingModel(role: iam.IRole, region: string): void {
+  role.addToPrincipalPolicy(new iam.PolicyStatement({
+    actions: ['bedrock:InvokeModel'],
+    resources: [embeddingModelArn(region)],
+  }));
+}
+
 export function grantSharedMemoryRecall(fn: lambda.Function, role: iam.IRole, props: MemoryRecallProps): void {
   props.memoryTable.grant(role, ...MEMORY_RECALL_ACTIONS);
   props.kmsKey.grantDecrypt(role);
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
-    actions: ['bedrock:InvokeModel'],
-    resources: [embeddingModelArn(props.region)],
-  }));
+  grantEmbeddingModel(role, props.region);
   fn.addEnvironment(MEMORY_TABLE_ENV, props.memoryTable.tableName);
 }
