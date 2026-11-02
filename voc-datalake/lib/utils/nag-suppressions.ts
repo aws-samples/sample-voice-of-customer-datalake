@@ -195,14 +195,6 @@ export const serviceQuotasReadSuppressions: NagAck[] = [
 // suppressed here any more: suppressReviewedResourceStar (nag-resource-star.ts) suppresses it per policy, only
 // where every `"*"` action is on the reviewed list in resource-star-actions.ts.
 
-// API Gateway request validation
-export const apiGatewayRequestValidationSuppressions: NagAck[] = [
-  {
-    id: 'AwsSolutions-APIG2',
-    reason: 'Request validation handled by Lambda functions with comprehensive input validation using Pydantic models and custom logic',
-  },
-];
-
 // Public feedback form endpoints (intentionally unauthenticated)
 export const publicFeedbackEndpointSuppressions: NagAck[] = [
   {

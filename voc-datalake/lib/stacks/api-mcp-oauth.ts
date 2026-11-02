@@ -30,6 +30,7 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import type * as lambda from 'aws-cdk-lib/aws-lambda';
 import { acknowledgeNagOnResource } from '../utils/nag-ack';
+import { publicBodyValidation } from './api-request-validation';
 
 import { booleanContextFlag } from '../utils/context-flag';
 import type { GlobalMcp } from './global-mcp';
@@ -196,8 +197,8 @@ export class McpOAuth {
     const { api, globalMcp } = this.props;
     const integration = new apigateway.LambdaIntegration(globalMcp.tokensInvokeTarget,
       { proxy: true, scopePermissionToMethod: false });
-    const anonymous = (resource: apigateway.IResource, verb: string): void => {
-      const method = resource.addMethod(verb, integration, { authorizationType: apigateway.AuthorizationType.NONE });
+    const anonymous = (resource: apigateway.IResource, verb: string, options: apigateway.MethodOptions = {}): void => {
+      const method = resource.addMethod(verb, integration, { ...options, authorizationType: apigateway.AuthorizationType.NONE });
       acknowledgeNagOnResource(method, [
         { id: 'AwsSolutions-APIG4', reason: 'Deliberately anonymous OAuth facade/discovery route: an MCP client has no credential before it signs in (docs/mcp.md "OAuth sign-in"); throttled per method' },
         { id: 'AwsSolutions-COG4', reason: 'Deliberately anonymous OAuth facade/discovery route (see APIG4)' },
@@ -210,7 +211,9 @@ export class McpOAuth {
     anonymous(wellKnown.addResource('oauth-authorization-server'), 'GET');
     anonymous(wellKnown.addResource('openid-configuration'), 'GET');
     const oauth = api.root.addResource('oauth');
-    anonymous(oauth.addResource('register'), 'POST');
+    // The RFC 7591 JSON body is validated at the gateway (api-request-validation.ts); `token` and `revoke`
+    // take urlencoded forms (RFC 6749 / RFC 7009), which a JSON-schema model cannot validate.
+    anonymous(oauth.addResource('register'), 'POST', publicBodyValidation(api, 'OAuthClientRegistration'));
     anonymous(oauth.addResource('authorize'), 'GET');
     anonymous(oauth.addResource('callback'), 'GET');
     anonymous(oauth.addResource('token'), 'POST');

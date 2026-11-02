@@ -9,11 +9,12 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
 import { acknowledgeNag } from '../utils/nag-ack';
 import type { PluginManifest } from '../plugin-loader';
-import { apiGatewayRequestValidationSuppressions, apiWafOffSuppressions } from '../utils/nag-suppressions';
+import { apiWafOffSuppressions } from '../utils/nag-suppressions';
 import { protectApiStage, wafEnabled } from '../utils/waf';
 import { apiAccessLogFormat } from './api-access-log';
 import { applyApiTlsPolicy } from './api-tls';
 import { scopeApiGatewayLoggingRole } from './api-gateway-logging-role';
+import { addRequestValidationResponse } from './api-request-validation';
 import type { ApiStackContext } from './api-context';
 import { MCP_OAUTH_METHOD_THROTTLE, mcpResourceMetadataUrl } from './api-mcp-oauth';
 import { GLOBAL_MCP_METHOD_THROTTLE } from './global-mcp';
@@ -517,7 +518,6 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
     cloudWatchRoleRemovalPolicy: cdk.RemovalPolicy.DESTROY
   });
 
-  acknowledgeNag(api, apiGatewayRequestValidationSuppressions);
   // Opt-in AWS WAF on the stage (`-c enableWaf=true` / performanceTier, lib/utils/waf.ts); off = acknowledged.
   if (wafEnabled(stack)) protectApiStage(stack, api);
   else acknowledgeNag(api, apiWafOffSuppressions);
@@ -535,6 +535,8 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
     type: apigateway.ResponseType.DEFAULT_5XX,
     responseHeaders: gatewayErrorCorsHeaders(allowedOrigin),
   });
+  // A public write route's body that failed its model (api-request-validation.ts): same CORS headers.
+  addRequestValidationResponse(api, gatewayErrorCorsHeaders(allowedOrigin));
   // API-WIDE, deliberately: this fires on every gateway-GENERATED 401 —
   // a request with no Authorization header on /mcp/global, AND the
   // Cognito authorizer rejecting any other route. The challenge is truthful

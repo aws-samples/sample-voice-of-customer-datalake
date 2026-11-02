@@ -219,6 +219,8 @@ const MethodSchema = z.object({
 });
 
 interface ApiMethod {
+  /** The AWS::ApiGateway::Method's logical id. */
+  logicalId: string;
   httpMethod: string;
   path: string;
   authorizationType: string;
@@ -294,10 +296,11 @@ export function apiMethods(template: Template): ApiMethod[] {
   };
 
   const aliasFunctions = aliasFunctionIds(template);
-  return Object.values(template.findResources('AWS::ApiGateway::Method')).map((method) => {
+  return Object.entries(template.findResources('AWS::ApiGateway::Method')).map(([logicalId, method]) => {
     const parsed = MethodSchema.parse(method.Properties);
     const path = pathOf(parsed.ResourceId) || '/';
     return {
+      logicalId,
       httpMethod: parsed.HttpMethod,
       path,
       authorizationType: parsed.AuthorizationType ?? 'NONE',
