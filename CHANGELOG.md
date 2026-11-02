@@ -17,6 +17,44 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.75.00] - 2026-11-02
+
+The last held dependency upgrades land: jsdom 30, knip 6.44.1 in the frontend, cdk-nag 3 and mutmut 3. The deployed
+Lambdas, API routes and stored data do not change.
+
+### Changed
+- **cdk-nag 3.0.2**: the AWS Solutions checks run as a CDK policy-validation plugin. Every former suppression is an
+  acknowledgement (`acknowledgeNag` / `acknowledgeNagOnResource` in `voc-datalake/lib/utils/nag-ack.ts`, over
+  `Validations.of(scope).acknowledge`), one per finding: the regex and prefix forms are gone, so each finding is
+  named, written as the ARN expression the grant uses. The same 663 findings (685 with every feature on) are
+  acknowledged with the same reasons; none is lost or added. An unacknowledged nag warning now fails `cdk synth` as
+  an error does. Instead of the per-stack `*-NagReport.csv` files, a failure is listed in
+  `cdk.out/validation-report.json`. See [docs/code-audit.md](docs/code-audit.md).
+- **mutmut 3.8.1** behind `voc-datalake/scripts/mutate-python.sh`, with the same flags. The run happens in a stage
+  outside the repository, so the source tree is never edited (no `.bak` files, no `.mutmut-cache`). New:
+  `mutate-python.sh show <mutant> | results | browse` and `MUTMUT_MAX_CHILDREN`. mutmut 3 does not mutate
+  module-level code or decorated functions. `whatthepatch` is no longer needed.
+- **jsdom 30** for the frontend tests. Five components keep the space before a screen-reader-only suffix outside
+  that span, or state the display, so the accessible name is the same in browsers and in jsdom (no visible change):
+  the AI draft button, external links, the project overview's action cards, Home's brief sources and the
+  assistant's session rows.
+- **knip 6.44.1** in the frontend: the three `generateDocument` compile-time type pins carry knip's `@public` tag.
+- **Dependabot**: no update is held any more (docs/dependencies.md → Held updates).
+
+### Fixed
+- `mutate-python.sh --patch` mutates the lines the range changed. Under mutmut 2 it matched no file and produced
+  no mutants.
+
+### Upgrade notes
+- Local development needs Node.js 22.22.2+ or 24.15+ (root `package.json` `engines`, was 22.18+ / 24.11+): jsdom 30
+  requires it.
+- A fork that adds its own `NagSuppressions` calls must move them to `acknowledgeNag` with explicit findings
+  (`lib/utils/nag-ack.ts`); `lib/nag-suppressions.test.ts` lists any finding left unacknowledged.
+- The first deploy creates one new API Gateway deployment: its logical id hashes the REST API's metadata, which no
+  longer carries cdk-nag entries. `npm run deploy:infra` refreshes the stage as usual.
+- Python dev tooling: `uv pip install -r voc-datalake/requirements-dev.txt` (or pip) to get mutmut 3.8.1 and its new
+  dependencies (libcst, textual).
+
 ## [5.74.00] - 2026-11-02
 
 Safer defaults: customer data survives a stack delete unless a demo opts out, every operational log keeps 30 days, and the deployment has one customer-managed KMS key.
