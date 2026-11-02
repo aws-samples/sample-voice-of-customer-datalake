@@ -17,6 +17,47 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.76.00] - 2026-11-02
+
+The raw data lake keeps history: raw objects are write-once and versioned, name the connector that wrote them, nothing under `raw/` expires, every ingested source keeps a raw copy when its policy allows one, and audit trails no longer expire.
+
+### Added
+
+- Every ingested source keeps a raw copy in the raw lake, write-once and versioned, when its source profile permits one ([docs/data-lake-structure.md → Every ingested source has a raw copy](docs/data-lake-structure.md#every-ingested-source-has-a-raw-copy)):
+  - feedback-form submissions, as the widget sent them, under `raw/feedback_form/`; the queued item's `s3_raw_uri` names the copy ([docs/feedback-forms.md](docs/feedback-forms.md#processing-pipeline));
+  - feedback-board requests (on create and every content edit) and +1s (on create and every edit) under `raw/feature_requests/`, governed by a `feature_requests` source profile; boards are still not queued into `voc-feedback` ([docs/feature-requests.md → Raw copies](docs/feature-requests.md#raw-copies));
+  - received email (`.eml`) under `raw/email_intake/` when the `email_intake` profile is set to `pii: allow`, filtered mail included with an S3 `drop-reason` ([docs/email-intake.md](docs/email-intake.md#raw-copies));
+  - S3 import originals under `raw/s3_import/` (metadata `original-key`) when the `s3_import` profile keeps whole files (allow, no retention period);
+  - the processor archives a message's inline `raw_data` when its producer's archive write failed (connector `processor`).
+- Plugins archive the payload they received next to the mapped item (`raw_content`): the App Store RSS entry, the Google Play review, the scraped review element's outer HTML or the JSON-LD `Review`, the S3 import row; at most 256 KB, with a truncation marker.
+
+### Changed
+
+- **Raw objects are write-once and versioned.** Every raw write uses `If-None-Match: *` at `raw/{source}/{YYYY}/{MM}/{DD}/{item}/{sha16}.json`: one folder per item, one object per distinct content (`{sha16}` hashes the content, never a timestamp). Ingesting identical content again writes nothing; changed content (an edited review, a GitHub issue update, a CSV dataset correction) becomes a new object next to the old one. Plugins, webhooks and the API writers share one helper, `voc-datalake/lambda/shared/raw_versions.py` ([docs/data-lake-structure.md](docs/data-lake-structure.md)).
+- A confirmed CSV dataset correction files its new raw version in the stored item's folder and points the item's `s3_raw_uri` at it; the previous version stays ([docs/csv-import.md](docs/csv-import.md)).
+- Every new raw object carries S3 metadata `connector` and `connector-version`: the plugin id and its manifest version (`webhook_<plugin>` for a webhook), or the API writer (`manual_import`, `csv_upload`, `json_upload`, `feedback_form`, `feature_requests`, `data_explorer`, `processor`, …) and the platform release. Plugin envelopes also carry `connector` and `content_sha16` ([docs/plugin-architecture.md](docs/plugin-architecture.md)).
+- Every webhook, not only GitHub's, archives its delivery (`BaseWebhook`).
+- VocCoreStack: the raw data bucket no longer expires noncurrent versions under `raw/`. Its other prefixes (`avatars/`, `company-context/`, `memory-imports/`, `projects/`, `prototypes/`, `scratch/`) keep the 90-day noncurrent expiry, each in its own lifecycle rule; `scratch/` keeps its 2-day expiry.
+- Retention and erasure (`voc-retention`) delete an item's raw objects in both layouts: the older `…/{item}.json` object and every object under `…/{item}/`, every version and delete marker ([docs/source-policies.md](docs/source-policies.md)).
+- Audit trails no longer expire: the global MCP token audit log (`MCPAUDIT#{token_id}`, under Connect → token details and `GET /connect/tokens/{token_id}`) and the import history (`IMPORT_RUN` rows, the **Import history** section of the Data sources page and `GET /scrapers/manual/history`) are written without a `ttl` ([docs/mcp.md](docs/mcp.md), [docs/import-history.md](docs/import-history.md)). The Import history section no longer says it shows "the last 90 days" (every language).
+- `POST /s3-import/reprocess` on a staged file that has expired answers 404 with a message naming its raw copy; staged files still expire after 90 days (the import bucket is an inbox).
+
+### Security
+
+- The raw data bucket's policy denies any `s3:PutObject` / `CompleteMultipartUpload` under `raw/` without `If-None-Match` (statement `DenyRawWritesWithoutIfNoneMatch`, multipart parts exempted as [AWS documents](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes-enforce.html)), so no writer can overwrite a raw object; CopyObject into `raw/` is refused as a consequence.
+
+### Upgrade notes
+
+- Existing raw objects (`raw/{source}/{YYYY}/{MM}/{DD}/{item}.json`) stay where they are; nothing is moved. New writes use the folder layout; readers and erasure handle both.
+- Noncurrent versions under `raw/` are no longer expired, so raw storage grows with every changed re-ingest (identical content adds nothing).
+- Any custom or out-of-band process that writes under `raw/` (a script, a replication job, an S3 batch copy) must send `If-None-Match: *` on PutObject / CompleteMultipartUpload, or it gets 403; CopyObject into `raw/` no longer works.
+- New IAM grants, all put-only and write-once (no read, no delete): `voc-feedback-form-api` on `raw/feedback_form/*`, `voc-engagement-api` on `raw/feature_requests/*`, the processing role (processor and aggregator) on `raw/*`, the opt-in `voc-email-intake` on `raw/email_intake/*`. These Lambdas, the manual-import Lambda and `voc-data-explorer-api` get `APP_VERSION`; each new writer gets `RAW_DATA_BUCKET`. Plugin ingestors and webhooks get `PLUGIN_VERSION`.
+- `APP_VERSION` is the platform release, so every release now changes the VocApiStack template (a version-only redeploy of the API Lambdas' configuration).
+- The email inbox's default profile is `pii: redact`, so by default it writes no raw copy; nothing changes for an existing inbox until an admin sets the `email_intake` profile to `allow`. The `inbound-raw/` 90-day copy is unchanged.
+- Raw copies of board requests and +1s carry the reporter's and supporter's email and name (what the board row stores). An erasure by email does not reach them yet; a whole-source erasure of `feature_requests` does.
+- An API-side item (manual / JSON import) received again on a later day is archived in that day's folder; erasing that item removes the folder its `s3_raw_uri` names, while a whole-source erasure removes all of them.
+- MCP audit and import-history rows written before this release keep the 90-day `ttl` they were written with and still expire on it; rows written from this release on are kept.
+
 ## [5.75.00] - 2026-11-02
 
 The last held dependency upgrades land: jsdom 30, knip 6.44.1 in the frontend, cdk-nag 3 and mutmut 3. The deployed
