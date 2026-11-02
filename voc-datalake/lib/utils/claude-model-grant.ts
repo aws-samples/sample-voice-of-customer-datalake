@@ -110,19 +110,31 @@ function stackClaudePolicies(scope: IConstruct, variant: ClaudeInvokeVariant): i
 }
 
 /**
+ * Makes a role's CDK default inline policy wait for the shared Claude policies, whenever that default policy is
+ * created (a role's first `addToPolicy` may come before or after its Claude grant): an aspect, so the order of the
+ * grants in a stack does not matter.
+ */
+class DefaultPolicyAfterClaudePolicies implements cdk.IAspect {
+  constructor(private readonly policies: readonly iam.ManagedPolicy[]) {}
+
+  public visit(node: IConstruct): void {
+    if (node instanceof iam.Policy && node.node.id === 'DefaultPolicy') {
+      for (const policy of this.policies) node.node.addDependency(policy);
+    }
+  }
+}
+
+/**
  * Grant `role` `variant` on every allowlisted Claude model (model-allowlist.ts), via the stack's shared policies.
  *
- * When the role already has its CDK default inline policy, that policy is made to depend on the shared ones, so a
- * deploy that moves the grant out of the inline policy (5.75 → this shape) attaches the managed policies BEFORE
- * it removes the inline statements, instead of racing the two updates.
+ * The role's default inline policy is made to depend on the shared ones, so a deploy that moves the grant out of
+ * the inline policy (5.76 → this shape) attaches the managed policies BEFORE it removes the inline statements,
+ * instead of racing the two updates.
  */
 export function grantClaudeModels(role: iam.IRole, variant: ClaudeInvokeVariant): iam.ManagedPolicy[] {
   const policies = stackClaudePolicies(role, variant);
-  const defaultPolicy = role.node.tryFindChild('DefaultPolicy');
-  for (const policy of policies) {
-    policy.attachToRole(role);
-    defaultPolicy?.node.addDependency(policy);
-  }
+  for (const policy of policies) policy.attachToRole(role);
+  cdk.Aspects.of(role).add(new DefaultPolicyAfterClaudePolicies(policies));
   return policies;
 }
 

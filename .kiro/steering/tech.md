@@ -17,7 +17,7 @@
 | **SQS** | Processing queue | DLQ, visibility timeout, batch processing |
 | **API Gateway** | REST API | Throttling, CORS, Cognito auth |
 | **Cognito** | Authentication | User Pool, admins/users groups |
-| **API Gateway throttling** | API protection | Per-method stage throttles (`lib/stacks/api-gateway.ts`); no WAF is deployed (cost decision) — add one for production |
+| **API Gateway throttling** | API protection | Per-method stage throttles (`lib/stacks/api-gateway.ts`); no WAF by default (a fixed monthly cost); opt in with `-c enableWaf=true` (`lib/utils/waf.ts`, also on with `-c performanceTier=true`) |
 | **EventBridge** | Scheduled ingestion | Rate expressions (1-30 min) |
 | **Secrets Manager** | API credentials | Auto-rotation capable |
 | **KMS** | Encryption | Customer-managed key, key rotation |
@@ -297,7 +297,7 @@ npm run generate:menu       # Generate menu config only
 ## Security & Cost Best Practices
 
 - **Authentication**: Cognito User Pool with admins/users groups
-- **API Protection**: per-method API Gateway throttling (`lib/stacks/api-gateway.ts`); no WAF is deployed (cost decision) — a WAF is recommended for production
+- **API Protection**: per-method API Gateway throttling (`lib/stacks/api-gateway.ts`); no WAF by default (a fixed monthly cost); opt in with `-c enableWaf=true` (`lib/utils/waf.ts`, also on with `-c performanceTier=true`), recommended for production. IAM: no CDK grant wildcards (`lib/utils/exact-grants.ts`), per-function log grants (`lib/utils/lambda-log-grants.ts`), Claude grants in AWS's cross-Region shape (`lib/utils/claude-model-grant.ts`); Cognito Plus is opt-in (`-c cognitoPlus=true`, `lib/utils/cognito-plus.ts`)
 - **Encryption**: KMS at rest, TLS in transit
 - **IAM**: Least-privilege per Lambda
 - **Secrets**: Never hardcode; use Secrets Manager

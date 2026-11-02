@@ -32,13 +32,14 @@ export function performanceTierEnabled(scope: IConstruct): boolean {
 }
 
 /**
- * A feature in the tier with its own flag too: on when `-c <key>=true` OR the performance tier is on. Both flags are
- * read before they are combined, so a typo in either is refused even when the other is on.
+ * A feature in the tier with its own flag too: its own flag decides when it is set (`-c <key>=true` or `=false`, so a
+ * tier deployment can leave one feature out), else the performance tier does. Both flags are read before they are
+ * combined, so a typo in either is refused even when the other decides.
  */
 export function enabledByOwnFlagOrTier(scope: IConstruct, key: string, why: string): boolean {
-  const own = booleanContextFlag(
-    scope.node.tryGetContext(key), key, false, `Use true/false (off by default: ${why}; opt in with -c ${key}=true).`,
-  );
+  const raw: unknown = scope.node.tryGetContext(key);
+  const usage = `Use true/false (off by default: ${why}; opt in with -c ${key}=true, or leave it out of the tier with -c ${key}=false).`;
+  const own = booleanContextFlag(raw, key, false, usage);
   const tier = performanceTierEnabled(scope);
-  return tier || own;
+  return raw === undefined || raw === null ? tier : own;
 }

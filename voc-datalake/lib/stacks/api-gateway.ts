@@ -36,10 +36,10 @@ import { GLOBAL_MCP_METHOD_THROTTLE } from './global-mcp';
  * Kept in lockstep with the handler by 'mcp transport headers' in
  * api-stack-mcp.test.ts, which reads the handler's Allow-Headers out of its source.
  */
-/** The REST API's name and its access-log group's, before `uniqueName` (api-gateway-logging-role.ts reads it). */
-const API_NAME_BASE = 'voc-analytics-api';
-
 const MCP_TRANSPORT_HEADERS = ['MCP-Protocol-Version', 'Mcp-Method', 'Mcp-Name'];
+
+/** The REST API's name and its access-log group's, before `uniqueName`. */
+const API_NAME_BASE = 'voc-analytics-api';
 
 /**
  * Every header this API accepts on a cross-origin request, declared ONCE.
