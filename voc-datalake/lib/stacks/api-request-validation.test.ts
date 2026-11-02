@@ -16,6 +16,7 @@ import {
   apiMethods, apiTemplate, apiTemplateAllPlugins, apiTemplateFlagged, RefSchema,
 } from '../test-support/api-stack-template';
 import { pythonIntConstant } from '../test-support/cross-language-invariants';
+import { gatewayResponseOfType } from '../test-support/gateway-responses';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import {
   FEEDBACK_SUBMISSION_BOUNDS, OAUTH_REGISTER_AUTH_METHOD, OAUTH_REGISTER_BOUNDS, OAUTH_REGISTER_GRANT_TYPES,
@@ -53,15 +54,6 @@ const MethodValidationSchema = z.object({
     RequestModels: z.record(z.string(), RefSchema).optional(),
   }),
 });
-const GatewayResponseSchema = z.object({
-  Properties: z.object({
-    ResponseType: z.string(),
-    StatusCode: z.string().optional(),
-    ResponseParameters: z.record(z.string(), z.unknown()).optional(),
-    ResponseTemplates: z.record(z.string(), z.string()).optional(),
-  }),
-});
-
 function restApiId(template: Template): string {
   const ids = Object.keys(template.findResources('AWS::ApiGateway::RestApi'));
   expect(ids).toHaveLength(1);
@@ -81,14 +73,6 @@ function validatedRoutes(template: Template): Record<string, string> {
     routes[method.route] = models.get(props.RequestModels?.['application/json']?.Ref ?? '') ?? '<none>';
   }
   return routes;
-}
-
-function gatewayResponse(template: Template, type: string): z.infer<typeof GatewayResponseSchema>['Properties'] {
-  const match = Object.values(template.findResources('AWS::ApiGateway::GatewayResponse'))
-    .map((resource) => GatewayResponseSchema.parse(resource).Properties)
-    .find((props) => props.ResponseType === type);
-  if (match === undefined) throw new Error(`no ${type} gateway response`);
-  return match;
 }
 
 describe('the request validator', () => {
@@ -209,9 +193,9 @@ describe('lockstep with the handlers', () => {
 describe('a failed validation (BAD_REQUEST_BODY)', () => {
   it('is a 400 with the same CORS headers as every other gateway 4XX', () => {
     const template = apiTemplate();
-    const response = gatewayResponse(template, 'BAD_REQUEST_BODY');
+    const response = gatewayResponseOfType(template, 'BAD_REQUEST_BODY');
     expect(response.StatusCode).toBe('400');
-    expect(response.ResponseParameters).toStrictEqual(gatewayResponse(template, 'DEFAULT_4XX').ResponseParameters);
+    expect(response.ResponseParameters).toStrictEqual(gatewayResponseOfType(template, 'DEFAULT_4XX').ResponseParameters);
     expect(response.ResponseTemplates).toStrictEqual({ 'application/json': VALIDATION_ERROR_TEMPLATE });
   });
 

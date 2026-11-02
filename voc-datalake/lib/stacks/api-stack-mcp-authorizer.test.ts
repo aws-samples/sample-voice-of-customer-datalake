@@ -14,7 +14,7 @@ import { apiMethods, apiTemplate, functionIdForHandler } from '../test-support/a
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { byCodeUnit } from '../utils/compare';
 import { MCP_UNAUTHORIZED_BODY, mcpBearerChallenge } from './api-mcp';
-import { RenderedStringRecordSchema } from '../test-support/cfn-render';
+import { gatewayResponseOfType, type GatewayResponseProperties } from '../test-support/gateway-responses';
 
 beforeAll(() => {
   apiTemplate();
@@ -26,15 +26,6 @@ const AuthorizerSchema = z.object({
     Type: z.string(),
     AuthorizerUri: z.unknown().optional(),
     AuthorizerResultTtlInSeconds: z.number().optional(),
-  }),
-});
-
-const GatewayResponseSchema = z.object({
-  Properties: z.object({
-    ResponseType: z.string(),
-    StatusCode: z.string().optional(),
-    ResponseParameters: RenderedStringRecordSchema.optional(),
-    ResponseTemplates: z.record(z.string(), z.string()).optional(),
   }),
 });
 
@@ -72,14 +63,8 @@ describe('the /mcp/global token authorizer', () => {
 });
 
 describe('access denied gateway response', () => {
-  function accessDenied(): z.infer<typeof GatewayResponseSchema>['Properties'] {
-    const found = Object.values(apiTemplate().findResources('AWS::ApiGateway::GatewayResponse'))
-      .map((r) => GatewayResponseSchema.parse(r).Properties)
-      .filter((p) => p.ResponseType === 'ACCESS_DENIED');
-    expect(found).toHaveLength(1);
-    const [only] = found;
-    if (only === undefined) throw new Error('no ACCESS_DENIED gateway response');
-    return only;
+  function accessDenied(): GatewayResponseProperties {
+    return gatewayResponseOfType(apiTemplate(), 'ACCESS_DENIED');
   }
 
   it('answers a refused MCP credential with a 401 and the Bearer challenge', () => {
