@@ -8,7 +8,6 @@
  * app, that every rendered id matches a finding cdk-nag computes.
  */
 import * as cdk from 'aws-cdk-lib';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import type { IConstruct } from 'constructs';
@@ -16,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 
 import { acknowledgeNag, acknowledgementsOn, renderNagFinding, type NagAck } from './nag-ack';
 import {
-  cdkAssetsSuppressions, dynamoDbGsiSuppressions, pluginSystemSuppressions, rawDataPrefixSuppressions,
+  cdkAssetsSuppressions, pluginSystemSuppressions, rawDataPrefixSuppressions,
   s3ObjectSuppressions,
 } from './nag-suppressions';
 
@@ -26,12 +25,11 @@ function fixture() {
   const app = new cdk.App();
   const producer = new cdk.Stack(app, 'pfx-Producer', { env });
   const consumer = new cdk.Stack(app, 'pfx-Consumer', { env });
-  const table = new dynamodb.Table(producer, 'Feedback', { partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING } });
   const bucket = new s3.Bucket(producer, 'Raw', { enforceSSL: true, versioned: true });
   const fn = new lambda.Function(consumer, 'Job', {
     runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
   });
-  return { producer, consumer, table, bucket, fn };
+  return { producer, consumer, bucket, fn };
 }
 
 /** The logical id of `construct`'s CloudFormation resource. */
@@ -45,14 +43,12 @@ const rendered = (scope: cdk.Stack, acks: readonly NagAck[]) =>
   acks.flatMap((ack) => (ack.findings ?? []).map((finding) => renderNagFinding(scope, finding)));
 
 describe('nag-suppressions.ts list builders', () => {
-  it('renders a table index grant in its own stack and through the export in another', () => {
-    const { producer, consumer, table } = fixture();
-    const id = logicalId(table);
-    expect(rendered(producer, dynamoDbGsiSuppressions([table]))).toStrictEqual([`Resource::<${id}.Arn>/index/*`]);
-    const [imported, ...rest] = rendered(consumer, dynamoDbGsiSuppressions([table]));
+  it('renders a cross-stack grant through the producer\'s export', () => {
+    const { consumer, bucket } = fixture();
+    const [imported, ...rest] = rendered(consumer, s3ObjectSuppressions([bucket.arnForObjects('*')]));
     expect(rest).toStrictEqual([]);
     // The export name CDK gives the automatic cross-stack reference: `<producer>:ExportsOutputFnGetAtt<id>Arn<hash>`.
-    expect(imported).toMatch(new RegExp(`^Resource::pfx-Producer:ExportsOutputFnGetAtt${id}Arn[0-9A-F]{8}/index/\\*$`));
+    expect(imported).toMatch(new RegExp(`^Resource::pfx-Producer:ExportsOutputFnGetAtt${logicalId(bucket)}Arn[0-9A-F]{8}/\\*$`));
   });
 
   it('names each object grant and raw-bucket prefix exactly, never the bucket or another prefix', () => {
@@ -80,11 +76,11 @@ describe('nag-suppressions.ts list builders', () => {
 
 describe('acknowledgeNag', () => {
   it('records one acknowledgement per finding, with the reason', () => {
-    const { producer, table } = fixture();
+    const { producer, bucket } = fixture();
     acknowledgeNag(producer, [{ id: 'AwsSolutions-IAM5', reason: 'a reason long enough', findings: ['Action::kms:ReEncrypt*'] }]);
-    acknowledgeNag(producer, dynamoDbGsiSuppressions([table]));
+    acknowledgeNag(producer, s3ObjectSuppressions([bucket.arnForObjects('*')]));
     expect(acknowledgementsOn(producer).map((ack) => ack.id)).toStrictEqual([
-      'AwsSolutions-IAM5[Action::kms:ReEncrypt*]', `AwsSolutions-IAM5[Resource::<${logicalId(table)}.Arn>/index/*]`,
+      'AwsSolutions-IAM5[Action::kms:ReEncrypt*]', `AwsSolutions-IAM5[Resource::<${logicalId(bucket)}.Arn>/*]`,
     ]);
     expect(acknowledgementsOn(producer)[0]?.reason).toBe('a reason long enough');
   });

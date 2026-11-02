@@ -20,8 +20,6 @@ import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import {
   cognitoPlusOffSuppressions,
   cognitoSecuritySuppressions,
-  dynamoDbGsiSuppressions,
-  kmsEncryptionSuppressions,
   lambdaBasicExecutionRoleSuppressions,
   providerFrameworkSuppressions,
 } from '../utils/nag-suppressions';
@@ -321,12 +319,8 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
 
     new cdk.CfnOutput(stack, 'DefaultModelPin', { value: defaultModelId });
 
-    // grantWriteData() emits the standard GSI (<TableArn>/index/*) and KMS
-    // (GenerateDataKey*/ReEncrypt*) wildcards, so reuse the shared
-    // suppressions rather than restating the same evidence.
-    acknowledgeNag(modelPinLambda, [
-      ...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions([aggregatesTable]), ...kmsEncryptionSuppressions,
-    ]);
+    // grantWriteData()'s index and KMS wildcards are rewritten to exact grants by lib/utils/exact-grants.ts.
+    acknowledgeNag(modelPinLambda, lambdaBasicExecutionRoleSuppressions);
     acknowledgeNag(
       modelPinProvider.node.findChild('framework-onEvent'),
       providerFrameworkSuppressions(modelPinLambda, 'ModelPinLambda', 'AdminBootstrapLambda'),
