@@ -131,11 +131,6 @@ function flatten(value: unknown): unknown {
   return ref.success ? PSEUDO[ref.data.Ref] : value;
 }
 
-/** An IAM resource pattern (`*` = any run of characters) as a whole-string RegExp. */
-function iamPattern(pattern: string): RegExp {
-  return new RegExp(`^${pattern.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\/]/g, '\\$&')).join('.*')}$`);
-}
-
 describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () => {
   let synth: SynthResult;
   // One whole-app synth per hook (the all-features one below), so each gets the per-synth timeout.
@@ -211,7 +206,6 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
   it('gives the API Gateway account role the execution-log, access-log and list grants, set before the account', () => {
     const api = resourcesOf(synth, 'VocApiStack');
     const role = logicalIdStartingWith(api, 'AWS::IAM::Role', 'VocAnalyticsApiCloudWatchRole');
-    const access = logsArn(`/aws/apigateway/*voc-analytics-api-${SYNTH_ACCOUNT}-${SYNTH_REGION}`);
     const statements = roleStatements(api, role).map((statement) => ({ ...statement, Resource: flatten(statement.Resource) }));
     expect(statements).toStrictEqual([
       {
@@ -219,7 +213,8 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
         Action: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:DescribeLogStreams', 'logs:PutLogEvents'],
       },
       {
-        Sid: 'AccessLogs', Effect: 'Allow', Resource: [`${access}:*`, access], // minimizePolicies sorts them
+        // Every log group: the role is the account+region setting of every REST API, VoC's or not.
+        Sid: 'AccessLogs', Effect: 'Allow', Resource: logsArn('*'),
         Action: ['logs:CreateLogStream', 'logs:DescribeLogStreams', 'logs:PutLogEvents'],
       },
       { Sid: 'ListLogGroups', Effect: 'Allow', Action: 'logs:DescribeLogGroups', Resource: '*' },
@@ -229,21 +224,13 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
     expect(api[account]?.DependsOn).toContain(policy);
   });
 
-  it('covers the access-log group each deployment really creates, prefixed or not, with one pattern', () => {
+  it('grants a prefixed deployment the same account-wide access-log statement', () => {
     // VocApiStack alone (in process): the API Gateway role is built with the stack, not by the app's aspect.
-    const shapes = [apiTemplate(), apiTemplatePrefixed()].map((template) => TemplateSchema.parse(template.toJSON()).Resources);
-    const names = shapes.map((resources) => flatten(
-      resources[logicalIdStartingWith(resources, 'AWS::Logs::LogGroup', 'ApiGatewayLogs')]?.Properties?.LogGroupName,
-    ));
-    const accessGrants = shapes.map((resources) => roleStatements(
-      resources, logicalIdStartingWith(resources, 'AWS::IAM::Role', 'VocAnalyticsApiCloudWatchRole'),
-    ).filter((statement) => statement.Sid === 'AccessLogs').map((statement) => flatten(statement.Resource)));
-    const pattern = iamPattern(`/aws/apigateway/*voc-analytics-api-${SYNTH_ACCOUNT}-${SYNTH_REGION}`);
-    expect(names).toStrictEqual([
-      `/aws/apigateway/voc-analytics-api-${SYNTH_ACCOUNT}-${SYNTH_REGION}`,
-      `/aws/apigateway/b-voc-analytics-api-${SYNTH_ACCOUNT}-${SYNTH_REGION}`,
-    ]);
-    expect(names.map((name) => pattern.test(String(name)))).toStrictEqual([true, true]);
-    expect(accessGrants[1]).toStrictEqual(accessGrants[0]);
+    const accessGrants = [apiTemplate(), apiTemplatePrefixed()].map((template) => {
+      const resources = TemplateSchema.parse(template.toJSON()).Resources;
+      return roleStatements(resources, logicalIdStartingWith(resources, 'AWS::IAM::Role', 'VocAnalyticsApiCloudWatchRole'))
+        .filter((statement) => statement.Sid === 'AccessLogs').map((statement) => flatten(statement.Resource));
+    });
+    expect(accessGrants).toStrictEqual([[logsArn('*')], [logsArn('*')]]);
   }, SYNTH_TIMEOUT_MS);
 });

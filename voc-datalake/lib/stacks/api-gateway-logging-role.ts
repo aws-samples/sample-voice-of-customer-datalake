@@ -5,9 +5,9 @@
  * CDK creates this role for `RestApi` (`cloudWatchRole`, on: the `disableCloudWatchRole` flag is false in
  * cdk.json) and sets it as the region's API Gateway ACCOUNT setting (`AWS::ApiGateway::Account`). That setting
  * is one per account and region: EVERY REST API there logs through whichever role was set last, including a
- * second VoC deployment (`-c deploymentPrefix`, docs/deployment.md → Two deployments). So the grants below
- * cover what any VoC deployment in this account and region writes, not only this stack's API; an API that is
- * not VoC's and sends ACCESS logs to its own group is not covered (execution logs of every API are).
+ * second VoC deployment (`-c deploymentPrefix`, docs/deployment.md → Two deployments) and any REST API that is
+ * not VoC's. So the grants below cover what EVERY REST API in this account and region writes: narrowing them to
+ * VoC's own groups would silently stop another API's access logs the moment VoC deploys.
  *
  * The managed policy grants CreateLogGroup, CreateLogStream, DescribeLogGroups, DescribeLogStreams,
  * PutLogEvents, GetLogEvents and FilterLogEvents on `*` (AWS managed policy reference). Kept, with the
@@ -17,9 +17,10 @@
  *   (API Gateway developer guide, set-up-logging.html), so CreateLogGroup (log-group), DescribeLogStreams
  *   (log-group), CreateLogStream and PutLogEvents (log-stream) on that AWS-chosen name prefix. One resource
  *   covers both types: `…:log-group:API-Gateway-Execution-Logs_*` matches the group and its streams.
- * - Access logs: the group this stack creates, `/aws/apigateway/<prefix->voc-analytics-api-<account>-<region>`.
- *   No CreateLogGroup (CloudFormation creates it). DescribeLogStreams needs the bare group ARN, the stream
- *   actions `…:<group>:*`.
+ * - Access logs: a REST API's access-log group is named by whoever owns that API (VoC's is
+ *   `/aws/apigateway/<prefix->voc-analytics-api-<account>-<region>`), so the stream writes cover every log group
+ *   of the account and region (`…:log-group:*`, which matches each group and its streams). No CreateLogGroup:
+ *   an access-log destination must exist before a stage can name it (API Gateway set-up-logging.html).
  * - DescribeLogGroups on `*`: the action has no resource type (it lists the account's groups), and the managed
  *   policy grants it; kept because API Gateway's log delivery is not documented to work without it.
  * - Dropped: GetLogEvents and FilterLogEvents. They READ logs; pushing logs never calls them.
@@ -37,11 +38,8 @@ const API_GATEWAY_PUSH_TO_LOGS_POLICY = 'service-role/AmazonAPIGatewayPushToClou
 /** The prefix API Gateway gives every execution-log group it creates. */
 const EXECUTION_LOG_GROUP_PREFIX = 'API-Gateway-Execution-Logs_';
 
-/**
- * Replace the managed policy on the CloudWatch role CDK created for `api`. `accessLogGroups` is the name
- * PATTERN of every VoC deployment's access-log group in this account and region (api-gateway.ts builds it).
- */
-export function scopeApiGatewayLoggingRole(api: apigateway.RestApi, accessLogGroups: string): void {
+/** Replace the managed policy on the CloudWatch role CDK created for `api`. */
+export function scopeApiGatewayLoggingRole(api: apigateway.RestApi): void {
   const role = api.node.tryFindChild('CloudWatchRole');
   const cfn = role?.node.defaultChild;
   const account = api.node.tryFindChild('Account');
@@ -50,8 +48,7 @@ export function scopeApiGatewayLoggingRole(api: apigateway.RestApi, accessLogGro
   }
   const stack = cdk.Stack.of(api);
   const executionLogs = logGroupArn(stack, `${EXECUTION_LOG_GROUP_PREFIX}*`);
-  const accessGroup = logGroupArn(stack, accessLogGroups);
-  const accessStreams = `${accessGroup}:*`;
+  const anyLogGroup = logGroupArn(stack, '*');
   removeAwsManagedPolicy(cfn, API_GATEWAY_PUSH_TO_LOGS_POLICY);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'ExecutionLogs',
@@ -61,7 +58,7 @@ export function scopeApiGatewayLoggingRole(api: apigateway.RestApi, accessLogGro
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'AccessLogs',
     actions: ['logs:CreateLogStream', 'logs:DescribeLogStreams', 'logs:PutLogEvents'],
-    resources: [accessGroup, accessStreams],
+    resources: [anyLogGroup],
   }));
   const { policyDependable } = role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'ListLogGroups', actions: ['logs:DescribeLogGroups'], resources: ['*'],
@@ -72,8 +69,8 @@ export function scopeApiGatewayLoggingRole(api: apigateway.RestApi, accessLogGro
   acknowledgeNag(role, [
     {
       id: 'AwsSolutions-IAM5',
-      reason: 'The API Gateway CloudWatch role is the account+region setting every REST API logs through: execution logs go to the API-Gateway-Execution-Logs_<api id>/<stage> groups API Gateway names and creates itself, and the access-log grant spans every VoC deployment\'s /aws/apigateway/*voc-analytics-api-<account>-<region> group (deploymentPrefix copies share the setting); the trailing :* is the log-stream part of the ARN (Service Authorization Reference, CloudWatch Logs)',
-      findings: [resourceFinding(executionLogs), resourceFinding(accessGroup), resourceFinding(accessStreams)],
+      reason: 'The API Gateway CloudWatch role is the account+region setting EVERY REST API logs through, VoC\'s and any other: execution logs go to the API-Gateway-Execution-Logs_<api id>/<stage> groups API Gateway names and creates itself, and access logs go to a group each API\'s owner names, so the stream writes (no CreateLogGroup) cover every log group of the account and region; narrowing it would stop another API\'s access logs',
+      findings: [resourceFinding(executionLogs), resourceFinding(anyLogGroup)],
     },
     {
       id: 'AwsSolutions-IAM5',
