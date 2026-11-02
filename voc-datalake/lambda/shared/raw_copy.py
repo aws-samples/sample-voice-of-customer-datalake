@@ -40,7 +40,7 @@ from shared.raw_versions import (
     version_key,
 )
 from shared.source_policy import ARCHIVE_NONE, archive_mode
-from shared.source_profiles import SourceProfilesUnavailable, cached_source_profile_strict
+from shared.source_profiles import SourceProfilesUnavailable, cached_source_profile_strict, source_profile_configured
 
 __all__ = [
     'RawTarget', 'app_json_copy', 'bytes_copy', 'bytes_digest', 'json_copy', 'source_archive_mode',
@@ -63,6 +63,12 @@ class RawTarget:
         return version_key(item_folder(self.source, self.day, self.stem), digest, extension)
 
 
+def _unreadable[T](source: str, fallback: T) -> T:
+    """Log that no copy is written because the source policy is unreadable; return ``fallback``."""
+    logger.warning('Raw copy not written: the source policy is unreadable', extra={'source': source})
+    return fallback
+
+
 def source_archive_mode(source: str) -> str:
     """``source``'s archive mode (``shared.source_policy.archive_mode``: ``none`` / ``item`` / ``file``).
 
@@ -72,12 +78,21 @@ def source_archive_mode(source: str) -> str:
     try:
         return archive_mode(cached_source_profile_strict(source))
     except SourceProfilesUnavailable:
-        logger.warning('Raw copy not written: the source policy is unreadable', extra={'source': source})
-        return ARCHIVE_NONE
+        return _unreadable(source, ARCHIVE_NONE)
 
 
-def source_permits_raw_copy(source: str) -> bool:
-    """True when ``source``'s profile permits a raw copy (see ``source_archive_mode``). Never raises."""
+def source_permits_raw_copy(source: str, *, require_profile: bool = False) -> bool:
+    """True when ``source``'s profile permits a raw copy (see ``source_archive_mode``). Never raises.
+
+    ``require_profile``: also require an admin-saved profile for ``source`` (an opt-in copy, e.g.
+    the feedback boards, whose copies hold personal data that erasure by email does not reach).
+    """
+    if require_profile:
+        try:
+            if not source_profile_configured(source):
+                return False
+        except SourceProfilesUnavailable:
+            return _unreadable(source, False)
     return source_archive_mode(source) != ARCHIVE_NONE
 
 

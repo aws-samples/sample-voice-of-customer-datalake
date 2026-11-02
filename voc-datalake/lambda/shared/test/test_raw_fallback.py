@@ -79,7 +79,8 @@ def test_no_bucket_writes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures('s3')
-def test_a_message_without_an_id_uses_the_item_stem() -> None:
+def test_a_message_without_an_id_uses_a_folder_named_after_its_content() -> None:
     uri = archive_inline_raw(_record(id=''), NOW)
     assert uri is not None
-    assert '/2026/03/05/item/' in uri
+    # Never a shared constant folder: an id-less item's folder is named after its content.
+    assert '/2026/03/05/noid-' in uri

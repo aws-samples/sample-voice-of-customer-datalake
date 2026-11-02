@@ -1,4 +1,4 @@
-"""POST /feedback-forms/{id}/submit keeps the body as the widget sent it (shared/feedback_form_raw.py).
+"""POST /feedback-forms/{id}/submit keeps the validated fields as the widget sent them (shared/feedback_form_raw.py).
 
 Only when the ``feedback_form`` profile permits a raw copy; a redact profile keeps none, and a
 failed write never refuses the submission.
@@ -28,17 +28,17 @@ def raw_s3() -> Iterator[Any]:
 
 
 def _submit(handler: Any, api_gateway_event: Any, lambda_context: Any, sqs: MagicMock,
-            profiles: list[dict] | None = None) -> dict:
+            profiles: list[dict] | None = None, *, body: dict | None = None, form: dict | None = None) -> dict:
     with (
         seeded_source_profiles(profiles),
         patch.object(handler, 'PROCESSING_QUEUE_URL', QUEUE),
         patch.object(handler, 'sqs', sqs),
         patch.object(handler, 'aggregates_table') as table,
     ):
-        table.get_item.return_value = _ENABLED_FORM
+        table.get_item.return_value = form or _ENABLED_FORM
         response, payload = call_route(
             handler.lambda_handler, api_gateway_event, lambda_context, method='POST',
-            path='/feedback-forms/deadbeef/submit', path_params={'form_id': 'deadbeef'}, body=BODY,
+            path='/feedback-forms/deadbeef/submit', path_params={'form_id': 'deadbeef'}, body=body or BODY,
         )
     assert response['statusCode'] == 200, payload
     return json.loads(sqs.send_message.call_args.kwargs['MessageBody'])
@@ -61,6 +61,31 @@ def test_the_submission_is_archived_as_sent_and_the_message_points_at_it(
     # Before the policy: the email exactly as typed (the queued copy is lower-cased).
     assert json.loads(obj['Body'].read()) == {'form_id': 'deadbeef', 'submission': BODY}
     assert obj['Metadata'] == {'connector': 'feedback_form', 'connector-version': '9.1.0'}
+
+
+def test_the_copy_keeps_only_validated_fields_never_extras_or_the_participant_token(
+    raw_s3, feedback_form_handler, api_gateway_event, lambda_context,
+):
+    # The route is public: an extra field of any size and the participant link token are not kept.
+    body = {**BODY, 'padding': 'x' * 100_000, 'participant_token': 'secret-token'}
+    _submit(feedback_form_handler, api_gateway_event, lambda_context, MagicMock(), body=body)
+
+    [key] = _objects(raw_s3)
+    assert json.loads(raw_s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())['submission'] == BODY
+
+
+def test_email_and_name_are_kept_only_when_the_form_collects_them(
+    raw_s3, feedback_form_handler, api_gateway_event, lambda_context,
+):
+    form = {'Item': {'form_id': 'deadbeef', 'enabled': True}}  # collects neither
+    _submit(feedback_form_handler, api_gateway_event, lambda_context, MagicMock(),
+            body={**BODY, 'name': 'Ann'}, form=form)
+
+    [key] = _objects(raw_s3)
+    submission = json.loads(raw_s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())['submission']
+    assert 'email' not in submission
+    assert 'name' not in submission
+    assert submission['text'] == BODY['text']
 
 
 def test_a_redact_profile_keeps_no_raw_copy(raw_s3, feedback_form_handler, api_gateway_event, lambda_context):

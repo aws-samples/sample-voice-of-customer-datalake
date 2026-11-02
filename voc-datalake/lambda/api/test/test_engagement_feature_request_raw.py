@@ -17,13 +17,22 @@ from shared.test.raw_lake_fixtures import RAW_BUCKET, raw_keys, raw_lake_client
 from shared.test.source_profile_fixtures import seeded_source_profiles
 
 BUCKET = RAW_BUCKET
+#: Board copies are opt-in: written only once an admin saves a ``feature_requests`` profile.
+_BOARD_PROFILE = [{'id': 'feature_requests', 'label': 'Feedback boards', 'pii': 'allow'}]
 
 
 @pytest.fixture
 def world() -> Iterator[tuple[Any, Any]]:
-    with engagement_world() as w, seeded_source_profiles(), raw_lake_client() as s3:
+    with engagement_world() as w, seeded_source_profiles(_BOARD_PROFILE), raw_lake_client() as s3:
         w.participants.put_item(Item={**SETTINGS_KEY, 'company_domains': ['acme.example']})
         yield w, s3
+
+
+def test_no_board_copy_is_written_until_a_feature_requests_profile_is_saved(world, lambda_context):
+    _, s3 = world
+    with seeded_source_profiles():
+        _file(lambda_context)
+    assert _objects(s3) == {}
 
 
 def _objects(s3: Any) -> dict[str, dict]:

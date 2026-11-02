@@ -160,8 +160,8 @@ Set the budget to 0 to read no attachments and gate no replies at all (every suc
   default `redact`, so by default nothing is written), the email as received goes to the raw lake:
   `raw/email_intake/{y}/{m}/{d}/<item id>/<sha16>.eml` (`message/rfc822`, connector `email_intake`), and the item's
   `s3_raw_uri` names it, so retention and erasure delete it with the item. Filtered mail of such a source (a duplicate
-  message or forward, a repeat in its thread, a reply without new information, over the sender cap) is kept the same way
-  with the S3 metadata `drop-reason`; spam, viruses, automatic and unreadable mail never are. The `inbound-raw/` copy
+  message or forward, a repeat in its thread, a reply without new information) is kept the same way
+  with the S3 metadata `drop-reason`; spam, viruses, automatic and unreadable mail, and mail over the sender cap, never are. The `inbound-raw/` copy
   above is unchanged.
 - Customer data under `pii: redact` keeps no sender address, so an erasure by email cannot match it
   (there is nothing to match); under `allow` the lower-cased address is kept and erasure finds it.

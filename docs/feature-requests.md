@@ -257,8 +257,9 @@ What people file is also kept in the raw lake, write-once (`lambda/shared/featur
   (the support id is stable per person and request), holding its field values, name and email.
 
 Nothing more than the row stores: no status, totals or bookkeeping, so an admin's triage writes no new version.
-The copies are governed by the `feature_requests` source profile (Administration → Privacy & access → Source
-policies): under `redact` or `summary_only` none is written. Deleting a request or a +1 does not delete its raw copies
-(the raw lake keeps history); a whole-source erasure of `feature_requests` removes them (configure the profile first so
-the erasure accepts the source). An erasure by email does NOT reach them: it scans `voc-feedback`, and boards are not a
-feedback source. Board requests are NOT queued into `voc-feedback`: that is a product decision not made yet.
+The copies are **opt-in**: none is written until an admin saves a `feature_requests` source profile (Administration →
+Privacy & access → Source policies) that permits one; under `redact` or `summary_only` none is written either, and an
+unreadable profile writes none. Opt-in because the copies hold reporters' and supporters' emails. Deleting a request or
+a +1 does not delete its raw copies (the raw lake keeps history); a whole-source erasure of `feature_requests` removes
+them. An erasure by email does NOT reach them: it scans `voc-feedback`, and boards are not a feedback source. Board
+requests are NOT queued into `voc-feedback`: that is a product decision not made yet.
