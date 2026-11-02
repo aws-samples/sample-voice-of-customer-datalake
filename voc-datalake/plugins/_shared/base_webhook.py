@@ -19,6 +19,7 @@ from .audit import emit_audit_event
 from .normalized_item import normalized_item_fields
 from .plugin_secrets import filter_plugin_secrets
 from .raw_archive import WEBHOOK, archive_raw_item
+from .raw_source import pop_raw_source
 from .source_policy_gate import policy_messages
 from .sqs_utils import send_messages_to_queue
 
@@ -95,8 +96,13 @@ class BaseWebhook(ABC):
         Same archive as every ingestor (``archive_raw_item``, connector ``webhook_<plugin>``):
         write-once, skipped for a redact / summary-only source. The item travels inline
         (``raw_data``) only when the archive write failed or was not allowed, and the
-        source policy drops that copy for a non-allow source (``shared/source_policy.py``).
+        source policy drops that copy for a non-allow source (``shared/source_policy.py``). The
+        provider payload a plugin left on the item (``_shared/raw_source.py``) is popped here and
+        archived as ``raw_content`` unless one was passed.
         """
+        source_payload = pop_raw_source(item)
+        if raw_content is None:
+            raw_content = source_payload
         uri = archive_raw_item(
             self._s3, RAW_DATA_BUCKET, self.source_platform, item, raw_content, transport=WEBHOOK,
         )

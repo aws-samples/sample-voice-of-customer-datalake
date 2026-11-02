@@ -38,7 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
 from _shared.github_api import GITHUB_API, GitHubClient, GitHubNotFound, StopRun
 from _shared.github_config import GitHubSourceConfig
-from _shared.github_mapping import RAW_PAYLOAD_KEY, comment_item, is_bot, is_pull_request, issue_item
+from _shared.github_mapping import comment_item, is_bot, is_pull_request, issue_item
 from shared.invocation_cost import measure_invocation_cost
 
 #: Hard cap per run across all repos (issues + comments), so one backfill of a
@@ -111,13 +111,6 @@ class GitHubIssuesIngestor(BaseIngestor):
         self.stop_reason = None
 
     # -- BaseIngestor hooks ---------------------------------------------------
-
-    def normalize_item(self, item: dict, raw_content: str | None = None) -> dict:
-        """Archive the untouched GitHub payload as ``raw_content``; send only the mapped item."""
-        payload = item.pop(RAW_PAYLOAD_KEY, None)
-        if payload is not None:
-            raw_content = json.dumps(payload, default=str)
-        return super().normalize_item(item, raw_content)
 
     def fetch_new_items(self) -> Generator[dict, None, None]:
         if not self._token or not self.config.repos:

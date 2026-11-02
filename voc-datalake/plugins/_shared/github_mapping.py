@@ -30,12 +30,14 @@ from .github_text import (
     parse_software_version,
     strip_markdown,
 )
+from .raw_source import RAW_SOURCE_KEY
 
 __all__ = ["RAW_PAYLOAD_KEY", "comment_item", "is_bot", "is_pull_request", "issue_item", "issue_labels"]
 
-#: Key under which an item carries the untouched GitHub payload for the raw
-#: archive. Popped before the item is normalised, so it never reaches SQS.
-RAW_PAYLOAD_KEY = "_github_payload"  # pragma: no mutate  internal name: every reader imports this constant and pops it
+#: Key under which an item carries the untouched GitHub payload for the raw archive: the generic
+#: raw-source key, popped by ``BaseIngestor`` / ``BaseWebhook.normalize_item`` (``_shared/raw_source.py``),
+#: so it never reaches SQS.
+RAW_PAYLOAD_KEY = RAW_SOURCE_KEY
 
 ISSUE_TEXT_CAP = 4000
 COMMENT_TEXT_CAP = 2000

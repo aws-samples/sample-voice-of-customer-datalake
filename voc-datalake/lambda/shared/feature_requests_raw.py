@@ -22,15 +22,12 @@ failed write is logged; the request or +1 is stored all the same.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from typing import Any, Final
 
 from shared.archive_keys import archive_key_stem
-from shared.aws import get_s3_client
-from shared.raw_copy import RawTarget, json_copy, source_permits_raw_copy
-from shared.raw_versions import app_connector
+from shared.raw_copy import app_json_copy, source_permits_raw_copy
 
 __all__ = ['FEATURE_REQUESTS_SOURCE', 'archive_request', 'archive_support']
 
@@ -51,11 +48,10 @@ def _day(created_at: object) -> date:
 
 
 def _archive(item_id: object, content: Mapping[str, Any]) -> str | None:
-    bucket = os.environ.get('RAW_DATA_BUCKET', '')
-    if not bucket or not isinstance(item_id, str) or not item_id or not source_permits_raw_copy(FEATURE_REQUESTS_SOURCE):
+    if not isinstance(item_id, str) or not item_id or not source_permits_raw_copy(FEATURE_REQUESTS_SOURCE):
         return None
-    target = RawTarget(bucket, FEATURE_REQUESTS_SOURCE, _day(content.get('created_at')), archive_key_stem(item_id))
-    return json_copy(get_s3_client(), target, dict(content), app_connector(FEATURE_REQUESTS_SOURCE))
+    return app_json_copy(FEATURE_REQUESTS_SOURCE, _day(content.get('created_at')), archive_key_stem(item_id),
+                         dict(content), FEATURE_REQUESTS_SOURCE)
 
 
 def archive_request(request: Mapping[str, Any]) -> str | None:

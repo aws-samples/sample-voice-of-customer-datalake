@@ -8,30 +8,26 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from typing import Any
-from unittest.mock import patch
 
-import boto3
 import pytest
 from engagement_fixtures import ADMIN, BOARD, BOARD_2, engagement_world, ok
 
 from shared.participants_settings import SETTINGS_KEY
+from shared.test.raw_lake_fixtures import RAW_BUCKET, raw_keys, raw_lake_client
 from shared.test.source_profile_fixtures import seeded_source_profiles
 
-BUCKET = 'raw-bucket'
+BUCKET = RAW_BUCKET
 
 
 @pytest.fixture
 def world() -> Iterator[tuple[Any, Any]]:
-    with engagement_world(RAW_DATA_BUCKET=BUCKET, APP_VERSION='9.1.0') as w, seeded_source_profiles():
+    with engagement_world() as w, seeded_source_profiles(), raw_lake_client() as s3:
         w.participants.put_item(Item={**SETTINGS_KEY, 'company_domains': ['acme.example']})
-        s3 = boto3.client('s3', region_name='us-east-1')
-        s3.create_bucket(Bucket=BUCKET)
-        with patch('shared.feature_requests_raw.get_s3_client', return_value=s3):
-            yield w, s3
+        yield w, s3
 
 
 def _objects(s3: Any) -> dict[str, dict]:
-    keys = [o['Key'] for o in s3.list_objects_v2(Bucket=BUCKET).get('Contents', [])]
+    keys = raw_keys(s3)
     return {key: json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read()) for key in keys}
 
 

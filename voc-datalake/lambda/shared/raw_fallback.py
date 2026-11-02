@@ -17,16 +17,13 @@ already drops ``raw_data`` from a redact / summary-only message upstream (``shar
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Final
 
 from shared.archive_keys import archive_key_stem
-from shared.aws import get_s3_client
 from shared.logging import logger
-from shared.raw_copy import RawTarget, json_copy, source_permits_raw_copy
-from shared.raw_versions import app_connector
+from shared.raw_copy import app_json_copy, source_permits_raw_copy
 
 __all__ = ['PROCESSOR_CONNECTOR', 'archive_inline_raw']
 
@@ -38,16 +35,14 @@ def archive_inline_raw(raw_record: Mapping[str, Any], now: datetime) -> str | No
     """The ``s3://`` URI of ``raw_record['raw_data']``'s copy; None when there is nothing to write,
     the record already names its archive, the policy forbids a copy or the write failed."""
     raw = raw_record.get('raw_data')
-    bucket = os.environ.get('RAW_DATA_BUCKET', '')
     source = raw_record.get('source_platform')
-    if not isinstance(raw, dict) or raw_record.get('s3_raw_uri') or not bucket or not isinstance(source, str):
+    if not isinstance(raw, dict) or raw_record.get('s3_raw_uri') or not isinstance(source, str):
         return None
     if not source_permits_raw_copy(source):
         return None
     item_id = raw_record.get('id')
     stem = archive_key_stem(item_id) if isinstance(item_id, str) and item_id else _NO_ID_STEM
-    uri = json_copy(get_s3_client(), RawTarget(bucket, source, now.date(), stem), raw,
-                    app_connector(PROCESSOR_CONNECTOR))
+    uri = app_json_copy(source, now.date(), stem, raw, PROCESSOR_CONNECTOR)
     if uri:
         logger.info('Archived inline raw data in the processor', extra={'source': source})
     return uri

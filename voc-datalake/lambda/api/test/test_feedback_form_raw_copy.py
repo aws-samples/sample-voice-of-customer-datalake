@@ -4,32 +4,27 @@ Only when the ``feedback_form`` profile permits a raw copy; a redact profile kee
 failed write never refuses the submission.
 """
 import json
+from collections.abc import Iterator
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import boto3
 import pytest
 from botocore.exceptions import ClientError
 from handler_events_fixtures import call_route
-from moto import mock_aws
 
+from shared.test.raw_lake_fixtures import RAW_BUCKET, raw_keys, raw_lake
 from shared.test.source_profile_fixtures import seeded_source_profiles
 
-BUCKET = 'raw-bucket'
+BUCKET = RAW_BUCKET
 QUEUE = 'https://sqs.example.com/queue'
 _ENABLED_FORM = {'Item': {'form_id': 'deadbeef', 'enabled': True, 'collect_email': True}}
 BODY = {'text': 'The checkout is slow', 'rating': 2, 'email': 'Ann@Example.com', 'page_url': 'https://shop/x'}
 
 
 @pytest.fixture
-def raw_s3(monkeypatch: pytest.MonkeyPatch) -> Any:
-    monkeypatch.setenv('RAW_DATA_BUCKET', BUCKET)
-    monkeypatch.setenv('APP_VERSION', '9.1.0')
-    with mock_aws():
-        client = boto3.client('s3', region_name='us-east-1')
-        client.create_bucket(Bucket=BUCKET)
-        with patch('shared.feedback_form_raw.get_s3_client', return_value=client):
-            yield client
+def raw_s3() -> Iterator[Any]:
+    with raw_lake() as client:
+        yield client
 
 
 def _submit(handler: Any, api_gateway_event: Any, lambda_context: Any, sqs: MagicMock,
@@ -50,7 +45,7 @@ def _submit(handler: Any, api_gateway_event: Any, lambda_context: Any, sqs: Magi
 
 
 def _objects(s3: Any) -> list[str]:
-    return [o['Key'] for o in s3.list_objects_v2(Bucket=BUCKET).get('Contents', [])]
+    return raw_keys(s3)
 
 
 def test_the_submission_is_archived_as_sent_and_the_message_points_at_it(
@@ -82,7 +77,7 @@ def test_a_failed_raw_write_still_queues_the_submission(
     monkeypatch.setenv('RAW_DATA_BUCKET', BUCKET)
     s3 = MagicMock()
     s3.put_object.side_effect = ClientError({'Error': {'Code': 'AccessDenied'}}, 'PutObject')
-    with patch('shared.feedback_form_raw.get_s3_client', return_value=s3):
+    with patch('shared.raw_copy.get_s3_client', return_value=s3):
         record = _submit(feedback_form_handler, api_gateway_event, lambda_context, MagicMock())
 
     assert record['text'] == 'The checkout is slow'
