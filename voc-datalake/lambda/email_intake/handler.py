@@ -47,6 +47,7 @@ def _context() -> IntakeContext:
         bucket=os.environ['INBOUND_BUCKET'],
         queue_url=os.environ['PROCESSING_QUEUE_URL'],
         inbox_domain=os.environ.get('INBOUND_EMAIL_DOMAIN', '').strip().lower(),
+        raw_bucket=os.environ.get('RAW_DATA_BUCKET', ''),
     )
 
 
