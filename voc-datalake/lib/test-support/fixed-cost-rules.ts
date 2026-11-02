@@ -14,6 +14,7 @@
  */
 import { PERFORMANCE_TIER_CONTEXT_KEY } from '../utils/performance-tier';
 import { SNAPSTART_CONTEXT_KEY, SNAPSTART_FUNCTION_IDS } from '../utils/snapstart';
+import { WAF_CONTEXT_KEY } from '../utils/waf';
 import { isRecord } from './guards';
 import { TemplateResourcesSchema } from './template-resources';
 
@@ -177,7 +178,7 @@ export interface CountedFixedCost {
  *   (lib/stacks/core-cdn.ts). A later release moves them to SSM Parameter Store (SecureString, no monthly fee) and
  *   brings this number to zero.
  *
- * The single-flag opt-in shapes (`snapStart`, `performanceTier`) are not counted: their registries above list
+ * The single-flag opt-in shapes (`snapStart`, `enableWaf`, `performanceTier`) are not counted: their registries above list
  * hourly-priced resources only. Every free context-gated feature is in the all-features synth, so a key or secret
  * one of those adds still fails here.
  */
@@ -221,6 +222,13 @@ export function countedFixedCostFindings(templates: readonly StackTemplate[]): s
 
 const SNAPSTART_FINDINGS = SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::Lambda::Function (GlobalMcp)?${id}[0-9A-F]{8}$`));
 
+// lib/utils/waf.ts: the CLOUDFRONT ACL (VocWebSearchStack), the REGIONAL ACL and its stage association (VocApiStack).
+const WAF_FINDINGS = [
+  /^AWS::WAFv2::WebACL FrontendWebAcl$/,
+  /^AWS::WAFv2::WebACL ApiWebAcl$/,
+  /^AWS::WAFv2::WebACLAssociation ApiWebAclAssociation$/,
+];
+
 /**
  * THE registry of opt-in fixed costs (TENETS.md, tenet 7): every context flag that may add a fixed monthly cost,
  * and exactly what it adds. lib/fixed-cost-guard.test.ts synthesizes each and requires those findings and no
@@ -229,6 +237,9 @@ const SNAPSTART_FINDINGS = SNAPSTART_FUNCTION_IDS.map((id) => new RegExp(`^AWS::
 export const OPT_IN_FIXED_COSTS: Readonly<Record<string, OptInFixedCost>> = {
   // `-c snapStart=true` (lib/utils/snapstart.ts): the four cold-start-bound API Lambdas.
   snapStart: { context: { [SNAPSTART_CONTEXT_KEY]: 'true' }, expected: SNAPSTART_FINDINGS },
-  // `-c performanceTier=true` (lib/utils/performance-tier.ts): every fixed-cost performance feature; today exactly SnapStart.
-  performanceTier: { context: { [PERFORMANCE_TIER_CONTEXT_KEY]: 'true' }, expected: SNAPSTART_FINDINGS },
+  // `-c enableWaf=true` (lib/utils/waf.ts): a web ACL on the SPA distribution and one on the API stage.
+  enableWaf: { context: { [WAF_CONTEXT_KEY]: 'true' }, expected: WAF_FINDINGS },
+  // `-c performanceTier=true` (lib/utils/performance-tier.ts): every fixed-cost opt-in at once, SnapStart and WAF.
+  // (It also turns on Cognito Plus, which is billed per active user, not a fixed cost, so the gate has nothing to find.)
+  performanceTier: { context: { [PERFORMANCE_TIER_CONTEXT_KEY]: 'true' }, expected: [...SNAPSTART_FINDINGS, ...WAF_FINDINGS] },
 };

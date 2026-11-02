@@ -19,6 +19,8 @@ import type { AnthropicUseCaseConfig } from '../stacks/bedrock-access-stack';
 export function shouldDeployAiEnablement(
   deployWebSearch: boolean,
   anthropicUseCase: AnthropicUseCaseConfig | undefined,
+  cloudFrontWebAcl = false,
 ): boolean {
-  return deployWebSearch || anthropicUseCase !== undefined;
+  // The opt-in CloudFront web ACL (lib/utils/waf.ts) must live in us-east-1 too, so it is a third reason.
+  return deployWebSearch || anthropicUseCase !== undefined || cloudFrontWebAcl;
 }

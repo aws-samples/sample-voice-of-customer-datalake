@@ -18,6 +18,7 @@ import * as path from 'path';
 import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
 import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import {
+  cognitoPlusOffSuppressions,
   cognitoSecuritySuppressions,
   dynamoDbGsiSuppressions,
   kmsEncryptionSuppressions,
@@ -27,6 +28,7 @@ import {
 import type { CoreBuildContext } from './core-cdn';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { isDevDeployment } from '../utils/context';
+import { cognitoPlusEnabled, userPoolFeaturePlan } from '../utils/cognito-plus';
 
 export interface CoreAuth {
   userPool: cognito.UserPool;
@@ -105,8 +107,9 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     // Opt-in passkeys (docs/deployment.md -> Passkeys): after sign-in the SPA offers to register one
     // (Amplify associateWebAuthnCredential), and Login can then sign in with it (USER_AUTH, WEB_AUTHN). A password
     // stays the other first factor. Passkeys need the Essentials plan (the default for new pools; set here
-    // so an older Lite pool moves too). The relying party is the site the SPA is served from.
-    featurePlan: cognito.FeaturePlan.ESSENTIALS,
+    // so an older Lite pool moves too), or Plus with `-c cognitoPlus=true` / performanceTier (lib/utils/cognito-plus.ts).
+    // The relying party is the site the SPA is served from.
+    ...userPoolFeaturePlan(stack),
     signInPolicy: { allowedFirstAuthFactors: { password: true, passkey: true } },
     passkeyRelyingPartyId: frontendDomainName,
     passkeyUserVerification: cognito.PasskeyUserVerification.REQUIRED,
@@ -147,7 +150,9 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   // Deleted with the stack (teardown), but KEPT if a change ever forces a replacement:
   // every user's `sub` keys project ownership, conversations, memory and plan approvals.
   retainOnReplace(userPool);
-  acknowledgeNagOnResource(userPool, cognitoSecuritySuppressions);
+  acknowledgeNagOnResource(userPool, [
+    ...cognitoSecuritySuppressions, ...(cognitoPlusEnabled(stack) ? [] : cognitoPlusOffSuppressions),
+  ]);
 
   // User Pool Client
   const userPoolClient = userPool.addClient('VocWebClient', {

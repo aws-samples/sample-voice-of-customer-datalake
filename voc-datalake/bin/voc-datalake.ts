@@ -21,6 +21,7 @@ import { validateDeploymentPrefix } from '../lib/utils/naming';
 import { recordOrEmpty, stringOr } from '../lib/utils/context';
 import { applyLambdaLogRetention, applyProtectedLogRetention } from '../lib/utils/log-retention';
 import { shouldProtectData } from '../lib/utils/data-protection';
+import { wafEnabled } from '../lib/utils/waf';
 
 const app = new cdk.App();
 
@@ -135,8 +136,12 @@ if (anthropicUseCaseRaw) {
 // submission with web search off leaves no reason to create the stack.
 const useCaseToSubmit = skipUseCaseSubmission ? undefined : anthropicUseCase;
 
+// Opt-in AWS WAF (`-c enableWaf=true` / performanceTier, lib/utils/waf.ts): the SPA distribution's CLOUDFRONT-scope
+// web ACL must be in us-east-1, so it lives in this stack and VocCoreStack reads its ARN cross-region.
+const deployWaf = wafEnabled(app);
+
 let webSearchStack: VocWebSearchStack | undefined;
-if (shouldDeployAiEnablement(deployWebSearch, useCaseToSubmit)) {
+if (shouldDeployAiEnablement(deployWebSearch, useCaseToSubmit, deployWaf)) {
   webSearchStack = new VocWebSearchStack(app, stackId('VocWebSearchStack'), {
     env: { account: env.account, region: 'us-east-1' },
     deploymentPrefix,
@@ -147,6 +152,7 @@ if (shouldDeployAiEnablement(deployWebSearch, useCaseToSubmit)) {
     description: 'VoC Data Lake - AI Enablement (web search gateway, Anthropic use-case form) (uksb-0q2jyqfvlm)(tag:VocWebSearchStack)',
     deployWebSearch,
     anthropicUseCase: useCaseToSubmit,
+    cloudFrontWebAcl: deployWaf,
   });
   tagStack(webSearchStack, 'AiEnablement');
   if (inferenceScope === 'eu') {
@@ -175,6 +181,9 @@ if (shouldDeployAiEnablement(deployWebSearch, useCaseToSubmit)) {
 const coreStack = new VocCoreStack(app, stackId('VocCoreStack'), {
   env,
   deploymentPrefix,
+  // Only the opt-in WAF reads from VocWebSearchStack; SSM-backed only when the app region is not us-east-1.
+  crossRegionReferences: deployWaf && env.region !== 'us-east-1',
+  frontendWebAclArn: webSearchStack?.frontendWebAclArn,
   description: 'VoC Data Lake - Core Infrastructure (Storage, Auth, Frontend Hosting) (uksb-0q2jyqfvlm)(tag:VocCoreStack)',
 });
 tagStack(coreStack, 'Core');

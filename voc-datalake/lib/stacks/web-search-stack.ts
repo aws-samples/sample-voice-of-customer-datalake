@@ -4,6 +4,7 @@ import * as bedrockagentcore from 'aws-cdk-lib/aws-bedrockagentcore';
 import { Construct } from 'constructs';
 import { AnthropicUseCaseSubmission, AnthropicUseCaseConfig } from './bedrock-access-stack';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
+import { createCloudFrontWebAcl } from '../utils/waf';
 import { WEB_SEARCH_CONFIGURATION_NAME, WEB_SEARCH_CONNECTOR_ID, pinWebSearchConnector } from './web-search-connector-pin';
 
 /**
@@ -64,6 +65,13 @@ export interface VocWebSearchStackProps extends VocStackProps {
    * under `skipUseCaseSubmission`.
    */
   anthropicUseCase?: AnthropicUseCaseConfig;
+
+  /**
+   * Create the SPA distribution's CLOUDFRONT-scope web ACL here (it must live in us-east-1, and this is the app's
+   * us-east-1 stack): only with `-c enableWaf=true` / performanceTier (lib/utils/waf.ts). VocCoreStack reads
+   * `frontendWebAclArn` through a cross-region reference.
+   */
+  cloudFrontWebAcl?: boolean;
 }
 
 export class VocWebSearchStack extends VocStack {
@@ -71,6 +79,8 @@ export class VocWebSearchStack extends VocStack {
   public readonly gatewayUrl?: string;
   public readonly gatewayArn?: string;
   public readonly toolName?: string;
+  /** Undefined unless `cloudFrontWebAcl`. */
+  public readonly frontendWebAclArn?: string;
 
   constructor(scope: Construct, id: string, props: VocWebSearchStackProps) {
     super(scope, id, props);
@@ -80,12 +90,16 @@ export class VocWebSearchStack extends VocStack {
     // strips CDKMetadata, so the workshop artifact would be an invalid
     // `Resources: {}`. shouldDeployAiEnablement() decides whether to construct
     // it at all; this makes skipping that decision impossible.
-    if (!props.deployWebSearch && !props.anthropicUseCase) {
+    if (!props.deployWebSearch && !props.anthropicUseCase && props.cloudFrontWebAcl !== true) {
       throw new Error(
-        `${id}: both halves are disabled (deployWebSearch=false and no anthropicUseCase), ` +
+        `${id}: both halves are disabled (deployWebSearch=false and no anthropicUseCase) and there is no cloudFrontWebAcl, ` +
         'which would synthesize a stack with no resources. Use shouldDeployAiEnablement() ' +
         'to decide whether to construct this stack.',
       );
+    }
+
+    if (props.cloudFrontWebAcl === true) {
+      this.frontendWebAclArn = createCloudFrontWebAcl(this).attrArn;
     }
 
     if (props.anthropicUseCase) {

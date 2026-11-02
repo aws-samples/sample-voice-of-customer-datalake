@@ -33,8 +33,11 @@ import { allowEventBridgeToScheduleDlq } from './ingestion-schedule-dlq';
  */
 const KMS_KEY_PENDING_WINDOW_DAYS = 30;
 
-/** VocCoreStack takes only the common stack props (env, deploymentPrefix, description). */
-export type VocCoreStackProps = VocStackProps;
+/** VocCoreStack takes the common stack props (env, deploymentPrefix, description) and the opt-in WAF. */
+export interface VocCoreStackProps extends VocStackProps {
+  /** The SPA distribution's CLOUDFRONT web ACL (VocWebSearchStack): only with `-c enableWaf=true` / performanceTier. */
+  frontendWebAclArn?: string;
+}
 
 interface EncryptedTableOptions {
   /** Defaults to the single-table `pk`/`sk` pair. */
@@ -192,7 +195,7 @@ export class VocCoreStack extends VocStack {
     };
     const cdn = createCoreCdn(buildContext, {
       kmsKey: this.kmsKey, rawDataBucket: this.rawDataBucket, websiteBucket: this.websiteBucket,
-      accessLogsBucket: this.accessLogsBucket,
+      accessLogsBucket: this.accessLogsBucket, webAclArn: props.frontendWebAclArn,
     });
     this.frontendDistribution = cdn.frontendDistribution;
     this.frontendDomainName = cdn.frontendDomainName;

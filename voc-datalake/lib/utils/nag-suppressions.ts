@@ -5,8 +5,10 @@ import type * as s3 from 'aws-cdk-lib/aws-s3';
 import { AwsCustomResource } from 'aws-cdk-lib/custom-resources';
 import type { IConstruct } from 'constructs';
 
+import { COGNITO_PLUS_OPT_IN_HINT } from './cognito-plus';
 import { bedrockFoundationModelSuppressionTargets } from './model-allowlist';
 import { acknowledgeNag, type NagAck, resourceFinding } from './nag-ack';
+import { WAF_OPT_IN_HINT } from './waf';
 
 /**
  * cdk-nag acknowledgements for the VoC Data Lake project (applied with lib/utils/nag-ack.ts).
@@ -47,10 +49,6 @@ export const cloudfrontDefaultCertSuppressions: NagAck[] = [
     reason: 'Geo restrictions not required for sample application - can be enabled based on specific compliance requirements',
   },
   {
-    id: 'AwsSolutions-CFR2',
-    reason: 'AWS WAF not included to minimize costs for sample deployment - recommended for production use',
-  },
-  {
     id: 'AwsSolutions-CFR4',
     reason: 'CloudFront distributions using default certificate (*.cloudfront.net) are limited to TLSv1 by AWS - custom domain with ACM certificate required for TLSv1.2+. See: https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-cloudfront-distribution-viewercertificate.html#cfn-cloudfront-distribution-viewercertificate-minimumprotocolversion',
   },
@@ -62,10 +60,37 @@ export const cognitoSecuritySuppressions: NagAck[] = [
     id: 'AwsSolutions-COG2',
     reason: 'MFA not enforced, to keep sign-in simple for the sample - every user is offered an opt-in passkey (phishing-resistant, WebAuthn) after sign-in; enforce MFA for production use',
   },
+];
+
+// The board pool (core-board-auth.ts): no passkey there, so its COG2 reason is its own.
+export const boardPoolMfaSuppressions: NagAck[] = [
   {
-    // cdk-nag 2.38 replaced COG3 (advanced security mode) with COG8 (the plus feature plan that now carries it).
+    id: 'AwsSolutions-COG2',
+    reason: 'Board users sign in with an emailed one-time code (EMAIL_OTP with -c emailFrom, else a password-reset code) and keep no password; Cognito refuses required MFA in a pool that allows EMAIL_OTP, and a second factor would be one more thing a one-off board visitor must set up',
+  },
+];
+
+// The paid opt-ins (lib/utils/waf.ts, lib/utils/cognito-plus.ts): acknowledged ONLY while the opt-in is off; with
+// it on the rule passes and these are not applied (an unused acknowledgement fails lib/nag-suppressions.test.ts).
+// cdk-nag 2.38 replaced COG3 (advanced security mode) with COG8 (the plus feature plan that now carries it).
+export const cognitoPlusOffSuppressions: NagAck[] = [
+  {
     id: 'AwsSolutions-COG8',
-    reason: 'Cognito plus feature plan (threat protection: compromised-credential and adaptive sign-in checks) not enabled to keep the sample pay-per-use - it adds a per-monthly-active-user charge; recommended for production use',
+    reason: `Cognito Plus feature plan (threat protection: compromised-credential and adaptive sign-in checks) is off by default - it raises every monthly active user's price ($0.020 per MAU with no free tier, against Essentials' $0.015 above 10,000 free); ${COGNITO_PLUS_OPT_IN_HINT}`,
+  },
+];
+
+export const cloudFrontWafOffSuppressions: NagAck[] = [
+  {
+    id: 'AwsSolutions-CFR2',
+    reason: `AWS WAF is off by default - a web ACL is a fixed monthly cost (TENETS.md tenet 7); ${WAF_OPT_IN_HINT}`,
+  },
+];
+
+export const apiWafOffSuppressions: NagAck[] = [
+  {
+    id: 'AwsSolutions-APIG3',
+    reason: `AWS WAF is off by default - a web ACL is a fixed monthly cost (TENETS.md tenet 7); the stage keeps its per-method throttles; ${WAF_OPT_IN_HINT}`,
   },
 ];
 
@@ -256,10 +281,6 @@ export const apiGatewayRequestValidationSuppressions: NagAck[] = [
   {
     id: 'AwsSolutions-APIG2',
     reason: 'Request validation handled by Lambda functions with comprehensive input validation using Pydantic models and custom logic',
-  },
-  {
-    id: 'AwsSolutions-APIG3',
-    reason: 'AWS WAF not included to minimize costs for sample deployment - recommended for production use',
   },
 ];
 
