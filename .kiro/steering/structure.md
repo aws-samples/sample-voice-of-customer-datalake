@@ -189,7 +189,7 @@ voice-of-customer-datalake/       # Root repository
 
 | Bucket | Structure | Purpose |
 |--------|-----------|---------|
-| `voc-raw-data-{account}-{region}` | `raw/{source}/{year}/{month}/{day}/{id}.json` | Raw scraped/ingested data archival — never deleted while the platform runs outside `voc-retention` (but NOT yet write-once: an item received again overwrites its file, see TENETS.md → D1); bucket deleted with the stack unless `protectData` |
+| `voc-raw-data-{account}-{region}` | `raw/{source}/{year}/{month}/{day}/{id}.json` | Raw scraped/ingested data archival — never deleted except by `voc-retention` (but NOT yet write-once: an item received again overwrites its file, see TENETS.md → D1); bucket deleted with the stack unless `protectData` |
 | `voc-raw-data-{account}-{region}` | `avatars/{project_id}/{persona_id}.png` | AI-generated persona avatars |
 
 ### DynamoDB Tables
