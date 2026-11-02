@@ -108,8 +108,9 @@ def _reprocessable_key(key: str) -> str:
 # A staged file expires from the import bucket (an inbox, VocIngestionStack IMPORT_STAGED_EXPIRATION_DAYS);
 # the durable copy of the original is the raw lake's (plugins/s3_import: raw/s3_import/..., when the
 # s3_import source profile keeps whole files), so a gone file is re-uploaded, not reprocessed.
-STAGED_FILE_GONE = ('Staged files expire after 90 days; the original is kept in the raw lake under raw/s3_import/ '
-                    'when the s3_import source keeps raw copies. Upload it again to import it.')
+STAGED_FILE_GONE = ('Staged files expire after a while (the import bucket is an inbox). If the s3_import source '
+                    'keeps whole-file raw copies, its original is in the raw lake under raw/s3_import/. Upload it '
+                    'again to import it.')
 
 
 def _require_reprocessable_object(key: str) -> None:

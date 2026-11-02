@@ -50,6 +50,11 @@ def _in_folder(objects: dict[str, dict], stem: str) -> list[dict]:
     return [content for key, content in objects.items() if key.split('/')[5] == stem]
 
 
+def _folders(objects: dict[str, dict], stem: str) -> set[str]:
+    """The full folder paths (date included) holding ``stem``'s versions: one, if the invariant holds."""
+    return {key.rsplit('/', 1)[0] for key in objects if key.split('/')[5] == stem}
+
+
 def test_a_new_request_keeps_the_request_and_the_reporters_plus_one(world, lambda_context):
     _, s3 = world
     created = _file(lambda_context)
@@ -80,6 +85,10 @@ def test_an_edit_is_a_new_version_and_a_status_change_is_not(world, lambda_conte
 
     titles = sorted(content['title'] for content in _in_folder(_objects(s3), request_id))
     assert titles == ['SAML SSO', 'SSO with SAML']
+    # The edit is archived under the request's own creation day: every version in ONE folder.
+    assert len(_folders(_objects(s3), request_id)) == 1
+    # ... because every version carries the request's created_at (the day is never "today" by fallback).
+    assert len({content['created_at'] for content in _in_folder(_objects(s3), request_id)}) == 1
 
 
 def test_a_plus_one_and_its_edit_are_kept(world, lambda_context):
@@ -94,6 +103,7 @@ def test_a_plus_one_and_its_edit_are_kept(world, lambda_context):
     versions = _in_folder(_objects(s3), support['support_id'])
     assert sorted(str(v['amount_usd']) for v in versions) == ['50000', '60000']
     assert {v['email'] for v in versions} == {'kim@acme.example'}
+    assert len(_folders(_objects(s3), support['support_id'])) == 1
 
 
 def test_a_redact_profile_keeps_no_copy(world, lambda_context):

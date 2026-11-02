@@ -55,7 +55,14 @@ from shared.archive_keys import archive_key_stem
 from shared.logging import logger
 from shared.raw_versions import RAW_PREFIX, parse_item_key
 
-__all__ = ['delete_item', 'delete_raw_prefix_page', 'erase_filter', 'raw_source_prefix', 'retention_cutoffs', 'retention_filter']
+__all__ = [
+    'delete_item',
+    'delete_raw_prefix_page',
+    'erase_filter',
+    'raw_source_prefix',
+    'retention_cutoffs',
+    'retention_filter',
+]
 
 # The whole-source erasure's field: the value IS a source id (``source_platform``).
 SOURCE_FIELD: Final = 'source'

@@ -12,8 +12,12 @@ content maps to the same key and writes nothing new.
 
 A failed write NEVER raises (the feedback must not be lost because its copy was): it is logged and
 the caller gets None. Whether a copy may be written at all (the source policy: a redact /
-summary-only source keeps none) is the caller's check, made before calling; a writer that has
-no profile in hand asks ``source_permits_raw_copy``.
+summary-only source keeps none) is the caller's check, made before calling. Two styles, one rule:
+a writer that already holds the profile it read strictly for the item itself (the form submit
+route) checks it with ``source_policy.raw_archive_allowed(profile)``; a writer with no profile in
+hand asks ``source_permits_raw_copy(source)``. Add ``require_profile=True`` (or
+``source_profile_configured``) when the copy is opt-in: personal data from a public or
+semi-public route (feedback forms, feedback boards).
 """
 
 from __future__ import annotations
@@ -42,7 +46,13 @@ from shared.raw_versions import (
 from shared.source_policy import ARCHIVE_NONE, archive_mode
 from shared.source_profiles import SourceProfilesUnavailable, cached_source_profile_strict, source_profile_configured
 
-__all__ = ['RawTarget', 'app_json_copy', 'bytes_copy', 'source_archive_mode', 'source_permits_raw_copy']
+__all__ = [
+    'RawTarget',
+    'app_json_copy',
+    'bytes_copy',
+    'source_archive_mode',
+    'source_permits_raw_copy',
+]
 
 _AWS_ERRORS = (ClientError, BotoCoreError)
 

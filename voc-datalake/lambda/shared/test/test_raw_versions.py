@@ -196,6 +196,16 @@ class TestPutRawVersion:
             put_raw_version(client, BUCKET, self.KEY, 'x', CONNECTOR)
         assert client.put_object.call_count == 1
 
+    @pytest.mark.parametrize(('code', 'status'), [('InvalidRequest', 412), ('OperationAborted', 409)])
+    def test_an_unrelated_code_with_a_conditional_status_raises(self, code: str, status: int) -> None:
+        # Only PreconditionFailed means "already archived"; only ConditionalRequestConflict is retried.
+        client = MagicMock()
+        client.put_object.side_effect = _client_error(code, status)
+
+        with pytest.raises(ClientError):
+            put_raw_version(client, BUCKET, self.KEY, 'x', CONNECTOR)
+        assert client.put_object.call_count == 1
+
     def test_a_non_int_status_is_ignored(self) -> None:
         client = MagicMock()
         response: Any = {'Error': {'Code': 'AccessDenied'}, 'ResponseMetadata': {'HTTPStatusCode': '412'}}

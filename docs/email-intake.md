@@ -162,7 +162,9 @@ Set the budget to 0 to read no attachments and gate no replies at all (every suc
   `s3_raw_uri` names it, so retention and erasure delete it with the item. Filtered mail of such a source (a repeat in
   its thread, a reply without new information) is kept the same way with the S3 metadata `drop-reason`; spam, viruses,
   automatic and unreadable mail, duplicates and mail over the sender cap never are (so the caps still bound storage).
-  The `inbound-raw/` copy above is unchanged.
+  The `inbound-raw/` copy above is unchanged. The copy is written before the item is queued (the queued item names
+  it); if queueing then fails, the copy stays with no item pointing at it, and a redelivery of the same mail maps to
+  the same key (its content hash), so it writes nothing new.
 - Customer data under `pii: redact` keeps no sender address, so an erasure by email cannot match it
   (there is nothing to match); under `allow` the lower-cased address is kept and erasure finds it.
 

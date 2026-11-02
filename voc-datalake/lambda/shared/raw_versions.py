@@ -46,7 +46,19 @@ from botocore.exceptions import ClientError
 
 from shared.archive_keys import archive_key_stem
 
-__all__ = ['RAW_PREFIX', 'UNKNOWN_VERSION', 'Connector', 'app_connector', 'content_digest', 'folder_of', 'item_folder', 'item_stem', 'parse_item_key', 'put_raw_version', 'version_key']
+__all__ = [
+    'RAW_PREFIX',
+    'UNKNOWN_VERSION',
+    'Connector',
+    'app_connector',
+    'content_digest',
+    'folder_of',
+    'item_folder',
+    'item_stem',
+    'parse_item_key',
+    'put_raw_version',
+    'version_key',
+]
 
 RAW_PREFIX: Final = 'raw/'
 CONNECTOR_META: Final = 'connector'
@@ -156,7 +168,10 @@ def _error(e: ClientError) -> tuple[str, int]:
 
 
 def _is(error: tuple[str, int], expected: tuple[str, int]) -> bool:
-    return error[0] == expected[0] or error[1] == expected[1]
+    """Match on the error code; fall back to the HTTP status only when the code is empty, so an
+    unrelated 412 / 409 is never read as "already archived" / "concurrent write"."""
+    code, status = error
+    return code == expected[0] if code else status == expected[1]
 
 
 def put_raw_version(

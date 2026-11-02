@@ -19,6 +19,8 @@ BUCKET = RAW_BUCKET
 QUEUE = 'https://sqs.example.com/queue'
 _ENABLED_FORM = {'Item': {'form_id': 'deadbeef', 'enabled': True, 'collect_email': True}}
 BODY = {'text': 'The checkout is slow', 'rating': 2, 'email': 'Ann@Example.com', 'page_url': 'https://shop/x'}
+#: Form copies are opt-in: an admin-saved feedback_form profile that permits one.
+_ALLOW = [{'id': 'feedback_form', 'label': 'Forms', 'pii': 'allow'}]
 
 
 @pytest.fixture
@@ -30,7 +32,7 @@ def raw_s3() -> Iterator[Any]:
 def _submit(handler: Any, api_gateway_event: Any, lambda_context: Any, sqs: MagicMock,
             profiles: list[dict] | None = None, *, body: dict | None = None, form: dict | None = None) -> dict:
     with (
-        seeded_source_profiles(profiles),
+        seeded_source_profiles(_ALLOW if profiles is None else profiles),
         patch.object(handler, 'PROCESSING_QUEUE_URL', QUEUE),
         patch.object(handler, 'sqs', sqs),
         patch.object(handler, 'aggregates_table') as table,
@@ -107,6 +109,16 @@ def test_email_and_name_are_kept_only_when_the_form_collects_them(
 def test_a_redact_profile_keeps_no_raw_copy(raw_s3, feedback_form_handler, api_gateway_event, lambda_context):
     record = _submit(feedback_form_handler, api_gateway_event, lambda_context, MagicMock(),
                      [{'id': 'feedback_form', 'label': 'Forms', 'pii': 'redact'}])
+
+    assert _objects(raw_s3) == []
+    assert record.get('s3_raw_uri') is None
+
+
+def test_no_copy_is_written_until_an_admin_saves_a_feedback_form_profile(
+    raw_s3, feedback_form_handler, api_gateway_event, lambda_context,
+):
+    # The route is public: an upgraded deployment never starts persisting submissions silently.
+    record = _submit(feedback_form_handler, api_gateway_event, lambda_context, MagicMock(), [])
 
     assert _objects(raw_s3) == []
     assert record.get('s3_raw_uri') is None

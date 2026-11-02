@@ -2,10 +2,11 @@
 
 Written before the source policy and the normalisation touch the body, so the lake keeps what
 the customer typed: ``raw/feedback_form/{YYYY}/{MM}/{DD}/{feedback id}/{sha16}.json`` with
-connector ``feedback_form`` at the app release (``shared/raw_copy.py``). Only when the
-``feedback_form`` source profile permits a raw copy: a redact / summary-only profile keeps none
-(privacy wins). The queued message references it (``s3_raw_uri``), so the retention worker
-deletes it with the item. A failed write is logged; the submission is still queued.
+connector ``feedback_form`` at the app release (``shared/raw_copy.py``). Opt-in: only once an
+admin has saved a ``feedback_form`` source profile that permits a raw copy; a redact /
+summary-only profile keeps none (privacy wins). The queued message references it (``s3_raw_uri``),
+so the retention worker deletes it with the item. A failed write is logged; the submission is
+still queued.
 
 The route is public, so the copy holds ONLY the fields the route validates and bounds
 (``SUBMITTED_FIELDS``), never the rest of the body: an extra field of any size is not kept, the
@@ -23,6 +24,7 @@ from typing import Any, Final
 from shared.archive_keys import archive_key_stem
 from shared.raw_copy import app_json_copy
 from shared.source_policy import raw_archive_allowed
+from shared.source_profiles import source_profile_configured
 
 __all__ = ['FEEDBACK_FORM_SOURCE', 'archive_submission']
 
@@ -55,10 +57,13 @@ def archive_submission(form_id: str, form: Mapping[str, Any], feedback_id: str, 
                        now: datetime) -> str | None:
     """The ``s3://`` URI of the submission's raw copy; None when the policy forbids one or the write failed.
 
-    ``validated`` = ``(text, dimensions)`` as the route validated them (``_validated_submission``,
-    ``_widget_dimensions``): the copy keeps those, never the body's own ``text`` / ``dimensions``.
+    OPT-IN like the board copies: written only once an admin has saved a ``feedback_form`` source
+    profile that permits a copy (the route is public and anonymous traffic supplies the content, so a
+    deployment never starts persisting it silently on upgrade). ``validated`` = ``(text, dimensions)``
+    as the route validated them (``_validated_submission``, ``_widget_dimensions``): the copy keeps
+    those, never the body's own ``text`` / ``dimensions``.
     """
-    if not raw_archive_allowed(profile):
+    if not raw_archive_allowed(profile) or not source_profile_configured(FEEDBACK_FORM_SOURCE):
         return None
     text, dimensions = validated
     return app_json_copy(FEEDBACK_FORM_SOURCE, now.date(), archive_key_stem(feedback_id),
