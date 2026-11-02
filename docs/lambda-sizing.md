@@ -272,9 +272,12 @@ any other fixed-cost resource) appears in a default synth.
 
 `-c performanceTier=true` is the one switch for a deployment that chooses performance over the lowest bill, for
 example the platform run as a managed service instead of a proof of concept. It turns on every opt-in feature that
-carries a fixed monthly cost. Today that is SnapStart for the four functions below (the same as `-c snapStart=true`).
-Absent or `false` leaves each feature to its own flag; anything else fails the synth
-(`lib/utils/performance-tier.ts`).
+carries a fixed monthly cost, and the paid security features. Today that is SnapStart for the four functions below
+(the same as `-c snapStart=true`), AWS WAF on the SPA distribution and the API stage (`-c enableWaf=true`) and the
+Cognito Plus plan on both user pools (`-c cognitoPlus=true`); see
+[deployment.md → AWS WAF and Cognito Plus](deployment.md#aws-waf-and-cognito-plus-opt-in). The flag keeps its name
+although it now covers security too. Absent or `false` leaves each feature to its own flag; anything else fails the
+synth (`lib/utils/performance-tier.ts`).
 
 Not in the tier yet, and why: SnapStart on further functions and provisioned concurrency need production
 cold-start and traffic data to pick the functions and the numbers; DynamoDB Accelerator (DAX) runs inside a VPC, a

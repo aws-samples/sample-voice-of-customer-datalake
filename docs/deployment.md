@@ -88,7 +88,9 @@ or set it in `voc-datalake/cdk.context.json`. An invalid value fails the synth.
 | `inboundEmailDomain` (+ `inboundEmailHostedZoneId`, `inboundEmailHostedZoneName`, `inboundEmailRuleSet`, `inboundEmailCreateIdentity`) | none | Receives feedback by email through SES ([email-intake.md](email-intake.md)) |
 | `deploymentPrefix` | none | Namespaces a second copy in the same account and region ([Two Deployments](#two-deployments-in-one-account-and-region)) |
 | `mcpReservedConcurrency` | `20` | Reserved concurrency of the MCP endpoint ([below](#reserved-concurrency-of-the-mcp-endpoint--c-mcpreservedconcurrency)) |
-| `performanceTier` | `false` | `true` turns on every performance feature that carries a fixed monthly cost (today: `snapStart`); for a deployment that runs as a managed service rather than a sample ([lambda-sizing.md](lambda-sizing.md#the-performance-tier--c-performancetier)) |
+| `performanceTier` | `false` | `true` turns on every paid optimisation at once: the fixed-cost performance features (`snapStart`) and the paid security features (`enableWaf`, `cognitoPlus`); for a deployment that runs as a managed service rather than a sample ([lambda-sizing.md](lambda-sizing.md#the-performance-tier--c-performancetier)) |
+| `enableWaf` | `false` | `true` puts AWS WAF in front of the SPA distribution and the API stage (a fixed monthly cost, about $18 plus $0.60 per million requests; off by default per [TENETS.md](../TENETS.md), tenet 7) ([below](#aws-waf-and-cognito-plus-opt-in)) |
+| `cognitoPlus` | `false` | `true` moves both user pools to the Cognito Plus plan with threat protection in audit mode ($0.020 per monthly active user, no free tier) ([below](#aws-waf-and-cognito-plus-opt-in)) |
 | `snapStart` | `false` | `true` turns on Lambda SnapStart for the four cold-start-bound APIs (a fixed monthly cache charge, about $20; off by default per [TENETS.md](../TENETS.md), tenet 7) ([lambda-sizing.md](lambda-sizing.md#snapstart-off-by-default)) |
 | `mcpTokenMinting`, `mcpOAuthCursorCallbacks`, `mcpOAuthWebCallbacks`, `mcpOAuthResourceIndicator` | see [mcp.md](mcp.md) | MCP token minting and OAuth client settings |
 | `brandName` | `MyBrand` (`VoC Analytics` in the committed file) | Brand name stamped on feedback forms and their submissions |
@@ -791,8 +793,8 @@ and the all-features shape, and fails on any resource or setting that bills whet
 SnapStart, provisioned concurrency, NAT gateways, Elastic IPs, interface VPC endpoints, EC2 instances, ECS services,
 RDS, ElastiCache, DAX, OpenSearch, MSK, Redshift, DocumentDB, Neptune, Global Accelerator, PROVISIONED DynamoDB or Kinesis capacity, an API Gateway cache cluster, a CloudFront dedicated IP, or a hosted zone
 the app creates ([TENETS.md](../TENETS.md), tenet 7). Such a feature goes behind an opt-in context flag, listed in
-`OPT_IN_FIXED_COSTS` (`lib/test-support/fixed-cost-rules.ts`) with exactly what it adds (today: `snapStart`, and `performanceTier`, which turns it on).
-A new performance feature reads `performanceTierEnabled` (`lib/utils/performance-tier.ts`) as well as its own flag. Lambda reserved concurrency costs nothing
+`OPT_IN_FIXED_COSTS` (`lib/test-support/fixed-cost-rules.ts`) with exactly what it adds (today: `snapStart`, `enableWaf`, and `performanceTier`, which turns both on).
+A new paid feature reads `enabledByOwnFlagOrTier` (`lib/utils/performance-tier.ts`) for its own flag and the tier. Lambda reserved concurrency costs nothing
 and is allowed. The same gate counts the resources billed per resource per month (`COUNTED_FIXED_COSTS`): the default
 synth and the all-features synth each hold exactly one customer-managed KMS key (the Core key; reuse it, with a narrow
 key-policy statement for a service principal) and the known baseline of three Secrets Manager secrets, which a later
@@ -1037,6 +1039,50 @@ carries `features.passkey: true`, and the SPA offers nothing in a browser
 without WebAuthn. Essentials bills about $0.015 per monthly active user after the
 first 10,000, which are free. A passkey is bound to the domain: moving the site
 to another domain means everyone adds a new one.
+
+**MFA is not required, and passkeys do not change that for cdk-nag.** cdk-nag's `AwsSolutions-COG2` passes only
+when a pool's `MfaConfiguration` is `ON` (required); it stays acknowledged on both pools. In Cognito a passkey is a
+FIRST factor and cannot be a second factor after a password. With MFA required, a passkey with user verification
+counts as multi-factor only when the pool's WebAuthn `FactorConfiguration` is `MULTI_FACTOR_WITH_USER_VERIFICATION`,
+and every person who still signs in with a password must also set up TOTP, SMS or email MFA
+([Cognito: things to know about MFA](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-mfa.html)).
+The board pool signs in with an emailed code, and Cognito refuses required MFA in a pool that allows `EMAIL_OTP`.
+
+### AWS WAF and Cognito Plus (opt-in)
+
+Both are off by default and turned on per deployment, each with its own flag, or together with
+`-c performanceTier=true` (the one switch for every paid optimisation).
+
+**AWS WAF (`-c enableWaf=true`, `lib/utils/waf.ts`).** Two web ACLs, each allowing by default and holding the AWS
+managed rule groups Amazon IP reputation list, Known bad inputs and the Core rule set (CRS), plus a per-IP rate-based
+rule (5-minute window):
+
+| Web ACL | Where | Protects | Rate limit per IP |
+|---|---|---|---|
+| `FrontendWebAcl` (scope `CLOUDFRONT`) | `VocWebSearchStack`, us-east-1 (CloudFront requires it there) | the SPA distribution, incl. `/avatars/*` and `/prototypes/*` | 10,000 requests |
+| `ApiWebAcl` (scope `REGIONAL`) | `VocApiStack`, the app region | the API `v1` stage (the per-method throttles stay) | 5,000 requests |
+
+On the API two CRS rules only count, because the API legitimately carries what they block: `SizeRestrictions_BODY`
+(bodies over 8 KB: CSV and JSON imports, conversation saves, documents) and `CrossSiteScripting_BODY` (stored
+documents, prototypes, reviews and assistant answers contain HTML). No WAF logging is configured: only CloudWatch
+metrics and sampled requests. With WAF on, `VocWebSearchStack` is created even when web search is off and no use-case
+form is filed, and `VocCoreStack` reads the CloudFront ACL's ARN from it: a CloudFormation export when the app region
+is us-east-1, CDK's SSM-backed cross-region reference otherwise (the same mechanism the API and processing stacks use
+for the web-search gateway; the account needs a us-east-1 bootstrap). To turn WAF off again, deploy `VocCoreStack`
+first (it stops reading the ARN), then the rest; a single `--all` run can stop on "export in use".
+
+Price ([AWS WAF pricing](https://aws.amazon.com/waf/pricing/)): $5.00 per web ACL and $1.00 per rule or managed rule
+group per month (prorated hourly), plus $0.60 per million requests. Each ACL holds four billed rules, so about
+$9 a month each, **$18 a month for both**, plus the requests (10 million a month adds $6). The managed rule groups
+used here carry no extra subscription fee.
+
+**Cognito Plus (`-c cognitoPlus=true`, `lib/utils/cognito-plus.ts`).** Both user pools move from Essentials to Plus,
+with threat protection (compromised-credential detection, adaptive authentication) in **audit** mode: every sign-in
+is scored and its risk recorded, nothing is blocked, so it cannot lock anyone out. Review the risk events, then switch
+to full function in the console or in code if you want enforcement. Passkeys and the board's email codes keep working
+(Plus includes Essentials). Price ([Cognito pricing](https://aws.amazon.com/cognito/pricing/)): $0.020 per monthly
+active user with no free tier, against Essentials' $0.015 after 10,000 free; 1,000 active users cost $20 a month on
+Plus and nothing on Essentials. Usage-based, so no fixed cost.
 
 ## Frontend Deployment
 
