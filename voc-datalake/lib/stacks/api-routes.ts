@@ -15,6 +15,7 @@ import {
   publicWebhookEndpointSuppressions,
 } from '../utils/nag-suppressions';
 import { addBrowserPreflight as cors, type ApiGateway } from './api-gateway';
+import { publicBodyValidation } from './api-request-validation';
 import { CHAT_STREAM_TIMEOUT, type AssistantLambdas } from './api-assistant-lambdas';
 import type { DataLambdas } from './api-data-lambdas';
 import type { EngagementLambdas } from './api-engagement-lambdas';
@@ -230,7 +231,8 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
     // argument before deleting either entry as duplicative.
     const publicFeedbackFormMethods = [
       cors(feedbackFormItem.addResource('config')).addMethod('GET', feedbackFormIntegration),
-      cors(feedbackFormItem.addResource('submit')).addMethod('POST', feedbackFormIntegration),
+      cors(feedbackFormItem.addResource('submit')).addMethod('POST', feedbackFormIntegration,
+        publicBodyValidation(api, 'FeedbackFormSubmission')),
       cors(feedbackFormItem.addResource('iframe')).addMethod('GET', feedbackFormIntegration),
     ];
     for (const publicMethod of publicFeedbackFormMethods) {
@@ -328,7 +330,8 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   // them by a test, because a mistyped key throttles nothing and says nothing.
   const publicBallotMethods = [
     cors(votingSessionItem.addResource('config')).addMethod('GET', ballotsIntegration),
-    cors(votingSessionItem.addResource('submit')).addMethod('POST', ballotsIntegration),
+    cors(votingSessionItem.addResource('submit')).addMethod('POST', ballotsIntegration,
+      publicBodyValidation(api, 'BallotSubmission')),
   ];
   for (const publicMethod of publicBallotMethods) {
     acknowledgeNagOnResource(publicMethod, publicBallotEndpointSuppressions);
