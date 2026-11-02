@@ -36,8 +36,6 @@ aws-lambda-powertools==3.38.0
 ruff==0.17.3
 # Dead code: functions, classes and variables nothing uses (config in pyproject.toml).
 vulture==2.16
-# mutmut 2.x on purpose: it mutates the named file in place and runs the tests you give it
-# (scripts/mutate-python.sh). Not a gate: a report on what a change touched.
-mutmut==2.5.1
-# mutmut's `patch` extra, exactly: `scripts/mutate-python.sh --patch` reads the diff with it.
-whatthepatch==0.0.6
+# Mutation testing, behind scripts/mutate-python.sh (+ scripts/mutmut_run.py). Not a gate: a report on what a
+# change touched. Pinned exactly: the script builds mutmut 3's stage and line filter on its internals.
+mutmut==3.8.1

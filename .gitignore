@@ -60,6 +60,9 @@ coverage_html/
 # Quality-gate tool state (scripts/validate.sh, scripts/mutation-report.sh)
 # validate.sh: per-run step logs (.cache/validate/logs/) and per-worktree tsc build info.
 .cache/
+# mutmut 3 (scripts/mutate-python.sh runs it in voc-datalake/.cache/mutmut/; `mutants/` is its working copy when
+# run by hand). `.mutmut-cache` and `*.py.bak` are mutmut 2 leftovers in older checkouts.
+mutants/
 .mutmut-cache
 *.py.bak
 .stryker-tmp/

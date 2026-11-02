@@ -38,7 +38,7 @@ EXIT_CLEAN, EXIT_FINDINGS, EXIT_ERROR = 0, 1, 2
 #: Never scanned: dependencies, build output, vendored layers, caches.
 SKIP_DIRS = frozenset({
     'node_modules', '.venv', 'cdk.out', 'dist', 'build', 'coverage', '__pycache__', '.git', '.cache',
-    '.stryker-tmp', '.mutmut-cache', 'layers', 'coverage_html',
+    '.stryker-tmp', '.mutmut-cache', 'mutants', 'layers', 'coverage_html',
 })
 #: Never production Python: the TypeScript stream Lambda and the plugin template (copied by hand, never deployed).
 NON_PRODUCTION_PARTS = frozenset({'stream', '_template'})

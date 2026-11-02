@@ -55,7 +55,7 @@ EXTENSION = re.compile(r'\.(?:md|py|ts|tsx|mjs|cjs|js|json|sh|ya?ml|toml|txt|htm
 GONE = re.compile(r'\b(?:deleted|removed|retired|gone|no longer|was|were|used to|old|former|renamed|moved|replaced|instead of)\b',
                   re.IGNORECASE)
 #: Not part of the tree a doc describes (dependency and cache dirs; `layers/` IS: it holds requirement files).
-TREE_SKIP = frozenset({'node_modules', '.venv', 'cdk.out', '__pycache__', '.git', '.cache', '.stryker-tmp', '.mutmut-cache',
+TREE_SKIP = frozenset({'node_modules', '.venv', 'cdk.out', '__pycache__', '.git', '.cache', '.stryker-tmp', '.mutmut-cache', 'mutants',
                        '.ruff_cache', 'coverage_html'})
 NOT_JUDGED_PARTS = frozenset({'dist', 'cdk.out', '.venv', 'coverage_html', 'node_modules', 'build', 'coverage', '.cache'})
 ROW = re.compile(r'^\|\s*([A-Z][A-Z/ ,]*?)\s*\|\s*([^|]+)\|')

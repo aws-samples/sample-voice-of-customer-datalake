@@ -31,7 +31,7 @@ export class AuditError extends Error {}
 /** Never scanned: dependencies, build output, vendored layers, caches (audit_common.py SKIP_DIRS). */
 const SKIP_DIRS = new Set([
   'node_modules', '.venv', 'cdk.out', 'dist', 'build', 'coverage', '__pycache__', '.git', '.cache',
-  '.stryker-tmp', '.mutmut-cache', 'layers', 'coverage_html',
+  '.stryker-tmp', '.mutmut-cache', 'mutants', 'layers', 'coverage_html',
 ])
 /** Tests, specs, test support, fixtures and dev mocks (audit_common.py `_TEST_PATH`). */
 const TEST_PATH = /(^|\/)(test|tests|__tests__|__fixtures__|test-support|e2e)\/|(^|\/)test_[^/]*\.py$|_test\.py$|(^|\/)conftest\.py$|\.(test|spec)\.[cm]?[jt]sx?$|-fixtures\.[jt]sx?$|(^|\/)mock[^/]*\.[cm]?js$/
