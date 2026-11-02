@@ -17,7 +17,7 @@ Set the region with `AWS_REGION`, `AWS_DEFAULT_REGION` or `--profile`. The CDK C
 | Area | `global` (default) | `eu` |
 |---|---|---|
 | Bedrock calls | `global.` cross-region inference profiles: may be served in any commercial region | `eu.` inference profiles: served only in EU regions |
-| IAM | `global.` profile ARNs | **Only** the `eu.` profile ARNs. A stray `global.` call is AccessDenied, not a silent residency breach |
+| IAM | `global.` profile ARNs, the in-Region model and the Region-agnostic global model (`arn:aws:bedrock:::foundation-model/…`), both only through those profiles | **Only** the `eu.` profile ARNs, and each model in the profile's EU destination Regions, only through those profiles. A stray `global.` call is AccessDenied, not a silent residency breach |
 | Stored / allowlisted model ids | Canonical `global.…` | Unchanged (still canonical). The prefix is mapped at call time |
 | Web search (AgentCore gateway) | On by default | **Never deployed.** An explicit `-c enableWebSearch=true` throws, because the connector runs only in us-east-1 |
 | Persona avatars | Image model in us-west-2 | **Disabled** (`AVATARS_ENABLED=false`); personas have no avatar |
@@ -77,6 +77,27 @@ Source-policy redaction ([source-policies.md](source-policies.md)) works in two 
   regex redaction only.
 
 For sources where names in free text matter, use `pii: summary_only`.
+
+## Bedrock IAM grant and destination Regions
+
+AWS authorizes a geographic cross-Region call against the `eu.` profile in your region AND the foundation model
+in every destination Region the profile can route to
+([geographic cross-Region inference](https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html)).
+The grant lists those Regions explicitly (no Region wildcard), from the "Geo: EU" table on each model's card in
+the Bedrock user guide, in `EU_PROFILE_DESTINATION_REGIONS` (`lib/utils/model-allowlist.ts`). From every EU
+source Region the profiles route to `eu-central-1`, `eu-north-1`, `eu-south-1`, `eu-south-2`, `eu-west-1` and
+`eu-west-3`; from `eu-central-2` and `eu-west-2` also to the source Region itself. The synth refuses
+`inferenceScope=eu` in any other region.
+
+If AWS adds a destination Region to the `eu.` profiles, the calls Bedrock routes there fail with
+`AccessDeniedException` (on `foundation-model/<model>` in the new Region) until the table lists it. To update:
+
+```bash
+aws bedrock get-inference-profile --region <your region> \
+  --inference-profile-identifier eu.anthropic.claude-sonnet-5-5 --query "models[].modelArn"
+```
+
+add the new Region to `EU_PROFILE_DESTINATION_REGIONS`, then redeploy.
 
 ## Choosing a region
 
