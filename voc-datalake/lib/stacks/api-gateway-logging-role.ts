@@ -32,7 +32,7 @@ import { removeAwsManagedPolicy } from '../utils/lambda-log-grants';
 import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 
 /** The managed policy replaced here. */
-export const API_GATEWAY_PUSH_TO_LOGS_POLICY = 'service-role/AmazonAPIGatewayPushToCloudWatchLogs';
+const API_GATEWAY_PUSH_TO_LOGS_POLICY = 'service-role/AmazonAPIGatewayPushToCloudWatchLogs';
 
 /** The prefix API Gateway gives every execution-log group it creates. */
 const EXECUTION_LOG_GROUP_PREFIX = 'API-Gateway-Execution-Logs_';
