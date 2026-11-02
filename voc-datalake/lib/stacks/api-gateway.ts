@@ -7,7 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag } from '../utils/nag-ack';
 import type { PluginManifest } from '../plugin-loader';
 import { apiGatewayRequestValidationSuppressions } from '../utils/nag-suppressions';
 import { apiAccessLogFormat } from './api-access-log';
@@ -512,7 +512,7 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
     cloudWatchRoleRemovalPolicy: cdk.RemovalPolicy.DESTROY
   });
 
-  NagSuppressions.addResourceSuppressions(api, apiGatewayRequestValidationSuppressions, true);
+  acknowledgeNag(api, apiGatewayRequestValidationSuppressions);
   applyApiTlsPolicy(api);
 
   // Gateway responses for CORS on errors

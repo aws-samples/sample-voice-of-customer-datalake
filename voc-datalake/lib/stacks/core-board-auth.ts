@@ -31,7 +31,7 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNagOnResource } from '../utils/nag-ack';
 import { cognitoSecuritySuppressions } from '../utils/nag-suppressions';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
@@ -219,7 +219,7 @@ export function createBoardAuth(ctx: CoreBuildContext, inputs: BoardAuthInputs):
   });
   // Kept if a change ever forces a replacement: a board user's email keys their supports.
   retainOnReplace(userPool);
-  NagSuppressions.addResourceSuppressions(userPool, [
+  acknowledgeNagOnResource(userPool, [
     ...cognitoSecuritySuppressions,
     {
       id: 'AwsSolutions-COG1',

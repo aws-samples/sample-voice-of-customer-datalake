@@ -11,7 +11,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { LOG_RETENTION } from '../utils/log-retention';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import { Construct } from 'constructs';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import { pluginSystemSuppressions } from '../utils/nag-suppressions';
 import { stackModelArns } from '../utils/model-allowlist';
 import { dependencyLayer } from '../utils/dependency-layers';
@@ -260,7 +260,7 @@ export class VocProcessingStack extends VocStack {
       enforceSSL: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
-    NagSuppressions.addResourceSuppressions(aggregatorFailureQueue, [{
+    acknowledgeNagOnResource(aggregatorFailureQueue, [{
       id: 'AwsSolutions-SQS3',
       reason: 'This queue IS the terminal failure record (a DynamoDB stream event source on-failure destination); nothing consumes it, so it has no DLQ of its own',
     }]);
@@ -342,7 +342,6 @@ export class VocProcessingStack extends VocStack {
         ? { url: props.webSearchGatewayUrl, arn: props.webSearchGatewayArn, toolName: props.webSearchToolName }
         : undefined,
     });
-    NagSuppressions.addResourceSuppressions(this.agentRunStateMachine, pluginSystemSuppressions(), true);
 
     // ============================================
     // RESEARCH WORKFLOW (Step Functions)
@@ -431,7 +430,7 @@ export class VocProcessingStack extends VocStack {
 
     // Step Functions workflow
     this.researchStateMachine = createResearchStateMachine(this, (baseName) => this.uniqueName(baseName), researchStepLambda);
-    NagSuppressions.addResourceSuppressions(this.researchStateMachine, pluginSystemSuppressions(), true);
+    acknowledgeNag(this.researchStateMachine, pluginSystemSuppressions([researchStepLambda]));
 
     // ============================================
     // WEB SEARCH (AgentCore Gateway — see VocWebSearchStack)

@@ -15,14 +15,14 @@ import { LOG_RETENTION } from '../utils/log-retention';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import * as fs from 'fs';
 import * as path from 'path';
-import { NagSuppressions } from 'cdk-nag';
 import { ALLOWED_MODEL_IDS } from '../utils/model-allowlist';
+import { acknowledgeNag, acknowledgeNagOnResource } from '../utils/nag-ack';
 import {
   cognitoSecuritySuppressions,
-  cdkCustomResourceSuppressions,
   dynamoDbGsiSuppressions,
   kmsEncryptionSuppressions,
   lambdaBasicExecutionRoleSuppressions,
+  providerFrameworkSuppressions,
 } from '../utils/nag-suppressions';
 import type { CoreBuildContext } from './core-cdn';
 import { retainOnReplace } from '../utils/retain-on-replace';
@@ -147,7 +147,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   // Deleted with the stack (teardown), but KEPT if a change ever forces a replacement:
   // every user's `sub` keys project ownership, conversations, memory and plan approvals.
   retainOnReplace(userPool);
-  NagSuppressions.addResourceSuppressions(userPool, cognitoSecuritySuppressions);
+  acknowledgeNagOnResource(userPool, cognitoSecuritySuppressions);
 
   // User Pool Client
   const userPoolClient = userPool.addClient('VocWebClient', {
@@ -257,20 +257,10 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
   });
   adminBootstrap.node.addDependency(adminGroup);
 
-  NagSuppressions.addResourceSuppressions(adminBootstrapLambda, lambdaBasicExecutionRoleSuppressions, true);
-  NagSuppressions.addResourceSuppressionsByPath(
-    stack,
-    `${stack.stackName}/AdminBootstrapProvider/framework-onEvent`,
-    [
-      ...cdkCustomResourceSuppressions,
-      ...lambdaBasicExecutionRoleSuppressions,
-      {
-        id: 'AwsSolutions-IAM5',
-        reason: 'The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to AdminBootstrapLambda only (same pattern as ModelAgreementLambda).',
-        appliesTo: [{ regex: '/Resource::<.*AdminBootstrapLambda.*\\.Arn>:\\*/' }],
-      },
-    ],
-    true
+  acknowledgeNag(adminBootstrapLambda, lambdaBasicExecutionRoleSuppressions);
+  acknowledgeNag(
+    adminBootstrapProvider.node.findChild('framework-onEvent'),
+    providerFrameworkSuppressions(adminBootstrapLambda, 'AdminBootstrapLambda', 'ModelAgreementLambda'),
   );
 
   // ============================================
@@ -329,24 +319,12 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
     // grantWriteData() emits the standard GSI (<TableArn>/index/*) and KMS
     // (GenerateDataKey*/ReEncrypt*) wildcards, so reuse the shared
     // suppressions rather than restating the same evidence.
-    NagSuppressions.addResourceSuppressions(
-      modelPinLambda,
-      [...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions, ...kmsEncryptionSuppressions],
-      true,
-    );
-    NagSuppressions.addResourceSuppressionsByPath(
-      stack,
-      `${stack.stackName}/ModelPinProvider/framework-onEvent`,
-      [
-        ...cdkCustomResourceSuppressions,
-        ...lambdaBasicExecutionRoleSuppressions,
-        {
-          id: 'AwsSolutions-IAM5',
-          reason: 'The CDK Provider framework invokes its handler by qualified ARN, requiring a version/alias wildcard scoped to ModelPinLambda only (same pattern as AdminBootstrapLambda).',
-          appliesTo: [{ regex: '/Resource::<.*ModelPinLambda.*\\.Arn>:\\*/' }],
-        },
-      ],
-      true
+    acknowledgeNag(modelPinLambda, [
+      ...lambdaBasicExecutionRoleSuppressions, ...dynamoDbGsiSuppressions([aggregatesTable]), ...kmsEncryptionSuppressions,
+    ]);
+    acknowledgeNag(
+      modelPinProvider.node.findChild('framework-onEvent'),
+      providerFrameworkSuppressions(modelPinLambda, 'ModelPinLambda', 'AdminBootstrapLambda'),
     );
   }
 

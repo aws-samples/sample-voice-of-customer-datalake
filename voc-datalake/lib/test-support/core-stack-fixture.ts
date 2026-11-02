@@ -7,7 +7,8 @@ import { Template } from 'aws-cdk-lib/assertions';
 import { VocCoreStack } from '../stacks/core-stack';
 import { SYNTH_ACCOUNT, SYNTH_REGION, committedFeatureFlags } from './synth-app';
 
-export function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
+/** VocCoreStack alone, constructed but not synthesized (for suites that read the construct tree). */
+export function buildCoreStack(context: Record<string, unknown> = {}): VocCoreStack {
   // Skip asset bundling (Docker) — template assertions only need structure.
   const app = new cdk.App({
     context: {
@@ -17,8 +18,11 @@ export function synthCoreTemplate(context: Record<string, unknown> = {}): Templa
       ...context,
     },
   });
-  const stack = new VocCoreStack(app, 'TestCoreStack', {
+  return new VocCoreStack(app, 'TestCoreStack', {
     env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION },
   });
-  return Template.fromStack(stack);
+}
+
+export function synthCoreTemplate(context: Record<string, unknown> = {}): Template {
+  return Template.fromStack(buildCoreStack(context));
 }

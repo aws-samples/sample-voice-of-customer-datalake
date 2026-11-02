@@ -29,7 +29,7 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import type * as lambda from 'aws-cdk-lib/aws-lambda';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNagOnResource } from '../utils/nag-ack';
 
 import { booleanContextFlag } from '../utils/context-flag';
 import type { GlobalMcp } from './global-mcp';
@@ -198,7 +198,7 @@ export class McpOAuth {
       { proxy: true, scopePermissionToMethod: false });
     const anonymous = (resource: apigateway.IResource, verb: string): void => {
       const method = resource.addMethod(verb, integration, { authorizationType: apigateway.AuthorizationType.NONE });
-      NagSuppressions.addResourceSuppressions(method, [
+      acknowledgeNagOnResource(method, [
         { id: 'AwsSolutions-APIG4', reason: 'Deliberately anonymous OAuth facade/discovery route: an MCP client has no credential before it signs in (docs/mcp.md "OAuth sign-in"); throttled per method' },
         { id: 'AwsSolutions-COG4', reason: 'Deliberately anonymous OAuth facade/discovery route (see APIG4)' },
       ]);

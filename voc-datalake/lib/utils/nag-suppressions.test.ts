@@ -1,87 +1,98 @@
 /**
- * Every `{ regex }` `appliesTo` in nag-suppressions.ts means what its reason says.
+ * The acknowledgement lists of nag-suppressions.ts name exactly the findings their reasons describe.
  *
- * The trap this pins: a backslash in a single-quoted TS string is dropped (`'\.Arn>/\*'` is the text
- * `.Arn>/*`), so `\.` became "any character" and `/\*` became "zero or more slashes", and every regex
- * suppressed far more than it named (`<Bucket.Arn>/*` also swallowed every `<Bucket.Arn>/<prefix>/*`
- * grant, and `.Arn>:*` matched the bare ARN). Each regex must compile the way cdk-nag compiles it
- * (`NagSuppressionHelper.toRegEx`), be anchored, escape every literal `.` before `Arn>` / `Name>` and every
- * literal `*`, and accept / refuse the findings below.
+ * cdk-nag 3 matches an acknowledgement to a finding by its exact id, so what is pinned here is the RENDERED
+ * id (lib/utils/nag-ack.ts `renderNagFinding`): each list builder turns the resource it is handed into the
+ * id cdk-nag reports for that grant, from the stack that holds the grant (a cross-stack reference becomes
+ * the producer's export name), and nothing broader. lib/nag-suppressions.test.ts then proves, over the real
+ * app, that every rendered id matches a finding cdk-nag computes.
  */
+import * as cdk from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import type { IConstruct } from 'constructs';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
-import * as suppressionModule from './nag-suppressions';
+import { acknowledgeNag, acknowledgementsOn, renderNagFinding, type NagAck } from './nag-ack';
+import {
+  cdkAssetsSuppressions, dynamoDbGsiSuppressions, pluginSystemSuppressions, rawDataPrefixSuppressions,
+  s3ObjectSuppressions,
+} from './nag-suppressions';
 
-const RegexItemSchema = z.object({ regex: z.string() });
-const SuppressionSchema = z.object({ id: z.string(), appliesTo: z.array(z.unknown()).optional() });
+const env = { account: '111111111111', region: 'us-east-1' };
 
-/** Every regex string declared in the module: the exported lists plus the one list builder. */
-function declaredRegexes(): string[] {
-  const lists: unknown[] = [...suppressionModule.pluginSystemSuppressions()];
-  for (const value of Object.values(suppressionModule)) {
-    if (Array.isArray(value)) lists.push(...value);
-  }
-  return lists.flatMap((entry) => {
-    const appliesTo = SuppressionSchema.parse(entry).appliesTo ?? [];
-    return appliesTo.flatMap((item) => {
-      const parsed = RegexItemSchema.safeParse(item);
-      return parsed.success ? [parsed.data.regex] : [];
-    });
+function fixture() {
+  const app = new cdk.App();
+  const producer = new cdk.Stack(app, 'pfx-Producer', { env });
+  const consumer = new cdk.Stack(app, 'pfx-Consumer', { env });
+  const table = new dynamodb.Table(producer, 'Feedback', { partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING } });
+  const bucket = new s3.Bucket(producer, 'Raw');
+  const fn = new lambda.Function(consumer, 'Job', {
+    runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
   });
+  return { producer, consumer, table, bucket, fn };
 }
 
-/** cdk-nag's own parse (`toRegEx`): `/<source>/<flags>`, the source ending at the LAST slash. */
-function compile(regex: string): RegExp {
-  const first = regex.indexOf('/');
-  const last = regex.lastIndexOf('/');
-  if (first < 0 || last <= first) throw new Error(`not a /source/flags regex: ${regex}`);
-  return new RegExp(regex.slice(first + 1, last), regex.slice(last + 1));
+/** The logical id of `construct`'s CloudFormation resource. */
+function logicalId(construct: IConstruct): string {
+  const cfn = construct.node.defaultChild;
+  if (!(cfn instanceof cdk.CfnElement)) throw new Error(`${construct.node.path} has no CloudFormation resource`);
+  return cdk.Stack.of(cfn).getLogicalId(cfn);
 }
 
-const regexes = declaredRegexes();
-const matchesAny = (findingId: string) => regexes.some((r) => compile(r).test(findingId));
+const rendered = (scope: cdk.Stack, acks: readonly NagAck[]) =>
+  acks.flatMap((ack) => (ack.findings ?? []).map((finding) => renderNagFinding(scope, finding)));
 
-describe('nag-suppressions.ts appliesTo regexes', () => {
-  it('declares regexes (vacuity guard)', () => {
-    expect(regexes.length).toBeGreaterThan(20);
+describe('nag-suppressions.ts list builders', () => {
+  it('renders a table index grant in its own stack and through the export in another', () => {
+    const { producer, consumer, table } = fixture();
+    const id = logicalId(table);
+    expect(rendered(producer, dynamoDbGsiSuppressions([table]))).toStrictEqual([`Resource::<${id}.Arn>/index/*`]);
+    const [imported, ...rest] = rendered(consumer, dynamoDbGsiSuppressions([table]));
+    expect(rest).toStrictEqual([]);
+    // The export name CDK gives the automatic cross-stack reference: `<producer>:ExportsOutputFnGetAtt<id>Arn<hash>`.
+    expect(imported).toMatch(new RegExp(`^Resource::pfx-Producer:ExportsOutputFnGetAtt${id}Arn[0-9A-F]{8}/index/\\*$`));
   });
 
-  it.each(regexes)('%s compiles, is anchored and escapes its literals', (regex) => {
-    const source = compile(regex).source;
-    expect(source.startsWith('^')).toBe(true);
-    expect(source.endsWith('$')).toBe(true);
-    // A literal `.` before a CloudFormation attribute must be escaped.
-    expect(source).not.toMatch(/(^|[^\\])\.(Arn|Name)>/);
-    // Every `*` is either the `.*` quantifier or an escaped literal `\*`.
-    expect(source).not.toMatch(/(^|[^.\\])\*/);
+  it('names each object grant and raw-bucket prefix exactly, never the bucket or another prefix', () => {
+    const { producer, bucket } = fixture();
+    const arn = `<${logicalId(bucket)}.Arn>`;
+    expect(rendered(producer, s3ObjectSuppressions([bucket.arnForObjects('*'), bucket.arnForObjects('raw/*')])))
+      .toStrictEqual([`Resource::${arn}/*`, `Resource::${arn}/raw/*`]);
+    expect(rendered(producer, rawDataPrefixSuppressions(bucket, ['avatars/*', 'projects/*/product_docs/extracted/*'])))
+      .toStrictEqual([`Resource::${arn}/avatars/*`, `Resource::${arn}/projects/*/product_docs/extracted/*`]);
   });
 
-  it.each([
-    'Resource::<FeedbackTableF528636C.Arn>/index/*',
-    'Resource::<ResearchStepLambdaDB89028D.Arn>:*',
-    'Resource::<RawDataBucket57F26C03.Arn>/*',
-    'Resource::<RawDataBucket57F26C03.Arn>/raw/*',
-    'Resource::<RawDataBucket57F26C03.Arn>/avatars/*',
-    'Resource::<RawDataBucket57F26C03.Arn>/projects/*/product_docs/extracted/*',
-    'Resource::<RawDataBucket57F26C03.Arn>/scratch/research_jobs/*',
-    'Resource::<WebsiteBucket75C24D94.Arn>/*',
-    'Resource::arn:aws:s3:::cdk-hnb659fds-assets-111111111111-us-east-1/*',
-  ])('suppresses the finding it names: %s', (findingId) => {
-    expect(matchesAny(findingId)).toBe(true);
+  it('names the version/alias wildcard of each function, not the bare ARN', () => {
+    const { consumer, fn } = fixture();
+    expect(rendered(consumer, pluginSystemSuppressions([fn]))).toStrictEqual([`Resource::<${logicalId(fn)}.Arn>:*`]);
   });
 
-  it.each([
-    // The unescaped forms matched all of these.
-    'Resource::<FeedbackTableF528636C.Arn>/index',
-    'Resource::<FeedbackTableF528636CxArn>/index/*',
-    'Resource::<ResearchStepLambdaDB89028D.Arn>',
-    'Resource::<RawDataBucket57F26C03.Arn>/new-prefix/*',
-    'Resource::<RawDataBucket57F26C03.Arn>/raw/other_source/*',
-    'Resource::<WebsiteBucket75C24D94.Arn>/assets/*',
-    'Resource::<S3ImportBucket676867E6.Arn>',
-    'Resource::arn:aws:s3:::cdk-hnb659fds-assets-111111111111-us-east-1/extra/*',
-  ])('does not suppress a finding no reason covers: %s', (findingId) => {
-    expect(matchesAny(findingId)).toBe(false);
+  it('names the stack\'s own bootstrap asset bucket', () => {
+    const { consumer } = fixture();
+    // `stack.formatArn`, like the asset bucket CDK grants on: this bare App has no partition-literals flag, so
+    // the partition stays the pseudo parameter (the app's cdk.json renders `arn:aws:`).
+    expect(rendered(consumer, cdkAssetsSuppressions(consumer)))
+      .toStrictEqual(['Resource::arn:<AWS::Partition>:s3:::cdk-hnb659fds-assets-111111111111-us-east-1/*']);
+  });
+});
+
+describe('acknowledgeNag', () => {
+  it('records one acknowledgement per finding, with the reason', () => {
+    const { producer, table } = fixture();
+    acknowledgeNag(producer, [{ id: 'AwsSolutions-IAM5', reason: 'a reason long enough', findings: ['Action::kms:ReEncrypt*'] }]);
+    acknowledgeNag(producer, dynamoDbGsiSuppressions([table]));
+    expect(acknowledgementsOn(producer).map((ack) => ack.id)).toStrictEqual([
+      'AwsSolutions-IAM5[Action::kms:ReEncrypt*]', `AwsSolutions-IAM5[Resource::<${logicalId(table)}.Arn>/index/*]`,
+    ]);
+    expect(acknowledgementsOn(producer)[0]?.reason).toBe('a reason long enough');
+  });
+
+  it('refuses a missing reason and an empty finding list', () => {
+    const { producer } = fixture();
+    expect(() => acknowledgeNag(producer, [{ id: 'AwsSolutions-SQS3', reason: 'short' }])).toThrow(/reason/);
+    expect(() => acknowledgeNag(producer, [{ id: 'AwsSolutions-IAM5', reason: 'a reason long enough', findings: [] }]))
+      .toThrow(/no finding/);
   });
 });

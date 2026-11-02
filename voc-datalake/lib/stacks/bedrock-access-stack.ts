@@ -27,7 +27,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { z } from 'zod';
 import { ALLOWED_FOUNDATION_MODEL_IDS, IMAGE_MODEL_ID, IMAGE_MODEL_REGION } from '../utils/model-allowlist';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag } from '../utils/nag-ack';
 import { cdkCustomResourceSuppressions, lambdaBasicExecutionRoleSuppressions, pluginSystemSuppressions, bedrockAgreementSuppressions, marketplaceSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
 
 /**
@@ -178,22 +178,11 @@ export class AnthropicUseCaseSubmission extends Construct {
     // Object-based rather than path-based: this is a Construct, so a hardcoded
     // `<stackName>/SubmitAnthropicUseCase/...` path would not resolve (the real
     // path gains this construct's id as a segment).
-    NagSuppressions.addResourceSuppressions(
-      submitUseCase,
-      [...cdkCustomResourceSuppressions, ...bedrockAgreementSuppressions],
-      true
-    );
+    acknowledgeNag(submitUseCase, [...cdkCustomResourceSuppressions, ...bedrockAgreementSuppressions]);
 
     // The AwsCustomResource construct creates a singleton Lambda with a
-    // deterministic UUID. It is scoped to the STACK, not to this construct,
-    // so these paths stay stack-relative.
-    //
-    // Built from the stack's CONSTRUCT ID, not `stack.stackName`: these are
-    // matched against `node.path`, which uses construct ids. The two only
-    // coincide while no explicit `stackName` is set, so using stackName here
-    // would silently stop matching — and therefore silently drop the
-    // suppressions — the day someone overrides it.
-    suppressAwsCustomResourceProvider(stack, stack.node.id);
+    // deterministic UUID. It is scoped to the STACK, not to this construct.
+    suppressAwsCustomResourceProvider(stack);
 
     // Outputs. Informational only — nothing imports these.
     new cdk.CfnOutput(this, 'BedrockAccessStatus', {
@@ -319,32 +308,16 @@ class ModelAgreementProvider {
       }),
     });
     
-    // Suppress CDK custom resource Lambda runtime warnings for Provider.
-    //
-    // pluginSystemSuppressions() takes NO prefix here, deliberately. It is a
-    // function of the deployment prefix because the findings it suppresses quote
-    // a concrete ARN, but the only findings it covers on THIS construct are the
-    // `<...ModelAgreementLambda...Arn>:*` version/alias wildcards — CDK logical-id
-    // references, which carry no VoC physical name and so no prefix. The
-    // ingestor/schedule entries in that set simply do not apply here.
-    //
-    // BedrockModelAgreements is a Construct, not a VocStack, so it has no access to
-    // the prefix either; threading one through would be work with no effect. If
-    // that ever stopped being true, the zero-warnings assertion over the
-    // PREFIXED synth in lib/app-deployment-prefix.test.ts would fail, since an
-    // unmatched suppression leaves an AwsSolutions-IAM5 finding behind.
-    NagSuppressions.addResourceSuppressions(
-      modelAgreementProvider,
-      [...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions, ...pluginSystemSuppressions()],
-      true
-    );
+    // The CDK Provider framework invokes ModelAgreementLambda by qualified ARN (`<...Arn>:*`).
+    acknowledgeNag(modelAgreementProvider, [
+      ...cdkCustomResourceSuppressions, ...lambdaBasicExecutionRoleSuppressions,
+      ...pluginSystemSuppressions([modelAgreementLambda]),
+    ]);
     
     // Suppress for ModelAgreementLambda
-    NagSuppressions.addResourceSuppressions(
-      modelAgreementLambda,
-      [...lambdaBasicExecutionRoleSuppressions, ...bedrockAgreementSuppressions, ...marketplaceSuppressions],
-      true
-    );
+    acknowledgeNag(modelAgreementLambda, [
+      ...lambdaBasicExecutionRoleSuppressions, ...bedrockAgreementSuppressions, ...marketplaceSuppressions,
+    ]);
 
     this.serviceToken = modelAgreementProvider.serviceToken;
   }

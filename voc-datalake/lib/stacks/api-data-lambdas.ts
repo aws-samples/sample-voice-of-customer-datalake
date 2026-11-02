@@ -7,7 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as path from 'path';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag } from '../utils/nag-ack';
 import { loadPlugins, aggregateSecretsByPlugin, getEnabledPlugins, getPluginsWithIngestor, secretConfigKeysByPlugin, type PluginManifest } from '../plugin-loader';
 import { serviceQuotasReadSuppressions } from '../utils/nag-suppressions';
 import { stackModelArns } from '../utils/model-allowlist';
@@ -353,7 +353,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     actions: ['servicequotas:GetServiceQuota'],
     resources: [`arn:${cdk.Aws.PARTITION}:servicequotas:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:bedrock/*`],
   }));
-  NagSuppressions.addResourceSuppressions(settingsRole, serviceQuotasReadSuppressions, true);
+  acknowledgeNag(settingsRole, serviceQuotasReadSuppressions);
   // Administration → AI models → Image generation: test call, access status, Marketplace (api-marketplace.ts).
   grantImageModelProbe(settingsRole);
   // Design system (docs/company-context.md): the Figma/GitHub tokens are

@@ -6,10 +6,11 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
-import { AwsSolutionsChecks, NagSuppressions } from 'cdk-nag';
+import { Template } from 'aws-cdk-lib/assertions';
+import { AwsSolutionsChecks } from 'cdk-nag';
 import { z } from 'zod';
 
+import { acknowledgeNag } from '../utils/nag-ack';
 import { lambdaBasicExecutionRoleSuppressions } from '../utils/nag-suppressions';
 import { BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS, pythonIntConstant } from '../test-support/cross-language-invariants';
 import { IamPolicySchema, isAttachedToRole, statementActions } from '../test-support/iam-statements';
@@ -511,21 +512,19 @@ describe('the optional invoker ARN narrows invoke to one principal', () => {
  * would have reported a wildcard on it. This runs cdk-nag over the shape that
  * DOES contain it, which is the only place those findings can appear.
  */
-it('leaves no unsuppressed cdk-nag finding on the fixture provider', () => {
-  const stack = buildApiStack(
-    { enableVerificationFixtureProvider: true }, [], 'b', [new AwsSolutionsChecks()],
-  );
-  // Mirror ONLY the suppression bin/voc-datalake.ts applies for the shared
+it('leaves no unacknowledged cdk-nag finding on the fixture provider', () => {
+  const stack = buildApiStack({ enableVerificationFixtureProvider: true }, [], 'b');
+  // Mirror ONLY the acknowledgement bin/voc-datalake.ts applies for the shared
   // createLambdaRole helper's AWSLambdaBasicExecutionRole. Deliberately not the
   // rest of that file's list: every other rule — IAM5 wildcards above all —
   // must still be able to fail this case.
-  NagSuppressions.addStackSuppressions(stack, lambdaBasicExecutionRoleSuppressions, true);
-  const annotations = Annotations.fromStack(stack);
-  const provider = [...annotations.findError('*', Match.anyValue()),
-    ...annotations.findWarning('*', Match.anyValue())]
-    .filter((annotation) => annotation.id.includes('VerificationFixtureProvider'))
-    .map((annotation) => `${annotation.id} ${JSON.stringify(annotation.entry.data)}`);
-  expect(provider, `unsuppressed findings:\n${provider.join('\n')}`).toStrictEqual([]);
+  acknowledgeNag(stack, lambdaBasicExecutionRoleSuppressions);
+  Template.fromStack(stack); // synthesize first: cdk-nag 3 checks the prepared tree
+  const provider = new AwsSolutionsChecks().validateScope(stack).violations
+    .flatMap((violation) => violation.violatingResources
+      .filter((resource) => resource.constructPath?.includes('VerificationFixtureProvider') === true)
+      .map((resource) => `${resource.constructPath} ${violation.ruleName}`));
+  expect(provider, `unacknowledged findings:\n${provider.join('\n')}`).toStrictEqual([]);
 }, SYNTH_TIMEOUT_MS); // a cdk-nag synth of the prefixed shape, well past 5 s
 
 /** The provider function's properties, parsed rather than asserted. */

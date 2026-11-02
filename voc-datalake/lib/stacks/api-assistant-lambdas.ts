@@ -7,7 +7,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as path from 'path';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { stackModelArns, embeddingModelArn } from '../utils/model-allowlist';
 import { AGENTS_API_FUNCTION_BASE_NAME, MEMORY_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { snapStartFunctionProps } from '../utils/snapstart';
@@ -117,24 +117,25 @@ export function createAssistantLambdas(
   aggregatesTable.grant(agentsRole, 'dynamodb:GetItem');
   kmsKey.grantEncryptDecrypt(agentsRole);
   agentRunStateMachine.grantStartExecution(agentsRole);
+  const agentExecutionsArn = stack.formatArn({
+    service: 'states',
+    resource: 'execution',
+    resourceName: `${agentRunStateMachine.stateMachineName}:*`,
+    arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+  });
   agentsRole.addToPolicy(new iam.PolicyStatement({
     actions: ['states:StopExecution', 'states:DescribeExecution'],
     // Executions of THIS machine only. Built from the machine's name token so
     // the stop grant can never reach the research or document workflows.
-    resources: [stack.formatArn({
-      service: 'states',
-      resource: 'execution',
-      resourceName: `${agentRunStateMachine.stateMachineName}:*`,
-      arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
-    })],
+    resources: [agentExecutionsArn],
   }));
   // `:*` is the EXECUTION name (one execution per run, named by run id) — the
   // machine itself is pinned, so this can reach no other workflow.
-  NagSuppressions.addResourceSuppressions(agentsRole, [{
+  acknowledgeNag(agentsRole, [{
     id: 'AwsSolutions-IAM5',
     reason: 'StopExecution/DescribeExecution address executions by name, one per agent run (named by run_id); the state machine part of the ARN is pinned to voc-agent-run',
-    appliesTo: [{ regex: '/Resource::arn:aws:states:.*:execution:<.*AgentRunStateMachine.*\\.Name>:\\*/' }],
-  }], true);
+    findings: [resourceFinding(agentExecutionsArn)],
+  }]);
 
   const agentsLambda = new lambda.Function(stack, 'AgentsApi', {
     functionName: ctx.uniqueName(AGENTS_API_FUNCTION_BASE_NAME),

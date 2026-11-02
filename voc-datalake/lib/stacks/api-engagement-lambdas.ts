@@ -7,7 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as path from 'path';
-import { NagSuppressions } from 'cdk-nag';
+import { acknowledgeNag, resourceFinding } from '../utils/nag-ack';
 import { getEnabledPlugins, loadPlugins } from '../plugin-loader';
 import { snapStartFunctionProps } from '../utils/snapstart';
 import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction';
@@ -49,15 +49,12 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
     enabledPlugins: getEnabledPlugins(loadPlugins(path.join(__dirname, '../../plugins')), ctx.props.enabledSources),
   });
   for (const statement of opsAlerts.statements) logsRole.addToPolicy(statement);
-  NagSuppressions.addResourceSuppressions(logsRole, [{
+  acknowledgeNag(logsRole, [{
     id: 'AwsSolutions-IAM5',
     reason: OPS_ALERTS_NAG_REASON,
-    appliesTo: [
-      { regex: '/^Resource::arn:(?:<AWS::Partition>|[^:<]+):cloudwatch:(?:<AWS::Region>|[^:<]+):(?:<AWS::AccountId>|[^:<]+):alarm:(.+-)?voc-alerts-<AWS::AccountId>-<AWS::Region>-\\*$/' },
-      // cloudwatch:DescribeAlarms only (read-only list call, authorized against alarm:*).
-      { regex: '/^Resource::arn:(?:<AWS::Partition>|[^:<]+):cloudwatch:(?:<AWS::Region>|[^:<]+):(?:<AWS::AccountId>|[^:<]+):alarm:\\*$/' },
-    ],
-  }], true);
+    // The prefixed write grant, and cloudwatch:DescribeAlarms (read-only list call, authorized against alarm:*).
+    findings: opsAlerts.alarmArns.map(resourceFinding),
+  }]);
 
   // Administration → System → Logs diagnostics: log search, failure-queue peek (api-logs-diagnostics.ts).
   const diagnosticsEnv = grantLogsDiagnostics(ctx, logsRole, {
