@@ -19,7 +19,7 @@ the platform package version.
 
 ## [5.77.00] - 2026-11-02
 
-Most cdk-nag findings are fixed in the infrastructure instead of acknowledged (588 → 121 in the default synth), and
+Most cdk-nag findings are fixed in the infrastructure instead of acknowledged (114 findings remain in the default synth, from 588 in 5.75.00), and
 AWS WAF and the Cognito Plus plan become opt-ins.
 
 ### Added
@@ -44,12 +44,20 @@ AWS WAF and the Cognito Plus plan become opt-ins.
   model, with `bedrock:InferenceProfileArn` and `aws:RequestedRegion` conditions) in shared customer-managed policies
   per stack; no Region wildcard. With `-c inferenceScope=eu` they list the `eu.` profiles' destination Regions
   ([docs/eu-deployment.md](docs/eu-deployment.md)).
+- **Lambda invoke grants** no longer carry CDK's version/alias wildcard (`<function arn>:*`) for a function that has
+  no version or alias: every caller (Step Functions tasks, CDK custom-resource providers, the Projects API's job
+  starts) invokes it unqualified. A SnapStart function (`live` alias) keeps it.
+- **API Gateway request validation** on the public JSON write routes (`POST /feedback-forms/{form_id}/submit`,
+  `POST /voting-sessions/{session_id}/submit`, `POST /oauth/register`): a body that does not match what the
+  handler accepts is answered 400 at the gateway (`{success:false, reason:'invalid', error:'invalid_request', …}`,
+  with the usual CORS headers) before any Lambda runs. The models are never stricter than the handlers; the
+  form-encoded `POST /unsubscribe`, `POST /oauth/token` and `POST /oauth/revoke` are not modelled.
 - **Point-in-time recovery** on the idempotency table (usage-based cost).
 - **Board user pool password policy**: 16 characters with every character class (board sign-in is by email code;
   the SPA's generated password already meets it).
 
 ### Security
-- 467 acknowledged cdk-nag findings are fixed rather than accepted; every remaining acknowledgement is a wildcard
+- Most acknowledged cdk-nag findings are fixed rather than accepted (114 remain in the default synth); every remaining acknowledgement is a wildcard
   AWS requires, a public route by design, or a paid opt-in that is off ([docs/code-audit.md](docs/code-audit.md)).
 
 ### Upgrade notes
