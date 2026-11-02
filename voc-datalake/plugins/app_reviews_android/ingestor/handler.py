@@ -20,6 +20,7 @@ from _shared.app_reviews_config import (
 )
 from _shared.app_reviews_utils import AppReviewsIngestor
 from _shared.base_ingestor import logger, metrics, tracer
+from _shared.raw_source import RAW_SOURCE_KEY
 from shared.invocation_cost import measure_invocation_cost
 from shared.radar_brands import radar_stamp
 
@@ -137,6 +138,9 @@ class AndroidAppReviewsIngestor(AppReviewsIngestor[AndroidAppConfig]):
                 else None
             ),
             "thumbs_up_count": review.get("thumbsUpCount", 0),
+            # The Google Play review as the library returned it: archived with the item, never queued
+            # (_shared/raw_source.py). Our own merge keys are left out.
+            RAW_SOURCE_KEY: {key: value for key, value in review.items() if key not in ("composite_id", "country")},
         }
 
 

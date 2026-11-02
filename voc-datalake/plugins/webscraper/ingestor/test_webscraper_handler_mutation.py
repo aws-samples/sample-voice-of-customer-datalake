@@ -41,6 +41,7 @@ from bs4 import BeautifulSoup
 from _shared.base_ingestor import logger as real_logger
 from _shared.base_ingestor import metrics as real_metrics
 from _shared.base_ingestor import tracer
+from _shared.raw_source import RAW_SOURCE_KEY
 from _shared.test.scoped_secret import scoped_secret
 from shared.test.clock import frozen_clock
 from shared.test.emf_fixtures import emf_metric_names
@@ -648,8 +649,22 @@ class TestScrapePage:
             patch.object(ingestor, '_fetch_soup', return_value=_soup(html)),
             patch.object(ingestor, '_extract_css_item', side_effect=[RuntimeError('boom'), {'ok': 1}]),
         ):
-            assert list(ingestor._scrape_page({'id': 'shop'}, URL)) == [{'ok': 1}]
+            # The surviving item carries its review element's outer HTML for the raw archive.
+            assert list(ingestor._scrape_page({'id': 'shop'}, URL)) == [{'ok': 1, RAW_SOURCE_KEY: self.REVIEW}]
         logger.exception.assert_called_once_with(f'Error extracting item from {URL}: boom')
+
+    def test_a_css_item_carries_the_review_element_not_the_page(self, ingestor):
+        page = '<html><body><h1>Shop</h1>' + self.REVIEW + '</body></html>'
+        with patch.object(ingestor, '_fetch_soup', return_value=_soup(page)):
+            [item] = list(ingestor._scrape_page({'id': 'shop', 'name': 'Shop'}, URL))
+        assert item[RAW_SOURCE_KEY] == self.REVIEW
+
+    def test_a_jsonld_item_carries_the_review_object(self, ingestor):
+        review = {'@type': 'Review', 'reviewBody': 'Really quite good', 'author': {'name': 'Ann'}}
+        page = f'<script type="application/ld+json">{json.dumps(review)}</script>'
+        with patch.object(ingestor, '_fetch_soup', return_value=_soup(page)):
+            [item] = list(ingestor._scrape_page({'id': 'shop', 'name': 'Shop', 'extraction_method': 'jsonld'}, URL))
+        assert item[RAW_SOURCE_KEY] == review
 
 
 # ---------------------------------------------------------------------------

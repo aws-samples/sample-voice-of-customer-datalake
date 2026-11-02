@@ -39,6 +39,7 @@ from aws_lambda_powertools.metrics.provider.cold_start import reset_cold_start_f
 
 from _shared.app_reviews_health import StorefrontFetch
 from _shared.base_ingestor import logger, metrics, tracer
+from _shared.raw_source import RAW_SOURCE_KEY
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
 from _shared.test.scoped_secret import scoped_secret
 from shared.test.emf_fixtures import emf_metric_names
@@ -260,11 +261,12 @@ def format_review(android) -> Callable[..., dict]:
 
 class TestFormattedReviewShape:
     def test_a_full_review(self, format_review):
-        assert format_review({
-            "content": "Nice", "score": 4, "at": _day(1), "userName": "kim", "country": "kr",
+        library_review = {
+            "content": "Nice", "score": 4, "at": _day(1), "userName": "kim",
             "reviewCreatedVersion": "2.1", "replyContent": "Thanks", "repliedAt": _day(2),
             "thumbsUpCount": 7,
-        }) == {
+        }
+        assert format_review({**library_review, "country": "kr"}) == {
             "id": "cid",
             "channel": "app_review_android",
             "text": "Nice",
@@ -282,6 +284,8 @@ class TestFormattedReviewShape:
             "developer_response": "Thanks",
             "developer_response_date": "2024-03-02T00:00:00+00:00",
             "thumbs_up_count": 7,
+            # The library's review as received, without our merge keys (composite_id, country).
+            RAW_SOURCE_KEY: library_review,
         }
 
     def test_a_bare_review_gets_every_default(self, format_review):

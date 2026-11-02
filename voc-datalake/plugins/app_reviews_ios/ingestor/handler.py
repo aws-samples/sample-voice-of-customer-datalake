@@ -20,6 +20,7 @@ from _shared.app_reviews_config import (
 )
 from _shared.app_reviews_utils import AppReviewsIngestor
 from _shared.base_ingestor import logger, metrics, tracer
+from _shared.raw_source import RAW_SOURCE_KEY
 from shared.invocation_cost import measure_invocation_cost
 from shared.radar_brands import radar_stamp
 
@@ -122,6 +123,8 @@ class IOSAppReviewsIngestor(AppReviewsIngestor[IOSAppConfig]):
             "country": review.get("country", ""),
             "developer_response": dev_response or None,
             **radar_stamp(app.radar_brand),
+            # The RSS entry as received: archived with the item, never queued (_shared/raw_source.py).
+            RAW_SOURCE_KEY: review.get("rss_entry"),
         }
 
 

@@ -17,6 +17,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from bs4 import BeautifulSoup
 
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
+from _shared.raw_source import RAW_SOURCE_KEY
 from shared.http_utils import MAX_PAGE_BYTES, UnsafeURLError, fetch_public_url
 from shared.invocation_cost import measure_invocation_cost
 from shared.producer_labels import message_labels
@@ -196,7 +197,8 @@ class WebScraperIngestor(BaseIngestor):
 
                     review_data = self._extract_from_jsonld_item(item, config, url)
                     if review_data:
-                        yield review_data
+                        # The JSON-LD Review object as published, for the raw archive (_shared/raw_source.py).
+                        yield {**review_data, RAW_SOURCE_KEY: item}
 
             except json.JSONDecodeError:
                 continue
@@ -371,7 +373,8 @@ class WebScraperIngestor(BaseIngestor):
                 logger.exception(f"Error extracting item from {url}: {e}")
                 continue
             if item is not None:
-                yield item
+                # The review element's outer HTML (not the page), bounded at 256 KB (_shared/raw_source.py).
+                yield {**item, RAW_SOURCE_KEY: str(container)}
 
     def _get_urls_to_scrape(self, config: dict) -> list[str]:
         """Get list of URLs to scrape based on config."""

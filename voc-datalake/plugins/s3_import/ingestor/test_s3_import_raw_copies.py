@@ -4,7 +4,6 @@ The original is kept only when the s3_import profile keeps whole files (allow, n
 GetObject + a conditional put; every item's archive carries the CSV row / JSON object it came from.
 """
 import hashlib
-import json
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +11,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from _shared import raw_original
+from _shared.raw_source import RAW_SOURCE_KEY
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
 from s3_import.ingestor import handler
 from shared.test.source_profile_fixtures import seeded_source_profiles, unreadable_source_profiles
@@ -99,5 +99,6 @@ class TestProcessFile:
             assert ingestor.process_file("import-bucket", "surveys/data.csv") == 2
 
         archive.assert_called_once_with(staged, RAW, "surveys/data.csv", CSV)
-        assert [json.loads(raw)["text"] for _item, raw in seen] == ["Great app", "Slow checkout"]
-        assert all(handler.RAW_ROW_KEY not in item for item, _raw in seen)
+        # Each item carries its CSV row to BaseIngestor.normalize_item, which archives it as raw_content.
+        assert [item[RAW_SOURCE_KEY] for item, _raw in seen] == [
+            {"id": "r1", "text": "Great app", "rating": "5"}, {"id": "r2", "text": "Slow checkout", "rating": "2"}]

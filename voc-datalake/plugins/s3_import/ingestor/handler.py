@@ -21,6 +21,7 @@ import boto3
 
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
 from _shared.raw_original import archive_original
+from _shared.raw_source import RAW_SOURCE_KEY
 from shared.import_runs import MAX_MESSAGES, S3_UPLOAD_ACTOR, ImportCounts, ImportRun, record_import_run
 from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
@@ -37,10 +38,6 @@ MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 # Where an operator archives ingested files by hand (`processed/<folder>/<file>`).
 PROCESSED_FOLDER = "processed"
-
-# The parsed row an item came from, carried to its raw archive (``raw_content``) and popped before
-# the item is normalized: an internal key no file field can collide with.
-RAW_ROW_KEY = "_s3_import_row"
 
 # What normalizing one parsed row can raise: AttributeError for a JSON row that is
 # not an object (no `.get`), TypeError/ValueError for a value of an unexpected
@@ -137,10 +134,10 @@ def _normalize_row(row: dict, source_name: str, default_channel: str) -> dict | 
 
 
 def _row_item(row: dict, source_name: str, default_channel: str) -> dict | None:
-    """``_normalize_row`` plus the source row under ``RAW_ROW_KEY`` (None when the row has no text)."""
+    """``_normalize_row`` plus the source row, for its raw archive (``_shared/raw_source.py``); None without text."""
     item = _normalize_row(row, source_name, default_channel)
     if item is not None:
-        item[RAW_ROW_KEY] = row
+        item[RAW_SOURCE_KEY] = row
     return item
 
 
@@ -324,8 +321,7 @@ class S3ImportIngestor(BaseIngestor):
         try:
             for item in parser(stream, source_name, report):
                 parsed += 1
-                row = item.pop(RAW_ROW_KEY, None)
-                normalized = self.normalize_item(item, json.dumps(row, default=str) if row is not None else None)
+                normalized = self.normalize_item(item)
                 batch.append(normalized)
                 if len(batch) >= 100:
                     # Count what SQS confirmed, not what was attempted:

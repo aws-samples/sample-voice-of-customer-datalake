@@ -42,6 +42,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 from aws_lambda_powertools.metrics.provider.cold_start import reset_cold_start_flag
 
+from _shared.raw_source import pop_raw_source
 from _shared.test.ingestor_fixtures import offline_ingestor_construction
 from s3_import.ingestor import handler
 from s3_import.ingestor.handler import (
@@ -97,8 +98,10 @@ def _context(function_name: str = "voc-s3-import-under-test") -> SimpleNamespace
 
 
 def _mark_normalized(item: dict, raw_content: str | None = None) -> dict:
-    """A typed stand-in for `BaseIngestor.normalize_item` that only marks the item."""
+    """A typed stand-in for `BaseIngestor.normalize_item` that only marks the item (and, like it,
+    takes the source row off for the raw archive: `_shared/raw_source.py`)."""
     del raw_content
+    pop_raw_source(item)
     return {**item, "_normalized": True}
 
 
