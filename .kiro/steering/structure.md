@@ -189,7 +189,7 @@ voice-of-customer-datalake/       # Root repository
 
 | Bucket | Structure | Purpose |
 |--------|-----------|---------|
-| `voc-raw-data-{account}-{region}` | `raw/{source}/{year}/{month}/{day}/{id}.json` | Raw scraped/ingested data archival — never deleted except by `voc-retention` (but NOT yet write-once: an item received again overwrites its file, see TENETS.md → D1); bucket deleted with the stack only under `-c protectData=false` |
+| `voc-raw-data-{account}-{region}` | `raw/{source}/{year}/{month}/{day}/{id}/{sha16}.json` (legacy objects: `…/{day}/{id}.json`, left in place) | Raw scraped/ingested data archival (bronze) — write-once (`If-None-Match`, enforced by the bucket policy; `lambda/shared/raw_versions.py`): an item received again with different content is a new object in its folder, nothing under `raw/` is overwritten or expires; objects carry `connector` / `connector-version` metadata; never deleted except by `voc-retention` (both layouts, every version); bucket deleted with the stack only under `-c protectData=false` (docs/data-lake-structure.md) |
 | `voc-raw-data-{account}-{region}` | `avatars/{project_id}/{persona_id}.png` | AI-generated persona avatars |
 
 ### DynamoDB Tables

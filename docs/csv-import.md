@@ -103,9 +103,11 @@ item; every other record naming a stored item is still a duplicate and skipped
 - **Metrics:** the item keeps its import day, so the aggregator moves the counters of the
   stream's MODIFY on that day (category, sentiment, urgency, channel), as for an in-place GitHub
   issue refresh ([processing-pipeline.md](processing-pipeline.md)).
-- **Raw archive:** under a retention period (per-item archives) the new copy is written over the
-  stored item's own archive key, so the item keeps one archive that retention deletes with it.
-  A kept-forever source archives the whole new file under `raw/csv_upload/…` as before.
+- **Raw archive:** under a retention period (per-item archives) the new copy is a NEW object in
+  the stored item's own folder (`…/<stem>/<sha16>.json`; for an item archived before that layout,
+  the folder next to its `…/<stem>.json`). The old version is kept, never overwritten; the item's
+  `s3_raw_uri` points at the newest, and retention deletes every version with the item. A
+  kept-forever source archives the whole new file under `raw/csv_upload/…` as before.
 - **Idempotency:** the correction's key is `<source>:<id>:csv:<digest>`, so the first import's
   idempotency record does not swallow it, while a redelivery of the same correction does.
 

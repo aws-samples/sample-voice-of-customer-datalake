@@ -362,8 +362,14 @@ characters such as `%0A` are fine.
 `normalize_item()` produces the message the processor validates: `id`, `source_platform`,
 `source_channel`, `url`, `text`, `rating`, `created_at`, `ingested_at`, `brand_name`,
 `brand_handles_matched`, the optional fields above, and `s3_raw_uri`. It first writes the raw item
-to `raw/<id>/<yyyy>/<mm>/<dd>/<item id>.json`, partitioned by the item's own `created_at` date, so a
-re-ingest overwrites the same object. If the S3 write fails, the item is sent inline in `raw_data`
+to `raw/<id>/<yyyy>/<mm>/<dd>/<item stem>/<sha16>.json`, partitioned by the item's own `created_at`
+date: one folder per item, one write-once object per distinct content (`<sha16>` hashes
+`raw_content` + `raw_item`, never a timestamp). A re-ingest of unchanged content writes nothing (S3
+answers 412 to the `If-None-Match: *` put and the existing URI is used); changed content is a new
+object next to the old one, never an overwrite ([data-lake-structure.md](data-lake-structure.md)). The
+object carries S3 metadata `connector` (the plugin id; `webhook_<id>` from a webhook) and
+`connector-version` (the manifest `version`, env `PLUGIN_VERSION`), and the JSON envelope a
+`connector` field with both. If the S3 write fails, the item is sent inline in `raw_data`
 instead, so the feedback is not lost.
 
 Before archiving and before queueing, the source's profile applies its PII policy (`allow`, `redact`
