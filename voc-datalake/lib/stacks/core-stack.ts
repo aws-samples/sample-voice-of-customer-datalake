@@ -460,9 +460,8 @@ export class VocCoreStack extends VocStack {
       { prefix: 'projects/' },
     );
 
-    // bin/voc-datalake.ts gives this stack only the basic-execution and
-    // cdk-assets suppressions, so everything the grants above generate has to be
-    // suppressed HERE rather than by widening the stack-level set: prefix-scoped
+    // bin/voc-datalake.ts gives this stack no stack-wide acknowledgement, so
+    // everything the grants above generate is acknowledged HERE: prefix-scoped
     // S3 object ARNs (the grant wildcards are rewritten to exact actions by lib/utils/exact-grants.ts;
     // the Claude grant names every model ARN exactly: lib/utils/claude-model-grant.ts).
     acknowledgeNag(productDocExtractor, [

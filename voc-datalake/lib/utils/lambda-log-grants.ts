@@ -1,7 +1,7 @@
 /**
  * Every Lambda function may write ONLY to its own log group (cdk-nag AwsSolutions-IAM4).
  *
- * Until 5.75 each function role held the AWS managed `service-role/AWSLambdaBasicExecutionRole`
+ * Until 5.76 each function role held the AWS managed `service-role/AWSLambdaBasicExecutionRole`
  * (logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents on `*`): any function could write to, and create,
  * any log group in the account. Every function now logs to a log group CloudFormation creates first (its own
  * `logGroup`, or the one lib/utils/log-retention.ts gives a function CDK created for us), so the role needs:
