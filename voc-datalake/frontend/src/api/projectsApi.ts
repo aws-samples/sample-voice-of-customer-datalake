@@ -505,6 +505,7 @@ export const projectsApi = {
 // error, so dropping `extends true` makes each `@ts-expect-error` unused (TS2578)
 // instead of silently disabling every control at once.
 type SignatureMustMatch<Verdict extends true> = Verdict
+/** @public A compile-time pin, exported so noUnusedLocals keeps it (knip's tag for an export nothing imports on purpose). */
 export type GenerateDocumentTakesTheSharedBody = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], GenerateDocumentBody>>
 // The non-vacuity controls. `SignatureMustMatch<BothWays<...>>` is also satisfied by a
 // `BothWays` that degenerates to `true` or collapses to one-way, each of which reports
@@ -514,6 +515,7 @@ export type GenerateDocumentTakesTheSharedBody = SignatureMustMatch<BothWays<Par
 // the directive unused.
 //
 // WIDENED side — a body with one extra member must NOT compare equal.
+/** @public A compile-time control, exported like the pin above. */
 // @ts-expect-error the declared parameter must NOT equal a body with an extra member
 export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], GenerateDocumentBody & { not_in_the_body: true }>>
 // NARROWED side — refuses a `BothWays` collapsed to its ONE-WAY form, which the
@@ -530,5 +532,6 @@ export type GenerateDocumentSignaturePinWouldSeeDrift = SignatureMustMatch<BothW
 // and deleting it left the collapse detected only by the other file. `Partial<...>` is
 // derived from the body, so it names no member and cannot go stale when the contract is
 // widened.
+/** @public A compile-time control, exported like the pin above. */
 // @ts-expect-error the declared parameter must NOT equal a body of optional members
 export type GenerateDocumentSignaturePinWouldSeeNarrowing = SignatureMustMatch<BothWays<Parameters<typeof projectsApi.generateDocument>[1], Partial<GenerateDocumentBody>>>
