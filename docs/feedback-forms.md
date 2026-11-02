@@ -215,8 +215,8 @@ Two properties surprise people:
 Submitted feedback follows the same processing pipeline as other data sources:
 
 1. **Submission**: the route validates the body, keeps the validated fields as sent in the raw lake
-   (`raw/feedback_form/{y}/{m}/{d}/<feedback id>/<sha16>.json`, connector `feedback_form`; only when the
-   `feedback_form` source profile permits a raw copy, [source-policies.md](source-policies.md)), applies the source
+   (`raw/feedback_form/{y}/{m}/{d}/<feedback id>/<sha16>.json`, connector `feedback_form`; opt-in: only once an
+   admin saves a `feedback_form` source profile that permits a raw copy, [source-policies.md](source-policies.md)), applies the source
    policy and sends the item, with `s3_raw_uri` naming that copy, to the SQS queue. The copy holds `text` and `dimensions` as
    validated (stripped, cleaned), `rating`, `page_url` and `custom_fields`, plus `email` / `name` only when the form
    collects them; any other body field and the participant link token are never kept. A failed raw write is logged and the

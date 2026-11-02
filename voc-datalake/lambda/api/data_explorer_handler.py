@@ -93,6 +93,8 @@ _OBJECT_EXISTS_ERROR_CODES = frozenset({'PreconditionFailed', 'ConditionalReques
 FAILED_LIST = 'Failed to list S3 objects'
 FAILED_PREVIEW = 'Failed to preview file'
 FAILED_SAVE = 'Failed to save file'
+# The connector a raw object created here records (shared/raw_versions.py), at the app release.
+DATA_EXPLORER_CONNECTOR = 'data_explorer'
 
 
 app = create_api_resolver()
@@ -296,10 +298,6 @@ def preview_s3_file():
         logger.exception("Failed to preview S3 file")
         raise ServiceError(FAILED_PREVIEW) from e
     return preview
-
-
-# The connector a raw object created here records (shared/raw_versions.py), at the app release.
-DATA_EXPLORER_CONNECTOR = 'data_explorer'
 
 
 def _put_object(bucket_name: str, key: str, content: str) -> None:
