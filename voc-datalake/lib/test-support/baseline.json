@@ -424,7 +424,7 @@
       }
     },
     "VocWebSearchStack": {
-      "templateSha256": "983944efddf5ef9887275b96187fe9494e404c160edb27a6ee16ef8460176237",
+      "templateSha256": "66e884016051e1296760aad644b50ccb0b46b60be116b724a81e00cd709e3558",
       "names": {
         "physicalNames": [
           "AWS::BedrockAgentCore::Gateway Name = voc-web-search-<AWS::AccountId>-<AWS::Region>"
