@@ -413,7 +413,7 @@ stack and through the export in another, each object grant and raw-bucket prefix
 bucket or another prefix), and `acknowledgeNag` refuses a missing reason or an empty finding list.
 
 **Fixed, not acknowledged (5.77.00).** Most findings are fixed in the infrastructure, so only what AWS or the
-design requires stays acknowledged (121 findings in the default synth, from 588):
+design requires stays acknowledged (114 findings in the default synth, from 588 in 5.75.00):
 
 - `lib/utils/exact-grants.ts` rewrites CDK's grant wildcards after every stack is built: `kms:GenerateDataKey*` /
   `kms:ReEncrypt*` and the S3 `GetObject*` / `List*` / `DeleteObject*` / `GetBucket*` / `Abort*` families become
@@ -424,6 +424,9 @@ design requires stays acknowledged (121 findings in the default synth, from 588)
   account-wide API Gateway role.
 - `lib/utils/claude-model-grant.ts`: Claude models are granted in AWS's documented three-part cross-Region shape
   (profile, in-Region model, Region-agnostic model, each with its conditions), never with a Region wildcard.
+- `lib/utils/unqualified-invoke.ts` (through exact-grants) drops `grantInvoke`'s `<function arn>:*` for a function
+  with no version or alias; `lib/stacks/api-request-validation.ts` validates the public JSON write routes at
+  API Gateway (APIG2).
 - Opt-ins (`-c enableWaf=true`, `-c cognitoPlus=true`, both on with `-c performanceTier=true`) satisfy CFR2,
   APIG3 and COG8 when chosen; while off, their acknowledgement names the flag.
 
