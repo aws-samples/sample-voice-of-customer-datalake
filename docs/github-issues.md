@@ -178,8 +178,8 @@ copies survive only as the versioned bucket's noncurrent versions, for as long a
 them.
 
 Every item's untouched GitHub payload is archived to the raw bucket
-(`raw/github_issues/{y}/{m}/{d}/<id>.json`) by both the ingestor and the webhook, like every
-source.
+(`raw/github_issues/{y}/{m}/{d}/<id>/<sha16>.json`, one write-once object per content version) by both the
+ingestor and the webhook, like every source.
 
 ### `issue_attributes`
 

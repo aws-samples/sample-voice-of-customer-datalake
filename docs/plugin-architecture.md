@@ -259,8 +259,10 @@ webhook plugin. Webhooks have no feedback-table access.
 ### S3 trigger and the shared secret
 
 - **S3 trigger:** `ObjectCreated` notifications on the import bucket `voc-import` for each suffix.
-  The bucket is versioned, KMS-encrypted and expires staged files after 90 days
-  ([data-lake-structure.md](data-lake-structure.md)).
+  The bucket is versioned, KMS-encrypted and expires staged files after 90 days: it is an inbox. The
+  ingestor keeps each file's original in the raw lake (`raw/s3_import/…`, `plugins/_shared/raw_original.py`)
+  when the `s3_import` profile keeps whole files, and a reprocess needs the staged file
+  ([data-lake-structure.md](data-lake-structure.md#every-ingested-source-has-a-raw-copy)).
 - **Shared secret:** `voc-datalake/api-credentials` (with the account/region suffix), seeded with
   every loaded plugin's `secrets` as `<id>_<key>`, plus `webscraper_configs: "[]"`. The ingestion
   stack outputs `ApiSecretsArn`, `LoadedPlugins` and `EnabledPlugins`.

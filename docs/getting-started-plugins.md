@@ -174,7 +174,8 @@ def lambda_handler(event, context):
 What the base class does for you when `run()` is called:
 
 - skips the run while the plugin's circuit breaker is open;
-- archives each item to `raw/my_reviews/<yyyy>/<mm>/<dd>/<id>.json` in the raw data bucket,
+- archives each item to `raw/my_reviews/<yyyy>/<mm>/<dd>/<id>/<sha16>.json` in the raw data bucket
+  (with the payload you put on it under `RAW_SOURCE_KEY`, `_shared/raw_source.py`, as `raw_content`),
   applies the source's PII policy and sends the items to the processing queue in batches of 100;
 - after the loop, saves the id of the **last** yielded item as the `last_id` watermark. That is
   why the example asks the API for the oldest reviews first;
