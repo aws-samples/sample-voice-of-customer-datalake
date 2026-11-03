@@ -384,7 +384,7 @@ def test_the_job_fails_the_ask_when_email_was_turned_off(world, lambda_context, 
 def test_an_erased_recipient_fails_as_erased(world, lambda_context):
     a, b = _people(lambda_context, 'a@example.com', 'b@example.com')
     ask = _ask(lambda_context, person_ids=[a, b])['ask']
-    ok(lambda_context, 'DELETE', f'/participants/people/{b}')
+    ok(lambda_context, 'DELETE', f'/participants/people/{b}', body={'legal_basis': 'GDPR art. 17 request #1'})
     run_send_job(lambda_context, world)
     detail = ok(lambda_context, 'GET', f'/participants/asks/{ask["ask_id"]}')
     assert sorted((r['status'], r['error']) for r in detail['recipients']) == [('failed', 'erased'), ('sent', None)]

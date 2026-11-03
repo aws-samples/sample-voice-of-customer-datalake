@@ -205,6 +205,8 @@ def retention_tables() -> Iterator[dict]:
         s3.create_bucket(Bucket='bkt')
         tables = {'feedback': create_pk_sk_table(retention.FEEDBACK_TABLE, resource),
                   'aggregates': create_pk_sk_table(retention.AGGREGATES_TABLE, resource)}
+        if retention.PROJECTS_TABLE:  # the lineage phase marks artifacts that cited a deleted item (6.00.00)
+            tables['projects'] = create_pk_sk_table(retention.PROJECTS_TABLE, resource)
         tables['aggregates'].put_item(Item=PROFILES_ROW)
         with patch.object(retention, 'get_dynamodb_resource', return_value=resource), \
                 patch.object(retention, 'get_s3_client', return_value=s3), \
