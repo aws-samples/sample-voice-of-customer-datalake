@@ -17,8 +17,6 @@ from __future__ import annotations
 from typing import Final
 
 __all__ = [
-    'LEGACY_LEGAL_BASIS',
-    'MAX_LEGAL_BASIS_CHARS',
     'legal_basis_or_legacy',
     'required_legal_basis',
 ]
