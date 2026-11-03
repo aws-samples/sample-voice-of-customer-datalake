@@ -1,5 +1,5 @@
 """Workspace delete records (shared/delete_audit.py)."""
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
@@ -76,13 +76,16 @@ class TestRecordDelete:
         sks = {c.kwargs['Item']['sk'] for c in table.put_item.call_args_list}
         assert len(sks) == 2
 
-    def test_a_failed_write_never_raises(self):
+    def test_a_failed_write_never_raises_and_logs_the_kind_only(self):
         table = MagicMock()
         table.put_item.side_effect = ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'no'}}, 'PutItem')
-        record_delete(table, kind='persona', target={'id': 'x'}, actor=None)
+        with patch('shared.delete_audit.logger') as log:
+            assert record_delete(table, kind='persona', target={'id': 'x'}, actor=None) is None
+        log.warning.assert_called_once_with(
+            'Could not record a delete', extra={'kind': 'persona', 'error_type': 'ClientError'})
 
     def test_a_missing_table_never_raises(self):
-        record_delete(None, kind='persona', target={'id': 'x'}, actor=None)
+        assert record_delete(None, kind='persona', target={'id': 'x'}, actor=None) is None
 
     @mock_aws
     def test_writes_to_a_real_table(self):

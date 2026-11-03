@@ -68,6 +68,7 @@ def test_the_list_keeps_the_newest_entries_only(table):
     _put(table, 'DOC#a', document_id='a', derivation={'persona_ids': ids})
     mark_citing_documents(table, 'p1', [DeletedSource('persona', i) for i in ids], deleted_at=NOW)
     stored = _deleted(table, 'DOC#a')
+    assert stored is not None
     assert [e['id'] for e in stored] == ids[-MAX_DELETED_SOURCES:]
 
 

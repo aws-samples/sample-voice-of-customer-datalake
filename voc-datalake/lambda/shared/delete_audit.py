@@ -64,7 +64,7 @@ def actor_from_event(event: Mapping[str, Any], *, admin: bool | None = None) -> 
     return {'sub': sub, 'kind': 'admin' if is_admin else 'user'}
 
 
-def _texts(values: Mapping[str, str]) -> dict[str, str]:
+def _texts(values: Mapping[str, object]) -> dict[str, str]:
     """The non-empty string values, each cut to a bounded length."""
     return {str(k): v[:_MAX_TEXT] for k, v in values.items() if isinstance(v, str) and v}
 

@@ -545,7 +545,7 @@ def delete_conversation(conversation_id: str):
     _require_valid_conversation_id(conversation_id)
     response = conversations_table.delete_item(
         Key={'pk': caller_pk, 'sk': f'CONV#{conversation_id}'}, ReturnValues='ALL_OLD')
-    if isinstance(response, dict) and response.get('Attributes'):
+    if response.get('Attributes'):
         record_delete(conversations_table, kind='conversation', target={'conversation_id': conversation_id},
                       actor=actor_from_event(app.current_event.raw_event))
     return {'success': True}
