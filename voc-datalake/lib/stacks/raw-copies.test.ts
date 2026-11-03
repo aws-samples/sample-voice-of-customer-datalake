@@ -4,8 +4,6 @@
  * connector-version they record (APP_VERSION). The bucket policy (core-buckets.ts) refuses any put
  * under raw/ without If-None-Match; the Python side is lambda/shared/raw_copy.py.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Template } from 'aws-cdk-lib/assertions';
 import { apiTemplate, policyStatementsOf, serviceEnvironment } from '../test-support/api-stack-template';
@@ -92,7 +90,7 @@ describe('raw copies: the email inbox (-c inboundEmailDomain)', () => {
 
 describe('raw copies: the S3 import reprocess message', () => {
   it('names the staged-file expiry the import bucket really has', () => {
-    const handler = readFileSync(join(__dirname, '..', '..', 'lambda', 'api', 's3_import_handler.py'), 'utf-8');
-    expect(handler).toContain(`Staged files expire after ${IMPORT_STAGED_EXPIRATION_DAYS} days`);
+    expect(serviceEnvironment(apiTemplate(), 'voc-s3-import-api')['IMPORT_STAGED_EXPIRATION_DAYS'])
+      .toBe(String(IMPORT_STAGED_EXPIRATION_DAYS));
   });
 });

@@ -105,12 +105,18 @@ def _reprocessable_key(key: str) -> str:
     return _deletable_key(key)
 
 
-# A staged file expires from the import bucket (an inbox, VocIngestionStack IMPORT_STAGED_EXPIRATION_DAYS);
-# the durable copy of the original is the raw lake's (plugins/s3_import: raw/s3_import/..., when the
-# s3_import source profile keeps whole files), so a gone file is re-uploaded, not reprocessed.
-STAGED_FILE_GONE = ('Staged files expire after 90 days (the import bucket is an inbox). If the s3_import source '
-                    'keeps whole-file raw copies, its original is in the raw lake under raw/s3_import/. Upload it '
-                    'again to import it.')
+# A staged file expires from the import bucket (an inbox, VocIngestionStack IMPORT_STAGED_EXPIRATION_DAYS,
+# passed to this Lambda as env IMPORT_STAGED_EXPIRATION_DAYS by api-s3-import-lambda.ts); the durable copy of
+# the original is the raw lake's (plugins/s3_import: raw/s3_import/..., when the s3_import source profile keeps
+# whole files), so a gone file is re-uploaded, not reprocessed.
+def _staged_file_gone(days: str) -> str:
+    """The 404 hint; the expiry is named only when the stack passed a whole number of days."""
+    expiry = f'Staged files expire after {days} days' if days.isdigit() else 'Staged files expire'
+    return (f'{expiry} (the import bucket is an inbox). If the s3_import source keeps whole-file raw copies, '
+            'its original is in the raw lake under raw/s3_import/. Upload it again to import it.')
+
+
+STAGED_FILE_GONE = _staged_file_gone(os.environ.get('IMPORT_STAGED_EXPIRATION_DAYS', '').strip())
 
 
 def _require_reprocessable_object(key: str) -> None:
