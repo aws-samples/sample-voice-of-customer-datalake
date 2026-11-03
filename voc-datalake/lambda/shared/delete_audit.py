@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from typing import Any, Final
 
 from shared.ai_writing import PLAN_PRINCIPAL_CLAIM, PLAN_PRINCIPAL_PREFIX
@@ -33,6 +32,7 @@ from shared.project_access import (
     claim_text,
     claims_from_event,
 )
+from shared.timestamps import now_iso
 
 __all__ = ['actor_from_event', 'record_delete']
 
@@ -78,7 +78,7 @@ def record_delete(
     reason: str | None = None,
 ) -> None:
     """Write one ``AUDIT#delete`` row to ``table``; never raises (see the module docstring)."""
-    now = datetime.now(UTC).isoformat()
+    now = now_iso()
     item: dict[str, Any] = {
         'pk': AUDIT_PK,
         'sk': f'{now}#{uuid.uuid4().hex}',
