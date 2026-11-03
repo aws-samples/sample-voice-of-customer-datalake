@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from shared.pii_redaction import redact_text
+from shared.pii_redaction import has_pattern_pii
 
 __all__ = [
     'legal_basis_or_legacy',
@@ -37,7 +37,7 @@ def required_legal_basis(value: object, what: str = 'legal_basis') -> str:
     text = value.strip()
     if len(text) > MAX_LEGAL_BASIS_CHARS:
         raise ValueError(f'{what} must be at most {MAX_LEGAL_BASIS_CHARS} characters')
-    if redact_text(text).counts:
+    if has_pattern_pii(text):
         raise ValueError(f'{what} must not contain personal data (an email, phone number or similar): it is kept '
                          'on permanent audit rows; use a case or ticket number instead')
     return text

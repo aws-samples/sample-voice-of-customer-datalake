@@ -35,6 +35,7 @@ import boto3
 from shared.logging import logger, metrics
 
 __all__ = [
+    'has_pattern_pii',
     'is_payment_card',
     'redact_text',
 ]
@@ -184,6 +185,17 @@ def _redact_patterns(text: str, counts: dict[str, int]) -> str:
     for kind, pattern, valid in _RULES:
         text = _apply_rule(text, kind, pattern, valid, counts)
     return text
+
+
+def has_pattern_pii(text: str) -> bool:
+    """True when the pattern pass finds personal data in ``text`` (an email, phone number, card, IBAN or IP).
+
+    Patterns only, never Comprehend: for short admin-typed text that must not identify anyone (a legal basis,
+    shared/legal_basis.py), where a network call per check is not wanted.
+    """
+    counts: dict[str, int] = {}
+    _redact_patterns(text, counts)
+    return bool(counts)
 
 
 _comprehend_client: list[Any] = []
