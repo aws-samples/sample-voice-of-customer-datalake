@@ -12,9 +12,10 @@ An erasure states its legal basis (``shared/legal_basis.py``) and is recorded be
 anything is deleted (TENETS.md D4, D5), in voc-participants, with no email and no name:
 
 - a tombstone ``AUDIT#tombstone#participant`` / ``{sha256 of the person id}``:
-  the legal basis, who erased, when (no ``ttl``);
+  the legal basis, the ``actor`` and ``deleted_at`` (no ``ttl``; the same field names as the
+  delete record);
 - the ``AUDIT#delete`` row every workspace delete writes (``shared/delete_audit.py``),
-  naming the same hash.
+  naming the opaque person id (as the ask's recipient rows still do).
 """
 from __future__ import annotations
 
@@ -69,11 +70,12 @@ def _record(table: Any, person_id: str, legal_basis: str, actor: Mapping[str, st
     """The tombstone and the delete record, written before the person's rows go."""
     person_hash = sha256_hex(person_id)
     table.put_item(Item={
-        'pk': TOMBSTONE_PK, 'sk': person_hash, 'person_id_hash': person_hash, 'legal_basis': legal_basis,
-        'erased_by': dict(actor), 'erased_at': now_iso(),
+        'pk': TOMBSTONE_PK, 'sk': person_hash, 'legal_basis': legal_basis,
+        'actor': dict(actor), 'deleted_at': now_iso(),
     })
-    record_delete(table, kind='participant', target={'person_id_hash': person_hash}, actor=actor,
-                  reason=legal_basis)
+    # The delete record names the opaque id like every other participant delete (the ask's recipient
+    # rows keep it too); the tombstone is keyed by its hash. Neither holds the email or the name.
+    record_delete(table, kind='participant', target={'person_id': person_id}, actor=actor, reason=legal_basis)
 
 
 def erase_person(table: Any, person_id: str, *, legal_basis: str, actor: Mapping[str, str]) -> dict[str, int]:

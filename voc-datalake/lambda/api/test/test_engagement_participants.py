@@ -308,9 +308,9 @@ def test_an_erasure_is_recorded_by_a_tombstone_and_a_delete_record_without_the_e
     tombstone = next(row for row in audit if row['pk'] == 'AUDIT#tombstone#participant')
     record = next(row for row in audit if row['pk'] == 'AUDIT#delete')
     assert tombstone['sk'] == sha256_hex(person_id)
-    assert (tombstone['legal_basis'], tombstone['erased_by']['sub']) == (ERASURE['legal_basis'], 'admin-sub')
+    assert (tombstone['legal_basis'], tombstone['actor']['sub']) == (ERASURE['legal_basis'], 'admin-sub')
     assert (record['kind'], record['target'], record['reason']) == (
-        'participant', {'person_id_hash': sha256_hex(person_id)}, ERASURE['legal_basis'])
+        'participant', {'person_id': person_id}, ERASURE['legal_basis'])
     assert not [row for row in audit if 'ttl' in row]
-    for value in ('gone@example.com', 'Gone Person', person_id):
+    for value in ('gone@example.com', 'Gone Person'):
         assert value not in str(audit)
