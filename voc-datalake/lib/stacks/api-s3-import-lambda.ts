@@ -15,6 +15,7 @@ import { getPluginsWithIngestor, type PluginManifest } from '../plugin-loader';
 import { ingestorFunctionBaseName } from './dlq-alarms';
 import { functionArnByName } from './api-assist-workers';
 import type { ApiStackContext } from './api-context';
+import { IMPORT_STAGED_EXPIRATION_DAYS } from './ingestion-stack';
 
 const S3_IMPORT_PLUGIN_ID = 's3_import';
 /** The reprocess run rows (`SOURCE_RUN#s3_import` / `<run id>`, lambda/shared/s3_import_runs.py SOURCE_RUN_PK). */
@@ -71,6 +72,8 @@ export function createS3ImportLambda(ctx: ApiStackContext, ingestorDeployed: boo
     memorySize: 1024, // CPU-bound: memory buys vCPU; keep CPU <= 60% of the share
     environment: {
       S3_IMPORT_BUCKET: s3ImportBucket.bucketName, ALLOWED_ORIGIN: allowedOrigin,
+      // The reprocess 404 names the import bucket's real staged-file expiry (lambda/api/s3_import_handler.py).
+      IMPORT_STAGED_EXPIRATION_DAYS: String(IMPORT_STAGED_EXPIRATION_DAYS),
       POWERTOOLS_SERVICE_NAME: 'voc-s3-import-api', LOG_LEVEL: 'INFO', ...reprocessEnv,
     },
     layers: [apiLayer],

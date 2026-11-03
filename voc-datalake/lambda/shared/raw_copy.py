@@ -15,9 +15,10 @@ the caller gets None. Whether a copy may be written at all (the source policy: a
 summary-only source keeps none) is the caller's check, made before calling. Two styles, one rule:
 a writer that already holds the profile it read strictly for the item itself (the form submit
 route) checks it with ``source_policy.raw_archive_allowed(profile)``; a writer with no profile in
-hand asks ``source_permits_raw_copy(source)``. Add ``require_profile=True`` (or
-``source_profile_configured``) when the copy is opt-in: personal data from a public or
-semi-public route (feedback forms, feedback boards).
+hand asks ``source_permits_raw_copy(source)``. When the copy is opt-in (personal data from a
+public or semi-public route: feedback forms, feedback boards) the writer asks
+``source_permits_raw_copy(source, require_profile=True)``: that is THE way, so every opt-in copy
+answers the same question in the same place.
 """
 
 from __future__ import annotations

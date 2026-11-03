@@ -150,6 +150,15 @@ class TestStartingAReprocess:
         table.put_item.assert_not_called()
         invoke.assert_not_called()
 
+    @pytest.mark.parametrize(('days', 'opening'), [
+        ('90', 'Staged files expire after 90 days (the import bucket is an inbox).'),
+        ('30', 'Staged files expire after 30 days (the import bucket is an inbox).'),
+        ('', 'Staged files expire (the import bucket is an inbox).'),
+        ('soon', 'Staged files expire (the import bucket is an inbox).'),
+    ])
+    def test_the_hint_names_the_expiry_the_stack_passed(self, days, opening):
+        assert h._staged_file_gone(days).startswith(opening)
+
     @pytest.mark.parametrize(('size', 'reason'), [(0, 'empty'), (h.MAX_REPROCESS_BYTES + 1, '50 MB')])
     def test_a_file_the_ingestor_would_skip_is_refused(
             self, api_gateway_event, lambda_context, s3, invoke, size, reason):

@@ -141,7 +141,11 @@ The date index is keyed by when the processor stored the item, not by the review
 
 Feedback items do not expire: the table has no TTL and the processor stamps none. Only
 `voc-retention` deletes feedback, when a source profile sets `retention_days` or an administrator
-requests an erasure ([source-policies.md](source-policies.md)). Deployments that predate this carry a legacy `ttl` on old items until `scripts/retention/remove_ttl.py --apply` removes it (see [Deployment → Data Retention](deployment.md#data-retention-nothing-is-ever-deleted)). Category corrections (`category_source='manual'`, `category_override`) and reprocessing (`category_source='reprocess'`) update items in place; see [Categories](categories.md).
+requests an erasure ([source-policies.md](source-policies.md)). Deployments that predate this carry a legacy
+`ttl` on old items until `scripts/retention/remove_ttl.py --apply` removes it (see [Deployment → Data
+Retention](deployment.md#data-retention-nothing-is-ever-deleted)). Category corrections
+(`category_source='manual'`, `category_override`) and reprocessing (`category_source='reprocess'`) update
+items in place; see [Categories](categories.md).
 
 ### Aggregates table
 
@@ -164,11 +168,16 @@ such as every source or persona counter. Common key families include:
 | `IMPORT_RUN`, `IMPORT_RUN#<run id>` | Import history (kept, no TTL; rows from earlier releases keep their 90-day TTL, [import-history.md](import-history.md)) |
 | `PRIORITIZATION` / `ROW#<id>` | Prioritization rows ([prioritization.md](prioritization.md)) |
 
-Metric rows are kept indefinitely (no `ttl`). The table keeps TTL enabled for its operational rows (logs, circuit-breaker failures, import history, voting sessions). Settings and other durable configuration rows omit TTL. See [Processing Pipeline](processing-pipeline.md#rebuilding-aggregates-for-a-window) before repairing counters.
+Metric rows are kept indefinitely (no `ttl`). The table keeps TTL enabled for its operational rows (logs,
+circuit-breaker failures, import history, voting sessions). Settings and other durable configuration rows
+omit TTL. See [Processing Pipeline](processing-pipeline.md#rebuilding-aggregates-for-a-window) before
+repairing counters.
 
 ### Projects table
 
-A project uses `pk=PROJECT#<project_id>`. Its sort keys include `META`, `PERSONA#<id>`, managed artifact prefixes such as `PRD#`, `PRFAQ#`, and `PROTOTYPE#`, and uploaded `DOC#` rows. The index `gsi1-by-type` lists items of one type, such as every project.
+A project uses `pk=PROJECT#<project_id>`. Its sort keys include `META`, `PERSONA#<id>`, managed artifact
+prefixes such as `PRD#`, `PRFAQ#`, and `PROTOTYPE#`, and uploaded `DOC#` rows. The index `gsi1-by-type`
+lists items of one type, such as every project.
 
 PRDs, PR/FAQs, and prototypes have internal version state in a separate partition:
 
@@ -178,20 +187,40 @@ sk = <DOCUMENT_TYPE>#<title-digest>                 # series counter
 sk = ALLOCATION#<DOCUMENT_TYPE>#<allocation-digest> # durable allocation history
 ```
 
-These rows preserve monotonic version numbers and retry identity. They deliberately survive document deletion; deleting or rewriting them can make delayed retries conflict or reuse version numbers. Manage artifacts through the application/API, not by deleting internal rows directly.
+These rows preserve monotonic version numbers and retry identity. They deliberately survive document
+deletion; deleting or rewriting them can make delayed retries conflict or reuse version numbers. Manage
+artifacts through the application/API, not by deleting internal rows directly.
 
 ### Jobs, conversations, and idempotency
 
-- Job rows use TTL (`ttl`). Completed and failed jobs remain available briefly for progress and diagnostics; assist jobs expire after 1 day. The index `gsi1-by-status` lists jobs by status.
-- Conversations are partitioned by authenticated user. Although the table has a `ttl` attribute configured, current conversation writes omit it, so rows persist until explicitly deleted or the stack is destroyed.
-- Two writers share an assistant conversation item: the SPA (`POST /chat/conversations/{id}`) and the stream Lambda, which saves the conversation while a run streams (user turn + in-progress answer, `run_id`, `run_status` running/finished/failed/interrupted/stopped, `revision`). A reload mid-answer therefore finds the partial answer and the SPA polls until it finishes. The server owns a run's answer: an SPA save is refused (409) while the run is live (last write < 960 s ago) or when its `baseRevision` is older than the stored `revision`. The stream Lambda's role holds only `GetItem`/`PutItem` on the table; it always writes the verified caller's own partition. Stop in the assistant writes a separate marker item `pk USER#{sub}`, `sk RUNCANCEL#{conversation id}` (`run_id`, `ttl` one day) through `POST /chat/conversations/{id}/cancel`; the running stream Lambda polls it (GetItem every 1.5 s), stops generating and saves the partial answer as `stopped`. The conversation list reads `CONV#` keys only, so the marker never lists.
-- Idempotency rows use the `expiration` TTL attribute. Processor and aggregator keys share the table but use distinct namespaces.
+- Job rows use TTL (`ttl`). Completed and failed jobs remain available briefly for progress and diagnostics;
+  assist jobs expire after 1 day. The index `gsi1-by-status` lists jobs by status.
+- Conversations are partitioned by authenticated user. Although the table has a `ttl` attribute configured,
+  current conversation writes omit it, so rows persist until explicitly deleted or the stack is destroyed.
+- Two writers share an assistant conversation item: the SPA (`POST /chat/conversations/{id}`) and the stream
+  Lambda, which saves the conversation while a run streams (user turn + in-progress answer, `run_id`,
+  `run_status` running/finished/failed/interrupted/stopped, `revision`). A reload mid-answer therefore finds
+  the partial answer and the SPA polls until it finishes. The server owns a run's answer: an SPA save is
+  refused (409) while the run is live (last write < 960 s ago) or when its `baseRevision` is older than the
+  stored `revision`. The stream Lambda's role holds only `GetItem`/`PutItem` on the table; it always writes
+  the verified caller's own partition. Stop in the assistant writes a separate marker item `pk USER#{sub}`,
+  `sk RUNCANCEL#{conversation id}` (`run_id`, `ttl` one day) through `POST /chat/conversations/{id}/cancel`;
+  the running stream Lambda polls it (GetItem every 1.5 s), stops generating and saves the partial answer as
+  `stopped`. The conversation list reads `CONV#` keys only, so the marker never lists.
+- Idempotency rows use the `expiration` TTL attribute. Processor and aggregator keys share the table but use
+  distinct namespaces.
 
 ## Data Explorer
 
-The Data Explorer browses the raw-data bucket and edits selected S3 or feedback records. It is an operational/debugging surface, not a replacement for project and version APIs. It is **admin-only** on every route (raw S3 cannot be filtered by category access), and it cannot delete: there is no DELETE route at API Gateway and its role holds no delete permission.
+The Data Explorer browses the raw-data bucket and edits selected S3 or feedback records. It is an
+operational/debugging surface, not a replacement for project and version APIs. It is **admin-only** on every
+route (raw S3 cannot be filtered by category access), and it cannot delete: there is no DELETE route at API
+Gateway and its role holds no delete permission.
 
-Folders read by name, the stored key staying the row's tooltip: the top folders and source folders by their label, and an avatar folder (`avatars/<persona id>`) by the persona and when it was made, "Persona 2 · Oct 24, 2026, 12:34 PM" (`persona_<stamp>_<hex>_<index>`), or "Persona · Oct 24, 2026, 12:34 PM" for an id without a batch index (an imported persona, or an id from before the random suffix).
+Folders read by name, the stored key staying the row's tooltip: the top folders and source folders by their
+label, and an avatar folder (`avatars/<persona id>`) by the persona and when it was made, "Persona 2 · Oct
+24, 2026, 12:34 PM" (`persona_<stamp>_<hex>_<index>`), or "Persona · Oct 24, 2026, 12:34 PM" for an id
+without a batch index (an imported persona, or an id from before the random suffix).
 
 ### API endpoints
 
@@ -213,7 +242,8 @@ recoverable for 7 days), staged files expire 90 days after upload, and `processe
 (moved to Glacier after 30 days). The import bucket is an inbox, not the archive: before a file is read,
 its original goes to the raw lake (`raw/s3_import/…`, above) when the `s3_import` profile keeps whole
 files. Reprocess works on staged files only: once a file has expired, `POST /s3-import/reprocess`
-answers 404 naming the raw copy, and the file is uploaded again from it. Administrators use the file explorer on the **S3 Bulk Import**
+answers 404 naming the raw copy, and the file is uploaded again from it. Administrators use the file
+explorer on the **S3 Bulk Import**
 card in **Administration → Sources → Source settings**. Its API (`s3_import_handler.py`) is
 **admin-only on every route**, because an upload ingests its rows into the pipeline and the listings
 expose the bucket name and every staged file.
@@ -285,15 +315,24 @@ Projects UI/API → Jobs → Bedrock → Projects table + S3 artifact assets
 
 ## Retention
 
-Customer data is not deleted while the platform runs, apart from opt-in per-source retention and erasure requests ([Source policies](source-policies.md)). Deleting the stacks keeps it by default (`protectData`); under `-c protectData=false` it deletes all of it; back up first ([Deployment → Teardown](deployment.md#teardown-with--c-protectdatafalse-back-up-first)). Details and the migration for existing deployments: [Deployment → Data Retention](deployment.md#data-retention-nothing-is-ever-deleted).
+Customer data is not deleted while the platform runs, apart from opt-in per-source retention and erasure
+requests ([Source policies](source-policies.md)). Deleting the stacks keeps it by default (`protectData`);
+under `-c protectData=false` it deletes all of it; back up first ([Deployment →
+Teardown](deployment.md#teardown-with--c-protectdatafalse-back-up-first)). Details and the migration for
+existing deployments: [Deployment → Data Retention](deployment.md#data-retention-nothing-is-ever-deleted).
 
-- **S3 raw data:** kept under `raw/` while the platform runs, with every version, unless a source's retention or an erasure removes it (nothing there is overwritten or expires); previous versions of overwritten objects under the other prefixes are kept 90 days; the bucket is deleted with the stack only under `-c protectData=false`. Project assets in the same bucket are managed by the project APIs.
-- **Feedback:** no expiry unless a source profile sets `retention_days`; the table is deleted with the stack only under `-c protectData=false`.
+- **S3 raw data:** kept under `raw/` while the platform runs, with every version, unless a source's
+  retention or an erasure removes it (nothing there is overwritten or expires); previous versions of
+  overwritten objects under the other prefixes are kept 90 days; the bucket is deleted with the stack only
+  under `-c protectData=false`. Project assets in the same bucket are managed by the project APIs.
+- **Feedback:** no expiry unless a source profile sets `retention_days`; the table is deleted with the stack
+  only under `-c protectData=false`.
 - **Daily aggregate metrics:** no expiry; the table is deleted with the stack only under `-c protectData=false`.
 - **Projects:** no expiry; the table is deleted with the stack only under `-c protectData=false`.
 - **Processing logs:** seven-day TTL.
 - **Jobs and idempotency:** item-specific TTL appropriate to progress visibility or retry guarantees.
-- **Conversations:** no automatic expiry on current writes; delete through the application/API when no longer needed.
+- **Conversations:** no automatic expiry on current writes; delete through the application/API when no
+  longer needed.
 
 ## Querying Feedback
 
@@ -307,4 +346,5 @@ response = table.query(
 )
 ```
 
-Use the application APIs where possible: they enforce authorization, pagination ceilings, partial-window reporting, and project tombstones that a direct table read bypasses.
+Use the application APIs where possible: they enforce authorization, pagination ceilings, partial-window
+reporting, and project tombstones that a direct table read bypasses.
