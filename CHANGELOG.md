@@ -17,6 +17,26 @@ the platform package version.
 
 ## [Unreleased]
 
+## [5.78.00] - 2026-11-03
+
+Follow-ups to the 5.77.00 review: the opt-in WAF keeps its rule exceptions off the public routes, and the tests now
+check what deploys.
+
+### Changed
+- **`-c enableWaf=true`**: the core-rule-set rules the API only counts (body size, cross-site scripting, LFI, RFI,
+  EC2 metadata SSRF, query-string size, query-argument RFI) block again on the unauthenticated routes: the feedback
+  widget, ballots, `POST /unsubscribe`, `/.well-known/*`, `/oauth/*` and webhooks. A new rule on each web ACL blocks
+  a counted rule's label there, except where a legitimate request carries it (large widget submissions and webhook
+  payloads, the MCP loopback `redirect_uri`). The SPA's CloudFront web ACL counts the query-argument RFI rule only on
+  `/oauth/authorize`. One more rule per web ACL: about $20 a month for both instead of $18
+  ([docs/deployment.md](docs/deployment.md) → AWS WAF).
+
+### Fixed
+- Tests: the per-stack CDK tests apply the same whole-app rewrites as the deploy (`lib/utils/app-aspects.ts`), so
+  they check the exact grants and log groups that deploy; a test runs every boundary body of the two public
+  request models through the handlers' own validation and a draft-4 validator (a model may never refuse what its
+  handler accepts); every function whose role holds a shared Claude policy is pinned to wait for it during a deploy.
+
 ## [5.77.00] - 2026-11-02
 
 Most cdk-nag findings are fixed in the infrastructure instead of acknowledged (114 findings remain in the default synth, from 588 in 5.75.00), and
