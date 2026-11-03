@@ -125,6 +125,7 @@ Table `voc-participants-<suffix>` (pk/sk, index `gsi1`, TTL `ttl`, the Core KMS 
 | `TOKEN#{sha256(token)}` | `RESPONSE` / `UNSUB` | what a token in an email may do |
 | `SETTINGS` | `engagement` | the settings above |
 | `SENDCOUNT#{day}` | `COUNT` | emails sent that UTC day (expires after 3 days) |
+| `AUDIT#delete` | `{iso time}#{uuid}` | one row per deleted list (`participant_list`, `{list_id}`) and per removed member (`participant_list_member`, `{list_id, person_id}`): ids and the actor's `{sub, kind}` only, no `ttl` ([project-workspace.md](project-workspace.md#deleting)) |
 
 ## Privacy
 
