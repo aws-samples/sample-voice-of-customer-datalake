@@ -27,7 +27,7 @@ export function isAuditRowGuardStatement(statement: { readonly Sid?: string }): 
 }
 
 /** One raw IAM statement as synthesized (`Effect` defaults to Allow when absent). */
-export const IamStatementSchema = z.object({
+const IamStatementSchema = z.object({
   Sid: z.string().optional(),
   Effect: z.string().optional(),
   Action: z.union([z.string(), z.array(z.string())]),
