@@ -375,10 +375,12 @@ describe('memory + agents APIs (VocApiStack)', () => {
     );
   });
 
-  it('settings API: its one S3 delete is s3:DeleteObject on the logo preview keys (5.47.00, archive)', () => {
+  it('settings API: its one S3 delete is the logo preview keys, every version (5.47.00 archive, 6.00.00 versions)', () => {
     const deletes = statementsOfRole(template, 'SettingsLambdaRole')
       .filter((st) => st.actions.some((a) => a.startsWith('s3:Delete')));
-    expect(deletes.map((st) => st.actions)).toStrictEqual([['s3:DeleteObject']]);
+    expect(deletes.map((st) => st.actions)).toStrictEqual([
+      ['s3:DeleteObject', 's3:DeleteObjectVersion', 's3:ListBucketVersions'],
+    ]);
     expect(itemAt(deletes, 0).resource).toContain('/company-context/design/logo_preview_*');
     expect(itemAt(deletes, 0).resource).toContain('/company-context/design/icons_*');
   });

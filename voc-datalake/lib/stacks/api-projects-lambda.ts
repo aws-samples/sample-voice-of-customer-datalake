@@ -10,7 +10,7 @@ import { PROJECTS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import type { ApiStackContext } from './api-context';
 import { grantMarketplaceSubscription } from './api-marketplace';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
-import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
+import { grantWorkspaceObjects } from '../utils/workspace-object-deletes';
 import {
   ASSIST_WORKER_ENV, PROJECTS_ASSIST_FUNCTION_BASE_NAME, assistWorkerName, createAssistWorker, grantAssistWorkerInvoke,
 } from './api-assist-workers';
@@ -56,14 +56,10 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   // The image model is a Marketplace listing (issue #274).
   grantMarketplaceSubscription(projectsRole);
 
-  rawDataBucket.grantReadWrite(projectsRole, 'avatars/*');
-  // Product context: projects API needs to issue presigned PUT URLs, read extracted text, delete docs.
-  rawDataBucket.grantReadWrite(projectsRole, 'projects/*/product_docs/*');
-  // Duplicating a prototype document copies its HTML (projects.py _copy_prototype_html).
-  rawDataBucket.grantReadWrite(projectsRole, 'prototypes/*');
-  // Workspace deletes remove every version of a deleted avatar / product doc / prototype (lib/utils/workspace-object-deletes.ts).
-  grantWorkspaceVersionDeletes(rawDataBucket, projectsRole,
-    ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*'], 'WorkspaceObjectDeletes');
+  // Avatars, product docs (presigned PUT URLs, extracted text, deletes) and prototypes (a duplicated document copies
+  // its HTML, projects.py _copy_prototype_html): read, write and delete, every version of a deleted object, in one
+  // statement (lib/utils/workspace-object-deletes.ts).
+  grantWorkspaceObjects(rawDataBucket, projectsRole, ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*']);
   // Signs the avatar and prototype URLs returned by GET /projects/{id}.
   // Explicit statement rather than secret.grantRead(): that adds a KMS
   // key-policy entry naming this role, and the key lives in CoreStack, so it

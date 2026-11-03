@@ -36,13 +36,18 @@ function addWriteStatement(
   table.encryptionKey?.grant(grantee, ...KEY_WRITE_ACTIONS);
 }
 
-/** Grant `grantee` the table's reads plus exactly `writes` (none: a read-only grant). */
+/**
+ * Grant `grantee` the table's reads plus exactly `writes` (none: a read-only grant). The writes go through
+ * `table.grant` (the table and its indexes, like CDK's own read/write grants), so policy minimization folds them
+ * into the read statement instead of adding one per table.
+ */
 export function grantReadAndWrites(
   table: dynamodb.ITable, grantee: iam.IGrantable, writes: readonly TableWrite[],
 ): void {
   table.grantReadData(grantee);
   if (writes.length === 0) return;
-  grantWrites(table, grantee, writes);
+  table.grant(grantee, ...writes.map((write) => `dynamodb:${write}`));
+  table.encryptionKey?.grant(grantee, ...KEY_WRITE_ACTIONS);
 }
 
 /** Grant exactly `writes` on the table (no reads), with the key actions a write needs. */
