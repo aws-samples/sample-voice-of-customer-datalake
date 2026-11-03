@@ -109,6 +109,16 @@ the editor's Delete). The dialog shows how many requests are gone so far; if it 
 again continues (the API: `?with_requests=true`, below). Projects already created from its requests are kept. Admins can delete any request or
 support.
 
+### Deleting
+
+Every delete is recorded in the feature-requests table, one row per artifact: `pk AUDIT#delete` /
+`sk <iso time>#<uuid>` with `kind`, `target` (ids only), `actor` (`{sub, kind}`, never an email; a board-pool
+user is never `admin`), `deleted_at` and no `ttl` (`lambda/shared/delete_audit.py`,
+[project-workspace.md](project-workspace.md#deleting)). The kinds: `feature_request` (`{request_id, board_id}`,
+its +1s go with it; `reason: board deleted` when its board was deleted with its requests),
+`feature_request_support` (`{request_id, support_id}`, a +1 removed by its owner or an admin) and
+`feature_board` (`{board_id}`, written when the board itself goes).
+
 **A request never moves to another board.** No route or tool changes a request's `board_id`: an edit
 (`PUT /feature-requests/{id}`) that names `board` or `board_id` is refused with 400 `A request cannot be moved
 to another board`. To move one, file it again on the other board.
