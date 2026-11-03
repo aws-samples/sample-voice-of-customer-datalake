@@ -202,6 +202,8 @@ class TestWholeFileUploads:
     def test_the_review_list_survives_a_hand_over(self, aws, worker_context, invoke_mock):
         event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
         self._from_upload(aws, 'c1', 'tickets', author='Jane')
+        self._from_upload(aws, 'c2', 'tickets', author='Jane')
+        # Time for one item: the hand-over comes mid-page, after the first row of the upload.
         budget = iter([900_000, 0])
         worker_context.get_remaining_time_in_millis.side_effect = lambda: next(budget, 0)
         assert handler.handle_event(event, worker_context)['status'] == 'continued'
@@ -260,15 +262,18 @@ class TestLineage:
     def test_the_lineage_pass_hands_over_with_its_cursor(self, aws, worker_context, invoke_mock):
         _feedback(aws, 'f1', author='Jane')
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1'])
+        _artifact(aws, 'PERSONA#b', input_feedback_ids=['f1'])
         event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        # Budget for the one item only; the lineage pass then hands over before its first page.
+        # Budget for the one item only; the lineage pass hands over after its first one-row page.
         budget = iter([900_000])
         worker_context.get_remaining_time_in_millis.side_effect = lambda: next(budget, 0)
-        assert handler.handle_event(event, worker_context)['status'] == 'continued'
-        payload = invoke_mock.call_args.args[1]
-        assert (payload['phase'], payload['cursor']) == ('lineage', None)
-        worker_context.get_remaining_time_in_millis.side_effect = None
-        assert handler.handle_event(payload, worker_context)['artifacts_marked'] == 1
+        with patch.object(lineage, 'PAGE_SIZE', 1):
+            assert handler.handle_event(event, worker_context)['status'] == 'continued'
+            payload = invoke_mock.call_args.args[1]
+            assert (payload['phase'], payload['run']['artifacts_marked']) == ('lineage', 1)
+            assert payload['cursor']
+            worker_context.get_remaining_time_in_millis.side_effect = None
+            assert handler.handle_event(payload, worker_context)['artifacts_marked'] == 2
 
     @pytest.mark.parametrize('sources', [[], ['other']])
     def test_an_id_without_a_tombstone_in_the_runs_sources_is_not_erased(self, aws, sources):

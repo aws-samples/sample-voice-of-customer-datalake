@@ -213,27 +213,54 @@ def _scan_page(table: Any, condition: ConditionBase, cursor: dict | None) -> dic
     return table.scan(**kwargs)
 
 
-def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
-    """Tombstone, then delete, every match of the phase's store from ``cursor`` on; a hand-over or None."""
-    store = _PHASE_STORES[phase]
-    table, condition, run = walk.tables[store], walk.filters(store), walk.run
-    deleter = ItemDeleter(run, walk.s3, RAW_DATA_BUCKET, walk.tables)
+@dataclass(frozen=True)
+class _Resume:
+    """A page left unfinished when the time ran out: resume the scan from ``cursor`` (None = the start)."""
+
+    cursor: dict | None
+
+
+def _walk(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | None], dict],
+          handle: Callable[[dict, dict | None], _Resume | None]) -> dict | None:
+    """The paged, time-budgeted loop every scanning phase shares; a hand-over result, or None when done.
+
+    ``scan(cursor)`` reads one page; ``handle(page, cursor)`` works through it and
+    returns ``_Resume`` when the time ran out mid-page. The cursor is checkpointed
+    across self re-invocations.
+    """
     while True:
-        page = _scan_page(table, condition, cursor)
-        run['scanned'] += int(page.get('ScannedCount', 0))
-        items = page.get('Items', [])
-        write_tombstones(walk.aggregates, run, items, store)
-        for item in items:
-            if not _time_left(walk.context):
-                return _hand_over(walk, phase, cursor)
-            deleter.delete(item, store)
-            cursor = {'pk': item['pk'], 'sk': item['sk']}
-        record_progress(walk.aggregates, run, phase)
+        page = scan(cursor)
+        resume = handle(page, cursor)
+        if resume is not None:
+            return _hand_over(walk, phase, resume.cursor)
+        record_progress(walk.aggregates, walk.run, phase)
         cursor = page.get('LastEvaluatedKey') or None
         if cursor is None:
             return None
         if not _time_left(walk.context):
             return _hand_over(walk, phase, cursor)
+
+
+def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
+    """Tombstone, then delete, every match of the phase's store from ``cursor`` on; a hand-over or None."""
+    store = _PHASE_STORES[phase]
+    table, condition, run = walk.tables[store], walk.filters(store), walk.run
+    deleter = ItemDeleter(run, walk.s3, RAW_DATA_BUCKET, walk.tables)
+
+    def handle(page: dict, start: dict | None) -> _Resume | None:
+        run['scanned'] += int(page.get('ScannedCount', 0))
+        items = page.get('Items', [])
+        write_tombstones(walk.aggregates, run, items, store)
+        done = start
+        for item in items:
+            if not _time_left(walk.context):
+                # After the last deleted item (this page's start when none was).
+                return _Resume(done)
+            deleter.delete(item, store)
+            done = {'pk': item['pk'], 'sk': item['sk']}
+        return None
+
+    return _walk(walk, phase, cursor, lambda at: _scan_page(table, condition, at), handle)
 
 
 def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
@@ -260,15 +287,12 @@ def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
 def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
     """Mark the workspace artifacts that cited a deleted item (``lineage.py``), page by page."""
     projects = walk.tables['projects']
-    while True:
-        if not _time_left(walk.context):
-            return _hand_over(walk, PHASE_LINEAGE, cursor)
-        page = lineage.scan_page(projects, cursor)
+
+    def handle(page: dict, _start: dict | None) -> _Resume | None:
         lineage.mark_rows(projects, walk.aggregates, walk.run, page.get('Items', []))
-        record_progress(walk.aggregates, walk.run, PHASE_LINEAGE)
-        cursor = page.get('LastEvaluatedKey') or None
-        if cursor is None:
-            return None
+        return None
+
+    return _walk(walk, PHASE_LINEAGE, cursor, lambda at: lineage.scan_page(projects, at), handle)
 
 
 def _phases(walk: Walk) -> list[str]:
