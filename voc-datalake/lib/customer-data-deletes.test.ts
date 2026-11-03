@@ -15,6 +15,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { IamAnyPolicySchema, TemplateResourcesSchema } from './test-support/iam-statements';
 import { cleanupAssemblyDirs, synthApp } from './test-support/synth-app';
 import { byCodeUnit } from './utils/compare';
 
@@ -102,20 +103,6 @@ const RAW_BUCKET_DELETERS: Readonly<Record<string, Readonly<Record<string, strin
   'memory-imports/': {},
 };
 
-const StatementSchema = z.object({
-  Effect: z.string().optional(),
-  Action: z.union([z.string(), z.array(z.string())]),
-  Resource: z.unknown(),
-  Condition: z.unknown().optional(),
-});
-const PolicySchema = z.object({
-  Type: z.enum(['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy']),
-  Properties: z.object({
-    PolicyDocument: z.object({ Statement: z.array(StatementSchema) }),
-    Roles: z.array(z.unknown()).optional(),
-  }),
-});
-const TemplateSchema = z.object({ Resources: z.record(z.string(), z.unknown()) });
 const LeadingKeysSchema = z.object({
   'ForAllValues:StringLike': z.object({ 'dynamodb:LeadingKeys': z.array(z.string()) }).optional(),
   'ForAllValues:StringEquals': z.object({ 'dynamodb:LeadingKeys': z.array(z.string()) }).optional(),
@@ -136,9 +123,9 @@ afterAll(cleanupAssemblyDirs);
 
 function allowGrants(): Grant[] {
   return synthed.stackNames.flatMap((stack) => {
-    const { Resources } = TemplateSchema.parse(synthed.template(stack));
+    const { Resources } = TemplateResourcesSchema.parse(synthed.template(stack));
     return Object.entries(Resources).flatMap(([id, resource]) => {
-      const policy = PolicySchema.safeParse(resource);
+      const policy = IamAnyPolicySchema.safeParse(resource);
       if (!policy.success) return [];
       // A managed policy is judged under its own id: no table or bucket delete may live in one.
       return policy.data.Properties.PolicyDocument.Statement

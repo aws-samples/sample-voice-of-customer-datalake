@@ -567,25 +567,12 @@ function fixtureProvider(template: Template): FixtureProvider {
  * An attached policy whose statements keep EVERY key — `Condition` included,
  * which the KMS case reads. `IamPolicySchema` strips unknown keys.
  */
-const ProviderPolicySchema = z.object({
-  Properties: z.object({
-    Roles: z.array(z.unknown()).optional(),
-    PolicyDocument: z.object({
-      Statement: z.array(z.object({
-        Sid: z.string().optional(),
-        Effect: z.string().optional(),
-        Action: z.union([z.string(), z.array(z.string())]),
-        Resource: z.unknown(),
-      }).loose()),
-    }),
-  }),
-});
 
 /** Every statement of every IAM policy attached to the provider's role, unstripped. */
 function providerStatements(template: Template, provider: FixtureProvider): IamStatement[] {
   const roleRef = provider.props.Role['Fn::GetAtt'][0];
   return Object.values(template.findResources('AWS::IAM::Policy')).flatMap((resource) => {
-    const parsed = ProviderPolicySchema.safeParse(resource);
+    const parsed = IamPolicySchema.safeParse(resource);
     return parsed.success && isAttachedToRole(parsed.data.Properties, roleRef)
       ? parsed.data.Properties.PolicyDocument.Statement.filter((statement) => !isAuditRowGuardStatement(statement))
       : [];

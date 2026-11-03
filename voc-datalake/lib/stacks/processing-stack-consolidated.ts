@@ -28,7 +28,7 @@ import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
 import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT } from './processor-timing';
 import { appVersion } from '../utils/connector-version';
 import { grantReadAndWrites } from '../utils/table-write-grants';
-import { createAggregatorRole, createProcessorRole } from './processing-roles';
+import { createAggregatorRole, createProcessorRole, grantTextAnalysis } from './processing-roles';
 
 export interface VocProcessingStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;
@@ -454,16 +454,7 @@ export class VocProcessingStack extends VocStack {
     deps.kmsKey.grantEncryptDecrypt(role);
     // 'enrichment'/'utilities' surfaces are repointable via the picker (issue #96).
     grantClaudeModels(role, 'invoke');
-    role.addToPolicy(new iam.PolicyStatement({
-      sid: 'ComprehendAnalysis',
-      actions: ['comprehend:DetectSentiment', 'comprehend:DetectDominantLanguage'],
-      resources: ['*'],
-    }));
-    role.addToPolicy(new iam.PolicyStatement({
-      sid: 'TranslateText',
-      actions: ['translate:TranslateText'],
-      resources: ['*'],
-    }));
+    grantTextAnalysis(role, ['comprehend:DetectSentiment', 'comprehend:DetectDominantLanguage']);
     // Self hand-over: a deterministic ARN, not `fn.grantInvoke(role)` — the
     // function depends on its role, so a role policy GetAtt-ing the function
     // would be a CloudFormation cycle (same pattern as the api-stack job Lambdas).

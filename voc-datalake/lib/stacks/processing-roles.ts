@@ -20,6 +20,13 @@ import type { Construct } from 'constructs';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { grantReadAndWrites, grantWrites } from '../utils/table-write-grants';
 
+/** Comprehend `comprehendActions` and Translate's TranslateText (neither takes a resource ARN, so `*`). Shared by
+ *  the processor and the category reprocess worker, which enrich the same way. */
+export function grantTextAnalysis(role: iam.Role, comprehendActions: readonly string[]): void {
+  role.addToPolicy(new iam.PolicyStatement({ sid: 'ComprehendAnalysis', actions: [...comprehendActions], resources: ['*'] }));
+  role.addToPolicy(new iam.PolicyStatement({ sid: 'TranslateText', actions: ['translate:TranslateText'], resources: ['*'] }));
+}
+
 export interface ProcessorRoleProps {
   readonly feedbackTable: dynamodb.ITable;
   readonly aggregatesTable: dynamodb.ITable;
@@ -48,16 +55,7 @@ export function createProcessorRole(scope: Construct, props: ProcessorRoleProps)
   // Enrichment defaults to Haiku but admins can repoint the 'enrichment' surface via the picker, so grant every
   // allowlisted model (issue #96).
   grantClaudeModels(role, 'stream');
-  role.addToPolicy(new iam.PolicyStatement({
-    sid: 'ComprehendAnalysis',
-    actions: ['comprehend:DetectSentiment', 'comprehend:DetectKeyPhrases', 'comprehend:DetectDominantLanguage'],
-    resources: ['*'],
-  }));
-  role.addToPolicy(new iam.PolicyStatement({
-    sid: 'TranslateText',
-    actions: ['translate:TranslateText'],
-    resources: ['*'],
-  }));
+  grantTextAnalysis(role, ['comprehend:DetectSentiment', 'comprehend:DetectKeyPhrases', 'comprehend:DetectDominantLanguage']);
   grantReadAndWrites(props.feedbackTable, role, ['PutItem', 'UpdateItem']);
   grantReadAndWrites(props.aggregatesTable, role, ['PutItem']);
   props.idempotencyTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem');
