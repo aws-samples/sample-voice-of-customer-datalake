@@ -98,13 +98,12 @@ describe('exact grants over the app', () => {
     expect(s3.map(actionsOf)).toStrictEqual([['s3:GetObject', 's3:ListBucket']]);
   });
 
-  it('the retention Lambda: explicit version deletes and listing, the whole-upload Deny keeps its wildcard', () => {
+  it('the retention Lambda: explicit version deletes and listing only', () => {
     const s3 = policy('VocProcessingStack', 'RetentionWorkerRetentionRoleDefaultPolicy')
       .filter((statement) => actionsOf(statement).some((action) => action.startsWith('s3:')))
       .map((statement) => [statement.Effect, [...actionsOf(statement)].sort(byCodeUnit)]);
     expect(s3).toStrictEqual([
       ['Allow', ['s3:DeleteObject', 's3:DeleteObjectVersion']],
-      ['Deny', ['s3:DeleteObject*']],
       ['Allow', ['s3:ListBucketVersions']],
     ]);
   });

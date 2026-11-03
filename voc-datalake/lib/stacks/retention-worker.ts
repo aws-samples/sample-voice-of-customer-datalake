@@ -2,7 +2,7 @@
  * The per-source retention / erasure worker, `voc-retention` (VocProcessingStack,
  * docs/source-policies.md). The ONE role in the app that may delete customer data,
  * and only in the two opt-in ways the handler (lambda/jobs/retention/handler.py)
- * implements:
+ * implements, each under a stated legal basis (TENETS.md D5):
  *
  *   - `{"mode": "retention"}`, daily: items of sources whose profile sets
  *     `retention_days`, older than the cutoff;
@@ -11,15 +11,22 @@
  *     `field: 'source'`, every item of one source and then everything left under
  *     `raw/<source>/` (the grants below already cover it).
  *
- * Each deleted item's `s3_raw_uri` object goes with it, every version. Least
- * privilege, pinned exactly by processing-stack-retention.test.ts:
+ * Each deleted item gets a tombstone first; its `s3_raw_uri` object goes with it,
+ * every version; Radar reviews go the same way; artifacts in voc-projects that
+ * cited a deleted item are marked. Least privilege, pinned exactly by
+ * processing-stack-retention.test.ts:
  *   - feedback: GetItem / Query / Scan / DeleteItem — no Put, no Update;
  *   - raw bucket: DeleteObject + DeleteObjectVersion on `raw/*` and
- *     ListBucketVersions restricted to the `raw/` prefix — no read, no put —
- *     and an explicit Deny of `s3:DeleteObject*` on `raw/csv_upload/*` and
- *     `raw/json_upload/*` (whole-file archives are never deleted);
+ *     ListBucketVersions restricted to the `raw/` prefix — no read, no put. The
+ *     whole-file uploads (`raw/csv_upload/`, `raw/json_upload/`) are under it: a
+ *     whole-source erasure deletes the source's own uploaded files (every row of one
+ *     is filed under the one source its upload named, shared/retention.py);
  *   - aggregates: GetItem / PutItem / UpdateItem / Query (source profiles, the
- *     erasure job row, the AUDIT#retention rows) — no delete;
+ *     erasure job row, the AUDIT#retention rows) plus BatchWriteItem (tombstones,
+ *     a page at a time) and BatchGetItem (the lineage pass's tombstone lookups) — no delete;
+ *   - radar: Scan / DeleteItem (a review and its dedupe marker) and the cache-version
+ *     bump (UpdateItem on `SETTINGS#radar` only) — no Put, no Query;
+ *   - projects: Scan / UpdateItem (mark artifacts, drop erased ids) — no delete, no put;
  *   - lambda:InvokeFunction on its own unqualified name (time-budget hand-over).
  */
 import * as cdk from 'aws-cdk-lib';
@@ -33,6 +40,7 @@ import { LOG_RETENTION } from '../utils/log-retention';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
+import { grantCacheVersionBump, RADAR_VERSION_PARTITION } from '../utils/cache-version-grants';
 import { RETENTION_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
@@ -43,8 +51,6 @@ const RETENTION_HANDLER = 'jobs/retention/handler.lambda_handler';
 
 /** The raw-archive prefix the worker may delete under (and list versions of). */
 const RAW_PREFIX = 'raw/';
-/** Whole-file upload archives (shared/retention.py `_WHOLE_UPLOAD_PREFIXES`): explicitly undeletable. */
-const WHOLE_UPLOAD_PREFIXES = ['raw/csv_upload/', 'raw/json_upload/'] as const;
 
 export interface RetentionWorkerProps {
   uniqueName: (baseName: string) => string;
@@ -52,6 +58,10 @@ export interface RetentionWorkerProps {
   kmsKey: kms.IKey;
   feedbackTable: dynamodb.ITable;
   aggregatesTable: dynamodb.ITable;
+  /** voc-radar: other brands' reviews, erased like our own (docs/radar.md). */
+  radarTable: dynamodb.ITable;
+  /** voc-projects: artifacts whose lineage names an erased item are marked. */
+  projectsTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
 }
 
@@ -78,26 +88,21 @@ function retentionCode(): lambda.Code {
 export function createRetentionWorker(scope: Construct, id: string, props: RetentionWorkerProps): void {
   // A plain construct with the same id keeps every logical id the class form had.
   const worker = new Construct(scope, id);
-  const { uniqueName, kmsKey, feedbackTable, aggregatesTable, rawDataBucket } = props;
+  const { uniqueName, kmsKey, feedbackTable, aggregatesTable, radarTable, projectsTable, rawDataBucket } = props;
   const functionName = uniqueName(RETENTION_FUNCTION_BASE_NAME);
 
   const role = workerRole(worker, 'RetentionRole');
   feedbackTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:DeleteItem');
-  aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query');
+  aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query',
+    'dynamodb:BatchWriteItem', 'dynamodb:BatchGetItem');
+  radarTable.grant(role, 'dynamodb:Scan', 'dynamodb:DeleteItem');
+  grantCacheVersionBump(radarTable, role, RADAR_VERSION_PARTITION);
+  projectsTable.grant(role, 'dynamodb:Scan', 'dynamodb:UpdateItem');
   kmsKey.grantEncryptDecrypt(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'DeleteRawArchiveObjects',
     actions: ['s3:DeleteObject', 's3:DeleteObjectVersion'],
     resources: [rawDataBucket.arnForObjects(`${RAW_PREFIX}*`)],
-  }));
-  // Belt and braces over the matcher in shared/retention.py: the whole-upload
-  // archives (many items in one object) are never deletable by this role,
-  // whatever a bug in the per-item key check might ask for.
-  role.addToPrincipalPolicy(new iam.PolicyStatement({
-    sid: 'NeverDeleteWholeUploadArchives',
-    effect: iam.Effect.DENY,
-    actions: ['s3:DeleteObject*'],
-    resources: WHOLE_UPLOAD_PREFIXES.map((prefix) => rawDataBucket.arnForObjects(`${prefix}*`)),
   }));
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'ListRawArchiveVersions',
@@ -125,6 +130,8 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
       FEEDBACK_TABLE: feedbackTable.tableName,
       AGGREGATES_TABLE: aggregatesTable.tableName,
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
+      RADAR_TABLE: radarTable.tableName,
+      PROJECTS_TABLE: projectsTable.tableName,
       // No RETENTION_FUNCTION: the worker re-invokes itself via context.function_name.
       POWERTOOLS_SERVICE_NAME: RETENTION_FUNCTION_BASE_NAME,
       LOG_LEVEL: 'INFO',

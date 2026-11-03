@@ -268,6 +268,8 @@ export class VocProcessingStack extends VocStack {
       kmsKey,
       feedbackTable,
       aggregatesTable,
+      radarTable: props.radarTable,
+      projectsTable,
       rawDataBucket,
     });
 

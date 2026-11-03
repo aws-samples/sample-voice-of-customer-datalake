@@ -42,7 +42,7 @@ describe('voc-retention worker', () => {
   it('is handed both tables and the raw bucket, but not its own name (it re-invokes via context.function_name)', () => {
     const variables = worker().Environment.Variables;
     expect(Object.keys(variables)).toStrictEqual(expect.arrayContaining([
-      'FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET',
+      'FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'RADAR_TABLE', 'PROJECTS_TABLE',
     ]));
     expect(variables).not.toHaveProperty('RETENTION_FUNCTION');
   });
@@ -52,9 +52,24 @@ describe('voc-retention worker', () => {
       .toStrictEqual(['dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan']);
   });
 
-  it('holds exactly GetItem/PutItem/UpdateItem/Query on aggregates — never a delete', () => {
-    expect(allowedActions(statements(), 'dynamodb:', 'Aggregates'))
-      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:UpdateItem']);
+  it('holds exactly Get/Put/Update/Query plus the tombstone batches on aggregates — never a delete', () => {
+    expect(allowedActions(statements(), 'dynamodb:', 'Aggregates')).toStrictEqual([
+      'dynamodb:BatchGetItem', 'dynamodb:BatchWriteItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
+      'dynamodb:Query', 'dynamodb:UpdateItem',
+    ]);
+  });
+
+  it('holds exactly Scan/DeleteItem on radar, plus the version bump pinned to SETTINGS#radar', () => {
+    const radar = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('Radar')
+      && s.actions.some((a) => a.startsWith('dynamodb:')));
+    expect(radar.map((s) => [...s.actions].sort(byCodeUnit).join(','))).toStrictEqual([
+      'dynamodb:DeleteItem,dynamodb:Scan', 'dynamodb:UpdateItem',
+    ]);
+    expect(JSON.stringify(template.toJSON())).toContain('"dynamodb:LeadingKeys":["SETTINGS#radar"]');
+  });
+
+  it('holds exactly Scan/UpdateItem on projects — it marks artifacts, never deletes or puts', () => {
+    expect(allowedActions(statements(), 'dynamodb:', 'Projects')).toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
   });
 
   it('deletes objects and versions under raw/* only, and lists versions of raw/ only', () => {
@@ -67,11 +82,8 @@ describe('voc-retention worker', () => {
     expect(JSON.stringify(template.toJSON())).toContain('"s3:prefix":["raw/*"]');
   });
 
-  it('is explicitly denied every object delete on the whole-upload archives', () => {
-    const denies = statements().filter((s) => s.effect === 'Deny');
-    expect(denies.map((s) => s.actions)).toStrictEqual([['s3:DeleteObject*']]);
-    expect(itemAt(denies, 0).resource).toContain('/raw/csv_upload/*');
-    expect(itemAt(denies, 0).resource).toContain('/raw/json_upload/*');
+  it('carries no Deny of its own: whole-file uploads are reached only by a whole-source erasure (in code)', () => {
+    expect(statements().filter((s) => s.effect === 'Deny')).toStrictEqual([]);
   });
 
   it('may invoke only itself, by an unqualified colon-form ARN', () => {
@@ -82,7 +94,7 @@ describe('voc-retention worker', () => {
   it('cannot reach Bedrock, SQS, other tables or anything with a wildcard action', () => {
     const offenders = statements().filter((s) => s.actions.some((a) =>
       a.startsWith('bedrock:') || a.startsWith('sqs:') || a.endsWith(':*'))
-      || ['Projects', 'Jobs', 'Memory', 'Agents', 'Conversations'].some((t) => s.resource.includes(t)));
+      || ['Jobs', 'Memory', 'Agents', 'Conversations'].some((t) => s.resource.includes(t)));
     expect(offenders).toStrictEqual([]);
   });
 
