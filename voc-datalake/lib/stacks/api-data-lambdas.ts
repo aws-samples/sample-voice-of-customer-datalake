@@ -26,6 +26,7 @@ import {
 import type { ApiStackContext } from './api-context';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
+import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
 import { briefingApiWiring } from './briefing-worker';
 import { grantImageModelProbe } from './api-marketplace';
 import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
@@ -375,12 +376,10 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   rawDataBucket.grantRead(settingsRole, 'company-context/*');
   rawDataBucket.grantPut(settingsRole, 'company-context/*');
   // The ONE delete: archiving a reference removes the copies made when it was read (its logo PREVIEW and
-  // sanitised SVG, and its copied icons; shared/design_logo.py delete_previews). Exactly s3:DeleteObject.
-  settingsRole.addToPolicy(new iam.PolicyStatement({
-    sid: 'DeleteLogoPreviewOnArchive',
-    actions: ['s3:DeleteObject'],
-    resources: [rawDataBucket.arnForObjects(`${LOGO_PREVIEW_PREFIX}*`), rawDataBucket.arnForObjects(`${DESIGN_ICONS_PREFIX}*`)],
-  }));
+  // sanitised SVG, and its copied icons; shared/design_logo.py delete_previews), every version of them
+  // (lib/utils/workspace-object-deletes.ts). Nothing else under company-context/ is deleted (keep-all).
+  grantWorkspaceVersionDeletes(rawDataBucket, settingsRole,
+    [`${LOGO_PREVIEW_PREFIX}*`, `${DESIGN_ICONS_PREFIX}*`], 'DeleteLogoPreviewOnArchive');
   // The morning brief (docs/briefing.md): Refresh queues, the caller's own email subscription.
   const briefing = briefingApiWiring(stack, ctx.uniqueName, kmsKey, ctx.props.userPool);
   briefing.grant(settingsRole);

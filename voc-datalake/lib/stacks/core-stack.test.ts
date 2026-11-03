@@ -1450,7 +1450,8 @@ describe('raw bucket scratch copies (DATA-4)', () => {
     const [bucket] = Object.entries(synthCoreTemplate().findResources('AWS::S3::Bucket'))
       .filter(([id]) => id.startsWith('RawDataBucket')).map(([, resource]) => resource);
     expect(bucket).toMatchObject({ Properties: { LifecycleConfiguration: { Rules: expect.arrayContaining([
-      { Id: 'scratch-expiry', Prefix: 'scratch/', Status: 'Enabled', ExpirationInDays: SCRATCH_EXPIRATION_DAYS },
+      { Id: 'scratch-expiry', Prefix: 'scratch/', Status: 'Enabled', ExpirationInDays: SCRATCH_EXPIRATION_DAYS,
+        NoncurrentVersionExpiration: { NoncurrentDays: SCRATCH_EXPIRATION_DAYS } },
     ]) } } });
   });
 });

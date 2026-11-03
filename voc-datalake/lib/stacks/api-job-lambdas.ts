@@ -15,6 +15,7 @@ import {
   WORKER_TREE_ASSET_EXCLUDES,
 } from '../utils/lambda-asset-excludes';
 import { grantReadAndWrites, type TableWrite } from '../utils/table-write-grants';
+import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
 
 /** Every job updates its own job row (shared/jobs.py: put + update); none deletes one. */
 const JOB_ROW_WRITES: readonly TableWrite[] = ['PutItem', 'UpdateItem'];
@@ -156,6 +157,8 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   }));
   grantMarketplaceSubscription(personaGeneratorRole);
   rawDataBucket.grantReadWrite(personaGeneratorRole, 'avatars/*');
+  // A replace removes the replaced personas' avatars, every version (lib/utils/workspace-object-deletes.ts).
+  grantWorkspaceVersionDeletes(rawDataBucket, personaGeneratorRole, ['avatars/*'], 'ReplacedAvatarDeletes');
 
   const personaGeneratorLambda = createJobLambda('PersonaGeneratorJob', {
     baseName: 'voc-job-persona-generator',

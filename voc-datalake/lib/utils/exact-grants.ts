@@ -18,7 +18,8 @@
  *   - S3 bucket grants: `s3:GetObject*` → `s3:GetObject` (GetObject, HeadObject, presigned GETs, ranged
  *     downloads and a copy source; no code reads a VersionId, a tag or an ACL), `s3:List*` → `s3:ListBucket`
  *     (ListObjectsV2, and a 404 rather than a 403 from HeadObject), `s3:DeleteObject*` → `s3:DeleteObject`
- *     (the one role that deletes versions, voc-retention, holds `s3:DeleteObjectVersion` explicitly),
+ *     (a role that deletes versions holds `s3:DeleteObjectVersion` explicitly: voc-retention under raw/, and the
+ *     workspace deleters on their own prefixes, lib/utils/workspace-object-deletes.ts),
  *     `s3:GetBucket*` and `s3:Abort*` → nothing (no code calls a GetBucket* API or uploads in parts: every
  *     writer is a single PutObject or a presigned PUT). CDK-owned handlers that do need some of them are
  *     listed in {@link CDK_HANDLER_NEEDS}.

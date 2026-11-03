@@ -14,7 +14,9 @@
  * The ONE exception is the raw data lake's bronze layer, `raw/` (TENETS.md D1): it keeps
  * history, so nothing under it ever expires, current or noncurrent, and a bucket-policy
  * statement refuses any PutObject under it that could overwrite (no `If-None-Match`).
- * Only voc-retention deletes there (lawful erasure / a declared retention period).
+ * Only voc-retention deletes there (lawful erasure / a declared retention period). The raw
+ * bucket's workspace prefixes have no noncurrent rule either: a workspace delete removes every
+ * version itself (RAW_BUCKET_WORKSPACE_PREFIXES); only `scratch/` expires.
  *
  * Resources are created directly on the stack passed in (not inside a child
  * construct), so their logical ids are exactly those VocCoreStack always had.
@@ -28,23 +30,21 @@ import { retainOnReplace } from '../utils/retain-on-replace';
 import { dataProtection, type DataProtection } from '../utils/data-protection';
 
 /**
- * Raw data bucket, WORKSPACE prefixes only (not `raw/`): a noncurrent version (a regenerated
- * avatar / prototype / document, an overwritten upload) is recoverable for 90 days; a quarter
- * is long enough to notice and restore before it is purged.
- */
-export const WORKSPACE_NONCURRENT_VERSION_DAYS = 90;
-/**
- * Every prefix of the raw data bucket other than `raw/`, each with its own noncurrent-version
- * rule (S3 lifecycle filters cannot say "everything but raw/"). `raw/` has none: the bronze
- * layer keeps every version (TENETS.md D1). A new prefix must be added here, or its overwritten
- * versions are kept forever; `core-buckets.test.ts` checks every grant on the bucket in lib/stacks.
+ * Every prefix of the raw data bucket other than `raw/`: the workspace prefixes. None has a noncurrent-version
+ * rule since 6.00 (wave C owner decision: a workspace artifact is really deleted when its owner deletes it, and the
+ * deleting code removes every version itself, lib/utils/workspace-object-deletes.ts), so nothing here expires a
+ * version behind the owner's back either. `scratch/` alone expires (SCRATCH_EXPIRATION_DAYS). A new prefix must be
+ * added here; `core-buckets.test.ts` checks every grant on the bucket in lib/stacks against this list.
  */
 export const RAW_BUCKET_WORKSPACE_PREFIXES = [
   'avatars/', 'company-context/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/',
 ] as const;
 /** The bronze layer: written once (If-None-Match), never overwritten or expired. */
 export const RAW_LAYER_PREFIX = 'raw/';
-/** `scratch/` objects (workflow claim-checks) expire after this many days; no workflow runs longer than 2 h. */
+/**
+ * `scratch/` objects (workflow claim-checks) expire after this many days, and so do their noncurrent versions (a
+ * workflow's own delete leaves one): no workflow runs longer than 2 h.
+ */
 export const SCRATCH_EXPIRATION_DAYS = 2;
 /**
  * SPA bucket: each deploy's `s3 sync --delete` turns the previous build's assets
@@ -92,19 +92,15 @@ function versionHygieneRules(noncurrentDays: number): s3.LifecycleRule[] {
 }
 
 /**
- * The raw data bucket's lifecycle: abandoned multipart uploads are aborted and expired delete
- * markers removed bucket-wide (neither removes data), and noncurrent versions expire under each
- * workspace prefix only — never under `raw/`.
+ * The raw data bucket's lifecycle: abandoned multipart uploads are aborted and expired delete markers removed
+ * bucket-wide (neither removes data). No noncurrent-version rule anywhere: `raw/` keeps every version (TENETS.md
+ * D1) and a workspace delete removes its own versions (RAW_BUCKET_WORKSPACE_PREFIXES). `scratch/` gets its own rule
+ * where the bucket is created.
  */
 function rawBucketVersionRules(): s3.LifecycleRule[] {
   return [
     { id: 'abort-incomplete-uploads', abortIncompleteMultipartUploadAfter: cdk.Duration.days(ABORT_MULTIPART_DAYS) },
     { id: 'remove-expired-delete-markers', expiredObjectDeleteMarker: true },
-    ...RAW_BUCKET_WORKSPACE_PREFIXES.map((prefix): s3.LifecycleRule => ({
-      id: `noncurrent-${prefix.replace(/\/$/, '')}`,
-      prefix,
-      noncurrentVersionExpiration: cdk.Duration.days(WORKSPACE_NONCURRENT_VERSION_DAYS),
-    })),
   ];
 }
 
@@ -216,8 +212,12 @@ export function createCoreBuckets(
     lifecycleRules: [
       ...rawBucketVersionRules(),
       // Research / document workflow scratch copies of feedback-derived text (DATA-4): the workflows run at
-      // most 2 h and delete their own on success; this removes what a failed or timed-out run left behind.
-      { id: 'scratch-expiry', prefix: 'scratch/', expiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS) },
+      // most 2 h and delete their own on success; this removes what a failed or timed-out run left behind, and the
+      // noncurrent version a workflow's own delete leaves (the bucket is versioned).
+      {
+        id: 'scratch-expiry', prefix: 'scratch/', expiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
+        noncurrentVersionExpiration: cdk.Duration.days(SCRATCH_EXPIRATION_DAYS),
+      },
     ],
     cors: [{
       // PUT is required for browser-side presigned uploads (project product docs).
