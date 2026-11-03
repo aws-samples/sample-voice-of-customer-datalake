@@ -66,7 +66,7 @@ describe('ingestor roles write the raw lake, never read or delete it', () => {
       .filter(([, actions]) => actions.length > 0);
     expect(readers.length).toBeGreaterThan(0);
     for (const [roleId, actions] of readers) {
-      expect(actions, roleId).toContain('s3:GetObject*');
+      expect(actions, roleId).toContain('s3:GetObject');
       expect(actions.filter((a) => WRITE_OR_DELETE.test(a)), roleId).toStrictEqual([]);
     }
   });

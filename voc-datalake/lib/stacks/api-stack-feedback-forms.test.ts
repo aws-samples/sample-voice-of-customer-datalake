@@ -274,7 +274,7 @@ describe('the public feedback-form routes', () => {
     // taking a prioritization meeting's throttle down with it would be unrelated.
     expect(keys.has('/voting-sessions/{session_id}/config/GET')).toBe(true);
     expect(keys.has('/voting-sessions/{session_id}/submit/POST')).toBe(true);
-  });
+  }, SYNTH_TIMEOUT_MS);
 
   it('every method setting on the stage names a route this stage wires', () => {
     // The general form of the two cases above, over BOTH template shapes: a
@@ -341,7 +341,7 @@ describe('the public feedback-form routes', () => {
         + 'it needs its own throttle pair, and `nonOptions` must stop excluding it',
       ).toStrictEqual([]);
     }
-  });
+  }, SYNTH_TIMEOUT_MS);
 
   it('gives EVERY unauthenticated route an explicit throttle, not just these three', () => {
     // The CONVERSE of the case above, and the one that generalises this PR rather

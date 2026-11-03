@@ -77,5 +77,5 @@ describe('integrations role: EventBridge schedule-rule grant', () => {
 
   it('grants no EventBridge action when no scheduled plugin is enabled', () => {
     expect(eventsStatements(apiTemplate())).toStrictEqual([]);
-  });
+  }, SYNTH_TIMEOUT_MS);
 });

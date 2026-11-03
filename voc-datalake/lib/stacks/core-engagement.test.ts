@@ -51,6 +51,13 @@ function onlyKmsKeyId(template: Template): string {
   return itemAt(ids, 0);
 }
 
+/** The one log group whose logical id starts with `prefix` (a function's own group, lib/utils/log-retention.ts). */
+function onlyLogGroupId(template: Template, prefix: string): string {
+  const ids = Object.keys(template.findResources('AWS::Logs::LogGroup')).filter((id) => id.startsWith(prefix));
+  expect(ids).toHaveLength(1);
+  return itemAt(ids, 0);
+}
+
 /** The table whose TableName starts with `baseName-`. */
 function tableNamed(template: Template, baseName: string) {
   return onlyResource(template, 'AWS::DynamoDB::Table', {
@@ -214,7 +221,7 @@ describe('board user pool', () => {
     expect(JSON.stringify(fn?.[1])).toMatch(/"FRONTEND_URL":\{"Fn::Join":\["",\["https:\/\/",\{"Fn::GetAtt":\["FrontendDistribution/);
   });
 
-  it('the pre-sign-up trigger may read participants + projects items (review links) and decrypt — nothing else', () => {
+  it('the pre-sign-up trigger may read participants + projects items (review links), decrypt and write its own logs — nothing else', () => {
     const policy = Object.entries(coreWithBoard().findResources('AWS::IAM::Policy'))
       .find(([id]) => id.startsWith('BoardPreSignUpLambdaServiceRoleDefaultPolicy'));
     const statements = z.object({ Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(z.object({
@@ -226,6 +233,8 @@ describe('board user pool', () => {
         { 'Fn::GetAtt': [tableNamed(coreWithBoard(), 'voc-projects').id, 'Arn'] },
       ])],
       ['kms:Decrypt', JSON.stringify({ 'Fn::GetAtt': [onlyKmsKeyId(coreWithBoard()), 'Arn'] })],
+      [['logs:CreateLogStream', 'logs:PutLogEvents'],
+        JSON.stringify({ 'Fn::GetAtt': [onlyLogGroupId(coreWithBoard(), 'BoardPreSignUpLambdaLogs'), 'Arn'] })],
     ]);
   });
 

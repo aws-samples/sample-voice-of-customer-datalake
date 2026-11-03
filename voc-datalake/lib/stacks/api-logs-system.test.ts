@@ -69,9 +69,13 @@ describe('the logs API searches this deployment\'s logs', () => {
     expect(logsEnv().WEB_SEARCH_ENABLED).toMatch(/^(true|false)$/);
   }, SYNTH_TIMEOUT_MS);
 
-  it('holds exactly the four Logs actions', () => {
-    expect([...grants('logs:').keys()].sort(byCodeUnit))
-      .toStrictEqual(['logs:DescribeLogGroups', 'logs:GetQueryResults,logs:StopQuery', 'logs:StartQuery']);
+  it('holds exactly the four Logs search actions, plus writes to its own log group', () => {
+    expect([...grants('logs:').keys()].sort(byCodeUnit)).toStrictEqual([
+      'logs:CreateLogStream,logs:PutLogEvents', 'logs:DescribeLogGroups', 'logs:GetQueryResults,logs:StopQuery',
+      'logs:StartQuery',
+    ]);
+    // The writes are the per-function grant every Lambda gets (lib/utils/lambda-log-grants.ts): one log group.
+    expect(grants('logs:').get('logs:CreateLogStream,logs:PutLogEvents')?.resources).toHaveLength(1);
   }, SYNTH_TIMEOUT_MS);
 
   it('starts queries only on the deployment\'s own log groups', () => {

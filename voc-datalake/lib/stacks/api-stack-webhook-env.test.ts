@@ -27,6 +27,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { apiStackDependencyProps, pkSkTable, sharedSecretArn } from '../test-support/api-stack-fixture';
+import { applyAppAspects } from '../utils/app-aspects';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 
 const WEBHOOK_PLUGIN_ID = 'webhook_fixture';
@@ -78,6 +79,7 @@ function synthWithWebhookPlugin(): Template {
     // api-stack.ts filters `getEnabledPlugins` before `getPluginsWithWebhook`.
     enabledSources: [WEBHOOK_PLUGIN_ID],
   });
+  applyAppAspects(app); // the rewrites bin/voc-datalake.ts applies
 
   return Template.fromStack(stack);
 }

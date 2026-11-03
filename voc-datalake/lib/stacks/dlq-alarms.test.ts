@@ -25,6 +25,7 @@ import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_ACCOUNT, SYNTH_REGION, committedFeatureFlags } from '../test-support/synth-app';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
+import { applyAppAspects } from '../utils/app-aspects';
 import { itemAt } from '../test-support/guards';
 import { byCodeUnit } from '../utils/compare';
 
@@ -69,7 +70,9 @@ function synthCoreTemplate(context: Record<string, unknown> = {}, deploymentPref
   const app = new cdk.App({
     context: { ...committedFeatureFlags(), 'aws:cdk:bundling-stacks': [], skipFrontendBuildCheck: true, ...context },
   });
-  return Template.fromStack(new VocCoreStack(app, 'TestCoreStack', { env, deploymentPrefix }));
+  const stack = new VocCoreStack(app, 'TestCoreStack', { env, deploymentPrefix });
+  applyAppAspects(app); // the rewrites bin/voc-datalake.ts applies
+  return Template.fromStack(stack);
 }
 
 /** Synthesize once per file: the alarm cases below read the same three stacks. */

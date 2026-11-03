@@ -10,7 +10,6 @@ import { Template } from 'aws-cdk-lib/assertions';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { z } from 'zod';
 
-import { applyLambdaLogRetention } from '../utils/log-retention';
 import { BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS, pythonIntConstant } from '../test-support/cross-language-invariants';
 import { IamPolicySchema, isAttachedToRole, statementActions } from '../test-support/iam-statements';
 import type { IamStatement } from '../test-support/iam-statements';
@@ -189,7 +188,7 @@ describe('prototype object IAM boundaries', () => {
       .filter((statement) => JSON.stringify(statement.Resource).includes('prototypes/*'));
 
     const actions = new Set(prototypeStatements.flatMap(statementActions));
-    expect(actions).toContain('s3:GetObject*');
+    expect(actions).toContain('s3:GetObject');
     expect(actions).toContain('s3:PutObject');
     expect(actions).not.toContain('s3:*');
   });
@@ -197,11 +196,11 @@ describe('prototype object IAM boundaries', () => {
   it('lets the projects Lambda sweep a deleted project\'s objects: list + delete on its three prefixes', () => {
     const statements = statementsForRole('ProjectsLambdaRole');
     const deletesUnder = (pattern: string) => statements.some((statement) =>
-      statementActions(statement).includes('s3:DeleteObject*') && JSON.stringify(statement.Resource).includes(pattern));
+      statementActions(statement).includes('s3:DeleteObject') && JSON.stringify(statement.Resource).includes(pattern));
 
     expect(['prototypes/*', 'projects/*/product_docs/*', 'avatars/*'].filter((pattern) => !deletesUnder(pattern)))
       .toStrictEqual([]);
-    expect(statements.some((statement) => statementActions(statement).includes('s3:List*'))).toBe(true);
+    expect(statements.some((statement) => statementActions(statement).includes('s3:ListBucket'))).toBe(true);
   });
 
   it('keeps the document generator read-write grant scoped to prototype objects', () => {
@@ -210,7 +209,7 @@ describe('prototype object IAM boundaries', () => {
 
     expect(prototypeStatements.length).toBeGreaterThan(0);
     const actions = new Set(prototypeStatements.flatMap(statementActions));
-    const needed = ['s3:GetObject*', 's3:PutObject', 's3:DeleteObject*'];
+    const needed = ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'];
     expect(needed.filter((action) => !actions.has(action)), 'missing prototype actions').toStrictEqual([]);
     expect(actions).not.toContain('s3:*');
   });
@@ -449,7 +448,7 @@ describe('the fixture provider is absent unless a prefixed deployment opts in', 
     ['the flag but no prefix', () => synthApiTemplate({ enableVerificationFixtureProvider: true })],
   ])('creates nothing given %s', (_label, synth) => {
     expect(fixtureProviderTrace(synth())).toStrictEqual(NO_FIXTURE_PROVIDER);
-  });
+  }, SYNTH_TIMEOUT_MS);
 
   // One synth per case, like the shapes above: five synths in one test body put a
   // single case past the 5s default once the machine is busy (seen on a full run).
@@ -461,6 +460,7 @@ describe('the fixture provider is absent unless a prefixed deployment opts in', 
       const template = synthApiTemplate({ enableVerificationFixtureProvider: value }, [], 'b');
       expect(fixtureProviderTrace(template)).toStrictEqual(NO_FIXTURE_PROVIDER);
     },
+    SYNTH_TIMEOUT_MS,
   );
 });
 
@@ -474,7 +474,7 @@ describe('the optional invoker ARN narrows invoke to one principal', () => {
 
   it('attaches no resource policy when no ARN is supplied', () => {
     expect(invokerPermissions(apiTemplatePrefixed())).toStrictEqual([]);
-  });
+  }, SYNTH_TIMEOUT_MS);
 
   it('attaches a permission for exactly the supplied role', () => {
     const arn = 'arn:aws:iam::111122223333:role/my-verification-role';
@@ -484,7 +484,7 @@ describe('the optional invoker ARN narrows invoke to one principal', () => {
     expect(permissions).toHaveLength(1);
     const props = z.object({ Properties: z.record(z.string(), z.unknown()) }).parse(itemAt(permissions, 0)[1]).Properties;
     expect(props).toMatchObject({ Action: 'lambda:InvokeFunction', Principal: arn });
-  });
+  }, SYNTH_TIMEOUT_MS);
 
   it.each([
     ['not an arn', 'my-verification-role'],
@@ -512,11 +512,10 @@ describe('the optional invoker ARN narrows invoke to one principal', () => {
  * DOES contain it, which is the only place those findings can appear.
  */
 it('leaves no unacknowledged cdk-nag finding on the fixture provider', () => {
+  // buildApiStack applies bin/voc-datalake.ts's rewrites (lib/utils/app-aspects.ts: own log groups, exact grants),
+  // and deliberately none of bin's acknowledgements: every rule, IAM5 wildcards above all, must still be able to
+  // fail this case.
   const stack = buildApiStack({ enableVerificationFixtureProvider: true }, [], 'b');
-  // Mirror ONLY the log aspect bin/voc-datalake.ts applies (each function's role writes its own log group,
-  // in place of AWSLambdaBasicExecutionRole). Deliberately none of bin's acknowledgements: every rule —
-  // IAM5 wildcards above all — must still be able to fail this case.
-  applyLambdaLogRetention(stack);
   Template.fromStack(stack); // synthesize first: cdk-nag 3 checks the prepared tree
   const violations = new AwsSolutionsChecks().validateScope(stack).violations;
   // Vacuity: the provider is in this shape, and every reported resource carries a construct path, so the

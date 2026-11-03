@@ -151,7 +151,7 @@ describe('the integrations Lambda is handed its plugin secret defaults', () => {
         .reduce((sum, [k, v]) => sum + Buffer.byteLength(`${k}=${String(v)}`), 0);
       expect(total, `${label} env is ${total} bytes`).toBeLessThan(4096);
     }
-  });
+  }, SYNTH_TIMEOUT_MS);
 });
 
 
