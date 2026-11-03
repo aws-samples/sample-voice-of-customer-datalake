@@ -44,7 +44,7 @@ type ApiCountedCrsRule = (typeof API_COUNTED_CRS_RULES)[number];
 export const CLOUDFRONT_COUNTED_CRS_RULES = ['GenericRFI_QUERYARGUMENTS'] as const;
 
 /** The SPA's OAuth consent page (frontend/src/routes.tsx, CONSENT_PAGE_PATH in shared/mcp_oauth_config.py). */
-export const SPA_OAUTH_CONSENT_PATH = '/oauth/authorize';
+const SPA_OAUTH_CONSENT_PATH = '/oauth/authorize';
 
 /** The label each counted rule adds (exact case, from the AWS baseline rule group page). */
 export const CRS_RULE_LABELS: Readonly<Record<ApiCountedCrsRule, string>> = {
@@ -142,7 +142,7 @@ const anyOf = (statements: readonly Statement[]): Statement => (
 );
 
 /** For each counted rule, the public paths it blocks on; rules with the same paths grouped (one regex each). */
-export function blockedPathGroups(): { rules: ApiCountedCrsRule[]; paths: string[] }[] {
+function blockedPathGroups(): { rules: ApiCountedCrsRule[]; paths: string[] }[] {
   const groups = new Map<string, { rules: ApiCountedCrsRule[]; paths: string[] }>();
   for (const rule of API_COUNTED_CRS_RULES) {
     const paths = PUBLIC_API_ROUTES.filter((route) => !route.keepCounted.includes(rule)).map((route) => route.path);
