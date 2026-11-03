@@ -152,3 +152,13 @@ class TestProjectDelete:
 
         assert world.versions() == ['prototypes/proj-10/keep.html'] * 2
         assert [(a['kind'], a['actor']) for a in world.audit()] == [('project', ACTOR)]
+
+
+class TestSupersededAvatar:
+    def test_a_replaced_avatar_loses_every_version_and_the_new_one_stays(self, world):
+        from shared.avatar import delete_superseded_avatars
+
+        world.put_versions('avatars/x1/old.png', owner=P)
+        world.put_versions('avatars/x1/new.png', owner=P)
+        delete_superseded_avatars(world.s3, BUCKET, 'x1', keep='avatars/x1/new.png', project_id=P)
+        assert world.versions('avatars/') == ['avatars/x1/new.png'] * 2

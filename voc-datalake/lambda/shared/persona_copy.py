@@ -19,6 +19,7 @@ from shared.ids import timestamped_id
 from shared.logging import logger
 from shared.persona_save import ProjectNotWritableError, save_persona_items, store_persona_count
 from shared.project_gate import PROJECT_NOT_FOUND
+from shared.s3_versions import delete_every_version
 
 SourceScope = Literal['project', 'company']
 
@@ -78,13 +79,13 @@ def _copy_avatar(s3: Any, bucket: str, source_uri: object, new_id: str, target: 
 
 
 def _sweep_copied_avatars(s3: Any, bucket: str, items: list[dict]) -> None:
-    """Best effort: remove the avatar objects this copy made for rows that were never saved."""
+    """Best effort: remove the avatar objects this copy made for rows that were never saved (every version)."""
     for item in items:
         key = avatar_key_from_uri(item.get('avatar_url'), bucket)
         if key is None:
             continue
         try:
-            s3.delete_object(Bucket=bucket, Key=key)
+            delete_every_version(s3, bucket, key, exact=True)
         except Exception:  # noqa: BLE001 - cleanup must not mask the 404
             logger.warning('[PERSONA_COPY] Could not remove a copied avatar', extra={'key': key})
 
