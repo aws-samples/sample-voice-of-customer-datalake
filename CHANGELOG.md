@@ -17,6 +17,46 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.00.00] - 2026-11-03
+
+Deletes follow the tenets: customer data is deleted only for a stated legal basis and leaves a tombstone, workspace deletes really delete and are recorded, no role holds a delete it does not use, and no role can change an audit row. Major: the erasure routes require a legal basis.
+
+### Added
+
+- **Every customer-data delete states its legal basis** (TENETS.md D5): `POST /settings/erasure` takes `legal_basis` (≤ 300 characters), source profiles take `retention_legal_basis`, and `DELETE /participants/people/{id}` takes `{legal_basis}`. Administration → Privacy & access → Source policies asks for it in the person erasure, the "Delete all data from a source" dialog and a source's retention setting, and the participant's erase dialog asks for it too ([docs/source-policies.md](docs/source-policies.md#retention-and-erasure), [docs/participants.md](docs/participants.md)).
+- **Tombstones**: `voc-retention` writes one contentless row per deleted item (`AUDIT#tombstone#<source>` / `<feedback_id>` in `voc-aggregates`: source, job, mode, legal basis, time; no `ttl`) before the delete. A participant erasure writes `AUDIT#tombstone#participant` (person id hash) and an `AUDIT#delete` row in `voc-participants`, with no email or name.
+- **Erasure and retention reach Radar**: matching `voc-radar` reviews, their dedupe markers and their raw archives are deleted (the brand's daily counters are kept); the job shows `deleted_radar_items` ([docs/radar.md](docs/radar.md)).
+- **Erased evidence is marked**: personas, research reports and documents that cited an erased review lose its id from `input_feedback_ids` / `evidence_feedback_ids` and carry `erased_evidence: {count, job_id, mode, at}`; the job shows `artifacts_marked`. Their text is not rewritten.
+- Erasure jobs show their legal basis, Radar and marked-artifact counts, and any uploaded CSV / JSON file kept for review (`files_needing_review`, keys only).
+- **Workspace deletes are recorded**: every delete of a project, persona, company persona, document (and a research / custom document's saved revisions), product doc, document comment, feedback request, +1, feedback board, participant list, list member, chat conversation and an archived design reference's copies writes one `AUDIT#delete` row in the table that held it: what (ids only), who (`{sub, kind}`: user, admin, agent, MCP token, plan or system; never an email) and when. The rows never expire. A replace-mode persona regeneration records each persona it removed (`persona_replaced`) as the person who started it ([docs/project-workspace.md → Deleting](docs/project-workspace.md#deleting)).
+- **Documents say when a source was deleted**: when a persona, document or product doc is deleted, the documents of the same project that were written from it gain `deleted_sources` (returned by the projects API), and the document view shows "Written from a persona that was later deleted: <name>" (or a document / product document). The ids stay in the document's lineage.
+
+### Changed
+
+- **Deletes remove every S3 version**: persona avatars (persona delete, regeneration, a failed copy), a deleted prototype's HTML (a deleted prototype document now takes its HTML with it), product doc uploads and extracted text, a project's prototypes / product docs / avatars, and an archived design reference's logo preview and icons are deleted with every version and delete marker.
+- The raw data bucket no longer expires noncurrent versions under its workspace prefixes (`avatars/`, `company-context/`, `memory-imports/`, `projects/`, `prototypes/`): deleting a workspace artifact removes every version itself. `scratch/` still expires after 2 days, now its noncurrent versions too ([docs/data-lake-structure.md](docs/data-lake-structure.md)).
+- "Delete all data from a source" also deletes the CSV and JSON files uploaded to that source (`raw/csv_upload/…`, `raw/json_upload/…`, every version). Retention and other erasures keep such a file when it holds a deleted row, and list it on the job / audit row for review.
+- The Sources page flags a retention period saved without a legal basis, and a save needs one.
+- **The feedback processor and the aggregator run as separate IAM roles**, each with only what its handler uses: the aggregator can no longer call Bedrock, Comprehend or Translate, write `raw/`, read the processing queue or touch feedback items (`voc-datalake/lib/stacks/processing-roles.ts`).
+- **DynamoDB writes are granted per action**: every API, job, ingestor and worker role keeps its reads and gets only the writes its code makes. The metrics API is read-only on `voc-aggregates`; no role but `voc-retention` can delete feedback or Radar items; the document generator, persona importer and product-doc extractor can no longer delete S3 objects.
+- `voc-retention` gets exact grants for its new reach: PutItem / BatchGetItem on `voc-aggregates` (tombstones are written one PutItem each: a batch write would also allow deletes), Scan / DeleteItem on `voc-radar` plus the `SETTINGS#radar` cache-version bump, Scan / UpdateItem on `voc-projects`; its explicit Deny on the whole-file upload prefixes is gone (a whole-source erasure now deletes the source's own uploads). New env `RADAR_TABLE`, `PROJECTS_TABLE`.
+- `POST /s3-import/reprocess`'s 404 for an expired staged file names the import bucket's real expiry, passed to `voc-s3-import-api` as `IMPORT_STAGED_EXPIRATION_DAYS`.
+
+### Security
+
+- No role holds a delete it does not use. A role that deletes operational rows in a shared table (a circuit-breaker row, the morning-brief subscriber row, a form config, validation logs, a Prioritization row and its ballots) has the delete pinned by `dynamodb:LeadingKeys` to those rows' partitions. The whole-app inventory of deleters covers every customer-data, workspace and audit table and every raw-bucket prefix (`voc-datalake/lib/customer-data-deletes.test.ts`).
+- **Audit rows are protected by IAM**: `AUDIT#*` rows in `voc-aggregates`, `voc-projects`, `voc-participants`, `voc-feature-requests` and `voc-conversations` carry an explicit Deny: no role can update or delete one, and only its named writer can put one (`voc-retention`; the projects API and persona generator; the engagement API; the chat API; the settings API only `AUDIT#delete` in `voc-aggregates`) (`voc-datalake/lib/utils/audit-row-guard.ts`).
+- The projects API, the persona generator and the settings API's design-preview cleanup may delete object versions (`s3:DeleteObjectVersion` + `s3:ListBucketVersions`), on their own prefixes only, never `raw/`.
+- Audit trails of customer-data deletes carry no `ttl` and no content: the `AUDIT#retention` run row records the legal basis (`legal_basis` / `legal_bases`), and tombstones record each deleted item.
+
+### Upgrade notes
+
+- **Breaking API change:** `POST /settings/erasure` answers 400 without a non-empty `legal_basis` (≤ 300 characters), and so does `DELETE /participants/people/{id}` without `{"legal_basis": "…"}` in its body. Update scripts and integrations that call them.
+- `PUT /settings/sources` answers 400 for a profile that sets `retention_days` without `retention_legal_basis`. Existing profiles with a retention period and no basis keep running unchanged (their audit rows and tombstones say `legal_basis: "not recorded (set before 6.00.00)"`); add the basis on the Sources page before the next save. An erasure job queued before the deploy runs with that same value.
+- The aggregator gets a new IAM role (`AggregatorLambdaRole`); CloudFormation creates it and switches the function over in one deploy. The processor keeps `ProcessingLambdaRole`. No table, bucket or queue is replaced.
+- Roles lose write actions they did not use. A custom Lambda or script that runs as one of the platform's roles and deleted rows with it now gets `AccessDenied`; a process that changes or deletes an `AUDIT#` row is denied whatever its role.
+- After this release, overwritten or deleted objects under the raw bucket's workspace prefixes are no longer purged after 90 days. Versions left by an artifact deleted BEFORE this release (a delete marker over noncurrent versions) are not purged either: remove them once with a temporary lifecycle rule or by version.
+
 ## [5.78.00] - 2026-11-03
 
 Follow-ups to the 5.77.00 review: the opt-in WAF keeps its rule exceptions off the public routes, and the tests now
