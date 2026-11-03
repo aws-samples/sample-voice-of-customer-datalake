@@ -38,8 +38,7 @@ export function synthProcessingTemplate(options: { withIndexes?: boolean } = {})
     return table;
   };
 
-  const stack = new VocProcessingStack(app, 'TestProcessing', {
-    env,
+  const tables = {
     feedbackTable: makeTable('Feedback', { stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES }),
     aggregatesTable: makeTable('Aggregates'),
     projectsTable: makeTable('Projects'),
@@ -49,6 +48,10 @@ export function synthProcessingTemplate(options: { withIndexes?: boolean } = {})
     agentsTable: makeTable('Agents'),
     radarTable: makeTable('Radar'),
     conversationsTable: makeTable('Conversations'),
+  };
+  const stack = new VocProcessingStack(app, 'TestProcessing', {
+    env,
+    ...tables,
     userPool: new cognito.UserPool(deps, 'UserPool'),
     processingQueue: fixtureQueue(deps, 'Queue'),
     kmsKey: new kms.Key(deps, 'Key'),
@@ -60,7 +63,7 @@ export function synthProcessingTemplate(options: { withIndexes?: boolean } = {})
     },
   });
   // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
-  applyAppAspects(app);
+  applyAppAspects(app, tables);
 
   return Template.fromStack(stack);
 }

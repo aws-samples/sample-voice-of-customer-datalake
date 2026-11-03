@@ -277,13 +277,14 @@ function synthApi(): Template {
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], skipFrontendBuildCheck: true } });
   const deps = new cdk.Stack(app, 'TestDeps', { env: ENV });
   const table = indexedTableFactory(deps);
+  const dependencies = apiStackDependencyProps(deps, ENV, table);
   const stack = new VocApiStack(app, 'TestApiStack', {
     env: ENV,
-    ...apiStackDependencyProps(deps, ENV, table),
+    ...dependencies,
     brandName: 'TestBrand',
     enabledSources: [],
   });
-  applyAppAspects(app); // the rewrites bin/voc-datalake.ts applies
+  applyAppAspects(app, dependencies); // the rewrites bin/voc-datalake.ts applies
   return Template.fromStack(stack);
 }
 
@@ -460,7 +461,7 @@ describe('memory + agents storage (VocCoreStack)', () => {
     // -c protectData=false: these cases pin the unprotected (demo) teardown shape.
     const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], protectData: false } });
     const stack = new VocCoreStack(app, 'TestCore', { env: ENV });
-    applyAppAspects(app); // the rewrites bin/voc-datalake.ts applies
+    applyAppAspects(app, stack); // the rewrites bin/voc-datalake.ts applies
     template = Template.fromStack(stack);
   });
 

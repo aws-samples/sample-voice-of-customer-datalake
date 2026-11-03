@@ -26,10 +26,11 @@ export function synthIngestionStacks(
     context: { ...committedFeatureFlags(), 'aws:cdk:bundling-stacks': [], ...context },
   });
   const deps = new cdk.Stack(app, 'Deps', { env });
+  const aggregatesTable = pkSkTable(deps, 'Aggregates');
   const stack = new VocIngestionStack(app, 'Ingestion', {
     env,
     watermarksTable: pkSkTable(deps, 'Watermarks'),
-    aggregatesTable: pkSkTable(deps, 'Aggregates'),
+    aggregatesTable,
     rawDataBucket: fixtureBucket(deps, 'RawData'),
     accessLogsBucket: fixtureBucket(deps, 'AccessLogs'),
     kmsKey: new kms.Key(deps, 'Key'),
@@ -37,6 +38,6 @@ export function synthIngestionStacks(
     frontendDomain,
   });
   // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
-  applyAppAspects(app);
+  applyAppAspects(app, { aggregatesTable });
   return { ingestion: Template.fromStack(stack), deps: Template.fromStack(deps) };
 }

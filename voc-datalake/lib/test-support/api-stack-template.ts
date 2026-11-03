@@ -134,16 +134,17 @@ export function buildApiStack(
   // wide grant and a table-scoped statement synthesize identically and every
   // wildcard assertion in these suites is vacuous.
   const table = indexedTableFactory(deps);
+  const dependencies = apiStackDependencyProps(deps, env, table);
 
   const stack = new VocApiStack(app, 'TestApiStack', {
     env,
     deploymentPrefix,
-    ...apiStackDependencyProps(deps, env, table),
+    ...dependencies,
     brandName: 'TestBrand',
     enabledSources,
   });
   // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
-  applyAppAspects(app);
+  applyAppAspects(app, dependencies);
   return stack;
 }
 

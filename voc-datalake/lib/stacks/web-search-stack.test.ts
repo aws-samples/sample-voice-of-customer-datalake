@@ -68,7 +68,7 @@ function construct(props: Omit<VocWebSearchStackProps, 'env' | 'crossRegionRefer
   // Skip asset bundling — template assertions only need structure.
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
   const stack = new VocWebSearchStack(app, 'VocWebSearchStack', { ...STACK_ENV, ...props });
-  applyAppAspects(app); // the rewrites bin/voc-datalake.ts applies
+  applyAppAspects(app, {}); // the rewrites bin/voc-datalake.ts applies (no table holds audit rows here)
   return stack;
 }
 
