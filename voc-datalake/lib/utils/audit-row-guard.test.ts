@@ -71,11 +71,19 @@ describe('audit rows (AUDIT#*) across every stack', () => {
   });
 
   it.each(writers)('%s may not change or remove an audit row in any table it writes', (_role, statements) => {
-    const deny = denied(statements, AUDIT_DENY_CHANGE_SID);
-    expect(deny.Effect).toBe('Deny');
-    expect(actionsOf(deny).sort(byCodeUnit)).toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem']);
-    expect(deny.Condition).toStrictEqual(AUDIT_CONDITION);
-    expect(tablesOf(deny).sort(byCodeUnit)).toStrictEqual(writtenBy(statements));
+    // Each written table sits in ONE of the two Denies (its ARN written once): the change-Deny for the tables the
+    // role writes audit rows in, the write-Deny (change actions + puts) for every other one. Both carry the change
+    // actions and the AUDIT# condition, so together they cover every table the role writes.
+    const changeActions = ['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem'];
+    const denies = [AUDIT_DENY_CHANGE_SID, AUDIT_DENY_WRITE_SID]
+      .map((sid) => statements.find((statement) => statement.Sid === sid))
+      .filter((statement) => statement !== undefined);
+    for (const deny of denies) {
+      expect(deny.Effect).toBe('Deny');
+      expect(changeActions.filter((action) => !actionsOf(deny).includes(action))).toStrictEqual([]);
+      expect(deny.Condition).toStrictEqual(AUDIT_CONDITION);
+    }
+    expect(denies.flatMap(tablesOf).sort(byCodeUnit)).toStrictEqual(writtenBy(statements));
   });
 
   it.each(GUARDED_TABLES)('%s: only its audit writers may put (or batch-write) an audit row', (table) => {
@@ -86,10 +94,11 @@ describe('audit rows (AUDIT#*) across every stack', () => {
     expect(mayPut).toStrictEqual(AUDIT_WRITERS[table]);
   });
 
-  it('a non-writer\'s put deny names PutItem and BatchWriteItem, on audit keys only', () => {
+  it('a non-writer\'s one deny names every write (put, batch, update, delete), on audit keys only', () => {
     const deny = denied(byRole.get('VocApiStack/ScrapersLambdaRole') ?? [], AUDIT_DENY_WRITE_SID);
     expect(deny.Effect).toBe('Deny');
-    expect(actionsOf(deny).sort(byCodeUnit)).toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:PutItem']);
+    expect(actionsOf(deny).sort(byCodeUnit))
+      .toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem']);
     expect(deny.Condition).toStrictEqual(AUDIT_CONDITION);
   });
 
@@ -131,13 +140,13 @@ describe('applyAuditRowGuard (one stack)', () => {
     .flatMap((policy) => IamPolicySchema.parse(policy).Properties.PolicyDocument.Statement)
     .flatMap((statement) => statement.Sid ?? []).sort(byCodeUnit);
 
-  it('a putter that deletes nothing is denied puts, changes and removals', () => {
+  it('a putter that deletes nothing is denied puts, changes and removals (one statement per table)', () => {
     expect(sids(guarded((table, role) => table.grant(role, 'dynamodb:PutItem'))))
-      .toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_WRITE_SID]);
+      .toStrictEqual([AUDIT_DENY_WRITE_SID]);
   });
 
   it('a delete grant does not make a role the audit writer (only the named writers are)', () => {
-    expect(sids(guarded((table, role) => table.grantReadWriteData(role)))).toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_WRITE_SID]);
+    expect(sids(guarded((table, role) => table.grantReadWriteData(role)))).toStrictEqual([AUDIT_DENY_WRITE_SID]);
   });
 
   it('a named writer keeps its puts, also with a delete grant', () => {
