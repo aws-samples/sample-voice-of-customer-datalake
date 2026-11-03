@@ -14,6 +14,7 @@ import { PII_REDACTION_ENV, piiDetectionStatement } from '../utils/pii-redaction
 import { FEEDBACK_FORM_API_FUNCTION_BASE_NAME, USERS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
 import { appVersion } from '../utils/connector-version';
+import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import type { ApiStackContext } from './api-context';
 import { OPS_ALERTS_NAG_REASON, opsAlertsWiring } from './dlq-alarms';
 import { grantLogsDiagnostics } from './api-logs-diagnostics';
@@ -42,7 +43,10 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   // deletes the CloudWatch alarms at runtime and manages the topic's email
   // recipients, so it gets the alert targets by name and exact-resource grants.
   const logsRole = ctx.role('LogsLambdaRole');
-  aggregatesTable.grantReadWriteData(logsRole);
+  // Alert settings (UpdateItem, shared/ops_alerts_service.py); DELETE /logs/validation/{source} clears that
+  // source's LOGS#validation#<source> rows with one batch (BatchWriteItem), nothing else.
+  grantReadAndWrites(aggregatesTable, logsRole, ['UpdateItem']);
+  grantKeyScopedWrites(aggregatesTable, logsRole, ['BatchWriteItem'], ['LOGS#validation#*']);
   kmsKey.grantDecrypt(logsRole);
   const opsAlerts = opsAlertsWiring({
     stack,
@@ -110,7 +114,10 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
 
   // Feedback Form API
   const feedbackFormRole = ctx.role('FeedbackFormLambdaRole');
-  aggregatesTable.grantReadWriteData(feedbackFormRole);
+  // Form configs and submissions (Put + Update); DELETE /feedback-forms/{id} deletes the FEEDBACK_FORM / FORM#<id>
+  // config row, the only delete.
+  grantReadAndWrites(aggregatesTable, feedbackFormRole, ['PutItem', 'UpdateItem']);
+  grantKeyScopedWrites(aggregatesTable, feedbackFormRole, ['DeleteItem'], ['FEEDBACK_FORM']);
   feedbackTable.grantReadData(feedbackFormRole);
   kmsKey.grantEncryptDecrypt(feedbackFormRole);
   feedbackFormRole.addToPolicy(new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: [processingQueueArn] }));
@@ -267,7 +274,8 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   // Chat API: saved conversations only. chat_handler.py reads CONVERSATIONS_TABLE and
   // nothing else, and makes no model call (the assistant itself is voc-chat-stream).
   const chatRole = ctx.role('ChatLambdaRole');
-  conversationsTable.grantReadWriteData(chatRole);
+  // The caller's own conversations: save (Put), rename (Update), DELETE /chat/conversations/{id} (Delete). No batch.
+  grantReadAndWrites(conversationsTable, chatRole, ['PutItem', 'UpdateItem', 'DeleteItem']);
   kmsKey.grantEncryptDecrypt(chatRole);
 
   const chatLambda = new lambda.Function(stack, 'ChatApi', {

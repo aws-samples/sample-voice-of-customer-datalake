@@ -26,6 +26,7 @@ import type { CoreBuildContext } from './core-cdn';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { isDevDeployment } from '../utils/context';
 import { cognitoPlusEnabled, userPoolFeaturePlan } from '../utils/cognito-plus';
+import { grantWrites } from '../utils/table-write-grants';
 
 export interface CoreAuth {
   userPool: cognito.UserPool;
@@ -296,7 +297,8 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
       sourceFile: 'model_pin.py',
       description: 'Seeds the global Bedrock model pin (create once, never reset)',
     });
-    aggregatesTable.grantWriteData(modelPinLambda);
+    // One conditional UpdateItem on the pin row (model_pin.py): no read, no put, no delete.
+    grantWrites(aggregatesTable, modelPinLambda, ['UpdateItem']);
 
     const modelPinProvider = new cr.Provider(stack, 'ModelPinProvider', {
       onEventHandler: modelPinLambda,

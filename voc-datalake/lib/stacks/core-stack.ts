@@ -23,6 +23,7 @@ import { createCoreCdn, type CoreBuildContext } from './core-cdn';
 import { createCoreBuckets } from './core-buckets';
 import { retainOnReplace } from '../utils/retain-on-replace';
 import { dataProtectionOf, type DataProtection } from '../utils/data-protection';
+import { grantReadAndWrites } from '../utils/table-write-grants';
 import { ALARM_NAME_PREFIX, ALARM_TOPIC_BASE_NAME, API_ASYNC_FAILURES_QUEUE_BASE_NAME, INGEST_SCHEDULE_DLQ_BASE_NAME, createAlarmTopic, createApiAsyncFailureQueue } from './dlq-alarms';
 import { allowEventBridgeToScheduleDlq } from './ingestion-schedule-dlq';
 
@@ -438,8 +439,10 @@ export class VocCoreStack extends VocStack {
     const productDocReadKeys = 'projects/*/product_docs/raw/*';
     const productDocWriteKeys = 'projects/*/product_docs/extracted/*';
     this.rawDataBucket.grantRead(productDocExtractor, productDocReadKeys);
-    this.rawDataBucket.grantWrite(productDocExtractor, productDocWriteKeys);
-    this.projectsTable.grantReadWriteData(productDocExtractor);
+    // Put only: the extractor writes its output and never deletes (a document delete is the projects API's).
+    this.rawDataBucket.grantPut(productDocExtractor, productDocWriteKeys);
+    // One conditional UpdateItem on the document row (handler.py); nothing else is written.
+    grantReadAndWrites(this.projectsTable, productDocExtractor, ['UpdateItem']);
     this.aggregatesTable.grantReadData(productDocExtractor);
     this.kmsKey.grantEncryptDecrypt(productDocExtractor);
     grantClaudeModelsToFunction(productDocExtractor, 'invoke');

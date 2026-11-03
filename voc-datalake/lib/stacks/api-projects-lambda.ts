@@ -9,6 +9,7 @@ import { grantClaudeModels } from '../utils/claude-model-grant';
 import { PROJECTS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import type { ApiStackContext } from './api-context';
 import { grantMarketplaceSubscription } from './api-marketplace';
+import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import {
   ASSIST_WORKER_ENV, PROJECTS_ASSIST_FUNCTION_BASE_NAME, assistWorkerName, createAssistWorker, grantAssistWorkerInvoke,
 } from './api-assist-workers';
@@ -32,7 +33,12 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   // Projects API
   const projectsRole = ctx.role('ProjectsLambdaRole');
   feedbackTable.grantReadData(projectsRole);
-  aggregatesTable.grantReadWriteData(projectsRole);
+  // Prioritization rows, room votes, user flags (Put + Update). Its aggregates deletes are workspace rows only: a
+  // Prioritization row with its ballots (PRIORITIZATION) and a closed vote's pointer (VOTING_SESSION_ROW).
+  grantReadAndWrites(aggregatesTable, projectsRole, ['PutItem', 'UpdateItem']);
+  grantKeyScopedWrites(aggregatesTable, projectsRole, ['DeleteItem'], ['PRIORITIZATION', 'VOTING_SESSION_ROW']);
+  // Workspace artifacts (owner decision: really deleted when their owner deletes them): every write, batches included
+  // (a project delete sweeps its rows and its jobs with batch_writer, lambda/api/projects.py delete_project).
   projectsTable.grantReadWriteData(projectsRole);
   jobsTable.grantReadWriteData(projectsRole);
   kmsKey.grantEncryptDecrypt(projectsRole);

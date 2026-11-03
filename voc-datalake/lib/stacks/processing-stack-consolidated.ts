@@ -27,6 +27,8 @@ import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
 import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT } from './processor-timing';
 import { appVersion } from '../utils/connector-version';
+import { grantReadAndWrites } from '../utils/table-write-grants';
+import { createAggregatorRole, createProcessorRole } from './processing-roles';
 
 export interface VocProcessingStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;
@@ -107,41 +109,12 @@ export class VocProcessingStack extends VocStack {
       'Dependencies for processing lambdas (ARM64/Graviton)');
 
     // ============================================
-    // PROCESSING ROLE (shared for processor + aggregator)
+    // PROCESSOR + AGGREGATOR ROLES (one each, lib/stacks/processing-roles.ts)
     // ============================================
-    const processingRole = new iam.Role(this, 'ProcessingLambdaRole', {
-      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+    const processingRole = createProcessorRole(this, {
+      feedbackTable, aggregatesTable, idempotencyTable, radarTable: props.radarTable, processingQueue, kmsKey, rawDataBucket,
     });
-
-    // Bedrock permissions
-    // Enrichment defaults to Haiku but admins can repoint the 'enrichment'
-    // surface via the picker, so grant every allowlisted model (issue #96).
-    grantClaudeModels(processingRole, 'stream');
-
-    // Comprehend + Translate permissions
-    processingRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'ComprehendAnalysis',
-      actions: ['comprehend:DetectSentiment', 'comprehend:DetectKeyPhrases', 'comprehend:DetectDominantLanguage'],
-      resources: ['*'],
-    }));
-    processingRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'TranslateText',
-      actions: ['translate:TranslateText'],
-      resources: ['*'],
-    }));
-
-    // DynamoDB + KMS permissions
-    feedbackTable.grantReadWriteData(processingRole);
-    aggregatesTable.grantReadWriteData(processingRole);
-    idempotencyTable.grantReadWriteData(processingRole);
-    processingQueue.grantConsumeMessages(processingRole);
-    kmsKey.grantEncryptDecrypt(processingRole);
-    // Radar reviews: the dedupe-marker read and one transaction of Put + counter Updates.
-    props.radarTable.grant(processingRole, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
-    // The inline raw_data fallback (lambda/shared/raw_fallback.py): a message whose producer could not
-    // archive it is archived here, write-once under raw/ (the bucket policy refuses a put without
-    // If-None-Match). Put only: no read, no delete.
-    rawDataBucket.grantPut(processingRole, 'raw/*');
+    const aggregatorRole = createAggregatorRole(this, { aggregatesTable, idempotencyTable, kmsKey });
 
     // ============================================
     // FEEDBACK PROCESSOR LAMBDA
@@ -212,7 +185,7 @@ export class VocProcessingStack extends VocStack {
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: aggregatorCode,
-      role: processingRole,
+      role: aggregatorRole,
       timeout: cdk.Duration.minutes(1),
       memorySize: 1536, // CPU: 88.7 % p95 at 512 MB → 1024 2026-10-18; 68.8 % at 1024 MB → 1536 2026-10-23 (lib/sizing/policy.ts)
       environment: {
@@ -226,10 +199,8 @@ export class VocProcessingStack extends VocStack {
         // table INSIDE the same TransactWriteItems as the counters, so the claim and
         // the counters commit together or not at all.
         //
-        // The shared `processingRole` is already granted this table
-        // (`idempotencyTable.grantReadWriteData` above, for the processor), so this
-        // is an environment change alone: without the NAME the function cannot
-        // reach a table it already has permission on. Absent, the handler logs a
+        // The aggregator's own role holds exactly the PutItem that claim needs
+        // (lib/stacks/processing-roles.ts). Absent, the handler logs a
         // warning and applies counters non-transactionally, which is the
         // pre-#264 behaviour rather than an outage.
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
@@ -351,8 +322,9 @@ export class VocProcessingStack extends VocStack {
     });
 
     feedbackTable.grantReadData(researchRole);
-    projectsTable.grantReadWriteData(researchRole);
-    jobsTable.grantReadWriteData(researchRole);
+    // The research document and its job row (Put + Update); the research workflow deletes nothing in DynamoDB.
+    grantReadAndWrites(projectsTable, researchRole, ['PutItem', 'UpdateItem']);
+    grantReadAndWrites(jobsTable, researchRole, ['PutItem', 'UpdateItem']);
     aggregatesTable.grantReadData(researchRole);
     kmsKey.grantEncryptDecrypt(researchRole);
     // The per-job feedback block (claim-check: too large for Step Functions state).
