@@ -32,10 +32,16 @@ and named after the item's ``source_id`` the way every per-item archive is
 (``plugins/_shared/raw_archive``, ``shared/ingest_archive``). An API-side item
 received again on a later day (a new ingest-date folder) leaves its older folder
 to the whole-source erasure; a correction (CSV dataset update) writes into the
-stored item's own folder, so it goes with the item. A whole-file archive shared by many items never
-matches, so it is never touched (documented limitation: those sources keep
-their uploaded files; give them a retention period or a non-allow policy so
-they archive per item).
+stored item's own folder, so it goes with the item. A whole-file archive shared by many items
+(``raw/csv_upload/``, ``raw/json_upload/``) is never an item's own archive. Every row of
+one such file is filed under the one source its upload named, so a whole-source
+erasure deletes the file (every version, ``delete_whole_upload``); any other erasure
+or retention run leaves it and lists it on its job / audit row as a file needing
+review (keys only), because rewriting it without the erased rows would mean
+re-parsing a CSV whose column mapping is not stored.
+
+The same filters and deletes reach Radar (``voc-radar``: other brands' reviews,
+``STORE_RADAR``): a review, its dedupe marker and its own raw archive.
 
 The erased value is never stored or logged: jobs and audit rows carry its
 SHA-256 (``value_hash``, ``shared.digests.sha256_hex``).
@@ -53,15 +59,21 @@ from boto3.dynamodb.conditions import Attr, ConditionBase
 
 from shared.archive_keys import archive_key_stem
 from shared.logging import logger
+from shared.radar_store import marker_key
 from shared.raw_versions import RAW_PREFIX, parse_item_key
 
 __all__ = [
+    'STORE_FEEDBACK',
+    'STORE_RADAR',
     'delete_item',
+    'delete_radar_item',
     'delete_raw_prefix_page',
+    'delete_whole_upload',
     'erase_filter',
     'raw_source_prefix',
     'retention_cutoffs',
     'retention_filter',
+    'whole_upload_key',
 ]
 
 # The whole-source erasure's field: the value IS a source id (``source_platform``).
@@ -73,6 +85,11 @@ ERASURE_JOB_PK: Final = 'JOB#erasure'
 ERASURE_JOB_PREFIX: Final = 'er_'
 _EMAIL_PATHS: Final = ('metadata.email', 'metadata.submitter_email')
 _FEEDBACK_SK_PREFIX: Final = 'FEEDBACK#'
+# Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
+STORE_FEEDBACK: Final = 'feedback'
+STORE_RADAR: Final = 'radar'
+_RADAR_PK_PREFIX: Final = 'RADAR#'
+_RADAR_ITEMS_MARK: Final = '#ITEMS#'
 _WHOLE_UPLOAD_PREFIXES: Final = ('raw/csv_upload/', 'raw/json_upload/')
 _MAX_VERSIONS_PER_DELETE: Final = 1000
 
@@ -87,23 +104,34 @@ def retention_cutoffs(profiles: list[dict[str, Any]], today: date) -> dict[str, 
     return cutoffs
 
 
-def _feedback_items() -> ConditionBase:
+def _store_items(store: str) -> ConditionBase:
+    """The rows of ``store`` that are reviews: ``FEEDBACK#`` items, or Radar's month-partitioned reviews.
+
+    A Radar review row (``shared/radar_store.py``) is ``RADAR#{brand}#ITEMS#{month}`` and carries
+    ``feedback_id`` and ``radar_brand``; its counters and dedupe markers carry neither, so a
+    category named ``ITEMS`` in a counter's key can never match.
+    """
+    if store == STORE_RADAR:
+        return (Attr('pk').begins_with(_RADAR_PK_PREFIX) & Attr('pk').contains(_RADAR_ITEMS_MARK)
+                & Attr('feedback_id').exists() & Attr('radar_brand').exists())
+    if store != STORE_FEEDBACK:
+        raise ValueError(f'Unknown item store "{store}"')
     return Attr('sk').begins_with(_FEEDBACK_SK_PREFIX)
 
 
-def retention_filter(cutoffs: Mapping[str, str]) -> ConditionBase:
-    """Scan filter: feedback items of a retained source dated before its cutoff."""
+def retention_filter(cutoffs: Mapping[str, str], store: str = STORE_FEEDBACK) -> ConditionBase:
+    """Scan filter: items of ``store`` of a retained source dated before its cutoff."""
     clauses = [Attr('source_platform').eq(source) & Attr('date').lt(cutoff) for source, cutoff in cutoffs.items()]
     if not clauses:
         raise ValueError('retention_filter needs at least one source')
     combined = clauses[0]
     for clause in clauses[1:]:
         combined = combined | clause
-    return _feedback_items() & combined
+    return _store_items(store) & combined
 
 
-def erase_filter(field: str, value: str, source: str | None) -> ConditionBase:
-    """Scan filter: feedback items whose ``field`` equals ``value`` (optionally in one source)."""
+def erase_filter(field: str, value: str, source: str | None, store: str = STORE_FEEDBACK) -> ConditionBase:
+    """Scan filter: items of ``store`` whose ``field`` equals ``value`` (optionally in one source)."""
     if field not in ERASE_FIELDS:
         raise ValueError(f'Unknown erasure field "{field}"')
     if field == 'email':
@@ -115,7 +143,7 @@ def erase_filter(field: str, value: str, source: str | None) -> ConditionBase:
         match = Attr('source_platform').eq(value)
     else:
         match = Attr(field).eq(value)
-    condition = _feedback_items() & match
+    condition = _store_items(store) & match
     return condition & Attr('source_platform').eq(source) if source and field != SOURCE_FIELD else condition
 
 
@@ -187,6 +215,19 @@ def _selected(entry: Mapping[str, Any], matches: Callable[[str], bool]) -> bool:
     return matches(str(entry.get('Key', ''))) and bool(entry.get('VersionId'))
 
 
+def _delete_own_raw_objects(s3: Any, bucket: str, item: Mapping[str, Any]) -> int:
+    """Every version of ``item``'s own raw archive, in both layouts; the files deleted."""
+    targets = item_raw_objects(item, bucket)
+    if targets is None:
+        return 0
+    legacy = targets.key
+    objects = _delete_versions(s3, bucket, legacy, lambda key: key == legacy)
+    folder = targets.folder
+    if folder is not None:
+        objects += _delete_versions(s3, bucket, folder, lambda key: key.startswith(folder))
+    return objects
+
+
 def delete_item(feedback_table: Any, s3: Any, bucket: str, item: Mapping[str, Any]) -> tuple[int, int]:
     """Delete one feedback item and its own raw objects; ``(items deleted, raw files deleted)``.
 
@@ -194,17 +235,50 @@ def delete_item(feedback_table: Any, s3: Any, bucket: str, item: Mapping[str, An
     folder go. The raw objects go first: if that fails the item stays, so a retry finds
     it again (deleting the item first would orphan the objects for good).
     """
-    objects = 0
-    targets = item_raw_objects(item, bucket)
-    if targets is not None:
-        legacy = targets.key
-        objects = _delete_versions(s3, bucket, legacy, lambda key: key == legacy)
-        folder = targets.folder
-        if folder is not None:
-            objects += _delete_versions(s3, bucket, folder, lambda key: key.startswith(folder))
+    objects = _delete_own_raw_objects(s3, bucket, item)
     feedback_table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
     logger.debug('Deleted one feedback item under its retention / erasure rule')
     return 1, objects
+
+
+def delete_radar_item(radar_table: Any, s3: Any, bucket: str, item: Mapping[str, Any]) -> tuple[int, int]:
+    """Delete one Radar review, its dedupe marker and its own raw objects; ``(reviews, raw files)``.
+
+    Same order as ``delete_item``: raw first, then the marker, then the review row, so
+    a crash leaves the review findable by the next scan (a marker left without its row
+    would only keep that review from being stored again). The brand's daily counters
+    are left as they are: they hold counts, no content, and are rebuilt from the
+    reviews (docs/radar.md).
+    """
+    objects = _delete_own_raw_objects(s3, bucket, item)
+    radar_table.delete_item(Key=marker_key(str(item['radar_brand']), str(item['feedback_id'])))
+    radar_table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
+    logger.debug('Deleted one Radar review under its retention / erasure rule')
+    return 1, objects
+
+
+def whole_upload_key(item: Mapping[str, Any], bucket: str) -> str | None:
+    """The key of the whole-file upload (``raw/csv_upload/``, ``raw/json_upload/``) ``item`` came from, or None.
+
+    Such a file holds every row of one CSV / JSON upload, all filed under the one
+    source the upload named (``api/manual_import_handler.py``), so only a
+    whole-source erasure of that source may delete it (``delete_whole_upload``).
+    """
+    uri = item.get('s3_raw_uri')
+    if not isinstance(uri, str) or not bucket:
+        return None
+    parsed = urlparse(uri)
+    key = parsed.path.lstrip('/')
+    if parsed.scheme != 's3' or parsed.netloc != bucket or '..' in key.split('/'):
+        return None
+    return key if key.startswith(_WHOLE_UPLOAD_PREFIXES) and not key.endswith('/') else None
+
+
+def delete_whole_upload(s3: Any, bucket: str, key: str) -> int:
+    """Every version of the whole-file upload at exactly ``key``; the files deleted (0 or 1)."""
+    if not key.startswith(_WHOLE_UPLOAD_PREFIXES):
+        raise ValueError('Not a whole-file upload archive')
+    return _delete_versions(s3, bucket, key, lambda listed: listed == key)
 
 
 def raw_source_prefix(source: str) -> str | None:

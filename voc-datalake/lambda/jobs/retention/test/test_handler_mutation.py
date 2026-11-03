@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
 
-from jobs.retention import handler
+from jobs.retention import handler, runs
 from jobs.retention.test.conftest import days_ago
 from shared.digests import sha256_hex
 from shared.test.instrumentation_fixtures import INSTRUMENTED_HANDLER_LAYERS, handler_layers
@@ -29,7 +30,8 @@ CONDITION: Any = object()
 
 def _run(**overrides: Any) -> dict[str, Any]:
     return {'mode': 'retention', 'run_id': 'r1', 'started_at': 'S', 'generation': 0, 'scanned': 0,
-            'deleted_items': 0, 'deleted_objects': 0, **overrides}
+            'deleted_items': 0, 'deleted_objects': 0, 'deleted_radar_items': 0, 'artifacts_marked': 0,
+            'erased_sources': [], 'review_files': [], 'review_files_more': False, **overrides}
 
 
 def _context(*budgets: int) -> MagicMock:
@@ -50,19 +52,24 @@ class TestTheModuleReadsItsEnvironment:
         assert spec is not None
         assert spec.loader is not None
         fresh = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(fresh)
+        # Registered while it runs: its dataclass resolves its annotations through sys.modules.
+        with patch.dict(sys.modules, {spec.name: fresh}):
+            spec.loader.exec_module(fresh)
         return fresh
 
     def test_each_name_is_read_from_its_variable(self) -> None:
-        env = {'FEEDBACK_TABLE': 'f1', 'AGGREGATES_TABLE': 'a1', 'RAW_DATA_BUCKET': 'b1'}
+        env = {'FEEDBACK_TABLE': 'f1', 'AGGREGATES_TABLE': 'a1', 'RAW_DATA_BUCKET': 'b1', 'RADAR_TABLE': 'r1',
+               'PROJECTS_TABLE': 'p1'}
         with patch.dict(os.environ, env):
             fresh = self._fresh()
-        assert (fresh.FEEDBACK_TABLE, fresh.AGGREGATES_TABLE, fresh.RAW_DATA_BUCKET) == ('f1', 'a1', 'b1')
+        assert (fresh.FEEDBACK_TABLE, fresh.AGGREGATES_TABLE, fresh.RAW_DATA_BUCKET, fresh.RADAR_TABLE,
+                fresh.PROJECTS_TABLE) == ('f1', 'a1', 'b1', 'r1', 'p1')
 
     def test_an_unset_variable_reads_empty(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             fresh = self._fresh()
-        assert (fresh.FEEDBACK_TABLE, fresh.AGGREGATES_TABLE, fresh.RAW_DATA_BUCKET) == ('', '', '')
+        assert (fresh.FEEDBACK_TABLE, fresh.AGGREGATES_TABLE, fresh.RAW_DATA_BUCKET, fresh.RADAR_TABLE,
+                fresh.PROJECTS_TABLE) == ('', '', '', '', '')
 
 
 class TestTheBoundaries:
@@ -88,23 +95,29 @@ class TestTheBoundaries:
 class TestTheAuditRow:
     def test_every_key_of_an_erasure_run(self) -> None:
         table = MagicMock()
-        run = _run(mode='erase', scanned=7, deleted_items=2, deleted_objects=3, job_id=JOB_ID, field='author',
-                   source='web', value_hash='h', cutoffs={'t': 'd'})
-        with patch.object(handler, 'now_iso', return_value=NOW):
-            handler.write_audit(table, run, 'failed', 'boom')
+        run = _run(mode='erase', scanned=7, deleted_items=2, deleted_objects=3, deleted_radar_items=4,
+                   artifacts_marked=5, job_id=JOB_ID, field='author', source='web', value_hash='h',
+                   cutoffs={'t': 'd'}, legal_basis='GDPR art. 17', legal_bases={'t': 'DPA'}, erased_sources=['web'],
+                   review_files=['raw/csv_upload/k.csv'])
+        with patch.object(runs, 'now_iso', return_value=NOW):
+            runs.write_audit(table, run, 'failed', 'boom')
         table.put_item.assert_called_once_with(Item={
             'pk': 'AUDIT#retention', 'sk': f'{NOW}#r1', 'run_id': 'r1', 'mode': 'erase', 'status': 'failed',
-            'deleted_items': 2, 'deleted_objects': 3, 'scanned': 7, 'started_at': 'S', 'finished_at': NOW,
-            'job_id': JOB_ID, 'field': 'author', 'source': 'web', 'value_hash': 'h', 'cutoffs': {'t': 'd'},
+            'deleted_items': 2, 'deleted_objects': 3, 'deleted_radar_items': 4, 'artifacts_marked': 5, 'scanned': 7,
+            'started_at': 'S', 'finished_at': NOW, 'job_id': JOB_ID, 'field': 'author', 'source': 'web',
+            'value_hash': 'h', 'cutoffs': {'t': 'd'}, 'legal_basis': 'GDPR art. 17', 'legal_bases': {'t': 'DPA'},
+            'erased_sources': ['web'],
+            'files_needing_review': {'count': 1, 'keys': ['raw/csv_upload/k.csv'], 'more': False},
             'error': 'boom'})
 
     def test_empty_optional_keys_and_no_error_are_left_out(self) -> None:
         table = MagicMock()
-        with patch.object(handler, 'now_iso', return_value=NOW):
-            handler.write_audit(table, _run(source=None, cutoffs={}), 'completed')
+        with patch.object(runs, 'now_iso', return_value=NOW):
+            runs.write_audit(table, _run(source=None, cutoffs={}), 'completed')
         assert table.put_item.call_args.kwargs['Item'] == {
             'pk': 'AUDIT#retention', 'sk': f'{NOW}#r1', 'run_id': 'r1', 'mode': 'retention', 'status': 'completed',
-            'deleted_items': 0, 'deleted_objects': 0, 'scanned': 0, 'started_at': 'S', 'finished_at': NOW}
+            'deleted_items': 0, 'deleted_objects': 0, 'deleted_radar_items': 0, 'artifacts_marked': 0, 'scanned': 0,
+            'started_at': 'S', 'finished_at': NOW}
 
     def test_an_erasure_audit_names_the_job_from_its_row(self, aws, worker_context) -> None:
         aws['aggregates'].put_item(Item={'pk': 'JOB#erasure', 'sk': JOB_ID, 'status': 'queued', 'field': 'author',
@@ -119,45 +132,62 @@ class TestTheAuditRow:
 class TestTheErasureJobRow:
     def test_a_running_job_is_claimed_again_and_stays_running(self, aws) -> None:
         aws['aggregates'].put_item(Item={'pk': 'JOB#erasure', 'sk': JOB_ID, 'status': 'running', 'started_at': 'S'})
-        job = handler.claim_erasure_job(aws['aggregates'], JOB_ID)
+        job = runs.claim_erasure_job(aws['aggregates'], JOB_ID)
         assert job == {'pk': 'JOB#erasure', 'sk': JOB_ID, 'status': 'running', 'started_at': 'S'}
 
     def test_a_queued_job_is_marked_running(self, aws) -> None:
         aws['aggregates'].put_item(Item={'pk': 'JOB#erasure', 'sk': JOB_ID, 'status': 'queued'})
-        with patch.object(handler, 'now_iso', return_value=NOW):
-            job = handler.claim_erasure_job(aws['aggregates'], JOB_ID)
+        with patch.object(runs, 'now_iso', return_value=NOW):
+            job = runs.claim_erasure_job(aws['aggregates'], JOB_ID)
         assert job == {'pk': 'JOB#erasure', 'sk': JOB_ID, 'status': 'running', 'started_at': NOW}
 
     def test_another_client_error_is_raised(self) -> None:
         table = MagicMock()
         table.update_item.side_effect = ClientError({'Error': {'Code': 'ThrottlingException'}}, 'UpdateItem')
         with pytest.raises(ClientError):
-            handler.claim_erasure_job(table, JOB_ID)
+            runs.claim_erasure_job(table, JOB_ID)
 
     def test_a_failure_records_its_error(self) -> None:
         table = MagicMock()
-        with patch.object(handler, 'now_iso', return_value=NOW):
-            handler.finish_erasure_job(table, _run(job_id=JOB_ID, deleted_items=1, deleted_objects=2), 'failed', 'e')
+        run = _run(job_id=JOB_ID, deleted_items=1, deleted_objects=2, deleted_radar_items=3, artifacts_marked=4,
+                   review_files=['raw/json_upload/k.json'], review_files_more=True)
+        with patch.object(runs, 'now_iso', return_value=NOW):
+            runs.finish_erasure_job(table, run, 'failed', 'e')
         table.update_item.assert_called_once_with(
             Key={'pk': 'JOB#erasure', 'sk': JOB_ID},
-            UpdateExpression=('SET #status = :status, deleted_items = :items, deleted_objects = :objects, '
-                              'finished_at = :now, #error = :error'),
+            UpdateExpression=('SET #status = :status, deleted_items = :deleted_items, '
+                              'deleted_objects = :deleted_objects, deleted_radar_items = :deleted_radar_items, '
+                              'artifacts_marked = :artifacts_marked, finished_at = :now, '
+                              'files_needing_review = :review, #error = :error'),
             ExpressionAttributeNames={'#status': 'status', '#error': 'error'},
-            ExpressionAttributeValues={':status': 'failed', ':items': 1, ':objects': 2, ':now': NOW, ':error': 'e'})
+            ExpressionAttributeValues={
+                ':status': 'failed', ':deleted_items': 1, ':deleted_objects': 2, ':deleted_radar_items': 3,
+                ':artifacts_marked': 4, ':now': NOW, ':error': 'e',
+                ':review': {'count': 1, 'keys': ['raw/json_upload/k.json'], 'more': True}})
 
 
 class TestTheRunState:
     def test_a_carried_run_keeps_every_counter(self) -> None:
         carried = {'run_id': 'abc', 'started_at': 'S0', 'generation': 3, 'scanned': 4, 'deleted_items': 5,
-                   'deleted_objects': 6}
-        assert handler._new_run({'run': carried}, 'erase') == {'mode': 'erase', **carried}
+                   'deleted_objects': 6, 'deleted_radar_items': 7, 'artifacts_marked': 8, 'erased_sources': ['web'],
+                   'review_files': ['raw/csv_upload/k.csv'], 'review_files_more': True}
+        run = runs.new_run({'run': carried}, 'erase')
+        assert run == {'mode': 'erase', **carried}
+        assert runs.carried_state(run) == {**carried, 'generation': 4}
 
     def test_a_fresh_run_starts_at_zero_with_a_new_id(self) -> None:
-        with patch.object(handler, 'now_iso', return_value=NOW), \
-                patch.object(handler.uuid, 'uuid4', return_value=MagicMock(hex='0123456789abcdef')):
-            run = handler._new_run({'run': 'not a dict'}, 'retention')
-        assert run == {'mode': 'retention', 'run_id': '0123456789ab', 'started_at': NOW, 'generation': 0,
-                       'scanned': 0, 'deleted_items': 0, 'deleted_objects': 0}
+        with patch.object(runs, 'now_iso', return_value=NOW), \
+                patch.object(runs.uuid, 'uuid4', return_value=MagicMock(hex='0123456789abcdef')):
+            run = runs.new_run({'run': 'not a dict'}, 'retention')
+        assert run == _run(run_id='0123456789ab', started_at=NOW)
+
+    def test_review_files_are_listed_once_and_capped(self) -> None:
+        run = _run()
+        for n in [0, 0, *range(1, runs.MAX_REVIEW_FILES + 1)]:
+            runs.note_review_file(run, f'raw/csv_upload/{n}.csv')
+        assert len(run['review_files']) == runs.MAX_REVIEW_FILES
+        assert run['review_files_more'] is True
+        assert runs.files_needing_review(_run()) is None
 
 
 class TestTheScanWalk:
@@ -165,9 +195,12 @@ class TestTheScanWalk:
               invoke: MagicMock) -> tuple[Any, MagicMock]:
         table = MagicMock()
         table.scan.side_effect = pages
-        with patch.object(handler, 'get_s3_client'), patch.object(handler, 'invoke_lambda_async', invoke), \
-                patch.object(handler.retention, 'delete_item', return_value=(1, 1)):
-            return handler._walk((table, MagicMock()), context, event, run, CONDITION), table
+        walk = handler.Walk({'feedback': table, 'aggregates': MagicMock()}, context, event, run,
+                            lambda _store: CONDITION, MagicMock())
+        with patch.object(handler, 'invoke_lambda_async', invoke), \
+                patch.object(handler.ItemDeleter, 'delete', autospec=True,
+                             side_effect=lambda _deleter, _item, _store: _count_one_delete(run)):
+            return handler._walk_store(walk, 'items', event.get('cursor')), table
 
     def test_pages_follow_the_cursor_and_add_up(self) -> None:
         run = _run(scanned=3)
@@ -187,9 +220,8 @@ class TestTheScanWalk:
         result, _ = self._walk(pages, _context(900_000, 0), {}, run, invoke)
         assert result == {'status': 'continued', 'run_id': 'r1'}
         invoke.assert_called_once_with('voc-retention', {
-            'mode': 'retention', 'cursor': _item(1), 'run': {
-                'run_id': 'r1', 'started_at': 'S', 'scanned': 3, 'deleted_items': 5, 'deleted_objects': 6,
-                'generation': 3}})
+            'mode': 'retention', 'phase': 'items', 'cursor': _item(1), 'run': {
+                **runs.carried_state(_run(scanned=3, deleted_items=5, deleted_objects=6, generation=2))}})
 
     def test_a_low_budget_between_pages_hands_over_at_the_next_page(self) -> None:
         pages = [{'Items': [_item(1)], 'LastEvaluatedKey': {'k': 1}}]
@@ -197,9 +229,14 @@ class TestTheScanWalk:
         event = {'mode': 'erase', 'job_id': JOB_ID, 'value': 'v', 'cursor': {'k': 0}, 'run': {}}
         self._walk(pages, _context(900_000, 0), event, _run(mode='erase'), invoke)
         invoke.assert_called_once_with('voc-retention', {
-            'mode': 'erase', 'job_id': JOB_ID, 'value': 'v', 'cursor': {'k': 1}, 'run': {
-                'run_id': 'r1', 'started_at': 'S', 'scanned': 0, 'deleted_items': 1, 'deleted_objects': 1,
-                'generation': 1}})
+            'mode': 'erase', 'job_id': JOB_ID, 'value': 'v', 'phase': 'items', 'cursor': {'k': 1},
+            'run': runs.carried_state(_run(deleted_items=1, deleted_objects=1))})
+
+
+def _count_one_delete(run: dict[str, Any]) -> None:
+    """Stands in for ItemDeleter.delete: one item and one raw file per call."""
+    run['deleted_items'] += 1
+    run['deleted_objects'] += 1
 
 
 class TestTheLogsAndTheResult:
@@ -239,9 +276,10 @@ class TestTheLogsAndTheResult:
         aws['feedback'].put_item(Item={'pk': 'SOURCE#tickets', 'sk': 'FEEDBACK#a', 'feedback_id': 'a',
                                        'source_id': 'a', 'source_platform': 'tickets', 'date': days_ago(60)})
         with patch.object(handler, 'metrics') as metrics, \
-                patch.object(handler.uuid, 'uuid4', return_value=MagicMock(hex='abcdefabcdef0000')):
+                patch.object(runs.uuid, 'uuid4', return_value=MagicMock(hex='abcdefabcdef0000')):
             result = handler.handle_event({}, worker_context)
-        assert result == {'status': 'completed', 'run_id': 'abcdefabcdef', 'deleted_items': 1, 'deleted_objects': 0}
+        assert result == {'status': 'completed', 'run_id': 'abcdefabcdef', 'deleted_items': 1,
+                          'deleted_radar_items': 0, 'deleted_objects': 0, 'artifacts_marked': 0}
         metrics.add_metric.assert_called_once_with(name='RetentionItemsDeleted', unit='Count', value=1)
 
 
