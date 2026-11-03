@@ -106,14 +106,20 @@ describe('SourceErasurePanel', () => {
     expect(confirm).toBeDisabled()
   })
 
-  it('sends what was typed as confirm with the legal basis, and shows the job progress', async () => {
+  /** Open the dialog, fill it with SOURCE and `basis`, serve `jobs` from then on and confirm; returns the panel. */
+  async function startDeletion(basisText: string, jobs: unknown[]) {
     const user = userEvent.setup()
     renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
     const { region, typed, basis, confirm } = await openDialog(user)
     await user.type(typed, SOURCE)
-    await user.type(basis, ` ${BASIS} `)
-    route({ jobs: [running] })
+    await user.type(basis, basisText)
+    route({ jobs })
     await user.click(confirm)
+    return region
+  }
+
+  it('sends what was typed as confirm with the legal basis, and shows the job progress', async () => {
+    const region = await startDeletion(` ${BASIS} `, [running])
     await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/settings/erasure', {
       method: 'POST', body: JSON.stringify({ field: 'source', value: SOURCE, confirm: SOURCE, legal_basis: BASIS }),
     }))
@@ -122,13 +128,8 @@ describe('SourceErasurePanel', () => {
   })
 
   it('shows the job\'s legal basis, the Radar reviews and marked artifacts, and the last phase', async () => {
-    const user = userEvent.setup()
-    renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
-    const { region, typed, basis, confirm } = await openDialog(user)
-    await user.type(typed, SOURCE)
-    await user.type(basis, BASIS)
-    route({ jobs: [{ ...running, phase: 'lineage', legal_basis: BASIS, deleted_radar_items: 2, artifacts_marked: 3 }] })
-    await user.click(confirm)
+    const region = await startDeletion(BASIS, [
+      { ...running, phase: 'lineage', legal_basis: BASIS, deleted_radar_items: 2, artifacts_marked: 3 }])
     expect(await within(region).findByText(/^Marking personas and documents/)).toBeInTheDocument()
     expect(within(region).getByText(`Legal basis: ${BASIS}`)).toBeInTheDocument()
     expect(within(region).getByText('2 Radar reviews deleted, 3 personas or documents marked')).toBeInTheDocument()
