@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import os
 import secrets
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING, Any
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared.delete_audit import record_delete
+from shared.deleted_sources import DeletedSource, mark_citing_documents
 from shared.derivation import DERIVATION_FIELD, build_derivation
 from shared.dynamo_paging import query_all
 from shared.exceptions import (
@@ -43,6 +45,7 @@ from shared.project_writes import (
     create_counted_project_child,
     put_project_item,
 )
+from shared.s3_versions import delete_every_version_of_keys
 from shared.tables import get_projects_table
 from shared.timestamps import now_iso
 
@@ -739,7 +742,12 @@ def create_upload_url(project_id: str, body: dict) -> dict:
 
 
 @tracer.capture_method
-def delete_doc(project_id: str, doc_id: str) -> dict:
+def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None = None) -> dict:
+    """Delete a product doc: its raw and extracted objects (every version), then the row.
+
+    The delete is recorded (``shared.delete_audit``), and a document that used it as a
+    visual says so (``shared.deleted_sources``).
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     bucket = os.environ.get('RAW_DATA_BUCKET')
@@ -752,16 +760,20 @@ def delete_doc(project_id: str, doc_id: str) -> dict:
         raise NotFoundError('document not found')
 
     if bucket:
-        for key in (item.get('s3_raw_key'), item.get('s3_extracted_key')):
-            if isinstance(key, str) and key:
-                try:
-                    _s3().delete_object(Bucket=bucket, Key=key)
-                except (ClientError, BotoCoreError) as e:
-                    logger.warning(f'Failed to delete s3://{bucket}/{key}: {e}')
+        keys = [key for key in (item.get('s3_raw_key'), item.get('s3_extracted_key')) if isinstance(key, str) and key]
+        try:
+            refused = delete_every_version_of_keys(_s3(), bucket, keys)
+        except (ClientError, BotoCoreError) as e:
+            logger.warning(f'Failed to delete the objects of product doc {doc_id}: {e}')
+        else:
+            if refused:
+                logger.warning(f'{refused} object version(s) of product doc {doc_id} could not be deleted')
 
     projects_table.delete_item(
         Key={'pk': _doc_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
     )
+    record_delete(projects_table, kind='product_doc', target={'project_id': project_id, 'doc_id': doc_id}, actor=actor)
+    mark_citing_documents(projects_table, project_id, [DeletedSource('product_doc', doc_id)], deleted_at=now_iso())
     return {'success': True}
 
 

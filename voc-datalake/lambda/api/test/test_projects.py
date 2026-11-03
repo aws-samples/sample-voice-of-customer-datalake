@@ -709,7 +709,9 @@ def test_project_delete_retries_fence_when_tombstone_insert_loses(mock_table):
 
     assert delete_project('p1') == {'success': True}
     assert mock_table.update_item.call_count == 3
-    assert mock_table.put_item.call_count == 1
+    # The fence's tombstone insert, then the AUDIT#delete record (which the mock also refuses).
+    assert mock_table.put_item.call_count == 2
+    assert mock_table.put_item.call_args.kwargs['Item']['pk'] == 'AUDIT#delete'
     assert mock_table.batch_writer.call_count == 2
     second_fence = mock_table.update_item.call_args_list[1].kwargs
     assert 'if_not_exists(#deleting, :now)' in second_fence['UpdateExpression']

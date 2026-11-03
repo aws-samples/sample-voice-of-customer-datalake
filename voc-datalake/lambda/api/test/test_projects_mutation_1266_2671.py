@@ -604,8 +604,8 @@ class TestClearingExistingPersonas:
         table = self._clear([])
         table.query.assert_called_once_with(
             KeyConditionExpression=Key('pk').eq('PROJECT#proj-1') & Key('sk').begins_with('PERSONA#'),
-            ProjectionExpression='pk, sk, #protected',
-            ExpressionAttributeNames={'#protected': 'protected'},
+            ProjectionExpression='pk, sk, #protected, #name',
+            ExpressionAttributeNames={'#protected': 'protected', '#name': 'name'},
         )
 
     def test_each_stored_key_is_deleted_and_the_count_logged(self, log):
@@ -960,7 +960,7 @@ class TestGeneratePersonasOrchestration(_Generation):
         stubs['_run_persona_calls'].assert_called_once_with(
             self.STEPS, self.FILTERS, 4, ['Old Name'], update_progress, '',
         )
-        stubs['_clear_existing_personas'].assert_called_once_with('proj-1')
+        stubs['_clear_existing_personas'].assert_called_once_with('proj-1', actor=None)
         stubs['datetime'].now.assert_called_once_with(UTC)
         stubs['_build_persona_items'].assert_called_once_with(
             'proj-1', run.batch.personas, corpus.items, persona_count=4,

@@ -639,44 +639,58 @@ class TestDeleteDoc:
         table.get_item.assert_called_once_with(Key=DOC_KEY)
         table.delete_item.assert_not_called()
 
-    def test_both_objects_and_the_record_are_deleted(self, table):
+    def test_every_version_of_both_objects_goes_then_the_record_and_the_delete_is_recorded(self, table):
         table.get_item.return_value = {'Item': {'s3_raw_key': 'raw/k', 's3_extracted_key': 'ext/k'}}
         s3 = MagicMock()
-        with patch.object(pc, '_s3', return_value=s3):
-            assert pc.delete_doc('p1', 'd1') == {'success': True}
-        assert s3.delete_object.call_args_list == [
-            call(Bucket='test-raw-data-bucket', Key='raw/k'),
-            call(Bucket='test-raw-data-bucket', Key='ext/k'),
-        ]
+        actor = {'sub': 'u-1', 'kind': 'user'}
+        with patch.object(pc, '_s3', return_value=s3), \
+                patch.object(pc, 'delete_every_version_of_keys', return_value=0) as sweep, \
+                patch.object(pc, 'record_delete') as record, \
+                patch.object(pc, 'mark_citing_documents') as mark:
+            assert pc.delete_doc('p1', 'd1', actor=actor) == {'success': True}
+        sweep.assert_called_once_with(s3, 'test-raw-data-bucket', ['raw/k', 'ext/k'])
         table.delete_item.assert_called_once_with(Key=DOC_KEY)
+        record.assert_called_once_with(table, kind='product_doc', target={'project_id': 'p1', 'doc_id': 'd1'},
+                                       actor=actor)
+        assert mark.call_args.args[:2] == (table, 'p1')
+        assert [(d.kind, d.id) for d in mark.call_args.args[2]] == [('product_doc', 'd1')]
 
     def test_missing_keys_are_not_deleted(self, table):
         table.get_item.return_value = {'Item': {'s3_raw_key': '', 's3_extracted_key': None}}
         s3 = MagicMock()
-        with patch.object(pc, '_s3', return_value=s3):
+        with patch.object(pc, '_s3', return_value=s3), patch.object(pc, 'record_delete'), \
+                patch.object(pc, 'mark_citing_documents'):
             pc.delete_doc('p1', 'd1')
-        s3.delete_object.assert_not_called()
+        s3.delete_objects.assert_not_called()
+        s3.get_paginator.assert_not_called()
         table.delete_item.assert_called_once_with(Key=DOC_KEY)
 
-    def test_a_failed_object_delete_is_logged_and_the_rest_continue(self, table):
-        table.get_item.return_value = {'Item': {'s3_raw_key': 'raw/k', 's3_extracted_key': 'ext/k'}}
-        s3 = MagicMock()
-        s3.delete_object.side_effect = [BotoCoreError(), None]
-        with patch.object(pc, '_s3', return_value=s3), patch.object(pc, 'logger') as log:
+    def test_a_failed_object_delete_is_logged_and_the_record_still_goes(self, table):
+        table.get_item.return_value = {'Item': {'s3_raw_key': 'raw/k'}}
+        with patch.object(pc, '_s3'), patch.object(pc, 'logger') as log, \
+                patch.object(pc, 'delete_every_version_of_keys', side_effect=BotoCoreError()), \
+                patch.object(pc, 'record_delete'), patch.object(pc, 'mark_citing_documents'):
             pc.delete_doc('p1', 'd1')
-        log.warning.assert_called_once_with(
-            'Failed to delete s3://test-raw-data-bucket/raw/k: An unspecified error occurred'
-        )
-        assert s3.delete_object.call_count == 2
+        log.warning.assert_called_once_with('Failed to delete the objects of product doc d1: An unspecified error occurred')
         table.delete_item.assert_called_once_with(Key=DOC_KEY)
+
+    def test_refused_versions_are_logged(self, table):
+        table.get_item.return_value = {'Item': {'s3_raw_key': 'raw/k'}}
+        with patch.object(pc, '_s3'), patch.object(pc, 'logger') as log, \
+                patch.object(pc, 'delete_every_version_of_keys', return_value=2), \
+                patch.object(pc, 'record_delete'), patch.object(pc, 'mark_citing_documents'):
+            pc.delete_doc('p1', 'd1')
+        log.warning.assert_called_once_with('2 object version(s) of product doc d1 could not be deleted')
 
     def test_without_a_bucket_only_the_record_is_deleted(self, table, monkeypatch):
         monkeypatch.delenv('RAW_DATA_BUCKET')
         table.get_item.return_value = {'Item': {'s3_raw_key': 'raw/k'}}
-        with patch.object(pc, '_s3') as s3:
+        with patch.object(pc, '_s3') as s3, patch.object(pc, 'record_delete') as record, \
+                patch.object(pc, 'mark_citing_documents'):
             pc.delete_doc('p1', 'd1')
         s3.assert_not_called()
         table.delete_item.assert_called_once_with(Key=DOC_KEY)
+        assert record.call_args.kwargs['actor'] is None
 
 
 # ── generate_report ──────────────────────────────────────────────────────────

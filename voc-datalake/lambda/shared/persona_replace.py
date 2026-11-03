@@ -38,9 +38,14 @@ def is_protected(row: dict) -> bool:
 
 @dataclass
 class ClearedPersonas:
-    """What a replace-mode clear did: the sort keys it removed, kept protected, or failed to remove."""
+    """What a replace-mode clear did: the sort keys it removed, kept protected, or failed to remove.
+
+    ``names`` maps a removed sort key to the persona's name (when it had one), so the
+    documents written from it can say which persona was replaced.
+    """
 
     deleted: list[str] = field(default_factory=list)
+    names: dict[str, str] = field(default_factory=dict)
     protected: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
 
@@ -48,8 +53,8 @@ class ClearedPersonas:
 def _persona_rows(table: Any, project_id: str) -> list[dict]:
     return list(iter_query(table, {
         'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}') & Key('sk').begins_with('PERSONA#'),
-        'ProjectionExpression': 'pk, sk, #protected',
-        'ExpressionAttributeNames': {'#protected': PROTECTED_FIELD},
+        'ProjectionExpression': 'pk, sk, #protected, #name',
+        'ExpressionAttributeNames': {'#protected': PROTECTED_FIELD, '#name': 'name'},
     }))
 
 
@@ -85,6 +90,8 @@ def clear_personas(table: Any, project_id: str) -> ClearedPersonas:
             result.failed.append(sort_key)
         else:
             result.deleted.append(sort_key)
+            if isinstance(name := row.get('name'), str) and name:
+                result.names[sort_key] = name
     return result
 
 
