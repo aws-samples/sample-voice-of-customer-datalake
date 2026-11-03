@@ -193,14 +193,15 @@ describe('prototype object IAM boundaries', () => {
     expect(actions).not.toContain('s3:*');
   });
 
-  it('lets the projects Lambda sweep a deleted project\'s objects: list + delete on its three prefixes', () => {
+  it('lets the projects Lambda sweep a deleted project\'s objects, every version, on its three prefixes', () => {
     const statements = statementsForRole('ProjectsLambdaRole');
     const deletesUnder = (pattern: string) => statements.some((statement) =>
-      statementActions(statement).includes('s3:DeleteObject') && JSON.stringify(statement.Resource).includes(pattern));
+      ['s3:DeleteObject', 's3:DeleteObjectVersion'].every((action) => statementActions(statement).includes(action))
+      && JSON.stringify(statement.Resource).includes(pattern));
 
     expect(['prototypes/*', 'projects/*/product_docs/*', 'avatars/*'].filter((pattern) => !deletesUnder(pattern)))
       .toStrictEqual([]);
-    expect(statements.some((statement) => statementActions(statement).includes('s3:ListBucket'))).toBe(true);
+    expect(statements.some((statement) => statementActions(statement).includes('s3:ListBucketVersions'))).toBe(true);
   });
 
   it('keeps the document generator prototype grant to read + put, scoped to prototype objects', () => {

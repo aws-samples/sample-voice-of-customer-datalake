@@ -379,7 +379,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // sanitised SVG, and its copied icons; shared/design_logo.py delete_previews), every version of them
   // (lib/utils/workspace-object-deletes.ts). Nothing else under company-context/ is deleted (keep-all).
   grantWorkspaceVersionDeletes(rawDataBucket, settingsRole,
-    [`${LOGO_PREVIEW_PREFIX}*`, `${DESIGN_ICONS_PREFIX}*`], 'DeleteLogoPreviewOnArchive');
+    [`${LOGO_PREVIEW_PREFIX}*`, `${DESIGN_ICONS_PREFIX}*`]);
   // The morning brief (docs/briefing.md): Refresh queues, the caller's own email subscription.
   const briefing = briefingApiWiring(stack, ctx.uniqueName, kmsKey, ctx.props.userPool);
   briefing.grant(settingsRole);

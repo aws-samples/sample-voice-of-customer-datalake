@@ -1,44 +1,70 @@
 import * as cdk from 'aws-cdk-lib';
-import { Match, Template } from 'aws-cdk-lib/assertions';
+import { Template } from 'aws-cdk-lib/assertions';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
-import { grantWorkspaceVersionDeletes } from './workspace-object-deletes';
+import { grantWorkspaceObjects, grantWorkspaceVersionDeletes, VERSION_DELETE_ACTIONS } from './workspace-object-deletes';
 
+const PolicySchema = z.object({
+  Properties: z.object({
+    PolicyDocument: z.object({
+      Statement: z.array(z.object({ Effect: z.string(), Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown() })),
+    }),
+  }),
+});
+
+/** A bucket (KMS-encrypted, like the raw data bucket) and a role. */
 function fixture(): { stack: cdk.Stack; bucket: s3.Bucket; role: iam.Role } {
   const stack = new cdk.Stack(new cdk.App(), 'S');
   return {
     stack,
-    bucket: new s3.Bucket(stack, 'B', { versioned: true, enforceSSL: true }),
+    bucket: new s3.Bucket(stack, 'B', { versioned: true, enforceSSL: true, encryption: s3.BucketEncryption.KMS }),
     role: new iam.Role(stack, 'R', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') }),
   };
+}
+
+function statements(stack: cdk.Stack): z.infer<typeof PolicySchema>['Properties']['PolicyDocument']['Statement'] {
+  return Object.values(Template.fromStack(stack).findResources('AWS::IAM::Policy'))
+    .flatMap((policy) => PolicySchema.parse(policy).Properties.PolicyDocument.Statement);
 }
 
 describe('grantWorkspaceVersionDeletes', () => {
   it.each([['raw/*'], ['raw/webscraper/*'], ['*']])('refuses the bronze layer or the whole bucket (%s)', (glob) => {
     const { bucket, role } = fixture();
-    expect(() => grantWorkspaceVersionDeletes(bucket, role, [glob], 'X')).toThrow(/not a workspace prefix/);
+    expect(() => grantWorkspaceVersionDeletes(bucket, role, [glob])).toThrow(/not a workspace prefix/);
   });
 
   it('refuses an empty prefix list', () => {
     const { bucket, role } = fixture();
-    expect(() => grantWorkspaceVersionDeletes(bucket, role, [], 'X')).toThrow(/at least one prefix/);
+    expect(() => grantWorkspaceVersionDeletes(bucket, role, [])).toThrow(/at least one prefix/);
   });
 
-  it('grants the version delete on the objects and the listing on the bucket, pinned to the same prefixes', () => {
+  it('grants the version delete and the version listing in one statement, on the bucket and the prefix only', () => {
     const { stack, bucket, role } = fixture();
-    grantWorkspaceVersionDeletes(bucket, role, ['avatars/*'], 'Avatars');
-    const template = Template.fromStack(stack);
-    template.hasResourceProperties('AWS::IAM::Policy', {
-      PolicyDocument: { Statement: Match.arrayWith([
-        Match.objectLike({ Sid: 'AvatarsVersions', Effect: 'Allow', Action: ['s3:DeleteObject', 's3:DeleteObjectVersion'] }),
-        Match.objectLike({
-          Sid: 'AvatarsListVersions', Effect: 'Allow', Action: 's3:ListBucketVersions',
-          Condition: { StringLike: { 's3:prefix': ['avatars/*'] } },
-        }),
-      ]) },
-    });
-    expect(Object.keys(template.findResources('AWS::IAM::Policy'))).toHaveLength(1);
+    grantWorkspaceVersionDeletes(bucket, role, ['avatars/*']);
+    const [statement, ...rest] = statements(stack);
+    expect(rest).toStrictEqual([]);
+    expect(statement?.Action).toStrictEqual([...VERSION_DELETE_ACTIONS]);
+    const resources = JSON.stringify(statement?.Resource);
+    expect(resources).toContain('"/avatars/*"');
+    expect(resources).not.toContain('"/*"');
+  });
+
+  it('grantWorkspaceObjects: read, write and every-version delete in one statement, plus the bucket key', () => {
+    const { stack, bucket, role } = fixture();
+    grantWorkspaceObjects(bucket, role, ['avatars/*', 'prototypes/*']);
+    const s3Statements = statements(stack).filter((s) => [s.Action].flat().some((a) => a.startsWith('s3:')));
+    expect(s3Statements).toHaveLength(1);
+    expect([s3Statements[0]?.Action].flat()).toStrictEqual(
+      ['s3:GetObject', 's3:ListBucket', 's3:PutObject', ...VERSION_DELETE_ACTIONS]);
+    const resources = JSON.stringify(s3Statements[0]?.Resource);
+    expect(['"/avatars/*"', '"/prototypes/*"'].filter((path) => !resources.includes(path))).toStrictEqual([]);
+  });
+
+  it('grantWorkspaceObjects refuses raw/ too', () => {
+    const { bucket, role } = fixture();
+    expect(() => grantWorkspaceObjects(bucket, role, ['avatars/*', 'raw/*'])).toThrow(/not a workspace prefix: raw\/\*/);
   });
 });
