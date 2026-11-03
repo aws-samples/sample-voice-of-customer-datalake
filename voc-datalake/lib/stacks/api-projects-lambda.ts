@@ -10,6 +10,7 @@ import { PROJECTS_API_FUNCTION_BASE_NAME } from '../utils/function-names';
 import type { ApiStackContext } from './api-context';
 import { grantMarketplaceSubscription } from './api-marketplace';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
+import { grantWorkspaceVersionDeletes } from '../utils/workspace-object-deletes';
 import {
   ASSIST_WORKER_ENV, PROJECTS_ASSIST_FUNCTION_BASE_NAME, assistWorkerName, createAssistWorker, grantAssistWorkerInvoke,
 } from './api-assist-workers';
@@ -60,6 +61,9 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   rawDataBucket.grantReadWrite(projectsRole, 'projects/*/product_docs/*');
   // Duplicating a prototype document copies its HTML (projects.py _copy_prototype_html).
   rawDataBucket.grantReadWrite(projectsRole, 'prototypes/*');
+  // Workspace deletes remove every version of a deleted avatar / product doc / prototype (lib/utils/workspace-object-deletes.ts).
+  grantWorkspaceVersionDeletes(rawDataBucket, projectsRole,
+    ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*'], 'WorkspaceObjectDeletes');
   // Signs the avatar and prototype URLs returned by GET /projects/{id}.
   // Explicit statement rather than secret.grantRead(): that adds a KMS
   // key-policy entry naming this role, and the key lives in CoreStack, so it

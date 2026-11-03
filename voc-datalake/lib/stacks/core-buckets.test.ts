@@ -10,7 +10,6 @@ import {
   RAW_LAYER_PREFIX,
   SCRATCH_EXPIRATION_DAYS,
   WEBSITE_NONCURRENT_VERSION_DAYS,
-  WORKSPACE_NONCURRENT_VERSION_DAYS,
 } from './core-buckets';
 import { synthCoreTemplate } from '../test-support/core-stack-fixture';
 import { itemAt } from '../test-support/guards';
@@ -48,11 +47,11 @@ describe('VocCoreStack bucket versioning', () => {
 
   it('pins the noncurrent-version retention windows', () => {
     expect({
-      workspace: WORKSPACE_NONCURRENT_VERSION_DAYS,
       website: WEBSITE_NONCURRENT_VERSION_DAYS,
       accessLogs: ACCESS_LOGS_NONCURRENT_VERSION_DAYS,
       abortMultipart: ABORT_MULTIPART_DAYS,
-    }).toStrictEqual({ workspace: 90, website: 30, accessLogs: 30, abortMultipart: 7 });
+      scratch: SCRATCH_EXPIRATION_DAYS,
+    }).toStrictEqual({ website: 30, accessLogs: 30, abortMultipart: 7, scratch: 2 });
   });
 
   it('WebsiteBucket expires noncurrent versions, aborts stale uploads and clears delete markers', () => {
@@ -67,16 +66,17 @@ describe('VocCoreStack bucket versioning', () => {
     ]);
   });
 
-  it('RawDataBucket expires noncurrent versions under each workspace prefix only, never under raw/', () => {
+  const SCRATCH_RULE = {
+    Id: 'scratch-expiry', Status: 'Enabled', Prefix: 'scratch/', ExpirationInDays: SCRATCH_EXPIRATION_DAYS,
+    NoncurrentVersionExpiration: { NoncurrentDays: SCRATCH_EXPIRATION_DAYS },
+  };
+
+  it('RawDataBucket keeps every version outside scratch/: no workspace noncurrent rule (deletes remove their versions)', () => {
     expect(versionedBucket('RawDataBucket').Properties.LifecycleConfiguration.Rules).toStrictEqual([
       { Id: 'abort-incomplete-uploads', Status: 'Enabled',
         AbortIncompleteMultipartUpload: { DaysAfterInitiation: ABORT_MULTIPART_DAYS } },
       { Id: 'remove-expired-delete-markers', Status: 'Enabled', ExpiredObjectDeleteMarker: true },
-      ...RAW_BUCKET_WORKSPACE_PREFIXES.map((prefix) => ({
-        Id: `noncurrent-${prefix.slice(0, -1)}`, Status: 'Enabled', Prefix: prefix,
-        NoncurrentVersionExpiration: { NoncurrentDays: WORKSPACE_NONCURRENT_VERSION_DAYS },
-      })),
-      { Id: 'scratch-expiry', Status: 'Enabled', Prefix: 'scratch/', ExpirationInDays: SCRATCH_EXPIRATION_DAYS },
+      SCRATCH_RULE,
     ]);
     expect(RAW_BUCKET_WORKSPACE_PREFIXES).toStrictEqual(
       ['avatars/', 'company-context/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/']);
@@ -94,9 +94,7 @@ describe('VocCoreStack bucket versioning', () => {
 
   it('never expires current raw-data versions outside scratch/ (raw customer data is kept forever)', () => {
     const rules = versionedBucket('RawDataBucket').Properties.LifecycleConfiguration.Rules;
-    expect(rules.filter((rule) => 'ExpirationInDays' in rule || 'ExpirationDate' in rule)).toStrictEqual([
-      { Id: 'scratch-expiry', Status: 'Enabled', Prefix: 'scratch/', ExpirationInDays: SCRATCH_EXPIRATION_DAYS },
-    ]);
+    expect(rules.filter((rule) => 'ExpirationInDays' in rule || 'ExpirationDate' in rule)).toStrictEqual([SCRATCH_RULE]);
   });
 });
 
@@ -138,10 +136,10 @@ describe('VocCoreStack raw bucket policy', () => {
 });
 
 /**
- * Every prefix a stack grants on the raw data bucket is either raw/ (no expiry) or a workspace
- * prefix with its own noncurrent-version rule. Read from the stack SOURCES (every
+ * Every prefix a stack grants on the raw data bucket is either raw/ (no expiry) or a known workspace
+ * prefix (RAW_BUCKET_WORKSPACE_PREFIXES). Read from the stack SOURCES (every
  * `rawDataBucket.grant*(…)` / `rawDataBucket.arnForObjects(…)` argument, string constants
- * resolved), so a new prefix cannot quietly keep every overwritten version forever.
+ * resolved), so a new prefix is a deliberate addition to that list.
  */
 describe('raw bucket prefixes in lib/stacks', () => {
   const stacksDir = __dirname;
@@ -177,7 +175,7 @@ describe('raw bucket prefixes in lib/stacks', () => {
     expect(grantedPrefixes().length).toBeGreaterThan(10);
   });
 
-  it('names only raw/ or a workspace prefix with a noncurrent rule', () => {
+  it('names only raw/ or a known workspace prefix', () => {
     const known: readonly string[] = [RAW_LAYER_PREFIX, ...RAW_BUCKET_WORKSPACE_PREFIXES];
     const tops = [...new Set(grantedPrefixes().map((prefix) => `${prefix.split('/')[0] ?? ''}/`))];
     expect(tops.filter((top) => !known.includes(top))).toStrictEqual([]);

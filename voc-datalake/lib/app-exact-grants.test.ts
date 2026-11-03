@@ -108,4 +108,20 @@ describe('exact grants over the app', () => {
       ['Allow', ['s3:ListBucketVersions']],
     ]);
   });
+
+  it.each([
+    ['ProjectsLambdaRole', ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*']],
+    ['PersonaGeneratorRole', ['avatars/*']],
+    ['SettingsLambdaRole', ['company-context/design/logo_preview_*', 'company-context/design/icons_*']],
+  ])('the workspace deleter %s: version deletes and listing on exactly its prefixes, never raw/', (role, prefixes) => {
+    const s3 = policy('VocApiStack', `${role}DefaultPolicy`);
+    const versionDeletes = s3.filter((statement) => actionsOf(statement).includes('s3:DeleteObjectVersion'));
+    expect(versionDeletes.map((statement) => [...actionsOf(statement)].sort(byCodeUnit)))
+      .toStrictEqual([['s3:DeleteObject', 's3:DeleteObjectVersion']]);
+    const objectPaths = [...JSON.stringify(versionDeletes[0]?.Resource).matchAll(/"\/([^"]*)"/g)]
+      .flatMap((match) => match[1] ?? []);
+    expect([...objectPaths].sort(byCodeUnit)).toStrictEqual([...prefixes].sort(byCodeUnit));
+    const listing = s3.filter((statement) => actionsOf(statement).includes('s3:ListBucketVersions'));
+    expect(listing.map((statement) => statement.Condition)).toStrictEqual([{ StringLike: { 's3:prefix': prefixes } }]);
+  });
 });
