@@ -108,9 +108,9 @@ describe('the API scope rule (BlockCountedCrsOnPublicRoutes)', () => {
     const regex = (exclude: string[]) => pathsRegex(PUBLIC_API_ROUTES.map((r) => r.path).filter((p) => !exclude.includes(p)), STAGE);
     const and = (labels: object, path: object) => ({ AndStatement: { Statements: [labels, path] } });
     expect(statement).toStrictEqual({ OrStatement: { Statements: [
-      and(LABEL('SizeRestrictions_BODY'), PATH(regex(['/feedback-forms/{form_id}/submit', '/webhooks/{plugin}']))),
-      and({ OrStatement: { Statements: [LABEL('CrossSiteScripting_BODY'), LABEL('GenericLFI_BODY'), LABEL('EC2MetaDataSSRF_BODY')] } },
-        PATH(regex(SUBMITS_AND_WEBHOOKS))),
+      and({ OrStatement: { Statements: [
+        LABEL('SizeRestrictions_BODY'), LABEL('CrossSiteScripting_BODY'), LABEL('GenericLFI_BODY'), LABEL('EC2MetaDataSSRF_BODY'),
+      ] } }, PATH(regex(SUBMITS_AND_WEBHOOKS))),
       and(LABEL('GenericRFI_BODY'), PATH(regex(['/oauth/register', '/oauth/token', ...SUBMITS_AND_WEBHOOKS]))),
       and(LABEL('SizeRestrictions_QUERYSTRING'), PATH(regex([]))),
       and(LABEL('GenericRFI_QUERYARGUMENTS'), PATH(regex(['/oauth/authorize']))),
@@ -168,7 +168,7 @@ describe('the API scope rule (BlockCountedCrsOnPublicRoutes)', () => {
     ['/unsubscribe', 'GenericLFI_BODY', true],
     ['/voting-sessions/{session_id}/submit', 'EC2MetaDataSSRF_BODY', false],
     ['/voting-sessions/{session_id}/submit', 'CrossSiteScripting_BODY', false],
-    ['/voting-sessions/{session_id}/submit', 'SizeRestrictions_BODY', true],
+    ['/voting-sessions/{session_id}/submit', 'SizeRestrictions_BODY', false],
     ['/voting-sessions/{session_id}/config', 'CrossSiteScripting_BODY', true],
   ] as const)('%s with %s: blocked=%s', (path, rule, blocked) => {
     expect(blocksLabel(statement, requestPath(path), rule)).toBe(blocked);
@@ -178,13 +178,13 @@ describe('the API scope rule (BlockCountedCrsOnPublicRoutes)', () => {
     expect(blocksLabel(statement, '/v1/unsubscrib%65', 'GenericLFI_BODY')).toBe(true);
     // API Gateway routes `a%2Fb` to one {form_id}; after the URL decode it is two segments, still matched.
     expect(blocksLabel(statement, '/v1/feedback-forms/a%2Fb/config', 'CrossSiteScripting_BODY')).toBe(true);
-    expect(blocksLabel(statement, '/v1/voting-sessions/a%2Fb%2Fc/submit', 'SizeRestrictions_BODY')).toBe(true);
+    expect(blocksLabel(statement, '/v1/voting-sessions/a%2Fb%2Fc/config', 'SizeRestrictions_BODY')).toBe(true);
     expect(matches(statement, { path: '/v1/unsubscribe', labels: new Set() })).toBe(false);
   });
 
-  it('costs 72 WCU, so the API ACL needs 999 of the 1,500 a web ACL includes', () => {
-    expect(wcu(statement)).toBe(72);
-    expect(25 + 2 + 200 + 700 + wcu(statement)).toBe(999);
+  it('costs 59 WCU, so the API ACL needs 986 of the 1,500 a web ACL includes', () => {
+    expect(wcu(statement)).toBe(59);
+    expect(25 + 2 + 200 + 700 + wcu(statement)).toBe(986);
   });
 
   it('keeps every regex under the WAF limit, and refuses one over it', () => {
