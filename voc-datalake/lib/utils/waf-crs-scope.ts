@@ -7,13 +7,17 @@
  * https://repost.aws/knowledge-center/waf-exclude-specific-requests-inspection, with the label keys of
  * https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-baseline.html.
  *
- * The line: the exceptions exist for SIGNED-IN callers' stored text (documents, chat, imports, `?ids=` lists; the
- * Cognito and MCP-token routes) and for the MCP OAuth loopback callback. They do not apply to the UNAUTHENTICATED
- * routes, which carry small bodies: there each counted label blocks, except where a legitimate request carries it
- * (read from the handlers):
- * - `SizeRestrictions_BODY` stays counted on `POST /feedback-forms/{id}/submit`: feedback text up to 10,000
- *   characters plus 20 custom fields of 1,000 (feedback_form_handler.py), or a prototype pin up to 24,000 bytes
- *   (shared/prototype_pins.py), is over the rule's 8 KB.
+ * The line: the exceptions exist for stored text (documents, chat, imports, `?ids=` lists on the Cognito and
+ * MCP-token routes; customers' feedback and ballot notes on the two public submit routes) and for the MCP OAuth
+ * loopback callback. On every other UNAUTHENTICATED route each counted label blocks. Where a public request
+ * legitimately carries one (read from the handlers):
+ * - `POST /feedback-forms/{id}/submit` keeps every body rule counted: feedback text up to 10,000 characters plus 20
+ *   custom fields of 1,000 (feedback_form_handler.py), or a prototype pin up to 24,000 bytes
+ *   (shared/prototype_pins.py), is over the rule's 8 KB; and that text is a customer's own words, where `<div>`,
+ *   `I <3 it`, `src/../lib/foo.py`, a pasted stack trace or a link to `http://10.0.0.1/admin` is feedback, not an
+ *   attack (stored as data, never executed, fetched or opened as a path; the SPA escapes it when it renders).
+ * - `POST /voting-sessions/{id}/submit` keeps the four content rules counted for the same reason (a ballot's
+ *   `notes`, up to 2,000 characters, ballots_handler.py); its body is small, so the size rule blocks.
  * - `/webhooks/*` keeps every body rule counted: a GitHub issue payload is over 8 KB and its body is user text with
  *   HTML, paths and URLs. The handler checks the HMAC signature before it parses anything.
  * - `GenericRFI_BODY` stays counted on `POST /oauth/register` (`redirect_uris: ["http://127.0.0.1:<port>/…"]`) and
@@ -23,11 +27,12 @@
  *   blocks there like everywhere else.
  * - Nothing else public needs one: `/.well-known/*` and the widget's `config` / `iframe` take no body and at most a
  *   short token query (`?r=`), ballots and `POST /unsubscribe` post a few short fields, `POST /oauth/revoke` a token.
- *   Accepted edge: a widget on a page served from a bare IPv4 host sends that `page_url`, which GenericRFI_BODY blocks.
  *
  * The path WAF inspects on a REST API stage is the one the caller sent, `/<stage>/<route>` on the execute-api host
  * (there is no custom domain). The matcher takes the stage prefix as optional, so a base-path mapping that drops it
- * still matches, and it URL-decodes first, so a percent-encoded route name cannot slip past it. API Gateway resource
+ * still matches, and it URL-decodes first, so a percent-encoded route name cannot slip past it; a `{param}` matches
+ * one or more segments of the DECODED path, because API Gateway routes `a%2Fb` to a single-segment parameter while
+ * the decode turns it into `a/b` (lib/waf-public-routes.test.ts pins both). API Gateway resource
  * paths are case-sensitive, so a differently cased path reaches no public route. The route list below must equal
  * every unauthenticated method of the API: lib/waf-public-routes.test.ts pins it against the synthesized stack.
  */
@@ -46,7 +51,12 @@ export const CLOUDFRONT_COUNTED_CRS_RULES = ['GenericRFI_QUERYARGUMENTS'] as con
 /** The SPA's OAuth consent page (frontend/src/routes.tsx, CONSENT_PAGE_PATH in shared/mcp_oauth_config.py). */
 const SPA_OAUTH_CONSENT_PATH = '/oauth/authorize';
 
-/** The label each counted rule adds (exact case, from the AWS baseline rule group page). */
+/**
+ * The label each counted rule adds: exact case, copied from the "Label" of each rule on
+ * https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-baseline.html (checked 2026-11-03).
+ * Nothing offline can prove a label string: after turning the opt-in on, docs/deployment.md → AWS WAF says how to
+ * see this rule's BlockedRequests metric move with one test request.
+ */
 export const CRS_RULE_LABELS: Readonly<Record<ApiCountedCrsRule, string>> = {
   SizeRestrictions_BODY: 'awswaf:managed:aws:core-rule-set:SizeRestrictions_Body',
   CrossSiteScripting_BODY: 'awswaf:managed:aws:core-rule-set:CrossSiteScripting_Body',
@@ -57,9 +67,11 @@ export const CRS_RULE_LABELS: Readonly<Record<ApiCountedCrsRule, string>> = {
   GenericRFI_QUERYARGUMENTS: 'awswaf:managed:aws:core-rule-set:GenericRFI_QueryArguments',
 };
 
-const BODY_RULES: readonly ApiCountedCrsRule[] = [
-  'SizeRestrictions_BODY', 'CrossSiteScripting_BODY', 'GenericLFI_BODY', 'GenericRFI_BODY', 'EC2MetaDataSSRF_BODY',
+/** The body rules that read the CONTENT of a body (every body rule but the size one). */
+const CONTENT_BODY_RULES: readonly ApiCountedCrsRule[] = [
+  'CrossSiteScripting_BODY', 'GenericLFI_BODY', 'GenericRFI_BODY', 'EC2MetaDataSSRF_BODY',
 ];
+const BODY_RULES: readonly ApiCountedCrsRule[] = ['SizeRestrictions_BODY', ...CONTENT_BODY_RULES];
 
 interface PublicApiRoute {
   /** The resource path as api-routes.ts declares it (`{name}` = one path segment). */
@@ -72,9 +84,9 @@ interface PublicApiRoute {
 export const PUBLIC_API_ROUTES: readonly PublicApiRoute[] = [
   { path: '/feedback-forms/{form_id}/config', keepCounted: [] },
   { path: '/feedback-forms/{form_id}/iframe', keepCounted: [] },
-  { path: '/feedback-forms/{form_id}/submit', keepCounted: ['SizeRestrictions_BODY'] },
+  { path: '/feedback-forms/{form_id}/submit', keepCounted: BODY_RULES },
   { path: '/voting-sessions/{session_id}/config', keepCounted: [] },
-  { path: '/voting-sessions/{session_id}/submit', keepCounted: [] },
+  { path: '/voting-sessions/{session_id}/submit', keepCounted: CONTENT_BODY_RULES },
   { path: '/unsubscribe', keepCounted: [] },
   { path: '/.well-known/oauth-authorization-server', keepCounted: [] },
   { path: '/.well-known/oauth-protected-resource', keepCounted: [] },
@@ -93,11 +105,17 @@ export const WAF_REGEX_MAX_CHARS = 512;
 
 const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** One path segment of a template: a `{param}` matches any one segment. */
-const segmentRegex = (segment: string): string => (/^\{\w+\}$/.test(segment) ? '[^/]+' : escapeRegex(segment));
+/**
+ * One path segment of a template. A `{param}` matches ONE OR MORE segments: the path is URL-decoded first, and an
+ * encoded `/` inside a parameter (`a%2Fb`, one segment to API Gateway) is two segments after the decode.
+ */
+const segmentRegex = (segment: string): string => (/^\{\w+\}$/.test(segment) ? '[^/]+(?:/[^/]+)*' : escapeRegex(segment));
 
-/** An alternation, or the single item as it is. */
-const alternation = (items: readonly string[]): string => (items.length === 1 ? items[0] ?? '' : `(?:${items.join('|')})`);
+/** An alternation, or the single item as it is; never empty (an empty one would match every path). */
+function alternation(items: readonly string[]): string {
+  if (items.length === 0) throw new Error('WAF path regex: an empty alternation');
+  return items.length === 1 ? items[0] ?? '' : `(?:${items.join('|')})`;
+}
 
 /**
  * One anchored regex for `paths`, the routes sharing a parent written once (`/oauth/(?:authorize|token)`) so the
@@ -136,10 +154,12 @@ const uriPathMatches = (regex: string): Statement => ({
   },
 });
 
-/** OR of two or more statements, or the single one as it is (WAF requires two in an OR). */
-const anyOf = (statements: readonly Statement[]): Statement => (
-  statements.length === 1 && statements[0] ? statements[0] : { orStatement: { statements: [...statements] } }
-);
+/** OR of two or more statements, or the single one as it is (WAF requires two in an OR; none is a bug). */
+function anyOf(statements: readonly Statement[]): Statement {
+  const [first, ...rest] = statements;
+  if (first === undefined) throw new Error('WAF rule: an OR of no statements');
+  return rest.length === 0 ? first : { orStatement: { statements: [...statements] } };
+}
 
 /** For each counted rule, the public paths it blocks on; rules with the same paths grouped (one regex each). */
 function blockedPathGroups(): { rules: ApiCountedCrsRule[]; paths: string[] }[] {

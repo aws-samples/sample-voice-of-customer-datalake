@@ -25,11 +25,13 @@ check what deploys.
 ### Changed
 - **`-c enableWaf=true`**: the core-rule-set rules the API only counts (body size, cross-site scripting, LFI, RFI,
   EC2 metadata SSRF, query-string size, query-argument RFI) block again on the unauthenticated routes: the feedback
-  widget, ballots, `POST /unsubscribe`, `/.well-known/*`, `/oauth/*` and webhooks. A new rule on each web ACL blocks
-  a counted rule's label there, except where a legitimate request carries it (large widget submissions and webhook
-  payloads, the MCP loopback `redirect_uri`). The SPA's CloudFront web ACL counts the query-argument RFI rule only on
-  `/oauth/authorize`. One more rule per web ACL: about $20 a month for both instead of $18
-  ([docs/deployment.md](docs/deployment.md) → AWS WAF).
+  widget's config and iframe, ballot config, `POST /unsubscribe`, `/.well-known/*` and `/oauth/*`. A new rule on each
+  web ACL blocks a counted rule's label there, except where a legitimate request carries it: the two public submit
+  routes keep the body-content rules counted (a customer's feedback or ballot note may hold HTML, paths or links),
+  the widget submit and webhooks keep the body-size rule counted, and the MCP loopback `redirect_uri` stays counted on
+  `/oauth/authorize`, `/oauth/register` and `/oauth/token`. The SPA's CloudFront web ACL counts the query-argument
+  RFI rule only on `/oauth/authorize`. One more rule per web ACL: about $20 a month for both instead of $18
+  ([docs/deployment.md](docs/deployment.md) → AWS WAF, which also says how to check the rule once after turning it on).
 
 ### Fixed
 - Tests: the per-stack CDK tests apply the same whole-app rewrites as the deploy (`lib/utils/app-aspects.ts`), so
