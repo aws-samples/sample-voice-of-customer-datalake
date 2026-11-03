@@ -416,7 +416,8 @@ feedbackFormSubmitResource.addMethod('POST', feedbackFormIntegration);
    calls with `grantReadAndWrites` / `grantKeyScopedWrites` (`lib/utils/table-write-grants.ts`), never
    `grantReadWriteData` on a table the role does not delete in. A delete of operational rows in a shared table is
    pinned by `dynamodb:LeadingKeys`; every deleter is listed in `lib/customer-data-deletes.test.ts`, and the
-   `AUDIT#*` rows are denied to every writer but their own (`lib/utils/audit-row-guard.ts`, applied in `bin/`)
+   `AUDIT#*` rows are denied to every writer but their own (`lib/utils/audit-row-guard.ts`, applied by
+   `applyAppAspects`): a new code path that writes an audit row names its role in `AUDIT_WRITERS` there
 
 **Benefits:**
 - Each Lambda stays under 20KB policy limit
