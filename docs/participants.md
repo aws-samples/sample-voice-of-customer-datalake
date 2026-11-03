@@ -146,6 +146,6 @@ Table `voc-participants-<suffix>` (pk/sk, index `gsi1`, TTL `ttl`, the Core KMS 
   The request body states the erasure's legal basis, `{"legal_basis": "GDPR art. 17 request #123"}` (required since
   6.00.00, at most 300 characters, never the person's name or email; **400** without it; the person's dialog asks
   for it). Before anything is deleted the erasure is recorded in voc-participants, with no email or name: a
-  tombstone `AUDIT#tombstone#participant` / `<sha256 of the person id>` (`legal_basis`, `erased_by` `{sub, kind}`,
-  `erased_at`) and the `AUDIT#delete` row every workspace delete writes (`kind: participant`, the same hash as its
-  target, the basis as its `reason`; `shared/delete_audit.py`). Neither has a `ttl`.
+  tombstone `AUDIT#tombstone#participant` / `<sha256 of the person id>` (`legal_basis`, `actor` `{sub, kind}`,
+  `deleted_at`) and the `AUDIT#delete` row every workspace delete writes (`kind: participant`, target `{person_id}`
+  (the opaque id the ask's recipient rows keep too), the basis as its `reason`; `shared/delete_audit.py`). Neither has a `ttl`.
