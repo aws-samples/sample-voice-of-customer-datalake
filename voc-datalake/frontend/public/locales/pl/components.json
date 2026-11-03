@@ -613,6 +613,8 @@
   },
   "sourcesManager": {
     "retentionHint": "{{min, number}}-{{max, number}} dni. Codzienne zadanie usuwa starsze opinie z tego źródła oraz ich surowe archiwa.",
+    "retentionBasisHint": "Dlaczego opinie z tego źródła są usuwane po tym okresie; zapisywane w dzienniku audytu. Na przykład: \"Umowa powierzenia z dostawcą X, 12 miesięcy\".",
+    "retentionBasisMissing": "Dla tego okresu przechowywania nie zapisano podstawy prawnej (ustawiono go przed 6.00.00). Nadal obowiązuje; dodaj podstawę prawną, aby zapisać ten profil.",
     "removeProfile": "Usuń profil: {{name}}",
     "labelLabel": "Etykieta",
     "piiLabel": "Dane osobowe",
@@ -637,6 +639,7 @@
     "problems": {
       "tooMany": "Można utworzyć maksymalnie {{max, number}} profili źródeł.",
       "retention": "{{name}}: okres przechowywania musi wynosić {{min, number}}-{{max, number}} dni lub dane mają być zachowywane na zawsze.",
+      "retentionBasis": "{{name}}: podaj podstawę prawną okresu przechowywania.",
       "tags": "{{name}}: najpierw popraw tagi.",
       "idFormat": "Użyj małych liter, cyfr, \"_\" lub \"-\" (do 48 znaków).",
       "idDuplicate": "To źródło ma już profil.",
@@ -650,7 +653,7 @@
   },
   "erasure": {
     "title": "Usuń opinie jednej osoby",
-    "description": "Usuwa wszystkie pasujące opinie wraz z ich surowymi archiwami. Tej operacji nie można cofnąć. Zachowywany jest tylko skrót wartości.",
+    "description": "Usuwa każdą pasującą opinię (także opinie Radar) wraz z jej surowym archiwum i oznacza persony oraz dokumenty, które ją cytowały. Tej operacji nie można cofnąć. Zachowywany jest tylko skrót wartości i podana podstawa prawna.",
     "fieldLabel": "Dopasuj według",
     "fields": {
       "author": "Autor",
@@ -668,6 +671,9 @@
     "jobsTitle": "Ostatnie usunięcia",
     "noJobs": "Brak.",
     "counts": "Usunięto opinie: {{items, number}}, obiekty surowe: {{objects, number}}",
+    "legalBasisShown": "Podstawa prawna: {{basis}}",
+    "copies": "Usunięte opinie Radar: {{radar, number}}, oznaczone persony lub dokumenty: {{artifacts, number}}",
+    "reviewFiles": "Przesłane pliki zachowane, bo zawierają też wiersze, których nie usunięto: {{files, number}}. Sprawdź je:",
     "status": {
       "queued": "W kolejce",
       "running": "W toku",
@@ -677,9 +683,13 @@
     "confirmTitle": "Usunąć opinie tej osoby?",
     "confirmMessage": "Każda opinia, której pole {{field}} odpowiada wartości ({{source}}), wraz z jej surowym archiwum zostanie trwale usunięta."
   },
+  "legalBasis": {
+    "label": "Podstawa prawna",
+    "hint": "Dlaczego te dane są usuwane; zapisywane w dzienniku audytu. Na przykład: \"RODO art. 17, wniosek #123\". Nigdy nie wpisuj tu imienia, nazwiska ani adresu e-mail osoby."
+  },
   "sourceErasure": {
     "title": "Usuń wszystkie dane źródła",
-    "description": "Usuwa wszystkie opinie z jednego źródła i wszystkie surowe pliki z jego folderu raw. Liczby na pulpicie maleją w miarę usuwania opinii. Źródło zachowuje ustawienia, harmonogram i pozycję synchronizacji, więc nowe opinie napływają, dopóki go nie wyłączysz. Przesłane pliki CSV i JSON zostają. Tej operacji nie można cofnąć.",
+    "description": "Usuwa wszystkie opinie z jednego źródła, jego opinie Radar, wszystkie surowe pliki w jego folderze raw oraz przesłane do niego pliki CSV i JSON. Liczby na pulpicie maleją w miarę usuwania opinii. Persony i dokumenty, które cytowały usuniętą opinię, zostają oznaczone. Źródło zachowuje ustawienia, harmonogram i pozycję synchronizacji, więc nowe opinie napływają, dopóki go nie wyłączysz. Tej operacji nie można cofnąć.",
     "sourceLabel": "Źródło",
     "chooseSource": "Wybierz źródło",
     "noSources": "Żadne źródło nie ma jeszcze danych.",
@@ -687,13 +697,15 @@
     "startError": "Usuwanie nie zostało rozpoczęte: {{reason}}",
     "confirmTitle": "Usunąć wszystkie dane źródła {{source}}?",
     "confirmMessage": "Wszystkie opinie ze źródła {{source}} i wszystkie surowe pliki z jego folderu zostaną trwale usunięte.",
-    "keepsRunning": "Źródło działa dalej po usunięciu: jeśli jego harmonogram jest włączony, nadal będą napływać nowe opinie. Najpierw wyłącz źródło, jeśli ma pozostać puste. Przesłane pliki CSV i JSON (raw/csv_upload, raw/json_upload) są zachowywane.",
+    "keepsRunning": "Źródło działa dalej po usunięciu: jeśli jego harmonogram jest włączony, nadal będą napływać nowe opinie. Najpierw wyłącz źródło, jeśli ma pozostać puste.",
     "scheduleOn": "Harmonogram źródła {{source}} jest włączony. Po usunięciu napłyną nowe opinie, chyba że najpierw wyłączysz źródło.",
     "typeLabel": "Wpisz {{source}}, aby potwierdzić",
     "confirm": "Usuń wszystkie dane",
     "progress": {
       "items": "Usuwanie opinii. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
+      "radar": "Usuwanie opinii Radar. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
       "raw": "Usuwanie surowych plików. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
+      "lineage": "Oznaczanie person i dokumentów, które cytowały usunięte opinie. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
       "done": "Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}."
     }
   },

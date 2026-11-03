@@ -3,15 +3,18 @@
 // settings_handler / metrics_handler / feedback_edit_handler):
 //
 //   GET|PUT /settings/dimensions        {dimensions, updated_at} / {success, dimensions}
-//   GET|PUT /settings/sources           {sources} / {success, sources}  (the mock caller is an admin)
+//   GET|PUT /settings/sources           {sources} / {success, sources}  (the mock caller is an admin; a
+//                                       retention period needs retention_legal_basis on PUT)
 //   GET|POST /settings/erasure          {jobs, sources} / 202 {job}  (only the value's sha256 is kept;
-//                                       field 'source' = a whole source, with `confirm` repeating it)
+//                                       field 'source' = a whole source, with `confirm` repeating it;
+//                                       `legal_basis` required, mock-legal-basis.js)
 //   GET /metrics/dimensions?key=…       {key, period_days, is_partial, values, unassigned}
 //   PUT /feedback/{id}/dimensions       {success, feedback_id, dimensions, tags}
 //
 // Stateful for the life of the process. The fixtures: `product` with a child
 // `module` (parent link + parent_value), `user_type`; profiles including a
-// restricted `support_tickets` (pii redact, retention 365). Fixture feedback is
+// restricted `support_tickets` (pii redact, retention 365, saved before 6.00.00 so it has no
+// retention_legal_basis: the Sources page flags it, and a save must add one). Fixture feedback is
 // stamped by seedDimensionFixtures so filters and chips have data in dev.
 // The `channel` / `dims` / `tag` filters and the entities additions are shared
 // with mock-server.js through attributeFilterOf / entityExtras.
@@ -19,6 +22,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { facetFilterOf } from './mock-facets.js';
+import { legalBasisError } from './mock-legal-basis.js';
 import { feedbackTypeDimension, isBuiltinDimension, stampFeedbackTypes } from './mock-feedback-types.js';
 
 const MAX_DIMENSIONS = 10;
@@ -161,17 +165,32 @@ function validateProfile(profile, ids) {
   if (!PII.includes(profile.pii ?? 'allow')) return 'pii must be allow, redact or summary_only';
   const days = profile.retention_days ?? null;
   if (days !== null && (!Number.isInteger(days) || days < 30 || days > 3650)) return 'retention_days must be null or 30-3650';
+  if (days !== null) {
+    const what = `Source "${profile.id}" retention_legal_basis`;
+    const basis = profile.retention_legal_basis;
+    if (typeof basis !== 'string' || !basis.trim()) return `${what} is required when retention_days is set`;
+    const basisError = legalBasisError(basis, what);
+    if (basisError) return basisError;
+  }
   const defaults = profile.dimension_defaults ?? {};
   if (Object.entries(defaults).some(([key, value]) => !resolves(key, value))) return `Unknown dimension default on "${profile.id}"`;
   if (!validTags(profile.tags ?? [])) return `Invalid tags on "${profile.id}"`;
   return null;
 }
 
+/** A profile's retention basis as stored: kept only with a period, like shared/source_profiles.py (null when absent). */
+function storedRetentionBasis(p) {
+  if (p.retention_days == null || typeof p.retention_legal_basis !== 'string') return null;
+  return p.retention_legal_basis.trim() || null;
+}
+
 function normalizedProfile(p) {
   const brand = typeof p.radar_brand === 'string' ? p.radar_brand.trim() : '';
   return {
     id: p.id, label: typeof p.label === 'string' && p.label.trim() ? p.label.trim() : p.id,
-    pii: p.pii ?? 'allow', retention_days: p.retention_days ?? null, restricted: p.restricted === true,
+    pii: p.pii ?? 'allow', retention_days: p.retention_days ?? null,
+    retention_legal_basis: storedRetentionBasis(p),
+    restricted: p.restricted === true,
     dimension_defaults: { ...(p.dimension_defaults ?? {}) }, tags: [...(p.tags ?? [])],
     // Radar fields only on a Radar source, like shared/radar_brands.radar_profile_fields.
     ...(brand ? { radar_brand: brand, radar_domains: [...(p.radar_domains ?? [])] } : {}),
@@ -297,7 +316,8 @@ function advanceErasure(job, shared) {
       : (f) => f.author && job.value_hash === sha256(f.author);
     job.deleted_items = shared.mockFeedback.filter(matches).length;
     job.deleted_objects = job.deleted_items;
-    if (job.field === 'source') job.phase = 'raw';
+    // The worker's last phase (lambda/jobs/retention/handler.py): marking the artifacts that cited a deleted item.
+    job.phase = 'lineage';
     job.status = 'completed';
     job.finished_at = now();
   }
@@ -330,23 +350,26 @@ function startErasure(body, shared) {
   if (!ERASURE_FIELDS.includes(field) || !value || value.length > 512) {
     return [400, { success: false, error: 'field must be author, source_id, csv_row_id, email or source, with a value' }];
   }
+  const basisError = legalBasisError(body?.legal_basis);
+  if (basisError) return [400, { success: false, error: basisError }];
+  const legalBasis = body.legal_basis.trim();
   if (field === 'source') {
     const problem = sourceErasureProblem(body, value, shared);
     if (problem) return problem;
-    return queueErasure(field, value, value);
+    return queueErasure(field, value, value, legalBasis);
   }
   const source = typeof body.source === 'string' && body.source !== '' ? body.source : undefined;
   if (source && !state.sources.some((p) => p.id === source)) return [400, { success: false, error: 'Unknown source' }];
   if (!source && (field === 'source_id' || field === 'csv_row_id')) {
     return [400, { success: false, error: `source is required when field is ${field}` }];
   }
-  return queueErasure(field, value, source);
+  return queueErasure(field, value, source, legalBasis);
 }
 
-function queueErasure(field, value, source) {
+function queueErasure(field, value, source, legalBasis) {
   const job = {
-    job_id: `er_${randomHex()}`, status: 'queued', field, source, value_hash: sha256(value),
-    deleted_items: 0, deleted_objects: 0, started_by: CALLER, created_at: now(),
+    job_id: `er_${randomHex()}`, status: 'queued', field, source, value_hash: sha256(value), legal_basis: legalBasis,
+    deleted_items: 0, deleted_objects: 0, deleted_radar_items: 0, artifacts_marked: 0, started_by: CALLER, created_at: now(),
   };
   if (!source) delete job.source;
   state.erasureJobs.unshift(job);

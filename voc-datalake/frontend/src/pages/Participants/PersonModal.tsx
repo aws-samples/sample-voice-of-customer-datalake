@@ -12,10 +12,12 @@ import ModalShell from '../../components/ModalShell/ModalShell'
 import DialogClose from '../../components/DialogClose/DialogClose'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import LegalBasisField from '../../components/LegalBasisField/LegalBasisField'
 import { participantsApi, participantsKeys } from '../../api/participantsApi'
 import type { Person, PersonDetail } from '../../api/participantsSchema'
 import { useIsAdmin } from '../../store/authStore'
 import { formatDateTime } from '../../utils/dateUtils'
+import { isLegalBasis } from '../../utils/legalBasis'
 import { KindBadge, PersonStatusBadge, RecipientStatusBadge } from './ParticipantBadges'
 import { participantErrorMessage } from './participantErrors'
 import { displayName } from './personLabel'
@@ -107,8 +109,9 @@ function ErasePerson({ person, onErased }: Readonly<{ person: Person; onErased: 
   const { t } = useTranslation('participants')
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
+  const [legalBasis, setLegalBasis] = useState('')
   const erase = useMutation({
-    mutationFn: () => participantsApi.deletePerson(person.person_id),
+    mutationFn: () => participantsApi.deletePerson(person.person_id, legalBasis.trim()),
     // Close first and drop the erased person's detail, or the refetch asks for it again (404).
     onSuccess: async () => {
       onErased()
@@ -124,7 +127,11 @@ function ErasePerson({ person, onErased }: Readonly<{ person: Person; onErased: 
       <ConfirmModal isOpen={confirming} title={t('person.eraseTitle')}
         message={t('person.eraseMessage', { name: displayName(person) })}
         confirmLabel={t('person.eraseConfirm')} cancelLabel={t('actions.cancel')} isLoading={erase.isPending}
+        confirmDisabled={!isLegalBasis(legalBasis)}
         onConfirm={() => erase.mutate()} onCancel={() => setConfirming(false)}>
+        <div className="mt-3">
+          <LegalBasisField value={legalBasis} onChange={setLegalBasis} disabled={erase.isPending} />
+        </div>
         {erase.isError ? <p role="alert" className="mt-2 text-sm text-danger">{participantErrorMessage(erase.error, t)}</p> : null}
       </ConfirmModal>
     </>

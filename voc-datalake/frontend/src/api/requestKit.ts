@@ -17,7 +17,8 @@ function jsonRequest(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown
 export const post = (body?: unknown): RequestInit => jsonRequest('POST', body)
 export const put = (body?: unknown): RequestInit => jsonRequest('PUT', body)
 export const patch = (body?: unknown): RequestInit => jsonRequest('PATCH', body)
-export const del = (): RequestInit => jsonRequest('DELETE')
+// A DELETE body is rare: a person's erasure states its legal basis in one (docs/participants.md).
+export const del = (body?: unknown): RequestInit => jsonRequest('DELETE', body)
 
 /** The signature of `fetchApi` in `./client`. */
 export type FetchApi = <T>(endpoint: string, options?: RequestInit) => Promise<T>

@@ -1,7 +1,8 @@
 /**
  * @fileoverview The pieces both erasure panels share (one person, a whole
- * source): the danger section frame, the job status badge and the "not
- * started" alert. The hooks they share are in `useErasureJobs.ts`.
+ * source): the danger section frame, the job status badge, the "not
+ * started" alert and a job's details (legal basis, the copies it reached, the
+ * uploaded files it kept for review). The hooks they share are in `useErasureJobs.ts`.
  *
  * @module components/SourcesManager/erasureParts
  */
@@ -11,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { AlertCircle } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
-import type { ErasureStatus } from '../../api/sourceProfilesApi'
+import type { ErasureJob, ErasureStatus } from '../../api/sourceProfilesApi'
 import type { Tone } from '../../theme/tones'
 
 const STATUS: Record<ErasureStatus, { tone: Tone; labelKey: string }> = {
@@ -51,5 +52,29 @@ export function ErasureStartError({ text }: Readonly<{ text: string }>) {
       <AlertCircle size={14} className="text-danger flex-shrink-0" aria-hidden="true" />
       {text}
     </p>
+  )
+}
+
+/**
+ * What a job did beyond its feedback counts: its legal basis, the Radar reviews it
+ * deleted and the workspace items it marked, and the uploaded files it kept because
+ * they also hold rows it did not erase (keys only; an admin reviews them).
+ */
+export function ErasureJobDetails({ job }: Readonly<{ job: ErasureJob }>) {
+  const { t } = useTranslation('components', { keyPrefix: 'erasure' })
+  const review = job.files_needing_review
+  return (
+    <>
+      {job.legal_basis !== undefined && <span className="text-muted">{t('legalBasisShown', { basis: job.legal_basis })}</span>}
+      {(job.deleted_radar_items > 0 || job.artifacts_marked > 0) && (
+        <span className="text-text">{t('copies', { radar: job.deleted_radar_items, artifacts: job.artifacts_marked })}</span>
+      )}
+      {review !== undefined && review.count > 0 && (
+        <div className="basis-full text-warn">
+          <p>{t('reviewFiles', { files: review.count })}</p>
+          <ul className="font-mono text-muted">{review.keys.map((key) => <li key={key}>{key}</li>)}</ul>
+        </div>
+      )}
+    </>
   )
 }

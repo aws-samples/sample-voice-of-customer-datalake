@@ -585,6 +585,8 @@
     "keepForever": "Conservar las opiniones para siempre",
     "retentionLabel": "Eliminar opiniones con más de (días)",
     "retentionHint": "{{min, number}}-{{max, number}} días. Una tarea diaria elimina las opiniones más antiguas de esta fuente y sus archivos sin procesar.",
+    "retentionBasisHint": "Por qué se eliminan las opiniones de esta fuente después de este periodo; se guarda en el registro de auditoría. Por ejemplo: \"Contrato de encargo con el proveedor X, 12 meses\".",
+    "retentionBasisMissing": "Este periodo de conservación no tiene una base legal registrada (se definió antes de la 6.00.00). Sigue aplicándose; añada la base legal para guardar este perfil.",
     "removeProfile": "Quitar el perfil de {{name}}",
     "labelLabel": "Etiqueta",
     "piiLabel": "Datos personales",
@@ -609,6 +611,7 @@
     "problems": {
       "tooMany": "Como máximo {{max, number}} perfiles de fuente.",
       "retention": "{{name}}: la retención debe ser de {{min, number}}-{{max, number}} días, o conservar para siempre.",
+      "retentionBasis": "{{name}}: indique la base legal del periodo de conservación.",
       "tags": "{{name}}: corrija primero las etiquetas.",
       "idFormat": "Use minúsculas, dígitos, \"_\" o \"-\" (hasta 48).",
       "idDuplicate": "Esa fuente ya tiene un perfil.",
@@ -620,7 +623,7 @@
   },
   "erasure": {
     "title": "Borrar las opiniones de una persona",
-    "description": "Elimina cada opinión coincidente y su archivo sin procesar. No se puede deshacer. Solo se guarda un hash del valor.",
+    "description": "Elimina cada opinión que coincida (también las de Radar) y su archivo sin procesar, y marca las personas y los documentos que citaban alguna. No se puede deshacer. Solo se guarda un hash del valor, junto con la base legal que indique.",
     "fieldLabel": "Coincidir por",
     "fields": {
       "author": "Autor",
@@ -638,6 +641,9 @@
     "jobsTitle": "Borrados recientes",
     "noJobs": "Ninguno todavía.",
     "counts": "{{items, number}} opiniones y {{objects, number}} objetos sin procesar eliminados",
+    "legalBasisShown": "Base legal: {{basis}}",
+    "copies": "{{radar, number}} opiniones de Radar eliminadas, {{artifacts, number}} personas o documentos marcados",
+    "reviewFiles": "Archivos subidos que se conservaron porque también contienen filas no borradas: {{files, number}}. Revíselos:",
     "status": {
       "queued": "En cola",
       "running": "En curso",
@@ -647,9 +653,13 @@
     "confirmTitle": "¿Borrar las opiniones de esta persona?",
     "confirmMessage": "Se eliminarán de forma permanente todas las opiniones cuyo campo {{field}} coincida con el valor ({{source}}) y su archivo sin procesar."
   },
+  "legalBasis": {
+    "label": "Base legal",
+    "hint": "Por qué se eliminan estos datos; se guarda en el registro de auditoría. Por ejemplo: \"RGPD art. 17, solicitud #123\". No escriba nunca aquí el nombre ni el correo electrónico de la persona."
+  },
   "sourceErasure": {
     "title": "Eliminar todos los datos de una fuente",
-    "description": "Elimina todas las reseñas de una fuente y todos los archivos sin procesar de su carpeta raw. Los recuentos del panel bajan a medida que se eliminan las reseñas. La fuente conserva su configuración, su programación y su posición de sincronización, así que seguirán llegando reseñas nuevas hasta que desactives la fuente. Los archivos CSV y JSON subidos se conservan. No se puede deshacer.",
+    "description": "Elimina todas las opiniones de una fuente, sus opiniones de Radar, todos los archivos sin procesar de su carpeta raw y los archivos CSV y JSON subidos para ella. Los recuentos del panel bajan a medida que se eliminan las opiniones. Las personas y los documentos que citaban una opinión eliminada quedan marcados. La fuente conserva su configuración, su programación y su posición de sincronización, así que seguirán llegando opiniones nuevas hasta que la desactive. No se puede deshacer.",
     "sourceLabel": "Fuente",
     "chooseSource": "Elige una fuente",
     "noSources": "Ninguna fuente tiene datos todavía.",
@@ -657,13 +667,15 @@
     "startError": "No se inició la eliminación: {{reason}}",
     "confirmTitle": "¿Eliminar todos los datos de {{source}}?",
     "confirmMessage": "Todas las reseñas de {{source}} y todos los archivos sin procesar de su carpeta se eliminarán para siempre.",
-    "keepsRunning": "La fuente sigue funcionando después de la eliminación: si su programación está activada, seguirán llegando reseñas nuevas. Desactiva primero la fuente si quieres que quede vacía. Los archivos CSV y JSON subidos (raw/csv_upload, raw/json_upload) se conservan.",
+    "keepsRunning": "La fuente sigue funcionando después de la eliminación: si su programación está activada, seguirán llegando opiniones nuevas. Desactive la fuente primero si quiere que quede vacía.",
     "scheduleOn": "La programación de {{source}} está activada. Llegarán reseñas nuevas después de la eliminación a menos que desactives primero la fuente.",
     "typeLabel": "Escribe {{source}} para confirmar",
     "confirm": "Eliminar todos los datos",
     "progress": {
       "items": "Eliminando reseñas. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
+      "radar": "Eliminando opiniones de Radar. Opiniones eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
       "raw": "Eliminando archivos sin procesar. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
+      "lineage": "Marcando las personas y los documentos que citaban opiniones eliminadas. Opiniones eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
       "done": "Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}."
     }
   },

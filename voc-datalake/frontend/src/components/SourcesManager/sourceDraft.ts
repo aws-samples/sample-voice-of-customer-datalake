@@ -2,13 +2,15 @@
  * @fileoverview The editable copy of the source profiles and its checks.
  *
  * Retention is edited as text (an empty field = keep forever) and parsed on
- * save, so a half-typed number never turns into a stored one.
+ * save, so a half-typed number never turns into a stored one. A retention
+ * period needs its legal basis before the draft can be saved.
  *
  * @module components/SourcesManager/sourceDraft
  */
 import {
   MANUAL_IMPORT_SOURCE, MAX_RETENTION_DAYS, MAX_SOURCE_PROFILES, MIN_RETENTION_DAYS, SOURCE_ID_RE, defaultSourceProfile,
 } from '../../api/sourceProfilesApi'
+import { isLegalBasis } from '../../utils/legalBasis'
 import { DEFAULT_RETENTION_DAYS } from './piiPolicy'
 import type { SourceProfile } from '../../api/sourceProfilesApi'
 
@@ -47,6 +49,8 @@ export function toWire(draft: readonly DraftProfile[]): SourceProfile[] {
     ...row.profile,
     label: row.profile.label.trim() === '' ? row.profile.id : row.profile.label.trim(),
     retention_days: parseRetention(row),
+    // A kept-forever source states no basis; a period's basis is sent trimmed (the server requires it).
+    retention_legal_basis: row.keepForever ? null : (row.profile.retention_legal_basis ?? '').trim(),
   }))
 }
 
@@ -79,6 +83,7 @@ export interface ProfileProblem {
 const PROBLEMS = {
   tooMany: { messageKey: 'components:sourcesManager.problems.tooMany' },
   retention: { messageKey: 'components:sourcesManager.problems.retention' },
+  retentionBasis: { messageKey: 'components:sourcesManager.problems.retentionBasis' },
   tags: { messageKey: 'components:sourcesManager.problems.tags' },
   idFormat: { messageKey: 'components:sourcesManager.problems.idFormat' },
   idDuplicate: { messageKey: 'components:sourcesManager.problems.idDuplicate' },
@@ -92,6 +97,8 @@ export function draftProblem(draft: readonly DraftProfile[]): ProfileProblem | n
   if (badRetention !== undefined) {
     return { messageKey: PROBLEMS.retention.messageKey, params: { name: badRetention.profile.label, min: MIN_RETENTION_DAYS, max: MAX_RETENTION_DAYS } }
   }
+  const noBasis = draft.find((d) => !d.keepForever && !isLegalBasis(d.profile.retention_legal_basis ?? ''))
+  if (noBasis !== undefined) return { messageKey: PROBLEMS.retentionBasis.messageKey, params: { name: noBasis.profile.label } }
   const badTags = draft.find((d) => !d.tagsValid)
   if (badTags !== undefined) return { messageKey: PROBLEMS.tags.messageKey, params: { name: badTags.profile.label } }
   const unnamedBrand = draft.find((d) => d.profile.radar_brand?.trim() === '')

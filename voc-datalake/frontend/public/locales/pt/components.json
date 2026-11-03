@@ -585,6 +585,8 @@
     "keepForever": "Manter as avaliações para sempre",
     "retentionLabel": "Excluir avaliações com mais de (dias)",
     "retentionHint": "{{min, number}}-{{max, number}} dias. Uma tarefa diária exclui as avaliações mais antigas desta fonte e seus arquivos brutos.",
+    "retentionBasisHint": "Por que as avaliações desta fonte são excluídas após este período; fica registrado na trilha de auditoria. Por exemplo: \"Contrato de tratamento com o fornecedor X, 12 meses\".",
+    "retentionBasisMissing": "Nenhuma base legal está registrada para este período de retenção (definido antes da 6.00.00). Ele continua em vigor; adicione a base legal para salvar este perfil.",
     "removeProfile": "Remover o perfil de {{name}}",
     "labelLabel": "Rótulo",
     "piiLabel": "Dados pessoais",
@@ -609,6 +611,7 @@
     "problems": {
       "tooMany": "No máximo {{max, number}} perfis de fonte.",
       "retention": "{{name}}: a retenção deve ser de {{min, number}}-{{max, number}} dias, ou para sempre.",
+      "retentionBasis": "{{name}}: informe a base legal do período de retenção.",
       "tags": "{{name}}: corrija primeiro as etiquetas.",
       "idFormat": "Use minúsculas, dígitos, \"_\" ou \"-\" (até 48).",
       "idDuplicate": "Essa fonte já tem um perfil.",
@@ -620,7 +623,7 @@
   },
   "erasure": {
     "title": "Apagar o feedback de uma pessoa",
-    "description": "Exclui cada avaliação correspondente e seu arquivo bruto. Não pode ser desfeito. Apenas um hash do valor é mantido.",
+    "description": "Exclui cada avaliação correspondente (inclusive as do Radar) e seu arquivo bruto, e marca as personas e os documentos que citavam alguma. Não é possível desfazer. Só são guardados um hash do valor e a base legal informada.",
     "fieldLabel": "Corresponder por",
     "fields": {
       "author": "Autor",
@@ -638,6 +641,9 @@
     "jobsTitle": "Exclusões recentes",
     "noJobs": "Nenhuma ainda.",
     "counts": "{{items, number}} avaliações e {{objects, number}} objetos brutos excluídos",
+    "legalBasisShown": "Base legal: {{basis}}",
+    "copies": "{{radar, number}} avaliações do Radar excluídas, {{artifacts, number}} personas ou documentos marcados",
+    "reviewFiles": "Arquivos enviados mantidos porque também contêm linhas não apagadas: {{files, number}}. Revise-os:",
     "status": {
       "queued": "Na fila",
       "running": "Em execução",
@@ -647,9 +653,13 @@
     "confirmTitle": "Apagar o feedback desta pessoa?",
     "confirmMessage": "Todas as avaliações cujo campo {{field}} corresponda ao valor ({{source}}) e seu arquivo bruto serão excluídos permanentemente."
   },
+  "legalBasis": {
+    "label": "Base legal",
+    "hint": "Por que estes dados são excluídos; fica registrado na trilha de auditoria. Por exemplo: \"RGPD art. 17, pedido #123\". Nunca digite aqui o nome nem o e-mail da pessoa."
+  },
   "sourceErasure": {
     "title": "Excluir todos os dados de uma fonte",
-    "description": "Exclui todas as avaliações de uma fonte e todos os arquivos brutos da pasta raw dela. As contagens do painel diminuem conforme as avaliações são excluídas. A fonte mantém as configurações, o agendamento e a posição de sincronização, então novas avaliações continuam chegando até você desativar a fonte. Os arquivos CSV e JSON enviados são mantidos. Não é possível desfazer.",
+    "description": "Exclui todas as avaliações de uma fonte, suas avaliações do Radar, todos os arquivos brutos da pasta raw e os arquivos CSV e JSON enviados para ela. As contagens do painel diminuem à medida que as avaliações são excluídas. Personas e documentos que citavam uma avaliação excluída são marcados. A fonte mantém suas configurações, agendamento e posição de sincronização, então novas avaliações continuam chegando até você desativá-la. Não é possível desfazer.",
     "sourceLabel": "Fonte",
     "chooseSource": "Escolha uma fonte",
     "noSources": "Nenhuma fonte tem dados ainda.",
@@ -657,13 +667,15 @@
     "startError": "A exclusão não foi iniciada: {{reason}}",
     "confirmTitle": "Excluir todos os dados de {{source}}?",
     "confirmMessage": "Todas as avaliações de {{source}} e todos os arquivos brutos da pasta dela serão excluídos permanentemente.",
-    "keepsRunning": "A fonte continua em execução após a exclusão: se o agendamento estiver ativado, novas avaliações continuam chegando. Desative a fonte primeiro se quiser que ela fique vazia. Os arquivos CSV e JSON enviados (raw/csv_upload, raw/json_upload) são mantidos.",
+    "keepsRunning": "A fonte continua em execução após a exclusão: se o agendamento estiver ativado, novas avaliações continuam chegando. Desative a fonte antes se quiser que ela fique vazia.",
     "scheduleOn": "O agendamento de {{source}} está ativado. Novas avaliações chegarão após a exclusão, a menos que você desative a fonte primeiro.",
     "typeLabel": "Digite {{source}} para confirmar",
     "confirm": "Excluir todos os dados",
     "progress": {
       "items": "Excluindo avaliações. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
+      "radar": "Excluindo avaliações do Radar. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
       "raw": "Excluindo arquivos brutos. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
+      "lineage": "Marcando personas e documentos que citavam avaliações excluídas. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
       "done": "Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}."
     }
   },

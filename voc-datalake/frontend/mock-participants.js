@@ -4,6 +4,7 @@
 // Wired into mock-server.js by handleDomainModules.
 
 import { askRoute } from './mock-participants-asks.js';
+import { legalBasisError } from './mock-legal-basis.js';
 import { newId, now, personView, state, syncMemberCounts } from './mock-participants-data.js';
 
 const KINDS = ['employees', 'paid', 'beta', 'sales', 'customers', 'requesters', 'custom'];
@@ -164,6 +165,12 @@ function personAsks(personId) {
   })));
 }
 
+/** The real route's 400 (shared/legal_basis.py): an erasure states why. */
+function legalBasisProblem(body) {
+  const error = legalBasisError(body?.legal_basis);
+  return error ? fail(400, error) : null;
+}
+
 function erasePerson(personId) {
   state.people.delete(personId);
   for (const ids of state.members.values()) ids.delete(personId);
@@ -189,7 +196,7 @@ function personRoute(req, personId, body) {
     row.updated_at = now();
     return [200, { person: personView(row) }];
   }
-  return req.method === 'DELETE' ? erasePerson(personId) : fail(405, 'Method not allowed');
+  return req.method === 'DELETE' ? (legalBasisProblem(body) ?? erasePerson(personId)) : fail(405, 'Method not allowed');
 }
 
 function projectView(projectId) {

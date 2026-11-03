@@ -26,18 +26,20 @@ import type { ErasureJob, SourceProfile } from '../../api/sourceProfilesApi'
 import type { SourcesStatus } from '../../api/sourcesStatusSchema'
 import { sourceLabel } from '../../utils/displayLabels'
 import DeleteSourceDataDialog from './DeleteSourceDataDialog'
-import { ErasureSection, ErasureStartError, ErasureStatusBadge } from './erasureParts'
+import { ErasureJobDetails, ErasureSection, ErasureStartError, ErasureStatusBadge } from './erasureParts'
 import { errorReason, useErasableSources, useErasureJobs, useStartErasure } from './useErasureJobs'
 
 const PROGRESS_KEYS = {
   items: 'components:sourceErasure.progress.items',
+  radar: 'components:sourceErasure.progress.radar',
   raw: 'components:sourceErasure.progress.raw',
+  lineage: 'components:sourceErasure.progress.lineage',
   done: 'components:sourceErasure.progress.done',
 } as const
 
 function progressKey(job: ErasureJob): string {
   if (job.status === 'completed' || job.status === 'failed') return PROGRESS_KEYS.done
-  return job.phase === 'raw' ? PROGRESS_KEYS.raw : PROGRESS_KEYS.items
+  return PROGRESS_KEYS[job.phase ?? 'items']
 }
 
 /** Whether `GET /sources/status` shows `source`'s own schedule turned on (unknown reads as off). */
@@ -54,6 +56,7 @@ function JobProgress({ job }: Readonly<{ job: ErasureJob }>) {
       <span className="font-mono text-muted">{job.source}</span>
       <span>{t(progressKey(job), { items: job.deleted_items, objects: job.deleted_objects })}</span>
       {job.error !== undefined && <span className="text-danger">{job.error}</span>}
+      <ErasureJobDetails job={job} />
     </p>
   )
 }
@@ -69,7 +72,8 @@ export default function SourceErasurePanel({ profiles }: Readonly<{ profiles: re
   const { data: status } = useQuery({ queryKey: sourcesStatusKey(), queryFn: () => api.getSourcesStatus() })
   const scheduleOn = isScheduleOn(status, source)
   const started = jobs.find((job) => job.job_id === startedId)
-  const start = useStartErasure((confirm: string) => sourceProfilesApi.startSourceErasure({ source, confirm }), {
+  const start = useStartErasure(({ confirm, legalBasis }: { confirm: string; legalBasis: string }) =>
+    sourceProfilesApi.startSourceErasure({ source, confirm, legalBasis }), {
     onAccepted: (job) => {
       setConfirming(false)
       setStartedId(job?.job_id ?? null)
@@ -97,7 +101,7 @@ export default function SourceErasurePanel({ profiles }: Readonly<{ profiles: re
       {started !== undefined && <JobProgress job={started} />}
       {confirming && (
         <DeleteSourceDataDialog source={source} scheduleOn={scheduleOn} isPending={start.isPending}
-          onConfirm={(typed) => start.mutate(typed)} onCancel={() => setConfirming(false)} />
+          onConfirm={(typed, legalBasis) => start.mutate({ confirm: typed, legalBasis })} onCancel={() => setConfirming(false)} />
       )}
     </ErasureSection>
   )

@@ -8,7 +8,9 @@
  * - `PUT /settings/sources` (admin) — validated server-side
  *   (`shared/source_profiles.py`).
  * - `POST /settings/erasure` (admin) → 202 `{job}`; `GET` → `{jobs, sources}`,
- *   jobs newest first. The erased value is only ever hashed server-side; this
+ *   jobs newest first. Every erasure states its `legal_basis` (required since
+ *   6.00.00, ≤ 300 characters); so does a profile's retention period
+ *   (`retention_legal_basis`, required on save when `retention_days` is set). The erased value is only ever hashed server-side; this
  *   client never stores it either (the form clears it once the job is accepted).
  *   `field: 'source'` erases a whole source: `value` and `confirm` both carry
  *   the source id (the server refuses a mismatch), and `sources` lists the ids
@@ -38,6 +40,8 @@ export interface SourceProfile {
   pii: PiiPolicy
   /** null = keep forever. */
   retention_days: number | null
+  /** Why items are deleted after `retention_days`; null on a profile saved before 6.00.00 (it keeps running). */
+  retention_legal_basis: string | null
   restricted: boolean
   dimension_defaults: Record<string, string>
   tags: string[]
@@ -63,6 +67,7 @@ const SourceProfileSchema = z.object({
   label: z.string().catch(''),
   pii: z.enum(PII_POLICIES).catch('allow'),
   retention_days: retentionField,
+  retention_legal_basis: z.string().trim().min(1).nullable().optional().catch(null).transform((basis) => basis ?? null),
   restricted: z.boolean().catch(false),
   dimension_defaults: StringMapSchema,
   tags: TagsSchema,
@@ -82,7 +87,10 @@ export function normalizeSourceProfiles(raw: unknown): SourceProfile[] {
 
 /** A fresh profile with the contract defaults (allow, keep forever, open). */
 export function defaultSourceProfile(id: string, label = id): SourceProfile {
-  return { id, label, pii: 'allow', retention_days: null, restricted: false, dimension_defaults: {}, tags: [] }
+  return {
+    id, label, pii: 'allow', retention_days: null, retention_legal_basis: null, restricted: false,
+    dimension_defaults: {}, tags: [],
+  }
 }
 
 // ── Erasure ─────────────────────────────────────────────────────────────────
@@ -94,13 +102,20 @@ export type ErasureField = typeof ERASURE_FIELDS[number]
 const SOURCE_ERASURE_FIELD = 'source'
 const JOB_FIELDS = [...ERASURE_FIELDS, SOURCE_ERASURE_FIELD] as const
 export type ErasureJobField = typeof JOB_FIELDS[number]
-const ERASURE_PHASES = ['items', 'raw'] as const
+/** The worker's phases in order (lambda/jobs/retention/handler.py). */
+const ERASURE_PHASES = ['items', 'radar', 'raw', 'lineage'] as const
 
 const ERASURE_STATUSES = ['queued', 'running', 'completed', 'failed'] as const
 export type ErasureStatus = typeof ERASURE_STATUSES[number]
 
 const count = z.number().int().nonnegative().catch(0)
 const optionalText = z.string().min(1).optional().catch(undefined)
+
+/** Whole-file uploads that hold erased rows and others, kept and listed for review (keys only). */
+const FilesNeedingReviewSchema = z.object({
+  count,
+  keys: z.array(z.unknown()).catch([]).transform((keys) => keys.filter((key): key is string => typeof key === 'string')),
+}).optional().catch(undefined)
 
 const ErasureJobSchema = z.object({
   job_id: z.string().min(1),
@@ -109,13 +124,20 @@ const ErasureJobSchema = z.object({
   field: z.enum(JOB_FIELDS).catch('author'),
   source: optionalText,
   value_hash: z.string().catch(''),
+  /** Absent on a job started before 6.00.00. */
+  legal_basis: optionalText,
   deleted_items: count,
   deleted_objects: count,
+  /** Other brands' reviews (voc-radar) the job deleted. */
+  deleted_radar_items: count,
+  /** Personas / documents whose cited reviews were erased, now marked. */
+  artifacts_marked: count,
+  files_needing_review: FilesNeedingReviewSchema,
   started_by: z.string().catch(''),
   created_at: z.string().catch(''),
   finished_at: optionalText,
   error: optionalText,
-  /** A whole-source erasure deletes the reviews first, then the raw folder. */
+  /** Reviews, then Radar reviews, then (whole source) the raw folder, then the marking of artifacts. */
   phase: z.enum(ERASURE_PHASES).optional().catch(undefined),
 })
 
@@ -168,12 +190,15 @@ export interface ErasureRequest {
   field: ErasureField
   value: string
   source?: string
+  /** Why this erasure is lawful (an erasure request, a contract); never the person's name or email. */
+  legal_basis: string
 }
 
 export interface SourceErasureRequest {
   source: string
   /** What the person typed; the server refuses it unless it equals `source`. */
   confirm: string
+  legalBasis: string
 }
 
 export const sourceProfilesKey = () => ['source-profiles'] as const
@@ -186,13 +211,15 @@ export const sourceProfilesApi = {
   saveProfiles: async (sources: SourceProfile[]): Promise<SourceProfile[]> =>
     normalizeSourceProfiles(await fetchApi<unknown>('/settings/sources', put({ sources }))),
 
-  startErasure: async (request: ErasureRequest): Promise<ErasureJob | null> =>
-    normalizeErasureJob(await fetchApi<unknown>('/settings/erasure', post(request.source === undefined || request.source === ''
-        ? { field: request.field, value: request.value }
-        : request))),
+  startErasure: async ({ source, ...request }: ErasureRequest): Promise<ErasureJob | null> =>
+    normalizeErasureJob(await fetchApi<unknown>('/settings/erasure', post(source === undefined || source === ''
+      ? request
+      : { ...request, source }))),
 
-  startSourceErasure: async ({ source, confirm }: SourceErasureRequest): Promise<ErasureJob | null> =>
-    normalizeErasureJob(await fetchApi<unknown>('/settings/erasure', post({ field: SOURCE_ERASURE_FIELD, value: source, confirm }))),
+  startSourceErasure: async ({ source, confirm, legalBasis }: SourceErasureRequest): Promise<ErasureJob | null> =>
+    normalizeErasureJob(await fetchApi<unknown>('/settings/erasure', post({
+      field: SOURCE_ERASURE_FIELD, value: source, confirm, legal_basis: legalBasis,
+    }))),
 
   /** One read serves both panels: the polled job list and the whole-source picker. */
   listErasure: async (): Promise<ErasureList> =>
