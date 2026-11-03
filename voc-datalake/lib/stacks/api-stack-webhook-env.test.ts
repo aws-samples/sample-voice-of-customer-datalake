@@ -71,15 +71,16 @@ function synthWithWebhookPlugin(): Template {
 
   const table = (id: string) => pkSkTable(deps, id);
 
+  const dependencies = apiStackDependencyProps(deps, ENV, table);
   const stack = new VocApiStack(app, 'TestApiStack', {
     env: ENV,
-    ...apiStackDependencyProps(deps, ENV, table),
+    ...dependencies,
     brandName: 'TestBrand',
     // The fixture plugin has to be ENABLED for a webhook Lambda to be created:
     // api-stack.ts filters `getEnabledPlugins` before `getPluginsWithWebhook`.
     enabledSources: [WEBHOOK_PLUGIN_ID],
   });
-  applyAppAspects(app); // the rewrites bin/voc-datalake.ts applies
+  applyAppAspects(app, dependencies); // the rewrites bin/voc-datalake.ts applies
 
   return Template.fromStack(stack);
 }

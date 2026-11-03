@@ -23,7 +23,7 @@ export function buildCoreStack(context: Record<string, unknown> = {}): VocCoreSt
     env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION },
   });
   // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
-  applyAppAspects(app);
+  applyAppAspects(app, stack);
   return stack;
 }
 

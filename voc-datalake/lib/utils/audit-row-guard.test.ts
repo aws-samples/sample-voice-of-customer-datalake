@@ -10,19 +10,23 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
-import { AUDIT_DENY_CHANGE_SID, AUDIT_DENY_WRITE_SID, applyAuditRowGuard } from './audit-row-guard';
+import {
+  AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID, AUDIT_DENY_WRITE_SID, applyAuditRowGuard, type NamedAuditWriter,
+} from './audit-row-guard';
 import { byCodeUnit } from './compare';
 
-const GUARDED_TABLES = ['AggregatesTable', 'ProjectsTable', 'ParticipantsTable', 'FeatureRequestsTable'] as const;
+const GUARDED_TABLES = ['AggregatesTable', 'ProjectsTable', 'ParticipantsTable', 'FeatureRequestsTable',
+  'ConversationsTable'] as const;
 const WRITES = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|\*)$/;
 const AUDIT_CONDITION = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#*'] } };
 
-/** Table → the roles that may PUT an audit row there (the audit writers). */
+/** Table → the roles that may PUT an audit row there (the audit writers; the settings API only `AUDIT#delete`). */
 const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
-  AggregatesTable: ['VocProcessingStack/RetentionWorkerRetentionRole'],
+  AggregatesTable: ['VocApiStack/SettingsLambdaRole', 'VocProcessingStack/RetentionWorkerRetentionRole'],
   ProjectsTable: ['VocApiStack/PersonaGeneratorRole', 'VocApiStack/ProjectsLambdaRole'],
   ParticipantsTable: ['VocApiStack/EngagementLambdaRole'],
   FeatureRequestsTable: ['VocApiStack/EngagementLambdaRole'],
+  ConversationsTable: ['VocApiStack/ChatLambdaRole'],
 };
 
 const StatementSchema = z.object({
@@ -95,10 +99,24 @@ describe('audit rows (AUDIT#*) across every stack', () => {
   });
 
   it('a non-writer\'s put deny names PutItem and BatchWriteItem, on audit keys only', () => {
-    const deny = denied(byRole.get('VocApiStack/SettingsLambdaRole') ?? [], AUDIT_DENY_WRITE_SID);
+    const deny = denied(byRole.get('VocApiStack/ScrapersLambdaRole') ?? [], AUDIT_DENY_WRITE_SID);
     expect(deny.Effect).toBe('Deny');
     expect(actionsOf(deny).sort(byCodeUnit)).toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:PutItem']);
     expect(deny.Condition).toStrictEqual(AUDIT_CONDITION);
+  });
+
+  it('the settings API may put only AUDIT#delete in voc-aggregates (no retention row, no tombstone)', () => {
+    const deny = denied(byRole.get('VocApiStack/SettingsLambdaRole') ?? [], AUDIT_DENY_OTHER_PARTITION_SID);
+    expect(deny.Effect).toBe('Deny');
+    expect(actionsOf(deny).sort(byCodeUnit)).toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:PutItem']);
+    expect(tablesOf(deny)).toStrictEqual(['AggregatesTable']);
+    expect(deny.Condition).toStrictEqual({ ...AUDIT_CONDITION,
+      'ForAnyValue:StringNotEquals': { 'dynamodb:LeadingKeys': ['AUDIT#delete'] } });
+  });
+
+  it('only the settings API carries a one-partition deny', () => {
+    const holders = [...byRole].filter(([, statements]) => denied(statements, AUDIT_DENY_OTHER_PARTITION_SID) !== NO_STATEMENT);
+    expect(holders.map(([role]) => role)).toStrictEqual(['VocApiStack/SettingsLambdaRole']);
   });
 
   it('leaves a read-only role alone', () => {
@@ -108,7 +126,8 @@ describe('audit rows (AUDIT#*) across every stack', () => {
 }, SYNTH_TIMEOUT_MS);
 
 describe('applyAuditRowGuard (one stack)', () => {
-  function guarded(grant: (table: dynamodb.Table, role: iam.Role) => void, writerSuffixes: string[] = []): Template {
+  function guarded(grant: (table: dynamodb.Table, role: iam.Role) => void, writerSuffixes: string[] = [],
+    partitionKey?: string): Template {
     const app = new cdk.App();
     const stack = new cdk.Stack(app, 'S');
     const table = new dynamodb.Table(stack, 'T', { partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING } });
@@ -116,7 +135,8 @@ describe('applyAuditRowGuard (one stack)', () => {
     const role = new iam.Role(stack, 'R', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') });
     grant(table, role);
     other.grantReadWriteData(role);
-    applyAuditRowGuard(app, { tables: [table], writers: [{ table, rolePathSuffixes: writerSuffixes }] });
+    const writer: NamedAuditWriter = { table, rolePathSuffixes: writerSuffixes, partitionKey };
+    applyAuditRowGuard(app, { tables: [table], writers: [writer] });
     return Template.fromStack(stack);
   }
   const sids = (template: Template): string[] => Object.values(template.findResources('AWS::IAM::Policy'))
@@ -134,6 +154,11 @@ describe('applyAuditRowGuard (one stack)', () => {
 
   it('a named writer keeps its puts', () => {
     expect(sids(guarded((table, role) => table.grant(role, 'dynamodb:PutItem'), ['/R']))).toStrictEqual([AUDIT_DENY_CHANGE_SID]);
+  });
+
+  it('a writer of one audit partition is denied puts on every other one', () => {
+    expect(sids(guarded((table, role) => table.grant(role, 'dynamodb:PutItem'), ['/R'], 'AUDIT#delete')))
+      .toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID]);
   });
 
   it('a key-scoped delete does not make a role the audit writer', () => {
