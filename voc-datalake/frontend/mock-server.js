@@ -1717,6 +1717,10 @@ const mockProjectDetails = {
         title: 'Proactive Delivery Updates',
         feature_idea: 'Proactive delivery delay notifications',
         content: '# PR/FAQ: Proactive Delivery Updates\n\n## Press Release\nToday we announced proactive delivery updates: customers are notified the moment a delay is detected, with an honest new estimate.\n\n## Customer FAQ\n**Q: Will I be spammed with notifications?**\nA: No — you are only notified when the estimate actually changes.\n\n## Internal FAQ\n**Q: What is the hardest technical dependency?**\nA: Carrier webhook latency and estimate recalculation.',
+        // Written from a persona deleted since (lambda/shared/deleted_sources.py): the page shows the notice.
+        derivation: { sources: [], selected_document_count: 0, feedback_count: 0, persona_ids: ['persona_gone'],
+          visual_document_ids: [], product_context_included: false },
+        deleted_sources: [{ kind: 'persona', id: 'persona_gone', name: 'Weekend Walt', deleted_at: new Date().toISOString() }],
         created_at: new Date().toISOString(),
       },
     ],

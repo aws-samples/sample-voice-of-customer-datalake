@@ -127,7 +127,13 @@
       "feedback": "피드백: {{feedback}}",
       "heading": "수정 대상"
     },
-    "selectDocument": "문서를 선택하세요"
+    "selectDocument": "문서를 선택하세요",
+    "deletedSources": {
+      "personaNamed": "나중에 삭제된 페르소나를 바탕으로 작성됨: {{name}}",
+      "persona": "나중에 삭제된 페르소나를 바탕으로 작성됨",
+      "document": "나중에 삭제된 문서를 바탕으로 작성됨",
+      "productDoc": "나중에 삭제된 제품 문서를 사용해 작성됨"
+    }
   },
   "imageErrors": {
     "tooLarge": "{{name}}은(는) 크기를 줄인 뒤에도 여전히 너무 큽니다. 더 작은 스크린샷을 사용하거나 잘라내세요.",

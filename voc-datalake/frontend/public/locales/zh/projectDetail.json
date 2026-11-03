@@ -127,7 +127,13 @@
       "feedback": "反馈：{{feedback}}",
       "heading": "修订自"
     },
-    "selectDocument": "选择文档"
+    "selectDocument": "选择文档",
+    "deletedSources": {
+      "personaNamed": "基于后来被删除的用户角色撰写：{{name}}",
+      "persona": "基于后来被删除的用户角色撰写",
+      "document": "基于后来被删除的文档撰写",
+      "productDoc": "使用了后来被删除的产品文档撰写"
+    }
   },
   "imageErrors": {
     "tooLarge": "{{name}} 压缩后仍然过大。请使用更小的截图，或先裁剪。",

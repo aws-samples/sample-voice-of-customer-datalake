@@ -127,7 +127,13 @@
       "feedback": "Retour : {{feedback}}",
       "heading": "Révision de"
     },
-    "selectDocument": "Sélectionner un document"
+    "selectDocument": "Sélectionner un document",
+    "deletedSources": {
+      "personaNamed": "Rédigé à partir d’un persona supprimé depuis : {{name}}",
+      "persona": "Rédigé à partir d’un persona supprimé depuis",
+      "document": "Rédigé à partir d’un document supprimé depuis",
+      "productDoc": "Rédigé avec un document produit supprimé depuis"
+    }
   },
   "imageErrors": {
     "tooLarge": "{{name}} reste trop volumineux après redimensionnement. Essayez une capture plus petite ou recadrez-la.",

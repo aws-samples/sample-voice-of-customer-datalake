@@ -7,6 +7,7 @@
  * the components that consume them.
  */
 import { z } from 'zod'
+import { withDeletedSources } from './deletedSources'
 import { parseEach } from './lenientFields'
 import { copiedFromSchema } from './personaCopiedFrom'
 import { UserRefSchema } from './userRefSchema'
@@ -182,9 +183,12 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   input_feedback_ids: optionalStringArray,
   revised_from_id: optionalNullableString,
   revision_feedback: optionalString,
+  // A persona / document / product doc this one cited and that was later deleted: read by the
+  // transform below (api/deletedSources.ts), the key omitted when there is none.
+  deleted_sources: z.unknown().optional(),
   created_at: z.string().catch(''),
   updated_at: optionalString,
-}))
+}).transform(withDeletedSources))
 
 // ── Sharing fields (see voc-datalake/lambda/shared/project_access.py) ──
 // A legacy payload without them is a public project the caller can view; it
