@@ -164,9 +164,11 @@ class TestReplaceSemantics:
                 {'pk': 'PROJECT#proj-1', 'sk': 'PERSONA#old-3'},
             ]
         }
-        # The protected personas to keep (none here), names to avoid, the clear, then the recount
-        # of the partition (the two new rows).
-        projects_table.query.side_effect = [old, old, old, {'Items': [{'sk': 'PERSONA#new-1'}, {'sk': 'PERSONA#new-2'}]}]
+        # The protected personas to keep (none here), names to avoid, the clear, the documents that
+        # cited a cleared persona (none, shared.deleted_sources), then the recount of the partition
+        # (the two new rows).
+        projects_table.query.side_effect = [
+            old, old, old, {'Items': []}, {'Items': [{'sk': 'PERSONA#new-1'}, {'sk': 'PERSONA#new-2'}]}]
 
         result = generate_personas('proj-1', {'persona_count': 2})
 
