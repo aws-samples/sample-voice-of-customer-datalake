@@ -13,6 +13,9 @@ def world():
         yield w
 
 
+ERASURE = {'legal_basis': 'GDPR art. 17 request #42'}
+
+
 def _person(ctx, email='pat@example.com', **fields):
     return ok(ctx, 'POST', '/participants/people', 201, body={'email': email, **fields})['person']
 
@@ -259,7 +262,7 @@ def test_people_carry_their_list_ids_and_they_follow_membership(lambda_context):
 def test_person_routes_answer_404_for_unknown_ids(lambda_context):
     assert call(lambda_context, 'GET', '/participants/people/per_0000000000000000')[0] == 404
     assert call(lambda_context, 'PUT', '/participants/people/per_0000000000000000', body={'name': 'x'})[0] == 404
-    assert call(lambda_context, 'DELETE', '/participants/people/per_0000000000000000')[0] == 404
+    assert call(lambda_context, 'DELETE', '/participants/people/per_0000000000000000', body=ERASURE)[0] == 404
     person = _person(lambda_context)
     assert call(lambda_context, 'PUT', f'/participants/people/{person["person_id"]}', body={})[0] == 400
 
@@ -272,9 +275,9 @@ def test_erasure_is_admin_only_and_removes_every_trace(world, lambda_context):
     ok(lambda_context, 'POST', '/participants/asks', 202, body={
         'person_ids': [person_id], 'subject': 'Hi', 'message': 'Please', 'link': {'kind': 'form', 'form_id': 'form-1'}})
     run_send_job(lambda_context, world)
-    assert call(lambda_context, 'DELETE', f'/participants/people/{person_id}', claims=USER)[0] == 403
-    ok(lambda_context, 'DELETE', f'/participants/people/{person_id}')
-    rows = world.participants.scan()['Items']
+    assert call(lambda_context, 'DELETE', f'/participants/people/{person_id}', claims=USER, body=ERASURE)[0] == 403
+    ok(lambda_context, 'DELETE', f'/participants/people/{person_id}', body=ERASURE)
+    rows = [row for row in world.participants.scan()['Items'] if not row['pk'].startswith('AUDIT#')]
     # Only the ask's recipient row still names the person, and it holds no token any more.
     naming = [row for row in rows if person_id in row['pk'] or row['sk'].endswith(person_id)]
     assert [row['sk'] for row in naming] == [f'RCPT#{person_id}']
@@ -287,3 +290,27 @@ def test_erasure_is_admin_only_and_removes_every_trace(world, lambda_context):
     recipients = ok(lambda_context, 'GET', f'/participants/asks/{ask_id}')['recipients']
     assert recipients == [{'person_id': person_id, 'email': None, 'name': None, 'status': 'sent',
                            'sent_at': recipient['sent_at'], 'responded_at': None, 'error': None}]
+
+
+@pytest.mark.parametrize('body', [None, {}, {'legal_basis': '  '}, {'legal_basis': 'b' * 301}])
+def test_an_erasure_without_a_legal_basis_is_400_and_erases_nothing(world, lambda_context, body):
+    person_id = _person(lambda_context, email='kept@example.com')['person_id']
+    status, answer = call(lambda_context, 'DELETE', f'/participants/people/{person_id}', body=body)
+    assert (status, 'legal_basis' in answer['error']) == (400, True)
+    assert ok(lambda_context, 'GET', f'/participants/people/{person_id}')['person']['email'] == 'kept@example.com'
+    assert not [row for row in world.participants.scan()['Items'] if row['pk'].startswith('AUDIT#')]
+
+
+def test_an_erasure_is_recorded_by_a_tombstone_and_a_delete_record_without_the_email(world, lambda_context):
+    person_id = _person(lambda_context, email='gone@example.com', name='Gone Person')['person_id']
+    ok(lambda_context, 'DELETE', f'/participants/people/{person_id}', body=ERASURE)
+    audit = [row for row in world.participants.scan()['Items'] if row['pk'].startswith('AUDIT#')]
+    tombstone = next(row for row in audit if row['pk'] == 'AUDIT#tombstone#participant')
+    record = next(row for row in audit if row['pk'] == 'AUDIT#delete')
+    assert tombstone['sk'] == sha256_hex(person_id)
+    assert (tombstone['legal_basis'], tombstone['erased_by']['sub']) == (ERASURE['legal_basis'], 'admin-sub')
+    assert (record['kind'], record['target'], record['reason']) == (
+        'participant', {'person_id_hash': sha256_hex(person_id)}, ERASURE['legal_basis'])
+    assert not [row for row in audit if 'ttl' in row]
+    for value in ('gone@example.com', 'Gone Person', person_id):
+        assert value not in str(audit)

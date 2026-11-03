@@ -17,6 +17,7 @@ from shared.api import get_caller_subject, require_admin
 from shared.delete_audit import actor_from_event, record_delete
 from shared.engagement_common import created, id_list, is_id, normalize_email
 from shared.exceptions import NotFoundError, ValidationError
+from shared.legal_basis import required_legal_basis
 from shared.logging import logger, tracer
 from shared.participants_asks import asks_of_person
 from shared.participants_erasure import erase_person
@@ -258,7 +259,12 @@ def put_person(person_id: str):
 @app.delete('/participants/people/<person_id>')
 @tracer.capture_method
 def erase_person_route(person_id: str):
-    """Admin: erase the person (docs/participants.md -> Erasure)."""
-    require_admin(_event())
-    erase_person(_table(), _person_id(person_id))
+    """Admin: erase the person under the body's ``legal_basis`` (docs/participants.md -> Erasure)."""
+    event = _event()
+    require_admin(event)
+    try:
+        legal_basis = required_legal_basis(json_object_body(app).get('legal_basis'))
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    erase_person(_table(), _person_id(person_id), legal_basis=legal_basis, actor=actor_from_event(event))
     return {'success': True}

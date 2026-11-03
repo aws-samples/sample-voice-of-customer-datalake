@@ -7,18 +7,31 @@ its delivery status (the response token hash and any error code are removed), so
 ask's counts stay true while nothing on it can identify the person any more.
 Feedback a person already submitted is customer data in voc-feedback: erase it with
 Administration -> Privacy (``POST /settings/erasure``), docs/source-policies.md.
+
+An erasure states its legal basis (``shared/legal_basis.py``) and is recorded before
+anything is deleted (TENETS.md D4, D5), in voc-participants, with no email and no name:
+
+- a tombstone ``AUDIT#tombstone#participant`` / ``{sha256 of the person id}``:
+  the legal basis, who erased, when (no ``ttl``);
+- the ``AUDIT#delete`` row every workspace delete writes (``shared/delete_audit.py``),
+  naming the same hash.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Final
 
+from shared.delete_audit import record_delete
+from shared.digests import sha256_hex
 from shared.dynamo_paging import query_all
 from shared.engagement_common import conditional_write
 from shared.logging import logger
 from shared.participants_asks import RESPONSE_SK, UNSUBSCRIBE_SK, hashed_token_key, recipient_key
 from shared.participants_lists import remove_member
 from shared.participants_store import email_guard_key, require_person
+from shared.timestamps import now_iso
+
+TOMBSTONE_PK: Final = 'AUDIT#tombstone#participant'
 
 
 def _ids(rows: list[dict[str, Any]], prefix: str, field: str) -> list[str]:
@@ -52,9 +65,21 @@ def _delete_rows(table: Any, person: Mapping[str, Any], rows: list[dict[str, Any
     return len(token_hashes), len(projects)
 
 
-def erase_person(table: Any, person_id: str) -> dict[str, int]:
-    """Erase ``person_id``; NotFoundError when absent. Returns what was removed (counts only)."""
+def _record(table: Any, person_id: str, legal_basis: str, actor: Mapping[str, str]) -> None:
+    """The tombstone and the delete record, written before the person's rows go."""
+    person_hash = sha256_hex(person_id)
+    table.put_item(Item={
+        'pk': TOMBSTONE_PK, 'sk': person_hash, 'person_id_hash': person_hash, 'legal_basis': legal_basis,
+        'erased_by': dict(actor), 'erased_at': now_iso(),
+    })
+    record_delete(table, kind='participant', target={'person_id_hash': person_hash}, actor=actor,
+                  reason=legal_basis)
+
+
+def erase_person(table: Any, person_id: str, *, legal_basis: str, actor: Mapping[str, str]) -> dict[str, int]:
+    """Erase ``person_id`` under ``legal_basis``; NotFoundError when absent. Returns what was removed (counts only)."""
     person = require_person(table, person_id)
+    _record(table, person_id, legal_basis, actor)
     rows = query_all(table, {'KeyConditionExpression': 'pk = :pk',
                              'ExpressionAttributeValues': {':pk': f'PERSON#{person_id}'}})
     lists = _ids(rows, 'LIST#', 'list_id')
