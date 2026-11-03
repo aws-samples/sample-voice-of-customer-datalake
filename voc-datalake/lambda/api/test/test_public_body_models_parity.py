@@ -79,18 +79,25 @@ def test_form_model_accepts_every_body_the_handler_accepts(feedback_form_handler
     assert refused_by_model_only == []
 
 
-def test_form_model_and_handler_agree_on_most_refusals(feedback_form_handler):
-    """The model is not empty: it refuses most of what the handler refuses (vacuity guard).
+def test_form_model_is_looser_than_the_handler_only_where_documented(feedback_form_handler):
+    """The model refuses what the handler refuses, except the documented looser cases, listed by name.
 
-    Looser on purpose (module docstring of api-request-models.ts): blank or over-long padded `text`, a too-long
-    `custom_fields` key, a malformed `dimensions` entry the handler drops.
+    Looser on purpose (module docstring of api-request-models.ts): a `text` the handler judges after stripping
+    (blank, or over its bound), and a `custom_fields` key over the handler's length (draft 4 has no
+    `propertyNames`). A new looser case fails here and must be added to the list on purpose; a case the model starts
+    refusing fails too, so a tightening is reviewed against the parity test above.
     """
-    bodies = _form_bodies(feedback_form_handler)
-    validate = _form_handler_validation(feedback_form_handler)
+    h = feedback_form_handler
+    bodies = _form_bodies(h)
+    validate = _form_handler_validation(h)
     refused = [body for body in bodies if not _handler_accepts(validate, body)]
     looser = [body for body in refused if FORM_MODEL.is_valid(body)]
-    assert len(refused) > 20
-    assert len(looser) <= 6, looser
+    assert len(refused) > 20  # vacuity: the table exercises the refusals
+    assert looser == [
+        {'text': '   '},
+        {'text': 'a' * (h.MAX_SUBMISSION_TEXT_CHARS + 1)},
+        {'text': 'ok', 'custom_fields': {'k' * (h.MAX_CUSTOM_FIELD_KEY_CHARS + 1): 'x'}},
+    ]
 
 
 def _ballot_bodies(h: Any) -> list[dict]:

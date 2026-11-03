@@ -21,8 +21,20 @@ import { applyExactGrants } from './exact-grants';
 import { applyInferenceScopeEnv } from './inference-scope';
 import { applyLambdaLogRetention, applyProtectedLogRetention } from './log-retention';
 
-/** Apply every whole-app rewrite to `scope` (an app, or a fixture's stack): see the module comment. */
+/** The scopes the rewrites were applied to: a second application over the same constructs would double-wrap. */
+const applied = new WeakSet<IConstruct>();
+
+/**
+ * Apply every whole-app rewrite to `scope` (an app, or a fixture's stack): see the module comment. Once per tree:
+ * `applyExactGrants` wraps the policies it finds, so a scope that is, contains or sits inside an already rewritten
+ * scope is refused (a fixture that builds through a helper which already applied them, then applies them again).
+ */
 export function applyAppAspects(scope: IConstruct): void {
+  const overlapping = [...scope.node.scopes, ...scope.node.findAll()].find((node) => applied.has(node));
+  if (overlapping !== undefined) {
+    throw new Error(`applyAppAspects: ${scope.node.path || '<app>'} overlaps ${overlapping.node.path || '<app>'}, already rewritten`);
+  }
+  applied.add(scope);
   applyLambdaLogRetention(scope);
   applyProtectedLogRetention(scope, shouldProtectData(scope.node.tryGetContext('protectData')));
   applyInferenceScopeEnv(scope);

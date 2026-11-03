@@ -30,7 +30,7 @@
  * largest shape is now `-c performanceTier=true` (SnapStart + the API's web ACL and its stage association, +2), so
  * the ceiling is 394 and that shape is checked too.
  *
- * 5.77.01: the fixture applies bin/voc-datalake.ts's whole-app rewrites (lib/utils/app-aspects.ts), so it counts
+ * 5.78.00: the fixture applies bin/voc-datalake.ts's whole-app rewrites (lib/utils/app-aspects.ts), so it counts
  * what deploys. That adds the one log group the aspect gives a function CDK creates without one (the website
  * BucketDeployment handler): the deployed performance-tier synth was already 395, one over the ceiling set against
  * the bare fixture. The ceiling is 395, the deployed count; the 425 gate is unchanged.
@@ -43,7 +43,7 @@ import { SNAPSTART_CONTEXT_KEY } from '../utils/snapstart';
 
 /**
  * The release ceiling: 388 after 5.63.00 (MCP OAuth), + 4 in 5.77.00 (request validation) + 2 for the opt-in API web
- * ACL (5.77.00) + the BucketDeployment handler's log group the bare fixture did not count (5.77.01); the
+ * ACL (5.77.00) + the BucketDeployment handler's log group the bare fixture did not count (5.78.00); the
  * performance-tier synth is 395, as deployed.
  */
 const ENGAGEMENT_RELEASE_CEILING = 395;

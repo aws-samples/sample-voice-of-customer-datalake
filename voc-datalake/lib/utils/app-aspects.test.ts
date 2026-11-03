@@ -49,6 +49,16 @@ describe('applyAppAspects', () => {
     expect(policies).not.toContain('/index/*');
   });
 
+  it('refuses a second application over the same constructs (the app, a stack inside it, or the app again)', () => {
+    const app = new cdk.App();
+    const stack = new cdk.Stack(app, 'Twice', { env: { account: '111111111111', region: 'us-east-1' } });
+    applyAppAspects(stack);
+    expect(() => applyAppAspects(stack)).toThrow(/already rewritten/);
+    expect(() => applyAppAspects(app)).toThrow(/Twice overlaps|overlaps Twice/);
+    const other = new cdk.Stack(new cdk.App(), 'Separate', { env: { account: '111111111111', region: 'us-east-1' } });
+    expect(() => applyAppAspects(other)).not.toThrow();
+  });
+
   it('sets the EU inference env under -c inferenceScope=eu, and nothing for the default scope', () => {
     const variables = (template: Template) => Object.values(resources(template, 'AWS::Lambda::Function'))
       .map((fn) => JSON.stringify(fn.Properties?.Environment ?? {}));

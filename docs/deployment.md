@@ -1080,18 +1080,25 @@ unauthenticated route, so the full CRS applies there. The exceptions a legitimat
 
 | Public route (with or without the `/v1` stage prefix) | Still counted there | Why |
 |---|---|---|
-| `POST /feedback-forms/{id}/submit` | `SizeRestrictions_BODY` | feedback text up to 10,000 characters plus custom fields, or a prototype pin up to 24,000 bytes |
+| `POST /feedback-forms/{id}/submit` | the five body rules | feedback text up to 10,000 characters plus custom fields, or a prototype pin up to 24,000 bytes; and a customer's own words (`<div>`, `src/../lib`, a pasted stack trace, a link to an IPv4 host) are feedback, stored as data |
+| `POST /voting-sessions/{id}/submit` | the four content body rules (not the size one) | a ballot's `notes`, up to 2,000 characters of free text |
 | `POST /webhooks/{plugin}` | the five body rules | a GitHub issue payload is over 8 KB and carries HTML, paths and URLs; the handler checks the HMAC signature first |
 | `GET /oauth/authorize` | `GenericRFI_QUERYARGUMENTS` | the loopback `redirect_uri` |
 | `POST /oauth/register`, `POST /oauth/token` | `GenericRFI_BODY` | the loopback `redirect_uris` / `redirect_uri` in the body |
-| every other public route (`/feedback-forms/{id}/config` and `/iframe`, `/voting-sessions/{id}/config` and `/submit`, `POST /unsubscribe`, `/.well-known/*`, `GET /oauth/callback`, `POST /oauth/revoke`) | nothing | small bodies and short queries only |
+| every other public route (`/feedback-forms/{id}/config` and `/iframe`, `/voting-sessions/{id}/config`, `POST /unsubscribe`, `/.well-known/*`, `GET /oauth/callback`, `POST /oauth/revoke`) | nothing | small bodies and short queries only |
 
 Cognito- and MCP-token-authorized routes keep all seven exceptions. The route list is
 `PUBLIC_API_ROUTES` in `voc-datalake/lib/utils/waf-crs-scope.ts`; `lib/waf-public-routes.test.ts` fails when an
 unauthenticated API method is missing from it or an authorized one matches it. The matcher URL-decodes the path
-first. One accepted edge: a widget on a page served from a bare IPv4 host sends that `page_url`, which
-`GenericRFI_BODY` blocks. On the CloudFront ACL only `GenericRFI_QUERYARGUMENTS` counts, and its fifth rule,
+first, and a `{param}` matches one or more decoded segments (API Gateway routes `a%2Fb` to one parameter, which the
+decode turns into `a/b`). On the CloudFront ACL only `GenericRFI_QUERYARGUMENTS` counts, and its fifth rule,
 `BlockQueryRfiOutsideOAuthConsent`, blocks it on every path except the SPA's consent page `/oauth/authorize`.
+
+**Check the scope rule once after turning WAF on.** Its label keys are copied from the AWS rule group page, and no
+offline test can prove a label string. Send one request that trips a counted rule on a public route, e.g.
+`curl -X POST "$API/unsubscribe" -H 'Content-Type: application/json' -d '{"token":"<script>alert(1)</script>"}'`:
+it must answer 403 (blocked by WAF, not the handler's 200), and the web ACL's `BlockCountedCrsOnPublicRoutes` rule
+shows one blocked request in its CloudWatch metrics (`AWS/WAFV2`, `BlockedRequests`) or its sampled requests.
 Capacity: 999 WCU on the API ACL and 941 on the CloudFront ACL, under the 1,500 a web ACL includes. No WAF logging
 is configured: only CloudWatch metrics and sampled requests. With WAF on, `VocWebSearchStack` is created even when web search is off and no use-case
 form is filed, and `VocCoreStack` reads the CloudFront ACL's ARN from it: a CloudFormation export when the app region

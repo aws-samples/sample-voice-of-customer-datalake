@@ -24,6 +24,10 @@ import {
 } from './utils/waf-crs-scope';
 
 const STAGE = 'v1';
+/** A `{param}` in the decoded path: one or more segments (waf-crs-scope.ts segmentRegex). */
+const PARAM = '[^/]+(?:/[^/]+)*';
+/** The two public submit routes (customers' free text) and the webhooks keep the content body rules counted. */
+const SUBMITS_AND_WEBHOOKS = ['/feedback-forms/{form_id}/submit', '/voting-sessions/{session_id}/submit', '/webhooks/{plugin}'];
 const LABEL = (rule: keyof typeof CRS_RULE_LABELS) => ({ LabelMatchStatement: { Scope: 'LABEL', Key: CRS_RULE_LABELS[rule] } });
 const PATH = (regex: string) => ({
   RegexMatchStatement: { RegexString: regex, FieldToMatch: { UriPath: {} }, TextTransformations: [{ Priority: 0, Type: 'URL_DECODE' }] },
@@ -77,9 +81,16 @@ function scopeStatement(template: Template, ruleName: string): Statement {
   return StatementSchema.parse(rule?.Statement);
 }
 
-/** A method path as a caller sends it: the stage first (unless `withStage` is false), every `{param}` filled in. */
+/**
+ * A method path as a caller sends it: the stage first (unless `withStage` is false), every `{param}` filled in, a
+ * greedy `{proxy+}` with two segments (a deeper path than one segment is what a proxy route actually receives).
+ */
 function requestPath(template: string, withStage = true): string {
-  const filled = template.split('/').map((segment) => (segment.startsWith('{') ? 'sample_id-1' : segment)).join('/');
+  const fill = (segment: string): string => {
+    if (segment.endsWith('+}')) return 'deep/er';
+    return segment.startsWith('{') ? 'sample_id-1' : segment;
+  };
+  const filled = template.split('/').map(fill).join('/');
   return withStage ? `/${STAGE}${filled}` : filled;
 }
 const blocksLabel = (statement: Statement, path: string, rule: keyof typeof CRS_RULE_LABELS) =>
@@ -99,16 +110,16 @@ describe('the API scope rule (BlockCountedCrsOnPublicRoutes)', () => {
     expect(statement).toStrictEqual({ OrStatement: { Statements: [
       and(LABEL('SizeRestrictions_BODY'), PATH(regex(['/feedback-forms/{form_id}/submit', '/webhooks/{plugin}']))),
       and({ OrStatement: { Statements: [LABEL('CrossSiteScripting_BODY'), LABEL('GenericLFI_BODY'), LABEL('EC2MetaDataSSRF_BODY')] } },
-        PATH(regex(['/webhooks/{plugin}']))),
-      and(LABEL('GenericRFI_BODY'), PATH(regex(['/oauth/register', '/oauth/token', '/webhooks/{plugin}']))),
+        PATH(regex(SUBMITS_AND_WEBHOOKS))),
+      and(LABEL('GenericRFI_BODY'), PATH(regex(['/oauth/register', '/oauth/token', ...SUBMITS_AND_WEBHOOKS]))),
       and(LABEL('SizeRestrictions_QUERYSTRING'), PATH(regex([]))),
       and(LABEL('GenericRFI_QUERYARGUMENTS'), PATH(regex(['/oauth/authorize']))),
     ] } });
     expect(PATH(regex([])).RegexMatchStatement.RegexString).toBe(
-      '^(?:/v1)?(?:/feedback-forms/[^/]+/(?:config|iframe|submit)|/voting-sessions/[^/]+/(?:config|submit)|/unsubscribe'
+      `^(?:/v1)?(?:/feedback-forms/${PARAM}/(?:config|iframe|submit)|/voting-sessions/${PARAM}/(?:config|submit)|/unsubscribe`
       + '|/\\.well-known/(?:oauth-authorization-server|oauth-protected-resource|openid-configuration)'
       + '|/\\.well-known/oauth-protected-resource/mcp/global|/oauth/(?:authorize|callback|register|revoke|token)'
-      + '|/webhooks/[^/]+)/?$');
+      + `|/webhooks/${PARAM})/?$`);
   });
 
   it('lists exactly the routes the API publishes (the review-gate lists of api-stack-template.ts)', () => {
@@ -136,7 +147,12 @@ describe('the API scope rule (BlockCountedCrsOnPublicRoutes)', () => {
 
   it.each([
     ['/feedback-forms/{form_id}/submit', 'SizeRestrictions_BODY', false],
-    ['/feedback-forms/{form_id}/submit', 'CrossSiteScripting_BODY', true],
+    // A customer's own words: HTML, `../`, a link to an IPv4 host or the metadata address is feedback here.
+    ['/feedback-forms/{form_id}/submit', 'CrossSiteScripting_BODY', false],
+    ['/feedback-forms/{form_id}/submit', 'GenericLFI_BODY', false],
+    ['/feedback-forms/{form_id}/submit', 'GenericRFI_BODY', false],
+    ['/feedback-forms/{form_id}/submit', 'EC2MetaDataSSRF_BODY', false],
+    ['/feedback-forms/{form_id}/submit', 'SizeRestrictions_QUERYSTRING', true],
     ['/feedback-forms/{form_id}/config', 'SizeRestrictions_BODY', true],
     ['/webhooks/github_issues', 'SizeRestrictions_BODY', false],
     ['/webhooks/github_issues', 'CrossSiteScripting_BODY', false],
@@ -150,13 +166,19 @@ describe('the API scope rule (BlockCountedCrsOnPublicRoutes)', () => {
     ['/oauth/revoke', 'GenericRFI_BODY', true],
     ['/.well-known/openid-configuration', 'GenericRFI_QUERYARGUMENTS', true],
     ['/unsubscribe', 'GenericLFI_BODY', true],
-    ['/voting-sessions/{session_id}/submit', 'EC2MetaDataSSRF_BODY', true],
+    ['/voting-sessions/{session_id}/submit', 'EC2MetaDataSSRF_BODY', false],
+    ['/voting-sessions/{session_id}/submit', 'CrossSiteScripting_BODY', false],
+    ['/voting-sessions/{session_id}/submit', 'SizeRestrictions_BODY', true],
+    ['/voting-sessions/{session_id}/config', 'CrossSiteScripting_BODY', true],
   ] as const)('%s with %s: blocked=%s', (path, rule, blocked) => {
     expect(blocksLabel(statement, requestPath(path), rule)).toBe(blocked);
   });
 
   it('blocks a percent-encoded route name too, and nothing without a counted label', () => {
     expect(blocksLabel(statement, '/v1/unsubscrib%65', 'GenericLFI_BODY')).toBe(true);
+    // API Gateway routes `a%2Fb` to one {form_id}; after the URL decode it is two segments, still matched.
+    expect(blocksLabel(statement, '/v1/feedback-forms/a%2Fb/config', 'CrossSiteScripting_BODY')).toBe(true);
+    expect(blocksLabel(statement, '/v1/voting-sessions/a%2Fb%2Fc/submit', 'SizeRestrictions_BODY')).toBe(true);
     expect(matches(statement, { path: '/v1/unsubscribe', labels: new Set() })).toBe(false);
   });
 
