@@ -23,6 +23,7 @@ import { apiStackDependencyProps, indexedTableFactory } from './api-stack-fixtur
 import { applyAppAspects } from '../utils/app-aspects';
 import { byCodeUnit } from '../utils/compare';
 import { itemAt } from './guards';
+import { isAuditRowGuardStatement } from './iam-statements';
 
 /** The only routes that may be served without credentials.
  *
@@ -507,6 +508,7 @@ const PolicyStatementsSchema = z.object({
   Properties: z.object({
     PolicyDocument: z.object({
       Statement: z.array(z.object({
+        Sid: z.string().optional(),
         Action: z.union([z.string(), z.array(z.string())]),
         Resource: z.unknown(),
         Condition: z.unknown().optional(),
@@ -523,14 +525,15 @@ export interface RolePolicyStatement {
 }
 
 /** Statements of the first IAM policy whose logical id contains `roleFragment`
- *  (a role's default policy is named after the role); fails the calling test
- *  when there is none. */
+ *  (a role's default policy is named after the role), without the audit-row
+ *  Denies (isAuditRowGuardStatement); fails the calling test when there is none. */
 export function policyStatementsOf(template: Template, roleFragment: string): RolePolicyStatement[] {
   const policy = Object.entries(template.findResources('AWS::IAM::Policy'))
     .find(([id]) => id.includes(roleFragment));
   expect(policy, `no IAM policy found for ${roleFragment}`).toBeDefined();
   if (policy === undefined) return [];
-  return PolicyStatementsSchema.parse(policy[1]).Properties.PolicyDocument.Statement.map((s) => ({
+  return PolicyStatementsSchema.parse(policy[1]).Properties.PolicyDocument.Statement
+    .filter((s) => !isAuditRowGuardStatement(s)).map((s) => ({
     actions: Array.isArray(s.Action) ? s.Action : [s.Action],
     resource: JSON.stringify(s.Resource),
     condition: s.Condition,

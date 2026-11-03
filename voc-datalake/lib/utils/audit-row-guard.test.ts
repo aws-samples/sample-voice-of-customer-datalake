@@ -148,25 +148,18 @@ describe('applyAuditRowGuard (one stack)', () => {
       .toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_WRITE_SID]);
   });
 
-  it('a role with an unscoped delete is the audit writer: changes and removals only', () => {
-    expect(sids(guarded((table, role) => table.grantReadWriteData(role)))).toStrictEqual([AUDIT_DENY_CHANGE_SID]);
+  it('a delete grant does not make a role the audit writer (only the named writers are)', () => {
+    expect(sids(guarded((table, role) => table.grantReadWriteData(role)))).toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_WRITE_SID]);
   });
 
-  it('a named writer keeps its puts', () => {
+  it('a named writer keeps its puts, also with a delete grant', () => {
     expect(sids(guarded((table, role) => table.grant(role, 'dynamodb:PutItem'), ['/R']))).toStrictEqual([AUDIT_DENY_CHANGE_SID]);
+    expect(sids(guarded((table, role) => table.grantReadWriteData(role), ['/R']))).toStrictEqual([AUDIT_DENY_CHANGE_SID]);
   });
 
   it('a writer of one audit partition is denied puts on every other one', () => {
     expect(sids(guarded((table, role) => table.grant(role, 'dynamodb:PutItem'), ['/R'], 'AUDIT#delete')))
       .toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID]);
-  });
-
-  it('a key-scoped delete does not make a role the audit writer', () => {
-    const template = guarded((table, role) => role.addToPrincipalPolicy(new iam.PolicyStatement({
-      actions: ['dynamodb:DeleteItem'], resources: [table.tableArn],
-      conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['CIRCUIT#*'] } },
-    })));
-    expect(sids(template)).toStrictEqual([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_WRITE_SID]);
   });
 
   it('a reader of the guarded table gets nothing (the unguarded table it writes does not count)', () => {

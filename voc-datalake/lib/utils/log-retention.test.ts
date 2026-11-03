@@ -184,15 +184,13 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
     expect(planStep.statements).toStrictEqual([ownGroupWrites(planStep.group)]);
   });
 
-  it('gives a role shared by two functions one statement naming both groups', () => {
+  it('gives the processor and the aggregator a role each, writing only its own group', () => {
+    // They shared ProcessingLambdaRole (one statement naming both groups) until wave C split the role.
     const processing = resourcesOf(synth, 'VocProcessingStack');
     const processor = functionLogGrants(processing, 'FeedbackProcessor');
     const aggregator = functionLogGrants(processing, 'AggregationProcessor');
-    expect(processor.statements).toStrictEqual([{
-      Effect: 'Allow', Action: LOG_WRITES,
-      // minimizePolicies lists the merged resources sorted.
-      Resource: [processor.group, aggregator.group].sort(byCodeUnit).map((group) => ({ 'Fn::GetAtt': [group, 'Arn'] })),
-    }]);
+    expect(processor.statements).toStrictEqual([ownGroupWrites(processor.group)]);
+    expect(aggregator.statements).toStrictEqual([ownGroupWrites(aggregator.group)]);
   });
 
   it('pins a CDK Provider framework onEvent function and a CustomResourceProvider handler', () => {
