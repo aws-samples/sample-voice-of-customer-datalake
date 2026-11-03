@@ -31,7 +31,7 @@ function statements(stack: cdk.Stack): z.infer<typeof PolicySchema>['Properties'
 }
 
 describe('grantWorkspaceVersionDeletes', () => {
-  it.each([['raw/*'], ['raw/webscraper/*'], ['*']])('refuses the bronze layer or the whole bucket (%s)', (glob) => {
+  it.each([['raw/*'], ['raw/webscraper/*'], ['*'], ['exports/*']])('refuses anything but a workspace prefix (%s)', (glob) => {
     const { bucket, role } = fixture();
     expect(() => grantWorkspaceVersionDeletes(bucket, role, [glob])).toThrow(/not a workspace prefix/);
   });

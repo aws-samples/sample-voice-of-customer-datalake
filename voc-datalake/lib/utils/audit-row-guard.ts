@@ -31,7 +31,7 @@ import type { IConstruct } from 'constructs';
 import { z } from 'zod';
 
 /** The partition-key pattern of every audit row. */
-export const AUDIT_PARTITION_PATTERN = 'AUDIT#*';
+const AUDIT_PARTITION_PATTERN = 'AUDIT#*';
 /** Sids of the two statements this module adds. */
 export const AUDIT_DENY_CHANGE_SID = 'DenyAuditRowChanges';
 export const AUDIT_DENY_WRITE_SID = 'DenyAuditRowWritesByNonWriters';
