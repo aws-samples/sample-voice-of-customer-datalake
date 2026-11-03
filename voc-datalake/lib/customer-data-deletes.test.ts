@@ -72,10 +72,12 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   ConversationsTable: {
     'VocApiStack/ChatLambdaRole': { scope: WHOLE_TABLE, why: 'DELETE /chat/conversations/{id} (the caller\'s own)' },
   },
-  // Nothing is deleted in these: memory forgets by tombstone, agents archive, Radar never removes a review.
+  // Nothing is deleted in these: memory forgets by tombstone, agents archive.
   MemoryTable: {},
   AgentsTable: {},
-  RadarTable: {},
+  RadarTable: {
+    [RETENTION_ROLE]: { scope: WHOLE_TABLE, why: 'erasure and retention reach Radar reviews and their dedupe markers (docs/radar.md)' },
+  },
 };
 
 /** A sample object key per customer / workspace prefix of the raw bucket, matched against each grant's ARN glob. */

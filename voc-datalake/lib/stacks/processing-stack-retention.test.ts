@@ -54,7 +54,7 @@ describe('voc-retention worker', () => {
 
   it('holds exactly Get/Put/Update/Query plus the tombstone batches on aggregates — never a delete', () => {
     expect(allowedActions(statements(), 'dynamodb:', 'Aggregates')).toStrictEqual([
-      'dynamodb:BatchGetItem', 'dynamodb:BatchWriteItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
+      'dynamodb:BatchGetItem', 'dynamodb:GetItem', 'dynamodb:PutItem',
       'dynamodb:Query', 'dynamodb:UpdateItem',
     ]);
   });

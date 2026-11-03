@@ -22,8 +22,8 @@
  *     whole-source erasure deletes the source's own uploaded files (every row of one
  *     is filed under the one source its upload named, shared/retention.py);
  *   - aggregates: GetItem / PutItem / UpdateItem / Query (source profiles, the
- *     erasure job row, the AUDIT#retention rows) plus BatchWriteItem (tombstones,
- *     a page at a time) and BatchGetItem (the lineage pass's tombstone lookups) — no delete;
+ *     erasure job row, the AUDIT#retention rows, one PutItem per tombstone: no BatchWriteItem, which
+ *     would also allow deletes) and BatchGetItem (the lineage pass's tombstone lookups) — no delete;
  *   - radar: Scan / DeleteItem (a review and its dedupe marker) and the cache-version
  *     bump (UpdateItem on `SETTINGS#radar` only) — no Put, no Query;
  *   - projects: Scan / UpdateItem (mark artifacts, drop erased ids) — no delete, no put;
@@ -94,7 +94,7 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   const role = workerRole(worker, 'RetentionRole');
   feedbackTable.grant(role, 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:DeleteItem');
   aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query',
-    'dynamodb:BatchWriteItem', 'dynamodb:BatchGetItem');
+    'dynamodb:BatchGetItem');
   radarTable.grant(role, 'dynamodb:Scan', 'dynamodb:DeleteItem');
   grantCacheVersionBump(radarTable, role, RADAR_VERSION_PARTITION);
   projectsTable.grant(role, 'dynamodb:Scan', 'dynamodb:UpdateItem');
