@@ -30,22 +30,13 @@ function normalizeDeletedSources(raw: unknown): DeletedSource[] {
   })
 }
 
-/** The document boundary's reading: the usable entries, or undefined when there are none. */
-function deletedSourcesOrUndefined(raw: unknown): DeletedSource[] | undefined {
+/**
+ * The document boundary's reading: the usable entries, or undefined when there are none (the
+ * boundary then leaves the key out, so a document that never lost a source keeps its old shape).
+ */
+export function deletedSourcesOrUndefined(raw: unknown): DeletedSource[] | undefined {
   const sources = normalizeDeletedSources(raw)
   return sources.length > 0 ? sources : undefined
-}
-
-/**
- * A parsed document with `deleted_sources` read through `deletedSourcesOrUndefined`, and the key
- * left out entirely when there is none, so a document that never lost a source keeps its old shape.
- */
-export function withDeletedSources<T extends { readonly deleted_sources?: unknown }>(
-  doc: T,
-): Omit<T, 'deleted_sources'> & { deleted_sources?: DeletedSource[] } {
-  const { deleted_sources: raw, ...rest } = doc
-  const sources = deletedSourcesOrUndefined(raw)
-  return sources === undefined ? rest : { ...rest, deleted_sources: sources }
 }
 
 /** The notice a document shows: each deleted persona's name, and whether any unnamed one / document / product doc was cited. */
