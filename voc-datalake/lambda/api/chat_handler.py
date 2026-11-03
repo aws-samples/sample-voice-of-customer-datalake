@@ -62,6 +62,7 @@ from botocore.exceptions import ClientError
 from shared.api import api_handler, create_api_resolver, get_caller_subject
 from shared.aws import get_dynamodb_resource
 from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX
+from shared.delete_audit import actor_from_event, record_delete
 from shared.dynamo_paging import iter_query
 from shared.exceptions import ConfigurationError, ConflictError, PayloadTooLargeError, ValidationError
 from shared.logging import logger, tracer
@@ -537,12 +538,16 @@ def _save_legacy_conversation(caller_pk: str, path_id: str, body: dict) -> dict:
 @app.delete("/chat/conversations/<conversation_id>")
 @tracer.capture_method
 def delete_conversation(conversation_id: str):
-    """Delete a chat conversation."""
+    """Delete a chat conversation; a delete that removed one is recorded (``shared.delete_audit``)."""
     caller_pk = _caller_pk()
     if not conversations_table:
         raise ConfigurationError('Conversations table not configured')
     _require_valid_conversation_id(conversation_id)
-    conversations_table.delete_item(Key={'pk': caller_pk, 'sk': f'CONV#{conversation_id}'})
+    response = conversations_table.delete_item(
+        Key={'pk': caller_pk, 'sk': f'CONV#{conversation_id}'}, ReturnValues='ALL_OLD')
+    if isinstance(response, dict) and response.get('Attributes'):
+        record_delete(conversations_table, kind='conversation', target={'conversation_id': conversation_id},
+                      actor=actor_from_event(app.current_event.raw_event))
     return {'success': True}
 
 

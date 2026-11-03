@@ -199,7 +199,7 @@ class TestReferences:
         assert response['statusCode'] == 200
         assert body['reference']['status'] == 'archived'
         # 5.47.00: archiving also deletes the logo preview (test_settings_design_reference_archive.py).
-        s3.delete_objects.assert_called_once()
+        s3.get_paginator.assert_called_with('list_object_versions')  # every version of each copy (s3_versions)
         _, view = _call(api_gateway_event, lambda_context, 'GET', '/settings/design-system')
         assert view['references'] == []
         _, view = _call(api_gateway_event, lambda_context, 'GET', '/settings/design-system',

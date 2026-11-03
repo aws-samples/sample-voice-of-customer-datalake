@@ -1373,8 +1373,8 @@ class TestReferenceWrites:
     def test_the_archive_write(self, route, table):
         table.get_item.return_value = {'Item': {'id': REF_ID, 'kind': 'figma', 'status': 'ready'}}
         s3 = MagicMock()
-        s3.delete_objects.return_value = {}
-        with patch.object(settings_handler, 'get_s3_client', return_value=s3):
+        with patch.object(settings_handler, 'get_s3_client', return_value=s3), \
+                patch('shared.design_logo.delete_every_version_of_keys', return_value=0) as sweep:
             response, payload = route('DELETE', f'/settings/design-system/references/{REF_ID}')
         assert response['statusCode'] == 200
         table.update_item.assert_called_once_with(
@@ -1385,9 +1385,9 @@ class TestReferenceWrites:
         )
         # 5.47.00: the logo preview objects go with the archive (every possible type, one call); 5.48.00: the
         # sanitised SVG beside it too, and every object listed under the reference's icon folder (none here).
-        s3.delete_objects.assert_called_once_with(Bucket=settings_handler.RAW_DATA_BUCKET, Delete={'Objects': [
-            {'Key': f'company-context/design/logo_preview_{REF_ID}.{ext}'} for ext in ('png', 'jpg', 'webp', 'svg')],
-            'Quiet': True})
+        # 6.00.00: every version of each copy (shared.s3_versions).
+        sweep.assert_called_once_with(s3, settings_handler.RAW_DATA_BUCKET, [
+            f'company-context/design/logo_preview_{REF_ID}.{ext}' for ext in ('png', 'jpg', 'webp', 'svg')])
         s3.list_objects_v2.assert_called_once_with(Bucket=settings_handler.RAW_DATA_BUCKET,
                                                    Prefix=f'company-context/design/icons_{REF_ID}/', MaxKeys=1000)
         assert payload['reference']['id'] == REF_ID
@@ -1411,14 +1411,14 @@ class TestReferenceWrites:
             'logo': {'source_url': 'https://x.example/l.svg', 'preview_key': 'k', 'svg_preview_key': 's'},
             'icons': [{'key': 'i'}]}}}
         s3 = MagicMock()
-        s3.delete_objects.return_value = {}
         s3.list_objects_v2.return_value = {'Contents': [{'Key': f'company-context/design/icons_{REF_ID}/a.png'}]}
-        with patch.object(settings_handler, 'get_s3_client', return_value=s3):
+        with patch.object(settings_handler, 'get_s3_client', return_value=s3), \
+                patch('shared.design_logo.delete_every_version_of_keys', return_value=0) as sweep:
             route('DELETE', f'/settings/design-system/references/{REF_ID}')
         kwargs = table.update_item.call_args.kwargs
         assert kwargs['UpdateExpression'] == ('SET #st = :archived, #u = :u REMOVE #d.#l.#preview_key, '
                                               '#d.#l.#svg_preview_key, #d.#icons')
-        deleted = [o['Key'] for o in s3.delete_objects.call_args.kwargs['Delete']['Objects']]
+        deleted = sweep.call_args.args[2]
         assert deleted[-1] == f'company-context/design/icons_{REF_ID}/a.png'
 
     @pytest.mark.parametrize(('method', 'path'), [

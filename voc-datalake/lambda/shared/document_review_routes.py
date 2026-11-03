@@ -27,6 +27,7 @@ from botocore.exceptions import ClientError
 from shared import document_comments as comments
 from shared import document_series, document_share
 from shared.aws import is_conditional_check_failure
+from shared.delete_audit import actor_from_event, record_delete
 from shared.engagement_identity import BoardViewer, board_viewer
 from shared.exceptions import AuthorizationError, ConflictError, NotFoundError
 from shared.logging import tracer
@@ -157,7 +158,10 @@ def delete_document_comment(project_id: str, document_id: str, comment_id: str):
     own = author.get('kind') == comments.AUTHOR_USER and author.get('sub') == _caller().subject
     if not own and not _can_edit():
         raise AuthorizationError('Only the comment author or a project editor can delete this comment')
-    comments.delete_thread(_table(), thread)
+    table = _table()
+    comments.delete_thread(table, thread)
+    record_delete(table, kind='document_comment', actor=actor_from_event(app.current_event.raw_event),
+                  target={'project_id': project_id, 'document_id': document_id, 'comment_id': comment_id})
     return {'success': True, 'comment_id': comment_id}
 
 

@@ -153,9 +153,21 @@ class TestDeletePreviews:
     ])
     def test_a_failed_or_partial_delete_raises(self, answer):
         s3 = MagicMock()
+        listed = [{'Key': key, 'VersionId': 'v1'} for key in design_logo.preview_keys(REF_ID)]
+        s3.get_paginator.return_value.paginate.return_value = [{'Versions': listed}]
         if isinstance(answer, Exception):
             s3.delete_objects.side_effect = answer
         else:
             s3.delete_objects.return_value = answer
         with pytest.raises(design_logo.LogoPreviewDeleteError):
             design_logo.delete_previews(s3, 'raw', REF_ID)
+
+    def test_every_version_of_a_preview_goes(self, s3):
+        s3.put_bucket_versioning(Bucket='raw', VersioningConfiguration={'Status': 'Enabled'})
+        key = design_logo.preview_keys(REF_ID)[0]
+        for body in (b'1', b'2'):
+            s3.put_object(Bucket='raw', Key=key, Body=body)
+        design_logo.delete_previews(s3, 'raw', REF_ID)
+        listing = s3.list_object_versions(Bucket='raw')
+        assert listing.get('Versions', []) == []
+        assert listing.get('DeleteMarkers', []) == []

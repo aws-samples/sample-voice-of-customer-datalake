@@ -73,6 +73,9 @@ def test_the_preview_objects_and_key_go_and_everything_else_stays(world, api_gat
     stored = _stored(table)
     assert stored['extracted_design']['logo'] == {'source_url': 'https://kirocrew.dev/logo.png',
                                                   'content_type': 'image/png'}
+    [audit] = table.query(KeyConditionExpression='pk = :p', ExpressionAttributeValues={':p': 'AUDIT#delete'})['Items']
+    assert (audit['kind'], audit['target'], audit['actor']) == (
+        'design_reference_copies', {'ref_id': REF_ID}, {'sub': 'admin-sub', 'kind': 'admin'})
 
 
 @pytest.mark.parametrize('logo', [None, {'source_url': 'https://kirocrew.dev/logo.png', 'content_type': 'image/png'}])
@@ -92,7 +95,7 @@ def test_an_s3_failure_is_a_503_and_a_retry_cleans_up(world, api_gateway_event, 
     _row(table, {'source_url': 'https://kirocrew.dev/logo.png', 'content_type': 'image/png', 'preview_key': PREVIEW})
     s3.put_object(Bucket='raw', Key=PREVIEW, Body=b'x')
     failing = MagicMock()
-    failing.delete_objects.side_effect = ClientError({'Error': {'Code': 'AccessDenied'}}, 'DeleteObjects')
+    failing.get_paginator.side_effect = ClientError({'Error': {'Code': 'AccessDenied'}}, 'ListObjectVersions')
     with patch.object(settings_handler, 'get_s3_client', return_value=failing):
         response, body = _archive(api_gateway_event, lambda_context)
     assert response['statusCode'] == 503

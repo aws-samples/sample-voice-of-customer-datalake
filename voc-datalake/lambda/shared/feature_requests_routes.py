@@ -25,11 +25,13 @@ from typing import Any, Final
 from aws_lambda_powertools.event_handler.api_gateway import Router
 
 from shared import engagement_config
+from shared.delete_audit import actor_from_event, record_delete
 from shared.engagement_common import created, is_id, now_iso
 from shared.engagement_identity import BoardViewer, require_board_admin, require_project_access
 from shared.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationError
 from shared.feature_board_fields import description_required, field_values, fields_of, statuses_of, validate_status
 from shared.feature_boards_access import BoardScope, scope_for, scope_from_event
+from shared.feature_boards_delete import record_feature_request_delete
 from shared.feature_boards_limits import charge_request, charge_support, refund_support
 from shared.feature_boards_store import board_view, is_paused
 from shared.feature_requests_promote import promote
@@ -239,6 +241,11 @@ def put_status(request_id: str):
     return {'request': request_view(update_request(scope.table, request_id, {'status': status}), _template(board))}
 
 
+def _delete_actor(viewer: BoardViewer) -> dict[str, str]:
+    """Who a delete is recorded as; admin as the board identity decided it (a board-pool token never is)."""
+    return actor_from_event(app.current_event.raw_event, admin=viewer.is_admin)
+
+
 @app.delete('/feature-requests/<request_id>')
 @tracer.capture_method
 def remove_request(request_id: str):
@@ -247,6 +254,7 @@ def remove_request(request_id: str):
     scope = scope_for(viewer)
     request, _ = _scoped(scope, request_id)
     delete_request(scope.table, request)
+    record_feature_request_delete(scope.table, request, _delete_actor(viewer))
     logger.info('Feature request deleted', extra={'request_id': request_id})
     return {'success': True}
 
@@ -302,6 +310,8 @@ def delete_support_route(request_id: str, support_id: str):
     _own_or_admin(scope.viewer, current.get('email'))
     _unpaused_unless_admin(scope.viewer, board)
     delete_support(scope.table, request_id, support_id)
+    record_delete(scope.table, kind='feature_request_support', actor=_delete_actor(scope.viewer),
+                  target={'request_id': request_id, 'support_id': support_id})
     return {'request': _recomputed(scope, request_id, board)}
 
 
