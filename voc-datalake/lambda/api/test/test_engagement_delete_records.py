@@ -3,17 +3,14 @@ from __future__ import annotations
 
 import pytest
 from boto3.dynamodb.conditions import Key
-from engagement_fixtures import ADMIN, BOARD, BOARD_2, USER, boards_world, engagement_world, ok
-
-from shared.participants_settings import SETTINGS_KEY
+from engagement_fixtures import ADMIN, BOARD, BOARD_2, USER, boards_world, ok
 
 ADMIN_ACTOR = {'sub': 'admin-sub', 'kind': 'admin'}
 
 
 @pytest.fixture
 def world():
-    with engagement_world() as w:
-        w.participants.put_item(Item={**SETTINGS_KEY, 'company_domains': ['acme.example']})
+    with boards_world() as w:
         yield w
 
 
@@ -47,16 +44,15 @@ def test_a_removed_support_is_recorded_as_its_board_pool_owner_never_admin(world
         {'sub': 'board-sub-2', 'kind': 'user'})
 
 
-def test_a_board_deleted_with_its_requests_records_each_and_the_board(lambda_context):
-    with boards_world() as world:
-        board = ok(lambda_context, 'POST', '/feature-requests/boards', 201,
-                   body={'name': 'Beta feedback', 'template': 'beta'})['board']
-        request_id = ok(lambda_context, 'POST', '/feature-requests', 201, claims=USER, body={
-            'board': board['board_id'], 'title': 'Slow', 'fields': {'area': 'Seats', 'outcome': 'broken'}},
-        )['request']['request_id']
-        removal = ok(lambda_context, 'DELETE', f"/feature-requests/boards/{board['board_id']}",
-                     query={'with_requests': 'true'})
-        rows = sorted(_audit(world), key=lambda r: r['kind'])
+def test_a_board_deleted_with_its_requests_records_each_and_the_board(world, lambda_context):
+    board = ok(lambda_context, 'POST', '/feature-requests/boards', 201,
+               body={'name': 'Beta feedback', 'template': 'beta'})['board']
+    request_id = ok(lambda_context, 'POST', '/feature-requests', 201, claims=USER, body={
+        'board': board['board_id'], 'title': 'Slow', 'fields': {'area': 'Seats', 'outcome': 'broken'}},
+    )['request']['request_id']
+    removal = ok(lambda_context, 'DELETE', f"/feature-requests/boards/{board['board_id']}",
+                 query={'with_requests': 'true'})
+    rows = sorted(_audit(world), key=lambda r: r['kind'])
     assert removal['done'] is True
     assert [(r['kind'], r.get('reason')) for r in rows] == [('feature_board', None), ('feature_request', 'board deleted')]
     assert rows[0]['target'] == {'board_id': board['board_id']}

@@ -6,6 +6,7 @@ import pytest
 from moto import mock_aws
 
 from shared.s3_versions import delete_every_version, delete_every_version_of_keys
+from shared.test.moto_s3 import create_versioned_bucket
 
 BUCKET = 'raw'
 
@@ -13,10 +14,7 @@ BUCKET = 'raw'
 @pytest.fixture
 def s3():
     with mock_aws():
-        client = boto3.client('s3', region_name='us-east-1')
-        client.create_bucket(Bucket=BUCKET)
-        client.put_bucket_versioning(Bucket=BUCKET, VersioningConfiguration={'Status': 'Enabled'})
-        yield client
+        yield create_versioned_bucket(BUCKET)
 
 
 def _entries(client, prefix: str = '') -> list[str]:
