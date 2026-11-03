@@ -195,7 +195,7 @@ class TestDeleteProjectEndpoint:
         )
 
         assert body['success'] is True
-        mock_delete_project.assert_called_once_with('proj-123')
+        mock_delete_project.assert_called_once_with('proj-123', actor={'sub': 'test-user-id', 'kind': 'admin'})
 
 
 class TestPersonaCRUDEndpoints:

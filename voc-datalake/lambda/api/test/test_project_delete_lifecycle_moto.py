@@ -129,7 +129,13 @@ class TestRowsAndTombstone:
 
         meta = world.projects.get_item(Key={'pk': 'PROJECT#proj-1', 'sk': 'META'})['Item']
         assert (result, meta['status']) == ({'success': True}, 'deleted')
-        assert [item['sk'] for item in world.projects.scan()['Items']] == ['META']
+        rows = world.projects.scan()['Items']
+        assert sorted(item['pk'] for item in rows) == ['AUDIT#delete', 'PROJECT#proj-1']
+        assert [item['sk'] for item in rows if item['pk'] == 'PROJECT#proj-1'] == ['META']
+        audit = next(item for item in rows if item['pk'] == 'AUDIT#delete')
+        assert (audit['kind'], audit['target'], audit['actor']) == (
+            'project', {'project_id': 'proj-1'}, {'sub': 'system', 'kind': 'system'})
+        assert 'ttl' not in audit
 
 
 @pytest.mark.parametrize(('sort_key', 'expected'), [

@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -43,6 +43,8 @@ from shared.batch_get import batch_get_all
 from shared.company_personas import is_company_container
 from shared.converse import ConverseResult, converse_chain, converse_detailed
 from shared.decision_records import DECISION_DOCUMENT_TYPE
+from shared.delete_audit import record_delete
+from shared.deleted_sources import DOCUMENT_SORT_KEY_PREFIXES, DeletedSource, mark_citing_documents
 from shared.document_history import (
     delete_document_revisions,
     edit_document,
@@ -123,6 +125,7 @@ from shared.prompts import (
 from shared.prototypes import prototype_s3_key, prototype_signed_url
 from shared.research_title import research_document_title
 from shared.row_ids import LONG_OPAQUE_ID_RE
+from shared.s3_versions import delete_every_version, delete_every_version_of_keys
 from shared.tables import get_feedback_table, get_jobs_table, get_projects_table
 from shared.timestamps import now_iso
 
@@ -285,6 +288,10 @@ PERSONA_PROMPT_VERSION = '2.3.0'
 # synthesis step itself reported (ConverseResult.model_id), so a picker change during a
 # run cannot mislabel the personas (#273).
 PERSONA_SURFACE = 'documents'
+
+# The generation filters' key for the `{sub, kind}` that started the job (shared/delete_audit.py
+# actor_from_event), so a replace run records who replaced the personas it deletes.
+REQUESTED_BY_FILTER = 'requested_by'
 
 
 def generate_persona_avatar(
@@ -764,14 +771,7 @@ def _stored_persona(project_id: str, persona_id: str) -> dict:
     return item
 
 
-_DOCUMENT_SORT_KEY_PREFIXES = (
-    'PRD#',
-    'PRFAQ#',
-    'RESEARCH#',
-    'DOC#',
-    'PRODUCT_REPORT#',
-    'PROTOTYPE#',
-)
+_DOCUMENT_SORT_KEY_PREFIXES = DOCUMENT_SORT_KEY_PREFIXES
 
 
 def _require_document(document: dict | None) -> dict:
@@ -1250,12 +1250,6 @@ def _start_project_deletion(
     raise ServiceError('Could not establish the project deletion fence. Please retry.')
 
 
-#: S3's hard cap on keys per `delete_objects` request. The prefix sweeps never
-#: reach it (a `list_objects_v2` page is at most 1000 keys), but the avatar sweep
-#: builds its own key list and has to chunk.
-S3_DELETE_BATCH_SIZE = 1000
-
-
 def prototype_project_prefix(project_id: str) -> str:
     """Every prototype object one project owns, and nothing another owns.
 
@@ -1302,38 +1296,30 @@ def _delete_project_job_rows(project_id: str) -> None:
                 batch.delete_item(Key={'pk': pk, 'sk': sk})
 
 
-def _report_failed_deletes(response: object, project_id: str, what: str) -> None:
-    """Log a partial `delete_objects` failure; never raise.
+def _report_failed_deletes(refused: int, project_id: str, what: str) -> None:
+    """Log the S3 entries a delete refused; never raise.
 
     Partial failure is normal under throttling. The durable work has committed
     and the tombstone must still be finalized; a retried delete resumes from
     whatever is still there.
     """
-    errors = response.get('Errors') if isinstance(response, dict) else None
-    if errors:
+    if refused:
         logger.warning(
             f'Some {what} could not be deleted; retry the delete',
-            extra={'project_id': project_id, 'failed_object_count': len(errors)},
+            extra={'project_id': project_id, 'failed_object_count': refused},
         )
 
 
 @tracer.capture_method
 def _delete_objects_under_prefix(project_id: str, bucket: str, prefix: str) -> None:
-    """Empty one S3 prefix a project owns, page by page.
+    """Empty one S3 prefix a project owns: every version and delete marker (``shared.s3_versions``).
 
     Lists the PREFIX rather than deriving keys from surviving rows, so an object
     whose row an earlier partial failure already removed is still found, and a
-    retry resumes from what remains. Paginated (1000 keys per page = one legal
-    delete batch). Callers pass a prefix ending in `/`.
+    retry resumes from what remains. Callers pass a prefix ending in `/`.
     """
-    client = get_s3_client()
-    for page in client.get_paginator('list_objects_v2').paginate(Bucket=bucket, Prefix=prefix):
-        keys = [key for entry in page.get('Contents') or [] if (key := entry.get('Key'))]
-        if keys:
-            response = client.delete_objects(
-                Bucket=bucket, Delete={'Objects': [{'Key': key} for key in keys], 'Quiet': True},
-            )
-            _report_failed_deletes(response, project_id, f'objects under {prefix}')
+    refused = delete_every_version(get_s3_client(), bucket, prefix)
+    _report_failed_deletes(refused, project_id, f'objects under {prefix}')
 
 
 def _owned_avatar_keys(client: Any, bucket: str, project_id: str, persona_ids: list[str]) -> list[str]:
@@ -1365,20 +1351,13 @@ def _owned_avatar_keys(client: Any, bucket: str, project_id: str, persona_ids: l
 
 @tracer.capture_method
 def _delete_project_avatar_objects(project_id: str, bucket: str, persona_ids: list[str]) -> None:
-    """Remove the avatar objects of this project's personas — only those it owns."""
+    """Remove the avatar objects of this project's personas — only those it owns, every version."""
     if not persona_ids:
         return
     client = get_s3_client()
     owned = _owned_avatar_keys(client, bucket, project_id, persona_ids)
-    for start in range(0, len(owned), S3_DELETE_BATCH_SIZE):
-        response = client.delete_objects(
-            Bucket=bucket,
-            Delete={
-                'Objects': [{'Key': key} for key in owned[start:start + S3_DELETE_BATCH_SIZE]],
-                'Quiet': True,
-            },
-        )
-        _report_failed_deletes(response, project_id, 'persona avatars')
+    if owned:
+        _report_failed_deletes(delete_every_version_of_keys(client, bucket, owned), project_id, 'persona avatars')
 
 
 def _persona_id_from_sort_key(sk: str) -> str | None:
@@ -1413,13 +1392,15 @@ def _sweep_project_objects(project_id: str, persona_ids: list[str]) -> None:
 
 
 @tracer.capture_method
-def delete_project(project_id: str) -> dict:
+def delete_project(project_id: str, *, actor: Mapping[str, str] | None = None) -> dict:
     """Retain a tombstone while deleting every project-owned artifact.
 
     The project partition, the version partition, the job rows in their own
     table, and the project's S3 objects (prototypes, product docs, and the
-    avatars it owns). The fence goes down first; every sweep then deletes only
-    what it still finds, so a retry resumes after a partial failure.
+    avatars it owns; every version). The fence goes down first; every sweep then
+    deletes only what it still finds, so a retry resumes after a partial failure.
+    The tombstoned META is the project's own delete record; an ``AUDIT#delete``
+    row (``shared.delete_audit``) also records who deleted it.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
@@ -1465,7 +1446,7 @@ def delete_project(project_id: str) -> dict:
             ':now': now,
         },
     )
-
+    record_delete(projects_table, kind='project', target={'project_id': project_id}, actor=actor)
     return {'success': True}
 
 
@@ -2296,7 +2277,16 @@ def _sweep_removed_persona_avatars(project_id: str, persona_ids: list[str]) -> N
         )
 
 
-def _clear_existing_personas(project_id: str) -> None:
+def _requested_by(filters: Mapping[str, Any]) -> dict[str, str] | None:
+    """The ``{sub, kind}`` that started a generation (``REQUESTED_BY_FILTER``); None for an older job."""
+    actor = filters.get(REQUESTED_BY_FILTER)
+    if not isinstance(actor, Mapping):
+        return None
+    sub, kind = actor.get('sub'), actor.get('kind')
+    return {'sub': sub, 'kind': kind} if isinstance(sub, str) and isinstance(kind, str) else None
+
+
+def _clear_existing_personas(project_id: str, actor: Mapping[str, str] | None = None) -> None:
     """Replace semantics: delete the project's existing personas before saving new ones.
 
     Re-running generation must not accumulate duplicates (e.g. "김지수" x2): each
@@ -2305,6 +2295,8 @@ def _clear_existing_personas(project_id: str) -> None:
     and each is deleted on its own (``shared.persona_replace``), so one failed delete
     is logged and the rest still go. Only the personas actually deleted take their
     avatar objects with them. Protected personas are kept (``shared.persona_replace``).
+    Each removed persona is recorded (``persona_replaced``, by the person who started the
+    generation) and the documents written from it say so.
     """
     try:
         cleared = persona_replace.clear_personas(projects_table, project_id)
@@ -2320,7 +2312,13 @@ def _clear_existing_personas(project_id: str) -> None:
         )
     if cleared.deleted:
         logger.info(f"[PERSONA] Cleared {len(cleared.deleted)} existing persona(s) before regeneration")
-        _sweep_removed_persona_avatars(project_id, _persona_ids_of([{'sk': sk} for sk in cleared.deleted]))
+        removed = _persona_ids_of([{'sk': sk} for sk in cleared.deleted])
+        _sweep_removed_persona_avatars(project_id, removed)
+        _after_personas_deleted(
+            project_id,
+            [DeletedSource('persona', pid, cleared.names.get(f'PERSONA#{pid}')) for pid in removed],
+            kind='persona_replaced', actor=actor,
+        )
 
 
 def _source_breakdown(feedback_items: list[dict]) -> dict[str, int]:
@@ -2559,7 +2557,7 @@ def _personas_to_add(
     persona to its planned name.
     """
     if not _is_additive(filters):
-        _clear_existing_personas(project_id)
+        _clear_existing_personas(project_id, actor=_requested_by(filters))
     kept_personas, clashes = persona_overlap.drop_name_clashes(personas, kept.name_keys)
     if clashes:
         logger.warning(
@@ -3127,9 +3125,14 @@ def restore_document(project_id: str, document_id: str, version_id: str, body: d
 
 @tracer.capture_method
 def delete_document(
-    project_id: str, document_id: str, _attempt: int = 0,
+    project_id: str, document_id: str, _attempt: int = 0, *, actor: Mapping[str, str] | None = None,
 ) -> dict:
-    """Delete one document without discarding version-allocation history."""
+    """Delete one document without discarding version-allocation history.
+
+    An unmanaged document's saved revisions and a prototype's HTML (every version)
+    go with it; the delete is recorded and the documents that cited it say so
+    (``_after_document_deleted``).
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
@@ -3251,7 +3254,7 @@ def delete_document(
             # migration is assignment/lease-idempotent and allocation-history
             # preservation is conditional winner-checked. Both have focused
             # replay tests in shared/test/test_document_versions.py.
-            return delete_document(project_id, document_id, _attempt + 1)
+            return delete_document(project_id, document_id, _attempt + 1, actor=actor)
         raise ServiceError(
             'Document could not be deleted because the project is being deleted '
             'or its document count changed repeatedly.'
@@ -3259,7 +3262,35 @@ def delete_document(
 
     if not is_managed:
         _delete_saved_revisions(project_id, document_id)
+    _after_document_deleted(project_id, document_id, sk, actor=actor, revisions=not is_managed)
     return {'success': True}
+
+
+def _delete_prototype_html(project_id: str, document_id: str) -> None:
+    """Best effort: every version of a deleted prototype's HTML object."""
+    bucket = os.environ.get('RAW_DATA_BUCKET', '')
+    if not bucket:
+        return
+    try:
+        refused = delete_every_version(get_s3_client(), bucket, prototype_s3_key(project_id, document_id), exact=True)
+    except Exception:
+        logger.exception('Could not delete the HTML of a deleted prototype',
+                         extra={'project_id': project_id, 'document_id': document_id})
+        return
+    _report_failed_deletes(refused, project_id, 'prototype versions')
+
+
+def _after_document_deleted(
+    project_id: str, document_id: str, sort_key: str, *, actor: Mapping[str, str] | None, revisions: bool,
+) -> None:
+    """What follows a committed document delete: its prototype HTML, the record, the citing documents."""
+    if sort_key.startswith('PROTOTYPE#'):
+        _delete_prototype_html(project_id, document_id)
+    target = {'project_id': project_id, 'document_id': document_id}
+    record_delete(projects_table, kind='document', target=target, actor=actor)
+    if revisions:
+        record_delete(projects_table, kind='document_revisions', target=target, actor=actor)
+    mark_citing_documents(projects_table, project_id, [DeletedSource('document', document_id)], deleted_at=now_iso())
 
 
 def _delete_saved_revisions(project_id: str, document_id: str) -> None:
@@ -3652,12 +3683,44 @@ def _only_the_counter_refused(error: Exception) -> bool:
     return codes[0] == 'None' and codes[_PERSONA_DELETE_COUNTER_INDEX] == 'ConditionalCheckFailed'
 
 
+def _persona_name(project_id: str, persona_id: str) -> str | None:
+    """The persona's name (a fictional archetype), read before a delete; None when unreadable."""
+    try:
+        response = projects_table.get_item(
+            Key={'pk': f'PROJECT#{project_id}', 'sk': f'PERSONA#{persona_id}'},
+            ProjectionExpression='#name', ExpressionAttributeNames={'#name': 'name'},
+        )
+    except ClientError:
+        return None
+    item = response.get('Item') if isinstance(response, dict) else None
+    name = item.get('name') if isinstance(item, dict) else None
+    return name if isinstance(name, str) and name else None
+
+
+def _after_personas_deleted(
+    project_id: str, deleted: list[DeletedSource], *, kind: str, actor: Mapping[str, str] | None,
+) -> None:
+    """Record each persona delete and mark the documents that cited one (``shared.deleted_sources``)."""
+    if not deleted:
+        return
+    now = now_iso()
+    for source in deleted:
+        record_delete(projects_table, kind=kind,
+                      target={'project_id': project_id, 'persona_id': source.id}, actor=actor)
+    mark_citing_documents(projects_table, project_id, deleted, deleted_at=now)
+
+
 @tracer.capture_method
-def delete_persona(project_id: str, persona_id: str) -> dict:
-    """Delete a persona, keeping the project's ``persona_count`` at zero or above."""
+def delete_persona(project_id: str, persona_id: str, *, actor: Mapping[str, str] | None = None) -> dict:
+    """Delete a persona, keeping the project's ``persona_count`` at zero or above.
+
+    Its avatar objects go (every version), the delete is recorded, and the documents
+    that were written from it gain a ``deleted_sources`` entry.
+    """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
 
+    name = _persona_name(project_id, persona_id)
     try:
         now = now_iso()
         table_name = projects_table_name(projects_table)
@@ -3681,6 +3744,8 @@ def delete_persona(project_id: str, persona_id: str) -> dict:
         logger.exception(f"Failed to delete persona: {e}")
         raise ServiceError('Failed to delete persona') from e
     _sweep_removed_persona_avatars(project_id, [persona_id])
+    kind = 'company_persona' if is_company_container(project_id) else 'persona'
+    _after_personas_deleted(project_id, [DeletedSource('persona', persona_id, name)], kind=kind, actor=actor)
     return {'success': True}
 
 

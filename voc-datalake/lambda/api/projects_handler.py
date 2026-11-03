@@ -115,6 +115,7 @@ from shared.api import (
 from shared.aws import get_dynamodb_resource, invoke_lambda_async, is_conditional_check_failure
 from shared.company_personas import is_company_container
 from shared.data_version import bump_config_version
+from shared.delete_audit import actor_from_event
 from shared.document_versions import MERGE_OUTPUT_TYPES, MERGE_VERSIONED_DOCUMENT_TYPES, split_versioned_title
 from shared.exceptions import (
     ApiError,
@@ -522,7 +523,7 @@ def api_update_project(project_id: str):
 @app.delete("/projects/<project_id>")
 @tracer.capture_method
 def api_delete_project(project_id: str):
-    result = delete_project(project_id)
+    result = delete_project(project_id, actor=_delete_actor())
     # Its rows stay in the prioritization partition; their open room votes must not
     # (best effort, `shared.voting_session_close`; the ballot routes also refuse them).
     close_project_sessions(get_aggregates_table(), project_id)
@@ -629,7 +630,17 @@ def api_set_persona_protection(project_id: str, persona_id: str):
 @app.delete("/projects/<project_id>/personas/<persona_id>")
 @tracer.capture_method
 def api_delete_persona(project_id: str, persona_id: str):
-    return delete_persona(project_id, persona_id)
+    return _delete_persona_as_caller(project_id, persona_id)
+
+
+def _delete_actor() -> dict[str, str]:
+    """Who is deleting (``shared.delete_audit``): the request's caller, an agent / MCP token / plan as such."""
+    return actor_from_event(app.current_event.raw_event)
+
+
+def _delete_persona_as_caller(project_id: str, persona_id: str) -> dict:
+    """``delete_persona`` recorded as the request's caller (the project route and the company library)."""
+    return delete_persona(project_id, persona_id, actor=_delete_actor())
 
 
 @app.post("/projects/<project_id>/personas/<persona_id>/notes")
@@ -706,6 +717,8 @@ def _start_persona_generation(project_id: str, body: dict) -> dict:
             body.get('keep_existing_personas'), default=False, field='keep_existing_personas'
         ),
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
+        # Who started it: a replace run records the personas it deletes as theirs.
+        projects.REQUESTED_BY_FILTER: _delete_actor(),
     }
     # 400 before any job row or invoke when nothing matches (F1): the job
     # would only fail with this same message after the caller had moved on.
@@ -1072,7 +1085,7 @@ def api_restore_document_version(project_id: str, document_id: str, version_id: 
 @app.delete("/projects/<project_id>/documents/<document_id>")
 @tracer.capture_method
 def api_delete_document(project_id: str, document_id: str):
-    return delete_document(project_id, document_id)
+    return delete_document(project_id, document_id, actor=_delete_actor())
 
 
 _MAX_TARGET_PROJECT_ID_LENGTH = 128
@@ -4530,7 +4543,7 @@ def api_create_product_doc_upload_url(project_id: str):
 @app.delete("/projects/<project_id>/product-docs/<doc_id>")
 @tracer.capture_method
 def api_delete_product_doc(project_id: str, doc_id: str):
-    return pc_delete_doc(project_id, doc_id)
+    return pc_delete_doc(project_id, doc_id, actor=_delete_actor())
 
 
 def _started_feedback_assist(
@@ -5096,7 +5109,7 @@ app.include_router(document_review_routes.app)
 company_personas_routes.configure(company_personas_routes.PersonaOps(
     start_generation=_start_persona_generation, start_import=_start_persona_import,
     start_avatar=_start_avatar_assist, job_list=_job_list, job_status=_job_status,
-    update_persona=update_persona, delete_persona=delete_persona, add_note=add_persona_note,
+    update_persona=update_persona, delete_persona=_delete_persona_as_caller, add_note=add_persona_note,
     require_persona=require_persona, sign_avatars=projects.with_signed_avatars,
 ))
 app.include_router(company_personas_routes.app)

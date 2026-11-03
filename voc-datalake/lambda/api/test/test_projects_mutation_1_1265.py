@@ -183,7 +183,6 @@ class TestNamedConstants:
         ('MAX_CHAT_CONTEXT_ID_LENGTH', 128),
         ('DOCUMENT_DELETE_ATTEMPTS', 4),
         ('PROJECT_DELETE_FENCE_ATTEMPTS', 4),
-        ('S3_DELETE_BATCH_SIZE', 1000),
     ])
     def test_each_literal_is_exactly_its_documented_value(self, name, value):
         assert getattr(projects, name) == value
@@ -1205,43 +1204,26 @@ class TestDeleteProjectJobRows:
 
 class TestReportFailedDeletes:
     def test_a_partial_failure_is_a_warning_with_the_count(self, log):
-        projects._report_failed_deletes({'Errors': [{'Key': 'a'}, {'Key': 'b'}]}, 'proj_1', 'persona avatars')
+        projects._report_failed_deletes(2, 'proj_1', 'persona avatars')
         log.warning.assert_called_once_with(
             'Some persona avatars could not be deleted; retry the delete',
             extra={'project_id': 'proj_1', 'failed_object_count': 2},
         )
 
-    @pytest.mark.parametrize('response', [None, 'odd', {}, {'Errors': []}, {'Deleted': [{'Key': 'a'}]}])
-    def test_a_clean_or_malformed_response_logs_nothing(self, log, response):
-        projects._report_failed_deletes(response, 'proj_1', 'x')
+    def test_nothing_refused_logs_nothing(self, log):
+        projects._report_failed_deletes(0, 'proj_1', 'x')
         log.warning.assert_not_called()
 
 
 class TestDeleteObjectsUnderPrefix:
-    def test_each_page_with_keys_is_one_quiet_delete_and_its_failures_are_reported(self):
+    def test_every_version_under_the_prefix_goes_and_the_refused_count_is_reported(self):
         client = MagicMock()
-        client.get_paginator.return_value.paginate.return_value = [
-            {'Contents': [{'Key': 'prototypes/proj_1/a.html'}, {'Size': 1}, {'Key': ''}]},
-            {'Contents': []},
-            {},
-            {'Contents': [{'Key': 'prototypes/proj_1/b.html'}]},
-        ]
-        client.delete_objects.side_effect = [{'Errors': [{'Key': 'prototypes/proj_1/a.html'}]}, {}]
         with patch.object(projects, 'get_s3_client', return_value=client), \
+                patch.object(projects, 'delete_every_version', return_value=3) as sweep, \
                 patch.object(projects, '_report_failed_deletes') as report:
             projects._delete_objects_under_prefix('proj_1', 'the-bucket', 'prototypes/proj_1/')
-        client.get_paginator.assert_called_once_with('list_objects_v2')
-        client.get_paginator.return_value.paginate.assert_called_once_with(
-            Bucket='the-bucket', Prefix='prototypes/proj_1/',
-        )
-        assert client.delete_objects.call_args_list == [
-            call(Bucket='the-bucket', Delete={'Objects': [{'Key': 'prototypes/proj_1/a.html'}], 'Quiet': True}),
-            call(Bucket='the-bucket', Delete={'Objects': [{'Key': 'prototypes/proj_1/b.html'}], 'Quiet': True}),
-        ]
-        assert report.call_args_list == [
-            call({'Errors': [{'Key': 'prototypes/proj_1/a.html'}]}, 'proj_1', 'objects under prototypes/proj_1/'),
-            call({}, 'proj_1', 'objects under prototypes/proj_1/'),
-        ]
+        sweep.assert_called_once_with(client, 'the-bucket', 'prototypes/proj_1/')
+        report.assert_called_once_with(3, 'proj_1', 'objects under prototypes/proj_1/')
 
 
 class TestOwnedAvatarKeys:
@@ -1273,23 +1255,17 @@ class TestDeleteProjectAvatarObjects:
             projects._delete_project_avatar_objects('proj_1', 'b', [])
         client.assert_not_called()
 
-    def test_a_thousand_keys_are_one_batch_and_the_next_opens_another(self):
-        keys = [f'avatars/p{i}.png' for i in range(1001)]
+    def test_every_version_of_each_owned_key_goes_and_the_refused_count_is_reported(self):
+        keys = ['avatars/p1.png', 'avatars/p1/abc.png']
         client = MagicMock()
-        client.delete_objects.side_effect = [{'Errors': [{'Key': keys[0]}]}, {}]
         with patch.object(projects, 'get_s3_client', return_value=client), \
                 patch.object(projects, '_owned_avatar_keys', return_value=keys) as owned, \
+                patch.object(projects, 'delete_every_version_of_keys', return_value=1) as sweep, \
                 patch.object(projects, '_report_failed_deletes') as report:
             projects._delete_project_avatar_objects('proj_1', 'the-bucket', ['p1'])
         owned.assert_called_once_with(client, 'the-bucket', 'proj_1', ['p1'])
-        assert client.delete_objects.call_args_list == [
-            call(Bucket='the-bucket', Delete={'Objects': [{'Key': key} for key in keys[:1000]], 'Quiet': True}),
-            call(Bucket='the-bucket', Delete={'Objects': [{'Key': keys[1000]}], 'Quiet': True}),
-        ]
-        assert report.call_args_list == [
-            call({'Errors': [{'Key': keys[0]}]}, 'proj_1', 'persona avatars'),
-            call({}, 'proj_1', 'persona avatars'),
-        ]
+        sweep.assert_called_once_with(client, 'the-bucket', keys)
+        report.assert_called_once_with(1, 'proj_1', 'persona avatars')
 
     def test_nothing_owned_means_no_delete_call(self):
         client = MagicMock()

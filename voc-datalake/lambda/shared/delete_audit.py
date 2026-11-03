@@ -23,8 +23,6 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Final
 
-from botocore.exceptions import BotoCoreError, ClientError
-
 from shared.ai_writing import PLAN_PRINCIPAL_CLAIM, PLAN_PRINCIPAL_PREFIX
 from shared.api import get_caller_groups
 from shared.logging import logger
@@ -92,5 +90,5 @@ def record_delete(
         item['reason'] = reason[:_MAX_TEXT]
     try:
         table.put_item(Item=item, ConditionExpression='attribute_not_exists(pk)')
-    except (ClientError, BotoCoreError, AttributeError, TypeError) as exc:
+    except Exception as exc:  # noqa: BLE001 - recording a delete never fails the delete
         logger.warning('Could not record a delete', extra={'kind': kind, 'error_type': type(exc).__name__})

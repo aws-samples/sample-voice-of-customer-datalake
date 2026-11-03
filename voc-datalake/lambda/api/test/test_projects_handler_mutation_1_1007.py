@@ -101,6 +101,8 @@ def world(api_gateway_event, lambda_context, monkeypatch) -> Iterator[World]:
 # ---------------------------------------------------------------------------
 
 BODY = {'name': 'N', 'role': 'editor'}
+# Who a delete is recorded as (shared/delete_audit.py): the world's caller is an administrator.
+ACTOR = {'sub': 'test-user-id', 'kind': 'admin'}
 ADMIN_ACCESS = ProjectAccess(role=ROLE_ADMIN)
 
 # (method, path, body, query, delegate, expected args, expected kwargs)
@@ -114,7 +116,7 @@ THIN_ROUTES = [
     ('POST', '/projects/p1/chat-context', {'other': 1}, None,
      'get_project_chat_context', ('p1', [], ADMIN), {}),
     ('PUT', '/projects/p1', BODY, None, 'update_project', ('p1', BODY), {}),
-    ('DELETE', '/projects/p1', None, None, 'delete_project', ('p1',), {}),
+    ('DELETE', '/projects/p1', None, None, 'delete_project', ('p1',), {'actor': ACTOR}),
     ('PUT', '/projects/p1/visibility', BODY, None, 'set_project_visibility', ('p1', BODY), {}),
     ('GET', '/projects/p1/members', None, None, 'get_project_members', ('p1', ADMIN), {}),
     ('GET', '/projects/p1/members/candidates', None, {'q': 'ad'}, 'search_member_candidates',
@@ -126,14 +128,14 @@ THIN_ROUTES = [
      ('p1', 'm1', ADMIN, ADMIN_ACCESS), {}),
     ('POST', '/projects/p1/owner', BODY, None, 'transfer_project_owner', ('p1', BODY, ADMIN), {}),
     ('PUT', '/projects/p1/personas/x1', BODY, None, 'update_persona', ('p1', 'x1', BODY), {}),
-    ('DELETE', '/projects/p1/personas/x1', None, None, 'delete_persona', ('p1', 'x1'), {}),
+    ('DELETE', '/projects/p1/personas/x1', None, None, 'delete_persona', ('p1', 'x1'), {'actor': ACTOR}),
     ('POST', '/projects/p1/personas/x1/notes', BODY, None, 'add_persona_note', ('p1', 'x1', BODY), {}),
     ('POST', '/projects/p1/documents', BODY, None, 'create_document', ('p1', BODY), {'creator_sub': 'test-user-id'}),
     ('PUT', '/projects/p1/documents/d1', BODY, None, 'update_document', ('p1', 'd1', BODY), {}),
     ('GET', '/projects/p1/documents/d1/versions', None, None, 'get_document_versions', ('p1', 'd1'), {}),
     ('POST', '/projects/p1/documents/d1/versions/v1/restore', BODY, None, 'restore_document',
      ('p1', 'd1', 'v1', BODY), {}),
-    ('DELETE', '/projects/p1/documents/d1', None, None, 'delete_document', ('p1', 'd1'), {}),
+    ('DELETE', '/projects/p1/documents/d1', None, None, 'delete_document', ('p1', 'd1'), {'actor': ACTOR}),
 ]
 
 
@@ -197,7 +199,7 @@ class TestThePersonaJobs:
         filters = {
             'sources': ['web'], 'date_basis': 'imported', 'persona_count': 3,
             'custom_instructions': '', 'response_language': None, 'generate_avatars': True,
-            'keep_existing_personas': False, SCOPE_CONFIG_KEY: SCOPE_CONFIG,
+            'keep_existing_personas': False, SCOPE_CONFIG_KEY: SCOPE_CONFIG, 'requested_by': ACTOR,
         }
         assert (status, body) == (200, {'success': True, 'job_id': 'job-1', 'status': 'running',
                                         'message': 'Persona generation started.'})

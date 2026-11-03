@@ -198,7 +198,8 @@ class TestTheProductContextRoutesDelegate:
                                           method=method, path=path, body=BODY)
 
         assert (response['statusCode'], answer) == (200, {'ok': delegate})
-        handler.assert_called_once_with(*args)
+        kwargs = {'actor': {'sub': 'test-user-id', 'kind': 'admin'}} if method == 'DELETE' else {}
+        handler.assert_called_once_with(*args, **kwargs)
 
     @pytest.mark.parametrize(('path', 'job_type', 'delegate', 'sent', 'received'), [
         ('prfaq-autofill', 'assist_prfaq_autofill', 'autofill_prfaq_questions', None, {}),
