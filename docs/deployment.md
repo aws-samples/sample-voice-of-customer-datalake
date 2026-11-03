@@ -89,7 +89,7 @@ or set it in `voc-datalake/cdk.context.json`. An invalid value fails the synth.
 | `deploymentPrefix` | none | Namespaces a second copy in the same account and region ([Two Deployments](#two-deployments-in-one-account-and-region)) |
 | `mcpReservedConcurrency` | `20` | Reserved concurrency of the MCP endpoint ([below](#reserved-concurrency-of-the-mcp-endpoint--c-mcpreservedconcurrency)) |
 | `performanceTier` | `false` | `true` turns on every paid optimisation at once: the fixed-cost performance features (`snapStart`) and the paid security features (`enableWaf`, `cognitoPlus`); a feature's own flag set to `false` leaves it out (e.g. `-c performanceTier=true -c cognitoPlus=false`); for a deployment that runs as a managed service rather than a sample ([lambda-sizing.md](lambda-sizing.md#the-performance-tier--c-performancetier)) |
-| `enableWaf` | `false` | `true` puts AWS WAF in front of the SPA distribution and the API stage (a fixed monthly cost, about $18 plus $0.60 per million requests; off by default per [TENETS.md](../TENETS.md), tenet 7) ([below](#aws-waf-and-cognito-plus-opt-in)) |
+| `enableWaf` | `false` | `true` puts AWS WAF in front of the SPA distribution and the API stage (a fixed monthly cost, about $20 plus $0.60 per million requests; off by default per [TENETS.md](../TENETS.md), tenet 7) ([below](#aws-waf-and-cognito-plus-opt-in)) |
 | `cognitoPlus` | `false` | `true` moves both user pools to the Cognito Plus plan with threat protection in audit mode ($0.020 per monthly active user, no free tier) ([below](#aws-waf-and-cognito-plus-opt-in)) |
 | `snapStart` | `false` | `true` turns on Lambda SnapStart for the four cold-start-bound APIs (a fixed monthly cache charge, about $20; off by default per [TENETS.md](../TENETS.md), tenet 7) ([lambda-sizing.md](lambda-sizing.md#snapstart-off-by-default)) |
 | `mcpTokenMinting`, `mcpOAuthCursorCallbacks`, `mcpOAuthWebCallbacks`, `mcpOAuthResourceIndicator` | see [mcp.md](mcp.md) | MCP token minting and OAuth client settings |
@@ -1068,15 +1068,32 @@ and chat sessions run. A blocked caller gets a bare 403 that names no limit. The
 thousands of API calls (about 1,000 of them deliberate 4xx), so against a WAF deployment it can hit the limit too.
 Raise `WAF_RATE_LIMIT_PER_5_MIN` in `voc-datalake/lib/utils/waf.ts` for a large team or before an e2e run.
 
-On the API seven CRS rules only count, because the API legitimately carries what they block:
-`GenericRFI_QUERYARGUMENTS` (an MCP client's RFC 8252 loopback callback, `redirect_uri=http://127.0.0.1:<port>/…`,
-which the SPA's consent page carries too, so it also counts on the CloudFront ACL),
+On the API seven CRS rules are overridden to **count**, because signed-in callers legitimately send what they block:
+`GenericRFI_QUERYARGUMENTS` (an MCP client's RFC 8252 loopback callback, `redirect_uri=http://127.0.0.1:<port>/…`),
 `SizeRestrictions_QUERYSTRING` (query strings over 2 KB: `GET /projects?ids=` takes up to 200 ids),
 `SizeRestrictions_BODY` (bodies over 8 KB: CSV and JSON imports, conversation saves, documents),
 `GenericLFI_BODY`, `GenericRFI_BODY` and `EC2MetaDataSSRF_BODY` (`../`, URLs with an IPv4 host and
 `169.254.169.254` inside stored text, which the chat resends on every turn) and `CrossSiteScripting_BODY` (stored
-documents, prototypes, reviews and assistant answers contain HTML). No WAF logging is configured: only CloudWatch
-metrics and sampled requests. With WAF on, `VocWebSearchStack` is created even when web search is off and no use-case
+documents, prototypes, reviews and assistant answers contain HTML). A counted rule still labels the request, and a
+fifth rule after the CRS, `BlockCountedCrsOnPublicRoutes`, **blocks** a request carrying one of those labels on an
+unauthenticated route, so the full CRS applies there. The exceptions a legitimate public request needs stay counted:
+
+| Public route (with or without the `/v1` stage prefix) | Still counted there | Why |
+|---|---|---|
+| `POST /feedback-forms/{id}/submit` | `SizeRestrictions_BODY` | feedback text up to 10,000 characters plus custom fields, or a prototype pin up to 24,000 bytes |
+| `POST /webhooks/{plugin}` | the five body rules | a GitHub issue payload is over 8 KB and carries HTML, paths and URLs; the handler checks the HMAC signature first |
+| `GET /oauth/authorize` | `GenericRFI_QUERYARGUMENTS` | the loopback `redirect_uri` |
+| `POST /oauth/register`, `POST /oauth/token` | `GenericRFI_BODY` | the loopback `redirect_uris` / `redirect_uri` in the body |
+| every other public route (`/feedback-forms/{id}/config` and `/iframe`, `/voting-sessions/{id}/config` and `/submit`, `POST /unsubscribe`, `/.well-known/*`, `GET /oauth/callback`, `POST /oauth/revoke`) | nothing | small bodies and short queries only |
+
+Cognito- and MCP-token-authorized routes keep all seven exceptions. The route list is
+`PUBLIC_API_ROUTES` in `voc-datalake/lib/utils/waf-crs-scope.ts`; `lib/waf-public-routes.test.ts` fails when an
+unauthenticated API method is missing from it or an authorized one matches it. The matcher URL-decodes the path
+first. One accepted edge: a widget on a page served from a bare IPv4 host sends that `page_url`, which
+`GenericRFI_BODY` blocks. On the CloudFront ACL only `GenericRFI_QUERYARGUMENTS` counts, and its fifth rule,
+`BlockQueryRfiOutsideOAuthConsent`, blocks it on every path except the SPA's consent page `/oauth/authorize`.
+Capacity: 999 WCU on the API ACL and 941 on the CloudFront ACL, under the 1,500 a web ACL includes. No WAF logging
+is configured: only CloudWatch metrics and sampled requests. With WAF on, `VocWebSearchStack` is created even when web search is off and no use-case
 form is filed, and `VocCoreStack` reads the CloudFront ACL's ARN from it: a CloudFormation export when the app region
 is us-east-1, CDK's SSM-backed cross-region reference otherwise (the same mechanism the API and processing stacks use
 for the web-search gateway; the account needs a us-east-1 bootstrap). To turn WAF off again, deploy `VocCoreStack`
@@ -1087,8 +1104,9 @@ leaves it, and its paid ACL, in place: delete it yourself afterwards,
 `aws cloudformation delete-stack --region us-east-1 --stack-name <prefix->VocWebSearchStack`.
 
 Price ([AWS WAF pricing](https://aws.amazon.com/waf/pricing/)): $5.00 per web ACL and $1.00 per rule or managed rule
-group per month (prorated hourly), plus $0.60 per million requests. Each ACL holds four billed rules, so about
-$9 a month each, **$18 a month for both**, plus the requests (10 million a month adds $6). The managed rule groups
+group per month (prorated hourly), plus $0.60 per million requests. Each ACL holds five billed rules (three managed
+rule groups, the rate-based rule and the scope rule), so about $10 a month each, **$20 a month for both**, plus the
+requests (10 million a month adds $6). The managed rule groups
 used here carry no extra subscription fee.
 
 **Cognito Plus (`-c cognitoPlus=true`, `lib/utils/cognito-plus.ts`).** Both user pools move from Essentials to Plus,

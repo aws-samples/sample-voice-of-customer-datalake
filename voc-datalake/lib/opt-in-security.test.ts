@@ -16,7 +16,9 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS, type SynthResult } from './test-support/synth-app';
-import { API_COUNTED_CRS_RULES, CLOUDFRONT_COUNTED_CRS_RULES, WAF_RATE_LIMIT_PER_5_MIN } from './utils/waf';
+import { byCodeUnit } from './utils/compare';
+import { WAF_RATE_LIMIT_PER_5_MIN } from './utils/waf';
+import { API_COUNTED_CRS_RULES, CLOUDFRONT_COUNTED_CRS_RULES } from './utils/waf-crs-scope';
 
 const SHAPES = {
   default: synthApp(),
@@ -36,6 +38,7 @@ const MANAGED_GROUPS = ['AWSManagedRulesAmazonIpReputationList', 'AWSManagedRule
 const WebAclRulesSchema = z.array(z.object({
   Name: z.string(),
   Priority: z.number(),
+  Action: z.unknown().optional(),
   Statement: z.object({
     RateBasedStatement: z.object({ Limit: z.number(), AggregateKeyType: z.string(), EvaluationWindowSec: z.number() }).optional(),
     ManagedRuleGroupStatement: z.object({
@@ -51,15 +54,27 @@ function webAclRules(result: SynthResult, stack: string): z.infer<typeof WebAclR
   return WebAclRulesSchema.parse(acls[0]?.Properties?.Rules);
 }
 
-/** The stacks of a synth that hold any web ACL. */
+/** The stacks of a synth that hold any web ACL, sorted (the synth's own stack order is not a contract). */
 const stacksWithWebAcl = (result: SynthResult): string[] => result.stackNames
-  .filter((stack) => Object.keys(templateOf(result, stack).findResources('AWS::WAFv2::WebACL')).length > 0);
+  .filter((stack) => Object.keys(templateOf(result, stack).findResources('AWS::WAFv2::WebACL')).length > 0)
+  .sort(byCodeUnit);
 
-/** Each pool's [UserPoolTier, threat-protection mode] by pool name prefix. */
+/** A pool's base name (`ctx.uniqueName(...)` in core-auth.ts / core-board-auth.ts) -> the key these cases use. */
+const POOL_KEYS = [['voc-user-pool', 'VocUserPool'], ['voc-board-user-pool', 'VocBoardUserPool']] as const;
+
+/** Which pool this is, by its UserPoolName (a logical id's hash suffix is not a stable key). */
+function poolKey(userPoolName: unknown): string {
+  const rendered = String(JSON.stringify(userPoolName));
+  const match = POOL_KEYS.find(([baseName]) => rendered.includes(baseName));
+  if (match === undefined) throw new Error(`Unknown user pool name ${rendered}`);
+  return match[1];
+}
+
+/** Each pool's [UserPoolTier, threat-protection mode] by pool. */
 function poolPlans(result: SynthResult): Record<string, [unknown, unknown]> {
   const pools = core(result).findResources('AWS::Cognito::UserPool');
-  return Object.fromEntries(Object.entries(pools).map(([id, pool]) => [
-    id.replace(/[0-9A-F]{8}$/, ''),
+  return Object.fromEntries(Object.values(pools).map((pool) => [
+    poolKey(pool.Properties?.UserPoolName),
     [pool.Properties?.UserPoolTier, pool.Properties?.UserPoolAddOns?.AdvancedSecurityMode],
   ]));
 }
@@ -111,17 +126,18 @@ describe('-c performanceTier=true', () => {
   });
 
   it.each([
-    ['VocWebSearchStack', WAF_RATE_LIMIT_PER_5_MIN.cloudFront, [...CLOUDFRONT_COUNTED_CRS_RULES]],
-    ['VocApiStack', WAF_RATE_LIMIT_PER_5_MIN.api, [...API_COUNTED_CRS_RULES]],
-  ] as const)('%s web ACL: IP reputation, a per-IP rate limit, Known bad inputs and the CRS', (stack, limit, counted) => {
+    ['VocWebSearchStack', WAF_RATE_LIMIT_PER_5_MIN.cloudFront, [...CLOUDFRONT_COUNTED_CRS_RULES], 'BlockQueryRfiOutsideOAuthConsent'],
+    ['VocApiStack', WAF_RATE_LIMIT_PER_5_MIN.api, [...API_COUNTED_CRS_RULES], 'BlockCountedCrsOnPublicRoutes'],
+  ] as const)('%s web ACL: IP reputation, a per-IP rate limit, Known bad inputs, the CRS and its scope rule', (stack, limit, counted, scopeRule) => {
     const rules = webAclRules(tier, stack);
     expect(rules.map((rule) => [rule.Priority, rule.Name])).toStrictEqual([
-      [0, MANAGED_GROUPS[0]], [1, 'RateLimitPerIp'], [2, MANAGED_GROUPS[1]], [3, MANAGED_GROUPS[2]],
+      [0, MANAGED_GROUPS[0]], [1, 'RateLimitPerIp'], [2, MANAGED_GROUPS[1]], [3, MANAGED_GROUPS[2]], [4, scopeRule],
     ]);
     expect(rules[1]?.Statement.RateBasedStatement).toMatchObject({ Limit: limit, AggregateKeyType: 'IP', EvaluationWindowSec: 300 });
     const crs = rules[3]?.Statement.ManagedRuleGroupStatement;
     expect((crs?.RuleActionOverrides ?? []).map((override) => [override.Name, override.ActionToUse]))
       .toStrictEqual(counted.map((name) => [name, { Count: {} }]));
+    expect(rules[4]?.Action).toStrictEqual({ Block: {} });
   });
 });
 

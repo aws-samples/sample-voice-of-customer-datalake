@@ -519,7 +519,7 @@ export function createApiGateway(ctx: ApiStackContext, webhookPlugins: PluginMan
   });
 
   // Opt-in AWS WAF on the stage (`-c enableWaf=true` / performanceTier, lib/utils/waf.ts); off = acknowledged.
-  if (wafEnabled(stack)) protectApiStage(stack, api);
+  if (wafEnabled(stack)) protectApiStage(stack, api, API_STAGE_NAME);
   else acknowledgeNag(api, apiWafOffSuppressions);
   // The account's API Gateway logging role: an inline policy in place of the managed one (IAM4), shared by
   // every REST API in the account and region (api-gateway-logging-role.ts).

@@ -5,8 +5,9 @@
  * $1.00 per rule or managed rule group per month, prorated hourly, plus $0.60 per million requests), and the platform
  * runs with no fixed monthly cost by default (TENETS.md, tenet 7). `-c enableWaf=true` turns it on, and so does the
  * one-switch opt-in `-c performanceTier=true` (lib/utils/performance-tier.ts). {@link wafEnabled} is the ONLY read of
- * the flag. Each ACL below holds four billed rules (three AWS managed rule groups and one rate-based rule): about $9 a
- * month per ACL, $18 for the two, plus the request charge (docs/deployment.md → "AWS WAF (opt-in)").
+ * the flag. Each ACL below holds five billed rules (three AWS managed rule groups, one rate-based rule and the rule
+ * that scopes the counted CRS rules): about $10 a month per ACL, $20 for the two, plus the request charge
+ * (docs/deployment.md → "AWS WAF (opt-in)").
  *
  * Where each ACL lives:
  * - CloudFront: a CLOUDFRONT-scope ACL must be created in us-east-1, so it lives in VocWebSearchStack (pinned to
@@ -18,18 +19,25 @@
  *
  * Rules (AWS Managed Rules, https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-list.html):
  * the Amazon IP reputation list, a per-IP rate limit, Known bad inputs and the Core rule set (CRS). On the API seven
- * CRS rules only COUNT (five body rules, one query-string size rule, one query-argument rule), because this API
- * legitimately carries what they block (stored text is data the Lambdas never execute, fetch or open as a path).
+ * CRS rules are overridden to COUNT (five body rules, one query-string size rule, one query-argument rule), because
+ * signed-in callers legitimately send what they block (stored text is data the Lambdas never execute, fetch or open
+ * as a path). A counted rule still labels the request, and the fifth rule (priority 4, after the CRS) BLOCKS a
+ * request carrying one of those labels on an unauthenticated route that has no use for the exception, so the CRS
+ * keeps full effect on the public widget, ballot, unsubscribe, OAuth and webhook routes (waf-crs-scope.ts lists the
+ * routes and the few carve-outs a legitimate public request needs).
  * GenericRFI_QUERYARGUMENTS matches a URL with an IPv4 host in a query value: an MCP client's RFC 8252 loopback
  * callback (`/oauth/authorize?redirect_uri=http://127.0.0.1:<port>/callback`, api-mcp-oauth.ts) and the SPA's
- * consent page that carries the same query, so it also counts on the CloudFront ACL.
+ * consent page that carries the same query, so it also counts on the CloudFront ACL, where the fifth rule blocks it
+ * on every path but the consent page `/oauth/authorize`.
  * SizeRestrictions_QUERYSTRING blocks a query string over 2 KB (`GET /projects?ids=` takes up to 200 project ids,
  * Prioritization's one-call read), SizeRestrictions_BODY blocks a body over 8 KB (CSV / JSON imports,
  * conversation saves up to ~350 KB, documents, the assistant's RunAgentInput), and
  * CrossSiteScripting_BODY matches HTML in a body (documents, prototypes, pasted reviews and assistant answers are
  * stored text; the SPA escapes them when it renders), and GenericLFI_BODY / GenericRFI_BODY / EC2MetaDataSSRF_BODY
  * match `../`, URLs with an IPv4 host and `169.254.169.254` in that same text (an assistant answer resent with every
- * chat turn would be refused for good). Every other CRS rule blocks. No logging configuration: WAF keeps
+ * chat turn would be refused for good). Every other CRS rule blocks. Capacity: 25 (IP reputation) + 2 (rate) + 200
+ * (Known bad inputs) + 700 (CRS) + the scope rule (1 WCU per label match, 13 per URL-decoded regex) = 999 WCU on
+ * the API ACL and 941 on the CloudFront ACL, under the 1,500 a web ACL includes. No logging configuration: WAF keeps
  * only its CloudWatch metrics and sampled requests (3 hours), so no request content is stored.
  */
 import * as cdk from 'aws-cdk-lib';
@@ -37,6 +45,9 @@ import type * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import type { IConstruct } from 'constructs';
 import { PERFORMANCE_TIER_CONTEXT_KEY, enabledByOwnFlagOrTier } from './performance-tier';
+import {
+  API_COUNTED_CRS_RULES, CLOUDFRONT_COUNTED_CRS_RULES, apiCountedCrsScopeRule, cloudFrontCountedCrsScopeRule, visibility,
+} from './waf-crs-scope';
 
 /** `-c enableWaf=true` opts in; absent or false = no web ACL anywhere. */
 export const WAF_CONTEXT_KEY = 'enableWaf';
@@ -54,23 +65,10 @@ const WAF_DESCRIPTION_SUFFIX = `opt-in -c ${WAF_CONTEXT_KEY}=true or ${PERFORMAN
  */
 export const WAF_RATE_LIMIT_PER_5_MIN = { cloudFront: 10_000, api: 5_000 } as const;
 
-/** The CRS rules that only count on the API (see the module comment). */
-export const API_COUNTED_CRS_RULES = [
-  'SizeRestrictions_BODY', 'CrossSiteScripting_BODY', 'GenericLFI_BODY', 'GenericRFI_BODY', 'EC2MetaDataSSRF_BODY',
-  'SizeRestrictions_QUERYSTRING', 'GenericRFI_QUERYARGUMENTS',
-] as const;
-
-/** The CRS rules that only count on the SPA distribution: the OAuth consent page carries the loopback callback. */
-export const CLOUDFRONT_COUNTED_CRS_RULES = ['GenericRFI_QUERYARGUMENTS'] as const;
-
 /** Whether this app opted in to AWS WAF: `-c enableWaf=true` or the performance tier. */
 export function wafEnabled(scope: IConstruct): boolean {
   return enabledByOwnFlagOrTier(scope, WAF_CONTEXT_KEY, 'a fixed monthly cost, TENETS.md tenet 7');
 }
-
-const visibility = (metricName: string): wafv2.CfnWebACL.VisibilityConfigProperty => ({
-  cloudWatchMetricsEnabled: true, metricName, sampledRequestsEnabled: true,
-});
 
 function managedRuleGroup(
   name: string, priority: number, countedRules: readonly string[] = [],
@@ -96,10 +94,15 @@ interface WebAclOptions {
   readonly scope: 'CLOUDFRONT' | 'REGIONAL';
   readonly description: string;
   readonly ratePer5Min: number;
-  readonly countedCrsRules?: readonly string[];
+  readonly countedCrsRules: readonly string[];
+  /** Evaluated after the CRS: blocks a counted rule's label where the exception has no use (waf-crs-scope.ts). */
+  readonly countedCrsScope: (priority: number) => wafv2.CfnWebACL.RuleProperty;
 }
 
-/** One web ACL: allow by default; IP reputation, a per-IP rate limit, Known bad inputs and the CRS block. */
+/**
+ * One web ACL: allow by default; IP reputation, a per-IP rate limit, Known bad inputs and the CRS block, then the
+ * rule that scopes the CRS rules counted here to the routes that need them.
+ */
 function createWebAcl(scope: IConstruct, id: string, options: WebAclOptions): wafv2.CfnWebACL {
   // No Name: CloudFormation generates a unique one, so a prefixed second deployment never collides.
   return new wafv2.CfnWebACL(scope, id, {
@@ -120,6 +123,7 @@ function createWebAcl(scope: IConstruct, id: string, options: WebAclOptions): wa
       },
       managedRuleGroup('AWSManagedRulesKnownBadInputsRuleSet', 2),
       managedRuleGroup('AWSManagedRulesCommonRuleSet', 3, options.countedCrsRules),
+      options.countedCrsScope(4),
     ],
   });
 }
@@ -134,16 +138,22 @@ export function createCloudFrontWebAcl(stack: cdk.Stack): wafv2.CfnWebACL {
     description: `VoC SPA CloudFront distribution, ${WAF_DESCRIPTION_SUFFIX}`,
     ratePer5Min: WAF_RATE_LIMIT_PER_5_MIN.cloudFront,
     countedCrsRules: CLOUDFRONT_COUNTED_CRS_RULES,
+    countedCrsScope: cloudFrontCountedCrsScopeRule,
   });
 }
 
-/** The REGIONAL ACL on the REST API's deployment stage. */
-export function protectApiStage(stack: cdk.Stack, api: apigateway.RestApi): wafv2.CfnWebACL {
+/**
+ * The REGIONAL ACL on the REST API's deployment stage. `stageName` is the literal name the stage was created with
+ * (`api.deploymentStage.stageName` is a token, and the path matcher needs the text).
+ */
+export function protectApiStage(stack: cdk.Stack, api: apigateway.RestApi, stageName: string): wafv2.CfnWebACL {
+  if (cdk.Token.isUnresolved(stageName)) throw new Error('protectApiStage needs the literal stage name');
   const webAcl = createWebAcl(stack, 'ApiWebAcl', {
     scope: 'REGIONAL',
     description: `VoC REST API stage, ${WAF_DESCRIPTION_SUFFIX}`,
     ratePer5Min: WAF_RATE_LIMIT_PER_5_MIN.api,
     countedCrsRules: API_COUNTED_CRS_RULES,
+    countedCrsScope: (priority) => apiCountedCrsScopeRule(priority, stageName),
   });
   new wafv2.CfnWebACLAssociation(stack, 'ApiWebAclAssociation', {
     resourceArn: api.deploymentStage.stageArn,
