@@ -2,7 +2,7 @@
 // Shared by mock-dimensions.js (POST /settings/erasure, PUT /settings/sources) and
 // mock-participants.js (DELETE /participants/people/{id}).
 
-export const MAX_LEGAL_BASIS_CHARS = 300;
+const MAX_LEGAL_BASIS_CHARS = 300;
 
 /** The real 400 message for a missing / blank / over-long `value`, or null when it is a valid basis. */
 export function legalBasisError(value, what = 'legal_basis') {

@@ -132,7 +132,7 @@ Customer data is deleted by two paths only, each for a legal obligation and each
 **legal basis** (TENETS.md → D5): the opt-in worker **`voc-retention`**
 (`lambda/jobs/retention/handler.py`, in VocProcessingStack), which runs an erasure request or a
 source's retention window, and participant erasure (`DELETE /participants/people/{id}`,
-[participants.md](participants.md#erasure)), which deletes one person's rows in voc-participants.
+[participants.md](participants.md)), which deletes one person's rows in voc-participants.
 `voc-retention` is the only worker that deletes feedback items, Radar reviews and raw archives.
 `lib/customer-data-deletes.test.ts` pins, as an exact list, every role that may delete from
 `voc-feedback` or `raw/` (it plus legacy grants that are never used and can only shrink).
