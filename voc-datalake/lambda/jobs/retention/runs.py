@@ -17,7 +17,7 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared.aws import is_conditional_check_failure
-from shared.retention import ERASURE_JOB_PK
+from shared.retention import ERASURE_JOB_COUNTERS, ERASURE_JOB_PK
 from shared.timestamps import now_iso
 
 MODE_RETENTION: Final = 'retention'
@@ -30,10 +30,8 @@ PROGRESS_EVERY_SECONDS: Final = 60
 # Whole-file uploads a run lists for review (keys only); a run that meets more says so (``more``).
 MAX_REVIEW_FILES: Final = 200
 
-# The counters a job's row records as it runs and when it ends (``scanned`` lives on the audit row only).
-_JOB_COUNTERS: Final = ('deleted_items', 'deleted_objects', 'deleted_radar_items', 'artifacts_marked')
 # The counters a run keeps and carries across hand-overs (audit row, result).
-COUNTERS: Final = ('scanned', *_JOB_COUNTERS)
+COUNTERS: Final = ('scanned', *ERASURE_JOB_COUNTERS)
 _CARRIED_LISTS: Final = ('erased_sources', 'review_files')
 _AUDIT_OPTIONAL: Final = ('job_id', 'field', 'source', 'value_hash', 'cutoffs', 'legal_basis', 'legal_bases',
                           'erased_sources')
@@ -130,8 +128,8 @@ def claim_erasure_job(aggregates_table: Any, job_id: str) -> dict[str, Any] | No
 
 def _counter_sets(run: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     """``SET`` clauses and values for the job's moving counters."""
-    clauses = ', '.join(f'{counter} = :{counter}' for counter in _JOB_COUNTERS)
-    return clauses, {f':{counter}': run[counter] for counter in _JOB_COUNTERS}
+    clauses = ', '.join(f'{counter} = :{counter}' for counter in ERASURE_JOB_COUNTERS)
+    return clauses, {f':{counter}': run[counter] for counter in ERASURE_JOB_COUNTERS}
 
 
 def finish_erasure_job(aggregates_table: Any, run: Mapping[str, Any], status: str, error: str | None = None) -> None:
@@ -163,7 +161,7 @@ def record_progress(aggregates_table: Any, run: dict[str, Any], phase: str) -> N
     """
     if not run.get('job_id'):
         return
-    counts = (*(run[counter] for counter in _JOB_COUNTERS), phase)
+    counts = (*(run[counter] for counter in ERASURE_JOB_COUNTERS), phase)
     last = run.get('_progress')
     if isinstance(last, tuple) and last[0] == counts \
             and time.monotonic() - last[1] < PROGRESS_EVERY_SECONDS:

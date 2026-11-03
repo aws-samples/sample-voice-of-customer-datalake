@@ -95,7 +95,7 @@ from shared.model_config import (
 from shared.model_profile import payload_fields
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value, json_object_body
-from shared.retention import ERASE_FIELDS, ERASURE_JOB_PK, ERASURE_JOB_PREFIX, SOURCE_FIELD
+from shared.retention import ERASE_FIELDS, ERASURE_JOB_COUNTERS, ERASURE_JOB_PK, ERASURE_JOB_PREFIX, SOURCE_FIELD
 from shared.scope_names import (
     HiddenNames,
     component_names_hidden,
@@ -1748,8 +1748,6 @@ ERASURE_VIEW_FIELDS = (
     'job_id', 'status', 'field', 'source', 'value_hash', 'legal_basis', 'deleted_items', 'deleted_objects',
     'started_by', 'created_at', 'finished_at', 'error', 'phase', 'progress_at',
 )
-# Counters the worker adds as it reaches each copy (jobs/retention/handler.py); 0 when absent.
-ERASURE_VIEW_COUNTERS = ('deleted_items', 'deleted_objects', 'deleted_radar_items', 'artifacts_marked')
 
 
 SOURCE_SCOPED_ERASURE_FIELDS: Final = frozenset({'source_id', 'csv_row_id'})
@@ -1824,7 +1822,7 @@ def _whole_source_request(body: dict, value: str, source: str | None) -> tuple[s
 def erasure_job_view(item: dict) -> dict:
     """The API's erasure ``Job`` (no keys; the erased value is never stored, only its hash)."""
     view = {field: item.get(field) for field in ERASURE_VIEW_FIELDS if item.get(field) is not None}
-    for counter in ERASURE_VIEW_COUNTERS:
+    for counter in ERASURE_JOB_COUNTERS:
         view[counter] = int(item.get(counter) or 0)
     review = item.get('files_needing_review')
     if isinstance(review, dict):

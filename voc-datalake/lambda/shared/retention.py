@@ -63,6 +63,8 @@ from shared.radar_store import marker_key
 from shared.raw_versions import RAW_PREFIX, parse_item_key
 
 __all__ = [
+    'ERASURE_JOB_COUNTERS',
+    'FEEDBACK_SK_PREFIX',
     'STORE_FEEDBACK',
     'STORE_RADAR',
     'delete_item',
@@ -84,7 +86,9 @@ ERASURE_JOB_PK: Final = 'JOB#erasure'
 # Every job row's ``sk`` (and ``job_id``) starts with this; the partition's lock rows do not.
 ERASURE_JOB_PREFIX: Final = 'er_'
 _EMAIL_PATHS: Final = ('metadata.email', 'metadata.submitter_email')
-_FEEDBACK_SK_PREFIX: Final = 'FEEDBACK#'
+FEEDBACK_SK_PREFIX: Final = 'FEEDBACK#'
+# The counters an erasure job's row records (voc-retention writes them, Settings lists them; 0 when absent).
+ERASURE_JOB_COUNTERS: Final = ('deleted_items', 'deleted_objects', 'deleted_radar_items', 'artifacts_marked')
 # Where a matched item lives: voc-feedback, or voc-radar (another brand's review, docs/radar.md).
 STORE_FEEDBACK: Final = 'feedback'
 STORE_RADAR: Final = 'radar'
@@ -116,7 +120,7 @@ def _store_items(store: str) -> ConditionBase:
                 & Attr('feedback_id').exists() & Attr('radar_brand').exists())
     if store != STORE_FEEDBACK:
         raise ValueError(f'Unknown item store "{store}"')
-    return Attr('sk').begins_with(_FEEDBACK_SK_PREFIX)
+    return Attr('sk').begins_with(FEEDBACK_SK_PREFIX)
 
 
 def retention_filter(cutoffs: Mapping[str, str], store: str = STORE_FEEDBACK) -> ConditionBase:
