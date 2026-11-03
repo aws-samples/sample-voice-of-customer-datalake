@@ -20,11 +20,10 @@ from typing import Any, Final
 from jobs.retention.runs import MODE_ERASE, note_erased_source, note_review_file
 from shared import retention
 from shared.legal_basis import legal_basis_or_legacy
-from shared.retention import SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR
+from shared.retention import FEEDBACK_SK_PREFIX, SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR
 from shared.timestamps import now_iso
 
 TOMBSTONE_PK_PREFIX: Final = 'AUDIT#tombstone#'
-_FEEDBACK_SK_PREFIX: Final = 'FEEDBACK#'
 _UNKNOWN_SOURCE: Final = 'unknown'
 
 
@@ -38,7 +37,7 @@ def _feedback_id(item: Mapping[str, Any]) -> str:
     feedback_id = item.get('feedback_id')
     if isinstance(feedback_id, str) and feedback_id:
         return feedback_id
-    return str(item['sk']).removeprefix(_FEEDBACK_SK_PREFIX)
+    return str(item['sk']).removeprefix(FEEDBACK_SK_PREFIX)
 
 
 def tombstone_key(source: str, feedback_id: str) -> dict[str, str]:

@@ -61,11 +61,11 @@
       "reason": "a resolved prototype pin (open/addressed/resolved) and a resolved document comment thread (open/resolved): separate vocabularies on separate rows"
     },
     {
-      "key": "STATUS_QUEUED::lambda/jobs/retention/handler.py,lambda/shared/reprocess_jobs.py",
+      "key": "STATUS_QUEUED::lambda/jobs/retention/runs.py,lambda/shared/reprocess_jobs.py",
       "reason": "erasure jobs and category-reprocess jobs are separate job kinds with their own lifecycles"
     },
     {
-      "key": "STATUS_RUNNING::lambda/jobs/retention/handler.py,lambda/shared/reprocess_jobs.py",
+      "key": "STATUS_RUNNING::lambda/jobs/retention/runs.py,lambda/shared/reprocess_jobs.py",
       "reason": "erasure jobs and category-reprocess jobs are separate job kinds with their own lifecycles"
     },
     {
