@@ -9,10 +9,10 @@
  * artifact, lambda/shared/delete_audit.py, which only PUTs a new row). Every role that can write in one of those
  * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
  *
- *   - every writer: Deny DeleteItem, UpdateItem and BatchWriteItem (no audit row is ever changed or removed, a batch
- *     delete included; every writer puts its rows one PutItem at a time);
- *   - a role that is not that table's audit writer: also Deny PutItem and BatchWriteItem (it cannot forge or
- *     overwrite one, nor delete one through a batch);
+ *   - a table the role is that table's audit writer for: Deny DeleteItem, UpdateItem and BatchWriteItem (no audit
+ *     row is ever changed or removed, a batch delete included; every writer puts its rows one PutItem at a time);
+ *   - every other table it writes: ONE Deny of those actions plus PutItem (it cannot forge, overwrite, change or
+ *     remove one). Each table's ARN appears in one of the two statements only, to keep the policies small;
  *   - a writer limited to one audit partition (the settings API's `AUDIT#delete` in voc-aggregates): Deny PutItem
  *     and BatchWriteItem on every OTHER audit partition (it cannot forge a retention row or a tombstone).
  *
@@ -147,13 +147,20 @@ function putRight(role: iam.Role, arn: string, writers: readonly NamedAuditWrite
   return named.partitionKey === undefined ? { kind: 'any' } : { kind: 'one', partitionKey: named.partitionKey };
 }
 
-/** Add the audit-row Denies to one role (see the module comment). */
+/** Add the audit-row Denies to one role (see the module comment). Each guarded table appears in ONE of the first two
+ *  statements, so its ARN is written once (the projects API's inline policy is close to the 70% size check): */
 function guardRole(role: iam.Role, written: ReadonlySet<string>, writers: readonly NamedAuditWriter[]): void {
-  role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_CHANGE_SID, CHANGE_ACTIONS,
-    [...written]));
   const rights = [...written].map((arn) => ({ arn, right: putRight(role, arn, writers) }));
+  //  - the tables it writes audit rows in: no change, no delete (a batch included);
+  const writes = rights.filter(({ right }) => right.kind !== 'none').map(({ arn }) => arn);
+  if (writes.length > 0) role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_CHANGE_SID, CHANGE_ACTIONS, writes));
+  //  - the tables it does not: no put either (it cannot forge or overwrite a row);
   const none = rights.filter(({ right }) => right.kind === 'none').map(({ arn }) => arn);
-  if (none.length > 0) role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_WRITE_SID, PUT_ACTIONS, none));
+  if (none.length > 0) {
+    role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_WRITE_SID, [...new Set([...CHANGE_ACTIONS, ...PUT_ACTIONS])],
+      none));
+  }
+  //  - a writer limited to one partition: no put on any other audit partition.
   for (const { arn, right } of rights) {
     if (right.kind !== 'one') continue;
     role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_OTHER_PARTITION_SID, PUT_ACTIONS, [arn], {

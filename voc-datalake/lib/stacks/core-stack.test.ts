@@ -157,13 +157,13 @@ describe('VocCoreStack synth context', () => {
       `${resource}'s statement count moved: either the synth context lost `
       + '@aws-cdk/aws-iam:minimizePolicies, or this policy gained a statement. Both want reading.';
 
-    // 9: the Claude grant lives in the stack's shared managed policies (lib/utils/claude-model-grant.ts); the app's
+    // 8: the Claude grant lives in the stack's shared managed policies (lib/utils/claude-model-grant.ts); the app's
     // rewrites (lib/utils/app-aspects.ts) add the DynamoDB-only KMS statement, the writes to its own log group and
-    // the two audit-row Denies on voc-projects, which it writes but holds no audit row of (audit-row-guard.ts).
+    // the one audit-row Deny on voc-projects, which it writes but holds no audit row of (audit-row-guard.ts).
     expect(
       statementCount('AWS::IAM::Policy', 'ProductDocExtractorLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
       because('the doc-extractor role'),
-    ).toBe(9);
+    ).toBe(8);
     // 2: its secret + the writes to its own log group (lib/utils/app-aspects.ts).
     expect(
       statementCount('AWS::IAM::Policy', 'CdnSigningKeysLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),

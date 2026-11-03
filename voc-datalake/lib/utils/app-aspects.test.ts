@@ -71,8 +71,9 @@ describe('applyAppAspects', () => {
 
   it('adds the audit-row Denies on the audit tables it is given, before the exact-grants rewrite', () => {
     const policies = JSON.stringify(resources(synth({}, 'us-east-1', true), 'AWS::IAM::Policy'));
-    expect(policies).toContain(`"Sid":"${AUDIT_DENY_CHANGE_SID}"`);
+    // The fixture role is no named audit writer: its one Deny carries every write action (audit-row-guard.ts).
     expect(policies).toContain(`"Sid":"${AUDIT_DENY_WRITE_SID}"`);
+    expect(policies).not.toContain(`"Sid":"${AUDIT_DENY_CHANGE_SID}"`);
     expect(policies).not.toContain('/index/*');
     expect(JSON.stringify(resources(synth({}), 'AWS::IAM::Policy'))).not.toContain('AUDIT#');
   });
