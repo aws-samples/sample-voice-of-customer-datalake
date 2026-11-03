@@ -5,8 +5,9 @@
  * 1. Brands: `GET /radar` 200; the Brand picker lists every brand it answered, and
  *    the chosen brand's view renders (or the "No brand on the Radar yet" empty state).
  * 2. Compare view ("Compared with us"): one row per category with Them / Us / Verdict.
- * 3. Releases: the timeline lists releases with their dates and sources.
- * 4. Reviews: "Read all reviews" opens "<brand> reviews"; a review's Details opens
+ * 3. Releases: the timeline lists releases with their dates; a row's title opens its sources.
+ * 4. Reviews: a theme's count ("Read all N reviews in <category>", "Read the review of <theme>")
+ *    opens "<brand> reviews"; a review's Details opens
  *    "Radar review details" (`GET /radar/brands/{brand}/reviews/{id}` 200) on top;
  *    Escape closes that one first, then the reviews list.
  * 5. Admin: Administration → Sources → Radar offers "Scan now". It is NEVER clicked
@@ -37,7 +38,6 @@ const TEXT = {
   releases: 'Releases',
   releasesEmpty: 'No release found yet. Releases come from the scheduled scan or Scan now.',
   noReviews: 'No reviews in this window',
-  readAll: 'Read all reviews',
   reviewList: 'Reviews',
   details: 'Details',
   reviewDialog: 'Radar review details',
@@ -50,6 +50,9 @@ const RADAR_SETUP_PATH = '/admin?tab=sources&section=radar'
 const compareSection = (page: Page): Locator => page.getByRole('region', { name: TEXT.compare })
 const releasesSection = (page: Page): Locator => page.getByRole('region', { name: TEXT.releases })
 const brandPicker = (page: Page): Locator => page.getByLabel(TEXT.brand, { exact: true })
+/** The theme counts that open the reviews behind them (radar.json themes.groupLabel / countLabel). */
+const readReviews = (page: Page): Locator =>
+  page.getByRole('button', { name: /^Read (all .+ reviews in|the review in|the review of|the .+ reviews of) / })
 
 /** The brand labels `GET /radar` answered. */
 function brandLabels(body: Record<string, unknown>): string[] {
@@ -130,6 +133,10 @@ test.describe('radar', () => {
       const releases = section.getByTestId('radar-release')
       expect(await releases.count()).toBeGreaterThan(0)
       await expect(releases.first().locator('time')).toBeVisible()
+      // The title is a disclosure: the summary and the citations show once it is opened.
+      const title = releases.first().getByRole('heading').getByRole('button')
+      await title.click()
+      await expect(title).toHaveAttribute('aria-expanded', 'true')
       await expect(releases.first().getByRole('list', { name: 'Sources' }).getByRole('link').first()).toBeVisible()
     })
   })
@@ -140,9 +147,10 @@ test.describe('radar', () => {
     const labels = await openRadar(page)
     test.skip(labels.length === 0, 'no brand on the Radar in this deployment')
     test.skip(await page.getByText(TEXT.noReviews, { exact: true }).isVisible(), 'the chosen brand has no review in the window')
+    test.skip(await readReviews(page).count() === 0, 'no theme with reviews to open in the window')
     await assertStep(page, role, 'radar-reviews', async () => {
       const brand = await chosenBrand(page)
-      await page.getByRole('button', { name: TEXT.readAll, exact: true }).click()
+      await readReviews(page).first().click()
       const list = dialogNamed(page, `${brand} reviews`)
       await expect(list).toBeVisible()
       const reviews = list.getByRole('list', { name: TEXT.reviewList }).getByRole('listitem')

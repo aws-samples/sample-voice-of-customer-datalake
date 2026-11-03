@@ -61,7 +61,8 @@ const SCREENS: readonly ListScreen[] = [
     name: 'projects', path: '/projects', api: '/projects',
     loading: (p) => main(p).locator('.skeleton'),
     error: (p) => failedAlert(p, LOAD_FAILED),
-    loaded: (p) => main(p).getByRole('heading', { level: 2 }).or(main(p).getByText('No projects yet')),
+    // A project card's actions menu (projects.json card.actions), not any h2: the passkey nudge is an h2 in main too.
+    loaded: (p) => main(p).getByRole('button', { name: /^Actions for / }).or(main(p).getByText('No projects yet')),
     recover: tryAgain,
   },
   {
