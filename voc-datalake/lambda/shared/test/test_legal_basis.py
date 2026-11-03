@@ -12,6 +12,21 @@ def test_a_basis_is_trimmed_and_bounded_at_300_characters():
         required_legal_basis('b' * 301, 'why')
 
 
+@pytest.mark.parametrize('value', [
+    'GDPR art. 17 request from jane@example.com',
+    'Erasure asked by phone +34 612 345 678',
+])
+def test_a_basis_with_personal_data_is_refused(value):
+    # The basis lands on permanent audit rows and tombstones: it must not identify the requester.
+    with pytest.raises(ValueError, match=r'^legal_basis must not contain personal data'):
+        required_legal_basis(value)
+
+
+@pytest.mark.parametrize('value', ['GDPR art. 17 request #123', 'DPA with vendor X, 12 months', 'Ticket SR-20261103'])
+def test_a_case_or_contract_reference_is_accepted(value):
+    assert required_legal_basis(value) == value
+
+
 @pytest.mark.parametrize('value', [None, '', '   ', 7, ['GDPR']])
 def test_a_missing_blank_or_non_text_basis_is_refused_naming_the_field(value):
     with pytest.raises(ValueError, match=r'^legal_basis is required: say why this data is deleted'):

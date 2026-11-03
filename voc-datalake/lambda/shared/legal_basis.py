@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from shared.pii_redaction import redact_text
+
 __all__ = [
     'legal_basis_or_legacy',
     'required_legal_basis',
@@ -26,12 +28,18 @@ LEGACY_LEGAL_BASIS: Final = 'not recorded (set before 6.00.00)'
 
 
 def required_legal_basis(value: object, what: str = 'legal_basis') -> str:
-    """``value`` trimmed: a non-empty string of at most ``MAX_LEGAL_BASIS_CHARS``; ValueError otherwise."""
+    """``value`` trimmed: a non-empty string of at most ``MAX_LEGAL_BASIS_CHARS`` that holds no personal data
+    (an email, phone number, card, IBAN or IP the pattern pass of ``shared.pii_redaction`` finds); ValueError
+    otherwise. The text lands on audit rows and tombstones that are never deleted, so it must not identify the
+    requester: a case number does, an email address must not."""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f'{what} is required: say why this data is deleted (for example "GDPR art. 17 request")')
     text = value.strip()
     if len(text) > MAX_LEGAL_BASIS_CHARS:
         raise ValueError(f'{what} must be at most {MAX_LEGAL_BASIS_CHARS} characters')
+    if redact_text(text).counts:
+        raise ValueError(f'{what} must not contain personal data (an email, phone number or similar): it is kept '
+                         'on permanent audit rows; use a case or ticket number instead')
     return text
 
 

@@ -147,8 +147,10 @@ How it works:
 
 - **Legal basis.** `legal_basis` is required on every `POST /settings/erasure` since 6.00.00: a
   non-empty text of at most 300 characters (`shared/legal_basis.py`), such as "GDPR art. 17 request
-  #123"; **400** when it is missing or blank. Never type the person's name or email in it: it is
-  stored as written. It is kept on the job row, its audit row and every tombstone. A retention run
+  #123"; **400** when it is missing or blank, and when it contains personal data the pattern pass of
+  `shared/pii_redaction.py` finds (an email, phone number, card, IBAN or IP address): it is kept, as
+  written, on the job row, its audit row and every tombstone, which are never deleted, so it must not
+  identify the requester (a case or ticket number does that job). A retention run
   records each retained source's `retention_legal_basis` (`legal_bases` on its audit row).
 - **Tombstones first.** Before an item is deleted, the worker writes its tombstone in
   `voc-aggregates`: `pk AUDIT#tombstone#<source>`, `sk <feedback_id>`, with `feedback_id`, `source`,
