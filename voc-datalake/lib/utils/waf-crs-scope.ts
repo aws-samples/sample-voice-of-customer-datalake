@@ -27,7 +27,7 @@
  *   `GET /oauth/callback` carries only Cognito's `code` and `state` (the loopback URI is in the relay row), so it
  *   blocks there like everywhere else.
  * - Nothing else public needs one: `/.well-known/*` and the widget's `config` / `iframe` take no body and at most a
- *   short token query (`?r=`), ballots and `POST /unsubscribe` post a few short fields, `POST /oauth/revoke` a token.
+ *   short token query (`?r=`), the ballot config route takes no body, `POST /unsubscribe` posts a few short fields, `POST /oauth/revoke` a token.
  *
  * The path WAF inspects on a REST API stage is the one the caller sent, `/<stage>/<route>` on the execute-api host
  * (there is no custom domain). The matcher takes the stage prefix as optional, so a base-path mapping that drops it
