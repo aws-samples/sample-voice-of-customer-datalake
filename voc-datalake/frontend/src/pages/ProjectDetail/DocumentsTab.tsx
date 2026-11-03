@@ -15,6 +15,7 @@ import { useLabelKnownIds } from '../../hooks/useLabelKnownIds'
 import type { ProjectDocument } from '../../api/types'
 import type { Project, ProductDoc } from '../../api/projectTypes'
 import { DerivationFooter, RevisionFooter } from './DocumentLineageFooters'
+import { DeletedSourcesNotice } from './DeletedSourcesNotice'
 import FeedbackCorpus from './FeedbackCorpus'
 import { stillPresent, hasDroppedSource, inheritedExtraSources } from './documentLineage'
 import { PrototypeView } from './DocumentPrototypeView'
@@ -154,6 +155,7 @@ export default function DocumentsTab({
                   pushing the preview down the page. */}
               <RevisionFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
               <DerivationFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
+              <DeletedSourcesNotice doc={selectedDoc} />
               <FeedbackCorpus feedbackIds={selectedDoc.input_feedback_ids}
                 className="mt-2" />
               {/* Prototypes keep their own revision lineage (the footer above). */}

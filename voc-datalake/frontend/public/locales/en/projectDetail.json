@@ -127,7 +127,13 @@
       "feedback": "Feedback: {{feedback}}",
       "heading": "Revision of"
     },
-    "selectDocument": "Select a document"
+    "selectDocument": "Select a document",
+    "deletedSources": {
+      "personaNamed": "Written from a persona that was later deleted: {{name}}",
+      "persona": "Written from a persona that was later deleted",
+      "document": "Written from a document that was later deleted",
+      "productDoc": "Written using a product document that was later deleted"
+    }
   },
   "imageErrors": {
     "tooLarge": "{{name}} is still too large after resizing. Try a smaller screenshot, or crop it.",

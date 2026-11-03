@@ -127,7 +127,13 @@
       "feedback": "フィードバック: {{feedback}}",
       "heading": "改訂元"
     },
-    "selectDocument": "ドキュメントを選択"
+    "selectDocument": "ドキュメントを選択",
+    "deletedSources": {
+      "personaNamed": "後で削除されたペルソナをもとに作成: {{name}}",
+      "persona": "後で削除されたペルソナをもとに作成",
+      "document": "後で削除されたドキュメントをもとに作成",
+      "productDoc": "後で削除された製品ドキュメントを使用して作成"
+    }
   },
   "imageErrors": {
     "tooLarge": "{{name}} は縮小してもまだサイズが大きすぎます。より小さいスクリーンショットを使うか、切り取ってください。",

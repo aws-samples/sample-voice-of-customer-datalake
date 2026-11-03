@@ -127,7 +127,13 @@
       "feedback": "Rückmeldung: {{feedback}}",
       "heading": "Überarbeitung von"
     },
-    "selectDocument": "Dokument auswählen"
+    "selectDocument": "Dokument auswählen",
+    "deletedSources": {
+      "personaNamed": "Aus einer Persona erstellt, die später gelöscht wurde: {{name}}",
+      "persona": "Aus einer Persona erstellt, die später gelöscht wurde",
+      "document": "Aus einem Dokument erstellt, das später gelöscht wurde",
+      "productDoc": "Mit einem Produktdokument erstellt, das später gelöscht wurde"
+    }
   },
   "imageErrors": {
     "tooLarge": "{{name}} ist auch nach dem Verkleinern noch zu groß. Verwende einen kleineren Screenshot oder schneide ihn zu.",

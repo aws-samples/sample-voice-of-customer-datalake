@@ -141,6 +141,12 @@
       "visualsFailed": "{{total, number}} nie udało się przetworzyć — prześlij ponownie, aby użyć",
       "visualsLimit": "Maksymalnie {{max, number}} makiet na jedno utworzenie",
       "visualsNotReady": "{{total, number}} wciąż w trakcie przetwarzania"
+    },
+    "deletedSources": {
+      "personaNamed": "Napisano na podstawie persony, która została później usunięta: {{name}}",
+      "persona": "Napisano na podstawie persony, która została później usunięta",
+      "document": "Napisano na podstawie dokumentu, który został później usunięty",
+      "productDoc": "Napisano z użyciem dokumentu produktu, który został później usunięty"
     }
   },
   "imageErrors": {

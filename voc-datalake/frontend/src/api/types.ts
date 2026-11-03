@@ -3,6 +3,7 @@
 // The derivation contract lives with its schema and resolver, so the runtime
 // validation and the declared type cannot drift apart.
 import type { DocumentDerivation } from './derivation'
+import type { DeletedSource } from './deletedSources'
 // The credential vocabulary lives with its schema for the same reason: the
 // declared type and the runtime validation cannot drift apart.
 import type { CategoryOverride } from './feedbackSchema'
@@ -556,6 +557,11 @@ export interface ProjectDocument {
    */
   revised_from_id?: string | null
   revision_feedback?: string
+  /**
+   * What this document cited and that was later deleted (api/deletedSources.ts); the ids stay
+   * in `derivation`. Always a list after the boundary; absent on hand-built test documents.
+   */
+  deleted_sources?: readonly DeletedSource[]
   created_at: string
   updated_at?: string
 }

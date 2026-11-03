@@ -127,7 +127,13 @@
       "feedback": "Comentários: {{feedback}}",
       "heading": "Revisão de"
     },
-    "selectDocument": "Selecione um documento"
+    "selectDocument": "Selecione um documento",
+    "deletedSources": {
+      "personaNamed": "Escrito a partir de uma persona que depois foi excluída: {{name}}",
+      "persona": "Escrito a partir de uma persona que depois foi excluída",
+      "document": "Escrito a partir de um documento que depois foi excluído",
+      "productDoc": "Escrito com um documento de produto que depois foi excluído"
+    }
   },
   "imageErrors": {
     "tooLarge": "{{name}} continua muito grande depois do redimensionamento. Tente uma captura menor ou recorte-a.",
