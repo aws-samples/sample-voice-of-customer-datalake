@@ -87,7 +87,7 @@ class TestStrictReaderWithoutATable:
         monkeypatch.delenv('AGGREGATES_TABLE', raising=False)
         assert cached_source_profile_strict('support') == {
             'id': 'support', 'label': 'support', 'pii': 'allow', 'retention_days': None,
-            'restricted': False, 'dimension_defaults': {}, 'tags': [],
+            'retention_legal_basis': None, 'restricted': False, 'dimension_defaults': {}, 'tags': [],
         }
 
 

@@ -71,7 +71,8 @@ def _keys(aws) -> set[str]:
 
 def _start(route) -> tuple[int, dict]:
     response, body = route('POST', '/settings/erasure',
-                           body={'field': 'source', 'value': SOURCE, 'confirm': SOURCE})
+                           body={'field': 'source', 'value': SOURCE, 'confirm': SOURCE,
+                                 'legal_basis': 'Contract with the review site ended'})
     return response['statusCode'], body
 
 

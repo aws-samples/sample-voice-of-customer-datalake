@@ -32,7 +32,7 @@ _DIMENSIONS = validate_dimensions([
 def _defaults(source_id: str) -> dict:
     return {
         'id': source_id, 'label': source_id, 'pii': 'allow', 'retention_days': None,
-        'restricted': False, 'dimension_defaults': {}, 'tags': [],
+        'retention_legal_basis': None, 'restricted': False, 'dimension_defaults': {}, 'tags': [],
     }
 
 
@@ -56,12 +56,12 @@ class TestValidateSourceProfilesNormalises:
     def test_a_full_profile_round_trips_trimmed_and_unknown_keys_dropped(self):
         result = validate_source_profiles([{
             'id': ' support_tickets ', 'label': ' Support tickets ', 'pii': 'summary_only',
-            'retention_days': 365, 'restricted': True,
+            'retention_days': 365, 'retention_legal_basis': ' DPA with vendor X, 12 months ', 'restricted': True,
             'dimension_defaults': {'product': 'app'}, 'tags': [' support ', 'Support'], 'extra': 1,
         }], _DIMENSIONS)
         assert result == [{
             'id': 'support_tickets', 'label': 'Support tickets', 'pii': 'summary_only',
-            'retention_days': 365, 'restricted': True,
+            'retention_days': 365, 'retention_legal_basis': 'DPA with vendor X, 12 months', 'restricted': True,
             'dimension_defaults': {'product': 'app'}, 'tags': ['support'],
         }]
 
@@ -88,7 +88,24 @@ class TestValidateSourceProfilesLimits:
 
     @pytest.mark.parametrize('days', [30, 3650, Decimal(90)])
     def test_retention_bounds_are_accepted(self, days):
-        assert validate_source_profiles([{'id': 's', 'retention_days': days}], _DIMENSIONS)[0]['retention_days'] == days
+        profile = {'id': 's', 'retention_days': days, 'retention_legal_basis': 'GDPR art. 5(1)(e)'}
+        assert validate_source_profiles([profile], _DIMENSIONS)[0]['retention_days'] == days
+
+    @pytest.mark.parametrize('basis', [None, '', '   '])
+    def test_a_retention_period_without_a_legal_basis_is_refused_on_save(self, basis):
+        profile = {'id': 's', 'retention_days': 90, **({} if basis is None else {'retention_legal_basis': basis})}
+        assert _refusal([profile]) == 'Source "s" retention_legal_basis is required when retention_days is set'
+
+    def test_the_legal_basis_is_bounded_at_300_characters(self):
+        profile = {'id': 's', 'retention_days': 90, 'retention_legal_basis': 'b' * 300}
+        assert validate_source_profiles([profile], _DIMENSIONS)[0]['retention_legal_basis'] == 'b' * 300
+        assert _refusal([{**profile, 'retention_legal_basis': 'b' * 301}]) == (
+            'Source "s" retention_legal_basis must be at most 300 characters')
+        assert 'retention_legal_basis is required' in _refusal([{**profile, 'retention_legal_basis': 7}])
+
+    def test_a_legal_basis_without_a_retention_period_is_dropped(self):
+        profile = {'id': 's', 'retention_legal_basis': 'GDPR'}
+        assert validate_source_profiles([profile], _DIMENSIONS)[0]['retention_legal_basis'] is None
 
     @pytest.mark.parametrize('days', [29, 3651, 0, -1, 90.5, Decimal('90.5'), '90', True])
     def test_retention_outside_the_range_or_not_whole_is_refused(self, days):
@@ -141,6 +158,17 @@ class TestLoadSourceProfiles:
             'dimension_defaults': {'retired_dimension': 'x'},
         }]
         assert type(profiles[0]['retention_days']) is int
+
+    def test_a_stored_retention_period_from_before_6_00_keeps_running_without_a_legal_basis(self):
+        with mock_aws():
+            table = create_pk_sk_table('agg')
+            table.put_item(Item={**SOURCES_SETTINGS_KEY, 'sources': [
+                {'id': 'old', 'retention_days': 90},
+                {'id': 'new', 'retention_days': 90, 'retention_legal_basis': 'Contract clause 4'},
+            ]})
+            profiles = load_source_profiles(table)
+        assert [(p['retention_days'], p['retention_legal_basis']) for p in profiles] == [
+            (90, None), (90, 'Contract clause 4')]
 
     def test_no_row_means_no_profiles(self):
         with mock_aws():
