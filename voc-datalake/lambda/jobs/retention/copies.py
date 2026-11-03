@@ -65,13 +65,17 @@ def _tombstone(run: Mapping[str, Any], item: Mapping[str, Any], store: str, now:
 
 def write_tombstones(aggregates_table: Any, run: Mapping[str, Any], items: Sequence[Mapping[str, Any]],
                      store: str) -> None:
-    """One tombstone per item, batched (a retried run re-writes the same keys)."""
+    """One tombstone per item, one PutItem each (a retried run re-writes the same keys).
+
+    Not a batch: ``dynamodb:BatchWriteItem`` would also let this role DELETE audit rows (IAM cannot tell a batch
+    put from a batch delete), so voc-retention holds PutItem only on voc-aggregates and the audit-row guard
+    (lib/utils/audit-row-guard.ts) denies it every change or delete of an ``AUDIT#`` row.
+    """
     if not items:
         return
     now = now_iso()
-    with aggregates_table.batch_writer(overwrite_by_pkeys=['pk', 'sk']) as batch:
-        for item in items:
-            batch.put_item(Item=_tombstone(run, item, store, now))
+    for item in items:
+        aggregates_table.put_item(Item=_tombstone(run, item, store, now))
 
 
 class ItemDeleter:
