@@ -26,7 +26,7 @@ import {
 const STAGE = 'v1';
 /** A `{param}` in the decoded path: one or more segments (waf-crs-scope.ts segmentRegex). */
 const PARAM = '[^/]+(?:/[^/]+)*';
-/** The two public submit routes (customers' free text) and the webhooks keep the content body rules counted. */
+/** The two public submit routes (customers' free text) and the webhooks keep every body rule counted. */
 const SUBMITS_AND_WEBHOOKS = ['/feedback-forms/{form_id}/submit', '/voting-sessions/{session_id}/submit', '/webhooks/{plugin}'];
 const LABEL = (rule: keyof typeof CRS_RULE_LABELS) => ({ LabelMatchStatement: { Scope: 'LABEL', Key: CRS_RULE_LABELS[rule] } });
 const PATH = (regex: string) => ({
