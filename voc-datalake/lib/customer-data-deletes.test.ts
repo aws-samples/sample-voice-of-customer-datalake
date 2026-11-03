@@ -24,9 +24,10 @@ const PERSONA_GENERATOR = 'VocApiStack/PersonaGeneratorRole';
 const ENGAGEMENT_API = 'VocApiStack/EngagementLambdaRole';
 const SETTINGS_API = 'VocApiStack/SettingsLambdaRole';
 
-/** `ALL`: the whole table; otherwise the `dynamodb:LeadingKeys` patterns the delete is pinned to. */
-const ALL = 'whole table';
-type Scope = typeof ALL | readonly string[];
+/** `WHOLE_TABLE`: no key condition; otherwise the `dynamodb:LeadingKeys` patterns the delete is pinned to. */
+const ALL = '<whole table>';
+type Scope = readonly string[];
+const WHOLE_TABLE: Scope = [ALL];
 interface Deleter { readonly scope: Scope; readonly why: string }
 
 /** The circuit breaker's own row (plugins/_shared/circuit_breaker.py, shared/plugin_circuit.py). */
@@ -40,7 +41,7 @@ const INGESTOR_ROLES = [
 /** Every DynamoDB table that holds customer data, workspace artifacts or audit rows → who may delete there. */
 const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>> = {
   FeedbackTable: {
-    [RETENTION_ROLE]: { scope: ALL, why: 'erasure requests and declared retention limits (docs/source-policies.md)' },
+    [RETENTION_ROLE]: { scope: WHOLE_TABLE, why: 'erasure requests and declared retention limits (docs/source-policies.md)' },
   },
   AggregatesTable: {
     'VocApiStack/IntegrationsLambdaRole': CIRCUIT_ROW,
@@ -54,21 +55,21 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
     [SETTINGS_API]: { scope: ['BRIEFSUB'], why: 'the morning-brief subscriber row when a user turns the brief off' },
   },
   ProjectsTable: {
-    [PROJECTS_API]: { scope: ALL, why: 'workspace deletes: projects, personas, documents, revisions, comments, links' },
-    [PERSONA_GENERATOR]: { scope: ALL, why: 'replace mode deletes the personas it replaces' },
+    [PROJECTS_API]: { scope: WHOLE_TABLE, why: 'workspace deletes: projects, personas, documents, revisions, comments, links' },
+    [PERSONA_GENERATOR]: { scope: WHOLE_TABLE, why: 'replace mode deletes the personas it replaces' },
   },
   JobsTable: {
-    [PROJECTS_API]: { scope: ALL, why: 'a project delete sweeps its job rows' },
+    [PROJECTS_API]: { scope: WHOLE_TABLE, why: 'a project delete sweeps its job rows' },
     'VocApiStack/GlobalMcpTokensApiRole': { scope: ['MCPOAUTH#*'], why: 'consumes single-use OAuth relay rows' },
   },
   ParticipantsTable: {
-    [ENGAGEMENT_API]: { scope: ALL, why: 'list / person / project-link deletes and participant erasure' },
+    [ENGAGEMENT_API]: { scope: WHOLE_TABLE, why: 'list / person / project-link deletes and participant erasure' },
   },
   FeatureRequestsTable: {
-    [ENGAGEMENT_API]: { scope: ALL, why: 'board, request and +1 deletes' },
+    [ENGAGEMENT_API]: { scope: WHOLE_TABLE, why: 'board, request and +1 deletes' },
   },
   ConversationsTable: {
-    'VocApiStack/ChatLambdaRole': { scope: ALL, why: 'DELETE /chat/conversations/{id} (the caller\'s own)' },
+    'VocApiStack/ChatLambdaRole': { scope: WHOLE_TABLE, why: 'DELETE /chat/conversations/{id} (the caller\'s own)' },
   },
   // Nothing is deleted in these: memory forgets by tombstone, agents archive, Radar never removes a review.
   MemoryTable: {},
@@ -156,9 +157,9 @@ function allowGrants(): Grant[] {
 // Parsed once: every case filters the same statements.
 const grants = allowGrants();
 
-/** The LeadingKeys patterns a statement is pinned to, or ALL. */
+/** The LeadingKeys patterns a statement is pinned to; `WHOLE_TABLE` when it has no condition. */
 function scopeOf(grant: Grant): Scope {
-  if (grant.condition === undefined) return ALL;
+  if (grant.condition === undefined) return WHOLE_TABLE;
   const parsed = LeadingKeysSchema.parse(grant.condition);
   const keys = parsed['ForAllValues:StringLike'] ?? parsed['ForAllValues:StringEquals'];
   if (keys === undefined) throw new Error(`${grant.role}: a delete with a condition that is not LeadingKeys`);
@@ -168,12 +169,14 @@ function scopeOf(grant: Grant): Scope {
 /** Matches the table itself (`<table>` / `<table>/index/...`) by its logical id in a GetAtt or an import. */
 const onTable = (table: string) => (grant: Grant) => new RegExp(`${table}[0-9A-F]{8}`).test(grant.resource);
 
+/** Two scopes of one role together: the whole table wins over any key list. */
+const unionOf = (a: Scope, b: Scope): Scope => (a.includes(ALL) || b.includes(ALL)
+  ? WHOLE_TABLE : [...new Set([...a, ...b])].sort(byCodeUnit));
+
 function tableDeleters(table: string): Record<string, Scope> {
   const out: Record<string, Scope> = {};
   for (const grant of grants.filter(onTable(table)).filter((g) => g.actions.some((a) => DYNAMO_DELETE.test(a)))) {
-    const scope = scopeOf(grant);
-    const held = out[grant.role];
-    out[grant.role] = held === ALL || scope === ALL ? ALL : [...new Set([...(held ?? []), ...scope])].sort(byCodeUnit);
+    out[grant.role] = unionOf(out[grant.role] ?? [], scopeOf(grant));
   }
   return out;
 }
@@ -181,14 +184,14 @@ function tableDeleters(table: string): Record<string, Scope> {
 /** The object-key globs a raw-bucket statement names (`/*` = the whole bucket). */
 function rawBucketGlobs(grant: Grant): string[] {
   if (!grant.resource.includes('RawDataBucket')) return [];
-  return [...grant.resource.matchAll(/"\/([^"]*)"/g)].map((match) => match[1]);
+  return [...grant.resource.matchAll(/"\/([^"]*)"/g)].flatMap((match) => match[1] ?? []);
 }
 
 const globMatches = (glob: string, key: string): boolean =>
   new RegExp(`^${glob.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`).test(key);
 
 function prefixDeleters(prefix: string): string[] {
-  const samples = RAW_BUCKET_PREFIXES[prefix];
+  const samples = RAW_BUCKET_PREFIXES[prefix] ?? [];
   return [...new Set(grants
     .filter((grant) => grant.actions.some((action) => S3_DELETE.test(action)))
     .filter((grant) => rawBucketGlobs(grant).some((glob) => samples.some((key) => globMatches(glob, key))))
@@ -206,7 +209,7 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
 
   it.each(Object.entries(TABLE_DELETERS))('%s: exactly the allowlisted roles delete, each in its scope', (table, allowed) => {
     const expected = Object.fromEntries(Object.entries(allowed).map(([role, deleter]) =>
-      [role, deleter.scope === ALL ? ALL : [...deleter.scope].sort(byCodeUnit)]));
+      [role, [...deleter.scope].sort(byCodeUnit)]));
     expect(tableDeleters(table)).toStrictEqual(expected);
   });
 
