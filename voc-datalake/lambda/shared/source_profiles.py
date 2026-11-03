@@ -8,7 +8,7 @@ is restricted to explicitly granted users, and the dimension values and tags
 every item from it starts with. Stored shape (``pk SETTINGS#sources``, ``sk
 config`` in the aggregates table)::
 
-    {sources: [{id, label, pii, retention_days, restricted,
+    {sources: [{id, label, pii, retention_days, retention_legal_basis, restricted,
                 dimension_defaults: {key: value}, tags: [str],
                 radar_brand?, radar_domains?}],     # Radar sources only (shared.radar_brands)
      updated_at, updated_by}
@@ -43,6 +43,7 @@ from shared.dimension_config import (
     validate_tags,
 )
 from shared.exceptions import ServiceUnavailableError
+from shared.legal_basis import required_legal_basis
 from shared.logging import logger
 from shared.radar_brands import radar_profile_fields
 
@@ -116,6 +117,24 @@ def _retention_days(entry: Mapping[str, Any], what: str) -> int | None:
     return int(raw)
 
 
+def _retention_legal_basis(entry: Mapping[str, Any], what: str, retention_days: int | None,
+                           *, required: bool) -> str | None:
+    """Why the source's items are deleted after ``retention_days`` (``shared.legal_basis``); None without a period.
+
+    Required on save (``required``) whenever a period is set. A stored profile from
+    before 6.00.00 may have a period and no basis: it keeps running, and its audit
+    rows say the basis was not recorded.
+    """
+    if retention_days is None:
+        return None
+    raw = entry.get('retention_legal_basis')
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        if required:
+            raise ValueError(f'{what} retention_legal_basis is required when retention_days is set')
+        return None
+    return required_legal_basis(raw, f'{what} retention_legal_basis')
+
+
 def _dimension_defaults(
     entry: Mapping[str, Any], what: str, dimensions_config: list[dict[str, Any]] | None,
 ) -> dict[str, str]:
@@ -141,10 +160,11 @@ def _dimension_defaults(
     return defaults
 
 
-def _profile(entry: object, dimensions_config: list[dict[str, Any]] | None) -> dict[str, Any]:
+def _profile(entry: object, dimensions_config: list[dict[str, Any]] | None, *, strict: bool) -> dict[str, Any]:
     source = as_object(entry, 'source profile')
     source_id = _source_id(source)
     what = f'Source "{source_id}"'
+    retention_days = _retention_days(source, what)
     try:
         tags = validate_tags(source.get('tags'))
     except ValueError as e:
@@ -153,7 +173,8 @@ def _profile(entry: object, dimensions_config: list[dict[str, Any]] | None) -> d
         'id': source_id,
         'label': bounded_text(source, 'label', MAX_LABEL_CHARS, f'{what} label') or source_id,
         'pii': _pii(source, what),
-        'retention_days': _retention_days(source, what),
+        'retention_days': retention_days,
+        'retention_legal_basis': _retention_legal_basis(source, what, retention_days, required=strict),
         'restricted': strict_bool(source, 'restricted', False, f'{what} restricted'),
         'dimension_defaults': _dimension_defaults(source, what, dimensions_config),
         'tags': tags,
@@ -162,8 +183,9 @@ def _profile(entry: object, dimensions_config: list[dict[str, Any]] | None) -> d
     }
 
 
-def _profiles(value: object, dimensions_config: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    profiles = [_profile(entry, dimensions_config)
+def _profiles(value: object, dimensions_config: list[dict[str, Any]] | None, *,
+              strict: bool) -> list[dict[str, Any]]:
+    profiles = [_profile(entry, dimensions_config, strict=strict)
                 for entry in bounded_list(value, MAX_SOURCE_PROFILES, 'source profiles')]
     ids = [profile['id'] for profile in profiles]
     if len(set(ids)) != len(ids):
@@ -175,9 +197,10 @@ def validate_source_profiles(value: object, dimensions_config: list[dict[str, An
     """The normalised profiles list, or ValueError with a client-safe message.
 
     ``dimension_defaults`` must name configured dimensions and their values
-    (exact value names, as the Settings editor offers them).
+    (exact value names, as the Settings editor offers them), and a profile with
+    ``retention_days`` must state its ``retention_legal_basis`` (``shared.legal_basis``).
     """
-    return _profiles(value, dimensions_config)
+    return _profiles(value, dimensions_config, strict=True)
 
 
 def load_source_profiles(table: Any) -> list[dict[str, Any]]:
@@ -187,10 +210,11 @@ def load_source_profiles(table: Any) -> list[dict[str, Any]]:
     corrupt row (ValueError): silently dropping a profile would un-restrict its
     source. ``dimension_defaults`` are NOT re-checked against today's dimensions
     (the dimensions may have changed since the save); every consumer passes them
-    through ``resolve_dimensions``.
+    through ``resolve_dimensions``. Nor is ``retention_legal_basis`` required: a profile
+    saved before 6.00.00 keeps its retention period without one (``shared.legal_basis``).
     """
     item = table.get_item(Key=SOURCES_SETTINGS_KEY, ConsistentRead=True).get('Item') or {}
-    return _profiles(item.get('sources'), None)
+    return _profiles(item.get('sources'), None, strict=False)
 
 
 # Sources whose UNCONFIGURED default is stricter than allow. The public email inbox
@@ -201,7 +225,7 @@ _BUILT_IN_DEFAULTS: Final = {'email_intake': {'label': 'Email inbox', 'pii': PII
 def _default_profile(source_id: str) -> dict[str, Any]:
     return {
         'id': source_id, 'label': source_id, 'pii': PII_ALLOW, 'retention_days': None,
-        'restricted': False, 'dimension_defaults': {}, 'tags': [],
+        'retention_legal_basis': None, 'restricted': False, 'dimension_defaults': {}, 'tags': [],
         **_BUILT_IN_DEFAULTS.get(source_id, {}),
     }
 

@@ -14,10 +14,11 @@ from shared.feedback_types import feedback_type_dimension
 from shared.source_erasure import STALE_AFTER, source_lock_key
 from shared.test.moto_tables import create_aggregates_table_with_metric_index
 
+BASIS = 'GDPR art. 17 request #123'
 USER_CLAIMS = {'sub': 'user-1', 'cognito:username': 'casey', 'cognito:groups': 'users'}
 DIMENSIONS = [{'key': 'product', 'label': 'Product', 'values': [{'name': 'App'}, {'name': 'Web'}]}]
 PROFILE = {'id': 'support_tickets', 'label': 'Support', 'pii': 'redact', 'retention_days': 365,
-           'restricted': True, 'dimension_defaults': {'product': 'App'}, 'tags': ['support']}
+           'retention_legal_basis': 'DPA with the ticketing vendor, 12 months', 'restricted': True, 'dimension_defaults': {'product': 'App'}, 'tags': ['support']}
 
 
 @pytest.fixture
@@ -90,6 +91,13 @@ class TestSources:
         assert response['statusCode'] == 400
         assert 'unknown dimension' in body['error']
 
+    def test_a_retention_period_needs_its_legal_basis_on_save(self, route):
+        route('PUT', '/settings/dimensions', body={'dimensions': DIMENSIONS})
+        profile = {key: value for key, value in PROFILE.items() if key != 'retention_legal_basis'}
+        response, body = route('PUT', '/settings/sources', body={'sources': [profile]})
+        assert response['statusCode'] == 400
+        assert body['error'] == 'Source "support_tickets" retention_legal_basis is required when retention_days is set'
+
     def test_a_corrupt_dimensions_row_is_500_on_save(self, route, table):
         table.put_item(Item={'pk': 'SETTINGS#dimensions', 'sk': 'config', 'dimensions': 'x'})
         response, _ = route('PUT', '/settings/sources', body={'sources': []})
@@ -104,7 +112,7 @@ class TestSources:
 class TestErasure:
     def test_start_stores_only_the_hash_and_invokes_the_worker(self, route, invoke, table):
         response, body = route('POST', '/settings/erasure',
-                               body={'field': 'email', 'value': ' ana@example.com ', 'source': 'support_tickets'})
+                               body={'field': 'email', 'legal_basis': BASIS, 'value': ' ana@example.com ', 'source': 'support_tickets'})
         assert response['statusCode'] == 202
         job = body['job']
         assert job['job_id'].startswith('er_')
@@ -118,35 +126,62 @@ class TestErasure:
 
     @pytest.mark.usefixtures('invoke')
     @pytest.mark.parametrize('body', [
-        {'field': 'name', 'value': 'x'},
-        {'field': 'author', 'value': '  '},
-        {'field': 'author', 'value': 'x' * 1001},
-        {'field': 'author', 'value': 'x', 'source': 'Bad Id'},
-        {'field': 'source_id', 'value': 'x1'},
-        {'field': 'csv_row_id', 'value': 'row-7', 'source': ''},
+        {'field': 'name', 'value': 'x', 'legal_basis': BASIS},
+        {'field': 'author', 'value': '  ', 'legal_basis': BASIS},
+        {'field': 'author', 'value': 'x' * 1001, 'legal_basis': BASIS},
+        {'field': 'author', 'value': 'x', 'source': 'Bad Id', 'legal_basis': BASIS},
+        {'field': 'source_id', 'value': 'x1', 'legal_basis': BASIS},
+        {'field': 'csv_row_id', 'value': 'row-7', 'source': '', 'legal_basis': BASIS},
     ])
     def test_invalid_requests_are_400(self, route, body):
         response, _ = route('POST', '/settings/erasure', body=body)
         assert response['statusCode'] == 400
 
+    @pytest.mark.parametrize('basis', [None, '', '   ', 7, 'b' * 301])
+    def test_an_erasure_without_a_legal_basis_is_400_and_starts_nothing(self, route, invoke, table, basis):
+        body = {'field': 'author', 'value': 'Jane', **({} if basis is None else {'legal_basis': basis})}
+        response, answer = route('POST', '/settings/erasure', body=body)
+        assert response['statusCode'] == 400
+        assert 'legal_basis' in answer['error']
+        invoke.assert_not_called()
+        assert table.scan()['Count'] == 0
+
+    @pytest.mark.usefixtures('invoke')
+    def test_the_legal_basis_is_stored_trimmed_on_the_job_and_shown_in_its_view(self, route, table):
+        response, body = route('POST', '/settings/erasure',
+                               body={'field': 'author', 'value': 'Jane', 'legal_basis': f'  {BASIS} '})
+        assert (response['statusCode'], body['job']['legal_basis']) == (202, BASIS)
+        stored = table.get_item(Key={'pk': 'JOB#erasure', 'sk': body['job']['job_id']})['Item']
+        assert stored['legal_basis'] == BASIS
+        _, listed = route('GET', '/settings/erasure')
+        assert listed['jobs'][0]['legal_basis'] == BASIS
+
+    def test_the_job_view_carries_every_copy_counter_and_the_files_needing_review(self):
+        view = settings_handler.erasure_job_view({
+            'job_id': 'er_000000000001', 'status': 'completed', 'deleted_radar_items': 2, 'artifacts_marked': 3,
+            'files_needing_review': {'count': 1, 'keys': ['raw/csv_upload/2026/01/01/j.csv']}})
+        assert (view['deleted_items'], view['deleted_radar_items'], view['artifacts_marked']) == (0, 2, 3)
+        assert view['files_needing_review'] == {'count': 1, 'keys': ['raw/csv_upload/2026/01/01/j.csv']}
+        assert 'files_needing_review' not in settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
+
     @pytest.mark.usefixtures('invoke')
     @pytest.mark.parametrize('field', ['source_id', 'csv_row_id'])
     def test_an_id_erasure_names_its_source(self, route, field):
-        response, body = route('POST', '/settings/erasure', body={'field': field, 'value': 'x1'})
+        response, body = route('POST', '/settings/erasure', body={'field': field, 'legal_basis': BASIS, 'value': 'x1'})
         assert (response['statusCode'], body['error']) == (400, f'source is required when field is {field}')
-        response, body = route('POST', '/settings/erasure', body={'field': field, 'value': 'x1', 'source': 'tickets'})
+        response, body = route('POST', '/settings/erasure', body={'field': field, 'legal_basis': BASIS, 'value': 'x1', 'source': 'tickets'})
         assert (response['statusCode'], body['job']['source']) == (202, 'tickets')
 
     @pytest.mark.usefixtures('invoke')
     def test_admin_only(self, route):
-        response, _ = route('POST', '/settings/erasure', body={'field': 'author', 'value': 'x'}, claims=USER_CLAIMS)
+        response, _ = route('POST', '/settings/erasure', body={'field': 'author', 'legal_basis': BASIS, 'value': 'x'}, claims=USER_CLAIMS)
         assert response['statusCode'] == 403
         response, _ = route('GET', '/settings/erasure', claims=USER_CLAIMS)
         assert response['statusCode'] == 403
 
     def test_a_failed_invoke_fails_the_job(self, route, invoke):
         invoke.side_effect = RuntimeError('down')
-        response, _ = route('POST', '/settings/erasure', body={'field': 'author', 'value': 'x'})
+        response, _ = route('POST', '/settings/erasure', body={'field': 'author', 'legal_basis': BASIS, 'value': 'x'})
         assert response['statusCode'] == 500
         _, body = route('GET', '/settings/erasure')
         assert [job['status'] for job in body['jobs']] == ['failed']
@@ -162,7 +197,7 @@ class TestErasure:
 
     def test_without_the_worker_configured(self, route):
         with patch.object(settings_handler, 'RETENTION_FUNCTION', ''):
-            response, _ = route('POST', '/settings/erasure', body={'field': 'author', 'value': 'x'})
+            response, _ = route('POST', '/settings/erasure', body={'field': 'author', 'legal_basis': BASIS, 'value': 'x'})
         assert response['statusCode'] == 500
 
 
@@ -173,7 +208,7 @@ def _counted(table, source: str) -> None:
 
 
 def _whole(source_id: str, **extra) -> dict:
-    return {'field': 'source', 'value': source_id, 'confirm': source_id, **extra}
+    return {'field': 'source', 'value': source_id, 'confirm': source_id, 'legal_basis': BASIS, **extra}
 
 
 @pytest.mark.usefixtures('table')
@@ -196,7 +231,7 @@ class TestWholeSourceErasure:
 
     @pytest.mark.usefixtures('invoke')
     @pytest.mark.parametrize(('body', 'error'), [
-        ({'field': 'source', 'value': 'tickets'}, 'confirm must repeat the source id'),
+        ({'field': 'source', 'value': 'tickets', 'legal_basis': BASIS}, 'confirm must repeat the source id'),
         (_whole('tickets', confirm='ticket'), 'confirm must repeat the source id'),
         (_whole('tickets', confirm='TICKETS'), 'confirm must repeat the source id'),
         (_whole('tickets', source='web'), 'source must equal value when field is source'),
@@ -310,7 +345,7 @@ class TestWholeSourceErasureLock:
 
     @pytest.mark.usefixtures('invoke')
     def test_an_id_erasure_takes_no_lock(self, route, table):
-        response, _ = route('POST', '/settings/erasure', body={'field': 'author', 'value': 'x'})
+        response, _ = route('POST', '/settings/erasure', body={'field': 'author', 'legal_basis': BASIS, 'value': 'x'})
         assert response['statusCode'] == 202
         assert table.scan()['Count'] == 1
 

@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
@@ -80,6 +81,7 @@ from shared.exceptions import (
     ServiceUnavailableError,
     ValidationError,
 )
+from shared.legal_basis import required_legal_basis
 from shared.logging import logger, tracer
 from shared.model_config import (
     ALLOWED_MODEL_IDS,
@@ -1743,16 +1745,38 @@ def create_feedback_type_dimension_route():
 MAX_ERASURE_VALUE_CHARS = 1_000
 MAX_LISTED_ERASURE_JOBS = 20
 ERASURE_VIEW_FIELDS = (
-    'job_id', 'status', 'field', 'source', 'value_hash', 'deleted_items', 'deleted_objects',
+    'job_id', 'status', 'field', 'source', 'value_hash', 'legal_basis', 'deleted_items', 'deleted_objects',
     'started_by', 'created_at', 'finished_at', 'error', 'phase', 'progress_at',
 )
+# Counters the worker adds as it reaches each copy (jobs/retention/handler.py); 0 when absent.
+ERASURE_VIEW_COUNTERS = ('deleted_items', 'deleted_objects', 'deleted_radar_items', 'artifacts_marked')
 
 
 SOURCE_SCOPED_ERASURE_FIELDS: Final = frozenset({'source_id', 'csv_row_id'})
 
 
-def _erasure_request(body: dict) -> tuple[str, str, str | None]:
-    """``(field, value, source)`` from a POST body, or 400. The value is never echoed."""
+@dataclass(frozen=True)
+class ErasureRequest:
+    """A validated ``POST /settings/erasure`` body (the value is never echoed or stored)."""
+
+    field: str
+    value: str
+    source: str | None
+    legal_basis: str
+
+
+def _erasure_request(body: dict) -> ErasureRequest:
+    """The request from a POST body, or 400. ``legal_basis`` is required (shared/legal_basis.py)."""
+    try:
+        legal_basis = required_legal_basis(body.get('legal_basis'))
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    field, value, source = _erasure_target(body)
+    return ErasureRequest(field, value, source, legal_basis)
+
+
+def _erasure_target(body: dict) -> tuple[str, str, str | None]:
+    """``(field, value, source)`` from a POST body, or 400."""
     field = body.get('field')
     if field not in ERASE_FIELDS:
         raise ValidationError(f"field must be one of: {', '.join(ERASE_FIELDS)}")
@@ -1800,25 +1824,32 @@ def _whole_source_request(body: dict, value: str, source: str | None) -> tuple[s
 def erasure_job_view(item: dict) -> dict:
     """The API's erasure ``Job`` (no keys; the erased value is never stored, only its hash)."""
     view = {field: item.get(field) for field in ERASURE_VIEW_FIELDS if item.get(field) is not None}
-    for counter in ('deleted_items', 'deleted_objects'):
+    for counter in ERASURE_VIEW_COUNTERS:
         view[counter] = int(item.get(counter) or 0)
+    review = item.get('files_needing_review')
+    if isinstance(review, dict):
+        # Whole-file uploads that hold erased rows AND others (keys only, never content).
+        view['files_needing_review'] = {
+            'count': int(review.get('count') or 0),
+            'keys': [str(key) for key in review.get('keys') or []],
+        }
     return view
 
 
-def _new_erasure_job(field: str, value: str, source: str | None, event: dict) -> dict:
+def _new_erasure_job(request: ErasureRequest, event: dict) -> dict:
     now = datetime.now(UTC)
     job_id = f'{ERASURE_JOB_PREFIX}{int(now.timestamp() * 1000):012x}'
     item = {
-        'pk': ERASURE_JOB_PK, 'sk': job_id, 'job_id': job_id, 'status': 'queued', 'field': field,
-        'value_hash': sha256_hex(value), 'deleted_items': 0,
+        'pk': ERASURE_JOB_PK, 'sk': job_id, 'job_id': job_id, 'status': 'queued', 'field': request.field,
+        'value_hash': sha256_hex(request.value), 'legal_basis': request.legal_basis, 'deleted_items': 0,
         'deleted_objects': 0, 'started_by': _caller_label(event), 'created_at': now.isoformat(),
     }
-    if source:
-        item['source'] = source
-    if field == SOURCE_FIELD:
+    if request.source:
+        item['source'] = request.source
+    if request.field == SOURCE_FIELD:
         # Closes the race the live-job check leaves open (shared/source_erasure.py).
         try:
-            acquire_source_lock(_configured_table(), value, job_id, now)
+            acquire_source_lock(_configured_table(), request.value, job_id, now)
         except SourceLocked as exc:
             raise ConflictError('An erasure of this source is already running') from exc
     try:
@@ -1850,6 +1881,9 @@ def _release_erasure_lock(job: dict) -> None:
 def start_erasure_route():
     """Erase every item matching ``field == value`` (admin): 202 ``{job}``.
 
+    The body states the request's ``legal_basis`` (required since 6.00.00, kept on
+    the job row, its audit row and every tombstone).
+
     The retention worker (``RETENTION_FUNCTION``) does the deleting; the value
     travels in its async event only — the job row keeps a SHA-256 of it, and
     nothing here logs it.
@@ -1858,10 +1892,10 @@ def start_erasure_route():
     require_admin(event)
     if not RETENTION_FUNCTION:
         raise ConfigurationError('Retention worker not configured')
-    field, value, source = _erasure_request(json_object_body(app))
-    job = _new_erasure_job(field, value, source, event)
+    request = _erasure_request(json_object_body(app))
+    job = _new_erasure_job(request, event)
     try:
-        invoke_lambda_async(RETENTION_FUNCTION, {'mode': 'erase', 'job_id': job['job_id'], 'value': value})
+        invoke_lambda_async(RETENTION_FUNCTION, {'mode': 'erase', 'job_id': job['job_id'], 'value': request.value})
     except Exception as e:
         logger.warning('Failed to start the erasure worker', extra={'error_type': type(e).__name__})
         _configured_table().update_item(
@@ -1873,7 +1907,7 @@ def start_erasure_route():
         )
         _release_erasure_lock(job)
         raise ServiceError('Failed to start the erasure job') from e
-    logger.info('Erasure job started', extra={'job_id': job['job_id'], 'field': field})
+    logger.info('Erasure job started', extra={'job_id': job['job_id'], 'field': request.field})
     return Response(
         status_code=202,
         content_type=content_types.APPLICATION_JSON,
