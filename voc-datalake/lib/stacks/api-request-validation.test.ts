@@ -33,6 +33,7 @@ const ROOT = join(__dirname, '..', '..');
 const FORM_HANDLER = ['lambda', 'api', 'feedback_form_handler.py'];
 const BALLOTS_HANDLER = ['lambda', 'api', 'ballots_handler.py'];
 const DRAFT4 = 'http://json-schema.org/draft-04/schema#';
+const PINNED_MODELS = join(ROOT, 'schemas', 'public-body-models.json');
 
 const VALIDATED_ROUTES: Record<string, string> = {
   'POST /feedback-forms/{form_id}/submit': 'FeedbackFormSubmission',
@@ -126,6 +127,13 @@ describe('the models (JSON Schema draft 4, never stricter than the handler)', ()
     });
   });
 
+  // lambda/api/test/test_public_body_models_parity.py runs every boundary body through the handlers AND these
+  // models (draft-4 validator), from this pinned copy: a deliberate model change updates the JSON file too (the
+  // failure prints the difference).
+  it('the parity test reads exactly the synthesized models (schemas/public-body-models.json)', () => {
+    expect(JSON.parse(readFileSync(PINNED_MODELS, 'utf8'))).toStrictEqual(schemas());
+  });
+
   it('no model refuses extra fields (widget participant_token, pin bodies)', () => {
     for (const schema of Object.values(schemas())) {
       expect(z.object({ additionalProperties: z.unknown().optional() }).parse(schema).additionalProperties).toBeUndefined();
@@ -134,7 +142,9 @@ describe('the models (JSON Schema draft 4, never stricter than the handler)', ()
 
   it('every field the embeddable widget sends is declared, and only `text` is required', () => {
     const widget = readFileSync(join(ROOT, 'lambda', 'api', 'static', 'feedback-widget.js'), 'utf8');
+    // The widget's flat payload literal; a nested object in it would end the match early, so the list is pinned.
     const payload = /var payload = \{([^}]*)\}/.exec(widget)?.[1] ?? '';
+    expect(payload, 'feedback-widget.js: no flat `var payload = {…}` literal').not.toBe('');
     const fields = payload.split(',').map((entry) => entry.split(':')[0]?.trim());
     expect(fields).toStrictEqual(['text', 'rating', 'name', 'email', 'page_url']);
     const schema = z.object({ required: z.array(z.string()), properties: z.record(z.string(), z.unknown()) })

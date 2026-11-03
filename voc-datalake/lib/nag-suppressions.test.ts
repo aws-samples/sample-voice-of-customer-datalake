@@ -225,10 +225,9 @@ describe('cdk-nag acknowledgements', () => {
     it('declares no acknowledgement that covers nothing in either shape', () => {
       const declared = new Set(shapes.flatMap((shape) => [...shape.declared]));
       const used = new Set(shapes.flatMap((shape) => [...shape.used]));
-      // Vacuity: the recorder saw the app's acknowledgements and the findings they cover (77 of each in
-      // 5.77.00). A floor a little under that: it catches a recorder that misses a good share of them, and a
-      // release that fixes more findings lowers it with the count.
-      expect(Math.min(declared.size, used.size)).toBeGreaterThan(70);
+      // The exact number of acknowledged findings, so a change that adds or removes an acknowledgement says so
+      // in its diff (and a recorder that misses some fails). Update it with the acknowledgement.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 75, used: 75 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

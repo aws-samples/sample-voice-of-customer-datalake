@@ -1,0 +1,86 @@
+{
+  "FeedbackFormSubmission": {
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "FeedbackFormSubmission",
+    "type": "object",
+    "required": [
+      "text"
+    ],
+    "properties": {
+      "text": {
+        "type": "string",
+        "minLength": 1
+      },
+      "rating": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 1,
+        "maximum": 10
+      },
+      "name": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 200
+      },
+      "email": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 254
+      },
+      "page_url": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 4096
+      },
+      "custom_fields": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "maxProperties": 20,
+        "patternProperties": {
+          "^$": {
+            "not": {}
+          }
+        },
+        "additionalProperties": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ],
+          "maxLength": 1000
+        }
+      },
+      "dimensions": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "maxProperties": 10
+      }
+    }
+  },
+  "BallotSubmission": {
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "BallotSubmission",
+    "type": "object",
+    "properties": {
+      "notes": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  }
+}
