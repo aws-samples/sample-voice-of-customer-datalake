@@ -73,9 +73,9 @@ class FakeConversationsTable:
         stored.update({'title': title, 'custom_title': title})
         return {}
 
-    def delete_item(self, Key):
-        self.items.pop((Key['pk'], Key['sk']), None)
-        return {}
+    def delete_item(self, Key, ReturnValues=None):
+        old = self.items.pop((Key['pk'], Key['sk']), None)
+        return {'Attributes': dict(old)} if old and ReturnValues == 'ALL_OLD' else {}
 
     def query(self, KeyConditionExpression, **kwargs):
         self.query_calls.append(kwargs)

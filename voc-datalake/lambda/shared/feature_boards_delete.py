@@ -6,6 +6,9 @@ the board (so only admins can post while it empties), then deletes its requests 
 each with every support (``delete_request``), for at most ``DELETE_BUDGET_SECONDS``. When requests
 remain the board is kept and the answer says how many (``done: false``); the call is idempotent
 and resumes where the last one stopped. When none remain the board itself is deleted.
+
+Each deleted request and the board itself are recorded (``shared.delete_audit``, ``AUDIT#delete`` in
+the feature-requests table) as the admin who deleted them.
 """
 from __future__ import annotations
 
@@ -14,6 +17,7 @@ from dataclasses import dataclass, field
 from time import monotonic
 from typing import Any, Final
 
+from shared.delete_audit import record_delete
 from shared.exceptions import ConflictError, ValidationError
 from shared.feature_boards_store import delete_board, update_board
 from shared.feature_requests_store import (
@@ -55,23 +59,29 @@ def parse_with_requests(params: Mapping[str, Any] | None) -> bool:
 
 
 def remove_board_and_requests(table: Any, participants: Any, board: Mapping[str, Any], *,
-                              with_requests: bool) -> BoardRemoval:
-    """Delete ``board`` (an empty one only, unless ``with_requests``)."""
+                              with_requests: bool, actor: Mapping[str, str] | None = None) -> BoardRemoval:
+    """Delete ``board`` (an empty one only, unless ``with_requests``); ``actor`` is recorded."""
     board_id = str(board['board_id'])
     if not with_requests:
         if has_requests(table, board_id):
             raise ConflictError(BOARD_NOT_EMPTY)
-        delete_board(table, participants, board)
+        _delete_board(table, participants, board, actor)
         return BoardRemoval(done=True, deleted=0, remaining=0)
-    deleted = _delete_requests(table, participants, board, monotonic() + DELETE_BUDGET_SECONDS)
+    deleted = _delete_requests(table, participants, board, monotonic() + DELETE_BUDGET_SECONDS, actor)
     remaining = count_board_requests(table, board_id)
     if remaining:
         return BoardRemoval(done=False, deleted=deleted, remaining=remaining)
-    delete_board(table, participants, board)
+    _delete_board(table, participants, board, actor)
     return BoardRemoval(done=True, deleted=deleted, remaining=0)
 
 
-def _delete_requests(table: Any, participants: Any, board: Mapping[str, Any], deadline: float) -> int:
+def _delete_board(table: Any, participants: Any, board: Mapping[str, Any], actor: Mapping[str, str] | None) -> None:
+    delete_board(table, participants, board)
+    record_delete(table, kind='feature_board', target={'board_id': str(board['board_id'])}, actor=actor)
+
+
+def _delete_requests(table: Any, participants: Any, board: Mapping[str, Any], deadline: float,
+                     actor: Mapping[str, str] | None) -> int:
     """Delete the board's requests until none is left or ``deadline`` passes (at least one is
     attempted per call, so every call makes progress); how many were deleted."""
     board_id = str(board['board_id'])
@@ -88,7 +98,7 @@ def _delete_requests(table: Any, participants: Any, board: Mapping[str, Any], de
                 return deleted
             request_id = str(row.get('request_id', ''))
             seen.add(request_id)
-            deleted += _delete_one(table, request_id, archive)
+            deleted += _delete_one(table, request_id, archive, actor)
 
 
 @dataclass
@@ -109,11 +119,20 @@ class _Archiver:
             self.done = True
 
 
-def _delete_one(table: Any, request_id: str, archive: _Archiver) -> int:
+def _delete_one(table: Any, request_id: str, archive: _Archiver, actor: Mapping[str, str] | None) -> int:
     """1 when the request was deleted; 0 when it was already gone (the index lags behind deletes)."""
     request = get_request(table, request_id)
     if request is None:
         return 0
     archive()
     delete_request(table, request)
+    record_feature_request_delete(table, request, actor, reason='board deleted')
     return 1
+
+
+def record_feature_request_delete(
+    table: Any, request: Mapping[str, Any], actor: Mapping[str, str] | None, *, reason: str | None = None,
+) -> None:
+    """The ``AUDIT#delete`` row of one deleted request (with its supports): ids only."""
+    target = {'request_id': str(request.get('request_id', '')), 'board_id': str(request.get('board_id') or '')}
+    record_delete(table, kind='feature_request', target=target, actor=actor, reason=reason)

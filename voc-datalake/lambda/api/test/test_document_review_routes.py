@@ -160,6 +160,14 @@ def test_an_editor_deletes_anyones_thread(call):
     assert call('GET', COMMENTS, OWNER)[1]['threads'] == []
 
 
+def test_a_deleted_thread_is_recorded_as_its_deleter(call, table):
+    thread = _comment(call, VIEWER)
+    call('DELETE', f'{COMMENTS}/{thread["comment_id"]}', EDITOR)
+    [row] = table.query(KeyConditionExpression='pk = :p', ExpressionAttributeValues={':p': 'AUDIT#delete'})['Items']
+    assert (row['kind'], row['target']['comment_id'], row['actor']) == (
+        'document_comment', thread['comment_id'], {'sub': 'editor-sub', 'kind': 'user'})
+
+
 # ── project members: share links ────────────────────────────────────────────
 
 def test_a_viewer_cannot_create_or_revoke_a_link(call):

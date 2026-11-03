@@ -35,6 +35,7 @@ from shared import design_assets
 from shared.extracted_design import LOGO_PREVIEW_PREFIX
 from shared.http_utils import UnsafeURLError, fetch_public_url
 from shared.logging import logger
+from shared.s3_versions import delete_every_version_of_keys
 
 MAX_LOGO_BYTES = 2_000_000
 LOGO_TIMEOUT_SECONDS = 10
@@ -168,23 +169,22 @@ def delete_previews(s3: Any, bucket: str, ref_id: str, extra_keys: Sequence[str]
     """Delete the reference's logo preview objects (``logo_preview_<ref id>.png|jpg|webp|svg``) and
     ``extra_keys`` (its copied icons, ``shared.design_icons.stored_icon_keys``) → keys asked for.
 
-    ONE ``DeleteObjects`` call (at most 1,000 keys): a key that does not exist is not an error
-    (S3 answers it as deleted), so the call is idempotent and safe to repeat. LogoPreviewDeleteError when
-    S3 reports a key it could not delete or the call itself fails; nothing for an empty bucket name or a
-    malformed id.
+    Every version and delete marker of each key goes (``shared.s3_versions``, at most 1,000 keys): a key
+    that does not exist has nothing to list, so the call is idempotent and safe to repeat.
+    LogoPreviewDeleteError when S3 refuses an entry or a call itself fails; nothing for an empty bucket
+    name or a malformed id.
     """
     own = preview_keys(ref_id)
     keys = [*own, *extra_keys][:MAX_DELETE_KEYS] if own else []
     if not bucket or not keys:
         return 0
     try:
-        answer = s3.delete_objects(Bucket=bucket, Delete={'Objects': [{'Key': k} for k in keys], 'Quiet': True})
+        refused = delete_every_version_of_keys(s3, bucket, keys)
     except (BotoCoreError, ClientError) as exc:
         logger.warning(f'Logo preview not deleted: {type(exc).__name__}')
         raise LogoPreviewDeleteError(type(exc).__name__) from exc
-    errors = answer.get('Errors') if isinstance(answer, dict) else None
-    if errors:
-        logger.warning('Logo preview not deleted', extra={'failed_keys': len(errors)})
+    if refused:
+        logger.warning('Logo preview not deleted', extra={'failed_keys': refused})
         raise LogoPreviewDeleteError('partial')
     return len(keys)
 

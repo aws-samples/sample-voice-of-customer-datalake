@@ -12,6 +12,7 @@ from typing import Any, Final
 from aws_lambda_powertools.event_handler.api_gateway import Router
 
 from shared import engagement_config
+from shared.delete_audit import actor_from_event
 from shared.engagement_common import created
 from shared.engagement_identity import require_board_admin
 from shared.exceptions import ConflictError
@@ -98,7 +99,8 @@ def remove_board(board_ref: str):
     scope = scope_for(viewer)
     board = scope.board(board_ref)
     removal = remove_board_and_requests(scope.table, engagement_config.participants_table(), board,
-                                        with_requests=with_requests)
+                                        with_requests=with_requests,
+                                        actor=actor_from_event(app.current_event.raw_event, admin=viewer.is_admin))
     logger.info('Board deleted' if removal.done else 'Board emptying', extra={
         'board_id': board['board_id'], 'requests_deleted': removal.deleted, 'remaining': removal.remaining,
         'by': viewer.subject})

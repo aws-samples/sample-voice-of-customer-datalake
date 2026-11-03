@@ -63,6 +63,7 @@ from shared.category_access import CategoryScope
 from shared.category_config import validate_categories
 from shared.category_gate import CATEGORIES_PK, CATEGORIES_SK, scope_for_caller
 from shared.data_version import bump_config_version
+from shared.delete_audit import actor_from_event, record_delete
 from shared.design_references import DESIGN_CAPTURE_ACTION
 from shared.digests import sha256_hex
 from shared.dimension_config import (
@@ -1456,6 +1457,8 @@ def archive_design_reference_route(ref_id: str):
         except design_logo.LogoPreviewDeleteError as e:
             raise ServiceUnavailableError('The reference is archived, but its logo preview could not be '
                                           'removed; try again') from e
+    record_delete(table, kind='design_reference_copies', target={'ref_id': ref_id},
+                  actor=actor_from_event(app.current_event.raw_event))
     return {'reference': company_context.reference_view(_reference_or_404(table, ref_id))}
 
 

@@ -32,6 +32,12 @@ class TestActorFromEvent:
     def test_never_an_email(self):
         assert 'a@example.com' not in str(actor_from_event(_event(sub='u-1', email='a@example.com')))
 
+    def test_the_route_can_decide_admin_itself(self):
+        board_token = _event(sub='b-1', **{'cognito:groups': 'admins'})
+        assert actor_from_event(board_token, admin=False) == {'sub': 'b-1', 'kind': 'user'}
+        assert actor_from_event(_event(sub='u-1'), admin=True) == {'sub': 'u-1', 'kind': 'admin'}
+        assert actor_from_event(_event(sub='agent:a'), admin=True)['kind'] == 'agent'
+
 
 class TestRecordDelete:
     def test_writes_one_audit_row_without_ttl_and_never_overwrites(self):

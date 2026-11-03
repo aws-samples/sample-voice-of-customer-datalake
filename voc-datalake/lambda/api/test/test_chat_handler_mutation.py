@@ -453,9 +453,20 @@ class TestTheRoutesCheckIdentityThenConfiguration:
 
     def test_a_delete_targets_exactly_the_callers_key(self, table):
         table.delete_item = MagicMock(return_value={})
+        table.put_item = MagicMock()
         with _as(USER_A):
             assert chat_handler.delete_conversation(conversation_id='conv_1') == {'success': True}
-        table.delete_item.assert_called_once_with(Key={'pk': PK_A, 'sk': 'CONV#conv_1'})
+        table.delete_item.assert_called_once_with(Key={'pk': PK_A, 'sk': 'CONV#conv_1'}, ReturnValues='ALL_OLD')
+        table.put_item.assert_not_called()  # nothing was there: no delete record
+
+    def test_a_delete_that_removed_a_conversation_is_recorded_as_the_caller(self, table):
+        table.delete_item = MagicMock(return_value={'Attributes': {'pk': PK_A, 'sk': 'CONV#conv_1'}})
+        table.put_item = MagicMock()
+        with _as(USER_A):
+            chat_handler.delete_conversation(conversation_id='conv_1')
+        item = table.put_item.call_args.kwargs['Item']
+        assert (item['pk'], item['kind'], item['target']) == ('AUDIT#delete', 'conversation', {'conversation_id': 'conv_1'})
+        assert item['actor']['kind'] == 'user'
 
     def test_a_get_by_id_targets_exactly_the_callers_key(self, table):
         table.get_item = MagicMock(return_value={'Item': _legacy_item()})

@@ -14,6 +14,7 @@ from aws_lambda_powertools.event_handler.api_gateway import Router
 
 from shared import engagement_config
 from shared.api import get_caller_subject, require_admin
+from shared.delete_audit import actor_from_event, record_delete
 from shared.engagement_common import created, id_list, is_id, normalize_email
 from shared.exceptions import NotFoundError, ValidationError
 from shared.logging import logger, tracer
@@ -159,7 +160,9 @@ def put_list(list_id: str):
 def remove_list(list_id: str):
     """Admin: the list, its memberships and project links go; the people stay."""
     require_admin(_event())
-    delete_list(_table(), _list_id(list_id))
+    table = _table()
+    delete_list(table, _list_id(list_id))
+    record_delete(table, kind='participant_list', target={'list_id': list_id}, actor=actor_from_event(_event()))
     logger.info('Participant list deleted', extra={'list_id': list_id})
     return {'success': True}
 
@@ -183,7 +186,9 @@ def post_members(list_id: str):
 def delete_member(list_id: str, person_id: str):
     table = _table()
     require_list(table, _list_id(list_id))
-    remove_member(table, list_id, _person_id(person_id))
+    if remove_member(table, list_id, _person_id(person_id)):
+        record_delete(table, kind='participant_list_member', target={'list_id': list_id, 'person_id': person_id},
+                      actor=actor_from_event(_event()))
     return {'success': True}
 
 

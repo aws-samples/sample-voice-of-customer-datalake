@@ -42,12 +42,13 @@ _SYSTEM_ACTOR: Final = {'sub': 'system', 'kind': 'system'}
 _MAX_TEXT: Final = 300
 
 
-def actor_from_event(event: Mapping[str, Any]) -> dict[str, str]:
+def actor_from_event(event: Mapping[str, Any], *, admin: bool | None = None) -> dict[str, str]:
     """``{sub, kind}`` of an API Gateway event's caller (never an email).
 
     ``agent`` / ``mcp`` for those synthetic subjects, ``plan`` for a plan step acting
     for its approver (the sub is the approver's), ``admin`` / ``user`` for a person,
-    ``system`` when the event carries no subject.
+    ``system`` when the event carries no subject. ``admin`` overrides the groups claim
+    when the route decided it itself (a board-pool token's groups are never honoured).
     """
     claims = claims_from_event(event)
     sub = claim_text(claims, 'sub')
@@ -59,8 +60,8 @@ def actor_from_event(event: Mapping[str, Any]) -> dict[str, str]:
         return {'sub': sub, 'kind': 'mcp'}
     if claim_text(claims, PLAN_PRINCIPAL_CLAIM).startswith(PLAN_PRINCIPAL_PREFIX):
         return {'sub': sub, 'kind': 'plan'}
-    groups = get_caller_groups(dict(event))
-    return {'sub': sub, 'kind': 'admin' if ADMIN_GROUP in groups else 'user'}
+    is_admin = ADMIN_GROUP in get_caller_groups(dict(event)) if admin is None else admin
+    return {'sub': sub, 'kind': 'admin' if is_admin else 'user'}
 
 
 def _texts(values: Mapping[str, str]) -> dict[str, str]:
