@@ -8,11 +8,27 @@
 import { expect } from 'vitest';
 import type { Template } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
+import { AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID, AUDIT_DENY_WRITE_SID } from '../utils/audit-row-guard';
 import { byCodeUnit } from '../utils/compare';
 import { itemAt } from './guards';
 
+const AUDIT_ROW_GUARD_SIDS: ReadonlySet<string> = new Set([AUDIT_DENY_CHANGE_SID, AUDIT_DENY_WRITE_SID,
+  AUDIT_DENY_OTHER_PARTITION_SID]);
+
+/**
+ * Whether a statement is one of the audit-row Denies (lib/utils/audit-row-guard.ts) that applyAppAspects adds to
+ * every role writing a table that holds `AUDIT#*` rows. The statement readers here and in api-stack-template.ts
+ * drop them: a per-role least-privilege case pins what the ROLE is granted, and those Denies are the same on every
+ * writer, pinned once over the whole app by audit-row-guard.test.ts. The IAM-size cases read the raw template, so
+ * they still count them.
+ */
+export function isAuditRowGuardStatement(statement: { readonly Sid?: string }): boolean {
+  return statement.Sid !== undefined && AUDIT_ROW_GUARD_SIDS.has(statement.Sid);
+}
+
 /** One raw IAM statement as synthesized (`Effect` defaults to Allow when absent). */
 const IamStatementSchema = z.object({
+  Sid: z.string().optional(),
   Effect: z.string().optional(),
   Action: z.union([z.string(), z.array(z.string())]),
   Resource: z.unknown(),
@@ -72,6 +88,7 @@ export function managedPolicies(template: Template): z.infer<typeof IamPolicySch
  * set — of the one policy whose own logical id starts with it. Without
  * `byIdPrefix`, the statements of customer-managed policies attached to the
  * role are included too: they are the role's permissions just the same.
+ * The audit-row Denies are left out ({@link isAuditRowGuardStatement}).
  */
 export function roleStatements(
   template: Template,
@@ -87,7 +104,8 @@ export function roleStatements(
   const managed = options.byIdPrefix
     ? []
     : managedPolicies(template).filter((policy) => isAttachedToRole(policy, roleLogicalId));
-  return [itemAt(policies, 0).policy, ...managed].flatMap((policy) => policy.PolicyDocument.Statement.map(normalize));
+  return [itemAt(policies, 0).policy, ...managed].flatMap((policy) => policy.PolicyDocument.Statement
+    .filter((statement) => !isAuditRowGuardStatement(statement)).map(normalize));
 }
 
 /** Sorted, de-duplicated Allow actions starting with `prefix` on resources naming `resourceFragment`. */

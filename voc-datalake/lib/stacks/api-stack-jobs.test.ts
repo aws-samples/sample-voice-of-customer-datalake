@@ -11,7 +11,7 @@ import { AwsSolutionsChecks } from 'cdk-nag';
 import { z } from 'zod';
 
 import { BEDROCK_FAILURE_RECORDING_RESERVE_SECONDS, pythonIntConstant } from '../test-support/cross-language-invariants';
-import { IamPolicySchema, isAttachedToRole, statementActions } from '../test-support/iam-statements';
+import { IamPolicySchema, isAttachedToRole, isAuditRowGuardStatement, statementActions } from '../test-support/iam-statements';
 import type { IamStatement } from '../test-support/iam-statements';
 import {
   RefSchema, apiTemplate, apiTemplatePrefixed, buildApiStack, serviceEnvironment, synthApiTemplate,
@@ -82,6 +82,9 @@ describe('ChatStream (AI assistant) delegation', () => {
     });
   }
 
+  /** {@link chatStatements} without the audit-row Denies (pinned by audit-row-guard.test.ts). */
+  const chatGrants = (chat: ParsedFunction) => chatStatements(chat).filter((statement) => !isAuditRowGuardStatement(statement));
+
   const actionsOf = statementActions;
 
   it('defaults the assistant to Sonnet 5.5', () => {
@@ -122,7 +125,7 @@ describe('ChatStream (AI assistant) delegation', () => {
   /** The ChatStream statements carrying a DynamoDB write action. */
   function chatWriteStatements(): IamStatement[] {
     const chat = byLogicalPrefix(functions(), 'ChatStreamApi');
-    return chatStatements(chat).filter((statement) => actionsOf(statement).some((action) =>
+    return chatGrants(chat).filter((statement) => actionsOf(statement).some((action) =>
       /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem)$/.test(action)));
   }
 
@@ -168,7 +171,8 @@ describe('prototype object IAM boundaries', () => {
     const policies = apiTemplate().findResources('AWS::IAM::Policy');
     const policy = Object.entries(policies).find(([logicalId]) => logicalId.includes(roleName));
     expect(policy, `no IAM policy found for ${roleName}`).toBeDefined();
-    return IamPolicySchema.parse(policy?.[1]).Properties.PolicyDocument.Statement;
+    return IamPolicySchema.parse(policy?.[1]).Properties.PolicyDocument.Statement
+      .filter((statement) => !isAuditRowGuardStatement(statement));
   }
 
   it('denies Data Explorer prototype writes without denying reads or other prefixes', () => {
@@ -568,6 +572,7 @@ const ProviderPolicySchema = z.object({
     Roles: z.array(z.unknown()).optional(),
     PolicyDocument: z.object({
       Statement: z.array(z.object({
+        Sid: z.string().optional(),
         Effect: z.string().optional(),
         Action: z.union([z.string(), z.array(z.string())]),
         Resource: z.unknown(),
@@ -582,7 +587,7 @@ function providerStatements(template: Template, provider: FixtureProvider): IamS
   return Object.values(template.findResources('AWS::IAM::Policy')).flatMap((resource) => {
     const parsed = ProviderPolicySchema.safeParse(resource);
     return parsed.success && isAttachedToRole(parsed.data.Properties, roleRef)
-      ? parsed.data.Properties.PolicyDocument.Statement
+      ? parsed.data.Properties.PolicyDocument.Statement.filter((statement) => !isAuditRowGuardStatement(statement))
       : [];
   });
 }

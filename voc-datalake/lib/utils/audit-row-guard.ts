@@ -15,9 +15,10 @@
  *   - a writer limited to one audit partition (the settings API's `AUDIT#delete` in voc-aggregates): Deny PutItem
  *     and BatchWriteItem on every OTHER audit partition (it cannot forge a retention row or a tombstone).
  *
- * The audit writer of a table is a role that deletes there without a key condition (a workspace delete records
- * itself with `record_delete`), or a role named in {@link NAMED_WRITERS}. An explicit Deny wins over every Allow, so
- * a later broad grant cannot reopen the rows.
+ * The audit writers are NAMED ({@link AUDIT_WRITERS}: the role that runs the code writing that table's audit rows),
+ * not inferred from the grants: a role that can delete in a table (the verification fixture provider, an operational
+ * cleanup) is not thereby allowed to write its audit trail. An explicit Deny wins over every Allow, so a later broad
+ * grant cannot reopen the rows.
  *
  * `ForAnyValue:StringLike`, not `ForAllValues`: in a Deny, `ForAllValues` would let a batch that mixes one audit key
  * with any other key through; `ForAnyValue` denies the request when ANY partition key it names matches, and is
@@ -45,7 +46,6 @@ export const AUDIT_DENY_OTHER_PARTITION_SID = 'DenyAuditRowWritesOutsideOwnParti
 
 const WRITE_ACTIONS = new Set(['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem',
   'dynamodb:BatchWriteItem', 'dynamodb:*']);
-const DELETE_ACTIONS = new Set(['dynamodb:DeleteItem', 'dynamodb:BatchWriteItem', 'dynamodb:*']);
 
 /** The tables that hold `AUDIT#*` rows, named like VocCoreStack's properties (a stack or a fixture's props fit). */
 export interface AuditRowTables {
@@ -56,7 +56,7 @@ export interface AuditRowTables {
   readonly conversationsTable?: dynamodb.ITable;
 }
 
-/** An audit writer that deletes nothing unscoped in its table, by the construct-path suffix of its role. */
+/** An audit writer of one table, by the construct-path suffix of its role. */
 export interface NamedAuditWriter {
   readonly table: dynamodb.ITable;
   readonly rolePathSuffixes: readonly string[];
@@ -69,13 +69,23 @@ export interface AuditGuardOptions {
   readonly writers: readonly NamedAuditWriter[];
 }
 
-/** The audit writers found by name, not by an unscoped delete (see the module comment). */
-const NAMED_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly rolePathSuffix: string;
+/** Every audit writer, per table (lambda/shared/delete_audit.py's callers, voc-retention). Each entry is pinned over
+ *  the whole app by audit-row-guard.test.ts. */
+const AUDIT_WRITERS: readonly { readonly table: keyof AuditRowTables; readonly rolePathSuffix: string;
   readonly partitionKey?: string }[] = [
   // voc-retention: AUDIT#retention (run rows) and AUDIT#tombstone#<source> (one per deleted item, batched).
   { table: 'aggregatesTable', rolePathSuffix: '/RetentionWorker/RetentionRole' },
   // The settings API (and its assist twin, same role): the AUDIT#delete row of an archived design reference's copies.
   { table: 'aggregatesTable', rolePathSuffix: '/SettingsLambdaRole', partitionKey: 'AUDIT#delete' },
+  // Project, persona, document, revision, product doc and comment deletes (the projects API and its assist twin);
+  // a replace regeneration's removed personas (the persona generator).
+  { table: 'projectsTable', rolePathSuffix: '/ProjectsLambdaRole' },
+  { table: 'projectsTable', rolePathSuffix: '/PersonaGeneratorRole' },
+  // Lists, people (participant erasure tombstones too), boards, requests and +1s.
+  { table: 'participantsTable', rolePathSuffix: '/EngagementLambdaRole' },
+  { table: 'featureRequestsTable', rolePathSuffix: '/EngagementLambdaRole' },
+  // A deleted conversation.
+  { table: 'conversationsTable', rolePathSuffix: '/ChatLambdaRole' },
 ];
 
 const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'featureRequestsTable',
@@ -83,7 +93,7 @@ const TABLE_KEYS = ['aggregatesTable', 'projectsTable', 'participantsTable', 'fe
 
 /** The guard options for the audit tables `tables` names (the tables it leaves out are not guarded). */
 export function auditRowGuardFor(tables: AuditRowTables): AuditGuardOptions {
-  const writers = NAMED_WRITERS.flatMap((writer) => {
+  const writers = AUDIT_WRITERS.flatMap((writer) => {
     const table = tables[writer.table];
     return table === undefined ? [] : [{ table, rolePathSuffixes: [writer.rolePathSuffix], partitionKey: writer.partitionKey }];
   });
@@ -106,20 +116,10 @@ function tablesWritten(statement: z.infer<typeof StatementSchema>, tableArns: Re
     .filter((resource): resource is string => typeof resource === 'string' && tableArns.has(resource));
 }
 
-const deletesWithoutCondition = (statement: z.infer<typeof StatementSchema>): boolean =>
-  statement.Condition === undefined && [statement.Action ?? []].flat().some((action) => DELETE_ACTIONS.has(action));
-
-/** For each guarded table (by its ARN token) a role's default policy writes: whether it deletes there unscoped. */
-function writtenTables(policy: iam.Policy, tableArns: ReadonlySet<string>): Map<string, boolean> {
-  const deletesUnscopedByArn = new Map<string, boolean>();
+/** The guarded tables (by their ARN tokens) a role's default policy writes. */
+function writtenTables(policy: iam.Policy, tableArns: ReadonlySet<string>): Set<string> {
   const statements = DocumentSchema.parse(policy.document.toJSON())?.Statement ?? [];
-  for (const statement of statements.map((raw) => StatementSchema.parse(raw))) {
-    const unscoped = deletesWithoutCondition(statement);
-    for (const arn of tablesWritten(statement, tableArns)) {
-      deletesUnscopedByArn.set(arn, unscoped || (deletesUnscopedByArn.get(arn) ?? false));
-    }
-  }
-  return deletesUnscopedByArn;
+  return new Set(statements.flatMap((raw) => tablesWritten(StatementSchema.parse(raw), tableArns)));
 }
 
 const AUDIT_KEYS = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [AUDIT_PARTITION_PATTERN] } };
@@ -132,8 +132,7 @@ const PUT_ACTIONS = ['dynamodb:PutItem', 'dynamodb:BatchWriteItem'];
 /** What a role may put in each table it writes: every audit partition, one, or none. */
 type PutRight = { readonly kind: 'any' } | { readonly kind: 'one'; readonly partitionKey: string } | { readonly kind: 'none' };
 
-function putRight(role: iam.Role, arn: string, deletesUnscoped: boolean, writers: readonly NamedAuditWriter[]): PutRight {
-  if (deletesUnscoped) return { kind: 'any' };
+function putRight(role: iam.Role, arn: string, writers: readonly NamedAuditWriter[]): PutRight {
   const named = writers.find((writer) => writer.table.tableArn === arn
     && writer.rolePathSuffixes.some((suffix) => role.node.path.endsWith(suffix)));
   if (named === undefined) return { kind: 'none' };
@@ -141,10 +140,10 @@ function putRight(role: iam.Role, arn: string, deletesUnscoped: boolean, writers
 }
 
 /** Add the audit-row Denies to one role (see the module comment). */
-function guardRole(role: iam.Role, written: Map<string, boolean>, writers: readonly NamedAuditWriter[]): void {
+function guardRole(role: iam.Role, written: ReadonlySet<string>, writers: readonly NamedAuditWriter[]): void {
   role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_CHANGE_SID, ['dynamodb:DeleteItem', 'dynamodb:UpdateItem'],
-    [...written.keys()]));
-  const rights = [...written].map(([arn, deletesUnscoped]) => ({ arn, right: putRight(role, arn, deletesUnscoped, writers) }));
+    [...written]));
+  const rights = [...written].map((arn) => ({ arn, right: putRight(role, arn, writers) }));
   const none = rights.filter(({ right }) => right.kind === 'none').map(({ arn }) => arn);
   if (none.length > 0) role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_WRITE_SID, PUT_ACTIONS, none));
   for (const { arn, right } of rights) {
