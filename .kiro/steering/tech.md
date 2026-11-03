@@ -297,7 +297,12 @@ npm run generate:menu       # Generate menu config only
 ## Security & Cost Best Practices
 
 - **Authentication**: Cognito User Pool with admins/users groups
-- **API Protection**: per-method API Gateway throttling (`lib/stacks/api-gateway.ts`); no WAF by default (a fixed monthly cost); opt in with `-c enableWaf=true` (`lib/utils/waf.ts`, also on with `-c performanceTier=true`), recommended for production. IAM: no CDK grant wildcards (`lib/utils/exact-grants.ts`), per-function log grants (`lib/utils/lambda-log-grants.ts`), Claude grants in AWS's cross-Region shape (`lib/utils/claude-model-grant.ts`); Cognito Plus is opt-in (`-c cognitoPlus=true`, `lib/utils/cognito-plus.ts`)
+- **API Protection**: per-method API Gateway throttling (`lib/stacks/api-gateway.ts`); no WAF by default (a fixed monthly cost); opt in with `-c enableWaf=true` (`lib/utils/waf.ts`, also on with `-c performanceTier=true`), recommended for production. IAM: no CDK grant wildcards (`lib/utils/exact-grants.ts`), per-function log grants (`lib/utils/lambda-log-grants.ts`), Claude grants in AWS's cross-Region shape (`lib/utils/claude-model-grant.ts`); exact DynamoDB writes per role,
+  a delete only where the code deletes, operational deletes pinned by `dynamodb:LeadingKeys`
+  (`lib/utils/table-write-grants.ts`, inventory `lib/customer-data-deletes.test.ts`); an explicit Deny on `AUDIT#*`
+  rows for every writer but their own (`lib/utils/audit-row-guard.ts`); workspace deleters remove every S3 version
+  on their own prefixes (`lib/utils/workspace-object-deletes.ts`); the processor and the aggregator have a role each
+  (`lib/stacks/processing-roles.ts`); Cognito Plus is opt-in (`-c cognitoPlus=true`, `lib/utils/cognito-plus.ts`)
 - **Encryption**: KMS at rest, TLS in transit
 - **IAM**: Least-privilege per Lambda
 - **Secrets**: Never hardcode; use Secrets Manager

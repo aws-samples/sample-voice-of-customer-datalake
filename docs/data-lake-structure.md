@@ -97,7 +97,9 @@ send `If-None-Match` (statement `DenyRawWritesWithoutIfNoneMatch`, `lib/stacks/c
 so no writer, ours or a custom out-of-band one, can overwrite a raw object; a CopyObject into `raw/`
 is refused too. The Data Explorer (admin-only) can create a new object but refuses (409) to
 overwrite an existing key under `raw/`. No lifecycle rule expires anything under `raw/`, current or
-noncurrent; the other prefixes (below) keep a 90-day noncurrent-version expiry. The bucket is kept when the stacks are deleted (`protectData`, the default); under
+noncurrent. The other prefixes (below) have no noncurrent-version rule either (since 6.00.00): a workspace
+delete removes every version of the object itself, and only `scratch/` expires (current and noncurrent versions
+after 2 days). The bucket is kept when the stacks are deleted (`protectData`, the default); under
 `-c protectData=false` deleting the stack empties the bucket (every version) and deletes it; back up first
 ([Deployment → Teardown](deployment.md#teardown-with--c-protectdatafalse-back-up-first)).
 

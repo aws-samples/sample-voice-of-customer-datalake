@@ -319,7 +319,7 @@ const chatLambda = new lambda.Function(this, 'ChatApi', {
   handler: 'chat_handler.lambda_handler',
   // ...
 });
-conversationsTable.grantReadWriteData(chatRole);
+grantReadAndWrites(conversationsTable, chatRole, ['PutItem', 'UpdateItem', 'DeleteItem']); // lib/utils/table-write-grants.ts
 
 // 3. Integrations Lambda - credentials and source schedules
 const integrationsLambda = new lambda.Function(this, 'IntegrationsApi', {
@@ -340,7 +340,8 @@ const settingsLambda = new lambda.Function(this, 'SettingsApi', {
   handler: 'settings_handler.lambda_handler',
   // ...
 });
-aggregatesTable.grantReadWriteData(settingsRole);
+grantReadAndWrites(aggregatesTable, settingsRole, ['PutItem', 'UpdateItem']);
+grantKeyScopedWrites(aggregatesTable, settingsRole, ['DeleteItem'], ['BRIEFSUB']); // its one delete, by partition
 // + Bedrock for category generation
 
 // 6. Projects Lambda - research projects
@@ -348,9 +349,9 @@ const projectsLambda = new lambda.Function(this, 'ProjectsApi', {
   handler: 'projects_handler.lambda_handler',
   // ...
 });
-projectsTable.grantReadWriteData(projectsRole);
+projectsTable.grantReadWriteData(projectsRole); // workspace deletes: every write, batches included
 jobsTable.grantReadWriteData(projectsRole);
-// + Step Functions + Bedrock + S3 (avatars)
+// + Step Functions + Bedrock + S3 (avatars; every version of a deleted object, lib/utils/workspace-object-deletes.ts)
 
 // 7. Users Lambda - Cognito user administration
 const usersLambda = new lambda.Function(this, 'UsersApi', {
@@ -364,7 +365,8 @@ const feedbackFormLambda = new lambda.Function(this, 'FeedbackFormApi', {
   handler: 'feedback_form_handler.lambda_handler',
   // ...
 });
-aggregatesTable.grantReadWriteData(feedbackFormRole);
+grantReadAndWrites(aggregatesTable, feedbackFormRole, ['PutItem', 'UpdateItem']);
+grantKeyScopedWrites(aggregatesTable, feedbackFormRole, ['DeleteItem'], ['FEEDBACK_FORM']);
 // + SQS for processing queue
 
 // 9. Data Explorer Lambda - S3 raw data and DynamoDB browser
@@ -373,7 +375,8 @@ const dataExplorerLambda = new lambda.Function(this, 'DataExplorerApi', {
   // ...
 });
 rawDataBucket.grantRead(dataExplorerRole);
-feedbackTable.grantReadWriteData(dataExplorerRole);
+feedbackTable.grantReadData(dataExplorerRole);
+feedbackTable.grant(dataExplorerRole, 'dynamodb:UpdateItem'); // in-place edit only, no delete
 // S3 + DynamoDB permissions
 ```
 
@@ -409,7 +412,11 @@ feedbackFormSubmitResource.addMethod('POST', feedbackFormIntegration);
 2. Create new Lambda Function with domain-specific handler
 3. Create LambdaIntegration
 4. Add API Gateway routes pointing to the new integration
-5. Grant only required table/service permissions to the role
+5. Grant only required table/service permissions to the role: `grantReadData` for reads, the exact writes the code
+   calls with `grantReadAndWrites` / `grantKeyScopedWrites` (`lib/utils/table-write-grants.ts`), never
+   `grantReadWriteData` on a table the role does not delete in. A delete of operational rows in a shared table is
+   pinned by `dynamodb:LeadingKeys`; every deleter is listed in `lib/customer-data-deletes.test.ts`, and the
+   `AUDIT#*` rows are denied to every writer but their own (`lib/utils/audit-row-guard.ts`, applied in `bin/`)
 
 **Benefits:**
 - Each Lambda stays under 20KB policy limit
