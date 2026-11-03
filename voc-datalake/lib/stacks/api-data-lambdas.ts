@@ -25,6 +25,7 @@ import {
 } from './api-assist-workers';
 import type { ApiStackContext } from './api-context';
 import { AGGREGATES_VERSION_PARTITION, grantCacheVersionBump } from '../utils/cache-version-grants';
+import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { briefingApiWiring } from './briefing-worker';
 import { grantImageModelProbe } from './api-marketplace';
 import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
@@ -59,7 +60,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // Metrics API
   const metricsRole = ctx.role('MetricsLambdaRole');
   feedbackTable.grantReadData(metricsRole);
-  aggregatesTable.grantReadWriteData(metricsRole);
+  // Read-only: the metrics routes never write (lib/customer-data-deletes.test.ts).
+  aggregatesTable.grantReadData(metricsRole);
   kmsKey.grantEncryptDecrypt(metricsRole);
 
   const metricsLambda = new lambda.Function(stack, 'MetricsApi', {
@@ -193,11 +195,15 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     layers: [apiLayer],
     logGroup: ctx.logGroup('IntegrationsApiLogs', ctx.uniqueName('voc-integrations-api')),
   });
-  aggregatesTable.grantReadWriteData(integrationsRole);
+  // SOURCE_RUN#<source> run rows (PutItem); a tripped circuit is cleared by deleting its CIRCUIT#<plugin> row
+  // (shared/plugin_circuit.py clear_circuit), the only delete this role makes.
+  grantReadAndWrites(aggregatesTable, integrationsRole, ['PutItem']);
+  grantKeyScopedWrites(aggregatesTable, integrationsRole, ['DeleteItem'], ['CIRCUIT#*']);
 
   // Scrapers API
   const scrapersRole = ctx.role('ScrapersLambdaRole');
-  aggregatesTable.grantReadWriteData(scrapersRole);
+  // SCRAPER_RUN#<id> run rows (PutItem); no update, no delete.
+  grantReadAndWrites(aggregatesTable, scrapersRole, ['PutItem']);
   kmsKey.grantEncryptDecrypt(scrapersRole);
   scrapersRole.addToPolicy(new iam.PolicyStatement({
     actions: ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue'],
@@ -244,7 +250,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   // Manual Import API
   const manualImportRole = ctx.role('ManualImportLambdaRole');
-  aggregatesTable.grantReadWriteData(manualImportRole);
+  // MANUAL_IMPORT#<job> rows and import runs (shared/import_runs.py): Put + Update, no delete.
+  grantReadAndWrites(aggregatesTable, manualImportRole, ['PutItem', 'UpdateItem']);
   kmsKey.grantEncryptDecrypt(manualImportRole);
   // A CSV dataset upload (issue #411, docs/csv-import.md) reads the rows it names to tell new,
   // changed and unchanged apart. Keyed reads only: no Scan/Query, no feedback write.
@@ -287,7 +294,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   // Manual Import Processor (async)
   const manualImportProcessorRole = ctx.role('ManualImportProcessorRole');
-  aggregatesTable.grantReadWriteData(manualImportProcessorRole);
+  // Updates its MANUAL_IMPORT#<job> row only.
+  grantReadAndWrites(aggregatesTable, manualImportProcessorRole, ['UpdateItem']);
   kmsKey.grantEncryptDecrypt(manualImportProcessorRole);
   grantClaudeModels(manualImportProcessorRole, 'invoke');
 
@@ -310,7 +318,10 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   // Settings API
   const settingsRole = ctx.role('SettingsLambdaRole');
-  aggregatesTable.grantReadWriteData(settingsRole);
+  // Settings rows, jobs, the erasure lock (conditional PutItem): Put + Update. Its one delete is the morning-brief
+  // subscriber row (BRIEFSUB / USER#<sub>, shared/briefing_subscription.py) when a user turns the brief off.
+  grantReadAndWrites(aggregatesTable, settingsRole, ['PutItem', 'UpdateItem']);
+  grantKeyScopedWrites(aggregatesTable, settingsRole, ['DeleteItem'], ['BRIEFSUB']);
   kmsKey.grantEncryptDecrypt(settingsRole);
   // POST /settings/categories/reprocess starts the worker asynchronously.
   const categoryReprocessFunctionName = ctx.uniqueName(CATEGORY_REPROCESS_FUNCTION_BASE_NAME);

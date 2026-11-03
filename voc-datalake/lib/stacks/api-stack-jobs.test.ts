@@ -203,14 +203,16 @@ describe('prototype object IAM boundaries', () => {
     expect(statements.some((statement) => statementActions(statement).includes('s3:ListBucket'))).toBe(true);
   });
 
-  it('keeps the document generator read-write grant scoped to prototype objects', () => {
+  it('keeps the document generator prototype grant to read + put, scoped to prototype objects', () => {
     const prototypeStatements = statementsForRole('DocumentGeneratorRole')
       .filter((statement) => JSON.stringify(statement.Resource).includes('prototypes/*'));
 
     expect(prototypeStatements.length).toBeGreaterThan(0);
     const actions = new Set(prototypeStatements.flatMap(statementActions));
-    const needed = ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'];
+    const needed = ['s3:GetObject', 's3:PutObject'];
     expect(needed.filter((action) => !actions.has(action)), 'missing prototype actions').toStrictEqual([]);
+    // The job never removes a prototype: a document delete is the projects API's (wave C least privilege).
+    expect([...actions].filter((action) => action.startsWith('s3:Delete'))).toStrictEqual([]);
     expect(actions).not.toContain('s3:*');
   });
 });

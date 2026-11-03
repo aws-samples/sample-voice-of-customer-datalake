@@ -14,6 +14,14 @@ import {
   VERIFICATION_FIXTURE_PROVIDER_ASSET_EXCLUDES,
   WORKER_TREE_ASSET_EXCLUDES,
 } from '../utils/lambda-asset-excludes';
+import { grantReadAndWrites, type TableWrite } from '../utils/table-write-grants';
+
+/** Every job updates its own job row (shared/jobs.py: put + update); none deletes one. */
+const JOB_ROW_WRITES: readonly TableWrite[] = ['PutItem', 'UpdateItem'];
+/** What a job writes in voc-projects: new artifacts and their counters. */
+const JOB_PROJECT_WRITES: readonly TableWrite[] = ['PutItem', 'UpdateItem'];
+/** The persona generator's replace mode also deletes the personas it replaces. */
+const JOB_PROJECT_WRITES_WITH_DELETE: readonly TableWrite[] = [...JOB_PROJECT_WRITES, 'DeleteItem'];
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import type { ApiStackContext } from './api-context';
 import { createDocumentStateMachine } from './api-document-workflow';
@@ -135,8 +143,10 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   // Persona Generator Job Lambda
   const personaGeneratorRole = ctx.role('PersonaGeneratorRole');
   feedbackTable.grantReadData(personaGeneratorRole);
-  projectsTable.grantReadWriteData(personaGeneratorRole);
-  jobsTable.grantReadWriteData(personaGeneratorRole);
+  // Personas (Put + Update) and, in replace mode, the personas it replaces (DeleteItem one by one,
+  // shared/persona_replace.py clear_personas). No batch.
+  grantReadAndWrites(projectsTable, personaGeneratorRole, JOB_PROJECT_WRITES_WITH_DELETE);
+  grantReadAndWrites(jobsTable, personaGeneratorRole, JOB_ROW_WRITES);
   aggregatesTable.grantReadData(personaGeneratorRole);
   kmsKey.grantEncryptDecrypt(personaGeneratorRole);
   grantClaudeModels(personaGeneratorRole, 'stream');
@@ -163,8 +173,9 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   // Document Generator Job Lambda (PRD/PRFAQ)
   const documentGeneratorRole = ctx.role('DocumentGeneratorRole');
   feedbackTable.grantReadData(documentGeneratorRole);
-  projectsTable.grantReadWriteData(documentGeneratorRole);
-  jobsTable.grantReadWriteData(documentGeneratorRole);
+  // New document versions (transactions of Put + Update, shared/document_versions.py); never a delete.
+  grantReadAndWrites(projectsTable, documentGeneratorRole, JOB_PROJECT_WRITES);
+  grantReadAndWrites(jobsTable, documentGeneratorRole, JOB_ROW_WRITES);
   // Model picker: read per-surface overrides (documents/prototype) from aggregates.
   aggregatesTable.grantReadData(documentGeneratorRole);
   // Prototype pin feedback (§6.2): each built prototype gets ONE `prototype_pin`
@@ -180,8 +191,10 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   rawDataBucket.grantRead(documentGeneratorRole, 'projects/*/product_docs/extracted/*');
   // Prototype HTML: write new prototypes + read prior ones (feedback-driven
   // regeneration reads the prior prototype's HTML back out of S3). Scoped to
-  // this prefix only, not a bucket-wide grant.
-  rawDataBucket.grantReadWrite(documentGeneratorRole, 'prototypes/*');
+  // this prefix only, not a bucket-wide grant. No delete: the job never removes a
+  // prototype (a document delete is the projects API's).
+  rawDataBucket.grantRead(documentGeneratorRole, 'prototypes/*');
+  rawDataBucket.grantPut(documentGeneratorRole, 'prototypes/*');
 
   const documentGeneratorLambda = createJobLambda('DocumentGeneratorJob', {
     baseName: 'voc-job-document-generator',
@@ -202,8 +215,9 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   // Document Merger Job Lambda
   const documentMergerRole = ctx.role('DocumentMergerRole');
   feedbackTable.grantReadData(documentMergerRole);
-  projectsTable.grantReadWriteData(documentMergerRole);
-  jobsTable.grantReadWriteData(documentMergerRole);
+  // The merged document (shared/project_writes.py create_counted_project_child: Put + Update); never a delete.
+  grantReadAndWrites(projectsTable, documentMergerRole, JOB_PROJECT_WRITES);
+  grantReadAndWrites(jobsTable, documentMergerRole, JOB_ROW_WRITES);
   // Model picker: read the documents-surface override from aggregates.
   aggregatesTable.grantReadData(documentMergerRole);
   kmsKey.grantEncryptDecrypt(documentMergerRole);
@@ -222,8 +236,9 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
 
   // Persona Importer Job Lambda
   const personaImporterRole = ctx.role('PersonaImporterRole');
-  projectsTable.grantReadWriteData(personaImporterRole);
-  jobsTable.grantReadWriteData(personaImporterRole);
+  // Imported personas (put_project_item_and_increment: Put + Update); it never replaces or deletes one.
+  grantReadAndWrites(projectsTable, personaImporterRole, JOB_PROJECT_WRITES);
+  grantReadAndWrites(jobsTable, personaImporterRole, JOB_ROW_WRITES);
   // Model picker: read the documents-surface override from aggregates.
   aggregatesTable.grantReadData(personaImporterRole);
   kmsKey.grantEncryptDecrypt(personaImporterRole);
@@ -233,7 +248,9 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
     resources: [avatarImageModelResource],
   }));
   grantMarketplaceSubscription(personaImporterRole);
-  rawDataBucket.grantReadWrite(personaImporterRole, 'avatars/*');
+  // A new avatar per imported persona (put) and the owner check reads (get, list); it deletes none.
+  rawDataBucket.grantRead(personaImporterRole, 'avatars/*');
+  rawDataBucket.grantPut(personaImporterRole, 'avatars/*');
 
   const personaImporterLambda = createJobLambda('PersonaImporterJob', {
     baseName: 'voc-job-persona-importer',

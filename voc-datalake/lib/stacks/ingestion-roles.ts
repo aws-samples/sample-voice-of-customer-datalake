@@ -31,6 +31,7 @@ import { acknowledgeNag, type NagAck } from '../utils/nag-ack';
 import { capitalize } from '../plugin-loader';
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { piiDetectionStatement } from '../utils/pii-redaction';
+import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 
 /** What every ingestor role is granted: watermarks, aggregates, queue, raw bucket, KMS, secrets, Comprehend PII detection. */
 export interface BaseIngestionGrants {
@@ -130,7 +131,10 @@ export class IngestorRoles {
 
     const { watermarksTable, aggregatesTable, processingQueue, rawDataBucket, kmsKey, apiSecrets } = this.grants;
     watermarksTable.grantReadWriteData(role);
-    aggregatesTable.grantReadWriteData(role);
+    // Run rows and counters (Put + Update, _shared/base_ingestor.py, the webscraper); the circuit breaker
+    // (_shared/circuit_breaker.py) deletes only its own CIRCUIT#<plugin> row when it closes.
+    grantReadAndWrites(aggregatesTable, role, ['PutItem', 'UpdateItem']);
+    grantKeyScopedWrites(aggregatesTable, role, ['DeleteItem'], ['CIRCUIT#*']);
     processingQueue.grantSendMessages(role);
     // Write-only under raw/ (IAM-1): ingestors only `put_object` raw/<source>/... (plugins/_shared/raw_archive.py).
     // No read and no delete: only voc-retention may delete customer data (docs/source-policies.md).
