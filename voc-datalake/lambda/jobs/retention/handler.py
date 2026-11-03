@@ -1,72 +1,87 @@
 """voc-retention: the opt-in per-source retention and erasure worker.
 
 The only Lambda that deletes customer feedback (``shared/retention.py`` says
-what and how). Two modes, one scan loop:
+what and how), and only for a legal obligation (TENETS.md D5). Two modes:
 
 - ``{"mode": "retention"}`` — the daily schedule (an event without ``mode``
   reads the same). Deletes items of every source whose profile sets
-  ``retention_days`` and whose ``date`` is older than the cutoff. Nothing is
+  ``retention_days`` and whose ``date`` is older than the cutoff, under the
+  profile's ``retention_legal_basis`` (``shared/legal_basis.py``). Nothing is
   deleted when no profile sets one, or when the profiles cannot be read.
 - ``{"mode": "erase", "job_id": "er_<12 hex>", "value": ...}`` — started by
   ``POST /settings/erasure`` (async invoke). The job row (``pk JOB#erasure``)
-  holds the field, the optional source and the value's SHA-256; the value
-  itself travels only in the invoke payload, is checked against that hash, and
-  is never stored or logged. ``field = 'source'`` erases a whole source: the
-  scan deletes every item of that ``source_platform``, then a second phase
-  (``phase: 'raw'``) deletes every object version left under ``raw/{source}/``
-  (``shared/retention.delete_raw_prefix_page``), one listing page at a time.
+  holds the field, the optional source, the legal basis and the value's
+  SHA-256; the value itself travels only in the invoke payload, is checked
+  against that hash, and is never stored or logged.
 
-The scan is paged and time-budgeted: before the Lambda's budget runs out the
-worker re-invokes itself with the scan cursor and its running counters, like
-the category reprocess worker. Deletes are idempotent, so a duplicate delivery
-or an overlapping daily run only repeats no-ops. Every finished run (and every
-failure) writes one audit row (``pk AUDIT#retention``) with the counts — never
-the erased value.
+A run walks its PHASES in order, each paged and time-budgeted:
 
-Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``RAW_DATA_BUCKET``.
+1. ``items`` — voc-feedback;
+2. ``radar`` — voc-radar (other brands' reviews), when ``RADAR_TABLE`` is set;
+3. ``raw`` — whole-source erasure only: every object version left under
+   ``raw/{source}/`` (``shared/retention.delete_raw_prefix_page``);
+4. ``lineage`` — when the run deleted anything and ``PROJECTS_TABLE`` is set:
+   artifacts that cited a deleted item are marked (``lineage.py``).
+
+Each deleted item first gets a tombstone (``copies.py``). Before the Lambda's
+budget runs out the worker re-invokes itself with its phase, the phase's scan
+cursor and its running state (``runs.py``). Deletes are idempotent, so a
+duplicate delivery or an overlapping daily run only repeats no-ops. Every
+finished run (and every failure) writes one audit row (``pk AUDIT#retention``).
+
+Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``RAW_DATA_BUCKET``, ``RADAR_TABLE``, ``PROJECTS_TABLE``.
 """
 
 from __future__ import annotations
 
 import os
 import re
-import time
-import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
+from jobs.retention import lineage
+from jobs.retention.copies import ItemDeleter, write_tombstones
+from jobs.retention.runs import (
+    MODE_ERASE,
+    MODE_RETENTION,
+    carried_state,
+    claim_erasure_job,
+    finish_erasure_job,
+    new_run,
+    record_progress,
+    write_audit,
+)
 from shared import retention
-from shared.aws import get_dynamodb_resource, get_s3_client, invoke_lambda_async, is_conditional_check_failure
-from shared.data_version import bump_data_version
+from shared.aws import get_dynamodb_resource, get_s3_client, invoke_lambda_async
+from shared.data_version import bump_data_version, bump_radar_version
 from shared.digests import sha256_hex
 from shared.invocation_cost import instrumented_handler
+from shared.legal_basis import legal_basis_or_legacy
 from shared.logging import logger, metrics
-from shared.retention import ERASURE_JOB_PK, SOURCE_FIELD
+from shared.retention import SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR
 from shared.source_erasure import refresh_source_lock, release_source_lock
 from shared.source_profiles import SOURCE_ID_RE, load_source_profiles
-from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
 
 # Bundled beside `shared/` (no sys.path shim); tests import `jobs.retention.handler`.
-FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET = (
-    os.environ.get(name, '') for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET'))
+FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET, RADAR_TABLE, PROJECTS_TABLE = (
+    os.environ.get(name, '')
+    for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'RADAR_TABLE', 'PROJECTS_TABLE'))
 
-MODE_RETENTION: Final = 'retention'
-MODE_ERASE: Final = 'erase'
-AUDIT_PK: Final = 'AUDIT#retention'
 JOB_ID_RE: Final = re.compile(r'^er_[0-9a-f]{12}\Z')
-STATUS_QUEUED: Final = 'queued'
-STATUS_RUNNING: Final = 'running'
 STATUS_COMPLETED: Final = 'completed'
 STATUS_FAILED: Final = 'failed'
 PHASE_ITEMS: Final = 'items'
+PHASE_RADAR: Final = 'radar'
 PHASE_RAW: Final = 'raw'
-# A running job's row is refreshed when its counts move, and at least this often.
-PROGRESS_EVERY_SECONDS: Final = 60
+PHASE_LINEAGE: Final = 'lineage'
+PHASES: Final = (PHASE_ITEMS, PHASE_RADAR, PHASE_RAW, PHASE_LINEAGE)
+_PHASE_STORES: Final = {PHASE_ITEMS: STORE_FEEDBACK, PHASE_RADAR: STORE_RADAR}
 
 PAGE_SIZE: Final = 100
 # Hand over to a fresh invocation when less than this remains of the budget.
@@ -77,128 +92,54 @@ MAX_GENERATIONS: Final = 500
 
 _AWS_ERRORS: Final = (ClientError, BotoCoreError)
 
+# The scan filter of one store (shared.retention.STORE_*), built once per invocation by the mode's setup.
+Filters = Callable[[str], ConditionBase]
 
-def _tables() -> tuple[Any, Any]:
+
+@dataclass
+class Walk:
+    """One invocation's tables, clients and state, handed to every phase."""
+
+    tables: dict[str, Any]
+    context: Any
+    event: dict[str, Any]
+    run: dict[str, Any]
+    filters: Filters
+    s3: Any
+
+    @property
+    def aggregates(self) -> Any:
+        return self.tables['aggregates']
+
+
+def _tables() -> dict[str, Any]:
     dynamodb = get_dynamodb_resource()
-    return dynamodb.Table(FEEDBACK_TABLE), dynamodb.Table(AGGREGATES_TABLE)
-
-
-# ============================================
-# Audit + erasure job rows
-# ============================================
-
-def write_audit(aggregates_table: Any, run: dict[str, Any], status: str, error: str | None = None) -> None:
-    """One audit row for a finished (or failed) run: mode, counts, never the erased value."""
-    now = now_iso()
-    item = {
-        'pk': AUDIT_PK, 'sk': f"{now}#{run['run_id']}", 'run_id': run['run_id'], 'mode': run['mode'],
-        'status': status, 'deleted_items': run['deleted_items'], 'deleted_objects': run['deleted_objects'],
-        'scanned': run['scanned'], 'started_at': run['started_at'], 'finished_at': now,
-        **{key: run[key] for key in ('job_id', 'field', 'source', 'value_hash', 'cutoffs') if run.get(key)},
-        **({'error': error} if error else {}),
-    }
-    aggregates_table.put_item(Item=item)
-
-
-def _job_key(job_id: str) -> dict[str, str]:
-    return {'pk': ERASURE_JOB_PK, 'sk': job_id}
-
-
-def claim_erasure_job(aggregates_table: Any, job_id: str) -> dict[str, Any] | None:
-    """The job, marked running; None when it is missing or already finished."""
-    try:
-        response = aggregates_table.update_item(
-            Key=_job_key(job_id),
-            UpdateExpression='SET #status = :running, started_at = if_not_exists(started_at, :now)',
-            ConditionExpression='attribute_exists(pk) AND #status IN (:queued, :running)',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={':running': STATUS_RUNNING, ':queued': STATUS_QUEUED, ':now': now_iso()},
-            ReturnValues='ALL_NEW',
-        )
-    except ClientError as e:
-        if is_conditional_check_failure(e):
-            return None
-        raise
-    return response.get('Attributes')
-
-
-def finish_erasure_job(aggregates_table: Any, run: dict[str, Any], status: str, error: str | None = None) -> None:
-    """Record the job's outcome and counts (the row keeps its value_hash, never the value)."""
-    names = {'#status': 'status'}
-    values: dict[str, Any] = {
-        ':status': status, ':items': run['deleted_items'], ':objects': run['deleted_objects'], ':now': now_iso(),
-    }
-    expression = 'SET #status = :status, deleted_items = :items, deleted_objects = :objects, finished_at = :now'
-    if error:
-        expression += ', #error = :error'
-        names['#error'] = 'error'
-        values[':error'] = error
-    aggregates_table.update_item(
-        Key=_job_key(run['job_id']), UpdateExpression=expression,
-        ExpressionAttributeNames=names, ExpressionAttributeValues=values,
-    )
-
-
-def record_progress(aggregates_table: Any, run: dict[str, Any], phase: str) -> None:
-    """Write a running erasure job's counts and phase (no-op for retention runs).
-
-    Throttled: only when the counts moved since the last write or
-    ``PROGRESS_EVERY_SECONDS`` passed, so a long scan with few matches still
-    shows it is alive without one write per page.
-    """
-    if not run.get('job_id'):
-        return
-    counts = (run['deleted_items'], run['deleted_objects'], phase)
-    last = run.get('_progress')
-    if isinstance(last, tuple) and last[0] == counts \
-            and time.monotonic() - last[1] < PROGRESS_EVERY_SECONDS:
-        return
-    try:
-        aggregates_table.update_item(
-            Key=_job_key(run['job_id']),
-            UpdateExpression='SET deleted_items = :items, deleted_objects = :objects, phase = :phase, progress_at = :now',
-            ConditionExpression='#status = :running',
-            ExpressionAttributeNames={'#status': 'status'},
-            ExpressionAttributeValues={':items': run['deleted_items'], ':objects': run['deleted_objects'],
-                                       ':phase': phase, ':now': now_iso(), ':running': STATUS_RUNNING},
-        )
-    except ClientError as e:
-        # A row that is gone or no longer running is never recreated; the outcome write still runs.
-        if not is_conditional_check_failure(e):
-            raise
-    run['_progress'] = (counts, time.monotonic())
+    tables = {STORE_FEEDBACK: dynamodb.Table(FEEDBACK_TABLE), 'aggregates': dynamodb.Table(AGGREGATES_TABLE)}
+    for name, table_name in ((STORE_RADAR, RADAR_TABLE), ('projects', PROJECTS_TABLE)):
+        if table_name:
+            tables[name] = dynamodb.Table(table_name)
+    return tables
 
 
 # ============================================
 # Run setup (one per mode)
 # ============================================
 
-def _new_run(event: dict[str, Any], mode: str) -> dict[str, Any]:
-    """The run's running state: carried across hand-overs in the event."""
-    raw = event.get('run')
-    carried: dict[str, Any] = raw if isinstance(raw, dict) else {}
-    return {
-        'mode': mode,
-        'run_id': carried.get('run_id') or uuid.uuid4().hex[:12],
-        'started_at': carried.get('started_at') or now_iso(),
-        'generation': int(carried.get('generation', 0)),
-        'scanned': int(carried.get('scanned', 0)),
-        'deleted_items': int(carried.get('deleted_items', 0)),
-        'deleted_objects': int(carried.get('deleted_objects', 0)),
-    }
-
-
-def _retention_setup(aggregates_table: Any, run: dict[str, Any]) -> ConditionBase | None:
-    """The scan filter for today's retention run, or None when nothing is retained."""
-    cutoffs = retention.retention_cutoffs(load_source_profiles(aggregates_table), datetime.now(UTC).date())
+def _retention_setup(aggregates_table: Any, run: dict[str, Any]) -> Filters | None:
+    """The scan filters for today's retention run, or None when nothing is retained."""
+    profiles = load_source_profiles(aggregates_table)
+    cutoffs = retention.retention_cutoffs(profiles, datetime.now(UTC).date())
     if not cutoffs:
         return None
     run['cutoffs'] = cutoffs
-    return retention.retention_filter(cutoffs)
+    # Each retained source's basis; a profile saved before 6.00.00 reads "not recorded".
+    run['legal_bases'] = {str(profile['id']): legal_basis_or_legacy(profile.get('retention_legal_basis'))
+                          for profile in profiles if str(profile['id']) in cutoffs}
+    return lambda store: retention.retention_filter(cutoffs, store)
 
 
-def _erase_setup(aggregates_table: Any, event: dict[str, Any], run: dict[str, Any]) -> ConditionBase | None:
-    """The scan filter for an erasure job, or None when the job cannot (or need not) run."""
+def _erase_setup(aggregates_table: Any, event: dict[str, Any], run: dict[str, Any]) -> Filters | None:
+    """The scan filters for an erasure job, or None when the job cannot (or need not) run."""
     job_id, value = event.get('job_id'), event.get('value')
     if not isinstance(job_id, str) or not JOB_ID_RE.match(job_id) or not isinstance(value, str) or not value:
         logger.error('Erasure event without a valid job_id and value')
@@ -208,12 +149,13 @@ def _erase_setup(aggregates_table: Any, event: dict[str, Any], run: dict[str, An
         logger.info('Erasure job is missing or already finished', extra={'job_id': job_id})
         return None
     run.update(job_id=job_id, field=job.get('field'), source=job.get('source') or None,
-               value_hash=job.get('value_hash'))
+               value_hash=job.get('value_hash'), legal_basis=legal_basis_or_legacy(job.get('legal_basis')))
     if job.get('value_hash') != sha256_hex(value):
         raise ValueError('The erasure value does not match the job')
     if run['field'] == SOURCE_FIELD:
         _check_whole_source(run['source'], value)
-    return retention.erase_filter(str(job.get('field')), value, run['source'])
+    field, source = str(job.get('field')), run['source']
+    return lambda store: retention.erase_filter(field, value, source, store)
 
 
 def _check_whole_source(source: object, value: str) -> None:
@@ -227,27 +169,18 @@ def _check_whole_source(source: object, value: str) -> None:
 
 
 # ============================================
-# Scan loop
+# Hand-over and the source lock
 # ============================================
-
-def _scan_page(feedback_table: Any, condition: ConditionBase, cursor: dict | None) -> dict:
-    kwargs: dict[str, Any] = {'Limit': PAGE_SIZE, 'FilterExpression': condition}
-    if cursor:
-        kwargs['ExclusiveStartKey'] = cursor
-    return feedback_table.scan(**kwargs)
-
 
 def _time_left(context: Any) -> bool:
     return context.get_remaining_time_in_millis() > TIME_RESERVE_MS
 
 
-def _hand_over(aggregates_table: Any, context: Any, event: dict[str, Any], run: dict[str, Any],
-               cursor: dict | None, **extra: Any) -> dict:
-    _whole_source_lock_call(aggregates_table, run, refresh_source_lock, 'renew')
-    carried = {key: run[key] for key in ('run_id', 'started_at', 'scanned', 'deleted_items', 'deleted_objects')}
-    payload = {**event, 'mode': run['mode'], 'cursor': cursor, **extra,
-               'run': {**carried, 'generation': run['generation'] + 1}}
-    invoke_lambda_async(context.function_name, payload)
+def _hand_over(walk: Walk, phase: str, cursor: dict | None) -> dict:
+    run = walk.run
+    _whole_source_lock_call(walk.aggregates, run, refresh_source_lock, 'renew')
+    payload = {**walk.event, 'mode': run['mode'], 'phase': phase, 'cursor': cursor, 'run': carried_state(run)}
+    invoke_lambda_async(walk.context.function_name, payload)
     return {'status': 'continued', 'run_id': run['run_id']}
 
 
@@ -270,51 +203,122 @@ def _whole_source_lock_call(aggregates_table: Any, run: dict[str, Any],
                        extra={'action': action, 'error_type': type(e).__name__})
 
 
-def _walk(tables: tuple[Any, Any], context: Any, event: dict[str, Any], run: dict[str, Any],
-          condition: ConditionBase) -> dict | None:
-    """Delete every match from the event's cursor on; a hand-over result, or None when done."""
-    feedback_table, aggregates_table = tables
-    s3 = get_s3_client()
-    cursor = event.get('cursor') or None
+# ============================================
+# Phases
+# ============================================
+
+def _scan_page(table: Any, condition: ConditionBase, cursor: dict | None) -> dict:
+    kwargs: dict[str, Any] = {'Limit': PAGE_SIZE, 'FilterExpression': condition}
+    if cursor:
+        kwargs['ExclusiveStartKey'] = cursor
+    return table.scan(**kwargs)
+
+
+def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
+    """Tombstone, then delete, every match of the phase's store from ``cursor`` on; a hand-over or None."""
+    store = _PHASE_STORES[phase]
+    table, condition, run = walk.tables[store], walk.filters(store), walk.run
+    deleter = ItemDeleter(run, walk.s3, RAW_DATA_BUCKET, walk.tables)
     while True:
-        page = _scan_page(feedback_table, condition, cursor)
+        page = _scan_page(table, condition, cursor)
         run['scanned'] += int(page.get('ScannedCount', 0))
-        for item in page.get('Items', []):
-            if not _time_left(context):
-                return _hand_over(aggregates_table, context, event, run, cursor)
-            items, objects = retention.delete_item(feedback_table, s3, RAW_DATA_BUCKET, item)
-            run['deleted_items'] += items
-            run['deleted_objects'] += objects
+        items = page.get('Items', [])
+        write_tombstones(walk.aggregates, run, items, store)
+        for item in items:
+            if not _time_left(walk.context):
+                return _hand_over(walk, phase, cursor)
+            deleter.delete(item, store)
             cursor = {'pk': item['pk'], 'sk': item['sk']}
-        record_progress(aggregates_table, run, PHASE_ITEMS)
+        record_progress(walk.aggregates, run, phase)
         cursor = page.get('LastEvaluatedKey') or None
         if cursor is None:
             return None
-        if not _time_left(context):
-            return _hand_over(aggregates_table, context, event, run, cursor)
+        if not _time_left(walk.context):
+            return _hand_over(walk, phase, cursor)
 
 
-def _sweep_raw(aggregates_table: Any, context: Any, event: dict[str, Any], run: dict[str, Any]) -> dict | None:
-    """A whole-source erasure's second phase: every object left under ``raw/{source}/``.
+def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
+    """A whole-source erasure's raw phase: every object left under ``raw/{source}/``.
 
     The per-item archives went with their items; this removes what no item
     points at any more (an archive whose item failed processing, an older
     copy). Each page lists from the start of the prefix (what was listed is
-    gone), so a hand-over carries only ``phase: 'raw'``.
+    gone), so a hand-over carries no cursor.
     """
-    prefix = retention.raw_source_prefix(str(run.get('source') or ''))
+    prefix = retention.raw_source_prefix(str(walk.run.get('source') or ''))
     if prefix is None or not RAW_DATA_BUCKET:
         return None
-    s3 = get_s3_client()
     more = True
     while more:
-        if not _time_left(context):
-            return _hand_over(aggregates_table, context, event, run, None, phase=PHASE_RAW)
-        objects, more = retention.delete_raw_prefix_page(s3, RAW_DATA_BUCKET, prefix)
-        run['deleted_objects'] += objects
-        record_progress(aggregates_table, run, PHASE_RAW)
+        if not _time_left(walk.context):
+            return _hand_over(walk, PHASE_RAW, None)
+        objects, more = retention.delete_raw_prefix_page(walk.s3, RAW_DATA_BUCKET, prefix)
+        walk.run['deleted_objects'] += objects
+        record_progress(walk.aggregates, walk.run, PHASE_RAW)
     return None
 
+
+def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
+    """Mark the workspace artifacts that cited a deleted item (``lineage.py``), page by page."""
+    projects = walk.tables['projects']
+    while True:
+        if not _time_left(walk.context):
+            return _hand_over(walk, PHASE_LINEAGE, cursor)
+        page = lineage.scan_page(projects, cursor)
+        lineage.mark_rows(projects, walk.aggregates, walk.run, page.get('Items', []))
+        record_progress(walk.aggregates, walk.run, PHASE_LINEAGE)
+        cursor = page.get('LastEvaluatedKey') or None
+        if cursor is None:
+            return None
+
+
+def _phases(walk: Walk) -> list[str]:
+    """The phases this run walks, in order (the lineage one is decided when it is reached)."""
+    phases = [PHASE_ITEMS]
+    if STORE_RADAR in walk.tables:
+        phases.append(PHASE_RADAR)
+    if walk.run.get('field') == SOURCE_FIELD:
+        phases.append(PHASE_RAW)
+    if 'projects' in walk.tables:
+        phases.append(PHASE_LINEAGE)
+    return phases
+
+
+def _deleted_anything(run: dict[str, Any]) -> bool:
+    return run['deleted_items'] + run['deleted_radar_items'] > 0
+
+
+def _walk_phases(walk: Walk) -> dict | None:
+    """Every phase from the event's on; a hand-over result or None.
+
+    A hand-over names its phase; one without (from before 6.00.00) was in the item
+    scan. The event's cursor belongs to that first phase only.
+    """
+    phases = _phases(walk)
+    resumed = walk.event.get('phase') or PHASE_ITEMS
+    remaining = phases[phases.index(resumed):] if resumed in phases else phases
+    cursor = (walk.event.get('cursor') or None) if resumed in phases else None
+    for phase in remaining:
+        if phase == PHASE_LINEAGE and not _deleted_anything(walk.run):
+            continue
+        handed_over = _PHASE_RUNNERS[phase](walk, cursor)
+        if handed_over is not None:
+            return handed_over
+        cursor = None
+    return None
+
+
+_PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
+    PHASE_ITEMS: lambda walk, cursor: _walk_store(walk, PHASE_ITEMS, cursor),
+    PHASE_RADAR: lambda walk, cursor: _walk_store(walk, PHASE_RADAR, cursor),
+    PHASE_RAW: _sweep_raw,
+    PHASE_LINEAGE: _mark_lineage,
+}
+
+
+# ============================================
+# Entry
+# ============================================
 
 def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str | None = None) -> dict:
     run.pop('_progress', None)
@@ -323,9 +327,11 @@ def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str 
         # Completed or failed: the next erasure of this source may start.
         _whole_source_lock_call(aggregates_table, run, release_source_lock, 'release')
     write_audit(aggregates_table, run, status, error)
-    metrics.add_metric(name='RetentionItemsDeleted', unit='Count', value=run['deleted_items'])
-    return {'status': status, 'run_id': run['run_id'],
-            'deleted_items': run['deleted_items'], 'deleted_objects': run['deleted_objects']}
+    metrics.add_metric(name='RetentionItemsDeleted', unit='Count',
+                       value=run['deleted_items'] + run['deleted_radar_items'])
+    return {'status': status, 'run_id': run['run_id'], 'deleted_items': run['deleted_items'],
+            'deleted_radar_items': run['deleted_radar_items'], 'deleted_objects': run['deleted_objects'],
+            'artifacts_marked': run['artifacts_marked']}
 
 
 def handle_event(event: dict[str, Any], context: Any) -> dict:
@@ -334,32 +340,33 @@ def handle_event(event: dict[str, Any], context: Any) -> dict:
     if mode not in (MODE_RETENTION, MODE_ERASE):
         logger.error('Retention event with an unknown mode', extra={'mode': str(mode)[:32]})
         return {'status': 'ignored'}
-    feedback_table, aggregates_table = _tables()
-    state = _new_run(event, mode)
+    tables = _tables()
+    state = new_run(event, mode)
     if state['generation'] >= MAX_GENERATIONS:
-        return _finish(aggregates_table, state, STATUS_FAILED, 'Stopped after too many hand-overs')
-    deleted_before = state['deleted_items']
+        return _finish(tables['aggregates'], state, STATUS_FAILED, 'Stopped after too many hand-overs')
+    before = (state['deleted_items'], state['deleted_radar_items'])
     try:
-        return _run(feedback_table, aggregates_table, context, event, state)
+        return _run(tables, context, event, state)
     finally:
         # After deletes (a hand-over, completion or failure): cached reads move on.
-        if state['deleted_items'] > deleted_before:
-            bump_data_version(aggregates_table)
+        if state['deleted_items'] > before[0]:
+            bump_data_version(tables['aggregates'])
+        if state['deleted_radar_items'] > before[1] and STORE_RADAR in tables:
+            bump_radar_version(tables[STORE_RADAR])
 
 
-def _run(feedback_table: Any, aggregates_table: Any, context: Any, event: dict[str, Any],
-         state: dict[str, Any]) -> dict:
-    """Set the run up for its mode, walk it, and record the outcome."""
-    mode = state['mode']
+def _run(tables: dict[str, Any], context: Any, event: dict[str, Any], state: dict[str, Any]) -> dict:
+    """Set the run up for its mode, walk its phases, and record the outcome."""
+    mode, aggregates_table = state['mode'], tables['aggregates']
     try:
-        condition = (_retention_setup(aggregates_table, state) if mode == MODE_RETENTION
-                     else _erase_setup(aggregates_table, event, state))
-        if condition is None:
+        filters = (_retention_setup(aggregates_table, state) if mode == MODE_RETENTION
+                   else _erase_setup(aggregates_table, event, state))
+        if filters is None:
             # Retention with no retained source still audits its (empty) run;
             # an erase event that cannot run leaves its job as it was.
             return (_finish(aggregates_table, state, STATUS_COMPLETED) if mode == MODE_RETENTION
                     else {'status': 'nothing_to_do'})
-        handed_over = _erase_walks((feedback_table, aggregates_table), context, event, state, condition)
+        handed_over = _walk_phases(Walk(tables, context, event, state, filters, get_s3_client()))
     except (*_AWS_ERRORS, ValueError, RuntimeError) as e:
         failure = type(e).__name__
     else:
@@ -367,17 +374,6 @@ def _run(feedback_table: Any, aggregates_table: Any, context: Any, event: dict[s
     # The error TYPE only: a message (or a traceback) could quote the erased value back.
     logger.error('Retention run failed', extra={'mode': mode, 'error_type': failure})
     return _finish(aggregates_table, state, STATUS_FAILED, f'Run failed ({failure})')
-
-
-def _erase_walks(tables: tuple[Any, Any], context: Any, event: dict[str, Any], state: dict[str, Any],
-                 condition: ConditionBase) -> dict | None:
-    """The item scan, then (whole-source erasure only) the raw sweep; a hand-over result or None."""
-    whole_source = state.get('field') == SOURCE_FIELD
-    if not (whole_source and event.get('phase') == PHASE_RAW):
-        handed_over = _walk(tables, context, event, state, condition)
-        if handed_over is not None or not whole_source:
-            return handed_over
-    return _sweep_raw(tables[1], context, event, state)
 
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).

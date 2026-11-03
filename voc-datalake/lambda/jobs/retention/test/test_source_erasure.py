@@ -6,7 +6,7 @@ import pytest
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from jobs.retention import handler
+from jobs.retention import handler, runs
 from jobs.retention.test.conftest import BUCKET, days_ago
 from shared import retention
 from shared.digests import sha256_hex
@@ -83,7 +83,9 @@ def test_the_raw_folder_is_swept_but_never_a_neighbour_or_a_whole_upload(aws, wo
     assert (result['deleted_items'], result['deleted_objects']) == (1, 2)
     assert _keys(aws) == {neighbour, 'raw/csv_upload/2026/01/01/job.csv'}
     job = _job_row(aws)
-    assert (job['status'], job['deleted_items'], job['deleted_objects'], job['phase']) == ('completed', 1, 2, 'raw')
+    # The last phase it reported: the lineage pass after the raw sweep.
+    assert (job['status'], job['deleted_items'], job['deleted_objects'], job['phase']) == (
+        'completed', 1, 2, 'lineage')
 
 
 def test_the_item_scan_pages_through_the_table(aws, worker_context):
@@ -148,7 +150,8 @@ def test_progress_is_written_to_the_running_job_between_pages(aws, worker_contex
 
 def test_progress_never_recreates_a_finished_job(aws):
     _job(aws, status='completed')
-    run = {'job_id': JOB_ID, 'deleted_items': 9, 'deleted_objects': 9}
+    run = {'job_id': JOB_ID, 'deleted_items': 9, 'deleted_objects': 9, 'deleted_radar_items': 0,
+           'artifacts_marked': 0}
     handler.record_progress(aws['aggregates'], run, 'items')
     assert _job_row(aws).get('deleted_items') is None
 
@@ -301,7 +304,7 @@ def test_a_failed_lock_release_still_finishes_the_run_and_writes_its_audit(aws, 
         result = handler.handle_event(EVENT, worker_context)
     assert (result['status'], result['deleted_items']) == ('completed', 1)
     assert _job_row(aws)['status'] == 'completed'
-    audits = aws['aggregates'].query(KeyConditionExpression=Key('pk').eq(handler.AUDIT_PK))['Items']
+    audits = aws['aggregates'].query(KeyConditionExpression=Key('pk').eq(runs.AUDIT_PK))['Items']
     assert [(row['job_id'], row['status']) for row in audits] == [(JOB_ID, 'completed')]
 
 

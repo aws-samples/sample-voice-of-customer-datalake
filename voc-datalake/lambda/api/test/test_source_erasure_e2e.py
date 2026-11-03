@@ -30,13 +30,17 @@ def aws():
         s3 = create_versioned_bucket(BUCKET)
         aggregates = create_aggregates_table_with_metric_index(worker.AGGREGATES_TABLE, resource)
         feedback = create_pk_sk_table(worker.FEEDBACK_TABLE, resource)
+        create_pk_sk_table('test-radar', resource)
+        create_pk_sk_table(worker.PROJECTS_TABLE or 'test-projects', resource)
         invoke = MagicMock()
         with patch.object(settings_handler, 'aggregates_table', aggregates), \
                 patch.object(settings_handler, 'RETENTION_FUNCTION', 'voc-retention'), \
                 patch.object(settings_handler, 'invoke_lambda_async', invoke), \
                 patch.object(worker, 'get_dynamodb_resource', return_value=resource), \
                 patch.object(worker, 'get_s3_client', return_value=s3), \
-                patch.object(worker, 'RAW_DATA_BUCKET', BUCKET):
+                patch.object(worker, 'RAW_DATA_BUCKET', BUCKET), \
+                patch.object(worker, 'RADAR_TABLE', 'test-radar'), \
+                patch.object(worker, 'PROJECTS_TABLE', worker.PROJECTS_TABLE or 'test-projects'):
             yield {'aggregates': aggregates, 'feedback': feedback, 's3': s3, 'invoke': invoke}
 
 
@@ -108,7 +112,7 @@ def test_a_source_is_erased_end_to_end_and_its_lock_spans_both_lambdas(aws, rout
     assert lock['job_id'] == job_id
     assert lock['released_at']
     _, listed = route('GET', '/settings/erasure')
-    assert [(job['job_id'], job['status'], job['phase']) for job in listed['jobs']] == [(job_id, 'completed', 'raw')]
+    assert [(job['job_id'], job['status'], job['phase']) for job in listed['jobs']] == [(job_id, 'completed', 'lineage')]
 
     # Released: the next erasure of the source may start.
     status, again = _start(route)
