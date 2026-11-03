@@ -1081,7 +1081,7 @@ unauthenticated route, so the full CRS applies there. The exceptions a legitimat
 | Public route (with or without the `/v1` stage prefix) | Still counted there | Why |
 |---|---|---|
 | `POST /feedback-forms/{id}/submit` | the five body rules | feedback text up to 10,000 characters plus custom fields, or a prototype pin up to 24,000 bytes; and a customer's own words (`<div>`, `src/../lib`, a pasted stack trace, a link to an IPv4 host) are feedback, stored as data |
-| `POST /voting-sessions/{id}/submit` | the four content body rules (not the size one) | a ballot's `notes`, up to 2,000 characters of free text |
+| `POST /voting-sessions/{id}/submit` | the five body rules | a ballot's `notes`, up to 2,000 characters of free text (2,000 characters outside the BMP are 8,000 bytes of UTF-8, over the size rule's 8 KB) |
 | `POST /webhooks/{plugin}` | the five body rules | a GitHub issue payload is over 8 KB and carries HTML, paths and URLs; the handler checks the HMAC signature first |
 | `GET /oauth/authorize` | `GenericRFI_QUERYARGUMENTS` | the loopback `redirect_uri` |
 | `POST /oauth/register`, `POST /oauth/token` | `GenericRFI_BODY` | the loopback `redirect_uris` / `redirect_uri` in the body |
@@ -1097,9 +1097,10 @@ decode turns into `a/b`). On the CloudFront ACL only `GenericRFI_QUERYARGUMENTS`
 **Check the scope rule once after turning WAF on.** Its label keys are copied from the AWS rule group page, and no
 offline test can prove a label string. Send one request that trips a counted rule on a public route, e.g.
 `curl -X POST "$API/unsubscribe" -H 'Content-Type: application/json' -d '{"token":"<script>alert(1)</script>"}'`:
-it must answer 403 (blocked by WAF, not the handler's 200), and the web ACL's `BlockCountedCrsOnPublicRoutes` rule
-shows one blocked request in its CloudWatch metrics (`AWS/WAFV2`, `BlockedRequests`) or its sampled requests.
-Capacity: 999 WCU on the API ACL and 941 on the CloudFront ACL, under the 1,500 a web ACL includes. No WAF logging
+it must answer 403 (blocked by WAF, not the handler's 200), and the blocked sample must name the
+`BlockCountedCrsOnPublicRoutes` rule (the web ACL's sampled requests, or that rule's `BlockedRequests` metric in
+`AWS/WAFV2`). A 403 from another rule, e.g. Known bad inputs, proves nothing about the scope rule: try another body.
+Capacity: 986 WCU on the API ACL and 941 on the CloudFront ACL, under the 1,500 a web ACL includes. No WAF logging
 is configured: only CloudWatch metrics and sampled requests. With WAF on, `VocWebSearchStack` is created even when web search is off and no use-case
 form is filed, and `VocCoreStack` reads the CloudFront ACL's ARN from it: a CloudFormation export when the app region
 is us-east-1, CDK's SSM-backed cross-region reference otherwise (the same mechanism the API and processing stacks use

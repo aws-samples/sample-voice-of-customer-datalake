@@ -93,11 +93,13 @@ def test_form_model_is_looser_than_the_handler_only_where_documented(feedback_fo
     refused = [body for body in bodies if not _handler_accepts(validate, body)]
     looser = [body for body in refused if FORM_MODEL.is_valid(body)]
     assert len(refused) > 20  # vacuity: the table exercises the refusals
-    assert looser == [
+    expected = [
         {'text': '   '},
         {'text': 'a' * (h.MAX_SUBMISSION_TEXT_CHARS + 1)},
         {'text': 'ok', 'custom_fields': {'k' * (h.MAX_CUSTOM_FIELD_KEY_CHARS + 1): 'x'}},
     ]
+    # Compared as a set: the order of the boundary table is not what this test is about.
+    assert sorted(map(json.dumps, looser)) == sorted(map(json.dumps, expected))
 
 
 def _ballot_bodies(h: Any) -> list[dict]:

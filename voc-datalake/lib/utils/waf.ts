@@ -36,7 +36,7 @@
  * stored text; the SPA escapes them when it renders), and GenericLFI_BODY / GenericRFI_BODY / EC2MetaDataSSRF_BODY
  * match `../`, URLs with an IPv4 host and `169.254.169.254` in that same text (an assistant answer resent with every
  * chat turn would be refused for good). Every other CRS rule blocks. Capacity: 25 (IP reputation) + 2 (rate) + 200
- * (Known bad inputs) + 700 (CRS) + the scope rule (1 WCU per label match, 13 per URL-decoded regex) = 999 WCU on
+ * (Known bad inputs) + 700 (CRS) + the scope rule (1 WCU per label match, 13 per URL-decoded regex) = 986 WCU on
  * the API ACL and 941 on the CloudFront ACL, under the 1,500 a web ACL includes. No logging configuration: WAF keeps
  * only its CloudWatch metrics and sampled requests (3 hours), so no request content is stored.
  */

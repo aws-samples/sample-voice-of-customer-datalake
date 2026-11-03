@@ -16,8 +16,9 @@
  *   (shared/prototype_pins.py), is over the rule's 8 KB; and that text is a customer's own words, where `<div>`,
  *   `I <3 it`, `src/../lib/foo.py`, a pasted stack trace or a link to `http://10.0.0.1/admin` is feedback, not an
  *   attack (stored as data, never executed, fetched or opened as a path; the SPA escapes it when it renders).
- * - `POST /voting-sessions/{id}/submit` keeps the four content rules counted for the same reason (a ballot's
- *   `notes`, up to 2,000 characters, ballots_handler.py); its body is small, so the size rule blocks.
+ * - `POST /voting-sessions/{id}/submit` keeps every body rule counted for the same reasons: a ballot's `notes` is up
+ *   to 2,000 characters of free text (ballots_handler.py), and 2,000 characters outside the BMP are 8,000 bytes of
+ *   UTF-8 before the JSON and the axes, over the size rule's 8 KB.
  * - `/webhooks/*` keeps every body rule counted: a GitHub issue payload is over 8 KB and its body is user text with
  *   HTML, paths and URLs. The handler checks the HMAC signature before it parses anything.
  * - `GenericRFI_BODY` stays counted on `POST /oauth/register` (`redirect_uris: ["http://127.0.0.1:<port>/…"]`) and
@@ -67,11 +68,9 @@ export const CRS_RULE_LABELS: Readonly<Record<ApiCountedCrsRule, string>> = {
   GenericRFI_QUERYARGUMENTS: 'awswaf:managed:aws:core-rule-set:GenericRFI_QueryArguments',
 };
 
-/** The body rules that read the CONTENT of a body (every body rule but the size one). */
-const CONTENT_BODY_RULES: readonly ApiCountedCrsRule[] = [
-  'CrossSiteScripting_BODY', 'GenericLFI_BODY', 'GenericRFI_BODY', 'EC2MetaDataSSRF_BODY',
+const BODY_RULES: readonly ApiCountedCrsRule[] = [
+  'SizeRestrictions_BODY', 'CrossSiteScripting_BODY', 'GenericLFI_BODY', 'GenericRFI_BODY', 'EC2MetaDataSSRF_BODY',
 ];
-const BODY_RULES: readonly ApiCountedCrsRule[] = ['SizeRestrictions_BODY', ...CONTENT_BODY_RULES];
 
 interface PublicApiRoute {
   /** The resource path as api-routes.ts declares it (`{name}` = one path segment). */
@@ -86,7 +85,7 @@ export const PUBLIC_API_ROUTES: readonly PublicApiRoute[] = [
   { path: '/feedback-forms/{form_id}/iframe', keepCounted: [] },
   { path: '/feedback-forms/{form_id}/submit', keepCounted: BODY_RULES },
   { path: '/voting-sessions/{session_id}/config', keepCounted: [] },
-  { path: '/voting-sessions/{session_id}/submit', keepCounted: CONTENT_BODY_RULES },
+  { path: '/voting-sessions/{session_id}/submit', keepCounted: BODY_RULES },
   { path: '/unsubscribe', keepCounted: [] },
   { path: '/.well-known/oauth-authorization-server', keepCounted: [] },
   { path: '/.well-known/oauth-protected-resource', keepCounted: [] },
