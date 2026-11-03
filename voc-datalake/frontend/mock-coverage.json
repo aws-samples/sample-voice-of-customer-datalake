@@ -738,7 +738,10 @@
     "call": "`/participants/people/${id(personId)}`",
     "probes": [
       {
-        "path": "/participants/people/per_probe_missing"
+        "path": "/participants/people/per_probe_missing",
+        "body": {
+          "legal_basis": "GDPR art. 17 request #42"
+        }
       }
     ]
   },
@@ -3272,6 +3275,7 @@
               "label": "Support tickets",
               "pii": "redact",
               "retention_days": 365,
+              "retention_legal_basis": "DPA with the ticketing vendor, 12 months",
               "restricted": true,
               "dimension_defaults": {},
               "tags": [
@@ -3292,7 +3296,8 @@
         "path": "/settings/erasure",
         "body": {
           "field": "author",
-          "value": "Jordan P."
+          "value": "Jordan P.",
+          "legal_basis": "GDPR art. 17 request #123"
         }
       },
       {
@@ -3300,7 +3305,8 @@
         "body": {
           "field": "source",
           "value": "webscraper",
-          "confirm": "webscraper"
+          "confirm": "webscraper",
+          "legal_basis": "Contract with the review site ended"
         }
       }
     ]

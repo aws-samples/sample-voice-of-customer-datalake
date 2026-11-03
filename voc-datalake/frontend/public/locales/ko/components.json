@@ -575,6 +575,8 @@
     "keepForever": "리뷰를 영구 보관",
     "retentionLabel": "다음보다 오래된 리뷰 삭제(일)",
     "retentionHint": "{{min, number}}~{{max, number}}일. 매일 실행되는 작업이 이 소스의 오래된 리뷰와 원본 보관 파일을 삭제합니다.",
+    "retentionBasisHint": "이 기간이 지나면 이 소스의 리뷰를 삭제하는 이유이며 감사 기록에 보관됩니다. 예: \"공급업체 X와의 DPA, 12개월\".",
+    "retentionBasisMissing": "이 보존 기간에는 기록된 법적 근거가 없습니다(6.00.00 이전에 설정됨). 계속 적용되며, 이 프로필을 저장하려면 법적 근거를 추가하세요.",
     "removeProfile": "{{name}} 프로필 삭제",
     "labelLabel": "레이블",
     "piiLabel": "개인 정보",
@@ -599,6 +601,7 @@
     "problems": {
       "tooMany": "소스 프로필은 최대 {{max, number}}개입니다.",
       "retention": "{{name}}: 보관 기간은 {{min, number}}~{{max, number}}일이거나 영구여야 합니다.",
+      "retentionBasis": "{{name}}: 보존 기간의 법적 근거를 입력하세요.",
       "tags": "{{name}}: 먼저 태그를 수정하세요.",
       "idFormat": "소문자, 숫자, \"_\" 또는 \"-\"를 사용하세요(최대 48자).",
       "idDuplicate": "해당 소스에는 이미 프로필이 있습니다.",
@@ -610,7 +613,7 @@
   },
   "erasure": {
     "title": "한 사람의 피드백 삭제",
-    "description": "일치하는 모든 리뷰와 원본 보관 파일을 삭제합니다. 되돌릴 수 없습니다. 값은 해시만 보관됩니다.",
+    "description": "일치하는 모든 리뷰(Radar 리뷰 포함)와 원본 아카이브를 삭제하고, 이를 인용한 페르소나와 문서에 표시합니다. 이 작업은 되돌릴 수 없습니다. 값의 해시와 입력한 법적 근거만 보관됩니다.",
     "fieldLabel": "일치 기준",
     "fields": {
       "author": "작성자",
@@ -628,6 +631,9 @@
     "jobsTitle": "최근 삭제",
     "noJobs": "아직 없습니다.",
     "counts": "리뷰 {{items, number}}건, 원본 객체 {{objects, number}}개 삭제",
+    "legalBasisShown": "법적 근거: {{basis}}",
+    "copies": "Radar 리뷰 {{radar, number}}개 삭제, 페르소나 또는 문서 {{artifacts, number}}개 표시",
+    "reviewFiles": "삭제되지 않은 행도 포함하고 있어 보관한 업로드 파일: {{files, number}}개. 검토하세요:",
     "status": {
       "queued": "대기 중",
       "running": "실행 중",
@@ -637,9 +643,13 @@
     "confirmTitle": "이 사람의 피드백을 삭제할까요?",
     "confirmMessage": "{{field}}이(가) 값과 일치하는 모든 리뷰({{source}})와 원본 보관 파일이 영구 삭제됩니다."
   },
+  "legalBasis": {
+    "label": "법적 근거",
+    "hint": "이 데이터를 삭제하는 이유이며 감사 기록에 보관됩니다. 예: \"GDPR 제17조 요청 #123\". 여기에 당사자의 이름이나 이메일을 입력하지 마세요."
+  },
   "sourceErasure": {
     "title": "소스의 모든 데이터 삭제",
-    "description": "한 소스의 모든 리뷰와 raw 폴더의 모든 원본 파일을 삭제합니다. 리뷰가 삭제되면서 대시보드 수치가 줄어듭니다. 소스의 설정, 일정, 동기화 위치는 유지되므로 소스를 끄기 전까지 새 리뷰가 계속 들어옵니다. 업로드한 CSV 및 JSON 파일은 유지됩니다. 이 작업은 되돌릴 수 없습니다.",
+    "description": "한 소스의 모든 리뷰, 해당 Radar 리뷰, raw 폴더의 모든 원본 파일, 이 소스에 업로드된 CSV 및 JSON 파일을 삭제합니다. 리뷰가 삭제되면서 대시보드 수치가 줄어듭니다. 삭제된 리뷰를 인용한 페르소나와 문서에는 표시가 남습니다. 소스의 설정, 일정, 동기화 위치는 유지되므로 소스를 끌 때까지 새 리뷰가 계속 들어옵니다. 이 작업은 되돌릴 수 없습니다.",
     "sourceLabel": "소스",
     "chooseSource": "소스 선택",
     "noSources": "아직 데이터가 있는 소스가 없습니다.",
@@ -647,13 +657,15 @@
     "startError": "삭제를 시작하지 못했습니다: {{reason}}",
     "confirmTitle": "{{source}}의 모든 데이터를 삭제할까요?",
     "confirmMessage": "{{source}}의 모든 리뷰와 해당 폴더의 모든 원본 파일이 영구적으로 삭제됩니다.",
-    "keepsRunning": "삭제 후에도 소스는 계속 실행됩니다. 일정이 켜져 있으면 새 리뷰가 계속 들어옵니다. 비어 있는 상태로 두려면 먼저 소스를 끄세요. 업로드한 CSV 및 JSON 파일(raw/csv_upload, raw/json_upload)은 유지됩니다.",
+    "keepsRunning": "삭제 후에도 소스는 계속 실행됩니다. 일정이 켜져 있으면 새 리뷰가 계속 들어옵니다. 비어 있는 상태로 두려면 먼저 소스를 끄세요.",
     "scheduleOn": "{{source}}의 일정이 켜져 있습니다. 먼저 소스를 끄지 않으면 삭제 후에도 새 리뷰가 들어옵니다.",
     "typeLabel": "확인하려면 {{source}}을(를) 입력하세요",
     "confirm": "모든 데이터 삭제",
     "progress": {
       "items": "리뷰를 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
+      "radar": "Radar 리뷰를 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
       "raw": "원본 파일을 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
+      "lineage": "삭제된 리뷰를 인용한 페르소나와 문서에 표시하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
       "done": "삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}."
     }
   },

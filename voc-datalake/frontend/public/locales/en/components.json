@@ -575,6 +575,8 @@
     "keepForever": "Keep reviews forever",
     "retentionLabel": "Delete reviews older than (days)",
     "retentionHint": "{{min, number}}-{{max, number}} days. A daily job deletes older reviews of this source and their raw archives.",
+    "retentionBasisHint": "Why reviews of this source are deleted after this period, kept in the audit trail. For example: \"DPA with vendor X, 12 months\".",
+    "retentionBasisMissing": "No legal basis is recorded for this retention period (it was set before 6.00.00). It keeps running; add the basis to save this profile.",
     "removeProfile": "Remove the profile of {{name}}",
     "labelLabel": "Label",
     "piiLabel": "Personal data",
@@ -599,6 +601,7 @@
     "problems": {
       "tooMany": "At most {{max, number}} source profiles.",
       "retention": "{{name}}: retention must be {{min, number}}-{{max, number}} days, or keep forever.",
+      "retentionBasis": "{{name}}: give the legal basis of the retention period.",
       "tags": "{{name}}: fix the tags first.",
       "idFormat": "Use lowercase letters, digits, \"_\" or \"-\" (up to 48).",
       "idDuplicate": "That source already has a profile.",
@@ -610,7 +613,7 @@
   },
   "erasure": {
     "title": "Erase one person's feedback",
-    "description": "Deletes every matching review and its raw archive. This cannot be undone. Only a hash of the value is kept.",
+    "description": "Deletes every matching review (Radar reviews too) and its raw archive, and marks the personas and documents that cited one. This cannot be undone. Only a hash of the value is kept, with the legal basis you give.",
     "fieldLabel": "Match on",
     "fields": {
       "author": "Author",
@@ -628,6 +631,9 @@
     "jobsTitle": "Recent erasures",
     "noJobs": "None yet.",
     "counts": "{{items, number}} reviews, {{objects, number}} raw objects deleted",
+    "legalBasisShown": "Legal basis: {{basis}}",
+    "copies": "{{radar, number}} Radar reviews deleted, {{artifacts, number}} personas or documents marked",
+    "reviewFiles": "Uploaded files kept because they also hold rows that were not erased: {{files, number}}. Review them:",
     "status": {
       "queued": "Queued",
       "running": "Running",
@@ -637,9 +643,13 @@
     "confirmTitle": "Erase this person's feedback?",
     "confirmMessage": "Every review whose {{field}} matches the value ({{source}}) and its raw archive will be deleted permanently."
   },
+  "legalBasis": {
+    "label": "Legal basis",
+    "hint": "Why this data is deleted, kept in the audit trail. For example: \"GDPR art. 17 request #123\". Never type the person's name or email here."
+  },
   "sourceErasure": {
     "title": "Delete all data from a source",
-    "description": "Deletes every review from one source and every raw file in its raw folder. Dashboard counts go down as the reviews are deleted. The source keeps its settings, schedule and sync position, so new reviews keep arriving until you turn the source off. Uploaded CSV and JSON files are kept. This cannot be undone.",
+    "description": "Deletes every review from one source, its Radar reviews, every raw file in its raw folder and the CSV and JSON files uploaded to it. Dashboard counts go down as the reviews are deleted. Personas and documents that cited a deleted review are marked. The source keeps its settings, schedule and sync position, so new reviews keep arriving until you turn the source off. This cannot be undone.",
     "sourceLabel": "Source",
     "chooseSource": "Choose a source",
     "noSources": "No source has data yet.",
@@ -647,13 +657,15 @@
     "startError": "The deletion was not started: {{reason}}",
     "confirmTitle": "Delete all data from {{source}}?",
     "confirmMessage": "Every review from {{source}} and every raw file in its folder will be deleted permanently.",
-    "keepsRunning": "The source keeps running after the deletion: if its schedule is on, new reviews keep arriving. Turn the source off first if you want it to stay empty. Uploaded CSV and JSON files (raw/csv_upload, raw/json_upload) are kept.",
+    "keepsRunning": "The source keeps running after the deletion: if its schedule is on, new reviews keep arriving. Turn the source off first if you want it to stay empty.",
     "scheduleOn": "The schedule of {{source}} is on. New reviews will arrive after the deletion unless you turn the source off first.",
     "typeLabel": "Type {{source}} to confirm",
     "confirm": "Delete all data",
     "progress": {
       "items": "Deleting reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
+      "radar": "Deleting Radar reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
       "raw": "Deleting raw files. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
+      "lineage": "Marking personas and documents that cited deleted reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
       "done": "Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}."
     }
   },

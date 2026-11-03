@@ -8,9 +8,17 @@ describe('normalizeSourceProfiles', () => {
   it('reads a full admin row as-is', () => {
     const row = {
       id: 'support_tickets', label: 'Support tickets', pii: 'redact', retention_days: 365,
+      retention_legal_basis: 'DPA with vendor X, 12 months',
       restricted: true, dimension_defaults: { user_type: 'customer' }, tags: ['support'],
     }
     expect(normalizeSourceProfiles({ sources: [row] })).toStrictEqual([row])
+  })
+
+  it('reads a missing or blank retention legal basis as null (a profile saved before 6.00.00)', () => {
+    const profiles = normalizeSourceProfiles({ sources: [
+      { id: 'old', retention_days: 90 }, { id: 'blank', retention_days: 90, retention_legal_basis: '  ' },
+    ] })
+    expect(profiles.map((p) => p.retention_legal_basis)).toStrictEqual([null, null])
   })
 
   it('fills the contract defaults on the non-admin view', () => {

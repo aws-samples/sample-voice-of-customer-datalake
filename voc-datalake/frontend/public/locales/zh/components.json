@@ -575,6 +575,8 @@
     "keepForever": "永久保留评价",
     "retentionLabel": "删除早于以下天数的评价",
     "retentionHint": "{{min, number}}-{{max, number}} 天。每日任务会删除此来源中更早的评价及其原始存档。",
+    "retentionBasisHint": "超过此期限后删除该来源评论的原因，会保存在审计记录中。例如：\"与供应商 X 的数据处理协议，12 个月\"。",
+    "retentionBasisMissing": "此保留期限没有记录法律依据（在 6.00.00 之前设置）。它仍会继续执行；请补充法律依据后再保存此配置。",
     "removeProfile": "删除 {{name}} 的配置",
     "labelLabel": "标签",
     "piiLabel": "个人数据",
@@ -599,6 +601,7 @@
     "problems": {
       "tooMany": "最多 {{max, number}} 个来源配置。",
       "retention": "{{name}}:保留期限必须为 {{min, number}}-{{max, number}} 天,或永久保留。",
+      "retentionBasis": "{{name}}：请填写保留期限的法律依据。",
       "tags": "{{name}}:请先修正标签。",
       "idFormat": "使用小写字母、数字、“_”或“-”(最多 48 个)。",
       "idDuplicate": "该来源已有配置。",
@@ -610,7 +613,7 @@
   },
   "erasure": {
     "title": "删除某个人的反馈",
-    "description": "删除所有匹配的评价及其原始存档。此操作无法撤销。仅保留该值的哈希。",
+    "description": "删除每条匹配的评论（包括 Radar 评论）及其原始归档，并标记引用过这些评论的角色和文档。此操作无法撤销。只保留该值的哈希以及您填写的法律依据。",
     "fieldLabel": "匹配字段",
     "fields": {
       "author": "作者",
@@ -628,6 +631,9 @@
     "jobsTitle": "最近的删除",
     "noJobs": "暂无。",
     "counts": "已删除 {{items, number}} 条评价、{{objects, number}} 个原始对象",
+    "legalBasisShown": "法律依据：{{basis}}",
+    "copies": "已删除 {{radar, number}} 条 Radar 评论，已标记 {{artifacts, number}} 个角色或文档",
+    "reviewFiles": "因同时包含未删除的行而保留的上传文件：{{files, number}} 个。请检查：",
     "status": {
       "queued": "排队中",
       "running": "运行中",
@@ -637,9 +643,13 @@
     "confirmTitle": "要删除此人的反馈吗?",
     "confirmMessage": "{{field}} 与该值匹配的所有评价({{source}})及其原始存档将被永久删除。"
   },
+  "legalBasis": {
+    "label": "法律依据",
+    "hint": "删除这些数据的原因，会保存在审计记录中。例如：\"GDPR 第 17 条请求 #123\"。请勿在此输入当事人的姓名或电子邮件。"
+  },
   "sourceErasure": {
     "title": "删除某个来源的全部数据",
-    "description": "删除一个来源的所有评论以及其 raw 文件夹中的所有原始文件。随着评论被删除，仪表板中的计数会下降。该来源的设置、计划和同步位置会保留，因此在关闭该来源之前，新评论会继续进入。已上传的 CSV 和 JSON 文件会保留。此操作无法撤销。",
+    "description": "删除某个来源的所有评论、其 Radar 评论、其 raw 文件夹中的所有原始文件，以及为其上传的 CSV 和 JSON 文件。随着评论被删除，仪表板中的数量会减少。引用过已删除评论的角色和文档会被标记。该来源会保留其设置、计划和同步位置，因此在您关闭该来源之前，新的评论会继续到来。此操作无法撤销。",
     "sourceLabel": "来源",
     "chooseSource": "选择来源",
     "noSources": "还没有来源有数据。",
@@ -647,13 +657,15 @@
     "startError": "未能开始删除：{{reason}}",
     "confirmTitle": "删除 {{source}} 的全部数据？",
     "confirmMessage": "{{source}} 的所有评论及其文件夹中的所有原始文件将被永久删除。",
-    "keepsRunning": "删除后该来源仍会继续运行：如果其计划已开启，新的评论会继续到来。如果希望它保持为空，请先关闭该来源。已上传的 CSV 和 JSON 文件（raw/csv_upload、raw/json_upload）会保留。",
+    "keepsRunning": "删除后该来源仍会继续运行：如果其计划已开启，新的评论会继续到来。如果希望它保持为空，请先关闭该来源。",
     "scheduleOn": "{{source}} 的计划已开启。除非先关闭该来源，否则删除后仍会有新的评论到来。",
     "typeLabel": "输入 {{source}} 以确认",
     "confirm": "删除全部数据",
     "progress": {
       "items": "正在删除评论。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
+      "radar": "正在删除 Radar 评论。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
       "raw": "正在删除原始文件。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
+      "lineage": "正在标记引用过已删除评论的角色和文档。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
       "done": "已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。"
     }
   },

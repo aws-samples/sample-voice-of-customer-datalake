@@ -4,7 +4,8 @@
  * one source. Admin only; irreversible, so it asks first.
  *
  * The value is sent once and cleared from the form when the job is accepted;
- * the job list shows only what the server keeps (a hash of the value, counts).
+ * the job list shows only what the server keeps (a hash of the value, the legal
+ * basis, counts, and any uploaded file that was kept because it holds other rows).
  * The list polls while a job is queued or running.
  *
  * @module components/SourcesManager/ErasurePanel
@@ -14,9 +15,11 @@ import { useTranslation } from 'react-i18next'
 import { Eraser } from 'lucide-react'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
 import { ERASURE_FIELDS, sourceProfilesApi } from '../../api/sourceProfilesApi'
+import { isLegalBasis } from '../../utils/legalBasis'
+import LegalBasisField from '../LegalBasisField/LegalBasisField'
 import type { ErasureField, ErasureJob, ErasureJobField, SourceProfile } from '../../api/sourceProfilesApi'
 import { sourceLabel } from '../../utils/displayLabels'
-import { ErasureSection, ErasureStartError, ErasureStatusBadge } from './erasureParts'
+import { ErasureJobDetails, ErasureSection, ErasureStartError, ErasureStatusBadge } from './erasureParts'
 import { errorReason, useErasureJobs, useStartErasure } from './useErasureJobs'
 
 const FIELD_COPY: Record<ErasureJobField, { labelKey: string }> = {
@@ -46,6 +49,7 @@ function JobRow({ job }: Readonly<{ job: ErasureJob }>) {
       <span className="text-text">{t('counts', { items: job.deleted_items, objects: job.deleted_objects })}</span>
       <span className="text-muted">{job.started_by} · {job.created_at}</span>
       {job.error !== undefined && <span className="text-danger">{job.error}</span>}
+      <ErasureJobDetails job={job} />
     </li>
   )
 }
@@ -59,13 +63,17 @@ export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly
   const [field, setField] = useState<ErasureField>('author')
   const [value, setValue] = useState('')
   const [source, setSource] = useState('')
+  const [legalBasis, setLegalBasis] = useState('')
   const [confirming, setConfirming] = useState(false)
   const { data: jobs = [] } = useErasureJobs()
   const needsSource = SOURCE_SCOPED_FIELDS.has(field) && source === ''
   const hintId = useId()
-  const start = useStartErasure(() => sourceProfilesApi.startErasure({ field, value: value.trim(), source }), {
+  const start = useStartErasure(() => sourceProfilesApi.startErasure({
+    field, value: value.trim(), source, legal_basis: legalBasis.trim(),
+  }), {
     onAccepted: () => {
       setValue('')
+      setLegalBasis('')
       setConfirming(false)
     },
     onRefused: () => setConfirming(false),
@@ -94,7 +102,9 @@ export default function ErasurePanel({ profiles }: Readonly<{ profiles: readonly
           {needsSource && <p id={hintId} className="text-xs text-muted mt-1">{t('sourceRequired')}</p>}
         </div>
       </div>
-      <button type="button" onClick={() => setConfirming(true)} disabled={value.trim() === '' || needsSource || start.isPending} className="btn btn-danger">
+      <LegalBasisField value={legalBasis} onChange={setLegalBasis} disabled={start.isPending} />
+      <button type="button" onClick={() => setConfirming(true)}
+        disabled={value.trim() === '' || needsSource || !isLegalBasis(legalBasis) || start.isPending} className="btn btn-danger">
         <Eraser size={14} aria-hidden="true" /> {t('start')}
       </button>
       {start.isError && <ErasureStartError text={t('startError', { reason: errorReason(start.error) })} />}

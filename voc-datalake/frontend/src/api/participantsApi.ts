@@ -119,7 +119,9 @@ export const participantsApi = {
   updatePerson: async (personId: string, edit: PersonEdit): Promise<Person> =>
     normalize.person(await fetchApi<unknown>(`/participants/people/${id(personId)}`, put(edit))),
   /** Admin: erases the person (memberships, project links, tokens); past recipient rows keep only the id. */
-  deletePerson: (personId: string) => fetchApi<unknown>(`/participants/people/${id(personId)}`, del()),
+  /** Erase a person (admin); `legalBasis` is required and recorded (never the person's email). */
+  deletePerson: (personId: string, legalBasis: string) =>
+    fetchApi<unknown>(`/participants/people/${id(personId)}`, del({ legal_basis: legalBasis })),
 
   getProject: async (projectId: string): Promise<ProjectParticipants> =>
     normalize.project(await fetchApi<unknown>(`/participants/projects/${id(projectId)}`)),

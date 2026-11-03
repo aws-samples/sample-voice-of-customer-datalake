@@ -173,15 +173,27 @@ describe('Participants page', () => {
     expect(await within(dialog).findByText('Tell us about the booking flow')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: /delete person/i }))
     expect(screen.getByText(/every list membership and project link/i)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Legal basis'), ' GDPR art. 17 request #42 ')
     expect(bodiesOf('DELETE', '/participants/people/per_ana')).toHaveLength(0)
     await user.click(screen.getByRole('button', { name: /delete for good/i }))
-    await waitFor(() => expect(bodiesOf('DELETE', '/participants/people/per_ana')).toHaveLength(1))
+    await waitFor(() => expect(bodiesOf('DELETE', '/participants/people/per_ana')).toStrictEqual([
+      { legal_basis: 'GDPR art. 17 request #42' }]))
+  })
+
+  it('keeps Delete for good off until the erasure states its legal basis', async () => {
+    const { user, dialog } = await openErasableAna()
+    await within(dialog).findByText('Tell us about the booking flow')
+    await user.click(within(dialog).getByRole('button', { name: /delete person/i }))
+    expect(screen.getByRole('button', { name: /delete for good/i })).toBeDisabled()
+    await user.type(screen.getByLabelText('Legal basis'), 'GDPR art. 17 request #42')
+    expect(screen.getByRole('button', { name: /delete for good/i })).toBeEnabled()
   })
 
   it('closes an erased person and never asks for them again', async () => {
     const { user, dialog } = await openErasableAna()
     await within(dialog).findByText('Tell us about the booking flow')
     await user.click(within(dialog).getByRole('button', { name: /delete person/i }))
+    await user.type(screen.getByLabelText('Legal basis'), 'GDPR art. 17 request #42')
     await user.click(screen.getByRole('button', { name: /delete for good/i }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     // The lists refetch proves the invalidation ran; the erased person must not be part of it.

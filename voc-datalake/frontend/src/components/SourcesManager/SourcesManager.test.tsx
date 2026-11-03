@@ -60,12 +60,37 @@ describe('SourcesManager', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/settings/sources', expect.objectContaining({ method: 'PUT' })))
     expect(savedBody()).toStrictEqual({ sources: [
-      { id: 'sales_csv', label: 'Sales CSV', pii: 'allow', retention_days: null, restricted: false, dimension_defaults: { user_type: 'partner' }, tags: ['sales'] },
-      { ...supportProfile, retention_days: null },
-      { id: 'webscraper', label: 'webscraper', pii: 'allow', retention_days: null, restricted: false, dimension_defaults: {}, tags: [] },
+      { id: 'sales_csv', label: 'Sales CSV', pii: 'allow', retention_days: null, retention_legal_basis: null, restricted: false, dimension_defaults: { user_type: 'partner' }, tags: ['sales'] },
+      { ...supportProfile, retention_days: null, retention_legal_basis: null },
+      { id: 'webscraper', label: 'webscraper', pii: 'allow', retention_days: null, retention_legal_basis: null, restricted: false, dimension_defaults: {}, tags: [] },
     ] })
     // A profile change changes what the feedback reads return (restricted, PII): they refresh.
     await waitFor(() => { expect(mockAfterIngest).toHaveBeenCalledExactlyOnceWith() })
+  })
+
+  it('flags a retention period saved without a legal basis and blocks the save until one is given', async () => {
+    const user = userEvent.setup()
+    renderWithQueryClient(<SourcesManager />)
+    const support = await screen.findByRole('region', { name: 'Support tickets' })
+    expect(within(support).getByRole('alert')).toHaveTextContent('No legal basis is recorded for this retention period')
+    const basis = within(support).getByLabelText('Legal basis')
+    await user.type(basis, 'x')
+    await user.clear(basis)
+    await user.tab()
+    expect(screen.getByRole('status')).toHaveTextContent('Support tickets: give the legal basis of the retention period.')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('saves a retention period with the legal basis typed for it, trimmed', async () => {
+    const user = userEvent.setup()
+    renderWithQueryClient(<SourcesManager />)
+    const support = await screen.findByRole('region', { name: 'Support tickets' })
+    await user.type(within(support).getByLabelText('Legal basis'), ' DPA with the ticketing vendor, 12 months ')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/settings/sources', expect.objectContaining({ method: 'PUT' })))
+    expect(savedBody()).toMatchObject({ sources: [{ id: 'sales_csv' }, {
+      id: 'support_tickets', retention_days: 365, retention_legal_basis: 'DPA with the ticketing vendor, 12 months',
+    }] })
   })
 
   it('blocks a save while a retention is out of range', async () => {
@@ -108,19 +133,43 @@ describe('SourcesManager', () => {
 })
 
 describe('ErasurePanel', () => {
-  it('asks first, sends the value once, clears it and lists the job by hash', async () => {
+  it('asks first, sends the value and the legal basis once, clears them and lists the job by hash', async () => {
     const user = userEvent.setup()
     renderWithQueryClient(<SourcesManager />)
     const panel = await screen.findByRole('region', { name: "Erase one person's feedback" })
     await user.selectOptions(within(panel).getByLabelText('Match on'), 'email')
     await user.type(within(panel).getByLabelText('Value'), 'ana@example.com')
     await user.selectOptions(within(panel).getByLabelText('Within source'), 'support_tickets')
-    routeSettings([job])
+    await user.type(within(panel).getByLabelText('Legal basis'), 'GDPR art. 17 request #123')
+    routeSettings([{ ...job, legal_basis: 'GDPR art. 17 request #123' }])
     await user.click(within(panel).getByRole('button', { name: 'Erase' }))
     await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Erase' }))
-    await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/settings/erasure', { method: 'POST', body: JSON.stringify({ field: 'email', value: 'ana@example.com', source: 'support_tickets' }) }))
-    expect(within(panel).getByLabelText('Value')).toHaveValue('')
+    await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/settings/erasure', { method: 'POST', body: JSON.stringify({
+      field: 'email', value: 'ana@example.com', legal_basis: 'GDPR art. 17 request #123', source: 'support_tickets',
+    }) }))
+    expect([within(panel).getByLabelText('Value'), within(panel).getByLabelText('Legal basis')].map((input) => input.getAttribute('value')))
+      .toStrictEqual(['', ''])
     expect(await within(panel).findByText('a1b2c3d4e5f6')).toBeInTheDocument()
+    expect(within(panel).getByText('Legal basis: GDPR art. 17 request #123')).toBeInTheDocument()
+  })
+
+  it('keeps Erase off until a legal basis is given', async () => {
+    const user = userEvent.setup()
+    renderWithQueryClient(<SourcesManager />)
+    const panel = await screen.findByRole('region', { name: "Erase one person's feedback" })
+    await user.type(within(panel).getByLabelText('Value'), 'Jordan P.')
+    expect(within(panel).getByRole('button', { name: 'Erase' })).toBeDisabled()
+    await user.type(within(panel).getByLabelText('Legal basis'), 'GDPR art. 17 request #9')
+    expect(within(panel).getByRole('button', { name: 'Erase' })).toBeEnabled()
+  })
+
+  it('lists the uploaded files a job kept for review', async () => {
+    const files = { count: 1, keys: ['raw/csv_upload/2026/01/01/job.csv'] }
+    routeSettings([{ ...job, files_needing_review: files }])
+    renderWithQueryClient(<SourcesManager />)
+    const panel = await screen.findByRole('region', { name: "Erase one person's feedback" })
+    expect(await within(panel).findByText(/^Uploaded files kept because they also hold rows/)).toHaveTextContent(': 1. Review them:')
+    expect(within(panel).getByText('raw/csv_upload/2026/01/01/job.csv')).toBeInTheDocument()
   })
 
   it.each(['source_id', 'csv_row_id'])('needs a source before a %s erasure can start', async (field) => {
@@ -129,6 +178,7 @@ describe('ErasurePanel', () => {
     const panel = await screen.findByRole('region', { name: "Erase one person's feedback" })
     await user.selectOptions(within(panel).getByLabelText('Match on'), field)
     await user.type(within(panel).getByLabelText('Value'), 'row-7')
+    await user.type(within(panel).getByLabelText('Legal basis'), 'GDPR art. 17 request #7')
     expect(within(panel).getByRole('button', { name: 'Erase' })).toBeDisabled()
     expect(within(panel).getByLabelText('Within source')).toHaveAccessibleDescription('An id is unique only within its source: choose the source.')
     await user.selectOptions(within(panel).getByLabelText('Within source'), 'support_tickets')

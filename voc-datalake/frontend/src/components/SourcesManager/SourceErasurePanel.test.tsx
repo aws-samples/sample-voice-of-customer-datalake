@@ -1,7 +1,8 @@
 /**
  * "Delete all data from a source": the picker lists what the server accepts,
- * Delete stays off until the source id is typed exactly, the typed text is sent
- * as `confirm`, and the started job's progress is shown from the polled list.
+ * Delete stays off until the source id is typed exactly and a legal basis is
+ * given, both are sent (`confirm`, `legal_basis`), and the started job's
+ * progress and details are shown from the polled list.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -21,6 +22,7 @@ import SourceErasurePanel from './SourceErasurePanel'
 import { normalizeSourceProfiles } from '../../api/sourceProfilesApi'
 
 const SOURCE = 'web_trustpilot_example_air'
+const BASIS = 'Contract with the review site ended'
 const PROFILES = normalizeSourceProfiles({ sources: [supportProfile] })
 const running = {
   job_id: 'er_00000000abcd', status: 'running', field: 'source', source: SOURCE, value_hash: 'f'.repeat(64),
@@ -56,6 +58,7 @@ describe('SourceErasurePanel', () => {
     return {
       region,
       typed: within(dialog).getByLabelText(`Type ${SOURCE} to confirm`),
+      basis: within(dialog).getByLabelText('Legal basis'),
       confirm: within(dialog).getByRole('button', { name: 'Delete all data' }),
     }
   }
@@ -67,14 +70,14 @@ describe('SourceErasurePanel', () => {
     expect(within(region).getByRole('button', { name: 'Delete all data from this source' })).toBeDisabled()
   })
 
-  it('says the source keeps running and uploaded files are kept, without a warning when its schedule is off', async () => {
+  it('says the source keeps running, without a warning when its schedule is off', async () => {
     route({ scheduled: { [SOURCE]: false, support_tickets: true } })
     const user = userEvent.setup()
     renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
     await openDialog(user)
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText(/The source keeps running after the deletion/)).toHaveTextContent(
-      'Uploaded CSV and JSON files (raw/csv_upload, raw/json_upload) are kept.')
+      'Turn the source off first if you want it to stay empty.')
     expect(within(dialog).queryByText(/schedule of .* is on/)).not.toBeInTheDocument()
   })
 
@@ -88,37 +91,56 @@ describe('SourceErasurePanel', () => {
       `The schedule of ${SOURCE} is on. New reviews will arrive after the deletion unless you turn the source off first.`)
   })
 
-  it('keeps Delete off until the source id is typed exactly', async () => {
+  it('keeps Delete off until the source id is typed exactly and a legal basis is given', async () => {
     const user = userEvent.setup()
     renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
-    const { typed, confirm } = await openDialog(user)
+    const { typed, basis, confirm } = await openDialog(user)
     await user.type(typed, SOURCE.toUpperCase())
+    await user.type(basis, BASIS)
     expect(confirm).toBeDisabled()
     await user.clear(typed)
     await user.type(typed, SOURCE)
     expect(confirm).toBeEnabled()
+    await user.clear(basis)
+    await user.type(basis, '   ')
+    expect(confirm).toBeDisabled()
   })
 
-  it('sends what was typed as confirm and shows the job progress', async () => {
+  it('sends what was typed as confirm with the legal basis, and shows the job progress', async () => {
     const user = userEvent.setup()
     renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
-    const { region, typed, confirm } = await openDialog(user)
+    const { region, typed, basis, confirm } = await openDialog(user)
     await user.type(typed, SOURCE)
+    await user.type(basis, ` ${BASIS} `)
     route({ jobs: [running] })
     await user.click(confirm)
     await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/settings/erasure', {
-      method: 'POST', body: JSON.stringify({ field: 'source', value: SOURCE, confirm: SOURCE }),
+      method: 'POST', body: JSON.stringify({ field: 'source', value: SOURCE, confirm: SOURCE, legal_basis: BASIS }),
     }))
     expect(await within(region).findByText('Deleting raw files. Reviews deleted: 40. Raw files deleted: 12.')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('shows the job\'s legal basis, the Radar reviews and marked artifacts, and the last phase', async () => {
+    const user = userEvent.setup()
+    renderWithQueryClient(<SourceErasurePanel profiles={PROFILES} />)
+    const { region, typed, basis, confirm } = await openDialog(user)
+    await user.type(typed, SOURCE)
+    await user.type(basis, BASIS)
+    route({ jobs: [{ ...running, phase: 'lineage', legal_basis: BASIS, deleted_radar_items: 2, artifacts_marked: 3 }] })
+    await user.click(confirm)
+    expect(await within(region).findByText(/^Marking personas and documents/)).toBeInTheDocument()
+    expect(within(region).getByText(`Legal basis: ${BASIS}`)).toBeInTheDocument()
+    expect(within(region).getByText('2 Radar reviews deleted, 3 personas or documents marked')).toBeInTheDocument()
   })
 
   it('shows why the server refused, such as a deletion already running', async () => {
     const user = userEvent.setup()
     route({ post: () => { throw new Error('An erasure of this source is already running') } })
     renderWithQueryClient(<SourceErasurePanel profiles={[]} />)
-    const { region, typed, confirm } = await openDialog(user)
+    const { region, typed, basis, confirm } = await openDialog(user)
     await user.type(typed, SOURCE)
+    await user.type(basis, BASIS)
     await user.click(confirm)
     expect(await within(region).findByRole('alert')).toHaveTextContent(
       'The deletion was not started: An erasure of this source is already running')

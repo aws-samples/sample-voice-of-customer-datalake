@@ -1,12 +1,15 @@
 /**
- * @fileoverview One source profile: label, PII policy, retention, whether it is
+ * @fileoverview One source profile: label, PII policy, retention (with its legal
+ * basis, flagged when a period saved before 6.00.00 has none), whether it is
  * restricted, and the dimension values and tags every review from it gets.
  *
  * @module components/SourcesManager/SourceProfileEditor
  */
 import { useId } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Lock } from 'lucide-react'
+import { AlertTriangle, Lock } from 'lucide-react'
+import LegalBasisField from '../LegalBasisField/LegalBasisField'
 import { RemoveRowButton } from '../DraftSaveBar/DraftParts'
 import { MAX_RETENTION_DAYS, MIN_RETENTION_DAYS, PII_POLICIES } from '../../api/sourceProfilesApi'
 import DimensionValuesFields from '../DimensionFields/DimensionValuesFields'
@@ -30,8 +33,30 @@ interface SourceProfileEditorProps {
   onRemove: () => void
 }
 
-function RetentionField({ keepForever, retentionText, onChange }: Readonly<{
+function RetentionBasis({ profile, onChange }: Readonly<{
+  profile: SourceProfile; onChange: (profile: SourceProfile) => void
+}>) {
+  const { t } = useTranslation('components', { keyPrefix: 'sourcesManager' })
+  const basis = profile.retention_legal_basis ?? ''
+  // A period stored without a basis (saved before 6.00.00) still runs; saving now needs one.
+  const missing = profile.retention_days !== null && profile.retention_legal_basis === null
+  return (
+    <div className="space-y-1">
+      {missing && (
+        <p role="alert" className="flex items-start gap-2 text-xs text-warn">
+          <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 flex-shrink-0" />{t('retentionBasisMissing')}
+        </p>
+      )}
+      <LegalBasisField value={basis} hint={t('retentionBasisHint')}
+        onChange={(value) => onChange({ ...profile, retention_legal_basis: value })} />
+    </div>
+  )
+}
+
+function RetentionField({ keepForever, retentionText, onChange, children }: Readonly<{
   keepForever: boolean; retentionText: string; onChange: SourceProfileEditorProps['onRetentionChange']
+  /** The period's legal basis field, shown with the days. */
+  children: ReactNode
 }>) {
   const { t } = useTranslation('components', { keyPrefix: 'sourcesManager' })
   const id = useId()
@@ -57,6 +82,7 @@ function RetentionField({ keepForever, retentionText, onChange }: Readonly<{
           <p className="text-xs text-muted mt-1">{t('retentionHint', { min: MIN_RETENTION_DAYS, max: MAX_RETENTION_DAYS })}</p>
         </div>
       )}
+      {!keepForever && children}
     </div>
   )
 }
@@ -96,7 +122,9 @@ export default function SourceProfileEditor({
           <p className="text-xs text-muted mt-1">{tAll(PII_COPY[profile.pii].hintKey)}</p>
         </div>
       </div>
-      <RetentionField keepForever={keepForever} retentionText={retentionText} onChange={onRetentionChange} />
+      <RetentionField keepForever={keepForever} retentionText={retentionText} onChange={onRetentionChange}>
+        <RetentionBasis profile={profile} onChange={onChange} />
+      </RetentionField>
       <SwitchField checked={profile.restricted} onChange={(restricted) => onChange({ ...profile, restricted })} label={t('restrictedLabel')} hint={t('restrictedHint')} />
       <RadarSourceField profile={profile} />
       {dimensions.length > 0 && (

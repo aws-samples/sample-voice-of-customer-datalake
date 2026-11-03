@@ -585,6 +585,8 @@
     "keepForever": "Conserver les avis indéfiniment",
     "retentionLabel": "Supprimer les avis de plus de (jours)",
     "retentionHint": "{{min, number}} à {{max, number}} jours. Une tâche quotidienne supprime les avis plus anciens de cette source et leurs archives brutes.",
+    "retentionBasisHint": "Pourquoi les avis de cette source sont supprimés après cette durée ; conservé dans la piste d'audit. Par exemple : \"Accord de sous-traitance avec le fournisseur X, 12 mois\".",
+    "retentionBasisMissing": "Aucune base légale n'est enregistrée pour cette durée de conservation (définie avant la 6.00.00). Elle continue de s'appliquer ; ajoutez la base légale pour enregistrer ce profil.",
     "removeProfile": "Supprimer le profil de {{name}}",
     "labelLabel": "Libellé",
     "piiLabel": "Données personnelles",
@@ -609,6 +611,7 @@
     "problems": {
       "tooMany": "{{max, number}} profils de source au maximum.",
       "retention": "{{name}} : la conservation doit être de {{min, number}} à {{max, number}} jours, ou illimitée.",
+      "retentionBasis": "{{name}} : indiquez la base légale de la durée de conservation.",
       "tags": "{{name}} : corrigez d'abord les étiquettes.",
       "idFormat": "Utilisez des minuscules, des chiffres, « _ » ou « - » (48 au maximum).",
       "idDuplicate": "Cette source a déjà un profil.",
@@ -620,7 +623,7 @@
   },
   "erasure": {
     "title": "Effacer les avis d'une personne",
-    "description": "Supprime chaque avis correspondant et son archive brute. Action irréversible. Seule une empreinte de la valeur est conservée.",
+    "description": "Supprime chaque avis correspondant (avis Radar compris) et son archive brute, et marque les personas et les documents qui en citaient un. Cette action est irréversible. Seuls un hachage de la valeur et la base légale indiquée sont conservés.",
     "fieldLabel": "Correspondance sur",
     "fields": {
       "author": "Auteur",
@@ -638,6 +641,9 @@
     "jobsTitle": "Effacements récents",
     "noJobs": "Aucun pour l'instant.",
     "counts": "{{items, number}} avis et {{objects, number}} objets bruts supprimés",
+    "legalBasisShown": "Base légale : {{basis}}",
+    "copies": "{{radar, number}} avis Radar supprimés, {{artifacts, number}} personas ou documents marqués",
+    "reviewFiles": "Fichiers importés conservés parce qu'ils contiennent aussi des lignes non effacées : {{files, number}}. Vérifiez-les :",
     "status": {
       "queued": "En file d'attente",
       "running": "En cours",
@@ -647,9 +653,13 @@
     "confirmTitle": "Effacer les avis de cette personne ?",
     "confirmMessage": "Chaque avis dont le champ {{field}} correspond à la valeur ({{source}}) ainsi que son archive brute seront supprimés définitivement."
   },
+  "legalBasis": {
+    "label": "Base légale",
+    "hint": "Pourquoi ces données sont supprimées ; conservé dans la piste d'audit. Par exemple : \"RGPD art. 17, demande #123\". N'indiquez jamais ici le nom ni l'adresse e-mail de la personne."
+  },
   "sourceErasure": {
     "title": "Supprimer toutes les données d’une source",
-    "description": "Supprime tous les avis d’une source et tous les fichiers bruts de son dossier raw. Les compteurs du tableau de bord baissent à mesure que les avis sont supprimés. La source garde ses paramètres, sa planification et sa position de synchronisation : de nouveaux avis continuent d’arriver tant que vous ne la désactivez pas. Les fichiers CSV et JSON importés sont conservés. Cette action est irréversible.",
+    "description": "Supprime tous les avis d'une source, ses avis Radar, tous les fichiers bruts de son dossier raw et les fichiers CSV et JSON importés pour elle. Les compteurs du tableau de bord baissent au fur et à mesure de la suppression des avis. Les personas et les documents qui citaient un avis supprimé sont marqués. La source conserve ses paramètres, sa planification et sa position de synchronisation : de nouveaux avis continuent d'arriver tant que vous ne la désactivez pas. Cette action est irréversible.",
     "sourceLabel": "Source",
     "chooseSource": "Choisir une source",
     "noSources": "Aucune source n’a encore de données.",
@@ -657,13 +667,15 @@
     "startError": "La suppression n’a pas démarré : {{reason}}",
     "confirmTitle": "Supprimer toutes les données de {{source}} ?",
     "confirmMessage": "Tous les avis de {{source}} et tous les fichiers bruts de son dossier seront supprimés définitivement.",
-    "keepsRunning": "La source continue de fonctionner après la suppression : si sa planification est active, de nouveaux avis continuent d'arriver. Désactivez d'abord la source si vous voulez qu'elle reste vide. Les fichiers CSV et JSON importés (raw/csv_upload, raw/json_upload) sont conservés.",
+    "keepsRunning": "La source continue de fonctionner après la suppression : si sa planification est active, de nouveaux avis continuent d'arriver. Désactivez d'abord la source si vous voulez qu'elle reste vide.",
     "scheduleOn": "La planification de {{source}} est active. De nouveaux avis arriveront après la suppression, sauf si vous désactivez d'abord la source.",
     "typeLabel": "Saisissez {{source}} pour confirmer",
     "confirm": "Supprimer toutes les données",
     "progress": {
       "items": "Suppression des avis. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
+      "radar": "Suppression des avis Radar. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
       "raw": "Suppression des fichiers bruts. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
+      "lineage": "Marquage des personas et des documents qui citaient des avis supprimés. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
       "done": "Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}."
     }
   },
