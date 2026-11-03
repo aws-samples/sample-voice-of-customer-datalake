@@ -7,8 +7,8 @@ import { Template } from 'aws-cdk-lib/assertions';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { afterAll, describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
+import { IamPolicySchema, TemplateResourcesSchema, type IamStatement } from '../test-support/iam-statements';
 import { cleanupAssemblyDirs, synthApp, SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 import {
   AUDIT_DENY_CHANGE_SID, AUDIT_DENY_OTHER_PARTITION_SID, AUDIT_DENY_WRITE_SID, applyAuditRowGuard, type NamedAuditWriter,
@@ -29,19 +29,7 @@ const AUDIT_WRITERS: Record<(typeof GUARDED_TABLES)[number], string[]> = {
   ConversationsTable: ['VocApiStack/ChatLambdaRole'],
 };
 
-const StatementSchema = z.object({
-  Sid: z.string().optional(),
-  Effect: z.string().optional(),
-  Action: z.union([z.string(), z.array(z.string())]),
-  Resource: z.unknown(),
-  Condition: z.unknown().optional(),
-});
-const PolicySchema = z.object({
-  Type: z.literal('AWS::IAM::Policy'),
-  Properties: z.object({ PolicyDocument: z.object({ Statement: z.array(StatementSchema) }) }),
-});
-const TemplateSchema = z.object({ Resources: z.record(z.string(), z.unknown()) });
-type Statement = z.infer<typeof StatementSchema>;
+type Statement = IamStatement;
 
 const synthed = synthApp();
 afterAll(cleanupAssemblyDirs);
@@ -50,8 +38,8 @@ afterAll(cleanupAssemblyDirs);
 function statementsByRole(): Map<string, Statement[]> {
   const out = new Map<string, Statement[]>();
   for (const stack of synthed.stackNames) {
-    for (const [id, resource] of Object.entries(TemplateSchema.parse(synthed.template(stack)).Resources)) {
-      const policy = PolicySchema.safeParse(resource);
+    for (const [id, resource] of Object.entries(TemplateResourcesSchema.parse(synthed.template(stack)).Resources)) {
+      const policy = IamPolicySchema.safeParse(resource);
       if (!policy.success) continue;
       const role = `${stack}/${id.replace(/DefaultPolicy[0-9A-F]{8}$/, '')}`;
       out.set(role, [...(out.get(role) ?? []), ...policy.data.Properties.PolicyDocument.Statement]);
@@ -140,7 +128,7 @@ describe('applyAuditRowGuard (one stack)', () => {
     return Template.fromStack(stack);
   }
   const sids = (template: Template): string[] => Object.values(template.findResources('AWS::IAM::Policy'))
-    .flatMap((policy) => PolicySchema.parse(policy).Properties.PolicyDocument.Statement)
+    .flatMap((policy) => IamPolicySchema.parse(policy).Properties.PolicyDocument.Statement)
     .flatMap((statement) => statement.Sid ?? []).sort(byCodeUnit);
 
   it('a putter that deletes nothing is denied puts, changes and removals', () => {

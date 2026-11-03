@@ -27,22 +27,33 @@ export function isAuditRowGuardStatement(statement: { readonly Sid?: string }): 
 }
 
 /** One raw IAM statement as synthesized (`Effect` defaults to Allow when absent). */
-const IamStatementSchema = z.object({
+export const IamStatementSchema = z.object({
   Sid: z.string().optional(),
   Effect: z.string().optional(),
   Action: z.union([z.string(), z.array(z.string())]),
   Resource: z.unknown(),
+  Condition: z.unknown().optional(),
 });
+
+/** A synthesized template's resources, each still `unknown` (parse the ones a case reads). */
+export const TemplateResourcesSchema = z.object({ Resources: z.record(z.string(), z.unknown()) });
 
 export type IamStatement = z.infer<typeof IamStatementSchema>;
 
-/** An `AWS::IAM::Policy` resource: its attached roles and its statements. */
-export const IamPolicySchema = z.object({
-  Properties: z.object({
-    Roles: z.array(z.unknown()).optional(),
-    PolicyDocument: z.object({ Statement: z.array(IamStatementSchema) }),
-  }),
+/** A policy resource's properties: its attached roles and its statements. */
+const PolicyPropertiesSchema = z.object({
+  Roles: z.array(z.unknown()).optional(),
+  PolicyDocument: z.object({ Statement: z.array(IamStatementSchema) }),
 });
+
+/** An `AWS::IAM::Policy` or `AWS::IAM::ManagedPolicy` resource: its type, attached roles and statements. */
+export const IamAnyPolicySchema = z.object({
+  Type: z.enum(['AWS::IAM::Policy', 'AWS::IAM::ManagedPolicy']),
+  Properties: PolicyPropertiesSchema,
+});
+
+/** An `AWS::IAM::Policy` resource: its attached roles and its statements. */
+export const IamPolicySchema = z.object({ Properties: PolicyPropertiesSchema });
 
 const RoleRefSchema = z.object({ Ref: z.string() });
 
