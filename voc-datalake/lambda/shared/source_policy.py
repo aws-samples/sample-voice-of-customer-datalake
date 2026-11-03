@@ -17,7 +17,8 @@ it archives anything and before it queues the message, and archives only what
 ``archive_mode`` also says HOW an allowed source is archived: a source with a
 retention period archives per item (``raw/{source}/{y}/{m}/{d}/{id}.json``) so
 the retention worker can delete each item's copy; a keep-forever source may keep
-a whole uploaded file (``raw/csv_upload/...``), which the worker never touches.
+a whole uploaded file (``raw/csv_upload/...``), which only a whole-source erasure
+of that source deletes (``shared/retention.py``).
 """
 
 from __future__ import annotations

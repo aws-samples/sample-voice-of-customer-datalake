@@ -143,3 +143,9 @@ Table `voc-participants-<suffix>` (pk/sk, index `gsi1`, TTL `ttl`, the Core KMS 
   Each recipient row keeps only `person_id` and its status, so an ask's counts stay correct while nothing on it
   identifies the person. Answers already submitted are feedback data: erase them with Administration → Privacy &
   access → Source policies ([source-policies.md](source-policies.md)).
+  The request body states the erasure's legal basis, `{"legal_basis": "GDPR art. 17 request #123"}` (required since
+  6.00.00, at most 300 characters, never the person's name or email; **400** without it; the person's dialog asks
+  for it). Before anything is deleted the erasure is recorded in voc-participants, with no email or name: a
+  tombstone `AUDIT#tombstone#participant` / `<sha256 of the person id>` (`legal_basis`, `erased_by` `{sub, kind}`,
+  `erased_at`) and the `AUDIT#delete` row every workspace delete writes (`kind: participant`, the same hash as its
+  target, the basis as its `reason`; `shared/delete_audit.py`). Neither has a `ttl`.
