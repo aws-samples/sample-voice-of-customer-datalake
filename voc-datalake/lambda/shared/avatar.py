@@ -27,6 +27,7 @@ from shared.avatar_failure import (
 )
 from shared.logging import logger, tracer
 from shared.prompts import format_prompt, get_avatar_prompt_config
+from shared.s3_versions import delete_every_version
 
 if TYPE_CHECKING:
     from mypy_boto3_bedrock_runtime import BedrockRuntimeClient
@@ -277,7 +278,8 @@ def delete_superseded_avatars(
     * the legacy flat keys stamped as this project's.
 
     An object stamped by ANOTHER project is always kept: persona ids are not
-    unique across projects. Best-effort: a failure is logged, never raised —
+    unique across projects. Every version of a removed image goes
+    (``shared.s3_versions``). Best-effort: a failure is logged, never raised —
     the new avatar is already live.
     """
     try:
@@ -295,9 +297,12 @@ def delete_superseded_avatars(
         if not ours:
             continue
         try:
-            s3_client.delete_object(Bucket=bucket, Key=key)
+            refused = delete_every_version(s3_client, bucket, key, exact=True)
         except Exception as e:  # noqa: BLE001 - cleanup must not fail the regeneration
             logger.warning(f"[PERSONA_AVATAR] Could not remove superseded {key}: {e}")
+            continue
+        if refused:
+            logger.warning(f"[PERSONA_AVATAR] {refused} version(s) of superseded {key} could not be removed")
 
 
 def _stable_seed(persona_id: str) -> int:
