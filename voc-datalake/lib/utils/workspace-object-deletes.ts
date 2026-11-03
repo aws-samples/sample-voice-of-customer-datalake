@@ -18,7 +18,7 @@
  */
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
-import { RAW_LAYER_PREFIX } from '../stacks/core-buckets';
+import { RAW_BUCKET_WORKSPACE_PREFIXES } from '../stacks/core-buckets';
 
 /** What a role needs to delete every version of an object. */
 export const VERSION_DELETE_ACTIONS = ['s3:DeleteObject', 's3:DeleteObjectVersion', 's3:ListBucketVersions'] as const;
@@ -31,8 +31,9 @@ const READ_WRITE_ACTIONS = ['s3:GetObject', 's3:ListBucket', 's3:PutObject'] as 
 
 function objectStatement(bucket: s3.IBucket, actions: readonly string[], objectGlobs: readonly string[]): iam.PolicyStatement {
   if (objectGlobs.length === 0) throw new Error('workspace object grant: name at least one prefix');
-  const bronze = objectGlobs.filter((glob) => glob === '*' || glob.startsWith(RAW_LAYER_PREFIX));
-  if (bronze.length > 0) throw new Error(`workspace object grant: not a workspace prefix: ${bronze.join(', ')}`);
+  // Only under a known workspace prefix: never raw/ (the bronze layer), never the whole bucket.
+  const outside = objectGlobs.filter((glob) => !RAW_BUCKET_WORKSPACE_PREFIXES.some((prefix) => glob.startsWith(prefix)));
+  if (outside.length > 0) throw new Error(`workspace object grant: not a workspace prefix: ${outside.join(', ')}`);
   return new iam.PolicyStatement({
     actions: [...actions],
     resources: [bucket.bucketArn, ...objectGlobs.map((glob) => bucket.arnForObjects(glob))],
