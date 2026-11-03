@@ -73,7 +73,7 @@ describe('audit rows (AUDIT#*) across every stack', () => {
   it.each(writers)('%s may not change or remove an audit row in any table it writes', (_role, statements) => {
     const deny = denied(statements, AUDIT_DENY_CHANGE_SID);
     expect(deny.Effect).toBe('Deny');
-    expect(actionsOf(deny).sort(byCodeUnit)).toStrictEqual(['dynamodb:DeleteItem', 'dynamodb:UpdateItem']);
+    expect(actionsOf(deny).sort(byCodeUnit)).toStrictEqual(['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem']);
     expect(deny.Condition).toStrictEqual(AUDIT_CONDITION);
     expect(tablesOf(deny).sort(byCodeUnit)).toStrictEqual(writtenBy(statements));
   });

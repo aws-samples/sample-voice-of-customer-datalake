@@ -9,7 +9,8 @@
  * artifact, lambda/shared/delete_audit.py, which only PUTs a new row). Every role that can write in one of those
  * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
  *
- *   - every writer: Deny DeleteItem and UpdateItem (no audit row is ever changed or removed);
+ *   - every writer: Deny DeleteItem, UpdateItem and BatchWriteItem (no audit row is ever changed or removed, a batch
+ *     delete included; every writer puts its rows one PutItem at a time);
  *   - a role that is not that table's audit writer: also Deny PutItem and BatchWriteItem (it cannot forge or
  *     overwrite one, nor delete one through a batch);
  *   - a writer limited to one audit partition (the settings API's `AUDIT#delete` in voc-aggregates): Deny PutItem
@@ -128,6 +129,13 @@ const denyOnAuditRows = (sid: string, actions: string[], resources: string[], co
   new iam.PolicyStatement({ sid, effect: iam.Effect.DENY, actions, resources, conditions });
 
 const PUT_ACTIONS = ['dynamodb:PutItem', 'dynamodb:BatchWriteItem'];
+/**
+ * What no role may do to an audit row, writers included. BatchWriteItem too: IAM checks a batch as BatchWriteItem, so
+ * a DeleteRequest inside it is NOT checked as DeleteItem; every audit writer puts its rows one PutItem at a time
+ * (lambda/shared/delete_audit.py, participants_erasure.py, jobs/retention/copies.py), so none needs a batch there.
+ * PartiQL is not listed: no role is granted a PartiQL action (grantReadWriteData and the exact grants hold none).
+ */
+const CHANGE_ACTIONS = ['dynamodb:DeleteItem', 'dynamodb:UpdateItem', 'dynamodb:BatchWriteItem'];
 
 /** What a role may put in each table it writes: every audit partition, one, or none. */
 type PutRight = { readonly kind: 'any' } | { readonly kind: 'one'; readonly partitionKey: string } | { readonly kind: 'none' };
@@ -141,7 +149,7 @@ function putRight(role: iam.Role, arn: string, writers: readonly NamedAuditWrite
 
 /** Add the audit-row Denies to one role (see the module comment). */
 function guardRole(role: iam.Role, written: ReadonlySet<string>, writers: readonly NamedAuditWriter[]): void {
-  role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_CHANGE_SID, ['dynamodb:DeleteItem', 'dynamodb:UpdateItem'],
+  role.addToPrincipalPolicy(denyOnAuditRows(AUDIT_DENY_CHANGE_SID, CHANGE_ACTIONS,
     [...written]));
   const rights = [...written].map((arn) => ({ arn, right: putRight(role, arn, writers) }));
   const none = rights.filter(({ right }) => right.kind === 'none').map(({ arn }) => arn);

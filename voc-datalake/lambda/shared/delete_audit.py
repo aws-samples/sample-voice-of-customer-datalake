@@ -13,7 +13,8 @@ The row carries no ``ttl``: an audit trail never expires. It is written with
 ``attribute_not_exists(pk)`` so an existing row is never overwritten.
 
 Recording a delete never fails the delete: ``record_delete`` logs a warning (the kind
-only) and returns.
+only), counts the ``DeleteRecordFailures`` metric (namespace ``VoC``) so a missing record is visible, and
+returns.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from typing import Any, Final
 
 from shared.ai_writing import PLAN_PRINCIPAL_CLAIM, PLAN_PRINCIPAL_PREFIX
 from shared.api import get_caller_groups
-from shared.logging import logger
+from shared.logging import logger, metrics
 from shared.project_access import (
     ADMIN_GROUP,
     AGENT_SUBJECT_PREFIX,
@@ -93,3 +94,5 @@ def record_delete(
         table.put_item(Item=item, ConditionExpression='attribute_not_exists(pk)')
     except Exception as exc:  # noqa: BLE001 - recording a delete never fails the delete
         logger.warning('Could not record a delete', extra={'kind': kind, 'error_type': type(exc).__name__})
+        # Visible, not silent: a delete that went through without its record can be found and backfilled.
+        metrics.add_metric(name='DeleteRecordFailures', unit='Count', value=1)

@@ -79,10 +79,12 @@ class TestRecordDelete:
     def test_a_failed_write_never_raises_and_logs_the_kind_only(self):
         table = MagicMock()
         table.put_item.side_effect = ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'no'}}, 'PutItem')
-        with patch('shared.delete_audit.logger') as log:
+        with patch('shared.delete_audit.logger') as log, patch('shared.delete_audit.metrics') as metrics:
             assert record_delete(table, kind='persona', target={'id': 'x'}, actor=None) is None
         log.warning.assert_called_once_with(
             'Could not record a delete', extra={'kind': 'persona', 'error_type': 'ClientError'})
+        # A delete without its record is counted, so it can be found and backfilled.
+        metrics.add_metric.assert_called_once_with(name='DeleteRecordFailures', unit='Count', value=1)
 
     def test_a_missing_table_never_raises(self):
         assert record_delete(None, kind='persona', target={'id': 'x'}, actor=None) is None
