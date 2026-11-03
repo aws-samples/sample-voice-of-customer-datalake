@@ -14,6 +14,7 @@ import {
 } from '../lib/stacks/bedrock-access-stack';
 import { acknowledgeStackFindings } from '../lib/utils/nag-stack-acknowledgements';
 import { suppressReviewedResourceStar } from '../lib/utils/nag-resource-star';
+import { applyAuditRowGuard } from '../lib/utils/audit-row-guard';
 import { shouldDeployWebSearchInScope } from '../lib/utils/web-search-default';
 import { inferenceScopeOf } from '../lib/utils/inference-scope';
 import { applyAppAspects } from '../lib/utils/app-aspects';
@@ -310,6 +311,15 @@ apiStack.addStackDependency(coreStack);
 apiStack.addStackDependency(ingestionStack);
 apiStack.addStackDependency(processingStack);
 tagStack(apiStack, 'Api');
+
+// Audit rows (AUDIT#*) can be changed or removed by no role and written only by their writer
+// (lib/utils/audit-row-guard.ts). voc-retention writes AUDIT#retention / AUDIT#tombstone#* in voc-aggregates and
+// deletes nothing there; the workspace deleters of the other three tables are found by their deletes. Before the
+// whole-app rewrites, so exact-grants wraps the guarded policies like every other.
+applyAuditRowGuard(app, {
+  tables: [coreStack.aggregatesTable, coreStack.projectsTable, coreStack.participantsTable, coreStack.featureRequestsTable],
+  writers: [{ table: coreStack.aggregatesTable, rolePathSuffixes: ['/RetentionWorker/RetentionRole'] }],
+});
 
 // The whole-app rewrites (lib/utils/app-aspects.ts; the per-stack test fixtures apply the same ones): each Lambda
 // logs to its own retained group, protectData retains every log group, inferenceScope=eu sets the EU inference env,
