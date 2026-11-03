@@ -122,11 +122,19 @@ Not behind API Gateway (Processing stack): `voc-retention` —
 `lambda/jobs/retention/handler.py`, daily schedule (mode `retention`) + async
 invoke from `POST /settings/erasure` (mode `erase`, env `RETENTION_FUNCTION` on
 the settings Lambda). The ONLY role with a customer-data delete; does nothing
-unless a source profile sets `retention_days` or an erasure is requested; never
-touches `raw/csv_upload/*`. A whole-source erasure (`field: 'source'`) scans by
+unless a source profile sets `retention_days` or an erasure is requested, each
+with a legal basis (`shared/legal_basis.py`; `legal_basis` required on the
+route, `retention_legal_basis` on a profile with a period). Every deleted item
+first gets a tombstone (`AUDIT#tombstone#{source}` / `{feedback_id}`, no ttl).
+Phases: `voc-feedback` items, `voc-radar` reviews (+ markers), whole-source
+raw sweep, then lineage (artifacts in `voc-projects` citing an erased id lose
+it and get `erased_evidence`). Whole-file uploads (`raw/csv_upload/*`,
+`raw/json_upload/*`) are deleted only by a whole-source erasure of their source,
+else listed as `files_needing_review`. A whole-source erasure (`field: 'source'`) scans by
 `source_platform`, then sweeps `raw/{source}/` (every version), writing progress
-to the job row; no new grant. Permissions: feedback Get/Query/Scan/DeleteItem,
-aggregates Get/Put/Update/Query (jobs, `AUDIT#retention`), raw bucket
+to the job row. Permissions: feedback Get/Query/Scan/DeleteItem,
+aggregates Get/Put/Update/Query + BatchWrite/BatchGet (jobs, `AUDIT#retention`, tombstones),
+radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan/UpdateItem, raw bucket
 `s3:DeleteObject`/`DeleteObjectVersion` on `raw/*` + `ListBucketVersions`, KMS,
 invoke itself. Ingestion-side Lambdas (plugins, webhooks, manual import,
 feedback forms, data explorer) apply the source policy before archive/SQS and

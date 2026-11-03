@@ -24,7 +24,7 @@ Two steps, both in the app: list the brands, then point review sources at them. 
 
 The source's own profile still applies as for any other source: PII policy (`redact` is recommended for another brand's customers) and restriction.
 
-- Radar items are not deleted by `voc-retention` (retention and erasure cover `voc-feedback`). If a Radar brand's data needs deleting, remove its items from `voc-radar`.
+- Radar items are reached by `voc-retention` like our own: a source's retention period and every erasure (by author, email, item id, CSV row id, or a whole Radar-routed source) delete the matching `voc-radar` review rows, their dedupe markers and their raw archives, each with a tombstone ([source-policies.md](source-policies.md#retention-and-erasure)). The brand's daily counters are left as they are: they hold counts, no content.
 
 Nothing runs and nothing costs until a brand is listed (or a legacy profile names one).
 
