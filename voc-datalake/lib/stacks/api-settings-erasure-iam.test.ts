@@ -23,7 +23,9 @@ describe('Settings role: whole-source erasure', () => {
   it('may Query and write the aggregates table, its indexes included', () => {
     const onAggregates = statements().filter((s) => /aggregates/i.test(s.resource));
     const query = onAggregates.filter((s) => s.actions.includes('dynamodb:Query'));
-    expect(query.some((s) => s.resource.includes('/index/*'))).toBe(true);
+    // Exact index ARNs (lib/utils/exact-grants.ts): the fixture's aggregates table has the one index `gsi1`.
+    expect(query.some((s) => s.resource.includes('/index/gsi1'))).toBe(true);
+    expect(query.some((s) => s.resource.includes('/index/*'))).toBe(false);
     const writes = onAggregates.filter((s) => s.actions.includes('dynamodb:PutItem') && s.actions.includes('dynamodb:UpdateItem'));
     expect(writes.length).toBeGreaterThan(0);
   });

@@ -20,6 +20,7 @@ import { z } from 'zod';
 
 import { VocApiStack } from '../stacks/api-stack';
 import { apiStackDependencyProps, indexedTableFactory } from './api-stack-fixture';
+import { applyAppAspects } from '../utils/app-aspects';
 import { byCodeUnit } from '../utils/compare';
 import { itemAt } from './guards';
 
@@ -141,6 +142,8 @@ export function buildApiStack(
     brandName: 'TestBrand',
     enabledSources,
   });
+  // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
+  applyAppAspects(app);
   return stack;
 }
 

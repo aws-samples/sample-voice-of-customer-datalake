@@ -140,12 +140,14 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
   it('holds exactly GetItem/Query/UpdateItem on feedback — never Put, Delete or Scan', () => {
     // Customer data is never deleted, and a correction is an in-place update of
     // the existing item. Query reaches the gsi4-by-feedback-id index (the grant
-    // carries `<table>/index/*`), GetItem the base item.
+    // names each index of the table exactly, lib/utils/exact-grants.ts; the
+    // fixture's table has the one index `gsi1`), GetItem the base item.
     expect(allowedActions(apiTemplate(), ROLE, 'dynamodb:', 'Feedback'))
       .toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem']);
     const feedbackResources = roleStatements(apiTemplate(), ROLE)
       .filter((s) => s.resource.includes('Feedback')).map((s) => s.resource).join(' ');
-    expect(feedbackResources, 'Query must reach the feedback-by-id GSI').toContain('/index/*');
+    expect(feedbackResources, 'Query must reach the feedback-by-id GSI').toContain('/index/gsi1');
+    expect(feedbackResources).not.toContain('/index/*');
   });
 
   it('reads aggregates (category config + CATEGORY_ACCESS rows) and bumps only the cache version row', () => {
@@ -245,7 +247,7 @@ describe('category reprocess is started by the settings Lambda', () => {
       .toContain('voc-retention-');
     expect(JSON.stringify(lambdaEnv(apiTemplatePrefixed(), 'settings_handler.lambda_handler').RETENTION_FUNCTION))
       .toContain('b-voc-retention-');
-  });
+  }, SYNTH_TIMEOUT_MS);
 
   it('invokes by deterministic unqualified ARNs', () => {
     expect(settingsInvokeResource(), 'no version/alias wildcard').not.toContain('*');
@@ -291,10 +293,10 @@ describe('the settings Lambda can test models and read their quotas', () => {
 
   it('may list the raw bucket, so archiving a design reference can find its copied icons (5.48.00)', () => {
     // ListObjectsV2 is authorized by s3:ListBucket on the BUCKET ARN, not by an object grant. The
-    // `company-context/*` read grant carries s3:List* on the bucket itself; without it every
+    // `company-context/*` read grant carries s3:ListBucket on the bucket itself; without it every
     // reference archive would answer 503 after the row is archived.
     const reads = roleStatements(apiTemplate(), ROLE)
-      .filter((s) => s.effect === 'Allow' && s.actions.includes('s3:List*') && s.resource.includes('company-context/*'));
+      .filter((s) => s.effect === 'Allow' && s.actions.includes('s3:ListBucket') && s.resource.includes('company-context/*'));
     expect(reads).toHaveLength(1);
     const resources = z.array(z.unknown()).parse(JSON.parse(itemAt(reads, 0).resource));
     const bucketLevel = resources.filter((r) => !JSON.stringify(r).includes('/'));
@@ -559,7 +561,7 @@ describe('the two public sets get OPPOSITE origins, on purpose', () => {
     // `allowedOrigin` to '*' in dev should just update this line — it is not the
     // asymmetry the describe block exists to protect.
     expect(allowedOriginOf(dev, 'voc-ballots-api')).toBe('*');
-  });
+  }, SYNTH_TIMEOUT_MS);
 });
 
 describe('document generator: prototype pin forms (§6.2)', () => {

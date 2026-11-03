@@ -16,7 +16,12 @@ import { radarExaParameterName } from '../utils/radar-exa-parameter';
 const PARAMETER_ARN = /arn:.*:ssm:.*:parameter\/voc\/radar\/exa-api-key"/;
 
 let processing: Template;
-beforeAll(() => { processing = synthProcessingTemplate({ withIndexes: true }); }, SYNTH_TIMEOUT_MS);
+beforeAll(() => {
+  processing = synthProcessingTemplate({ withIndexes: true });
+  // Warm the two cached API shapes here, under the synth timeout, not inside a 5 s case.
+  apiTemplate();
+  apiTemplatePrefixed();
+}, SYNTH_TIMEOUT_MS);
 
 const ssmStatements = (statements: readonly { actions: string[]; resource: string }[]) =>
   statements.filter((s) => s.actions.some((action) => action.startsWith('ssm:')));

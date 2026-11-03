@@ -5,6 +5,7 @@
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import { VocCoreStack } from '../stacks/core-stack';
+import { applyAppAspects } from '../utils/app-aspects';
 import { SYNTH_ACCOUNT, SYNTH_REGION, committedFeatureFlags } from './synth-app';
 
 /** VocCoreStack alone, constructed but not synthesized (for suites that read the construct tree). */
@@ -18,9 +19,12 @@ export function buildCoreStack(context: Record<string, unknown> = {}): VocCoreSt
       ...context,
     },
   });
-  return new VocCoreStack(app, 'TestCoreStack', {
+  const stack = new VocCoreStack(app, 'TestCoreStack', {
     env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION },
   });
+  // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
+  applyAppAspects(app);
+  return stack;
 }
 
 export function synthCoreTemplate(context: Record<string, unknown> = {}): Template {

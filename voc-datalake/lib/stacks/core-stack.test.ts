@@ -27,7 +27,7 @@ import {
 // silently. Importing costs nothing at module load — synth-app.ts only shells out
 // to `cdk synth` inside `synthApp()`, and its sole module-level work is a `join()`
 // on two path constants.
-import { SYNTH_ACCOUNT, cdkJsonContextStrict, committedFeatureFlags } from '../test-support/synth-app';
+import { SYNTH_ACCOUNT, SYNTH_TIMEOUT_MS, cdkJsonContextStrict, committedFeatureFlags } from '../test-support/synth-app';
 import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
 import { byCodeUnit } from '../utils/compare';
 import { PROTOTYPE_BASE_CSP, prototypeCspFunctionCode } from '../utils/prototype-csp';
@@ -129,7 +129,8 @@ describe('VocCoreStack synth context', () => {
   it('merges IAM statements the way a real deploy\'s feature flags do', () => {
     // `@aws-cdk/aws-iam:minimizePolicies` merges statements that share a
     // resource set, so these three resources genuinely change shape between a
-    // bare `App` and this one (10→6, 2→1, 6→5).
+    // bare `App` and this one (10→6, 2→1, 6→5, counted before the app's rewrites,
+    // lib/utils/app-aspects.ts, which add statements of their own: see below).
     //
     // Named for the mechanism rather than for the numbers because the numbers
     // move for TWO unrelated causes, and the failure gives no hint which: the
@@ -156,18 +157,20 @@ describe('VocCoreStack synth context', () => {
       `${resource}'s statement count moved: either the synth context lost `
       + '@aws-cdk/aws-iam:minimizePolicies, or this policy gained a statement. Both want reading.';
 
-    // 5: the Claude grant lives in the stack's shared managed policies (lib/utils/claude-model-grant.ts).
+    // 7: the Claude grant lives in the stack's shared managed policies (lib/utils/claude-model-grant.ts); the app's
+    // rewrites (lib/utils/app-aspects.ts) add the DynamoDB-only KMS statement and the writes to its own log group.
     expect(
       statementCount('AWS::IAM::Policy', 'ProductDocExtractorLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
       because('the doc-extractor role'),
-    ).toBe(5);
+    ).toBe(7);
+    // 2: its secret + the writes to its own log group (lib/utils/app-aspects.ts).
     expect(
       statementCount('AWS::IAM::Policy', 'CdnSigningKeysLambdaServiceRoleDefaultPolicy', 'PolicyDocument'),
       because('the CDN signing-key role'),
-    ).toBe(1);
+    ).toBe(2);
     // 5 + the CloudWatch alarm-topic grant + the EventBridge schedule-DLQ grant (one key since 5.74.00).
     expect(statementCount('AWS::KMS::Key', 'VocKmsKey', 'KeyPolicy'), because('the KMS key')).toBe(7);
-  });
+  }, SYNTH_TIMEOUT_MS);
 });
 
 describe('VocCoreStack admin bootstrap (issue #196)', () => {
@@ -1318,7 +1321,7 @@ describe('VocCoreStack product doc extractor', () => {
 
   it('scopes the S3 read to the raw/ upload prefix', () => {
     const readStatements = extractorPolicyStatements().filter(
-      (s) => Array.isArray(s.Action) && s.Action.includes('s3:GetObject*'),
+      (s) => Array.isArray(s.Action) && s.Action.includes('s3:GetObject'),
     );
     expect(readStatements).toHaveLength(1);
     expect(JSON.stringify(itemAt(readStatements, 0).Resource)).toContain('/projects/*/product_docs/raw/*');

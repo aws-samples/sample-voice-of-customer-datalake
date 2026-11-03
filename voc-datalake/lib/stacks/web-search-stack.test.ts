@@ -25,6 +25,7 @@ import { Template, Match } from 'aws-cdk-lib/assertions';
 import { z } from 'zod';
 import { VocWebSearchStack, VocWebSearchStackProps } from './web-search-stack';
 import { shouldDeployAiEnablement } from '../utils/ai-enablement-default';
+import { applyAppAspects } from '../utils/app-aspects';
 import { byCodeUnit } from '../utils/compare';
 import { defined } from '../test-support/guards';
 
@@ -66,7 +67,9 @@ const STACK_ENV = {
 function construct(props: Omit<VocWebSearchStackProps, 'env' | 'crossRegionReferences'>): VocWebSearchStack {
   // Skip asset bundling — template assertions only need structure.
   const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } });
-  return new VocWebSearchStack(app, 'VocWebSearchStack', { ...STACK_ENV, ...props });
+  const stack = new VocWebSearchStack(app, 'VocWebSearchStack', { ...STACK_ENV, ...props });
+  applyAppAspects(app); // the rewrites bin/voc-datalake.ts applies
+  return stack;
 }
 
 function synth(props: Omit<VocWebSearchStackProps, 'env'>): Template {

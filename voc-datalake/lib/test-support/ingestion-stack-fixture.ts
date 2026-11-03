@@ -7,6 +7,7 @@ import { Template } from 'aws-cdk-lib/assertions';
 import * as kms from 'aws-cdk-lib/aws-kms';
 
 import { VocIngestionStack } from '../stacks/ingestion-stack';
+import { applyAppAspects } from '../utils/app-aspects';
 import { pkSkTable } from './api-stack-fixture';
 import { fixtureBucket } from './fixture-resources';
 import { SYNTH_ACCOUNT, SYNTH_REGION, committedFeatureFlags } from './synth-app';
@@ -35,5 +36,7 @@ export function synthIngestionStacks(
     config: { brandName: 'Test', enabledSources },
     frontendDomain,
   });
+  // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
+  applyAppAspects(app);
   return { ingestion: Template.fromStack(stack), deps: Template.fromStack(deps) };
 }

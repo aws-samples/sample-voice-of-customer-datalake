@@ -27,6 +27,7 @@ import { VocCoreStack } from './core-stack';
 import { apiStackDependencyProps, indexedTableFactory } from '../test-support/api-stack-fixture';
 import { allowedActions, roleStatements, type NormalizedStatement } from '../test-support/iam-statements';
 import { stateMachineDefinition, synthProcessingTemplate } from '../test-support/processing-stack-fixture';
+import { applyAppAspects } from '../utils/app-aspects';
 import { EMBEDDING_MODEL_ID } from '../utils/model-allowlist';
 import { byCodeUnit } from '../utils/compare';
 import { itemAt } from '../test-support/guards';
@@ -282,6 +283,7 @@ function synthApi(): Template {
     brandName: 'TestBrand',
     enabledSources: [],
   });
+  applyAppAspects(app); // the rewrites bin/voc-datalake.ts applies
   return Template.fromStack(stack);
 }
 
@@ -455,7 +457,9 @@ describe('memory + agents storage (VocCoreStack)', () => {
   beforeAll(() => {
     // -c protectData=false: these cases pin the unprotected (demo) teardown shape.
     const app = new cdk.App({ context: { 'aws:cdk:bundling-stacks': [], protectData: false } });
-    template = Template.fromStack(new VocCoreStack(app, 'TestCore', { env: ENV }));
+    const stack = new VocCoreStack(app, 'TestCore', { env: ENV });
+    applyAppAspects(app); // the rewrites bin/voc-datalake.ts applies
+    template = Template.fromStack(stack);
   });
 
   const TableSchema = z.object({

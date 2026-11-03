@@ -14,14 +14,12 @@ import {
 } from '../lib/stacks/bedrock-access-stack';
 import { acknowledgeStackFindings } from '../lib/utils/nag-stack-acknowledgements';
 import { suppressReviewedResourceStar } from '../lib/utils/nag-resource-star';
-import { applyExactGrants } from '../lib/utils/exact-grants';
 import { shouldDeployWebSearchInScope } from '../lib/utils/web-search-default';
-import { applyInferenceScopeEnv, inferenceScopeOf } from '../lib/utils/inference-scope';
+import { inferenceScopeOf } from '../lib/utils/inference-scope';
+import { applyAppAspects } from '../lib/utils/app-aspects';
 import { shouldDeployAiEnablement } from '../lib/utils/ai-enablement-default';
 import { validateDeploymentPrefix } from '../lib/utils/naming';
 import { recordOrEmpty, stringOr } from '../lib/utils/context';
-import { applyLambdaLogRetention, applyProtectedLogRetention } from '../lib/utils/log-retention';
-import { shouldProtectData } from '../lib/utils/data-protection';
 import { wafEnabled } from '../lib/utils/waf';
 
 const app = new cdk.App();
@@ -313,10 +311,10 @@ apiStack.addStackDependency(ingestionStack);
 apiStack.addStackDependency(processingStack);
 tagStack(apiStack, 'Api');
 
-// Every Lambda (CDK's own provider functions included) logs to a group with a retention period.
-applyLambdaLogRetention(app);
-// Protected deployments (-c protectData, on by default): every log group is retained on teardown (30 days, like every log).
-applyProtectedLogRetention(app, shouldProtectData(app.node.tryGetContext('protectData')));
+// The whole-app rewrites (lib/utils/app-aspects.ts; the per-stack test fixtures apply the same ones): each Lambda
+// logs to its own retained group, protectData retains every log group, inferenceScope=eu sets the EU inference env,
+// and CDK grant wildcards become exact actions and index ARNs. After every stack is built.
+applyAppAspects(app);
 
 // cdk-nag (AwsSolutions) runs as a policy-validation plugin after synthesis: an unacknowledged finding,
 // error or warning, fails `cdk synth` and is listed in the assembly's validation report.
@@ -328,13 +326,5 @@ acknowledgeStackFindings({ core: coreStack, ingestion: ingestionStack, processin
 // reviewed list (lib/utils/resource-star-actions.ts) gets it, so a new unscoped grant elsewhere is reported.
 // After every stack is built, so each policy document is complete when it is read.
 for (const stack of [ingestionStack, processingStack, apiStack]) suppressReviewedResourceStar(stack);
-
-// inferenceScope=eu: BEDROCK_INFERENCE_SCOPE=eu + AVATARS_ENABLED=false on every
-// Lambda of every stack. A no-op for `global`, so default templates are unchanged.
-applyInferenceScopeEnv(app);
-
-// CDK grant wildcards (kms:GenerateDataKey*, s3:GetObject*, <table>/index/*, ...) become the exact actions and
-// index ARNs the platform uses, on every identity policy (lib/utils/exact-grants.ts).
-applyExactGrants(app);
 
 app.synth();
