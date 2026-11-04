@@ -90,6 +90,7 @@ jobs:
 
       # While the review is advisory, a GitHub or AWS outage in the next two steps is a warning, not a red check.
       - name: Read the PR's commits, diff and conversation (as data)
+        id: fetch
         if: steps.gate.outputs.ready == 'true'
         continue-on-error: ${{ env.AI_REVIEW_ENFORCED != 'true' }}
         env:
@@ -116,7 +117,8 @@ jobs:
 
       - name: Review (OIDC → Bedrock)
         id: review
-        if: steps.gate.outputs.ready == 'true'
+        # No credentials are minted when there is nothing to review (a failed fetch leaves no refs).
+        if: steps.gate.outputs.ready == 'true' && steps.fetch.outcome == 'success'
         continue-on-error: ${{ env.AI_REVIEW_ENFORCED != 'true' }}
         env:
           ROLE_ARN: ${{ secrets.AI_REVIEW_ROLE_ARN }}

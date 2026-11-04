@@ -115,7 +115,7 @@ export function bedrockCall(request, { region, env = process.env, timeoutMs = RE
     child.on('error', (error) => finish(error))
     child.on('close', (code) => {
       if (timedOut) {
-        finish(new Error(`the AWS CLI did not answer within ${Math.round(timeoutMs / 1000)} s (the review budget)`))
+        finish(new Error(`the AWS CLI did not answer within ${Math.max(1, Math.round(timeoutMs / 1000))} s (the review budget)`))
         return
       }
       if (code !== 0) {

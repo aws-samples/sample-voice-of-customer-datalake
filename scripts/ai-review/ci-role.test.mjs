@@ -98,7 +98,13 @@ test('a repository without the review, or a main without the reviewer, skips bef
   for (const later of ['git -C "$out/repo" fetch', 'ACTIONS_ID_TOKEN_REQUEST_URL', 'node trusted/scripts/ai-review/ci-review.mjs']) {
     assert.ok(workflowCode.indexOf(later) > workflowCode.indexOf('elif [ ! -f'), `${later} runs after the gate`)
   }
-  assert.equal(workflowCode.match(/^ {8}if: steps\.gate\.outputs\.ready == 'true'$/gm).length, 3, 'setup-node, the fetch and the review wait for the gate')
+  // Each step that costs something waits for the gate (by name, not by count: a new harmless step needs no edit here).
+  const step = (name) => workflowCode.slice(workflowCode.indexOf(name), workflowCode.indexOf('\n      - ', workflowCode.indexOf(name) + 1))
+  for (const name of ['uses: actions/setup-node@', "- name: Read the PR's commits", '- name: Review (OIDC']) {
+    assert.match(step(name), /^ {8}if: steps\.gate\.outputs\.ready == 'true'/m, name)
+  }
+  // And the review mints no credentials after a failed fetch.
+  assert.match(step('- name: Review (OIDC'), /^ {8}if: steps\.gate\.outputs\.ready == 'true' && steps\.fetch\.outcome == 'success'$/m)
 })
 
 test('while advisory, a GitHub or AWS outage in the fetch or the review is not a red check', () => {

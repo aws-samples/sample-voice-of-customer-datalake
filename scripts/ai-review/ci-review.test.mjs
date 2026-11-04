@@ -350,7 +350,7 @@ test('bedrockCall kills a CLI that outlives the review budget, and refuses to st
   const hanging = fakeAws('setInterval(() => {}, 1000)')
   try {
     const started = Date.now()
-    await assert.rejects(bedrockCall({}, { region: 'r', env: { PATH: hanging }, timeoutMs: 300 }), /did not answer within 0 s \(the review budget\)/)
+    await assert.rejects(bedrockCall({}, { region: 'r', env: { PATH: hanging }, timeoutMs: 300 }), /did not answer within 1 s \(the review budget\)/)
     assert.ok(Date.now() - started < 10_000, 'the hanging CLI was killed')
     await assert.rejects(bedrockCall({}, { region: 'r', env: { PATH: hanging }, timeoutMs: 0 }), /no time left in the review budget/)
   } finally {
