@@ -2,7 +2,7 @@
  * @fileoverview Tests for Layout component.
  */
 import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { tabTimes } from '@test/keyboard'
 import { Routes, Route } from 'react-router-dom'
@@ -76,6 +76,8 @@ vi.mock('../ReviewModal/ReviewModalHost', () => ({
 }))
 
 import Layout from './Layout'
+import { useThemeStore } from '../../theme/themeStore'
+import { WORKSPACE_THEME_CHOICE } from '../../theme/themeCatalog'
 import { useAuthStore, useIsAdmin } from '../../store/authStore'
 
 /**
@@ -131,6 +133,18 @@ describe('Layout', () => {
       await waitFor(() => {
         expect(screen.getByText('VoC Analytics')).toBeInTheDocument()
       })
+    })
+
+    it('shows the active theme\'s mark beside the title and follows a theme change live', async () => {
+      onTestFinished(() => { act(() => { useThemeStore.setState({ colorTheme: WORKSPACE_THEME_CHOICE }) }) })
+      render(<Layout />, { wrapper: createWrapper() })
+      const brand = await screen.findByText('VoC Analytics')
+      const mark = () => brand.closest('div.flex')?.querySelector('svg[data-mark]')
+      expect(mark()).toHaveAttribute('data-mark', 'kiro')
+      expect(mark()).toHaveClass('text-accent-text')
+      act(() => { useThemeStore.setState({ colorTheme: 'dracula' }) })
+      expect(mark()).toHaveAttribute('data-mark', 'dracula')
+      expect(mark()).toHaveClass('text-accent-text')
     })
   })
 

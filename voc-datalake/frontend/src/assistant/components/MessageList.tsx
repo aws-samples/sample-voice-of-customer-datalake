@@ -17,7 +17,7 @@ import { Check, CircleStop, Copy, FilePlus2, Loader2, Paperclip, RotateCcw } fro
 import { projectsApi } from '../../api/projectsApi'
 import { projectKey } from '../../api/projectQueryKeys'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
-import { GhostThinking } from '../../components/KiroGhost/GhostPoses'
+import { ThemeMarkThinking } from '../../components/ThemeMark/ThemeMark'
 import { contentToText } from '../thread/reducer'
 import { attachmentName } from '../thread/wire'
 import { formatDate } from '../../utils/dateUtils'
@@ -306,13 +306,13 @@ export default function MessageList({ thread, page, onRegenerate }: Readonly<{
       ))}
       {streaming && last?.role !== 'assistant' && (
         <p className="flex items-center gap-1.5 text-[12px] text-aim">
-          <GhostThinking className="h-5 w-5" />
+          <ThemeMarkThinking className="h-5 w-5" />
           {t('panel.thinking')}
         </p>
       )}
       {generating && (
         <p className="flex items-center gap-1.5 text-[12px] text-aim" role="status">
-          <GhostThinking className="h-5 w-5" />
+          <ThemeMarkThinking className="h-5 w-5" />
           {t('panel.stillGenerating')}
         </p>
       )}

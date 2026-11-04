@@ -47,6 +47,7 @@ function GhostPose({ art, className }: Readonly<{ art: GhostPoseArt; className?:
       className={className}
       aria-hidden
       focusable={false}
+      data-mark="kiro"
     >
       <path
         d={art.body}

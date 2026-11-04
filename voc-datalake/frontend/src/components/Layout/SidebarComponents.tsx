@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
-import KiroGhost from '../KiroGhost/KiroGhost'
+import ThemeMark from '../ThemeMark/ThemeMark'
 import type { LucideIcon } from 'lucide-react'
 
 export interface NavItem {
@@ -61,7 +61,7 @@ function SidebarHeader({
       sidebarCollapsed ? 'lg:justify-center justify-between lg:px-2' : 'justify-between',
     )}>
       {(!sidebarCollapsed || mobileMenuOpen) ? <div className="flex items-center gap-2.5 min-w-0">
-        <KiroGhost className="w-7 h-7 text-accent-text flex-shrink-0" />
+        <ThemeMark className="w-7 h-7 text-accent-text flex-shrink-0" />
         <div className="min-w-0">
           {/* Brand wordmark, not a heading: the page's own <h1> is the only one (D-STRUCT). */}
           <p className="text-[0.8125rem] font-bold tracking-[.14em] uppercase text-text-strong break-words">{t('appName')}</p>

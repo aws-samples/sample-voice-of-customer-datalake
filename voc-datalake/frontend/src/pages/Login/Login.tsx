@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next'
 import {
   useNavigate, useLocation,
 } from 'react-router-dom'
-import KiroGhost from '../../components/KiroGhost/KiroGhost'
+import ThemeMark from '../../components/ThemeMark/ThemeMark'
 import { AuthChallengeError, authService, isNewPasswordChallenge } from '../../services/auth'
 import { canUsePasskeys, passkeyAuth } from '../../services/passkeyAuth'
 import { passkeyErrorText } from '../../components/PasskeyPrompt/passkeyErrorText'
@@ -342,7 +342,7 @@ export default function Login() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <KiroGhost className="w-12 h-12 text-accent-text" />
+            <ThemeMark className="w-12 h-12 text-accent-text" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-text-strong">{t('appName', { ns: 'common' })}</h1>
           <p className="text-muted mt-1">{t('appTagline', { ns: 'common' })}</p>

@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { screen } from '@testing-library/react'
+import { describe, it, expect, beforeEach, onTestFinished } from 'vitest'
+import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '@test/test-utils'
 import { stubElementScrollIntoView } from '@test/stubScrollTo'
 import { createThreadState } from '../thread/reducer'
 import MessageList from './MessageList'
 import { classifyHref } from './safeHref'
+import { useThemeStore } from '../../theme/themeStore'
+import { WORKSPACE_THEME_CHOICE } from '../../theme/themeCatalog'
 import type { Message } from '@ag-ui/core'
 
 function renderAnswer(markdown: string) {
@@ -64,11 +66,21 @@ describe('MessageList markdown links', () => {
 describe('MessageList thinking state', () => {
   beforeEach(() => stubElementScrollIntoView())
 
-  it('shows the drifting Kiro ghost while streaming before the answer starts', () => {
+  it('shows the drifting Kiro ghost (the default theme thinking mark) while streaming before the answer starts', () => {
     const messages: Message[] = [{ id: 'u1', role: 'user', content: 'hi' }]
     render(<MessageList thread={{ ...createThreadState('t1'), messages, status: 'streaming' }} page={{ kind: 'home', path: '/' }} />)
     const row = screen.getByText('Thinking…')
     expect(row.querySelector('svg.animate-float')).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('shows the active theme\'s thinking mark instead of the ghost under another theme', () => {
+    onTestFinished(() => { act(() => { useThemeStore.setState({ colorTheme: WORKSPACE_THEME_CHOICE }) }) })
+    act(() => { useThemeStore.setState({ colorTheme: 'nord' }) })
+    const messages: Message[] = [{ id: 'u1', role: 'user', content: 'hi' }]
+    render(<MessageList thread={{ ...createThreadState('t1'), messages, status: 'streaming' }} page={{ kind: 'home', path: '/' }} />)
+    const mark = screen.getByText('Thinking…').querySelector('svg')
+    expect(mark).toHaveAttribute('data-mark', 'nord')
+    expect(mark).toHaveClass('animate-float', 'motion-reduce:animate-none', 'h-5', 'w-5')
   })
 
   it('shows no thinking row once the assistant is answering', () => {
