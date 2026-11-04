@@ -1,14 +1,49 @@
 /**
- * Theme tokens read straight from index.css, and WCAG contrast between them, for
- * the design-system residue tests (theme/*.test.ts).
+ * Theme tokens read straight from index.css (Kiro) and styles/theme-palettes.css
+ * (every other colour theme), and WCAG contrast between them, for the
+ * design-system residue tests (theme/*.test.ts).
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { COLOR_THEME_IDS, type ColorThemeId, type ThemeMode } from '../theme/themeCatalog'
 
 export const indexCss = readFileSync(resolve(__dirname, '../index.css'), 'utf8')
+export const paletteCss = readFileSync(resolve(__dirname, '../styles/theme-palettes.css'), 'utf8')
+/** Both stylesheets: index.css (recipes + the Kiro blocks), then every other theme's blocks. */
+export const themeCss = `${indexCss}\n${paletteCss}`
 
-export const THEMES = ['kiro-dark', 'kiro-light'] as const
-export type Theme = (typeof THEMES)[number]
+export type Theme = `${ColorThemeId}-${ThemeMode}`
+export const MODES: readonly ThemeMode[] = ['dark', 'light']
+
+/** Every `data-theme` block the app ships: each colour theme in both modes. */
+export const THEMES: readonly Theme[] = COLOR_THEME_IDS.flatMap((id) => MODES.map((mode): Theme => `${id}-${mode}`))
+
+/** The Kiro blocks, for checks about Kiro's own provenance (KiroCrew values, the audit's measurements). */
+export const KIRO_THEMES = ['kiro-dark', 'kiro-light'] as const
+export type KiroTheme = (typeof KIRO_THEMES)[number]
+
+/** The Kiro block of `mode`: the reference every other theme's token set is held to. */
+export function kiroThemeOf(mode: ThemeMode): KiroTheme {
+  return mode === 'dark' ? 'kiro-dark' : 'kiro-light'
+}
+
+/** The mode a theme block paints. */
+export function modeOf(theme: Theme): ThemeMode {
+  return theme.endsWith('-dark') ? 'dark' : 'light'
+}
+
+/** The colour theme a block belongs to (`nord-light` → `nord`). */
+export function colorThemeOf(theme: Theme): ColorThemeId {
+  const id = COLOR_THEME_IDS.find((candidate) => theme.startsWith(`${candidate}-`))
+  if (id === undefined) throw new Error(`no colour theme for ${theme}`)
+  return id
+}
+
+/** The blocks of one colour theme. */
+export function themesOf(id: ColorThemeId): Theme[] {
+  return THEMES.filter((theme) => colorThemeOf(theme) === id)
+}
+
 
 /** `css` without its block comments (split on the delimiters; no backtracking regex). */
 export function withoutComments(css: string): string {
@@ -21,9 +56,18 @@ export function withoutComments(css: string): string {
 
 /** The declarations of one `[data-theme="…"]` block, comments stripped. */
 export function themeBlockBody(theme: Theme): string {
-  const start = indexCss.indexOf(`[data-theme="${theme}"]`)
+  const start = themeCss.indexOf(`[data-theme="${theme}"] {`)
   if (start === -1) throw new Error(`no ${theme} block`)
-  return withoutComments(indexCss.slice(indexCss.indexOf('{', start) + 1, indexCss.indexOf('}', start)))
+  return withoutComments(themeCss.slice(themeCss.indexOf('{', start) + 1, themeCss.indexOf('}', start)))
+}
+
+/** Every custom property one theme block declares (`--name` without the dashes), sorted. */
+export function themeTokenNames(theme: Theme): string[] {
+  return themeBlockBody(theme).split(';')
+    .map((declaration) => declaration.slice(0, declaration.indexOf(':')).trim())
+    .filter((name) => name.startsWith('--'))
+    .map((name) => name.slice(2))
+    .sort((a, b) => a.localeCompare(b))
 }
 
 /** `--name: #hex` declarations of one `[data-theme="…"]` block, lower-cased. */
