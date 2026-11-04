@@ -14,22 +14,18 @@ email or name, never a support row, the description cut to ``MAX_DESCRIPTION_CHA
 """
 from __future__ import annotations
 
-import os
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from functools import lru_cache
 from typing import Any, Final
 
-from shared.aws import get_dynamodb_resource
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import as_count
-from shared.exceptions import ConfigurationError
+from shared.engagement_config import feature_requests_table
 from shared.feature_boards_store import SEEDED_BOARD_ID, list_boards
 from shared.feature_requests_store import REQUESTS_PARTITION, board_id_of
 from shared.indexes import FEATURE_REQUESTS_LISTING_INDEX
 
-FEATURE_REQUESTS_TABLE_ENV: Final = 'FEATURE_REQUESTS_TABLE'
 # Request rows one load reads at most. A row is a few KB, so this keeps one load well inside a
 # Lambda's memory and a few seconds of reads; past it the result says ``truncated``.
 MAX_SCANNED_REQUESTS: Final = 5000
@@ -57,21 +53,9 @@ class _Filters:
     terms: tuple[str, ...]
 
 
-@lru_cache(maxsize=4)
-def _table_named(name: str) -> Any:
-    return get_dynamodb_resource().Table(name)
-
-
-def feature_requests_table() -> Any:
-    """voc-feature-requests (env ``FEATURE_REQUESTS_TABLE``); a ConfigurationError (500) when unset."""
-    name = os.environ.get(FEATURE_REQUESTS_TABLE_ENV, '')
-    if not name:
-        raise ConfigurationError(f'{FEATURE_REQUESTS_TABLE_ENV} not configured')
-    return _table_named(name)
-
-
-def _text(value: object) -> str:
-    return value if isinstance(value, str) else ''
+def _plain_text(value: object) -> str:
+    """A stored string, '' for anything else."""
+    return _optional_text(value) or ''
 
 
 def _optional_text(value: object) -> str | None:
@@ -123,7 +107,7 @@ def _category_key(item: Mapping[str, Any]) -> str:
 
 def _searchable(item: Mapping[str, Any]) -> str:
     parts = (item.get('title'), item.get('description'), _enrichment(item).get('problem_summary'))
-    return '\n'.join(_text(part) for part in parts).lower()
+    return '\n'.join(_plain_text(part) for part in parts).lower()
 
 
 def _matches(item: Mapping[str, Any], filters: _Filters) -> bool:
@@ -131,7 +115,7 @@ def _matches(item: Mapping[str, Any], filters: _Filters) -> bool:
         return False
     if filters.categories is not None and _category_key(item) not in filters.categories:
         return False
-    if filters.statuses is not None and _text(item.get('status')).lower() not in filters.statuses:
+    if filters.statuses is not None and _plain_text(item.get('status')).lower() not in filters.statuses:
         return False
     if filters.terms:
         text = _searchable(item)
@@ -149,16 +133,16 @@ def slim_request(item: Mapping[str, Any]) -> dict[str, Any]:
     Never an email, a name or a field value (a deal, a customer) from the board."""
     enrichment = _enrichment(item)
     return {
-        'request_id': _text(item.get('request_id')),
+        'request_id': _plain_text(item.get('request_id')),
         'board_id': board_id_of(item),
-        'title': _text(item.get('title')),
-        'description': _text(item.get('description'))[:MAX_DESCRIPTION_CHARS],
-        'status': _text(item.get('status')),
+        'title': _plain_text(item.get('title')),
+        'description': _plain_text(item.get('description'))[:MAX_DESCRIPTION_CHARS],
+        'status': _plain_text(item.get('status')),
         'supporters': _supporters(item),
         'category': _optional_text(enrichment.get('category')),
         'sentiment': _optional_text(enrichment.get('sentiment')),
         'problem_summary': _optional_text(enrichment.get('problem_summary')),
-        'created_at': _text(item.get('created_at')),
+        'created_at': _plain_text(item.get('created_at')),
     }
 
 
