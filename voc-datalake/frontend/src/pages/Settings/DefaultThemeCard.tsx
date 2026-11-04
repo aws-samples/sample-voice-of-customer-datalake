@@ -11,6 +11,7 @@
  * @module pages/Settings/DefaultThemeCard
  */
 import { useId, useState } from 'react'
+import type { Location } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Lock, Save } from 'lucide-react'
@@ -65,6 +66,12 @@ function DefaultThemeSaveBar({ dirty, pending, failed, onSave }: Readonly<{
   )
 }
 
+/** What can unmount the card and lose a pick: leaving /admin, or switching its `?tab=` (not an overlay like `?review=`). */
+function losesTheCard(current: Location, next: Location): boolean {
+  const tab = (search: string) => new URLSearchParams(search).get('tab')
+  return current.pathname !== next.pathname || tab(current.search) !== tab(next.search)
+}
+
 /** The admin's unsaved pick, its save, and the guard that asks before it is lost. */
 function useDefaultThemeDraft(saved: ColorThemeId | undefined, isAdmin: boolean) {
   const [draft, setDraft] = useState<ColorThemeId | null>(null)
@@ -75,7 +82,7 @@ function useDefaultThemeDraft(saved: ColorThemeId | undefined, isAdmin: boolean)
     await save.mutateAsync(draft)
     return true
   }
-  const guard = useUnsavedChangesGuard({ dirty, onSave: saveDraft, onDiscard: () => setDraft(null) })
+  const guard = useUnsavedChangesGuard({ dirty, onSave: saveDraft, onDiscard: () => setDraft(null), shouldBlock: losesTheCard })
   return { draft, setDraft, dirty, save, saveDraft, guard }
 }
 

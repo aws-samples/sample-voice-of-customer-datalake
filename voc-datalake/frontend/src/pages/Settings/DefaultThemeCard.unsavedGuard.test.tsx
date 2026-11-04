@@ -5,7 +5,7 @@
  * refetches while the dialog is open, and Discard lets the leave through.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
@@ -41,6 +41,17 @@ describe('Default theme — Cancel keeps the pick and stays guarded (R2)', () =>
       },
     })
     await expectCancelKeepsDraftGuarded(scenario)
+  })
+
+  // Only what can unmount the card asks: an overlay such as the review modal (?review=) keeps it.
+  it('lets a ?review= overlay through with a pick unsaved, but asks before a tab switch', async () => {
+    routeFetchApi({ 'GET /settings/appearance': () => ({ default_theme: 'kiro' }) })
+    const { router } = mountAtAdmin(<DefaultThemeCard apiEndpoint={API} isAdmin />)
+    await userEvent.click(await screen.findByRole('radio', { name: 'Nord' }))
+    await act(() => router.navigate('/admin?review=fb_1'))
+    expect([router.state.location.search, screen.queryByRole('dialog')]).toStrictEqual(['?review=fb_1', null])
+    await act(() => router.navigate('/admin?tab=sources'))
+    expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
   })
 
   it('does not guard a read-only viewer', async () => {
