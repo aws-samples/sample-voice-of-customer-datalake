@@ -25,10 +25,10 @@ import HighContrastMark from './HighContrastMark'
 import QuickMark, { QuickMarkThinking } from './QuickMark'
 import type { ColorThemeId } from '../../theme/themeCatalog'
 import type { ComponentType } from 'react'
-import type { MarkProps } from './MarkSvg'
+import type { MarkProps, StaticMarkProps } from './MarkSvg'
 
 /** The static mark of every theme but Kiro (whose idle and thinking poses differ from its mark). */
-const STATIC_MARKS: Record<Exclude<ColorThemeId, 'kiro'>, ComponentType<MarkProps>> = {
+const STATIC_MARKS: Record<Exclude<ColorThemeId, 'kiro'>, ComponentType<StaticMarkProps>> = {
   nord: NordMark,
   dracula: DraculaMark,
   highcontrast: HighContrastMark,
@@ -37,7 +37,7 @@ const STATIC_MARKS: Record<Exclude<ColorThemeId, 'kiro'>, ComponentType<MarkProp
 
 const FLOAT = 'animate-float motion-reduce:animate-none'
 
-export default function ThemeMark({ className, onFill }: Readonly<MarkProps>) {
+export default function ThemeMark({ className, onFill }: Readonly<StaticMarkProps>) {
   const theme = useActiveColorTheme()
   if (theme === 'kiro') return <KiroGhost className={className} />
   const Mark = STATIC_MARKS[theme]

@@ -7,8 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Link, RouterProvider, createMemoryRouter } from 'react-router-dom'
-import { createTestQueryClient, renderWithQueryClient } from '@test/query-client'
+import { mountAtAdmin } from '@test/adminRoute'
 import { expectCancelKeepsDraftGuarded } from '@test/unsavedGuardContract'
 import type { GuardUser } from '@test/unsavedGuardContract'
 import { useConfigStore } from '../../store/configStore'
@@ -32,18 +31,7 @@ const stored = (brandName: string, hashtags: string[] = ['#stored']): BrandSetti
   brand_name: brandName, brand_handles: ['@stored'], hashtags, urls_to_track: [],
 })
 
-function mountAdmin() {
-  const client = createTestQueryClient()
-  const router = createMemoryRouter(
-    [
-      { path: '/', element: <p>Home page</p> },
-      { path: '/admin', element: <><Link to="/">Home</Link><Settings /></> },
-    ],
-    { initialEntries: ['/admin'] },
-  )
-  renderWithQueryClient(<RouterProvider router={router} />, client)
-  return { client, router }
-}
+const mountAdmin = () => mountAtAdmin(<Settings />)
 
 const brandField = () => screen.getByLabelText('Brand Name')
 

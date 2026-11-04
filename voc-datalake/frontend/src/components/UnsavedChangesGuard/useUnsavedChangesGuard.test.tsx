@@ -11,6 +11,7 @@ import { Link, MemoryRouter, RouterProvider, createMemoryRouter, useLocation } f
 import { useUnsavedChangesGuard } from './useUnsavedChangesGuard'
 import { runGuarded } from './guardRegistry'
 import type { UnsavedChangesGuardOptions } from './useUnsavedChangesGuard'
+import type { ReactNode } from 'react'
 
 type Overrides = Partial<Pick<UnsavedChangesGuardOptions, 'canSave' | 'shouldBlock'>>
 
@@ -50,16 +51,21 @@ function Editor({ onSave, onDiscard, options = {} }: Readonly<{
   )
 }
 
-function renderInDataRouter(props: Parameters<typeof Editor>[0]) {
+/** `/editor` showing `editor` (under a data router, so `useBlocker` is live) and an `/elsewhere` page. */
+function renderEditorRoute(editor: ReactNode) {
   const router = createMemoryRouter(
     [
-      { path: '/editor', element: <Editor {...props} /> },
+      { path: '/editor', element: editor },
       { path: '/elsewhere', element: <p>Elsewhere page</p> },
     ],
     { initialEntries: ['/editor'] },
   )
   render(<RouterProvider router={router} />)
   return { user: userEvent.setup(), router }
+}
+
+function renderInDataRouter(props: Parameters<typeof Editor>[0]) {
+  return renderEditorRoute(<Editor {...props} />)
 }
 
 const dialog = () => screen.getByRole('dialog', { name: 'Unsaved changes' })
@@ -186,15 +192,7 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
   // react-router keeps ONE blocker per router and the last one mounted wins: a clean editor
   // below a dirty one used to take it, so leaving with unsaved edits went through unasked.
   it('a clean editor mounted after a dirty one does not take its route guard', async () => {
-    const router = createMemoryRouter(
-      [
-        { path: '/editor', element: <><Editor onSave={vi.fn()} /><CleanEditor /></> },
-        { path: '/elsewhere', element: <p>Elsewhere page</p> },
-      ],
-      { initialEntries: ['/editor'] },
-    )
-    render(<RouterProvider router={router} />)
-    const user = userEvent.setup()
+    const { router, user } = renderEditorRoute(<><Editor onSave={vi.fn()} /><CleanEditor /></>)
     await user.type(screen.getByLabelText('Name'), 'x')
     await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
     expect(dialog()).toBeInTheDocument()
@@ -209,17 +207,7 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     return <><label>Other <input value={value} onChange={(e) => setValue(e.target.value)} /></label>{guard.dialog}</>
   }
 
-  function renderTwoDirty() {
-    const router = createMemoryRouter(
-      [
-        { path: '/editor', element: <><Editor onSave={vi.fn()} /><OtherEditor /></> },
-        { path: '/elsewhere', element: <p>Elsewhere page</p> },
-      ],
-      { initialEntries: ['/editor'] },
-    )
-    render(<RouterProvider router={router} />)
-    return { router, user: userEvent.setup() }
-  }
+  const renderTwoDirty = () => renderEditorRoute(<><Editor onSave={vi.fn()} /><OtherEditor /></>)
 
   // Both dirty: only one blocker exists, so the editor that caught the change hands it on.
   it('asks every dirty editor in turn, and leaves only after both let it go', async () => {
