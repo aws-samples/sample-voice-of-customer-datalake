@@ -95,6 +95,10 @@ export default function DefaultThemeCard({ apiEndpoint, isAdmin }: CardProps) {
   const { draft, setDraft, dirty, save, saveDraft, guard } = useDefaultThemeDraft(saved, isAdmin)
   const current = draft ?? saved
 
+  // Without an API endpoint the read never runs (a local build before setup): no card at all,
+  // rather than a title over nothing.
+  if (apiEndpoint === '') return null
+
   return (
     <section className="card space-y-4" aria-labelledby={labelId}>
       {guard.dialog}

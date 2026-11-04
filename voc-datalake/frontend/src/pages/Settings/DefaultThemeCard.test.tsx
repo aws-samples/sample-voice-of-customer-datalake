@@ -44,6 +44,14 @@ beforeEach(() => {
   useThemeStore.setState({ workspaceTheme: 'kiro', colorTheme: 'workspace' })
 })
 
+describe('DefaultThemeCard — no API endpoint', () => {
+  it('renders nothing and asks nothing before an API endpoint is configured', () => {
+    const { container } = renderWithQueryClient(<DefaultThemeCard apiEndpoint="" isAdmin />)
+    expect(container).toBeEmptyDOMElement()
+    expect(fetchApi).not.toHaveBeenCalled()
+  })
+})
+
 describe('DefaultThemeCard — admin', () => {
   it('enables Save only once the pick differs from the saved theme', async () => {
     serve('kiro')
