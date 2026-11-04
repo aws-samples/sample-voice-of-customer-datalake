@@ -28,12 +28,12 @@
    *   --nav-active-text #88c0d0 → #8cc4d4 (4.31:1 → 4.50:1)
    *   --ok #a3be8c → #c0dca9 (3.46:1 → 4.50:1)
    *   --warn #ebcb8b → #f0d08f (4.36:1 → 4.51:1)
-   *   --danger #bf616a → #fdc7c9 (1.94:1 → 4.53:1)
+   *   --danger #bf616a → #febabd (1.94:1 → 4.5:1; --bg-hover #434c5e → #3f4758 so the red keeps more colour)
    *   --info #81a1c1 → #b7d8fa (2.76:1 → 4.51:1)
    *   --aim #b48ead → #f9d0f1 (2.54:1 → 4.50:1)
    *   --chart-2 #5e81ac → #678ab6 (2.84:1 → 3.21:1)
    *   --chart-5 #bf616a → #cb6c74 (2.79:1 → 3.23:1) */
-  --bg: #2e3440; --bg-accent: #333a47; --bg-elevated: #3b4252; --bg-hover: #434c5e;
+  --bg: #2e3440; --bg-accent: #333a47; --bg-elevated: #3b4252; --bg-hover: #3f4758;
   --card: #333a47; --card-hl: rgba(255, 255, 255, .04);
   --panel: #2e3440;
   --chrome: rgba(46, 52, 64, .95);
@@ -45,7 +45,7 @@
   --nav-active-bg: #434c5e; --nav-active-text: #8cc4d4; --nav-active-border: #4c566a;
   --ok: #c0dca9; --ok-fg: #000000; --ok-subtle: rgba(192, 220, 169, .12);
   --warn: #f0d08f; --warn-fg: #000000; --warn-subtle: rgba(240, 208, 143, .12);
-  --danger: #fdc7c9; --danger-fg: #000000; --danger-subtle: rgba(253, 199, 201, .12);
+  --danger: #febabd; --danger-fg: #000000; --danger-subtle: rgba(254, 186, 189, .12);
   --info: #b7d8fa;
   --aim: #f9d0f1; --aim-subtle: rgba(249, 208, 241, .15);
   --overlay: rgba(15, 18, 24, .6);
@@ -111,10 +111,10 @@
    * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
    *   --control-border #6272a4 → #8293c7 (1.94:1 → 3.03:1)
    *   --accent-text #d5acff → #ddbefe (3.93:1 → 4.52:1)
-   *   --danger #ff5555 → #fdbeb8 (2.64:1 → 4.53:1)
+   *   --danger #ff5555 → #fdb0aa (2.64:1 → 4.5:1; --bg-hover #44475a → #3e4152 so the red keeps more colour)
    *   --aim #ff79c6 → #fdc6e2 (3.12:1 → 4.51:1)
    *   --chart-5 #6272a4 → #6c7caf (2.81:1 → 3.24:1) */
-  --bg: #282a36; --bg-accent: #2d2f3d; --bg-elevated: #383a4a; --bg-hover: #44475a;
+  --bg: #282a36; --bg-accent: #2d2f3d; --bg-elevated: #383a4a; --bg-hover: #3e4152;
   --card: #2d2f3d; --card-hl: rgba(255, 255, 255, .05);
   --panel: #282a36;
   --chrome: rgba(40, 42, 54, .95);
@@ -126,7 +126,7 @@
   --nav-active-bg: #44475a; --nav-active-text: #d5acff; --nav-active-border: #565970;
   --ok: #50fa7b; --ok-fg: #000000; --ok-subtle: rgba(80, 250, 123, .12);
   --warn: #f1fa8c; --warn-fg: #000000; --warn-subtle: rgba(241, 250, 140, .12);
-  --danger: #fdbeb8; --danger-fg: #000000; --danger-subtle: rgba(253, 190, 184, .12);
+  --danger: #fdb0aa; --danger-fg: #000000; --danger-subtle: rgba(253, 176, 170, .12);
   --info: #8be9fd;
   --aim: #fdc6e2; --aim-subtle: rgba(253, 198, 226, .15);
   --overlay: rgba(16, 17, 22, .6);
