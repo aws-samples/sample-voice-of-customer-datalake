@@ -25,7 +25,12 @@ Faster Python cold starts: every Lambda bundle ships its own code compiled.
 - **Python Lambda bundles ship bytecode.** Every function built by the CDK bundling now includes `.pyc` files
   compiled by the Python 3.14 bundling image (unchecked-hash, PEP 552), so a cold start no longer compiles the
   function's own modules (about 35,000 lines for the Projects API). Each deployment zip grows by roughly the size
-  of its source. See [docs/lambda-sizing.md](docs/lambda-sizing.md) → Cold starts.
+  of its source. Measured in production: the Projects API's cold start went from 1.58 s to 1.24 s (p50), the other
+  APIs by 7–14 %. See [docs/lambda-sizing.md](docs/lambda-sizing.md) → Cold starts.
+
+### Fixed
+- Production e2e suite: the participant erasure gives the legal basis 6.00.00 requires, in the erase dialog and in
+  the suite's own cleanup (`DELETE /participants/people/{id}` with `{legal_basis}`), so test people are erased again.
 
 ## [6.00.00] - 2026-11-03
 

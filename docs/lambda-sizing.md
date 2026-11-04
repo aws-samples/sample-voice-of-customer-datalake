@@ -233,10 +233,15 @@ Every bundle built by `pythonLambdaAsset` (`lib/utils/python-lambda-asset.ts`) n
 image, after the prune (which still deletes any `.pyc` from the source tree). Unchecked-hash bytecode (PEP 552)
 loads without reading or hashing the source and carries no timestamp, which is safe because a deployed bundle never
 changes; if the runtime's Python ever differs, it ignores the files and compiles from source as before. Each zip
-grows by about the size of its source. The largest bundle, the Projects API (it ships 284 modules, of which a cold start imports the 122 in
-the table above), is 8.2 MB unzipped with
-its 4.2 MB of bytecode (3.1 MB zipped); with its two layers (39.4 MB unzipped) it uses 47.6 MB of Lambda's 250 MB
-unzipped quota. `lib/utils/python-lambda-asset.test.ts` builds one real bundle (when Docker
+grows by about the size of its source. The largest bundle, the Projects API, ships 284 modules (a cold start
+imports the 122 in the table above) and is 8.2 MB unzipped with its 4.2 MB of bytecode (3.1 MB zipped); with its two
+layers (39.4 MB unzipped) it uses 47.6 MB of Lambda's 250 MB unzipped quota.
+
+Measured in production (Init Duration p50, the 7 days before the deploy against the first hour after it, functions
+with at least 5 cold starts in both): projects 1,575 → 1,244 ms (−21 %), settings 1,544 → 1,329 ms (−14 %), logs
+1,290 → 1,106 ms (−14 %), agents 1,257 → 1,097 ms (−13 %), metrics 1,248 → 1,112 ms (−11 %), feedback forms
+1,245 → 1,108 ms (−11 %), chat 1,140 → 1,045 ms (−8 %), integrations 1,152 → 1,074 ms (−7 %). The after sample is
+small (5–18 cold starts each). `lib/utils/python-lambda-asset.test.ts` builds one real bundle (when Docker
 and the image are present) and checks a `cpython-314` unchecked-hash `.pyc` next to every shipped module. Not
 covered: the two functions CoreStack builds without bundling (the product-document extractor, which is
 stdlib + boto3 only, and the Node custom-resource handler).
