@@ -7,17 +7,13 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { indexCss, paletteCss, withoutComments } from '@test/themeTokens'
+import { indexCss, paletteCss, ruleBody, withoutComments } from '@test/themeTokens'
 
 const css = withoutComments(paletteCss)
 const pkg: unknown = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf8'))
 
-/** The declarations of the rule whose selector list is exactly `selector`. */
-function rule(selector: string): string {
-  const start = css.indexOf(`${selector} {`)
-  if (start === -1) throw new Error(`no rule for ${selector}`)
-  return css.slice(css.indexOf('{', start) + 1, css.indexOf('}', start))
-}
+/** The declarations of the theme-palettes.css rule whose selector list is exactly `selector`. */
+const rule = (selector: string): string => ruleBody(css, selector)
 
 function dependencies(manifest: unknown): Record<string, unknown> {
   if (typeof manifest !== 'object' || manifest === null || !('dependencies' in manifest)) return {}

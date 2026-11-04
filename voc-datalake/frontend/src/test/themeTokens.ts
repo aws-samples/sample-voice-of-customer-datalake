@@ -13,7 +13,7 @@ export const paletteCss = readFileSync(resolve(__dirname, '../styles/theme-palet
 export const themeCss = `${indexCss}\n${paletteCss}`
 
 export type Theme = `${ColorThemeId}-${ThemeMode}`
-export const MODES: readonly ThemeMode[] = ['dark', 'light']
+const MODES: readonly ThemeMode[] = ['dark', 'light']
 
 /** Every `data-theme` block the app ships: each colour theme in both modes. */
 export const THEMES: readonly Theme[] = COLOR_THEME_IDS.flatMap((id) => MODES.map((mode): Theme => `${id}-${mode}`))
@@ -52,6 +52,13 @@ export function withoutComments(css: string): string {
     const close = part.indexOf('*/')
     return close === -1 ? '' : part.slice(close + 2)
   }).join('')
+}
+
+/** The declarations of the first rule in `css` whose selector list starts with `selector`. */
+export function ruleBody(css: string, selector: string): string {
+  const start = css.indexOf(`${selector} {`)
+  if (start === -1) throw new Error(`no rule for ${selector}`)
+  return css.slice(css.indexOf('{', start) + 1, css.indexOf('}', start))
 }
 
 /** The declarations of one `[data-theme="…"]` block, comments stripped. */
