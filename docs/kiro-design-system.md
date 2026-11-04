@@ -124,9 +124,10 @@ Quick is more than a palette. Under `[data-color-theme="quick"]` (the end of `th
 
 ### Adding a theme
 
-1. Add its id to `COLOR_THEME_IDS` (`themeCatalog.ts`) and the mirrors it names (`theme-init.js`, `lambda/shared/appearance.py`).
+1. Add its id to `COLOR_THEME_IDS` (`themeCatalog.ts`) and every mirror, each pinned by a test: `public/theme-init.js` (`themeInit.test.ts`), `lambda/shared/appearance.py` (`test_appearance.py`) and the dev mock's `THEME_IDS` in `frontend/mock-appearance.js` (`themeCatalog.test.ts`); also the theme list of `PUT /settings/appearance` in `.kiro/steering/structure.md`.
 2. Add `:root[data-theme="<id>-dark"], [data-theme="<id>-dark"]` and the same for `-light` to `theme-palettes.css`, declaring **every** token the Kiro block of that mode declares, and nothing else (a theme's own extra tokens go in `EXTRA_TOKENS` in `theme/themeTokenSet.test.ts`, with a reason).
-3. Run `npx vitest run src/theme`: the suites iterate every block (`THEMES` in `src/test/themeTokens.ts`) and check the token set, text and non-text contrast, status tones on their tints, the chart ramp, control borders and the focus ring. When one fails, fix the palette; the thresholds are not negotiable.
+3. Give it a mark in `components/ThemeMark` (an entry in `STATIC_MARKS`, `data-mark="<id>"`) and a tab icon `public/favicons/<id>.svg` (`themeFavicon`; `themeCatalog.test.ts` fails without the file), its name in `components/ThemePicker/themeNames.ts`, and record the source of any borrowed art or palette in `THIRD-PARTY-LICENSES.md`.
+4. Run `npx vitest run src/theme src/components/ThemeMark`: the suites iterate every block (`THEMES` in `src/test/themeTokens.ts`) and check the token set, text and non-text contrast, status tones on their tints, the chart ramp, control borders and the focus ring. When one fails, fix the palette; the thresholds are not negotiable.
 
 ## Colour
 

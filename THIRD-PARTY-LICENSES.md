@@ -108,3 +108,4 @@ Frontend design system:
 [@fontsource/space-grotesk@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1
 [@fontsource/jetbrains-mono@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1
 [@fontsource-variable/inter@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1 (the Quick theme's face)
+Quick design system (AWS, first party): the Quick theme's palette and component look (src/styles/theme-palettes.css) and the four-point spark of its assistant (src/components/ThemeMark/QuickMark.tsx, public/favicons/quick.svg), redrawn here from the product's own outline; Amazon trademarks are not licensed by this repository's licence
