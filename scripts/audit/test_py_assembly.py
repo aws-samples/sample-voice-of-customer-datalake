@@ -4,6 +4,7 @@ Run: ``cd voc-datalake && .venv/bin/python -m pytest --no-cov ../scripts/audit``
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,14 @@ def tree(make_tree: TreeMaker) -> Path:
     })
 
 
+def _bundle_compile_step() -> str:
+    """PYTHON_BUNDLE_COMPILE as lib/utils/python-lambda-asset.ts declares it (the one source of the command)."""
+    source = (Path(__file__).resolve().parents[2] / 'voc-datalake' / 'lib' / 'utils' / 'python-lambda-asset.ts').read_text()
+    match = re.search(r"export const PYTHON_BUNDLE_COMPILE = '([^']+)';", source)
+    assert match is not None, 'python-lambda-asset.ts: no PYTHON_BUNDLE_COMPILE literal'
+    return match.group(1)
+
+
 class TestTheReplay:
     def test_cp_into_a_directory_cp_contents_glob_conditional_and_prune(self, tree: Path) -> None:
         script = ('mkdir -p /asset-output/jobs && cp /asset-input/api/metrics_handler.py /asset-output/ && '
@@ -56,7 +65,7 @@ class TestTheReplay:
         assert sorted(bundle.files) == ['__init__.py', 'api.py']
 
     def test_the_bytecode_compile_step_ships_no_extra_module(self, tree: Path) -> None:
-        compile_step = 'python -m compileall -q -j 0 --invalidation-mode unchecked-hash /asset-output'
+        compile_step = _bundle_compile_step()
         script = 'cp /asset-input/api/metrics_handler.py /asset-output/ && ' + PRUNE + ' && ' + compile_step
         bundle = emulate_bundle(tree, _fn(script))
         assert sorted(bundle.files) == ['metrics_handler.py']

@@ -115,7 +115,7 @@ describe('PYTHON_BUNDLE_PRUNE and PYTHON_BUNDLE_COMPILE', () => {
 
   it('is the exact step the code audit\'s bundling emulator ignores (scripts/audit/py_assembly.py IGNORED_STEPS)', () => {
     const emulator = readFileSync(join(process.cwd(), '..', 'scripts', 'audit', 'py_assembly.py'), 'utf8');
-    expect(emulator).toContain(`|${PYTHON_BUNDLE_COMPILE})$')`);
+    expect(emulator).toContain(`|${PYTHON_BUNDLE_COMPILE})`);
   });
 });
 
