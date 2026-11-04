@@ -2,7 +2,7 @@
 
 Every tool is a thin translation from MCP arguments to ONE route of the domain
 Lambda that owns the data (``shared.mcp_delegate``): metrics, settings, memory,
-projects or agents. The tool never reads a table itself, so the route's own
+projects, agents or engagement (the feedback boards' search). The tool never reads a table itself, so the route's own
 validation, category filtering and per-project access rules apply to the call,
 evaluated for the token's minter (never admin, capped at editor).
 
@@ -34,6 +34,7 @@ DOMAIN_SETTINGS: Final = 'settings'
 DOMAIN_MEMORY: Final = 'memory'
 DOMAIN_PROJECTS: Final = 'projects'
 DOMAIN_AGENTS: Final = 'agents'
+DOMAIN_ENGAGEMENT: Final = 'engagement'
 
 DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
     DOMAIN_METRICS: 'METRICS_FUNCTION',
@@ -41,6 +42,7 @@ DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
     DOMAIN_MEMORY: 'MEMORY_FUNCTION',
     DOMAIN_PROJECTS: 'PROJECTS_FUNCTION',
     DOMAIN_AGENTS: 'AGENTS_FUNCTION',
+    DOMAIN_ENGAGEMENT: 'ENGAGEMENT_FUNCTION',
 }
 
 MAX_DAYS: Final = 9999           # shared.api.MAX_FEEDBACK_WINDOW_DAYS; 0 = all time
@@ -67,6 +69,17 @@ _SIMILAR_FIELDS: Final[tuple[str, ...]] = ('feedback_id', 'source_platform', 'so
                                            'sentiment_label', 'urgency', 'rating', 'title', 'problem_summary')
 # Post-query filters every feedback/metrics route takes (docs/dimensions.md); `dims` is serialised.
 ITEM_FILTERS: Final[tuple[str, ...]] = ('channel', 'tag')
+# `search_feature_requests` (GET /feature-requests/search): the slim item, a page of at most 50, a window of
+# at most 3650 days (0 = all time), board / category / status as comma lists.
+FEATURE_REQUEST_FIELDS: Final[tuple[str, ...]] = ('request_id', 'board_id', 'title', 'description', 'status',
+                                                  'supporters', 'category', 'sentiment', 'problem_summary',
+                                                  'created_at')
+FEATURE_REQUEST_FILTERS: Final[tuple[str, ...]] = ('board', 'category', 'status')
+MAX_FEATURE_REQUEST_LIMIT: Final = 50
+DEFAULT_FEATURE_REQUEST_LIMIT: Final = 25
+MAX_FEATURE_REQUEST_DAYS: Final = 3650
+MAX_FEATURE_REQUEST_FILTER_LENGTH: Final = 500
+MAX_FEATURE_REQUEST_TEXT_CHARS: Final = 1000
 
 # Keys never forwarded to an MCP client: storage keys, index keys, and anything
 # carrying a signed URL.
@@ -123,6 +136,9 @@ class GlobalTool:
     project_scoped: bool = False
     # Extra reads after the main route answered (validated by ``build`` first).
     follow_ups: Callable[[Mapping[str, Any]], tuple[FollowUp, ...]] = _no_follow_ups
+    # A feedback-board route (`/feature-requests/*`): the delegated claims also carry the app pool's
+    # issuer and a verified service address (``board_route_claims``), which the board scope reads.
+    board_route: bool = False
 
     def declaration(self) -> dict:
         """The tool as `tools/list` publishes it."""
@@ -286,6 +302,54 @@ def _stripped(payload: object, _args: Mapping[str, Any]) -> object:
     return {key: _public_value(value) for key, value in _public(payload).items()}
 
 
+def _feature_requests(payload: object, _args: Mapping[str, Any]) -> dict:
+    """The search answer as slim items only: no field added upstream reaches the client unreviewed."""
+    items = []
+    for row in _items(payload, 'items'):
+        if not isinstance(row, Mapping):
+            continue
+        item = {key: row[key] for key in FEATURE_REQUEST_FIELDS if row.get(key) is not None}
+        for key in ('title', 'description', 'problem_summary'):
+            if isinstance(item.get(key), str):
+                item[key] = item[key][:MAX_FEATURE_REQUEST_TEXT_CHARS]
+        items.append(item)
+    total = payload.get('total') if isinstance(payload, Mapping) else None
+    truncated = payload.get('truncated') if isinstance(payload, Mapping) else None
+    return {'count': len(items), 'total': total if isinstance(total, int) and not isinstance(total, bool) else len(items),
+            'truncated': truncated is True, 'items': items}
+
+
+# ── Board-route claims ──────────────────────────────────────────────────────
+# The board routes (shared/engagement_identity.board_viewer) read the caller's pool from the verified
+# `iss` claim and need a verified email. A global token's minter is always an APP-pool user: tokens are
+# minted at /connect/tokens behind the app-pool authorizer, and the minter is re-checked in that pool
+# (USER_POOL_ID) on every call. So the issuer is THIS function's own app pool, from its environment —
+# never the request, and never the board pool, which therefore cannot be claimed through MCP. The email
+# is a service address naming the credential (``.invalid`` is reserved, RFC 2606: it is nobody's
+# mailbox), never the minter's, as in ``mcp_delegate.synthetic_claims``. An app-pool caller's board scope
+# never depends on its email (every non-archived board), and `cognito:groups` stays empty: never admin.
+SERVICE_EMAIL_DOMAIN: Final = 'mcp.invalid'
+
+
+def app_pool_issuer(pool_id: str) -> str | None:
+    """The Cognito issuer of ``pool_id`` (``<region>_<id>``), or None when it is not a pool id."""
+    region, sep, rest = pool_id.partition('_')
+    if not sep or not region or not rest:
+        return None
+    return f'https://cognito-idp.{region}.amazonaws.com/{pool_id}'
+
+
+def board_route_claims(claims: Mapping[str, str], token_id: object, pool_id: str) -> dict[str, str]:
+    """``claims`` plus the app-pool issuer and a verified service address; unchanged when either is unknown.
+
+    Fail closed: without them the board route refuses the call (403), it never widens it.
+    """
+    issuer = app_pool_issuer(pool_id)
+    if issuer is None or not gt.is_path_id(token_id):
+        return dict(claims)
+    return {**claims, 'iss': issuer, 'email': f'mcp+{token_id}@{SERVICE_EMAIL_DOMAIN}', 'email_verified': 'true'}
+
+
 # ── Builders ────────────────────────────────────────────────────────────────
 def _search_feedback(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
     query = _text_arg(args, 'query', max_length=MAX_QUERY_LENGTH)
@@ -408,6 +472,18 @@ def _get_agent_run(args: Mapping[str, Any], _project: str | None) -> RouteReques
     return RouteRequest(DOMAIN_AGENTS, 'GET', f"/agents/{agent_id}/runs/{_id_arg(args, 'run_id')}")
 
 
+def _search_feature_requests(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
+    query: dict[str, Any] = {
+        'q': _text_arg(args, 'query', max_length=MAX_QUERY_LENGTH),
+        'limit': _int_arg(args, 'limit', default=DEFAULT_FEATURE_REQUEST_LIMIT, low=1, high=MAX_FEATURE_REQUEST_LIMIT),
+    }
+    for name in FEATURE_REQUEST_FILTERS:
+        query[name] = _text_arg(args, name, max_length=MAX_FEATURE_REQUEST_FILTER_LENGTH)
+    days = _int_arg(args, 'days', default=0, low=0, high=MAX_FEATURE_REQUEST_DAYS)
+    query['days'] = days or None  # 0 = all time: no window sent
+    return RouteRequest(DOMAIN_ENGAGEMENT, 'GET', '/feature-requests/search', query=query)
+
+
 def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
     return RouteRequest(DOMAIN_AGENTS, 'POST', f"/agents/{_id_arg(args, 'agent_id')}/run")
 
@@ -487,6 +563,23 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_RUNS_LIMIT,
                            'default': DEFAULT_RUNS_LIMIT}}, ('agent_id',)),
         _get_agent_run, _stripped),
+    GlobalTool(
+        'search_feature_requests', 'Search feedback-board requests',
+        'Search the requests people posted on the feedback boards (feature requests, ideas) you can see. '
+        'These are board requests, NOT customer reviews: a separate source, never counted in feedback metrics '
+        'and never returned by search_feedback. Each item: request_id, board_id, title, description, status, '
+        'supporters (+1 count), category, sentiment, problem_summary, created_at. Cite a request as '
+        '[FR:<request_id>], never as a review. `board`, `category` and `status` take one value or a comma list.',
+        _schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
+                 'board': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH,
+                           'description': 'Board id or slug (comma list for several).'},
+                 'category': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH},
+                 'status': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH},
+                 'days': {'type': 'integer', 'minimum': 0, 'maximum': MAX_FEATURE_REQUEST_DAYS, 'default': 0,
+                          'description': 'Only requests created in the last N days; 0 = all time.'},
+                 'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_FEATURE_REQUEST_LIMIT,
+                           'default': DEFAULT_FEATURE_REQUEST_LIMIT}}),
+        _search_feature_requests, _feature_requests, board_route=True),
     GlobalTool(
         'create_document', 'Create a project document',
         'Create a custom markdown document in a project you can edit. Requires a write token. Write '

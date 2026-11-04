@@ -37,7 +37,7 @@ with ``Retry-After``.
 
 Own role: GetItem/UpdateItem on the projects table's ``MCPGTOKEN`` partition,
 PutItem on the jobs table's ``MCPAUDIT#…`` partitions, AdminGetUser +
-AdminListGroupsForUser on the user pool, InvokeFunction on exactly the five
+AdminListGroupsForUser on the user pool, InvokeFunction on exactly the six
 domain functions in ``shared.mcp_global_tools.DOMAIN_FUNCTION_ENV``.
 """
 
@@ -76,6 +76,7 @@ from shared.mcp_global_tools import (
     GlobalTool,
     InvalidToolArgument,
     RouteRequest,
+    board_route_claims,
 )
 from shared.mcp_tokens import parse_token, secret_matches
 from shared.project_access import ADMIN_GROUP, MCP_AGENT_RUN_CLAIM
@@ -393,6 +394,9 @@ def _check_allowed(call: ToolCall, row: Mapping[str, Any]) -> None:
 
 def _claims_for(call: ToolCall, row: Mapping[str, Any]) -> dict[str, str]:
     claims = synthetic_claims(row)
+    if call.tool.board_route:
+        # The app pool's issuer from this function's own environment, never the request (mcp_global_tools).
+        claims = board_route_claims(claims, row.get('token_id'), os.environ.get('USER_POOL_ID', ''))
     if call.tool.admin_only:
         # Only after _check_allowed's live Cognito check (see project_access).
         claims[MCP_AGENT_RUN_CLAIM] = 'true'

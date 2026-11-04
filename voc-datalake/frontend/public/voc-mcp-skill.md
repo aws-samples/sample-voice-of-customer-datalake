@@ -65,6 +65,7 @@ outcome — never the arguments or any content).
 | `get_document` | Read one document's full content. |
 | `list_agents` | Autonomous agents the user can see, with their status. |
 | `get_agent_run` | Follow an agent run: give `run_id` (from `run_agent`) for its status, current step, project and error, or leave it out for the agent's newest runs. |
+| `search_feature_requests` | Requests people posted on the feedback boards (feature requests, ideas): `query`, `board`, `category`, `status` (one value or a comma list), `days` (0 = all time), `limit` (≤ 50). Each has `supporters` (+1 count). These are NOT customer reviews: never add them to feedback counts, and cite each as `[FR:<request_id>]`. |
 | `create_document` | (write) Add a markdown document to a project. |
 | `update_document` | (write) Change a document's title and/or content. |
 | `run_agent` | (write, admin-minted) Start an agent run now. |

@@ -165,11 +165,11 @@ describe('global MCP endpoint IAM', () => {
     }
   });
 
-  it('may invoke exactly the five domain functions, by unqualified ARN', () => {
+  it('may invoke exactly the six domain functions, by unqualified ARN', () => {
     const invoke = statements().filter((s) => s.actions.includes('lambda:InvokeFunction'));
     expect(invoke).toHaveLength(1);
     const { resource } = itemAt(invoke, 0);
-    expect(['MetricsApi', 'SettingsApi', 'MemoryApi', 'ProjectsApi', 'AgentsApi'].filter((fn) => !resource.includes(fn)))
+    expect(['MetricsApi', 'SettingsApi', 'MemoryApi', 'ProjectsApi', 'AgentsApi', 'EngagementApi'].filter((fn) => !resource.includes(fn)))
       .toStrictEqual([]);
     expect(resource.match(/Api[0-9A-F]{8}/g) ?? []).toHaveLength(domainEnvKeys().length);
     expect(resource).not.toContain(':*');
