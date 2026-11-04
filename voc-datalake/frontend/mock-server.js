@@ -1683,6 +1683,8 @@ const mockProjectDetails = {
         feedback_count: 14,
         // The corpus (#236): ids only. 'fb_erased' has no review, so the list shows it unavailable.
         input_feedback_ids: ['1', '3', '2', 'fb_erased'],
+        // An erasure removed one cited review (lambda/jobs/retention/lineage.py): the header says so, count only.
+        erased_evidence: { count: 1, job_id: 'er_fixture', mode: 'erase', at: '2026-01-05T00:00:00Z' },
         // The reviews its supporting evidence cites (#429): the persona menu's "Cited" view.
         supporting_evidence: ['Review #2', 'Review #1', 'Mostly weekday orders'],
         evidence_feedback_ids: ['3', '1'],
