@@ -17,6 +17,22 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.01.01] - 2026-11-05
+
+Dependency refresh: the newest minor and patch releases of the packages the platform supports.
+
+### Changed
+- **Frontend**: TanStack Query 5.106, i18next 26.7 (with its browser language detector 8.3, HTTP backend 4.0.10 and
+  react-i18next 17.1.12), Lucide 1.68, Tailwind CSS 4.3.4, React Flow 12.12.1 and the Vite React plugin 6.2.1.
+- **AI assistant Lambda** (`voc-chat-stream`): AWS SDK for JavaScript 3.1162.
+- **Python Lambdas**: Powertools for AWS Lambda 3.39.0 in the ingestion and processing layers.
+- **Tests and tooling**: Vitest 5.1.0 in the CDK app, the frontend and the assistant Lambda; boto3 1.43.124 for local
+  development.
+
+### Upgrade notes
+- Rebuild the Lambda layers before deploying (`./scripts/build-layers.sh`), so the layers carry Powertools 3.39.0.
+- Node.js 26 and Python 3.15 stay out on purpose: the Lambdas run `nodejs24.x` and Python 3.14.
+
 ## [6.01.00] - 2026-11-04
 
 Five colour themes instead of one: an administrator picks the start theme for everyone, and each person can pick

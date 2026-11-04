@@ -170,12 +170,12 @@ def lambda_handler(event, context):
 |------|---------|---------|
 | React | ^19.3.1 | UI framework |
 | Vite | ^8.3.5 | Build tool |
-| Tailwind CSS | ^4.3.3 | Styling |
+| Tailwind CSS | ^4.3.4 | Styling |
 | Zustand | ^5.0.16 | State management (persisted) |
-| TanStack Query | ^5.105.0 | Data fetching/caching |
+| TanStack Query | ^5.106.0 | Data fetching/caching |
 | React Router | ^7.18.5 | Routing (react-router-dom) |
 | Recharts | ^3.10.1 | Charts (Line, Bar, Pie) |
-| Lucide React | ^1.66.0 | Icons |
+| Lucide React | ^1.68.0 | Icons |
 | date-fns | ^4.4.0 | Date formatting |
 | clsx | ^2.1.1 | Conditional classes |
 | react-markdown | ^10.1.0 | Markdown rendering |
@@ -183,7 +183,7 @@ def lambda_handler(event, context):
 | aws-amplify | ^6.22.2 | Cognito sign-in for the app user pool (`aws-amplify/auth`); the board pool uses plain Cognito calls (`services/boardAuth.ts`, `services/boardSession.ts`) |
 | Zod | 4.6.7 | Runtime validation (frontend) |
 | TypeScript | 6.0.3 | Type safety |
-| Vitest | 5.0.5 | Testing framework (frontend) |
+| Vitest | 5.1.0 | Testing framework (frontend) |
 
 ### Pages
 
