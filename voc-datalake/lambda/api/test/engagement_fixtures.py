@@ -3,7 +3,8 @@
 ``engagement_world()`` runs moto with the participants, feature-requests, projects and
 aggregates tables, points the engagement modules at them, and replaces the two calls
 that leave the process: SES (``participant_mailer.get_sesv2_client``) and the async
-self-invoke (``participants_send.invoke_lambda_async``), both MagicMocks the tests read.
+self-invoke (``participants_send.invoke_lambda_async``), both MagicMocks the tests read; the
+enrichment self-invoke (``feature_requests_enrich.invoke_lambda_async``) is ``enrich_invoke``.
 ``call`` drives the real handler through an API Gateway REST event as one of the
 callers below (app admin, app user, board user, outsider pool).
 """
@@ -13,7 +14,7 @@ import json
 import os
 from collections.abc import Generator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -53,6 +54,8 @@ class World:
     aggregates: Any
     ses: MagicMock
     invoke: MagicMock
+    # The enrichment self-invoke (shared/feature_requests_enrich.py), apart from the ask sends.
+    enrich_invoke: MagicMock = field(default_factory=MagicMock)
 
 
 def _seed(projects: Any, aggregates: Any) -> None:
@@ -88,6 +91,7 @@ def engagement_world(**env: str) -> Generator[World, None, None]:
                 patch('shared.engagement_identity.get_projects_table', return_value=world.projects), \
                 patch('shared.participant_mailer.get_sesv2_client', return_value=world.ses), \
                 patch('shared.participants_send.invoke_lambda_async', world.invoke), \
+                patch('shared.feature_requests_enrich.invoke_lambda_async', world.enrich_invoke), \
                 patch('shared.participants_send.time.sleep'):
             yield world
         engagement_config._table.cache_clear()

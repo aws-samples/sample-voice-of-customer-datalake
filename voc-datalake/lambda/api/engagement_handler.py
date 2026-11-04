@@ -9,17 +9,22 @@ the bundle (``api/<handler>.py`` + ``shared/``) carries them:
     POST /unsubscribe      shared/participants_ask_routes.py (PUBLIC, always 200)
     /feature-requests/boards*  shared/feature_boards_routes.py (BOARD authorizer: app + board pools;
                            included FIRST, so ``boards`` is never read as a request id)
+    /feature-requests/insights*  shared/feature_requests_insights_routes.py (BOARD authorizer;
+                           included before the request routes, so ``insights`` is never a request id)
     /feature-requests/*    shared/feature_requests_routes.py (BOARD authorizer)
 
 An event ``{"engagement_job": "send_ask", ...}`` is this Lambda invoking ITSELF to send
-an ask's emails in the background (shared/participants_send.py); it is routed before
-the resolver.
+an ask's emails in the background (shared/participants_send.py); ``{"engagement_job":
+"enrich_feature_request", ...}`` enriches board requests (shared/feature_requests_enrich.py).
+Both are routed before the resolver.
 """
 
 from typing import Any
 
 from shared import (
     feature_boards_routes,
+    feature_requests_enrich,
+    feature_requests_insights_routes,
     feature_requests_routes,
     participant_mailer,
     participants_ask_routes,
@@ -34,6 +39,7 @@ app = create_api_resolver()
 app.include_router(participants_routes.app)
 app.include_router(participants_ask_routes.app)
 app.include_router(feature_boards_routes.app)
+app.include_router(feature_requests_insights_routes.app)
 app.include_router(feature_requests_routes.app)
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).
@@ -42,7 +48,9 @@ warm_at_init(get_dynamodb_resource, get_lambda_client, participant_mailer.get_se
 
 @api_handler
 def lambda_handler(event: dict, context: Any) -> dict:
-    """Main Lambda handler: the background send job, else the API."""
+    """Main Lambda handler: the background send / enrichment jobs, else the API."""
     if participants_send.is_send_event(event):
         return participants_send.run(event, context)
+    if feature_requests_enrich.is_enrich_event(event):
+        return feature_requests_enrich.run(event, context)
     return app.resolve(event, context)

@@ -83,6 +83,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'PUT /feature-requests/<request_id>/status', 'DELETE /feature-requests/<request_id>',
         'POST /feature-requests/<request_id>/promote',
     }),
+    # Board insights (docs/feature-requests.md -> Enrichment): only admins start the enrichment backfill (Bedrock spend).
+    'feature_requests_insights_routes.py': frozenset({'POST /feature-requests/insights/enrich'}),
     # Feedback boards (docs/feature-requests.md): only admins create, configure and delete.
     'feature_boards_routes.py': frozenset({
         'POST /feature-requests/boards', 'PUT /feature-requests/boards/<board_ref>',
