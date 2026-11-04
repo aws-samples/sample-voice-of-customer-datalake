@@ -1,4 +1,383 @@
 /*
- * Colour themes beyond Kiro (src/theme/themeCatalog.ts): one `[data-theme="<id>-<mode>"]`
- * block per theme and mode, declaring every token the Kiro blocks in index.css declare.
+ * Colour themes beyond Kiro (src/theme/themeCatalog.ts, docs/kiro-design-system.md → Themes):
+ * one `:root[data-theme="<id>-<mode>"]` block per theme and mode, declaring every token the
+ * Kiro blocks in index.css declare and no others (Quick adds its five ink/link tokens), pinned
+ * by theme/themeTokenSet.test.ts. The `:root` raises each selector above index.css's `:root`
+ * Kiro fallback, which comes later in the cascade because this file is imported first.
+ *
+ * Upstream: Nord, Dracula and High contrast from kirocrew (kirodotdev/kirocrew, Apache-2.0)
+ * website/src/styles/theme-palettes.css; Quick from the Quick design system. Tokens the
+ * upstream lacks are derived in the theme's own hues, the way the Kiro blocks derive theirs:
+ *  - --control-border: the theme's edge grey moved to ≥ 3:1 on every surface; hover = --muted.
+ *  - --nav-active-*: dark = the accent on the --border fill, edged --border-strong (Kiro dark);
+ *    light = the accent 12 % into white, edged 35 % (Kiro light).
+ *  - --muted-strong: between --muted and --text (an alias of --muted in Quick, as upstream).
+ *  - --chart-1…8: Kiro's order (accent first, --muted at step 6, green and amber last) in the
+ *    theme's own hues, each ≥ 3.2:1 on --card and ≥ 10 ΔE2000 from every other step.
+ *  - --sentiment-*: the status tones, never the ramp (as in Kiro).
+ * A value that missed WCAG AA (text 4.5:1 on every surface it labels, a tone also on its own
+ * tint over a hovered row; non-text 3:1) moved in lightness only, OKLCH hue and chroma kept;
+ * each block lists those moves. The suites in src/theme run over every block.
  */
+
+/* ── Nord (the Nord palette project, via kirocrew website/src/styles/theme-palettes.css) ── */
+:root[data-theme="nord-dark"] {
+  /* AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
+   *   --control-border #616e88 → #8b99b5 (1.68:1 → 3.01:1)
+   *   --accent-text #88c0d0 → #a3dcec (3.37:1 → 4.50:1)
+   *   --nav-active-text #88c0d0 → #8cc4d4 (4.31:1 → 4.50:1)
+   *   --ok #a3be8c → #c0dca9 (3.46:1 → 4.50:1)
+   *   --warn #ebcb8b → #f0d08f (4.36:1 → 4.51:1)
+   *   --danger #bf616a → #fdc7c9 (1.94:1 → 4.53:1)
+   *   --info #81a1c1 → #b7d8fa (2.76:1 → 4.51:1)
+   *   --aim #b48ead → #f9d0f1 (2.54:1 → 4.50:1)
+   *   --chart-2 #5e81ac → #678ab6 (2.84:1 → 3.21:1)
+   *   --chart-5 #bf616a → #cb6c74 (2.79:1 → 3.23:1) */
+  --bg: #2e3440; --bg-accent: #333a47; --bg-elevated: #3b4252; --bg-hover: #434c5e;
+  --card: #333a47; --card-hl: rgba(255, 255, 255, .04);
+  --panel: #2e3440;
+  --chrome: rgba(46, 52, 64, .95);
+  --text: #d8dee9; --text-strong: #eceff4; --muted: #b4bcca; --muted-strong: #c4cad6;
+  --border: #434c5e; --border-strong: #4c566a; --border-hover: #5e6a82;
+  --control-border: #8b99b5; --control-border-hover: #b4bcca;
+  --accent: #88c0d0; --accent-fg: #000000; --accent-hover: #9dd0de; --accent-subtle: rgba(136, 192, 208, .15);
+  --accent-glow: rgba(136, 192, 208, .25); --accent-text: #a3dcec; --ring: #88c0d0;
+  --nav-active-bg: #434c5e; --nav-active-text: #8cc4d4; --nav-active-border: #4c566a;
+  --ok: #c0dca9; --ok-fg: #000000; --ok-subtle: rgba(192, 220, 169, .12);
+  --warn: #f0d08f; --warn-fg: #000000; --warn-subtle: rgba(240, 208, 143, .12);
+  --danger: #fdc7c9; --danger-fg: #000000; --danger-subtle: rgba(253, 199, 201, .12);
+  --info: #b7d8fa;
+  --aim: #f9d0f1; --aim-subtle: rgba(249, 208, 241, .15);
+  --overlay: rgba(15, 18, 24, .6);
+  --chart-1: #88c0d0; --chart-2: #678ab6; --chart-3: #b48ead; --chart-4: #d08770;
+  --chart-5: #cb6c74; --chart-6: #b4bcca; --chart-7: #a3be8c; --chart-8: #ebcb8b;
+  --chart-grid: #434c5e;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b4bcca' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --sentiment-positive: var(--ok); --sentiment-neutral: var(--muted); --sentiment-negative: var(--danger); --sentiment-mixed: var(--warn);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, .35), 0 0 0 1px rgba(255, 255, 255, .02);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, .45);
+  color-scheme: dark;
+}
+
+:root[data-theme="nord-light"] {
+  /* Data ramp step 1 is frost #5e81ac (the upstream --ring), not --accent: #4a6a98 is 7.9 ΔE2000 from --muted.
+   * --accent-hover is darker than --accent: upstream #6d91bc carries white text at 3.27:1.
+   * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
+   *   --control-border #7b88a1 → #727e97 (2.64:1 → 3.02:1)
+   *   --accent-text #4a6a98 → #3c5c89 (3.65:1 → 4.51:1)
+   *   --ring #5e81ac → #5d80ab (2.98:1 → 3.02:1)
+   *   --ok #689d6a → #316434 (2.18:1 → 4.54:1)
+   *   --warn #d08770 → #894732 (1.96:1 → 4.51:1)
+   *   --danger #bf616a → #953b46 (2.75:1 → 4.53:1)
+   *   --info #5e81ac → #385982 (2.67:1 → 4.54:1)
+   *   --aim #b48ead → #6f4d6a (1.93:1 → 4.51:1)
+   *   --chart-2 #8fbcbb → #6b9796 (2.08:1 → 3.23:1)
+   *   --chart-3 #b48ead → #aa84a3 (2.83:1 → 3.21:1)
+   *   --chart-4 #d08770 → #c57d67 (2.84:1 → 3.23:1)
+   *   --chart-7 #a3be8c → #7d9767 (2.04:1 → 3.23:1)
+   *   --chart-8 #ebcb8b → #aa8b4d (1.56:1 → 3.23:1) */
+  --bg: #eceff4; --bg-accent: #e5e9f0; --bg-elevated: #ffffff; --bg-hover: #d8dee9;
+  --card: #ffffff; --card-hl: rgba(0, 0, 0, .03);
+  --panel: #eceff4;
+  --chrome: rgba(236, 239, 244, .95);
+  --text: #4c566a; --text-strong: #2e3440; --muted: #57627a; --muted-strong: #4c566a;
+  --border: #d8dee9; --border-strong: #c8ced9; --border-hover: #a0a8b8;
+  --control-border: #727e97; --control-border-hover: #57627a;
+  --accent: #4a6a98; --accent-fg: #ffffff; --accent-hover: #3c5a85; --accent-subtle: rgba(94, 129, 172, .12);
+  --accent-glow: rgba(94, 129, 172, .15); --accent-text: #3c5c89; --ring: #5d80ab;
+  --nav-active-bg: #e9edf3; --nav-active-text: #4a6a98; --nav-active-border: #c0cbdb;
+  --ok: #316434; --ok-fg: #ffffff; --ok-subtle: rgba(49, 100, 52, .1);
+  --warn: #894732; --warn-fg: #ffffff; --warn-subtle: rgba(137, 71, 50, .1);
+  --danger: #953b46; --danger-fg: #ffffff; --danger-subtle: rgba(149, 59, 70, .1);
+  --info: #385982;
+  --aim: #6f4d6a; --aim-subtle: rgba(111, 77, 106, .12);
+  --overlay: rgba(46, 52, 64, .4);
+  --chart-1: #5e81ac; --chart-2: #6b9796; --chart-3: #aa84a3; --chart-4: #c57d67;
+  --chart-5: #bf616a; --chart-6: #57627a; --chart-7: #7d9767; --chart-8: #aa8b4d;
+  --chart-grid: #d8dee9;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2357627a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --sentiment-positive: var(--ok); --sentiment-neutral: var(--muted); --sentiment-negative: var(--danger); --sentiment-mixed: var(--warn);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, .08), 0 0 0 1px rgba(0, 0, 0, .04);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, .12);
+  color-scheme: light;
+}
+
+
+/* ── Dracula (the Dracula palette project, via kirocrew website/src/styles/theme-palettes.css) ── */
+:root[data-theme="dracula-dark"] {
+  /* --accent-hover #e2c6ff: upstream #d4b0ff is 1.2 ΔE2000 from --accent, so hover showed nothing.
+   * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
+   *   --control-border #6272a4 → #8293c7 (1.94:1 → 3.03:1)
+   *   --accent-text #d5acff → #ddbefe (3.93:1 → 4.52:1)
+   *   --danger #ff5555 → #fdbeb8 (2.64:1 → 4.53:1)
+   *   --aim #ff79c6 → #fdc6e2 (3.12:1 → 4.51:1)
+   *   --chart-5 #6272a4 → #6c7caf (2.81:1 → 3.24:1) */
+  --bg: #282a36; --bg-accent: #2d2f3d; --bg-elevated: #383a4a; --bg-hover: #44475a;
+  --card: #2d2f3d; --card-hl: rgba(255, 255, 255, .05);
+  --panel: #282a36;
+  --chrome: rgba(40, 42, 54, .95);
+  --text: #f8f8f2; --text-strong: #ffffff; --muted: #adb6cf; --muted-strong: #c4cadb;
+  --border: #44475a; --border-strong: #565970; --border-hover: #6272a4;
+  --control-border: #8293c7; --control-border-hover: #adb6cf;
+  --accent: #d5acff; --accent-fg: #000000; --accent-hover: #e2c6ff; --accent-subtle: rgba(189, 147, 249, .15);
+  --accent-glow: rgba(189, 147, 249, .25); --accent-text: #ddbefe; --ring: #bd93f9;
+  --nav-active-bg: #44475a; --nav-active-text: #d5acff; --nav-active-border: #565970;
+  --ok: #50fa7b; --ok-fg: #000000; --ok-subtle: rgba(80, 250, 123, .12);
+  --warn: #f1fa8c; --warn-fg: #000000; --warn-subtle: rgba(241, 250, 140, .12);
+  --danger: #fdbeb8; --danger-fg: #000000; --danger-subtle: rgba(253, 190, 184, .12);
+  --info: #8be9fd;
+  --aim: #fdc6e2; --aim-subtle: rgba(253, 198, 226, .15);
+  --overlay: rgba(16, 17, 22, .6);
+  --chart-1: #d5acff; --chart-2: #8be9fd; --chart-3: #ff79c6; --chart-4: #ffb86c;
+  --chart-5: #6c7caf; --chart-6: #adb6cf; --chart-7: #50fa7b; --chart-8: #f1fa8c;
+  --chart-grid: #44475a;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23adb6cf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --sentiment-positive: var(--ok); --sentiment-neutral: var(--muted); --sentiment-negative: var(--danger); --sentiment-mixed: var(--warn);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, .35), 0 0 0 1px rgba(255, 255, 255, .02);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, .45);
+  color-scheme: dark;
+}
+
+:root[data-theme="dracula-light"] {
+  /* --accent-hover is darker than --accent: upstream #9055ff carries white text at 4.26:1.
+   * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
+   *   --control-border #8f8f87 → #85857d (2.64:1 → 3.02:1)
+   *   --accent-text #7c3aed → #732de2 (3.92:1 → 4.51:1)
+   *   --ok #16a34a → #026e2e (2.43:1 → 4.53:1)
+   *   --warn #a16207 → #895201 (3.56:1 → 4.56:1)
+   *   --danger #dc2626 → #bd0011 (3.40:1 → 4.50:1)
+   *   --info #0891b2 → #04657d (2.64:1 → 4.54:1)
+   *   --aim #c026d3 → #9d0cae (3.24:1 → 4.51:1)
+   *   --chart-4 #ffb86c → #c58132 (1.70:1 → 3.20:1)
+   *   --chart-5 #ff5555 → #fd5353 (3.14:1 → 3.21:1)
+   *   --chart-8 #f1fa8c → #8f951e (1.12:1 → 3.24:1) */
+  --bg: #f8f8f2; --bg-accent: #f0f0e8; --bg-elevated: #ffffff; --bg-hover: #e8e8e0;
+  --card: #ffffff; --card-hl: rgba(0, 0, 0, .03);
+  --panel: #f8f8f2;
+  --chrome: rgba(248, 248, 242, .95);
+  --text: #44475a; --text-strong: #282a36; --muted: #586696; --muted-strong: #44475a;
+  --border: #d8d8d0; --border-strong: #c8c8c0; --border-hover: #a0a098;
+  --control-border: #85857d; --control-border-hover: #586696;
+  --accent: #7c3aed; --accent-fg: #ffffff; --accent-hover: #6526d4; --accent-subtle: rgba(124, 58, 237, .12);
+  --accent-glow: rgba(124, 58, 237, .15); --accent-text: #732de2; --ring: #7c3aed;
+  --nav-active-bg: #efe7fd; --nav-active-text: #7c3aed; --nav-active-border: #d1baf9;
+  --ok: #026e2e; --ok-fg: #ffffff; --ok-subtle: rgba(2, 110, 46, .1);
+  --warn: #895201; --warn-fg: #ffffff; --warn-subtle: rgba(137, 82, 1, .1);
+  --danger: #bd0011; --danger-fg: #ffffff; --danger-subtle: rgba(189, 0, 17, .1);
+  --info: #04657d;
+  --aim: #9d0cae; --aim-subtle: rgba(157, 12, 174, .12);
+  --overlay: rgba(40, 42, 54, .4);
+  --chart-1: #7c3aed; --chart-2: #0891b2; --chart-3: #c026d3; --chart-4: #c58132;
+  --chart-5: #fd5353; --chart-6: #586696; --chart-7: #16a34a; --chart-8: #8f951e;
+  --chart-grid: #d8d8d0;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23586696' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --sentiment-positive: var(--ok); --sentiment-neutral: var(--muted); --sentiment-negative: var(--danger); --sentiment-mixed: var(--warn);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, .08), 0 0 0 1px rgba(0, 0, 0, .04);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, .12);
+  color-scheme: light;
+}
+
+
+/* ── High contrast (kirocrew website/src/styles/theme-palettes.css): text ≥ 7:1 (WCAG AAA), non-text ≥ 4.5:1 ── */
+:root[data-theme="highcontrast-dark"] {
+  /* Text ≥ 7:1, focus ring, control edges and chart steps ≥ 4.5:1.
+   * --nav-active-bg is a dark cyan fill edged in --accent (upstream has no selected-row fill).
+   * --shadow-sm is `0 0 #0000`: upstream `none` is invalid inside the .card shadow list.
+   * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
+   *   --accent-text #00d4ff → #85e2fe (5.84:1 → 7.04:1)
+   *   --danger #ff0000 → #fdbeb3 (3.67:1 → 7.01:1)
+   *   --aim #bf5af2 → #ebcffd (3.60:1 → 7.04:1) */
+  --bg: #000000; --bg-accent: #0a0a0a; --bg-elevated: #111111; --bg-hover: #222222;
+  --card: #0a0a0a; --card-hl: rgba(255, 255, 255, .06);
+  --panel: #000000;
+  --chrome: rgba(0, 0, 0, .98);
+  --text: #ffffff; --text-strong: #ffffff; --muted: #dddddd; --muted-strong: #eeeeee;
+  --border: #666666; --border-strong: #999999; --border-hover: #bbbbbb;
+  --control-border: #999999; --control-border-hover: #dddddd;
+  --accent: #00d4ff; --accent-fg: #000000; --accent-hover: #33ddff; --accent-subtle: rgba(0, 212, 255, .2);
+  --accent-glow: rgba(0, 212, 255, .35); --accent-text: #85e2fe; --ring: #00d4ff;
+  --nav-active-bg: #00303a; --nav-active-text: #ffffff; --nav-active-border: #00d4ff;
+  --ok: #00ff41; --ok-fg: #000000; --ok-subtle: rgba(0, 255, 65, .15);
+  --warn: #ffcc00; --warn-fg: #000000; --warn-subtle: rgba(255, 204, 0, .15);
+  --danger: #fdbeb3; --danger-fg: #000000; --danger-subtle: rgba(253, 190, 179, .15);
+  --info: #00d4ff;
+  --aim: #ebcffd; --aim-subtle: rgba(235, 207, 253, .18);
+  --overlay: rgba(0, 0, 0, .75);
+  --chart-1: #00d4ff; --chart-2: #4d8dff; --chart-3: #ff66cc; --chart-4: #ff9933;
+  --chart-5: #c58cff; --chart-6: #dddddd; --chart-7: #00ff41; --chart-8: #ffee00;
+  --chart-grid: #333333;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23dddddd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --sentiment-positive: var(--ok); --sentiment-neutral: var(--muted); --sentiment-negative: var(--danger); --sentiment-mixed: var(--warn);
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 0 0 0 1px rgba(255, 255, 255, .12);
+  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, .18);
+  color-scheme: dark;
+}
+
+:root[data-theme="highcontrast-light"] {
+  /* Text ≥ 7:1, focus ring, control edges and chart steps ≥ 4.5:1.
+   * --accent-hover is darker than --accent: upstream #0066ee carries white text at 5.08:1, under 7.
+   * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
+   *   --accent #0055cc → #0552c2 (5.40:1 → 5.73:1)
+   *   --accent-text #0055cc → #04398a (4.32:1 → 7.01:1)
+   *   --nav-active-text #0055cc → #0346a8 (5.46:1 → 7.09:1)
+   *   --ok #007a1e → #024a10 (3.84:1 → 7.02:1)
+   *   --warn #8a6500 → #533b00 (3.75:1 → 7.05:1)
+   *   --danger #cc0000 → #800503 (3.88:1 → 7.04:1)
+   *   --info #0055cc → #053a8c (4.51:1 → 7.01:1)
+   *   --aim #7b2fbe → #5d0798 (4.79:1 → 7.02:1) */
+  --bg: #ffffff; --bg-accent: #f5f5f5; --bg-elevated: #ffffff; --bg-hover: #e8e8e8;
+  --card: #ffffff; --card-hl: rgba(0, 0, 0, .05);
+  --panel: #ffffff;
+  --chrome: rgba(255, 255, 255, .98);
+  --text: #111111; --text-strong: #000000; --muted: #222222; --muted-strong: #111111;
+  --border: #555555; --border-strong: #333333; --border-hover: #111111;
+  --control-border: #555555; --control-border-hover: #222222;
+  --accent: #0552c2; --accent-fg: #ffffff; --accent-hover: #00419c; --accent-subtle: rgba(0, 85, 204, .15);
+  --accent-glow: rgba(0, 85, 204, .2); --accent-text: #04398a; --ring: #0055cc;
+  --nav-active-bg: #e1eaf8; --nav-active-text: #0346a8; --nav-active-border: #0552c2;
+  --ok: #024a10; --ok-fg: #ffffff; --ok-subtle: rgba(2, 74, 16, .12);
+  --warn: #533b00; --warn-fg: #ffffff; --warn-subtle: rgba(83, 59, 0, .12);
+  --danger: #800503; --danger-fg: #ffffff; --danger-subtle: rgba(128, 5, 3, .12);
+  --info: #053a8c;
+  --aim: #5d0798; --aim-subtle: rgba(93, 7, 152, .12);
+  --overlay: rgba(0, 0, 0, .5);
+  --chart-1: #0552c2; --chart-2: #007a8a; --chart-3: #b0007a; --chart-4: #b34700;
+  --chart-5: #7b2fbe; --chart-6: #222222; --chart-7: #1a7a1a; --chart-8: #806000;
+  --chart-grid: #cccccc;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23222222' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --sentiment-positive: var(--ok); --sentiment-neutral: var(--muted); --sentiment-negative: var(--danger); --sentiment-mixed: var(--warn);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .1);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, .12), 0 0 0 1px rgba(0, 0, 0, .08);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, .18);
+  color-scheme: light;
+}
+
+
+/* ── Quick (the Quick design system: ink pill buttons, blue links and focus, violet accent, Inter) ── */
+:root[data-theme="quick-dark"] {
+  /* Quick Dark. Tints re-expressed as rgba so they sit on any surface; --ring = --focus;
+   * --shadow-sm is `0 0 #0000` (flat; `none` is invalid in a shadow list). Data ramp steps 3–5, 7, 8
+   * derived from Quick's brand hues (teal, coral, magenta, green, amber). */
+  --bg: #0f141a; --bg-accent: #1d2531; --bg-elevated: #1d2531; --bg-hover: #232b37;
+  --card: #161d26; --card-hl: rgba(255, 255, 255, 0);
+  --panel: #161d26;
+  --chrome: rgba(15, 20, 26, .95);
+  --text: #dedee3; --text-strong: #ffffff; --muted: #a4a4ad; --muted-strong: #a4a4ad;
+  --border: #2c3440; --border-strong: #3a4350; --border-hover: #59636f;
+  --control-border: #7a7f89; --control-border-hover: #dedee3;
+  --accent: #c9a2ff; --accent-fg: #161d26; --accent-hover: #d9bcff; --accent-subtle: rgba(140, 80, 255, .18);
+  --accent-glow: rgba(201, 162, 255, .25); --accent-text: #c9a2ff; --ring: #7cb8ff;
+  --nav-active-bg: #2e2549; --nav-active-text: #ffffff; --nav-active-border: #2e2549;
+  --ok: #4fd166; --ok-fg: #161d26; --ok-subtle: rgba(79, 209, 102, .14);
+  --warn: #f2c24b; --warn-fg: #161d26; --warn-subtle: rgba(242, 194, 75, .14);
+  --danger: #ff7a7a; --danger-fg: #161d26; --danger-subtle: rgba(255, 122, 122, .14);
+  --info: #7cb8ff;
+  --aim: #f39cf0; --aim-subtle: rgba(243, 156, 240, .14);
+  --overlay: rgba(5, 8, 12, .6);
+  --chart-1: #c9a2ff; --chart-2: #7cb8ff; --chart-3: #4fd1c5; --chart-4: #ff9f80;
+  --chart-5: #f39cf0; --chart-6: #a4a4ad; --chart-7: #4fd166; --chart-8: #f2c24b;
+  --chart-grid: #2c3440;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a4a4ad' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --sentiment-positive: var(--ok); --sentiment-neutral: var(--muted); --sentiment-negative: var(--danger); --sentiment-mixed: var(--warn);
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 1px 1px 20px rgba(0, 0, 0, .45);
+  --shadow-lg: 1px 1px 20px rgba(0, 0, 0, .45);
+  --ink: #ffffff; --on-ink: #161d26; --ink-hover: #dedee3;
+  --link: #7cb8ff; --focus: #7cb8ff;
+  color-scheme: dark;
+}
+
+:root[data-theme="quick-light"] {
+  /* Quick Light. Opaque tints (#e8e6ff lavender, #e7f4e8 …) re-expressed as rgba; --ring = --focus;
+   * --shadow-sm `0 0 #0000` (flat). Data ramp steps 3–5, 7, 8 from Quick's brand hues, darkened to ≥ 3.2:1.
+   * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
+   *   --link #0062d1 → #085fc8 (4.28:1 → 4.51:1)
+   *   --ok #037f0c → #07780e (4.16:1 → 4.55:1)
+   *   --danger #d91515 → #cc1615 (4.09:1 → 4.51:1)
+   *   --info #0067c7 → #0863be (4.25:1 → 4.53:1)
+   *   --chart-3 #00a3a3 → #179f9f (3.10:1 → 3.23:1)
+   *   --chart-4 #ff7a59 → #ea6747 (2.57:1 → 3.22:1)
+   *   --chart-8 #ffb000 → #be8417 (1.83:1 → 3.23:1) */
+  --bg: #ffffff; --bg-accent: #f9f9fb; --bg-elevated: #ffffff; --bg-hover: #f3f3f7;
+  --card: #ffffff; --card-hl: rgba(255, 255, 255, 0);
+  --panel: #f9f9fb;
+  --chrome: rgba(255, 255, 255, .95);
+  --text: #232b37; --text-strong: #161d26; --muted: #59636f; --muted-strong: #59636f;
+  --border: #dedee3; --border-strong: #ccccd1; --border-hover: #a4a4ad;
+  --control-border: #8c8c94; --control-border-hover: #232b37;
+  --accent: #8811c2; --accent-fg: #ffffff; --accent-hover: #7410a6; --accent-subtle: rgba(91, 76, 255, .14);
+  --accent-glow: rgba(136, 17, 194, .15); --accent-text: #8811c2; --ring: #0062d1;
+  --nav-active-bg: #e8e6ff; --nav-active-text: #161d26; --nav-active-border: #e8e6ff;
+  --ok: #07780e; --ok-fg: #ffffff; --ok-subtle: rgba(3, 127, 12, .09);
+  --warn: #855900; --warn-fg: #ffffff; --warn-subtle: rgba(255, 191, 0, .16);
+  --danger: #cc1615; --danger-fg: #ffffff; --danger-subtle: rgba(217, 21, 21, .08);
+  --info: #0863be;
+  --aim: #a7059c; --aim-subtle: rgba(167, 5, 156, .1);
+  --overlay: rgba(15, 20, 26, .5);
+  --chart-1: #8811c2; --chart-2: #0067c7; --chart-3: #179f9f; --chart-4: #ea6747;
+  --chart-5: #b50193; --chart-6: #59636f; --chart-7: #2ea043; --chart-8: #be8417;
+  --chart-grid: #dedee3;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2359636f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --sentiment-positive: var(--ok); --sentiment-neutral: var(--muted); --sentiment-negative: var(--danger); --sentiment-mixed: var(--warn);
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 1px 1px 20px rgba(0, 0, 0, .1);
+  --shadow-lg: 1px 1px 20px rgba(0, 0, 0, .1);
+  --ink: #161d26; --on-ink: #ffffff; --ink-hover: #232b37;
+  --link: #085fc8; --focus: #0062d1;
+  color-scheme: light;
+}
+
+/* ── Quick component look (docs/kiro-design-system.md → Themes → Quick) ──
+ * Quick is more than a palette: Inter, pill buttons with the --ink primary, the --focus ring,
+ * --link links, flat surfaces. Kiro, Nord, Dracula and High contrast keep the Kiro recipes.
+ * Each rule sits in the layer of the recipe it adjusts, one attribute more specific, so a
+ * call-site utility still wins over it exactly as it wins over the Kiro recipe. */
+:root[data-color-theme="quick"] {
+  --font-body: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius-sm: 4px;
+}
+
+@layer base {
+  [data-color-theme="quick"] :focus-visible { outline-color: var(--focus); }
+  [data-color-theme="quick"] :is(h1, h2, h3, h4, h5, h6) { letter-spacing: normal; }
+}
+
+@layer components {
+  [data-color-theme="quick"] .btn { border-radius: 9999px; }
+  [data-color-theme="quick"] .btn-primary { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+  [data-color-theme="quick"] .btn-primary::after { content: none; }
+  [data-color-theme="quick"] .btn-primary:not(:disabled):hover { background: var(--ink-hover); border-color: var(--ink-hover); box-shadow: none; }
+  [data-color-theme="quick"] .btn-secondary { background: var(--bg); border-color: var(--ink); color: var(--ink); }
+  [data-color-theme="quick"] .btn-secondary:not(:disabled):hover { background: var(--bg-hover); border-color: var(--ink); }
+
+  /* Flat: the ring outline is the whole focus state, no accent glow around a field. */
+  [data-color-theme="quick"] :is(.input:focus, .input:focus-visible, .select:focus, .select:focus-visible) { box-shadow: none; }
+
+  [data-color-theme="quick"] .link {
+    color: var(--link);
+    text-decoration-color: color-mix(in srgb, var(--link) 55%, transparent);
+    text-underline-offset: 4px;
+  }
+  [data-color-theme="quick"] .link:hover { text-decoration-color: var(--link); }
+
+  /* The selected item is also bold, so colour is never its only cue. */
+  [data-color-theme="quick"] .nav-active { font-weight: 500; }
+
+  /* Selected tab: strong text over a 2px --ink bar instead of the accent label. */
+  [data-color-theme="quick"] :is(.tab-active, .tab[aria-selected="true"]),
+  [data-color-theme="quick"] :is(.tab-active, .tab[aria-selected="true"]):hover {
+    color: var(--text-strong);
+    box-shadow: inset 0 -2px 0 var(--ink);
+  }
+
+  [data-color-theme="quick"] .stat-accent::after { content: none; }
+}
+
+/* Unlayered, like the .md-content rules it adjusts. */
+[data-color-theme="quick"] .md-content a { color: var(--link); text-decoration-color: color-mix(in srgb, var(--link) 45%, transparent); }
+[data-color-theme="quick"] .md-content a:hover { text-decoration-color: var(--link); }

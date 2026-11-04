@@ -104,6 +104,7 @@
 
 
 Frontend design system:
-[kirodotdev/kirocrew](https://github.com/kirodotdev/kirocrew) - Apache-2.0 (Kiro colour tokens, component recipes and the Kiro ghost mark, adapted in voc-datalake/frontend/src/index.css and src/components/KiroGhost)
+[kirodotdev/kirocrew](https://github.com/kirodotdev/kirocrew) - Apache-2.0 (Kiro colour tokens, component recipes and the Kiro ghost mark, adapted in voc-datalake/frontend/src/index.css and src/components/KiroGhost; the Nord, Dracula and High contrast palettes, adapted in src/styles/theme-palettes.css)
 [@fontsource/space-grotesk@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1
 [@fontsource/jetbrains-mono@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1
+[@fontsource-variable/inter@5.3.0](https://github.com/fontsource/font-files) - OFL-1.1 (the Quick theme's face)

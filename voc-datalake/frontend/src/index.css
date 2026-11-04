@@ -4,7 +4,9 @@
  *
  * Theme is selected by attributes on <html> (set by public/theme-init.js
  * before first paint and kept in sync by src/theme/themeStore.ts):
- *   data-theme="kiro-dark" | "kiro-light"
+ *   data-theme="<theme>-dark" | "<theme>-light"  (kiro here; nord, dracula,
+ *     highcontrast, quick in styles/theme-palettes.css)
+ *   data-color-theme="kiro" | "nord" | "dracula" | "highcontrast" | "quick"
  *   data-mode="dark" | "light"
  *   data-mode-pref="dark" | "light" | "system"
  *
@@ -20,6 +22,8 @@
 @import "@fontsource/space-grotesk/700.css";
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
+/* Inter: the Quick theme's face (styles/theme-palettes.css → Quick component look). */
+@import "@fontsource-variable/inter";
 @import "./styles/theme-palettes.css";
 @import "./styles/theme-marks.css";
 
