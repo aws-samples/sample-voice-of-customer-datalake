@@ -26,7 +26,8 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { UNSAFE_DataRouterContext } from 'react-router-dom'
 import RouterBlocker from './RouterBlocker'
 import UnsavedChangesDialog from './UnsavedChangesDialog'
-import { registerGuard } from './guardRegistry'
+import { anyGuardAsks, consumeRelease, registerGuard, releaseRoute, runGuarded } from './guardRegistry'
+import type { RegisteredGuard } from './guardRegistry'
 import { pathOrQueryChanged } from './pathOrQueryChanged'
 import type { ReactNode } from 'react'
 import type { Location } from 'react-router-dom'
@@ -96,18 +97,36 @@ export function useUnsavedChangesGuard({
     else open({ proceed: action, stay: () => {} })
   }, [open])
 
-  useEffect(() => registerGuard({ isDirty: () => latest.current.dirty, requestLeave }), [requestLeave])
+  const self = useRef<RegisteredGuard | null>(null)
+  useEffect(() => {
+    const guard: RegisteredGuard = {
+      isDirty: () => latest.current.dirty,
+      requestLeave,
+      blocksRoute: (current, next) => latest.current.shouldBlock(current, next),
+    }
+    self.current = guard
+    return registerGuard(guard)
+  }, [requestLeave])
 
   const blockWhen = useCallback(
-    (current: Location, next: Location) => latest.current.dirty && latest.current.shouldBlock(current, next),
+    (current: Location, next: Location) => !consumeRelease(next) && latest.current.dirty && latest.current.shouldBlock(current, next),
     [],
   )
 
   const close = (leave: boolean) => {
     if (pending === null) return
     setPending(null)
-    if (leave) pending.proceed()
-    else pending.stay()
+    const route = pending.route
+    const except = self.current ?? undefined
+    if (!leave) pending.stay()
+    // react-router holds one blocker per router, so only this editor's caught the change.
+    // Other dirty editors it would also lose ask in turn; the held change is reset and
+    // retried once every one of them let it go (this editor's blocker may unmount meanwhile).
+    else if (route === undefined || !anyGuardAsks({ except, route })) pending.proceed()
+    else {
+      pending.stay()
+      runGuarded(() => { releaseRoute(route.next); route.retry() }, { except, route })
+    }
   }
   const save = async () => {
     setSaving(true)
