@@ -55,6 +55,16 @@ class TestTheReplay:
         bundle = emulate_bundle(tree, _fn(None, 'lambda/shared'))
         assert sorted(bundle.files) == ['__init__.py', 'api.py']
 
+    def test_the_bytecode_compile_step_ships_no_extra_module(self, tree: Path) -> None:
+        compile_step = 'python -m compileall -q -j 0 --invalidation-mode unchecked-hash /asset-output'
+        script = 'cp /asset-input/api/metrics_handler.py /asset-output/ && ' + PRUNE + ' && ' + compile_step
+        bundle = emulate_bundle(tree, _fn(script))
+        assert sorted(bundle.files) == ['metrics_handler.py']
+
+    def test_a_compile_step_with_other_arguments_is_still_unknown(self, tree: Path) -> None:
+        with pytest.raises(AuditError, match='does not understand'):
+            emulate_bundle(tree, _fn('python -m compileall /asset-input'))
+
     def test_an_unknown_step_in_a_python_bundle_is_a_scan_error(self, tree: Path) -> None:
         with pytest.raises(AuditError, match='does not understand'):
             emulate_bundle(tree, _fn('pip install -r requirements.txt -t /asset-output'))

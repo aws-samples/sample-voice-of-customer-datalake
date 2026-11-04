@@ -20,7 +20,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 /** Directory names that never ship, at any depth of the bundle. */
 const PRUNED_DIRECTORIES = ['test', 'tests', '__pycache__', '.pytest_cache'];
 
-/** File names that never ship, at any depth: tests, bytecode, dev secrets. */
+/** File names that never ship, at any depth: tests, the source tree's own bytecode (recompiled below), dev secrets. */
 const PRUNED_FILES = ['test_*.py', '*_test.py', 'conftest.py', '*.pyc', '.env*'];
 
 function findNames(names: readonly string[]): string {
@@ -35,9 +35,24 @@ export const PYTHON_BUNDLE_PRUNE =
   `find /asset-output -type d \\( ${findNames(PRUNED_DIRECTORIES)} \\) -prune -exec rm -rf {} + && ` +
   `find /asset-output -type f \\( ${findNames(PRUNED_FILES)} \\) -delete`;
 
-/** The full `bash -c` script: the caller's copy steps, then the prune. */
+/**
+ * The step after the prune: compile every shipped `.py` to bytecode, in the bundling image (the same Python 3.14 the
+ * runtime runs, so the `cpython-314` tag and magic number match).
+ *
+ * WHY: `/var/task` is read-only, so a bundle without `__pycache__` makes Python compile every module it imports on
+ * every cold start and throw the result away. That was 35,180 lines (122 modules) for the Projects API alone, about
+ * 240 ms of CPU on a developer Mac and two to three times that on Graviton (docs/lambda-sizing.md → Cold starts).
+ *
+ * `unchecked-hash` bytecode (PEP 552): the import system loads it without reading or hashing the source, and the
+ * file carries no timestamp, so the same source gives the same bytes. Safe because a deployed bundle never changes
+ * after it is built. If the runtime's Python ever differs, it ignores the files and compiles from source as before.
+ * A syntax error fails the build. The prune runs first, so a stale `.pyc` from the source tree never ships.
+ */
+export const PYTHON_BUNDLE_COMPILE = 'python -m compileall -q -j 0 --invalidation-mode unchecked-hash /asset-output';
+
+/** The full `bash -c` script: the caller's copy steps, then the prune, then the bytecode compile. */
 export function pythonBundleScript(copySteps: readonly string[]): string {
-  return [...copySteps, PYTHON_BUNDLE_PRUNE].join(' && ');
+  return [...copySteps, PYTHON_BUNDLE_PRUNE, PYTHON_BUNDLE_COMPILE].join(' && ');
 }
 
 export interface PythonLambdaAssetOptions {
@@ -53,7 +68,7 @@ export interface PythonLambdaAssetOptions {
 /**
  * A Python 3.14 / arm64 code asset staged from `root` (`'lambda'`, or `'.'` for
  * bundles that span `plugins/` and `lambda/shared`), always in
- * `IgnoreMode.GIT`, always ending with {@link PYTHON_BUNDLE_PRUNE}.
+ * `IgnoreMode.GIT`, always ending with {@link PYTHON_BUNDLE_PRUNE} and then {@link PYTHON_BUNDLE_COMPILE}.
  */
 export function pythonLambdaAsset(root: 'lambda' | '.', options: PythonLambdaAssetOptions): lambda.Code {
   return lambda.Code.fromAsset(root, {
