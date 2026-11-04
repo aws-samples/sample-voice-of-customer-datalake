@@ -27,15 +27,10 @@ describe('appearanceApi', () => {
   })
 
   it('PUTs the default theme and reads the saved settings', async () => {
-    let sent: unknown
-    routeFetchApi({
-      'PUT /settings/appearance': (body) => {
-        sent = body
-        return { success: true, settings: { default_theme: 'quick' } }
-      },
-    })
+    const handler = vi.fn((_body: unknown) => ({ success: true, settings: { default_theme: 'quick' } }))
+    routeFetchApi({ 'PUT /settings/appearance': handler })
     await expect(appearanceApi.save('quick')).resolves.toStrictEqual({ default_theme: 'quick' })
-    expect(sent).toStrictEqual({ default_theme: 'quick' })
+    expect(handler).toHaveBeenCalledExactlyOnceWith({ default_theme: 'quick' })
   })
 
   it('reads an answer without settings as the default theme', async () => {
@@ -46,7 +41,7 @@ describe('appearanceApi', () => {
   it('rejects like the client when the server refuses', async () => {
     routeFetchApi({}, { missStatus: 403 })
     await expect(appearanceApi.save('nord')).rejects.toThrow('API Error: 403')
-    expect(fetchApi).toHaveBeenCalledOnce()
+    expect(fetchApi).toHaveBeenCalledExactlyOnceWith('/settings/appearance', { method: 'PUT', body: '{"default_theme":"nord"}' })
   })
 
   it('keys the query under the config-family settings root', () => {
