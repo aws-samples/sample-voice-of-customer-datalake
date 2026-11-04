@@ -67,3 +67,38 @@ export function runGuarded(action: () => void, options: RunGuardedOptions = {}):
 export function useGuardedAction(): (action: () => void) => void {
   return useCallback((action: () => void) => runGuarded(action), [])
 }
+
+/*
+ * The ONE route blocker. react-router supports a single `useBlocker` per router (a second one
+ * logs "A router only supports one blocker at a time" and the last registered wins), and every
+ * guard's `blockWhen` already asks all the dirty editors (`anyGuardAsks`), so one is enough:
+ * the first guard that needs a blocker owns it, and when it stops needing it, the next one
+ * that still does takes over.
+ */
+const wanting = new Set<RegisteredGuard>()
+const owner: { current: RegisteredGuard | null } = { current: null }
+const ownerListeners = new Set<() => void>()
+
+function electOwner(): void {
+  const next = owner.current !== null && wanting.has(owner.current) ? owner.current : ([...wanting][0] ?? null)
+  if (next === owner.current) return
+  owner.current = next
+  ownerListeners.forEach((listener) => { listener() })
+}
+
+/** Say whether `guard` needs the route blocker now (dirty, a dialog open, or holding a change). */
+export function wantBlocker(guard: RegisteredGuard, wants: boolean): void {
+  if (wants) wanting.add(guard)
+  else wanting.delete(guard)
+  electOwner()
+}
+
+/** For `useSyncExternalStore`: who owns the blocker, and a subscription to changes. */
+export function subscribeBlockerOwner(listener: () => void): () => void {
+  ownerListeners.add(listener)
+  return () => { ownerListeners.delete(listener) }
+}
+
+export function blockerOwner(): RegisteredGuard | null {
+  return owner.current
+}

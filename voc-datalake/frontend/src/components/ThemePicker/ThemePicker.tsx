@@ -75,7 +75,11 @@ export default function ThemePicker({ options, value, onChange, labelledBy, read
         return (
           <button
             key={option.value}
-            ref={(el) => { cards.current[index] = el }}
+            ref={(el) => {
+              cards.current[index] = el
+              // React 19 ref cleanup: an option that goes away leaves no detached node to focus.
+              return () => { cards.current[index] = null }
+            }}
             type="button"
             role="radio"
             aria-checked={checked}

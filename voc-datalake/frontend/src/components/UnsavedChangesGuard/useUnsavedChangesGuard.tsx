@@ -22,11 +22,11 @@
  *
  * @module components/UnsavedChangesGuard/useUnsavedChangesGuard
  */
-import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { UNSAFE_DataRouterContext } from 'react-router-dom'
 import RouterBlocker from './RouterBlocker'
 import UnsavedChangesDialog from './UnsavedChangesDialog'
-import { anyGuardAsks, registerGuard, runGuarded } from './guardRegistry'
+import { anyGuardAsks, blockerOwner, registerGuard, runGuarded, subscribeBlockerOwner, wantBlocker } from './guardRegistry'
 import type { RegisteredGuard } from './guardRegistry'
 import { pathOrQueryChanged } from './pathOrQueryChanged'
 import type { ReactNode } from 'react'
@@ -107,8 +107,17 @@ export function useUnsavedChangesGuard({
       blocksRoute: (current, next) => latest.current.shouldBlock(current, next),
     }
     self.current = guard
-    return registerGuard(guard)
+    const unregister = registerGuard(guard)
+    return () => { wantBlocker(guard, false); unregister() }
   }, [requestLeave])
+
+  // One route blocker for the whole page (guardRegistry): this editor asks for it while it has
+  // edits, a dialog open or a change held, and renders it only while it owns it.
+  const wantsBlocker = dirty || pending !== null || holding
+  useEffect(() => {
+    if (self.current !== null) wantBlocker(self.current, wantsBlocker)
+  }, [wantsBlocker, requestLeave])
+  const ownsBlocker = useSyncExternalStore(subscribeBlockerOwner, () => blockerOwner() === self.current && self.current !== null)
 
   // A chained dialog (asked on behalf of another editor's held route change) that unmounts
   // unanswered, e.g. its card is switched away, resets that change instead of leaving the
@@ -173,10 +182,8 @@ export function useUnsavedChangesGuard({
     requestLeave,
     dialog: (
       <>
-        {/* Only an editor with edits (or an open dialog) holds the router's blocker: a router
-            supports ONE blocker at a time, and a clean editor on the same page (the brand form
-            and the Default theme card on /admin) must not take it from a dirty one. */}
-        {inDataRouter && (dirty || pending !== null || holding) && <RouterBlocker when={blockWhen} onBlocked={onBlocked} />}
+        {/* A router supports ONE blocker at a time: only the editor that owns it renders it. */}
+        {inDataRouter && ownsBlocker && <RouterBlocker when={blockWhen} onBlocked={onBlocked} />}
         <UnsavedChangesDialog
           isOpen={pending !== null}
           saving={saving}

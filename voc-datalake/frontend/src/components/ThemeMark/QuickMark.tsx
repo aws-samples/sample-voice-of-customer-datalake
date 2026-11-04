@@ -1,10 +1,10 @@
 /**
- * @fileoverview The Quick mark: the Quick design system's four-point spark, outlined in
+ * @fileoverview The Quick mark: a four-point spark inspired by Quick, outlined in
  * the brand gradient (violet → purple → magenta, the `--mark-quick-*` tokens of
  * styles/theme-marks.css, never recoloured by a palette). On a filled surface (the
  * assistant's round launcher) it is drawn in `currentColor` instead, so it keeps its
  * contrast on the accent fill. The thinking pose spins the spark (`animate-mark-spin`,
- * still under reduced motion), as Quick's own assistant does while it works.
+ * still under reduced motion) while the assistant works.
  * @module components/ThemeMark/QuickMark
  */
 import { useId } from 'react'
@@ -12,7 +12,7 @@ import clsx from 'clsx'
 import MarkSvg from './MarkSvg'
 import type { MarkProps, StaticMarkProps } from './MarkSvg'
 
-/** The spark outline, centred on (0, 0) within ±32.8 units (the Quick assistant's own path). */
+/** The spark outline, centred on (0, 0) within ±32.8 units. */
 const QUICK_SPARK = [
   'M32.717-.129C32.686-2.67 30.186-3.263 30.186-3.263L11.447-10.57',
   'S4.82-27.415 4.261-28.703C3.355-30.789 2.109-31.856.479-31.77-1.35-31.672-2.277-30.88-2.974-28.716',
@@ -26,7 +26,8 @@ const QUICK_SPARK = [
 const VIEW_BOX = '-36 -36 72 72'
 
 function QuickSpark({ className, onFill = false, thinking }: Readonly<StaticMarkProps & { thinking: boolean }>) {
-  const gradient = `${useId()}-spark`
+  // useId() can hold ':' (`:r0:`); keep the id selector- and sanitiser-safe.
+  const gradient = `${useId().replace(/[^a-zA-Z0-9_-]/g, '')}-spark`
   return (
     <MarkSvg theme="quick" viewBox={VIEW_BOX} className={className}>
       {onFill ? null : (

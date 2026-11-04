@@ -36,6 +36,7 @@
   el.setAttribute('data-mode', mode)
   el.setAttribute('data-mode-pref', pref)
   // = themeFavicon() in themeCatalog.ts: index.html's SVG icon link, before the tab first draws it.
+  // Only the first rel="icon" link: the favicon.ico fallback (browsers without SVG icons) stays Kiro.
   const icon = document.querySelector('link[rel="icon"]')
   if (icon) icon.setAttribute('href', theme === 'kiro' ? '/kiro-ghost.svg' : '/favicons/' + theme + '.svg')
 })()

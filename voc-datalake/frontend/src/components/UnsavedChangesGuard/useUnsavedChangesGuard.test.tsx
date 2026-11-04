@@ -240,6 +240,19 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     expect(await screen.findByText('Elsewhere page')).toBeInTheDocument()
   })
 
+  // One blocker per router: with both editors dirty only the owner renders one, so react-router
+  // never warns "A router only supports one blocker at a time".
+  it('mounts a single route blocker however many editors are dirty', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { user } = renderTwoDirty()
+    await user.type(screen.getByLabelText('Name'), 'x')
+    await user.type(screen.getByLabelText('Other'), 'y')
+    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    await screen.findByRole('dialog', { name: 'Unsaved changes' })
+    expect([...warn.mock.calls, ...error.mock.calls].flat().map(String).join(' ')).not.toContain('only supports one blocker')
+  })
+
   /** Both editors dirty, a leave, Discard in the first dialog, Cancel in the second. */
   async function discardThenCancel() {
     const rendered = await bothDirtyThenDiscardFirst()
@@ -251,10 +264,10 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
   it('Cancel in the second dialog stays, and the editor that asked second keeps its edits', async () => {
     const { router } = await discardThenCancel()
     expect(router.state.location.pathname).toBe('/editor')
-    // The editor mounted last caught the change and asked first: its Discard cleared it,
-    // and the first editor, which asked second, keeps its edits after Cancel.
-    expect(screen.getByLabelText('Other')).toHaveDisplayValue('')
-    expect(screen.getByLabelText('Name')).toHaveDisplayValue('x')
+    // The editor dirtied first owns the page's one blocker and asked first: its Discard cleared
+    // it, and the other editor, which asked second, keeps its edits after Cancel.
+    expect(screen.getByLabelText('Name')).toHaveDisplayValue('')
+    expect(screen.getByLabelText('Other')).toHaveDisplayValue('y')
   })
 
   it('after that Cancel, a new attempt to leave is guarded again', async () => {
@@ -314,11 +327,11 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?tab=b'))
   })
 
-  /** The first editor behind a switch the test flips, as a card a tab switch removes. */
-  function SwitchableFirst({ onHideReady }: Readonly<{ onHideReady: (hide: () => void) => void }>) {
+  /** The second editor behind a switch the test flips, as a card a tab switch removes. */
+  function SwitchableOther({ onHideReady }: Readonly<{ onHideReady: (hide: () => void) => void }>) {
     const [shown, setShown] = useState(true)
     useEffect(() => { onHideReady(() => setShown(false)) }, [onHideReady])
-    return shown ? <Editor onSave={vi.fn()} /> : null
+    return shown ? <OtherEditor /> : null
   }
 
   // A chained dialog that disappears unanswered resets the held change instead of leaving the
@@ -327,7 +340,7 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     const hide = { current: () => {} }
     const onHideReady = (fn: () => void) => { hide.current = fn }
     const { router, user } = renderEditorRoute(
-      <><Link to="/elsewhere">Leave</Link><SwitchableFirst onHideReady={onHideReady} /><OtherEditor /></>,
+      <><Link to="/elsewhere">Leave</Link><Editor onSave={vi.fn()} /><SwitchableOther onHideReady={onHideReady} /></>,
       ['/elsewhere', '/editor'],
     )
     await user.type(screen.getByLabelText('Name'), 'x')
@@ -338,7 +351,7 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     act(() => { hide.current() })
     await waitFor(() => expect(queryDialog()).not.toBeInTheDocument())
     expect(router.state.location.pathname).toBe('/editor')
-    await user.type(screen.getByLabelText('Other'), 'z')
+    await user.type(screen.getByLabelText('Name'), 'z')
     await user.click(screen.getByRole('link', { name: 'Leave' }))
     expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
   })
