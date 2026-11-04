@@ -4,7 +4,7 @@
  * navigation, and the Save / Discard / Cancel dialog's outcomes.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, RouterProvider, createMemoryRouter, useLocation } from 'react-router-dom'
@@ -279,6 +279,54 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     expect(router.state.historyAction).toBe('POP')
     await act(() => router.navigate(1))
     expect(router.state.location.pathname).toBe('/editor')
+  })
+
+  /** An editor with no `onDiscard`: it still reads dirty after its Discard. */
+  function KeepsEditsEditor({ label }: Readonly<{ label: string }>) {
+    const [value, setValue] = useState('')
+    const guard = useUnsavedChangesGuard({ dirty: value !== '', onSave: () => Promise.resolve(true) })
+    return <><label>{label} <input value={value} onChange={(e) => setValue(e.target.value)} /></label>{guard.dialog}</>
+  }
+
+  // Each editor asks once: one with no `onDiscard` still reads dirty after answering, and two of
+  // them used to hand the change back and forth (only the last one to answer was skipped).
+  it('asks each dirty editor once, even when neither forgets its edits on Discard', async () => {
+    const { user } = renderEditorRoute(<><Link to="/elsewhere">Elsewhere</Link><KeepsEditsEditor label="First" /><KeepsEditsEditor label="Second" /></>)
+    await user.type(screen.getByLabelText('First'), 'x')
+    await user.type(screen.getByLabelText('Second'), 'y')
+    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    await user.click((await nextDialog()).getByRole('button', { name: 'Discard' }))
+    expect(await screen.findByText('Elsewhere page')).toBeInTheDocument()
+  })
+
+  /** The first editor behind a switch the test flips, as a card a tab switch removes. */
+  function SwitchableFirst({ onHideReady }: Readonly<{ onHideReady: (hide: () => void) => void }>) {
+    const [shown, setShown] = useState(true)
+    useEffect(() => { onHideReady(() => setShown(false)) }, [onHideReady])
+    return shown ? <Editor onSave={vi.fn()} /> : null
+  }
+
+  // A chained dialog that disappears unanswered resets the held change instead of leaving the
+  // router blocked with no dialog: the editor that held it guards its next edits as before.
+  it('resets the held leave when a chained editor disappears with its dialog open', async () => {
+    const hide = { current: () => {} }
+    const onHideReady = (fn: () => void) => { hide.current = fn }
+    const { router, user } = renderEditorRoute(
+      <><Link to="/elsewhere">Leave</Link><SwitchableFirst onHideReady={onHideReady} /><OtherEditor /></>,
+      ['/elsewhere', '/editor'],
+    )
+    await user.type(screen.getByLabelText('Name'), 'x')
+    await user.type(screen.getByLabelText('Other'), 'y')
+    await user.click(screen.getByRole('link', { name: 'Leave' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    await nextDialog()
+    act(() => { hide.current() })
+    await waitFor(() => expect(queryDialog()).not.toBeInTheDocument())
+    expect(router.state.location.pathname).toBe('/editor')
+    await user.type(screen.getByLabelText('Other'), 'z')
+    await user.click(screen.getByRole('link', { name: 'Leave' }))
+    expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
   })
 })
 

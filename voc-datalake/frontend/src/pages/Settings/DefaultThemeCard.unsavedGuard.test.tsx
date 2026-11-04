@@ -20,7 +20,6 @@ import DefaultThemeCard from './DefaultThemeCard'
 
 const API = 'https://api.example.com'
 
-
 beforeEach(() => {
   resetFetchApi()
   useThemeStore.setState({ workspaceTheme: 'kiro', colorTheme: 'workspace' })

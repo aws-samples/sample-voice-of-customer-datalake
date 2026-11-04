@@ -8,10 +8,11 @@ import { renderHook, waitFor } from '@testing-library/react'
 vi.mock('../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
 import { fetchApi, resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
-import { createQueryWrapper } from '@test/query-client'
+import { createQueryWrapper, renderWithQueryClient } from '@test/query-client'
 import { useConfigStore } from '../store/configStore'
 import { useThemeStore } from './themeStore'
 import { useWorkspaceThemeSync } from './useWorkspaceThemeSync'
+import WorkspaceThemeSync from './WorkspaceThemeSync'
 
 beforeEach(() => {
   resetFetchApi()
@@ -45,5 +46,14 @@ describe('useWorkspaceThemeSync', () => {
     useConfigStore.setState((s) => ({ config: { ...s.config, apiEndpoint: '' } }))
     renderHook(() => useWorkspaceThemeSync(), { wrapper: createQueryWrapper() })
     expect(fetchApi).not.toHaveBeenCalled()
+  })
+})
+
+describe('WorkspaceThemeSync (the mount the signed-in shell renders)', () => {
+  it('renders nothing and caches the administrator’s start theme', async () => {
+    routeFetchApi({ 'GET /settings/appearance': () => ({ default_theme: 'quick' }) })
+    const { container } = renderWithQueryClient(<WorkspaceThemeSync />)
+    expect(container).toBeEmptyDOMElement()
+    await waitFor(() => expect(useThemeStore.getState().workspaceTheme).toBe('quick'))
   })
 })

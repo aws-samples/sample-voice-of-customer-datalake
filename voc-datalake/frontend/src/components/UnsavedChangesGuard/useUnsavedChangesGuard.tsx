@@ -110,6 +110,16 @@ export function useUnsavedChangesGuard({
     return registerGuard(guard)
   }, [requestLeave])
 
+  // A chained dialog (asked on behalf of another editor's held route change) that unmounts
+  // unanswered, e.g. its card is switched away, resets that change instead of leaving the
+  // router blocked with no dialog. Its own held change (`route`) is react-router's to drop.
+  const pendingNow = useRef<Pending | null>(null)
+  useEffect(() => { pendingNow.current = pending })
+  useEffect(() => () => {
+    const unanswered = pendingNow.current
+    if (unanswered !== null && unanswered.route === undefined) unanswered.stay()
+  }, [])
+
   const blockWhen = useCallback(
     (current: Location, next: Location) => latest.current.dirty && latest.current.shouldBlock(current, next),
     [],
@@ -119,9 +129,9 @@ export function useUnsavedChangesGuard({
     if (pending === null) return
     setPending(null)
     const route = pending.route
-    const except = self.current ?? undefined
+    const answered = new Set(self.current === null ? [] : [self.current])
     if (!leave) pending.stay()
-    else if (route === undefined || !anyGuardAsks({ except, route })) pending.proceed()
+    else if (route === undefined || !anyGuardAsks({ answered, route })) pending.proceed()
     else {
       // react-router holds one blocker per router, so only this editor's caught the change.
       // It keeps holding it (`holding` keeps the blocker mounted once this editor is clean)
@@ -131,7 +141,7 @@ export function useUnsavedChangesGuard({
       setHolding(true)
       runGuarded(
         () => { setHolding(false); proceed() },
-        { except, route, stay: () => { setHolding(false); stay() } },
+        { answered, route, stay: () => { setHolding(false); stay() } },
       )
     }
   }
