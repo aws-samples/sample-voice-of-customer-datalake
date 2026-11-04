@@ -46,6 +46,7 @@ const REGISTERED: Readonly<Record<string, string>> = {
   ParticipantSettingsCard: 'Administration → Privacy & access → Users → Participant email → Save',
   CompanyDomainsCard: 'Administration → Privacy & access → Boards → Company domains → Save domains',
   BoardEditor: 'Administration → Privacy & access → Boards → board editor → Save board',
+  DefaultThemeCard: 'Administration → General → Default theme → Save',
 }
 
 /** Module name → why its primary button is not a form's save / submit row. */

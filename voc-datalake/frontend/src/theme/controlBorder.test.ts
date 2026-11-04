@@ -12,19 +12,15 @@
  */
 import { describe, expect, it } from 'vitest'
 import { appTsxLines, isCommentLine, stringLiterals } from '@test/appSources'
-import { THEMES, contrastRatio as contrast, indexCss as css, themeHex as token } from '@test/themeTokens'
+import { THEMES, contrastRatio as contrast, indexCss as css, ruleBody as cssRuleBody, themeHex as token } from '@test/themeTokens'
 
 const MIN_NON_TEXT_CONTRAST = 3
 
 /** Every surface a control is placed on: the page, panels, cards, dialogs and a hovered row. */
 const SURFACES = ['bg', 'bg-accent', 'bg-elevated', 'bg-hover', 'card', 'panel'] as const
 
-/** The body of the first rule whose selector list starts with `selector`. */
-function ruleBody(selector: string): string {
-  const start = css.indexOf(`${selector} {`)
-  if (start === -1) throw new Error(`no rule for ${selector}`)
-  return css.slice(css.indexOf('{', start) + 1, css.indexOf('}', start))
-}
+/** The body of the first index.css rule whose selector list starts with `selector`. */
+const ruleBody = (selector: string): string => cssRuleBody(css, selector)
 
 describe('the contrast arithmetic (positive control)', () => {
   it('reproduces the audit: --border on the dark card is 1.28:1, on the light card 1.27:1', () => {
