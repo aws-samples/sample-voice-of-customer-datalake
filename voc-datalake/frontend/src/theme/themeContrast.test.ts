@@ -58,10 +58,8 @@ describe.each(THEMES)('text in %s', (theme) => {
     expect(below(theme, fg, surfaces(theme), min)).toStrictEqual([])
   })
 
-  // Not on a hovered row: Kiro dark's --muted-strong (#8a8592) is 4.23:1 there (KIRO_DARK_GAPS).
-  it('--muted-strong reaches the text floor on the page, panels and cards', () => {
-    const names = SURFACES.filter((name) => name !== 'bg-hover')
-    expect(below(theme, 'muted-strong', surfaces(theme, names), min)).toStrictEqual([])
+  it('--muted-strong reaches the text floor on every surface, a hovered row included', () => {
+    expect(below(theme, 'muted-strong', surfaces(theme), min)).toStrictEqual([])
   })
 
   it('--accent-text reaches the text floor on every surface and on its own tint', () => {
@@ -72,34 +70,9 @@ describe.each(THEMES)('text in %s', (theme) => {
     expect(below(theme, 'nav-active-text', { 'nav-active-bg': themeHex(theme, 'nav-active-bg') }, min)).toStrictEqual([])
   })
 
-  it('--accent-fg reaches the text floor on a solid --accent fill', () => {
-    expect(below(theme, 'accent-fg', { accent: themeHex(theme, 'accent') }, min)).toStrictEqual([])
-  })
-})
-
-describe.each(THEMES.filter((theme) => colorThemeOf(theme) !== 'kiro'))('hover states in %s', (theme) => {
-  it('--accent-fg reaches the text floor on --accent-hover (a hovered primary button)', () => {
-    expect(below(theme, 'accent-fg', { 'accent-hover': themeHex(theme, 'accent-hover') }, textFloor(theme))).toStrictEqual([])
-  })
-
-  it('--muted-strong reaches the text floor on a hovered row too', () => {
-    expect(below(theme, 'muted-strong', surfaces(theme), textFloor(theme))).toStrictEqual([])
-  })
-})
-
-/**
- * The two pairs Kiro dark misses, both KiroCrew's own values (docs/kiro-design-system.md
- * → Themes). Pinned at today's ratio so they can only get better.
- */
-const KIRO_DARK_GAPS = [
-  { fg: 'accent-fg', bg: 'accent-hover', ratio: 3.68 },
-  { fg: 'muted-strong', bg: 'bg-hover', ratio: 4.23 },
-] as const
-
-describe('known Kiro dark gaps', () => {
-  it.each(KIRO_DARK_GAPS)('--$fg on --$bg stays at least $ratio:1', ({ fg, bg, ratio }) => {
-    const measured = contrastRatio(themeHex('kiro-dark', fg), themeHex('kiro-dark', bg))
-    expect(Number(measured.toFixed(2))).toBeGreaterThanOrEqual(ratio)
+  it('--accent-fg reaches the text floor on a solid --accent fill, at rest and hovered', () => {
+    const fills = { accent: themeHex(theme, 'accent'), 'accent-hover': themeHex(theme, 'accent-hover') }
+    expect(below(theme, 'accent-fg', fills, min)).toStrictEqual([])
   })
 })
 

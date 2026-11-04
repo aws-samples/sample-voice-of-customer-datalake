@@ -107,7 +107,7 @@ A value that missed AA moved in lightness only (OKLCH hue and chroma kept); each
 | High contrast dark | `--danger` / `--aim` / `--accent-text` | `#ff0000` / `#bf5af2` / `#00d4ff` → `#fdbeb3` / `#ebcffd` / `#85e2fe` | to 7:1 on a hovered row and its tint (pure red cannot reach 7:1 there) |
 | High contrast light | every status tone, `--accent-text` | e.g. `#cc0000` → `#800503`, `#007a1e` → `#024a10` | to 7:1 on their tints |
 | Quick light | `--link` / `--ok` / `--danger` / `--info` | `#0062d1` / `#037f0c` / `#d91515` / `#0067c7` → `#085fc8` / `#07780e` / `#cc1615` / `#0863be` | 4.1–4.3:1 on their tints over a hovered row |
-| Kiro dark (not adjusted) | `--accent-fg` on `--accent-hover`; `--muted-strong` on `--bg-hover` | 3.68:1; 4.23:1 | KiroCrew's own values; pinned so they cannot get worse (`themeContrast.test.ts`) |
+| Kiro dark | `--accent-hover`; `--muted-strong` | `#9f63ff` → `#7a35e0`; `#8a8592` → `#8f8a97` | white text on a hovered primary button was 3.68:1 (now 6.15:1: the hover darkens, as in Kiro light); `--muted-strong` on a hovered row was 4.23:1 (now 4.52:1) |
 
 Also: `--shadow-sm` is `0 0 #0000` where upstream says `none` (High contrast, Quick), because `none` is invalid inside the `.card` shadow list; High contrast gains a dark-cyan selected-row fill edged in `--accent`.
 
@@ -137,7 +137,7 @@ All values are CSS custom properties in `src/index.css`. Use the **utility** in 
 | Role | Utility / variable | Kiro Dark | Kiro Light | Use |
 |---|---|---|---|---|
 | **Primary** (accent) | `bg-accent` / `--accent` | `#8e48ff` | `#8e48ff` | Primary buttons, active indicators, focus ring, brand glyph |
-| Primary hover | `hover:bg-accent-hover` / `--accent-hover` | `#9f63ff` | `#7a35e0` | Hover of solid accent |
+| Primary hover | `hover:bg-accent-hover` / `--accent-hover` | `#7a35e0` | `#7a35e0` | Hover of solid accent (darker than the accent in both modes: white text on it ≥ 4.5:1) |
 | On primary | `text-accent-fg` / `--accent-fg` | `#ffffff` | `#ffffff` | Text/icons on solid accent |
 | Primary text | `text-accent-text` / `--accent-text` | `#bd8fff` | `#723acc` | Accent-coloured **text** and links on surfaces (contrast-safe) |
 | Primary subtle | `bg-accent-subtle` / `--accent-subtle` | `rgba(178,127,255,.16)` | `rgba(142,72,255,.12)` | Tinted fills, selected rows, avatars |
@@ -171,7 +171,7 @@ In Kiro Light `--card` equals `--bg`, so cards **must** keep their border.
 | `text-text-strong` | `#f2f1f4` | `#19161d` | Headings, values, emphasised text |
 | `text-text` | `#dcdadf` | `#4a464f` | Body text |
 | `text-muted` | `#938f9b` | `#5e5966` | Secondary text, meta, idle icons, placeholders |
-| `text-muted-strong` | `#8a8592` | `#4a464f` | Section labels, faint text |
+| `text-muted-strong` | `#8f8a97` | `#4a464f` | Section labels, faint text |
 
 ### Borders
 
@@ -212,7 +212,8 @@ In Kiro Light `--card` equals `--bg`, so cards **must** keep their border.
 | `--danger` | dark | `#f94359` | `#ff5f73` | on its tint over a hovered row 3.79 → 4.53 (`--danger-fg` black) |
 | `--info` | dark | `#6f9ae0` | `#7aa3e6` | `badge-info` on a hovered row 4.42 → 4.85 |
 | `--accent-text` | dark | `#b07fff` | `#bd8fff` | |
-| `--muted-strong` | dark | `#5e5966` | `#8a8592` | |
+| `--muted-strong` | dark | `#5e5966` | `#8f8a97` | 4.52:1 on a hovered row |
+| `--accent-hover` | dark | `#9f63ff` | `#7a35e0` | white text 3.68 → 6.15 |
 | `--ok` | light | `#008543` | `#007038` | on its tint over a hovered row 3.56 → 4.61 |
 | `--warn` | light | `#a38a00` | `#6b5900` | 2.70 → 5.25 (so `--warn-fg` is white, not KiroCrew's black) |
 | `--danger` | light | `#d92544` | `#bd1c3a` | 3.71 → 4.64 (white `--danger-fg` 6.19) |
