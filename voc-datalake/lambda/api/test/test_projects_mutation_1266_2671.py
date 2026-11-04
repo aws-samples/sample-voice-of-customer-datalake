@@ -987,6 +987,7 @@ class TestGeneratePersonasOrchestration(_Generation):
                 'personas_planned': 2,
                 'personas_dropped': 1,
                 'duplicate_names_dropped': 0,
+                'feature_requests_used': 0,
                 'source_breakdown': {'unknown': 3},
                 'generation_time_ms': 2750,
             },

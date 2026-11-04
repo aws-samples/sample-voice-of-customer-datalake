@@ -200,6 +200,7 @@ class TestThePersonaJobs:
             'sources': ['web'], 'date_basis': 'imported', 'persona_count': 3,
             'custom_instructions': '', 'response_language': None, 'generate_avatars': True,
             'keep_existing_personas': False, SCOPE_CONFIG_KEY: SCOPE_CONFIG, 'requested_by': ACTOR,
+            **NO_FEATURE_REQUESTS,
         }
         assert (status, body) == (200, {'success': True, 'job_id': 'job-1', 'status': 'running',
                                         'message': 'Persona generation started.'})
@@ -248,11 +249,14 @@ class TestThePersonaJobs:
         assert projects_handler.validate_persona_count(None) == 3
 
 
+# Board requests as evidence are opt-in (shared/feature_request_context.py): what a body without them stores.
+NO_FEATURE_REQUESTS = {'include_feature_requests': False, 'feature_request_board_ids': None}
+NO_DOCUMENT_FEATURE_REQUESTS = {'data_sources': {'feature_requests': False}, 'feature_request_board_ids': None}
 RESEARCH_DEFAULTS = {
     'question': 'What are the main customer pain points?', 'title': '', 'sources': [],
     'categories': [], 'sentiments': [], 'days': 30, 'date_basis': 'imported',
     'selected_persona_ids': [], 'selected_document_ids': [], 'response_language': None,
-    'use_web_search': True, 'filters': {}, SCOPE_CONFIG_KEY: SCOPE_CONFIG,
+    'use_web_search': True, **NO_FEATURE_REQUESTS, 'filters': {}, SCOPE_CONFIG_KEY: SCOPE_CONFIG,
 }
 RESEARCH_BODY = {
     'question': 'Why churn?', 'title': 'Churn', 'sources': ['web'], 'categories': ['app'],
@@ -280,7 +284,7 @@ class TestTheResearchJob:
         monkeypatch.setenv('RESEARCH_STATE_MACHINE_ARN', 'arn:research')
         world.call('POST', '/projects/p1/research', body=RESEARCH_BODY)
         assert world.create_job.call_args.args[3] == {
-            **RESEARCH_BODY, 'filters': RESEARCH_BODY, SCOPE_CONFIG_KEY: SCOPE_CONFIG,
+            **RESEARCH_BODY, **NO_FEATURE_REQUESTS, 'filters': RESEARCH_BODY, SCOPE_CONFIG_KEY: SCOPE_CONFIG,
         }
 
     def test_a_truthy_non_boolean_web_search_stays_off(self, world, monkeypatch):
@@ -324,7 +328,8 @@ class TestTheDocumentJob:
         monkeypatch.setenv('DOCUMENT_STATE_MACHINE_ARN', 'arn:doc')
         status, body, _ = world.call('POST', '/projects/p1/document',
                                      body={'doc_type': doc_type, 'title': 'Spec (v3)', 'x': 1})
-        config = {'doc_type': doc_type, 'title': 'Spec', 'x': 1, SCOPE_CONFIG_KEY: SCOPE_CONFIG}
+        config = {'doc_type': doc_type, 'title': 'Spec', 'x': 1, **NO_DOCUMENT_FEATURE_REQUESTS,
+                  SCOPE_CONFIG_KEY: SCOPE_CONFIG}
         assert (status, body) == (200, {'success': True, 'job_id': 'job-1', 'status': 'pending',
                                         'message': message})
         _started(world, f'generate_{doc_type}', 'doc_config', config, status='pending')
@@ -337,7 +342,8 @@ class TestTheDocumentJob:
 
     def test_without_a_state_machine_the_generator_is_invoked(self, world):
         world.call('POST', '/projects/p1/document', body={'x': 1})
-        config = {'x': 1, 'doc_type': 'prd', 'title': 'Untitled', SCOPE_CONFIG_KEY: SCOPE_CONFIG}
+        config = {'x': 1, 'doc_type': 'prd', 'title': 'Untitled', **NO_DOCUMENT_FEATURE_REQUESTS,
+                  SCOPE_CONFIG_KEY: SCOPE_CONFIG}
         world.invoke.assert_called_once_with(
             projects_handler.DOCUMENT_GENERATOR_FUNCTION,
             {'project_id': 'p1', 'job_id': 'job-1', 'doc_config': config},
