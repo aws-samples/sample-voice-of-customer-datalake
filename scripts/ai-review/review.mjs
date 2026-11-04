@@ -28,7 +28,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildPrompt, capDiff, chooseRunner, KINDS, onPath, parseVerdict, REVIEW_PATHSPEC, runnerCommand, SECRET_PATHS } from './lib.mjs'
 
-function git(root, args, okStatuses = [0]) {
+export function git(root, args, okStatuses = [0]) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
   if (result.error || !okStatuses.includes(result.status)) return null
   return result.stdout
@@ -43,22 +43,28 @@ function reviewBase(root, env) {
   return null
 }
 
-/** The diff from `base` to the working tree, untracked files shown as new files. */
-function collectChange(root, base) {
-  const tracked = git(root, ['diff', '--no-color', base, '--', ...REVIEW_PATHSPEC]) ?? ''
-  const untracked = (git(root, ['ls-files', '--others', '--exclude-standard', '--', ...REVIEW_PATHSPEC]) ?? '')
-    .split('\n').filter(Boolean)
+/**
+ * The change from `base` to `head`: `{diff, files, commits, omitted}`. With no `head` (the local reviews) it is the
+ * working tree, untracked files shown as new files; with a commit (the pull request review on CI,
+ * scripts/ai-review/ci-review.mjs) it is that commit, read from git objects only, nothing checked out.
+ */
+export function collectChange(root, base, head = null) {
+  const range = head ? [base, head] : [base]
+  const tracked = git(root, ['diff', '--no-color', ...range, '--', ...REVIEW_PATHSPEC]) ?? ''
+  const untrackedOf = (pathspec) => head ? []
+    : (git(root, ['ls-files', '--others', '--exclude-standard', '--', ...pathspec]) ?? '').split('\n').filter(Boolean)
+  const untracked = untrackedOf(REVIEW_PATHSPEC)
   // `git diff --no-index` exits 1 when the files differ, which they always do against /dev/null.
   const added = untracked.map((file) => git(root, ['diff', '--no-color', '--no-index', '--', '/dev/null', file], [0, 1]) ?? '')
   const files = [
-    git(root, ['diff', '--stat=200', base, '--', ...REVIEW_PATHSPEC]) ?? '',
+    git(root, ['diff', '--stat=200', ...range, '--', ...REVIEW_PATHSPEC]) ?? '',
     ...untracked.map((file) => ` ${file} (new, untracked)`),
   ].join('\n')
-  const commits = git(root, ['log', '--no-color', '--format=%h %s%n%b', `${base}..HEAD`]) ?? ''
+  const commits = git(root, ['log', '--no-color', '--format=%h %s%n%b', `${base}..${head ?? 'HEAD'}`]) ?? ''
   // Names only: the changed paths SECRET_PATHS kept out of the diff.
   const omitted = [
-    ...(git(root, ['diff', '--name-only', base, '--', ...SECRET_PATHS]) ?? '').split('\n'),
-    ...(git(root, ['ls-files', '--others', '--exclude-standard', '--', ...SECRET_PATHS]) ?? '').split('\n'),
+    ...(git(root, ['diff', '--name-only', ...range, '--', ...SECRET_PATHS]) ?? '').split('\n'),
+    ...untrackedOf(SECRET_PATHS),
   ].filter(Boolean)
   return { diff: [tracked, ...added].join('\n').trim(), files, commits, omitted: [...new Set(omitted)] }
 }
