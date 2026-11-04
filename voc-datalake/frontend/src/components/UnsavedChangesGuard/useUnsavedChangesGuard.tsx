@@ -126,7 +126,10 @@ export function useUnsavedChangesGuard({
     requestLeave,
     dialog: (
       <>
-        {inDataRouter && <RouterBlocker when={blockWhen} onBlocked={open} />}
+        {/* Only an editor with edits (or an open dialog) holds the router's blocker: a router
+            supports ONE blocker at a time, and a clean editor on the same page (the brand form
+            and the Default theme card on /admin) must not take it from a dirty one. */}
+        {inDataRouter && (dirty || pending !== null) && <RouterBlocker when={blockWhen} onBlocked={open} />}
         <UnsavedChangesDialog
           isOpen={pending !== null}
           saving={saving}
