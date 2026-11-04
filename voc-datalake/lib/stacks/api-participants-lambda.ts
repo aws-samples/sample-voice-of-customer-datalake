@@ -8,13 +8,15 @@
  * `POST /participants/asks` records the ask and its recipients, then async-invokes THIS function by
  * name (`{"engagement_job": "send_ask", …}`); each invocation sends a slice and re-invokes itself
  * with the next cursor. So the function carries the async failure destination (#253) and no retry
- * — a hidden re-drive could email a recipient twice.
+ * — a hidden re-drive could email a recipient twice. Creating or editing a board request async-invokes
+ * it the same way (`{"engagement_job": "enrich_feature_request", …}`) for the request's enrichment.
  *
  * Resources are created on the stack itself — see api-context.ts.
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { grantClaudeModels } from '../utils/claude-model-grant';
 import { emailSenderOf, type EmailSender } from '../utils/email-sender';
 import { appVersion } from '../utils/connector-version';
 import type { ApiStackContext } from './api-context';
@@ -64,9 +66,13 @@ export function createParticipantsLambda(ctx: ApiStackContext): lambda.Function 
   featureRequestsTable.grantReadWriteData(role);
   // shared/project_access.py: the project META and its members (view / edit checks).
   projectsTable.grantReadData(role);
-  // The brand name (default sender name): one item, no index.
+  // The brand name (default sender name), the categories config and the model picker (the board requests'
+  // enrichment, lambda/shared/feature_requests_enrich.py): single items, no index.
   role.addToPolicy(new iam.PolicyStatement({ actions: ['dynamodb:GetItem'], resources: [aggregatesTable.tableArn] }));
   kmsKey.grantEncryptDecrypt(role);
+  // The board requests' enrichment: one `enrichment`-surface Converse call per request, on whichever allowlisted
+  // model the picker or a capacity fallback lands on (the stack's shared managed policies: no new resource).
+  grantClaudeModels(role, 'invoke');
   // The boards' raw copies (lambda/shared/feature_requests_raw.py): write-once versions of each request
   // and +1, under the feature_requests prefix only. No read, no delete.
   rawDataBucket.grantPut(role, 'raw/feature_requests/*');
