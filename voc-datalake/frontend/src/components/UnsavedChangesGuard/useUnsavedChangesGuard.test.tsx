@@ -176,6 +176,33 @@ describe('useUnsavedChangesGuard — route changes', () => {
   })
 })
 
+describe('useUnsavedChangesGuard — two editors on one page', () => {
+  /** A guard that never has edits: mounted AFTER the dirty editor, like a card below a form. */
+  function CleanEditor() {
+    const guard = useUnsavedChangesGuard({ dirty: false, onSave: () => Promise.resolve(true) })
+    return <>{guard.dialog}</>
+  }
+
+  // react-router keeps ONE blocker per router and the last one mounted wins: a clean editor
+  // below a dirty one used to take it, so leaving with unsaved edits went through unasked.
+  it('a clean editor mounted after a dirty one does not take its route guard', async () => {
+    const router = createMemoryRouter(
+      [
+        { path: '/editor', element: <><Editor onSave={vi.fn()} /><CleanEditor /></> },
+        { path: '/elsewhere', element: <p>Elsewhere page</p> },
+      ],
+      { initialEntries: ['/editor'] },
+    )
+    render(<RouterProvider router={router} />)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Name'), 'x')
+    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    expect(dialog()).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/editor')
+    expect(screen.queryByText('Elsewhere page')).not.toBeInTheDocument()
+  })
+})
+
 describe('useUnsavedChangesGuard — beforeunload', () => {
   it('registers beforeunload only once dirty, and the event asks for the browser prompt', async () => {
     const add = vi.spyOn(window, 'addEventListener')
