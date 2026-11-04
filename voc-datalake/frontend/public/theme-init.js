@@ -35,4 +35,7 @@
   el.setAttribute('data-color-theme', theme)
   el.setAttribute('data-mode', mode)
   el.setAttribute('data-mode-pref', pref)
+  // = themeFavicon() in themeCatalog.ts: index.html's SVG icon link, before the tab first draws it.
+  const icon = document.querySelector('link[rel="icon"]')
+  if (icon) icon.setAttribute('href', theme === 'kiro' ? '/kiro-ghost.svg' : '/favicons/' + theme + '.svg')
 })()

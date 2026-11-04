@@ -1,23 +1,29 @@
 /*
  * Tokens of the per-theme brand marks (components/ThemeMark).
  *
- * The Quick tile is never recoloured, in either mode, so its colours live on
- * :root and no palette overrides them: the brand gradient (violet → purple →
- * magenta) and the white of its speech bubble and spark.
+ * The Quick spark is never recoloured by a palette: its gradient lives here (violet →
+ * purple → magenta). Quick dark lifts the same three hues so the outline stays at
+ * ≥ 3:1 on its navy page (WCAG 1.4.11), as Quick's own dark accent (#c9a2ff) does.
  */
 :root {
   --mark-quick-from: #6b2fd6;
   --mark-quick-via: #8811c2;
   --mark-quick-to: #b50193;
-  --mark-quick-glyph: #ffffff;
 }
 
-/* The Quick thinking pose: the spark breathes (`animate-mark-breathe`; callers add motion-reduce:animate-none). */
-@theme {
-  --animate-mark-breathe: mark-breathe 1.6s ease-in-out infinite;
+:root[data-theme="quick-dark"], [data-theme="quick-dark"] {
+  --mark-quick-from: #a98bff;
+  --mark-quick-via: #c9a2ff;
+  --mark-quick-to: #f39cf0;
+}
 
-  @keyframes mark-breathe {
-    0%, 100% { opacity: 1; transform: scale(1) }
-    50% { opacity: .5; transform: scale(.7) }
+/* The Quick thinking pose: the spark spins (`animate-mark-spin`; callers add motion-reduce:animate-none). */
+@theme {
+  --animate-mark-spin: mark-spin 1.6s cubic-bezier(.65, 0, .35, 1) infinite;
+
+  @keyframes mark-spin {
+    0% { transform: rotate(0deg) scale(1) }
+    50% { transform: rotate(180deg) scale(.86) }
+    100% { transform: rotate(360deg) scale(1) }
   }
 }

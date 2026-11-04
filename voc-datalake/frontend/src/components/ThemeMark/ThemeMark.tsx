@@ -7,9 +7,10 @@
  *
  * Kiro keeps its ghost (KiroGhost, GhostPoses). Nord: a snowflake; Dracula: a bat;
  * High Contrast: the contrast circle — all `currentColor`, so the caller's text
- * class colours them. Quick: its gradient tile, never recoloured. Every mark is
- * decorative (`aria-hidden`); the text beside it names things. The thinking pose
- * floats (`animate-float`), or for Quick breathes its spark; both stop under
+ * class colours them. Quick: its four-point spark in the brand gradient (in
+ * `currentColor` with `onFill`, on the accent launcher). Every mark is decorative
+ * (`aria-hidden`); the text beside it names things. The thinking pose floats
+ * (`animate-float`), or for Quick spins the spark; both stop under
  * `prefers-reduced-motion`.
  *
  * @module components/ThemeMark
@@ -36,11 +37,11 @@ const STATIC_MARKS: Record<Exclude<ColorThemeId, 'kiro'>, ComponentType<MarkProp
 
 const FLOAT = 'animate-float motion-reduce:animate-none'
 
-export default function ThemeMark({ className }: Readonly<MarkProps>) {
+export default function ThemeMark({ className, onFill }: Readonly<MarkProps>) {
   const theme = useActiveColorTheme()
   if (theme === 'kiro') return <KiroGhost className={className} />
   const Mark = STATIC_MARKS[theme]
-  return <Mark className={className} />
+  return <Mark className={className} onFill={onFill} />
 }
 
 /** At rest, greeting an empty conversation. */
@@ -51,7 +52,7 @@ export function ThemeMarkIdle({ className }: Readonly<MarkProps>) {
   return <Mark className={className} />
 }
 
-/** While the assistant works: the mark floats (Quick: its spark breathes). */
+/** While the assistant works: the mark floats (Quick: its spark spins). */
 export function ThemeMarkThinking({ className }: Readonly<MarkProps>) {
   const theme = useActiveColorTheme()
   if (theme === 'kiro') return <GhostThinking className={className} />

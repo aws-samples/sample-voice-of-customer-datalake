@@ -9,6 +9,8 @@ import type { ColorThemeId } from '../../theme/themeCatalog'
 
 export interface MarkProps {
   className?: string
+  /** The mark sits on a filled surface (the accent launcher): a brand-coloured mark draws in `currentColor`. */
+  onFill?: boolean
 }
 
 export default function MarkSvg({ theme, viewBox, className, children }: Readonly<{

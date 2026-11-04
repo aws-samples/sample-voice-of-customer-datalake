@@ -64,7 +64,7 @@ describe('theme selection', () => {
     expect(new Set(paints)).toStrictEqual(new Set(['currentColor']))
   })
 
-  it('paints the Quick tile from its own tokens, never the palette or hex literals', () => {
+  it('outlines the Quick spark in its own gradient tokens, never the palette or hex literals', () => {
     pick('quick')
     const svg = svgOf(<ThemeMark />)
     const stops = [...svg.querySelectorAll('stop')].map((s) => s.style.getPropertyValue('stop-color'))
@@ -72,13 +72,19 @@ describe('theme selection', () => {
     expect(svg.outerHTML).not.toMatch(/#[0-9a-f]{3,8}\b/i)
   })
 
-  it('gives each Quick tile its own gradient id', () => {
+  it('gives each Quick spark its own gradient id', () => {
     pick('quick')
     const { container } = render(<><ThemeMark /><ThemeMark /></>)
     const ids = [...container.querySelectorAll('linearGradient')].map((g) => g.id)
     expect(new Set(ids).size).toBe(2)
-    const rect = container.querySelector('rect')
-    expect(rect?.getAttribute('fill')).toBe(`url(#${ids[0]})`)
+    expect(container.querySelector('[data-spark]')?.getAttribute('stroke')).toBe(`url(#${ids[0]})`)
+  })
+
+  it('draws the Quick spark in currentColor, without a gradient, on a filled surface', () => {
+    pick('quick')
+    const svg = svgOf(<ThemeMark onFill />)
+    expect(svg.querySelector('linearGradient')).toBeNull()
+    expect(svg.querySelector('[data-spark]')?.getAttribute('stroke')).toBe('currentColor')
   })
 })
 
@@ -88,11 +94,11 @@ describe('thinking motion', () => {
     expect(svgOf(<ThemeMarkThinking />)).toHaveClass('animate-float', 'motion-reduce:animate-none')
   })
 
-  it('quick breathes its spark instead, still under reduced motion', () => {
+  it('quick spins its spark instead, still under reduced motion', () => {
     pick('quick')
     const svg = svgOf(<ThemeMarkThinking />)
     expect(svg.getAttribute('class') ?? '').not.toContain('animate')
-    expect(svg.querySelector('[data-spark]')).toHaveClass('animate-mark-breathe', 'motion-reduce:animate-none')
+    expect(svg.querySelector('[data-spark]')).toHaveClass('animate-mark-spin', 'motion-reduce:animate-none')
   })
 
   it.each(COLOR_THEME_IDS)('the static and idle %s marks stay still', (theme) => {
