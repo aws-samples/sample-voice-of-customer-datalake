@@ -46,7 +46,9 @@ export const PYTHON_BUNDLE_PRUNE =
  * `unchecked-hash` bytecode (PEP 552): the import system loads it without reading or hashing the source, and the
  * file carries no timestamp, so the same source gives the same bytes. Safe because a deployed bundle never changes
  * after it is built. If the runtime's Python ever differs, it ignores the files and compiles from source as before.
- * A syntax error fails the build. The prune runs first, so a stale `.pyc` from the source tree never ships.
+ * A syntax error fails the build (`-q` hides the file list, not errors); a shipped `.py` that must not be compiled
+ * would need an `-x <regex>` exclusion here. The prune runs first, so a stale `.pyc` from the source tree never ships.
+ * scripts/audit/py_assembly.py names this exact command as a step that ships no module (cross-checked by the test).
  */
 export const PYTHON_BUNDLE_COMPILE = 'python -m compileall -q -j 0 --invalidation-mode unchecked-hash /asset-output';
 
