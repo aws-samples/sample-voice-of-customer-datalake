@@ -18,6 +18,12 @@ vi.mock('./boardContext', async (importOriginal) => {
   const original = await importOriginal<typeof import('./boardContext')>()
   return { ...original, get APP_BOARD_HOST() { return { api: app.api, basePath: '/feature-requests', session: 'app' } } }
 })
+// The Insights tab itself is InsightsTab.test's: here only what the page hands it.
+vi.mock('./InsightsTab', () => ({
+  default: ({ boards, isAdmin }: { boards: readonly unknown[]; isAdmin: boolean }) => (
+    <p data-testid="insights-stub">{`${boards.length} boards, admin ${String(isAdmin)}`}</p>
+  ),
+}))
 import Page from './FeatureRequests'
 
 const SALES = fixtureBoard('sales', { board_id: 'brd_sales', slug: 'sales-feature-requests', name: 'Sales feature requests', request_count: 3 })
@@ -190,5 +196,28 @@ describe('a pre-boards request link', () => {
     })
     expect(await screen.findByRole('alert')).toHaveTextContent('This request no longer exists.')
     await waitFor(() => expect(screen.getByRole('link', { name: 'Back to the boards' })).toHaveAttribute('href', '/feature-requests'))
+  })
+})
+
+describe('the page tabs', () => {
+  it('opens on Boards', async () => {
+    renderPage(ADMIN)
+    expect(await screen.findByRole('tab', { name: 'Boards' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByTestId('insights-stub')).not.toBeInTheDocument()
+  })
+
+  it('deep-links Insights with the boards and the admin flag', async () => {
+    renderPage(ADMIN, '/feature-requests?tab=insights')
+    expect(await screen.findByRole('tab', { name: 'Insights' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('3 boards, admin true')).toBeInTheDocument()
+  })
+
+  it('switches tabs in the URL, and leaving Insights drops its view', async () => {
+    const user = userEvent.setup()
+    renderPage(ADMIN, '/feature-requests?tab=insights&board=brd_sales&days=30')
+    await user.click(await screen.findByRole('tab', { name: 'Boards' }))
+    expect(screen.getByTestId('search')).toHaveTextContent(/^$/)
+    await user.click(screen.getByRole('tab', { name: 'Insights' }))
+    expect(screen.getByTestId('search')).toHaveTextContent('?tab=insights')
   })
 })
