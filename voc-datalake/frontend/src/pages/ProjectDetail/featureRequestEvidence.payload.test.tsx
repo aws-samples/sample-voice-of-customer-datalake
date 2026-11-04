@@ -4,11 +4,9 @@
  * documents: `data_sources.feature_requests` + top-level ids), and an unticked wizard sends the
  * same body as before.
  */
-import type { ReactNode } from 'react'
 import { act, renderHook } from '@testing-library/react'
-import { QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createTestQueryClient } from '../../test/query-client'
+import { createWizardWrapper } from './wizard-fixtures'
 import { useProjectMutations } from './useProjectData'
 import { useProjectWizardState } from './useProjectWizardState'
 import type { ContextConfig } from '../../components/DataSourceWizard/types'
@@ -20,21 +18,17 @@ const api = vi.hoisted(() => ({
 }))
 vi.mock('../../api/projectsApi', () => ({ projectsApi: api }))
 
-function wrapper({ children }: { readonly children: ReactNode }) {
-  return <QueryClientProvider client={createTestQueryClient()}>{children}</QueryClientProvider>
-}
-
-function useWizardWithMutations() {
+/** The project wizard state and its mutations, as the page wires them. */
+function useWiredWizard() {
   const wizard = useProjectWizardState()
-  const mutations = useProjectMutations({ id: 'proj_1', ...wizard, onSuccess: () => {}, onError: () => {} })
-  return { wizard, mutations }
+  return { wizard, mutations: useProjectMutations({ id: 'proj_1', ...wizard, onSuccess: () => {}, onError: () => {} }) }
 }
 
 type Mutation = 'personaMut' | 'resMut' | 'docMut'
 
 /** The body `mutation` sends with the context `change` applied. */
 async function bodyOf(mutation: Mutation, change: Partial<ContextConfig>): Promise<Record<string, unknown>> {
-  const { result } = renderHook(useWizardWithMutations, { wrapper })
+  const { result } = renderHook(useWiredWizard, { wrapper: createWizardWrapper() })
   act(() => {
     result.current.wizard.setContextConfig((config) => ({ ...config, ...change }))
     result.current.wizard.setResearchConfig((config) => ({ ...config, question: 'Why?' }))

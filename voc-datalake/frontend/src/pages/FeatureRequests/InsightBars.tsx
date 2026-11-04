@@ -21,6 +21,14 @@ export interface InsightBarRow {
   readonly value: number
 }
 
+/** The names axis: every row labelled, cut with an ellipsis (full name as tooltip) at `width`. */
+function categoryAxisProps(width: number) {
+  return {
+    dataKey: 'name', type: 'category', interval: 0, width,
+    tick: <CategoryAxisTick axisWidth={width} />, axisLine: AXIS_LINE, tickLine: AXIS_LINE,
+  } as const
+}
+
 export default function InsightBars({ title, rows, fill, testId }: Readonly<{
   title: string; rows: readonly InsightBarRow[]; fill: string; testId: string
 }>) {
@@ -37,8 +45,7 @@ export default function InsightBars({ title, rows, fill, testId }: Readonly<{
               <BarChart data={[...rows]} layout="vertical" margin={{ left: 0, right: 16 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
                 <XAxis type="number" allowDecimals={false} tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={AXIS_LINE} tickFormatter={tick} />
-                <YAxis dataKey="name" type="category" interval={0} tick={<CategoryAxisTick axisWidth={axisWidth} />}
-                  axisLine={AXIS_LINE} tickLine={AXIS_LINE} width={axisWidth} />
+                <YAxis {...categoryAxisProps(axisWidth)} />
                 <Tooltip {...TOOLTIP_PROPS} cursor={BAR_CURSOR} formatter={tooltipFormatter(i18n.language)} />
                 <Bar dataKey="value" name={t('insights.requests')} fill={fill} radius={[0, 4, 4, 0]} />
               </BarChart>
