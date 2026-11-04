@@ -310,5 +310,49 @@
     "notFound": "Ta tablica nie istnieje lub nie została Ci udostępniona.",
     "backToBoards": "Wróć do tablic",
     "standaloneIntro": "Tablice, z których możesz korzystać. Otwórz jedną, aby dodać zgłoszenie lub dać +1."
+  },
+  "tabs": {
+    "boards": "Tablice",
+    "insights": "Analiza"
+  },
+  "insights": {
+    "label": "Analiza tablic",
+    "intro": "Co mówią zgłoszenia z tablic, oddzielnie od wskaźników opinii.",
+    "board": "Tablica",
+    "allBoards": "Wszystkie tablice",
+    "window": "Utworzone w",
+    "lastDays_one": "Ostatni dzień",
+    "lastDays_few": "Ostatnie {{count, number}} dni",
+    "lastDays_many": "Ostatnie {{count, number}} dni",
+    "lastDays_other": "Ostatnie {{count, number}} dnia",
+    "allTime": "Cały okres",
+    "enrich": "Wzbogać zgłoszenia",
+    "enrichQueued_one": "{{count, number}} zgłoszenie w kolejce, {{remaining, number}} do wzbogacenia.",
+    "enrichQueued_few": "{{count, number}} zgłoszenia w kolejce, {{remaining, number}} do wzbogacenia.",
+    "enrichQueued_many": "{{count, number}} zgłoszeń w kolejce, {{remaining, number}} do wzbogacenia.",
+    "enrichQueued_other": "{{count, number}} zgłoszenia w kolejce, {{remaining, number}} do wzbogacenia.",
+    "enrichFailed": "Nie udało się rozpocząć wzbogacania. Spróbuj ponownie.",
+    "loadFailed": "Nie udało się wczytać analizy tablic.",
+    "empty": "Brak zgłoszeń w tym okresie.",
+    "noData": "Na razie nie ma nic do pokazania.",
+    "totalRequests": "Zgłoszenia",
+    "totalSupporters": "Popierający",
+    "totalEnriched": "Wzbogacone",
+    "top": "Najczęściej popierane zgłoszenia",
+    "byCategory": "Zgłoszenia według kategorii",
+    "byStatus": "Zgłoszenia według statusu",
+    "bySentiment": "Zgłoszenia według wydźwięku",
+    "uncategorized": "Bez kategorii",
+    "notEnriched": "Jeszcze niewzbogacone",
+    "requests": "Zgłoszenia",
+    "rowText_one": "{{name}}: {{value}} zgłoszenie",
+    "rowText_few": "{{name}}: {{value}} zgłoszenia",
+    "rowText_many": "{{name}}: {{value}} zgłoszeń",
+    "rowText_other": "{{name}}: {{value}} zgłoszenia"
+  },
+  "enrichment": {
+    "label": "Wzbogacenie:",
+    "category": "Kategoria",
+    "summary": "W jednym zdaniu:"
   }
 }

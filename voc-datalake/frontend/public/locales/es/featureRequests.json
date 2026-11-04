@@ -303,5 +303,43 @@
     "notFound": "Este tablero no existe o no se ha compartido contigo.",
     "backToBoards": "Volver a los tableros",
     "standaloneIntro": "Los tableros que puedes usar. Abre uno para añadir una solicitud o dar +1."
+  },
+  "tabs": {
+    "boards": "Tableros",
+    "insights": "Análisis"
+  },
+  "insights": {
+    "label": "Análisis de los tableros",
+    "intro": "Lo que dicen las solicitudes de los tableros, separado de las métricas de reseñas.",
+    "board": "Tablero",
+    "allBoards": "Todos los tableros",
+    "window": "Creadas en",
+    "lastDays_one": "El último día",
+    "lastDays_other": "Los últimos {{count, number}} días",
+    "allTime": "Todo el tiempo",
+    "enrich": "Enriquecer solicitudes",
+    "enrichQueued_one": "{{count, number}} solicitud en cola, {{remaining, number}} pendientes de enriquecer.",
+    "enrichQueued_other": "{{count, number}} solicitudes en cola, {{remaining, number}} pendientes de enriquecer.",
+    "enrichFailed": "No se pudo iniciar el enriquecimiento. Inténtalo de nuevo.",
+    "loadFailed": "No se pudo cargar el análisis de los tableros.",
+    "empty": "No hay solicitudes en este periodo.",
+    "noData": "Todavía no hay nada que mostrar.",
+    "totalRequests": "Solicitudes",
+    "totalSupporters": "Apoyos",
+    "totalEnriched": "Enriquecidas",
+    "top": "Solicitudes con más apoyos",
+    "byCategory": "Solicitudes por categoría",
+    "byStatus": "Solicitudes por estado",
+    "bySentiment": "Solicitudes por sentimiento",
+    "uncategorized": "Sin categoría",
+    "notEnriched": "Sin enriquecer todavía",
+    "requests": "Solicitudes",
+    "rowText_one": "{{name}}: {{value}} solicitud",
+    "rowText_other": "{{name}}: {{value}} solicitudes"
+  },
+  "enrichment": {
+    "label": "Enriquecimiento:",
+    "category": "Categoría",
+    "summary": "En una frase:"
   }
 }

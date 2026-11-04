@@ -6,9 +6,21 @@
     "filterAll": "すべて",
     "filterPersona": "ペルソナ",
     "everyPersona": "すべてのペルソナ",
-    "authorKind": { "user": "チーム", "persona": "ペルソナ", "reviewer": "レビュアー" },
-    "authorKinds": { "user": "チームメンバー", "persona": "ペルソナ", "reviewer": "外部レビュアー" },
-    "stance": { "positive": "肯定的", "mixed": "賛否あり", "negative": "否定的" },
+    "authorKind": {
+      "user": "チーム",
+      "persona": "ペルソナ",
+      "reviewer": "レビュアー"
+    },
+    "authorKinds": {
+      "user": "チームメンバー",
+      "persona": "ペルソナ",
+      "reviewer": "外部レビュアー"
+    },
+    "stance": {
+      "positive": "肯定的",
+      "mixed": "賛否あり",
+      "negative": "否定的"
+    },
     "showResolved": "解決済みを表示",
     "commentWhole": "ドキュメント全体にコメント",
     "onWholeDocument": "ドキュメント全体について",
@@ -43,7 +55,10 @@
     "title": "レビュー用に共有",
     "intro": "リンクを受け取った人は、メールで届くコードでサインインし、最新バージョンを読んでコメントできます。自分のコメントだけが表示され、ドキュメントは編集できません。",
     "whoMayOpen": "開ける人",
-    "mode": { "anyone": "リンクを知っている全員", "list": "指定したドメインまたはアドレスのみ" },
+    "mode": {
+      "anyone": "リンクを知っている全員",
+      "list": "指定したドメインまたはアドレスのみ"
+    },
     "modeHint": {
       "anyone": "送信されたコードでメールアドレスを確認した人なら誰でも。",
       "list": "例: example.com や name@example.com"
@@ -246,7 +261,19 @@
       "usesAll": "ペルソナ生成では、すべてを読み込みます。",
       "confirming": "正確な件数を確認しています…",
       "noMatches": "これらのフィルターに一致するレビューはありません。条件を広げないと、実行時に読み込むデータがありません。",
-      "error": "一致するレビューを数えられませんでした。"
+      "error": "一致するレビューを数えられませんでした。",
+      "featureRequests_one": "ボードの機能リクエストも{{count, number}}件あります。",
+      "featureRequests_other": "ボードの機能リクエストも{{count, number}}件あります。"
+    },
+    "featureRequests": {
+      "title": "機能リクエスト",
+      "description": "フィードバックボードのリクエストを、レビューとは別の根拠として読み込みます。",
+      "boards": "読み込むボード",
+      "boardsHint": "ボードを選んで絞り込みます。選ばない場合はすべてのボードを読み込みます。",
+      "allBoards": "すべてのボード",
+      "loadingBoards": "ボードを読み込み中…",
+      "boardsFailed": "ボードを読み込めませんでした。すべてのボードを読み込みます。",
+      "noBoards": "読み込めるボードはまだありません。"
     }
   },
   "documentExport": {

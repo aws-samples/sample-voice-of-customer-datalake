@@ -632,6 +632,13 @@
     "viewLabel": "Qué reseñas",
     "viewCited": "Citadas ({{n, number}})",
     "viewUsed": "Todas las usadas ({{n, number}})",
-    "citedNote": "Las reseñas que nombran las evidencias de la persona. Una cita que no nombra ninguna reseña leída se conserva solo como texto."
+    "citedNote": "Las reseñas que nombran las evidencias de la persona. Una cita que no nombra ninguna reseña leída se conserva solo como texto.",
+    "featureRequests_one": "y {{count, number}} solicitud de funciones",
+    "featureRequests_other": "y {{count, number}} solicitudes de funciones",
+    "featureRequestsOnly_one": "Redactado a partir de {{count, number}} solicitud de funciones",
+    "featureRequestsOnly_other": "Redactado a partir de {{count, number}} solicitudes de funciones",
+    "showFeatureRequests": "Ver solicitudes",
+    "hideFeatureRequests": "Ocultar solicitudes",
+    "featureRequestLink": "Solicitud {{id}}"
   }
 }

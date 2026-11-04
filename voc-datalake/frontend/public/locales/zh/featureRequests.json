@@ -296,5 +296,43 @@
     "notFound": "此看板不存在，或未与你共享。",
     "backToBoards": "返回看板列表",
     "standaloneIntro": "你可以使用的看板。打开一个来添加需求或 +1。"
+  },
+  "tabs": {
+    "boards": "看板",
+    "insights": "洞察"
+  },
+  "insights": {
+    "label": "看板洞察",
+    "intro": "看板需求反映的内容，与评论指标分开显示。",
+    "board": "看板",
+    "allBoards": "所有看板",
+    "window": "创建时间",
+    "lastDays_one": "最近 {{count, number}} 天",
+    "lastDays_other": "最近 {{count, number}} 天",
+    "allTime": "全部时间",
+    "enrich": "补充需求信息",
+    "enrichQueued_one": "已将 {{count, number}} 条需求加入队列，还剩 {{remaining, number}} 条待补充。",
+    "enrichQueued_other": "已将 {{count, number}} 条需求加入队列，还剩 {{remaining, number}} 条待补充。",
+    "enrichFailed": "无法开始补充，请重试。",
+    "loadFailed": "无法加载看板洞察。",
+    "empty": "此时间段内没有需求。",
+    "noData": "暂无可显示的内容。",
+    "totalRequests": "需求",
+    "totalSupporters": "支持者",
+    "totalEnriched": "已补充",
+    "top": "支持最多的需求",
+    "byCategory": "按类别统计的需求",
+    "byStatus": "按状态统计的需求",
+    "bySentiment": "按情绪统计的需求",
+    "uncategorized": "未分类",
+    "notEnriched": "尚未补充",
+    "requests": "需求",
+    "rowText_one": "{{name}}：{{value}} 条需求",
+    "rowText_other": "{{name}}：{{value}} 条需求"
+  },
+  "enrichment": {
+    "label": "补充信息：",
+    "category": "类别",
+    "summary": "一句话概括："
   }
 }

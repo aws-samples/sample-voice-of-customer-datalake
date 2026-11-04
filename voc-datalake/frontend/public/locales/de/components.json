@@ -6,9 +6,21 @@
     "filterAll": "Allen",
     "filterPersona": "Persona",
     "everyPersona": "Allen Personas",
-    "authorKind": { "user": "Team", "persona": "Persona", "reviewer": "Prüfer" },
-    "authorKinds": { "user": "Teammitglieder", "persona": "Personas", "reviewer": "Externe Prüfer" },
-    "stance": { "positive": "Positiv", "mixed": "Gemischt", "negative": "Negativ" },
+    "authorKind": {
+      "user": "Team",
+      "persona": "Persona",
+      "reviewer": "Prüfer"
+    },
+    "authorKinds": {
+      "user": "Teammitglieder",
+      "persona": "Personas",
+      "reviewer": "Externe Prüfer"
+    },
+    "stance": {
+      "positive": "Positiv",
+      "mixed": "Gemischt",
+      "negative": "Negativ"
+    },
     "showResolved": "Erledigte anzeigen",
     "commentWhole": "Das ganze Dokument kommentieren",
     "onWholeDocument": "Zum ganzen Dokument",
@@ -43,7 +55,10 @@
     "title": "Zur Prüfung teilen",
     "intro": "Personen mit dem Link melden sich mit einem per E-Mail gesendeten Code an, lesen die neueste Version und hinterlassen Kommentare. Sie sehen nur ihre eigenen Kommentare und können das Dokument nicht bearbeiten.",
     "whoMayOpen": "Wer ihn öffnen darf",
-    "mode": { "anyone": "Alle mit dem Link", "list": "Nur diese Domains oder Adressen" },
+    "mode": {
+      "anyone": "Alle mit dem Link",
+      "list": "Nur diese Domains oder Adressen"
+    },
     "modeHint": {
       "anyone": "Alle, die ihre E-Mail-Adresse mit dem gesendeten Code bestätigen.",
       "list": "Zum Beispiel example.com oder name@example.com."
@@ -246,7 +261,19 @@
       "usesAll": "Die Persona-Generierung liest alle davon.",
       "confirming": "Genaue Anzahl wird bestätigt…",
       "noMatches": "Keine Bewertungen passen zu diesen Filtern. Erweitern Sie sie, sonst hat der Lauf nichts zu lesen.",
-      "error": "Die passenden Bewertungen konnten nicht gezählt werden."
+      "error": "Die passenden Bewertungen konnten nicht gezählt werden.",
+      "featureRequests_one": "Außerdem {{count, number}} Feature-Wunsch von den Boards.",
+      "featureRequests_other": "Außerdem {{count, number}} Feature-Wünsche von den Boards."
+    },
+    "featureRequests": {
+      "title": "Feature-Wünsche",
+      "description": "Wünsche von den Feedback-Boards, als eigene Belege neben den Bewertungen gelesen.",
+      "boards": "Zu lesende Boards",
+      "boardsHint": "Wählen Sie Boards zum Eingrenzen aus, oder keines, um alle Boards zu lesen.",
+      "allBoards": "Alle Boards",
+      "loadingBoards": "Boards werden geladen…",
+      "boardsFailed": "Die Boards konnten nicht geladen werden. Alle Boards werden gelesen.",
+      "noBoards": "Es gibt noch keine Boards zum Lesen."
     }
   },
   "documentExport": {

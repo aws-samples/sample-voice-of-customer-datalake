@@ -6,9 +6,21 @@
     "filterAll": "Todos",
     "filterPersona": "Persona",
     "everyPersona": "Todas as personas",
-    "authorKind": { "user": "Equipe", "persona": "Persona", "reviewer": "Revisor" },
-    "authorKinds": { "user": "Membros da equipe", "persona": "Personas", "reviewer": "Revisores externos" },
-    "stance": { "positive": "Positiva", "mixed": "Mista", "negative": "Negativa" },
+    "authorKind": {
+      "user": "Equipe",
+      "persona": "Persona",
+      "reviewer": "Revisor"
+    },
+    "authorKinds": {
+      "user": "Membros da equipe",
+      "persona": "Personas",
+      "reviewer": "Revisores externos"
+    },
+    "stance": {
+      "positive": "Positiva",
+      "mixed": "Mista",
+      "negative": "Negativa"
+    },
     "showResolved": "Mostrar resolvidos",
     "commentWhole": "Comentar o documento inteiro",
     "onWholeDocument": "Sobre o documento inteiro",
@@ -43,7 +55,10 @@
     "title": "Compartilhar para revisão",
     "intro": "Quem tiver o link entra com um código enviado ao seu e-mail, lê a versão mais recente e deixa comentários. Vê apenas os próprios comentários e não pode editar o documento.",
     "whoMayOpen": "Quem pode abrir",
-    "mode": { "anyone": "Qualquer pessoa com o link", "list": "Somente estes domínios ou endereços" },
+    "mode": {
+      "anyone": "Qualquer pessoa com o link",
+      "list": "Somente estes domínios ou endereços"
+    },
     "modeHint": {
       "anyone": "Qualquer pessoa que confirme o e-mail com o código enviado.",
       "list": "Por exemplo example.com ou nome@example.com."
@@ -253,7 +268,19 @@
       "usesAll": "A geração de personas lê todas elas.",
       "confirming": "Confirmando a contagem exata…",
       "noMatches": "Nenhuma avaliação corresponde a estes filtros. Amplie-os, ou a execução não terá nada para ler.",
-      "error": "Não foi possível contar as avaliações correspondentes."
+      "error": "Não foi possível contar as avaliações correspondentes.",
+      "featureRequests_one": "Também {{count, number}} pedido de funcionalidade dos quadros.",
+      "featureRequests_other": "Também {{count, number}} pedidos de funcionalidades dos quadros."
+    },
+    "featureRequests": {
+      "title": "Pedidos de funcionalidades",
+      "description": "Pedidos dos quadros de feedback, lidos como evidência própria ao lado das avaliações.",
+      "boards": "Quadros a ler",
+      "boardsHint": "Escolha quadros para restringir, ou nenhum para ler todos.",
+      "allBoards": "Todos os quadros",
+      "loadingBoards": "Carregando os quadros…",
+      "boardsFailed": "Não foi possível carregar os quadros. Todos os quadros serão lidos.",
+      "noBoards": "Ainda não há quadros para ler."
     }
   },
   "documentExport": {

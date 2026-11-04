@@ -632,6 +632,13 @@
     "viewLabel": "Quels avis",
     "viewCited": "Cités ({{n, number}})",
     "viewUsed": "Tous les avis utilisés ({{n, number}})",
-    "citedNote": "Les avis que nomment les éléments probants de la persona. Une citation qui ne nomme aucun avis lu est conservée sous forme de texte uniquement."
+    "citedNote": "Les avis que nomment les éléments probants de la persona. Une citation qui ne nomme aucun avis lu est conservée sous forme de texte uniquement.",
+    "featureRequests_one": "et {{count, number}} demande de fonctionnalité",
+    "featureRequests_other": "et {{count, number}} demandes de fonctionnalités",
+    "featureRequestsOnly_one": "Rédigé à partir de {{count, number}} demande de fonctionnalité",
+    "featureRequestsOnly_other": "Rédigé à partir de {{count, number}} demandes de fonctionnalités",
+    "showFeatureRequests": "Voir les demandes",
+    "hideFeatureRequests": "Masquer les demandes",
+    "featureRequestLink": "Demande {{id}}"
   }
 }

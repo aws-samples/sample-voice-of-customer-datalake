@@ -296,5 +296,43 @@
     "notFound": "このボードは存在しないか、あなたと共有されていません。",
     "backToBoards": "ボード一覧に戻る",
     "standaloneIntro": "利用できるボードです。開いてリクエストを追加するか +1 してください。"
+  },
+  "tabs": {
+    "boards": "ボード",
+    "insights": "インサイト"
+  },
+  "insights": {
+    "label": "ボードのインサイト",
+    "intro": "ボードのリクエストが示す内容です。レビューの指標とは分けて表示します。",
+    "board": "ボード",
+    "allBoards": "すべてのボード",
+    "window": "作成期間",
+    "lastDays_one": "過去{{count, number}}日",
+    "lastDays_other": "過去{{count, number}}日",
+    "allTime": "すべての期間",
+    "enrich": "リクエストを補強",
+    "enrichQueued_one": "{{count, number}}件をキューに追加しました。残り{{remaining, number}}件です。",
+    "enrichQueued_other": "{{count, number}}件をキューに追加しました。残り{{remaining, number}}件です。",
+    "enrichFailed": "補強を開始できませんでした。もう一度お試しください。",
+    "loadFailed": "ボードのインサイトを読み込めませんでした。",
+    "empty": "この期間のリクエストはありません。",
+    "noData": "まだ表示するものがありません。",
+    "totalRequests": "リクエスト",
+    "totalSupporters": "支持者",
+    "totalEnriched": "補強済み",
+    "top": "支持の多いリクエスト",
+    "byCategory": "カテゴリ別リクエスト",
+    "byStatus": "ステータス別リクエスト",
+    "bySentiment": "感情別リクエスト",
+    "uncategorized": "未分類",
+    "notEnriched": "未補強",
+    "requests": "リクエスト",
+    "rowText_one": "{{name}}: {{value}}件",
+    "rowText_other": "{{name}}: {{value}}件"
+  },
+  "enrichment": {
+    "label": "補強:",
+    "category": "カテゴリ",
+    "summary": "一文で:"
   }
 }

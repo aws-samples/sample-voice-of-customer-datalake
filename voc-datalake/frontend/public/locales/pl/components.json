@@ -8,9 +8,21 @@
     "filterAll": "Wszystkich",
     "filterPersona": "Persona",
     "everyPersona": "Wszystkich person",
-    "authorKind": { "user": "Zespół", "persona": "Persona", "reviewer": "Recenzent" },
-    "authorKinds": { "user": "Członkowie zespołu", "persona": "Persony", "reviewer": "Recenzenci zewnętrzni" },
-    "stance": { "positive": "Pozytywna", "mixed": "Mieszana", "negative": "Negatywna" },
+    "authorKind": {
+      "user": "Zespół",
+      "persona": "Persona",
+      "reviewer": "Recenzent"
+    },
+    "authorKinds": {
+      "user": "Członkowie zespołu",
+      "persona": "Persony",
+      "reviewer": "Recenzenci zewnętrzni"
+    },
+    "stance": {
+      "positive": "Pozytywna",
+      "mixed": "Mieszana",
+      "negative": "Negatywna"
+    },
     "showResolved": "Pokaż rozwiązane",
     "commentWhole": "Skomentuj cały dokument",
     "onWholeDocument": "Do całego dokumentu",
@@ -47,7 +59,10 @@
     "title": "Udostępnij do recenzji",
     "intro": "Osoby z linkiem logują się kodem wysłanym na ich e-mail, czytają najnowszą wersję i zostawiają komentarze. Widzą tylko swoje komentarze i nie mogą edytować dokumentu.",
     "whoMayOpen": "Kto może go otworzyć",
-    "mode": { "anyone": "Każdy, kto ma link", "list": "Tylko te domeny lub adresy" },
+    "mode": {
+      "anyone": "Każdy, kto ma link",
+      "list": "Tylko te domeny lub adresy"
+    },
     "modeHint": {
       "anyone": "Każdy, kto potwierdzi swój adres e-mail wysłanym kodem.",
       "list": "Na przykład example.com lub imie@example.com."
@@ -278,7 +293,21 @@
       "usesAll": "Generowanie person czyta je wszystkie.",
       "confirming": "Potwierdzanie dokładnej liczby…",
       "noMatches": "Żadna opinia nie pasuje do tych filtrów. Rozszerz je, inaczej uruchomienie nie będzie miało czego czytać.",
-      "error": "Nie udało się policzyć pasujących opinii."
+      "error": "Nie udało się policzyć pasujących opinii.",
+      "featureRequests_one": "Do tego {{count, number}} prośba o funkcję z tablic.",
+      "featureRequests_few": "Do tego {{count, number}} prośby o funkcje z tablic.",
+      "featureRequests_many": "Do tego {{count, number}} próśb o funkcje z tablic.",
+      "featureRequests_other": "Do tego {{count, number}} prośby o funkcje z tablic."
+    },
+    "featureRequests": {
+      "title": "Prośby o funkcje",
+      "description": "Zgłoszenia z tablic opinii, czytane jako osobne źródło obok opinii.",
+      "boards": "Tablice do odczytu",
+      "boardsHint": "Wybierz tablice, aby zawęzić, albo żadnej, aby czytać wszystkie.",
+      "allBoards": "Wszystkie tablice",
+      "loadingBoards": "Wczytywanie tablic…",
+      "boardsFailed": "Nie udało się wczytać tablic. Zostaną odczytane wszystkie tablice.",
+      "noBoards": "Nie ma jeszcze tablic do odczytu."
     }
   },
   "documentExport": {

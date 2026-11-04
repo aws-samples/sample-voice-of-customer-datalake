@@ -6,9 +6,21 @@
     "filterAll": "所有人",
     "filterPersona": "用户画像",
     "everyPersona": "所有用户画像",
-    "authorKind": { "user": "团队", "persona": "用户画像", "reviewer": "审阅者" },
-    "authorKinds": { "user": "团队成员", "persona": "用户画像", "reviewer": "外部审阅者" },
-    "stance": { "positive": "正面", "mixed": "褒贬不一", "negative": "负面" },
+    "authorKind": {
+      "user": "团队",
+      "persona": "用户画像",
+      "reviewer": "审阅者"
+    },
+    "authorKinds": {
+      "user": "团队成员",
+      "persona": "用户画像",
+      "reviewer": "外部审阅者"
+    },
+    "stance": {
+      "positive": "正面",
+      "mixed": "褒贬不一",
+      "negative": "负面"
+    },
     "showResolved": "显示已解决",
     "commentWhole": "评论整篇文档",
     "onWholeDocument": "针对整篇文档",
@@ -43,7 +55,10 @@
     "title": "分享以供审阅",
     "intro": "持有链接的人使用发送到其邮箱的验证码登录，阅读最新版本并留下评论。他们只能看到自己的评论，且无法编辑文档。",
     "whoMayOpen": "谁可以打开",
-    "mode": { "anyone": "任何持有链接的人", "list": "仅限这些域名或地址" },
+    "mode": {
+      "anyone": "任何持有链接的人",
+      "list": "仅限这些域名或地址"
+    },
     "modeHint": {
       "anyone": "任何用发送的验证码确认了邮箱地址的人。",
       "list": "例如 example.com 或 name@example.com。"
@@ -246,7 +261,19 @@
       "usesAll": "角色生成将读取全部评论。",
       "confirming": "正在确认准确数量…",
       "noMatches": "没有评论匹配这些筛选条件。请放宽条件，否则运行时将没有可读取的内容。",
-      "error": "无法统计匹配的评论。"
+      "error": "无法统计匹配的评论。",
+      "featureRequests_one": "另有来自看板的 {{count, number}} 条功能需求。",
+      "featureRequests_other": "另有来自看板的 {{count, number}} 条功能需求。"
+    },
+    "featureRequests": {
+      "title": "功能需求",
+      "description": "来自反馈看板的需求，作为与评论并列的独立依据读取。",
+      "boards": "要读取的看板",
+      "boardsHint": "选择看板以缩小范围，不选则读取所有看板。",
+      "allBoards": "所有看板",
+      "loadingBoards": "正在加载看板…",
+      "boardsFailed": "无法加载看板，将读取所有看板。",
+      "noBoards": "还没有可读取的看板。"
     }
   },
   "documentExport": {
