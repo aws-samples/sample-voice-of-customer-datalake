@@ -190,6 +190,8 @@ MODULE_FLOORS: dict[str, int] = {
     # follow-up reads, the prompts/resources catalogue, and the endpoint's alarms.
     'test_mcp_global_tools_reach': 16,
     'test_mcp_global_follow_ups': 6,
+    # 6.01.00: search_feature_requests (the feedback boards' search) and its board-route claims.
+    'test_mcp_global_board_tools': 28,
     'test_mcp_global_prompts': 35,
     'test_mcp_global_alarms': 14,
     'test_mcp_tokens_handler_mutation': 93,
