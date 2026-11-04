@@ -22,6 +22,7 @@ import type {
   ProjectJob,
 } from '../../api/projectTypes'
 import type { ContextConfig } from '../../components/DataSourceWizard/types'
+import { documentBoardIds, featureRequestEvidenceFields } from '../../components/DataSourceWizard/featureRequestEvidence'
 
 /**
  * Query key for a project's product context.
@@ -281,6 +282,7 @@ export function useProjectMutations({
       days: contextConfig.days,
       response_language: i18n.language,
       keep_existing_personas: personaConfig.mode === 'add',
+      ...featureRequestEvidenceFields(contextConfig),
     }),
     ...jobRequestCallbacks,
   })
@@ -298,6 +300,8 @@ export function useProjectMutations({
           personas: contextConfig.usePersonas,
           documents: contextConfig.useDocuments,
           research: contextConfig.useResearch,
+          // Only when ticked: the API's default is off, and an older body stays byte-identical.
+          ...(contextConfig.useFeatureRequests ? { feature_requests: true } : {}),
         },
         selected_persona_ids: contextConfig.selectedPersonaIds,
         selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
@@ -306,6 +310,7 @@ export function useProjectMutations({
         days: contextConfig.days,
         customer_questions: docConfig.customerQuestions.filter((q) => q.trim() !== ''),
         response_language: i18n.language,
+        ...documentBoardIds(contextConfig),
       }
       return Promise.all(types.map((docType) => projectsApi.generateDocument(projectId, {
         doc_type: docType, ...base, title: generatedDocTitle(base.title, docType, types.length, documents),
@@ -326,6 +331,7 @@ export function useProjectMutations({
       selected_document_ids: [...contextConfig.selectedDocumentIds, ...contextConfig.selectedResearchIds],
       response_language: i18n.language,
       use_web_search: researchConfig.useWebSearch,
+      ...featureRequestEvidenceFields(contextConfig),
     }),
     ...jobRequestCallbacks,
   })

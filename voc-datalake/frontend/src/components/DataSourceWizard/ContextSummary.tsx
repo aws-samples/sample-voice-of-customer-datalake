@@ -8,6 +8,7 @@ import type { ProjectPersona } from '../../api/projectTypes'
 import type { ContextConfig } from './types'
 import { useSentimentLabels, toSentimentLabels } from './sentimentLabels'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
+import { useEvidenceBoards } from './featureRequestEvidence'
 
 interface ContextSummaryProps {
   readonly config: ContextConfig
@@ -54,6 +55,20 @@ function FeedbackSection({ config }: Readonly<{ config: ContextConfig }>) {
   )
 }
 
+/** "Feature requests: All boards" or the picked boards' names (the ids while the listing loads). */
+function FeatureRequestsLine({ config }: Readonly<{ config: ContextConfig }>) {
+  const { t } = useTranslation('components')
+  const { boards } = useEvidenceBoards(config.useFeatureRequests)
+  if (!config.useFeatureRequests) return null
+  const sep = t('components:dataSourceWizard.labelSeparator')
+  const names = config.featureRequestBoardIds.map((id) => boards.find((board) => board.board_id === id)?.name ?? id)
+  return (
+    <p data-testid="summary-feature-requests"><span className="text-muted">{withSeparator(t('components:dataSourceWizard.featureRequests.title'), sep)}</span> {
+      formatListOrFallback(names, t('components:dataSourceWizard.featureRequests.allBoards'))
+    }</p>
+  )
+}
+
 export default function ContextSummary({ config, personas, documents }: ContextSummaryProps) {
   const { t } = useTranslation('components')
   const sep = t('components:dataSourceWizard.labelSeparator')
@@ -64,6 +79,7 @@ export default function ContextSummary({ config, personas, documents }: ContextS
   const selectedResearch = researchDocs.filter(d => config.selectedResearchIds.includes(d.document_id))
 
   const hasNoSources = !config.useFeedback && !config.usePersonas && !config.useDocuments && !config.useResearch
+    && !config.useFeatureRequests
 
   return (
     <div className="bg-bg-accent rounded-lg p-4 space-y-2 text-sm">
@@ -98,6 +114,8 @@ export default function ContextSummary({ config, personas, documents }: ContextS
         }</p>
       )}
       
+      <FeatureRequestsLine config={config} />
+
       {hasNoSources && (
         <p className="text-muted italic">{t('components:dataSourceWizard.noDataSourcesSelected')}</p>
       )}

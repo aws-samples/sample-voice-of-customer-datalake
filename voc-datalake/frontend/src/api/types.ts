@@ -361,7 +361,9 @@ export interface GenerateDocumentBody {
     feedback: boolean;
     personas: boolean;
     documents: boolean;
-    research: boolean
+    research: boolean;
+    /** Feedback-board requests as their own evidence (C5); absent = off. */
+    feature_requests?: boolean
   }
   selected_persona_ids: string[]
   selected_document_ids: string[]
@@ -370,6 +372,8 @@ export interface GenerateDocumentBody {
   days: number
   customer_questions?: string[]
   response_language?: string
+  /** The boards to read requests from (≤ 20) when `data_sources.feature_requests`; absent = every board. */
+  feature_request_board_ids?: string[]
 }
 
 // 🔑 The pin on `GenerateDocumentBody.doc_type`. What it guarantees, stated as the
