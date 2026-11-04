@@ -1,6 +1,6 @@
 # Kiro design system
 
-The VoC frontend uses the design system of [KiroCrew](https://github.com/kirodotdev/kirocrew) (Apache-2.0): its **Kiro** colour theme in dark and light, Space Grotesk + JetBrains Mono, lucide icons, the Kiro ghost mark, and KiroCrew's component recipes and motion.
+The VoC frontend uses the design system of [KiroCrew](https://github.com/kirodotdev/kirocrew) (Apache-2.0): its **Kiro** colour theme in dark and light (plus Nord, Dracula, High contrast and Quick, see [Themes](#themes)), Space Grotesk + JetBrains Mono, lucide icons, the Kiro ghost mark, and KiroCrew's component recipes and motion.
 
 This file is the contract for VoC UI code. When something isn't covered here, look it up in KiroCrew (see [Upstream references](#upstream-references)) and port it the same way.
 
@@ -27,7 +27,9 @@ Ported from KiroCrew `main` at `5bb27bd` (2026-10-04). Colour tokens, status ton
 
 | Path (in `voc-datalake/frontend/`) | Role |
 |---|---|
-| `src/index.css` | All tokens, the Tailwind bridge (`@theme inline`), base styles and every component recipe |
+| `src/index.css` | The Kiro tokens, the Tailwind bridge (`@theme inline`), base styles and every component recipe |
+| `src/styles/theme-palettes.css` | The Nord, Dracula, High contrast and Quick palettes, and Quick's component look ([Themes](#themes)) |
+| `src/theme/themeCatalog.ts` | The colour theme ids and the `data-theme` value they key on |
 | `public/theme-init.js` | Applies the saved theme to `<html>` before first paint |
 | `src/theme/themeStore.ts` | Theme preference (system / light / dark), persisted as `voc-theme` |
 | `src/theme/useThemeSync.ts` | Keeps `<html>` attributes in step with the store and the OS |
@@ -62,17 +64,68 @@ These are KiroCrew's UI rules (`website/AGENTS.md`, `website/AUTOSDE.yaml`, `web
 
 ## Themes
 
+The app ships five colour themes, each in a dark and a light mode. A person picks one on `/account` or keeps the workspace default an administrator picked (`src/theme/themeCatalog.ts`); the mode (system / light / dark) is a separate, personal preference.
+
+| Theme | Id | Lives in | Upstream |
+|---|---|---|---|
+| Kiro (default) | `kiro` | `src/index.css` | KiroCrew's Kiro theme |
+| Nord | `nord` | `src/styles/theme-palettes.css` | the Nord palette project, via KiroCrew `website/src/styles/theme-palettes.css` |
+| Dracula | `dracula` | `src/styles/theme-palettes.css` | the Dracula palette project, via KiroCrew |
+| High contrast | `highcontrast` | `src/styles/theme-palettes.css` | KiroCrew's High Contrast, taken past AA: text ≥ 7:1, focus ring, control edges and chart steps ≥ 4.5:1 |
+| Quick | `quick` | `src/styles/theme-palettes.css` (palette + component look) | the Quick design system (ink pill buttons, blue links and focus, violet accent, Inter) |
+
 | Preference | `<html>` attributes |
 |---|---|
 | `system` | follows `prefers-color-scheme` live |
-| `light` | `data-theme="kiro-light" data-mode="light" data-mode-pref="light"` |
-| `dark` (default) | `data-theme="kiro-dark" data-mode="dark" data-mode-pref="dark"` |
+| `light` | `data-theme="<id>-light" data-color-theme="<id>" data-mode="light" data-mode-pref="light"` |
+| `dark` (default) | `data-theme="<id>-dark" data-color-theme="<id>" data-mode="dark" data-mode-pref="dark"` |
 
 - A visitor who has never chosen gets **Kiro Dark** (`DEFAULT_THEME_PREFERENCE` in `themeStore.ts`, mirrored by `DEFAULT_PREF` in `theme-init.js`); a saved choice always wins.
-- Tokens are keyed on `data-theme`; `:root` falls back to Kiro Dark.
+- Tokens are keyed on `data-theme`; `:root` falls back to Kiro Dark. Because `theme-palettes.css` is imported at the top of `index.css` (before that fallback), its blocks are keyed `:root[data-theme="…"]`, one step more specific.
 - The `dark:` variant matches `[data-mode="dark"]`. Prefer tokens; reach for `dark:` only when a value genuinely differs per mode and there is no token for it.
 - `theme-init.js` is an external file because the CloudFront CSP is `script-src 'self'` (no inline scripts). Its storage key and attributes are pinned to `themeStore.ts` by `themeInit.test.ts`.
-- KiroCrew ships ~18 colour families (emerald, nord, dracula, …). VoC ships only **Kiro**. To add another, copy its `[data-theme="<name>-dark|light"]` block from KiroCrew `website/src/index.css`, extend `themeAttribute()` and `theme-init.js`, and add a picker.
+- Print and PDF exports stay on the Kiro light palette whatever the theme (`theme/printPalette.ts`, `pages/Categories/types.ts`).
+
+### What each theme derives
+
+Upstream palettes carry the surfaces, text, borders, accent and status tones. The tokens they lack are derived in the theme's own hues, the way the Kiro blocks derive theirs: `--control-border` (the edge grey moved to ≥ 3:1 on every surface; its hover is `--muted`), `--nav-active-*` (dark: the accent on the `--border` fill; light: the accent 12 % into white with a 35 % edge), `--muted-strong` (between `--muted` and `--text`), the `--chart-1…8` ramp (Kiro's order, accent first, `--muted` at step 6, green and amber last; each ≥ 3.2:1 on `--card`, ≥ 10 ΔE2000 apart), `--sentiment-*` (the status tones) and the `--select-chevron` data URI (in the theme's `--muted`).
+
+### AA adjustments from upstream
+
+A value that missed AA moved in lightness only (OKLCH hue and chroma kept); each block in `theme-palettes.css` lists its moves with the before and after ratio. The ones that matter most:
+
+| Theme | Token | Upstream → VoC | Why |
+|---|---|---|---|
+| Nord dark | `--danger` | `#bf616a` → `#fdc7c9` | 1.94:1 on its tint over a hovered row (Nord's hover `#434c5e` is light for a dark theme); `--ok` / `--info` / `--aim` lighten the same way |
+| Nord dark | `--accent-text` | `#88c0d0` → `#a3dcec` | 3.37:1 on the accent tint over a hovered row |
+| Nord light | `--ok` / `--warn` / `--danger` / `--info` / `--aim` | `#689d6a` / `#d08770` / `#bf616a` / `#5e81ac` / `#b48ead` → `#316434` / `#894732` / `#953b46` / `#385982` / `#6f4d6a` | 1.9–2.8:1 as text on white; the light fills now carry white text |
+| Nord light | `--accent-hover` | `#6d91bc` → `#3c5a85` | darker, not lighter: white text on `#6d91bc` is 3.27:1 |
+| Dracula dark | `--danger` / `--aim` | `#ff5555` / `#ff79c6` → `#fdbeb8` / `#fdc6e2` | 2.64 and 3.12:1 on their tints over a hovered row |
+| Dracula dark | `--accent-hover` | `#d4b0ff` → `#e2c6ff` | upstream is 1.2 ΔE2000 from `--accent`, so hover showed nothing |
+| Dracula light | `--ok` / `--danger` / `--info` / `--aim` | `#16a34a` / `#dc2626` / `#0891b2` / `#c026d3` → `#026e2e` / `#bd0011` / `#04657d` / `#9d0cae` | 2.4–3.4:1 on their tints over a hovered row |
+| High contrast dark | `--danger` / `--aim` / `--accent-text` | `#ff0000` / `#bf5af2` / `#00d4ff` → `#fdbeb3` / `#ebcffd` / `#85e2fe` | to 7:1 on a hovered row and its tint (pure red cannot reach 7:1 there) |
+| High contrast light | every status tone, `--accent-text` | e.g. `#cc0000` → `#800503`, `#007a1e` → `#024a10` | to 7:1 on their tints |
+| Quick light | `--link` / `--ok` / `--danger` / `--info` | `#0062d1` / `#037f0c` / `#d91515` / `#0067c7` → `#085fc8` / `#07780e` / `#cc1615` / `#0863be` | 4.1–4.3:1 on their tints over a hovered row |
+| Kiro dark (not adjusted) | `--accent-fg` on `--accent-hover`; `--muted-strong` on `--bg-hover` | 3.68:1; 4.23:1 | KiroCrew's own values; pinned so they cannot get worse (`themeContrast.test.ts`) |
+
+Also: `--shadow-sm` is `0 0 #0000` where upstream says `none` (High contrast, Quick), because `none` is invalid inside the `.card` shadow list; High contrast gains a dark-cyan selected-row fill edged in `--accent`.
+
+### Quick component look
+
+Quick is more than a palette. Under `[data-color-theme="quick"]` (the end of `theme-palettes.css`, each rule in the layer of the recipe it adjusts, so a call-site utility still wins):
+
+- **Type**: `--font-body` is Inter (`@fontsource-variable/inter`, OFL); headings keep normal tracking. Every other theme keeps Space Grotesk.
+- **Buttons**: every `.btn` is a pill; `.btn-primary` is `--ink` with `--on-ink` text (`--ink-hover` on hover), with no light sweep or accent glow; `.btn-secondary` has an `--ink` edge and text.
+- **Focus**: outlines take `--focus` (blue), and `--ring` is `--focus`, so every ring recipe follows; fields drop the accent glow around the ring.
+- **Links**: `.link` and markdown links take `--link`, underlined 4px below.
+- **Shape and depth**: `--radius-sm` is 4px; shadows are flat (`--shadow-sm` is empty, menus and dialogs a soft `1px 1px 20px` shadow); selected nav items are also bold; the selected tab is strong text over a 2px `--ink` bar.
+- Quick's own tokens: `--ink`, `--on-ink`, `--ink-hover`, `--link`, `--focus` (both Quick blocks; no other theme declares them).
+
+### Adding a theme
+
+1. Add its id to `COLOR_THEME_IDS` (`themeCatalog.ts`) and the mirrors it names (`theme-init.js`, `lambda/shared/appearance.py`).
+2. Add `:root[data-theme="<id>-dark"]` and `:root[data-theme="<id>-light"]` to `theme-palettes.css`, declaring **every** token the Kiro block of that mode declares, and nothing else (a theme's own extra tokens go in `EXTRA_TOKENS` in `theme/themeTokenSet.test.ts`, with a reason).
+3. Run `npx vitest run src/theme`: the suites iterate every block (`THEMES` in `src/test/themeTokens.ts`) and check the token set, text and non-text contrast, status tones on their tints, the chart ramp, control borders and the focus ring. When one fails, fix the palette; the thresholds are not negotiable.
 
 ## Colour
 
@@ -279,6 +332,7 @@ Order is a VoC choice: KiroCrew keys hues by source, not rank. The accent leads 
 | Family | Stack | Loaded from | Weights |
 |---|---|---|---|
 | Body (`font-sans`, `font-body`) | `'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif` | `@fontsource/space-grotesk` (bundled; CSP `font-src 'self'`) | 400 500 600 700 |
+| Body, Quick theme | `'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif` | `@fontsource-variable/inter` (bundled; fetched only while Quick is active) | 100–900 |
 | Mono (`font-mono`) | `'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace` | `@fontsource/jetbrains-mono` | 400 500 |
 
 Base: `body { font: 400 .875rem/1.55 }` — **14px** body, antialiased, headings `letter-spacing: -0.01em` in `text-text-strong`.
