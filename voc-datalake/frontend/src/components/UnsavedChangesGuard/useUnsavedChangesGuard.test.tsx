@@ -214,6 +214,12 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
 
   const nextDialog = async () => within(await screen.findByRole('dialog', { name: 'Unsaved changes' }))
 
+  /** Discard in the next dialog, and the held leave lands on the Elsewhere page. */
+  async function expectLeftAfterNextDiscard(user: GuardUserSession) {
+    await user.click((await nextDialog()).getByRole('button', { name: 'Discard' }))
+    expect(await screen.findByText('Elsewhere page')).toBeInTheDocument()
+  }
+
   /** Follow the Elsewhere link and expect the dialog: the leave is guarded. */
   async function expectLeaveGuarded(user: GuardUserSession) {
     await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
@@ -236,8 +242,7 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
   it('asks every dirty editor in turn, and leaves only after both let it go', async () => {
     const { router, user } = await bothDirtyThenDiscardFirst()
     expect(router.state.location.pathname).toBe('/editor')
-    await user.click((await nextDialog()).getByRole('button', { name: 'Discard' }))
-    expect(await screen.findByText('Elsewhere page')).toBeInTheDocument()
+    await expectLeftAfterNextDiscard(user)
   })
 
   // One blocker per router: with both editors dirty only the owner renders one, so react-router
@@ -309,8 +314,7 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     await user.type(screen.getByLabelText('Second'), 'y')
     await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
     await user.click(within(dialog()).getByRole('button', { name: 'Discard' }))
-    await user.click((await nextDialog()).getByRole('button', { name: 'Discard' }))
-    expect(await screen.findByText('Elsewhere page')).toBeInTheDocument()
+    await expectLeftAfterNextDiscard(user)
   })
 
   // react-router consults only the last blocker mounted. The brand form (it lets ?tab= through)
