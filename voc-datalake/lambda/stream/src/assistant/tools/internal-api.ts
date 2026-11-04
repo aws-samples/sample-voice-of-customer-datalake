@@ -134,9 +134,12 @@ const MAX_ERROR_TEXT = 200;
  * Only these claim keys are forwarded, and only when they are strings. The two
  * `voc:` keys are set only by the plan runtime (a plan acting for its approver);
  * the stream Lambda's own claims never carry them (runtime/event.ts reads the
- * four Cognito keys alone).
+ * Cognito keys alone). `iss` and `email_verified` are the app-pool authorizer's
+ * own claims, which the board routes (`/feature-requests/*`) read.
  */
-const FORWARDED_CLAIM_KEYS = ['sub', 'cognito:groups', 'cognito:username', 'email', 'voc:acting_subject', 'voc:principal'] as const;
+const FORWARDED_CLAIM_KEYS = [
+  'sub', 'cognito:groups', 'cognito:username', 'email', 'iss', 'email_verified', 'voc:acting_subject', 'voc:principal',
+] as const;
 
 function forwardedClaims(claims: CallerClaims): Record<string, string> {
   const out: Record<string, string> = {};

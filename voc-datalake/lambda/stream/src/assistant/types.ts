@@ -21,6 +21,13 @@ export interface CallerClaims {
   'cognito:groups'?: string;
   'cognito:username'?: string;
   email?: string;
+  /**
+   * The verified token's issuer (the app user pool) and its `email_verified` flag, as the API Gateway
+   * Cognito authorizer delivers them: the board routes (`/feature-requests/*`, shared/engagement_identity.py)
+   * read the pool from `iss` and need a verified email. The stream sits behind the app-pool authorizer only.
+   */
+  iss?: string;
+  email_verified?: string;
   /** Plan runtime only (voc-plan-step): the approver a plan acts for. Never read from a request. */
   'voc:acting_subject'?: string;
   /** Plan runtime only: `plan:{plan_id}`, the principal recorded by the domain APIs. */
