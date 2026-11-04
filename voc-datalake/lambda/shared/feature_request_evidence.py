@@ -25,13 +25,13 @@ from shared.engagement_config import feature_requests_table
 from shared.feature_boards_store import SEEDED_BOARD_ID, list_boards
 from shared.feature_requests_store import REQUESTS_PARTITION, board_id_of
 from shared.indexes import FEATURE_REQUESTS_LISTING_INDEX
+from shared.problem_aggregation import UNCATEGORIZED  # the one spelling of a missing category
 
 # Request rows one load reads at most. A row is a few KB, so this keeps one load well inside a
 # Lambda's memory and a few seconds of reads; past it the result says ``truncated``.
 MAX_SCANNED_REQUESTS: Final = 5000
 MAX_DESCRIPTION_CHARS: Final = 1000
 MAX_LIMIT: Final = 1000
-UNCATEGORIZED: Final = 'uncategorized'
 
 
 @dataclass(frozen=True)
