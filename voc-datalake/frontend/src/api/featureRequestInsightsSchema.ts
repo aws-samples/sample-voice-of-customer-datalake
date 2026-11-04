@@ -13,8 +13,7 @@ import { z } from 'zod'
 import { count } from './featureBoardsSchema'
 import { lenientText, parsedList } from './schemaList'
 
-export const ENRICHMENT_SENTIMENTS = ['positive', 'neutral', 'negative', 'mixed'] as const
-export type EnrichmentSentiment = typeof ENRICHMENT_SENTIMENTS[number]
+const ENRICHMENT_SENTIMENTS = ['positive', 'neutral', 'negative', 'mixed'] as const
 
 const sentimentSchema = z.enum(ENRICHMENT_SENTIMENTS).nullable().optional().catch(null).transform((value) => value ?? null)
 const nullableText = z.string().min(1).nullable().optional().catch(null).transform((value) => value ?? null)
