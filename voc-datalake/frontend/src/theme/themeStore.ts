@@ -14,7 +14,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import {
-  DEFAULT_COLOR_THEME, isColorThemeChoice, isColorThemeId, themeAttribute, WORKSPACE_THEME_CHOICE,
+  DEFAULT_COLOR_THEME, isColorThemeChoice, isColorThemeId, themeAttribute, themeFavicon, WORKSPACE_THEME_CHOICE,
 } from './themeCatalog'
 import type { ColorThemeChoice, ColorThemeId, ThemeMode } from './themeCatalog'
 
@@ -45,13 +45,14 @@ export function resolveMode(preference: ThemePreference, prefersDark: boolean): 
   return preference
 }
 
-/** Write the theme attributes on <html>. */
+/** Write the theme attributes on <html> and point the SVG tab icon at the theme's mark. */
 export function applyTheme(preference: ThemePreference, mode: ThemeMode, theme: ColorThemeId): void {
   const el = document.documentElement
   el.dataset.theme = themeAttribute(theme, mode)
   el.dataset.colorTheme = theme
   el.dataset.mode = mode
   el.dataset.modePref = preference
+  document.querySelector('link[rel="icon"]')?.setAttribute('href', themeFavicon(theme))
 }
 
 /** Order used by the header toggle: system → light → dark → system. */

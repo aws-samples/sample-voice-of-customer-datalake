@@ -46,3 +46,8 @@ export function resolveColorTheme(choice: ColorThemeChoice, workspaceTheme: Colo
 export function themeAttribute(theme: ColorThemeId, mode: ThemeMode): string {
   return `${theme}-${mode}`
 }
+
+/** The tab icon of a theme: Kiro keeps its ghost, every other theme has `public/favicons/<id>.svg`. */
+export function themeFavicon(theme: ColorThemeId): string {
+  return theme === 'kiro' ? '/kiro-ghost.svg' : `/favicons/${theme}.svg`
+}

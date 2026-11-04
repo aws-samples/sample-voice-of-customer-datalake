@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { COLOR_THEME_IDS, DEFAULT_COLOR_THEME, WORKSPACE_THEME_CHOICE } from './themeCatalog'
+import { COLOR_THEME_IDS, DEFAULT_COLOR_THEME, themeFavicon, WORKSPACE_THEME_CHOICE } from './themeCatalog'
 import {
   applyTheme, DEFAULT_THEME_PREFERENCE, isThemePreference, nextPreference, resolveMode, THEME_STORAGE_KEY, useThemeStore,
 } from './themeStore'
@@ -68,6 +68,23 @@ describe('theme-init.js', () => {
   it('paints every theme id it accepts', async () => {
     for (const id of COLOR_THEME_IDS) {
       expect((await runInit(JSON.stringify({ state: { preference: 'light', colorTheme: id } }), false)).theme).toBe(`${id}-light`)
+    }
+  })
+
+  it('points the SVG tab icon at the same file as the store, for every theme', async () => {
+    const link = document.createElement('link')
+    link.rel = 'icon'
+    link.href = '/kiro-ghost.svg'
+    document.head.append(link)
+    try {
+      for (const id of COLOR_THEME_IDS) {
+        await runInit(JSON.stringify({ state: { preference: 'dark', colorTheme: id } }), false)
+        expect(link.getAttribute('href')).toBe(themeFavicon(id))
+      }
+      applyTheme('dark', 'dark', 'dracula')
+      expect(link.getAttribute('href')).toBe('/favicons/dracula.svg')
+    } finally {
+      link.remove()
     }
   })
 
