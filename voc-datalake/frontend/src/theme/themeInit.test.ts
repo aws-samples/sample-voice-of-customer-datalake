@@ -3,6 +3,9 @@
  * themeStore.ts (runtime): same storage key, persisted shape and attributes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { COLOR_THEME_IDS, DEFAULT_COLOR_THEME, WORKSPACE_THEME_CHOICE } from './themeCatalog'
 import {
   applyTheme, DEFAULT_THEME_PREFERENCE, isThemePreference, nextPreference, resolveMode, THEME_STORAGE_KEY, useThemeStore,
 } from './themeStore'
@@ -45,8 +48,26 @@ describe('theme-init.js', () => {
     ['{"state":{"preference":"system"},"version":0}', false, 'kiro-light', 'light', 'system'],
     ['{"state":{"preference":"neon"}}', false, 'kiro-dark', 'dark', 'dark'],
     ['not json', false, 'kiro-dark', 'dark', 'dark'],
+    ['{"state":{"preference":"light","colorTheme":"nord"}}', false, 'nord-light', 'light', 'light'],
+    ['{"state":{"preference":"dark","colorTheme":"workspace","workspaceTheme":"dracula"}}', false, 'dracula-dark', 'dark', 'dark'],
+    ['{"state":{"preference":"dark","workspaceTheme":"quick"}}', false, 'quick-dark', 'dark', 'dark'],
+    ['{"state":{"preference":"dark","colorTheme":"highcontrast","workspaceTheme":"quick"}}', false, 'highcontrast-dark', 'dark', 'dark'],
+    ['{"state":{"preference":"dark","colorTheme":"neon","workspaceTheme":"constructor"}}', false, 'kiro-dark', 'dark', 'dark'],
   ])('stored=%s prefersDark=%s → %s', async (stored, prefersDark, theme, mode, pref) => {
     expect(await runInit(stored, prefersDark)).toStrictEqual({ theme, mode, modePref: pref })
+  })
+
+  it('knows exactly the theme ids and default of themeCatalog.ts', async () => {
+    const source = await readFile(resolve(__dirname, SCRIPT_PATH), 'utf8')
+    expect(source).toContain(`const THEME_IDS = [${COLOR_THEME_IDS.map((id) => `'${id}'`).join(', ')}]`)
+    expect(source).toContain(`const DEFAULT_THEME = '${DEFAULT_COLOR_THEME}'`)
+    expect(source).toContain(`const WORKSPACE = '${WORKSPACE_THEME_CHOICE}'`)
+  })
+
+  it('paints every theme id it accepts', async () => {
+    for (const id of COLOR_THEME_IDS) {
+      expect((await runInit(JSON.stringify({ state: { preference: 'light', colorTheme: id } }), false)).theme).toBe(`${id}-light`)
+    }
   })
 
   it('defaults to the same preference as the store', async () => {
@@ -57,16 +78,37 @@ describe('theme-init.js', () => {
     // setup.ts mocks localStorage, so capture what persist writes.
     const setItem = vi.mocked(window.localStorage.setItem)
     setItem.mockClear()
-    useThemeStore.setState({ preference: 'light' })
+    useThemeStore.setState({ preference: 'light', colorTheme: 'workspace', workspaceTheme: 'nord' })
     const call = setItem.mock.calls.find(([key]) => key === THEME_STORAGE_KEY)
     expect(call).toBeDefined()
-    expect((await runInit(call?.[1] ?? null, true)).theme).toBe('kiro-light')
+    expect((await runInit(call?.[1] ?? null, true)).theme).toBe('nord-light')
+    useThemeStore.setState({ workspaceTheme: DEFAULT_COLOR_THEME })
   })
 })
 
 describe('themeStore', () => {
-  beforeEach(() => { useThemeStore.setState({ preference: 'system' }) })
+  beforeEach(() => { useThemeStore.setState({ preference: 'system', colorTheme: 'workspace', workspaceTheme: 'kiro' }) })
   afterEach(() => { vi.restoreAllMocks() })
+
+  it('starts on the workspace default, Kiro', () => {
+    expect(useThemeStore.getState().colorTheme).toBe(WORKSPACE_THEME_CHOICE)
+    expect(useThemeStore.getState().workspaceTheme).toBe(DEFAULT_COLOR_THEME)
+  })
+
+  it('keeps a personal pick and the cached workspace default apart', () => {
+    useThemeStore.getState().setWorkspaceTheme('dracula')
+    useThemeStore.getState().setColorTheme('quick')
+    expect(useThemeStore.getState()).toMatchObject({ colorTheme: 'quick', workspaceTheme: 'dracula' })
+  })
+
+  it('drops an invalid persisted theme on rehydration', async () => {
+    vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => (key === THEME_STORAGE_KEY
+      ? '{"state":{"preference":"light","colorTheme":"neon","workspaceTheme":"__proto__"},"version":0}'
+      : null))
+    await useThemeStore.persist.rehydrate()
+    expect(useThemeStore.getState()).toMatchObject({ preference: 'light', colorTheme: 'workspace', workspaceTheme: 'kiro' })
+    vi.mocked(window.localStorage.getItem).mockReturnValue(null)
+  })
 
   it('cycles system → light → dark → system', () => {
     expect(nextPreference('system')).toBe('light')
@@ -89,9 +131,10 @@ describe('themeStore', () => {
   })
 
   it('applies attributes to <html>', () => {
-    applyTheme('system', 'light')
+    applyTheme('system', 'light', 'nord')
     const data = document.documentElement.dataset
-    expect(data.theme).toBe('kiro-light')
+    expect(data.theme).toBe('nord-light')
+    expect(data.colorTheme).toBe('nord')
     expect(data.mode).toBe('light')
     expect(data.modePref).toBe('system')
   })
