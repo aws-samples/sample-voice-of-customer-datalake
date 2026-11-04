@@ -81,7 +81,8 @@ The app ships five colour themes, each in a dark and a light mode. A person pick
 | `dark` (default) | `data-theme="<id>-dark" data-color-theme="<id>" data-mode="dark" data-mode-pref="dark"` |
 
 - A visitor who has never chosen gets **Kiro Dark** (`DEFAULT_THEME_PREFERENCE` in `themeStore.ts`, mirrored by `DEFAULT_PREF` in `theme-init.js`); a saved choice always wins.
-- Tokens are keyed on `data-theme`; `:root` falls back to Kiro Dark. Because `theme-palettes.css` is imported at the top of `index.css` (before that fallback), its blocks are keyed `:root[data-theme="…"]`, one step more specific.
+- Tokens are keyed on `data-theme`; `:root` falls back to Kiro Dark. Because `theme-palettes.css` is imported at the top of `index.css` (before that fallback), its blocks are keyed `:root[data-theme="…"]`, one step more specific, and also `[data-theme="…"]`, so a nested element with its own `data-theme` (the theme picker's previews, `components/ThemePicker`) paints that palette.
+- Who picks: an administrator sets the start theme for everyone in Administration → General (`GET` / `PUT /settings/appearance`, the PUT admin-only server-side); each person may override it in Account → Preferences, kept in this browser. The cached workspace theme lets `theme-init.js` paint it before the first request.
 - The `dark:` variant matches `[data-mode="dark"]`. Prefer tokens; reach for `dark:` only when a value genuinely differs per mode and there is no token for it.
 - `theme-init.js` is an external file because the CloudFront CSP is `script-src 'self'` (no inline scripts). Its storage key and attributes are pinned to `themeStore.ts` by `themeInit.test.ts`.
 - Print and PDF exports stay on the Kiro light palette whatever the theme (`theme/printPalette.ts`, `pages/Categories/types.ts`).
@@ -124,7 +125,7 @@ Quick is more than a palette. Under `[data-color-theme="quick"]` (the end of `th
 ### Adding a theme
 
 1. Add its id to `COLOR_THEME_IDS` (`themeCatalog.ts`) and the mirrors it names (`theme-init.js`, `lambda/shared/appearance.py`).
-2. Add `:root[data-theme="<id>-dark"]` and `:root[data-theme="<id>-light"]` to `theme-palettes.css`, declaring **every** token the Kiro block of that mode declares, and nothing else (a theme's own extra tokens go in `EXTRA_TOKENS` in `theme/themeTokenSet.test.ts`, with a reason).
+2. Add `:root[data-theme="<id>-dark"], [data-theme="<id>-dark"]` and the same for `-light` to `theme-palettes.css`, declaring **every** token the Kiro block of that mode declares, and nothing else (a theme's own extra tokens go in `EXTRA_TOKENS` in `theme/themeTokenSet.test.ts`, with a reason).
 3. Run `npx vitest run src/theme`: the suites iterate every block (`THEMES` in `src/test/themeTokens.ts`) and check the token set, text and non-text contrast, status tones on their tints, the chart ramp, control borders and the focus ring. When one fails, fix the palette; the thresholds are not negotiable.
 
 ## Colour
@@ -395,7 +396,17 @@ Layering: page content has **no z-index**. The sidebar `<aside>` is `z-50` (it o
 - **Library:** `lucide-react`, default stroke (2). Colour comes from `currentColor`: put `text-muted` / `text-accent` on the icon or its parent.
 - **Sizes:** 16 nav, toolbars and icon buttons · 14 inline with text, tabs and menu items · 12–13 inside badges and meta · 18–20 empty states and feature tiles · 24 metric tiles.
 - **Icon-only buttons:** `.icon-btn` (muted → text on hover); always `aria-label` + `title`.
-- **Brand mark:** `<KiroGhost className="w-7 h-7 text-accent-text" />` — sidebar (28px), login (48px) and favicon (`public/kiro-ghost.svg`, accent stroke). Upstream also has 8 ghost poses (`website/src/assets/ghost-poses/pose-1..8.svg`) for empty states and loaders, not ported yet.
+- **Brand mark:** the active theme's mark, `components/ThemeMark` — `<ThemeMark className="w-7 h-7 text-accent-text" />` in the sidebar (28px), login (48px), the assistant's bubble and panel header; `ThemeMarkIdle` greets an empty conversation and `ThemeMarkThinking` is the assistant's busy indicator. They follow the theme live (`useActiveColorTheme()`):
+
+  | Theme | Mark | Thinking pose |
+  |---|---|---|
+  | Kiro | the ghost (`KiroGhost`, idle and drift poses from `GhostPoses`) | the drift pose floats |
+  | Nord | a six-armed snowflake | floats |
+  | Dracula | a bat | floats |
+  | High contrast | the half-filled contrast circle, heavy outline | floats |
+  | Quick | the Quick tile: brand gradient, a white speech bubble and four-point spark | the spark breathes (`animate-mark-breathe`) |
+
+  Nord, Dracula and High contrast draw in `currentColor` on a 24-unit grid, so the caller's `text-*` class colours them. The Quick tile is never recoloured; its colours are the `--mark-quick-*` tokens in `styles/theme-marks.css`. Every mark is decorative (`aria-hidden`, not focusable, `data-mark="<theme id>"`); the text beside it names the product, and motion stops under `prefers-reduced-motion`. The favicon stays the Kiro ghost (`public/kiro-ghost.svg`).
 - **Theme toggle icons:** `Monitor` (system) · `Sun` (light) · `Moon` (dark).
 
 ## Components

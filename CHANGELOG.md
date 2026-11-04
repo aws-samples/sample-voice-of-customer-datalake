@@ -17,6 +17,27 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.01.00] - 2026-11-04
+
+Five colour themes instead of one: an administrator picks the start theme for everyone, and each person can pick
+their own.
+
+### Added
+- **Colour themes**: Nord, Dracula, High contrast and Quick next to Kiro, each in a light and a dark mode. The new
+  palettes are adjusted where their upstream values missed WCAG AA (High contrast goes to 7:1 for text). Quick also
+  brings its component look: Inter, ink pill buttons, blue links and focus ring, flat surfaces
+  ([docs/kiro-design-system.md](docs/kiro-design-system.md) → Themes).
+- **Administration → General → Default theme**: the theme everyone sees until they choose their own, stored for the
+  deployment (`GET /settings/appearance` for every signed-in user, `PUT /settings/appearance` for administrators;
+  an unknown theme is a 400).
+- **Account → Preferences → Colour theme**: "Workspace default" (the administrator's pick) or one of the five
+  themes, kept in this browser; light or dark stays its own setting.
+- **Theme marks**: the menu, sign-in screen and AI assistant show the active theme's mark instead of always the Kiro
+  ghost: a snowflake for Nord, a bat for Dracula, a contrast circle for High contrast, the Quick tile with a speech
+  bubble for Quick. The Kiro theme keeps the ghost.
+
+### Upgrade notes
+- Nothing to do: without a saved default the app stays on Kiro, and a person's earlier light/dark choice is kept.
 ## [6.00.00] - 2026-11-03
 
 Deletes follow the tenets: customer data is deleted only for a stated legal basis and leaves a tombstone, workspace deletes really delete and are recorded, no role holds a delete it does not use, and no role can change an audit row. Major: the erasure routes require a legal basis.
