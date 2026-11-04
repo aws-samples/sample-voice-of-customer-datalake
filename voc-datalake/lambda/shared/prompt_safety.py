@@ -42,6 +42,8 @@ DATA_BLOCK_TAGS = (
     'email',
     # What the author typed in the document wizard, for its AI drafts (shared/draft_intent.py).
     'author_draft',
+    # Feedback-board requests, a separate evidence source (shared/feature_request_context.py).
+    'feature_requests',
 )
 
 _TAG_RE = re.compile(

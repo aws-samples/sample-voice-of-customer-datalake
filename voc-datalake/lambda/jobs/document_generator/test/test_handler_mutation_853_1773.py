@@ -550,7 +550,7 @@ class TestHandleJob:
         spec = MagicMock()
         chain_type = MagicMock(return_value=spec)
         gathered = MagicMock(feedback_context='FB', personas_context='PE', feedback='SAMPLE',
-                             derivation_inputs={'sources': ['s']})
+                             derivation_inputs={'sources': ['s']}, feature_request_ids=())
         mocks = {
             '_chain_doc_type': chain_type,
             'get_versioned_document_by_allocation': MagicMock(return_value=None),
@@ -699,7 +699,7 @@ class TestBuildSteps:
         spec = MagicMock()
         spec.build_steps.return_value = [{'s': 1}, {'s': 2}]
         gathered = MagicMock(feedback_context='FB', personas_context='PE', feedback='SAMPLE',
-                             derivation_inputs={'sources': []})
+                             derivation_inputs={'sources': []}, feature_request_ids=())
         allocation = MagicMock(return_value=None)
         gather = MagicMock(return_value=gathered)
         config = {'doc_type': 'prfaq', 'title': 'T', 'feature_idea': 'idea', 'response_language': 'ko'}

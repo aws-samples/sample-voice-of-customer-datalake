@@ -23,6 +23,12 @@ from shared.derivation import (
     build_derivation,
     derivation_source,
 )
+from shared.feature_request_context import (
+    INPUT_FEATURE_REQUEST_IDS_FIELD,
+    config_context,
+    input_feature_request_fields,
+    received_feature_request_ids,
+)
 from shared.feedback import (
     feedback_char_budget,
     feedback_item_limit,
@@ -332,6 +338,14 @@ def _feedback_analyzed_line(feedback_count: int, usage: dict) -> str:
     return f'{feedback_count} items'
 
 
+def _feature_requests_line(event: dict) -> str:
+    """The report header's board-request count ('' when none reached the model)."""
+    derivation = event.get('derivation')
+    raw = derivation.get(INPUT_FEATURE_REQUEST_IDS_FIELD) if isinstance(derivation, dict) else None
+    count = len(received_feature_request_ids(raw))
+    return f'\n**Feature Requests Analyzed:** {count} from the feedback boards' if count else ''
+
+
 # Ceiling on the query pages one project read walks. A project partition holds
 # its personas, documents and members, each item well under the 400 KB item cap,
 # so 50 pages of up to 1 MB is far past any real project while still stopping a
@@ -529,8 +543,12 @@ def step_initialize(event: dict) -> dict:
     web_context, web_search_queries = _web_search_context(project_id, job_id, config, feedback_stats)
     grounding = _research_grounding(job_id, config)
 
+    # Board requests (opt-in, a separate source): their own fenced section after the reviews, cited
+    # [FR:<id>]. They ride the feedback block's claim-check, so the state machine carries only ids.
+    feature_requests = config_context(config)
+
     # The block is far larger than a Step Functions state may be; only step_analyze needs it.
-    _stash_feedback_context(job_id, feedback_context)
+    _stash_feedback_context(job_id, feedback_context + feature_requests.section)
 
     update_job_status(project_id, job_id, 'running', 20, 'data_ready')
 
@@ -557,14 +575,17 @@ def step_initialize(event: dict) -> dict:
         # step_save and 'derivation.$': '$.Payload.derivation' in the CDK.
         # DERIVATION_FIELD is the DynamoDB attribute name, and coupling the two
         # would make renaming the stored column silently change the wire.
-        'derivation': build_derivation(
-            sources=used_sources,
-            selected_document_count=len(selected_document_ids),
-            # The records the model saw, not the ones the fetch returned.
-            feedback_count=items_used,
-            persona_ids=used_persona_ids,
-            **derivation_knowledge(grounding, web_search_count=len(web_search_queries)),
-        ),
+        'derivation': {
+            **build_derivation(
+                sources=used_sources,
+                selected_document_count=len(selected_document_ids),
+                # The records the model saw, not the ones the fetch returned.
+                feedback_count=items_used,
+                persona_ids=used_persona_ids,
+                **derivation_knowledge(grounding, web_search_count=len(web_search_queries)),
+            ),
+            **input_feature_request_fields(feature_requests.ids),
+        },
     }
 @tracer.capture_method
 def step_analyze(event: dict) -> dict:
@@ -768,7 +789,7 @@ Public-web grounding for this report came from the following searches:
     full_report = f"""# Research Report: {research_question}
 
 **Generated:** {now[:10]}
-**Feedback Analyzed:** {_feedback_analyzed_line(feedback_count, feedback_usage)}
+**Feedback Analyzed:** {_feedback_analyzed_line(feedback_count, feedback_usage)}{_feature_requests_line(event)}
 **Filters:** Sources: {', '.join(filters.get('sources', [])) or 'All'} | Categories: {', '.join(filters.get('categories', [])) or 'All'} | Sentiments: {', '.join(filters.get('sentiments', [])) or 'All'} | Days: {filters.get('days', 30)} | Date basis: {date_basis}{web_search_note}
 
 ---
