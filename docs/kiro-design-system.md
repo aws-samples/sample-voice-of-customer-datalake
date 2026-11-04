@@ -97,11 +97,11 @@ A value that missed AA moved in lightness only (OKLCH hue and chroma kept); each
 
 | Theme | Token | Upstream → VoC | Why |
 |---|---|---|---|
-| Nord dark | `--danger` | `#bf616a` → `#fdc7c9` | 1.94:1 on its tint over a hovered row (Nord's hover `#434c5e` is light for a dark theme); `--ok` / `--info` / `--aim` lighten the same way |
+| Nord dark | `--danger`, `--bg-hover` | `#bf616a` → `#febabd`; `#434c5e` → `#3f4758` | 1.94:1 on its tint over a hovered row. The hover is a step darker than upstream, so the red keeps more colour; `--ok` / `--info` / `--aim` lighten the same way |
 | Nord dark | `--accent-text` | `#88c0d0` → `#a3dcec` | 3.37:1 on the accent tint over a hovered row |
 | Nord light | `--ok` / `--warn` / `--danger` / `--info` / `--aim` | `#689d6a` / `#d08770` / `#bf616a` / `#5e81ac` / `#b48ead` → `#316434` / `#894732` / `#953b46` / `#385982` / `#6f4d6a` | 1.9–2.8:1 as text on white; the light fills now carry white text |
 | Nord light | `--accent-hover` | `#6d91bc` → `#3c5a85` | darker, not lighter: white text on `#6d91bc` is 3.27:1 |
-| Dracula dark | `--danger` / `--aim` | `#ff5555` / `#ff79c6` → `#fdbeb8` / `#fdc6e2` | 2.64 and 3.12:1 on their tints over a hovered row |
+| Dracula dark | `--danger` / `--aim`, `--bg-hover` | `#ff5555` / `#ff79c6` → `#fdb0aa` / `#fdc6e2`; `#44475a` → `#3e4152` | 2.64 and 3.12:1 on their tints over a hovered row; the hover is a step darker than upstream, so the red keeps more colour |
 | Dracula dark | `--accent-hover` | `#d4b0ff` → `#e2c6ff` | upstream is 1.2 ΔE2000 from `--accent`, so hover showed nothing |
 | Dracula light | `--ok` / `--danger` / `--info` / `--aim` | `#16a34a` / `#dc2626` / `#0891b2` / `#c026d3` → `#026e2e` / `#bd0011` / `#04657d` / `#9d0cae` | 2.4–3.4:1 on their tints over a hovered row |
 | High contrast dark | `--danger` / `--aim` / `--accent-text` | `#ff0000` / `#bf5af2` / `#00d4ff` → `#fdbeb3` / `#ebcffd` / `#85e2fe` | to 7:1 on a hovered row and its tint (pure red cannot reach 7:1 there) |
