@@ -14,7 +14,7 @@ from typing import Any
 
 from aws_lambda_powertools.event_handler.api_gateway import Router
 
-from shared.api import require_admin
+from shared.api import get_caller_subject, require_admin
 from shared.appearance import APPEARANCE_PK, APPEARANCE_SK, appearance_view, parse_default_theme
 from shared.exceptions import ConfigurationError, ValidationError
 from shared.logging import logger, tracer
@@ -58,6 +58,10 @@ def put_appearance():
         theme = parse_default_theme(json_object_body(app))
     except ValueError as exc:
         raise ValidationError(str(exc)) from None
-    table.put_item(Item={'pk': APPEARANCE_PK, 'sk': APPEARANCE_SK, 'default_theme': theme, 'updated_at': now_iso()})
+    # `updated_by` = the admin's Cognito sub (stable; never logged, never answered by the GET).
+    updated_by = get_caller_subject(app.current_event.raw_event)
+    table.put_item(Item={
+        'pk': APPEARANCE_PK, 'sk': APPEARANCE_SK, 'default_theme': theme, 'updated_at': now_iso(), 'updated_by': updated_by,
+    })
     logger.info('Appearance: default theme saved', extra={'default_theme': theme})
     return {'success': True, 'settings': {'default_theme': theme}}

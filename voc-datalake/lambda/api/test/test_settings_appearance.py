@@ -52,6 +52,16 @@ def test_an_admin_saves_the_default_theme(api_gateway_event, lambda_context, tab
     item = table.put_item.call_args.kwargs['Item']
     assert (item['pk'], item['sk'], item['default_theme']) == (APPEARANCE_PK, APPEARANCE_SK, 'nord')
     assert item['updated_at']
+    # Who changed it (tenet D4): the admin's stable Cognito sub, never part of the GET answer.
+    assert item['updated_by'] == 'admin-sub'
+
+
+def test_the_get_never_answers_who_saved_it(api_gateway_event, lambda_context, table):
+    table.get_item.return_value = {'Item': {
+        'pk': APPEARANCE_PK, 'sk': APPEARANCE_SK, 'default_theme': 'nord', 'updated_by': 'admin-sub',
+    }}
+    status, payload = _call(api_gateway_event, lambda_context, 'GET', USER)
+    assert (status, payload) == (200, {'default_theme': 'nord'})
 
 
 @pytest.mark.parametrize('body', [{'default_theme': 'solarized'}, {}, {'default_theme': None}])
