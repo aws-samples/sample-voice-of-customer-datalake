@@ -40,13 +40,25 @@ function useSaveDefaultTheme(onSaved: () => void) {
   })
 }
 
-function SaveButton({ pending, disabled, onSave }: Readonly<{ pending: boolean; disabled: boolean; onSave: () => void }>) {
+/** The admin's Save row: saves `draft` when it differs from the stored theme; the save error under it. */
+function DefaultThemeSaveBar({ draft, dirty, save }: Readonly<{
+  draft: ColorThemeId | null
+  dirty: boolean
+  save: ReturnType<typeof useSaveDefaultTheme>
+}>) {
   const { t } = useTranslation('settings')
+  const pending = save.isPending
   return (
-    <button type="button" onClick={onSave} disabled={disabled || pending} className="btn btn-primary btn-sm flex items-center gap-1.5">
-      {pending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
-      {pending ? t('appearance.saving') : t('appearance.save')}
-    </button>
+    <>
+      {save.isError ? <SettingsNotice text={t('appearance.saveFailed')} /> : null}
+      <StickyActionBar variant="inline" className="flex justify-end py-2">
+        <button type="button" disabled={!dirty || pending} className="btn btn-primary btn-sm flex items-center gap-1.5"
+          onClick={() => { if (draft !== null) save.mutate(draft) }}>
+          {pending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
+          {pending ? t('appearance.saving') : t('appearance.save')}
+        </button>
+      </StickyActionBar>
+    </>
   )
 }
 
@@ -84,12 +96,7 @@ export default function DefaultThemeCard({ apiEndpoint, isAdmin }: CardProps) {
           onChange={(value) => { if (isColorThemeId(value)) setDraft(value) }}
         />
       )}
-      {save.isError ? <SettingsNotice text={t('appearance.saveFailed')} /> : null}
-      {isAdmin && current !== undefined ? (
-        <StickyActionBar variant="inline" className="flex justify-end py-2">
-          <SaveButton pending={save.isPending} disabled={!dirty} onSave={() => { if (draft !== null) save.mutate(draft) }} />
-        </StickyActionBar>
-      ) : null}
+      {isAdmin && current !== undefined ? <DefaultThemeSaveBar draft={draft} dirty={dirty} save={save} /> : null}
     </section>
   )
 }

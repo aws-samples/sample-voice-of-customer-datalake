@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent, type RefObject,
 } from 'react'
 import { noCleanup } from '../../hooks/noCleanup'
+import { MENU_KEYS, rovingIndex } from '../../utils/rovingIndex'
 
 /** Which item takes focus when the menu opens. */
 type OpenFocus = 'first' | 'last'
@@ -28,15 +29,6 @@ interface MenuButton {
 function menuItems(menu: HTMLElement | null): HTMLElement[] {
   if (menu === null) return []
   return [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-}
-
-/** The index the key moves focus to, or null when the key is not a movement key. */
-function nextIndex(key: string, current: number, count: number): number | null {
-  if (key === 'ArrowDown') return (current + 1) % count
-  if (key === 'ArrowUp') return (current - 1 + count) % count
-  if (key === 'Home') return 0
-  if (key === 'End') return count - 1
-  return null
 }
 
 export function useMenuButton(): MenuButton {
@@ -104,7 +96,7 @@ export function useMenuButton(): MenuButton {
     const items = menuItems(menuRef.current)
     if (items.length === 0) return
     const current = items.findIndex((item) => item === document.activeElement)
-    const next = nextIndex(event.key, current, items.length)
+    const next = rovingIndex(event.key, current, items.length, MENU_KEYS)
     if (next === null) return
     event.preventDefault()
     items[next]?.focus()

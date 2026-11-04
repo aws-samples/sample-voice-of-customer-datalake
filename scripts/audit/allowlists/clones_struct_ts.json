@@ -92,13 +92,6 @@
     },
     {
       "files": [
-        "voc-datalake/frontend/src/components/ProfileMenu/useMenuButton.ts",
-        "voc-datalake/frontend/src/pages/FeedbackForms/FormEditor.tsx"
-      ],
-      "reason": "the planted-style look-alike: a menu moves on ArrowUp/ArrowDown, a tablist on ArrowLeft/ArrowRight (WAI-ARIA); same shape, different keys"
-    },
-    {
-      "files": [
         "voc-datalake/frontend/src/pages/Login/LoginSharedComponents.tsx",
         "voc-datalake/frontend/src/pages/ProjectDetail/PersonaEditModal.tsx"
       ],

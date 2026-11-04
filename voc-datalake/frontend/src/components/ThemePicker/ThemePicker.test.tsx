@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ThemePicker from './ThemePicker'
-import { targetIndex } from './radioKeys'
 import type { ThemeOption } from './ThemePicker'
 
 const OPTIONS: ThemeOption[] = [
@@ -86,18 +85,5 @@ describe('ThemePicker', () => {
     expect(themes()).toStrictEqual(['kiro-light', 'nord-light', 'dracula-light'])
     document.documentElement.dataset.mode = 'dark'
     await waitFor(() => expect(themes()).toStrictEqual(['kiro-dark', 'nord-dark', 'dracula-dark']))
-  })
-})
-
-describe('targetIndex', () => {
-  it.each([
-    ['ArrowRight', 2, 0], ['ArrowDown', 0, 1], ['ArrowLeft', 0, 2], ['ArrowUp', 1, 0],
-    ['Home', 2, 0], ['End', 0, 2],
-  ])('%s from %i → %i', (key, from, to) => {
-    expect(targetIndex(key, from, 3)).toBe(to)
-  })
-
-  it('ignores other keys', () => {
-    expect(targetIndex('a', 0, 3)).toBeNull()
   })
 })
