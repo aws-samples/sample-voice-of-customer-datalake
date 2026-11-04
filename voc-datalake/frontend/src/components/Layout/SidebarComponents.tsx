@@ -64,7 +64,7 @@ function SidebarHeader({
         <ThemeMark className="w-7 h-7 text-accent-text flex-shrink-0" />
         <div className="min-w-0">
           {/* Brand wordmark, not a heading: the page's own <h1> is the only one (D-STRUCT). */}
-          <p className="text-[0.8125rem] font-bold tracking-[.14em] uppercase text-text-strong break-words">{t('appName')}</p>
+          <p className="brand-wordmark text-[0.8125rem] font-bold tracking-[.14em] uppercase text-text-strong break-words">{t('appName')}</p>
           <p className="text-muted text-[0.75rem] mt-0.5 break-words" aria-busy={brandName === '' && brandLoading}>
             {brandSubtitle(brandName, brandLoading, t('configureBrand'))}
           </p>

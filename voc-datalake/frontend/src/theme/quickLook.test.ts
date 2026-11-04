@@ -70,6 +70,10 @@ describe('Quick recipes', () => {
     expect(rule(`${Q} .md-content a`)).toContain('color: var(--link)')
   })
 
+  it('narrows the sidebar wordmark tracking so the name fits on one line in Inter', () => {
+    expect(rule(`${Q} .brand-wordmark`)).toContain('letter-spacing: .04em')
+  })
+
   it('every override is scoped to Quick', () => {
     const look = css.slice(css.indexOf(`:root${Q}`))
     const selectors = look.split('}')
