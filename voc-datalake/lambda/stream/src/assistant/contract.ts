@@ -107,7 +107,7 @@ export const SERVER_TOOLS = {
   core: [
     'search_feedback', 'get_metrics', 'get_feedback_item', 'list_projects', 'get_project', 'suggest_navigation', 'web_search',
     'list_categories', 'list_dimensions', 'search_memory', 'get_plan', 'plan_catalogue', 'plan_lookup',
-    'get_radar',
+    'get_radar', 'search_feature_requests',
   ],
   insights: ['get_urgent_feedback', 'list_feedback', 'get_entities', 'get_resolved_problems'],
   project: ['get_documents', 'get_persona', 'get_product_context', 'list_project_jobs', 'consult_personas'],

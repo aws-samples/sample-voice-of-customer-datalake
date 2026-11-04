@@ -20,11 +20,11 @@ import { converseCommand, type PlanStepDeps } from './deps.js';
 const MAX_THINK_ROUNDS = 8;
 const MAX_THINK_TOKENS = 4000;
 const MAX_THINK_OUTPUT_CHARS = 8000;
-// get_radar / list_participant_lists: voc-plan-step may not invoke the Radar or engagement API
+// get_radar / list_participant_lists / search_feature_requests: voc-plan-step may not invoke the Radar or engagement API
 // (PLAN_STEP_DELEGATES has no RADAR_FUNCTION, no ENGAGEMENT_FUNCTION).
 const THINK_EXCLUDED_TOOLS: readonly string[] = [
   'web_search', 'get_plan', 'plan_catalogue', 'plan_lookup', 'list_users', 'get_user_access', 'get_radar',
-  'list_participant_lists',
+  'list_participant_lists', 'search_feature_requests',
 ];
 const EXCLUDED: ReadonlySet<string> = new Set(THINK_EXCLUDED_TOOLS);
 const ADMIN_ONLY: ReadonlySet<string> = new Set(ADMIN_ONLY_SERVER_TOOLS);
