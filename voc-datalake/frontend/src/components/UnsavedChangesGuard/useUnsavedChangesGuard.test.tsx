@@ -201,6 +201,65 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     expect(router.state.location.pathname).toBe('/editor')
     expect(screen.queryByText('Elsewhere page')).not.toBeInTheDocument()
   })
+
+  /** A second one-field editor with its own label, mounted after the first. */
+  function OtherEditor() {
+    const [value, setValue] = useState('')
+    const guard = useUnsavedChangesGuard({ dirty: value !== '', onSave: () => Promise.resolve(true), onDiscard: () => setValue('') })
+    return <><label>Other <input value={value} onChange={(e) => setValue(e.target.value)} /></label>{guard.dialog}</>
+  }
+
+  function renderTwoDirty() {
+    const router = createMemoryRouter(
+      [
+        { path: '/editor', element: <><Editor onSave={vi.fn()} /><OtherEditor /></> },
+        { path: '/elsewhere', element: <p>Elsewhere page</p> },
+      ],
+      { initialEntries: ['/editor'] },
+    )
+    render(<RouterProvider router={router} />)
+    return { router, user: userEvent.setup() }
+  }
+
+  // Both dirty: only one blocker exists, so the editor that caught the change hands it on.
+  it('asks every dirty editor in turn, and leaves only after both let it go', async () => {
+    const { router, user } = renderTwoDirty()
+    await user.type(screen.getByLabelText('Name'), 'x')
+    await user.type(screen.getByLabelText('Other'), 'y')
+    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    expect(router.state.location.pathname).toBe('/editor')
+    await user.click(within(await screen.findByRole('dialog', { name: 'Unsaved changes' })).getByRole('button', { name: 'Discard' }))
+    expect(await screen.findByText('Elsewhere page')).toBeInTheDocument()
+  })
+
+  /** Both editors dirty, a leave, Discard in the first dialog, Cancel in the second. */
+  async function discardThenCancel() {
+    const rendered = renderTwoDirty()
+    const { user } = rendered
+    await user.type(screen.getByLabelText('Name'), 'x')
+    await user.type(screen.getByLabelText('Other'), 'y')
+    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Unsaved changes' })).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(queryDialog()).not.toBeInTheDocument())
+    return rendered
+  }
+
+  it('Cancel in the second dialog stays, and the editor that asked second keeps its edits', async () => {
+    const { router } = await discardThenCancel()
+    expect(router.state.location.pathname).toBe('/editor')
+    // The editor mounted last caught the change and asked first: its Discard cleared it,
+    // and the first editor, which asked second, keeps its edits after Cancel.
+    expect(screen.getByLabelText('Other')).toHaveDisplayValue('')
+    expect(screen.getByLabelText('Name')).toHaveDisplayValue('x')
+  })
+
+  it('after that Cancel, a new attempt to leave is guarded again', async () => {
+    const { user } = await discardThenCancel()
+    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
+  })
 })
 
 describe('useUnsavedChangesGuard — beforeunload', () => {
