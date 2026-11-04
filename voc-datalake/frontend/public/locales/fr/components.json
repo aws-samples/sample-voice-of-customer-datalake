@@ -684,7 +684,8 @@
   },
   "legalBasis": {
     "label": "Base légale",
-    "hint": "Pourquoi ces données sont supprimées ; conservé dans la piste d'audit. Par exemple : \"RGPD art. 17, demande #123\". N'indiquez jamais ici le nom ni l'adresse e-mail de la personne."
+    "hint": "Pourquoi ces données sont supprimées ; conservé dans la piste d'audit. Par exemple : \"RGPD art. 17, demande #123\". N'indiquez jamais ici le nom ni l'adresse e-mail de la personne.",
+    "personalData": "Retirez l’adresse e-mail ou le numéro de téléphone : la base légale est conservée dans des enregistrements d’audit permanents. Indiquez plutôt un numéro de dossier ou de ticket."
   },
   "sourceErasure": {
     "title": "Supprimer toutes les données d’une source",

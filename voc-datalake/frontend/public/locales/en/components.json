@@ -659,7 +659,8 @@
   },
   "legalBasis": {
     "label": "Legal basis",
-    "hint": "Why this data is deleted, kept in the audit trail. For example: \"GDPR art. 17 request #123\". Never type the person's name or email here."
+    "hint": "Why this data is deleted, kept in the audit trail. For example: \"GDPR art. 17 request #123\". Never type the person's name or email here.",
+    "personalData": "Remove the email address or phone number: the legal basis is kept on permanent audit records. Use a case or ticket number instead."
   },
   "sourceErasure": {
     "title": "Delete all data from a source",

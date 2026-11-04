@@ -718,7 +718,8 @@
   },
   "legalBasis": {
     "label": "Podstawa prawna",
-    "hint": "Dlaczego te dane są usuwane; zapisywane w dzienniku audytu. Na przykład: \"RODO art. 17, wniosek #123\". Nigdy nie wpisuj tu imienia, nazwiska ani adresu e-mail osoby."
+    "hint": "Dlaczego te dane są usuwane; zapisywane w dzienniku audytu. Na przykład: \"RODO art. 17, wniosek #123\". Nigdy nie wpisuj tu imienia, nazwiska ani adresu e-mail osoby.",
+    "personalData": "Usuń adres e-mail lub numer telefonu: podstawa prawna jest zapisywana w trwałych rejestrach audytu. Zamiast tego podaj numer sprawy lub zgłoszenia."
   },
   "sourceErasure": {
     "title": "Usuń wszystkie dane źródła",
