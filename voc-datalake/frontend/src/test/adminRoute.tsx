@@ -35,8 +35,8 @@ interface AdminGuardParts {
   readonly whileDialogOpen?: (mounted: AdminMount) => Promise<void>
 }
 
-/** The guard contract's scenario for an editor on /admin; `mounted()` is the live mount. */
-export function adminGuardScenario(parts: AdminGuardParts): { scenario: GuardedEditorScenario; mounted: () => AdminMount } {
+/** The guard contract's scenario for an editor on /admin. */
+export function adminGuardScenario(parts: AdminGuardParts): { scenario: GuardedEditorScenario } {
   const slot: { current?: AdminMount } = {}
   const mounted = (): AdminMount => {
     if (slot.current === undefined) throw new Error('not mounted')
@@ -44,7 +44,6 @@ export function adminGuardScenario(parts: AdminGuardParts): { scenario: GuardedE
   }
   const { whileDialogOpen } = parts
   return {
-    mounted,
     scenario: {
       mount: async () => {
         slot.current = mountAtAdmin(parts.page())
