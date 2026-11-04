@@ -99,7 +99,12 @@ test('a repository without the review, or a main without the reviewer, skips bef
     assert.ok(workflowCode.indexOf(later) > workflowCode.indexOf('elif [ ! -f'), `${later} runs after the gate`)
   }
   // Each step that costs something waits for the gate (by name, not by count: a new harmless step needs no edit here).
-  const step = (name) => workflowCode.slice(workflowCode.indexOf(name), workflowCode.indexOf('\n      - ', workflowCode.indexOf(name) + 1))
+  const step = (name) => {
+    const start = workflowCode.indexOf(name)
+    assert.ok(start >= 0, `the step ${name} exists`)
+    const end = workflowCode.indexOf('\n      - ', start + 1)
+    return workflowCode.slice(start, end < 0 ? undefined : end)
+  }
   for (const name of ['uses: actions/setup-node@', "- name: Read the PR's commits", '- name: Review (OIDC']) {
     assert.match(step(name), /^ {8}if: steps\.gate\.outputs\.ready == 'true'/m, name)
   }
