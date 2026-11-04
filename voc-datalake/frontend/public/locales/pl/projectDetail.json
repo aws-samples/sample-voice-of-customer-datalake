@@ -683,6 +683,10 @@
     "featureRequestsOnly_other": "Napisano na podstawie {{count, number}} prośby o funkcje",
     "showFeatureRequests": "Pokaż zgłoszenia",
     "hideFeatureRequests": "Ukryj zgłoszenia",
-    "featureRequestLink": "Zgłoszenie {{id}}"
+    "featureRequestLink": "Zgłoszenie {{id}}",
+    "erasedSummary_one": "{{count, number}} cytowana opinia lub prośba z tablicy została usunięta (podstawa prawna zapisana)",
+    "erasedSummary_few": "{{count, number}} cytowane opinie lub prośby z tablic zostały usunięte (podstawa prawna zapisana)",
+    "erasedSummary_many": "{{count, number}} cytowanych opinii lub próśb z tablic zostało usuniętych (podstawa prawna zapisana)",
+    "erasedSummary_other": "{{count, number}} cytowanej opinii lub prośby z tablic zostało usunięte (podstawa prawna zapisana)"
   }
 }

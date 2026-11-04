@@ -8,6 +8,7 @@
  */
 import { z } from 'zod'
 import { deletedSourcesOrUndefined } from './deletedSources'
+import { optionalErasedEvidenceSchema } from './erasedEvidence'
 import { parseEach } from './lenientFields'
 import { copiedFromSchema } from './personaCopiedFrom'
 import { UserRefSchema } from './userRefSchema'
@@ -137,6 +138,7 @@ const ProjectPersonaSchema = z.looseObject({
   input_feedback_ids: optionalStringArray,
   copied_from: copiedFromSchema,
   evidence_feedback_ids: optionalStringArray,
+  erased_evidence: optionalErasedEvidenceSchema,
   /** Kept by a replace regeneration (#429); only a literal true protects. */
   protected: z.boolean().optional().catch(undefined),
 })
@@ -181,6 +183,7 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   merge_instructions: optionalString,
   feedback_count: optionalNonnegativeInteger,
   input_feedback_ids: optionalStringArray,
+  erased_evidence: optionalErasedEvidenceSchema,
   revised_from_id: optionalNullableString,
   revision_feedback: optionalString,
   // A persona / document / product doc this one cited and that was later deleted: read by the

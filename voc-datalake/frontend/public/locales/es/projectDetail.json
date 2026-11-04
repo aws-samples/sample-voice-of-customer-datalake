@@ -639,6 +639,8 @@
     "featureRequestsOnly_other": "Redactado a partir de {{count, number}} solicitudes de funciones",
     "showFeatureRequests": "Ver solicitudes",
     "hideFeatureRequests": "Ocultar solicitudes",
-    "featureRequestLink": "Solicitud {{id}}"
+    "featureRequestLink": "Solicitud {{id}}",
+    "erasedSummary_one": "se borró {{count, number}} reseña o solicitud de tablero citada (base legal registrada)",
+    "erasedSummary_other": "se borraron {{count, number}} reseñas o solicitudes de tablero citadas (base legal registrada)"
   }
 }

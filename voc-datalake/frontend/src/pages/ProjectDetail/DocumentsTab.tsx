@@ -16,6 +16,7 @@ import type { ProjectDocument } from '../../api/types'
 import type { Project, ProductDoc } from '../../api/projectTypes'
 import { DerivationFooter, RevisionFooter } from './DocumentLineageFooters'
 import { DeletedSourcesNotice } from './DeletedSourcesNotice'
+import ErasedEvidenceNote from './ErasedEvidenceNote'
 import FeedbackCorpus from './FeedbackCorpus'
 import { featureRequestIdsOf, linkFeatureRequestCitations } from './featureRequestCitations'
 import { stillPresent, hasDroppedSource, inheritedExtraSources } from './documentLineage'
@@ -160,6 +161,7 @@ export default function DocumentsTab({
               <FeedbackCorpus feedbackIds={selectedDoc.input_feedback_ids}
                 featureRequestIds={featureRequestIdsOf(selectedDoc)}
                 className="mt-2" />
+              <ErasedEvidenceNote erasedEvidence={selectedDoc.erased_evidence} className="mt-1" />
               {/* Prototypes keep their own revision lineage (the footer above). */}
               {NO_CONTENT_EDITOR.has(selectedDoc.document_type) ? null : (
                 <DocumentVersions key={selectedDoc.document_id} projectId={project.project_id}

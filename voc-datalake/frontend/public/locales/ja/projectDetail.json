@@ -633,6 +633,8 @@
     "featureRequestsOnly_other": "{{count, number}}件の機能リクエストから作成",
     "showFeatureRequests": "リクエストを表示",
     "hideFeatureRequests": "リクエストを隠す",
-    "featureRequestLink": "リクエスト {{id}}"
+    "featureRequestLink": "リクエスト {{id}}",
+    "erasedSummary_one": "引用されたレビューまたはボードのリクエスト{{count, number}}件が消去されました（法的根拠を記録済み）",
+    "erasedSummary_other": "引用されたレビューまたはボードのリクエスト{{count, number}}件が消去されました（法的根拠を記録済み）"
   }
 }

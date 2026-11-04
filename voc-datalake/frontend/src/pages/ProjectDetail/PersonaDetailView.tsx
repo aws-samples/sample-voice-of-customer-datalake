@@ -21,6 +21,7 @@ import {
   QuotesSection,
   ScenarioSection,
 } from './PersonaSections'
+import ErasedEvidenceNote from './ErasedEvidenceNote'
 import FeedbackCorpus from './FeedbackCorpus'
 import { featureRequestIdsOf } from './featureRequestCitations'
 import ResearchNotes from './ResearchNotes'
@@ -73,6 +74,7 @@ function PersonaHeaderIdentity({ persona, shown, protection }: {
         ) : null}
         <FeedbackCorpus feedbackIds={persona.input_feedback_ids} citedIds={persona.evidence_feedback_ids}
           featureRequestIds={featureRequestIdsOf(persona)} className="mt-1.5" />
+        <ErasedEvidenceNote erasedEvidence={persona.erased_evidence} className="mt-1" />
         <CopiedFromLine copiedFrom={persona.copied_from} />
       </div>
     </div>
