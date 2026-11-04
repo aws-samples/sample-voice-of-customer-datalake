@@ -20,6 +20,8 @@
 @import "@fontsource/space-grotesk/700.css";
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
+@import "./styles/theme-palettes.css";
+@import "./styles/theme-marks.css";
 
 /* `dark:` matches whichever dark theme is active (use sparingly — prefer tokens). */
 @custom-variant dark (&:where([data-mode="dark"], [data-mode="dark"] *));
