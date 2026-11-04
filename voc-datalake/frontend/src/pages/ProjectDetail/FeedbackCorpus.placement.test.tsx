@@ -70,3 +70,21 @@ describe('the project detail boundary', () => {
     expect(detail.documents[0]?.input_feedback_ids).toBeUndefined()
   })
 })
+
+// The erased-evidence note (api/erasedEvidence.ts): cited reviews `voc-retention` erased, the count only.
+describe('the erased-evidence note', () => {
+  it('shows the count on a persona, even when every listed review was erased', () => {
+    renderPersona({ ...PERSONA, input_feedback_ids: [], erased_evidence: { count: 3 } })
+    expect(screen.getByTestId('erased-evidence')).toHaveTextContent('3 cited reviews were erased (legal basis recorded)')
+  })
+
+  it('shows the singular on a document', () => {
+    renderDocument({ ...PRD, input_feedback_ids: ['f1'], erased_evidence: { count: 1 } })
+    expect(screen.getByTestId('erased-evidence')).toHaveTextContent('1 cited review was erased (legal basis recorded)')
+  })
+
+  it('is absent without a mark', () => {
+    renderDocument(PRD)
+    expect(screen.queryByTestId('erased-evidence')).toBeNull()
+  })
+})
