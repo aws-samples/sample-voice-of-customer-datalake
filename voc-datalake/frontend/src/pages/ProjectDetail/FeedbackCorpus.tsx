@@ -15,34 +15,44 @@
  * @module pages/ProjectDetail/FeedbackCorpus
  */
 import clsx from 'clsx'
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import FeedbackCorpusModal from './FeedbackCorpusModal'
 import { corpusIds } from './feedbackCorpusIds'
+import { FeatureRequestCount, FeatureRequestList, FeatureRequestToggle } from './FeatureRequestCorpus'
 
 interface FeedbackCorpusProps {
   readonly feedbackIds: readonly string[] | undefined
   /** The ids the artefact cites (a persona's `evidence_feedback_ids`); absent or empty = no Cited view. */
   readonly citedIds?: readonly string[]
+  /** The feedback-board requests it was also written from (`featureRequestIdsOf`); counted apart from the reviews. */
+  readonly featureRequestIds?: readonly string[]
   /** Extra classes for the line (its placement, e.g. a top margin); the base look is the component's own. */
   readonly className?: string
 }
 
-export default function FeedbackCorpus({ feedbackIds, citedIds, className }: FeedbackCorpusProps) {
+export default function FeedbackCorpus({ feedbackIds, citedIds, featureRequestIds, className }: FeedbackCorpusProps) {
   const { t } = useTranslation('projectDetail')
   const ids = useMemo(() => corpusIds(feedbackIds), [feedbackIds])
   const cited = useMemo(() => corpusIds(citedIds), [citedIds])
+  const requests = useMemo(() => corpusIds(featureRequestIds), [featureRequestIds])
   const [open, setOpen] = useState(false)
-  if (ids.length === 0) return null
-  // The modal is a sibling of the line, never inside it: ModalShell renders in place (no portal),
-  // and its panel <div>s are not valid content of a <p>.
+  const [requestsOpen, setRequestsOpen] = useState(false)
+  const requestListId = useId()
+  if (ids.length === 0 && requests.length === 0) return null
+  // The modal and the request list are siblings of the line, never inside it: ModalShell renders in
+  // place (no portal), and neither its panel <div>s nor a <ul> are valid content of a <p>.
   return (
     <>
       <p data-testid="feedback-corpus" className={clsx('flex flex-wrap items-center gap-x-2 text-xs text-muted', className)}>
-        <span>{t('corpus.summary', { count: ids.length })}</span>
+        {ids.length > 0 ? <span>{t('corpus.summary', { count: ids.length })}</span> : null}
+        <FeatureRequestCount count={requests.length} withReviews={ids.length > 0} />
         {cited.length > 0 ? <span>{t('corpus.citedSummary', { count: cited.length })}</span> : null}
-        <button type="button" className="link" onClick={() => setOpen(true)}>{t('corpus.show')}</button>
+        {ids.length > 0 ? <button type="button" className="link" onClick={() => setOpen(true)}>{t('corpus.show')}</button> : null}
+        <FeatureRequestToggle count={requests.length} open={requestsOpen} listId={requestListId}
+          onToggle={() => setRequestsOpen((value) => !value)} />
       </p>
+      <FeatureRequestList ids={requests} open={requestsOpen} listId={requestListId} />
       {open ? <FeedbackCorpusModal ids={ids} citedIds={cited} onClose={() => setOpen(false)} /> : null}
     </>
   )
