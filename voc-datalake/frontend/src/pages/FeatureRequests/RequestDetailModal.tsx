@@ -18,6 +18,7 @@ import StatusBadge from './StatusBadge'
 import SupportRow from './SupportRow'
 import WriteError from './WriteError'
 import RequestFieldValues from './RequestFieldValues'
+import EnrichmentChips, { ProblemSummary } from './EnrichmentChips'
 import { RequestTotals } from './RequestTotals'
 import DescriptionField from './DescriptionField'
 import { descriptionError } from './templateDraft'
@@ -144,6 +145,8 @@ function DetailBody({ requestId, viewer, initialName, onClose }: Readonly<{
           <p className="text-xs text-muted break-words">
             {t('detail.reported', { name: displayName(request.reporter_name, request.reporter_email), email: request.reporter_email })}
           </p>
+          <EnrichmentChips enrichment={request.enrichment} />
+          <ProblemSummary enrichment={request.enrichment} />
         </div>
       )}
       <div className="flex flex-wrap gap-2">

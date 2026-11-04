@@ -296,5 +296,43 @@
     "notFound": "This board does not exist, or it is not shared with you.",
     "backToBoards": "Back to the boards",
     "standaloneIntro": "The boards you can use. Open one to add a request or +1 one."
+  },
+  "tabs": {
+    "boards": "Boards",
+    "insights": "Insights"
+  },
+  "insights": {
+    "label": "Board insights",
+    "intro": "What the board requests say, kept apart from review metrics.",
+    "board": "Board",
+    "allBoards": "All boards",
+    "window": "Created in",
+    "lastDays_one": "The last day",
+    "lastDays_other": "The last {{count}} days",
+    "allTime": "All time",
+    "enrich": "Enrich requests",
+    "enrichQueued_one": "{{count}} request queued, {{remaining}} still to enrich.",
+    "enrichQueued_other": "{{count}} requests queued, {{remaining}} still to enrich.",
+    "enrichFailed": "Could not start the enrichment. Try again.",
+    "loadFailed": "Could not load the board insights.",
+    "empty": "No requests in this window.",
+    "noData": "Nothing to show yet.",
+    "totalRequests": "Requests",
+    "totalSupporters": "Supporters",
+    "totalEnriched": "Enriched",
+    "top": "Most supported requests",
+    "byCategory": "Requests by category",
+    "byStatus": "Requests by status",
+    "bySentiment": "Requests by sentiment",
+    "uncategorized": "Uncategorized",
+    "notEnriched": "Not enriched yet",
+    "requests": "Requests",
+    "rowText_one": "{{name}}: {{value}} request",
+    "rowText_other": "{{name}}: {{value}} requests"
+  },
+  "enrichment": {
+    "label": "Enrichment:",
+    "category": "Category",
+    "summary": "In one sentence:"
   }
 }
