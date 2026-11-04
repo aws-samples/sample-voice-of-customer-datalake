@@ -80,6 +80,11 @@ describe('buildProxyEvent', () => {
     const event = buildProxyEvent(JOBS_CALL, claimsWithToken);
     expect(event.requestContext).toStrictEqual({ authorizer: { claims: { sub: 's' } }, stage: 'v1' });
   });
+
+  it('forwards the issuer and email_verified the board routes read', () => {
+    const claims = { sub: 's', email: 'j@example.com', iss: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_app', email_verified: 'true' };
+    expect(buildProxyEvent(JOBS_CALL, claims).requestContext).toStrictEqual({ authorizer: { claims }, stage: 'v1' });
+  });
 });
 
 describe('createInternalApiInvoker', () => {

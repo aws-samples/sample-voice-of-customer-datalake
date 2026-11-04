@@ -56,11 +56,15 @@ export function extractCallerClaims(event: LambdaEvent): CallerClaims {
   const groups = claimString(claims, 'cognito:groups');
   const username = claimString(claims, 'cognito:username');
   const email = claimString(claims, 'email');
+  const issuer = claimString(claims, 'iss');
+  const emailVerified = claimString(claims, 'email_verified');
   return {
     sub,
     ...(groups ? { 'cognito:groups': groups } : {}),
     ...(username ? { 'cognito:username': username } : {}),
     ...(email ? { email } : {}),
+    ...(issuer ? { iss: issuer } : {}),
+    ...(emailVerified ? { email_verified: emailVerified } : {}),
   };
 }
 

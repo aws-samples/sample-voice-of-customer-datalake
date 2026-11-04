@@ -23,11 +23,15 @@ describe('extractCallerClaims', () => {
     }
   });
 
-  it('forwards only sub, groups, username and email', () => {
+  it('forwards only sub, groups, username, email, the issuer and email_verified', () => {
+    const issuer = 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_app';
     const claims = extractCallerClaims(eventWithClaims({
       sub: 'abc', 'cognito:groups': 'admins', 'cognito:username': 'jane', email: 'j@example.com', 'custom:x': 'y', aud: 'client',
+      iss: issuer, email_verified: 'true',
     }));
-    expect(claims).toStrictEqual({ sub: 'abc', 'cognito:groups': 'admins', 'cognito:username': 'jane', email: 'j@example.com' });
+    expect(claims).toStrictEqual({
+      sub: 'abc', 'cognito:groups': 'admins', 'cognito:username': 'jane', email: 'j@example.com', iss: issuer, email_verified: 'true',
+    });
   });
 
   it('fails closed when sub is missing or blank', () => {
