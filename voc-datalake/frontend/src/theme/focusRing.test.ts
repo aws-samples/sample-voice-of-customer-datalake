@@ -10,12 +10,15 @@
  *
  * Every recipe now draws the base `:focus-visible` treatment: a 2px solid
  * `--ring` outline (outline is never reset by a variant class), and `--ring`
- * clears 3:1 on every surface a control sits on, in both themes.
+ * clears 3:1 on every surface a control sits on, in every theme. A theme's
+ * component overrides (styles/theme-palettes.css, Quick) are held to the same rules.
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { contrastRatio as contrast, indexCss as css, themeHexTokens as tokens, withoutComments as stripComments } from '@test/themeTokens'
+import {
+  THEMES, contrastRatio as contrast, indexCss as css, themeCss, themeHexTokens as tokens, withoutComments as stripComments,
+} from '@test/themeTokens'
 
 const canvasCss = readFileSync(resolve(__dirname, '../components/WorkflowEditor/workflowCanvas.css'), 'utf8')
 
@@ -41,7 +44,7 @@ function ruleBody(source: string, selector: string): string {
 const RING_OUTLINE = /outline:\s*2px solid var\(--ring\)/
 
 describe('focus ring token', () => {
-  it.each(['kiro-dark', 'kiro-light'] as const)('clears 3:1 on every surface in %s', (theme) => {
+  it.each(THEMES)('clears 3:1 on every surface in %s', (theme) => {
     const t = tokens(theme)
     for (const surface of ['bg', 'bg-accent', 'card', 'bg-elevated', 'bg-hover', 'panel']) {
       const ratio = contrast(t['ring'] ?? '', t[surface] ?? '')
@@ -80,8 +83,8 @@ describe('focus recipes draw the ring outline', () => {
     expect(edgeRules.some(([, body]) => /font-size:\s*12px/.test(body))).toBe(true)
   })
 
-  it('no focus rule relies on the accent-subtle tint alone', () => {
-    const focusRules = rules(css).filter(([selector]) => selector.includes(':focus'))
+  it('no focus rule (recipes or a theme override) relies on the accent-subtle tint alone', () => {
+    const focusRules = rules(themeCss).filter(([selector]) => selector.includes(':focus'))
     expect(focusRules.length).toBeGreaterThan(5)
     for (const [selector, body] of focusRules) {
       if (!body.includes('--accent-subtle')) continue

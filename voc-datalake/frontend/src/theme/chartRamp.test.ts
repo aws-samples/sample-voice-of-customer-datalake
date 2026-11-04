@@ -1,7 +1,7 @@
 /**
  * Pins the data ramp (`--chart-1…8` in index.css) to KiroCrew's categorical
- * data hues and to the properties a chart palette needs, in both themes:
- *  - SOURCE: the steps are KiroCrew's `--ctx-src-*` / `--ctx-cat-*` hues
+ * data hues (Kiro blocks) and to the properties a chart palette needs (every theme):
+ *  - SOURCE (Kiro only; other themes derive theirs, styles/theme-palettes.css): the steps are KiroCrew's `--ctx-src-*` / `--ctx-cat-*` hues
  *    (kirodotdev/kirocrew website/src/index.css). Dark uses KiroCrew's own recipe
  *    exactly (`color-mix(in srgb, <hue> 74%, var(--card))`); light keeps each hue
  *    and darkens it, because the 74%-into-white mix is 1.5–2.3:1 on the white card.
