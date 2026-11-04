@@ -4329,5 +4329,28 @@
         }
       }
     ]
+  },
+  {
+    "file": "api/appearanceApi.ts",
+    "method": "GET",
+    "call": "PATH",
+    "probes": [
+      {
+        "path": "/settings/appearance"
+      }
+    ]
+  },
+  {
+    "file": "api/appearanceApi.ts",
+    "method": "PUT",
+    "call": "PATH",
+    "probes": [
+      {
+        "path": "/settings/appearance",
+        "body": {
+          "default_theme": "kiro"
+        }
+      }
+    ]
   }
 ]

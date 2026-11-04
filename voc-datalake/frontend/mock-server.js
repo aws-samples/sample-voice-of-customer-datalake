@@ -16,6 +16,7 @@ import { handleSourceRoutes } from './mock-sources.js';
 import { handleImportHistoryRoutes } from './mock-import-history.js';
 import { handleFormRoutes } from './mock-forms.js';
 import { handleOnboardingRoutes } from './mock-onboarding.js';
+import { handleAppearanceRoutes } from './mock-appearance.js';
 import { handleBriefingRoutes } from './mock-briefing.js';
 import { handleAlertRoutes } from './mock-alerts.js';
 import { handleEmailInboxRoutes } from './mock-email-inbox.js';
@@ -1338,6 +1339,7 @@ function handleDomainModules(req, res, url) {
     || handlePersonaRoutes(req, res, url, send, shared)
     || handleProjectActionRoutes(req, res, url, send, shared)
     || handleOnboardingRoutes(req, res, url, send, shared)
+    || handleAppearanceRoutes(req, res, url, send, shared)
     || handleBriefingRoutes(req, res, url, send, shared)
     || handleAlertRoutes(req, res, url, send, shared)
     || handleEmailInboxRoutes(req, res, url, send, shared)
