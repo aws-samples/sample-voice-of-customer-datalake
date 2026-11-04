@@ -21,7 +21,7 @@
  */
 
 /* ── Nord (the Nord palette project, via kirocrew website/src/styles/theme-palettes.css) ── */
-:root[data-theme="nord-dark"] {
+:root[data-theme="nord-dark"], [data-theme="nord-dark"] {
   /* AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
    *   --control-border #616e88 → #8b99b5 (1.68:1 → 3.01:1)
    *   --accent-text #88c0d0 → #a3dcec (3.37:1 → 4.50:1)
@@ -60,7 +60,7 @@
   color-scheme: dark;
 }
 
-:root[data-theme="nord-light"] {
+:root[data-theme="nord-light"], [data-theme="nord-light"] {
   /* Data ramp step 1 is frost #5e81ac (the upstream --ring), not --accent: #4a6a98 is 7.9 ΔE2000 from --muted.
    * --accent-hover is darker than --accent: upstream #6d91bc carries white text at 3.27:1.
    * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
@@ -106,7 +106,7 @@
 
 
 /* ── Dracula (the Dracula palette project, via kirocrew website/src/styles/theme-palettes.css) ── */
-:root[data-theme="dracula-dark"] {
+:root[data-theme="dracula-dark"], [data-theme="dracula-dark"] {
   /* --accent-hover #e2c6ff: upstream #d4b0ff is 1.2 ΔE2000 from --accent, so hover showed nothing.
    * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
    *   --control-border #6272a4 → #8293c7 (1.94:1 → 3.03:1)
@@ -141,7 +141,7 @@
   color-scheme: dark;
 }
 
-:root[data-theme="dracula-light"] {
+:root[data-theme="dracula-light"], [data-theme="dracula-light"] {
   /* --accent-hover is darker than --accent: upstream #9055ff carries white text at 4.26:1.
    * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
    *   --control-border #8f8f87 → #85857d (2.64:1 → 3.02:1)
@@ -183,7 +183,7 @@
 
 
 /* ── High contrast (kirocrew website/src/styles/theme-palettes.css): text ≥ 7:1 (WCAG AAA), non-text ≥ 4.5:1 ── */
-:root[data-theme="highcontrast-dark"] {
+:root[data-theme="highcontrast-dark"], [data-theme="highcontrast-dark"] {
   /* Text ≥ 7:1, focus ring, control edges and chart steps ≥ 4.5:1.
    * --nav-active-bg is a dark cyan fill edged in --accent (upstream has no selected-row fill).
    * --shadow-sm is `0 0 #0000`: upstream `none` is invalid inside the .card shadow list.
@@ -218,7 +218,7 @@
   color-scheme: dark;
 }
 
-:root[data-theme="highcontrast-light"] {
+:root[data-theme="highcontrast-light"], [data-theme="highcontrast-light"] {
   /* Text ≥ 7:1, focus ring, control edges and chart steps ≥ 4.5:1.
    * --accent-hover is darker than --accent: upstream #0066ee carries white text at 5.08:1, under 7.
    * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
@@ -259,7 +259,7 @@
 
 
 /* ── Quick (the Quick design system: ink pill buttons, blue links and focus, violet accent, Inter) ── */
-:root[data-theme="quick-dark"] {
+:root[data-theme="quick-dark"], [data-theme="quick-dark"] {
   /* Quick Dark. Tints re-expressed as rgba so they sit on any surface; --ring = --focus;
    * --shadow-sm is `0 0 #0000` (flat; `none` is invalid in a shadow list). Data ramp steps 3–5, 7, 8
    * derived from Quick's brand hues (teal, coral, magenta, green, amber). */
@@ -292,7 +292,7 @@
   color-scheme: dark;
 }
 
-:root[data-theme="quick-light"] {
+:root[data-theme="quick-light"], [data-theme="quick-light"] {
   /* Quick Light. Opaque tints (#e8e6ff lavender, #e7f4e8 …) re-expressed as rgba; --ring = --focus;
    * --shadow-sm `0 0 #0000` (flat). Data ramp steps 3–5, 7, 8 from Quick's brand hues, darkened to ≥ 3.2:1.
    * AA-adjusted from upstream (lowest ratio on what it sits on, before → after):
