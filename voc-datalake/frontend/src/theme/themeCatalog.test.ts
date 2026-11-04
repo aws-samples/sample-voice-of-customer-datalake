@@ -47,4 +47,10 @@ describe('themeCatalog', () => {
     expect(themeFavicon('kiro')).toBe('/kiro-ghost.svg')
     expect(themeFavicon('quick')).toBe('/favicons/quick.svg')
   })
+
+  it('the dev mock accepts exactly the shipped theme ids (mock-appearance.js)', () => {
+    const mock = readFileSync(resolve(__dirname, '../../mock-appearance.js'), 'utf8')
+    const quoted = COLOR_THEME_IDS.map((id) => `'${id}'`).join(', ')
+    expect(mock).toContain(`const THEME_IDS = [${quoted}];`)
+  })
 })
