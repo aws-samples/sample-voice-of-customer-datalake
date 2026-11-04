@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import {
   COLOR_THEME_IDS, DEFAULT_COLOR_THEME, isColorThemeChoice, isColorThemeId, resolveColorTheme, themeAttribute,
-  WORKSPACE_THEME_CHOICE,
+  themeFavicon, WORKSPACE_THEME_CHOICE,
 } from './themeCatalog'
 
 describe('themeCatalog', () => {
@@ -33,5 +35,16 @@ describe('themeCatalog', () => {
   it('names the stylesheet block `<id>-<mode>`', () => {
     expect(themeAttribute('highcontrast', 'light')).toBe('highcontrast-light')
     expect(themeAttribute('kiro', 'dark')).toBe('kiro-dark')
+  })
+
+  it.each(COLOR_THEME_IDS)('ships the %s tab icon it points at, as an SVG', (id) => {
+    const file = resolve(__dirname, '../../public', themeFavicon(id).slice(1))
+    expect(existsSync(file)).toBe(true)
+    expect(readFileSync(file, 'utf8')).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
+  })
+
+  it('keeps Kiro on its ghost and every other theme under /favicons/', () => {
+    expect(themeFavicon('kiro')).toBe('/kiro-ghost.svg')
+    expect(themeFavicon('quick')).toBe('/favicons/quick.svg')
   })
 })

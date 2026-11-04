@@ -191,6 +191,8 @@ const TRACKED_DIRECTORIES = [
  * read properties of undefined`.
  */
 const NESTED_ALLOWED_EXTENSIONS: Partial<Record<string, readonly string[]>> = {
+  // One SVG tab icon per colour theme (theme/themeCatalog.ts `themeFavicon`).
+  favicons: ['.svg'],
   // i18next-parser writes one JSON namespace per language and nothing else.
   locales: ['.json'],
 }
@@ -211,6 +213,9 @@ const EXPECTED_PUBLIC_ENTRIES = [
   // SVG favicon (Kiro ghost mark), declared first in index.html's icon links;
   // favicon.ico stays as the fallback for browsers without SVG icons.
   'kiro-ghost.svg',
+  // The tab icon of every other colour theme (Kiro keeps kiro-ghost.svg): theme-init.js
+  // and useThemeSync point index.html's icon link at `/favicons/<theme>.svg`.
+  'favicons',
   // i18next fetches translation JSON at runtime over HTTP, so these cannot be
   // bundled — src/i18n/loadPath.ts builds `/locales/{{lng}}/{{ns}}.json?v=…`.
   // Contents are guarded separately by src/i18n/localeParity.test.ts.

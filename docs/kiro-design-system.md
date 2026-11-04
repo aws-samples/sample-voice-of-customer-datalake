@@ -405,9 +405,10 @@ Layering: page content has **no z-index**. The sidebar `<aside>` is `z-50` (it o
   | Nord | a six-armed snowflake | floats |
   | Dracula | a bat | floats |
   | High contrast | the half-filled contrast circle, heavy outline | floats |
-  | Quick | the Quick tile: brand gradient, a white speech bubble and four-point spark | the spark breathes (`animate-mark-breathe`) |
+  | Quick | the four-point spark of Quick's assistant, outlined in the brand gradient (in `currentColor` with `onFill`, on the accent launcher) | the spark spins (`animate-mark-spin`) |
 
-  Nord, Dracula and High contrast draw in `currentColor` on a 24-unit grid, so the caller's `text-*` class colours them. The Quick tile is never recoloured; its colours are the `--mark-quick-*` tokens in `styles/theme-marks.css`. Every mark is decorative (`aria-hidden`, not focusable, `data-mark="<theme id>"`); the text beside it names the product, and motion stops under `prefers-reduced-motion`. The favicon stays the Kiro ghost (`public/kiro-ghost.svg`).
+  Nord, Dracula and High contrast draw in `currentColor` on a 24-unit grid, so the caller's `text-*` class colours them. The Quick spark takes the `--mark-quick-*` gradient in `styles/theme-marks.css` (lighter in Quick dark, ≥ 3:1 on its navy), never the palette. Every mark is decorative (`aria-hidden`, not focusable, `data-mark="<theme id>"`); the text beside it names the product, and motion stops under `prefers-reduced-motion`.
+- **Favicon:** the tab icon follows the theme: `themeFavicon()` (`theme/themeCatalog.ts`) is `public/kiro-ghost.svg` for Kiro and `public/favicons/<id>.svg` for the others, the same shapes in fixed colours that read on light and dark tab bars (the Quick one switches its gradient with `prefers-color-scheme`). `theme-init.js` sets index.html's icon link before the tab draws it, and `applyTheme` keeps it in step (pinned by `themeInit.test.ts` and `themeCatalog.test.ts`).
 - **Theme toggle icons:** `Monitor` (system) · `Sun` (light) · `Moon` (dark).
 
 ## Components

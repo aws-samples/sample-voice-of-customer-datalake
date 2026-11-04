@@ -33,8 +33,9 @@ their own.
 - **Account → Preferences → Colour theme**: "Workspace default" (the administrator's pick) or one of the five
   themes, kept in this browser; light or dark stays its own setting.
 - **Theme marks**: the menu, sign-in screen and AI assistant show the active theme's mark instead of always the Kiro
-  ghost: a snowflake for Nord, a bat for Dracula, a contrast circle for High contrast, the Quick tile with a speech
-  bubble for Quick. The Kiro theme keeps the ghost.
+  ghost: a snowflake for Nord, a bat for Dracula, a contrast circle for High contrast, Quick's four-point spark for
+  Quick (it spins while the assistant is thinking). The Kiro theme keeps the ghost. The browser tab icon follows the
+  theme too.
 
 ### Fixed
 - **Kiro dark contrast**: white text on a hovered primary button was 3.68:1 and the faint `muted-strong` text on a

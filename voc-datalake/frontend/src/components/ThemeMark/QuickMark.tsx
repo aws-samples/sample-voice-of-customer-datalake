@@ -1,52 +1,62 @@
 /**
- * @fileoverview The Quick mark, after the Quick design system's brand tile: a
- * 64-unit tile with 16-unit corners in the brand gradient, a white four-point
- * spark top right and, for voice of the customer, a white speech bubble (3.6-unit
- * stroke) where the original has an envelope. The tile is never recoloured, in
- * either mode: its colours are the `--mark-quick-*` tokens of
- * styles/theme-marks.css, not the active palette. The thinking pose breathes the
- * spark (`animate-mark-breathe`, still under reduced motion).
+ * @fileoverview The Quick mark: the Quick design system's four-point spark, outlined in
+ * the brand gradient (violet → purple → magenta, the `--mark-quick-*` tokens of
+ * styles/theme-marks.css, never recoloured by a palette). On a filled surface (the
+ * assistant's round launcher) it is drawn in `currentColor` instead, so it keeps its
+ * contrast on the accent fill. The thinking pose spins the spark (`animate-mark-spin`,
+ * still under reduced motion), as Quick's own assistant does while it works.
  * @module components/ThemeMark/QuickMark
  */
 import { useId } from 'react'
+import clsx from 'clsx'
 import MarkSvg from './MarkSvg'
 import type { MarkProps } from './MarkSvg'
 
-const GLYPH = 'var(--mark-quick-glyph)'
-const BUBBLE = 'M19 20H39A6 6 0 0 1 45 26V35A6 6 0 0 1 39 41H27L19 47V41A6 6 0 0 1 13 35V26A6 6 0 0 1 19 20Z'
-const SPARK = 'M49 11.5c.9 3.9 2.7 5.7 6.5 6.5-3.8.8-5.6 2.6-6.5 6.5-.9-3.9-2.7-5.7-6.5-6.5 3.8-.8 5.6-2.6 6.5-6.5Z'
-const DOTS = [21.5, 29, 36.5] as const
+/** The spark outline, centred on (0, 0) within ±32.8 units (the Quick assistant's own path). */
+const QUICK_SPARK = [
+  'M32.717-.129C32.686-2.67 30.186-3.263 30.186-3.263L11.447-10.57',
+  'S4.82-27.415 4.261-28.703C3.355-30.789 2.109-31.856.479-31.77-1.35-31.672-2.277-30.88-2.974-28.716',
+  'C-3.486-27.126-9.948-10.663-9.948-10.663L-29.437-2.895S-31.518-2.209-31.532-.005',
+  'C-31.545 2.172-30.365 2.636-29.135 3.243-26.173 4.706-9.908 10.796-9.908 10.796',
+  'S-5.842 21.806-3.041 28.557C-2.274 30.404-1.686 32.191.451 32.208 2.124 32.221 3.181 31.95 4.419 28.516',
+  'C6.337 23.197 11.511 10.756 11.511 10.756S25.779 4.934 29.577 3.635C32.16 2.752 32.737 1.483 32.717-.129Z',
+].join('')
 
-function QuickTile({ className, thinking }: Readonly<MarkProps & { thinking: boolean }>) {
-  const tile = `${useId()}-tile`
+/** Room for the 6-unit stroke around the ±32.8 outline. */
+const VIEW_BOX = '-36 -36 72 72'
+
+function QuickSpark({ className, onFill = false, thinking }: Readonly<MarkProps & { thinking: boolean }>) {
+  const gradient = `${useId()}-spark`
   return (
-    <MarkSvg theme="quick" viewBox="0 0 64 64" className={className}>
-      <defs>
-        <linearGradient id={tile} x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
-          <stop offset="0" style={{ stopColor: 'var(--mark-quick-from)' }} />
-          <stop offset="0.55" style={{ stopColor: 'var(--mark-quick-via)' }} />
-          <stop offset="1" style={{ stopColor: 'var(--mark-quick-to)' }} />
-        </linearGradient>
-      </defs>
-      <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${tile})`} />
-      <path d={BUBBLE} stroke={GLYPH} strokeWidth={3.6} strokeLinejoin="round" />
-      {DOTS.map((cx) => <circle key={cx} cx={cx} cy={30.5} r={2.6} fill={GLYPH} />)}
+    <MarkSvg theme="quick" viewBox={VIEW_BOX} className={className}>
+      {onFill ? null : (
+        <defs>
+          <linearGradient id={gradient} x1="-32" y1="-32" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+            <stop offset="0" style={{ stopColor: 'var(--mark-quick-from)' }} />
+            <stop offset="0.55" style={{ stopColor: 'var(--mark-quick-via)' }} />
+            <stop offset="1" style={{ stopColor: 'var(--mark-quick-to)' }} />
+          </linearGradient>
+        </defs>
+      )}
       <path
-        d={SPARK}
-        fill={GLYPH}
+        d={QUICK_SPARK}
+        stroke={onFill ? 'currentColor' : `url(#${gradient})`}
+        strokeWidth={6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
         data-spark=""
         style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-        className={thinking ? 'animate-mark-breathe motion-reduce:animate-none' : undefined}
+        className={clsx(thinking && 'animate-mark-spin motion-reduce:animate-none')}
       />
     </MarkSvg>
   )
 }
 
-export default function QuickMark({ className }: Readonly<MarkProps>) {
-  return <QuickTile className={className} thinking={false} />
+export default function QuickMark(props: Readonly<MarkProps>) {
+  return <QuickSpark {...props} thinking={false} />
 }
 
-/** The busy indicator: the tile holds still while its spark breathes. */
-export function QuickMarkThinking({ className }: Readonly<MarkProps>) {
-  return <QuickTile className={className} thinking />
+/** The busy indicator: the spark spins. */
+export function QuickMarkThinking(props: Readonly<MarkProps>) {
+  return <QuickSpark {...props} thinking />
 }
