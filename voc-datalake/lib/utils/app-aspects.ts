@@ -5,8 +5,8 @@
  *
  * In this order (registration order is the order the aspects visit a construct in):
  *
- *   0. the audit-row Denies (audit-row-guard.ts) on every role that writes one of `auditRowTables` (the tables
- *      holding `AUDIT#*` rows: pass VocCoreStack, or a fixture's dependency props; `{}` when the scope has none).
+ *   0. the audit-row Denies (audit-row-guard.ts) on every role that writes one of the `auditRowTables` option (the
+ *      tables holding `AUDIT#*` rows: pass VocCoreStack, or a fixture's dependency props; `{}` when the scope has none).
  *      Not an aspect: it reads the grants that exist when it is called, so before the exact-grants rewrite;
  *   1. every Lambda logs to its own retained log group and its role writes only that group (log-retention.ts);
  *   2. `protectData` (on unless `-c protectData=false`): every log group is retained on stack deletion;
@@ -33,7 +33,12 @@ const applied = new WeakSet<IConstruct>();
  * `applyExactGrants` wraps the policies it finds, so a scope that is, contains or sits inside an already rewritten
  * scope is refused (a fixture that builds through a helper which already applied them, then applies them again).
  */
-export function applyAppAspects(scope: IConstruct, auditRowTables: AuditRowTables): void {
+interface AppAspectsOptions {
+  /** The tables holding `AUDIT#*` rows (step 0): VocCoreStack, a fixture's dependency props, or `{}`. */
+  readonly auditRowTables: AuditRowTables;
+}
+
+export function applyAppAspects(scope: IConstruct, { auditRowTables }: AppAspectsOptions): void {
   const overlapping = [...scope.node.scopes, ...scope.node.findAll()].find((node) => applied.has(node));
   if (overlapping !== undefined) {
     throw new Error(`applyAppAspects: ${scope.node.path || '<app>'} overlaps ${overlapping.node.path || '<app>'}, already rewritten`);

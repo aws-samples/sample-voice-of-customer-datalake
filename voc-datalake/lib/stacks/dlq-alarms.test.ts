@@ -71,7 +71,7 @@ function synthCoreTemplate(context: Record<string, unknown> = {}, deploymentPref
     context: { ...committedFeatureFlags(), 'aws:cdk:bundling-stacks': [], skipFrontendBuildCheck: true, ...context },
   });
   const stack = new VocCoreStack(app, 'TestCoreStack', { env, deploymentPrefix });
-  applyAppAspects(app, stack); // the rewrites bin/voc-datalake.ts applies
+  applyAppAspects(app, { auditRowTables: stack }); // the rewrites bin/voc-datalake.ts applies
   return Template.fromStack(stack);
 }
 

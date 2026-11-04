@@ -145,7 +145,7 @@ export function buildApiStack(
     enabledSources,
   });
   // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
-  applyAppAspects(app, dependencies);
+  applyAppAspects(app, { auditRowTables: dependencies });
   return stack;
 }
 

@@ -38,6 +38,6 @@ export function synthIngestionStacks(
     frontendDomain,
   });
   // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
-  applyAppAspects(app, { aggregatesTable });
+  applyAppAspects(app, { auditRowTables: { aggregatesTable } });
   return { ingestion: Template.fromStack(stack), deps: Template.fromStack(deps) };
 }

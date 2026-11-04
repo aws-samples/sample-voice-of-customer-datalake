@@ -64,7 +64,7 @@ export function synthProcessingTemplate(options: { withIndexes?: boolean } = {})
     },
   });
   // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
-  applyAppAspects(app, tables);
+  applyAppAspects(app, { auditRowTables: tables });
 
   return Template.fromStack(stack);
 }
