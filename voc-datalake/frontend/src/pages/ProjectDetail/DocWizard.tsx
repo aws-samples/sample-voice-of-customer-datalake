@@ -184,6 +184,7 @@ export function DocWizard({
       documents={documents}
       contextConfig={contextConfig}
       onContextChange={onContextChange}
+      offerFeatureRequests
       renderFinalStep={() => (
         <div className="space-y-6">
           {human.lockedType === undefined ? null : <HumanDrivenNotice docType={human.lockedType} title={docConfig.title} />}

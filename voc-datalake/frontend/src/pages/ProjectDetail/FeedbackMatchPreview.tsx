@@ -22,6 +22,7 @@ import type { FeedbackPreviewBody } from '../../api/projectsApi'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import type { FeedbackPreview, FeedbackPreviewMode, FeedbackPreviewPurpose } from '../../api/feedbackPreviewSchema'
 import type { ContextConfig } from '../../components/DataSourceWizard/types'
+import { featureRequestEvidenceFields } from '../../components/DataSourceWizard/featureRequestEvidence'
 
 /** How long the filters must be still before the count is re-requested. */
 const FEEDBACK_PREVIEW_DEBOUNCE_MS = 500
@@ -40,6 +41,8 @@ interface KnownPreview {
   readonly lowerBound: boolean
   readonly sampleLimit: number | null
   readonly estimated: boolean
+  /** Board requests matching, when asked for (shown beside the reviews, never added to them). */
+  readonly featureRequests: number | null
 }
 
 function knownPreview(preview: FeedbackPreview | undefined): KnownPreview | null {
@@ -49,6 +52,7 @@ function knownPreview(preview: FeedbackPreview | undefined): KnownPreview | null
     lowerBound: preview.matched_is_lower_bound,
     sampleLimit: preview.sample_limit,
     estimated: preview.estimated,
+    featureRequests: preview.feature_requests_matched,
   }
 }
 
@@ -61,6 +65,7 @@ function previewBody(config: ContextConfig): FeedbackPreviewBody {
     categories: sorted(config.categories),
     sentiments: sorted(config.sentiments),
     days: config.days,
+    ...featureRequestEvidenceFields({ ...config, featureRequestBoardIds: sorted(config.featureRequestBoardIds) }),
   }
 }
 
@@ -99,6 +104,11 @@ function StatusLine({ preview, stale, confirming }: StatusLineProps) {
   return (
     <p className={clsx('text-sm text-text transition-opacity', stale && 'opacity-60')}>
       <span className="font-medium">{matchText(t, preview)}</span> {sampleText(t, preview)}
+      {preview.featureRequests === null ? null : (
+        <span className="ml-1" data-testid="feature-requests-matched">
+          {t('dataSourceWizard.feedbackPreview.featureRequests', { count: preview.featureRequests })}
+        </span>
+      )}
       {preview.estimated && confirming ? (
         <span className="ml-1 inline-flex items-center gap-1 text-xs text-muted">
           <Loader2 size={12} aria-hidden="true" className="animate-spin" />

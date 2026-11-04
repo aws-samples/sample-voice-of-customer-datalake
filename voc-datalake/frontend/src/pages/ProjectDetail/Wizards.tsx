@@ -138,6 +138,8 @@ export function PersonaWizard({
       // sequence, since this is exactly where someone would look for "use my
       // research".
       hideDataSources={PERSONA_HIDDEN_DATA_SOURCES}
+      // Board requests are a project generation's evidence (C5); the company library has no such route.
+      offerFeatureRequests={projectId !== undefined}
       // Generation samples the matching feedback: say how much matches while the filters are chosen.
       feedbackStepFooter={projectId
         ? <FeedbackMatchPreview projectId={projectId} contextConfig={contextConfig} purpose="personas" />
@@ -260,6 +262,7 @@ export function ResearchWizard({
       contextConfig={contextConfig}
       onContextChange={onContextChange}
       extraDataSources={extraDataSources}
+      offerFeatureRequests
       feedbackStepFooter={<FeedbackMatchPreview projectId={projectId} contextConfig={contextConfig} purpose="research" />}
       renderFinalStep={() => (
         <FinalStepSummary contextConfig={contextConfig} personas={personas} documents={documents} startError={startError}>

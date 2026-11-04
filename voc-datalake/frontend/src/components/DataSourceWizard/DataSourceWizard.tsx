@@ -33,6 +33,8 @@ interface DataSourceWizardProps {
   readonly extraDataSources?: ReadonlyArray<ExtraDataSource>
   /** Rendered at the foot of the feedback-filters step (the live "N reviews match" line). */
   readonly feedbackStepFooter?: React.ReactNode
+  /** Offer feedback-board requests as their own evidence (C5: personas, research, PRD / PR/FAQ). */
+  readonly offerFeatureRequests?: boolean
 }
 
 // Every wizard is the brand accent: progress bar `bg-accent`, Next/Submit `btn-primary`,
@@ -58,6 +60,7 @@ export default function DataSourceWizard({
   combineDocuments = false,
   extraDataSources = [],
   feedbackStepFooter,
+  offerFeatureRequests = false,
 }: DataSourceWizardProps) {
   const {
     step,
@@ -107,6 +110,7 @@ export default function DataSourceWizard({
             otherDocsCount={otherDocs.length}
             researchDocsCount={researchDocs.length}
             extraDataSources={extraDataSources}
+            showFeatureRequests={offerFeatureRequests}
           />
         )}
 

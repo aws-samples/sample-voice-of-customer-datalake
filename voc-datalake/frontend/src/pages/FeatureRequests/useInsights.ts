@@ -64,10 +64,8 @@ export function useEnrichRequests() {
   return useMutation({
     mutationFn: (board: string) => enrichFeatureRequests(board === '' ? undefined : board),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: featureRequestInsightKeys.root }),
-        queryClient.invalidateQueries({ queryKey: featureRequestKeys.root('app') }),
-      ])
+      // The board cache root holds the Insights figures too (featureRequestInsightKeys).
+      await queryClient.invalidateQueries({ queryKey: featureRequestKeys.root('app') })
     },
   })
 }

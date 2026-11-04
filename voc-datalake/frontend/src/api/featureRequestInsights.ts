@@ -27,9 +27,9 @@ export interface InsightsQuery {
   readonly days: InsightWindow
 }
 
+/** Under the app session's board cache (`featureRequestKeys.root('app')`), so every board write refreshes them too. */
 export const featureRequestInsightKeys = {
-  root: ['feature-request-insights'] as const,
-  insights: (query: InsightsQuery) => ['feature-request-insights', query.board ?? '', query.days] as const,
+  insights: (query: InsightsQuery) => ['feature-requests', 'app', 'insights', query.board ?? '', query.days] as const,
 }
 
 function insightsParams({ board, days }: InsightsQuery): string {

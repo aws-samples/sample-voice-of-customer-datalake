@@ -12,6 +12,7 @@ import { ALL_TIME_CUSTOM_DAYS } from '../../api/baseUrl'
 import type { CategoryOption, ContextConfig } from './types'
 import { useSentimentLabels } from './sentimentLabels'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
+import FeatureRequestsSource from './FeatureRequestsSource'
 
 /** Time-range choices offered as "Last N days"; a year and all time (0) get their own labels. */
 const DAY_RANGE_OPTIONS = [7, 14, 30, 60, 90] as const
@@ -87,6 +88,8 @@ interface DataSourcesStepProps {
   readonly otherDocsCount: number
   readonly researchDocsCount: number
   readonly extraDataSources?: ReadonlyArray<ExtraDataSource>
+  /** Offer feedback-board requests as their own evidence (persona, research and document wizards). */
+  readonly showFeatureRequests?: boolean
 }
 
 export function DataSourcesStep({
@@ -102,6 +105,7 @@ export function DataSourcesStep({
   otherDocsCount,
   researchDocsCount,
   extraDataSources = [],
+  showFeatureRequests = false,
 }: DataSourcesStepProps) {
   const { t } = useTranslation('components')
   return (
@@ -173,18 +177,34 @@ export function DataSourcesStep({
             />
           )}
 
-          {extraDataSources.map(source => (
-            <DataSourceCheckbox
-              key={source.key}
-              checked={source.checked}
-              onChange={source.onChange}
-              title={source.title}
-              description={source.description}
-            />
-          ))}
+          <PeerSources contextConfig={contextConfig} onContextChange={onContextChange}
+            showFeatureRequests={showFeatureRequests} extraDataSources={extraDataSources} />
         </div>
       </div>
     </div>
+  )
+}
+
+/** The sources after the project's own: feedback-board requests (when offered), then the wizard's extras. */
+function PeerSources({ contextConfig, onContextChange, showFeatureRequests, extraDataSources }: Readonly<{
+  contextConfig: ContextConfig
+  onContextChange: (config: ContextConfig) => void
+  showFeatureRequests: boolean
+  extraDataSources: ReadonlyArray<ExtraDataSource>
+}>) {
+  return (
+    <>
+      {showFeatureRequests ? <FeatureRequestsSource contextConfig={contextConfig} onContextChange={onContextChange} /> : null}
+      {extraDataSources.map(source => (
+        <DataSourceCheckbox
+          key={source.key}
+          checked={source.checked}
+          onChange={source.onChange}
+          title={source.title}
+          description={source.description}
+        />
+      ))}
+    </>
   )
 }
 

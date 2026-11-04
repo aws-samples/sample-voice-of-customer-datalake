@@ -14,7 +14,7 @@ const previewFeedback = vi.hoisted(() => vi.fn())
 vi.mock('../../api/projectsApi', () => ({ projectsApi: { previewFeedback } }))
 
 const answer = (fields: Partial<FeedbackPreview>): FeedbackPreview => ({
-  matched: 0, matched_is_lower_bound: false, sample_limit: 145, estimated: false, ...fields,
+  matched: 0, matched_is_lower_bound: false, sample_limit: 145, estimated: false, feature_requests_matched: null, ...fields,
 })
 
 /** Answer each mode with its own promise, resolved when the test says so. */
@@ -37,6 +37,19 @@ function renderPreview(purpose: 'personas' | 'research' = 'personas') {
 
 describe('FeedbackMatchPreview', () => {
   beforeEach(() => { previewFeedback.mockReset() })
+
+  it('asks for board requests with the picked boards, and shows them beside the reviews', async () => {
+    previewFeedback.mockResolvedValue(answer({ matched: 3, feature_requests_matched: 4 }))
+    render(
+      <FeedbackMatchPreview projectId="proj-1" purpose="research"
+        contextConfig={{ ...defaultContextConfig, useFeatureRequests: true, featureRequestBoardIds: ['brd_sales'] }} />,
+      { wrapper: createWizardWrapper() },
+    )
+    expect(await screen.findByTestId('feature-requests-matched')).toHaveTextContent('Also 4 feature requests from the boards.')
+    expect(previewFeedback).toHaveBeenCalledWith('proj-1', expect.objectContaining({
+      include_feature_requests: true, feature_request_board_ids: ['brd_sales'],
+    }), 'exact', 'research')
+  })
 
   it('asks for both modes with the generation filters and the purpose', async () => {
     previewFeedback.mockResolvedValue(answer({ matched: 3 }))

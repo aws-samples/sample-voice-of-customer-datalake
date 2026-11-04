@@ -246,7 +246,19 @@
       "usesAll": "Persona generation reads all of them.",
       "confirming": "Confirming the exact count…",
       "noMatches": "No reviews match these filters. Widen them, or the run has nothing to read.",
-      "error": "Could not count the matching reviews."
+      "error": "Could not count the matching reviews.",
+      "featureRequests_one": "Also {{count, number}} feature request from the boards.",
+      "featureRequests_other": "Also {{count, number}} feature requests from the boards."
+    },
+    "featureRequests": {
+      "title": "Feature requests",
+      "description": "Requests from the feedback boards, read as their own evidence beside the reviews.",
+      "boards": "Boards to read",
+      "boardsHint": "Pick boards to narrow it, or none to read every board.",
+      "allBoards": "All boards",
+      "loadingBoards": "Loading the boards…",
+      "boardsFailed": "Could not load the boards. Every board will be read.",
+      "noBoards": "There are no boards to read yet."
     }
   },
   "documentExport": {

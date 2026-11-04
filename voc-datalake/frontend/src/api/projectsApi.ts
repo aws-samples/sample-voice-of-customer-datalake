@@ -63,8 +63,17 @@ function withoutAssistJobs(answer: { success: boolean; jobs: ProjectJob[] }) {
     : answer
 }
 
+/**
+ * Feedback-board requests as their own evidence in a persona / research run or its live count (C5):
+ * absent = off; `feature_request_board_ids` (≤ 20) narrows them, absent = every board.
+ */
+export interface FeatureRequestEvidenceBody {
+  readonly include_feature_requests?: boolean
+  readonly feature_request_board_ids?: readonly string[]
+}
+
 /** The feedback filters a wizard's live count reads (the generation request's own fields). */
-export interface FeedbackPreviewBody {
+export interface FeedbackPreviewBody extends FeatureRequestEvidenceBody {
   readonly sources: readonly string[]
   readonly categories: readonly string[]
   readonly sentiments: readonly string[]
@@ -151,7 +160,7 @@ export const projectsApi = {
     response_language?: string
     /** true adds next to the project's personas; false/absent replaces them (#353). */
     keep_existing_personas?: boolean
-  }) =>
+  } & FeatureRequestEvidenceBody) =>
     // Async since the work moved to the persona-generator Lambda: the route answers
     // with a job id and the UI polls the jobs list. It has not returned `personas`
     // (or an `analysis` blob) for some time — the old synchronous shape lingered here
@@ -225,7 +234,7 @@ export const projectsApi = {
     selected_document_ids?: string[]
     response_language?: string
     use_web_search?: boolean
-  }) =>
+  } & FeatureRequestEvidenceBody) =>
     fetchApi<{
       success: boolean;
       job_id: string;
