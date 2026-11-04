@@ -5,13 +5,11 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import patch
 
-import boto3
 import pytest
 from engagement_fixtures import ADMIN, BOARD, BOARD_POOL, ISSUER, USER, engagement_world, event
 
-from shared import feature_boards_routes, feature_request_evidence, feature_requests_routes
+from shared import feature_boards_routes, feature_requests_routes
 from shared import feature_requests_search_routes as search_routes
 from shared.api import create_api_resolver
 from shared.exceptions import ConfigurationError
@@ -62,14 +60,10 @@ def _request(table: Any, n: int, board_id: str | None, *, days_ago: int = 1, sup
 def world():
     with engagement_world() as w:
         w.participants.put_item(Item={**SETTINGS_KEY, 'company_domains': ['acme.example']})
-        resource = boto3.resource('dynamodb', region_name='us-east-1')
-        feature_request_evidence._table_named.cache_clear()
-        with patch('shared.feature_request_evidence.get_dynamodb_resource', return_value=resource):
-            _board(w.requests, OPEN_BOARD)
-            _board(w.requests, ANYONE_BOARD, audience='anyone')
-            _board(w.requests, ARCHIVED_BOARD, archived=True)
-            yield w
-        feature_request_evidence._table_named.cache_clear()
+        _board(w.requests, OPEN_BOARD)
+        _board(w.requests, ANYONE_BOARD, audience='anyone')
+        _board(w.requests, ARCHIVED_BOARD, archived=True)
+        yield w
 
 
 def _search(ctx: Any, claims: dict = USER, **query: str) -> tuple[int, Any]:
