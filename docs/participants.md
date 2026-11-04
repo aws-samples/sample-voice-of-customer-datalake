@@ -149,3 +149,6 @@ Table `voc-participants-<suffix>` (pk/sk, index `gsi1`, TTL `ttl`, the Core KMS 
   tombstone `AUDIT#tombstone#participant` / `<sha256 of the person id>` (`legal_basis`, `actor` `{sub, kind}`,
   `deleted_at`) and the `AUDIT#delete` row every workspace delete writes (`kind: participant`, target `{person_id}`
   (the opaque id the ask's recipient rows keep too), the basis as its `reason`; `shared/delete_audit.py`). Neither has a `ttl`.
+  Some HTTP clients, proxies and API tools drop the body of a `DELETE` request (RFC 9110 gives it no defined
+  meaning) and send none: the route then answers **400** (no `legal_basis`) and deletes nothing. Send the body with
+  `Content-Type: application/json` from a client that keeps it (the SPA, `curl -X DELETE -d '{…}'`, `fetch`).
