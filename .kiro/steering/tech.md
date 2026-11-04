@@ -133,7 +133,7 @@ it and get `erased_evidence`). Whole-file uploads (`raw/csv_upload/*`,
 else listed as `files_needing_review`. A whole-source erasure (`field: 'source'`) scans by
 `source_platform`, then sweeps `raw/{source}/` (every version), writing progress
 to the job row. Permissions: feedback Get/Query/Scan/DeleteItem,
-aggregates Get/Put/Update/Query + BatchWrite/BatchGet (jobs, `AUDIT#retention`, tombstones),
+aggregates Get/Put/Update/Query + BatchGet (jobs, `AUDIT#retention`, tombstones one PutItem each; no BatchWrite, which would allow deletes),
 radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan/UpdateItem, raw bucket
 `s3:DeleteObject`/`DeleteObjectVersion` on `raw/*` + `ListBucketVersions`, KMS,
 invoke itself. Ingestion-side Lambdas (plugins, webhooks, manual import,

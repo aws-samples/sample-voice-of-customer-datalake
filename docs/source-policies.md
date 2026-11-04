@@ -155,9 +155,10 @@ How it works:
 - **Tombstones first.** Before an item is deleted, the worker writes its tombstone in
   `voc-aggregates`: `pk AUDIT#tombstone#<source>`, `sk <feedback_id>`, with `feedback_id`, `source`,
   `store` (`feedback` or `radar`), `mode`, `run_id`, `job_id` (erasure), `legal_basis` and
-  `deleted_at`, and no content and no `ttl` (TENETS.md → D4). Tombstones are written a scanned page
-  at a time (BatchWriteItem), so a crash or a hand-over can leave a tombstone whose item is still
-  there (the next generation deletes it and rewrites the same key), never a delete without one.
+  `deleted_at`, and no content and no `ttl` (TENETS.md → D4). Tombstones are written for a scanned page
+  before its deletes, one PutItem each (never BatchWriteItem, which would also allow deletes), so a
+  crash or a hand-over can leave a tombstone whose item is still there (the next generation deletes
+  it and rewrites the same key), never a delete without one.
 - Each deleted item's raw objects go with it, every version and delete marker, in both layouts
   ([data-lake-structure.md](data-lake-structure.md)): the legacy `…/<stem>.json` object and every
   object under the item's folder `…/<stem>/` (one per archived content version), whichever of the
@@ -309,6 +310,6 @@ Least-privilege grants (`lib/stacks/retention-worker.ts`):
 | Radar table | `Scan`, `DeleteItem`; `UpdateItem` on the `SETTINGS#radar` partition only (the Radar cache version) |
 | Projects table | `Scan`, `UpdateItem` (no delete, no put) |
 | Raw bucket | `DeleteObject` and `DeleteObjectVersion` on `raw/*`, plus `ListBucketVersions` with the `raw/` prefix. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source |
-| Aggregates table | `GetItem`, `PutItem`, `UpdateItem`, `Query`, `BatchWriteItem` (tombstones), `BatchGetItem` (the lineage pass's tombstone lookups); no delete |
+| Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); no delete |
 | KMS | Encrypt/decrypt |
 | Lambda | Invoke itself |
