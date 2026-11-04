@@ -83,8 +83,16 @@ export async function deleteListAs(listId: string): Promise<number> {
   return listStatus(listId)
 }
 
+/**
+ * The legal basis the suite gives every erasure it makes (6.00.00: `DELETE /participants/people/{id}` and the erase
+ * dialog require one). No email, phone or name: the server refuses personal data in a basis.
+ */
+export const E2E_LEGAL_BASIS = 'E2E test data cleanup (automated suite)'
+
 /** Admin cleanup: erases the person when they still exist; returns the GET status after (404 expected). */
 export async function erasePersonAs(personId: string): Promise<number> {
-  if (await personStatus(personId) === 200) await apiCall('admin', 'DELETE', `/participants/people/${encodeURIComponent(personId)}`)
+  if (await personStatus(personId) === 200) {
+    await apiCall('admin', 'DELETE', `/participants/people/${encodeURIComponent(personId)}`, { legal_basis: E2E_LEGAL_BASIS })
+  }
   return personStatus(personId)
 }

@@ -39,7 +39,7 @@ import { isRecord } from '../lib/guards'
 import { injectFailure } from '../lib/inject'
 import {
   addPersonToList, createList, deleteListAs, e2eEmail, erasePersonAs, listIdNamed, personIdByEmail,
-  listStatus, personStatus, readEngagementSettings,
+  E2E_LEGAL_BASIS, listStatus, personStatus, readEngagementSettings,
 } from '../lib/participants'
 import { ensureE2eProject } from '../lib/projects'
 
@@ -176,6 +176,9 @@ test.describe('participants (admin)', () => {
       await modal.getByRole('button', { name: 'Delete person' }).click()
       const confirm = dialogNamed(page, 'Delete this person for good?')
       await expect(confirm.getByText(/This cannot be undone/)).toBeVisible()
+      // 6.00.00: the delete stays disabled until a legal basis is given.
+      await expect(confirm.getByRole('button', { name: 'Delete for good' })).toBeDisabled()
+      await confirm.getByLabel('Legal basis').fill(E2E_LEGAL_BASIS)
       const erased = page.waitForResponse((r) => isApi(r, 'DELETE', /\/participants\/people\/[^/]+$/))
       await confirm.getByRole('button', { name: 'Delete for good' }).click()
       expect((await erased).status()).toBeLessThan(300)
