@@ -18,8 +18,6 @@ import {
 } from './themeCatalog'
 import type { ColorThemeChoice, ColorThemeId, ThemeMode } from './themeCatalog'
 
-export type { ThemeMode } from './themeCatalog'
-
 export const THEME_STORAGE_KEY = 'voc-theme'
 const THEME_PREFERENCES = ['system', 'light', 'dark'] as const
 

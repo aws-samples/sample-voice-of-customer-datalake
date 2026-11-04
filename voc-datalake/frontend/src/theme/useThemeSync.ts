@@ -8,7 +8,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { applyTheme, DARK_QUERY, resolveMode, systemPrefersDark, useThemeStore } from './themeStore'
 import { useActiveColorTheme } from './useActiveColorTheme'
-import type { ThemeMode } from './themeStore'
+import type { ThemeMode } from './themeCatalog'
 
 function subscribeToSystemScheme(onChange: () => void): () => void {
   if (typeof window.matchMedia !== 'function') return () => {}
