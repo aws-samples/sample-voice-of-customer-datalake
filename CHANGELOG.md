@@ -17,6 +17,25 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.00.02] - 2026-11-04
+
+Pull requests get the tenets review and the code review of `scripts/validate.sh` as an automated comment. This is development tooling only: the platform, its stacks and the workshop packaging do not change.
+
+### Added
+
+- **The `AI review` workflow** (`.github/workflows/ai-review.yml`, `scripts/ai-review/ci-review.mjs`) reviews every pull request from this repository. It runs the tenets review first, then the code review, and posts both as one comment ([CONTRIBUTING.md → AI review on pull requests](CONTRIBUTING.md#ai-review-on-pull-requests)).
+  - **Model and prompts:** Claude Opus 5.5 on Amazon Bedrock, with the prompts of `npm run validate:tenets` / `validate:commit`, read from `main`.
+  - **What it sees:** TENETS.md, the pull request's description and comments, the commit messages and the diff. It is called with no tools, and nothing of the pull request is checked out or run.
+  - **Advisory:** it fails no check. A push that leaves the diff unchanged gets no new review.
+  - **When it skips:** forks, drafts, Dependabot, and a repository without the `AI_REVIEW_ROLE_ARN` secret.
+- **The review's AWS role** (`tools/ai-review-ci/`) is a standalone CloudFormation stack, deployed by hand and never with the platform. It holds the GitHub OIDC provider and a role that only this repository's `pull_request` runs can assume, limited to `bedrock:InvokeModel` on Opus 5.5 and its two fallback models. `scripts/ai-review/ci-role.test.mjs` fails when the trust or the permissions widen ([tools/ai-review-ci/README.md](tools/ai-review-ci/README.md)).
+
+### Upgrade notes
+
+- Nothing to do for a deployment of the platform.
+- To turn the review on, a maintainer deploys `tools/ai-review-ci/ai-review-role.json` into the account that pays for the reviews, with Bedrock access to the three Claude models. Then set the repository secret `AI_REVIEW_ROLE_ARN` and the variable `AI_REVIEW_REGION`. Until then the workflow skips with a notice.
+- The reviewer is read from `main`, so the pull request that adds it is not reviewed itself; the next one is.
+
 ## [6.00.01] - 2026-11-04
 
 Faster Python cold starts: every Lambda bundle ships its own code compiled.
