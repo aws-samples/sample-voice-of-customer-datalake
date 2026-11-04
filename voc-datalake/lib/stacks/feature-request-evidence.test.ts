@@ -22,7 +22,7 @@ beforeAll(() => {
 /** The DynamoDB actions `roleFragment` holds on the feature-requests table (any of its ARNs). */
 function featureRequestActions(template: Template, roleFragment: string): string[] {
   const statements = policyStatementsOf(template, roleFragment).filter((s) => /FeatureRequests/.test(s.resource));
-  return [...new Set(actionsWithPrefix(statements, 'dynamodb:'))].sort();
+  return [...new Set(actionsWithPrefix(statements, 'dynamodb:'))].sort((a, b) => a.localeCompare(b));
 }
 
 describe('the evidence readers', () => {
