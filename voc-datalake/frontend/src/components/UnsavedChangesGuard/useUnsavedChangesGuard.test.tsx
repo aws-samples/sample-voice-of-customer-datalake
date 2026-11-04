@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, RouterProvider, createMemoryRouter, useLocation } from 'react-router-dom'
 import { useUnsavedChangesGuard } from './useUnsavedChangesGuard'
@@ -245,6 +245,22 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
 
   it('after that Cancel, a new attempt to leave is guarded again', async () => {
     const { user } = await discardThenCancel()
+    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
+  })
+
+  // The release lets exactly the one retry through: a later leave to the same place, with
+  // new edits, is asked again (the release used to outlive a retry no blocker had checked).
+  it('guards the same leave again after a released one went through and the page came back', async () => {
+    const { router, user } = renderTwoDirty()
+    await user.type(screen.getByLabelText('Name'), 'x')
+    await user.type(screen.getByLabelText('Other'), 'y')
+    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Unsaved changes' })).getByRole('button', { name: 'Discard' }))
+    await screen.findByText('Elsewhere page')
+    await act(() => router.navigate('/editor'))
+    await user.type(screen.getByLabelText('Name'), 'again')
     await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
     expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
   })
