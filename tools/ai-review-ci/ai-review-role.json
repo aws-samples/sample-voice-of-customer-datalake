@@ -96,7 +96,7 @@
     }
   },
   "Outputs": {
-    "RoleArn": {
+    "AiReviewRoleArn": {
       "Description": "Store as the repository secret AI_REVIEW_ROLE_ARN.",
       "Value": { "Fn::GetAtt": ["ReviewRole", "Arn"] }
     }

@@ -38,8 +38,12 @@ export const DEFAULT_MODEL = 'global.anthropic.claude-opus-5-5'
 // short. 24K keeps one call well inside the read timeout; a longer answer is continued, then disclosed as cut.
 const MAX_TOKENS = 24_000
 const MAX_CONTINUATIONS = 2
-const CONTINUE_DEADLINE_MS = 15 * 60_000
-const READ_TIMEOUT_SECONDS = 900
+// The time budget, inside the job's `timeout-minutes: 30`. Every AWS CLI call (retries included) is killed when the
+// review's REVIEW_BUDGET_MS is spent, and no continuation starts after CONTINUE_DEADLINE_MS, so the comment is always
+// rendered and the `post` job always runs. Measured: a 22 KB diff answers in 36 s.
+const REVIEW_BUDGET_MS = 20 * 60_000
+const CONTINUE_DEADLINE_MS = 10 * 60_000
+const READ_TIMEOUT_SECONDS = 600
 
 const OPTIONS = Object.freeze({
   '--repo': 'repo', '--prompts-root': 'promptsRoot', '--event': 'event',
@@ -76,29 +80,44 @@ export function pullRequestOf(event) {
   return { number: pr.number, headSha, title: typeof pr.title === 'string' ? pr.title : '', body: typeof pr.body === 'string' ? pr.body : '' }
 }
 
-/** One Bedrock Converse call through the AWS CLI: resolves the parsed response, rejects with the CLI's first error. */
-export function bedrockCall(request, { region, env = process.env }) {
+/**
+ * One Bedrock Converse call through the AWS CLI: resolves the parsed response, rejects with the CLI's first error.
+ * `timeoutMs` bounds the whole call, the CLI's own retries included: past it the CLI is killed and the call rejects.
+ */
+export function bedrockCall(request, { region, env = process.env, timeoutMs = REVIEW_BUDGET_MS }) {
+  if (!(timeoutMs > 0)) return Promise.reject(new Error('no time left in the review budget'))
   const dir = mkdtempSync(join(tmpdir(), 'ai-review-'))
   const file = join(dir, 'request.json')
   writeFileSync(file, JSON.stringify(request), { mode: 0o600 })
   const args = ['bedrock-runtime', 'converse', '--cli-input-json', `file://${file}`, '--region', region,
     '--output', 'json', '--cli-read-timeout', String(READ_TIMEOUT_SECONDS), '--cli-connect-timeout', '30']
   return new Promise((resolve, reject) => {
-    const child = spawn('aws', args, { env: { AWS_RETRY_MODE: 'standard', AWS_MAX_ATTEMPTS: '3', ...env, AWS_PAGER: '' }, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn('aws', args, {
+      env: { AWS_RETRY_MODE: 'standard', AWS_MAX_ATTEMPTS: '3', ...env, AWS_PAGER: '' }, stdio: ['ignore', 'pipe', 'pipe'],
+    })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (chunk) => { stdout += chunk })
     child.stderr.on('data', (chunk) => { stderr += chunk })
     let settled = false
+    let timedOut = false
+    // Our own timer, not spawn's `timeout`: that one is never cleared when the spawn fails, and would hold the
+    // process open for the whole budget.
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, Math.ceil(timeoutMs))
     // A spawn failure emits 'error' and may still emit 'close': settle and clean up once.
     const finish = (error, value) => {
       if (settled) return
       settled = true
+      clearTimeout(timer)
       rmSync(dir, { recursive: true, force: true })
       if (error) reject(error); else resolve(value)
     }
     child.on('error', (error) => finish(error))
     child.on('close', (code) => {
+      if (timedOut) {
+        finish(new Error(`the AWS CLI did not answer within ${Math.round(timeoutMs / 1000)} s (the review budget)`))
+        return
+      }
       if (code !== 0) {
         const first = stderr.split('\n').map((line) => line.trim()).find(Boolean) ?? `exit ${code}`
         finish(new Error(first.slice(0, 300)))
@@ -146,7 +165,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
 
   const modelId = env.AI_REVIEW_MODEL || DEFAULT_MODEL
   const region = env.AWS_REGION || 'us-east-1'
-  const caller = call ?? ((request) => bedrockCall(request, { region, env }))
+  // One budget for both reviews (they run in parallel) and every continuation.
+  const budgetEnds = Date.now() + REVIEW_BUDGET_MS
+  const caller = call ?? ((request) => bedrockCall(request, { region, env, timeoutMs: budgetEnds - Date.now() }))
   const { text, truncated } = capDiff(change.diff)
   const pullRequest = prContext({ title: pr.title, body: pr.body, issueComments, reviewComments: readComments(readJson(options.reviewComments)) })
   const tenets = readFileSync(join(options.promptsRoot, 'TENETS.md'), 'utf8')

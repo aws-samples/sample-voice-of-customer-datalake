@@ -32,7 +32,7 @@ Pull requests get the tenets review and the code review of `scripts/validate.sh`
 
 ### Upgrade notes
 
-- Nothing to do for a deployment of the platform.
+- Nothing to do for a deployment of the platform. A redeploy changes only the release number the Lambdas record (`APP_VERSION`, the connector version of the raw objects they write, `6.0.1`), as every release does; that is why the Api and Processing template hashes in `voc-datalake/lib/test-support/baseline.json` move.
 - To turn the review on, a maintainer deploys `tools/ai-review-ci/ai-review-role.json` into the account that pays for the reviews, with Bedrock access to the three Claude models. Then set the repository secret `AI_REVIEW_ROLE_ARN` and the variable `AI_REVIEW_REGION`. Until then the workflow skips with a notice.
 - The reviewer is read from `main`, so the pull request that adds it is not reviewed itself; the next one is.
 

@@ -113,6 +113,8 @@ export function prContext({ title, body, issueComments, reviewComments }) {
   ].sort((a, b) => a.at.localeCompare(b.at))
   const kept = []
   let budget = CONVERSATION_CHARS
+  // The NEWEST comments, as one unbroken run back from the latest. Skipping a long comment to fit older ones would leave
+  // a hole in the middle of the conversation that the "[N earlier comments left out]" line cannot describe.
   for (let i = lines.length - 1; i >= 0 && lines[i].text.length <= budget; i--) {
     kept.unshift(lines[i].text)
     budget -= lines[i].text.length
@@ -183,7 +185,8 @@ function verdictCell(result) {
   const counts = new Map()
   for (const item of [...blocking, ...others]) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1)
   const listed = [...counts].map(([kind, count]) => `${count} ${kind}`).join(', ')
-  return listed ? `${VERDICT_TEXT[verdict]}: ${listed}` : VERDICT_TEXT[verdict]
+  const word = VERDICT_TEXT[verdict] ?? verdict
+  return listed ? `${word}: ${listed}` : word
 }
 
 function section(result) {
@@ -205,7 +208,7 @@ const codeSpan = (name) => `\`${name.replace(/[`\r\n]/g, '')}\``
  * The pull request comment: the marker on the FIRST line (latestReview reads it), a verdict table, what the reviewer
  * saw, and each answer verbatim in a code block, so nothing in it renders as markup, mentions or links.
  */
-export function renderComment({ headSha, hash, modelId, results, diffTruncated, omitted }) {
+export function renderComment({ headSha, hash, modelId, results, diffTruncated = false, omitted = [] }) {
   const notes = [
     ...(diffTruncated ? ['> The diff was cut to fit: this review is partial.'] : []),
     ...(omitted.length > 0 ? [`> Not sent to the model (named like a secret, review them yourself): ${omitted.map(codeSpan).join(', ')}`] : []),

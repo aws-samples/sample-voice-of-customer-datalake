@@ -61,17 +61,37 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: trusted
+          # scripts/pr-checks: lib.mjs imports TENET_IDS from scripts/pr-checks/tenets.mjs.
           sparse-checkout: |
             scripts/ai-review
             scripts/pr-checks
             .kiro/agents/prompts
           persist-credentials: false
 
+      - name: Is the review set up here?
+        id: gate
+        env:
+          ROLE_ARN: ${{ secrets.AI_REVIEW_ROLE_ARN }}
+        run: |
+          # Both checks come first and cost nothing, so a repository without the review stays green.
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::notice title=AI review::no AI_REVIEW_ROLE_ARN secret in this repository; skipped (tools/ai-review-ci/README.md)"
+          elif [ ! -f trusted/scripts/ai-review/ci-review.mjs ]; then
+            # The pull request that adds the reviewer, and any branch cut before it merged.
+            echo "::notice title=AI review::the default branch has no scripts/ai-review/ci-review.mjs yet; nothing to review"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.gate.outputs.ready == 'true'
         with:
           node-version: '24'
 
+      # While the review is advisory, a GitHub or AWS outage in the next two steps is a warning, not a red check.
       - name: Read the PR's commits, diff and conversation (as data)
+        if: steps.gate.outputs.ready == 'true'
+        continue-on-error: ${{ env.AI_REVIEW_ENFORCED != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -83,14 +103,21 @@ jobs:
           mkdir -p "$out"
           git init -q "$out/repo"
           git -C "$out/repo" remote add origin "$SERVER/$REPO.git"
+          # Authenticated like actions/checkout (a private repository needs it), through the environment so the token
+          # is neither in argv nor in a config file.
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
           # Every commit and tree, blobs on demand: enough for the merge base and the diff, nothing checked out.
-          git -C "$out/repo" fetch -q --no-tags --filter=blob:none origin \
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+            git -C "$out/repo" fetch -q --no-tags --filter=blob:none origin \
             "+refs/pull/$PR_NUMBER/head:refs/pr/head" "+refs/heads/$BASE_REF:refs/pr/base"
           gh api --paginate --slurp "repos/$REPO/issues/$PR_NUMBER/comments" > "$out/issue-comments.json"
           gh api --paginate --slurp "repos/$REPO/pulls/$PR_NUMBER/comments" > "$out/review-comments.json"
 
       - name: Review (OIDC → Bedrock)
         id: review
+        if: steps.gate.outputs.ready == 'true'
+        continue-on-error: ${{ env.AI_REVIEW_ENFORCED != 'true' }}
         env:
           ROLE_ARN: ${{ secrets.AI_REVIEW_ROLE_ARN }}
           AWS_REGION: ${{ vars.AI_REVIEW_REGION || 'us-east-1' }}
@@ -98,18 +125,6 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          if [ -z "$ROLE_ARN" ]; then
-            echo "::notice title=AI review::no AI_REVIEW_ROLE_ARN secret in this repository; skipped (tools/ai-review-ci/README.md)"
-            echo "comment=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          reviewer=trusted/scripts/ai-review/ci-review.mjs
-          if [ ! -f "$reviewer" ]; then
-            # The pull request that adds the reviewer, and any branch cut before it merged.
-            echo "::notice title=AI review::the default branch has no $reviewer yet; nothing to review"
-            echo "comment=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           # The account id appears in AWS error messages; keep it out of the public log.
           account="$(printf '%s' "$ROLE_ARN" | cut -d: -f5)"
           if [ -n "$account" ]; then echo "::add-mask::$account"; fi
@@ -126,11 +141,13 @@ jobs:
           AWS_SECRET_ACCESS_KEY="$(jq -er '.SecretAccessKey' <<< "$creds")"
           AWS_SESSION_TOKEN="$(jq -er '.SessionToken' <<< "$creds")"
           unset creds
+          # The key id too: an ASIA... key id encodes the account id.
+          echo "::add-mask::$AWS_ACCESS_KEY_ID"
           echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
           echo "::add-mask::$AWS_SESSION_TOKEN"
           export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
           pr="$RUNNER_TEMP/pr"
-          node "$reviewer" \
+          node trusted/scripts/ai-review/ci-review.mjs \
             --repo "$pr/repo" --prompts-root trusted --event "$GITHUB_EVENT_PATH" \
             --issue-comments "$pr/issue-comments.json" --review-comments "$pr/review-comments.json" \
             --out "$pr/comment.md"
