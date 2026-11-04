@@ -19,7 +19,7 @@ import { useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
-import KiroGhost from '../../components/KiroGhost/KiroGhost'
+import ThemeMark from '../../components/ThemeMark/ThemeMark'
 import { useAssistantUiStore } from '../store/assistantStore'
 import { useLauncherPosition } from '../bubble/useLauncherPosition'
 import { isChatRoute } from '../page/chatRoute'
@@ -98,7 +98,7 @@ export default function AssistantRoot({ launcherHidden = false }: Readonly<Assis
             : 'cursor-grab active:scale-[0.97] active:duration-75 motion-safe:transition-[right,bottom,background-color,box-shadow,transform]',
         )}
       >
-        {open ? <X size={22} aria-hidden /> : <KiroGhost className="h-6 w-6" />}
+        {open ? <X size={22} aria-hidden /> : <ThemeMark className="h-6 w-6" />}
       </button>
       <span id={hintId} className="sr-only">{t('launcher.moveHint')}</span>
     </>

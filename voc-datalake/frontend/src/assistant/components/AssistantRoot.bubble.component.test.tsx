@@ -14,6 +14,8 @@ import { useBubbleStore } from '../bubble/bubbleStore'
 import { ACTION_BAR_GAP, EDGE_MARGIN, KEY_STEP, KEY_STEP_LARGE, LAUNCHER_SIZE } from '../bubble/geometry'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import AssistantRoot from './AssistantRoot'
+import { useThemeStore } from '../../theme/themeStore'
+import { WORKSPACE_THEME_CHOICE } from '../../theme/themeCatalog'
 
 const launcher = () => screen.getByTestId('assistant-launcher')
 const offsets = () => ({ right: parseFloat(launcher().style.right), bottom: parseFloat(launcher().style.bottom) })
@@ -86,6 +88,19 @@ beforeEach(() => {
 afterEach(() => {
   vi.mocked(localStorage.getItem).mockReturnValue(null)
   vi.restoreAllMocks()
+})
+
+describe('assistant launcher mark', () => {
+  afterEach(() => { act(() => { useThemeStore.setState({ colorTheme: WORKSPACE_THEME_CHOICE }) }) })
+
+  it('shows the active theme\'s mark and follows a theme change live', () => {
+    render(<AssistantRoot />, { initialEntries: ['/'] })
+    const mark = () => launcher().querySelector('svg[data-mark]')
+    expect(mark()).toHaveAttribute('data-mark', 'kiro')
+    act(() => { useThemeStore.setState({ colorTheme: 'quick' }) })
+    expect(mark()).toHaveAttribute('data-mark', 'quick')
+    expect(mark()).toHaveClass('h-6', 'w-6')
+  })
 })
 
 describe('assistant launcher position', () => {
