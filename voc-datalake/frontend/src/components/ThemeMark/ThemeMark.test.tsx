@@ -89,12 +89,12 @@ describe('theme selection', () => {
 })
 
 describe('thinking motion', () => {
-  it.each(['kiro', 'nord', 'dracula', 'highcontrast'] as const)('%s floats, still under reduced motion', (theme) => {
+  it.each(['kiro', 'nord', 'dracula', 'highcontrast'] as const)('%s floats, stopped under reduced motion', (theme) => {
     pick(theme)
     expect(svgOf(<ThemeMarkThinking />)).toHaveClass('animate-float', 'motion-reduce:animate-none')
   })
 
-  it('quick spins its spark instead, still under reduced motion', () => {
+  it('quick spins its spark instead, stopped under reduced motion', () => {
     pick('quick')
     const svg = svgOf(<ThemeMarkThinking />)
     expect(svg.getAttribute('class') ?? '').not.toContain('animate')
