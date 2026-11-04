@@ -26,7 +26,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { UNSAFE_DataRouterContext } from 'react-router-dom'
 import RouterBlocker from './RouterBlocker'
 import UnsavedChangesDialog from './UnsavedChangesDialog'
-import { anyGuardAsks, isReleased, registerGuard, retryReleased, runGuarded } from './guardRegistry'
+import { anyGuardAsks, registerGuard, runGuarded } from './guardRegistry'
 import type { RegisteredGuard } from './guardRegistry'
 import { pathOrQueryChanged } from './pathOrQueryChanged'
 import type { ReactNode } from 'react'
@@ -80,6 +80,8 @@ export function useUnsavedChangesGuard({
   const [pending, setPending] = useState<Pending | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
+  // This editor's blocker caught a route change that other dirty editors are still asking about.
+  const [holding, setHolding] = useState(false)
   // Read at decision time, so the blocker and the registry never act on a stale render.
   const latest = useRef({ dirty, onSave, onDiscard, shouldBlock })
   useEffect(() => {
@@ -92,9 +94,9 @@ export function useUnsavedChangesGuard({
     setSaveFailed(false)
     setPending(next)
   }, [])
-  const requestLeave = useCallback((action: () => void) => {
+  const requestLeave = useCallback((action: () => void, stay: () => void = () => {}) => {
     if (!latest.current.dirty) action()
-    else open({ proceed: action, stay: () => {} })
+    else open({ proceed: action, stay })
   }, [open])
 
   const self = useRef<RegisteredGuard | null>(null)
@@ -109,7 +111,7 @@ export function useUnsavedChangesGuard({
   }, [requestLeave])
 
   const blockWhen = useCallback(
-    (current: Location, next: Location) => !isReleased(next) && latest.current.dirty && latest.current.shouldBlock(current, next),
+    (current: Location, next: Location) => latest.current.dirty && latest.current.shouldBlock(current, next),
     [],
   )
 
@@ -119,13 +121,18 @@ export function useUnsavedChangesGuard({
     const route = pending.route
     const except = self.current ?? undefined
     if (!leave) pending.stay()
-    // react-router holds one blocker per router, so only this editor's caught the change.
-    // Other dirty editors it would also lose ask in turn; the held change is reset and
-    // retried once every one of them let it go (this editor's blocker may unmount meanwhile).
     else if (route === undefined || !anyGuardAsks({ except, route })) pending.proceed()
     else {
-      pending.stay()
-      runGuarded(() => { retryReleased(route.next, route.retry) }, { except, route })
+      // react-router holds one blocker per router, so only this editor's caught the change.
+      // It keeps holding it (`holding` keeps the blocker mounted once this editor is clean)
+      // while every other dirty editor it would also lose asks in turn; then the held
+      // navigation itself proceeds (a Back or a replace stays one), or Cancel resets it.
+      const { proceed, stay } = pending
+      setHolding(true)
+      runGuarded(
+        () => { setHolding(false); proceed() },
+        { except, route, stay: () => { setHolding(false); stay() } },
+      )
     }
   }
   const save = async () => {
@@ -148,7 +155,7 @@ export function useUnsavedChangesGuard({
         {/* Only an editor with edits (or an open dialog) holds the router's blocker: a router
             supports ONE blocker at a time, and a clean editor on the same page (the brand form
             and the Default theme card on /admin) must not take it from a dirty one. */}
-        {inDataRouter && (dirty || pending !== null) && <RouterBlocker when={blockWhen} onBlocked={open} />}
+        {inDataRouter && (dirty || pending !== null || holding) && <RouterBlocker when={blockWhen} onBlocked={open} />}
         <UnsavedChangesDialog
           isOpen={pending !== null}
           saving={saving}

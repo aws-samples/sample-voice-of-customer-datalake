@@ -7,8 +7,9 @@
  *
  * It also chains a held route change through EVERY dirty editor: react-router keeps
  * one blocker per router, so when two editors on one page hold edits, the one whose
- * blocker caught the navigation asks first, releases it, and the others ask in turn
- * (`runGuarded` with `except`); once all have let it go, the navigation is retried.
+ * blocker caught the navigation asks first and KEEPS holding it (its blocker stays
+ * mounted) while the others ask in turn (`runGuarded` with `except`, `stay`); the held
+ * navigation itself then proceeds, a Back or a replace included, or is reset on Cancel.
  *
  * @module components/UnsavedChangesGuard/guardRegistry
  */
@@ -18,8 +19,8 @@ import type { Location } from 'react-router-dom'
 export interface RegisteredGuard {
   /** Whether this editor holds unsaved edits right now. */
   readonly isDirty: () => boolean
-  /** Open this editor's dialog; `action` runs after Save (success) or Discard. */
-  readonly requestLeave: (action: () => void) => void
+  /** Open this editor's dialog; `action` runs after Save (success) or Discard, `stay` after Cancel. */
+  readonly requestLeave: (action: () => void, stay?: () => void) => void
   /** Whether this editor would hold a route change from `current` to `next` (its `shouldBlock`). */
   readonly blocksRoute?: (current: Location, next: Location) => boolean
 }
@@ -38,6 +39,8 @@ interface RunGuardedOptions {
   readonly except?: RegisteredGuard
   /** A held route change: only editors that would block it ask. */
   readonly route?: { readonly current: Location; readonly next: Location }
+  /** What Cancel in a later editor's dialog does (a held route change resets its blocker). */
+  readonly stay?: () => void
 }
 
 function asks(guard: RegisteredGuard, { except, route }: RunGuardedOptions): boolean {
@@ -54,33 +57,7 @@ export function anyGuardAsks(options: RunGuardedOptions): boolean {
 export function runGuarded(action: () => void, options: RunGuardedOptions = {}): void {
   const dirty = [...guards].find((guard) => asks(guard, options))
   if (dirty === undefined) action()
-  else dirty.requestLeave(() => runGuarded(action, { ...options, except: dirty }))
-}
-
-/** The route change every dirty editor has let through, while its one retry runs. */
-const released: { key: string | null } = { key: null }
-
-const routeKey = (location: Pick<Location, 'pathname' | 'search' | 'hash'>): string =>
-  `${location.pathname}${location.search}${location.hash}`
-
-/**
- * Run `retry` (a navigation to `next`) with that one change let through every blocker.
- * react-router asks its blocker synchronously when `navigate` starts, so the release
- * ends as soon as `retry` returns: no later navigation to the same place is ever let
- * through unasked.
- */
-export function retryReleased(next: Location, retry: () => void): void {
-  released.key = routeKey(next)
-  try {
-    retry()
-  } finally {
-    released.key = null
-  }
-}
-
-/** True while the retry of the released change `next` is being decided; a blocker then lets it through. */
-export function isReleased(next: Location): boolean {
-  return released.key !== null && released.key === routeKey(next)
+  else dirty.requestLeave(() => runGuarded(action, { ...options, except: dirty }), options.stay)
 }
 
 /** `runGuarded` as a stable callback, for local-state navigation (tabs, closes). */
