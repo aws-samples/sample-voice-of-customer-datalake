@@ -263,7 +263,7 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
   it('hands the route blocker on when its owner unmounts, so the other editor still asks', async () => {
     const hide = { current: () => {} }
     const onHideReady = (fn: () => void) => { hide.current = fn }
-    const { user } = renderEditorRoute(<><Link to="/elsewhere">Leave</Link><OwnerThatUnmounts onHideReady={onHideReady} /><OtherEditor /></>)
+    const { user } = renderEditorRoute(<><Link to="/elsewhere">Leave</Link><Unmountable onHideReady={onHideReady}><KeepsEditsEditor label="Owner" /></Unmountable><OtherEditor /></>)
     await user.type(screen.getByLabelText('Owner'), 'x')
     await user.type(screen.getByLabelText('Other'), 'y')
     act(() => { hide.current() })
@@ -272,11 +272,11 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     expect(screen.queryByText('Elsewhere page')).not.toBeInTheDocument()
   })
 
-  /** A guarded editor ("Owner") that the test can unmount. */
-  function OwnerThatUnmounts({ onHideReady }: Readonly<{ onHideReady: (hide: () => void) => void }>) {
+  /** `children` until the test calls the `hide` it receives: a card a tab switch removes. */
+  function Unmountable({ onHideReady, children }: Readonly<{ onHideReady: (hide: () => void) => void; children: ReactNode }>) {
     const [shown, setShown] = useState(true)
     useEffect(() => { onHideReady(() => setShown(false)) }, [onHideReady])
-    return shown ? <KeepsEditsEditor label="Owner" /> : null
+    return shown ? children : null
   }
 
   /** Both editors dirty, a leave, Discard in the first dialog, Cancel in the second. */
@@ -352,20 +352,13 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?tab=b'))
   })
 
-  /** The second editor behind a switch the test flips, as a card a tab switch removes. */
-  function SwitchableOther({ onHideReady }: Readonly<{ onHideReady: (hide: () => void) => void }>) {
-    const [shown, setShown] = useState(true)
-    useEffect(() => { onHideReady(() => setShown(false)) }, [onHideReady])
-    return shown ? <OtherEditor /> : null
-  }
-
   // A chained dialog that disappears unanswered resets the held change instead of leaving the
   // router blocked with no dialog: the editor that held it guards its next edits as before.
   it('resets the held leave when a chained editor disappears with its dialog open', async () => {
     const hide = { current: () => {} }
     const onHideReady = (fn: () => void) => { hide.current = fn }
     const { router, user } = renderEditorRoute(
-      <><Link to="/elsewhere">Leave</Link><Editor onSave={vi.fn()} /><SwitchableOther onHideReady={onHideReady} /></>,
+      <><Link to="/elsewhere">Leave</Link><Editor onSave={vi.fn()} /><Unmountable onHideReady={onHideReady}><OtherEditor /></Unmountable></>,
       ['/elsewhere', '/editor'],
     )
     await user.type(screen.getByLabelText('Name'), 'x')

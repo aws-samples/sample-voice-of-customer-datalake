@@ -4,7 +4,7 @@
  * styles/theme-marks.css, never recoloured by a palette). On a filled surface (the
  * assistant's round launcher) it is drawn in `currentColor` instead, so it keeps its
  * contrast on the accent fill. The thinking pose spins the spark (`animate-mark-spin`,
- * still under reduced motion) while the assistant works.
+ * which stops under reduced motion) while the assistant works.
  * @module components/ThemeMark/QuickMark
  */
 import { useId } from 'react'
