@@ -11,7 +11,8 @@
  * 2. A real Docker build of one production bundle contains no test file and no
  *    `.pyc` from the source tree, and holds an unchecked-hash `cpython-314` `.pyc`
  *    next to every shipped module (no compile at cold start). Skipped when Docker or
- *    the bundling image is not available locally (it never pulls the multi-GB image).
+ *    the bundling image is not available locally (it never pulls the multi-GB image), so check 1 (the script
+ *    ends with the prune, then the compile) is the one that always runs and catches a revert.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -111,6 +112,11 @@ describe('PYTHON_BUNDLE_PRUNE and PYTHON_BUNDLE_COMPILE', () => {
   it('compiles unchecked-hash bytecode over the whole output with the image\'s own Python', () => {
     expect(PYTHON_BUNDLE_COMPILE).toBe('python -m compileall -q -j 0 --invalidation-mode unchecked-hash /asset-output');
   });
+
+  it('is the exact step the code audit\'s bundling emulator ignores (scripts/audit/py_assembly.py IGNORED_STEPS)', () => {
+    const emulator = readFileSync(join(process.cwd(), '..', 'scripts', 'audit', 'py_assembly.py'), 'utf8');
+    expect(emulator).toContain(`|${PYTHON_BUNDLE_COMPILE})$')`);
+  });
 });
 
 /** Docker from a fixed location (CDK_DOCKER, CDK's own override, first), never a PATH lookup. */
@@ -143,6 +149,8 @@ const SHIPPED_DIRECTORY = /(^|\/)(test|tests|\.pytest_cache)\/$/;
 const SHIPPED_FILE = /(^|\/)(test_[^/]*\.py|[^/]*_test\.py|conftest\.py)$/;
 const isTest = (path: string): boolean => SHIPPED_DIRECTORY.test(path) || SHIPPED_FILE.test(path);
 
+const PYC_SUFFIX = '.cpython-314.pyc';
+
 /** The `.py` a `<dir>/__pycache__/<name>.cpython-314.pyc` compiles; undefined for any other path. */
 function sourceOf(pyc: string): string | undefined {
   const parts = pyc.split('/');
@@ -150,7 +158,6 @@ function sourceOf(pyc: string): string | undefined {
   if (parts.at(-2) !== '__pycache__' || !file.endsWith(PYC_SUFFIX)) return undefined;
   return [...parts.slice(0, -2), `${file.slice(0, -PYC_SUFFIX.length)}.py`].join('/');
 }
-const PYC_SUFFIX = '.cpython-314.pyc';
 
 /** PEP 552 flags word of a .pyc (bytes 4-7): 0b01 = hash-based, not checked against the source. */
 const pycFlags = (file: string): number => readFileSync(file).readUInt32LE(4);
@@ -217,6 +224,7 @@ describe.skipIf(!bundlingImageAvailable())('a real Docker-built bundle (briefing
 
   it('compiles unchecked-hash bytecode (PEP 552 flags = 1) everywhere', () => {
     const compiled = files.filter((path) => path.endsWith('.pyc'));
+    expect(compiled.length).toBeGreaterThan(10);
     expect(new Set(compiled.map((pyc) => pycFlags(join(asset, pyc))))).toStrictEqual(new Set([1]));
   });
 });

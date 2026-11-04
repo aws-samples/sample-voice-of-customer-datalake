@@ -233,7 +233,9 @@ Every bundle built by `pythonLambdaAsset` (`lib/utils/python-lambda-asset.ts`) n
 image, after the prune (which still deletes any `.pyc` from the source tree). Unchecked-hash bytecode (PEP 552)
 loads without reading or hashing the source and carries no timestamp, which is safe because a deployed bundle never
 changes; if the runtime's Python ever differs, it ignores the files and compiles from source as before. Each zip
-grows by about the size of its source. `lib/utils/python-lambda-asset.test.ts` builds one real bundle (when Docker
+grows by about the size of its source. The largest bundle, the Projects API (284 modules), is 8.2 MB unzipped with
+its 4.2 MB of bytecode (3.1 MB zipped); with its two layers (39.4 MB unzipped) it uses 47.6 MB of Lambda's 250 MB
+unzipped quota. `lib/utils/python-lambda-asset.test.ts` builds one real bundle (when Docker
 and the image are present) and checks a `cpython-314` unchecked-hash `.pyc` next to every shipped module. Not
 covered: the two functions CoreStack builds without bundling (the product-document extractor, which is
 stdlib + boto3 only, and the Node custom-resource handler).
