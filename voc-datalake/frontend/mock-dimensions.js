@@ -304,23 +304,58 @@ function putSources(body) {
   return [200, { success: true, sources: state.sources }];
 }
 
-/** A poll moves a live job one step: queued → running → completed. */
+/**
+ * The worker's phases, in order (lambda/jobs/retention/handler.py `_phases`): the items, the Radar
+ * reviews, the raw sweep (a whole-source erasure only), then the lineage pass, which runs only once
+ * something was deleted. One poll walks one phase; the job keeps its last phase when it completes.
+ */
+function erasurePhases(job) {
+  const deleted = job.deleted_items + job.deleted_radar_items > 0;
+  return ['items', 'radar', ...(job.field === 'source' ? ['raw'] : []), ...(deleted ? ['lineage'] : [])];
+}
+
+function erasedIds(job, shared) {
+  const matches = job.field === 'source'
+    ? (f) => f.source_platform === job.source
+    : (f) => f.author && job.value_hash === sha256(f.author);
+  return new Set(shared.mockFeedback.filter(matches).map((f) => f.feedback_id));
+}
+
+/** Personas and documents whose id lists name an erased item (the real pass marks them `erased_evidence`). */
+function citingArtifacts(ids, shared) {
+  const artifacts = Object.values(shared.mockProjectDetails).flatMap((d) => [...(d.personas || []), ...(d.documents || [])]);
+  return artifacts.filter((a) => [...(a.input_feedback_ids || []), ...(a.evidence_feedback_ids || [])].some((id) => ids.has(id))).length;
+}
+
+/** One phase's counts. Counted, not deleted: the shared fixtures stay intact for the other pages. */
+function runErasurePhase(job, phase, shared) {
+  const ids = erasedIds(job, shared);
+  if (phase === 'items') {
+    job.deleted_items = ids.size;
+    // An item's raw archive goes with it; a whole source's raw folder is swept in its own phase.
+    if (job.field !== 'source') job.deleted_objects = ids.size;
+  } else if (phase === 'radar') {
+    job.deleted_radar_items = 0; // the mock holds no Radar review written by a person
+  } else if (phase === 'raw') {
+    job.deleted_objects = ids.size;
+  } else {
+    job.artifacts_marked = citingArtifacts(ids, shared);
+  }
+}
+
+/** A poll moves a live job one phase: queued → running (items) → … → completed. */
 function advanceErasure(job, shared) {
-  if (job.status === 'queued') {
-    job.status = 'running';
-    if (job.field === 'source') job.phase = 'items';
-  } else if (job.status === 'running') {
-    // Counted, not deleted: the shared fixtures stay intact for the other pages.
-    const matches = job.field === 'source'
-      ? (f) => f.source_platform === job.source
-      : (f) => f.author && job.value_hash === sha256(f.author);
-    job.deleted_items = shared.mockFeedback.filter(matches).length;
-    job.deleted_objects = job.deleted_items;
-    // The worker's last phase (lambda/jobs/retention/handler.py): marking the artifacts that cited a deleted item.
-    job.phase = 'lineage';
+  if (job.status !== 'queued' && job.status !== 'running') return;
+  const phases = erasurePhases(job);
+  const next = job.status === 'queued' ? phases[0] : phases[phases.indexOf(job.phase) + 1];
+  if (next === undefined) {
     job.status = 'completed';
     job.finished_at = now();
+    return;
   }
+  job.status = 'running';
+  job.phase = next;
+  runErasurePhase(job, next, shared);
 }
 
 /** Profiles plus every source the fixtures hold data for (the real route reads METRIC#daily_source# rows). */
