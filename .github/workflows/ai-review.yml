@@ -1,0 +1,153 @@
+# AI review: the tenets review, then the code review, of every pull request, by Claude on Amazon Bedrock.
+#
+# What: the two reviews `npm run validate:tenets` and `npm run validate:commit` run on a developer's machine
+# (scripts/ai-review/, .kiro/agents/prompts/), posted as ONE comment per push that changes the diff
+# (scripts/ai-review/ci-review.mjs). Advisory: AI_REVIEW_ENFORCED 'false' never fails the check; 'true' fails it
+# on a complete VIOLATION or MUST-FIX.
+#
+# Development tooling, not part of the platform: the AWS side is its own stack (tools/ai-review-ci/), deployed by
+# hand into the account that pays for the reviews. Nothing here is deployed with the solution.
+#
+# Trust model:
+# - The reviewer (scripts/ai-review/, the prompts, TENETS.md) is read from the DEFAULT branch, so a pull request
+#   cannot edit the review it gets. The price: a change to the reviewer takes effect once it merges. This workflow
+#   file itself comes from the PR (that is how `pull_request` works); an edit to it is visible in review, and the
+#   AWS role can only invoke the listed models whatever the workflow does.
+# - The PR is only READ as data: its commits and diff come from a blob-less fetch and git objects. Nothing from the
+#   PR is checked out or executed. Title, body and comments reach the script as files, never through `${{ }}` in
+#   `run:`.
+# - The model has NO tools: it gets the diff, the commit messages and the PR conversation as fenced data, and its
+#   answer is posted verbatim inside a code block (no markup, mentions or links render).
+# - AWS by OIDC, no stored key: the role (AI_REVIEW_ROLE_ARN) trusts only this repository's `pull_request` runs, and
+#   its credentials live in the one step that calls Bedrock (never in GITHUB_ENV).
+# - Two jobs: `review` (AWS, read-only token, writes nothing) and `post` (writes the comment, no AWS).
+# - `pull_request` (not `pull_request_target`): fork PRs get no secrets and no OIDC token, so they are skipped, as
+#   are drafts, Dependabot, and a repository without the AI_REVIEW_ROLE_ARN secret (a fork of the sample).
+name: AI review
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  AI_REVIEW_ENFORCED: 'false'
+
+jobs:
+  review:
+    name: review
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && !github.event.pull_request.draft
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read # the trusted checkout and the fetch of the PR's commits
+      pull-requests: read # the PR's comments and inline review comments
+      id-token: write # the OIDC token exchanged for the Bedrock-only role
+    outputs:
+      comment: ${{ steps.review.outputs.comment }}
+      body: ${{ steps.review.outputs.body }}
+    steps:
+      - name: Check out the reviewer from the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          sparse-checkout: |
+            scripts/ai-review
+            scripts/pr-checks
+            .kiro/agents/prompts
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Read the PR's commits, diff and conversation (as data)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          out="$RUNNER_TEMP/pr"
+          mkdir -p "$out"
+          git init -q "$out/repo"
+          git -C "$out/repo" remote add origin "$SERVER/$REPO.git"
+          # Every commit and tree, blobs on demand: enough for the merge base and the diff, nothing checked out.
+          git -C "$out/repo" fetch -q --no-tags --filter=blob:none origin \
+            "+refs/pull/$PR_NUMBER/head:refs/pr/head" "+refs/heads/$BASE_REF:refs/pr/base"
+          gh api --paginate --slurp "repos/$REPO/issues/$PR_NUMBER/comments" > "$out/issue-comments.json"
+          gh api --paginate --slurp "repos/$REPO/pulls/$PR_NUMBER/comments" > "$out/review-comments.json"
+
+      - name: Review (OIDC → Bedrock)
+        id: review
+        env:
+          ROLE_ARN: ${{ secrets.AI_REVIEW_ROLE_ARN }}
+          AWS_REGION: ${{ vars.AI_REVIEW_REGION || 'us-east-1' }}
+          AI_REVIEW_MODEL: ${{ vars.AI_REVIEW_MODEL || 'global.anthropic.claude-opus-5-5' }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::notice title=AI review::no AI_REVIEW_ROLE_ARN secret in this repository; skipped (tools/ai-review-ci/README.md)"
+            echo "comment=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The account id appears in AWS error messages; keep it out of the public log.
+          account="$(printf '%s' "$ROLE_ARN" | cut -d: -f5)"
+          if [ -n "$account" ]; then echo "::add-mask::$account"; fi
+          token_file="$RUNNER_TEMP/oidc-token"
+          ( umask 077
+            curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -er '.value' > "$token_file" )
+          creds="$(aws sts assume-role-with-web-identity --role-arn "$ROLE_ARN" \
+            --role-session-name "voc-ai-review-pr${PR_NUMBER}-${RUN_ID}" \
+            --web-identity-token "file://$token_file" --duration-seconds 3600 \
+            --query Credentials --output json)"
+          rm -f "$token_file"
+          AWS_ACCESS_KEY_ID="$(jq -er '.AccessKeyId' <<< "$creds")"
+          AWS_SECRET_ACCESS_KEY="$(jq -er '.SecretAccessKey' <<< "$creds")"
+          AWS_SESSION_TOKEN="$(jq -er '.SessionToken' <<< "$creds")"
+          unset creds
+          echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
+          echo "::add-mask::$AWS_SESSION_TOKEN"
+          export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+          pr="$RUNNER_TEMP/pr"
+          node trusted/scripts/ai-review/ci-review.mjs \
+            --repo "$pr/repo" --prompts-root trusted --event "$GITHUB_EVENT_PATH" \
+            --issue-comments "$pr/issue-comments.json" --review-comments "$pr/review-comments.json" \
+            --out "$pr/comment.md"
+
+  post:
+    name: post
+    needs: review
+    if: ${{ !cancelled() && needs.review.outputs.comment == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write # the review comment, the only write this workflow makes
+    steps:
+      - name: Post the review on the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BODY: ${{ needs.review.outputs.body }}
+        run: |
+          # GitHub drops a job output that holds a masked value (the account id, say, quoted in a diff).
+          if [ -z "$BODY" ]; then
+            echo "::warning title=AI review::the review produced no postable body (an output holding a masked value is dropped); see the review job's log"
+            exit 0
+          fi
+          printf '%s' "$BODY" > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$RUNNER_TEMP/comment.md"

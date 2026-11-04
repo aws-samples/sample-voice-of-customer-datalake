@@ -1,0 +1,104 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "VoC AI review (development tooling, not part of the platform): the role the GitHub pull request AI review (.github/workflows/ai-review.yml) assumes by OIDC. It may only invoke the three listed Bedrock models. Deployed by hand, on its own: tools/ai-review-ci/README.md.",
+  "Parameters": {
+    "GitHubRepository": {
+      "Type": "String",
+      "Default": "aws-samples/sample-voice-of-customer-datalake",
+      "AllowedPattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "Description": "owner/name of the only repository whose pull_request runs may assume the role."
+    },
+    "ReviewModelId": {
+      "Type": "String",
+      "Default": "global.anthropic.claude-opus-5-5",
+      "AllowedPattern": "^global\\.anthropic\\.[a-z0-9.-]+$",
+      "Description": "The global inference profile the review asks for (the workflow's AI_REVIEW_MODEL)."
+    },
+    "FallbackModelId": {
+      "Type": "String",
+      "Default": "global.anthropic.claude-opus-5",
+      "AllowedPattern": "^global\\.anthropic\\.[a-z0-9.-]+$",
+      "Description": "The model Bedrock may serve a request with when ReviewModelId declines it (granted, never asked for)."
+    },
+    "SecondFallbackModelId": {
+      "Type": "String",
+      "Default": "global.anthropic.claude-opus-4-8",
+      "AllowedPattern": "^global\\.anthropic\\.[a-z0-9.-]+$",
+      "Description": "The model Bedrock may serve a request with when FallbackModelId declines it (granted, never asked for)."
+    },
+    "ExistingOidcProviderArn": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "^$|^arn:aws[a-z-]*:iam::[0-9]{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com$",
+      "Description": "Leave empty to create the GitHub OIDC provider. An account holds one provider per URL: if it already has one, give its ARN."
+    }
+  },
+  "Conditions": {
+    "CreateOidcProvider": { "Fn::Equals": [{ "Ref": "ExistingOidcProviderArn" }, ""] }
+  },
+  "Resources": {
+    "GitHubOidcProvider": {
+      "Type": "AWS::IAM::OIDCProvider",
+      "Condition": "CreateOidcProvider",
+      "Properties": {
+        "Url": "https://token.actions.githubusercontent.com",
+        "ClientIdList": ["sts.amazonaws.com"]
+      }
+    },
+    "ReviewRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "voc-ai-review-github",
+        "Description": "Assumed by the pull request AI review of one GitHub repository; Bedrock InvokeModel on three models only.",
+        "MaxSessionDuration": 3600,
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": { "Fn::If": ["CreateOidcProvider", { "Ref": "GitHubOidcProvider" }, { "Ref": "ExistingOidcProviderArn" }] }
+              },
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": { "Fn::Sub": "repo:${GitHubRepository}:pull_request" }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "bedrock-invoke-review-models",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "InvokeTheReviewModels",
+                  "Effect": "Allow",
+                  "Action": "bedrock:InvokeModel",
+                  "Resource": [
+                    { "Fn::Sub": "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ReviewModelId}" },
+                    { "Fn::Sub": "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${FallbackModelId}" },
+                    { "Fn::Sub": "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SecondFallbackModelId}" },
+                    { "Fn::Sub": ["arn:${AWS::Partition}:bedrock:*::foundation-model/${Model}", { "Model": { "Fn::Select": [1, { "Fn::Split": ["global.", { "Ref": "ReviewModelId" }] }] } }] },
+                    { "Fn::Sub": ["arn:${AWS::Partition}:bedrock:*::foundation-model/${Model}", { "Model": { "Fn::Select": [1, { "Fn::Split": ["global.", { "Ref": "FallbackModelId" }] }] } }] },
+                    { "Fn::Sub": ["arn:${AWS::Partition}:bedrock:*::foundation-model/${Model}", { "Model": { "Fn::Select": [1, { "Fn::Split": ["global.", { "Ref": "SecondFallbackModelId" }] }] } }] }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "RoleArn": {
+      "Description": "Store as the repository secret AI_REVIEW_ROLE_ARN.",
+      "Value": { "Fn::GetAtt": ["ReviewRole", "Arn"] }
+    }
+  }
+}

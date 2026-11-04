@@ -117,6 +117,25 @@ in, a timeout, or CI = the step prints why and passes, so the gate runs on every
   language models: a PASS is not proof, and two runs can differ. `validate-affected.sh` never runs them (groups
   `tenets` and `commit`).
 
+### AI review on pull requests
+
+The `AI review` workflow (`.github/workflows/ai-review.yml`, `scripts/ai-review/ci-review.mjs`) runs the same two
+reviews on every pull request, the tenets first and then the code, and posts them as one comment. It is advisory: it
+fails no check.
+
+- **Same prompts as `validate.sh`.** They are read from `main`, so a pull request cannot change the review it gets.
+  The model is Claude Opus 5.5 on Amazon Bedrock, called directly with no tools. It sees TENETS.md, the pull
+  request's title, description and comments, the commit messages and the diff (cut at 150,000 characters, which the
+  comment says), and nothing else, so it may report what it cannot check as a `CONCERN` or `SHOULD-FIX`.
+- **Nothing of the pull request runs.** The diff is read from git objects. The answer is posted verbatim in a code
+  block.
+- **A push that leaves the diff unchanged gets no new review.** The comment's hidden marker carries the diff's hash,
+  so a rebase onto a moved `main` with the same change costs nothing.
+- **When it skips:** pull requests from forks (they get no credentials), drafts and Dependabot. It also skips when
+  the repository has no `AI_REVIEW_ROLE_ARN` secret, so a fork of this sample stays green.
+- **Where it runs.** The AWS role it uses is development tooling, deployed on its own and never with the platform:
+  [tools/ai-review-ci/README.md](tools/ai-review-ci/README.md).
+
 ### Running part of the gate
 
 | Command | Runs |
