@@ -33,6 +33,7 @@ import { SECTION_PANEL_ID, buildSections, buildTabs, sectionTabId } from './admi
 import { isLeavingAdmin, useAdminLocation } from './useAdminLocation'
 import { useApiEndpointField, useBrandForm } from './useSettingsSync'
 import { Header, ApiConfigSection, BrandConfigSection } from './SettingsSections'
+import DefaultThemeCard from './DefaultThemeCard'
 
 /** A non-General tab's content: the tabpanel of the section switch when one is shown. */
 function SectionPanel({ labelledBy, children }: Readonly<{ labelledBy: string | null; children: ReactNode }>) {
@@ -203,6 +204,7 @@ export default function Settings() {
             onUrlsToTrackChange={setUrlsToTrack}
             readOnly={!isAdmin}
           />
+          <DefaultThemeCard apiEndpoint={apiEndpoint} isAdmin={isAdmin} />
         </div>
       ) : (
         <SectionPanel labelledBy={sections.length > 1 && location.section !== null ? sectionTabId(location.section) : null}>

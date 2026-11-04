@@ -960,5 +960,15 @@
       "conflict": "Das Board wurde inzwischen geändert. Laden Sie es neu und versuchen Sie es erneut.",
       "generic": "Etwas ist schiefgelaufen. Versuchen Sie es erneut."
     }
+  },
+  "appearance": {
+    "title": "Standard-Farbschema",
+    "hint": "Das Farbschema, das alle sehen, bis sie unter Konto → Einstellungen ein eigenes wählen.",
+    "adminOnlyNotice": "Nur Administratoren können das Standard-Farbschema ändern. Sie können es hier ansehen.",
+    "loading": "Standard-Farbschema wird geladen…",
+    "loadFailed": "Das Standard-Farbschema konnte nicht vom Server geladen werden.",
+    "save": "Farbschema speichern",
+    "saving": "Wird gespeichert…",
+    "saveFailed": "Das Standard-Farbschema konnte nicht gespeichert werden. Bitte versuchen Sie es erneut."
   }
 }

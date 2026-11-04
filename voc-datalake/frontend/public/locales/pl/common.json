@@ -163,7 +163,11 @@
     "system": "Motyw systemowy",
     "light": "Motyw jasny",
     "dark": "Motyw ciemny",
-    "toggle": "{{current}} — przełącz na {{next}}"
+    "toggle": "{{current}} — przełącz na {{next}}",
+    "highContrast": "Wysoki kontrast",
+    "workspaceDefault": "Domyślny w obszarze roboczym ({{name}})",
+    "colorTheme": "Motyw kolorystyczny",
+    "colorThemeHint": "Twój własny wybór, zapisany w tej przeglądarce. Domyślny w obszarze roboczym to motyw wybrany przez administratora dla wszystkich."
   },
   "account": {
     "password": {
@@ -234,7 +238,6 @@
     "roleAdmin": "Administrator",
     "roleUser": "Użytkownik",
     "preferences": "Język i motyw",
-    "theme": "Motyw",
     "mcpTitle": "Moje tokeny MCP",
     "mcpHint": "Połącz zewnętrznych asystentów jednym tokenem MCP dla całej aplikacji, wygenerowanym w sekcji Połącz.",
     "mcpLink": "Przejdź do Połącz",
@@ -250,7 +253,8 @@
     "onboardingShow": "Pokaż na stronie głównej",
     "tabsLabel": "Konto",
     "briefHint": "Twoje osobiste podsumowanie: kiedy dociera, w jakim języku, na czym się koncentruje i czy jest wysyłane e-mailem.",
-    "guideOpen": "Pokazuj „Jak to działa” rozwinięte na stronie głównej"
+    "guideOpen": "Pokazuj „Jak to działa” rozwinięte na stronie głównej",
+    "themeMode": "Jasny lub ciemny"
   },
   "connect": {
     "scope": {
