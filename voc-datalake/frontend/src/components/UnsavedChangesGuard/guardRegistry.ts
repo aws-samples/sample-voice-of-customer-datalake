@@ -8,7 +8,7 @@
  * It also chains a held route change through EVERY dirty editor: react-router keeps
  * one blocker per router, so when two editors on one page hold edits, the one whose
  * blocker caught the navigation asks first and KEEPS holding it (its blocker stays
- * mounted) while the others ask in turn (`runGuarded` with `except`, `stay`); the held
+ * mounted) while the others ask in turn, each once (`runGuarded` with `answered`, `stay`); the held
  * navigation itself then proceeds, a Back or a replace included, or is reset on Cancel.
  *
  * @module components/UnsavedChangesGuard/guardRegistry
@@ -35,29 +35,32 @@ export function registerGuard(guard: RegisteredGuard): () => void {
 }
 
 interface RunGuardedOptions {
-  /** The guard that already asked (it may still read dirty until it re-renders). */
-  readonly except?: RegisteredGuard
+  /** The guards that already answered (one may still read dirty: no `onDiscard`, or not re-rendered yet). */
+  readonly answered?: ReadonlySet<RegisteredGuard>
   /** A held route change: only editors that would block it ask. */
   readonly route?: { readonly current: Location; readonly next: Location }
   /** What Cancel in a later editor's dialog does (a held route change resets its blocker). */
   readonly stay?: () => void
 }
 
-function asks(guard: RegisteredGuard, { except, route }: RunGuardedOptions): boolean {
-  if (guard === except || !guard.isDirty()) return false
+function asks(guard: RegisteredGuard, { answered, route }: RunGuardedOptions): boolean {
+  if (answered?.has(guard) === true || !guard.isDirty()) return false
   return route === undefined || guard.blocksRoute === undefined || guard.blocksRoute(route.current, route.next)
 }
 
-/** Whether some dirty editor (other than `except`) would ask before `route`. */
+/** Whether some dirty editor (other than the `answered` ones) would ask before `route`. */
 export function anyGuardAsks(options: RunGuardedOptions): boolean {
   return [...guards].some((guard) => asks(guard, options))
 }
 
-/** Run `action` now, or after every dirty editor's dialog, one after another, lets it through. */
+/** Run `action` now, or after every dirty editor's dialog, one after another, lets it through (each asks once). */
 export function runGuarded(action: () => void, options: RunGuardedOptions = {}): void {
   const dirty = [...guards].find((guard) => asks(guard, options))
   if (dirty === undefined) action()
-  else dirty.requestLeave(() => runGuarded(action, { ...options, except: dirty }), options.stay)
+  else {
+    const answered = new Set(options.answered).add(dirty)
+    dirty.requestLeave(() => runGuarded(action, { ...options, answered }), options.stay)
+  }
 }
 
 /** `runGuarded` as a stable callback, for local-state navigation (tabs, closes). */
