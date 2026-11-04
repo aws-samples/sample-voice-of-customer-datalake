@@ -300,6 +300,20 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     expect(await screen.findByText('Elsewhere page')).toBeInTheDocument()
   })
 
+  // react-router consults only the last blocker mounted. The brand form (it lets ?tab= through)
+  // dirtied after the Default theme card (any query change loses it) mounted its blocker last,
+  // and a tab switch then dropped the card's pick unasked. Any dirty editor's rule now holds it.
+  it('a tab switch asks the editor that would lose its edits, even when another one blocked last', async () => {
+    const pathOnly = (current: { pathname: string }, next: { pathname: string }) => current.pathname !== next.pathname
+    const { router, user } = renderEditorRoute(<><KeepsEditsEditor label="Card" /><Editor onSave={vi.fn()} options={{ shouldBlock: pathOnly }} /></>)
+    await user.type(screen.getByLabelText('Card'), 'nord')
+    await user.type(screen.getByLabelText('Name'), 'x')
+    await user.click(screen.getByRole('link', { name: 'Tab B' }))
+    expect(router.state.location.search).toBe('')
+    await user.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    await waitFor(() => expect(router.state.location.search).toBe('?tab=b'))
+  })
+
   /** The first editor behind a switch the test flips, as a card a tab switch removes. */
   function SwitchableFirst({ onHideReady }: Readonly<{ onHideReady: (hide: () => void) => void }>) {
     const [shown, setShown] = useState(true)

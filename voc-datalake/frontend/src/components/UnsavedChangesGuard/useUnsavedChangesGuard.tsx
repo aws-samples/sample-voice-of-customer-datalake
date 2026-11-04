@@ -120,10 +120,32 @@ export function useUnsavedChangesGuard({
     if (unanswered !== null && unanswered.route === undefined) unanswered.stay()
   }, [])
 
+  // react-router consults only the LAST registered blocker, so whichever editor's blocker is
+  // live holds a change that ANY dirty editor would lose, not only its own.
   const blockWhen = useCallback(
-    (current: Location, next: Location) => latest.current.dirty && latest.current.shouldBlock(current, next),
+    (current: Location, next: Location) => anyGuardAsks({ route: { current, next } }),
     [],
   )
+
+  // Hold the caught change while every dirty editor it would lose asks in turn (each once,
+  // `answered` already skipped); then the held navigation itself proceeds (a Back or a replace
+  // stays one), or Cancel resets it. `holding` keeps this blocker mounted meanwhile.
+  const chain = useCallback((held: Pending, route: NonNullable<Pending['route']>, answered: ReadonlySet<RegisteredGuard>) => {
+    setHolding(true)
+    runGuarded(
+      () => { setHolding(false); held.proceed() },
+      { answered, route, stay: () => { setHolding(false); held.stay() } },
+    )
+  }, [])
+
+  // A change this editor would not lose itself (another editor's edits) goes straight to the chain.
+  const onBlocked = useCallback((held: Pending) => {
+    const { route } = held
+    const me = self.current
+    const mine = route === undefined || (latest.current.dirty && latest.current.shouldBlock(route.current, route.next))
+    if (mine || me === null) open(held)
+    else chain(held, route, new Set([me]))
+  }, [open, chain])
 
   const close = (leave: boolean) => {
     if (pending === null) return
@@ -132,18 +154,7 @@ export function useUnsavedChangesGuard({
     const answered = new Set(self.current === null ? [] : [self.current])
     if (!leave) pending.stay()
     else if (route === undefined || !anyGuardAsks({ answered, route })) pending.proceed()
-    else {
-      // react-router holds one blocker per router, so only this editor's caught the change.
-      // It keeps holding it (`holding` keeps the blocker mounted once this editor is clean)
-      // while every other dirty editor it would also lose asks in turn; then the held
-      // navigation itself proceeds (a Back or a replace stays one), or Cancel resets it.
-      const { proceed, stay } = pending
-      setHolding(true)
-      runGuarded(
-        () => { setHolding(false); proceed() },
-        { answered, route, stay: () => { setHolding(false); stay() } },
-      )
-    }
+    else chain(pending, route, answered)
   }
   const save = async () => {
     setSaving(true)
@@ -165,7 +176,7 @@ export function useUnsavedChangesGuard({
         {/* Only an editor with edits (or an open dialog) holds the router's blocker: a router
             supports ONE blocker at a time, and a clean editor on the same page (the brand form
             and the Default theme card on /admin) must not take it from a dirty one. */}
-        {inDataRouter && (dirty || pending !== null || holding) && <RouterBlocker when={blockWhen} onBlocked={open} />}
+        {inDataRouter && (dirty || pending !== null || holding) && <RouterBlocker when={blockWhen} onBlocked={onBlocked} />}
         <UnsavedChangesDialog
           isOpen={pending !== null}
           saving={saving}
