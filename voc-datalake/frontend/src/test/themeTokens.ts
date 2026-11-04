@@ -61,11 +61,14 @@ export function ruleBody(css: string, selector: string): string {
   return css.slice(css.indexOf('{', start) + 1, css.indexOf('}', start))
 }
 
-/** The declarations of one `[data-theme="…"]` block, comments stripped. */
+/** Both stylesheets without comments, so a comment naming a selector never matches ahead of the real block. */
+const themeCssCode = withoutComments(themeCss)
+
+/** The declarations of one `[data-theme="…"]` block. */
 export function themeBlockBody(theme: Theme): string {
-  const start = themeCss.indexOf(`[data-theme="${theme}"] {`)
+  const start = themeCssCode.indexOf(`[data-theme="${theme}"] {`)
   if (start === -1) throw new Error(`no ${theme} block`)
-  return withoutComments(themeCss.slice(themeCss.indexOf('{', start) + 1, themeCss.indexOf('}', start)))
+  return themeCssCode.slice(themeCssCode.indexOf('{', start) + 1, themeCssCode.indexOf('}', start))
 }
 
 /** Every custom property one theme block declares (`--name` without the dashes), sorted. */

@@ -25,9 +25,10 @@ const AppearanceSchema = z.object({
   default_theme: z.enum(COLOR_THEME_IDS).catch(DEFAULT_COLOR_THEME),
 }).catch({ default_theme: DEFAULT_COLOR_THEME })
 
-const SavedSchema = z.looseObject({ settings: z.unknown().optional() })
+/** A PUT answer's `settings.default_theme`, read strictly (no default). */
+const SavedSchema = z.looseObject({ settings: z.looseObject({ default_theme: z.enum(COLOR_THEME_IDS) }) })
 
-/** A GET answer, or the `settings` of a PUT answer. */
+/** A GET answer: lenient, so an unknown or missing id reads as the default. */
 export function readAppearance(raw: unknown): AppearanceSettings {
   return AppearanceSchema.parse(raw)
 }
@@ -37,6 +38,12 @@ export const appearanceKey = () => ['settings', 'appearance'] as const
 
 export const appearanceApi = {
   get: async (): Promise<AppearanceSettings> => readAppearance(await fetchApi<unknown>(PATH)),
-  save: async (theme: ColorThemeId): Promise<AppearanceSettings> =>
-    readAppearance(SavedSchema.safeParse(await fetchApi<unknown>(PATH, put({ default_theme: theme }))).data?.settings),
+  /**
+   * The server answered 2xx, so it stored `theme`: an answer that does not echo a known id
+   * keeps the requested one, never the default (that would claim the workspace is on Kiro).
+   */
+  save: async (theme: ColorThemeId): Promise<AppearanceSettings> => {
+    const saved = SavedSchema.safeParse(await fetchApi<unknown>(PATH, put({ default_theme: theme })))
+    return { default_theme: saved.success ? saved.data.settings.default_theme : theme }
+  },
 }

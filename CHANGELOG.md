@@ -47,6 +47,7 @@ their own.
 
 ### Upgrade notes
 - Nothing to do: without a saved default the app stays on Kiro, and a person's earlier light/dark choice is kept.
+
 ## [6.00.00] - 2026-11-03
 
 Deletes follow the tenets: customer data is deleted only for a stated legal basis and leaves a tombstone, workspace deletes really delete and are recorded, no role holds a delete it does not use, and no role can change an audit row. Major: the erasure routes require a legal basis.
