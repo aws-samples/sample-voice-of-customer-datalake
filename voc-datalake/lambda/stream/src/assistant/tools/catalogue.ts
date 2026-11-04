@@ -24,6 +24,7 @@ import { ConfigurationError } from '../../lib/errors.js';
 import { createAgentsServerTools } from './server/agents.js';
 import { createCompanyServerTools } from './server/company.js';
 import { createRadarServerTools } from './server/radar.js';
+import { createFeatureRequestServerTools } from './server/feature-requests.js';
 import { createParticipantServerTools } from './server/participants.js';
 import { createCoreServerTools } from './server/core.js';
 import { createInsightsServerTools } from './server/insights.js';
@@ -51,6 +52,7 @@ export function buildCatalogue(deps: ToolDeps): AssistantToolDefinition[] {
     ...createAgentsServerTools(deps),
     ...createCompanyServerTools(deps),
     ...createRadarServerTools(deps),
+    ...createFeatureRequestServerTools(deps),
     ...createParticipantServerTools(deps),
     ...createProjectClientTools(deps),
     ...createWorkspaceClientTools(),

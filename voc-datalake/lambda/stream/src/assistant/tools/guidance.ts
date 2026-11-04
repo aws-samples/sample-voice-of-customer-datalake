@@ -72,6 +72,8 @@ const PACK_GUIDANCE: Record<ToolPack, string> = {
       + 'of our categories, say they make a different kind of product before comparing. A new release or news scan '
       + '(run_radar_scan, admins) is available on the Radar and Data sources pages: elsewhere, offer suggest_navigation to '
       + '/radar.',
+    '- Feedback boards (feature requests people posted, with +1 supporters): search_feature_requests. They are a '
+      + 'separate source from reviews: never add them to review counts or metrics, and cite each as [FR:<request_id>].',
     PLAN_GUIDANCE,
     MEMORY_GUIDANCE,
   ].join('\n'),
