@@ -15,6 +15,7 @@ import type { BoardControls as Controls } from './useBoardControls'
 import StatusBadge from './StatusBadge'
 import StatusSelect from './StatusSelect'
 import RequestFieldValues from './RequestFieldValues'
+import EnrichmentChips from './EnrichmentChips'
 import { RequestTotals } from './RequestTotals'
 import { useCurrentBoard } from './boardContext'
 import { boardStatusOf } from './boardStatuses'
@@ -67,6 +68,7 @@ function RequestCard({ request, onOpen }: Readonly<{ request: FeatureRequest; on
         {t('list.reportedBy', { name: displayName(request.reporter_name, request.reporter_email) })}
       </p>
       <RequestFieldValues request={request} compact />
+      <EnrichmentChips enrichment={request.enrichment} />
       <RequestTotals request={request} />
     </li>
   )
