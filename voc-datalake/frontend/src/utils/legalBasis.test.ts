@@ -4,6 +4,7 @@ import { hasContactData, isLegalBasis, MAX_LEGAL_BASIS_CHARS } from './legalBasi
 describe('hasContactData', () => {
   it.each([
     'Request from someone@example.com',
+    'Request from (someone@example.com).',
     'call +44 20 7946 0958',
     'phone (020) 7946-0958',
     'tel 020.7946.0958',
