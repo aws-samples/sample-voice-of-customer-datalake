@@ -48,7 +48,7 @@ function RetentionBasis({ profile, onChange }: Readonly<{
         </p>
       )}
       <LegalBasisField value={basis} hint={t('retentionBasisHint')}
-        onChange={(value) => onChange({ ...profile, retention_legal_basis: value })} />
+        onChange={(value) => onChange({ ...profile, retention_legal_basis: value.trim() === '' ? null : value })} />
     </div>
   )
 }
