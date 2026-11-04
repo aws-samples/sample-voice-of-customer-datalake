@@ -29,7 +29,7 @@ function synth(context: Record<string, unknown>, region = 'us-east-1', writes = 
   });
   table.grantReadData(fn);
   if (writes) table.grant(fn, 'dynamodb:PutItem');
-  applyAppAspects(app, writes ? { aggregatesTable: table } : {});
+  applyAppAspects(app, { auditRowTables: writes ? { aggregatesTable: table } : {} });
   return Template.fromStack(stack);
 }
 
@@ -55,11 +55,11 @@ describe('applyAppAspects', () => {
   it('refuses a second application over the same constructs (the app, a stack inside it, or the app again)', () => {
     const app = new cdk.App();
     const stack = new cdk.Stack(app, 'Twice', { env: { account: '111111111111', region: 'us-east-1' } });
-    applyAppAspects(stack, {});
-    expect(() => applyAppAspects(stack, {})).toThrow(/already rewritten/);
-    expect(() => applyAppAspects(app, {})).toThrow(/Twice overlaps|overlaps Twice/);
+    applyAppAspects(stack, { auditRowTables: {} });
+    expect(() => applyAppAspects(stack, { auditRowTables: {} })).toThrow(/already rewritten/);
+    expect(() => applyAppAspects(app, { auditRowTables: {} })).toThrow(/Twice overlaps|overlaps Twice/);
     const other = new cdk.Stack(new cdk.App(), 'Separate', { env: { account: '111111111111', region: 'us-east-1' } });
-    expect(() => applyAppAspects(other, {})).not.toThrow();
+    expect(() => applyAppAspects(other, { auditRowTables: {} })).not.toThrow();
   });
 
   it('sets the EU inference env under -c inferenceScope=eu, and nothing for the default scope', () => {

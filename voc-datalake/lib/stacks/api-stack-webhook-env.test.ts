@@ -80,7 +80,7 @@ function synthWithWebhookPlugin(): Template {
     // api-stack.ts filters `getEnabledPlugins` before `getPluginsWithWebhook`.
     enabledSources: [WEBHOOK_PLUGIN_ID],
   });
-  applyAppAspects(app, dependencies); // the rewrites bin/voc-datalake.ts applies
+  applyAppAspects(app, { auditRowTables: dependencies }); // the rewrites bin/voc-datalake.ts applies
 
   return Template.fromStack(stack);
 }

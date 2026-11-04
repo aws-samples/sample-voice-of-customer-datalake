@@ -316,7 +316,7 @@ tagStack(apiStack, 'Api');
 // logs to its own retained group, protectData retains every log group, inferenceScope=eu sets the EU inference env,
 // and CDK grant wildcards become exact actions and index ARNs. After every stack is built. First of them, the
 // audit-row Denies on the tables VocCoreStack holds AUDIT# rows in (lib/utils/audit-row-guard.ts).
-applyAppAspects(app, coreStack);
+applyAppAspects(app, { auditRowTables: coreStack });
 
 // cdk-nag (AwsSolutions) runs as a policy-validation plugin after synthesis: an unacknowledged finding,
 // error or warning, fails `cdk synth` and is listed in the assembly's validation report.
