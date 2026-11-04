@@ -68,6 +68,8 @@ ADMIN_ONLY: dict[str, frozenset[str]] = {
         'POST /workflows/<workflow_id>/duplicate', 'POST /workflows/<workflow_id>/rename',
         'DELETE /workflows/<workflow_id>',
     }),
+    # The workspace's start theme (Administration → General): every person sees it until they pick their own.
+    'appearance_routes.py': frozenset({'PUT /settings/appearance'}),
     'data_explorer_handler.py': frozenset({'PUT /data-explorer/s3', 'PUT /data-explorer/feedback'}),
     # Company personas (since 5.60.00): only admins write the shared library; promote copies into it.
     'company_personas_routes.py': frozenset({
