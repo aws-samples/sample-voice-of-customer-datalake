@@ -19,6 +19,7 @@ import ModalShell from '../../components/ModalShell/ModalShell'
 import { saveIgnoringFailure, useSnapshotGuard } from '../../components/UnsavedChangesGuard/useSnapshotGuard'
 import { CategoryPanel, SettingsPanel, ThemePanel } from './FormEditorPanels'
 import type { EditorCategory } from './FormEditorPanels'
+import { rovingIndex, TAB_KEYS } from '../../utils/rovingIndex'
 
 type FormConfig = Omit<FeedbackForm, 'form_id' | 'created_at' | 'updated_at'>
 export type FormConfigWithId = FormConfig & { form_id?: string }
@@ -70,15 +71,6 @@ function getSaveButtonText(isSaving: boolean, isEditing: boolean, t: (key: strin
   return isEditing ? t('editor.saveChanges') : t('editor.createForm')
 }
 
-/** The tab a WAI-ARIA tabs key moves to (Left/Right wrap, Home/End), or null for any other key. */
-function tabIndexForKey(key: string, current: number, count: number): number | null {
-  if (key === 'ArrowRight') return (current + 1) % count
-  if (key === 'ArrowLeft') return (current - 1 + count) % count
-  if (key === 'Home') return 0
-  if (key === 'End') return count - 1
-  return null
-}
-
 /**
  * The editor's tab strip (WAI-ARIA tabs: one tab in the Tab order, the arrow
  * keys move between tabs and select them). Extracted from `FormEditor` when the fourth tab
@@ -104,7 +96,7 @@ function EditorTabBar({ activeTab, onSelect, idPrefix }: Readonly<{
     { id: 'theme', label: t('editor.tabs.theme'), shortLabel: t('editor.tabs.theme'), icon: Palette },
   ]
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const next = tabIndexForKey(event.key, tabs.findIndex((tab) => tab.id === activeTab), tabs.length)
+    const next = rovingIndex(event.key, tabs.findIndex((tab) => tab.id === activeTab), tabs.length, TAB_KEYS)
     const target = next === null ? undefined : tabs[next]
     if (next === null || target === undefined) return
     event.preventDefault()

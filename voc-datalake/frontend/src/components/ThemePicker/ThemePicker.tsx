@@ -16,7 +16,7 @@ import { Check } from 'lucide-react'
 import { themeAttribute } from '../../theme/themeCatalog'
 import type { ColorThemeId, ThemeMode } from '../../theme/themeCatalog'
 import { useDocumentMode } from './useDocumentMode'
-import { targetIndex } from './radioKeys'
+import { RADIO_KEYS, rovingIndex } from '../../utils/rovingIndex'
 
 export interface ThemeOption {
   /** What `onChange` receives (a theme id, or a choice such as `workspace`). */
@@ -59,7 +59,7 @@ export default function ThemePicker({ options, value, onChange, labelledBy, read
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const next = targetIndex(event.key, index, options.length)
+    const next = rovingIndex(event.key, index, options.length, RADIO_KEYS)
     if (next === null) return
     event.preventDefault()
     cards.current[next]?.focus()
