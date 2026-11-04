@@ -303,5 +303,43 @@
     "notFound": "Este quadro não existe ou não foi compartilhado com você.",
     "backToBoards": "Voltar aos quadros",
     "standaloneIntro": "Os quadros que você pode usar. Abra um para adicionar um pedido ou dar +1."
+  },
+  "tabs": {
+    "boards": "Quadros",
+    "insights": "Análise"
+  },
+  "insights": {
+    "label": "Análise dos quadros",
+    "intro": "O que dizem os pedidos dos quadros, separado das métricas de avaliações.",
+    "board": "Quadro",
+    "allBoards": "Todos os quadros",
+    "window": "Criados em",
+    "lastDays_one": "O último dia",
+    "lastDays_other": "Os últimos {{count, number}} dias",
+    "allTime": "Todo o tempo",
+    "enrich": "Enriquecer pedidos",
+    "enrichQueued_one": "{{count, number}} pedido na fila, {{remaining, number}} ainda por enriquecer.",
+    "enrichQueued_other": "{{count, number}} pedidos na fila, {{remaining, number}} ainda por enriquecer.",
+    "enrichFailed": "Não foi possível iniciar o enriquecimento. Tente novamente.",
+    "loadFailed": "Não foi possível carregar a análise dos quadros.",
+    "empty": "Nenhum pedido neste período.",
+    "noData": "Ainda não há nada para mostrar.",
+    "totalRequests": "Pedidos",
+    "totalSupporters": "Apoiadores",
+    "totalEnriched": "Enriquecidos",
+    "top": "Pedidos com mais apoio",
+    "byCategory": "Pedidos por categoria",
+    "byStatus": "Pedidos por status",
+    "bySentiment": "Pedidos por sentimento",
+    "uncategorized": "Sem categoria",
+    "notEnriched": "Ainda não enriquecidos",
+    "requests": "Pedidos",
+    "rowText_one": "{{name}}: {{value}} pedido",
+    "rowText_other": "{{name}}: {{value}} pedidos"
+  },
+  "enrichment": {
+    "label": "Enriquecimento:",
+    "category": "Categoria",
+    "summary": "Em uma frase:"
   }
 }

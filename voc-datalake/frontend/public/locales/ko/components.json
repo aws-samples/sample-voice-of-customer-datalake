@@ -6,9 +6,21 @@
     "filterAll": "모두",
     "filterPersona": "페르소나",
     "everyPersona": "모든 페르소나",
-    "authorKind": { "user": "팀", "persona": "페르소나", "reviewer": "검토자" },
-    "authorKinds": { "user": "팀원", "persona": "페르소나", "reviewer": "외부 검토자" },
-    "stance": { "positive": "긍정적", "mixed": "엇갈림", "negative": "부정적" },
+    "authorKind": {
+      "user": "팀",
+      "persona": "페르소나",
+      "reviewer": "검토자"
+    },
+    "authorKinds": {
+      "user": "팀원",
+      "persona": "페르소나",
+      "reviewer": "외부 검토자"
+    },
+    "stance": {
+      "positive": "긍정적",
+      "mixed": "엇갈림",
+      "negative": "부정적"
+    },
     "showResolved": "해결된 댓글 표시",
     "commentWhole": "문서 전체에 댓글 달기",
     "onWholeDocument": "문서 전체에 대해",
@@ -43,7 +55,10 @@
     "title": "검토용으로 공유",
     "intro": "링크를 받은 사람은 이메일로 받은 코드로 로그인해 최신 버전을 읽고 댓글을 남깁니다. 자신의 댓글만 볼 수 있으며 문서를 편집할 수 없습니다.",
     "whoMayOpen": "열 수 있는 사람",
-    "mode": { "anyone": "링크가 있는 누구나", "list": "지정한 도메인 또는 주소만" },
+    "mode": {
+      "anyone": "링크가 있는 누구나",
+      "list": "지정한 도메인 또는 주소만"
+    },
     "modeHint": {
       "anyone": "보낸 코드로 이메일 주소를 확인한 사람이면 누구나.",
       "list": "예: example.com 또는 name@example.com"
@@ -246,7 +261,19 @@
       "usesAll": "페르소나 생성은 모두 읽습니다.",
       "confirming": "정확한 개수를 확인하는 중…",
       "noMatches": "이 필터와 일치하는 리뷰가 없습니다. 필터를 넓히지 않으면 실행 시 읽을 데이터가 없습니다.",
-      "error": "일치하는 리뷰를 셀 수 없습니다."
+      "error": "일치하는 리뷰를 셀 수 없습니다.",
+      "featureRequests_one": "보드의 기능 요청 {{count, number}}개도 있습니다.",
+      "featureRequests_other": "보드의 기능 요청 {{count, number}}개도 있습니다."
+    },
+    "featureRequests": {
+      "title": "기능 요청",
+      "description": "피드백 보드의 요청을 리뷰와 별도의 근거로 읽습니다.",
+      "boards": "읽을 보드",
+      "boardsHint": "보드를 골라 범위를 좁히거나, 고르지 않으면 모든 보드를 읽습니다.",
+      "allBoards": "모든 보드",
+      "loadingBoards": "보드를 불러오는 중…",
+      "boardsFailed": "보드를 불러오지 못했습니다. 모든 보드를 읽습니다.",
+      "noBoards": "아직 읽을 보드가 없습니다."
     }
   },
   "documentExport": {

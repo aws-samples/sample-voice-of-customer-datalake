@@ -626,6 +626,13 @@
     "viewLabel": "表示するレビュー",
     "viewCited": "引用 ({{n, number}})",
     "viewUsed": "使用したすべて ({{n, number}})",
-    "citedNote": "ペルソナの根拠が示しているレビューです。読み込んだレビューを示していない引用は、テキストとしてのみ残ります。"
+    "citedNote": "ペルソナの根拠が示しているレビューです。読み込んだレビューを示していない引用は、テキストとしてのみ残ります。",
+    "featureRequests_one": "と機能リクエスト{{count, number}}件",
+    "featureRequests_other": "と機能リクエスト{{count, number}}件",
+    "featureRequestsOnly_one": "{{count, number}}件の機能リクエストから作成",
+    "featureRequestsOnly_other": "{{count, number}}件の機能リクエストから作成",
+    "showFeatureRequests": "リクエストを表示",
+    "hideFeatureRequests": "リクエストを隠す",
+    "featureRequestLink": "リクエスト {{id}}"
   }
 }

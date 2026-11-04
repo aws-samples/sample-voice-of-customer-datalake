@@ -6,9 +6,21 @@
     "filterAll": "Tout le monde",
     "filterPersona": "Persona",
     "everyPersona": "Tous les personas",
-    "authorKind": { "user": "Équipe", "persona": "Persona", "reviewer": "Relecteur" },
-    "authorKinds": { "user": "Membres de l'équipe", "persona": "Personas", "reviewer": "Relecteurs externes" },
-    "stance": { "positive": "Positif", "mixed": "Mitigé", "negative": "Négatif" },
+    "authorKind": {
+      "user": "Équipe",
+      "persona": "Persona",
+      "reviewer": "Relecteur"
+    },
+    "authorKinds": {
+      "user": "Membres de l'équipe",
+      "persona": "Personas",
+      "reviewer": "Relecteurs externes"
+    },
+    "stance": {
+      "positive": "Positif",
+      "mixed": "Mitigé",
+      "negative": "Négatif"
+    },
     "showResolved": "Afficher les résolus",
     "commentWhole": "Commenter tout le document",
     "onWholeDocument": "Sur tout le document",
@@ -43,7 +55,10 @@
     "title": "Partager pour relecture",
     "intro": "Les personnes disposant du lien se connectent avec un code envoyé par e-mail, lisent la dernière version et laissent des commentaires. Elles ne voient que leurs propres commentaires et ne peuvent pas modifier le document.",
     "whoMayOpen": "Qui peut l'ouvrir",
-    "mode": { "anyone": "Toute personne disposant du lien", "list": "Uniquement ces domaines ou adresses" },
+    "mode": {
+      "anyone": "Toute personne disposant du lien",
+      "list": "Uniquement ces domaines ou adresses"
+    },
     "modeHint": {
       "anyone": "Toute personne qui confirme son adresse e-mail avec le code envoyé.",
       "list": "Par exemple example.com ou nom@example.com."
@@ -253,7 +268,19 @@
       "usesAll": "La génération de personas les lit tous.",
       "confirming": "Confirmation du nombre exact…",
       "noMatches": "Aucun avis ne correspond à ces filtres. Élargissez-les, sinon l’exécution n’aura rien à lire.",
-      "error": "Impossible de compter les avis correspondants."
+      "error": "Impossible de compter les avis correspondants.",
+      "featureRequests_one": "Plus {{count, number}} demande de fonctionnalité des tableaux.",
+      "featureRequests_other": "Plus {{count, number}} demandes de fonctionnalités des tableaux."
+    },
+    "featureRequests": {
+      "title": "Demandes de fonctionnalités",
+      "description": "Les demandes des tableaux de retours, lues comme une source à part à côté des avis.",
+      "boards": "Tableaux à lire",
+      "boardsHint": "Choisissez des tableaux pour restreindre, ou aucun pour lire tous les tableaux.",
+      "allBoards": "Tous les tableaux",
+      "loadingBoards": "Chargement des tableaux…",
+      "boardsFailed": "Impossible de charger les tableaux. Tous les tableaux seront lus.",
+      "noBoards": "Il n’y a pas encore de tableau à lire."
     }
   },
   "documentExport": {

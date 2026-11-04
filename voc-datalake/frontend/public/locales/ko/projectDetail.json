@@ -626,6 +626,13 @@
     "viewLabel": "표시할 리뷰",
     "viewCited": "인용됨 ({{n, number}})",
     "viewUsed": "사용된 전체 ({{n, number}})",
-    "citedNote": "페르소나의 근거가 가리키는 리뷰입니다. 읽은 리뷰를 가리키지 않는 인용은 텍스트로만 남습니다."
+    "citedNote": "페르소나의 근거가 가리키는 리뷰입니다. 읽은 리뷰를 가리키지 않는 인용은 텍스트로만 남습니다.",
+    "featureRequests_one": "및 기능 요청 {{count, number}}개",
+    "featureRequests_other": "및 기능 요청 {{count, number}}개",
+    "featureRequestsOnly_one": "기능 요청 {{count, number}}개를 바탕으로 작성됨",
+    "featureRequestsOnly_other": "기능 요청 {{count, number}}개를 바탕으로 작성됨",
+    "showFeatureRequests": "요청 보기",
+    "hideFeatureRequests": "요청 숨기기",
+    "featureRequestLink": "요청 {{id}}"
   }
 }

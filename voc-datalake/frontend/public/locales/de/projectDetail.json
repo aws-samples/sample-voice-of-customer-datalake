@@ -626,6 +626,13 @@
     "viewLabel": "Welche Bewertungen",
     "viewCited": "Zitiert ({{n, number}})",
     "viewUsed": "Alle verwendeten ({{n, number}})",
-    "citedNote": "Die Bewertungen, die die Belege der Persona nennen. Ein Verweis auf keine gelesene Bewertung bleibt nur als Text erhalten."
+    "citedNote": "Die Bewertungen, die die Belege der Persona nennen. Ein Verweis auf keine gelesene Bewertung bleibt nur als Text erhalten.",
+    "featureRequests_one": "und {{count, number}} Feature-Wunsch",
+    "featureRequests_other": "und {{count, number}} Feature-Wünschen",
+    "featureRequestsOnly_one": "Aus {{count, number}} Feature-Wunsch verfasst",
+    "featureRequestsOnly_other": "Aus {{count, number}} Feature-Wünschen verfasst",
+    "showFeatureRequests": "Wünsche anzeigen",
+    "hideFeatureRequests": "Wünsche ausblenden",
+    "featureRequestLink": "Wunsch {{id}}"
   }
 }

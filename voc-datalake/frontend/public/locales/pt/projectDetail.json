@@ -632,6 +632,13 @@
     "viewLabel": "Quais avaliações",
     "viewCited": "Citadas ({{n, number}})",
     "viewUsed": "Todas as usadas ({{n, number}})",
-    "citedNote": "As avaliações que as evidências da persona nomeiam. Uma citação que não nomeia nenhuma avaliação lida é mantida apenas como texto."
+    "citedNote": "As avaliações que as evidências da persona nomeiam. Uma citação que não nomeia nenhuma avaliação lida é mantida apenas como texto.",
+    "featureRequests_one": "e {{count, number}} pedido de funcionalidade",
+    "featureRequests_other": "e {{count, number}} pedidos de funcionalidades",
+    "featureRequestsOnly_one": "Escrito a partir de {{count, number}} pedido de funcionalidade",
+    "featureRequestsOnly_other": "Escrito a partir de {{count, number}} pedidos de funcionalidades",
+    "showFeatureRequests": "Ver pedidos",
+    "hideFeatureRequests": "Ocultar pedidos",
+    "featureRequestLink": "Pedido {{id}}"
   }
 }

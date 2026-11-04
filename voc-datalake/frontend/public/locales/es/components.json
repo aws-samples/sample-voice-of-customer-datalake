@@ -6,9 +6,21 @@
     "filterAll": "Todos",
     "filterPersona": "Persona",
     "everyPersona": "Todas las personas",
-    "authorKind": { "user": "Equipo", "persona": "Persona", "reviewer": "Revisor" },
-    "authorKinds": { "user": "Miembros del equipo", "persona": "Personas", "reviewer": "Revisores externos" },
-    "stance": { "positive": "Positiva", "mixed": "Mixta", "negative": "Negativa" },
+    "authorKind": {
+      "user": "Equipo",
+      "persona": "Persona",
+      "reviewer": "Revisor"
+    },
+    "authorKinds": {
+      "user": "Miembros del equipo",
+      "persona": "Personas",
+      "reviewer": "Revisores externos"
+    },
+    "stance": {
+      "positive": "Positiva",
+      "mixed": "Mixta",
+      "negative": "Negativa"
+    },
     "showResolved": "Mostrar resueltos",
     "commentWhole": "Comentar todo el documento",
     "onWholeDocument": "Sobre todo el documento",
@@ -43,7 +55,10 @@
     "title": "Compartir para revisión",
     "intro": "Quien tenga el enlace inicia sesión con un código enviado a su correo, lee la versión más reciente y deja comentarios. Solo ve sus propios comentarios y no puede editar el documento.",
     "whoMayOpen": "Quién puede abrirlo",
-    "mode": { "anyone": "Cualquiera con el enlace", "list": "Solo estos dominios o direcciones" },
+    "mode": {
+      "anyone": "Cualquiera con el enlace",
+      "list": "Solo estos dominios o direcciones"
+    },
     "modeHint": {
       "anyone": "Cualquiera que confirme su dirección de correo con el código enviado.",
       "list": "Por ejemplo example.com o nombre@example.com."
@@ -253,7 +268,19 @@
       "usesAll": "La generación de personas las lee todas.",
       "confirming": "Confirmando el recuento exacto…",
       "noMatches": "Ninguna reseña coincide con estos filtros. Amplíelos o la ejecución no tendrá nada que leer.",
-      "error": "No se pudieron contar las reseñas que coinciden."
+      "error": "No se pudieron contar las reseñas que coinciden.",
+      "featureRequests_one": "Además, {{count, number}} solicitud de funciones de los tableros.",
+      "featureRequests_other": "Además, {{count, number}} solicitudes de funciones de los tableros."
+    },
+    "featureRequests": {
+      "title": "Solicitudes de funciones",
+      "description": "Solicitudes de los tableros de opiniones, leídas como evidencia propia junto a las reseñas.",
+      "boards": "Tableros que leer",
+      "boardsHint": "Elige tableros para acotar, o ninguno para leer todos.",
+      "allBoards": "Todos los tableros",
+      "loadingBoards": "Cargando los tableros…",
+      "boardsFailed": "No se pudieron cargar los tableros. Se leerán todos.",
+      "noBoards": "Todavía no hay tableros que leer."
     }
   },
   "documentExport": {

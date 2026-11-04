@@ -296,5 +296,43 @@
     "notFound": "Dieses Board existiert nicht oder wurde nicht mit Ihnen geteilt.",
     "backToBoards": "Zurück zu den Boards",
     "standaloneIntro": "Die Boards, die Sie nutzen können. Öffnen Sie eines, um einen Eintrag anzulegen oder +1 zu geben."
+  },
+  "tabs": {
+    "boards": "Boards",
+    "insights": "Auswertung"
+  },
+  "insights": {
+    "label": "Board-Auswertung",
+    "intro": "Was die Wünsche auf den Boards sagen, getrennt von den Bewertungskennzahlen.",
+    "board": "Board",
+    "allBoards": "Alle Boards",
+    "window": "Zeitraum",
+    "lastDays_one": "Letzter Tag",
+    "lastDays_other": "Letzte {{count, number}} Tage",
+    "allTime": "Gesamter Zeitraum",
+    "enrich": "Wünsche anreichern",
+    "enrichQueued_one": "{{count, number}} Wunsch eingereiht, {{remaining, number}} noch anzureichern.",
+    "enrichQueued_other": "{{count, number}} Wünsche eingereiht, {{remaining, number}} noch anzureichern.",
+    "enrichFailed": "Die Anreicherung konnte nicht gestartet werden. Bitte versuchen Sie es erneut.",
+    "loadFailed": "Die Board-Auswertung konnte nicht geladen werden.",
+    "empty": "Keine Wünsche in diesem Zeitraum.",
+    "noData": "Noch nichts anzuzeigen.",
+    "totalRequests": "Wünsche",
+    "totalSupporters": "Unterstützer",
+    "totalEnriched": "Angereichert",
+    "top": "Am meisten unterstützte Wünsche",
+    "byCategory": "Wünsche nach Kategorie",
+    "byStatus": "Wünsche nach Status",
+    "bySentiment": "Wünsche nach Stimmung",
+    "uncategorized": "Ohne Kategorie",
+    "notEnriched": "Noch nicht angereichert",
+    "requests": "Wünsche",
+    "rowText_one": "{{name}}: {{value}} Wunsch",
+    "rowText_other": "{{name}}: {{value}} Wünsche"
+  },
+  "enrichment": {
+    "label": "Anreicherung:",
+    "category": "Kategorie",
+    "summary": "In einem Satz:"
   }
 }

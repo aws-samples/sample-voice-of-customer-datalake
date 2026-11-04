@@ -296,5 +296,43 @@
     "notFound": "이 보드가 없거나 공유되지 않았습니다.",
     "backToBoards": "보드 목록으로 돌아가기",
     "standaloneIntro": "사용할 수 있는 보드입니다. 하나를 열어 요청을 추가하거나 +1 하세요."
+  },
+  "tabs": {
+    "boards": "보드",
+    "insights": "인사이트"
+  },
+  "insights": {
+    "label": "보드 인사이트",
+    "intro": "보드 요청이 말해 주는 내용입니다. 리뷰 지표와는 따로 보여 줍니다.",
+    "board": "보드",
+    "allBoards": "모든 보드",
+    "window": "생성 기간",
+    "lastDays_one": "최근 {{count, number}}일",
+    "lastDays_other": "최근 {{count, number}}일",
+    "allTime": "전체 기간",
+    "enrich": "요청 보강",
+    "enrichQueued_one": "요청 {{count, number}}개를 대기열에 넣었습니다. 남은 요청 {{remaining, number}}개.",
+    "enrichQueued_other": "요청 {{count, number}}개를 대기열에 넣었습니다. 남은 요청 {{remaining, number}}개.",
+    "enrichFailed": "보강을 시작하지 못했습니다. 다시 시도하세요.",
+    "loadFailed": "보드 인사이트를 불러오지 못했습니다.",
+    "empty": "이 기간에는 요청이 없습니다.",
+    "noData": "아직 표시할 내용이 없습니다.",
+    "totalRequests": "요청",
+    "totalSupporters": "지지자",
+    "totalEnriched": "보강됨",
+    "top": "지지를 가장 많이 받은 요청",
+    "byCategory": "카테고리별 요청",
+    "byStatus": "상태별 요청",
+    "bySentiment": "감정별 요청",
+    "uncategorized": "미분류",
+    "notEnriched": "아직 보강 안 됨",
+    "requests": "요청",
+    "rowText_one": "{{name}}: 요청 {{value}}개",
+    "rowText_other": "{{name}}: 요청 {{value}}개"
+  },
+  "enrichment": {
+    "label": "보강:",
+    "category": "카테고리",
+    "summary": "한 문장 요약:"
   }
 }

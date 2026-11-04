@@ -672,6 +672,17 @@
     "viewLabel": "Które opinie",
     "viewCited": "Cytowane ({{n, number}})",
     "viewUsed": "Wszystkie użyte ({{n, number}})",
-    "citedNote": "Opinie, które wskazują dowody persony. Cytat, który nie wskazuje żadnej przeczytanej opinii, zostaje zachowany tylko jako tekst."
+    "citedNote": "Opinie, które wskazują dowody persony. Cytat, który nie wskazuje żadnej przeczytanej opinii, zostaje zachowany tylko jako tekst.",
+    "featureRequests_one": "i {{count, number}} prośby o funkcję",
+    "featureRequests_few": "i {{count, number}} próśb o funkcje",
+    "featureRequests_many": "i {{count, number}} próśb o funkcje",
+    "featureRequests_other": "i {{count, number}} prośby o funkcje",
+    "featureRequestsOnly_one": "Napisano na podstawie {{count, number}} prośby o funkcję",
+    "featureRequestsOnly_few": "Napisano na podstawie {{count, number}} próśb o funkcje",
+    "featureRequestsOnly_many": "Napisano na podstawie {{count, number}} próśb o funkcje",
+    "featureRequestsOnly_other": "Napisano na podstawie {{count, number}} prośby o funkcje",
+    "showFeatureRequests": "Pokaż zgłoszenia",
+    "hideFeatureRequests": "Ukryj zgłoszenia",
+    "featureRequestLink": "Zgłoszenie {{id}}"
   }
 }

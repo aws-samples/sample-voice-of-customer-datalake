@@ -626,6 +626,13 @@
     "viewLabel": "显示哪些评论",
     "viewCited": "已引用 ({{n, number}})",
     "viewUsed": "全部已用 ({{n, number}})",
-    "citedNote": "角色的支持证据所指的评论。未指向任何已读评论的引用仅保留为文本。"
+    "citedNote": "角色的支持证据所指的评论。未指向任何已读评论的引用仅保留为文本。",
+    "featureRequests_one": "及 {{count, number}} 条功能需求",
+    "featureRequests_other": "及 {{count, number}} 条功能需求",
+    "featureRequestsOnly_one": "基于 {{count, number}} 条功能需求撰写",
+    "featureRequestsOnly_other": "基于 {{count, number}} 条功能需求撰写",
+    "showFeatureRequests": "查看需求",
+    "hideFeatureRequests": "隐藏需求",
+    "featureRequestLink": "需求 {{id}}"
   }
 }
