@@ -195,10 +195,11 @@ describe('Account — preferences: language & theme', () => {
     expect(changeLanguage).toHaveBeenCalledWith('de')
   })
 
-  it('carries the theme toggle', () => {
+  it('carries the mode toggle and the colour theme picker', () => {
     renderAt('?tab=preferences')
-    expect(within(section('Language & theme')).getByText('Theme')).toBeInTheDocument()
+    expect(within(section('Language & theme')).getByText('Light or dark')).toBeInTheDocument()
     expect(within(section('Language & theme')).getByRole('button')).toBeInTheDocument()
+    expect(within(section('Language & theme')).getByRole('radiogroup', { name: 'Colour theme' })).toBeInTheDocument()
   })
 })
 

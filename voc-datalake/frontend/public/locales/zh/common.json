@@ -168,7 +168,11 @@
     "system": "跟随系统",
     "light": "浅色主题",
     "dark": "深色主题",
-    "toggle": "{{current}} — 切换到{{next}}"
+    "toggle": "{{current}} — 切换到{{next}}",
+    "highContrast": "高对比度",
+    "workspaceDefault": "工作区默认 ({{name}})",
+    "colorTheme": "配色主题",
+    "colorThemeHint": "你自己的选择，保存在此浏览器中。工作区默认跟随管理员为所有人选择的主题。"
   },
   "partialTimeBudgetHint": "近似值：为及时响应，计数仅覆盖 {{date}} 起的数据——缩小时间范围可获得完整总数",
   "account": {
@@ -182,7 +186,6 @@
     "roleAdmin": "管理员",
     "roleUser": "用户",
     "preferences": "语言与主题",
-    "theme": "主题",
     "mcpTitle": "我的 MCP 令牌",
     "mcpHint": "使用在“连接”页面创建的一个全应用 MCP 令牌即可连接外部助手。",
     "mcpLink": "前往“连接”",
@@ -256,7 +259,8 @@
       "hint": "仅保存在此浏览器的本地存储中。此处的操作不会更改服务器。",
       "endpoint": "API 端点",
       "endpointNone": "未配置"
-    }
+    },
+    "themeMode": "浅色或深色"
   },
   "connect": {
     "title": "连接",

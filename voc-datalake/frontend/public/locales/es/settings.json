@@ -979,5 +979,15 @@
       "conflict": "El tablero ha cambiado mientras tanto. Vuelve a cargarlo e inténtalo de nuevo.",
       "generic": "Algo ha salido mal. Inténtalo de nuevo."
     }
+  },
+  "appearance": {
+    "title": "Tema predeterminado",
+    "hint": "El tema de color que todos ven hasta que eligen el suyo en Cuenta → Preferencias.",
+    "adminOnlyNotice": "Solo los administradores pueden cambiar el tema predeterminado. Puedes verlo aquí.",
+    "loading": "Cargando el tema predeterminado…",
+    "loadFailed": "No se pudo cargar el tema predeterminado del servidor.",
+    "save": "Guardar tema",
+    "saving": "Guardando…",
+    "saveFailed": "No se pudo guardar el tema predeterminado. Inténtalo de nuevo."
   }
 }

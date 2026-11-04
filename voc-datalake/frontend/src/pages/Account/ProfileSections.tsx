@@ -11,6 +11,7 @@ import clsx from 'clsx'
 import { Eye, LogOut, Plug, Shield, SlidersHorizontal, UserRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import ThemeToggle from '../../components/ThemeToggle/ThemeToggle'
+import ColorThemeField from './ColorThemeField'
 import { changeLanguage, isSupportedLanguage, languageNames, supportedLanguages } from '../../i18n/languages'
 
 export interface AccountUser {
@@ -151,9 +152,10 @@ export function PreferencesSection() {
     <Section icon={SlidersHorizontal} title={t('account.preferences')}>
       <LanguageField />
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm text-text">{t('account.theme')}</span>
+        <span className="text-sm text-text">{t('account.themeMode')}</span>
         <ThemeToggle />
       </div>
+      <ColorThemeField />
     </Section>
   )
 }

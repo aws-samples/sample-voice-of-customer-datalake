@@ -979,5 +979,15 @@
       "conflict": "Le tableau a changé entre-temps. Rechargez-le et réessayez.",
       "generic": "Une erreur s’est produite. Réessayez."
     }
+  },
+  "appearance": {
+    "title": "Thème par défaut",
+    "hint": "Le thème de couleurs que tout le monde voit jusqu’à choisir le sien dans Compte → Préférences.",
+    "adminOnlyNotice": "Seuls les administrateurs peuvent changer le thème par défaut. Vous pouvez le consulter ici.",
+    "loading": "Chargement du thème par défaut…",
+    "loadFailed": "Impossible de charger le thème par défaut depuis le serveur.",
+    "save": "Enregistrer le thème",
+    "saving": "Enregistrement…",
+    "saveFailed": "Impossible d’enregistrer le thème par défaut. Réessayez."
   }
 }

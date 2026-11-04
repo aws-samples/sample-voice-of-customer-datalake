@@ -168,7 +168,11 @@
     "system": "システムテーマ",
     "light": "ライトテーマ",
     "dark": "ダークテーマ",
-    "toggle": "{{current}} — {{next}}に切り替え"
+    "toggle": "{{current}} — {{next}}に切り替え",
+    "highContrast": "ハイコントラスト",
+    "workspaceDefault": "ワークスペースの既定 ({{name}})",
+    "colorTheme": "カラーテーマ",
+    "colorThemeHint": "このブラウザーに保存されるあなた自身の選択です。ワークスペースの既定は、管理者が全員向けに選んだテーマに従います。"
   },
   "partialTimeBudgetHint": "概算：時間内に応答するため、件数は {{date}} 以降のみを対象としています。完全な合計を得るには期間を絞り込んでください",
   "account": {
@@ -182,7 +186,6 @@
     "roleAdmin": "管理者",
     "roleUser": "ユーザー",
     "preferences": "言語とテーマ",
-    "theme": "テーマ",
     "mcpTitle": "自分の MCP トークン",
     "mcpHint": "外部アシスタントは、接続ページで発行するアプリ全体用の MCP トークン 1 つで接続できます。",
     "mcpLink": "接続へ移動",
@@ -256,7 +259,8 @@
       "hint": "このブラウザーのローカルストレージにのみ保存されます。ここでの操作はサーバーを変更しません。",
       "endpoint": "API エンドポイント",
       "endpointNone": "未設定"
-    }
+    },
+    "themeMode": "ライトまたはダーク"
   },
   "connect": {
     "title": "接続",

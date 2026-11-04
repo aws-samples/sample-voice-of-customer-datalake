@@ -168,7 +168,11 @@
     "system": "System theme",
     "light": "Light theme",
     "dark": "Dark theme",
-    "toggle": "{{current}} — switch to {{next}}"
+    "toggle": "{{current}} — switch to {{next}}",
+    "highContrast": "High contrast",
+    "workspaceDefault": "Workspace default ({{name}})",
+    "colorTheme": "Colour theme",
+    "colorThemeHint": "Your own pick, kept in this browser. Workspace default follows the theme an administrator chose for everyone."
   },
   "partialTimeBudgetHint": "Approximate: to answer in time, counts cover {{date}} onward — narrow the window for a complete total",
   "account": {
@@ -182,7 +186,6 @@
     "roleAdmin": "Administrator",
     "roleUser": "User",
     "preferences": "Language & theme",
-    "theme": "Theme",
     "mcpTitle": "My MCP tokens",
     "mcpHint": "Connect your external assistants with one MCP token for the whole app, minted on Connect.",
     "mcpLink": "Go to Connect",
@@ -256,7 +259,8 @@
       "hint": "Kept only in the local storage of this browser. Nothing here changes the server.",
       "endpoint": "API endpoint",
       "endpointNone": "Not configured"
-    }
+    },
+    "themeMode": "Light or dark"
   },
   "connect": {
     "title": "Connect",

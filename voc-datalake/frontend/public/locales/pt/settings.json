@@ -979,5 +979,15 @@
       "conflict": "O quadro mudou nesse meio-tempo. Recarregue-o e tente de novo.",
       "generic": "Algo deu errado. Tente de novo."
     }
+  },
+  "appearance": {
+    "title": "Tema padrão",
+    "hint": "O tema de cores que todos veem até escolherem o seu em Conta → Preferências.",
+    "adminOnlyNotice": "Somente administradores podem alterar o tema padrão. Você pode vê-lo aqui.",
+    "loading": "Carregando o tema padrão…",
+    "loadFailed": "Não foi possível carregar o tema padrão do servidor.",
+    "save": "Salvar tema",
+    "saving": "Salvando…",
+    "saveFailed": "Não foi possível salvar o tema padrão. Tente novamente."
   }
 }

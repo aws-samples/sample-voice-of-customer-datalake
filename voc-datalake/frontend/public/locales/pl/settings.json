@@ -1016,5 +1016,15 @@
       "conflict": "Tablica zmieniła się w międzyczasie. Wczytaj ją ponownie i spróbuj jeszcze raz.",
       "generic": "Coś poszło nie tak. Spróbuj ponownie."
     }
+  },
+  "appearance": {
+    "title": "Domyślny motyw",
+    "hint": "Motyw kolorystyczny widoczny dla wszystkich, dopóki nie wybiorą własnego w Konto → Preferencje.",
+    "adminOnlyNotice": "Tylko administratorzy mogą zmienić domyślny motyw. Możesz go tutaj zobaczyć.",
+    "loading": "Wczytywanie domyślnego motywu…",
+    "loadFailed": "Nie udało się wczytać domyślnego motywu z serwera.",
+    "save": "Zapisz motyw",
+    "saving": "Zapisywanie…",
+    "saveFailed": "Nie udało się zapisać domyślnego motywu. Spróbuj ponownie."
   }
 }
