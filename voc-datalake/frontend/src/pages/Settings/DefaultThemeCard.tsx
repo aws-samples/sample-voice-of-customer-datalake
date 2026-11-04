@@ -71,7 +71,8 @@ function useDefaultThemeDraft(saved: ColorThemeId | undefined, isAdmin: boolean)
   const save = useSaveDefaultTheme(() => setDraft(null))
   const dirty = isAdmin && draft !== null && draft !== saved
   const saveDraft = async (): Promise<boolean> => {
-    if (draft !== null) await save.mutateAsync(draft)
+    if (draft === null) return false
+    await save.mutateAsync(draft)
     return true
   }
   const guard = useUnsavedChangesGuard({ dirty, onSave: saveDraft, onDiscard: () => setDraft(null) })
