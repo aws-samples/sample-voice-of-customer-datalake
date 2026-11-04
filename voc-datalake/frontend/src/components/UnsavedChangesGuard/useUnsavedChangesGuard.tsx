@@ -26,7 +26,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { UNSAFE_DataRouterContext } from 'react-router-dom'
 import RouterBlocker from './RouterBlocker'
 import UnsavedChangesDialog from './UnsavedChangesDialog'
-import { anyGuardAsks, consumeRelease, registerGuard, releaseRoute, runGuarded } from './guardRegistry'
+import { anyGuardAsks, isReleased, registerGuard, retryReleased, runGuarded } from './guardRegistry'
 import type { RegisteredGuard } from './guardRegistry'
 import { pathOrQueryChanged } from './pathOrQueryChanged'
 import type { ReactNode } from 'react'
@@ -109,7 +109,7 @@ export function useUnsavedChangesGuard({
   }, [requestLeave])
 
   const blockWhen = useCallback(
-    (current: Location, next: Location) => !consumeRelease(next) && latest.current.dirty && latest.current.shouldBlock(current, next),
+    (current: Location, next: Location) => !isReleased(next) && latest.current.dirty && latest.current.shouldBlock(current, next),
     [],
   )
 
@@ -125,7 +125,7 @@ export function useUnsavedChangesGuard({
     else if (route === undefined || !anyGuardAsks({ except, route })) pending.proceed()
     else {
       pending.stay()
-      runGuarded(() => { releaseRoute(route.next); route.retry() }, { except, route })
+      runGuarded(() => { retryReleased(route.next, route.retry) }, { except, route })
     }
   }
   const save = async () => {

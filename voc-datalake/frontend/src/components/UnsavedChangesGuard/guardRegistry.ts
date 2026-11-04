@@ -57,21 +57,30 @@ export function runGuarded(action: () => void, options: RunGuardedOptions = {}):
   else dirty.requestLeave(() => runGuarded(action, { ...options, except: dirty }))
 }
 
-/** The route change every dirty editor has let through: its retry passes the blocker once. */
+/** The route change every dirty editor has let through, while its one retry runs. */
 const released: { key: string | null } = { key: null }
 
 const routeKey = (location: Pick<Location, 'pathname' | 'search' | 'hash'>): string =>
   `${location.pathname}${location.search}${location.hash}`
 
-export function releaseRoute(next: Location): void {
+/**
+ * Run `retry` (a navigation to `next`) with that one change let through every blocker.
+ * react-router asks its blocker synchronously when `navigate` starts, so the release
+ * ends as soon as `retry` returns: no later navigation to the same place is ever let
+ * through unasked.
+ */
+export function retryReleased(next: Location, retry: () => void): void {
   released.key = routeKey(next)
+  try {
+    retry()
+  } finally {
+    released.key = null
+  }
 }
 
-/** True (once) when `next` is the released route change; a blocker then lets it through. */
-export function consumeRelease(next: Location): boolean {
-  if (released.key === null || released.key !== routeKey(next)) return false
-  released.key = null
-  return true
+/** True while the retry of the released change `next` is being decided; a blocker then lets it through. */
+export function isReleased(next: Location): boolean {
+  return released.key !== null && released.key === routeKey(next)
 }
 
 /** `runGuarded` as a stable callback, for local-state navigation (tabs, closes). */
