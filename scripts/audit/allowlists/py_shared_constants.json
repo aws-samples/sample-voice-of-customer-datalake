@@ -29,6 +29,10 @@
       "reason": "the categorization prompt's version and the MCP server's advertised version; both 1.0.0 by coincidence"
     },
     {
+      "key": "DATA_SOURCE_KEY|FEATURE_REQUESTS_SOURCE::*",
+      "reason": "the document body's data_sources key for board-request evidence and the raw-archive source id of the boards; both spell feature_requests, neither is the other's contract"
+    },
+    {
       "key": "CONFIG_SK::lambda/shared/company_context.py,lambda/shared/user_flags.py",
       "reason": "the sort key of two different items (company context, a user's flags); 'config' is a common row name, not one contract"
     },
