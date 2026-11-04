@@ -28,6 +28,7 @@ import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
 import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT } from './processor-timing';
 import { appVersion } from '../utils/connector-version';
 import { grantReadAndWrites } from '../utils/table-write-grants';
+import { FEATURE_REQUESTS_TABLE_ENV, grantFeatureRequestEvidenceRead } from '../utils/feature-request-evidence-grant';
 import { createAggregatorRole, createProcessorRole, grantTextAnalysis } from './processing-roles';
 
 export interface VocProcessingStackProps extends VocStackProps {
@@ -42,7 +43,8 @@ export interface VocProcessingStackProps extends VocStackProps {
   agentsTable: dynamodb.Table;
   /** voc-radar — the processor routes Radar sources' reviews here; the release scan writes here (docs/radar.md). */
   radarTable: dynamodb.Table;
-  /** voc-feature-requests: only the retention worker reaches it (an erasure by email de-identifies board rows). */
+  /** voc-feature-requests: research reads board requests as a separate evidence source (Query only); the
+   *  retention worker de-identifies board rows on an erasure by email. */
   featureRequestsTable: dynamodb.Table;
   /** The memory scanner reads assistant sessions; the extractor reads one. */
   conversationsTable: dynamodb.Table;
@@ -332,6 +334,8 @@ export class VocProcessingStack extends VocStack {
     grantReadAndWrites(jobsTable, researchRole, ['PutItem', 'UpdateItem']);
     aggregatesTable.grantReadData(researchRole);
     kmsKey.grantEncryptDecrypt(researchRole);
+    // Board requests as a separate evidence source (opt-in per research job, read-only).
+    grantFeatureRequestEvidenceRead(props.featureRequestsTable, researchRole);
     // The per-job feedback block (claim-check: too large for Step Functions state).
     rawDataBucket.grantReadWrite(researchRole, 'scratch/research_jobs/*');
 
@@ -386,6 +390,7 @@ export class VocProcessingStack extends VocStack {
         AGGREGATES_TABLE: aggregatesTable.tableName,
         // Scratch home of the per-job feedback block (research_step_handler).
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
+        [FEATURE_REQUESTS_TABLE_ENV]: props.featureRequestsTable.tableName,
         POWERTOOLS_SERVICE_NAME: 'voc-research-step',
         LOG_LEVEL: 'INFO',
       },
