@@ -633,6 +633,8 @@
     "featureRequestsOnly_other": "기능 요청 {{count, number}}개를 바탕으로 작성됨",
     "showFeatureRequests": "요청 보기",
     "hideFeatureRequests": "요청 숨기기",
-    "featureRequestLink": "요청 {{id}}"
+    "featureRequestLink": "요청 {{id}}",
+    "erasedSummary_one": "인용된 리뷰 또는 보드 요청 {{count, number}}개가 삭제됨(법적 근거 기록됨)",
+    "erasedSummary_other": "인용된 리뷰 또는 보드 요청 {{count, number}}개가 삭제됨(법적 근거 기록됨)"
   }
 }

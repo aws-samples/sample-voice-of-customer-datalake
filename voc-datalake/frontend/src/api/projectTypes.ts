@@ -7,6 +7,7 @@
 //    `KnownProjectDocumentType` stays beside it;
 //  * `ProjectDocument`, `PrioritizationScore`, `PrioritizationBallotEdit` —
 //    imported from there by pages/Prioritization/prioritizationUtils.ts.
+import type { ErasedEvidence } from './erasedEvidence'
 import type { ProductDocStatus, ProjectDocument } from './types'
 
 export interface ProjectJob {
@@ -141,6 +142,8 @@ export interface ProjectPersona {
    * #429), a subset of `input_feedback_ids` in first-cited order. Absent on older personas.
    */
   evidence_feedback_ids?: string[]
+  /** Cited reviews later erased under a legal basis (api/erasedEvidence.ts): the count only, never content. */
+  erased_evidence?: ErasedEvidence
   /** A replace regeneration keeps a protected persona (#429). Absent = unprotected. */
   protected?: boolean
   /**

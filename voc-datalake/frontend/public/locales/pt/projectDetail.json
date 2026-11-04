@@ -639,6 +639,8 @@
     "featureRequestsOnly_other": "Escrito a partir de {{count, number}} pedidos de funcionalidades",
     "showFeatureRequests": "Ver pedidos",
     "hideFeatureRequests": "Ocultar pedidos",
-    "featureRequestLink": "Pedido {{id}}"
+    "featureRequestLink": "Pedido {{id}}",
+    "erasedSummary_one": "{{count, number}} avaliação ou solicitação de quadro citada foi apagada (base legal registrada)",
+    "erasedSummary_other": "{{count, number}} avaliações ou solicitações de quadro citadas foram apagadas (base legal registrada)"
   }
 }

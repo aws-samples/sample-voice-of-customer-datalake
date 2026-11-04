@@ -4,6 +4,7 @@
 // validation and the declared type cannot drift apart.
 import type { DocumentDerivation } from './derivation'
 import type { DeletedSource } from './deletedSources'
+import type { ErasedEvidence } from './erasedEvidence'
 // The credential vocabulary lives with its schema for the same reason: the
 // declared type and the runtime validation cannot drift apart.
 import type { CategoryOverride } from './feedbackSchema'
@@ -554,6 +555,8 @@ export interface ProjectDocument {
    * PRDs, PR/FAQs, merged documents and fallback research reports generated before 5.49.00.
    */
   input_feedback_ids?: string[]
+  /** Cited reviews later erased under a legal basis (api/erasedEvidence.ts): the count only, never content. */
+  erased_evidence?: ErasedEvidence
   /**
    * The prototype this one revises, and the feedback that drove the revision.
    * "This replaces that" is a DIFFERENT relation from "this was built from

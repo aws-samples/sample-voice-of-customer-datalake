@@ -633,6 +633,8 @@
     "featureRequestsOnly_other": "基于 {{count, number}} 条功能需求撰写",
     "showFeatureRequests": "查看需求",
     "hideFeatureRequests": "隐藏需求",
-    "featureRequestLink": "需求 {{id}}"
+    "featureRequestLink": "需求 {{id}}",
+    "erasedSummary_one": "{{count, number}} 条引用的评论或看板请求已被删除（已记录法律依据）",
+    "erasedSummary_other": "{{count, number}} 条引用的评论或看板请求已被删除（已记录法律依据）"
   }
 }

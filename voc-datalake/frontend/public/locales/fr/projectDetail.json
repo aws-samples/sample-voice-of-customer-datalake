@@ -639,6 +639,8 @@
     "featureRequestsOnly_other": "Rédigé à partir de {{count, number}} demandes de fonctionnalités",
     "showFeatureRequests": "Voir les demandes",
     "hideFeatureRequests": "Masquer les demandes",
-    "featureRequestLink": "Demande {{id}}"
+    "featureRequestLink": "Demande {{id}}",
+    "erasedSummary_one": "{{count, number}} avis ou demande de tableau cité a été effacé (base légale enregistrée)",
+    "erasedSummary_other": "{{count, number}} avis ou demandes de tableau cités ont été effacés (base légale enregistrée)"
   }
 }

@@ -633,6 +633,8 @@
     "featureRequestsOnly_other": "Aus {{count, number}} Feature-Wünschen verfasst",
     "showFeatureRequests": "Wünsche anzeigen",
     "hideFeatureRequests": "Wünsche ausblenden",
-    "featureRequestLink": "Wunsch {{id}}"
+    "featureRequestLink": "Wunsch {{id}}",
+    "erasedSummary_one": "{{count, number}} zitierte Bewertung oder Board-Anfrage wurde gelöscht (Rechtsgrundlage erfasst)",
+    "erasedSummary_other": "{{count, number}} zitierte Bewertungen oder Board-Anfragen wurden gelöscht (Rechtsgrundlage erfasst)"
   }
 }
