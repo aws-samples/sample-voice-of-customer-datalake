@@ -47,6 +47,7 @@ their own.
 
 ### Upgrade notes
 - Nothing to do: without a saved default the app stays on Kiro, and a person's earlier light/dark choice is kept.
+
 ## [6.00.02] - 2026-11-04
 
 Pull requests get the tenets review and the code review of `scripts/validate.sh` as an automated comment. This is development tooling only: the platform, its stacks and the workshop packaging do not change.

@@ -33,10 +33,13 @@ describe('appearanceApi', () => {
     expect(handler).toHaveBeenCalledExactlyOnceWith({ default_theme: 'quick' })
   })
 
-  it('reads an answer without settings as the default theme', async () => {
-    routeFetchApi({ 'PUT /settings/appearance': () => null })
-    await expect(appearanceApi.save('nord')).resolves.toStrictEqual({ default_theme: 'kiro' })
-  })
+  it.each([[null], [{ success: true }], [{ settings: { default_theme: 'neon' } }]])(
+    'keeps the requested theme when the 2xx answer %j does not echo a known id (never claims Kiro)',
+    async (answer) => {
+      routeFetchApi({ 'PUT /settings/appearance': () => answer })
+      await expect(appearanceApi.save('nord')).resolves.toStrictEqual({ default_theme: 'nord' })
+    },
+  )
 
   it('rejects like the client when the server refuses', async () => {
     routeFetchApi({}, { missStatus: 403 })
