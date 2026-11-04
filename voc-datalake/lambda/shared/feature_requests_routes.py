@@ -16,6 +16,8 @@ A request never changes board: an edit that names ``board`` / ``board_id`` is a 
 
 What a person files (a request, an edit of its content, a +1 and its edit) is also kept as a raw
 copy once stored (``shared.feature_requests_raw``, policy-gated, never queued into voc-feedback).
+A new request, or an edit that changes its title or description, queues its enrichment
+(``shared.feature_requests_enrich``, an async self-invoke that never fails the write).
 """
 from __future__ import annotations
 
@@ -34,6 +36,7 @@ from shared.feature_boards_access import BoardScope, scope_for, scope_from_event
 from shared.feature_boards_delete import record_feature_request_delete
 from shared.feature_boards_limits import charge_request, charge_support, refund_support
 from shared.feature_boards_store import board_view, is_paused
+from shared.feature_requests_enrich import queue_if_stale
 from shared.feature_requests_promote import promote
 from shared.feature_requests_raw import archive_request, archive_support
 from shared.feature_requests_store import (
@@ -195,6 +198,7 @@ def post_request():
                                (viewer.email, name))
     archive_request(meta)
     archive_support(sup)
+    queue_if_stale(meta)
     logger.info('Feature request created', extra={'request_id': meta['request_id'], 'board_id': board['board_id'],
                                                    'pool': viewer.pool})
     return created({'request': request_view(meta, _template(board)), 'supports': [support_view(sup)]})
@@ -225,6 +229,7 @@ def put_request(request_id: str):
         raise ValidationError('Nothing to update: send title, description or fields')
     updated = update_request(scope.table, request_id, changes)
     archive_request(updated)
+    queue_if_stale(updated)
     if 'fields' in changes:
         return {'request': _recomputed(scope, request_id, board)}
     return {'request': request_view(updated, _template(board))}
