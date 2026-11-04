@@ -16,6 +16,7 @@ import {
 } from '../utils/lambda-asset-excludes';
 import { grantReadAndWrites, type TableWrite } from '../utils/table-write-grants';
 import { grantWorkspaceObjects } from '../utils/workspace-object-deletes';
+import { wireFeatureRequestEvidence } from '../utils/feature-request-evidence-grant';
 
 /** Every job updates its own job row (shared/jobs.py: put + update); none deletes one. */
 const JOB_ROW_WRITES: readonly TableWrite[] = ['PutItem', 'UpdateItem'];
@@ -40,7 +41,9 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   // The assist twin is the same function as the Projects API (api-assist-workers.ts),
   // so every variable added below goes to both.
   const projectsFunctions = [projectsLambda, projectsAssistWorker];
-  const { feedbackTable, aggregatesTable, projectsTable, jobsTable, kmsKey, rawDataBucket, memoryTable } = ctx.props;
+  const {
+    feedbackTable, aggregatesTable, projectsTable, jobsTable, kmsKey, rawDataBucket, memoryTable, featureRequestsTable,
+  } = ctx.props;
   // Company memories for the shared generators (lambda/shared/job_knowledge.py).
   const memoryRecall = { memoryTable, kmsKey, region: stack.region };
 
@@ -172,6 +175,8 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
     },
   });
   grantSharedMemoryRecall(personaGeneratorLambda, personaGeneratorRole, memoryRecall);
+  // Board requests as a separate evidence source (opt-in per generation, read-only).
+  wireFeatureRequestEvidence(featureRequestsTable, personaGeneratorRole, [personaGeneratorLambda]);
 
   // Document Generator Job Lambda (PRD/PRFAQ)
   const documentGeneratorRole = ctx.role('DocumentGeneratorRole');
@@ -214,6 +219,8 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
     },
   });
   grantSharedMemoryRecall(documentGeneratorLambda, documentGeneratorRole, memoryRecall);
+  // Board requests as a separate evidence source (`data_sources.feature_requests`, read-only).
+  wireFeatureRequestEvidence(featureRequestsTable, documentGeneratorRole, [documentGeneratorLambda]);
 
   // Document Merger Job Lambda
   const documentMergerRole = ctx.role('DocumentMergerRole');
