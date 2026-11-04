@@ -3803,6 +3803,32 @@
     ]
   },
   {
+    "file": "api/featureRequestInsights.ts",
+    "method": "GET",
+    "call": "`/feature-requests/insights?${insightsParams(query)}`",
+    "probes": [
+      {
+        "path": "/feature-requests/insights?days=90"
+      },
+      {
+        "path": "/feature-requests/insights?days=0&board=brd_sales"
+      }
+    ]
+  },
+  {
+    "file": "api/featureRequestInsights.ts",
+    "method": "POST",
+    "call": "'/feature-requests/insights/enrich'",
+    "probes": [
+      {
+        "path": "/feature-requests/insights/enrich",
+        "body": {
+          "board": "brd_beta"
+        }
+      }
+    ]
+  },
+  {
     "file": "api/featureRequestsApi.ts",
     "method": "GET",
     "call": "'/feature-requests/boards'",

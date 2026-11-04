@@ -10,6 +10,7 @@
 import {
   Refusal, SEEDED_BOARD_ID, SUPPORT_KEYS, boardFor, boardWire, fieldValues, handleBoardRoutes, refuse, refuseWhenPaused, registerRequestQueries, templateOfBoard,
 } from './mock-boards.js';
+import { handleFeatureRequestInsightRoutes } from './mock-feature-request-insights.js';
 
 const PATH = /^\/feature-requests(?:\/([^/]+)(?:\/(status|promote|supports)(?:\/([^/]+))?)?)?$/;
 /** An `anyone` board's per-poster daily cap on new requests (the API's own; 429 `rate_limited`). */
@@ -33,6 +34,14 @@ function support(id, fields, created) {
   };
 }
 
+/** A fixture's enrichment (C1 on `FR#{id}` / `META`); requests 2 and 5 are left un-enriched for the Enrich button. */
+function enriched(fields, days) {
+  return {
+    status: 'ok', subcategory: null, language: 'en', model_id: 'mock', prompt_version: 'mock-1',
+    text_sha16: '0000000000000000', enriched_at: daysAgo(days), ...fields,
+  };
+}
+
 function fixtureRequest(id, fields, supports) {
   return {
     meta: {
@@ -50,6 +59,7 @@ const store = new Map([
     description: 'Enterprise customers need their admins to sign in through their own identity provider.',
     // A pre-boards request: no board_id, so it reads as the seeded Sales board's.
     status: 'under_review', reporter_email: 'dana.lee@example.com', reporter_name: 'Dana Lee', created_at: daysAgo(12), board_id: undefined,
+    enrichment: enriched({ category: 'account_access', sentiment: 'negative', problem_summary: 'Customer admins cannot sign in with their own identity provider.' }, 11),
   }, [
     support('sup_0000000000000001', {
       email: 'dana.lee@example.com', name: 'Dana Lee', customer: 'Acme', deal: 'Acme renewal FY27', impact: 'at_risk',
@@ -73,6 +83,7 @@ const store = new Map([
     title: 'Offline mode for the field app',
     description: 'Crews work without signal; the app should queue changes and sync later.',
     status: 'planned', reporter_email: 'ana.ruiz@example.com', reporter_name: 'Ana Ruiz', created_at: daysAgo(30),
+    enrichment: enriched({ category: 'app_performance', sentiment: 'mixed', problem_summary: 'Field crews lose their work when the app has no signal.' }, 29),
   }, [
     support('sup_0000000000000004', {
       email: 'ana.ruiz@example.com', name: 'Ana Ruiz', customer: 'Acme', impact: 'committed', amount_usd: 120000, is_reporter: true,
@@ -84,6 +95,7 @@ const store = new Map([
   ])],
   ['fr_0000000000000004', fixtureRequest('fr_0000000000000004', {
     title: 'Refund email never arrives', board_id: 'brd_service', status: 'confirmed',
+    enrichment: enriched({ category: 'customer_support', sentiment: 'negative', problem_summary: 'Customers who cancel never get the promised refund email.' }, 4),
     description: 'Customers who cancel a booking are told a refund email is on its way; it never comes.',
     reporter_email: 'ana.ruiz@example.com', reporter_name: 'Ana Ruiz', created_at: daysAgo(5),
     fields: { kind: 'bug', severity: 'high', reference: 'BK-10442', steps: 'Cancel a booking, then wait for the refund email.', affected_count: 12 },
@@ -332,11 +344,47 @@ function route(req, match, body, viewer, shared, url) {
   return handler ? handler(entry, body, viewer, shared) : fail(405, 'Method not allowed');
 }
 
-/** Returns true when it handled the request. */
+/** The board-pool user with `x-mock-board-viewer: board`, else the mock's admin app user. */
 const viewerOf = (req) => (req.headers['x-mock-board-viewer'] === 'board' ? BOARD_VIEWER : ADMIN_VIEWER);
 
+/** The board `boardId` as `viewer` may use it as evidence (archived boards never), else null. */
+function evidenceBoard(boardId, viewer) {
+  try {
+    const target = boardFor(boardId, viewer);
+    return target.archived ? null : target;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The store entries of one board (`boardRef`, 404 when not visible) or of every non-archived board
+ * the viewer may see, as the Insights / search routes read them (mock-feature-request-insights.js).
+ */
+function entriesFor(viewer, boardRef) {
+  const board = boardRef === undefined ? null : boardFor(boardRef, viewer);
+  const entries = [...store.values()].filter((entry) => (board === null
+    ? evidenceBoard(boardIdOf(entry), viewer) !== null
+    : boardIdOf(entry) === board.board_id));
+  return { entries, board };
+}
+
+/**
+ * The evidence count a wizard preview reports (`feature_requests_matched`, mock-personas.js): the
+ * admin's non-archived boards, narrowed to `boardIds` when any, created within `days` (0 = all).
+ */
+export function countFeatureRequestEvidence({ boardIds = [], days = 0 }) {
+  const since = days > 0 ? Date.parse(daysAgo(days)) : 0;
+  return entriesFor(ADMIN_VIEWER, undefined).entries.filter((entry) => (boardIds.length === 0 || boardIds.includes(boardIdOf(entry)))
+    && Date.parse(entry.meta.created_at) >= since).length;
+}
+
+const refusalAnswer = (error) => (error instanceof Refusal ? fail(error.status, error.message) : fail(500, 'Mock error'));
+
+/** Returns true when it handled the request. */
 export function handleFeatureRequestRoutes(req, res, url, send, shared) {
   if (handleBoardRoutes(req, res, url, send, shared, viewerOf)) return true;
+  if (handleFeatureRequestInsightRoutes(req, res, url, send, shared, { viewer: viewerOf(req), entriesFor, onRefusal: refusalAnswer })) return true;
   const match = url.pathname.match(PATH);
   if (!match) return false;
   const viewer = viewerOf(req);
@@ -344,8 +392,7 @@ export function handleFeatureRequestRoutes(req, res, url, send, shared) {
     try {
       send(...route(req, match, body ?? {}, viewer, shared, url));
     } catch (error) {
-      if (error instanceof Refusal) send(...fail(error.status, error.message));
-      else send(...fail(500, 'Mock error'));
+      send(...refusalAnswer(error));
     }
   });
   return true;
