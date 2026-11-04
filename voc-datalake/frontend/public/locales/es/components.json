@@ -684,7 +684,8 @@
   },
   "legalBasis": {
     "label": "Base legal",
-    "hint": "Por qué se eliminan estos datos; se guarda en el registro de auditoría. Por ejemplo: \"RGPD art. 17, solicitud #123\". No escriba nunca aquí el nombre ni el correo electrónico de la persona."
+    "hint": "Por qué se eliminan estos datos; se guarda en el registro de auditoría. Por ejemplo: \"RGPD art. 17, solicitud #123\". No escriba nunca aquí el nombre ni el correo electrónico de la persona.",
+    "personalData": "Quite la dirección de correo electrónico o el número de teléfono: la base legal se guarda en registros de auditoría permanentes. Use un número de caso o de solicitud."
   },
   "sourceErasure": {
     "title": "Eliminar todos los datos de una fuente",

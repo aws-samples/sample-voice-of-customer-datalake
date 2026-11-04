@@ -684,7 +684,8 @@
   },
   "legalBasis": {
     "label": "Base legal",
-    "hint": "Por que estes dados são excluídos; fica registrado na trilha de auditoria. Por exemplo: \"RGPD art. 17, pedido #123\". Nunca digite aqui o nome nem o e-mail da pessoa."
+    "hint": "Por que estes dados são excluídos; fica registrado na trilha de auditoria. Por exemplo: \"RGPD art. 17, pedido #123\". Nunca digite aqui o nome nem o e-mail da pessoa.",
+    "personalData": "Remova o endereço de e-mail ou o número de telefone: a base legal fica em registros de auditoria permanentes. Use um número de caso ou de chamado."
   },
   "sourceErasure": {
     "title": "Excluir todos os dados de uma fonte",

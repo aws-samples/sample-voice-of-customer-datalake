@@ -674,7 +674,8 @@
   },
   "legalBasis": {
     "label": "Rechtsgrundlage",
-    "hint": "Warum diese Daten gelöscht werden; wird im Prüfprotokoll gespeichert. Zum Beispiel: \"DSGVO Art. 17, Antrag #123\". Geben Sie hier nie den Namen oder die E-Mail-Adresse der Person ein."
+    "hint": "Warum diese Daten gelöscht werden; wird im Prüfprotokoll gespeichert. Zum Beispiel: \"DSGVO Art. 17, Antrag #123\". Geben Sie hier nie den Namen oder die E-Mail-Adresse der Person ein.",
+    "personalData": "Entfernen Sie die E-Mail-Adresse oder Telefonnummer: Die Rechtsgrundlage wird in dauerhaften Prüfprotokollen gespeichert. Verwenden Sie stattdessen eine Fall- oder Ticketnummer."
   },
   "sourceErasure": {
     "title": "Alle Daten einer Quelle löschen",
