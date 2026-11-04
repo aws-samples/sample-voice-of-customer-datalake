@@ -10,13 +10,12 @@ import { actionsWithPrefix, apiTemplateAllPlugins, policyStatementsOf, serviceEn
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_TIMEOUT_MS } from '../test-support/synth-app';
 
-const holder: { processing?: Template; api?: Template } = {};
-const processing = (): Template => holder.processing ?? (holder.processing = synthProcessingTemplate());
-const api = (): Template => holder.api ?? (holder.api = apiTemplateAllPlugins());
+let processing: Template;
+let api: Template;
 
 beforeAll(() => {
-  processing();
-  api();
+  // Both stacks' templates, synthesized once for the whole file.
+  [processing, api] = [synthProcessingTemplate(), apiTemplateAllPlugins()];
 }, SYNTH_TIMEOUT_MS);
 
 /** The DynamoDB actions `roleFragment` holds on the feature-requests table (any of its ARNs). */
@@ -31,18 +30,18 @@ describe('the evidence readers', () => {
     ['PersonaGeneratorRole', 'voc-job-persona-generator'],
     ['DocumentGeneratorRole', 'voc-job-document-generator'],
   ])('%s queries the table and %s knows its name', (role, service) => {
-    expect(featureRequestActions(api(), role)).toStrictEqual(['dynamodb:Query']);
-    expect(JSON.stringify(serviceEnvironment(api(), service).FEATURE_REQUESTS_TABLE)).toMatch(/FeatureRequests/);
+    expect(featureRequestActions(api, role)).toStrictEqual(['dynamodb:Query']);
+    expect(JSON.stringify(serviceEnvironment(api, service).FEATURE_REQUESTS_TABLE)).toMatch(/FeatureRequests/);
   });
 
   it('the research step queries the table and knows its name', () => {
-    expect(featureRequestActions(processing(), 'ResearchLambdaRole')).toStrictEqual(['dynamodb:Query']);
-    expect(JSON.stringify(serviceEnvironment(processing(), 'voc-research-step').FEATURE_REQUESTS_TABLE))
+    expect(featureRequestActions(processing, 'ResearchLambdaRole')).toStrictEqual(['dynamodb:Query']);
+    expect(JSON.stringify(serviceEnvironment(processing, 'voc-research-step').FEATURE_REQUESTS_TABLE))
       .toMatch(/FeatureRequests/);
   });
 
   it('the generators that do not read board requests get no access', () => {
-    expect(featureRequestActions(api(), 'DocumentMergerRole')).toStrictEqual([]);
-    expect(featureRequestActions(api(), 'PersonaImporterRole')).toStrictEqual([]);
+    expect(featureRequestActions(api, 'DocumentMergerRole')).toStrictEqual([]);
+    expect(featureRequestActions(api, 'PersonaImporterRole')).toStrictEqual([]);
   });
 });
