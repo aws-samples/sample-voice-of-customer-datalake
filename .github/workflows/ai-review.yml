@@ -103,6 +103,13 @@ jobs:
             echo "comment=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          reviewer=trusted/scripts/ai-review/ci-review.mjs
+          if [ ! -f "$reviewer" ]; then
+            # The pull request that adds the reviewer, and any branch cut before it merged.
+            echo "::notice title=AI review::the default branch has no $reviewer yet; nothing to review"
+            echo "comment=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # The account id appears in AWS error messages; keep it out of the public log.
           account="$(printf '%s' "$ROLE_ARN" | cut -d: -f5)"
           if [ -n "$account" ]; then echo "::add-mask::$account"; fi
@@ -123,7 +130,7 @@ jobs:
           echo "::add-mask::$AWS_SESSION_TOKEN"
           export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
           pr="$RUNNER_TEMP/pr"
-          node trusted/scripts/ai-review/ci-review.mjs \
+          node "$reviewer" \
             --repo "$pr/repo" --prompts-root trusted --event "$GITHUB_EVENT_PATH" \
             --issue-comments "$pr/issue-comments.json" --review-comments "$pr/review-comments.json" \
             --out "$pr/comment.md"

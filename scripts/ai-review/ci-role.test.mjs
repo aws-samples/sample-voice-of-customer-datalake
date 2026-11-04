@@ -80,3 +80,11 @@ test('the workflow runs on pull_request, never pull_request_target, and only one
   ])
   assert.equal(workflowCode.match(/secrets\./g).length, 1, 'one secret: the role ARN')
 })
+
+test('the workflow skips, not fails, while the default branch has no reviewer, before any AWS call', () => {
+  // The pull request that adds the reviewer runs it from `main`, where it does not exist yet (PR #533's first run).
+  const guard = workflowCode.indexOf('if [ ! -f "$reviewer" ]; then')
+  assert.ok(guard > 0, 'the reviewer-present guard exists')
+  assert.ok(guard < workflowCode.indexOf('ACTIONS_ID_TOKEN_REQUEST_URL'), 'the guard runs before the OIDC exchange')
+  assert.match(workflowCode, /node "\$reviewer" \\/)
+})
