@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from aws_lambda_powertools.event_handler import Response, content_types
 
 from shared import (
+    appearance_routes,
     assist_jobs,
     briefing_prefs,
     briefing_requests,
@@ -156,6 +157,9 @@ RESOLVED_PROBLEMS_TTL_DAYS = 180
 _PRUNE_CHUNK_SIZE = 20
 
 app = create_api_resolver()
+# The workspace's start theme (shared/appearance_routes.py); reads the table at call time.
+appearance_routes.bind_aggregates_table(lambda: aggregates_table)
+app.include_router(appearance_routes.app)
 
 
 def _configured_table():
