@@ -79,6 +79,11 @@ const wanting = new Set<RegisteredGuard>()
 const owner: { current: RegisteredGuard | null } = { current: null }
 const ownerListeners = new Set<() => void>()
 
+/**
+ * Keep the owner while it still wants the blocker, else hand it to the next guard that does.
+ * A handoff spans two React commits (the old owner unmounts its blocker, the new one mounts its
+ * own), so for a moment no blocker is registered; a user-paced navigation never falls in it.
+ */
 function electOwner(): void {
   const next = owner.current !== null && wanting.has(owner.current) ? owner.current : ([...wanting][0] ?? null)
   if (next === owner.current) return
