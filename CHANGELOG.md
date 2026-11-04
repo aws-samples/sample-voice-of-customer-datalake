@@ -36,6 +36,15 @@ their own.
   ghost: a snowflake for Nord, a bat for Dracula, a contrast circle for High contrast, the Quick tile with a speech
   bubble for Quick. The Kiro theme keeps the ghost.
 
+### Fixed
+- **Kiro dark contrast**: white text on a hovered primary button was 3.68:1 and the faint `muted-strong` text on a
+  hovered row 4.23:1, both under WCAG AA's 4.5:1. The button hover now darkens (as in Kiro light) and the faint text
+  is a shade lighter; every theme is now held to the same text contrast checks.
+- **Unsaved changes with two editors on one page**: react-router allows one navigation blocker per page and the
+  editor mounted last held it, even with no edits. On Administration, unsaved brand edits were lost without the
+  "Unsaved changes" prompt when a link was followed while a board editor was open; the new Default theme card would
+  have done the same on every visit to General. Only an editor with edits holds the blocker now.
+
 ### Upgrade notes
 - Nothing to do: without a saved default the app stays on Kiro, and a person's earlier light/dark choice is kept.
 ## [6.00.02] - 2026-11-04

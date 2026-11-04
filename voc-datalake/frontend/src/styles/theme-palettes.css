@@ -381,3 +381,8 @@
 /* Unlayered, like the .md-content rules it adjusts. */
 [data-color-theme="quick"] .md-content a { color: var(--link); text-decoration-color: color-mix(in srgb, var(--link) 45%, transparent); }
 [data-color-theme="quick"] .md-content a:hover { text-decoration-color: var(--link); }
+
+/* The sidebar wordmark: Inter is wider than Space Grotesk, so Kiro's .14em tracking wraps
+ * "VOC ANALYTICS" onto two lines at the sidebar's width. Unlayered, to win over the
+ * `tracking-[.14em]` utility on the element. */
+[data-color-theme="quick"] .brand-wordmark { letter-spacing: .04em; }
