@@ -12,6 +12,7 @@
 // answers the same count, so the wizard's "About N … confirming" line settles on the exact one.
 
 import { matchingFeedback } from './mock-project-actions.js';
+import { countFeatureRequestEvidence } from './mock-feature-requests.js';
 
 const PREVIEW_ROUTE = /^\/projects\/([^/]+)\/feedback-preview$/;
 const PROTECTION_ROUTE = /^\/projects\/([^/]+)\/personas\/([^/]+)\/protection$/;
@@ -31,7 +32,19 @@ function feedbackPreview(shared, body) {
     matched_is_lower_bound: false,
     estimated: body.mode === 'estimate',
     sample_limit: purpose === 'personas' ? PERSONA_SAMPLE_LIMIT : null,
+    ...featureRequestsMatched(body),
   }];
+}
+
+/** `{feature_requests_matched}` when the body asks for board requests as evidence (C5), else nothing. */
+function featureRequestsMatched(body) {
+  if (body.include_feature_requests !== true) return {};
+  const boardIds = Array.isArray(body.feature_request_board_ids)
+    ? body.feature_request_board_ids.filter((id) => typeof id === 'string')
+    : [];
+  // 0 (the wizard's "All time") or anything unreadable = every request.
+  const days = Number.isInteger(body.days) && body.days > 0 ? body.days : 0;
+  return { feature_requests_matched: countFeatureRequestEvidence({ boardIds, days }) };
 }
 
 function setProtection(detail, personaId, body) {

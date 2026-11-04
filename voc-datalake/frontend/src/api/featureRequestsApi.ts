@@ -24,6 +24,7 @@ import { lenientText, optionalText, parsedList } from './schemaList'
 import { toOptionalFiniteNumber } from './lenientFields'
 import { IMPACT_CHOICES } from './boardFields'
 import { boardSchema, count, deleteBoardStepSchema, fieldValuesSchema } from './featureBoardsSchema'
+import { enrichmentSchema } from './featureRequestInsightsSchema'
 import type { BoardPatch, DeleteBoardStep, FieldValues, NewBoardInput } from './featureBoardsSchema'
 import type { FetchApi } from './requestKit'
 
@@ -63,6 +64,8 @@ const requestSchema = z.object({
   /** Absent on a pre-boards request: it belongs to the seeded board. */
   board_id: optionalText,
   fields: fieldValuesSchema,
+  /** The request's light enrichment (category, sentiment); absent = not enriched yet. */
+  enrichment: enrichmentSchema,
 })
 export type FeatureRequest = z.infer<typeof requestSchema>
 
