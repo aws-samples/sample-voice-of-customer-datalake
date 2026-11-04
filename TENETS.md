@@ -73,8 +73,12 @@ Performance features that carry a fixed cost are **opt-in**: a deployment choose
 managed service, that tier would be on by default, because we would operate it. Architecturally we build for the service either way (tenet 6); only the bill is opt-in.
 
 Lambda **reserved** concurrency is free (it only caps a function's share of the account) and is allowed by default.
-The one accepted baseline is a single customer-managed KMS key (about $1 a month): encryption under a key the
-deployment controls is part of tenet 6, which ranks higher.
+The accepted baseline is one customer-managed KMS key (about $1 a month) and three Secrets Manager secrets
+(`VocApiSecrets`, `CdnSigningKeySecret`, `DesignIntegrationsSecret`, about $0.40 a month each): encryption under a
+key the deployment controls is part of tenet 6, which ranks higher, and the secrets hold credentials and signing keys.
+Both are capped by `COUNTED_FIXED_COSTS` (`voc-datalake/lib/test-support/fixed-cost-rules.ts`), so neither count can
+grow unnoticed. Moving the secrets to SSM Parameter Store was considered and dropped: it is a breaking credential
+migration for every deployment to save $1.20 a month, and `webscraper_configs` can outgrow a 4 KB standard parameter.
 
 ---
 
