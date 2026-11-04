@@ -1,0 +1,4 @@
+/*
+ * Colour themes beyond Kiro (src/theme/themeCatalog.ts): one `[data-theme="<id>-<mode>"]`
+ * block per theme and mode, declaring every token the Kiro blocks in index.css declare.
+ */
