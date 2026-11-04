@@ -258,6 +258,27 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     expect([...warn.mock.calls, ...error.mock.calls].flat().map(String).join(' ')).not.toContain('only supports one blocker')
   })
 
+  // The first dirty editor owns the page's one blocker; when it unmounts, the other dirty
+  // editor must take the blocker over, or its edits would be lost unasked.
+  it('hands the route blocker on when its owner unmounts, so the other editor still asks', async () => {
+    const hide = { current: () => {} }
+    const onHideReady = (fn: () => void) => { hide.current = fn }
+    const { user } = renderEditorRoute(<><Link to="/elsewhere">Leave</Link><OwnerThatUnmounts onHideReady={onHideReady} /><OtherEditor /></>)
+    await user.type(screen.getByLabelText('Owner'), 'x')
+    await user.type(screen.getByLabelText('Other'), 'y')
+    act(() => { hide.current() })
+    await user.click(screen.getByRole('link', { name: 'Leave' }))
+    expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
+    expect(screen.queryByText('Elsewhere page')).not.toBeInTheDocument()
+  })
+
+  /** A guarded editor ("Owner") that the test can unmount. */
+  function OwnerThatUnmounts({ onHideReady }: Readonly<{ onHideReady: (hide: () => void) => void }>) {
+    const [shown, setShown] = useState(true)
+    useEffect(() => { onHideReady(() => setShown(false)) }, [onHideReady])
+    return shown ? <KeepsEditsEditor label="Owner" /> : null
+  }
+
   /** Both editors dirty, a leave, Discard in the first dialog, Cancel in the second. */
   async function discardThenCancel() {
     const rendered = await bothDirtyThenDiscardFirst()
