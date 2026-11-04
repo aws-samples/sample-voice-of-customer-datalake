@@ -16,7 +16,7 @@ import {
   Bell, Download, History, LocateFixed, Maximize2, Minimize2, PanelRightOpen, Plus,
 } from 'lucide-react'
 import DialogClose from '../../components/DialogClose/DialogClose'
-import KiroGhost from '../../components/KiroGhost/KiroGhost'
+import ThemeMark from '../../components/ThemeMark/ThemeMark'
 import { useNotifySetting } from '../notifications/useNotifySetting'
 import MoreMenu from './MoreMenu'
 import { pageLabelKey } from '../page/pageContext'
@@ -134,7 +134,7 @@ export default function PanelHeader({
   const secondary = useSecondaryItems(canExport, onExport, onResetPosition)
   return (
     <header className="chrome-glass flex flex-shrink-0 items-start gap-2 border-b border-border px-3 py-2">
-      <KiroGhost className="mt-0.5 h-5 w-5 flex-shrink-0 text-accent-text" />
+      <ThemeMark className="mt-0.5 h-5 w-5 flex-shrink-0 text-accent-text" />
       <div className="min-w-0 flex-1">
         <h2 className={clsx('text-sm font-semibold tracking-tight text-text-strong', variant === 'page' && 'sr-only')} id={titleId}>{t('panel.title')}</h2>
         <ContextChip page={page} />

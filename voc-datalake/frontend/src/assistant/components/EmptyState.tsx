@@ -1,12 +1,12 @@
 /**
- * @fileoverview Empty thread: the idle Kiro ghost, a greeting and suggested
+ * @fileoverview Empty thread: the theme's idle mark, a greeting and suggested
  * prompts for the page kind.
  *
  * @module assistant/components/EmptyState
  */
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { GhostIdle } from '../../components/KiroGhost/GhostPoses'
+import { ThemeMarkIdle } from '../../components/ThemeMark/ThemeMark'
 import type { PageKind } from '../contract'
 
 /**
@@ -48,7 +48,7 @@ export default function EmptyState({ kind, onPick }: Readonly<{ kind: PageKind; 
   return (
     // A region named by its title ("How can I help?"): the empty conversation is findable by role.
     <section aria-labelledby={titleId} className="flex flex-col items-center px-2 py-6 text-center animate-rise">
-      <GhostIdle className="mb-3 h-14 w-14 text-aim" />
+      <ThemeMarkIdle className="mb-3 h-14 w-14 text-aim" />
       <p id={titleId} className="text-sm font-semibold tracking-tight text-text-strong">{t('empty.title')}</p>
       <p className="mb-4 text-[12px] text-muted">{t('empty.subtitle')}</p>
       <ul className="w-full space-y-1.5">

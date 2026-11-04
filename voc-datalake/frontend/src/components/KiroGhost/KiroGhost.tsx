@@ -20,6 +20,8 @@ export default function KiroGhost({ className }: Readonly<{ className?: string }
       strokeLinejoin="round"
       className={className}
       aria-hidden
+      focusable={false}
+      data-mark="kiro"
     >
       <path d={BODY} />
       <path fill="currentColor" stroke="none" d={LEFT_EYE} />

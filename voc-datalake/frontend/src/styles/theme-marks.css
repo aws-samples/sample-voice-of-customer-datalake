@@ -1,3 +1,23 @@
 /*
  * Tokens of the per-theme brand marks (components/ThemeMark).
+ *
+ * The Quick tile is never recoloured, in either mode, so its colours live on
+ * :root and no palette overrides them: the brand gradient (violet → purple →
+ * magenta) and the white of its speech bubble and spark.
  */
+:root {
+  --mark-quick-from: #6b2fd6;
+  --mark-quick-via: #8811c2;
+  --mark-quick-to: #b50193;
+  --mark-quick-glyph: #ffffff;
+}
+
+/* The Quick thinking pose: the spark breathes (`animate-mark-breathe`; callers add motion-reduce:animate-none). */
+@theme {
+  --animate-mark-breathe: mark-breathe 1.6s ease-in-out infinite;
+
+  @keyframes mark-breathe {
+    0%, 100% { opacity: 1; transform: scale(1) }
+    50% { opacity: .5; transform: scale(.7) }
+  }
+}
