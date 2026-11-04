@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Lock, Save } from 'lucide-react'
 import ThemePicker from '../../components/ThemePicker/ThemePicker'
+import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import { useThemeNames } from '../../components/ThemePicker/themeNames'
 import { appearanceApi, appearanceKey } from '../../api/appearanceApi'
 import { COLOR_THEME_IDS, isColorThemeId } from '../../theme/themeCatalog'
@@ -85,9 +86,9 @@ export default function DefaultThemeCard({ apiEndpoint, isAdmin }: CardProps) {
       )}
       {save.isError ? <SettingsNotice text={t('appearance.saveFailed')} /> : null}
       {isAdmin && current !== undefined ? (
-        <div className="flex justify-end">
+        <StickyActionBar variant="inline" className="flex justify-end py-2">
           <SaveButton pending={save.isPending} disabled={!dirty} onSave={() => { if (draft !== null) save.mutate(draft) }} />
-        </div>
+        </StickyActionBar>
       ) : null}
     </section>
   )
