@@ -1,6 +1,6 @@
 /**
  * @fileoverview The Nord mark: a crisp six-armed snowflake in `currentColor`.
- * One arm (a spoke with a chevron two thirds out) drawn six times, 60° apart,
+ * One arm (a spoke with a chevron about halfway out) drawn six times, 60° apart,
  * on a 24-unit grid with a 2-unit round stroke so it still reads at 20 px.
  * @module components/ThemeMark/NordMark
  */
