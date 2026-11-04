@@ -7,7 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { mountAtAdmin } from '@test/adminRoute'
+import { adminGuardScenario, mountAtAdmin } from '@test/adminRoute'
 import { expectCancelKeepsDraftGuarded } from '@test/unsavedGuardContract'
 import type { GuardUser } from '@test/unsavedGuardContract'
 import { useConfigStore } from '../../store/configStore'
@@ -36,31 +36,14 @@ const mountAdmin = () => mountAtAdmin(<Settings />)
 const brandField = () => screen.getByLabelText('Brand Name')
 
 /** The shared scenario for the brand form; `whileDialogOpen` is what lands during the dialog. */
-function brandScenario(whileDialogOpen: () => Promise<void>, ready: () => Promise<void>) {
-  const mounted: { current?: ReturnType<typeof mountAdmin> } = {}
-  const router = () => {
-    if (mounted.current === undefined) throw new Error('not mounted')
-    return mounted.current.router
-  }
-  return {
-    mounted,
-    scenario: {
-      mount: async () => {
-        mounted.current = mountAdmin()
-        await ready()
-      },
-      edit: async (user: GuardUser) => {
-        await user.type(brandField(), ' e2e-unsaved')
-      },
-      expectDraft: () => expect(brandField()).toHaveDisplayValue(/e2e-unsaved/),
-      leave: async (user: GuardUser) => {
-        await user.click(screen.getByRole('link', { name: 'Home' }))
-      },
-      expectStayed: () => expect(router().state.location.pathname).toBe('/admin'),
-      expectLeft: async () => { expect(await screen.findByText('Home page')).toBeInTheDocument() },
-      whileDialogOpen,
-    },
-  }
+function brandScenario(whileDialogOpen: (mounted: ReturnType<typeof mountAdmin>) => Promise<void>, ready: () => Promise<void>) {
+  return adminGuardScenario({
+    page: () => <Settings />,
+    ready,
+    edit: async (user: GuardUser) => { await user.type(brandField(), ' e2e-unsaved') },
+    expectDraft: () => expect(brandField()).toHaveDisplayValue(/e2e-unsaved/),
+    whileDialogOpen,
+  })
 }
 
 beforeEach(() => {
@@ -88,11 +71,11 @@ describe('/admin brand form — Cancel keeps the draft and stays guarded (R2)', 
   it('when the server copy changes and refetches while the dialog is open', async () => {
     const server = { current: stored('Stored brand') }
     getBrandSettings.mockImplementation(() => Promise.resolve(server.current))
-    const { scenario, mounted } = brandScenario(
-      async () => {
+    const { scenario } = brandScenario(
+      async ({ client }) => {
         // Another admin changed the hashtags; the edited Brand Name must survive the refetch.
         server.current = stored('Stored brand', ['#theirs'])
-        await mounted.current?.client.invalidateQueries({ queryKey: brandSettingsKey() })
+        await client.invalidateQueries({ queryKey: brandSettingsKey() })
         expect(await screen.findByDisplayValue('#theirs')).toBeInTheDocument()
       },
       async () => { expect(await screen.findByDisplayValue('Stored brand')).toBeInTheDocument() },

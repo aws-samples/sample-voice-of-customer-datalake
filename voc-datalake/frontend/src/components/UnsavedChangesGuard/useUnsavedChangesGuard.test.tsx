@@ -13,6 +13,8 @@ import { runGuarded } from './guardRegistry'
 import type { UnsavedChangesGuardOptions } from './useUnsavedChangesGuard'
 import type { ReactNode } from 'react'
 
+type GuardUserSession = ReturnType<typeof userEvent.setup>
+
 type Overrides = Partial<Pick<UnsavedChangesGuardOptions, 'canSave' | 'shouldBlock'>>
 
 /** A one-field editor: typing makes it dirty, `onSave` is the test's. */
@@ -52,13 +54,13 @@ function Editor({ onSave, onDiscard, options = {} }: Readonly<{
 }
 
 /** `/editor` showing `editor` (under a data router, so `useBlocker` is live) and an `/elsewhere` page. */
-function renderEditorRoute(editor: ReactNode) {
+function renderEditorRoute(editor: ReactNode, initialEntries: string[] = ['/editor']) {
   const router = createMemoryRouter(
     [
       { path: '/editor', element: editor },
       { path: '/elsewhere', element: <p>Elsewhere page</p> },
     ],
-    { initialEntries: ['/editor'] },
+    { initialEntries },
   )
   render(<RouterProvider router={router} />)
   return { user: userEvent.setup(), router }
@@ -207,29 +209,41 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
     return <><label>Other <input value={value} onChange={(e) => setValue(e.target.value)} /></label>{guard.dialog}</>
   }
 
-  const renderTwoDirty = () => renderEditorRoute(<><Editor onSave={vi.fn()} /><OtherEditor /></>)
+  /** Opened from /elsewhere, so Back has somewhere to go. */
+  const renderTwoDirty = () => renderEditorRoute(<><Editor onSave={vi.fn()} /><OtherEditor /></>, ['/elsewhere', '/editor'])
 
-  // Both dirty: only one blocker exists, so the editor that caught the change hands it on.
-  it('asks every dirty editor in turn, and leaves only after both let it go', async () => {
-    const { router, user } = renderTwoDirty()
+  const nextDialog = async () => within(await screen.findByRole('dialog', { name: 'Unsaved changes' }))
+
+  /** Follow the Elsewhere link and expect the dialog: the leave is guarded. */
+  async function expectLeaveGuarded(user: GuardUserSession) {
+    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
+  }
+
+  /** Both editors dirty, a leave (a link by default), then Discard in the first dialog. */
+  async function bothDirtyThenDiscardFirst(leave?: (router: ReturnType<typeof renderTwoDirty>['router']) => Promise<void>) {
+    const rendered = renderTwoDirty()
+    const { router, user } = rendered
     await user.type(screen.getByLabelText('Name'), 'x')
     await user.type(screen.getByLabelText('Other'), 'y')
-    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    if (leave === undefined) await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
+    else await leave(router)
     await user.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    return rendered
+  }
+
+  // Both dirty: only one blocker exists, so the editor that caught the change holds it while the other asks.
+  it('asks every dirty editor in turn, and leaves only after both let it go', async () => {
+    const { router, user } = await bothDirtyThenDiscardFirst()
     expect(router.state.location.pathname).toBe('/editor')
-    await user.click(within(await screen.findByRole('dialog', { name: 'Unsaved changes' })).getByRole('button', { name: 'Discard' }))
+    await user.click((await nextDialog()).getByRole('button', { name: 'Discard' }))
     expect(await screen.findByText('Elsewhere page')).toBeInTheDocument()
   })
 
   /** Both editors dirty, a leave, Discard in the first dialog, Cancel in the second. */
   async function discardThenCancel() {
-    const rendered = renderTwoDirty()
-    const { user } = rendered
-    await user.type(screen.getByLabelText('Name'), 'x')
-    await user.type(screen.getByLabelText('Other'), 'y')
-    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
-    await user.click(within(dialog()).getByRole('button', { name: 'Discard' }))
-    await user.click(within(await screen.findByRole('dialog', { name: 'Unsaved changes' })).getByRole('button', { name: 'Cancel' }))
+    const rendered = await bothDirtyThenDiscardFirst()
+    await rendered.user.click((await nextDialog()).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(queryDialog()).not.toBeInTheDocument())
     return rendered
   }
@@ -245,24 +259,26 @@ describe('useUnsavedChangesGuard — two editors on one page', () => {
 
   it('after that Cancel, a new attempt to leave is guarded again', async () => {
     const { user } = await discardThenCancel()
-    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
-    expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
+    await expectLeaveGuarded(user)
   })
 
-  // The release lets exactly the one retry through: a later leave to the same place, with
-  // new edits, is asked again (the release used to outlive a retry no blocker had checked).
-  it('guards the same leave again after a released one went through and the page came back', async () => {
-    const { router, user } = renderTwoDirty()
-    await user.type(screen.getByLabelText('Name'), 'x')
-    await user.type(screen.getByLabelText('Other'), 'y')
-    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
-    await user.click(within(dialog()).getByRole('button', { name: 'Discard' }))
-    await user.click(within(await screen.findByRole('dialog', { name: 'Unsaved changes' })).getByRole('button', { name: 'Discard' }))
+  it('guards the same leave again after it went through and the page came back', async () => {
+    const { router, user } = await bothDirtyThenDiscardFirst()
+    await user.click((await nextDialog()).getByRole('button', { name: 'Discard' }))
     await screen.findByText('Elsewhere page')
     await act(() => router.navigate('/editor'))
     await user.type(screen.getByLabelText('Name'), 'again')
-    await user.click(screen.getByRole('link', { name: 'Elsewhere' }))
-    expect(await screen.findByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument()
+    await expectLeaveGuarded(user)
+  })
+
+  // The held navigation itself goes on: a Back stays a Back, with no extra history entry.
+  it('lets a held Back through as a Back once both editors let it go', async () => {
+    const { router, user } = await bothDirtyThenDiscardFirst(async (r) => { await act(() => r.navigate(-1)) })
+    await user.click((await nextDialog()).getByRole('button', { name: 'Discard' }))
+    expect(await screen.findByText('Elsewhere page')).toBeInTheDocument()
+    expect(router.state.historyAction).toBe('POP')
+    await act(() => router.navigate(1))
+    expect(router.state.location.pathname).toBe('/editor')
   })
 })
 

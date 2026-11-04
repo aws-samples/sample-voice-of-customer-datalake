@@ -44,7 +44,8 @@ their own.
 - **Unsaved changes with two editors on one page**: react-router allows one navigation blocker per page and the
   editor mounted last held it, even with no edits. On Administration, unsaved brand edits were lost without the
   "Unsaved changes" prompt when a link was followed while a board editor was open; the new Default theme card would
-  have done the same on every visit to General. Only an editor with edits holds the blocker now.
+  have done the same on every visit to General. Only an editor with edits holds the blocker now, and when several
+  editors hold edits, leaving asks each of them in turn (Save / Discard / Cancel); a Back stays a Back.
 
 ### Upgrade notes
 - Nothing to do: without a saved default the app stays on Kiro, and a person's earlier light/dark choice is kept.
