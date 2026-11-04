@@ -127,6 +127,13 @@ test('the comment starts with a marker latestReview reads back, and fences answe
   assert.ok(body.indexOf('#### Tenets') < body.indexOf('#### Code review'), 'the tenets come first')
 })
 
+test('a verdict the table does not know is shown as it is, never as undefined', () => {
+  const body = renderComment({ headSha: SHA, hash: '0123456789abcdef', modelId: 'm',
+    results: [{ kind: 'commit', output: 'x', truncated: false, verdict: { verdict: 'ODD', blocking: [], others: [] } }] })
+  assert.match(body, /\| Code review \| ODD \|/)
+  assert.doesNotMatch(body, /undefined/)
+})
+
 test('a secret-shaped path named by the pull request cannot break out of its code span', () => {
   const body = renderComment({ headSha: SHA, hash: '0123456789abcdef', modelId: 'm', diffTruncated: false, results: [],
     omitted: ['a`.env` [x](https://evil.example) @team\n> injected'] })
@@ -134,7 +141,8 @@ test('a secret-shaped path named by the pull request cannot break out of its cod
 })
 
 test('a review that was not run says so in the table and its section', () => {
-  const body = renderComment({ headSha: SHA, hash: '0123456789abcdef', modelId: 'm', diffTruncated: false, omitted: [], results: [{ kind: 'tenets', error: true }] })
+  // Also: `diffTruncated` and `omitted` may be left out.
+  const body = renderComment({ headSha: SHA, hash: '0123456789abcdef', modelId: 'm', results: [{ kind: 'tenets', error: true }] })
   assert.match(body, /\| Tenets \(TENETS\.md\) \| ⛔ not run/)
   assert.match(body, /Not run: the Bedrock call failed/)
   assert.doesNotMatch(body, /partial|named like a secret/)
@@ -329,12 +337,24 @@ process.stdout.write(JSON.stringify({ output: { message: { content: [{ text: 'ok
     assert.deepEqual(readConverse(response), { text: 'ok', stopReason: 'end_turn' })
     const { args, request, file } = JSON.parse(readFileSync(seen, 'utf8'))
     assert.deepEqual(args.slice(0, 2), ['bedrock-runtime', 'converse'])
-    assert.equal(args[args.indexOf('--cli-read-timeout') + 1], '900')
+    assert.equal(args[args.indexOf('--cli-read-timeout') + 1], '600')
     assert.equal(args[args.indexOf('--region') + 1], 'us-east-1')
     assert.deepEqual(request, { modelId: 'm' })
     assert.equal(existsSync(file), false, 'the request file is removed')
   } finally {
     rmSync(bin, { recursive: true, force: true })
+  }
+})
+
+test('bedrockCall kills a CLI that outlives the review budget, and refuses to start when it is spent', async () => {
+  const hanging = fakeAws('setInterval(() => {}, 1000)')
+  try {
+    const started = Date.now()
+    await assert.rejects(bedrockCall({}, { region: 'r', env: { PATH: hanging }, timeoutMs: 300 }), /did not answer within 0 s \(the review budget\)/)
+    assert.ok(Date.now() - started < 10_000, 'the hanging CLI was killed')
+    await assert.rejects(bedrockCall({}, { region: 'r', env: { PATH: hanging }, timeoutMs: 0 }), /no time left in the review budget/)
+  } finally {
+    rmSync(hanging, { recursive: true, force: true })
   }
 })
 

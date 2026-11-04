@@ -40,7 +40,7 @@ Then give the repository the role (a repository admin):
 
 ```bash
 role_arn="$(aws cloudformation describe-stacks --stack-name voc-ai-review-ci --region us-east-1 \
-  --query "Stacks[0].Outputs[?OutputKey=='RoleArn'].OutputValue" --output text)"
+  --query "Stacks[0].Outputs[?OutputKey=='AiReviewRoleArn'].OutputValue" --output text)"
 gh secret set AI_REVIEW_ROLE_ARN --repo aws-samples/sample-voice-of-customer-datalake --body "$role_arn"
 gh variable set AI_REVIEW_REGION --repo aws-samples/sample-voice-of-customer-datalake --body us-east-1
 ```
