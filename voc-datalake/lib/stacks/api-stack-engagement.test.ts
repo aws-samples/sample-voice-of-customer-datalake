@@ -119,6 +119,16 @@ describe('voc-engagement-api IAM', () => {
     expect(invoke[0]?.resource).toMatch(/function:voc-engagement-api-/);
   });
 
+  it('invokes Claude through the stack\'s shared managed policies (the request enrichment), never inline', () => {
+    const inline = statements(apiTemplate()).flatMap((s) => s.actions).filter((a) => a.startsWith('bedrock:'));
+    expect(inline).toStrictEqual([]);
+    const role = idStartingWith(apiTemplate(), 'AWS::IAM::Role', 'EngagementLambdaRole');
+    const managed = Object.entries(apiTemplate().findResources('AWS::IAM::ManagedPolicy'))
+      .filter(([, policy]) => JSON.stringify(policy).includes(`"Ref":"${role}"`)).map(([id]) => id);
+    expect(managed.length).toBeGreaterThan(0);
+    expect(managed.every((id) => id.includes('ClaudeInvokePolicy'))).toBe(true);
+  });
+
   it('cannot send email without -c emailFrom', () => {
     expect(statements(apiTemplate()).flatMap((s) => s.actions).filter((a) => a.startsWith('ses:'))).toStrictEqual([]);
   });
