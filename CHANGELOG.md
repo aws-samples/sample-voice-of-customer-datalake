@@ -17,6 +17,16 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.00.01] - 2026-11-04
+
+Faster Python cold starts: every Lambda bundle ships its own code compiled.
+
+### Changed
+- **Python Lambda bundles ship bytecode.** Every function built by the CDK bundling now includes `.pyc` files
+  compiled by the Python 3.14 bundling image (unchecked-hash, PEP 552), so a cold start no longer compiles the
+  function's own modules (about 35,000 lines for the Projects API). Each deployment zip grows by roughly the size
+  of its source. See [docs/lambda-sizing.md](docs/lambda-sizing.md) → Cold starts.
+
 ## [6.00.00] - 2026-11-03
 
 Deletes follow the tenets: customer data is deleted only for a stated legal basis and leaves a tombstone, workspace deletes really delete and are recorded, no role holds a delete it does not use, and no role can change an audit row. Major: the erasure routes require a legal basis.

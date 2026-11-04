@@ -1,5 +1,5 @@
 /**
- * Tests and caches never ship in a Python Lambda bundle (deadpy.md §5).
+ * Tests never ship in a Python Lambda bundle (deadpy.md §5), and its bytecode is compiled at build time.
  *
  * The staging excludes shape only the asset hash: Docker bundling mounts the
  * unfiltered source as /asset-input, so `cp -r /asset-input/shared` used to copy
@@ -8,19 +8,20 @@
  * 1. Every Python bundling command any stack hands to `Code.fromAsset` ends with
  *    PYTHON_BUNDLE_PRUNE. Recorded from real in-process synths (the template
  *    holds no bundling command), so a site that bypasses the helper fails too.
- * 2. A real Docker build of one production bundle contains no test file, no
- *    `__pycache__` and no `.pyc`. Skipped when Docker or the bundling image is
- *    not available locally (it never pulls the multi-GB image).
+ * 2. A real Docker build of one production bundle contains no test file and no
+ *    `.pyc` from the source tree, and holds an unchecked-hash `cpython-314` `.pyc`
+ *    next to every shipped module (no compile at cold start). Skipped when Docker or
+ *    the bundling image is not available locally (it never pulls the multi-GB image).
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { VocApiStack } from '../stacks/api-stack';
 import { pluginDirectoryIds } from '../plugin-loader';
@@ -28,7 +29,7 @@ import { apiStackDependencyProps, pkSkTable } from '../test-support/api-stack-fi
 import { synthIngestionStacks } from '../test-support/ingestion-stack-fixture';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
-import { PYTHON_BUNDLE_PRUNE, pythonBundleScript } from './python-lambda-asset';
+import { PYTHON_BUNDLE_COMPILE, PYTHON_BUNDLE_PRUNE, pythonBundleScript } from './python-lambda-asset';
 import { createWorkerFunction, workerRole } from './worker-lambda';
 
 const PYTHON_IMAGE = lambda.Runtime.PYTHON_3_14.bundlingImage;
@@ -71,16 +72,16 @@ function synthApiStack(): void {
   Template.fromStack(stack);
 }
 
-describe('every Python bundle prunes tests and caches from its output', () => {
+describe('every Python bundle prunes tests and stale caches, then compiles its bytecode', () => {
   const scripts = recordPythonBundleScripts(() => {
     synthProcessingTemplate();
     synthIngestionStacks(PLUGIN_IDS, { inboundEmailDomain: 'voc.example.com' });
     synthApiStack();
   });
 
-  it('ends every recorded bundling script with the prune', () => {
-    const unpruned = scripts.filter((script) => !script.endsWith(` && ${PYTHON_BUNDLE_PRUNE}`));
-    expect(unpruned).toStrictEqual([]);
+  it('ends every recorded bundling script with the prune, then the compile', () => {
+    const wrongEnd = scripts.filter((script) => !script.endsWith(` && ${PYTHON_BUNDLE_PRUNE} && ${PYTHON_BUNDLE_COMPILE}`));
+    expect(wrongEnd).toStrictEqual([]);
   });
 
   it.each([
@@ -101,10 +102,14 @@ describe('every Python bundle prunes tests and caches from its output', () => {
   });
 });
 
-describe('PYTHON_BUNDLE_PRUNE', () => {
-  it('runs after the copy steps, joined into one fail-fast script', () => {
+describe('PYTHON_BUNDLE_PRUNE and PYTHON_BUNDLE_COMPILE', () => {
+  it('run after the copy steps, prune first, joined into one fail-fast script', () => {
     expect(pythonBundleScript(['mkdir -p /asset-output', 'cp a b']))
-      .toBe(`mkdir -p /asset-output && cp a b && ${PYTHON_BUNDLE_PRUNE}`);
+      .toBe(`mkdir -p /asset-output && cp a b && ${PYTHON_BUNDLE_PRUNE} && ${PYTHON_BUNDLE_COMPILE}`);
+  });
+
+  it('compiles unchecked-hash bytecode over the whole output with the image\'s own Python', () => {
+    expect(PYTHON_BUNDLE_COMPILE).toBe('python -m compileall -q -j 0 --invalidation-mode unchecked-hash /asset-output');
   });
 });
 
@@ -134,16 +139,30 @@ function walk(dir: string, prefix = ''): string[] {
   });
 }
 
-const SHIPPED_DIRECTORY = /(^|\/)(test|tests|__pycache__|\.pytest_cache)\/$/;
-const SHIPPED_FILE = /(^|\/)(test_[^/]*\.py|[^/]*_test\.py|conftest\.py|[^/]*\.pyc)$/;
-const isTestOrCache = (path: string): boolean => SHIPPED_DIRECTORY.test(path) || SHIPPED_FILE.test(path);
+const SHIPPED_DIRECTORY = /(^|\/)(test|tests|\.pytest_cache)\/$/;
+const SHIPPED_FILE = /(^|\/)(test_[^/]*\.py|[^/]*_test\.py|conftest\.py)$/;
+const isTest = (path: string): boolean => SHIPPED_DIRECTORY.test(path) || SHIPPED_FILE.test(path);
+
+/** The `.py` a `<dir>/__pycache__/<name>.cpython-314.pyc` compiles; undefined for any other path. */
+function sourceOf(pyc: string): string | undefined {
+  const parts = pyc.split('/');
+  const file = parts.at(-1) ?? '';
+  if (parts.at(-2) !== '__pycache__' || !file.endsWith(PYC_SUFFIX)) return undefined;
+  return [...parts.slice(0, -2), `${file.slice(0, -PYC_SUFFIX.length)}.py`].join('/');
+}
+const PYC_SUFFIX = '.cpython-314.pyc';
+
+/** PEP 552 flags word of a .pyc (bytes 4-7): 0b01 = hash-based, not checked against the source. */
+const pycFlags = (file: string): number => readFileSync(file).readUInt32LE(4);
 
 describe.skipIf(!bundlingImageAvailable())('a real Docker-built bundle (briefing worker)', () => {
   const outdir = mkdtempSync(join(tmpdir(), 'voc-python-bundle-'));
+  let asset = '';
+  let files: string[] = [];
   afterAll(() => rmSync(outdir, { recursive: true, force: true }));
 
-  /** Synthesizes with real Docker bundling; returns the one asset directory's paths. */
-  function bundleBriefingWorker(): string[] {
+  /** Synthesizes with real Docker bundling; returns the one asset directory. */
+  function bundleBriefingWorker(): string {
     const app = new cdk.App({ outdir });
     const stack = new cdk.Stack(app, 'BundleProbe', { env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION } });
     createWorkerFunction(stack, 'Probe', {
@@ -159,25 +178,45 @@ describe.skipIf(!bundlingImageAvailable())('a real Docker-built bundle (briefing
     });
     app.synth();
     const assetDirs = readdirSync(outdir).filter((name) => name.startsWith('asset.'));
-    expect(assetDirs).toHaveLength(1);
-    return walk(join(outdir, assetDirs[0] ?? ''));
+    if (assetDirs.length !== 1) throw new Error(`expected one asset directory, got ${assetDirs.join(', ')}`);
+    return join(outdir, assetDirs[0] ?? '');
   }
 
-  it('contains the payload and no test file, __pycache__ or .pyc', () => {
+  beforeAll(() => {
     // A cache file in the source tree, the shape a developer checkout always has
-    // (a fresh clone has none, which would make the cache half of this vacuous).
+    // (a fresh clone has none, which would make the stale-cache case vacuous).
     const cacheDir = join(process.cwd(), 'lambda', 'shared', '__pycache__');
     const createdCacheDir = !existsSync(cacheDir);
     mkdirSync(cacheDir, { recursive: true });
     const cacheFile = join(cacheDir, 'python-lambda-asset-probe.cpython-314.pyc');
     writeFileSync(cacheFile, '');
     try {
-      const files = bundleBriefingWorker();
-      expect(files).toContain('briefing/handler.py');
-      expect(files).toContain('shared/api.py');
-      expect(files.filter(isTestOrCache)).toStrictEqual([]);
+      asset = bundleBriefingWorker();
+      files = walk(asset);
     } finally {
       rmSync(createdCacheDir ? cacheDir : cacheFile, { recursive: true, force: true });
     }
   }, 300_000);
+
+  it('contains the payload and no test file', () => {
+    expect(files).toContain('briefing/handler.py');
+    expect(files).toContain('shared/api.py');
+    expect(files.filter(isTest)).toStrictEqual([]);
+  });
+
+  it('ships no .pyc from the source tree (the probe has no .py, so only a stale copy could be there)', () => {
+    expect(files.filter((path) => path.includes('python-lambda-asset-probe'))).toStrictEqual([]);
+  });
+
+  it('holds a cpython-314 .pyc for every shipped module, and none without its module', () => {
+    const modules = files.filter((path) => path.endsWith('.py'));
+    const compiled = files.filter((path) => path.endsWith('.pyc'));
+    expect(compiled.map(sourceOf).filter((source) => source === undefined || !modules.includes(source))).toStrictEqual([]);
+    expect(modules.filter((module) => !compiled.some((pyc) => sourceOf(pyc) === module))).toStrictEqual([]);
+  });
+
+  it('compiles unchecked-hash bytecode (PEP 552 flags = 1) everywhere', () => {
+    const compiled = files.filter((path) => path.endsWith('.pyc'));
+    expect(new Set(compiled.map((pyc) => pycFlags(join(asset, pyc))))).toStrictEqual(new Set([1]));
+  });
 });

@@ -215,6 +215,29 @@ as relative; Lambda runs 3.14 on Graviton.
 The API bundles ship only `api/<handler>.py` + `shared/` + prompts and static files (`createApiLambdaCode`).
 No API bundle ships or imports `plugins/` or another handler.
 
+### Our own code ships compiled (since 6.00.01)
+
+`/var/task` is read-only, so until 6.00.01 a function bundle without `__pycache__` made Python compile every module
+it imported on every cold start and discard the result (the layers already shipped `.pyc`). Measured on a developer
+Mac (`compile()` of exactly the modules each handler imports; Graviton is two to three times slower):
+
+| Handler | Own modules imported | Lines | Compile CPU per cold start (Mac) |
+|---|---|---|---|
+| projects | 122 | 35,180 | 240 ms |
+| settings | 115 | 26,262 | 207 ms |
+| metrics | 62 | 12,395 | 95 ms |
+| agents | 63 | 13,288 | 90 ms |
+
+Every bundle built by `pythonLambdaAsset` (`lib/utils/python-lambda-asset.ts`) now ends with
+`PYTHON_BUNDLE_COMPILE`: `python -m compileall --invalidation-mode unchecked-hash` in the Python 3.14 bundling
+image, after the prune (which still deletes any `.pyc` from the source tree). Unchecked-hash bytecode (PEP 552)
+loads without reading or hashing the source and carries no timestamp, which is safe because a deployed bundle never
+changes; if the runtime's Python ever differs, it ignores the files and compiles from source as before. Each zip
+grows by about the size of its source. `lib/utils/python-lambda-asset.test.ts` builds one real bundle (when Docker
+and the image are present) and checks a `cpython-314` unchecked-hash `.pyc` next to every shipped module. Not
+covered: the two functions CoreStack builds without bundling (the product-document extractor, which is
+stdlib + boto3 only, and the Node custom-resource handler).
+
 ### Dependency layers
 
 Every function also unzips its layers into `/opt` on a cold start, so each layer carries only what its functions

@@ -311,7 +311,10 @@ def _decode(cached: dict) -> Assembly:
 _IF = re.compile(r'^if \[ -([fd]) (\S+) \]; then (.+); fi$')
 # What a copy-staged asset's `exclude` drops in this repo (core-stack.ts: ['test', '__pycache__']).
 COPY_STAGING_PRUNE = "find /asset-output -type d -name 'test' -name 'tests' -name '__pycache__'"
-IGNORED_STEPS = re.compile(r'^(mkdir -p \S+|cd \S+)$')
+# Steps that change no module a bundle ships: directories, and the bytecode compile every Python bundle ends with
+# (PYTHON_BUNDLE_COMPILE in lib/utils/python-lambda-asset.ts; it adds only __pycache__/*.pyc next to the sources).
+IGNORED_STEPS = re.compile(
+    r'^(mkdir -p \S+|cd \S+|python -m compileall -q -j 0 --invalidation-mode unchecked-hash /asset-output)$')
 
 
 class Bundle:
