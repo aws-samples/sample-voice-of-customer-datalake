@@ -22,6 +22,7 @@ import {
   ScenarioSection,
 } from './PersonaSections'
 import FeedbackCorpus from './FeedbackCorpus'
+import { featureRequestIdsOf } from './featureRequestCitations'
 import ResearchNotes from './ResearchNotes'
 import { useRegenerateAvatar } from './useRegenerateAvatar'
 import CopiedFromLine from './CopiedFromLine'
@@ -71,7 +72,7 @@ function PersonaHeaderIdentity({ persona, shown, protection }: {
           <PersonaProtectStatus personaId={persona.persona_id} isProtected={persona.protected === true} protection={protection} />
         ) : null}
         <FeedbackCorpus feedbackIds={persona.input_feedback_ids} citedIds={persona.evidence_feedback_ids}
-          className="mt-1.5" />
+          featureRequestIds={featureRequestIdsOf(persona)} className="mt-1.5" />
         <CopiedFromLine copiedFrom={persona.copied_from} />
       </div>
     </div>

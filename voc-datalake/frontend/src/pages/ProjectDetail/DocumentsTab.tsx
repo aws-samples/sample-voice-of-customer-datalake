@@ -17,6 +17,7 @@ import type { Project, ProductDoc } from '../../api/projectTypes'
 import { DerivationFooter, RevisionFooter } from './DocumentLineageFooters'
 import { DeletedSourcesNotice } from './DeletedSourcesNotice'
 import FeedbackCorpus from './FeedbackCorpus'
+import { featureRequestIdsOf, linkFeatureRequestCitations } from './featureRequestCitations'
 import { stillPresent, hasDroppedSource, inheritedExtraSources } from './documentLineage'
 import { PrototypeView } from './DocumentPrototypeView'
 import { DocumentCoachingNotice } from '../../components/AiCoach/HumanDrivenNotice'
@@ -147,7 +148,7 @@ export default function DocumentsTab({
                   onJobStarted={onJobStarted}
                 />
               ) : (
-                <ProseDocument project={project} document={selectedDoc} markdown={labelIds(selectedDoc.content)} />
+                <ProseDocument project={project} document={selectedDoc} markdown={linkFeatureRequestCitations(labelIds(selectedDoc.content))} />
               )}
               {/* Below the content, not above it: provenance is what the document
                   was made from, not what it says. Both branches above own the
@@ -157,6 +158,7 @@ export default function DocumentsTab({
               <DerivationFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
               <DeletedSourcesNotice doc={selectedDoc} />
               <FeedbackCorpus feedbackIds={selectedDoc.input_feedback_ids}
+                featureRequestIds={featureRequestIdsOf(selectedDoc)}
                 className="mt-2" />
               {/* Prototypes keep their own revision lineage (the footer above). */}
               {NO_CONTENT_EDITOR.has(selectedDoc.document_type) ? null : (
