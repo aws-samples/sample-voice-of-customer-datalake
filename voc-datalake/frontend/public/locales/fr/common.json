@@ -171,7 +171,11 @@
     "system": "Thème du système",
     "light": "Thème clair",
     "dark": "Thème sombre",
-    "toggle": "{{current}} — passer à {{next}}"
+    "toggle": "{{current}} — passer à {{next}}",
+    "highContrast": "Contraste élevé",
+    "workspaceDefault": "Par défaut de l’espace de travail ({{name}})",
+    "colorTheme": "Thème de couleurs",
+    "colorThemeHint": "Votre propre choix, conservé dans ce navigateur. Le thème par défaut de l’espace de travail suit celui qu’un administrateur a choisi pour tous."
   },
   "partialTimeBudgetHint": "Approximatif : pour répondre à temps, les chiffres couvrent la période à partir du {{date}} — réduisez la période pour un total complet",
   "account": {
@@ -185,7 +189,6 @@
     "roleAdmin": "Administrateur",
     "roleUser": "Utilisateur",
     "preferences": "Langue et thème",
-    "theme": "Thème",
     "mcpTitle": "Mes jetons MCP",
     "mcpHint": "Connectez vos assistants externes avec un seul jeton MCP pour toute l’application, créé dans Connexion.",
     "mcpLink": "Aller à Connexion",
@@ -259,7 +262,8 @@
       "hint": "Conservé uniquement dans le stockage local de ce navigateur. Rien ici ne modifie le serveur.",
       "endpoint": "Point de terminaison de l'API",
       "endpointNone": "Non configuré"
-    }
+    },
+    "themeMode": "Clair ou sombre"
   },
   "connect": {
     "title": "Connexion",

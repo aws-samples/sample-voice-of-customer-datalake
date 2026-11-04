@@ -171,7 +171,11 @@
     "system": "Tema del sistema",
     "light": "Tema claro",
     "dark": "Tema oscuro",
-    "toggle": "{{current}} — cambiar a {{next}}"
+    "toggle": "{{current}} — cambiar a {{next}}",
+    "highContrast": "Alto contraste",
+    "workspaceDefault": "Predeterminado del espacio de trabajo ({{name}})",
+    "colorTheme": "Tema de color",
+    "colorThemeHint": "Tu propia elección, guardada en este navegador. El predeterminado del espacio de trabajo sigue el tema que un administrador eligió para todos."
   },
   "partialTimeBudgetHint": "Aproximado: para responder a tiempo, los recuentos cubren desde el {{date}} — acota el periodo para obtener un total completo",
   "account": {
@@ -185,7 +189,6 @@
     "roleAdmin": "Administrador",
     "roleUser": "Usuario",
     "preferences": "Idioma y tema",
-    "theme": "Tema",
     "mcpTitle": "Mis tokens MCP",
     "mcpHint": "Conecta tus asistentes externos con un único token MCP para toda la aplicación, creado en Conectar.",
     "mcpLink": "Ir a Conectar",
@@ -259,7 +262,8 @@
       "hint": "Se guarda solo en el almacenamiento local de este navegador. Nada de esto cambia el servidor.",
       "endpoint": "Endpoint de la API",
       "endpointNone": "No configurado"
-    }
+    },
+    "themeMode": "Claro u oscuro"
   },
   "connect": {
     "title": "Conectar",

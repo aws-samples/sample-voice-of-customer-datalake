@@ -20,7 +20,7 @@ Each tab and section is a deep link, `/admin?tab=<tab>&section=<section>`
 
 | Tab (`?tab=`) | Sections (`&section=`) |
 |---|---|
-| General (`brand`) | Brand (names, handles, hashtags, URLs). Local dev builds only: API configuration |
+| General (`brand`) | Brand (names, handles, hashtags, URLs); Default theme (the colour theme everyone starts with). Local dev builds only: API configuration |
 | Sources (`sources`) | Data sources (`plugins`), Integrations (`integrations`), Email inbox (`inbox`), Radar (`radar`) |
 | Taxonomy (`taxonomy`) | Categories (`categories`), Dimensions (`dimensions`) |
 | Privacy & access (`access`) | Source policies (`policies`: profiles, PII, retention, restriction, erasure), Users (`users`: roles, category and source access, flags, way of working with AI, participant email), Boards (`boards`: company domains and the [feedback boards](feature-requests.md)) |
@@ -40,7 +40,7 @@ Profile. The `?section=<id>` links of releases 5.09 to 5.11 open the tab that ho
 | Tab (`?tab=`) | Cards | Store |
 |---|---|---|
 | Profile (`profile`) | Profile: name, email, username, role, groups (read-only); Change password; Sign out | Cognito |
-| Preferences (`preferences`) | Language & theme; Setup checklist "Show on Home", start page ("Open the dashboard when I sign in"), "How it works" (`guide`); Assistant: desktop notifications (the same setting as the panel bell), "Reset bubble position"; This browser: the API endpoint (read-only), "Reset local settings" | `voc-language`, `voc-theme`; `/settings/my-onboarding`; `voc-assistant-ui` `notify`, `voc-assistant-bubble`; `voc-config` |
+| Preferences (`preferences`) | Language & theme (language, light or dark, colour theme: Workspace default or one of the themes); Setup checklist "Show on Home", start page ("Open the dashboard when I sign in"), "How it works" (`guide`); Assistant: desktop notifications (the same setting as the panel bell), "Reset bubble position"; This browser: the API endpoint (read-only), "Reset local settings" | `voc-language`, `voc-theme`; `/settings/my-onboarding`; `voc-assistant-ui` `notify`, `voc-assistant-bubble`; `voc-config` |
 | Morning brief (`briefing`) | On/off, time, brief language, custom instructions, email to my verified address ([briefing.md](briefing.md)) | `/settings/my-briefing` |
 | Objectives (`objectives`) | My own objectives and KPIs ([company-context.md](company-context.md)) | `/settings/my-context` |
 | Access & tokens (`access`) | My access: role, category and source scope (read-only; an admin changes it in Privacy & access → Users); MCP tokens: a link to Connect, where tokens are created, audited and revoked ([mcp.md](mcp.md)) | `GET /feedback/access`; `/connect/tokens` |
@@ -58,7 +58,7 @@ everyone who uses the same browser.
 | Setting | Home | Notes |
 |---|---|---|
 | Profile (name, email, role, groups), password | Account → Profile | |
-| Language, theme | Account → Preferences | the header theme toggle is a shortcut to the same preference |
+| Language, light or dark, colour theme | Account → Preferences | the header theme toggle is a shortcut to the same light/dark preference; the colour theme "Workspace default" follows Administration → General → Default theme |
 | My objectives and KPIs | Account → Objectives | |
 | Morning brief: on/off, time, language, instructions, email | Account → Morning brief | Home keeps the brief, Refresh, the card actions and, while not subscribed, a one-click Subscribe with a "Customise in Account" link |
 | Setup checklist, start page, "How it works" | Account → Preferences | Home keeps its in-place controls (Skip, Hide, Show setup checklist); both read the same preference |
@@ -72,6 +72,7 @@ everyone who uses the same browser.
 | Personal memories | Memory → Personal | a working tool, not a setting |
 | My conversations | the assistant sidebar | content, not a setting |
 | Brand (name, handles, hashtags, URLs) | Administration → General | |
+| Default theme (the colour theme everyone sees until they pick their own) | Administration → General | `GET /settings/appearance` (everyone) / `PUT` (admins); non-admins see it read-only |
 | Data sources, credentials, schedules, circuit breakers | Administration → Sources | |
 | Integrations (Figma and GitHub tokens), Email inbox, Radar | Administration → Sources | |
 | Categories, AI generation, reprocess; Dimensions | Administration → Taxonomy | |

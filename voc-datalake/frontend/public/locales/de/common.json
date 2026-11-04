@@ -168,7 +168,11 @@
     "system": "Systemdesign",
     "light": "Helles Design",
     "dark": "Dunkles Design",
-    "toggle": "{{current}} — wechseln zu {{next}}"
+    "toggle": "{{current}} — wechseln zu {{next}}",
+    "highContrast": "Hoher Kontrast",
+    "workspaceDefault": "Arbeitsbereich-Standard ({{name}})",
+    "colorTheme": "Farbschema",
+    "colorThemeHint": "Ihre eigene Wahl, in diesem Browser gespeichert. Arbeitsbereich-Standard folgt dem Schema, das ein Administrator für alle gewählt hat."
   },
   "partialTimeBudgetHint": "Ungefähr: Um rechtzeitig zu antworten, umfassen die Zahlen nur den Zeitraum ab {{date}} – verkleinern Sie den Zeitraum für eine vollständige Summe",
   "account": {
@@ -182,7 +186,6 @@
     "roleAdmin": "Administrator",
     "roleUser": "Benutzer",
     "preferences": "Sprache & Design",
-    "theme": "Design",
     "mcpTitle": "Meine MCP-Tokens",
     "mcpHint": "Verbinden Sie externe Assistenten mit einem MCP-Token für die gesamte App, erstellt unter „Verbinden“.",
     "mcpLink": "Zu „Verbinden“",
@@ -256,7 +259,8 @@
       "hint": "Nur im lokalen Speicher dieses Browsers gespeichert. Nichts hier ändert den Server.",
       "endpoint": "API-Endpunkt",
       "endpointNone": "Nicht konfiguriert"
-    }
+    },
+    "themeMode": "Hell oder dunkel"
   },
   "connect": {
     "title": "Verbinden",

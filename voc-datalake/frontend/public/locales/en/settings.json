@@ -960,5 +960,15 @@
       "conflict": "The board changed meanwhile. Reload it and try again.",
       "generic": "Something went wrong. Try again."
     }
+  },
+  "appearance": {
+    "title": "Default theme",
+    "hint": "The colour theme everyone sees until they pick their own in Account → Preferences.",
+    "adminOnlyNotice": "Only admins can change the default theme. You can view it here.",
+    "loading": "Loading the default theme…",
+    "loadFailed": "Couldn’t load the default theme from the server.",
+    "save": "Save theme",
+    "saving": "Saving…",
+    "saveFailed": "Couldn’t save the default theme. Try again."
   }
 }

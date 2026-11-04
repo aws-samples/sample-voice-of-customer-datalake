@@ -168,7 +168,11 @@
     "system": "시스템 테마",
     "light": "라이트 테마",
     "dark": "다크 테마",
-    "toggle": "{{current}} — {{next}}(으)로 전환"
+    "toggle": "{{current}} — {{next}}(으)로 전환",
+    "highContrast": "고대비",
+    "workspaceDefault": "워크스페이스 기본값 ({{name}})",
+    "colorTheme": "색상 테마",
+    "colorThemeHint": "이 브라우저에 저장되는 나만의 선택입니다. 워크스페이스 기본값은 관리자가 모두를 위해 고른 테마를 따릅니다."
   },
   "partialTimeBudgetHint": "근사치: 제시간에 응답하기 위해 {{date}} 이후만 집계했습니다. 전체 합계를 보려면 기간을 좁히세요",
   "account": {
@@ -182,7 +186,6 @@
     "roleAdmin": "관리자",
     "roleUser": "사용자",
     "preferences": "언어 및 테마",
-    "theme": "테마",
     "mcpTitle": "내 MCP 토큰",
     "mcpHint": "외부 어시스턴트는 연결 페이지에서 발급하는 앱 전체용 MCP 토큰 하나로 연결할 수 있습니다.",
     "mcpLink": "연결로 이동",
@@ -256,7 +259,8 @@
       "hint": "이 브라우저의 로컬 저장소에만 보관됩니다. 여기서는 서버가 변경되지 않습니다.",
       "endpoint": "API 엔드포인트",
       "endpointNone": "구성되지 않음"
-    }
+    },
+    "themeMode": "라이트 또는 다크"
   },
   "connect": {
     "title": "연결",
