@@ -18,6 +18,8 @@ export interface McpDelegates {
   settingsLambda: lambda.Function;
   memoryLambda: lambda.Function;
   agentsLambda: lambda.Function;
+  /** voc-engagement-api: `search_feature_requests` reads GET /feature-requests/search (docs/mcp.md). */
+  engagementLambda: lambda.Function;
 }
 
 /** Must equal MCP_UNAUTHORIZED / the 401 message in lambda/api/mcp_global_handler.py (pinned by a test). */
@@ -80,7 +82,7 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
   signingLayer: lambda.ILayerVersion): GlobalMcp {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const { api, authMethodOptions } = gateway;
-  const { metricsLambda, projectsLambda, settingsLambda, memoryLambda, agentsLambda } = delegates;
+  const { metricsLambda, projectsLambda, settingsLambda, memoryLambda, agentsLambda, engagementLambda } = delegates;
   const { projectsTable, jobsTable, kmsKey, userPool } = ctx.props;
 
   // The per-project MCP server (`POST /mcp`, `/mcp/{proxy+}`, voc-mcp-api and its
@@ -100,7 +102,7 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
     apiRoot: api.root, projectsTable, jobsTable, kmsKey, userPool,
     domainFunctions: {
       METRICS_FUNCTION: metricsLambda, SETTINGS_FUNCTION: settingsLambda, MEMORY_FUNCTION: memoryLambda,
-      PROJECTS_FUNCTION: projectsLambda, AGENTS_FUNCTION: agentsLambda,
+      PROJECTS_FUNCTION: projectsLambda, AGENTS_FUNCTION: agentsLambda, ENGAGEMENT_FUNCTION: engagementLambda,
     },
   });
   // OAuth sign-in for the same endpoint (api-mcp-oauth.ts, docs/mcp.md "OAuth sign-in").

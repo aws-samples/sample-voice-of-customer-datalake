@@ -126,6 +126,20 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         _object({'agent_id': ID, 'run_id': ID,
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50, 'default': 5}}, 'agent_id'),
         False, False, False),
+    'search_feature_requests': (
+        'Search feedback-board requests',
+        ('Search the requests people posted on the feedback boards (feature requests, ideas) you can see. These '
+         'are board requests, NOT customer reviews: a separate source, never counted in feedback metrics and never '
+         'returned by search_feedback. Each item: request_id, board_id, title, description, status, supporters '
+         '(+1 count), category, sentiment, problem_summary, created_at. Cite a request as [FR:<request_id>], never '
+         'as a review. `board`, `category` and `status` take one value or a comma list.'),
+        _object({'query': {'type': 'string', 'maxLength': 500},
+                 'board': {'type': 'string', 'maxLength': 500, 'description': 'Board id or slug (comma list for several).'},
+                 'category': {'type': 'string', 'maxLength': 500}, 'status': {'type': 'string', 'maxLength': 500},
+                 'days': {'type': 'integer', 'minimum': 0, 'maximum': 3650, 'default': 0,
+                          'description': 'Only requests created in the last N days; 0 = all time.'},
+                 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50, 'default': 25}}),
+        False, False, False),
     'create_document': (
         'Create a project document',
         ('Create a custom markdown document in a project you can edit. Requires a write token. Write only what '
@@ -189,7 +203,7 @@ class TestThePublishedCatalogue:
     def test_domains_and_their_function_env_names(self):
         assert tools.DOMAIN_FUNCTION_ENV == {
             'metrics': 'METRICS_FUNCTION', 'settings': 'SETTINGS_FUNCTION', 'memory': 'MEMORY_FUNCTION',
-            'projects': 'PROJECTS_FUNCTION', 'agents': 'AGENTS_FUNCTION'}
+            'projects': 'PROJECTS_FUNCTION', 'agents': 'AGENTS_FUNCTION', 'engagement': 'ENGAGEMENT_FUNCTION'}
 
 
 class TestTheModelTypes:

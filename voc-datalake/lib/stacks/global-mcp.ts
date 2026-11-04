@@ -17,7 +17,8 @@
  *  - global MCP role: GetItem/UpdateItem on the projects table's MCPGTOKEN
  *    partition only; PutItem on the jobs table's MCPAUDIT#… partitions only;
  *    AdminGetUser + AdminListGroupsForUser on this user pool; InvokeFunction
- *    on exactly the five domain functions it delegates to. No feedback,
+ *    on exactly the six domain functions it delegates to (engagement for the
+ *    feedback boards' search). No feedback,
  *    aggregates, memory or agents table grant — data comes through the
  *    domain functions, which apply their own rules.
  *  - tokens role: Query/GetItem/BatchGetItem/PutItem/UpdateItem on MCPGTOKEN, GetItem on
@@ -82,7 +83,7 @@ function mcpReservedConcurrency(scope: Construct): number | undefined {
 
 /** The env key each domain's function name arrives in (= DOMAIN_FUNCTION_ENV in mcp_global_tools.py). */
 type GlobalMcpDomainFunctions = Record<
-  'METRICS_FUNCTION' | 'SETTINGS_FUNCTION' | 'MEMORY_FUNCTION' | 'PROJECTS_FUNCTION' | 'AGENTS_FUNCTION',
+  'METRICS_FUNCTION' | 'SETTINGS_FUNCTION' | 'MEMORY_FUNCTION' | 'PROJECTS_FUNCTION' | 'AGENTS_FUNCTION' | 'ENGAGEMENT_FUNCTION',
   lambda.IFunction
 >;
 

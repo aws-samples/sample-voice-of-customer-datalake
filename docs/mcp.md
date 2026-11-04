@@ -110,6 +110,14 @@ credential is still not an admin anywhere else.
 
 ## Tools
 
+A board route (`/feature-requests/*`) resolves its caller from the verified `iss` claim and needs a verified
+email (`shared/engagement_identity.py`). For `search_feature_requests` the delegated claims therefore also carry
+`iss` = this deployment's APP user pool (the MCP function's own `USER_POOL_ID`, never the request),
+`email` = `mcp+<token_id>@mcp.invalid` (a service address naming the credential, not the minter's) and
+`email_verified=true`. A global token's minter is always an app-pool user, so the credential sees every
+non-archived board, is never a board admin (`cognito:groups` stays empty), and can never claim the board pool.
+No other tool gets these claims (`board_route_claims` in `lambda/shared/mcp_global_tools.py`).
+
 | Tool | Scope | Route (domain Lambda) |
 |---|---|---|
 | `search_feedback` | read | `GET /feedback/search` (query ≥ 2 chars) or `GET /feedback` (metrics); filters `category`, `sentiment`, `source`, `channel`, `tag`, `dims` (object → `key:value,…`); `urgent: true` adds `urgent=1` to either route, so only high-urgency items are listed and every other filter still applies (`/feedback/urgent` is not used: it has no text search, so `query` and `urgent` could not combine) |
@@ -124,6 +132,7 @@ credential is still not an admin anywhere else.
 | `get_document` | read | `GET /projects/{id}` (projects) — one document in full |
 | `list_agents` | read | `GET /agents` (agents) |
 | `get_agent_run` | read | `GET /agents/{id}/runs/{run_id}`, or without `run_id` `GET /agents/{id}/runs?limit=` (agents) — follow a run `run_agent` started |
+| `search_feature_requests` | read | `GET /feature-requests/search` (engagement) — feedback-board requests the minter may see; `query` → `q`, `board` / `category` / `status` (comma lists), `days` (0–3650, 0 = all time, not sent), `limit` (1–50, default 25). Only the slim fields reach the client (`request_id`, `board_id`, `title`, `description` ≤ 1000 chars, `status`, `supporters`, `category`, `sentiment`, `problem_summary`, `created_at`; never an email or a name), with `total` and `truncated`. Board requests are a separate source from feedback, cited as `[FR:<request_id>]` ([feature-requests.md](feature-requests.md)) |
 | `create_document` | write | `POST /projects/{id}/documents` (projects) — custom markdown documents |
 | `update_document` | write | `PUT /projects/{id}/documents/{doc}` (projects); a PR/FAQ or PRD only when the minter (and the project owner) work AI-driven, else denied ([ways-of-working.md](ways-of-working.md)) |
 | `run_agent` | write + admin-minted | `POST /agents/{id}/run` (agents) |
@@ -417,8 +426,8 @@ test user who is NOT an administrator, then once with an administrator for `run_
 - `/connect/tokens` routes sit behind one Cognito proxy, `/connect/{proxy+}` (the handler routes by path);
 - least-privilege roles, pinned by `lib/stacks/api-stack-mcp-global.test.ts`: the MCP
   role reads/updates only the `MCPGTOKEN` partition, appends only `MCPAUDIT#…` rows,
-  calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the five domain
-  Lambdas; the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
+  calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the six domain
+  Lambdas (metrics, settings, memory, projects, agents, engagement); the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
   check and queries `MCPAUDIT#…`;
 - each function has ONE API-scoped invoke permission (not two per method) because
   `VocApiStack` is close to CloudFormation's 500-resource limit.
