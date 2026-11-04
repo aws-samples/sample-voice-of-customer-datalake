@@ -59,7 +59,8 @@ describe('theme-init.js', () => {
 
   it('knows exactly the theme ids and default of themeCatalog.ts', async () => {
     const source = await readFile(resolve(__dirname, SCRIPT_PATH), 'utf8')
-    expect(source).toContain(`const THEME_IDS = [${COLOR_THEME_IDS.map((id) => `'${id}'`).join(', ')}]`)
+    const quoted = COLOR_THEME_IDS.map((id) => `'${id}'`).join(', ')
+    expect(source).toContain(`const THEME_IDS = [${quoted}]`)
     expect(source).toContain(`const DEFAULT_THEME = '${DEFAULT_COLOR_THEME}'`)
     expect(source).toContain(`const WORKSPACE = '${WORKSPACE_THEME_CHOICE}'`)
   })

@@ -58,9 +58,10 @@ describe.each(THEMES)('%s', (theme) => {
 describe('the cascade', () => {
   // theme-palettes.css is imported at the top of index.css, so its blocks come BEFORE
   // index.css's `:root, [data-theme="kiro-dark"]` fallback; a bare attribute selector
-  // would tie on specificity and lose to that later `:root`.
-  it.each(NON_KIRO)('%s is keyed `:root[data-theme=…]`, above the Kiro `:root` fallback', (theme) => {
-    expect(paletteCss).toContain(`:root[data-theme="${theme}"] {`)
+  // would tie on specificity and lose to that later `:root` on <html>. The bare selector
+  // is listed too, so a nested `data-theme` (the theme picker's previews) paints that palette.
+  it.each(NON_KIRO)('%s is keyed `:root[data-theme=…]` (above the Kiro fallback) and `[data-theme=…]` (previews)', (theme) => {
+    expect(paletteCss).toContain(`:root[data-theme="${theme}"], [data-theme="${theme}"] {`)
   })
 
   it('theme-palettes.css declares no Kiro block of its own', () => {
