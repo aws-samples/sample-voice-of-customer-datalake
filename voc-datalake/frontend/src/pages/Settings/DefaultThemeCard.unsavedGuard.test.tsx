@@ -7,12 +7,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Link, RouterProvider, createMemoryRouter } from 'react-router-dom'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
-import { createTestQueryClient, renderWithQueryClient } from '@test/query-client'
+import { mountAtAdmin } from '@test/adminRoute'
 import { expectCancelKeepsDraftGuarded } from '@test/unsavedGuardContract'
 import type { GuardUser } from '@test/unsavedGuardContract'
 import { appearanceKey } from '../../api/appearanceApi'
@@ -21,18 +20,7 @@ import DefaultThemeCard from './DefaultThemeCard'
 
 const API = 'https://api.example.com'
 
-function mountAdmin(isAdmin = true) {
-  const client = createTestQueryClient()
-  const router = createMemoryRouter(
-    [
-      { path: '/', element: <p>Home page</p> },
-      { path: '/admin', element: <><Link to="/">Home</Link><DefaultThemeCard apiEndpoint={API} isAdmin={isAdmin} /></> },
-    ],
-    { initialEntries: ['/admin'] },
-  )
-  renderWithQueryClient(<RouterProvider router={router} />, client)
-  return { client, router }
-}
+const mountAdmin = (isAdmin = true) => mountAtAdmin(<DefaultThemeCard apiEndpoint={API} isAdmin={isAdmin} />)
 
 beforeEach(() => {
   resetFetchApi()

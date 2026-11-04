@@ -9,7 +9,11 @@ import type { ColorThemeId } from '../../theme/themeCatalog'
 
 export interface MarkProps {
   className?: string
-  /** The mark sits on a filled surface (the accent launcher): a brand-coloured mark draws in `currentColor`. */
+}
+
+/** The static mark's props: it may sit on a filled surface (the accent launcher). */
+export interface StaticMarkProps extends MarkProps {
+  /** A brand-coloured mark (Quick) draws in `currentColor` instead, keeping its contrast on the fill. */
   onFill?: boolean
 }
 

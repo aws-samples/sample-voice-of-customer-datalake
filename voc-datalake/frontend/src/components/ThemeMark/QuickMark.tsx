@@ -10,7 +10,7 @@
 import { useId } from 'react'
 import clsx from 'clsx'
 import MarkSvg from './MarkSvg'
-import type { MarkProps } from './MarkSvg'
+import type { MarkProps, StaticMarkProps } from './MarkSvg'
 
 /** The spark outline, centred on (0, 0) within ±32.8 units (the Quick assistant's own path). */
 const QUICK_SPARK = [
@@ -25,7 +25,7 @@ const QUICK_SPARK = [
 /** Room for the 6-unit stroke around the ±32.8 outline. */
 const VIEW_BOX = '-36 -36 72 72'
 
-function QuickSpark({ className, onFill = false, thinking }: Readonly<MarkProps & { thinking: boolean }>) {
+function QuickSpark({ className, onFill = false, thinking }: Readonly<StaticMarkProps & { thinking: boolean }>) {
   const gradient = `${useId()}-spark`
   return (
     <MarkSvg theme="quick" viewBox={VIEW_BOX} className={className}>
@@ -52,11 +52,11 @@ function QuickSpark({ className, onFill = false, thinking }: Readonly<MarkProps 
   )
 }
 
-export default function QuickMark(props: Readonly<MarkProps>) {
-  return <QuickSpark {...props} thinking={false} />
+export default function QuickMark({ className, onFill }: Readonly<StaticMarkProps>) {
+  return <QuickSpark className={className} onFill={onFill} thinking={false} />
 }
 
 /** The busy indicator: the spark spins. */
-export function QuickMarkThinking(props: Readonly<MarkProps>) {
-  return <QuickSpark {...props} thinking />
+export function QuickMarkThinking({ className }: Readonly<MarkProps>) {
+  return <QuickSpark className={className} thinking />
 }
