@@ -7,6 +7,7 @@
  */
 import { useEffect, useSyncExternalStore } from 'react'
 import { applyTheme, DARK_QUERY, resolveMode, systemPrefersDark, useThemeStore } from './themeStore'
+import { useActiveColorTheme } from './useActiveColorTheme'
 import type { ThemeMode } from './themeStore'
 
 function subscribeToSystemScheme(onChange: () => void): () => void {
@@ -26,7 +27,8 @@ function useResolvedThemeMode(): ThemeMode {
 export function useThemeSync(): void {
   const preference = useThemeStore((s) => s.preference)
   const mode = useResolvedThemeMode()
+  const theme = useActiveColorTheme()
   useEffect(() => {
-    applyTheme(preference, mode)
-  }, [preference, mode])
+    applyTheme(preference, mode, theme)
+  }, [preference, mode, theme])
 }
