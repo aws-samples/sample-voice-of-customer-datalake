@@ -5,6 +5,10 @@ next to the project's current ones or **replaces** them. The mode is always expl
 would destroy personas someone reviewed. `POST /projects/{id}/personas/generate` starts the run as a background
 job (the persona-generator Lambda); the project page, the AI assistant and the autonomous agents all call it.
 How to pick the feedback a run reads is in [project-workspace.md](project-workspace.md#which-feedback-a-generation-reads).
+With `include_feature_requests: true` (and optionally `feature_request_board_ids`) the run also reads the requests
+filed on the feedback boards, as a separate section the personas cite as `[FR:<request_id>]`; each persona stores
+their ids as `input_feature_request_ids`
+([feature requests as evidence](project-workspace.md#feature-requests-from-the-feedback-boards)).
 
 ## The request field
 
