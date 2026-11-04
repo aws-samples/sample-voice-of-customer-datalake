@@ -69,6 +69,7 @@ from shared.document_versions import (
 )
 from shared.document_writer_brief import clean_stored_text, prompt_feature_idea, with_writer_brief
 from shared.dynamo_paging import iter_query
+from shared.feature_request_context import document_context, input_feature_request_fields
 from shared.feedback import (
     feedback_char_budget,
     feedback_item_limit,
@@ -146,6 +147,8 @@ class GatheredContext(NamedTuple):
     personas_context: str
     derivation_inputs: dict
     feedback: FeedbackSample
+    # Board requests that reached the prompts (``data_sources.feature_requests``), in prompt order.
+    feature_request_ids: tuple[str, ...] = ()
 
 
 def _gather_context(
@@ -175,6 +178,10 @@ def _gather_context(
         ctx.update_progress(20, 'fetching_feedback')
         feedback = _feedback_context(feedback_table, doc_config)
     feedback_context = feedback.context
+    # Board requests: their own fenced section after the reviews, cited [FR:<id>] (opt-in).
+    feature_requests = document_context(doc_config)
+    if feature_requests.section:
+        feedback_context = f"{feedback_context}{feature_requests.section}"
 
     # Query project items once if we need personas or documents
     wants_documents = data_sources.get('documents') or data_sources.get('research')
@@ -200,7 +207,16 @@ def _gather_context(
         'feedback_count': feedback.items_used,
         'persona_ids': used_persona_ids,
     }
-    return GatheredContext(feedback_context, personas_context, inputs, feedback)
+    return GatheredContext(feedback_context, personas_context, inputs, feedback, feature_requests.ids)
+
+
+def _derivation(gathered: GatheredContext, product_context_included: bool, grounding: Grounding) -> dict:
+    """The document's ``derivation``: what reached its prompts, board request ids included."""
+    return {
+        **build_derivation(**gathered.derivation_inputs, product_context_included=product_context_included,
+                           **derivation_knowledge(grounding)),
+        **input_feature_request_fields(gathered.feature_request_ids),
+    }
 
 
 NO_FEEDBACK = FeedbackSample('', 0, False)
@@ -1596,8 +1612,7 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
     feedback_fields = _stashed_feedback_fields(gathered.feedback)
     item_fields = _document_item_fields(
         project_id, job_id, feature_idea, content,
-        build_derivation(**gathered.derivation_inputs, product_context_included=product_context_included,
-                         **derivation_knowledge(grounding)),
+        _derivation(gathered, product_context_included, grounding),
         analysis,
         feedback_fields,
         _date_basis_fields(doc_config),
@@ -1757,10 +1772,7 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     # started on the previous definition still saves a derivation.
     _put_text(
         _scratch_key(job_id, 'derivation'),
-        _json.dumps(build_derivation(
-            **gathered.derivation_inputs, product_context_included=product_context_included,
-            **derivation_knowledge(grounding),
-        )),
+        _json.dumps(_derivation(gathered, product_context_included, grounding)),
     )
     # Same claim-check, same reason, for the feedback-budget outcome (#231) and
     # the ids of the reviews the prompts held (#236).

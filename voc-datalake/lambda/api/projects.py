@@ -74,6 +74,7 @@ from shared.exceptions import (
     ServiceError,
     ValidationError,
 )
+from shared.feature_request_context import config_context, input_feature_request_fields, with_feature_requests
 from shared.feedback import (
     feedback_char_budget,
     feedback_context_exists,
@@ -2616,6 +2617,11 @@ def generate_personas(
         chain_steps = with_persona_knowledge(
             _build_persona_chain(corpus, filters, persona_count, avoid_names, kept.section), knowledge,
         )
+        # Board requests (opt-in, a separate source): the analysis and every persona call read them.
+        feature_requests = config_context(filters)
+        chain_steps = with_feature_requests(
+            chain_steps, feature_requests, (PERSONA_KNOWLEDGE_STEP, PERSONA_SYNTHESIS_STEP),
+        )
         feedback_items_used, context_truncated = _items_reaching_synthesis(chain_steps, corpus)
 
         logger.info("[PERSONA] Step 4/5: Analysis, plan, then one call per persona...")
@@ -2653,6 +2659,7 @@ def generate_personas(
         )
         for _pid, _persona, persona_item in persona_items:
             persona_item.update(persona_knowledge_fields(knowledge, feedback_items_used))
+            persona_item.update(input_feature_request_fields(feature_requests.ids))
 
         if generate_avatars and persona_items:
             # The avatars are the billed tail: none for a project deleted during the model calls.
@@ -2705,6 +2712,8 @@ def generate_personas(
             # Additive mode: new personas dropped because their name repeated a kept
             # persona's (#353, shared/persona_overlap.py); 0 in replace mode.
             'duplicate_names_dropped': name_clashes,
+            # Board requests that reached the prompts (0 when not asked for; ids on each persona).
+            'feature_requests_used': len(feature_requests.ids),
             'source_breakdown': source_breakdown,
             'generation_time_ms': llm_time
         }

@@ -91,6 +91,7 @@ from shared import (
     document_review_routes,
     document_series,
     draft_intent,
+    feature_request_context,
     model_profile,
     persona_copy_routes,
     project_access,
@@ -664,14 +665,22 @@ def _start_avatar_assist(project_id: str, persona_id: str) -> Response:
 @app.post("/projects/<project_id>/feedback-preview")
 @tracer.capture_method
 def api_preview_feedback(project_id: str):
-    """The persona / research wizards' live "N reviews match" (``mode``: estimate | exact)."""
+    """The persona / research wizards' live "N reviews match" (``mode``: estimate | exact).
+
+    With ``include_feature_requests`` it also answers ``feature_requests_matched``: the board
+    requests the same generation would read (its boards and ``days``)."""
     body = json_object_body(app)
+    evidence = feature_request_context.evidence_options(body)
     filters = {
         **feedback_filters_from_body(body),
         'date_basis': validate_date_basis(body.get('date_basis')),
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
-    return projects.preview_feedback(project_id, filters, body.get('mode'), body.get('purpose', 'personas'))
+    preview = projects.preview_feedback(project_id, filters, body.get('mode'), body.get('purpose', 'personas'))
+    if not evidence[feature_request_context.INCLUDE_FIELD]:
+        return preview
+    return {**preview, 'feature_requests_matched': feature_request_context.matched_count(
+        evidence[feature_request_context.BOARD_IDS_FIELD], filters.get('days'))}
 
 
 @app.post("/projects/<project_id>/personas/generate")
@@ -719,6 +728,8 @@ def _start_persona_generation(project_id: str, body: dict) -> dict:
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
         # Who started it: a replace run records the personas it deletes as theirs.
         projects.REQUESTED_BY_FILTER: _delete_actor(),
+        # Feedback-board requests as a separate evidence source (opt-in, shared/feature_request_context.py).
+        **feature_request_context.evidence_options(body),
     }
     # 400 before any job row or invoke when nothing matches (F1): the job
     # would only fail with this same message after the caller had moved on.
@@ -776,6 +787,7 @@ def api_run_research(project_id: str):
         # an explicit false, null or the string "false" keeps it off.
         'use_web_search': body.get('use_web_search', True) is True,
         **_web_query_cap(body),
+        **feature_request_context.evidence_options(body),
         'filters': body,
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
@@ -929,6 +941,7 @@ def api_generate_document(project_id: str):
     # already exists.
     doc_config = {
         **body, 'doc_type': doc_type, 'title': title,
+        **feature_request_context.document_options(body),
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
     job_id = _start_document_generation(project_id, doc_config)
