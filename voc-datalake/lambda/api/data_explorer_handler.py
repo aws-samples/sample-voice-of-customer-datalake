@@ -485,6 +485,11 @@ def _unchanged_since_read(item: dict) -> ConditionBase:
     return Attr('updated_at').eq(stamp) if isinstance(stamp, str) and stamp else Attr('updated_at').not_exists()
 
 
+def _write_condition(change: CategoryChange | None) -> ConditionBase:
+    """A category move's own condition (it exists with the category read), else that it exists."""
+    return change.condition if change is not None and change.condition is not None else item_exists()
+
+
 def _update_kwargs(item: dict, key: dict, edits: FieldEdits, change: CategoryChange | None,
                    edit: ManualEdit) -> dict:
     """One conditional `update_item`: plain fields, the category move, the change stamp.
@@ -502,7 +507,7 @@ def _update_kwargs(item: dict, key: dict, edits: FieldEdits, change: CategoryCha
     return {
         'Key': key,
         'UpdateExpression': update_expression([*sets, *stamp_sets], removes),
-        'ConditionExpression': (change.condition if change is not None else item_exists()) & _unchanged_since_read(item),
+        'ConditionExpression': _write_condition(change) & _unchanged_since_read(item),
         'ExpressionAttributeNames': {**names, **stamp_names},
         'ExpressionAttributeValues': {**values, **stamp_values},
     }

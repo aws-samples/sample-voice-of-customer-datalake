@@ -23,7 +23,7 @@ as a duplicate, so a corrected spreadsheet amends its rows rather than doubling 
   stored text, enrichment and digest, as an issue refresh keeps them.
 * Stamped ``updated_by`` (the system actor: the queue applies the correction the uploader
   confirmed, and the import run records who that was), ``updated_at``, ``change_reason``
-  ``'csv_correction'``; the processor keeps the item as it was first (``keep_silver_version``).
+  ``'csv_correction'``; the processor keeps the item as it was once the update landed (``keep_silver_version``).
 * ``s3_raw_uri`` follows the newest archive and is never removed: the API writes the
   correction as a NEW object in the stored item's own folder (``shared/raw_versions.py``;
   the old version stays next to it, never overwritten), so retention still finds the

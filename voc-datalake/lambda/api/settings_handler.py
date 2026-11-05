@@ -120,7 +120,7 @@ from shared.source_profiles import (
     profile_for,
     validate_source_profiles,
 )
-from shared.timestamps import now_iso
+from shared.timestamps import now_iso, parse_iso
 from shared.url_policy import validate_url
 
 dynamodb = get_dynamodb_resource()
@@ -911,7 +911,7 @@ def _resume_reprocess(table: Any, body: dict, event: dict) -> dict | None:
     resume = reprocess_jobs.resume_point(previous)
     if resume is None:
         raise ConflictError('Only a partial job that has not been resumed yet can be resumed')
-    job_slice = reprocess_slices.slice_from_job(previous)
+    job_slice = reprocess_slices.slice_from_job(previous).pinned_at(_started_at(previous))
     try:
         return reprocess_jobs.start_job(
             table, mode=str(previous.get('mode')), days=job_slice.days or 0,
@@ -921,6 +921,11 @@ def _resume_reprocess(table: Any, body: dict, event: dict) -> dict | None:
         )
     except reprocess_jobs.ResumeRefused as e:
         raise ConflictError('This job was resumed already') from e
+
+
+def _started_at(job: dict) -> datetime:
+    """When ``job`` was created (its ``created_at``); now when that is missing or unreadable."""
+    return parse_iso(job.get('created_at')) or datetime.now(UTC)
 
 
 @app.get("/settings/categories/reprocess")

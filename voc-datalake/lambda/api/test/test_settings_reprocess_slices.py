@@ -31,10 +31,11 @@ def post(api_gateway_event, lambda_context):
     return _post
 
 
-def _partial_job(table) -> str:
+def _partial_job(table, *, days: int = 0, now: datetime | None = None) -> str:
     """A finished job that stopped at the item ceiling with a cursor."""
-    job = jobs.start_job(table, mode='raw', days=0, include_manual=True, started_by='alice', now=datetime.now(UTC),
-                         job_slice=settings_handler.reprocess_slices.ReprocessSlice(sources=('web',)))
+    job_slice = settings_handler.reprocess_slices.ReprocessSlice(sources=('web',), days=days)
+    job = jobs.start_job(table, mode='raw', days=days, include_manual=True, started_by='alice',
+                         now=now or datetime.now(UTC), job_slice=job_slice)
     assert job is not None
     jobs.claim_job(table, job['sk'], 'tok')
     jobs.finish_job(table, job['sk'], jobs.STATUS_PARTIAL, counters={'scanned': 2}, worker_token='tok',
@@ -93,6 +94,14 @@ class TestResume:
         jobs.release_lock(table, body['job']['job_id'])  # the resumer runs on; only its resume mark is under test
         response, _ = post({'resume': partial})
         assert response['statusCode'] == 409
+
+    def test_a_resumed_days_job_keeps_the_days_it_started_on(self, post, table):
+        """Counted back from the resume's own day, a days window would move and skip its first days."""
+        partial = _partial_job(table, days=30, now=datetime(2026, 10, 1, 9, tzinfo=UTC))
+        response, body = post({'resume': partial})
+        assert response['statusCode'] == 202
+        stored = jobs.get_job(table, body['job']['job_id']) or {}
+        assert (stored.get('date_from'), stored.get('date_to')) == ('2026-09-02', '2026-10-01')
 
     def test_a_cancelled_resume_can_be_resumed_again(self, post, table):
         partial = _partial_job(table)
