@@ -226,6 +226,10 @@ const MAX_COMMENT_CHARS = 60_000
 /** A path from the pull request as inline code: a backtick or a line break in the name cannot end the span. */
 const codeSpan = (name) => `\`${name.replace(/[`\r\n]/g, '')}\``
 
+// Lists of paths in the notes are bounded too, so the head can never crowd out the answers.
+const MAX_NAMES = 20
+const names = (paths) => `${paths.slice(0, MAX_NAMES).map((p) => codeSpan(p.slice(0, 200))).join(', ')}${paths.length > MAX_NAMES ? ` and ${paths.length - MAX_NAMES} more` : ''}`
+
 const findingLine = (f, suffix = '') => `  ${f.id.padEnd(4)} ${f.kind.padEnd(10)} ${f.where} — ${f.title}${suffix}`
 
 /** The recap of one pass, as plain text (it goes inside a code block): what became of the earlier findings, and what is new. */
@@ -240,7 +244,10 @@ export function recapText(entry) {
 }
 
 function verdictRow(label, result, entry, verdict) {
-  if (result.error) return `| ${label} | ⛔ not run (the Bedrock call failed; see the workflow log) | – | ${entry.stillOpen.length} | – | – |`
+  if (result.error) {
+    const carried = verdict === 'BLOCK' ? '; ❌ BLOCK carried: an open blocking finding' : ''
+    return `| ${label} | ⛔ not run (the Bedrock call failed; see the workflow log)${carried} | – | ${entry.stillOpen.length} | – | – |`
+  }
   return `| ${label} | ${VERDICT_TEXT[verdict] ?? verdict} | ${entry.resolved.length} | ${entry.stillOpen.length} | ${entry.answered.length} | ${entry.added.length} |`
 }
 
@@ -250,7 +257,11 @@ const RECAP_CHARS = 8_000
 function section(label, result, recap, chars) {
   const heading = `#### ${label}`
   if (result.error) {
-    return [heading, '', 'Not run: the Bedrock call failed (the workflow log says why). Its open findings carry over unchanged.']
+    const marks = fence(recap)
+    return [
+      heading, '', 'Not run: the Bedrock call failed (the workflow log says why). Its open findings carry over unchanged.',
+      ...(recap ? ['', `${marks}text`, recap, marks] : []),
+    ]
   }
   const output = clip(result.output.trim(), chars)
   const recapMarks = fence(recap)
@@ -279,8 +290,8 @@ export function renderComment({
   const files = `${context.included.length} repository file${context.included.length === 1 ? '' : 's'}`
   const notes = [
     ...(diffTruncated ? ['> The diff was cut to fit: this review is partial.'] : []),
-    ...(omitted.length > 0 ? [`> Not sent to the model (named like a secret, review them yourself): ${omitted.map(codeSpan).join(', ')}`] : []),
-    ...(context.skipped.length > 0 ? [`> Repository files left out for size: ${context.skipped.slice(0, 20).map(codeSpan).join(', ')}`] : []),
+    ...(omitted.length > 0 ? [`> Not sent to the model (named like a secret, review them yourself): ${names(omitted)}`] : []),
+    ...(context.skipped.length > 0 ? [`> Repository files left out for size: ${names(context.skipped)}`] : []),
     ...(dropped > 0 ? [`> ${dropped} of the oldest open findings no longer fit and were dropped from the follow-up list.`] : []),
   ]
   const links = earlierRounds.filter((r) => r.url).map((r) => `[round ${r.round}](${r.url})`)
@@ -299,7 +310,8 @@ export function renderComment({
     ...(notes.length > 0 ? ['', ...notes] : []), '',
   ].join('\n')
   // Everything but the answers is counted first: the head (marker, ledger line, table, notes) and the recaps.
-  const recaps = results.map((result) => (isFollowUp && !result.error ? clip(recapText(recap[result.kind]), RECAP_CHARS) : ''))
+  // An errored pass shows the findings it carries: they can still block.
+  const recaps = results.map((result) => (isFollowUp || result.error ? clip(recapText(recap[result.kind]), RECAP_CHARS) : ''))
   const fixed = head.length + recaps.reduce((sum, r) => sum + r.length, 0) + 1_000 * results.length
   const perSection = Math.max(1_000, Math.floor((MAX_COMMENT_CHARS - fixed) / Math.max(1, results.length)))
   const body = results.flatMap((result, i) => [...section(LABELS[result.kind], result, recaps[i], perSection), ''])

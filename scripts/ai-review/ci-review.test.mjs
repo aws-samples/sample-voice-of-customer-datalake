@@ -172,13 +172,16 @@ test('a secret-shaped path or a skipped file named by the pull request cannot br
   })
   assert.match(body, /review them yourself\): `a\.env \[x\]\(https:\/\/evil\.example\) @team> injected`$/m)
   assert.match(body, /left out for size: `b\.ts @team`$/m)
+  const many = render([], { omitted: Array.from({ length: 30 }, (_, i) => `${'d/'.repeat(150)}${i}.env`) }).body
+  assert.match(many, / and 10 more$/m)
+  assert.ok(many.length < 10_000, 'the note lists are bounded')
 })
 
 test('a review that was not run says so in the table and its section, and its open findings carry over', () => {
   const first = render([answer('tenets', VIOLATION)]).ledger
   const { body, ledger, verdicts } = render([{ kind: 'tenets', error: true }], { previous: first })
-  assert.match(body, /\| Tenets \(TENETS\.md\) \| ⛔ not run[^|]*\| – \| 1 \|/)
-  assert.match(body, /Not run: the Bedrock call failed/)
+  assert.match(body, /\| Tenets \(TENETS\.md\) \| ⛔ not run[^|]*; ❌ BLOCK carried: an open blocking finding \| – \| 1 \|/)
+  assert.match(body, /Not run: the Bedrock call failed[^\n]*\n\n```text\nStill open \(1\)\n {2}T1 /, 'the carried finding is shown')
   assert.doesNotMatch(body, /partial|named like a secret/)
   assert.deepEqual(ledger.findings.map((f) => f.id), ['T1'])
   assert.equal(verdicts.tenets, 'BLOCK', 'an outage does not clear the open VIOLATION')
