@@ -56,6 +56,12 @@ def support_key(request_id: str, support_id: str) -> dict[str, str]:
     return {'pk': f'FR#{request_id}', 'sk': f'SUP#{support_id}'}
 
 
+def supporters_of(request: Mapping[str, Any]) -> int:
+    """The request's ``totals.supporters`` (a DynamoDB number reads as a Decimal), 0 when absent."""
+    totals = request.get('totals')
+    return as_count(totals.get('supporters')) if isinstance(totals, Mapping) else 0
+
+
 def board_id_of(request: Mapping[str, Any]) -> str:
     board_id = request.get('board_id')
     return board_id if isinstance(board_id, str) and board_id else SEEDED_BOARD_ID

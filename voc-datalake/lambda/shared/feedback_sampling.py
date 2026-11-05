@@ -37,6 +37,7 @@ from shared.time_budget import WalkBudget
 from shared.usefulness import BAND_RANK, USEFULNESS_FIELD, stored_band
 
 __all__ = [
+    'INPUT_FEATURE_REQUEST_IDS_FIELD',
     'INPUT_FEEDBACK_IDS_FIELD',
     'POOL_MAX_ROWS',
     'FeedbackPool',
@@ -312,6 +313,8 @@ def fetch_full(table: Any, rows: Sequence[Mapping[str, Any]]) -> list[dict]:
 MAX_INPUT_FEEDBACK_IDS: Final = 500
 # The artefact field that holds them (persona, research report, PRD, PR/FAQ, merged document).
 INPUT_FEEDBACK_IDS_FIELD: Final = 'input_feedback_ids'
+# The board requests an artifact read (shared/feature_request_context.py writes it; retention lineage reads it).
+INPUT_FEATURE_REQUEST_IDS_FIELD: Final = 'input_feature_request_ids'
 
 
 def input_feedback_ids(items: Sequence[Mapping[str, Any]], used: int | None = None) -> list[str]:
