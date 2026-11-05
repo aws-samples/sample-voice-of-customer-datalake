@@ -42,6 +42,8 @@ export interface VocProcessingStackProps extends VocStackProps {
   agentsTable: dynamodb.Table;
   /** voc-radar — the processor routes Radar sources' reviews here; the release scan writes here (docs/radar.md). */
   radarTable: dynamodb.Table;
+  /** voc-feature-requests: only the retention worker reaches it (an erasure by email de-identifies board rows). */
+  featureRequestsTable: dynamodb.Table;
   /** The memory scanner reads assistant sessions; the extractor reads one. */
   conversationsTable: dynamodb.Table;
   /** The agent conductor re-checks a plan's approver in Cognito (docs/assistant-plan-mode.md). */
@@ -270,6 +272,7 @@ export class VocProcessingStack extends VocStack {
       aggregatesTable,
       radarTable: props.radarTable,
       projectsTable,
+      featureRequestsTable: props.featureRequestsTable,
       rawDataBucket,
     });
 

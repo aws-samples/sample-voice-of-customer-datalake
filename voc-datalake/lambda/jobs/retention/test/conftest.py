@@ -14,6 +14,7 @@ from shared.test.moto_tables import create_pk_sk_table
 BUCKET = handler.RAW_DATA_BUCKET or 'test-raw-data-bucket'
 RADAR_TABLE = handler.RADAR_TABLE or 'test-radar'
 PROJECTS_TABLE = handler.PROJECTS_TABLE or 'test-projects'
+FEATURE_REQUESTS_TABLE = handler.FEATURE_REQUESTS_TABLE or 'test-feature-requests'
 
 
 def days_ago(days: int) -> str:
@@ -29,12 +30,15 @@ def aws():
         aggregates = create_pk_sk_table(handler.AGGREGATES_TABLE, resource)
         radar = create_pk_sk_table(RADAR_TABLE, resource)
         projects = create_pk_sk_table(PROJECTS_TABLE, resource)
+        feature_requests = create_pk_sk_table(FEATURE_REQUESTS_TABLE, resource)
         with patch.object(handler, 'get_dynamodb_resource', return_value=resource), \
                 patch.object(handler, 'get_s3_client', return_value=s3), \
                 patch.object(handler, 'RAW_DATA_BUCKET', BUCKET), \
                 patch.object(handler, 'RADAR_TABLE', RADAR_TABLE), \
-                patch.object(handler, 'PROJECTS_TABLE', PROJECTS_TABLE):
-            yield {'feedback': feedback, 'aggregates': aggregates, 'radar': radar, 'projects': projects, 's3': s3}
+                patch.object(handler, 'PROJECTS_TABLE', PROJECTS_TABLE), \
+                patch.object(handler, 'FEATURE_REQUESTS_TABLE', FEATURE_REQUESTS_TABLE):
+            yield {'feedback': feedback, 'aggregates': aggregates, 'radar': radar, 'projects': projects, 's3': s3,
+                   'feature_requests': feature_requests}
 
 
 @pytest.fixture

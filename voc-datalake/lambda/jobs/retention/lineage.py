@@ -2,7 +2,9 @@
 
 Personas, research reports and documents in voc-projects record the reviews they
 read (``input_feedback_ids``) and, for a persona, the ones it cites
-(``evidence_feedback_ids``). After a run deletes items, this pass scans
+(``evidence_feedback_ids``); the board requests they read sit in ``input_feature_request_ids``
+(an erasure de-identifies a request, ``boards.py``, and tombstones it like a deleted review). After a
+run deletes or de-identifies anything, this pass scans
 voc-projects for rows carrying either list (paged, time-budgeted by the caller)
 and looks each listed id up among the tombstones of the sources the run deleted
 from (``AUDIT#tombstone#{source}``). An artifact with an erased id:
@@ -33,7 +35,10 @@ from shared.logging import logger
 from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD
 from shared.timestamps import now_iso
 
-ID_FIELDS: Final = (INPUT_FEEDBACK_IDS_FIELD, EVIDENCE_FEEDBACK_IDS_FIELD)
+# The board requests a document / persona / research result read (written by the generators, C5 of 6.01.00);
+# a request whose reporter an erasure de-identified has a tombstone under ``feature_requests`` (boards.py).
+INPUT_FEATURE_REQUEST_IDS_FIELD: Final = 'input_feature_request_ids'
+ID_FIELDS: Final = (INPUT_FEEDBACK_IDS_FIELD, EVIDENCE_FEEDBACK_IDS_FIELD, INPUT_FEATURE_REQUEST_IDS_FIELD)
 MARK_FIELD: Final = 'erased_evidence'
 PAGE_SIZE: Final = 100
 
@@ -46,10 +51,10 @@ def scan_page(projects_table: Any, cursor: Mapping[str, Any] | None) -> dict[str
     """One page of rows that carry a feedback-id list, with only the fields this pass reads."""
     kwargs: dict[str, Any] = {
         'Limit': PAGE_SIZE,
-        'FilterExpression': Attr(ID_FIELDS[0]).exists() | Attr(ID_FIELDS[1]).exists(),
-        'ProjectionExpression': '#pk, #sk, #ids, #cited, #mark',
+        'FilterExpression': Attr(ID_FIELDS[0]).exists() | Attr(ID_FIELDS[1]).exists() | Attr(ID_FIELDS[2]).exists(),
+        'ProjectionExpression': '#pk, #sk, #ids, #cited, #requests, #mark',
         'ExpressionAttributeNames': {'#pk': 'pk', '#sk': 'sk', '#ids': ID_FIELDS[0], '#cited': ID_FIELDS[1],
-                                     '#mark': MARK_FIELD},
+                                     '#requests': ID_FIELDS[2], '#mark': MARK_FIELD},
     }
     if cursor:
         kwargs['ExclusiveStartKey'] = dict(cursor)

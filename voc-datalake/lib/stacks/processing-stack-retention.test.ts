@@ -42,7 +42,7 @@ describe('voc-retention worker', () => {
   it('is handed both tables and the raw bucket, but not its own name (it re-invokes via context.function_name)', () => {
     const variables = worker().Environment.Variables;
     expect(Object.keys(variables)).toStrictEqual(expect.arrayContaining([
-      'FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'RADAR_TABLE', 'PROJECTS_TABLE',
+      'FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'RADAR_TABLE', 'PROJECTS_TABLE', 'FEATURE_REQUESTS_TABLE',
     ]));
     expect(variables).not.toHaveProperty('RETENTION_FUNCTION');
   });
@@ -70,6 +70,11 @@ describe('voc-retention worker', () => {
 
   it('holds exactly Scan/UpdateItem on projects — it marks artifacts, never deletes or puts', () => {
     expect(allowedActions(statements(), 'dynamodb:', 'Projects')).toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
+  });
+
+  it('holds exactly Scan/UpdateItem on feature requests — it de-identifies board rows, never deletes or puts', () => {
+    expect(allowedActions(statements(), 'dynamodb:', 'FeatureRequests'))
+      .toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
   });
 
   it('deletes objects and versions under raw/* only, and lists versions of raw/ only', () => {

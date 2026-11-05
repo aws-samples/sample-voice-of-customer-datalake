@@ -32,6 +32,9 @@ MAX_REVIEW_FILES: Final = 200
 
 # The counters a run keeps and carries across hand-overs (audit row, result).
 COUNTERS: Final = ('scanned', *ERASURE_JOB_COUNTERS)
+# Board rows (requests, +1s) an erasure by email de-identified (boards.py): carried like the others, and
+# written on the job and audit rows only once it is above 0 (a run without boards reads as before).
+BOARD_COUNTER: Final = 'board_items_deidentified'
 _CARRIED_LISTS: Final = ('erased_sources', 'review_files')
 _AUDIT_OPTIONAL: Final = ('job_id', 'field', 'source', 'value_hash', 'cutoffs', 'legal_basis', 'legal_bases',
                           'erased_sources')
@@ -46,7 +49,7 @@ def new_run(event: Mapping[str, Any], mode: str) -> dict[str, Any]:
         'run_id': carried.get('run_id') or uuid.uuid4().hex[:12],
         'started_at': carried.get('started_at') or now_iso(),
         'generation': int(carried.get('generation', 0)),
-        **{counter: int(carried.get(counter, 0)) for counter in COUNTERS},
+        **{counter: int(carried.get(counter, 0)) for counter in COUNTERS}, **board_count(carried),
     }
     for name in _CARRIED_LISTS:
         values = carried.get(name)
@@ -59,10 +62,16 @@ def carried_state(run: Mapping[str, Any]) -> dict[str, Any]:
     """What a hand-over passes on (the next generation re-reads its job row and profiles)."""
     return {
         'run_id': run['run_id'], 'started_at': run['started_at'], 'generation': run['generation'] + 1,
-        **{counter: run[counter] for counter in COUNTERS},
+        **{counter: run[counter] for counter in COUNTERS}, **board_count(run),
         **{name: list(run[name]) for name in _CARRIED_LISTS},
         'review_files_more': run['review_files_more'],
     }
+
+
+def board_count(run: Mapping[str, Any]) -> dict[str, int]:
+    """``{BOARD_COUNTER: n}`` when the run de-identified board rows, else {}."""
+    count = int(run.get(BOARD_COUNTER) or 0)
+    return {BOARD_COUNTER: count} if count else {}
 
 
 def note_erased_source(run: dict[str, Any], source: str) -> None:
@@ -95,7 +104,7 @@ def write_audit(aggregates_table: Any, run: Mapping[str, Any], status: str, erro
     review = files_needing_review(run)
     item = {
         'pk': AUDIT_PK, 'sk': f"{now}#{run['run_id']}", 'run_id': run['run_id'], 'mode': run['mode'],
-        'status': status, **{counter: run[counter] for counter in COUNTERS},
+        'status': status, **{counter: run[counter] for counter in COUNTERS}, **board_count(run),
         'started_at': run['started_at'], 'finished_at': now,
         **{key: run[key] for key in _AUDIT_OPTIONAL if run.get(key)},
         **({'files_needing_review': review} if review else {}),
@@ -128,8 +137,9 @@ def claim_erasure_job(aggregates_table: Any, job_id: str) -> dict[str, Any] | No
 
 def _counter_sets(run: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     """``SET`` clauses and values for the job's moving counters."""
-    clauses = ', '.join(f'{counter} = :{counter}' for counter in ERASURE_JOB_COUNTERS)
-    return clauses, {f':{counter}': run[counter] for counter in ERASURE_JOB_COUNTERS}
+    counts = {**{counter: run[counter] for counter in ERASURE_JOB_COUNTERS}, **board_count(run)}
+    clauses = ', '.join(f'{counter} = :{counter}' for counter in counts)
+    return clauses, {f':{counter}': value for counter, value in counts.items()}
 
 
 def finish_erasure_job(aggregates_table: Any, run: Mapping[str, Any], status: str, error: str | None = None) -> None:
@@ -161,7 +171,7 @@ def record_progress(aggregates_table: Any, run: dict[str, Any], phase: str) -> N
     """
     if not run.get('job_id'):
         return
-    counts = (*(run[counter] for counter in ERASURE_JOB_COUNTERS), phase)
+    counts = (*(run[counter] for counter in ERASURE_JOB_COUNTERS), run.get(BOARD_COUNTER), phase)
     last = run.get('_progress')
     if isinstance(last, tuple) and last[0] == counts \
             and time.monotonic() - last[1] < PROGRESS_EVERY_SECONDS:
