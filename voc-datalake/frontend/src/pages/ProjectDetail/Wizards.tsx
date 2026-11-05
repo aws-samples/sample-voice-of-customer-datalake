@@ -138,7 +138,7 @@ export function PersonaWizard({
       // sequence, since this is exactly where someone would look for "use my
       // research".
       hideDataSources={PERSONA_HIDDEN_DATA_SOURCES}
-      // Board requests are a project generation's evidence (C5); the company library has no such route.
+      // Board requests are a project generation's evidence; the company library has no such route.
       offerFeatureRequests={projectId !== undefined}
       // Generation samples the matching feedback: say how much matches while the filters are chosen.
       feedbackStepFooter={projectId

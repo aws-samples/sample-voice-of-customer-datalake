@@ -1,5 +1,5 @@
 /**
- * @fileoverview Feedback-board requests as a wizard evidence source (contract C5): the boards a
+ * @fileoverview Feedback-board requests as a wizard evidence source: the boards a
  * person may pick from (the board pages' own cached listing, archived boards left out) and the fields
  * a generation request carries for them. Requests stay their own source: they are never added to the
  * review filters or counts.

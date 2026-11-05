@@ -1,5 +1,5 @@
 /**
- * Feedback-board requests as evidence (C5): the persona, research and PRD / PR/FAQ requests carry
+ * Feedback-board requests as evidence: the persona, research and PRD / PR/FAQ requests carry
  * them only when the box is ticked (`include_feature_requests` + `feature_request_board_ids`;
  * documents: `data_sources.feature_requests` + top-level ids), and an unticked wizard sends the
  * same body as before.

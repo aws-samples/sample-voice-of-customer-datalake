@@ -1,5 +1,5 @@
 /**
- * @fileoverview The feedback-board requests behind a generated persona or document (C5), beside its
+ * @fileoverview The feedback-board requests behind a generated persona or document, beside its
  * reviews: "and N feature requests" (or "Written from N feature requests" when it read no review),
  * a "Show requests" toggle in the corpus line, and — beside the line, never inside its paragraph —
  * the requests as links that open each on its board.

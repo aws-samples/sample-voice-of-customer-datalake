@@ -20,10 +20,8 @@ import { INSIGHTS_VIEW_PARAMS } from './useInsights'
 
 const TAB_PARAM = 'tab'
 type PageTab = 'boards' | 'insights'
-const TABS: ReadonlyArray<{ id: PageTab; icon: LucideIcon }> = [
-  { id: 'boards', icon: LayoutGrid },
-  { id: 'insights', icon: BarChart3 },
-]
+const PAGE_TABS: readonly PageTab[] = ['boards', 'insights']
+const TAB_ICONS: Readonly<Record<PageTab, LucideIcon>> = { boards: LayoutGrid, insights: BarChart3 }
 
 /** The tab in the URL (anything else is Boards) and its setter; leaving Insights drops its view parameters. */
 function usePageTab(): readonly [PageTab, (tab: PageTab) => void] {
@@ -43,16 +41,19 @@ function usePageTab(): readonly [PageTab, (tab: PageTab) => void] {
 
 function PageTabs({ active, onChange }: Readonly<{ active: PageTab; onChange: (tab: PageTab) => void }>) {
   const { t } = useTranslation('featureRequests')
-  const label = (id: PageTab) => (id === 'boards' ? t('tabs.boards') : t('tabs.insights'))
   return (
     <div className="tabs-rail overflow-x-auto">
       <div className="tabs-track" role="tablist" aria-label={t('page.title')}>
-        {TABS.map((def) => (
-          <button key={def.id} type="button" role="tab" aria-selected={active === def.id}
-            onClick={() => onChange(def.id)} className={clsx('tab', active === def.id && 'tab-active')}>
-            <def.icon size={14} aria-hidden="true" />{label(def.id)}
-          </button>
-        ))}
+        {PAGE_TABS.map((id) => {
+          const Icon = TAB_ICONS[id]
+          return (
+            <button key={id} type="button" role="tab" aria-selected={active === id} onClick={() => onChange(id)}
+              className={clsx('tab', active === id && 'tab-active')}>
+              <Icon size={14} aria-hidden="true" />
+              {id === 'boards' ? t('tabs.boards') : t('tabs.insights')}
+            </button>
+          )
+        })}
       </div>
     </div>
   )

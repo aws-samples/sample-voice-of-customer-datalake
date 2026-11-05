@@ -1,5 +1,5 @@
 /**
- * @fileoverview The wizards' board-request count (contract C5): read from the boards' Insights totals
+ * @fileoverview The wizards' board-request count: read from the boards' Insights totals
  * (the feedback preview does not count them), one read per picked board or one for every board,
  * summed, "at least" when a board was truncated, and nothing at all when unticked or unreadable.
  */

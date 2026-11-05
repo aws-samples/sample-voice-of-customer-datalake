@@ -5,20 +5,13 @@
  *
  * @module components/DataSourceWizard/FeatureRequestsSource
  */
-import clsx from 'clsx'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useEvidenceBoards } from './featureRequestEvidence'
+import { FilterChip } from './FilterChip'
+import { toggleArrayItem } from './filterChipState'
 import { MAX_EVIDENCE_BOARDS } from './types'
 import type { ContextConfig } from './types'
-
-const SELECTED = 'bg-accent-subtle border-accent text-accent-text'
-const UNSELECTED = 'bg-bg-elevated border-border'
-
-function toggle(ids: readonly string[], id: string): string[] {
-  if (ids.includes(id)) return ids.filter((candidate) => candidate !== id)
-  return ids.length >= MAX_EVIDENCE_BOARDS ? [...ids] : [...ids, id]
-}
 
 function BoardPicker({ selected, onChange }: Readonly<{ selected: readonly string[]; onChange: (ids: string[]) => void }>) {
   const { t } = useTranslation('components')
@@ -37,11 +30,10 @@ function BoardPicker({ selected, onChange }: Readonly<{ selected: readonly strin
       <p className="text-xs text-muted">{t('dataSourceWizard.featureRequests.boardsHint')}</p>
       <div className="flex flex-wrap gap-2" role="group" aria-label={t('dataSourceWizard.featureRequests.boards')}>
         {boards.map((board) => (
-          <button key={board.board_id} type="button" aria-pressed={selected.includes(board.board_id)}
-            onClick={() => onChange(toggle(selected, board.board_id))}
-            className={clsx('px-3 py-1.5 rounded-lg border text-sm break-words text-left', selected.includes(board.board_id) ? SELECTED : UNSELECTED)}>
+          <FilterChip key={board.board_id} pressed={selected.includes(board.board_id)} className="px-3 py-1.5 text-sm break-words text-left"
+            onToggle={() => onChange(toggleArrayItem(selected, board.board_id, MAX_EVIDENCE_BOARDS))}>
             {board.name}
-          </button>
+          </FilterChip>
         ))}
       </div>
     </div>

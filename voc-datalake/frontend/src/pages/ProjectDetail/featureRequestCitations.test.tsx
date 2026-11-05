@@ -1,5 +1,5 @@
 /**
- * Feedback-board requests behind a persona or document (C5): their ids read from the artefact,
+ * Feedback-board requests behind a persona or document: their ids read from the artefact,
  * `[FR:<id>]` citations linked to the request, and the corpus line counting them apart from reviews.
  */
 import { describe, expect, it } from 'vitest'
