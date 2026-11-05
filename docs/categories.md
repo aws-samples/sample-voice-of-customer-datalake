@@ -218,7 +218,7 @@ before the band existed ([data quality](data-quality.md#backfill-optional-field-
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/settings/categories/reprocess` | Start: `{mode: 'processed'\|'raw', days: 0–9999 (0 = all), include_manual?: false}` → 202 `{job}`; 409 while one is queued/running |
+| POST | `/settings/categories/reprocess` | Start: `{mode: 'processed'\|'raw'\|'dimensions', include_manual?: false, sources?, categories?, days \| date_from/date_to, date_basis?}` (the slice, below) → 202 `{job}`; or `{resume: <job_id>}` to continue a partial job; 400 for a malformed slice, 404 / 409 for a resume that is unknown / not partial or resumed already; 409 while a job is queued/running |
 | GET | `/settings/categories/reprocess` | Latest job (`{job: Job \| null}`) |
 | POST | `/settings/categories/reprocess/{job_id}/cancel` | Cancel |
 
@@ -229,6 +229,53 @@ Modes:
 - **`raw`** — reload the original from `s3_raw_uri` and re-run the full enrichment
   (language, translation, sentiment, one full model call). Costlier; use it when the
   enrichment itself should be redone.
+- **`dimensions`** — re-infer the AI-sourced dimensions only (one small model call);
+  values set by the source, its profile or a person are kept.
+
+### Reprocessing a slice
+
+A job replays a slice of the stored reviews (TENETS.md D3), never more:
+
+| Field | Meaning |
+|---|---|
+| `sources` | Up to 50 source ids (`source_platform`). The worker reads only those sources' partitions (a Query per source, no table scan). Absent = every source. |
+| `categories` | Up to 50 STORED category names, including ones no longer configured (the usual reason to reprocess). Absent = every category. |
+| `days` | The platform window, 0 = all time. |
+| `date_from` / `date_to` | `YYYY-MM-DD`, inclusive; either end may be left open. Mutually exclusive with `days` (400 when both). |
+| `date_basis` | `processed` (default: the item's `date`, when it was processed) or `review` (`source_created_at`, when the customer wrote it; a review without one uses its processed date, like every review-basis read). |
+
+Reviews outside the slice are read past and not counted. A job that reaches the per-job
+ceiling (50,000 reviews, `MAX_REPROCESS_ITEMS`) ends `partial` with a `resume_from` cursor
+(the last review it finished); `POST /settings/categories/reprocess {resume: <job_id>}`
+starts a new job with the same mode, `include_manual` and slice at that cursor, so it
+never restarts from the top. The new job carries `resumed_from`, the partial one
+`resumed_by`, and a partial job can be resumed once. Administration → Taxonomy shows the
+slice, and a **Resume** button on a partial job.
+
+### What a reprocess records
+
+- **The previous version.** Before each in-place update the review as it was is kept
+  under `silver/{source}/{feedback_id}/` in the raw bucket (`keep_silver_version`, reason
+  `reprocess`, actor the admin who started the job); see
+  [data lake structure](data-lake-structure.md). A review the job leaves unchanged keeps no copy.
+- **How the review was re-derived.** The update stamps `pipeline_version`,
+  `enrichment_mode` (`reprocess_processed` / `reprocess_raw` / `reprocess_dimensions`),
+  `enriched_at` and `llm_metadata` with the model that ANSWERED the re-classification (after a
+  capacity fallback it differs from `requested_model`) and the prompt version, plus
+  `updated_by {sub, kind: 'admin'}`, `updated_at` and `change_reason: 'reprocess'`. A
+  band-only update (the usefulness backfill) carries the change stamps but no new provenance.
+- **The configuration it derived with.** The job row's `config` holds `config_version`,
+  `categories_sha16` (the first 16 hex of the categories config's sha256), the enrichment
+  model id and the prompt version. A hand-over that derives with another configuration keeps
+  the first and sets `config_changed` with `last_config`.
+- **What raw mode could not replay.** `raw_fallback` counts the reviews with no readable
+  archived raw item, replayed from their stored text instead, and `raw_fallback_sources`
+  names their sources. CSV and JSON uploads, pasted imports and the S3 import archive whole
+  files rather than one raw item per review, so their reviews always fall back; a
+  summary-only source's stored text is its summary.
+- **Summary-only sources.** Raw mode never writes `normalized_text` or
+  `direct_customer_quote` back on a summary-only review (it removes them), matching what the
+  processor stores for such a source ([source policies](source-policies.md)).
 
 Reviews corrected by a person (`category_source='manual'`) are skipped unless
 `include_manual` is set. Items are always updated in place — never deleted, never
@@ -238,12 +285,14 @@ The work runs in the `voc-category-reprocess` worker (VocProcessingStack, 15-min
 timeout): it scans `voc-feedback` page by page, checkpoints counters and its cursor
 on the job row (`pk=JOB#category_reprocess`, `sk=rp_<12 hex>`) every page, honours
 cancel between pages, and re-invokes itself before it runs out of time. Job fields:
-`job_id, status (queued|running|completed|failed|cancelled), mode, days, include_manual,
-scanned, updated, unchanged, skipped_manual, failed, started_by, created_at, updated_at,
+`job_id, status (queued|running|completed|partial|failed|cancelled), mode, days, include_manual,
+scanned, updated, unchanged, skipped_manual, failed, raw_fallback, raw_fallback_sources,
+sources?, categories?, date_from?, date_to?, date_basis, started_by, created_at, updated_at,
+stopped_at_ceiling, resumable, resumed_from?, resumed_by?, config, config_changed,
 finished_at?, error?`.
 
-The worker's role: Scan/GetItem/UpdateItem on feedback, GetItem/PutItem/UpdateItem/Query
-on aggregates, read on `raw/*`, Bedrock (model allowlist), Comprehend, Translate, KMS,
+The worker's role: Scan/Query/GetItem/UpdateItem on feedback, GetItem/PutItem/UpdateItem/Query
+on aggregates, read on `raw/*`, put on `silver/*` (the kept versions), Bedrock (model allowlist), Comprehend, Translate, KMS,
 and invoke on itself only. The settings Lambda receives its name as
 `CATEGORY_REPROCESS_FUNCTION` and may invoke exactly that function.
 

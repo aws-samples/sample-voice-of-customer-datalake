@@ -247,9 +247,20 @@ inside the *same* `TransactWriteItems` as its counters:
 A **reversal** (`REMOVE`, and the decrement half of a `MODIFY`) is *not* transacted, by design.
 Every decrement is a conditional write (`attribute_exists(pk) AND #field >= :floor`) whose refusal
 the code reads to decide what to do next, while `TransactWriteItems` reports no per-item outcome:
-one refused item cancels the whole transaction. So a redelivered reversal still decrements a second
-time, bounded by that floor: no counter goes negative and no expired row is recreated.
-`AggregateRecordReplayed` in CloudWatch counts the arrivals the claim refused.
+one refused item cancels the whole transaction. Since 6.03.00 a reversal is claimed once all the
+same, by a claim that is not a transaction participant (`shared/stream_claims.py`):
+
+- Before its writes, the reversal puts `aggregator#reversal#{eventID}` in the idempotency table
+  (conditional, 48-hour expiry). Refused = an earlier delivery reversed this record, and the
+  redelivery writes nothing.
+- When the writes fail, the claim is released (`claim_state: released`), so the stream's retry runs
+  the record again as before.
+- A run of `REMOVE`s claims each record before the joint writes and releases the ones that failed.
+- Residuals, in the "a missed `-1` beats a second `-1`" direction: a function that dies between its
+  claim and its writes (a timeout) leaves the claim, and the retry skips that reversal; a claim that
+  cannot be written at all fails open (the reversal runs unclaimed, bounded by the floor as before).
+
+`AggregateRecordReplayed` in CloudWatch counts the arrivals and the reversals a claim refused.
 
 A **run of consecutive `REMOVE` records** in one batch (a bulk delete) is reversed together: one
 conditional `update_item` per distinct counter (`-n` under `#field >= n`) and one per day for the
