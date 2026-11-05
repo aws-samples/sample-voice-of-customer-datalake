@@ -26,8 +26,35 @@ def tables():
         aggregates = create_pk_sk_table(handler.AGGREGATES_TABLE, resource)
         aggregates.put_item(Item={'pk': 'SETTINGS#categories', 'sk': 'config', 'categories': CATEGORIES})
         with patch('jobs.category_reprocess.handler.get_dynamodb_resource', return_value=resource), \
-             patch('shared.categorization.get_active_model_id', return_value='test-model'):
+             patch('shared.categorization.get_active_model_id', return_value='test-model'), \
+             patch('shared.reprocess_lineage.get_active_model_id', return_value='test-model'):
             yield {'feedback': feedback, 'aggregates': aggregates}
+
+
+@pytest.fixture(autouse=True)
+def kept_versions():
+    """``keep_silver_version`` as a mock: every suite here sees the calls, none writes S3."""
+    mock = MagicMock(return_value=None)
+    with patch.object(handler.silver_provenance, 'keep_silver_version', mock):
+        yield mock
+
+
+@pytest.fixture(autouse=True)
+def answers_through_the_categorization_converse():
+    """The recorder's ``converse_detailed`` answers through ``shared.categorization.converse``.
+
+    So every suite's patch of that name keeps deciding the answer; the answering model
+    reported is the requested one.
+    """
+    from shared import categorization
+    from shared.converse import ConverseResult
+
+    def detailed(**kwargs):
+        text = categorization.converse(**kwargs)
+        return ConverseResult(text=text, model_id=kwargs.get('model_id'), requested_model_id=kwargs.get('model_id'))
+
+    with patch('shared.reprocess_lineage.converse_detailed', side_effect=detailed):
+        yield
 
 
 @pytest.fixture

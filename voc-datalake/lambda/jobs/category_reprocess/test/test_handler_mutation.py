@@ -50,6 +50,7 @@ from jobs.category_reprocess.handler import (
 from shared import reprocess_jobs as jobs
 from shared.categorization import Enrichment
 from shared.converse import BedrockThrottlingError
+from shared.reprocess_slices import ReprocessSlice, read_filter
 
 HANDLER_PATH = Path(handler.__file__)
 ENV_SETTINGS = (
@@ -167,21 +168,17 @@ class TestScanPageAsksForExactlyOnePage:
     def test_all_time_without_cursor(self):
         table = MagicMock()
         table.scan.return_value = {'Items': []}
-        assert scan_page(table, None, None) == {'Items': []}
-        table.scan.assert_called_once_with(
-            Limit=25,
-            FilterExpression='begins_with(sk, :feedback)',
-            ExpressionAttributeValues={':feedback': 'FEEDBACK#'},
-        )
+        whole = ReprocessSlice()
+        assert scan_page(table, None, whole, (None, None)) == {'Items': []}
+        table.scan.assert_called_once_with(Limit=25, FilterExpression=read_filter(whole, (None, None)))
 
     def test_window_and_cursor(self):
         table = MagicMock()
-        scan_page(table, {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#a'}, '2026-02-09')
+        window = ('2026-02-09', None)
+        scan_page(table, {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#a'}, ReprocessSlice(days=30), window)
         table.scan.assert_called_once_with(
             Limit=25,
-            FilterExpression='begins_with(sk, :feedback) AND #date >= :cutoff',
-            ExpressionAttributeNames={'#date': 'date'},
-            ExpressionAttributeValues={':feedback': 'FEEDBACK#', ':cutoff': '2026-02-09'},
+            FilterExpression=read_filter(ReprocessSlice(days=30), window),
             ExclusiveStartKey={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#a'},
         )
 
@@ -209,7 +206,7 @@ class TestThrottleRestartBudget:
     def test_the_third_restart_still_hands_over(self, tables, throttled, worker_context, invoke_mock):
         result = run_job({'job_id': throttled['sk'], 'throttle_restarts': 2}, worker_context)
         assert result == {'status': 'continued', 'scanned': 0, 'updated': 0, 'unchanged': 0,
-                          'skipped_manual': 0, 'failed': 0}
+                          'skipped_manual': 0, 'failed': 0, 'raw_fallback': 0, 'raw_fallback_sources': []}
         stored = jobs.get_job(tables['aggregates'], throttled['sk'])
         assert stored is not None
         invoke_mock.assert_called_once_with(
@@ -274,7 +271,7 @@ class TestProcessedModeClassifierInput:
         }
         classify.assert_called_once_with(
             {'text': 'stored text', 'source_platform': 'web', 'source_channel': 'reviews', 'rating': 2},
-            'translated text', CATEGORIES,
+            'translated text', CATEGORIES, converse_fn=None,
         )
 
     def test_missing_fields_default(self, classify: MagicMock):
@@ -282,7 +279,7 @@ class TestProcessedModeClassifierInput:
         processed_attributes(item, CATEGORIES)
         classify.assert_called_once_with(
             {'text': '', 'source_platform': 'unknown', 'source_channel': 'unknown', 'rating': None},
-            'translated text', CATEGORIES,
+            'translated text', CATEGORIES, converse_fn=None,
         )
 
     def test_the_original_text_is_the_fallback(self, classify: MagicMock):
@@ -467,6 +464,11 @@ def _counters(**outcome: int) -> dict:
     return {**dict.fromkeys(jobs.COUNTERS, 0), **outcome}
 
 
+def _result(**outcome: int) -> dict:
+    """An invocation result's counters: the outcomes plus the raw-fallback progress."""
+    return {**_counters(**outcome), 'raw_fallback': 0, 'raw_fallback_sources': []}
+
+
 class TestReprocessItemOutcomes:
     """Every outcome lands in ``scanned`` plus exactly one counter, and only
     ``updated`` writes. Table and classifiers are doubles so each path is exact."""
@@ -476,6 +478,8 @@ class TestReprocessItemOutcomes:
     # What is written: the classification plus the band of the stored text ('stored text': low).
     WRITTEN: ClassVar[dict] = {**NEW, 'usefulness': 'low'}
 
+    RAW_INPUT: ClassVar[dict] = {'text': 'archived text'}
+
     @pytest.fixture
     def doubles(self):
         table = MagicMock()
@@ -483,8 +487,18 @@ class TestReprocessItemOutcomes:
         raw = MagicMock(return_value=dict(self.NEW))
         with patch.object(handler, 'processed_attributes', processed), \
                 patch.object(handler, 'raw_attributes', raw), \
+                patch.object(handler, 'raw_input_for', return_value=(self.RAW_INPUT, True)), \
                 patch.object(handler, 'now_iso', return_value=self.NOW):
             yield table, processed, raw
+
+    @classmethod
+    def _stamped(cls, attributes: dict, mode: str = 'processed') -> dict:
+        """``attributes`` with the provenance + change stamps the job's (unnamed) admin writes."""
+        return {**attributes, **handler.enrichment_stamps(mode, handler.job_actor({}), cls.NOW, None)}
+
+    @classmethod
+    def _band_stamps(cls) -> dict:
+        return handler.change_stamps(handler.job_actor({}), cls.NOW)
 
     @staticmethod
     def _run(doubles, item: dict, **job) -> dict:
@@ -511,7 +525,7 @@ class TestReprocessItemOutcomes:
         item = _item(category_source='manual')
         counters = self._run(doubles, item, include_manual=True)
         assert counters == _counters(scanned=1, updated=1)
-        table.update_item.assert_called_once_with(**build_update(item, self.WRITTEN, True, self.NOW))
+        table.update_item.assert_called_once_with(**build_update(item, self._stamped(self.WRITTEN), True, self.NOW))
         assert ':manual' not in table.update_item.call_args.kwargs['ExpressionAttributeValues']
 
     def test_processed_mode_classifies_and_updates_in_place(self, doubles):
@@ -519,18 +533,19 @@ class TestReprocessItemOutcomes:
         item = _item()
         counters = self._run(doubles, item)
         assert counters == _counters(scanned=1, updated=1)
-        processed.assert_called_once_with(item, CATEGORIES)
+        assert processed.call_args.args == (item, CATEGORIES, processed.call_args.args[2])
         raw.assert_not_called()
-        table.update_item.assert_called_once_with(**build_update(item, self.WRITTEN, False, self.NOW))
+        table.update_item.assert_called_once_with(**build_update(item, self._stamped(self.WRITTEN), False, self.NOW))
 
     def test_raw_mode_re_enriches(self, doubles):
         table, processed, raw = doubles
         item = _item()
         counters = self._run(doubles, item, mode='raw')
         assert counters == _counters(scanned=1, updated=1)
-        raw.assert_called_once_with(item, CATEGORIES)
+        raw.assert_called_once_with(item, CATEGORIES, self.RAW_INPUT)
         processed.assert_not_called()
-        table.update_item.assert_called_once_with(**build_update(item, self.WRITTEN, False, self.NOW))
+        table.update_item.assert_called_once_with(
+            **build_update(item, self._stamped(self.WRITTEN, 'raw'), False, self.NOW))
 
     def test_raw_mode_never_short_circuits_on_an_unchanged_category(self, doubles):
         table, _processed, _raw = doubles
@@ -551,7 +566,7 @@ class TestReprocessItemOutcomes:
         item = _item(category='shipping', subcategory='late', **({'pii_policy': pii_policy} if pii_policy else {}))
         counters = self._run(doubles, item)
         assert counters == _counters(scanned=1, updated=1)
-        table.update_item.assert_called_once_with(**build_usefulness_update(item, 'low'))
+        table.update_item.assert_called_once_with(**build_usefulness_update(item, 'low', self._band_stamps()))
 
     def test_a_summary_only_review_keeps_its_band_when_its_category_stays(self, doubles):
         # The stored text is the summary ('stored text' rates low); the ingestion band holds.
@@ -567,7 +582,7 @@ class TestReprocessItemOutcomes:
         counters = self._run(doubles, item)
         assert counters == _counters(scanned=1, updated=1)
         table.update_item.assert_called_once_with(
-            **build_update(item, {**self.NEW, 'usefulness': 'high'}, False, self.NOW))
+            **build_update(item, self._stamped({**self.NEW, 'usefulness': 'high'}), False, self.NOW))
 
     def test_the_classifier_answer_is_not_mutated(self, doubles):
         _table, processed, _raw = doubles
@@ -687,7 +702,7 @@ class TestTheScanResumesFromTheEventCursorFirst:
         if event_cursor is not None:
             event['cursor'] = event_cursor
         assert run_job(event, worker_context)['status'] == 'completed'
-        scan.assert_called_once_with(tables['feedback'], expected, None)
+        scan.assert_called_once_with(tables['feedback'], expected, ReprocessSlice(), (None, None))
 
 
 
@@ -705,7 +720,7 @@ class TestHandOverEvents:
         job = _two_reviews_and_a_job(tables, start_job)
         worker_context.get_remaining_time_in_millis.side_effect = [900_000, 1_000]
         result = run_job({'job_id': job['sk'], 'throttle_restarts': 2}, worker_context)
-        assert result == {'status': 'continued', **_counters(scanned=1, updated=1)}
+        assert result == {'status': 'continued', **_result(scanned=1, updated=1)}
         stored = jobs.get_job(tables['aggregates'], job['sk'])
         assert stored is not None
         [(name, event)] = [c.args for c in invoke_mock.call_args_list]
@@ -720,7 +735,7 @@ class TestHandOverEvents:
         tables['feedback'].put_item(Item=_item())
         job = start_job()
         worker_context.get_remaining_time_in_millis.return_value = 1_000
-        assert run_job({'job_id': job['sk']}, worker_context) == {'status': 'continued', **_counters()}
+        assert run_job({'job_id': job['sk']}, worker_context) == {'status': 'continued', **_result()}
         event = invoke_mock.call_args.args[1]
         assert 'cursor' not in event
         assert set(event) == {'job_id', 'throttle_restarts', 'worker_token'}
@@ -731,7 +746,7 @@ class TestHandOverEvents:
         job = _two_reviews_and_a_job(tables, start_job)
         converse_mock.side_effect = ['{"category": "shipping", "subcategory": "late"}', BedrockThrottlingError('slow')]
         result = run_job({'job_id': job['sk'], 'throttle_restarts': 2}, worker_context)
-        assert result == {'status': 'continued', **_counters(scanned=1, updated=1)}
+        assert result == {'status': 'continued', **_result(scanned=1, updated=1)}
         assert invoke_mock.call_args.args[1]['throttle_restarts'] == 1
 
     def test_a_cancel_racing_the_hand_over_checkpoint_stops_without_invoking(
@@ -758,8 +773,8 @@ class TestSparseJobRowsFallBack:
         tables['aggregates'].put_item(Item={'pk': jobs.JOB_PK, 'sk': self.JOB_ID, 'status': 'queued', 'mode': 'processed'})
         with patch.object(handler, 'scan_page', wraps=handler.scan_page) as scan:
             result = run_job({'job_id': self.JOB_ID}, worker_context)
-        assert result == {'status': 'completed', **_counters(scanned=1, updated=1)}
-        scan.assert_called_once_with(tables['feedback'], None, None)
+        assert result == {'status': 'completed', **_result(scanned=1, updated=1)}
+        scan.assert_called_once_with(tables['feedback'], None, ReprocessSlice(), (None, None))
 
 
 @pytest.mark.usefixtures('converse_mock', 'invoke_mock')
@@ -769,7 +784,7 @@ class TestCompletionCeilingAndCancellationAreObservable:
         job = start_job()
         with patch.object(handler, 'metrics') as metrics_mock, patch.object(handler, 'logger') as logger_mock:
             result = run_job({'job_id': job['sk']}, worker_context)
-        assert result == {'status': 'completed', **_counters(scanned=1, updated=1)}
+        assert result == {'status': 'completed', **_result(scanned=1, updated=1)}
         metrics_mock.add_metric.assert_called_once_with(name='CategoryReprocessCompleted', unit='Count', value=1)
         logger_mock.warning.assert_not_called()
         logger_mock.error.assert_not_called()
@@ -781,13 +796,13 @@ class TestCompletionCeilingAndCancellationAreObservable:
         with patch.object(jobs, 'MAX_REPROCESS_ITEMS', 1), patch.object(handler, 'metrics') as metrics_mock, \
                 patch.object(handler, 'logger') as logger_mock:
             result = run_job({'job_id': job['sk']}, worker_context)
-        assert result == {'status': 'completed', 'stopped_at_ceiling': True, **_counters(scanned=1, updated=1)}
+        assert result == {'status': 'partial', 'stopped_at_ceiling': True, **_result(scanned=1, updated=1)}
         logger_mock.warning.assert_called_once_with('Reprocess job reached its item ceiling', extra={'job_id': job['sk']})
         metrics_mock.add_metric.assert_called_once_with(
             name='CategoryReprocessStoppedAtCeiling', unit='Count', value=1,
         )
         view = jobs.job_view(jobs.get_job(tables['aggregates'], job['sk']) or {})
-        assert view['status'] == 'completed'
+        assert view['status'] == 'partial'
         assert view['stopped_at_ceiling'] is True
 
     @pytest.mark.parametrize(('items', 'ceiling', 'scanned'), [(2, 2, 2), (3, 2, 2), (1, 2, 1)])

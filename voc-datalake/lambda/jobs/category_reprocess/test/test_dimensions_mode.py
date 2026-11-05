@@ -55,9 +55,12 @@ def test_unchanged_dimensions_still_backfill_a_missing_usefulness_band():
     counters, table = _run(item, {'product': 'app'})
     assert counters['updated'] == 1
     kwargs = table.update_item.call_args.kwargs
-    assert kwargs['UpdateExpression'] == 'SET #a0 = :v0'
-    assert kwargs['ExpressionAttributeNames']['#a0'] == 'usefulness'
+    # The band, then the change stamps (no new provenance: no model re-derived anything).
+    assert kwargs['UpdateExpression'] == 'SET #a0 = :v0, #a1 = :v1, #a2 = :v2, #a3 = :v3'
+    names = kwargs['ExpressionAttributeNames']
+    assert [names[f'#a{i}'] for i in range(4)] == ['usefulness', 'updated_by', 'updated_at', 'change_reason']
     assert kwargs['ExpressionAttributeValues'][':v0'] == 'medium'
+    assert kwargs['ExpressionAttributeValues'][':v3'] == 'reprocess'
     assert 'attribute_not_exists(#use_now)' in kwargs['ConditionExpression']
 
 
