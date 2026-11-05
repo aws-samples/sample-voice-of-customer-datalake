@@ -110,6 +110,7 @@ def test_a_newer_edit_wins_over_an_older_job(world, lambda_context):
     with _model():
         assert enrich.enrich_request(world.requests, read, []) == 'changed'
     assert 'enrichment' not in require_request(world.requests, request_id)
+    assert _versions(world, request_id) == []  # a refused result keeps no version either
 
 
 def test_an_edit_of_the_text_queues_again_but_a_field_edit_does_not(world, lambda_context):
@@ -207,16 +208,6 @@ def test_every_stored_result_is_kept_as_a_version(world, lambda_context):
         enrich.text_sha16({'title': 'Split invoices', 'description': 'By cost centre'}),
         require_request(world.requests, request_id)['enrichment']['text_sha16']}
     assert all('reporter_email' not in v and 'gsi1pk' not in v for v in versions)
-
-
-def test_a_result_a_newer_edit_refused_keeps_no_version(world, lambda_context):
-    request_id = _file(lambda_context)['request_id']
-    read = require_request(world.requests, request_id)
-    world.requests.update_item(Key=request_key(request_id), UpdateExpression='SET title = :t',
-                               ExpressionAttributeValues={':t': 'Split invoices per team'})
-    with _model():
-        enrich.enrich_request(world.requests, read, [])
-    assert _versions(world, request_id) == []
 
 
 def test_a_failed_version_write_keeps_the_stored_result(world, lambda_context):
