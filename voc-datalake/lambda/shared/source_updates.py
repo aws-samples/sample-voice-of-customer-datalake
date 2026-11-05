@@ -28,6 +28,11 @@ a normal new item / duplicate skip, never an in-place overwrite. For those:
   ``reinfer_dimensions``, which keeps every manual / source / profile value.
   ``tags`` are never touched (a person may have edited them).
 
+Each refresh stamps ``updated_by`` (the system actor), ``updated_at`` and ``change_reason``
+``'source_update'``; a re-enrichment also writes the provenance fields (``enrichment_mode``
+``'source_update'``, ``shared/silver_provenance.py``). The processor keeps the item as it was
+(``keep_silver_version``) before it runs the update.
+
 The keys and the date index stay: ``pk``/``sk``, ``gsi1*`` and ``date`` are the
 item's first ingest, so the aggregator re-buckets a MODIFY on the same day. Only
 ``gsi2pk`` (category), ``gsi2sk``'s sentiment half and ``gsi3pk`` (urgency) follow
@@ -43,6 +48,7 @@ from shared.categorization import Enrichment
 from shared.csv_datasets import is_csv_replace
 from shared.feedback_category import CATEGORY_SOURCE_MANUAL
 from shared.github_metrics import GITHUB_SOURCE
+from shared.silver_provenance import REASON_SOURCE_UPDATE, SYSTEM_ACTOR, change_stamp, provenance
 from shared.source_profiles import PII_SUMMARY_ONLY
 from shared.usefulness import USEFULNESS_FIELD, item_usefulness
 
@@ -195,7 +201,8 @@ class ItemUpdate:
 def attributes_update(stored: Mapping[str, Any], raw_record: Mapping[str, Any], now_iso: str) -> dict:
     """Refresh ``issue_attributes`` only (labels, state, milestone, reactions, …)."""
     update = ItemUpdate(stored)
-    update.assign({ISSUE_ATTRIBUTES: raw_record[ISSUE_ATTRIBUTES], 'source_refreshed_at': now_iso})
+    update.assign({ISSUE_ATTRIBUTES: raw_record[ISSUE_ATTRIBUTES], 'source_refreshed_at': now_iso,
+                   **change_stamp(SYSTEM_ACTOR, REASON_SOURCE_UPDATE, now_iso)})
     update.require_unchanged(stored, ISSUE_ATTRIBUTES)
     return update.kwargs()
 
@@ -228,7 +235,8 @@ def reenriched_fields(
         'original_text': raw_record.get('text', ''),
         'title': raw_record.get('title'),
         **enriched,
-        'llm_metadata': enrichment.llm_result.get('metadata', {}),
+        # How the new enrichment was made (TENETS.md D2, shared/silver_provenance.py).
+        **provenance('source_update', llm_metadata=enrichment.llm_result.get('metadata', {})),
         'dimensions': resolved or None,
         'dimension_sources': sources or None,
         'gsi2sk': _sentiment_index_key(stored, enriched['sentiment_score']),
@@ -259,6 +267,7 @@ def reenrichment_update(
         ISSUE_ATTRIBUTES: raw_record[ISSUE_ATTRIBUTES],
         'source_refreshed_at': now_iso,
         **reenriched_fields(stored, raw_record, enrichment, dimensions),
+        **change_stamp(SYSTEM_ACTOR, REASON_SOURCE_UPDATE, now_iso),
     })
     update.require_unchanged(stored, ISSUE_ATTRIBUTES)
     update.require_unchanged(stored, 'dimensions')

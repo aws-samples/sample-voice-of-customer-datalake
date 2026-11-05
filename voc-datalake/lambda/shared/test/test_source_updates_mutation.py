@@ -18,10 +18,12 @@ cannot see:
 * the gsi2sk rebuild for an item with no `#` in its key or no key at all.
 """
 from datetime import date
+from unittest.mock import ANY
 
 import pytest
 
 from shared.categorization import Enrichment
+from shared.silver_provenance import PIPELINE_VERSION
 from shared.source_updates import (
     UPDATE_APPLY,
     UPDATE_STALE,
@@ -185,19 +187,24 @@ class TestTheAttributesUpdate:
 
         assert attributes_update(stored, incoming, NOW) == {
             'Key': {'pk': 'SOURCE#github_issues', 'sk': 'FEEDBACK#7'},
-            'UpdateExpression': 'SET #f1 = :f0, #f2 = :f1',
-            'ConditionExpression': 'attribute_exists(#pk) AND #g3 = :g2',
+            'UpdateExpression': 'SET #f1 = :f0, #f2 = :f1, #f3 = :f2, #f4 = :f3, #f5 = :f4',
+            'ConditionExpression': 'attribute_exists(#pk) AND #g6 = :g5',
             'ExpressionAttributeNames': {'#pk': 'pk', '#f1': 'issue_attributes', '#f2': 'source_refreshed_at',
-                                         '#g3': 'issue_attributes'},
-            'ExpressionAttributeValues': {':f0': {'updated_at': NEW}, ':f1': NOW, ':g2': {'updated_at': OLD}},
+                                         '#f3': 'updated_by', '#f4': 'updated_at', '#f5': 'change_reason',
+                                         '#g6': 'issue_attributes'},
+            'ExpressionAttributeValues': {':f0': {'updated_at': NEW}, ':f1': NOW,
+                                          ':f2': {'sub': 'system', 'kind': 'system'}, ':f3': NOW,
+                                          ':f4': 'source_update', ':g5': {'updated_at': OLD}},
         }
 
     def test_an_item_stored_without_attributes_requires_them_still_absent(self):
         kwargs = attributes_update(_stored(), _incoming(NEW), NOW)
 
-        assert kwargs['ConditionExpression'] == 'attribute_exists(#pk) AND attribute_not_exists(#g3)'
-        assert kwargs['ExpressionAttributeNames']['#g3'] == 'issue_attributes'
-        assert kwargs['ExpressionAttributeValues'] == {':f0': {'updated_at': NEW}, ':f1': NOW}
+        assert kwargs['ConditionExpression'] == 'attribute_exists(#pk) AND attribute_not_exists(#g6)'
+        assert kwargs['ExpressionAttributeNames']['#g6'] == 'issue_attributes'
+        assert kwargs['ExpressionAttributeValues'] == {
+            ':f0': {'updated_at': NEW}, ':f1': NOW, ':f2': {'sub': 'system', 'kind': 'system'}, ':f3': NOW,
+            ':f4': 'source_update'}
 
 
 class TestKeepsStoredCategory:
@@ -225,6 +232,7 @@ class TestTheReenrichedFields:
             'category': 'performance', 'subcategory': 'latency', 'sentiment_score': -0.9,
             'urgency': 'high', 'sentiment_label': 'negative',
             'llm_metadata': {'model_name': 'haiku'},
+            'pipeline_version': PIPELINE_VERSION, 'enrichment_mode': 'source_update', 'enriched_at': ANY,
             'dimensions': {'product': 'IDE'}, 'dimension_sources': {'product': 'ai'},
             'gsi2sk': '-0.9#2026-01-02T00:00:00Z', 'gsi3pk': 'URGENCY#high',
             'gsi2pk': 'CATEGORY#performance',
@@ -250,6 +258,7 @@ class TestTheReenrichedFields:
             'original_text': '', 'title': None,
             'sentiment_score': -0.9, 'urgency': 'high', 'sentiment_label': 'negative',
             'llm_metadata': {'model_name': 'haiku'},
+            'pipeline_version': PIPELINE_VERSION, 'enrichment_mode': 'source_update', 'enriched_at': ANY,
             'dimensions': None, 'dimension_sources': None,
             'gsi2sk': '-0.9#T', 'gsi3pk': 'URGENCY#high',
             'usefulness': 'low',
@@ -287,22 +296,28 @@ class TestTheReenrichmentUpdate:
         assert kwargs == {
             'Key': {'pk': 'SOURCE#github_issues', 'sk': 'FEEDBACK#7'},
             'UpdateExpression': ('SET #f1 = :f0, #f2 = :f1, #f3 = :f2, #f4 = :f3, #f5 = :f4, #f6 = :f5, '
-                                 '#f7 = :f6, #f9 = :f7, #f12 = :f8, #f13 = :f9, #f14 = :f10, #f15 = :f11 '
-                                 'REMOVE #f8, #f10, #f11'),
-            'ConditionExpression': ('attribute_exists(#pk) AND #g16 = :g12 AND #g17 = :g13 AND '
+                                 '#f7 = :f6, #f9 = :f7, #f10 = :f8, #f11 = :f9, #f12 = :f10, #f15 = :f11, '
+                                 '#f16 = :f12, #f17 = :f13, #f18 = :f14, #f19 = :f15, #f20 = :f16, #f21 = :f17 '
+                                 'REMOVE #f8, #f13, #f14'),
+            'ConditionExpression': ('attribute_exists(#pk) AND #g22 = :g18 AND #g23 = :g19 AND '
                                     '(attribute_not_exists(#category_source) OR #category_source <> :manual)'),
             'ExpressionAttributeNames': {
                 '#pk': 'pk', '#f1': 'issue_attributes', '#f2': 'source_refreshed_at', '#f3': 'original_text',
                 '#f4': 'title', '#f5': 'category', '#f6': 'sentiment_score', '#f7': 'urgency',
-                '#f8': 'subcategory', '#f9': 'llm_metadata', '#f10': 'dimensions', '#f11': 'dimension_sources',
-                '#f12': 'gsi2sk', '#f13': 'gsi3pk', '#f14': 'gsi2pk', '#f15': 'usefulness',
-                '#g16': 'issue_attributes', '#g17': 'dimensions', '#category_source': 'category_source',
+                '#f8': 'subcategory', '#f9': 'pipeline_version', '#f10': 'enrichment_mode',
+                '#f11': 'enriched_at', '#f12': 'llm_metadata', '#f13': 'dimensions',
+                '#f14': 'dimension_sources', '#f15': 'gsi2sk', '#f16': 'gsi3pk', '#f17': 'gsi2pk',
+                '#f18': 'usefulness', '#f19': 'updated_by', '#f20': 'updated_at', '#f21': 'change_reason',
+                '#g22': 'issue_attributes', '#g23': 'dimensions', '#category_source': 'category_source',
             },
             'ExpressionAttributeValues': {
                 ':f0': {'updated_at': NEW}, ':f1': NOW, ':f2': 'edited', ':f3': 'Title', ':f4': 'performance',
-                ':f5': -0.9, ':f6': 'high', ':f7': {'m': 1}, ':f8': '-0.9#T', ':f9': 'URGENCY#high',
-                ':f10': 'CATEGORY#performance', ':f11': 'low',
-                ':g12': {'updated_at': OLD}, ':g13': {'product': 'IDE'},
+                # llm_metadata keeps the contract's fields only (shared/silver_provenance.py).
+                ':f5': -0.9, ':f6': 'high', ':f7': PIPELINE_VERSION, ':f8': 'source_update',
+                ':f9': ANY, ':f10': {}, ':f11': '-0.9#T', ':f12': 'URGENCY#high', ':f13': 'CATEGORY#performance',
+                ':f14': 'low', ':f15': {'sub': 'system', 'kind': 'system'}, ':f16': NOW,
+                ':f17': 'source_update',
+                ':g18': {'updated_at': OLD}, ':g19': {'product': 'IDE'},
                 ':manual': 'manual',
             },
         }
@@ -313,9 +328,10 @@ class TestTheReenrichmentUpdate:
         kwargs = reenrichment_update(stored, _incoming(NEW, text='e'), enrichment, ({'a': 'b'}, {'a': 'ai'}), NOW)
 
         assert kwargs['ConditionExpression'] == \
-            'attribute_exists(#pk) AND attribute_not_exists(#g13) AND attribute_not_exists(#g14)'
+            'attribute_exists(#pk) AND attribute_not_exists(#g19) AND attribute_not_exists(#g20)'
         assert kwargs['UpdateExpression'] == (
             'SET #f1 = :f0, #f2 = :f1, #f3 = :f2, #f4 = :f3, #f5 = :f4, #f6 = :f5, #f7 = :f6, '
-            '#f8 = :f7, #f9 = :f8, #f10 = :f9, #f11 = :f10, #f12 = :f11')
+            '#f8 = :f7, #f9 = :f8, #f10 = :f9, #f11 = :f10, #f12 = :f11, #f13 = :f12, #f14 = :f13, '
+            '#f15 = :f14, #f16 = :f15, #f17 = :f16, #f18 = :f17')
         assert '#category_source' not in kwargs['ExpressionAttributeNames']
         assert ':manual' not in kwargs['ExpressionAttributeValues']
