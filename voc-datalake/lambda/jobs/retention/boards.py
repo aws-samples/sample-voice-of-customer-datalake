@@ -31,7 +31,7 @@ from typing import Any, Final
 from boto3.dynamodb.conditions import Attr, ConditionBase
 from botocore.exceptions import ClientError
 
-from jobs.retention.copies import legal_basis_for, tombstone_key
+from jobs.retention.copies import tombstone_record
 from jobs.retention.runs import BOARD_COUNTER, MODE_ERASE, note_erased_source
 from shared import retention
 from shared.archive_keys import archive_key_stem
@@ -110,11 +110,8 @@ def tombstone(run: Mapping[str, Any], row: Mapping[str, Any], now: str) -> dict[
     """One de-identified row's record: ids, the run and the legal basis, never the email or any content."""
     item_id = _item_id(row)
     return {
-        **tombstone_key(BOARDS_SOURCE, item_id), 'feature_request_id': _request_id(row),
-        **({'support_id': item_id} if _kind(row) == _SUPPORT_SK_PREFIX else {}),
-        'source': BOARDS_SOURCE, 'store': STORE_BOARDS, 'action': 'deidentified', 'mode': run['mode'],
-        'run_id': run['run_id'], 'legal_basis': legal_basis_for(run, BOARDS_SOURCE), 'deleted_at': now,
-        **({'job_id': run['job_id']} if run.get('job_id') else {}),
+        **tombstone_record(run, BOARDS_SOURCE, item_id, STORE_BOARDS, now), 'feature_request_id': _request_id(row),
+        **({'support_id': item_id} if _kind(row) == _SUPPORT_SK_PREFIX else {}), 'action': 'deidentified',
     }
 
 
