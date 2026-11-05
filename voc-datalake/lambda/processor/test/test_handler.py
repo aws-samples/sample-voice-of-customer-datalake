@@ -313,7 +313,7 @@ class TestValidateSqsMessage:
 class TestInvokeBedrockLlm:
     """Tests for invoke_bedrock_llm() function."""
 
-    @patch('processor.handler.converse')
+    @patch('processor.handler.converse_detailed')
     @patch('processor.handler.get_categories_config')
     def test_returns_parsed_insights(self, mock_categories, mock_converse, sample_sqs_record, sample_llm_insights):
         """Returns parsed LLM insights from Bedrock response."""
@@ -330,7 +330,7 @@ class TestInvokeBedrockLlm:
         assert result['insights']['sentiment_label'] == 'positive'
 
 
-    @patch('processor.handler.converse')
+    @patch('processor.handler.converse_detailed')
     @patch('processor.handler.get_categories_config')
     def test_includes_latency_in_metadata(self, mock_categories, mock_converse, sample_sqs_record, sample_llm_insights):
         """Includes latency_ms in metadata."""

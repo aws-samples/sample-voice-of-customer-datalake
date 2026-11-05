@@ -24,7 +24,12 @@ from decimal import Decimal
 from typing import Any
 
 from shared.category_access import FALLBACK_CATEGORY
-from shared.converse import BedrockThrottlingError, converse, with_thinking_headroom
+from shared.converse import (
+    BedrockThrottlingError,
+    ConverseResult,
+    converse,
+    with_thinking_headroom,
+)
 from shared.feedback_dimensions import inferable_dimensions
 from shared.llm_json import first_json_object
 from shared.logging import logger, tracer
@@ -39,8 +44,11 @@ CATEGORIES_SETTINGS_KEY = {'pk': 'SETTINGS#categories', 'sk': 'config'}
 DEFAULT_CATEGORIES = "delivery|customer_support|product_quality|pricing|website|app|billing|returns|communication|other"
 DEFAULT_CATEGORY_NAMES = tuple(DEFAULT_CATEGORIES.split('|'))
 
-# Bumped when the enrichment prompt changes; recorded on llm_metadata.
-PROMPT_VERSION = '1.0.0'
+# Bumped when an enrichment prompt changes; recorded on llm_metadata. Pinned to a digest of
+# every prompt below by shared/test/test_prompt_version_pin.py, so a prompt edit without a
+# bump fails. 2.0.0: the <reviews> fence, the prompt-injection rule and the dimensions
+# instruction were added after 1.0.0 without a bump.
+PROMPT_VERSION = '2.0.0'
 
 # Every enrichment call resolves its model through the per-surface picker.
 ENRICHMENT_SURFACE = 'enrichment'
@@ -351,11 +359,15 @@ def invoke_enrichment_llm(
     raw_record: dict,
     categories_instruction: str,
     *,
-    converse_fn: Callable[..., str] | None = None,
+    converse_fn: Callable[..., ConverseResult | str] | None = None,
     raise_on_throttle: bool = True,
     dimensions_config: Sequence[Mapping[str, Any]] = (),
 ) -> dict:
     """Full enrichment call. Returns ``{'insights': {...}, 'metadata': {...}}``.
+
+    ``metadata.model_name`` is the model that ANSWERED when ``converse_fn`` returns a
+    ``ConverseResult`` (pass ``shared.converse.converse_detailed``, as the processor does);
+    with a text-only ``converse_fn`` (the default ``converse``) it is the requested model.
 
     With inferable dimensions configured the JSON contract also asks for a
     ``dimensions`` object (see ``build_dimensions_instruction``); without them the
@@ -374,8 +386,9 @@ def invoke_enrichment_llm(
         dimensions_json=_dimensions_json_field(dimensions_config),
     )
     active_model = get_active_model_id(ENRICHMENT_SURFACE)
+    attempt = {'requested_model': active_model, 'prompt_version': PROMPT_VERSION}
     try:
-        content = (converse_fn or converse)(
+        answer = (converse_fn or converse)(
             prompt=user_prompt,
             system_prompt=SYSTEM_PROMPT,
             max_tokens=with_thinking_headroom(
@@ -387,24 +400,31 @@ def invoke_enrichment_llm(
             max_continuations=0,
             step_name='feedback_enrichment',
         )
-        llm_result = first_json_object(parse_llm_json_response(content))
+        llm_result = first_json_object(parse_llm_json_response(_answer_text(answer)))
         latency_ms = int((datetime.now(UTC) - start_time).total_seconds() * 1000)
         return {
             'insights': llm_result if isinstance(llm_result, dict) else {},
-            'metadata': {
-                'model_name': active_model,
-                'prompt_version': PROMPT_VERSION,
-                'latency_ms': latency_ms,
-            },
+            'metadata': {'model_name': _answering_model(answer, active_model), **attempt, 'latency_ms': latency_ms},
         }
     except BedrockThrottlingError:
         raise
     except json.JSONDecodeError as e:
         logger.exception(f"Failed to parse Bedrock response: {e}")
-        return {'insights': {}, 'metadata': {'error': str(e)}}
+        return {'insights': {}, 'metadata': {**attempt, 'error': str(e)}}
     except Exception as e:
         logger.error(f"Unexpected Bedrock error: {e}", exc_info=True)
-        return {'insights': {}, 'metadata': {'error': str(e)}}
+        return {'insights': {}, 'metadata': {**attempt, 'error': str(e)}}
+
+
+def _answer_text(answer: ConverseResult | str) -> str:
+    """The text of a converse answer (an injected ``converse_fn`` may return the bare text)."""
+    return answer.text if isinstance(answer, ConverseResult) else answer
+
+
+def _answering_model(answer: ConverseResult | str, requested: str) -> str:
+    """The model that ANSWERED (a capacity fallback may have served it), else the requested one."""
+    model_id = answer.model_id if isinstance(answer, ConverseResult) else None
+    return model_id or requested
 
 
 @tracer.capture_method
