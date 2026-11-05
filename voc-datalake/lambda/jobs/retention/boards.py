@@ -188,9 +188,14 @@ class BoardEraser:
     def _erase_row(self, row: Mapping[str, Any]) -> bool:
         if not is_support(row):
             return deidentify(self._table, row)
+        # Read first: a +1 removed since the scan gets no tombstone naming an id that is never stored. The
+        # tombstone still precedes the change; the transaction's conditions cover the race left after the read.
+        current = boards_rekey.current_support(self._table, {'pk': row['pk'], 'sk': row['sk']})
+        if current is None:
+            return False
         support_id = boards_rekey.new_support_id()
-        self._aggregates.put_item(Item=tombstone(self._run, row, now_iso(), support_id))
-        if not boards_rekey.rekey(self._table, {'pk': row['pk'], 'sk': row['sk']}, support_id):
+        self._aggregates.put_item(Item=tombstone(self._run, current, now_iso(), support_id))
+        if not boards_rekey.rekey(self._table, current, support_id):
             return False
         boards_rekey.recount(self._table, _request_id(row))
         return True

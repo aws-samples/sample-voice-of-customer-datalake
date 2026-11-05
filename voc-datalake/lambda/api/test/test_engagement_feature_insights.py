@@ -141,3 +141,28 @@ def test_the_backfill_requeues_a_stale_or_failed_enrichment(world, lambda_contex
 def test_insights_is_never_read_as_a_request_id(lambda_context):
     _file(lambda_context)
     assert call(lambda_context, 'GET', INSIGHTS, claims=USER)[0] == 200
+
+
+def test_a_second_backfill_before_the_jobs_ran_queues_nothing_again(world, lambda_context):
+    """The lease (enrich_queued_at): a repeated click must not send the same requests to the model twice."""
+    ids = {_file(lambda_context, title=f'Request {n}')['request_id'] for n in range(2)}
+    world.enrich_invoke.reset_mock()
+    assert ok(lambda_context, 'POST', f'{INSIGHTS}/enrich') == {'success': True, 'queued': 2, 'remaining': 0}
+    assert ok(lambda_context, 'POST', f'{INSIGHTS}/enrich') == {'success': True, 'queued': 0, 'remaining': 2}
+    assert {rid for c in world.enrich_invoke.call_args_list for rid in c.args[1]['request_ids']} == ids
+    assert world.enrich_invoke.call_count == 1
+
+
+def test_a_lapsed_lease_is_claimed_again(world, lambda_context):
+    request = _file(lambda_context)
+    world.enrich_invoke.reset_mock()
+    _set(world, request['request_id'], enrich_queued_at='2000-01-01T00:00:00+00:00')
+    assert ok(lambda_context, 'POST', f'{INSIGHTS}/enrich')['queued'] == 1
+
+
+@pytest.mark.usefixtures('world')
+def test_the_lease_is_bookkeeping_never_shown_on_the_request(lambda_context):
+    request = _file(lambda_context)
+    ok(lambda_context, 'POST', f'{INSIGHTS}/enrich')
+    shown = ok(lambda_context, 'GET', f"/feature-requests/{request['request_id']}", claims=USER)['request']
+    assert 'enrich_queued_at' not in shown

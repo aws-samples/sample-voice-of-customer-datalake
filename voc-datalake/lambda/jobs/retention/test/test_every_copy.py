@@ -357,6 +357,21 @@ class TestBoards:
         assert 'Split' not in str(stones)
         assert all('ttl' not in row for row in stones.values())
 
+    def test_a_support_removed_since_the_scan_leaves_no_tombstone(self, aws, worker_context):
+        """A +1 deleted between the scan and its re-key: no tombstone names an id that was never stored."""
+        _board_rows(aws)
+        table = aws['feature_requests']
+        real_current = boards_rekey.current_support
+
+        def removed_meanwhile(tbl, key):
+            table.delete_item(Key=dict(key))
+            return real_current(tbl, key)
+
+        with patch.object(boards_rekey, 'current_support', removed_meanwhile):
+            handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
+        assert {row['sk'] for row in _tombstones(aws, 'feature_requests')} == {'fr_000000000001'}
+        assert _job_row(aws)['board_items_deidentified'] == 1
+
     @pytest.mark.parametrize(('field', 'value', 'source'), [
         ('author', 'Jane', None), ('email', 'jane@example.com', 'web')])
     def test_other_erasures_leave_the_boards_alone(self, aws, worker_context, field, value, source):

@@ -52,16 +52,23 @@ def deidentified_support(row: Mapping[str, Any], support_id: str) -> dict[str, A
             DEIDENTIFIED_FIELD: now, 'updated_at': now}
 
 
-def rekey(table: Any, old_key: Mapping[str, str], support_id: str) -> bool:
-    """Move the +1 at ``old_key`` to ``support_id`` without its email and name; False when it is gone meanwhile."""
-    row = table.get_item(Key=dict(old_key), ConsistentRead=True).get('Item')
-    if not isinstance(row, dict):
-        return False
+def current_support(table: Any, key: Mapping[str, str]) -> dict[str, Any] | None:
+    """The +1 at ``key`` as stored now (a consistent read), or None when it is gone."""
+    row = table.get_item(Key=dict(key), ConsistentRead=True).get('Item')
+    return row if isinstance(row, dict) else None
+
+
+def rekey(table: Any, row: Mapping[str, Any], support_id: str) -> bool:
+    """Move the +1 ``row`` (read by ``current_support``) to ``support_id`` without its email and name.
+
+    False when it was removed or re-keyed between the read and the write (the transaction's conditions).
+    """
+    old_key = {'pk': row['pk'], 'sk': row['sk']}
     try:
         table.meta.client.transact_write_items(TransactItems=[
             {'Put': {'TableName': table.name, 'Item': deidentified_support(row, support_id),
                      'ConditionExpression': 'attribute_not_exists(pk)'}},
-            {'Delete': {'TableName': table.name, 'Key': dict(old_key), 'ConditionExpression': 'attribute_exists(pk)'}},
+            {'Delete': {'TableName': table.name, 'Key': old_key, 'ConditionExpression': 'attribute_exists(pk)'}},
         ])
     except ClientError as error:
         if error.response.get('Error', {}).get('Code') == 'TransactionCanceledException':
