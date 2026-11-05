@@ -26,7 +26,14 @@ from aws_lambda_powertools.event_handler.api_gateway import Router
 from shared.engagement_identity import require_board_admin
 from shared.exceptions import ValidationError
 from shared.feature_boards_access import BoardScope, scope_for, scope_from_event
-from shared.feature_requests_enrich import ENRICHMENT_FIELD, STATUS_OK, claim_for_backfill, queue, wants_backfill
+from shared.feature_requests_enrich import (
+    ENRICHMENT_FIELD,
+    STATUS_OK,
+    claim_for_backfill,
+    queue,
+    release_claims,
+    wants_backfill,
+)
 from shared.feature_requests_store import (
     MAX_REQUESTS_LISTED,
     board_id_of,
@@ -145,6 +152,10 @@ def post_backfill():
     scope = scope_for(viewer)
     waiting = [str(request['request_id']) for request in list_requests(scope.table)
                if isinstance(request.get('request_id'), str) and wants_backfill(request)]
-    queued = queue(claim_for_backfill(scope.table, waiting[:MAX_BACKFILL]))
+    claimed = claim_for_backfill(scope.table, waiting[:MAX_BACKFILL])
+    queued_ids = queue(claimed)
+    # A job that could not be queued must not hold its requests' lease: the next call retries them.
+    release_claims(scope.table, [request_id for request_id in claimed if request_id not in set(queued_ids)])
+    queued = len(queued_ids)
     logger.info('Feature request enrichment backfill queued', extra={'queued': queued, 'waiting': len(waiting)})
     return {'success': True, 'queued': queued, 'remaining': len(waiting) - queued}

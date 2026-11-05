@@ -166,3 +166,15 @@ def test_the_lease_is_bookkeeping_never_shown_on_the_request(lambda_context):
     ok(lambda_context, 'POST', f'{INSIGHTS}/enrich')
     shown = ok(lambda_context, 'GET', f"/feature-requests/{request['request_id']}", claims=USER)['request']
     assert 'enrich_queued_at' not in shown
+
+
+def test_a_job_that_could_not_be_queued_releases_its_lease(world, lambda_context):
+    """A failed async invoke must not hold the request for the lease: the next call queues it."""
+    request = _file(lambda_context)
+    world.enrich_invoke.reset_mock()
+    world.enrich_invoke.side_effect = RuntimeError('invoke failed')
+    assert ok(lambda_context, 'POST', f'{INSIGHTS}/enrich') == {'success': True, 'queued': 0, 'remaining': 1}
+    row = world.requests.get_item(Key=request_key(request['request_id']))['Item']
+    assert 'enrich_queued_at' not in row
+    world.enrich_invoke.side_effect = None
+    assert ok(lambda_context, 'POST', f'{INSIGHTS}/enrich')['queued'] == 1

@@ -136,14 +136,14 @@ def _invoke(payload: dict[str, Any]) -> bool:
     return True
 
 
-def queue(request_ids: Sequence[str]) -> int:
-    """Queue ``request_ids`` in jobs of at most ``MAX_IDS_PER_JOB``; how many were queued."""
-    queued = 0
+def queue(request_ids: Sequence[str]) -> list[str]:
+    """Queue ``request_ids`` in jobs of at most ``MAX_IDS_PER_JOB``; the ids whose job was queued."""
+    queued: list[str] = []
     ids = [request_id for request_id in dict.fromkeys(request_ids) if is_id(request_id, REQUEST_PREFIX)]
     for start in range(0, len(ids), MAX_IDS_PER_JOB):
         chunk = ids[start:start + MAX_IDS_PER_JOB]
         if _invoke({JOB_FIELD: ENRICH_JOB, 'request_ids': chunk}):
-            queued += len(chunk)
+            queued.extend(chunk)
     return queued
 
 
@@ -158,6 +158,14 @@ def _claim(table: Any, request_id: str, now: datetime) -> bool:
         ExpressionAttributeValues={':now': now.isoformat(),
                                    ':cutoff': (now - BACKFILL_LEASE).isoformat()},
     )
+
+
+def release_claims(table: Any, request_ids: Sequence[str]) -> None:
+    """Drop the lease of claimed requests whose job could not be queued, so the next call retries them."""
+    for request_id in request_ids:
+        conditional_write(table.update_item, Key=request_key(request_id), UpdateExpression='REMOVE #lease',
+                          ConditionExpression='attribute_exists(pk)',
+                          ExpressionAttributeNames={'#lease': BACKFILL_LEASE_FIELD})
 
 
 def claim_for_backfill(table: Any, request_ids: Sequence[str]) -> list[str]:
