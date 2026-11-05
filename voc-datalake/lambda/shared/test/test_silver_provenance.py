@@ -123,3 +123,16 @@ class TestKeepSilverVersion:
         assert sp.keep_silver_version({'source_platform': 's'}, actor=ACTOR, reason='r', changed_fields=[]) is None
         s3.put_object.assert_not_called()
         failures.assert_called_once()
+
+
+class TestReasons:
+    def test_every_declared_reason_is_known(self):
+        assert {'category_edit', 'dimensions_edit', 'data_explorer_edit', 'csv_correction',
+                                     'source_update', 'reprocess'} == sp.CHANGE_REASONS
+
+    @pytest.mark.usefixtures('s3')
+    def test_an_undeclared_reason_is_logged_but_still_kept(self):
+        with patch.object(sp.logger, 'warning') as warning:
+            uri = sp.keep_silver_version(ITEM, actor=ACTOR, reason='typo', changed_fields=[])
+        assert uri is not None
+        warning.assert_called_once_with('Silver version kept with an undeclared reason', extra={'reason': 'typo'})
