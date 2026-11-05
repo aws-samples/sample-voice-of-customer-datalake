@@ -142,6 +142,22 @@ def test_the_job_hands_on_the_rest_when_time_runs_low(world, lambda_context):
         'voc-engagement-api', {'engagement_job': 'enrich_feature_request', 'request_ids': [second]})
 
 
+def test_a_job_chain_is_bounded_below_lambdas_loop_detection(world, lambda_context):
+    """Every job enriches at least its first id before it may hand on, so a batch of MAX_IDS_PER_JOB is done
+    in at most MAX_IDS_PER_JOB - 1 hand-ons: with the route's own invoke, a chain stays well under 16 hops."""
+    ids = [_file(lambda_context, title=f'Request {n}')['request_id'] for n in range(enrich.MAX_IDS_PER_JOB)]
+    world.enrich_invoke.reset_mock()
+    lambda_context.get_remaining_time_in_millis = lambda: 1_000  # always short of time: the worst case
+    hops, pending = 0, ids
+    with _model():
+        while _job(pending, lambda_context)['status'] == 'continued':
+            hops += 1
+            pending = world.enrich_invoke.call_args.args[1]['request_ids']
+    assert hops == enrich.MAX_IDS_PER_JOB - 1
+    assert 1 + hops < 16
+    assert all(require_request(world.requests, rid)['enrichment']['status'] == 'ok' for rid in ids)
+
+
 @pytest.mark.parametrize('event', [
     {'engagement_job': 'enrich_feature_request', 'request_id': '../etc'},
     {'engagement_job': 'enrich_feature_request', 'request_ids': 'fr_x'},

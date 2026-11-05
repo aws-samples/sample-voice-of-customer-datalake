@@ -6,7 +6,8 @@ from unittest.mock import patch
 import pytest
 from engagement_fixtures import ADMIN, BOARD, BOARD_2, USER, boards_world, call, ok
 
-from shared.feature_requests_enrich import text_sha16
+from shared.feature_requests_enrich import MAX_IDS_PER_JOB, text_sha16
+from shared.feature_requests_insights_routes import MAX_BACKFILL
 from shared.feature_requests_store import request_key
 
 INSIGHTS = '/feature-requests/insights'
@@ -115,6 +116,17 @@ def test_the_backfill_is_admin_only_and_bounded(world, lambda_context):
     payload = world.enrich_invoke.call_args.args[1]
     assert payload['engagement_job'] == 'enrich_feature_request'
     assert payload['request_ids'][0] in {requests[1]['request_id'], requests[2]['request_id']}
+
+
+def test_the_backfill_fans_out_one_job_per_batch_from_the_route(world, lambda_context):
+    """The route invokes every job itself (ceil(n / MAX_IDS_PER_JOB), ≤ 20 for 200): no job chain is needed."""
+    ids = {_file(lambda_context, title=f'Request {n}')['request_id'] for n in range(2 * MAX_IDS_PER_JOB + 1)}
+    world.enrich_invoke.reset_mock()
+    assert ok(lambda_context, 'POST', f'{INSIGHTS}/enrich')['queued'] == len(ids)
+    batches = [c.args[1]['request_ids'] for c in world.enrich_invoke.call_args_list]
+    assert [len(batch) for batch in batches] == [MAX_IDS_PER_JOB, MAX_IDS_PER_JOB, 1]
+    assert {rid for batch in batches for rid in batch} == ids
+    assert MAX_BACKFILL // MAX_IDS_PER_JOB == 20
 
 
 def test_the_backfill_requeues_a_stale_or_failed_enrichment(world, lambda_context):
