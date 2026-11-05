@@ -680,7 +680,7 @@
     "progress": {
       "items": "Deleting reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
       "radar": "Deleting Radar reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
-      "boards": "De-identifying board requests and +1s. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
+      "boards": "De-identifying board requests and +1s. De-identified so far: {{rows, number}}.",
       "raw": "Deleting raw files. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
       "lineage": "Marking personas and documents that cited deleted reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
       "done": "Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}."

@@ -695,7 +695,7 @@
     "progress": {
       "items": "レビューを削除しています。削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。",
       "radar": "Radar のレビューを削除しています。削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。",
-      "boards": "ボードのリクエストと +1 を匿名化しています。削除されたレビュー: {{items, number}}。削除された生ファイル: {{objects, number}}。",
+      "boards": "ボードのリクエストと +1 を匿名化しています。これまでに匿名化: {{rows, number}}。",
       "raw": "生ファイルを削除しています。削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。",
       "lineage": "削除したレビューを引用していたペルソナとドキュメントに印を付けています。削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。",
       "done": "削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。"

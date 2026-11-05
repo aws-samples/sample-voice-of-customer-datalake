@@ -705,7 +705,7 @@
     "progress": {
       "items": "Excluindo avaliações. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
       "radar": "Excluindo avaliações do Radar. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
-      "boards": "Anonimizando solicitações de quadro e +1. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
+      "boards": "Anonimizando solicitações de quadro e +1. Anonimizados até agora: {{rows, number}}.",
       "raw": "Excluindo arquivos brutos. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
       "lineage": "Marcando personas e documentos que citavam avaliações excluídas. Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}.",
       "done": "Avaliações excluídas: {{items, number}}. Arquivos brutos excluídos: {{objects, number}}."

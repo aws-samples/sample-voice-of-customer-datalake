@@ -705,7 +705,7 @@
     "progress": {
       "items": "Suppression des avis. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
       "radar": "Suppression des avis Radar. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
-      "boards": "Anonymisation des demandes de tableau et des +1. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
+      "boards": "Anonymisation des demandes de tableau et des +1. Anonymisés jusqu’ici : {{rows, number}}.",
       "raw": "Suppression des fichiers bruts. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
       "lineage": "Marquage des personas et des documents qui citaient des avis supprimés. Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}.",
       "done": "Avis supprimés : {{items, number}}. Fichiers bruts supprimés : {{objects, number}}."

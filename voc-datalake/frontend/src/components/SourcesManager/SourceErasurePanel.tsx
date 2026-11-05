@@ -55,7 +55,9 @@ function JobProgress({ job }: Readonly<{ job: ErasureJob }>) {
     <p role="status" aria-live="polite" className="flex flex-wrap items-center gap-2 text-xs text-text">
       <ErasureStatusBadge status={job.status} />
       <span className="font-mono text-muted">{job.source}</span>
-      <span>{t(progressKey(job), { items: job.deleted_items, objects: job.deleted_objects })}</span>
+      <span>{t(progressKey(job), {
+        items: job.deleted_items, objects: job.deleted_objects, rows: job.board_items_deidentified,
+      })}</span>
       {job.error !== undefined && <span className="text-danger">{job.error}</span>}
       <ErasureJobDetails job={job} />
     </p>

@@ -695,7 +695,7 @@
     "progress": {
       "items": "Bewertungen werden gelöscht. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
       "radar": "Radar-Bewertungen werden gelöscht. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
-      "boards": "Board-Anfragen und +1 werden anonymisiert. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
+      "boards": "Board-Anfragen und +1 werden anonymisiert. Bisher anonymisiert: {{rows, number}}.",
       "raw": "Rohdateien werden gelöscht. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
       "lineage": "Personas und Dokumente, die gelöschte Bewertungen zitiert haben, werden markiert. Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}.",
       "done": "Gelöschte Bewertungen: {{items, number}}. Gelöschte Rohdateien: {{objects, number}}."

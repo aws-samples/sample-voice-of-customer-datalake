@@ -52,7 +52,7 @@ function groupBy(metas, keyOf) {
 }
 
 function insights(url, viewer, entriesFor) {
-  const days = intParam(url, 'days', { min: 0, max: MAX_DAYS, fallback: 90 });
+  const days = intParam(url, 'days', { min: 0, max: MAX_DAYS, fallback: 0 }); // absent = all time, as the route
   if (days === null) return fail(400, `days must be a whole number from 0 to ${MAX_DAYS}`);
   const boardRef = url.searchParams.get('board') || undefined;
   const { entries, board } = entriesFor(viewer, boardRef);

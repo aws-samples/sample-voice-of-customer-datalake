@@ -739,7 +739,7 @@
     "progress": {
       "items": "Usuwanie opinii. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
       "radar": "Usuwanie opinii Radar. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
-      "boards": "Anonimizowanie próśb z tablic i +1. Usunięte opinie: {{items, number}}. Usunięte pliki surowe: {{objects, number}}.",
+      "boards": "Anonimizowanie próśb z tablic i +1. Dotąd zanonimizowano: {{rows, number}}.",
       "raw": "Usuwanie surowych plików. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
       "lineage": "Oznaczanie person i dokumentów, które cytowały usunięte opinie. Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}.",
       "done": "Usunięte opinie: {{items, number}}. Usunięte surowe pliki: {{objects, number}}."
