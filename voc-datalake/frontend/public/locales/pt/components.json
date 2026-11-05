@@ -270,7 +270,9 @@
       "noMatches": "Nenhuma avaliação corresponde a estes filtros. Amplie-os, ou a execução não terá nada para ler.",
       "error": "Não foi possível contar as avaliações correspondentes.",
       "featureRequests_one": "Também {{count, number}} pedido de funcionalidade dos quadros.",
-      "featureRequests_other": "Também {{count, number}} pedidos de funcionalidades dos quadros."
+      "featureRequests_other": "Também {{count, number}} pedidos de funcionalidades dos quadros.",
+      "featureRequestsAtLeast_one": "Pelo menos {{count, number}} pedido de funcionalidade dos quadros.",
+      "featureRequestsAtLeast_other": "Pelo menos {{count, number}} pedidos de funcionalidades dos quadros."
     },
     "featureRequests": {
       "title": "Pedidos de funcionalidades",

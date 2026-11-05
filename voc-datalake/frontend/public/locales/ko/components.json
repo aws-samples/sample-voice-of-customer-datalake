@@ -263,7 +263,9 @@
       "noMatches": "이 필터와 일치하는 리뷰가 없습니다. 필터를 넓히지 않으면 실행 시 읽을 데이터가 없습니다.",
       "error": "일치하는 리뷰를 셀 수 없습니다.",
       "featureRequests_one": "보드의 기능 요청 {{count, number}}개도 있습니다.",
-      "featureRequests_other": "보드의 기능 요청 {{count, number}}개도 있습니다."
+      "featureRequests_other": "보드의 기능 요청 {{count, number}}개도 있습니다.",
+      "featureRequestsAtLeast_one": "보드의 기능 요청이 최소 {{count, number}}개 있습니다.",
+      "featureRequestsAtLeast_other": "보드의 기능 요청이 최소 {{count, number}}개 있습니다."
     },
     "featureRequests": {
       "title": "기능 요청",

@@ -248,7 +248,9 @@
       "noMatches": "No reviews match these filters. Widen them, or the run has nothing to read.",
       "error": "Could not count the matching reviews.",
       "featureRequests_one": "Also {{count, number}} feature request from the boards.",
-      "featureRequests_other": "Also {{count, number}} feature requests from the boards."
+      "featureRequests_other": "Also {{count, number}} feature requests from the boards.",
+      "featureRequestsAtLeast_one": "At least {{count, number}} feature request from the boards.",
+      "featureRequestsAtLeast_other": "At least {{count, number}} feature requests from the boards."
     },
     "featureRequests": {
       "title": "Feature requests",

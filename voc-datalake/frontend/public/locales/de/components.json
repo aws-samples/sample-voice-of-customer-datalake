@@ -263,7 +263,9 @@
       "noMatches": "Keine Bewertungen passen zu diesen Filtern. Erweitern Sie sie, sonst hat der Lauf nichts zu lesen.",
       "error": "Die passenden Bewertungen konnten nicht gezählt werden.",
       "featureRequests_one": "Außerdem {{count, number}} Feature-Wunsch von den Boards.",
-      "featureRequests_other": "Außerdem {{count, number}} Feature-Wünsche von den Boards."
+      "featureRequests_other": "Außerdem {{count, number}} Feature-Wünsche von den Boards.",
+      "featureRequestsAtLeast_one": "Mindestens {{count, number}} Feature-Wunsch von den Boards.",
+      "featureRequestsAtLeast_other": "Mindestens {{count, number}} Feature-Wünsche von den Boards."
     },
     "featureRequests": {
       "title": "Feature-Wünsche",

@@ -263,7 +263,9 @@
       "noMatches": "これらのフィルターに一致するレビューはありません。条件を広げないと、実行時に読み込むデータがありません。",
       "error": "一致するレビューを数えられませんでした。",
       "featureRequests_one": "ボードの機能リクエストも{{count, number}}件あります。",
-      "featureRequests_other": "ボードの機能リクエストも{{count, number}}件あります。"
+      "featureRequests_other": "ボードの機能リクエストも{{count, number}}件あります。",
+      "featureRequestsAtLeast_one": "ボードの機能リクエストが少なくとも{{count, number}}件あります。",
+      "featureRequestsAtLeast_other": "ボードの機能リクエストが少なくとも{{count, number}}件あります。"
     },
     "featureRequests": {
       "title": "機能リクエスト",
