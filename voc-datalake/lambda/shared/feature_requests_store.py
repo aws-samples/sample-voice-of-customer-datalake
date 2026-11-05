@@ -45,7 +45,8 @@ MAX_SUPPORTS: Final = 2000
 REQUEST_NOT_FOUND: Final = 'Feature request not found'
 SUPPORT_NOT_FOUND: Final = 'Support not found'
 ALREADY_SUPPORTED: Final = 'already_supported'
-_HIDDEN: Final = frozenset({'version'})
+# Bookkeeping, not request content: the row version and the enrichment backfill's lease.
+_HIDDEN: Final = frozenset({'version', 'enrich_queued_at'})
 # Set on a +1 an erasure re-keyed without its email (jobs/retention/boards_rekey.py): it still counts once.
 DEIDENTIFIED_FIELD: Final = 'deidentified_at'
 

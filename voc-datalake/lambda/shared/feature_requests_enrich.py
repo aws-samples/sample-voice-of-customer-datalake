@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 from shared import engagement_config
@@ -58,6 +59,10 @@ STATUS_OK: Final = 'ok'
 STATUS_FAILED: Final = 'failed'
 SENTIMENTS: Final = frozenset({'positive', 'neutral', 'negative', 'mixed'})
 MAX_IDS_PER_JOB: Final = 10
+# The admin backfill claims a request for this long before queueing it, so a repeated call does not
+# bill the same request twice (the job itself runs in well under a minute).
+BACKFILL_LEASE: Final = timedelta(minutes=15)
+BACKFILL_LEASE_FIELD: Final = 'enrich_queued_at'
 MAX_SUMMARY_CHARS: Final = 300
 MAX_PROMPT_TITLE_CHARS: Final = 160
 MAX_PROMPT_DESCRIPTION_CHARS: Final = 3000
@@ -140,6 +145,30 @@ def queue(request_ids: Sequence[str]) -> int:
         if _invoke({JOB_FIELD: ENRICH_JOB, 'request_ids': chunk}):
             queued += len(chunk)
     return queued
+
+
+def _claim(table: Any, request_id: str, now: datetime) -> bool:
+    """Set ``enrich_queued_at`` unless another backfill claimed the request less than the lease ago."""
+    return conditional_write(
+        table.update_item,
+        Key=request_key(request_id),
+        UpdateExpression='SET #lease = :now',
+        ConditionExpression='attribute_exists(pk) AND (attribute_not_exists(#lease) OR #lease < :cutoff)',
+        ExpressionAttributeNames={'#lease': BACKFILL_LEASE_FIELD},
+        ExpressionAttributeValues={':now': now.isoformat(),
+                                   ':cutoff': (now - BACKFILL_LEASE).isoformat()},
+    )
+
+
+def claim_for_backfill(table: Any, request_ids: Sequence[str], *, now: datetime | None = None) -> list[str]:
+    """The ``request_ids`` this backfill may queue: each one claimed with a lease (``BACKFILL_LEASE``).
+
+    A second click (or a retried POST) before the jobs ran finds the rows claimed and queues nothing,
+    so a request is not sent to the model twice; a failed one is retried at most once per lease.
+    """
+    moment = now or datetime.now(UTC)
+    return [request_id for request_id in dict.fromkeys(request_ids)
+            if is_id(request_id, REQUEST_PREFIX) and _claim(table, request_id, moment)]
 
 
 def queue_if_stale(request: Mapping[str, Any]) -> None:

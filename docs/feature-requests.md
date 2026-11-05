@@ -306,8 +306,11 @@ enrichment: {status: 'ok' | 'failed', category, subcategory, sentiment: positive
   itself (at most 20 invokes), so no job is needed to start another batch. A job hands on only its OWN unfinished
   ids when its 60 s run gets short, and only after it enriched at least one of them, so the longest chain is the
   route's invoke plus 9 hand-ons: 10 invocations, below the 16 at which Lambda's recursive-loop detection stops a
-  chain. Call it again for the remaining ones once the queued jobs finished (a request still waiting
-  is counted again until its job ran). Each enrichment is one model call billed to the account.
+  chain. Call it again for the remaining ones once the queued jobs finished. Each queued request is
+  claimed first (`enrich_queued_at`, a 15-minute lease, never shown by the API): a second call, or a retried
+  POST, before the jobs ran queues nothing again and counts those requests in `remaining`, so a request is not
+  sent to the model twice, and a failed one is retried at most once per lease. Each enrichment is one model call
+  billed to the account.
 
 ## Insights
 
