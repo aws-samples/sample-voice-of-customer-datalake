@@ -33,7 +33,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import engagement_config
 from shared.aws import invoke_lambda_async
@@ -173,7 +173,7 @@ def release_claims(table: Any, request_ids: Sequence[str]) -> None:
             conditional_write(table.update_item, Key=request_key(request_id), UpdateExpression='REMOVE #lease',
                               ConditionExpression='attribute_exists(pk)',
                               ExpressionAttributeNames={'#lease': BACKFILL_LEASE_FIELD})
-        except ClientError:
+        except (ClientError, BotoCoreError):  # a refusal, or a connection / timeout error
             logger.warning('Enrichment lease not released', extra={'request_id': request_id}, exc_info=True)
 
 
