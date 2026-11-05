@@ -141,7 +141,7 @@ source's retention window, and participant erasure (`DELETE /participants/people
 |---|---|---|
 | `retention` | Daily schedule, 04:15 UTC | Items (in `voc-feedback` and `voc-radar`) of sources whose profile sets `retention_days`, with `date` older than the cutoff, under the profile's `retention_legal_basis` |
 | `erase` | `POST /settings/erasure` (admin) `{field, value, source?, legal_basis}` | Items where `field == value`. `field` is `author`, `source_id`, `csv_row_id` or `email` (`metadata.email` / `metadata.submitter_email`); optionally limited to one `source`, which is **required** for `source_id` and `csv_row_id` (an id is unique only within its source; 400 without it) |
-| `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy & access → Source policies → **Delete all data from a source** | Every item whose `source_platform` is the source, its Radar reviews, its whole-file uploads, then every object version left under `raw/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)) |
+| `erase`, `field: source` | `POST /settings/erasure` (admin), Administration → Privacy & access → Source policies → **Delete all data from a source** | Every item whose `source_platform` is the source, its Radar reviews, its whole-file uploads, then every object version left under `raw/<source>/` and `silver/<source>/` (see [Delete all data from a source](#delete-all-data-from-a-source)) |
 
 How it works:
 
@@ -166,6 +166,12 @@ How it works:
   again on a later day lands in a new date folder; that older folder is removed by a whole-source
   erasure, not by the item's. Removing the item from DynamoDB moves the aggregate counters through
   the aggregator's REMOVE path.
+- **Silver history.** Each deleted item's kept versions go with it: every object version under
+  `silver/<source>/<feedback_id>/` (the item as it was before each edit, refresh or reprocess,
+  [data-lake-structure.md → Silver history](data-lake-structure.md#silver-history-silver)), counted in
+  `deleted_objects`. A whole-source erasure also sweeps what is left under `silver/<source>/`. A kept
+  version holds only what its item held, so under a `redact` or `summary_only` policy it carries no more
+  customer data than the item did.
 - **Radar.** After `voc-feedback`, the same match runs over `voc-radar` (other brands' reviews,
   [radar.md](radar.md)): each matching review row goes with its dedupe marker (`RADARID#<brand>`) and
   its own raw archive (`deleted_radar_items`). The brand's daily counters are kept: they hold
@@ -288,8 +294,8 @@ What it keeps:
 
 ### What erasure does not reach
 
-Retention and erasure delete **feedback items, Radar reviews and their own per-item raw
-archives**, the whole-file uploads of an erased source, and the erased ids from the lineage lists of
+Retention and erasure delete **feedback items, Radar reviews, their own per-item raw
+archives and the items' kept Silver versions**, the whole-file uploads of an erased source, and the erased ids from the lineage lists of
 workspace artifacts. Copies derived from a review before it was erased stay where they are:
 
 | Copy | Where | What to do |
@@ -319,7 +325,7 @@ Least-privilege grants (`lib/stacks/retention-worker.ts`):
 | Radar table | `Scan`, `DeleteItem`; `UpdateItem` on the `SETTINGS#radar` partition only (the Radar cache version) |
 | Projects table | `Scan`, `UpdateItem` (no delete, no put) |
 | Feature requests table | `Scan`, `GetItem`, `Query`, `UpdateItem` (de-identifies board rows, recounts totals); `PutItem` / `DeleteItem` under `FR#*` only (re-keys an erased +1) |
-| Raw bucket | `DeleteObject` and `DeleteObjectVersion` on `raw/*`, plus `ListBucketVersions` with the `raw/` prefix. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source |
+| Raw bucket | `DeleteObject` and `DeleteObjectVersion` on `raw/*` and `silver/*`, plus `ListBucketVersions` with the `raw/` and `silver/` prefixes. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source |
 | Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); no delete |
 | KMS | Encrypt/decrypt |
 | Lambda | Invoke itself |
