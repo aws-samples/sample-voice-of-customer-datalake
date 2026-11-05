@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from boto3.dynamodb.conditions import Key
 
-from jobs.retention import boards, copies, handler, lineage, runs
+from jobs.retention import boards, boards_rekey, copies, handler, lineage, runs
 from jobs.retention.test.conftest import BUCKET, days_ago
 from shared.digests import sha256_hex
 from shared.legal_basis import LEGACY_LEGAL_BASIS
@@ -287,7 +287,7 @@ def _board_rows(aws) -> dict[str, str]:
     rows = {
         'fr_000000000001': {'pk': 'FR#fr_000000000001', 'sk': 'META', 'request_id': 'fr_000000000001',
                             'title': 'Split invoices', 'reporter_email': 'jane@example.com', 'reporter_name': 'Jane',
-                            'created_at': '2026-03-04T10:00:00+00:00', 'totals': {'supporters': 2}},
+                            'created_at': '2026-03-04T10:00:00+00:00', 'totals': {'supporters': 2}, 'version': 0},
         'sup_0000000000aa': {'pk': 'FR#fr_000000000001', 'sk': 'SUP#sup_0000000000aa', 'support_id': 'sup_0000000000aa',
                      'request_id': 'fr_000000000001', 'email': 'jane@example.com', 'name': 'Jane',
                      'is_reporter': True, 'created_at': '2026-03-04T10:00:00+00:00'},
@@ -308,15 +308,24 @@ def _board_row(aws, sk: str) -> dict:
     return aws['feature_requests'].get_item(Key={'pk': 'FR#fr_000000000001', 'sk': sk})['Item']
 
 
+def _rekeyed_support(aws) -> dict:
+    """Jane's +1 after the erasure: the one support whose id is not one of the fixture's."""
+    rows = [row for row in aws['feature_requests'].scan()['Items']
+            if str(row['sk']).startswith('SUP#') and row['sk'] not in ('SUP#sup_0000000000aa', 'SUP#sup_0000000000bb')]
+    assert len(rows) == 1
+    return rows[0]
+
+
 class TestBoards:
     def test_an_erasure_by_email_deidentifies_the_board_rows_and_deletes_their_raw_copies(self, aws, worker_context):
         keys = _board_rows(aws)
         result = handler.handle_event(_job(aws, 'email', 'Jane@Example.com', legal_basis=BASIS), worker_context)
         assert result['board_items_deidentified'] == 2
-        meta, own, other = _board_row(aws, 'META'), _board_row(aws, 'SUP#sup_0000000000aa'), _board_row(aws, 'SUP#sup_0000000000bb')
+        meta, other = _board_row(aws, 'META'), _board_row(aws, 'SUP#sup_0000000000bb')
         assert 'reporter_email' not in meta
         assert 'reporter_name' not in meta
-        assert (meta['title'], meta['totals']) == ('Split invoices', {'supporters': 2})
+        assert (meta['title'], meta['totals']['supporters']) == ('Split invoices', 2)
+        own = _rekeyed_support(aws)
         assert 'email' not in own
         assert 'name' not in own
         assert own['is_reporter'] is True
@@ -328,16 +337,22 @@ class TestBoards:
     def test_each_board_row_leaves_a_contentless_tombstone_first(self, aws, worker_context):
         _board_rows(aws)
         order: list[str] = []
-        real_put, real_deidentify = boards.BoardEraser.tombstones, boards.deidentify
+        real_put, real_deidentify, real_rekey = boards.BoardEraser.tombstones, boards.deidentify, boards_rekey.rekey
         with patch.object(boards.BoardEraser, 'tombstones',
                           lambda self, rows: (order.append('tombstones'), real_put(self, rows))), \
-                patch.object(boards, 'deidentify', lambda table, row: (order.append('row'), real_deidentify(table, row))[1]):
+                patch.object(boards, 'deidentify', lambda table, row: (order.append('row'), real_deidentify(table, row))[1]), \
+                patch.object(boards_rekey, 'rekey', lambda table, key, new_id: (
+                    order.append(f'rekey:{len(_tombstones(aws, "feature_requests"))}'), real_rekey(table, key, new_id))[1]):
             handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
-        assert order == ['tombstones', 'row', 'row']
+        # The request's tombstone before the page changes; the +1's (the 2nd) before its re-key.
+        assert order == ['tombstones', 'row', 'rekey:2']
         stones = {row['sk']: row for row in _tombstones(aws, 'feature_requests')}
-        assert set(stones) == {'fr_000000000001', 'sup_0000000000aa'}
-        assert stones['sup_0000000000aa']['feature_request_id'] == 'fr_000000000001'
-        assert (stones['sup_0000000000aa']['legal_basis'], stones['sup_0000000000aa']['action']) == (BASIS, 'deidentified')
+        new_id = _rekeyed_support(aws)['support_id']
+        assert set(stones) == {'fr_000000000001', new_id}
+        assert stones[new_id]['support_id'] == new_id
+        assert stones[new_id]['feature_request_id'] == 'fr_000000000001'
+        assert (stones[new_id]['legal_basis'], stones[new_id]['action']) == (BASIS, 'deidentified')
+        assert 'sup_0000000000aa' not in str(stones)
         assert 'jane' not in str(stones).lower()
         assert 'Split' not in str(stones)
         assert all('ttl' not in row for row in stones.values())
@@ -371,9 +386,12 @@ class TestBoards:
             worker_context.get_remaining_time_in_millis.side_effect = None
             assert handler.handle_event(payload, worker_context)['board_items_deidentified'] == 2
 
-    def test_the_worker_never_deletes_a_board_row(self, aws, worker_context):
+    def test_the_worker_deletes_only_the_old_key_of_a_rekeyed_support(self, aws, worker_context):
         _board_rows(aws)
         with patch.object(aws['feature_requests'].meta.client, 'delete_item') as delete:
             handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
         delete.assert_not_called()
-        assert len(aws['feature_requests'].scan()['Items']) == 3
+        sks = {row['sk'] for row in aws['feature_requests'].scan()['Items']}
+        assert 'SUP#sup_0000000000aa' not in sks
+        assert {'META', 'SUP#sup_0000000000bb'} < sks
+        assert len(sks) == 3

@@ -65,7 +65,8 @@ A board's `fields` is `{request: {<key>: {enabled, required}}, support: {<key>: 
 catalogue key present; a required field must be on). Statuses are 1–8 `{key, label}`, keys `^[a-z_]{1,30}$`; a new
 request starts in the first one.
 
-**Totals** are recomputed from the supports after every change: `supporters` = distinct supporter emails; sales
+**Totals** are recomputed from the supports after every change: `supporters` = distinct supporter emails, plus one
+for each +1 an erasure de-identified ([Erasure](#erasure)); sales
 adds distinct customers (case-insensitive) and the committed / at-risk dollar sums; service adds `affected` (the
 reporter's `affected_count`, at least 1, plus every other supporter); beta adds `avg_rating` (the request's rating).
 
@@ -239,7 +240,7 @@ Table `voc-feature-requests-<suffix>` (pk/sk, index `gsi1`, the Core KMS key, po
 | `SLUG#{slug}` | `BOARD` | board_id: the slug's uniqueness guard, written in one transaction with META |
 | `BOARDS#SEEDED` | `META` | nothing but the key: the Sales board was seeded (no gsi1pk, never listed); never seed again |
 | `FR#{id}` | `META` | title, description, status, `board_id` (absent = the seeded board), `fields`, reporter email and name, totals, `enrichment`?, project_id?, list_id?, `version` (conditional writes); gsi1pk `FRS` |
-| `FR#{id}` | `SUP#{id}` | email, name, the +1's field values, is_reporter, created/updated. The id is `sup_` + the first 16 hex of sha256(request id, lowercased email); supports from releases before 5.54.01 keep random ids |
+| `FR#{id}` | `SUP#{id}` | email, name, the +1's field values, is_reporter, created/updated. The id is `sup_` + the first 16 hex of sha256(request id, lowercased email); supports from releases before 5.54.01 keep random ids, and so does a +1 an erasure re-keyed (no email, `deidentified_at`) |
 | `RATE#{board_id}#{hash}#{day}` | `COUNT` | `requests`, `supports` counters of an `anyone` board, `ttl` |
 
 The participants table holds the derived sign-up row `SETTINGS` / `board_audience` (above).
@@ -320,7 +321,8 @@ everywhere). `days` is 0–3650 (0 or absent = all time) and filters on the requ
  by_sentiment: [{sentiment, requests}]}                               // no enrichment = 'unknown'
 ```
 
-Supporters are each request's `totals.supporters` (distinct supporter emails, the reporter included). Only a
+Supporters are each request's `totals.supporters` (distinct supporter emails, the reporter included, plus each
+de-identified +1). Only a
 successful enrichment counts (`enriched`); a failed one reads as not enriched. At most 1000 requests are read
 (newest first); `truncated: true` says the bound was reached. No email or name is in the answer, and these numbers
 are never mixed into the review metrics.
@@ -332,15 +334,22 @@ without a source, or with the source `feature_requests`, also reaches the boards
 `voc-retention` scans `voc-feature-requests` for requests whose `reporter_email` and +1s whose `email` match
 (case-insensitive) and, for each row:
 
-1. writes a tombstone `AUDIT#tombstone#feature_requests` / `<request or support id>` (ids, `action: deidentified`,
-   the legal basis; no content, no `ttl`), one PutItem each, before the row changes;
+1. writes a tombstone `AUDIT#tombstone#feature_requests` (ids, `action: deidentified`, the legal basis; no content,
+   no `ttl`), one PutItem each, before the row changes. A request's is keyed by its request id. A +1's is keyed by
+   its NEW support id (step 3) and never names the old one;
 2. deletes every version under the row's raw-copy folder (`raw/feature_requests/{y}/{m}/{d}/<id>/`);
-3. **de-identifies** the row: removes `reporter_email` / `reporter_name` from a request, `email` / `name` from a +1.
-   The request's title, description, fields and +1 count stay: they are the board's shared content. The next
-   recount of the request's totals no longer counts the erased +1 as a supporter.
+3. **de-identifies** the row. A request: `reporter_email` / `reporter_name` are removed. A +1: its id is derived
+   from the request and the email (above), so removing the email alone would leave an id anyone who knows the
+   email can recompute. The worker therefore **re-keys** it (`lambda/jobs/retention/boards_rekey.py`): one
+   `TransactWriteItems` puts the de-identified +1 under a new random support id (same request, same field values,
+   `is_reporter` and `created_at` kept, no `email` / `name`, `deidentified_at` set) and deletes the old `SUP#` row
+   (only while it still exists). The request's totals are then recomputed: a de-identified +1 still counts as one
+   supporter, so the +1 count does not drop. The request's title, description and fields stay: they are the
+   board's shared content. The request row itself stores no support id (its own id is random).
 
 The job counts the rows in `board_items_deidentified`. Documents, personas and research results that read an
 erased person's request (`input_feature_request_ids`) lose that id and are marked `erased_evidence`, like for an
-erased review. The worker holds `Scan` and `UpdateItem` on the table, no delete. A +1's id is derived from the
-request and the email (above), so it stays the same after the email is removed. Text a person typed into a
-description or a field (a contact email, a name) is not searched: edit or delete such a request by hand.
+erased review. On the table the worker holds `Scan`, `GetItem`, `Query` and `UpdateItem`, and `PutItem` /
+`DeleteItem` only on the request partitions (`FR#*`, by `dynamodb:LeadingKeys`), for the re-key. An `AUDIT#delete`
+row of a +1 removed before the erasure still names that +1's old id (audit rows are never changed). Text a person
+typed into a description or a field (a contact email, a name) is not searched: edit or delete such a request by hand.

@@ -31,15 +31,14 @@ Feedback boards become their own evidence source: requests are enriched on their
 
 ### Changed
 
-- **An erasure by email reaches the feedback boards**: the person's requests and +1s are de-identified (email and name removed), every version of their raw copies under `raw/feature_requests/` is deleted, each row gets a tombstone, and artifacts that read those requests are marked. Erasure jobs show the `boards` phase and `board_items_deidentified` ([docs/source-policies.md](docs/source-policies.md)).
+- **An erasure by email reaches the feedback boards**: the person's requests and +1s are de-identified (email and name removed; a +1, whose id was derived from the email, moves to a new random id and still counts as a supporter), every version of their raw copies under `raw/feature_requests/` is deleted, each row gets a tombstone, and artifacts that read those requests are marked. Erasure jobs show the `boards` phase and `board_items_deidentified` ([docs/source-policies.md](docs/source-policies.md)).
 - The legal basis field refuses an email address or phone number before the request is sent (the API stays the authority).
-- TENETS.md tenet 7 records the accepted fixed-cost baseline: one customer-managed KMS key and three Secrets Manager secrets (about $1.20 a month together), capped by the fixed-cost guard.
 - Docs: the DELETE routes that carry a legal basis in a JSON body note that some HTTP clients drop DELETE bodies (the API then answers 400 and deletes nothing).
 
 ### Upgrade notes
 
 - `voc-engagement-api` now calls the enrichment-surface model (pay-per-use, one call per new or edited board request). Run the backfill once after deploying to enrich existing requests.
-- New grants: the persona generator, document generator and research step roles get `dynamodb:Query` on `voc-feature-requests` and its `gsi1` index; `voc-retention` gets Scan / UpdateItem on it (no delete); the global MCP Lambda may invoke `voc-engagement-api`. VocCoreStack adds one export that VocProcessingStack imports, so deploy with `--all` (or Core before Processing). No new fixed-cost resource.
+- New grants: the persona generator, document generator and research step roles get `dynamodb:Query` on `voc-feature-requests` and its `gsi1` index; `voc-retention` gets Scan / GetItem / Query / UpdateItem on it, plus PutItem / DeleteItem pinned to the request partitions (`FR#*`) to re-key an erased +1; the global MCP Lambda may invoke `voc-engagement-api`. VocCoreStack adds one export that VocProcessingStack imports, so deploy with `--all` (or Core before Processing). No new fixed-cost resource.
 
 ## [6.01.01] - 2026-11-05
 

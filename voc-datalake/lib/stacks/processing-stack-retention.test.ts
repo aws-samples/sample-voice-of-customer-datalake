@@ -72,9 +72,15 @@ describe('voc-retention worker', () => {
     expect(allowedActions(statements(), 'dynamodb:', 'Projects')).toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
   });
 
-  it('holds exactly Scan/UpdateItem on feature requests — it de-identifies board rows, never deletes or puts', () => {
-    expect(allowedActions(statements(), 'dynamodb:', 'FeatureRequests'))
-      .toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
+  it('reads and updates feature requests, and puts / deletes only under FR#* (it re-keys an erased +1)', () => {
+    expect(allowedActions(statements(), 'dynamodb:', 'FeatureRequests')).toStrictEqual([
+      'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:Scan',
+      'dynamodb:UpdateItem',
+    ]);
+    const writes = statements().filter((s) => s.effect === 'Allow' && s.resource.includes('FeatureRequests')
+      && s.actions.some((a) => a === 'dynamodb:PutItem' || a === 'dynamodb:DeleteItem'));
+    expect(writes.map((s) => [...s.actions].sort(byCodeUnit).join(','))).toStrictEqual(['dynamodb:DeleteItem,dynamodb:PutItem']);
+    expect(JSON.stringify(template.toJSON())).toContain('"dynamodb:LeadingKeys":["FR#*"]');
   });
 
   it('deletes objects and versions under raw/* only, and lists versions of raw/ only', () => {
