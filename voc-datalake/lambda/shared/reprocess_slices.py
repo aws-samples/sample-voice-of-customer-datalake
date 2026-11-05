@@ -20,7 +20,7 @@ worker reads it back (``slice_from_job``) and filters with ``admits``.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from typing import Any, Final
 
@@ -55,6 +55,17 @@ class ReprocessSlice:
         if self.days <= ALL_TIME_DAYS:
             return None, None
         return (today - timedelta(days=self.days - 1)).strftime('%Y-%m-%d'), None
+
+    def pinned_at(self, started: datetime) -> ReprocessSlice:
+        """The same slice with a ``days`` window fixed to the days it covered at ``started``.
+
+        A resume replays what its partial job started on: counted back from the resume's own day, a
+        ``days`` window would move and skip the reviews of its first days still after the cursor.
+        """
+        if self.days is None or self.days <= ALL_TIME_DAYS:
+            return self
+        first, _last = self.window(started)
+        return replace(self, days=None, date_from=first, date_to=started.strftime('%Y-%m-%d'))
 
     def fields(self) -> dict[str, Any]:
         """The job-row fields (only the axes this slice narrows, plus its basis)."""

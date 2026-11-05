@@ -31,7 +31,7 @@ a normal new item / duplicate skip, never an in-place overwrite. For those:
 Each refresh stamps ``updated_by`` (the system actor), ``updated_at`` and ``change_reason``
 ``'source_update'``; a re-enrichment also writes the provenance fields (``enrichment_mode``
 ``'source_update'``, ``shared/silver_provenance.py``). The processor keeps the item as it was
-(``keep_silver_version``) before it runs the update.
+(``keep_silver_version``) once the update landed (a refused update keeps no version).
 
 The keys and the date index stay: ``pk``/``sk``, ``gsi1*`` and ``date`` are the
 item's first ingest, so the aggregator re-buckets a MODIFY on the same day. Only
