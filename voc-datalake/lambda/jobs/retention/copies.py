@@ -53,14 +53,18 @@ def legal_basis_for(run: Mapping[str, Any], source: str) -> str:
     return legal_basis_or_legacy(bases.get(source) if isinstance(bases, Mapping) else None)
 
 
-def _tombstone(run: Mapping[str, Any], item: Mapping[str, Any], store: str, now: str) -> dict[str, Any]:
-    source = item_source(item)
-    feedback_id = _feedback_id(item)
+def tombstone_record(run: Mapping[str, Any], source: str, item_id: str, store: str, now: str) -> dict[str, Any]:
+    """The fields every tombstone carries: its key, the run, the legal basis, the time; never content."""
     return {
-        **tombstone_key(source, feedback_id), 'feedback_id': feedback_id, 'source': source, 'store': store,
+        **tombstone_key(source, item_id), 'source': source, 'store': store,
         'mode': run['mode'], 'run_id': run['run_id'], 'legal_basis': legal_basis_for(run, source),
         'deleted_at': now, **({'job_id': run['job_id']} if run.get('job_id') else {}),
     }
+
+
+def _tombstone(run: Mapping[str, Any], item: Mapping[str, Any], store: str, now: str) -> dict[str, Any]:
+    feedback_id = _feedback_id(item)
+    return {**tombstone_record(run, item_source(item), feedback_id, store, now), 'feedback_id': feedback_id}
 
 
 def write_tombstones(aggregates_table: Any, run: Mapping[str, Any], items: Sequence[Mapping[str, Any]],
