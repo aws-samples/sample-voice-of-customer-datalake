@@ -160,13 +160,13 @@ def _claim(table: Any, request_id: str, now: datetime) -> bool:
     )
 
 
-def claim_for_backfill(table: Any, request_ids: Sequence[str], *, now: datetime | None = None) -> list[str]:
+def claim_for_backfill(table: Any, request_ids: Sequence[str]) -> list[str]:
     """The ``request_ids`` this backfill may queue: each one claimed with a lease (``BACKFILL_LEASE``).
 
     A second click (or a retried POST) before the jobs ran finds the rows claimed and queues nothing,
     so a request is not sent to the model twice; a failed one is retried at most once per lease.
     """
-    moment = now or datetime.now(UTC)
+    moment = datetime.now(UTC)
     return [request_id for request_id in dict.fromkeys(request_ids)
             if is_id(request_id, REQUEST_PREFIX) and _claim(table, request_id, moment)]
 
