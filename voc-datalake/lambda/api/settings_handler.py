@@ -41,6 +41,7 @@ from shared import (
     onboarding,
     reference_urls,
     reprocess_jobs,
+    reprocess_slices,
 )
 from shared import email_intake_settings as inbox
 from shared.api import (
@@ -857,18 +858,10 @@ def start_category_reprocess():
         body = {}
     if not isinstance(body, dict):
         raise ValidationError('Request body must be a JSON object')
-    mode = body.get('mode')
-    if mode not in reprocess_jobs.MODES:
-        raise ValidationError(f"mode must be one of: {', '.join(reprocess_jobs.MODES)}")
-    days = _reprocess_days(body.get('days'))
-    include_manual = validate_bool(body.get('include_manual'), False, 'include_manual')
-
-    job = reprocess_jobs.start_job(
-        table, mode=mode, days=days, include_manual=include_manual,
-        started_by=_caller_label(event), now=datetime.now(UTC),
-    )
+    job = _resume_reprocess(table, body, event) if 'resume' in body else _new_reprocess(table, body, event)
     if job is None:
         raise ConflictError('A reprocess job is already queued or running')
+    mode, days = job.get('mode'), job.get('days')
     try:
         invoke_lambda_async(CATEGORY_REPROCESS_FUNCTION, {'job_id': job['sk'], **payload_fields()})
     except Exception as e:
@@ -882,6 +875,52 @@ def start_category_reprocess():
         content_type=content_types.APPLICATION_JSON,
         body=json.dumps({'job': reprocess_jobs.job_view(job)}),
     )
+
+
+def _new_reprocess(table: Any, body: dict, event: dict) -> dict | None:
+    """A new job for the body's mode and slice (``shared/reprocess_slices.py``); None while one is active."""
+    mode = body.get('mode')
+    if mode not in reprocess_jobs.MODES:
+        raise ValidationError(f"mode must be one of: {', '.join(reprocess_jobs.MODES)}")
+    try:
+        job_slice = reprocess_slices.parse_slice(body, _reprocess_days)
+    except ValueError as e:
+        raise ValidationError(str(e)) from e
+    include_manual = validate_bool(body.get('include_manual'), False, 'include_manual')
+    return reprocess_jobs.start_job(
+        table, mode=mode, days=job_slice.days or 0, include_manual=include_manual,
+        started_by=_caller_label(event), now=datetime.now(UTC), job_slice=job_slice,
+        started_by_sub=get_caller_subject(event),
+    )
+
+
+def _resume_reprocess(table: Any, body: dict, event: dict) -> dict | None:
+    """``{resume: <job_id>}``: a new job continuing a partial one at its cursor, with its mode and slice.
+
+    400 for other fields or a malformed id, 404 for an unknown job, 409 unless the job
+    is partial and not resumed yet. None while another job is active.
+    """
+    if set(body) != {'resume'}:
+        raise ValidationError('resume takes no other fields: the resumed job keeps its mode and slice')
+    job_id = body.get('resume')
+    if not reprocess_jobs.is_job_id(job_id):
+        raise ValidationError('resume must be a reprocess job id')
+    previous = reprocess_jobs.get_job(table, str(job_id))
+    if previous is None:
+        raise NotFoundError('Reprocess job not found')
+    resume = reprocess_jobs.resume_point(previous)
+    if resume is None:
+        raise ConflictError('Only a partial job that has not been resumed yet can be resumed')
+    job_slice = reprocess_slices.slice_from_job(previous)
+    try:
+        return reprocess_jobs.start_job(
+            table, mode=str(previous.get('mode')), days=job_slice.days or 0,
+            include_manual=previous.get('include_manual') is True, started_by=_caller_label(event),
+            now=datetime.now(UTC), job_slice=job_slice,
+            started_by_sub=get_caller_subject(event), resume=resume,
+        )
+    except reprocess_jobs.ResumeRefused as e:
+        raise ConflictError('This job was resumed already') from e
 
 
 @app.get("/settings/categories/reprocess")
