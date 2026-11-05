@@ -11,10 +11,10 @@
  * unbounded storage growth. Same contract as the S3-import bucket
  * (ingestion-stack.ts `createS3ImportBucket`).
  *
- * The ONE exception is the raw data lake's bronze layer, `raw/` (TENETS.md D1): it keeps
- * history, so nothing under it ever expires, current or noncurrent, and a bucket-policy
- * statement refuses any PutObject under it that could overwrite (no `If-None-Match`).
- * Only voc-retention deletes there (lawful erasure / a declared retention period). The raw
+ * The ONE exception is the raw data lake's append-only layers, `raw/` (bronze) and `silver/`
+ * (Silver history) (TENETS.md D1): they keep history, so nothing under them ever expires,
+ * current or noncurrent, and a bucket-policy statement refuses any PutObject under them that
+ * could overwrite (no `If-None-Match`). Only voc-retention deletes there (lawful erasure / a declared retention period). The raw
  * bucket's workspace prefixes have no noncurrent rule either: a workspace delete removes every
  * version itself (RAW_BUCKET_WORKSPACE_PREFIXES); only `scratch/` expires.
  *
@@ -41,6 +41,14 @@ export const RAW_BUCKET_WORKSPACE_PREFIXES = [
 ] as const;
 /** The bronze layer: written once (If-None-Match), never overwritten or expired. */
 export const RAW_LAYER_PREFIX = 'raw/';
+/**
+ * Silver history: a feedback item as it was before each in-place change (lambda/shared/silver_provenance.py),
+ * `silver/{source}/{feedback_id}/{stamp}-{sha8}.json`. Same contract as `raw/` (TENETS.md D1): written once
+ * (If-None-Match), never overwritten, no lifecycle rule expires it; only voc-retention deletes it, with its item.
+ */
+export const SILVER_HISTORY_PREFIX = 'silver/';
+/** The append-only layers of the raw data bucket: write-once, kept forever (only voc-retention deletes). */
+export const APPEND_ONLY_PREFIXES = [RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX] as const;
 /**
  * `scratch/` objects (workflow claim-checks) expire after this many days, and so do their noncurrent versions (a
  * workflow's own delete leaves one): no workflow runs longer than 2 h.
@@ -94,7 +102,7 @@ function versionHygieneRules(noncurrentDays: number): s3.LifecycleRule[] {
 /**
  * The raw data bucket's lifecycle: abandoned multipart uploads are aborted and expired delete markers removed
  * bucket-wide (neither removes data). No noncurrent-version rule anywhere: `raw/` keeps every version (TENETS.md
- * D1) and a workspace delete removes its own versions (RAW_BUCKET_WORKSPACE_PREFIXES). `scratch/` gets its own rule
+ * D1), nor `silver/`, and a workspace delete removes its own versions (RAW_BUCKET_WORKSPACE_PREFIXES). `scratch/` gets its own rule
  * where the bucket is created.
  */
 function rawBucketVersionRules(): s3.LifecycleRule[] {
@@ -105,8 +113,9 @@ function rawBucketVersionRules(): s3.LifecycleRule[] {
 }
 
 /**
- * Deny every PutObject / CompleteMultipartUpload under `raw/` that does not send `If-None-Match`,
- * so no writer (ours or out-of-band) can overwrite a bronze object: a write either creates a new
+ * Deny every PutObject / CompleteMultipartUpload under `raw/` and `silver/` (APPEND_ONLY_PREFIXES) that does
+ * not send `If-None-Match`, so no writer (ours or out-of-band) can overwrite a bronze object or a kept Silver
+ * version: a write either creates a new
  * key or gets 412. Multipart parts (CreateMultipartUpload, UploadPart, UploadPartCopy) cannot carry
  * the header and are exempted by `s3:ObjectCreationOperation`, as AWS documents
  * (https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes-enforce.html). A
@@ -119,7 +128,7 @@ function denyOverwritingRawWrites(bucket: s3.Bucket): void {
     effect: iam.Effect.DENY,
     principals: [new iam.AnyPrincipal()],
     actions: ['s3:PutObject'],
-    resources: [bucket.arnForObjects(`${RAW_LAYER_PREFIX}*`)],
+    resources: APPEND_ONLY_PREFIXES.map((prefix) => bucket.arnForObjects(`${prefix}*`)),
     conditions: {
       Null: { 's3:if-none-match': 'true' },
       Bool: { 's3:ObjectCreationOperation': 'true' },

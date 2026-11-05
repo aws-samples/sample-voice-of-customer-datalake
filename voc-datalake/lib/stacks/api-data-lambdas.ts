@@ -31,6 +31,7 @@ import { briefingApiWiring } from './briefing-worker';
 import { grantImageModelProbe } from './api-marketplace';
 import { DESIGN_ICONS_PREFIX, LOGO_PREVIEW_PREFIX } from './design-capture';
 import { appVersion } from '../utils/connector-version';
+import { grantSilverHistoryPut } from '../utils/silver-history-grants';
 import { INBOUND_EMAIL_RULE_BASE_NAME, inboundEmailSettingsEnv } from '../utils/inbound-email';
 
 export interface DataLambdas {
@@ -100,6 +101,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   // The data_version bump after an edit (read-your-write for the read cache, docs/caching.md).
   grantCacheVersionBump(aggregatesTable, feedbackEditRole, AGGREGATES_VERSION_PARTITION);
   kmsKey.grantEncryptDecrypt(feedbackEditRole);
+  // The review as it was before each edit (lambda/shared/silver_provenance.py): write-once Put under silver/ only.
+  grantSilverHistoryPut(rawDataBucket, feedbackEditRole);
 
   const feedbackEditLambda = new lambda.Function(stack, 'FeedbackEditApi', {
     functionName: ctx.uniqueName(FEEDBACK_EDIT_API_FUNCTION_BASE_NAME),
@@ -113,6 +116,9 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     environment: {
       FEEDBACK_TABLE: feedbackTable.tableName,
       AGGREGATES_TABLE: aggregatesTable.tableName,
+      // Where an edited review's previous version is kept, and the release it records (shared/silver_provenance.py).
+      RAW_DATA_BUCKET: rawDataBucket.bucketName,
+      APP_VERSION: appVersion(),
       ALLOWED_ORIGIN: allowedOrigin,
       POWERTOOLS_SERVICE_NAME: 'voc-feedback-edit-api',
       LOG_LEVEL: 'INFO',

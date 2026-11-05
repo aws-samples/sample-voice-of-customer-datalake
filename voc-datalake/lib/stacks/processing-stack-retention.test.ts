@@ -85,14 +85,15 @@ describe('voc-retention worker', () => {
     expect(JSON.stringify(template.toJSON())).toContain('"ForAllValues:StringLike":{"dynamodb:LeadingKeys":["FR#*"]}');
   });
 
-  it('deletes objects and versions under raw/* only, and lists versions of raw/ only', () => {
+  it('deletes objects and versions under raw/* and silver/* only, and lists versions of those prefixes only', () => {
     const s3 = statements().filter((s) => s.effect === 'Allow' && s.actions.some((a) => a.startsWith('s3:')));
     expect(s3.map((s) => [...s.actions].sort(byCodeUnit).join(','))).toStrictEqual([
       's3:DeleteObject,s3:DeleteObjectVersion',
       's3:ListBucketVersions',
     ]);
     expect(itemAt(s3, 0).resource).toContain('/raw/*');
-    expect(JSON.stringify(template.toJSON())).toContain('"s3:prefix":["raw/*"]');
+    expect(itemAt(s3, 0).resource).toContain('/silver/*');
+    expect(JSON.stringify(template.toJSON())).toContain('"s3:prefix":["raw/*","silver/*"]');
   });
 
   it('carries no Deny of its own: whole-file uploads are reached only by a whole-source erasure (in code)', () => {

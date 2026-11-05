@@ -34,12 +34,16 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
     ]),
   ]);
   acknowledgeNag(processing, [
-    ...s3ObjectSuppressions([raw.arnForObjects('raw/*')]),
+    // silver/*: the processor and the reprocess worker keep an item's previous version (write-once Put), and
+    // voc-retention deletes those versions with the item (lambda/shared/silver_provenance.py).
+    ...s3ObjectSuppressions([raw.arnForObjects('raw/*'), raw.arnForObjects('silver/*')]),
     ...rawDataPrefixSuppressions(raw, ['memory-imports/*', 'prototypes/*', 'scratch/research_jobs/*']),
   ]);
   acknowledgeNag(api, [
     ...s3ObjectSuppressions([
-      raw.arnForObjects('*'), raw.arnForObjects('raw/*'), ingestion.s3ImportBucket.arnForObjects('*'),
+      // silver/*: the feedback-edit API keeps the review as it was before an edit (write-once Put).
+      raw.arnForObjects('*'), raw.arnForObjects('raw/*'), raw.arnForObjects('silver/*'),
+      ingestion.s3ImportBucket.arnForObjects('*'),
       core.websiteBucket.arnForObjects('*'),
     ]),
     ...rawDataPrefixSuppressions(raw, [

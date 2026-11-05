@@ -59,6 +59,8 @@ const RETENTION_HANDLER = 'jobs/retention/handler.lambda_handler';
 
 /** The raw-archive prefix the worker may delete under (and list versions of). */
 const RAW_PREFIX = 'raw/';
+/** The kept Silver versions of an item (lambda/shared/silver_provenance.py): deleted with the item. */
+const SILVER_PREFIX = 'silver/';
 
 export interface RetentionWorkerProps {
   uniqueName: (baseName: string) => string;
@@ -118,13 +120,13 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'DeleteRawArchiveObjects',
     actions: ['s3:DeleteObject', 's3:DeleteObjectVersion'],
-    resources: [rawDataBucket.arnForObjects(`${RAW_PREFIX}*`)],
+    resources: [rawDataBucket.arnForObjects(`${RAW_PREFIX}*`), rawDataBucket.arnForObjects(`${SILVER_PREFIX}*`)],
   }));
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'ListRawArchiveVersions',
     actions: ['s3:ListBucketVersions'],
     resources: [rawDataBucket.bucketArn],
-    conditions: { StringLike: { 's3:prefix': [`${RAW_PREFIX}*`] } },
+    conditions: { StringLike: { 's3:prefix': [`${RAW_PREFIX}*`, `${SILVER_PREFIX}*`] } },
   }));
   // Self hand-over before the 15-minute ceiling, by name (a GetAtt on the
   // function from its own role's policy would be a CloudFormation cycle).

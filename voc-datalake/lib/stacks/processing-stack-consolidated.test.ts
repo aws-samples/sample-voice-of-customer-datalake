@@ -377,10 +377,11 @@ describe('category reprocess worker', () => {
       .toStrictEqual(['dynamodb:GetItem', 'dynamodb:UpdateItem']);
   });
 
-  it('reads only raw/* in the raw bucket, and writes nothing there', () => {
+  it('reads only raw/* in the raw bucket, and writes only a kept Silver version (PutObject on silver/*)', () => {
     const s3 = statements().filter((s) => s.actions.some((a) => a.startsWith('s3:')));
     expect(s3.length).toBeGreaterThan(0);
-    expect(s3.flatMap((s) => s.actions).filter((a) => /^s3:(Put|Delete|Abort)/.test(a))).toStrictEqual([]);
+    const writes = s3.filter((s) => s.actions.some((a) => /^s3:(Put|Delete|Abort)/.test(a)));
+    expect(writes.map((s) => [s.actions, s.resource.includes('/silver/*')])).toStrictEqual([[['s3:PutObject'], true]]);
     const objectResources = s3.map((s) => s.resource).filter((r) => r.includes('/'));
     expect(objectResources.join(' ')).toContain('/raw/*');
     expect(objectResources.every((r) => !r.includes('"/*"')), 'bucket-wide object grant').toBe(true);
