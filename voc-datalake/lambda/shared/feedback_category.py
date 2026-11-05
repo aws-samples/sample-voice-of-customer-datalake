@@ -178,7 +178,10 @@ def assignment_clauses(fields: Mapping[str, Any], prefix: str) -> tuple[list[str
 
 
 def keep_before_edit(item: Mapping[str, Any], edit: ManualEdit, update_kwargs: Mapping[str, Any]) -> None:
-    """Keep ``item`` as it is before ``update_kwargs`` runs (``shared.silver_provenance``; never raises)."""
+    """Keep ``item`` as it was before ``update_kwargs`` ran (``shared.silver_provenance``; never raises).
+
+    Called once the conditional update succeeded, so a refused edit leaves no version.
+    """
     keep_silver_version(item, actor=edit.actor, reason=edit.reason, changed_fields=fields_of_update(update_kwargs))
 
 

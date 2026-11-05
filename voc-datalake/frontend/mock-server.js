@@ -1405,7 +1405,7 @@ function advanceReprocessJob(job) {
       job.raw_fallback = Math.round(job.scanned * 0.25);
       job.raw_fallback_sources = job.raw_fallback > 0 ? ['csv_upload'] : [];
     }
-    job.config = { config_version: 3, categories_sha16: '0a1b2c3d4e5f6a7b', model_id: 'global.anthropic.claude-haiku-5-5', prompt_version: '1.1.0' };
+    job.config = { config_version: 3, categories_sha16: '0a1b2c3d4e5f6a7b', model_id: 'global.anthropic.claude-haiku-5-5', prompt_version: '2.0.0' };
     const remaining = MOCK_REPROCESS_TOTAL - (job.resume_offset ?? 0);
     if (job.scanned >= remaining || job.scanned >= MOCK_REPROCESS_CEILING) {
       job.stopped_at_ceiling = job.scanned < remaining;

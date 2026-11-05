@@ -1,6 +1,6 @@
 """Replay slices, resume, lineage and the raw-mode fixes of the reprocess worker (TENETS.md D1-D4).
 
-Against moto, so the Query / Scan filters and the conditional updates really run.
+Against moto, so the Scan filters and the conditional updates really run.
 """
 import json
 from datetime import UTC, datetime
@@ -34,19 +34,28 @@ def _view(tables, job_id: str) -> dict:
 
 @pytest.mark.usefixtures('converse_mock', 'invoke_mock')
 class TestSlices:
-    def test_a_sourced_job_reads_only_its_sources_partitions(self, tables, worker_context):
+    def test_a_sourced_job_reprocesses_only_its_sources(self, tables, worker_context):
         tables['feedback'].put_item(Item=feedback_item('a'))
         tables['feedback'].put_item(Item=feedback_item('b', pk='SOURCE#app', source_platform='app'))
         tables['feedback'].put_item(Item=feedback_item('c', pk='SOURCE#forms', source_platform='forms'))
         job = _start(tables, ReprocessSlice(sources=('web', 'forms')))
-        with patch.object(tables['feedback'], 'scan', wraps=tables['feedback'].scan) as scan:
-            assert handler.run_job({'job_id': job['sk']}, worker_context)['status'] == 'completed'
-        scan.assert_not_called()
+        assert handler.run_job({'job_id': job['sk']}, worker_context)['status'] == 'completed'
         after = _items(tables['feedback'])
         assert after['a']['category'] == 'shipping'
         assert after['c']['category'] == 'shipping'
         assert after['b']['category'] == 'billing'
         assert _view(tables, job['sk'])['scanned'] == 2
+
+    def test_a_branded_review_of_a_sliced_source_is_reprocessed(self, tables, worker_context):
+        """The processor stores a review with a brand name under SOURCE#{brand_name}: the slice still finds it."""
+        tables['feedback'].put_item(Item=feedback_item('d', pk='SOURCE#Example Air', source_platform='web'))
+        tables['feedback'].put_item(Item=feedback_item('e', pk='SOURCE#Example Air', source_platform='app'))
+        job = _start(tables, ReprocessSlice(sources=('web',)))
+        assert handler.run_job({'job_id': job['sk']}, worker_context)['status'] == 'completed'
+        after = _items(tables['feedback'])
+        assert after['d']['category'] == 'shipping'
+        assert after['e']['category'] == 'billing'
+        assert _view(tables, job['sk'])['scanned'] == 1
 
     def test_a_category_slice_leaves_other_categories_uncounted(self, tables, worker_context):
         tables['feedback'].put_item(Item=feedback_item('a'))
@@ -99,7 +108,7 @@ class TestPartialAndResume:
         assert _view(tables, second['sk'])['resumed_from'] == first['sk']
         assert _view(tables, first['sk'])['resumable'] is False
 
-    def test_a_partial_job_is_resumed_once(self, tables, worker_context):
+    def _partial(self, tables, worker_context):
         tables['feedback'].put_item(Item=feedback_item('a'))
         tables['feedback'].put_item(Item=feedback_item('b'))
         first = _start(tables)
@@ -107,10 +116,34 @@ class TestPartialAndResume:
             handler.run_job({'job_id': first['sk']}, worker_context)
         resume = jobs.resume_point(jobs.get_job(tables['aggregates'], first['sk']))
         assert resume is not None
+        return first, resume
+
+    def test_a_partial_job_is_resumed_once_at_a_time(self, tables, worker_context):
+        first, resume = self._partial(tables, worker_context)
         second = _start(tables, resume=resume)
-        jobs.cancel_job(tables['aggregates'], second['sk'])
+        jobs.release_lock(tables['aggregates'], second['sk'])  # a live resumer would hold it; the lock is not under test
         with pytest.raises(jobs.ResumeRefused):
             _start(tables, resume=resume)
+        assert jobs.resume_point(jobs.get_job(tables['aggregates'], first['sk'])) is None
+
+    @pytest.mark.parametrize('ending', ['cancel', 'fail'])
+    def test_a_resumer_that_did_not_finish_hands_the_partial_job_back(self, tables, worker_context, ending):
+        """A failed or cancelled resume (an invoke that never started included) never loses the cursor."""
+        first, resume = self._partial(tables, worker_context)
+        second = _start(tables, resume=resume)
+        if ending == 'cancel':
+            jobs.cancel_job(tables['aggregates'], second['sk'])
+        else:
+            jobs.finish_job(tables['aggregates'], second['sk'], jobs.STATUS_FAILED, error='invoke failed')
+        again = jobs.resume_point(jobs.get_job(tables['aggregates'], first['sk']))
+        assert again == resume
+        third = _start(tables, resume=again)
+        assert jobs.get_job(tables['aggregates'], first['sk'])['resumed_by'] == third['sk']
+
+    def test_a_completed_resumer_keeps_the_partial_job_closed(self, tables, worker_context):
+        first, resume = self._partial(tables, worker_context)
+        second = _start(tables, resume=resume)
+        assert handler.run_job({'job_id': second['sk']}, worker_context)['status'] == 'completed'
         assert jobs.resume_point(jobs.get_job(tables['aggregates'], first['sk'])) is None
 
     @pytest.mark.parametrize('job', [
@@ -144,6 +177,26 @@ class TestLineage:
     def test_an_unchanged_review_keeps_no_version(self, tables, worker_context, kept_versions):
         tables['feedback'].put_item(Item=feedback_item('a', category='shipping', subcategory='late', usefulness='low'))
         handler.run_job({'job_id': _start(tables)['sk']}, worker_context)
+        kept_versions.assert_not_called()
+
+    def test_a_review_a_manual_edit_won_meanwhile_keeps_no_version(self, tables, worker_context, kept_versions):
+        """The conditional update loses to a hand correction made during the job: no version of a change that
+        never happened (TENETS.md D4)."""
+        feedback = tables['feedback']
+        feedback.put_item(Item=feedback_item('a'))
+        real_update = feedback.update_item
+
+        def corrected_by_hand_first(**kwargs):
+            real_update(Key={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#a'},
+                        UpdateExpression='SET category_source = :m', ExpressionAttributeValues={':m': 'manual'})
+            return real_update(**kwargs)
+
+        job = _start(tables)
+        with patch.object(feedback, 'update_item', side_effect=corrected_by_hand_first), \
+             patch.object(handler, '_tables', return_value=(feedback, tables['aggregates'])):
+            handler.run_job({'job_id': job['sk']}, worker_context)
+        assert _items(feedback)['a']['category'] == 'billing'
+        assert _view(tables, job['sk'])['skipped_manual'] == 1
         kept_versions.assert_not_called()
 
     def test_the_job_records_the_configuration_it_derived_with(self, tables, worker_context):

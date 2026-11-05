@@ -532,13 +532,13 @@ def refresh_stored_item(stored: dict, raw_record: dict) -> str:
         kwargs = _reenrichment_update(stored, raw_record, refreshed_at)
     else:
         kwargs = attributes_update(stored, raw_record, refreshed_at)
-    _keep_previous(stored, kwargs, REASON_SOURCE_UPDATE)
     try:
         feedback_table.update_item(**kwargs)
     except ClientError as e:
         if is_conditional_check_failure(e):
             raise ConcurrentSourceUpdateError(f"Feedback {stored.get('feedback_id')} changed during refresh") from e
         raise
+    _keep_previous(stored, kwargs, REASON_SOURCE_UPDATE)  # once the update landed: a refused one leaves no version
     logger.info(f"Refreshed stored feedback {stored.get('feedback_id')} from a newer source copy")
     count_metric("SourceUpdatesApplied")
     return decision
@@ -586,20 +586,20 @@ def refresh_csv_item(stored: dict, raw_record: dict) -> str:
     # so the row still previews as changed and a later confirmed upload retries the text.
     enrichment_failed = wants_reenrichment and reenriched is None
     kwargs = csv_update(stored, raw_record, pii_policy, now_iso(), reenriched, moves_category, enrichment_failed)
-    _keep_previous(stored, kwargs, REASON_CSV_CORRECTION)
     try:
         feedback_table.update_item(**kwargs)
     except ClientError as e:
         if is_conditional_check_failure(e):
             raise ConcurrentSourceUpdateError(f"Feedback {stored.get('feedback_id')} changed during a CSV update") from e
         raise
+    _keep_previous(stored, kwargs, REASON_CSV_CORRECTION)  # once the update landed: a refused one leaves no version
     logger.info(f"Updated stored feedback {stored.get('feedback_id')} from a corrected CSV row")
     count_metric(_csv_update_metric(wants_reenrichment, enrichment_failed))
     return decision
 
 
 def _keep_previous(stored: dict, update_kwargs: dict, reason: str) -> None:
-    """Keep ``stored`` as it is before an in-place update (TENETS.md D1; never fails the update)."""
+    """Keep ``stored`` as it was before an in-place update that landed (TENETS.md D1; never fails it)."""
     keep_silver_version(stored, actor=SYSTEM_ACTOR, reason=reason, changed_fields=fields_of_update(update_kwargs))
 
 

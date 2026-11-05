@@ -106,8 +106,10 @@ after 2 days). The bucket is kept when the stacks are deleted (`protectData`, th
 ### Silver history (`silver/`)
 
 A processed feedback item (`voc-feedback`, the Silver tier) changes in place when a person corrects it, a
-source sends a newer copy or a reprocess re-derives it. Before every such change the item **as it was** is
-written to the raw bucket (TENETS.md D1, `lambda/shared/silver_provenance.py`):
+source sends a newer copy or a reprocess re-derives it. Once such a change has landed, the item **as it was**
+before it is written to the raw bucket (TENETS.md D1, `lambda/shared/silver_provenance.py`). A change its
+condition refused (a concurrent edit, a manual correction that won, an item gone) keeps no version, so the
+history never records a change that did not happen:
 
 ```
 silver/{source_platform}/{feedback_id}/{YYYYMMDDTHHMMSSffffffZ}-{sha8}.json

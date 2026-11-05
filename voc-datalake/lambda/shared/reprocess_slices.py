@@ -19,12 +19,12 @@ worker reads it back (``slice_from_job``) and filters with ``admits``.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Final
 
-from boto3.dynamodb.conditions import Attr, ConditionBase, Key
+from boto3.dynamodb.conditions import Attr, ConditionBase
 
 from shared.api import ALL_TIME_DAYS
 from shared.feedback import DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, basis_date
@@ -35,7 +35,6 @@ DATE_BASIS_PROCESSED: Final = 'processed'
 DATE_BASES: Final = (DATE_BASIS_PROCESSED, DATE_BASIS_REVIEW)
 MAX_SLICE_VALUES: Final = 50
 MAX_SLICE_VALUE_CHARS: Final = 128
-SOURCE_PK_PREFIX: Final = 'SOURCE#'
 
 
 @dataclass(frozen=True)
@@ -183,17 +182,16 @@ def admits(item: Mapping[str, Any], job_slice: ReprocessSlice, window: tuple[str
     return (first is None or day >= first) and (last is None or day <= last)
 
 
-def read_filter(
-    job_slice: ReprocessSlice, window: tuple[str | None, str | None], *, scan: bool = True,
-) -> ConditionBase | None:
-    """The FilterExpression a page read applies: feedback rows (a Scan only: a Query keys on
-    them, and DynamoDB refuses a key attribute in a Query filter), the categories and a
-    processed-date window. None when nothing is left to filter.
+def read_filter(job_slice: ReprocessSlice, window: tuple[str | None, str | None]) -> ConditionBase:
+    """The FilterExpression a page's Scan applies: feedback rows, the sources (``source_platform``), the
+    categories and a processed-date window.
 
     A review-date window is not pushed down (its fallback to ``date`` cannot be
     expressed); ``admits`` applies it.
     """
-    conditions: list[ConditionBase] = [Attr('sk').begins_with(FEEDBACK_SK_PREFIX)] if scan else []
+    conditions: list[ConditionBase] = [Attr('sk').begins_with(FEEDBACK_SK_PREFIX)]
+    if job_slice.sources:
+        conditions.append(Attr('source_platform').is_in(list(job_slice.sources)))
     if job_slice.categories:
         conditions.append(Attr('category').is_in(list(job_slice.categories)))
     first, last = window
@@ -202,59 +200,23 @@ def read_filter(
             conditions.append(Attr('date').gte(first))
         if last is not None:
             conditions.append(Attr('date').lte(last))
-    if not conditions:
-        return None
     combined = conditions[0]
     for condition in conditions[1:]:
         combined &= condition
     return combined
 
 
-def _next_source(sources: Sequence[str], cursor: Mapping[str, Any] | None) -> tuple[str | None, bool]:
-    """The source a sourced read continues in, and whether the cursor points inside it."""
-    ordered = sorted(sources)
-    if not cursor:
-        return ordered[0], False
-    pk = cursor.get('pk')
-    current = pk.removeprefix(SOURCE_PK_PREFIX) if isinstance(pk, str) else None
-    if current in ordered:
-        return current, True
-    return None, False
-
-
 def read_page(
     table: Any, cursor: dict | None, job_slice: ReprocessSlice, window: tuple[str | None, str | None],
     page_size: int,
 ) -> dict:
-    """One page of the slice: a Scan, or with ``sources`` a Query of one source's partition.
+    """One page of the slice: a Scan whose filter names the sources, categories and processed-date window.
 
-    A sourced read walks the sources in sorted order; at the end of one it answers
-    a cursor at the START of the next (``{'pk': 'SOURCE#next', 'sk': 'FEEDBACK#'}``,
-    before every feedback row), so the caller's cursor handling is the same for
-    both reads.
+    Sources are matched on ``source_platform``, never on the partition: the processor stores an item under
+    ``SOURCE#{brand_name}`` when it has a brand name, so a Query of ``SOURCE#{source}`` would skip it (the
+    retention job matches sources the same way).
     """
-    kwargs: dict[str, Any] = {'Limit': page_size}
-    if not job_slice.sources:
-        kwargs['FilterExpression'] = read_filter(job_slice, window)
-        if cursor:
-            kwargs['ExclusiveStartKey'] = cursor
-        return table.scan(**kwargs)
-    query_filter = read_filter(job_slice, window, scan=False)
-    if query_filter is not None:
-        kwargs['FilterExpression'] = query_filter
-    source, inside = _next_source(job_slice.sources, cursor)
-    if source is None:
-        return {'Items': []}
-    kwargs['KeyConditionExpression'] = (
-        Key('pk').eq(f'{SOURCE_PK_PREFIX}{source}') & Key('sk').begins_with(FEEDBACK_SK_PREFIX))
-    if inside and cursor and cursor.get('sk') != FEEDBACK_SK_PREFIX:
+    kwargs: dict[str, Any] = {'Limit': page_size, 'FilterExpression': read_filter(job_slice, window)}
+    if cursor:
         kwargs['ExclusiveStartKey'] = cursor
-    page = table.query(**kwargs)
-    if page.get('LastEvaluatedKey'):
-        return page
-    ordered = sorted(job_slice.sources)
-    position = ordered.index(source)
-    if position + 1 < len(ordered):
-        return {**page, 'LastEvaluatedKey': {'pk': f'{SOURCE_PK_PREFIX}{ordered[position + 1]}',
-                                             'sk': FEEDBACK_SK_PREFIX}}
-    return page
+    return table.scan(**kwargs)

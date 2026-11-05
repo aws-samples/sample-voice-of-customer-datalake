@@ -23,10 +23,10 @@ Processed feedback keeps its history and says how it was made, and a reprocess c
 
 ### Added
 
-- **Silver history**: before any in-place change to a feedback item (a category or dimensions edit, a Data Explorer edit, a GitHub issue refresh, a CSV correction, a reprocess), the item as it was is written once to `silver/{source}/{feedback_id}/` in the raw bucket, with who changed it, why and which fields. The bucket policy makes `silver/` write-once like `raw/`, and erasure and retention delete every kept version with the item ([docs/data-lake-structure.md](docs/data-lake-structure.md)).
+- **Silver history**: after any in-place change to a feedback item (a category or dimensions edit, a Data Explorer edit, a GitHub issue refresh, a CSV correction, a reprocess), the item as it was is written once to `silver/{source}/{feedback_id}/` in the raw bucket, with who changed it, why and which fields; a change that was refused keeps no version. Data Explorer refuses to write under `silver/`. The bucket policy makes `silver/` write-once like `raw/`, and erasure and retention delete every kept version with the item ([docs/data-lake-structure.md](docs/data-lake-structure.md)).
 - **How an item was made**: every enriched item records `pipeline_version` (the app release), `enrichment_mode` (`llm`, `defaults` when the model call failed, `manual`, `reprocess_*`, `source_update`), `enriched_at`, and in `llm_metadata` the model that answered and the one requested (they differ after a capacity fallback).
 - **Reprocess a slice**: `POST /settings/categories/reprocess` and Administration → Taxonomy → Reprocess take `sources`, `categories` and a `date_from` / `date_to` range on the processed or the review date (`date_basis`), next to `days` ([docs/categories.md](docs/categories.md)).
-- **Resume a reprocess**: a job that stops at the 50,000-review limit ends `partial` with a cursor, and `{resume: <job_id>}` (the Resume button) continues where it stopped instead of starting over.
+- **Resume a reprocess**: a job that stops at the 50,000-review limit ends `partial` with a cursor, and `{resume: <job_id>}` (the Resume button) continues where it stopped instead of starting over. A resume that fails or is cancelled hands the job back, so it can be resumed again.
 - Reprocess jobs record the configuration they ran with (config version, categories digest, model, prompt version) and how many reviews fell back to their stored text (`raw_fallback`, `raw_fallback_sources`).
 
 ### Changed
@@ -44,7 +44,7 @@ Processed feedback keeps its history and says how it was made, and a reprocess c
 
 ### Upgrade notes
 
-- New grants: `s3:PutObject` on `silver/*` for the processor, the reprocess worker and the feedback-edit API; `voc-retention` may delete and list versions under `silver/*`; the reprocess worker gets `dynamodb:Query` on `voc-feedback` (a slice by source). The raw bucket's policy changes (VocCoreStack). Deploy with `--all`.
+- New grants: `s3:PutObject` on `silver/*` for the processor, the reprocess worker and the feedback-edit API; `voc-retention` may delete and list versions under `silver/*`. A slice by source is a filtered scan (sources are matched on `source_platform`, so branded reviews are included), so the worker needs no new table grant. The raw bucket's policy changes (VocCoreStack). Deploy with `--all`.
 - Items stored before 6.03.00 have no `pipeline_version` and keep `prompt_version` 1.0.0 until reprocessed.
 - A reprocess job's status can now be `partial`; before, a job stopped at the limit read `completed`.
 
