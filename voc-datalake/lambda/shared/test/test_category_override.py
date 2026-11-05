@@ -45,7 +45,11 @@ def test_every_resolver_strips_by_sub_from_its_responses():
 
 def test_updated_by_keeps_the_kind_only():
     assert public_updated_by({'sub': 'sub-secret', 'kind': 'admin'}) == {'kind': 'admin'}
-    assert public_updated_by('sub-secret') is None
+
+
+def test_a_plain_string_updated_by_of_another_domain_passes_unchanged():
+    assert public_updated_by('admin-sub') == 'admin-sub'
+    assert redact_category_overrides({'updated_by': None}) == {'updated_by': None}
 
 
 def test_redacts_every_nested_updated_by():
