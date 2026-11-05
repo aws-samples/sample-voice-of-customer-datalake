@@ -61,6 +61,32 @@ FALLBACK_SKIPPED_NOTE: Final = (
     '**Feature requests:** not read. This report ran on the synchronous fallback, which cannot read the '
     'feedback boards; run it through the research workflow to include them.'
 )
+# The note in the app's UI languages (frontend/public/locales); any other response language reads the English one.
+_FALLBACK_SKIPPED_NOTES: Final[Mapping[str, str]] = {
+    'de': '**Feature-Wünsche:** nicht gelesen. Dieser Bericht lief über den synchronen Ersatzweg, der die '
+          'Feedback-Boards nicht lesen kann; starte ihn über den Research-Workflow, um sie einzubeziehen.',
+    'es': '**Solicitudes de funciones:** no leídas. Este informe se generó por la vía síncrona de respaldo, que no '
+          'puede leer los tableros de feedback; ejecútalo con el flujo de investigación para incluirlas.',
+    'fr': '**Demandes de fonctionnalités :** non lues. Ce rapport a utilisé la voie synchrone de secours, qui ne '
+          'peut pas lire les tableaux de feedback ; lancez-le via le workflow de recherche pour les inclure.',
+    'ja': '**機能リクエスト:** 読み込まれていません。このレポートはフィードバックボードを読めない同期フォールバックで'
+          '実行されました。含めるにはリサーチワークフローで実行してください。',
+    'ko': '**기능 요청:** 읽지 않음. 이 보고서는 피드백 보드를 읽을 수 없는 동기식 대체 경로로 실행되었습니다. '
+          '포함하려면 리서치 워크플로로 실행하세요.',
+    'pl': '**Prośby o funkcje:** nie zostały odczytane. Ten raport powstał w synchronicznej ścieżce zapasowej, która '
+          'nie może czytać tablic opinii; uruchom go przez przepływ badawczy, aby je uwzględnić.',
+    'pt': '**Pedidos de funcionalidades:** não lidos. Este relatório foi gerado pelo caminho síncrono de reserva, '
+          'que não consegue ler os quadros de feedback; execute-o pelo fluxo de pesquisa para incluí-los.',
+    # Full-width colon and semicolon (U+FF1A, U+FF1B), the Chinese punctuation, written as escapes.
+    'zh': '**功能请求\uff1a** 未读取。此报告通过无法读取反馈看板的同步备用路径生成\uff1b请通过研究工作流运行以包含它们。',
+}
+
+
+def fallback_skipped_note(response_language: object) -> str:
+    """The skipped-boards note in the report's language (an unknown or absent language reads English)."""
+    if isinstance(response_language, str):
+        return _FALLBACK_SKIPPED_NOTES.get(response_language.strip().lower(), FALLBACK_SKIPPED_NOTE)
+    return FALLBACK_SKIPPED_NOTE
 
 
 def validate_board_ids(value: object) -> list[str] | None:

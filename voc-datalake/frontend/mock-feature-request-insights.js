@@ -114,9 +114,12 @@ function search(url, viewer, entriesFor) {
   const limit = intParam(url, 'limit', { min: 1, max: 100, fallback: 25 });
   const days = intParam(url, 'days', { min: 0, max: MAX_DAYS, fallback: undefined });
   if (limit === null || days === null) return fail(400, 'limit must be 1–100 and days 0–3650');
+  // A named board resolves like the route's (by id or slug): one the viewer may not use (archived,
+  // unknown) throws the 404 Refusal the route answers, never an empty list.
+  const boards = listParam(url, 'board').map((ref) => entriesFor(viewer, ref).board.board_id);
   const filters = {
     q: (url.searchParams.get('q') ?? '').trim().toLowerCase(), categories: listParam(url, 'category'),
-    statuses: listParam(url, 'status'), boards: listParam(url, 'board'), days,
+    statuses: listParam(url, 'status'), boards, days,
   };
   const found = entriesFor(viewer, undefined).entries.map((entry) => entry.meta).filter((meta) => matchesSearch(meta, filters))
     .sort((a, b) => supportersOf(b) - supportersOf(a));

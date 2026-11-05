@@ -272,6 +272,7 @@
       "description": "Wünsche von den Feedback-Boards, als eigene Belege neben den Bewertungen gelesen.",
       "boards": "Zu lesende Boards",
       "boardsHint": "Wählen Sie Boards zum Eingrenzen aus, oder keines, um alle Boards zu lesen.",
+      "boardsCap": "Du kannst bis zu {{count, number}} Boards auswählen. Wähle eines ab, um ein anderes zu wählen.",
       "allBoards": "Alle Boards",
       "loadingBoards": "Boards werden geladen…",
       "boardsFailed": "Die Boards konnten nicht geladen werden. Alle Boards werden gelesen.",

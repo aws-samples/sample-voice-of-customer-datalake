@@ -55,6 +55,25 @@ describe('the Feature requests card', () => {
     expect(screen.queryByRole('button', { name: 'Old board' })).not.toBeInTheDocument()
   })
 
+  it('at the cap says so and disables only the boards not picked', async () => {
+    const ids = Array.from({ length: MAX_EVIDENCE_BOARDS }, (_, n) => `brd_${n}`)
+    listBoards.mockResolvedValue({
+      boards: [...ids.map((id) => board(id, `Board ${id}`)), board('brd_extra', 'Extra board')],
+      viewer: { email: '', name: '', is_admin: false, pool: 'app' },
+    })
+    renderWithQueryClient(<FeatureRequestsSource
+      contextConfig={contextConfig({ useFeatureRequests: true, featureRequestBoardIds: ids })} onContextChange={vi.fn()} />)
+    expect(await screen.findByRole('button', { name: 'Extra board' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Board brd_0' })).toBeEnabled()
+    expect(screen.getByRole('status')).toHaveTextContent(String(MAX_EVIDENCE_BOARDS))
+  })
+
+  it('below the cap shows no cap note and every board can be picked', async () => {
+    renderWithQueryClient(<FeatureRequestsSource contextConfig={contextConfig({ useFeatureRequests: true })} onContextChange={vi.fn()} />)
+    expect(await screen.findByRole('button', { name: 'Sales requests' })).toBeEnabled()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
   it('clears the picked boards when unticked', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()

@@ -279,6 +279,7 @@
       "description": "Pedidos dos quadros de feedback, lidos como evidência própria ao lado das avaliações.",
       "boards": "Quadros a ler",
       "boardsHint": "Escolha quadros para restringir, ou nenhum para ler todos.",
+      "boardsCap": "Você pode escolher até {{count, number}} quadros. Desmarque um para escolher outro.",
       "allBoards": "Todos os quadros",
       "loadingBoards": "Carregando os quadros…",
       "boardsFailed": "Não foi possível carregar os quadros. Todos os quadros serão lidos.",

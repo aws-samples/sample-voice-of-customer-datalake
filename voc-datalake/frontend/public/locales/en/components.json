@@ -257,6 +257,7 @@
       "description": "Requests from the feedback boards, read as their own evidence beside the reviews.",
       "boards": "Boards to read",
       "boardsHint": "Pick boards to narrow it, or none to read every board.",
+      "boardsCap": "You can pick up to {{count, number}} boards. Unpick one to choose another.",
       "allBoards": "All boards",
       "loadingBoards": "Loading the boards…",
       "boardsFailed": "Could not load the boards. Every board will be read.",

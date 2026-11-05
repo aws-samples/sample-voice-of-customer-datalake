@@ -308,6 +308,7 @@
       "description": "Zgłoszenia z tablic opinii, czytane jako osobne źródło obok opinii.",
       "boards": "Tablice do odczytu",
       "boardsHint": "Wybierz tablice, aby zawęzić, albo żadnej, aby czytać wszystkie.",
+      "boardsCap": "Możesz wybrać do {{count, number}} tablic. Odznacz jedną, aby wybrać inną.",
       "allBoards": "Wszystkie tablice",
       "loadingBoards": "Wczytywanie tablic…",
       "boardsFailed": "Nie udało się wczytać tablic. Zostaną odczytane wszystkie tablice.",

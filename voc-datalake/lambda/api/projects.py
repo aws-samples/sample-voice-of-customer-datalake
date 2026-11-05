@@ -76,8 +76,8 @@ from shared.exceptions import (
 )
 from shared.feature_request_context import (
     FALLBACK_SKIPPED_FIELD,
-    FALLBACK_SKIPPED_NOTE,
     config_context,
+    fallback_skipped_note,
     input_feature_request_fields,
     wants_feature_requests,
     with_feature_requests,
@@ -3789,7 +3789,7 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
     research_question = body.get('question', 'What are the main customer pain points?')
     # This Lambda cannot read the boards (no grant): a ticked "Feature requests" box is reported, not dropped.
     skipped_requests = wants_feature_requests(body)
-    skipped_note = f'\n{FALLBACK_SKIPPED_NOTE}\n' if skipped_requests else ''
+    skipped_note = f"\n{fallback_skipped_note(body.get('response_language'))}\n" if skipped_requests else ''
 
     # Get project data - exceptions will propagate
     project_data = get_project(project_id)

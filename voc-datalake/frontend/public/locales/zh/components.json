@@ -272,6 +272,7 @@
       "description": "来自反馈看板的需求，作为与评论并列的独立依据读取。",
       "boards": "要读取的看板",
       "boardsHint": "选择看板以缩小范围，不选则读取所有看板。",
+      "boardsCap": "最多可选择 {{count, number}} 个看板。取消选择一个后才能选择其他看板。",
       "allBoards": "所有看板",
       "loadingBoards": "正在加载看板…",
       "boardsFailed": "无法加载看板，将读取所有看板。",

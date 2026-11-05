@@ -25,12 +25,20 @@ function BoardPicker({ selected, onChange }: Readonly<{ selected: readonly strin
   }
   if (isError) return <p className="text-sm text-danger">{t('dataSourceWizard.featureRequests.boardsFailed')}</p>
   if (boards.length === 0) return <p className="text-sm text-muted">{t('dataSourceWizard.featureRequests.noBoards')}</p>
+  // At the cap an unpicked board cannot be added (the API takes at most MAX_EVIDENCE_BOARDS): say so.
+  const atCap = selected.length >= MAX_EVIDENCE_BOARDS
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted">{t('dataSourceWizard.featureRequests.boardsHint')}</p>
+      {atCap ? (
+        <p className="text-xs text-muted" role="status">
+          {t('dataSourceWizard.featureRequests.boardsCap', { count: MAX_EVIDENCE_BOARDS })}
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-2" role="group" aria-label={t('dataSourceWizard.featureRequests.boards')}>
         {boards.map((board) => (
           <FilterChip key={board.board_id} pressed={selected.includes(board.board_id)} className="px-3 py-1.5 text-sm break-words text-left"
+            disabled={atCap && !selected.includes(board.board_id)}
             onToggle={() => onChange(toggleArrayItem(selected, board.board_id, MAX_EVIDENCE_BOARDS))}>
             {board.name}
           </FilterChip>
