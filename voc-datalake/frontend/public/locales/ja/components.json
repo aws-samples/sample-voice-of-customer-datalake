@@ -662,6 +662,7 @@
     "counts": "レビュー {{items, number}} 件、元データ {{objects, number}} 件を削除",
     "legalBasisShown": "法的根拠: {{basis}}",
     "copies": "削除した Radar レビュー: {{radar, number}}、印を付けたペルソナまたはドキュメント: {{artifacts, number}}",
+    "boards": "匿名化されたボードのリクエストと +1: {{rows, number}}",
     "reviewFiles": "消去されていない行も含むため保持したアップロードファイル: {{files, number}}。確認してください:",
     "status": {
       "queued": "待機中",
@@ -694,6 +695,7 @@
     "progress": {
       "items": "レビューを削除しています。削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。",
       "radar": "Radar のレビューを削除しています。削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。",
+      "boards": "ボードのリクエストと +1 を匿名化しています。削除されたレビュー: {{items, number}}。削除された生ファイル: {{objects, number}}。",
       "raw": "生ファイルを削除しています。削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。",
       "lineage": "削除したレビューを引用していたペルソナとドキュメントに印を付けています。削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。",
       "done": "削除したレビュー: {{items, number}}。削除した生ファイル: {{objects, number}}。"

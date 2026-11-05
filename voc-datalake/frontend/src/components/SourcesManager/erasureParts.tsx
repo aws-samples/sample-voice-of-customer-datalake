@@ -57,7 +57,7 @@ export function ErasureStartError({ text }: Readonly<{ text: string }>) {
 
 /**
  * What a job did beyond its feedback counts: its legal basis, the Radar reviews it
- * deleted and the workspace items it marked, and the uploaded files it kept because
+ * deleted, the board requests and +1s it de-identified and the workspace items it marked, and the uploaded files it kept because
  * they also hold rows it did not erase (keys only; an admin reviews them).
  */
 export function ErasureJobDetails({ job }: Readonly<{ job: ErasureJob }>) {
@@ -68,6 +68,9 @@ export function ErasureJobDetails({ job }: Readonly<{ job: ErasureJob }>) {
       {job.legal_basis !== undefined && <span className="text-muted">{t('legalBasisShown', { basis: job.legal_basis })}</span>}
       {(job.deleted_radar_items > 0 || job.artifacts_marked > 0) && (
         <span className="text-text">{t('copies', { radar: job.deleted_radar_items, artifacts: job.artifacts_marked })}</span>
+      )}
+      {job.board_items_deidentified > 0 && (
+        <span className="text-text">{t('boards', { rows: job.board_items_deidentified })}</span>
       )}
       {review !== undefined && review.count > 0 && (
         <div className="basis-full text-warn">

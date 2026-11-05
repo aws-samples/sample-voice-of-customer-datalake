@@ -306,12 +306,14 @@ function putSources(body) {
 
 /**
  * The worker's phases, in order (lambda/jobs/retention/handler.py `_phases`): the items, the Radar
- * reviews, the raw sweep (a whole-source erasure only), then the lineage pass, which runs only once
- * something was deleted. One poll walks one phase; the job keeps its last phase when it completes.
+ * reviews, the feedback boards (an erasure by email not limited to another source, jobs/retention/boards.py
+ * `applies`), the raw sweep (a whole-source erasure only), then the lineage pass, which runs only once
+ * something was deleted or de-identified. One poll walks one phase; the job keeps its last phase when it completes.
  */
 function erasurePhases(job) {
-  const deleted = job.deleted_items + job.deleted_radar_items > 0;
-  return ['items', 'radar', ...(job.field === 'source' ? ['raw'] : []), ...(deleted ? ['lineage'] : [])];
+  const touched = job.deleted_items + job.deleted_radar_items + (job.board_items_deidentified ?? 0) > 0;
+  const boards = job.field === 'email' && (job.source === undefined || job.source === 'feature_requests');
+  return ['items', 'radar', ...(boards ? ['boards'] : []), ...(job.field === 'source' ? ['raw'] : []), ...(touched ? ['lineage'] : [])];
 }
 
 function erasedIds(job, shared) {
@@ -336,6 +338,9 @@ function runErasurePhase(job, phase, shared) {
     if (job.field !== 'source') job.deleted_objects = ids.size;
   } else if (phase === 'radar') {
     job.deleted_radar_items = 0; // the mock holds no Radar review written by a person
+  } else if (phase === 'boards') {
+    // The boards' fixtures live in mock-feature-requests.js, outside `shared`: the mock de-identifies none, and,
+    // like the worker (jobs/retention/runs.py), writes `board_items_deidentified` only once it is above 0.
   } else if (phase === 'raw') {
     job.deleted_objects = ids.size;
   } else {
