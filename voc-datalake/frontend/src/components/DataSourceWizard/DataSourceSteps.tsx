@@ -13,13 +13,14 @@ import type { CategoryOption, ContextConfig } from './types'
 import { useSentimentLabels } from './sentimentLabels'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import FeatureRequestsSource from './FeatureRequestsSource'
+import { FilterChip } from './FilterChip'
+import { SELECTED_FILTER, UNSELECTED_FILTER, toggleArrayItem } from './filterChipState'
 
 /** Time-range choices offered as "Last N days"; a year and all time (0) get their own labels. */
 const DAY_RANGE_OPTIONS = [7, 14, 30, 60, 90] as const
 
-/** A selected filter chip (design-system rule 7: selected = accent-subtle; hover never reuses it). */
-const SELECTED_FILTER = 'bg-accent-subtle border-accent text-accent-text'
-const UNSELECTED_FILTER = 'bg-bg-elevated border-border'
+/** The source and category chips' size: a grid cell, one line. */
+const CHIP_SIZE = 'px-2 sm:px-3 py-2 text-xs sm:text-sm truncate'
 
 // Helper functions
 function getSentimentClass(sentiment: string, isSelected: boolean): string {
@@ -28,10 +29,6 @@ function getSentimentClass(sentiment: string, isSelected: boolean): string {
   if (sentiment === 'positive') return 'bg-ok-subtle border-ok/30 text-ok'
   if (sentiment === 'negative') return 'bg-danger-subtle border-danger/30 text-danger'
   return SELECTED_FILTER
-}
-
-function toggleArrayItem(arr: string[], item: string): string[] {
-  return arr.includes(item) ? arr.filter(x => x !== item) : [...arr, item]
 }
 
 
@@ -237,18 +234,10 @@ export function FeedbackFiltersStep({
         <p className="text-sm text-muted mb-2">{t('components:dataSourceWizard.leaveEmptyForAllSources')}</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {sources.map(s => (
-            <button
-              key={s}
-              type="button"
-              aria-pressed={contextConfig.sources.includes(s)}
-              onClick={() => onContextChange({ ...contextConfig, sources: toggleArrayItem(contextConfig.sources, s) })}
-              className={clsx(
-                'px-2 sm:px-3 py-2 rounded-lg border text-xs sm:text-sm truncate',
-                contextConfig.sources.includes(s) ? SELECTED_FILTER : UNSELECTED_FILTER
-              )}
-            >
+            <FilterChip key={s} pressed={contextConfig.sources.includes(s)} className={CHIP_SIZE}
+              onToggle={() => onContextChange({ ...contextConfig, sources: toggleArrayItem(contextConfig.sources, s) })}>
               {labels.source(s)}
-            </button>
+            </FilterChip>
           ))}
         </div>
       </div>
@@ -263,18 +252,10 @@ export function FeedbackFiltersStep({
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {categories.map(c => (
-              <button
-                key={c.value}
-                type="button"
-                aria-pressed={contextConfig.categories.includes(c.value)}
-                onClick={() => onContextChange({ ...contextConfig, categories: toggleArrayItem(contextConfig.categories, c.value) })}
-                className={clsx(
-                  'px-2 sm:px-3 py-2 rounded-lg border text-xs sm:text-sm truncate',
-                  contextConfig.categories.includes(c.value) ? SELECTED_FILTER : UNSELECTED_FILTER
-                )}
-              >
+              <FilterChip key={c.value} pressed={contextConfig.categories.includes(c.value)} className={CHIP_SIZE}
+                onToggle={() => onContextChange({ ...contextConfig, categories: toggleArrayItem(contextConfig.categories, c.value) })}>
                 {c.label}
-              </button>
+              </FilterChip>
             ))}
           </div>
         )}

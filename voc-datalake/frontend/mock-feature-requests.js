@@ -34,7 +34,7 @@ function support(id, fields, created) {
   };
 }
 
-/** A fixture's enrichment (C1 on `FR#{id}` / `META`); requests 2 and 5 are left un-enriched for the Enrich button. */
+/** A fixture's enrichment (on `FR#{id}` / `META`, docs/feature-requests.md); requests 2 and 5 are left un-enriched for the Enrich button. */
 function enriched(fields, days) {
   return {
     status: 'ok', subcategory: null, language: 'en', model_id: 'mock', prompt_version: 'mock-1',

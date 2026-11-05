@@ -1,5 +1,5 @@
 /**
- * @fileoverview Feedback-board requests behind a generated artefact (C5), kept apart from its reviews:
+ * @fileoverview Feedback-board requests behind a generated artefact, kept apart from its reviews:
  *
  * - `featureRequestIdsOf` reads the request ids an artefact was written from: a persona's or research
  *   report's `input_feature_request_ids`, a PRD / PR/FAQ's `derivation.input_feature_request_ids`

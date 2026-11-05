@@ -362,7 +362,7 @@ export interface GenerateDocumentBody {
     personas: boolean;
     documents: boolean;
     research: boolean;
-    /** Feedback-board requests as their own evidence (C5); absent = off. */
+    /** Feedback-board requests as their own evidence (docs/feature-requests.md); absent = off. */
     feature_requests?: boolean
   }
   selected_persona_ids: string[]

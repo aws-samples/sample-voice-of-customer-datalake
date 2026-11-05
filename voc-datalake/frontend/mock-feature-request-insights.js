@@ -1,5 +1,5 @@
 // Feedback boards as their own evidence source (docs/feature-requests.md), in the wire shape of
-// lambda/shared/feature_requests_insights_routes.py and feature_requests_search_routes.py:
+// the board Insights and search routes served by the engagement API:
 //
 //   GET  /feature-requests/insights?board=&days=   (days 0–3650, 0 = all)
 //        -> {success, board: {id, label} | null, window_days, totals: {requests, supporters, enriched},

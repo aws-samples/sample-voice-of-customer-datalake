@@ -1,6 +1,6 @@
 /**
  * @fileoverview "Also N feature requests from the boards." under the persona and research wizards'
- * review count, when Feature requests is ticked as evidence (contract C5).
+ * review count, when Feature requests is ticked as evidence.
  *
  * The feedback preview does not count board requests, so the count is the boards' own Insights
  * total (`GET /feature-requests/insights` → `totals.requests`, created in the wizard's window): one

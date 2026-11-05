@@ -159,9 +159,17 @@
       "files": [
         "voc-datalake/frontend/src/components/WorkflowEditor/ArrowSettings.tsx",
         "voc-datalake/frontend/src/pages/Connect/MintTokenForm.tsx",
+        "voc-datalake/frontend/src/pages/FeatureRequests/InsightsTab.tsx",
         "voc-datalake/frontend/src/pages/ProjectDetail/ProductFormFields.tsx"
       ],
-      "reason": "a LabeledField + native select row of the workflow editor, the token form and the Product tab's lifecycle field: different options, state and i18n keys"
+      "reason": "a LabeledField + native select row of the workflow editor, the token form, the board Insights window picker and the Product tab's lifecycle field: different options, state and i18n keys"
+    },
+    {
+      "files": [
+        "voc-datalake/frontend/src/pages/FeatureRequests/FeatureRequests.tsx",
+        "voc-datalake/frontend/src/pages/Participants/Participants.tsx"
+      ],
+      "reason": "each page's own WAI-ARIA tablist row (role=tab, aria-selected, an icon per tab): different tab ids, icons, state and i18n namespaces"
     }
   ]
 }

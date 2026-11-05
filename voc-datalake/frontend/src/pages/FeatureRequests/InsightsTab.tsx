@@ -10,10 +10,10 @@
  * @module pages/FeatureRequests/InsightsTab
  */
 import { Loader2, Sparkles, Users } from 'lucide-react'
-import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { useSentimentLabels } from '../../components/DataSourceWizard/sentimentLabels'
 import { formatCount } from '../../utils/numberFormat'
@@ -30,30 +30,32 @@ const requestLink = (requestId: string) => `/feature-requests?${new URLSearchPar
 
 function WindowSelect({ value, onChange }: Readonly<{ value: InsightsView['days']; onChange: (days: InsightsView['days']) => void }>) {
   const { t } = useTranslation('featureRequests')
-  const id = useId()
   return (
-    <div>
-      <label htmlFor={id} className="block text-xs font-medium text-text mb-1">{t('insights.window')}</label>
-      <select id={id} className="select w-auto" value={value}
-        onChange={(e) => { const days = Number(e.target.value); if (isInsightWindow(days)) onChange(days) }}>
-        {INSIGHT_WINDOWS.map((days) => (
-          <option key={days} value={days}>{days === 0 ? t('insights.allTime') : t('insights.lastDays', { count: days })}</option>
-        ))}
-      </select>
-    </div>
+    <LabeledField label={t('insights.window')}>
+      {(id) => (
+        <select id={id} className="select w-auto" value={value}
+          onChange={(e) => { const days = Number(e.target.value); if (isInsightWindow(days)) onChange(days) }}>
+          {INSIGHT_WINDOWS.map((days) => (
+            <option key={days} value={days}>{days === 0 ? t('insights.allTime') : t('insights.lastDays', { count: days })}</option>
+          ))}
+        </select>
+      )}
+    </LabeledField>
   )
 }
 
 function BoardSelect({ boards, value, onChange }: Readonly<{ boards: readonly FeatureBoard[]; value: string; onChange: (board: string) => void }>) {
   const { t } = useTranslation('featureRequests')
-  const id = useId()
   return (
     <div className="min-w-48">
-      <label htmlFor={id} className="block text-xs font-medium text-text mb-1">{t('insights.board')}</label>
-      <select id={id} className="select w-full" value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">{t('insights.allBoards')}</option>
-        {boards.map((board) => <option key={board.board_id} value={board.board_id}>{board.name}</option>)}
-      </select>
+      <LabeledField label={t('insights.board')}>
+        {(id) => (
+          <select id={id} className="select w-full" value={value} onChange={(e) => onChange(e.target.value)}>
+            <option value="">{t('insights.allBoards')}</option>
+            {boards.map((board) => <option key={board.board_id} value={board.board_id}>{board.name}</option>)}
+          </select>
+        )}
+      </LabeledField>
     </div>
   )
 }

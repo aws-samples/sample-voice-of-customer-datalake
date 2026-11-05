@@ -33,7 +33,7 @@ interface DataSourceWizardProps {
   readonly extraDataSources?: ReadonlyArray<ExtraDataSource>
   /** Rendered at the foot of the feedback-filters step (the live "N reviews match" line). */
   readonly feedbackStepFooter?: React.ReactNode
-  /** Offer feedback-board requests as their own evidence (C5: personas, research, PRD / PR/FAQ). */
+  /** Offer feedback-board requests as their own evidence (personas, research, PRD / PR/FAQ). */
   readonly offerFeatureRequests?: boolean
 }
 
