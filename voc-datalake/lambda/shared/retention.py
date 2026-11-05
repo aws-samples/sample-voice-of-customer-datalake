@@ -40,6 +40,11 @@ or retention run leaves it and lists it on its job / audit row as a file needing
 review (keys only), because rewriting it without the erased rows would mean
 re-parsing a CSV whose column mapping is not stored.
 
+Every kept Silver version of a deleted item (``silver/{source}/{feedback_id}/``, the
+item's earlier states, ``shared/silver_provenance.py``) goes with it, every object
+version (``delete_silver_versions``); a whole-source erasure also sweeps what is left
+under ``silver/{source}/`` (``silver_source_prefix``).
+
 The same filters and deletes reach Radar (``voc-radar``: other brands' reviews,
 ``STORE_RADAR``): a review, its dedupe marker and its own raw archive.
 
@@ -61,6 +66,7 @@ from shared.archive_keys import archive_key_stem
 from shared.logging import logger
 from shared.radar_store import marker_key
 from shared.raw_versions import RAW_PREFIX, parse_item_key
+from shared.silver_provenance import SILVER_PREFIX, silver_item_prefix
 
 __all__ = [
     'ERASURE_JOB_COUNTERS',
@@ -70,11 +76,13 @@ __all__ = [
     'delete_item',
     'delete_radar_item',
     'delete_raw_prefix_page',
+    'delete_silver_versions',
     'delete_whole_upload',
     'erase_filter',
     'raw_source_prefix',
     'retention_cutoffs',
     'retention_filter',
+    'silver_source_prefix',
     'whole_upload_key',
 ]
 
@@ -236,13 +244,26 @@ def delete_item(feedback_table: Any, s3: Any, bucket: str, item: Mapping[str, An
     """Delete one feedback item and its own raw objects; ``(items deleted, raw files deleted)``.
 
     Every version of the legacy key and every object (all versions) under the item's
-    folder go. The raw objects go first: if that fails the item stays, so a retry finds
+    folder go, and every kept Silver version of the item (``delete_silver_versions``).
+    The S3 copies go first: if that fails the item stays, so a retry finds
     it again (deleting the item first would orphan the objects for good).
     """
-    objects = _delete_own_raw_objects(s3, bucket, item)
+    objects = delete_silver_versions(s3, bucket, item) + _delete_own_raw_objects(s3, bucket, item)
     feedback_table.delete_item(Key={'pk': item['pk'], 'sk': item['sk']})
     logger.debug('Deleted one feedback item under its retention / erasure rule')
     return 1, objects
+
+
+def delete_silver_versions(s3: Any, bucket: str, item: Mapping[str, Any]) -> int:
+    """Every kept Silver version of ``item`` (``silver/{source}/{feedback_id}/``, all object versions).
+
+    The item's earlier states (``shared/silver_provenance.py``) are copies of it, so an erasure
+    reaches them too (TENETS.md D5). Returns the files deleted; 0 for an item without an id.
+    """
+    prefix = silver_item_prefix(item)
+    if prefix is None:
+        return 0
+    return _delete_versions(s3, bucket, prefix, lambda key: key.startswith(prefix))
 
 
 def delete_radar_item(radar_table: Any, s3: Any, bucket: str, item: Mapping[str, Any]) -> tuple[int, int]:
@@ -283,6 +304,13 @@ def delete_whole_upload(s3: Any, bucket: str, key: str) -> int:
     if not key.startswith(_WHOLE_UPLOAD_PREFIXES):
         raise ValueError('Not a whole-file upload archive')
     return _delete_versions(s3, bucket, key, lambda listed: listed == key)
+
+
+def silver_source_prefix(source: str) -> str | None:
+    """``silver/{source}/``: every kept Silver version of ``source``'s items (same rules as ``raw_source_prefix``)."""
+    if not source or '/' in source or source in ('.', '..'):
+        return None
+    return f'{SILVER_PREFIX}{archive_key_stem(source)}/'
 
 
 def raw_source_prefix(source: str) -> str | None:

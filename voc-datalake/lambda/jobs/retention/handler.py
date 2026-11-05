@@ -22,11 +22,12 @@ A run walks its PHASES in order, each paged and time-budgeted:
    the person's board requests and +1s are de-identified and their raw copies deleted
    (``boards.py``);
 3. ``raw`` — whole-source erasure only: every object version left under
-   ``raw/{source}/`` (``shared/retention.delete_raw_prefix_page``);
+   ``raw/{source}/`` and ``silver/{source}/`` (``shared/retention.delete_raw_prefix_page``);
 4. ``lineage`` — when the run deleted anything and ``PROJECTS_TABLE`` is set:
    artifacts that cited a deleted item are marked (``lineage.py``).
 
-Each deleted item first gets a tombstone (``copies.py``). Before the Lambda's
+Each deleted item first gets a tombstone (``copies.py``); its kept Silver versions
+(``silver/{source}/{feedback_id}/``) are deleted with it (``shared/retention.delete_item``). Before the Lambda's
 budget runs out the worker re-invokes itself with its phase, the phase's scan
 cursor and its running state (``runs.py``). Deletes are idempotent, so a
 duplicate delivery or an overlapping daily run only repeats no-ops. Every
@@ -281,23 +282,25 @@ def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
 
 
 def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
-    """A whole-source erasure's raw phase: every object left under ``raw/{source}/``.
+    """A whole-source erasure's raw phase: every object left under ``raw/{source}/`` and ``silver/{source}/``.
 
-    The per-item archives went with their items; this removes what no item
-    points at any more (an archive whose item failed processing, an older
-    copy). Each page lists from the start of the prefix (what was listed is
-    gone), so a hand-over carries no cursor.
+    The per-item archives and kept Silver versions went with their items; this
+    removes what no item points at any more (an archive whose item failed
+    processing, an older copy). Each page lists from the start of the prefix
+    (what was listed is gone), so a hand-over carries no cursor.
     """
-    prefix = retention.raw_source_prefix(str(walk.run.get('source') or ''))
-    if prefix is None or not RAW_DATA_BUCKET:
+    source = str(walk.run.get('source') or '')
+    raw_prefix, silver_prefix = retention.raw_source_prefix(source), retention.silver_source_prefix(source)
+    if raw_prefix is None or silver_prefix is None or not RAW_DATA_BUCKET:
         return None
-    more = True
-    while more:
-        if not _time_left(walk.context):
-            return _hand_over(walk, PHASE_RAW, None)
-        objects, more = retention.delete_raw_prefix_page(walk.s3, RAW_DATA_BUCKET, prefix)
-        walk.run['deleted_objects'] += objects
-        record_progress(walk.aggregates, walk.run, PHASE_RAW)
+    for prefix in (raw_prefix, silver_prefix):
+        more = True
+        while more:
+            if not _time_left(walk.context):
+                return _hand_over(walk, PHASE_RAW, None)
+            objects, more = retention.delete_raw_prefix_page(walk.s3, RAW_DATA_BUCKET, prefix)
+            walk.run['deleted_objects'] += objects
+            record_progress(walk.aggregates, walk.run, PHASE_RAW)
     return None
 
 
