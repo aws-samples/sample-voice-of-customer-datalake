@@ -46,6 +46,8 @@ REQUEST_NOT_FOUND: Final = 'Feature request not found'
 SUPPORT_NOT_FOUND: Final = 'Support not found'
 ALREADY_SUPPORTED: Final = 'already_supported'
 _HIDDEN: Final = frozenset({'version'})
+# Set on a +1 an erasure re-keyed without its email (jobs/retention/boards_rekey.py): it still counts once.
+DEIDENTIFIED_FIELD: Final = 'deidentified_at'
 
 
 def request_key(request_id: str) -> dict[str, str]:
@@ -182,13 +184,21 @@ def _sales_totals(supports: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     return totals
 
 
+def _supporter_count(supports: Sequence[Mapping[str, Any]]) -> int:
+    """Distinct emails (case-insensitive), plus one per de-identified +1 (no email left to compare)."""
+    emails = {str(row['email']).lower() for row in supports if row.get('email')}
+    erased = sum(1 for row in supports if not row.get('email') and row.get(DEIDENTIFIED_FIELD))
+    return len(emails) + erased
+
+
 def compute_totals(supports: Sequence[Mapping[str, Any]], template: str = 'sales',
                    values: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """The template's totals. ``supporters``: distinct supporter emails. Sales adds customers and
+    """The template's totals. ``supporters``: distinct supporter emails, plus each +1 an erasure
+    de-identified (``DEIDENTIFIED_FIELD``: one person, no email left). Sales adds customers and
     the committed / at-risk dollars; service adds ``affected`` (the reporter's ``affected_count``,
     at least 1, plus every other supporter); beta adds ``avg_rating`` (the request's rating)."""
     values = values or {}
-    supporters = len({str(row.get('email', '')).lower() for row in supports if row.get('email')})
+    supporters = _supporter_count(supports)
     totals: dict[str, Any] = {'supporters': supporters}
     kind = template_of(template)
     if kind == 'sales':

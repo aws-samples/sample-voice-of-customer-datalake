@@ -27,9 +27,10 @@
  *   - radar: Scan / DeleteItem (a review and its dedupe marker) and the cache-version
  *     bump (UpdateItem on `SETTINGS#radar` only) — no Put, no Query;
  *   - projects: Scan / UpdateItem (mark artifacts, drop erased ids) — no delete, no put;
- *   - feature requests: Scan / UpdateItem (an erasure by email de-identifies the person's board requests
- *     and +1s: REMOVE their email and name; their raw copies under `raw/feature_requests/` go with the
- *     raw grant above) — no delete, no put;
+ *   - feature requests: Scan / GetItem / Query / UpdateItem (an erasure by email de-identifies the person's board
+ *     requests: REMOVE their email and name) and PutItem / DeleteItem pinned to `FR#*` (a +1's id derives from the
+ *     email, so it is RE-KEYED: put under a new random id, the old row deleted, totals recomputed); their raw
+ *     copies under `raw/feature_requests/` go with the raw grant above;
  *   - lambda:InvokeFunction on its own unqualified name (time-budget hand-over).
  */
 import * as cdk from 'aws-cdk-lib';
@@ -47,7 +48,11 @@ import { grantCacheVersionBump, RADAR_VERSION_PARTITION } from '../utils/cache-v
 import { RETENTION_FUNCTION_BASE_NAME } from '../utils/function-names';
 import { PY_LAMBDA_ASSET_EXCLUDES, WORKER_TREE_ASSET_EXCLUDES } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
+import { grantKeyScopedWrites } from '../utils/table-write-grants';
 import { grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
+
+/** The request partitions of voc-feature-requests (`FR#{id}`: META + its +1s), the only rows the worker re-keys. */
+const FEATURE_REQUEST_PARTITIONS = 'FR#*';
 
 /** Path-style handler: the bundle keeps `jobs/retention/` with `shared/` beside `jobs/`. */
 const RETENTION_HANDLER = 'jobs/retention/handler.lambda_handler';
@@ -105,7 +110,10 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   radarTable.grant(role, 'dynamodb:Scan', 'dynamodb:DeleteItem');
   grantCacheVersionBump(radarTable, role, RADAR_VERSION_PARTITION);
   projectsTable.grant(role, 'dynamodb:Scan', 'dynamodb:UpdateItem');
-  featureRequestsTable.grant(role, 'dynamodb:Scan', 'dynamodb:UpdateItem');
+  // Boards: read + de-identify a request; RE-KEY an erased +1 (one transaction: Put the de-identified row under a new
+  // random id, Delete the email-derived one), so Put/Delete are pinned to the request partitions (FR#*), never boards.
+  featureRequestsTable.grant(role, 'dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem');
+  grantKeyScopedWrites(featureRequestsTable, role, ['PutItem', 'DeleteItem'], [FEATURE_REQUEST_PARTITIONS]);
   kmsKey.grantEncryptDecrypt(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'DeleteRawArchiveObjects',

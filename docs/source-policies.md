@@ -201,7 +201,8 @@ How it works:
   `feature_requests`) also reaches `voc-feature-requests`: the person's requests and +1s are
   tombstoned (`AUDIT#tombstone#feature_requests`), their raw copies under
   `raw/feature_requests/` deleted (every version) and the rows de-identified (email and name
-  removed; the request text stays). Counted as `board_items_deidentified`; artifacts that read
+  removed; the request text stays; a +1, whose id derives from the email, is re-keyed under a
+  new random id and still counts as a supporter). Counted as `board_items_deidentified`; artifacts that read
   such a request (`input_feature_request_ids`) are marked like for an erased review
   ([feature-requests.md → Erasure](feature-requests.md#erasure)).
 
@@ -317,7 +318,7 @@ Least-privilege grants (`lib/stacks/retention-worker.ts`):
 | Feedback table | `GetItem`, `Query`, `Scan`, `DeleteItem` |
 | Radar table | `Scan`, `DeleteItem`; `UpdateItem` on the `SETTINGS#radar` partition only (the Radar cache version) |
 | Projects table | `Scan`, `UpdateItem` (no delete, no put) |
-| Feature requests table | `Scan`, `UpdateItem` (de-identifies board rows; no delete, no put) |
+| Feature requests table | `Scan`, `GetItem`, `Query`, `UpdateItem` (de-identifies board rows, recounts totals); `PutItem` / `DeleteItem` under `FR#*` only (re-keys an erased +1) |
 | Raw bucket | `DeleteObject` and `DeleteObjectVersion` on `raw/*`, plus `ListBucketVersions` with the `raw/` prefix. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source |
 | Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); no delete |
 | KMS | Encrypt/decrypt |

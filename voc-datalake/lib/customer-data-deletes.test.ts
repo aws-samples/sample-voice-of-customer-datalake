@@ -68,6 +68,7 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
   },
   FeatureRequestsTable: {
     [ENGAGEMENT_API]: { scope: WHOLE_TABLE, why: 'board, request and +1 deletes' },
+    [RETENTION_ROLE]: { scope: ['FR#*'], why: 'an erasure by email re-keys the erased +1 (its id derives from the email)' },
   },
   ConversationsTable: {
     'VocApiStack/ChatLambdaRole': { scope: WHOLE_TABLE, why: 'DELETE /chat/conversations/{id} (the caller\'s own)' },
@@ -215,10 +216,12 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
     expect(rawDeletes.flatMap(rawBucketGlobs)).toStrictEqual(['raw/*']);
   });
 
-  it('voc-retention reaches the feedback boards only to de-identify (Scan / UpdateItem, no delete)', () => {
+  it('voc-retention reaches the feedback boards to de-identify and re-key (reads, UpdateItem, Put/Delete under FR#*)', () => {
     const onBoards = grants.filter((g) => g.role === RETENTION_ROLE).filter(onTable('FeatureRequestsTable'));
-    expect([...new Set(onBoards.flatMap((g) => g.actions))].sort(byCodeUnit))
-      .toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
+    expect([...new Set(onBoards.flatMap((g) => g.actions))].sort(byCodeUnit)).toStrictEqual([
+      'dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:Scan',
+      'dynamodb:UpdateItem',
+    ]);
   });
 
   it('no role deletes bucket-wide in the raw bucket', () => {
