@@ -111,9 +111,9 @@ TIME_RESERVE_MS = 3 * 60 * 1000
 MAX_THROTTLE_RESTARTS = 3
 
 CATEGORY_SOURCE_REPROCESS = 'reprocess'
-SILVER_REASON = 'reprocess'
+SILVER_REASON = silver_provenance.REASON_REPROCESS
 # The E-C1 enrichment mode each job mode stamps.
-ENRICHMENT_MODES = {
+ENRICHMENT_MODES: dict[str, silver_provenance.EnrichmentMode] = {
     jobs.MODE_PROCESSED: 'reprocess_processed',
     jobs.MODE_RAW: 'reprocess_raw',
     jobs.MODE_DIMENSIONS: 'reprocess_dimensions',
