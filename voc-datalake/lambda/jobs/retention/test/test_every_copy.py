@@ -358,6 +358,17 @@ class TestBoards:
         assert 'Split' not in str(stones)
         assert all('ttl' not in row for row in stones.values())
 
+    def test_kept_enrichment_versions_are_never_erased_as_board_rows(self, aws, worker_context):
+        """ENRICH# rows share a request's partition; the boards phase reads only META and SUP# rows."""
+        _board_rows(aws)
+        version = {'pk': 'FR#fr_000000000001', 'sk': 'ENRICH#2026-11-01T00:00:00Z#abc',
+                   'request_id': 'fr_000000000001', 'reporter_email': 'jane@example.com', 'email': 'jane@example.com'}
+        aws['feature_requests'].put_item(Item=version)
+        handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)
+        kept = aws['feature_requests'].get_item(Key={'pk': version['pk'], 'sk': version['sk']})['Item']
+        assert kept == version
+        assert version['sk'] not in {row['sk'] for row in _tombstones(aws, 'feature_requests')}
+
     def test_a_support_removed_since_the_scan_leaves_no_tombstone(self, aws, worker_context):
         """A +1 deleted between the scan and its re-key: no tombstone names an id that was never stored."""
         _board_rows(aws)

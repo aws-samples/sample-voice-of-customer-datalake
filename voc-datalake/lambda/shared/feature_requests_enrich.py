@@ -305,11 +305,11 @@ def keep_enrichment_version(table: Any, request_id: str, enrichment: Mapping[str
 
     Best-effort like a kept Silver version: a failure is logged and never undoes the stored result.
     """
-    item = {**enrichment_version_key(request_id, enrichment), 'request_id': request_id,
-            ENRICHMENT_FIELD: dict(enrichment)}
     try:
+        item = {**enrichment_version_key(request_id, enrichment), 'request_id': request_id,
+                ENRICHMENT_FIELD: dict(enrichment)}
         conditional_write(table.put_item, Item=item, ConditionExpression='attribute_not_exists(pk)')
-    except (ClientError, BotoCoreError):
+    except (ClientError, BotoCoreError, ValueError):  # a refusal, a connection error, a result without its key parts
         logger.warning('Feature request enrichment version not kept', extra={'request_id': request_id},
                        exc_info=True)
 
