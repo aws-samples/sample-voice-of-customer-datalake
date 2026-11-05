@@ -21,10 +21,14 @@ export function isInsightWindow(value: number): value is InsightWindow {
   return INSIGHT_WINDOWS.some((days) => days === value)
 }
 
+/** The route's widest window (`days` 0–3650). */
+export const MAX_INSIGHT_DAYS = 3650
+
 export interface InsightsQuery {
   /** A board's id or slug; undefined = every board the caller may see. */
   readonly board?: string
-  readonly days: InsightWindow
+  /** 0–MAX_INSIGHT_DAYS, 0 = all time: the tab offers INSIGHT_WINDOWS, a wizard its own window. */
+  readonly days: number
 }
 
 /** Under the app session's board cache (`featureRequestKeys.root('app')`), so every board write refreshes them too. */

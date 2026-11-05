@@ -270,7 +270,9 @@
       "noMatches": "Ninguna reseña coincide con estos filtros. Amplíelos o la ejecución no tendrá nada que leer.",
       "error": "No se pudieron contar las reseñas que coinciden.",
       "featureRequests_one": "Además, {{count, number}} solicitud de funciones de los tableros.",
-      "featureRequests_other": "Además, {{count, number}} solicitudes de funciones de los tableros."
+      "featureRequests_other": "Además, {{count, number}} solicitudes de funciones de los tableros.",
+      "featureRequestsAtLeast_one": "Al menos {{count, number}} solicitud de funciones de los tableros.",
+      "featureRequestsAtLeast_other": "Al menos {{count, number}} solicitudes de funciones de los tableros."
     },
     "featureRequests": {
       "title": "Solicitudes de funciones",

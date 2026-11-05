@@ -73,7 +73,7 @@ export interface FeatureRequestEvidenceBody {
 }
 
 /** The feedback filters a wizard's live count reads (the generation request's own fields). */
-export interface FeedbackPreviewBody extends FeatureRequestEvidenceBody {
+export interface FeedbackPreviewBody {
   readonly sources: readonly string[]
   readonly categories: readonly string[]
   readonly sentiments: readonly string[]

@@ -270,7 +270,9 @@
       "noMatches": "Aucun avis ne correspond à ces filtres. Élargissez-les, sinon l’exécution n’aura rien à lire.",
       "error": "Impossible de compter les avis correspondants.",
       "featureRequests_one": "Plus {{count, number}} demande de fonctionnalité des tableaux.",
-      "featureRequests_other": "Plus {{count, number}} demandes de fonctionnalités des tableaux."
+      "featureRequests_other": "Plus {{count, number}} demandes de fonctionnalités des tableaux.",
+      "featureRequestsAtLeast_one": "Au moins {{count, number}} demande de fonctionnalité des tableaux.",
+      "featureRequestsAtLeast_other": "Au moins {{count, number}} demandes de fonctionnalités des tableaux."
     },
     "featureRequests": {
       "title": "Demandes de fonctionnalités",

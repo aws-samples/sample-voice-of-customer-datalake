@@ -369,16 +369,6 @@ function entriesFor(viewer, boardRef) {
   return { entries, board };
 }
 
-/**
- * The evidence count a wizard preview reports (`feature_requests_matched`, mock-personas.js): the
- * admin's non-archived boards, narrowed to `boardIds` when any, created within `days` (0 = all).
- */
-export function countFeatureRequestEvidence({ boardIds = [], days = 0 }) {
-  const since = days > 0 ? Date.parse(daysAgo(days)) : 0;
-  return entriesFor(ADMIN_VIEWER, undefined).entries.filter((entry) => (boardIds.length === 0 || boardIds.includes(boardIdOf(entry)))
-    && Date.parse(entry.meta.created_at) >= since).length;
-}
-
 const refusalAnswer = (error) => (error instanceof Refusal ? fail(error.status, error.message) : fail(500, 'Mock error'));
 
 /** Returns true when it handled the request. */

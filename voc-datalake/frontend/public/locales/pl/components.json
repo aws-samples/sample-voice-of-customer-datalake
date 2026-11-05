@@ -297,7 +297,11 @@
       "featureRequests_one": "Do tego {{count, number}} prośba o funkcję z tablic.",
       "featureRequests_few": "Do tego {{count, number}} prośby o funkcje z tablic.",
       "featureRequests_many": "Do tego {{count, number}} próśb o funkcje z tablic.",
-      "featureRequests_other": "Do tego {{count, number}} prośby o funkcje z tablic."
+      "featureRequests_other": "Do tego {{count, number}} prośby o funkcje z tablic.",
+      "featureRequestsAtLeast_one": "Co najmniej {{count, number}} prośba o funkcję z tablic.",
+      "featureRequestsAtLeast_few": "Co najmniej {{count, number}} prośby o funkcje z tablic.",
+      "featureRequestsAtLeast_many": "Co najmniej {{count, number}} próśb o funkcje z tablic.",
+      "featureRequestsAtLeast_other": "Co najmniej {{count, number}} prośby o funkcje z tablic."
     },
     "featureRequests": {
       "title": "Prośby o funkcje",

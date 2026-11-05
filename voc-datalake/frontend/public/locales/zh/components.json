@@ -263,7 +263,9 @@
       "noMatches": "没有评论匹配这些筛选条件。请放宽条件，否则运行时将没有可读取的内容。",
       "error": "无法统计匹配的评论。",
       "featureRequests_one": "另有来自看板的 {{count, number}} 条功能需求。",
-      "featureRequests_other": "另有来自看板的 {{count, number}} 条功能需求。"
+      "featureRequests_other": "另有来自看板的 {{count, number}} 条功能需求。",
+      "featureRequestsAtLeast_one": "来自看板的功能需求至少 {{count, number}} 条。",
+      "featureRequestsAtLeast_other": "来自看板的功能需求至少 {{count, number}} 条。"
     },
     "featureRequests": {
       "title": "功能需求",
