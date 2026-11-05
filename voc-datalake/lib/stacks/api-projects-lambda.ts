@@ -11,7 +11,6 @@ import type { ApiStackContext } from './api-context';
 import { grantMarketplaceSubscription } from './api-marketplace';
 import { grantKeyScopedWrites, grantReadAndWrites } from '../utils/table-write-grants';
 import { grantWorkspaceObjects } from '../utils/workspace-object-deletes';
-import { FEATURE_REQUESTS_TABLE_ENV, grantFeatureRequestEvidenceRead } from '../utils/feature-request-evidence-grant';
 import {
   ASSIST_WORKER_ENV, PROJECTS_ASSIST_FUNCTION_BASE_NAME, assistWorkerName, createAssistWorker, grantAssistWorkerInvoke,
 } from './api-assist-workers';
@@ -30,7 +29,6 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   const {
     feedbackTable, aggregatesTable, projectsTable, jobsTable, kmsKey, rawDataBucket, researchStateMachine,
     cdnSigningSecretArn, cdnSigningKeyPairId, avatarsCdnUrl, prototypesCdnUrl, userPool, boardUserPool,
-    featureRequestsTable,
   } = ctx.props;
 
   // Projects API
@@ -45,8 +43,6 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   projectsTable.grantReadWriteData(projectsRole);
   jobsTable.grantReadWriteData(projectsRole);
   kmsKey.grantEncryptDecrypt(projectsRole);
-  // Board requests as evidence: the persona / research wizards' live count (feedback-preview).
-  grantFeatureRequestEvidenceRead(featureRequestsTable, projectsRole);
   projectsRole.addToPolicy(new iam.PolicyStatement({ actions: ['states:StartExecution'], resources: [researchStateMachine.stateMachineArn] }));
   // Claude models through the stack's shared customer-managed policies (lib/utils/claude-model-grant.ts),
   // not the role's inline policy, which would pass 70% of its 10,240-char quota (api-stack-mcp.test.ts).
@@ -113,7 +109,6 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
       ...projectTablesEnvironment,
       RESEARCH_STATE_MACHINE_ARN: researchStateMachine.stateMachineArn,
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
-      [FEATURE_REQUESTS_TABLE_ENV]: featureRequestsTable.tableName,
       AVATARS_CDN_URL: avatarsCdnUrl,
       PROTOTYPES_CDN_URL: prototypesCdnUrl,
       CDN_SIGNING_SECRET_ARN: cdnSigningSecretArn,

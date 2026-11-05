@@ -155,12 +155,6 @@ def feature_request_context(*, asked: bool, board_ids: object, days: object) -> 
     return build_context(evidence.items)
 
 
-def matched_count(board_ids: Sequence[str] | None, days: object) -> int:
-    """How many board requests a generation over these boards and ``days`` would draw from
-    (the wizards' live count; at most the loader's read bound)."""
-    return load_feature_request_evidence(board_ids=board_ids, days=_window(days), limit=0).total
-
-
 def config_context(config: Mapping[str, Any]) -> FeatureRequestContext:
     """``feature_request_context`` for a persona / research job config."""
     return feature_request_context(asked=wants_feature_requests(config), board_ids=config.get(BOARD_IDS_FIELD),

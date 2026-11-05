@@ -665,22 +665,14 @@ def _start_avatar_assist(project_id: str, persona_id: str) -> Response:
 @app.post("/projects/<project_id>/feedback-preview")
 @tracer.capture_method
 def api_preview_feedback(project_id: str):
-    """The persona / research wizards' live "N reviews match" (``mode``: estimate | exact).
-
-    With ``include_feature_requests`` it also answers ``feature_requests_matched``: the board
-    requests the same generation would read (its boards and ``days``)."""
+    """The persona / research wizards' live "N reviews match" (``mode``: estimate | exact)."""
     body = json_object_body(app)
-    evidence = feature_request_context.evidence_options(body)
     filters = {
         **feedback_filters_from_body(body),
         'date_basis': validate_date_basis(body.get('date_basis')),
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
-    preview = projects.preview_feedback(project_id, filters, body.get('mode'), body.get('purpose', 'personas'))
-    if not evidence[feature_request_context.INCLUDE_FIELD]:
-        return preview
-    return {**preview, 'feature_requests_matched': feature_request_context.matched_count(
-        evidence[feature_request_context.BOARD_IDS_FIELD], filters.get('days'))}
+    return projects.preview_feedback(project_id, filters, body.get('mode'), body.get('purpose', 'personas'))
 
 
 @app.post("/projects/<project_id>/personas/generate")

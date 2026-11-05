@@ -96,12 +96,12 @@ What reached the prompt is stored as `input_feature_request_ids` (ids only, at m
 In personas, the analysis step and every persona-writing call read the section; the plan step reads the analysis only.
 Autonomous agents, "Pursue" on a decision and the merged document never send the flag, so they read no board request.
 The synchronous research fallback (`run_research`, used only when the research state machine is not configured)
-ignores the flag. `POST /projects/{id}/feedback-preview` with `include_feature_requests: true` (and the same
-`feature_request_board_ids` and `days`) also answers `feature_requests_matched`, the number of requests the run would
-draw from.
+ignores the flag. `POST /projects/{id}/feedback-preview` counts reviews only; a board's request count comes from
+`GET /feature-requests/insights` (`totals.requests`, [feature requests](feature-requests.md)).
 
-The readers (the Projects API, the persona and document generator jobs, the research step) hold `dynamodb:Query` on
-voc-feature-requests and nothing else on it (`lib/utils/feature-request-evidence-grant.ts`). A board request is
+The readers (the persona and document generator jobs, the research step) hold `dynamodb:Query` on
+voc-feature-requests and nothing else on it; the Projects API, which only starts those jobs, holds nothing on it
+(`lib/utils/feature-request-evidence-grant.ts`). A board request is
 searched by `GET /feature-requests/search` ([feature requests](feature-requests.md)).
 
 ### How many reviews match: the wizards' live count
