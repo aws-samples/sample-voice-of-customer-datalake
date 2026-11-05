@@ -12,6 +12,7 @@ import pytest
 from jobs.category_reprocess import handler
 from jobs.category_reprocess.test.test_handler import feedback_item
 from shared import reprocess_jobs as jobs
+from shared.converse import BedrockThrottlingError
 from shared.reprocess_slices import ReprocessSlice
 
 
@@ -273,6 +274,17 @@ class TestRawMode:
             result = handler.run_job({'job_id': _start(tables, mode='raw')['sk']}, worker_context)
         assert result['raw_fallback'] == 0
         assert result['raw_fallback_sources'] == []
+
+    def test_a_throttled_fallback_review_is_counted_once(self, tables):
+        """A throttle raises before the count; the review is read again on the retry and counted then, once."""
+        tables['feedback'].put_item(Item=feedback_item('a'))
+        counters: dict = {}
+        job = {'mode': 'raw', 'started_by_sub': 'sub-alice'}
+        item = tables['feedback'].get_item(Key={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#a'})['Item']
+        with patch.object(handler, 'raw_attributes', side_effect=BedrockThrottlingError('slow down')), \
+             pytest.raises(BedrockThrottlingError):
+            handler._recategorise(tables['feedback'], item, job, [], counters)
+        assert counters.get('raw_fallback', 0) == 0
 
 
 def test_the_withheld_fields_are_the_processors_summary_only_fields_that_enrichment_writes():

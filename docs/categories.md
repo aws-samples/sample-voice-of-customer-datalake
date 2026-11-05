@@ -249,7 +249,8 @@ ceiling (50,000 reviews, `MAX_REPROCESS_ITEMS`) ends `partial` with a `resume_fr
 (the last review it finished); `POST /settings/categories/reprocess {resume: <job_id>}`
 starts a new job with the same mode, `include_manual` and slice at that cursor, so it
 never restarts from the top. The new job carries `resumed_from`, the partial one
-`resumed_by`, and a partial job can be resumed once. Administration → Taxonomy shows the
+`resumed_by`, and a partial job is resumed by one job at a time: a resumer that fails or is cancelled
+hands it back (its `resumed_by` is removed), so it can be resumed again. Administration → Taxonomy shows the
 slice, and a **Resume** button on a partial job.
 
 ### What a reprocess records

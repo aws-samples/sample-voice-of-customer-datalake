@@ -2897,7 +2897,14 @@ class _RunCoalescingProcessor(BatchProcessor):
             except _RECORD_FAILURES:
                 plan.fail()
         claimed = _claim_run(plans)
-        reverse_removals(plans)
+        try:
+            reverse_removals(plans)
+        except BaseException:
+            # An error outside the per-record failures (the whole batch is retried): release every claim of
+            # the run first, or the retry would skip reversals that never ran and leave counters too high.
+            for _plan, key in claimed:
+                _release(key)
+            raise
         for plan, key in claimed:
             if plan.error is not None:
                 _release(key)
