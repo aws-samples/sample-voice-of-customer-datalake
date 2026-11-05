@@ -53,6 +53,15 @@ class FeatureRequestContext:
 
 NO_FEATURE_REQUESTS: Final = FeatureRequestContext()
 
+# The synchronous research fallback (projects.run_research) runs in the projects Lambda, whose role
+# holds no grant on voc-feature-requests (kept off for its policy size): it says so instead of
+# silently reading reviews only (tenet 2).
+FALLBACK_SKIPPED_FIELD: Final = 'feature_requests_skipped'
+FALLBACK_SKIPPED_NOTE: Final = (
+    '**Feature requests:** not read. This report ran on the synchronous fallback, which cannot read the '
+    'feedback boards; run it through the research workflow to include them.'
+)
+
 
 def validate_board_ids(value: object) -> list[str] | None:
     """``feature_request_board_ids`` from a request body: None when absent, else ≤ 20 board ids (400)."""
