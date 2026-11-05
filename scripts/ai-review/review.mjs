@@ -162,8 +162,9 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
 
   const systemPrompt = readFileSync(join(root, `.kiro/agents/prompts/${kind.agent}.md`), 'utf8')
   const tenets = readFileSync(join(root, 'TENETS.md'), 'utf8')
+  const reviewGuide = existsSync(join(root, 'REVIEW.md')) ? readFileSync(join(root, 'REVIEW.md'), 'utf8') : ''
   const { text, truncated } = capDiff(diff)
-  const prompt = buildPrompt({ kind: kindName, tenets, commits, base: base.slice(0, 12), files, diff: text, truncated, omitted })
+  const prompt = buildPrompt({ kind: kindName, tenets, reviewGuide, commits, base: base.slice(0, 12), files, diff: text, truncated, omitted })
 
   const cacheDir = join(root, '.cache', 'ai-review')
   const key = createHash('sha256').update(`${kindName}\n${choice.runner}\n${env.AI_REVIEW_MODEL ?? ''}\n${systemPrompt}\n${prompt}`).digest('hex')
