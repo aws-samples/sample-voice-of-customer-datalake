@@ -45,6 +45,7 @@ from moto_helpers import CATEGORY_EDIT_ITEM as ITEM
 from moto_helpers import invoke, rest_event, seeded_category_edit_tables
 
 import data_explorer_handler as h
+from shared.silver_provenance import PIPELINE_VERSION
 from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_handler_wrapped, assert_tracer_wrapped
 from shared.test.source_profile_fixtures import no_source_profiles
@@ -90,11 +91,10 @@ class TestTheColdStartModuleState:
         assert h._IMAGE_EXTENSIONS == ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico')
         assert h._MAX_PREVIEW_BYTES == 1048576
         assert h._TRUNCATION_MARKER == '\n\n... [truncated - file too large]'
-        assert h.UPDATABLE_FEEDBACK_FIELDS == (
-            'original_text', 'normalized_text',
-            'sentiment_label', 'sentiment_score', 'urgency', 'impact_area',
-            'problem_summary', 'problem_root_cause_hypothesis', 'persona_name',
-            'persona_type', 'journey_stage', 'rating',
+        assert h.EDITABLE_FIELDS == (
+            'original_text', 'normalized_text', 'problem_summary', 'problem_root_cause_hypothesis',
+            'persona_name', 'sentiment_label', 'urgency', 'impact_area', 'journey_stage', 'persona_type',
+            'sentiment_score', 'rating',
         )
         assert h.CATEGORY_FIELDS == ('category', 'subcategory')
 
@@ -611,6 +611,22 @@ class TestSavingAnObject:
 # ============================================
 
 ISO = '2026-02-03T04:05:06+00:00'
+#: The caller every `api_gateway_event` carries (api/test/conftest.py).
+ADMIN_SUB = 'test-user-id'
+
+
+def _assigned(kwargs: dict) -> dict:
+    """``{field: value}`` of every SET clause of an ``update_item`` call."""
+    sets = kwargs['UpdateExpression'].removeprefix('SET ').split(' REMOVE ')[0].split(', ')
+    names, values = kwargs['ExpressionAttributeNames'], kwargs['ExpressionAttributeValues']
+    return {names[alias]: values[placeholder] for alias, placeholder in (clause.split(' = ') for clause in sets)}
+
+
+def _stamp(at: str, kind: str = 'admin', sub: str | None = None) -> dict:
+    """The change stamp + provenance a Data Explorer edit writes (``shared.feedback_category``)."""
+    actor = {'sub': sub or ADMIN_SUB, 'kind': kind}
+    return {'pipeline_version': PIPELINE_VERSION, 'enrichment_mode': 'manual', 'enriched_at': at,
+            'updated_by': actor, 'updated_at': at, 'change_reason': 'data_explorer_edit'}
 
 
 class TestTheFeedbackWrite:
@@ -632,30 +648,36 @@ class TestTheFeedbackWrite:
         return _put(api_gateway_event, lambda_context, '/data-explorer/feedback',
                     {'feedback_id': feedback_id, 'data': data, **extra})
 
-    def test_a_plain_edit_is_one_conditional_update_with_updated_at(
+    def test_a_plain_edit_is_one_conditional_update_with_its_change_stamp(
             self, table, frozen_now, api_gateway_event, lambda_context):
         resource, mock_table = table
-        response, body = self._save(api_gateway_event, lambda_context,
-                                    {'source_platform': 'web', 'original_text': 'edited'})
+        with patch.object(h, 'keep_before_edit') as keep:
+            response, body = self._save(api_gateway_event, lambda_context,
+                                        {'source_platform': 'web', 'original_text': 'edited'})
         assert response['statusCode'] == 200
         assert body == {'success': True, 'message': 'Feedback updated'}
         resource.Table.assert_called_once_with('test-feedback')
         mock_table.get_item.assert_called_once_with(
             Key={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'}, ConsistentRead=True)
         mock_table.query.assert_not_called()
-        mock_table.update_item.assert_called_once_with(
-            Key={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'},
-            UpdateExpression='SET #original_text = :original_text, #updated_at = :updated_at',
-            ConditionExpression=Attr('pk').exists(),
-            ExpressionAttributeNames={'#original_text': 'original_text', '#updated_at': 'updated_at'},
-            ExpressionAttributeValues={':original_text': 'edited', ':updated_at': ISO},
-        )
+        kwargs = mock_table.update_item.call_args.kwargs
+        assert kwargs['Key'] == {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'}
+        assert kwargs['UpdateExpression'] == 'SET #fld0 = :fld0, ' + ', '.join(
+            f'#edit{i} = :edit{i}' for i in range(6))
+        assert kwargs['ConditionExpression'] == Attr('pk').exists()
+        assert _assigned(kwargs) == {'original_text': 'edited', **_stamp(ISO)}
+        # The record as it was is kept first, with the admin as the actor.
+        (stored, edit, update), _ = keep.call_args
+        assert stored['category'] == 'delivery'
+        assert edit.actor['kind'] == 'admin'
+        assert edit.reason == 'data_explorer_edit'
+        assert update == kwargs
         # every read of the clock in the request (the cache-version bump stamps too) is a UTC one
         assert {c.args for c in frozen_now.now.call_args_list} == {(UTC,)}
 
     def test_updated_at_is_an_aware_utc_iso_timestamp(self, table, api_gateway_event, lambda_context):
         self._save(api_gateway_event, lambda_context, {'source_platform': 'web', 'rating': 5})
-        stamp = table[1].update_item.call_args.kwargs['ExpressionAttributeValues'][':updated_at']
+        stamp = _assigned(table[1].update_item.call_args.kwargs)['updated_at']
         parsed = datetime.fromisoformat(stamp)
         assert parsed.tzinfo is not None
         offset = parsed.utcoffset()
@@ -663,31 +685,56 @@ class TestTheFeedbackWrite:
         assert offset.total_seconds() == 0
         assert abs((datetime.now(UTC) - parsed).total_seconds()) < 60
 
-    @pytest.mark.parametrize('field', h.UPDATABLE_FEEDBACK_FIELDS)
-    def test_each_editable_field_is_written_under_its_own_name(self, table, field, api_gateway_event, lambda_context):
-        response, _ = self._save(api_gateway_event, lambda_context, {'source_platform': 'web', field: 'v'})
+    @pytest.mark.parametrize(('field', 'value', 'stored'), [
+        ('original_text', 'v', 'v'), ('normalized_text', 'v', 'v'), ('problem_summary', 'v', 'v'),
+        ('problem_root_cause_hypothesis', 'v', 'v'), ('persona_name', 'v', 'v'),
+        ('sentiment_label', 'mixed', 'mixed'), ('urgency', 'high', 'high'), ('impact_area', 'cx', 'cx'),
+        ('journey_stage', 'usage', 'usage'), ('persona_type', 'prospect', 'prospect'),
+        ('sentiment_score', 0.5, Decimal('0.5')), ('rating', 3, Decimal(3)),
+    ])
+    def test_each_editable_field_is_written_under_its_own_name(
+            self, table, field, value, stored, api_gateway_event, lambda_context):
+        response, _ = self._save(api_gateway_event, lambda_context, {'source_platform': 'web', field: value})
         assert response['statusCode'] == 200
-        kwargs = table[1].update_item.call_args.kwargs
-        assert kwargs['UpdateExpression'] == f'SET #{field} = :{field}, #updated_at = :updated_at'
-        assert kwargs['ExpressionAttributeNames'][f'#{field}'] == field
-        assert kwargs['ExpressionAttributeValues'][f':{field}'] == 'v'
+        assigned = _assigned(table[1].update_item.call_args.kwargs)
+        assert assigned[field] == stored
 
-    def test_fields_are_written_in_catalogue_order_and_floats_become_decimals(
+    def test_numbers_become_decimals_and_unknown_keys_are_ignored(
             self, table, api_gateway_event, lambda_context):
         self._save(api_gateway_event, lambda_context, {
             'source_platform': 'web', 'rating': 4, 'sentiment_score': 0.85, 'urgency': 'high', 'ignored': 'x',
         })
-        kwargs = table[1].update_item.call_args.kwargs
-        assert kwargs['UpdateExpression'] == (
-            'SET #sentiment_score = :sentiment_score, #urgency = :urgency, #rating = :rating, '
-            '#updated_at = :updated_at')
-        values = kwargs['ExpressionAttributeValues']
-        assert values[':sentiment_score'] == Decimal('0.85')
-        assert isinstance(values[':sentiment_score'], Decimal)
-        assert values[':rating'] == 4
-        assert isinstance(values[':rating'], int)
-        assert values[':urgency'] == 'high'
-        assert ':ignored' not in values
+        assigned = _assigned(table[1].update_item.call_args.kwargs)
+        assert assigned['sentiment_score'] == Decimal('0.85')
+        assert isinstance(assigned['sentiment_score'], Decimal)
+        assert assigned['rating'] == Decimal(4)
+        assert assigned['urgency'] == 'high'
+        assert 'ignored' not in assigned
+
+    @pytest.mark.parametrize(('data', 'message'), [
+        ({'urgency': 'critical'}, 'urgency must be one of: high, low, medium'),
+        ({'sentiment_score': 2}, 'sentiment_score must be between -1 and 1'),
+        ({'sentiment_score': True}, 'sentiment_score must be a number'),
+        ({'rating': 0}, 'rating must be between 1 and 10'),
+        ({'rating': 'NaN'}, 'rating must be between 1 and 10'),
+        ({'original_text': ''}, 'original_text is required'),
+        ({'problem_summary': 7}, 'problem_summary must be a non-empty string of at most 2000 characters'),
+    ])
+    def test_an_invalid_value_is_a_400_and_writes_nothing(self, table, data, message, api_gateway_event, lambda_context):
+        response, body = self._save(api_gateway_event, lambda_context, {'source_platform': 'web', **data})
+        assert response['statusCode'] == 400
+        assert body == {'success': False, 'error': message}
+        table[1].update_item.assert_not_called()
+
+    def test_an_unchanged_record_sent_back_whole_is_no_change(self, table, api_gateway_event, lambda_context):
+        table[1].get_item.return_value = {'Item': {
+            'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1', 'category': 'delivery', 'rating': Decimal(4),
+            'journey_stage': 'legacy-value'}}
+        response, body = self._save(api_gateway_event, lambda_context, {
+            'source_platform': 'web', 'category': 'delivery', 'rating': 4, 'journey_stage': 'legacy-value'})
+        assert response['statusCode'] == 200
+        assert body == {'success': True, 'message': 'No changes'}
+        table[1].update_item.assert_not_called()
 
     def test_without_a_source_platform_the_key_comes_from_the_by_id_index(
             self, table, api_gateway_event, lambda_context):
@@ -759,7 +806,7 @@ class TestTheFeedbackWrite:
         assert table[0].mock_calls == []
 
     def test_a_category_key_alone_counts_as_a_field_to_update(self, table, api_gateway_event, lambda_context):
-        """`category` is not in UPDATABLE_FEEDBACK_FIELDS; the gate must still let it through."""
+        """`category` is not in EDITABLE_FIELDS; the gate must still let it through."""
         table[1].get_item.return_value = {'Item': {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1', 'category': 'delivery'}}
         response, body = self._save(api_gateway_event, lambda_context, {'source_platform': 'web', 'category': 'delivery'})
         assert response['statusCode'] == 200
@@ -932,31 +979,30 @@ class TestRequestedCategory:
 
 
 class TestUpdateKwargs:
+    EDIT = h.ManualEdit(actor={'sub': 'sub-admin', 'kind': 'admin'}, reason='data_explorer_edit')
+
     def test_a_category_change_appends_its_clauses_and_takes_its_condition(self):
         change = h.CategoryChange(
             sets=['#cat_c = :cat_c'], removes=['#cat_s'], names={'#cat_c': 'category', '#cat_s': 'subcategory'},
             values={':cat_c': 'app'}, condition=Attr('pk').exists() & Attr('category').eq('delivery'),
         )
+        edits = h.FieldEdits(sets={'rating': Decimal(3)}, removes=['persona_name'])
         with frozen_clock(h) as dt:
             dt.now.return_value.isoformat.return_value = ISO
-            kwargs = h._update_kwargs({'pk': 'p', 'sk': 's'}, {'rating': 3}, change)
-        assert kwargs == {
-            'Key': {'pk': 'p', 'sk': 's'},
-            'UpdateExpression': 'SET #rating = :rating, #cat_c = :cat_c, #updated_at = :updated_at REMOVE #cat_s',
-            'ConditionExpression': Attr('pk').exists() & Attr('category').eq('delivery'),
-            'ExpressionAttributeNames': {'#rating': 'rating', '#cat_c': 'category', '#cat_s': 'subcategory',
-                                         '#updated_at': 'updated_at'},
-            'ExpressionAttributeValues': {':rating': 3, ':cat_c': 'app', ':updated_at': ISO},
-        }
+            kwargs = h._update_kwargs({'pk': 'p', 'sk': 's'}, edits, change, self.EDIT)
+        stamp = ', '.join(f'#edit{i} = :edit{i}' for i in range(6))
+        assert kwargs['UpdateExpression'] == f'SET #fld0 = :fld0, #cat_c = :cat_c, {stamp} REMOVE #rm0, #cat_s'
+        assert kwargs['ConditionExpression'] == Attr('pk').exists() & Attr('category').eq('delivery')
+        assert kwargs['ExpressionAttributeNames']['#rm0'] == 'persona_name'
+        assert _assigned(kwargs) == {'rating': Decimal(3), 'category': 'app', **_stamp(ISO, sub='sub-admin')}
 
     def test_without_a_change_the_only_condition_is_existence(self):
         with frozen_clock(h) as dt:
             dt.now.return_value.isoformat.return_value = ISO
-            kwargs = h._update_kwargs({'pk': 'p', 'sk': 's'}, {}, None)
-        assert kwargs['UpdateExpression'] == 'SET #updated_at = :updated_at'
+            kwargs = h._update_kwargs({'pk': 'p', 'sk': 's'}, h.FieldEdits(), None, self.EDIT)
+        assert kwargs['UpdateExpression'] == 'SET ' + ', '.join(f'#edit{i} = :edit{i}' for i in range(6))
         assert kwargs['ConditionExpression'] == Attr('pk').exists()
-        assert kwargs['ExpressionAttributeNames'] == {'#updated_at': 'updated_at'}
-        assert kwargs['ExpressionAttributeValues'] == {':updated_at': ISO}
+        assert _assigned(kwargs) == _stamp(ISO, sub='sub-admin')
 
 
 # ============================================

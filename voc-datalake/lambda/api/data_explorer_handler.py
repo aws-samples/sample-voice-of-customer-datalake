@@ -22,7 +22,6 @@ Dedicated Lambda to avoid 20KB IAM policy limit.
 import json
 import os
 import sys
-from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -35,6 +34,7 @@ if TYPE_CHECKING:
 from shared.api import admins_only, api_handler, create_api_resolver
 from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client, is_missing_s3_object
 from shared.data_version import bump_data_version
+from shared.delete_audit import actor_from_event
 from shared.exceptions import (
     ApiError,
     ConfigurationError,
@@ -45,15 +45,20 @@ from shared.exceptions import (
 )
 from shared.feedback_category import (
     CategoryChange,
+    ManualEdit,
     apply_conditional_update,
+    assignment_clauses,
     categories_config,
     category_change,
     category_label,
     item_exists,
+    keep_before_edit,
+    manual_edit_fields,
     override_record,
     update_expression,
     validate_target,
 )
+from shared.feedback_field_edits import EDITABLE_FIELDS, FieldEdits, field_edits
 from shared.indexes import FEEDBACK_BY_ID_INDEX
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
@@ -61,6 +66,7 @@ from shared.raw_object_summary import add_summaries
 from shared.raw_versions import app_connector
 from shared.request_body import json_object_body
 from shared.retention import RAW_PREFIX
+from shared.silver_provenance import REASON_DATA_EXPLORER_EDIT
 from shared.source_policy import apply_source_policy, raw_archive_allowed
 from shared.source_profiles import cached_source_profile_strict
 from shared.tables import get_aggregates_table
@@ -402,31 +408,10 @@ def save_s3_file():
 # DynamoDB Feedback (read + edit)
 # ============================================
 
-# Fields an admin may edit on a processed feedback record. `category` and
-# `subcategory` are NOT plain fields: a change to either goes through
-# `shared.feedback_category`, exactly like PUT /feedback/{id}/category.
-UPDATABLE_FEEDBACK_FIELDS = (
-    'original_text', 'normalized_text',
-    'sentiment_label', 'sentiment_score', 'urgency', 'impact_area',
-    'problem_summary', 'problem_root_cause_hypothesis', 'persona_name',
-    'persona_type', 'journey_stage', 'rating',
-)
+# Fields an admin may edit on a processed feedback record: `shared.feedback_field_edits`
+# (validated, PII-policy applied). `category` and `subcategory` are NOT plain fields: a
+# change to either goes through `shared.feedback_category`, exactly like PUT /feedback/{id}/category.
 CATEGORY_FIELDS = ('category', 'subcategory')
-
-
-def _plain_field_update(data: dict) -> tuple[list[str], dict, dict]:
-    """`(SET clauses, names, values)` for the plain editable fields present in `data`."""
-    sets: list[str] = []
-    names: dict[str, str] = {}
-    values: dict[str, Any] = {}
-    for name in UPDATABLE_FEEDBACK_FIELDS:
-        if name in data:
-            sets.append(f"#{name} = :{name}")
-            names[f"#{name}"] = name
-            value = data[name]
-            # Convert floats to Decimal for DynamoDB
-            values[f":{name}"] = Decimal(str(value)) if isinstance(value, float) else value
-    return sets, names, values
 
 
 def _feedback_key(table, feedback_id: str, source_platform: str) -> dict:
@@ -485,25 +470,25 @@ def _category_change(item: dict, data: dict) -> CategoryChange | None:
     return category_change(item, category, subcategory, override_record(item, caller))
 
 
-def _update_kwargs(key: dict, data: dict, change: CategoryChange | None) -> dict:
-    """One conditional `update_item`: plain fields, the category move, `updated_at`.
+def _update_kwargs(key: dict, edits: FieldEdits, change: CategoryChange | None, edit: ManualEdit) -> dict:
+    """One conditional `update_item`: plain fields, the category move, the change stamp.
 
     Always conditional on the item existing (an edit can never create one); a
     category move adds "still has the category that was read".
     """
-    sets, names, values = _plain_field_update(data)
+    sets, names, values = assignment_clauses(edits.sets, 'fld')
+    removes = [f'#rm{index}' for index in range(len(edits.removes))]
+    names.update(dict(zip(removes, edits.removes, strict=True)))
     if change is not None:
-        sets = [*sets, *change.sets]
+        sets, removes = [*sets, *change.sets], [*removes, *change.removes]
         names, values = {**names, **change.names}, {**values, **change.values}
-    sets.append("#updated_at = :updated_at")
-    names["#updated_at"] = "updated_at"
-    values[":updated_at"] = now_iso()
+    stamp_sets, stamp_names, stamp_values = assignment_clauses(manual_edit_fields(edit, now_iso()), 'edit')
     return {
         'Key': key,
-        'UpdateExpression': update_expression(sets, change.removes if change is not None else []),
+        'UpdateExpression': update_expression([*sets, *stamp_sets], removes),
         'ConditionExpression': change.condition if change is not None else item_exists(),
-        'ExpressionAttributeNames': names,
-        'ExpressionAttributeValues': values,
+        'ExpressionAttributeNames': {**names, **stamp_names},
+        'ExpressionAttributeValues': {**values, **stamp_values},
     }
 
 
@@ -514,8 +499,12 @@ def save_feedback():
 
     The raw object the record was ingested from is never touched: raw data is
     immutable, so there is no write-back to S3 (the former `sync_to_s3` flag is
-    ignored). A category change is validated, moves `gsi2pk` and is audited
-    exactly as `PUT /feedback/{id}/category` does (409 on a concurrent change).
+    ignored). Only the fields that differ from the stored record change; each is
+    validated and put through the source's PII policy (`shared.feedback_field_edits`).
+    A category change is validated, moves `gsi2pk` and is audited exactly as
+    `PUT /feedback/{id}/category` does (409 on a concurrent change). The record as it
+    was is kept under `silver/` first, and the update stamps `updated_by` (the admin),
+    `updated_at`, `change_reason` and `enrichment_mode 'manual'`.
     """
     if not FEEDBACK_TABLE:
         raise ConfigurationError('Feedback table not configured')
@@ -528,25 +517,31 @@ def save_feedback():
         raise ValidationError('Feedback ID is required')
     if not isinstance(data, dict):
         raise ValidationError('data must be an object')
-    if not any(name in data for name in (*UPDATABLE_FEEDBACK_FIELDS, *CATEGORY_FIELDS)):
+    if not any(name in data for name in (*EDITABLE_FIELDS, *CATEGORY_FIELDS)):
         raise ValidationError('No fields to update')
 
     table = dynamodb.Table(FEEDBACK_TABLE)
     try:
         key = _feedback_key(table, feedback_id, data.get('source_platform', ''))
-        change = _category_change(_stored_item(table, key), data)
+        item = _stored_item(table, key)
+        change = _category_change(item, data)
+        edits = field_edits(item, data)
     except ApiError:
         raise
     except Exception as e:
         logger.exception("Failed to read feedback")
         raise ServiceError('Failed to update feedback') from e
-    if change is None and not any(name in data for name in UPDATABLE_FEEDBACK_FIELDS):
+    if change is None and not edits.changed:
         return {'success': True, 'message': 'No changes'}
 
+    edit = ManualEdit(actor=actor_from_event(app.current_event.raw_event, admin=True), reason=REASON_DATA_EXPLORER_EDIT)
+    kwargs = _update_kwargs(key, edits, change, edit)
+    # The review as it was, before the edit (TENETS.md D1): never fails the edit.
+    keep_before_edit(item, edit, kwargs)
     # A failed existence-only condition means the item vanished (404); with a
     # category move it is the shared lost-update 409.
     missing = None if change is not None else NotFoundError('Feedback not found')
-    apply_conditional_update(table, _update_kwargs(key, data, change), on_condition_failed=missing)
+    apply_conditional_update(table, kwargs, on_condition_failed=missing)
     # Read-your-write: cached reads move on now, not when the stream reaches the aggregator.
     bump_data_version(get_aggregates_table())
     return {'success': True, 'message': 'Feedback updated'}
