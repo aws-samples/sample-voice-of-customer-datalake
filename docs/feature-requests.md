@@ -302,8 +302,11 @@ enrichment: {status: 'ok' | 'failed', category, subcategory, sentiment: positive
   that were enriched; an edit meanwhile queued its own job.
 - **Failures.** A model error or an unreadable answer writes `status: 'failed'` (every value `null`).
 - **Backfill.** `POST /feature-requests/insights/enrich` (app admins) queues up to 200 requests with no enrichment,
-  a stale one or a failed one, in jobs of 10 (each job hands the rest on when its 60 s run gets short) →
-  `{queued, remaining}`. Call it again for the remaining ones once the queued jobs finished (a request still waiting
+  a stale one or a failed one → `{queued, remaining}`. The route fans out: it async-invokes one job per batch of 10
+  itself (at most 20 invokes), so no job is needed to start another batch. A job hands on only its OWN unfinished
+  ids when its 60 s run gets short, and only after it enriched at least one of them, so the longest chain is the
+  route's invoke plus 9 hand-ons: 10 invocations, below the 16 at which Lambda's recursive-loop detection stops a
+  chain. Call it again for the remaining ones once the queued jobs finished (a request still waiting
   is counted again until its job ran). Each enrichment is one model call billed to the account.
 
 ## Insights

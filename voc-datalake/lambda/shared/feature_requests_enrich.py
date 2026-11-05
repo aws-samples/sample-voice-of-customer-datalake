@@ -15,8 +15,10 @@ enriched again only when that changes.
 Flow: creating a request, or an edit that changes its title or description, async-invokes the
 engagement Lambda ITSELF with ``{"engagement_job": "enrich_feature_request", "request_id"}``
 (``queue_if_stale``; ``engagement_handler.lambda_handler`` routes it before the resolver). The
-admin backfill (``POST /feature-requests/insights/enrich``) queues ``request_ids`` lists of up to
-``MAX_IDS_PER_JOB``. A job makes ONE ``enrichment``-surface model call per request and writes the
+admin backfill (``POST /feature-requests/insights/enrich``) itself queues ``request_ids`` lists of up to
+``MAX_IDS_PER_JOB`` (a fan-out: ≤ 20 invokes for 200). A job hands on only its own unfinished ids, after
+enriching at least one, so a chain is at most ``MAX_IDS_PER_JOB`` invocations (below Lambda's 16-hop loop
+detection). A job makes ONE ``enrichment``-surface model call per request and writes the
 result only while the row still exists with the title and description it enriched, so a newer edit
 wins. A model failure writes ``status: 'failed'``; nothing here ever fails a request write.
 
