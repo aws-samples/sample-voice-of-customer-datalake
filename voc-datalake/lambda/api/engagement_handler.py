@@ -11,6 +11,8 @@ the bundle (``api/<handler>.py`` + ``shared/``) carries them:
                            included FIRST, so ``boards`` is never read as a request id)
     /feature-requests/insights*  shared/feature_requests_insights_routes.py (BOARD authorizer;
                            included before the request routes, so ``insights`` is never a request id)
+    GET /feature-requests/search  shared/feature_requests_search_routes.py (BOARD authorizer; scoped by
+                           board access, before the request routes for the same reason)
     /feature-requests/*    shared/feature_requests_routes.py (BOARD authorizer)
 
 An event ``{"engagement_job": "send_ask", ...}`` is this Lambda invoking ITSELF to send
@@ -26,6 +28,7 @@ from shared import (
     feature_requests_enrich,
     feature_requests_insights_routes,
     feature_requests_routes,
+    feature_requests_search_routes,
     participant_mailer,
     participants_ask_routes,
     participants_routes,
@@ -40,6 +43,7 @@ app.include_router(participants_routes.app)
 app.include_router(participants_ask_routes.app)
 app.include_router(feature_boards_routes.app)
 app.include_router(feature_requests_insights_routes.app)
+app.include_router(feature_requests_search_routes.app)
 app.include_router(feature_requests_routes.app)
 
 # Build the AWS clients during INIT, not on the first request (shared/warm_init.py).
