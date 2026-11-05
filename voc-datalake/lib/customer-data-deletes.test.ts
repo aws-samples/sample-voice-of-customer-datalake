@@ -82,7 +82,11 @@ const TABLE_DELETERS: Readonly<Record<string, Readonly<Record<string, Deleter>>>
 
 /** A sample object key per customer / workspace prefix of the raw bucket, matched against each grant's ARN glob. */
 const RAW_BUCKET_PREFIXES: Readonly<Record<string, readonly string[]>> = {
-  'raw/': ['raw/webscraper/2026/01/01/abc/0123456789abcdef.json', 'raw/csv_upload/2026/01/01/u.json'],
+  'raw/': [
+    'raw/webscraper/2026/01/01/abc/0123456789abcdef.json', 'raw/csv_upload/2026/01/01/u.json',
+    // The boards' opt-in raw copies (lambda/shared/feature_requests_raw.py): an erasure by email reaches them.
+    'raw/feature_requests/2026/01/01/fr_0123456789ab/0123456789abcdef.json',
+  ],
   'avatars/': ['avatars/persona_1_abc.png'],
   'prototypes/': ['prototypes/proj_1/doc_1.html'],
   'projects/*/product_docs/': ['projects/proj_1/product_docs/raw/doc.pdf', 'projects/proj_1/product_docs/extracted/doc.txt'],
@@ -209,6 +213,12 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
   it('voc-retention deletes only under raw/, never bucket-wide', () => {
     const rawDeletes = grants.filter((g) => g.role === RETENTION_ROLE && g.actions.some((a) => S3_DELETE.test(a)));
     expect(rawDeletes.flatMap(rawBucketGlobs)).toStrictEqual(['raw/*']);
+  });
+
+  it('voc-retention reaches the feedback boards only to de-identify (Scan / UpdateItem, no delete)', () => {
+    const onBoards = grants.filter((g) => g.role === RETENTION_ROLE).filter(onTable('FeatureRequestsTable'));
+    expect([...new Set(onBoards.flatMap((g) => g.actions))].sort(byCodeUnit))
+      .toStrictEqual(['dynamodb:Scan', 'dynamodb:UpdateItem']);
   });
 
   it('no role deletes bucket-wide in the raw bucket', () => {

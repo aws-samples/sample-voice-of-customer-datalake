@@ -18,6 +18,9 @@ A run walks its PHASES in order, each paged and time-budgeted:
 
 1. ``items`` — voc-feedback;
 2. ``radar`` — voc-radar (other brands' reviews), when ``RADAR_TABLE`` is set;
+   then ``boards`` — an erasure by email only, when ``FEATURE_REQUESTS_TABLE`` is set:
+   the person's board requests and +1s are de-identified and their raw copies deleted
+   (``boards.py``);
 3. ``raw`` — whole-source erasure only: every object version left under
    ``raw/{source}/`` (``shared/retention.delete_raw_prefix_page``);
 4. ``lineage`` — when the run deleted anything and ``PROJECTS_TABLE`` is set:
@@ -29,7 +32,8 @@ cursor and its running state (``runs.py``). Deletes are idempotent, so a
 duplicate delivery or an overlapping daily run only repeats no-ops. Every
 finished run (and every failure) writes one audit row (``pk AUDIT#retention``).
 
-Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``RAW_DATA_BUCKET``, ``RADAR_TABLE``, ``PROJECTS_TABLE``.
+Env: ``FEEDBACK_TABLE``, ``AGGREGATES_TABLE``, ``RAW_DATA_BUCKET``, ``RADAR_TABLE``, ``PROJECTS_TABLE``,
+``FEATURE_REQUESTS_TABLE``.
 """
 
 from __future__ import annotations
@@ -44,11 +48,13 @@ from typing import Any, Final
 from boto3.dynamodb.conditions import ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
-from jobs.retention import lineage
+from jobs.retention import boards, lineage
 from jobs.retention.copies import ItemDeleter, write_tombstones
 from jobs.retention.runs import (
+    BOARD_COUNTER,
     MODE_ERASE,
     MODE_RETENTION,
+    board_count,
     carried_state,
     claim_erasure_job,
     finish_erasure_job,
@@ -69,15 +75,17 @@ from shared.source_profiles import SOURCE_ID_RE, load_source_profiles
 from shared.warm_init import warm_at_init
 
 # Bundled beside `shared/` (no sys.path shim); tests import `jobs.retention.handler`.
-FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET, RADAR_TABLE, PROJECTS_TABLE = (
+FEEDBACK_TABLE, AGGREGATES_TABLE, RAW_DATA_BUCKET, RADAR_TABLE, PROJECTS_TABLE, FEATURE_REQUESTS_TABLE = (
     os.environ.get(name, '')
-    for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'RADAR_TABLE', 'PROJECTS_TABLE'))
+    for name in ('FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'RADAR_TABLE', 'PROJECTS_TABLE',
+                 'FEATURE_REQUESTS_TABLE'))
 
 JOB_ID_RE: Final = re.compile(r'^er_[0-9a-f]{12}\Z')
 STATUS_COMPLETED: Final = 'completed'
 STATUS_FAILED: Final = 'failed'
 PHASE_ITEMS: Final = 'items'
 PHASE_RADAR: Final = 'radar'
+PHASE_BOARDS: Final = 'boards'
 PHASE_RAW: Final = 'raw'
 PHASE_LINEAGE: Final = 'lineage'
 _PHASE_STORES: Final = {PHASE_ITEMS: STORE_FEEDBACK, PHASE_RADAR: STORE_RADAR}
@@ -114,7 +122,8 @@ class Walk:
 def _tables() -> dict[str, Any]:
     dynamodb = get_dynamodb_resource()
     tables = {STORE_FEEDBACK: dynamodb.Table(FEEDBACK_TABLE), 'aggregates': dynamodb.Table(AGGREGATES_TABLE)}
-    for name, table_name in ((STORE_RADAR, RADAR_TABLE), ('projects', PROJECTS_TABLE)):
+    for name, table_name in ((STORE_RADAR, RADAR_TABLE), ('projects', PROJECTS_TABLE),
+                             (boards.STORE_BOARDS, FEATURE_REQUESTS_TABLE)):
         if table_name:
             tables[name] = dynamodb.Table(table_name)
     return tables
@@ -241,26 +250,34 @@ def _walk(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | No
             return _hand_over(walk, phase, cursor)
 
 
+def _erase_pages(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | None], dict],
+                 tombstones: Callable[[list[dict]], None], erase: Callable[[dict], None]) -> dict | None:
+    """Per page: every match's tombstone first, then each match erased, until the time runs low."""
+
+    def handle(page: dict, start: dict | None) -> _Resume | None:
+        walk.run['scanned'] += int(page.get('ScannedCount', 0))
+        items = page.get('Items', [])
+        tombstones(items)
+        done = start
+        for item in items:
+            if not _time_left(walk.context):
+                # After the last erased item (this page's start when none was).
+                return _Resume(done)
+            erase(item)
+            done = {'pk': item['pk'], 'sk': item['sk']}
+        return None
+
+    return _walk(walk, phase, cursor, scan, handle)
+
+
 def _walk_store(walk: Walk, phase: str, cursor: dict | None) -> dict | None:
     """Tombstone, then delete, every match of the phase's store from ``cursor`` on; a hand-over or None."""
     store = _PHASE_STORES[phase]
     table, condition, run = walk.tables[store], walk.filters(store), walk.run
     deleter = ItemDeleter(run, walk.s3, RAW_DATA_BUCKET, walk.tables)
-
-    def handle(page: dict, start: dict | None) -> _Resume | None:
-        run['scanned'] += int(page.get('ScannedCount', 0))
-        items = page.get('Items', [])
-        write_tombstones(walk.aggregates, run, items, store)
-        done = start
-        for item in items:
-            if not _time_left(walk.context):
-                # After the last deleted item (this page's start when none was).
-                return _Resume(done)
-            deleter.delete(item, store)
-            done = {'pk': item['pk'], 'sk': item['sk']}
-        return None
-
-    return _walk(walk, phase, cursor, lambda at: _scan_page(table, condition, at), handle)
+    return _erase_pages(walk, phase, cursor, lambda at: _scan_page(table, condition, at),
+                        lambda items: write_tombstones(walk.aggregates, run, items, store),
+                        lambda item: deleter.delete(item, store))
 
 
 def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
@@ -284,6 +301,14 @@ def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
     return None
 
 
+def _erase_from_boards(walk: Walk, cursor: dict | None) -> dict | None:
+    """Tombstone, then de-identify, every board request and +1 of the erased email (``boards.py``)."""
+    table, value = walk.tables[boards.STORE_BOARDS], str(walk.event.get('value') or '')
+    eraser = boards.BoardEraser(walk.run, walk.tables, walk.s3, RAW_DATA_BUCKET)
+    return _erase_pages(walk, PHASE_BOARDS, cursor, lambda at: boards.scan_page(table, value, at),
+                        eraser.tombstones, eraser.erase)
+
+
 def _mark_lineage(walk: Walk, cursor: dict | None) -> dict | None:
     """Mark the workspace artifacts that cited a deleted item (``lineage.py``), page by page."""
     projects = walk.tables['projects']
@@ -300,6 +325,8 @@ def _phases(walk: Walk) -> list[str]:
     phases = [PHASE_ITEMS]
     if STORE_RADAR in walk.tables:
         phases.append(PHASE_RADAR)
+    if boards.STORE_BOARDS in walk.tables and boards.applies(walk.run):
+        phases.append(PHASE_BOARDS)
     if walk.run.get('field') == SOURCE_FIELD:
         phases.append(PHASE_RAW)
     if 'projects' in walk.tables:
@@ -308,7 +335,7 @@ def _phases(walk: Walk) -> list[str]:
 
 
 def _deleted_anything(run: dict[str, Any]) -> bool:
-    return run['deleted_items'] + run['deleted_radar_items'] > 0
+    return run['deleted_items'] + run['deleted_radar_items'] + int(run.get(BOARD_COUNTER) or 0) > 0
 
 
 def _walk_phases(walk: Walk) -> dict | None:
@@ -334,6 +361,7 @@ def _walk_phases(walk: Walk) -> dict | None:
 _PHASE_RUNNERS: Final[dict[str, Callable[[Walk, dict | None], dict | None]]] = {
     PHASE_ITEMS: lambda walk, cursor: _walk_store(walk, PHASE_ITEMS, cursor),
     PHASE_RADAR: lambda walk, cursor: _walk_store(walk, PHASE_RADAR, cursor),
+    PHASE_BOARDS: _erase_from_boards,
     PHASE_RAW: _sweep_raw,
     PHASE_LINEAGE: _mark_lineage,
 }
@@ -354,7 +382,7 @@ def _finish(aggregates_table: Any, run: dict[str, Any], status: str, error: str 
                        value=run['deleted_items'] + run['deleted_radar_items'])
     return {'status': status, 'run_id': run['run_id'], 'deleted_items': run['deleted_items'],
             'deleted_radar_items': run['deleted_radar_items'], 'deleted_objects': run['deleted_objects'],
-            'artifacts_marked': run['artifacts_marked']}
+            'artifacts_marked': run['artifacts_marked'], **board_count(run)}
 
 
 def handle_event(event: dict[str, Any], context: Any) -> dict:

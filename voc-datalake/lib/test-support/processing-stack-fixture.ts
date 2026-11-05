@@ -47,6 +47,7 @@ export function synthProcessingTemplate(options: { withIndexes?: boolean } = {})
     memoryTable: makeTable('Memory'),
     agentsTable: makeTable('Agents'),
     radarTable: makeTable('Radar'),
+    featureRequestsTable: makeTable('FeatureRequests'),
     conversationsTable: makeTable('Conversations'),
   };
   const stack = new VocProcessingStack(app, 'TestProcessing', {

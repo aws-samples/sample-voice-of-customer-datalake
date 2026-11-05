@@ -175,6 +175,11 @@ class TestTheRunState:
         assert run == {'mode': 'erase', **carried}
         assert runs.carried_state(run) == {**carried, 'generation': 4}
 
+    def test_the_board_counter_is_carried_only_once_it_counts(self) -> None:
+        run = runs.new_run({'run': {'board_items_deidentified': 2}}, 'erase')
+        assert runs.carried_state(run)['board_items_deidentified'] == 2
+        assert 'board_items_deidentified' not in runs.carried_state(runs.new_run({}, 'erase'))
+
     def test_a_fresh_run_starts_at_zero_with_a_new_id(self) -> None:
         with patch.object(runs, 'now_iso', return_value=NOW), \
                 patch.object(runs.uuid, 'uuid4', return_value=MagicMock(hex='0123456789abcdef')):

@@ -27,6 +27,9 @@
  *   - radar: Scan / DeleteItem (a review and its dedupe marker) and the cache-version
  *     bump (UpdateItem on `SETTINGS#radar` only) — no Put, no Query;
  *   - projects: Scan / UpdateItem (mark artifacts, drop erased ids) — no delete, no put;
+ *   - feature requests: Scan / UpdateItem (an erasure by email de-identifies the person's board requests
+ *     and +1s: REMOVE their email and name; their raw copies under `raw/feature_requests/` go with the
+ *     raw grant above) — no delete, no put;
  *   - lambda:InvokeFunction on its own unqualified name (time-budget hand-over).
  */
 import * as cdk from 'aws-cdk-lib';
@@ -62,6 +65,8 @@ export interface RetentionWorkerProps {
   radarTable: dynamodb.ITable;
   /** voc-projects: artifacts whose lineage names an erased item are marked. */
   projectsTable: dynamodb.ITable;
+  /** voc-feature-requests: an erasure by email de-identifies the person's board requests and +1s. */
+  featureRequestsTable: dynamodb.ITable;
   rawDataBucket: s3.IBucket;
 }
 
@@ -88,7 +93,9 @@ function retentionCode(): lambda.Code {
 export function createRetentionWorker(scope: Construct, id: string, props: RetentionWorkerProps): void {
   // A plain construct with the same id keeps every logical id the class form had.
   const worker = new Construct(scope, id);
-  const { uniqueName, kmsKey, feedbackTable, aggregatesTable, radarTable, projectsTable, rawDataBucket } = props;
+  const {
+    uniqueName, kmsKey, feedbackTable, aggregatesTable, radarTable, projectsTable, featureRequestsTable, rawDataBucket,
+  } = props;
   const functionName = uniqueName(RETENTION_FUNCTION_BASE_NAME);
 
   const role = workerRole(worker, 'RetentionRole');
@@ -98,6 +105,7 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
   radarTable.grant(role, 'dynamodb:Scan', 'dynamodb:DeleteItem');
   grantCacheVersionBump(radarTable, role, RADAR_VERSION_PARTITION);
   projectsTable.grant(role, 'dynamodb:Scan', 'dynamodb:UpdateItem');
+  featureRequestsTable.grant(role, 'dynamodb:Scan', 'dynamodb:UpdateItem');
   kmsKey.grantEncryptDecrypt(role);
   role.addToPrincipalPolicy(new iam.PolicyStatement({
     sid: 'DeleteRawArchiveObjects',
@@ -132,6 +140,7 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
       RADAR_TABLE: radarTable.tableName,
       PROJECTS_TABLE: projectsTable.tableName,
+      FEATURE_REQUESTS_TABLE: featureRequestsTable.tableName,
       // No RETENTION_FUNCTION: the worker re-invokes itself via context.function_name.
       POWERTOOLS_SERVICE_NAME: RETENTION_FUNCTION_BASE_NAME,
       LOG_LEVEL: 'INFO',
