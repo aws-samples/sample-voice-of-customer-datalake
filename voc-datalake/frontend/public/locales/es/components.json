@@ -174,7 +174,8 @@
         "running": "En curso",
         "completed": "Completado",
         "failed": "Error",
-        "cancelled": "Cancelado"
+        "cancelled": "Cancelado",
+        "partial": "Parcial"
       },
       "counters": {
         "scanned": "Revisadas",
@@ -188,7 +189,7 @@
       "lastNDays_other": "Últimos {{count, number}} días",
       "cancel": "Cancelar trabajo",
       "alreadyRunning": "Ya hay un trabajo de reprocesamiento en curso. Espera a que termine o cancélalo primero.",
-      "stoppedAtCeiling": "Se detuvo en el límite de {{max}} opiniones por trabajo para acotar el coste del modelo: el resto no se reprocesó. Reduce el periodo para cubrirlas.",
+      "stoppedAtCeiling": "Se detuvo en el límite de {{max}} opiniones por trabajo para acotar el coste del modelo. Reanuda para continuar donde se detuvo.",
       "startError": "No se pudo iniciar el trabajo de reprocesamiento.",
       "daysLabel": "Periodo (días)",
       "includeManual": "Sobrescribir también las correcciones manuales",
@@ -196,7 +197,32 @@
       "costNote": "Coste: una llamada al modelo por cada reseña del periodo. Una ejecución de todo el periodo sobre un data lake grande puede tardar horas.",
       "start": "Iniciar reprocesamiento",
       "confirmTitle": "¿Reprocesar los comentarios existentes?",
-      "confirmMessage": "{{mode}} para {{window}}. Se hace una llamada al modelo por cada reseña de ese periodo. Las reseñas se actualizan en su sitio; no se elimina nada."
+      "confirmMessage": "{{mode}} para {{window}}. Se hace una llamada al modelo por cada reseña de ese periodo. Las reseñas se actualizan en su sitio; no se elimina nada.",
+      "openEnded": "abierto",
+      "dateRange": "{{from}} – {{to}}",
+      "byReviewDate": "{{range}} (fecha de la opinión)",
+      "byProcessedDate": "{{range}} (fecha de procesamiento)",
+      "sliceSources": "Fuentes: {{list}}",
+      "sliceCategories": "Categorías: {{list}}",
+      "rawFallback_one": "{{count, number}} opinión no tenía elemento sin procesar archivado y se reprocesó desde su texto almacenado (fuentes: {{sources}}).",
+      "rawFallback_other": "{{count, number}} opiniones no tenían elemento sin procesar archivado y se reprocesaron desde su texto almacenado (fuentes: {{sources}}).",
+      "derivedWith": "Derivado con el modelo {{model}}, categorías {{digest}}, versión de configuración {{version}}.",
+      "configChanged": "La configuración cambió mientras se ejecutaba el trabajo.",
+      "resume": "Reanudar",
+      "windowLabel": "Periodo",
+      "windowDays": "Últimos N días",
+      "windowRange": "Rango de fechas",
+      "basisProcessed": "Fecha de procesamiento",
+      "basisReview": "Fecha de la opinión",
+      "dateFrom": "Desde",
+      "dateTo": "Hasta",
+      "dateBasis": "Fecha que se lee",
+      "rangeHint": "Cualquiera de los extremos puede quedar abierto. La fecha de la opinión es cuando el cliente la escribió; las opiniones sin ella usan su fecha de procesamiento.",
+      "sourcesLabel": "Fuentes",
+      "sourcesHint": "Sin selección = todas las fuentes. Solo se leen estas fuentes.",
+      "categoriesLabel": "Categorías",
+      "categoriesPlaceholder": "facturación, entrega",
+      "categoriesHint": "Nombres de categoría almacenados, separados por comas (también los que ya no están configurados). Vacío = todas las categorías."
     }
   },
   "dataSourceWizard": {

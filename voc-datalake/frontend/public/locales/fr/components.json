@@ -174,7 +174,8 @@
         "running": "En cours",
         "completed": "Terminé",
         "failed": "Échec",
-        "cancelled": "Annulé"
+        "cancelled": "Annulé",
+        "partial": "Partiel"
       },
       "counters": {
         "scanned": "Analysés",
@@ -188,7 +189,7 @@
       "lastNDays_other": "Derniers {{count, number}} jours",
       "cancel": "Annuler la tâche",
       "alreadyRunning": "Une tâche de retraitement est déjà en cours. Attendez qu'elle se termine ou annulez-la d'abord.",
-      "stoppedAtCeiling": "Arrêté à la limite de {{max}} avis par tâche pour plafonner les coûts du modèle — les avis restants n'ont pas été retraités. Réduisez la période pour les couvrir.",
+      "stoppedAtCeiling": "Arrêté à la limite de {{max}} avis par tâche pour plafonner les coûts du modèle. Reprenez pour continuer là où elle s'est arrêtée.",
       "startError": "La tâche de retraitement n'a pas pu démarrer.",
       "daysLabel": "Période (jours)",
       "includeManual": "Écraser aussi les corrections manuelles",
@@ -196,7 +197,32 @@
       "costNote": "Coût : un appel au modèle par avis de la période. Une exécution sur toute la période d'un grand data lake peut prendre des heures.",
       "start": "Lancer le retraitement",
       "confirmTitle": "Retraiter les retours existants ?",
-      "confirmMessage": "{{mode}} pour {{window}}. Un appel au modèle est effectué par avis de cette période. Les avis sont mis à jour sur place ; rien n'est supprimé."
+      "confirmMessage": "{{mode}} pour {{window}}. Un appel au modèle est effectué par avis de cette période. Les avis sont mis à jour sur place ; rien n'est supprimé.",
+      "openEnded": "ouvert",
+      "dateRange": "{{from}} – {{to}}",
+      "byReviewDate": "{{range}} (date de l'avis)",
+      "byProcessedDate": "{{range}} (date de traitement)",
+      "sliceSources": "Sources : {{list}}",
+      "sliceCategories": "Catégories : {{list}}",
+      "rawFallback_one": "{{count, number}} avis n'avait pas d'élément brut archivé et a été retraité à partir de son texte stocké (sources : {{sources}}).",
+      "rawFallback_other": "{{count, number}} avis n'avaient pas d'élément brut archivé et ont été retraités à partir de leur texte stocké (sources : {{sources}}).",
+      "derivedWith": "Dérivé avec le modèle {{model}}, catégories {{digest}}, version de configuration {{version}}.",
+      "configChanged": "La configuration a changé pendant l'exécution de la tâche.",
+      "resume": "Reprendre",
+      "windowLabel": "Période",
+      "windowDays": "N derniers jours",
+      "windowRange": "Plage de dates",
+      "basisProcessed": "Date de traitement",
+      "basisReview": "Date de l'avis",
+      "dateFrom": "Du",
+      "dateTo": "Au",
+      "dateBasis": "Date lue",
+      "rangeHint": "Chaque borne peut rester ouverte. La date de l'avis est celle où le client l'a écrit ; les avis sans cette date utilisent leur date de traitement.",
+      "sourcesLabel": "Sources",
+      "sourcesHint": "Aucune sélection = toutes les sources. Seules ces sources sont lues.",
+      "categoriesLabel": "Catégories",
+      "categoriesPlaceholder": "facturation, livraison",
+      "categoriesHint": "Noms de catégorie stockés, séparés par des virgules (y compris ceux qui ne sont plus configurés). Vide = toutes les catégories."
     }
   },
   "dataSourceWizard": {

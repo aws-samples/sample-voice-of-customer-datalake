@@ -174,7 +174,8 @@
         "running": "Läuft",
         "completed": "Abgeschlossen",
         "failed": "Fehlgeschlagen",
-        "cancelled": "Abgebrochen"
+        "cancelled": "Abgebrochen",
+        "partial": "Teilweise"
       },
       "counters": {
         "scanned": "Geprüft",
@@ -188,7 +189,7 @@
       "lastNDays_other": "Letzte {{count, number}} Tage",
       "cancel": "Job abbrechen",
       "alreadyRunning": "Es läuft bereits ein Neuverarbeitungs-Job. Warten Sie, bis er fertig ist, oder brechen Sie ihn zuerst ab.",
-      "stoppedAtCeiling": "Beim Limit von {{max}} Bewertungen pro Job angehalten, um die Modellkosten zu begrenzen – die übrigen Bewertungen wurden nicht neu verarbeitet. Verkleinern Sie den Zeitraum, um sie abzudecken.",
+      "stoppedAtCeiling": "Beim Limit von {{max}} Bewertungen pro Job angehalten, um die Modellkosten zu begrenzen. Setzen Sie den Job fort, um an der Stelle weiterzumachen, an der er angehalten hat.",
       "startError": "Der Neuverarbeitungs-Job konnte nicht gestartet werden.",
       "daysLabel": "Zeitraum (Tage)",
       "includeManual": "Auch manuelle Korrekturen überschreiben",
@@ -196,7 +197,32 @@
       "costNote": "Kosten: ein Modellaufruf pro Bewertung im Zeitraum. Ein Lauf über den gesamten Zeitraum eines großen Data Lakes kann Stunden dauern.",
       "start": "Neuverarbeitung starten",
       "confirmTitle": "Vorhandenes Feedback neu verarbeiten?",
-      "confirmMessage": "{{mode}} für {{window}}. Dabei wird pro Bewertung im Zeitraum ein Modellaufruf ausgeführt. Bewertungen werden direkt aktualisiert; nichts wird gelöscht."
+      "confirmMessage": "{{mode}} für {{window}}. Dabei wird pro Bewertung im Zeitraum ein Modellaufruf ausgeführt. Bewertungen werden direkt aktualisiert; nichts wird gelöscht.",
+      "openEnded": "offen",
+      "dateRange": "{{from}} – {{to}}",
+      "byReviewDate": "{{range}} (Bewertungsdatum)",
+      "byProcessedDate": "{{range}} (Verarbeitungsdatum)",
+      "sliceSources": "Quellen: {{list}}",
+      "sliceCategories": "Kategorien: {{list}}",
+      "rawFallback_one": "{{count, number}} Bewertung hatte kein archiviertes Rohelement und wurde aus dem gespeicherten Text neu verarbeitet (Quellen: {{sources}}).",
+      "rawFallback_other": "{{count, number}} Bewertungen hatten kein archiviertes Rohelement und wurden aus dem gespeicherten Text neu verarbeitet (Quellen: {{sources}}).",
+      "derivedWith": "Abgeleitet mit Modell {{model}}, Kategorien {{digest}}, Konfigurationsversion {{version}}.",
+      "configChanged": "Die Konfiguration hat sich während des Jobs geändert.",
+      "resume": "Fortsetzen",
+      "windowLabel": "Zeitraum",
+      "windowDays": "Letzte N Tage",
+      "windowRange": "Datumsbereich",
+      "basisProcessed": "Verarbeitungsdatum",
+      "basisReview": "Bewertungsdatum",
+      "dateFrom": "Von",
+      "dateTo": "Bis",
+      "dateBasis": "Zu lesendes Datum",
+      "rangeHint": "Beide Enden dürfen offen bleiben. Das Bewertungsdatum ist der Tag, an dem der Kunde sie geschrieben hat; Bewertungen ohne dieses Datum verwenden ihr Verarbeitungsdatum.",
+      "sourcesLabel": "Quellen",
+      "sourcesHint": "Keine Auswahl = alle Quellen. Es werden nur diese Quellen gelesen.",
+      "categoriesLabel": "Kategorien",
+      "categoriesPlaceholder": "abrechnung, lieferung",
+      "categoriesHint": "Gespeicherte Kategorienamen, durch Kommas getrennt (auch nicht mehr konfigurierte). Leer = alle Kategorien."
     }
   },
   "dataSourceWizard": {

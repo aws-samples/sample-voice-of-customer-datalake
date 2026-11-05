@@ -47,7 +47,55 @@ describe('ReprocessPanel', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Start reprocessing' }))
     await waitFor(() => expect(mockFetchApi).toHaveBeenCalledWith('/settings/categories/reprocess', {
-      method: 'POST', body: JSON.stringify({ mode: 'raw', days: 0, include_manual: false }),
+      method: 'POST', body: JSON.stringify({ mode: 'raw', include_manual: false, days: 0 }),
+    }))
+  })
+
+  it('starts a slice: a review-date range and categories', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByRole('radio', { name: 'Date range' }))
+    expect(screen.getByRole('button', { name: 'Start reprocessing' })).toBeDisabled()
+    await user.type(screen.getByLabelText('From'), '2026-02-01')
+    await user.type(screen.getByLabelText('To'), '2026-02-28')
+    await user.selectOptions(screen.getByLabelText('Date to read'), 'review')
+    await user.type(screen.getByLabelText('Categories'), 'billing, old-delivery')
+    mockFetchApi.mockResolvedValueOnce({ job: { ...runningJob, status: 'queued', scanned: 0 } })
+    await user.click(screen.getByRole('button', { name: 'Start reprocessing' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('2026-02-01 – 2026-02-28 (review date)')
+    await user.click(within(dialog).getByRole('button', { name: 'Start reprocessing' }))
+    await waitFor(() => expect(mockFetchApi).toHaveBeenCalledWith('/settings/categories/reprocess', {
+      method: 'POST',
+      body: JSON.stringify({
+        mode: 'processed', include_manual: false, categories: ['billing', 'old-delivery'],
+        date_from: '2026-02-01', date_to: '2026-02-28', date_basis: 'review',
+      }),
+    }))
+  })
+
+  const partialJob = {
+    ...runningJob, mode: 'raw', status: 'partial', stopped_at_ceiling: true, resumable: true,
+    raw_fallback: 4, raw_fallback_sources: ['csv_upload'], sources: ['web'],
+    config: { config_version: 3, categories_sha16: '0a1b2c3d4e5f6a7b', model_id: 'model-x', prompt_version: '1.1.0' },
+  }
+
+  it('shows a partial job with its slice, raw fallback and configuration', async () => {
+    mockFetchApi.mockResolvedValue({ job: partialJob })
+    renderPanel()
+    expect(await screen.findByText('Partial')).toBeInTheDocument()
+    expect(screen.getByText(/4 reviews had no archived raw item/)).toHaveTextContent('csv_upload')
+    expect(screen.getByText('Sources: web')).toBeInTheDocument()
+    expect(screen.getByTestId('reprocess-config')).toHaveTextContent('model-x')
+  })
+
+  it('resumes a job that stopped at the ceiling', async () => {
+    mockFetchApi.mockResolvedValue({ job: partialJob })
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(await screen.findByRole('button', { name: 'Resume' }))
+    await waitFor(() => expect(mockFetchApi).toHaveBeenCalledWith('/settings/categories/reprocess', {
+      method: 'POST', body: JSON.stringify({ resume: 'rp_0123456789ab' }),
     }))
   })
 

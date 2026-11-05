@@ -23,7 +23,7 @@ import { isTerminalJob } from '../../api/reprocessApi'
 import { useConfigStore } from '../../store/configStore'
 import { formatCount } from '../../utils/numberFormat'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
-import { JobProgress } from '../CategoriesManager/ReprocessPanel'
+import { JobProgress } from '../CategoriesManager/ReprocessJobProgress'
 import { useLatestJob, useReprocessMutations } from '../CategoriesManager/useReprocessJob'
 import type { DimensionMetrics } from '../../api/dimensionsSchema'
 

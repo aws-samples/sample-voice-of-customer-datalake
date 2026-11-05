@@ -9,6 +9,11 @@
  * - `raw` re-runs full enrichment from the immutable raw object in S3.
  * Either costs one model call per review in the window.
  *
+ * A job replays a SLICE (TENETS.md D3): `sources`, `categories`, and either `days`
+ * or a `date_from`/`date_to` range on the processed or the review date. A job
+ * that reaches the per-job ceiling ends `partial`; `{resume: <job_id>}` continues
+ * it from where it stopped. docs/categories.md → "Reprocessing a slice".
+ *
  * One job at a time: starting while one is queued/running answers 409. Every
  * response is normalized through a lenient Zod schema — the panel polls this
  * while the job runs, so a drifted field must not crash the poll.
@@ -24,11 +29,17 @@ import { fetchApi } from './client'
 const REPROCESS_MODES = ['processed', 'raw', 'dimensions'] as const
 export type ReprocessMode = typeof REPROCESS_MODES[number]
 
-const JOB_STATUSES = ['queued', 'running', 'completed', 'failed', 'cancelled'] as const
+const JOB_STATUSES = ['queued', 'running', 'completed', 'partial', 'failed', 'cancelled'] as const
 export type ReprocessJobStatus = typeof JOB_STATUSES[number]
 
 /** Statuses after which the job never changes again — polling stops here. */
-const TERMINAL_STATUSES: ReadonlySet<ReprocessJobStatus> = new Set(['completed', 'failed', 'cancelled'])
+const TERMINAL_STATUSES: ReadonlySet<ReprocessJobStatus> = new Set(['completed', 'partial', 'failed', 'cancelled'])
+
+const DATE_BASES = ['processed', 'review'] as const
+export type ReprocessDateBasis = typeof DATE_BASES[number]
+
+/** Bounds of a slice axis (`MAX_SLICE_VALUES` in lambda/shared/reprocess_slices.py). */
+export const MAX_SLICE_VALUES = 50
 
 export function isTerminalJob(job: Pick<ReprocessJob, 'status'>): boolean {
   return TERMINAL_STATUSES.has(job.status)
@@ -37,12 +48,22 @@ export function isTerminalJob(job: Pick<ReprocessJob, 'status'>): boolean {
 /**
  * The backend's per-job cost ceiling (`MAX_REPROCESS_ITEMS` in
  * lambda/shared/reprocess_jobs.py, pinned by reprocessApi.lockstep.test.ts):
- * a job that scans this many reviews ends 'completed' with `stopped_at_ceiling`.
+ * a job that scans this many reviews ends 'partial' with `stopped_at_ceiling`, and can be resumed.
  */
 export const MAX_REPROCESS_ITEMS = 50_000
 
 const count = z.number().int().nonnegative().catch(0)
 const optionalText = z.string().optional().catch(undefined)
+const textList = z.array(z.unknown()).optional().catch(undefined)
+  .transform((values) => (values ?? []).filter((value): value is string => typeof value === 'string'))
+
+/** The configuration the worker derived with (`config` on the job row). */
+const JobConfigSchema = z.object({
+  config_version: z.number().int().nullable().catch(null),
+  categories_sha16: z.string().nullable().catch(null),
+  model_id: z.string().nullable().catch(null),
+  prompt_version: z.string().nullable().catch(null),
+}).nullable().optional().catch(null).transform((value) => value ?? null)
 
 const ReprocessJobSchema = z.object({
   job_id: z.string().min(1),
@@ -64,6 +85,19 @@ const ReprocessJobSchema = z.object({
   error: optionalText,
   // Absent on jobs written before the ceiling existed.
   stopped_at_ceiling: z.boolean().optional().catch(undefined).transform((value) => value === true),
+  // The slice (absent on jobs written before slices: `days` only).
+  sources: textList,
+  categories: textList,
+  date_from: optionalText,
+  date_to: optionalText,
+  date_basis: z.enum(DATE_BASES).catch('processed'),
+  // Raw mode: reviews replayed from the stored text (no archived raw item), and their sources.
+  raw_fallback: count,
+  raw_fallback_sources: textList,
+  resumable: z.boolean().optional().catch(undefined).transform((value) => value === true),
+  resumed_from: optionalText,
+  config: JobConfigSchema,
+  config_changed: z.boolean().optional().catch(undefined).transform((value) => value === true),
 })
 
 export type ReprocessJob = z.infer<typeof ReprocessJobSchema>
@@ -79,12 +113,21 @@ export function normalizeJobEnvelope(raw: unknown): ReprocessJob | null {
   return parsed.success ? parsed.data : null
 }
 
-/** Body of `POST /settings/categories/reprocess`; `days: 0` means all time. */
-export interface ReprocessRequest {
+/** The window of a new job: `days` (0 = all time) OR a `date_from`/`date_to` range, never both. */
+export type ReprocessWindow =
+  | { days: number }
+  | { date_from?: string; date_to?: string; date_basis: ReprocessDateBasis }
+
+/** Body of `POST /settings/categories/reprocess` for a new job. */
+export type ReprocessStart = {
   mode: ReprocessMode
-  days: number
   include_manual: boolean
-}
+  sources?: string[]
+  categories?: string[]
+} & ReprocessWindow
+
+/** A new job, or `{resume}`: continue a partial job where it stopped (same mode and slice). */
+export type ReprocessRequest = ReprocessStart | { resume: string }
 
 const BASE = '/settings/categories/reprocess'
 

@@ -174,7 +174,8 @@
         "running": "실행 중",
         "completed": "완료됨",
         "failed": "실패",
-        "cancelled": "취소됨"
+        "cancelled": "취소됨",
+        "partial": "부분 완료"
       },
       "counters": {
         "scanned": "검사됨",
@@ -188,7 +189,7 @@
       "lastNDays_other": "최근 {{count, number}}일",
       "cancel": "작업 취소",
       "alreadyRunning": "재처리 작업이 이미 실행 중입니다. 완료될 때까지 기다리거나 먼저 취소하세요.",
-      "stoppedAtCeiling": "모델 비용을 제한하기 위해 작업당 한도인 리뷰 {{max}}건에서 중지했습니다. 나머지 리뷰는 재처리되지 않았습니다. 기간을 좁혀 나머지를 처리하세요.",
+      "stoppedAtCeiling": "모델 비용을 제한하기 위해 작업당 한도인 리뷰 {{max}}건에서 중지했습니다. 재개하면 중지한 위치부터 계속합니다.",
       "startError": "재처리 작업을 시작하지 못했습니다.",
       "daysLabel": "기간(일)",
       "includeManual": "수동 수정도 덮어쓰기",
@@ -196,7 +197,32 @@
       "costNote": "비용: 기간 내 리뷰 1건당 모델 호출 1회. 대규모 데이터 레이크의 전체 기간 실행은 몇 시간이 걸릴 수 있습니다.",
       "start": "재처리 시작",
       "confirmTitle": "기존 피드백을 재처리할까요?",
-      "confirmMessage": "{{window}} 동안 '{{mode}}'을(를) 실행합니다. 해당 기간의 리뷰 1건당 모델을 1회 호출합니다. 리뷰는 그대로 업데이트되며 아무것도 삭제되지 않습니다."
+      "confirmMessage": "{{window}} 동안 '{{mode}}'을(를) 실행합니다. 해당 기간의 리뷰 1건당 모델을 1회 호출합니다. 리뷰는 그대로 업데이트되며 아무것도 삭제되지 않습니다.",
+      "openEnded": "제한 없음",
+      "dateRange": "{{from}} – {{to}}",
+      "byReviewDate": "{{range}} (리뷰 작성일)",
+      "byProcessedDate": "{{range}} (처리일)",
+      "sliceSources": "소스: {{list}}",
+      "sliceCategories": "카테고리: {{list}}",
+      "rawFallback_one": "리뷰 {{count, number}}건에 보관된 원본 항목이 없어 저장된 텍스트로 재처리했습니다(소스: {{sources}}).",
+      "rawFallback_other": "리뷰 {{count, number}}건에 보관된 원본 항목이 없어 저장된 텍스트로 재처리했습니다(소스: {{sources}}).",
+      "derivedWith": "모델 {{model}}, 카테고리 {{digest}}, 구성 버전 {{version}}(으)로 도출했습니다.",
+      "configChanged": "작업이 실행되는 동안 구성이 변경되었습니다.",
+      "resume": "재개",
+      "windowLabel": "기간",
+      "windowDays": "최근 N일",
+      "windowRange": "날짜 범위",
+      "basisProcessed": "처리일",
+      "basisReview": "리뷰 작성일",
+      "dateFrom": "시작",
+      "dateTo": "끝",
+      "dateBasis": "기준 날짜",
+      "rangeHint": "양쪽 끝 모두 비워 둘 수 있습니다. 리뷰 작성일은 고객이 리뷰를 쓴 날이며, 작성일이 없는 리뷰는 처리일을 사용합니다.",
+      "sourcesLabel": "소스",
+      "sourcesHint": "선택하지 않으면 모든 소스입니다. 선택한 소스만 읽습니다.",
+      "categoriesLabel": "카테고리",
+      "categoriesPlaceholder": "billing, delivery",
+      "categoriesHint": "저장된 카테고리 이름을 쉼표로 구분해 입력합니다(더 이상 구성되지 않은 이름도 가능). 비워 두면 모든 카테고리입니다."
     }
   },
   "dataSourceWizard": {

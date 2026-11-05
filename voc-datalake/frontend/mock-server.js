@@ -1374,7 +1374,7 @@ const MOCK_REPROCESS_TOTAL = 120;     // reviews the fake job "scans"
 const MOCK_REPROCESS_STEP = 30;       // advanced per poll
 // The real per-job ceiling is 50 000 scanned reviews (MAX_REPROCESS_ITEMS in
 // shared/reprocess_jobs.py). Start the mock with MOCK_REPROCESS_CEILING=60 to
-// see a job finish as 'completed' with stopped_at_ceiling.
+// see a job end 'partial' with stopped_at_ceiling, and resume it ({resume: <job_id>}).
 const MOCK_REPROCESS_CEILING = Number(process.env.MOCK_REPROCESS_CEILING) || 50000;
 
 const callerAdmits = scopeAdmits;
@@ -1401,9 +1401,16 @@ function advanceReprocessJob(job) {
     job.updated = Math.round(job.scanned * 0.4);
     job.skipped_manual = job.include_manual ? 0 : 1;
     job.unchanged = job.scanned - job.updated - job.skipped_manual;
-    if (job.scanned >= MOCK_REPROCESS_TOTAL || job.scanned >= MOCK_REPROCESS_CEILING) {
-      job.stopped_at_ceiling = job.scanned < MOCK_REPROCESS_TOTAL;
-      job.status = 'completed';
+    if (job.mode === 'raw') {
+      job.raw_fallback = Math.round(job.scanned * 0.25);
+      job.raw_fallback_sources = job.raw_fallback > 0 ? ['csv_upload'] : [];
+    }
+    job.config = { config_version: 3, categories_sha16: '0a1b2c3d4e5f6a7b', model_id: 'global.anthropic.claude-haiku-5-5', prompt_version: '1.1.0' };
+    const remaining = MOCK_REPROCESS_TOTAL - (job.resume_offset ?? 0);
+    if (job.scanned >= remaining || job.scanned >= MOCK_REPROCESS_CEILING) {
+      job.stopped_at_ceiling = job.scanned < remaining;
+      job.status = job.stopped_at_ceiling ? 'partial' : 'completed';
+      job.resumable = job.stopped_at_ceiling;
       job.finished_at = new Date().toISOString();
     }
   }
@@ -1411,22 +1418,74 @@ function advanceReprocessJob(job) {
   return job;
 }
 
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const sliceList = (value) => (Array.isArray(value) && value.length <= 50 && value.every((v) => typeof v === 'string') ? value : null);
+
+/** The slice of a new job (shared/reprocess_slices.py): days XOR a date range, ≤ 50 sources / categories. */
+function reprocessSlice(body) {
+  const ranged = body.date_from !== undefined || body.date_to !== undefined;
+  if (ranged && body.days !== undefined) return [null, 'days and date_from/date_to are mutually exclusive'];
+  const sources = body.sources === undefined ? [] : sliceList(body.sources);
+  const categories = body.categories === undefined ? [] : sliceList(body.categories);
+  if (sources === null || categories === null) return [null, 'sources and categories must be lists of at most 50 strings'];
+  const basis = body.date_basis ?? 'processed';
+  if (!['processed', 'review'].includes(basis)) return [null, 'date_basis must be one of: processed, review'];
+  if (ranged) {
+    const days = [body.date_from, body.date_to].filter((d) => d !== undefined);
+    if (days.some((d) => typeof d !== 'string' || !ISO_DAY.test(d))) return [null, 'dates must be YYYY-MM-DD'];
+    if (days.length === 2 && body.date_from > body.date_to) return [null, 'date_from must not be after date_to'];
+  } else if (!Number.isInteger(body.days) || body.days < 0 || body.days > 9999) {
+    return [null, 'days must be an integer (0 = all time)'];
+  }
+  const slice = { days: ranged ? 0 : body.days, date_basis: basis };
+  if (sources.length > 0) slice.sources = sources;
+  if (categories.length > 0) slice.categories = categories;
+  if (body.date_from !== undefined) slice.date_from = body.date_from;
+  if (body.date_to !== undefined) slice.date_to = body.date_to;
+  return [slice, null];
+}
+
+function newReprocessJob(fields) {
+  const now = new Date().toISOString();
+  return {
+    job_id: `rp_${Math.random().toString(16).slice(2, 14).padEnd(12, '0')}`,
+    status: 'queued', scanned: 0, updated: 0, unchanged: 0, skipped_manual: 0, failed: 0,
+    raw_fallback: 0, raw_fallback_sources: [], stopped_at_ceiling: false, resumable: false, config: null,
+    started_by: MOCK_CALLER.username, created_at: now, updated_at: now, ...fields,
+  };
+}
+
+/** `{resume: <job_id>}`: a new job continuing a partial one (same mode and slice), once. */
+function resumeReprocessJob(body) {
+  if (Object.keys(body).length !== 1) return [400, { success: false, error: 'resume takes no other fields' }];
+  const previous = mockReprocessJobs.find((j) => j.job_id === body.resume);
+  if (!previous) return [404, { success: false, error: 'Reprocess job not found' }];
+  if (previous.status !== 'partial' || !previous.resumable) {
+    return [409, { success: false, error: 'Only a partial job that has not been resumed yet can be resumed' }];
+  }
+  previous.resumable = false;
+  const { mode, days, include_manual, date_basis, sources, categories, date_from, date_to } = previous;
+  const job = newReprocessJob({
+    mode, days, include_manual, date_basis, sources, categories, date_from, date_to,
+    resumed_from: previous.job_id, resume_offset: (previous.resume_offset ?? 0) + previous.scanned,
+  });
+  previous.resumed_by = job.job_id;
+  mockReprocessJobs.push(job);
+  return [202, { job }];
+}
+
 function startReprocessJob(body) {
   if (mockReprocessJobs.some((j) => j.status === 'queued' || j.status === 'running')) {
     return [409, { success: false, error: 'A reprocess job is already running' }];
   }
+  if (body && typeof body === 'object' && 'resume' in body) return resumeReprocessJob(body);
   const mode = body?.mode;
-  const days = body?.days;
-  if (!['processed', 'raw', 'dimensions'].includes(mode) || !Number.isInteger(days) || days < 0 || days > 9999) {
-    return [400, { success: false, error: 'mode must be processed|raw|dimensions and days 0–9999' }];
+  if (!['processed', 'raw', 'dimensions'].includes(mode)) {
+    return [400, { success: false, error: 'mode must be one of: processed, raw, dimensions' }];
   }
-  const now = new Date().toISOString();
-  const job = {
-    job_id: `rp_${Math.random().toString(16).slice(2, 14).padEnd(12, '0')}`,
-    status: 'queued', mode, days, include_manual: body.include_manual === true,
-    scanned: 0, updated: 0, unchanged: 0, skipped_manual: 0, failed: 0, stopped_at_ceiling: false,
-    started_by: MOCK_CALLER.username, created_at: now, updated_at: now,
-  };
+  const [slice, error] = reprocessSlice(body);
+  if (error !== null) return [400, { success: false, error }];
+  const job = newReprocessJob({ mode, include_manual: body.include_manual === true, ...slice });
   mockReprocessJobs.push(job);
   return [202, { job }];
 }

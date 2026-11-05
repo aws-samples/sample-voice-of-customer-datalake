@@ -174,7 +174,8 @@
         "running": "実行中",
         "completed": "完了",
         "failed": "失敗",
-        "cancelled": "キャンセル済み"
+        "cancelled": "キャンセル済み",
+        "partial": "一部完了"
       },
       "counters": {
         "scanned": "スキャン済み",
@@ -188,7 +189,7 @@
       "lastNDays_other": "過去{{count, number}}日間",
       "cancel": "ジョブをキャンセル",
       "alreadyRunning": "再処理ジョブはすでに実行中です。完了を待つか、先にキャンセルしてください。",
-      "stoppedAtCeiling": "モデルのコストを抑えるため、ジョブあたりの上限 {{max}} 件で停止しました。残りのレビューは再処理されていません。期間を絞って対象にしてください。",
+      "stoppedAtCeiling": "モデルのコストを抑えるため、ジョブあたりの上限 {{max}} 件で停止しました。再開すると停止した位置から続行します。",
       "startError": "再処理ジョブを開始できませんでした。",
       "daysLabel": "期間（日数）",
       "includeManual": "手動の修正も上書きする",
@@ -196,7 +197,32 @@
       "costNote": "コスト：期間内のレビュー1件につきモデル呼び出し1回。大規模なデータレイクで全期間を処理すると数時間かかることがあります。",
       "start": "再処理を開始",
       "confirmTitle": "既存のフィードバックを再処理しますか？",
-      "confirmMessage": "{{window}}を対象に「{{mode}}」を実行します。この期間のレビュー1件につきモデルを1回呼び出します。レビューはその場で更新され、何も削除されません。"
+      "confirmMessage": "{{window}}を対象に「{{mode}}」を実行します。この期間のレビュー1件につきモデルを1回呼び出します。レビューはその場で更新され、何も削除されません。",
+      "openEnded": "指定なし",
+      "dateRange": "{{from}} – {{to}}",
+      "byReviewDate": "{{range}}（レビュー日）",
+      "byProcessedDate": "{{range}}（処理日）",
+      "sliceSources": "ソース: {{list}}",
+      "sliceCategories": "カテゴリ: {{list}}",
+      "rawFallback_one": "{{count, number}} 件のレビューにはアーカイブされた元データがなく、保存済みテキストから再処理しました（ソース: {{sources}}）。",
+      "rawFallback_other": "{{count, number}} 件のレビューにはアーカイブされた元データがなく、保存済みテキストから再処理しました（ソース: {{sources}}）。",
+      "derivedWith": "モデル {{model}}、カテゴリ {{digest}}、設定バージョン {{version}} で導出しました。",
+      "configChanged": "ジョブの実行中に設定が変更されました。",
+      "resume": "再開",
+      "windowLabel": "期間",
+      "windowDays": "過去 N 日間",
+      "windowRange": "日付範囲",
+      "basisProcessed": "処理日",
+      "basisReview": "レビュー日",
+      "dateFrom": "開始日",
+      "dateTo": "終了日",
+      "dateBasis": "参照する日付",
+      "rangeHint": "どちらの端も空欄にできます。レビュー日は顧客が書いた日です。レビュー日のないレビューは処理日を使います。",
+      "sourcesLabel": "ソース",
+      "sourcesHint": "未選択 = すべてのソース。選択したソースだけを読み込みます。",
+      "categoriesLabel": "カテゴリ",
+      "categoriesPlaceholder": "billing, delivery",
+      "categoriesHint": "保存済みのカテゴリ名をカンマ区切りで入力します（現在は設定されていないものも可）。空欄 = すべてのカテゴリ。"
     }
   },
   "dataSourceWizard": {
