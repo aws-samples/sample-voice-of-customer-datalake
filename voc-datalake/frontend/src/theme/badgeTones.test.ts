@@ -277,7 +277,7 @@ describe('labels vs status across the app (3.14.02)', () => {
 
     it('selects a filter accent-subtle; a selected sentiment keeps its meaning colour, the one tint left', () => {
       const steps = read('components/DataSourceWizard/DataSourceSteps.tsx')
-      expect(steps).toMatch(/const SELECTED_FILTER = 'bg-accent-subtle border-accent text-accent-text'/)
+      expect(read('components/DataSourceWizard/filterChipState.ts')).toMatch(/const SELECTED_FILTER = 'bg-accent-subtle border-accent text-accent-text'/)
       expect(statusTints(steps)).toStrictEqual(['bg-ok-subtle', 'border-ok/30', 'text-ok'])
     })
 
