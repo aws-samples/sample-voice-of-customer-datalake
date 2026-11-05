@@ -12,7 +12,7 @@ import type { ReprocessJob, ReprocessJobStatus, ReprocessMode } from '../../api/
 import type { Tone } from '../../theme/tones'
 
 /** Copy per mode; a Record, so every mode the API accepts must have a title. */
-export const MODE_COPY: Record<ReprocessMode, { titleKey: string; descriptionKey: string }> = {
+const MODE_COPY: Record<ReprocessMode, { titleKey: string; descriptionKey: string }> = {
   processed: {
     titleKey: 'components:categoriesManager.reprocess.modes.processed.title',
     descriptionKey: 'components:categoriesManager.reprocess.modes.processed.description',
@@ -56,7 +56,7 @@ export function modeTitleKey(mode: ReprocessMode): string {
 }
 
 /** A `days` window: all time or the last N days. */
-export function daysLabel(days: number, t: TFunction): string {
+function daysLabel(days: number, t: TFunction): string {
   return days === ALL_TIME_CUSTOM_DAYS
     ? t('components:categoriesManager.reprocess.allTime')
     : t('components:categoriesManager.reprocess.lastNDays', { count: days })
