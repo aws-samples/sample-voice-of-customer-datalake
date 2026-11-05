@@ -181,8 +181,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   const range = reviewRange(git, options.repo, { previousSha: previous?.sha ?? null, base: 'refs/pr/base', head })
   const sinceLast = range.mode === 'incremental' ? collectChange(options.repo, range.from, head) : null
   const incremental = sinceLast?.diff ? { ...capDiff(sinceLast.diff), from: range.from } : null
-  // Incremental, but the new commits only touch files the review skips (a lockfile, a translation): review it whole.
-  const reviewed = incremental || range.mode === 'full' ? range : { mode: 'full', reason: 'the new commits change only files the review skips' }
+  const reviewed = incremental ? range : { mode: 'full', reason: range.reason ?? 'no new reviewable commits since the last review' }
 
   const paths = changedPaths(git, options.repo, base, head)
   const tier = riskTier(paths)
@@ -208,14 +207,14 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   const results = await Promise.all(REVIEW_ORDER.map((kind) => runReview(kind, {
     call: caller, modelId, systemPrefix, promptsRoot: options.promptsRoot, tier: budget,
     prompt: buildPrompt({
-      kind, tenets, reviewGuide, commits: (sinceLast ?? change).commits, base: base.slice(0, 12), files: change.files, diff: text,
+      kind, tenets, reviewGuide, commits: (incremental ? sinceLast : change).commits, base: base.slice(0, 12), files: change.files, diff: text,
       truncated, omitted: change.omitted, pullRequest, canRead: false, extra: extraBlocks(kind, { context, ledger, incremental }),
     }),
   })))
   if (results.every((result) => result.error)) return skip('no review was run (see the warnings above): nothing to post')
 
   // The STATUS lines are read from the raw answer; the comment shows the answer without them (they are in the recap).
-  const { ledger: next, recap } = advanceLedger(ledger, { sha: pr.headSha }, results.map((r) => (r.error ? r : { ...r, output: r.raw })))
+  const { ledger: next, recap } = advanceLedger(ledger, results.map((r) => (r.error ? r : { ...r, output: r.raw })))
   const verdicts = Object.fromEntries(results.map((r) => [r.kind, passVerdict(recap[r.kind], r.verdict?.verdict)]))
   for (const result of results) say(`${result.kind}: ${result.error ? 'not run' : verdicts[result.kind]}`)
   const body = renderComment({
