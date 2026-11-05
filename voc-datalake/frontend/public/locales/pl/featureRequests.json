@@ -338,6 +338,7 @@
     "totalRequests": "Zgłoszenia",
     "totalSupporters": "Popierający",
     "totalEnriched": "Wzbogacone",
+    "truncated": "Te liczby obejmują tylko część okresu: tablice zawierają więcej próśb, niż obejmuje jeden odczyt.",
     "top": "Najczęściej popierane zgłoszenia",
     "byCategory": "Zgłoszenia według kategorii",
     "byStatus": "Zgłoszenia według statusu",

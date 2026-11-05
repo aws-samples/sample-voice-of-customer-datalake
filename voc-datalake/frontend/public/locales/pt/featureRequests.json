@@ -327,6 +327,7 @@
     "totalRequests": "Pedidos",
     "totalSupporters": "Apoiadores",
     "totalEnriched": "Enriquecidos",
+    "truncated": "Estes números cobrem apenas parte do período: os quadros têm mais pedidos do que uma leitura abrange.",
     "top": "Pedidos com mais apoio",
     "byCategory": "Pedidos por categoria",
     "byStatus": "Pedidos por status",

@@ -144,6 +144,7 @@ function InsightsBody({ insights, boards }: Readonly<{ insights: FeatureRequestI
   return (
     <div className="space-y-4">
       <Totals totals={insights.totals} />
+      {insights.truncated ? <p className="text-xs text-muted" data-testid="fr-insights-truncated">{t('insights.truncated')}</p> : null}
       <TopRequests top={insights.top} categoryLabel={categoryLabel} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <InsightBars title={t('insights.byCategory')} rows={byCategory} fill="var(--chart-1)" testId="fr-insights-by-category" />
