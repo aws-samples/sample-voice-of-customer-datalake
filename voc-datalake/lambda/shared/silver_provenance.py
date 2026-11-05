@@ -41,21 +41,18 @@ from shared.archive_keys import archive_key_stem
 from shared.logging import logger, metrics
 from shared.raw_versions import UNKNOWN_VERSION
 
+# Also part of the contract, imported by name (the reprocess worker, tests): PIPELINE_VERSION,
+# REASON_REPROCESS, EnrichmentMode, contract_llm_metadata.
 __all__ = [
-    'PIPELINE_VERSION',
     'REASON_CATEGORY_EDIT',
     'REASON_CSV_CORRECTION',
     'REASON_DATA_EXPLORER_EDIT',
     'REASON_DIMENSIONS_EDIT',
-    'REASON_REPROCESS',
     'REASON_SOURCE_UPDATE',
     'SILVER_PREFIX',
     'SYSTEM_ACTOR',
-    'EnrichmentMode',
     'change_stamp',
-    'contract_llm_metadata',
     'fields_of_update',
-    'json_safe',
     'keep_silver_version',
     'provenance',
     'silver_item_prefix',
@@ -126,16 +123,16 @@ def change_stamp(actor: Mapping[str, str], reason: str, at: str | None = None) -
     return {'updated_by': _actor(actor), 'updated_at': at or _now().isoformat(), 'change_reason': reason}
 
 
-def json_safe(value: object) -> object:
+def _json_safe(value: object) -> object:
     """``value`` with every Decimal as a number (int when integral) and sets as sorted lists."""
     if isinstance(value, Decimal):
         return int(value) if value == value.to_integral_value() else float(value)
     if isinstance(value, Mapping):
-        return {str(key): json_safe(item) for key, item in value.items()}
+        return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, list | tuple):
-        return [json_safe(item) for item in value]
+        return [_json_safe(item) for item in value]
     if isinstance(value, set | frozenset):
-        return sorted((json_safe(item) for item in value), key=str)
+        return sorted((_json_safe(item) for item in value), key=str)
     if isinstance(value, bytes | bytearray):
         return value.hex()
     return value
@@ -171,7 +168,7 @@ def _version_body(
     item: Mapping[str, Any], actor: Mapping[str, str], reason: str, changed_fields: Sequence[str], kept_at: str,
 ) -> str:
     return json.dumps({
-        'item': json_safe(item),
+        'item': _json_safe(item),
         'actor': _actor(actor),
         'reason': reason[:_MAX_REASON_CHARS],
         'changed_fields': sorted({str(name) for name in changed_fields}),
