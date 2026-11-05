@@ -33,6 +33,8 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
+from botocore.exceptions import ClientError
+
 from shared import engagement_config
 from shared.aws import invoke_lambda_async
 from shared.categorization import (
@@ -161,11 +163,18 @@ def _claim(table: Any, request_id: str, now: datetime) -> bool:
 
 
 def release_claims(table: Any, request_ids: Sequence[str]) -> None:
-    """Drop the lease of claimed requests whose job could not be queued, so the next call retries them."""
+    """Drop the lease of claimed requests whose job could not be queued, so the next call retries them.
+
+    Best-effort: the jobs that were queued already ran their invoke, so a failed release is logged and
+    the answer keeps its counts; that request simply waits out its lease.
+    """
     for request_id in request_ids:
-        conditional_write(table.update_item, Key=request_key(request_id), UpdateExpression='REMOVE #lease',
-                          ConditionExpression='attribute_exists(pk)',
-                          ExpressionAttributeNames={'#lease': BACKFILL_LEASE_FIELD})
+        try:
+            conditional_write(table.update_item, Key=request_key(request_id), UpdateExpression='REMOVE #lease',
+                              ConditionExpression='attribute_exists(pk)',
+                              ExpressionAttributeNames={'#lease': BACKFILL_LEASE_FIELD})
+        except ClientError:
+            logger.warning('Enrichment lease not released', extra={'request_id': request_id}, exc_info=True)
 
 
 def claim_for_backfill(table: Any, request_ids: Sequence[str]) -> list[str]:

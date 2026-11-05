@@ -4,8 +4,10 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from botocore.exceptions import ClientError
 from engagement_fixtures import ADMIN, BOARD, BOARD_2, USER, boards_world, call, ok
 
+from shared import feature_requests_enrich as enrich
 from shared.feature_requests_enrich import MAX_IDS_PER_JOB, text_sha16
 from shared.feature_requests_insights_routes import MAX_BACKFILL
 from shared.feature_requests_store import request_key
@@ -178,3 +180,20 @@ def test_a_job_that_could_not_be_queued_releases_its_lease(world, lambda_context
     assert 'enrich_queued_at' not in row
     world.enrich_invoke.side_effect = None
     assert ok(lambda_context, 'POST', f'{INSIGHTS}/enrich')['queued'] == 1
+
+
+def test_a_failed_lease_release_keeps_the_answer(world, lambda_context):
+    """release_claims is best-effort: a DynamoDB error on one release never turns a queued backfill into a 500."""
+    _file(lambda_context)
+    world.enrich_invoke.reset_mock()
+    world.enrich_invoke.side_effect = RuntimeError('invoke failed')
+    real_write = enrich.conditional_write
+
+    def failing_release(write, **request):
+        if str(request.get('UpdateExpression', '')).startswith('REMOVE'):
+            raise ClientError({'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow'}},
+                              'UpdateItem')
+        return real_write(write, **request)
+
+    with patch('shared.feature_requests_enrich.conditional_write', side_effect=failing_release):
+        assert ok(lambda_context, 'POST', f'{INSIGHTS}/enrich') == {'success': True, 'queued': 0, 'remaining': 1}
