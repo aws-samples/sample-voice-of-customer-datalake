@@ -394,11 +394,36 @@ test('a rewritten history is reviewed whole again, still answering the earlier f
     writeFileSync(join(box.dir, 'comments.json'), JSON.stringify([[comment(BOT_LOGIN, round1)]]))
     const fake = fakeBedrock([reply('STATUS -- T1 -- OPEN -- still on by default\nREVIEW-VERDICT: tenets BLOCK\n'), reply(PASS('commit'))])
     await main(box.args, {}, { call: fake.call })
-    assert.match(fake.requests[0].system[0].text, /No <changes-since-last-review>: the history was rewritten/)
+    assert.match(fake.requests[0].system[0].text, /No <changes-since-last-review> \(the history was rewritten since [0-9a-f]{12}\)/)
     assert.doesNotMatch(fake.requests[0].messages[0].content[0].text, /<changes-since-last-review/)
     const body = readFileSync(join(box.dir, 'comment.md'), 'utf8')
     assert.match(body, /\*\*Reviewed:\*\* the whole diff \(the history was rewritten since [0-9a-f]{12}\)/)
     assert.match(body, /\| Tenets \(TENETS\.md\) \| ❌ BLOCK \| 0 \| 1 \| 0 \| 0 \|/)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
+test('new commits that touch only skipped files get the whole diff again, with a reason, never "undefined"', async () => {
+  const box = scratch()
+  try {
+    const run = (...args) => spawnSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: box.repo, encoding: 'utf8' })
+    await main(box.args, {}, { call: fakeBedrock([reply(VIOLATION), reply(PASS('commit'))]).call })
+    const round1 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
+    run('checkout', '-q', 'refs/pr/head')
+    writeFileSync(join(box.repo, 'package-lock.json'), '{"lockfileVersion": 3}\n')
+    run('add', 'package-lock.json')
+    run('commit', '-q', '-m', 'lockfile only')
+    run('update-ref', 'refs/pr/head', 'HEAD')
+    const headSha = run('rev-parse', 'HEAD').stdout.trim()
+    writeFileSync(join(box.dir, 'event.json'), JSON.stringify({ pull_request: { number: 9, head: { sha: headSha }, title: 'NAT', body: '' } }))
+    writeFileSync(join(box.dir, 'comments.json'), JSON.stringify([[comment(BOT_LOGIN, round1)]]))
+    const fake = fakeBedrock([reply('STATUS -- T1 -- OPEN -- unchanged\nREVIEW-VERDICT: tenets BLOCK\n'), reply(PASS('commit'))])
+    const out = join(box.dir, 'github-output')
+    await main(box.args, { GITHUB_OUTPUT: out }, { call: fake.call })
+    // The PR diff itself did not change (the lockfile is outside the review pathspec): no round at all.
+    assert.equal(fake.requests.length, 0)
+    assert.match(outputsOf(out), /\nfalse\n/)
   } finally {
     rmSync(box.dir, { recursive: true, force: true })
   }

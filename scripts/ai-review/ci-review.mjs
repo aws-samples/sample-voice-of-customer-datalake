@@ -181,7 +181,8 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   const range = reviewRange(git, options.repo, { previousSha: previous?.sha ?? null, base: 'refs/pr/base', head })
   const sinceLast = range.mode === 'incremental' ? collectChange(options.repo, range.from, head) : null
   const incremental = sinceLast?.diff ? { ...capDiff(sinceLast.diff), from: range.from } : null
-  const reviewed = incremental ? range : (previous ? { mode: 'full', reason: range.reason } : range)
+  // Incremental, but the new commits only touch files the review skips (a lockfile, a translation): review it whole.
+  const reviewed = incremental || range.mode === 'full' ? range : { mode: 'full', reason: 'the new commits change only files the review skips' }
 
   const paths = changedPaths(git, options.repo, base, head)
   const tier = riskTier(paths)
@@ -202,7 +203,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   const tenets = readFileSync(join(options.promptsRoot, 'TENETS.md'), 'utf8')
   const reviewGuide = readText(join(options.promptsRoot, 'REVIEW.md'))
   const round = (ledger?.round ?? 0) + 1
-  const systemPrefix = CI_PREAMBLE + tierNote(tier) + (ledger ? followUpPreamble({ round, incremental: Boolean(incremental) }) : '')
+  const systemPrefix = CI_PREAMBLE + tierNote(tier) + (ledger ? followUpPreamble({ round, incremental: Boolean(incremental), reason: reviewed.reason }) : '')
   say(`round ${round} (${incremental ? `commits since ${range.from.slice(0, 8)}` : 'whole diff'}), depth ${tier.tier}, ${context.included.length} repository files, ${modelId}${truncated ? ', diff cut' : ''}...`)
   const results = await Promise.all(REVIEW_ORDER.map((kind) => runReview(kind, {
     call: caller, modelId, systemPrefix, promptsRoot: options.promptsRoot, tier: budget,

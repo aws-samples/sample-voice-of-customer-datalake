@@ -45,12 +45,12 @@ replaces the "read-only tools" lines of the instructions below; every other rule
 /**
  * Put after CI_PREAMBLE from the second round on. The STATUS lines it asks for are read by ledger.mjs (parseStatuses).
  */
-export function followUpPreamble({ round, incremental }) {
+export function followUpPreamble({ round, incremental, reason = '' }) {
   const what = incremental
     ? `- <changes-since-last-review>: ONLY the commits pushed since your last review. Review THESE.
 - <git-diff>: the whole pull request as it is now, for context only: do not review unchanged code again.`
-    : `- No <changes-since-last-review>: the history was rewritten or the base merged in since your last review, so
-  review the whole <git-diff> again, but still answer every earlier finding below.`
+    : `- No <changes-since-last-review> (${reason || 'the history changed since your last review'}): review the whole
+  <git-diff> again, but still answer every earlier finding below.`
   return `## This run: follow-up review, round ${round}
 
 You reviewed this pull request before. You are given:
