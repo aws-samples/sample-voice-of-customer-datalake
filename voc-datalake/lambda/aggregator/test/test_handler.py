@@ -2913,7 +2913,12 @@ class TestUpdateAverageReportsWhetherItLanded:
 
 
 class TestRedeliveryMovesACounterTwice:
-    """The residual that REMAINS after issue #264, pinned at what the code really does.
+    """The UNCLAIMED reversal path (no dedupe table configured), pinned at what it really does.
+
+    Since 6.03.00 a reversal is claimed once per stream record when the dedupe table is
+    configured (`shared/stream_claims.py`, test_reversal_claims.py), so in production a
+    redelivered REMOVE or MODIFY moves nothing. These tests run with the table unset (the
+    conftest pins it), which is the fail-open path and the behaviour before the claim.
 
     Streams deliver at-least-once and the event source carries `retryAttempts: 3`
     with `reportBatchItemFailures: true`, so a batch that partially fails
