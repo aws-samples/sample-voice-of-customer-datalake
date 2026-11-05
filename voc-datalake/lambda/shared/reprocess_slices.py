@@ -28,13 +28,13 @@ from boto3.dynamodb.conditions import Attr, ConditionBase, Key
 
 from shared.api import ALL_TIME_DAYS
 from shared.feedback import DATE_BASIS_IMPORTED, DATE_BASIS_REVIEW, basis_date
+from shared.retention import FEEDBACK_SK_PREFIX
 from shared.timestamps import ISO_DAY_RE
 
 DATE_BASIS_PROCESSED: Final = 'processed'
 DATE_BASES: Final = (DATE_BASIS_PROCESSED, DATE_BASIS_REVIEW)
 MAX_SLICE_VALUES: Final = 50
 MAX_SLICE_VALUE_CHARS: Final = 128
-FEEDBACK_SK_PREFIX: Final = 'FEEDBACK#'
 SOURCE_PK_PREFIX: Final = 'SOURCE#'
 
 

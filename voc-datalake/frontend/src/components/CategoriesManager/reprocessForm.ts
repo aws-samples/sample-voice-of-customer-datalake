@@ -39,7 +39,7 @@ function rangeIsValid(from: string, to: string): boolean {
 }
 
 /** The window a valid form names, or null (an unreadable day count, an empty or inverted range). */
-export function windowOf(form: ReprocessForm): ReprocessWindow | null {
+function windowOf(form: ReprocessForm): ReprocessWindow | null {
   if (form.windowKind === 'days') {
     const days = parseCustomDaysInput(form.daysInput)
     return days === null ? null : { days }
