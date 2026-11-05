@@ -279,6 +279,7 @@
       "description": "Solicitudes de los tableros de opiniones, leídas como evidencia propia junto a las reseñas.",
       "boards": "Tableros que leer",
       "boardsHint": "Elige tableros para acotar, o ninguno para leer todos.",
+      "boardsCap": "Puedes elegir hasta {{count, number}} tableros. Quita uno para elegir otro.",
       "allBoards": "Todos los tableros",
       "loadingBoards": "Cargando los tableros…",
       "boardsFailed": "No se pudieron cargar los tableros. Se leerán todos.",

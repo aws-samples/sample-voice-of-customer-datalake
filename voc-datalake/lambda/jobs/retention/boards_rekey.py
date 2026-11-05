@@ -28,6 +28,7 @@ from shared.feature_requests_store import (
     SUPPORT_PREFIX,
     board_id_of,
     get_request,
+    get_support,
     recompute_totals,
     support_key,
 )
@@ -53,9 +54,13 @@ def deidentified_support(row: Mapping[str, Any], support_id: str) -> dict[str, A
 
 
 def current_support(table: Any, key: Mapping[str, str]) -> dict[str, Any] | None:
-    """The +1 at ``key`` as stored now (a consistent read), or None when it is gone."""
-    row = table.get_item(Key=dict(key), ConsistentRead=True).get('Item')
-    return row if isinstance(row, dict) else None
+    """The +1 at ``key`` as stored now (the store's consistent read), or None when it is gone."""
+    request_id = str(key['pk']).removeprefix('FR#')
+    support_id = str(key['sk']).removeprefix('SUP#')
+    try:
+        return get_support(table, request_id, support_id)
+    except NotFoundError:
+        return None
 
 
 def rekey(table: Any, row: Mapping[str, Any], support_id: str) -> bool:

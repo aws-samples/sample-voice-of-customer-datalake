@@ -279,6 +279,7 @@
       "description": "Les demandes des tableaux de retours, lues comme une source à part à côté des avis.",
       "boards": "Tableaux à lire",
       "boardsHint": "Choisissez des tableaux pour restreindre, ou aucun pour lire tous les tableaux.",
+      "boardsCap": "Vous pouvez choisir jusqu’à {{count, number}} tableaux. Retirez-en un pour en choisir un autre.",
       "allBoards": "Tous les tableaux",
       "loadingBoards": "Chargement des tableaux…",
       "boardsFailed": "Impossible de charger les tableaux. Tous les tableaux seront lus.",

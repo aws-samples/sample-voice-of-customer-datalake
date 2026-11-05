@@ -54,7 +54,6 @@ PAGE_SIZE: Final = 100
 _SUPPORT_SK_PREFIX: Final = 'SUP#'
 # The request row's sort key, as its store writes it.
 _REQUEST_SK: Final = request_key('_')['sk']
-# What each row kind stores about the person (REMOVEd) and the id its raw folder is named after.
 # What a request row stores about its reporter (REMOVEd); a +1 is re-keyed instead (boards_rekey.py).
 _REPORTER_FIELDS: Final = ('reporter_email', 'reporter_name')
 _PROJECTION: Final = ('pk', 'sk', 'request_id', 'support_id', 'created_at')
