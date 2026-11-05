@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from boto3.dynamodb.conditions import Attr, ConditionBase
 from botocore.exceptions import BotoCoreError, ClientError
 
 if TYPE_CHECKING:
@@ -474,11 +475,22 @@ def _category_change(item: dict, data: dict) -> CategoryChange | None:
     return category_change(item, category, subcategory, override_record(item, caller))
 
 
-def _update_kwargs(key: dict, edits: FieldEdits, change: CategoryChange | None, edit: ManualEdit) -> dict:
+def _unchanged_since_read(item: dict) -> ConditionBase:
+    """The item still is what was read: its last change stamp (``updated_at``) is the one read, or still absent.
+
+    Every in-place change stamps ``updated_at``, so a change that landed after the read fails this and the
+    version kept of the read item never hides it.
+    """
+    stamp = item.get('updated_at')
+    return Attr('updated_at').eq(stamp) if isinstance(stamp, str) and stamp else Attr('updated_at').not_exists()
+
+
+def _update_kwargs(item: dict, key: dict, edits: FieldEdits, change: CategoryChange | None,
+                   edit: ManualEdit) -> dict:
     """One conditional `update_item`: plain fields, the category move, the change stamp.
 
-    Always conditional on the item existing (an edit can never create one); a
-    category move adds "still has the category that was read".
+    Always conditional on the item existing (an edit can never create one) and unchanged since it was
+    read; a category move adds "still has the category that was read".
     """
     sets, names, values = assignment_clauses(edits.sets, 'fld')
     removes = [f'#rm{index}' for index in range(len(edits.removes))]
@@ -490,7 +502,7 @@ def _update_kwargs(key: dict, edits: FieldEdits, change: CategoryChange | None, 
     return {
         'Key': key,
         'UpdateExpression': update_expression([*sets, *stamp_sets], removes),
-        'ConditionExpression': change.condition if change is not None else item_exists(),
+        'ConditionExpression': (change.condition if change is not None else item_exists()) & _unchanged_since_read(item),
         'ExpressionAttributeNames': {**names, **stamp_names},
         'ExpressionAttributeValues': {**values, **stamp_values},
     }
@@ -539,11 +551,14 @@ def save_feedback():
         return {'success': True, 'message': 'No changes'}
 
     edit = ManualEdit(actor=actor_from_event(app.current_event.raw_event, admin=True), reason=REASON_DATA_EXPLORER_EDIT)
-    kwargs = _update_kwargs(key, edits, change, edit)
-    # A failed existence-only condition means the item vanished (404); with a
-    # category move it is the shared lost-update 409.
-    missing = None if change is not None else NotFoundError('Feedback not found')
-    apply_conditional_update(table, kwargs, on_condition_failed=missing)
+    kwargs = _update_kwargs(item, key, edits, change, edit)
+    try:
+        apply_conditional_update(table, kwargs)
+    except ConflictError:
+        # The item vanished (404) or changed since it was read (the shared lost-update 409).
+        if not table.get_item(Key=key, ConsistentRead=True).get('Item'):
+            raise NotFoundError('Feedback not found') from None
+        raise
     # The review as it was before the edit (TENETS.md D1), kept once the edit landed, so a refused
     # edit leaves no version; never fails the edit.
     keep_before_edit(item, edit, kwargs)

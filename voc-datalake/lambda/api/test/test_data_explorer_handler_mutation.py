@@ -669,7 +669,8 @@ class TestTheFeedbackWrite:
         assert kwargs['Key'] == {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'}
         assert kwargs['UpdateExpression'] == 'SET #fld0 = :fld0, ' + ', '.join(
             f'#edit{i} = :edit{i}' for i in range(6))
-        assert kwargs['ConditionExpression'] == Attr('pk').exists()
+        # It exists, and it still is what was read (no change stamp yet, so none may have landed since).
+        assert kwargs['ConditionExpression'] == Attr('pk').exists() & Attr('updated_at').not_exists()
         assert _assigned(kwargs) == {'original_text': 'edited', **_stamp(ISO)}
         # The record as it was is kept first, with the admin as the actor.
         (stored, edit, update), _ = keep.call_args
@@ -774,10 +775,27 @@ class TestTheFeedbackWrite:
         table[1].update_item.assert_not_called()
 
     def test_a_vanished_item_at_write_time_is_a_404_not_a_409(self, table, api_gateway_event, lambda_context):
+        read = table[1].get_item.return_value
+        table[1].get_item.side_effect = [read, {}]  # there when read, gone when the refused write re-checks
         table[1].update_item.side_effect = _client_error('ConditionalCheckFailedException', 'UpdateItem')
         response, body = self._save(api_gateway_event, lambda_context, {'source_platform': 'web', 'rating': 1})
         assert response['statusCode'] == 404
         assert body == {'success': False, 'error': 'Feedback not found'}
+
+    def test_a_change_that_landed_after_the_read_is_a_409_and_keeps_no_version(
+            self, table, api_gateway_event, lambda_context):
+        table[1].update_item.side_effect = _client_error('ConditionalCheckFailedException', 'UpdateItem')
+        with patch.object(h, 'keep_before_edit') as keep:
+            response, _ = self._save(api_gateway_event, lambda_context, {'source_platform': 'web', 'rating': 1})
+        assert response['statusCode'] == 409
+        keep.assert_not_called()
+
+    def test_the_condition_names_the_change_stamp_that_was_read(self, table, api_gateway_event, lambda_context):
+        table[1].get_item.return_value = {'Item': {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1', 'category': 'delivery',
+                                                   'updated_at': '2026-11-01T00:00:00+00:00'}}
+        self._save(api_gateway_event, lambda_context, {'source_platform': 'web', 'rating': 1})
+        assert table[1].update_item.call_args.kwargs['ConditionExpression'] == (
+            Attr('pk').exists() & Attr('updated_at').eq('2026-11-01T00:00:00+00:00'))
 
     def test_a_failed_read_is_a_500_that_hides_the_aws_detail(self, table, api_gateway_event, lambda_context):
         table[1].get_item.side_effect = RuntimeError('boom')
@@ -994,19 +1012,20 @@ class TestUpdateKwargs:
         edits = h.FieldEdits(sets={'rating': Decimal(3)}, removes=['persona_name'])
         with frozen_clock(h) as dt:
             dt.now.return_value.isoformat.return_value = ISO
-            kwargs = h._update_kwargs({'pk': 'p', 'sk': 's'}, edits, change, self.EDIT)
+            kwargs = h._update_kwargs({}, {'pk': 'p', 'sk': 's'}, edits, change, self.EDIT)
         stamp = ', '.join(f'#edit{i} = :edit{i}' for i in range(6))
         assert kwargs['UpdateExpression'] == f'SET #fld0 = :fld0, #cat_c = :cat_c, {stamp} REMOVE #rm0, #cat_s'
-        assert kwargs['ConditionExpression'] == Attr('pk').exists() & Attr('category').eq('delivery')
+        assert kwargs['ConditionExpression'] == (
+            Attr('pk').exists() & Attr('category').eq('delivery') & Attr('updated_at').not_exists())
         assert kwargs['ExpressionAttributeNames']['#rm0'] == 'persona_name'
         assert _assigned(kwargs) == {'rating': Decimal(3), 'category': 'app', **_stamp(ISO, sub='sub-admin')}
 
-    def test_without_a_change_the_only_condition_is_existence(self):
+    def test_without_a_change_the_condition_is_existence_and_the_read_stamp(self):
         with frozen_clock(h) as dt:
             dt.now.return_value.isoformat.return_value = ISO
-            kwargs = h._update_kwargs({'pk': 'p', 'sk': 's'}, h.FieldEdits(), None, self.EDIT)
+            kwargs = h._update_kwargs({}, {'pk': 'p', 'sk': 's'}, h.FieldEdits(), None, self.EDIT)
         assert kwargs['UpdateExpression'] == 'SET ' + ', '.join(f'#edit{i} = :edit{i}' for i in range(6))
-        assert kwargs['ConditionExpression'] == Attr('pk').exists()
+        assert kwargs['ConditionExpression'] == Attr('pk').exists() & Attr('updated_at').not_exists()
         assert _assigned(kwargs) == _stamp(ISO, sub='sub-admin')
 
 

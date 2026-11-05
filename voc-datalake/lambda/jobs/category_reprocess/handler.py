@@ -32,8 +32,8 @@ Invariants:
   * Cost ceiling: after ``MAX_REPROCESS_ITEMS`` scanned reviews the job ends as
     'partial' (``stopped_at_ceiling``) with a ``resume_from`` cursor, which
     ``POST /settings/categories/reprocess {resume: <job_id>}`` continues.
-  * Lineage (D1, D2, D4): before each in-place update the review AS IT WAS is
-    kept (``shared.silver_provenance.keep_silver_version``, reason 'reprocess',
+  * Lineage (D1, D2, D4): after each in-place update that landed, the review AS IT
+    WAS is kept (``shared.silver_provenance.keep_silver_version``, reason 'reprocess',
     actor the admin who started the job), and the update stamps
     ``provenance(...)`` (pipeline version, mode, the model that answered, prompt
     version), ``updated_by`` / ``updated_at`` / ``change_reason``. The job row
@@ -502,9 +502,11 @@ def _recategorise(feedback_table: Any, item: dict, job: dict, categories_config:
     actor = job_actor(job)
     if mode == jobs.MODE_RAW:
         raw_record, archived = raw_input_for(item)
+        attributes = raw_attributes(item, categories_config, raw_record)
+        # Counted once the model call returned: a throttle raises before, and the review is read again
+        # (and would be counted again) when the job continues.
         if not archived:
             note_raw_fallback(counters, item)
-        attributes = raw_attributes(item, categories_config, raw_record)
         llm_metadata = attributes.pop('llm_metadata', None) if attributes else None
     else:
         recorder = AnswerRecorder()
