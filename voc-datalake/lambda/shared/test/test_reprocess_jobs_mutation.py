@@ -135,15 +135,18 @@ class TestJobViewIsTheApiShape:
         assert jobs.job_view(item) == {
             'job_id': NOW_JOB_ID, 'status': 'running', 'mode': 'raw', 'days': 7,
             'include_manual': True, 'scanned': 5, 'updated': 4, 'unchanged': 3,
-            'skipped_manual': 2, 'failed': 1, 'started_by': 'alice', 'created_at': 'c',
-            'updated_at': 'u', 'stopped_at_ceiling': True, 'finished_at': 'f', 'error': 'boom',
+            'skipped_manual': 2, 'failed': 1, 'raw_fallback': 0, 'raw_fallback_sources': [], 'date_basis': 'processed', 'started_by': 'alice', 'created_at': 'c',
+            'updated_at': 'u', 'stopped_at_ceiling': True, 'resumable': False, 'config': None,
+            'config_changed': False, 'finished_at': 'f', 'error': 'boom',
         }
 
     def test_empty_item_defaults(self):
         assert jobs.job_view({}) == {
             'job_id': None, 'status': None, 'mode': None, 'days': 0, 'include_manual': False,
             'scanned': 0, 'updated': 0, 'unchanged': 0, 'skipped_manual': 0, 'failed': 0,
+            'raw_fallback': 0, 'raw_fallback_sources': [], 'date_basis': 'processed',
             'started_by': '', 'created_at': None, 'updated_at': None, 'stopped_at_ceiling': False,
+            'resumable': False, 'config': None, 'config_changed': False,
         }
 
     @pytest.mark.parametrize('flag', ['include_manual', 'stopped_at_ceiling'])
@@ -396,16 +399,17 @@ class TestTransitionWritesAreExact:
             'scanned': 5}
         table.update_item.assert_called_once_with(
             Key=JOB_KEY,
-            UpdateExpression='SET #f0 = :v0, #f1 = :v1, #f2 = :v2, #f3 = :v3, #f4 = :v4, #f5 = :v5, #f6 = :v6',
+            UpdateExpression='SET #f0 = :v0, #f1 = :v1, #f2 = :v2, #f3 = :v3, #f4 = :v4, #f5 = :v5, '
+                             '#f6 = :v6, #f7 = :v7',
             ConditionExpression=ACTIVE_CONDITION + ' AND #token = :held_by',
             ExpressionAttributeNames={
                 '#status': 'status', '#f0': 'scanned', '#f1': 'updated', '#f2': 'unchanged',
-                '#f3': 'skipped_manual', '#f4': 'failed', '#f5': 'updated_at', '#f6': 'cursor',
-                '#token': 'worker_token',
+                '#f3': 'skipped_manual', '#f4': 'failed', '#f5': 'raw_fallback', '#f6': 'updated_at',
+                '#f7': 'cursor', '#token': 'worker_token',
             },
             ExpressionAttributeValues={
-                ':v0': 5, ':v1': 4, ':v2': 0, ':v3': 0, ':v4': 1, ':v5': NOW_ISO,
-                ':v6': {'pk': 'a', 'sk': 'b'}, ':queued': 'queued', ':running': 'running', ':held_by': 'tok',
+                ':v0': 5, ':v1': 4, ':v2': 0, ':v3': 0, ':v4': 1, ':v5': 0, ':v6': NOW_ISO,
+                ':v7': {'pk': 'a', 'sk': 'b'}, ':queued': 'queued', ':running': 'running', ':held_by': 'tok',
             },
             ReturnValues='ALL_NEW',
         )
@@ -413,7 +417,7 @@ class TestTransitionWritesAreExact:
     def test_checkpoint_without_cursor_stores_an_empty_map(self):
         table = MagicMock()
         jobs.checkpoint(table, 'rp_000000000001', {}, None, 'tok', now=NOW)
-        assert table.update_item.call_args.kwargs['ExpressionAttributeValues'][':v6'] == {}
+        assert table.update_item.call_args.kwargs['ExpressionAttributeValues'][':v7'] == {}
 
     def test_finish_with_everything(self):
         table = MagicMock()
@@ -426,16 +430,17 @@ class TestTransitionWritesAreExact:
         assert table.update_item.call_args_list[0] == call(
             Key=JOB_KEY,
             UpdateExpression='SET #f0 = :v0, #f1 = :v1, #f2 = :v2, #f3 = :v3, #f4 = :v4, #f5 = :v5, '
-                             '#f6 = :v6, #f7 = :v7, #f8 = :v8, #f9 = :v9',
+                             '#f6 = :v6, #f7 = :v7, #f8 = :v8, #f9 = :v9, #f10 = :v10',
             ConditionExpression=ACTIVE_CONDITION + ' AND #token = :held_by',
             ExpressionAttributeNames={
                 '#status': 'status', '#f0': 'status', '#f1': 'updated_at', '#f2': 'finished_at',
                 '#f3': 'scanned', '#f4': 'updated', '#f5': 'unchanged', '#f6': 'skipped_manual',
-                '#f7': 'failed', '#f8': 'error', '#f9': 'stopped_at_ceiling', '#token': 'worker_token',
+                '#f7': 'failed', '#f8': 'raw_fallback', '#f9': 'error', '#f10': 'stopped_at_ceiling',
+                '#token': 'worker_token',
             },
             ExpressionAttributeValues={
                 ':v0': 'completed', ':v1': NOW_ISO, ':v2': NOW_ISO, ':v3': 9, ':v4': 0, ':v5': 0,
-                ':v6': 0, ':v7': 0, ':v8': 'boom', ':v9': True,
+                ':v6': 0, ':v7': 0, ':v8': 0, ':v9': 'boom', ':v10': True,
                 ':queued': 'queued', ':running': 'running', ':held_by': 'tok',
             },
             ReturnValues='ALL_NEW',

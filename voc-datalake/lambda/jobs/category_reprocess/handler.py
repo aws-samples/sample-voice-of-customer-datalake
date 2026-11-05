@@ -26,8 +26,23 @@ Invariants:
   * One owner per job: each invocation claims it with a compare-and-set on a
     fresh ``worker_token`` (a hand-over passes its token in the event); a
     duplicate delivery fails the claim or its next checkpoint and exits.
+  * Slices (TENETS.md D3, ``shared/reprocess_slices.py``): a job replays the
+    reviews of its sources (one Query per source partition), categories and
+    processed- or review-date window; everything else is read past uncounted.
   * Cost ceiling: after ``MAX_REPROCESS_ITEMS`` scanned reviews the job ends as
-    'completed' with ``stopped_at_ceiling``.
+    'partial' (``stopped_at_ceiling``) with a ``resume_from`` cursor, which
+    ``POST /settings/categories/reprocess {resume: <job_id>}`` continues.
+  * Lineage (D1, D2, D4): before each in-place update the review AS IT WAS is
+    kept (``shared.silver_provenance.keep_silver_version``, reason 'reprocess',
+    actor the admin who started the job), and the update stamps
+    ``provenance(...)`` (pipeline version, mode, the model that answered, prompt
+    version), ``updated_by`` / ``updated_at`` / ``change_reason``. The job row
+    records the configuration it derived with (``shared.reprocess_lineage``).
+  * Raw mode replays the archived raw item; a review with none readable (CSV /
+    JSON uploads and other imports archive whole files, not per-item raw items) is
+    replayed from its stored text and counted in ``raw_fallback`` (with its
+    source in ``raw_fallback_sources``). A summary-only review never gets
+    ``normalized_text`` / ``direct_customer_quote`` back (the processor's rule).
   * Every mode also (re)computes the heuristic ``usefulness`` band
     (``shared.usefulness``, no model call) from the stored text, so a reprocess
     backfills reviews stored before the band existed. A review whose category
@@ -36,14 +51,14 @@ Invariants:
 """
 import json
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import reprocess_jobs as jobs
-from shared.api import ALL_TIME_DAYS
+from shared import silver_provenance
 from shared.aws import (
     get_dynamodb_resource,
     get_s3_client,
@@ -74,6 +89,9 @@ from shared.invocation_cost import instrumented_handler
 # CategoryReprocess bundling in processing-stack-consolidated.ts), and tests
 # import it as `jobs.category_reprocess.handler` from the lambda/ root.
 from shared.logging import logger, metrics
+from shared.reprocess_lineage import AnswerRecorder, change_stamps, job_actor, job_config
+from shared.reprocess_slices import ReprocessSlice, read_page, slice_from_job
+from shared.reprocess_slices import admits as slice_admits
 from shared.source_profiles import PII_SUMMARY_ONLY
 from shared.timestamps import now_iso
 from shared.usefulness import USEFULNESS_FIELD, USEFULNESS_UNRATED, item_usefulness, stored_band
@@ -93,6 +111,16 @@ TIME_RESERVE_MS = 3 * 60 * 1000
 MAX_THROTTLE_RESTARTS = 3
 
 CATEGORY_SOURCE_REPROCESS = 'reprocess'
+SILVER_REASON = 'reprocess'
+# The E-C1 enrichment mode each job mode stamps.
+ENRICHMENT_MODES = {
+    jobs.MODE_PROCESSED: 'reprocess_processed',
+    jobs.MODE_RAW: 'reprocess_raw',
+    jobs.MODE_DIMENSIONS: 'reprocess_dimensions',
+}
+# A summary-only source never stores these (processor/handler.py
+# SUMMARY_ONLY_DROPPED_FIELDS); of them, raw-mode enrichment writes only these two.
+SUMMARY_ONLY_WITHHELD = ('normalized_text', 'direct_customer_quote')
 
 _comprehend = None
 _translate = None
@@ -118,30 +146,14 @@ def _tables() -> tuple[Any, Any]:
 
 
 # ============================================
-# Window + scan
+# Slice read
 # ============================================
 
-def window_cutoff(days: int, today: datetime) -> str | None:
-    """First included ``date`` ('YYYY-MM-DD'), or None for all time (days == 0)."""
-    if days <= ALL_TIME_DAYS:
-        return None
-    return (today - timedelta(days=days - 1)).strftime('%Y-%m-%d')
-
-
-def scan_page(feedback_table: Any, cursor: dict | None, cutoff: str | None) -> dict:
-    """One page of feedback items (``sk`` FEEDBACK#…) inside the window."""
-    kwargs: dict = {
-        'Limit': PAGE_SIZE,
-        'FilterExpression': 'begins_with(sk, :feedback)',
-        'ExpressionAttributeValues': {':feedback': 'FEEDBACK#'},
-    }
-    if cutoff:
-        kwargs['FilterExpression'] += ' AND #date >= :cutoff'
-        kwargs['ExpressionAttributeNames'] = {'#date': 'date'}
-        kwargs['ExpressionAttributeValues'][':cutoff'] = cutoff
-    if cursor:
-        kwargs['ExclusiveStartKey'] = cursor
-    return feedback_table.scan(**kwargs)
+def scan_page(
+    feedback_table: Any, cursor: dict | None, job_slice: ReprocessSlice, window: tuple[str | None, str | None],
+) -> dict:
+    """One page of the job's slice (a Scan, or a Query per source; ``shared.reprocess_slices``)."""
+    return read_page(feedback_table, cursor, job_slice, window, PAGE_SIZE)
 
 
 # ============================================
@@ -252,24 +264,49 @@ def _raw_record_from_s3(item: dict) -> dict | None:
 def raw_record_for(item: dict) -> dict:
     """The input the processor saw: the archived raw item when the review links
     one, else the stored ``original_text`` (kept verbatim at ingestion)."""
-    return _raw_record_from_s3(item) or _prompt_record(item)
+    return raw_input_for(item)[0]
 
 
-def processed_attributes(item: dict, categories_config: list[dict]) -> dict | None:
-    """New category/subcategory from the stored (translated) text; None if unusable."""
+def raw_input_for(item: dict) -> tuple[dict, bool]:
+    """``raw_record_for`` and whether it is the ARCHIVED raw item (False = the stored-text fallback)."""
+    archived = _raw_record_from_s3(item)
+    return (archived, True) if archived is not None else (_prompt_record(item), False)
+
+
+def note_raw_fallback(counters: dict, item: dict) -> None:
+    """Count a raw-mode review replayed from its stored text, and remember its source (R1)."""
+    counters['raw_fallback'] = counters.get('raw_fallback', 0) + 1
+    sources = counters.setdefault('raw_fallback_sources', set())
+    if isinstance(sources, set) and len(sources) < jobs.MAX_FALLBACK_SOURCES:
+        sources.add(str(item.get('source_platform', 'unknown')))
+
+
+def processed_attributes(
+    item: dict, categories_config: list[dict], recorder: AnswerRecorder | None = None,
+) -> dict | None:
+    """New category/subcategory from the stored (translated) text; None if unusable.
+
+    ``recorder`` (a ``converse_fn``) remembers the model that answered, for ``llm_metadata``.
+    """
     text = item.get('normalized_text') or item.get('original_text') or ''
     if not isinstance(text, str) or not text.strip():
         return None
-    resolved = classify_category(_prompt_record(item), text, categories_config)
+    resolved = classify_category(_prompt_record(item), text, categories_config, converse_fn=recorder)
     if resolved is None:
         return None
     category, subcategory = resolved
     return {'category': category, 'subcategory': subcategory, 'gsi2pk': f"CATEGORY#{category}"}
 
 
-def raw_attributes(item: dict, categories_config: list[dict]) -> dict | None:
-    """Full re-enrichment through the processor's path; None if the model failed."""
-    raw_record = raw_record_for(item)
+def raw_attributes(item: dict, categories_config: list[dict], raw_record: dict | None = None) -> dict | None:
+    """Full re-enrichment through the processor's path; None if the model failed.
+
+    ``raw_record`` is the input (default: ``raw_record_for(item)``). A summary-only
+    review gets no ``normalized_text`` / ``direct_customer_quote`` (they are
+    REMOVEd, as the processor never stores them for such a source: audit S8).
+    """
+    if raw_record is None:
+        raw_record = raw_record_for(item)
     if not raw_record.get('text'):
         return None
     instruction = build_categories_instruction(categories_config)
@@ -292,6 +329,8 @@ def raw_attributes(item: dict, categories_config: list[dict]) -> dict | None:
     attributes['gsi2pk'] = f"CATEGORY#{attributes['category']}"
     attributes['gsi3pk'] = f"URGENCY#{attributes['urgency']}"
     attributes['llm_metadata'] = enrichment.llm_result.get('metadata', {})
+    if item.get('pii_policy') == PII_SUMMARY_ONLY:
+        attributes.update(dict.fromkeys(SUMMARY_ONLY_WITHHELD))
     return attributes
 
 
@@ -308,6 +347,7 @@ def _stored_map(item: dict, field: str) -> dict:
 
 def build_dimensions_update(
     item: dict, dimensions: dict, sources: dict, now: str, band: str | None = None,
+    stamps: dict | None = None,
 ) -> dict:
     """``update_item`` kwargs replacing ``dimensions`` / ``dimension_sources`` in place.
 
@@ -325,12 +365,13 @@ def build_dimensions_update(
     }
     if band is not None:
         attributes[USEFULNESS_FIELD] = band
+    attributes.update(stamps or {})
     expression = _set_and_remove(attributes, names, values)
     conditions = _unchanged_guard(item, 'dimensions', ('#dims', ':dims_before'), values)
     return _update_kwargs(item, expression, conditions, names, values)
 
 
-def build_usefulness_update(item: dict, band: str) -> dict:
+def build_usefulness_update(item: dict, band: str, stamps: dict | None = None) -> dict:
     """``update_item`` kwargs SETting only the review's ``usefulness`` band.
 
     Conditional on the item existing with the band (or no band) that was read, so
@@ -339,7 +380,7 @@ def build_usefulness_update(item: dict, band: str) -> dict:
     """
     names = {'#pk': 'pk', '#use_now': USEFULNESS_FIELD}
     values: dict = {}
-    expression = _set_and_remove({USEFULNESS_FIELD: band}, names, values)
+    expression = _set_and_remove({USEFULNESS_FIELD: band, **(stamps or {})}, names, values)
     conditions = _unchanged_guard(item, USEFULNESS_FIELD, ('#use_now', ':use_before'), values)
     return _update_kwargs(item, expression, conditions, names, values)
 
@@ -356,16 +397,38 @@ def reprocess_band(item: dict, reprocessed: dict) -> str:
     return item_usefulness(reprocessed)
 
 
-def rate_usefulness(feedback_table: Any, item: dict, band: str) -> str:
-    """Store ``band`` when the review's stored band differs; ``updated`` / ``unchanged``."""
+def keep_then_update(feedback_table: Any, item: dict, update: dict, changed: dict, actor: dict) -> None:
+    """Keep the review AS IT WAS (E-C1, never fails the change), then update it in place."""
+    changed_fields = sorted(field for field, value in changed.items() if item.get(field) != value)
+    silver_provenance.keep_silver_version(item, actor=actor, reason=SILVER_REASON, changed_fields=changed_fields)
+    feedback_table.update_item(**update)
+
+
+def enrichment_stamps(mode: str, actor: dict, now: str, llm_metadata: dict | None) -> dict:
+    """The provenance and change stamps of a re-derived review."""
+    return {
+        **silver_provenance.provenance(ENRICHMENT_MODES[mode], llm_metadata=llm_metadata, at=now),
+        **change_stamps(actor, now),
+    }
+
+
+def rate_usefulness(feedback_table: Any, item: dict, band: str, actor: dict | None = None) -> str:
+    """Store ``band`` when the review's stored band differs; ``updated`` / ``unchanged``.
+
+    A band-only write re-derives nothing with a model, so it carries the change
+    stamps but no new provenance.
+    """
     if item.get(USEFULNESS_FIELD) == band:
         return 'unchanged'
-    feedback_table.update_item(**build_usefulness_update(item, band))
+    actor = actor or job_actor({})
+    update = build_usefulness_update(item, band, change_stamps(actor, now_iso()))
+    keep_then_update(feedback_table, item, update, {USEFULNESS_FIELD: band}, actor)
     return 'updated'
 
 
 def reprocess_dimensions(
     feedback_table: Any, item: dict, dimensions_config: list[dict], categories_config: list[dict],
+    actor: dict | None = None,
 ) -> str:
     """Re-infer one review's AI dimensions (and its usefulness band); the outcome counter to record.
 
@@ -374,15 +437,21 @@ def reprocess_dimensions(
     text = item.get('normalized_text') or item.get('original_text') or ''
     if not isinstance(text, str) or not text.strip():
         return 'failed'
-    answer = classify_dimensions(_prompt_record(item), text, dimensions_config)
+    actor = actor or job_actor({})
+    recorder = AnswerRecorder()
+    answer = classify_dimensions(_prompt_record(item), text, dimensions_config, converse_fn=recorder)
     dimensions, sources = reinfer_dimensions(
         dimensions_config, item,
         product=category_product(categories_config, item.get('category')), ai=answer,
     )
     band = reprocess_band(item, {**item, 'dimensions': dimensions})
     if dimensions == _stored_map(item, 'dimensions') and sources == _stored_map(item, 'dimension_sources'):
-        return rate_usefulness(feedback_table, item, band)
-    feedback_table.update_item(**build_dimensions_update(item, dimensions, sources, now_iso(), band))
+        return rate_usefulness(feedback_table, item, band, actor)
+    now = now_iso()
+    stamps = enrichment_stamps(jobs.MODE_DIMENSIONS, actor, now, recorder.metadata())
+    update = build_dimensions_update(item, dimensions, sources, now, band, stamps)
+    changed = {'dimensions': dimensions or None, 'dimension_sources': sources or None, USEFULNESS_FIELD: band}
+    keep_then_update(feedback_table, item, update, changed, actor)
     return 'updated'
 
 
@@ -397,6 +466,7 @@ def reprocess_item(
     """
     include_manual = job.get('include_manual') is True
     mode = job.get('mode')
+    actor = job_actor(job)
     # A manual CATEGORY correction only matters to the modes that move the category.
     if mode != jobs.MODE_DIMENSIONS and item.get('category_source') == CATEGORY_SOURCE_MANUAL \
             and not include_manual:
@@ -404,23 +474,10 @@ def reprocess_item(
         return
     try:
         if mode == jobs.MODE_DIMENSIONS:
-            _record(counters, reprocess_dimensions(feedback_table, item, dimensions_config or [], categories_config))
+            _record(counters, reprocess_dimensions(
+                feedback_table, item, dimensions_config or [], categories_config, actor))
             return
-        if mode == jobs.MODE_RAW:
-            attributes = raw_attributes(item, categories_config)
-        else:
-            attributes = processed_attributes(item, categories_config)
-            if attributes and attributes['category'] == item.get('category') \
-                    and attributes['subcategory'] == item.get('subcategory'):
-                # The category stays; the band may still be missing (a pre-band review).
-                _record(counters, rate_usefulness(feedback_table, item, reprocess_band(item, item)))
-                return
-        if attributes is None:
-            _record(counters, 'failed')
-            return
-        attributes = {**attributes, USEFULNESS_FIELD: reprocess_band(item, {**item, **attributes})}
-        feedback_table.update_item(**build_update(item, attributes, include_manual, now_iso()))
-        _record(counters, 'updated')
+        _record(counters, _recategorise(feedback_table, item, job, categories_config, counters))
     except BedrockThrottlingError:
         raise
     except Exception as e:
@@ -433,6 +490,34 @@ def reprocess_item(
             extra={'feedback_id': item.get('feedback_id'), 'error_type': type(e).__name__},
         )
         _record(counters, 'failed')
+
+
+def _recategorise(feedback_table: Any, item: dict, job: dict, categories_config: list[dict], counters: dict) -> str:
+    """The processed / raw modes for one review; the outcome counter to record."""
+    mode = str(job.get('mode'))
+    actor = job_actor(job)
+    if mode == jobs.MODE_RAW:
+        raw_record, archived = raw_input_for(item)
+        if not archived:
+            note_raw_fallback(counters, item)
+        attributes = raw_attributes(item, categories_config, raw_record)
+        llm_metadata = attributes.pop('llm_metadata', None) if attributes else None
+    else:
+        recorder = AnswerRecorder()
+        attributes = processed_attributes(item, categories_config, recorder)
+        llm_metadata = recorder.metadata()
+        if attributes and attributes['category'] == item.get('category') \
+                and attributes['subcategory'] == item.get('subcategory'):
+            # The category stays; the band may still be missing (a pre-band review).
+            return rate_usefulness(feedback_table, item, reprocess_band(item, item), actor)
+    if attributes is None:
+        return 'failed'
+    attributes = {**attributes, USEFULNESS_FIELD: reprocess_band(item, {**item, **attributes})}
+    now = now_iso()
+    stamped = {**attributes, **enrichment_stamps(mode, actor, now, llm_metadata)}
+    update = build_update(item, stamped, job.get('include_manual') is True, now)
+    keep_then_update(feedback_table, item, update, attributes, actor)
+    return 'updated'
 
 
 # ============================================
@@ -470,7 +555,7 @@ def run_job(event: dict, context: Any) -> dict:
                     extra={'job_id': job_id})
         return {'status': 'not_active'}
 
-    counters = {name: int(job.get(name, 0)) for name in jobs.COUNTERS}
+    counters = _job_counters(job)
     cursor = event.get('cursor') or job.get('cursor') or None
     throttle_restarts = int(event.get('throttle_restarts', 0))
     try:
@@ -490,6 +575,14 @@ def run_job(event: dict, context: Any) -> dict:
         bump_data_version(aggregates_table)
 
 
+def _job_counters(job: dict) -> dict:
+    """The job's progress so far: every counter, plus the raw-fallback sources as a set."""
+    counters: dict = {name: int(job.get(name, 0)) for name in jobs.ALL_COUNTERS}
+    stored = job.get('raw_fallback_sources')
+    counters['raw_fallback_sources'] = {s for s in stored if isinstance(s, str)} if isinstance(stored, list) else set()
+    return counters
+
+
 def _reprocess_pages(
     feedback_table: Any, aggregates_table: Any, context: Any, job_id: str, job: dict, counters: dict,
     cursor: dict | None, throttle_restarts: int, token: str,
@@ -497,12 +590,19 @@ def _reprocess_pages(
     """Walk the scan from ``cursor`` until the job finishes, hands over or is cancelled."""
     categories_config = load_categories_config(aggregates_table)
     dimensions_config = load_dimensions_config(aggregates_table) if job.get('mode') == jobs.MODE_DIMENSIONS else []
-    cutoff = window_cutoff(int(job.get('days', 0)), datetime.now(UTC))
+    if jobs.record_config(aggregates_table, job, job_config(aggregates_table, categories_config), token) is None:
+        logger.info("Reprocess job cancelled or claimed by another delivery", extra={'job_id': job_id})
+        return {'status': jobs.STATUS_CANCELLED}
+    job_slice = slice_from_job(job)
+    window = job_slice.window(datetime.now(UTC))
     while True:
-        page = scan_page(feedback_table, cursor, cutoff)
+        page = scan_page(feedback_table, cursor, job_slice, window)
         for item in page.get('Items', []):
+            if not slice_admits(item, job_slice, window):
+                cursor = {'pk': item['pk'], 'sk': item['sk']}
+                continue
             if counters['scanned'] >= jobs.MAX_REPROCESS_ITEMS:
-                return _finish_at_ceiling(aggregates_table, job_id, counters, token)
+                return _finish_at_ceiling(aggregates_table, job_id, counters, token, cursor)
             if not _time_left(context):
                 return _checkpoint_and_hand_over(aggregates_table, context, job_id, counters, cursor, 0, token)
             try:
@@ -522,7 +622,7 @@ def _reprocess_pages(
             jobs.finish_job(aggregates_table, job_id, jobs.STATUS_COMPLETED, counters=counters,
                             worker_token=token)
             metrics.add_metric(name="CategoryReprocessCompleted", unit="Count", value=1)
-            return {'status': jobs.STATUS_COMPLETED, **counters}
+            return {'status': jobs.STATUS_COMPLETED, **_result_counters(counters)}
         if jobs.checkpoint(aggregates_table, job_id, counters, cursor, token) is None:
             logger.info("Reprocess job cancelled or claimed by another delivery", extra={'job_id': job_id})
             return {'status': jobs.STATUS_CANCELLED}
@@ -530,12 +630,18 @@ def _reprocess_pages(
         bump_data_version(aggregates_table)
 
 
-def _finish_at_ceiling(aggregates_table: Any, job_id: str, counters: dict, token: str) -> dict:
+def _result_counters(counters: dict) -> dict:
+    """The counters as the invocation's result (the source set as a sorted list)."""
+    return {**counters, 'raw_fallback_sources': sorted(counters.get('raw_fallback_sources') or ())}
+
+
+def _finish_at_ceiling(aggregates_table: Any, job_id: str, counters: dict, token: str, cursor: dict | None) -> dict:
+    """End the job 'partial' at the ceiling; ``cursor`` (the last review done) is where a resume starts."""
     logger.warning("Reprocess job reached its item ceiling", extra={'job_id': job_id})
-    jobs.finish_job(aggregates_table, job_id, jobs.STATUS_COMPLETED, counters=counters,
-                    worker_token=token, stopped_at_ceiling=True)
+    jobs.finish_job(aggregates_table, job_id, jobs.STATUS_PARTIAL, counters=counters,
+                    worker_token=token, stopped_at_ceiling=True, resume_from=cursor)
     metrics.add_metric(name="CategoryReprocessStoppedAtCeiling", unit="Count", value=1)
-    return {'status': jobs.STATUS_COMPLETED, 'stopped_at_ceiling': True, **counters}
+    return {'status': jobs.STATUS_PARTIAL, 'stopped_at_ceiling': True, **_result_counters(counters)}
 
 
 def _checkpoint_and_hand_over(
@@ -545,7 +651,7 @@ def _checkpoint_and_hand_over(
     if jobs.checkpoint(aggregates_table, job_id, counters, cursor, token) is None:
         return {'status': jobs.STATUS_CANCELLED}
     _hand_over(context, job_id, cursor, throttle_restarts, token)
-    return {'status': 'continued', **counters}
+    return {'status': 'continued', **_result_counters(counters)}
 
 
 @instrumented_handler

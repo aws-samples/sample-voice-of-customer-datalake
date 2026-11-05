@@ -8,7 +8,6 @@ import pytest
 from jobs.category_reprocess.handler import (
     CATEGORY_SOURCE_REPROCESS,
     run_job,
-    window_cutoff,
 )
 from shared import reprocess_jobs as jobs
 from shared.converse import BedrockThrottlingError
@@ -48,11 +47,12 @@ def _assert_untouched_and_counted_failed(tables, job_id):
     assert _job(tables, job_id)['failed'] == 1
 
 
-def test_window_cutoff():
+def test_the_days_window():
+    from shared.reprocess_slices import ReprocessSlice
     today = datetime(2026, 3, 10, tzinfo=UTC)
-    assert window_cutoff(0, today) is None
-    assert window_cutoff(1, today) == '2026-03-10'
-    assert window_cutoff(30, today) == '2026-02-09'
+    assert ReprocessSlice(days=0).window(today) == (None, None)
+    assert ReprocessSlice(days=1).window(today) == ('2026-03-10', None)
+    assert ReprocessSlice(days=30).window(today) == ('2026-02-09', None)
 
 
 @pytest.mark.usefixtures('converse_mock', 'invoke_mock')
@@ -241,11 +241,12 @@ class TestHandOverAndCancel:
         job = start_job()
         with patch.object(jobs, 'MAX_REPROCESS_ITEMS', 2):
             result = run_job({'job_id': job['sk']}, worker_context)
-        assert result['status'] == 'completed'
+        assert result['status'] == 'partial'
         assert result['stopped_at_ceiling'] is True
         view = _job(tables, job['sk'])
-        assert view['status'] == 'completed'
+        assert view['status'] == 'partial'
         assert view['stopped_at_ceiling'] is True
+        assert view['resumable'] is True
         assert view['scanned'] == 2
         assert start_job() is not None  # lock released
 
