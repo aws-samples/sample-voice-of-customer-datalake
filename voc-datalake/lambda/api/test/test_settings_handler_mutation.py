@@ -43,6 +43,7 @@ from settings_handler import lambda_handler
 from shared.category_access import CategoryScope
 from shared.exceptions import AuthorizationError, ServiceError, ValidationError
 from shared.model_config import ALLOWED_MODEL_IDS, PICKER_SURFACES
+from shared.reprocess_slices import ReprocessSlice
 from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
 
@@ -449,7 +450,8 @@ class TestStartingAReprocess:
         assert response['statusCode'] == 202
         assert response['multiValueHeaders']['Content-Type'] == ['application/json']
         jobs.start.assert_called_once_with(jobs.table, mode='raw', days=0, include_manual=False,
-                                           started_by='alice', now=FIXED_NOW)
+                                           started_by='alice', now=FIXED_NOW,
+                                           job_slice=ReprocessSlice(days=0), started_by_sub='admin-sub')
         jobs.invoke.assert_called_once_with('voc-worker', {'job_id': 'rp_0123456789ab'})
         jobs.finish.assert_not_called()
         logger.info.assert_called_once_with('Category reprocess started',
