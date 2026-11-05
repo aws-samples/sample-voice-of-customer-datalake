@@ -306,8 +306,8 @@ function putSources(body) {
 
 /**
  * The worker's phases, in order (lambda/jobs/retention/handler.py `_phases`): the items, the Radar
- * reviews, the feedback boards (an erasure by email not limited to another source, jobs/retention/boards.py
- * `applies`), the raw sweep (a whole-source erasure only), then the lineage pass, which runs only once
+ * reviews, the feedback boards (an erasure by email not limited to another source; the worker's boards
+ * phase, 6.01.00), the raw sweep (a whole-source erasure only), then the lineage pass, which runs only once
  * something was deleted or de-identified. One poll walks one phase; the job keeps its last phase when it completes.
  */
 function erasurePhases(job) {
