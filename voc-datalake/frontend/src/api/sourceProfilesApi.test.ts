@@ -61,6 +61,15 @@ describe('erasure jobs', () => {
     expect(odd?.phase).toBeUndefined()
   })
 
+  it('reads the boards phase and its de-identified count, absent reading as 0', () => {
+    const [byEmail, before] = normalizeErasureJobs({ jobs: [
+      { ...job, phase: 'boards', board_items_deidentified: 4 },
+      { ...job, job_id: 'er_2', board_items_deidentified: 'many' },
+    ] })
+    expect([byEmail?.phase, byEmail?.board_items_deidentified]).toStrictEqual(['boards', 4])
+    expect(before?.board_items_deidentified).toBe(0)
+  })
+
   it('keeps only valid source ids in the erasable list', () => {
     expect(normalizeErasableSources({ jobs: [], sources: ['web_x', 'Bad Id', 7, 'manual_import'] }))
       .toStrictEqual(['web_x', 'manual_import'])

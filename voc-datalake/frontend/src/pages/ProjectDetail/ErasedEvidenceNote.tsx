@@ -1,7 +1,8 @@
 /**
- * @fileoverview "N cited reviews were erased (legal basis recorded)": a persona or document whose cited
- * reviews `voc-retention` erased (`erased_evidence`, api/erasedEvidence.ts). Only the count: no erased
- * content, id or erasure detail is ever shown. Renders nothing for an artefact without the mark.
+ * @fileoverview "N cited reviews or board requests were erased (legal basis recorded)": a persona or
+ * document whose cited reviews or board requests `voc-retention` erased or de-identified (`erased_evidence`,
+ * api/erasedEvidence.ts; lineage keeps one count for both). Only the count: no erased content, id or erasure
+ * detail is ever shown. Renders nothing for an artefact without the mark.
  * @module pages/ProjectDetail/ErasedEvidenceNote
  */
 import clsx from 'clsx'

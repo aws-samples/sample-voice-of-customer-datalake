@@ -647,6 +647,7 @@
     "counts": "{{items, number}} reviews, {{objects, number}} raw objects deleted",
     "legalBasisShown": "Legal basis: {{basis}}",
     "copies": "{{radar, number}} Radar reviews deleted, {{artifacts, number}} personas or documents marked",
+    "boards": "Board requests and +1s de-identified: {{rows, number}}",
     "reviewFiles": "Uploaded files kept because they also hold rows that were not erased: {{files, number}}. Review them:",
     "status": {
       "queued": "Queued",
@@ -679,6 +680,7 @@
     "progress": {
       "items": "Deleting reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
       "radar": "Deleting Radar reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
+      "boards": "De-identifying board requests and +1s. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
       "raw": "Deleting raw files. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
       "lineage": "Marking personas and documents that cited deleted reviews. Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}.",
       "done": "Reviews deleted: {{items, number}}. Raw files deleted: {{objects, number}}."

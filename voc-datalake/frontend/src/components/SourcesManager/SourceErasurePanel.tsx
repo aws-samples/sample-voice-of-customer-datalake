@@ -32,6 +32,7 @@ import { errorReason, useErasableSources, useErasureJobs, useStartErasure } from
 const PROGRESS_KEYS = {
   items: 'components:sourceErasure.progress.items',
   radar: 'components:sourceErasure.progress.radar',
+  boards: 'components:sourceErasure.progress.boards',
   raw: 'components:sourceErasure.progress.raw',
   lineage: 'components:sourceErasure.progress.lineage',
   done: 'components:sourceErasure.progress.done',

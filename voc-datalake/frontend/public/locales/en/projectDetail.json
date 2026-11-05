@@ -634,7 +634,7 @@
     "viewCited": "Cited ({{n, number}})",
     "viewUsed": "All used ({{n, number}})",
     "citedNote": "The reviews the persona's supporting evidence names. A citation that named no review it read is kept as text only.",
-    "erasedSummary_one": "{{count, number}} cited review was erased (legal basis recorded)",
-    "erasedSummary_other": "{{count, number}} cited reviews were erased (legal basis recorded)"
+    "erasedSummary_one": "{{count, number}} cited review or board request was erased (legal basis recorded)",
+    "erasedSummary_other": "{{count, number}} cited reviews or board requests were erased (legal basis recorded)"
   }
 }
