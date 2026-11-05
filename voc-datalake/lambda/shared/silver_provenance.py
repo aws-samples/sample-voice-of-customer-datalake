@@ -32,12 +32,12 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any, Final, Literal
 
 from botocore.exceptions import ClientError
 
 from shared.archive_keys import archive_key_stem
+from shared.dynamo_values import plain
 from shared.logging import logger, metrics
 from shared.raw_versions import UNKNOWN_VERSION
 
@@ -128,21 +128,6 @@ def change_stamp(actor: Mapping[str, str], reason: str, at: str | None = None) -
     return {'updated_by': _actor(actor), 'updated_at': at or _now().isoformat(), 'change_reason': reason}
 
 
-def _json_safe(value: object) -> object:
-    """``value`` with every Decimal as a number (int when integral) and sets as sorted lists."""
-    if isinstance(value, Decimal):
-        return int(value) if value == value.to_integral_value() else float(value)
-    if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, set | frozenset):
-        return sorted((_json_safe(item) for item in value), key=str)
-    if isinstance(value, bytes | bytearray):
-        return value.hex()
-    return value
-
-
 def _source_of(item: Mapping[str, Any]) -> str:
     source = item.get('source_platform')
     if isinstance(source, str) and source:
@@ -173,7 +158,7 @@ def _version_body(
     item: Mapping[str, Any], actor: Mapping[str, str], reason: str, changed_fields: Sequence[str], kept_at: str,
 ) -> str:
     return json.dumps({
-        'item': _json_safe(item),
+        'item': plain(item),
         'actor': _actor(actor),
         'reason': reason[:_MAX_REASON_CHARS],
         'changed_fields': sorted({str(name) for name in changed_fields}),
