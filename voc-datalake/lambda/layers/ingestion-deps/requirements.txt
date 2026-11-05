@@ -1,5 +1,5 @@
 requests>=2.34.2
-# Exact pin: 3.38.0 started answering Vary: Origin on CORS; an open range let CI and local disagree.
+# Exact pin: Powertools changed CORS behaviour within a minor (3.38.0 started answering Vary: Origin); an open range let CI and local disagree.
 aws-lambda-powertools[tracer]==3.39.0
 beautifulsoup4>=4.15.0
 # lxml (the email intake's HTML parser) is NOT here: lambda/layers/email-intake-deps. bs4 imports it only

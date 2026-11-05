@@ -31,6 +31,8 @@ Dependency refresh: the newest minor and patch releases of the packages the plat
 
 ### Upgrade notes
 - Rebuild the Lambda layers before deploying (`./scripts/build-layers.sh`), so the layers carry Powertools 3.39.0.
+- Contributors: re-run the local venv install (`pip install -r voc-datalake/requirements-dev.txt`), as the Powertools pin and
+  the boto3 floor moved.
 - Node.js 26 and Python 3.15 stay out on purpose: the Lambdas run `nodejs24.x` and Python 3.14.
 
 ## [6.01.00] - 2026-11-04
