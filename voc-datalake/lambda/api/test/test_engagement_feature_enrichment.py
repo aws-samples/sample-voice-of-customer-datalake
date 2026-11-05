@@ -9,7 +9,7 @@ from engagement_fixtures import BOARD, USER, boards_world, ok
 import engagement_handler
 from shared import feature_requests_enrich as enrich
 from shared.converse import ConverseResult
-from shared.feature_requests_store import get_request, request_key
+from shared.feature_requests_store import request_key, require_request
 
 # The seeded Sales board's required request fields.
 SALES_FIELDS = {'customer': 'Example Air', 'impact': 'at_risk', 'amount_usd': 1000}
@@ -53,7 +53,7 @@ def test_a_new_request_queues_its_enrichment(world, lambda_context):
 def test_a_failed_queue_never_fails_the_request(world, lambda_context):
     world.enrich_invoke.side_effect = RuntimeError('throttled')
     request = _file(lambda_context)
-    assert get_request(world.requests, request['request_id']) is not None
+    assert require_request(world.requests, request['request_id'])['title'] == 'Split invoices'
 
 
 def test_the_job_stores_the_contract_shape_with_the_answering_model(world, lambda_context):
@@ -61,7 +61,7 @@ def test_the_job_stores_the_contract_shape_with_the_answering_model(world, lambd
     with _model() as model:
         assert _job([request_id], lambda_context)['status'] == 'done'
     assert model.call_args.kwargs['surface'] == 'enrichment'
-    stored = get_request(world.requests, request_id)['enrichment']
+    stored = require_request(world.requests, request_id)['enrichment']
     assert set(stored) == {'status', 'category', 'subcategory', 'sentiment', 'problem_summary', 'language',
                            'model_id', 'prompt_version', 'text_sha16', 'enriched_at'}
     assert stored['status'] == 'ok'
@@ -72,7 +72,7 @@ def test_the_job_stores_the_contract_shape_with_the_answering_model(world, lambd
     assert stored['prompt_version'] == enrich.PROMPT_VERSION
     assert stored['text_sha16'] == enrich.text_sha16({'title': 'Split invoices', 'description': 'By cost centre'})
     # The row's version is untouched (a concurrent totals recompute is not refused).
-    assert get_request(world.requests, request_id)['version'] == 0
+    assert require_request(world.requests, request_id)['version'] == 0
 
 
 def test_unknown_values_are_dropped_not_invented(world, lambda_context):
@@ -81,7 +81,7 @@ def test_unknown_values_are_dropped_not_invented(world, lambda_context):
               + '","language":"English please"}')
     with _model(answer):
         _job([request_id], lambda_context)
-    stored = get_request(world.requests, request_id)['enrichment']
+    stored = require_request(world.requests, request_id)['enrichment']
     assert stored['category'] is None
     assert stored['sentiment'] is None
     assert stored['language'] is None
@@ -95,7 +95,7 @@ def test_a_model_failure_is_recorded_as_failed(world, lambda_context, failure):
                else _model('not json at all'))
     with patcher:
         assert _job([request_id], lambda_context) == {'status': 'done', 'failed': 1}
-    stored = get_request(world.requests, request_id)['enrichment']
+    stored = require_request(world.requests, request_id)['enrichment']
     assert stored['status'] == 'failed'
     assert stored['category'] is None
     assert stored['model_id'] is None
@@ -103,12 +103,12 @@ def test_a_model_failure_is_recorded_as_failed(world, lambda_context, failure):
 
 def test_a_newer_edit_wins_over_an_older_job(world, lambda_context):
     request_id = _file(lambda_context)['request_id']
-    read = get_request(world.requests, request_id)
+    read = require_request(world.requests, request_id)
     world.requests.update_item(Key=request_key(request_id), UpdateExpression='SET title = :t',
                                ExpressionAttributeValues={':t': 'Split invoices per team'})
     with _model():
         assert enrich.enrich_request(world.requests, read, []) == 'changed'
-    assert 'enrichment' not in get_request(world.requests, request_id)
+    assert 'enrichment' not in require_request(world.requests, request_id)
 
 
 def test_an_edit_of_the_text_queues_again_but_a_field_edit_does_not(world, lambda_context):
