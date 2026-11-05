@@ -23,12 +23,17 @@ from typing import Any, Final
 
 from aws_lambda_powertools.event_handler.api_gateway import Router
 
-from shared.dynamo_values import as_count
 from shared.engagement_identity import require_board_admin
 from shared.exceptions import ValidationError
 from shared.feature_boards_access import BoardScope, scope_for, scope_from_event
 from shared.feature_requests_enrich import ENRICHMENT_FIELD, STATUS_OK, queue, wants_backfill
-from shared.feature_requests_store import MAX_REQUESTS_LISTED, board_id_of, list_requests, requests_of_board
+from shared.feature_requests_store import (
+    MAX_REQUESTS_LISTED,
+    board_id_of,
+    list_requests,
+    requests_of_board,
+    supporters_of,
+)
 from shared.logging import logger, tracer
 from shared.problem_aggregation import UNCATEGORIZED
 
@@ -52,12 +57,6 @@ def parse_days(raw: object) -> int:
 
 def _cutoff(days: int) -> str | None:
     return (datetime.now(UTC) - timedelta(days=days)).isoformat() if days else None
-
-
-def supporters_of(request: Mapping[str, Any]) -> int:
-    """The request's ``totals.supporters`` (a DynamoDB number reads as a Decimal), 0 when absent."""
-    totals = request.get('totals')
-    return as_count(totals.get('supporters')) if isinstance(totals, Mapping) else 0
 
 
 def _ok_enrichment(request: Mapping[str, Any]) -> Mapping[str, Any] | None:

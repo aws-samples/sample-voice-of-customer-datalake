@@ -20,10 +20,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 from shared.dynamo_paging import iter_query
-from shared.dynamo_values import as_count
 from shared.engagement_config import feature_requests_table
 from shared.feature_boards_store import SEEDED_BOARD_ID, list_boards
-from shared.feature_requests_store import REQUESTS_PARTITION, board_id_of
+from shared.feature_requests_store import REQUESTS_PARTITION, board_id_of, supporters_of
 from shared.indexes import FEATURE_REQUESTS_LISTING_INDEX
 from shared.problem_aggregation import UNCATEGORIZED  # the one spelling of a missing category
 
@@ -123,11 +122,6 @@ def _matches(item: Mapping[str, Any], filters: _Filters) -> bool:
     return True
 
 
-def _supporters(item: Mapping[str, Any]) -> int:
-    totals = item.get('totals')
-    return as_count(totals.get('supporters')) if isinstance(totals, Mapping) else 0
-
-
 def slim_request(item: Mapping[str, Any]) -> dict[str, Any]:
     """The evidence view of one request row: ids, text, status, support count and enrichment.
     Never an email, a name or a field value (a deal, a customer) from the board."""
@@ -138,7 +132,7 @@ def slim_request(item: Mapping[str, Any]) -> dict[str, Any]:
         'title': _plain_text(item.get('title')),
         'description': _plain_text(item.get('description'))[:MAX_DESCRIPTION_CHARS],
         'status': _plain_text(item.get('status')),
-        'supporters': _supporters(item),
+        'supporters': supporters_of(item),
         'category': _optional_text(enrichment.get('category')),
         'sentiment': _optional_text(enrichment.get('sentiment')),
         'problem_summary': _optional_text(enrichment.get('problem_summary')),

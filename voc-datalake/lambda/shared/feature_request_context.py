@@ -23,12 +23,12 @@ from shared.api import validate_bool
 from shared.exceptions import ValidationError
 from shared.feature_boards_store import is_board_id
 from shared.feature_request_evidence import load_feature_request_evidence
+from shared.feedback_sampling import INPUT_FEATURE_REQUEST_IDS_FIELD
 from shared.prompt_safety import data_block
 
 INCLUDE_FIELD: Final = 'include_feature_requests'
 BOARD_IDS_FIELD: Final = 'feature_request_board_ids'
 DATA_SOURCE_KEY: Final = 'feature_requests'
-INPUT_FEATURE_REQUEST_IDS_FIELD: Final = 'input_feature_request_ids'
 MAX_BOARD_IDS: Final = 20
 MAX_INPUT_FEATURE_REQUEST_IDS: Final = 200
 # Characters the block may take in one prompt: about 8k tokens, beside a review corpus that takes

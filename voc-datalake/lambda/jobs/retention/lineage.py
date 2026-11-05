@@ -30,14 +30,13 @@ from botocore.exceptions import ClientError
 from jobs.retention.copies import tombstone_key
 from shared.aws import is_conditional_check_failure
 from shared.batch_get import batch_get_all
-from shared.feedback_sampling import INPUT_FEEDBACK_IDS_FIELD
+from shared.feedback_sampling import INPUT_FEATURE_REQUEST_IDS_FIELD, INPUT_FEEDBACK_IDS_FIELD
 from shared.logging import logger
 from shared.persona_evidence import EVIDENCE_FEEDBACK_IDS_FIELD
 from shared.timestamps import now_iso
 
 # The board requests a document / persona / research result read (written by the generators, C5 of 6.01.00);
 # a request whose reporter an erasure de-identified has a tombstone under ``feature_requests`` (boards.py).
-INPUT_FEATURE_REQUEST_IDS_FIELD: Final = 'input_feature_request_ids'
 ID_FIELDS: Final = (INPUT_FEEDBACK_IDS_FIELD, EVIDENCE_FEEDBACK_IDS_FIELD, INPUT_FEATURE_REQUEST_IDS_FIELD)
 MARK_FIELD: Final = 'erased_evidence'
 PAGE_SIZE: Final = 100
