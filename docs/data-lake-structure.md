@@ -103,6 +103,45 @@ after 2 days). The bucket is kept when the stacks are deleted (`protectData`, th
 `-c protectData=false` deleting the stack empties the bucket (every version) and deletes it; back up first
 ([Deployment → Teardown](deployment.md#teardown-with--c-protectdatafalse-back-up-first)).
 
+### Silver history (`silver/`)
+
+A processed feedback item (`voc-feedback`, the Silver tier) changes in place when a person corrects it, a
+source sends a newer copy or a reprocess re-derives it. Before every such change the item **as it was** is
+written to the raw bucket (TENETS.md D1, `lambda/shared/silver_provenance.py`):
+
+```
+silver/{source_platform}/{feedback_id}/{YYYYMMDDTHHMMSSffffffZ}-{sha8}.json
+  {item, actor: {sub, kind}, reason, changed_fields, kept_at}
+```
+
+- **Who writes it, and why** (`reason`): `PUT /feedback/{id}/category` (`category_edit`),
+  `PUT /feedback/{id}/dimensions` (`dimensions_edit`), `PUT /data-explorer/feedback` (`data_explorer_edit`),
+  the processor for a GitHub issue refresh (`source_update`) and a confirmed CSV correction (`csv_correction`),
+  and the category reprocess worker (`reprocess`). `actor.kind` is `user`, `admin`, `agent`, `mcp`, `plan` (a
+  plan step acting for its approver) or `system` (the queue).
+- **Write-once and kept forever**, like `raw/`: every put sends `If-None-Match: *` and the bucket policy
+  denies one without it (`lib/stacks/core-buckets.ts` `APPEND_ONLY_PREFIXES`); no lifecycle rule expires
+  anything under it. Only `voc-retention` deletes there: every version of an erased or expired item goes
+  with it ([Source policies → Retention and erasure](source-policies.md#retention-and-erasure)).
+- **The same data protection as the item.** A kept version is a copy of the Silver row, which is already
+  policy-applied: for a `redact` or `summary_only` source it holds only what the item held (redacted text,
+  or the summary and no customer words), never more.
+- **Never fails the change.** A failed put is logged (no content) and counted (`SilverVersionFailures`,
+  namespace `VoC`); the change goes on.
+
+Every changed item also carries who changed it: `updated_by {sub, kind}`, `updated_at`, `change_reason`.
+A client reads `updated_by.kind` only: the API's response sanitiser and the assistant's source cards drop
+the `sub` (`shared/category_override.py`).
+
+Every enriched item says how it was made (TENETS.md D2): `pipeline_version` (the app release, env
+`APP_VERSION`), `enrichment_mode` (`llm`; `defaults` when the model call failed and the fallback values were
+stored; `manual` after a person's edit; `source_update`; `reprocess_processed` / `reprocess_raw` /
+`reprocess_dimensions`), `enriched_at` and `llm_metadata {model_name, requested_model, prompt_version,
+latency_ms, error?}`. `model_name` is the model that answered (after a capacity fallback it differs from
+`requested_model`). `prompt_version` is pinned to a digest of the enrichment prompts
+(`shared/test/test_prompt_version_pin.py`): a prompt change without a bump fails the tests. Items stored
+before 6.03.00 have no `pipeline_version` / `enrichment_mode`, and their `prompt_version` reads `1.0.0`.
+
 Other prefixes in the same bucket store project uploads, extracted product context, persona avatars
 (`avatars/<project_id>/<persona_id>.png`) and generated prototype assets. `scratch/` holds working
 copies of research and document workflows and expires after 2 days.
@@ -230,7 +269,7 @@ without a batch index (an imported persona, or an id from before the random suff
 | GET | `/data-explorer/s3` | List S3 objects |
 | GET | `/data-explorer/s3/preview` | Preview file content |
 | PUT | `/data-explorer/s3` | Create a file, optionally reprocess it (409 when overwriting an existing `raw/` key) |
-| PUT | `/data-explorer/feedback` | Update a feedback record in place |
+| PUT | `/data-explorer/feedback` | Update a feedback record in place: only the fields that differ from the stored record; each is validated (enums, bounds) and put through the source's PII policy (the stricter of the item's and the profile's; `summary_only` refuses `original_text` / `normalized_text`, 400; unreadable profiles 503). The record as it was is kept under `silver/` first, and the edit is stamped (`updated_by`, `change_reason: data_explorer_edit`) |
 
 ## S3 Import Bucket
 
@@ -322,7 +361,8 @@ Teardown](deployment.md#teardown-with--c-protectdatafalse-back-up-first)). Detai
 existing deployments: [Deployment → Data Retention](deployment.md#data-retention-nothing-is-ever-deleted).
 
 - **S3 raw data:** kept under `raw/` while the platform runs, with every version, unless a source's
-  retention or an erasure removes it (nothing there is overwritten or expires); previous versions of
+  retention or an erasure removes it (nothing there is overwritten or expires); the same holds for the
+  Silver history under `silver/`; previous versions of
   overwritten objects under the other prefixes are kept 90 days; the bucket is deleted with the stack only
   under `-c protectData=false`. Project assets in the same bucket are managed by the project APIs.
 - **Feedback:** no expiry unless a source profile sets `retention_days`; the table is deleted with the stack
