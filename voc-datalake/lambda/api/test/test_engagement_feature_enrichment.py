@@ -240,3 +240,13 @@ def test_a_failed_result_keeps_no_version(world, lambda_context):
     with patch.object(enrich, '_ask_model', side_effect=RuntimeError('model down')):
         assert enrich.enrich_request(world.requests, require_request(world.requests, request_id), []) == 'failed'
     assert _versions(world, request_id) == []
+
+
+def test_a_result_without_its_key_parts_is_stored_and_not_kept(world, lambda_context):
+    """The version write is best-effort for a malformed result too: the stored enrichment stands."""
+    request_id = _file(lambda_context)['request_id']
+    request = require_request(world.requests, request_id)
+    result = {**enrich.failed_enrichment(enrich.text_sha16(request)), 'status': 'ok', 'enriched_at': ''}
+    assert enrich.store_enrichment(world.requests, request, result) is True
+    assert require_request(world.requests, request_id)['enrichment']['status'] == 'ok'
+    assert _versions(world, request_id) == []
