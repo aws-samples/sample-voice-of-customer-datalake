@@ -4,7 +4,6 @@ Root pytest configuration for Lambda tests.
 This conftest sets up the environment consistently for all tests,
 preventing conflicts between different test directories.
 """
-import importlib
 import json
 import os
 import sys
@@ -59,10 +58,6 @@ lambda_dir = os.path.dirname(os.path.abspath(__file__))
 if lambda_dir not in sys.path:
     sys.path.insert(0, lambda_dir)
 
-
-# The test stand-in for ``shared.silver_provenance`` (E-C1), registered only while that module is
-# absent (``install`` does nothing once it exists). Before any test module imports a writer of it.
-importlib.import_module('shared.test.silver_provenance_stub').install()
 
 # ── CloudFront URL signing (issue #229) ──────────────────────────────────────
 # `/avatars/*` and `/prototypes/*` are restricted by a trusted key group, so

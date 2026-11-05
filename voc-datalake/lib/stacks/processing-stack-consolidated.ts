@@ -455,7 +455,8 @@ export class VocProcessingStack extends VocStack {
     const role = new iam.Role(this, 'CategoryReprocessRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
     });
-    deps.feedbackTable.grant(role, 'dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    // Query: a slice by source reads one SOURCE# partition at a time (shared/reprocess_slices.py).
+    deps.feedbackTable.grant(role, 'dynamodb:Scan', 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     // Category config + model-picker override (GetItem); the job row and its
     // lock are only ever UPDATEd by the worker (claim, checkpoint, finish,
     // release). Creating jobs (PutItem) and the latest-job lookup (Query) are
@@ -498,6 +499,8 @@ export class VocProcessingStack extends VocStack {
         FEEDBACK_TABLE: deps.feedbackTable.tableName,
         AGGREGATES_TABLE: deps.aggregatesTable.tableName,
         RAW_DATA_BUCKET: deps.rawDataBucket.bucketName,
+        // The Silver contract's pipeline_version (lambda/shared/silver_provenance.py).
+        APP_VERSION: appVersion(),
         PRIMARY_LANGUAGE: deps.primaryLanguage,
         POWERTOOLS_SERVICE_NAME: CATEGORY_REPROCESS_FUNCTION_BASE_NAME,
         LOG_LEVEL: 'INFO',

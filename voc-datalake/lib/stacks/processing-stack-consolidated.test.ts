@@ -368,8 +368,9 @@ describe('category reprocess worker', () => {
     ]));
   });
 
-  it('holds exactly Scan/GetItem/UpdateItem on feedback — never Put or Delete', () => {
-    expect(actionsOn('dynamodb:', 'Feedback')).toStrictEqual(['dynamodb:GetItem', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
+  it('holds exactly Scan/Query/GetItem/UpdateItem on feedback (Query: a slice by source) — never Put or Delete', () => {
+    expect(actionsOn('dynamodb:', 'Feedback'))
+      .toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
   });
 
   it('holds exactly GetItem/UpdateItem on aggregates — the worker never creates or lists jobs', () => {
