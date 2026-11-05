@@ -25,14 +25,18 @@ def public_override(override: object) -> dict | None:
     return {key: override.get(key) for key in PUBLIC_OVERRIDE_FIELDS if key in override}
 
 
-# The only `updated_by` field a client ever sees (no `sub`).
+# The only field of a feedback change stamp (`updated_by` mapping) a client ever sees (no `sub`).
 PUBLIC_UPDATED_BY_FIELDS = ('kind',)
 
 
-def public_updated_by(stamp: object) -> dict | None:
-    """``updated_by`` as a client may see it: the actor's kind, never its ``sub``."""
+def public_updated_by(stamp: object) -> object:
+    """``updated_by`` as a client may see it: a change stamp ``{sub, kind}`` loses its ``sub``.
+
+    Only the feedback change stamp is a mapping; other domains store ``updated_by`` as a plain
+    string they already return on purpose (agents, settings rows), which passes unchanged.
+    """
     if not isinstance(stamp, Mapping):
-        return None
+        return stamp
     return {key: stamp.get(key) for key in PUBLIC_UPDATED_BY_FIELDS if key in stamp}
 
 
