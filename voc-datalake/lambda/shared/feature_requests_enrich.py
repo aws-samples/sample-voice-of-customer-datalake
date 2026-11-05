@@ -33,6 +33,7 @@ from typing import Any, Final
 from shared import engagement_config
 from shared.aws import invoke_lambda_async
 from shared.categorization import (
+    ENRICHMENT_SURFACE,
     build_categories_instruction,
     load_categories_config,
     parse_llm_json_response,
@@ -44,14 +45,13 @@ from shared.engagement_common import conditional_write, is_id, now_iso
 from shared.feature_requests_store import REQUEST_PREFIX, get_request, request_key
 from shared.llm_json import first_json_object
 from shared.logging import logger
+from shared.participants_send import JOB_FIELD
 from shared.prompt_safety import data_block
 from shared.tables import get_aggregates_table
 
 PROMPT_VERSION: Final = '1.0.0'
 ENRICH_JOB: Final = 'enrich_feature_request'
-JOB_FIELD: Final = 'engagement_job'
 ENRICHMENT_FIELD: Final = 'enrichment'
-ENRICHMENT_SURFACE: Final = 'enrichment'
 STATUS_OK: Final = 'ok'
 STATUS_FAILED: Final = 'failed'
 SENTIMENTS: Final = frozenset({'positive', 'neutral', 'negative', 'mixed'})
