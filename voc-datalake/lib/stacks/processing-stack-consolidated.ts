@@ -498,8 +498,6 @@ export class VocProcessingStack extends VocStack {
         FEEDBACK_TABLE: deps.feedbackTable.tableName,
         AGGREGATES_TABLE: deps.aggregatesTable.tableName,
         RAW_DATA_BUCKET: deps.rawDataBucket.bucketName,
-        // pipeline_version on every item it re-derives (lambda/shared/silver_provenance.py).
-        APP_VERSION: appVersion(),
         PRIMARY_LANGUAGE: deps.primaryLanguage,
         POWERTOOLS_SERVICE_NAME: CATEGORY_REPROCESS_FUNCTION_BASE_NAME,
         LOG_LEVEL: 'INFO',
