@@ -189,7 +189,7 @@ class BoardEraser:
             return deidentify(self._table, row)
         # Read first: a +1 removed since the scan gets no tombstone naming an id that is never stored. The
         # tombstone still precedes the change; the transaction's conditions cover the race left after the read.
-        current = boards_rekey.current_support(self._table, {'pk': row['pk'], 'sk': row['sk']})
+        current = boards_rekey.current_support(self._table, _request_id(row), _item_id(row))
         if current is None:
             return False
         support_id = boards_rekey.new_support_id()

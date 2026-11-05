@@ -33,7 +33,7 @@ def test_the_rekeyed_support_keeps_its_values_without_the_person(aws):
     new_id = boards_rekey.new_support_id()
     assert new_id.startswith('sup_')
     assert new_id != old_id
-    current = boards_rekey.current_support(table, support_key(REQUEST, old_id))
+    current = boards_rekey.current_support(table, REQUEST, old_id)
     assert current is not None
     assert boards_rekey.rekey(table, current, new_id) is True
     assert 'Item' not in table.get_item(Key=support_key(REQUEST, old_id))
@@ -50,18 +50,18 @@ def test_the_rekeyed_support_keeps_its_values_without_the_person(aws):
 def test_a_support_gone_meanwhile_is_not_brought_back(aws):
     table = aws['feature_requests']
     old_id = _seed(aws)
-    current = boards_rekey.current_support(table, support_key(REQUEST, old_id))
+    current = boards_rekey.current_support(table, REQUEST, old_id)
     assert current is not None
     table.delete_item(Key=support_key(REQUEST, old_id))  # removed between the read and the write
     assert boards_rekey.rekey(table, current, 'sup_00000000000f') is False
-    assert boards_rekey.current_support(table, support_key(REQUEST, old_id)) is None
+    assert boards_rekey.current_support(table, REQUEST, old_id) is None
     assert 'Item' not in table.get_item(Key=support_key(REQUEST, 'sup_00000000000f'))
 
 
 def test_the_recount_keeps_the_erased_supporter(aws):
     table = aws['feature_requests']
     old_id = _seed(aws)
-    current = boards_rekey.current_support(table, support_key(REQUEST, old_id))
+    current = boards_rekey.current_support(table, REQUEST, old_id)
     assert current is not None
     boards_rekey.rekey(table, current, 'sup_00000000000f')
     boards_rekey.recount(table, REQUEST)

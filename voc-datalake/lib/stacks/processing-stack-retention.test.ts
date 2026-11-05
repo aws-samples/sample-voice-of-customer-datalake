@@ -81,6 +81,8 @@ describe('voc-retention worker', () => {
       && s.actions.some((a) => a === 'dynamodb:PutItem' || a === 'dynamodb:DeleteItem'));
     expect(writes.map((s) => [...s.actions].sort(byCodeUnit).join(','))).toStrictEqual(['dynamodb:DeleteItem,dynamodb:PutItem']);
     expect(JSON.stringify(template.toJSON())).toContain('"dynamodb:LeadingKeys":["FR#*"]');
+    // A wildcard needs a StringLike-family operator: StringEquals would deny every re-key at runtime.
+    expect(JSON.stringify(template.toJSON())).toContain('"ForAllValues:StringLike":{"dynamodb:LeadingKeys":["FR#*"]}');
   });
 
   it('deletes objects and versions under raw/* only, and lists versions of raw/ only', () => {

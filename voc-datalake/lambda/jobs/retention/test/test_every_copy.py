@@ -8,6 +8,7 @@ from boto3.dynamodb.conditions import Key
 from jobs.retention import boards, boards_rekey, copies, handler, lineage, runs
 from jobs.retention.test.conftest import BUCKET, days_ago
 from shared.digests import sha256_hex
+from shared.feature_requests_store import support_key
 from shared.legal_basis import LEGACY_LEGAL_BASIS
 
 JOB_ID = 'er_00000000abcd'
@@ -363,9 +364,9 @@ class TestBoards:
         table = aws['feature_requests']
         real_current = boards_rekey.current_support
 
-        def removed_meanwhile(tbl, key):
-            table.delete_item(Key=dict(key))
-            return real_current(tbl, key)
+        def removed_meanwhile(tbl, request_id, support_id):
+            table.delete_item(Key=support_key(request_id, support_id))
+            return real_current(tbl, request_id, support_id)
 
         with patch.object(boards_rekey, 'current_support', removed_meanwhile):
             handler.handle_event(_job(aws, 'email', 'jane@example.com', legal_basis=BASIS), worker_context)

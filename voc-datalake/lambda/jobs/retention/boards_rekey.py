@@ -53,10 +53,8 @@ def deidentified_support(row: Mapping[str, Any], support_id: str) -> dict[str, A
             DEIDENTIFIED_FIELD: now, 'updated_at': now}
 
 
-def current_support(table: Any, key: Mapping[str, str]) -> dict[str, Any] | None:
-    """The +1 at ``key`` as stored now (the store's consistent read), or None when it is gone."""
-    request_id = str(key['pk']).removeprefix('FR#')
-    support_id = str(key['sk']).removeprefix('SUP#')
+def current_support(table: Any, request_id: str, support_id: str) -> dict[str, Any] | None:
+    """The +1 as stored now (the store's consistent read), or None when it is gone."""
     try:
         return get_support(table, request_id, support_id)
     except NotFoundError:
