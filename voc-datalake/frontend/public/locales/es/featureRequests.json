@@ -325,7 +325,7 @@
     "empty": "No hay solicitudes en este periodo.",
     "noData": "Todavía no hay nada que mostrar.",
     "totalRequests": "Solicitudes",
-    "totalSupporters": "Apoyos",
+    "totalSupporters": "+1 (sumados por solicitud)",
     "totalEnriched": "Enriquecidas",
     "truncated": "Estas cifras cubren solo parte del periodo: los tableros tienen más solicitudes de las que se leen de una vez.",
     "top": "Solicitudes con más apoyos",

@@ -325,7 +325,7 @@
     "empty": "Aucune demande sur cette période.",
     "noData": "Rien à afficher pour l’instant.",
     "totalRequests": "Demandes",
-    "totalSupporters": "Soutiens",
+    "totalSupporters": "+1 (cumulés sur les demandes)",
     "totalEnriched": "Enrichies",
     "truncated": "Ces chiffres ne couvrent qu'une partie de la période : les tableaux contiennent plus de demandes qu'une seule lecture n'en prend.",
     "top": "Demandes les plus soutenues",

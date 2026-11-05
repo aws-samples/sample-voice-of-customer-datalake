@@ -47,7 +47,7 @@ from shared.categorization import (
 )
 from shared.converse import converse_detailed, with_thinking_headroom
 from shared.engagement_common import conditional_write, is_id, now_iso
-from shared.feature_requests_store import REQUEST_PREFIX, get_request, request_key
+from shared.feature_requests_store import ENRICHMENT_VERSION_SK_PREFIX, REQUEST_PREFIX, get_request, request_key
 from shared.llm_json import first_json_object
 from shared.logging import logger
 from shared.participants_send import JOB_FIELD
@@ -65,6 +65,8 @@ MAX_IDS_PER_JOB: Final = 10
 # bill the same request twice (the job itself runs in well under a minute).
 BACKFILL_LEASE: Final = timedelta(minutes=15)
 BACKFILL_LEASE_FIELD: Final = 'enrich_queued_at'
+# Every enrichment result is also kept as its own row beside the request (shared/feature_requests_store.py).
+ENRICHMENT_VERSION_PREFIX: Final = ENRICHMENT_VERSION_SK_PREFIX
 MAX_SUMMARY_CHARS: Final = 300
 MAX_PROMPT_TITLE_CHARS: Final = 160
 MAX_PROMPT_DESCRIPTION_CHARS: Final = 3000
@@ -258,6 +260,12 @@ def failed_enrichment(sha: str) -> dict[str, Any]:
 
 # ── The job ───────────────────────────────────────────────────────────────────
 
+def enrichment_version_key(request_id: str, enrichment: Mapping[str, Any]) -> dict[str, str]:
+    """``FR#{id}`` / ``ENRICH#{enriched_at}#{text_sha16}``: one kept enrichment result of the request."""
+    return {'pk': request_key(request_id)['pk'],
+            'sk': f"{ENRICHMENT_VERSION_PREFIX}{enrichment.get('enriched_at', '')}#{enrichment.get('text_sha16', '')}"}
+
+
 def _unchanged(names: dict[str, str], values: dict[str, Any], request: Mapping[str, Any], field: str) -> str:
     """The condition that ``field`` still holds what was read (absent stays absent)."""
     names[f'#{field}'] = field
@@ -270,14 +278,35 @@ def _unchanged(names: dict[str, str], values: dict[str, Any], request: Mapping[s
 
 def store_enrichment(table: Any, request: Mapping[str, Any], enrichment: Mapping[str, Any]) -> bool:
     """Write ``enrichment`` while the row exists with the title / description it was computed from;
-    False when the request was deleted or edited meanwhile (the newer edit queued its own job)."""
+    False when the request was deleted or edited meanwhile (the newer edit queued its own job).
+
+    A stored result is also kept as its own row (``keep_enrichment_version``, TENETS.md D1), so a later
+    result never loses an earlier one.
+    """
     names: dict[str, str] = {'#e': ENRICHMENT_FIELD}
     values: dict[str, Any] = {':e': dict(enrichment)}
     same = [_unchanged(names, values, request, field) for field in ('title', 'description')]
-    return conditional_write(
+    stored = conditional_write(
         table.update_item, Key=request_key(str(request['request_id'])), UpdateExpression='SET #e = :e',
         ConditionExpression=' AND '.join(['attribute_exists(pk)', *same]),
         ExpressionAttributeNames=names, ExpressionAttributeValues=values)
+    if stored:
+        keep_enrichment_version(table, str(request['request_id']), enrichment)
+    return stored
+
+
+def keep_enrichment_version(table: Any, request_id: str, enrichment: Mapping[str, Any]) -> None:
+    """Keep one stored result as ``FR#{id}`` / ``ENRICH#{enriched_at}#{sha}``, write-once.
+
+    Best-effort like a kept Silver version: a failure is logged and never undoes the stored result.
+    """
+    item = {**enrichment_version_key(request_id, enrichment), 'request_id': request_id,
+            ENRICHMENT_FIELD: dict(enrichment)}
+    try:
+        conditional_write(table.put_item, Item=item, ConditionExpression='attribute_not_exists(pk)')
+    except (ClientError, BotoCoreError):
+        logger.warning('Feature request enrichment version not kept', extra={'request_id': request_id},
+                       exc_info=True)
 
 
 def enrich_request(table: Any, request: Mapping[str, Any], categories_config: list[dict]) -> str:

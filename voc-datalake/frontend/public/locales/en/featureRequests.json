@@ -318,7 +318,7 @@
     "empty": "No requests in this window.",
     "noData": "Nothing to show yet.",
     "totalRequests": "Requests",
-    "totalSupporters": "Supporters",
+    "totalSupporters": "+1s (summed across requests)",
     "totalEnriched": "Enriched",
     "truncated": "These figures cover part of the window: the boards hold more requests than one read takes.",
     "top": "Most supported requests",

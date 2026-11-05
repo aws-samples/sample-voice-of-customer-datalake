@@ -318,7 +318,7 @@
     "empty": "此时间段内没有需求。",
     "noData": "暂无可显示的内容。",
     "totalRequests": "需求",
-    "totalSupporters": "支持者",
+    "totalSupporters": "+1 总数（按请求累加）",
     "totalEnriched": "已补充",
     "truncated": "这些数字只涵盖部分时间段：看板中的需求多于一次读取的数量。",
     "top": "支持最多的需求",

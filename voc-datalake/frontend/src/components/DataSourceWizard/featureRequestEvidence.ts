@@ -23,7 +23,10 @@ export function useEvidenceBoards(enabled: boolean): { boards: readonly FeatureB
   return { boards, isLoading: enabled && query.isLoading, isError: query.isError }
 }
 
-/** The persona / research / preview body fields: nothing unless the box is ticked (the API's default is off). */
+/**
+ * The persona / research run's body fields: nothing unless the box is ticked (the API's default is off).
+ * Not for `feedback-preview`, which counts reviews only (the board count comes from the Insights route).
+ */
 export function featureRequestEvidenceFields(config: Pick<ContextConfig, 'useFeatureRequests' | 'featureRequestBoardIds'>): {
   include_feature_requests?: true
   feature_request_board_ids?: string[]

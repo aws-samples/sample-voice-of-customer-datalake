@@ -10,7 +10,7 @@
 import {
   Refusal, SEEDED_BOARD_ID, SUPPORT_KEYS, boardFor, boardWire, fieldValues, handleBoardRoutes, refuse, refuseWhenPaused, registerRequestQueries, templateOfBoard,
 } from './mock-boards.js';
-import { handleFeatureRequestInsightRoutes } from './mock-feature-request-insights.js';
+import { handleFeatureRequestInsightRoutes, textSha16 } from './mock-feature-request-insights.js';
 
 const PATH = /^\/feature-requests(?:\/([^/]+)(?:\/(status|promote|supports)(?:\/([^/]+))?)?)?$/;
 /** An `anyone` board's per-poster daily cap on new requests (the API's own; 429 `rate_limited`). */
@@ -38,7 +38,7 @@ function support(id, fields, created) {
 function enriched(fields, days) {
   return {
     status: 'ok', subcategory: null, language: 'en', model_id: 'mock', prompt_version: 'mock-1',
-    text_sha16: '0000000000000000', enriched_at: daysAgo(days), ...fields,
+    text_sha16: '', enriched_at: daysAgo(days), ...fields,  // set from the request's text below the store
   };
 }
 
@@ -112,6 +112,10 @@ const store = new Map([
     support('sup_0000000000000008', { email: 'sam.seller@example.com', name: 'Sam Seller', is_reporter: true }, daysAgo(1)),
   ])],
 ]);
+// A fixture's enrichment was computed from its own text, so the Enrich button treats it as fresh (like the route).
+for (const entry of store.values()) {
+  if (entry.meta.enrichment) entry.meta.enrichment.text_sha16 = textSha16(entry.meta);
+}
 
 const boardIdOf = (entry) => entry.meta.board_id ?? SEEDED_BOARD_ID;
 registerRequestQueries({

@@ -4,7 +4,8 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-from engagement_fixtures import BOARD, USER, boards_world, ok
+from botocore.exceptions import ClientError
+from engagement_fixtures import ADMIN, BOARD, USER, boards_world, ok
 
 import engagement_handler
 from shared import feature_requests_enrich as enrich
@@ -183,3 +184,53 @@ def test_board_users_see_the_enrichment_on_their_request(lambda_context):
         _job([request_id], lambda_context)
     view = ok(lambda_context, 'GET', f'/feature-requests/{request_id}', claims=BOARD)['request']
     assert view['enrichment']['category'] == 'billing'
+
+
+def _versions(world, request_id):
+    return world.requests.query(
+        KeyConditionExpression='pk = :pk AND begins_with(sk, :s)',
+        ExpressionAttributeValues={':pk': f'FR#{request_id}', ':s': 'ENRICH#'})['Items']
+
+
+def test_every_stored_result_is_kept_as_a_version(world, lambda_context):
+    """TENETS.md D1: a re-enrichment after an edit replaces the row's enrichment but keeps the older result."""
+    request_id = _file(lambda_context)['request_id']
+    with _model():
+        enrich.enrich_request(world.requests, require_request(world.requests, request_id), [])
+    world.requests.update_item(Key=request_key(request_id), UpdateExpression='SET title = :t',
+                               ExpressionAttributeValues={':t': 'Split invoices per team'})
+    with _model():
+        enrich.enrich_request(world.requests, require_request(world.requests, request_id), [])
+    versions = _versions(world, request_id)
+    assert len(versions) == 2
+    assert {v['enrichment']['text_sha16'] for v in versions} == {
+        enrich.text_sha16({'title': 'Split invoices', 'description': 'By cost centre'}),
+        require_request(world.requests, request_id)['enrichment']['text_sha16']}
+    assert all('reporter_email' not in v and 'gsi1pk' not in v for v in versions)
+
+
+def test_a_result_a_newer_edit_refused_keeps_no_version(world, lambda_context):
+    request_id = _file(lambda_context)['request_id']
+    read = require_request(world.requests, request_id)
+    world.requests.update_item(Key=request_key(request_id), UpdateExpression='SET title = :t',
+                               ExpressionAttributeValues={':t': 'Split invoices per team'})
+    with _model():
+        enrich.enrich_request(world.requests, read, [])
+    assert _versions(world, request_id) == []
+
+
+def test_a_failed_version_write_keeps_the_stored_result(world, lambda_context):
+    request_id = _file(lambda_context)['request_id']
+    error = ClientError({'Error': {'Code': 'InternalServerError', 'Message': 'boom'}}, 'PutItem')
+    with _model(), patch.object(world.requests, 'put_item', side_effect=error):
+        assert enrich.enrich_request(world.requests, require_request(world.requests, request_id), []) == 'ok'
+    assert require_request(world.requests, request_id)['enrichment']['status'] == 'ok'
+
+
+def test_deleting_a_request_deletes_its_kept_versions(world, lambda_context):
+    request_id = _file(lambda_context)['request_id']
+    with _model():
+        enrich.enrich_request(world.requests, require_request(world.requests, request_id), [])
+    assert _versions(world, request_id)
+    ok(lambda_context, 'DELETE', f'/feature-requests/{request_id}', claims=ADMIN)
+    assert _versions(world, request_id) == []
