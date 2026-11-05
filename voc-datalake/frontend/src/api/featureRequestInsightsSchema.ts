@@ -51,7 +51,17 @@ const categoryRowSchema = z.object({
 
 const statusRowSchema = z.object({ status: z.string().min(1), requests: count, supporters: count })
 
+/** `'unknown'` is the server's bucket for requests not enriched yet: read like an absent sentiment. */
 const sentimentRowSchema = z.object({ sentiment: sentimentSchema, requests: count })
+
+type SentimentRow = z.infer<typeof sentimentRowSchema>
+
+/** One row per sentiment: an `'unknown'` row and a null row are the same bucket, so they add up. */
+function mergeSentimentRows(rows: readonly SentimentRow[]): SentimentRow[] {
+  const merged = new Map<SentimentRow['sentiment'], number>()
+  for (const row of rows) merged.set(row.sentiment, (merged.get(row.sentiment) ?? 0) + row.requests)
+  return [...merged].map(([sentiment, requests]) => ({ sentiment, requests }))
+}
 
 const totalsSchema = z.object({ requests: count, supporters: count, enriched: count })
   .catch({ requests: 0, supporters: 0, enriched: 0 })
@@ -61,10 +71,12 @@ const insightsSchema = z.object({
     .transform((value) => value ?? null),
   window_days: count,
   totals: totalsSchema,
+  /** The server stopped reading at its budget: the figures cover only part of the window. */
+  truncated: z.boolean().optional().catch(false).transform((value) => value ?? false),
   top: parsedList(topRequestSchema),
   by_category: parsedList(categoryRowSchema),
   by_status: parsedList(statusRowSchema),
-  by_sentiment: parsedList(sentimentRowSchema),
+  by_sentiment: parsedList(sentimentRowSchema).transform(mergeSentimentRows),
 })
 export type FeatureRequestInsights = z.infer<typeof insightsSchema>
 

@@ -327,6 +327,7 @@
     "totalRequests": "Demandes",
     "totalSupporters": "Soutiens",
     "totalEnriched": "Enrichies",
+    "truncated": "Ces chiffres ne couvrent qu'une partie de la période : les tableaux contiennent plus de demandes qu'une seule lecture n'en prend.",
     "top": "Demandes les plus soutenues",
     "byCategory": "Demandes par catégorie",
     "byStatus": "Demandes par statut",

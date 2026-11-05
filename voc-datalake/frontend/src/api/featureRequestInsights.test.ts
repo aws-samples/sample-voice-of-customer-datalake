@@ -41,13 +41,30 @@ describe('getFeatureRequestInsights', () => {
     expect(insights.totals).toStrictEqual({ requests: 3, supporters: 5, enriched: 2 })
     expect(insights.by_category.map((row) => row.category)).toStrictEqual(['login', null])
     expect(insights.board).toStrictEqual({ id: 'brd_sales', label: 'Sales feature requests' })
+    expect(insights.truncated).toBe(false)
+  })
+
+  it('reads a truncated answer and every board as board null', async () => {
+    fetchApi.mockResolvedValue({ ...INSIGHTS, board: null, truncated: true })
+    const insights = await getFeatureRequestInsights({ days: 0 })
+    expect(insights.truncated).toBe(true)
+    expect(insights.board).toBeNull()
+  })
+
+  it("adds the 'unknown' sentiment bucket to the not-enriched one", async () => {
+    fetchApi.mockResolvedValue({
+      ...INSIGHTS,
+      by_sentiment: [{ sentiment: 'negative', requests: 2 }, { sentiment: 'unknown', requests: 3 }, { sentiment: null, requests: 1 }],
+    })
+    const insights = await getFeatureRequestInsights({ days: 90 })
+    expect(insights.by_sentiment).toStrictEqual([{ sentiment: 'negative', requests: 2 }, { sentiment: null, requests: 4 }])
   })
 
   it.each([[null], ['nope'], [{ totals: 'x', top: 'y', board: 7 }]])('reads %j as empty insights', async (raw) => {
     fetchApi.mockResolvedValue(raw)
     const insights = await getFeatureRequestInsights({ days: 30 })
     expect(insights).toStrictEqual({
-      board: null, window_days: 0, totals: { requests: 0, supporters: 0, enriched: 0 },
+      board: null, window_days: 0, totals: { requests: 0, supporters: 0, enriched: 0 }, truncated: false,
       top: [], by_category: [], by_status: [], by_sentiment: [],
     })
   })
@@ -61,7 +78,7 @@ describe('getFeatureRequestInsights', () => {
 
 describe('enrichFeatureRequests', () => {
   it('posts the board and reads the queue counts', async () => {
-    fetchApi.mockResolvedValue({ queued: 4, remaining: 10 })
+    fetchApi.mockResolvedValue({ success: true, queued: 4, remaining: 10 })
     await expect(enrichFeatureRequests('brd_sales')).resolves.toStrictEqual({ queued: 4, remaining: 10 })
     expect(fetchApi.mock.calls[0]?.[0]).toBe('/feature-requests/insights/enrich')
     expect(fetchApi.mock.calls[0]?.[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ board: 'brd_sales' }) })

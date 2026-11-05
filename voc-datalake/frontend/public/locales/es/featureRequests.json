@@ -327,6 +327,7 @@
     "totalRequests": "Solicitudes",
     "totalSupporters": "Apoyos",
     "totalEnriched": "Enriquecidas",
+    "truncated": "Estas cifras cubren solo parte del periodo: los tableros tienen más solicitudes de las que se leen de una vez.",
     "top": "Solicitudes con más apoyos",
     "byCategory": "Solicitudes por categoría",
     "byStatus": "Solicitudes por estado",

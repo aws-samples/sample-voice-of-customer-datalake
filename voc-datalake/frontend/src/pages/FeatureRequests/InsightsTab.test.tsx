@@ -26,7 +26,7 @@ const SALES = fixtureBoard('sales', { board_id: 'brd_sales', name: 'Sales featur
 const OLD = fixtureBoard('beta', { board_id: 'brd_old', name: 'Old board', archived: true })
 
 const EMPTY: FeatureRequestInsights = {
-  board: null, window_days: 90, totals: { requests: 0, supporters: 0, enriched: 0 },
+  board: null, window_days: 90, totals: { requests: 0, supporters: 0, enriched: 0 }, truncated: false,
   top: [], by_category: [], by_status: [], by_sentiment: [],
 }
 const FIGURES: FeatureRequestInsights = {
@@ -72,6 +72,13 @@ describe('the Insights tab', () => {
     const link = within(screen.getByTestId('fr-insights-top')).getByRole('link', { name: 'Single sign-on' })
     expect(link).toHaveAttribute('href', '/feature-requests?request=fr_1')
     expect(screen.getByTestId('fr-insights-top')).toHaveTextContent('Account access')
+    expect(screen.queryByTestId('fr-insights-truncated')).not.toBeInTheDocument()
+  })
+
+  it('says when the server read only part of the window', async () => {
+    api.getFeatureRequestInsights.mockResolvedValue({ ...FIGURES, truncated: true })
+    renderTab()
+    expect(await screen.findByTestId('fr-insights-truncated')).toHaveTextContent('These figures cover part of the window')
   })
 
   it('lists the breakdowns in words: no category, the board status label, not enriched', async () => {

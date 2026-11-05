@@ -320,6 +320,7 @@
     "totalRequests": "需求",
     "totalSupporters": "支持者",
     "totalEnriched": "已补充",
+    "truncated": "这些数字只涵盖部分时间段：看板中的需求多于一次读取的数量。",
     "top": "支持最多的需求",
     "byCategory": "按类别统计的需求",
     "byStatus": "按状态统计的需求",

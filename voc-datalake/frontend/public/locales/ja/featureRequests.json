@@ -320,6 +320,7 @@
     "totalRequests": "リクエスト",
     "totalSupporters": "支持者",
     "totalEnriched": "補強済み",
+    "truncated": "これらの数値は期間の一部のみを対象としています。ボードには一度に読み取れる数より多くのリクエストがあります。",
     "top": "支持の多いリクエスト",
     "byCategory": "カテゴリ別リクエスト",
     "byStatus": "ステータス別リクエスト",

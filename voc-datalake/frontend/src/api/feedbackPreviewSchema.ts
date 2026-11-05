@@ -25,15 +25,11 @@ const feedbackPreviewSchema = z.object({
   /** How many of them persona generation reads; null for research or when not said. */
   sample_limit: count.nullable().catch(null),
   estimated: z.boolean().catch(false),
-  /** Board requests matching, when the body asked for them (C5); null when not asked or not said. */
-  feature_requests_matched: count.nullable().optional().catch(null).transform((value) => value ?? null),
 })
 
 export type FeedbackPreview = z.infer<typeof feedbackPreviewSchema>
 
-const UNKNOWN: FeedbackPreview = {
-  matched: null, matched_is_lower_bound: false, sample_limit: null, estimated: false, feature_requests_matched: null,
-}
+const UNKNOWN: FeedbackPreview = { matched: null, matched_is_lower_bound: false, sample_limit: null, estimated: false }
 
 export function normalizeFeedbackPreview(raw: unknown): FeedbackPreview {
   const parsed = feedbackPreviewSchema.safeParse(raw)

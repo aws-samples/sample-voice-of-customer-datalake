@@ -3,7 +3,8 @@
 //
 //   GET  /feature-requests/insights?board=&days=   (days 0–3650, 0 = all)
 //        -> {success, board: {id, label} | null, window_days, totals: {requests, supporters, enriched},
-//            top (≤ 20, by supporters), by_category (null = uncategorized), by_status, by_sentiment}
+//            truncated, top (≤ 20, by supporters), by_category (null = uncategorized), by_status,
+//            by_sentiment ('unknown' = not enriched)}
 //   POST /feature-requests/insights/enrich {board?}  (admin)  -> {success, queued, remaining}
 //   GET  /feature-requests/search?q=&board=&category=&status=&days=&limit=  -> {success, items, total, truncated}
 //
@@ -64,6 +65,8 @@ function insights(url, viewer, entriesFor) {
     success: true,
     board: board ? { id: board.board_id, label: board.name } : null,
     window_days: days,
+    // The mock reads every request, so it never stops at a budget.
+    truncated: false,
     totals: {
       requests: metas.length,
       supporters: metas.reduce((sum, meta) => sum + supportersOf(meta), 0),
@@ -72,7 +75,8 @@ function insights(url, viewer, entriesFor) {
     top,
     by_category: groupBy(metas, categoryOf).map(({ key, ...row }) => ({ category: key, ...row })),
     by_status: groupBy(metas, (meta) => meta.status).map(({ key, ...row }) => ({ status: key, ...row })),
-    by_sentiment: groupBy(metas, (meta) => meta.enrichment?.sentiment ?? null).map(({ key, requests }) => ({ sentiment: key, requests })),
+    // A request not enriched yet (or with no sentiment) is the server's 'unknown' bucket.
+    by_sentiment: groupBy(metas, (meta) => meta.enrichment?.sentiment ?? 'unknown').map(({ key, requests }) => ({ sentiment: key, requests })),
   }];
 }
 
