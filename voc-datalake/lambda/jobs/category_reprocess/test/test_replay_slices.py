@@ -138,7 +138,7 @@ class TestPartialAndResume:
         again = jobs.resume_point(jobs.get_job(tables['aggregates'], first['sk']))
         assert again == resume
         third = _start(tables, resume=again)
-        assert jobs.get_job(tables['aggregates'], first['sk'])['resumed_by'] == third['sk']
+        assert (jobs.get_job(tables['aggregates'], first['sk']) or {}).get('resumed_by') == third['sk']
 
     def test_a_completed_resumer_keeps_the_partial_job_closed(self, tables, worker_context):
         first, resume = self._partial(tables, worker_context)
