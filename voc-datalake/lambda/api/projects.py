@@ -74,7 +74,14 @@ from shared.exceptions import (
     ServiceError,
     ValidationError,
 )
-from shared.feature_request_context import config_context, input_feature_request_fields, with_feature_requests
+from shared.feature_request_context import (
+    FALLBACK_SKIPPED_FIELD,
+    FALLBACK_SKIPPED_NOTE,
+    config_context,
+    input_feature_request_fields,
+    wants_feature_requests,
+    with_feature_requests,
+)
 from shared.feedback import (
     feedback_char_budget,
     feedback_context_exists,
@@ -3780,6 +3787,9 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
         raise ConfigurationError('Projects table not configured')
 
     research_question = body.get('question', 'What are the main customer pain points?')
+    # This Lambda cannot read the boards (no grant): a ticked "Feature requests" box is reported, not dropped.
+    skipped_requests = wants_feature_requests(body)
+    skipped_note = f'\n{FALLBACK_SKIPPED_NOTE}\n' if skipped_requests else ''
 
     # Get project data - exceptions will propagate
     project_data = get_project(project_id)
@@ -3828,7 +3838,7 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
 **Generated:** {now[:10]}
 **Feedback Analyzed:** {len(feedback_items)} items
 **Filters:** Sources: {', '.join(filters.get('sources', [])) or 'All'} | Categories: {', '.join(filters.get('categories', [])) or 'All'} | Sentiments: {', '.join(filters.get('sentiments', [])) or 'All'} | Days: {filters.get('days', 30)} | Date basis: {date_basis}
-
+{skipped_note}
 ---
 
 ## Executive Summary & Key Findings
@@ -3858,7 +3868,8 @@ def run_research(project_id: str, body: dict, *, category_scope: dict | None) ->
         # Every fetched review reaches this fallback's prompt untrimmed (format_feedback_for_llm has
         # no total budget), so all are the corpus (#236); test_run_research_date_basis.py pins it.
         feedback_fields = {'feedback_count': len(feedback_items),
-                           **input_feedback_fields(input_feedback_ids(feedback_items))}
+                           **input_feedback_fields(input_feedback_ids(feedback_items)),
+                           **({FALLBACK_SKIPPED_FIELD: True} if skipped_requests else {})}
 
         def build(research_id: str) -> dict:
             return {

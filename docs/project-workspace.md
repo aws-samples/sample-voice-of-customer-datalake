@@ -96,7 +96,10 @@ What reached the prompt is stored as `input_feature_request_ids` (ids only, at m
 In personas, the analysis step and every persona-writing call read the section; the plan step reads the analysis only.
 Autonomous agents, "Pursue" on a decision and the merged document never send the flag, so they read no board request.
 The synchronous research fallback (`run_research`, used only when the research state machine is not configured)
-ignores the flag. `POST /projects/{id}/feedback-preview` counts reviews only; a board's request count comes from
+cannot read the boards: it runs in the projects Lambda, whose role holds no grant on `voc-feature-requests` (kept
+off for its policy size). When the box is ticked, the report says so under its header ("Feature requests: not
+read…") and the saved report carries `feature_requests_skipped: true`, so the skip is never silent.
+`POST /projects/{id}/feedback-preview` counts reviews only; a board's request count comes from
 `GET /feature-requests/insights` (`totals.requests`, [feature requests](feature-requests.md)).
 
 The readers (the persona and document generator jobs, the research step) hold `dynamodb:Query` on
