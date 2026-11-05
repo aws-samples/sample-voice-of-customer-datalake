@@ -21,6 +21,9 @@ as a duplicate, so a corrected spreadsheet amends its rows rather than doubling 
   created or deleted.
 * A failed model call (``enrichment_failed``) writes the row's own fields only and keeps the
   stored text, enrichment and digest, as an issue refresh keeps them.
+* Stamped ``updated_by`` (the system actor: the queue applies the correction the uploader
+  confirmed, and the import run records who that was), ``updated_at``, ``change_reason``
+  ``'csv_correction'``; the processor keeps the item as it was first (``keep_silver_version``).
 * ``s3_raw_uri`` follows the newest archive and is never removed: the API writes the
   correction as a NEW object in the stored item's own folder (``shared/raw_versions.py``;
   the old version stays next to it, never overwritten), so retention still finds the
@@ -32,6 +35,7 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 
+from shared.silver_provenance import REASON_CSV_CORRECTION, SYSTEM_ACTOR, change_stamp
 from shared.source_profiles import PII_ALLOW, PII_SUMMARY_ONLY
 from shared.source_updates import UPDATE_APPLY, UPDATE_UNCHANGED, ItemUpdate, text_changed
 
@@ -66,6 +70,7 @@ def _row_fields(raw_record: Mapping[str, Any], pii_policy: str, now_iso: str) ->
         'source_channel': raw_record.get('source_channel') or 'unknown',
         'pii_policy': None if pii_policy == PII_ALLOW else pii_policy,
         'source_refreshed_at': now_iso,
+        **change_stamp(SYSTEM_ACTOR, REASON_CSV_CORRECTION, now_iso),
     }
     if raw_record.get('s3_raw_uri'):
         fields['s3_raw_uri'] = raw_record['s3_raw_uri']

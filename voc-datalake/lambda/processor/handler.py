@@ -68,6 +68,14 @@ from shared.processing_logs import PROCESSING_FAILED_MESSAGE, THROTTLED_MESSAGE
 from shared.radar_brands import brand_key
 from shared.radar_routing import BrandLabels
 from shared.raw_fallback import archive_inline_raw
+from shared.silver_provenance import (
+    REASON_CSV_CORRECTION,
+    REASON_SOURCE_UPDATE,
+    SYSTEM_ACTOR,
+    fields_of_update,
+    keep_silver_version,
+    provenance,
+)
 from shared.source_profiles import (
     PII_ALLOW,
     PII_SUMMARY_ONLY,
@@ -524,6 +532,7 @@ def refresh_stored_item(stored: dict, raw_record: dict) -> str:
         kwargs = _reenrichment_update(stored, raw_record, refreshed_at)
     else:
         kwargs = attributes_update(stored, raw_record, refreshed_at)
+    _keep_previous(stored, kwargs, REASON_SOURCE_UPDATE)
     try:
         feedback_table.update_item(**kwargs)
     except ClientError as e:
@@ -576,9 +585,10 @@ def refresh_csv_item(stored: dict, raw_record: dict) -> str:
     # A failed re-enrichment applies the row's own fields only and keeps the stored digest,
     # so the row still previews as changed and a later confirmed upload retries the text.
     enrichment_failed = wants_reenrichment and reenriched is None
+    kwargs = csv_update(stored, raw_record, pii_policy, now_iso(), reenriched, moves_category, enrichment_failed)
+    _keep_previous(stored, kwargs, REASON_CSV_CORRECTION)
     try:
-        feedback_table.update_item(**csv_update(
-            stored, raw_record, pii_policy, now_iso(), reenriched, moves_category, enrichment_failed))
+        feedback_table.update_item(**kwargs)
     except ClientError as e:
         if is_conditional_check_failure(e):
             raise ConcurrentSourceUpdateError(f"Feedback {stored.get('feedback_id')} changed during a CSV update") from e
@@ -586,6 +596,11 @@ def refresh_csv_item(stored: dict, raw_record: dict) -> str:
     logger.info(f"Updated stored feedback {stored.get('feedback_id')} from a corrected CSV row")
     count_metric(_csv_update_metric(wants_reenrichment, enrichment_failed))
     return decision
+
+
+def _keep_previous(stored: dict, update_kwargs: dict, reason: str) -> None:
+    """Keep ``stored`` as it is before an in-place update (TENETS.md D1; never fails the update)."""
+    keep_silver_version(stored, actor=SYSTEM_ACTOR, reason=reason, changed_fields=fields_of_update(update_kwargs))
 
 
 def _csv_update_metric(wants_reenrichment: bool, enrichment_failed: bool) -> str:
@@ -734,7 +749,10 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime) -> di
         # category, sentiment, urgency, persona, language/translation
         **enriched,
 
-        'llm_metadata': llm_result.get('metadata', {}),
+        # How this item was made (TENETS.md D2): pipeline version, `llm` or `defaults` (the model
+        # call failed and the fallback values are stored), the model that answered, the prompt version.
+        **provenance('defaults' if enrichment.llm_failed else 'llm',
+                     llm_metadata=llm_result.get('metadata', {}), at=now_iso),
         # No `ttl`: customer feedback is never deleted (the table's TTL is disabled).
 
         # Producer fields (None-stripped below when the source sent none).

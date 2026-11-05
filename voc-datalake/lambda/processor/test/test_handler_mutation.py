@@ -45,6 +45,7 @@ from processor import handler
 from processor.test.sqs_fixtures import sqs_record
 from shared.converse import BedrockThrottlingError
 from shared.feedback_types import feedback_type_dimension
+from shared.silver_provenance import PIPELINE_VERSION
 
 FIXED_NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 FIXED_ISO = '2026-01-02T03:04:05+00:00'
@@ -665,6 +666,7 @@ class TestProcessFeedbackItem:
             'persona_type': 'existing_customer',
             'persona_attributes': PERSONA_ATTRIBUTES,
             'llm_metadata': {'model_name': 'haiku', 'prompt_version': 'v9', 'latency_ms': 12},
+            'pipeline_version': PIPELINE_VERSION, 'enrichment_mode': 'llm', 'enriched_at': FIXED_ISO,
             # Nine words naming a concrete term (shipping): one signal (shared/usefulness.py).
             'usefulness': 'medium',
         }
@@ -706,6 +708,8 @@ class TestProcessFeedbackItem:
             'urgency': 'low',
             'impact_area': 'other',
             'llm_metadata': {'error': 'boom'},
+            # The model call failed: the fallback values are stored, and the item says so.
+            'pipeline_version': PIPELINE_VERSION, 'enrichment_mode': 'defaults', 'enriched_at': FIXED_ISO,
             'usefulness': 'low',
         }
 

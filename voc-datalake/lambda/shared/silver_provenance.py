@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -53,6 +54,7 @@ __all__ = [
     'EnrichmentMode',
     'change_stamp',
     'contract_llm_metadata',
+    'fields_of_update',
     'json_safe',
     'keep_silver_version',
     'provenance',
@@ -82,6 +84,10 @@ _MAX_REASON_CHARS: Final = 64
 _SHA_CHARS: Final = 8
 _ALREADY_KEPT: Final = 'PreconditionFailed'
 FAILURE_METRIC: Final = 'SilverVersionFailures'
+#: The change stamp ``change_stamp`` writes: not a change of the item's content.
+_STAMP_FIELDS: Final = frozenset({'updated_by', 'updated_at', 'change_reason'})
+#: An attribute-name placeholder in an UpdateExpression.
+_ALIAS_RE: Final = re.compile(r'#\w+')
 
 
 def _now() -> datetime:
@@ -149,6 +155,16 @@ def silver_item_prefix(item: Mapping[str, Any]) -> str | None:
     if not isinstance(feedback_id, str) or not feedback_id:
         return None
     return f'{SILVER_PREFIX}{archive_key_stem(_source_of(item))}/{archive_key_stem(feedback_id)}/'
+
+
+def fields_of_update(update_kwargs: Mapping[str, Any]) -> list[str]:
+    """The item fields an ``update_item`` call SETs or REMOVEs (its change stamp left out), sorted."""
+    expression = update_kwargs.get('UpdateExpression')
+    names = update_kwargs.get('ExpressionAttributeNames')
+    if not isinstance(expression, str) or not isinstance(names, Mapping):
+        return []
+    fields = {str(names.get(alias, alias)) for alias in _ALIAS_RE.findall(expression)}
+    return sorted(fields - _STAMP_FIELDS)
 
 
 def _version_body(
