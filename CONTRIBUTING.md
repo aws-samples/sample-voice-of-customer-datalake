@@ -124,9 +124,23 @@ reviews on every pull request, the tenets first and then the code, and posts the
 fails no check.
 
 - **Same prompts as `validate.sh`.** They are read from `main`, so a pull request cannot change the review it gets.
-  The model is Claude Opus 5.5 on Amazon Bedrock, called directly with no tools. It sees TENETS.md, the pull
-  request's title, description and comments, the commit messages and the diff (cut at 150,000 characters, which the
-  comment says), and nothing else, so it may report what it cannot check as a `CONCERN` or `SHOULD-FIX`.
+  The model is Claude Opus 5.5 on Amazon Bedrock, called directly with no tools. It sees:
+  - TENETS.md and [REVIEW.md](REVIEW.md), the guide to what failure looks like in each area of the repository;
+  - the pull request's title, description and comments, and the commit messages;
+  - the diff, cut at 150,000 characters (the comment says so when it is cut);
+  - the current text of the changed files and of the files the change names by path, within a size limit.
+
+  What it cannot check, it reports as a `CONCERN` or a `SHOULD-FIX`.
+- **Depth follows the changed paths.** A documentation-only change gets a short review. A change to CI, the reviewers,
+  IAM and stacks, data deletion or the AI-writing guard gets a deep one with a larger budget.
+- **Rounds converge.** The first push gets a full review. Every later push gets a new round that:
+  - reviews only the commits since the last review, with the whole diff as context;
+  - gives every earlier finding a status by id: **resolved**, **answered by the author** (a reply with a reason the
+    reviewer accepts) or **still open**, listed in one line and never explained again;
+  - shows that recap above its new findings.
+
+  A blocking finding still open keeps the round's verdict at BLOCK. There is no limit on rounds. A rewritten history
+  (a rebase or amend) gets the whole diff again, still with the recap.
 - **Nothing of the pull request runs.** The diff is read from git objects. The answer is posted verbatim in a code
   block.
 - **A push that leaves the diff unchanged gets no new review.** The comment's hidden marker carries the diff's hash,

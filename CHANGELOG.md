@@ -17,6 +17,33 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.01.02] - 2026-11-05
+
+The pull request AI review converges: later rounds review only the new commits and give every earlier finding a status. It also reads the changed files, follows a new `REVIEW.md`, and scales its depth to what changed. This is development tooling only: the platform, its stacks and the workshop packaging do not change.
+
+### Added
+
+- **`REVIEW.md`**: what failure looks like in each area of the repository, how to report (file:line evidence, one finding per class of mistake, at most 3 nits, a count first) and what to skip. Both AI reviews read it, `npm run validate:commit` / `validate:tenets` locally and the `AI review` workflow on pull requests.
+
+### Changed
+
+- **Rounds converge.** From the second push on, the `AI review` comment is a new round ([CONTRIBUTING.md → AI review on pull requests](CONTRIBUTING.md#ai-review-on-pull-requests)):
+  - it reviews only the commits since the last review, with the whole diff as context;
+  - every earlier finding keeps a stable id (`T1`, `C1`, …) and is listed once as **Resolved**, **Answered by the author** or **Still open**, above the new findings;
+  - a blocking finding still open keeps the verdict at BLOCK, whatever the model's own verdict line says;
+  - there is no limit on rounds;
+  - a rewritten history gets the whole diff again, still with the recap.
+- **The reviewer sees the code around the change**: the current text of the changed files and of the files the change names by path, within a size limit, read from git objects only.
+- **Depth follows the changed paths**:
+  - documentation only gets a short review;
+  - CI, the reviewers, IAM and stacks, data deletion and the AI-writing guard get a deep one, with a larger output budget and context;
+  - everything else gets the standard review.
+
+### Upgrade notes
+
+- Nothing to do for a deployment of the platform. A redeploy changes only the release number the Lambdas record (`APP_VERSION`, `6.1.2`), as every release does.
+- The AWS role of the review (`tools/ai-review-ci/`) does not change. The new review applies from the first pull request after this one merges, because the reviewer is read from `main`.
+
 ## [6.01.01] - 2026-11-05
 
 Dependency refresh: the newest minor and patch releases of the packages the platform supports.

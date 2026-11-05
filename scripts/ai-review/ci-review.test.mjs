@@ -10,6 +10,7 @@ import {
 } from './ci-lib.mjs'
 import { bedrockCall, DEFAULT_MODEL, main, parseArgs, pullRequestOf } from './ci-review.mjs'
 import { buildPrompt, parseVerdict } from './lib.mjs'
+import { advanceLedger, encodeLedger, passVerdict } from './ledger.mjs'
 import { collectChange } from './review.mjs'
 
 const ROOT = join(import.meta.dirname, '..', '..')
@@ -31,7 +32,7 @@ test('only the workflow bot\'s first-line marker counts, and the newest wins', (
     comment(BOT_LOGIN, `review text\n${marker('3333333', 'eeeeeeeeeeeeeeee')}`),
     comment(BOT_LOGIN, `${marker('4444444', 'fedcba9876543210')}\nnew`),
   ])
-  assert.deepEqual(latestReview(comments), { sha: '4444444', diffhash: 'fedcba9876543210' })
+  assert.deepEqual(latestReview(comments), { sha: '4444444', diffhash: 'fedcba9876543210', ledger: null, url: '' })
   assert.equal(latestReview(comments.slice(1, 3)), null)
 })
 
@@ -107,45 +108,114 @@ test('an empty first answer is an error: there is nothing to post', async () => 
 
 const PASS = (kind) => `Looks fine.\nREVIEW-VERDICT: ${kind} PASS\n`
 const VIOLATION = 'VIOLATION -- lib/x.ts:2 -- tenet 7: a NAT gateway on by default\n> new NatGateway()\nTrigger: a default deploy\nOutcome: a monthly bill\nFix: a flag\nREVIEW-VERDICT: tenets BLOCK\n'
+const answer = (kind, output, extra = {}) => ({ kind, output, truncated: false, verdict: parseVerdict(output, kind), ...extra })
 
-test('the comment starts with a marker latestReview reads back, and fences answers so they cannot break out', () => {
-  const output = 'x ```` y\nREVIEW-VERDICT: commit PASS'
+/** Render a round the way main() does: advance the ledger, recompute the verdicts, then render. */
+function render(results, { previous = null, round = (previous?.round ?? 0) + 1, range = { mode: 'full', reason: 'first review' }, ...rest } = {}) {
+  const { ledger, recap } = advanceLedger(previous, results)
+  const verdicts = Object.fromEntries(results.map((r) => [r.kind, passVerdict(recap[r.kind], r.verdict?.verdict)]))
   const body = renderComment({
-    headSha: SHA, hash: '0123456789abcdef', modelId: DEFAULT_MODEL, diffTruncated: true, omitted: ['.env'],
-    results: [
-      { kind: 'tenets', output: VIOLATION, truncated: true, verdict: parseVerdict(VIOLATION, 'tenets') },
-      { kind: 'commit', output, truncated: false, verdict: parseVerdict(output, 'commit') },
-    ],
+    headSha: SHA, hash: '0123456789abcdef', ledgerLine: encodeLedger(ledger), modelId: DEFAULT_MODEL, results, recap, verdicts, round, range,
+    tier: { tier: 'standard', sensitive: [] }, ...rest,
   })
-  assert.deepEqual(latestReview(readComments([comment(BOT_LOGIN, body)])), { sha: SHA, diffhash: '0123456789abcdef' })
-  assert.match(body, /\| Tenets \(TENETS\.md\) \| ❌ BLOCK: 1 VIOLATION \|/)
-  assert.match(body, /\| Code review \| ✅ PASS \|/)
+  return { body, ledger, recap, verdicts }
+}
+
+test('the comment starts with the marker and the ledger latestReview reads back, and fences answers so they cannot break out', () => {
+  const output = 'x ```` y\nREVIEW-VERDICT: commit PASS'
+  const { body } = render([answer('tenets', VIOLATION, { truncated: true }), answer('commit', output)], { diffTruncated: true, omitted: ['.env'] })
+  const read = latestReview(readComments([comment(BOT_LOGIN, body, { html_url: 'https://github.com/o/r/pull/1#issuecomment-1' })]))
+  assert.equal(read.sha, SHA)
+  assert.equal(read.diffhash, '0123456789abcdef')
+  assert.equal(read.url, 'https://github.com/o/r/pull/1#issuecomment-1')
+  assert.deepEqual(read.ledger.findings.map((f) => [f.id, f.kind, f.blocking]), [['T1', 'VIOLATION', true]])
+  assert.match(body, /^### 🤖 AI review, round 1: the tenets, then the code$/m)
+  assert.match(body, /\| Tenets \(TENETS\.md\) \| ❌ BLOCK \| 0 \| 0 \| 0 \| 1 \|/)
+  assert.match(body, /\| Code review \| ✅ PASS \| 0 \| 0 \| 0 \| 0 \|/)
   assert.match(body, /`````text\nx ```` y\nREVIEW-VERDICT: commit PASS\n`````/)
   assert.match(body, /the answer reached the output limit/i)
   assert.match(body, /this review is partial/)
   assert.match(body, /named like a secret, review them yourself\): `\.env`/)
+  assert.match(body, /\*\*Depth:\*\* standard\. \*\*Reviewed:\*\* the whole diff, at `aaaaaaaaaaaa`\./)
+  assert.doesNotMatch(body, /Still open \(/, 'round 1 has no recap')
   assert.ok(body.indexOf('#### Tenets') < body.indexOf('#### Code review'), 'the tenets come first')
 })
 
 test('a verdict the table does not know is shown as it is, never as undefined', () => {
-  const body = renderComment({ headSha: SHA, hash: '0123456789abcdef', modelId: 'm',
-    results: [{ kind: 'commit', output: 'x', truncated: false, verdict: { verdict: 'ODD', blocking: [], others: [] } }] })
+  const results = [{ kind: 'commit', output: 'x', truncated: false, verdict: { verdict: 'ODD', blocking: [], others: [] } }]
+  const { recap } = advanceLedger(null, results)
+  const body = renderComment({
+    headSha: SHA, hash: '0123456789abcdef', ledgerLine: '', modelId: 'm', results, recap, verdicts: { commit: 'ODD' }, round: 1,
+    range: { mode: 'full', reason: 'first review' }, tier: { tier: 'quick', sensitive: [] },
+  })
   assert.match(body, /\| Code review \| ODD \|/)
   assert.doesNotMatch(body, /undefined/)
 })
 
-test('a secret-shaped path named by the pull request cannot break out of its code span', () => {
-  const body = renderComment({ headSha: SHA, hash: '0123456789abcdef', modelId: 'm', diffTruncated: false, results: [],
-    omitted: ['a`.env` [x](https://evil.example) @team\n> injected'] })
-  assert.match(body, /review them yourself\): `a\.env \[x\]\(https:\/\/evil\.example\) @team> injected`$/m)
+test('the worst case still fits in one GitHub comment: 40 long open findings, long recaps and long answers', () => {
+  const long = (n) => 'x'.repeat(n)
+  const many = (prefix) => Array.from({ length: 60 }, (_, i) => `${prefix} -- ${long(150)}/${i}.ts:1 -- ${long(300)}\nTrigger: t\nOutcome: o`).join('\n')
+  const first = advanceLedger(null, [answer('tenets', `${many('CONCERN')}\nREVIEW-VERDICT: tenets WARN`), answer('commit', `${many('MUST-FIX')}\nREVIEW-VERDICT: commit BLOCK`)]).ledger
+  const statuses = (prefix) => first.findings.filter((f) => f.id[0] === prefix).map((f) => `STATUS -- ${f.id} -- OPEN -- ${long(300)}`).join('\n')
+  const { body } = render([
+    answer('tenets', `${statuses('T')}\n${long(80_000)}\nREVIEW-VERDICT: tenets BLOCK`),
+    answer('commit', `${statuses('C')}\n${long(80_000)}\nREVIEW-VERDICT: commit BLOCK`),
+  ], { previous: first, range: { mode: 'incremental', from: 'b'.repeat(40) } })
+  assert.ok(body.length < 65_536, `${body.length} characters`)
+  assert.equal(latestReview(readComments([comment(BOT_LOGIN, body)])).ledger.findings.length, 40, 'the ledger line survives intact')
 })
 
-test('a review that was not run says so in the table and its section', () => {
-  // Also: `diffTruncated` and `omitted` may be left out.
-  const body = renderComment({ headSha: SHA, hash: '0123456789abcdef', modelId: 'm', results: [{ kind: 'tenets', error: true }] })
-  assert.match(body, /\| Tenets \(TENETS\.md\) \| ⛔ not run/)
-  assert.match(body, /Not run: the Bedrock call failed/)
+test('a secret-shaped path or a skipped file named by the pull request cannot break out of its code span', () => {
+  const { body } = render([], {
+    omitted: ['a`.env` [x](https://evil.example) @team\n> injected'],
+    context: { included: [], skipped: ['b`.ts` @team'] },
+  })
+  assert.match(body, /review them yourself\): `a\.env \[x\]\(https:\/\/evil\.example\) @team> injected`$/m)
+  assert.match(body, /left out for size: `b\.ts @team`$/m)
+  const many = render([], { omitted: Array.from({ length: 30 }, (_, i) => `${'d/'.repeat(150)}${i}.env`) }).body
+  assert.match(many, / and 10 more$/m)
+  assert.ok(many.length < 10_000, 'the note lists are bounded')
+})
+
+test('a review that was not run says so in the table and its section, and its open findings carry over', () => {
+  const first = render([answer('tenets', VIOLATION)]).ledger
+  const { body, ledger, verdicts } = render([{ kind: 'tenets', error: true }], { previous: first })
+  assert.match(body, /\| Tenets \(TENETS\.md\) \| ⛔ not run[^|]*; ❌ BLOCK carried: an open blocking finding \| – \| 1 \|/)
+  assert.match(body, /Not run: the Bedrock call failed[^\n]*\n\n```text\nStill open \(1\)\n {2}T1 /, 'the carried finding is shown')
   assert.doesNotMatch(body, /partial|named like a secret/)
+  assert.deepEqual(ledger.findings.map((f) => f.id), ['T1'])
+  assert.equal(verdicts.tenets, 'BLOCK', 'an outage does not clear the open VIOLATION')
+})
+
+test('round 2 recaps what was resolved, answered, still open and new, and links the earlier round', () => {
+  const MUST = (title, line) => `MUST-FIX -- a.mjs:${line} -- ${title}\n> x\nTrigger: t\nOutcome: o\nFix: f`
+  const first = render([answer('commit', `${MUST('cap never applied', 1)}\n${MUST('error swallowed', 2)}\nSHOULD-FIX -- b.md:1 -- stale number\nWhy: w\nREVIEW-VERDICT: commit BLOCK`)]).ledger
+  assert.deepEqual(first.findings.map((f) => f.id), ['C1', 'C2', 'C3'])
+  const output = [
+    'STATUS -- C1 -- RESOLVED -- fixed in 1a2b3c4',
+    'STATUS -- C3 -- ANSWERED -- the author showed the number is generated',
+    'STATUS -- T9 -- RESOLVED -- not a commit id, ignored',
+    'NIT -- c.ts:4 -- a misleading name',
+    'REVIEW-VERDICT: commit PASS',
+  ].join('\n')
+  const { body, ledger, recap, verdicts } = render([answer('commit', output, { output })], {
+    previous: first, range: { mode: 'incremental', from: 'b'.repeat(40) },
+    earlierRounds: [{ round: 1, url: 'https://github.com/o/r/pull/1#issuecomment-1' }],
+  })
+  assert.deepEqual(recap.commit.resolved.map((f) => f.id), ['C1'])
+  assert.deepEqual(recap.commit.answered.map((f) => f.id), ['C3'])
+  assert.deepEqual(recap.commit.stillOpen.map((f) => [f.id, f.note]), [['C2', 'no status given this round']], 'no STATUS = still open')
+  assert.deepEqual(recap.commit.added.map((f) => f.id), ['C4'], 'ids continue, never reused')
+  assert.equal(verdicts.commit, 'BLOCK', 'C2 is a MUST-FIX still open, whatever the model\'s own PASS line says')
+  assert.deepEqual(ledger.findings.map((f) => f.id), ['C2', 'C4'], 'only open findings travel on')
+  assert.match(body, /^### 🤖 AI review, round 2: /m)
+  assert.match(body, /\| Code review \| ❌ BLOCK \| 1 \| 1 \| 1 \| 1 \|/)
+  assert.match(body, /the commits since `bbbbbbbbbbbb` \(round 1\)/)
+  assert.match(body, /Earlier rounds: \[round 1\]\(https:\/\/github\.com\/o\/r\/pull\/1#issuecomment-1\)/)
+  assert.match(body, /Resolved \(1\)\n {2}C1 +MUST-FIX +a\.mjs:1 — cap never applied {2}\[fixed in 1a2b3c4\]/)
+  assert.match(body, /Answered by the author \(1\)\n {2}C3 /)
+  assert.match(body, /Still open \(1\)\n {2}C2 +MUST-FIX +a\.mjs:2 — error swallowed {2}\(round 1; no status given this round\)/)
+  assert.match(body, /New \(1\)\n {2}C4 +NIT +c\.ts:4 — a misleading name/)
 })
 
 test('outputs are written with a delimiter the value cannot contain', () => {
@@ -220,6 +290,23 @@ const fakeBedrock = (answers) => {
 }
 const outputsOf = (file) => existsSync(file) ? readFileSync(file, 'utf8') : ''
 
+/**
+ * The author pushes to the scratch pull request: `files` written on refs/pr/head and committed (`amend` rewrites the
+ * last commit instead), the event and the conversation updated. Returns the new head SHA.
+ */
+function push(box, { files, message, amend = false, body = '', comments }) {
+  const run = (...args) => spawnSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: box.repo, encoding: 'utf8' })
+  run('checkout', '-q', 'refs/pr/head')
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(box.repo, name), content)
+  run('add', ...Object.keys(files))
+  run('commit', '-q', ...(amend ? ['--amend'] : []), '-m', message)
+  run('update-ref', 'refs/pr/head', 'HEAD')
+  const headSha = run('rev-parse', 'HEAD').stdout.trim()
+  writeFileSync(join(box.dir, 'event.json'), JSON.stringify({ pull_request: { number: 9, head: { sha: headSha }, title: 'NAT', body } }))
+  writeFileSync(join(box.dir, 'comments.json'), JSON.stringify([comments]))
+  return headSha
+}
+
 test('collectChange with a head reads that commit range only, never the working tree', () => {
   const box = scratch()
   try {
@@ -272,6 +359,88 @@ test('a push that leaves the diff unchanged is not reviewed again, and costs no 
     assert.equal(await main(box.args, { GITHUB_OUTPUT: out }, { call: fake.call }), 0)
     assert.equal(fake.requests.length, 0)
     assert.match(outputsOf(out), /^comment<<ghadelimiter_[^\n]+\nfalse\n/)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
+test('round 2 reviews only the new commits, carries the open findings by id, and recaps them', async () => {
+  const box = scratch()
+  try {
+    writeFileSync(join(box.dir, 'trusted', 'REVIEW.md'), '# Review guide\nDocs fail when they lie.\n')
+    const first = fakeBedrock([reply(VIOLATION), reply(PASS('commit'))])
+    assert.equal(await main(box.args, {}, { call: first.call }), 0)
+    const round1 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
+    assert.match(first.requests[0].messages[0].content[0].text, /<review-guide file="REVIEW\.md">\n# Review guide/)
+    assert.match(first.requests[0].messages[0].content[0].text, /<repository-files ref="pull request head">\n===== stack\.ts =====\nexport const a = 1\nnew NatGateway\(\)/)
+    assert.doesNotMatch(first.requests[0].system[0].text, /follow-up review/)
+
+    // The author pushes one more commit; the bot's round-1 comment is now on the pull request.
+    push(box, {
+      files: { 'flag.ts': 'export const natGateway = process.env.NAT === "1"\n' }, message: 'put the NAT gateway behind a flag', body: 'Adds a NAT gateway',
+      comments: [comment('ana', 'please check tenet 7'), comment(BOT_LOGIN, round1, { html_url: 'https://github.com/o/r/pull/9#issuecomment-1' })],
+    })
+
+    const second = fakeBedrock([
+      reply('STATUS -- T1 -- RESOLVED -- behind the NAT flag now\nREVIEW-VERDICT: tenets PASS\n'),
+      reply('NIT -- flag.ts:1 -- name the flag NAT_GATEWAY\nREVIEW-VERDICT: commit WARN\n'),
+    ])
+    assert.equal(await main(box.args, {}, { call: second.call }), 0)
+    const [tenets, commit] = second.requests
+    assert.match(tenets.system[0].text, /## This run: follow-up review, round 2/)
+    const prompt = tenets.messages[0].content[0].text
+    assert.match(prompt, /<previous-findings round="1">\nT1 \[VIOLATION tenet 7\] lib\/x\.ts:2 — a NAT gateway on by default \(raised in round 1\)\n<\/previous-findings>/)
+    assert.match(prompt, /<changes-since-last-review from="[0-9a-f]{12}">\n[^<]*\+export const natGateway/)
+    assert.doesNotMatch(prompt.slice(prompt.indexOf('<changes-since-last-review')), /\+new NatGateway/, 'the old commit is context, not re-reviewed')
+    assert.match(commit.messages[0].content[0].text, /<commits>\n[0-9a-f]+ put the NAT gateway behind a flag\n<\/commits>/, 'only the new commit messages')
+    const body = readFileSync(join(box.dir, 'comment.md'), 'utf8')
+    assert.match(body, /^### 🤖 AI review, round 2: /m)
+    assert.match(body, /\| Tenets \(TENETS\.md\) \| ✅ PASS \| 1 \| 0 \| 0 \| 0 \|/)
+    assert.match(body, /\| Code review \| ⚠️ WARN \| 0 \| 0 \| 0 \| 1 \|/)
+    assert.match(body, /Resolved \(1\)\n {2}T1 /)
+    assert.doesNotMatch(body, /STATUS -- T1/, 'STATUS lines are shown in the recap, not in the answer')
+    assert.match(body, /Earlier rounds: \[round 1\]\(https:\/\/github\.com\/o\/r\/pull\/9#issuecomment-1\)/)
+    assert.deepEqual(latestReview(readComments([comment(BOT_LOGIN, body)])).ledger.findings.map((f) => f.id), ['C1'])
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
+/** Round 1 on the scratch pull request (one open VIOLATION, T1): the comment it posts. */
+async function roundOne(box) {
+  await main(box.args, {}, { call: fakeBedrock([reply(VIOLATION), reply(PASS('commit'))]).call })
+  return readFileSync(join(box.dir, 'comment.md'), 'utf8')
+}
+
+test('a rewritten history is reviewed whole again, still answering the earlier findings', async () => {
+  const box = scratch()
+  try {
+    const round1 = await roundOne(box)
+    // An amend: the reviewed commit is no longer an ancestor of the head.
+    push(box, { files: { 'stack.ts': 'export const a = 1\nnew NatGateway({ optIn: true })\n' }, message: '5.75.01: add an opt-in NAT gateway', amend: true, comments: [comment(BOT_LOGIN, round1)] })
+    const fake = fakeBedrock([reply('STATUS -- T1 -- OPEN -- still on by default\nREVIEW-VERDICT: tenets BLOCK\n'), reply(PASS('commit'))])
+    await main(box.args, {}, { call: fake.call })
+    assert.match(fake.requests[0].system[0].text, /No <changes-since-last-review> \(the history was rewritten since [0-9a-f]{12}\)/)
+    assert.doesNotMatch(fake.requests[0].messages[0].content[0].text, /<changes-since-last-review/)
+    const body = readFileSync(join(box.dir, 'comment.md'), 'utf8')
+    assert.match(body, /\*\*Reviewed:\*\* the whole diff \(the history was rewritten since [0-9a-f]{12}\)/)
+    assert.match(body, /\| Tenets \(TENETS\.md\) \| ❌ BLOCK \| 0 \| 1 \| 0 \| 0 \|/)
+  } finally {
+    rmSync(box.dir, { recursive: true, force: true })
+  }
+})
+
+test('a push that changes only files the review skips (a lockfile) makes no round and no model call', async () => {
+  const box = scratch()
+  try {
+    const round1 = await roundOne(box)
+    push(box, { files: { 'package-lock.json': '{"lockfileVersion": 3}\n' }, message: 'lockfile only', comments: [comment(BOT_LOGIN, round1)] })
+    const fake = fakeBedrock([reply('STATUS -- T1 -- OPEN -- unchanged\nREVIEW-VERDICT: tenets BLOCK\n'), reply(PASS('commit'))])
+    const out = join(box.dir, 'github-output')
+    await main(box.args, { GITHUB_OUTPUT: out }, { call: fake.call })
+    // The PR diff itself did not change (the lockfile is outside the review pathspec): no round at all.
+    assert.equal(fake.requests.length, 0)
+    assert.match(outputsOf(out), /\nfalse\n/)
   } finally {
     rmSync(box.dir, { recursive: true, force: true })
   }

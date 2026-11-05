@@ -25,19 +25,20 @@
  * A Bedrock failure is a warning in the log, never a failed check.
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { CI_PREAMBLE, converseLong, diffHash, latestReview, prContext, readComments, renderComment, REVIEW_ORDER, writeOutput } from './ci-lib.mjs'
+import { CI_PREAMBLE, converseLong, diffHash, followUpPreamble, latestReview, prContext, readComments, renderComment, REVIEW_ORDER, reviewRounds, writeOutput } from './ci-lib.mjs'
+import { changedPaths, contextFiles, referencedPaths, reviewRange, riskTier, tierNote, TIERS } from './context.mjs'
+import { advanceLedger, emptyLedger, encodeLedger, passVerdict, previousFindingsBlock, stripStatusLines } from './ledger.mjs'
 import { buildPrompt, capDiff, KINDS, parseVerdict } from './lib.mjs'
 import { collectChange, git } from './review.mjs'
 
 export const DEFAULT_MODEL = 'global.anthropic.claude-opus-5-5'
-// Reasoning shares the output budget with the answer and grows with the diff: 8K cut real reviews of 77 KB diffs
-// short. 24K keeps one call well inside the read timeout; a longer answer is continued, then disclosed as cut.
-const MAX_TOKENS = 24_000
-const MAX_CONTINUATIONS = 2
+// The output budget per pass is the depth's (TIERS in context.mjs): reasoning shares it with the answer and grows
+// with the diff, and 8K cut real reviews of 77 KB diffs short, so standard and deep reviews get 24K and 32K, and a
+// longer answer is continued, then disclosed as cut.
 // The time budget, inside the job's `timeout-minutes: 30`. Every AWS CLI call (retries included) is killed when the
 // review's REVIEW_BUDGET_MS is spent, and no continuation starts after CONTINUE_DEADLINE_MS, so the comment is always
 // rendered and the `post` job always runs. Measured: a 22 KB diff answers in 36 s.
@@ -132,17 +133,28 @@ export function bedrockCall(request, { region, env = process.env, timeoutMs = RE
   })
 }
 
-async function runReview(kind, { call, modelId, promptsRoot, prompt }) {
-  const systemPrompt = CI_PREAMBLE + readFileSync(join(promptsRoot, `.kiro/agents/prompts/${KINDS[kind].agent}.md`), 'utf8')
+async function runReview(kind, { call, modelId, systemPrefix, promptsRoot, prompt, tier }) {
+  const systemPrompt = systemPrefix + readFileSync(join(promptsRoot, `.kiro/agents/prompts/${KINDS[kind].agent}.md`), 'utf8')
   try {
     const answer = await converseLong(call, {
-      modelId, systemPrompt, prompt, maxTokens: MAX_TOKENS, maxContinuations: MAX_CONTINUATIONS, deadlineMs: CONTINUE_DEADLINE_MS,
+      modelId, systemPrompt, prompt, maxTokens: tier.maxTokens, maxContinuations: tier.maxContinuations, deadlineMs: CONTINUE_DEADLINE_MS,
     })
-    return { kind, output: answer.text, truncated: answer.truncated, verdict: parseVerdict(answer.text, kind) }
+    return { kind, output: stripStatusLines(answer.text), raw: answer.text, truncated: answer.truncated, verdict: parseVerdict(answer.text, kind) }
   } catch (error) {
     console.log(`::warning title=AI review::the ${kind} review was not run: ${error instanceof Error ? error.message : String(error)}`)
     return { kind, error: true }
   }
+}
+
+const readText = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : '')
+
+/** The prompt blocks only CI adds: the repository files and, from round 2, the open findings and the new commits. */
+function extraBlocks(kind, { context, ledger, incremental }) {
+  return [
+    ...(context.text ? [{ tag: 'repository-files', body: context.text, attrs: ' ref="pull request head"' }] : []),
+    ...(ledger ? [{ tag: 'previous-findings', body: previousFindingsBlock(ledger, kind) || '(none open)', attrs: ` round="${ledger.round}"` }] : []),
+    ...(incremental ? [{ tag: 'changes-since-last-review', body: incremental.text, attrs: ` from="${incremental.from.slice(0, 12)}"` }] : []),
+  ]
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env, { call } = {}) {
@@ -153,15 +165,32 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
 
   const pr = pullRequestOf(readJson(options.event))
   if (pr === null) return skip('skipped: the event is not a pull request with a head SHA')
-  const base = git(options.repo, ['merge-base', 'refs/pr/base', 'refs/pr/head'])?.trim()
+  const head = 'refs/pr/head'
+  const base = git(options.repo, ['merge-base', 'refs/pr/base', head])?.trim()
   if (!base) return skip('skipped: refs/pr/base and refs/pr/head have no merge base (were both fetched?)')
-  const change = collectChange(options.repo, base, 'refs/pr/head')
+  const change = collectChange(options.repo, base, head)
   if (!change.diff) return skip(`nothing to review since ${base.slice(0, 8)}`)
 
   const hash = diffHash(change.diff)
   const issueComments = readComments(readJson(options.issueComments))
   const previous = latestReview(issueComments)
   if (previous?.diffhash === hash) return skip(`the diff is the one reviewed at ${previous.sha.slice(0, 12)}: no new review`)
+
+  // A comment from before ledgers existed still counts as a round, with nothing to carry over.
+  const ledger = previous ? (previous.ledger ?? { ...emptyLedger(), round: reviewRounds(issueComments).length }) : null
+  const range = reviewRange(git, options.repo, { previousSha: previous?.sha ?? null, base: 'refs/pr/base', head })
+  const sinceLast = range.mode === 'incremental' ? collectChange(options.repo, range.from, head) : null
+  const incremental = sinceLast?.diff ? { ...capDiff(sinceLast.diff), from: range.from } : null
+  const reviewed = incremental ? range : { mode: 'full', reason: range.reason ?? 'no new reviewable commits since the last review' }
+
+  const paths = changedPaths(git, options.repo, base, head)
+  const tier = riskTier(paths)
+  const budget = TIERS[tier.tier]
+  const focus = incremental ? changedPaths(git, options.repo, range.from, head) : paths
+  const tree = new Set((git(options.repo, ['ls-tree', '-r', '--name-only', head]) ?? '').split('\n').filter(Boolean))
+  const context = contextFiles(git, options.repo, head, {
+    changed: focus, referenced: referencedPaths(`${incremental?.text ?? change.diff}\n${pr.body}`, tree), maxChars: budget.contextChars,
+  })
 
   const modelId = env.AI_REVIEW_MODEL || DEFAULT_MODEL
   const region = env.AWS_REGION || 'us-east-1'
@@ -171,20 +200,32 @@ export async function main(argv = process.argv.slice(2), env = process.env, { ca
   const { text, truncated } = capDiff(change.diff)
   const pullRequest = prContext({ title: pr.title, body: pr.body, issueComments, reviewComments: readComments(readJson(options.reviewComments)) })
   const tenets = readFileSync(join(options.promptsRoot, 'TENETS.md'), 'utf8')
-  say(`reviewing ${change.diff.length} characters of diff since ${base.slice(0, 8)} with ${modelId}${truncated ? ' (cut)' : ''}...`)
+  const reviewGuide = readText(join(options.promptsRoot, 'REVIEW.md'))
+  const round = (ledger?.round ?? 0) + 1
+  const systemPrefix = CI_PREAMBLE + tierNote(tier) + (ledger ? followUpPreamble({ round, incremental: Boolean(incremental), reason: reviewed.reason }) : '')
+  say(`round ${round} (${incremental ? `commits since ${range.from.slice(0, 8)}` : 'whole diff'}), depth ${tier.tier}, ${context.included.length} repository files, ${modelId}${truncated ? ', diff cut' : ''}...`)
   const results = await Promise.all(REVIEW_ORDER.map((kind) => runReview(kind, {
-    call: caller, modelId, promptsRoot: options.promptsRoot,
-    prompt: buildPrompt({ kind, tenets, commits: change.commits, base: base.slice(0, 12), files: change.files, diff: text, truncated, omitted: change.omitted, pullRequest, canRead: false }),
+    call: caller, modelId, systemPrefix, promptsRoot: options.promptsRoot, tier: budget,
+    prompt: buildPrompt({
+      kind, tenets, reviewGuide, commits: (incremental ? sinceLast : change).commits, base: base.slice(0, 12), files: change.files, diff: text,
+      truncated, omitted: change.omitted, pullRequest, canRead: false, extra: extraBlocks(kind, { context, ledger, incremental }),
+    }),
   })))
   if (results.every((result) => result.error)) return skip('no review was run (see the warnings above): nothing to post')
 
-  for (const result of results) say(`${result.kind}: ${result.error ? 'not run' : result.verdict.verdict}`)
-  const body = renderComment({ headSha: pr.headSha, hash, modelId, results, diffTruncated: truncated, omitted: change.omitted })
+  // The STATUS lines are read from the raw answer; the comment shows the answer without them (they are in the recap).
+  const { ledger: next, recap } = advanceLedger(ledger, results.map((r) => (r.error ? r : { ...r, output: r.raw })))
+  const verdicts = Object.fromEntries(results.map((r) => [r.kind, passVerdict(recap[r.kind], r.verdict?.verdict)]))
+  for (const result of results) say(`${result.kind}: ${result.error ? 'not run' : verdicts[result.kind]}`)
+  const body = renderComment({
+    headSha: pr.headSha, hash, ledgerLine: encodeLedger(next), modelId, results, recap, verdicts, round, range: reviewed, tier, context,
+    earlierRounds: reviewRounds(issueComments), diffTruncated: truncated, omitted: change.omitted, dropped: next.dropped,
+  })
   if (options.out) writeFileSync(options.out, body)
   writeOutput(env.GITHUB_OUTPUT, 'comment', 'true')
   writeOutput(env.GITHUB_OUTPUT, 'body', body)
-  const blocked = results.some((result) => result.verdict?.verdict === 'BLOCK')
-  if (blocked && env.AI_REVIEW_ENFORCED === 'true') { say('BLOCK: a complete VIOLATION or MUST-FIX (AI_REVIEW_ENFORCED=true)'); return 1 }
+  const blocked = Object.values(verdicts).includes('BLOCK')
+  if (blocked && env.AI_REVIEW_ENFORCED === 'true') { say('BLOCK: a complete VIOLATION or MUST-FIX is open (AI_REVIEW_ENFORCED=true)'); return 1 }
   return 0
 }
 
