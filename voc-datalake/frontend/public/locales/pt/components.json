@@ -174,7 +174,8 @@
         "running": "Em execução",
         "completed": "Concluído",
         "failed": "Falhou",
-        "cancelled": "Cancelado"
+        "cancelled": "Cancelado",
+        "partial": "Parcial"
       },
       "counters": {
         "scanned": "Verificadas",
@@ -188,7 +189,7 @@
       "lastNDays_other": "Últimos {{count, number}} dias",
       "cancel": "Cancelar tarefa",
       "alreadyRunning": "Já há uma tarefa de reprocessamento em execução. Aguarde a conclusão ou cancele-a primeiro.",
-      "stoppedAtCeiling": "Parou no limite de {{max}} avaliações por tarefa para limitar o custo do modelo — as restantes não foram reprocessadas. Reduza o período para abrangê-las.",
+      "stoppedAtCeiling": "Parou no limite de {{max}} avaliações por tarefa para limitar o custo do modelo. Retome para continuar de onde parou.",
       "startError": "Não foi possível iniciar a tarefa de reprocessamento.",
       "daysLabel": "Período (dias)",
       "includeManual": "Substituir também as correções manuais",
@@ -196,7 +197,32 @@
       "costNote": "Custo: uma chamada ao modelo por avaliação no período. Uma execução de todo o período em um data lake grande pode levar horas.",
       "start": "Iniciar reprocessamento",
       "confirmTitle": "Reprocessar o feedback existente?",
-      "confirmMessage": "{{mode}} para {{window}}. Isso faz uma chamada ao modelo por avaliação nesse período. As avaliações são atualizadas no lugar; nada é excluído."
+      "confirmMessage": "{{mode}} para {{window}}. Isso faz uma chamada ao modelo por avaliação nesse período. As avaliações são atualizadas no lugar; nada é excluído.",
+      "openEnded": "aberto",
+      "dateRange": "{{from}} – {{to}}",
+      "byReviewDate": "{{range}} (data da avaliação)",
+      "byProcessedDate": "{{range}} (data de processamento)",
+      "sliceSources": "Fontes: {{list}}",
+      "sliceCategories": "Categorias: {{list}}",
+      "rawFallback_one": "{{count, number}} avaliação não tinha item bruto arquivado e foi reprocessada a partir do texto armazenado (fontes: {{sources}}).",
+      "rawFallback_other": "{{count, number}} avaliações não tinham item bruto arquivado e foram reprocessadas a partir do texto armazenado (fontes: {{sources}}).",
+      "derivedWith": "Derivado com o modelo {{model}}, categorias {{digest}}, versão de configuração {{version}}.",
+      "configChanged": "A configuração mudou enquanto a tarefa era executada.",
+      "resume": "Retomar",
+      "windowLabel": "Período",
+      "windowDays": "Últimos N dias",
+      "windowRange": "Intervalo de datas",
+      "basisProcessed": "Data de processamento",
+      "basisReview": "Data da avaliação",
+      "dateFrom": "De",
+      "dateTo": "Até",
+      "dateBasis": "Data lida",
+      "rangeHint": "Qualquer um dos extremos pode ficar em aberto. A data da avaliação é quando o cliente a escreveu; avaliações sem ela usam a data de processamento.",
+      "sourcesLabel": "Fontes",
+      "sourcesHint": "Nenhuma seleção = todas as fontes. Só estas fontes são lidas.",
+      "categoriesLabel": "Categorias",
+      "categoriesPlaceholder": "faturação, entrega",
+      "categoriesHint": "Nomes de categoria armazenados, separados por vírgulas (incluindo os que já não estão configurados). Vazio = todas as categorias."
     }
   },
   "dataSourceWizard": {

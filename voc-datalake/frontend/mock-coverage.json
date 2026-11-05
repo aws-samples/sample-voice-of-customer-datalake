@@ -2596,6 +2596,22 @@
           "mode": "processed",
           "days": 30
         }
+      },
+      {
+        "path": "/settings/categories/reprocess",
+        "body": {
+          "mode": "raw",
+          "include_manual": false,
+          "sources": [
+            "webscraper"
+          ],
+          "categories": [
+            "delivery"
+          ],
+          "date_from": "2026-02-01",
+          "date_to": "2026-02-28",
+          "date_basis": "review"
+        }
       }
     ]
   },
