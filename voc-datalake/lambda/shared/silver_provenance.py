@@ -71,6 +71,11 @@ REASON_DATA_EXPLORER_EDIT: Final = 'data_explorer_edit'
 REASON_CSV_CORRECTION: Final = 'csv_correction'
 REASON_SOURCE_UPDATE: Final = 'source_update'
 REASON_REPROCESS: Final = 'reprocess'
+#: Every reason a change may give: a kept version with another one is still kept, and logged.
+CHANGE_REASONS: Final = frozenset({
+    REASON_CATEGORY_EDIT, REASON_DIMENSIONS_EDIT, REASON_DATA_EXPLORER_EDIT, REASON_CSV_CORRECTION,
+    REASON_SOURCE_UPDATE, REASON_REPROCESS,
+})
 
 #: The actor of a change no person made (a source update, a CSV correction the queue applies).
 SYSTEM_ACTOR: Final = {'sub': 'system', 'kind': 'system'}
@@ -194,6 +199,8 @@ def keep_silver_version(
     A 412 (the same version already kept) is a success. Any failure is logged, counted
     (``SilverVersionFailures``) and returns None: it never fails the change.
     """
+    if reason not in CHANGE_REASONS:
+        logger.warning('Silver version kept with an undeclared reason', extra={'reason': reason[:_MAX_REASON_CHARS]})
     bucket = os.environ.get('RAW_DATA_BUCKET', '')
     prefix = silver_item_prefix(item)
     if not bucket or prefix is None:
