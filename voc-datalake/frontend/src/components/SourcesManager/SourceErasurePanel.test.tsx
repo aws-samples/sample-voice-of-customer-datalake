@@ -135,6 +135,14 @@ describe('SourceErasurePanel', () => {
     expect(within(region).getByText('2 Radar reviews deleted, 3 personas or documents marked')).toBeInTheDocument()
   })
 
+  it('counts the de-identified board rows, not reviews or raw files, while the boards phase runs', async () => {
+    const region = await startDeletion(BASIS, [
+      { ...running, phase: 'boards', legal_basis: BASIS, board_items_deidentified: 7 }])
+    expect(await within(region).findByText('De-identifying board requests and +1s. De-identified so far: 7.'))
+      .toBeInTheDocument()
+    expect(within(region).queryByText(/Reviews deleted: 40/)).not.toBeInTheDocument()
+  })
+
   it('shows why the server refused, such as a deletion already running', async () => {
     const user = userEvent.setup()
     route({ post: () => { throw new Error('An erasure of this source is already running') } })

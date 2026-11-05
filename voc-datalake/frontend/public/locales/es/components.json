@@ -705,7 +705,7 @@
     "progress": {
       "items": "Eliminando reseñas. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
       "radar": "Eliminando opiniones de Radar. Opiniones eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
-      "boards": "Anonimizando solicitudes de tablero y +1. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
+      "boards": "Anonimizando solicitudes de tablero y +1. Anonimizados hasta ahora: {{rows, number}}.",
       "raw": "Eliminando archivos sin procesar. Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
       "lineage": "Marcando las personas y los documentos que citaban opiniones eliminadas. Opiniones eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}.",
       "done": "Reseñas eliminadas: {{items, number}}. Archivos sin procesar eliminados: {{objects, number}}."

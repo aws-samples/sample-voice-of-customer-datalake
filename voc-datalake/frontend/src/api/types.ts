@@ -555,7 +555,7 @@ export interface ProjectDocument {
    * PRDs, PR/FAQs, merged documents and fallback research reports generated before 5.49.00.
    */
   input_feedback_ids?: string[]
-  /** Cited reviews later erased under a legal basis (api/erasedEvidence.ts): the count only, never content. */
+  /** Cited reviews or board requests later erased under a legal basis (api/erasedEvidence.ts): the count only, never content. */
   erased_evidence?: ErasedEvidence
   /**
    * The prototype this one revises, and the feedback that drove the revision.

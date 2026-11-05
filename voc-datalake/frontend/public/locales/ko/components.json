@@ -695,7 +695,7 @@
     "progress": {
       "items": "리뷰를 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
       "radar": "Radar 리뷰를 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
-      "boards": "보드 요청 및 +1을 비식별 처리하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원시 파일: {{objects, number}}.",
+      "boards": "보드 요청 및 +1을 비식별 처리하는 중입니다. 지금까지 비식별 처리: {{rows, number}}.",
       "raw": "원본 파일을 삭제하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
       "lineage": "삭제된 리뷰를 인용한 페르소나와 문서에 표시하는 중입니다. 삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}.",
       "done": "삭제된 리뷰: {{items, number}}. 삭제된 원본 파일: {{objects, number}}."

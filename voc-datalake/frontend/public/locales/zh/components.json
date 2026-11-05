@@ -695,7 +695,7 @@
     "progress": {
       "items": "正在删除评论。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
       "radar": "正在删除 Radar 评论。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
-      "boards": "正在对看板请求和 +1 去标识化。已删除的评论：{{items, number}}。已删除的原始文件：{{objects, number}}。",
+      "boards": "正在对看板请求和 +1 去标识化。目前已去标识化：{{rows, number}}。",
       "raw": "正在删除原始文件。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
       "lineage": "正在标记引用过已删除评论的角色和文档。已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。",
       "done": "已删除评论：{{items, number}}。已删除原始文件：{{objects, number}}。"
