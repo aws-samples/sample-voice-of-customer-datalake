@@ -35,7 +35,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final, Literal
 
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import ClientError
 
 from shared.archive_keys import archive_key_stem
 from shared.logging import logger, metrics
@@ -214,7 +214,7 @@ def keep_silver_version(
         if not _is_already_kept(exc):
             _count_failure(reason, exc)
             return None
-    except (BotoCoreError, ValueError, TypeError) as exc:
+    except Exception as exc:  # noqa: BLE001 - keeping a version never fails the change
         _count_failure(reason, exc)
         return None
     return f's3://{bucket}/{key}'

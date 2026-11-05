@@ -38,13 +38,30 @@ const PUBLIC_OVERRIDE_FIELDS = ['previous_category', 'previous_subcategory', 'by
 
 /** `category_override` as a client may see it (no `by_sub`), or undefined when malformed. */
 function publicCategoryOverride(value: unknown): Record<string, unknown> | undefined {
+  return publicFields(value, PUBLIC_OVERRIDE_FIELDS);
+}
+
+/**
+ * The only `updated_by` field a card may carry (the change stamp of an edited
+ * review, lambda/shared/silver_provenance.py): its `kind`, never the `sub`.
+ * Mirror of `PUBLIC_UPDATED_BY_FIELDS` in lambda/shared/category_override.py.
+ */
+const PUBLIC_UPDATED_BY_FIELDS = ['kind'] as const;
+
+function publicFields(value: unknown, fields: readonly string[]): Record<string, unknown> | undefined {
   if (!isRecord(value)) return undefined;
   const out: Record<string, unknown> = {};
-  for (const key of PUBLIC_OVERRIDE_FIELDS) {
+  for (const key of fields) {
     if (key in value) out[key] = value[key];
   }
   return out;
 }
+
+/** Keys whose stored value is projected before it reaches a card. */
+const PROJECTED_KEYS: Readonly<Record<string, (value: unknown) => Record<string, unknown> | undefined>> = {
+  category_override: publicCategoryOverride,
+  updated_by: (value) => publicFields(value, PUBLIC_UPDATED_BY_FIELDS),
+};
 
 /** Upper bound on source cards one tool call contributes. */
 const MAX_SOURCES_PER_CALL = 10;
@@ -61,9 +78,10 @@ export function toFeedbackSource(record: Record<string, unknown>): FeedbackSourc
   const card: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(withPlainReviewText(record))) {
     if (SOURCE_EXCLUDED_KEY_PATTERN.test(key) || value === null || value === undefined) continue;
-    if (key === 'category_override') {
-      const override = publicCategoryOverride(value);
-      if (override) card[key] = override;
+    const project = Object.hasOwn(PROJECTED_KEYS, key) ? PROJECTED_KEYS[key] : undefined;
+    if (project) {
+      const projected = project(value);
+      if (projected) card[key] = projected;
       continue;
     }
     card[key] = typeof value === 'string' && value.length > SOURCE_TEXT_MAX ? value.slice(0, SOURCE_TEXT_MAX) : value;

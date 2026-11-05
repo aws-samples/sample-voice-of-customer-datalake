@@ -4,7 +4,7 @@ import json
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
 from shared.api import create_api_resolver
-from shared.category_override import public_override, redact_category_overrides
+from shared.category_override import public_override, public_updated_by, redact_category_overrides
 
 STORED = {
     'previous_category': 'delivery', 'previous_subcategory': 'late',
@@ -41,3 +41,15 @@ def test_every_resolver_strips_by_sub_from_its_responses():
     response = app.resolve(event, LambdaContext())
     assert response['statusCode'] == 200
     assert json.loads(response['body'])['items'][0]['category_override'] == PUBLIC
+
+
+def test_updated_by_keeps_the_kind_only():
+    assert public_updated_by({'sub': 'sub-secret', 'kind': 'admin'}) == {'kind': 'admin'}
+    assert public_updated_by('sub-secret') is None
+
+
+def test_redacts_every_nested_updated_by():
+    body = {'items': [{'feedback_id': 'f1', 'updated_by': {'sub': 'sub-secret', 'kind': 'user'}}]}
+    redacted = redact_category_overrides(body)
+    assert redacted == {'items': [{'feedback_id': 'f1', 'updated_by': {'kind': 'user'}}]}
+    assert 'sub-secret' not in json.dumps(redacted)

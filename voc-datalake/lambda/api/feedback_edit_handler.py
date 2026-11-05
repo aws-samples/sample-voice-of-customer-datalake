@@ -11,6 +11,10 @@ item. It keeps the item's keys and ``gsi2sk`` and moves only ``gsi2pk``; the
 aggregator's MODIFY path rebuckets the per-category counters. The previous
 value and who changed it are recorded in ``category_override``.
 
+Both routes keep the review as it was before the edit (``silver/`` in the raw
+bucket, ``shared.silver_provenance``) and stamp ``updated_by {sub, kind}``,
+``updated_at``, ``change_reason`` and ``enrichment_mode 'manual'`` (TENETS.md D1, D4).
+
 Rules:
 - the caller must be able to see the item's CURRENT category and the NEW one
   (``shared.category_access``), else 404 — the same answer as a missing item;
@@ -31,15 +35,20 @@ from shared.category_access import CategoryScope
 from shared.category_gate import scope_for_caller
 from shared.category_override import public_override
 from shared.data_version import bump_data_version
+from shared.delete_audit import actor_from_event
 from shared.dimension_config import load_dimensions_config, validate_tags
 from shared.exceptions import ConfigurationError, NotFoundError, ServiceError, ValidationError
 from shared.feedback_category import (
     CATEGORY_SOURCE_MANUAL,
+    ManualEdit,
     apply_conditional_update,
+    assignment_clauses,
     categories_config,
     category_change,
     category_label,
     item_exists,
+    keep_before_edit,
+    manual_edit_fields,
     override_record,
     update_expression,
     validate_target,
@@ -49,7 +58,9 @@ from shared.indexes import FEEDBACK_BY_ID_INDEX
 from shared.logging import logger, tracer
 from shared.project_gate import caller_from_event
 from shared.request_body import json_body_value
+from shared.silver_provenance import REASON_CATEGORY_EDIT, REASON_DIMENSIONS_EDIT
 from shared.tables import get_aggregates_table, get_feedback_table
+from shared.timestamps import now_iso
 
 FEEDBACK_NOT_FOUND = 'Feedback not found'
 
@@ -88,15 +99,23 @@ def _require_visible(scope: CategoryScope, item: Mapping[str, Any], new_category
         raise NotFoundError(FEEDBACK_NOT_FOUND)
 
 
-def _update_kwargs(item: Mapping[str, Any], category: str, subcategory: str | None, override: dict) -> dict:
+def _edit(event: Mapping[str, Any], reason: str) -> ManualEdit:
+    """The caller as the actor of an edit (``agent`` / ``mcp`` / ``plan`` / ``admin`` / ``user``)."""
+    return ManualEdit(actor=actor_from_event(event), reason=reason)
+
+
+def _update_kwargs(
+    item: Mapping[str, Any], category: str, subcategory: str | None, override: dict, edit: ManualEdit,
+) -> dict:
     """The conditional ``update_item`` that moves ``item`` to ``category`` (``shared.feedback_category``)."""
     change = category_change(item, category, subcategory, override)
+    sets, names, values = assignment_clauses(manual_edit_fields(edit, override['at']), 'edit')
     return {
         'Key': {'pk': item['pk'], 'sk': item['sk']},
-        'UpdateExpression': update_expression(change.sets, change.removes),
+        'UpdateExpression': update_expression([*change.sets, *sets], change.removes),
         'ConditionExpression': change.condition,
-        'ExpressionAttributeNames': change.names,
-        'ExpressionAttributeValues': change.values,
+        'ExpressionAttributeNames': {**change.names, **names},
+        'ExpressionAttributeValues': {**change.values, **values},
         'ReturnValues': 'ALL_NEW',
     }
 
@@ -120,7 +139,10 @@ def set_feedback_category(feedback_id: str):
     validate_target(categories_config(aggregates_table), category, subcategory)
 
     override = override_record(item, caller)
-    updated = apply_conditional_update(feedback_table, _update_kwargs(item, category, subcategory, override))
+    edit = _edit(event, REASON_CATEGORY_EDIT)
+    kwargs = _update_kwargs(item, category, subcategory, override, edit)
+    keep_before_edit(item, edit, kwargs)
+    updated = apply_conditional_update(feedback_table, kwargs)
     # Read-your-write: cached reads move on now, not when the stream reaches the aggregator.
     bump_data_version(aggregates_table)
 
@@ -161,7 +183,10 @@ def set_feedback_dimensions(feedback_id: str):
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     new_tags = item.get('tags') if tags is None else tags
-    updated = apply_conditional_update(feedback_table, _dimensions_update_kwargs(item, dimensions, sources, new_tags))
+    edit = _edit(event, REASON_DIMENSIONS_EDIT)
+    kwargs = _dimensions_update_kwargs(item, dimensions, sources, new_tags, edit)
+    keep_before_edit(item, edit, kwargs)
+    updated = apply_conditional_update(feedback_table, kwargs)
     bump_data_version(aggregates_table)
     return {
         'success': True,
@@ -205,12 +230,14 @@ def _unchanged_since_read(item: Mapping[str, Any], field: str) -> ConditionBase:
 
 
 def _dimensions_update_kwargs(
-    item: Mapping[str, Any], dimensions: dict, sources: dict, tags: object,
+    item: Mapping[str, Any], dimensions: dict, sources: dict, tags: object, edit: ManualEdit,
 ) -> dict:
-    """The conditional in-place update; empty values are REMOVEd (the processor never stores them)."""
-    names = {'#d': 'dimensions', '#ds': 'dimension_sources', '#t': 'tags'}
-    values: dict[str, Any] = {}
-    sets: list[str] = []
+    """The conditional in-place update; empty values are REMOVEd (the processor never stores them).
+
+    Stamped with who changed it and when (TENETS.md D4; the previous values are the kept version).
+    """
+    sets, stamp_names, values = assignment_clauses(manual_edit_fields(edit, now_iso()), 'edit')
+    names = {'#d': 'dimensions', '#ds': 'dimension_sources', '#t': 'tags', **stamp_names}
     removes: list[str] = []
     for alias, value in (('#d', dimensions), ('#ds', sources), ('#t', tags)):
         if value:
@@ -221,16 +248,14 @@ def _dimensions_update_kwargs(
     condition = item_exists()
     for field in ('dimensions', 'dimension_sources', 'tags'):
         condition = condition & _unchanged_since_read(item, field)
-    kwargs: dict[str, Any] = {
+    return {
         'Key': {'pk': item['pk'], 'sk': item['sk']},
         'UpdateExpression': update_expression(sets, removes),
         'ConditionExpression': condition,
         'ExpressionAttributeNames': names,
+        'ExpressionAttributeValues': values,
         'ReturnValues': 'ALL_NEW',
     }
-    if values:
-        kwargs['ExpressionAttributeValues'] = values
-    return kwargs
 
 
 @api_handler
