@@ -325,7 +325,7 @@
     "empty": "Nenhum pedido neste período.",
     "noData": "Ainda não há nada para mostrar.",
     "totalRequests": "Pedidos",
-    "totalSupporters": "Apoiadores",
+    "totalSupporters": "+1 (somados por pedido)",
     "totalEnriched": "Enriquecidos",
     "truncated": "Estes números cobrem apenas parte do período: os quadros têm mais pedidos do que uma leitura abrange.",
     "top": "Pedidos com mais apoio",

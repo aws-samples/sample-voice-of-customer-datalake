@@ -64,7 +64,8 @@ function withoutAssistJobs(answer: { success: boolean; jobs: ProjectJob[] }) {
 }
 
 /**
- * Feedback-board requests as their own evidence in a persona / research run or its live count:
+ * Feedback-board requests as their own evidence in a persona / research run (never in the `feedback-preview`
+ * body, which counts reviews only):
  * absent = off; `feature_request_board_ids` (≤ 20) narrows them, absent = every board.
  */
 export interface FeatureRequestEvidenceBody {

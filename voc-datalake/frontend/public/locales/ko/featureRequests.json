@@ -318,7 +318,7 @@
     "empty": "이 기간에는 요청이 없습니다.",
     "noData": "아직 표시할 내용이 없습니다.",
     "totalRequests": "요청",
-    "totalSupporters": "지지자",
+    "totalSupporters": "+1 합계(요청별)",
     "totalEnriched": "보강됨",
     "truncated": "이 수치는 기간의 일부만 다룹니다. 보드에 한 번에 읽을 수 있는 것보다 많은 요청이 있습니다.",
     "top": "지지를 가장 많이 받은 요청",

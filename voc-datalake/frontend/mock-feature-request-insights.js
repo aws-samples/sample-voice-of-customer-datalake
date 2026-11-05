@@ -10,9 +10,12 @@
 //
 // Reached through mock-feature-requests.js, which hands these paths here BEFORE its own
 // `/feature-requests/{id}` pattern could read `insights` or `search` as a request id. The requests come
-// from that module's store (only the boards the viewer may see); the mock's enrich "answers" at once,
-// filing a fixed category and sentiment on up to ENRICH_PAGE requests per call. Never mixed into the
-// review metrics of mock-server.js.
+// from that module's store (only the boards the viewer may see). The mock's enrich picks requests like the
+// route (no enrichment, one computed from another title / description, or a failed one; one claimed in the
+// last 15 minutes is skipped and counted in `remaining`) and "answers" at once, filing a fixed category and
+// sentiment on up to ENRICH_PAGE requests per call. Never mixed into the review metrics of mock-server.js.
+
+import { createHash } from 'node:crypto';
 
 const INSIGHTS = '/feature-requests/insights';
 const ENRICH = '/feature-requests/insights/enrich';
@@ -20,6 +23,7 @@ const SEARCH = '/feature-requests/search';
 const MAX_DAYS = 3650;
 const TOP_LIMIT = 20;
 const ENRICH_PAGE = 2;
+const LEASE_MS = 15 * 60_000;
 const DAY_MS = 86_400_000;
 
 const fail = (status, error) => [status, { success: false, error }];
@@ -80,16 +84,26 @@ function insights(url, viewer, entriesFor) {
   }];
 }
 
+/** The route's `text_sha16`: the first 16 hex of sha256(title, newline, description). */
+export const textSha16 = (meta) => createHash('sha256').update(`${meta.title ?? ''}\n${meta.description ?? ''}`).digest('hex').slice(0, 16);
+
+/** The route's `wants_backfill`: no enrichment, a stale one (another text) or a failed one. */
+const wantsBackfill = (meta) => meta.enrichment === undefined || meta.enrichment.status !== 'ok'
+  || meta.enrichment.text_sha16 !== textSha16(meta);
+
 function enrich(body, viewer, entriesFor) {
   if (!viewer.is_admin) return fail(403, 'Only an admin can do that');
   const boardRef = typeof body.board === 'string' && body.board !== '' ? body.board : undefined;
-  const pending = entriesFor(viewer, boardRef).entries.filter((entry) => entry.meta.enrichment === undefined);
-  const page = pending.slice(0, ENRICH_PAGE);
+  const now = Date.now();
+  const pending = entriesFor(viewer, boardRef).entries.filter((entry) => wantsBackfill(entry.meta));
+  const claimable = pending.filter((entry) => now - (entry.enrichQueuedAt ?? 0) >= LEASE_MS);
+  const page = claimable.slice(0, ENRICH_PAGE);
   for (const entry of page) {
+    entry.enrichQueuedAt = now;
     entry.meta.enrichment = {
       status: 'ok', category: 'feature_request', subcategory: null, sentiment: 'neutral',
       problem_summary: entry.meta.title, language: 'en', model_id: 'mock', prompt_version: 'mock-1',
-      text_sha16: '0000000000000000', enriched_at: new Date().toISOString(),
+      text_sha16: textSha16(entry.meta), enriched_at: new Date(now).toISOString(),
     };
   }
   return [200, { success: true, queued: page.length, remaining: pending.length - page.length }];

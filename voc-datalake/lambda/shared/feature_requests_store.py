@@ -42,6 +42,9 @@ MAX_DESCRIPTION: Final = 4000
 MAX_NAME: Final = 160
 MAX_REQUESTS_LISTED: Final = 1000
 MAX_SUPPORTS: Final = 2000
+# ``FR#{id}`` / ``ENRICH#{enriched_at}#{sha}``: one kept enrichment result (shared/feature_requests_enrich.py).
+ENRICHMENT_VERSION_SK_PREFIX: Final = 'ENRICH#'
+MAX_ENRICHMENT_VERSIONS: Final = 1000
 REQUEST_NOT_FOUND: Final = 'Feature request not found'
 SUPPORT_NOT_FOUND: Final = 'Support not found'
 ALREADY_SUPPORTED: Final = 'already_supported'
@@ -294,11 +297,20 @@ def update_request(table: Any, request_id: str, fields: Mapping[str, Any]) -> di
     return update_existing(table, request_key(request_id), fields, REQUEST_NOT_FOUND, bump_version=True)
 
 
+def enrichment_versions_of(table: Any, request_id: str) -> list[dict[str, Any]]:
+    """Every kept enrichment result of the request (``ENRICH#…`` rows), oldest first."""
+    return query_all(table, {
+        'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :s)',
+        'ExpressionAttributeValues': {':pk': f'FR#{request_id}', ':s': ENRICHMENT_VERSION_SK_PREFIX},
+        'ConsistentRead': True,
+    }, max_items=MAX_ENRICHMENT_VERSIONS)
+
+
 def delete_request(table: Any, request: Mapping[str, Any]) -> None:
-    """The request, every support, and one off its board's ``request_count`` (never below 0)."""
+    """The request, every support and kept enrichment, and one off its board's ``request_count`` (never below 0)."""
     request_id = str(request['request_id'])
     with table.batch_writer() as batch:
-        for row in supports_of(table, request_id):
+        for row in [*supports_of(table, request_id), *enrichment_versions_of(table, request_id)]:
             batch.delete_item(Key={'pk': row['pk'], 'sk': row['sk']})
     table.delete_item(Key=request_key(request_id))
     conditional_write(table.update_item, Key=board_key(board_id_of(request)),
