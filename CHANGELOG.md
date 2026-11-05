@@ -17,6 +17,37 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.03.00] - 2026-11-05
+
+Processed feedback keeps its history and says how it was made, and a reprocess can replay a slice: every in-place change keeps the item as it was, every enriched item records its pipeline version, mode and the model that answered, and reprocessing takes sources, categories and a date range and resumes where it stopped.
+
+### Added
+
+- **Silver history**: before any in-place change to a feedback item (a category or dimensions edit, a Data Explorer edit, a GitHub issue refresh, a CSV correction, a reprocess), the item as it was is written once to `silver/{source}/{feedback_id}/` in the raw bucket, with who changed it, why and which fields. The bucket policy makes `silver/` write-once like `raw/`, and erasure and retention delete every kept version with the item ([docs/data-lake-structure.md](docs/data-lake-structure.md)).
+- **How an item was made**: every enriched item records `pipeline_version` (the app release), `enrichment_mode` (`llm`, `defaults` when the model call failed, `manual`, `reprocess_*`, `source_update`), `enriched_at`, and in `llm_metadata` the model that answered and the one requested (they differ after a capacity fallback).
+- **Reprocess a slice**: `POST /settings/categories/reprocess` and Administration → Taxonomy → Reprocess take `sources`, `categories` and a `date_from` / `date_to` range on the processed or the review date (`date_basis`), next to `days` ([docs/categories.md](docs/categories.md)).
+- **Resume a reprocess**: a job that stops at the 50,000-review limit ends `partial` with a cursor, and `{resume: <job_id>}` (the Resume button) continues where it stopped instead of starting over.
+- Reprocess jobs record the configuration they ran with (config version, categories digest, model, prompt version) and how many reviews fell back to their stored text (`raw_fallback`, `raw_fallback_sources`).
+
+### Changed
+
+- Edited items carry `updated_by {sub, kind}`, `updated_at` and `change_reason`; the API shows only `kind`. Plan steps, agents and MCP tokens are told apart from a person.
+- `PUT /data-explorer/feedback` writes only the fields that changed, checks each one and applies the source's PII policy: 400 for a bad value or customer text on a summary-only source, 503 when the source settings cannot be read.
+- The enrichment prompt version is 2.0.0 (the prompt had changed since 1.0.0); a test now pins the prompt text to its version.
+
+### Fixed
+
+- `PUT /feedback/{id}/dimensions` now records who changed it, when, and the previous value.
+- A raw-mode reprocess no longer writes a translation or a customer quote back on a summary-only source.
+- A processed or dimensions reprocess now updates `llm_metadata` with the model that answered.
+- A redelivered DynamoDB stream record (REMOVE / MODIFY) no longer moves the aggregates twice.
+
+### Upgrade notes
+
+- New grants: `s3:PutObject` on `silver/*` for the processor, the reprocess worker and the feedback-edit API; `voc-retention` may delete and list versions under `silver/*`; the reprocess worker gets `dynamodb:Query` on `voc-feedback` (a slice by source). The raw bucket's policy changes (VocCoreStack). Deploy with `--all`.
+- Items stored before 6.03.00 have no `pipeline_version` and keep `prompt_version` 1.0.0 until reprocessed.
+- A reprocess job's status can now be `partial`; before, a job stopped at the limit read `completed`.
+
 ## [6.02.00] - 2026-11-05
 
 Feedback boards become their own evidence source: requests are enriched on their own row, can be cited in personas, research and documents, are searchable by the assistant and over MCP, and have their own Insights view. They never enter the review pipeline or its metrics.
