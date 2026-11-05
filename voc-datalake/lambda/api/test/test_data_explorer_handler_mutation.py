@@ -156,19 +156,19 @@ class TestKeyedBucketRequestNamesItsRefusal:
             h._keyed_bucket_request({'bucket': 'nope'})
 
 
-class TestPrototypeGuard:
+class TestReadOnlyPrefixes:
     def test_a_prototype_key_is_refused_with_the_exact_wording(self):
         with pytest.raises(h.ValidationError) as info:
-            h._reject_prototype_mutation('prototypes/p1/x.html')
+            h._reject_read_only_prefix('prototypes/p1/x.html')
         assert str(info.value) == 'Generated prototypes are read-only in Data Explorer'
 
     @pytest.mark.parametrize('key', ['raw/prototypes/x', 'prototype/x', 'Prototypes/x', '', 'raw/silver/x', 'silverx/a'])
     def test_only_the_prototypes_and_silver_prefixes_are_read_only(self, key):
-        assert h._reject_prototype_mutation(key) is None
+        assert h._reject_read_only_prefix(key) is None
 
     def test_a_kept_feedback_version_is_refused_with_its_own_wording(self):
         with pytest.raises(h.ValidationError) as info:
-            h._reject_prototype_mutation('silver/web/f1/20261105T000000000000Z-abcd1234.json')
+            h._reject_read_only_prefix('silver/web/f1/20261105T000000000000Z-abcd1234.json')
         assert str(info.value) == 'Feedback history (silver/) is read-only in Data Explorer'
 
     @pytest.mark.parametrize(('key', 'is_raw'), [

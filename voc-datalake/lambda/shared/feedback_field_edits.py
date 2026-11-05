@@ -127,8 +127,9 @@ def _policy(item: Mapping[str, Any]) -> str:
 def _apply_policy(edits: FieldEdits, language: str | None) -> None:
     if edits.pii_policy == PII_ALLOW:
         return
-    if edits.pii_policy == PII_SUMMARY_ONLY and _CUSTOMER_WORDS & {*edits.sets, *edits.removes}:
-        raise ValidationError("This source keeps no customer text: original_text and normalized_text can't be edited")
+    # Setting customer text is refused; removing it (it should not be stored for this source) is allowed.
+    if edits.pii_policy == PII_SUMMARY_ONLY and _CUSTOMER_WORDS & set(edits.sets):
+        raise ValidationError("This source keeps no customer text: original_text and normalized_text can't be set")
     for name in [n for n in edits.sets if n in _TEXTS]:
         edits.sets[name] = redact_text(edits.sets[name], language).text[:_TEXTS[name]]
 

@@ -291,7 +291,7 @@ sources?, categories?, date_from?, date_to?, date_basis, started_by, created_at,
 stopped_at_ceiling, resumable, resumed_from?, resumed_by?, config, config_changed,
 finished_at?, error?`.
 
-The worker's role: Scan/Query/GetItem/UpdateItem on feedback, GetItem/PutItem/UpdateItem/Query
+The worker's role: Scan/GetItem/UpdateItem on feedback, GetItem/PutItem/UpdateItem/Query
 on aggregates, read on `raw/*`, put on `silver/*` (the kept versions), Bedrock (model allowlist), Comprehend, Translate, KMS,
 and invoke on itself only. The settings Lambda receives its name as
 `CATEGORY_REPROCESS_FUNCTION` and may invoke exactly that function.
