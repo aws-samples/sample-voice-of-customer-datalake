@@ -121,8 +121,11 @@ Known residuals
   (`apply_arrival_once`), which closes both halves at once: a redelivery moves
   nothing, and a record that dies partway leaves no partial application for the
   retry to land on top of.
-  ⚠️ A REVERSAL (REMOVE, and the decrement half of a MODIFY) IS NOT TRANSACTED, so
-  a redelivered one still decrements a second time. Not an omission: every
+  A REVERSAL (REMOVE, and the decrement half of a MODIFY) IS NOT TRANSACTED, and
+  since 6.03.00 it is claimed once all the same: `shared/stream_claims.py` claims
+  the record's `eventID` in the idempotency table BEFORE the writes and releases
+  the claim when they fail, so a redelivered REMOVE or MODIFY moves nothing (audit
+  G1). Why that claim is not a transaction participant: every
   decrement is a CONDITIONAL write whose refusal the code above it reads —
   `_reverse_a_pre_deploy_persona_row` triggers on `ROW_ABSENT`, `_rebucket_average`
   pairs on a refused reversal — and `TransactWriteItems` reports no per-item
@@ -131,8 +134,8 @@ Known residuals
   "the edit wrote nothing at all", which silently disables the aged-out-day
   protections that exist BY observing a refusal. Closing it properly needs a
   dedupe claim that is not a transaction participant — a claim written first, then
-  compensated if the writes fail — which is new failure machinery rather than a
-  wider transaction, and it is out of scope here. What the conditions still
+  compensated if the writes fail — which is what `shared/stream_claims.py` is (its
+  residuals are in its docstring). What the conditions still
   guarantee for those paths is what they always did: no resurrected row, and no
   negative counter, with the tests in TestRedeliveryMovesACounterTwice pinning
   the reversal behaviour so this note and the code cannot drift apart.
@@ -281,6 +284,9 @@ from shared.metric_keys import (
     USEFULNESS_PREFIX,
 )
 from shared.source_profile import profile_counter_pks
+from shared.stream_claims import claim as claim_reversal
+from shared.stream_claims import release as release_reversal
+from shared.stream_claims import reversal_key
 from shared.timestamps import now_iso
 from shared.usefulness import USEFULNESS_UNRATED, stored_band
 
@@ -2271,8 +2277,43 @@ def record_handler(record: DynamoDBRecord) -> dict:
     if event_name == 'REMOVE':
         return _handle_remove(record, old_image)
     if event_name == 'MODIFY':
-        return _handle_modify(old_image, new_image)
+        return _handle_modify(old_image, new_image, record)
     return _handle_insert(record, new_image)
+
+
+# --- A reversal is claimed once per stream record (audit G1) -----------------
+# `shared/stream_claims.py`: the claim is written BEFORE the reversal's writes and
+# released when they raise, so a redelivery after a landed reversal moves nothing and
+# a failed one is retried as before. Only with the dedupe table configured, like the
+# INSERT claim; without it a reversal runs unclaimed, exactly as before.
+
+def _reversal_claim_key(record: DynamoDBRecord) -> str | None:
+    """The record's reversal claim key, or None when claims are off or it has no `eventID`."""
+    raw = getattr(record, 'raw_event', None)
+    if not IDEMPOTENCY_TABLE or not isinstance(raw, Mapping):
+        return None
+    return reversal_key(raw.get('eventID'))
+
+
+def _idempotency_table() -> Any:
+    return dynamodb.Table(IDEMPOTENCY_TABLE)
+
+
+def _claim_once(key: str | None) -> bool:
+    """Claim a reversal; False (with REPLAYED_METRIC) when an earlier delivery reversed it."""
+    if key is None or claim_reversal(_idempotency_table(), key, int(time.time())):
+        return True
+    logger.info(f"Stream record {key} was already reversed; leaving its aggregate writes alone")
+    metrics.add_metric(name=REPLAYED_METRIC, unit="Count", value=1)
+    return False
+
+
+def _release(key: str | None) -> None:
+    if key is not None:
+        release_reversal(_idempotency_table(), key, int(time.time()))
+
+
+_ALREADY_REVERSED = {"status": "skipped", "reason": "already applied"}
 
 
 def _handle_remove(record: DynamoDBRecord, old_image: dict[str, Any] | None) -> dict:
@@ -2280,7 +2321,15 @@ def _handle_remove(record: DynamoDBRecord, old_image: dict[str, Any] | None) -> 
     item = _removal_to_reverse(record, old_image)
     if isinstance(item, _Skipped):
         return item.result
-    if not process_deleted_feedback(item):
+    key = _reversal_claim_key(record)
+    if not _claim_once(key):
+        return dict(_ALREADY_REVERSED)
+    try:
+        reversed_ = process_deleted_feedback(item)
+    except Exception:
+        _release(key)
+        raise
+    if not reversed_:
         return {"status": "skipped", "reason": "no date"}
     metrics.add_metric(name=REVERSED_METRIC, unit="Count", value=1)
     return {"status": "success"}
@@ -2310,12 +2359,21 @@ def _removal_to_reverse(record: DynamoDBRecord, old_image: dict[str, Any] | None
     return item
 
 
-def _handle_modify(old_image: dict[str, Any] | None, new_image: dict[str, Any] | None) -> dict:
-    """MODIFY: move the item between buckets; REBUCKETED_METRIC only when a write landed."""
+def _handle_modify(
+    old_image: dict[str, Any] | None, new_image: dict[str, Any] | None, record: DynamoDBRecord | None = None,
+) -> dict:
+    """MODIFY: move the item between buckets, once per stream record; REBUCKETED_METRIC only when a write landed."""
     if not old_image or not new_image:
         logger.warning("MODIFY record is missing an image; cannot rebucket")
         return {"status": "skipped", "reason": "incomplete images"}
-    writes = process_modified_feedback(deserialize_image(old_image), deserialize_image(new_image))
+    key = _reversal_claim_key(record) if record is not None else None
+    if not _claim_once(key):
+        return dict(_ALREADY_REVERSED)
+    try:
+        writes = process_modified_feedback(deserialize_image(old_image), deserialize_image(new_image))
+    except Exception:
+        _release(key)
+        raise
     if writes is None:
         return {"status": "skipped", "reason": "no date"}
     if writes:
@@ -2428,6 +2486,18 @@ def _plan_removal(plan: _PlannedReversal) -> None:
         plan.result = {"status": "skipped", "reason": "no date"}
         return
     plan.item, plan.date = item, date
+
+
+def _claim_run(plans: list[_PlannedReversal]) -> list[tuple[_PlannedReversal, str]]:
+    """Claim each planned reversal of a run; a refused one leaves the run as already applied."""
+    claimed: list[tuple[_PlannedReversal, str]] = []
+    for plan, _item in list(_pending(plans)):
+        key = _reversal_claim_key(plan.record)
+        if not _claim_once(key):
+            plan.item, plan.result = None, dict(_ALREADY_REVERSED)
+        elif key is not None:
+            claimed.append((plan, key))
+    return claimed
 
 
 @tracer.capture_method
@@ -2826,7 +2896,11 @@ class _RunCoalescingProcessor(BatchProcessor):
                 _plan_removal(plan)
             except _RECORD_FAILURES:
                 plan.fail()
+        claimed = _claim_run(plans)
         reverse_removals(plans)
+        for plan, key in claimed:
+            if plan.error is not None:
+                _release(key)
         return [self._report(plan) for plan in plans]
 
     def _arrival_run(self, run: list[dict]) -> list[tuple]:
