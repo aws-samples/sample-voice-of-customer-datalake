@@ -114,9 +114,18 @@ A board route (`/feature-requests/*`) resolves its caller from the verified `iss
 email (`shared/engagement_identity.py`). For `search_feature_requests` the delegated claims therefore also carry
 `iss` = this deployment's APP user pool (the MCP function's own `USER_POOL_ID`, never the request),
 `email` = `mcp+<token_id>@mcp.invalid` (a service address naming the credential, not the minter's) and
-`email_verified=true`. A global token's minter is always an app-pool user, so the credential sees every
-non-archived board, is never a board admin (`cognito:groups` stays empty), and can never claim the board pool.
-No other tool gets these claims (`board_route_claims` in `lambda/shared/mcp_global_tools.py`).
+`email_verified=true`. No other tool gets these claims (`board_route_claims` in `lambda/shared/mcp_global_tools.py`).
+
+**`search_feature_requests` sees exactly what its minter sees in the app, never more.** A global token's minter is
+always an app-pool user, and an app-pool user uses every non-archived board (board audiences limit only board-pool
+users), so the credential reads every non-archived board, never an archived one, and is never a board admin:
+`cognito:groups` stays empty even when an admin minted the token, so the admin-only view of archived boards is out
+of reach. Naming an archived board answers the route's 404 as a tool error. The service address cannot widen this:
+board access is decided by the pool in `iss` (always this deployment's app pool, from the MCP function's own
+environment, never from the request) and by the groups, not by the email; the address is on no allow list, belongs
+to no company domain (`.invalid` is reserved), and only names the credential in logs. The board pool can never be
+claimed. `test_feature_request_search.py` runs the tool end to end through the real search route and pins that an
+MCP call never sees an archived board.
 
 | Tool | Scope | Route (domain Lambda) |
 |---|---|---|
