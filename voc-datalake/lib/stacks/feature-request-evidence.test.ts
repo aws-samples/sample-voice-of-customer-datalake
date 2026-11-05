@@ -26,7 +26,6 @@ function featureRequestActions(template: Template, roleFragment: string): string
 
 describe('the evidence readers', () => {
   it.each([
-    ['ProjectsLambdaRole', 'voc-projects-api'],
     ['PersonaGeneratorRole', 'voc-job-persona-generator'],
     ['DocumentGeneratorRole', 'voc-job-document-generator'],
   ])('%s queries the table and %s knows its name', (role, service) => {
@@ -40,7 +39,10 @@ describe('the evidence readers', () => {
       .toMatch(/FeatureRequests/);
   });
 
-  it('the generators that do not read board requests get no access', () => {
+  it('the roles that do not read board requests get no access', () => {
+    // The Projects API only starts the jobs; its inline policy has no room (api-stack-mcp.test.ts).
+    expect(featureRequestActions(api, 'ProjectsLambdaRole')).toStrictEqual([]);
+    expect(serviceEnvironment(api, 'voc-projects-api').FEATURE_REQUESTS_TABLE).toBeUndefined();
     expect(featureRequestActions(api, 'DocumentMergerRole')).toStrictEqual([]);
     expect(featureRequestActions(api, 'PersonaImporterRole')).toStrictEqual([]);
   });

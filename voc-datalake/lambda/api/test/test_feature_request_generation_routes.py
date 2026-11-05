@@ -1,6 +1,8 @@
 """Board requests as evidence on the Projects API: the generation routes validate and carry
 ``include_feature_requests`` / ``data_sources.feature_requests`` and ``feature_request_board_ids``
-into the job input, and ``feedback-preview`` answers ``feature_requests_matched`` when asked."""
+into the job input. ``feedback-preview`` never reads board requests: the Projects API role holds no
+access to voc-feature-requests (its inline policy has no room, api-stack-mcp.test.ts); the wizards'
+board count comes from ``GET /feature-requests/insights``."""
 import json
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -8,7 +10,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from shared.category_access import CategoryScope
-from shared.feature_request_evidence import FeatureRequestEvidence
 
 SCOPE = CategoryScope(all=True, categories=frozenset())
 BOARDS = ['brd_0000000a', 'brd_sales']
@@ -90,26 +91,17 @@ def test_bad_feature_request_fields_are_400_before_any_job(api_gateway_event, la
     calls['create_job'].assert_not_called()
 
 
-def _preview(api_gateway_event, lambda_context, body: dict[str, Any], evidence: FeatureRequestEvidence):
+def test_the_preview_never_reads_board_requests(api_gateway_event, lambda_context):
     from projects_handler import lambda_handler
+    body = {'mode': 'estimate', 'days': 14, 'include_feature_requests': True, 'feature_request_board_ids': ['brd_sales']}
     event = api_gateway_event(method='POST', path='/projects/p1/feedback-preview',
                               path_params={'project_id': 'p1'}, body=body)
     answer = {'matched': 4, 'matched_is_lower_bound': False, 'estimated': True}
     with patch('projects_handler.category_gate.scope_for_event', return_value=SCOPE), \
             patch('projects.persona_context_budget', return_value=(100_000, 145)), \
             patch('projects.persona_feedback_preview.preview_feedback', return_value=answer), \
-            patch('shared.feature_request_context.load_feature_request_evidence', return_value=evidence) as load:
+            patch('shared.feature_request_context.load_feature_request_evidence') as load:
         response = lambda_handler(event, lambda_context)
-    return response['statusCode'], json.loads(response['body']), load
-
-
-def test_the_preview_counts_feature_requests_only_when_asked(api_gateway_event, lambda_context):
-    evidence = FeatureRequestEvidence([], 9, True)
-    status, body, load = _preview(api_gateway_event, lambda_context, {
-        'mode': 'estimate', 'days': 14, 'include_feature_requests': True, 'feature_request_board_ids': ['brd_sales'],
-    }, evidence)
-    assert (status, body['matched'], body['feature_requests_matched']) == (200, 4, 9)
-    assert load.call_args.kwargs == {'board_ids': ['brd_sales'], 'days': 14, 'limit': 0}
-    status, body, load = _preview(api_gateway_event, lambda_context, {'mode': 'estimate'}, evidence)
-    assert (status, 'feature_requests_matched' in body) == (200, False)
+    answered = json.loads(response['body'])
+    assert (response['statusCode'], answered['matched'], 'feature_requests_matched' in answered) == (200, 4, False)
     load.assert_not_called()

@@ -1,10 +1,10 @@
 /**
  * Read access to voc-feature-requests for the roles that use feedback-board requests as evidence
  * (lambda/shared/feature_request_evidence.py, docs/project-workspace.md → Feature requests): the
- * Projects API (the wizards' live count), the persona and document generator jobs and the research
- * step. The loader only queries the listing index (`gsi1`: the boards, then the requests), so the
- * grant is `dynamodb:Query` and nothing else; the KMS decrypt comes with each role's existing
- * `kmsKey.grantEncryptDecrypt`. No write, no Scan, no GetItem: board requests are read as evidence,
+ * persona and document generator jobs and the research step. Not the Projects API: it only starts
+ * those jobs, and its inline policy is near the 70% gate (api-stack-mcp.test.ts). The loader only
+ * queries the listing index (`gsi1`: the boards, then the requests), so the grant is `dynamodb:Query`
+ * and nothing else; the KMS decrypt comes with each role's existing `kmsKey.grantEncryptDecrypt`. No write, no Scan, no GetItem: board requests are read as evidence,
  * never changed by a generation.
  */
 import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';

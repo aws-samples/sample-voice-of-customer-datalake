@@ -93,8 +93,3 @@ def test_artefact_fields_and_received_ids():
     assert frc.received_feature_request_ids('fr_1') == []
     assert frc.received_feature_request_ids(['fr_1']) == ['fr_1']
 
-
-def test_matched_count_is_the_loaders_total():
-    with patch.object(frc, 'load_feature_request_evidence', return_value=FeatureRequestEvidence([], 12, True)) as load:
-        assert frc.matched_count(['brd_sales'], 30) == 12
-    assert load.call_args.kwargs == {'board_ids': ['brd_sales'], 'days': 30, 'limit': 0}
