@@ -41,7 +41,7 @@ from shared.categorization import (
 from shared.categorization import (
     translate_text as shared_translate_text,
 )
-from shared.converse import BedrockThrottlingError, converse
+from shared.converse import BedrockThrottlingError, converse_detailed
 from shared.csv_datasets import is_csv_replace
 from shared.csv_updates import csv_update, csv_update_decision, needs_reenrichment
 from shared.data_version import BatchBump, bump_radar_version
@@ -404,7 +404,7 @@ def invoke_bedrock_llm(raw_record: dict, raise_on_throttle: bool = True) -> dict
     """Invoke Bedrock for structured insights (throttling re-raised for SQS retry)."""
     return invoke_enrichment_llm(
         raw_record, build_categories_instruction(),
-        converse_fn=converse, raise_on_throttle=raise_on_throttle,
+        converse_fn=converse_detailed, raise_on_throttle=raise_on_throttle,
         dimensions_config=get_dimensions_config(),
     )
 

@@ -543,7 +543,7 @@ class TestInvokeBedrockLlm:
 
         instruction.assert_called_once_with()
         enrich.assert_called_once_with(
-            record, 'CATEGORIES', converse_fn=handler.converse, raise_on_throttle=raise_on_throttle,
+            record, 'CATEGORIES', converse_fn=handler.converse_detailed, raise_on_throttle=raise_on_throttle,
             dimensions_config=[feedback_type_dimension()],
         )
 

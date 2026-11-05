@@ -54,6 +54,7 @@ from shared.categorization import (
     run_enrichment,
     translate_text,
 )
+from shared.converse import ConverseResult
 
 CONFIG = [
     {'name': 'shipping', 'description': 'Shipping issues',
@@ -120,7 +121,7 @@ class TestDefaultsAreTheDocumentedLiterals:
         assert categorization.MAX_PROMPT_TEXT_CHARS == 3000
         assert categorization.MAX_SERVICE_TEXT_CHARS == 5000
         assert categorization.MAX_SUBCATEGORY_CHARS == 100
-        assert categorization.PROMPT_VERSION == '1.0.0'
+        assert categorization.PROMPT_VERSION == '2.0.0'
         assert categorization.ENRICHMENT_SURFACE == 'enrichment'
 
     def test_sentiment_languages(self):
@@ -356,20 +357,45 @@ class TestEnrichmentCall:
 
         assert result == {
             'insights': {'category': 'billing'},
-            'metadata': {'model_name': 'test-model', 'prompt_version': '1.0.0', 'latency_ms': 1500},
+            'metadata': {'model_name': 'test-model', 'requested_model': 'test-model',
+                         'prompt_version': '2.0.0', 'latency_ms': 1500},
         }
         assert clock.now.call_args_list == [call(UTC), call(UTC)]
+
+    def test_metadata_names_the_model_that_answered(self):
+        answer = ConverseResult(text='{}', model_id='fallback-model', requested_model_id='test-model')
+
+        result = invoke_enrichment_llm({'text': 'x'}, 'I', converse_fn=MagicMock(return_value=answer))
+
+        assert result['metadata']['model_name'] == 'fallback-model'
+        assert result['metadata']['requested_model'] == 'test-model'
+
+    def test_an_answer_without_a_model_id_names_the_requested_one(self):
+        result = invoke_enrichment_llm(
+            {'text': 'x'}, 'I', converse_fn=MagicMock(return_value=ConverseResult(text='{}')))
+
+        assert result['metadata']['model_name'] == 'test-model'
+
+    def test_a_text_answer_names_the_requested_model(self):
+        with patch('shared.categorization.converse', return_value='{"category": "billing"}') as text_only:
+            result = invoke_enrichment_llm({'text': 'x'}, 'I')
+
+        text_only.assert_called_once()
+        assert result['insights'] == {'category': 'billing'}
+        assert result['metadata']['model_name'] == 'test-model'
 
     def test_a_non_object_answer_is_empty_insights(self):
         result = invoke_enrichment_llm({'text': 'x'}, 'I', converse_fn=MagicMock(return_value='[1, 2]'))
 
         assert result['insights'] == {}
-        assert result['metadata']['prompt_version'] == '1.0.0'
+        assert result['metadata']['prompt_version'] == '2.0.0'
 
     def test_bad_json_is_logged_and_reported(self, logger: MagicMock):
         result = invoke_enrichment_llm({'text': 'x'}, 'I', converse_fn=MagicMock(return_value='nope'))
 
-        assert result == {'insights': {}, 'metadata': {'error': 'Expecting value: line 1 column 1 (char 0)'}}
+        assert result == {'insights': {}, 'metadata': {
+            'requested_model': 'test-model', 'prompt_version': '2.0.0',
+            'error': 'Expecting value: line 1 column 1 (char 0)'}}
         logger.exception.assert_called_once_with(
             'Failed to parse Bedrock response: Expecting value: line 1 column 1 (char 0)')
 
@@ -377,7 +403,7 @@ class TestEnrichmentCall:
         result = invoke_enrichment_llm(
             {'text': 'x'}, 'I', converse_fn=MagicMock(side_effect=RuntimeError('boom')))
 
-        assert result == {'insights': {}, 'metadata': {'error': 'boom'}}
+        assert result == {'insights': {}, 'metadata': {'requested_model': 'test-model', 'prompt_version': '2.0.0', 'error': 'boom'}}
         logger.error.assert_called_once_with('Unexpected Bedrock error: boom', exc_info=True)
 
 
@@ -515,7 +541,7 @@ class TestRunEnrichmentAttributes:
         assert enrichment.attributes['subcategory'] == 'late'
 
     @pytest.mark.parametrize(('llm_result', 'failed'), [
-        ({'insights': {}, 'metadata': {'error': 'boom'}}, True),
+        ({'insights': {}, 'metadata': {'requested_model': 'test-model', 'prompt_version': '2.0.0', 'error': 'boom'}}, True),
         ({'insights': {}, 'metadata': {'error': ''}}, False),
         ({'insights': {}, 'metadata': {}}, False),
         ({'insights': {}, 'metadata': 'x'}, False),
