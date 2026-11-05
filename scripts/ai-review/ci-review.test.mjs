@@ -112,7 +112,7 @@ const answer = (kind, output, extra = {}) => ({ kind, output, truncated: false, 
 
 /** Render a round the way main() does: advance the ledger, recompute the verdicts, then render. */
 function render(results, { previous = null, round = (previous?.round ?? 0) + 1, range = { mode: 'full', reason: 'first review' }, ...rest } = {}) {
-  const { ledger, recap } = advanceLedger(previous, { sha: SHA }, results)
+  const { ledger, recap } = advanceLedger(previous, results)
   const verdicts = Object.fromEntries(results.map((r) => [r.kind, passVerdict(recap[r.kind], r.verdict?.verdict)]))
   const body = renderComment({
     headSha: SHA, hash: '0123456789abcdef', ledgerLine: encodeLedger(ledger), modelId: DEFAULT_MODEL, results, recap, verdicts, round, range,
@@ -143,13 +143,26 @@ test('the comment starts with the marker and the ledger latestReview reads back,
 
 test('a verdict the table does not know is shown as it is, never as undefined', () => {
   const results = [{ kind: 'commit', output: 'x', truncated: false, verdict: { verdict: 'ODD', blocking: [], others: [] } }]
-  const { recap } = advanceLedger(null, { sha: SHA }, results)
+  const { recap } = advanceLedger(null, results)
   const body = renderComment({
     headSha: SHA, hash: '0123456789abcdef', ledgerLine: '', modelId: 'm', results, recap, verdicts: { commit: 'ODD' }, round: 1,
     range: { mode: 'full', reason: 'first review' }, tier: { tier: 'quick', sensitive: [] },
   })
   assert.match(body, /\| Code review \| ODD \|/)
   assert.doesNotMatch(body, /undefined/)
+})
+
+test('the worst case still fits in one GitHub comment: 40 long open findings, long recaps and long answers', () => {
+  const long = (n) => 'x'.repeat(n)
+  const many = (prefix) => Array.from({ length: 60 }, (_, i) => `${prefix} -- ${long(150)}/${i}.ts:1 -- ${long(300)}\nTrigger: t\nOutcome: o`).join('\n')
+  const first = advanceLedger(null, [answer('tenets', `${many('CONCERN')}\nREVIEW-VERDICT: tenets WARN`), answer('commit', `${many('MUST-FIX')}\nREVIEW-VERDICT: commit BLOCK`)]).ledger
+  const statuses = (prefix) => first.findings.filter((f) => f.id[0] === prefix).map((f) => `STATUS -- ${f.id} -- OPEN -- ${long(300)}`).join('\n')
+  const { body } = render([
+    answer('tenets', `${statuses('T')}\n${long(80_000)}\nREVIEW-VERDICT: tenets BLOCK`),
+    answer('commit', `${statuses('C')}\n${long(80_000)}\nREVIEW-VERDICT: commit BLOCK`),
+  ], { previous: first, range: { mode: 'incremental', from: 'b'.repeat(40) } })
+  assert.ok(body.length < 65_536, `${body.length} characters`)
+  assert.equal(latestReview(readComments([comment(BOT_LOGIN, body)])).ledger.findings.length, 40, 'the ledger line survives intact')
 })
 
 test('a secret-shaped path or a skipped file named by the pull request cannot break out of its code span', () => {
@@ -168,7 +181,7 @@ test('a review that was not run says so in the table and its section, and its op
   assert.match(body, /Not run: the Bedrock call failed/)
   assert.doesNotMatch(body, /partial|named like a secret/)
   assert.deepEqual(ledger.findings.map((f) => f.id), ['T1'])
-  assert.equal(verdicts.tenets, null)
+  assert.equal(verdicts.tenets, 'BLOCK', 'an outage does not clear the open VIOLATION')
 })
 
 test('round 2 recaps what was resolved, answered, still open and new, and links the earlier round', () => {
@@ -274,6 +287,23 @@ const fakeBedrock = (answers) => {
 }
 const outputsOf = (file) => existsSync(file) ? readFileSync(file, 'utf8') : ''
 
+/**
+ * The author pushes to the scratch pull request: `files` written on refs/pr/head and committed (`amend` rewrites the
+ * last commit instead), the event and the conversation updated. Returns the new head SHA.
+ */
+function push(box, { files, message, amend = false, body = '', comments }) {
+  const run = (...args) => spawnSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: box.repo, encoding: 'utf8' })
+  run('checkout', '-q', 'refs/pr/head')
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(box.repo, name), content)
+  run('add', ...Object.keys(files))
+  run('commit', '-q', ...(amend ? ['--amend'] : []), '-m', message)
+  run('update-ref', 'refs/pr/head', 'HEAD')
+  const headSha = run('rev-parse', 'HEAD').stdout.trim()
+  writeFileSync(join(box.dir, 'event.json'), JSON.stringify({ pull_request: { number: 9, head: { sha: headSha }, title: 'NAT', body } }))
+  writeFileSync(join(box.dir, 'comments.json'), JSON.stringify([comments]))
+  return headSha
+}
+
 test('collectChange with a head reads that commit range only, never the working tree', () => {
   const box = scratch()
   try {
@@ -334,7 +364,6 @@ test('a push that leaves the diff unchanged is not reviewed again, and costs no 
 test('round 2 reviews only the new commits, carries the open findings by id, and recaps them', async () => {
   const box = scratch()
   try {
-    const run = (...args) => spawnSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: box.repo, encoding: 'utf8' })
     writeFileSync(join(box.dir, 'trusted', 'REVIEW.md'), '# Review guide\nDocs fail when they lie.\n')
     const first = fakeBedrock([reply(VIOLATION), reply(PASS('commit'))])
     assert.equal(await main(box.args, {}, { call: first.call }), 0)
@@ -344,14 +373,10 @@ test('round 2 reviews only the new commits, carries the open findings by id, and
     assert.doesNotMatch(first.requests[0].system[0].text, /follow-up review/)
 
     // The author pushes one more commit; the bot's round-1 comment is now on the pull request.
-    run('checkout', '-q', 'refs/pr/head')
-    writeFileSync(join(box.repo, 'flag.ts'), 'export const natGateway = process.env.NAT === "1"\n')
-    run('add', 'flag.ts')
-    run('commit', '-q', '-m', 'put the NAT gateway behind a flag')
-    run('update-ref', 'refs/pr/head', 'HEAD')
-    const headSha = run('rev-parse', 'HEAD').stdout.trim()
-    writeFileSync(join(box.dir, 'event.json'), JSON.stringify({ pull_request: { number: 9, head: { sha: headSha }, title: 'NAT', body: 'Adds a NAT gateway' } }))
-    writeFileSync(join(box.dir, 'comments.json'), JSON.stringify([[comment('ana', 'please check tenet 7'), comment(BOT_LOGIN, round1, { html_url: 'https://github.com/o/r/pull/9#issuecomment-1' })]]))
+    push(box, {
+      files: { 'flag.ts': 'export const natGateway = process.env.NAT === "1"\n' }, message: 'put the NAT gateway behind a flag', body: 'Adds a NAT gateway',
+      comments: [comment('ana', 'please check tenet 7'), comment(BOT_LOGIN, round1, { html_url: 'https://github.com/o/r/pull/9#issuecomment-1' })],
+    })
 
     const second = fakeBedrock([
       reply('STATUS -- T1 -- RESOLVED -- behind the NAT flag now\nREVIEW-VERDICT: tenets PASS\n'),
@@ -378,20 +403,18 @@ test('round 2 reviews only the new commits, carries the open findings by id, and
   }
 })
 
+/** Round 1 on the scratch pull request (one open VIOLATION, T1): the comment it posts. */
+async function roundOne(box) {
+  await main(box.args, {}, { call: fakeBedrock([reply(VIOLATION), reply(PASS('commit'))]).call })
+  return readFileSync(join(box.dir, 'comment.md'), 'utf8')
+}
+
 test('a rewritten history is reviewed whole again, still answering the earlier findings', async () => {
   const box = scratch()
   try {
-    const run = (...args) => spawnSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: box.repo, encoding: 'utf8' })
-    await main(box.args, {}, { call: fakeBedrock([reply(VIOLATION), reply(PASS('commit'))]).call })
-    const round1 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
+    const round1 = await roundOne(box)
     // An amend: the reviewed commit is no longer an ancestor of the head.
-    run('checkout', '-q', 'refs/pr/head')
-    writeFileSync(join(box.repo, 'stack.ts'), 'export const a = 1\nnew NatGateway({ optIn: true })\n')
-    run('commit', '-q', '-a', '--amend', '-m', '5.75.01: add an opt-in NAT gateway')
-    run('update-ref', 'refs/pr/head', 'HEAD')
-    const headSha = run('rev-parse', 'HEAD').stdout.trim()
-    writeFileSync(join(box.dir, 'event.json'), JSON.stringify({ pull_request: { number: 9, head: { sha: headSha }, title: 'NAT', body: '' } }))
-    writeFileSync(join(box.dir, 'comments.json'), JSON.stringify([[comment(BOT_LOGIN, round1)]]))
+    push(box, { files: { 'stack.ts': 'export const a = 1\nnew NatGateway({ optIn: true })\n' }, message: '5.75.01: add an opt-in NAT gateway', amend: true, comments: [comment(BOT_LOGIN, round1)] })
     const fake = fakeBedrock([reply('STATUS -- T1 -- OPEN -- still on by default\nREVIEW-VERDICT: tenets BLOCK\n'), reply(PASS('commit'))])
     await main(box.args, {}, { call: fake.call })
     assert.match(fake.requests[0].system[0].text, /No <changes-since-last-review> \(the history was rewritten since [0-9a-f]{12}\)/)
@@ -404,20 +427,11 @@ test('a rewritten history is reviewed whole again, still answering the earlier f
   }
 })
 
-test('new commits that touch only skipped files get the whole diff again, with a reason, never "undefined"', async () => {
+test('a push that changes only files the review skips (a lockfile) makes no round and no model call', async () => {
   const box = scratch()
   try {
-    const run = (...args) => spawnSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: box.repo, encoding: 'utf8' })
-    await main(box.args, {}, { call: fakeBedrock([reply(VIOLATION), reply(PASS('commit'))]).call })
-    const round1 = readFileSync(join(box.dir, 'comment.md'), 'utf8')
-    run('checkout', '-q', 'refs/pr/head')
-    writeFileSync(join(box.repo, 'package-lock.json'), '{"lockfileVersion": 3}\n')
-    run('add', 'package-lock.json')
-    run('commit', '-q', '-m', 'lockfile only')
-    run('update-ref', 'refs/pr/head', 'HEAD')
-    const headSha = run('rev-parse', 'HEAD').stdout.trim()
-    writeFileSync(join(box.dir, 'event.json'), JSON.stringify({ pull_request: { number: 9, head: { sha: headSha }, title: 'NAT', body: '' } }))
-    writeFileSync(join(box.dir, 'comments.json'), JSON.stringify([[comment(BOT_LOGIN, round1)]]))
+    const round1 = await roundOne(box)
+    push(box, { files: { 'package-lock.json': '{"lockfileVersion": 3}\n' }, message: 'lockfile only', comments: [comment(BOT_LOGIN, round1)] })
     const fake = fakeBedrock([reply('STATUS -- T1 -- OPEN -- unchanged\nREVIEW-VERDICT: tenets BLOCK\n'), reply(PASS('commit'))])
     const out = join(box.dir, 'github-output')
     await main(box.args, { GITHUB_OUTPUT: out }, { call: fake.call })
