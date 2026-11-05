@@ -6,7 +6,6 @@ bucket (``shared/silver_provenance.py``), and the update stamps ``updated_by`` /
 ``change_reason``. A new item says how it was made (``pipeline_version``, ``enrichment_mode``).
 Driven through the real ``record_handler`` against moto (DynamoDB + S3).
 """
-import json
 from unittest.mock import patch
 
 import boto3
@@ -16,6 +15,7 @@ from processor import handler
 from processor.test import test_csv_updates as csv
 from processor.test import test_source_updates as issues
 from shared.silver_provenance import PIPELINE_VERSION
+from shared.test.silver_fixtures import kept_versions
 
 BUCKET = 'voc-raw-test'
 
@@ -26,10 +26,7 @@ def _bucket_env(monkeypatch):
 
 
 def _kept_versions() -> list[dict]:
-    s3 = boto3.client('s3', region_name='us-east-1')
-    listed = s3.list_objects_v2(Bucket=BUCKET, Prefix='silver/').get('Contents', [])
-    keys = [entry.get('Key', '') for entry in listed]
-    return [{'key': key, **json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())} for key in keys]
+    return kept_versions(BUCKET)
 
 
 def _create_bucket() -> None:

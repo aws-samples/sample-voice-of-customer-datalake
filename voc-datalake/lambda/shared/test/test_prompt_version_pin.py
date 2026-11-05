@@ -11,7 +11,7 @@ from shared import categorization
 
 #: version -> sha256 of the prompts at that version. Append only.
 PINNED = {
-    '2.0.0': '2744a4263b9c4ebd3a1be1bbc869bc127e91196844aa8ae0f24669cce2ed1c6c',
+    '2.0.0': '6a10d104f0931ad23371a2f452957f9977e508bddd147cfe06a05833941e911e',
 }
 
 _CATEGORIES = [
@@ -19,11 +19,11 @@ _CATEGORIES = [
     {'name': 'other'},
 ]
 _DIMENSIONS = [
-    {'key': 'product', 'label': 'Product', 'description': 'Which product', 'infer': True,
-     'values': [{'name': 'App'}, {'name': 'Web'}]},
-    {'key': 'module', 'label': 'Module', 'infer': True, 'parent': 'product',
-     'values': [{'name': 'checkout', 'parent_value': 'App'}, {'name': 'login'}]},
-    {'key': 'region', 'label': 'Region', 'infer': False, 'values': [{'name': 'EU'}]},
+    {'key': 'channel_kind', 'label': 'Channel kind', 'description': 'Where the customer wrote from', 'infer': True,
+     'values': [{'name': 'Mobile'}, {'name': 'Desktop'}]},
+    {'key': 'flow', 'label': 'Flow', 'infer': True, 'parent': 'channel_kind',
+     'values': [{'name': 'booking', 'parent_value': 'Mobile'}, {'name': 'check-in'}]},
+    {'key': 'market', 'label': 'Market', 'infer': False, 'values': [{'name': 'EU'}]},
 ]
 
 

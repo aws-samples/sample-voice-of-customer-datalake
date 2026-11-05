@@ -6,7 +6,6 @@ the record as it was goes to ``silver/{source}/{feedback_id}/`` first, the updat
 ``updated_by`` / ``updated_at`` / ``change_reason``, and each changed field is validated and put
 through the source's PII policy (``shared/feedback_field_edits.py``). Against moto (DynamoDB + S3).
 """
-import json
 
 import boto3
 import pytest
@@ -17,6 +16,7 @@ from moto_helpers import CATEGORY_EDIT_ITEM as ITEM
 from moto_helpers import invoke, rest_event, seeded_category_edit_tables
 
 import data_explorer_handler
+from shared.test.silver_fixtures import kept_versions
 from shared.test.source_profile_fixtures import seeded_source_profiles, unreadable_source_profiles
 
 BUCKET = 'voc-raw-explorer-test'
@@ -47,9 +47,7 @@ def _stored(tables) -> dict:
 
 
 def _kept() -> list[dict]:
-    s3 = boto3.client('s3', region_name='us-east-1')
-    listed = s3.list_objects_v2(Bucket=BUCKET, Prefix='silver/').get('Contents', [])
-    return [json.loads(s3.get_object(Bucket=BUCKET, Key=entry.get('Key', ''))['Body'].read()) for entry in listed]
+    return kept_versions(BUCKET)
 
 
 def _profile(pii: str) -> list[dict]:
