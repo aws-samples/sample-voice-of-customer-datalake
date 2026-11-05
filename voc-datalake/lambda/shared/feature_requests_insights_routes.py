@@ -155,7 +155,8 @@ def post_backfill():
     claimed = claim_for_backfill(scope.table, waiting[:MAX_BACKFILL])
     queued_ids = queue(claimed)
     # A job that could not be queued must not hold its requests' lease: the next call retries them.
-    release_claims(scope.table, [request_id for request_id in claimed if request_id not in set(queued_ids)])
+    taken = set(queued_ids)
+    release_claims(scope.table, [request_id for request_id in claimed if request_id not in taken])
     queued = len(queued_ids)
     logger.info('Feature request enrichment backfill queued', extra={'queued': queued, 'waiting': len(waiting)})
     return {'success': True, 'queued': queued, 'remaining': len(waiting) - queued}
