@@ -5,15 +5,19 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import patch
 
 import pytest
-from engagement_fixtures import ADMIN, BOARD, BOARD_POOL, ISSUER, USER, engagement_world, event
+from engagement_fixtures import ADMIN, APP_POOL, BOARD, BOARD_POOL, ISSUER, USER, engagement_world, event
 
+import mcp_global_handler as mcp
 from shared import feature_boards_routes, feature_requests_routes
 from shared import feature_requests_search_routes as search_routes
 from shared.api import create_api_resolver
 from shared.exceptions import ConfigurationError
 from shared.feature_request_evidence import MAX_DESCRIPTION_CHARS, load_feature_request_evidence
+from shared.mcp_delegate import DomainCall, DomainResult, build_proxy_event
+from shared.mcp_global_tools import TOOLS_BY_NAME
 from shared.participants_settings import SETTINGS_KEY
 
 OUTSIDER = {'sub': 'out-sub', 'email': 'eve@outsider.example', 'email_verified': 'true', 'iss': ISSUER + BOARD_POOL}
@@ -196,3 +200,40 @@ def test_search_is_not_read_as_a_request_id(lambda_context):
     status, body = _search(lambda_context, USER)
     assert status == 200
     assert body['items'] == []
+
+
+# ── Over /mcp/global (docs/mcp.md → Tools) ───────────────────────────────────
+# End to end: the MCP handler builds the delegated call and claims (board_route_claims), build_proxy_event
+# turns them into the engagement function's event, and the real search route answers it.
+
+MCP_SEARCH = TOOLS_BY_NAME['search_feature_requests']
+MCP_ROW = {'token_id': 'gmt_tok1', 'scope': 'read', 'created_by': 'admin-sub', 'created_by_username': 'ada'}
+
+
+def _mcp_search(ctx: Any, arguments: dict) -> tuple[str, str, list[dict]]:
+    """The tool's outcome, its answer as text, and the claims of every delegated call."""
+    seen: list[dict] = []
+
+    def call_domain(call: DomainCall, *, claims: dict) -> DomainResult:
+        seen.append(dict(claims))
+        response = resolver.resolve(build_proxy_event(call, claims), ctx)
+        return DomainResult(response['statusCode'], json.loads(response['body']))
+
+    with patch.object(mcp, 'call_domain', call_domain), patch.dict('os.environ', {'USER_POOL_ID': APP_POOL}):
+        content, outcome = mcp._run_tool(mcp.ToolCall(MCP_SEARCH, arguments, None), MCP_ROW)
+    return outcome, json.dumps(content), seen
+
+
+def test_an_mcp_search_sees_every_non_archived_board_never_an_archived_one(world, lambda_context):
+    """The row names an admin minter: the delegated claims still carry no group, so no admin reach."""
+    on_open = _request(world.requests, 1, OPEN_BOARD)
+    on_anyone = _request(world.requests, 2, ANYONE_BOARD)
+    archived = _request(world.requests, 3, ARCHIVED_BOARD)
+    outcome, text, claims = _mcp_search(lambda_context, {})
+    assert outcome == 'ok'
+    assert (on_open in text, on_anyone in text, archived in text) == (True, True, False)
+    assert (claims[0]['iss'], claims[0]['cognito:groups']) == (ISSUER + APP_POOL, '')
+    # Naming the archived board is a tool error (the route's 404: invisible to the caller), never its requests.
+    outcome, text, _ = _mcp_search(lambda_context, {'board': ARCHIVED_BOARD})
+    assert outcome != 'ok'
+    assert archived not in text
