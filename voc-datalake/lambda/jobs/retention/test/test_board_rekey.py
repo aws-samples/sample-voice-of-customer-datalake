@@ -72,7 +72,9 @@ def test_a_recount_that_cannot_write_is_skipped_not_raised(aws):
 
 
 def test_a_recount_of_a_deleted_request_does_nothing(aws):
-    boards_rekey.recount(aws['feature_requests'], 'fr_00000000dead')
+    table = aws['feature_requests']
+    boards_rekey.recount(table, 'fr_00000000dead')
+    assert table.scan()['Items'] == []
 
 
 def test_compute_totals_counts_a_deidentified_support_once():
