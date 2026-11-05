@@ -36,16 +36,20 @@ from jobs.retention.runs import BOARD_COUNTER, MODE_ERASE, note_erased_source
 from shared import retention
 from shared.archive_keys import archive_key_stem
 from shared.aws import is_conditional_check_failure
+from shared.feature_requests_raw import FEATURE_REQUESTS_SOURCE
+from shared.feature_requests_store import request_key
 from shared.timestamps import now_iso
 
-BOARDS_SOURCE: Final = 'feature_requests'
-STORE_BOARDS: Final = 'feature_requests'
+# The boards' source id (raw copies, tombstones) doubles as the table's key in ``Walk.tables``.
+BOARDS_SOURCE: Final = FEATURE_REQUESTS_SOURCE
+STORE_BOARDS: Final = FEATURE_REQUESTS_SOURCE
 ERASE_FIELD: Final = 'email'
 PAGE_SIZE: Final = 100
-_META_SK: Final = 'META'
 _SUPPORT_SK_PREFIX: Final = 'SUP#'
+# The request row's sort key, as its store writes it.
+_REQUEST_SK: Final = request_key('_')['sk']
 # What each row kind stores about the person (REMOVEd) and the id its raw folder is named after.
-_PERSON_FIELDS: Final = {_META_SK: ('reporter_email', 'reporter_name'), _SUPPORT_SK_PREFIX: ('email', 'name')}
+_PERSON_FIELDS: Final = {_REQUEST_SK: ('reporter_email', 'reporter_name'), _SUPPORT_SK_PREFIX: ('email', 'name')}
 _PROJECTION: Final = ('pk', 'sk', 'request_id', 'support_id', 'created_at')
 
 
@@ -58,7 +62,7 @@ def applies(run: Mapping[str, Any]) -> bool:
 def erase_filter(value: str) -> ConditionBase:
     """Requests filed by, and +1s given by, the email (case-insensitive: the boards store it lower-cased)."""
     spellings = list(dict.fromkeys([value.strip().lower(), value]))
-    request = Attr('sk').eq(_META_SK) & Attr('reporter_email').is_in(spellings)
+    request = Attr('sk').eq(_REQUEST_SK) & Attr('reporter_email').is_in(spellings)
     support = Attr('sk').begins_with(_SUPPORT_SK_PREFIX) & Attr('email').is_in(spellings)
     return request | support
 
@@ -76,7 +80,7 @@ def scan_page(table: Any, value: str, cursor: Mapping[str, Any] | None) -> dict[
 
 
 def _kind(row: Mapping[str, Any]) -> str:
-    return _META_SK if row.get('sk') == _META_SK else _SUPPORT_SK_PREFIX
+    return _REQUEST_SK if row.get('sk') == _REQUEST_SK else _SUPPORT_SK_PREFIX
 
 
 def _request_id(row: Mapping[str, Any]) -> str:
@@ -85,7 +89,7 @@ def _request_id(row: Mapping[str, Any]) -> str:
 
 def _item_id(row: Mapping[str, Any]) -> str:
     """The request id (META) or the support id (a +1): the tombstone's and the raw folder's name."""
-    if _kind(row) == _META_SK:
+    if _kind(row) == _REQUEST_SK:
         return _request_id(row)
     return str(row.get('support_id') or str(row['sk']).removeprefix(_SUPPORT_SK_PREFIX))
 

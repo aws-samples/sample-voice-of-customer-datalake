@@ -30,13 +30,13 @@ from shared.feature_boards_access import BoardScope, scope_for, scope_from_event
 from shared.feature_requests_enrich import ENRICHMENT_FIELD, STATUS_OK, queue, wants_backfill
 from shared.feature_requests_store import MAX_REQUESTS_LISTED, board_id_of, list_requests, requests_of_board
 from shared.logging import logger, tracer
+from shared.problem_aggregation import UNCATEGORIZED
 
 app = Router()
 
 MAX_DAYS: Final = 3650
 MAX_TOP: Final = 20
 MAX_BACKFILL: Final = 200
-UNCATEGORIZED: Final = 'uncategorized'
 UNKNOWN_SENTIMENT: Final = 'unknown'
 DAYS_INVALID: Final = f'days must be a whole number from 0 to {MAX_DAYS}'
 
