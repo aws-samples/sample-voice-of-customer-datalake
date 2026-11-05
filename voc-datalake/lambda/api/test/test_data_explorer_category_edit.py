@@ -12,6 +12,10 @@ from moto_helpers import CATEGORY_EDIT_ITEM as ITEM
 from moto_helpers import invoke, rest_event, seeded_category_edit_tables
 
 import data_explorer_handler
+from shared.test.source_profile_fixtures import no_source_profiles
+
+# A plain-field edit reads the source's PII policy (shared/feedback_field_edits.py): no profiles = allow.
+_no_profiles = pytest.fixture(autouse=True)(no_source_profiles)
 
 PATH = '/data-explorer/feedback'
 
