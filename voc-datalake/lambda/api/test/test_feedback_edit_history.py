@@ -16,6 +16,7 @@ from moto_helpers import invoke, rest_event
 
 import feedback_edit_handler
 from shared.ai_writing import PLAN_PRINCIPAL_CLAIM
+from shared.test.silver_fixtures import kept_versions
 
 BUCKET = 'voc-raw-edit-test'
 KEY = {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'}
@@ -32,9 +33,7 @@ def tables(monkeypatch):
 
 
 def _kept() -> list[dict]:
-    s3 = boto3.client('s3', region_name='us-east-1')
-    listed = s3.list_objects_v2(Bucket=BUCKET, Prefix='silver/').get('Contents', [])
-    return [json.loads(s3.get_object(Bucket=BUCKET, Key=entry.get('Key', ''))['Body'].read()) for entry in listed]
+    return kept_versions(BUCKET)
 
 
 def _put_dimensions(tables: tuple[Any, Any], lambda_context: Any, body: dict) -> tuple[int, Any]:

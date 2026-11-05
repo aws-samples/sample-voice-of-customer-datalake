@@ -6,19 +6,13 @@ import pytest
 from boto3.dynamodb.conditions import Key
 
 from jobs.retention import boards, boards_rekey, copies, handler, lineage, runs
-from jobs.retention.test.conftest import BUCKET, days_ago
+from jobs.retention.test.conftest import BUCKET, days_ago, put_feedback
 from shared.digests import sha256_hex
 from shared.feature_requests_store import support_key
 from shared.legal_basis import LEGACY_LEGAL_BASIS
 
 JOB_ID = 'er_00000000abcd'
 BASIS = 'GDPR art. 17 request #123'
-
-
-def _feedback(aws, feedback_id: str, source: str = 'web', **extra: Any) -> None:
-    aws['feedback'].put_item(Item={'pk': f'SOURCE#{source}', 'sk': f'FEEDBACK#{feedback_id}',
-                                   'feedback_id': feedback_id, 'source_id': feedback_id, 'source_platform': source,
-                                   'date': days_ago(1), **extra})
 
 
 def _radar(aws, feedback_id: str, source: str = 'web_rival', brand: str = 'rival', **extra: Any) -> str:
@@ -61,8 +55,8 @@ def _keys(aws) -> set[str]:
 class TestTombstones:
     def test_every_deleted_item_leaves_a_contentless_tombstone_with_its_legal_basis(self, aws, worker_context):
         event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        _feedback(aws, 'f1', author='Jane', text='I hate it')
-        _feedback(aws, 'f2', author='John')
+        put_feedback(aws, 'f1', author='Jane', text='I hate it')
+        put_feedback(aws, 'f2', author='John')
         handler.handle_event(event, worker_context)
         [tombstone] = _tombstones(aws, 'web')
         assert {key: value for key, value in tombstone.items() if key != 'deleted_at'} == {
@@ -75,8 +69,8 @@ class TestTombstones:
 
     def test_the_tombstones_are_written_before_any_item_is_deleted(self, aws, worker_context):
         event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        _feedback(aws, 'f1', author='Jane')
-        _feedback(aws, 'f2', author='Jane')
+        put_feedback(aws, 'f1', author='Jane')
+        put_feedback(aws, 'f2', author='Jane')
         order: list[str] = []
         real_write, real_delete = copies.write_tombstones, copies.retention.delete_item
 
@@ -94,7 +88,7 @@ class TestTombstones:
 
     def test_a_failed_delete_leaves_the_tombstone_and_a_retry_rewrites_the_same_key(self, aws, worker_context):
         event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        _feedback(aws, 'f1', author='Jane')
+        put_feedback(aws, 'f1', author='Jane')
         with patch.object(copies.retention, 'delete_item', side_effect=RuntimeError('boom')):
             assert handler.handle_event(event, worker_context)['status'] == 'failed'
         assert [row['sk'] for row in _tombstones(aws, 'web')] == ['f1']
@@ -105,7 +99,7 @@ class TestTombstones:
 
     def test_a_job_from_before_6_00_reads_not_recorded(self, aws, worker_context):
         event = _job(aws, 'author', 'Jane')
-        _feedback(aws, 'f1', author='Jane')
+        put_feedback(aws, 'f1', author='Jane')
         handler.handle_event(event, worker_context)
         assert _tombstones(aws, 'web')[0]['legal_basis'] == LEGACY_LEGAL_BASIS
 
@@ -113,8 +107,8 @@ class TestTombstones:
         aws['aggregates'].put_item(Item={'pk': 'SETTINGS#sources', 'sk': 'config', 'sources': [
             {'id': 'tickets', 'retention_days': 30, 'retention_legal_basis': 'DPA with vendor X, 12 months'},
             {'id': 'legacy', 'retention_days': 30}]})
-        _feedback(aws, 't1', 'tickets', date=days_ago(40))
-        _feedback(aws, 'l1', 'legacy', date=days_ago(40))
+        put_feedback(aws, 't1', 'tickets', date=days_ago(40))
+        put_feedback(aws, 'l1', 'legacy', date=days_ago(40))
         result = handler.handle_event({'mode': 'retention'}, worker_context)
         assert result['deleted_items'] == 2
         assert _tombstones(aws, 'tickets')[0]['legal_basis'] == 'DPA with vendor X, 12 months'
@@ -175,7 +169,7 @@ UPLOAD = 'raw/csv_upload/2026/01/01/job.csv'
 
 class TestWholeFileUploads:
     def _from_upload(self, aws, feedback_id: str, source: str, **extra: Any) -> None:
-        _feedback(aws, feedback_id, source, s3_raw_uri=f's3://{BUCKET}/{UPLOAD}', **extra)
+        put_feedback(aws, feedback_id, source, s3_raw_uri=f's3://{BUCKET}/{UPLOAD}', **extra)
 
     def test_a_whole_source_erasure_deletes_the_sources_uploaded_file_every_version(self, aws, worker_context):
         aws['s3'].put_object(Bucket=BUCKET, Key=UPLOAD, Body=b'a')
@@ -226,8 +220,8 @@ def _row(aws, sk: str) -> dict:
 class TestLineage:
     def test_artifacts_that_cited_an_erased_item_lose_the_id_and_say_so(self, aws, worker_context):
         event = _job(aws, 'author', 'Jane', legal_basis=BASIS)
-        _feedback(aws, 'f1', author='Jane')
-        _feedback(aws, 'f2', author='John')
+        put_feedback(aws, 'f1', author='Jane')
+        put_feedback(aws, 'f2', author='John')
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1', 'f2'], evidence_feedback_ids=['f1'])
         _artifact(aws, 'PRD#b', input_feedback_ids=['f2'])
         _artifact(aws, 'META')
@@ -243,7 +237,7 @@ class TestLineage:
 
     def test_the_count_adds_up_over_runs(self, aws, worker_context):
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1'], erased_evidence={'count': 3, 'job_id': 'er_old'})
-        _feedback(aws, 'f1', author='Jane')
+        put_feedback(aws, 'f1', author='Jane')
         handler.handle_event(_job(aws, 'author', 'Jane', legal_basis=BASIS), worker_context)
         assert _row(aws, 'PERSONA#a')['erased_evidence']['count'] == 4
 
@@ -261,7 +255,7 @@ class TestLineage:
         assert _row(aws, 'PERSONA#a')['input_feedback_ids'] == ['f1', 'f2']
 
     def test_the_lineage_pass_hands_over_with_its_cursor(self, aws, worker_context, invoke_mock):
-        _feedback(aws, 'f1', author='Jane')
+        put_feedback(aws, 'f1', author='Jane')
         _artifact(aws, 'PERSONA#a', input_feedback_ids=['f1'])
         _artifact(aws, 'PERSONA#b', input_feedback_ids=['f1'])
         event = _job(aws, 'author', 'Jane', legal_basis=BASIS)

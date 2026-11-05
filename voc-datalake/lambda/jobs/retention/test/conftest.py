@@ -1,6 +1,7 @@
 """Fixtures for the retention / erasure worker: moto feedback + aggregates tables
 and a versioned raw bucket, so deletes (and every object version) are real."""
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -19,6 +20,13 @@ FEATURE_REQUESTS_TABLE = handler.FEATURE_REQUESTS_TABLE or 'test-feature-request
 
 def days_ago(days: int) -> str:
     return (datetime.now(UTC).date() - timedelta(days=days)).isoformat()
+
+
+def put_feedback(aws: dict[str, Any], feedback_id: str, source: str = 'web', **extra: Any) -> None:
+    """One stored review of ``source``, processed yesterday (its ``source_id`` is its id)."""
+    aws['feedback'].put_item(Item={'pk': f'SOURCE#{source}', 'sk': f'FEEDBACK#{feedback_id}',
+                                   'feedback_id': feedback_id, 'source_id': feedback_id, 'source_platform': source,
+                                   'date': days_ago(1), **extra})
 
 
 @pytest.fixture

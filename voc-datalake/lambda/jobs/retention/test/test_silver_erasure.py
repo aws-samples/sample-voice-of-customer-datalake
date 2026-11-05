@@ -4,21 +4,14 @@ An in-place change keeps the item as it was (``shared/silver_provenance.py``). T
 copies of the customer's data, so an erasure or a retention delete of the item deletes every one of
 them (every object version), and a whole-source erasure sweeps what is left under ``silver/{source}/``.
 """
-from typing import Any
 
 from jobs.retention import handler
-from jobs.retention.test.conftest import BUCKET, days_ago
+from jobs.retention.test.conftest import BUCKET, days_ago, put_feedback
 from shared.digests import sha256_hex
 from shared.retention import silver_source_prefix
 
 JOB_ID = 'er_00000000beef'
 BASIS = 'GDPR art. 17 request #456'
-
-
-def _feedback(aws, feedback_id: str, source: str = 'web', **extra: Any) -> None:
-    aws['feedback'].put_item(Item={'pk': f'SOURCE#{source}', 'sk': f'FEEDBACK#{feedback_id}',
-                                   'feedback_id': feedback_id, 'source_id': feedback_id, 'source_platform': source,
-                                   'date': days_ago(1), **extra})
 
 
 def _kept_version(aws, source: str, feedback_id: str, name: str = '20260101T000000000000Z-0a0b0c0d') -> str:
@@ -40,8 +33,8 @@ def _versions(aws) -> set[str]:
 
 
 def test_an_erased_item_takes_every_kept_version_with_it(aws, worker_context):
-    _feedback(aws, 'f1', author='Jane')
-    _feedback(aws, 'f2', author='John')
+    put_feedback(aws, 'f1', author='Jane')
+    put_feedback(aws, 'f2', author='John')
     first = _kept_version(aws, 'web', 'f1')
     aws['s3'].put_object(Bucket=BUCKET, Key=first, Body=b'{"second": "version"}')  # two object versions
     _kept_version(aws, 'web', 'f1', '20260102T000000000000Z-1a1b1c1d')
@@ -55,7 +48,7 @@ def test_an_erased_item_takes_every_kept_version_with_it(aws, worker_context):
 def test_a_retention_delete_takes_the_kept_versions_too(aws, worker_context):
     aws['aggregates'].put_item(Item={'pk': 'SETTINGS#sources', 'sk': 'config', 'sources': [
         {'id': 'web', 'label': 'Web', 'retention_days': 30, 'retention_legal_basis': BASIS}]})
-    _feedback(aws, 'old', date=days_ago(400))
+    put_feedback(aws, 'old', date=days_ago(400))
     _kept_version(aws, 'web', 'old')
 
     handler.handle_event({'mode': 'retention'}, worker_context)
@@ -64,7 +57,7 @@ def test_a_retention_delete_takes_the_kept_versions_too(aws, worker_context):
 
 
 def test_a_whole_source_erasure_sweeps_silver_of_that_source_only(aws, worker_context):
-    _feedback(aws, 'f1')
+    put_feedback(aws, 'f1')
     _kept_version(aws, 'web', 'f1')
     orphan = _kept_version(aws, 'web', 'gone-already')
     kept_elsewhere = _kept_version(aws, 'web_shop', 'f9')
