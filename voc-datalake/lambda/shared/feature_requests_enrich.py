@@ -270,10 +270,9 @@ def _event_ids(event: Mapping[str, Any]) -> list[str]:
 
 
 def _out_of_time(context: Any) -> bool:
-    remaining = getattr(context, 'get_remaining_time_in_millis', None)
-    if not callable(remaining):
-        return False
-    left = remaining()
+    """Less than ``MIN_REMAINING_MS`` left of the invocation (a context without a clock never is)."""
+    clock = getattr(context, 'get_remaining_time_in_millis', None)
+    left = clock() if callable(clock) else None
     return isinstance(left, int | float) and left < MIN_REMAINING_MS
 
 
