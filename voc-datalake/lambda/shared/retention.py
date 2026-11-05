@@ -76,7 +76,6 @@ __all__ = [
     'delete_item',
     'delete_radar_item',
     'delete_raw_prefix_page',
-    'delete_silver_versions',
     'delete_whole_upload',
     'erase_filter',
     'raw_source_prefix',
