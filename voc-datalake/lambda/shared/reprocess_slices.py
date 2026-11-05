@@ -4,8 +4,8 @@ The slice a category-reprocess job replays (TENETS.md D3): which reviews it read
 ``POST /settings/categories/reprocess`` takes, beside ``mode``:
 
 * ``sources``    — up to 50 source ids (``source_platform``); absent = every source.
-  A sourced job reads each source's own partition (``SOURCE#{id}``) with a Query,
-  never the whole table.
+  Matched on each item's ``source_platform`` in the Scan's filter, never on its
+  partition: a review with a brand name is stored under ``SOURCE#{brand_name}``.
 * ``categories`` — up to 50 stored category names; absent = every category.
 * ``days``       — the platform window (0 = all time), OR
 * ``date_from`` / ``date_to`` — ``YYYY-MM-DD``, inclusive, either may be left open.

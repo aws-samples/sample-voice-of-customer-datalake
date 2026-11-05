@@ -110,7 +110,7 @@ app = create_api_resolver()
 app.use(middlewares=[admins_only])
 
 
-def _reject_prototype_mutation(key: str) -> None:
+def _reject_read_only_prefix(key: str) -> None:
     if key.startswith('prototypes/'):
         raise ValidationError('Generated prototypes are read-only in Data Explorer')
     # Kept versions of processed feedback (shared/silver_provenance.py) are the platform's own history: a file
@@ -371,7 +371,7 @@ def save_s3_file():
     content = body.get('content', '')
     sync_to_dynamo = body.get('sync_to_dynamo', False)
     bucket_name, key = _keyed_bucket_request(body)
-    _reject_prototype_mutation(key)
+    _reject_read_only_prefix(key)
 
     # Ensure content is a string
     if isinstance(content, dict):

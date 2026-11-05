@@ -106,6 +106,20 @@ def test_a_summary_only_source_refuses_customer_text(tables, lambda_context, fie
     assert _kept() == []
 
 
+def test_a_summary_only_source_may_remove_customer_text_it_should_not_hold(tables, lambda_context):
+    """Clearing leaked text reduces what is stored, so it is allowed; the earlier version is kept, stripped."""
+    # As the processor stores it: the item carries its source's policy.
+    tables[0].update_item(Key=KEY, UpdateExpression='SET normalized_text = :t, pii_policy = :p',
+                          ExpressionAttributeValues={':t': 'leaked words', ':p': 'summary_only'})
+    with seeded_source_profiles(_profile('summary_only')):
+        status, _ = _save(tables, lambda_context, {'normalized_text': None})
+
+    assert status == 200
+    assert 'normalized_text' not in _stored(tables)
+    (kept,) = _kept()
+    assert 'normalized_text' not in kept['item']
+
+
 def test_unreadable_source_profiles_fail_closed(tables, lambda_context):
     with unreadable_source_profiles():
         status, _ = _save(tables, lambda_context, {'original_text': EMAIL_TEXT})
