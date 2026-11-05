@@ -27,3 +27,17 @@ describe('category_override on source cards', () => {
     expect(toFeedbackSource({ feedback_id: 'f1', category_override: ['x'] })).toStrictEqual({ feedback_id: 'f1' });
   });
 });
+
+describe('updated_by on source cards', () => {
+  it('carries the editor kind, never the Cognito subject', () => {
+    const card = toFeedbackSource({
+      feedback_id: 'f1', updated_by: { sub: 'sub-secret', kind: 'admin' }, change_reason: 'category_edit',
+    });
+    expect(card).toStrictEqual({ feedback_id: 'f1', updated_by: { kind: 'admin' }, change_reason: 'category_edit' });
+    expect(JSON.stringify(card)).not.toContain('sub-secret');
+  });
+
+  it('drops a malformed stamp', () => {
+    expect(toFeedbackSource({ feedback_id: 'f1', updated_by: 'sub-secret' })).toStrictEqual({ feedback_id: 'f1' });
+  });
+});

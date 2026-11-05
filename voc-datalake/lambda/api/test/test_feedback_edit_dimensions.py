@@ -11,6 +11,7 @@ from moto_helpers import invoke, rest_event
 
 import feedback_edit_handler
 from shared.category_access import access_key
+from shared.feedback_category import ManualEdit
 
 DIMENSIONS = [
     {'key': 'product', 'label': 'Product', 'values': [{'name': 'App'}, {'name': 'Web'}]},
@@ -98,8 +99,17 @@ def test_a_concurrent_change_is_409(tables, lambda_context):
 
 def test_the_update_is_conditional_on_what_was_read():
     item = {**KEY, 'dimensions': {'product': 'App'}, 'tags': ['a']}
-    kwargs = feedback_edit_handler._dimensions_update_kwargs(item, {}, {}, ['a'])
-    assert kwargs['UpdateExpression'] == 'SET #t = :t REMOVE #d, #ds'
+    edit = ManualEdit(actor={'sub': 'u1', 'kind': 'user'}, reason='dimensions_edit')
+    kwargs = feedback_edit_handler._dimensions_update_kwargs(item, {}, {}, ['a'], edit)
+    assert kwargs['UpdateExpression'] == (
+        'SET #edit0 = :edit0, #edit1 = :edit1, #edit2 = :edit2, #edit3 = :edit3, #edit4 = :edit4, '
+        '#edit5 = :edit5, #t = :t REMOVE #d, #ds')
+    stamped = {kwargs['ExpressionAttributeNames'][f'#edit{i}']: kwargs['ExpressionAttributeValues'][f':edit{i}']
+               for i in range(6)}
+    assert stamped['enrichment_mode'] == 'manual'
+    assert stamped['updated_by'] == {'sub': 'u1', 'kind': 'user'}
+    assert stamped['change_reason'] == 'dimensions_edit'
+    assert stamped['updated_at'] == stamped['enriched_at']
     built = ConditionExpressionBuilder().build_expression(kwargs['ConditionExpression'])
     names = set(built.attribute_name_placeholders.values())
     assert names == {'pk', 'dimensions', 'dimension_sources', 'tags'}

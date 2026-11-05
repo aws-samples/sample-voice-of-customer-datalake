@@ -8,6 +8,10 @@ serving the item under its old category, past the category-access filter),
 record ``category_source='manual'`` plus a ``category_override`` audit, and be
 conditional on the item still existing with the category that was read.
 
+Every edit also keeps the item as it was (``keep_before_edit``, ``silver/`` in the raw
+bucket) and stamps ``enrichment_mode 'manual'``, ``updated_by {sub, kind}``,
+``updated_at`` and ``change_reason`` (``manual_edit_fields``).
+
 This module builds those pieces; callers run the ``update_item``. The stored
 audit keeps the editor's Cognito ``by_sub``; the client projection lives in
 ``shared.category_override``.
@@ -27,6 +31,7 @@ from shared.category_gate import read_categories_config
 from shared.exceptions import ApiError, ConflictError, ServiceError, ValidationError
 from shared.logging import logger
 from shared.project_access import Caller
+from shared.silver_provenance import change_stamp, fields_of_update, keep_silver_version, provenance
 from shared.timestamps import now_iso
 
 CATEGORY_SOURCE_MANUAL = 'manual'
@@ -145,6 +150,36 @@ def category_change(
         Attr('category').eq(previous) if previous is not None else Attr('category').not_exists()
     )
     return change
+
+
+@dataclass(frozen=True)
+class ManualEdit:
+    """Who made a person's in-place edit and why: the kept version and the stamp (TENETS.md D1, D4)."""
+
+    actor: Mapping[str, str]
+    reason: str
+
+
+def manual_edit_fields(edit: ManualEdit, at: str) -> dict[str, Any]:
+    """The fields a person's edit writes besides its own: ``enrichment_mode 'manual'`` + the change stamp."""
+    return {**provenance('manual', at=at), **change_stamp(edit.actor, edit.reason, at)}
+
+
+def assignment_clauses(fields: Mapping[str, Any], prefix: str) -> tuple[list[str], dict[str, str], dict[str, Any]]:
+    """``(SET clauses, names, values)`` assigning each of ``fields``; aliases are ``#{prefix}{i}``."""
+    sets: list[str] = []
+    names: dict[str, str] = {}
+    values: dict[str, Any] = {}
+    for index, (name, value) in enumerate(fields.items()):
+        sets.append(f'#{prefix}{index} = :{prefix}{index}')
+        names[f'#{prefix}{index}'] = name
+        values[f':{prefix}{index}'] = value
+    return sets, names, values
+
+
+def keep_before_edit(item: Mapping[str, Any], edit: ManualEdit, update_kwargs: Mapping[str, Any]) -> None:
+    """Keep ``item`` as it is before ``update_kwargs`` runs (``shared.silver_provenance``; never raises)."""
+    keep_silver_version(item, actor=edit.actor, reason=edit.reason, changed_fields=fields_of_update(update_kwargs))
 
 
 def update_expression(sets: list[str], removes: list[str]) -> str:
