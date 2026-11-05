@@ -176,7 +176,8 @@ How it works:
   from its lists and gains `erased_evidence: {count, job_id, mode, at}` (`count` adds up across
   runs; `artifacts_marked` on the job). Its text is never rewritten (it belongs to its owner); the
   update is conditional, so an artifact regenerated meanwhile is left for the next run.
-- The worker walks its phases in order (`items`, `radar`, `raw` for a whole source, `lineage`) and
+- The worker walks its phases in order (`items`, `radar`, `boards` for an email erasure, `raw` for a
+  whole source, `lineage`) and
   hands over to a fresh invocation of itself, with its phase and cursor, before its 15-minute timeout.
 - `POST /settings/erasure` answers 202 `{job}`. `GET /settings/erasure` lists the newest 20
   jobs, and the sources a whole-source erasure may name. A job shows `legal_basis`,
@@ -196,6 +197,13 @@ How it works:
 - An `email` erasure is case-insensitive: ingestion stores `metadata.email` and
   `metadata.submitter_email` lower-cased, and the worker matches the lower-cased value as
   well as the value as typed (for items stored before that normalisation).
+- **Feedback boards.** An `email` erasure without a source (or with the source
+  `feature_requests`) also reaches `voc-feature-requests`: the person's requests and +1s are
+  tombstoned (`AUDIT#tombstone#feature_requests`), their raw copies under
+  `raw/feature_requests/` deleted (every version) and the rows de-identified (email and name
+  removed; the request text stays). Counted as `board_items_deidentified`; artifacts that read
+  such a request (`input_feature_request_ids`) are marked like for an erased review
+  ([feature-requests.md → Erasure](feature-requests.md#erasure)).
 
 ### Delete all data from a source
 
@@ -309,6 +317,7 @@ Least-privilege grants (`lib/stacks/retention-worker.ts`):
 | Feedback table | `GetItem`, `Query`, `Scan`, `DeleteItem` |
 | Radar table | `Scan`, `DeleteItem`; `UpdateItem` on the `SETTINGS#radar` partition only (the Radar cache version) |
 | Projects table | `Scan`, `UpdateItem` (no delete, no put) |
+| Feature requests table | `Scan`, `UpdateItem` (de-identifies board rows; no delete, no put) |
 | Raw bucket | `DeleteObject` and `DeleteObjectVersion` on `raw/*`, plus `ListBucketVersions` with the `raw/` prefix. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source |
 | Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); no delete |
 | KMS | Encrypt/decrypt |

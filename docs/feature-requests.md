@@ -193,11 +193,13 @@ an unverified one: 403); `name` comes from the token when there is one, else fro
 | POST | `/feature-requests/{id}/supports` | a user of its board who does not support it yet | `{fields, name?}` → 201 `{support, request}`; one +1 per person per request (the reporter's own included, emails compared case-insensitively): a second answers 409 `already_supported` (also when two arrive at once: the +1's id is derived from the request and the email, and the write is conditional), and the board offers "Edit my +1" instead of "+1" |
 | PUT, DELETE | `/feature-requests/{id}/supports/{support_id}` | its owner or admin | PUT replaces the support's fields → `{request}` |
 | POST | `/feature-requests/{id}/promote` | **admin** with edit on the project | `{project_id}` → `{request, list, added, skipped: [{email, reason}]}` |
+| GET | `/feature-requests/insights?board=&days=` | a user of the board (no `board` = every board the caller may use) | counts per board, category, status and sentiment ([Insights](#insights)) |
+| POST | `/feature-requests/insights/enrich` | **admin** | queue enrichment for up to 200 requests that need it → `{success, queued, remaining}` ([Enrichment](#enrichment)) |
 
 **Board** = `{board_id, slug, name, description, template, fields, statuses, audience, archived, paused,
 request_count, share_url ({FRONTEND_URL}/board/{slug}), created_at, updated_at}` (+ `paused_at` while paused;
 + `created_by`, `paused_by` and the full audience for admins; others get `audience: {mode}`). **Request** carries `board_id`, `status`, `fields` (values by key) and
-`totals` (the template's keys). **Support** carries its values both as `fields` and at the top level.
+`totals` (the template's keys) and, once enriched, `enrichment` ([Enrichment](#enrichment)). **Support** carries its values both as `fields` and at the top level.
 
 `fields` is checked against the board's enabled fields: an unknown or switched-off key, a missing required one or a
 bad value is a 400. A client from before boards that sends the sales values at the top level of the body (no
@@ -236,7 +238,7 @@ Table `voc-feature-requests-<suffix>` (pk/sk, index `gsi1`, the Core KMS key, po
 | `BOARD#{id}` | `META` | `brd_` + 8 hex (the seeded board: `brd_sales`), slug, name, description, template, fields, statuses, audience, archived, paused (+ paused_at, paused_by while paused; absent = not paused), request_count, created/updated; gsi1pk `BOARDS`, gsi1sk the lower-cased name |
 | `SLUG#{slug}` | `BOARD` | board_id: the slug's uniqueness guard, written in one transaction with META |
 | `BOARDS#SEEDED` | `META` | nothing but the key: the Sales board was seeded (no gsi1pk, never listed); never seed again |
-| `FR#{id}` | `META` | title, description, status, `board_id` (absent = the seeded board), `fields`, reporter email and name, totals, project_id?, list_id?, `version` (conditional writes); gsi1pk `FRS` |
+| `FR#{id}` | `META` | title, description, status, `board_id` (absent = the seeded board), `fields`, reporter email and name, totals, `enrichment`?, project_id?, list_id?, `version` (conditional writes); gsi1pk `FRS` |
 | `FR#{id}` | `SUP#{id}` | email, name, the +1's field values, is_reporter, created/updated. The id is `sup_` + the first 16 hex of sha256(request id, lowercased email); supports from releases before 5.54.01 keep random ids |
 | `RATE#{board_id}#{hash}#{day}` | `COUNT` | `requests`, `supports` counters of an `anyone` board, `ttl` |
 
@@ -270,6 +272,75 @@ Nothing more than the row stores: no status, totals or bookkeeping, so an admin'
 The copies are **opt-in**: none is written until an admin saves a `feature_requests` source profile (Administration →
 Privacy & access → Source policies) that permits one; under `redact` or `summary_only` none is written either, and an
 unreadable profile writes none. Opt-in because the copies hold reporters' and supporters' emails. Deleting a request or
-a +1 does not delete its raw copies (the raw lake keeps history); a whole-source erasure of `feature_requests` removes
-them. An erasure by email does NOT reach them: it scans `voc-feedback`, and boards are not a feedback source. Board
-requests are NOT queued into `voc-feedback`: that is a product decision not made yet.
+a +1 (`DELETE /feature-requests/{id}`, `DELETE …/supports/{id}`) does not delete its raw copies (the raw lake keeps
+history); an erasure by email removes the copies of that person's requests and +1s ([Erasure](#erasure)), and a
+whole-source erasure of `feature_requests` removes them all. Board requests are NOT queued into `voc-feedback`: they
+are their own evidence source, with their own [enrichment](#enrichment).
+
+## Enrichment
+
+Board requests never enter `voc-feedback` or the review metrics. Each one gets a light enrichment of its own,
+stored on its row (`lambda/shared/feature_requests_enrich.py`, prompt version `PROMPT_VERSION`):
+
+```
+enrichment: {status: 'ok' | 'failed', category, subcategory, sentiment: positive|neutral|negative|mixed,
+             problem_summary (≤ 300 chars), language, model_id, prompt_version, text_sha16, enriched_at}
+```
+
+- **When.** Creating a request, and an edit that changes its title or description, async-invokes the engagement
+  Lambda itself (`{"engagement_job": "enrich_feature_request", "request_id"}`); the answer to the request does not
+  wait for it, and a failed invoke never fails the request (the backfill picks it up). An edit of the fields or the
+  status, a +1 and an admin's triage do not re-run it: `text_sha16` (the first 16 hex of sha256 of the title and
+  description) says which text was enriched.
+- **What.** ONE call on the `enrichment` surface (the model the admin picked for it in Administration → AI models;
+  never a hard-coded id). `model_id` is the model that answered, after any capacity fallback. The category and
+  subcategory are checked against the categories config (Administration → Taxonomy); an unknown one is stored as
+  `null`, never invented. The title is reduced to one line and the description is fenced as data the model is told
+  never to obey.
+- **Newer edits win.** The result is written only while the request still exists with the title and description
+  that were enriched; an edit meanwhile queued its own job.
+- **Failures.** A model error or an unreadable answer writes `status: 'failed'` (every value `null`).
+- **Backfill.** `POST /feature-requests/insights/enrich` (app admins) queues up to 200 requests with no enrichment,
+  a stale one or a failed one, in jobs of 10 (each job hands the rest on when its 60 s run gets short) →
+  `{queued, remaining}`. Call it again for the remaining ones once the queued jobs finished (a request still waiting
+  is counted again until its job ran). Each enrichment is one model call billed to the account.
+
+## Insights
+
+`GET /feature-requests/insights?board=&days=` (`lambda/shared/feature_requests_insights_routes.py`) counts one board's
+requests, or, without `board`, those of every board the caller may use (a board they may not use is a 404, as
+everywhere). `days` is 0–3650 (0 or absent = all time) and filters on the request's `created_at`. The answer:
+
+```
+{success, board: {id, label} | null, window_days, truncated,
+ totals: {requests, supporters, enriched},
+ top: [{request_id, board_id, title, status, supporters, category}],   // ≤ 20, most supporters first
+ by_category: [{category, requests, supporters}],                     // no enrichment = 'uncategorized'
+ by_status: [{status, requests, supporters}],
+ by_sentiment: [{sentiment, requests}]}                               // no enrichment = 'unknown'
+```
+
+Supporters are each request's `totals.supporters` (distinct supporter emails, the reporter included). Only a
+successful enrichment counts (`enriched`); a failed one reads as not enriched. At most 1000 requests are read
+(newest first); `truncated: true` says the bound was reached. No email or name is in the answer, and these numbers
+are never mixed into the review metrics.
+
+## Erasure
+
+An erasure by email (`POST /settings/erasure {field: 'email', …}`, [source-policies.md](source-policies.md#retention-and-erasure))
+without a source, or with the source `feature_requests`, also reaches the boards (`lambda/jobs/retention/boards.py`):
+`voc-retention` scans `voc-feature-requests` for requests whose `reporter_email` and +1s whose `email` match
+(case-insensitive) and, for each row:
+
+1. writes a tombstone `AUDIT#tombstone#feature_requests` / `<request or support id>` (ids, `action: deidentified`,
+   the legal basis; no content, no `ttl`), one PutItem each, before the row changes;
+2. deletes every version under the row's raw-copy folder (`raw/feature_requests/{y}/{m}/{d}/<id>/`);
+3. **de-identifies** the row: removes `reporter_email` / `reporter_name` from a request, `email` / `name` from a +1.
+   The request's title, description, fields and +1 count stay: they are the board's shared content. The next
+   recount of the request's totals no longer counts the erased +1 as a supporter.
+
+The job counts the rows in `board_items_deidentified`. Documents, personas and research results that read an
+erased person's request (`input_feature_request_ids`) lose that id and are marked `erased_evidence`, like for an
+erased review. The worker holds `Scan` and `UpdateItem` on the table, no delete. A +1's id is derived from the
+request and the email (above), so it stays the same after the email is removed. Text a person typed into a
+description or a field (a contact email, a name) is not searched: edit or delete such a request by hand.
