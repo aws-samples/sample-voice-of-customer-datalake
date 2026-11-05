@@ -157,16 +157,21 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
       .toStrictEqual(['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:UpdateItem']);
   });
 
-  it('cannot reach projects, conversations, S3 or the processing queue', () => {
-    const offenders = roleStatements(apiTemplate(), ROLE).filter((s) =>
+  it('cannot reach projects, conversations, the processing queue or S3 beyond keeping Silver versions', () => {
+    const statements = roleStatements(apiTemplate(), ROLE);
+    const offenders = statements.filter((s) =>
       ['Projects', 'Conversations', 'Jobs'].some((t) => s.resource.includes(t))
-      || s.actions.some((a) => a.startsWith('s3:') || a.startsWith('sqs:') || a.startsWith('bedrock:')));
+      || s.actions.some((a) => a.startsWith('sqs:') || a.startsWith('bedrock:')));
     expect(offenders).toStrictEqual([]);
+    // Its one S3 grant: a write-once PutObject of the review as it was (lambda/shared/silver_provenance.py).
+    const s3 = statements.filter((s) => s.actions.some((a) => a.startsWith('s3:')));
+    expect(s3.map((s) => s.actions)).toStrictEqual([['s3:PutObject']]);
+    expect(s3.every((s) => s.resource.includes('/silver/*'))).toBe(true);
   });
 
-  it('is handed both table names', () => {
+  it('is handed both table names, the raw bucket and the app release', () => {
     expect(Object.keys(lambdaEnv(apiTemplate(), 'feedback_edit_handler.lambda_handler')))
-      .toStrictEqual(expect.arrayContaining(['FEEDBACK_TABLE', 'AGGREGATES_TABLE']));
+      .toStrictEqual(expect.arrayContaining(['FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'APP_VERSION']));
   });
 });
 

@@ -18,6 +18,7 @@ import type * as s3 from 'aws-cdk-lib/aws-s3';
 import type * as sqs from 'aws-cdk-lib/aws-sqs';
 import type { Construct } from 'constructs';
 import { grantClaudeModels } from '../utils/claude-model-grant';
+import { grantSilverHistoryPut } from '../utils/silver-history-grants';
 import { grantReadAndWrites, grantWrites } from '../utils/table-write-grants';
 
 /** Comprehend `comprehendActions` and Translate's TranslateText (neither takes a resource ARN, so `*`). Shared by
@@ -46,6 +47,7 @@ export interface ProcessorRoleProps {
  * - radar (another brand's reviews): the dedupe-marker read and one transaction of Put + counter Updates;
  * - idempotency: Powertools' record (Get / Put / Update / Delete);
  * - raw/: write-once Put of the inline raw_data fallback (lambda/shared/raw_fallback.py), no read, no delete;
+ * - silver/: write-once Put of an item's kept version before an in-place refresh (shared/silver_provenance.py);
  * - the processing queue, Bedrock (the 'enrichment' surface, any allowlisted model), Comprehend, Translate, KMS.
  */
 export function createProcessorRole(scope: Construct, props: ProcessorRoleProps): iam.Role {
@@ -64,6 +66,9 @@ export function createProcessorRole(scope: Construct, props: ProcessorRoleProps)
   props.radarTable.grant(role, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
   // Write-once under raw/ (the bucket policy refuses a put without If-None-Match). Put only: no read, no delete.
   props.rawDataBucket.grantPut(role, 'raw/*');
+  // Write-once under silver/ too: the item as it was before a source refresh or a CSV correction
+  // (lambda/shared/silver_provenance.py; the same If-None-Match bucket rule). Put only.
+  grantSilverHistoryPut(props.rawDataBucket, role);
   return role;
 }
 

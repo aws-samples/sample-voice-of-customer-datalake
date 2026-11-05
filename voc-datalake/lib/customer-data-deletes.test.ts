@@ -88,6 +88,8 @@ const RAW_BUCKET_PREFIXES: Readonly<Record<string, readonly string[]>> = {
     // The boards' opt-in raw copies (lambda/shared/feature_requests_raw.py): an erasure by email reaches them.
     'raw/feature_requests/2026/01/01/fr_0123456789ab/0123456789abcdef.json',
   ],
+  // The kept Silver versions of an edited item (lambda/shared/silver_provenance.py): copies of customer data.
+  'silver/': ['silver/webscraper/abc/20260101T000000000000Z-0a0b0c0d.json'],
   'avatars/': ['avatars/persona_1_abc.png'],
   'prototypes/': ['prototypes/proj_1/doc_1.html'],
   'projects/*/product_docs/': ['projects/proj_1/product_docs/raw/doc.pdf', 'projects/proj_1/product_docs/extracted/doc.txt'],
@@ -100,6 +102,7 @@ const RAW_BUCKET_PREFIXES: Readonly<Record<string, readonly string[]>> = {
 /** Prefix → who may delete objects there (any S3 delete action, versions included). */
 const RAW_BUCKET_DELETERS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   'raw/': { [RETENTION_ROLE]: 'erasure requests and declared retention limits (never the whole-upload archives)' },
+  'silver/': { [RETENTION_ROLE]: 'every kept version of an erased or expired item, and a whole-source sweep' },
   'avatars/': {
     [PROJECTS_API]: 'project / persona deletes and superseded avatars',
     [PERSONA_GENERATOR]: 'the avatars of the personas a replace removes',
@@ -211,9 +214,9 @@ describe('customer-data, workspace and audit deletes across every stack', () => 
     expect(prefixDeleters(prefix)).toStrictEqual(Object.keys(allowed).sort(byCodeUnit));
   });
 
-  it('voc-retention deletes only under raw/, never bucket-wide', () => {
+  it('voc-retention deletes only under raw/ and silver/, never bucket-wide', () => {
     const rawDeletes = grants.filter((g) => g.role === RETENTION_ROLE && g.actions.some((a) => S3_DELETE.test(a)));
-    expect(rawDeletes.flatMap(rawBucketGlobs)).toStrictEqual(['raw/*']);
+    expect(rawDeletes.flatMap(rawBucketGlobs).sort(byCodeUnit)).toStrictEqual(['raw/*', 'silver/*']);
   });
 
   it('voc-retention reaches the feedback boards to de-identify and re-key (reads, UpdateItem, Put/Delete under FR#*)', () => {

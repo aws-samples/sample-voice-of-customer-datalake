@@ -27,6 +27,7 @@ import { createResearchStateMachine } from './processing-research-workflow';
 import { grantSharedMemoryRecall } from '../utils/memory-recall-grant';
 import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT } from './processor-timing';
 import { appVersion } from '../utils/connector-version';
+import { grantSilverHistoryPut } from '../utils/silver-history-grants';
 import { grantReadAndWrites } from '../utils/table-write-grants';
 import { FEATURE_REQUESTS_TABLE_ENV, grantFeatureRequestEvidenceRead } from '../utils/feature-request-evidence-grant';
 import { createAggregatorRole, createProcessorRole, grantTextAnalysis } from './processing-roles';
@@ -461,6 +462,8 @@ export class VocProcessingStack extends VocStack {
     // the settings API's, not the worker's.
     deps.aggregatesTable.grant(role, 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     deps.rawDataBucket.grantRead(role, 'raw/*');
+    // The item as it was before each reprocess update (lambda/shared/silver_provenance.py): write-once Put only.
+    grantSilverHistoryPut(deps.rawDataBucket, role);
     deps.kmsKey.grantEncryptDecrypt(role);
     // 'enrichment'/'utilities' surfaces are repointable via the picker (issue #96).
     grantClaudeModels(role, 'invoke');
@@ -495,6 +498,8 @@ export class VocProcessingStack extends VocStack {
         FEEDBACK_TABLE: deps.feedbackTable.tableName,
         AGGREGATES_TABLE: deps.aggregatesTable.tableName,
         RAW_DATA_BUCKET: deps.rawDataBucket.bucketName,
+        // pipeline_version on every item it re-derives (lambda/shared/silver_provenance.py).
+        APP_VERSION: appVersion(),
         PRIMARY_LANGUAGE: deps.primaryLanguage,
         POWERTOOLS_SERVICE_NAME: CATEGORY_REPROCESS_FUNCTION_BASE_NAME,
         LOG_LEVEL: 'INFO',

@@ -7,7 +7,9 @@ import {
   ABORT_MULTIPART_DAYS,
   ACCESS_LOGS_NONCURRENT_VERSION_DAYS,
   RAW_BUCKET_WORKSPACE_PREFIXES,
+  APPEND_ONLY_PREFIXES,
   RAW_LAYER_PREFIX,
+  SILVER_HISTORY_PREFIX,
   SCRATCH_EXPIRATION_DAYS,
   WEBSITE_NONCURRENT_VERSION_DAYS,
 } from './core-buckets';
@@ -82,13 +84,13 @@ describe('VocCoreStack bucket versioning', () => {
       ['avatars/', 'company-context/', 'memory-imports/', 'projects/', 'prototypes/', 'scratch/']);
   });
 
-  it('no raw-bucket lifecycle rule can expire anything under raw/ (bronze keeps every version)', () => {
+  it.each(APPEND_ONLY_PREFIXES)('no raw-bucket lifecycle rule can expire anything under %s (kept forever)', (layer) => {
     const rules = versionedBucket('RawDataBucket').Properties.LifecycleConfiguration.Rules;
     const expiring = rules.filter((rule) => 'NoncurrentVersionExpiration' in rule || 'ExpirationInDays' in rule
       || 'ExpirationDate' in rule || 'Transitions' in rule || 'NoncurrentVersionTransitions' in rule);
     for (const rule of expiring) {
       const prefix = z.string().parse(rule['Prefix']);
-      expect(prefix.startsWith(RAW_LAYER_PREFIX) || RAW_LAYER_PREFIX.startsWith(prefix), String(rule['Id'])).toBe(false);
+      expect(prefix.startsWith(layer) || layer.startsWith(prefix), String(rule['Id'])).toBe(false);
     }
   });
 
@@ -131,7 +133,12 @@ describe('VocCoreStack raw bucket policy', () => {
       Condition: { Null: { 's3:if-none-match': 'true' }, Bool: { 's3:ObjectCreationOperation': 'true' } },
       Resource: undefined,
     });
-    expect(JSON.stringify(statement['Resource'])).toContain('/raw/*');
+    const resources = JSON.stringify(statement['Resource']);
+    expect(APPEND_ONLY_PREFIXES.filter((prefix) => !resources.includes(`/${prefix}*`))).toStrictEqual([]);
+  });
+
+  it('covers exactly the append-only layers: raw/ (bronze) and silver/ (Silver history)', () => {
+    expect(APPEND_ONLY_PREFIXES).toStrictEqual(['raw/', 'silver/']);
   });
 });
 
@@ -176,7 +183,7 @@ describe('raw bucket prefixes in lib/stacks', () => {
   });
 
   it('names only raw/ or a known workspace prefix', () => {
-    const known: readonly string[] = [RAW_LAYER_PREFIX, ...RAW_BUCKET_WORKSPACE_PREFIXES];
+    const known: readonly string[] = [RAW_LAYER_PREFIX, SILVER_HISTORY_PREFIX, ...RAW_BUCKET_WORKSPACE_PREFIXES];
     const tops = [...new Set(grantedPrefixes().map((prefix) => `${prefix.split('/')[0] ?? ''}/`))];
     expect(tops.filter((top) => !known.includes(top))).toStrictEqual([]);
   });
