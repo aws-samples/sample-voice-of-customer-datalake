@@ -200,3 +200,19 @@ def test_a_failed_lease_release_keeps_the_answer(world, lambda_context, failure)
 
     with patch('shared.feature_requests_enrich.conditional_write', side_effect=failing_release):
         assert ok(lambda_context, 'POST', f'{INSIGHTS}/enrich') == {'success': True, 'queued': 0, 'remaining': 1}
+
+
+def test_kept_enrichment_versions_are_never_read_as_requests(world, lambda_context):
+    """ENRICH# rows share the request's partition: insights and search count only requests (gsi1 FRS)."""
+    request = _file(lambda_context)
+    _enrich(world, request)
+    stored = world.requests.get_item(Key=request_key(request['request_id']))['Item']
+    for n in range(3):
+        version = {**stored['enrichment'], 'enriched_at': f'2026-11-0{n + 1}T00:00:00Z'}
+        world.requests.put_item(Item={**enrich.enrichment_version_key(request['request_id'], version),
+                                      'request_id': request['request_id'], 'enrichment': version})
+    totals = ok(lambda_context, 'GET', INSIGHTS, claims=USER)['totals']
+    assert (totals['requests'], totals['enriched']) == (1, 1)
+    found = ok(lambda_context, 'GET', '/feature-requests/search', claims=USER)
+    assert [item['request_id'] for item in found['items']] == [request['request_id']]
+    assert found['total'] == 1

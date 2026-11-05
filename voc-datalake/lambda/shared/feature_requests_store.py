@@ -44,7 +44,6 @@ MAX_REQUESTS_LISTED: Final = 1000
 MAX_SUPPORTS: Final = 2000
 # ``FR#{id}`` / ``ENRICH#{enriched_at}#{sha}``: one kept enrichment result (shared/feature_requests_enrich.py).
 ENRICHMENT_VERSION_SK_PREFIX: Final = 'ENRICH#'
-MAX_ENRICHMENT_VERSIONS: Final = 1000
 REQUEST_NOT_FOUND: Final = 'Feature request not found'
 SUPPORT_NOT_FOUND: Final = 'Support not found'
 ALREADY_SUPPORTED: Final = 'already_supported'
@@ -298,12 +297,13 @@ def update_request(table: Any, request_id: str, fields: Mapping[str, Any]) -> di
 
 
 def enrichment_versions_of(table: Any, request_id: str) -> list[dict[str, Any]]:
-    """Every kept enrichment result of the request (``ENRICH#…`` rows), oldest first."""
+    """Every kept enrichment result of the request (``ENRICH#…`` rows), oldest first; all of them (one per
+    model result for a new text, so a delete never leaves one behind)."""
     return query_all(table, {
         'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :s)',
         'ExpressionAttributeValues': {':pk': f'FR#{request_id}', ':s': ENRICHMENT_VERSION_SK_PREFIX},
         'ConsistentRead': True,
-    }, max_items=MAX_ENRICHMENT_VERSIONS)
+    })
 
 
 def delete_request(table: Any, request: Mapping[str, Any]) -> None:

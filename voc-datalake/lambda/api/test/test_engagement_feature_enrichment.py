@@ -225,3 +225,18 @@ def test_deleting_a_request_deletes_its_kept_versions(world, lambda_context):
     assert _versions(world, request_id)
     ok(lambda_context, 'DELETE', f'/feature-requests/{request_id}', claims=ADMIN)
     assert _versions(world, request_id) == []
+
+
+@pytest.mark.parametrize('field', ['enriched_at', 'text_sha16'])
+def test_a_version_key_needs_both_parts(field):
+    result = {'enriched_at': '2026-11-01T00:00:00Z', 'text_sha16': 'abc', field: ''}
+    with pytest.raises(ValueError, match='enriched_at and text_sha16'):
+        enrich.enrichment_version_key('fr_000000000001', result)
+
+
+def test_a_failed_result_keeps_no_version(world, lambda_context):
+    """A request that keeps failing adds no row per backfill: only a model's result is a version."""
+    request_id = _file(lambda_context)['request_id']
+    with patch.object(enrich, '_ask_model', side_effect=RuntimeError('model down')):
+        assert enrich.enrich_request(world.requests, require_request(world.requests, request_id), []) == 'failed'
+    assert _versions(world, request_id) == []
