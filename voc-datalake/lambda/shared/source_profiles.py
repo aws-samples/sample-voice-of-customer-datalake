@@ -66,6 +66,9 @@ SOURCES_SETTINGS_KEY: Final = {'pk': 'SETTINGS#sources', 'sk': 'config'}
 PII_ALLOW: Final = 'allow'
 PII_REDACT: Final = 'redact'
 PII_SUMMARY_ONLY: Final = 'summary_only'
+# A summary-only source keeps derived fields only: these hold (or may quote) the customer's own words or
+# identity, so they are never stored for it (the processor drops them; a kept Silver version strips them too).
+SUMMARY_ONLY_DROPPED_FIELDS: Final = ('normalized_text', 'direct_customer_quote', 'author', 'title', 'metadata')
 PII_POLICIES: Final = (PII_ALLOW, PII_REDACT, PII_SUMMARY_ONLY)
 
 MAX_SOURCE_PROFILES: Final = 50

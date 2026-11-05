@@ -2,6 +2,7 @@
 import json
 from decimal import Decimal
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -136,3 +137,29 @@ class TestReasons:
             uri = sp.keep_silver_version(ITEM, actor=ACTOR, reason='typo', changed_fields=[])
         assert uri is not None
         warning.assert_called_once_with('Silver version kept with an undeclared reason', extra={'reason': 'typo'})
+
+
+class TestSummaryOnlyVersions:
+    """TENETS.md tenet 6 over D2: write-once history never holds what a summary-only source must not store."""
+
+    LEAKED: ClassVar[dict] = {'normalized_text': 'my words', 'direct_customer_quote': '"my words"', 'author': 'Jane',
+                              'title': 'Late', 'metadata': {'order': '5512'}}
+
+    def _kept(self, s3, item):
+        sp.keep_silver_version(item, actor={'sub': 's', 'kind': 'admin'}, reason=sp.REASON_REPROCESS,
+                               changed_fields=['category'])
+        return json.loads(s3.put_object.call_args.kwargs['Body'])['item']
+
+    def test_a_summary_only_item_is_kept_without_the_fields_its_policy_drops(self, s3):
+        item = {'feedback_id': 'f1', 'source_platform': 'web', 'pii_policy': 'summary_only', 'category': 'billing',
+                **self.LEAKED}
+        kept = self._kept(s3, item)
+        assert not set(self.LEAKED) & set(kept)
+        assert kept['category'] == 'billing'
+        assert kept['pii_policy'] == 'summary_only'
+
+    @pytest.mark.parametrize('policy', ['allow', 'redact', None])
+    def test_other_policies_keep_the_item_as_it_was(self, s3, policy):
+        item = {'feedback_id': 'f1', 'source_platform': 'web', **({'pii_policy': policy} if policy else {}),
+                **self.LEAKED}
+        assert set(self.LEAKED) <= set(self._kept(s3, item))

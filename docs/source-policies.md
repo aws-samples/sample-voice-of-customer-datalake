@@ -170,8 +170,11 @@ How it works:
   `silver/<source>/<feedback_id>/` (the item as it was before each edit, refresh or reprocess,
   [data-lake-structure.md → Silver history](data-lake-structure.md#silver-history-silver)), counted in
   `deleted_objects`. A whole-source erasure also sweeps what is left under `silver/<source>/`. A kept
-  version holds only what its item held, so under a `redact` or `summary_only` policy it carries no more
-  customer data than the item did.
+  version holds only what its item held, and under a `summary_only` policy never the fields that policy
+  drops (`normalized_text`, `direct_customer_quote`, `author`, `title`, `metadata`), even if an item from
+  before 6.03.00 still holds them. **Removing personal data by hand** (a Data Explorer edit of a leaked email)
+  keeps the version from before the edit, which still holds it: remove it with an erasure (this page), which
+  deletes every kept version of the matching items.
 - **Radar.** After `voc-feedback`, the same match runs over `voc-radar` (other brands' reviews,
   [radar.md](radar.md)): each matching review row goes with its dedupe marker (`RADARID#<brand>`) and
   its own raw archive (`deleted_radar_items`). The brand's daily counters are kept: they hold

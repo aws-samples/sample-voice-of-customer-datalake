@@ -17,8 +17,8 @@ a write-once JSON object in the raw bucket,
 ``silver/{source_platform}/{feedback_id}/{YYYYMMDDTHHMMSSffffffZ}-{sha8}.json``, holding the item,
 the actor ``{sub, kind}``, the reason and the changed fields. The item then carries
 ``updated_by`` / ``updated_at`` / ``change_reason`` (``change_stamp``). A kept version is a copy of
-the Silver row, which is already policy-applied, so a redact / summary-only source's version
-holds only what its item holds. Only ``voc-retention`` deletes these objects, with the item
+the Silver row, which is already policy-applied, and a summary-only item's version never holds the
+fields that policy drops (``_policy_safe``), even if an older item still does. Only ``voc-retention`` deletes these objects, with the item
 (``silver_item_prefix``).
 
 Keeping a version never fails the change: a failed put is logged (no content) and counted
@@ -41,6 +41,7 @@ from shared.archive_keys import archive_key_stem
 from shared.dynamo_values import plain
 from shared.logging import logger, metrics
 from shared.raw_versions import UNKNOWN_VERSION
+from shared.source_profiles import PII_SUMMARY_ONLY, SUMMARY_ONLY_DROPPED_FIELDS
 
 # Also part of the contract, imported by name (the reprocess worker, tests): PIPELINE_VERSION,
 # REASON_REPROCESS, EnrichmentMode, contract_llm_metadata.
@@ -155,11 +156,22 @@ def fields_of_update(update_kwargs: Mapping[str, Any]) -> list[str]:
     return sorted(fields - _STAMP_FIELDS)
 
 
+def _policy_safe(item: Mapping[str, Any]) -> Mapping[str, Any]:
+    """``item`` without what its source's summary-only policy never stores (TENETS.md tenet 6 over D2).
+
+    A summary-only review should already hold none of these; one that still does (customer text a reprocess
+    wrote back before 6.03.00) must not be copied into write-once history, where only an erasure reaches it.
+    """
+    if item.get('pii_policy') != PII_SUMMARY_ONLY:
+        return item
+    return {key: value for key, value in item.items() if key not in SUMMARY_ONLY_DROPPED_FIELDS}
+
+
 def _version_body(
     item: Mapping[str, Any], actor: Mapping[str, str], reason: str, changed_fields: Sequence[str], kept_at: str,
 ) -> str:
     return json.dumps({
-        'item': plain(item),
+        'item': plain(_policy_safe(item)),
         'actor': _actor(actor),
         'reason': reason[:_MAX_REASON_CHARS],
         'changed_fields': sorted({str(name) for name in changed_fields}),
