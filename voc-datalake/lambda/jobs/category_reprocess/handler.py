@@ -118,7 +118,7 @@ ENRICHMENT_MODES: dict[str, silver_provenance.EnrichmentMode] = {
     jobs.MODE_RAW: 'reprocess_raw',
     jobs.MODE_DIMENSIONS: 'reprocess_dimensions',
 }
-# A summary-only source never stores these (processor/handler.py
+# A summary-only source never stores these (shared/source_profiles.py
 # SUMMARY_ONLY_DROPPED_FIELDS); of them, raw-mode enrichment writes only these two.
 SUMMARY_ONLY_WITHHELD = ('normalized_text', 'direct_customer_quote')
 

@@ -79,6 +79,7 @@ from shared.silver_provenance import (
 from shared.source_profiles import (
     PII_ALLOW,
     PII_SUMMARY_ONLY,
+    SUMMARY_ONLY_DROPPED_FIELDS,
     SourceProfilesUnavailable,
     load_source_profiles,
     profile_for,
@@ -770,9 +771,6 @@ def build_feedback_item(raw_record: dict, feedback_id: str, now: datetime) -> di
     return apply_storage_policy(built, pii_policy_for(raw_record))
 
 
-# A summary-only source keeps derived fields only: these hold (or may quote) the
-# customer's own words or identity, so they are never stored for it.
-SUMMARY_ONLY_DROPPED_FIELDS = ('normalized_text', 'direct_customer_quote', 'author', 'title', 'metadata')
 WITHHELD_TEXT = '[withheld]'
 
 
