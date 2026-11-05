@@ -65,8 +65,6 @@ MAX_IDS_PER_JOB: Final = 10
 # bill the same request twice (the job itself runs in well under a minute).
 BACKFILL_LEASE: Final = timedelta(minutes=15)
 BACKFILL_LEASE_FIELD: Final = 'enrich_queued_at'
-# Every enrichment result is also kept as its own row beside the request (shared/feature_requests_store.py).
-ENRICHMENT_VERSION_PREFIX: Final = ENRICHMENT_VERSION_SK_PREFIX
 MAX_SUMMARY_CHARS: Final = 300
 MAX_PROMPT_TITLE_CHARS: Final = 160
 MAX_PROMPT_DESCRIPTION_CHARS: Final = 3000
@@ -261,9 +259,14 @@ def failed_enrichment(sha: str) -> dict[str, Any]:
 # ── The job ───────────────────────────────────────────────────────────────────
 
 def enrichment_version_key(request_id: str, enrichment: Mapping[str, Any]) -> dict[str, str]:
-    """``FR#{id}`` / ``ENRICH#{enriched_at}#{text_sha16}``: one kept enrichment result of the request."""
-    return {'pk': request_key(request_id)['pk'],
-            'sk': f"{ENRICHMENT_VERSION_PREFIX}{enrichment.get('enriched_at', '')}#{enrichment.get('text_sha16', '')}"}
+    """``FR#{id}`` / ``ENRICH#{enriched_at}#{text_sha16}``: one kept enrichment result of the request.
+
+    Both parts are always set by ``build_enrichment``; a result without them is a bug, never an ``ENRICH##`` key.
+    """
+    enriched_at, sha = enrichment['enriched_at'], enrichment['text_sha16']
+    if not isinstance(enriched_at, str) or not enriched_at or not isinstance(sha, str) or not sha:
+        raise ValueError('an enrichment result names its enriched_at and text_sha16')
+    return {'pk': request_key(request_id)['pk'], 'sk': f'{ENRICHMENT_VERSION_SK_PREFIX}{enriched_at}#{sha}'}
 
 
 def _unchanged(names: dict[str, str], values: dict[str, Any], request: Mapping[str, Any], field: str) -> str:
@@ -290,7 +293,9 @@ def store_enrichment(table: Any, request: Mapping[str, Any], enrichment: Mapping
         table.update_item, Key=request_key(str(request['request_id'])), UpdateExpression='SET #e = :e',
         ConditionExpression=' AND '.join(['attribute_exists(pk)', *same]),
         ExpressionAttributeNames=names, ExpressionAttributeValues=values)
-    if stored:
+    # A failed call derived nothing: only a result the model gave is kept, so a request that keeps failing
+    # adds no row per backfill.
+    if stored and enrichment.get('status') == STATUS_OK:
         keep_enrichment_version(table, str(request['request_id']), enrichment)
     return stored
 

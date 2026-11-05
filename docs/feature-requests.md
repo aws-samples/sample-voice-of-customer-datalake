@@ -304,8 +304,8 @@ enrichment: {status: 'ok' | 'failed', category, subcategory, sentiment: positive
 - **History.** Every stored result is also kept, write-once, as its own row beside the request
   (`FR#{id}` / `ENRICH#{enriched_at}#{text_sha16}`, the `enrichment` map and the request id, no person data), so a
   re-enrichment after an edit or a backfill replaces the row's `enrichment` without losing the earlier one
-  (TENETS.md D1). A result a newer edit refused keeps no version; a failed version write is logged and never undoes
-  the stored result. Deleting a request deletes its kept versions with its +1s.
+  (TENETS.md D1). A result a newer edit refused, or a failed model call, keeps no version; a failed version write is
+  logged and never undoes the stored result. Deleting a request deletes its kept versions with its +1s.
 - **Backfill.** `POST /feature-requests/insights/enrich` (app admins) queues up to 200 requests with no enrichment,
   a stale one or a failed one → `{queued, remaining}`. The route fans out: it async-invokes one job per batch of 10
   itself (at most 20 invokes), so no job is needed to start another batch. A job hands on only its OWN unfinished
