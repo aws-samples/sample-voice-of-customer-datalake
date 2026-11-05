@@ -244,12 +244,14 @@ function verdictRow(label, result, entry, verdict) {
   return `| ${label} | ${VERDICT_TEXT[verdict] ?? verdict} | ${entry.resolved.length} | ${entry.stillOpen.length} | ${entry.answered.length} | ${entry.added.length} |`
 }
 
-function section(label, result, entry, isFollowUp, chars) {
+// The recap of one pass is bounded too (40 open findings plus this round's closures fit well within it).
+const RECAP_CHARS = 8_000
+
+function section(label, result, recap, chars) {
   const heading = `#### ${label}`
   if (result.error) {
     return [heading, '', 'Not run: the Bedrock call failed (the workflow log says why). Its open findings carry over unchanged.']
   }
-  const recap = isFollowUp ? recapText(entry) : ''
   const output = clip(result.output.trim(), chars)
   const recapMarks = fence(recap)
   const marks = fence(output)
@@ -296,8 +298,11 @@ export function renderComment({
     ...(links.length > 0 ? [`> Earlier rounds: ${links.join(' · ')}`] : []),
     ...(notes.length > 0 ? ['', ...notes] : []), '',
   ].join('\n')
-  const perSection = Math.max(2_000, Math.floor((MAX_COMMENT_CHARS - head.length) / Math.max(1, results.length)) - 2_000)
-  const body = results.flatMap((result) => [...section(LABELS[result.kind], result, recap[result.kind], isFollowUp, perSection), ''])
+  // Everything but the answers is counted first: the head (marker, ledger line, table, notes) and the recaps.
+  const recaps = results.map((result) => (isFollowUp && !result.error ? clip(recapText(recap[result.kind]), RECAP_CHARS) : ''))
+  const fixed = head.length + recaps.reduce((sum, r) => sum + r.length, 0) + 1_000 * results.length
+  const perSection = Math.max(1_000, Math.floor((MAX_COMMENT_CHARS - fixed) / Math.max(1, results.length)))
+  const body = results.flatMap((result, i) => [...section(LABELS[result.kind], result, recaps[i], perSection), ''])
   return `${head}\n${body.join('\n').trimEnd()}\n`
 }
 

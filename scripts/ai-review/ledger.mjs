@@ -18,10 +18,11 @@ export const PREFIX = Object.freeze({ tenets: 'T', commit: 'C' })
 const PASS_OF = Object.freeze({ T: 'tenets', C: 'commit' })
 const STATUSES = Object.freeze(['open', 'resolved', 'answered'])
 const LEDGER_LINE = /^<!-- voc-ai-review-ledger ([A-Za-z0-9+/=]+) -->$/
-// A bound on what a comment carries into the next prompt. Past it the OLDEST open findings are dropped, and the recap
-// says how many.
-const MAX_OPEN = 100
-const MAX_TEXT = 200
+// What one comment carries into the next round, sized so the ledger line stays far below GitHub's 65,536-character
+// comment limit (40 findings × ~400 characters of JSON, base64 ≈ 22,000). Past it the OLDEST NON-BLOCKING open
+// findings are dropped first, and the comment says how many: a blocker is the last thing to go.
+export const MAX_OPEN = 40
+const MAX_TEXT = 160
 
 const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
 const text = (value, max = MAX_TEXT) => {
@@ -32,12 +33,29 @@ const count = (value) => (Number.isInteger(value) && value >= 0 && value < 100_0
 
 /** An empty ledger, before the first round. */
 export function emptyLedger() {
-  return { v: 1, round: 0, next: { T: 1, C: 1 }, findings: [], rounds: [], dropped: 0 }
+  return { v: 1, round: 0, next: { T: 1, C: 1 }, findings: [], dropped: 0 }
 }
 
-/** The hidden line that carries `ledger` in a comment. */
+/**
+ * The hidden line that carries `ledger` in a comment: the round, the id counters and the OPEN findings, each with only
+ * what the next round needs (a status note belongs to the round that wrote it, and is shown in its recap).
+ */
 export function encodeLedger(ledger) {
-  return `<!-- voc-ai-review-ledger ${Buffer.from(JSON.stringify(ledger), 'utf8').toString('base64')} -->`
+  const findings = ledger.findings.filter((f) => f.status === 'open')
+    .map(({ id, pass, kind, where, title, tenet, blocking, round }) => ({ id, pass, kind, where, title, tenet, blocking, round }))
+  const carried = { v: 1, round: ledger.round, next: ledger.next, findings }
+  return `<!-- voc-ai-review-ledger ${Buffer.from(JSON.stringify(carried), 'utf8').toString('base64')} -->`
+}
+
+/**
+ * `{kept, dropped}`: at most MAX_OPEN findings, in their original order. Blocking findings are kept first (newest
+ * first if even they overflow), then the newest of the rest.
+ */
+function bound(findings) {
+  if (findings.length <= MAX_OPEN) return { kept: findings, dropped: 0 }
+  const newestFirst = [...findings].reverse()
+  const keep = new Set([...newestFirst.filter((f) => f.blocking), ...newestFirst.filter((f) => !f.blocking)].slice(0, MAX_OPEN))
+  return { kept: findings.filter((f) => keep.has(f)), dropped: findings.length - keep.size }
 }
 
 /** One finding read back from a comment, or null when it is not shaped like one. */
@@ -51,7 +69,7 @@ function readFinding(value) {
   return {
     id, pass, kind: text(value.kind, 20), where: text(value.where), title: text(value.title),
     tenet: typeof value.tenet === 'string' ? text(value.tenet, 4) : null, blocking: value.blocking === true, round, status,
-    note: text(value.note), closedRound: count(value.closedRound),
+    note: '', closedRound: null,
   }
 }
 
@@ -73,14 +91,12 @@ export function decodeLedger(body) {
   const findings = (Array.isArray(raw.findings) ? raw.findings : []).map(readFinding).filter(Boolean)
   const highest = (prefix) => Math.max(0, ...findings.filter((f) => f.id[0] === prefix).map((f) => Number(f.id.slice(1))))
   const next = isRecord(raw.next) ? raw.next : {}
-  const rounds = (Array.isArray(raw.rounds) ? raw.rounds : []).filter(isRecord)
-    .map((r) => ({ round: count(r.round), sha: /^[0-9a-f]{7,40}$/.test(r.sha ?? '') ? r.sha : '' }))
-    .filter((r) => r.round !== null)
+  const { kept, dropped } = bound(findings.filter((f) => f.status === 'open'))
   return {
     v: 1, round: raw.round,
     // Never reuse an id, even if `next` was tampered with or lost.
     next: { T: Math.max(count(next.T) ?? 1, highest('T') + 1), C: Math.max(count(next.C) ?? 1, highest('C') + 1) },
-    findings: findings.filter((f) => f.status === 'open').slice(-MAX_OPEN), rounds: rounds.slice(-50), dropped: 0,
+    findings: kept, dropped,
   }
 }
 
@@ -98,10 +114,36 @@ export function parseStatuses(output, pass, openIds) {
   return statuses
 }
 
-/** The output without its STATUS lines (they are shown in the recap instead), nor a code fence they leave empty. */
+const FENCE = /^\s*(`{3,}|~{3,})/
+
+/**
+ * The output without its STATUS lines (they are shown in the recap instead). A code block that held only STATUS lines
+ * goes with them; every other block, even an empty one the model wrote, stays exactly as written.
+ */
 export function stripStatusLines(output) {
-  return String(output).split(/\r?\n/).filter((line) => !STATUS_LINE.test(line.trim())).join('\n')
-    .replace(/^(`{3,})[^\n`]*\n(?:[ \t]*\n)*\1[ \t]*$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
+  const kept = []
+  let block = null // {fence, lines, stripped}: the code block being read
+  for (const line of String(output).split(/\r?\n/)) {
+    const fence = FENCE.exec(line)?.[1]
+    if (block === null) {
+      if (fence) block = { fence, lines: [line], stripped: false }
+      else if (STATUS_LINE.test(line.trim())) continue
+      else kept.push(line)
+      continue
+    }
+    if (fence && fence[0] === block.fence[0] && fence.length >= block.fence.length && line.trim() === fence) {
+      block.lines.push(line)
+      const emptied = block.stripped && block.lines.slice(1, -1).every((l) => l.trim() === '')
+      if (!emptied) kept.push(...block.lines)
+      block = null
+    } else if (STATUS_LINE.test(line.trim())) {
+      block.stripped = true
+    } else {
+      block.lines.push(line)
+    }
+  }
+  if (block !== null) kept.push(...block.lines)
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 /** The prompt block listing the findings of `pass` still open, for the model to answer by id. */
@@ -115,10 +157,9 @@ export function previousFindingsBlock(ledger, pass) {
  * (`{kind, output, verdict}`, or `{kind, error: true}` when the call failed: that pass's open findings carry over
  * untouched). An open finding the model gave no STATUS for stays open: nothing quietly disappears.
  */
-export function advanceLedger(previous, { sha }, results) {
+export function advanceLedger(previous, results) {
   const ledger = structuredClone(previous ?? emptyLedger())
   ledger.round += 1
-  ledger.rounds = [...ledger.rounds, { round: ledger.round, sha }].slice(-50)
   const recap = {}
   for (const result of results) {
     const pass = result.kind
@@ -150,18 +191,20 @@ export function advanceLedger(previous, { sha }, results) {
       entry.added.push(finding)
     }
   }
-  const open = ledger.findings.filter((f) => f.status === 'open')
-  ledger.dropped = Math.max(0, open.length - MAX_OPEN)
-  ledger.findings = open.slice(-MAX_OPEN)
+  const { kept, dropped } = bound(ledger.findings.filter((f) => f.status === 'open'))
+  ledger.findings = kept
+  ledger.dropped = dropped + (previous?.dropped ?? 0)
   return { ledger, recap }
 }
 
 /**
  * A pass's verdict this round, from what is OPEN now, not only what the model said: a blocking finding still open
- * blocks even when the model's own line says PASS, and a resolved one no longer counts.
+ * blocks even when the model's own line says PASS, and a resolved one no longer counts. A pass whose call failed has
+ * no verdict of its own (null), but it still BLOCKs while it carries an open blocking finding, so a Bedrock outage can
+ * never clear an enforced block.
  */
 export function passVerdict(entry, modelVerdict) {
-  if (entry.error) return null
+  if (entry.error) return entry.stillOpen.some((f) => f.blocking) ? 'BLOCK' : null
   const live = [...entry.stillOpen, ...entry.added]
   if (live.some((f) => f.blocking)) return 'BLOCK'
   if (modelVerdict === 'INCOMPLETE') return 'INCOMPLETE'
