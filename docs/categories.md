@@ -238,7 +238,7 @@ A job replays a slice of the stored reviews (TENETS.md D3), never more:
 
 | Field | Meaning |
 |---|---|
-| `sources` | Up to 50 source ids (`source_platform`). The worker reads only those sources' partitions (a Query per source, no table scan). Absent = every source. |
+| `sources` | Up to 50 source ids (`source_platform`). Matched on each item's `source_platform`, not on its partition (an item with a brand name is stored under `SOURCE#{brand_name}`), so the worker still scans the table and skips the other sources; the job counts only what it reprocesses. Absent = every source. |
 | `categories` | Up to 50 STORED category names, including ones no longer configured (the usual reason to reprocess). Absent = every category. |
 | `days` | The platform window, 0 = all time. |
 | `date_from` / `date_to` | `YYYY-MM-DD`, inclusive; either end may be left open. Mutually exclusive with `days` (400 when both). |
@@ -254,10 +254,10 @@ slice, and a **Resume** button on a partial job.
 
 ### What a reprocess records
 
-- **The previous version.** Before each in-place update the review as it was is kept
+- **The previous version.** After each in-place update that landed, the review as it was is kept
   under `silver/{source}/{feedback_id}/` in the raw bucket (`keep_silver_version`, reason
   `reprocess`, actor the admin who started the job); see
-  [data lake structure](data-lake-structure.md). A review the job leaves unchanged keeps no copy.
+  [data lake structure](data-lake-structure.md). A review the job leaves unchanged, or whose update a manual correction won, keeps no copy.
 - **How the review was re-derived.** The update stamps `pipeline_version`,
   `enrichment_mode` (`reprocess_processed` / `reprocess_raw` / `reprocess_dimensions`),
   `enriched_at` and `llm_metadata` with the model that ANSWERED the re-classification (after a

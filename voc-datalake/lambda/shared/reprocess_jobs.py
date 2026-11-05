@@ -30,7 +30,7 @@ a hand-over saw another one) and ``raw_fallback`` (raw-mode reviews replayed fro
 the stored text, with ``raw_fallback_sources``). A job that reaches the item
 ceiling ends ``partial`` with a ``resume_from`` cursor; a resume is a NEW job
 (``resumed_from``) that starts at that cursor, and the partial job records
-``resumed_by`` so it is resumed once.
+``resumed_by`` so it is resumed once at a time (a resumer that ends failed or cancelled hands it back).
 """
 import re
 import uuid
@@ -42,6 +42,7 @@ from typing import Any
 from boto3.dynamodb.conditions import Key
 
 from shared.aws import is_conditional_check_failure
+from shared.logging import logger
 from shared.reprocess_slices import ReprocessSlice
 from shared.timestamps import now_iso
 
@@ -438,7 +439,28 @@ def finish_job(
     result = _transition(table, job_id, updates, worker_token=worker_token)
     if result is not None or worker_token is None:
         release_lock(table, job_id)
+    if result is not None and status in (STATUS_FAILED, STATUS_CANCELLED):
+        _reopen_resumed(table, result)
     return result
+
+
+def _reopen_resumed(table: Any, job: dict) -> None:
+    """A resumer that ended failed or cancelled hands its partial job back: resumable again from its cursor.
+
+    Only that resumer's own mark is removed (``resumed_by`` must name it), so a later resumer is never undone.
+    The reviews it updated before it stopped are updated again on the next resume, which is idempotent.
+    """
+    partial_job_id = job.get('resumed_from')
+    if not isinstance(partial_job_id, str) or not partial_job_id:
+        return
+    try:
+        table.update_item(
+            Key={'pk': JOB_PK, 'sk': partial_job_id}, UpdateExpression='REMOVE resumed_by',
+            ConditionExpression='resumed_by = :me', ExpressionAttributeValues={':me': job.get('sk')},
+        )
+    except Exception as e:
+        if not is_conditional_check_failure(e):
+            logger.warning('Partial reprocess job not reopened', extra={'job_id': partial_job_id}, exc_info=True)
 
 
 def cancel_job(table: Any, job_id: str, now: datetime | None = None) -> dict | None:

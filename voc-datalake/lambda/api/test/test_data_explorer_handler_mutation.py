@@ -162,9 +162,14 @@ class TestPrototypeGuard:
             h._reject_prototype_mutation('prototypes/p1/x.html')
         assert str(info.value) == 'Generated prototypes are read-only in Data Explorer'
 
-    @pytest.mark.parametrize('key', ['raw/prototypes/x', 'prototype/x', 'Prototypes/x', ''])
-    def test_only_the_prototypes_prefix_itself_is_read_only(self, key):
+    @pytest.mark.parametrize('key', ['raw/prototypes/x', 'prototype/x', 'Prototypes/x', '', 'raw/silver/x', 'silverx/a'])
+    def test_only_the_prototypes_and_silver_prefixes_are_read_only(self, key):
         assert h._reject_prototype_mutation(key) is None
+
+    def test_a_kept_feedback_version_is_refused_with_its_own_wording(self):
+        with pytest.raises(h.ValidationError) as info:
+            h._reject_prototype_mutation('silver/web/f1/20261105T000000000000Z-abcd1234.json')
+        assert str(info.value) == 'Feedback history (silver/) is read-only in Data Explorer'
 
     @pytest.mark.parametrize(('key', 'is_raw'), [
         ('raw/a.json', True), ('raw/', True), ('raw', False), ('Raw/a', False), ('imports/raw/a', False),

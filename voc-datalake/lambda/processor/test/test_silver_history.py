@@ -103,7 +103,7 @@ class TestSourceUpdates:
         assert result['status'] == 'skipped'
         assert labels == ['question']
 
-    def test_the_version_is_kept_before_the_update(self):
+    def test_the_version_is_kept_once_the_update_landed(self):
         order: list[str] = []
         with issues.world() as (feedback, _):
             issues.deliver(issues.issue_message())
@@ -117,7 +117,21 @@ class TestSourceUpdates:
                  patch.object(feedback, 'update_item', side_effect=update):
                 issues.deliver(issues.issue_message(issues.CHANGED, labels=['question']))
 
-        assert order == ['keep', 'update']
+        assert order == ['update', 'keep']
+
+    def test_a_refused_update_keeps_no_version(self):
+        """A refresh that loses its condition (the item changed meanwhile) records no change that never happened."""
+        with issues.world() as (feedback, _):
+            issues.deliver(issues.issue_message())
+            read = issues.stored(feedback)
+            feedback.update_item(Key={k: read[k] for k in ('pk', 'sk')},
+                                 UpdateExpression='SET issue_attributes.plus_one = :n',
+                                 ExpressionAttributeValues={':n': 5})
+            with patch.object(handler, 'load_stored_item', return_value=read), \
+                 patch.object(handler, 'keep_silver_version') as keep, \
+                 pytest.raises(handler.ConcurrentSourceUpdateError):
+                issues.deliver(issues.issue_message(issues.CHANGED, labels=['regression']))
+        keep.assert_not_called()
 
 
 class TestCsvCorrections:

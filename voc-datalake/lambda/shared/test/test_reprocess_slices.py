@@ -5,6 +5,7 @@ from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
+from boto3.dynamodb.conditions import ConditionExpressionBuilder
 from botocore.exceptions import ClientError
 
 from shared import reprocess_lineage as lineage
@@ -100,36 +101,30 @@ class TestAdmits:
                              ('2026-01-01', None)) is False
 
 
+def _names(condition) -> set[str]:
+    """The attribute names a filter condition reads."""
+    return set(ConditionExpressionBuilder().build_expression(condition).attribute_name_placeholders.values())
+
+
 class TestReadPage:
-    def test_a_query_filter_never_names_the_sort_key(self):
-        assert slices.read_filter(slices.ReprocessSlice(sources=('web',)), (None, None), scan=False) is None
-
-    def test_a_sourced_read_moves_to_the_next_source_at_the_end_of_one(self):
+    def test_every_read_is_a_scan_filtered_on_the_sources(self):
         table = MagicMock()
-        table.query.return_value = {'Items': [{'pk': 'SOURCE#app'}]}
-        page = slices.read_page(table, None, slices.ReprocessSlice(sources=('web', 'app')), (None, None), 25)
-        assert page['LastEvaluatedKey'] == {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#'}
-        assert 'ExclusiveStartKey' not in table.query.call_args.kwargs
-        table.query.return_value = {'Items': []}
-        last = slices.read_page(table, page['LastEvaluatedKey'], slices.ReprocessSlice(sources=('web', 'app')),
-                                (None, None), 25)
-        assert 'LastEvaluatedKey' not in last
-        # The start-of-source cursor is not a real key: the read starts at the top of that partition.
-        assert 'ExclusiveStartKey' not in table.query.call_args.kwargs
+        table.scan.return_value = {'Items': []}
+        slices.read_page(table, None, slices.ReprocessSlice(sources=('web', 'app')), (None, None), 25)
+        table.query.assert_not_called()
+        names = _names(table.scan.call_args.kwargs['FilterExpression'])
+        assert {'sk', 'source_platform'} <= names
+        assert 'ExclusiveStartKey' not in table.scan.call_args.kwargs
 
-    def test_a_cursor_inside_a_source_continues_after_it(self):
+    def test_a_cursor_continues_the_scan(self):
         table = MagicMock()
-        table.query.return_value = {'Items': [], 'LastEvaluatedKey': {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#z'}}
+        table.scan.return_value = {'Items': []}
         cursor = {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#m'}
         slices.read_page(table, cursor, slices.ReprocessSlice(sources=('web',)), (None, None), 25)
-        assert table.query.call_args.kwargs['ExclusiveStartKey'] == cursor
+        assert table.scan.call_args.kwargs['ExclusiveStartKey'] == cursor
 
-    def test_a_cursor_outside_the_sources_reads_nothing(self):
-        table = MagicMock()
-        page = slices.read_page(table, {'pk': 'SOURCE#gone', 'sk': 'FEEDBACK#a'},
-                                slices.ReprocessSlice(sources=('web',)), (None, None), 25)
-        assert page == {'Items': []}
-        table.query.assert_not_called()
+    def test_the_filter_always_keeps_to_feedback_rows(self):
+        assert _names(slices.read_filter(slices.ReprocessSlice(), (None, None))) == {'sk'}
 
 
 class TestLineage:

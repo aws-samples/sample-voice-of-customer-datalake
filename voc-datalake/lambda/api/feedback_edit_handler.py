@@ -141,8 +141,8 @@ def set_feedback_category(feedback_id: str):
     override = override_record(item, caller)
     edit = _edit(event, REASON_CATEGORY_EDIT)
     kwargs = _update_kwargs(item, category, subcategory, override, edit)
-    keep_before_edit(item, edit, kwargs)
     updated = apply_conditional_update(feedback_table, kwargs)
+    keep_before_edit(item, edit, kwargs)  # once the edit landed: a refused one leaves no version
     # Read-your-write: cached reads move on now, not when the stream reaches the aggregator.
     bump_data_version(aggregates_table)
 
@@ -185,8 +185,8 @@ def set_feedback_dimensions(feedback_id: str):
     new_tags = item.get('tags') if tags is None else tags
     edit = _edit(event, REASON_DIMENSIONS_EDIT)
     kwargs = _dimensions_update_kwargs(item, dimensions, sources, new_tags, edit)
-    keep_before_edit(item, edit, kwargs)
     updated = apply_conditional_update(feedback_table, kwargs)
+    keep_before_edit(item, edit, kwargs)  # once the edit landed: a refused one leaves no version
     bump_data_version(aggregates_table)
     return {
         'success': True,

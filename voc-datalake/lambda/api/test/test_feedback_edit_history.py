@@ -100,3 +100,18 @@ def test_a_refused_s3_put_never_fails_the_edit(tables, lambda_context, monkeypat
 
     assert status == 200
     assert tables[0].get_item(Key=KEY)['Item']['category'] == 'billing'
+
+
+def test_a_refused_edit_keeps_no_version(tables, lambda_context):
+    """A 409 (the review changed meanwhile) records no change that never happened (TENETS.md D4)."""
+    feedback = tables[0]
+    real_update = feedback.update_item
+
+    def concurrent_edit_first(**kwargs):
+        real_update(Key=KEY, UpdateExpression='SET category = :c', ExpressionAttributeValues={':c': 'returns'})
+        return real_update(**kwargs)
+
+    with patch.object(feedback, 'update_item', side_effect=concurrent_edit_first):
+        status, _ = put_category(tables, lambda_context, {'category': 'billing'})
+    assert status == 409
+    assert _kept() == []

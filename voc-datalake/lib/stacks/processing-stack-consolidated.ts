@@ -455,8 +455,8 @@ export class VocProcessingStack extends VocStack {
     const role = new iam.Role(this, 'CategoryReprocessRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
     });
-    // Query: a slice by source reads one SOURCE# partition at a time (shared/reprocess_slices.py).
-    deps.feedbackTable.grant(role, 'dynamodb:Scan', 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:UpdateItem');
+    // A slice by source is a Scan filtered on source_platform (shared/reprocess_slices.py): no Query.
+    deps.feedbackTable.grant(role, 'dynamodb:Scan', 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     // Category config + model-picker override (GetItem); the job row and its
     // lock are only ever UPDATEd by the worker (claim, checkpoint, finish,
     // release). Creating jobs (PutItem) and the latest-job lookup (Query) are

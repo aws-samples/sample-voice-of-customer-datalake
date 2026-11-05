@@ -66,7 +66,7 @@ from shared.raw_object_summary import add_summaries
 from shared.raw_versions import app_connector
 from shared.request_body import json_object_body
 from shared.retention import RAW_PREFIX
-from shared.silver_provenance import REASON_DATA_EXPLORER_EDIT
+from shared.silver_provenance import REASON_DATA_EXPLORER_EDIT, SILVER_PREFIX
 from shared.source_policy import apply_source_policy, raw_archive_allowed
 from shared.source_profiles import cached_source_profile_strict
 from shared.tables import get_aggregates_table
@@ -113,6 +113,10 @@ app.use(middlewares=[admins_only])
 def _reject_prototype_mutation(key: str) -> None:
     if key.startswith('prototypes/'):
         raise ValidationError('Generated prototypes are read-only in Data Explorer')
+    # Kept versions of processed feedback (shared/silver_provenance.py) are the platform's own history: a file
+    # written here by hand would read as a change that never happened (and the bucket policy refuses the put).
+    if key.startswith(SILVER_PREFIX):
+        raise ValidationError('Feedback history (silver/) is read-only in Data Explorer')
 
 
 def _is_raw_key(key: str) -> bool:
@@ -536,12 +540,13 @@ def save_feedback():
 
     edit = ManualEdit(actor=actor_from_event(app.current_event.raw_event, admin=True), reason=REASON_DATA_EXPLORER_EDIT)
     kwargs = _update_kwargs(key, edits, change, edit)
-    # The review as it was, before the edit (TENETS.md D1): never fails the edit.
-    keep_before_edit(item, edit, kwargs)
     # A failed existence-only condition means the item vanished (404); with a
     # category move it is the shared lost-update 409.
     missing = None if change is not None else NotFoundError('Feedback not found')
     apply_conditional_update(table, kwargs, on_condition_failed=missing)
+    # The review as it was before the edit (TENETS.md D1), kept once the edit landed, so a refused
+    # edit leaves no version; never fails the edit.
+    keep_before_edit(item, edit, kwargs)
     # Read-your-write: cached reads move on now, not when the stream reaches the aggregator.
     bump_data_version(get_aggregates_table())
     return {'success': True, 'message': 'Feedback updated'}

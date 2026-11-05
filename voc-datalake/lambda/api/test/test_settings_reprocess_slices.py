@@ -87,12 +87,19 @@ class TestResume:
         assert stored['cursor'] == {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#b'}
         assert jobs.job_view(jobs.get_job(table, partial) or {})['resumed_by'] == job['job_id']
 
-    def test_a_job_is_resumed_once(self, post, table):
+    def test_a_job_is_resumed_once_at_a_time(self, post, table):
+        partial = _partial_job(table)
+        _response, body = post({'resume': partial})
+        jobs.release_lock(table, body['job']['job_id'])  # the resumer runs on; only its resume mark is under test
+        response, _ = post({'resume': partial})
+        assert response['statusCode'] == 409
+
+    def test_a_cancelled_resume_can_be_resumed_again(self, post, table):
         partial = _partial_job(table)
         _response, body = post({'resume': partial})
         jobs.cancel_job(table, body['job']['job_id'])
         response, _ = post({'resume': partial})
-        assert response['statusCode'] == 409
+        assert response['statusCode'] == 202
 
     def test_a_completed_job_cannot_be_resumed(self, post, table):
         _response, body = post({'mode': 'processed', 'days': 0})

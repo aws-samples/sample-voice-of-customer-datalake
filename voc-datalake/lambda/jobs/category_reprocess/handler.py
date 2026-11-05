@@ -27,7 +27,7 @@ Invariants:
     fresh ``worker_token`` (a hand-over passes its token in the event); a
     duplicate delivery fails the claim or its next checkpoint and exits.
   * Slices (TENETS.md D3, ``shared/reprocess_slices.py``): a job replays the
-    reviews of its sources (one Query per source partition), categories and
+    reviews of its sources (a Scan filtered on ``source_platform``), categories and
     processed- or review-date window; everything else is read past uncounted.
   * Cost ceiling: after ``MAX_REPROCESS_ITEMS`` scanned reviews the job ends as
     'partial' (``stopped_at_ceiling``) with a ``resume_from`` cursor, which
@@ -152,7 +152,7 @@ def _tables() -> tuple[Any, Any]:
 def scan_page(
     feedback_table: Any, cursor: dict | None, job_slice: ReprocessSlice, window: tuple[str | None, str | None],
 ) -> dict:
-    """One page of the job's slice (a Scan, or a Query per source; ``shared.reprocess_slices``)."""
+    """One page of the job's slice (a filtered Scan; ``shared.reprocess_slices``)."""
     return read_page(feedback_table, cursor, job_slice, window, PAGE_SIZE)
 
 
@@ -398,10 +398,14 @@ def reprocess_band(item: dict, reprocessed: dict) -> str:
 
 
 def keep_then_update(feedback_table: Any, item: dict, update: dict, changed: dict, actor: dict) -> None:
-    """Keep the review AS IT WAS (E-C1, never fails the change), then update it in place."""
+    """Update the review in place, then keep it AS IT WAS (E-C1, never fails the change).
+
+    The version is written only once the conditional update landed: a review a manual edit won, or one
+    gone meanwhile, raises before it and leaves no version.
+    """
     changed_fields = sorted(field for field, value in changed.items() if item.get(field) != value)
-    silver_provenance.keep_silver_version(item, actor=actor, reason=SILVER_REASON, changed_fields=changed_fields)
     feedback_table.update_item(**update)
+    silver_provenance.keep_silver_version(item, actor=actor, reason=SILVER_REASON, changed_fields=changed_fields)
 
 
 def enrichment_stamps(mode: str, actor: dict, now: str, llm_metadata: dict | None) -> dict:

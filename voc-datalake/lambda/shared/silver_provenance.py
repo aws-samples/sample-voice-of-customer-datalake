@@ -11,7 +11,8 @@ Every processed feedback item (``voc-feedback``, the Silver tier) says how it wa
   error?}``: ``model_name`` is the model that ANSWERED (after a capacity fallback it differs from
   ``requested_model``).
 
-An in-place change of a stored item keeps the item AS IT WAS first (``keep_silver_version``):
+An in-place change of a stored item keeps the item AS IT WAS once the change landed (``keep_silver_version``,
+so a refused change leaves no version):
 a write-once JSON object in the raw bucket,
 ``silver/{source_platform}/{feedback_id}/{YYYYMMDDTHHMMSSffffffZ}-{sha8}.json``, holding the item,
 the actor ``{sub, kind}``, the reason and the changed fields. The item then carries
@@ -179,7 +180,9 @@ def _s3() -> Any:
 def keep_silver_version(
     item: Mapping[str, Any], *, actor: Mapping[str, str], reason: str, changed_fields: Sequence[str],
 ) -> str | None:
-    """Write ``item`` as it is NOW (before the caller's change) write-once; its ``s3://`` URI or None.
+    """Write ``item`` as it was read before the caller's change write-once; its ``s3://`` URI or None.
+
+    Callers call it once their conditional update landed, so a refused change leaves no version.
 
     A 412 (the same version already kept) is a success. Any failure is logged, counted
     (``SilverVersionFailures``) and returns None: it never fails the change.
