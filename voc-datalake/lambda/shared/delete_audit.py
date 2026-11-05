@@ -33,12 +33,12 @@ from shared.project_access import (
     claim_text,
     claims_from_event,
 )
+from shared.silver_provenance import SYSTEM_ACTOR
 from shared.timestamps import now_iso
 
 __all__ = ['actor_from_event', 'record_delete']
 
 AUDIT_PK: Final = 'AUDIT#delete'
-_SYSTEM_ACTOR: Final = {'sub': 'system', 'kind': 'system'}
 #: Each target id / actor field / reason is cut to this many characters.
 _MAX_TEXT: Final = 300
 
@@ -54,7 +54,7 @@ def actor_from_event(event: Mapping[str, Any], *, admin: bool | None = None) -> 
     claims = claims_from_event(event)
     sub = claim_text(claims, 'sub')
     if not sub:
-        return dict(_SYSTEM_ACTOR)
+        return dict(SYSTEM_ACTOR)
     if sub.startswith(AGENT_SUBJECT_PREFIX):
         return {'sub': sub, 'kind': 'agent'}
     if sub.startswith(DELEGATED_SUBJECT_PREFIX):
@@ -85,7 +85,7 @@ def record_delete(
         'sk': f'{now}#{uuid.uuid4().hex}',
         'kind': kind,
         'target': _texts(target),
-        'actor': _texts(actor) if actor else dict(_SYSTEM_ACTOR),
+        'actor': _texts(actor) if actor else dict(SYSTEM_ACTOR),
         'deleted_at': now,
     }
     if reason:
