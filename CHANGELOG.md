@@ -17,6 +17,30 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.02.00] - 2026-11-05
+
+Feedback boards become their own evidence source: requests are enriched on their own row, can be cited in personas, research and documents, are searchable by the assistant and over MCP, and have their own Insights view. They never enter the review pipeline or its metrics.
+
+### Added
+
+- **Board request enrichment**: each feedback-board request gets a category, subcategory, sentiment, language and a one-sentence problem summary, stored as `enrichment` on the request in `voc-feature-requests` (one enrichment-surface model call per new request or per edit of its title / description; a failure is stored as `status: failed` and never fails the request). Admins backfill existing requests with `POST /feature-requests/insights/enrich` (≤ 200 per call, answers `{queued, remaining}`) or the "Enrich requests" button ([docs/feature-requests.md](docs/feature-requests.md#enrichment)).
+- **Board Insights**: `GET /feature-requests/insights?board=&days=` and an Insights tab on Feedback boards (`/feature-requests?tab=insights`): totals, the 20 most-supported requests, requests by category, status and sentiment, with a 30 / 90 / 365 / all window. Scoped by board access like every board route; never mixed into Dashboard or review metrics. Requests show their category and sentiment chips once enriched.
+- **Feature requests as evidence**: the persona, research and PRD / PR/FAQ wizards have a "Feature requests" option (off by default) with an optional board picker and a count beside the review count. The API takes `include_feature_requests` + `feature_request_board_ids` (personas, research) and `data_sources.feature_requests` + `feature_request_board_ids` (documents). Prompts cite board requests as `[FR:<id>]`, apart from reviews; personas, research reports and document derivations store `input_feature_request_ids` (≤ 200), and the views link each citation to its request ("Written from N reviews and M feature requests") ([docs/project-workspace.md](docs/project-workspace.md)).
+- **Search board requests**: `GET /feature-requests/search` (`q`, `board`, `category`, `status`, `days`, `limit` 1–100), scoped by board access, answers requests without any name or email. The AI assistant and `/mcp/global` (read scope) get the matching `search_feature_requests` tool ([docs/mcp.md](docs/mcp.md)).
+- Personas and documents say how many of their cited reviews or board requests were erased (legal basis recorded), never which ones.
+
+### Changed
+
+- **An erasure by email reaches the feedback boards**: the person's requests and +1s are de-identified (email and name removed), every version of their raw copies under `raw/feature_requests/` is deleted, each row gets a tombstone, and artifacts that read those requests are marked. Erasure jobs show the `boards` phase and `board_items_deidentified` ([docs/source-policies.md](docs/source-policies.md)).
+- The legal basis field refuses an email address or phone number before the request is sent (the API stays the authority).
+- TENETS.md tenet 7 records the accepted fixed-cost baseline: one customer-managed KMS key and three Secrets Manager secrets (about $1.20 a month together), capped by the fixed-cost guard.
+- Docs: the DELETE routes that carry a legal basis in a JSON body note that some HTTP clients drop DELETE bodies (the API then answers 400 and deletes nothing).
+
+### Upgrade notes
+
+- `voc-engagement-api` now calls the enrichment-surface model (pay-per-use, one call per new or edited board request). Run the backfill once after deploying to enrich existing requests.
+- New grants: the persona generator, document generator and research step roles get `dynamodb:Query` on `voc-feature-requests` and its `gsi1` index; `voc-retention` gets Scan / UpdateItem on it (no delete); the global MCP Lambda may invoke `voc-engagement-api`. VocCoreStack adds one export that VocProcessingStack imports, so deploy with `--all` (or Core before Processing). No new fixed-cost resource.
+
 ## [6.01.01] - 2026-11-05
 
 Dependency refresh: the newest minor and patch releases of the packages the platform supports.
