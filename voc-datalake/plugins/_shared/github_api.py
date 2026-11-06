@@ -19,9 +19,10 @@ from urllib.parse import urlsplit
 
 import requests
 
+from shared.github_rest import GITHUB_API
+
 __all__ = ["GITHUB_API", "GitHubClient", "GitHubNotFound", "StopRun"]
 
-GITHUB_API = "https://api.github.com"
 API_VERSION = "2022-11-28"
 REQUEST_TIMEOUT_SECONDS = 15
 #: Stop while a few requests of quota remain, so an operator's own use of the
