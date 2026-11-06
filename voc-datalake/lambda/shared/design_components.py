@@ -303,8 +303,8 @@ def merge_components(current: list[dict], incoming: list[dict]) -> tuple[list[di
 # ── Names ───────────────────────────────────────────────────────────────────
 
 def component_display_name(raw: str) -> str:
-    """``raw`` split at camelCase humps and whitespace, as one sentence-case name (``PrimaryButton``
-    and ``primary button`` both read ``Primary button``)."""
+    """``raw`` split at camelCase humps and whitespace, as one sentence-case name: the class name
+    PrimaryButton and the words "primary button" both read "Primary button"."""
     words = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', raw).split()
     text = ' '.join(words).lower()
     return text[:1].upper() + text[1:]

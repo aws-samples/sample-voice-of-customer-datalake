@@ -4,8 +4,8 @@ import json
 
 import pytest
 
+from shared.b64_json import MAX_TOKEN_CHARS as MAX_CURSOR_CHARS
 from shared.feedback_cursor import (
-    MAX_CURSOR_CHARS,
     decode_key_cursor,
     decode_offset_cursor,
     encode_key_cursor,
