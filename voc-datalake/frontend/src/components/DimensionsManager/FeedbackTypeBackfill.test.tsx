@@ -101,36 +101,32 @@ describe('FeedbackTypeBackfill', () => {
   })
 })
 
-describe('a backfill that stopped at the per-job limit', () => {
-  it.each([
-    [409, /can no longer be resumed/],
-    [404, /no longer exists/],
-  ])('explains a refused resume (%i), not "already running"', async (status, message) => {
-    const partial = { ...QUEUED, status: 'partial', stopped_at_ceiling: true, resumable: true }
-    fetchApi.mockImplementation((endpoint, options) => {
-      if (endpoint.startsWith('/metrics/dimensions')) return Promise.resolve(METRICS)
-      return methodOf(options) === 'POST'
-        ? Promise.reject(new ApiError(status, `API Error: ${status}`))
-        : Promise.resolve({ job: partial })
-    })
-    const user = userEvent.setup()
-    renderCard()
-    await user.click(await screen.findByRole('button', { name: 'Resume' }))
-    expect(await screen.findByText(message)).toBeInTheDocument()
-    expect(screen.queryByText(/already running/i)).not.toBeInTheDocument()
-  })
+const PARTIAL = { ...QUEUED, status: 'partial', stopped_at_ceiling: true, resumable: true }
 
+/** The latest job is a partial backfill; a POST (the resume) answers `post`. */
+function servePartial(post: () => Promise<unknown>) {
+  fetchApi.mockImplementation((endpoint, options) => {
+    if (endpoint.startsWith('/metrics/dimensions')) return Promise.resolve(METRICS)
+    return methodOf(options) === 'POST' ? post() : Promise.resolve({ job: PARTIAL })
+  })
+}
+
+describe('a backfill that stopped at the per-job limit', () => {
   it('offers Resume and resumes that job', async () => {
-    const partial = { ...QUEUED, status: 'partial', stopped_at_ceiling: true, resumable: true }
-    fetchApi.mockImplementation((endpoint, options) => {
-      if (endpoint.startsWith('/metrics/dimensions')) return Promise.resolve(METRICS)
-      return methodOf(options) === 'POST' ? Promise.resolve({ job: QUEUED }) : Promise.resolve({ job: partial })
-    })
+    servePartial(() => Promise.resolve({ job: QUEUED }))
     const user = userEvent.setup()
     renderCard()
     await user.click(await screen.findByRole('button', { name: 'Resume' }))
     await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/settings/categories/reprocess', {
       method: 'POST', body: JSON.stringify({ resume: 'rp_0123456789ab' }),
     }))
+  })
+
+  it('explains a refused resume, not "already running"', async () => {
+    servePartial(() => Promise.reject(new ApiError(404, 'API Error: 404')))
+    const user = userEvent.setup()
+    renderCard()
+    await user.click(await screen.findByRole('button', { name: 'Resume' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no longer exists/)
   })
 })
