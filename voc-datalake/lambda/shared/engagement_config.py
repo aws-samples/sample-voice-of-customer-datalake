@@ -14,21 +14,16 @@ read through ``shared.tables`` like every API Lambda.
 from __future__ import annotations
 
 import os
-from functools import lru_cache
 from typing import Any, Final
 
 from shared.aws import get_dynamodb_resource
 from shared.exceptions import ConfigurationError
+from shared.tables import cached_table as _table
 from shared.tables import get_aggregates_table
 
 PARTICIPANTS_TABLE_ENV: Final = 'PARTICIPANTS_TABLE'
 FEATURE_REQUESTS_TABLE_ENV: Final = 'FEATURE_REQUESTS_TABLE'
 BRAND_KEY: Final = {'pk': 'SETTINGS#brand', 'sk': 'config'}
-
-
-@lru_cache(maxsize=8)
-def _table(resource: Any, name: str) -> Any:
-    return resource.Table(name)
 
 
 def _required_table(env: str) -> Any:
