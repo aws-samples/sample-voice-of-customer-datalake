@@ -5,7 +5,7 @@
  * @module pages/Prioritization/scoringDraft
  */
 import {
-  MAX_ACTIVE_AXES, MAX_AXES, MAX_AXIS_DESCRIPTION, MAX_AXIS_LABEL, MAX_SCALE_LABEL, MAX_WEIGHT,
+  MAX_ACTIVE_AXES, MAX_AXES, MAX_AXIS_DESCRIPTION, MAX_AXIS_LABEL, MAX_SCALE_LABEL, MAX_WEIGHT, percentShares,
 } from '../../api/prioritizationAxes'
 import type { AxisDirection, ScoringAxis } from '../../api/prioritizationAxes'
 import type { AxisInput } from '../../api/prioritizationConfigApi'
@@ -117,9 +117,7 @@ export const canAddAxis = (draft: readonly DraftAxis[]): boolean => (
 
 /** Each active metric's live share of the composite, in whole percent. */
 export function draftShares(draft: readonly DraftAxis[]): Readonly<Record<string, number>> {
-  const active = draft.filter((axis) => !axis.archived)
-  const total = active.reduce((sum, axis) => sum + axis.weight, 0)
-  return Object.fromEntries(active.map((axis) => [axis.key, total > 0 ? Math.round((axis.weight / total) * 100) : 0]))
+  return percentShares(draft.filter((axis) => !axis.archived), (axis) => axis.key)
 }
 
 /** The fields a reviewer can edit on one metric. */
