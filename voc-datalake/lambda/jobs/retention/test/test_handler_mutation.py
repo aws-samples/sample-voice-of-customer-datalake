@@ -21,6 +21,7 @@ from botocore.exceptions import ClientError
 from jobs.retention import handler, runs
 from jobs.retention.test.conftest import days_ago
 from shared.digests import sha256_hex
+from shared.jobs import has_time_left
 from shared.test.instrumentation_fixtures import INSTRUMENTED_HANDLER_LAYERS, handler_layers
 
 JOB_ID = 'er_0123456789ab'
@@ -75,7 +76,7 @@ class TestTheModuleReadsItsEnvironment:
 class TestTheBoundaries:
     @pytest.mark.parametrize(('remaining', 'left'), [(60_000, False), (60_001, True)])
     def test_sixty_seconds_is_the_reserve(self, remaining: int, left: bool) -> None:
-        assert handler._time_left(_context(remaining)) is left
+        assert has_time_left(_context(remaining), handler.TIME_RESERVE_MS) is left
 
     def test_one_page_is_a_hundred_items_from_the_cursor(self) -> None:
         table = MagicMock()

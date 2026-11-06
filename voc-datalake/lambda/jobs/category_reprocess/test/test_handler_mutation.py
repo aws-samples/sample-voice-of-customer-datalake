@@ -37,7 +37,6 @@ from botocore.exceptions import ClientError
 
 from jobs.category_reprocess import handler
 from jobs.category_reprocess.handler import (
-    _time_left,
     build_update,
     build_usefulness_update,
     processed_attributes,
@@ -50,6 +49,7 @@ from jobs.category_reprocess.handler import (
 from shared import reprocess_jobs as jobs
 from shared.categorization import Enrichment
 from shared.converse import BedrockThrottlingError
+from shared.jobs import has_time_left
 from shared.reprocess_slices import ReprocessSlice, read_filter
 
 HANDLER_PATH = Path(handler.__file__)
@@ -192,7 +192,7 @@ class TestTimeReserveBoundary:
     def test_time_left(self, remaining_ms: int, expected: bool):
         context = MagicMock()
         context.get_remaining_time_in_millis.return_value = remaining_ms
-        assert _time_left(context) is expected
+        assert has_time_left(context, handler.TIME_RESERVE_MS) is expected
 
 
 @pytest.mark.usefixtures('converse_mock')
