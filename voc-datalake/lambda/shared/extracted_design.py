@@ -45,7 +45,7 @@ from shared.company_context import (
     is_font_weight,
     validate_design_system,
 )
-from shared.design_components import clean_components, merge_components
+from shared.design_components import clean_components, merge_by_key, merge_components
 from shared.prompt_safety import injection_findings, neutralise_tags
 from shared.scope_names import DESIGN_TOKEN_GROUPS
 
@@ -174,26 +174,9 @@ def combine(preferred: dict | None, fallback: dict | None) -> dict:
 
 # ── Merge into a draft ──────────────────────────────────────────────────────
 
-def _key_of(entry: dict, field: str) -> str:
-    return str(entry.get(field, '')).strip().lower()
-
-
 def _merge_group(current: list[dict], incoming: list[dict], field: str) -> tuple[list[dict], int, int]:
     """``current`` with same-named entries replaced in place and new ones appended (capped)."""
-    merged = [dict(e) for e in current]
-    index = {_key_of(e, field): i for i, e in enumerate(merged)}
-    added = replaced = 0
-    for entry in incoming:
-        key = _key_of(entry, field)
-        if key in index:
-            if merged[index[key]] != entry:
-                merged[index[key]] = dict(entry)
-                replaced += 1
-        elif len(merged) < MAX_TOKEN_ENTRIES:
-            index[key] = len(merged)
-            merged.append(dict(entry))
-            added += 1
-    return merged, added, replaced
+    return merge_by_key(current, incoming, field, MAX_TOKEN_ENTRIES)
 
 
 def _section_title(title: object) -> str:

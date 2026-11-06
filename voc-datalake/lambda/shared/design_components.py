@@ -272,23 +272,32 @@ def clean_components(raw: object) -> list[dict]:
 
 # ── Merge (apply a reference) ───────────────────────────────────────────────
 
+def merge_by_key(current: list[dict], incoming: list[dict], field: str, cap: int) -> tuple[list[dict], int, int]:
+    """``current`` with entries whose ``field`` matches (case-insensitively, stripped) replaced in
+    place and new ones appended while fewer than ``cap``: ``(merged, added, replaced)``.
+
+    The one merge rule of a reference applied to the design system: components (by name) here,
+    the token groups (by name or role) in ``shared.extracted_design``."""
+    merged = [dict(e) for e in current]
+    index = {str(e.get(field, '')).strip().lower(): i for i, e in enumerate(merged)}
+    added = replaced = 0
+    for entry in incoming:
+        key = str(entry.get(field, '')).strip().lower()
+        if key in index:
+            if merged[index[key]] != entry:
+                merged[index[key]] = dict(entry)
+                replaced += 1
+        elif len(merged) < cap:
+            index[key] = len(merged)
+            merged.append(dict(entry))
+            added += 1
+    return merged, added, replaced
+
+
 def merge_components(current: list[dict], incoming: list[dict]) -> tuple[list[dict], int, int]:
     """``current`` with same-named components replaced in place and new ones appended (≤ 30):
     ``(merged, added, replaced)``. Names compare case-insensitively."""
-    merged = [dict(c) for c in current]
-    index = {str(c.get('name', '')).strip().lower(): i for i, c in enumerate(merged)}
-    added = replaced = 0
-    for component in incoming:
-        key = str(component.get('name', '')).strip().lower()
-        if key in index:
-            if merged[index[key]] != component:
-                merged[index[key]] = dict(component)
-                replaced += 1
-        elif len(merged) < MAX_COMPONENTS:
-            index[key] = len(merged)
-            merged.append(dict(component))
-            added += 1
-    return merged, added, replaced
+    return merge_by_key(current, incoming, 'name', MAX_COMPONENTS)
 
 
 # ── Prompt text ─────────────────────────────────────────────────────────────
