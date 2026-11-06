@@ -33,10 +33,6 @@
       "reason": "the sort key of two different items (company context, a user's flags); 'config' is a common row name, not one contract"
     },
     {
-      "key": "GITHUB_API::*",
-      "reason": "the public GitHub REST base URL of two independent integrations (design references, the GitHub Issues plugin) with their own clients and auth"
-    },
-    {
       "key": "REDACTED|_REDACTED::*",
       "reason": "two redaction outputs (an agent failure reason, a memory statement) that print the same marker; neither reads the other's"
     },

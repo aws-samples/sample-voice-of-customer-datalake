@@ -42,6 +42,7 @@ from shared.css_tokens import custom_properties, tokens_from_css, tokens_from_pr
 from shared.design_assets import DESIGN_PREFIX as UPLOAD_PREFIX
 from shared.design_components import MAX_VARIANTS, clean_components
 from shared.extracted_design import clean_extracted_design, combine
+from shared.github_rest import GITHUB_API
 from shared.image_limits import MAX_IMAGE_BYTES
 from shared.logging import logger
 from shared.prompt_safety import neutralise_tags
@@ -49,7 +50,6 @@ from shared.tailwind_components import Theme, components_from_source
 from shared.timestamps import now_iso
 
 FIGMA_API = 'https://api.figma.com/v1'
-GITHUB_API = 'https://api.github.com'
 HTTP_TIMEOUT = (4, 8)  # (connect, read) seconds — the worker shares one invocation
 MAX_RESPONSE_BYTES = 5_000_000
 #: A recursive tree listing: GitHub truncates one at 100,000 entries / 7 MB; a monorepo's is several MB.
