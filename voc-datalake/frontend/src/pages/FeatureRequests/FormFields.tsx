@@ -5,6 +5,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
+import { EnumSelectField } from '../../components/LabeledField/EnumSelectField'
 
 /** A field's error as its translated sentence; nothing when `messageKey` is undefined. */
 export function FieldError({ messageKey }: Readonly<{ messageKey: string | undefined }>) {
@@ -46,16 +47,7 @@ export function ChoiceField<T extends string>({ label, value, choices, labels, f
 }>) {
   const { t } = useTranslation('featureRequests')
   return (
-    <LabeledField label={label}>
-      {(id) => (
-        <select id={id} className={fullWidth ? 'select w-full' : 'select w-auto'} value={value}
-          onChange={(e) => {
-            const chosen = choices.find((choice) => choice === e.target.value)
-            if (chosen !== undefined) onChange(chosen)
-          }}>
-          {choices.map((choice) => <option key={choice} value={choice}>{t(labels[choice].labelKey)}</option>)}
-        </select>
-      )}
-    </LabeledField>
+    <EnumSelectField label={label} value={value} choices={choices} display={(choice) => t(labels[choice].labelKey)}
+      width={fullWidth ? 'full' : 'auto'} onChange={onChange} />
   )
 }

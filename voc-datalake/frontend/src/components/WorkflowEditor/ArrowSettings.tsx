@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next'
 import { connect, edgeLabelsFor, removeEdges, setEdgeLabel } from './model'
 import { gateLabelFor } from './loopGates'
 import { LabeledField } from '../LabeledField/LabeledField'
+import { OptionsSelectField } from '../LabeledField/OptionsSelectField'
 import type { WorkflowDefinition, WorkflowEdge, WorkflowEdgeLabel, WorkflowNode } from '../../api/workflowsApi'
 
 interface ArrowProps {
@@ -139,14 +140,8 @@ function AddArrow({ definition, node, labels, onChange }: Readonly<Omit<ArrowPro
   return (
     <fieldset className="space-y-2 rounded-md border border-dashed border-border px-2 py-2">
       <legend className="px-1 text-[12px] font-medium text-muted">{t('editor.addArrow')}</legend>
-      <LabeledField label={t('editor.fields.arrowTarget')}>
-        {(id) => (
-          <select id={id} className="select w-full" value={target} onChange={(e) => setTarget(e.target.value)}>
-            <option value="">{t('editor.fields.arrowTargetNone')}</option>
-            {targets.map((n) => <option key={n.id} value={n.id}>{n.data.title}</option>)}
-          </select>
-        )}
-      </LabeledField>
+      <OptionsSelectField label={t('editor.fields.arrowTarget')} value={target} onChange={setTarget}
+        noneLabel={t('editor.fields.arrowTargetNone')} options={targets.map((n) => ({ value: n.id, label: n.data.title }))} />
       {labels.length > 0 && (
         <LabeledField label={t('editor.fields.label')}>
           {(id) => <ConditionSelect id={id} labels={labels} value={condition} disabled={false} onPick={setCondition} />}

@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
+import { OptionsSelectField } from '../../components/LabeledField/OptionsSelectField'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { useSentimentLabels } from '../../components/DataSourceWizard/sentimentLabels'
 import { formatCount } from '../../utils/numberFormat'
@@ -48,14 +49,8 @@ function BoardSelect({ boards, value, onChange }: Readonly<{ boards: readonly Fe
   const { t } = useTranslation('featureRequests')
   return (
     <div className="min-w-48">
-      <LabeledField label={t('insights.board')}>
-        {(id) => (
-          <select id={id} className="select w-full" value={value} onChange={(e) => onChange(e.target.value)}>
-            <option value="">{t('insights.allBoards')}</option>
-            {boards.map((board) => <option key={board.board_id} value={board.board_id}>{board.name}</option>)}
-          </select>
-        )}
-      </LabeledField>
+      <OptionsSelectField label={t('insights.board')} value={value} onChange={onChange} noneLabel={t('insights.allBoards')}
+        options={boards.map((board) => ({ value: board.board_id, label: board.name }))} />
     </div>
   )
 }
