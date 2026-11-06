@@ -115,3 +115,23 @@ export function JobProgress({ job, onCancel, cancelling, onResume, resuming }: R
     </div>
   )
 }
+
+/** The two job controls a panel wires: cancel a running job, resume a partial one (``useReprocessMutations``). */
+export interface JobControls {
+  readonly start: { readonly mutate: (request: { resume: string }) => void; readonly isPending: boolean }
+  readonly cancel: { readonly mutate: (jobId: string) => void; readonly isPending: boolean }
+}
+
+/** ``JobProgress`` with cancel and resume wired to the panel's mutations; resume only once the job stopped. */
+export function LiveJobProgress({ job, controls }: Readonly<{ job: ReprocessJob; controls: JobControls }>) {
+  const { start, cancel } = controls
+  return (
+    <JobProgress
+      job={job}
+      onCancel={() => cancel.mutate(job.job_id)}
+      cancelling={cancel.isPending}
+      onResume={isTerminalJob(job) ? () => start.mutate({ resume: job.job_id }) : undefined}
+      resuming={start.isPending}
+    />
+  )
+}

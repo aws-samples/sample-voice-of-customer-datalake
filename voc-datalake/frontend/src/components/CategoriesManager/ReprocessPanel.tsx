@@ -23,7 +23,7 @@ import ConfirmModal from '../ConfirmModal/ConfirmModal'
 import RadioCard from '../RadioCard/RadioCard'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import { useLatestJob, useReprocessMutations } from './useReprocessJob'
-import { JobProgress } from './ReprocessJobProgress'
+import { LiveJobProgress } from './ReprocessJobProgress'
 import ReprocessSliceFields from './ReprocessSliceFields'
 import { MODES, jobWindowLabel, modeTitleKey } from './reprocessCopy'
 import { buildStart } from './reprocessForm'
@@ -126,15 +126,7 @@ export default function ReprocessPanel() {
         </button>
       </StickyActionBar>
       {start.isError && <StartError error={start.error} resuming={isResume(start.variables)} />}
-      {job != null && (
-        <JobProgress
-          job={job}
-          onCancel={() => cancel.mutate(job.job_id)}
-          cancelling={cancel.isPending}
-          onResume={busy ? undefined : () => start.mutate({ resume: job.job_id })}
-          resuming={start.isPending}
-        />
-      )}
+      {job != null && <LiveJobProgress job={job} controls={{ start, cancel }} />}
 
       {request !== null && (
         <ConfirmModal
