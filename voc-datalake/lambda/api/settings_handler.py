@@ -62,6 +62,7 @@ from shared.aws import (
     is_action_event,
     put_secret_json,
 )
+from shared.caller_claims import first_claim
 from shared.category_access import CategoryScope
 from shared.category_config import validate_categories
 from shared.category_gate import CATEGORIES_PK, CATEGORIES_SK, scope_for_caller
@@ -834,12 +835,7 @@ def _reprocess_days(value: object) -> int:
 
 def _caller_label(event: dict) -> str:
     """Who started a job, for the admin-only job view (username, else email, else sub)."""
-    claims = (event.get('requestContext') or {}).get('authorizer', {}).get('claims', {})
-    for claim in ('cognito:username', 'username', 'email'):
-        value = claims.get(claim) if isinstance(claims, dict) else None
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return get_caller_subject(event)
+    return first_claim(event, ('cognito:username', 'username', 'email')) or get_caller_subject(event)
 
 
 @app.post("/settings/categories/reprocess")
@@ -984,12 +980,7 @@ MAX_INTEGRATION_TOKEN_CHARS = 1_000
 
 def _caller_username(event: dict) -> str | None:
     """Display username of the caller (never the sub or the email)."""
-    claims = (event.get('requestContext') or {}).get('authorizer', {}).get('claims', {})
-    for claim in ('cognito:username', 'username'):
-        value = claims.get(claim) if isinstance(claims, dict) else None
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
+    return first_claim(event, ('cognito:username', 'username'))
 
 
 @app.get("/settings/company-context")

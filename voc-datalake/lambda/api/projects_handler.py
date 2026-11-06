@@ -114,6 +114,7 @@ from shared.api import (
     validate_int,
 )
 from shared.aws import get_dynamodb_resource, invoke_lambda_async, is_conditional_check_failure
+from shared.caller_claims import first_claim
 from shared.company_personas import is_company_container
 from shared.data_version import bump_config_version
 from shared.delete_audit import actor_from_event
@@ -4452,12 +4453,8 @@ def _config_payload(config: dict) -> dict:
 def _setup_editor_label(event: dict) -> str:
     """Who saved the setup, as every signed-in reader may see it: the caller's
     name or username — never the email, which this API shows only to managers."""
-    claims = (event.get('requestContext') or {}).get('authorizer', {}).get('claims', {})
-    for claim in ('name', 'cognito:username', 'username'):
-        value = claims.get(claim) if isinstance(claims, dict) else None
-        if isinstance(value, str) and value.strip():
-            return value.strip()[:128]
-    return 'An administrator'
+    label = first_claim(event, ('name', 'cognito:username', 'username'))
+    return label[:128] if label else 'An administrator'
 
 
 @app.get("/projects/prioritization/config")
