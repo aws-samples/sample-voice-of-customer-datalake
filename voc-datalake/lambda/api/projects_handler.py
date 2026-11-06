@@ -141,7 +141,12 @@ from shared.prioritization_keys import (
 )
 from shared.prioritization_row_batch import batch_project_ids, ensure_rows_batch
 from shared.project_access import Caller, ProjectAccess
-from shared.project_writes import PROJECT_DELETION_ATTRIBUTE, is_project_tombstone, is_verification_fixture
+from shared.project_writes import (
+    PROJECT_DELETION_ATTRIBUTE,
+    is_project_tombstone,
+    is_verification_fixture,
+    project_pk,
+)
 from shared.request_body import json_body_value, json_object_body
 from shared.row_ids import MAX_KEY_SEGMENT_ID_LEN, is_clampable_number, validated_row_id
 from shared.tables import get_aggregates_table, get_jobs_table, get_projects_table
@@ -426,7 +431,7 @@ def _started_assist(project_id: str, job_type: str, config: dict) -> Response:
     """
     _require_project_exists(project_id)
     started = assist_jobs.start(
-        assist_jobs.project_pk(project_id), job_type, config,
+        project_pk(project_id), job_type, config,
         worker_function=assist_jobs.worker_function(),
         initiated_by=_request_caller().subject, project_id=project_id,
     )

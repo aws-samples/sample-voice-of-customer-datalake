@@ -66,10 +66,6 @@ FAILED: Final = 'failed'
 VIEW_FIELDS: Final = ('job_id', 'job_type', 'status', 'created_at', 'updated_at', 'completed_at', 'error', 'result')
 
 
-def project_pk(project_id: str) -> str:
-    return f'PROJECT#{project_id}'
-
-
 def owner_pk(subject: str) -> str:
     """The partition of a caller's assists outside any project."""
     if not subject:

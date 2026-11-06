@@ -43,6 +43,7 @@ from shared.image_limits import IMAGE_CONTENT_TYPE_EXTENSIONS, MAX_IMAGE_BYTES
 from shared.logging import logger, tracer
 from shared.project_writes import (
     create_counted_project_child,
+    project_pk,
     put_project_item,
 )
 from shared.s3_versions import delete_every_version_of_keys
@@ -373,10 +374,6 @@ def update_context(project_id: str, body: object) -> dict:
 DOC_SK_PREFIX = 'PRODUCT_DOC#'
 
 
-def _doc_pk(project_id: str) -> str:
-    return f'PROJECT#{project_id}'
-
-
 def _new_doc_id() -> str:
     # 16 hex chars; collision-free per project for our scale.
     return secrets.token_hex(8)
@@ -467,7 +464,7 @@ def _list_doc_items(project_id: str) -> list[dict]:
         return []
     kwargs: QueryInputTableQueryTypeDef = {
         'KeyConditionExpression': (
-            Key('pk').eq(_doc_pk(project_id)) &
+            Key('pk').eq(project_pk(project_id)) &
             Key('sk').begins_with(DOC_SK_PREFIX)
         )
     }
@@ -547,7 +544,7 @@ def _fail_if_stalled(project_id: str, item: dict) -> dict:
         raise ConfigurationError('Projects table not configured')
     try:
         projects_table.update_item(
-            Key={'pk': _doc_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
+            Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
             UpdateExpression='SET #status = :failed, #error = :error',
             ConditionExpression='#status = :expected',
             # `status` and `error` are both DynamoDB reserved words — same
@@ -699,7 +696,7 @@ def create_upload_url(project_id: str, body: dict) -> dict:
     now = now_iso()
 
     item = {
-        'pk': _doc_pk(project_id),
+        'pk': project_pk(project_id),
         'sk': f'{DOC_SK_PREFIX}{doc_id}',
         'doc_id': doc_id,
         'filename': filename[:255],
@@ -753,7 +750,7 @@ def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None 
     bucket = os.environ.get('RAW_DATA_BUCKET')
 
     resp = projects_table.get_item(
-        Key={'pk': _doc_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
+        Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
     )
     item = resp.get('Item')
     if not item:
@@ -770,7 +767,7 @@ def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None 
                 logger.warning(f'{refused} object version(s) of product doc {doc_id} could not be deleted')
 
     projects_table.delete_item(
-        Key={'pk': _doc_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
+        Key={'pk': project_pk(project_id), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
     )
     record_delete(projects_table, kind='product_doc', target={'project_id': project_id, 'doc_id': doc_id}, actor=actor)
     mark_citing_documents(projects_table, project_id, [DeletedSource('product_doc', doc_id)], deleted_at=now_iso())
