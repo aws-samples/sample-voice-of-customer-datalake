@@ -8,6 +8,23 @@ import { formatCount } from '../../utils/numberFormat'
 import type { DisplayLabels } from '../../hooks/useDisplayLabels'
 import type { CategoryGroup } from '../../api/problemsApi'
 
+/** What the header totals read: the screen's CategoryGroup and the PDF's category shape both have it. */
+interface CountedCategory {
+  readonly totalItems: number
+  readonly urgentCount: number
+  readonly subcategories: readonly { readonly problemCount: number }[]
+}
+
+/** The header totals of a problem tree (screen and PDF): subcategories, problems, reviews, urgent reviews. */
+export function treeTotals(groups: readonly CountedCategory[]) {
+  return {
+    subcategories: groups.reduce((sum, g) => sum + g.subcategories.length, 0),
+    problems: groups.reduce((sum, g) => sum + g.subcategories.reduce((s, sub) => s + sub.problemCount, 0), 0),
+    reviews: groups.reduce((sum, g) => sum + g.totalItems, 0),
+    urgent: groups.reduce((sum, g) => sum + g.urgentCount, 0),
+  }
+}
+
 // Map the problem tree to the PDF export shape (the problem level names its count itemCount).
 // The PDF renders outside React's providers, so the names arrive labelled.
 export function toPDFCategories(groups: CategoryGroup[], labels: Pick<DisplayLabels, 'category' | 'subcategory'>) {
