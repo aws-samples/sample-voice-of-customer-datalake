@@ -53,13 +53,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/api/projects_handler.py",
-        "voc-datalake/lambda/api/settings_handler.py"
-      ],
-      "reason": "caller display labels for different audiences (project setup editor, settings audit, username); same claim lookups, different fallbacks"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/api/feedback_form_handler.py",
         "voc-datalake/lambda/shared/company_context.py",
         "voc-datalake/lambda/shared/dimension_config.py",
