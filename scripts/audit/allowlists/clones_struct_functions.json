@@ -43,14 +43,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/agents/plan_identity.py",
-        "voc-datalake/lambda/api/mcp_global_handler.py",
-        "voc-datalake/lambda/api/projects.py"
-      ],
-      "reason": "lazy module-cached Cognito clients; the tests of each module patch its own cached client"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/api/product_context.py",
         "voc-datalake/lambda/shared/assist_jobs.py"
       ],

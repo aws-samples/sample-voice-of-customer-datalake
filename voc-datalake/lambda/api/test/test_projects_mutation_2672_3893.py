@@ -44,7 +44,7 @@ from botocore.exceptions import ClientError
 from projects_mutation_fixtures import PERSONA_SECTIONS
 
 import projects
-from shared import project_access, project_writes
+from shared import aws, project_access, project_writes
 from shared.avatar_failure import AvatarGenerationFailed
 from shared.exceptions import (
     AuthorizationError,
@@ -785,11 +785,11 @@ class TestCognitoClient:
     def test_importing_the_module_creates_no_client(self):
         # Lazy on purpose: nothing in this module needs Cognito config at import,
         # and the sentinel the lazy getter tests for is None, not any falsy value.
-        assert projects._cognito_client is None
+        assert projects._get_cognito_client is aws.get_cognito_idp_client
 
     def test_the_client_is_created_once_and_cached(self):
-        with patch.object(projects, '_cognito_client', None), \
-                patch.object(projects.boto3, 'client', return_value='the-client') as factory:
+        with patch.object(aws, '_cognito_idp_client', None), \
+                patch.object(aws.boto3, 'client', return_value='the-client') as factory:
             first = projects._get_cognito_client()
             second = projects._get_cognito_client()
         factory.assert_called_once_with('cognito-idp')

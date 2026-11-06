@@ -41,6 +41,7 @@ from aws_lambda_powertools.metrics.provider import cold_start
 from botocore.exceptions import ClientError, EndpointConnectionError
 
 import mcp_global_handler as h
+from shared import aws
 from shared import mcp_global_tokens as gt
 from shared.mcp_delegate import DelegationUnavailable, DomainCall, DomainResult
 from shared.mcp_global_tools import TOOLS_BY_NAME, InvalidToolArgument
@@ -164,8 +165,8 @@ class TestEnvelope:
         assert h._error(1, -1, 'm', data=0)['error'] == {'code': -1, 'message': 'm', 'data': 0}
 
     def test_the_cognito_client_is_built_once(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(h, '_cognito', None)
-        with patch.object(h.boto3, 'client', return_value='client') as client:
+        monkeypatch.setattr(aws, '_cognito_idp_client', None)
+        with patch.object(aws.boto3, 'client', return_value='client') as client:
             assert (h._cognito_client(), h._cognito_client()) == ('client', 'client')
         client.assert_called_once_with('cognito-idp')
 
@@ -176,7 +177,7 @@ class TestEnvelope:
         module = importlib.util.module_from_spec(spec)
         with patch.dict(sys.modules, {spec.name: module}):
             spec.loader.exec_module(module)
-        assert module._cognito is None
+        assert module._cognito_client is aws.get_cognito_idp_client
 
     def test_now_is_aware_utc(self):
         before = datetime.now(UTC)

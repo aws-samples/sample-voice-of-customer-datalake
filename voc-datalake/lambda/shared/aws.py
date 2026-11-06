@@ -24,6 +24,7 @@ _secrets_client = None
 _bedrock_client = None
 _lambda_client = None
 _eventbridge_client = None
+_cognito_idp_client = None
 
 # One pooled connection per read a request can have in flight on the shared DynamoDB client
 # (shared/concurrency.py). Below that, botocore discards the surplus connections after each fan-out
@@ -205,6 +206,15 @@ def get_eventbridge_client():
     if _eventbridge_client is None:
         _eventbridge_client = boto3.client("events")
     return _eventbridge_client
+
+
+def get_cognito_idp_client():
+    """Get shared Cognito user-pool client with connection reuse (built on first use: importing a
+    module that reads the directory needs no Cognito config)."""
+    global _cognito_idp_client
+    if _cognito_idp_client is None:
+        _cognito_idp_client = boto3.client("cognito-idp")
+    return _cognito_idp_client
 
 
 def invoke_lambda_async(function_name: str, payload: dict) -> dict:
