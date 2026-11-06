@@ -1455,7 +1455,16 @@ function newReprocessJob(fields) {
   };
 }
 
-/** `{resume: <job_id>}`: a new job continuing a partial one (same mode and slice), once. */
+/** A resumer that ends cancelled or failed hands its partial job back, resumable again (reprocess_jobs.py). */
+function handBack(job) {
+  const parent = mockReprocessJobs.find((j) => j.job_id === job.resumed_from);
+  if (parent && parent.resumed_by === job.job_id) {
+    parent.resumable = true;
+    delete parent.resumed_by;
+  }
+}
+
+/** `{resume: <job_id>}`: a new job continuing a partial one (same mode and slice), once at a time. */
 function resumeReprocessJob(body) {
   if (Object.keys(body).length !== 1) return [400, { success: false, error: 'resume takes no other fields' }];
   const previous = mockReprocessJobs.find((j) => j.job_id === body.resume);
@@ -1497,7 +1506,12 @@ function handleReprocessRoutes(req, url, body) {
   if (!jobId && req.method === 'POST') return startReprocessJob(body);
   if (!jobId && req.method === 'GET') {
     const latest = mockReprocessJobs.at(-1);
-    return [200, { job: latest ? advanceReprocessJob(latest) : null }];
+    if (!latest) return [200, { job: null }];
+    const view = advanceReprocessJob(latest);
+    // Like the route: a cancelled or failed resumer names the partial job it handed back.
+    const parent = mockReprocessJobs.find((j) => j.job_id === view.resumed_from);
+    const handedBack = ['cancelled', 'failed'].includes(view.status) && parent?.resumable === true;
+    return [200, { job: handedBack ? { ...view, resumable_job_id: parent.job_id } : view }];
   }
   const job = mockReprocessJobs.find((j) => j.job_id === jobId);
   if (!job) return [404, { success: false, error: 'Job not found' }];
@@ -1505,6 +1519,7 @@ function handleReprocessRoutes(req, url, body) {
     if (job.status === 'queued' || job.status === 'running') {
       job.status = 'cancelled';
       job.finished_at = job.updated_at = new Date().toISOString();
+      handBack(job);
     }
     return [200, { job }];
   }

@@ -110,6 +110,20 @@ class TestResume:
         response, _ = post({'resume': partial})
         assert response['statusCode'] == 202
 
+    def test_the_latest_read_names_the_job_a_cancelled_resumer_handed_back(
+            self, post, table, api_gateway_event, lambda_context):
+        """Otherwise the SPA, which shows the latest job, would have no Resume left for it."""
+        partial = _partial_job(table)
+        _response, body = post({'resume': partial})
+        jobs.cancel_job(table, body['job']['job_id'])
+        _, latest = call_route(lambda_handler, api_gateway_event, lambda_context, method='GET', path=BASE)
+        assert latest['job']['job_id'] == body['job']['job_id']
+        assert latest['job']['resumable_job_id'] == partial
+        post({'resume': partial})  # resumed again: the cancelled one names nothing any more
+        jobs.cancel_job(table, (jobs.get_latest_job(table) or {}).get('sk', ''))
+        _, after = call_route(lambda_handler, api_gateway_event, lambda_context, method='GET', path=BASE)
+        assert after['job']['resumable_job_id'] == partial  # the second resumer handed it back too
+
     def test_a_completed_job_cannot_be_resumed(self, post, table):
         _response, body = post({'mode': 'processed', 'days': 0})
         jobs.cancel_job(table, body['job']['job_id'])

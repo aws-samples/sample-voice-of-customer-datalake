@@ -62,6 +62,28 @@ function ConfigLine({ job }: Readonly<{ job: ReprocessJob }>) {
   )
 }
 
+function ResumeButton({ onResume, resuming }: Readonly<{ onResume: () => void; resuming: boolean | undefined }>) {
+  const { t } = useTranslation('components')
+  return (
+    <button type="button" onClick={onResume} disabled={resuming === true} className="btn btn-secondary btn-sm">
+      {resuming === true ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
+      {t('categoriesManager.reprocess.resume')}
+    </button>
+  )
+}
+
+/** A resumer that was cancelled or failed handed its partial job back: offer to resume that one. */
+function HandedBack({ job, onResume, resuming }: Readonly<Pick<JobProgressProps, 'job' | 'onResume' | 'resuming'>>) {
+  const { t } = useTranslation('components')
+  if (job.resumable_job_id === undefined || onResume === undefined) return null
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <p className="text-xs text-muted">{t('categoriesManager.reprocess.handedBack')}</p>
+      <ResumeButton onResume={onResume} resuming={resuming} />
+    </div>
+  )
+}
+
 function Ceiling({ job, onResume, resuming }: Readonly<Pick<JobProgressProps, 'job' | 'onResume' | 'resuming'>>) {
   const { t, i18n } = useTranslation('components')
   if (!job.stopped_at_ceiling) return null
@@ -70,12 +92,7 @@ function Ceiling({ job, onResume, resuming }: Readonly<Pick<JobProgressProps, 'j
       <p className="text-xs text-warn">
         {t('categoriesManager.reprocess.stoppedAtCeiling', { max: formatCount(MAX_REPROCESS_ITEMS, i18n.language) })}
       </p>
-      {job.resumable && onResume !== undefined && (
-        <button type="button" onClick={onResume} disabled={resuming === true} className="btn btn-secondary btn-sm">
-          {resuming === true ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
-          {t('categoriesManager.reprocess.resume')}
-        </button>
-      )}
+      {job.resumable && onResume !== undefined && <ResumeButton onResume={onResume} resuming={resuming} />}
     </div>
   )
 }
@@ -110,6 +127,7 @@ function JobProgress({ job, onCancel, cancelling, onResume, resuming }: Readonly
       </dl>
       <RawFallbackNote job={job} />
       <Ceiling job={job} onResume={onResume} resuming={resuming} />
+      <HandedBack job={job} onResume={onResume} resuming={resuming} />
       <ConfigLine job={job} />
       {job.error !== undefined && <p role="alert" className="text-xs text-danger">{job.error}</p>}
     </div>
@@ -130,7 +148,7 @@ export function LiveJobProgress({ job, controls }: Readonly<{ job: ReprocessJob;
       job={job}
       onCancel={() => cancel.mutate(job.job_id)}
       cancelling={cancel.isPending}
-      onResume={isTerminalJob(job) ? () => start.mutate({ resume: job.job_id }) : undefined}
+      onResume={isTerminalJob(job) ? () => start.mutate({ resume: job.resumable_job_id ?? job.job_id }) : undefined}
       resuming={start.isPending}
     />
   )

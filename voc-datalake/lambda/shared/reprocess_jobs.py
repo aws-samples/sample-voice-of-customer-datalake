@@ -274,10 +274,11 @@ def start_job(
             marked = True
         table.put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
     except Exception:
+        release_lock(table, job_id)  # first: nothing after it may keep the lock held
         if marked and resume is not None:
             # The new job row was never written: hand the partial job back, or it would stay resumed by nothing.
+            # Never raises (_reopen_resumed logs its own failures), so the original error is the one re-raised.
             _reopen_resumed(table, {'sk': job_id, 'resumed_from': resume.job_id})
-        release_lock(table, job_id)
         raise
     return item
 
@@ -300,6 +301,14 @@ def _mark_resumed(table: Any, partial_job_id: str, new_job_id_: str) -> None:
         if is_conditional_check_failure(e):
             raise ResumeRefused from e
         raise
+
+
+def handed_back_job(table: Any, job: dict) -> str | None:
+    """The partial job a cancelled or failed resumer ``job`` handed back, while it is resumable; else None."""
+    parent_id = job.get('resumed_from')
+    if job.get('status') not in (STATUS_FAILED, STATUS_CANCELLED) or not isinstance(parent_id, str) or not parent_id:
+        return None
+    return parent_id if resume_point(get_job(table, parent_id)) is not None else None
 
 
 def resume_point(job: dict | None) -> Resume | None:

@@ -191,6 +191,7 @@
       "alreadyRunning": "Une tâche de retraitement est déjà en cours. Attendez qu'elle se termine ou annulez-la d'abord.",
       "resumeRefused": "Ce traitement ne peut plus être repris : il a déjà été repris, ou un autre traitement est en cours.",
       "resumeGone": "Ce traitement n’existe plus et ne peut donc pas être repris.",
+      "handedBack": "Le traitement que celui-ci poursuivait peut être repris à nouveau là où il s’est arrêté.",
       "stoppedAtCeiling": "Arrêté à la limite de {{max}} avis par tâche pour plafonner les coûts du modèle. Reprenez pour continuer là où elle s'est arrêtée.",
       "startError": "La tâche de retraitement n'a pas pu démarrer.",
       "daysLabel": "Période (jours)",

@@ -191,6 +191,7 @@ voice-of-customer-datalake/       # Root repository
 |--------|-----------|---------|
 | `voc-raw-data-{account}-{region}` | `raw/{source}/{year}/{month}/{day}/{id}/{sha16}.json` (legacy objects: `…/{day}/{id}.json`, left in place) | Raw scraped/ingested data archival (bronze) — write-once (`If-None-Match`, enforced by the bucket policy; `lambda/shared/raw_versions.py`): an item received again with different content is a new object in its folder, nothing under `raw/` is overwritten or expires; objects carry `connector` / `connector-version` metadata; never deleted except by `voc-retention` (both layouts, every version); bucket deleted with the stack only under `-c protectData=false` (docs/data-lake-structure.md) |
 | `voc-raw-data-{account}-{region}` | `avatars/{project_id}/{persona_id}.png` | AI-generated persona avatars |
+| `voc-raw-data-{account}-{region}` | `silver/{source}/{feedback_id}/{YYYYMMDDTHHMMSSffffffZ}-{sha8}.json` | Silver history: a processed feedback item as it was before each in-place change that landed (`shared/silver_provenance.py`), write-once like `raw/` (bucket policy), deleted only by `voc-retention` with its item (docs/data-lake-structure.md) |
 
 ### DynamoDB Tables
 
@@ -370,8 +371,8 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 | PUT | `/settings/categories` | Save category configuration — admin-only; categories carry `product` + `owners` |
 | POST | `/settings/categories/generate` | AI-generate categories — admin-only (Bedrock spend, #242); the AI panel is hidden for non-admins. 202 + assist job (see Scrapers → Assist jobs) |
 | GET | `/settings/jobs/{job_id}` | Poll a categories assist job (its starter only; 404 otherwise) |
-| POST | `/settings/categories/reprocess` | Start a reprocess job `{mode: processed\|raw\|dimensions, days, include_manual?}` (admin) → 202 `{job}`, 409 if one is active |
-| GET | `/settings/categories/reprocess` | Latest reprocess job |
+| POST | `/settings/categories/reprocess` | Start a reprocess job `{mode: processed\|raw\|dimensions, days \| date_from/date_to, date_basis?, sources?, categories?, include_manual?}` (≤ 50 sources / categories; a source slice is a Scan filtered on `source_platform`) or resume one `{resume: <job_id>}` (a `partial` job, from its cursor, one resumer at a time; a failed or cancelled resumer hands it back) (admin) → 202 `{job}`, 409 if one is active or the job is not resumable, 404 unknown job (docs/categories.md) |
+| GET | `/settings/categories/reprocess` | Latest reprocess job (`resumable`, `resume_from`, `config`, `raw_fallback`; a cancelled / failed resumer also names `resumable_job_id`) |
 | POST | `/settings/categories/reprocess/{job_id}/cancel` | Cancel a reprocess job |
 | GET/PUT | `/settings/dimensions` | Dimensions config (GET any user, PUT admin); the built-in `feedback_type` (`shared/feedback_types.py`) is listed first with `builtin: true` and never stored — docs/dimensions.md |
 | GET/PUT | `/settings/sources` | Source profiles (admin full; others `{id, label, restricted}`; PUT admin) — docs/source-policies.md |
@@ -683,7 +684,7 @@ Admin-only on every route. Customer data is never deleted: there is **no**
 | GET | `/data-explorer/s3` | Browse S3 raw data bucket with folder navigation |
 | GET | `/data-explorer/s3/preview` | Preview JSON file content from S3 |
 | PUT | `/data-explorer/s3` | Create S3 file (409 when overwriting an existing `raw/` object) |
-| PUT | `/data-explorer/feedback` | Update DynamoDB feedback record in place |
+| PUT | `/data-explorer/feedback` | Update DynamoDB feedback record in place: changed fields only, validated and put through the source's PII policy (400 / 503), conditional on the record unchanged since read (409, 404 when gone); keeps the record as it was under `silver/` once it landed and stamps `updated_by` / `updated_at` / `change_reason` (docs/data-lake-structure.md → Silver history) |
 
 ## Adding a New Data Source
 

@@ -191,6 +191,7 @@
       "alreadyRunning": "Ya hay un trabajo de reprocesamiento en curso. Espera a que termine o cancélalo primero.",
       "resumeRefused": "Este trabajo ya no se puede reanudar: ya se reanudó o hay otro trabajo en curso.",
       "resumeGone": "Este trabajo ya no existe, así que no se puede reanudar.",
+      "handedBack": "El trabajo que este continuaba puede reanudarse de nuevo desde donde se detuvo.",
       "stoppedAtCeiling": "Se detuvo en el límite de {{max}} opiniones por trabajo para acotar el coste del modelo. Reanuda para continuar donde se detuvo.",
       "startError": "No se pudo iniciar el trabajo de reprocesamiento.",
       "daysLabel": "Periodo (días)",
