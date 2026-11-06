@@ -172,3 +172,29 @@ def test_a_stale_editor_whose_values_match_is_asked_to_reload(tables, lambda_con
         # '' = the SPA opened the record unstamped, which it no longer is: a stale editor, even with equal values.
         status, _ = _save(tables, lambda_context, {'urgency': 'high', 'updated_at': ''})
     assert status == 409
+
+
+def test_a_stale_editor_is_asked_to_reload_before_its_fields_are_checked(tables, lambda_context):
+    """A stale copy may carry a value today's rules refuse: the editor is told to reload (409), not given a 400."""
+    with seeded_source_profiles():
+        _save(tables, lambda_context, {'urgency': 'high'})
+        status, body = _save(tables, lambda_context, {'urgency': 'not-an-urgency', 'updated_at': ''})
+    assert status == 409
+    assert 'changed by someone else' in body['error']
+    assert _stored(tables)['urgency'] == 'high'
+
+
+def test_a_branded_review_is_found_by_id_when_its_source_partition_misses(tables, lambda_context):
+    """A branded review lives under SOURCE#{brand_name}; the editor sends back its source_platform."""
+    branded = {**ITEM, 'pk': 'SOURCE#example_air', 'feedback_id': 'f2', 'sk': 'FEEDBACK#f2',
+               'source_platform': SOURCE, 'original_text': 'The lounge was full'}
+    tables[0].put_item(Item=branded)
+    event = rest_event('PUT', '/data-explorer/feedback', claims=ADMIN_CLAIMS,
+                       body={'feedback_id': 'f2', 'data': {'source_platform': SOURCE, 'urgency': 'high'}})
+    with seeded_source_profiles():
+        status, _ = invoke(data_explorer_handler, event, lambda_context, aggregates=tables[1])
+    stored = tables[0].get_item(Key={'pk': 'SOURCE#example_air', 'sk': 'FEEDBACK#f2'})['Item']
+
+    assert status == 200
+    assert stored['urgency'] == 'high'
+    assert 'Item' not in tables[0].get_item(Key={'pk': f'SOURCE#{SOURCE}', 'sk': 'FEEDBACK#f2'})  # never created

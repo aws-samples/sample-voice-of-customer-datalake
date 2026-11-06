@@ -272,7 +272,7 @@ without a batch index (an imported persona, or an id from before the random suff
 | GET | `/data-explorer/s3` | List S3 objects |
 | GET | `/data-explorer/s3/preview` | Preview file content |
 | PUT | `/data-explorer/s3` | Create a file, optionally reprocess it (409 when overwriting an existing `raw/` key) |
-| PUT | `/data-explorer/feedback` | Update a feedback record in place: only the fields that differ from the stored record; each is validated (enums, bounds) and put through the source's PII policy (the stricter of the item's and the profile's; `summary_only` refuses setting `original_text` / `normalized_text`, 400, removing them is allowed; unreadable profiles 503). The write is conditional on the record being unchanged since it was read (its `updated_at`): 409 when a change landed meanwhile, 404 when it is gone. Once the edit landed, the record as it was is kept under `silver/` and the edit is stamped (`updated_by`, `change_reason: data_explorer_edit`) |
+| PUT | `/data-explorer/feedback` | Update a feedback record in place: only the fields that differ from the stored record; each is validated (enums, bounds) and put through the source's PII policy (the stricter of the item's and the profile's; `summary_only` refuses setting `original_text` / `normalized_text`, 400; `normalized_text` may be removed, `original_text` never (every review needs one); unreadable profiles 503). The write is conditional on the record being unchanged since it was read (its `updated_at`): 409 when a change landed meanwhile, 404 when it is gone. Once the edit landed, the record as it was is kept under `silver/` and the edit is stamped (`updated_by`, `change_reason: data_explorer_edit`) |
 
 ## S3 Import Bucket
 

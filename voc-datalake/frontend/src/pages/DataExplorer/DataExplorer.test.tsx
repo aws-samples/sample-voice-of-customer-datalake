@@ -17,25 +17,15 @@ const queriesState = vi.hoisted(() => {
 const failure = (view: 's3' | 'feedback') => ({
   loadFailed: queriesState.failed === view, retrying: false, retry: () => queriesState.retry(),
 })
-vi.mock('./useDataExplorerQueries', () => ({
-  useDataExplorerQueries: () => ({
-    isConfigured: queriesState.isConfigured,
-    s3Data: { folders: [], files: [] },
-    s3Loading: false,
-    feedbackData: { items: [], total: 0, isLowerBound: false },
-    feedbackLoading: false,
-    s3Failure: failure('s3'),
-    feedbackFailure: failure('feedback'),
-    bucketsData: { buckets: [{ id: 'raw-data', label: 'Raw Data' }] },
-    sourcesData: { sources: {} },
-    refetch: vi.fn(),
-  }),
-}))
+vi.mock('./useDataExplorerQueries', async () => {
+  const { dataExplorerQueriesResult } = await import('./data-explorer-fixtures')
+  return { useDataExplorerQueries: () => dataExplorerQueriesResult(queriesState.isConfigured, failure) }
+})
 
 vi.mock('./useDataExplorerMutations', () => ({
   useDataExplorerMutations: () => ({
-    saveS3Mutation: { mutate: vi.fn(), isPending: false, error: null },
-    saveFeedbackMutation: { mutate: vi.fn(), isPending: false, error: null },
+    saveS3Mutation: { mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null },
+    saveFeedbackMutation: { mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null },
   }),
 }))
 

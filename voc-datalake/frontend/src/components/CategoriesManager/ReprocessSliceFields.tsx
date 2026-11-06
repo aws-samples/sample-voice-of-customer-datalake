@@ -15,6 +15,7 @@ import { ALL_TIME_CUSTOM_DAYS, MAX_CUSTOM_DAYS } from '../../api/baseUrl'
 import { MAX_SLICE_VALUES } from '../../api/reprocessApi'
 import type { ReprocessDateBasis } from '../../api/reprocessApi'
 import { useErasableSources } from '../SourcesManager/useErasureJobs'
+import { parseList } from './reprocessForm'
 import type { ReprocessForm, WindowKind } from './reprocessForm'
 
 type Change = (patch: Partial<ReprocessForm>) => void
@@ -78,6 +79,13 @@ function RangeFields({ form, onChange, invalid }: Readonly<{ form: ReprocessForm
   )
 }
 
+/** Says why Start is disabled when a list names more values than the server accepts. */
+function TooManyValues({ selected }: Readonly<{ selected: number }>) {
+  const { t } = useTranslation('components')
+  if (selected <= MAX_SLICE_VALUES) return null
+  return <p role="alert" className="text-xs text-danger mt-1">{t('categoriesManager.reprocess.tooManyValues', { selected, max: MAX_SLICE_VALUES })}</p>
+}
+
 function SourcePicker({ selected, onChange }: Readonly<{ selected: readonly string[]; onChange: Change }>) {
   const { t } = useTranslation('components')
   const { data: sources = [] } = useErasableSources()
@@ -97,6 +105,7 @@ function SourcePicker({ selected, onChange }: Readonly<{ selected: readonly stri
         ))}
       </div>
       <p className="text-xs text-muted mt-1">{t('categoriesManager.reprocess.sourcesHint', { max: MAX_SLICE_VALUES })}</p>
+      <TooManyValues selected={selected.length} />
     </fieldset>
   )
 }
@@ -130,6 +139,7 @@ export default function ReprocessSliceFields({ form, onChange, invalid }: Readon
           onChange={(e) => onChange({ categoriesInput: e.target.value })}
           placeholder={t('categoriesManager.reprocess.categoriesPlaceholder')} />
         <p className="text-xs text-muted mt-1">{t('categoriesManager.reprocess.categoriesHint', { max: MAX_SLICE_VALUES })}</p>
+        <TooManyValues selected={parseList(form.categoriesInput).length} />
       </div>
       <label className="flex items-center gap-2 text-sm min-h-9">
         <input type="checkbox" checked={form.includeManual} className="rounded-sm accent-accent"

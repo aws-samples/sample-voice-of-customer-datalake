@@ -225,7 +225,8 @@
       "sourcesHint": "Aucune sélection = toutes les sources. Seules ces sources sont lues. {{max, number}} au maximum.",
       "categoriesLabel": "Catégories",
       "categoriesPlaceholder": "facturation, livraison",
-      "categoriesHint": "Noms de catégorie stockés, séparés par des virgules (y compris ceux qui ne sont plus configurés). Vide = toutes les catégories. {{max, number}} au maximum."
+      "categoriesHint": "Noms de catégorie stockés, séparés par des virgules (y compris ceux qui ne sont plus configurés). Vide = toutes les catégories. {{max, number}} au maximum.",
+      "tooManyValues": "{{selected, number}} indiqués ; la limite est de {{max, number}}. Retirez-en pour lancer la tâche."
     }
   },
   "dataSourceWizard": {

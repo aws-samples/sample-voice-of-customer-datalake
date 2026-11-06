@@ -7,6 +7,7 @@
  * @module pages/DataExplorer/openedStamp
  */
 
+import { apiErrorStatus, HTTP_CONFLICT } from '../../api/apiErrorStatus'
 import type { FeedbackItem } from '../../api/types'
 
 /** The record's `updated_at` as opened; '' when it has none. */
@@ -22,4 +23,9 @@ export function openedStamp(opened: unknown): string {
 export function savedFeedbackBody(edited: unknown, opened: unknown): Partial<FeedbackItem> & { updated_at: string } {
   const fields = typeof edited === 'object' && edited !== null ? edited : {}
   return { ...fields, updated_at: openedStamp(opened) }
+}
+
+/** True when a processed-record save was refused because the record changed after the editor opened it (409). */
+export function isStaleEditorRefusal(error: unknown): boolean {
+  return apiErrorStatus(error) === HTTP_CONFLICT
 }

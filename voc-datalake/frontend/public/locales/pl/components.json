@@ -235,7 +235,8 @@
       "rawFallback_few": "{{count, number}} opinie nie miały zarchiwizowanego surowego elementu i zostały przetworzone z zapisanego tekstu (źródła: {{sources}}).",
       "rawFallback_many": "{{count, number}} opinii nie miało zarchiwizowanego surowego elementu i zostały przetworzone z zapisanego tekstu (źródła: {{sources}}).",
       "lastNDays_few": "Ostatnie {{count, number}} dni",
-      "lastNDays_many": "Ostatnie {{count, number}} dni"
+      "lastNDays_many": "Ostatnie {{count, number}} dni",
+      "tooManyValues": "Podano {{selected, number}}, limit to {{max, number}}. Usuń część, aby uruchomić zadanie."
     },
     "categoryCount_few": "{{count, number}} kategorie",
     "categoryCount_many": "{{count, number}} kategorii",

@@ -15,7 +15,8 @@
     "type": "Typ",
     "viewFeedback": "Feedback anzeigen",
     "viewS3File": "S3-Datei anzeigen",
-    "content": "Dateiinhalt"
+    "content": "Dateiinhalt",
+    "staleRecord": "Dieser Datensatz wurde geändert, nachdem Sie ihn geöffnet haben. Schließen Sie den Editor und öffnen Sie ihn erneut, um die aktuelle Version zu sehen."
   },
   "feedback": {
     "category": "Kategorie: {{category}}",

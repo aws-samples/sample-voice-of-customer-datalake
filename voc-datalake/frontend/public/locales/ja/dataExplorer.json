@@ -15,7 +15,8 @@
     "type": "タイプ",
     "viewFeedback": "フィードバックを表示",
     "viewS3File": "S3 ファイルを表示",
-    "content": "ファイルの内容"
+    "content": "ファイルの内容",
+    "staleRecord": "このレコードは開いた後に変更されました。エディターを閉じて開き直し、最新の内容を確認してください。"
   },
   "feedback": {
     "category": "カテゴリ: {{category}}",

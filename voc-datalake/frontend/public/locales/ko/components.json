@@ -225,7 +225,8 @@
       "sourcesHint": "선택하지 않으면 모든 소스입니다. 선택한 소스만 읽습니다. 최대 {{max, number}}개.",
       "categoriesLabel": "카테고리",
       "categoriesPlaceholder": "billing, delivery",
-      "categoriesHint": "저장된 카테고리 이름을 쉼표로 구분해 입력합니다(더 이상 구성되지 않은 이름도 가능). 비워 두면 모든 카테고리입니다. 최대 {{max, number}}개."
+      "categoriesHint": "저장된 카테고리 이름을 쉼표로 구분해 입력합니다(더 이상 구성되지 않은 이름도 가능). 비워 두면 모든 카테고리입니다. 최대 {{max, number}}개.",
+      "tooManyValues": "{{selected, number}}개가 지정되었습니다. 최대 {{max, number}}개까지 가능합니다. 작업을 시작하려면 일부를 제거하세요."
     }
   },
   "dataSourceWizard": {

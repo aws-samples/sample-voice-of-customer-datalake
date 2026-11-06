@@ -210,7 +210,8 @@
       "sourcesHint": "None selected = every source. Only these sources are read. Up to {{max, number}}.",
       "categoriesLabel": "Categories",
       "categoriesPlaceholder": "billing, delivery",
-      "categoriesHint": "Stored category names, comma-separated (also ones no longer configured). Empty = every category. Up to {{max, number}}."
+      "categoriesHint": "Stored category names, comma-separated (also ones no longer configured). Empty = every category. Up to {{max, number}}.",
+      "tooManyValues": "{{selected, number}} given; the limit is {{max, number}}. Remove some to start the job."
     }
   },
   "dataSourceWizard": {

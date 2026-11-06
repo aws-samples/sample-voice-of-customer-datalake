@@ -225,7 +225,8 @@
       "sourcesHint": "Nenhuma seleção = todas as fontes. Só estas fontes são lidas. Até {{max, number}}.",
       "categoriesLabel": "Categorias",
       "categoriesPlaceholder": "faturação, entrega",
-      "categoriesHint": "Nomes de categoria armazenados, separados por vírgulas (incluindo os que já não estão configurados). Vazio = todas as categorias. Até {{max, number}}."
+      "categoriesHint": "Nomes de categoria armazenados, separados por vírgulas (incluindo os que já não estão configurados). Vazio = todas as categorias. Até {{max, number}}.",
+      "tooManyValues": "{{selected, number}} indicados; o limite é {{max, number}}. Remova alguns para iniciar o trabalho."
     }
   },
   "dataSourceWizard": {

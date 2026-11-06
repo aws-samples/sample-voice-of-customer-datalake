@@ -225,7 +225,8 @@
       "sourcesHint": "Keine Auswahl = alle Quellen. Es werden nur diese Quellen gelesen. Höchstens {{max, number}}.",
       "categoriesLabel": "Kategorien",
       "categoriesPlaceholder": "abrechnung, lieferung",
-      "categoriesHint": "Gespeicherte Kategorienamen, durch Kommas getrennt (auch nicht mehr konfigurierte). Leer = alle Kategorien. Höchstens {{max, number}}."
+      "categoriesHint": "Gespeicherte Kategorienamen, durch Kommas getrennt (auch nicht mehr konfigurierte). Leer = alle Kategorien. Höchstens {{max, number}}.",
+      "tooManyValues": "{{selected, number}} angegeben, höchstens {{max, number}} erlaubt. Entfernen Sie einige, um den Auftrag zu starten."
     }
   },
   "dataSourceWizard": {

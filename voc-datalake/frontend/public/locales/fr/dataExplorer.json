@@ -15,7 +15,8 @@
     "type": "Catégorie",
     "viewFeedback": "Afficher le commentaire",
     "viewS3File": "Afficher le fichier S3",
-    "content": "Contenu du fichier"
+    "content": "Contenu du fichier",
+    "staleRecord": "Cet enregistrement a changé après son ouverture. Fermez l'éditeur et rouvrez-le pour voir la version actuelle."
   },
   "feedback": {
     "category": "Catégorie : {{category}}",

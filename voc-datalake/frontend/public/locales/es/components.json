@@ -225,7 +225,8 @@
       "sourcesHint": "Sin selección = todas las fuentes. Solo se leen estas fuentes. Hasta {{max, number}}.",
       "categoriesLabel": "Categorías",
       "categoriesPlaceholder": "facturación, entrega",
-      "categoriesHint": "Nombres de categoría almacenados, separados por comas (también los que ya no están configurados). Vacío = todas las categorías. Hasta {{max, number}}."
+      "categoriesHint": "Nombres de categoría almacenados, separados por comas (también los que ya no están configurados). Vacío = todas las categorías. Hasta {{max, number}}.",
+      "tooManyValues": "Se indicaron {{selected, number}}; el límite es {{max, number}}. Quite algunos para iniciar el trabajo."
     }
   },
   "dataSourceWizard": {

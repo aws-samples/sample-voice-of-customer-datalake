@@ -170,6 +170,22 @@ describe('ReprocessPanel', () => {
     expect(screen.getByRole('button', { name: 'Start reprocessing' })).toBeDisabled()
   })
 
+  it('says why Start is disabled when more than 50 categories are named, and stops saying it at 50', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    const names = Array.from({ length: 51 }, (_, index) => `cat-${index}`)
+    const categories = screen.getByLabelText('Categories')
+    await user.click(categories)
+    await user.paste(names.join(', '))
+    expect(screen.getByRole('alert')).toHaveTextContent('51 given; the limit is 50. Remove some to start the job.')
+    expect(screen.getByRole('button', { name: 'Start reprocessing' })).toBeDisabled()
+
+    await user.clear(categories)
+    await user.paste(names.slice(0, 50).join(', '))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start reprocessing' })).toBeEnabled()
+  })
+
   // verify5/V6: de mode labels pushed the Taxonomy tab 6 px wider than 390 px at 200 % text.
   it('lets each mode title and description wrap inside its row', async () => {
     renderPanel()

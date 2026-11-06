@@ -15,7 +15,8 @@
     "type": "Tipo",
     "viewFeedback": "Ver Comentario",
     "viewS3File": "Ver Archivo S3",
-    "content": "Contenido del archivo"
+    "content": "Contenido del archivo",
+    "staleRecord": "Este registro cambió después de abrirlo. Cierre el editor y vuelva a abrirlo para ver la versión actual."
   },
   "feedback": {
     "category": "Categoría: {{category}}",
