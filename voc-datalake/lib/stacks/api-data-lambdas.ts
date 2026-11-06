@@ -116,9 +116,9 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
     environment: {
       FEEDBACK_TABLE: feedbackTable.tableName,
       AGGREGATES_TABLE: aggregatesTable.tableName,
-      // Where an edited review's previous version is kept, and the release it records (shared/silver_provenance.py).
+      // Where an edited review's previous version is kept (shared/silver_provenance.py). An edit stamps no
+      // pipeline_version (the enrichment provenance stays), so the app release is not needed here.
       RAW_DATA_BUCKET: rawDataBucket.bucketName,
-      APP_VERSION: appVersion(),
       ALLOWED_ORIGIN: allowedOrigin,
       POWERTOOLS_SERVICE_NAME: 'voc-feedback-edit-api',
       LOG_LEVEL: 'INFO',

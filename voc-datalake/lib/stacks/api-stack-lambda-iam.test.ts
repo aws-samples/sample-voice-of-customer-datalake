@@ -169,9 +169,9 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
     expect(s3.every((s) => s.resource.includes('/silver/*'))).toBe(true);
   });
 
-  it('is handed both table names, the raw bucket and the app release', () => {
+  it('is handed both table names and the raw bucket', () => {
     expect(Object.keys(lambdaEnv(apiTemplate(), 'feedback_edit_handler.lambda_handler')))
-      .toStrictEqual(expect.arrayContaining(['FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET', 'APP_VERSION']));
+      .toStrictEqual(expect.arrayContaining(['FEEDBACK_TABLE', 'AGGREGATES_TABLE', 'RAW_DATA_BUCKET']));
   });
 });
 
