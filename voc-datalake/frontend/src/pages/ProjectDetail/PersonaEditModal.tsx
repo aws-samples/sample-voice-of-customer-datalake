@@ -10,6 +10,7 @@
 import { BookOpen, Frown, IdCard, Loader2, Pencil, Quote, Target, User, type LucideIcon } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
+import { TextInputField } from '../../components/TextInputField/TextInputField'
 import type { ProjectPersona } from '../../api/projectTypes'
 import DialogClose from '../../components/DialogClose/DialogClose'
 import ModalShell from '../../components/ModalShell/ModalShell'
@@ -35,23 +36,8 @@ interface InputFieldProps {
 interface TextAreaFieldProps extends InputFieldProps { readonly rows?: number; readonly className?: string }
 
 // Reusable input field
-function InputField({
-  label, value, onChange, placeholder,
-}: InputFieldProps) {
-  const id = useId()
-  return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium text-text mb-1">{label}</label>
-      <input
-        id={id}
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="input"
-        placeholder={placeholder}
-      />
-    </div>
-  )
+function InputField(props: InputFieldProps) {
+  return <TextInputField {...props} />
 }
 
 // Reusable textarea field
