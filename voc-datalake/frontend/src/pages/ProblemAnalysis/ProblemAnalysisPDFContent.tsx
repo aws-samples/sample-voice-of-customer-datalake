@@ -11,7 +11,7 @@ import { PDF_TONES, pdfToneStyle } from '../../components/PdfParts/pdfTones'
 import { signedAverage } from '../../components/SentimentWords/sentimentWords'
 import { formatDate } from '../../utils/dateUtils'
 import { formatCount } from '../../utils/numberFormat'
-import { problemsLine } from './problemGrouping'
+import { problemsLine, treeTotals } from './problemGrouping'
 
 interface ProblemGroupPDF {
   readonly problem: string
@@ -81,10 +81,7 @@ function buildActiveFilters(filters: ProblemAnalysisPDFProps['filters']): string
 }
 
 function buildHeaderStats(categories: CategoryGroupPDF[]) {
-  const totalProblems = categories.reduce((sum, c) =>
-    sum + c.subcategories.reduce((s, sub) => s + sub.problemCount, 0), 0)
-  const totalFeedback = categories.reduce((sum, c) => sum + c.totalItems, 0)
-  const totalUrgent = categories.reduce((sum, c) => sum + c.urgentCount, 0)
+  const { problems: totalProblems, reviews: totalFeedback, urgent: totalUrgent } = treeTotals(categories)
   return [
     {
       label: 'Categories',

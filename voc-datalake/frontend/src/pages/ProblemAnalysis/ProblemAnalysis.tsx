@@ -27,7 +27,7 @@ import { useProblemResolution } from './useProblemResolution'
 import { useProblemTree } from './useProblemTree'
 import { toggleSetMember } from './toggleSetMember'
 import { WindowCoverageNotice } from './WindowCoverageNotice'
-import { toPDFCategories } from './problemGrouping'
+import { toPDFCategories, treeTotals } from './problemGrouping'
 import { rankEntityKeys } from '../Categories/entityCounts'
 import { generateProblemAnalysisPDF } from './problemAnalysisPdfGenerator'
 import { getTimeRangeLabel } from '../../utils/dateUtils'
@@ -63,10 +63,7 @@ function EmptyProblemsState({ resolvedCount }: { readonly resolvedCount: number 
 
 function StatRow({ groups }: Readonly<{ groups: readonly CategoryGroup[] }>) {
   const { t } = useTranslation('problemAnalysis')
-  const subcategories = groups.reduce((sum, g) => sum + g.subcategories.length, 0)
-  const problems = groups.reduce((sum, g) => sum + g.subcategories.reduce((s, sub) => s + sub.problemCount, 0), 0)
-  const reviews = groups.reduce((sum, g) => sum + g.totalItems, 0)
-  const urgent = groups.reduce((sum, g) => sum + g.urgentCount, 0)
+  const { subcategories, problems, reviews, urgent } = treeTotals(groups)
   const icon = (Icon: typeof TrendingUp) => <Icon size={18} aria-hidden="true" />
   return (
     <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3 sm:gap-4">
