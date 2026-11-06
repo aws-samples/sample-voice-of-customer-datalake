@@ -543,24 +543,15 @@ class _RatingTally:
 
 
 def item_to_form(item: dict) -> dict:
-    """Convert DynamoDB item to form response."""
+    """Convert DynamoDB item to the authenticated form response: the public widget
+    projection (`item_to_widget_config`) plus the fields only signed-in callers see.
+
+    The public projection is the base and never the other way round, so a field added
+    here stays out of the unauthenticated `GET /feedback-forms/<id>/config`."""
     return {
         'form_id': item.get('form_id', ''),
         'name': item.get('name', ''),
-        'enabled': item.get('enabled', False),
-        'title': item.get('title', ''),
-        'description': item.get('description', ''),
-        'question': item.get('question', ''),
-        'placeholder': item.get('placeholder', ''),
-        'rating_enabled': item.get('rating_enabled', True),
-        'rating_type': item.get('rating_type', 'stars'),
-        'rating_max': _rating_max(item),
-        'submit_button_text': item.get('submit_button_text', ''),
-        'success_message': item.get('success_message', ''),
-        'theme': item.get('theme', {}),
-        'collect_email': item.get('collect_email', False),
-        'collect_name': item.get('collect_name', False),
-        'custom_fields': item.get('custom_fields', []),
+        **item_to_widget_config(item),
         'category': item.get('category', ''),
         'subcategory': item.get('subcategory', ''),
         # Optional validation link — authenticated callers only. Deliberately
@@ -573,25 +564,19 @@ def item_to_form(item: dict) -> dict:
         # one form each built prototype gets (shared/prototype_pins.py). Set by
         # the document generator only — not creatable or updatable here.
         'form_type': item.get('form_type') or 'standard',
-        'brand_name': item.get('brand_name', ''),
         'created_at': item.get('created_at', ''),
         'updated_at': item.get('updated_at', ''),
     }
 
 
-# jscpd:ignore-start — item_to_widget_config restates item_to_form's rendering
-# fields on purpose: it is the PUBLIC allowlist, and a shared "rendering fields"
-# helper is exactly the path by which a field added for authenticated callers
-# would leak to the widget (see the docstring below and
-# test_widget_config_type_lockstep.py).
 def item_to_widget_config(item: dict) -> dict:
     """Convert DynamoDB item to the PUBLIC widget config response.
 
-    Deliberately a separate, narrower projection from `item_to_form` rather
-    than "item_to_form minus a few keys": `GET /feedback-forms/<id>/config` is
-    unauthenticated and fetched by the widget from the customer's own website,
-    so every field here is one someone chose to publish. Adding a field to
-    `item_to_form` must not leak it; it has to be added here too, on purpose.
+    The narrower projection `item_to_form` is built on, never "item_to_form minus a
+    few keys": `GET /feedback-forms/<id>/config` is unauthenticated and fetched by
+    the widget from the customer's own website, so every field here is one someone
+    chose to publish. A field added to `item_to_form` does not reach it; one added
+    here is published, on purpose.
 
     Mirrors `FeedbackFormConfig` in frontend/src/api/types.ts — the rendering
     fields the widget reads plus `enabled` and `brand_name`.
@@ -613,7 +598,6 @@ def item_to_widget_config(item: dict) -> dict:
         'custom_fields': item.get('custom_fields', []),
         'brand_name': item.get('brand_name', ''),
     }
-# jscpd:ignore-end of the accepted pair
 
 
 # ============================================
