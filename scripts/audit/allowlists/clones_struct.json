@@ -11,9 +11,11 @@
     },
     {
       "files": [
-        "voc-datalake/scripts/**"
+        "voc-datalake/scripts/mcp_tokens/backfill_creator_index.py",
+        "voc-datalake/scripts/memory/backfill_categories.py",
+        "voc-datalake/scripts/retention/retention_common.py"
       ],
-      "reason": "one-off operator scripts (backfills, retention) each carry their own argparse and stack-output lookup on purpose, so a script runs alone from a checkout (the 5.28 duplicate audit kept them separate)"
+      "reason": "operator scripts: (1) the CloudFormation output lookups stay in each script because scripts/audit/stack_outputs.py resolves a helper's OutputKey reads only within the file that defines it, so one imported helper would hide every caller's output key from that gate; (2) parse_args declares each script's own flags (env defaults, table names, --dry-run/--apply wording)"
     },
     {
       "files": [
