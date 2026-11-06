@@ -16,6 +16,8 @@ def _today() -> str:
     return datetime.now(UTC).strftime('%Y-%m-%d')
 
 
+STAMP = '2026-11-01T00:00:00+00:00'
+
 DIMENSIONS = [
     {'key': 'product', 'label': 'Product', 'values': [{'name': 'App'}, {'name': 'Web'}]},
     {'key': 'user_type', 'label': 'User type', 'values': [{'name': 'customer'}]},
@@ -29,7 +31,9 @@ def _item(feedback_id: str, **extra) -> dict:
 
 def _items() -> list[dict]:
     return [
-        _item('a', source_channel='email', dimensions={'product': 'App'}, tags=['VIP']),
+        # 'a' was edited once: its change stamp reaches the client (the Data Explorer editor sends it back).
+        _item('a', source_channel='email', dimensions={'product': 'App'}, tags=['VIP'],
+              updated_at=STAMP, updated_by={'sub': 'sub-admin', 'kind': 'admin'}, original_text='The parcel was late'),
         _item('b', source_channel='chat', dimensions={'product': 'Web', 'user_type': 'customer'},
               tags=['vip', 'beta'], sentiment_label='positive'),
         _item('c', source_channel='email'),
@@ -89,6 +93,15 @@ class TestFilters:
         _, body = _get(api_gateway_event, lambda_context, '/feedback', days=1, **params)
         assert _ids(body) == ids
         assert body['total'] == len(ids)
+
+    @pytest.mark.parametrize(('path', 'params'), [('/feedback', {}), ('/feedback/search', {'q': 'parcel'})])
+    def test_a_listed_item_carries_its_change_stamp_without_the_sub(self, api_gateway_event, lambda_context,
+                                                                    path, params):
+        """PUT /data-explorer/feedback refuses a stale editor (409); without updated_at every save would 409."""
+        _, body = _get(api_gateway_event, lambda_context, path, days=1, **params)
+        (item,) = [i for i in body['items'] if i['feedback_id'] == 'a']
+        assert item['updated_at'] == STAMP
+        assert item['updated_by'] == {'kind': 'admin'}
 
     @pytest.mark.parametrize('path', ['/feedback', '/feedback/urgent', '/feedback/entities',
                                       '/metrics/sentiment', '/metrics/categories', '/feedback/search'])
