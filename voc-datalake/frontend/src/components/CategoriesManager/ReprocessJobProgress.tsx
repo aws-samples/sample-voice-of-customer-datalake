@@ -9,7 +9,7 @@
 import { useTranslation } from 'react-i18next'
 import { Loader2, Play, Square } from 'lucide-react'
 import { MAX_REPROCESS_ITEMS, isTerminalJob } from '../../api/reprocessApi'
-import type { ReprocessJob } from '../../api/reprocessApi'
+import type { ReprocessJob, ReprocessRequest } from '../../api/reprocessApi'
 import { formatCount } from '../../utils/numberFormat'
 import { COUNTERS, STATUS, jobWindowLabel, modeTitleKey } from './reprocessCopy'
 
@@ -118,7 +118,7 @@ export function JobProgress({ job, onCancel, cancelling, onResume, resuming }: R
 
 /** The two job controls a panel wires: cancel a running job, resume a partial one (``useReprocessMutations``). */
 export interface JobControls {
-  readonly start: { readonly mutate: (request: { resume: string }) => void; readonly isPending: boolean }
+  readonly start: { readonly mutate: (request: ReprocessRequest) => void; readonly isPending: boolean }
   readonly cancel: { readonly mutate: (jobId: string) => void; readonly isPending: boolean }
 }
 
