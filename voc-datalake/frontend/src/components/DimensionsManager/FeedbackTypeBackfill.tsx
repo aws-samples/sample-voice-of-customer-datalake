@@ -23,7 +23,7 @@ import { isTerminalJob } from '../../api/reprocessApi'
 import { useConfigStore } from '../../store/configStore'
 import { formatCount } from '../../utils/numberFormat'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
-import { JobProgress } from '../CategoriesManager/ReprocessJobProgress'
+import { LiveJobProgress } from '../CategoriesManager/ReprocessJobProgress'
 import { useLatestJob, useReprocessMutations } from '../CategoriesManager/useReprocessJob'
 import type { DimensionMetrics } from '../../api/dimensionsSchema'
 
@@ -89,8 +89,7 @@ export default function FeedbackTypeBackfill() {
         </p>
       )}
       {job?.mode === 'dimensions' && (
-        <JobProgress job={job} onCancel={() => cancel.mutate(job.job_id)} cancelling={cancel.isPending}
-          onResume={busy ? undefined : () => start.mutate({ resume: job.job_id })} resuming={start.isPending} />
+        <LiveJobProgress job={job} controls={{ start, cancel }} />
       )}
       <ConfirmModal
         isOpen={confirming}
