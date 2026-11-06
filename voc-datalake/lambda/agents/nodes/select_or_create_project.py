@@ -15,7 +15,7 @@ from agents import principal
 from agents.conductor import planning
 from agents.event_text import project_ref, remember_project_name
 from agents.fields import dict_field
-from agents.nodes.base import NodeContext, NodeFailure, done
+from agents.nodes.base import NodeContext, answered_id, done
 from shared.category_gate import read_categories_config
 from shared.display_labels import category_label
 from shared.exceptions import ServiceError
@@ -102,11 +102,8 @@ def start(ctx: NodeContext) -> dict:
         'name': decision['name'], 'description': decision['description'],
         'purpose': decision['purpose'], 'visibility': _visibility(ctx.agent),
     })
-    project = payload.get('project') if isinstance(payload, dict) else None
-    project_id = project.get('project_id') if isinstance(project, dict) else None
-    if not isinstance(project_id, str) or not project_id:
-        raise NodeFailure('the project could not be created')
-    name = (project.get('name') if isinstance(project, dict) else None) or decision['name']
+    project_id = answered_id(payload, 'project', 'project_id', 'the project could not be created')
+    name = payload['project'].get('name') or decision['name']
     return done(ctx, f'Created {project_ref(name)} for {_category_text(category)}',
                 artifacts={'project_id': project_id},
                 updates={'project_id': project_id, 'project_created': True,

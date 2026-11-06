@@ -172,6 +172,15 @@ def failed(node_id: str, error: str, *, detail: str | None = None) -> dict:
     return result
 
 
+def answered_id(payload: Any, record: str, field: str, failure: str) -> str:
+    """``payload[record][field]`` of a domain route's answer as a non-empty string, else NodeFailure(failure)."""
+    created = payload.get(record) if isinstance(payload, dict) else None
+    value = created.get(field) if isinstance(created, dict) else None
+    if not isinstance(value, str) or not value:
+        raise NodeFailure(failure)
+    return value
+
+
 def started_job(ctx: NodeContext, payload: Any, project_id: str, summary: str) -> dict:
     """The pending result for a route that answered ``{job_id}``."""
     job_id = payload.get('job_id') if isinstance(payload, dict) else None

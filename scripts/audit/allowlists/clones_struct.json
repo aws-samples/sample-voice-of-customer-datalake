@@ -52,12 +52,6 @@
         "voc-datalake/lambda/shared/prioritization_axes.py"
       ],
       "reason": "optional-field validators with per-feature limits and messages; the settings rows already share dimension_config.bounded_text/bounded_list, the others are request contracts of their own routes"
-    },
-    {
-      "files": [
-        "voc-datalake/lambda/agents/nodes/**"
-      ],
-      "reason": "agent workflow nodes each check their own domain-API answer and raise their own NodeFailure text (one node = one readable file)"
     }
   ]
 }

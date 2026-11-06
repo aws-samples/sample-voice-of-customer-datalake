@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from agents.event_text import project_name
 from agents.failure_reason import document_label
-from agents.nodes.base import NodeContext, NodeFailure, done
+from agents.nodes.base import NodeContext, NodeFailure, answered_id, done
 
 KINDS = ('prfaq', 'prd', 'prototype', 'research')
 
@@ -26,10 +26,7 @@ def start(ctx: NodeContext) -> dict:
     payload = ctx.projects('POST', f'/projects/{project_id}/documents/{document_id}/duplicate',
                            body={'target_project_id': target},
                            path_parameters={'project_id': project_id, 'document_id': document_id})
-    copy = payload.get('document') if isinstance(payload, dict) else None
-    copy_id = copy.get('document_id') if isinstance(copy, dict) else None
-    if not isinstance(copy_id, str) or not copy_id:
-        raise NodeFailure('the duplicate route returned no document')
+    copy_id = answered_id(payload, 'document', 'document_id', 'the duplicate route returned no document')
     target_name, names = project_name(ctx, target)
     return done(ctx, f'{document_label(kind)} copied into {target_name}',
                 artifacts={'project_id': target, 'document_id': copy_id, 'document_type': kind},
