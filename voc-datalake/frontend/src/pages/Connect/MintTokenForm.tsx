@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next'
 import { connectApi, CONNECT_TOKENS_KEY } from '../../api/connectApi'
 import { CONNECT_SCOPES, DEFAULT_EXPIRY_DAYS, EXPIRY_CHOICES, MAX_TOKEN_NAME_LENGTH, isConnectScope } from '../../api/connectSchema'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
+import { OptionsSelectField } from '../../components/LabeledField/OptionsSelectField'
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard'
 import { CopyButton } from './CopyButton'
 import type { ConnectScope, MintResponse } from '../../api/connectSchema'
@@ -119,16 +120,9 @@ export function MintTokenForm({ projects, initialProjectId, canMintAgentRunner }
               </select>
             )}
           </LabeledField>
-          <LabeledField label={t('connect.projectLabel')} hint={t('connect.projectHint')}>
-            {(id) => (
-              <select id={id} className="select w-full" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-                <option value="">{t('connect.projectAll')}</option>
-                {projects.map((project) => (
-                  <option key={project.project_id} value={project.project_id}>{project.name || project.project_id}</option>
-                ))}
-              </select>
-            )}
-          </LabeledField>
+          <OptionsSelectField label={t('connect.projectLabel')} hint={t('connect.projectHint')} value={projectId}
+            onChange={setProjectId} noneLabel={t('connect.projectAll')}
+            options={projects.map((project) => ({ value: project.project_id, label: project.name || project.project_id }))} />
         </div>
         {mint.isError && <p role="alert" className="text-sm text-danger">{t('connect.mintFailed')}</p>}
         <StickyActionBar variant="inline" className="py-2">

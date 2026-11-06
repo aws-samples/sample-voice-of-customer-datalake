@@ -7,6 +7,7 @@
  */
 import { useState, type ChangeEvent } from 'react'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
+import { OptionsSelectField } from '../../components/LabeledField/OptionsSelectField'
 
 /** What every control shares: its label, the saved value and the "Saving…" hint while it saves. */
 interface FieldProps {
@@ -73,12 +74,6 @@ export function SelectField({
   label, value, options, savingHint, onSave,
 }: FieldProps & { readonly options: readonly { value: string; label: string }[] }) {
   return (
-    <LabeledField label={label} hint={savingHint}>
-      {(id) => (
-        <select id={id} value={value} onChange={(e) => onSave(e.target.value)} className="select w-full">
-          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      )}
-    </LabeledField>
+    <OptionsSelectField label={label} hint={savingHint} value={value} options={options} onChange={onSave} />
   )
 }
