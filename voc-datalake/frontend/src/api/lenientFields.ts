@@ -35,6 +35,20 @@ export function parseEach<T>(schema: z.ZodType<T>, value: unknown): T[] {
   })
 }
 
+/**
+ * `schema` that reads anything it cannot parse as its own defaults (`schema.parse({})`), so an
+ * unreadable object field or response becomes an empty one instead of failing the whole read.
+ * Every field of `schema` must therefore have a default.
+ */
+export function withDefaults<S extends z.ZodType>(schema: S) {
+  return schema.catch(schema.parse({}))
+}
+
+/** Parse a whole response with `withDefaults(schema)`; an absent body (`null` / `undefined`) is `{}`. */
+export function parseOrDefaults<S extends z.ZodType>(schema: S, raw: unknown): z.output<S> {
+  return withDefaults(schema).parse(raw ?? {})
+}
+
 /** The guard for a list of ids: strings, and not the empty one. */
 export function isNonEmptyString(item: unknown): item is string {
   return typeof item === 'string' && item !== ''

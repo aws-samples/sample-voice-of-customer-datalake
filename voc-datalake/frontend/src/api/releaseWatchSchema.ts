@@ -6,6 +6,7 @@
  */
 import { z } from 'zod'
 import { isPresent } from '../lib/typeGuards'
+import { parseOrDefaults } from './lenientFields'
 import { readPartialWindow, type PartialWindow } from './partialWindow'
 
 const count = z.number().int().nonnegative().catch(0)
@@ -84,7 +85,7 @@ function evidenceOf(release: RawRelease): ReleaseEvidence[] {
 
 /** The response as the UI reads it; anything unreadable becomes an empty watch. */
 export function normalizeReleaseWatch(raw: unknown): ReleaseWatch {
-  const parsed = ReleaseWatchSchema.catch(ReleaseWatchSchema.parse({})).parse(raw ?? {})
+  const parsed = parseOrDefaults(ReleaseWatchSchema, raw)
   return {
     windowDays: parsed.window_days,
     releases: parsed.releases.filter(isPresent).map((release) => ({

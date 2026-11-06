@@ -10,6 +10,7 @@
  */
 import { z } from 'zod'
 import { fetchApi } from './client'
+import { withDefaults } from './lenientFields'
 import { lenientText, optionalText, parsedList } from './schemaList'
 
 const IMPORT_METHODS = ['paste', 'csv', 'json', 's3', 'assistant'] as const
@@ -30,7 +31,7 @@ const ImportRunSummarySchema = z.object({
   actor_email: lenientText,
   started_at: lenientText,
   finished_at: lenientText,
-  counts: CountsSchema.catch(CountsSchema.parse({})),
+  counts: withDefaults(CountsSchema),
   status: z.enum(IMPORT_STATUSES).or(z.literal('unknown')).catch('unknown'),
   warning_count: count,
   error_count: count,
