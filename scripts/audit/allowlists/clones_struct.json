@@ -31,13 +31,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/design_capture/capture_worker.py",
-        "voc-datalake/plugins/web_reviews/ingestor/page_reader.py"
-      ],
-      "reason": "page-settle polling in two separately bundled functions (design capture vs the web_reviews plugin, which cannot import lambda/shared)"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/api/projects.py",
         "voc-datalake/lambda/shared/decision_records.py"
       ],

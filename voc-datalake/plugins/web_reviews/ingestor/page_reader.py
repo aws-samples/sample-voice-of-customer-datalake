@@ -27,7 +27,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from block_detection import HTML_SAMPLE_CHARS, PageSignals
 from cdp_client import CdpConnection, CdpError
 
-from shared.cdp_page import HTTP_ERROR_RESPONSE, PROGRESS_JS
+from shared.cdp_page import HTTP_ERROR_RESPONSE, PROGRESS_JS, SettleTimings, wait_until_settled
 
 #: Visible text kept per page (what the LLM extraction reads at most, in chunks).
 MAX_TEXT_CHARS: Final = 160000
@@ -247,15 +247,8 @@ class BrowserTab:
 
     def _wait_until_settled(self) -> None:
         """Until the page is loaded and its text stops changing (a challenge reloads it), within bounds."""
-        started = self._clock()
-        self._sleep(LOAD_MIN_SECONDS)
-        previous = -1  # pragma: no mutate  any start below SETTLED_TEXT_CHARS (or None) can never equal a settled length
-        while self._clock() - started < LOAD_MAX_SECONDS:
-            state, length = self._progress()
-            if state == 'complete' and length >= SETTLED_TEXT_CHARS and length == previous:
-                return
-            previous = length
-            self._sleep(LOAD_POLL_SECONDS)
+        wait_until_settled(self._progress, self._clock, self._sleep,
+                           SettleTimings(LOAD_MIN_SECONDS, LOAD_MAX_SECONDS, LOAD_POLL_SECONDS, SETTLED_TEXT_CHARS))
 
     def _scroll(self) -> tuple[bool, int] | None:
         """One scroll step: ``(at the bottom, document height)``, ``None`` when unreadable."""
