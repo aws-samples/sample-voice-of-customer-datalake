@@ -55,13 +55,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/shared/briefing_prefs.py",
-        "voc-datalake/lambda/shared/onboarding.py"
-      ],
-      "reason": "the same 'unknown field / at least one field' preamble of two PUT bodies (brief preferences, onboarding), each with its own field list and value rules; a shared helper would save about four lines"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/shared/github_design.py",
         "voc-datalake/lambda/shared/tailwind_components.py"
       ],

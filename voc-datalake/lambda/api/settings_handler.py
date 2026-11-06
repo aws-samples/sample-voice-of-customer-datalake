@@ -97,7 +97,7 @@ from shared.model_config import (
 )
 from shared.model_profile import payload_fields
 from shared.project_gate import caller_from_event
-from shared.request_body import json_body_value, json_object_body
+from shared.request_body import json_body_value, json_object_body, reject_unknown_fields
 from shared.retention import ERASE_FIELDS, ERASURE_JOB_COUNTERS, ERASURE_JOB_PK, ERASURE_JOB_PREFIX, SOURCE_FIELD
 from shared.scope_names import (
     HiddenNames,
@@ -1145,9 +1145,7 @@ def put_design_integrations_route():
     if not DESIGN_INTEGRATIONS_SECRET_ARN:
         raise ConfigurationError('Design integrations secret not configured')
     body = json_object_body(app)
-    unknown = set(body) - set(INTEGRATION_FIELDS)
-    if unknown:
-        raise ValidationError(f'Unknown field(s): {", ".join(sorted(unknown))}')
+    reject_unknown_fields(body, INTEGRATION_FIELDS)
     secret = _read_integration_secret()
     for key in INTEGRATION_FIELDS:
         if key not in body:
