@@ -53,14 +53,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/api/ballots_handler.py",
-        "voc-datalake/lambda/api/chat_handler.py",
-        "voc-datalake/lambda/api/feedback_form_handler.py"
-      ],
-      "reason": "free-text validators of three routes (ballot note, assistant title, form submission): different limits, control-character rules and 400 wording per public contract"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/shared/feedback_cursor.py",
         "voc-datalake/lambda/shared/radar_reviews.py"
       ],
