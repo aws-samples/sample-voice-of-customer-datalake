@@ -16,11 +16,12 @@ import re
 from dataclasses import dataclass
 from typing import Final
 
+from shared.text_clip import collapse_whitespace
+
 COMMENT_RE: Final = re.compile(r'/\*.*?\*/', re.DOTALL)
 _APPLY_RE: Final = re.compile(r'^@apply\s+(.+)\Z', re.DOTALL)
 _PROPERTY_RE: Final = re.compile(r'^(--[\w-]{1,60}|-?[a-z][a-z-]{0,40})\s*:\s*(.+)\Z', re.DOTALL | re.IGNORECASE)
 IMPORTANT_RE: Final = re.compile(r'\s*!important\s*\Z', re.IGNORECASE)
-_WS_RE: Final = re.compile(r'\s+')
 MAX_RULES: Final = 4_000
 
 
@@ -33,7 +34,7 @@ class Rule:
 
     def selector_parts(self) -> list[str]:
         """The comma-separated selectors, whitespace collapsed."""
-        return [_WS_RE.sub(' ', part).strip() for part in self.selector.split(',') if part.strip()]
+        return [collapse_whitespace(part) for part in self.selector.split(',') if part.strip()]
 
     def in_media(self) -> bool:
         return any(parent.lower().startswith('@media') for parent in self.parents)
@@ -56,7 +57,7 @@ def leaf_rules(css: str) -> list[Rule]:
         if char == '{':
             if stack:
                 stack[-1].has_child = True
-            stack.append(_Open(_WS_RE.sub(' ', text[boundary:index]).strip(), index + 1))
+            stack.append(_Open(collapse_whitespace(text[boundary:index]), index + 1))
             boundary = index + 1
         elif char == '}':
             if stack:
@@ -96,11 +97,11 @@ def declarations(body: str) -> list[tuple[str, str]]:
     for part in _split_body(body):
         apply = _APPLY_RE.match(part)
         if apply:
-            pairs.append(('@apply', _WS_RE.sub(' ', apply.group(1)).strip()))
+            pairs.append(('@apply', collapse_whitespace(apply.group(1))))
             continue
         match = _PROPERTY_RE.match(part)
         if match:
             name = match.group(1)
             prop = name if name.startswith('--') else name.lower()
-            pairs.append((prop, IMPORTANT_RE.sub('', _WS_RE.sub(' ', match.group(2)).strip())))
+            pairs.append((prop, IMPORTANT_RE.sub('', collapse_whitespace(match.group(2)))))
     return pairs

@@ -41,6 +41,7 @@ from shared.css_values import (
 from shared.exceptions import ValidationError
 from shared.html_sanitizer import CSS_FUNCTION_RE, sanitize_html
 from shared.prompt_safety import injection_findings, neutralise_tags
+from shared.text_clip import collapse_whitespace
 
 MAX_COMPONENTS: Final = 30
 MAX_COMPONENT_NAME_CHARS: Final = 60
@@ -52,7 +53,6 @@ MAX_SHADOW_CHARS: Final = 200
 MAX_OUTLINE_CHARS: Final = 80
 TEXT_TRANSFORMS: Final = ('none', 'uppercase', 'capitalize')
 
-_WS_RE: Final = re.compile(r'\s+')
 #: A token name is at most 60 characters (shared.company_context.MAX_TOKEN_NAME_CHARS).
 _TOKEN_REF_RE: Final = re.compile(r'^var:[\w .-]{1,60}\Z')
 _LETTER_SPACING_RE: Final = re.compile(r'^(normal|0|-?\d{1,3}(\.\d{1,3})?(px|rem|em))\Z')
@@ -152,7 +152,7 @@ class _Mode:
         if not isinstance(value, str):
             self.fail(f'{field} must be a string')
             return None
-        text = _WS_RE.sub(' ', value).strip()
+        text = collapse_whitespace(value)
         if clip and not self.strict:
             text = text[:limit].strip()
         if required and not text:
@@ -179,7 +179,7 @@ def _styles(raw: object, field: str, rules: dict, mode: _Mode) -> dict[str, str]
         if value in (None, ''):
             continue
         if is_valid(value):
-            out[key] = _WS_RE.sub(' ', str(value)).strip()
+            out[key] = collapse_whitespace(str(value))
         else:
             mode.fail(f'{field}.{key} must be {what}')
     return out

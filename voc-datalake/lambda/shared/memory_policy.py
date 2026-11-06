@@ -23,6 +23,7 @@ from decimal import Decimal
 from typing import Any, Final
 
 from shared.pii_redaction import is_payment_card
+from shared.text_clip import collapse_whitespace
 
 # ── Vocabulary ───────────────────────────────────────────────────────────────
 SCOPE_COMPANY: Final = 'company'
@@ -118,7 +119,6 @@ _REDACTED: Final = '[redacted]'
 # the customer's words may not (§0 M7).
 _LONG_QUOTE_RE: Final = re.compile(r'["“”«»]([^"“”«»]{0,400}?)["“”«»]')
 _QUOTE_MIN_WORDS: Final = 6
-_WS_RE: Final = re.compile(r'\s+')
 
 # First-person-singular preference phrasing: specific to one user (owner rule).
 _PERSONAL_PHRASING_RE: Final = re.compile(
@@ -186,7 +186,7 @@ def clean_statement(raw: object, *, restricted_source: bool = False) -> CleanRes
     """
     if not isinstance(raw, str):
         return CleanResult(None, 'not_text')
-    text = _WS_RE.sub(' ', raw).strip()
+    text = collapse_whitespace(raw)
     if screen_injection(text):
         return CleanResult(None, 'injection')
     if contains_profanity(text):
@@ -195,7 +195,7 @@ def clean_statement(raw: object, *, restricted_source: bool = False) -> CleanRes
         return CleanResult(None, 'judgment')
     text = redact_personal_data(text)
     if restricted_source:
-        text = _WS_RE.sub(' ', strip_long_quotes(text)).strip()
+        text = collapse_whitespace(strip_long_quotes(text))
     text = text[:MAX_STATEMENT_CHARS].strip()
     meaningful = text.replace(_REDACTED, '').strip(' .,;:-')
     if len(meaningful) < MIN_STATEMENT_CHARS:

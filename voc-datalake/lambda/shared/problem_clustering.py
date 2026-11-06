@@ -23,6 +23,8 @@ import re
 from collections import Counter
 from collections.abc import Sequence
 
+from shared.text_clip import collapse_whitespace
+
 __all__ = ['merge_by_similarity']
 
 # The stopword set the browser's grouping used (copied when it was ported; the SPA no
@@ -43,7 +45,6 @@ _STOP_WORDS = frozenset({
 })
 
 _NON_ALNUM = re.compile(r'[^a-z0-9\s]')
-_WHITESPACE = re.compile(r'\s+')
 
 # Float slack for the prefix length: `0.6 * 5` is 3.0000000000000004, and a ceil of
 # that would shorten the prefix by one and miss a real match. A longer prefix only
@@ -53,7 +54,7 @@ _EPSILON = 1e-9
 
 def normalize_text(text: str) -> str:
     """Lowercase, strip everything but ``a-z0-9`` and whitespace, collapse whitespace."""
-    return _WHITESPACE.sub(' ', _NON_ALNUM.sub('', text.lower())).strip()
+    return collapse_whitespace(_NON_ALNUM.sub('', text.lower()))
 
 
 def extract_keywords(text: str) -> frozenset[str]:
