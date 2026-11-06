@@ -6,19 +6,16 @@ import { useTranslation } from 'react-i18next'
 import { Layers, ShieldCheck } from 'lucide-react'
 import DimensionsManager from '../../components/DimensionsManager/DimensionsManager'
 import SourcesManager from '../../components/SourcesManager/SourcesManager'
+import { SectionHeader } from '../Company/ContextParts'
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-function Section({ icon: Icon, title, description, children }: Readonly<{
+function Section({ icon, title, description, children }: Readonly<{
   icon: LucideIcon; title: string; description: string; children: ReactNode
 }>) {
   return (
     <div className="card">
-      <div className="flex items-center gap-2 mb-1">
-        <Icon className="text-accent" size={16} />
-        <h2 className="text-lg font-semibold tracking-tight text-text-strong">{title}</h2>
-      </div>
-      <p className="text-sm text-muted mb-4">{description}</p>
+      <SectionHeader icon={icon} title={title} description={description} />
       {children}
     </div>
   )
