@@ -904,34 +904,20 @@ def run_source(source: str):
 
 def _get_source_run_status(source: str):
     """Get the latest run status for a data source plugin."""
-    from boto3.dynamodb.conditions import Key
-
+    from shared.run_rows import latest_run, run_summary
     from shared.tables import get_aggregates_table
 
     table = get_aggregates_table()
     if not table:
         return {'source': source, 'status': 'unknown'}
     try:
-        response = table.query(
-            KeyConditionExpression=Key('pk').eq(f'SOURCE_RUN#{source}'),
-            ScanIndexForward=False, Limit=1,
-        )
-        items = response.get('Items', [])
-        if not items:
-            return {'source': source, 'status': 'never_run'}
-        run = items[0]
-        return {
-            'source': source,
-            'execution_id': run.get('sk'),
-            'status': run.get('status', 'unknown'),
-            'started_at': run.get('started_at'),
-            'completed_at': run.get('completed_at'),
-            'items_found': run.get('items_found', 0),
-            'errors': run.get('errors', []),
-        }
+        run = latest_run(table, f'SOURCE_RUN#{source}')
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get source run status: {e}")
         return {'source': source, 'status': 'unknown'}
+    if run is None:
+        return {'source': source, 'status': 'never_run'}
+    return {'source': source, **run_summary(run), 'errors': run.get('errors', [])}
 
 
 # Concurrent DescribeRule calls one GET /sources/status makes. The default list

@@ -62,7 +62,6 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import boto3
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import assist_jobs
@@ -77,6 +76,7 @@ from shared.producer_labels import normalise_label_fields
 from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_object_body
 from shared.row_ids import OPAQUE_ID_RE
+from shared.run_rows import latest_run, run_summary
 from shared.scraper_limits import MAX_SCRAPERS, MAX_URLS_PER_SCRAPER, MAX_WEBSCRAPER_CONFIGS_BYTES
 from shared.scraper_run_errors import redacted_scraper_errors
 from shared.tables import get_aggregates_table
@@ -558,19 +558,15 @@ def get_scraper_status(scraper_id: str):
     if not table:
         return {'scraper_id': scraper_id, 'status': 'unknown'}
     try:
-        response = table.query(KeyConditionExpression=Key('pk').eq(f'SCRAPER_RUN#{scraper_id}'), ScanIndexForward=False, Limit=1)
-        items = response.get('Items', [])
-        if not items:
-            return {'scraper_id': scraper_id, 'status': 'never_run'}
-        run = items[0]
-        return {'scraper_id': scraper_id, 'execution_id': run.get('sk'), 'status': run.get('status', 'unknown'),
-                'started_at': run.get('started_at'), 'completed_at': run.get('completed_at'),
-                'pages_scraped': run.get('pages_scraped', 0), 'items_found': run.get('items_found', 0),
-                # Readable by every user: redacted exactly as GET /logs/scraper/<id> is.
-                'errors': redacted_scraper_errors(run.get('errors'))}
+        run = latest_run(table, f'SCRAPER_RUN#{scraper_id}')
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get scraper status: {e}")
         return {'scraper_id': scraper_id, 'status': 'unknown', 'error': 'Failed to retrieve status'}
+    if run is None:
+        return {'scraper_id': scraper_id, 'status': 'never_run'}
+    return {'scraper_id': scraper_id, **run_summary(run), 'pages_scraped': run.get('pages_scraped', 0),
+            # Readable by every user: redacted exactly as GET /logs/scraper/<id> is.
+            'errors': redacted_scraper_errors(run.get('errors'))}
 
 
 def _fetch_html(url: str) -> str:
