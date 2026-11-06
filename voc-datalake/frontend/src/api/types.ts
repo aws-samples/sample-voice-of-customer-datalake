@@ -56,6 +56,8 @@ export interface FeedbackItem {
   pii_policy?: PiiPolicy
   /** The stored usefulness band (`shared/usefulness.py`); absent = not scored yet. */
   usefulness?: UsefulnessBand
+  /** The last in-place change (`PUT /feedback/{id}/…`, Data Explorer); absent for an item never edited. */
+  updated_at?: string
 }
 
 /** Where a CSV column goes on upload: a field, `metadata`, `ignore`, or `dimension:<key>`. */

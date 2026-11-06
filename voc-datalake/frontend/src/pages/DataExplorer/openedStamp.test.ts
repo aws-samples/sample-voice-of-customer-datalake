@@ -1,3 +1,7 @@
+/**
+ * The Data Explorer save body: the edited fields plus the `updated_at` the record was opened with ('' when
+ * never stamped), which the API compares with the stored stamp (409 on a stale editor).
+ */
 import { describe, expect, it } from 'vitest'
 import { openedStamp, savedFeedbackBody } from './openedStamp'
 

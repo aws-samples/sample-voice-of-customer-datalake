@@ -17,7 +17,7 @@ the platform package version.
 
 ## [Unreleased]
 
-## [6.03.00] - 2026-11-05
+## [6.03.00] - 2026-11-06
 
 Processed feedback keeps its history and says how it was made, and a reprocess can replay a slice: every in-place change keeps the item as it was, every enriched item records its pipeline version, mode and the model that answered, and reprocessing takes sources, categories and a date range and resumes where it stopped.
 

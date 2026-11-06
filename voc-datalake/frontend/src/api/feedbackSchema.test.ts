@@ -104,3 +104,15 @@ describe('dimensions, tags and policy fields', () => {
     expect([item.dimensions, item.tags, item.pii_policy]).toStrictEqual([undefined, undefined, undefined])
   })
 })
+
+describe('the change stamp', () => {
+  it('keeps updated_at, which the Data Explorer editor sends back (a stale save is a 409)', () => {
+    const item = normalizeFeedbackItem({ feedback_id: 'f1', updated_at: '2026-11-01T00:00:00+00:00' })
+    expect(item.updated_at).toBe('2026-11-01T00:00:00+00:00')
+  })
+
+  it('reads a missing or junk stamp as absent (an item never edited)', () => {
+    expect(normalizeFeedbackItem({ feedback_id: 'f1' }).updated_at).toBeUndefined()
+    expect(normalizeFeedbackItem({ feedback_id: 'f1', updated_at: 7 }).updated_at).toBeUndefined()
+  })
+})

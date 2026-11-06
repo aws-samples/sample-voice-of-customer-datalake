@@ -94,6 +94,8 @@ const FeedbackItemSchema = z.object({
   pii_policy: z.enum(['allow', 'redact', 'summary_only']).optional().catch(undefined),
   // Only a stored band reads; anything else (absent, junk) is "not scored" and shows no badge.
   usefulness: z.enum(USEFULNESS_BANDS).optional().catch(undefined),
+  // The last change stamp: the Data Explorer editor sends it back, and the API refuses a stale save (409).
+  updated_at: optionalText,
 })
 
 function emptyAsUndefined(map: Record<string, string>): Record<string, string> | undefined {

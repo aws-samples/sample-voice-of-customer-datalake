@@ -302,6 +302,13 @@ describe('the aggregator can reach the dedupe table it is already allowed to (#2
     expect(aggregatorEnvironment()).toHaveProperty('IDEMPOTENCY_TABLE');
   });
 
+  it('lets the aggregator write its claims: PutItem on the idempotency table, the one write claim and release use', () => {
+    // shared/stream_claims.py claims and releases with PutItem only; release never raises, so without the grant a
+    // failed reversal would keep its claim silently and its retry would skip it.
+    const statements = roleStatements(template, 'AggregatorLambdaRole', { byIdPrefix: true });
+    expect(allowedActions(statements, 'dynamodb:', 'Idempotency')).toContain('dynamodb:PutItem');
+  });
+
   it('names a real table rather than a literal, so the value resolves at deploy', () => {
     // A hand-written string would synthesize as a plain value and point at a table
     // that may not exist in this account. What a real table reference looks like is
