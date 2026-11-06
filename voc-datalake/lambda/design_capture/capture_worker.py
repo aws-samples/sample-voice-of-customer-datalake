@@ -66,7 +66,7 @@ from page_styles import (
 )
 
 from shared import company_context, design_icons, design_logo, design_references, design_vision
-from shared.cdp_page import HTTP_ERROR_RESPONSE, PROGRESS_JS
+from shared.cdp_page import HTTP_ERROR_RESPONSE, PROGRESS_JS, SettleTimings, wait_until_settled
 from shared.component_overlay import overlay_components
 from shared.css_tokens import custom_properties, tokens_from_css
 from shared.logging import logger
@@ -171,16 +171,8 @@ class _Tab:
 
     def _settle(self) -> None:
         """Until the document is complete and its text stopped growing, within SETTLE_MAX_SECONDS."""
-        started = self._deps.clock()
-        self._deps.sleep(SETTLE_MIN_SECONDS)
-        previous = -1
-        while self._deps.clock() - started < SETTLE_MAX_SECONDS:
-            raw = self.evaluate(PROGRESS_JS)
-            state, length = parse_progress(raw)
-            if state == 'complete' and length == previous:
-                return
-            previous = length
-            self._deps.sleep(SETTLE_POLL_SECONDS)
+        wait_until_settled(lambda: parse_progress(self.evaluate(PROGRESS_JS)), self._deps.clock, self._deps.sleep,
+                           SettleTimings(SETTLE_MIN_SECONDS, SETTLE_MAX_SECONDS, SETTLE_POLL_SECONDS))
 
 
 def parse_progress(raw: object) -> tuple[str, int]:
