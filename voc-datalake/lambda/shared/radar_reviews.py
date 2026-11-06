@@ -16,9 +16,6 @@ author / email fields are never part of a review view.
 
 from __future__ import annotations
 
-import base64
-import binascii
-import json
 import re
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -30,6 +27,7 @@ from boto3.dynamodb.conditions import Key
 
 from shared import category_access
 from shared.api import validate_int
+from shared.b64_json import decode_b64_json, encode_b64_json
 from shared.category_access import CategoryScope
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import item_key
@@ -55,7 +53,6 @@ MAX_READ: Final = 1000
 QUERY_PAGE: Final = 200
 MAX_TEXT_CHARS: Final = 5000
 MAX_SHORT_CHARS: Final = 500
-MAX_CURSOR_CHARS: Final = 1024
 MAX_FILTER_CHARS: Final = 200
 DAY_FORMAT_ERROR: Final = 'day must be a YYYY-MM-DD date'
 _SK_PATTERN: Final = re.compile(r'(\d{4}-\d{2}-\d{2})#.+')
@@ -84,18 +81,11 @@ class ReviewFilter:
 
 def encode_cursor(key: Mapping[str, Any]) -> str:
     """The opaque cursor of a stored review's key (base64url JSON, no padding)."""
-    raw = json.dumps({'pk': str(key['pk']), 'sk': str(key['sk'])}, separators=(',', ':'))
-    return base64.urlsafe_b64encode(raw.encode('utf-8')).decode('ascii').rstrip('=')
+    return encode_b64_json({'pk': str(key['pk']), 'sk': str(key['sk'])})
 
 
 def _cursor_json(cursor: str) -> object:
-    if not cursor or len(cursor) > MAX_CURSOR_CHARS:
-        raise ValueError('cursor is not valid')
-    try:
-        raw = base64.urlsafe_b64decode(cursor + '=' * (-len(cursor) % 4))
-        return json.loads(raw.decode('utf-8'))
-    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
-        raise ValueError('cursor is not valid') from exc
+    return decode_b64_json(cursor, 'cursor is not valid')
 
 
 def decode_cursor(cursor: str, brand: str, start: date, end: date) -> dict[str, str]:

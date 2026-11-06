@@ -53,13 +53,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/shared/feedback_cursor.py",
-        "voc-datalake/lambda/shared/radar_reviews.py"
-      ],
-      "reason": "two cursor formats with their own size limit and error wording; sharing the 7-line base64-JSON decode would couple the feedback and Radar cursor contracts"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/api/projects_handler.py",
         "voc-datalake/lambda/api/settings_handler.py"
       ],

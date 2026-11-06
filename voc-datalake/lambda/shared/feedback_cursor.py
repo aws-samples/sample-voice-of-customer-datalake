@@ -14,36 +14,26 @@ change without an API change.
 
 from __future__ import annotations
 
-import base64
-import binascii
-import json
 from collections.abc import Mapping
 from typing import Final
 
-__all__ = ['decode_key_cursor', 'decode_offset_cursor', 'encode_key_cursor', 'encode_offset_cursor']
+from shared.b64_json import MAX_TOKEN_CHARS as MAX_CURSOR_CHARS
+from shared.b64_json import decode_b64_json, encode_b64_json
 
-MAX_CURSOR_CHARS: Final = 1024
+__all__ = [
+    'MAX_CURSOR_CHARS', 'decode_key_cursor', 'decode_offset_cursor', 'encode_key_cursor', 'encode_offset_cursor',
+]
+
 _INVALID: Final = 'next_token is not valid'
 
 
-def _encode(payload: Mapping[str, object]) -> str:
-    raw = json.dumps(payload, separators=(',', ':'), sort_keys=True).encode('utf-8')
-    return base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
-
-
 def _decode(token: str) -> object:
-    if not token or len(token) > MAX_CURSOR_CHARS:
-        raise ValueError(_INVALID)
-    try:
-        raw = base64.urlsafe_b64decode(token + '=' * (-len(token) % 4))
-        return json.loads(raw)
-    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
-        raise ValueError(_INVALID) from exc
+    return decode_b64_json(token, _INVALID)
 
 
 def encode_key_cursor(key: Mapping[str, str]) -> str:
     """The cursor of one index row's key."""
-    return _encode(dict(key))
+    return encode_b64_json(dict(key))
 
 
 def decode_key_cursor(token: str, fields: frozenset[str], partition: tuple[str, str]) -> dict[str, str]:
@@ -65,7 +55,7 @@ def decode_key_cursor(token: str, fields: frozenset[str], partition: tuple[str, 
 
 def encode_offset_cursor(offset: int) -> str:
     """The cursor of the next match a caller has not yet received."""
-    return _encode({'o': offset})
+    return encode_b64_json({'o': offset})
 
 
 def decode_offset_cursor(token: str, max_offset: int) -> int:
