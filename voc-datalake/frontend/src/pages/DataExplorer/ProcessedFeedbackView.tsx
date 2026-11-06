@@ -5,8 +5,7 @@
 
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import clsx from 'clsx'
-import { Database, ChevronRight, ChevronDown, Eye, Pencil, Loader2, AlertTriangle, type LucideIcon } from 'lucide-react'
+import { Database, ChevronRight, ChevronDown, Eye, Pencil, Loader2, AlertTriangle } from 'lucide-react'
 import type { FeedbackItem } from '../../api/types'
 import SentimentBadge from '../../components/SentimentBadge/SentimentBadge'
 import { formatDateTime } from '../../utils/dateUtils'
@@ -14,6 +13,7 @@ import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import type { ProcessedFeedbackData } from './useDataExplorerQueries'
 import FeedbackRecordDetails from './FeedbackRecordDetails'
 import { cleanReviewText } from '../../utils/cleanReviewText'
+import { RowAction } from './RowAction'
 
 interface ProcessedFeedbackViewProps {
   /** Already filtered server-side (source, window and search): rendered as given. */
@@ -103,21 +103,6 @@ interface FeedbackRowProps {
   readonly onToggleExpand: () => void
   readonly onView: (item: FeedbackItem) => void
   readonly onEdit: (item: FeedbackItem) => void
-}
-
-function RowAction({ icon: Icon, label, onClick, className, ...aria }: Readonly<{
-  icon: LucideIcon
-  label: string
-  onClick: () => void
-  className?: string
-  'aria-expanded'?: boolean
-  'aria-controls'?: string
-}>) {
-  return (
-    <button type="button" onClick={onClick} className={clsx('icon-btn p-2', className)} title={label} aria-label={label} {...aria}>
-      <Icon size={16} />
-    </button>
-  )
 }
 
 function FeedbackRow({ item, isExpanded, onToggleExpand, onView, onEdit }: FeedbackRowProps) {
