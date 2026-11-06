@@ -12,6 +12,7 @@ import { formatFileSize } from '../../utils/file'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { folderLabel } from './folderLabels'
 import type { S3ObjectSummary } from './dataExplorerSchema'
+import { RowAction } from './RowAction'
 
 interface S3Object {
   key: string
@@ -183,19 +184,6 @@ function RowText({ obj, folderLabel }: Readonly<{ obj: S3Object; folderLabel: (k
   )
 }
 
-function RowAction({ icon: Icon, label, onClick, hoverClass }: Readonly<{
-  icon: LucideIcon
-  label: string
-  onClick: () => void
-  hoverClass: string
-}>) {
-  return (
-    <button type="button" onClick={onClick} className={clsx('icon-btn p-2', hoverClass)} title={label} aria-label={label}>
-      <Icon size={16} />
-    </button>
-  )
-}
-
 function S3ObjectRow({ obj, folderLabel, onNavigateToFolder, onView, onEdit, onDownload }: S3ObjectRowProps) {
   const { t } = useTranslation('dataExplorer')
   const fullKey = obj.fullKey ?? obj.key
@@ -218,10 +206,10 @@ function S3ObjectRow({ obj, folderLabel, onNavigateToFolder, onView, onEdit, onD
       </button>
       {!obj.isFolder && (
         <div className="flex items-center flex-shrink-0">
-          <RowAction icon={Eye} label={t('s3Browser.view')} onClick={() => onView(fullKey)} hoverClass="hover:text-accent-text" />
-          <RowAction icon={Download} label={t('s3Browser.download')} onClick={() => onDownload(fullKey, obj.key)} hoverClass="hover:text-accent-text" />
+          <RowAction icon={Eye} label={t('s3Browser.view')} onClick={() => onView(fullKey)} className="hover:text-accent-text" />
+          <RowAction icon={Download} label={t('s3Browser.download')} onClick={() => onDownload(fullKey, obj.key)} className="hover:text-accent-text" />
           {isEditableFile(obj.key) && !isImmutableRawKey(fullKey) && (
-            <RowAction icon={Pencil} label={t('s3Browser.edit')} onClick={() => onEdit(fullKey)} hoverClass="hover:text-accent-text" />
+            <RowAction icon={Pencil} label={t('s3Browser.edit')} onClick={() => onEdit(fullKey)} className="hover:text-accent-text" />
           )}
         </div>
       )}
