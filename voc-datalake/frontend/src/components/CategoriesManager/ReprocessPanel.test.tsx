@@ -103,7 +103,9 @@ describe('ReprocessPanel', () => {
     [409, /can no longer be resumed/],
     [404, /no longer exists/],
   ])('explains a refused resume (%i) instead of "already running"', async (status, message) => {
-    mockFetchApi.mockImplementation((path: string, init?: RequestInit) => (init?.method === 'POST'
+    const isPost = (options: unknown) => typeof options === 'object' && options !== null
+      && 'method' in options && options.method === 'POST'
+    mockFetchApi.mockImplementation((_endpoint: string, options?: unknown) => (isPost(options)
       ? Promise.reject(new Error(`API Error: ${status}`))
       : Promise.resolve({ job: partialJob })))
     const user = userEvent.setup()
