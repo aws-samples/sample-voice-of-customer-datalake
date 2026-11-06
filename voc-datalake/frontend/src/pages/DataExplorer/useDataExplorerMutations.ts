@@ -31,7 +31,7 @@ export function useDataExplorerMutations(selectedBucket: string, callbacks: Muta
   })
 
   const saveFeedbackMutation = useMutation({
-    mutationFn: (params: { feedbackId: string; data: Partial<FeedbackItem> }) =>
+    mutationFn: (params: { feedbackId: string; data: Partial<FeedbackItem> & { updated_at?: string } }) =>
       api.saveDataExplorerFeedback(params.feedbackId, params.data),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: dataExplorerKeys.feedback() })

@@ -2612,6 +2612,12 @@
           "date_to": "2026-02-28",
           "date_basis": "review"
         }
+      },
+      {
+        "path": "/settings/categories/reprocess",
+        "body": {
+          "resume": "rp_unknown"
+        }
       }
     ]
   },

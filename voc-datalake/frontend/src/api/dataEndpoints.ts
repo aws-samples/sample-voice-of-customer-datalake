@@ -72,7 +72,8 @@ export function dataExplorerEndpoints(fetchApi: FetchApi) {
       fetchApi<{ success: boolean; message?: string; synced?: boolean }>('/data-explorer/s3', put({ key, content, sync_to_dynamo: syncToDynamo, bucket })),
 
     // DynamoDB processed-record edits: no S3 sync and no delete route.
-    saveDataExplorerFeedback: (feedbackId: string, data: Partial<FeedbackItem>) =>
+    // `updated_at`: the stamp the record was opened with ('' = never stamped), checked by the API (409).
+    saveDataExplorerFeedback: (feedbackId: string, data: Partial<FeedbackItem> & { updated_at?: string }) =>
       fetchApi<{ success: boolean; message?: string }>('/data-explorer/feedback', put({ feedback_id: feedbackId, data })),
   }
 }
