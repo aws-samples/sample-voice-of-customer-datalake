@@ -28,6 +28,7 @@ from shared.dimension_config import bounded_text
 from shared.dynamo_values import plain
 from shared.exceptions import NotFoundError, ServiceError, ValidationError
 from shared.timestamps import now_iso
+from shared.update_expressions import set_clause
 
 TOKEN_BYTES: Final = 24
 ID_HEX_BYTES: Final = 8
@@ -123,10 +124,8 @@ def update_existing(table: Any, key: Mapping[str, str], fields: Mapping[str, Any
 
     ``bump_version`` also adds 1 to the row's ``version`` (rows written with a version condition).
     """
-    names = {f'#f{i}': field for i, field in enumerate(fields)}
-    values: dict[str, Any] = {f':v{i}': value for i, value in enumerate(fields.values())}
-    sets = [f'#f{i} = :v{i}' for i in range(len(fields))]
-    expression = 'SET ' + ', '.join([*sets, '#updated = :now'])
+    sets, names, values = set_clause(fields)
+    expression = f'SET {sets}, #updated = :now' if sets else 'SET #updated = :now'
     if bump_version:
         expression += ' ADD version :one'
         values[':one'] = 1

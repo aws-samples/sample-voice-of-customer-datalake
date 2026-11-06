@@ -30,6 +30,7 @@ from shared.exceptions import NotFoundError, ValidationError
 from shared.memory_policy import parse_datetime
 from shared.metric_keys import DAILY_TOTAL_PK
 from shared.timestamps import ISO_DAY_RE
+from shared.update_expressions import set_clause
 
 BRIEF_PK_PREFIX: Final = 'BRIEF#'
 ORG_PK_PREFIX: Final = 'BRIEFORG#'
@@ -202,9 +203,7 @@ def validate_card_states(body: Mapping[str, Any]) -> tuple[str, dict[str, str]]:
 
 def set_card_states(aggregates_table: Any, sub: str, day: str, states: Mapping[str, str]) -> dict[str, str]:
     """Record the caller's card states on their own brief of ``day``; 404 when there is none."""
-    names = {f'#c{i}': card for i, card in enumerate(states)}
-    values = {f':s{i}': state for i, state in enumerate(states.values())}
-    sets = ', '.join(f'card_state.#c{i} = :s{i}' for i in range(len(states)))
+    sets, names, values = set_clause(states, path='card_state.', name='#c', value=':s')
     try:
         response = aggregates_table.update_item(
             Key=brief_key(sub, day), UpdateExpression=f'SET {sets}',
