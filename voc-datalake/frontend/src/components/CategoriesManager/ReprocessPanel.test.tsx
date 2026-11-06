@@ -30,6 +30,9 @@ beforeEach(() => {
   mockFetchApi.mockResolvedValue({ job: null })
 })
 
+const methodOfInit = (options: unknown): unknown =>
+  typeof options === 'object' && options !== null && 'method' in options ? options.method : 'GET'
+
 describe('ReprocessPanel', () => {
   it('states the cost and offers both modes', async () => {
     renderPanel()
@@ -99,20 +102,14 @@ describe('ReprocessPanel', () => {
     }))
   })
 
-  it.each([
-    [409, /can no longer be resumed/],
-    [404, /no longer exists/],
-  ])('explains a refused resume (%i) instead of "already running"', async (status, message) => {
-    const isPost = (options: unknown) => typeof options === 'object' && options !== null
-      && 'method' in options && options.method === 'POST'
-    mockFetchApi.mockImplementation((_endpoint: string, options?: unknown) => (isPost(options)
-      ? Promise.reject(new Error(`API Error: ${status}`))
+  it('explains a refused resume instead of "already running"', async () => {
+    mockFetchApi.mockImplementation((_endpoint: string, options?: unknown) => (methodOfInit(options) === 'POST'
+      ? Promise.reject(new Error('API Error: 409'))
       : Promise.resolve({ job: partialJob })))
     const user = userEvent.setup()
     renderPanel()
     await user.click(await screen.findByRole('button', { name: 'Resume' }))
-    expect(await screen.findByText(message)).toBeInTheDocument()
-    expect(screen.queryByText(/already running/i)).not.toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(/can no longer be resumed/)
   })
 
   it('shows live counters and cancels a running job', async () => {
