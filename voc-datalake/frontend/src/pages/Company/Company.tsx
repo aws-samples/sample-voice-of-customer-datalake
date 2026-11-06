@@ -19,7 +19,7 @@
 import { useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import clsx from 'clsx'
+import { IconTabs } from '../../components/IconTabs/IconTabs'
 import { Compass, Palette, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useGuardedAction } from '../../components/UnsavedChangesGuard/guardRegistry'
@@ -59,18 +59,8 @@ export default function Company() {
           <Link to="/account?tab=objectives" className="link">{t('company.myObjectivesLink')}</Link>
         </p>
       </div>
-      <div className="tabs-rail overflow-x-auto">
-        <div className="tabs-track" role="tablist" aria-label={t('company.title')}>
-          {COMPANY_TABS.map((id) => {
-            const Icon = TAB_ICONS[id]
-            return (
-              <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => guarded(() => setTab(id))} className={clsx('tab', tab === id && 'tab-active')}>
-                <Icon size={14} /> {t(`company.tabs.${id}`)}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <IconTabs tabs={COMPANY_TABS} active={tab} icons={TAB_ICONS} label={t('company.title')}
+        labelOf={(id) => t(`company.tabs.${id}`)} onSelect={(id) => guarded(() => setTab(id))} />
       {config.apiEndpoint ? <CompanyTabContent tab={tab} isAdmin={isAdmin} /> : (
         <div className="card text-sm text-warn bg-warn-subtle border-warn/30">{t('shared.configureFirst')}</div>
       )}

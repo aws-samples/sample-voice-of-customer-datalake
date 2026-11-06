@@ -10,7 +10,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import clsx from 'clsx'
+import { IconTabs } from '../../components/IconTabs/IconTabs'
 import { Contact, List, Mail, Send } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
@@ -61,20 +61,8 @@ export default function Participants() {
         ) : null}
       </div>
 
-      <div className="tabs-rail overflow-x-auto">
-        <div className="tabs-track" role="tablist" aria-label={t('page.title')}>
-          {PARTICIPANT_TABS.map((id) => {
-            const Icon = TAB_ICONS[id]
-            return (
-              <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-                className={clsx('tab', tab === id && 'tab-active')}>
-                <Icon size={14} aria-hidden />
-                <TabLabel tab={id} />
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <IconTabs tabs={PARTICIPANT_TABS} active={tab} icons={TAB_ICONS} label={t('page.title')}
+        labelOf={(id) => <TabLabel tab={id} />} onSelect={setTab} />
 
       {configured ? <TabContent tab={tab} /> : (
         <div className="card text-sm text-warn bg-warn-subtle border-warn/30">{t('configureFirst')}</div>
