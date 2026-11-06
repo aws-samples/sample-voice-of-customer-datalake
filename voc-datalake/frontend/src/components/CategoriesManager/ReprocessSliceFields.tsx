@@ -12,6 +12,7 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ALL_TIME_CUSTOM_DAYS, MAX_CUSTOM_DAYS } from '../../api/baseUrl'
+import { MAX_SLICE_VALUES } from '../../api/reprocessApi'
 import type { ReprocessDateBasis } from '../../api/reprocessApi'
 import { useErasableSources } from '../SourcesManager/useErasureJobs'
 import type { ReprocessForm, WindowKind } from './reprocessForm'
@@ -95,7 +96,7 @@ function SourcePicker({ selected, onChange }: Readonly<{ selected: readonly stri
           </label>
         ))}
       </div>
-      <p className="text-xs text-muted mt-1">{t('categoriesManager.reprocess.sourcesHint')}</p>
+      <p className="text-xs text-muted mt-1">{t('categoriesManager.reprocess.sourcesHint', { max: MAX_SLICE_VALUES })}</p>
     </fieldset>
   )
 }
@@ -128,7 +129,7 @@ export default function ReprocessSliceFields({ form, onChange, invalid }: Readon
         <input id={categoriesId} type="text" value={form.categoriesInput} className="input py-1.5 w-full max-w-md"
           onChange={(e) => onChange({ categoriesInput: e.target.value })}
           placeholder={t('categoriesManager.reprocess.categoriesPlaceholder')} />
-        <p className="text-xs text-muted mt-1">{t('categoriesManager.reprocess.categoriesHint')}</p>
+        <p className="text-xs text-muted mt-1">{t('categoriesManager.reprocess.categoriesHint', { max: MAX_SLICE_VALUES })}</p>
       </div>
       <label className="flex items-center gap-2 text-sm min-h-9">
         <input type="checkbox" checked={form.includeManual} className="rounded-sm accent-accent"

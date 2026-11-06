@@ -38,8 +38,8 @@ def failures():
 
 class TestProvenance:
     def test_fields_without_llm_metadata(self):
-        fields = sp.provenance('manual', at='2026-01-01T00:00:00+00:00')
-        assert fields == {'pipeline_version': sp.PIPELINE_VERSION, 'enrichment_mode': 'manual',
+        fields = sp.provenance('source_update', at='2026-01-01T00:00:00+00:00')
+        assert fields == {'pipeline_version': sp.PIPELINE_VERSION, 'enrichment_mode': 'source_update',
                           'enriched_at': '2026-01-01T00:00:00+00:00'}
 
     def test_llm_metadata_keeps_only_contract_fields(self):

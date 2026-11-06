@@ -189,11 +189,13 @@
       "lastNDays_other": "Últimos {{count, number}} dias",
       "cancel": "Cancelar tarefa",
       "alreadyRunning": "Já há uma tarefa de reprocessamento em execução. Aguarde a conclusão ou cancele-a primeiro.",
+      "resumeRefused": "Este trabalho não pode mais ser retomado: já foi retomado ou outro trabalho está em execução.",
+      "resumeGone": "Este trabalho não existe mais, então não pode ser retomado.",
       "stoppedAtCeiling": "Parou no limite de {{max}} avaliações por tarefa para limitar o custo do modelo. Retome para continuar de onde parou.",
       "startError": "Não foi possível iniciar a tarefa de reprocessamento.",
       "daysLabel": "Período (dias)",
       "includeManual": "Substituir também as correções manuais",
-      "daysHint": "De 1 a {{max, number}} dias, ou 0 para todo o período. As correções manuais são mantidas, a menos que você escolha o contrário.",
+      "daysHint": "De 1 a {{max, number}} dias, ou 0 para todo o período. As correções manuais são mantidas, a menos que você escolha o contrário. Contado pela data de processamento.",
       "costNote": "Custo: uma chamada ao modelo por avaliação no período. Uma execução de todo o período em um data lake grande pode levar horas.",
       "start": "Iniciar reprocessamento",
       "confirmTitle": "Reprocessar o feedback existente?",
@@ -219,10 +221,10 @@
       "dateBasis": "Data lida",
       "rangeHint": "Qualquer um dos extremos pode ficar em aberto. A data da avaliação é quando o cliente a escreveu; avaliações sem ela usam a data de processamento.",
       "sourcesLabel": "Fontes",
-      "sourcesHint": "Nenhuma seleção = todas as fontes. Só estas fontes são lidas.",
+      "sourcesHint": "Nenhuma seleção = todas as fontes. Só estas fontes são lidas. Até {{max, number}}.",
       "categoriesLabel": "Categorias",
       "categoriesPlaceholder": "faturação, entrega",
-      "categoriesHint": "Nomes de categoria armazenados, separados por vírgulas (incluindo os que já não estão configurados). Vazio = todas as categorias."
+      "categoriesHint": "Nomes de categoria armazenados, separados por vírgulas (incluindo os que já não estão configurados). Vazio = todas as categorias. Até {{max, number}}."
     }
   },
   "dataSourceWizard": {

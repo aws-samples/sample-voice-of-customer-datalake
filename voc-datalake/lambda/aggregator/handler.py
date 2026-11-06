@@ -2296,6 +2296,7 @@ def _reversal_claim_key(record: DynamoDBRecord) -> str | None:
 
 
 def _idempotency_table() -> Any:
+    # A Table resource is a cheap handle over the module-level client (no network call to build it).
     return dynamodb.Table(IDEMPOTENCY_TABLE)
 
 
@@ -2360,14 +2361,13 @@ def _removal_to_reverse(record: DynamoDBRecord, old_image: dict[str, Any] | None
 
 
 def _handle_modify(
-    old_image: dict[str, Any] | None, new_image: dict[str, Any] | None, record: DynamoDBRecord | None = None,
+    old_image: dict[str, Any] | None, new_image: dict[str, Any] | None, record: DynamoDBRecord,
 ) -> dict:
     """MODIFY: move the item between buckets, once per stream record; REBUCKETED_METRIC only when a write landed."""
     if not old_image or not new_image:
         logger.warning("MODIFY record is missing an image; cannot rebucket")
         return {"status": "skipped", "reason": "incomplete images"}
-    key = _reversal_claim_key(record) if record is not None else None
-    if not _claim_once(key):
+    if not _claim_once(key := _reversal_claim_key(record)):
         return dict(_ALREADY_REVERSED)
     try:
         writes = process_modified_feedback(deserialize_image(old_image), deserialize_image(new_image))

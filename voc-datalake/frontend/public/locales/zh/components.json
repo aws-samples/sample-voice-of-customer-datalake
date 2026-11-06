@@ -189,11 +189,13 @@
       "lastNDays_other": "最近 {{count, number}} 天",
       "cancel": "取消任务",
       "alreadyRunning": "已有重新处理任务正在运行。请等待其完成或先将其取消。",
+      "resumeRefused": "此任务无法再继续：它已被继续，或另一个任务正在运行。",
+      "resumeGone": "此任务已不存在，无法继续。",
       "stoppedAtCeiling": "为控制模型成本，已在每个任务 {{max}} 条评论的上限处停止。继续即可从停止处接着处理。",
       "startError": "无法启动重新处理任务。",
       "daysLabel": "时间范围（天）",
       "includeManual": "同时覆盖手动更正",
-      "daysHint": "1–{{max, number}} 天，或输入 0 表示全部时间。除非另行选择，手动更正会被保留。",
+      "daysHint": "1–{{max, number}} 天，或输入 0 表示全部时间。除非另行选择，手动更正会被保留。按处理日期计算。",
       "costNote": "成本：时间范围内每条评论调用一次模型。对大型数据湖运行全部时间可能需要数小时。",
       "start": "开始重新处理",
       "confirmTitle": "要重新处理现有反馈吗？",
@@ -219,10 +221,10 @@
       "dateBasis": "读取的日期",
       "rangeHint": "任一端都可以留空。评论日期是客户撰写评论的日期；没有该日期的评论使用其处理日期。",
       "sourcesLabel": "来源",
-      "sourcesHint": "未选择 = 所有来源。只读取所选来源。",
+      "sourcesHint": "未选择 = 所有来源。只读取所选来源。最多 {{max, number}} 个。",
       "categoriesLabel": "类别",
       "categoriesPlaceholder": "billing, delivery",
-      "categoriesHint": "已存储的类别名称，以逗号分隔（包括已不再配置的类别）。留空 = 所有类别。"
+      "categoriesHint": "已存储的类别名称，以逗号分隔（包括已不再配置的类别）。留空 = 所有类别。最多 {{max, number}} 个。"
     }
   },
   "dataSourceWizard": {

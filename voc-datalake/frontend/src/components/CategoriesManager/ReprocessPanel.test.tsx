@@ -99,6 +99,20 @@ describe('ReprocessPanel', () => {
     }))
   })
 
+  it.each([
+    [409, /can no longer be resumed/],
+    [404, /no longer exists/],
+  ])('explains a refused resume (%i) instead of "already running"', async (status, message) => {
+    mockFetchApi.mockImplementation((path: string, init?: RequestInit) => (init?.method === 'POST'
+      ? Promise.reject(new Error(`API Error: ${status}`))
+      : Promise.resolve({ job: partialJob })))
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(await screen.findByRole('button', { name: 'Resume' }))
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(screen.queryByText(/already running/i)).not.toBeInTheDocument()
+  })
+
   it('shows live counters and cancels a running job', async () => {
     mockFetchApi.mockResolvedValue({ job: runningJob })
     const user = userEvent.setup()

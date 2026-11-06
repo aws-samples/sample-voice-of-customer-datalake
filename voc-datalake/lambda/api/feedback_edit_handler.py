@@ -13,7 +13,7 @@ value and who changed it are recorded in ``category_override``.
 
 Both routes keep the review as it was before the edit (``silver/`` in the raw
 bucket, ``shared.silver_provenance``) and stamp ``updated_by {sub, kind}``,
-``updated_at``, ``change_reason`` and ``enrichment_mode 'manual'`` (TENETS.md D1, D4).
+``updated_at`` and ``change_reason``; the enrichment provenance is left as it was (TENETS.md D1, D4).
 
 Rules:
 - the caller must be able to see the item's CURRENT category and the NEW one

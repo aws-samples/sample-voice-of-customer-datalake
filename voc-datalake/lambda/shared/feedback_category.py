@@ -9,7 +9,7 @@ record ``category_source='manual'`` plus a ``category_override`` audit, and be
 conditional on the item still existing with the category that was read.
 
 Every edit also keeps the item as it was (``keep_before_edit``, ``silver/`` in the raw
-bucket) and stamps ``enrichment_mode 'manual'``, ``updated_by {sub, kind}``,
+bucket) and stamps ``updated_by {sub, kind}``,
 ``updated_at`` and ``change_reason`` (``manual_edit_fields``).
 
 This module builds those pieces; callers run the ``update_item``. The stored
@@ -31,7 +31,7 @@ from shared.category_gate import read_categories_config
 from shared.exceptions import ApiError, ConflictError, ServiceError, ValidationError
 from shared.logging import logger
 from shared.project_access import Caller
-from shared.silver_provenance import change_stamp, fields_of_update, keep_silver_version, provenance
+from shared.silver_provenance import change_stamp, fields_of_update, keep_silver_version
 from shared.timestamps import now_iso
 
 CATEGORY_SOURCE_MANUAL = 'manual'
@@ -161,8 +161,13 @@ class ManualEdit:
 
 
 def manual_edit_fields(edit: ManualEdit, at: str) -> dict[str, Any]:
-    """The fields a person's edit writes besides its own: ``enrichment_mode 'manual'`` + the change stamp."""
-    return {**provenance('manual', at=at), **change_stamp(edit.actor, edit.reason, at)}
+    """The fields a person's edit writes besides its own: the change stamp only.
+
+    The enrichment provenance (``pipeline_version``, ``enrichment_mode``, ``enriched_at``, ``llm_metadata``)
+    keeps describing how the item was enriched; ``updated_by`` / ``updated_at`` / ``change_reason`` describe
+    the edit, and ``category_source`` / ``dimension_sources`` say which values a person set.
+    """
+    return change_stamp(edit.actor, edit.reason, at)
 
 
 def assignment_clauses(fields: Mapping[str, Any], prefix: str) -> tuple[list[str], dict[str, str], dict[str, Any]]:

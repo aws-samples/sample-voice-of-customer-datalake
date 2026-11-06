@@ -366,6 +366,17 @@ describe('the data explorer never deletes customer data', () => {
       .toStrictEqual(['dynamodb:GetItem', 'dynamodb:UpdateItem']);
     expect(lambdaEnv(apiTemplate(), 'data_explorer_handler.lambda_handler').AGGREGATES_TABLE).toBeDefined();
   });
+
+  it('can keep the Silver version of an edit: a put that covers silver/*, the raw bucket and the app release', () => {
+    // lambda/shared/silver_provenance.py writes silver/{source}/{id}/…; the bucket-wide put covers it, and the
+    // bucket policy's write-once Deny applies (the writer sends If-None-Match).
+    const puts = roleStatements(apiTemplate(), ROLE)
+      .filter((s) => s.effect === 'Allow' && s.actions.includes('s3:PutObject'))
+      .map((s) => s.resource);
+    expect(puts.some((r) => r.includes('RawData') && r.includes('"/*"'))).toBe(true);  // the bucket's every key
+    expect(Object.keys(lambdaEnv(apiTemplate(), 'data_explorer_handler.lambda_handler')))
+      .toStrictEqual(expect.arrayContaining(['RAW_DATA_BUCKET', 'APP_VERSION']));
+  });
 });
 
 

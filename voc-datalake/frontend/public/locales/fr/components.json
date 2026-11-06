@@ -189,11 +189,13 @@
       "lastNDays_other": "Derniers {{count, number}} jours",
       "cancel": "Annuler la tâche",
       "alreadyRunning": "Une tâche de retraitement est déjà en cours. Attendez qu'elle se termine ou annulez-la d'abord.",
+      "resumeRefused": "Ce traitement ne peut plus être repris : il a déjà été repris, ou un autre traitement est en cours.",
+      "resumeGone": "Ce traitement n’existe plus et ne peut donc pas être repris.",
       "stoppedAtCeiling": "Arrêté à la limite de {{max}} avis par tâche pour plafonner les coûts du modèle. Reprenez pour continuer là où elle s'est arrêtée.",
       "startError": "La tâche de retraitement n'a pas pu démarrer.",
       "daysLabel": "Période (jours)",
       "includeManual": "Écraser aussi les corrections manuelles",
-      "daysHint": "De 1 à {{max, number}} jours, ou 0 pour toute la période. Les corrections manuelles sont conservées sauf choix contraire.",
+      "daysHint": "De 1 à {{max, number}} jours, ou 0 pour toute la période. Les corrections manuelles sont conservées sauf choix contraire. Compté sur la date de traitement.",
       "costNote": "Coût : un appel au modèle par avis de la période. Une exécution sur toute la période d'un grand data lake peut prendre des heures.",
       "start": "Lancer le retraitement",
       "confirmTitle": "Retraiter les retours existants ?",
@@ -219,10 +221,10 @@
       "dateBasis": "Date lue",
       "rangeHint": "Chaque borne peut rester ouverte. La date de l'avis est celle où le client l'a écrit ; les avis sans cette date utilisent leur date de traitement.",
       "sourcesLabel": "Sources",
-      "sourcesHint": "Aucune sélection = toutes les sources. Seules ces sources sont lues.",
+      "sourcesHint": "Aucune sélection = toutes les sources. Seules ces sources sont lues. {{max, number}} au maximum.",
       "categoriesLabel": "Catégories",
       "categoriesPlaceholder": "facturation, livraison",
-      "categoriesHint": "Noms de catégorie stockés, séparés par des virgules (y compris ceux qui ne sont plus configurés). Vide = toutes les catégories."
+      "categoriesHint": "Noms de catégorie stockés, séparés par des virgules (y compris ceux qui ne sont plus configurés). Vide = toutes les catégories. {{max, number}} au maximum."
     }
   },
   "dataSourceWizard": {
