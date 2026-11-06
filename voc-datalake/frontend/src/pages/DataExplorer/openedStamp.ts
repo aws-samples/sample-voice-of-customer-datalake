@@ -1,7 +1,8 @@
 /**
  * @fileoverview The `updated_at` a processed record was opened with in the Data Explorer editor. The save
  * always sends it (`PUT /data-explorer/feedback` answers 409 when the stored record changed since), '' for a
- * record never stamped, so a record untouched since ingest is guarded too.
+ * record never stamped, so a record untouched since ingest is guarded too. The edited JSON is passed on as it
+ * is: the API validates every field (`shared/feedback_field_edits.py`), this module checks no shape.
  *
  * @module pages/DataExplorer/openedStamp
  */

@@ -162,3 +162,11 @@ def test_an_editor_with_the_current_stamp_saves(tables, lambda_context):
         status, _ = _save(tables, lambda_context, {'urgency': 'low', 'updated_at': stamp})
     assert status == 200
     assert _stored(tables)['urgency'] == 'low'
+
+
+def test_a_stale_editor_whose_values_match_is_asked_to_reload(tables, lambda_context):
+    """Checked before 'No changes': a stale editor reloads even when its values happen to equal the stored ones."""
+    with seeded_source_profiles():
+        _save(tables, lambda_context, {'urgency': 'high'})
+        status, _ = _save(tables, lambda_context, {'urgency': 'high', 'updated_at': ''})
+    assert status == 409
