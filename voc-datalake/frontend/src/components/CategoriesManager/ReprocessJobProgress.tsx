@@ -80,7 +80,7 @@ function Ceiling({ job, onResume, resuming }: Readonly<Pick<JobProgressProps, 'j
   )
 }
 
-export function JobProgress({ job, onCancel, cancelling, onResume, resuming }: Readonly<JobProgressProps>) {
+function JobProgress({ job, onCancel, cancelling, onResume, resuming }: Readonly<JobProgressProps>) {
   const { t, i18n } = useTranslation('components')
   const running = !isTerminalJob(job)
   const status = STATUS[job.status]

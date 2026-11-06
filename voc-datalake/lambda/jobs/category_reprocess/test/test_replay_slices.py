@@ -77,6 +77,18 @@ class TestSlices:
         moved = {fid for fid, item in _items(tables['feedback']).items() if item['category'] == 'shipping'}
         assert moved == {'first', 'last'}
 
+    def test_a_days_window_counts_back_from_when_the_job_started(self, tables, worker_context):
+        """A hand-over runs later than the first invocation; the window must not move with it."""
+        for feedback_id, day in (('in', '2026-02-02'), ('out', '2026-01-31')):
+            tables['feedback'].put_item(Item=feedback_item(feedback_id, date=day))
+        job = jobs.start_job(tables['aggregates'], mode='processed', days=3, include_manual=False, started_by='alice',
+                             now=datetime(2026, 2, 3, 9, tzinfo=UTC), job_slice=ReprocessSlice(days=3),
+                             started_by_sub='sub-alice')
+        assert job is not None
+        handler.run_job({'job_id': job['sk']}, worker_context)  # run "now", long after 2026-02-03
+        moved = {fid for fid, item in _items(tables['feedback']).items() if item['category'] == 'shipping'}
+        assert moved == {'in'}
+
     def test_a_review_date_range_reads_when_the_customer_wrote_it(self, tables, worker_context):
         tables['feedback'].put_item(Item=feedback_item('feb', date='2026-04-02', source_created_at='2026-02-10T08:00:00Z'))
         tables['feedback'].put_item(Item=feedback_item('apr', date='2026-02-10', source_created_at='2026-04-01T08:00:00Z'))
