@@ -300,6 +300,16 @@ def merge_components(current: list[dict], incoming: list[dict]) -> tuple[list[di
     return merge_by_key(current, incoming, 'name', MAX_COMPONENTS)
 
 
+# ── Names ───────────────────────────────────────────────────────────────────
+
+def component_display_name(raw: str) -> str:
+    """``raw`` split at camelCase humps and whitespace, as one sentence-case name (``PrimaryButton``
+    and ``primary button`` both read ``Primary button``)."""
+    words = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', raw).split()
+    text = ' '.join(words).lower()
+    return text[:1].upper() + text[1:]
+
+
 # ── Prompt text ─────────────────────────────────────────────────────────────
 
 def _style_pairs(styles: object) -> str:

@@ -30,7 +30,7 @@ from typing import Final
 
 from shared.css_color_mix import evaluate_color_mix
 from shared.css_values import is_css_color, is_css_length
-from shared.design_components import HOVER_KEYS, MAX_VARIANTS
+from shared.design_components import HOVER_KEYS, MAX_VARIANTS, component_display_name
 
 MAX_COMPONENTS_PER_FILE: Final = 12
 NAME_ALIASES: Final = {'Btn': 'Button', 'Btn group': 'Button group'}
@@ -315,9 +315,7 @@ def _chunks(text: str) -> list[tuple[str, str]]:
 
 
 def _label(name: str) -> str:
-    words = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', name).split()
-    text = ' '.join(words).lower()
-    label = text[:1].upper() + text[1:]
+    label = component_display_name(name)
     return NAME_ALIASES.get(label, label)
 
 
