@@ -265,8 +265,10 @@
     "unparsedSections_other": "{{count, number}} secciones no pudieron ser analizadas",
     "datesRequired_one": "{{count, number}} reseña necesita una fecha antes de poder importar.",
     "datesRequired_other": "{{count, number}} reseñas necesitan una fecha antes de poder importar.",
+    "datesRequired_many": "{{count, number}} de reseñas necesitan una fecha antes de que pueda ejecutarse la importación.",
     "datesDefaulted_one": "{{count, number}} reseña no tenía fecha en el texto, así que usa la fecha de importación de hoy. Puedes cambiarla abajo.",
     "datesDefaulted_other": "{{count, number}} reseñas no tenían fecha en el texto, así que usan la fecha de importación de hoy. Puedes cambiarlas abajo.",
+    "datesDefaulted_many": "{{count, number}} de reseñas no tenían fecha en el texto, así que usarán la fecha de importación de hoy. Puedes cambiarlas abajo.",
     "importFailed": "No se pudieron importar las reseñas",
     "clearDraft": "Borrar borrador",
     "draftDropped": "Tu borrador guardado superaba los {{max}} caracteres y se ha borrado. Pega un texto más corto para continuar."
@@ -426,10 +428,13 @@
     "daily": "A diario",
     "everyMinutes_one": "Cada minuto",
     "everyMinutes_other": "Cada {{count, number}} minutos",
+    "everyMinutes_many": "Cada {{count, number}} de minutos",
     "everyHours_one": "Cada hora",
     "everyHours_other": "Cada {{count, number}} horas",
+    "everyHours_many": "Cada {{count, number}} de horas",
     "everyDays_one": "A diario",
-    "everyDays_other": "Cada {{count, number}} días"
+    "everyDays_other": "Cada {{count, number}} días",
+    "everyDays_many": "Cada {{count, number}} de días"
   },
   "importHistory": {
     "title": "Historial de importaciones",
@@ -471,10 +476,13 @@
     "countsShort": {
       "skipped_one": "{{count, number}} omitida",
       "skipped_other": "{{count, number}} omitidas",
+      "skipped_many": "{{count, number}} de omitidos",
       "duplicate_one": "{{count, number}} duplicada",
       "duplicate_other": "{{count, number}} duplicadas",
+      "duplicate_many": "{{count, number}} de duplicados",
       "failed_one": "{{count, number}} fallida",
-      "failed_other": "{{count, number}} fallidas"
+      "failed_other": "{{count, number}} fallidas",
+      "failed_many": "{{count, number}} de fallidos"
     },
     "detail": {
       "title": "Detalles de la importación",
@@ -489,6 +497,7 @@
       "loadFailed": "No se pudo cargar esta importación.",
       "moreNotShown_one": "{{count, number}} más sin mostrar",
       "moreNotShown_other": "{{count, number}} más sin mostrar",
+      "moreNotShown_many": "{{count, number}} de elementos más sin mostrar",
       "loading": "Cargando los detalles de la importación…"
     },
     "loading": "Cargando el historial de importaciones…"

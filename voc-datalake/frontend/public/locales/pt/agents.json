@@ -2,7 +2,8 @@
   "nav": {
     "label": "Agentes autônomos",
     "needsDecision_one": "{{count, number}} agente precisa de uma decisão",
-    "needsDecision_other": "{{count, number}} agentes precisam de uma decisão"
+    "needsDecision_other": "{{count, number}} agentes precisam de uma decisão",
+    "needsDecision_many": "{{count, number}} de agentes precisam de uma decisão"
   },
   "common": {
     "cancel": "Cancelar"
@@ -289,7 +290,9 @@
       "steps_one": "{{count, number}} etapa",
       "arrows_one": "{{count, number}} seta",
       "steps_other": "{{count, number}} etapas",
-      "arrows_other": "{{count, number}} setas"
+      "steps_many": "{{count, number}} de etapas",
+      "arrows_other": "{{count, number}} setas",
+      "arrows_many": "{{count, number}} de setas"
     },
     "unsaved": "Alterações não salvas",
     "save": "Salvar",
@@ -308,6 +311,7 @@
     "generalIssues": "Problemas do fluxo de trabalho",
     "issueCount_one": "{{count, number}} problema",
     "issueCount_other": "{{count, number}} problemas",
+    "issueCount_many": "{{count, number}} de problemas",
     "valid": "O fluxo de trabalho é válido.",
     "validUnsaved": "Válido — ainda não salvo.",
     "outcome": {
@@ -372,6 +376,7 @@
     "newLoop": "Um novo loop",
     "loopOption_one": "Loop {{n}} ({{count, number}} etapa)",
     "loopOption_other": "Loop {{n}} ({{count, number}} etapas)",
+    "loopOption_many": "Loop {{n}} ({{count, number}} de etapas)",
     "leaveLoop": "Tirar esta etapa do loop",
     "outlineSteps": "Etapas deste fluxo de trabalho",
     "outlineStepsCount": "Etapas ({{n, number}})",
@@ -536,6 +541,7 @@
     },
     "verdicts_one": "{{count, number}} veredito de persona",
     "verdicts_other": "{{count, number}} vereditos de personas",
+    "verdicts_many": "{{count, number}} de vereditos de persona",
     "score": "{{score}}/5",
     "blocking": "Bloqueante",
     "stop": "Encerrar a execução",

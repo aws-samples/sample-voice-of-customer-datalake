@@ -265,8 +265,10 @@
     "unparsedSections_other": "{{count, number}} seções não puderam ser analisadas",
     "datesRequired_one": "{{count, number}} avaliação precisa de uma data antes da importação.",
     "datesRequired_other": "{{count, number}} avaliações precisam de uma data antes da importação.",
+    "datesRequired_many": "{{count, number}} de avaliações precisam de uma data antes que a importação possa ser executada.",
     "datesDefaulted_one": "{{count, number}} avaliação não tinha data no texto, por isso usa a data de importação de hoje. Você pode alterá-la abaixo.",
     "datesDefaulted_other": "{{count, number}} avaliações não tinham data no texto, por isso usam a data de importação de hoje. Você pode alterá-las abaixo.",
+    "datesDefaulted_many": "{{count, number}} de avaliações não tinham data no texto, por isso usarão a data de importação de hoje. Você pode alterá-las abaixo.",
     "importFailed": "Não foi possível importar as avaliações",
     "clearDraft": "Limpar rascunho",
     "draftDropped": "Seu rascunho salvo tinha mais de {{max}} caracteres e foi apagado. Cole um texto mais curto para continuar."
@@ -426,10 +428,13 @@
     "daily": "Diariamente",
     "everyMinutes_one": "A cada minuto",
     "everyMinutes_other": "A cada {{count, number}} minutos",
+    "everyMinutes_many": "A cada {{count, number}} de minutos",
     "everyHours_one": "A cada hora",
     "everyHours_other": "A cada {{count, number}} horas",
+    "everyHours_many": "A cada {{count, number}} de horas",
     "everyDays_one": "Diariamente",
-    "everyDays_other": "A cada {{count, number}} dias"
+    "everyDays_other": "A cada {{count, number}} dias",
+    "everyDays_many": "A cada {{count, number}} de dias"
   },
   "importHistory": {
     "title": "Histórico de importações",
@@ -471,10 +476,13 @@
     "countsShort": {
       "skipped_one": "{{count, number}} ignorada",
       "skipped_other": "{{count, number}} ignoradas",
+      "skipped_many": "{{count, number}} de ignoradas",
       "duplicate_one": "{{count, number}} duplicada",
       "duplicate_other": "{{count, number}} duplicadas",
+      "duplicate_many": "{{count, number}} de duplicadas",
       "failed_one": "{{count, number}} com falha",
-      "failed_other": "{{count, number}} com falha"
+      "failed_other": "{{count, number}} com falha",
+      "failed_many": "{{count, number}} de falhas"
     },
     "detail": {
       "title": "Detalhes da importação",
@@ -489,6 +497,7 @@
       "loadFailed": "Não foi possível carregar esta importação.",
       "moreNotShown_one": "mais {{count, number}} não exibida",
       "moreNotShown_other": "mais {{count, number}} não exibidas",
+      "moreNotShown_many": "{{count, number}} de outras não exibidas",
       "loading": "Carregando os detalhes da importação…"
     },
     "loading": "Carregando o histórico de importações…"

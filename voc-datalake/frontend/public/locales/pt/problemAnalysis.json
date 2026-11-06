@@ -55,6 +55,7 @@
     "showMoreProblems_many": "Mostrar mais {{count, number}} problemas (faltam {{total, number}})",
     "examplesOf_one": "Mostrando {{shown, number}} de {{count, number}} avaliação",
     "examplesOf_other": "Mostrando {{shown, number}} de {{count, number}} avaliações",
+    "examplesOf_many": "Mostrando {{shown, number}} de {{count, number}} de avaliações",
     "examplesLoading": "Carregando avaliações de exemplo…",
     "examplesFailed": "Não foi possível carregar as avaliações de exemplo."
   },

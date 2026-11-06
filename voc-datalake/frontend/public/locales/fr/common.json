@@ -150,6 +150,7 @@
     "label": "Période",
     "lastNDays_one": "Dernier {{count, number}} jour",
     "lastNDays_other": "{{count, number}} derniers jours",
+    "lastNDays_many": "Les {{count, number}} derniers jours",
     "filterBy": "Filtrer les dates par",
     "filterByCurrent": "Filtrer les dates par : {{basis}}",
     "imported": "Date d'import",

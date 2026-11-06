@@ -2,7 +2,8 @@
   "nav": {
     "label": "Agentes autónomos",
     "needsDecision_one": "{{count, number}} agente necesita una decisión",
-    "needsDecision_other": "{{count, number}} agentes necesitan una decisión"
+    "needsDecision_other": "{{count, number}} agentes necesitan una decisión",
+    "needsDecision_many": "{{count, number}} de agentes necesitan una decisión"
   },
   "common": {
     "cancel": "Cancelar"
@@ -289,7 +290,9 @@
       "steps_one": "{{count, number}} paso",
       "arrows_one": "{{count, number}} flecha",
       "steps_other": "{{count, number}} pasos",
-      "arrows_other": "{{count, number}} flechas"
+      "steps_many": "{{count, number}} de pasos",
+      "arrows_other": "{{count, number}} flechas",
+      "arrows_many": "{{count, number}} de flechas"
     },
     "unsaved": "Cambios sin guardar",
     "save": "Guardar",
@@ -308,6 +311,7 @@
     "generalIssues": "Problemas del flujo de trabajo",
     "issueCount_one": "{{count, number}} problema",
     "issueCount_other": "{{count, number}} problemas",
+    "issueCount_many": "{{count, number}} de problemas",
     "valid": "El flujo de trabajo es válido.",
     "validUnsaved": "Válido; aún no guardado.",
     "outcome": {
@@ -372,6 +376,7 @@
     "newLoop": "Un bucle nuevo",
     "loopOption_one": "Bucle {{n}} ({{count, number}} paso)",
     "loopOption_other": "Bucle {{n}} ({{count, number}} pasos)",
+    "loopOption_many": "Bucle {{n}} ({{count, number}} de pasos)",
     "leaveLoop": "Sacar este paso del bucle",
     "outlineSteps": "Pasos de este flujo de trabajo",
     "outlineStepsCount": "Pasos ({{n, number}})",
@@ -536,6 +541,7 @@
     },
     "verdicts_one": "{{count, number}} veredicto de persona",
     "verdicts_other": "{{count, number}} veredictos de personas",
+    "verdicts_many": "{{count, number}} de veredictos de personas",
     "score": "{{score}}/5",
     "blocking": "Bloqueante",
     "stop": "Cerrar la ejecución",

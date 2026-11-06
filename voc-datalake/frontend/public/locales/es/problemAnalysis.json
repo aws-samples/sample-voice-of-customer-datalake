@@ -55,6 +55,7 @@
     "showMoreProblems_many": "Mostrar {{count, number}} problemas más (quedan {{total, number}})",
     "examplesOf_one": "Mostrando {{shown, number}} de {{count, number}} reseña",
     "examplesOf_other": "Mostrando {{shown, number}} de {{count, number}} reseñas",
+    "examplesOf_many": "Mostrando {{shown, number}} de {{count, number}} reseñas",
     "examplesLoading": "Cargando reseñas de ejemplo…",
     "examplesFailed": "No se pudieron cargar las reseñas de ejemplo."
   },

@@ -18,6 +18,7 @@ import {
   applyDatasetUpdate, datasetIdentity, datasetKey, planCounts, planDataset, previewAnswer, rememberDatasetRow,
 } from './mock-csv-datasets.js';
 import { cursorPage } from './mock-feedback-cursor.js';
+import { REASON_DATA_EXPLORER_EDIT, stampManualEdit } from './mock-edit-stamp.js';
 import { csvUploadCounts, recordImportRun } from './mock-import-history.js';
 import { effectiveBrands, radarBrandError } from './mock-radar-brands.js';
 import { SYSTEM_LOG_ROUTES } from './mock-system-logs.js';
@@ -1278,6 +1279,10 @@ function categoryChange(shared, item, data) {
   return { change: { category: category.value, subcategory: subcategory.value } };
 }
 
+/** data_explorer_handler `_refuse_stale_editor`: the editor names the `updated_at` it opened ('' = unstamped). */
+const LOST_UPDATE_MESSAGE = 'This review was changed by someone else. Reload and retry.';
+const staleEditor = (item, data) => Object.hasOwn(data, 'updated_at') && (data.updated_at || null) !== (item.updated_at || null);
+
 function saveFeedback({ shared }, body) {
   const feedbackId = body.feedback_id;
   const data = body.data ?? {};
@@ -1289,6 +1294,8 @@ function saveFeedback({ shared }, body) {
   const item = shared.mockFeedback.find((f) => f.feedback_id === String(feedbackId)
     && (!data.source_platform || f.source_platform === data.source_platform));
   if (!item) return fail(404, 'Feedback not found');
+  // Before any field check, like the route: a stale editor reloads even when its values match.
+  if (staleEditor(item, data)) return fail(409, LOST_UPDATE_MESSAGE);
   const { change, error } = categoryChange(shared, item, data);
   if (error) return fail(400, error);
   if (change === null && Object.keys(plain).length === 0) return [200, { success: true, message: 'No changes' }];
@@ -1299,7 +1306,7 @@ function saveFeedback({ shared }, body) {
     else item.subcategory = change.subcategory;
     item.category_source = 'manual';
   }
-  item.updated_at = new Date().toISOString();
+  stampManualEdit(item, REASON_DATA_EXPLORER_EDIT);
   return [200, { success: true, message: 'Feedback updated' }];
 }
 

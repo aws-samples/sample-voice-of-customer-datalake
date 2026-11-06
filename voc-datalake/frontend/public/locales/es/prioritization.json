@@ -188,10 +188,12 @@
   },
   "rowCount_one": "{{count, number}} propuesta",
   "rowCount_other": "{{count, number}} propuestas",
+  "rowCount_many": "{{count, number}} de propuestas",
   "rowDeleted": {
     "descriptionNoCount": "«{{row}}» ya no existe, junto con las papeletas que se hubieran emitido. No se ha informado del número de papeletas.",
     "description_one": "«{{row}}» ya no existe, y con ella se ha eliminado la única papeleta emitida.",
     "description_other": "«{{row}}» ya no existe, y con ella se han eliminado las {{count, number}} papeletas emitidas.",
+    "description_many": "\"{{row}}\" se ha eliminado y, con ella, también se han eliminado los {{count, number}} de votos emitidos sobre esta propuesta.",
     "dismiss": "Descartar este mensaje",
     "title": "La fila se ha eliminado"
   },
@@ -325,7 +327,8 @@
     "totalRows": "Propuestas totales",
     "loading": "Contando propuestas...",
     "unreadable_one": "No se ha podido leer la puntuación del equipo de {{count, number}} propuesta, así que solo cuenta en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verla.",
-    "unreadable_other": "No se han podido leer las puntuaciones del equipo de {{count, number}} propuestas, así que solo cuentan en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verlas."
+    "unreadable_other": "No se han podido leer las puntuaciones del equipo de {{count, number}} propuestas, así que solo cuentan en el total y en ninguno de los demás recuentos. Vuelve a cargar la página para verlas.",
+    "unreadable_many": "No se pudieron leer las puntuaciones del equipo de {{count, number}} de propuestas. Se cuentan en el total, pero no en los demás recuentos. Recarga la página para verlas."
   },
   "subtitle": "Puntuar y priorizar PRD y PR/FAQs en todos los proyectos",
   "team": {

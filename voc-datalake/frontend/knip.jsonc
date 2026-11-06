@@ -12,7 +12,9 @@
     "scripts/check-mock-coverage.test.mjs",
     "scripts/mock-corpus.test.mjs",
     "scripts/mock-faceted-scope.test.mjs",
-    "scripts/mock-scope.test.mjs"
+    "scripts/mock-scope.test.mjs",
+    "scripts/mock-edit-stamp.test.mjs",
+    "scripts/mock-reprocess.test.mjs"
   ],
   "project": [
     "src/**/*.{ts,tsx,css}!",

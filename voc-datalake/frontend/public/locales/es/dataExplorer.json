@@ -87,6 +87,7 @@
     "backfillHint": "Los comentarios guardados antes de que existieran las valoraciones no tienen banda; un reprocesado de categorías (Administración → Taxonomía) los valora.",
     "chartTop_one": "El gráfico muestra la fuente con más actividad; la tabla incluye todas las fuentes.",
     "chartTop_other": "El gráfico muestra las {{count, number}} fuentes con más actividad; la tabla incluye todas las fuentes.",
+    "chartTop_many": "El gráfico muestra las {{count, number}} fuentes más activas; la tabla enumera todas las fuentes.",
     "partial": "Algunos datos no se pudieron leer a tiempo, así que estas cifras pueden ser menores que las reales.",
     "tableCaption": "Utilidad de los comentarios por fuente",
     "allSources": "Todas las fuentes",

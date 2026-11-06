@@ -92,8 +92,10 @@
       "new": "Nouvelle dans le classement",
       "grew_one": "En hausse depuis {{count, number}}",
       "grew_other": "En hausse depuis {{count, number}}",
+      "grew_many": "En hausse par rapport à {{count, number}}",
       "count_one": "{{count, number}} avis",
-      "count_other": "{{count, number}} avis"
+      "count_other": "{{count, number}} avis",
+      "count_many": "{{count, number}} d'avis"
     }
   }
 }
