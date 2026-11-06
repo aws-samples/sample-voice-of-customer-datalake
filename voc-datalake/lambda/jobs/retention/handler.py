@@ -68,6 +68,7 @@ from shared.aws import get_dynamodb_resource, get_s3_client, invoke_lambda_async
 from shared.data_version import bump_data_version, bump_radar_version
 from shared.digests import sha256_hex
 from shared.invocation_cost import instrumented_handler
+from shared.jobs import has_time_left
 from shared.legal_basis import legal_basis_or_legacy
 from shared.logging import logger, metrics
 from shared.retention import SOURCE_FIELD, STORE_FEEDBACK, STORE_RADAR
@@ -181,10 +182,6 @@ def _check_whole_source(source: object, value: str) -> None:
 # Hand-over and the source lock
 # ============================================
 
-def _time_left(context: Any) -> bool:
-    return context.get_remaining_time_in_millis() > TIME_RESERVE_MS
-
-
 def _hand_over(walk: Walk, phase: str, cursor: dict | None) -> dict:
     run = walk.run
     _whole_source_lock_call(walk.aggregates, run, refresh_source_lock, 'renew')
@@ -247,7 +244,7 @@ def _walk(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[dict | No
         cursor = page.get('LastEvaluatedKey') or None
         if cursor is None:
             return None
-        if not _time_left(walk.context):
+        if not has_time_left(walk.context, TIME_RESERVE_MS):
             return _hand_over(walk, phase, cursor)
 
 
@@ -261,7 +258,7 @@ def _erase_pages(walk: Walk, phase: str, cursor: dict | None, scan: Callable[[di
         tombstones(items)
         done = start
         for item in items:
-            if not _time_left(walk.context):
+            if not has_time_left(walk.context, TIME_RESERVE_MS):
                 # After the last erased item (this page's start when none was).
                 return _Resume(done)
             erase(item)
@@ -296,7 +293,7 @@ def _sweep_raw(walk: Walk, _cursor: dict | None) -> dict | None:
     for prefix in (raw_prefix, silver_prefix):
         more = True
         while more:
-            if not _time_left(walk.context):
+            if not has_time_left(walk.context, TIME_RESERVE_MS):
                 return _hand_over(walk, PHASE_RAW, None)
             objects, more = retention.delete_raw_prefix_page(walk.s3, RAW_DATA_BUCKET, prefix)
             walk.run['deleted_objects'] += objects

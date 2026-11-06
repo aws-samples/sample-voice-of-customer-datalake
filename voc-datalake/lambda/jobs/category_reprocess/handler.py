@@ -84,6 +84,7 @@ from shared.dimension_config import load_dimensions_config
 from shared.feedback_category import CATEGORY_SOURCE_MANUAL
 from shared.feedback_dimensions import category_product, reinfer_dimensions
 from shared.invocation_cost import instrumented_handler
+from shared.jobs import has_time_left
 
 # No sys.path shim: the asset bundles this file beside `shared/` (see the
 # CategoryReprocess bundling in processing-stack-consolidated.ts), and tests
@@ -539,10 +540,6 @@ def _hand_over(
     invoke_lambda_async(context.function_name, event)
 
 
-def _time_left(context: Any) -> bool:
-    return context.get_remaining_time_in_millis() > TIME_RESERVE_MS
-
-
 def run_job(event: dict, context: Any) -> dict:
     job_id = event.get('job_id')
     if not isinstance(job_id, str) or not jobs.is_job_id(job_id):
@@ -611,7 +608,7 @@ def _reprocess_pages(
                 continue
             if counters['scanned'] >= jobs.MAX_REPROCESS_ITEMS:
                 return _finish_at_ceiling(aggregates_table, job_id, counters, token, cursor)
-            if not _time_left(context):
+            if not has_time_left(context, TIME_RESERVE_MS):
                 return _checkpoint_and_hand_over(aggregates_table, context, job_id, counters, cursor, 0, token)
             try:
                 reprocess_item(feedback_table, item, job, categories_config, counters, dimensions_config)

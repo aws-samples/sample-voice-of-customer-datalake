@@ -45,6 +45,11 @@ CLAIM_CONDITION_EXPRESSION = (
 CLAIM_ATTRIBUTE_NAMES = {'#status': 'status', '#error': 'error', '#result': 'result'}
 
 
+def has_time_left(lambda_context: Any, reserve_ms: int) -> bool:
+    """More than ``reserve_ms`` of the invocation remain: room for one more slice before handing over."""
+    return lambda_context.get_remaining_time_in_millis() > reserve_ms
+
+
 def _remaining_seconds(lambda_context: Any) -> int:
     remaining_time = getattr(lambda_context, 'get_remaining_time_in_millis', None)
     if not callable(remaining_time):

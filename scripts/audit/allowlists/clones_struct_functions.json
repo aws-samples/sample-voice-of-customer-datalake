@@ -51,13 +51,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/jobs/category_reprocess/handler.py",
-        "voc-datalake/lambda/jobs/retention/handler.py"
-      ],
-      "reason": "same shape, different workers: each reads its own TIME_RESERVE_MS (3 min vs 1 min) and its own table env; the tests of each patch them"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/api/product_context.py",
         "voc-datalake/lambda/shared/assist_jobs.py"
       ],
