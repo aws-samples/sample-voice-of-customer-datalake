@@ -25,7 +25,7 @@ import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import { useLatestJob, useReprocessMutations } from './useReprocessJob'
 import { LiveJobProgress } from './ReprocessJobProgress'
 import ReprocessSliceFields from './ReprocessSliceFields'
-import { MODES, jobWindowLabel, modeTitleKey } from './reprocessCopy'
+import { jobWindowLabel, MODES, modeTitleKey, resumeErrorKey } from './reprocessCopy'
 import { buildStart } from './reprocessForm'
 import type { ReprocessForm } from './reprocessForm'
 
@@ -62,25 +62,19 @@ function ModeChoice({ mode, onChange }: Readonly<{ mode: ReprocessMode; onChange
   )
 }
 
-/** Whether the last start request was a resume (`{resume: <job_id>}`). */
-function isResume(request: unknown): boolean {
-  return typeof request === 'object' && request !== null && 'resume' in request
-}
-
 /** The message of a refused start; a refused resume says why the job can't be resumed (404 / 409). */
-function startErrorKey(status: number | null | undefined, resuming: boolean): string {
-  if (resuming && status === 404) return 'categoriesManager.reprocess.resumeGone'
-  if (resuming && status === 409) return 'categoriesManager.reprocess.resumeRefused'
-  return status === 409 ? 'categoriesManager.reprocess.alreadyRunning' : 'categoriesManager.reprocess.startError'
+function startErrorKey(status: number | null | undefined, request: unknown): string {
+  return resumeErrorKey(status, request)
+    ?? (status === 409 ? 'categoriesManager.reprocess.alreadyRunning' : 'categoriesManager.reprocess.startError')
 }
 
-function StartError({ error, resuming }: Readonly<{ error: unknown; resuming: boolean }>) {
+function StartError({ error, request }: Readonly<{ error: unknown; request: unknown }>) {
   const { t } = useTranslation('components')
   const status = apiErrorStatus(error)
   return (
     <p role="alert" className="text-sm text-text flex items-center gap-2 bg-danger-subtle border border-danger/30 rounded-md px-3 py-2">
       <AlertCircle size={14} className="text-danger flex-shrink-0" aria-hidden="true" />
-      {t(startErrorKey(status, resuming))}
+      {t(startErrorKey(status, request))}
     </p>
   )
 }
@@ -125,7 +119,7 @@ export default function ReprocessPanel() {
           {t('categoriesManager.reprocess.start')}
         </button>
       </StickyActionBar>
-      {start.isError && <StartError error={start.error} resuming={isResume(start.variables)} />}
+      {start.isError && <StartError error={start.error} request={start.variables} />}
       {job != null && <LiveJobProgress job={job} controls={{ start, cancel }} />}
 
       {request !== null && (

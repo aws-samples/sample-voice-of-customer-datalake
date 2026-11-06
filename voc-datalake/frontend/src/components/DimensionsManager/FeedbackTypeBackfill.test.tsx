@@ -102,6 +102,24 @@ describe('FeedbackTypeBackfill', () => {
 })
 
 describe('a backfill that stopped at the per-job limit', () => {
+  it.each([
+    [409, /can no longer be resumed/],
+    [404, /no longer exists/],
+  ])('explains a refused resume (%i), not "already running"', async (status, message) => {
+    const partial = { ...QUEUED, status: 'partial', stopped_at_ceiling: true, resumable: true }
+    fetchApi.mockImplementation((endpoint, options) => {
+      if (endpoint.startsWith('/metrics/dimensions')) return Promise.resolve(METRICS)
+      return methodOf(options) === 'POST'
+        ? Promise.reject(new ApiError(status, `API Error: ${status}`))
+        : Promise.resolve({ job: partial })
+    })
+    const user = userEvent.setup()
+    renderCard()
+    await user.click(await screen.findByRole('button', { name: 'Resume' }))
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(screen.queryByText(/already running/i)).not.toBeInTheDocument()
+  })
+
   it('offers Resume and resumes that job', async () => {
     const partial = { ...QUEUED, status: 'partial', stopped_at_ceiling: true, resumable: true }
     fetchApi.mockImplementation((endpoint, options) => {

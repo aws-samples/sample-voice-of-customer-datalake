@@ -13,6 +13,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, Tags } from 'lucide-react'
 import { apiErrorStatus } from '../../api/apiErrorStatus'
@@ -20,6 +21,7 @@ import { ALL_TIME_CUSTOM_DAYS } from '../../api/baseUrl'
 import { dimensionMetricsKey, dimensionsApi } from '../../api/dimensionsApi'
 import { FEEDBACK_TYPE_KEY } from '../../api/feedbackTypes'
 import { isTerminalJob } from '../../api/reprocessApi'
+import { resumeErrorKey } from '../CategoriesManager/reprocessCopy'
 import { useConfigStore } from '../../store/configStore'
 import { formatCount } from '../../utils/numberFormat'
 import ConfirmModal from '../ConfirmModal/ConfirmModal'
@@ -54,8 +56,17 @@ function CountLine({ metrics }: Readonly<{ metrics: DimensionMetrics | undefined
   )
 }
 
+/** A refused start: a refused resume says why (shared copy), anything else is this card's own message. */
+function startErrorText(error: unknown, request: unknown, t: TFunction, tc: TFunction): string {
+  const status = apiErrorStatus(error)
+  const resumeKey = resumeErrorKey(status, request)
+  if (resumeKey !== null) return tc(resumeKey)
+  return status === 409 ? t('alreadyRunning') : t('startError')
+}
+
 export default function FeedbackTypeBackfill() {
   const { t } = useTranslation('components', { keyPrefix: 'dimensionsManager.feedbackTypeBackfill' })
+  const { t: tc } = useTranslation('components')
   const [confirming, setConfirming] = useState(false)
   const { data: metrics } = useTypeCounts()
   const { data: job } = useLatestJob()
@@ -85,7 +96,7 @@ export default function FeedbackTypeBackfill() {
       {start.isError && (
         <p role="alert" className="text-sm text-text flex items-center gap-2">
           <AlertCircle size={14} className="text-danger flex-shrink-0" aria-hidden="true" />
-          {apiErrorStatus(start.error) === 409 ? t('alreadyRunning') : t('startError')}
+          {startErrorText(start.error, start.variables, t, tc)}
         </p>
       )}
       {job?.mode === 'dimensions' && (
