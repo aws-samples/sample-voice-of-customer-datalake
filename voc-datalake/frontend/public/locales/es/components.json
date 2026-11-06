@@ -189,11 +189,13 @@
       "lastNDays_other": "Últimos {{count, number}} días",
       "cancel": "Cancelar trabajo",
       "alreadyRunning": "Ya hay un trabajo de reprocesamiento en curso. Espera a que termine o cancélalo primero.",
+      "resumeRefused": "Este trabajo ya no se puede reanudar: ya se reanudó o hay otro trabajo en curso.",
+      "resumeGone": "Este trabajo ya no existe, así que no se puede reanudar.",
       "stoppedAtCeiling": "Se detuvo en el límite de {{max}} opiniones por trabajo para acotar el coste del modelo. Reanuda para continuar donde se detuvo.",
       "startError": "No se pudo iniciar el trabajo de reprocesamiento.",
       "daysLabel": "Periodo (días)",
       "includeManual": "Sobrescribir también las correcciones manuales",
-      "daysHint": "De 1 a {{max, number}} días, o 0 para todo el periodo. Las correcciones manuales se conservan salvo que elijas lo contrario.",
+      "daysHint": "De 1 a {{max, number}} días, o 0 para todo el periodo. Las correcciones manuales se conservan salvo que elijas lo contrario. Se cuenta por la fecha de procesamiento.",
       "costNote": "Coste: una llamada al modelo por cada reseña del periodo. Una ejecución de todo el periodo sobre un data lake grande puede tardar horas.",
       "start": "Iniciar reprocesamiento",
       "confirmTitle": "¿Reprocesar los comentarios existentes?",
@@ -219,10 +221,10 @@
       "dateBasis": "Fecha que se lee",
       "rangeHint": "Cualquiera de los extremos puede quedar abierto. La fecha de la opinión es cuando el cliente la escribió; las opiniones sin ella usan su fecha de procesamiento.",
       "sourcesLabel": "Fuentes",
-      "sourcesHint": "Sin selección = todas las fuentes. Solo se leen estas fuentes.",
+      "sourcesHint": "Sin selección = todas las fuentes. Solo se leen estas fuentes. Hasta {{max, number}}.",
       "categoriesLabel": "Categorías",
       "categoriesPlaceholder": "facturación, entrega",
-      "categoriesHint": "Nombres de categoría almacenados, separados por comas (también los que ya no están configurados). Vacío = todas las categorías."
+      "categoriesHint": "Nombres de categoría almacenados, separados por comas (también los que ya no están configurados). Vacío = todas las categorías. Hasta {{max, number}}."
     }
   },
   "dataSourceWizard": {

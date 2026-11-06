@@ -189,11 +189,13 @@
       "lastNDays_other": "Letzte {{count, number}} Tage",
       "cancel": "Job abbrechen",
       "alreadyRunning": "Es läuft bereits ein Neuverarbeitungs-Job. Warten Sie, bis er fertig ist, oder brechen Sie ihn zuerst ab.",
+      "resumeRefused": "Dieser Auftrag kann nicht mehr fortgesetzt werden: Er wurde bereits fortgesetzt, oder ein anderer Auftrag läuft.",
+      "resumeGone": "Dieser Auftrag existiert nicht mehr und kann nicht fortgesetzt werden.",
       "stoppedAtCeiling": "Beim Limit von {{max}} Bewertungen pro Job angehalten, um die Modellkosten zu begrenzen. Setzen Sie den Job fort, um an der Stelle weiterzumachen, an der er angehalten hat.",
       "startError": "Der Neuverarbeitungs-Job konnte nicht gestartet werden.",
       "daysLabel": "Zeitraum (Tage)",
       "includeManual": "Auch manuelle Korrekturen überschreiben",
-      "daysHint": "1–{{max, number}} Tage oder 0 für den gesamten Zeitraum. Manuelle Korrekturen bleiben erhalten, sofern Sie nichts anderes wählen.",
+      "daysHint": "1–{{max, number}} Tage oder 0 für den gesamten Zeitraum. Manuelle Korrekturen bleiben erhalten, sofern Sie nichts anderes wählen. Gezählt nach dem Verarbeitungsdatum.",
       "costNote": "Kosten: ein Modellaufruf pro Bewertung im Zeitraum. Ein Lauf über den gesamten Zeitraum eines großen Data Lakes kann Stunden dauern.",
       "start": "Neuverarbeitung starten",
       "confirmTitle": "Vorhandenes Feedback neu verarbeiten?",
@@ -219,10 +221,10 @@
       "dateBasis": "Zu lesendes Datum",
       "rangeHint": "Beide Enden dürfen offen bleiben. Das Bewertungsdatum ist der Tag, an dem der Kunde sie geschrieben hat; Bewertungen ohne dieses Datum verwenden ihr Verarbeitungsdatum.",
       "sourcesLabel": "Quellen",
-      "sourcesHint": "Keine Auswahl = alle Quellen. Es werden nur diese Quellen gelesen.",
+      "sourcesHint": "Keine Auswahl = alle Quellen. Es werden nur diese Quellen gelesen. Höchstens {{max, number}}.",
       "categoriesLabel": "Kategorien",
       "categoriesPlaceholder": "abrechnung, lieferung",
-      "categoriesHint": "Gespeicherte Kategorienamen, durch Kommas getrennt (auch nicht mehr konfigurierte). Leer = alle Kategorien."
+      "categoriesHint": "Gespeicherte Kategorienamen, durch Kommas getrennt (auch nicht mehr konfigurierte). Leer = alle Kategorien. Höchstens {{max, number}}."
     }
   },
   "dataSourceWizard": {

@@ -24,14 +24,14 @@ Processed feedback keeps its history and says how it was made, and a reprocess c
 ### Added
 
 - **Silver history**: after any in-place change to a feedback item (a category or dimensions edit, a Data Explorer edit, a GitHub issue refresh, a CSV correction, a reprocess), the item as it was is written once to `silver/{source}/{feedback_id}/` in the raw bucket, with who changed it, why and which fields; a change that was refused keeps no version. Data Explorer refuses to write under `silver/`. The bucket policy makes `silver/` write-once like `raw/`, and erasure and retention delete every kept version with the item ([docs/data-lake-structure.md](docs/data-lake-structure.md)).
-- **How an item was made**: every enriched item records `pipeline_version` (the app release), `enrichment_mode` (`llm`, `defaults` when the model call failed, `manual`, `reprocess_*`, `source_update`), `enriched_at`, and in `llm_metadata` the model that answered and the one requested (they differ after a capacity fallback).
+- **How an item was made**: every enriched item records `pipeline_version` (the app release), `enrichment_mode` (`llm`, `defaults` when the model call failed, `reprocess_*`, `source_update`), `enriched_at`, and in `llm_metadata` the model that answered and the one requested (they differ after a capacity fallback).
 - **Reprocess a slice**: `POST /settings/categories/reprocess` and Administration → Taxonomy → Reprocess take `sources`, `categories` and a `date_from` / `date_to` range on the processed or the review date (`date_basis`), next to `days` ([docs/categories.md](docs/categories.md)).
 - **Resume a reprocess**: a job that stops at the 50,000-review limit ends `partial` with a cursor, and `{resume: <job_id>}` (the Resume button) continues where it stopped instead of starting over. A resume that fails or is cancelled hands the job back, so it can be resumed again.
 - Reprocess jobs record the configuration they ran with (config version, categories digest, model, prompt version) and how many reviews fell back to their stored text (`raw_fallback`, `raw_fallback_sources`).
 
 ### Changed
 
-- Edited items carry `updated_by {sub, kind}`, `updated_at` and `change_reason`; the API shows only `kind`. Plan steps, agents and MCP tokens are told apart from a person.
+- Edited items carry `updated_by {sub, kind}`, `updated_at` and `change_reason`; the API shows only `kind`. An edit leaves the enrichment provenance as it was, so `pipeline_version` and `enriched_at` keep describing how the item was enriched. Plan steps, agents and MCP tokens are told apart from a person.
 - `PUT /data-explorer/feedback` writes only the fields that changed, checks each one and applies the source's PII policy: 400 for a bad value or customer text on a summary-only source, 503 when the source settings cannot be read.
 - The enrichment prompt version is 2.0.0 (the prompt had changed since 1.0.0); a test now pins the prompt text to its version.
 

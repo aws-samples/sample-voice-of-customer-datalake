@@ -102,14 +102,13 @@ def test_the_update_is_conditional_on_what_was_read():
     edit = ManualEdit(actor={'sub': 'u1', 'kind': 'user'}, reason='dimensions_edit')
     kwargs = feedback_edit_handler._dimensions_update_kwargs(item, {}, {}, ['a'], edit)
     assert kwargs['UpdateExpression'] == (
-        'SET #edit0 = :edit0, #edit1 = :edit1, #edit2 = :edit2, #edit3 = :edit3, #edit4 = :edit4, '
-        '#edit5 = :edit5, #t = :t REMOVE #d, #ds')
+        'SET #edit0 = :edit0, #edit1 = :edit1, #edit2 = :edit2, #t = :t REMOVE #d, #ds')
     stamped = {kwargs['ExpressionAttributeNames'][f'#edit{i}']: kwargs['ExpressionAttributeValues'][f':edit{i}']
-               for i in range(6)}
-    assert stamped['enrichment_mode'] == 'manual'
+               for i in range(3)}
+    # The change stamp only: the enrichment provenance keeps describing how the item was enriched.
+    assert set(stamped) == {'updated_by', 'updated_at', 'change_reason'}
     assert stamped['updated_by'] == {'sub': 'u1', 'kind': 'user'}
     assert stamped['change_reason'] == 'dimensions_edit'
-    assert stamped['updated_at'] == stamped['enriched_at']
     built = ConditionExpressionBuilder().build_expression(kwargs['ConditionExpression'])
     names = set(built.attribute_name_placeholders.values())
     assert names == {'pk', 'dimensions', 'dimension_sources', 'tags'}

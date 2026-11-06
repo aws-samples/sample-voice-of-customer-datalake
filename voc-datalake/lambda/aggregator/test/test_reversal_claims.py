@@ -144,6 +144,24 @@ def test_without_the_dedupe_table_a_reversal_is_unclaimed(world):
     assert world[1].scan()['Items'] == []
 
 
+def test_a_run_that_raises_releases_every_claim_so_the_retry_reverses(world):
+    """An error outside the per-record failures retries the whole batch: no claim may survive it."""
+    items = [_item(n, date='2026-03-01') for n in range(4, 6)]
+    for item in items:
+        _seed(world, item, 2)
+    records = [_raw('REMOVE', 40 + n, old=item) for n, item in enumerate(items)]
+    with _on(world) as handler:
+        with patch.object(handler, 'reverse_removals', side_effect=RuntimeError('throttled')), \
+             pytest.raises(RuntimeError, match='throttled'):
+            process_partial_response(event={'Records': records}, record_handler=handler.record_handler,
+                                     processor=handler.processor)
+        claims = {row['id']: row['claim_state'] for row in world[1].scan()['Items']}
+        assert set(claims.values()) == {'released'}
+        process_partial_response(event={'Records': records}, record_handler=handler.record_handler,
+                                 processor=handler.processor)
+    assert _count(world[0], 'METRIC#daily_total', '2026-03-01') == 2  # each reversed once, by the retry
+
+
 class TestClaims:
     def test_a_claim_is_taken_once_and_can_be_taken_again_after_a_release(self, world):
         table = world[1]
@@ -165,23 +183,3 @@ class TestClaims:
     ])
     def test_the_key(self, event_id, expected):
         assert stream_claims.reversal_key(event_id) == expected
-
-
-
-
-def test_a_run_that_raises_releases_every_claim_so_the_retry_reverses(world):
-    """An error outside the per-record failures retries the whole batch: no claim may survive it."""
-    items = [_item(n, date='2026-03-01') for n in range(4, 6)]
-    for item in items:
-        _seed(world, item, 2)
-    records = [_raw('REMOVE', 40 + n, old=item) for n, item in enumerate(items)]
-    with _on(world) as handler:
-        with patch.object(handler, 'reverse_removals', side_effect=RuntimeError('throttled')), \
-             pytest.raises(RuntimeError, match='throttled'):
-            process_partial_response(event={'Records': records}, record_handler=handler.record_handler,
-                                     processor=handler.processor)
-        claims = {row['id']: row['claim_state'] for row in world[1].scan()['Items']}
-        assert set(claims.values()) == {'released'}
-        process_partial_response(event={'Records': records}, record_handler=handler.record_handler,
-                                 processor=handler.processor)
-    assert _count(world[0], 'METRIC#daily_total', '2026-03-01') == 2  # each reversed once, by the retry

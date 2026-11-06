@@ -89,7 +89,8 @@ export default function FeedbackTypeBackfill() {
         </p>
       )}
       {job?.mode === 'dimensions' && (
-        <JobProgress job={job} onCancel={() => cancel.mutate(job.job_id)} cancelling={cancel.isPending} />
+        <JobProgress job={job} onCancel={() => cancel.mutate(job.job_id)} cancelling={cancel.isPending}
+          onResume={busy ? undefined : () => start.mutate({ resume: job.job_id })} resuming={start.isPending} />
       )}
       <ConfirmModal
         isOpen={confirming}

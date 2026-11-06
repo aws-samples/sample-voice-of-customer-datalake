@@ -5,7 +5,7 @@ Every processed feedback item (``voc-feedback``, the Silver tier) says how it wa
 - ``pipeline_version``: the app release that wrote it (env ``APP_VERSION``, the same source as
   the raw archive's ``connector-version``, ``shared/raw_versions.py``); ``'unknown'`` when unset;
 - ``enrichment_mode``: ``llm`` (the model answered), ``defaults`` (the model call failed and the
-  fallback values were stored), ``manual`` (a person edited it), ``reprocess_*`` (a category
+  fallback values were stored), ``reprocess_*`` (a category
   reprocess job), ``source_update`` (a newer copy from the source, a CSV correction);
 - ``enriched_at`` and ``llm_metadata`` ``{model_name, requested_model, prompt_version, latency_ms,
   error?}``: ``model_name`` is the model that ANSWERED (after a capacity fallback it differs from
@@ -64,7 +64,7 @@ PIPELINE_VERSION: Final[str] = os.environ.get('APP_VERSION') or UNKNOWN_VERSION
 SILVER_PREFIX: Final = 'silver/'
 
 EnrichmentMode = Literal[
-    'llm', 'defaults', 'manual', 'reprocess_processed', 'reprocess_raw', 'reprocess_dimensions', 'source_update',
+    'llm', 'defaults', 'reprocess_processed', 'reprocess_raw', 'reprocess_dimensions', 'source_update',
 ]
 
 REASON_CATEGORY_EDIT: Final = 'category_edit'

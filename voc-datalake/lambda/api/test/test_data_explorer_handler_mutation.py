@@ -45,7 +45,6 @@ from moto_helpers import CATEGORY_EDIT_ITEM as ITEM
 from moto_helpers import invoke, rest_event, seeded_category_edit_tables
 
 import data_explorer_handler as h
-from shared.silver_provenance import PIPELINE_VERSION
 from shared.test.clock import frozen_clock
 from shared.test.instrumentation_fixtures import assert_handler_wrapped, assert_tracer_wrapped
 from shared.test.source_profile_fixtures import no_source_profiles
@@ -628,10 +627,9 @@ def _assigned(kwargs: dict) -> dict:
 
 
 def _stamp(at: str, kind: str = 'admin', sub: str | None = None) -> dict:
-    """The change stamp + provenance a Data Explorer edit writes (``shared.feedback_category``)."""
+    """The change stamp a Data Explorer edit writes (``shared.feedback_category``); provenance is left alone."""
     actor = {'sub': sub or ADMIN_SUB, 'kind': kind}
-    return {'pipeline_version': PIPELINE_VERSION, 'enrichment_mode': 'manual', 'enriched_at': at,
-            'updated_by': actor, 'updated_at': at, 'change_reason': 'data_explorer_edit'}
+    return {'updated_by': actor, 'updated_at': at, 'change_reason': 'data_explorer_edit'}
 
 
 class TestTheFeedbackWrite:
@@ -668,11 +666,11 @@ class TestTheFeedbackWrite:
         kwargs = mock_table.update_item.call_args.kwargs
         assert kwargs['Key'] == {'pk': 'SOURCE#web', 'sk': 'FEEDBACK#f1'}
         assert kwargs['UpdateExpression'] == 'SET #fld0 = :fld0, ' + ', '.join(
-            f'#edit{i} = :edit{i}' for i in range(6))
+            f'#edit{i} = :edit{i}' for i in range(3))
         # It exists, and it still is what was read (no change stamp yet, so none may have landed since).
         assert kwargs['ConditionExpression'] == Attr('pk').exists() & Attr('updated_at').not_exists()
         assert _assigned(kwargs) == {'original_text': 'edited', **_stamp(ISO)}
-        # The record as it was is kept first, with the admin as the actor.
+        # Once the update landed, the record as it was is kept, with the admin as the actor.
         (stored, edit, update), _ = keep.call_args
         assert stored['category'] == 'delivery'
         assert edit.actor['kind'] == 'admin'
@@ -1013,7 +1011,7 @@ class TestUpdateKwargs:
         with frozen_clock(h) as dt:
             dt.now.return_value.isoformat.return_value = ISO
             kwargs = h._update_kwargs({}, {'pk': 'p', 'sk': 's'}, edits, change, self.EDIT)
-        stamp = ', '.join(f'#edit{i} = :edit{i}' for i in range(6))
+        stamp = ', '.join(f'#edit{i} = :edit{i}' for i in range(3))
         assert kwargs['UpdateExpression'] == f'SET #fld0 = :fld0, #cat_c = :cat_c, {stamp} REMOVE #rm0, #cat_s'
         assert kwargs['ConditionExpression'] == (
             Attr('pk').exists() & Attr('category').eq('delivery') & Attr('updated_at').not_exists())
@@ -1024,7 +1022,7 @@ class TestUpdateKwargs:
         with frozen_clock(h) as dt:
             dt.now.return_value.isoformat.return_value = ISO
             kwargs = h._update_kwargs({}, {'pk': 'p', 'sk': 's'}, h.FieldEdits(), None, self.EDIT)
-        assert kwargs['UpdateExpression'] == 'SET ' + ', '.join(f'#edit{i} = :edit{i}' for i in range(6))
+        assert kwargs['UpdateExpression'] == 'SET ' + ', '.join(f'#edit{i} = :edit{i}' for i in range(3))
         assert kwargs['ConditionExpression'] == Attr('pk').exists() & Attr('updated_at').not_exists()
         assert _assigned(kwargs) == _stamp(ISO, sub='sub-admin')
 

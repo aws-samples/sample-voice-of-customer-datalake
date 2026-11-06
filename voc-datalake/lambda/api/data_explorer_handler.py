@@ -523,9 +523,9 @@ def save_feedback():
     ignored). Only the fields that differ from the stored record change; each is
     validated and put through the source's PII policy (`shared.feedback_field_edits`).
     A category change is validated, moves `gsi2pk` and is audited exactly as
-    `PUT /feedback/{id}/category` does (409 on a concurrent change). The record as it
-    was is kept under `silver/` first, and the update stamps `updated_by` (the admin),
-    `updated_at`, `change_reason` and `enrichment_mode 'manual'`.
+    `PUT /feedback/{id}/category` does (409 on a concurrent change). Once the update
+    landed, the record as it was is kept under `silver/`, and the update stamps `updated_by` (the admin),
+    `updated_at` and `change_reason` (the enrichment provenance is left as it was).
     """
     if not FEEDBACK_TABLE:
         raise ConfigurationError('Feedback table not configured')

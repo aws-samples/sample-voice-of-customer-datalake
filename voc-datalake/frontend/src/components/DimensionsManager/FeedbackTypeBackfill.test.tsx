@@ -100,3 +100,19 @@ describe('FeedbackTypeBackfill', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('A reprocess job is already running. Wait for it to finish.')
   })
 })
+
+describe('a backfill that stopped at the per-job limit', () => {
+  it('offers Resume and resumes that job', async () => {
+    const partial = { ...QUEUED, status: 'partial', stopped_at_ceiling: true, resumable: true }
+    fetchApi.mockImplementation((endpoint, options) => {
+      if (endpoint.startsWith('/metrics/dimensions')) return Promise.resolve(METRICS)
+      return methodOf(options) === 'POST' ? Promise.resolve({ job: QUEUED }) : Promise.resolve({ job: partial })
+    })
+    const user = userEvent.setup()
+    renderCard()
+    await user.click(await screen.findByRole('button', { name: 'Resume' }))
+    await waitFor(() => expect(fetchApi).toHaveBeenCalledWith('/settings/categories/reprocess', {
+      method: 'POST', body: JSON.stringify({ resume: 'rp_0123456789ab' }),
+    }))
+  })
+})

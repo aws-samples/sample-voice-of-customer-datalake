@@ -2,7 +2,7 @@
 
 ``PUT /feedback/{id}/category`` and ``PUT /feedback/{id}/dimensions`` write the review as it was to
 ``silver/{source}/{feedback_id}/`` in the raw bucket before the update (``shared/silver_provenance.py``),
-and stamp ``updated_by {sub, kind}``, ``updated_at``, ``change_reason`` and ``enrichment_mode 'manual'``.
+and stamp ``updated_by {sub, kind}``, ``updated_at`` and ``change_reason`` (the enrichment provenance stays).
 A client sees the stamp's ``kind`` only. Against moto (DynamoDB + S3).
 """
 import json
@@ -52,10 +52,11 @@ def test_a_category_edit_keeps_the_review_as_it_was(tables, lambda_context):
     assert kept['item']['subcategory'] == 'late'
     assert kept['actor'] == {'sub': 'sub-admin', 'kind': 'admin'}
     assert kept['reason'] == 'category_edit'
-    assert {'category', 'gsi2pk', 'subcategory', 'category_override', 'enrichment_mode'} <= set(kept['changed_fields'])
+    assert {'category', 'gsi2pk', 'subcategory', 'category_override'} <= set(kept['changed_fields'])
+    assert 'enrichment_mode' not in kept['changed_fields']
     assert item['updated_by'] == {'sub': 'sub-admin', 'kind': 'admin'}
     assert item['change_reason'] == 'category_edit'
-    assert item['enrichment_mode'] == 'manual'
+    assert 'enrichment_mode' not in item
     assert item['updated_at'] == item['category_override']['at']
     assert 'sub-admin' not in json.dumps(body)
 

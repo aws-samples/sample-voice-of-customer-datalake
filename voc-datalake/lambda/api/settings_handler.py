@@ -925,7 +925,13 @@ def _resume_reprocess(table: Any, body: dict, event: dict) -> dict | None:
 
 def _started_at(job: dict) -> datetime:
     """When ``job`` was created (its ``created_at``); now when that is missing or unreadable."""
-    return parse_iso(job.get('created_at')) or datetime.now(UTC)
+    started = parse_iso(job.get('created_at'))
+    if started is None:
+        # A job row without a readable created_at: the resumed days window counts back from now instead.
+        logger.warning('Reprocess job has no readable created_at; its resume window starts today',
+                       extra={'job_id': job.get('sk')})
+        return datetime.now(UTC)
+    return started
 
 
 @app.get("/settings/categories/reprocess")

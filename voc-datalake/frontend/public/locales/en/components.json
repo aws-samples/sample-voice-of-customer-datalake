@@ -174,11 +174,13 @@
       "lastNDays_other": "Last {{count, number}} days",
       "cancel": "Cancel job",
       "alreadyRunning": "A reprocess job is already running. Wait for it to finish or cancel it first.",
+      "resumeRefused": "This job can no longer be resumed: it was resumed already, or another job is running.",
+      "resumeGone": "This job no longer exists, so it can't be resumed.",
       "stoppedAtCeiling": "Stopped at the per-job limit of {{max}} reviews to cap model costs. Resume to continue from where it stopped.",
       "startError": "The reprocess job could not be started.",
       "daysLabel": "Window (days)",
       "includeManual": "Also overwrite manual corrections",
-      "daysHint": "1–{{max, number}} days, or 0 for all time. Manual corrections are kept unless you choose otherwise.",
+      "daysHint": "1–{{max, number}} days, or 0 for all time. Manual corrections are kept unless you choose otherwise. Counted on the processing date.",
       "costNote": "Cost: one model call per review in the window. An all-time run over a large data lake can take hours.",
       "start": "Start reprocessing",
       "confirmTitle": "Reprocess existing feedback?",
@@ -204,10 +206,10 @@
       "dateBasis": "Date to read",
       "rangeHint": "Either end may be left open. The review date is when the customer wrote it; reviews without one use their processed date.",
       "sourcesLabel": "Sources",
-      "sourcesHint": "None selected = every source. Only these sources are read.",
+      "sourcesHint": "None selected = every source. Only these sources are read. Up to {{max, number}}.",
       "categoriesLabel": "Categories",
       "categoriesPlaceholder": "billing, delivery",
-      "categoriesHint": "Stored category names, comma-separated (also ones no longer configured). Empty = every category."
+      "categoriesHint": "Stored category names, comma-separated (also ones no longer configured). Empty = every category. Up to {{max, number}}."
     }
   },
   "dataSourceWizard": {

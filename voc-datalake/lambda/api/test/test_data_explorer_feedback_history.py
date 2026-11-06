@@ -2,7 +2,7 @@
 
 Closes audit finding S2: the route used to overwrite up to 12 fields (``original_text`` included)
 with no actor, no previous value, no validation and no PII pass. Now (TENETS.md D1, D2, D4):
-the record as it was goes to ``silver/{source}/{feedback_id}/`` first, the update stamps
+once the update landed the record as it was goes to ``silver/{source}/{feedback_id}/``, the update stamps
 ``updated_by`` / ``updated_at`` / ``change_reason``, and each changed field is validated and put
 through the source's PII policy (``shared/feedback_field_edits.py``). Against moto (DynamoDB + S3).
 """
@@ -68,7 +68,7 @@ def test_an_edit_keeps_the_record_as_it_was_and_stamps_the_admin(tables, lambda_
     assert item['original_text'] == 'The parcel was two days late'
     assert item['updated_by'] == {'sub': ADMIN_CLAIMS['sub'], 'kind': 'admin'}
     assert item['change_reason'] == 'data_explorer_edit'
-    assert item['enrichment_mode'] == 'manual'
+    assert 'enrichment_mode' not in item  # an edit never claims to be how the item was enriched
 
 
 def test_an_allow_source_stores_the_text_as_typed(tables, lambda_context):

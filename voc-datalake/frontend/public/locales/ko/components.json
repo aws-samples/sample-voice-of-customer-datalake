@@ -189,11 +189,13 @@
       "lastNDays_other": "최근 {{count, number}}일",
       "cancel": "작업 취소",
       "alreadyRunning": "재처리 작업이 이미 실행 중입니다. 완료될 때까지 기다리거나 먼저 취소하세요.",
+      "resumeRefused": "이 작업은 더 이상 재개할 수 없습니다. 이미 재개되었거나 다른 작업이 실행 중입니다.",
+      "resumeGone": "이 작업은 더 이상 존재하지 않아 재개할 수 없습니다.",
       "stoppedAtCeiling": "모델 비용을 제한하기 위해 작업당 한도인 리뷰 {{max}}건에서 중지했습니다. 재개하면 중지한 위치부터 계속합니다.",
       "startError": "재처리 작업을 시작하지 못했습니다.",
       "daysLabel": "기간(일)",
       "includeManual": "수동 수정도 덮어쓰기",
-      "daysHint": "1–{{max, number}}일 또는 전체 기간은 0. 따로 선택하지 않으면 수동 수정은 유지됩니다.",
+      "daysHint": "1–{{max, number}}일 또는 전체 기간은 0. 따로 선택하지 않으면 수동 수정은 유지됩니다. 처리 날짜 기준으로 셉니다.",
       "costNote": "비용: 기간 내 리뷰 1건당 모델 호출 1회. 대규모 데이터 레이크의 전체 기간 실행은 몇 시간이 걸릴 수 있습니다.",
       "start": "재처리 시작",
       "confirmTitle": "기존 피드백을 재처리할까요?",
@@ -219,10 +221,10 @@
       "dateBasis": "기준 날짜",
       "rangeHint": "양쪽 끝 모두 비워 둘 수 있습니다. 리뷰 작성일은 고객이 리뷰를 쓴 날이며, 작성일이 없는 리뷰는 처리일을 사용합니다.",
       "sourcesLabel": "소스",
-      "sourcesHint": "선택하지 않으면 모든 소스입니다. 선택한 소스만 읽습니다.",
+      "sourcesHint": "선택하지 않으면 모든 소스입니다. 선택한 소스만 읽습니다. 최대 {{max, number}}개.",
       "categoriesLabel": "카테고리",
       "categoriesPlaceholder": "billing, delivery",
-      "categoriesHint": "저장된 카테고리 이름을 쉼표로 구분해 입력합니다(더 이상 구성되지 않은 이름도 가능). 비워 두면 모든 카테고리입니다."
+      "categoriesHint": "저장된 카테고리 이름을 쉼표로 구분해 입력합니다(더 이상 구성되지 않은 이름도 가능). 비워 두면 모든 카테고리입니다. 최대 {{max, number}}개."
     }
   },
   "dataSourceWizard": {

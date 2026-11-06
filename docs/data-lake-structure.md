@@ -137,11 +137,12 @@ the `sub` (`shared/category_override.py`).
 
 Every enriched item says how it was made (TENETS.md D2): `pipeline_version` (the app release, env
 `APP_VERSION`), `enrichment_mode` (`llm`; `defaults` when the model call failed and the fallback values were
-stored; `manual` after a person's edit; `source_update`; `reprocess_processed` / `reprocess_raw` /
+stored; `source_update`; `reprocess_processed` / `reprocess_raw` /
 `reprocess_dimensions`), `enriched_at` and `llm_metadata {model_name, requested_model, prompt_version,
 latency_ms, error?}`. `model_name` is the model that answered (after a capacity fallback it differs from
 `requested_model`). `prompt_version` is pinned to a digest of the enrichment prompts
-(`shared/test/test_prompt_version_pin.py`): a prompt change without a bump fails the tests. Items stored
+(`shared/test/test_prompt_version_pin.py`): a prompt change without a bump fails the tests. A person's edit leaves these as they were and stamps `updated_by` / `updated_at` / `change_reason`
+instead (which values a person set is `category_source` / `dimension_sources`). Items stored
 before 6.03.00 have no `pipeline_version` / `enrichment_mode`, and their `prompt_version` reads `1.0.0`.
 
 Other prefixes in the same bucket store project uploads, extracted product context, persona avatars
