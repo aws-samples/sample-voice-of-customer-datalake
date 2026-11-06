@@ -31,7 +31,7 @@ Processed feedback keeps its history and says how it was made, and a reprocess c
 
 ### Changed
 
-- Edited items carry `updated_by {sub, kind}`, `updated_at` and `change_reason`; the API shows only `kind`. An edit leaves the enrichment provenance as it was, so `pipeline_version` and `enriched_at` keep describing how the item was enriched. Plan steps, agents and MCP tokens are told apart from a person.
+- Edited items carry `updated_by {sub, kind}` (`kind`: `user`, `admin`, `agent`, `mcp`, `plan` or `system`), `updated_at` and `change_reason`; the API shows only `kind`. An edit leaves the enrichment provenance as it was, so `pipeline_version` and `enriched_at` keep describing how the item was enriched. Plan steps, agents and MCP tokens are told apart from a person.
 - `PUT /data-explorer/feedback` writes only the fields that changed, checks each one and applies the source's PII policy: 400 for a bad value or for setting customer text on a summary-only source, 503 when the source settings cannot be read, and 409 when the record changed since it was read (the editor shows "changed by someone else, reload and retry"; 404 when it is gone).
 - The enrichment prompt version is 2.0.0 (the prompt had changed since 1.0.0); a test now pins the prompt text to its version.
 

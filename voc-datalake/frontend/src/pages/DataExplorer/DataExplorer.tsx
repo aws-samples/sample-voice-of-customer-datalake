@@ -18,6 +18,7 @@ import EditModal, { type EditModalState } from './EditModal'
 import { useDataExplorerQueries } from './useDataExplorerQueries'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
+import { openedStamp } from './openedStamp'
 import { useAppSourceLabel } from './useAppSourceLabel'
 import { useDataExplorerMutations } from './useDataExplorerMutations'
 import { openS3Editor, openS3Creator, downloadS3File } from './s3Handlers'
@@ -112,7 +113,10 @@ export default function DataExplorer() {
       mutations.saveS3Mutation.mutate({ key: editModal.key, content: contentStr, syncToDynamo: sync })
     } else if (editModal.feedbackId) {
       const feedbackData = isPartialFeedbackItem(content) ? content : {}
-      mutations.saveFeedbackMutation.mutate({ feedbackId: editModal.feedbackId, data: feedbackData })
+      // The stamp the record was OPENED with (not what the JSON now says), '' when it had none: the API
+      // answers 409 when the stored record changed since (PUT /data-explorer/feedback).
+      const updatedAt = openedStamp(editModal.data)
+      mutations.saveFeedbackMutation.mutate({ feedbackId: editModal.feedbackId, data: { ...feedbackData, updated_at: updatedAt } })
     }
   }, [editModal, mutations.saveS3Mutation, mutations.saveFeedbackMutation])
 

@@ -143,12 +143,13 @@ def test_null_removes_an_optional_field(tables, lambda_context):
     assert 'persona_name' not in _stored(tables)
 
 
-def test_an_editor_opened_before_the_last_change_is_refused(tables, lambda_context):
+@pytest.mark.parametrize('opened', [None, ''])  # '' is what the SPA sends for a record it opened unstamped
+def test_an_editor_opened_before_the_last_change_is_refused(tables, lambda_context, opened):
     """The editor sends the whole record it opened: its stale fields must not overwrite a change made since."""
     with seeded_source_profiles():
         assert _save(tables, lambda_context, {'urgency': 'high'})[0] == 200  # someone else's edit stamps updated_at
         status, body = _save(tables, lambda_context, {'urgency': 'low', 'original_text': 'The parcel was late',
-                                                      'updated_at': None})
+                                                      'updated_at': opened})
     assert status == 409
     assert 'changed by someone else' in body['error']
     assert _stored(tables)['urgency'] == 'high'
