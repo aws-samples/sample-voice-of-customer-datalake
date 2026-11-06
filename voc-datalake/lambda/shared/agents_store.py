@@ -43,7 +43,12 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agent_run_decisions, workflow_schema
 from shared.agent_run_decisions import RUN_NEEDS_HUMAN
-from shared.aws import get_dynamodb_resource, is_conditional_check_failure
+from shared.aws import (
+    consistent_item,
+    get_dynamodb_resource,
+    is_conditional_check_failure,
+    update_unless_condition_fails,
+)
 from shared.category_access import CategoryScope, item_category
 from shared.dynamo_paging import query_all
 from shared.dynamo_values import plain
@@ -600,25 +605,20 @@ def set_agent_attributes(table: Any, agent_id: str, fields: Mapping[str, Any]) -
     """Server-maintained bookkeeping (no updated_by/at): skip reasons, trigger state."""
     clause, names, values = set_clause(fields)
     try:
-        table.update_item(Key=agent_key(agent_id), UpdateExpression=f'SET {clause}',
-                          ConditionExpression='attribute_exists(pk)',
-                          ExpressionAttributeNames=names, ExpressionAttributeValues=values)
-    except ClientError as exc:
-        if not is_conditional_check_failure(exc):
-            raise _service_error('update agent bookkeeping', exc) from exc
-    except BotoCoreError as exc:
+        update_unless_condition_fails(table, Key=agent_key(agent_id), UpdateExpression=f'SET {clause}',
+                                      ConditionExpression='attribute_exists(pk)',
+                                      ExpressionAttributeNames=names, ExpressionAttributeValues=values)
+    except (ClientError, BotoCoreError) as exc:
         raise _service_error('update agent bookkeeping', exc) from exc
 
 
 def clear_lock(table: Any, agent_id: str, run_id: str) -> None:
     """Drop a lock left pointing at a run that is already terminal or gone."""
     try:
-        table.update_item(Key=agent_key(agent_id), UpdateExpression='REMOVE active_run_id',
-                          ConditionExpression='active_run_id = :run', ExpressionAttributeValues={':run': run_id})
-    except ClientError as exc:
-        if not is_conditional_check_failure(exc):
-            raise _service_error('release the agent run lock', exc) from exc
-    except BotoCoreError as exc:
+        update_unless_condition_fails(table, Key=agent_key(agent_id), UpdateExpression='REMOVE active_run_id',
+                                      ConditionExpression='active_run_id = :run',
+                                      ExpressionAttributeValues={':run': run_id})
+    except (ClientError, BotoCoreError) as exc:
         raise _service_error('release the agent run lock', exc) from exc
 
 
@@ -926,10 +926,9 @@ def start_run(table: Any, agent: Mapping[str, Any], request: RunStart, *, now: d
 
 def get_run(table: Any, agent_id: str, run_id: str) -> dict | None:
     try:
-        item = table.get_item(Key=run_key(agent_id, run_id), ConsistentRead=True).get('Item')
+        return consistent_item(table, run_key(agent_id, run_id))
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('read the run', exc) from exc
-    return item if isinstance(item, dict) else None
 
 
 def list_runs(table: Any, agent_id: str, *, limit: int, cursor: object = None) -> tuple[list[dict], str | None]:
@@ -1026,19 +1025,18 @@ def release_lock(table: Any, agent_id: str, run_id: str, status: str) -> None:
     run is left alone.
     """
     try:
-        table.update_item(
+        released = update_unless_condition_fails(
+            table,
             Key=agent_key(agent_id),
             UpdateExpression='REMOVE active_run_id SET last_run_status = :s, #c = if_not_exists(#c, :zero) + :one',
             ConditionExpression='active_run_id = :run',
             ExpressionAttributeNames={'#c': f'runs_{status}'},
             ExpressionAttributeValues={':s': status, ':run': run_id, ':zero': 0, ':one': 1},
         )
-    except ClientError as exc:
-        if not is_conditional_check_failure(exc):
-            raise _service_error('release the agent run lock', exc) from exc
-        logger.info('Agent lock already held by another run', extra={'agent_id': agent_id, 'run_id': run_id})
-    except BotoCoreError as exc:
+    except (ClientError, BotoCoreError) as exc:
         raise _service_error('release the agent run lock', exc) from exc
+    if not released:
+        logger.info('Agent lock already held by another run', extra={'agent_id': agent_id, 'run_id': run_id})
 
 
 def count_month_calls(table: Any, agent: Mapping[str, Any], calls: int, *, now: datetime) -> None:

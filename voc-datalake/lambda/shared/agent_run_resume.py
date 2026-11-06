@@ -25,7 +25,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agent_run_decisions as decisions
 from shared import agents_store as store
-from shared.aws import is_conditional_check_failure
+from shared.aws import is_conditional_check_failure, update_unless_condition_fails
 from shared.exceptions import ServiceError
 from shared.logging import logger
 
@@ -64,13 +64,10 @@ def decided_summary(record: Mapping[str, Any]) -> str:
 def _record_last_status(table: Any, agent_id: str, run_id: str, status: str) -> None:
     """Stamp the agent's last-run status, unless a newer run already took its place."""
     try:
-        table.update_item(Key=store.agent_key(agent_id), UpdateExpression='SET last_run_status = :s',
-                          ConditionExpression='last_run_id = :run',
-                          ExpressionAttributeValues={':s': status, ':run': run_id})
-    except ClientError as exc:
-        if not is_conditional_check_failure(exc):
-            raise ServiceError(_RECORD_FAILED) from exc
-    except BotoCoreError as exc:
+        update_unless_condition_fails(table, Key=store.agent_key(agent_id), UpdateExpression='SET last_run_status = :s',
+                                      ConditionExpression='last_run_id = :run',
+                                      ExpressionAttributeValues={':s': status, ':run': run_id})
+    except (ClientError, BotoCoreError) as exc:
         raise ServiceError(_RECORD_FAILED) from exc
 
 

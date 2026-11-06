@@ -55,15 +55,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/shared/agents_store.py",
-        "voc-datalake/lambda/shared/briefing_store.py",
-        "voc-datalake/lambda/shared/agent_run_resume.py",
-        "voc-datalake/lambda/shared/plans_store.py"
-      ],
-      "reason": "UpdateExpression builders and conditional updates on different rows (agent run fields vs brief card_state.#c paths; last-run stamp vs run-lock release), each with its own ServiceError message"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/shared/briefing_prefs.py",
         "voc-datalake/lambda/shared/onboarding.py"
       ],
