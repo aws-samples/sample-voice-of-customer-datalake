@@ -24,6 +24,7 @@ bundles that cannot import each other; `shared/` ships with every one of them.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from typing import Any, Protocol
 
 from shared.exceptions import ValidationError
@@ -88,3 +89,18 @@ def validated_text(value: object, field: str, limit: int, *, required: bool = Fa
     if len(text) > limit:
         raise ValidationError(f'{field} must be at most {limit} characters')
     return text
+
+
+def reject_unknown_fields(body: Mapping[str, Any], allowed: Iterable[str]) -> None:
+    """400 ``Unknown field(s): a, b`` (sorted) when ``body`` names a field outside ``allowed``."""
+    unknown = set(body) - set(allowed)
+    if unknown:
+        raise ValidationError(f"Unknown field(s): {', '.join(sorted(unknown))}")
+
+
+def require_known_change(body: Mapping[str, Any], fields: Iterable[str]) -> None:
+    """A partial-update body: only ``fields``, and at least one of them (400 listing them in order)."""
+    names = list(fields)
+    reject_unknown_fields(body, names)
+    if not any(name in body for name in names):
+        raise ValidationError(f"Give at least one of: {', '.join(names)}")

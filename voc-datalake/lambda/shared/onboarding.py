@@ -59,6 +59,7 @@ from shared.agents_store import is_run_id
 from shared.company_context import user_context_pk
 from shared.earliest_date import EARLIEST_DATE_KEY, earliest_date_from_item
 from shared.exceptions import ValidationError
+from shared.request_body import require_known_change
 
 ONBOARDING_SK: Final = 'onboarding'
 STATES: Final = ('active', 'hidden', 'dismissed', 'skipped')
@@ -86,11 +87,7 @@ def _choice(body: dict, name: str, allowed: tuple[str, ...]) -> str:
 
 def validate_preference(body: dict) -> dict[str, str]:
     """The fields to change; 400 on an unknown field, a bad value, or no field at all."""
-    unknown = set(body) - set(_FIELDS)
-    if unknown:
-        raise ValidationError(f"Unknown field(s): {', '.join(sorted(unknown))}")
-    if not any(name in body for name in _FIELDS):
-        raise ValidationError(f"Give at least one of: {', '.join(_FIELDS)}")
+    require_known_change(body, _FIELDS)
     changes = {name: _choice(body, name, allowed) for name, allowed in _CHOICES.items() if name in body}
     if _DISMISS_RUN in body:
         run_id = body[_DISMISS_RUN]

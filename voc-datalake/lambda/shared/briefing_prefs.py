@@ -36,6 +36,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from shared.company_context import user_context_pk
 from shared.exceptions import ValidationError
 from shared.prompt_safety import injection_findings
+from shared.request_body import reject_unknown_fields, require_known_change
 
 BRIEFING_SK: Final = 'briefing'
 #: The UI languages (frontend/src/i18n/languages.ts, lockstepped by a test).
@@ -140,11 +141,7 @@ _VALIDATORS: Final = {
 
 def validate_changes(body: Mapping[str, Any]) -> dict[str, Any]:
     """The fields to change; 400 on an unknown field, a bad value, or no field at all."""
-    unknown = set(body) - set(FIELDS)
-    if unknown:
-        raise ValidationError(f"Unknown field(s): {', '.join(sorted(unknown))}")
-    if not any(name in body for name in FIELDS):
-        raise ValidationError(f"Give at least one of: {', '.join(FIELDS)}")
+    require_known_change(body, FIELDS)
     changes: dict[str, Any] = {}
     for name in FIELDS:
         if name not in body:
@@ -159,9 +156,7 @@ def validate_changes(body: Mapping[str, Any]) -> dict[str, Any]:
 
 def validate_refresh(body: Mapping[str, Any]) -> str | None:
     """The optional ``{language}`` of ``POST .../refresh``: the reader's UI language, or None."""
-    unknown = set(body) - {'language'}
-    if unknown:
-        raise ValidationError(f"Unknown field(s): {', '.join(sorted(unknown))}")
+    reject_unknown_fields(body, ('language',))
     return _language(body['language']) if 'language' in body else None
 
 

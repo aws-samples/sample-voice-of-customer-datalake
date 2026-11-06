@@ -29,6 +29,7 @@ from shared.dynamo_values import as_count, plain
 from shared.exceptions import NotFoundError, ValidationError
 from shared.memory_policy import parse_datetime
 from shared.metric_keys import DAILY_TOTAL_PK
+from shared.request_body import reject_unknown_fields
 from shared.timestamps import ISO_DAY_RE
 from shared.update_expressions import set_clause
 
@@ -182,9 +183,7 @@ def mark_failed(aggregates_table: Any, sub: str, day: str, now: datetime) -> Non
 
 def validate_card_states(body: Mapping[str, Any]) -> tuple[str, dict[str, str]]:
     """``(day, {card_id: state})`` from ``{day, states}``; 400 on anything else."""
-    unknown = set(body) - {'day', 'states'}
-    if unknown:
-        raise ValidationError(f"Unknown field(s): {', '.join(sorted(unknown))}")
+    reject_unknown_fields(body, ('day', 'states'))
     day = body.get('day')
     if not isinstance(day, str) or not ISO_DAY_RE.match(day):
         raise ValidationError('day must be YYYY-MM-DD')
