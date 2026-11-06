@@ -43,8 +43,13 @@ PROJECT_WRITABLE_ATTRIBUTE_VALUES = {
 PUT_AND_INCREMENT_PUT_INDEX = 0
 
 
+def project_pk(project_id: str) -> str:
+    """A project's partition: its rows in voc-projects, and its jobs in voc-jobs."""
+    return f'PROJECT#{project_id}'
+
+
 def project_meta_key(project_id: str) -> dict[str, str]:
-    return {'pk': f'PROJECT#{project_id}', 'sk': 'META'}
+    return {'pk': project_pk(project_id), 'sk': 'META'}
 
 
 def is_project_tombstone(item: dict[str, Any] | None) -> bool:

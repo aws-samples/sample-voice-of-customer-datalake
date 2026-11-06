@@ -40,13 +40,6 @@
         "voc-datalake/lambda/api/settings_handler.py"
       ],
       "reason": "two routes of two Lambdas (GET /scrapers/jobs/<id>, GET /settings/jobs/<id>) that each delegate in one line to shared.assist_jobs"
-    },
-    {
-      "files": [
-        "voc-datalake/lambda/api/product_context.py",
-        "voc-datalake/lambda/shared/assist_jobs.py"
-      ],
-      "reason": "the projects-table document partition and the jobs-table assist partition happen to share the PROJECT# spelling; different tables"
     }
   ]
 }
