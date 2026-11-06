@@ -26,6 +26,7 @@ import pytest
 from botocore.exceptions import BotoCoreError, ClientError
 
 from agents import plan_identity as pi
+from shared import aws
 
 POOL = 'pool-42'
 META = {'approver_sub': 'sub-7', 'approver_username': 'ada', 'plan_id': 'pl_abc'}
@@ -55,22 +56,19 @@ def client() -> Iterator[MagicMock]:
 class TestTheDirectoryClient:
     def test_the_cognito_client_is_built_once_and_reused(self):
         built = MagicMock()
-        with patch.object(pi, '_client', None), patch('agents.plan_identity.boto3.client',
-                                                      return_value=built) as factory:
+        with patch.object(aws, '_cognito_idp_client', None), patch.object(aws.boto3, 'client',
+                                                                          return_value=built) as factory:
             assert pi._cognito() is built
             assert pi._cognito() is built
         factory.assert_called_once_with('cognito-idp')
 
-    def test_a_fresh_module_builds_its_client_on_first_use(self):
+    def test_a_fresh_module_reads_the_shared_client_on_first_use(self):
         spec = importlib.util.spec_from_file_location('fresh_plan_identity', pi.__file__)
         assert spec
         assert spec.loader
         fresh = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(fresh)
-        built = MagicMock()
-        with patch.object(fresh.boto3, 'client', return_value=built) as factory:
-            assert fresh._cognito() is built
-        factory.assert_called_once_with('cognito-idp')
+        assert fresh._cognito is aws.get_cognito_idp_client
 
     def test_an_unset_pool_is_a_directory_fault_with_its_reason(self):
         with patch.dict('os.environ', {}, clear=True), pytest.raises(pi.DirectoryUnavailable) as raised:

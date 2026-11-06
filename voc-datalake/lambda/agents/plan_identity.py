@@ -17,11 +17,11 @@ import os
 from collections.abc import Mapping
 from typing import Any, Final
 
-import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.ai_writing import PLAN_PRINCIPAL_CLAIM as PRINCIPAL_CLAIM
 from shared.ai_writing import PLAN_PRINCIPAL_PREFIX
+from shared.aws import get_cognito_idp_client as _cognito
 from shared.logging import logger
 from shared.model_profile import E2E_GROUP
 from shared.project_access import ACTING_SUBJECT_CLAIM, ADMIN_GROUP
@@ -38,14 +38,6 @@ class DirectoryUnavailable(Exception):
     """Cognito could not answer; the step fails closed."""
 
 
-_client: Any = None
-
-
-def _cognito() -> Any:
-    global _client
-    if _client is None:
-        _client = boto3.client('cognito-idp')
-    return _client
 
 
 def _pool() -> str:

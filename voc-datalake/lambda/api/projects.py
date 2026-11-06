@@ -13,7 +13,6 @@ from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from typing import Any
 
-import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
@@ -38,6 +37,7 @@ from shared.avatar import (
     generate_persona_avatar as _generate_persona_avatar,
 )
 from shared.avatar_failure import AvatarGenerationFailed
+from shared.aws import get_cognito_idp_client as _get_cognito_client
 from shared.aws import get_s3_client
 from shared.batch_get import batch_get_all
 from shared.company_personas import is_company_container
@@ -3916,15 +3916,6 @@ MAX_USER_SUB_LENGTH = 128
 # Characters that would let a value escape the quoted Cognito ListUsers filter.
 _COGNITO_FILTER_FORBIDDEN = ('"', '\\')
 
-_cognito_client = None
-
-
-def _get_cognito_client():
-    """Lazily created so importing this module never needs Cognito config."""
-    global _cognito_client
-    if _cognito_client is None:
-        _cognito_client = boto3.client('cognito-idp')
-    return _cognito_client
 
 
 def _user_pool_id() -> str:

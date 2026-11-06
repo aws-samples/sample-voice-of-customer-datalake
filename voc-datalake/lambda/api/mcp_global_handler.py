@@ -51,13 +51,13 @@ from datetime import UTC, datetime
 from functools import partial
 from typing import Any, Final
 
-import boto3
 from aws_lambda_powertools import Logger, Metrics, Tracer
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import mcp_global_prompts as mpp
 from shared import mcp_global_tokens as gt
 from shared import mcp_protocol as mp
+from shared.aws import get_cognito_idp_client as _cognito_client
 from shared.e2e_tag import with_test_run_tag
 from shared.invocation_cost import measure_invocation_cost
 from shared.mcp_credentials import CredentialBackendUnavailable, authenticate_oauth, looks_like_jwt
@@ -132,14 +132,6 @@ _ALLOW_HEADER: Final = 'POST, OPTIONS'
 AUTH_DENIED_METRIC: Final = 'AuthDenied'
 _AUTH_DENIED_STATUSES: Final = frozenset({401, 403})
 
-_cognito = None
-
-
-def _cognito_client():
-    global _cognito
-    if _cognito is None:
-        _cognito = boto3.client('cognito-idp')
-    return _cognito
 
 
 def _now() -> datetime:
