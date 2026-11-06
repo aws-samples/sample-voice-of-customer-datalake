@@ -17,12 +17,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Final
 
-from shared.b64_json import MAX_TOKEN_CHARS as MAX_CURSOR_CHARS
 from shared.b64_json import decode_b64_json, encode_b64_json
 
-__all__ = [
-    'MAX_CURSOR_CHARS', 'decode_key_cursor', 'decode_offset_cursor', 'encode_key_cursor', 'encode_offset_cursor',
-]
+__all__ = ['decode_key_cursor', 'decode_offset_cursor', 'encode_key_cursor', 'encode_offset_cursor']
 
 _INVALID: Final = 'next_token is not valid'
 
