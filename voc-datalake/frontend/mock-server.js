@@ -1455,6 +1455,16 @@ function newReprocessJob(fields) {
   };
 }
 
+/** Like the route (`ReprocessSlice.pinned_at`): a resumed `days` window becomes the dates it covered when its
+ * job started, so the resumed job reads the same days. */
+function pinnedWindow({ days, date_from, date_to, created_at }) {
+  if (!(days > 0)) return { days, date_from, date_to };
+  const started = new Date(created_at ?? Date.now());
+  const first = new Date(started.getTime() - (days - 1) * 86_400_000);
+  const day = (d) => d.toISOString().slice(0, 10);
+  return { days: 0, date_from: day(first), date_to: day(started) };
+}
+
 /** A resumer that ends cancelled or failed hands its partial job back, resumable again (reprocess_jobs.py). */
 function handBack(job) {
   const parent = mockReprocessJobs.find((j) => j.job_id === job.resumed_from);
@@ -1475,7 +1485,7 @@ function resumeReprocessJob(body) {
   previous.resumable = false;
   const { mode, days, include_manual, date_basis, sources, categories, date_from, date_to } = previous;
   const job = newReprocessJob({
-    mode, days, include_manual, date_basis, sources, categories, date_from, date_to,
+    mode, include_manual, date_basis, sources, categories, ...pinnedWindow({ days, date_from, date_to, created_at: previous.created_at }),
     resumed_from: previous.job_id, resume_offset: (previous.resume_offset ?? 0) + previous.scanned,
   });
   previous.resumed_by = job.job_id;
