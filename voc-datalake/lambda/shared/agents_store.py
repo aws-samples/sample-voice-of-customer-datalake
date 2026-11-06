@@ -54,6 +54,7 @@ from shared.model_config import ALLOWED_MODEL_IDS
 from shared.model_profile import payload_fields
 from shared.request_body import validated_text as _text
 from shared.row_ids import validated_row_id
+from shared.update_expressions import set_clause
 
 AGENTS_TABLE_ENV: Final = 'AGENTS_TABLE'
 STATE_MACHINE_ENV: Final = 'AGENT_RUN_STATE_MACHINE_ARN'
@@ -570,20 +571,13 @@ def create_agent(table: Any, fields: Mapping[str, Any], *, created_by: str, now:
     return item
 
 
-def _set_clause(fields: Mapping[str, Any]) -> tuple[str, dict[str, str], dict[str, Any]]:
-    names = {f'#f{i}': name for i, name in enumerate(fields)}
-    values = {f':v{i}': value for i, value in enumerate(fields.values())}
-    clause = ', '.join(f'#f{i} = :v{i}' for i in range(len(fields)))
-    return clause, names, values
-
-
 def update_agent(table: Any, agent_id: str, fields: Mapping[str, Any], *, updated_by: str, now: datetime,
                  allow_archived: bool = False) -> dict:
     """SET ``fields`` (plus updated_by/at) on an existing agent; 404 when missing/archived."""
     to_set = {**fields, 'updated_by': updated_by, 'updated_at': iso(now)}
     if 'name' in fields:
         to_set['gsi1sk'] = fields['name']
-    clause, names, values = _set_clause(to_set)
+    clause, names, values = set_clause(to_set)
     condition = 'attribute_exists(pk)'
     if not allow_archived:
         condition += ' AND #status <> :archived'
@@ -604,7 +598,7 @@ def update_agent(table: Any, agent_id: str, fields: Mapping[str, Any], *, update
 
 def set_agent_attributes(table: Any, agent_id: str, fields: Mapping[str, Any]) -> None:
     """Server-maintained bookkeeping (no updated_by/at): skip reasons, trigger state."""
-    clause, names, values = _set_clause(fields)
+    clause, names, values = set_clause(fields)
     try:
         table.update_item(Key=agent_key(agent_id), UpdateExpression=f'SET {clause}',
                           ConditionExpression='attribute_exists(pk)',
@@ -775,7 +769,7 @@ def save_revision(table: Any, workflow_id: str, definition: Mapping[str, Any], *
     current_sets = {**revision, 'description': definition.get('description', ''), 'updated_at': stamp,
                     'updated_by_username': username, 'slug': workflow_schema.slugify(definition['name']),
                     'gsi1sk': f"{definition['name'].lower()}#{workflow_id}"}
-    clause, names, values = _set_clause(current_sets)
+    clause, names, values = set_clause(current_sets)
     names['#rev'] = 'revision'
     names['#status'] = 'status'
     values[':expected'] = expected_revision
@@ -893,7 +887,7 @@ def start_run(table: Any, agent: Mapping[str, Any], request: RunStart, *, now: d
     agent_id, run_id, stamp = agent['agent_id'], new_run_id(now), iso(now)
     sets = {'active_run_id': run_id, 'last_run_at': stamp, 'last_run_id': run_id,
             'last_run_status': RUN_QUEUED, 'last_run_cursor': stamp, **(request.extra_agent_sets or {})}
-    clause, names, values = _set_clause(sets)
+    clause, names, values = set_clause(sets)
     names['#status'] = 'status'
     values.update({':archived': AGENT_STATUS_ARCHIVED, ':zero': 0, ':inc': 1})
     update = f'SET {clause}, runs_total = if_not_exists(runs_total, :zero) + :inc'
@@ -1012,7 +1006,7 @@ def finish_run(table: Any, agent_id: str, run_id: str, status: str, *, now: date
     sets: dict[str, Any] = {'status': status, 'finished_at': iso(now)}
     if error:
         sets['error'] = error[:500]
-    clause, names, values = _set_clause(sets)
+    clause, names, values = set_clause(sets)
     names['#st'] = 'status'
     values.update({':queued': RUN_QUEUED, ':running': RUN_RUNNING})
     run = _run_update(table, agent_id, run_id, f'SET {clause} REMOVE gsi1pk, gsi1sk', names, values,

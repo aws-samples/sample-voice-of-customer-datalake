@@ -31,6 +31,7 @@ from botocore.exceptions import ClientError, EndpointConnectionError
 from shared import agents_store as store
 from shared import workflow_schema
 from shared.exceptions import ConflictError, NotFoundError, ServiceError
+from shared.update_expressions import set_clause
 
 NOW: Final = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
 STAMP: Final = '2026-10-04T12:00:00+00:00'
@@ -168,7 +169,7 @@ class TestAgentRows:
         assert item['created_by'] == 'admin-sub'
 
     def test_set_clause_numbers_names_and_values_in_order(self) -> None:
-        assert store._set_clause({'a': 1, 'b': 'x'}) == (
+        assert set_clause({'a': 1, 'b': 'x'}) == (
             '#f0 = :v0, #f1 = :v1', {'#f0': 'a', '#f1': 'b'}, {':v0': 1, ':v1': 'x'})
 
     def test_update_agent_refuses_an_archived_row_and_moves_the_name_index(self) -> None:

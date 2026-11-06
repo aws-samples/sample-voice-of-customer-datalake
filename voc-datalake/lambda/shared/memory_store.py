@@ -56,6 +56,7 @@ from shared.indexes import MEMORY_BY_STATUS_INDEX
 from shared.logging import logger
 from shared.scope_names import HiddenNames
 from shared.timestamps import now_iso
+from shared.update_expressions import set_clause
 
 MEMORY_TABLE_ENV: Final = 'MEMORY_TABLE'
 # The voc-memory GSI over gsi1pk/gsi1sk — named in lib/stacks/core-stack.ts.
@@ -393,13 +394,12 @@ def set_fields(table, item: Mapping[str, Any], fields: Mapping[str, Any], *, now
     values = {**fields, 'updated_at': stamp}
     if 'status' in fields:
         values['gsi1pk'] = status_partition(str(item.get('scope')), str(fields['status']))
-    names = {f'#f{i}': name for i, name in enumerate(values)}
-    expression = 'SET ' + ', '.join(f'#f{i} = :v{i}' for i in range(len(values)))
+    clause, names, placeholders = set_clause(values)
     response = table.update_item(
         Key=item_key(item),
-        UpdateExpression=expression,
+        UpdateExpression=f'SET {clause}',
         ExpressionAttributeNames=names,
-        ExpressionAttributeValues={f':v{i}': value for i, value in enumerate(values.values())},
+        ExpressionAttributeValues=placeholders,
         ConditionExpression='attribute_exists(pk)',
         ReturnValues='ALL_NEW',
     )
@@ -1011,12 +1011,12 @@ def get_cursors(table, session_ids: list[str]) -> dict[str, dict]:
 
 def save_cursor(table, session_id: str, fields: Mapping[str, Any], *, now: datetime) -> None:
     values = {**fields, 'updated_at': now_iso(now)}
-    names = {f'#f{i}': name for i, name in enumerate(values)}
+    clause, names, placeholders = set_clause(values)
     table.update_item(
         Key=cursor_key(session_id),
-        UpdateExpression='SET ' + ', '.join(f'#f{i} = :v{i}' for i in range(len(values))),
+        UpdateExpression=f'SET {clause}',
         ExpressionAttributeNames=names,
-        ExpressionAttributeValues={f':v{i}': v for i, v in enumerate(values.values())},
+        ExpressionAttributeValues=placeholders,
     )
 
 

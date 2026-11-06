@@ -44,6 +44,7 @@ from shared.feature_boards_audience import (
 )
 from shared.indexes import FEATURE_REQUESTS_LISTING_INDEX
 from shared.timestamps import now_iso
+from shared.update_expressions import set_clause
 
 BOARDS_PARTITION: Final = 'BOARDS'
 SEEDED_MARKER_KEY: Final = {'pk': 'BOARDS#SEEDED', 'sk': 'META'}
@@ -276,9 +277,8 @@ def with_pause_stamp(board: Mapping[str, Any], changes: Mapping[str, Any], by: s
 def _rename(table: Any, board: Mapping[str, Any], changes: Mapping[str, Any]) -> dict[str, Any]:
     """Slug + META in one transaction: the new guard, the old one removed, the META update."""
     board_id, new_slug = str(board['board_id']), str(changes['slug'])
-    names = {f'#f{i}': key for i, key in enumerate(changes)}
-    values = {f':v{i}': value for i, value in enumerate(changes.values())}
-    sets = ', '.join([*(f'#f{i} = :v{i}' for i in range(len(changes))), 'updated_at = :now'])
+    clause, names, values = set_clause(changes)
+    sets = f'{clause}, updated_at = :now'  # never empty: `changes` carries the slug
     update = {'Update': {'TableName': table.name, 'Key': board_key(board_id), 'UpdateExpression': f'SET {sets}',
                          'ConditionExpression': 'attribute_exists(pk)', 'ExpressionAttributeNames': names,
                          'ExpressionAttributeValues': {**values, ':now': now_iso()}}}
