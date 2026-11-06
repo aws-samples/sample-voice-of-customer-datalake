@@ -20,7 +20,8 @@ import { API_WORKFLOW_LIMITS, WORKFLOW_LOOP_UNTIL } from '../../api/workflowsApi
 import { addToLoop, loopIndexOf, removeFromLoop, removeLoop, updateLoop } from './model'
 import { clampRounds, loopIssues } from './loopFields'
 import { LabeledField } from '../LabeledField/LabeledField'
-import type { WorkflowDefinition, WorkflowLoop, WorkflowLoopUntil, WorkflowNode } from '../../api/workflowsApi'
+import { EnumSelectField } from '../LabeledField/EnumSelectField'
+import type { WorkflowDefinition, WorkflowLoop, WorkflowNode } from '../../api/workflowsApi'
 
 interface LoopProps {
   definition: WorkflowDefinition
@@ -88,17 +89,9 @@ export function LoopForm({ definition, index, readOnly, onChange, issues = [], o
           {mine.map((message) => <li key={message}>{workflowIssueText(t, message)}</li>)}
         </ul>
       )}
-      <LabeledField label={t('editor.fields.until')} hint={t(`loopUntilHint.${loop.until}`)}>
-        {(id) => (
-          <select id={id} className="select w-full" disabled={readOnly} value={loop.until}
-            onChange={(e) => {
-              const until: WorkflowLoopUntil | undefined = WORKFLOW_LOOP_UNTIL.find((u) => u === e.target.value)
-              if (until !== undefined) onChange(updateLoop(definition, index, { until }))
-            }}>
-            {WORKFLOW_LOOP_UNTIL.map((u) => <option key={u} value={u}>{t(`loopUntil.${u}`)}</option>)}
-          </select>
-        )}
-      </LabeledField>
+      <EnumSelectField label={t('editor.fields.until')} hint={t(`loopUntilHint.${loop.until}`)} choices={WORKFLOW_LOOP_UNTIL}
+        value={loop.until} display={(u) => t(`loopUntil.${u}`)} disabled={readOnly}
+        onChange={(until) => onChange(updateLoop(definition, index, { until }))} />
       <LabeledField label={t('editor.fields.maxRounds')}
         hint={t('editor.maxRoundsHint', { min: API_WORKFLOW_LIMITS.minRounds, max: API_WORKFLOW_LIMITS.maxRounds })}>
         {(id) => (

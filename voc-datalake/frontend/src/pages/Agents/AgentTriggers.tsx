@@ -10,7 +10,8 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AGENT_SCHEDULE_EVERY, AGENT_THRESHOLD_PER, API_AGENT_LIMITS, TRIGGER_KINDS } from '../../api/agentsApi'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
-import { clampInt } from './agentDraft'
+import { EnumSelectField } from '../../components/LabeledField/EnumSelectField'
+import { ClampedNumberField } from './ClampedNumberField'
 import type { AgentTrigger } from '../../api/agentsApi'
 import type { SectionProps } from './AgentSections'
 
@@ -31,14 +32,10 @@ function TriggerFields({ trigger, readOnly, onChange }: Readonly<{
   if (trigger.kind === 'new_reviews') {
     return (
       <div className="grid gap-3 sm:grid-cols-2">
-        <LabeledField label={t('triggers.minNew')}>
-          {(id) => <input id={id} type="number" className="input w-full" disabled={readOnly} min={1} max={L.maxMinNew} value={trigger.min_new}
-            onChange={(e) => onChange({ ...trigger, min_new: clampInt(e.target.value, 1, L.maxMinNew, 1) })} />}
-        </LabeledField>
-        <LabeledField label={t('triggers.cooldown')}>
-          {(id) => <input id={id} type="number" className="input w-full" disabled={readOnly} min={0} max={L.maxCooldownHours} value={trigger.cooldown_hours}
-            onChange={(e) => onChange({ ...trigger, cooldown_hours: clampInt(e.target.value, 0, L.maxCooldownHours, 0) })} />}
-        </LabeledField>
+        <ClampedNumberField label={t('triggers.minNew')} readOnly={readOnly} min={1} max={L.maxMinNew} value={trigger.min_new}
+          onChange={(n) => onChange({ ...trigger, min_new: n })} />
+        <ClampedNumberField label={t('triggers.cooldown')} readOnly={readOnly} min={0} max={L.maxCooldownHours} value={trigger.cooldown_hours}
+          onChange={(n) => onChange({ ...trigger, cooldown_hours: n })} />
       </div>
     )
   }
@@ -73,25 +70,12 @@ function TriggerFields({ trigger, readOnly, onChange }: Readonly<{
   }
   return (
     <div className="grid gap-3 sm:grid-cols-3">
-      <LabeledField label={t('triggers.count')}>
-        {(id) => <input id={id} type="number" className="input w-full" disabled={readOnly} min={1} max={L.maxThresholdCount} value={trigger.count}
-          onChange={(e) => onChange({ ...trigger, count: clampInt(e.target.value, 1, L.maxThresholdCount, 1) })} />}
-      </LabeledField>
-      <LabeledField label={t('triggers.per')}>
-        {(id) => (
-          <select id={id} className="select w-full" disabled={readOnly} value={trigger.per}
-            onChange={(e) => {
-              const per = AGENT_THRESHOLD_PER.find((v) => v === e.target.value)
-              if (per !== undefined) onChange({ ...trigger, per })
-            }}>
-            {AGENT_THRESHOLD_PER.map((v) => <option key={v} value={v}>{t(`triggers.perOptions.${v}`)}</option>)}
-          </select>
-        )}
-      </LabeledField>
-      <LabeledField label={t('triggers.windowDays')}>
-        {(id) => <input id={id} type="number" className="input w-full" disabled={readOnly} min={1} max={L.maxWindowDays} value={trigger.window_days}
-          onChange={(e) => onChange({ ...trigger, window_days: clampInt(e.target.value, 1, L.maxWindowDays, 1) })} />}
-      </LabeledField>
+      <ClampedNumberField label={t('triggers.count')} readOnly={readOnly} min={1} max={L.maxThresholdCount} value={trigger.count}
+        onChange={(n) => onChange({ ...trigger, count: n })} />
+      <EnumSelectField label={t('triggers.per')} choices={AGENT_THRESHOLD_PER} value={trigger.per}
+        display={(v) => t(`triggers.perOptions.${v}`)} disabled={readOnly} onChange={(per) => onChange({ ...trigger, per })} />
+      <ClampedNumberField label={t('triggers.windowDays')} readOnly={readOnly} min={1} max={L.maxWindowDays} value={trigger.window_days}
+        onChange={(n) => onChange({ ...trigger, window_days: n })} />
     </div>
   )
 }
