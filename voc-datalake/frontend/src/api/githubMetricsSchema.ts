@@ -9,6 +9,7 @@
  */
 import { z } from 'zod'
 import { isPresent } from '../lib/typeGuards'
+import { parseOrDefaults } from './lenientFields'
 import { readPartialWindow, type PartialWindow } from './partialWindow'
 
 const count = z.number().int().nonnegative().catch(0)
@@ -79,7 +80,7 @@ export interface GithubMetrics {
 
 /** The response as the UI reads it; anything unreadable becomes an empty breakdown. */
 export function normalizeGithubMetrics(raw: unknown): GithubMetrics {
-  const parsed = GithubMetricsSchema.catch(GithubMetricsSchema.parse({})).parse(raw ?? {})
+  const parsed = parseOrDefaults(GithubMetricsSchema, raw)
   return {
     total: parsed.total,
     repos: parsed.repos,

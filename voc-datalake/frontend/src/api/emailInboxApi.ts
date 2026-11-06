@@ -11,6 +11,7 @@
 import { put } from './requestKit'
 import { z } from 'zod'
 import { fetchApi } from './client'
+import { withDefaults } from './lenientFields'
 import { lenientText, optionalText } from './schemaList'
 
 /** DROP_REASONS / DEDUPE_REASONS in shared/email_intake_settings.py, in display order. */
@@ -54,8 +55,8 @@ const TodaySchema = z.object({
   accepted: count,
   model_calls: count,
   deferred: count,
-  dropped: DroppedSchema.catch(DroppedSchema.parse({})),
-  deduped: DedupedSchema.catch(DedupedSchema.parse({})),
+  dropped: withDefaults(DroppedSchema),
+  deduped: withDefaults(DedupedSchema),
 })
 export type EmailInboxToday = z.output<typeof TodaySchema>
 
@@ -65,9 +66,9 @@ const EmailInboxSchema = z.object({
   addresses: z.array(z.string()).catch([]),
   rule_set: optionalText,
   rule_set_needs_activation: z.boolean().catch(false),
-  caps: CapsSchema.catch(CapsSchema.parse({})),
-  defaults: CapsSchema.catch(CapsSchema.parse({})),
-  today: TodaySchema.catch(TodaySchema.parse({})),
+  caps: withDefaults(CapsSchema),
+  defaults: withDefaults(CapsSchema),
+  today: withDefaults(TodaySchema),
   pii: z.enum(['allow', 'redact', 'summary_only']).catch('redact'),
   profile_configured: z.boolean().catch(false),
   feedback_type_dimension: z.boolean().catch(false),
