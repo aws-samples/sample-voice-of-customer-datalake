@@ -66,7 +66,7 @@ from shared.delete_audit import actor_from_event, record_delete
 from shared.dynamo_paging import iter_query
 from shared.exceptions import ConfigurationError, ConflictError, PayloadTooLargeError, ValidationError
 from shared.logging import logger, tracer
-from shared.request_body import json_body_value
+from shared.request_body import json_body_value, validated_text
 from shared.row_ids import LONG_OPAQUE_ID_RE, OPAQUE_ID_RE
 from shared.timestamps import now_iso
 
@@ -168,16 +168,7 @@ def _is_iso_timestamp(value: object) -> bool:
 
 
 def _validated_assistant_title(raw: object) -> str:
-    if raw is None:
-        return DEFAULT_ASSISTANT_TITLE
-    if not isinstance(raw, str):
-        raise ValidationError('title must be a string')
-    title = raw.strip()
-    if not title:
-        return DEFAULT_ASSISTANT_TITLE
-    if len(title) > MAX_TITLE_CHARS:
-        raise ValidationError(f'title must be at most {MAX_TITLE_CHARS} characters')
-    return title
+    return validated_text(raw, 'title', MAX_TITLE_CHARS) or DEFAULT_ASSISTANT_TITLE
 
 
 def _validated_object_list(

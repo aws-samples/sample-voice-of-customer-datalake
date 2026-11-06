@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 # Shared module imports
 from shared.logging import logger, metrics, tracer
 from shared.producer_labels import clean_dimensions, message_labels, normalise_label_fields
-from shared.request_body import json_body_value, json_object_body
+from shared.request_body import json_body_value, json_object_body, validated_text
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
 from shared.source_policy import apply_source_policy
 from shared.source_profiles import cached_source_profile_strict
@@ -260,19 +260,7 @@ def _rating_max(item: dict) -> int:
 
 def _validated_submission_text(body: dict) -> str:
     """The stripped feedback text, or a 400 when absent, not a string, or too long."""
-    text = body.get('text')
-    if text is None:
-        text = ''
-    if not isinstance(text, str):
-        raise ValidationError('Feedback text must be a string')
-    text = text.strip()
-    if not text:
-        raise ValidationError('Feedback text is required')
-    if len(text) > MAX_SUBMISSION_TEXT_CHARS:
-        raise ValidationError(
-            f'Feedback text must be at most {MAX_SUBMISSION_TEXT_CHARS} characters'
-        )
-    return text
+    return validated_text(body.get('text'), 'Feedback text', MAX_SUBMISSION_TEXT_CHARS, required=True)
 
 
 def _validate_optional_string(body: dict, field: str, max_chars: int) -> None:

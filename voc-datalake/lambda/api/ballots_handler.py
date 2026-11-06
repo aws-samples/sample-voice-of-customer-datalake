@@ -138,7 +138,7 @@ from shared.prioritization_keys import (
     ROW_SK_PREFIX,
 )
 from shared.project_writes import is_project_tombstone
-from shared.request_body import json_object_body
+from shared.request_body import json_object_body, validated_text
 from shared.row_ids import is_clampable_number, validated_row_id
 from shared.tables import get_aggregates_table, get_projects_table
 from shared.voting_session_close import (  # the session keys, declared once for both bundles
@@ -654,16 +654,7 @@ def _validated_note(raw: Any) -> str | None:
     when it is doing the most work. The bound is pinned against that path by
     `test_anon_ballot_key_lockstep.py`, so the two cannot drift.
     """
-    if raw is None:
-        return None
-    if not isinstance(raw, str):
-        raise ValidationError('notes must be a string')
-    note = raw.strip()
-    if not note:
-        return None
-    if len(note) > MAX_BALLOT_NOTE_LEN:
-        raise ValidationError(f'notes must be at most {MAX_BALLOT_NOTE_LEN} characters')
-    return note
+    return validated_text(raw, 'notes', MAX_BALLOT_NOTE_LEN) or None
 
 
 def _validated_axes(body: dict, axes: Iterable[dict] = axes_mod.DEFAULT_AXES) -> dict[str, int]:
