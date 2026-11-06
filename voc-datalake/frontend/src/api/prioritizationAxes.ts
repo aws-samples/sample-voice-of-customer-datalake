@@ -159,11 +159,17 @@ export function compositeScore(
   return sums.weight > 0 ? sums.weighted / sums.weight : null
 }
 
+/** Each weighted item's share of their total weight, in whole percent (sums to ~100; all 0 when the total is 0). */
+export function percentShares<T extends { readonly weight: number }>(
+  items: readonly T[], keyOf: (item: T) => string,
+): Readonly<Record<string, number>> {
+  const total = items.reduce((sum, item) => sum + item.weight, 0)
+  return Object.fromEntries(items.map((item) => [keyOf(item), total > 0 ? Math.round((item.weight / total) * 100) : 0]))
+}
+
 /** Each active axis's share of the composite, in whole percent (sums to ~100). */
 export function weightShares(axes: readonly ScoringAxis[]): Readonly<Record<string, number>> {
-  const active = activeAxes(axes)
-  const total = active.reduce((sum, axis) => sum + axis.weight, 0)
-  return Object.fromEntries(active.map((axis) => [axis.id, total > 0 ? Math.round((axis.weight / total) * 100) : 0]))
+  return percentShares(activeAxes(axes), (axis) => axis.id)
 }
 
 /** The active axes by weight, heaviest first; ties keep the configured order. */
