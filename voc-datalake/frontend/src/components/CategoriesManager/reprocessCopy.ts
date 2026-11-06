@@ -75,3 +75,18 @@ export function jobWindowLabel(
     ? t('components:categoriesManager.reprocess.byReviewDate', { range })
     : t('components:categoriesManager.reprocess.byProcessedDate', { range })
 }
+
+/** Whether a start request was a resume (`{resume: <job_id>}`). */
+export function isResume(request: unknown): boolean {
+  return typeof request === 'object' && request !== null && 'resume' in request
+}
+
+/**
+ * The full `components` key of a refused RESUME (404: the job is gone; 409: resumed already or another job
+ * runs), or null when the request was not a resume or failed otherwise. Shared by every card that resumes.
+ */
+export function resumeErrorKey(status: number | null | undefined, request: unknown): string | null {
+  if (!isResume(request)) return null
+  if (status === 404) return 'categoriesManager.reprocess.resumeGone'
+  return status === 409 ? 'categoriesManager.reprocess.resumeRefused' : null
+}

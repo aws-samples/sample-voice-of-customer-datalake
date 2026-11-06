@@ -267,11 +267,16 @@ def start_job(
     if resume is not None:
         item['resumed_from'] = resume.job_id
         item['cursor'] = resume.cursor
+    marked = False
     try:
         if resume is not None:
             _mark_resumed(table, resume.job_id, job_id)
+            marked = True
         table.put_item(Item=item, ConditionExpression='attribute_not_exists(sk)')
     except Exception:
+        if marked and resume is not None:
+            # The new job row was never written: hand the partial job back, or it would stay resumed by nothing.
+            _reopen_resumed(table, {'sk': job_id, 'resumed_from': resume.job_id})
         release_lock(table, job_id)
         raise
     return item

@@ -258,7 +258,10 @@ same, by a claim that is not a transaction participant (`shared/stream_claims.py
 - A run of `REMOVE`s claims each record before the joint writes and releases the ones that failed.
 - Residuals, in the "a missed `-1` beats a second `-1`" direction: a function that dies between its
   claim and its writes (a timeout) leaves the claim, and the retry skips that reversal; a claim that
-  cannot be written at all fails open (the reversal runs unclaimed, bounded by the floor as before).
+  cannot be written at all fails open (the reversal runs unclaimed, bounded by the floor as before);
+  and a reversal whose writes fail part-way (a throttle after some counters moved) is released, so the
+  retry moves the counters that had landed a second time, bounded by the floor. That last one is the
+  pre-6.03.00 behaviour for that case; `rebuild_aggregates.py` repairs either drift.
 
 `AggregateRecordReplayed` in CloudWatch counts the arrivals and the reversals a claim refused.
 

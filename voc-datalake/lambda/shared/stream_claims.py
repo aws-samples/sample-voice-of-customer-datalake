@@ -23,8 +23,10 @@ role already holds ``PutItem`` there.
 Residuals, chosen in the "a missed -1 beats a second -1" direction the aggregator
 takes everywhere: a function that dies AFTER its claim and BEFORE its writes (a
 timeout, an out-of-memory) leaves the claim in place, and the retry skips that
-reversal; and a claim that cannot be written at all (throttling, a missing table)
-fails OPEN: the reversal runs unclaimed, as it did before.
+reversal; a claim that cannot be written at all (throttling, a missing table)
+fails OPEN: the reversal runs unclaimed, as it did before; and a reversal whose
+writes fail PART-WAY is released, so its retry moves the counters that had landed
+again (bounded by the decrement floor, as before claims existed).
 """
 from __future__ import annotations
 

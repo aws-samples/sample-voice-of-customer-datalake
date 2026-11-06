@@ -139,6 +139,21 @@ class TestPartialAndResume:
             _start(tables, resume=resume)
         assert jobs.resume_point(jobs.get_job(tables['aggregates'], first['sk'])) is None
 
+    def test_a_resume_whose_job_row_failed_hands_the_partial_job_back(self, tables, worker_context):
+        """The partial job is marked before the new row is written; a failed put must not strand it."""
+        first, resume = self._partial(tables, worker_context)
+        real_put = tables['aggregates'].put_item
+
+        def failing_job_row(**kwargs):
+            if str(kwargs.get('Item', {}).get('sk', '')).startswith('rp_'):
+                raise RuntimeError('put failed')
+            return real_put(**kwargs)
+
+        with patch.object(tables['aggregates'], 'put_item', side_effect=failing_job_row), \
+             pytest.raises(RuntimeError, match='put failed'):
+            _start(tables, resume=resume)
+        assert jobs.resume_point(jobs.get_job(tables['aggregates'], first['sk'])) == resume
+
     @pytest.mark.parametrize('ending', ['cancel', 'fail'])
     def test_a_resumer_that_did_not_finish_hands_the_partial_job_back(self, tables, worker_context, ending):
         """A failed or cancelled resume (an invoke that never started included) never loses the cursor."""
