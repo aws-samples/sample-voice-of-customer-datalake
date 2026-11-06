@@ -10,7 +10,7 @@
  */
 import { radarApi } from '../../api/radarApi'
 import { invalidateKeys, keysFor } from './invalidation'
-import { StaleApprovalError, shownOf } from './shown'
+import { requireUnchangedSinceShown, shownOf } from './shown'
 import { brandKeyOf, radarListFingerprint, savedNewsFields } from './radarSchemas'
 import type { RunRadarScanArgs, SaveRadarBrandsArgs } from './radarSchemas'
 import type { WriteToolExecutionContext } from '../types'
@@ -21,7 +21,7 @@ export const RADAR_BRANDS_CHANGED_MESSAGE = 'The Radar brand list changed since 
 export async function saveRadarBrands(args: SaveRadarBrandsArgs, ctx: WriteToolExecutionContext) {
   const shownBase = shownOf(ctx)?.radarBrandsBase
   const current = await radarApi.getBrands()
-  if (shownBase === undefined || shownBase !== radarListFingerprint(current)) throw new StaleApprovalError(RADAR_BRANDS_CHANGED_MESSAGE)
+  requireUnchangedSinceShown(shownBase, radarListFingerprint(current), RADAR_BRANDS_CHANGED_MESSAGE)
   // A brand the card names a language, feeds or terms for gets them; otherwise a brand already tracked keeps its own.
   const stored = new Map(current.map((entry) => [entry.key, entry]))
   const saved = await radarApi.saveBrands(args.brands.map((brand) => ({

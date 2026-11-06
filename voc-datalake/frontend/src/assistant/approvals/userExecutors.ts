@@ -26,7 +26,7 @@ import { categoryAccessApi } from '../../api/categoryAccessApi'
 import { useAuthStore } from '../../store/authStore'
 import { invalidateKeys, keysFor } from './invalidation'
 import { safeErrorMessage } from './safeError'
-import { StaleApprovalError, shownOf } from './shown'
+import { StaleApprovalError, requireUnchangedSinceShown, shownOf } from './shown'
 import { accessFingerprint, proposedAccess, userFingerprint, userRecordSchema } from './userSchemas'
 import type { CategoryScope, SourceGrant } from '../../api/categoryAccessApi'
 import type { WriteToolExecutionContext } from '../types'
@@ -169,7 +169,7 @@ export async function updateUser(args: UpdateUserArgs, ctx: WriteToolExecutionCo
   const current = await fetchUser(args.username)
   if (current === undefined) throw new StaleApprovalError(userMissingMessage(args.username))
   const shownBase = shownOf(ctx)?.userBase
-  if (shownBase === undefined || shownBase !== userFingerprint(current)) throw new StaleApprovalError(USER_CHANGED_MESSAGE)
+  requireUnchangedSinceShown(shownBase, userFingerprint(current), USER_CHANGED_MESSAGE)
   refuseSelfChange(current, args.updates)
   const applied = await applyInOrder(current.email, updateSteps(current, args.updates))
   void invalidateKeys(ctx.queryClient, keysFor.users())
@@ -195,7 +195,7 @@ function accessSummary(username: string, grant: CategoryScope, sourceGrant: Sour
 export async function setUserAccess(args: SetUserAccessArgs, ctx: WriteToolExecutionContext) {
   const current = await categoryAccessApi.getUserGrant(args.username)
   const shownBase = shownOf(ctx)?.accessBase
-  if (shownBase === undefined || shownBase !== accessFingerprint(current)) throw new StaleApprovalError(ACCESS_CHANGED_MESSAGE)
+  requireUnchangedSinceShown(shownBase, accessFingerprint(current), ACCESS_CHANGED_MESSAGE)
   const { grant, sourceGrant } = proposedAccess(args)
   await categoryAccessApi.saveUserGrant(args.username, grant, sourceGrant)
   void invalidateKeys(ctx.queryClient, [...keysFor.users(), ...keysFor.userAccess(args.username)])
