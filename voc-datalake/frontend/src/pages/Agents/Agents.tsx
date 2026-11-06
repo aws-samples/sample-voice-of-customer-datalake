@@ -10,8 +10,8 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Bot, Hand, Plus, Workflow } from 'lucide-react'
-import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
+import { IconTabs } from '../../components/IconTabs/IconTabs'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { NameDialog } from '../../components/NameDialog/NameDialog'
 import { failedReads } from '../../utils/failedReads'
@@ -104,20 +104,8 @@ function ViewTabs({ view, onChange }: Readonly<{ view: AgentsView; onChange: (vi
     if (id === 'workflows') void prefetch(queryClient, { queryKey: workflowsKeys.list(), queryFn: workflowsApi.list, staleTime: 30_000 })
   }
   return (
-    <div className="tabs-rail overflow-x-auto">
-      <div className="tabs-track" role="tablist" aria-label={t('views.label')}>
-        {VIEWS.map((id) => {
-          const Icon = VIEW_ICONS[id]
-          return (
-            <button key={id} type="button" role="tab" aria-selected={view === id}
-              className={clsx('tab', view === id && 'tab-active')} onClick={() => onChange(id)}
-              onMouseEnter={() => warm(id)} onFocus={() => warm(id)}>
-              <Icon size={14} aria-hidden="true" /> {t(`views.${id}`)}
-            </button>
-          )
-        })}
-      </div>
-    </div>
+    <IconTabs tabs={VIEWS} active={view} icons={VIEW_ICONS} label={t('views.label')} labelOf={(id) => t(`views.${id}`)}
+      onSelect={onChange} onWarm={warm} />
   )
 }
 

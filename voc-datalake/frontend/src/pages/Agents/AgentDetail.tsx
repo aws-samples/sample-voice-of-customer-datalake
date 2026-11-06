@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
+import { IconTabs } from '../../components/IconTabs/IconTabs'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
 import { useUnsavedChangesGuard } from '../../components/UnsavedChangesGuard/useUnsavedChangesGuard'
@@ -217,20 +218,8 @@ export default function AgentDetail() {
       <BackToAgents />
       <Header agent={agent} isAdmin={isAdmin} />
       {agent.stats.last_run_status === 'needs_human' && tab !== 'runs' && <NeedsDecisionBanner onReview={() => setTab('runs')} />}
-      <div className="tabs-rail overflow-x-auto">
-        <div className="tabs-track" role="tablist" aria-label={t('detail.tabs')}>
-          {TABS.map((id) => {
-            const Icon = TAB_ICONS[id]
-            return (
-              <button key={id} type="button" role="tab" aria-selected={tab === id}
-                className={clsx('tab', tab === id && 'tab-active')} onClick={() => setTab(id)}
-                onMouseEnter={() => prefetchTab(id)} onFocus={() => prefetchTab(id)}>
-                <Icon size={14} aria-hidden="true" /> {t(`tabs.${id}`)}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <IconTabs tabs={TABS} active={tab} icons={TAB_ICONS} label={t('detail.tabs')} labelOf={(id) => t(`tabs.${id}`)}
+        onSelect={setTab} onWarm={prefetchTab} />
       <div role="tabpanel" aria-label={t(`tabs.${tab}`)}>
         {CONFIG_TABS.includes(tab) && <ConfigEditor agent={agent} tab={tab} isAdmin={isAdmin} />}
         {tab === 'workflow' && <AgentWorkflow agent={agent} isAdmin={isAdmin} />}

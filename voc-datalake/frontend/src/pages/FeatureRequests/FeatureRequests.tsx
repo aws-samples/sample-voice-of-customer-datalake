@@ -5,9 +5,9 @@
  * review metrics). A pre-boards request link (`?request=<id>`) opens that request on its board
  * instead. Board-pool users reach the same boards at `/board`, without Insights.
  */
-import clsx from 'clsx'
 import { BarChart3, LayoutGrid, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { IconTabs } from '../../components/IconTabs/IconTabs'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 import { PageTitle } from '../../components/PageTitle/PageTitle'
@@ -42,20 +42,8 @@ function usePageTab(): readonly [PageTab, (tab: PageTab) => void] {
 function PageTabs({ active, onChange }: Readonly<{ active: PageTab; onChange: (tab: PageTab) => void }>) {
   const { t } = useTranslation('featureRequests')
   return (
-    <div className="tabs-rail overflow-x-auto">
-      <div className="tabs-track" role="tablist" aria-label={t('page.title')}>
-        {PAGE_TABS.map((id) => {
-          const Icon = TAB_ICONS[id]
-          return (
-            <button key={id} type="button" role="tab" aria-selected={active === id} onClick={() => onChange(id)}
-              className={clsx('tab', active === id && 'tab-active')}>
-              <Icon size={14} aria-hidden="true" />
-              {id === 'boards' ? t('tabs.boards') : t('tabs.insights')}
-            </button>
-          )
-        })}
-      </div>
-    </div>
+    <IconTabs tabs={PAGE_TABS} active={active} icons={TAB_ICONS} label={t('page.title')}
+      labelOf={(id) => (id === 'boards' ? t('tabs.boards') : t('tabs.insights'))} onSelect={onChange} />
   )
 }
 
