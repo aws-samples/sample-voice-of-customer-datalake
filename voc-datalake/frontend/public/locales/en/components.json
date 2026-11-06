@@ -176,6 +176,7 @@
       "alreadyRunning": "A reprocess job is already running. Wait for it to finish or cancel it first.",
       "resumeRefused": "This job can no longer be resumed: it was resumed already, or another job is running.",
       "resumeGone": "This job no longer exists, so it can't be resumed.",
+      "handedBack": "The job this one continued can be resumed again from where it stopped.",
       "stoppedAtCeiling": "Stopped at the per-job limit of {{max}} reviews to cap model costs. Resume to continue from where it stopped.",
       "startError": "The reprocess job could not be started.",
       "daysLabel": "Window (days)",

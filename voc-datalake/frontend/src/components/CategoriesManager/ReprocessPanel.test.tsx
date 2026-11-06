@@ -102,6 +102,19 @@ describe('ReprocessPanel', () => {
     }))
   })
 
+  it('offers to resume the job a cancelled resumer handed back', async () => {
+    const cancelledResumer = { ...runningJob, status: 'cancelled', resumed_from: 'rp_0123456789ab',
+      job_id: 'rp_0123456789ac', resumable_job_id: 'rp_0123456789ab' }
+    mockFetchApi.mockResolvedValue({ job: cancelledResumer })
+    const user = userEvent.setup()
+    renderPanel()
+    expect(await screen.findByText(/can be resumed again/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Resume' }))
+    await waitFor(() => expect(mockFetchApi).toHaveBeenCalledWith('/settings/categories/reprocess', {
+      method: 'POST', body: JSON.stringify({ resume: 'rp_0123456789ab' }),
+    }))
+  })
+
   it('explains a refused resume instead of "already running"', async () => {
     mockFetchApi.mockImplementation((_endpoint: string, options?: unknown) => (methodOfInit(options) === 'POST'
       ? Promise.reject(new Error('API Error: 409'))

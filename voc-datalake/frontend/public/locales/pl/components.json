@@ -197,6 +197,7 @@
       "alreadyRunning": "Przetwarzanie jest już uruchomione. Poczekaj na jego zakończenie lub najpierw je anuluj.",
       "resumeRefused": "Tego zadania nie można już wznowić: zostało już wznowione albo trwa inne zadanie.",
       "resumeGone": "To zadanie już nie istnieje, więc nie można go wznowić.",
+      "handedBack": "Zadanie, które to kontynuowało, można ponownie wznowić od miejsca zatrzymania.",
       "stoppedAtCeiling": "Zatrzymano po osiągnięciu limitu {{max}} opinii na zadanie, aby ograniczyć koszty modelu. Wznów, aby kontynuować od miejsca zatrzymania.",
       "startError": "Nie udało się uruchomić zadania ponownego przetwarzania.",
       "daysLabel": "Okres (dni)",

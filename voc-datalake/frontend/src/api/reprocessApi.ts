@@ -96,6 +96,8 @@ const ReprocessJobSchema = z.object({
   raw_fallback_sources: textList,
   resumable: z.boolean().optional().catch(undefined).transform((value) => value === true),
   resumed_from: optionalText,
+  /** On a cancelled or failed resumer: the partial job it handed back, still resumable (GET latest only). */
+  resumable_job_id: optionalText,
   config: JobConfigSchema,
   config_changed: z.boolean().optional().catch(undefined).transform((value) => value === true),
 })

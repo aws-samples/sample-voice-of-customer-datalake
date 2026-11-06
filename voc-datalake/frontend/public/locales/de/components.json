@@ -191,6 +191,7 @@
       "alreadyRunning": "Es läuft bereits ein Neuverarbeitungs-Job. Warten Sie, bis er fertig ist, oder brechen Sie ihn zuerst ab.",
       "resumeRefused": "Dieser Auftrag kann nicht mehr fortgesetzt werden: Er wurde bereits fortgesetzt, oder ein anderer Auftrag läuft.",
       "resumeGone": "Dieser Auftrag existiert nicht mehr und kann nicht fortgesetzt werden.",
+      "handedBack": "Der Auftrag, den dieser fortgesetzt hat, kann erneut ab der Stelle fortgesetzt werden, an der er stoppte.",
       "stoppedAtCeiling": "Beim Limit von {{max}} Bewertungen pro Job angehalten, um die Modellkosten zu begrenzen. Setzen Sie den Job fort, um an der Stelle weiterzumachen, an der er angehalten hat.",
       "startError": "Der Neuverarbeitungs-Job konnte nicht gestartet werden.",
       "daysLabel": "Zeitraum (Tage)",

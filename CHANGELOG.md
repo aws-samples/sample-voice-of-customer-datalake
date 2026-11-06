@@ -32,7 +32,7 @@ Processed feedback keeps its history and says how it was made, and a reprocess c
 ### Changed
 
 - Edited items carry `updated_by {sub, kind}`, `updated_at` and `change_reason`; the API shows only `kind`. An edit leaves the enrichment provenance as it was, so `pipeline_version` and `enriched_at` keep describing how the item was enriched. Plan steps, agents and MCP tokens are told apart from a person.
-- `PUT /data-explorer/feedback` writes only the fields that changed, checks each one and applies the source's PII policy: 400 for a bad value or customer text on a summary-only source, 503 when the source settings cannot be read.
+- `PUT /data-explorer/feedback` writes only the fields that changed, checks each one and applies the source's PII policy: 400 for a bad value or for setting customer text on a summary-only source, 503 when the source settings cannot be read, and 409 when the record changed since it was read (the editor shows "changed by someone else, reload and retry"; 404 when it is gone).
 - The enrichment prompt version is 2.0.0 (the prompt had changed since 1.0.0); a test now pins the prompt text to its version.
 
 ### Fixed
@@ -44,7 +44,7 @@ Processed feedback keeps its history and says how it was made, and a reprocess c
 
 ### Upgrade notes
 
-- New grants: `s3:PutObject` on `silver/*` for the processor, the reprocess worker and the feedback-edit API; `voc-retention` may delete and list versions under `silver/*`. A slice by source is a filtered scan (sources are matched on `source_platform`, so branded reviews are included), so the worker needs no new table grant. The raw bucket's policy changes (VocCoreStack). Deploy with `--all`.
+- New grants: `s3:PutObject` on `silver/*` for the processor, the reprocess worker and the feedback-edit API (the Data Explorer writes its kept versions under its existing bucket-wide put); `voc-retention` may delete and list versions under `silver/*`. A slice by source is a filtered scan (sources are matched on `source_platform`, so branded reviews are included), so the worker needs no new table grant. The raw bucket's policy changes (VocCoreStack). Deploy with `--all`.
 - Items stored before 6.03.00 have no `pipeline_version` and keep `prompt_version` 1.0.0 until reprocessed.
 - A reprocess job's status can now be `partial`; before, a job stopped at the limit read `completed`.
 

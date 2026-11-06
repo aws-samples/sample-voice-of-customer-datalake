@@ -939,8 +939,16 @@ def _started_at(job: dict) -> datetime:
 def get_latest_category_reprocess():
     """Latest reprocess job (admin) — ``{job: Job | null}``."""
     require_admin(app.current_event.raw_event)
-    job = reprocess_jobs.get_latest_job(_configured_table())
-    return {'job': reprocess_jobs.job_view(job) if job else None}
+    table = _configured_table()
+    job = reprocess_jobs.get_latest_job(table)
+    if not job:
+        return {'job': None}
+    view = reprocess_jobs.job_view(job)
+    # A resumer that was cancelled or failed handed its partial job back: name it, so the SPA can offer Resume.
+    handed_back = reprocess_jobs.handed_back_job(table, job)
+    if handed_back is not None:
+        view['resumable_job_id'] = handed_back
+    return {'job': view}
 
 
 @app.post("/settings/categories/reprocess/<job_id>/cancel")

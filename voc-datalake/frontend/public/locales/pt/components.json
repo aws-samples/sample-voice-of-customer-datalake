@@ -191,6 +191,7 @@
       "alreadyRunning": "Já há uma tarefa de reprocessamento em execução. Aguarde a conclusão ou cancele-a primeiro.",
       "resumeRefused": "Este trabalho não pode mais ser retomado: já foi retomado ou outro trabalho está em execução.",
       "resumeGone": "Este trabalho não existe mais, então não pode ser retomado.",
+      "handedBack": "O trabalho que este continuava pode ser retomado de novo de onde parou.",
       "stoppedAtCeiling": "Parou no limite de {{max}} avaliações por tarefa para limitar o custo do modelo. Retome para continuar de onde parou.",
       "startError": "Não foi possível iniciar a tarefa de reprocessamento.",
       "daysLabel": "Período (dias)",
