@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
+import { TextInputField } from '../../components/TextInputField/TextInputField'
 
 // Error Alert Component
 interface ErrorAlertProps { readonly message: string }
@@ -84,28 +85,8 @@ interface TextFieldProps {
 }
 
 /** Every login field is required. */
-export function TextField({
-  value, onChange, label, placeholder, type = 'text', autoComplete, minLength,
-}: Readonly<TextFieldProps>) {
-  const id = useId()
-  return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium text-text mb-1">
-        {label}
-      </label>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="input"
-        placeholder={placeholder}
-        autoComplete={autoComplete}
-        required
-        minLength={minLength}
-      />
-    </div>
-  )
+export function TextField(props: Readonly<TextFieldProps>) {
+  return <TextInputField {...props} required />
 }
 
 // Password Input Component
