@@ -32,7 +32,6 @@ import json
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import Any, Final
 
 from aws_lambda_powertools.event_handler import Response, content_types
@@ -72,6 +71,7 @@ from shared.radar_views import (
 from shared.request_body import json_body_value
 from shared.response_cache import memoized_route, request_versions
 from shared.source_profiles import load_source_profiles
+from shared.tables import cached_table as _table
 from shared.tables import get_aggregates_table
 from shared.timestamps import now_iso
 from shared.warm_init import warm_at_init
@@ -96,12 +96,6 @@ def get_radar_table() -> Any:
     if not RADAR_TABLE:
         raise ConfigurationError('Radar table not configured')
     return _table(get_dynamodb_resource(), RADAR_TABLE)
-
-
-@lru_cache(maxsize=4)
-def _table(resource: Any, name: str) -> Any:
-    """One ``Table`` per (resource, name): boto3 rebuilds the resource class on every ``.Table()``."""
-    return resource.Table(name)
 
 
 def _radar_table_now() -> Any:

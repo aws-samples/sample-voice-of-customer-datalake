@@ -4,6 +4,7 @@ Provides centralized table access with connection reuse.
 """
 
 import os
+from functools import lru_cache
 from typing import Any
 
 from shared.aws import get_dynamodb_resource
@@ -22,6 +23,16 @@ def _get_table(env_var: str) -> Any:
         if table_name:
             _cache[env_var] = get_dynamodb_resource().Table(table_name)
     return _cache.get(env_var)
+
+
+@lru_cache(maxsize=8)
+def cached_table(resource: Any, name: str) -> Any:
+    """One ``Table`` per (resource, name): boto3 rebuilds the resource class on every ``.Table()``.
+
+    For tables read by name outside the env-var getters below (voc-radar, voc-participants,
+    voc-feature-requests); ``cache_clear()`` resets it between tests.
+    """
+    return resource.Table(name)
 
 
 def get_jobs_table():

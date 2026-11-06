@@ -27,13 +27,10 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/api/agents_handler.py",
-        "voc-datalake/lambda/api/radar_handler.py",
         "voc-datalake/lambda/api/ballots_handler.py",
         "voc-datalake/lambda/api/projects_handler.py",
         "voc-datalake/lambda/api/settings_handler.py",
-        "voc-datalake/lambda/api/users_handler.py",
-        "voc-datalake/lambda/shared/engagement_config.py"
+        "voc-datalake/lambda/api/users_handler.py"
       ],
       "reason": "per-handler required-table getters (ConfigurationError when the env is unset); each is the seam its handler's tests patch, so merging them is a test redesign, not a clean-up"
     },
