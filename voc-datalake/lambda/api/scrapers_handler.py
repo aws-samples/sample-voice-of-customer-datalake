@@ -76,7 +76,7 @@ from shared.producer_labels import normalise_label_fields
 from shared.radar_brands import radar_brand_setting
 from shared.request_body import json_object_body
 from shared.row_ids import OPAQUE_ID_RE
-from shared.run_rows import latest_run, run_summary
+from shared.run_rows import run_status
 from shared.scraper_limits import MAX_SCRAPERS, MAX_URLS_PER_SCRAPER, MAX_WEBSCRAPER_CONFIGS_BYTES
 from shared.scraper_run_errors import redacted_scraper_errors
 from shared.tables import get_aggregates_table
@@ -554,19 +554,17 @@ def run_scraper(scraper_id: str):
 @tracer.capture_method
 def get_scraper_status(scraper_id: str):
     """Get the latest run status for a scraper."""
-    table = get_aggregates_table()
-    if not table:
-        return {'scraper_id': scraper_id, 'status': 'unknown'}
     try:
-        run = latest_run(table, f'SCRAPER_RUN#{scraper_id}')
+        return run_status(get_aggregates_table(), f'SCRAPER_RUN#{scraper_id}', {'scraper_id': scraper_id},
+                          _scraper_run_fields)
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get scraper status: {e}")
         return {'scraper_id': scraper_id, 'status': 'unknown', 'error': 'Failed to retrieve status'}
-    if run is None:
-        return {'scraper_id': scraper_id, 'status': 'never_run'}
-    return {'scraper_id': scraper_id, **run_summary(run), 'pages_scraped': run.get('pages_scraped', 0),
-            # Readable by every user: redacted exactly as GET /logs/scraper/<id> is.
-            'errors': redacted_scraper_errors(run.get('errors'))}
+
+
+def _scraper_run_fields(run: dict) -> dict:
+    # Readable by every user: the errors are redacted exactly as GET /logs/scraper/<id> does.
+    return {'pages_scraped': run.get('pages_scraped', 0), 'errors': redacted_scraper_errors(run.get('errors'))}
 
 
 def _fetch_html(url: str) -> str:

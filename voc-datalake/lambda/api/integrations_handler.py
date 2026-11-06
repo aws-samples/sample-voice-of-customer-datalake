@@ -904,20 +904,15 @@ def run_source(source: str):
 
 def _get_source_run_status(source: str):
     """Get the latest run status for a data source plugin."""
-    from shared.run_rows import latest_run, run_summary
+    from shared.run_rows import run_status
     from shared.tables import get_aggregates_table
 
-    table = get_aggregates_table()
-    if not table:
-        return {'source': source, 'status': 'unknown'}
     try:
-        run = latest_run(table, f'SOURCE_RUN#{source}')
+        return run_status(get_aggregates_table(), f'SOURCE_RUN#{source}', {'source': source},
+                          lambda run: {'errors': run.get('errors', [])})
     except (ClientError, BotoCoreError) as e:
         logger.warning(f"Failed to get source run status: {e}")
         return {'source': source, 'status': 'unknown'}
-    if run is None:
-        return {'source': source, 'status': 'never_run'}
-    return {'source': source, **run_summary(run), 'errors': run.get('errors', [])}
 
 
 # Concurrent DescribeRule calls one GET /sources/status makes. The default list
