@@ -11,14 +11,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/api/integrations_handler.py",
-        "voc-datalake/lambda/api/scrapers_handler.py"
-      ],
-      "name": "get_scraper_status",
-      "reason": "different answers: a scraper run adds pages_scraped, redacts its errors for every reader and reports a read failure; the source run does neither (separate API Lambdas)"
-    },
-    {
-      "files": [
         "voc-datalake/scripts/**"
       ],
       "reason": "one-off operator scripts (backfills, retention) each carry their own argparse and stack-output lookup on purpose, so a script runs alone from a checkout (the 5.28 duplicate audit kept them separate)"
