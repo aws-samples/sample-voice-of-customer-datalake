@@ -17,6 +17,8 @@ from __future__ import annotations
 import re
 from pathlib import PurePosixPath
 
+from shared.design_components import component_display_name
+
 MAX_DESIGN_FILES = 12
 MAX_COMPONENT_NAMES = 40
 #: UI source files read for their component styles, beside the design files (one request each).
@@ -96,9 +98,7 @@ def rank_design_files(paths: list[str], base: str = '') -> list[str]:
 
 
 def _component_label(stem: str) -> str:
-    words = re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', stem).replace('-', ' ').replace('_', ' ').split()
-    text = ' '.join(words).lower()
-    return text[:1].upper() + text[1:]
+    return component_display_name(stem.replace('-', ' ').replace('_', ' '))
 
 
 def component_names(paths: list[str], base: str = '') -> list[str]:

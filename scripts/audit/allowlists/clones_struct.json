@@ -55,13 +55,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/shared/github_design.py",
-        "voc-datalake/lambda/shared/tailwind_components.py"
-      ],
-      "reason": "component labels from two sources (GitHub paths vs Tailwind class names): same 4-line shape, different inputs"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/agents/nodes/**"
       ],
       "reason": "agent workflow nodes each check their own domain-API answer and raise their own NodeFailure text (one node = one readable file)"
