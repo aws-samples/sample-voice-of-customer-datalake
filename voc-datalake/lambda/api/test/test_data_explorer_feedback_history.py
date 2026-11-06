@@ -167,6 +167,8 @@ def test_an_editor_with_the_current_stamp_saves(tables, lambda_context):
 def test_a_stale_editor_whose_values_match_is_asked_to_reload(tables, lambda_context):
     """Checked before 'No changes': a stale editor reloads even when its values happen to equal the stored ones."""
     with seeded_source_profiles():
+        # No updated_at in the body (an older client): judged on the server's read only, so it lands and stamps.
         _save(tables, lambda_context, {'urgency': 'high'})
+        # '' = the SPA opened the record unstamped, which it no longer is: a stale editor, even with equal values.
         status, _ = _save(tables, lambda_context, {'urgency': 'high', 'updated_at': ''})
     assert status == 409
