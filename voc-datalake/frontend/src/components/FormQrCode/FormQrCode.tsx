@@ -24,11 +24,10 @@
  *
  * @module components/FormQrCode
  */
-import { QRCodeSVG } from 'qrcode.react'
 import { useTranslation } from 'react-i18next'
 import { feedbackFormPublicUrl } from '../../api/feedbackFormUrls'
 import type { ReactElement } from 'react'
-import { QR_ERROR_CORRECTION, QR_MARGIN_MODULES, QR_SIZE_PX } from './qrSymbol'
+import QrPanel from './QrPanel'
 
 /**
  * The QR for one feedback form's public page.
@@ -50,26 +49,14 @@ export default function FormQrCode({
   // A QR cannot report its own failure: whatever it encodes, it looks like a QR
   // and scans like one, so an unusable endpoint would reach the room as a symbol
   // that resolves to nothing. `feedbackFormPublicUrl` decides — the only thing
-  // left to do here is say it in words rather than draw it.
-  if (url === null) {
-    return <p className="text-xs text-muted text-center">{t('formQrCode.unavailable')}</p>
-  }
+  // left to do here is say it in words rather than draw it (QrPanel's `unavailable`).
   return (
-    <div className="flex flex-col items-center gap-2">
-      {/* `title` becomes the SVG's <title>, which is what assistive tech
-          announces for its role="img" — an unnamed QR is an unlabelled image. */}
-      <QRCodeSVG
-        value={url}
-        size={QR_SIZE_PX}
-        level={QR_ERROR_CORRECTION}
-        marginSize={QR_MARGIN_MODULES}
-        title={t('formQrCode.accessibleName', { formName })}
-        // Fluid up to QR_SIZE_PX rather than fixed at it: `w-full` lets a narrow
-        // container (a phone in portrait) scale the symbol down instead of
-        // overflowing the dialog, and `h-auto` keeps it square via the viewBox.
-        className="bg-white w-full h-auto"
-      />
+    <QrPanel
+      url={url}
+      title={t('formQrCode.accessibleName', { formName })}
+      unavailable={<p className="text-xs text-muted text-center">{t('formQrCode.unavailable')}</p>}
+    >
       <p className="text-xs text-muted text-center">{t('formQrCode.caption')}</p>
-    </div>
+    </QrPanel>
   )
 }
