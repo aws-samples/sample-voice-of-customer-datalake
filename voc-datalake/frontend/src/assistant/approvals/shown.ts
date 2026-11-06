@@ -65,6 +65,14 @@ export class StaleApprovalError extends Error {
   }
 }
 
+/**
+ * Refuse a write whose card was never shown, or whose stored record changed since: `shownBase` is the
+ * fingerprint the card rendered against, `currentFingerprint` the one of the record read just now.
+ */
+export function requireUnchangedSinceShown(shownBase: string | undefined, currentFingerprint: string, changedMessage: string): void {
+  if (shownBase === undefined || shownBase !== currentFingerprint) throw new StaleApprovalError(changedMessage)
+}
+
 /** The job environment the app selects right now. */
 export function currentJobEnvironment(): JobEnvironment {
   const { timeRange, customDays } = useConfigStore.getState()

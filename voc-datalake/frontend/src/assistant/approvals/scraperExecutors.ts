@@ -13,7 +13,7 @@
 import { api } from '../../api/client'
 import { scrapersApi } from '../../api/scrapersApi'
 import { invalidateKeys, keysFor } from './invalidation'
-import { StaleApprovalError, shownOf } from './shown'
+import { StaleApprovalError, requireUnchangedSinceShown, shownOf } from './shown'
 import {
   APP_ID_FIELD, appConnectorRecord, createdScraperRecord, mergedScraperRecord, scraperFingerprint, scraperRecordProblem,
 } from './scraperSchemas'
@@ -57,7 +57,7 @@ export async function updateScraper(args: UpdateScraperArgs, ctx: WriteToolExecu
   const shownBase = shownOf(ctx)?.scraperBase
   const current = await fetchScraper(args.scraper_id)
   if (current === undefined) throw new StaleApprovalError(scraperMissingMessage(args.scraper_id))
-  if (shownBase === undefined || shownBase !== scraperFingerprint(current)) throw new StaleApprovalError(SCRAPER_CHANGED_MESSAGE)
+  requireUnchangedSinceShown(shownBase, scraperFingerprint(current), SCRAPER_CHANGED_MESSAGE)
   const merged = mergedScraperRecord(current, args.updates)
   refused(scraperRecordProblem(merged))
   await scrapersApi.saveScraper(merged)
