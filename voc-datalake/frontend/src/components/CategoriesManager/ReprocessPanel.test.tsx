@@ -92,23 +92,17 @@ describe('ReprocessPanel', () => {
     expect(screen.getByTestId('reprocess-config')).toHaveTextContent('model-x')
   })
 
-  it('resumes a job that stopped at the ceiling', async () => {
-    mockFetchApi.mockResolvedValue({ job: partialJob })
-    const user = userEvent.setup()
-    renderPanel()
-    await user.click(await screen.findByRole('button', { name: 'Resume' }))
-    await waitFor(() => expect(mockFetchApi).toHaveBeenCalledWith('/settings/categories/reprocess', {
-      method: 'POST', body: JSON.stringify({ resume: 'rp_0123456789ab' }),
-    }))
-  })
+  const cancelledResumer = { ...runningJob, status: 'cancelled', resumed_from: 'rp_0123456789ab',
+    job_id: 'rp_0123456789ac', resumable_job_id: 'rp_0123456789ab' }
 
-  it('offers to resume the job a cancelled resumer handed back', async () => {
-    const cancelledResumer = { ...runningJob, status: 'cancelled', resumed_from: 'rp_0123456789ab',
-      job_id: 'rp_0123456789ac', resumable_job_id: 'rp_0123456789ab' }
-    mockFetchApi.mockResolvedValue({ job: cancelledResumer })
+  it.each([
+    ['a job that stopped at the ceiling', partialJob, /per-job limit/],
+    ['the job a cancelled resumer handed back', cancelledResumer, /can be resumed again/],
+  ])('resumes %s', async (_case, job, note) => {
+    mockFetchApi.mockResolvedValue({ job })
     const user = userEvent.setup()
     renderPanel()
-    expect(await screen.findByText(/can be resumed again/)).toBeInTheDocument()
+    expect(await screen.findByText(note)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Resume' }))
     await waitFor(() => expect(mockFetchApi).toHaveBeenCalledWith('/settings/categories/reprocess', {
       method: 'POST', body: JSON.stringify({ resume: 'rp_0123456789ab' }),
