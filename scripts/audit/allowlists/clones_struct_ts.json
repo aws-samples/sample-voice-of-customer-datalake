@@ -6,170 +6,92 @@
         "voc-datalake/frontend/src/assistant/plan/*.ts",
         "voc-datalake/lambda/stream/src/assistant/plan/*.ts"
       ],
-      "reason": "SPA <-> stream Lambda plan mirror (schema, validate, placeholders, graph, canonical), pinned by plan.lockstep tests; separate packages that must not import each other (jscpd ignores them too)"
+      "reason": "SPA <-> stream Lambda plan mirror (schema, validate, placeholders, graph, canonical), pinned by plan.lockstep tests; separate packages that must not import each other (jscpd ignores them too). One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'] (proposal: scratch/dedupe-ts-report.md)."
     },
     {
       "files": [
         "voc-datalake/frontend/src/assistant/contract.ts",
         "voc-datalake/lambda/stream/src/assistant/contract.ts"
       ],
-      "reason": "the AG-UI contract mirror, pinned by contract.lockstep"
+      "reason": "the AG-UI contract mirror, pinned by contract.lockstep. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'] (proposal: scratch/dedupe-ts-report.md)."
     },
     {
       "files": [
         "voc-datalake/frontend/src/assistant/sessions/personaResult.ts",
         "voc-datalake/lambda/stream/src/assistant/session/persona-result.ts"
       ],
-      "reason": "persona-cards result storage mirrored by the SPA and the stream Lambda (both write the same session), pinned by personaResult.lockstep.test.ts; separate packages that must not import each other"
+      "reason": "persona-cards result storage mirrored by the SPA and the stream Lambda (both write the same session), pinned by personaResult.lockstep.test.ts; separate packages that must not import each other. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'] (proposal: scratch/dedupe-ts-report.md)."
     },
     {
       "files": [
         "voc-datalake/frontend/src/assistant/approvals/reviewImportSchemas.ts",
         "voc-datalake/lambda/stream/src/assistant/tools/client/review-import-schemas.ts"
       ],
-      "reason": "approval-card bounds mirrored from the stream tool schema, pinned by its lockstep test"
+      "reason": "approval-card bounds mirrored from the stream tool schema, pinned by its lockstep test. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'] (proposal: scratch/dedupe-ts-report.md)."
     },
     {
       "files": [
         "voc-datalake/frontend/src/assistant/approvals/radarSchemas.ts",
         "voc-datalake/lambda/stream/src/assistant/tools/client/radar-schemas.ts"
       ],
-      "reason": "Radar brand-list bounds (languages, feed URL shape) mirrored from the stream tool schema and shared/radar_brand_fields.py, pinned by radarSchemas.lockstep.test.ts; separate packages that must not import each other"
+      "reason": "Radar brand-list bounds (languages, feed URL shape) mirrored from the stream tool schema and shared/radar_brand_fields.py, pinned by radarSchemas.lockstep.test.ts; separate packages that must not import each other. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'] (proposal: scratch/dedupe-ts-report.md)."
     },
     {
       "files": [
         "voc-datalake/lib/stacks/agent-runtime.ts",
-        "voc-datalake/lib/stacks/memory-workers.ts",
-        "voc-datalake/lib/stacks/api-assistant-lambdas.ts",
-        "voc-datalake/lib/stacks/api-engagement-lambdas.ts"
+        "voc-datalake/lib/stacks/memory-workers.ts"
       ],
-      "reason": "CDK builders repeat a Lambda/role construct shape per function on purpose: one function, one role (the 20 KB IAM policy split); logical ids and asset hashes must not move"
+      "reason": "the agent heartbeat and the memory scanner: the construct calls are already shared (workerRole, createWorkerFunction, scheduleWorker); what is left is each function's own grants, env and schedule, which is the 20 KB IAM split (one function, one role) and must stay per function; logical ids are pinned by the CDK tests"
     },
     {
       "files": [
         "voc-datalake/frontend/src/assistant/approvals/scraperExecutors.ts",
         "voc-datalake/frontend/src/assistant/approvals/userExecutors.ts"
       ],
-      "reason": "approval executors of two tool families: same re-check-then-write flow, different routes, fingerprints and error mapping (pinned by their lockstep and approval tests)"
+      "reason": "update_scraper vs update_user executors: the shown-record re-check is one helper (shown.ts requireUnchangedSinceShown); what is left is the flow shape, with different steps between it (scraper: merge + record validation + one save; user: self-change refusal + ordered multi-route apply), routes, messages and summaries"
     },
     {
       "files": [
         "voc-datalake/frontend/src/components/FormQrCode/FormQrCode.tsx",
         "voc-datalake/frontend/src/pages/Prioritization/SessionQrCode.tsx"
       ],
-      "reason": "QR panels for a feedback form and a voting room: different URLs, labels and download names; similar JSX only"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/api/githubMetricsSchema.ts",
-        "voc-datalake/frontend/src/api/releaseWatchSchema.ts"
-      ],
-      "reason": "lenient Zod boundary normalisers of two wire shapes (the wire-shape rule wants one per payload)"
+      "reason": "both draw through components/FormQrCode/QrPanel; what is left is each wrapper building its own URL (the API host form page vs the SPA ballot route, deliberately not one \"id + kind\" component, see SessionQrCode's header) and its own words and tones (the ballot one also prints the URL)"
     },
     {
       "files": [
         "voc-datalake/lambda/stream/src/assistant/tools/server/agents.ts",
         "voc-datalake/lambda/stream/src/assistant/tools/server/core.ts",
-        "voc-datalake/lambda/stream/src/assistant/tools/server/project.ts",
-        "voc-datalake/lambda/stream/src/assistant/tools/client/radar.ts",
-        "voc-datalake/lambda/stream/src/assistant/tools/client/scrapers.ts"
+        "voc-datalake/lambda/stream/src/assistant/tools/server/project.ts"
       ],
-      "reason": "assistant tool definitions: each tool reads its own route with its own arguments and answer shape (one tool = one readable unit, pinned by tool tests)"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/api/prioritizationAxes.ts",
-        "voc-datalake/frontend/src/pages/Prioritization/scoringDraft.ts"
-      ],
-      "reason": "weight shares of saved axes (by id, activeAxes rule) vs of the unsaved editor draft (by key, archived flag): two shapes on purpose, four lines each"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/pages/ProblemAnalysis/ProblemAnalysis.tsx",
-        "voc-datalake/frontend/src/pages/ProblemAnalysis/ProblemAnalysisPDFContent.tsx"
-      ],
-      "reason": "header totals of the screen and of the PDF over two different group types (CategoryGroup vs CategoryGroupPDF)"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/pages/Login/LoginSharedComponents.tsx",
-        "voc-datalake/frontend/src/pages/ProjectDetail/PersonaEditModal.tsx"
-      ],
-      "reason": "labelled inputs of the login forms (autocomplete, error wiring) and of the persona editor (onChange of a persona field)"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/pages/Company/ContextParts.tsx",
-        "voc-datalake/frontend/src/pages/Settings/DataGovernanceSections.tsx"
-      ],
-      "reason": "section headers of two admin pages with different actions"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/pages/Agents/AgentDetail.tsx",
-        "voc-datalake/frontend/src/pages/Agents/Agents.tsx",
-        "voc-datalake/frontend/src/pages/Company/Company.tsx"
-      ],
-      "reason": "three icon tab strips (agent detail, agents views, company) with different prefetch/guard handlers; CANDIDATE for one TabStrip, but Company's icons lack aria-hidden, so merging changes its accessibility tree (not a byte-identical consolidation)"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/pages/DataExplorer/ProcessedFeedbackView.tsx",
-        "voc-datalake/frontend/src/pages/DataExplorer/S3Browser.tsx"
-      ],
-      "reason": "row action buttons of the two explorer views (record vs object), each with its own icon set"
+      "reason": "get_agent / get_project / get_product_context: the tool-definition skeleton every server tool has (toolSpec, serverTool, parseToolInput, resolveId are already shared); the description, pack, route, answer shape and side effect (projectAccess.record) differ per tool"
     },
     {
       "files": [
         "voc-datalake/frontend/src/pages/Prioritization/ListEmptyState.tsx",
         "voc-datalake/frontend/src/pages/Vote/Vote.tsx"
       ],
-      "reason": "empty/finished states of the prioritization list and the public ballot page (different bundles of the same SPA, different copy)"
+      "reason": "the prioritization list's empty card (centred, icon tile, h2) and the public ballot's recorded notice (role=status, ok-toned banner, icon beside the text): different layout, role and tone; only the 'icon + title + text' shape matches"
     },
     {
       "files": [
         "voc-datalake/frontend/src/pages/DataExplorer/S3Browser.tsx",
         "voc-datalake/frontend/src/pages/ProjectDetail/JobsSection.tsx"
       ],
-      "reason": "an empty-folder note and a jobs header"
+      "reason": "the S3 empty-folder note (centred, bare icon, two lines) and the jobs section header (row with an icon tile and an h2): different layout and heading semantics; only the 'icon + two lines' shape matches"
     },
     {
       "files": [
         "voc-datalake/frontend/src/pages/ProjectDetail/decisions/VerdictBadge.tsx",
         "voc-datalake/frontend/src/pages/Scrapers/SourceCardParts.tsx"
       ],
-      "reason": "badges mapping different enums (decision verdict, run outcome) to tones"
+      "reason": "icon badges over two enums (decision verdict, run outcome). FIXABLE-LATER: an IconBadge component (tone class, icon, label) would serve these and ~19 other 'badge inline-flex items-center gap-1' sites; do it as one sweep (scratch/dedupe-ts-report.md)"
     },
     {
       "files": [
         "voc-datalake/frontend/src/components/MetricCard/MetricCard.tsx",
         "voc-datalake/frontend/src/pages/Home/onboarding/OnboardingBuddy.tsx"
       ],
-      "reason": "status icons for a trend and an onboarding step"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/components/WorkflowEditor/LoopSettings.tsx",
-        "voc-datalake/frontend/src/pages/Agents/AgentSections.tsx",
-        "voc-datalake/frontend/src/pages/Agents/AgentTriggers.tsx"
-      ],
-      "reason": "form rows (label + select/number input) of the agent and workflow editors: different fields, bounds and i18n keys"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/components/WorkflowEditor/ArrowSettings.tsx",
-        "voc-datalake/frontend/src/pages/Connect/MintTokenForm.tsx",
-        "voc-datalake/frontend/src/pages/FeatureRequests/InsightsTab.tsx",
-        "voc-datalake/frontend/src/pages/ProjectDetail/ProductFormFields.tsx"
-      ],
-      "reason": "a LabeledField + native select row of the workflow editor, the token form, the board Insights window picker and the Product tab's lifecycle field: different options, state and i18n keys"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/pages/FeatureRequests/FeatureRequests.tsx",
-        "voc-datalake/frontend/src/pages/Participants/Participants.tsx"
-      ],
-      "reason": "each page's own WAI-ARIA tablist row (role=tab, aria-selected, an icon per tab): different tab ids, icons, state and i18n namespaces"
+      "reason": "two three-way enum -> icon switches (trend up/down/flat at 14 px, onboarding step done/pending/todo at 20 px with a spinner): different icons, sizes and classes; a shared helper would be a lookup table as long as each switch"
     }
   ]
 }
