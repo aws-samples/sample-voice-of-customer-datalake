@@ -173,8 +173,10 @@ How it works:
   version holds only what its item held, and under a `summary_only` policy never the fields that policy
   drops (`normalized_text`, `direct_customer_quote`, `author`, `title`, `metadata`), even if an item from
   before 6.03.00 still holds them. **Removing personal data by hand** (a Data Explorer edit of a leaked email)
-  keeps the version from before the edit, which still holds it: remove it with an erasure (this page), which
-  deletes every kept version of the matching items.
+  keeps the version from before the edit, which still holds it. Erase the value BEFORE editing it out (the
+  erasure matches the item while it still holds the value, and deletes the item with every kept version), or
+  afterwards erase the item by a value it still holds (its `source_id`). An erasure by the removed value
+  alone finds nothing, because it matches items as they are stored now (see "What erasure does not reach").
 - **Radar.** After `voc-feedback`, the same match runs over `voc-radar` (other brands' reviews,
   [radar.md](radar.md)): each matching review row goes with its dedupe marker (`RADARID#<brand>`) and
   its own raw archive (`deleted_radar_items`). The brand's daily counters are kept: they hold

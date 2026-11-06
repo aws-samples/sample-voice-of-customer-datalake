@@ -103,6 +103,18 @@ class TestResume:
         stored = jobs.get_job(table, body['job']['job_id']) or {}
         assert (stored.get('date_from'), stored.get('date_to')) == ('2026-09-02', '2026-10-01')
 
+    def test_a_resume_of_a_resume_keeps_the_original_days(self, post, table):
+        """The first resume pins a days window to dates; a later resume reads those dates, not its own start."""
+        partial = _partial_job(table, days=30, now=datetime(2026, 10, 1, 9, tzinfo=UTC))
+        _response, first = post({'resume': partial})
+        resumer = first['job']['job_id']
+        jobs.claim_job(table, resumer, 'tok2')
+        jobs.finish_job(table, resumer, jobs.STATUS_PARTIAL, counters={'scanned': 1}, worker_token='tok2',
+                        stopped_at_ceiling=True, resume_from={'pk': 'SOURCE#web', 'sk': 'FEEDBACK#c'})
+        _response, second = post({'resume': resumer})
+        stored = jobs.get_job(table, second['job']['job_id']) or {}
+        assert (stored.get('date_from'), stored.get('date_to')) == ('2026-09-02', '2026-10-01')
+
     def test_a_cancelled_resume_can_be_resumed_again(self, post, table):
         partial = _partial_job(table)
         _response, body = post({'resume': partial})
@@ -119,8 +131,10 @@ class TestResume:
         _, latest = call_route(lambda_handler, api_gateway_event, lambda_context, method='GET', path=BASE)
         assert latest['job']['job_id'] == body['job']['job_id']
         assert latest['job']['resumable_job_id'] == partial
-        post({'resume': partial})  # resumed again: the cancelled one names nothing any more
-        jobs.cancel_job(table, (jobs.get_latest_job(table) or {}).get('sk', ''))
+        _response, again = post({'resume': partial})  # resumed again by a second job
+        _, running = call_route(lambda_handler, api_gateway_event, lambda_context, method='GET', path=BASE)
+        assert 'resumable_job_id' not in running['job']  # a live resumer names nothing
+        jobs.cancel_job(table, again['job']['job_id'])
         _, after = call_route(lambda_handler, api_gateway_event, lambda_context, method='GET', path=BASE)
         assert after['job']['resumable_job_id'] == partial  # the second resumer handed it back too
 

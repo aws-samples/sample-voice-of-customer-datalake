@@ -45,6 +45,7 @@ from shared.exceptions import (
     ValidationError,
 )
 from shared.feedback_category import (
+    LOST_UPDATE_MESSAGE,
     CategoryChange,
     ManualEdit,
     apply_conditional_update,
@@ -485,6 +486,19 @@ def _unchanged_since_read(item: dict) -> ConditionBase:
     return Attr('updated_at').eq(stamp) if isinstance(stamp, str) and stamp else Attr('updated_at').not_exists()
 
 
+def _refuse_stale_editor(item: dict, data: dict) -> None:
+    """409 when the editor's copy is older than the record: it names the ``updated_at`` it was opened with.
+
+    The editor sends the whole record as it opened it, so its untouched fields would otherwise overwrite a
+    change made since. A body without ``updated_at`` (an older client) is judged on the server's read only.
+    """
+    if 'updated_at' not in data:
+        return
+    opened, stored = data.get('updated_at'), item.get('updated_at')
+    if (opened or None) != (stored or None):
+        raise ConflictError(LOST_UPDATE_MESSAGE)
+
+
 def _write_condition(change: CategoryChange | None) -> ConditionBase:
     """A category move's own condition (it exists with the category read), else that it exists."""
     return change.condition if change is not None and change.condition is not None else item_exists()
@@ -554,6 +568,7 @@ def save_feedback():
         raise ServiceError('Failed to update feedback') from e
     if change is None and not edits.changed:
         return {'success': True, 'message': 'No changes'}
+    _refuse_stale_editor(item, data)
 
     edit = ManualEdit(actor=actor_from_event(app.current_event.raw_event, admin=True), reason=REASON_DATA_EXPLORER_EDIT)
     kwargs = _update_kwargs(item, key, edits, change, edit)

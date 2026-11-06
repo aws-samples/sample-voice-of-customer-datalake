@@ -141,3 +141,23 @@ def test_null_removes_an_optional_field(tables, lambda_context):
         status, _ = _save(tables, lambda_context, {'persona_name': None})
     assert status == 200
     assert 'persona_name' not in _stored(tables)
+
+
+def test_an_editor_opened_before_the_last_change_is_refused(tables, lambda_context):
+    """The editor sends the whole record it opened: its stale fields must not overwrite a change made since."""
+    with seeded_source_profiles():
+        assert _save(tables, lambda_context, {'urgency': 'high'})[0] == 200  # someone else's edit stamps updated_at
+        status, body = _save(tables, lambda_context, {'urgency': 'low', 'original_text': 'The parcel was late',
+                                                      'updated_at': None})
+    assert status == 409
+    assert 'changed by someone else' in body['error']
+    assert _stored(tables)['urgency'] == 'high'
+
+
+def test_an_editor_with_the_current_stamp_saves(tables, lambda_context):
+    with seeded_source_profiles():
+        _save(tables, lambda_context, {'urgency': 'high'})
+        stamp = _stored(tables)['updated_at']
+        status, _ = _save(tables, lambda_context, {'urgency': 'low', 'updated_at': stamp})
+    assert status == 200
+    assert _stored(tables)['urgency'] == 'low'
