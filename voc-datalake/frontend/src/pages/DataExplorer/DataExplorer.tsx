@@ -18,7 +18,7 @@ import EditModal, { type EditModalState } from './EditModal'
 import { useDataExplorerQueries } from './useDataExplorerQueries'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
-import { savedFeedbackBody } from './openedStamp'
+import { isStaleEditorRefusal, savedFeedbackBody } from './openedStamp'
 import { useAppSourceLabel } from './useAppSourceLabel'
 import { useDataExplorerMutations } from './useDataExplorerMutations'
 import { openS3Editor, openS3Creator, downloadS3File } from './s3Handlers'
@@ -62,6 +62,7 @@ function isFeedbackItemWithS3(item: FeedbackItem): item is FeedbackItemWithS3 {
 }
 
 export default function DataExplorer() {
+  const { t } = useTranslation('dataExplorer')
   const [viewMode, setViewMode] = useViewMode()
   const [selectedBucket, setSelectedBucket] = useState<string>('raw-data')
   const [s3Path, setS3Path] = useState<string[]>([])
@@ -75,6 +76,15 @@ export default function DataExplorer() {
     onFeedbackSaveSuccess: () => setEditModal(null),
   })
 
+  // A save error belongs to the editor it was shown in: the next editor opens without it.
+  const { reset: resetS3Save } = mutations.saveS3Mutation
+  const { reset: resetFeedbackSave } = mutations.saveFeedbackMutation
+  const showEditor = useCallback((state: EditModalState | null) => {
+    resetS3Save()
+    resetFeedbackSave()
+    setEditModal(state)
+  }, [resetS3Save, resetFeedbackSave])
+
   const handleBucketChange = useCallback((bucketId: string) => {
     setSelectedBucket(bucketId)
     setS3Path([])
@@ -83,12 +93,12 @@ export default function DataExplorer() {
   const handleOpenS3Editor = useCallback((fullKey: string, mode: 'view' | 'edit') => {
     // Same contract as download: a failed preview fetch must not surface as an
     // unhandled rejection; the modal simply does not open.
-    openS3Editor(fullKey, mode, selectedBucket, setEditModal).catch(console.error)
-  }, [selectedBucket])
+    openS3Editor(fullKey, mode, selectedBucket, showEditor).catch(console.error)
+  }, [selectedBucket, showEditor])
 
   const handleOpenS3Creator = useCallback(() => {
-    openS3Creator(s3Path, setEditModal)
-  }, [s3Path])
+    openS3Creator(s3Path, showEditor)
+  }, [s3Path, showEditor])
 
   const handleDownloadS3File = useCallback((fullKey: string, filename: string) => {
     downloadS3File(fullKey, filename, selectedBucket).catch(console.error)
@@ -96,11 +106,11 @@ export default function DataExplorer() {
 
   const handleOpenFeedbackEditor = useCallback((item: FeedbackItem, mode: 'view' | 'edit') => {
     const s3RawUri = isFeedbackItemWithS3(item) ? item.s3_raw_uri : undefined
-    setEditModal({
+    showEditor({
       isOpen: true, mode, type: 'dynamodb', data: item,
       feedbackId: item.feedback_id, s3RawUri,
     })
-  }, [])
+  }, [showEditor])
 
   const handleSave = useCallback((content: unknown, sync?: boolean) => {
     if (!editModal) return
@@ -111,6 +121,9 @@ export default function DataExplorer() {
       mutations.saveFeedbackMutation.mutate({ feedbackId: editModal.feedbackId, data: savedFeedbackBody(content, editModal.data) })
     }
   }, [editModal, mutations.saveS3Mutation, mutations.saveFeedbackMutation])
+
+  const feedbackSaveError = mutations.saveFeedbackMutation.error
+  const feedbackSaveMessage = isStaleEditorRefusal(feedbackSaveError) ? t('editModal.staleRecord') : feedbackSaveError?.message
 
   if (!queries.isConfigured) {
     return <NotConfiguredView />
@@ -148,10 +161,10 @@ export default function DataExplorer() {
       {editModal && (
         <EditModal
           {...editModalProps(editModal)}
-          onClose={() => setEditModal(null)}
+          onClose={() => showEditor(null)}
           onSave={handleSave}
           saving={mutations.saveS3Mutation.isPending || mutations.saveFeedbackMutation.isPending}
-          error={mutations.saveS3Mutation.error?.message ?? mutations.saveFeedbackMutation.error?.message}
+          error={mutations.saveS3Mutation.error?.message ?? feedbackSaveMessage}
         />
       )}
     </div>

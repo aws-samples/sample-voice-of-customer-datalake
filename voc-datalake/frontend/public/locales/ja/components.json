@@ -225,7 +225,8 @@
       "sourcesHint": "未選択 = すべてのソース。選択したソースだけを読み込みます。最大 {{max, number}} 件。",
       "categoriesLabel": "カテゴリ",
       "categoriesPlaceholder": "billing, delivery",
-      "categoriesHint": "保存済みのカテゴリ名をカンマ区切りで入力します（現在は設定されていないものも可）。空欄 = すべてのカテゴリ。最大 {{max, number}} 件。"
+      "categoriesHint": "保存済みのカテゴリ名をカンマ区切りで入力します（現在は設定されていないものも可）。空欄 = すべてのカテゴリ。最大 {{max, number}} 件。",
+      "tooManyValues": "{{selected, number}} 件が指定されています。上限は {{max, number}} 件です。ジョブを開始するには減らしてください。"
     }
   },
   "dataSourceWizard": {

@@ -372,7 +372,7 @@ Plan mode (3.17.00) adds to the `scrapers` pack: client write `run_source` (admi
 | POST | `/settings/categories/generate` | AI-generate categories — admin-only (Bedrock spend, #242); the AI panel is hidden for non-admins. 202 + assist job (see Scrapers → Assist jobs) |
 | GET | `/settings/jobs/{job_id}` | Poll a categories assist job (its starter only; 404 otherwise) |
 | POST | `/settings/categories/reprocess` | Start a reprocess job `{mode: processed\|raw\|dimensions, days \| date_from/date_to, date_basis?, sources?, categories?, include_manual?}` (≤ 50 sources / categories; a source slice is a Scan filtered on `source_platform`) or resume one `{resume: <job_id>}` (a `partial` job, from its cursor, one resumer at a time; a failed or cancelled resumer hands it back) (admin) → 202 `{job}`, 409 if one is active or the job is not resumable, 404 unknown job (docs/categories.md) |
-| GET | `/settings/categories/reprocess` | Latest reprocess job (`resumable`, `resume_from`, `config`, `raw_fallback`; a cancelled / failed resumer also names `resumable_job_id`) |
+| GET | `/settings/categories/reprocess` | Latest reprocess job (`resumable`, `resumed_from` / `resumed_by`, `config`, `raw_fallback_sources`; the `resume_from` cursor stays server-side; a cancelled / failed resumer also names `resumable_job_id`) |
 | POST | `/settings/categories/reprocess/{job_id}/cancel` | Cancel a reprocess job |
 | GET/PUT | `/settings/dimensions` | Dimensions config (GET any user, PUT admin); the built-in `feedback_type` (`shared/feedback_types.py`) is listed first with `builtin: true` and never stored — docs/dimensions.md |
 | GET/PUT | `/settings/sources` | Source profiles (admin full; others `{id, label, restricted}`; PUT admin) — docs/source-policies.md |

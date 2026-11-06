@@ -15,7 +15,8 @@
     "type": "유형",
     "viewFeedback": "피드백 보기",
     "viewS3File": "S3 파일 보기",
-    "content": "파일 내용"
+    "content": "파일 내용",
+    "staleRecord": "이 레코드는 연 후에 변경되었습니다. 편집기를 닫고 다시 열어 현재 버전을 확인하세요."
   },
   "feedback": {
     "category": "카테고리: {{category}}",

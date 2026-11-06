@@ -225,7 +225,8 @@
       "sourcesHint": "未选择 = 所有来源。只读取所选来源。最多 {{max, number}} 个。",
       "categoriesLabel": "类别",
       "categoriesPlaceholder": "billing, delivery",
-      "categoriesHint": "已存储的类别名称，以逗号分隔（包括已不再配置的类别）。留空 = 所有类别。最多 {{max, number}} 个。"
+      "categoriesHint": "已存储的类别名称，以逗号分隔（包括已不再配置的类别）。留空 = 所有类别。最多 {{max, number}} 个。",
+      "tooManyValues": "已指定 {{selected, number}} 个，上限为 {{max, number}} 个。请删除一些后再开始任务。"
     }
   },
   "dataSourceWizard": {

@@ -6,6 +6,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { FeedbackItem } from '../../api/types'
+import { isStaleEditorRefusal } from './openedStamp'
 import { dataExplorerKeys } from './useDataExplorerQueries'
 
 /**
@@ -36,6 +37,10 @@ export function useDataExplorerMutations(selectedBucket: string, callbacks: Muta
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: dataExplorerKeys.feedback() })
       callbacks.onFeedbackSaveSuccess()
+    },
+    // A 409 means the listed copy is stale: refetch it, so reopening the record brings the current stamp.
+    onError: (error) => {
+      if (isStaleEditorRefusal(error)) void queryClient.invalidateQueries({ queryKey: dataExplorerKeys.feedback() })
     },
   })
 

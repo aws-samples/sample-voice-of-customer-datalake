@@ -15,7 +15,8 @@
     "type": "类型",
     "viewFeedback": "查看反馈",
     "viewS3File": "查看 S3 文件",
-    "content": "文件内容"
+    "content": "文件内容",
+    "staleRecord": "此记录在您打开后已被更改。请关闭编辑器并重新打开以查看当前版本。"
   },
   "feedback": {
     "category": "分类：{{category}}",

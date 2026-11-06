@@ -420,10 +420,8 @@ def save_s3_file():
 CATEGORY_FIELDS = ('category', 'subcategory')
 
 
-def _feedback_key(table, feedback_id: str, source_platform: str) -> dict:
-    """The record's primary key: from `source_platform` when given, else via the by-id GSI."""
-    if source_platform:
-        return {'pk': f"SOURCE#{source_platform}", 'sk': f"FEEDBACK#{feedback_id}"}
+def _feedback_key_by_id(table, feedback_id: str) -> dict:
+    """The record's primary key via the by-id GSI, or 404."""
     response = table.query(
         IndexName=FEEDBACK_BY_ID_INDEX,
         KeyConditionExpression='feedback_id = :fid',
@@ -442,6 +440,22 @@ def _stored_item(table, key: dict) -> dict:
     if not item:
         raise NotFoundError('Feedback not found')
     return item
+
+
+def _located_item(table, feedback_id: str, source_platform: str) -> tuple[dict, dict]:
+    """`(key, item)` of the record: tried at `SOURCE#{source_platform}` first, else found by id.
+
+    The editor sends `source_platform` back with the record, but a branded review lives under
+    `SOURCE#{brand_name}` (the processor's partition), so that key alone would answer 404 for it.
+    """
+    if source_platform:
+        try:
+            key = {'pk': f"SOURCE#{source_platform}", 'sk': f"FEEDBACK#{feedback_id}"}
+            return key, _stored_item(table, key)
+        except NotFoundError:
+            pass
+    key = _feedback_key_by_id(table, feedback_id)
+    return key, _stored_item(table, key)
 
 
 def _requested_category(item: dict, data: dict) -> tuple[str, str | None] | None:
@@ -557,8 +571,9 @@ def save_feedback():
 
     table = dynamodb.Table(FEEDBACK_TABLE)
     try:
-        key = _feedback_key(table, feedback_id, data.get('source_platform', ''))
-        item = _stored_item(table, key)
+        key, item = _located_item(table, feedback_id, str(data.get('source_platform') or ''))
+        # Before any field check: a stale editor reloads, even when its values match or one fails today's rules.
+        _refuse_stale_editor(item, data)
         change = _category_change(item, data)
         edits = field_edits(item, data)
     except ApiError:
@@ -566,7 +581,6 @@ def save_feedback():
     except Exception as e:
         logger.exception("Failed to read feedback")
         raise ServiceError('Failed to update feedback') from e
-    _refuse_stale_editor(item, data)  # first: a stale editor reloads, even when its values happen to match
     if change is None and not edits.changed:
         return {'success': True, 'message': 'No changes'}
 

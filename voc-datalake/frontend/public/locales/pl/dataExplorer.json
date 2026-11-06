@@ -14,7 +14,8 @@
     "type": "Typ",
     "viewFeedback": "Podgląd opinii",
     "viewS3File": "Podgląd pliku S3",
-    "content": "Zawartość pliku"
+    "content": "Zawartość pliku",
+    "staleRecord": "Ten rekord zmienił się po jego otwarciu. Zamknij edytor i otwórz go ponownie, aby zobaczyć bieżącą wersję."
   },
   "feedback": {
     "category": "Kategoria: {{category}}",

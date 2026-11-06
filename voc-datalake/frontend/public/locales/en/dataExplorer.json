@@ -15,7 +15,8 @@
     "type": "Type",
     "viewFeedback": "View Feedback",
     "viewS3File": "View S3 File",
-    "content": "File content"
+    "content": "File content",
+    "staleRecord": "This record changed after you opened it. Close the editor and open it again to see the current version."
   },
   "feedback": {
     "category": "Category: {{category}}",
