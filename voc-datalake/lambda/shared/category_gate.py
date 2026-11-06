@@ -14,13 +14,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from botocore.exceptions import BotoCoreError, ClientError
-
 from shared import category_access
 from shared.api import get_raw_categories_config
 from shared.category_access import CategoryScope
 from shared.exceptions import ServiceError
-from shared.logging import logger
+from shared.gate_reads import read_gate_item
 from shared.project_access import Caller
 from shared.project_gate import caller_from_event
 from shared.source_profiles import SOURCES_SETTINGS_KEY
@@ -36,26 +34,22 @@ def read_categories_config(aggregates_table: Any) -> list[dict]:
     correcting a review's category): a category added a moment ago must be
     usable at once, which the 5-minute cache in ``shared.api`` cannot promise.
     """
-    try:
-        response = aggregates_table.get_item(
-            Key={'pk': CATEGORIES_PK, 'sk': CATEGORIES_SK}, ConsistentRead=True)
-    except (ClientError, BotoCoreError) as exc:
-        logger.exception('Categories config read failed')
-        raise ServiceError('Could not read categories. Please retry.') from exc
-    item = response.get('Item') if isinstance(response, Mapping) else None
-    raw = item.get('categories') if isinstance(item, Mapping) else None
+    item = read_gate_item(
+        aggregates_table, log_message='Categories config read failed',
+        error_message='Could not read categories. Please retry.',
+        Key={'pk': CATEGORIES_PK, 'sk': CATEGORIES_SK}, ConsistentRead=True,
+    )
+    raw = item.get('categories') if item else None
     return [c for c in raw if isinstance(c, dict) and c.get('name')] if isinstance(raw, list) else []
 
 
 def read_access_row(aggregates_table: Any, subject: str) -> dict | None:
     """``subject``'s access row, or None when there is none."""
-    try:
-        response = aggregates_table.get_item(Key=category_access.access_key(subject))
-    except (ClientError, BotoCoreError) as exc:
-        logger.exception('Category access read failed')
-        raise ServiceError('Could not verify category access. Please retry.') from exc
-    item = response.get('Item') if isinstance(response, Mapping) else None
-    return item if isinstance(item, dict) else None
+    return read_gate_item(
+        aggregates_table, log_message='Category access read failed',
+        error_message='Could not verify category access. Please retry.',
+        Key=category_access.access_key(subject),
+    )
 
 
 def read_restricted_sources(aggregates_table: Any) -> frozenset[str]:
@@ -65,13 +59,12 @@ def read_restricted_sources(aggregates_table: Any) -> frozenset[str]:
     the others: any entry naming an id with ``restricted: true`` counts. A failed
     read is a 500, never "nothing restricted".
     """
-    try:
-        response = aggregates_table.get_item(Key=SOURCES_SETTINGS_KEY, ConsistentRead=True)
-    except (ClientError, BotoCoreError) as exc:
-        logger.exception('Source profiles read failed')
-        raise ServiceError('Could not verify source access. Please retry.') from exc
-    item = response.get('Item') if isinstance(response, Mapping) else None
-    raw = item.get('sources') if isinstance(item, Mapping) else None
+    item = read_gate_item(
+        aggregates_table, log_message='Source profiles read failed',
+        error_message='Could not verify source access. Please retry.',
+        Key=SOURCES_SETTINGS_KEY, ConsistentRead=True,
+    )
+    raw = item.get('sources') if item else None
     if not isinstance(raw, list):
         return frozenset()
     return frozenset(

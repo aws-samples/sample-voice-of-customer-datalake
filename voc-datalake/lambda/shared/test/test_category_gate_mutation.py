@@ -19,7 +19,7 @@ import pytest
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import category_access as ca
-from shared import category_gate
+from shared import category_gate, gate_reads
 from shared.api import clear_categories_cache
 from shared.exceptions import ServiceError
 from shared.project_access import Caller
@@ -83,7 +83,7 @@ class TestEveryFailedReadIsA500NamingItsCause:
         self, read: Callable[[MagicMock], object], message: str, log_line: str,
         failure: Exception,
     ) -> None:
-        with patch.object(category_gate, 'logger') as logger, \
+        with patch.object(gate_reads, 'logger') as logger, \
                 pytest.raises(ServiceError) as raised:
             read(_table(failure))
         assert str(raised.value) == message
