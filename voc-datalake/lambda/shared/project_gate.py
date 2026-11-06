@@ -12,13 +12,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from botocore.exceptions import BotoCoreError, ClientError
-
 from shared import project_access
 from shared.api import get_caller_groups
 from shared.company_personas import is_company_container
-from shared.exceptions import AuthorizationError, NotFoundError, ServiceError, ValidationError
-from shared.logging import logger
+from shared.exceptions import AuthorizationError, NotFoundError, ValidationError
+from shared.gate_reads import read_gate_item
 from shared.project_access import Caller, ProjectAccess
 from shared.project_writes import PROJECT_DELETION_ATTRIBUTE, is_project_tombstone
 from shared.row_ids import LONG_OPAQUE_ID_RE
@@ -68,15 +66,11 @@ def read_gate_meta(table: Any, project_id: str) -> dict | None:
     """
     if is_company_container(project_id):
         return None
-    try:
-        response = table.get_item(
-            **project_access.meta_gate_read(project_id, PROJECT_DELETION_ATTRIBUTE)
-        )
-    except (ClientError, BotoCoreError) as exc:
-        logger.exception('Project access read failed')
-        raise ServiceError('Could not verify project access. Please retry.') from exc
-    item = response.get('Item') if isinstance(response, dict) else None
-    return item if isinstance(item, dict) else None
+    return read_gate_item(
+        table, log_message='Project access read failed',
+        error_message='Could not verify project access. Please retry.',
+        **project_access.meta_gate_read(project_id, PROJECT_DELETION_ATTRIBUTE),
+    )
 
 
 def require_project_level(

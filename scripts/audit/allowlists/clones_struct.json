@@ -72,13 +72,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/shared/category_gate.py",
-        "voc-datalake/lambda/shared/project_gate.py"
-      ],
-      "reason": "access-row reads of two gates: different keys and projections, and each raises its own user-facing ServiceError text"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/shared/briefing_prefs.py",
         "voc-datalake/lambda/shared/onboarding.py"
       ],

@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from shared import project_access, project_gate
+from shared import gate_reads, project_access, project_gate
 from shared.exceptions import AuthorizationError, NotFoundError, ServiceError
 from shared.project_access import Caller
 
@@ -93,7 +93,7 @@ class TestAFailedReadLogsAndAnswers500Verbatim:
                                       'Message': 'slow down'}}, 'GetItem')
         table.get_item.side_effect = error
 
-        with patch.object(project_gate, 'logger') as logger, pytest.raises(ServiceError) as raised:
+        with patch.object(gate_reads, 'logger') as logger, pytest.raises(ServiceError) as raised:
             project_gate.read_gate_meta(table, 'p1')
 
         logger.exception.assert_called_once_with('Project access read failed')
