@@ -5,9 +5,19 @@ a quoted review is clipped here instead.
 """
 from __future__ import annotations
 
+import re
+from typing import Final
+
 ELLIPSIS = '…'
+#: Any run of whitespace (newlines, tabs, repeated spaces).
+WHITESPACE_RE: Final = re.compile(r'\s+')
 #: Stripped before the ellipsis so a clip never reads "refunds,…" or "refunds —…".
 _TRAILING_PUNCTUATION = ' ,;:.-\u2014\u2013'  # space, comma, …, em dash, en dash
+
+
+def collapse_whitespace(text: str) -> str:
+    """``text`` with every whitespace run turned into one space, trimmed."""
+    return WHITESPACE_RE.sub(' ', text).strip()
 
 
 def clip_words(text: str, limit: int) -> str:

@@ -25,6 +25,7 @@ from shared.document_versions import (
 )
 from shared.dynamo_paging import iter_query
 from shared.exceptions import NotFoundError, ValidationError
+from shared.text_clip import collapse_whitespace
 
 COMMENTABLE_TYPES: Final = MERGE_VERSIONED_DOCUMENT_TYPES
 DOCUMENT_NOT_FOUND: Final = 'Document not found'
@@ -89,12 +90,11 @@ _TABLE_SEPARATOR_RE: Final = re.compile(r'^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:
 _EMPHASIS_RE: Final = re.compile(r'(\*\*|__|~~|`)')
 _SINGLE_STAR_RE: Final = re.compile(r'(?<![\w*])\*(?=\S)|(?<=\S)\*(?![\w*])')
 _HTML_TAG_RE: Final = re.compile(r'</?[A-Za-z][^>]*>')
-_WS_RE: Final = re.compile(r'\s+')
 
 
 def collapse(text: str) -> str:
     """Every whitespace run as one space, trimmed (how both sides compare text)."""
-    return _WS_RE.sub(' ', text).strip()
+    return collapse_whitespace(text)
 
 
 def plain_text(markdown: object) -> str:

@@ -13,10 +13,6 @@
       "reason": "the open-session pointer lives in its own partition (OPEN_ROW_SESSION_PK); it only shares the ROW# spelling with the Prioritization row records"
     },
     {
-      "key": "_WHITESPACE|_WS_RE::*",
-      "reason": "a one-token whitespace regex; sharing it would couple unrelated text cleaners for no contract"
-    },
-    {
       "key": "CATEGORY_FIELDS|THRESHOLD_PER::*",
       "reason": "the Data Explorer's editable category fields and an agent threshold's per-bucket choices: equal tuples, different meanings"
     },

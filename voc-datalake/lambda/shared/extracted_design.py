@@ -48,6 +48,7 @@ from shared.company_context import (
 from shared.design_components import clean_components, merge_by_key, merge_components
 from shared.prompt_safety import injection_findings, neutralise_tags
 from shared.scope_names import DESIGN_TOKEN_GROUPS
+from shared.text_clip import collapse_whitespace
 
 SOURCES = ('computed_styles', 'repo_files', 'figma', 'html', 'screenshot')
 LOGO_CONTENT_TYPES = ('image/png', 'image/jpeg', 'image/webp')
@@ -57,7 +58,6 @@ LOGO_PREVIEW_PREFIX = 'company-context/design/logo_preview_'
 ICONS_PREFIX = 'company-context/design/icons_'
 VALUE_GROUPS = {'colors': is_css_color, 'spacing': is_css_length, 'radius': is_css_length}
 _SECTION_TITLE_CHARS = 120
-_WS_RE = re.compile(r'\s+')
 #: A remote image in the guidelines (markdown or an HTML tag) would be hotlinked wherever they are shown.
 _REMOTE_MD_IMAGE_RE = re.compile(r'!\[([^\]\n]{0,300})\]\(\s*(?:https?:)?//[^)\n]*\)', re.IGNORECASE)
 _HTML_IMAGE_RE = re.compile(r'<(?:img|picture|source|image)\b[^>]*>', re.IGNORECASE)
@@ -69,7 +69,7 @@ def _clean_text(value: object, limit: int) -> str:
     """A one-line, tag-neutral, injection-free string of at most ``limit`` characters, or ''."""
     if not isinstance(value, str):
         return ''
-    text = _WS_RE.sub(' ', value).strip()
+    text = collapse_whitespace(value)
     if not text or len(text) > limit or injection_findings(text):
         return ''
     return neutralise_tags(text)
@@ -102,7 +102,7 @@ def _typography_row(entry: dict) -> dict | None:
     family = entry.get('family')
     if not role or not isinstance(family, str) or not is_font_family(family):
         return None
-    row: dict[str, Any] = {'role': role, 'family': _WS_RE.sub(' ', family).strip()}
+    row: dict[str, Any] = {'role': role, 'family': collapse_whitespace(family)}
     if is_css_length(entry.get('size')):
         row['size'] = str(entry['size']).strip()
     if is_font_weight(entry.get('weight')):
@@ -180,7 +180,7 @@ def _merge_group(current: list[dict], incoming: list[dict], field: str) -> tuple
 
 
 def _section_title(title: object) -> str:
-    text = _WS_RE.sub(' ', str(title or '')).strip()[:_SECTION_TITLE_CHARS]
+    text = collapse_whitespace(str(title or ''))[:_SECTION_TITLE_CHARS]
     return neutralise_tags(text) or 'the reference'
 
 
