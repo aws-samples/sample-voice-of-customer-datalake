@@ -11,9 +11,10 @@ import { api } from '../../api/client'
 import { AGENT_MODEL_ROLES, AGENT_VISIBILITIES, API_AGENT_LIMITS } from '../../api/agentsApi'
 import { workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
+import { EnumSelectField } from '../../components/LabeledField/EnumSelectField'
+import { ClampedNumberField } from './ClampedNumberField'
 import { useVisibleCategories } from '../../hooks/useCategories'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
-import { clampInt } from './agentDraft'
 import type { AgentDraft } from './agentDraft'
 import { modelSettingsKey } from '../../api/queryKeys'
 
@@ -103,17 +104,9 @@ export function SettingsSection({ draft, readOnly, onChange }: Readonly<SectionP
           </select>
         )}
       </LabeledField>
-      <LabeledField label={t('fields.visibility')} hint={t('fields.visibilityHint')}>
-        {(id) => (
-          <select id={id} className="select w-full" disabled={readOnly} value={draft.output.visibility}
-            onChange={(e) => {
-              const visibility = AGENT_VISIBILITIES.find((v) => v === e.target.value)
-              if (visibility !== undefined) onChange({ ...draft, output: { visibility } })
-            }}>
-            {AGENT_VISIBILITIES.map((v) => <option key={v} value={v}>{t(`visibility.${v}`)}</option>)}
-          </select>
-        )}
-      </LabeledField>
+      <EnumSelectField label={t('fields.visibility')} hint={t('fields.visibilityHint')} choices={AGENT_VISIBILITIES}
+        value={draft.output.visibility} display={(v) => t(`visibility.${v}`)} disabled={readOnly}
+        onChange={(visibility) => onChange({ ...draft, output: { visibility } })} />
     </div>
   )
 }
@@ -158,27 +151,21 @@ export function BudgetSection({ draft, readOnly, onChange }: Readonly<SectionPro
   const cap = budget.monthly_call_cap
   return (
     <div className="space-y-4">
-      <LabeledField label={t('budget.runsPerDay')} hint={t('budget.runsPerDayHint')}>
-        {(id) => <input id={id} type="number" className="input w-full" disabled={readOnly} min={0} max={L.maxScheduledRunsPerDay}
-          value={budget.max_scheduled_runs_per_day ?? L.maxScheduledRunsPerDay}
-          onChange={(e) => onChange({ ...draft, budget: { ...budget, max_scheduled_runs_per_day: clampInt(e.target.value, 0, L.maxScheduledRunsPerDay, 0) } })} />}
-      </LabeledField>
-      <LabeledField label={t('budget.callsPerRun')}>
-        {(id) => <input id={id} type="number" className="input w-full" disabled={readOnly}
-          min={L.minModelCallsPerRun} max={L.maxModelCallsPerRun} value={budget.max_model_calls_per_run ?? 150}
-          onChange={(e) => onChange({ ...draft, budget: { ...budget, max_model_calls_per_run: clampInt(e.target.value, L.minModelCallsPerRun, L.maxModelCallsPerRun, L.minModelCallsPerRun) } })} />}
-      </LabeledField>
+      <ClampedNumberField label={t('budget.runsPerDay')} hint={t('budget.runsPerDayHint')} readOnly={readOnly}
+        min={0} max={L.maxScheduledRunsPerDay} value={budget.max_scheduled_runs_per_day ?? L.maxScheduledRunsPerDay}
+        onChange={(n) => onChange({ ...draft, budget: { ...budget, max_scheduled_runs_per_day: n } })} />
+      <ClampedNumberField label={t('budget.callsPerRun')} readOnly={readOnly}
+        min={L.minModelCallsPerRun} max={L.maxModelCallsPerRun} value={budget.max_model_calls_per_run ?? 150}
+        onChange={(n) => onChange({ ...draft, budget: { ...budget, max_model_calls_per_run: n } })} />
       <label className="flex items-center gap-2 text-sm text-text">
         <input type="checkbox" className="accent-accent" disabled={readOnly} checked={cap === null}
           onChange={(e) => onChange({ ...draft, budget: { ...budget, monthly_call_cap: e.target.checked ? null : 5000 } })} />
         {t('budget.uncapped')}
       </label>
       {cap !== null && (
-        <LabeledField label={t('budget.monthlyCap')} hint={t('budget.monthlyCapHint')}>
-          {(id) => <input id={id} type="number" className="input w-full" disabled={readOnly} min={0} max={L.maxMonthlyCallCap}
-            value={cap ?? 0}
-            onChange={(e) => onChange({ ...draft, budget: { ...budget, monthly_call_cap: clampInt(e.target.value, 0, L.maxMonthlyCallCap, 0) } })} />}
-        </LabeledField>
+        <ClampedNumberField label={t('budget.monthlyCap')} hint={t('budget.monthlyCapHint')} readOnly={readOnly}
+          min={0} max={L.maxMonthlyCallCap} value={cap ?? 0}
+          onChange={(n) => onChange({ ...draft, budget: { ...budget, monthly_call_cap: n } })} />
       )}
     </div>
   )
