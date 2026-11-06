@@ -44,7 +44,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agents_store
 from shared.agents_store import AGENTS_INDEX, META_SK, iso
-from shared.aws import is_conditional_check_failure
+from shared.aws import consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
 from shared.exceptions import ServiceError
@@ -221,10 +221,10 @@ def create_plan(table: Any, plan: Mapping[str, Any], *, approver: Approver, conv
 
 def _get(table: Any, key: Mapping[str, str], what: str) -> dict | None:
     try:
-        item = table.get_item(Key=dict(key), ConsistentRead=True).get('Item')
+        item = consistent_item(table, key)
     except (ClientError, BotoCoreError) as exc:
         raise _service_error(what, exc) from exc
-    return plain(item) if isinstance(item, dict) else None
+    return None if item is None else plain(item)
 
 
 def get_meta(table: Any, plan_id: str) -> dict | None:

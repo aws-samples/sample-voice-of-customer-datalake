@@ -4,10 +4,12 @@ Provides pre-configured clients with connection reuse.
 """
 
 import json
+from collections.abc import Mapping
 from functools import lru_cache
-from typing import Final
+from typing import Any, Final
 
 import boto3
+from botocore.exceptions import ClientError
 
 from shared import dynamodb_fast_items
 from shared.concurrency import MAX_IN_FLIGHT_READS
@@ -81,6 +83,27 @@ def is_conditional_check_failure(error: Exception) -> bool:
     code = (response.get('Error') or {}).get('Code') if isinstance(response, dict) else None
     return (code == 'ConditionalCheckFailedException'
             or type(error).__name__ == 'ConditionalCheckFailedException')
+
+
+def update_unless_condition_fails(table: Any, **update_item: Any) -> bool:
+    """``table.update_item(**update_item)``; False when its condition refused the write.
+
+    For a guarded update whose refusal is an expected outcome (a lock already released, a
+    newer run already stamped); every other ClientError / BotoCoreError propagates.
+    """
+    try:
+        table.update_item(**update_item)
+    except ClientError as error:
+        if is_conditional_check_failure(error):
+            return False
+        raise
+    return True
+
+
+def consistent_item(table: Any, key: Mapping[str, Any]) -> dict | None:
+    """The item at ``key`` read strongly, or None when absent (boto errors propagate)."""
+    item = table.get_item(Key=dict(key), ConsistentRead=True).get('Item')
+    return item if isinstance(item, dict) else None
 
 
 def get_s3_client():
