@@ -11,7 +11,7 @@
  */
 import type { AssistantRunContext, ClientToolDefinition } from '../../types.js';
 import type { ToolDeps } from '../deps.js';
-import { recordsAt } from '../server/feedback-shape.js';
+import { stringsAt } from '../server/feedback-shape.js';
 import {
   APP_CONNECTOR_DEFAULTS,
   APP_CONNECTOR_LIMITS,
@@ -77,7 +77,7 @@ function radarSuffix(key: string | undefined): string {
 /** The ids of GET /scrapers, as the caller. */
 async function scraperIds(deps: ToolDeps, ctx: AssistantRunContext): Promise<Set<string>> {
   const body = await deps.invoke({ fn: 'scrapers', method: 'GET', path: '/scrapers', resource: '/scrapers' }, ctx.claims);
-  return new Set(recordsAt(body, 'scrapers').flatMap((s) => (typeof s.id === 'string' ? [s.id] : [])));
+  return new Set(stringsAt(body, 'scrapers', 'id'));
 }
 
 function createScraper(deps: ToolDeps): ClientToolDefinition {

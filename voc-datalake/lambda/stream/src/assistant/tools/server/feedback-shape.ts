@@ -106,3 +106,11 @@ export function recordsAt(body: unknown, key: string): Record<string, unknown>[]
   if (!isRecord(body)) return [];
   return itemListSchema.parse(body[key]).filter(isRecord);
 }
+
+/** The string values of `field` across the records of `body[listKey]` (records without one are skipped). */
+export function stringsAt(body: unknown, listKey: string, field: string): string[] {
+  return recordsAt(body, listKey).flatMap((record) => {
+    const value = record[field];
+    return typeof value === 'string' ? [value] : [];
+  });
+}

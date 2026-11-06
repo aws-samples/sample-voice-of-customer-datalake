@@ -17,7 +17,7 @@
 import type { AssistantRunContext, ClientToolDefinition } from '../../types.js';
 import type { ToolDeps } from '../deps.js';
 import { getSettingsRoute } from '../server/common.js';
-import { recordsAt } from '../server/feedback-shape.js';
+import { stringsAt } from '../server/feedback-shape.js';
 import { defineClientTool, q, stringProperty } from './define.js';
 import type { JsonSchemaProperties } from '../spec.js';
 import { DEFAULT_IMPORT_SOURCE_ID, REVIEW_IMPORT_LIMITS as L, importReviewsArgsSchema } from './review-import-schemas.js';
@@ -28,7 +28,7 @@ const MAX_DATE_CHARS = 32;
 
 async function configuredSourceIds(deps: ToolDeps, ctx: AssistantRunContext): Promise<string[]> {
   const body = await getSettingsRoute(deps, ctx, 'sources');
-  return recordsAt(body, 'sources').flatMap((entry) => (typeof entry.id === 'string' ? [entry.id] : []));
+  return stringsAt(body, 'sources', 'id');
 }
 
 /** The refusal for a `source_id` that is not a configured profile, else undefined. */

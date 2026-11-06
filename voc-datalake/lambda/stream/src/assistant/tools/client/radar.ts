@@ -16,7 +16,7 @@
  */
 import type { AssistantRunContext, ClientToolDefinition } from '../../types.js';
 import type { ToolDeps } from '../deps.js';
-import { recordsAt } from '../server/feedback-shape.js';
+import { stringsAt } from '../server/feedback-shape.js';
 import { defineClientTool } from './define.js';
 import { RADAR_BRAND_LANGUAGES, RADAR_BRAND_LIMITS, radarBrandKey, runRadarScanArgsSchema, saveRadarBrandsArgsSchema } from './radar-schemas.js';
 
@@ -25,7 +25,7 @@ async function radarBrandKeys(deps: ToolDeps, ctx: AssistantRunContext): Promise
   const body = await deps.invoke({
     fn: 'radar', method: 'GET', path: '/radar/brands', resource: '/radar/{proxy+}', pathParameters: { proxy: 'brands' },
   }, ctx.claims);
-  return new Set(recordsAt(body, 'brands').flatMap((brand) => (typeof brand.key === 'string' ? [brand.key] : [])));
+  return new Set(stringsAt(body, 'brands', 'key'));
 }
 
 const unknownBrand = (key: string) => `no Radar brand has key "${key}". Read get_radar view "brands"; to track a new brand, `
