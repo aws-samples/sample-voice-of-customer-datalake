@@ -115,6 +115,16 @@ class TestResume:
         stored = jobs.get_job(table, second['job']['job_id']) or {}
         assert (stored.get('date_from'), stored.get('date_to')) == ('2026-09-02', '2026-10-01')
 
+    def test_a_resume_whose_worker_could_not_start_hands_the_job_back(self, post, table):
+        """The invoke fails after the resume was recorded: the route fails the new job, which hands it back."""
+        partial = _partial_job(table)
+        with patch.object(settings_handler, 'invoke_lambda_async', side_effect=RuntimeError('invoke failed')):
+            response, _ = post({'resume': partial})
+        assert response['statusCode'] == 500
+        assert jobs.resume_point(jobs.get_job(table, partial)) is not None
+        response, _ = post({'resume': partial})
+        assert response['statusCode'] == 202
+
     def test_a_cancelled_resume_can_be_resumed_again(self, post, table):
         partial = _partial_job(table)
         _response, body = post({'resume': partial})

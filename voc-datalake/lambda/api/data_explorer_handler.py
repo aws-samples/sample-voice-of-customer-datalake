@@ -566,9 +566,9 @@ def save_feedback():
     except Exception as e:
         logger.exception("Failed to read feedback")
         raise ServiceError('Failed to update feedback') from e
+    _refuse_stale_editor(item, data)  # first: a stale editor reloads, even when its values happen to match
     if change is None and not edits.changed:
         return {'success': True, 'message': 'No changes'}
-    _refuse_stale_editor(item, data)
 
     edit = ManualEdit(actor=actor_from_event(app.current_event.raw_event, admin=True), reason=REASON_DATA_EXPLORER_EDIT)
     kwargs = _update_kwargs(item, key, edits, change, edit)
