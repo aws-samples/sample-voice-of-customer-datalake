@@ -2,7 +2,8 @@
   "nav": {
     "label": "Agents autonomes",
     "needsDecision_one": "{{count, number}} agent attend une décision",
-    "needsDecision_other": "{{count, number}} agents attendent une décision"
+    "needsDecision_other": "{{count, number}} agents attendent une décision",
+    "needsDecision_many": "{{count, number}} d'agents ont besoin d'une décision"
   },
   "common": {
     "cancel": "Annuler"
@@ -289,7 +290,9 @@
       "steps_one": "{{count, number}} étape",
       "arrows_one": "{{count, number}} flèche",
       "steps_other": "{{count, number}} étapes",
-      "arrows_other": "{{count, number}} flèches"
+      "steps_many": "{{count, number}} d'étapes",
+      "arrows_other": "{{count, number}} flèches",
+      "arrows_many": "{{count, number}} de flèches"
     },
     "unsaved": "Modifications non enregistrées",
     "save": "Enregistrer",
@@ -308,6 +311,7 @@
     "generalIssues": "Problèmes du workflow",
     "issueCount_one": "{{count, number}} problème",
     "issueCount_other": "{{count, number}} problèmes",
+    "issueCount_many": "{{count, number}} de problèmes",
     "valid": "Le workflow est valide.",
     "validUnsaved": "Valide — pas encore enregistré.",
     "outcome": {
@@ -372,6 +376,7 @@
     "newLoop": "Une nouvelle boucle",
     "loopOption_one": "Boucle {{n}} ({{count, number}} étape)",
     "loopOption_other": "Boucle {{n}} ({{count, number}} étapes)",
+    "loopOption_many": "Boucle {{n}} ({{count, number}} d'étapes)",
     "leaveLoop": "Retirer cette étape de la boucle",
     "outlineSteps": "Étapes de ce workflow",
     "outlineStepsCount": "Étapes ({{n, number}})",
@@ -536,6 +541,7 @@
     },
     "verdicts_one": "{{count, number}} avis de persona",
     "verdicts_other": "{{count, number}} avis de personas",
+    "verdicts_many": "{{count, number}} de verdicts de personas",
     "score": "{{score}}/5",
     "blocking": "Bloquant",
     "stop": "Clore l'exécution",

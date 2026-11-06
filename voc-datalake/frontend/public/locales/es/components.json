@@ -2,6 +2,7 @@
   "documentComments": {
     "openCount_one": "{{count, number}} comentario abierto",
     "openCount_other": "{{count, number}} comentarios abiertos",
+    "openCount_many": "{{count, number}} de comentarios abiertos",
     "filterAuthor": "Mostrar comentarios de",
     "filterAll": "Todos",
     "filterPersona": "Persona",
@@ -47,6 +48,7 @@
     "personaReviewHint": "Hasta 6 personas de este proyecto leen esta versión y dejan comentarios citando el texto. Nunca cambian el documento. Cuesta una llamada al modelo por persona.",
     "personaReviewDone_one": "{{count, number}} comentario registrado ({{personas, number}} personas consultadas)",
     "personaReviewDone_other": "{{count, number}} comentarios registrados ({{personas, number}} personas consultadas)",
+    "personaReviewDone_many": "{{count, number}} de comentarios presentados ({{personas, number}} personas consultadas)",
     "personaReviewFailed": "La revisión de las personas falló. Inténtalo de nuevo."
   },
   "reviewShare": {
@@ -68,6 +70,7 @@
     "expiresIn": "El enlace caduca en",
     "days_one": "{{count, number}} día",
     "days_other": "{{count, number}} días",
+    "days_many": "{{count, number}} de días",
     "create": "Crear enlace de revisión",
     "createFailed": "No se pudo crear el enlace. Inténtalo de nuevo.",
     "linkLabel": "Enlace de revisión",
@@ -117,10 +120,12 @@
     "listTitle": "Categorías y subcategorías",
     "categoryCount_one": "{{count, number}} categoría",
     "categoryCount_other": "{{count, number}} categorías",
+    "categoryCount_many": "{{count, number}} de categorías",
     "emptyTitle": "Aún no hay categorías configuradas.",
     "emptyHint": "Usa la generación con IA de arriba o añade categorías manualmente abajo.",
     "subCount_one": "{{count, number}} subcategoría",
     "subCount_other": "{{count, number}} subcategorías",
+    "subCount_many": "{{count, number}} de subcategorías",
     "addSubcategoryPlaceholder": "Añadir subcategoría...",
     "addCategoryPlaceholder": "Añadir nueva categoría...",
     "addCategory": "Añadir categoría",
@@ -187,6 +192,7 @@
       "allTime": "Todo el periodo",
       "lastNDays_one": "Último {{count, number}} día",
       "lastNDays_other": "Últimos {{count, number}} días",
+      "lastNDays_many": "Últimos {{count, number}} de días",
       "cancel": "Cancelar trabajo",
       "alreadyRunning": "Ya hay un trabajo de reprocesamiento en curso. Espera a que termine o cancélalo primero.",
       "resumeRefused": "Este trabajo ya no se puede reanudar: ya se reanudó o hay otro trabajo en curso.",
@@ -209,6 +215,7 @@
       "sliceCategories": "Categorías: {{list}}",
       "rawFallback_one": "{{count, number}} opinión no tenía elemento sin procesar archivado y se reprocesó desde su texto almacenado (fuentes: {{sources}}).",
       "rawFallback_other": "{{count, number}} opiniones no tenían elemento sin procesar archivado y se reprocesaron desde su texto almacenado (fuentes: {{sources}}).",
+      "rawFallback_many": "{{count, number}} de reseñas no tenían un elemento sin procesar archivado y se reprocesaron a partir de su texto almacenado (fuentes: {{sources}}).",
       "derivedWith": "Derivado con el modelo {{model}}, categorías {{digest}}, versión de configuración {{version}}.",
       "configChanged": "La configuración cambió mientras se ejecutaba el trabajo.",
       "resume": "Reanudar",
@@ -290,10 +297,13 @@
       "counting": "Contando las reseñas que coinciden…",
       "matches_one": "{{count, number}} reseña coincide",
       "matches_other": "{{count, number}} reseñas coinciden",
+      "matches_many": "{{count, number}} de reseñas coinciden",
       "matchesAtLeast_one": "Al menos {{count, number}} reseña coincide",
       "matchesAtLeast_other": "Al menos {{count, number}} reseñas coinciden",
+      "matchesAtLeast_many": "Al menos {{count, number}} de reseñas coinciden",
       "matchesEstimated_one": "Aproximadamente {{count, number}} reseña coincide",
       "matchesEstimated_other": "Aproximadamente {{count, number}} reseñas coinciden",
+      "matchesEstimated_many": "Aproximadamente {{count, number}} de reseñas coinciden",
       "sampled": "La generación de personas lee una muestra uniforme de {{limit, number}} de ellas.",
       "usesAll": "La generación de personas las lee todas.",
       "confirming": "Confirmando el recuento exacto…",
@@ -301,8 +311,10 @@
       "error": "No se pudieron contar las reseñas que coinciden.",
       "featureRequests_one": "Además, {{count, number}} solicitud de funciones de los tableros.",
       "featureRequests_other": "Además, {{count, number}} solicitudes de funciones de los tableros.",
+      "featureRequests_many": "Además, {{count, number}} de solicitudes de funcionalidades de los tableros.",
       "featureRequestsAtLeast_one": "Al menos {{count, number}} solicitud de funciones de los tableros.",
-      "featureRequestsAtLeast_other": "Al menos {{count, number}} solicitudes de funciones de los tableros."
+      "featureRequestsAtLeast_other": "Al menos {{count, number}} solicitudes de funciones de los tableros.",
+      "featureRequestsAtLeast_many": "Al menos {{count, number}} de solicitudes de funcionalidades de los tableros."
     },
     "featureRequests": {
       "title": "Solicitudes de funciones",
@@ -409,7 +421,8 @@
       "startFailed": "No se pudo iniciar el reprocesamiento: {{error}}",
       "dismiss": "Cerrar",
       "completed_one": "{{filename}} reprocesado: {{count, number}} fila enviada al proceso (allí se omiten los duplicados).",
-      "completed_other": "{{filename}} reprocesado: {{count, number}} filas enviadas al proceso (allí se omiten los duplicados)."
+      "completed_other": "{{filename}} reprocesado: {{count, number}} filas enviadas al proceso (allí se omiten los duplicados).",
+      "completed_many": "Reprocesado {{filename}}: {{count, number}} de filas enviadas a la canalización (los duplicados se omiten allí)."
     }
   },
   "socialFeed": {
@@ -765,6 +778,7 @@
   "scopeNotice": {
     "categories_one": "Solo se muestra {{list}}: la categoría a la que tienes acceso.",
     "categories_other": "Solo se muestran {{list}}: las categorías a las que tienes acceso.",
+    "categories_many": "Mostrando solo {{list}}: las categorías a las que tienes acceso.",
     "sources": "Solo se muestran reseñas de las fuentes a las que tienes acceso.",
     "none": "Tu acceso aún no incluye ninguna categoría: pídeselo a un administrador."
   },
@@ -810,6 +824,7 @@
     "usefulnessBadge": "Utilidad: {{band}}",
     "selectedCount_one": "{{count, number}} seleccionado",
     "selectedCount_other": "{{count, number}} seleccionados",
+    "selectedCount_many": "{{count, number}} de elementos seleccionados",
     "clear": "Borrar",
     "clearAll": "Borrar filtros",
     "noMatchTitle": "Ningún comentario coincide con estos filtros",

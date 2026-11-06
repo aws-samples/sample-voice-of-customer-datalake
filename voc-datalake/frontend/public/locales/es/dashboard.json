@@ -77,6 +77,7 @@
     "title": "Issues de GitHub",
     "subtitle_one": "{{count, number}} issue o comentario en este periodo ({{unversioned, number}} sin versión)",
     "subtitle_other": "{{count, number}} issues y comentarios en este periodo ({{unversioned, number}} sin versión)",
+    "subtitle_many": "{{count, number}} incidencias y comentarios en este periodo ({{unversioned, number}} sin versión)",
     "byRelease": "Comentarios por versión",
     "byLabel": "Comentarios por etiqueta",
     "newSinceLast": "Novedades desde la última versión",

@@ -21,6 +21,7 @@
 // Wired into mock-server.js by handleDomainModules.
 
 import { createHash, randomBytes } from 'node:crypto';
+import { REASON_DIMENSIONS_EDIT, stampManualEdit } from './mock-edit-stamp.js';
 import { facetFilterOf } from './mock-facets.js';
 import { legalBasisError } from './mock-legal-basis.js';
 import { feedbackTypeDimension, isBuiltinDimension, stampFeedbackTypes } from './mock-feedback-types.js';
@@ -455,6 +456,7 @@ function editFeedbackDimensions(id, body, shared) {
   item.dimensions = dimensions;
   item.dimension_sources = sources;
   if (body?.tags !== undefined) item.tags = [...new Set(body.tags.map((t) => t.trim()))];
+  stampManualEdit(item, REASON_DIMENSIONS_EDIT);
   return [200, { success: true, feedback_id: id, dimensions, tags: item.tags || [] }];
 }
 

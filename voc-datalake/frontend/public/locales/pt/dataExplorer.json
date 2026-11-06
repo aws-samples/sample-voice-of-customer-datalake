@@ -87,6 +87,7 @@
     "backfillHint": "O feedback salvo antes de existirem avaliações não tem faixa; um reprocessamento de categorias (Administração → Taxonomia) o avalia.",
     "chartTop_one": "O gráfico mostra a fonte mais ativa; a tabela lista todas as fontes.",
     "chartTop_other": "O gráfico mostra as {{count, number}} fontes mais ativas; a tabela lista todas as fontes.",
+    "chartTop_many": "O gráfico mostra as {{count, number}} fontes mais movimentadas; a tabela lista todas as fontes.",
     "partial": "Alguns dados não puderam ser lidos a tempo, então estes números podem ser menores que os reais.",
     "tableCaption": "Utilidade do feedback por fonte",
     "allSources": "Todas as fontes",

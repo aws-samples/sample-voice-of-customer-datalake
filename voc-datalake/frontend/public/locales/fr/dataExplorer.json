@@ -87,6 +87,7 @@
     "backfillHint": "Les retours enregistrés avant l'existence des évaluations n'ont pas de niveau ; un retraitement des catégories (Administration → Taxonomie) les évalue.",
     "chartTop_one": "Le graphique montre la source la plus active ; le tableau liste toutes les sources.",
     "chartTop_other": "Le graphique montre les {{count, number}} sources les plus actives ; le tableau liste toutes les sources.",
+    "chartTop_many": "Le graphique présente les {{count, number}} de sources les plus actives ; le tableau répertorie toutes les sources.",
     "partial": "Certaines données n'ont pas pu être lues à temps : ces chiffres peuvent être inférieurs à la réalité.",
     "tableCaption": "Utilité des retours par source",
     "allSources": "Toutes les sources",

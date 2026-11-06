@@ -92,8 +92,10 @@
       "new": "Nueva entre las principales",
       "grew_one": "Sube desde {{count, number}}",
       "grew_other": "Sube desde {{count, number}}",
+      "grew_many": "Subió desde {{count, number}}",
       "count_one": "{{count, number}} reseña",
-      "count_other": "{{count, number}} reseñas"
+      "count_other": "{{count, number}} reseñas",
+      "count_many": "{{count, number}} reseñas"
     }
   }
 }

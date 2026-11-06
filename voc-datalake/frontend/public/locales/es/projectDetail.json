@@ -29,13 +29,17 @@
       "builtFrom": "Creado a partir de",
       "feedbackUsed_one": "{{count, number}} comentario utilizado",
       "feedbackUsed_other": "{{count, number}} comentarios utilizados",
+      "feedbackUsed_many": "{{count, number}} de elementos de retroalimentación utilizados",
       "personasUsed_one": "{{count, number}} persona utilizada",
       "personasUsed_other": "{{count, number}} personas utilizadas",
+      "personasUsed_many": "{{count, number}} de personas utilizadas",
       "productContext": "Contexto del producto incluido",
       "memoriesUsed_one": "{{count, number}} memoria de la empresa",
       "memoriesUsed_other": "{{count, number}} memorias de la empresa",
+      "memoriesUsed_many": "{{count, number}} de memorias de la empresa",
       "webSearchesUsed_one": "{{count, number}} búsqueda web",
       "webSearchesUsed_other": "{{count, number}} búsquedas web",
+      "webSearchesUsed_many": "{{count, number}} de búsquedas web",
       "companyContext": "Contexto de la empresa",
       "designSystem": "Sistema de diseño de la empresa",
       "roles": {
@@ -47,7 +51,8 @@
       "selectedUsed": "{{used, number}} de {{selected, number}} documentos seleccionados utilizados",
       "unavailable": "Ya no está disponible",
       "visualsUsed_one": "{{count, number}} maqueta utilizada",
-      "visualsUsed_other": "{{count, number}} maquetas utilizadas"
+      "visualsUsed_other": "{{count, number}} maquetas utilizadas",
+      "visualsUsed_many": "{{count, number}} de elementos visuales utilizados"
     },
     "editDocument": "Editar documento",
     "newDocument": "Nuevo Documento",
@@ -88,10 +93,12 @@
       "designSystemParts": {
         "components_one": "{{count, number}} estilo de componente",
         "components_other": "{{count, number}} estilos de componentes",
+        "components_many": "{{count, number}} de estilos de componentes",
         "colours": "colores",
         "guidelines": "pautas",
         "references_one": "{{count, number}} diseño de referencia",
         "references_other": "{{count, number}} diseños de referencia",
+        "references_many": "{{count, number}} de diseños de referencia",
         "spacing": "espaciado",
         "type": "tipografía"
       },
@@ -177,10 +184,13 @@
     "badge": {
       "running_one": "{{count, number}} en curso",
       "running_other": "{{count, number}} en curso",
+      "running_many": "{{count, number}} de tareas en curso",
       "failed_one": "{{count, number}} con error",
       "failed_other": "{{count, number}} con error",
+      "failed_many": "{{count, number}} de tareas fallidas",
       "done_one": "{{count, number}} terminado",
-      "done_other": "{{count, number}} terminados"
+      "done_other": "{{count, number}} terminados",
+      "done_many": "{{count, number}} de tareas completadas"
     },
     "completedCount_one": "{{count, number}} completado",
     "completedCount_other": "{{count, number}} completados",
@@ -199,6 +209,7 @@
     },
     "duplicateNamesDropped_one": "No se añadió {{count, number}} persona nueva: su nombre repite el de una que el proyecto ya tiene.",
     "duplicateNamesDropped_other": "No se añadieron {{count, number}} personas nuevas: sus nombres repiten los de otras que el proyecto ya tiene.",
+    "duplicateNamesDropped_many": "No se añadieron {{count, number}} de personas nuevas: sus nombres se repiten con los que este proyecto ya tiene.",
     "truncated": {
       "counted": "Basado en {{used, number}} de los {{total, number}} comentarios leídos: el resto no cupo en una sola generación.",
       "fetchCapped": "Cada generación lee como máximo {{limit, number}} comentarios. Puede que más coincidan con tus filtros: ajústalos para cambiar cuáles se usan.",
@@ -568,17 +579,21 @@
     "personaModeAdd": "Añadir a las personas existentes",
     "personaModeAddHint_one": "Conserva la {{count, number}} persona de este proyecto y escribe otras nuevas, claramente distintas, junto a ella.",
     "personaModeAddHint_other": "Conserva las {{count, number}} personas de este proyecto y escribe otras nuevas, claramente distintas, junto a ellas.",
+    "personaModeAddHint_many": "Conserva las personas actuales del proyecto ({{count, number}} de ellas) y escribe otras nuevas, claramente distintas, junto a ellas.",
     "personaModeReplace": "Reemplazar las personas existentes",
     "personaModeReplaceHint_one": "Elimina la {{count, number}} persona de este proyecto, con sus cambios y su avatar, y escribe un conjunto nuevo.",
     "personaModeReplaceHint_other": "Elimina las {{count, number}} personas de este proyecto, con sus cambios y avatares, y escribe un conjunto nuevo.",
+    "personaModeReplaceHint_many": "Elimina las personas actuales del proyecto ({{count, number}} de ellas), junto con sus ediciones y avatares, y luego escribe un conjunto nuevo.",
     "personaReplaceConfirmTitle": "¿Reemplazar las personas existentes?",
     "personaReplaceConfirmMessage_one": "Se eliminará la {{count, number}} persona existente del proyecto, con sus cambios y su avatar, y se escribirá un conjunto nuevo de {{n, number}}. No se puede deshacer.",
     "personaReplaceConfirmMessage_other": "Se eliminarán las {{count, number}} personas existentes del proyecto, con sus cambios y avatares, y se escribirá un conjunto nuevo de {{n, number}}. No se puede deshacer.",
+    "personaReplaceConfirmMessage_many": "Esto elimina las personas existentes del proyecto ({{count, number}} de ellas), incluidas sus ediciones y avatares, y escribe un nuevo conjunto de {{n, number}}. No se puede deshacer.",
     "submitReplacePersonas": "Eliminar y generar",
     "submitRemixDocuments": "Remezlar Documentos",
     "workingBackwards": "Trabajar hacia Atrás",
     "personaReplaceKeepsProtected_one": "Se conserva {{count, number}} persona protegida.",
-    "personaReplaceKeepsProtected_other": "Se conservan las {{count, number}} personas protegidas."
+    "personaReplaceKeepsProtected_other": "Se conservan las {{count, number}} personas protegidas.",
+    "personaReplaceKeepsProtected_many": "Se conservan las personas protegidas ({{count, number}} de ellas)."
   },
   "header": {
     "back": "Volver a los proyectos",
@@ -617,6 +632,7 @@
   "corpus": {
     "summary_one": "Redactado a partir de {{count, number}} reseña",
     "summary_other": "Redactado a partir de {{count, number}} reseñas",
+    "summary_many": "Escrito a partir de {{count, number}} de reseñas",
     "show": "Ver reseñas",
     "title": "Reseñas a partir de las que se redactó",
     "note": "Con el resultado solo se guardan los identificadores de las reseñas, nunca su texto. Una reseña borrada, eliminada o que no puedes ver aparece como no disponible.",
@@ -629,18 +645,22 @@
     "close": "Cerrar",
     "citedSummary_one": "cita {{count, number}} de ellas",
     "citedSummary_other": "cita {{count, number}} de ellas",
+    "citedSummary_many": "cita {{count, number}} de ellas",
     "viewLabel": "Qué reseñas",
     "viewCited": "Citadas ({{n, number}})",
     "viewUsed": "Todas las usadas ({{n, number}})",
     "citedNote": "Las reseñas que nombran las evidencias de la persona. Una cita que no nombra ninguna reseña leída se conserva solo como texto.",
     "featureRequests_one": "y {{count, number}} solicitud de funciones",
     "featureRequests_other": "y {{count, number}} solicitudes de funciones",
+    "featureRequests_many": "y {{count, number}} de solicitudes de funcionalidades",
     "featureRequestsOnly_one": "Redactado a partir de {{count, number}} solicitud de funciones",
     "featureRequestsOnly_other": "Redactado a partir de {{count, number}} solicitudes de funciones",
+    "featureRequestsOnly_many": "Escrito a partir de {{count, number}} de solicitudes de funcionalidades",
     "showFeatureRequests": "Ver solicitudes",
     "hideFeatureRequests": "Ocultar solicitudes",
     "featureRequestLink": "Solicitud {{id}}",
     "erasedSummary_one": "se borró {{count, number}} reseña o solicitud de tablero citada (base legal registrada)",
-    "erasedSummary_other": "se borraron {{count, number}} reseñas o solicitudes de tablero citadas (base legal registrada)"
+    "erasedSummary_other": "se borraron {{count, number}} reseñas o solicitudes de tablero citadas (base legal registrada)",
+    "erasedSummary_many": "Se borraron {{count, number}} de reseñas o solicitudes del consejo citadas (base legal registrada)"
   }
 }

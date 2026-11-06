@@ -3,6 +3,8 @@
  *
  *   const mock = useMockServer()          // at the top of a test file: starts before, stops after
  *   await fetch(`${mock.base}/feedback`)
+ *   const call = mockCaller(mock)         // [status, json] of one JSON request
+ *   const [status, body] = await call('PUT', '/feedback/f1/category', { category: 'billing' })
  */
 
 import { spawn } from 'node:child_process'
@@ -41,4 +43,16 @@ export function useMockServer() {
   })
   after(() => { mock?.stop() })
   return server
+}
+
+/** `(method, path, body?) => [status, json]` against the mock `useMockServer` returned. */
+export function mockCaller(server) {
+  return async (method, path, body) => {
+    const response = await fetch(`${server.base}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    return [response.status, await response.json()]
+  }
 }

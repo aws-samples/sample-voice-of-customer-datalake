@@ -37,6 +37,8 @@ Processed feedback keeps its history and says how it was made, and a reprocess c
 
 ### Fixed
 
+- French, Spanish and Portuguese have the plural form their grammar uses for round millions ("1 000 000 de avis") on all 97 counted strings that lacked it; those counts no longer fall back to English.
+- The dev mock (`npm run mock`) stamps every feedback edit like the API (`updated_at`, `updated_by`, `change_reason`), refuses a stale Data Explorer save with the API's 409, and checks a reprocess resume in the route's order.
 - Data Explorer: saving an edit of a branded review (stored under its brand, not its source) no longer answers 404; the record is found by its id.
 - `PUT /feedback/{id}/dimensions` now records who changed it, when, and the previous value.
 - A raw-mode reprocess no longer writes a translation or a customer quote back on a summary-only source.

@@ -188,10 +188,12 @@
   },
   "rowCount_one": "{{count, number}} proposition",
   "rowCount_other": "{{count, number}} propositions",
+  "rowCount_many": "de {{count, number}} propositions",
   "rowDeleted": {
     "descriptionNoCount": "« {{row}} » a disparu, ainsi que les bulletins qui y avaient été déposés. Aucun nombre de bulletins n’a été communiqué.",
     "description_one": "« {{row}} » a disparu, ainsi que le seul bulletin déposé sur elle.",
     "description_other": "« {{row}} » a disparu, ainsi que les {{count, number}} bulletins déposés sur elle.",
+    "description_many": "« {{row}} » a disparu, et avec lui, de {{count, number}} votes exprimés dessus.",
     "dismiss": "Masquer ce message",
     "title": "La ligne a été supprimée"
   },
@@ -325,7 +327,8 @@
     "totalRows": "Propositions au total",
     "loading": "Décompte des propositions...",
     "unreadable_one": "La note de l'équipe pour {{count, number}} proposition n'a pas pu être lue : elle compte dans le total mais dans aucun des autres décomptes. Rechargez la page pour la voir.",
-    "unreadable_other": "Les notes de l'équipe pour {{count, number}} propositions n'ont pas pu être lues : elles comptent dans le total mais dans aucun des autres décomptes. Rechargez la page pour les voir."
+    "unreadable_other": "Les notes de l'équipe pour {{count, number}} propositions n'ont pas pu être lues : elles comptent dans le total mais dans aucun des autres décomptes. Rechargez la page pour les voir.",
+    "unreadable_many": "Les notes de l'équipe pour de {{count, number}} propositions n'ont pas pu être lues. Elles sont donc comptées dans le total, mais dans aucun des autres décomptes. Rechargez la page pour les voir."
   },
   "subtitle": "Évaluer et prioriser les PRD et PR/FAQ de tous les projets",
   "team": {

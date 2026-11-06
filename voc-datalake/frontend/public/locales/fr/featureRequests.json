@@ -316,10 +316,12 @@
     "window": "Créées sur",
     "lastDays_one": "Le dernier jour",
     "lastDays_other": "Les {{count, number}} derniers jours",
+    "lastDays_many": "Les {{count, number}} derniers jours",
     "allTime": "Tous les temps",
     "enrich": "Enrichir les demandes",
     "enrichQueued_one": "{{count, number}} demande mise en file, {{remaining, number}} encore à enrichir.",
     "enrichQueued_other": "{{count, number}} demandes mises en file, {{remaining, number}} encore à enrichir.",
+    "enrichQueued_many": "{{count, number}} demandes en file d'attente, dont {{remaining, number}} restent à enrichir.",
     "enrichFailed": "Impossible de lancer l’enrichissement. Réessayez.",
     "loadFailed": "Impossible de charger l’analyse des tableaux.",
     "empty": "Aucune demande sur cette période.",
@@ -336,7 +338,8 @@
     "notEnriched": "Pas encore enrichies",
     "requests": "Demandes",
     "rowText_one": "{{name}} : {{value}} demande",
-    "rowText_other": "{{name}} : {{value}} demandes"
+    "rowText_other": "{{name}} : {{value}} demandes",
+    "rowText_many": "{{name}} : {{value}} demandes"
   },
   "enrichment": {
     "label": "Enrichissement :",

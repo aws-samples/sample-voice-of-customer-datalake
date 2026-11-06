@@ -32,6 +32,7 @@ import {
   attributeFilterOf, dimensionsConfig, entityExtras, handleDimensionRoutes, seedDimensionFixtures, sourceProfiles,
 } from './mock-dimensions.js';
 import { cursorPage } from './mock-feedback-cursor.js';
+import { REASON_CATEGORY_EDIT, stampManualEdit } from './mock-edit-stamp.js';
 import { corpusFeedback } from './mock-feedback-corpus.js';
 import { problemTree } from './mock-problems.js';
 import { facetedMetric, seedUsefulness, withoutParams } from './mock-facets.js';
@@ -1474,14 +1475,24 @@ function handBack(job) {
   }
 }
 
-/** `{resume: <job_id>}`: a new job continuing a partial one (same mode and slice), once at a time. */
+const REPROCESS_ACTIVE = [409, { success: false, error: 'A reprocess job is already queued or running' }];
+const reprocessActive = () => mockReprocessJobs.some((j) => j.status === 'queued' || j.status === 'running');
+
+/** `{resume: <job_id>}`: a new job continuing a partial one (same mode and slice), once at a time. Checked in the
+ * route's order (settings_handler `_resume_reprocess`): the body, the job, its state, then another active job. */
 function resumeReprocessJob(body) {
-  if (Object.keys(body).length !== 1) return [400, { success: false, error: 'resume takes no other fields' }];
+  if (Object.keys(body).length !== 1) {
+    return [400, { success: false, error: 'resume takes no other fields: the resumed job keeps its mode and slice' }];
+  }
+  if (typeof body.resume !== 'string' || !/^rp_[0-9a-f]{12}$/.test(body.resume)) {
+    return [400, { success: false, error: 'resume must be a reprocess job id' }];
+  }
   const previous = mockReprocessJobs.find((j) => j.job_id === body.resume);
   if (!previous) return [404, { success: false, error: 'Reprocess job not found' }];
   if (previous.status !== 'partial' || !previous.resumable) {
     return [409, { success: false, error: 'Only a partial job that has not been resumed yet can be resumed' }];
   }
+  if (reprocessActive()) return REPROCESS_ACTIVE;
   previous.resumable = false;
   const { mode, days, include_manual, date_basis, sources, categories, date_from, date_to } = previous;
   const job = newReprocessJob({
@@ -1494,9 +1505,6 @@ function resumeReprocessJob(body) {
 }
 
 function startReprocessJob(body) {
-  if (mockReprocessJobs.some((j) => j.status === 'queued' || j.status === 'running')) {
-    return [409, { success: false, error: 'A reprocess job is already running' }];
-  }
   if (body && typeof body === 'object' && 'resume' in body) return resumeReprocessJob(body);
   const mode = body?.mode;
   if (!['processed', 'raw', 'dimensions'].includes(mode)) {
@@ -1504,6 +1512,7 @@ function startReprocessJob(body) {
   }
   const [slice, error] = reprocessSlice(body);
   if (error !== null) return [400, { success: false, error }];
+  if (reprocessActive()) return REPROCESS_ACTIVE;
   const job = newReprocessJob({ mode, include_manual: body.include_manual === true, ...slice });
   mockReprocessJobs.push(job);
   return [202, { job }];
@@ -1553,6 +1562,7 @@ function changeFeedbackCategory(id, body) {
   item.category = target.name;
   if (subcategory) item.subcategory = subcategory; else delete item.subcategory;
   item.category_source = 'manual';
+  stampManualEdit(item, REASON_CATEGORY_EDIT);
   const { feedback_id, category, category_source, category_override } = item;
   return [200, { success: true, feedback: { feedback_id, category, subcategory: item.subcategory, category_source, category_override } }];
 }

@@ -2,6 +2,7 @@
   "documentComments": {
     "openCount_one": "{{count, number}} comentário aberto",
     "openCount_other": "{{count, number}} comentários abertos",
+    "openCount_many": "{{count, number}} comentários abertos",
     "filterAuthor": "Mostrar comentários de",
     "filterAll": "Todos",
     "filterPersona": "Persona",
@@ -47,6 +48,7 @@
     "personaReviewHint": "Até 6 personas deste projeto leem esta versão e deixam comentários citando o texto. Elas nunca alteram o documento. Custa uma chamada ao modelo por persona.",
     "personaReviewDone_one": "{{count, number}} comentário registrado ({{personas, number}} personas consultadas)",
     "personaReviewDone_other": "{{count, number}} comentários registrados ({{personas, number}} personas consultadas)",
+    "personaReviewDone_many": "{{count, number}} comentários registrados ({{personas, number}} personas consultadas)",
     "personaReviewFailed": "A revisão das personas falhou. Tente novamente."
   },
   "reviewShare": {
@@ -68,6 +70,7 @@
     "expiresIn": "O link expira em",
     "days_one": "{{count, number}} dia",
     "days_other": "{{count, number}} dias",
+    "days_many": "{{count, number}} dias",
     "create": "Criar link de revisão",
     "createFailed": "Não foi possível criar o link. Tente novamente.",
     "linkLabel": "Link de revisão",
@@ -117,10 +120,12 @@
     "listTitle": "Categorias e subcategorias",
     "categoryCount_one": "{{count, number}} categoria",
     "categoryCount_other": "{{count, number}} categorias",
+    "categoryCount_many": "{{count, number}} categorias",
     "emptyTitle": "Nenhuma categoria configurada ainda.",
     "emptyHint": "Use a geração por IA acima ou adicione categorias manualmente abaixo.",
     "subCount_one": "{{count, number}} subcategoria",
     "subCount_other": "{{count, number}} subcategorias",
+    "subCount_many": "{{count, number}} subcategorias",
     "addSubcategoryPlaceholder": "Adicionar subcategoria...",
     "addCategoryPlaceholder": "Adicionar nova categoria...",
     "addCategory": "Adicionar categoria",
@@ -187,6 +192,7 @@
       "allTime": "Todo o período",
       "lastNDays_one": "Último {{count, number}} dia",
       "lastNDays_other": "Últimos {{count, number}} dias",
+      "lastNDays_many": "Últimos {{count, number}} dias",
       "cancel": "Cancelar tarefa",
       "alreadyRunning": "Já há uma tarefa de reprocessamento em execução. Aguarde a conclusão ou cancele-a primeiro.",
       "resumeRefused": "Este trabalho não pode mais ser retomado: já foi retomado ou outro trabalho está em execução.",
@@ -209,6 +215,7 @@
       "sliceCategories": "Categorias: {{list}}",
       "rawFallback_one": "{{count, number}} avaliação não tinha item bruto arquivado e foi reprocessada a partir do texto armazenado (fontes: {{sources}}).",
       "rawFallback_other": "{{count, number}} avaliações não tinham item bruto arquivado e foram reprocessadas a partir do texto armazenado (fontes: {{sources}}).",
+      "rawFallback_many": "{{count, number}} avaliações não tinham item bruto arquivado e foram reprocessadas a partir do texto armazenado (fontes: {{sources}}).",
       "derivedWith": "Derivado com o modelo {{model}}, categorias {{digest}}, versão de configuração {{version}}.",
       "configChanged": "A configuração mudou enquanto a tarefa era executada.",
       "resume": "Retomar",
@@ -290,10 +297,13 @@
       "counting": "Contando as avaliações correspondentes…",
       "matches_one": "{{count, number}} avaliação corresponde",
       "matches_other": "{{count, number}} avaliações correspondem",
+      "matches_many": "{{count, number}} avaliações correspondem",
       "matchesAtLeast_one": "Pelo menos {{count, number}} avaliação corresponde",
       "matchesAtLeast_other": "Pelo menos {{count, number}} avaliações correspondem",
+      "matchesAtLeast_many": "Pelo menos {{count, number}} avaliações correspondem",
       "matchesEstimated_one": "Cerca de {{count, number}} avaliação corresponde",
       "matchesEstimated_other": "Cerca de {{count, number}} avaliações correspondem",
+      "matchesEstimated_many": "Cerca de {{count, number}} avaliações correspondem",
       "sampled": "A geração de personas lê uma amostra uniforme de {{limit, number}} delas.",
       "usesAll": "A geração de personas lê todas elas.",
       "confirming": "Confirmando a contagem exata…",
@@ -301,8 +311,10 @@
       "error": "Não foi possível contar as avaliações correspondentes.",
       "featureRequests_one": "Também {{count, number}} pedido de funcionalidade dos quadros.",
       "featureRequests_other": "Também {{count, number}} pedidos de funcionalidades dos quadros.",
+      "featureRequests_many": "Também {{count, number}} solicitações de funcionalidades dos quadros.",
       "featureRequestsAtLeast_one": "Pelo menos {{count, number}} pedido de funcionalidade dos quadros.",
-      "featureRequestsAtLeast_other": "Pelo menos {{count, number}} pedidos de funcionalidades dos quadros."
+      "featureRequestsAtLeast_other": "Pelo menos {{count, number}} pedidos de funcionalidades dos quadros.",
+      "featureRequestsAtLeast_many": "Pelo menos {{count, number}} solicitações de funcionalidades dos quadros."
     },
     "featureRequests": {
       "title": "Pedidos de funcionalidades",
@@ -409,7 +421,8 @@
       "startFailed": "Não foi possível iniciar o reprocessamento: {{error}}",
       "dismiss": "Fechar",
       "completed_one": "{{filename}} reprocessado: {{count, number}} linha enviada ao pipeline (lá as duplicadas são ignoradas).",
-      "completed_other": "{{filename}} reprocessado: {{count, number}} linhas enviadas ao pipeline (lá as duplicadas são ignoradas)."
+      "completed_other": "{{filename}} reprocessado: {{count, number}} linhas enviadas ao pipeline (lá as duplicadas são ignoradas).",
+      "completed_many": "{{filename}} reprocessado: {{count, number}} linhas enviadas ao pipeline (duplicadas são ignoradas ali)."
     }
   },
   "socialFeed": {
@@ -765,6 +778,7 @@
   "scopeNotice": {
     "categories_one": "Mostrando apenas {{list}} — a categoria a que você tem acesso.",
     "categories_other": "Mostrando apenas {{list}} — as categorias a que você tem acesso.",
+    "categories_many": "Mostrando apenas {{list}} — as categorias às quais você tem acesso.",
     "sources": "Mostrando apenas avaliações das fontes a que você tem acesso.",
     "none": "Seu acesso ainda não inclui nenhuma categoria — peça a um administrador."
   },
@@ -810,6 +824,7 @@
     "usefulnessBadge": "Utilidade: {{band}}",
     "selectedCount_one": "{{count, number}} selecionado",
     "selectedCount_other": "{{count, number}} selecionados",
+    "selectedCount_many": "{{count, number}} selecionados",
     "clear": "Limpar",
     "clearAll": "Limpar filtros",
     "noMatchTitle": "Nenhum feedback corresponde a estes filtros",

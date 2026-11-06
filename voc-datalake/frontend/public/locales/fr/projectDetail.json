@@ -29,13 +29,17 @@
       "builtFrom": "Créé à partir de",
       "feedbackUsed_one": "{{count, number}} retour client utilisé",
       "feedbackUsed_other": "{{count, number}} retours clients utilisés",
+      "feedbackUsed_many": "{{count, number}} de retours clients utilisés",
       "personasUsed_one": "{{count, number}} persona utilisé",
       "personasUsed_other": "{{count, number}} personas utilisés",
+      "personasUsed_many": "{{count, number}} de personas utilisés",
       "productContext": "Contexte produit inclus",
       "memoriesUsed_one": "{{count, number}} mémoire d'entreprise",
       "memoriesUsed_other": "{{count, number}} mémoires d'entreprise",
+      "memoriesUsed_many": "{{count, number}} de mémoires d'entreprise",
       "webSearchesUsed_one": "{{count, number}} recherche web",
       "webSearchesUsed_other": "{{count, number}} recherches web",
+      "webSearchesUsed_many": "{{count, number}} de recherches web",
       "companyContext": "Contexte de l'entreprise",
       "designSystem": "Système de design de l’entreprise",
       "roles": {
@@ -47,7 +51,8 @@
       "selectedUsed": "Documents utilisés : {{used, number}} sur {{selected, number}} sélectionnés",
       "unavailable": "Plus disponible",
       "visualsUsed_one": "{{count, number}} maquette utilisée",
-      "visualsUsed_other": "{{count, number}} maquettes utilisées"
+      "visualsUsed_other": "{{count, number}} maquettes utilisées",
+      "visualsUsed_many": "{{count, number}} de visuels utilisés"
     },
     "editDocument": "Modifier le document",
     "newDocument": "Nouveau document",
@@ -88,10 +93,12 @@
       "designSystemParts": {
         "components_one": "{{count, number}} style de composant",
         "components_other": "{{count, number}} styles de composants",
+        "components_many": "{{count, number}} de styles de composants",
         "colours": "couleurs",
         "guidelines": "règles",
         "references_one": "{{count, number}} maquette de référence",
         "references_other": "{{count, number}} maquettes de référence",
+        "references_many": "{{count, number}} de maquettes de référence",
         "spacing": "espacements",
         "type": "typographie"
       },
@@ -177,10 +184,13 @@
     "badge": {
       "running_one": "{{count, number}} en cours",
       "running_other": "{{count, number}} en cours",
+      "running_many": "{{count, number}} en cours",
       "failed_one": "{{count, number}} en échec",
       "failed_other": "{{count, number}} en échec",
+      "failed_many": "{{count, number}} en échec",
       "done_one": "{{count, number}} terminée",
-      "done_other": "{{count, number}} terminées"
+      "done_other": "{{count, number}} terminées",
+      "done_many": "{{count, number}} terminés"
     },
     "completedCount_one": "{{count, number}} terminée",
     "completedCount_other": "{{count, number}} terminées",
@@ -199,6 +209,7 @@
     },
     "duplicateNamesDropped_one": "{{count, number}} nouveau persona n'a pas été ajouté : son nom reprend celui d'un persona que ce projet a déjà.",
     "duplicateNamesDropped_other": "{{count, number}} nouveaux personas n'ont pas été ajoutés : leurs noms reprennent ceux de personas que ce projet a déjà.",
+    "duplicateNamesDropped_many": "{{count, number}} de nouveaux personas n'ont pas été ajoutés : leurs noms existent déjà dans ce projet.",
     "truncated": {
       "counted": "Basé sur {{used, number}} des {{total, number}} retours lus : le reste n'a pas pu tenir dans une seule génération.",
       "fetchCapped": "Une génération lit au maximum {{limit, number}} retours. D'autres peuvent correspondre à vos filtres — affinez-les pour changer lesquels sont utilisés.",
@@ -568,17 +579,21 @@
     "personaModeAdd": "Ajouter aux personas existants",
     "personaModeAddHint_one": "Conserve le {{count, number}} persona de ce projet et en écrit de nouveaux, nettement différents, à côté.",
     "personaModeAddHint_other": "Conserve les {{count, number}} personas de ce projet et en écrit de nouveaux, nettement différents, à côté.",
+    "personaModeAddHint_many": "Conserve les personas existants du projet ({{count, number}} de personas) et en rédige de nouveaux, nettement différents, à leurs côtés.",
     "personaModeReplace": "Remplacer les personas existants",
     "personaModeReplaceHint_one": "Supprime le {{count, number}} persona de ce projet, avec ses modifications et son avatar, puis écrit un nouvel ensemble.",
     "personaModeReplaceHint_other": "Supprime les {{count, number}} personas de ce projet, avec leurs modifications et leurs avatars, puis écrit un nouvel ensemble.",
+    "personaModeReplaceHint_many": "Supprime les personas existants du projet ({{count, number}} de personas), avec leurs modifications et avatars, puis en rédige un nouveau jeu.",
     "personaReplaceConfirmTitle": "Remplacer les personas existants ?",
     "personaReplaceConfirmMessage_one": "Le {{count, number}} persona existant du projet sera supprimé, avec ses modifications et son avatar, et un nouvel ensemble de {{n, number}} sera écrit. Action irréversible.",
     "personaReplaceConfirmMessage_other": "Les {{count, number}} personas existants du projet seront supprimés, avec leurs modifications et leurs avatars, et un nouvel ensemble de {{n, number}} sera écrit. Action irréversible.",
+    "personaReplaceConfirmMessage_many": "Cette action supprime les {{count, number}} de personas existants du projet, y compris leurs modifications et avatars, puis en rédige un nouveau jeu de {{n, number}}. Elle est irréversible.",
     "submitReplacePersonas": "Supprimer et générer",
     "submitRemixDocuments": "Remixer les documents",
     "workingBackwards": "Raisonnement inversé",
     "personaReplaceKeepsProtected_one": "La {{count, number}} persona protégée est conservée.",
-    "personaReplaceKeepsProtected_other": "Les {{count, number}} personas protégées sont conservées."
+    "personaReplaceKeepsProtected_other": "Les {{count, number}} personas protégées sont conservées.",
+    "personaReplaceKeepsProtected_many": "Les {{count, number}} de personas protégés sont conservés."
   },
   "header": {
     "back": "Retour aux projets",
@@ -617,6 +632,7 @@
   "corpus": {
     "summary_one": "Rédigé à partir de {{count, number}} avis",
     "summary_other": "Rédigé à partir de {{count, number}} avis",
+    "summary_many": "Rédigé à partir de {{count, number}} d'avis",
     "show": "Voir les avis",
     "title": "Avis à partir desquels il a été rédigé",
     "note": "Seuls les identifiants des avis sont conservés avec le résultat, jamais leur texte. Un avis effacé, supprimé ou que vous ne pouvez pas voir apparaît comme indisponible.",
@@ -629,18 +645,22 @@
     "close": "Fermer",
     "citedSummary_one": "en cite {{count, number}}",
     "citedSummary_other": "en cite {{count, number}}",
+    "citedSummary_many": "en cite {{count, number}}",
     "viewLabel": "Quels avis",
     "viewCited": "Cités ({{n, number}})",
     "viewUsed": "Tous les avis utilisés ({{n, number}})",
     "citedNote": "Les avis que nomment les éléments probants de la persona. Une citation qui ne nomme aucun avis lu est conservée sous forme de texte uniquement.",
     "featureRequests_one": "et {{count, number}} demande de fonctionnalité",
     "featureRequests_other": "et {{count, number}} demandes de fonctionnalités",
+    "featureRequests_many": "et {{count, number}} de demandes de fonctionnalités",
     "featureRequestsOnly_one": "Rédigé à partir de {{count, number}} demande de fonctionnalité",
     "featureRequestsOnly_other": "Rédigé à partir de {{count, number}} demandes de fonctionnalités",
+    "featureRequestsOnly_many": "Rédigé à partir de {{count, number}} de demandes de fonctionnalités",
     "showFeatureRequests": "Voir les demandes",
     "hideFeatureRequests": "Masquer les demandes",
     "featureRequestLink": "Demande {{id}}",
     "erasedSummary_one": "{{count, number}} avis ou demande de tableau cité a été effacé (base légale enregistrée)",
-    "erasedSummary_other": "{{count, number}} avis ou demandes de tableau cités ont été effacés (base légale enregistrée)"
+    "erasedSummary_other": "{{count, number}} avis ou demandes de tableau cités ont été effacés (base légale enregistrée)",
+    "erasedSummary_many": "{{count, number}} d'avis ou de demandes du comité cités ont été effacés (base juridique consignée)"
   }
 }

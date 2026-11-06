@@ -48,6 +48,7 @@
       "count": "Personnes",
       "countValue_one": "{{count, number}} personne",
       "countValue_other": "{{count, number}} personnes",
+      "countValue_many": "{{count, number}} personnes",
       "listNotFound": "Cette liste est introuvable : approuver n’ajoutera personne.",
       "email": "E-mail",
       "name": "Nom",
@@ -57,9 +58,11 @@
       "notSet": "Non renseigné",
       "tableLabel_one": "{{count, number}} personne à ajouter",
       "tableLabel_other": "{{count, number}} personnes à ajouter",
+      "tableLabel_many": "{{count, number}} personnes à ajouter",
       "reviewAllNote": "Toutes les personnes sont listées ; faites défiler pour vérifier chaque ligne avant d’approuver.",
       "duplicatesNote_one": "{{count, number}} adresse e-mail répétée a été regroupée sur sa première ligne.",
       "duplicatesNote_other": "{{count, number}} adresses e-mail répétées ont été regroupées sur leur première ligne.",
+      "duplicatesNote_many": "{{count, number}} adresses e-mail en double ont été réduites à leur première ligne.",
       "reuseNote": "Une personne déjà connue garde ses informations enregistrées ; celles déjà dans la liste restent inchangées. Aucun e-mail n’est envoyé.",
       "listLabel": "Nouvelle liste",
       "listName": "Nom",
@@ -103,8 +106,10 @@
     "personas": {
       "add_one": "S'ajoute au {{count, number}} persona du projet, qui est conservé.",
       "add_other": "S'ajoute aux {{count, number}} personas du projet, qui sont conservés.",
+      "add_many": "Ajoute aux {{count, number}} personas existantes du projet ; elles sont conservées.",
       "replace_one": "Supprime le {{count, number}} persona existant du projet, avec ses modifications et son avatar, avant d'écrire le nouvel ensemble.",
       "replace_other": "Supprime les {{count, number}} personas existants du projet, avec leurs modifications et leurs avatars, avant d'écrire le nouvel ensemble.",
+      "replace_many": "Supprime les {{count, number}} personas existantes du projet, avec leurs modifications et avatars, avant d'écrire le nouvel ensemble.",
       "replaceUnknown": "Supprime les personas existants du projet, avec leurs modifications et leurs avatars, avant d'écrire le nouvel ensemble."
     },
     "agent": "Agent",
@@ -137,6 +142,7 @@
       "companyVisible": "Les mémoires d'entreprise sont visibles par tous et utilisées par l'assistant et les agents pour tous les utilisateurs.",
       "supporters_one": "{{count, number}} personne soutient l'énoncé actuel.",
       "supporters_other": "{{count, number}} personnes soutiennent l'énoncé actuel.",
+      "supporters_many": "{{count, number}} personnes soutiennent l'énoncé actuel.",
       "reason": "Pourquoi",
       "forEveryone": "Cela modifie ce que l'entreprise retient, pour tout le monde. Si vous n'êtes ni administrateur ni relecteur de mémoire, la modification est soumise comme proposition à examiner."
     },
@@ -179,6 +185,7 @@
       "noChange": "Ces valeurs correspondent à l’existant ; approuver ne change rien.",
       "unchangedFields_one": "{{count, number}} champ inchangé",
       "unchangedFields_other": "{{count, number}} champs inchangés",
+      "unchangedFields_many": "{{count, number}} champs inchangés",
       "notFound": "Le scraper {{id}} est introuvable ; approuver n’enregistrera rien.",
       "none": "Aucun",
       "notSet": "Non défini",
@@ -256,6 +263,7 @@
       "notFound": "L’utilisateur {{username}} est introuvable ; approuver n’enregistrera rien.",
       "usersTableLabel_one": "{{count, number}} utilisateur à créer",
       "usersTableLabel_other": "{{count, number}} utilisateurs à créer",
+      "usersTableLabel_many": "{{count, number}} utilisateurs à créer",
       "temporaryPasswordsNote": "Cognito envoie à chaque personne un mot de passe temporaire par e-mail. Rien d'autre n'est créé ni modifié.",
       "inOrderNote": "Les utilisateurs sont créés dans cet ordre ; si l'un échoue, les suivants ne sont pas créés.",
       "adminsNote": "{{n, number}} sur {{total, number}} seront administrateurs, avec un accès complet aux paramètres, aux utilisateurs et aux données."
@@ -309,6 +317,7 @@
       "count": "Avis",
       "countValue_one": "{{count, number}} avis",
       "countValue_other": "{{count, number}} avis",
+      "countValue_many": "{{count, number}} avis",
       "rated": "Avec une note",
       "dated": "Avec une date",
       "ofTotal": "{{n, number}} sur {{total, number}}",
@@ -319,6 +328,7 @@
       "date": "Date",
       "undatedNote_one": "{{count, number}} avis n'a pas de date ; il est daté à l'import.",
       "undatedNote_other": "{{count, number}} avis n'ont pas de date ; ils sont datés à l'import.",
+      "undatedNote_many": "{{count, number}} avis n'ont pas de date ; ils seront datés à l'import.",
       "pipelineNote": "Les avis passent par l'enrichissement habituel et apparaissent en quelques minutes. Importer à nouveau les mêmes avis ne les enregistre qu'une fois.",
       "url": "Lien",
       "title": "Titre",
@@ -342,12 +352,14 @@
     "add_participants": {
       "title": "Ajouter des personnes à une liste de participants",
       "titleWith_one": "Ajouter {{count, number}} personne à une liste de participants",
-      "titleWith_other": "Ajouter {{count, number}} personnes à une liste de participants"
+      "titleWith_other": "Ajouter {{count, number}} personnes à une liste de participants",
+      "titleWith_many": "Ajouter {{count, number}} personnes à une liste de participants"
     },
     "save_radar_brands": {
       "title": "Enregistrer la liste des marques Radar",
       "titleWith_one": "Enregistrer la liste des marques Radar ({{count, number}} marque)",
-      "titleWith_other": "Enregistrer la liste des marques Radar ({{count, number}} marques)"
+      "titleWith_other": "Enregistrer la liste des marques Radar ({{count, number}} marques)",
+      "titleWith_many": "Enregistrer la liste de marques Radar ({{count, number}} marques)"
     },
     "run_radar_scan": {
       "title": "Rechercher maintenant les sorties des marques Radar"
@@ -513,12 +525,14 @@
     "import_reviews": {
       "title": "Importer des avis",
       "titleWith_one": "Importer {{count, number}} avis depuis {{source}}",
-      "titleWith_other": "Importer {{count, number}} avis depuis {{source}}"
+      "titleWith_other": "Importer {{count, number}} avis depuis {{source}}",
+      "titleWith_many": "Importer {{count, number}} avis depuis {{source}}"
     },
     "create_users": {
       "title": "Créer des utilisateurs",
       "titleWith_one": "Créer {{count, number}} utilisateur",
-      "titleWith_other": "Créer {{count, number}} utilisateurs"
+      "titleWith_other": "Créer {{count, number}} utilisateurs",
+      "titleWith_many": "Créer {{count, number}} utilisateurs"
     }
   }
 }

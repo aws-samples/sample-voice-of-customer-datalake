@@ -13,18 +13,11 @@
 
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
-import { useMockServer } from './mock-server-harness.mjs'
+import { mockCaller, useMockServer } from './mock-server-harness.mjs'
 
 const mock = useMockServer()
 
-async function call(method, path, body) {
-  const response = await fetch(`${mock.base}${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  return [response.status, await response.json()]
-}
+const call = mockCaller(mock)
 
 describe('dev mock: faceted metric reads keep the caller scope', () => {
   it('counts only the allowed categories when a facet is set', async () => {

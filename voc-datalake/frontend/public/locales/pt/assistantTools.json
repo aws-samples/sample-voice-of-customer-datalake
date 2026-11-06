@@ -48,6 +48,7 @@
       "count": "Pessoas",
       "countValue_one": "{{count, number}} pessoa",
       "countValue_other": "{{count, number}} pessoas",
+      "countValue_many": "{{count, number}} pessoas",
       "listNotFound": "Esta lista não foi encontrada; aprovar não adicionará ninguém.",
       "email": "E-mail",
       "name": "Nome",
@@ -57,9 +58,11 @@
       "notSet": "Não definido",
       "tableLabel_one": "{{count, number}} pessoa a adicionar",
       "tableLabel_other": "{{count, number}} pessoas a adicionar",
+      "tableLabel_many": "{{count, number}} pessoas para adicionar",
       "reviewAllNote": "Todas as pessoas estão listadas; role para conferir cada linha antes de aprovar.",
       "duplicatesNote_one": "{{count, number}} endereço de e-mail repetido foi unificado na primeira linha.",
       "duplicatesNote_other": "{{count, number}} endereços de e-mail repetidos foram unificados na primeira linha.",
+      "duplicatesNote_many": "{{count, number}} endereços de e-mail repetidos foram agrupados na primeira linha.",
       "reuseNote": "Quem já existe mantém os dados guardados; quem já está na lista fica como está. Nenhum e-mail é enviado.",
       "listLabel": "Nova lista",
       "listName": "Nome",
@@ -103,8 +106,10 @@
     "personas": {
       "add_one": "Adiciona à {{count, number}} persona do projeto, que é mantida.",
       "add_other": "Adiciona às {{count, number}} personas do projeto, que são mantidas.",
+      "add_many": "Adiciona às {{count, number}} personas que o projeto já tem; elas serão mantidas.",
       "replace_one": "Exclui a {{count, number}} persona existente do projeto, com as edições e o avatar, antes de escrever o novo conjunto.",
       "replace_other": "Exclui as {{count, number}} personas existentes do projeto, com as edições e os avatares, antes de escrever o novo conjunto.",
+      "replace_many": "Exclui as {{count, number}} personas existentes do projeto, incluindo edições e avatares, antes de gravar o novo conjunto.",
       "replaceUnknown": "Exclui as personas existentes do projeto, com as edições e os avatares, antes de escrever o novo conjunto."
     },
     "agent": "Agente",
@@ -137,6 +142,7 @@
       "companyVisible": "As memórias da empresa são visíveis para todos e usadas pelo assistente e pelos agentes para todos os usuários.",
       "supporters_one": "{{count, number}} pessoa apoia a declaração atual.",
       "supporters_other": "{{count, number}} pessoas apoiam a declaração atual.",
+      "supporters_many": "{{count, number}} pessoas apoiam a declaração atual.",
       "reason": "Motivo",
       "forEveryone": "Isso altera o que a empresa lembra, para todos. Se você não for administrador nem revisor de memória, será registrado como proposta para revisão."
     },
@@ -179,6 +185,7 @@
       "noChange": "Estes valores são iguais aos salvos; aprovar não muda nada.",
       "unchangedFields_one": "{{count, number}} campo inalterado",
       "unchangedFields_other": "{{count, number}} campos inalterados",
+      "unchangedFields_many": "{{count, number}} campos sem alteração",
       "notFound": "O scraper {{id}} não foi encontrado; aprovar não salvará nada.",
       "none": "Nenhum",
       "notSet": "Não definido",
@@ -256,6 +263,7 @@
       "notFound": "O usuário {{username}} não foi encontrado; aprovar não salvará nada.",
       "usersTableLabel_one": "{{count, number}} usuário a criar",
       "usersTableLabel_other": "{{count, number}} usuários a criar",
+      "usersTableLabel_many": "{{count, number}} usuários para criar",
       "temporaryPasswordsNote": "O Cognito envia a cada pessoa uma senha temporária por e-mail. Nada mais é criado ou alterado.",
       "inOrderNote": "Os usuários são criados nesta ordem; se um falhar, os demais não são criados.",
       "adminsNote": "{{n, number}} de {{total, number}} serão administradores, com acesso total a configurações, usuários e dados."
@@ -309,6 +317,7 @@
       "count": "Avaliações",
       "countValue_one": "{{count, number}} avaliação",
       "countValue_other": "{{count, number}} avaliações",
+      "countValue_many": "{{count, number}} avaliações",
       "rated": "Com nota",
       "dated": "Com data",
       "ofTotal": "{{n, number}} de {{total, number}}",
@@ -319,6 +328,7 @@
       "date": "Data",
       "undatedNote_one": "{{count, number}} avaliação não tem data; ela recebe a data da importação.",
       "undatedNote_other": "{{count, number}} avaliações não têm data; elas recebem a data da importação.",
+      "undatedNote_many": "{{count, number}} avaliações não têm data; elas receberão a data da importação.",
       "pipelineNote": "As avaliações passam pelo enriquecimento normal e aparecem em poucos minutos. Importar as mesmas avaliações de novo as guarda uma só vez.",
       "url": "Link",
       "title": "Título",
@@ -342,12 +352,14 @@
     "add_participants": {
       "title": "Adicionar pessoas a uma lista de participantes",
       "titleWith_one": "Adicionar {{count, number}} pessoa a uma lista de participantes",
-      "titleWith_other": "Adicionar {{count, number}} pessoas a uma lista de participantes"
+      "titleWith_other": "Adicionar {{count, number}} pessoas a uma lista de participantes",
+      "titleWith_many": "Adicionar {{count, number}} pessoas a uma lista de participantes"
     },
     "save_radar_brands": {
       "title": "Salvar a lista de marcas do Radar",
       "titleWith_one": "Salvar a lista de marcas do Radar ({{count, number}} marca)",
-      "titleWith_other": "Salvar a lista de marcas do Radar ({{count, number}} marcas)"
+      "titleWith_other": "Salvar a lista de marcas do Radar ({{count, number}} marcas)",
+      "titleWith_many": "Salvar a lista de marcas do Radar ({{count, number}} marcas)"
     },
     "run_radar_scan": {
       "title": "Buscar agora lançamentos das marcas do Radar"
@@ -513,12 +525,14 @@
     "import_reviews": {
       "title": "Importar avaliações",
       "titleWith_one": "Importar {{count, number}} avaliação de {{source}}",
-      "titleWith_other": "Importar {{count, number}} avaliações de {{source}}"
+      "titleWith_other": "Importar {{count, number}} avaliações de {{source}}",
+      "titleWith_many": "Importar {{count, number}} avaliações de {{source}}"
     },
     "create_users": {
       "title": "Criar usuários",
       "titleWith_one": "Criar {{count, number}} usuário",
-      "titleWith_other": "Criar {{count, number}} usuários"
+      "titleWith_other": "Criar {{count, number}} usuários",
+      "titleWith_many": "Criar {{count, number}} usuários"
     }
   }
 }

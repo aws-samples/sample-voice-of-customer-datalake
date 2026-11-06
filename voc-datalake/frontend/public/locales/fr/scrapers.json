@@ -265,8 +265,10 @@
     "unparsedSections_other": "{{count, number}} sections n'ont pas pu être analysées",
     "datesRequired_one": "{{count, number}} avis doit avoir une date avant de pouvoir l'importer.",
     "datesRequired_other": "{{count, number}} avis doivent avoir une date avant de pouvoir les importer.",
+    "datesRequired_many": "{{count, number}} d'avis nécessitent une date avant que l'import puisse être lancé.",
     "datesDefaulted_one": "{{count, number}} avis n'avait pas de date dans le texte : il prend la date d'import du jour. Vous pouvez la modifier ci-dessous.",
     "datesDefaulted_other": "{{count, number}} avis n'avaient pas de date dans le texte : ils prennent la date d'import du jour. Vous pouvez la modifier ci-dessous.",
+    "datesDefaulted_many": "{{count, number}} d'avis ne contenaient pas de date dans le texte. Ils utilisent donc la date d'import du jour. Vous pouvez les modifier ci-dessous.",
     "importFailed": "Échec de l'importation des avis",
     "clearDraft": "Effacer le brouillon",
     "draftDropped": "Votre brouillon enregistré dépassait {{max}} caractères ; il a été effacé. Collez un texte plus court pour continuer."
@@ -426,10 +428,13 @@
     "daily": "Tous les jours",
     "everyMinutes_one": "Toutes les minutes",
     "everyMinutes_other": "Toutes les {{count, number}} minutes",
+    "everyMinutes_many": "Toutes les {{count, number}} minutes",
     "everyHours_one": "Toutes les heures",
     "everyHours_other": "Toutes les {{count, number}} heures",
+    "everyHours_many": "Toutes les {{count, number}} heures",
     "everyDays_one": "Tous les jours",
-    "everyDays_other": "Tous les {{count, number}} jours"
+    "everyDays_other": "Tous les {{count, number}} jours",
+    "everyDays_many": "Tous les {{count, number}} jours"
   },
   "importHistory": {
     "title": "Historique des imports",
@@ -471,10 +476,13 @@
     "countsShort": {
       "skipped_one": "{{count, number}} ignorée",
       "skipped_other": "{{count, number}} ignorées",
+      "skipped_many": "{{count, number}} ignorés",
       "duplicate_one": "{{count, number}} doublon",
       "duplicate_other": "{{count, number}} doublons",
+      "duplicate_many": "{{count, number}} de doublons",
       "failed_one": "{{count, number}} échouée",
-      "failed_other": "{{count, number}} échouées"
+      "failed_other": "{{count, number}} échouées",
+      "failed_many": "{{count, number}} échoués"
     },
     "detail": {
       "title": "Détails de l’import",
@@ -489,6 +497,7 @@
       "loadFailed": "Impossible de charger cet import.",
       "moreNotShown_one": "{{count, number}} autre non affiché",
       "moreNotShown_other": "{{count, number}} autres non affichés",
+      "moreNotShown_many": "{{count, number}} de plus non affichés",
       "loading": "Chargement des détails de l’import…"
     },
     "loading": "Chargement de l’historique des imports…"
