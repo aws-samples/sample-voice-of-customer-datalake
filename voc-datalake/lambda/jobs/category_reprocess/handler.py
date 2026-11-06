@@ -93,7 +93,7 @@ from shared.reprocess_lineage import AnswerRecorder, change_stamps, job_actor, j
 from shared.reprocess_slices import ReprocessSlice, read_page, slice_from_job
 from shared.reprocess_slices import admits as slice_admits
 from shared.source_profiles import PII_SUMMARY_ONLY
-from shared.timestamps import now_iso
+from shared.timestamps import now_iso, parse_iso
 from shared.usefulness import USEFULNESS_FIELD, USEFULNESS_UNRATED, item_usefulness, stored_band
 
 FEEDBACK_TABLE = os.environ.get('FEEDBACK_TABLE', '')
@@ -599,8 +599,10 @@ def _reprocess_pages(
     if jobs.record_config(aggregates_table, job, job_config(aggregates_table, categories_config), token) is None:
         logger.info("Reprocess job cancelled or claimed by another delivery", extra={'job_id': job_id})
         return {'status': jobs.STATUS_CANCELLED}
+    # A days window counts back from when the JOB started, not from this invocation: a hand-over hours
+    # later reads the same days as the first invocation did.
     job_slice = slice_from_job(job)
-    window = job_slice.window(datetime.now(UTC))
+    window = job_slice.window(parse_iso(job.get('created_at')) or datetime.now(UTC))
     while True:
         page = scan_page(feedback_table, cursor, job_slice, window)
         for item in page.get('Items', []):
