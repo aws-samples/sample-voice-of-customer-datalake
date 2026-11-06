@@ -4669,17 +4669,21 @@ def _validated_research_ids(project_id: str, raw: Any, field: str) -> list[str]:
     one 400 rather than N reads and then a 400. Duplicates are collapsed: a
     repeated id would otherwise be read twice and injected into the prompt twice.
     """
+    return _validated_source_ids(project_id, raw, field, 'RESEARCH#', MAX_SELECTED_RESEARCH_IDS)
+
+
+def _validated_source_ids(project_id: str, raw: Any, field: str, prefix: str, cap: int) -> list[str]:
+    """``raw`` as at most ``cap`` distinct ids of this project's ``prefix`` documents, in the order
+    sent ([] when absent); the arity bound is checked before the first read."""
     if raw is None:
         return []
     if not isinstance(raw, list):
         raise ValidationError(f'{field} must be a list of document ids')
-    if len(raw) > MAX_SELECTED_RESEARCH_IDS:
-        raise ValidationError(
-            f'{field} names more than {MAX_SELECTED_RESEARCH_IDS} documents'
-        )
+    if len(raw) > cap:
+        raise ValidationError(f'{field} names more than {cap} documents')
     document_ids: list[str] = []
     for entry in raw:
-        document_id = _validated_source_id(project_id, 'RESEARCH#', entry, field)
+        document_id = _validated_source_id(project_id, prefix, entry, field)
         if document_id and document_id not in document_ids:
             document_ids.append(document_id)
     return document_ids
@@ -4717,20 +4721,9 @@ def _validated_product_doc_ids(project_id: str, raw: Any, field: str) -> list[st
     after: the same mockup named twice would otherwise be read twice and its
     palette repeated in the prompt.
     """
-    if raw is None:
-        return []
-    if not isinstance(raw, list):
-        raise ValidationError(f'{field} must be a list of document ids')
-    if len(raw) > MAX_SELECTED_PRODUCT_DOC_IDS:
-        raise ValidationError(
-            f'{field} names more than {MAX_SELECTED_PRODUCT_DOC_IDS} documents'
-        )
-    document_ids: list[str] = []
-    for entry in raw:
-        document_id = _validated_source_id(project_id, PRODUCT_DOC_SK_PREFIX, entry, field)
-        if document_id and document_id not in document_ids:
-            document_ids.append(document_id)
-    return document_ids
+    return _validated_source_ids(
+        project_id, raw, field, PRODUCT_DOC_SK_PREFIX, MAX_SELECTED_PRODUCT_DOC_IDS,
+    )
 
 
 # ---- Prototype pins (docs/feedback-forms.md) -----------------------------------

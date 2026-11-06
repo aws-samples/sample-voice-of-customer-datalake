@@ -28,7 +28,7 @@
         "voc-datalake/lambda/api/projects_handler.py",
         "voc-datalake/lambda/shared/radar_brands.py"
       ],
-      "reason": "id-list / domain-list validators: same shape, each with its own limits, normalisation and 400 wording for its route"
+      "reason": "projects_handler._validated_source_ids (document ids: keyed ownership read per id, ValidationError, 'names more than N documents') vs radar_brands._domains (host names: URL/www stripping and a regex, ValueError the brand-list route words as '{brand} radar_domains may hold at most N domains'); a common helper would take the parser, the exception and both messages as parameters"
     },
     {
       "files": [
