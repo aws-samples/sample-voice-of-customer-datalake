@@ -277,8 +277,11 @@ def start_job(
         release_lock(table, job_id)  # first: nothing after it may keep the lock held
         if marked and resume is not None:
             # The new job row was never written: hand the partial job back, or it would stay resumed by nothing.
-            # Never raises (_reopen_resumed logs its own failures), so the original error is the one re-raised.
-            _reopen_resumed(table, {'sk': job_id, 'resumed_from': resume.job_id})
+            # Guarded here as well, so the original error is always the one re-raised.
+            try:
+                _reopen_resumed(table, {'sk': job_id, 'resumed_from': resume.job_id})
+            except Exception:  # a failed hand-back must not replace the start's own error
+                logger.exception('Partial reprocess job not handed back after a failed start')
         raise
     return item
 
