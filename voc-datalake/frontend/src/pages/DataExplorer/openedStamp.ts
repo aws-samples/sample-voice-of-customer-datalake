@@ -6,8 +6,19 @@
  * @module pages/DataExplorer/openedStamp
  */
 
+import type { FeedbackItem } from '../../api/types'
+
 /** The record's `updated_at` as opened; '' when it has none. */
 export function openedStamp(opened: unknown): string {
   if (typeof opened !== 'object' || opened === null || !('updated_at' in opened)) return ''
   return typeof opened.updated_at === 'string' ? opened.updated_at : ''
+}
+
+/**
+ * The body of a processed-record save: the edited JSON (an object; anything else saves nothing) with the
+ * `updated_at` the record was OPENED with, whatever the JSON now says, so the API can refuse a stale editor.
+ */
+export function savedFeedbackBody(edited: unknown, opened: unknown): Partial<FeedbackItem> & { updated_at: string } {
+  const fields = typeof edited === 'object' && edited !== null ? edited : {}
+  return { ...fields, updated_at: openedStamp(opened) }
 }
