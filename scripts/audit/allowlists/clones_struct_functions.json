@@ -39,7 +39,7 @@
         "voc-datalake/lambda/api/scrapers_handler.py",
         "voc-datalake/lambda/api/settings_handler.py"
       ],
-      "reason": "two routes of two Lambdas (GET /scrapers/jobs/<id>, GET /settings/jobs/<id>) that each delegate in one line to shared.assist_jobs"
+      "reason": "the poll routes of two Lambdas (GET /scrapers/jobs/<id>, GET /settings/jobs/<id>): each Lambda must register its own route, and the body is already one call into shared.assist_jobs; the route inventories that classify every route (test_scrapers_security, test_route_admin_gates, the tracer ROUTES lists) read each handler's own decorated functions"
     }
   ]
 }
