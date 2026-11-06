@@ -19,13 +19,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/shared/design_components.py",
-        "voc-datalake/lambda/shared/extracted_design.py"
-      ],
-      "reason": "merge rules for two record types (component specs vs extracted design groups) with different keys and precedence; same loop shape only"
-    },
-    {
-      "files": [
         "voc-datalake/scripts/**"
       ],
       "reason": "one-off operator scripts (backfills, retention) each carry their own argparse and stack-output lookup on purpose, so a script runs alone from a checkout (the 5.28 duplicate audit kept them separate)"
