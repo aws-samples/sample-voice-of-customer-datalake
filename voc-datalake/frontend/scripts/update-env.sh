@@ -31,9 +31,9 @@ API_ENDPOINT=$(cfn_output "$API_STACK" ApiEndpoint)
 COGNITO_USER_POOL_ID=$(cfn_output "$CORE_STACK" UserPoolId)
 COGNITO_CLIENT_ID=$(cfn_output "$CORE_STACK" UserPoolClientId)
 COGNITO_REGION=$(cfn_output "$CORE_STACK" CognitoRegion)
-# Push notifications (docs/realtime.md); optional: an older stack has no Event API and the SPA polls.
-REALTIME_HTTP_DNS=$(cfn_output "$API_STACK" RealtimeHttpDns)
-REALTIME_DNS=$(cfn_output "$API_STACK" RealtimeDns)
+# Push notifications (docs/realtime.md; VocCoreStack's Event API); optional: an older stack has none and the SPA polls.
+REALTIME_HTTP_DNS=$(cfn_output "$CORE_STACK" RealtimeHttpDns)
+REALTIME_DNS=$(cfn_output "$CORE_STACK" RealtimeDns)
 [ "$REALTIME_HTTP_DNS" = "None" ] && REALTIME_HTTP_DNS=""
 [ "$REALTIME_DNS" = "None" ] && REALTIME_DNS=""
 [ -z "$COGNITO_REGION" ] || [ "$COGNITO_REGION" = "None" ] \
