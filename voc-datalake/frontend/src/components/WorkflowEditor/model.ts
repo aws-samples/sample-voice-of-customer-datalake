@@ -7,7 +7,7 @@
  *
  * @module components/WorkflowEditor/model
  */
-import { WORKFLOW_SCHEMA } from '../../api/workflowsApi'
+import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import { gateLabelFor } from './loopGates'
 import type {
   WorkflowDefinition, WorkflowEdge, WorkflowEdgeLabel, WorkflowLoop, WorkflowNode, WorkflowNodeRole, WorkflowNodeType,
@@ -231,7 +231,7 @@ export function clearDefinition(definition: WorkflowDefinition): WorkflowDefinit
 /** The smallest valid workflow, Start → End: what "New workflow" in the library creates. */
 export function starterDefinition(titles: Readonly<{ name: string; start: string; end: string }>): WorkflowDefinition {
   return {
-    schema: WORKFLOW_SCHEMA,
+    schema: WORKFLOW_SCHEMA_VERSION,
     name: titles.name,
     nodes: [
       { id: 'start', type: 'start', position: { x: 0, y: 0 }, data: { title: titles.start, params: {} } },

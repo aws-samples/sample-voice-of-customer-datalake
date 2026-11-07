@@ -5,7 +5,8 @@
  */
 import { describe, it, expect } from 'vitest'
 import { checkGraph, validateLocally } from './graphRules'
-import { API_WORKFLOW_LIMITS, WORKFLOW_SCHEMA } from '../../api/workflowsApi'
+import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
+import { API_WORKFLOW_LIMITS } from '../../api/workflowsApi'
 import type { WorkflowDefinition, WorkflowEdge, WorkflowNode, WorkflowNodeType } from '../../api/workflowsApi'
 import { at } from '@test/defined'
 
@@ -26,7 +27,7 @@ const edge = (source: string, target: string, label?: WorkflowEdge['label']): Wo
 /** Reviews → Prototype, with the persona review / revise loop. */
 function defaultLike(): WorkflowDefinition {
   return {
-    schema: WORKFLOW_SCHEMA,
+    schema: WORKFLOW_SCHEMA_VERSION,
     name: 'Reviews → Prototype',
     nodes: [
       node('start', 'start'),
@@ -57,7 +58,7 @@ function chain(stepCount: number): WorkflowDefinition {
   const steps = Array.from({ length: stepCount }, (_x, i) => node(`s${i}`, 'aggregate_reviews'))
   const ids = ['start', ...steps.map((s) => s.id), 'end']
   return {
-    schema: WORKFLOW_SCHEMA,
+    schema: WORKFLOW_SCHEMA_VERSION,
     name: 'Chain',
     nodes: [node('start', 'start'), ...steps, node('end', 'end')],
     edges: ids.slice(1).map((id, i) => edge(at(ids, i), id)),
