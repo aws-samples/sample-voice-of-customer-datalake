@@ -17,7 +17,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { autofillPrfaq, suggestDocumentBrief } from './mock-ai-drafts.js';
 import {
-  NO_SOURCE_MESSAGE, documentRequestUse, generationMethodology, prototypeBlocked,
+  NO_SOURCE_MESSAGE, documentRequestUse, generationMethodology, importStartMethodology, importedPersonaMarker,
+  prototypeBlocked,
 } from './mock-methodology.js';
 
 // mock-server.js's MOCK_CALLER (admin-demo); its subject is what jobs and pins record.
@@ -521,18 +522,19 @@ function importPersona(ctx) {
     return bad(`That image could not be read. Accepted: ${CONVERSE_IMAGE_TYPES.join(', ')}.`);
   }
   const name = inputType === 'text' ? (content.trim().split('\n')[0].slice(0, 40) || 'Imported Persona') : 'Screenshot Persona';
-  return startJob(ctx.projectId, {
+  return withMethodology(startJob(ctx.projectId, {
     jobType: 'import_persona', status: 'running', message: 'Persona import started.',
     runningStep: 'extracting_persona', errorMessage: 'Persona import failed',
     complete: (detail) => {
       const persona = personaItem(personaIdTaken(detail), {
         ...cloneJson(PERSONA_TEMPLATES[0]), name, tagline: 'Imported from a pasted description', confidence: 'low',
+        imported_from: inputType, ...importedPersonaMarker(),
       });
       detail.personas.push(persona);
       detail.project.persona_count = (Number(detail.project.persona_count) || 0) + 1;
       return { persona_id: persona.persona_id, title: `Imported: ${persona.name}` };
     },
-  });
+  }), importStartMethodology());
 }
 
 // ── Generated content ───────────────────────────────────────────────────────

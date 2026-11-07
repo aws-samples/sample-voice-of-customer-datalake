@@ -12,6 +12,7 @@ import { optionalErasedEvidenceSchema } from './erasedEvidence'
 import { parseEach } from './lenientFields'
 import { optionalMethodologyBlock, optionalProjectMethodology } from './methodologySchema'
 import { copiedFromSchema } from './personaCopiedFrom'
+import { personaEvidenceMarkerSchema } from './personaEvidenceMarker'
 import { UserRefSchema } from './userRefSchema'
 import { asRecord } from './wireRecord'
 import type {
@@ -138,6 +139,10 @@ const ProjectPersonaSchema = z.looseObject({
   source_breakdown: z.record(z.string(), z.number()).optional().catch(undefined),
   input_feedback_ids: optionalStringArray,
   copied_from: copiedFromSchema,
+  /** An imported persona's input kind (`text` / `image`); absent on generated ones. */
+  imported_from: optionalString,
+  /** Imported or copied: the reviews behind it (api/personaEvidenceMarker.ts). */
+  evidence: personaEvidenceMarkerSchema,
   evidence_feedback_ids: optionalStringArray,
   erased_evidence: optionalErasedEvidenceSchema,
   /** Kept by a replace regeneration (#429); only a literal true protects. */

@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, Final, Literal
 
+from shared import persona_evidence_marker
 from shared.avatar import AVATAR_CACHE_CONTROL, AVATAR_KEY_PREFIX, AVATAR_OWNER_METADATA_KEY, avatar_key_from_uri
 from shared.exceptions import NotFoundError
 from shared.ids import timestamped_id
@@ -27,7 +28,7 @@ PERSONA_NOT_FOUND: Final = 'Persona not found'
 #: Stored fields a copy never carries over: keys, identity, timestamps, notes, provenance, the avatar.
 NOT_COPIED: Final = frozenset({
     'pk', 'sk', 'gsi1pk', 'gsi1sk', 'persona_id', 'created_at', 'updated_at',
-    'research_notes', 'copied_from', 'avatar_url',
+    'research_notes', 'copied_from', 'avatar_url', *persona_evidence_marker.MARKER_FIELDS,
 })
 #: The content type a copied avatar gets when the source HEAD reports none.
 DEFAULT_AVATAR_CONTENT_TYPE: Final = 'image/jpeg'
@@ -97,6 +98,8 @@ def _new_item(source: dict, target: str, new_id: str, now: str, provenance: dict
         'gsi1pk': f'PROJECT#{target}#PERSONAS', 'gsi1sk': now,
         'persona_id': new_id, 'created_at': now, 'updated_at': now,
         'research_notes': [], 'copied_from': provenance, 'avatar_url': None,
+        # The source's reviews when it had any, else a no-evidence marker; never invented.
+        **persona_evidence_marker.copied(source),
     }
 
 

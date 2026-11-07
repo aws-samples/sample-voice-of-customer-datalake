@@ -95,6 +95,7 @@ from shared import (
     methodology,
     model_profile,
     persona_copy_routes,
+    persona_evidence_marker,
     project_access,
     project_gate,
     prototype_pins,
@@ -629,7 +630,9 @@ def _start_persona_import(project_id: str, body: dict) -> dict:
         'job_id': job_id,
         'import_config': config
     })
-    return {'success': True, 'job_id': job_id, 'status': 'running', 'message': 'Persona import started.'}
+    return {'success': True, 'job_id': job_id, 'status': 'running', 'message': 'Persona import started.',
+            # An import cites no customer feedback: said at the start, like every methodology step.
+            'methodology': persona_evidence_marker.import_start()}
 
 
 @app.put("/projects/<project_id>/personas/<persona_id>")

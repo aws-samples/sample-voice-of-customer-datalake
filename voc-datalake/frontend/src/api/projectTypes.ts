@@ -9,6 +9,7 @@
 //    imported from there by pages/Prioritization/prioritizationUtils.ts.
 import type { ErasedEvidence } from './erasedEvidence'
 import type { ProjectMethodology } from './methodologySchema'
+import type { PersonaEvidenceMarker } from './personaEvidenceMarker'
 import type { ProductDocStatus, ProjectDocument } from './types'
 
 export interface ProjectJob {
@@ -152,6 +153,10 @@ export interface ProjectPersona {
    * link; research notes are never copied). Replaced, not chained, on a copy of a copy.
    */
   copied_from?: PersonaCopiedFrom
+  /** An imported persona's input kind (`text` / `image`). */
+  imported_from?: string
+  /** Set on an imported or copied persona: how many reviews stand behind it (0 = none). */
+  evidence?: PersonaEvidenceMarker
 }
 
 /** Where a copied persona came from (`copied_from` on the persona row). */

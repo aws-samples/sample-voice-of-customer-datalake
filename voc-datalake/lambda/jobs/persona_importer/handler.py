@@ -15,6 +15,7 @@ import os
 from datetime import UTC, datetime
 
 from api.projects import generate_persona_avatar
+from shared import persona_evidence_marker
 from shared.aws import get_bedrock_client, get_dynamodb_resource
 from shared.converse import converse_blocks
 from shared.ids import timestamped_id
@@ -170,6 +171,8 @@ def handle_job(ctx: JobContext, project_id: str, _job_id: str, import_config: di
         'scenario': persona_data.get('scenario', {}),
         'research_notes': [],
         'imported_from': input_type,
+        # Not based on customer feedback: said on the persona (shared/persona_evidence_marker.py, tenet 2).
+        **persona_evidence_marker.imported(),
         # Attributability, matching what the generation path already records. An
         # imported persona previously carried no prompt version at all, so a row
         # with odd inner keys could not be traced to the prompt that produced it —

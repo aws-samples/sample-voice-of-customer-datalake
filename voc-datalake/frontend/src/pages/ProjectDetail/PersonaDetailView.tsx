@@ -27,6 +27,7 @@ import { featureRequestIdsOf } from './featureRequestCitations'
 import ResearchNotes from './ResearchNotes'
 import { useRegenerateAvatar } from './useRegenerateAvatar'
 import CopiedFromLine from './CopiedFromLine'
+import NoEvidenceNote from './NoEvidenceNote'
 import { PromotePersonaButton, PromoteStatus } from './PromotePersonaButton'
 import { usePromotePersona } from './usePromotePersona'
 import { useIsAdmin } from '../../store/authStore'
@@ -76,6 +77,7 @@ function PersonaHeaderIdentity({ persona, shown, protection }: {
           featureRequestIds={featureRequestIdsOf(persona)} className="mt-1.5" />
         <ErasedEvidenceNote erasedEvidence={persona.erased_evidence} className="mt-1" />
         <CopiedFromLine copiedFrom={persona.copied_from} />
+        <NoEvidenceNote persona={persona} className="mt-1" />
       </div>
     </div>
   )

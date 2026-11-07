@@ -11,8 +11,8 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 import {
-  documentRequestUse, generationMethodology, humanMethodology, projectMethodology, prototypeBlocked,
-  workflowMethodologyWarnings,
+  copiedPersonaMarker, documentRequestUse, generationMethodology, humanMethodology, importStartMethodology,
+  importedPersonaMarker, projectMethodology, prototypeBlocked, workflowMethodologyWarnings,
 } from '../mock-methodology.js'
 
 const EMPTY = { personas: [], documents: [] }
@@ -85,5 +85,27 @@ describe('mock methodology: workflow warnings', () => {
       edges: [edge('a', 'p'), edge('p', 'f'), edge('f', 'r'), edge('r', 'd'), edge('d', 'b')],
     })
     assert.deepEqual(warnings, [])
+  })
+})
+
+describe('persona evidence markers (shared/persona_evidence_marker.py)', () => {
+  it('marks an import as having no evidence', () => {
+    const fields = importedPersonaMarker()
+    assert.deepEqual(fields.evidence, { source: 'import', count: 0, inherited: false, origin: 'import' })
+    assert.deepEqual(fields.methodology.warnings.map((w) => w.code), ['no_evidence'])
+    assert.deepEqual(importStartMethodology(), fields.methodology)
+  })
+
+  it('keeps a generated source persona\'s review count on a copy', () => {
+    const fields = copiedPersonaMarker({ input_feedback_ids: ['a', 'b'] })
+    assert.deepEqual(fields.evidence, { source: 'copy', count: 2, inherited: true, origin: 'generated' })
+    assert.deepEqual(fields.methodology.warnings, [])
+  })
+
+  it('marks a copy of an import as having no evidence, naming the origin', () => {
+    const fields = copiedPersonaMarker({ evidence: { source: 'import', count: 0 } })
+    assert.deepEqual(fields.evidence, { source: 'copy', count: 0, inherited: false, origin: 'import' })
+    assert.equal(fields.methodology.warnings[0].message, 'Copied from a persona that is not based on customer feedback.')
+    assert.equal(copiedPersonaMarker({}).evidence.origin, 'unknown')
   })
 })
