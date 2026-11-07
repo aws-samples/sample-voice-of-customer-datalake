@@ -191,7 +191,7 @@ def test_import_stores_the_original_and_queues_chunk_zero(call, world):
     import_id = body['import_id']
     stored = json.loads(world.s3.get_object(Bucket=RAW_BUCKET, Key=f'memory-imports/{import_id}.json')['Body'].read())
     assert stored['title'] == 'Wiki'
-    assert world.queued() == [{'kind': 'import', 'import_id': import_id, 'chunk': 0}]
+    assert world.queued() == [{'kind': 'import', 'import_id': import_id, 'chunk': 0, 'notify': 'sub-reviewer'}]
     status, body = call('GET', f'/memory/imports/{import_id}', claims=REVIEWER_CLAIMS,
                         path_params={'import_id': import_id})
     assert (status, body['import']['status']) == (200, 'queued')

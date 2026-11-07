@@ -555,8 +555,10 @@ def create_import():
         record['url'] = url
     table.put_item(Item=record)
     try:
+        # `notify`: who the extractor tells when the import ends (docs/realtime.md). In the message only: the
+        # import row keeps a supporter hash, never the sub.
         get_sqs_client().send_message(QueueUrl=MEMORY_QUEUE_URL, MessageBody=json.dumps(
-            {'kind': 'import', 'import_id': import_id, 'chunk': 0}))
+            {'kind': 'import', 'import_id': import_id, 'chunk': 0, 'notify': caller.subject}))
     except Exception as exc:
         store.add_import_counts(table, import_id, {}, {'status': 'failed', 'error': 'Could not queue the import'},
                                 now=now)

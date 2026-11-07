@@ -190,3 +190,23 @@ def test_imports_process_chunk_by_chunk(world, worker_context):
     [row] = world.memories()
     assert row['source_kind'] == 'import'
     assert row['supporters'] == 1  # one importer, however many chunks repeat it
+
+
+def test_an_import_tells_its_importer_once_it_ends(world, worker_context, monkeypatch):
+    """The `notify` sub rides chunk to chunk in the message (never stored) and hears the end once."""
+    sent = []
+    monkeypatch.setattr(extractor.job_notices.realtime, 'publish',
+                        lambda namespace, sub, event: sent.append((namespace, sub, event)) is None)
+    content = '\n\n'.join(['Customers love the loyalty program. ' * 300] * 2)
+    import_id = _start_import(world, content)
+    world.converse.return_value = model_reply([])
+    extractor.lambda_handler(_sqs_event({'kind': 'import', 'import_id': import_id, 'chunk': 0, 'notify': 'sub-rev'}),
+                             worker_context)
+    [follow_up] = world.queued()
+    assert (follow_up['notify'], sent) == ('sub-rev', [])
+    total = int(_import_row(world, import_id)['chunks_total'])
+    for chunk in range(1, total):
+        extractor.lambda_handler(_sqs_event({**follow_up, 'chunk': chunk}), worker_context)
+    assert sent == [('jobs', 'sub-rev', {'type': 'job', 'job_id': import_id, 'status': 'completed',
+                                         'job_type': 'memory_import'})]
+    assert 'sub-rev' not in json.dumps(_import_row(world, import_id), default=str)

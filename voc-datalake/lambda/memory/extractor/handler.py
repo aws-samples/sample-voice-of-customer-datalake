@@ -39,6 +39,7 @@ from aws_lambda_powertools.utilities.batch import BatchProcessor, EventType, pro
 from aws_lambda_powertools.utilities.batch.types import PartialItemFailureResponse
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
 
+from shared import job_notices
 from shared import memory_policy as policy
 from shared import memory_store as store
 from shared.api import get_raw_categories_config
@@ -374,6 +375,7 @@ def process_import(message: Mapping[str, Any], now: datetime) -> None:
     if chunk >= len(chunks):
         store.add_import_counts(memory_table, import_id, {}, {'status': 'completed', 'chunks_total': len(chunks)},
                                 now=now)
+        _notify_import_end(message, import_id)
         return
     outcome, reply = extract_and_write(chunks[chunk], ExtractionSource(
         block='document', source_kind=policy.SOURCE_IMPORT,
@@ -386,7 +388,19 @@ def process_import(message: Mapping[str, Any], now: datetime) -> None:
         'chunks_done': chunk + 1, **_tier_fields(reply),
     }, now=now)
     if not last:
-        _enqueue({'kind': KIND_IMPORT, 'import_id': import_id, 'chunk': chunk + 1})
+        _enqueue({'kind': KIND_IMPORT, 'import_id': import_id, 'chunk': chunk + 1,
+                  **({'notify': message['notify']} if isinstance(message.get('notify'), str) else {})})
+        return
+    _notify_import_end(message, import_id)
+
+
+#: The notice's ``job_type`` (shared/job_notices.py): the memory imports list listens for it.
+IMPORT_JOB_TYPE = 'memory_import'
+
+
+def _notify_import_end(message: Mapping[str, Any], import_id: str) -> None:
+    """Tell the importer (the message's ``notify`` sub, carried chunk to chunk) that it ended; best effort."""
+    job_notices.notify(message.get('notify'), import_id, 'completed', job_type=IMPORT_JOB_TYPE)
 
 
 # ── Handler ──────────────────────────────────────────────────────────────────

@@ -758,7 +758,7 @@ class TestImportWrites:
         }
         world.table.put_item.assert_called_once_with(Item=record)
         world.sqs.send_message.assert_called_once_with(
-            QueueUrl='https://sqs.example/q', MessageBody='{"kind": "import", "import_id": "imp_1", "chunk": 0}')
+            QueueUrl='https://sqs.example/q', MessageBody='{"kind": "import", "import_id": "imp_1", "chunk": 0, "notify": "sub-rev"}')
         assert (status, body) == (202, {'import_id': 'imp_1', 'import': store.public_import(record)})
 
     def test_no_username_and_no_url_leave_their_fields_out(self, world):

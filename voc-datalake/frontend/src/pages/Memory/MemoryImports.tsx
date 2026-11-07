@@ -5,7 +5,8 @@
  * kept in the raw bucket.
  *
  * Below the form: the imports this browser submitted, each polled every 3 s
- * until it finishes.
+ * until it finishes (with push, read at once on its end notice and polled
+ * slower as the fallback, docs/realtime.md).
  *
  * @module pages/Memory/MemoryImports
  */
@@ -18,6 +19,7 @@ import { isTerminalImport, MAX_IMPORT_CHARS, memoryApi, memoryKeys } from '../..
 import type { ImportStatus } from '../../api/memoryApi'
 import { readImportHistory, rememberImport } from './importHistory'
 import StickyActionBar from '../../components/StickyActionBar/StickyActionBar'
+import { realtimePollInterval, useRealtimeJobRefresh } from '../../realtime/jobRefresh'
 import { formatCount } from '../../utils/numberFormat'
 
 const POLL_MS = 3000
@@ -94,10 +96,13 @@ function ImportRow({ importId }: Readonly<{ importId: string }>) {
     queryKey: memoryKeys.import(importId),
     queryFn: () => memoryApi.getImport(importId),
     // Stop on a finished import, and on an error (an unknown id would poll forever).
-    refetchInterval: (q) => (q.state.status === 'error' || (q.state.data && isTerminalImport(q.state.data)) ? false : POLL_MS),
+    refetchInterval: (q) => (q.state.status === 'error' || (q.state.data && isTerminalImport(q.state.data))
+      ? false
+      : realtimePollInterval(POLL_MS)),
     retry: false,
   })
   const record = query.data
+  useRealtimeJobRefresh({ jobId: importId }, [memoryKeys.import(importId)], record === undefined || !isTerminalImport(record))
   if (!record) {
     return (
       <li className="py-2 text-sm text-muted flex items-center gap-2">
