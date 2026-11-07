@@ -43,7 +43,8 @@ export async function createScraper(args: CreateScraperArgs, ctx: WriteToolExecu
   const record = createdScraperRecord(args)
   refused(scraperRecordProblem(record))
   if (await fetchScraper(args.id) !== undefined) throw new StaleApprovalError(scraperExistsMessage(args.id))
-  await scrapersApi.saveScraper(record)
+  // The server refuses the overwrite too (409), whoever the client is.
+  await scrapersApi.saveScraper(record, { mode: 'create' })
   void invalidateKeys(ctx.queryClient, keysFor.scrapers())
   const schedule = record.enabled && record.frequency_minutes > 0 ? `every ${String(record.frequency_minutes)} minutes` : 'not scheduled'
   return {
@@ -60,7 +61,8 @@ export async function updateScraper(args: UpdateScraperArgs, ctx: WriteToolExecu
   requireUnchangedSinceShown(shownBase, scraperFingerprint(current), SCRAPER_CHANGED_MESSAGE)
   const merged = mergedScraperRecord(current, args.updates)
   refused(scraperRecordProblem(merged))
-  await scrapersApi.saveScraper(merged)
+  // The server refuses a stale update too (409 on another etag).
+  await scrapersApi.saveScraper(merged, { mode: 'update', ...(current.etag === undefined ? {} : { base_etag: current.etag }) })
   void invalidateKeys(ctx.queryClient, keysFor.scrapers())
   return {
     summary: `Updated web scraper ${args.scraper_id} (${Object.keys(args.updates).join(', ')}).`,
@@ -82,7 +84,7 @@ export async function createAppConnector(args: CreateAppConnectorArgs, ctx: Writ
   const { apps } = await api.getAppConfigs(args.source)
   const duplicate = apps.some((app) => sameText(app.app_name, record.app_name) || sameText(app[idField], record[idField]))
   if (duplicate) throw new StaleApprovalError(appExistsMessage(record.app_name ?? ''))
-  const res = await api.saveAppConfig(args.source, record)
+  const res = await api.saveAppConfig(args.source, record, { mode: 'create' })
   void invalidateKeys(ctx.queryClient, keysFor.appConfigs(args.source))
   const cadence = record.frequency_minutes === '0' ? 'on manual runs only' : `every ${record.frequency_minutes ?? ''} minutes`
   const web = args.source === 'web_reviews'

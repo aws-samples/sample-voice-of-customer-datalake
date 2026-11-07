@@ -665,6 +665,13 @@ const handlers = {
     const radarError = radarBrandError(scraper.radar_brand);
     if (radarError) return { __status: 400, body: { success: false, error: radarError } };
     const index = mockScrapers.findIndex((s) => s.id === scraper.id);
+    // The write rules (shared/config_write_guard.py); the mock does not compute etags, so base_etag is not checked.
+    if (body.mode === 'create' && index >= 0) {
+      return { __status: 409, body: { success: false, error: `A scraper with id "${scraper.id}" already exists; nothing was saved. A create never overwrites.` } };
+    }
+    if (body.mode === 'update' && index < 0) {
+      return { __status: 404, body: { success: false, error: `A scraper with id "${scraper.id}" does not exist; nothing was saved.` } };
+    }
     if (index >= 0) mockScrapers[index] = scraper;
     else mockScrapers.push(scraper);
     return { success: true, scraper };

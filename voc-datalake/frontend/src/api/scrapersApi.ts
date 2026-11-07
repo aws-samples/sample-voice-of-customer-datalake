@@ -8,7 +8,7 @@ import type { CsvDatasetPreview, CsvUploadResult } from './csvDatasetSchema'
 import { normalizeScrapers, normalizeScraperRunStatus } from './scrapersSchema'
 import type { ScraperRunStatus } from './scrapersSchema'
 import type {
-  CsvColumnTarget, ScraperConfig, ScraperTemplate,
+  ConfigWriteRules, CsvColumnTarget, ScraperConfig, ScraperTemplate,
 } from './types'
 
 export const scrapersApi = {
@@ -22,11 +22,16 @@ export const scrapersApi = {
 
   getScraperTemplates: () => fetchApi<{ templates: ScraperTemplate[] }>('/scrapers/templates'),
 
-  saveScraper: (scraper: ScraperConfig) =>
+  /**
+   * `rules` (optional, docs/scrapers.md → Write rules): `mode: 'create'` is refused 409 when
+   * the id exists, `mode: 'update'` 404 when it does not, and `base_etag` 409 when the
+   * stored scraper changed since it was read. Absent = the upsert.
+   */
+  saveScraper: (scraper: ScraperConfig, rules?: ConfigWriteRules) =>
     fetchApi<{
       success: boolean;
       scraper: ScraperConfig
-    }>('/scrapers', post({ scraper })),
+    }>('/scrapers', post({ scraper, ...rules })),
 
   deleteScraper: (id: string) =>
     fetchApi<{ success: boolean }>(`/scrapers/${id}`, del()),

@@ -80,6 +80,8 @@ const ScraperConfigSchema = z.looseObject({
   tags: OptionalTagsSchema,
   // A Radar source names its brand by key (absent on an ordinary scraper).
   radar_brand: optionalString,
+  // The stored record's version, computed by GET /scrapers (a save's `base_etag`).
+  etag: optionalString,
 })
 
 /**

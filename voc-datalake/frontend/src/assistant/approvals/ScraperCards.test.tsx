@@ -101,7 +101,7 @@ describe('create_scraper card', () => {
       urls: ['https://shop.acme.example/r'], container_selector: '.review', text_selector: '.body', frequency_minutes: 60,
       dimension_defaults: { product: 'mobile' }, tags: ['web'], enabled: false,
       pagination: { enabled: false, param: 'page', max_pages: 1, start: 1 },
-    } }]])
+    }, mode: 'create' }]])
     expect(invalidate.mock.calls.map(([f]) => f?.queryKey)).toContainEqual(['scrapers'])
     expect(screen.getByRole('link', { name: 'Open this scraper on the Data sources page' })).toHaveAttribute('href', '/scrapers#scraper-acme')
   })
@@ -190,7 +190,7 @@ describe('create_app_connector card', () => {
     await approve(user, onResolve)
     expect(save.mock.calls).toStrictEqual([['app_reviews_android', {
       app_name: 'Acme app', package_name: 'com.acme.app', sort_by: 'rating', max_reviews_per_run: '500', frequency_minutes: '0',
-    }]])
+    }, { mode: 'create' }]])
   })
 
   it('refuses an app that is already configured, and saves nothing', async () => {
@@ -223,7 +223,7 @@ describe('create_app_connector card', () => {
     await approve(user, onResolve)
     expect(save.mock.calls).toStrictEqual([['web_reviews', {
       app_name: 'Acme Trustpilot', url: WEB.url, max_pages: '3', max_reviews: '50', frequency_minutes: '0',
-    }]])
+    }, { mode: 'create' }]])
   })
 
   it('returns the source label the route minted, so the assistant can scope jobs to it', async () => {

@@ -242,6 +242,12 @@ export interface IntegrationStatus {
   }
 }
 
+/** The optional write rules of POST /scrapers and POST /integrations/{source}/apps. */
+export interface ConfigWriteRules {
+  mode?: 'create' | 'update'
+  base_etag?: string
+}
+
 export interface ScraperConfig {
   id: string
   name: string
@@ -273,6 +279,8 @@ export interface ScraperConfig {
   tags?: string[]
   /** Radar source (docs/radar.md): the Radar brand key its reviews go to; absent / '' = an ordinary source. */
   radar_brand?: string
+  /** The stored record's version, computed by GET /scrapers; a save's `base_etag` (docs/scrapers.md → Write rules). */
+  etag?: string
 }
 
 export interface ScraperTemplate {

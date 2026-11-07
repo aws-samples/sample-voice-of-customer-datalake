@@ -27,6 +27,7 @@ import type {
   SourceBreakdown,
   IntegrationStatus,
   ScraperConfig,
+  ConfigWriteRules,
   EntitiesResponse,
   WireBallotEdit,
   FeedbackForm,
@@ -303,11 +304,11 @@ export const api = {
   getAppConfigs: (source: string) =>
     fetchApi<{ apps: Array<Record<string, string>> }>(`/integrations/${source}/apps`),
 
-  saveAppConfig: (source: string, app: Record<string, string>) =>
+  saveAppConfig: (source: string, app: Record<string, string>, rules?: ConfigWriteRules) =>
     fetchApi<{
       success: boolean;
       app: Record<string, string>
-    }>(`/integrations/${source}/apps`, post({ app })),
+    }>(`/integrations/${source}/apps`, post({ app, ...rules })),
 
   deleteAppConfig: (source: string, appId: string) =>
     fetchApi<{ success: boolean }>(`/integrations/${source}/apps/${appId}`, del()),
