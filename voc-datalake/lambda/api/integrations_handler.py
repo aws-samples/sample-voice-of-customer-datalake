@@ -5,6 +5,7 @@ Manages API credentials and data source schedules.
 
 import json
 import os
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC
 from functools import cache
@@ -803,7 +804,7 @@ def _same_text(a: object, b: object) -> bool:
     return isinstance(a, str) and isinstance(b, str) and bool(a.strip()) and a.strip().lower() == b.strip().lower()
 
 
-def _check_app_write(source: str, configs: list, app_config: dict, stored: dict | None,
+def _check_app_write(source: str, configs: list, app_config: dict, stored: Mapping[str, Any] | None,
                      mode: str | None, base: str | None) -> None:
     """The write rules for an app connector: a create also refuses the same app under a new id."""
     name = app_config.get('app_name')
