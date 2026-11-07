@@ -11,7 +11,7 @@
 import { z } from 'zod'
 import { toolOutcomeSchema } from '../toolOutcome'
 import { ownEntry } from '../ownEntry'
-import { PLAN_ID_RE } from '../plan/schema'
+import { PLAN_ID_RE } from '@stream/assistant/plan/schema'
 import { PLAN_PROPOSAL_TOOL } from '../approvals/planSchemas'
 import { jsonOrUndefined } from '../parseJson'
 import type { PlanView } from '../../api/plansApi'

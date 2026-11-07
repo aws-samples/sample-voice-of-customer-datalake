@@ -13,12 +13,12 @@
 import { useTranslation } from 'react-i18next'
 import { Brain, Hourglass, PenLine, RotateCcw } from 'lucide-react'
 import { useIsAdmin } from '../../../store/authStore'
-import { NEVER_PREAPPROVABLE_TOOLS, PLAN_LIMITS } from '../../plan/schema'
-import { validatePlan } from '../../plan/validate'
+import { NEVER_PREAPPROVABLE_TOOLS, PLAN_LIMITS } from '@stream/assistant/plan/schema'
+import { validatePlan } from '@stream/assistant/plan/validate'
 import { packsAllowedFor } from '../../plan/packsAllowed'
 import { FieldTable } from './FieldDiff'
 import { planArgRows } from './planRows'
-import type { PlanStep, VocPlan } from '../../plan/schema'
+import type { PlanStep, VocPlan } from '@stream/assistant/plan/schema'
 import type { StepNumberOf } from './planRows'
 
 const KIND_ICONS = { write: PenLine, wait: Hourglass, think: Brain } as const

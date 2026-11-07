@@ -3,13 +3,6 @@
   "entries": [
     {
       "files": [
-        "voc-datalake/frontend/src/assistant/plan/*.ts",
-        "voc-datalake/lambda/stream/src/assistant/plan/*.ts"
-      ],
-      "reason": "SPA <-> stream Lambda plan mirror (schema, validate, placeholders, graph, canonical), pinned by plan.lockstep tests; separate packages that must not import each other (jscpd ignores four of the five; canonical.ts has no exact clone). One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'], and the shared file must stay browser-safe (zod only)."
-    },
-    {
-      "files": [
         "voc-datalake/frontend/src/assistant/sessions/personaResult.ts",
         "voc-datalake/lambda/stream/src/assistant/session/persona-result.ts"
       ],
