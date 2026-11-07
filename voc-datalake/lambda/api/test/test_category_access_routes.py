@@ -1,6 +1,6 @@
 """Category access on chat, feedback forms, users, settings and project jobs."""
 import json
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
@@ -199,7 +199,7 @@ class TestProjectJobsCaptureScope:
     EXPECTED: ClassVar[dict[str, Any]] = {'all': False, 'categories': ['delivery']}
 
     @contextmanager
-    def _scoped_project(self) -> Iterator[None]:
+    def _scoped_project(self) -> Generator[None]:
         """The caller's scope is SCOPE, project p1 exists and has no methodology items yet."""
         with patch('projects_handler.category_gate.scope_for_event', return_value=self.SCOPE), \
                 patch('projects_handler._require_project_exists'), \
