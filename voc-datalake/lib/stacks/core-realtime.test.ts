@@ -140,7 +140,9 @@ describe('the Event API', () => {
     expect(jobs).toHaveLength(API_JOBS_PUBLISHERS.length);
     expect(API_JOBS_PUBLISHERS.filter((f) => !named(jobs, f))).toStrictEqual([]);
     expect([publishers.get('chat')?.length, named(publishers.get('chat'), 'ChatStream')]).toStrictEqual([1, true]);
-    // VocApiStack names no appsync action itself and creates no Event API resource.
+  });
+
+  it('leaves VocApiStack without an appsync statement or an Event API resource of its own', () => {
     const api = apiTemplate();
     expect(JSON.stringify(api.findResources('AWS::IAM::Policy'))).not.toContain('appsync:');
     expect(Object.keys({ ...api.findResources('AWS::AppSync::Api'), ...api.findResources('AWS::AppSync::ChannelNamespace'),
