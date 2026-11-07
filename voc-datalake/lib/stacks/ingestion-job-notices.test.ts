@@ -1,17 +1,17 @@
 /**
  * VocIngestionStack: an ingestor declaring `infrastructure.ingestor.jobNotices` (s3_import) tells a reprocess
  * run's starter when it ends (docs/realtime.md). It runs on a DEDICATED role (never the shared one, so no
- * other plugin may publish), that role reads exactly the realtime endpoint parameter, the function is told
- * its name, and this stack grants no appsync action (VocApiStack attaches the `jobs` publish grant).
+ * other plugin may publish), that role carries exactly VocCoreStack's `jobs` publish policy (core-realtime.ts),
+ * the function is told the Event API's host, and no statement of this stack names an appsync action.
  */
 import { Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { roleStatements } from '../test-support/iam-statements';
+import { FIXTURE_REALTIME_HTTP_DNS } from '../test-support/fixture-resources';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { findWorkerFunction } from '../test-support/worker-function';
-import { REALTIME_HTTP_DNS_ENV, realtimeParameterReference } from '../utils/realtime';
-import { expectReadsOnlyTheRealtimeParameter } from '../test-support/realtime-assertions';
+import { REALTIME_HTTP_DNS_ENV } from '../utils/realtime';
+import { expectPublishesOnlyOn, realtimeNamespacesOfRole } from '../test-support/realtime-assertions';
 
 describe('VocIngestionStack job-end notices', () => {
   let template: Template;
@@ -26,14 +26,15 @@ describe('VocIngestionStack job-end notices', () => {
     expect(fn.Role['Fn::GetAtt'][0]).toMatch(/^IngestorRoleS3Import/);
   });
 
-  it('tells it the endpoint parameter, and its role reads exactly that parameter', () => {
-    expect(fn.Environment.Variables[REALTIME_HTTP_DNS_ENV]).toBe(realtimeParameterReference(undefined));
-    expectReadsOnlyTheRealtimeParameter(roleStatements(template, fn.Role['Fn::GetAtt'][0]));
+  it('tells it the Event API host, and its role publishes on exactly `jobs`', () => {
+    expect(fn.Environment.Variables[REALTIME_HTTP_DNS_ENV]).toBe(FIXTURE_REALTIME_HTTP_DNS);
+    expectPublishesOnlyOn(template, fn.Role['Fn::GetAtt'][0], 'jobs');
   });
 
   it('no other ingestor is told, and nothing here publishes', () => {
     const webscraper = findWorkerFunction(template, 'voc-ingestor-webscraper');
     expect(REALTIME_HTTP_DNS_ENV in webscraper.Environment.Variables).toBe(false);
+    expect(realtimeNamespacesOfRole(template, webscraper.Role['Fn::GetAtt'][0])).toStrictEqual([]);
     expect(JSON.stringify(template.toJSON())).not.toContain('appsync:');
   });
 });

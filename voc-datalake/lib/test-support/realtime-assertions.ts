@@ -1,14 +1,36 @@
 /**
- * Test support: the check every realtime publisher outside VocApiStack shares (lib/utils/realtime.ts
- * `wireRealtimeEndpointParameter`): its role reads the Event API endpoint parameter, and nothing else in SSM.
+ * Test support: the check every realtime publisher shares (lib/utils/realtime.ts `grantRealtimePublish`): its role
+ * carries exactly ONE of VocCoreStack's per-namespace publish policies (core-realtime.ts, `Realtime<Ns>PublishPolicy`,
+ * referenced from another stack), holds no appsync or ssm statement of its own, and nothing else is needed.
  */
+import type { Template } from 'aws-cdk-lib/assertions';
 import { expect } from 'vitest';
-import { realtimeParameterName } from '../utils/realtime';
-import type { NormalizedStatement } from './iam-statements';
+import { z } from 'zod';
+import { byCodeUnit } from '../utils/compare';
+import type { RealtimeNamespace } from '../utils/realtime';
+import { roleStatements } from './iam-statements';
 
-/** `statements` (a role's, from `roleStatements`) grant exactly `ssm:GetParameter`, on the unprefixed endpoint parameter. */
-export function expectReadsOnlyTheRealtimeParameter(statements: readonly NormalizedStatement[]): void {
-  const ssm = statements.filter((s) => s.actions.some((a) => a.startsWith('ssm:')));
-  expect(ssm.map((s) => s.actions)).toStrictEqual([['ssm:GetParameter']]);
-  expect(ssm[0]?.resource).toContain(`parameter${realtimeParameterName(undefined)}`);
+const RoleSchema = z.object({ Properties: z.object({ ManagedPolicyArns: z.array(z.unknown()).optional() }) });
+const POLICY_REFERENCE = /Realtime(Jobs|Chat|Runs)PublishPolicy/;
+
+/** The namespaces whose publish policy the role `roleLogicalId` (exact id, or an id prefix) carries, sorted. */
+export function realtimeNamespacesOfRole(template: Template, roleLogicalId: string,
+  options: { byIdPrefix?: boolean } = {}): string[] {
+  const roles = Object.entries(template.findResources('AWS::IAM::Role'))
+    .filter(([id]) => (options.byIdPrefix ? id.startsWith(roleLogicalId) : id === roleLogicalId));
+  expect(roles.map(([id]) => id), `expected exactly one role ${roleLogicalId}`).toHaveLength(1);
+  const arns = RoleSchema.parse(roles[0]?.[1]).Properties.ManagedPolicyArns ?? [];
+  return arns.map((arn) => POLICY_REFERENCE.exec(JSON.stringify(arn))?.[1]?.toLowerCase())
+    .filter((namespace) => namespace !== undefined)
+    .sort(byCodeUnit);
+}
+
+/** The role publishes on exactly `namespace` (its managed policy), with no appsync or ssm statement of its own. */
+export function expectPublishesOnlyOn(template: Template, roleLogicalId: string, namespace: RealtimeNamespace,
+  options: { byIdPrefix?: boolean } = {}): void {
+  expect(realtimeNamespacesOfRole(template, roleLogicalId, options), roleLogicalId).toStrictEqual([namespace]);
+  const own = roleStatements(template, roleLogicalId, options)
+    .flatMap((s) => s.actions)
+    .filter((a) => a.startsWith('appsync:') || a.startsWith('ssm:'));
+  expect(own, `${roleLogicalId}: no appsync / ssm statement of its own`).toStrictEqual([]);
 }
