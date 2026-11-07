@@ -4,10 +4,10 @@
  */
 import { describe, expect, it } from 'vitest'
 import { buildForwardedProps } from '../agui/forwardedProps'
-import { MENTION_TOOL_CALL_PREFIX } from '../contract'
+import { MENTION_TOOL_CALL_PREFIX } from '@stream/assistant/contract'
 import { mentionsOfLastTurn } from './mentionsOfTurn'
 import type { Message } from '@ag-ui/core'
-import type { Mentions, PageContext } from '../contract'
+import type { Mentions, PageContext } from '@stream/assistant/contract'
 
 const PROJECT: PageContext = { kind: 'project', path: '/projects/proj_1', projectId: 'proj_1' }
 

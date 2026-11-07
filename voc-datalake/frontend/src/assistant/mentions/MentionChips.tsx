@@ -6,7 +6,7 @@
  * @module assistant/mentions/MentionChips
  */
 import { useTranslation } from 'react-i18next'
-import { MENTION_LIMITS } from '../contract'
+import { MENTION_LIMITS } from '@stream/assistant/contract'
 import MentionIcon from './MentionIcon'
 import RemovableChips from '../components/RemovableChips'
 import type { MentionPick } from './mentionModel'

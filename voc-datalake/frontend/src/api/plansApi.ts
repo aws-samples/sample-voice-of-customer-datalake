@@ -14,7 +14,7 @@ import { z } from 'zod'
 import { fetchApi } from './client'
 import { isRecord } from '../lib/typeGuards'
 import { parseEach } from './lenientFields'
-import { TOOL_PACKS } from '../assistant/contract'
+import { TOOL_PACKS } from '@stream/assistant/contract'
 import { PLAN_STATUSES, PLAN_STEP_KINDS, PLAN_STEP_STATUSES } from '../assistant/plan/schema'
 import type { VocPlan } from '../assistant/plan/schema'
 

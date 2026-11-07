@@ -9,8 +9,8 @@
  * @module assistant/store/chatScopeStore
  */
 import { create } from 'zustand'
-import { PAGE_FILTER_KEYS, boundedFilterValue, chatScopeSchema } from '../contract'
-import type { ChatScope } from '../contract'
+import { PAGE_FILTER_KEYS, boundedFilterValue, chatScopeSchema } from '@stream/assistant/contract'
+import type { ChatScope } from '@stream/assistant/contract'
 
 export type ScopeFilterKey = (typeof PAGE_FILTER_KEYS)[number]
 

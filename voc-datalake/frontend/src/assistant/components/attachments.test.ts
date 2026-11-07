@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LIMITS } from '../contract'
+import { LIMITS } from '@stream/assistant/contract'
 import {
   ATTACHMENT_ACCEPT, MAX_ATTACHMENT_MB, attachmentRejection, buildUserContent, resolveAttachmentMime,
 } from './attachments'

@@ -32,7 +32,7 @@ import { checkArgs, isApprovable, isDestructive } from './approvalGate'
 import type { ArgsCheck } from './approvalGate'
 import { PLAN_PROPOSAL_TOOL } from './planSchemas'
 import type { Expiry } from './useExpiry'
-import type { PageContext } from '../contract'
+import type { PageContext } from '@stream/assistant/contract'
 import type { ApprovalCardProps, WriteToolDefinition, WriteToolExecutionContext } from '../types'
 
 /** Why the card cannot be approved, in a sentence; the validator's own words and the tool name under "Details". */

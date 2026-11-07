@@ -16,7 +16,7 @@
  * `plan.lockstep.test.ts`); change both together.
  */
 import { z } from 'zod'
-import { CLIENT_TOOLS, PLAN_TOOL_NAMES, TOOL_PACKS, type ToolPack } from '../contract'
+import { CLIENT_TOOLS, PLAN_TOOL_NAMES, TOOL_PACKS, type ToolPack } from '@stream/assistant/contract'
 
 export const PLAN_SCHEMA = 'voc-plan/1'
 

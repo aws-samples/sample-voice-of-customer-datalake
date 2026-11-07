@@ -11,7 +11,7 @@ import { createThreadState } from '../thread/reducer'
 import MessageList from './MessageList'
 import type { Message } from '@ag-ui/core'
 import type { ThreadState } from '../thread/types'
-import type { PageContext } from '../contract'
+import type { PageContext } from '@stream/assistant/contract'
 
 const PAGE: PageContext = { kind: 'home', path: '/' }
 

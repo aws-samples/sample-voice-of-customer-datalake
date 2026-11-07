@@ -10,7 +10,7 @@
  * @module assistant/thread/customEvents
  */
 import { z } from 'zod'
-import { INTERRUPT_REASON_TOOL_APPROVAL } from '../contract'
+import { INTERRUPT_REASON_TOOL_APPROVAL } from '@stream/assistant/contract'
 import { parseEach } from '../../api/lenientFields'
 import { asRecord } from '../../api/wireRecord'
 import type { ApprovalInterrupt } from '../types'

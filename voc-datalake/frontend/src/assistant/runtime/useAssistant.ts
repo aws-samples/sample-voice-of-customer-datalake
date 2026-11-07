@@ -14,7 +14,7 @@ import {
 } from './runtime'
 import type { ContentPart } from '@ag-ui/core'
 import type { ApprovalResolution } from '../types'
-import type { Mentions } from '../contract'
+import type { Mentions } from '@stream/assistant/contract'
 import type { RunEnvironment } from './runtime'
 
 /** The run environment for the current route: page, UI language, web search. */

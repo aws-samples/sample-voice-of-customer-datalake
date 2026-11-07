@@ -10,13 +10,6 @@
     },
     {
       "files": [
-        "voc-datalake/frontend/src/assistant/contract.ts",
-        "voc-datalake/lambda/stream/src/assistant/contract.ts"
-      ],
-      "reason": "the AG-UI contract mirror, pinned by contract.lockstep. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'], and the shared file must stay browser-safe (zod only)."
-    },
-    {
-      "files": [
         "voc-datalake/frontend/src/assistant/sessions/personaResult.ts",
         "voc-datalake/lambda/stream/src/assistant/session/persona-result.ts"
       ],

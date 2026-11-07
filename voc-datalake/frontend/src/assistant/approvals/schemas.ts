@@ -18,7 +18,7 @@
  * @module assistant/approvals/schemas
  */
 import { z } from 'zod'
-import { MAX_ID_LENGTH } from '../contract'
+import { MAX_ID_LENGTH } from '@stream/assistant/contract'
 
 /**
  * A server-minted identifier used as a URL path segment. The charset excludes

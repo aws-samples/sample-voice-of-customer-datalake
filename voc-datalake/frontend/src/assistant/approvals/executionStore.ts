@@ -14,7 +14,7 @@
  */
 import { create } from 'zustand'
 import { ownEntry } from '../ownEntry'
-import type { ToolOutcome } from '../contract'
+import type { ToolOutcome } from '../toolOutcome'
 
 export type ExecutionEntry =
   | { phase: 'executing' }

@@ -19,7 +19,7 @@ import ApprovalCard from '../assistant/approvals/ApprovalCard'
 import { buildResume } from '../assistant/thread/resume'
 import { approvalExpiresAt } from './assistantDoubles'
 import { fetchApi } from './fetchApiRoutes'
-import type { PageContext } from '../assistant/contract'
+import type { PageContext } from '@stream/assistant/contract'
 import type { ApprovalCardProps, ApprovalResolution, AssistantToolCall } from '../assistant/types'
 import { parsedJson } from '@test/jsonText'
 

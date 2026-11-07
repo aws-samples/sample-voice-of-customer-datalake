@@ -33,10 +33,6 @@
     // lambda/api/test/test_doc_type_lockstep.py pins their exact text. FeedbackFormConfig is the
     // public widget's wire shape, pinned by test_widget_config_type_lockstep.py.
     "src/api/types.ts": ["types"],
-    // The SPA mirror of the stream Lambda's wire contract. contract.lockstep.test.ts imports it as a
-    // namespace and compares EVERY export against the server file, so the names the SPA itself never
-    // reads (tool packs, interrupt constants, outcome statuses) are pinned there, not dead.
-    "src/assistant/contract.ts": ["exports", "types"],
     // The SPA mirror of the stream's plan contract (lambda/stream/src/assistant/plan/{schema,validate,canonical}.ts):
     // plan/plan.lockstep.test.ts walks every export of the stream modules and requires the same export here,
     // equal by value / JSON Schema / output on the shared fixtures. The patterns, wait kinds, control and
