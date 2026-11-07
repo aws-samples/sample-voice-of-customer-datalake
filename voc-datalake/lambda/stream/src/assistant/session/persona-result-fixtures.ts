@@ -1,8 +1,4 @@
-/**
- * Inputs for the persona-result trim, shared by its tests here and the SPA's lockstep test
- * (`frontend/src/assistant/sessions/personaResult.lockstep.test.ts`), which runs both
- * implementations on every input below.
- */
+/** Inputs for the persona-result trim (`persona-result.ts`, which the SPA imports through `@stream` too). */
 
 function result(responses: readonly Record<string, string>[]): string {
   return JSON.stringify({ responses });
@@ -45,8 +41,8 @@ export const PERSONA_RESULT_CASES: readonly PersonaResultCase[] = [
   },
 ];
 
-/** Every input the lockstep test runs through both implementations: the cases plus the big round at each cap. */
-export const PERSONA_RESULT_LOCKSTEP_INPUTS: ReadonlyArray<{ text: string; budget: number }> = [
+/** The cases plus the big round at each cap. */
+export const PERSONA_RESULT_INPUTS: ReadonlyArray<{ text: string; budget: number }> = [
   ...PERSONA_RESULT_CASES.map(({ text, budget }) => ({ text, budget })),
   ...[32_000, 6000, 1000, 100].map((budget) => ({ text: SIX_LONG_ANSWERS, budget })),
 ];

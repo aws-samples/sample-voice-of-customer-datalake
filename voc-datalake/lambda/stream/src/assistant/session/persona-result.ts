@@ -7,9 +7,8 @@
  * characters on its own). Here the ANSWERS are shortened instead, evenly, so the
  * stored text is always valid JSON within its own, larger cap.
  *
- * LOCKSTEP with the SPA's `frontend/src/assistant/sessions/personaResult.ts`
- * (`personaResult.lockstep.test.ts` compares both on the same inputs): the
- * stream Lambda and the SPA must store the same thing.
+ * The SPA imports this module through `@stream` (`frontend/src/assistant/sessions/serialize.ts`): the
+ * stream Lambda and the SPA write the same session, so they store a persona result the same way.
  */
 import { z } from 'zod';
 import { isRecord } from '../../lib/is-record.js';
