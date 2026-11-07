@@ -1,8 +1,9 @@
 /**
  * @fileoverview Data for Knowledge → Company → Personas (5.60): the library list
  * (`GET /company-personas`, with `can_edit` for admins), its background jobs (polled
- * like a project's, see `jobsPollInterval`), the list refetch when a job finishes, and
- * the additive generate start.
+ * like a project's, see `liveJobsPollInterval`), the list refetch when a job finishes, and
+ * the additive generate start. The jobs are project jobs of the reserved `company_personas` container, so
+ * their end arrives as a job notice to the admin who started them (docs/realtime.md).
  *
  * @module pages/Company/useCompanyPersonas
  */
@@ -11,9 +12,13 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { companyPersonaJobsKey, companyPersonasApi, companyPersonasKey } from '../../api/companyPersonasApi'
 import { recentlyCompletedJobs } from '../ProjectDetail/jobCompletion'
-import { jobsPollInterval } from '../ProjectDetail/useProjectData'
+import { liveJobsPollInterval } from '../ProjectDetail/useProjectData'
+import { useRealtimeJobRefresh } from '../../realtime/jobRefresh'
 import type { PersonaToolConfig } from '../ProjectDetail/types'
 import type { ContextConfig } from '../../components/DataSourceWizard/types'
+
+/** The reserved container the library's jobs run under (lambda/shared/company_personas.py). */
+const COMPANY_PERSONAS_CONTAINER = 'company_personas'
 
 interface GenerateInput {
   readonly contextConfig: ContextConfig
@@ -32,8 +37,9 @@ export function useCompanyPersonas() {
     queryKey: companyPersonaJobsKey(),
     queryFn: companyPersonasApi.getJobs,
     // Jobs are read by everyone, but only admins start them: a reader's list only polls while one runs.
-    refetchInterval: (query) => jobsPollInterval(query.state.data?.jobs ?? [], jobStartedAt, Date.now()),
+    refetchInterval: (query) => liveJobsPollInterval(query.state.data?.jobs ?? [], jobStartedAt),
   })
+  useRealtimeJobRefresh({ projectId: COMPANY_PERSONAS_CONTAINER }, [companyPersonaJobsKey()])
 
   // Refetch the library when a job finishes: each poll tick inside the "recently completed"
   // window brings a new `jobs.data`, and only completions not seen before invalidate the list,

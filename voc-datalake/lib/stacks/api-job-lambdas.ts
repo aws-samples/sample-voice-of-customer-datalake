@@ -33,6 +33,8 @@ import type { ProjectsLambda } from './api-projects-lambda';
 export interface JobLambdas {
   /** Builds prototypes too, so it holds the pin-form submit base URL (wired once the RestApi exists). */
   documentGeneratorLambda: lambda.Function;
+  /** Every project job Lambda: each tells the job's starter when it ends (shared/jobs.py job_handler, docs/realtime.md). */
+  projectJobLambdas: lambda.Function[];
 }
 
 export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda): JobLambdas {
@@ -309,5 +311,8 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   const documentStateMachine = createDocumentStateMachine(ctx, documentGeneratorLambda);
   documentStateMachine.grantStartExecution(projectsRole);
   for (const fn of projectsFunctions) fn.addEnvironment('DOCUMENT_STATE_MACHINE_ARN', documentStateMachine.stateMachineArn);
-  return { documentGeneratorLambda };
+  return {
+    documentGeneratorLambda,
+    projectJobLambdas: [personaGeneratorLambda, documentGeneratorLambda, documentMergerLambda, personaImporterLambda],
+  };
 }
