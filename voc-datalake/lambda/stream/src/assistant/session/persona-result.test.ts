@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '@ag-ui/core';
 import { buildSessionItem } from './record.js';
 import { MAX_STORED_PERSONA_CHARS, storedPersonaResult } from './persona-result.js';
-import { PERSONA_RESULT_CASES, PERSONA_RESULT_LOCKSTEP_INPUTS, SIX_LONG_ANSWERS } from './persona-result-fixtures.js';
+import { PERSONA_RESULT_CASES, PERSONA_RESULT_INPUTS, SIX_LONG_ANSWERS } from './persona-result-fixtures.js';
 
 const snapshotBase = {
   callerSub: 'sub-1', threadId: 'thread-1', runId: 'run-1', status: 'finished' as const,
@@ -14,7 +14,7 @@ describe('storedPersonaResult', () => {
     expect(storedPersonaResult(text, budget)).toBe(expected);
   });
 
-  const personaInputs = PERSONA_RESULT_LOCKSTEP_INPUTS.filter(({ text, budget }) => budget >= 1000 && storedPersonaResult(text, budget) !== null);
+  const personaInputs = PERSONA_RESULT_INPUTS.filter(({ text, budget }) => budget >= 1000 && storedPersonaResult(text, budget) !== null);
 
   it.each(personaInputs)('stores a persona result within $budget characters as valid JSON', ({ text, budget }) => {
     const stored = storedPersonaResult(text, budget) ?? '';
