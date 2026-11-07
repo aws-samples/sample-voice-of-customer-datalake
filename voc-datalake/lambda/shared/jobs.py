@@ -16,6 +16,7 @@ from botocore.exceptions import ClientError
 
 from shared.aws import invoke_lambda_async, is_conditional_check_failure
 from shared.exceptions import ApiError, ServiceError
+from shared.job_notices import notify_project_job
 from shared.logging import logger
 from shared.tables import get_jobs_table
 from shared.timestamps import now_iso
@@ -374,6 +375,8 @@ def job_handler(error_message: str = 'Job execution failed'):
                 # Mark job as completed
                 update_job_status(project_id, job_id, 'completed', 100, 'complete', result=result)
                 logger.info(f"[JOB] Completed {func.__name__} for job={job_id}")
+                # Its starter's page re-reads the job now (best effort, docs/realtime.md).
+                notify_project_job(project_id, job_id, 'completed')
 
                 response = {'success': True, **result}
 
@@ -384,6 +387,7 @@ def job_handler(error_message: str = 'Job execution failed'):
                 update_job_status(
                     project_id, job_id, 'failed', 0, 'error', error=_job_error_text(error_message, e),
                 )
+                notify_project_job(project_id, job_id, 'failed')
                 raise ServiceError(error_message) from e
             else:
                 return response
@@ -421,4 +425,5 @@ def _end_job_without_result(
     )
     error_text = _job_error_text(error_message, error)
     update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_text)
+    notify_project_job(project_id, job_id, 'failed')
     return {'success': False, 'error': error_text}

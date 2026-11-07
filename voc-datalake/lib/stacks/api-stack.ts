@@ -43,7 +43,9 @@ import { createJobLambdas } from './api-job-lambdas';
 import { createMcpApi } from './api-mcp';
 import { cognitoHostedUiHost } from './api-mcp-oauth';
 import { createProjectsLambda } from './api-projects-lambda';
-import { createRealtimeApi, grantConductorRunsPublish, grantRealtimePublish, realtimeRuntimeConfig } from './api-realtime';
+import {
+  createRealtimeApi, grantConductorRunsPublish, grantRealtimePublish, grantRealtimePublishToRoles, realtimeRuntimeConfig,
+} from './api-realtime';
 import { addApiRoutes } from './api-routes';
 import { createRadarLambda } from './api-radar-lambda';
 import { createParticipantsLambda } from './api-participants-lambda';
@@ -109,6 +111,11 @@ export interface VocApiStackProps extends VocStackProps {
   agentRunStateMachine: sfn.StateMachine;
   /** voc-agent-conductor's role: it publishes run / plan notices to the Event API's `runs` namespace (api-realtime.ts). */
   agentConductorRoleArn: string;
+  /**
+   * Job workers of VocProcessingStack / VocIngestionStack that tell a job's starter it ended (docs/realtime.md):
+   * role ARNs by a stable name. VocApiStack grants each publish on the Event API's `jobs` namespace.
+   */
+  realtimeJobsPublisherRoleArns: Readonly<Record<string, string>>;
   /** memory-extract queue — the memory API enqueues page imports onto it. */
   memoryExtractQueueUrl: string;
   memoryExtractQueueArn: string;
@@ -342,7 +349,9 @@ export class VocApiStack extends VocStack {
     grantRealtimePublish(realtime, 'jobs', [
       projects.projectsLambda, projects.projectsAssistWorker,
       data.settingsLambda, data.settingsAssistWorker, data.scrapersLambda, data.scrapersAssistWorker,
+      ...jobs.projectJobLambdas,
     ]);
+    grantRealtimePublishToRoles(ctx, realtime, 'jobs', props.realtimeJobsPublisherRoleArns);
     grantRealtimePublish(realtime, 'chat', [assistant.chatStreamLambda]);
     grantConductorRunsPublish(ctx, realtime, props.agentConductorRoleArn);
 

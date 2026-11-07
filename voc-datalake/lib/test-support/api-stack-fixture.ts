@@ -120,6 +120,9 @@ export function apiStackDependencyProps(
       definitionBody: sfn.DefinitionBody.fromChainable(new sfn.Pass(deps, 'AgentRunNoop')),
     }),
     agentConductorRoleArn: `arn:aws:iam::${env.account}:role/voc-agent-conductor-role`,
+    realtimeJobsPublisherRoleArns: {
+      ResearchStep: `arn:aws:iam::${env.account}:role/voc-research-step-role`,
+    },
     memoryExtractQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/memory-extract`,
     memoryExtractQueueArn: `arn:aws:sqs:${env.region}:${env.account}:memory-extract`,
   };

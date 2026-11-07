@@ -110,6 +110,19 @@ export function grantConductorRunsPublish(ctx: ApiStackContext, realtime: Realti
   realtime.namespaces.runs.grantPublish(role);
 }
 
+/**
+ * Publish grants for Lambdas of the stacks deployed BEFORE this one (their roles by ARN, keyed by a stable
+ * name that becomes the role reference's construct id): a policy created HERE on each role, on exactly
+ * `namespace`. They read the host from the SSM parameter (lib/utils/realtime.ts `wireRealtimeEndpointParameter`).
+ */
+export function grantRealtimePublishToRoles(ctx: ApiStackContext, realtime: RealtimeApi, namespace: RealtimeNamespace,
+  roleArns: Readonly<Record<string, string>>): void {
+  for (const [name, roleArn] of Object.entries(roleArns)) {
+    const role = iam.Role.fromRoleArn(ctx.stack, `Realtime${name}RoleRef`, roleArn, { mutable: true });
+    realtime.namespaces[namespace].grantPublish(role);
+  }
+}
+
 /** The SPA's runtime config block: where to connect (both hosts, no scheme). */
 export function realtimeRuntimeConfig(realtime: RealtimeApi): Record<string, unknown> {
   return { realtime: { httpDns: realtime.api.httpDns, realtimeDns: realtime.api.realtimeDns } };
