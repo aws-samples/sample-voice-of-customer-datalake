@@ -8,18 +8,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isTerminalJob, latestReprocessJobKey, reprocessApi } from '../../api/reprocessApi'
 import type { ReprocessJob, ReprocessRequest } from '../../api/reprocessApi'
+import { realtimePollInterval, useRealtimeJobRefresh } from '../../realtime/jobRefresh'
 
-/** How often a running job is re-read. */
+/** How often a running job is re-read (slower while push is live: its end arrives as a notice). */
 const POLL_INTERVAL_MS = 2_000
 
-/** The latest job, polled while it is still moving. */
+/** The notice's `job_type` for a reprocess job (lambda/shared/reprocess_jobs.py JOB_TYPE). */
+const REPROCESS_JOB_TYPE = 'category_reprocess'
+
+/** The latest job, polled while it is still moving, and re-read at once when it ends (docs/realtime.md). */
 export function useLatestJob() {
+  useRealtimeJobRefresh({ jobType: REPROCESS_JOB_TYPE }, [latestReprocessJobKey()])
   return useQuery({
     queryKey: latestReprocessJobKey(),
     queryFn: () => reprocessApi.getLatest(),
     refetchInterval: (query) => {
       const job = query.state.data
-      return job != null && !isTerminalJob(job) ? POLL_INTERVAL_MS : false
+      return job != null && !isTerminalJob(job) ? realtimePollInterval(POLL_INTERVAL_MS) : false
     },
   })
 }

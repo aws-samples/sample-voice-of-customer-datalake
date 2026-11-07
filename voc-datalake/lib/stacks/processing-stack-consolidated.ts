@@ -279,9 +279,11 @@ export class VocProcessingStack extends VocStack {
     // ============================================
     // CATEGORY REPROCESS WORKER
     // ============================================
-    this.createCategoryReprocessLambda({
+    const reprocessWorker = this.createCategoryReprocessLambda({
       feedbackTable, aggregatesTable, kmsKey, rawDataBucket, processingLayer, primaryLanguage: config.primaryLanguage,
     });
+    // A reprocess job's end reaches its starter (shared/reprocess_jobs.py finish_job, docs/realtime.md).
+    this.realtimeJobsPublisherRoles.CategoryReprocess = wireRealtimeEndpointParameter(reprocessWorker, this.deploymentPrefix);
 
     // ============================================
     // RETENTION / ERASURE WORKER (docs/source-policies.md)
@@ -425,8 +427,7 @@ export class VocProcessingStack extends VocStack {
     });
 
     // The research job's end reaches its starter (docs/realtime.md); the host comes from VocApiStack's parameter.
-    wireRealtimeEndpointParameter(researchStepLambda, this.deploymentPrefix);
-    this.realtimeJobsPublisherRoles.ResearchStep = researchRole;
+    this.realtimeJobsPublisherRoles.ResearchStep = wireRealtimeEndpointParameter(researchStepLambda, this.deploymentPrefix);
 
     grantSharedMemoryRecall(researchStepLambda, researchRole, { memoryTable: props.memoryTable, kmsKey, region: this.region });
 

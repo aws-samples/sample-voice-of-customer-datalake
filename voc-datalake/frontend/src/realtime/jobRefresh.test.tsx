@@ -1,22 +1,19 @@
 /** realtime/jobRefresh.ts: a job view re-reads on its notice and on a reconnect; the poll stays as the fallback. */
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deliverNotice, setRealtimeLive } from './hub'
 import {
   SUBSCRIBED_JOB_POLL_INTERVAL_MS, isMatchingJobNotice, realtimePollInterval, subscribedPollInterval, useRealtimeJobRefresh,
   type JobNoticeMatch,
 } from './jobRefresh'
+import { createQueryWrapper, createTestQueryClient } from '../test/query-client'
 
 const job = (fields: Record<string, string> = {}) => ({ type: 'job' as const, job_id: 'j1', status: 'completed', ...fields })
 
 function mount(match: JobNoticeMatch, enabled = true) {
-  const queryClient = new QueryClient()
+  const queryClient = createTestQueryClient()
   const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue()
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const wrapper = createQueryWrapper(queryClient)
   const view = renderHook(({ on }: { on: boolean }) => { useRealtimeJobRefresh(match, [['a'], ['b', 1]], on) },
     { wrapper, initialProps: { on: enabled } })
   return { invalidate, view }

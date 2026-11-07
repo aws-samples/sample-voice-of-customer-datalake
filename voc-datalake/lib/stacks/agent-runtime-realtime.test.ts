@@ -21,6 +21,7 @@ const FunctionSchema = z.object({
 const PUBLISHERS: Record<string, string> = {
   'voc-agent-conductor': 'AgentRuntimeAgentConductorRole',
   'voc-research-step': 'ResearchLambdaRole',
+  'voc-category-reprocess': 'CategoryReprocessRole',
 };
 
 let template: Template;
