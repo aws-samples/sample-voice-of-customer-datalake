@@ -31,6 +31,8 @@ import type {
 import {
   PRODUCT_CONTEXT_FIELD_COUNT, countFilledProductContextFields,
 } from './productContextFields'
+import { serverMissing } from '../../api/methodologySchema'
+import type { ProjectMethodology } from '../../api/methodologySchema'
 
 /** The six Overview steps, in dependency order. */
 type OverviewStep = 'product' | 'personas' | 'research' | 'documents' | 'prototype' | 'remix'
@@ -115,6 +117,13 @@ export interface OverviewStepState {
    * component decides which reading applies, per card.
    */
   readonly missingUpstream: boolean
+  /**
+   * Research and documents only: the upstream steps the SERVER says are missing
+   * (`GET /projects/{id}` → `methodology`), in methodology order, which the card's
+   * hint names. Undefined when the API did not say (an older API): the hint then
+   * falls back to the local reading of `missingUpstream`.
+   */
+  readonly missingSteps?: readonly string[]
 }
 
 /** One document a prototype build could be aimed at. */
@@ -242,10 +251,16 @@ interface DeriveInput {
    * A failed list must not cost the other five cards their state.
    */
   readonly productDocs?: ReadonlyArray<ProductDoc>
+  /**
+   * The server's per-step gaps (`GET /projects/{id}` → `methodology`, lambda/shared/methodology.py).
+   * When present, the three `missingUpstream` answers are the server's, so every client shows the
+   * same gaps; the local reading below is only the fallback for an older API.
+   */
+  readonly methodology?: ProjectMethodology
 }
 
 export function deriveOverviewState({
-  personas, documents, productContext, productDocs = [],
+  personas, documents, productContext, productDocs = [], methodology,
 }: DeriveInput): OverviewState {
   const filled = productContext == null ? undefined : countFilledProductContextFields(productContext)
   const researchOptions = sourceOptions(documents, 'research')
@@ -276,13 +291,14 @@ export function deriveOverviewState({
       count: researchCount,
       // Research is the one step that can read personas, which is the whole
       // reason personas now come first.
-      missingUpstream: personas.length === 0,
+      ...upstreamGaps(methodology, ['research'], personas.length === 0),
     },
     documents: {
       position: 4,
       hasOutput: prdCount + prfaqCount > 0,
       count: prdCount + prfaqCount,
-      missingUpstream: personas.length === 0 && researchCount === 0,
+      // The card covers both documents: the PR/FAQ's gaps and the PRD's (its PR/FAQ).
+      ...upstreamGaps(methodology, ['prfaq', 'prd'], personas.length === 0 && researchCount === 0),
     },
     prototype: {
       position: 5,
@@ -294,7 +310,7 @@ export function deriveOverviewState({
       // A hard block, not a hint. The backend builds from the latest PRD and/or
       // PR/FAQ, so with neither present there is no source — the same condition
       // the control has always enforced, just derived in one place now.
-      missingUpstream: prdCount === 0 && prfaqCount === 0,
+      missingUpstream: methodology?.steps.prototype?.blocked ?? (prdCount === 0 && prfaqCount === 0),
     },
     remix: {
       position: 6,
@@ -320,6 +336,19 @@ export function deriveOverviewState({
       visualsFailed: countVisuals(productDocs, (s) => s === 'failed'),
     },
   }
+}
+
+/**
+ * The server's gaps for `methodologySteps` (deduplicated, first-seen order) when it gave them,
+ * else the local fallback with no list.
+ */
+function upstreamGaps(
+  methodology: ProjectMethodology | undefined, methodologySteps: readonly string[], fallback: boolean,
+): Pick<OverviewStepState, 'missingUpstream' | 'missingSteps'> {
+  const answers = methodologySteps.map((step) => serverMissing(methodology, step))
+  if (answers.some((missing) => missing === undefined)) return { missingUpstream: fallback }
+  const missingSteps = [...new Set(answers.flatMap((missing) => missing ?? []))]
+  return { missingUpstream: missingSteps.length > 0, missingSteps }
 }
 
 /**

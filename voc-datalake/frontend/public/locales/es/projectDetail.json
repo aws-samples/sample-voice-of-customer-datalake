@@ -140,6 +140,19 @@
       "persona": "Escrito a partir de una persona que luego se eliminó",
       "document": "Escrito a partir de un documento que luego se eliminó",
       "productDoc": "Escrito con un documento de producto que luego se eliminó"
+    },
+    "methodology": {
+      "title": "Huecos en la metodología",
+      "missingPersonas": "Creado sin personas: el proyecto no tenía ninguna.",
+      "missingPrfaq": "Creado sin PR/FAQ: el proyecto no tenía ninguna. La metodología escribe primero la PR/FAQ.",
+      "missingPrd": "Creado sin PRD: el proyecto no tenía ninguno.",
+      "notSelectedFeedback": "Creado sin opiniones de clientes: estaban desactivadas para este documento.",
+      "notSelectedPersonas": "Creado sin las personas del proyecto: no se seleccionaron.",
+      "notSelectedPrfaq": "Creado sin la PR/FAQ del proyecto: no se seleccionó.",
+      "noEvidence": "No cita ninguna evidencia de clientes.",
+      "documentsSkipped_one": "Se omitió {{count, number}} documento de referencia seleccionado (solo se leen los primeros {{cap, number}}).",
+      "documentsSkipped_other": "Se omitieron {{count, number}} documentos de referencia seleccionados (solo se leen los primeros {{cap, number}}).",
+      "handWritten": "Escrito a mano: todavía no cita opiniones de clientes."
     }
   },
   "imageErrors": {
@@ -242,7 +255,9 @@
     "generatePrdPrfaqDesc": "Crear documentos de producto a partir del feedback",
     "hint": {
       "documentsNeedContext": "Las personas o la investigación fortalecen estos documentos.",
-      "researchNeedsPersonas": "Genere personas primero para fundamentar la investigación en ellas."
+      "researchNeedsPersonas": "Genere personas primero para fundamentar la investigación en ellas.",
+      "documentsNeedPersonas": "Genere personas primero: la metodología escribe la PR/FAQ y el PRD a partir de ellas.",
+      "prdNeedsPrfaq": "Escriba la PR/FAQ antes del PRD: la metodología la lee."
     },
     "needAtLeast2Docs": "Se necesitan al menos 2 documentos",
     "nextStep": {

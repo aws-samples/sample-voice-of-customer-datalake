@@ -133,6 +133,19 @@
       "persona": "後で削除されたペルソナをもとに作成",
       "document": "後で削除されたドキュメントをもとに作成",
       "productDoc": "後で削除された製品ドキュメントを使用して作成"
+    },
+    "methodology": {
+      "title": "方法論の抜け",
+      "missingPersonas": "ペルソナなしで作成されました。プロジェクトにペルソナがありませんでした。",
+      "missingPrfaq": "PR/FAQ なしで作成されました。プロジェクトに PR/FAQ がありませんでした。方法論では PR/FAQ を先に書きます。",
+      "missingPrd": "PRD なしで作成されました。プロジェクトに PRD がありませんでした。",
+      "notSelectedFeedback": "顧客フィードバックなしで作成されました。このドキュメントではオフになっていました。",
+      "notSelectedPersonas": "プロジェクトのペルソナなしで作成されました。選択されていませんでした。",
+      "notSelectedPrfaq": "プロジェクトの PR/FAQ なしで作成されました。選択されていませんでした。",
+      "noEvidence": "顧客の根拠を引用していません。",
+      "documentsSkipped_one": "選択した参照ドキュメント {{count, number}} 件が除外されました(最初の {{cap, number}} 件のみ読み込まれます)。",
+      "documentsSkipped_other": "選択した参照ドキュメント {{count, number}} 件が除外されました(最初の {{cap, number}} 件のみ読み込まれます)。",
+      "handWritten": "手書きの文書です。まだ顧客フィードバックを引用していません。"
     }
   },
   "imageErrors": {
@@ -229,7 +242,9 @@
     "generatePrdPrfaqDesc": "フィードバックから製品ドキュメントを作成",
     "hint": {
       "documentsNeedContext": "ペルソナやリサーチがあると、これらの文書はより充実します。",
-      "researchNeedsPersonas": "先にペルソナを生成すると、リサーチをペルソナに基づけられます。"
+      "researchNeedsPersonas": "先にペルソナを生成すると、リサーチをペルソナに基づけられます。",
+      "documentsNeedPersonas": "先にペルソナを生成してください。方法論では PR/FAQ と PRD をペルソナに基づいて書きます。",
+      "prdNeedsPrfaq": "PRD の前に PR/FAQ を書いてください。方法論では PR/FAQ を読み込みます。"
     },
     "needAtLeast2Docs": "最低 2 つのドキュメントが必要です",
     "nextStep": {

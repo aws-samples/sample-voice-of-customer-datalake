@@ -140,6 +140,19 @@
       "persona": "Rédigé à partir d’un persona supprimé depuis",
       "document": "Rédigé à partir d’un document supprimé depuis",
       "productDoc": "Rédigé avec un document produit supprimé depuis"
+    },
+    "methodology": {
+      "title": "Lacunes de méthode",
+      "missingPersonas": "Créé sans personas : le projet n'en avait pas.",
+      "missingPrfaq": "Créé sans PR/FAQ : le projet n'en avait pas. La méthode écrit d'abord la PR/FAQ.",
+      "missingPrd": "Créé sans PRD : le projet n'en avait pas.",
+      "notSelectedFeedback": "Créé sans avis clients : ils étaient désactivés pour ce document.",
+      "notSelectedPersonas": "Créé sans les personas du projet : elles n'ont pas été sélectionnées.",
+      "notSelectedPrfaq": "Créé sans la PR/FAQ du projet : elle n'a pas été sélectionnée.",
+      "noEvidence": "Ne cite aucune preuve client.",
+      "documentsSkipped_one": "{{count, number}} document de référence sélectionné a été laissé de côté (seuls les {{cap, number}} premiers sont lus).",
+      "documentsSkipped_other": "{{count, number}} documents de référence sélectionnés ont été laissés de côté (seuls les {{cap, number}} premiers sont lus).",
+      "handWritten": "Écrit à la main : ne cite encore aucun avis client."
     }
   },
   "imageErrors": {
@@ -242,7 +255,9 @@
     "generatePrdPrfaqDesc": "Créer des documents produit à partir des retours",
     "hint": {
       "documentsNeedContext": "Les personas ou la recherche renforcent ces documents.",
-      "researchNeedsPersonas": "Générez d'abord des personas pour y ancrer la recherche."
+      "researchNeedsPersonas": "Générez d'abord des personas pour y ancrer la recherche.",
+      "documentsNeedPersonas": "Générez d'abord des personas : la méthode écrit la PR/FAQ et le PRD à partir d'elles.",
+      "prdNeedsPrfaq": "Écrivez la PR/FAQ avant le PRD : la méthode la lit."
     },
     "needAtLeast2Docs": "Au moins 2 documents requis",
     "nextStep": {

@@ -140,6 +140,19 @@
       "persona": "Escrito a partir de uma persona que depois foi excluída",
       "document": "Escrito a partir de um documento que depois foi excluído",
       "productDoc": "Escrito com um documento de produto que depois foi excluído"
+    },
+    "methodology": {
+      "title": "Lacunas na metodologia",
+      "missingPersonas": "Criado sem personas: o projeto não tinha nenhuma.",
+      "missingPrfaq": "Criado sem PR/FAQ: o projeto não tinha nenhuma. A metodologia escreve primeiro a PR/FAQ.",
+      "missingPrd": "Criado sem PRD: o projeto não tinha nenhum.",
+      "notSelectedFeedback": "Criado sem feedback de clientes: estava desativado para este documento.",
+      "notSelectedPersonas": "Criado sem as personas do projeto: não foram selecionadas.",
+      "notSelectedPrfaq": "Criado sem a PR/FAQ do projeto: não foi selecionada.",
+      "noEvidence": "Não cita nenhuma evidência de clientes.",
+      "documentsSkipped_one": "{{count, number}} documento de referência selecionado ficou de fora (só os primeiros {{cap, number}} são lidos).",
+      "documentsSkipped_other": "{{count, number}} documentos de referência selecionados ficaram de fora (só os primeiros {{cap, number}} são lidos).",
+      "handWritten": "Escrito à mão: ainda não cita feedback de clientes."
     }
   },
   "imageErrors": {
@@ -242,7 +255,9 @@
     "generatePrdPrfaqDesc": "Criar documentos de produto a partir de feedback",
     "hint": {
       "documentsNeedContext": "Personas ou pesquisa deixam estes documentos mais consistentes.",
-      "researchNeedsPersonas": "Gere personas primeiro para fundamentar a pesquisa nelas."
+      "researchNeedsPersonas": "Gere personas primeiro para fundamentar a pesquisa nelas.",
+      "documentsNeedPersonas": "Gere personas primeiro: a metodologia escreve a PR/FAQ e o PRD a partir delas.",
+      "prdNeedsPrfaq": "Escreva a PR/FAQ antes do PRD: a metodologia lê-a."
     },
     "needAtLeast2Docs": "Necessário pelo menos 2 documentos",
     "nextStep": {

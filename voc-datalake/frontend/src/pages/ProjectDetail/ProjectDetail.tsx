@@ -188,7 +188,7 @@ export default function ProjectDetail() {
   }
 
   const {
-    project, personas, documents,
+    project, personas, documents, methodology,
   } = data
   const jobs = jobsData?.jobs ?? []
   // Viewers see the banner and none of the controls that would only 403.
@@ -269,6 +269,7 @@ export default function ProjectDetail() {
         canEdit={canEdit}
         personas={personas}
         documents={documents}
+        methodology={methodology}
         productContext={productContext}
         productDocs={productDocs}
         designSystem={designSystem}
