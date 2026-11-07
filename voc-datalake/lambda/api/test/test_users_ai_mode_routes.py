@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import BotoCoreError, ClientError
 from handler_events_fixtures import call_route
-from users_table_fixtures import users_aggregates_table
+from users_table_fixtures import cognito_users, users_aggregates_table
 
 import users_handler
 from shared import ai_mode
@@ -42,10 +42,7 @@ def table() -> Iterator[Any]:
 
 @pytest.fixture
 def cognito() -> Iterator[MagicMock]:
-    mock = MagicMock()
-    mock.exceptions.UserNotFoundException = type('UserNotFoundException', (Exception,), {})
-    mock.admin_get_user.side_effect = lambda Username, **_kw: {
-        'UserAttributes': [{'Name': 'sub', 'Value': SUBS[Username]}]}
+    mock = cognito_users(SUBS)
     mock.admin_list_groups_for_user.return_value = {'Groups': [{'GroupName': 'admins'}]}
     with patch.object(users_handler, 'cognito', mock):
         yield mock

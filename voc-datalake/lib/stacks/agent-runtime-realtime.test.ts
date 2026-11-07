@@ -11,7 +11,8 @@ import { z } from 'zod';
 import { roleStatements } from '../test-support/iam-statements';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { byCodeUnit } from '../utils/compare';
-import { REALTIME_HTTP_DNS_ENV, realtimeParameterName } from '../utils/realtime';
+import { REALTIME_HTTP_DNS_ENV } from '../utils/realtime';
+import { expectReadsOnlyTheRealtimeParameter } from '../test-support/realtime-assertions';
 
 const FunctionSchema = z.object({
   Properties: z.object({ FunctionName: z.unknown(), Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }) }),
@@ -46,10 +47,7 @@ describe('VocProcessingStack\'s realtime publishers', () => {
   });
 
   it.each(Object.entries(PUBLISHERS))('%s reads exactly that parameter', (_name, roleId) => {
-    const statements = roleStatements(template, roleId, { byIdPrefix: true });
-    const ssm = statements.filter((s) => s.actions.some((a) => a.startsWith('ssm:')));
-    expect(ssm.map((s) => s.actions)).toStrictEqual([['ssm:GetParameter']]);
-    expect(ssm[0]?.resource).toContain(`parameter${realtimeParameterName(undefined)}`);
+    expectReadsOnlyTheRealtimeParameter(roleStatements(template, roleId, { byIdPrefix: true }));
   });
 
   it('publishes nothing from this stack', () => {

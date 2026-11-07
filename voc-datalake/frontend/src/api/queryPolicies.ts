@@ -93,6 +93,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'entities': 'feedbackData',
   'entities-all-sources': 'feedbackData',
   'erasure-jobs': 'live', // GET /settings/erasure → {jobs, sources}: polled while a job runs
+  'feedback-catalogue': 'config', // GET /feedback/catalogue: field meanings, change only with a release (Data Explorer → Fields)
   'feature-requests': 'standard', // feedback boards, their requests and a request's detail (api/featureRequestsApi)
   'feedback': 'feedbackData',
   'feedback-access': 'config', // the caller's category/source scope

@@ -12,7 +12,7 @@ import { z } from 'zod'
 
 const id = z.string().min(1).max(200)
 
-export const JobNoticeSchema = z.object({
+const JobNoticeSchema = z.object({
   type: z.literal('job'),
   job_id: id,
   status: z.string(),
@@ -20,28 +20,28 @@ export const JobNoticeSchema = z.object({
   project_id: id.optional(),
 })
 
-export const SessionNoticeSchema = z.object({
+const SessionNoticeSchema = z.object({
   type: z.literal('session'),
   conversation_id: id,
   run_status: z.string(),
   revision: z.number().int().nonnegative(),
 })
 
-export const RunNoticeSchema = z.object({
+const RunNoticeSchema = z.object({
   type: z.literal('run'),
   agent_id: id,
   run_id: id,
   status: z.string(),
 })
 
-export const PlanNoticeSchema = z.object({
+const PlanNoticeSchema = z.object({
   type: z.literal('plan'),
   plan_id: id,
   change: z.string(),
   step_id: id.optional(),
 })
 
-export const RealtimeNoticeSchema = z.discriminatedUnion('type', [
+const RealtimeNoticeSchema = z.discriminatedUnion('type', [
   JobNoticeSchema, SessionNoticeSchema, RunNoticeSchema, PlanNoticeSchema,
 ])
 

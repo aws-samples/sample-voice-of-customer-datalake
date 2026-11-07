@@ -14,16 +14,16 @@ vi.mock('../agui/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../agui/client')>()
   return { ...actual, runAgent: (...args: Parameters<typeof runAgentMock>) => runAgentMock(...args) }
 })
-vi.mock('../sessions/sessionsApi', () => ({ saveSession: vi.fn(() => Promise.resolve()), getSession: vi.fn(), cancelServerRun: vi.fn(() => Promise.resolve()) }))
+vi.mock('../sessions/sessionsApi', () => import('./runtime-fixtures').then((m) => m.sessionsApiModule()))
 
 import { regenerate, resolveApproval, sendMessage, stopRun } from './runtime'
+import { HOME_ENV } from './runtime-fixtures'
 import { cancelServerRun, getSession, saveSession } from '../sessions/sessionsApi'
 import { threadFromSession, toSaveBody } from '../sessions/serialize'
 import { useThreadStore } from '../store/assistantStore'
-import type { RunEnvironment } from './runtime'
 import type { ApprovalResolution } from '../types'
 
-const env: RunEnvironment = { page: { kind: 'home', path: '/' }, useWebSearch: false }
+const env = HOME_ENV
 
 describe('assistant runtime', () => {
   beforeEach(() => {

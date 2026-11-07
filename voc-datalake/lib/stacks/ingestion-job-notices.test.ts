@@ -10,7 +10,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { roleStatements } from '../test-support/iam-statements';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { findWorkerFunction } from '../test-support/worker-function';
-import { REALTIME_HTTP_DNS_ENV, realtimeParameterName, realtimeParameterReference } from '../utils/realtime';
+import { REALTIME_HTTP_DNS_ENV, realtimeParameterReference } from '../utils/realtime';
+import { expectReadsOnlyTheRealtimeParameter } from '../test-support/realtime-assertions';
 
 describe('VocIngestionStack job-end notices', () => {
   let template: Template;
@@ -27,9 +28,7 @@ describe('VocIngestionStack job-end notices', () => {
 
   it('tells it the endpoint parameter, and its role reads exactly that parameter', () => {
     expect(fn.Environment.Variables[REALTIME_HTTP_DNS_ENV]).toBe(realtimeParameterReference(undefined));
-    const ssm = roleStatements(template, fn.Role['Fn::GetAtt'][0]).filter((s) => s.actions.some((a) => a.startsWith('ssm:')));
-    expect(ssm.map((s) => s.actions)).toStrictEqual([['ssm:GetParameter']]);
-    expect(ssm[0]?.resource).toContain(`parameter${realtimeParameterName(undefined)}`);
+    expectReadsOnlyTheRealtimeParameter(roleStatements(template, fn.Role['Fn::GetAtt'][0]));
   });
 
   it('no other ingestor is told, and nothing here publishes', () => {
