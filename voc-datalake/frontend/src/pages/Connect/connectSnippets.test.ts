@@ -1,7 +1,8 @@
 /**
  * What Connect hands to an external assistant, and the skill's lockstep with
  * the server: the skill must document every tool the global MCP server exposes
- * (lambda/shared/mcp_global_tools.py), and nothing it does not.
+ * (lambda/shared/mcp_global_tools.py and the step tools it includes from
+ * lambda/shared/mcp_global_tools_steps.py), and nothing it does not.
  */
 import { describe, it, expect } from 'vitest'
 import * as fs from 'fs'
@@ -14,9 +15,11 @@ import {
 
 const FRONTEND = path.join(__dirname, '../../..')
 const SKILL = fs.readFileSync(path.join(FRONTEND, 'public', 'voc-mcp-skill.md'), 'utf8')
-const TOOLS_SOURCE = fs.readFileSync(path.join(FRONTEND, '..', 'lambda', 'shared', 'mcp_global_tools.py'), 'utf8')
+const TOOLS_SOURCE = ['mcp_global_tools.py', 'mcp_global_tools_steps.py']
+  .map((file) => fs.readFileSync(path.join(FRONTEND, '..', 'lambda', 'shared', file), 'utf8'))
+  .join('\n')
 
-/** Tool names declared in the TOOLS tuple: `GlobalTool(\n        'name', 'Title',`. */
+/** Tool names declared in the TOOLS / STEP_TOOLS tuples: `GlobalTool(\n        'name', 'Title',`. */
 function serverToolNames(): string[] {
   return [...TOOLS_SOURCE.matchAll(/GlobalTool\(\s*'([a-z_]+)',/g)].map((match) => match.at(1) ?? '')
 }
