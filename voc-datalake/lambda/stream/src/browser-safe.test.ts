@@ -19,6 +19,9 @@ const STREAM_SOURCES = import.meta.glob<string>('./**/*.ts', { eager: true, quer
 
 const STREAM_IMPORT = /['"]@stream\/([^'"]+)['"]/g;
 const RELATIVE_IMPORT = /\bfrom\s+'(\.{1,2}\/[^']+)\.js'/g;
+/** An SPA import that reaches the stream sources by relative path, around the alias this spec watches. */
+const RELATIVE_STREAM_IMPORT = /\bfrom\s+['"](?:\.\.\/)+lambda\/stream\//;
+const SPA_SPEC = /\.(test|spec)\.tsx?$|-fixtures\.tsx?$|\/test\//;
 
 /** `src/<module>.ts` of each `@stream/<module>` the SPA names. */
 function spaImports(): string[] {
@@ -73,6 +76,13 @@ function hasRule(config: unknown): boolean {
 describe('browser-safe stream modules', () => {
   it('finds the SPA’s @stream imports (positive control)', () => {
     expect(spaImports()).toContain('src/assistant/contract.ts');
+  });
+
+  it('no SPA production file reaches a stream module by relative path (it would bypass this check)', () => {
+    const offenders = Object.entries(SPA_SOURCES)
+      .filter(([file, text]) => !SPA_SPEC.test(file) && RELATIVE_STREAM_IMPORT.test(text))
+      .map(([file]) => file);
+    expect(offenders).toStrictEqual([]);
   });
 
   it('the browser-safe block covers exactly what the SPA imports and what that imports', async () => {
