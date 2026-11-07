@@ -30,7 +30,7 @@ documents and its own profile. Then the assistant adds a short synthesis.
 1. The mentions travel **structured**, as ids picked from the project. They are never parsed from the
    message text: `forwardedProps.mentions = { personas?: [ids] | 'all', documents?: [{ document_id, version? }] }`
    in the AG-UI `RunAgentInput`. The schema is `mentionsSchema` in `lambda/stream/src/assistant/contract.ts`,
-   mirrored in the SPA and pinned by `contract.lockstep.test.ts`. A request over the limits is a 400.
+   which the SPA imports itself through `@stream/assistant/contract`. A request over the limits is a 400.
 2. **Persona round** (`lambda/stream/src/assistant/runtime/persona-round.ts`): before the model's own
    turn, the stream Lambda reads the project (`POST /projects/{id}/chat-context`, with the caller's
    project access) and asks each mentioned persona. Each persona is one `consult_personas` call on one
@@ -66,8 +66,8 @@ The round is part of the conversation the stream Lambda saves while it runs. Eac
 (persona id, name, avatar) is stored in its own result, so the cards come back after a reload.
 Saved tool results are cut to 4,000 characters. A persona result is shortened inside its JSON instead, so it
 stays valid and the cards survive a reload. Its answers are cut evenly within 32,000 characters (6,000 in the one-turn retry after a 413), and avatar URLs
-go first when space is short. The SPA (`sessions/personaResult.ts`) and the stream Lambda
-(`session/persona-result.ts`) store it identically, pinned by `personaResult.lockstep.test.ts`.
+go first when space is short. The stream Lambda and the SPA store it with the same module,
+`lambda/stream/src/assistant/session/persona-result.ts` (the SPA imports it through `@stream`).
 
 **Regenerate** on a mention answer asks the same personas again. They are read back from the round's
 saved `mention_` calls, so an `@all` comes back as the personas it asked.
