@@ -35,6 +35,8 @@ from shared.silver_provenance import change_stamp, fields_of_update, keep_silver
 from shared.timestamps import now_iso
 
 CATEGORY_SOURCE_MANUAL = 'manual'
+# What a category reprocess job stamps (lambda/jobs/category_reprocess); one home for the worker and the catalogue.
+CATEGORY_SOURCE_REPROCESS = 'reprocess'
 MAX_LABEL_CHARS = 64
 
 @overload

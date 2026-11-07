@@ -46,10 +46,10 @@ function closeChannels(): void {
 function retry(generation: number, sub: string, transport: RealtimeTransport, attempt: number): void {
   const delay = RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)]
   clearTimeout(connection.timer)
-  connection.timer = setTimeout(() => { void connect(generation, sub, transport, attempt + 1) }, delay)
+  connection.timer = setTimeout(() => { void connectChannels(generation, sub, transport, attempt + 1) }, delay)
 }
 
-async function connect(generation: number, sub: string, transport: RealtimeTransport, attempt: number): Promise<void> {
+async function connectChannels(generation: number, sub: string, transport: RealtimeTransport, attempt: number): Promise<void> {
   const onError = () => {
     // Only an OPEN session reacts (once: the first error closes every channel); a failure while
     // subscribing is the allSettled below.
@@ -88,7 +88,7 @@ export function startRealtime(sub: string, transport: RealtimeTransport): void {
       setRealtimeLive(connected)
     }
   })
-  void connect(generation, sub, transport, 0)
+  void connectChannels(generation, sub, transport, 0)
 }
 
 /** Close everything (sign-out, a different user); the views fall back to polling. */

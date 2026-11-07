@@ -87,6 +87,8 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
       FEEDBACK_TABLE: feedbackTable.tableName,
       AGGREGATES_TABLE: aggregatesTable.tableName,
       ALLOWED_ORIGIN: allowedOrigin,
+      // GET /feedback/catalogue imports the writers' modules, which read the pipeline version at import.
+      APP_VERSION: appVersion(),
       POWERTOOLS_SERVICE_NAME: 'voc-metrics-api',
       LOG_LEVEL: 'INFO',
     },

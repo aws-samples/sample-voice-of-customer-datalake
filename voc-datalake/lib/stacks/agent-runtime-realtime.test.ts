@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { roleStatements } from '../test-support/iam-statements';
 import { synthProcessingTemplate } from '../test-support/processing-stack-fixture';
 import { byCodeUnit } from '../utils/compare';
-import { REALTIME_HTTP_DNS_PARAMETER_ENV, realtimeParameterName } from '../utils/realtime';
+import { REALTIME_HTTP_DNS_ENV, realtimeParameterName } from '../utils/realtime';
 
 const FunctionSchema = z.object({
   Properties: z.object({ FunctionName: z.unknown(), Environment: z.object({ Variables: z.record(z.string(), z.unknown()) }) }),
@@ -39,7 +39,7 @@ function environmentsWith(key: string): string[] {
 
 describe('VocProcessingStack\'s realtime publishers', () => {
   it('only the publishers are told where the Event API endpoint parameter is', () => {
-    const named = environmentsWith(REALTIME_HTTP_DNS_PARAMETER_ENV);
+    const named = environmentsWith(REALTIME_HTTP_DNS_ENV);
     const expected = Object.keys(PUBLISHERS).sort(byCodeUnit);
     expect(named).toHaveLength(expected.length);
     expect(expected.filter((name) => !named.some((fn) => fn.includes(name)))).toStrictEqual([]);

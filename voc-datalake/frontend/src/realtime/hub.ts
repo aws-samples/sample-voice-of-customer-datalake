@@ -12,6 +12,7 @@
  * @module realtime/hub
  */
 import type { RealtimeNotice } from './events'
+import { abortError } from '../lib/abortError'
 
 type Listener = (notice: RealtimeNotice) => void
 type ReconnectListener = () => void
@@ -63,10 +64,6 @@ export interface RealtimeWatch {
   wait: (fallbackMs: number, signal?: AbortSignal) => Promise<WakeReason>
   /** Stop listening (always call it when the loop ends). */
   close: () => void
-}
-
-function abortError(): Error {
-  return new DOMException('The request was aborted.', 'AbortError')
 }
 
 /** Watch for notices matching `matches`, for one polling loop. */

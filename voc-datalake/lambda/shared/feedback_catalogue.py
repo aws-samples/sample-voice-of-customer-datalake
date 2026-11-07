@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Final, get_args
 
 from shared.feedback_catalogue_fields import FIELDS, STEPS, CatalogueField
-from shared.feedback_category import CATEGORY_SOURCE_MANUAL
+from shared.feedback_category import CATEGORY_SOURCE_MANUAL, CATEGORY_SOURCE_REPROCESS
 from shared.feedback_dimensions import (
     DIMENSION_SOURCE_AI,
     DIMENSION_SOURCE_CATEGORY,
@@ -38,12 +38,10 @@ from shared.silver_provenance import CHANGE_REASONS, EnrichmentMode
 from shared.source_profiles import PII_POLICIES, SUMMARY_ONLY_DROPPED_FIELDS
 from shared.usefulness import USEFULNESS_BANDS
 
-__all__ = ['CATALOGUE_VERSION', 'CATEGORY_SOURCE_REPROCESS', 'catalogue', 'render_markdown']
+__all__ = ['CATALOGUE_VERSION', 'catalogue', 'render_markdown']
 
 #: Bumped when the catalogue's own shape (not a field) changes.
 CATALOGUE_VERSION: Final = 1
-#: ``lambda/jobs/category_reprocess/handler.py`` CATEGORY_SOURCE_REPROCESS (pinned by the catalogue test).
-CATEGORY_SOURCE_REPROCESS: Final = 'reprocess'
 
 #: What a ``redact`` policy does at ingestion (``shared/source_policy.py``, pinned by the test): the
 #: customer's words and links are redacted, the author dropped, no raw copy archived. Model-written text is

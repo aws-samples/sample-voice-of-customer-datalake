@@ -81,7 +81,7 @@ from shared.categorization import (
 from shared.converse import BedrockThrottlingError
 from shared.data_version import bump_data_version
 from shared.dimension_config import load_dimensions_config
-from shared.feedback_category import CATEGORY_SOURCE_MANUAL
+from shared.feedback_category import CATEGORY_SOURCE_MANUAL, CATEGORY_SOURCE_REPROCESS
 from shared.feedback_dimensions import category_product, reinfer_dimensions
 from shared.invocation_cost import instrumented_handler
 from shared.jobs import has_time_left
@@ -111,7 +111,6 @@ TIME_RESERVE_MS = 3 * 60 * 1000
 # Consecutive hand-overs caused by Bedrock throttling before the job fails.
 MAX_THROTTLE_RESTARTS = 3
 
-CATEGORY_SOURCE_REPROCESS = 'reprocess'
 SILVER_REASON = silver_provenance.REASON_REPROCESS
 # The E-C1 enrichment mode each job mode stamps.
 ENRICHMENT_MODES: dict[str, silver_provenance.EnrichmentMode] = {

@@ -23,6 +23,7 @@
 import { z } from 'zod'
 import { assistJobPollSchema } from '@stream/assistant/tools/server/assist-job-values'
 import { isRealtimeLive, watchRealtime } from '../realtime/hub'
+import { abortError } from '../lib/abortError'
 
 export const ASSIST_POLL_INTERVAL_MS = 1500
 export const ASSIST_TIMEOUT_MS = 15 * 60 * 1000
@@ -49,10 +50,6 @@ export interface AssistJobOptions {
 /** True for the job types the project Background jobs panel never lists. */
 export function isAssistJobType(jobType: unknown): boolean {
   return typeof jobType === 'string' && jobType.startsWith('assist_')
-}
-
-function abortError(): Error {
-  return new DOMException('The request was aborted.', 'AbortError')
 }
 
 function parseAnswer<S extends z.ZodType>(schema: S, answer: unknown): z.output<S> {

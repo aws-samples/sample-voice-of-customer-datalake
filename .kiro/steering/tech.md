@@ -81,7 +81,7 @@ Push notices (6.04.00, docs/realtime.md): `appsync:EventPublish` on exactly one 
 its assist twin, which publishes when an assist job ends), `chat` for `voc-chat-stream` (a run's session
 notice). `voc-agent-conductor` (VocProcessingStack) publishes run / plan status notices on `runs`: VocApiStack
 attaches that grant to its role, and the conductor reads the host from the SSM parameter
-`/[<prefix>-]voc/realtime/event-api-http-dns` (`REALTIME_HTTP_DNS_PARAMETER`, `ssm:GetParameter` on exactly it).
+`/[<prefix>-]voc/realtime/event-api-http-dns` (`REALTIME_HTTP_DNS=ssm:<parameter>`, `ssm:GetParameter` on exactly it).
 Job ends (`shared/job_notices.py`, `{type: 'job', job_id, job_type, status, project_id?}` to the starter's
 `/jobs/<sub>`) are published on `jobs` too: in VocApiStack by the four project job Lambdas (`job_handler`) and
 `voc-manual-import-processor` (`REALTIME_HTTP_DNS`); before it, by `voc-research-step`, `voc-category-reprocess`,

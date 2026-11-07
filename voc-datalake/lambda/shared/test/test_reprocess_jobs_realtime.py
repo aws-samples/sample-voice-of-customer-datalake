@@ -52,7 +52,6 @@ def test_a_lost_notice_leaves_the_outcome(table, published):
 
 def test_unconfigured_it_is_a_no_op(table, monkeypatch):
     monkeypatch.delenv('REALTIME_HTTP_DNS', raising=False)
-    monkeypatch.delenv('REALTIME_HTTP_DNS_PARAMETER', raising=False)
     job = present(_start(table, started_by_sub='sub-1'))
     with patch.object(jobs.job_notices.realtime.requests, 'post') as post:
         assert present(jobs.finish_job(table, job['sk'], jobs.STATUS_COMPLETED))['status'] == 'completed'

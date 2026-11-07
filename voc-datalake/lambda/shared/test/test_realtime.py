@@ -18,7 +18,6 @@ SUB = '0a1b2c3d-1111-4222-8333-444455556666'
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
     monkeypatch.delenv(realtime.HTTP_DNS_ENV, raising=False)
-    monkeypatch.delenv(realtime.HTTP_DNS_PARAMETER_ENV, raising=False)
     monkeypatch.setenv('AWS_REGION', 'us-east-1')
     realtime._parameter_cache.update(host=None, checked_at=None)
 
@@ -96,7 +95,7 @@ class TestPublish:
 @pytest.mark.usefixtures('credentials')
 class TestParameterEndpoint:
     def test_reads_the_host_from_the_parameter_once(self, monkeypatch, post):
-        monkeypatch.setenv(realtime.HTTP_DNS_PARAMETER_ENV, '/voc/realtime/event-api-http-dns')
+        monkeypatch.setenv(realtime.HTTP_DNS_ENV, 'ssm:/voc/realtime/event-api-http-dns')
         ssm = MagicMock()
         ssm.get_parameter.return_value = {'Parameter': {'Value': HOST}}
         with patch.object(realtime.boto3, 'client', return_value=ssm):
@@ -106,7 +105,7 @@ class TestParameterEndpoint:
         assert post.call_args.args[0] == f'https://{HOST}/event'
 
     def test_a_missing_parameter_turns_notices_off_and_is_not_reread_at_once(self, monkeypatch, post):
-        monkeypatch.setenv(realtime.HTTP_DNS_PARAMETER_ENV, '/voc/realtime/event-api-http-dns')
+        monkeypatch.setenv(realtime.HTTP_DNS_ENV, 'ssm:/voc/realtime/event-api-http-dns')
         ssm = MagicMock()
         ssm.get_parameter.side_effect = ClientError({'Error': {'Code': 'ParameterNotFound'}}, 'GetParameter')
         with patch.object(realtime.boto3, 'client', return_value=ssm):

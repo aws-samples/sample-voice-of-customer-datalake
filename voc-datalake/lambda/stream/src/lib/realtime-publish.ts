@@ -8,6 +8,7 @@
  * rejects, so a run never fails because a notice was lost (the SPA's polling is the fallback).
  */
 import { signedPost, type SignedPost } from './sigv4.js';
+import { errorName } from './error-name.js';
 
 export type RealtimeNamespace = 'jobs' | 'chat' | 'runs';
 
@@ -29,10 +30,6 @@ export interface PublisherConfig {
   host: string | undefined;
   region: string | undefined;
   post?: (request: SignedPost) => Promise<Response>;
-}
-
-function errorName(error: unknown): string {
-  return error instanceof Error && error.name ? error.name : 'UnknownError';
 }
 
 /** The publisher, or undefined when the Event API is not configured here (then nothing is sent). */
