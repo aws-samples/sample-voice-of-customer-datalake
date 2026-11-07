@@ -321,7 +321,10 @@ class TestTheResearchJob:
         with patch.object(projects_handler, 'run_research',
                           return_value={'success': True, 'inline': 1}) as run:
             status, body, _ = world.call('POST', '/projects/p1/research', body={'question': 'Q'})
-        assert (status, body) == (200, {'success': True, 'inline': 1})
+        assert status == 200
+        # The run's own answer, plus the methodology block every research start answers.
+        assert {k: v for k, v in body.items() if k != 'methodology'} == {'success': True, 'inline': 1}
+        assert body['methodology']['step'] == 'research'
         run.assert_called_once_with('p1', {'question': 'Q'}, category_scope=SCOPE_CONFIG)
         world.boto_client.assert_not_called()
 
