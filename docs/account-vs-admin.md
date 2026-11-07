@@ -31,6 +31,22 @@ Links written for releases before 5.09.00 still work and are replaced by their c
 `integrations`, `radar` open Sources; `categories`, `dimensions` open Taxonomy; `users` opens Privacy & access;
 `logs`, `version` open System. The old `/settings` path redirects to `/admin`.
 
+### Users
+
+The users API (`lambda/api/users_handler.py`, rules in `lambda/shared/user_admin_guard.py`) keeps a deployment
+administrable for every client (the SPA, the AI assistant, a plan step, a script). It answers **409**, and changes
+nothing, when:
+
+- an administrator changes their OWN role to non-admin (`PUT /users/{username}/group`), disables
+  (`PUT /users/{username}/disable`) or deletes (`DELETE /users/{username}`) their own account:
+  `You cannot change the role of your own account. Ask another administrator.` (`disable` / `delete` in place of
+  `change the role of`);
+- the target is the LAST enabled member of the `admins` group and the request demotes, disables or deletes it:
+  `This is the last enabled administrator: make another user an administrator first.`
+
+The SPA and the assistant's `update_user` card check the same rules before asking; the API is the rule (TENETS.md
+tenet 4). A Cognito fault during the check answers the route's own fixed error message (500).
+
 ## Account: five tabs
 
 Each tab is a deep link, `/account?tab=<id>` (`frontend/src/pages/Account/accountSections.ts`). An unknown id opens

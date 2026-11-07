@@ -111,6 +111,25 @@ Building a workflow by hand (the built-in can be rebuilt from an empty canvas, p
 - With nothing selected the panel shows the workflow's name, description and an outline that selects any step or
   loop, so every setting is reachable from the keyboard.
 
+### Methodology warnings
+
+A valid workflow can still skip the methodology (TENETS.md tenet 2): `start → write_prd → end` writes a PRD with no
+personas, no PR/FAQ and no customer evidence. `POST /workflows/validate` therefore answers, next to `valid` and
+`errors`, `warnings: [{code, message, node_id}]` for a valid definition (`lambda/shared/workflow_methodology.py`;
+empty while the graph has errors). A step counts as upstream when a node of its kind reaches the writing node along
+the arrows:
+
+| Writing step | Code | Missing upstream |
+|---|---|---|
+| `write_prfaq`, `write_prd` | `no_upstream_evidence` | an `aggregate_reviews` or `deep_research` step |
+| `write_prfaq`, `write_prd` | `no_upstream_personas` | a `select_personas` or `generate_personas` step |
+| `write_prd` | `no_upstream_prfaq` | a `write_prfaq` step |
+| `build_prototype` | `no_upstream_document` | a `write_prfaq` or `write_prd` step |
+
+Warnings are advice, never errors: save and run are not refused, because a workflow may work on a project that
+already holds those artifacts. The editor lists them above the canvas ("Methodology"), each naming its step; a
+code it does not know shows the server's message. An older API answers no `warnings`: the editor shows none.
+
 Archiving: `DELETE /workflows/{id}` (admin) archives a workflow the way `DELETE /agents/{id}` archives an agent —
 a soft `status: archived` on its CURRENT row, never a delete. It leaves `GET /workflows` (admins may add
 `?include_archived=true`), becomes read-only (save / duplicate answer 404) and can no longer back a new agent;

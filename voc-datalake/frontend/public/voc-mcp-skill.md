@@ -40,7 +40,8 @@ feedback categories that user can see, is never an administrator, and is at
 most an editor on any project. On top of that:
 
 - a **read-only** token gets only the read tools;
-- a **read-write** token can also create and update project documents;
+- a **read-write** token can also create and update project documents, start a
+  methodology step (`generate`) and correct a feedback item (`edit_feedback`);
 - a token **scoped to one project** can read and write only that project's
   documents (workspace-wide reads such as feedback and metrics still work);
 - `run_agent` exists only for a read-write token minted by an administrator,
@@ -66,8 +67,12 @@ outcome — never the arguments or any content).
 | `list_agents` | Autonomous agents the user can see, with their status. |
 | `get_agent_run` | Follow an agent run: give `run_id` (from `run_agent`) for its status, current step, project and error, or leave it out for the agent's newest runs. |
 | `search_feature_requests` | Requests people posted on the feedback boards (feature requests, ideas): `query`, `board`, `category`, `status` (one value or a comma list), `days` (0 = all time), `limit` (≤ 50). Each has `supporters` (+1 count). These are NOT customer reviews: never add them to feedback counts, and cite each as `[FR:<request_id>]`. |
+| `get_job` | Follow a job `generate` started: give `project_id` and `job_id`; read it until `status` is `completed` (its `result` names the document) or `failed`. The result carries the `methodology` block. |
+| `read_radar` | Other brands' reviews (Radar): no `brand` = the brands and their totals; a `brand` key = its reviews (`days`, `limit` ≤ 50). These are NOT our customers: never add them to our feedback counts or quote them as our evidence. |
 | `create_document` | (write) Add a markdown document to a project. |
 | `update_document` | (write) Change a document's title and/or content. |
+| `generate` | (write) Start one methodology step in a project: `step` = `personas` (adds `count` personas, never replaces), `research` (`brief` = the question), `prfaq` or `prd` (`brief` = the idea; reads customer feedback), `prototype` (from the newest PRD / PR/FAQ). Answers a `job_id` and a `methodology` block: the upstream steps this one runs without (`skipped`) and `warnings`. Tell the user about every warning; never hide a skipped step. A prototype with no PRD or PR/FAQ is refused: write one first. A PR/FAQ or PRD is refused unless the user (and the project owner) work AI-driven. |
+| `edit_feedback` | (write) Correct one feedback item: `category` (+ `subcategory`), or `dimensions` (key → value, `null` clears) and `tags`. Not both in one call. |
 | `run_agent` | (write, admin-minted) Start an agent run now. |
 
 ## Prompts and resources
@@ -89,10 +94,14 @@ Resources (`resources/read`, JSON): `voc://categories` (the category taxonomy) a
 2. **Cite your evidence.** When you state what customers want, include the
    `feedback_id`s (or the metrics view) the claim rests on.
 3. **Ask before writing.** Confirm with the user before `create_document`,
-   `update_document` or `run_agent`; say which project and which document.
-4. **Don't copy personal data out.** Feedback can contain names, emails or order
+   `update_document`, `generate`, `edit_feedback` or `run_agent`; say which project
+   and which document or feedback item.
+4. **Follow the methodology.** It goes customer evidence → personas → PR/FAQ → PRD →
+   prototype. When a `methodology` block lists a skipped step, say so to the user and
+   offer to do that step first.
+5. **Don't copy personal data out.** Feedback can contain names, emails or order
    numbers; summarise rather than quote them into other systems.
-5. **Treat the token as a password.** Never print it, commit it or put it in a
+6. **Treat the token as a password.** Never print it, commit it or put it in a
    document. If it leaks, revoke it on the Connect page.
-6. **A refusal is an answer.** "Not found", "read-only" or "scoped to project …"
+7. **A refusal is an answer.** "Not found", "read-only" or "scoped to project …"
    means the token may not do that — do not retry with other ids to get around it.

@@ -144,6 +144,23 @@ from a name, and to say when no page was found.
 
 These tools are not on the global MCP server (`/mcp/global`).
 
+### Write rules
+
+The "a create never overwrites" and "a stale update is refused" rules above are enforced by the API, not only by
+the card (`lambda/shared/config_write_guard.py`, TENETS.md tenet 4). `POST /scrapers` and
+`POST /integrations/{source}/apps` take two optional body fields:
+
+| Field | Values | Effect |
+|---|---|---|
+| `mode` | `create` \| `update` | `create`: **409** `A scraper with id "<id>" already exists; nothing was saved. A create never overwrites.` (an app connector: also when the same `app_name` or identifier, `app_id` / `package_name` / `url`, is configured under another id: `An app connector for "<name>" already exists; …`). `update`: **404** `… does not exist; nothing was saved.` Any other value: 400 |
+| `base_etag` | the record's `etag` as read (≤ 64 characters) | **409** `… changed since it was read; nothing was saved. Read it again.` when the stored record's `etag` differs |
+
+Both absent = the upsert older clients rely on. `GET /scrapers` and `GET /integrations/{source}/apps` add a computed
+`etag` to each record (the first 16 hex characters of a SHA-256 of its canonical JSON); it is never stored, and a
+record sent back with its `etag` is saved without it. The assistant's `create_scraper` / `create_app_connector`
+executors send `mode: create`; `update_scraper` sends `mode: update` and the `etag` the card read; a plan step does
+the same.
+
 ## Pagination
 
 Configure pagination to collect reviews across multiple pages:
@@ -193,7 +210,7 @@ All routes require a signed-in (Cognito) user. "Admin" means the `admins` group.
 | Method | Endpoint | Who | Description |
 |--------|----------|-----|-------------|
 | GET | `/scrapers` | Any user | List all scrapers |
-| POST | `/scrapers` | Admin | Create/update scraper (bounded, see below) |
+| POST | `/scrapers` | Admin | Create/update scraper (bounded, see below); optional `mode` / `base_etag` ([write rules](#write-rules)) |
 | DELETE | `/scrapers/{id}` | Admin | Delete scraper |
 | GET | `/scrapers/templates` | Any user | Get available templates |
 | GET | `/scrapers/connectors` | Any user | App connectors and Web Reviews pages with their `radar_brand`, selected fields only (the AI assistant's `list_scrapers` reads it; [radar.md](radar.md)) |

@@ -66,7 +66,7 @@ The UI only follows the mode. The Projects API enforces it in `lambda/shared/ai_
 Gated routes (PR/FAQ / PRD only):
 
 - `POST /projects/{id}/document` (generate; agent nodes `write_prfaq`, `write_prd` and
-  `revise_document` go through it);
+  `revise_document` go through it, and so does MCP `generate` with `step` `prfaq` / `prd`);
 - `POST /projects/{id}/decisions/{doc}/pursue` (seeds a PR/FAQ);
 - `POST /projects/{id}/documents/merge` with `output_type` `prfaq` / `prd`;
 - `POST /projects/{id}/prfaq-autofill` and `POST /projects/{id}/documents/suggest-brief`;
