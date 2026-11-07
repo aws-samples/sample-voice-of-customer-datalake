@@ -804,6 +804,10 @@ def api_run_research(project_id: str):
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
     state_machine_arn = os.environ.get('RESEARCH_STATE_MACHINE_ARN', '')
+    # The methodology is read before anything starts: a failed read is a 500 with no job and no paid run.
+    # Research reads personas only when some are selected: say so when it runs without.
+    assessment = methodology.assess('research', _methodology_items(project_id),
+                                    used={'personas': bool(research_config['selected_persona_ids'])})
     # 400 before any job row or execution when nothing matches (F1). Only on the
     # Step Functions path: the fallback (run_research) makes its own check.
     job_id = _started_job(
@@ -818,15 +822,12 @@ def api_run_research(project_id: str):
             input=json.dumps({'job_id': job_id, 'project_id': project_id, 'research_config': research_config})
         )
     else:
-        return run_research(
+        answer = run_research(
             project_id, body,
             category_scope=research_config[category_access.SCOPE_CONFIG_KEY],
         )
+        return {**answer, 'methodology': assessment}
 
-    # Research reads personas only when some are selected: say so when it runs without.
-    selected_personas = research_config['selected_persona_ids']
-    assessment = methodology.assess('research', _methodology_items(project_id),
-                                    used={'personas': bool(selected_personas)})
     return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Research started.',
             'methodology': assessment}
 

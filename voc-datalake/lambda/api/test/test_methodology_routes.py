@@ -89,3 +89,34 @@ class TestResearchRoute:
         status, body, _ = _call(api_gateway_event, lambda_context, '/projects/p1/research', {}, [PERSONA])
         assert status == 200
         assert body['methodology']['skipped'] == [{'step': 'personas', 'reason': 'not_selected'}]
+
+    def test_a_failed_methodology_read_starts_no_job(self, api_gateway_event, lambda_context):
+        """Read before anything starts: a retry after the 500 must not find a paid run already going."""
+        from projects_handler import lambda_handler
+        event = api_gateway_event(method='POST', path='/projects/p1/research', path_params={'project_id': 'p1'}, body={})
+        with patch('projects_handler.category_gate.scope_for_event', return_value=SCOPE), \
+                patch('projects_handler._require_project_exists'), \
+                patch('projects_handler._methodology_items', side_effect=RuntimeError('throttled')), \
+                patch('projects_handler.ensure_research_feedback'), \
+                patch('projects_handler.create_job', return_value=('job-1', {})) as create_job, \
+                patch('projects_handler.boto3.client') as client, \
+                patch.dict('os.environ', {'RESEARCH_STATE_MACHINE_ARN': 'arn:sm:research'}):
+            response = lambda_handler(event, lambda_context)
+        assert response['statusCode'] == 500
+        create_job.assert_not_called()
+        client.assert_not_called()
+
+    def test_the_fallback_path_answers_the_block_too(self, api_gateway_event, lambda_context):
+        from projects_handler import lambda_handler
+        event = api_gateway_event(method='POST', path='/projects/p1/research', path_params={'project_id': 'p1'}, body={})
+        with patch('projects_handler.category_gate.scope_for_event', return_value=SCOPE), \
+                patch('projects_handler._require_project_exists'), \
+                patch('projects_handler._methodology_items', return_value=[PERSONA]), \
+                patch('projects_handler.create_job', return_value=('job-1', {})), \
+                patch('projects_handler.run_research', return_value={'success': True, 'job_id': 'job-1'}), \
+                patch.dict('os.environ', {'RESEARCH_STATE_MACHINE_ARN': ''}):
+            response = lambda_handler(event, lambda_context)
+        body = json.loads(response['body'])
+        assert response['statusCode'] == 200
+        assert body['job_id'] == 'job-1'
+        assert body['methodology']['skipped'] == [{'step': 'personas', 'reason': 'not_selected'}]
