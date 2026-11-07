@@ -134,5 +134,37 @@
         "very_long": "1.000 Zeichen oder mehr"
       }
     }
+  },
+  "fields": {
+    "title": "Felder",
+    "description": "Was jedes gespeicherte Feld eines Feedback-Eintrags bedeutet: sein Typ, welcher Schritt es setzt, ob es personenbezogene Daten enthält, was eine Quellrichtlinie „Schwärzen“ oder „Nur Zusammenfassung“ damit macht, und seine zulässigen Werte. Die Bedeutungen sind auf Englisch.",
+    "loading": "Felder werden geladen…",
+    "empty": "Die API hat keine Felder geliefert.",
+    "caption": "Felder eines Feedback-Eintrags ({{table}})",
+    "keyBadge": "Schlüssel",
+    "redact": "Schwärzen: {{effect}}",
+    "summaryOnly": "Nur Zusammenfassung: {{effect}}",
+    "columns": {
+      "field": "Feld",
+      "type": "Typ",
+      "meaning": "Bedeutung",
+      "setBy": "Gesetzt von",
+      "personalData": "Personenbezogene Daten",
+      "policies": "Bei Schwärzen / nur Zusammenfassung",
+      "values": "Werte"
+    },
+    "pii": {
+      "customer_text": "Kundentext",
+      "personal": "Personenbezogene Daten",
+      "derived_text": "Aus Kundentext abgeleitet",
+      "none": "Keine"
+    },
+    "effects": {
+      "kept": "beibehalten",
+      "redacted": "geschwärzt",
+      "dropped": "entfernt",
+      "from_redacted": "aus dem geschwärzten Text abgeleitet",
+      "replaced": "ersetzt"
+    }
   }
 }

@@ -134,5 +134,37 @@
         "very_long": "1,000자 이상"
       }
     }
+  },
+  "fields": {
+    "title": "필드",
+    "description": "피드백 항목에 저장되는 각 필드의 의미: 유형, 어떤 단계가 설정하는지, 개인 데이터를 포함하는지, 가림 또는 요약만 소스 정책이 적용될 때 어떻게 되는지, 허용되는 값. 의미는 영어로 표시됩니다.",
+    "loading": "필드를 불러오는 중…",
+    "empty": "API가 필드를 반환하지 않았습니다.",
+    "caption": "피드백 항목의 필드 ({{table}})",
+    "keyBadge": "키",
+    "redact": "가림: {{effect}}",
+    "summaryOnly": "요약만: {{effect}}",
+    "columns": {
+      "field": "필드",
+      "type": "유형",
+      "meaning": "의미",
+      "setBy": "설정 주체",
+      "personalData": "개인 데이터",
+      "policies": "가림 / 요약만일 때",
+      "values": "값"
+    },
+    "pii": {
+      "customer_text": "고객 텍스트",
+      "personal": "개인 데이터",
+      "derived_text": "고객 텍스트에서 파생",
+      "none": "없음"
+    },
+    "effects": {
+      "kept": "유지",
+      "redacted": "가림",
+      "dropped": "삭제",
+      "from_redacted": "가린 텍스트에서 파생",
+      "replaced": "대체"
+    }
   }
 }
