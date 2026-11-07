@@ -17,6 +17,20 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.03.01] - 2026-11-07
+
+Duplicated code that the duplication checks had excused is now shared, and every excuse that is left names a constraint that was checked.
+
+### Changed
+
+- Shared helpers replace copies in the API and worker Lambdas: request-body checks (unknown fields, free text), the latest-run status of sources and scrapers, the category / source / project access reads, cursor encoding, update expressions, strong reads, the Cognito client, a worker's time budget and the GitHub API base. Answers, status codes and error wording are unchanged; JSON key order in `GET /sources/status`, `GET /scrapers/{id}/status` and the authenticated form view may differ.
+- The SPA shares one component each for icon tab rows, labelled text inputs, enum and option selects, clamped number inputs, QR code panels and Data Explorer row actions, and one stale-approval check for the scraper, Radar and user cards. Nothing on screen changes.
+- The duplication allowlists shrink (`scripts/audit/allowlists/`: Python clones 17 → 6, Python functions 8 → 5, shared constants 19 → 17, TypeScript clones 23 → 13) and `.jscpd.json` ignores one file fewer; each remaining entry's reason names what keeps it.
+
+### Fixed
+
+- A feedback list cursor that is not UTF-8 JSON is refused with a 400 like the Radar cursor, instead of being decoded.
+
 ## [6.03.00] - 2026-11-06
 
 Processed feedback keeps its history and says how it was made, and a reprocess can replay a slice: every in-place change keeps the item as it was, every enriched item records its pipeline version, mode and the model that answered, and reprocessing takes sources, categories and a date range and resumes where it stopped.
