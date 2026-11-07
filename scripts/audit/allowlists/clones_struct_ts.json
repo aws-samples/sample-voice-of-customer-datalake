@@ -6,35 +6,35 @@
         "voc-datalake/frontend/src/assistant/plan/*.ts",
         "voc-datalake/lambda/stream/src/assistant/plan/*.ts"
       ],
-      "reason": "SPA <-> stream Lambda plan mirror (schema, validate, placeholders, graph, canonical), pinned by plan.lockstep tests; separate packages that must not import each other (jscpd ignores them too). One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'] (proposal: scratch/dedupe-ts-report.md)."
+      "reason": "SPA <-> stream Lambda plan mirror (schema, validate, placeholders, graph, canonical), pinned by plan.lockstep tests; separate packages that must not import each other (jscpd ignores four of the five; canonical.ts has no exact clone). One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'], and the shared file must stay browser-safe (zod only)."
     },
     {
       "files": [
         "voc-datalake/frontend/src/assistant/contract.ts",
         "voc-datalake/lambda/stream/src/assistant/contract.ts"
       ],
-      "reason": "the AG-UI contract mirror, pinned by contract.lockstep. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'] (proposal: scratch/dedupe-ts-report.md)."
+      "reason": "the AG-UI contract mirror, pinned by contract.lockstep. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'], and the shared file must stay browser-safe (zod only)."
     },
     {
       "files": [
         "voc-datalake/frontend/src/assistant/sessions/personaResult.ts",
         "voc-datalake/lambda/stream/src/assistant/session/persona-result.ts"
       ],
-      "reason": "persona-cards result storage mirrored by the SPA and the stream Lambda (both write the same session), pinned by personaResult.lockstep.test.ts; separate packages that must not import each other. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'] (proposal: scratch/dedupe-ts-report.md)."
+      "reason": "persona-cards result storage mirrored by the SPA and the stream Lambda (both write the same session), pinned by personaResult.lockstep.test.ts; separate packages that must not import each other. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'], and the shared file must stay browser-safe (zod only)."
     },
     {
       "files": [
         "voc-datalake/frontend/src/assistant/approvals/reviewImportSchemas.ts",
         "voc-datalake/lambda/stream/src/assistant/tools/client/review-import-schemas.ts"
       ],
-      "reason": "approval-card bounds mirrored from the stream tool schema, pinned by its lockstep test. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'] (proposal: scratch/dedupe-ts-report.md)."
+      "reason": "approval-card bounds mirrored from the stream tool schema, pinned by its lockstep test. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'], and the shared file must stay browser-safe (zod only)."
     },
     {
       "files": [
         "voc-datalake/frontend/src/assistant/approvals/radarSchemas.ts",
         "voc-datalake/lambda/stream/src/assistant/tools/client/radar-schemas.ts"
       ],
-      "reason": "Radar brand-list bounds (languages, feed URL shape) mirrored from the stream tool schema and shared/radar_brand_fields.py, pinned by radarSchemas.lockstep.test.ts; separate packages that must not import each other. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'] (proposal: scratch/dedupe-ts-report.md)."
+      "reason": "Radar brand-list bounds (languages, feed URL shape) mirrored from the stream tool schema and shared/radar_brand_fields.py, pinned by radarSchemas.lockstep.test.ts; separate packages that must not import each other. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'], and the shared file must stay browser-safe (zod only)."
     },
     {
       "files": [
@@ -84,7 +84,7 @@
         "voc-datalake/frontend/src/pages/ProjectDetail/decisions/VerdictBadge.tsx",
         "voc-datalake/frontend/src/pages/Scrapers/SourceCardParts.tsx"
       ],
-      "reason": "icon badges over two enums (decision verdict, run outcome). FIXABLE-LATER: an IconBadge component (tone class, icon, label) would serve these and ~19 other 'badge inline-flex items-center gap-1' sites; do it as one sweep (scratch/dedupe-ts-report.md)"
+      "reason": "icon badges over two enums (decision verdict, run outcome). FIXABLE-LATER: an IconBadge component (tone class, icon, label) would serve these and ~19 other 'badge inline-flex items-center gap-1' sites; do it as one sweep"
     },
     {
       "files": [
