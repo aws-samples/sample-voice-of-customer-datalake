@@ -65,13 +65,6 @@ export const SCHEDULE_TARGET_RETRY_ATTEMPTS = 2;
 export const SCHEDULE_TARGET_MAX_EVENT_AGE = cdk.Duration.hours(1);
 
 /**
- * Ingestors whose many-app runs continue in a new invocation of their OWN function
- * once the time budget is reached (plugins/_shared/app_reviews_parts.py): each gets
- * `lambda:InvokeFunction` on exactly its own function ARN, on its dedicated role.
- */
-export const SELF_CONTINUING_INGESTORS: ReadonlySet<string> = new Set(['app_reviews_ios', 'app_reviews_android']);
-
-/**
  * The env var naming the import bucket on an S3-triggered ingestor
  * (plugins/s3_import/ingestor/handler.py IMPORT_BUCKET): records for any other bucket are skipped.
  */
@@ -417,11 +410,12 @@ export class VocIngestionStack extends VocStack {
     const functionName = this.uniqueName(ingestorFunctionBaseName(plugin.id));
 
     // A many-app run continues in a fresh invocation of its own function when it
-    // would not fit another app before the timeout (plugins/_shared/app_reviews_parts.py).
+    // would not fit another app before the timeout (plugins/_shared/app_reviews_parts.py):
+    // the plugin declares it in its manifest (`infrastructure.ingestor.selfInvoke`).
     // Only on the plugin's DEDICATED role (scheduled plugins have one), and only on
     // its own function, built from the NAME: a grant that GetAtts the function
     // would be a cycle (the function depends on this role's policy).
-    if (SELF_CONTINUING_INGESTORS.has(plugin.id) && scheduleRuleName) {
+    if (infra.selfInvoke && scheduleRuleName) {
       role.addToPolicy(new iam.PolicyStatement({
         actions: ['lambda:InvokeFunction'],
         resources: [this.formatArn({

@@ -90,7 +90,14 @@ const IngestorInfraSchema = z.object({
   // sessions of the AWS-managed AgentCore browser (aws.browser.v1) — the
   // web_reviews plugin. See ingestion-roles.ts.
   browser: z.boolean().optional().default(false),
+  // Opt-in capability: when true, a run that reaches its time budget continues in a
+  // new invocation of the plugin's OWN function (plugins/_shared/app_reviews_parts.py),
+  // so its dedicated role gets `lambda:InvokeFunction` on exactly that function.
+  selfInvoke: z.boolean().optional().default(false),
 });
+
+/** A webhook receiver's MemorySize when its manifest names none. */
+export const DEFAULT_WEBHOOK_MEMORY_MB = 256;
 
 const WebhookInfraSchema = z.object({
   enabled: z.boolean(),
@@ -98,6 +105,8 @@ const WebhookInfraSchema = z.object({
   methods: z.array(z.enum(['GET', 'POST', 'PUT', 'DELETE'])).max(4).default(['POST']),
   signatureHeader: z.string().max(64).regex(/^[A-Za-z0-9\-]+$/).optional(),
   signatureMethod: z.string().max(32).regex(/^[a-z_]+$/).optional(),
+  // The receiver's MemorySize (lib/sizing/policy.ts pins each one against its capacity evidence).
+  memory: z.number().int().min(128).max(1024).default(DEFAULT_WEBHOOK_MEMORY_MB),
 });
 
 const S3TriggerSchema = z.object({
@@ -109,6 +118,17 @@ const InfrastructureSchema = z.object({
   ingestor: IngestorInfraSchema.optional(),
   webhook: WebhookInfraSchema.optional(),
   s3Trigger: S3TriggerSchema.optional(),
+});
+
+/**
+ * What the PLATFORM does differently for this source's records, declared by the plugin instead of
+ * the platform naming plugin ids (TENETS.md tenet 5). Strict: a misspelt capability fails the load.
+ */
+const CapabilitiesSchema = z.strictObject({
+  // The source sends an item again whenever it changes (an issue tracker), and the processor
+  // refreshes the stored item in place instead of skipping it as a duplicate
+  // (lambda/shared/source_updates.py; the records must carry `issue_attributes`).
+  updatesItems: z.boolean().optional().default(false),
 });
 
 const IntegritySchema = z.object({
@@ -135,6 +155,7 @@ export const ManifestSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+$/, 'Version must be semver').optional(),
   minPlatformVersion: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
   integrity: IntegritySchema.optional(),
+  capabilities: CapabilitiesSchema.optional(),
 });
 
 // ============================================
@@ -446,6 +467,14 @@ export function secretConfigKeysByPlugin(plugins: PluginManifest[]): Record<stri
   return Object.fromEntries(plugins
     .map((plugin) => [plugin.id, plugin.config.filter((field) => field.secret).map((field) => field.key)] as const)
     .filter(([, keys]) => keys.length > 0));
+}
+
+/** A capability a plugin declares in its manifest's `capabilities` block. */
+export type PluginCapability = keyof z.infer<typeof CapabilitiesSchema>;
+
+/** The ids of the plugins declaring `capability`, sorted (an env value must not churn with disk order). */
+export function pluginIdsWithCapability(plugins: readonly PluginManifest[], capability: PluginCapability): string[] {
+  return plugins.filter((plugin) => plugin.capabilities?.[capability] === true).map((plugin) => plugin.id).sort(byCodeUnit);
 }
 
 export function getPluginsWithIngestor(plugins: PluginManifest[]): PluginManifest[] {

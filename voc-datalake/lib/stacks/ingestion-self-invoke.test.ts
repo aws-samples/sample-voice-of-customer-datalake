@@ -10,12 +10,20 @@ import type { Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { capitalize } from '../plugin-loader';
+import * as path from 'path';
+
+import { capitalize, loadPlugins } from '../plugin-loader';
+import { byCodeUnit } from '../utils/compare';
 import { flattenRefJoin } from '../test-support/cfn-join';
 import { type NormalizedStatement, roleStatements } from '../test-support/iam-statements';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
-import { SELF_CONTINUING_INGESTORS } from './ingestion-stack';
+
+/** The plugins whose manifest declares `infrastructure.ingestor.selfInvoke` (tenet 5: no id list in the stack). */
+const selfInvokingPlugins = (): string[] => loadPlugins(path.join(__dirname, '../../plugins'))
+  .filter((plugin) => plugin.infrastructure.ingestor?.selfInvoke === true)
+  .map((plugin) => plugin.id)
+  .sort(byCodeUnit);
 
 const FunctionSchema = z.object({ Properties: z.object({ FunctionName: z.unknown() }) });
 
@@ -37,8 +45,11 @@ describe('VocIngestionStack app-review self-invoke grants', () => {
     roleStatements(template, `IngestorRole${capitalize(pluginId)}DefaultPolicy`, { byIdPrefix: true }),
   );
 
+  it('reads the grant from the manifests: exactly the two app-review ingestors declare selfInvoke', () => {
+    expect(selfInvokingPlugins()).toStrictEqual(['app_reviews_android', 'app_reviews_ios']);
+  });
+
   it.each(['app_reviews_ios', 'app_reviews_android'])('lets %s invoke exactly its own function', (pluginId) => {
-    expect(SELF_CONTINUING_INGESTORS.has(pluginId)).toBe(true);
     const grants = grantsOf(pluginId);
     expect(grants.map((s) => s.actions)).toStrictEqual([['lambda:InvokeFunction']]);
     expect(grants.map((s) => flattenRefJoin(JSON.parse(s.resource)))).toStrictEqual([

@@ -52,6 +52,9 @@ os.environ.setdefault('SECRETS_ARN', 'arn:aws:secretsmanager:us-east-1:123456789
 os.environ.setdefault('RAW_DATA_BUCKET', 'test-raw-data-bucket')
 os.environ.setdefault('PROCESSING_QUEUE_URL', 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue')
 os.environ.setdefault('USER_POOL_ID', 'us-east-1_testpool')
+# What the processing stack renders from the manifests' `capabilities.updatesItems`
+# (pinned against plugins/*/manifest.json by shared/test/test_source_update_capability.py).
+os.environ.setdefault('UPDATE_CAPABLE_SOURCES', '["github_issues"]')
 
 # Add lambda directory to path for shared module imports
 lambda_dir = os.path.dirname(os.path.abspath(__file__))
