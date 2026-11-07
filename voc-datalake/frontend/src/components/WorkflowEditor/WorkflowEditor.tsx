@@ -29,6 +29,7 @@ import { API_WORKFLOW_LIMITS } from '../../api/workflowsApi'
 import type { CanvasSelection } from './selection'
 import type { SaveOutcome } from './useWorkflowEditor'
 import type { RestoredRevision } from './WorkflowHistory'
+import MethodologyWarnings from './MethodologyWarnings'
 import type { WorkflowDefinition, WorkflowNodeType, WorkflowView } from '../../api/workflowsApi'
 import type { ReactNode } from 'react'
 
@@ -255,6 +256,8 @@ function EditorBody({ editor, draft, workflow, canEdit, onSavedAs, notice, title
           {grouped.general.map((message) => <li key={message}>{workflowIssueText(t, message)}</li>)}
         </ul>
       )}
+
+      <MethodologyWarnings warnings={editor.methodologyWarnings} definition={draft} />
 
       <div className="grid gap-3 lg:grid-cols-[200px_minmax(0,1fr)_280px]">
         {/* Both side columns scroll, so both are focusable (a read-only editor
