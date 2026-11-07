@@ -16,6 +16,9 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { autofillPrfaq, suggestDocumentBrief } from './mock-ai-drafts.js';
+import {
+  NO_SOURCE_MESSAGE, documentRequestUse, generationMethodology, prototypeBlocked,
+} from './mock-methodology.js';
 
 // mock-server.js's MOCK_CALLER (admin-demo); its subject is what jobs and pins record.
 const MOCK_CALLER_SUB = 'sub-admin-demo';
@@ -148,6 +151,9 @@ function addVersionedDocument(shared, detail, type, requestedTitle, fields) {
 
 /** How many feedback items the mock "read" — the real count of the feedback fixture. */
 const feedbackCount = (shared) => (Array.isArray(shared.mockFeedback) ? shared.mockFeedback.length : 0);
+
+/** A route answer `[status, payload]` with the request's methodology block added (shared/methodology.py). */
+const withMethodology = ([status, payload], block) => [status, { ...payload, methodology: block }];
 
 /**
  * The fixture feedback a body's filters match: the F1 pre-check of POST .../personas/generate
@@ -564,7 +570,9 @@ function startResearch(ctx) {
   // step handler's `config.get('title', 'Research: …')` default never applies.
   const title = stringOr(ctx.body.title, '');
   if (!anyFeedbackMatches(ctx.shared, ctx.body)) return bad(RESEARCH_NO_FEEDBACK_MESSAGE);
-  return startJob(ctx.projectId, {
+  // Research reads personas only when some are selected (api_run_research).
+  const block = generationMethodology(ctx.detail, 'research', { personas: stringList(ctx.body.selected_persona_ids).length > 0 });
+  return withMethodology(startJob(ctx.projectId, {
     jobType: 'research', status: 'pending', message: 'Research started.',
     runningStep: 'analyzing_feedback', errorMessage: 'Research failed',
     complete: (detail) => {
@@ -575,7 +583,7 @@ function startResearch(ctx) {
       });
       return { document_id: doc.document_id, title: doc.title };
     },
-  });
+  }), block);
 }
 
 function startDocumentGeneration(ctx) {
@@ -585,15 +593,22 @@ function startDocumentGeneration(ctx) {
   }
   const [title] = splitVersionedTitle(stringOr(ctx.body.title, 'Untitled'));
   const featureIdea = stringOr(ctx.body.feature_idea, '');
-  return startJob(ctx.projectId, {
+  // Feedback ON unless the body says false (methodology.data_sources_with_defaults).
+  const used = documentRequestUse(ctx.detail, ctx.body);
+  const block = generationMethodology(ctx.detail, docType, used);
+  return withMethodology(startJob(ctx.projectId, {
     jobType: `generate_${docType}`, status: 'pending', message: `${docType.toUpperCase()} generation started.`,
     runningStep: 'generating_document', errorMessage: 'Document generation failed',
     complete: (detail) => {
       const content = docType === 'prd' ? prdContent(title, featureIdea, detail) : prfaqContent(title, featureIdea);
-      const doc = addVersionedDocument(ctx.shared, detail, docType, title, { feature_idea: featureIdea, content });
-      return { document_id: doc.document_id, title: doc.title };
+      // The generator stores the final block: the forecast plus the evidence that reached the prompt.
+      const evidence = used.feedback ? feedbackCount(ctx.shared) : 0;
+      const doc = addVersionedDocument(ctx.shared, detail, docType, title, {
+        feature_idea: featureIdea, content, methodology: generationMethodology(detail, docType, used, { evidence }),
+      });
+      return { document_id: doc.document_id, title: doc.title, methodology: doc.methodology };
     },
-  });
+  }), block);
 }
 
 /** POST /projects/{id}/document for another mock module (mock-decisions.js "Pursue"). */
@@ -836,13 +851,16 @@ function prototypeConfig(ctx) {
 function startPrototypeBuild(ctx) {
   const [config, error] = prototypeConfig(ctx);
   if (error) return error;
-  return startJob(ctx.projectId, {
+  // Refused before any job row (api_build_prototype, tenet 2), no longer a failed job.
+  if (prototypeBlocked(ctx.detail)) return [409, { success: false, error: NO_SOURCE_MESSAGE }];
+  const block = generationMethodology(ctx.detail, 'prototype');
+  return withMethodology(startJob(ctx.projectId, {
     jobType: 'build_prototype', status: 'pending', message: 'Prototype build started.',
     runningStep: 'invoking_bedrock', errorMessage: 'Document generation failed',
     complete: (detail) => {
       const prd = config.prd ? findDocument(detail, config.prd) : newestOfType(detail, 'prd');
       const prfaq = config.prfaq ? findDocument(detail, config.prfaq) : newestOfType(detail, 'prfaq');
-      if (!prd && !prfaq) throw new Error('No PRD or PR/FAQ found for this project. Generate at least one first.');
+      if (!prd && !prfaq) throw new Error(NO_SOURCE_MESSAGE);
       // Inline HTML (the legacy srcDoc path): the mock has no signed CloudFront URL to mint.
       const title = config.title ?? defaultPrototypeTitle(prd, prfaq, `Prototype: ${detail.project?.name ?? 'Project'}`);
       const doc = addVersionedDocument(ctx.shared, detail, 'prototype', title, {
@@ -850,10 +868,11 @@ function startPrototypeBuild(ctx) {
         prototype_format: 'html',
         source_prd_id: prd?.document_id ?? null, source_prfaq_id: prfaq?.document_id ?? null,
         ...(config.feedback ? { revised_from_id: config.base, revision_feedback: config.feedback.slice(0, 2000) } : {}),
+        methodology: block,
       });
       return { document_id: doc.document_id, title: doc.title };
     },
-  });
+  }), block);
 }
 
 // ── AI helpers (assist jobs: their answer is the job `result`, see `assisted`) ──
