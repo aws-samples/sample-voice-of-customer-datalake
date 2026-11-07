@@ -29,8 +29,8 @@ from shared import mcp_global_tokens as gt
 READ_TOOLS = {'search_feedback', 'get_feedback', 'get_metrics', 'list_categories', 'list_dimensions',
               'search_memory',
               'get_company_context', 'list_projects', 'get_project', 'get_document', 'list_agents',
-              'get_agent_run', 'search_feature_requests'}
-WRITE_TOOLS = {'create_document', 'update_document'}
+              'get_agent_run', 'search_feature_requests', 'get_job', 'read_radar'}
+WRITE_TOOLS = {'create_document', 'update_document', 'generate', 'edit_feedback'}
 
 
 @pytest.fixture
