@@ -34,6 +34,7 @@ from handler_events_fixtures import keyed_get_item, project_meta_table
 from module_reload_fixtures import reload_cycle
 
 import projects_handler
+from shared import methodology
 from shared.category_access import SCOPE_CONFIG_KEY, CategoryScope
 from shared.exceptions import AuthorizationError, ConfigurationError, ServiceError
 from shared.project_access import ROLE_ADMIN, Caller, ProjectAccess
@@ -251,7 +252,8 @@ class TestThePersonaJobs:
 
 # Board requests as evidence are opt-in (shared/feature_request_context.py): what a body without them stores.
 NO_FEATURE_REQUESTS = {'include_feature_requests': False, 'feature_request_board_ids': None}
-NO_DOCUMENT_FEATURE_REQUESTS = {'data_sources': {'feature_requests': False}, 'feature_request_board_ids': None}
+NO_DOCUMENT_FEATURE_REQUESTS = {'data_sources': {'feature_requests': False, 'feedback': True},
+                                'feature_request_board_ids': None}
 RESEARCH_DEFAULTS = {
     'question': 'What are the main customer pain points?', 'title': '', 'sources': [],
     'categories': [], 'sentiments': [], 'days': 30, 'date_basis': 'imported',
@@ -271,7 +273,8 @@ class TestTheResearchJob:
         monkeypatch.setenv('RESEARCH_STATE_MACHINE_ARN', 'arn:research')
         status, body, _ = world.call('POST', '/projects/p1/research')
         assert (status, body) == (200, {'success': True, 'job_id': 'job-1', 'status': 'pending',
-                                        'message': 'Research started.'})
+                                        'message': 'Research started.',
+                                        'methodology': methodology.assess('research', [])})
         _started(world, 'research', 'research_config', RESEARCH_DEFAULTS, status='pending')
         world.boto_client.assert_called_once_with('stepfunctions')
         world.sfn.start_execution.assert_called_once_with(
@@ -328,10 +331,11 @@ class TestTheDocumentJob:
         monkeypatch.setenv('DOCUMENT_STATE_MACHINE_ARN', 'arn:doc')
         status, body, _ = world.call('POST', '/projects/p1/document',
                                      body={'doc_type': doc_type, 'title': 'Spec (v3)', 'x': 1})
+        assessment = methodology.assess(doc_type, [])
         config = {'doc_type': doc_type, 'title': 'Spec', 'x': 1, **NO_DOCUMENT_FEATURE_REQUESTS,
-                  SCOPE_CONFIG_KEY: SCOPE_CONFIG}
+                  SCOPE_CONFIG_KEY: SCOPE_CONFIG, 'methodology': assessment}
         assert (status, body) == (200, {'success': True, 'job_id': 'job-1', 'status': 'pending',
-                                        'message': message})
+                                        'message': message, 'methodology': assessment})
         _started(world, f'generate_{doc_type}', 'doc_config', config, status='pending')
         world.boto_client.assert_called_once_with('stepfunctions')
         world.sfn.start_execution.assert_called_once_with(
@@ -343,7 +347,7 @@ class TestTheDocumentJob:
     def test_without_a_state_machine_the_generator_is_invoked(self, world):
         world.call('POST', '/projects/p1/document', body={'x': 1})
         config = {'x': 1, 'doc_type': 'prd', 'title': 'Untitled', **NO_DOCUMENT_FEATURE_REQUESTS,
-                  SCOPE_CONFIG_KEY: SCOPE_CONFIG}
+                  SCOPE_CONFIG_KEY: SCOPE_CONFIG, 'methodology': methodology.assess('prd', [])}
         world.invoke.assert_called_once_with(
             projects_handler.DOCUMENT_GENERATOR_FUNCTION,
             {'project_id': 'p1', 'job_id': 'job-1', 'doc_config': config},

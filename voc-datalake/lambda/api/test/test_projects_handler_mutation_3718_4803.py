@@ -43,7 +43,7 @@ from projects_handler import (
     _bounded_chat_context_response,
     lambda_handler,
 )
-from shared import project_access, prototype_pins
+from shared import methodology, project_access, prototype_pins
 from shared.row_ids import MAX_KEY_SEGMENT_ID_LEN
 from shared.test.instrumentation_fixtures import assert_handler_wrapped, assert_tracer_wrapped
 
@@ -458,6 +458,8 @@ class TestTheGeneratorJobs:
             'source_prd_id': 'prd_1', 'source_prfaq_id': None, 'use_product_context': True,
             'use_research': False, 'use_design_system': True, 'selected_research_ids': [],
             'selected_product_doc_ids': [],
+            # The build reads a PRD; it has no PR/FAQ, which the block says (tenet 2).
+            'methodology': methodology.build('prototype', [{'step': 'prfaq', 'reason': 'missing'}]),
         }
         assert config == expected
         create_job.assert_called_once_with('proj-1', 'build_prototype', 'doc_config', expected,
@@ -466,7 +468,7 @@ class TestTheGeneratorJobs:
             'doc-gen', {'project_id': 'proj-1', 'job_id': 'job_1', 'doc_config': expected})
         assert json.loads(response['body']) == {
             'success': True, 'job_id': 'job_1', 'status': 'pending',
-            'message': 'Prototype build started.',
+            'message': 'Prototype build started.', 'methodology': expected['methodology'],
         }
 
     def test_a_bad_base_prototype_id_names_its_field(self, api_gateway_event, lambda_context):

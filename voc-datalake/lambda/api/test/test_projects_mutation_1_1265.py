@@ -829,7 +829,7 @@ class TestGetProject:
         assert project['owner_email'] == 'owner@example.com'
         assert project['access'] == {'role': 'owner', 'can_view': True, 'can_edit': True, 'can_manage': True}
         assert project['members'] == project_access.public_members(_meta())
-        assert set(result) == {'project', 'personas', 'documents'}
+        assert set(result) == {'project', 'personas', 'documents', 'methodology'}
 
     def test_an_internal_read_redacts_every_email_and_computes_no_sharing(self):
         with patch.object(projects, '_query_partition_items', return_value=self._partition()), \

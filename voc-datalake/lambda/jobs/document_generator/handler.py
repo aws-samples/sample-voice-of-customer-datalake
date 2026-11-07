@@ -48,7 +48,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from shared import category_access
+from shared import category_access, methodology
 from shared.api import validate_date_basis
 from shared.aws import get_dynamodb_resource, get_s3_client
 from shared.company_context import company_context_block, design_system_block
@@ -149,6 +149,8 @@ class GatheredContext(NamedTuple):
     feedback: FeedbackSample
     # Board requests that reached the prompts (``data_sources.feature_requests``), in prompt order.
     feature_request_ids: tuple[str, ...] = ()
+    # Selected reference documents the cap left out (M7), recorded in the methodology block.
+    skipped_document_ids: tuple[str, ...] = ()
 
 
 def _gather_context(
@@ -171,10 +173,13 @@ def _gather_context(
     used_sources: list[dict] = []
     used_persona_ids: list[str] = []
     selected_document_count = 0
+    skipped_document_ids: tuple[str, ...] = ()
 
     # Gather feedback
     feedback = NO_FEEDBACK
-    if data_sources.get('feedback'):
+    # ON unless the request says false (M1): the route stores the default, and a job
+    # config from before it (no `data_sources`) reads feedback too.
+    if data_sources.get('feedback', True) is not False:
         ctx.update_progress(20, 'fetching_feedback')
         feedback = _feedback_context(feedback_table, doc_config)
     feedback_context = feedback.context
@@ -198,6 +203,7 @@ def _gather_context(
         if wants_documents:
             ctx.update_progress(40, 'fetching_documents')
             doc_text, used_sources, selected_document_count = _reference_documents(all_project_items, doc_config)
+            skipped_document_ids = _capped_reference_ids(all_project_items, doc_config)
             if doc_text:
                 feedback_context = f"{feedback_context}\n\n{doc_text}" if feedback_context else doc_text
 
@@ -207,7 +213,26 @@ def _gather_context(
         'feedback_count': feedback.items_used,
         'persona_ids': used_persona_ids,
     }
-    return GatheredContext(feedback_context, personas_context, inputs, feedback, feature_requests.ids)
+    return GatheredContext(feedback_context, personas_context, inputs, feedback, feature_requests.ids,
+                           skipped_document_ids)
+
+
+def _final_methodology(doc_config: dict, gathered: GatheredContext) -> dict:
+    """The methodology block stored on the document and the job result (shared/methodology.py).
+
+    The route's forecast names the upstream steps skipped; the job adds what only it
+    knows: the evidence that reached the prompts and the reference documents the cap
+    left out. A job config from before the forecast existed starts from no skipped steps.
+    """
+    forecast = doc_config.get('methodology')
+    skipped = forecast.get('skipped', []) if isinstance(forecast, dict) else []
+    extra = []
+    if gathered.skipped_document_ids:
+        extra.append(methodology.documents_skipped_warning(
+            list(gathered.skipped_document_ids), REFERENCE_DOCUMENT_CAP))
+    evidence = gathered.feedback.items_used + len(gathered.feature_request_ids)
+    return methodology.build(str(doc_config.get('doc_type') or 'prd'), list(skipped),
+                             evidence=evidence, extra_warnings=extra)
 
 
 def _derivation(gathered: GatheredContext, product_context_included: bool, grounding: Grounding) -> dict:
@@ -286,24 +311,39 @@ def _persona_context(project_items: list, doc_config: dict) -> tuple[str, list[s
     return context, [pid for p in personas if (pid := p.get('persona_id'))]
 
 
-def _reference_documents(project_items: list, doc_config: dict) -> tuple[str, list[dict], int]:
-    """The reference-documents block, the derivation sources that reached it,
-    and how many documents were selected."""
+#: How many reference documents reach a PR/FAQ / PRD prompt; the rest are recorded as skipped (M7).
+REFERENCE_DOCUMENT_CAP = 3
+
+
+def _selected_reference_docs(project_items: list, doc_config: dict) -> list:
+    """The project documents a request selected (every one when it names none), in partition order."""
     selected_ids = doc_config.get('selected_document_ids', [])
     docs = [i for i in project_items if str(i.get('sk')).startswith(('RESEARCH#', 'PRD#', 'PRFAQ#', 'DOC#'))]
     if selected_ids:
         docs = [d for d in docs if d.get('document_id') in selected_ids]
+    return docs
+
+
+def _capped_reference_ids(project_items: list, doc_config: dict) -> tuple[str, ...]:
+    """The ids of the selected reference documents past the cap: they never reach the prompt."""
+    docs = _selected_reference_docs(project_items, doc_config)[REFERENCE_DOCUMENT_CAP:]
+    return tuple(str(d.get('document_id')) for d in docs if d.get('document_id'))
+
+
+def _reference_documents(project_items: list, doc_config: dict) -> tuple[str, list[dict], int]:
+    """The reference-documents block, the derivation sources that reached it,
+    and how many documents were selected."""
+    selected_ids = doc_config.get('selected_document_ids', [])
+    docs = _selected_reference_docs(project_items, doc_config)
     if not docs:
         return '', [], len(selected_ids)
     doc_parts = []
     used_sources: list[dict] = []
-    # The [:3] cap silently drops the rest of the selection. Recording
-    # each document from THIS loop (rather than from selected_ids) is
-    # what makes the recorded provenance the documents that actually
-    # reached the model; the selected count states how many were asked
-    # for, so the drop is visible. The cap itself is a separate known
-    # issue and is deliberately left alone.
-    for d in docs[:3]:
+    # The cap drops the rest of the selection; `_capped_reference_ids` records the
+    # dropped ones in the methodology block (M7). Recording each document from THIS
+    # loop (rather than from selected_ids) is what makes the recorded provenance the
+    # documents that actually reached the model.
+    for d in docs[:REFERENCE_DOCUMENT_CAP]:
         doc_parts.append(f"### {d.get('title', 'Untitled')}\n{d.get('content', '')[:3000]}")
         source = derivation_source(d.get('document_id'), ROLE_REFERENCE)
         if source:
@@ -714,7 +754,8 @@ def _date_basis_fields(doc_config: dict) -> dict:
 
 def _document_item_fields(project_id: str, job_id: str, feature_idea: str,
                           content: str, derivation: dict, analysis: dict,
-                          feedback_usage: dict, date_basis_fields: dict) -> dict:
+                          feedback_usage: dict, date_basis_fields: dict,
+                          methodology_block: dict | None = None) -> dict:
     """The versioned-document item fields shared by the sync and step-function paths.
 
     ``feedback_usage`` is ``_stashed_feedback_fields``' output (counts + corpus ids) and
@@ -735,6 +776,9 @@ def _document_item_fields(project_id: str, job_id: str, feature_idea: str,
     }
     if analysis:
         item_fields['analysis'] = analysis
+    if methodology_block:
+        # The gap is on the artifact (tenet 2): skipped steps, evidence count, warnings.
+        item_fields['methodology'] = methodology_block
     return item_fields
 
 
@@ -1514,6 +1558,11 @@ def _generate_prototype(ctx, projects_table, project_id: str, job_id: str, doc_c
         # decision), so the revision fields stay as they are.
         item_fields['revised_from_id'] = base_prototype_id or None
         item_fields['revision_feedback'] = feedback[:2000]
+    # The source the build read without: a PRD or a PR/FAQ it could not find (tenet 2).
+    item_fields['methodology'] = methodology.build('prototype', [
+        {'step': step, 'reason': methodology.REASON_MISSING}
+        for step, doc in (('prd', prd), ('prfaq', prfaq)) if not doc
+    ])
     item = persist_versioned_document(
         projects_table,
         project_id,
@@ -1610,12 +1659,14 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
 
     ctx.update_progress(90, 'saving_document')
     feedback_fields = _stashed_feedback_fields(gathered.feedback)
+    methodology_block = _final_methodology(doc_config, gathered)
     item_fields = _document_item_fields(
         project_id, job_id, feature_idea, content,
         _derivation(gathered, product_context_included, grounding),
         analysis,
         feedback_fields,
         _date_basis_fields(doc_config),
+        methodology_block,
     )
 
     item = persist_versioned_document(
@@ -1626,7 +1677,8 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
         job_id,
         item_fields,
     )
-    return {'document_id': item['document_id'], 'title': item['title'], **_without_corpus_ids(feedback_fields)}
+    return {'document_id': item['document_id'], 'title': item['title'], **_without_corpus_ids(feedback_fields),
+            'methodology': methodology_block}
 
 
 # ── Step Functions step handlers ─────────────────────────────────────────────
@@ -1709,6 +1761,11 @@ def _read_feedback_usage(job_id: str) -> dict:
     return {**_without_corpus_ids(stashed), **input_feedback_fields(ids or [])}
 
 
+def _read_methodology(job_id: str) -> dict:
+    """The methodology block the gather step stashed, or ``{}`` (an execution gathered before it: no block)."""
+    return _read_scratch_json(job_id, 'methodology', {}, 'methodology')
+
+
 def _read_date_basis(job_id: str) -> dict:
     """The date basis the gather step stashed (re-validated), or ``{}`` (unknown — omitted)."""
     stashed = _read_scratch_json(job_id, 'date_basis', {}, 'date basis')
@@ -1782,6 +1839,8 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     )
     # And for the date basis the feedback was read with (#258).
     _put_text(_scratch_key(job_id, 'date_basis'), _json.dumps(_date_basis_fields(doc_config)))
+    # And for the methodology block (shared/methodology.py): what the save step stores on the document.
+    _put_text(_scratch_key(job_id, 'methodology'), _json.dumps(_final_methodology(doc_config, gathered)))
     # And for the model profile (shared/model_profile.py): run_step gets only ids from the state.
     _put_text(_scratch_key(job_id, 'model_profile'), _json.dumps(payload_fields()))
 
@@ -1849,9 +1908,10 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
     content, analysis = spec.assemble(ChainOutput(title, results))
 
     feedback_fields = _read_feedback_usage(job_id)
+    methodology_block = _read_methodology(job_id)
     item_fields = _document_item_fields(
         project_id, job_id, feature_idea, content, _read_derivation(job_id), analysis,
-        feedback_fields, _read_date_basis(job_id),
+        feedback_fields, _read_date_basis(job_id), methodology_block,
     )
 
     item = persist_versioned_document(
@@ -1870,13 +1930,15 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
             {'Key': _scratch_key(job_id, 'derivation')},
             {'Key': _scratch_key(job_id, 'feedback_usage')},
             {'Key': _scratch_key(job_id, 'date_basis')},
+            {'Key': _scratch_key(job_id, 'methodology')},
             *({'Key': _scratch_key(job_id, f'result_{i}')} for i in range(num_steps)),
         ]
         _s3().delete_objects(Bucket=SCRATCH_BUCKET, Delete={'Objects': keys})
     except Exception:
         logger.exception("Scratch cleanup failed (non-fatal)")
 
-    result = {'document_id': item['document_id'], 'title': item['title'], **_without_corpus_ids(feedback_fields)}
+    result = {'document_id': item['document_id'], 'title': item['title'], **_without_corpus_ids(feedback_fields),
+              **({'methodology': methodology_block} if methodology_block else {})}
     update_job_status(
         project_id, job_id, 'completed', 100, 'complete', result=result,
     )

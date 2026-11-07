@@ -92,6 +92,7 @@ from shared import (
     document_series,
     draft_intent,
     feature_request_context,
+    methodology,
     model_profile,
     persona_copy_routes,
     project_access,
@@ -119,6 +120,7 @@ from shared.company_personas import is_company_container
 from shared.data_version import bump_config_version
 from shared.delete_audit import actor_from_event
 from shared.document_versions import MERGE_OUTPUT_TYPES, MERGE_VERSIONED_DOCUMENT_TYPES, split_versioned_title
+from shared.dynamo_paging import query_all
 from shared.exceptions import (
     ApiError,
     AuthorizationError,
@@ -381,6 +383,15 @@ def _require_project_exists(project_id: str) -> None:
     meta = _gate_meta(project_id)
     if not meta or is_project_tombstone(meta):
         raise NotFoundError(project_gate.PROJECT_NOT_FOUND)
+
+
+def _methodology_items(project_id: str) -> list[dict]:
+    """The keys of one project's artifacts, enough for shared/methodology.py (no content read)."""
+    return query_all(get_projects_table(), {
+        'KeyConditionExpression': Key('pk').eq(f'PROJECT#{project_id}'),
+        'ConsistentRead': True,
+        'ProjectionExpression': 'sk, document_id, persona_id',
+    })
 
 
 def _started_job(
@@ -809,7 +820,12 @@ def api_run_research(project_id: str):
             category_scope=research_config[category_access.SCOPE_CONFIG_KEY],
         )
 
-    return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Research started.'}
+    # Research reads personas only when some are selected: say so when it runs without.
+    selected_personas = research_config['selected_persona_ids']
+    assessment = methodology.assess('research', _methodology_items(project_id),
+                                    used={'personas': bool(selected_personas)})
+    return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': 'Research started.',
+            'methodology': assessment}
 
 
 DEFAULT_GENERATED_DOC_TYPE = 'prd'
@@ -937,18 +953,29 @@ def api_generate_document(project_id: str):
     # `doc_config.get('doc_type', 'prd')` reads an explicit null as null rather
     # than as the default, and a null crashes it on `.upper()` after the job row
     # already exists.
+    options = feature_request_context.document_options(body)
+    # Feedback ON unless the body says false (M1): a headless POST that names no
+    # data sources still grounds the document in customer evidence.
+    options['data_sources'] = methodology.data_sources_with_defaults(options['data_sources'])
     doc_config = {
         **body, 'doc_type': doc_type, 'title': title,
-        **feature_request_context.document_options(body),
+        **options,
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
-    job_id = _start_document_generation(project_id, doc_config)
-    return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': f'{doc_type.upper()} generation started.'}
+    job_id, assessment = _start_document_generation(project_id, doc_config)
+    return {'success': True, 'job_id': job_id, 'status': 'pending', 'message': f'{doc_type.upper()} generation started.',
+            'methodology': assessment}
 
 
-def _start_document_generation(project_id: str, doc_config: dict) -> str:
-    """Create the job row and start a validated PRD / PR-FAQ generation; answers the job id."""
+def _start_document_generation(project_id: str, doc_config: dict) -> tuple[str, dict]:
+    """Create the job row and start a validated PRD / PR-FAQ generation.
+
+    Answers the job id and the request's methodology assessment (shared/methodology.py),
+    which also rides in the job config so the generator can finish it on the document.
+    """
     doc_type = doc_config['doc_type']
+    assessment = methodology.for_document_request(doc_type, _methodology_items(project_id), doc_config)
+    doc_config['methodology'] = assessment
     job_id = _started_job(project_id, f'generate_{doc_type}', 'doc_config', doc_config, status='pending')
 
     state_machine_arn = os.environ.get('DOCUMENT_STATE_MACHINE_ARN', '')
@@ -973,7 +1000,7 @@ def _start_document_generation(project_id: str, doc_config: dict) -> str:
             'job_id': job_id,
             'doc_config': doc_config
         })
-    return job_id
+    return job_id, assessment
 
 
 # ============================================
@@ -1007,12 +1034,12 @@ def api_pursue_decision(project_id: str, document_id: str):
         **decision_records.pursue_doc_config(decision, json_object_body(app)),
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
-    job_id = _start_document_generation(project_id, doc_config)
+    job_id, assessment = _start_document_generation(project_id, doc_config)
     decision_records.record_seeded_prfaq(table, decision, job_id)
     return Response(
         status_code=202,
         content_type=content_types.APPLICATION_JSON,
-        body=json.dumps({'success': True, 'job_id': job_id, 'status': 'pending'}),
+        body=json.dumps({'success': True, 'job_id': job_id, 'status': 'pending', 'methodology': assessment}),
     )
 
 
@@ -4966,7 +4993,15 @@ def api_build_prototype(project_id: str):
             project_id, body.get('selected_product_doc_ids'), 'selected_product_doc_ids',
         ),
     }
-    return _started_generator_job(project_id, 'build_prototype', doc_config, 'Prototype build started.')
+    # The no-source build used to fail only inside the job, after this 202: it is
+    # refused here now (409), before any job row (tenet 2, shared/methodology.py).
+    assessment = methodology.for_prototype_request(_methodology_items(project_id))
+    if methodology.is_blocked(assessment):
+        _require_project_exists(project_id)
+        raise ConflictError('No PRD or PR/FAQ found for this project. Generate at least one first.')
+    doc_config['methodology'] = assessment
+    return {**_started_generator_job(project_id, 'build_prototype', doc_config, 'Prototype build started.'),
+            'methodology': assessment}
 
 
 @app.post("/projects/<project_id>/product-report")

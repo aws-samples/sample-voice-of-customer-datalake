@@ -40,6 +40,16 @@ def build_prototype_against(documents, body, api_gateway_event, lambda_context, 
 
     table.get_item.side_effect = get_item
 
+    def query(**kwargs):
+        # The route's methodology read (shared/methodology.py): the partition's keys.
+        # Answered from the same documents, filtered by the queried partition.
+        condition = kwargs.get('KeyConditionExpression')
+        values = getattr(condition, '_values', ())
+        partition = values[1] if len(values) > 1 else None
+        return {'Items': [{'sk': sk, **doc} for (pk, sk), doc in documents.items() if pk == partition]}
+
+    table.query.side_effect = query
+
     with patch('projects_handler.get_projects_table', return_value=table), \
             patch('projects_handler.create_job', return_value=('job_1', {})) as create_job, \
             patch('projects_handler.invoke_lambda_async') as invoke:

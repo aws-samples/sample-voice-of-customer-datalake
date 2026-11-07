@@ -99,13 +99,22 @@ def _projects_table(items: list[dict]) -> MagicMock:
 class TestGatherContext:
     def test_nothing_requested_reads_nothing_and_records_zeroes(self):
         ctx, projects, feedback = MagicMock(), _projects_table([]), MagicMock()
-        gathered = handler._gather_context(ctx, projects, feedback, 'p1', {'data_sources': {}})
+        gathered = handler._gather_context(ctx, projects, feedback, 'p1', {'data_sources': {'feedback': False}})
         assert gathered == handler.GatheredContext(
             '', '', {'sources': [], 'selected_document_count': 0, 'feedback_count': 0, 'persona_ids': []},
             handler.FeedbackSample('', 0, False),
         )
         assert projects.query.call_count == 0
         assert ctx.update_progress.call_count == 0
+
+    @pytest.mark.parametrize('doc_config', [{}, {'data_sources': {}}, {'data_sources': {'personas': False}}])
+    def test_feedback_is_read_unless_turned_off(self, doc_config):
+        # M1: an absent `feedback` reads feedback (a headless request grounds the document).
+        ctx = MagicMock()
+        with patch.object(handler, '_feedback_context', return_value=handler.FeedbackSample('FB', 2, False)) as read:
+            gathered = handler._gather_context(ctx, _projects_table([]), MagicMock(), 'p1', doc_config)
+        read.assert_called_once()
+        assert gathered.feedback.items_used == 2
 
     def test_each_source_reports_its_progress_in_order(self):
         ctx = MagicMock()
