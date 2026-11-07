@@ -470,7 +470,7 @@ class TestWorkflowLibrary:
         with _api():
             status, body = _call(lambda_context, 'POST', '/workflows/validate', claims=USER,
                                  body={'definition': workflow_schema.default_template()})
-            assert (status, body) == (200, {'valid': True, 'errors': []})
+            assert (status, body) == (200, {'valid': True, 'errors': [], 'warnings': []})
 
     def test_validate_diffs_even_an_invalid_definition(self, lambda_context):
         with _api():
@@ -567,3 +567,21 @@ class TestTheRoutesAreInstrumented:
     def test_the_handler_is_wrapped_by_api_handler(self):
         handler = agents_handler.lambda_handler
         assert handler_layers(handler) == API_HANDLER_LAYERS
+
+
+class TestValidateMethodologyWarnings:
+    def test_a_prd_alone_is_valid_with_warnings(self, lambda_context):
+        template = workflow_schema.default_template()
+        start = next(n for n in template['nodes'] if n['type'] == 'start')
+        end = next(n for n in template['nodes'] if n['type'] == 'end')
+        prd = {**start, 'id': 'prd', 'type': 'write_prd', 'data': {'title': 'Write the PRD', 'params': {}}}
+        definition = {**template, 'nodes': [start, prd, end], 'loops': [], 'edges': [
+            {'id': 'e1', 'source': start['id'], 'target': 'prd'},
+            {'id': 'e2', 'source': 'prd', 'target': end['id']},
+        ]}
+        with _api():
+            status, body = _call(lambda_context, 'POST', '/workflows/validate', claims=USER,
+                                 body={'definition': definition})
+        assert (status, body['valid'], body['errors']) == (200, True, [])
+        assert [w['code'] for w in body['warnings']] == [
+            'no_upstream_evidence', 'no_upstream_personas', 'no_upstream_prfaq']
