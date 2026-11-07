@@ -73,11 +73,11 @@ const WORKSPACE_CASES: WriteRequestCase[] = [
     request: { fn: 'scrapers', method: 'POST', path: '/scrapers', resource: '/scrapers', body: { scraper: {
       id: 'acme', name: 'Acme', extraction_method: 'jsonld', base_url: 'https://www.acme.example/r', enabled: false, urls: [], frequency_minutes: 0,
       container_selector: '', text_selector: '', pagination: { enabled: false, param: 'page', max_pages: 1, start: 1 },
-    } } },
+    }, mode: 'create' } },
   },
   {
     tool: 'create_app_connector', args: { source: 'app_reviews_ios', app_name: 'ExampleAir iOS', app_id: '1234567890' },
-    request: { fn: 'integrations', method: 'POST', path: '/integrations/app_reviews_ios/apps', resource: '/integrations/{source}/{proxy+}', pathParameters: { source: 'app_reviews_ios', proxy: 'apps' }, body: { app: { app_name: 'ExampleAir iOS', app_id: '1234567890', sort_by: 'most_recent', max_reviews_per_run: '500', frequency_minutes: '0' } } },
+    request: { fn: 'integrations', method: 'POST', path: '/integrations/app_reviews_ios/apps', resource: '/integrations/{source}/{proxy+}', pathParameters: { source: 'app_reviews_ios', proxy: 'apps' }, body: { app: { app_name: 'ExampleAir iOS', app_id: '1234567890', sort_by: 'most_recent', max_reviews_per_run: '500', frequency_minutes: '0' }, mode: 'create' } },
   },
   { tool: 'run_source', args: { source: 'app_reviews_ios' }, request: { fn: 'integrations', method: 'POST', path: '/sources/app_reviews_ios/run', resource: '/sources/{source}/{proxy+}', pathParameters: { source: 'app_reviews_ios', proxy: 'run' } } },
   { tool: 'set_source_enabled', args: { source: 'webscraper', enabled: false }, request: { fn: 'integrations', method: 'PUT', path: '/sources/webscraper/disable', resource: '/sources/{source}/{proxy+}', pathParameters: { source: 'webscraper', proxy: 'disable' } } },
@@ -119,7 +119,7 @@ export const UPDATE_SCRAPER_CASE: WriteRequestCase & { stored: Record<string, un
   request: { fn: 'scrapers', method: 'POST', path: '/scrapers', resource: '/scrapers', body: { scraper: {
     id: 'sc_1', name: 'Renamed', enabled: true, extraction_method: 'jsonld', created_at: '2026-01-01', base_url: '', urls: [], frequency_minutes: 0,
     container_selector: '', text_selector: '', pagination: { enabled: true, param: 'p', max_pages: 3, start: 1 },
-  } } },
+  }, mode: 'update' } },
 };
 
 export const WRITE_REQUEST_CASES: readonly WriteRequestCase[] = [...PROJECT_CASES, ...WORKSPACE_CASES];
@@ -131,6 +131,6 @@ export const WEB_REVIEWS_CONNECTOR_CASE: WriteRequestCase = {
   request: {
     fn: 'integrations', method: 'POST', path: '/integrations/web_reviews/apps', resource: '/integrations/{source}/{proxy+}',
     pathParameters: { source: 'web_reviews', proxy: 'apps' },
-    body: { app: { app_name: 'ExampleAir Trustpilot', url: 'https://www.trustpilot.com/review/www.example-air.com', max_pages: '10', max_reviews: '0', frequency_minutes: '0', radar_brand: 'example-air' } },
+    body: { app: { app_name: 'ExampleAir Trustpilot', url: 'https://www.trustpilot.com/review/www.example-air.com', max_pages: '10', max_reviews: '0', frequency_minutes: '0', radar_brand: 'example-air' }, mode: 'create' },
   },
 };
