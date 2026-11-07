@@ -2,13 +2,14 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "b824bdf08405995c6b408aaac6ec367f14f6231c9bea8e4be970219adb3a9229",
+      "templateSha256": "936c8c623b147e65d2f49cfeca227dda8dfe9c0116bebae513ff82a4cb38f230",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
           "AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer",
           "AWS::ApiGateway::Authorizer Name = voc-mcp-token-authorizer",
           "AWS::ApiGateway::RestApi Name = voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
+          "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
           "AWS::Cognito::UserPoolClient ClientName = voc-mcp-claude-code-<AWS::AccountId>-<AWS::Region>",
           "AWS::Cognito::UserPoolClient ClientName = voc-mcp-cursor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Cognito::UserPoolClient ClientName = voc-mcp-kiro-<AWS::AccountId>-<AWS::Region>",
@@ -75,6 +76,7 @@
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-users-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-webhook-github_issues-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/stepfunctions/voc-document-workflow-<AWS::AccountId>-<AWS::Region>",
+          "AWS::SSM::Parameter Name = /voc/realtime/event-api-http-dns",
           "AWS::StepFunctions::StateMachine StateMachineName = voc-document-workflow-<AWS::AccountId>-<AWS::Region>"
         ],
         "exportNames": [],
@@ -324,7 +326,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "237513996e529c54c0e87e4dbd6aadb025f534ff780eb4e4cc5bf8277a156a20",
+      "templateSha256": "fd65a53c0c20cb2f27cb3e449d57b997e99293d7ad115b92d504ec3551913a49",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -375,6 +377,7 @@
           "AWS::StepFunctions::StateMachine StateMachineName = voc-research-workflow-<AWS::AccountId>-<AWS::Region>"
         ],
         "exportNames": [
+          "VocProcessingStack:ExportsOutputFnGetAttAgentRuntimeAgentConductorRole410C02E3ArnCE5C249A",
           "VocProcessingStack:ExportsOutputFnGetAttAgentRuntimeAgentRunStateMachine62103E58NameD657FC17",
           "VocProcessingStack:ExportsOutputFnGetAttMemoryWorkersMemoryExtractQueue640F6B21Arn9F525C78",
           "VocProcessingStack:ExportsOutputRefAgentRuntimeAgentRunStateMachine62103E58DCDE9480",
@@ -393,7 +396,8 @@
           "arn:aws:lambda:us-east-1:111111111111:function:voc-retention-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-settings-api-<AWS::AccountId>-<AWS::Region>",
-          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/radar/exa-api-key"
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/radar/exa-api-key",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/realtime/event-api-http-dns"
         ],
         "environmentNames": [
           "AGENTS_FUNCTION = voc-agents-api-<AWS::AccountId>-<AWS::Region>",
@@ -418,6 +422,7 @@
           "POWERTOOLS_SERVICE_NAME = voc-retention",
           "PROJECTS_FUNCTION = voc-projects-api-<AWS::AccountId>-<AWS::Region>",
           "RADAR_EXA_PARAMETER = /voc/radar/exa-api-key",
+          "REALTIME_HTTP_DNS_PARAMETER = /voc/realtime/event-api-http-dns",
           "SCRAPERS_FUNCTION = voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
           "SETTINGS_FUNCTION = voc-settings-api-<AWS::AccountId>-<AWS::Region>"
         ]

@@ -615,7 +615,11 @@ describe('Marketplace image model access (issue #274)', () => {
       .map((resource) => IamPolicySchema.parse(resource).Properties);
     for (const policy of [...inline, ...managedPolicies(template)]) {
       for (const role of policy.Roles ?? []) {
-        const roleId = RefSchema.parse(role).Ref;
+        // A role of ANOTHER stack is attached by name, not by Ref (the agent conductor's realtime publish
+        // grant, api-realtime.ts): not one of this stack's roles, so not one that can reach the image model.
+        const ref = RefSchema.safeParse(role);
+        if (!ref.success) continue;
+        const roleId = ref.data.Ref;
         byRole.set(roleId, [...(byRole.get(roleId) ?? []), ...policy.PolicyDocument.Statement]);
       }
     }
