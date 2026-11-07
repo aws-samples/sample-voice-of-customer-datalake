@@ -424,6 +424,8 @@ class TestGeneratePrototype:
             'prototype_format': 'html', 'job_id': JOB, 'source_prd_id': 'p1', 'source_prfaq_id': 'f1',
             H.DERIVATION_FIELD: {'deriv': 1}, 'created_at': NOW,
             'revised_from_id': 'b1', 'revision_feedback': ('fix it ' + 'z' * 2000)[:2000],
+            # Both sources were read: nothing skipped (shared/methodology.py).
+            'methodology': {'step': 'prototype', 'skipped': [], 'warnings': [], 'evidence': None},
         }
 
     def test_a_plain_build_from_one_empty_prfaq_asks_for_nothing_optional(self):
@@ -565,11 +567,13 @@ class TestHandleJob:
             '_date_basis_fields': MagicMock(return_value={'date_basis': 'b'}),
             '_document_item_fields': MagicMock(return_value={'fields': 1}),
             'persist_versioned_document': MagicMock(return_value={'document_id': 'n', 'title': 'Saved'}),
+            '_final_methodology': MagicMock(return_value={'m': 1}),
         }
         config = {'doc_type': 'prfaq', 'title': 'Mine', 'feature_idea': 'idea'}
         result, ctx, tables = self._run(config, **mocks)
         # The corpus ids go on the document, never on the job result (#236).
-        assert result == {'document_id': 'n', 'title': 'Saved', 'feedback_items_used': 3}
+        assert result == {'document_id': 'n', 'title': 'Saved', 'feedback_items_used': 3, 'methodology': {'m': 1}}
+        mocks['_final_methodology'].assert_called_once_with(config, gathered)
         chain_type.assert_called_once_with('prfaq')
         mocks['_gather_context'].assert_called_once_with(ctx, tables.projects, tables.feedback, PROJECT, config)
         mocks['_product_context'].assert_called_once_with(PROJECT)
@@ -586,7 +590,7 @@ class TestHandleJob:
         mocks['_date_basis_fields'].assert_called_once_with(config)
         mocks['_document_item_fields'].assert_called_once_with(
             PROJECT, JOB, 'idea', 'CONTENT', {'d': 1}, {'a': 1},
-            {'feedback_items_used': 3, 'input_feedback_ids': ['f1']}, {'date_basis': 'b'},
+            {'feedback_items_used': 3, 'input_feedback_ids': ['f1']}, {'date_basis': 'b'}, {'m': 1},
         )
         mocks['persist_versioned_document'].assert_called_once_with(
             tables.projects, PROJECT, 'prfaq', 'Mine', JOB, {'fields': 1},
@@ -713,6 +717,7 @@ class TestBuildSteps:
             _feedback_usage_fields=MagicMock(return_value={'u': 3}),
             _feedback_corpus_fields=MagicMock(return_value={'input_feedback_ids': ['f1']}),
             _date_basis_fields=MagicMock(return_value={'date_basis': 'b'}),
+            _final_methodology=MagicMock(return_value={'m': 1}),
         )
         assert result == {'doc_type': 'prfaq', 'title': 'T', 'feature_idea': 'idea',
                           'num_steps': 2, 'replayed': False}
@@ -727,6 +732,7 @@ class TestBuildSteps:
             call('scratch/document_jobs/job_1/derivation.txt', '{"d": 2}'),
             call('scratch/document_jobs/job_1/feedback_usage.txt', '{"u": 3, "input_feedback_ids": ["f1"]}'),
             call('scratch/document_jobs/job_1/date_basis.txt', '{"date_basis": "b"}'),
+            call('scratch/document_jobs/job_1/methodology.txt', '{"m": 1}'),
             # No model profile in force: an empty profile record (run_step then uses the configured models).
             call('scratch/document_jobs/job_1/model_profile.txt', '{}'),
         ]
@@ -743,7 +749,7 @@ class TestBuildSteps:
             _gather_context=MagicMock(), _product_context=MagicMock(return_value=('', False)),
             _with_org_context=MagicMock(return_value=''),
             build_derivation=MagicMock(return_value={}), _feedback_usage_fields=MagicMock(return_value={}),
-            _date_basis_fields=MagicMock(return_value={}),
+            _date_basis_fields=MagicMock(return_value={}), _final_methodology=MagicMock(return_value={}),
         )
         assert result == {'doc_type': 'prd', 'title': 'Untitled', 'feature_idea': '',
                           'num_steps': 0, 'replayed': False}
@@ -815,6 +821,7 @@ class TestAssembleAndSave:
             '_read_feedback_usage': MagicMock(return_value={'u': 1}),
             '_read_derivation': MagicMock(return_value={'d': 1}),
             '_read_date_basis': MagicMock(return_value={'b': 1}),
+            '_read_methodology': MagicMock(return_value={}),
             '_document_item_fields': MagicMock(return_value={'f': 1}),
             'persist_versioned_document': MagicMock(return_value={'document_id': 'n', 'title': 'T'}),
             '_s3': MagicMock(),
@@ -845,7 +852,7 @@ class TestAssembleAndSave:
             'Title', ['<scratch/document_jobs/job_1/result_0.txt>', '<scratch/document_jobs/job_1/result_1.txt>'],
         ))
         mocks['_document_item_fields'].assert_called_once_with(
-            PROJECT, JOB, 'idea', 'DOC', {'d': 1}, {'an': 1}, {'u': 1}, {'b': 1},
+            PROJECT, JOB, 'idea', 'DOC', {'d': 1}, {'an': 1}, {'u': 1}, {'b': 1}, {},
         )
         mocks['persist_versioned_document'].assert_called_once_with(
             tables.projects, PROJECT, 'prd', 'Title', JOB, {'f': 1},
@@ -853,7 +860,7 @@ class TestAssembleAndSave:
         prefix = 'scratch/document_jobs/job_1/'
         mocks['_s3'].return_value.delete_objects.assert_called_once_with(Bucket=H.SCRATCH_BUCKET, Delete={'Objects': [
             {'Key': f'{prefix}{name}.txt'}
-            for name in ('steps', 'derivation', 'feedback_usage', 'date_basis', 'result_0', 'result_1')
+            for name in ('steps', 'derivation', 'feedback_usage', 'date_basis', 'methodology', 'result_0', 'result_1')
         ]})
         mocks['update_job_status'].assert_called_once_with(
             PROJECT, JOB, 'completed', 100, 'complete', result={'document_id': 'n', 'title': 'T', 'u': 1},

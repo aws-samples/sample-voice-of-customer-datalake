@@ -203,6 +203,7 @@ class TestProjectJobsCaptureScope:
         # against moto; here it is doubled so only the scope capture is under test.
         with patch('projects_handler.category_gate.scope_for_event', return_value=self.SCOPE), \
                 patch('projects_handler._require_project_exists'), \
+                patch('projects_handler._methodology_items', return_value=[]), \
                 patch('projects_handler.create_job', return_value=('job-1', {})) as create_job, \
                 patch('projects_handler.invoke_lambda_async') as invoke_async, \
                 patch.dict('os.environ', {'RESEARCH_STATE_MACHINE_ARN': '', 'DOCUMENT_STATE_MACHINE_ARN': ''}), \
@@ -238,6 +239,7 @@ class TestProjectJobsCaptureScope:
                                   path_params={'project_id': 'p1'}, body={})
         with patch('projects_handler.category_gate.scope_for_event', return_value=self.SCOPE), \
                 patch('projects_handler._require_project_exists'), \
+                patch('projects_handler._methodology_items', return_value=[]), \
                 patch('projects_handler.create_job', return_value=('job-1', {})), \
                 patch.dict('os.environ', {'RESEARCH_STATE_MACHINE_ARN': ''}), \
                 patch('projects_handler.run_research', return_value={'success': True}) as run:
@@ -255,6 +257,7 @@ class TestProjectJobsCaptureScope:
                                   body={'category_scope': {'all': True, 'categories': []}})
         with patch('projects_handler.category_gate.scope_for_event', return_value=self.SCOPE), \
                 patch('projects_handler._require_project_exists'), \
+                patch('projects_handler._methodology_items', return_value=[]), \
                 patch('projects_handler.assist_jobs.start', return_value={'success': True}) as start:
             assert projects_handler.lambda_handler(event, lambda_context)['statusCode'] == 202
         assert start.call_args.args[1] == job_type

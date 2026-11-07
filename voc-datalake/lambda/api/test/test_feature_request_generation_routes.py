@@ -21,6 +21,7 @@ def _call(api_gateway_event, lambda_context, path: str, body: dict[str, Any]) ->
     sfn = MagicMock()
     with patch('projects_handler.category_gate.scope_for_event', return_value=SCOPE), \
             patch('projects_handler._require_project_exists'), \
+            patch('projects_handler._methodology_items', return_value=[]), \
             patch('projects_handler.ensure_persona_feedback'), \
             patch('projects_handler.ensure_research_feedback'), \
             patch('projects_handler.create_job', return_value=('job-1', {})) as create_job, \
@@ -73,7 +74,7 @@ def test_a_document_normalises_its_data_sources_flag(api_gateway_event, lambda_c
     assert config['data_sources'] == {'feedback': True, 'feature_requests': True}
     assert config['feature_request_board_ids'] == ['brd_0000000a']
     status, _body, calls = _call(api_gateway_event, lambda_context, '/projects/p1/document', {'doc_type': 'prd'})
-    assert _config(calls)['data_sources'] == {'feature_requests': False}
+    assert _config(calls)['data_sources'] == {'feature_requests': False, 'feedback': True}
 
 
 @pytest.mark.parametrize(('path', 'body'), [

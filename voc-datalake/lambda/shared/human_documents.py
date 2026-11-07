@@ -15,6 +15,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Final
 
+from shared import methodology
 from shared.ai_writing import GATED_DOC_TYPES
 from shared.document_versions import persist_versioned_document
 from shared.exceptions import ValidationError
@@ -92,6 +93,8 @@ def create_human_document(table: Any, project_id: str, doc_type: str, body: dict
         'gsi1sk': now,
         'content': content,
         'origin': ORIGIN_HUMAN,
+        # Says on the artifact that it cites no evidence (tenet 2, M4).
+        'methodology': methodology.human_document(doc_type),
         'created_at': now,
         'updated_at': now,
         **({'created_by_sub': creator_sub} if creator_sub else {}),
