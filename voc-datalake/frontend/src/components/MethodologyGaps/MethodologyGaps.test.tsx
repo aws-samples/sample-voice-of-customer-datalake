@@ -24,6 +24,25 @@ describe('MethodologyGaps', () => {
   })
 
   it.each([
+    [{ code: 'missing_upstream', step: 'personas', message: 'x' }, 'Made without personas: the project had none.'],
+    [{ code: 'missing_upstream', step: 'prd', message: 'x' }, 'Made without a PRD: the project had none.'],
+    [{ code: 'missing_upstream', step: 'research', message: 'Server: no research.' }, 'Server: no research.'],
+    [{ code: 'upstream_not_selected', step: 'feedback', message: 'x' }, 'Made without customer feedback: it was turned off for this document.'],
+    [{ code: 'upstream_not_selected', step: 'personas', message: 'x' }, "Made without the project's personas: they were not selected."],
+    [{ code: 'upstream_not_selected', step: 'prfaq', message: 'x' }, "Made without the project's PR/FAQ: it was not selected."],
+    [{ code: 'upstream_not_selected', step: 'prd', message: 'Server: PRD off.' }, 'Server: PRD off.'],
+    [{ code: 'reference_documents_skipped', document_ids: ['d4', 'd5'], cap: 3, message: 'x' }, '2 selected reference documents were left out (only the first 3 are read).'],
+  ])('says %j as %s', (warning, text) => {
+    render(<MethodologyGaps block={block({ step: 'prd', warnings: [warning] })} />)
+    expect(screen.getByRole('listitem')).toHaveTextContent(text)
+  })
+
+  it('says a hand-written document cites no feedback yet', () => {
+    render(<MethodologyGaps block={block({ step: 'prfaq', warnings: [{ code: 'no_evidence', message: 'x' }] })} handWritten />)
+    expect(screen.getByRole('listitem')).toHaveTextContent('Written by hand: cites no customer feedback yet.')
+  })
+
+  it.each([
     ['no block', undefined],
     ['a block without warnings', block({ step: 'research', skipped: [], warnings: [], evidence: null })],
   ])('renders nothing for %s', (_label, value) => {

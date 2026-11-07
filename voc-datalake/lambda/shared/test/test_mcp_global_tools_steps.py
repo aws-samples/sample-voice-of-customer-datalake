@@ -4,7 +4,7 @@ import pytest
 from shared.mcp_global_tools import TOOLS_BY_NAME, InvalidToolArgument, RouteRequest
 
 
-def _build(name, args, project='proj_1') -> RouteRequest:
+def _build(name, args, project: str | None = 'proj_1') -> RouteRequest:
     return TOOLS_BY_NAME[name].build(args, project)
 
 
