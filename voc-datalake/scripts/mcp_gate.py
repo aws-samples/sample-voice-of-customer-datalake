@@ -191,6 +191,7 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_global_tools_reach': 16,
     'test_mcp_global_follow_ups': 6,
     # 6.01.00: search_feature_requests (the feedback boards' search) and its board-route claims.
+    'test_mcp_feature_request_person': 3,
     'test_mcp_global_board_tools': 28,
     # 6.04.00: generate / get_job (the methodology block), read_radar and edit_feedback.
     'test_mcp_global_tools_steps': 20,
