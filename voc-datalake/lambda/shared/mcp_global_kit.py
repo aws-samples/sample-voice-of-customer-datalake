@@ -163,7 +163,7 @@ def public(row: object) -> dict:
             if key not in _HIDDEN_KEYS and 'url' not in key.lower()}
 
 
-def items(payload: object, key: str) -> list:
+def rows_at(payload: object, key: str) -> list:
     value = payload.get(key) if isinstance(payload, Mapping) else None
     return value if isinstance(value, list) else []
 
