@@ -9,7 +9,9 @@
  *   server that stores it) — the editor validates against it before saving;
  * - the assistant approval boundary builds the same schema with the stream
  *   Lambda's limits (`approvals/agentSchemas.ts`).
- * Both are pinned to their source files by lockstep tests.
+ * The API limits are pinned to the Python file by workflowsApi.lockstep.test.ts;
+ * the stream limits and the node / role / edge / loop vocabulary are imported
+ * from the stream's own `@stream/assistant/tools/agent-limits`.
  *
  * Graph rules (one start, reachable end, loops) are NOT in the schema: the
  * editor runs a client-side port of them (`components/WorkflowEditor/graphRules.ts`)
@@ -19,30 +21,19 @@
  */
 import { del, post, put } from './requestKit'
 import { z } from 'zod'
+import {
+  WORKFLOW_EDGE_LABELS, WORKFLOW_LOOP_UNTIL, WORKFLOW_NODE_ROLES, WORKFLOW_NODE_TYPES, WORKFLOW_SCHEMA_VERSION,
+} from '@stream/assistant/tools/agent-limits'
 import { isRecord } from '../lib/typeGuards'
 import { fetchApi } from './client'
 import { lenientList } from './lenientFields'
 import type { QueryClient } from '@tanstack/react-query'
 
-export const WORKFLOW_SCHEMA = 'voc-workflow/1'
 export const DEFAULT_WORKFLOW_ID = 'wf_default'
 
-// jscpd:ignore-start — mirrors lambda/stream/src/assistant/tools/agent-schemas.ts on purpose: separate packages, pinned by newTools.lockstep.test.ts
-export const WORKFLOW_NODE_TYPES = [
-  'start', 'aggregate_reviews', 'select_or_create_project', 'select_personas', 'generate_personas',
-  'deep_research', 'write_prfaq', 'write_prd', 'persona_review', 'revise_document', 'build_prototype',
-  'collect_prototype_feedback', 'revise_prototype', 'final_review', 'duplicate_document', 'handoff', 'custom_llm', 'end',
-] as const
-// jscpd:ignore-end of the accepted pair
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number]
-
-export const WORKFLOW_NODE_ROLES = ['orchestrator', 'worker', 'reviewer', 'persona'] as const
 export type WorkflowNodeRole = (typeof WORKFLOW_NODE_ROLES)[number]
-
-export const WORKFLOW_EDGE_LABELS = ['pass', 'fail', 'agreed', 'not_agreed'] as const
 export type WorkflowEdgeLabel = (typeof WORKFLOW_EDGE_LABELS)[number]
-
-export const WORKFLOW_LOOP_UNTIL = ['persona_agreement', 'review_pass'] as const
 
 /** `persona_review` / `revise_document` params.target. */
 export const REVIEW_TARGETS = ['prfaq', 'prd', 'prototype'] as const
@@ -110,7 +101,7 @@ export function buildWorkflowDefinitionSchema(limits: WorkflowLimits, elementId:
     max_rounds: z.number().int().min(limits.minRounds).max(limits.maxRounds),
   })
   return z.strictObject({
-    schema: z.literal(WORKFLOW_SCHEMA),
+    schema: z.literal(WORKFLOW_SCHEMA_VERSION),
     name: z.string().trim().min(1).max(limits.maxNameChars),
     description: z.string().max(limits.maxDescriptionChars).optional(),
     nodes: z.array(node).min(1).max(limits.maxNodes),
@@ -164,7 +155,7 @@ const guard = schemaGuard
 
 /** One bad node / edge / loop costs itself, never the whole definition. */
 const LenientDefinitionSchema = z.object({
-  schema: z.literal(WORKFLOW_SCHEMA).catch(WORKFLOW_SCHEMA),
+  schema: z.literal(WORKFLOW_SCHEMA_VERSION).catch(WORKFLOW_SCHEMA_VERSION),
   name: z.string().catch(''),
   description: optionalString,
   nodes: lenientList(guard(LenientNodeSchema)),
@@ -178,7 +169,7 @@ export function normalizeDefinition(raw: unknown): WorkflowDefinition | null {
   if (!parsed.success) return null
   const d = parsed.data
   return {
-    schema: WORKFLOW_SCHEMA,
+    schema: WORKFLOW_SCHEMA_VERSION,
     name: d.name,
     ...(d.description === undefined ? {} : { description: d.description }),
     nodes: d.nodes.map((n) => ({

@@ -8,7 +8,8 @@
  */
 import { Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { AGENT_SCHEDULE_EVERY, AGENT_THRESHOLD_PER, API_AGENT_LIMITS, TRIGGER_KINDS } from '../../api/agentsApi'
+import { AGENT_SCHEDULE_EVERY, AGENT_THRESHOLD_PER } from '@stream/assistant/tools/agent-limits'
+import { API_AGENT_LIMITS, TRIGGER_KINDS } from '../../api/agentsApi'
 import { LabeledField } from '../../components/LabeledField/LabeledField'
 import { EnumSelectField } from '../../components/LabeledField/EnumSelectField'
 import { ClampedNumberField } from './ClampedNumberField'

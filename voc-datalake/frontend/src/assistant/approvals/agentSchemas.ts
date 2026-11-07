@@ -1,8 +1,8 @@
 /**
  * @fileoverview Argument schemas of the `agents` pack write tools — a strict
  * mirror of `lambda/stream/src/assistant/tools/{agent-schemas.ts,client/agents.ts}`
- * (same keys, enums and limits; `newTools.lockstep.test.ts` reads the
- * stream source as text and pins the limits).
+ * (same keys, enums and limits: the limits are the stream's own, imported from
+ * `@stream/assistant/tools/agent-limits`).
  *
  * The shapes are built by the same builders the editor and the agent form use
  * (`api/workflowsApi.ts`, `api/agentsApi.ts`), fed the STREAM's limits: the SPA
@@ -12,52 +12,21 @@
  * @module assistant/approvals/agentSchemas
  */
 import { z } from 'zod'
+import { AGENT_BUDGET_RULES, AGENT_LIMITS, WORKFLOW_LIMITS } from '@stream/assistant/tools/agent-limits'
 import { buildAgentFieldsShape } from '../../api/agentsApi'
 import { buildWorkflowDefinitionSchema } from '../../api/workflowsApi'
 import { hasAnyKey, idSchema, nonEmpty } from './schemas'
 import type { AgentLimits } from '../../api/agentsApi'
 import type { WorkflowLimits } from '../../api/workflowsApi'
 
-// jscpd:ignore-start — mirrors lambda/stream/src/assistant/tools/agent-schemas.ts on purpose: separate packages, pinned by newTools.lockstep.test.ts
-/** `WORKFLOW_LIMITS` in the stream's agent-schemas.ts. */
-export const STREAM_WORKFLOW_LIMITS: WorkflowLimits = {
-  maxNodes: 60,
-  maxEdges: 200,
-  maxLoops: 20,
-  minRounds: 1,
-  maxRounds: 5,
-  maxNameChars: 200,
-  maxDescriptionChars: 2000,
-  maxTitleChars: 200,
-  maxInstructionsChars: 8000,
-  maxParamsJsonChars: 4000,
-  maxDefinitionJsonChars: 200_000,
-}
+/** The stream's `WORKFLOW_LIMITS` (`@stream/assistant/tools/agent-limits`). */
+const STREAM_WORKFLOW_LIMITS: WorkflowLimits = WORKFLOW_LIMITS
 
-/** `AGENT_LIMITS` in the stream's agent-schemas.ts. */
-export const STREAM_AGENT_LIMITS: AgentLimits = {
-  maxNameChars: 200,
-  maxDescriptionChars: 2000,
-  maxInstructionsChars: 8000,
-  maxCategories: 50,
-  maxSubcategories: 100,
-  maxCategoryNameChars: 64,
-  maxFixedPersonas: 20,
-  maxTriggers: 5,
-  maxCooldownHours: 720,
-  maxMinNew: 10_000,
-  maxThresholdCount: 100_000,
-  maxWindowDays: 365,
-  maxCronChars: 100,
-  maxTimezoneChars: 64,
-  maxModelIdChars: 128,
-  maxScheduledRunsPerDay: 2,
-  minModelCallsPerRun: 1,
-  maxModelCallsPerRun: 1000,
-  maxMonthlyCallCap: 1_000_000,
-  monthlyCapNullable: false,
-}
-// jscpd:ignore-end of the accepted pair
+/**
+ * The stream's `AGENT_LIMITS` and budget rules. Its budget schema never takes a null monthly
+ * cap (pinned by the stream's agent-schemas.test.ts and by agentSchemas.test.ts here).
+ */
+const STREAM_AGENT_LIMITS: AgentLimits = { ...AGENT_LIMITS, ...AGENT_BUDGET_RULES, monthlyCapNullable: false }
 
 const MAX_CHANGE_SUMMARY = 500
 const changeSummary = nonEmpty(MAX_CHANGE_SUMMARY)

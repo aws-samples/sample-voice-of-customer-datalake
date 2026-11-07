@@ -1,19 +1,16 @@
 /**
- * @fileoverview Keeps the assist-job poll statuses in step across the three
- * packages that read them: the backend's own (`lambda/shared/assist_jobs.py`),
- * the SPA's poll schema (`assistJobs.ts`) and the stream tool's
- * (`lambda/stream/src/assistant/tools/server/assist-job.ts`). The two TypeScript
- * schemas mirror each other on purpose (separate packages); this is their pin.
+ * @fileoverview Keeps the assist-job poll statuses in step with the backend that
+ * writes them (`lambda/shared/assist_jobs.py`). The SPA and the stream tool read the
+ * job with one schema, the stream's `assistJobPollSchema`
+ * (`@stream/assistant/tools/server/assist-job-values`), so that schema is pinned
+ * here against the Python file, read as text.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { assistJobPollSchema } from '@stream/assistant/tools/server/assist-job-values'
 
 const ROOT = join(__dirname, '../../..')
-
-function read(relative: string): string {
-  return readFileSync(join(ROOT, relative), 'utf8')
-}
 
 /** The status values `assist_jobs.py` binds (`PENDING: Final = 'pending'` …). */
 function pythonStatuses(source: string): string[] {
@@ -24,21 +21,11 @@ function pythonStatuses(source: string): string[] {
   })
 }
 
-/** The members of the `status: z.enum([...])` in a poll schema. */
-function schemaStatuses(source: string): string[] {
-  const members = /status: z\.enum\(\[([^\]]*)\]\)/.exec(source)?.[1]
-  if (members === undefined) throw new Error('the poll schema no longer spells status as z.enum([...])')
-  return [...members.matchAll(/'([a-z]+)'/g)].flatMap((m) => (m[1] === undefined ? [] : [m[1]]))
-}
-
 describe('assist job statuses', () => {
-  const backend = pythonStatuses(read('lambda/shared/assist_jobs.py'))
+  const backend = pythonStatuses(readFileSync(join(ROOT, 'lambda/shared/assist_jobs.py'), 'utf8'))
 
-  it.each([
-    ['the SPA poll schema', 'frontend/src/api/assistJobs.ts'],
-    ['the stream tool poll schema', 'lambda/stream/src/assistant/tools/server/assist-job.ts'],
-  ])('%s accepts exactly the backend statuses', (_label, file) => {
-    const statuses = schemaStatuses(read(file))
+  it('the shared poll schema accepts exactly the backend statuses', () => {
+    const statuses = assistJobPollSchema.shape.status.options
     expect(statuses).toHaveLength(backend.length)
     expect(new Set(statuses)).toStrictEqual(new Set(backend))
   })

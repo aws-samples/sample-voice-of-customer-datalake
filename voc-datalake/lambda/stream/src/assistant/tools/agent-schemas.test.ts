@@ -27,8 +27,9 @@ describe('workflowDefinitionSchema node positions', () => {
   });
 });
 
-// The SPA's approval boundary builds its budget schema from AGENT_BUDGET_RULES: these pin that the
-// stream's own schema applies exactly those rules.
+// The SPA's approval boundary builds its budget schema from AGENT_BUDGET_RULES and a non-nullable
+// monthly cap (frontend/src/assistant/approvals/agentSchemas.ts): these pin that the stream's own
+// schema applies exactly those rules.
 describe('agent budget rules', () => {
   const budget = agentFieldsShape.budget;
 
@@ -39,8 +40,8 @@ describe('agent budget rules', () => {
     expect(budget.safeParse({ max_model_calls_per_run: AGENT_LIMITS.maxModelCallsPerRun + 1 }).success).toBe(false);
   });
 
-  it('accepts a null monthly cap exactly when monthlyCapNullable says so', () => {
-    expect(budget.safeParse({ monthly_call_cap: null }).success).toBe(AGENT_BUDGET_RULES.monthlyCapNullable);
+  it('refuses a null monthly cap (the agents Lambda takes null = no cap; the assistant does not offer it)', () => {
+    expect(budget.safeParse({ monthly_call_cap: null }).success).toBe(false);
     expect(budget.safeParse({ monthly_call_cap: AGENT_LIMITS.maxMonthlyCallCap }).success).toBe(true);
   });
 });
