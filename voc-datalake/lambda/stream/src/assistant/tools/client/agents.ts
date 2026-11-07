@@ -5,12 +5,11 @@
  */
 import { z } from 'zod';
 import type { ClientToolDefinition } from '../../types.js';
+import { AGENT_LIMITS, WORKFLOW_LIMITS } from '../agent-limits.js';
 import {
   AGENT_FIELD_PROPERTIES,
-  AGENT_LIMITS,
   agentFieldsShape,
   WORKFLOW_DEFINITION_PROPERTY,
-  WORKFLOW_LIMITS,
   workflowDefinitionSchema,
 } from '../agent-schemas.js';
 import { idProperty, idSchema } from '../spec.js';
