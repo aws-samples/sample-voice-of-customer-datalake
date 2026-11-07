@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { changelogPlugin } from './changelogPlugin.ts'
+import { streamFsAllow, streamResolve } from './streamSource.ts'
 import { vendorChunkGroups } from './vendorChunkGroups.ts'
 /**
  * Which vendor packages share a chunk (Rolldown `codeSplitting.groups`, built by `vendorChunkGroups` below).
@@ -136,6 +137,8 @@ function findUp(name: string): string | null {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), changelogPlugin()],
+  // The modules shared with the assistant stream Lambda (streamSource.ts).
+  resolve: streamResolve,
   define: {
     global: 'globalThis',
     // Namespaced under import.meta.env: a bare identifier define would be
@@ -157,6 +160,7 @@ export default defineConfig({
     },
   },
   server: {
+    fs: { allow: streamFsAllow },
     proxy: {
       '/api': {
         target: 'http://localhost:3001',
