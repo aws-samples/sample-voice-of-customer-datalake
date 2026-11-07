@@ -11,7 +11,8 @@
  */
 import { z } from 'zod'
 import { PLAN_ID_RE, planSchema } from '@stream/assistant/plan/schema'
-import { idSchema, nonEmpty } from './schemas'
+import { idSchema } from './schemas'
+import { nonEmpty } from '@stream/assistant/tools/client/text-schemas'
 
 /**
  * The plugins whose ingestor `POST /sources/{source}/run` starts by hand (every
