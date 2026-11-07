@@ -376,7 +376,12 @@
     "unprotect": "取消保护此角色",
     "protected": "已保护",
     "protectedHint": "新的生成替换此项目的角色时仍会保留",
-    "protectFailed": "无法更改保护状态，请重试。"
+    "protectFailed": "无法更改保护状态，请重试。",
+    "noEvidence": {
+      "imported": "无客户证据：导入",
+      "copiedFromImport": "无客户证据：复制自导入的用户画像",
+      "copied": "无客户证据：复制自没有评价的用户画像"
+    }
   },
   "personaSections": {
     "ageRange": "年龄",

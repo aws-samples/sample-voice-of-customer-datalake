@@ -376,7 +376,12 @@
     "unprotect": "このペルソナの保護を解除",
     "protected": "保護中",
     "protectedHint": "新しい生成でこのプロジェクトのペルソナを置き換えても残ります",
-    "protectFailed": "保護を変更できませんでした。もう一度お試しください。"
+    "protectFailed": "保護を変更できませんでした。もう一度お試しください。",
+    "noEvidence": {
+      "imported": "顧客の根拠なし: インポート",
+      "copiedFromImport": "顧客の根拠なし: インポートしたペルソナからコピー",
+      "copied": "顧客の根拠なし: レビューのないペルソナからコピー"
+    }
   },
   "personaSections": {
     "ageRange": "年齢",

@@ -88,6 +88,25 @@ class TestCopyPersonas:
             'persona_id': 'persona_src', 'copied_at': NOW.isoformat(), 'copied_by': 'admin-sub',
         }
 
+    def test_a_source_without_reviews_gives_a_copy_marked_without_evidence(self, world):
+        table, s3 = world
+
+        [copy] = _copy(table, s3)
+
+        assert copy['evidence'] == {'source': 'copy', 'count': 0, 'inherited': False, 'origin': 'unknown'}
+        assert [w['code'] for w in copy['methodology']['warnings']] == ['no_evidence']
+
+    def test_a_copy_keeps_the_source_reviews_and_recomputes_a_stale_marker(self, world):
+        table, s3 = world
+        table.put_item(Item={**SOURCE, 'input_feedback_ids': ['fb1', 'fb2'], 'evidence_feedback_ids': ['fb1'],
+                             'evidence': {'source': 'import', 'count': 0}, 'methodology': {'evidence': 0}})
+
+        [copy] = _copy(table, s3)
+
+        assert (copy['input_feedback_ids'], copy['evidence_feedback_ids']) == (['fb1', 'fb2'], ['fb1'])
+        assert copy['evidence'] == {'source': 'copy', 'count': 2, 'inherited': True, 'origin': 'generated'}
+        assert (copy['methodology']['evidence'], copy['methodology']['warnings']) == (2, [])
+
     def test_a_company_source_carries_no_project_fields(self, world):
         table, s3 = world
 

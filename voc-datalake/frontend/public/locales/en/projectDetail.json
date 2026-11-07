@@ -376,7 +376,12 @@
     "unprotect": "Stop protecting this persona",
     "protected": "Protected",
     "protectedHint": "Kept when a new generation replaces this project's personas",
-    "protectFailed": "Could not change the protection. Try again."
+    "protectFailed": "Could not change the protection. Try again.",
+    "noEvidence": {
+      "imported": "No customer evidence: imported",
+      "copiedFromImport": "No customer evidence: copied from an imported persona",
+      "copied": "No customer evidence: copied from a persona without reviews"
+    }
   },
   "personaSections": {
     "ageRange": "Age",

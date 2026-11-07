@@ -12,6 +12,7 @@
 // handleDomainModules; project fixtures and sharing come through `shared`.
 
 import { randomBytes } from 'node:crypto';
+import { copiedPersonaMarker } from './mock-methodology.js';
 import { registerPersonaContainer, serveContainerRoute } from './mock-project-actions.js';
 
 const CONTAINER_ID = 'company_personas';
@@ -74,7 +75,10 @@ function copyOf(persona, target, copiedFrom) {
   let personaId = newPersonaId();
   while (taken(personaId)) personaId = newPersonaId();
   const at = nowIso();
-  return { ...cloneJson(persona), persona_id: personaId, research_notes: [], created_at: at, updated_at: at, copied_from: copiedFrom };
+  return {
+    ...cloneJson(persona), persona_id: personaId, research_notes: [], created_at: at, updated_at: at, copied_from: copiedFrom,
+    ...copiedPersonaMarker(persona),
+  };
 }
 
 function addPersonas(target, personas) {

@@ -392,7 +392,12 @@
     "unprotect": "Dejar de proteger esta persona",
     "protected": "Protegida",
     "protectedHint": "Se conserva cuando una nueva generación reemplaza las personas de este proyecto",
-    "protectFailed": "No se pudo cambiar la protección. Inténtelo de nuevo."
+    "protectFailed": "No se pudo cambiar la protección. Inténtelo de nuevo.",
+    "noEvidence": {
+      "imported": "Sin evidencia de clientes: importada",
+      "copiedFromImport": "Sin evidencia de clientes: copiada de una persona importada",
+      "copied": "Sin evidencia de clientes: copiada de una persona sin reseñas"
+    }
   },
   "personaSections": {
     "ageRange": "Edad",

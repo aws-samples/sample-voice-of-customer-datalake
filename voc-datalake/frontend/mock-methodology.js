@@ -83,6 +83,44 @@ export const humanMethodology = (step) => ({
   evidence: 0,
 });
 
+// shared/persona_evidence_marker.py: an imported or copied persona's evidence marker.
+const PERSONA_NO_EVIDENCE = {
+  import: 'Imported persona: it is not based on customer feedback.',
+  copy: 'Copied from a persona that is not based on customer feedback.',
+};
+const idList = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === 'string' && v !== '') : []);
+const personaReviewCount = (p) => idList(p?.input_feedback_ids).length || idList(p?.evidence_feedback_ids).length;
+const personaBlock = (source, count) => ({
+  step: 'personas', skipped: [], evidence: count,
+  warnings: count ? [] : [{ code: 'no_evidence', message: PERSONA_NO_EVIDENCE[source] }],
+});
+
+function personaOrigin(source) {
+  if (personaReviewCount(source) > 0) return 'generated';
+  const marker = source?.evidence;
+  const origin = marker?.source === 'copy' ? marker?.origin : marker?.source;
+  if (origin === 'generated' || origin === 'import') return origin;
+  return source?.imported_from ? 'import' : 'unknown';
+}
+
+/** persona_evidence_marker.imported(): the fields an imported persona stores. */
+export const importedPersonaMarker = () => ({
+  evidence: { source: 'import', count: 0, inherited: false, origin: 'import' },
+  methodology: personaBlock('import', 0),
+});
+
+/** persona_evidence_marker.import_start(): the block an import START answers. */
+export const importStartMethodology = () => personaBlock('import', 0);
+
+/** persona_evidence_marker.copied(source): the fields a copy stores (never invented). */
+export function copiedPersonaMarker(source) {
+  const count = personaReviewCount(source);
+  return {
+    evidence: { source: 'copy', count, inherited: count > 0, origin: personaOrigin(source) },
+    methodology: personaBlock('copy', count),
+  };
+}
+
 const EVIDENCE_KINDS = ['aggregate_reviews', 'deep_research'];
 const PERSONA_KINDS = ['select_personas', 'generate_personas'];
 const WORKFLOW_RULES = {
