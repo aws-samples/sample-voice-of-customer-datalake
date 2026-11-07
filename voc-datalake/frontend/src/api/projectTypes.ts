@@ -8,6 +8,7 @@
 //  * `ProjectDocument`, `PrioritizationScore`, `PrioritizationBallotEdit` —
 //    imported from there by pages/Prioritization/prioritizationUtils.ts.
 import type { ErasedEvidence } from './erasedEvidence'
+import type { ProjectMethodology } from './methodologySchema'
 import type { ProductDocStatus, ProjectDocument } from './types'
 
 export interface ProjectJob {
@@ -279,6 +280,8 @@ export interface ProjectDetail {
   project: Project
   personas: ProjectPersona[]
   documents: ProjectDocument[]
+  /** The per-step upstream gaps the server computed (docs/project-workspace.md → Methodology); absent from an older API. */
+  methodology?: ProjectMethodology
 }
 
 /**

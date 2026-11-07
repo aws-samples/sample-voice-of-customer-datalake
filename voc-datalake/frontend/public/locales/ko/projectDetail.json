@@ -133,6 +133,19 @@
       "persona": "나중에 삭제된 페르소나를 바탕으로 작성됨",
       "document": "나중에 삭제된 문서를 바탕으로 작성됨",
       "productDoc": "나중에 삭제된 제품 문서를 사용해 작성됨"
+    },
+    "methodology": {
+      "title": "방법론 공백",
+      "missingPersonas": "페르소나 없이 작성됨: 프로젝트에 페르소나가 없었습니다.",
+      "missingPrfaq": "PR/FAQ 없이 작성됨: 프로젝트에 PR/FAQ가 없었습니다. 방법론은 PR/FAQ를 먼저 작성합니다.",
+      "missingPrd": "PRD 없이 작성됨: 프로젝트에 PRD가 없었습니다.",
+      "notSelectedFeedback": "고객 피드백 없이 작성됨: 이 문서에서는 꺼져 있었습니다.",
+      "notSelectedPersonas": "프로젝트의 페르소나 없이 작성됨: 선택되지 않았습니다.",
+      "notSelectedPrfaq": "프로젝트의 PR/FAQ 없이 작성됨: 선택되지 않았습니다.",
+      "noEvidence": "고객 근거를 인용하지 않습니다.",
+      "documentsSkipped_one": "선택한 참고 문서 {{count, number}}개가 제외되었습니다(처음 {{cap, number}}개만 읽습니다).",
+      "documentsSkipped_other": "선택한 참고 문서 {{count, number}}개가 제외되었습니다(처음 {{cap, number}}개만 읽습니다).",
+      "handWritten": "직접 작성한 문서: 아직 고객 피드백을 인용하지 않습니다."
     }
   },
   "imageErrors": {
@@ -229,7 +242,9 @@
     "generatePrdPrfaqDesc": "피드백에서 제품 문서 생성",
     "hint": {
       "documentsNeedContext": "페르소나나 리서치가 있으면 이 문서가 더 탄탄해집니다.",
-      "researchNeedsPersonas": "먼저 페르소나를 생성하면 리서치의 근거로 사용할 수 있습니다."
+      "researchNeedsPersonas": "먼저 페르소나를 생성하면 리서치의 근거로 사용할 수 있습니다.",
+      "documentsNeedPersonas": "먼저 페르소나를 생성하세요. 방법론은 페르소나를 바탕으로 PR/FAQ와 PRD를 작성합니다.",
+      "prdNeedsPrfaq": "PRD보다 먼저 PR/FAQ를 작성하세요. 방법론은 PR/FAQ를 읽습니다."
     },
     "needAtLeast2Docs": "최소 2개의 문서 필요",
     "nextStep": {

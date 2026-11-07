@@ -147,6 +147,21 @@
       "persona": "Napisano na podstawie persony, która została później usunięta",
       "document": "Napisano na podstawie dokumentu, który został później usunięty",
       "productDoc": "Napisano z użyciem dokumentu produktu, który został później usunięty"
+    },
+    "methodology": {
+      "title": "Luki w metodyce",
+      "missingPersonas": "Utworzono bez person: projekt nie miał żadnych.",
+      "missingPrfaq": "Utworzono bez PR/FAQ: projekt go nie miał. Metodyka najpierw pisze PR/FAQ.",
+      "missingPrd": "Utworzono bez PRD: projekt go nie miał.",
+      "notSelectedFeedback": "Utworzono bez opinii klientów: były wyłączone dla tego dokumentu.",
+      "notSelectedPersonas": "Utworzono bez person projektu: nie zostały wybrane.",
+      "notSelectedPrfaq": "Utworzono bez PR/FAQ projektu: nie zostało wybrane.",
+      "noEvidence": "Nie cytuje żadnych dowodów od klientów.",
+      "documentsSkipped_one": "Pominięto {{count, number}} wybrany dokument referencyjny (czytane są tylko pierwsze {{cap, number}}).",
+      "documentsSkipped_few": "Pominięto {{count, number}} wybrane dokumenty referencyjne (czytane są tylko pierwsze {{cap, number}}).",
+      "documentsSkipped_many": "Pominięto {{count, number}} wybranych dokumentów referencyjnych (czytane są tylko pierwsze {{cap, number}}).",
+      "documentsSkipped_other": "Pominięto {{count, number}} wybranego dokumentu referencyjnego (czytane są tylko pierwsze {{cap, number}}).",
+      "handWritten": "Napisane ręcznie: nie cytuje jeszcze opinii klientów."
     }
   },
   "imageErrors": {
@@ -255,7 +270,9 @@
     "generatePrdPrfaqDesc": "Twórz dokumenty produktowe na podstawie opinii",
     "hint": {
       "documentsNeedContext": "Persony lub badania sprawią, że te dokumenty będą lepsze.",
-      "researchNeedsPersonas": "Najpierw wygeneruj persony, aby oprzeć badania na ich podstawie."
+      "researchNeedsPersonas": "Najpierw wygeneruj persony, aby oprzeć badania na ich podstawie.",
+      "documentsNeedPersonas": "Najpierw wygeneruj persony: metodyka pisze PR/FAQ i PRD na ich podstawie.",
+      "prdNeedsPrfaq": "Napisz PR/FAQ przed PRD: metodyka je czyta."
     },
     "needAtLeast2Docs": "Wymagane są co najmniej 2 dokumenty",
     "nextStep": {
