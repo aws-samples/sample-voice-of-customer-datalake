@@ -91,7 +91,9 @@ the metrics and Radar entries depend on.
   import polls (`/memory/imports/{id}`), voting sessions and the system log search
   (`/logs/system`). The full list is
   `NO_STORE_PATTERNS`. Any other GET that is not a
-  200 JSON answer gets `no-store` too.
+  200 JSON answer gets `no-store` too. Several of these polls now also wake on a push notice
+  ([docs/realtime.md](realtime.md)) and poll slower while the page is subscribed; the poll itself
+  and its `no-store` answer are unchanged.
 - `ETag` is in `Access-Control-Expose-Headers`, both on the Lambdas' own CORS and on
   the gateway responses (`lib/stacks/api-gateway.ts`). `If-None-Match` is not in the
   allowed request headers on purpose: the browser's HTTP cache adds it when

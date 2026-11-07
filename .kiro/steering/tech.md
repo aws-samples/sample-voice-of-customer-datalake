@@ -26,6 +26,7 @@
 | **Translate** | Multi-language | Auto language pair detection |
 | **Step Functions** | Long-running jobs | Research workflows, persona generation |
 | **CloudFront** | CDN | Frontend distribution, avatar images |
+| **AppSync Events** | Push notices to the SPA | One Event API in VocApiStack (`lib/stacks/api-realtime.ts`); namespaces `jobs`, `chat`, `runs`, channels `/<ns>/<cognito sub>`; subscribe = app pool (SPA client only) + own-channel onSubscribe handler, publish = IAM only; pay per use, no fixed cost; polling stays the fallback (docs/realtime.md) |
 
 ## Data Sources
 
@@ -74,6 +75,13 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-ballots-api` | `ballots_handler.py` | `/voting-sessions/*` (room votes on a Prioritization row; `GET .../config` and `POST .../submit` public) | DynamoDB aggregates Get/Put/Update, projects GetItem, KMS |
 | `voc-radar-api` | `radar_handler.py` | `/radar`, `/radar/{proxy+}` (other brands, docs/radar.md) | DynamoDB radar Get/Query/Put/BatchGet, aggregates read, KMS, invoke the Radar scan worker |
 | `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` (admin-only; incl. `POST /s3-import/reprocess`, `GET /s3-import/reprocess/{run_id}`) | S3 import bucket RW, KMS; with the `s3_import` plugin enabled (`lib/stacks/api-s3-import-lambda.ts`): `lambda:InvokeFunction` on exactly `voc-ingestor-s3_import` (by name, env `S3_IMPORT_INGESTOR_FUNCTION`) and aggregates Put/Get/UpdateItem + Query (the duplicate-run check, 409) pinned by `dynamodb:LeadingKeys` to `SOURCE_RUN#s3_import` (the reprocess run rows) |
+
+Push notices (6.04.00, docs/realtime.md): `appsync:EventPublish` on exactly one namespace each, with
+`REALTIME_HTTP_DNS` in the environment: `jobs` for the projects, settings and scrapers roles (each shared with
+its assist twin, which publishes when an assist job ends), `chat` for `voc-chat-stream` (a run's session
+notice). `voc-agent-conductor` (VocProcessingStack) publishes run / plan status notices on `runs`: VocApiStack
+attaches that grant to its role, and the conductor reads the host from the SSM parameter
+`/[<prefix>-]voc/realtime/event-api-http-dns` (`REALTIME_HTTP_DNS_PARAMETER`, `ssm:GetParameter` on exactly it).
 
 Assist twins (4.00.00, `lib/stacks/api-assist-workers.ts`): `voc-projects-assist`,
 `voc-settings-assist`, `voc-scrapers-assist` run the SAME code, handler, role and env as their API
