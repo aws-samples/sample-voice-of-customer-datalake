@@ -1,7 +1,7 @@
 """shared/plan_schema.py + plan_canonical.py against the fixtures the TypeScript validators share.
 
 The fixtures (test/fixtures/plans/*.json, test/fixtures/plan-fingerprints.json) are also read by
-lambda/stream/src/assistant/plan/*.test.ts and frontend/src/assistant/plan/plan.lockstep.test.ts, so a
+lambda/stream/src/assistant/plan/*.test.ts and frontend/src/assistant/plan/planFixtures.test.ts, so a
 case that passes here and there means the three validators agree. ``needs_args_schema`` fixtures are
 caught only by a validator holding the tools' zod schemas: Python must accept them (rule 6 is TS-only).
 """
