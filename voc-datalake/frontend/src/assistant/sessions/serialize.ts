@@ -6,7 +6,7 @@
  *
  * Saving keeps a record small and free of user uploads: every `tool` message
  * content is trimmed to {@link MAX_STORED_TOOL_CHARS} (a persona-cards result keeps
- * valid JSON within its own cap, personaResult.ts) and attachment parts lose
+ * valid JSON within its own cap, @stream/assistant/session/persona-result) and attachment parts lose
  * their data (name and mimeType survive in `metadata`). Feedback/web sources and
  * navigation chips ride in the assistant message's `metadata.voc` so a restored
  * thread still shows them; the wire copy (`thread/wire.ts`) drops metadata.
@@ -67,7 +67,7 @@ function stripPart(part: ContentPart): ContentPart {
   }
 }
 
-/** A tool content within its cap; a persona-cards result stays valid JSON (personaResult.ts). */
+/** A tool content within its cap; a persona-cards result stays valid JSON (@stream/assistant/session/persona-result). */
 function storedToolText(text: string, toolChars: number, personaChars: number): string {
   return storedPersonaResult(text, personaChars) ?? text.slice(0, toolChars)
 }

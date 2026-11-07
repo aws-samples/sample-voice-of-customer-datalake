@@ -292,7 +292,7 @@ tests.
 | `…/plan/catalogue-args.ts` | `catalogueArgsSchemaFor(catalogue)`: the tools' own zod schemas for the literal check |
 | `…/plan/contract-json.ts` + `lambda/stream/scripts/write-plan-contract.mjs` | generate `lambda/shared/plan_contract.json` |
 | `voc-datalake/lambda/stream/src/assistant/contract.ts` | `PLAN_TOOL_NAMES` (empty: every plan tool is built), `INTERRUPT_REASON_PLAN_APPROVAL` (`plan_approval`), `PLAN_INTERRUPT_ID_PREFIX` (`plan:`), `CUSTOM_EVENTS.plan` (`assistant.plan`) |
-| `voc-datalake/frontend/src/assistant/plan/{schema,validate,placeholders,graph,canonical}.ts` | SPA mirror; `canonicalWriteFingerprint` is async there (Web Crypto). `plan.lockstep.test.ts` compares every export and runs the fixtures through both |
+| `voc-datalake/frontend/src/assistant/plan/planFixtures.test.ts` | the SPA imports the stream's `plan/schema.ts` and `plan/validate.ts` through `@stream`; this spec runs the shared fixtures through `validatePlan` with the SPA's own tool argument schemas |
 | `voc-datalake/lambda/shared/plan_schema.py`, `plan_canonical.py` | Python: `validate_plan(plan, *, is_admin, packs_allowed)` → `(plan, [])` or `(None, errors)`, `canonical_write_fingerprint`, tables read from `plan_contract.json` |
 | `voc-datalake/lambda/shared/test/fixtures/plans/*.json`, `plan-fingerprints.json` | the fixtures all three validators must agree on |
 

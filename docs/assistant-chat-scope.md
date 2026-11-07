@@ -52,8 +52,8 @@ Analysis, `page.filters` holds the page's URL filters. A run from `/chat` also c
   the tools' own `days` argument may still name another window ("the last 90 days").
 
 The schemas are `pageFiltersSchema` and `chatScopeSchema` in
-`voc-datalake/lambda/stream/src/assistant/contract.ts`, mirrored in
-`voc-datalake/frontend/src/assistant/contract.ts` (the lockstep test compares them). The SPA sends
+`voc-datalake/lambda/stream/src/assistant/contract.ts`, which the SPA imports itself through
+`@stream/assistant/contract` (`frontend/streamSource.ts`). The SPA sends
 `scope` only from `/chat`. A scope the contract would refuse is sent as one that admits nothing
 (`sentiment: 'none'`): the run reads no feedback rather than reading without the user's filters.
 `'none'` is not a sentiment, so the floor's sentiment list is empty and every floored tool answers
