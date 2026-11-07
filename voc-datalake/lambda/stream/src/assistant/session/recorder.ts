@@ -45,6 +45,8 @@ export interface SessionRecorder {
   observe(event: BaseEvent): number | null;
   /** Queue a write of the current state now (the run's first write: the user turn). */
   flush(): number;
+  /** The run's stored status and the revision of its newest queued write (0 before the first). */
+  outcome(): { status: RunStatus; revision: number };
 }
 
 const textStart = z.object({ messageId: z.string() });
@@ -69,6 +71,8 @@ interface RecorderState {
   navigation: unknown[];
   /** The user stopped the run (CUSTOM assistant.stopped): saved as `stopped`, the answer marked. */
   stopped: boolean;
+  /** The revision of the newest queued write. */
+  revision: number;
 }
 
 function isAssistant(message: Message): message is AssistantMessage {
@@ -87,7 +91,7 @@ function contentText(content: unknown): string {
 export function createSessionRecorder(base: RecorderBase, writer: SessionWriter, nowMs: () => number): SessionRecorder {
   const state: RecorderState = {
     messages: [], lastAssistantId: null, pending: [], status: 'running',
-    lastFlushMs: nowMs(), charsSinceFlush: 0, sources: undefined, navigation: [], stopped: false,
+    lastFlushMs: nowMs(), charsSinceFlush: 0, sources: undefined, navigation: [], stopped: false, revision: 0,
   };
 
   function ensureAssistant(id: string): void {
@@ -141,7 +145,8 @@ export function createSessionRecorder(base: RecorderBase, writer: SessionWriter,
       ...(base.customTitle === undefined ? {} : { customTitle: base.customTitle }),
       updatedAt: new Date(state.lastFlushMs).toISOString(),
     };
-    return writer.enqueue((revision) => buildSessionItem({ ...snapshot, revision }));
+    state.revision = writer.enqueue((revision) => buildSessionItem({ ...snapshot, revision }));
+    return state.revision;
   }
 
   function onText(event: BaseEvent): number | null {
@@ -236,5 +241,6 @@ export function createSessionRecorder(base: RecorderBase, writer: SessionWriter,
       return handlers[event.type]?.(event) ?? null;
     },
     flush,
+    outcome: () => ({ status: state.status, revision: state.revision }),
   };
 }
