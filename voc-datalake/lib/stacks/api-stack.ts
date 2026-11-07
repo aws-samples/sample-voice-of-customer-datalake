@@ -336,6 +336,8 @@ export class VocApiStack extends VocStack {
       memoryLambda: assistant.memoryLambda,
       agentsLambda: assistant.agentsLambda,
       engagementLambda,
+      radarLambda,
+      feedbackEditLambda: data.feedbackEditLambda,
     }, signingLayer);
     const { webSearch } = assistant;
 

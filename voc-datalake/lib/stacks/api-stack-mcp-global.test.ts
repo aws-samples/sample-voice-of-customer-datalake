@@ -32,10 +32,11 @@ function domainEnvKeys(): string[] {
   return keys;
 }
 
-/** Every route a global tool builds, as `METHOD /path` with `{}` for interpolated segments. */
+/** Every route a global tool builds (both catalogue modules), as `METHOD /path` with `{}` for interpolated segments. */
 function toolRoutes(): string[] {
-  const source = readRepoFile('lambda', 'shared', 'mcp_global_tools.py');
-  return [...source.matchAll(/RouteRequest\(DOMAIN_[A-Z]+, '([A-Z]+)', f?['"]([^'"]+)['"]/g)]
+  const source = ['mcp_global_tools.py', 'mcp_global_tools_steps.py']
+    .map((file) => readRepoFile('lambda', 'shared', file)).join('\n');
+  return [...source.matchAll(/RouteRequest\(DOMAIN_[A-Z_]+, '([A-Z]+)', f?['"]([^'"]+)['"]/g)]
     .map((m) => `${itemAt(m, 1)} ${collapsePlaceholders(itemAt(m, 2))}`);
 }
 
@@ -165,11 +166,12 @@ describe('global MCP endpoint IAM', () => {
     }
   });
 
-  it('may invoke exactly the six domain functions, by unqualified ARN', () => {
+  it('may invoke exactly the eight domain functions, by unqualified ARN', () => {
     const invoke = statements().filter((s) => s.actions.includes('lambda:InvokeFunction'));
     expect(invoke).toHaveLength(1);
     const { resource } = itemAt(invoke, 0);
-    expect(['MetricsApi', 'SettingsApi', 'MemoryApi', 'ProjectsApi', 'AgentsApi', 'EngagementApi'].filter((fn) => !resource.includes(fn)))
+    expect(['MetricsApi', 'SettingsApi', 'MemoryApi', 'ProjectsApi', 'AgentsApi', 'EngagementApi', 'RadarApi', 'FeedbackEditApi']
+      .filter((fn) => !resource.includes(fn)))
       .toStrictEqual([]);
     expect(resource.match(/Api[0-9A-F]{8}/g) ?? []).toHaveLength(domainEnvKeys().length);
     expect(resource).not.toContain(':*');
