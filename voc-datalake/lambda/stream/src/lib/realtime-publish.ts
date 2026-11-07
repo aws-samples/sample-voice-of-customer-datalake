@@ -10,7 +10,7 @@
 import { signedPost, type SignedPost } from './sigv4.js';
 import { errorName } from './error-name.js';
 
-export type RealtimeNamespace = 'jobs' | 'chat' | 'runs';
+type RealtimeNamespace = 'jobs' | 'chat' | 'runs';
 
 /** Send one notice to `sub`'s channel; resolves true when AppSync accepted it. Never rejects. */
 export type PublishNotice = (namespace: RealtimeNamespace, sub: string, event: Record<string, unknown>) => Promise<boolean>;

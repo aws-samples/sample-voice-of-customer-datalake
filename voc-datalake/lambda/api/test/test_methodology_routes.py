@@ -38,6 +38,7 @@ class TestDocumentRoute:
         status, body, config = _call(api_gateway_event, lambda_context, '/projects/p1/document',
                                      {'doc_type': 'prd'}, [])
         assert status == 200
+        assert config is not None
         assert config['data_sources']['feedback'] is True
         assert body['methodology']['skipped'] == [
             {'step': 'personas', 'reason': 'missing'}, {'step': 'prfaq', 'reason': 'missing'},
@@ -50,6 +51,7 @@ class TestDocumentRoute:
             'doc_type': 'prfaq', 'data_sources': {'feedback': False, 'personas': True},
         }, [PERSONA])
         assert status == 200
+        assert config is not None
         assert config['data_sources']['feedback'] is False
         assert body['methodology']['skipped'] == [{'step': 'feedback', 'reason': 'not_selected'}]
 
@@ -63,6 +65,7 @@ class TestDocumentRoute:
     def test_a_client_sent_block_is_replaced(self, api_gateway_event, lambda_context):
         _, _, config = _call(api_gateway_event, lambda_context, '/projects/p1/document',
                              {'doc_type': 'prd', 'methodology': {'skipped': []}}, [])
+        assert config is not None
         assert config['methodology']['skipped'] != []
 
 
@@ -77,6 +80,7 @@ class TestPrototypeRoute:
         status, body, config = _call(api_gateway_event, lambda_context, '/projects/p1/build-prototype', {}, [PRFAQ])
         assert status == 200
         assert body['methodology']['skipped'] == [{'step': 'prd', 'reason': 'missing'}]
+        assert config is not None
         assert config['methodology'] == body['methodology']
 
 
