@@ -1458,7 +1458,6 @@ def delete_project(project_id: str, *, actor: Mapping[str, str] | None = None) -
     return {'success': True}
 
 
-
 def _is_oversized_input_error(exc: Exception) -> bool:
     """True when a Bedrock failure looks like "the prompt was too long".
 
@@ -3915,7 +3914,6 @@ MAX_CANDIDATE_RESULTS = 20
 MAX_USER_SUB_LENGTH = 128
 # Characters that would let a value escape the quoted Cognito ListUsers filter.
 _COGNITO_FILTER_FORBIDDEN = ('"', '\\')
-
 
 
 def _user_pool_id() -> str:
