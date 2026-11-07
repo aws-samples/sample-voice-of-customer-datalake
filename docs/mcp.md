@@ -97,8 +97,8 @@ The token can only narrow that:
 
 | Setting | Values | Effect |
 |---|---|---|
-| `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes, `generate` and `edit_feedback` |
-| `project_id` | optional pin | Project tools (`get_project`, `get_document`, `create_document`, `update_document`, `generate`, `get_job`) are confined to that project and default to it; `list_projects` shows only it; `run_agent` is refused. Workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer |
+| `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes, `generate`, `edit_feedback`, `score_prioritization` and `write_feature_request` |
+| `project_id` | optional pin | Project tools (`get_project`, `get_document`, `create_document`, `update_document`, `generate`, `get_job`, `get_prioritization`) are confined to that project and default to it; `list_projects` shows only it; `get_prioritization` keeps only its rows; `run_agent` and `score_prioritization` (it reaches rows of every project the minter can see) are not offered and are refused. Workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer |
 | `expires_in_days` | 1–90, default 30 (the Connect page offers 1, 7, 30 or 90 days) | Always set; there is no non-expiring global token. Tokens minted by releases before 3.02.00 keep their stored expiry (up to 365 days) |
 
 `run_agent` (agent runs are admin-only) is offered only to a **write** token minted by
@@ -111,7 +111,7 @@ credential is still not an admin anywhere else.
 ## Tools
 
 A board route (`/feature-requests/*`) resolves its caller from the verified `iss` claim and needs a verified
-email (`shared/engagement_identity.py`). For `search_feature_requests` the delegated claims therefore also carry
+email (`shared/engagement_identity.py`). For `search_feature_requests` and `write_feature_request` the delegated claims therefore also carry
 `iss` = this deployment's APP user pool (the MCP function's own `USER_POOL_ID`, never the request),
 `email` = `mcp+<token_id>@mcp.invalid` (a service address naming the credential, not the minter's) and
 `email_verified=true`. No other tool gets these claims (`board_route_claims` in `lambda/shared/mcp_global_tools.py`).
@@ -147,11 +147,21 @@ MCP call never sees an archived board.
 | `create_document` | write | `POST /projects/{id}/documents` (projects) — custom markdown documents |
 | `update_document` | write | `PUT /projects/{id}/documents/{doc}` (projects); a PR/FAQ or PRD only when the minter (and the project owner) work AI-driven, else denied ([ways-of-working.md](ways-of-working.md)) |
 | `generate` | write, project | One methodology step, through the route the web app calls (projects): `step: personas` → `POST /projects/{id}/personas/generate` (`count` 1–10, default 3, always `keep_existing_personas: true`), `research` → `POST /projects/{id}/research` (`brief` = the question), `prfaq` / `prd` → `POST /projects/{id}/document` (`brief` = `feature_idea`; feedback read by default), `prototype` → `POST /projects/{id}/build-prototype`. Answers `step`, `job_id`, `status`, `message` and the route's `methodology` block (absent for personas). The route's own refusals answer as tool errors: the way of working for a PR/FAQ / PRD (an MCP token is an autonomous caller: the minter and the project owner must work AI-driven, [ways-of-working.md](ways-of-working.md)) and the 409 of a prototype with no PRD or PR/FAQ ([project-workspace.md → Methodology](project-workspace.md#methodology)) |
+| `get_feedback_catalogue` | read | `GET /feedback/catalogue` (metrics): every stored attribute of a feedback item, with type, meaning, setting step, PII class, `redact` / `summary_only` effect and allowed values ([data-catalogue.md](data-catalogue.md)). `sources: true` reads `GET /sources/status` (integrations) instead: each source's schedule (`enabled`, `schedule`) and circuit breaker, never its last error (admins only). Enabling, disabling, resetting and running a source are admin-only routes: no tool |
+| `get_prioritization` | read, project | `GET /projects/prioritization` (projects): the rows whose project the minter can view, the minter's own `scores`, the team `aggregates`, the scoring `axes` and `config_version`. With a project (the argument or the pin) only that project's rows, scores and aggregates |
 | `edit_feedback` | write | `PUT /feedback/{id}/category` (`category` + optional `subcategory`) or `PUT /feedback/{id}/dimensions` (`dimensions` key → value or null, `tags`), never both in one call (feedback edit); the route's category and source access apply |
+| `score_prioritization` | write, not pinned | `PATCH /projects/prioritization` (projects) with `{scores: {row_id: {axis: 1–5}}}` for one row: the route's validation (the active axes), its VIEW check on the row's project (a hidden row is 404) and its frozen-row rules apply. The ballot is the **minter's own**: the route keys a delegated `mcp:` ballot on the minter (`voc:acting_subject`), so a person never votes twice, and a token that acts for nobody is refused (403). The axes (`PUT /projects/prioritization/config`) are admin-only: no tool |
+| `write_feature_request` | write | Without `request_id`: `POST /feature-requests` (engagement), `{board?, title, description?, fields?}` on a board the minter can see (omitted = the seeded board); with `request_id`: `POST /feature-requests/{id}/supports` (a +1, `fields?`). The board's audience, archive / pause (409), template fields (400), one +1 per person (409) and `anyone`-board rate limit (429) apply. Both are recorded as the credential's service address (`mcp+<token_id>@mcp.invalid`): a +1 counts once per token and request. Status changes, deletes and promotion are board-admin routes: no tool |
 | `run_agent` | write + admin-minted | `POST /agents/{id}/run` (agents) |
 
+**Not tools, and why.** Every import route (`/scrapers/manual/*` paste / CSV / JSON, `/s3-import/*`) is admin-only
+(the handlers' `admins_only` middleware, #242: importing writes customer data), and an MCP token is never admin, so
+there is no import tool. The same holds for source enable / disable / reset / run, the Prioritization axes and a board
+request's status.
+
 The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Radar and feedback-edit tools in
-`lambda/shared/mcp_global_tools_steps.py`, the shared helpers in `lambda/shared/mcp_global_kit.py`). Ids from arguments must
+`lambda/shared/mcp_global_tools_steps.py`, the catalogue, Prioritization and board-write tools in
+`lambda/shared/mcp_global_tools_work.py`, the shared helpers in `lambda/shared/mcp_global_kit.py`). Ids from arguments must
 match `^[A-Za-z0-9_-]{1,128}$` before they are put in a route path; results drop
 storage keys and every signed URL. A route's 4xx is a tool error (`isError: true`)
 the model can act on; a 5xx or an invoke fault is JSON-RPC `-32603`.
@@ -440,8 +450,8 @@ test user who is NOT an administrator, then once with an administrator for `run_
 - `/connect/tokens` routes sit behind one Cognito proxy, `/connect/{proxy+}` (the handler routes by path);
 - least-privilege roles, pinned by `lib/stacks/api-stack-mcp-global.test.ts`: the MCP
   role reads/updates only the `MCPGTOKEN` partition, appends only `MCPAUDIT#…` rows,
-  calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the eight domain
-  Lambdas (metrics, settings, memory, projects, agents, engagement, radar, feedback edit); the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
+  calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the nine domain
+  Lambdas (metrics, settings, memory, projects, agents, engagement, radar, feedback edit, integrations); the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
   check and queries `MCPAUDIT#…`;
 - each function has ONE API-scoped invoke permission (not two per method) because
   `VocApiStack` is close to CloudFormation's 500-resource limit.
@@ -493,7 +503,12 @@ token refused outside its project, and `run_agent` for non-admin, admin and demo
 minters. `test_global_mcp_protocol.py` and `test_global_mcp_tokens_api.py` cover the
 envelope, argument validation and the token API. `lambda/shared/test/test_mcp_global_tools_budget.py`
 keeps the whole `tools/list` under an estimated 4,000 tokens (ChatGPT connectors are reported to
-refuse servers past about 5,000): a new tool or a wordy description fails there first.
+refuse servers past about 5,000): a new tool or a wordy description fails there first. To stay inside it, a
+tool publishes only the annotations that differ from the MCP defaults (`readOnlyHint`, `openWorldHint: false`, and
+`destructiveHint: false` on a write tool); the display name is the top-level `title`.
+`lambda/api/test/test_mcp_global_work_tools.py` covers the catalogue, Prioritization and board-write tools (routes,
+refusals, the pin, the board claims), and `test_projects_prioritization_delegated.py` that a token's ballot is its
+minter's own.
 
 These tests run every layer between the JSON-RPC frame and the DynamoDB row except API Gateway's own token
 authorizer, Cognito (an in-memory fake at the boto3 surface) and Step Functions. To check a real client, deploy,

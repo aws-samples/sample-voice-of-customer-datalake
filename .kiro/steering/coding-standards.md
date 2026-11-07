@@ -192,7 +192,7 @@ lambda/jobs/category_reprocess/handler.py  # voc-category-reprocess worker (asyn
 | Logs | `logs_handler.py` | CloudWatch Logs read, its own CloudWatch alarms, the ops SNS topic |
 | Memory | `memory_handler.py` | DynamoDB (memory, aggregates read), SQS memory-extract, S3 `memory-imports/*`, Bedrock |
 | Agents | `agents_handler.py` | DynamoDB (agents, aggregates read), Step Functions `voc-agent-run` |
-| Global MCP | `mcp_global_handler.py` | DynamoDB (projects tokens, jobs audit), Cognito read, invoke eight domain APIs (metrics, settings, memory, projects, agents, engagement, radar, feedback edit) |
+| Global MCP | `mcp_global_handler.py` | DynamoDB (projects tokens, jobs audit), Cognito read, invoke nine domain APIs (metrics, settings, memory, projects, agents, engagement, radar, feedback edit, integrations) |
 | MCP tokens | `mcp_tokens_handler.py` | DynamoDB (projects tokens, jobs audit) |
 | Engagement | `engagement_handler.py` | DynamoDB (participants, feature requests RW; projects, aggregates read), KMS, SES (with `-c emailFrom`), self-invoke |
 | Ballots | `ballots_handler.py` | DynamoDB (aggregates Get/Put/Update, projects GetItem), KMS |

@@ -41,9 +41,15 @@ most an editor on any project. On top of that:
 
 - a **read-only** token gets only the read tools;
 - a **read-write** token can also create and update project documents, start a
-  methodology step (`generate`) and correct a feedback item (`edit_feedback`);
+  methodology step (`generate`), correct a feedback item (`edit_feedback`), score
+  a Prioritization row as the user (`score_prioritization`) and post or +1 a board
+  request (`write_feature_request`);
 - a token **scoped to one project** can read and write only that project's
   documents (workspace-wide reads such as feedback and metrics still work);
+  `get_prioritization` shows only that project's rows, and `score_prioritization`
+  is not available to it;
+- imports, enabling / disabling / running a data source, the Prioritization axes and
+  board status changes are administrator actions: no token reaches them;
 - `run_agent` exists only for a read-write token minted by an administrator,
   and stops working the moment that person is no longer an administrator.
 
@@ -69,10 +75,14 @@ outcome — never the arguments or any content).
 | `search_feature_requests` | Requests people posted on the feedback boards (feature requests, ideas): `query`, `board`, `category`, `status` (one value or a comma list), `days` (0 = all time), `limit` (≤ 50). Each has `supporters` (+1 count). These are NOT customer reviews: never add them to feedback counts, and cite each as `[FR:<request_id>]`. |
 | `get_job` | Follow a job `generate` started: give `project_id` and `job_id`; read it until `status` is `completed` (its `result` names the document) or `failed`. The result carries the `methodology` block. |
 | `read_radar` | Other brands' reviews (Radar): no `brand` = the brands and their totals; a `brand` key = its reviews (`days`, `limit` ≤ 50). These are NOT our customers: never add them to our feedback counts or quote them as our evidence. |
+| `get_feedback_catalogue` | What each stored field of a feedback item means: its type, which step sets it, whether it holds personal data, what a `redact` / `summary_only` source policy does to it, and its allowed values. Read it before filtering or quoting an unfamiliar field. `sources: true` answers the data sources instead: each one's schedule (enabled or not) and circuit breaker. |
+| `get_prioritization` | The Prioritization board: rows (a project and its documents), the user's own scores, the team's aggregate and the scoring `axes` (their ids are the keys of `score_prioritization`). A `project_id` (or a pinned token) keeps only that project's rows. |
 | `create_document` | (write) Add a markdown document to a project. |
 | `update_document` | (write) Change a document's title and/or content. |
 | `generate` | (write) Start one methodology step in a project: `step` = `personas` (adds `count` personas, never replaces), `research` (`brief` = the question), `prfaq` or `prd` (`brief` = the idea; reads customer feedback), `prototype` (from the newest PRD / PR/FAQ). Answers a `job_id` and a `methodology` block: the upstream steps this one runs without (`skipped`) and `warnings`. Tell the user about every warning; never hide a skipped step. A prototype with no PRD or PR/FAQ is refused: write one first. A PR/FAQ or PRD is refused unless the user (and the project owner) work AI-driven. |
 | `edit_feedback` | (write) Correct one feedback item: `category` (+ `subcategory`), or `dimensions` (key → value, `null` clears) and `tags`. Not both in one call. |
+| `score_prioritization` | (write; not for a project-scoped token) Set the user's own scores on one row: `row_id` and `scores` = `{axis id: 1-5}` from `get_prioritization`. It replaces only the axes given, on the user's own ballot (never a second vote). |
+| `write_feature_request` | (write) Post a request on a board the user can see (`board` id or slug, omitted = the default board; `title`, `description`, `fields` = the board's own fields), or +1 an existing one (`request_id`, optional `fields`). The +1 is recorded as this token (one per request). A paused or archived board refuses it. |
 | `run_agent` | (write, admin-minted) Start an agent run now. |
 
 ## Prompts and resources
@@ -94,8 +104,9 @@ Resources (`resources/read`, JSON): `voc://categories` (the category taxonomy) a
 2. **Cite your evidence.** When you state what customers want, include the
    `feedback_id`s (or the metrics view) the claim rests on.
 3. **Ask before writing.** Confirm with the user before `create_document`,
-   `update_document`, `generate`, `edit_feedback` or `run_agent`; say which project
-   and which document or feedback item.
+   `update_document`, `generate`, `edit_feedback`, `score_prioritization`,
+   `write_feature_request` or `run_agent`; say which project and which document,
+   feedback item, row or board.
 4. **Follow the methodology.** It goes customer evidence → personas → PR/FAQ → PRD →
    prototype. When a `methodology` block lists a skipped step, say so to the user and
    offer to do that step first.

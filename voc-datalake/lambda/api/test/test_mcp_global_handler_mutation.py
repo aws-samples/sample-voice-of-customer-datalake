@@ -605,7 +605,8 @@ class TestToolGating:
         assert names == ['search_feedback', 'get_feedback', 'get_metrics', 'list_categories', 'list_dimensions',
                          'search_memory',
                          'get_company_context', 'list_projects', 'get_project', 'get_document', 'list_agents',
-                         'get_agent_run', 'search_feature_requests', 'get_job', 'read_radar']
+                         'get_agent_run', 'search_feature_requests', 'get_job', 'read_radar',
+                         'get_feedback_catalogue', 'get_prioritization']
         assert _body(response)['result']['tools'][7] == LIST.declaration()
 
     @pytest.mark.parametrize(('tool', 'arguments', 'pin', 'expected'), [
