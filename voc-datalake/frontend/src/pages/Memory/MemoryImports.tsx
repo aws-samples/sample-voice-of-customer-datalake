@@ -102,7 +102,7 @@ function ImportRow({ importId }: Readonly<{ importId: string }>) {
     retry: false,
   })
   const record = query.data
-  useRealtimeJobRefresh({ jobId: importId }, [memoryKeys.import(importId)], record === undefined || !isTerminalImport(record))
+  useRealtimeJobRefresh({ jobId: importId }, [memoryKeys.import(importId)], record != null && !isTerminalImport(record))
   if (!record) {
     return (
       <li className="py-2 text-sm text-muted flex items-center gap-2">
