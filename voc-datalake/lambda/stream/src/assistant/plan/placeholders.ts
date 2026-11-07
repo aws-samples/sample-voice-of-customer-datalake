@@ -3,7 +3,7 @@
  * (objects and arrays, any depth) classified as a literal, a `{{free}}` marker,
  * a `{{step.output}}` reference, or malformed (any other `{{` / `}}`).
  *
- * LOCKSTEP: `frontend/src/assistant/plan/placeholders.ts` mirrors this file.
+ * The SPA reads it through `@stream/assistant/plan/validate`.
  */
 import { FREE_PLACEHOLDER, REFERENCE_RE } from './schema.js';
 

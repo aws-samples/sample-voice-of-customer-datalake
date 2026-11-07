@@ -16,7 +16,8 @@ import { getProjectRoute, getSettingsRoute, seg, serverTool, syncServerTool, win
 import { summarizeProject } from './project-shape.js';
 import { readCategoryScope, readVisibleCategories } from './category-access.js';
 import { breakdownLabels, labelResult, readCategoryLabeller } from './category-labels.js';
-import { DIMENSION_KEY_PATTERN, ITEM_FILTER_PROPERTIES, itemFilterShape } from './item-filters.js';
+import { ITEM_FILTER_PROPERTIES, itemFilterShape } from './item-filters.js';
+import { DIMENSION_KEY_PATTERN } from '../dimension-patterns.js';
 import { floorForRun, isEmptyFloor, readLimitForRun, type FeedbackFloor } from './feedback-floor.js';
 import { floorQuery, type FloorQuery, type RouteFloorField } from './floor-args.js';
 

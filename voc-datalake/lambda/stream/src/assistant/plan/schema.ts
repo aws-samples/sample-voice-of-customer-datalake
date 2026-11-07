@@ -12,8 +12,8 @@
  * cross-step rules (limits, DAG, references, packs, admin gating, literals) are
  * `validate.ts`.
  *
- * LOCKSTEP: `frontend/src/assistant/plan/schema.ts` mirrors every export
- * (`plan.lockstep.test.ts` there), and `lambda/shared/plan_contract.json` is
+ * The SPA imports this module through `@stream` (browser-safe: zod and the
+ * contract only), and `lambda/shared/plan_contract.json` is
  * generated from these constants for the Python validator (`contract-json.ts`).
  */
 import { z } from 'zod';

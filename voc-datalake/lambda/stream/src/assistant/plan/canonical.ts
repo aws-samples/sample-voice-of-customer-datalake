@@ -9,7 +9,7 @@
  * numbers, lone surrogates and other value types are refused, so both sides
  * either agree or both throw.
  *
- * LOCKSTEP: `frontend/src/assistant/plan/canonical.ts` mirrors this file.
+ * The SPA reads it through `@stream/assistant/plan/validate` (pure: no Node built-ins).
  */
 
 /** Thrown for a value that has no canonical form. */

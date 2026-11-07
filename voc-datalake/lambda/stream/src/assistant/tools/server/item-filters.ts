@@ -11,9 +11,8 @@
 import type { DocumentType } from '@smithy/types';
 import { z } from 'zod';
 import type { JsonSchemaProperties } from '../spec.js';
+import { DIMENSION_KEY_PATTERN, DIMENSION_VALUE_PATTERN } from '../dimension-patterns.js';
 
-export const DIMENSION_KEY_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
-export const DIMENSION_VALUE_PATTERN = /^[^\s#,:]{1,64}$/;
 const MAX_DIMENSION_FILTERS = 10;
 const MAX_FILTER_LENGTH = 64;
 

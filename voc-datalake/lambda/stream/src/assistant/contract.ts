@@ -6,9 +6,9 @@
  * application-specific parts of it (`forwardedProps`), the tool catalogue and
  * its packs, and the names of the CUSTOM events and interrupt reasons.
  *
- * LOCKSTEP: `frontend/src/assistant/contract.ts` mirrors every exported
- * constant below; `frontend/src/assistant/contract.lockstep.test.ts` parses
- * this file and fails when the two drift. Change both together.
+ * The SPA imports this module itself, through `@stream/assistant/contract`
+ * (`frontend/streamSource.ts`), so it must stay browser-safe: zod only (the
+ * `browser-safe` block of this package's eslint.config.js).
  *
  * Execution model
  *   - SERVER tools are read-only and run inside the stream Lambda.
@@ -209,7 +209,7 @@ export const ADMIN_ONLY_SERVER_TOOLS: readonly ServerToolName[] = ['analyze_scra
  * named here before they were implemented. Every one is now built and listed
  * in SERVER_TOOLS / CLIENT_TOOLS (and `run_source` in ADMIN_ONLY_CLIENT_TOOLS),
  * so the lists are empty; the export stays because the plan contract
- * (`plan/schema.ts`, `plan_contract.json`) and both mirrors read it, and a
+ * (`plan/schema.ts`, `plan_contract.json`) and the SPA read it, and a
  * later plan-mode tool is named here first the same way.
  */
 export const PLAN_TOOL_NAMES = {
@@ -434,7 +434,7 @@ export const forwardedPropsSchema = z.object({
 });
 export type ForwardedProps = z.infer<typeof forwardedPropsSchema>;
 
-/** Hard request bounds (the SPA mirrors these). */
+/** Hard request bounds (the SPA reads the same object). */
 export const LIMITS = {
   maxMessages: 300,
   maxUserMessageChars: 8000,

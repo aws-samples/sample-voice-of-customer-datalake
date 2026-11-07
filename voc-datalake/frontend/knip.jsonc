@@ -33,11 +33,9 @@
     // lambda/api/test/test_doc_type_lockstep.py pins their exact text. FeedbackFormConfig is the
     // public widget's wire shape, pinned by test_widget_config_type_lockstep.py.
     "src/api/types.ts": ["types"],
-    // Allowlist pins and a test seam of the approval layer: PERSONA_UPDATABLE_FIELDS /
-    // FEEDBACK_FORM_UPDATABLE_FIELDS and listWriteTools are compared against the stream Lambda's
-    // contract by allowlists.lockstep.test.ts and registry.test.ts; resetExecutions resets the
-    // module-private zustand store between ApprovalCard specs (production never resets it).
-    "src/assistant/approvals/schemas.ts": ["exports"],
+    // Test seams of the approval layer: listWriteTools is compared against the stream Lambda's
+    // contract by registry.test.ts; resetExecutions resets the module-private zustand store between
+    // ApprovalCard specs (production never resets it).
     "src/assistant/approvals/registry.ts": ["exports"],
     "src/assistant/approvals/executionStore.ts": ["exports"],
     // resetSessionExpiryForTests: the test seam over module-private redirect state (3 specs);
