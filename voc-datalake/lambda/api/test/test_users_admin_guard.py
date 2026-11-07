@@ -77,11 +77,11 @@ def test_enabling_oneself_is_not_refused(api_gateway_event, lambda_context):
 
 class TestGuard:
     def test_a_user_outside_the_group_is_never_the_last_admin(self):
-        user_admin_guard.refuse_last_admin('bob', [{'Username': 'alice'}])
+        assert user_admin_guard.refuse_last_admin('bob', [{'Username': 'alice'}]) is None
 
     def test_the_only_member_is_the_last_admin(self):
         with pytest.raises(ConflictError, match='last enabled administrator'):
             user_admin_guard.refuse_last_admin('alice', [{'Username': 'alice'}])
 
     def test_no_caller_subject_never_matches(self):
-        user_admin_guard.refuse_own_account('', '', user_admin_guard.ACTION_DELETE)
+        assert user_admin_guard.refuse_own_account('', '', user_admin_guard.ACTION_DELETE) is None

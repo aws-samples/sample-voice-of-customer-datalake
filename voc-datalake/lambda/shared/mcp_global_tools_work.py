@@ -29,7 +29,7 @@ token is never admin.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Final
+from typing import Any, Final, TypeGuard
 
 from shared.mcp_global_kit import (
     BOOL_SCHEMA,
@@ -48,6 +48,7 @@ from shared.mcp_global_kit import (
     stripped,
     text_arg,
 )
+from shared.request_body import optional_field
 
 MAX_BOARD_REF_CHARS: Final = 64
 MAX_REQUEST_TITLE_CHARS: Final = 160      # shared/feature_requests_store.MAX_TITLE
@@ -110,12 +111,13 @@ def _score(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
 
 
 def _board_fields(args: Mapping[str, Any]) -> dict[str, Any]:
-    value = args.get('fields')
-    if value is None:
-        return {}
-    if not isinstance(value, Mapping) or len(value) > MAX_BOARD_FIELDS:
-        raise InvalidToolArgument(f'fields must be an object of at most {MAX_BOARD_FIELDS} board field values')
-    return {'fields': dict(value)}
+    value = optional_field(args, 'fields', _is_board_fields, lambda: InvalidToolArgument(
+        f'fields must be an object of at most {MAX_BOARD_FIELDS} board field values'))
+    return {} if value is None else {'fields': dict(value)}
+
+
+def _is_board_fields(value: object) -> TypeGuard[Mapping[str, Any]]:
+    return isinstance(value, Mapping) and len(value) <= MAX_BOARD_FIELDS
 
 
 def _feature_request(args: Mapping[str, Any], _project: str | None) -> RouteRequest:

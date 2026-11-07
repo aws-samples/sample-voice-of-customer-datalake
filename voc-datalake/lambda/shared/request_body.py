@@ -24,8 +24,8 @@ bundles that cannot import each other; `shared/` ships with every one of them.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from typing import Any, Protocol
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any, Protocol, TypeGuard
 
 from shared.exceptions import ValidationError
 
@@ -104,3 +104,15 @@ def require_known_change(body: Mapping[str, Any], fields: Iterable[str]) -> None
     reject_unknown_fields(body, names)
     if not any(name in body for name in names):
         raise ValidationError(f"Give at least one of: {', '.join(names)}")
+
+
+
+def optional_field[T](body: Mapping[str, Any], field: str, fits: Callable[[object], TypeGuard[T]],
+                      refusal: Callable[[], Exception]) -> T | None:
+    """``body[field]`` when ``fits`` accepts it, None when it is absent or null, else ``refusal()`` is raised."""
+    value = body.get(field)
+    if value is None:
+        return None
+    if not fits(value):
+        raise refusal()
+    return value
