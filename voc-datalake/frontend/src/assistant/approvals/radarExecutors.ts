@@ -11,7 +11,8 @@
 import { radarApi } from '../../api/radarApi'
 import { invalidateKeys, keysFor } from './invalidation'
 import { requireUnchangedSinceShown, shownOf } from './shown'
-import { brandKeyOf, radarListFingerprint, savedNewsFields } from './radarSchemas'
+import { radarBrandKey } from '@stream/assistant/tools/client/radar-schemas'
+import { radarListFingerprint, savedNewsFields } from './radarSchemas'
 import type { RunRadarScanArgs, SaveRadarBrandsArgs } from './radarSchemas'
 import type { WriteToolExecutionContext } from '../types'
 
@@ -25,10 +26,10 @@ export async function saveRadarBrands(args: SaveRadarBrandsArgs, ctx: WriteToolE
   // A brand the card names a language, feeds or terms for gets them; otherwise a brand already tracked keeps its own.
   const stored = new Map(current.map((entry) => [entry.key, entry]))
   const saved = await radarApi.saveBrands(args.brands.map((brand) => ({
-    label: brand.label, domains: brand.domains ?? [], ...savedNewsFields(brand, stored.get(brandKeyOf(brand.label))),
+    label: brand.label, domains: brand.domains ?? [], ...savedNewsFields(brand, stored.get(radarBrandKey(brand.label))),
   })))
   void invalidateKeys(ctx.queryClient, keysFor.radar())
-  const brands = args.brands.map((brand) => ({ key: brandKeyOf(brand.label), label: brand.label }))
+  const brands = args.brands.map((brand) => ({ key: radarBrandKey(brand.label), label: brand.label }))
   const named = brands.map((brand) => `${brand.label} (key ${brand.key})`).join(', ')
   return {
     summary: brands.length === 0
