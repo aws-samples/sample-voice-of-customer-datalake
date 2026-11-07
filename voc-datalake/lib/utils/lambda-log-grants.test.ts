@@ -43,4 +43,24 @@ describe('removeAwsManagedPolicy', () => {
     removeAwsManagedPolicy(cfn, LAMBDA_BASIC_EXECUTION_POLICY);
     expect(stack.resolve(cfn.managedPolicyArns)).toStrictEqual([managedArn('ReadOnlyAccess')]);
   });
+
+  it('keeps a managed policy of ANOTHER stack as its import, not as a Ref to a resource this stack lacks', () => {
+    const app = new cdk.App();
+    const policyStack = new cdk.Stack(app, 'Policies');
+    const shared = new iam.ManagedPolicy(policyStack, 'Shared', {
+      statements: [new iam.PolicyStatement({ actions: ['sqs:SendMessage'], resources: ['*'] })],
+    });
+    const stack = new cdk.Stack(app, 'Roles');
+    const role = new iam.Role(stack, 'Role', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName(LAMBDA_BASIC_EXECUTION_POLICY), shared],
+    });
+    const cfn = role.node.defaultChild;
+    if (!(cfn instanceof iam.CfnRole)) throw new Error('no CfnRole');
+    removeAwsManagedPolicy(cfn, LAMBDA_BASIC_EXECUTION_POLICY);
+    const rendered = JSON.stringify(Template.fromStack(stack).findResources('AWS::IAM::Role'));
+    expect(rendered).toContain('"Fn::ImportValue":"Policies:ExportsOutputRefShared');
+    expect(rendered).not.toContain('{"Ref":"Shared');
+    expect(rendered).not.toContain(LAMBDA_BASIC_EXECUTION_POLICY);
+  });
 });
