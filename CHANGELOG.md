@@ -17,33 +17,16 @@ the platform package version.
 
 ## [Unreleased]
 
-## [6.03.02] - 2026-11-08
+## [6.03.02] - 2026-11-07
 
-The pull request AI review converges: later rounds review only the new commits and give every earlier finding a status. It also reads the changed files, follows a new `REVIEW.md`, and scales its depth to what changed. This is development tooling only: the platform, its stacks and the workshop packaging do not change.
-
-### Added
-
-- **`REVIEW.md`**: what failure looks like in each area of the repository, how to report (file:line evidence, one finding per class of mistake, at most 3 nits, a count first) and what to skip. Both AI reviews read it, `npm run validate:commit` / `validate:tenets` locally and the `AI review` workflow on pull requests.
+The SPA reads the code it shares with the AI assistant's stream Lambda from the stream package itself, so the hand-kept copies and their lockstep tests are gone.
 
 ### Changed
 
-- **Rounds converge.** From the second push on, the `AI review` comment is a new round ([CONTRIBUTING.md → AI review on pull requests](CONTRIBUTING.md#ai-review-on-pull-requests)):
-  - it reviews only the commits since the last review, with the whole diff as context;
-  - every earlier finding keeps a stable id (`T1`, `C1`, …) and is listed once as **Resolved**, **Answered by the author** or **Still open**, above the new findings;
-  - a blocking finding still open keeps the verdict at BLOCK, whatever the model's own verdict line says;
-  - there is no limit on rounds;
-  - each pass resumes from the last commit it reviewed to the end, so a pass that failed or was cut short reviews the commits it missed;
-  - a rewritten history gets the whole diff again, still with the recap.
-- **The reviewer sees the code around the change**: the current text of the changed files and of the files the change names by path, within a size limit, read from git objects only.
-- **Depth follows the changed paths**:
-  - documentation only (`*.md`, `docs/`, `LICENSE`; never TENETS.md, REVIEW.md, CONTRIBUTING.md or `.kiro/`) gets a short review;
-  - CI, the git hooks and the gates that enforce the tenets, the reviewers, TENETS.md and REVIEW.md, IAM and stacks, data deletion, authentication and access checks, and the AI-writing guard get a deep one, with a larger output budget and context;
-  - everything else gets the standard review.
-
-### Upgrade notes
-
-- Nothing to do for a deployment of the platform. A redeploy changes only the release number the Lambdas record (`APP_VERSION`, `6.3.2`), as every release does.
-- The AWS role of the review (`tools/ai-review-ci/`) does not change. The new review applies from the first pull request after this one merges, because the reviewer is read from `main`.
+- The SPA imports the AG-UI contract, the plan schema and checks, the persona-result storage and the approval-card bounds (persona, product context, feedback form, review import, Radar, memory, company, agents, workflows, assist-job polling) from `voc-datalake/lambda/stream/src` through the `@stream/*` alias (`frontend/streamSource.ts`: vite, vitest and tsconfig, zod deduplicated). The bounds, rules and messages are the ones each side used before; where the two sides worded a message differently, each keeps its own.
+- The stream Lambda lints every module the SPA reaches with a `browser-safe` block (no Node built-ins, `@aws-sdk` or `@smithy` at runtime), and `src/browser-safe.test.ts` fails when the SPA imports a stream module the block does not cover. CONTRIBUTING.md → "Code the SPA shares with the stream Lambda".
+- One `IconBadge` component draws 18 icon badges (verdicts, run outcomes, plans, visibility, pins, release watch, model tests). Nothing on screen changes.
+- The duplication excuses for these copies go: 6 `.jscpd.json` file ignores, 10 inline `jscpd:ignore` blocks, 6 TypeScript clone allowlist entries and the knip and reachability entries that existed for the mirrors.
 
 ## [6.03.01] - 2026-11-07
 
