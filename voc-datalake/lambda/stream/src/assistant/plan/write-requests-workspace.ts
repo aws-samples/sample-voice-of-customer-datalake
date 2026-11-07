@@ -56,17 +56,21 @@ function sourceRoute(root: 'integrations' | 'sources', source: string, rest: str
 }
 
 /** `POST /scrapers` with a record the SPA would also save (css selectors present, within the size budget). */
-function saveScraper(scraper: Record<string, unknown>): WriteRequest {
+/**
+ * POST /scrapers with the server's write rules (docs/scrapers.md → Write rules): a create never
+ * overwrites, an update of a record read with an `etag` is refused when it changed since.
+ */
+function saveScraper(scraper: Record<string, unknown>, mode: 'create' | 'update', baseEtag?: unknown): WriteRequest {
   const problem = scraperRecordProblem(scraper);
   if (problem !== undefined) throw new WriteRequestError(`${problem} Nothing was saved.`);
-  return exact('scrapers', 'POST', '/scrapers', { scraper });
+  return exact('scrapers', 'POST', '/scrapers', { scraper, mode, ...(typeof baseEtag === 'string' ? { base_etag: baseEtag } : {}) });
 }
 
 const SCRAPERS: Readonly<Record<string, RequestBuilder>> = {
   run_scraper: (args) => proxied('scrapers', 'POST', 'scrapers', `${text(args, 'scraper_id')}/run`),
-  create_scraper: (args) => saveScraper(createdScraperRecord(args)),
-  update_scraper: (args, env) => saveScraper(mergedScraperRecord({ ...current(env) }, args)),
-  create_app_connector: (args) => sourceRoute('integrations', appConnectorSource(args), 'apps', { app: appConnectorRecord(args) }),
+  create_scraper: (args) => saveScraper(createdScraperRecord(args), 'create'),
+  update_scraper: (args, env) => saveScraper(mergedScraperRecord({ ...current(env) }, args), 'update', current(env).etag),
+  create_app_connector: (args) => sourceRoute('integrations', appConnectorSource(args), 'apps', { app: appConnectorRecord(args), mode: 'create' }),
   run_source: (args) => sourceRoute('sources', text(args, 'source'), 'run'),
   set_source_enabled: (args) => sourceRoute('sources', text(args, 'source'), args.enabled === true ? 'enable' : 'disable', undefined, 'PUT'),
 };
