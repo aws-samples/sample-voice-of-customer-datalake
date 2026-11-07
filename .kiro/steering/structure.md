@@ -690,12 +690,23 @@ Admin-only on every route. Customer data is never deleted: there is **no**
 
 ## Adding a New Data Source
 
-1. Create plugin in `plugins/{source}/` with `manifest.json` and `handler.py`
-2. Follow the template in `plugins/_template/`
-3. Run `npm run validate:plugins` to verify configuration
-4. Add source config to `ingestion-stack.ts` (schedule, timeout)
-5. Add credentials to Secrets Manager template
-6. Update frontend Settings page with source fields
+The full walkthrough is `docs/getting-started-plugins.md`; in short:
+
+1. Copy `plugins/_template/` to `plugins/{source}/` (folder name = manifest `id`, not a namespace prefix of another
+   id) and edit `manifest.json`: `infrastructure` (ingestor schedule, timeout, memory; webhook; s3Trigger), `config`
+   (the settings form), `secrets` (at least one bare key), and any capability the platform must honour —
+   `capabilities.updatesItems`, `infrastructure.ingestor.selfInvoke` / `bedrock` / `browser`,
+   `infrastructure.webhook.memory` (docs/plugin-architecture.md → Capabilities). Never branch on the plugin id in
+   platform code (TENETS.md tenet 5).
+2. Implement `ingestor/handler.py` (`BaseIngestor.fetch_new_items`) and/or `webhook/handler.py`; run
+   `npm run validate:plugins`.
+3. Register it: `pluginStatus.{source}: true` in `cdk.context.json`; its name + description in all nine
+   `frontend/public/locales/*/settings.json` (`pluginCopy.*`) and `PLUGIN_COPY_KEYS` in
+   `frontend/src/plugins/pluginCopy.ts` (`pluginCopy.test.tsx` fails without them); its Lambda memory in
+   `lib/sizing/policy.ts` (`lib/lambda-memory.test.ts`).
+4. `npm run generate:config` (frontend manifests + menu), then deploy (`npm run deploy:infra`, `npm run deploy:frontend`).
+   No stack edit: `ingestion-stack.ts` / `api-stack.ts` create the Lambdas, schedules, webhook routes and secret keys
+   from the manifest.
 
 ## CDK Stack Dependencies
 

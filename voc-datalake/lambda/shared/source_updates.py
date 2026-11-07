@@ -1,5 +1,5 @@
 """
-In-place refresh of an issue-tracker item that is already stored (github_issues).
+In-place refresh of an issue-tracker item that is already stored (today: github_issues).
 
 An issue is a living record: labels, state, milestone, reactions and even its text
 change after the first ingest, and the plugin re-sends it whenever GitHub's
@@ -7,8 +7,9 @@ change after the first ingest, and the plugin re-sends it whenever GitHub's
 ``labeled`` / ``closed`` / ``edited`` …). Every other source sends an item once,
 so "already stored" means "duplicate" for them and only for them.
 
-A record is UPDATE-CAPABLE only when it comes from the github_issues plugin
-(``source_platform == GITHUB_SOURCE``, the plugin's manifest id) AND carries
+A record is UPDATE-CAPABLE only when its source's plugin declares the capability
+(``"capabilities": {"updatesItems": true}`` in its ``manifest.json``, rendered into
+the processor's ``UPDATE_CAPABLE_SOURCES`` env at synth; TENETS.md tenet 5) AND it carries
 ``issue_attributes``. ``issue_attributes`` alone is not enough: any other producer
 (manual import, a feedback form, another plugin) that happens to send the key is
 a normal new item / duplicate skip, never an in-place overwrite. For those:
@@ -40,14 +41,15 @@ a re-enrichment.
 """
 import hashlib
 import json
+import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from functools import cache
 from typing import Any
 
 from shared.categorization import Enrichment
 from shared.csv_datasets import is_csv_replace
 from shared.feedback_category import CATEGORY_SOURCE_MANUAL
-from shared.github_metrics import GITHUB_SOURCE
 from shared.silver_provenance import REASON_SOURCE_UPDATE, SYSTEM_ACTOR, change_stamp, provenance
 from shared.source_profiles import PII_SUMMARY_ONLY
 from shared.usefulness import USEFULNESS_FIELD, item_usefulness
@@ -62,13 +64,32 @@ FINGERPRINT_LENGTH = 16
 ISSUE_ATTRIBUTES = 'issue_attributes'
 
 
-#: The only source whose records are refreshed in place (plugins/github_issues/manifest.json ``id``).
-UPDATE_CAPABLE_SOURCE = GITHUB_SOURCE
+#: The processor env var naming the update-capable sources, a JSON array the CDK renders from the
+#: plugins whose ``manifest.json`` declares ``capabilities.updatesItems`` (UPDATE_CAPABLE_SOURCES_ENV,
+#: lib/stacks/processing-stack-consolidated.ts). Unset or malformed = no source is update-capable
+#: (fails closed: every resend is a duplicate, never an in-place overwrite).
+UPDATE_CAPABLE_SOURCES_ENV = 'UPDATE_CAPABLE_SOURCES'
+
+
+def update_capable_sources() -> frozenset[str]:
+    """The source ids the deployment's manifests declare ``updatesItems`` for (read per call: tests set it)."""
+    return _parsed_sources(os.environ.get(UPDATE_CAPABLE_SOURCES_ENV) or '[]')
+
+
+@cache
+def _parsed_sources(raw: str) -> frozenset[str]:
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return frozenset()
+    if not isinstance(parsed, list):
+        return frozenset()
+    return frozenset(source for source in parsed if isinstance(source, str) and source)
 
 
 def is_update_capable(raw_record: Mapping[str, Any]) -> bool:
-    """True for a record a source may legitimately send again with newer content: a GitHub issue."""
-    return (raw_record.get('source_platform') == UPDATE_CAPABLE_SOURCE
+    """True for a record its source may legitimately send again with newer content (an issue)."""
+    return (raw_record.get('source_platform') in update_capable_sources()
             and isinstance(raw_record.get(ISSUE_ATTRIBUTES), Mapping))
 
 

@@ -19,7 +19,7 @@ from moto import mock_aws
 
 from processor import handler
 from processor.test.sqs_fixtures import sqs_record
-from shared.source_updates import UPDATE_CAPABLE_SOURCE, idempotency_key_for
+from shared.source_updates import idempotency_key_for, update_capable_sources
 from shared.test.moto_tables import create_pk_sk_table
 
 INGESTED = "2026-01-02T00:00:00Z"
@@ -336,6 +336,8 @@ class TestOnlyGithubIssuesAreUpdateCapable:
         assert idempotency_key_for(non_github_issue_copy()) == "webscraper:scraped-7"
         assert idempotency_key_for(non_github_issue_copy(CHANGED)) == "webscraper:scraped-7"
 
-    def test_the_update_capable_source_is_the_github_plugins_manifest_id(self):
-        manifest = Path(__file__).parents[3] / "plugins" / "github_issues" / "manifest.json"
-        assert json.loads(manifest.read_text(encoding="utf-8"))["id"] == UPDATE_CAPABLE_SOURCE
+    def test_the_github_plugins_manifest_declares_the_update_capability(self):
+        manifest = json.loads(
+            (Path(__file__).parents[3] / "plugins" / "github_issues" / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["capabilities"]["updatesItems"] is True
+        assert update_capable_sources() == frozenset({manifest["id"]})

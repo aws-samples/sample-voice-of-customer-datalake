@@ -232,7 +232,7 @@ export const RAISED_FOR_CPU: Readonly<Record<string, number>> = {
   'voc-s3-import-api': 1024,
   // 512 → 1024 (79 % p95 ≥ 100 ms); 2026-10-18: 1024 MB at 78.2 % → 1536.
   'voc-scrapers-api': 1536,
-  // 2026-10-18: 256 MB at 84.8 % → 512 (the only plugin webhook; api-stack.ts WEBHOOK_MEMORY_MB).
+  // 2026-10-18: 256 MB at 84.8 % → 512 (the only plugin webhook; `infrastructure.webhook.memory` in its manifest).
   'voc-webhook-github_issues': 512,
 };
 

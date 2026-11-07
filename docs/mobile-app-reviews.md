@@ -249,7 +249,7 @@ N parts; ten iOS apps take two.
   A run of a single app (`app_id`) never needs a second part.
 - An app whose connector was removed or renamed while the run was going is dropped from later parts.
 - **IAM**: each app-review ingestor role may `lambda:InvokeFunction` exactly its own function ARN
-  (`SELF_CONTINUING_INGESTORS` in `lib/stacks/ingestion-stack.ts`); no other ingestor gets an invoke
+  (`"selfInvoke": true` under `infrastructure.ingestor` in each plugin's `manifest.json`); no other ingestor gets an invoke
   grant.
 - A scheduled chain that runs longer than the 30-minute schedule tick (about 18 iOS apps due at
   once) can overlap the next tick for an app it has not reached yet. That app is then fetched by both
