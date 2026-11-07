@@ -158,9 +158,8 @@ def tsc  frontend,frontend-static           "node: frontend i18n script tests"  
 def tsc  frontend,frontend-static           "node: frontend i18n audit"          'cd "$FRONTEND" && { out="$(node scripts/i18n-check.mjs)" || { printf "%s\n" "$out"; exit 1; }; }'
 # Every fetchApi call site in the SPA has a dev-mock route that answers it (frontend/mock-coverage.json).
 def tsc  frontend,frontend-static           "node: frontend mock coverage"       'cd "$FRONTEND" && node --test scripts/check-mock-coverage.test.mjs scripts/mock-corpus.test.mjs scripts/mock-faceted-scope.test.mjs scripts/mock-scope.test.mjs scripts/mock-edit-stamp.test.mjs scripts/mock-reprocess.test.mjs && node scripts/check-mock-coverage.mjs'
-# Duplication across code and tests, whole repo (.jscpd.json: threshold 0). The SPA's
-# assistant/contract.ts and approvals/schemas.ts are excluded there on purpose: they mirror the stream
-# Lambda's contract/allowlists line for line and the *.lockstep.test.ts specs prove they agree.
+# Duplication across code and tests, whole repo (.jscpd.json: threshold 0). The SPA imports the modules it
+# shares with the stream Lambda through @stream (frontend/streamSource.ts), so there is no mirror to exclude.
 def lint repo                               "jscpd"                              'cd "$ROOT" && npx jscpd --fail-on-empty --reporters console --silent'
 # GitHub Actions workflows: pinned actionlint (+ shellcheck) and zizmor --offline, every finding fails.
 def lint repo                               "actions: actionlint + zizmor"       'cd "$ROOT" && node --test scripts/actions-lint.test.mjs && bash scripts/actions-lint.sh'
