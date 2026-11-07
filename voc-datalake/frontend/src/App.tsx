@@ -10,6 +10,7 @@ import { useThemeSync } from './theme/useThemeSync'
 import { createAppQueryClient } from './api/queryPolicies'
 import { watchFeedbackJobs } from './api/feedbackDataWatch'
 import { bindQueryCacheToUser } from './api/userCacheScope'
+import { watchRealtimeSession } from './realtime/session'
 
 // Caching policy per key family (api/queryPolicies.ts); app-lifetime watchers,
 // so their unsubscribes are deliberately not kept.
@@ -18,6 +19,14 @@ watchFeedbackJobs(queryClient)
 bindQueryCacheToUser(queryClient)
 
 const router = createBrowserRouter(routes)
+
+/** Push notifications (docs/realtime.md) are bound once, after the runtime config names the Event API. */
+const realtimeWatch = { started: false }
+function startRealtimeWatch(): void {
+  if (realtimeWatch.started) return
+  realtimeWatch.started = true
+  watchRealtimeSession(queryClient)
+}
 
 /**
  * App wrapper that loads runtime config before rendering.
@@ -38,7 +47,8 @@ export default function App() {
           
           // Configure Amplify after runtime config is loaded
           configureAmplify()
-          
+          startRealtimeWatch()
+
           setConfigReady(true)
         })
         .catch((err: unknown) => {
