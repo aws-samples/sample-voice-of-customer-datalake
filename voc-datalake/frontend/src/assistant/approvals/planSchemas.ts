@@ -10,7 +10,7 @@
  * @module assistant/approvals/planSchemas
  */
 import { z } from 'zod'
-import { PLAN_ID_RE, planSchema } from '../plan/schema'
+import { PLAN_ID_RE, planSchema } from '@stream/assistant/plan/schema'
 import { idSchema, nonEmpty } from './schemas'
 
 /**

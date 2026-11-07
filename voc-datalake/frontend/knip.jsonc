@@ -33,15 +33,6 @@
     // lambda/api/test/test_doc_type_lockstep.py pins their exact text. FeedbackFormConfig is the
     // public widget's wire shape, pinned by test_widget_config_type_lockstep.py.
     "src/api/types.ts": ["types"],
-    // The SPA mirror of the stream's plan contract (lambda/stream/src/assistant/plan/{schema,validate,canonical}.ts):
-    // plan/plan.lockstep.test.ts walks every export of the stream modules and requires the same export here,
-    // equal by value / JSON Schema / output on the shared fixtures. The patterns, wait kinds, control and
-    // card-only lists, the ArgsSchemaLike type and the write fingerprint are read only by the stream's own
-    // validator and runner, so in the SPA only that spec uses them; un-exporting them would drop them from
-    // the lockstep. The app itself imports the schema, planWriteTools, NEVER_PREAPPROVABLE_TOOLS and validatePlan.
-    "src/assistant/plan/schema.ts": ["exports"],
-    "src/assistant/plan/validate.ts": ["types"],
-    "src/assistant/plan/canonical.ts": ["exports"],
     // Allowlist pins and a test seam of the approval layer: PERSONA_UPDATABLE_FIELDS /
     // FEEDBACK_FORM_UPDATABLE_FIELDS and listWriteTools are compared against the stream Lambda's
     // contract by allowlists.lockstep.test.ts and registry.test.ts; resetExecutions resets the
