@@ -38,6 +38,7 @@ import { problemTree } from './mock-problems.js';
 import { facetedMetric, seedUsefulness, withoutParams } from './mock-facets.js';
 import { callerAccess, handleScopeRoutes, scopeAdmits, scopedCategoriesConfig, scopedMetric } from './mock-scope.js';
 import { handleProjectActionRoutes, startProjectAssistJob } from './mock-project-actions.js';
+import { humanMethodology, projectMethodology, workflowMethodologyWarnings } from './mock-methodology.js';
 import { handleCompanyPersonaRoutes } from './mock-company-personas.js';
 import { handleDocumentReviewRoutes } from './mock-document-review.js';
 import { handleAssistJobRoutes, startOwnerAssistJob } from './mock-assist-jobs.js';
@@ -3527,7 +3528,9 @@ function routeWorkflows(req, url, body) {
   }
   if (req.method === 'POST' && workflowId === 'validate' && !action) {
     const errors = validateWorkflowDefinition(body?.definition);
-    return [200, { valid: errors.length === 0, errors }];
+    // Methodology warnings only for a valid graph (agents_handler validate, shared/workflow_methodology.py).
+    const warnings = errors.length === 0 ? workflowMethodologyWarnings(body.definition) : [];
+    return [200, { valid: errors.length === 0, errors, warnings }];
   }
   const entry = mockWorkflows.get(workflowId);
   if (!entry) return WORKFLOW_NOT_FOUND;
@@ -3677,7 +3680,9 @@ const server = http.createServer((req, res) => {
           ? body.content
           : (handWritten ? MOCK_BLANK_TEMPLATES[body.document_type] : ''),
         created_at: new Date().toISOString(),
-        ...(handWritten ? { origin: 'human', created_by_sub: MOCK_CALLER.sub, version: 1 } : {}),
+        ...(handWritten ? {
+          origin: 'human', created_by_sub: MOCK_CALLER.sub, version: 1, methodology: humanMethodology(body.document_type),
+        } : {}),
       };
       detail.documents.push(document);
       detail.project.document_count = detail.documents.length;
@@ -3689,7 +3694,9 @@ const server = http.createServer((req, res) => {
     const projectId = projectDetailMatch[1];
     const detail = mockProjectDetails[projectId];
     if (detail && projectAccess(projectId).can_view) {
-      sendJson(res, 200, { ...detail, project: decorateProject(detail.project, { withMembers: true }) });
+      sendJson(res, 200, {
+        ...detail, project: decorateProject(detail.project, { withMembers: true }), methodology: projectMethodology(detail),
+      });
     } else {
       sendJson(res, 404, { error: 'Project not found' });
     }
