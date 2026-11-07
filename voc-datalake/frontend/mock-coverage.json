@@ -4400,5 +4400,15 @@
         }
       }
     ]
+  },
+  {
+    "file": "api/feedbackCatalogueApi.ts",
+    "method": "GET",
+    "call": "'/feedback/catalogue'",
+    "probes": [
+      {
+        "path": "/feedback/catalogue"
+      }
+    ]
   }
 ]

@@ -134,5 +134,37 @@
         "very_long": "1,000 个字符及以上"
       }
     }
+  },
+  "fields": {
+    "title": "字段",
+    "description": "反馈条目中每个已存储字段的含义：类型、由哪个步骤设置、是否包含个人数据、脱敏或仅摘要的来源策略会如何处理它，以及允许的取值。含义以英文显示。",
+    "loading": "正在加载字段…",
+    "empty": "API 未返回任何字段。",
+    "caption": "反馈条目的字段（{{table}}）",
+    "keyBadge": "键",
+    "redact": "脱敏：{{effect}}",
+    "summaryOnly": "仅摘要：{{effect}}",
+    "columns": {
+      "field": "字段",
+      "type": "类型",
+      "meaning": "含义",
+      "setBy": "设置方",
+      "personalData": "个人数据",
+      "policies": "脱敏 / 仅摘要时",
+      "values": "取值"
+    },
+    "pii": {
+      "customer_text": "客户文本",
+      "personal": "个人数据",
+      "derived_text": "源自客户文本",
+      "none": "无"
+    },
+    "effects": {
+      "kept": "保留",
+      "redacted": "脱敏",
+      "dropped": "删除",
+      "from_redacted": "源自脱敏后的文本",
+      "replaced": "替换"
+    }
   }
 }

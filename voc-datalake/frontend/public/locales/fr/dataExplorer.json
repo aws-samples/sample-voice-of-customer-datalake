@@ -135,5 +135,37 @@
         "very_long": "1 000 caractères ou plus"
       }
     }
+  },
+  "fields": {
+    "title": "Champs",
+    "description": "Ce que signifie chaque champ enregistré d’un retour : son type, l’étape qui le renseigne, s’il contient des données personnelles, ce qu’une règle de source de masquage ou de résumé seul lui fait, et ses valeurs autorisées. Les significations sont en anglais.",
+    "loading": "Chargement des champs…",
+    "empty": "L’API n’a renvoyé aucun champ.",
+    "caption": "Champs d’un retour ({{table}})",
+    "keyBadge": "clé",
+    "redact": "Masquage : {{effect}}",
+    "summaryOnly": "Résumé seul : {{effect}}",
+    "columns": {
+      "field": "Champ",
+      "type": "Type",
+      "meaning": "Signification",
+      "setBy": "Renseigné par",
+      "personalData": "Données personnelles",
+      "policies": "Avec masquage / résumé seul",
+      "values": "Valeurs"
+    },
+    "pii": {
+      "customer_text": "Texte du client",
+      "personal": "Données personnelles",
+      "derived_text": "Dérivé du texte du client",
+      "none": "Aucune"
+    },
+    "effects": {
+      "kept": "conservé",
+      "redacted": "masqué",
+      "dropped": "supprimé",
+      "from_redacted": "dérivé du texte masqué",
+      "replaced": "remplacé"
+    }
   }
 }
