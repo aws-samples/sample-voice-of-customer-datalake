@@ -1,6 +1,10 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // The SPA modules a cross-side spec loads (runtime/spa-reasoning-roundtrip.test.ts) import this package's
+  // shared modules as `@stream/...` (frontend/streamSource.ts); the alias resolves them here too.
+  resolve: { alias: { '@stream': fileURLToPath(new URL('./src', import.meta.url)) } },
   test: {
     globals: true,
     environment: 'node',
