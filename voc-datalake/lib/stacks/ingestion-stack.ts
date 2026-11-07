@@ -31,6 +31,7 @@ import { dependencyLayer } from '../utils/dependency-layers';
 import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { PII_REDACTION_ENV } from '../utils/pii-redaction';
+import { wireRealtimeEndpointParameter } from '../utils/realtime';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import {
   EMAIL_INTAKE_DLQ_BASE_NAME, INGEST_SCHEDULE_DLQ_BASE_NAME, PROCESSING_DLQ_BASE_NAME, ingestorFunctionBaseName,
@@ -103,6 +104,8 @@ export class VocIngestionStack extends VocStack {
   public readonly processingQueue: sqs.Queue;
   public readonly secretsArn: string;
   public readonly s3ImportBucket: s3.Bucket;
+  /** Ingestors with `jobNotices` (VocApiStack grants each publish on `jobs`, docs/realtime.md). */
+  public readonly realtimeJobsPublisherRoles: Record<string, iam.IRole> = {};
 
   // Built in the constructor once the grant targets exist (see ingestion-roles.ts).
   private ingestorRoles!: IngestorRoles;
@@ -406,7 +409,9 @@ export class VocIngestionStack extends VocStack {
     const ingestorCode = this.bundlePluginCode(plugin.id, allPluginIds);
 
     // Bedrock-capable and scheduled plugins get a dedicated, scoped role; the rest share one.
-    const role = this.ingestorRoles.roleFor(plugin.id, { bedrock: infra.bedrock, browser: infra.browser, scheduleRuleName });
+    const role = this.ingestorRoles.roleFor(plugin.id, {
+      bedrock: infra.bedrock, browser: infra.browser, scheduleRuleName, jobNotices: infra.jobNotices,
+    });
     const functionName = this.uniqueName(ingestorFunctionBaseName(plugin.id));
 
     // A many-app run continues in a fresh invocation of its own function when it
@@ -461,6 +466,10 @@ export class VocIngestionStack extends VocStack {
       });
     }
 
+    // A run the API started tells its starter when it ends (docs/realtime.md); VocApiStack grants publish on `jobs`.
+    if (infra.jobNotices) {
+      this.realtimeJobsPublisherRoles[`Ingestor${capitalize(plugin.id)}`] = wireRealtimeEndpointParameter(fn, this.deploymentPrefix);
+    }
     this.ingestionLambdas.set(plugin.id, fn);
   }
 

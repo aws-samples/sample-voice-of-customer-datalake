@@ -53,17 +53,19 @@ def is_run_id(value: str) -> bool:
     return bool(_RUN_ID.fullmatch(value))
 
 
-def reprocess_event(bucket: str, key: str, run_id: str) -> dict:
+def reprocess_event(bucket: str, key: str, run_id: str, started_by: str = '') -> dict:
     """The ingestor's input: one S3 ObjectCreated record (the trigger's shape) plus the run id.
 
     `execution_id` is the key `POST /sources/{source}/run` passes every ingestor.
     `reprocess: True` is the one explicit addition: it lets the ingestor name a
     `processed/<source>/<file>` key's source `S3 - <source>`, as the original upload was.
     The key is URL-encoded the way S3 encodes it in a notification (a space as `+`, `/` kept).
+    `started_by` is the starter's Cognito sub: the ingestor tells them when the run ends (docs/realtime.md).
     """
     return {
         'execution_id': run_id,
         'reprocess': True,
+        **({'started_by': started_by} if started_by else {}),
         'Records': [{
             'eventSource': 'aws:s3',
             'eventName': 'ObjectCreated:Put',
@@ -139,7 +141,7 @@ def _is_live_run_of(row: dict, key: str, cutoff: datetime) -> bool:
     return started is not None and started > cutoff
 
 
-def start_run(table: Any, function_name: str, bucket: str, key: str) -> dict:
+def start_run(table: Any, function_name: str, bucket: str, key: str, started_by: str = '') -> dict:
     """Write the `running` row, then async-invoke the ingestor for *key*. Returns the row.
 
     ConflictError when *key* already has a live run (`refuse_running_duplicate`).
@@ -158,7 +160,7 @@ def start_run(table: Any, function_name: str, bucket: str, key: str) -> dict:
         logger.exception(f"Failed to record the reprocess run: {e}")
         raise ServiceError(START_FAILED) from e
     try:
-        invoke_lambda_async(function_name, reprocess_event(bucket, key, run_id))
+        invoke_lambda_async(function_name, reprocess_event(bucket, key, run_id, started_by))
     except Exception as e:
         logger.exception("Failed to start the S3 import ingestor")
         _mark_not_started(table, run_id)
