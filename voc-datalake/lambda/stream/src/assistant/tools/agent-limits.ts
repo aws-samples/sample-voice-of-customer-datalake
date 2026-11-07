@@ -62,9 +62,7 @@ export const AGENT_LIMITS = {
 } as const;
 
 /**
- * The budget rules `agent-schemas.ts` applies: at least one model call per run, and a
- * monthly cap that is a number, never null (the agents Lambda also takes null = no cap).
- * The SPA feeds both to its agent-fields builder; agent-schemas.test.ts pins the stream
- * schema to them.
+ * The least model calls a run may be given (`budget.max_model_calls_per_run`). The SPA's
+ * approval boundary feeds it to its agent-fields builder; `agent-schemas.ts` applies it.
  */
-export const AGENT_BUDGET_RULES = { minModelCallsPerRun: 1, monthlyCapNullable: false } as const;
+export const AGENT_BUDGET_RULES = { minModelCallsPerRun: 1 } as const;

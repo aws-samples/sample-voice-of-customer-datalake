@@ -12,7 +12,8 @@ import { at } from '@test/defined'
 import { validateLocally } from './graphRules'
 import { connect } from './model'
 import { StepArrows } from './ArrowSettings'
-import { normalizeDefinition, WORKFLOW_SCHEMA } from '../../api/workflowsApi'
+import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
+import { normalizeDefinition } from '../../api/workflowsApi'
 import type { WorkflowDefinition, WorkflowEdge, WorkflowLoop, WorkflowNode, WorkflowNodeType } from '../../api/workflowsApi'
 
 const node = (id: string, type: WorkflowNodeType, params?: Record<string, unknown>): WorkflowNode => ({
@@ -25,7 +26,7 @@ const edge = (source: string, target: string, label?: WorkflowEdge['label']): Wo
 /** start → write → review ⇄ revise → end; the review gates a persona-agreement loop. */
 function personaLoop(edges?: WorkflowEdge[], loop?: Partial<WorkflowLoop>): WorkflowDefinition {
   return {
-    schema: WORKFLOW_SCHEMA,
+    schema: WORKFLOW_SCHEMA_VERSION,
     name: 'Loop',
     nodes: [
       node('start', 'start'), node('write', 'write_prfaq'), node('review', 'persona_review', { target: 'prfaq' }),

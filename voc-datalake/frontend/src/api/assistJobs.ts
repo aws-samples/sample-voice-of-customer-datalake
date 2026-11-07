@@ -15,6 +15,7 @@
  * @module api/assistJobs
  */
 import { z } from 'zod'
+import { assistJobPollSchema } from '@stream/assistant/tools/server/assist-job-values'
 
 export const ASSIST_POLL_INTERVAL_MS = 1500
 export const ASSIST_TIMEOUT_MS = 15 * 60 * 1000
@@ -27,14 +28,6 @@ const startAnswerSchema = z.object({
   job_id: z.string().min(1),
   status: z.string(),
 })
-
-// jscpd:ignore-start — mirrors lambda/stream/src/assistant/tools/server/assist-job.ts on purpose: separate packages, pinned by assistJobs.lockstep.test.ts
-const pollAnswerSchema = z.object({
-  status: z.enum(['pending', 'running', 'completed', 'failed']),
-  result: z.unknown().optional(),
-  error: z.string().nullish(),
-})
-// jscpd:ignore-end of the accepted pair
 
 export interface AssistJobOptions {
   /** Pause between two polls (default 1.5 s). */
@@ -97,7 +90,7 @@ export async function runAssistJob<T>(
   const { job_id: jobId } = parseAnswer(startAnswerSchema, await start())
   for (;;) {
     if (signal?.aborted === true) throw abortError()
-    const answer = parseAnswer(pollAnswerSchema, await poll(jobId))
+    const answer = parseAnswer(assistJobPollSchema, await poll(jobId))
     if (answer.status === 'completed') return parse(answer.result)
     if (answer.status === 'failed') {
       throw new Error(answer.error != null && answer.error !== '' ? answer.error : GENERIC_FAILURE)

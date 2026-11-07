@@ -36,9 +36,6 @@ export function hasAnyKey(value: object): boolean {
 }
 const AT_LEAST_ONE = { message: 'At least one field must be provided' }
 
-/** `YYYY-MM-DD` (the stream's `isoDateSchema`). */
-export const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a YYYY-MM-DD date')
-
 export const createProjectArgs = z.strictObject({
   name: nonEmpty(200),
   description: z.string().max(2000).optional(),

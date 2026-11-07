@@ -20,7 +20,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { NodeConfigPanel } from './NodeConfigPanel'
 import { selectLoop, selectStep, viewOf } from './selection'
-import { WORKFLOW_SCHEMA } from '../../api/workflowsApi'
+import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import type { CanvasSelection } from './selection'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 
@@ -29,7 +29,7 @@ const node = (id: string, type: WorkflowDefinition['nodes'][number]['type'], tit
 
 /** start → write → review ⇄ revise (loop) → final → done | human. */
 const DEFINITION: WorkflowDefinition = {
-  schema: WORKFLOW_SCHEMA,
+  schema: WORKFLOW_SCHEMA_VERSION,
   name: 'Branching',
   nodes: [
     node('start', 'start', 'Start'),

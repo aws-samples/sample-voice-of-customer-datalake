@@ -12,7 +12,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, render } from '@testing-library/react'
 import { applyEdgeSelection, NO_EDGES } from './edgeSelection'
-import { WORKFLOW_SCHEMA } from '../../api/workflowsApi'
+import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import type { Edge, EdgeChange, OnSelectionChangeParams } from '@xyflow/react'
 import type { CanvasSelection } from './selection'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
@@ -61,7 +61,7 @@ describe('applyEdgeSelection', () => {
 })
 
 const DEFINITION: WorkflowDefinition = {
-  schema: WORKFLOW_SCHEMA,
+  schema: WORKFLOW_SCHEMA_VERSION,
   name: 'Two steps',
   nodes: [
     { id: 'start', type: 'start', position: { x: 0, y: 0 }, data: { title: 'Start' } },

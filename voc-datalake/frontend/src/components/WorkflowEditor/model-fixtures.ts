@@ -1,10 +1,10 @@
 /** Spec support for the workflow editor: the smallest valid definition (start → end). */
-import { WORKFLOW_SCHEMA } from '../../api/workflowsApi'
+import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 
 export function emptyDefinition(name: string): WorkflowDefinition {
   return {
-    schema: WORKFLOW_SCHEMA,
+    schema: WORKFLOW_SCHEMA_VERSION,
     name,
     nodes: [
       { id: 'start', type: 'start', position: { x: 0, y: 0 }, data: { title: 'Start', params: {} } },

@@ -10,7 +10,8 @@ import userEvent from '@testing-library/user-event'
 import { renderWithQueryClient } from '@test/query-client'
 import { resetFetchApi, routeFetchApi as route, stubResizeObserverForSuite } from '@test/fetchApiRoutes'
 import { fileInput, jsonFile, wfEdge, withPrdStep, workflowView } from '@test/workflowFixtures'
-import { WORKFLOW_SCHEMA, workflowDefinitionSchema } from '../../api/workflowsApi'
+import { WORKFLOW_SCHEMA_VERSION } from '@stream/assistant/tools/agent-limits'
+import { workflowDefinitionSchema } from '../../api/workflowsApi'
 import { emptyDefinition } from './model-fixtures'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import type { RouteHandler as Handler } from '@test/fetchApiRoutes'
@@ -196,7 +197,7 @@ describe('WorkflowEditor — read-only', () => {
 
 /** A stored workflow with one loop (review ⇄ revise), for the loop-frame click. */
 const LOOPED: WorkflowDefinition = {
-  schema: WORKFLOW_SCHEMA,
+  schema: WORKFLOW_SCHEMA_VERSION,
   name: 'Looped',
   nodes: [
     { id: 'start', type: 'start', position: { x: 0, y: 0 }, data: { title: 'Start', params: {} } },

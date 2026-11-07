@@ -12,6 +12,7 @@
  */
 import { del, post, put } from './requestKit'
 import { z } from 'zod'
+import { AGENT_SCHEDULE_EVERY, AGENT_THRESHOLD_PER, AGENT_VISIBILITIES } from '@stream/assistant/tools/agent-limits'
 import { fetchApi } from './client'
 import { lenientList } from './lenientFields'
 import { NeedsHumanSchema, RunActionsSchema, RunDecisionSchema } from './agentRunDecision'
@@ -19,10 +20,6 @@ import { isRecord } from '../lib/typeGuards'
 import { schemaGuard as guard } from './workflowsApi'
 import type { RunDecisionKind } from './agentRunDecision'
 
-export const AGENT_SCHEDULE_EVERY = ['12h', '24h', 'cron'] as const
-export const AGENT_THRESHOLD_PER = ['category', 'subcategory'] as const
-export const AGENT_VISIBILITIES = ['private', 'public'] as const
-export const AGENT_MODEL_ROLES = ['orchestrator', 'worker', 'reviewer', 'persona'] as const
 export const TRIGGER_KINDS = ['new_reviews', 'schedule', 'threshold'] as const
 
 const RUN_STATUSES = ['queued', 'running', 'needs_human', 'completed', 'failed', 'cancelled'] as const
