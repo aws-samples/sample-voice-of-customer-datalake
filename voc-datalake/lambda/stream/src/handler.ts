@@ -25,6 +25,7 @@ import { createAiWritingLoader } from './assistant/runtime/ai-writing.js';
 import { createMemoryRecall } from './assistant/runtime/memory-recall.js';
 import { getInternalApiInvoker } from './assistant/tools/internal-api.js';
 import { createDynamoSessionStore } from './assistant/session/store.js';
+import { createRealtimePublisher } from './lib/realtime-publish.js';
 import { createPersonaRound } from './assistant/runtime/persona-round.js';
 import { getDefaultToolDeps } from './assistant/tools/deps.js';
 
@@ -36,6 +37,8 @@ const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 const AGGREGATES_TABLE = process.env.AGGREGATES_TABLE ?? '';
 // Server-side session persistence (assistant/session/): unset = not saved.
 const CONVERSATIONS_TABLE = process.env.CONVERSATIONS_TABLE ?? '';
+// Push notifications (docs/realtime.md): unset = none, the SPA polls.
+const notify = createRealtimePublisher({ host: process.env.REALTIME_HTTP_DNS, region: process.env.AWS_REGION });
 
 const deps: RuntimeDeps = {
   converse: converseStream,
@@ -52,7 +55,13 @@ const deps: RuntimeDeps = {
   // Lazy like the tool catalogue: the tool deps open their clients on the first mention.
   personaRound: (input) => createPersonaRound(getDefaultToolDeps())(input),
   ...(CONVERSATIONS_TABLE
-    ? { sessions: { store: createDynamoSessionStore(docClient, CONVERSATIONS_TABLE), nowMs: () => Date.now() } }
+    ? {
+        sessions: {
+          store: createDynamoSessionStore(docClient, CONVERSATIONS_TABLE),
+          nowMs: () => Date.now(),
+          ...(notify === undefined ? {} : { notify }),
+        },
+      }
     : {}),
 };
 
