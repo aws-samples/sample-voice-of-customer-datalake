@@ -19,7 +19,7 @@ from typing import Any, Final
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import ai_mode, category_access, user_flags
+from shared import ai_mode, category_access, user_admin_guard, user_flags
 from shared.api import (
     DEFAULT_CATEGORIES,
     api_handler,
@@ -335,6 +335,8 @@ def update_user_group(username: str):
 
     if new_group not in ROLE_GROUPS:
         raise ValidationError('Group must be "admins" or "users"')
+    if new_group != ADMIN_GROUP:
+        _refuse_unsafe_admin_change(username, user_admin_guard.ACTION_ROLE, FAILED_UPDATE_GROUP)
 
     try:
         # Get current groups
@@ -397,6 +399,27 @@ def _run_user_action(
     return {'success': True, 'message': message, 'username': username}
 
 
+def _refuse_unsafe_admin_change(username: str, action: str, public_error: str) -> None:
+    """409 for the caller's own account and for the last enabled administrator (tenet 4).
+
+    Checked here, for every client; the SPA and the assistant check the same as UX.
+    A Cognito fault answers the route's own fixed message (#263).
+    """
+    caller_sub = get_caller_subject(app.current_event.raw_event)
+    try:
+        target = cognito.admin_get_user(UserPoolId=USER_POOL_ID, Username=username)
+        admins = _paged(cognito.list_users_in_group, 'Users', UserPoolId=USER_POOL_ID, GroupName=ADMIN_GROUP, Limit=60)
+    except cognito.exceptions.UserNotFoundException as exc:
+        raise NotFoundError('User not found') from exc
+    except Exception as e:
+        logger.exception('Error checking the administrators')
+        raise ServiceError(public_error) from e
+    target_sub = next((a.get('Value') for a in target.get('UserAttributes', [])
+                       if isinstance(a, dict) and a.get('Name') == 'sub'), '')
+    user_admin_guard.refuse_own_account(caller_sub, str(target_sub or ''), action)
+    user_admin_guard.refuse_last_admin(username, admins)
+
+
 @app.post('/users/<username>/reset-password')
 @tracer.capture_method
 def reset_user_password(username: str):
@@ -420,6 +443,7 @@ def enable_user(username: str):
 def disable_user(username: str):
     """Disable a user (prevents login)."""
     require_admin(app.current_event.raw_event)
+    _refuse_unsafe_admin_change(username, user_admin_guard.ACTION_DISABLE, FAILED_DISABLE_USER)
     return _run_user_action(cognito.admin_disable_user, username, 'Error disabling user', FAILED_DISABLE_USER, 'User disabled')
 
 
@@ -428,6 +452,7 @@ def disable_user(username: str):
 def delete_user(username: str):
     """Delete a user from Cognito."""
     require_admin(app.current_event.raw_event)
+    _refuse_unsafe_admin_change(username, user_admin_guard.ACTION_DELETE, FAILED_DELETE_USER)
     return _run_user_action(cognito.admin_delete_user, username, 'Error deleting user', FAILED_DELETE_USER, 'User deleted')
 
 

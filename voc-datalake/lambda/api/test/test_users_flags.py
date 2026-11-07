@@ -41,7 +41,8 @@ def table():
 
 @pytest.fixture
 def cognito():
-    groups = {'alice': ['admins'], 'bob': ['users']}
+    # `root` is the calling administrator: alice is never the last one (shared/user_admin_guard.py).
+    groups = {'alice': ['admins'], 'bob': ['users'], 'root': ['admins']}
     mock = _cognito(groups)
     with patch.object(users_handler, 'cognito', mock):
         yield mock
