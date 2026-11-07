@@ -17,6 +17,7 @@ vi.mock('../../../api/client', async (importOriginal) => {
 vi.mock('../../../store/authStore', () => ({ useAuthStore: () => ({ user: { sub: 'sub-ana' } }) }))
 
 const { useBrief } = await import('./useBrief')
+const { deliverNotice } = await import('../../../realtime/hub')
 const { useBriefPreferences } = await import('./useBriefPreferences')
 
 const CARD = { id: 'whats_new_0123456789abcdef', kind: 'whats_new', title: '12 reviews' }
@@ -50,6 +51,16 @@ describe('useBrief', () => {
     act(() => { hook.result.current.refresh() })
     return hook.result
   }
+
+  it('with push, a built brief\'s notice reads it at once instead of on the next poll', async () => {
+    const answer: { brief: unknown } = { brief: { status: 'pending', day: '2026-10-17', cards: [] } }
+    routeFetchApi({ 'GET /settings/my-briefing/brief': () => answer.brief })
+    const { result } = renderHook(() => useBrief(), { wrapper })
+    await waitFor(() => expect(result.current.generating).toBe(true))
+    answer.brief = READY
+    deliverNotice({ type: 'job', job_id: 'brief_2026-10-17', status: 'ready', job_type: 'morning_brief' })
+    await waitFor(() => expect(result.current.brief.status).toBe('ready'), { timeout: 1000 })
+  })
 
   it('reports an up-to-date refresh and keeps the brief', async () => {
     const result = await refreshedWith({ status: 'up_to_date', brief: READY })

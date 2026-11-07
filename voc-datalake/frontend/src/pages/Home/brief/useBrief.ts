@@ -5,7 +5,8 @@
  * there stay on screen meanwhile. Refresh answers `up_to_date` at once when no
  * review arrived and the brief is younger than 15 minutes (the server's debounce).
  * Refresh sends the app's language: the brief follows it unless the reader chose a
- * brief language (docs/briefing.md → "Which language").
+ * brief language (docs/briefing.md → "Which language"). With push (docs/realtime.md) a
+ * built brief's notice re-reads it at once, and the pending poll slows to the fallback.
  *
  * @module pages/Home/brief/useBrief
  */
@@ -13,10 +14,13 @@ import { useCallback } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { NO_BRIEF, briefKey, briefPreferencesKey, briefingApi } from '../../../api/briefingApi'
 import { useBriefScope } from './useBriefScope'
+import { realtimePollInterval, useRealtimeJobRefresh } from '../../../realtime/jobRefresh'
 import type { Brief, CardState } from '../../../api/briefingApi'
 
 /** How often a running build is polled. */
 const BRIEF_POLL_MS = 3000
+/** The notice's `job_type` for a settled brief (lambda/briefing/build.py BRIEF_JOB_TYPE). */
+const BRIEF_JOB_TYPE = 'morning_brief'
 
 export type RefreshOutcome = 'idle' | 'up_to_date' | 'started' | 'failed'
 
@@ -48,8 +52,9 @@ export function useBrief(): BriefResult {
     queryKey,
     queryFn: async () => keepCards(queryClient.getQueryData<Brief>(queryKey), await briefingApi.getBrief()),
     enabled,
-    refetchInterval: (current) => (current.state.data?.status === 'pending' ? BRIEF_POLL_MS : false),
+    refetchInterval: (current) => (current.state.data?.status === 'pending' ? realtimePollInterval(BRIEF_POLL_MS) : false),
   })
+  useRealtimeJobRefresh({ jobType: BRIEF_JOB_TYPE }, [queryKey], enabled)
   const brief = query.data ?? NO_BRIEF
 
   const refresh = useMutation({

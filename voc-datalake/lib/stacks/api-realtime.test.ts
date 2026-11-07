@@ -79,7 +79,7 @@ const JOBS_PUBLISHERS = [
   'PersonaGeneratorRole', 'DocumentGeneratorRole', 'DocumentMergerRole', 'PersonaImporterRole',
   'ManualImportProcessorRole',
   'voc-research-step-role', 'voc-category-reprocess-role', 'voc-retention-role', 'voc-ingestor-s3-import-role',
-  'voc-memory-extractor-role',
+  'voc-memory-extractor-role', 'voc-briefing-role',
 ];
 
 describe('the Event API', () => {
