@@ -8,7 +8,7 @@
  * @module assistant/approvals/previews/planRows
  */
 import { isRecord } from '../../../lib/typeGuards'
-import { FREE_PLACEHOLDER, REFERENCE_RE } from '../../plan/schema'
+import { FREE_PLACEHOLDER, REFERENCE_RE } from '@stream/assistant/plan/schema'
 import { LiteralValue, PlaceholderValue } from './PlanValues'
 import type { FieldRow } from './FieldDiff'
 
