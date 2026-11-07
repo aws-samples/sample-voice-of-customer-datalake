@@ -288,7 +288,7 @@ export class VocProcessingStack extends VocStack {
     // ============================================
     // RETENTION / ERASURE WORKER (docs/source-policies.md)
     // ============================================
-    createRetentionWorker(this, 'RetentionWorker', {
+    const retentionWorker = createRetentionWorker(this, 'RetentionWorker', {
       uniqueName: (baseName) => this.uniqueName(baseName),
       layer: processingLayer,
       kmsKey,
@@ -299,6 +299,9 @@ export class VocProcessingStack extends VocStack {
       featureRequestsTable: props.featureRequestsTable,
       rawDataBucket,
     });
+    // An erasure job's end reaches the admin who started it (jobs/retention/runs.py, docs/realtime.md): a publish
+    // grant and the endpoint read only; nothing else on the only customer-data delete role changes (D5).
+    this.realtimeJobsPublisherRoles.Retention = wireRealtimeEndpointParameter(retentionWorker, this.deploymentPrefix);
 
     // ============================================
     // MEMORY + AUTONOMOUS AGENTS

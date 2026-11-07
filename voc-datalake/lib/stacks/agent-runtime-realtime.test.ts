@@ -22,6 +22,7 @@ const PUBLISHERS: Record<string, string> = {
   'voc-agent-conductor': 'AgentRuntimeAgentConductorRole',
   'voc-research-step': 'ResearchLambdaRole',
   'voc-category-reprocess': 'CategoryReprocessRole',
+  'voc-retention': 'RetentionWorkerRetentionRole',
 };
 
 let template: Template;

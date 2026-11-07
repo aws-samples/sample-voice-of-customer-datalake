@@ -97,7 +97,8 @@ function retentionCode(): lambda.Code {
   });
 }
 
-export function createRetentionWorker(scope: Construct, id: string, props: RetentionWorkerProps): void {
+/** The worker; the caller wires its erasure-end notices (lib/utils/realtime.ts). */
+export function createRetentionWorker(scope: Construct, id: string, props: RetentionWorkerProps): lambda.Function {
   // A plain construct with the same id keeps every logical id the class form had.
   const worker = new Construct(scope, id);
   const {
@@ -167,4 +168,5 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
     // 04:15 UTC — after the memory retention run (03:15), off the quarter-hour ticks.
     events.Schedule.cron({ hour: '4', minute: '15' }),
     events.RuleTargetInput.fromObject({ mode: 'retention' }));
+  return fn;
 }
