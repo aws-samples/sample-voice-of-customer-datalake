@@ -13,7 +13,8 @@
  */
 import { useContext, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { brandKeyOf, radarListFingerprint, savedNewsFields } from '../radarSchemas'
+import { radarBrandKey } from '@stream/assistant/tools/client/radar-schemas'
+import { radarListFingerprint, savedNewsFields } from '../radarSchemas'
 import { ShownContext, recordRadarBrandsBase } from '../shown'
 import { CardNote, FieldDiff, FieldTable, NothingSavedNote } from './FieldDiff'
 import { Lines, Muted } from './ScraperValues'
@@ -66,7 +67,7 @@ function brandRows(stored: readonly RadarBrandEntry[], args: SaveRadarBrandsArgs
   const listed = new Map(stored.filter((entry) => entry.origin === 'list').map((entry) => [entry.key, entry]))
   const before = new Map([...listed].map(([key, entry]): [string, BrandSide] => [key, storedSide(entry)]))
   const after = new Map(args.brands.map((brand): [string, BrandSide] => {
-    const key = brandKeyOf(brand.label)
+    const key = radarBrandKey(brand.label)
     return [key, proposedSide(brand, listed.get(key))]
   }))
   const keys = [...new Set([...before.keys(), ...after.keys()])]
@@ -86,7 +87,7 @@ export function RadarBrandsPreview({ args }: Readonly<{ args: SaveRadarBrandsArg
   }, [shown, data])
   if (isLoading) return <p className="text-[12px] text-muted">{t('preview.loading')}</p>
   if (isError || data === undefined) return <p role="alert" className="text-[12px] text-danger">{t(`${K}.unavailable`)}</p>
-  const profileBrands = data.filter((entry) => entry.origin === 'profile' && !args.brands.some((brand) => brandKeyOf(brand.label) === entry.key))
+  const profileBrands = data.filter((entry) => entry.origin === 'profile' && !args.brands.some((brand) => radarBrandKey(brand.label) === entry.key))
   return (
     <div className="space-y-2">
       <FieldDiff {...brandRows(data, args, t)} />

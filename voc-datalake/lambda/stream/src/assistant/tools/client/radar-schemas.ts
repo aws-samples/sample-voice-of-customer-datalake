@@ -10,9 +10,10 @@
  * (`MAX_TERMS`, `MAX_TERM_CHARS`, the term rules of search_terms / exclude_terms) and the route's
  * 25-brand cap; the route re-validates.
  *
- * LOCKSTEP: the SPA boundary (`frontend/src/assistant/approvals/radarSchemas.ts`)
- * holds the same limits and patterns; `radarSchemas.lockstep.test.ts` reads this
- * file and radar_brands.py as text and fails when they drift.
+ * The SPA's approval boundary (`frontend/src/assistant/approvals/radarSchemas.ts`)
+ * imports the limits, the patterns and the rule functions below through `@stream`
+ * and words its own messages; browser-safe: zod and scraper-schemas only.
+ * `radar-schemas.test.ts` pins the bounds against the Python modules.
  */
 import { z } from 'zod';
 import { radarBrandKeySchema } from './scraper-schemas.js';
@@ -26,14 +27,14 @@ export const RADAR_BRAND_LANGUAGES = ['en', 'pl', 'cs', 'sk', 'de', 'fr', 'es', 
 const BLOCKED_FEED_HOSTS: ReadonlySet<string> = new Set(['localhost', 'localhost.localdomain', 'ip6-localhost', 'ip6-loopback']);
 
 /** radar_brands._BRAND_RE: letters (any script), digits, spaces and . & ' + - */
-const BRAND_LABEL_PATTERN = /^[\p{L}\p{N}_][\p{L}\p{N}_ .&'+-]{0,63}$/u;
+export const BRAND_LABEL_PATTERN = /^[\p{L}\p{N}_][\p{L}\p{N}_ .&'+-]{0,63}$/u;
 /** radar_brands.DOMAIN_RE, as checks without backtracking: dotted labels of 1-63 [a-z0-9-] not starting or ending with "-", an alphabetic TLD. */
 const DOMAIN_LABEL = /^[a-z0-9-]{1,63}$/;
 const DOMAIN_TLD = /^[a-z]{2,63}$/;
 const MAX_DOMAIN_CHARS = 253;
 /** Raw input caps before normalisation (whitespace collapse, scheme/path strip); the patterns bound the result. */
-const MAX_LABEL_INPUT = 128;
-const MAX_DOMAIN_INPUT = 300;
+export const MAX_LABEL_INPUT = 128;
+export const MAX_DOMAIN_INPUT = 300;
 const KEY_EDGE: ReadonlySet<string> = new Set(['-', '_']);
 
 /** `value` without leading and trailing "-" / "_" (Python's `.strip('-_')`). */
@@ -51,7 +52,7 @@ export function radarBrandKey(label: string): string {
 }
 
 /** Whether `host` (already normalised) is a domain name radar_brands.DOMAIN_RE accepts. */
-function isBrandDomain(host: string): boolean {
+export function isBrandDomain(host: string): boolean {
   const labels = host.split('.');
   const tld = labels.at(-1) ?? '';
   return host.length <= MAX_DOMAIN_CHARS && labels.length >= 2 && DOMAIN_TLD.test(tld)
@@ -85,7 +86,7 @@ function isFeedHost(url: URL): boolean {
 }
 
 /** radar_brand_fields._feed_url_problem: https, a dotted public host name, no credentials, no fragment, no spaces. */
-function isFeedUrl(raw: string): boolean {
+export function isFeedUrl(raw: string): boolean {
   if (raw.length > RADAR_BRAND_LIMITS.maxFeedUrlChars || /[\s\p{Cc}]/u.test(raw) || raw.includes('#')) return false;
   if (!URL.canParse(raw)) return false;
   const url = new URL(raw);
@@ -97,7 +98,7 @@ const feedUrlSchema = z.string().max(RADAR_BRAND_LIMITS.maxFeedUrlChars + 50).tr
   .pipe(z.string().refine(isFeedUrl, 'must be an https feed URL like https://example.com/feed'));
 
 /** radar_brand_terms._term_problem: whitespace folded, 1-60 characters, no control character, no `"`, no leading "-". */
-function isBrandTerm(term: string): boolean {
+export function isBrandTerm(term: string): boolean {
   return term !== '' && term.length <= RADAR_BRAND_LIMITS.maxTermChars && !/\p{Cc}/u.test(term)
     && !term.includes('"') && !term.startsWith('-');
 }

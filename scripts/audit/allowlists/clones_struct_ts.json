@@ -3,13 +3,6 @@
   "entries": [
     {
       "files": [
-        "voc-datalake/frontend/src/assistant/approvals/radarSchemas.ts",
-        "voc-datalake/lambda/stream/src/assistant/tools/client/radar-schemas.ts"
-      ],
-      "reason": "Radar brand-list bounds (languages, feed URL shape) mirrored from the stream tool schema and shared/radar_brand_fields.py, pinned by radarSchemas.lockstep.test.ts; separate packages that must not import each other. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'], and the shared file must stay browser-safe (zod only)."
-    },
-    {
-      "files": [
         "voc-datalake/lib/stacks/agent-runtime.ts",
         "voc-datalake/lib/stacks/memory-workers.ts"
       ],
