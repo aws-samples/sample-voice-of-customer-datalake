@@ -22,6 +22,62 @@ its personas and documents ([mentions](assistant-mentions.md)).
 
 Long-running research, persona, document, merge, and prototype operations run as background jobs. Their status appears in the project.
 
+## Methodology
+
+The platform teaches one path: customer evidence → personas → PR/FAQ → PRD → prototype (TENETS.md, tenet 2).
+Steps may be done out of order, because a document without its upstream still has value, but no client skips a step
+silently. The server says which steps were skipped, in one module, `lambda/shared/methodology.py`, so the web app,
+the AI assistant, agents and MCP clients all see the same list.
+
+**The per-step overview.** `GET /projects/{id}` carries `methodology: {order, steps}`. `steps.<step>` is
+`{missing: [upstream steps the project has not produced], count}` for `personas`, `research`, `prfaq`, `prd` and
+`prototype`. `prototype` also has `blocked` (no PRD and no PR/FAQ). The upstream of each step:
+
+| Step | Reads |
+|---|---|
+| personas | (customer feedback) |
+| research | personas |
+| PR/FAQ | customer feedback, personas |
+| PRD | customer feedback, personas, the PR/FAQ |
+| prototype | the PRD and/or the PR/FAQ |
+
+The Overview cards render this list: the research card's hint and the PR/FAQ + PRD card's hint name the missing
+steps ("Generate personas first", "Write the PR/FAQ before the PRD"), and the prototype card is disabled while
+`blocked`. Against an API from before 6.04.00 (no `methodology`) the cards keep their earlier local hints.
+
+**The block a step answers and stores.** `POST /projects/{id}/research`, `POST /projects/{id}/document`
+(PR/FAQ, PRD; also "Pursue" on a decision) and `POST /projects/{id}/build-prototype` answer, next to `job_id`,
+`methodology: {step, skipped, warnings, evidence}`:
+
+- `skipped`: `[{step, reason: missing | not_selected}]`, an upstream step the project lacks, or one it has that the
+  request does not read (research without selected personas, a PR/FAQ / PRD without personas or without the PR/FAQ
+  among its documents);
+- `warnings`: `[{code, message, …}]`, one per skipped step (`missing_upstream`, `upstream_not_selected`, with
+  `step`), `no_evidence` when no customer feedback reached the document, `reference_documents_skipped`
+  (`document_ids`, `cap`) when more reference documents were selected than the generator reads (3), and
+  `no_source_document` for a prototype with no source. The messages are English for headless clients; the SPA
+  renders by `code`;
+- `evidence`: the number of feedback items (and board requests) that reached the prompts; `null` in the start answer
+  (the job has not read anything yet), `0` for a hand-written document.
+
+The document generator stores the final block on the PR/FAQ, PRD or prototype it writes (and in the job result,
+so `GET /projects/{id}/jobs/{job_id}` and MCP `get_job` show it). The Documents tab shows a document's warnings under
+it ("Methodology gaps"). Documents made before 6.04.00 have no block and show nothing.
+
+**Feedback by default.** A PR/FAQ or PRD request reads customer feedback unless its `data_sources.feedback` is
+`false` (an explicit `false` is honoured and reported as `upstream_not_selected` / `no_evidence`). Before 6.04.00 a
+request that named no data sources read no feedback.
+
+**Hand-written documents.** A PR/FAQ or PRD written from a blank template (`POST /projects/{id}/documents` with
+`document_type: prfaq | prd`, `origin: human`) is stored with `methodology: {evidence: 0}` and a `no_evidence`
+warning; the Documents tab says "Written by hand: cites no customer feedback yet."
+
+**The one refusal.** `POST /projects/{id}/build-prototype` on a project with no PRD and no PR/FAQ answers **409**
+`No PRD or PR/FAQ found for this project. Generate at least one first.` before any job row. It used to answer 202 and
+fail inside the job.
+
+Workflows (agents) get the same advice at design time: see [autonomous-agents.md → Methodology warnings](autonomous-agents.md#methodology-warnings).
+
 ## Product tab
 
 The **Product** tab (`/projects/<id>?tab=product`) holds the project's product description, which PRD, PR/FAQ,
