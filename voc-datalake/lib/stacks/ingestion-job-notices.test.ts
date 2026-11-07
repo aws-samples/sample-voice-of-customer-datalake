@@ -10,7 +10,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { roleStatements } from '../test-support/iam-statements';
 import { synthIngestionTemplate } from '../test-support/ingestion-stack-fixture';
 import { findWorkerFunction } from '../test-support/worker-function';
-import { REALTIME_HTTP_DNS_PARAMETER_ENV, realtimeParameterName } from '../utils/realtime';
+import { REALTIME_HTTP_DNS_ENV, realtimeParameterName, realtimeParameterReference } from '../utils/realtime';
 
 describe('VocIngestionStack job-end notices', () => {
   let template: Template;
@@ -26,7 +26,7 @@ describe('VocIngestionStack job-end notices', () => {
   });
 
   it('tells it the endpoint parameter, and its role reads exactly that parameter', () => {
-    expect(fn.Environment.Variables[REALTIME_HTTP_DNS_PARAMETER_ENV]).toBe(realtimeParameterName(undefined));
+    expect(fn.Environment.Variables[REALTIME_HTTP_DNS_ENV]).toBe(realtimeParameterReference(undefined));
     const ssm = roleStatements(template, fn.Role['Fn::GetAtt'][0]).filter((s) => s.actions.some((a) => a.startsWith('ssm:')));
     expect(ssm.map((s) => s.actions)).toStrictEqual([['ssm:GetParameter']]);
     expect(ssm[0]?.resource).toContain(`parameter${realtimeParameterName(undefined)}`);
@@ -34,7 +34,7 @@ describe('VocIngestionStack job-end notices', () => {
 
   it('no other ingestor is told, and nothing here publishes', () => {
     const webscraper = findWorkerFunction(template, 'voc-ingestor-webscraper');
-    expect(REALTIME_HTTP_DNS_PARAMETER_ENV in webscraper.Environment.Variables).toBe(false);
+    expect(REALTIME_HTTP_DNS_ENV in webscraper.Environment.Variables).toBe(false);
     expect(JSON.stringify(template.toJSON())).not.toContain('appsync:');
   });
 });

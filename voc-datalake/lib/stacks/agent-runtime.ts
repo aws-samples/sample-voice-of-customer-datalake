@@ -47,7 +47,7 @@ import {
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { createWorkerFunction, grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
 import { createPlanStepFunction } from './plan-step-lambda';
-import { REALTIME_HTTP_DNS_PARAMETER_ENV, realtimeParameterName, realtimeParameterReadStatement } from '../utils/realtime';
+import { REALTIME_HTTP_DNS_ENV, realtimeParameterReference, realtimeParameterReadStatement } from '../utils/realtime';
 
 /**
  * The rendered voc-agent-run definition. Its `TimeoutSeconds` (24 h, the
@@ -192,7 +192,7 @@ export class AgentRuntime extends Construct {
         MEMORY_EXTRACT_QUEUE_URL: memoryExtractQueue.queueUrl,
         JOBS_TABLE: jobsTable.tableName,
         USER_POOL_ID: userPool.userPoolId,
-        [REALTIME_HTTP_DNS_PARAMETER_ENV]: realtimeParameterName(this.props.deploymentPrefix),
+        [REALTIME_HTTP_DNS_ENV]: realtimeParameterReference(this.props.deploymentPrefix),
       },
       // Verification re-reads every claimed project/document AS THE AGENT through
       // the Projects API — the conductor never trusts a crewmate's claim.

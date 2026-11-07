@@ -42,7 +42,7 @@ import { loadPlugins, pluginIdsWithCapability } from '../plugin-loader';
  * hard-coded github_issues check did before 6.04.00: records already queued by a
  * plugin that was since disabled are still handled as updates.
  */
-export const UPDATE_CAPABLE_SOURCES_ENV = 'UPDATE_CAPABLE_SOURCES';
+const UPDATE_CAPABLE_SOURCES_ENV = 'UPDATE_CAPABLE_SOURCES';
 
 export interface VocProcessingStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;

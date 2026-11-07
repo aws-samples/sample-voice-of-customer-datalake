@@ -16,7 +16,7 @@
  */
 import type { SessionPersistence } from './run-session.js';
 import { isStorableThreadId } from './record.js';
-import { errorName } from './writer.js';
+import { errorName } from '../../lib/error-name.js';
 
 const POLL_INTERVAL_MS = 1500;
 
