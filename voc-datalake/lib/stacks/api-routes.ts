@@ -78,7 +78,7 @@ export function addApiRoutes(stack: cdk.Stack, gateway: ApiGateway, targets: Rou
   };
 
   // /feedback/* — three resources (5.47.00; ten before). `/feedback/{id}` GET also serves the
-  // single-segment reads (`access`, `urgent`, `entities`, `search`, `problems`): the metrics Lambda
+  // single-segment reads (`access`, `urgent`, `entities`, `search`, `problems`, `catalogue`): the metrics Lambda
   // resolves by PATH and Powertools matches its static routes before `/feedback/<id>`. Under the item,
   // a proxy with GET → metrics (`similar`) and PUT → feedback edit (`category`, `dimensions`, the only
   // feedback WRITE routes, their own Lambda). Never a sibling `{proxy+}` of `{id}`: API Gateway

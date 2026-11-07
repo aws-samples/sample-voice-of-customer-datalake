@@ -221,6 +221,7 @@ voice-of-customer-datalake/       # Root repository
 | GET | `/feedback/{id}` | Get single feedback item |
 | GET | `/feedback/{id}/similar` | Get similar feedback items |
 | GET | `/feedback/access` | The caller's scope `{all, categories, sources_all, sources, source_rule: all\|allow\|deny, sources_denied}` |
+| GET | `/feedback/catalogue` | What every stored attribute of a feedback item means `{version, table, steps, policy_effects, fields: [{name, type, meaning, set_by, always_present, key, pii, under_redact, under_summary_only, values?}]}` (any signed-in user, no table read, ETag; `shared/feedback_catalogue.py`, docs/data-catalogue.md) |
 | GET | `/feedback/urgent` | Get high-urgency items |
 | GET | `/feedback/problems` | The Problem Analysis tree over the whole window (docs/problem-analysis.md): the header's `days` + `date_basis` like every route; ≤ 100,000 slim rows, ≤ 1,000 problems listed (`problems_truncated`); answers `window` + `type_counts` |
 | GET | `/feedback/entities` | Keywords, categories, issues, `channels`, `tags`, `dimensions` for filters |

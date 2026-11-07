@@ -117,7 +117,7 @@ describe('feedback edit Lambda (PUT /feedback/{id}/category, PUT /feedback/{id}/
   it.each([
     ['GET', '/feedback'], ['GET', '/feedback/fb_1'], ['GET', '/feedback/fb_1/similar'],
     ['GET', '/feedback/access'], ['GET', '/feedback/urgent'], ['GET', '/feedback/entities'],
-    ['GET', '/feedback/search'], ['GET', '/feedback/problems'],
+    ['GET', '/feedback/search'], ['GET', '/feedback/problems'], ['GET', '/feedback/catalogue'],
   ])('routes %s %s to the read-only metrics Lambda behind Cognito', (verb, path) => {
     const method = resolveMethod(apiMethods(apiTemplate()), verb, path);
     expect(method?.integrationFunctionId, `${verb} ${path}`).toBe(functionIdForHandler(apiTemplate(), 'metrics_handler.py'));
