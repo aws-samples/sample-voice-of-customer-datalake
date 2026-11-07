@@ -24,6 +24,7 @@ import { describeIssues } from '../assistant/tools/spec.js';
 import { missingStoreAppRefusal } from '../assistant/tools/client/store-app-check.js';
 import { describeToolError, isAssistantToolError } from '../assistant/tools/errors.js';
 import type { CallerClaims, ClientToolDefinition } from '../assistant/types.js';
+import { isRecord } from '../lib/is-record.js';
 import { failed, type PendingWrite, type PlanStepEvent, type PlanStepResult } from './event.js';
 import type { PlanStepDeps } from './deps.js';
 import { writeFreeFields } from './free-fields.js';
@@ -97,10 +98,13 @@ async function execute(deps: PlanStepDeps, c: WriteContext, toolName: string, ar
     if (fallback === undefined || !isAssistantToolError(error) || error.code !== 'not_permitted') throw error;
     return deps.invoke(fallback, c.claims);
   });
+  const methodology = isRecord(response) && isRecord(response.methodology) ? response.methodology : undefined;
   return {
     status: 'done',
     outputs: declaredOutputs(extractOutputs(toolName, response, args), c.event.step.produces),
     fingerprint: canonicalWriteFingerprint(toolName, args),
+    // A methodology step's start answer (research, PR/FAQ, PRD, prototype): the conductor bounds and journals it.
+    ...(methodology === undefined ? {} : { methodology }),
   };
 }
 

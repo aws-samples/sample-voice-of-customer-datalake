@@ -80,9 +80,13 @@ def load(plan_id: str, now: datetime | None = None) -> PlanState | None:
 
 
 def journal(plan_id: str, kind: str, summary: str, *, now: datetime, step_id: str | None = None,
-            meta: Mapping[str, Any] | None = None) -> None:
-    """One plan journal row for a status change, and the approver's ``runs`` notice (agents/notices.py)."""
-    ps.append_event(table(), plan_id, kind, summary, now=now, step_id=step_id)
+            meta: Mapping[str, Any] | None = None, methodology_block: object = None) -> None:
+    """One plan journal row for a status change, and the approver's ``runs`` notice (agents/notices.py).
+
+    ``methodology_block``: a finished methodology step's block, stored (bounded) on the row.
+    """
+    ps.append_event(table(), plan_id, kind, summary, now=now, step_id=step_id,
+                    **({} if methodology_block is None else {'methodology_block': methodology_block}))
     notices.plan_changed(plan_id, kind, meta=meta, step_id=step_id)
 
 

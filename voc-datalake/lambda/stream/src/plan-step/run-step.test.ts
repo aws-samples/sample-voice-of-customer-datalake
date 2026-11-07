@@ -69,6 +69,20 @@ describe('write steps that match their definition', () => {
     expect(h.calls[0]?.claims).toStrictEqual(USER_CLAIMS);
   });
 
+  it('report the methodology block a methodology step\u2019s route answered, for the conductor to journal', async () => {
+    const block = { step: 'prd', skipped: [{ step: 'prfaq', reason: 'missing' }], warnings: [{ code: 'missing_upstream', message: 'm', step: 'prfaq' }], evidence: null };
+    const h = harness({ 'POST /projects/proj_9/document': { success: true, job_id: 'job_prd', methodology: block } });
+    const args = { project_id: 'proj_9', doc_type: 'prd', title: 'Seat map PRD', feature_idea: 'A live seat map' };
+    const step = { id: 's3', pack: 'project', kind: 'write', title: 'Write the PRD', write: { tool: 'generate_document', args }, produces: ['job_id'] };
+    const result = await runPlanStep(event(step), h.deps);
+    expect(result).toMatchObject({ status: 'done', outputs: { job_id: 'job_prd' }, methodology: block });
+  });
+
+  it('report no methodology block for a write whose route answers none', async () => {
+    const result = await runPlanStep(event(writeStep('create_project', { name: 'Ancillaries' })), harness(CREATED).deps);
+    expect(result).not.toHaveProperty('methodology');
+  });
+
   it('fill a reference from the earlier step\u2019s recorded output', async () => {
     const h = harness({ 'POST /projects/proj_9/personas/generate': { success: true, job_id: 'job_1' } });
     const step = { id: 's3', pack: 'project', kind: 'write', title: 'Personas', after: ['s2'], write: { tool: 'generate_personas', args: { project_id: '{{s2.project_id}}', persona_count: 4 } }, produces: ['job_id'] };

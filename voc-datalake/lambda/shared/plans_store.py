@@ -42,7 +42,7 @@ from typing import Any, Final
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import agents_store
+from shared import agents_store, methodology
 from shared.agents_store import AGENTS_INDEX, META_SK, iso
 from shared.aws import consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
@@ -509,8 +509,8 @@ def launch_plan(table: Any, meta: Mapping[str, Any], *, now: datetime) -> None:
 
 
 def append_event(table: Any, plan_id: str, kind: str, summary: str, *, now: datetime,
-                 step_id: str | None = None) -> None:
-    """One journal row (best effort: a lost event never stops a plan)."""
+                 step_id: str | None = None, methodology_block: object = None) -> None:
+    """One journal row (best effort: a lost event never stops a plan); ``methodology_block`` is bounded."""
     try:
         counter = table.update_item(Key=plan_key(plan_id), UpdateExpression='ADD event_seq :one',
                                     ConditionExpression='attribute_exists(pk)',
@@ -521,6 +521,9 @@ def append_event(table: Any, plan_id: str, kind: str, summary: str, *, now: date
                                 'summary': clip(summary, MAX_EVENT_SUMMARY_CHARS)}
         if step_id:
             item['step_id'] = step_id
+        block = methodology.compact(methodology_block)
+        if block is not None:
+            item['methodology'] = block
         table.put_item(Item=item)
     except (ClientError, BotoCoreError, KeyError, TypeError, ValueError):
         logger.warning('Plan event not recorded', extra={'plan_id': plan_id, 'kind': kind})
@@ -560,6 +563,9 @@ def step_view(step: Mapping[str, Any]) -> dict[str, Any]:
     for name in ('started_at', 'finished_at', 'error'):
         if step.get(name):
             view[name] = step[name]
+    block = methodology.compact(step.get('methodology'))
+    if block is not None:
+        view['methodology'] = block
     pending = _pending_view(step)
     if pending is not None:
         view['pending'] = pending
