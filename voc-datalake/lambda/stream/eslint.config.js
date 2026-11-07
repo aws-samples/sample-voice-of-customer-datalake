@@ -8,6 +8,7 @@ import importX from 'eslint-plugin-import-x'
 import unusedImports from 'eslint-plugin-unused-imports'
 import vitest from '@vitest/eslint-plugin'
 import globals from 'globals'
+import { builtinModules } from 'node:module'
 import noReExports from '../../../eslint-rules/no-re-exports.mjs'
 import {
   SOURCE_RULES,
@@ -26,6 +27,28 @@ import {
 const PENDING_SOURCE = {}
 const PENDING_SPEC = {}
 const PENDING_SUPPRESSION = {}
+
+// The stream modules the SPA imports through `@stream` (frontend/streamSource.ts), and every stream file
+// those import: the `browser-safe` block below lints them. Add a file here when the SPA starts importing it.
+export const BROWSER_SAFE_FILES = [
+  'src/assistant/contract.ts',
+  'src/assistant/plan/canonical.ts',
+  'src/assistant/plan/graph.ts',
+  'src/assistant/plan/placeholders.ts',
+  'src/assistant/plan/plan-fixtures.ts',
+  'src/assistant/plan/schema.ts',
+  'src/assistant/plan/validate.ts',
+  'src/assistant/session/persona-result.ts',
+  'src/assistant/tools/client/allowlists.ts',
+  'src/assistant/tools/client/radar-schemas.ts',
+  'src/assistant/tools/client/review-import-schemas.ts',
+  'src/assistant/tools/client/scraper-schemas.ts',
+  'src/assistant/tools/client/text-schemas.ts',
+  'src/assistant/tools/client/user-schemas.ts',
+  'src/assistant/tools/dimension-patterns.ts',
+  'src/lib/is-record.ts',
+]
+const BROWSER_SAFE_MESSAGE = 'The SPA imports this module through @stream: no Node built-in, @aws-sdk or @smithy at runtime (import type is fine).'
 
 export default tseslint.config(
   {
@@ -186,6 +209,23 @@ export default tseslint.config(
       'vitest/consistent-test-filename': ['error', { pattern: '.*\\.test\\.[tj]sx?$' }],
       'vitest/prefer-to-have-length': 'error',
       'vitest/prefer-spy-on': 'error',
+    },
+  },
+
+  // ─── Browser-safe: the modules the SPA imports through `@stream` (frontend/streamSource.ts) ───
+  // They run in the browser bundle too, so no Node built-in, no AWS SDK and no Smithy runtime (a type-only
+  // import is erased and allowed). src/browser-safe.test.ts fails when the SPA imports a stream module, or a
+  // listed module imports a stream file, that this block does not cover.
+  {
+    name: 'browser-safe',
+    files: BROWSER_SAFE_FILES,
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', {
+        paths: builtinModules.filter((name) => !name.startsWith('node:')).map((name) => ({
+          name, allowTypeImports: true, message: BROWSER_SAFE_MESSAGE,
+        })),
+        patterns: [{ group: ['node:*', '@aws-sdk/*', '@smithy/*'], allowTypeImports: true, message: BROWSER_SAFE_MESSAGE }],
+      }],
     },
   },
 )
