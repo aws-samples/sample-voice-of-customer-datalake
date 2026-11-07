@@ -9,15 +9,19 @@ import { describe, expect, it } from 'vitest';
 
 import { LAMBDA_BASIC_EXECUTION_POLICY, removeAwsManagedPolicy } from './lambda-log-grants';
 
+function cfnRoleOf(role: iam.Role): iam.CfnRole {
+  const cfn = role.node.defaultChild;
+  if (!(cfn instanceof iam.CfnRole)) throw new Error('no CfnRole');
+  return cfn;
+}
+
 function roleWith(policies: string[]): { stack: cdk.Stack; cfn: iam.CfnRole } {
   const stack = new cdk.Stack();
   const role = new iam.Role(stack, 'Role', {
     assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
     managedPolicies: policies.map((name) => iam.ManagedPolicy.fromAwsManagedPolicyName(name)),
   });
-  const cfn = role.node.defaultChild;
-  if (!(cfn instanceof iam.CfnRole)) throw new Error('no CfnRole');
-  return { stack, cfn };
+  return { stack, cfn: cfnRoleOf(role) };
 }
 
 const managedArn = (name: string): unknown => ({
@@ -55,9 +59,7 @@ describe('removeAwsManagedPolicy', () => {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName(LAMBDA_BASIC_EXECUTION_POLICY), shared],
     });
-    const cfn = role.node.defaultChild;
-    if (!(cfn instanceof iam.CfnRole)) throw new Error('no CfnRole');
-    removeAwsManagedPolicy(cfn, LAMBDA_BASIC_EXECUTION_POLICY);
+    removeAwsManagedPolicy(cfnRoleOf(role), LAMBDA_BASIC_EXECUTION_POLICY);
     const rendered = JSON.stringify(Template.fromStack(stack).findResources('AWS::IAM::Role'));
     expect(rendered).toContain('"Fn::ImportValue":"Policies:ExportsOutputRefShared');
     expect(rendered).not.toContain('{"Ref":"Shared');

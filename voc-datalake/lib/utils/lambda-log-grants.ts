@@ -61,8 +61,9 @@ export function removeAwsManagedPolicy(role: iam.CfnRole, policyName: string): v
   const now = ManagedPolicyListSchema.parse(cdk.Stack.of(role).resolve(original));
   if (now === undefined || kept(now)?.length === now.length) return;
   // Resolved in the context of the final synthesis, so a cross-stack ARN still becomes its import.
-  const filtered: cdk.IResolvable = { creationStack: [], resolve: (context) => kept(context.resolve(original)) };
-  role.managedPolicyArns = cdk.Token.asList(filtered);
+  role.managedPolicyArns = cdk.Lazy.uncachedList({
+    produce: (context) => kept(context.resolve(original))?.map((arn) => cdk.Token.asString(arn)),
+  });
 }
 
 /** The construct a token string refers to (`Ref` / `Fn::GetAtt` of a resource in the app), if it is one. */
