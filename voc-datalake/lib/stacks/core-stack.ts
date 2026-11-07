@@ -287,6 +287,19 @@ export class VocCoreStack extends VocStack {
     this.conversationsTable = this.createEncryptedTable('ConversationsTable', 'voc-conversations', {
       timeToLiveAttribute: 'ttl',
     });
+    // The memory scanner's 15-minute read (lambda/memory/scanner/handler.py): assistant sessions
+    // by last update, a key range instead of a Scan of the whole table (TENETS.md tenet 7). Keyed
+    // on `kind` + `updated_at`, which both writers (chat_handler.py and the stream's session
+    // recorder) already store, so DynamoDB backfills it from the existing items when it is added:
+    // no migration, no new attribute. Items without `kind` (legacy chat saves, RUNCANCEL# markers)
+    // stay off it. On-demand like the table: no fixed cost.
+    this.conversationsTable.addGlobalSecondaryIndex({
+      indexName: 'gsi1-by-kind-updated-at',
+      partitionKey: { name: 'kind', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'updated_at', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.INCLUDE,
+      nonKeyAttributes: ['message_count'],
+    });
 
     // Memory Table — docs/memory.md. Memories are curated company knowledge
     // (forget = tombstone + archive, never a delete while the platform runs);

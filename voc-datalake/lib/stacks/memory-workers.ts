@@ -18,6 +18,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as events from 'aws-cdk-lib/aws-events';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
@@ -31,6 +32,11 @@ import { createWorkerFunction, scheduleWorker, workerRole } from '../utils/worke
 
 /** Extractor ceiling; the queue's visibility timeout is derived from it. */
 const EXTRACTOR_TIMEOUT = cdk.Duration.minutes(5);
+/**
+ * The voc-conversations index the scanner queries (core-stack.ts `indexName`; mirrored by
+ * lambda/shared/indexes.py, pinned to it by memory-agents-stack.test.ts).
+ */
+export const CONVERSATIONS_BY_KIND_INDEX = 'gsi1-by-kind-updated-at';
 
 /** Base physical name of the memory-extract DLQ (alerting watches it when on, dlq-alarms.ts; #247). */
 export const MEMORY_EXTRACT_DLQ_BASE_NAME = 'voc-memory-extract-dlq';
@@ -131,8 +137,13 @@ export class MemoryWorkers extends Construct {
   private createScanner(): void {
     const { uniqueName, kmsKey, memoryTable, conversationsTable } = this.props;
     const role = workerRole(this, 'MemoryScannerRole');
-    // No updatedAt index on conversations: a paged Scan with a filter.
-    conversationsTable.grant(role, 'dynamodb:Scan');
+    // The idle-session window is a Query of the kind/updated_at index (core-stack.ts), never a
+    // Scan of the table: idle cost no longer grows with the stored conversations (TENETS.md tenet 7).
+    // Query on exactly that index ARN: the base table is not readable.
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:Query'],
+      resources: [`${conversationsTable.tableArn}/index/${CONVERSATIONS_BY_KIND_INDEX}`],
+    }));
     // Session cursors (MEMCURSOR / SESSION#...): read in one BatchGetItem
     // (store.get_cursors), advanced with UpdateItem (store.save_cursor). Without
     // BatchGetItem every run failed AccessDenied and no session was ever queued.

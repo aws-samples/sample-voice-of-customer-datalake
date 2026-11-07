@@ -193,10 +193,21 @@ or company context text, so internal facts (codenames, targets) never become web
 |---|---|---|---|
 | `voc-memory-api` | Api | API Gateway `/memory`, `/memory/{proxy+}` | memory Get/BatchGet/Put/Update/Query; aggregates Get/Query; raw `memory-imports/*` read+put; SendMessage memory-extract; Bedrock allowlist + Titan V2 |
 | `voc-memory-extractor` | Processing | SQS `voc-memory-extract` (batch 5, partial failures) | memory Get/Put/Update/Query; conversations Get; agents Get/Query; aggregates Get; raw `memory-imports/*` read; Bedrock allowlist + Titan V2 |
-| `voc-memory-scanner` | Processing | EventBridge `rate(15 minutes)` | conversations Scan; memory Get/Put/Update (cursors); SendMessage memory-extract |
+| `voc-memory-scanner` | Processing | EventBridge `rate(15 minutes)` | conversations Query on the `gsi1-by-kind-updated-at` index only (no Scan, no base-table read); memory BatchGet/Update (cursors); SendMessage memory-extract |
 | `voc-memory-retention` | Processing | EventBridge `cron(15 3 * * ? *)` | memory Query/Get/Update/Put |
 
 The queue's visibility timeout is 6× the extractor timeout (30 min); 3 receives then the DLQ (14 days).
+
+**How the scanner finds sessions (6.04.00).** Every 15 minutes it reads one key range of the
+`voc-conversations` index `gsi1-by-kind-updated-at` (partition `kind = assistant`, sort `updated_at`
+between 7 days and 30 minutes ago, projection `message_count`), paged and stopped on its time budget.
+Its cost follows the sessions active in the last week, not every conversation ever stored (TENETS.md
+tenet 7; before 6.04.00 it was a filtered Scan of the whole table). The index is keyed on attributes
+both writers already store (`chat_handler.py` and the stream's session recorder), so DynamoDB indexes
+the existing conversations while it builds the index on deploy: no backfill, and no session is
+skipped. CloudFormation finishes the VocCoreStack update only once the new index is active, and the
+scanner's code and grant ship in VocProcessingStack, which deploys after it, so the old scanner keeps
+scanning until the new one can query.
 Workers bundle `lambda/memory/` + `lambda/shared/` (path-style handlers, e.g. `memory/extractor/handler.lambda_handler`);
 no other Lambda's asset hashes the `memory/` or `agents/` tree (`WORKER_TREE_ASSET_EXCLUDES`).
 

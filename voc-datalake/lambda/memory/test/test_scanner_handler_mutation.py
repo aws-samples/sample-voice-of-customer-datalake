@@ -133,7 +133,7 @@ class TestTheScanFollowsItsPagesWithinTheBudget:
     @staticmethod
     def _two_pages() -> MagicMock:
         table = MagicMock()
-        table.scan.side_effect = [
+        table.query.side_effect = [
             {'Items': [{'pk': 'USER#a', 'sk': 'CONV#one', 'message_count': 1, 'updated_at': 't1'}],
              'LastEvaluatedKey': {'pk': 'USER#a', 'sk': 'CONV#one'}},
             {'Items': [{'pk': 'USER#b', 'sk': 'CONV#two', 'message_count': 2, 'updated_at': 't2'}]},
@@ -144,17 +144,24 @@ class TestTheScanFollowsItsPagesWithinTheBudget:
         table = self._two_pages()
         sessions = scanner.idle_sessions(table, NOW, lambda: PLENTY)
         assert [s['session_id'] for s in sessions] == ['one', 'two']
-        assert table.scan.call_count == 2
-        second = table.scan.call_args_list[1].kwargs
+        assert table.query.call_count == 2
+        second = table.query.call_args_list[1].kwargs
         assert second['ExclusiveStartKey'] == {'pk': 'USER#a', 'sk': 'CONV#one'}
         assert second['ProjectionExpression'] == 'pk, sk, message_count, updated_at'
-        assert 'ExclusiveStartKey' not in table.scan.call_args_list[0].kwargs
+        assert 'ExclusiveStartKey' not in table.query.call_args_list[0].kwargs
+
+    def test_it_reads_the_kind_index_and_never_scans_the_table(self):
+        """Tenet 7: the 15-minute read is a key range of the index, its idle cost independent of the table."""
+        table = self._two_pages()
+        scanner.idle_sessions(table, NOW, lambda: PLENTY)
+        table.scan.assert_not_called()
+        assert {call.kwargs['IndexName'] for call in table.query.call_args_list} == {'gsi1-by-kind-updated-at'}
 
     @pytest.mark.parametrize(('time_left', 'pages'), [(20_000, 2), (19_999, 1)])
     def test_the_next_page_needs_at_least_twenty_seconds(self, time_left, pages):
         table = self._two_pages()
         sessions = scanner.idle_sessions(table, NOW, lambda: time_left)
-        assert table.scan.call_count == pages
+        assert table.query.call_count == pages
         assert len(sessions) == pages
 
     def test_stopping_early_is_logged_once_with_its_reason(self):

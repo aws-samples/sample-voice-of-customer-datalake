@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 import boto3
 from moto import mock_aws
 
-from api.test.moto_helpers import pk_sk_table
+from api.test.moto_helpers import conversations_table, pk_sk_table
 from shared import memory_categories, memory_store
 from shared.converse import ConverseResult
 from shared.embeddings import EMBED_DIMENSIONS
@@ -101,7 +101,7 @@ def memory_world(monkeypatch):
         resource = boto3.resource('dynamodb', region_name='us-east-1')
         memory = pk_sk_table(MEMORY_TABLE_NAME, gsi1_index=MEMORY_BY_STATUS_INDEX)
         aggregates = pk_sk_table(AGGREGATES_TABLE_NAME)
-        conversations = pk_sk_table(CONVERSATIONS_TABLE_NAME)
+        conversations = conversations_table(CONVERSATIONS_TABLE_NAME)
         s3 = boto3.client('s3', region_name='us-east-1')
         s3.create_bucket(Bucket=RAW_BUCKET)
         sqs = boto3.client('sqs', region_name='us-east-1')
