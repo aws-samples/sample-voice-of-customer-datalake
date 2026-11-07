@@ -13,10 +13,12 @@ from typing import Any
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+from shared import config_write_guard
 from shared.api import api_handler, create_api_resolver, is_admin, require_admin
 from shared.aws import get_dynamodb_resource, get_secrets_client, put_secret_json
 from shared.enabled_sources import default_source_ids
 from shared.exceptions import (
+    ApiError,
     ConfigurationError,
     ServiceError,
     ValidationError,
@@ -729,7 +731,8 @@ def list_app_configs(source: str):
         logger.warning(f"Could not read app configs for {source}: {e}")
         return {'apps': []}
     else:
-        return {'apps': configs}
+        # Each with its computed `etag`, the version a save's `base_etag` names.
+        return {'apps': [config_write_guard.with_etag(c) for c in configs]}
 
 
 @app.post("/integrations/<source>/apps")
@@ -751,11 +754,15 @@ def save_app_config(source: str):
         raise ConfigurationError('Secrets not configured')
 
     body = json_object_body(app)
+    # Optional write rules (shared/config_write_guard.py); absent = the upsert.
+    mode = config_write_guard.write_mode(body)
+    base = config_write_guard.base_etag(body)
     app_config = body.get('app')
     if not app_config:
         raise ValidationError('No app config provided')
     if not isinstance(app_config, dict):  # a string, list or number would raise below (a 500)
         raise ValidationError('app must be an object')
+    app_config = config_write_guard.without_etag(app_config)
 
     # Validate required fields
     if not app_config.get('id'):
@@ -770,6 +777,7 @@ def save_app_config(source: str):
 
         existing_idx = next((i for i, c in enumerate(configs) if c.get('id') == app_config['id']), None)
         stored = configs[existing_idx] if existing_idx is not None else None
+        _check_app_write(source, configs, app_config, stored if isinstance(stored, dict) else None, mode, base)
         app_config = _with_source_id(source, app_config, stored if isinstance(stored, dict) else None)
         if existing_idx is None:
             configs.append(app_config)
@@ -778,13 +786,32 @@ def save_app_config(source: str):
 
         secrets[configs_key] = json.dumps(configs)
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-    except (ConfigurationError, ValidationError):
+    except ApiError:
         raise
     except Exception as e:
         logger.exception(f"Failed to save app config for {source}: {e}")
         raise ServiceError('Failed to save app configuration') from e
     else:
         return {'success': True, 'app': app_config}
+
+
+#: The field that names the same app / page twice, per connector (frontend APP_ID_FIELD).
+APP_IDENTITY_FIELD = {'app_reviews_ios': 'app_id', 'app_reviews_android': 'package_name', 'web_reviews': 'url'}
+
+
+def _same_text(a: object, b: object) -> bool:
+    return isinstance(a, str) and isinstance(b, str) and bool(a.strip()) and a.strip().lower() == b.strip().lower()
+
+
+def _check_app_write(source: str, configs: list, app_config: dict, stored: dict | None,
+                     mode: str | None, base: str | None) -> None:
+    """The write rules for an app connector: a create also refuses the same app under a new id."""
+    name = app_config.get('app_name')
+    if mode == config_write_guard.MODE_CREATE and stored is None:
+        field = APP_IDENTITY_FIELD.get(source)
+        stored = config_write_guard.find_existing(configs, lambda c: _same_text(c.get('app_name'), name) or (
+            field is not None and _same_text(c.get(field), app_config.get(field))))
+    config_write_guard.check_write(stored, mode=mode, base=base, what=f'An app connector for "{name}"')
 
 
 @app.delete("/integrations/<source>/apps/<app_id>")

@@ -64,11 +64,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import assist_jobs
+from shared import assist_jobs, config_write_guard
 from shared.api import api_handler, create_api_resolver, get_caller_subject, require_admin
 from shared.app_connector_listing import connectors_in_secret
 from shared.aws import get_secrets_client, put_secret_json
-from shared.exceptions import ConfigurationError, ServiceError, ValidationError
+from shared.exceptions import ApiError, ConfigurationError, ServiceError, ValidationError
 from shared.http_utils import MAX_PAGE_BYTES
 from shared.ids import timestamped_id
 from shared.logging import logger, tracer
@@ -236,7 +236,8 @@ def list_scrapers():
         # An AWS failure, or a secret whose JSON is not the {key: str} shape.
         logger.warning(f"Could not read scraper configs: {e}")
         return {'scrapers': []}
-    return {'scrapers': configs}
+    # Each with its computed `etag`, the version a save's `base_etag` names.
+    return {'scrapers': [config_write_guard.with_etag(c) for c in configs]}
 
 
 # --- Bounds on the save route ---------------------------------------------------
@@ -346,6 +347,8 @@ def _validated_scraper(body: object) -> dict:
         raise ValidationError('No scraper config provided')
     if not isinstance(scraper, dict):
         raise ValidationError('Scraper config must be an object')
+    # A record sent back as it was read carries its computed `etag`: never stored.
+    scraper = config_write_guard.without_etag(scraper)
     error = _scraper_shape_error(scraper) or scraper_url_error(scraper, validate_url)
     if error is not None:
         raise ValidationError(error)
@@ -409,17 +412,25 @@ def save_scraper():
     if not SECRETS_ARN:
         raise ConfigurationError('Secrets not configured')
 
-    scraper = _validated_scraper(json_object_body(app))
+    body = json_object_body(app)
+    # Optional write rules (shared/config_write_guard.py): `mode: create` never
+    # overwrites, `base_etag` refuses a stale update. Absent = the upsert.
+    mode = config_write_guard.write_mode(body)
+    base = config_write_guard.base_etag(body)
+    scraper = _validated_scraper(body)
 
     try:
         secrets, configs = _webscraper_configs_in_secret()
+        stored = config_write_guard.find_existing(configs, lambda c: c.get('id') == scraper['id'])
+        config_write_guard.check_write(stored, mode=mode, base=base, what=f'A scraper with id "{scraper["id"]}"')
         configs = _upserted_configs(configs, scraper)
         secrets['webscraper_configs'] = json.dumps(configs)
         put_secret_json(secretsmanager, SECRETS_ARN, secrets)
-    except ValidationError:
+    except ApiError:
         # put_secret_json refuses an over-limit secret, and _upserted_configs a
         # count or budget overrun. Both are a 400 the user can act on ("remove
-        # some scrapers"), so they must not be flattened into the generic 500.
+        # some scrapers"), so they must not be flattened into the generic 500;
+        # nor are the write rules' 404 / 409.
         raise
     except Exception as e:
         logger.exception(f"Failed to save scraper: {e}")
