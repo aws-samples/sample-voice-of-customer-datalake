@@ -299,6 +299,7 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   s3ImportBucket: ingestionStack.s3ImportBucket,
   researchStateMachine: processingStack.researchStateMachine,
   agentRunStateMachine: processingStack.agentRunStateMachine,
+  agentConductorRoleArn: processingStack.agentConductorRole.roleArn,
   memoryExtractQueueUrl: processingStack.memoryExtractQueue.queueUrl,
   memoryExtractQueueArn: processingStack.memoryExtractQueue.queueArn,
   webSearchGatewayUrl: webSearchStack?.gatewayUrl,

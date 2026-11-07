@@ -81,6 +81,10 @@ PASSKEY_AVAILABLE=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="Pass
 BOARD_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolId") | .OutputValue // empty')
 BOARD_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolClientId") | .OutputValue // empty')
 BOARD_SIGN_IN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardSignInMode") | .OutputValue // "email_otp"')
+# The AppSync Events hosts for push notifications (docs/realtime.md, 6.04.00); an older stack has none,
+# and the SPA then polls exactly as before.
+REALTIME_HTTP_DNS=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="RealtimeHttpDns") | .OutputValue // empty')
+REALTIME_DNS=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="RealtimeDns") | .OutputValue // empty')
 
 # Validate required values
 if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "null" ]; then
@@ -113,6 +117,7 @@ echo "  Cognito Region: $COGNITO_REGION"
 echo "  Identity Pool: $IDENTITY_POOL_ID"
 echo "  Email: $EMAIL_AVAILABLE"
 echo "  Board Pool: ${BOARD_USER_POOL_ID:-none}"
+echo "  Realtime: ${REALTIME_DNS:-none}"
 
 # Step 2: Build the frontend
 echo ""
@@ -141,6 +146,8 @@ jq -n \
   --arg boardUserPoolId "$BOARD_USER_POOL_ID" \
   --arg boardClientId "$BOARD_CLIENT_ID" \
   --arg boardSignIn "$BOARD_SIGN_IN" \
+  --arg realtimeHttpDns "$REALTIME_HTTP_DNS" \
+  --arg realtimeDns "$REALTIME_DNS" \
   '{
     apiEndpoint: $apiEndpoint,
     cognito: {
@@ -160,6 +167,11 @@ jq -n \
       userPoolId: $boardUserPoolId,
       clientId: $boardClientId,
       signIn: $boardSignIn
+    }
+  } else {} end) + (if $realtimeHttpDns != "" and $realtimeDns != "" then {
+    realtime: {
+      httpDns: $realtimeHttpDns,
+      realtimeDns: $realtimeDns
     }
   } else {} end)' > dist/config.json
 

@@ -43,6 +43,7 @@ import { createJobLambdas } from './api-job-lambdas';
 import { createMcpApi } from './api-mcp';
 import { cognitoHostedUiHost } from './api-mcp-oauth';
 import { createProjectsLambda } from './api-projects-lambda';
+import { createRealtimeApi, grantConductorRunsPublish, grantRealtimePublish, realtimeRuntimeConfig } from './api-realtime';
 import { addApiRoutes } from './api-routes';
 import { createRadarLambda } from './api-radar-lambda';
 import { createParticipantsLambda } from './api-participants-lambda';
@@ -112,6 +113,8 @@ export interface VocApiStackProps extends VocStackProps {
   researchStateMachine: sfn.StateMachine;
   /** voc-agent-run — the agents API starts ("Run now") and stops (cancel) executions. */
   agentRunStateMachine: sfn.StateMachine;
+  /** voc-agent-conductor's role: it publishes run / plan notices to the Event API's `runs` namespace (api-realtime.ts). */
+  agentConductorRoleArn: string;
   /** memory-extract queue — the memory API enqueues page imports onto it. */
   memoryExtractQueueUrl: string;
   memoryExtractQueueArn: string;
@@ -336,6 +339,17 @@ export class VocApiStack extends VocStack {
     }, signingLayer);
     const { webSearch } = assistant;
 
+    // ============================================
+    // PUSH NOTIFICATIONS (AppSync Events, docs/realtime.md)
+    // ============================================
+    const realtime = createRealtimeApi(ctx);
+    grantRealtimePublish(realtime, 'jobs', [
+      projects.projectsLambda, projects.projectsAssistWorker,
+      data.settingsLambda, data.settingsAssistWorker, data.scrapersLambda, data.scrapersAssistWorker,
+    ]);
+    grantRealtimePublish(realtime, 'chat', [assistant.chatStreamLambda]);
+    grantConductorRunsPublish(ctx, realtime, props.agentConductorRoleArn);
+
 
     // ============================================
     // FRONTEND DEPLOYMENT
@@ -366,6 +380,8 @@ export class VocApiStack extends VocStack {
       },
       // The board pool (/board and /review): its ids and how it emails sign-in codes.
       ...boardRuntimeConfig(props, emailSenderOf(this.node) !== undefined),
+      // Where the SPA subscribes to its notices (docs/realtime.md); polling stays the fallback.
+      ...realtimeRuntimeConfig(realtime),
     };
 
     this.runtimeConfig = runtimeConfig;
