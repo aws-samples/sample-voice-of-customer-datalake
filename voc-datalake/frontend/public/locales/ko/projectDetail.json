@@ -376,7 +376,12 @@
     "unprotect": "이 페르소나 보호 해제",
     "protected": "보호됨",
     "protectedHint": "새 생성이 이 프로젝트의 페르소나를 교체해도 유지됩니다",
-    "protectFailed": "보호 설정을 변경하지 못했습니다. 다시 시도하세요."
+    "protectFailed": "보호 설정을 변경하지 못했습니다. 다시 시도하세요.",
+    "noEvidence": {
+      "imported": "고객 근거 없음: 가져옴",
+      "copiedFromImport": "고객 근거 없음: 가져온 페르소나에서 복사함",
+      "copied": "고객 근거 없음: 리뷰가 없는 페르소나에서 복사함"
+    }
   },
   "personaSections": {
     "ageRange": "나이",

@@ -376,7 +376,12 @@
     "unprotect": "Schutz dieser Persona aufheben",
     "protected": "Geschützt",
     "protectedHint": "Bleibt erhalten, wenn eine neue Generierung die Personas dieses Projekts ersetzt",
-    "protectFailed": "Der Schutz konnte nicht geändert werden. Versuchen Sie es erneut."
+    "protectFailed": "Der Schutz konnte nicht geändert werden. Versuchen Sie es erneut.",
+    "noEvidence": {
+      "imported": "Keine Kundenbelege: importiert",
+      "copiedFromImport": "Keine Kundenbelege: von einer importierten Persona kopiert",
+      "copied": "Keine Kundenbelege: von einer Persona ohne Bewertungen kopiert"
+    }
   },
   "personaSections": {
     "ageRange": "Alter",

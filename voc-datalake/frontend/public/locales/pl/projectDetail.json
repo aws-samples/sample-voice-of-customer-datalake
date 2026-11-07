@@ -410,7 +410,12 @@
     "unprotect": "Przestań chronić tę personę",
     "protected": "Chroniona",
     "protectedHint": "Zostaje, gdy nowe generowanie zastępuje persony tego projektu",
-    "protectFailed": "Nie udało się zmienić ochrony. Spróbuj ponownie."
+    "protectFailed": "Nie udało się zmienić ochrony. Spróbuj ponownie.",
+    "noEvidence": {
+      "imported": "Brak dowodów od klientów: zaimportowana",
+      "copiedFromImport": "Brak dowodów od klientów: skopiowana z zaimportowanej persony",
+      "copied": "Brak dowodów od klientów: skopiowana z persony bez opinii"
+    }
   },
   "personaSections": {
     "ageRange": "Wiek",

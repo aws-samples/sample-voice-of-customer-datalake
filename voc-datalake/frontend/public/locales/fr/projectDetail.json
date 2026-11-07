@@ -392,7 +392,12 @@
     "unprotect": "Ne plus protéger cette persona",
     "protected": "Protégée",
     "protectedHint": "Conservée lorsqu’une nouvelle génération remplace les personas de ce projet",
-    "protectFailed": "Impossible de modifier la protection. Réessayez."
+    "protectFailed": "Impossible de modifier la protection. Réessayez.",
+    "noEvidence": {
+      "imported": "Aucune preuve client : importé",
+      "copiedFromImport": "Aucune preuve client : copié d’un persona importé",
+      "copied": "Aucune preuve client : copié d’un persona sans avis"
+    }
   },
   "personaSections": {
     "ageRange": "Âge",

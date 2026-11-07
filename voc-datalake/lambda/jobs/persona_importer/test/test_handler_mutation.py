@@ -42,6 +42,7 @@ from unittest.mock import Mock, call, patch
 
 import pytest
 
+from shared import persona_evidence_marker
 from shared.exceptions import ServiceError
 from shared.logging import logger, metrics, tracer
 from shared.prompts import PERSONA_IMPORT_PROMPTS, load_prompt_file
@@ -110,6 +111,8 @@ def _persona_row(template: dict, persona_fields: dict) -> dict:
         **persona_fields,
         'research_notes': [],
         'imported_from': 'text',
+        'evidence': {'source': 'import', 'count': 0, 'inherited': False, 'origin': 'import'},
+        'methodology': persona_evidence_marker.import_start(),
         'llm_metadata': {'model': MODEL_ID, 'prompt_version': template['version']},
         'created_at': FIXED_ISO,
         'updated_at': FIXED_ISO,

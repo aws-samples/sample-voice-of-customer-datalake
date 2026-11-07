@@ -72,6 +72,23 @@ request that named no data sources read no feedback.
 `document_type: prfaq | prd`, `origin: human`) is stored with `methodology: {evidence: 0}` and a `no_evidence`
 warning; the Documents tab says "Written by hand: cites no customer feedback yet."
 
+**Imported and copied personas.** A persona imported from an image or pasted text (`POST /projects/{id}/personas/import`,
+`POST /company-personas/import`, the persona importer job) or copied (`POST /projects/{id}/personas/copy`, promote to
+the company library) is not generated from feedback, so it stores an evidence marker
+(`lambda/shared/persona_evidence_marker.py`):
+
+- `evidence: {source: import | copy, count, inherited, origin}`: `count` is the number of customer reviews behind
+  it (always 0 for an import); a copy keeps its source's reviews (`input_feedback_ids` / `evidence_feedback_ids` are
+  copied with it), counts them and sets `inherited: true`; `origin` says where the source's evidence came from
+  (`generated`, `import`, `unknown`). Where it was copied from stays in `copied_from`;
+- `methodology: {step: personas, skipped: [], warnings, evidence: count}`, with a `no_evidence` warning when
+  `count` is 0.
+
+The import START answer carries the same `methodology` block. Evidence is never invented: the marker repeats no
+review id (the ids stay in the two existing fields, which an erasure already clears). The persona header shows
+"No customer evidence: imported" (or "copied from an imported persona" / "copied from a persona without reviews").
+A persona imported before 6.04.00 has no marker; its `imported_from` still shows the imported note.
+
 **The one refusal.** `POST /projects/{id}/build-prototype` on a project with no PRD and no PR/FAQ answers **409**
 `No PRD or PR/FAQ found for this project. Generate at least one first.` before any job row. It used to answer 202 and
 fail inside the job.

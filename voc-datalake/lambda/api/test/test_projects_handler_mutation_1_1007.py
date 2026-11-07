@@ -185,7 +185,11 @@ class TestThePersonaJobs:
                                      body={'input_type': 'text', 'content': 'A described persona.'})
         config = {'input_type': 'text', 'content': 'A described persona.', 'media_type': ''}
         assert (status, body) == (200, {'success': True, 'job_id': 'job-1', 'status': 'running',
-                                        'message': 'Persona import started.'})
+                                        'message': 'Persona import started.',
+                                        'methodology': {
+                                            'step': 'personas', 'skipped': [], 'evidence': 0,
+                                            'warnings': [{'code': 'no_evidence', 'message':
+                                                          'Imported persona: it is not based on customer feedback.'}]}})
         _started(world, 'import_persona', 'import_config', config)
         world.invoke.assert_called_once_with(
             projects_handler.PERSONA_IMPORTER_FUNCTION,
