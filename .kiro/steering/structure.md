@@ -320,7 +320,7 @@ breaker's state lives in voc-aggregates (`CIRCUIT#<plugin>` / `TRIPPED`).
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/scrapers` | List scraper configs |
-| POST | `/scrapers` | Save scraper config (admin); optional `radar_brand` (a Radar brand key) makes it a Radar source |
+| POST | `/scrapers` | Save scraper config (admin); optional `radar_brand` (a Radar brand key) makes it a Radar source; optional `mode: create\|update` (409 an existing id / 404 a missing one) and `base_etag` (409 stale; `GET /scrapers` adds a computed `etag`), the same on `POST /integrations/{source}/apps` (`shared/config_write_guard.py`, docs/scrapers.md → Write rules) |
 | DELETE | `/scrapers/{id}` | Delete scraper (admin) |
 | GET | `/scrapers/templates` | Get scraper templates |
 | GET | `/scrapers/connectors` | iOS / Android app connectors and Web Reviews pages with their `radar_brand` (read-only, any signed-in user; the assistant's `list_scrapers` reads it, docs/radar.md) |
@@ -392,7 +392,7 @@ Every mutating route in `lambda/api/*_handler.py` is listed as ADMIN_ONLY (struc
 | GET | `/users` | List Cognito users |
 | POST | `/users` | Create user |
 | PUT | `/users/{username}` | Update user |
-| DELETE | `/users/{username}` | Delete user |
+| DELETE | `/users/{username}` | Delete user (409 own account / the last enabled admin, like `PUT …/group` to non-admin and `PUT …/disable`: `shared/user_admin_guard.py`, docs/account-vs-admin.md → Users) |
 | POST | `/users/{username}/reset-password` | Reset password |
 | GET | `/users/{username}/category-access` | A user's category access (admin) |
 | PUT | `/users/{username}/category-access` | Set it: `{categories: ['*'] \| [names], sources?: ['*'] \| [ids] \| null}` (admin; omitted = unchanged, null = default rule) |
@@ -518,7 +518,7 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 |--------|------|-------------|
 | GET | `/projects` | List projects the caller can view; `?ids=a,b` (≤ 200) → `{details: [{project, documents}]}` for the viewable ones (Prioritization's one-call read; unviewable/missing ids are simply absent) |
 | POST | `/projects` | Create project (caller becomes owner; default private) |
-| GET | `/projects/{id}` | Get project with personas/documents and members |
+| GET | `/projects/{id}` | Get project with personas/documents and members; `methodology` = per-step missing upstream steps (`shared/methodology.py` overview, docs/project-workspace.md → Methodology) |
 | PUT | `/projects/{id}` | Update project |
 | DELETE | `/projects/{id}` | Delete project (manage) |
 | POST | `/projects/{id}/personas/generate` | Generate personas from feedback; `keep_existing_personas: true` adds next to the existing ones (name clashes dropped), absent/false replaces them (docs/persona-generation.md) |
@@ -527,7 +527,7 @@ Owner and member `email` (and `owner_email`) appear in project list/get and
 | POST | `/projects/{id}/personas/copy` | Copy `{source: {scope: company} \| {scope: project, project_id}, persona_ids: [1–20]}` in (edit) → 201 `{success, personas}`; notes never copied, avatars copied |
 | POST | `/projects/{id}/feedback-preview` | The persona / research wizards' live count `{sources, categories, sentiments, days, date_basis, mode: estimate\|exact, purpose: personas\|research}` → `{matched, matched_is_lower_bound, estimated, sample_limit}`: exact = the generation's own read (20 s budget, then a lower bound), estimate = a scaled feedback-id-index sample; cached 5 min per project + selection + scope (`shared/persona_feedback_preview.py`, docs/project-workspace.md) |
 | PUT | `/projects/{id}/personas/{persona_id}/protection` | `{protected: bool}` (400 otherwise, 404 unknown persona): a replace regeneration keeps a protected persona and tells the model about it (`shared/persona_replace.py`) |
-| POST | `/projects/{id}/research` | Run research job (Step Functions) |
+| POST | `/projects/{id}/research` | Run research job (Step Functions); like `POST /document` and `POST /build-prototype` it answers a `methodology` block `{step, skipped, warnings, evidence}` (stored on the PR/FAQ / PRD / prototype); `build-prototype` with no PRD and no PR/FAQ is 409 before any job; PR/FAQ / PRD read feedback unless `data_sources.feedback: false` |
 | POST | `/projects/{id}/documents` | Create a custom document, or a hand-written PR/FAQ / PRD from a blank template (`document_type: prfaq\|prd`, `{title, content?, create_id?}`, `origin: human`) |
 | — | (project chat) | Now the unified AI assistant at `POST /chat/stream` with `forwardedProps.page.projectId` |
 | PUT | `/projects/{id}/visibility` | Set public/private (manage) |
@@ -654,7 +654,7 @@ fails the import.
 | GET/POST | `/agents` | List / create |
 | ANY | `/agents/{proxy+}` | `{id}` get/update/archive, `enable\|disable`, `run` (202), `runs`, `runs/{run_id}[/events\|/cancel]` |
 | GET/POST | `/workflows` | List / create |
-| ANY | `/workflows/{proxy+}` | `{id}` (+ revisions), `{id}/revisions/{revision}` (one revision with its definition, read like `{id}`; 400 bad number, 404 absent), `PUT {id}` (409 stale), `duplicate`, `export`, `validate` |
+| ANY | `/workflows/{proxy+}` | `{id}` (+ revisions), `{id}/revisions/{revision}` (one revision with its definition, read like `{id}`; 400 bad number, 404 absent), `PUT {id}` (409 stale), `duplicate`, `export`, `validate` (answers `warnings` = methodology gaps of a valid graph, `shared/workflow_methodology.py`) |
 | POST/GET | `/agents/plans` | Approve + start an assistant plan `{plan, conversation_id?}` → 202 `{plan_id, status}` (any signed-in user = approver; 400 lists `errors`; 409 at 3 active) / the caller's plans `?limit=` — NOT admin-only (docs/assistant-plan-mode.md) |
 | GET | `/agents/plans/{plan_id}` | `{plan: PlanView}` (approver or admin, else 404) |
 | POST | `/agents/plans/{plan_id}/cancel`, `/steps/{step_id}/approve\|decline` | Cancel (approver or admin) / resolve a paused step (approver only; 409 unless `needs_approval`) |
@@ -663,7 +663,7 @@ fails the import.
 ### Global MCP + Connect tokens (`mcp_global_handler.py` / `voc-mcp-global-api`, `mcp_tokens_handler.py` / `voc-mcp-tokens-api`) — see docs/mcp.md
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/mcp/global` | global MCP token | JSON-RPC MCP server for the whole app (throttled 20 rps / 40); acts as the minting user — their project + category access, never admin, ≤ editor |
+| POST | `/mcp/global` | global MCP token | JSON-RPC MCP server for the whole app (throttled 20 rps / 40); acts as the minting user — their project + category access, never admin, ≤ editor; tools incl. `generate` (personas, research, PR/FAQ, PRD, prototype; the methodology block), `get_job`, `read_radar`, `edit_feedback` (docs/mcp.md → Tools) |
 | GET/POST | `/connect/tokens` | Cognito | List my tokens / mint one (`read` or `write` scope, expiry 1–90 days, optional project pin) |
 | GET | `/connect/tokens/{token_id}` | Cognito | One token and its audit log (tool, time, project, outcome — never arguments) |
 | DELETE | `/connect/tokens/{token_id}` | Cognito | Revoke (soft; the row is kept) |

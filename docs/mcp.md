@@ -97,8 +97,8 @@ The token can only narrow that:
 
 | Setting | Values | Effect |
 |---|---|---|
-| `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes |
-| `project_id` | optional pin | Project tools (`get_project`, `get_document`, `create_document`, `update_document`) are confined to that project and default to it; `list_projects` shows only it; `run_agent` is refused. Workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer |
+| `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes, `generate` and `edit_feedback` |
+| `project_id` | optional pin | Project tools (`get_project`, `get_document`, `create_document`, `update_document`, `generate`, `get_job`) are confined to that project and default to it; `list_projects` shows only it; `run_agent` is refused. Workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer |
 | `expires_in_days` | 1–90, default 30 (the Connect page offers 1, 7, 30 or 90 days) | Always set; there is no non-expiring global token. Tokens minted by releases before 3.02.00 keep their stored expiry (up to 365 days) |
 
 `run_agent` (agent runs are admin-only) is offered only to a **write** token minted by
@@ -141,12 +141,17 @@ MCP call never sees an archived board.
 | `get_document` | read | `GET /projects/{id}` (projects) — one document in full |
 | `list_agents` | read | `GET /agents` (agents) |
 | `get_agent_run` | read | `GET /agents/{id}/runs/{run_id}`, or without `run_id` `GET /agents/{id}/runs?limit=` (agents) — follow a run `run_agent` started |
-| `search_feature_requests` | read | `GET /feature-requests/search` (engagement) — feedback-board requests the minter may see; `query` → `q`, `board` / `category` / `status` (comma lists), `days` (0–3650, 0 = all time, not sent), `limit` (1–50, default 25). Only the slim fields reach the client (`request_id`, `board_id`, `title`, `description` ≤ 1000 chars, `status`, `supporters`, `category`, `sentiment`, `problem_summary`, `created_at`; never an email or a name), with `total` and `truncated`. Board requests are a separate source from feedback, cited as `[FR:<request_id>]` ([feature-requests.md](feature-requests.md)) |
+| `search_feature_requests` | read | `GET /feature-requests/search` (engagement) — feedback-board requests the minter may see; `query` → `q`, `board` / `category` / `status` (comma lists), `days` (0–3650, 0 = all time, not sent), `limit` (1–50, default 25). Only the slim fields reach the client (`request_id`, `board_id`, `title`, `description` ≤ 1000 chars, `status`, `supporters`, `category`, `sentiment`, `problem_summary`, `created_at`; never an email or a name), with `total` and `truncated`. Board requests are a separate source from feedback, cited as `[FR:<request_id>]` ([feature-requests.md](feature-requests.md)). `boards: true` reads `GET /feature-requests/boards` instead: the boards the minter can see, without storage keys |
+| `get_job` | read | `GET /projects/{id}/jobs/{job_id}` (projects) — a job `generate` started: `job_id`, `status`, `progress`, `current_step`, `job_type`, timestamps, `error`, `result` (a PR/FAQ, PRD or prototype result carries its `methodology` block); never who started it |
+| `read_radar` | read | `GET /radar` (radar) without `brand`: the brands and their totals (the scan settings dropped); with `brand`: `GET /radar/brands/{brand}/reviews?days=&limit=` (`days` 1–365, default 90; `limit` 1–50, default 20). Other brands' reviews, never counted as ours ([radar.md](radar.md)) |
 | `create_document` | write | `POST /projects/{id}/documents` (projects) — custom markdown documents |
 | `update_document` | write | `PUT /projects/{id}/documents/{doc}` (projects); a PR/FAQ or PRD only when the minter (and the project owner) work AI-driven, else denied ([ways-of-working.md](ways-of-working.md)) |
+| `generate` | write, project | One methodology step, through the route the web app calls (projects): `step: personas` → `POST /projects/{id}/personas/generate` (`count` 1–10, default 3, always `keep_existing_personas: true`), `research` → `POST /projects/{id}/research` (`brief` = the question), `prfaq` / `prd` → `POST /projects/{id}/document` (`brief` = `feature_idea`; feedback read by default), `prototype` → `POST /projects/{id}/build-prototype`. Answers `step`, `job_id`, `status`, `message` and the route's `methodology` block (absent for personas). The route's own refusals answer as tool errors: the way of working for a PR/FAQ / PRD (an MCP token is an autonomous caller: the minter and the project owner must work AI-driven, [ways-of-working.md](ways-of-working.md)) and the 409 of a prototype with no PRD or PR/FAQ ([project-workspace.md → Methodology](project-workspace.md#methodology)) |
+| `edit_feedback` | write | `PUT /feedback/{id}/category` (`category` + optional `subcategory`) or `PUT /feedback/{id}/dimensions` (`dimensions` key → value or null, `tags`), never both in one call (feedback edit); the route's category and source access apply |
 | `run_agent` | write + admin-minted | `POST /agents/{id}/run` (agents) |
 
-The catalogue lives in `lambda/shared/mcp_global_tools.py`. Ids from arguments must
+The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Radar and feedback-edit tools in
+`lambda/shared/mcp_global_tools_steps.py`, the shared helpers in `lambda/shared/mcp_global_kit.py`). Ids from arguments must
 match `^[A-Za-z0-9_-]{1,128}$` before they are put in a route path; results drop
 storage keys and every signed URL. A route's 4xx is a tool error (`isError: true`)
 the model can act on; a 5xx or an invoke fault is JSON-RPC `-32603`.
@@ -435,8 +440,8 @@ test user who is NOT an administrator, then once with an administrator for `run_
 - `/connect/tokens` routes sit behind one Cognito proxy, `/connect/{proxy+}` (the handler routes by path);
 - least-privilege roles, pinned by `lib/stacks/api-stack-mcp-global.test.ts`: the MCP
   role reads/updates only the `MCPGTOKEN` partition, appends only `MCPAUDIT#…` rows,
-  calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the six domain
-  Lambdas (metrics, settings, memory, projects, agents, engagement); the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
+  calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the eight domain
+  Lambdas (metrics, settings, memory, projects, agents, engagement, radar, feedback edit); the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
   check and queries `MCPAUDIT#…`;
 - each function has ONE API-scoped invoke permission (not two per method) because
   `VocApiStack` is close to CloudFormation's 500-resource limit.
