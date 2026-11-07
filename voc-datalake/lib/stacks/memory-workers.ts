@@ -54,11 +54,13 @@ export interface MemoryWorkersProps {
 
 export class MemoryWorkers extends Construct {
   public readonly extractQueue: sqs.Queue;
+  /** voc-memory-extractor: a page import's end reaches the importer (docs/realtime.md). */
+  public readonly extractor: lambda.Function;
 
   constructor(scope: Construct, id: string, private readonly props: MemoryWorkersProps) {
     super(scope, id);
     this.extractQueue = this.createExtractQueue();
-    this.createExtractor();
+    this.extractor = this.createExtractor();
     this.createScanner();
     this.createRetention();
   }

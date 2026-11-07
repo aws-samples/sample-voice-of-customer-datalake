@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen } from '@testing-library/react'
 import { renderWithQueryClient } from '@test/query-client'
 import { resetFetchApi, routeFetchApi } from '@test/fetchApiRoutes'
+import { deliverNotice } from '../../realtime/hub'
 
 vi.mock('../../api/client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 vi.mock('../../store/authStore', () => import('@test/fetchApiRoutes').then((m) => m.authStoreModule()))
@@ -33,5 +34,18 @@ describe('Imports history', () => {
     renderWithQueryClient(<MemoryImports />)
     expect(screen.getByText('Loading import…')).toBeInTheDocument()
     expect(screen.queryByText(IMPORT_ID)).not.toBeInTheDocument()
+  })
+})
+
+describe('Imports history with push', () => {
+  it('reads an import at once when its end notice arrives', async () => {
+    const answers = { status: 'processing' }
+    routeFetchApi({ [`GET /memory/imports/${IMPORT_ID}`]: () => ({ import_id: IMPORT_ID, title: 'Page', ...answers }) },
+      { ignoreQuery: true })
+    renderWithQueryClient(<MemoryImports />)
+    expect(await screen.findByText('Processing')).toBeInTheDocument()
+    answers.status = 'completed'
+    deliverNotice({ type: 'job', job_id: IMPORT_ID, status: 'completed', job_type: 'memory_import' })
+    expect(await screen.findByText('Completed', {}, { timeout: 1000 })).toBeInTheDocument()
   })
 })

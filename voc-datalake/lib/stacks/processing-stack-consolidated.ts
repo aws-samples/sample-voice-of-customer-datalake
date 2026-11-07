@@ -317,6 +317,7 @@ export class VocProcessingStack extends VocStack {
       rawDataBucket,
     });
     this.memoryExtractQueue = memoryWorkers.extractQueue;
+    this.realtimeJobsPublisherRoles.MemoryExtractor = wireRealtimeEndpointParameter(memoryWorkers.extractor, this.deploymentPrefix);
     const agentRuntime = new AgentRuntime(this, 'AgentRuntime', {
       uniqueName,
       deploymentPrefix: this.deploymentPrefix,
