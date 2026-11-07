@@ -9,7 +9,10 @@
     "skipLibCheck": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@test/*": ["./src/test/*"]
+      "@test/*": ["./src/test/*"],
+      "@stream/*": ["../lambda/stream/src/*"],
+      "zod": ["./node_modules/zod"],
+      "zod/*": ["./node_modules/zod/*"]
     },
 
     /* Bundler mode */

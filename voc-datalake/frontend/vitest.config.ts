@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
 import { changelogPlugin } from './changelogPlugin.ts'
+import { streamResolve } from './streamSource.ts'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
@@ -46,7 +47,10 @@ export default defineConfig({
     },
   },
   resolve: {
+    // The modules shared with the assistant stream Lambda (streamSource.ts).
+    dedupe: streamResolve.dedupe,
     alias: {
+      ...streamResolve.alias,
       '@': path.resolve(import.meta.dirname, './src'),
       '@test': path.resolve(import.meta.dirname, './src/test'),
     },
