@@ -8,6 +8,7 @@ import { at } from '@test/defined'
 import ManualImportModal from './ManualImportModal'
 import { useManualImportStore } from '../../store/manualImportStore'
 import { ApiError } from '../../lib/errors'
+import { deliverNotice, setRealtimeLive } from '../../realtime/hub'
 
 // Mock API client
 const mockStartManualImportParse = vi.fn<(...args: unknown[]) => unknown>()
@@ -583,6 +584,24 @@ describe('ManualImportModal', () => {
       await waitFor(() => {
         expect(useManualImportStore.getState().step).toBe('preview')
       })
+    })
+
+    it('with push, the parse job\'s end notice reads it at once', async () => {
+      renderProcessingWithStatus({ status: 'processing' })
+      await waitFor(() => { expect(mockGetManualImportStatus).toHaveBeenCalledTimes(1) })
+      mockGetManualImportStatus.mockResolvedValue({ status: 'completed', reviews: [], unparsed_sections: [] })
+      deliverNotice({ type: 'job', job_id: 'other', status: 'completed', job_type: 'manual_import_parse' })
+      deliverNotice({ type: 'job', job_id: 'job-123', status: 'completed', job_type: 'manual_import_parse' })
+      await waitFor(() => { expect(useManualImportStore.getState().step).toBe('preview') })
+      expect(mockGetManualImportStatus).toHaveBeenCalledTimes(2)
+    })
+
+    it('with push, a reconnect reads the job at once', async () => {
+      renderProcessingWithStatus({ status: 'processing' })
+      await waitFor(() => { expect(mockGetManualImportStatus).toHaveBeenCalledTimes(1) })
+      setRealtimeLive(true)
+      await waitFor(() => { expect(mockGetManualImportStatus).toHaveBeenCalledTimes(2) })
+      setRealtimeLive(false)
     })
 
     it('shows error when polling returns failed', async () => {

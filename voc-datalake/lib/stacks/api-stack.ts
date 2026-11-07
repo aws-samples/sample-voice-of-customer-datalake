@@ -349,7 +349,7 @@ export class VocApiStack extends VocStack {
     grantRealtimePublish(realtime, 'jobs', [
       projects.projectsLambda, projects.projectsAssistWorker,
       data.settingsLambda, data.settingsAssistWorker, data.scrapersLambda, data.scrapersAssistWorker,
-      ...jobs.projectJobLambdas,
+      ...jobs.projectJobLambdas, data.manualImportProcessorLambda,
     ]);
     grantRealtimePublishToRoles(ctx, realtime, 'jobs', props.realtimeJobsPublisherRoleArns);
     grantRealtimePublish(realtime, 'chat', [assistant.chatStreamLambda]);

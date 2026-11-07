@@ -51,6 +51,8 @@ export interface DataLambdas {
   /** The scrapers API's 15-minute assist twin (api-assist-workers.ts): same role, code and environment. */
   scrapersAssistWorker: lambda.Function;
   manualImportLambda: lambda.Function;
+  /** The async parse worker: tells the parse job's starter when it ends (docs/realtime.md). */
+  manualImportProcessorLambda: lambda.Function;
   settingsLambda: lambda.Function;
   /** The settings API's 15-minute assist twin. */
   settingsAssistWorker: lambda.Function;
@@ -310,7 +312,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   kmsKey.grantEncryptDecrypt(manualImportProcessorRole);
   grantClaudeModels(manualImportProcessorRole, 'invoke');
 
-  new lambda.Function(stack, 'ManualImportProcessor', {
+  const manualImportProcessorLambda = new lambda.Function(stack, 'ManualImportProcessor', {
     functionName: manualImportProcessorName,
     runtime: lambda.Runtime.PYTHON_3_14,
     architecture: lambda.Architecture.ARM_64,
@@ -432,6 +434,6 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   return {
     allPlugins, enabledSourcesEnv, metricsLambda, feedbackEditLambda, integrationsLambda, scrapersLambda, manualImportLambda, settingsLambda,
-    scrapersAssistWorker, settingsAssistWorker,
+    scrapersAssistWorker, settingsAssistWorker, manualImportProcessorLambda,
   };
 }

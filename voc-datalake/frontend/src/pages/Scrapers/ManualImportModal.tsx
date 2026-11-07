@@ -14,6 +14,7 @@ import SourceDialogHeader from './SourceDialogHeader'
 import { isHttpUrl } from './scraperUrl'
 import { hasDraft } from './manualImportDraft'
 import { formatCount } from '../../utils/numberFormat'
+import { realtimePollInterval, useRealtimeJobWake } from '../../realtime/jobRefresh'
 const POLL_INTERVAL = 2000
 
 function extractDomainDisplay(url: string): string {
@@ -315,14 +316,17 @@ export default function ManualImportModal() {
     }
   }, [stopPolling, setParsedReviews, setUnparsedSections, setSourceOrigin, setStep, setProcessingError])
 
-  // Start polling when we have a job ID and are in processing step
+  // Start polling when we have a job ID and are in processing step (slower while push is live: the parse's
+  // end notice reads it at once, docs/realtime.md).
+  const isParsing = step === 'processing' && jobId != null && jobId !== ''
   useEffect(() => {
-    if (step === 'processing' && jobId != null && jobId !== '') {
+    if (isParsing) {
       void pollJobStatus(jobId)
-      pollIntervalRef.current = window.setInterval(() => void pollJobStatus(jobId), POLL_INTERVAL)
+      pollIntervalRef.current = window.setInterval(() => void pollJobStatus(jobId), realtimePollInterval(POLL_INTERVAL))
     }
     return stopPolling
-  }, [step, jobId, pollJobStatus, stopPolling])
+  }, [isParsing, jobId, pollJobStatus, stopPolling])
+  useRealtimeJobWake({ jobId: jobId ?? '' }, () => { if (jobId != null) void pollJobStatus(jobId) }, isParsing)
 
   const handleClose = () => {
     stopPolling()
