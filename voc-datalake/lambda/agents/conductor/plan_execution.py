@@ -43,7 +43,7 @@ _TOOL_RE: Final = re.compile(r'[a-z_]{1,64}')
 def _fail_step(state: PlanState, step_id: str, error: str) -> dict:
     ps.finish_step(plan_state.table(), state.plan_id, step_id, ps.STEP_FAILED, now=state.now,
                    when=(ps.STEP_PENDING, ps.STEP_RUNNING), error=error)
-    ps.append_event(plan_state.table(), state.plan_id, 'step_failed', error, now=state.now, step_id=step_id)
+    plan_state.journal(state.plan_id, 'step_failed', error, now=state.now, step_id=step_id, meta=state.meta)
     return NOT_RUN
 
 
@@ -94,8 +94,8 @@ def prepare(plan_id: str, step_id: str) -> dict:
         {'status': ps.STEP_RUNNING, 'started_at': iso(state.now)}, (ps.STEP_PENDING,)), now=state.now)
     if claimed is None:
         return NOT_RUN
-    ps.append_event(plan_state.table(), plan_id, 'step_started', str(definition.get('title') or step_id),
-                    now=state.now, step_id=step_id)
+    plan_state.journal(plan_id, 'step_started', str(definition.get('title') or step_id),
+                       now=state.now, step_id=step_id, meta=state.meta)
     return {'run': True, 'event': _event(state, step_id, claims)}
 
 
@@ -231,7 +231,7 @@ def record(plan_id: str, step_id: str, result: object, error: object) -> dict:
     if isinstance(error, dict):
         name = str(error.get('Error') or 'Error')[:100]
         kind = _record_failed(state, step_id, f'The step stopped on an internal error ({name}).')
-        ps.append_event(plan_state.table(), plan_id, kind, name, now=state.now, step_id=step_id)
+        plan_state.journal(plan_id, kind, name, now=state.now, step_id=step_id, meta=state.meta)
         return {}
     outcome = result if isinstance(result, dict) else {}
     kind = _apply_result(state, step_id, outcome)
@@ -239,6 +239,6 @@ def record(plan_id: str, step_id: str, result: object, error: object) -> dict:
     if calls:
         ps.update_meta(plan_state.table(), plan_id, ps.Change({}, ps.ACTIVE_PLAN_STATUSES + ps.TERMINAL_PLAN_STATUSES,
                                                               add={'model_calls': calls}), now=state.now)
-    ps.append_event(plan_state.table(), plan_id, kind, str(state.definitions[step_id].get('title') or step_id),
-                    now=state.now, step_id=step_id)
+    plan_state.journal(plan_id, kind, str(state.definitions[step_id].get('title') or step_id),
+                       now=state.now, step_id=step_id, meta=state.meta)
     return {}

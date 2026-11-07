@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agents import pins, principal, run_memory, store
+from agents import notices, pins, principal, run_memory, store
 from agents.conductor import plan_decide, plan_execution, planning, resume
 from agents.failure_reason import VERIFICATION_FAILURE, document_label, failure_summary
 from agents.fields import dict_field, list_field
@@ -71,6 +71,7 @@ def _finish(agent_id: str, run_id: str, status: str, message: str, needs_human: 
         kind = 'message' if status == store.RUN_COMPLETED else 'decision'
         store.append_event(agent_id, run_id, kind, message)
         run_memory.enqueue_finished_run(agent_id, run_id, status)
+        notices.run_changed(agent_id, run_id, status)
     else:
         _settle_left_running(agent_id, run_id)
     return {'kind': 'finish', 'status': status}
@@ -81,6 +82,7 @@ def _settle_left_running(agent_id: str, run_id: str) -> dict:
     run = store.get_run(agent_id, run_id) or {}
     if run.get('status') == store.RUN_CANCELLED:
         store.mark_cancelled_finished(agent_id, run_id)
+        notices.run_changed(agent_id, run_id, store.RUN_CANCELLED, run=run)
     return {'kind': 'finish', 'status': run.get('status') or store.RUN_CANCELLED}
 
 
@@ -390,6 +392,7 @@ def init(event: dict) -> dict:
         run = store.start_run(agent_id, run_id, revision)
     except store.RunNotRunning:
         return _settle_left_running(agent_id, run_id)
+    notices.run_changed(agent_id, run_id, store.RUN_RUNNING, agent=agent, run=run)
     if isinstance(run.get('resume'), dict):
         return _resume(agent, run, graph, revision)
     store.append_event(agent_id, run_id, 'message',

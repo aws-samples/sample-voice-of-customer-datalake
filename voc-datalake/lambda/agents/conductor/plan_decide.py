@@ -52,7 +52,7 @@ def _fail(state: PlanState, step_id: str, error: str, when: tuple[str, ...]) -> 
     done = ps.finish_step(plan_state.table(), state.plan_id, step_id, ps.STEP_FAILED, now=state.now,
                           when=when, error=error)
     if done is not None:
-        ps.append_event(plan_state.table(), state.plan_id, 'step_failed', error, now=state.now, step_id=step_id)
+        plan_state.journal(state.plan_id, 'step_failed', error, now=state.now, step_id=step_id, meta=state.meta)
     return done is not None
 
 
@@ -142,7 +142,7 @@ def _finish(state: PlanState) -> dict:
     if ps.finish_plan(plan_state.table(), state.plan_id, status, now=state.now, summary=_summary(state)) is None:
         reloaded = plan_state.load(state.plan_id)
         return _finish_directive(str((reloaded.meta if reloaded else {}).get('status') or ps.PLAN_CANCELLED))
-    ps.append_event(plan_state.table(), state.plan_id, 'plan_finished', f'Plan {status}', now=state.now)
+    plan_state.journal(state.plan_id, 'plan_finished', f'Plan {status}', now=state.now, meta=state.meta)
     return _finish_directive(status)
 
 
@@ -172,7 +172,7 @@ def _start(state: PlanState) -> PlanState:
     started = ps.update_meta(plan_state.table(), state.plan_id, ps.Change(
         {'status': ps.PLAN_RUNNING, 'started_at': iso(state.now)}, (ps.PLAN_APPROVED,)), now=state.now)
     if started is not None:
-        ps.append_event(plan_state.table(), state.plan_id, 'plan_running', 'Plan started', now=state.now)
+        plan_state.journal(state.plan_id, 'plan_running', 'Plan started', now=state.now, meta=state.meta)
     return plan_state.load(state.plan_id, state.now) or state
 
 
@@ -195,5 +195,5 @@ def stop(plan_id: str, summary: str) -> dict:
     table, now = plan_state.table(), agents_store.utc_now()
     if ps.finish_plan(table, plan_id, ps.PLAN_FAILED, now=now, summary=summary) is not None:
         ps.close_open_steps(table, plan_id, now=now, status=ps.STEP_SKIPPED, error=STOPPED_STEP_ERROR)
-        ps.append_event(table, plan_id, 'plan_failed', summary, now=now)
+        plan_state.journal(plan_id, 'plan_failed', summary, now=now)
     return _finish_directive(ps.PLAN_FAILED)
