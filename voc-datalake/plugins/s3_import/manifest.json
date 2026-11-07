@@ -10,7 +10,8 @@
     "ingestor": {
       "enabled": true,
       "timeout": 300,
-      "memory": 512
+      "memory": 512,
+      "jobNotices": true
     },
     "s3Trigger": {
       "enabled": true,

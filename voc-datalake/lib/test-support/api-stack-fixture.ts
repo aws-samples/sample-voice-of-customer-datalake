@@ -124,6 +124,7 @@ export function apiStackDependencyProps(
       ResearchStep: `arn:aws:iam::${env.account}:role/voc-research-step-role`,
       CategoryReprocess: `arn:aws:iam::${env.account}:role/voc-category-reprocess-role`,
       Retention: `arn:aws:iam::${env.account}:role/voc-retention-role`,
+      IngestorS3Import: `arn:aws:iam::${env.account}:role/voc-ingestor-s3-import-role`,
     },
     memoryExtractQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/memory-extract`,
     memoryExtractQueueArn: `arn:aws:sqs:${env.region}:${env.account}:memory-extract`,

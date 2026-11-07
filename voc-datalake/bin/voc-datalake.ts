@@ -301,7 +301,8 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   agentRunStateMachine: processingStack.agentRunStateMachine,
   agentConductorRoleArn: processingStack.agentConductorRole.roleArn,
   realtimeJobsPublisherRoleArns: Object.fromEntries(
-    Object.entries(processingStack.realtimeJobsPublisherRoles).map(([name, role]) => [name, role.roleArn]),
+    Object.entries({ ...ingestionStack.realtimeJobsPublisherRoles, ...processingStack.realtimeJobsPublisherRoles })
+      .map(([name, role]) => [name, role.roleArn]),
   ),
   memoryExtractQueueUrl: processingStack.memoryExtractQueue.queueUrl,
   memoryExtractQueueArn: processingStack.memoryExtractQueue.queueArn,

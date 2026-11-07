@@ -108,6 +108,11 @@ class TestStartingAReprocess:
         assert urllib.parse.unquote_plus(record['s3']['object']['key']) == 'support_tickets/q2+.json'
         assert json.dumps(payload)  # an async invoke payload must be JSON
 
+    def test_the_ingestor_is_told_who_to_notify_when_the_run_ends(self, api_gateway_event, lambda_context, invoke):
+        _reprocess(api_gateway_event, lambda_context, {'key': 'reviews/june.csv'},
+                   claims={'sub': 'admin-sub-1', 'cognito:groups': 'admins'})
+        assert invoke.call_args.args[1]['started_by'] == 'admin-sub-1'
+
     def test_an_archived_processed_file_can_be_reprocessed(self, api_gateway_event, lambda_context):
         status, body = _reprocess(api_gateway_event, lambda_context, {'key': 'processed/reviews/may.csv'})
 

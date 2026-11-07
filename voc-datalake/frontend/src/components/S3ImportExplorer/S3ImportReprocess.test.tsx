@@ -28,6 +28,7 @@ import { api } from '../../api/client'
 import { getS3ImportReprocessRun, isRunSettled, reprocessS3ImportFile } from '../../api/s3ImportReprocessApi'
 import S3ImportExplorer from './S3ImportExplorer'
 import { describeImportKey } from './importKey'
+import { deliverNotice, setRealtimeLive } from '../../realtime/hub'
 
 const mockStart = vi.mocked(reprocessS3ImportFile)
 const mockPoll = vi.mocked(getS3ImportReprocessRun)
@@ -50,6 +51,7 @@ async function openConfirm() {
 }
 
 beforeEach(() => {
+  setRealtimeLive(false)
   vi.clearAllMocks()
   // Implementations too: each test states what the start and the poll answer.
   mockStart.mockReset()
@@ -100,6 +102,20 @@ describe('reprocessing a file', () => {
     expect(await screen.findByText(/Reprocessed june.csv: 5 rows sent to the pipeline/, {}, { timeout: 4000 }))
       .toBeInTheDocument()
     expect(mockPoll).toHaveBeenCalledWith('run_s3_import_20260310120000_0a1b2c3d')
+  })
+
+  it('with push, the run\'s end notice reads it at once instead of on the next poll', async () => {
+    setRealtimeLive(true)
+    mockStart.mockResolvedValue(run('running'))
+    mockPoll.mockResolvedValue(run('running'))
+    const user = await openConfirm()
+    await user.click(screen.getByRole('button', { name: 'Reprocess' }))
+    await screen.findByText('Reprocessing june.csv...')
+    const reads = mockPoll.mock.calls.length
+    mockPoll.mockResolvedValue(run('completed', 3))
+    deliverNotice({ type: 'job', job_id: run('x').run_id, status: 'completed', job_type: 's3_import_reprocess' })
+    expect(await screen.findByText(/Reprocessed june.csv: 3 rows/, {}, { timeout: 1000 })).toBeInTheDocument()
+    expect(mockPoll.mock.calls).toHaveLength(reads + 1)
   })
 
   it('shows a run that failed, and can dismiss it', async () => {

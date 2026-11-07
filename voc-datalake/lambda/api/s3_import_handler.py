@@ -41,7 +41,7 @@ from botocore.exceptions import ClientError
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared import s3_import_runs
-from shared.api import admins_only, api_handler, create_api_resolver
+from shared.api import admins_only, api_handler, create_api_resolver, get_caller_subject
 from shared.aws import get_s3_client, is_missing_s3_object
 from shared.exceptions import ConfigurationError, ConflictError, NotFoundError, ServiceError, ValidationError
 from shared.logging import logger, tracer
@@ -313,7 +313,8 @@ def reprocess_file():
     key = _reprocessable_key(raw_key.strip())
     _require_reprocessable_object(key)
 
-    item = s3_import_runs.start_run(table, S3_IMPORT_INGESTOR_FUNCTION, S3_IMPORT_BUCKET, key)
+    item = s3_import_runs.start_run(table, S3_IMPORT_INGESTOR_FUNCTION, S3_IMPORT_BUCKET, key,
+                                    started_by=get_caller_subject(app.current_event.raw_event))
     logger.info("S3 import reprocess started", extra={'run_id': item['sk'], 'key': key})
     return Response(
         status_code=202,

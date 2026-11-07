@@ -5,7 +5,8 @@
  * again, duplicates are skipped, stored rows are NOT re-enriched: that is
  * "Reprocess existing feedback"), then a status line that polls the run until it
  * settles. The run is the platform's source-run record, so a finished run also
- * refreshes the feedback caches (api/feedbackDataWatch.ts).
+ * refreshes the feedback caches (api/feedbackDataWatch.ts). With push (docs/realtime.md)
+ * the run's end notice re-reads it at once, and the poll slows to the fallback.
  *
  * @module components/S3ImportExplorer/S3ImportReprocess
  */
@@ -17,6 +18,7 @@ import ConfirmModal from '../ConfirmModal/ConfirmModal'
 import {
   S3_IMPORT_REPROCESS_ROOT, getS3ImportReprocessRun, isRunSettled, reprocessS3ImportFile, type S3ImportRun,
 } from '../../api/s3ImportReprocessApi'
+import { realtimePollInterval, useRealtimeJobRefresh } from '../../realtime/jobRefresh'
 import { describeImportKey } from './importKey'
 
 const POLL_INTERVAL_MS = 2_000
@@ -69,13 +71,17 @@ function RunStatusLine({ run, filename, pollFailed }: Readonly<{ run: S3ImportRu
 
 function RunStatus({ started, onDismiss }: Readonly<{ started: S3ImportRun; onDismiss: () => void }>) {
   const { t } = useTranslation('components')
+  const queryKey = [S3_IMPORT_REPROCESS_ROOT, started.run_id]
   const { data, isError } = useQuery({
-    queryKey: [S3_IMPORT_REPROCESS_ROOT, started.run_id],
+    queryKey,
     queryFn: () => getS3ImportReprocessRun(started.run_id),
     initialData: started,
     // Stops once the run settles, and on a failed poll (a 4xx is not retried; see queryPolicies).
-    refetchInterval: (query) => (query.state.error !== null || isRunSettled(query.state.data ?? started) ? false : POLL_INTERVAL_MS),
+    refetchInterval: (query) => (query.state.error !== null || isRunSettled(query.state.data ?? started)
+      ? false
+      : realtimePollInterval(POLL_INTERVAL_MS)),
   })
+  useRealtimeJobRefresh({ jobId: started.run_id }, [queryKey], !isRunSettled(data))
   // A failed poll says so (the run may still be going), with a dismiss, rather than a spinner forever.
   const pollFailed = isError && !isRunSettled(data)
   return (

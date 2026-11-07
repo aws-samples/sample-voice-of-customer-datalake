@@ -22,6 +22,7 @@ import boto3
 from _shared.base_ingestor import BaseIngestor, logger, metrics, tracer
 from _shared.raw_original import archive_original
 from _shared.raw_source import RAW_SOURCE_KEY
+from shared import job_notices
 from shared.import_runs import MAX_MESSAGES, S3_UPLOAD_ACTOR, ImportCounts, ImportRun, record_import_run
 from shared.invocation_cost import measure_invocation_cost
 from shared.timestamps import now_iso
@@ -233,17 +234,22 @@ def _get_parser(key: str):
     return None
 
 
+#: The notice's ``job_type`` for an API-started run (shared/job_notices.py): the S3 import explorer listens for it.
+REPROCESS_JOB_TYPE = "s3_import_reprocess"
+
+
 class S3ImportIngestor(BaseIngestor):
     """Ingestor for importing feedback from S3 files.
 
     *execution_id* is set on a run started by the API (`POST /s3-import/reprocess`,
     or `POST /sources/s3_import/run`); `record_run_started` / `record_run_finished`
     then move that run's `SOURCE_RUN#s3_import` row. An S3 trigger event has none,
-    and no row is written.
+    and no row is written. *started_by* (the API's caller) is told when that run ends (docs/realtime.md).
     """
 
-    def __init__(self, execution_id: str | None = None):
+    def __init__(self, execution_id: str | None = None, started_by: str | None = None):
         super().__init__(execution_id=execution_id)
+        self.started_by = started_by
 
     def fetch_new_items(self) -> Generator[dict, None, None]:
         """Not used — S3 import processes files directly via process_file."""
@@ -259,6 +265,8 @@ class S3ImportIngestor(BaseIngestor):
         if error is not None:
             updates.update(status='error', errors=[type(error).__name__])
         self._update_source_run_status(updates)
+        # Best effort, never raises: the explorer re-reads the run now (its poll stays the fallback).
+        job_notices.notify(self.started_by, self.execution_id, updates['status'], job_type=REPROCESS_JOB_TYPE)
 
     def _record_file_run(self, bucket: str, key: str, started_at: str, counts: ImportCounts, report: FileReport,
                          *, reprocess: bool = False) -> None:
@@ -429,7 +437,8 @@ def lambda_handler(event, context):
         return {"status": "skipped", "reason": "no records"}
 
     reprocess = event.get("reprocess") is True
-    ingestor = S3ImportIngestor(execution_id=execution_id)
+    started_by = event.get("started_by") if isinstance(event.get("started_by"), str) else None
+    ingestor = S3ImportIngestor(execution_id=execution_id, started_by=started_by)
     # A run with no file (`POST /sources/s3_import/run`) still closes its row, as completed with 0 items.
     try:
         results = _process_records(ingestor, records, reprocess=reprocess)

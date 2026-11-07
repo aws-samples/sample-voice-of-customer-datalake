@@ -254,3 +254,39 @@ class TestTheApiEventEndToEnd:
 
         built["s3"].head_object.assert_not_called()
         built["s3"].get_object.assert_not_called()
+
+
+class TestTheEndNotice:
+    """A run the API started tells its starter when it ends (shared/job_notices.py, docs/realtime.md)."""
+
+    @pytest.fixture
+    def published(self):
+        with patch.object(handler.job_notices.realtime, "publish", return_value=True) as publish:
+            yield publish
+
+    def test_a_completed_run_tells_its_starter(self, run, published):
+        invoke, _ = run
+        invoke({**_event("reviews/june.csv"), "started_by": "admin-sub"})
+        published.assert_called_once_with("jobs", "admin-sub", {
+            "type": "job", "job_id": RUN_ID, "status": "completed", "job_type": "s3_import_reprocess"})
+
+    def test_a_failed_run_tells_its_starter(self, run, published):
+        invoke, built = run
+        built["queue_error"] = RuntimeError("boom")
+        with patch.object(handler, "metrics"):
+            assert invoke({**_event("reviews/june.csv"), "started_by": "admin-sub"})["status"] == "error"
+        assert published.call_args.args[2]["status"] == "error"
+
+    def test_a_lost_notice_changes_nothing(self, run, published):
+        published.return_value = False
+        invoke, _ = run
+        assert invoke({**_event("reviews/june.csv"), "started_by": "admin-sub"})["items_processed"] == 2
+
+    def test_an_upload_trigger_has_no_starter_and_sends_nothing(self, run, published):
+        invoke, _ = run
+        invoke(_event("reviews/june.csv", execution_id=None, reprocess=False))
+        published.assert_not_called()
+
+    def test_the_api_passes_the_starter_in_the_event(self):
+        assert s3_import_runs.reprocess_event("b", "k.csv", RUN_ID, "admin-sub")["started_by"] == "admin-sub"
+        assert "started_by" not in s3_import_runs.reprocess_event("b", "k.csv", RUN_ID)

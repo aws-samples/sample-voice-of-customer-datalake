@@ -29,6 +29,7 @@ describe('manifest capabilities schema', () => {
     });
     expect(parsed.capabilities?.updatesItems).toBe(false);
     expect(parsed.infrastructure.ingestor?.selfInvoke).toBe(false);
+    expect(parsed.infrastructure.ingestor?.jobNotices).toBe(false);
     expect(parsed.infrastructure.webhook?.memory).toBe(DEFAULT_WEBHOOK_MEMORY_MB);
   });
 
@@ -62,6 +63,10 @@ describe('the committed manifests keep what each plugin did before 6.04.00', () 
   it('only the two app-review ingestors continue themselves', () => {
     expect(PLUGINS.filter((p) => p.infrastructure.ingestor?.selfInvoke).map((p) => p.id).sort(byCodeUnit))
       .toStrictEqual(['app_reviews_android', 'app_reviews_ios']);
+  });
+
+  it('only the s3_import ingestor sends job-end notices (its API-started reprocess runs, docs/realtime.md)', () => {
+    expect(PLUGINS.filter((p) => p.infrastructure.ingestor?.jobNotices).map((p) => p.id)).toStrictEqual(['s3_import']);
   });
 
   it('the github_issues webhook keeps 512 MB, every other webhook the default', () => {

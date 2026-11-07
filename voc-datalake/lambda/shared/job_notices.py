@@ -24,7 +24,8 @@ from shared.tables import get_jobs_table
 def notify(starter: object, job_id: object, status: object, *, job_type: object = None,
            project_id: object = None) -> bool:
     """Send ``{type: 'job', …}`` to ``starter``'s jobs channel. True when AppSync accepted it; never raises."""
-    if not isinstance(job_id, str) or not job_id or not isinstance(status, str) or not status:
+    # Nobody to tell (an older row, a run nobody started) or nothing to name: not even the endpoint is read.
+    if not all(isinstance(value, str) and value for value in (starter, job_id, status)):
         return False
     event: dict[str, Any] = {'type': 'job', 'job_id': job_id, 'status': status}
     if isinstance(job_type, str) and job_type:
