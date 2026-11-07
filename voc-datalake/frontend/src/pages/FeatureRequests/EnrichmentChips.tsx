@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import SentimentBadge from '../../components/SentimentBadge/SentimentBadge'
 import { humanizeId } from '../../utils/displayLabels'
 import type { RequestEnrichment } from '../../api/featureRequestInsightsSchema'
+import { IconBadge } from '../../components/IconBadge/IconBadge'
 
 /** The enrichment worth showing (status ok), else undefined. */
 function shownEnrichment(enrichment: RequestEnrichment | undefined): RequestEnrichment | undefined {
@@ -27,9 +28,9 @@ export default function EnrichmentChips({ enrichment }: Readonly<{ enrichment: R
     <p className="flex flex-wrap items-center gap-1.5" data-testid="fr-enrichment">
       <span className="sr-only">{t('enrichment.label')}</span>
       {shown.category === null ? null : (
-        <span className="badge badge-muted inline-flex items-center gap-1 break-words" title={t('enrichment.category')}>
-          <Tag size={12} aria-hidden="true" />{humanizeId(shown.category)}
-        </span>
+        <IconBadge toneClass="badge-muted" icon={Tag} className="break-words" title={t('enrichment.category')}>
+          {humanizeId(shown.category)}
+        </IconBadge>
       )}
       {shown.sentiment === null ? null : <SentimentBadge sentiment={shown.sentiment} />}
     </p>

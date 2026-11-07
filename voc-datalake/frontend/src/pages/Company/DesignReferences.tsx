@@ -26,6 +26,7 @@ import { hasDesign } from './designDraftSummary'
 import ReferenceDesignPreview from './ReferenceDesignPreview'
 import type { PreviewActions } from './ReferenceDesignPreview'
 import { httpHref } from '../../utils/httpHref'
+import { IconBadge } from '../../components/IconBadge/IconBadge'
 
 // lucide's brand marks (Figma, Github) are deprecated; neutral glyphs instead.
 const KIND_ICONS: Record<ReferenceKind, LucideIcon> = { website: Globe, screenshot: Image, html: FileCode, figma: Frame, github: GitBranch }
@@ -116,10 +117,9 @@ export function ReferencesPanel({ references, canEdit, apply, onLogoDrafted }: R
 function StatusBadge({ status }: Readonly<{ status: ReferenceStatus }>) {
   const { t } = useTranslation('settings')
   return (
-    <span className={`badge ${STATUS_TONE[status]} inline-flex items-center gap-1`}>
-      {status === 'pending' ? <Loader2 size={12} className="animate-spin" aria-hidden="true" /> : null}
+    <IconBadge toneClass={STATUS_TONE[status]} icon={status === 'pending' ? Loader2 : undefined} spin>
       {t(`designSystem.statuses.${status}`)}
-    </span>
+    </IconBadge>
   )
 }
 

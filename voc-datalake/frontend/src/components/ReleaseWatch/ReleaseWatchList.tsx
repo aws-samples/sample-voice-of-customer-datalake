@@ -13,6 +13,7 @@ import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import { signedAverage } from '../SentimentWords/sentimentWords'
 import { formatCount } from '../../utils/numberFormat'
 import type { ReleaseSide, ReleaseWatchEntry } from '../../api/releaseWatchSchema'
+import { IconBadge } from '../IconBadge/IconBadge'
 
 const EVIDENCE_SHOWN = 3
 
@@ -39,16 +40,12 @@ function RegressionBadge({ entry }: Readonly<{ entry: ReleaseWatchEntry }>) {
   const { t } = useTranslation('decisions')
   if (!entry.regression) {
     return (
-      <span className="badge badge-ok inline-flex items-center gap-1">
-        <CircleCheck size={12} aria-hidden />{t('releaseWatch.noRegression')}
-      </span>
+      <IconBadge toneClass="badge-ok" icon={CircleCheck}>{t('releaseWatch.noRegression')}</IconBadge>
     )
   }
   const reasons = entry.reasons.map((reason) => t(`releaseWatch.reasons.${reason}`, { defaultValue: reason }))
   return (
-    <span className="badge badge-danger inline-flex items-center gap-1" title={reasons.join(', ')}>
-      <TrendingDown size={12} aria-hidden />{t('releaseWatch.regression')}
-    </span>
+    <IconBadge toneClass="badge-danger" icon={TrendingDown} title={reasons.join(', ')}>{t('releaseWatch.regression')}</IconBadge>
   )
 }
 

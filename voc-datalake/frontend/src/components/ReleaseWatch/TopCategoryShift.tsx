@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLabels } from '../../hooks/useDisplayLabels'
 import type { ReleaseSide } from '../../api/releaseWatchSchema'
+import { IconBadge } from '../IconBadge/IconBadge'
 
 /** The most a side lists; the server sends at most three (`TOP_CATEGORIES`). */
 const SHOWN = 3
@@ -35,15 +36,11 @@ function ShiftBadge({ shift }: Readonly<{ shift: Shift }>) {
   if (shift === null) return null
   if (shift.kind === 'new') {
     return (
-      <span className="badge badge-accent inline-flex items-center gap-1">
-        <Sparkles size={12} aria-hidden />{t('releaseWatch.topCategories.new')}
-      </span>
+      <IconBadge toneClass="badge-accent" icon={Sparkles}>{t('releaseWatch.topCategories.new')}</IconBadge>
     )
   }
   return (
-    <span className="badge badge-warn inline-flex items-center gap-1">
-      <ArrowUpRight size={12} aria-hidden />{t('releaseWatch.topCategories.grew', { count: shift.from })}
-    </span>
+    <IconBadge toneClass="badge-warn" icon={ArrowUpRight}>{t('releaseWatch.topCategories.grew', { count: shift.from })}</IconBadge>
   )
 }
 

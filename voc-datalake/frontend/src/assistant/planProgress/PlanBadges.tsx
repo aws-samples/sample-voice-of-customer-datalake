@@ -6,10 +6,10 @@
  * @module assistant/planProgress/PlanBadges
  */
 import { useTranslation } from 'react-i18next'
-import clsx from 'clsx'
 import { AlertTriangle, CheckCircle2, Hourglass, Loader2, MinusCircle, XCircle } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { PlanStatus, PlanStepStatus } from '../../api/plansApi'
+import { IconBadge } from '../../components/IconBadge/IconBadge'
 
 interface Look { tone: string; Icon: LucideIcon; spin?: boolean }
 
@@ -42,13 +42,7 @@ const PLAN_LOOKS: Record<PlanStatus, Look> = {
 }
 
 function Badge({ look, label }: Readonly<{ look: Look; label: string }>) {
-  const { Icon } = look
-  return (
-    <span className={clsx('badge inline-flex items-center gap-1', look.tone)}>
-      <Icon className={clsx('h-3 w-3', look.spin === true && 'animate-spin')} aria-hidden="true" />
-      {label}
-    </span>
-  )
+  return <IconBadge toneClass={look.tone} icon={look.Icon} spin={look.spin === true}>{label}</IconBadge>
 }
 
 export function PlanStepStatusBadge({ status }: Readonly<{ status: PlanStepStatus }>) {

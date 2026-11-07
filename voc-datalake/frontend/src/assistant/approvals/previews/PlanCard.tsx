@@ -20,6 +20,7 @@ import { FieldTable } from './FieldDiff'
 import { planArgRows } from './planRows'
 import type { PlanStep, VocPlan } from '@stream/assistant/plan/schema'
 import type { StepNumberOf } from './planRows'
+import { IconBadge } from '../../../components/IconBadge/IconBadge'
 
 const KIND_ICONS = { write: PenLine, wait: Hourglass, think: Brain } as const
 const NEVER_PREAPPROVABLE: ReadonlySet<string> = new Set(NEVER_PREAPPROVABLE_TOOLS)
@@ -56,15 +57,9 @@ function StepItem({ step, index, numberOf }: Readonly<{ step: PlanStep; index: n
         <span className="font-mono text-[12px] text-muted">{index + 1}.</span>
         <span className="text-[13px] font-medium text-text-strong">{step.title}</span>
         <span className="badge badge-muted">{t(`preview.plan.packs.${step.pack}`)}</span>
-        <span className="badge badge-muted inline-flex items-center gap-1">
-          <Icon className="h-3 w-3" aria-hidden="true" />
-          {t(`preview.plan.kinds.${step.kind}`)}
-        </span>
+        <IconBadge toneClass="badge-muted" icon={Icon}>{t(`preview.plan.kinds.${step.kind}`)}</IconBadge>
         {asksAgain && (
-          <span className="badge badge-warn inline-flex items-center gap-1">
-            <RotateCcw className="h-3 w-3" aria-hidden="true" />
-            {t('preview.plan.asksAgain')}
-          </span>
+          <IconBadge toneClass="badge-warn" icon={RotateCcw}>{t('preview.plan.asksAgain')}</IconBadge>
         )}
       </div>
       <p className="text-[12px] text-muted">

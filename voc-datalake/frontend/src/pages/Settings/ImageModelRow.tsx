@@ -16,6 +16,7 @@ import { useModelCapacity } from './useModelCapacity'
 import type { ModelTests } from './useModelTests'
 import type { ImageAccessStatus, ImageModelCapacity, ImageModelInfo } from '../../api/imageModelSchema'
 import type { Tone } from '../../theme/tones'
+import { IconBadge } from '../../components/IconBadge/IconBadge'
 
 const ACCESS_META: Record<ImageAccessStatus, { readonly tone: Tone; readonly icon: LucideIcon }> = {
   available: { tone: 'ok', icon: CheckCircle2 },
@@ -82,12 +83,11 @@ function AccessStatus({ image }: { readonly image: ImageModelCapacity | null }) 
   const { t } = useTranslation('settings')
   const status: ImageAccessStatus = image?.access.status ?? 'unknown'
   const meta = ACCESS_META[status]
-  const Icon = meta.icon
   return (
     <span className="inline-flex flex-col gap-0.5 min-w-0" data-access={status}>
-      <span className={`badge badge-${meta.tone} inline-flex items-center gap-1 self-start`}>
-        <Icon size={12} aria-hidden="true" /> {t(`aiModel.accessStatus.${status}`)}
-      </span>
+      <IconBadge toneClass={`badge-${meta.tone}`} icon={meta.icon} className="self-start">
+        {t(`aiModel.accessStatus.${status}`)}
+      </IconBadge>
       {status !== 'available' && <span className="text-xs text-muted">{t(`aiModel.image.hint.${status}`)}</span>}
     </span>
   )
