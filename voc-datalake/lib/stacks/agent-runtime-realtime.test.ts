@@ -23,6 +23,7 @@ const PUBLISHERS: Record<string, string> = {
   'voc-research-step': 'ResearchLambdaRole',
   'voc-category-reprocess': 'CategoryReprocessRole',
   'voc-retention': 'RetentionWorkerRetentionRole',
+  'voc-memory-extractor': 'MemoryWorkersMemoryExtractorRole',
 };
 
 let template: Template;
