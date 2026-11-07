@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final
 
+from agents import notices
 from shared import agents_store
 from shared import plans_store as ps
 from shared.plan_schema import ADMIN_ONLY_PACKS, ADMIN_ONLY_WRITE_TOOLS, ADMIN_READ_PACKS, FREE_PLACEHOLDER, PLAN_LIMITS
@@ -76,6 +77,13 @@ def load(plan_id: str, now: datetime | None = None) -> PlanState | None:
         meta=meta, rows={str(row['step_id']): row for row in rows}, definitions=ps.plan_steps_by_id(meta),
         order=[str(row['step_id']) for row in rows], now=now or agents_store.utc_now(),
     )
+
+
+def journal(plan_id: str, kind: str, summary: str, *, now: datetime, step_id: str | None = None,
+            meta: Mapping[str, Any] | None = None) -> None:
+    """One plan journal row for a status change, and the approver's ``runs`` notice (agents/notices.py)."""
+    ps.append_event(table(), plan_id, kind, summary, now=now, step_id=step_id)
+    notices.plan_changed(plan_id, kind, meta=meta, step_id=step_id)
 
 
 def _has_free_field(value: object) -> bool:

@@ -11,7 +11,10 @@ that, so no route answers with model output any more. Instead the route:
    which claims the row (``pending → running``, once), runs the registered work
    function and records ``completed`` + ``result`` or ``failed`` + ``error``;
 4. the client polls ``GET …/jobs/{job_id}`` and reads ``result``, which is exactly
-   the body the synchronous route used to return.
+   the body the synchronous route used to return;
+5. when the job ends, the worker sends the starter a ``{type: 'job', job_id, status}``
+   notice on ``/jobs/<starter sub>`` (``shared/realtime.py``, docs/realtime.md), and a
+   subscribed browser polls once at once instead of waiting for its next (slower) poll.
 
 Where a row lives (``pk``):
 
@@ -43,6 +46,7 @@ from typing import Any, Final
 from aws_lambda_powertools.event_handler import Response, content_types
 from botocore.exceptions import ClientError
 
+from shared import realtime
 from shared.aws import invoke_lambda_async, is_conditional_check_failure
 from shared.exceptions import ApiError, NotFoundError, ServiceError
 from shared.logging import logger
@@ -207,6 +211,19 @@ def _finish(pk: str, job_id: str, status: str, *, result: dict | None = None, er
                          ExpressionAttributeNames=names, ExpressionAttributeValues=values)
 
 
+def _starter(pk: str, row: Mapping[str, Any]) -> object:
+    """Who started the job: the sub in an ``ASSIST#{sub}`` pk, else the row's ``initiated_by``."""
+    return pk.removeprefix('ASSIST#') if pk.startswith('ASSIST#') else row.get('initiated_by')
+
+
+def _notify(pk: str, row: Mapping[str, Any], status: str) -> None:
+    """Tell the starter's browser the job ended (best effort, never raises; polling stays the fallback)."""
+    event: dict[str, Any] = {'type': 'job', 'job_id': row.get('job_id'), 'job_type': row.get('job_type'), 'status': status}
+    if isinstance(row.get('project_id'), str):
+        event['project_id'] = row['project_id']
+    realtime.publish('jobs', _starter(pk, row), event)
+
+
 def _storable(result: object) -> dict:
     """The work's answer as DynamoDB can store it (floats → Decimal via a JSON round trip)."""
     return json.loads(json.dumps(result, default=str), parse_float=Decimal)
@@ -237,12 +254,15 @@ def run(event: Mapping[str, Any], registry: Mapping[str, Work]) -> dict[str, Any
     if work is None:
         _finish(pk, job_id, FAILED, error='This assistant is not available.')
         logger.error('No work registered for assist', extra={'job_type': job_type})
+        _notify(pk, row, FAILED)
         return {'status': FAILED}
     try:
         result = work.run(dict(row.get('config') or {}))
     except Exception as exc:  # noqa: BLE001 - the worker never raises; _failure_text logs the traceback
         _finish(pk, job_id, FAILED, error=_failure_text(exc, job_type, work))
+        _notify(pk, row, FAILED)
         return {'status': FAILED}
     _finish(pk, job_id, COMPLETED, result=_storable(result))
     logger.info('Assist completed', extra={'job_type': job_type})
+    _notify(pk, row, COMPLETED)
     return {'status': COMPLETED}
