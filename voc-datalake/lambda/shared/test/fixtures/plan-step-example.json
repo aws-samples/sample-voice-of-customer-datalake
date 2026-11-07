@@ -255,7 +255,8 @@
               "sort_by": "most_recent",
               "max_reviews_per_run": "500",
               "frequency_minutes": "0"
-            }
+            },
+            "mode": "create"
           }
         }
       ],
