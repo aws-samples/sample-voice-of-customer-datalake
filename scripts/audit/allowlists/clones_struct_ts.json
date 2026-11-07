@@ -46,13 +46,6 @@
     },
     {
       "files": [
-        "voc-datalake/frontend/src/pages/ProjectDetail/decisions/VerdictBadge.tsx",
-        "voc-datalake/frontend/src/pages/Scrapers/SourceCardParts.tsx"
-      ],
-      "reason": "icon badges over two enums (decision verdict, run outcome). FIXABLE-LATER: an IconBadge component (tone class, icon, label) would serve these and ~19 other 'badge inline-flex items-center gap-1' sites; do it as one sweep"
-    },
-    {
-      "files": [
         "voc-datalake/frontend/src/components/MetricCard/MetricCard.tsx",
         "voc-datalake/frontend/src/pages/Home/onboarding/OnboardingBuddy.tsx"
       ],

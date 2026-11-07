@@ -7,6 +7,7 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle2, RotateCcw, Send, ShieldAlert } from 'lucide-react'
 import type { PrototypePin } from '../../api/prototypePinsApi'
+import { IconBadge } from '../IconBadge/IconBadge'
 
 /** Mirrors MAX_REPLY_CHARS in lambda/shared/prototype_pins.py. */
 const MAX_REPLY_CHARS = 2000
@@ -76,7 +77,7 @@ export default function PinCard({ pin, number, busy, onReply, onStatus }: PinCar
         <span className="text-sm font-semibold">{t('prototypePins.pinNumber', { number })}</span>
         <span className={STATUS_BADGE[pin.status]}>{t(`prototypePins.status.${pin.status}`)}</span>
         {pin.flagged ? (
-          <span className="badge badge-danger inline-flex items-center gap-1"><ShieldAlert size={10} /> {t('prototypePins.flagged')}</span>
+          <IconBadge toneClass="badge-danger" icon={ShieldAlert} iconSize={10}>{t('prototypePins.flagged')}</IconBadge>
         ) : null}
       </div>
       <p className="text-sm whitespace-pre-wrap break-words">{pin.comment}</p>

@@ -8,6 +8,7 @@
 import { Loader2, Lock, LockOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { PersonaProtection } from './usePersonaProtection'
+import { IconBadge } from '../../components/IconBadge/IconBadge'
 
 interface PersonaProtectToggleProps {
   readonly personaId: string
@@ -41,9 +42,9 @@ export function PersonaProtectStatus({ personaId, isProtected, protection }: Per
   return (
     <>
       {isProtected ? (
-        <span className="badge badge-muted mt-1.5 inline-flex items-center gap-1" title={t('personas.protectedHint')}>
-          <Lock size={12} aria-hidden />{t('personas.protected')}
-        </span>
+        <IconBadge toneClass="badge-muted" icon={Lock} className="mt-1.5" title={t('personas.protectedHint')}>
+          {t('personas.protected')}
+        </IconBadge>
       ) : null}
       {protection.failedFor(personaId) ? (
         <p role="alert" className="mt-1.5 text-[12px] text-danger">{t('personas.protectFailed')}</p>
