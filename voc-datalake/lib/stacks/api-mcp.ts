@@ -20,6 +20,10 @@ export interface McpDelegates {
   agentsLambda: lambda.Function;
   /** voc-engagement-api: `search_feature_requests` reads GET /feature-requests/search (docs/mcp.md). */
   engagementLambda: lambda.Function;
+  /** voc-radar-api: `read_radar` reads GET /radar and a brand's reviews (docs/mcp.md). */
+  radarLambda: lambda.Function;
+  /** voc-feedback-edit-api: `edit_feedback` writes PUT /feedback/{id}/category|dimensions (docs/mcp.md). */
+  feedbackEditLambda: lambda.Function;
 }
 
 /** Must equal MCP_UNAUTHORIZED / the 401 message in lambda/api/mcp_global_handler.py (pinned by a test). */
@@ -82,7 +86,9 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
   signingLayer: lambda.ILayerVersion): GlobalMcp {
   const { stack, allowedOrigin, apiLayer, apiCode: createApiLambdaCode } = ctx;
   const { api, authMethodOptions } = gateway;
-  const { metricsLambda, projectsLambda, settingsLambda, memoryLambda, agentsLambda, engagementLambda } = delegates;
+  const {
+    metricsLambda, projectsLambda, settingsLambda, memoryLambda, agentsLambda, engagementLambda, radarLambda, feedbackEditLambda,
+  } = delegates;
   const { projectsTable, jobsTable, kmsKey, userPool } = ctx.props;
 
   // The per-project MCP server (`POST /mcp`, `/mcp/{proxy+}`, voc-mcp-api and its
@@ -103,6 +109,7 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
     domainFunctions: {
       METRICS_FUNCTION: metricsLambda, SETTINGS_FUNCTION: settingsLambda, MEMORY_FUNCTION: memoryLambda,
       PROJECTS_FUNCTION: projectsLambda, AGENTS_FUNCTION: agentsLambda, ENGAGEMENT_FUNCTION: engagementLambda,
+      RADAR_FUNCTION: radarLambda, FEEDBACK_EDIT_FUNCTION: feedbackEditLambda,
     },
   });
   // OAuth sign-in for the same endpoint (api-mcp-oauth.ts, docs/mcp.md "OAuth sign-in").

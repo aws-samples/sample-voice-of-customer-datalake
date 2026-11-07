@@ -22,19 +22,62 @@ route below and the role's invoke grant in step with the stack.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Mapping
 from typing import Any, Final
 
 from shared import mcp_global_tokens as gt
 from shared.dimension_config import DIMENSION_KEY_RE, MAX_DIMENSIONS, parse_dims_param
-
-DOMAIN_METRICS: Final = 'metrics'
-DOMAIN_SETTINGS: Final = 'settings'
-DOMAIN_MEMORY: Final = 'memory'
-DOMAIN_PROJECTS: Final = 'projects'
-DOMAIN_AGENTS: Final = 'agents'
-DOMAIN_ENGAGEMENT: Final = 'engagement'
+from shared.mcp_global_kit import (
+    BOOL_SCHEMA as _BOOL,
+)
+from shared.mcp_global_kit import (
+    DOMAIN_AGENTS,
+    DOMAIN_ENGAGEMENT,
+    DOMAIN_FEEDBACK_EDIT,
+    DOMAIN_MEMORY,
+    DOMAIN_METRICS,
+    DOMAIN_PROJECTS,
+    DOMAIN_RADAR,
+    DOMAIN_SETTINGS,
+    FollowUp,
+    GlobalTool,
+    InvalidToolArgument,
+    RouteRequest,
+)
+from shared.mcp_global_kit import (
+    ID_SCHEMA as _ID,
+)
+from shared.mcp_global_kit import (
+    PROJECT_ID_SCHEMA as _PROJECT_ID,
+)
+from shared.mcp_global_kit import (
+    bool_arg as _bool_arg,
+)
+from shared.mcp_global_kit import (
+    id_arg as _id_arg,
+)
+from shared.mcp_global_kit import (
+    int_arg as _int_arg,
+)
+from shared.mcp_global_kit import (
+    items as _items,
+)
+from shared.mcp_global_kit import (
+    public as _public,
+)
+from shared.mcp_global_kit import (
+    require_project as _require_project,
+)
+from shared.mcp_global_kit import (
+    schema as _schema,
+)
+from shared.mcp_global_kit import (
+    stripped as _stripped,
+)
+from shared.mcp_global_kit import (
+    text_arg as _text_arg,
+)
+from shared.mcp_global_tools_steps import STEP_TOOLS
 
 DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
     DOMAIN_METRICS: 'METRICS_FUNCTION',
@@ -43,6 +86,8 @@ DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
     DOMAIN_PROJECTS: 'PROJECTS_FUNCTION',
     DOMAIN_AGENTS: 'AGENTS_FUNCTION',
     DOMAIN_ENGAGEMENT: 'ENGAGEMENT_FUNCTION',
+    DOMAIN_RADAR: 'RADAR_FUNCTION',
+    DOMAIN_FEEDBACK_EDIT: 'FEEDBACK_EDIT_FUNCTION',
 }
 
 MAX_DAYS: Final = 9999           # shared.api.MAX_FEEDBACK_WINDOW_DAYS; 0 = all time
@@ -81,119 +126,7 @@ MAX_FEATURE_REQUEST_DAYS: Final = 3650
 MAX_FEATURE_REQUEST_FILTER_LENGTH: Final = 500
 MAX_FEATURE_REQUEST_TEXT_CHARS: Final = 1000
 
-# Keys never forwarded to an MCP client: storage keys, index keys, and anything
-# carrying a signed URL.
-_HIDDEN_KEYS: Final = frozenset({'pk', 'sk', 'gsi1pk', 'gsi1sk', 'gsi2pk', 'gsi2sk', 'secret_hash',
-                                 'kiro_default_export_prompt', 'kiro_export_prompt'})
-
-
-class InvalidToolArgument(ValueError):
-    """The arguments do not satisfy the tool's contract; a tool error the model can fix."""
-
-
-@dataclass(frozen=True)
-class RouteRequest:
-    """The route a tool call becomes, before a function name and claims are attached."""
-
-    domain: str
-    method: str
-    path: str
-    query: dict[str, Any] = field(default_factory=dict)
-    body: dict | None = None
-
-
-def _unchanged(payload: Any, _args: Mapping[str, Any]) -> Any:
-    return payload
-
-
-@dataclass(frozen=True)
-class FollowUp:
-    """A second read whose shaped answer joins a successful tool result under ``key``.
-
-    Best effort: the handler records a refusal or fault as ``{key}_error`` and keeps the main result.
-    """
-
-    key: str
-    request: RouteRequest
-    shape: Callable[[Any], Any]
-
-
-def _no_follow_ups(_args: Mapping[str, Any]) -> tuple[FollowUp, ...]:
-    return ()
-
-
-@dataclass(frozen=True)
-class GlobalTool:
-    name: str
-    title: str
-    description: str
-    input_schema: dict
-    build: Callable[[Mapping[str, Any], str | None], RouteRequest]
-    shape: Callable[[Any, Mapping[str, Any]], Any] = _unchanged
-    write: bool = False
-    admin_only: bool = False
-    # Takes a `project_id` argument; a pinned token's pin applies (and defaults it).
-    project_scoped: bool = False
-    # Extra reads after the main route answered (validated by ``build`` first).
-    follow_ups: Callable[[Mapping[str, Any]], tuple[FollowUp, ...]] = _no_follow_ups
-    # A feedback-board route (`/feature-requests/*`): the delegated claims also carry the app pool's
-    # issuer and a verified service address (``board_route_claims``), which the board scope reads.
-    board_route: bool = False
-
-    def declaration(self) -> dict:
-        """The tool as `tools/list` publishes it."""
-        return {
-            'name': self.name,
-            'title': self.title,
-            'description': self.description,
-            'inputSchema': self.input_schema,
-            'annotations': {
-                'title': self.title,
-                'readOnlyHint': not self.write,
-                'destructiveHint': False,
-                'idempotentHint': not self.write,
-                'openWorldHint': False,
-            },
-        }
-
-
 # ── Argument readers ────────────────────────────────────────────────────────
-def _int_arg(args: Mapping[str, Any], name: str, *, default: int, low: int, high: int) -> int:
-    value = args.get(name, default)
-    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-        raise InvalidToolArgument(f'{name} must be an integer between {low} and {high}')
-    return value
-
-
-def _text_arg(args: Mapping[str, Any], name: str, *, max_length: int, required: bool = False) -> str | None:
-    """A trimmed string argument; absent or blank is None unless ``required``."""
-    value = args.get(name)
-    if value is not None and not isinstance(value, str):
-        raise InvalidToolArgument(f'{name} must be a string')
-    text = (value or '').strip()
-    if not text:
-        if required:
-            raise InvalidToolArgument(f'{name} is required')
-        return None
-    if len(text) > max_length:
-        raise InvalidToolArgument(f'{name} must be at most {max_length} characters')
-    return text
-
-
-def _bool_arg(args: Mapping[str, Any], name: str) -> bool:
-    value = args.get(name, False)
-    if not isinstance(value, bool):
-        raise InvalidToolArgument(f'{name} must be true or false')
-    return value
-
-
-def _id_arg(args: Mapping[str, Any], name: str) -> str:
-    value = args.get(name)
-    if not gt.is_path_id(value):
-        raise InvalidToolArgument(f'{name} is required and must be an id (letters, digits, _ and -)')
-    return str(value)
-
-
 def _dims_arg(args: Mapping[str, Any]) -> str | None:
     """``dims`` ({key: value}) as the routes' ``key:value,…`` query parameter; empty is None."""
     value = args.get('dims')
@@ -216,21 +149,8 @@ def _item_filters(args: Mapping[str, Any]) -> dict[str, Any]:
     return filters
 
 
-def _require_project(project_id: str | None) -> str:
-    if not project_id:
-        raise InvalidToolArgument('project_id is required')
-    return project_id
-
-
-def _schema(properties: dict, required: tuple[str, ...] = ()) -> dict:
-    schema: dict[str, Any] = {'type': 'object', 'properties': properties, 'additionalProperties': False}
-    if required:
-        schema['required'] = list(required)
-    return schema
-
-
 _DAYS = {'type': 'integer', 'minimum': 0, 'maximum': MAX_DAYS, 'default': DEFAULT_DAYS,
-         'description': 'Look-back window in days; 0 = all time.'}
+         'description': 'Days back; 0 = all time.'}
 _LIMIT = {'type': 'integer', 'minimum': 1, 'maximum': MAX_LIST_LIMIT, 'default': DEFAULT_LIST_LIMIT}
 _FILTER = {'type': 'string', 'maxLength': MAX_FILTER_LENGTH}
 _ITEM_FILTERS = {
@@ -238,27 +158,9 @@ _ITEM_FILTERS = {
     'dims': {'type': 'object', 'maxProperties': MAX_DIMENSIONS,
              'propertyNames': {'pattern': DIMENSION_KEY_RE.pattern.replace('\\Z', '$')},
              'additionalProperties': {'type': 'string', 'maxLength': MAX_FILTER_LENGTH},
-             'description': 'Dimension filters {key: value} (keys from list_dimensions), all must match.'},
+             'description': 'Dimension filters {key: value}; all must match.'},
 }
-_BOOL = {'type': 'boolean', 'default': False}
-_ID = {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}
-_PROJECT_ID = {**_ID, 'description': 'Project id (from list_projects). Optional for a project-scoped token.'}
-
-
 # ── Projections ─────────────────────────────────────────────────────────────
-def _public(row: object) -> dict:
-    """A row without storage keys and without any signed URL."""
-    if not isinstance(row, Mapping):
-        return {}
-    return {key: value for key, value in row.items()
-            if key not in _HIDDEN_KEYS and 'url' not in key.lower()}
-
-
-def _items(payload: object, key: str) -> list:
-    value = payload.get(key) if isinstance(payload, Mapping) else None
-    return value if isinstance(value, list) else []
-
-
 def _document_summary(document: Mapping[str, Any]) -> dict:
     return {key: document.get(key) for key in
             ('document_id', 'document_type', 'title', 'base_title', 'version', 'created_at', 'updated_at')
@@ -288,22 +190,13 @@ def _project_list(payload: object, _args: Mapping[str, Any]) -> dict:
     return {'count': len(projects), 'projects': projects}
 
 
-def _public_value(value: object) -> object:
-    """A list of rows loses its rows' hidden keys; anything else passes through."""
-    if isinstance(value, list) and all(isinstance(v, Mapping) for v in value):
-        return [_public(v) for v in value]
-    return value
+def _feature_requests(payload: object, args: Mapping[str, Any]) -> object:
+    """The search answer as slim items only: no field added upstream reaches the client unreviewed.
 
-
-def _stripped(payload: object, _args: Mapping[str, Any]) -> object:
-    """The route body without hidden keys, one level of row lists deep."""
-    if not isinstance(payload, Mapping):
-        return payload
-    return {key: _public_value(value) for key, value in _public(payload).items()}
-
-
-def _feature_requests(payload: object, _args: Mapping[str, Any]) -> dict:
-    """The search answer as slim items only: no field added upstream reaches the client unreviewed."""
+    ``boards: true`` answered the board list instead: its rows without storage keys.
+    """
+    if args.get('boards') is True:
+        return _stripped(payload, args)
     items = []
     for row in _items(payload, 'items'):
         if not isinstance(row, Mapping):
@@ -473,6 +366,9 @@ def _get_agent_run(args: Mapping[str, Any], _project: str | None) -> RouteReques
 
 
 def _search_feature_requests(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
+    if _bool_arg(args, 'boards'):
+        # The boards the minter can see (GET /feature-requests/boards), folded in to keep tools/list small.
+        return RouteRequest(DOMAIN_ENGAGEMENT, 'GET', '/feature-requests/boards')
     query: dict[str, Any] = {
         'q': _text_arg(args, 'query', max_length=MAX_QUERY_LENGTH),
         'limit': _int_arg(args, 'limit', default=DEFAULT_FEATURE_REQUEST_LIMIT, low=1, high=MAX_FEATURE_REQUEST_LIMIT),
@@ -492,115 +388,101 @@ def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
 TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'search_feedback', 'Search feedback',
-        'Search or list customer feedback (reviews, form submissions, imports) you can see. Give `query` '
-        '(2+ characters) for a text search, or only filters to list the newest items; `urgent: true` keeps '
-        'high-urgency items only. Returns verbatims with sentiment, category and urgency. Use it to ground '
-        'any claim about what customers say.',
+        'Search (`query`, 2+ characters) or list the newest customer feedback you can see; `urgent: true` keeps '
+        'high urgency only. Verbatims with sentiment, category and urgency: ground claims about customers here.',
         _schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH}, 'days': _DAYS, 'limit': _LIMIT,
                  'category': _FILTER, 'sentiment': _FILTER, 'source': _FILTER, 'urgent': _BOOL, **_ITEM_FILTERS}),
         _search_feedback, _stripped),
     GlobalTool(
         'get_feedback', 'Get one feedback item',
-        'One feedback item in full, by `feedback_id` (from search_feedback); `include_similar: true` adds '
-        f'up to {MAX_SIMILAR} similar items.',
+        f'One feedback item by `feedback_id`; `include_similar: true` adds up to {MAX_SIMILAR} similar items.',
         _schema({'feedback_id': _ID, 'include_similar': _BOOL}, ('feedback_id',)), _get_feedback, _stripped,
         follow_ups=_similar_follow_up),
     GlobalTool(
         'get_metrics', 'Get feedback metrics',
-        'Aggregated metrics over a window: `view` = summary (totals, average sentiment, urgent count, '
-        'daily series), a breakdown by sentiment, categories, sources, personas or one dimension '
-        '(`dimensions` + `key`), `github` (GitHub issues per release and label) or `entities` (the filter '
-        'values in use: categories, sources, channels, tags, dimensions, with counts); every view takes the '
-        'source / channel / tag / dims filters. '
-        'Use it for trends and volumes instead of counting search results.',
+        'Metrics over a window. `view`: summary, sentiment, categories, sources, personas, dimensions (+ `key`), '
+        'github (issues per release and label) or entities (filter values with counts). Use it for volumes and trends.',
         _schema({'view': {'type': 'string', 'enum': list(METRIC_VIEWS), 'default': 'summary'}, 'days': _DAYS,
                  'key': _FILTER, 'source': _FILTER, **_ITEM_FILTERS}),
         _get_metrics),
     GlobalTool(
         'list_categories', 'List categories',
-        'The feedback category taxonomy you have access to (name, description, product, subcategories).',
+        'The category taxonomy you can see (name, description, product, subcategories).',
         _schema({}), _list_categories),
     GlobalTool(
         'list_dimensions', 'List dimensions',
-        'The feedback dimensions (product, module, user type, ...): key, label and allowed values, for '
-        'the `dims` filter and the dimensions metric view.',
+        'Feedback dimensions (key, label, allowed values) for `dims` and the dimensions view.',
         _schema({}), _list_dimensions),
     GlobalTool(
         'search_memory', 'Search memory',
-        'Semantic search over company memory and your personal memory (decisions, facts, preferences '
-        'the team has recorded), filtered to the categories you can see. Use it before proposing '
-        'something the team may already have decided.',
+        'Semantic search over company and personal memory (decisions, facts, preferences) you can see. '
+        'Check it before proposing.',
         _schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'k': {'type': 'integer', 'minimum': 1, 'maximum': MAX_MEMORY_K, 'default': DEFAULT_MEMORY_K}}, ('query',)),
         _search_memory),
     GlobalTool(
         'get_company_context', 'Get company context',
-        'The company vision and objectives every product decision should align with.',
+        'The company vision and objectives.',
         _schema({}), _company_context),
     GlobalTool(
         'list_projects', 'List projects',
-        'Research projects you can see (a project-scoped token sees only its project).',
+        'Research projects you can see.',
         _schema({}), _list_projects, _project_list),
     GlobalTool(
         'get_project', 'Get a project',
-        'A project with its personas and the list of its documents (PRDs, PR/FAQs, research, custom '
-        'documents) — titles and ids only; read a body with get_document.',
+        'A project: its personas and documents (titles and ids; bodies via get_document).',
         _schema({'project_id': _PROJECT_ID}), _get_project, _project_overview, project_scoped=True),
     GlobalTool(
         'get_document', 'Get a document',
-        'One project document in full, by `document_id` (from get_project).',
+        'One project document in full, by `document_id`.',
         _schema({'project_id': _PROJECT_ID, 'document_id': _ID}, ('document_id',)),
         _get_document, _one_document, project_scoped=True),
     GlobalTool(
-        'list_agents', 'List autonomous agents',
-        'Autonomous agents (review → PR/FAQ → prototype crews) you can see, with their status.',
+        'list_agents', 'List agents',
+        'Autonomous agents you can see, with their status.',
         _schema({}), _list_agents, _stripped),
     GlobalTool(
         'get_agent_run', 'Get agent runs',
-        "An agent's run by `run_id` (status, current step, project, error), or without `run_id` its newest "
-        'runs. Use it to follow a run started with run_agent; read its output with get_project.',
+        "An agent's run by `run_id`, or its newest runs (status, step, project, error).",
         _schema({'agent_id': _ID, 'run_id': _ID,
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_RUNS_LIMIT,
                            'default': DEFAULT_RUNS_LIMIT}}, ('agent_id',)),
         _get_agent_run, _stripped),
     GlobalTool(
-        'search_feature_requests', 'Search feedback-board requests',
-        'Search the requests people posted on the feedback boards (feature requests, ideas) you can see. '
-        'These are board requests, NOT customer reviews: a separate source, never counted in feedback metrics '
-        'and never returned by search_feedback. Each item: request_id, board_id, title, description, status, '
-        'supporters (+1 count), category, sentiment, problem_summary, created_at. Cite a request as '
-        '[FR:<request_id>], never as a review. `board`, `category` and `status` take one value or a comma list.',
+        'search_feature_requests', 'Search board requests',
+        'Search feedback-board requests you can see (NOT reviews: never in feedback metrics); cite as '
+        '[FR:<request_id>]. `board`, `category`, `status`: one value or a comma list. `boards: true` lists the boards.',
         _schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'board': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH,
-                           'description': 'Board id or slug (comma list for several).'},
+                           'description': 'Board id or slug.'},
                  'category': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH},
                  'status': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH},
                  'days': {'type': 'integer', 'minimum': 0, 'maximum': MAX_FEATURE_REQUEST_DAYS, 'default': 0,
-                          'description': 'Only requests created in the last N days; 0 = all time.'},
+                          'description': 'Created in the last N days; 0 = all time.'},
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_FEATURE_REQUEST_LIMIT,
-                           'default': DEFAULT_FEATURE_REQUEST_LIMIT}}),
+                           'default': DEFAULT_FEATURE_REQUEST_LIMIT},
+                 'boards': _BOOL}),
         _search_feature_requests, _feature_requests, board_route=True),
     GlobalTool(
-        'create_document', 'Create a project document',
-        'Create a custom markdown document in a project you can edit. Requires a write token. Write '
-        'only what the user asked for; cite feedback ids for claims about customers.',
+        'create_document', 'Create a document',
+        'Create a custom markdown document in a project you can edit (write token). Cite feedback ids for claims.',
         _schema({'project_id': _PROJECT_ID, 'title': {'type': 'string', 'maxLength': MAX_TITLE_LENGTH},
                  'content': {'type': 'string', 'maxLength': MAX_DOCUMENT_CHARS}}, ('title', 'content')),
         _create_document, _stripped, write=True, project_scoped=True),
     GlobalTool(
-        'update_document', 'Update a project document',
-        "Replace a document's title and/or content in a project you can edit. Requires a write token. "
-        'Managed PRD / PR/FAQ titles cannot change series, and prototype bodies cannot be edited here.',
+        'update_document', 'Update a document',
+        "Replace a document's title and/or content (write token). PRD / PR/FAQ titles keep their series; "
+        'prototypes cannot be edited here.',
         _schema({'project_id': _PROJECT_ID, 'document_id': _ID,
                  'title': {'type': 'string', 'maxLength': MAX_TITLE_LENGTH},
                  'content': {'type': 'string', 'maxLength': MAX_DOCUMENT_CHARS}}, ('document_id',)),
         _update_document, _stripped, write=True, project_scoped=True),
     GlobalTool(
-        'run_agent', 'Run an autonomous agent',
-        'Start a run of an autonomous agent now (from list_agents). Only for write tokens minted by an '
-        'administrator who is still an administrator; returns the queued run. Confirm with the user '
-        'first — a run spends model budget and creates or updates projects.',
+        'run_agent', 'Run an agent',
+        'Start an agent run now (write token minted by a current administrator). Confirm first: it spends model budget.',
         _schema({'agent_id': _ID}, ('agent_id',)), _run_agent, _stripped, write=True, admin_only=True),
+    # Methodology steps, their jobs, Radar and feedback edits (shared/mcp_global_tools_steps.py).
+    *STEP_TOOLS,
 )
 
 TOOLS_BY_NAME: Final[dict[str, GlobalTool]] = {tool.name: tool for tool in TOOLS}
