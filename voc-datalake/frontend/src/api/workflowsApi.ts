@@ -43,7 +43,6 @@ export const WORKFLOW_EDGE_LABELS = ['pass', 'fail', 'agreed', 'not_agreed'] as 
 export type WorkflowEdgeLabel = (typeof WORKFLOW_EDGE_LABELS)[number]
 
 export const WORKFLOW_LOOP_UNTIL = ['persona_agreement', 'review_pass'] as const
-export type WorkflowLoopUntil = (typeof WORKFLOW_LOOP_UNTIL)[number]
 
 /** `persona_review` / `revise_document` params.target. */
 export const REVIEW_TARGETS = ['prfaq', 'prd', 'prototype'] as const
