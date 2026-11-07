@@ -75,6 +75,7 @@ from shared.mcp_global_tools import (
     TOOLS_BY_NAME,
     GlobalTool,
     InvalidToolArgument,
+    MinterIdentity,
     RouteRequest,
     board_route_claims,
 )
@@ -234,6 +235,29 @@ def _minter_is_current(row: Mapping[str, Any]) -> bool:
     return bool(user.get('Enabled', False)) and attributes.get('sub') == minter
 
 
+def _minter_identity(row: Mapping[str, Any]) -> MinterIdentity | None:
+    """The minter's verified email and display name from Cognito now, or None (no verified email, or a fault).
+
+    Only the board tools need it (their routes record who posted a request or a +1): None makes the board
+    route refuse the call (403), so a request is never recorded under anyone but the person.
+    """
+    username, pool = row.get('created_by_username'), os.environ.get('USER_POOL_ID', '')
+    if not isinstance(username, str) or not username or not pool:
+        return None
+    try:
+        user = _cognito_client().admin_get_user(UserPoolId=pool, Username=username)
+    except (ClientError, BotoCoreError) as exc:
+        logger.warning('Minter identity lookup failed', extra={'error_type': type(exc).__name__})
+        return None
+    attributes = {a.get('Name'): a.get('Value') for a in user.get('UserAttributes', []) if isinstance(a, dict)}
+    email, verified = attributes.get('email'), attributes.get('email_verified')
+    if attributes.get('sub') != row.get('created_by') or not isinstance(email, str) or not email \
+            or str(verified).lower() != 'true':
+        return None
+    name = attributes.get('name')
+    return MinterIdentity(email=email.strip().lower(), name=name.strip() if isinstance(name, str) else '')
+
+
 def _authenticate(event: Mapping[str, Any]) -> dict | None:
     """The usable token row for the presented credential, or None (a 401)."""
     authorization = _header(event, 'authorization')
@@ -389,7 +413,7 @@ def _claims_for(call: ToolCall, row: Mapping[str, Any]) -> dict[str, str]:
     claims = synthetic_claims(row)
     if call.tool.board_route:
         # The app pool's issuer from this function's own environment, never the request (mcp_global_tools).
-        claims = board_route_claims(claims, row.get('token_id'), os.environ.get('USER_POOL_ID', ''))
+        claims = board_route_claims(claims, _minter_identity(row), os.environ.get('USER_POOL_ID', ''))
     if call.tool.admin_only:
         # Only after _check_allowed's live Cognito check (see project_access).
         claims[MCP_AGENT_RUN_CLAIM] = 'true'

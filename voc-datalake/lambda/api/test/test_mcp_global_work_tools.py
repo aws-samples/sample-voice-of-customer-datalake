@@ -13,7 +13,7 @@ import pytest
 
 import mcp_global_handler as h
 from shared.mcp_delegate import DomainResult
-from shared.mcp_global_tools import TOOLS_BY_NAME, InvalidToolArgument
+from shared.mcp_global_tools import TOOLS_BY_NAME, InvalidToolArgument, MinterIdentity
 
 CATALOGUE = TOOLS_BY_NAME['get_feedback_catalogue']
 PRIORITIZATION = TOOLS_BY_NAME['get_prioritization']
@@ -33,7 +33,9 @@ BOARD = {
 
 def _run(tool, arguments: dict, answer: DomainResult, row=WRITE_ROW, project: str | None = None):
     call_domain = MagicMock(return_value=answer)
-    with patch.object(h, 'call_domain', call_domain), patch.dict('os.environ', {'USER_POOL_ID': APP_POOL}):
+    minter = MinterIdentity(email='alice@example.com', name='Alice Example')
+    with patch.object(h, 'call_domain', call_domain), patch.object(h, '_minter_identity', return_value=minter), \
+            patch.dict('os.environ', {'USER_POOL_ID': APP_POOL}):
         content, outcome = h._run_tool(h.ToolCall(tool, arguments, project), row)
     return content, outcome, call_domain
 
@@ -154,13 +156,13 @@ class TestTheBoardWrite:
         assert not h._may_offer(BOARD_WRITE, READ_ROW)
         assert h._may_offer(BOARD_WRITE, PINNED_WRITE_ROW)
 
-    def test_the_claims_are_a_non_admin_app_pool_service_address(self):
+    def test_the_claims_are_the_non_admin_app_pool_minter(self):
         _, outcome, call_domain = _run(BOARD_WRITE, {'title': 'Seat map'},
                                        DomainResult(201, {'request': {'request_id': 'fr_9'}}))
         claims = call_domain.call_args.kwargs['claims']
         assert outcome == 'ok'
         assert claims['iss'] == f'https://cognito-idp.eu-west-1.amazonaws.com/{APP_POOL}'
-        assert claims['email'] == 'mcp+gmt_tok1@mcp.invalid'
+        assert (claims['email'], claims['name']) == ('alice@example.com', 'Alice Example')
         assert claims.get('cognito:groups', '') == ''
 
     def test_a_paused_board_s_refusal_reaches_the_client(self):
