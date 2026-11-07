@@ -2,7 +2,7 @@
  * @fileoverview Tests for ProblemAnalysis page
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { at } from '@test/defined'
 import {
@@ -148,6 +148,29 @@ describe('ProblemAnalysis', () => {
   })
 
   describe('expand/collapse', () => {
+    it('Expand All opens every category and subcategory, and Collapse All closes them again', async () => {
+      await renderLoadedPage()
+      expect(screen.queryByText('Slow delivery times')).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Expand All' }))
+      expect(await screen.findByText('Slow delivery times')).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Collapse All' }))
+      expect(screen.queryByText('Slow delivery times')).not.toBeInTheDocument()
+    })
+
+    it('says a resolve that could not be saved failed, until it is dismissed', async () => {
+      setProblemResolved.mockRejectedValue(new Error('network'))
+      await renderLoadedPage()
+      await userEvent.click(screen.getByRole('button', { name: 'Expand All' }))
+
+      await userEvent.click(await screen.findByRole('button', { name: /mark as resolved/i }))
+      const banner = await screen.findByRole('alert')
+
+      await userEvent.click(within(banner).getByRole('button'))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
     it('renders expand button', async () => {
       await renderLoadedPage()
 
