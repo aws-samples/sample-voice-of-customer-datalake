@@ -1112,7 +1112,8 @@ def list_events(table: Any, run_id: str, *, after: int, limit: int) -> list[dict
     except (ClientError, BotoCoreError) as exc:
         raise _service_error('list run events', exc) from exc
     # ``detail``: a failed step's technical reason (masked, bounded) beside its plain ``summary``.
-    keys = ('seq', 'at', 'kind', 'node_id', 'role', 'summary', 'detail', 'ref')
+    # ``methodology``: the block a methodology step's route or job answered (skipped steps, warnings).
+    keys = ('seq', 'at', 'kind', 'node_id', 'role', 'summary', 'detail', 'ref', 'methodology')
     return [{k: v for k, v in plain(item).items() if k in keys} for item in page.get('Items', [])]
 
 

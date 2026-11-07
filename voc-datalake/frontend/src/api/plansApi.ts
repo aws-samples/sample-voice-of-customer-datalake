@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { fetchApi } from './client'
 import { isRecord } from '../lib/typeGuards'
 import { parseEach } from './lenientFields'
+import { optionalMethodologyBlock } from './methodologySchema'
 import { TOOL_PACKS } from '@stream/assistant/contract'
 import { PLAN_STATUSES, PLAN_STEP_KINDS, PLAN_STEP_STATUSES } from '@stream/assistant/plan/schema'
 import type { VocPlan } from '@stream/assistant/plan/schema'
@@ -57,6 +58,8 @@ const PlanStepViewSchema = z.object({
   outputs: outputsSchema,
   error: optionalString,
   pending: PendingSchema.optional().catch(undefined),
+  /** A methodology step's start block (skipped steps, warnings): api/methodologySchema.ts. */
+  methodology: optionalMethodologyBlock.optional(),
 })
 export type PlanStepView = z.output<typeof PlanStepViewSchema>
 

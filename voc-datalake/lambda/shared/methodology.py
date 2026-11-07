@@ -225,3 +225,56 @@ def for_prototype_request(project_items: Iterable[Mapping[str, Any]]) -> dict[st
 def is_blocked(assessment: Mapping[str, Any]) -> bool:
     """True when the assessment carries the one hard refusal (a prototype with no source)."""
     return any(w.get('code') == W_NO_SOURCE for w in assessment.get('warnings', []))
+
+
+#: Bounds of a block copied into a journal (agent run events, plan step rows).
+MAX_JOURNAL_ITEMS: Final = 10
+MAX_JOURNAL_MESSAGE_CHARS: Final = 300
+_JOURNAL_TEXT_CHARS: Final = 64
+
+
+def _short(value: object) -> str | None:
+    return value[:_JOURNAL_TEXT_CHARS] if isinstance(value, str) and value else None
+
+
+def compact(block: object) -> dict[str, Any] | None:
+    """A route's or job's ``methodology`` block, bounded for a journal; None when it is not one.
+
+    Keeps ``step``, ``skipped`` (step + reason), ``warnings`` (code, message, step) and
+    ``evidence``; drops anything else (ids a warning lists stay on the document).
+    """
+    if not isinstance(block, Mapping) or block.get('step') not in UPSTREAM:
+        return None
+    skipped = [{'step': _short(s.get('step')), 'reason': _short(s.get('reason'))}
+               for s in block.get('skipped') or [] if isinstance(s, Mapping) and _short(s.get('step'))]
+    warnings = []
+    for warning in block.get('warnings') or []:
+        if not isinstance(warning, Mapping) or not _short(warning.get('code')):
+            continue
+        message = warning.get('message')
+        row = {'code': _short(warning.get('code')),
+               'message': message[:MAX_JOURNAL_MESSAGE_CHARS] if isinstance(message, str) else ''}
+        if _short(warning.get('step')):
+            row['step'] = _short(warning.get('step'))
+        warnings.append(row)
+    evidence = block.get('evidence')
+    return {
+        'step': block['step'],
+        'skipped': skipped[:MAX_JOURNAL_ITEMS],
+        'warnings': warnings[:MAX_JOURNAL_ITEMS],
+        'evidence': evidence if isinstance(evidence, int) and not isinstance(evidence, bool) else None,
+    }
+
+
+def journal_line(block: Mapping[str, Any]) -> str:
+    """One plain sentence for a journal: what the step skipped and how much evidence it read."""
+    label = _STEP_LABEL.get(str(block.get('step')), str(block.get('step'))).removeprefix('a ')
+    skipped = [_STEP_LABEL.get(str(s.get('step')), str(s.get('step'))) for s in block.get('skipped') or []]
+    parts = [f'skipped {", ".join(skipped)}' if skipped else 'no step skipped']
+    evidence = block.get('evidence')
+    if isinstance(evidence, int):
+        parts.append(f'{evidence} evidence item(s)')
+    warnings = len(block.get('warnings') or [])
+    if warnings:
+        parts.append(f'{warnings} warning(s)')
+    return f'Methodology ({label}): {"; ".join(parts)}.'

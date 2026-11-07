@@ -5,7 +5,11 @@ A node result (returned to Step Functions, then to the conductor's
 
     {node_id, status: 'done'|'pending'|'failed', summary, outcome?,
      artifacts?: {project_id?, document_id?, document_type?, persona_ids?, job_id?},
-     updates?: {<run context keys>}, pending?: {project_id, job_id}, halt?, error?, detail?}
+     updates?: {<run context keys>}, pending?: {project_id, job_id}, halt?, error?, detail?,
+     methodology?}
+
+``methodology`` is the block a methodology step's route answered at its start, or its
+job stored at the end (shared/methodology.py); the conductor journals it.
 
 A failed result's ``summary`` is plain language for people; ``detail`` keeps the
 technical reason (agents/failure_reason.py).
@@ -21,6 +25,7 @@ from typing import Any
 from agents import llm, principal
 from agents.fields import dict_field
 from agents.graph import Node
+from shared import methodology as methodology_mod
 from shared.display_labels import humanize_id
 
 MAX_SUMMARY_CHARS = 500
@@ -144,8 +149,12 @@ def _summary(text: str) -> str:
 
 
 def done(ctx: NodeContext, summary: str, *, outcome: str | None = None,
-         artifacts: dict | None = None, updates: dict | None = None, halt: bool = False) -> dict:
+         artifacts: dict | None = None, updates: dict | None = None, halt: bool = False,
+         methodology: object = None) -> dict:
     result: dict[str, Any] = {'node_id': ctx.node.id, 'status': 'done', 'summary': _summary(summary)}
+    block = methodology_mod.compact(methodology)
+    if block is not None:
+        result['methodology'] = block
     if outcome:
         result['outcome'] = outcome
     if artifacts:
@@ -186,7 +195,17 @@ def started_job(ctx: NodeContext, payload: Any, project_id: str, summary: str) -
     job_id = payload.get('job_id') if isinstance(payload, dict) else None
     if not isinstance(job_id, str) or not job_id:
         raise NodeFailure('the route did not start a job')
-    return pending(ctx, project_id, job_id, summary)
+    result = pending(ctx, project_id, job_id, summary)
+    # The route's methodology block (skipped steps, warnings): journalled by the conductor.
+    block = methodology_mod.compact(payload.get('methodology') if isinstance(payload, dict) else None)
+    if block is not None:
+        result['methodology'] = block
+    return result
+
+
+def job_methodology(job: dict) -> object:
+    """The final methodology block a finished job stored in its result (None when it has none)."""
+    return dict_field(job, 'result').get('methodology')
 
 
 def document_updates(ctx: NodeContext, kind: str, document_id: str) -> dict:

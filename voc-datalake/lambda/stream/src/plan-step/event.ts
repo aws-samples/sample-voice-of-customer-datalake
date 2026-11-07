@@ -12,7 +12,8 @@
  *
  * Response (every one also carries `model_calls`: the Converse calls this step made, 0 for a
  * pure write — the conductor adds it to the plan's model-call cap):
- *   {status:'done', outputs, fingerprint?}   (fingerprint: canonical tool + args of the executed write)
+ *   {status:'done', outputs, fingerprint?, methodology?}   (fingerprint: canonical tool + args of the executed write;
+ *     methodology: the block a methodology step's route answered — skipped steps, warnings — journalled by the conductor)
  *   | {status:'needs_approval', pending:{tool, args, fingerprint, reason}}
  *   | {status:'failed', error}   (error client-safe, ≤ 500 chars)
  */
@@ -65,7 +66,7 @@ export interface PendingWrite {
 }
 
 export type PlanStepResult =
-  | { status: 'done'; outputs: Record<string, string>; fingerprint?: string }
+  | { status: 'done'; outputs: Record<string, string>; fingerprint?: string; methodology?: Record<string, unknown> }
   | { status: 'needs_approval'; pending: PendingWrite }
   | { status: 'failed'; error: string };
 
