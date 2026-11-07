@@ -7,7 +7,7 @@
  * apart, since Amplify holds one user pool per page.
  */
 import { Amplify } from 'aws-amplify'
-import { getRuntimeConfig } from '../runtimeConfig'
+import { getRealtimeEndpoints, getRuntimeConfig } from '../runtimeConfig'
 
 /** Process-wide flag: Amplify is configured once per page load. */
 const amplifyState = { configured: false }
@@ -22,7 +22,18 @@ export function configureAmplify(): void {
     return
   }
 
+  // Push notifications (docs/realtime.md): only on a deployment with an Event API.
+  const realtime = getRealtimeEndpoints()
   Amplify.configure({
+    ...(realtime === null ? {} : {
+      API: {
+        Events: {
+          endpoint: `https://${realtime.httpDns}/event`,
+          region: cfg.cognito.region,
+          defaultAuthMode: 'userPool',
+        },
+      },
+    }),
     Auth: {
       Cognito: {
         userPoolId: cfg.cognito.userPoolId,

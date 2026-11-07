@@ -12,13 +12,22 @@
  * type by passing its own start, poll and result parser through here, so the
  * components and their mutations did not change.
  *
+ * Push (docs/realtime.md): while the page is subscribed to its notices, the worker's
+ * `job` notice for this job wakes the loop at once, and the poll slows to
+ * {@link ASSIST_SUBSCRIBED_POLL_INTERVAL_MS} as the fallback for a lost notice; a
+ * (re)connect polls at once. Not subscribed (the dev mock, an older deployment): the
+ * same 1.5 s polling as before.
+ *
  * @module api/assistJobs
  */
 import { z } from 'zod'
 import { assistJobPollSchema } from '@stream/assistant/tools/server/assist-job-values'
+import { isRealtimeLive, watchRealtime } from '../realtime/hub'
 
 export const ASSIST_POLL_INTERVAL_MS = 1500
 export const ASSIST_TIMEOUT_MS = 15 * 60 * 1000
+/** The fallback poll while the job's notice is expected (push is live). */
+export const ASSIST_SUBSCRIBED_POLL_INTERVAL_MS = 10_000
 
 const GENERIC_FAILURE = 'The request failed. Please try again.'
 const UNEXPECTED_ANSWER = 'Unexpected response from the server.'
@@ -46,24 +55,6 @@ function abortError(): Error {
   return new DOMException('The request was aborted.', 'AbortError')
 }
 
-function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted === true) {
-      reject(abortError())
-      return
-    }
-    const onAbort = () => {
-      clearTimeout(timer)
-      reject(abortError())
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-    signal?.addEventListener('abort', onAbort, { once: true })
-  })
-}
-
 function parseAnswer<S extends z.ZodType>(schema: S, answer: unknown): z.output<S> {
   const parsed = schema.safeParse(answer)
   if (!parsed.success) throw new Error(UNEXPECTED_ANSWER)
@@ -71,10 +62,22 @@ function parseAnswer<S extends z.ZodType>(schema: S, answer: unknown): z.output<
 }
 
 /**
+ * How long to wait before the next poll: `intervalMs`, or the slower fallback while the job's notice is
+ * expected (push is live), never past the deadline. Throws the timeout when not even `intervalMs` is left.
+ */
+function nextPause(intervalMs: number, deadline: number): number {
+  const remaining = deadline - Date.now()
+  if (remaining < intervalMs) throw new Error(TIMED_OUT)
+  const pause = isRealtimeLive() ? Math.max(intervalMs, ASSIST_SUBSCRIBED_POLL_INTERVAL_MS) : intervalMs
+  return Math.min(pause, remaining)
+}
+
+/**
  * Start an assist job, poll it until it ends, and resolve `parse(result)`.
  *
  * Polls once straight after the start (the job read is consistent, and the mock
- * completes on the first poll), then every `intervalMs`. Rejects with the job's
+ * completes on the first poll), then every `intervalMs`, or on the job's notice
+ * (at most {@link ASSIST_SUBSCRIBED_POLL_INTERVAL_MS} apart) while push is live. Rejects with the job's
  * `error` when it fails, with a timeout error past `timeoutMs`, and with an
  * `AbortError` when `signal` aborts. A start or poll answer that is not the
  * contract's shape is an error, never a cast.
@@ -88,14 +91,18 @@ export async function runAssistJob<T>(
   const { intervalMs = ASSIST_POLL_INTERVAL_MS, timeoutMs = ASSIST_TIMEOUT_MS, signal } = opts
   const deadline = Date.now() + timeoutMs
   const { job_id: jobId } = parseAnswer(startAnswerSchema, await start())
-  for (;;) {
-    if (signal?.aborted === true) throw abortError()
-    const answer = parseAnswer(assistJobPollSchema, await poll(jobId))
-    if (answer.status === 'completed') return parse(answer.result)
-    if (answer.status === 'failed') {
-      throw new Error(answer.error != null && answer.error !== '' ? answer.error : GENERIC_FAILURE)
+  const watch = watchRealtime((notice) => notice.type === 'job' && notice.job_id === jobId)
+  try {
+    for (;;) {
+      if (signal?.aborted === true) throw abortError()
+      const answer = parseAnswer(assistJobPollSchema, await poll(jobId))
+      if (answer.status === 'completed') return parse(answer.result)
+      if (answer.status === 'failed') {
+        throw new Error(answer.error != null && answer.error !== '' ? answer.error : GENERIC_FAILURE)
+      }
+      await watch.wait(nextPause(intervalMs, deadline), signal)
     }
-    if (Date.now() + intervalMs > deadline) throw new Error(TIMED_OUT)
-    await sleep(intervalMs, signal)
+  } finally {
+    watch.close()
   }
 }

@@ -10,6 +10,11 @@
  * see `isLiveServerRun`) or {@link FOLLOW_BOUND_MS} passes; each poll replaces
  * the thread with the newer record. One follower per thread at most.
  *
+ * Push (docs/realtime.md): while the page is subscribed, the stream Lambda's `session`
+ * notice for this conversation wakes the follower at once, and the GET poll drops to
+ * one every {@link SUBSCRIBED_FOLLOW_DELAY_MS} (the fallback for a lost notice); a
+ * (re)connect polls at once. Not subscribed: the backoff polling above, as before.
+ *
  * The server owns a run's answer: `adoptServerSession` is also what a save
  * refused with 409 (the server has a newer revision) falls back to.
  *
@@ -20,6 +25,7 @@ import { getSession } from '../sessions/sessionsApi'
 import { isLiveServerRun } from '../sessions/schema'
 import { threadFromSession } from '../sessions/serialize'
 import { slotOf, useThreadStore } from '../store/assistantStore'
+import { isRealtimeLive, watchRealtime, type RealtimeWatch } from '../../realtime/hub'
 import type { SessionRecord } from '../sessions/schema'
 
 /** Poll delays: quick at first (an answer usually finishes within seconds), then every 5 s. */
@@ -28,6 +34,8 @@ const FOLLOW_DELAYS_MS = [1000, 2000, 3000, STEADY_DELAY_MS] as const
 /** Stop following after this long: by then the server run has finished or died. */
 export const FOLLOW_BOUND_MS = STALE_RUN_SECONDS * 1000
 export const FOLLOW_TIMEOUT_CODE = 'SERVER_RUN_TIMEOUT'
+/** The fallback GET while the run's session notice is expected (push is live). */
+export const SUBSCRIBED_FOLLOW_DELAY_MS = 15_000
 
 const following = new Set<string>()
 
@@ -69,15 +77,17 @@ async function readSession(threadId: string): Promise<SessionRecord | null | 'un
 export async function followServerRun(threadId: string): Promise<void> {
   if (following.has(threadId)) return
   following.add(threadId)
+  const watch = watchRealtime((notice) => notice.type === 'session' && notice.conversation_id === threadId)
   try {
-    await pollUntilDone(threadId, Date.now(), 0)
+    await pollUntilDone(threadId, Date.now(), 0, watch)
   } finally {
+    watch.close()
     following.delete(threadId)
   }
 }
 
 /** One poll, then the next after its backoff delay (recursion: the attempt counter stays const). */
-async function pollUntilDone(threadId: string, started: number, attempt: number): Promise<void> {
+async function pollUntilDone(threadId: string, started: number, attempt: number, watch: RealtimeWatch): Promise<void> {
   if (Date.now() - started >= FOLLOW_BOUND_MS) {
     if (statusOf(threadId) === 'generating') {
       useThreadStore.getState().dispatchTo(threadId, {
@@ -86,7 +96,7 @@ async function pollUntilDone(threadId: string, started: number, attempt: number)
     }
     return
   }
-  await sleep(delayFor(attempt))
+  await watch.wait(isRealtimeLive() ? SUBSCRIBED_FOLLOW_DELAY_MS : delayFor(attempt))
   if (statusOf(threadId) !== 'generating') return
   const record = await readSession(threadId)
   if (record === null) {
@@ -97,7 +107,7 @@ async function pollUntilDone(threadId: string, started: number, attempt: number)
     applyRecord(threadId, record)
     if (!isLiveServerRun(record)) return
   }
-  await pollUntilDone(threadId, started, attempt + 1)
+  await pollUntilDone(threadId, started, attempt + 1, watch)
 }
 
 /**
