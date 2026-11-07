@@ -1,6 +1,6 @@
 /**
  * The shared plan fixtures (`lambda/shared/test/fixtures/plans/*.json`), also
- * read by the SPA mirror's lockstep spec and by `test_plan_schema.py`. Loaded at
+ * read by the SPA's plan spec (`frontend/src/assistant/plan/planFixtures.test.ts`) and by `test_plan_schema.py`. Loaded at
  * transform time by vitest (`import.meta.glob`), so no runtime fs access.
  */
 import { z } from 'zod';

@@ -13,7 +13,7 @@
  * @module assistant/approvals/scraperSchemas
  */
 import { z } from 'zod'
-import { dimensionDefaultsSchema, labelTagsSchema } from './schemas'
+import { dimensionDefaultsSchema, labelTagsSchema } from '@stream/assistant/tools/client/allowlists'
 import type { ScraperConfig } from '../../api/types'
 
 export const SPA_SCRAPER_LIMITS = {

@@ -25,7 +25,8 @@
  * (`argsSchemaFor` returns undefined, e.g. a plan-mode tool not built yet) is
  * not literal-checked here; its REST route still validates at run time.
  *
- * LOCKSTEP: `frontend/src/assistant/plan/validate.ts` mirrors this file, and
+ * The SPA imports this module through `@stream` (its approval card validates a
+ * proposed plan with it), and
  * `lambda/shared/plan_schema.py` implements 1-5 (not 6: Python has no zod).
  */
 import { ADMIN_ONLY_CLIENT_TOOLS, ADMIN_ONLY_PACKS, PLAN_TOOL_NAMES, type ToolPack } from '../contract.js';

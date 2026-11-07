@@ -2,11 +2,10 @@
  * The keys an `updates` object may carry, per write tool. Strict zod objects:
  * anything else is refused at validation, before an approval card is shown.
  *
- * IDENTICAL to the SPA's own boundary (`frontend/src/assistant/approvals/
- * schemas.ts`) — same keys, nested shapes and limits; where the two ever
- * differed the narrower rule was taken. The frontend lockstep test
- * `approvals/allowlists.lockstep.test.ts` reads this file as text and pins the
- * key sets, so a key added here alone fails the frontend suite.
+ * The SPA's approval boundary (`frontend/src/assistant/approvals/schemas.ts`)
+ * imports the `*UpdatesShape` objects and the label schemas through `@stream`
+ * and adds its own "at least one field" message, so both sides accept the same
+ * keys, nested shapes and limits. Browser-safe: zod and dimension-patterns only.
  *
  * Sources of truth:
  *   - persona: `lambda/api/projects.py::update_persona` `updatable_fields`,
@@ -24,7 +23,7 @@
  *     flat maps/lists the route validates against the dimension config.
  */
 import { z } from 'zod';
-import { DIMENSION_KEY_PATTERN, DIMENSION_VALUE_PATTERN } from '../server/item-filters.js';
+import { DIMENSION_KEY_PATTERN, DIMENSION_VALUE_PATTERN } from '../dimension-patterns.js';
 
 function nonEmpty<T extends Record<string, unknown>>(schema: z.ZodType<T>) {
   return schema.refine((value) => Object.values(value).some((v) => v !== undefined), 'updates must change at least one field');
@@ -39,7 +38,8 @@ export const PERSONA_UPDATE_FIELDS = [
   'context_environment', 'quotes', 'scenario',
 ] as const;
 
-export const personaUpdatesSchema = nonEmpty(z.object({
+/** The persona `updates` keys and their shapes (strict sections); `personaUpdatesSchema` adds the non-empty rule. */
+export const personaUpdatesShape = {
   name: required(200).optional(),
   tagline: textField(500).optional(),
   confidence: z.enum(['high', 'medium', 'low']).optional(),
@@ -85,7 +85,9 @@ export const personaUpdatesSchema = nonEmpty(z.object({
     trigger: textField(1000).optional(),
     outcome: textField(1000).optional(),
   }).strict().optional(),
-}).strict());
+};
+
+export const personaUpdatesSchema = nonEmpty(z.object(personaUpdatesShape).strict());
 
 /** product_context.py STRING_FIELDS, name → max length. */
 export const PRODUCT_CONTEXT_STRING_FIELDS = {
@@ -103,15 +105,24 @@ export const PRODUCT_CONTEXT_STRING_FIELDS = {
 
 export const LIFECYCLE_STATES = ['idea', 'mvp', 'beta', 'ga', 'mature'] as const;
 
-/** Built from the field → max-length map so the limits live in one place. */
-const productContextStringShape: Record<string, z.ZodOptional<z.ZodString>> = Object.fromEntries(
-  Object.entries(PRODUCT_CONTEXT_STRING_FIELDS).map(([field, max]) => [field, textField(max).optional()]),
-);
+const F = PRODUCT_CONTEXT_STRING_FIELDS;
 
-export const productContextUpdatesSchema = nonEmpty(z.object({
-  ...productContextStringShape,
+/** The product-context `updates` keys, each string capped by PRODUCT_CONTEXT_STRING_FIELDS. */
+export const productContextUpdatesShape = {
+  product_name: textField(F.product_name).optional(),
+  one_liner: textField(F.one_liner).optional(),
+  target_users: textField(F.target_users).optional(),
+  problem_solved: textField(F.problem_solved).optional(),
+  key_features: textField(F.key_features).optional(),
+  differentiators: textField(F.differentiators).optional(),
+  known_limitations: textField(F.known_limitations).optional(),
+  non_goals: textField(F.non_goals).optional(),
+  success_metrics: textField(F.success_metrics).optional(),
+  free_form_notes: textField(F.free_form_notes).optional(),
   current_state: z.enum(LIFECYCLE_STATES).optional(),
-}).strict());
+};
+
+export const productContextUpdatesSchema = nonEmpty(z.object(productContextUpdatesShape).strict());
 
 export const FEEDBACK_FORM_UPDATE_FIELDS = [
   'enabled', 'name', 'title', 'description', 'question', 'placeholder',
@@ -132,7 +143,8 @@ export const dimensionDefaultsSchema = z.record(z.string().regex(DIMENSION_KEY_P
 /** Shared by the form and scraper label fields (`tags`). */
 export const labelTagsSchema = z.array(z.string().trim().regex(TAG_PATTERN)).max(MAX_LABEL_TAGS);
 
-export const feedbackFormUpdatesSchema = nonEmpty(z.object({
+/** The feedback-form `updates` keys (flat display settings). */
+export const feedbackFormUpdatesShape = {
   enabled: z.boolean().optional(),
   name: required(200).optional(),
   title: textField(200).optional(),
@@ -147,4 +159,6 @@ export const feedbackFormUpdatesSchema = nonEmpty(z.object({
   collect_name: z.boolean().optional(),
   dimension_defaults: dimensionDefaultsSchema.optional(),
   tags: labelTagsSchema.optional(),
-}).strict());
+};
+
+export const feedbackFormUpdatesSchema = nonEmpty(z.object(feedbackFormUpdatesShape).strict());

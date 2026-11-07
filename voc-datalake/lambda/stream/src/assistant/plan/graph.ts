@@ -1,9 +1,7 @@
 /**
  * The step dependency graph of a plan (`after` edges): cycle detection and the
- * transitive `after` chain of each step. Pure and mutation-free (the SPA mirror
- * is linted against mutation); plans have at most 20 steps.
- *
- * LOCKSTEP: `frontend/src/assistant/plan/graph.ts` mirrors this file.
+ * transitive `after` chain of each step. Pure and mutation-free; plans have at
+ * most 20 steps. The SPA reads it through `@stream/assistant/plan/validate`.
  */
 
 export interface GraphStep {
