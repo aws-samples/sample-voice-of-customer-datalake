@@ -222,6 +222,7 @@ const ingestionStack = new VocIngestionStack(app, stackId('VocIngestionStack'), 
   kmsKey: coreStack.kmsKey,
   config,
   frontendDomain: coreStack.frontendDomainName,
+  realtime: coreStack.realtime,
 });
 ingestionStack.addStackDependency(coreStack);
 tagStack(ingestionStack, 'Ingestion');
@@ -246,6 +247,7 @@ const processingStack = new VocProcessingStack(app, stackId('VocProcessingStack'
   featureRequestsTable: coreStack.featureRequestsTable,
   conversationsTable: coreStack.conversationsTable,
   userPool: coreStack.userPool,
+  realtime: coreStack.realtime,
   processingQueue: ingestionStack.processingQueue,
   kmsKey: coreStack.kmsKey,
   rawDataBucket: coreStack.rawDataBucket,
@@ -293,17 +295,13 @@ const apiStack = new VocApiStack(app, stackId('VocApiStack'), {
   boardUserPool: coreStack.boardUserPool,
   boardUserPoolClient: coreStack.boardUserPoolClient,
   userPoolDomainPrefix: coreStack.userPoolDomainPrefix,
+  realtime: coreStack.realtime,
   processingQueueUrl: ingestionStack.processingQueue.queueUrl,
   processingQueueArn: ingestionStack.processingQueue.queueArn,
   secretsArn: ingestionStack.secretsArn,
   s3ImportBucket: ingestionStack.s3ImportBucket,
   researchStateMachine: processingStack.researchStateMachine,
   agentRunStateMachine: processingStack.agentRunStateMachine,
-  agentConductorRoleArn: processingStack.agentConductorRole.roleArn,
-  realtimeJobsPublisherRoleArns: Object.fromEntries(
-    Object.entries({ ...ingestionStack.realtimeJobsPublisherRoles, ...processingStack.realtimeJobsPublisherRoles })
-      .map(([name, role]) => [name, role.roleArn]),
-  ),
   memoryExtractQueueUrl: processingStack.memoryExtractQueue.queueUrl,
   memoryExtractQueueArn: processingStack.memoryExtractQueue.queueArn,
   webSearchGatewayUrl: webSearchStack?.gatewayUrl,

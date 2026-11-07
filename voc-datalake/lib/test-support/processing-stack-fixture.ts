@@ -19,7 +19,7 @@ import { z } from 'zod';
 import { VocProcessingStack } from '../stacks/processing-stack-consolidated';
 import { applyAppAspects } from '../utils/app-aspects';
 import { addGsi1 } from './api-stack-fixture';
-import { fixtureBucket, fixtureQueue } from './fixture-resources';
+import { fixtureBucket, fixtureQueue, fixtureRealtime } from './fixture-resources';
 import { itemAt, valueAt } from './guards';
 
 export function synthProcessingTemplate(options: { withIndexes?: boolean } = {}): Template {
@@ -54,6 +54,7 @@ export function synthProcessingTemplate(options: { withIndexes?: boolean } = {})
     env,
     ...tables,
     userPool: new cognito.UserPool(deps, 'UserPool'),
+    realtime: fixtureRealtime(deps),
     processingQueue: fixtureQueue(deps, 'Queue'),
     kmsKey: new kms.Key(deps, 'Key'),
     rawDataBucket: fixtureBucket(deps, 'RawData'),

@@ -43,9 +43,8 @@ import { createJobLambdas } from './api-job-lambdas';
 import { createMcpApi } from './api-mcp';
 import { cognitoHostedUiHost } from './api-mcp-oauth';
 import { createProjectsLambda } from './api-projects-lambda';
-import {
-  createRealtimeApi, grantConductorRunsPublish, grantRealtimePublish, grantRealtimePublishToRoles, realtimeRuntimeConfig,
-} from './api-realtime';
+import { type CoreRealtime, realtimeRuntimeConfig } from './core-realtime';
+import { grantRealtimePublish } from '../utils/realtime';
 import { addApiRoutes } from './api-routes';
 import { createRadarLambda } from './api-radar-lambda';
 import { createParticipantsLambda } from './api-participants-lambda';
@@ -98,6 +97,8 @@ export interface VocApiStackProps extends VocStackProps {
   boardUserPoolClient: cognito.IUserPoolClient;
   /** The app pool's hosted-UI domain prefix: MCP OAuth forwards sign-in and token calls there (api-mcp-oauth.ts). */
   userPoolDomainPrefix: string;
+  /** VocCoreStack's AppSync Events API: its hosts and per-namespace publish policies (core-realtime.ts). */
+  realtime: CoreRealtime;
 
   // Ingestion stack resources
   processingQueueUrl: string;
@@ -109,13 +110,6 @@ export interface VocApiStackProps extends VocStackProps {
   researchStateMachine: sfn.StateMachine;
   /** voc-agent-run — the agents API starts ("Run now") and stops (cancel) executions. */
   agentRunStateMachine: sfn.StateMachine;
-  /** voc-agent-conductor's role: it publishes run / plan notices to the Event API's `runs` namespace (api-realtime.ts). */
-  agentConductorRoleArn: string;
-  /**
-   * Job workers of VocProcessingStack / VocIngestionStack that tell a job's starter it ended (docs/realtime.md):
-   * role ARNs by a stable name. VocApiStack grants each publish on the Event API's `jobs` namespace.
-   */
-  realtimeJobsPublisherRoleArns: Readonly<Record<string, string>>;
   /** memory-extract queue — the memory API enqueues page imports onto it. */
   memoryExtractQueueUrl: string;
   memoryExtractQueueArn: string;
@@ -346,15 +340,14 @@ export class VocApiStack extends VocStack {
     // ============================================
     // PUSH NOTIFICATIONS (AppSync Events, docs/realtime.md)
     // ============================================
-    const realtime = createRealtimeApi(ctx);
+    // The Event API is VocCoreStack's (core-realtime.ts): each publisher's role carries the namespace's policy.
+    const { realtime } = props;
     grantRealtimePublish(realtime, 'jobs', [
       projects.projectsLambda, projects.projectsAssistWorker,
       data.settingsLambda, data.settingsAssistWorker, data.scrapersLambda, data.scrapersAssistWorker,
       ...jobs.projectJobLambdas, data.manualImportProcessorLambda,
     ]);
-    grantRealtimePublishToRoles(ctx, realtime, 'jobs', props.realtimeJobsPublisherRoleArns);
     grantRealtimePublish(realtime, 'chat', [assistant.chatStreamLambda]);
-    grantConductorRunsPublish(ctx, realtime, props.agentConductorRoleArn);
 
 
     // ============================================

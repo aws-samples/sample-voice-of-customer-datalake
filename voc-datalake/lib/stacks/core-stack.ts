@@ -18,6 +18,7 @@ import { VocStack, VocStackProps } from '../utils/voc-stack';
 import { isDevDeployment } from '../utils/context';
 import { createCoreAuth } from './core-auth';
 import { createBoardAuth } from './core-board-auth';
+import { createCoreRealtime, type CoreRealtime } from './core-realtime';
 import { emailSenderOf } from '../utils/email-sender';
 import { createCoreCdn, type CoreBuildContext } from './core-cdn';
 import { createCoreBuckets } from './core-buckets';
@@ -121,6 +122,8 @@ export class VocCoreStack extends VocStack {
   public readonly boardUserPoolClient: cognito.UserPoolClient;
   /** The app pool's hosted-UI domain prefix (`<prefix>.auth.<region>.amazoncognito.com`); MCP OAuth forwards to it. */
   public readonly userPoolDomainPrefix: string;
+  /** The AppSync Events API's hosts and per-namespace publish policies (core-realtime.ts, docs/realtime.md). */
+  public readonly realtime: CoreRealtime;
   /** How customer data is removed with the stacks (`-c protectData`). */
   public readonly dataProtection: DataProtection;
 
@@ -507,6 +510,8 @@ export class VocCoreStack extends VocStack {
     this.userPoolClient = auth.userPoolClient;
     this.identityPool = auth.identityPool;
     this.userPoolDomainPrefix = auth.domainPrefix;
+    // Push notifications (AppSync Events): here because every publisher's stack deploys after this one.
+    this.realtime = createCoreRealtime(buildContext, auth.userPool, auth.userPoolClient);
     // The board pool: feedback boards and document review links (core-board-auth.ts), on every
     // deployment; `-c emailFrom` only chooses how it emails its sign-in codes.
     const board = createBoardAuth(buildContext, {
