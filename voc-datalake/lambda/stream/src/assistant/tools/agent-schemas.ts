@@ -4,10 +4,8 @@
  *
  * They mirror the agents Lambda's model (brief §C, `lambda/api/agents_handler.py`)
  * and are the SPA approval boundary's contract too: the frontend's agent
- * approval schemas must accept exactly what these accept (same keys, enums and
- * limits). The `const NAME = [ … ] as const` / `{ … } as const` literals
- * below are plain on purpose so a frontend lockstep test can read this file as
- * text, like `client/allowlists.ts`.
+ * approval schemas must accept exactly what these accept, so their enums and
+ * limits live in the pure `agent-limits.ts`, which the SPA imports.
  *
  * Structural rules the Lambda checks on validate (one start, reachable end, no
  * orphans, cycles only inside declared loops) are NOT re-implemented here: the
@@ -15,60 +13,21 @@
  */
 import { z } from 'zod';
 import type { DocumentType } from '@smithy/types';
+import {
+  AGENT_BUDGET_RULES,
+  AGENT_LIMITS,
+  AGENT_MODEL_ROLES,
+  AGENT_SCHEDULE_EVERY,
+  AGENT_THRESHOLD_PER,
+  AGENT_VISIBILITIES,
+  WORKFLOW_EDGE_LABELS,
+  WORKFLOW_LIMITS,
+  WORKFLOW_LOOP_UNTIL,
+  WORKFLOW_NODE_ROLES,
+  WORKFLOW_NODE_TYPES,
+  WORKFLOW_SCHEMA_VERSION,
+} from './agent-limits.js';
 import { idProperty, idSchema } from './spec.js';
-
-const WORKFLOW_SCHEMA_VERSION = 'voc-workflow/1';
-
-// jscpd:ignore-start — mirrors frontend/src/api/workflowsApi.ts and frontend/src/assistant/approvals/agentSchemas.ts on purpose: separate packages, pinned by newTools.lockstep.test.ts
-const WORKFLOW_NODE_TYPES = [
-  'start', 'aggregate_reviews', 'select_or_create_project', 'select_personas', 'generate_personas',
-  'deep_research', 'write_prfaq', 'write_prd', 'persona_review', 'revise_document', 'build_prototype',
-  'collect_prototype_feedback', 'revise_prototype', 'final_review', 'duplicate_document', 'handoff', 'custom_llm', 'end',
-] as const;
-const WORKFLOW_NODE_ROLES = ['orchestrator', 'worker', 'reviewer', 'persona'] as const;
-const WORKFLOW_EDGE_LABELS = ['pass', 'fail', 'agreed', 'not_agreed'] as const;
-const WORKFLOW_LOOP_UNTIL = ['persona_agreement', 'review_pass'] as const;
-
-export const WORKFLOW_LIMITS = {
-  maxNodes: 60,
-  maxEdges: 200,
-  maxLoops: 20,
-  minRounds: 1,
-  maxRounds: 5,
-  maxNameChars: 200,
-  maxDescriptionChars: 2000,
-  maxTitleChars: 200,
-  maxInstructionsChars: 8000,
-  maxParamsJsonChars: 4000,
-  maxDefinitionJsonChars: 200_000,
-} as const;
-
-const AGENT_SCHEDULE_EVERY = ['12h', '24h', 'cron'] as const;
-const AGENT_THRESHOLD_PER = ['category', 'subcategory'] as const;
-const AGENT_VISIBILITIES = ['private', 'public'] as const;
-const AGENT_MODEL_ROLES = ['orchestrator', 'worker', 'reviewer', 'persona'] as const;
-
-export const AGENT_LIMITS = {
-  maxNameChars: 200,
-  maxDescriptionChars: 2000,
-  maxInstructionsChars: 8000,
-  maxCategories: 50,
-  maxSubcategories: 100,
-  maxCategoryNameChars: 64,
-  maxFixedPersonas: 20,
-  maxTriggers: 5,
-  maxCooldownHours: 720,
-  maxMinNew: 10_000,
-  maxThresholdCount: 100_000,
-  maxWindowDays: 365,
-  maxCronChars: 100,
-  maxTimezoneChars: 64,
-  maxModelIdChars: 128,
-  maxScheduledRunsPerDay: 2,
-  maxModelCallsPerRun: 1000,
-  maxMonthlyCallCap: 1_000_000,
-} as const;
-// jscpd:ignore-end of the accepted pair
 
 const jsonLength = (value: unknown) => JSON.stringify(value).length;
 
@@ -174,7 +133,7 @@ const agentModelsSchema = z.object(
 
 const agentBudgetSchema = z.object({
   max_scheduled_runs_per_day: z.number().int().min(0).max(AGENT_LIMITS.maxScheduledRunsPerDay),
-  max_model_calls_per_run: z.number().int().min(1).max(AGENT_LIMITS.maxModelCallsPerRun),
+  max_model_calls_per_run: z.number().int().min(AGENT_BUDGET_RULES.minModelCallsPerRun).max(AGENT_LIMITS.maxModelCallsPerRun),
   monthly_call_cap: z.number().int().min(0).max(AGENT_LIMITS.maxMonthlyCallCap),
 }).partial().strict();
 

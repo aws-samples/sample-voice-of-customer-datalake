@@ -106,9 +106,6 @@ export function defineClientTool<T extends Record<string, unknown>>(config: Clie
 
 // ── Shared argument schemas ──
 
-/** A calendar date argument (`YYYY-MM-DD`). */
-export const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a YYYY-MM-DD date');
-
 /** "a, b" of the parts that are present — for summaries of optional-field writes. */
 export function presentParts(parts: readonly (string | false)[]): string {
   return parts.filter(Boolean).join(', ');

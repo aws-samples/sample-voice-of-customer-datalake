@@ -15,6 +15,7 @@
 import { z } from 'zod';
 import { AssistantToolError } from '../errors.js';
 import { clip } from '../format.js';
+import { assistJobPollSchema } from './assist-job-values.js';
 
 export const ASSIST_POLL_INTERVAL_MS = 1500;
 /** Upper bound on one wait, whatever the deadline. */
@@ -24,14 +25,6 @@ export const ASSIST_DEADLINE_MARGIN_MS = 60_000;
 const MAX_ERROR_CHARS = 200;
 
 const startSchema = z.object({ job_id: z.string().min(1).max(128) });
-
-// jscpd:ignore-start — mirrors frontend/src/api/assistJobs.ts on purpose: separate packages, pinned by assistJobs.lockstep.test.ts
-const pollSchema = z.object({
-  status: z.enum(['pending', 'running', 'completed', 'failed']),
-  result: z.unknown().optional(),
-  error: z.string().nullish(),
-});
-// jscpd:ignore-end of the accepted pair
 
 export interface AssistJobClock {
   nowMs(): number;
@@ -70,7 +63,7 @@ export async function awaitAssistJob(clock: AssistJobClock, wait: AssistJobWait)
       throw new AssistantToolError('unavailable', `${wait.label} is taking too long and was not waited for. Try again later.`);
     }
     await clock.sleep(ASSIST_POLL_INTERVAL_MS);
-    const job = pollSchema.safeParse(await wait.poll(jobId));
+    const job = assistJobPollSchema.safeParse(await wait.poll(jobId));
     if (!job.success) throw unexpected(wait.label);
     if (job.data.status === 'completed') return job.data.result;
     if (job.data.status === 'failed') {
