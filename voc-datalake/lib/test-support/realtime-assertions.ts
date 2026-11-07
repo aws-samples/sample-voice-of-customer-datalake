@@ -11,7 +11,8 @@ import type { RealtimeNamespace } from '../utils/realtime';
 import { roleStatements } from './iam-statements';
 
 const RoleSchema = z.object({ Properties: z.object({ ManagedPolicyArns: z.array(z.unknown()).optional() }) });
-const POLICY_REFERENCE = /Realtime(Jobs|Chat|Runs)PublishPolicy/;
+// An IMPORT of Core's policy: a bare `Ref` to it would name a resource the role's stack does not have.
+const POLICY_REFERENCE = /^\{"Fn::ImportValue":"[\w-]+:ExportsOutputRefRealtime(Jobs|Chat|Runs)PublishPolicy\w+"\}$/;
 
 /** The namespaces whose publish policy the role `roleLogicalId` (exact id, or an id prefix) carries, sorted. */
 export function realtimeNamespacesOfRole(template: Template, roleLogicalId: string,
