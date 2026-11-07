@@ -299,7 +299,7 @@ reviews one read uses. The panel's live count reads `GET /metrics/sentiment`.
 round (`runtime/persona-round.ts`): one `consult_personas` call per persona (ids `mention_…`, one assistant
 message, review only, grounded on the tagged documents), then a `<mentions>` data block for a short synthesis.
 `consult_personas` takes `document_ids` (≤ 3). Persona results are stored JSON-safe (32,000 chars,
-`session/persona-result.ts` = SPA `sessions/personaResult.ts`), so the cards survive a reload.
+`session/persona-result.ts`, which the SPA imports through `@stream`), so the cards survive a reload.
 
 ### Integrations (integrations_handler.py)
 | Method | Path | Description |

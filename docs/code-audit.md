@@ -283,8 +283,8 @@ similarity >= 0.89` as three functions of ~58 nodes whose least similar pair sha
 differs (a limit, a message, a key) and decide: one helper, or a deliberate copy.
 
 **False-positive classes.** Copies that must stay separate (`product_doc_extractor` is stdlib + boto3 only;
-`plugins/_shared` vs `lambda/shared` are separate bundles; the SPA ↔ stream mirrors pinned by
-`*.lockstep.test.ts`); request validators with per-route limits and wording; small React components sharing
+`plugins/_shared` vs `lambda/shared` are separate bundles; the SPA ↔ stream mirrors still pinned by
+`*.lockstep.test.ts`, where the SPA does not yet import the stream module through `@stream`); request validators with per-route limits and wording; small React components sharing
 Tailwind vocabulary; CDK builders repeating one construct per Lambda (the 20 KB IAM split). Tiny decorator-registered
 functions (such as the `shared/api.py` exception handlers) sit under the size floor and in one file: they show
 with `--min-nodes 20 --same-file <file>`.

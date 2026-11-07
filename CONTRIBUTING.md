@@ -215,6 +215,16 @@ a `scripts/validate.sh` step (`validate-affected.sh` picks the ones whose inputs
 the gate: fix it, or allowlist it in `scripts/audit/allowlists/<tool>.json` with a reason. `npm run test:audit` runs
 their own tests and `npm run lint:audit` lints them (both gate steps too). See [docs/code-audit.md](docs/code-audit.md).
 
+### Code the SPA shares with the stream Lambda
+The assistant's wire contract, plan contract and several approval-card bounds live once, in the stream Lambda
+(`voc-datalake/lambda/stream/src`). The SPA imports them through the `@stream/*` alias
+(`voc-datalake/frontend/streamSource.ts`, with `zod` deduplicated so the bundle keeps one copy) instead of keeping a
+mirrored copy pinned by a lockstep test. Those modules run in the browser, so the `browser-safe` block of
+`lambda/stream/eslint.config.js` (`BROWSER_SAFE_FILES`) forbids Node built-ins, `@aws-sdk/*` and `@smithy/*` in them
+(a type-only import is fine), and `lambda/stream/src/browser-safe.test.ts` fails when the SPA imports a stream module,
+or a listed module imports a stream file, that the list does not name. When the SPA needs something the stream
+module does not have (its own message, an SPA-only builder), put it in a small SPA module next to its users.
+
 ### Optional: AI review before push
 `scripts/git-hooks/pre-push` reviews the diff you are pushing with three Kiro CLI agents (`.kiro/agents/`), run in
 parallel on each chunk of the diff:

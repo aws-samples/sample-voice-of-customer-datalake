@@ -6,7 +6,7 @@
  * agent-schemas.ts}` + `server/memory-shape.ts`).
  *
  * The stream package cannot be imported (separate npm package, zod 3), so its
- * source is read as TEXT — like allowlists.lockstep.test.ts — and its literal
+ * source is read as TEXT, and its literal
  * enums and limits are compared with the SPA's.
  */
 import { describe, it, expect } from 'vitest'

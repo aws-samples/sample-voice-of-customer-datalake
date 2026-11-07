@@ -1,11 +1,6 @@
 {
   "entries": [
-    {"key": "frontend:src/assistant/contract.ts#*", "reason": "Lockstep mirror of the stream's contract.ts: contract.lockstep.test.ts compares every export with the server file (knip-ignored for the same reason)."},
-    {"key": "stream:src/assistant/contract.ts#*", "reason": "Wire contract the SPA mirrors; the SPA lockstep specs read this FILE as text with `export const` regexes, so SPA-only names stay exported here."},
-    {"key": "stream:src/assistant/tools/client/allowlists.ts#*", "reason": "Allowlist pins compared with the SPA copy by allowlists.lockstep.test.ts (as text)."},
-    {"key": "frontend:src/assistant/plan/schema.ts#*", "reason": "SPA mirror of the stream plan contract: plan.lockstep.test.ts requires every stream export here (limits and wait kinds are read only by the stream's runner)."},
-    {"key": "frontend:src/assistant/plan/canonical.ts#*", "reason": "Plan contract mirror pinned by plan.lockstep.test.ts (write fingerprint is the stream runner's)."},
-    {"key": "frontend:src/assistant/approvals/schemas.ts#*_UPDATABLE_FIELDS", "reason": "Allowlist pins compared with the stream contract by allowlists.lockstep.test.ts."},
+    {"key": "stream:src/assistant/contract.ts#*", "reason": "The AG-UI wire contract, shared with the SPA: frontend/src imports it through @stream, which the stream program does not see, so the names only the SPA reads and the documented protocol constants stay exported here."},
     {"key": "frontend:src/assistant/approvals/userSchemas.ts#SPA_USER_LIMITS.*", "reason": "Bounds lockstepped with the stream's user schemas by userSchemas.lockstep.test.ts; only the spec reads these three."},
     {"key": "frontend:src/assistant/approvals/registry.ts#listWriteTools", "reason": "Test seam: registry.test.ts compares the registry with the stream's write-tool list."},
     {"key": "frontend:src/assistant/approvals/executionStore.ts#resetExecutions", "reason": "Test seam over the module-private execution store (knip ignoreIssues)."},
