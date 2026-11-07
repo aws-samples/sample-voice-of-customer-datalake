@@ -135,5 +135,37 @@
         "very_long": "1.000 caracteres ou mais"
       }
     }
+  },
+  "fields": {
+    "title": "Campos",
+    "description": "O que significa cada campo guardado de um feedback: o tipo, que etapa o define, se contém dados pessoais, o que uma política de origem de ocultação ou só resumo faz com ele e os valores permitidos. Os significados estão em inglês.",
+    "loading": "Carregando os campos…",
+    "empty": "A API não devolveu nenhum campo.",
+    "caption": "Campos de um feedback ({{table}})",
+    "keyBadge": "chave",
+    "redact": "Ocultar: {{effect}}",
+    "summaryOnly": "Só resumo: {{effect}}",
+    "columns": {
+      "field": "Campo",
+      "type": "Tipo",
+      "meaning": "Significado",
+      "setBy": "Definido por",
+      "personalData": "Dados pessoais",
+      "policies": "Com ocultação / só resumo",
+      "values": "Valores"
+    },
+    "pii": {
+      "customer_text": "Texto do cliente",
+      "personal": "Dados pessoais",
+      "derived_text": "Derivado do texto do cliente",
+      "none": "Nenhum"
+    },
+    "effects": {
+      "kept": "mantido",
+      "redacted": "ocultado",
+      "dropped": "removido",
+      "from_redacted": "derivado do texto ocultado",
+      "replaced": "substituído"
+    }
   }
 }

@@ -134,5 +134,37 @@
         "very_long": "1,000 文字以上"
       }
     }
+  },
+  "fields": {
+    "title": "フィールド",
+    "description": "フィードバック項目に保存される各フィールドの意味: 型、どのステップが設定するか、個人データを含むか、マスキングまたは要約のみのソースポリシーでどうなるか、使用できる値。意味は英語で表示されます。",
+    "loading": "フィールドを読み込んでいます…",
+    "empty": "API はフィールドを返しませんでした。",
+    "caption": "フィードバック項目のフィールド ({{table}})",
+    "keyBadge": "キー",
+    "redact": "マスキング: {{effect}}",
+    "summaryOnly": "要約のみ: {{effect}}",
+    "columns": {
+      "field": "フィールド",
+      "type": "型",
+      "meaning": "意味",
+      "setBy": "設定元",
+      "personalData": "個人データ",
+      "policies": "マスキング / 要約のみの場合",
+      "values": "値"
+    },
+    "pii": {
+      "customer_text": "顧客のテキスト",
+      "personal": "個人データ",
+      "derived_text": "顧客のテキストから派生",
+      "none": "なし"
+    },
+    "effects": {
+      "kept": "保持",
+      "redacted": "マスキング",
+      "dropped": "削除",
+      "from_redacted": "マスキング後のテキストから派生",
+      "replaced": "置換"
+    }
   }
 }

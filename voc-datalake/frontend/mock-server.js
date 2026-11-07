@@ -26,6 +26,7 @@ import { handleRadarRoutes } from './mock-radar.js';
 import { handleParticipantsRoutes } from './mock-participants.js';
 import { handleFeatureRequestRoutes } from './mock-feature-requests.js';
 import { handleDataQualityRoutes, stampBands } from './mock-data-quality.js';
+import { handleFeedbackCatalogueRoutes } from './mock-feedback-catalogue.js';
 import { handlePersonaRoutes } from './mock-personas.js';
 import { radarBrandError } from './mock-radar-brands.js';
 import {
@@ -1338,6 +1339,7 @@ function handleDomainModules(req, res, url) {
   return handlePrioritizationConfigRoutes(req, res, url, send, shared)
     || handleDimensionRoutes(req, res, url, send, shared)
     || handleDataQualityRoutes(req, res, url, send, shared)
+    || handleFeedbackCatalogueRoutes(req, res, url, send)
     || handleScopeRoutes(req, res, url, send, shared)
     || handleAssistJobRoutes(req, res, url, send)
     || handleImportHistoryRoutes(req, res, url, send)

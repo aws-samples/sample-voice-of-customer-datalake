@@ -135,5 +135,37 @@
         "very_long": "1000 caracteres o más"
       }
     }
+  },
+  "fields": {
+    "title": "Campos",
+    "description": "Qué significa cada campo guardado de un comentario: su tipo, qué paso lo establece, si contiene datos personales, qué le hace una política de origen de ocultación o de solo resumen y sus valores permitidos. Los significados están en inglés.",
+    "loading": "Cargando los campos…",
+    "empty": "La API no devolvió ningún campo.",
+    "caption": "Campos de un comentario ({{table}})",
+    "keyBadge": "clave",
+    "redact": "Ocultar: {{effect}}",
+    "summaryOnly": "Solo resumen: {{effect}}",
+    "columns": {
+      "field": "Campo",
+      "type": "Tipo",
+      "meaning": "Significado",
+      "setBy": "Lo establece",
+      "personalData": "Datos personales",
+      "policies": "Con ocultación / solo resumen",
+      "values": "Valores"
+    },
+    "pii": {
+      "customer_text": "Texto del cliente",
+      "personal": "Datos personales",
+      "derived_text": "Derivado del texto del cliente",
+      "none": "Ninguno"
+    },
+    "effects": {
+      "kept": "se conserva",
+      "redacted": "se oculta",
+      "dropped": "se elimina",
+      "from_redacted": "se deriva del texto ocultado",
+      "replaced": "se sustituye"
+    }
   }
 }

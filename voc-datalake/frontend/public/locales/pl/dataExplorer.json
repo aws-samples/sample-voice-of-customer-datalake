@@ -136,5 +136,37 @@
         "very_long": "1000 znaków lub więcej"
       }
     }
+  },
+  "fields": {
+    "title": "Pola",
+    "description": "Co oznacza każde zapisane pole opinii: jego typ, który krok je ustawia, czy zawiera dane osobowe, co robi z nim zasada źródła „zamaskuj” lub „tylko podsumowanie” oraz jego dozwolone wartości. Znaczenia są po angielsku.",
+    "loading": "Wczytywanie pól…",
+    "empty": "API nie zwróciło żadnych pól.",
+    "caption": "Pola opinii ({{table}})",
+    "keyBadge": "klucz",
+    "redact": "Maskowanie: {{effect}}",
+    "summaryOnly": "Tylko podsumowanie: {{effect}}",
+    "columns": {
+      "field": "Pole",
+      "type": "Typ",
+      "meaning": "Znaczenie",
+      "setBy": "Ustawia",
+      "personalData": "Dane osobowe",
+      "policies": "Przy maskowaniu / tylko podsumowaniu",
+      "values": "Wartości"
+    },
+    "pii": {
+      "customer_text": "Tekst klienta",
+      "personal": "Dane osobowe",
+      "derived_text": "Wywiedzione z tekstu klienta",
+      "none": "Brak"
+    },
+    "effects": {
+      "kept": "zachowane",
+      "redacted": "zamaskowane",
+      "dropped": "usunięte",
+      "from_redacted": "wywiedzione z zamaskowanego tekstu",
+      "replaced": "zastąpione"
+    }
   }
 }
