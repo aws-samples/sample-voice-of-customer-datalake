@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 from botocore.credentials import Credentials
-from botocore.exceptions import ClientError
 
 from shared import realtime
 
@@ -19,7 +18,6 @@ SUB = '0a1b2c3d-1111-4222-8333-444455556666'
 def _clean_env(monkeypatch):
     monkeypatch.delenv(realtime.HTTP_DNS_ENV, raising=False)
     monkeypatch.setenv('AWS_REGION', 'us-east-1')
-    realtime._parameter_cache.update(host=None, checked_at=None)
 
 
 @pytest.fixture
@@ -91,25 +89,9 @@ class TestPublish:
         assert realtime.publish('jobs', SUB, {'type': 'job'}) is False
         post.assert_not_called()
 
-
-@pytest.mark.usefixtures('credentials')
-class TestParameterEndpoint:
-    def test_reads_the_host_from_the_parameter_once(self, monkeypatch, post):
+    def test_an_ssm_reference_is_no_endpoint(self, monkeypatch, post):
+        # The 6.04.00 pre-release form (`ssm:<parameter>`) is gone: such a value is not a host.
         monkeypatch.setenv(realtime.HTTP_DNS_ENV, 'ssm:/voc/realtime/event-api-http-dns')
-        ssm = MagicMock()
-        ssm.get_parameter.return_value = {'Parameter': {'Value': HOST}}
-        with patch.object(realtime.boto3, 'client', return_value=ssm):
-            assert realtime.publish('runs', SUB, {'type': 'run'}) is True
-            assert realtime.publish('runs', SUB, {'type': 'run'}) is True
-        ssm.get_parameter.assert_called_once_with(Name='/voc/realtime/event-api-http-dns')
-        assert post.call_args.args[0] == f'https://{HOST}/event'
-
-    def test_a_missing_parameter_turns_notices_off_and_is_not_reread_at_once(self, monkeypatch, post):
-        monkeypatch.setenv(realtime.HTTP_DNS_ENV, 'ssm:/voc/realtime/event-api-http-dns')
-        ssm = MagicMock()
-        ssm.get_parameter.side_effect = ClientError({'Error': {'Code': 'ParameterNotFound'}}, 'GetParameter')
-        with patch.object(realtime.boto3, 'client', return_value=ssm):
-            assert realtime.publish('runs', SUB, {'type': 'run'}) is False
-            assert realtime.configured() is False
-        ssm.get_parameter.assert_called_once()
+        assert realtime.configured() is False
+        assert realtime.publish('runs', SUB, {'type': 'run'}) is False
         post.assert_not_called()
