@@ -211,6 +211,12 @@ def _stored_token(token_id: str) -> dict | None:
     return item if isinstance(item, dict) else None
 
 
+def _user_attributes(user: Mapping[str, Any]) -> dict[str, Any]:
+    """A Cognito ``AdminGetUser`` answer's attributes, by name."""
+    return {a['Name']: a.get('Value') for a in user.get('UserAttributes', [])
+            if isinstance(a, dict) and isinstance(a.get('Name'), str)}
+
+
 def _minter_is_current(row: Mapping[str, Any]) -> bool:
     """The minter still exists in Cognito, is enabled, and is the same person.
 
@@ -231,7 +237,7 @@ def _minter_is_current(row: Mapping[str, Any]) -> bool:
         raise AuthBackendUnavailable('cognito') from exc
     except BotoCoreError as exc:
         raise AuthBackendUnavailable('cognito') from exc
-    attributes = {a.get('Name'): a.get('Value') for a in user.get('UserAttributes', []) if isinstance(a, dict)}
+    attributes = _user_attributes(user)
     return bool(user.get('Enabled', False)) and attributes.get('sub') == minter
 
 
@@ -249,7 +255,7 @@ def _minter_identity(row: Mapping[str, Any]) -> MinterIdentity | None:
     except (ClientError, BotoCoreError) as exc:
         logger.warning('Minter identity lookup failed', extra={'error_type': type(exc).__name__})
         return None
-    attributes = {a.get('Name'): a.get('Value') for a in user.get('UserAttributes', []) if isinstance(a, dict)}
+    attributes = _user_attributes(user)
     email, verified = attributes.get('email'), attributes.get('email_verified')
     if attributes.get('sub') != row.get('created_by') or not isinstance(email, str) or not email \
             or str(verified).lower() != 'true':
