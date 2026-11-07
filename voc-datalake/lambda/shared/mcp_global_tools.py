@@ -23,9 +23,9 @@ route below and the role's invoke grant in step with the stack.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Final
 
-from shared import mcp_global_tokens as gt
 from shared.dimension_config import DIMENSION_KEY_RE, MAX_DIMENSIONS, parse_dims_param
 from shared.mcp_global_kit import (
     BOOL_SCHEMA,
@@ -197,10 +197,19 @@ def _feature_requests(payload: object, args: Mapping[str, Any]) -> object:
 # minted at /connect/tokens behind the app-pool authorizer, and the minter is re-checked in that pool
 # (USER_POOL_ID) on every call. So the issuer is THIS function's own app pool, from its environment —
 # never the request, and never the board pool, which therefore cannot be claimed through MCP. The email
-# is a service address naming the credential (``.invalid`` is reserved, RFC 2606: it is nobody's
-# mailbox), never the minter's, as in ``mcp_delegate.synthetic_claims``. An app-pool caller's board scope
-# never depends on its email (every non-archived board), and `cognito:groups` stays empty: never admin.
-SERVICE_EMAIL_DOMAIN: Final = 'mcp.invalid'
+# and name are the MINTER's, read from Cognito on this call (a verified email only): a request or +1 made
+# over MCP is the person's, exactly as if they posted it in the app, so one person supports a request once
+# however many tokens they hold. The subject stays the credential (`mcp:<token_id>`), so the token is still
+# traceable. An app-pool caller's board scope never depends on its email (every non-archived board), and
+# `cognito:groups` stays empty: never admin.
+
+
+@dataclass(frozen=True)
+class MinterIdentity:
+    """The token minter's verified email and display name, as Cognito holds them now."""
+
+    email: str
+    name: str
 
 
 def app_pool_issuer(pool_id: str) -> str | None:
@@ -211,15 +220,16 @@ def app_pool_issuer(pool_id: str) -> str | None:
     return f'https://cognito-idp.{region}.amazonaws.com/{pool_id}'
 
 
-def board_route_claims(claims: Mapping[str, str], token_id: object, pool_id: str) -> dict[str, str]:
-    """``claims`` plus the app-pool issuer and a verified service address; unchanged when either is unknown.
+def board_route_claims(claims: Mapping[str, str], minter: MinterIdentity | None, pool_id: str) -> dict[str, str]:
+    """``claims`` plus the app-pool issuer and the minter's verified email and name; unchanged when either the
+    issuer or the minter is unknown.
 
     Fail closed: without them the board route refuses the call (403), it never widens it.
     """
     issuer = app_pool_issuer(pool_id)
-    if issuer is None or not gt.is_path_id(token_id):
+    if issuer is None or minter is None:
         return dict(claims)
-    return {**claims, 'iss': issuer, 'email': f'mcp+{token_id}@{SERVICE_EMAIL_DOMAIN}', 'email_verified': 'true'}
+    return {**claims, 'iss': issuer, 'email': minter.email, 'name': minter.name, 'email_verified': 'true'}
 
 
 # ── Builders ────────────────────────────────────────────────────────────────

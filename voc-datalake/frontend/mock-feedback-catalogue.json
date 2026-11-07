@@ -1,0 +1,1104 @@
+{
+  "version": 1,
+  "table": "voc-feedback",
+  "steps": [
+    {
+      "name": "producer",
+      "meaning": "Copied from the queue message the source sent (plugin, webhook, import, feedback form), after the source policy (shared/source_policy.py) and the queue schema (shared/ingest_schemas.py)"
+    },
+    {
+      "name": "processor",
+      "meaning": "Computed by the feedback processor when it stores the item (lambda/processor/handler.py)"
+    },
+    {
+      "name": "enrichment",
+      "meaning": "Comprehend language and sentiment, Translate, and the enrichment model (shared/categorization.py run_enrichment)"
+    },
+    {
+      "name": "classification",
+      "meaning": "Dimension and tag resolution: message, source profile, category product, then the model (shared/feedback_dimensions.py)"
+    },
+    {
+      "name": "provenance",
+      "meaning": "How the item was made (shared/silver_provenance.py, TENETS.md D2)"
+    },
+    {
+      "name": "storage_policy",
+      "meaning": "The source's PII policy applied to the stored item (processor apply_storage_policy)"
+    },
+    {
+      "name": "source_update",
+      "meaning": "A newer copy from an update-capable source or a confirmed CSV correction (shared/source_updates.py, shared/csv_updates.py)"
+    },
+    {
+      "name": "reprocess",
+      "meaning": "A category reprocess job (lambda/jobs/category_reprocess)"
+    },
+    {
+      "name": "edit",
+      "meaning": "A person: PUT /feedback/{id}/category|dimensions, PUT /data-explorer/feedback"
+    }
+  ],
+  "policy_effects": [
+    {
+      "name": "kept",
+      "meaning": "stored as the producer sent it"
+    },
+    {
+      "name": "redacted",
+      "meaning": "personal data replaced by placeholders before anything is archived or queued"
+    },
+    {
+      "name": "dropped",
+      "meaning": "not stored"
+    },
+    {
+      "name": "from_redacted",
+      "meaning": "made from the redacted text"
+    },
+    {
+      "name": "replaced",
+      "meaning": "the model's problem_summary (or `[withheld]`) instead of the customer's words"
+    }
+  ],
+  "fields": [
+    {
+      "name": "pk",
+      "type": "string",
+      "meaning": "`SOURCE#{brand_name}`: the partition of the source the item came from",
+      "set_by": [
+        "processor"
+      ],
+      "always_present": true,
+      "key": true,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "sk",
+      "type": "string",
+      "meaning": "`FEEDBACK#{feedback_id}`",
+      "set_by": [
+        "processor"
+      ],
+      "always_present": true,
+      "key": true,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "gsi1pk",
+      "type": "string",
+      "meaning": "`DATE#{YYYY-MM-DD}` of processing (index gsi1-by-date)",
+      "set_by": [
+        "processor"
+      ],
+      "always_present": true,
+      "key": true,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "gsi1sk",
+      "type": "string",
+      "meaning": "`{processed_at}#{feedback_id}` (gsi1-by-date, gsi5-by-channel)",
+      "set_by": [
+        "processor"
+      ],
+      "always_present": true,
+      "key": true,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "gsi2pk",
+      "type": "string",
+      "meaning": "`CATEGORY#{category}` (index gsi2-by-category)",
+      "set_by": [
+        "processor",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": true,
+      "key": true,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "gsi2sk",
+      "type": "string",
+      "meaning": "`{sentiment_score}#{processed_at}`",
+      "set_by": [
+        "processor",
+        "source_update"
+      ],
+      "always_present": true,
+      "key": true,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "gsi3pk",
+      "type": "string",
+      "meaning": "`URGENCY#{urgency}` (index gsi3-by-urgency)",
+      "set_by": [
+        "processor",
+        "source_update"
+      ],
+      "always_present": true,
+      "key": true,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "gsi3sk",
+      "type": "string",
+      "meaning": "`processed_at` (gsi3-by-urgency)",
+      "set_by": [
+        "processor"
+      ],
+      "always_present": true,
+      "key": true,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "feedback_id",
+      "type": "string",
+      "meaning": "The item id, unique in the deployment (index gsi4-by-feedback-id)",
+      "set_by": [
+        "processor"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "source_id",
+      "type": "string",
+      "meaning": "The id the source gave the item (its own review / issue id)",
+      "set_by": [
+        "producer"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "source_platform",
+      "type": "string",
+      "meaning": "The source (plugin id or import path) that sent the item",
+      "set_by": [
+        "producer"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "source_channel",
+      "type": "string",
+      "meaning": "The source's channel (e.g. `review`, `issue`, `form`); `unknown` when the source sends none (index gsi5-by-channel)",
+      "set_by": [
+        "producer",
+        "source_update"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "brand_name",
+      "type": "string",
+      "meaning": "The label the item is filed under: the message `brand_name`, else the source",
+      "set_by": [
+        "processor"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "ingestion_method",
+      "type": "string",
+      "meaning": "How the item entered: `manual`, `csv_upload`, `json_upload`, …",
+      "set_by": [
+        "producer"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "source_url",
+      "type": "string",
+      "meaning": "Link to the item at its source (http/https; redacted under a `redact` policy)",
+      "set_by": [
+        "producer",
+        "source_update",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "personal",
+      "under_redact": "redacted",
+      "under_summary_only": "redacted"
+    },
+    {
+      "name": "source_created_at",
+      "type": "string",
+      "meaning": "When the customer wrote it (ISO 8601, the source clock)",
+      "set_by": [
+        "producer",
+        "source_update"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "ingested_at",
+      "type": "string",
+      "meaning": "When the producer fetched it (ISO 8601)",
+      "set_by": [
+        "producer"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "processed_at",
+      "type": "string",
+      "meaning": "When the processor stored it (ISO 8601 UTC)",
+      "set_by": [
+        "processor"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "date",
+      "type": "string",
+      "meaning": "`YYYY-MM-DD` of processing: the day the metrics count it under",
+      "set_by": [
+        "processor"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "s3_raw_uri",
+      "type": "string",
+      "meaning": "The immutable raw copy (`s3://…/raw/{source}/…`); absent when the source policy archives nothing",
+      "set_by": [
+        "producer",
+        "processor"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "dropped",
+      "under_summary_only": "dropped"
+    },
+    {
+      "name": "csv_row_id",
+      "type": "string",
+      "meaning": "A CSV row's own id, unique only within its file",
+      "set_by": [
+        "producer",
+        "source_update"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "csv_dataset",
+      "type": "string",
+      "meaning": "The named CSV dataset the row belongs to (docs/csv-import.md)",
+      "set_by": [
+        "producer",
+        "source_update"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "csv_content_hash",
+      "type": "string",
+      "meaning": "Digest of a dataset row's content, compared by the next upload",
+      "set_by": [
+        "producer",
+        "source_update"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "issue_attributes",
+      "type": "map",
+      "meaning": "Issue-tracker fields (version, labels, state, reactions, …) of an update-capable source; sub-fields listed under `sub_fields`",
+      "set_by": [
+        "producer",
+        "source_update"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "sub_fields": [
+        {
+          "name": "kind",
+          "type": "str"
+        },
+        {
+          "name": "repo",
+          "type": "str"
+        },
+        {
+          "name": "number",
+          "type": "int"
+        },
+        {
+          "name": "parent_id",
+          "type": "str | None"
+        },
+        {
+          "name": "state",
+          "type": "str | None"
+        },
+        {
+          "name": "state_reason",
+          "type": "str | None"
+        },
+        {
+          "name": "labels",
+          "type": "list"
+        },
+        {
+          "name": "plus_one",
+          "type": "int"
+        },
+        {
+          "name": "reactions_total",
+          "type": "int"
+        },
+        {
+          "name": "author_association",
+          "type": "str | None"
+        },
+        {
+          "name": "milestone",
+          "type": "str | None"
+        },
+        {
+          "name": "linked_prs",
+          "type": "list"
+        },
+        {
+          "name": "comment_count",
+          "type": "int"
+        },
+        {
+          "name": "updated_at",
+          "type": "str | None"
+        },
+        {
+          "name": "software_version",
+          "type": "str | None"
+        },
+        {
+          "name": "version_source",
+          "type": "str | None"
+        },
+        {
+          "name": "component",
+          "type": "str | None"
+        },
+        {
+          "name": "error_signature",
+          "type": "str | None"
+        },
+        {
+          "name": "has_repro",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "source_refreshed_at",
+      "type": "string",
+      "meaning": "When a newer copy from the source last refreshed it",
+      "set_by": [
+        "source_update"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "original_text",
+      "type": "string",
+      "meaning": "The customer's text as received (after the source policy); under `summary_only` the model's summary or `[withheld]`",
+      "set_by": [
+        "producer",
+        "storage_policy",
+        "source_update",
+        "edit"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "customer_text",
+      "under_redact": "redacted",
+      "under_summary_only": "replaced"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "meaning": "Title of the review / issue",
+      "set_by": [
+        "producer",
+        "source_update"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "customer_text",
+      "under_redact": "redacted",
+      "under_summary_only": "dropped"
+    },
+    {
+      "name": "author",
+      "type": "string",
+      "meaning": "The author's name or handle (dropped under `redact`)",
+      "set_by": [
+        "producer"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "personal",
+      "under_redact": "dropped",
+      "under_summary_only": "dropped"
+    },
+    {
+      "name": "metadata",
+      "type": "map",
+      "meaning": "Source-specific extra fields (e.g. app version, form custom fields; `email` lower-cased)",
+      "set_by": [
+        "producer"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "personal",
+      "under_redact": "redacted",
+      "under_summary_only": "dropped"
+    },
+    {
+      "name": "rating",
+      "type": "number",
+      "meaning": "Star rating, 1 to 5 when the source has one",
+      "set_by": [
+        "producer",
+        "source_update",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "original_language",
+      "type": "string",
+      "meaning": "Language of `original_text` (Comprehend, ISO 639-1)",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "normalized_text",
+      "type": "string",
+      "meaning": "The text translated into the primary language; absent when it is already in it",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "customer_text",
+      "under_redact": "from_redacted",
+      "under_summary_only": "dropped"
+    },
+    {
+      "name": "category",
+      "type": "string",
+      "meaning": "Configured category (GET /settings/categories); `other` when the model picks none",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "subcategory",
+      "type": "string",
+      "meaning": "Configured subcategory of `category`",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "sentiment_label",
+      "type": "string",
+      "meaning": "Overall sentiment",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "mixed",
+        "negative",
+        "neutral",
+        "positive"
+      ]
+    },
+    {
+      "name": "sentiment_score",
+      "type": "number",
+      "meaning": "Sentiment from -1 (negative) to 1 (positive), 3 decimals",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "urgency",
+      "type": "string",
+      "meaning": "How soon it needs attention",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    {
+      "name": "impact_area",
+      "type": "string",
+      "meaning": "The part of the business it affects",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "brand",
+        "cx",
+        "legal",
+        "operations",
+        "other",
+        "pricing",
+        "product",
+        "tech"
+      ]
+    },
+    {
+      "name": "journey_stage",
+      "type": "string",
+      "meaning": "Customer-journey stage it was written in",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "advocacy",
+        "awareness",
+        "consideration",
+        "delivery",
+        "purchase",
+        "retention",
+        "support",
+        "unknown",
+        "usage"
+      ]
+    },
+    {
+      "name": "problem_summary",
+      "type": "string",
+      "meaning": "The model's one-line summary of the problem",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "derived_text",
+      "under_redact": "from_redacted",
+      "under_summary_only": "from_redacted"
+    },
+    {
+      "name": "problem_root_cause_hypothesis",
+      "type": "string",
+      "meaning": "The model's guess at the cause",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "derived_text",
+      "under_redact": "from_redacted",
+      "under_summary_only": "from_redacted"
+    },
+    {
+      "name": "direct_customer_quote",
+      "type": "string",
+      "meaning": "The most telling sentence, quoted verbatim",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "customer_text",
+      "under_redact": "from_redacted",
+      "under_summary_only": "dropped"
+    },
+    {
+      "name": "persona_name",
+      "type": "string",
+      "meaning": "Inferred customer archetype name",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "derived_text",
+      "under_redact": "from_redacted",
+      "under_summary_only": "from_redacted"
+    },
+    {
+      "name": "persona_type",
+      "type": "string",
+      "meaning": "Inferred relationship to the brand",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "advocate",
+        "churn_risk",
+        "existing_customer",
+        "prospect",
+        "unknown"
+      ]
+    },
+    {
+      "name": "persona_attributes",
+      "type": "map",
+      "meaning": "`{inferred_segment, confidence}` of the persona",
+      "set_by": [
+        "enrichment",
+        "source_update",
+        "reprocess"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "usefulness",
+      "type": "string",
+      "meaning": "Heuristic usefulness band (docs/data-quality.md); absent = unrated",
+      "set_by": [
+        "processor",
+        "source_update"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    {
+      "name": "dimensions",
+      "type": "map",
+      "meaning": "`{key: value}` over the configured dimensions (GET /settings/dimensions) and the built-in `feedback_type`",
+      "set_by": [
+        "classification",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "builtin_dimensions": {
+        "feedback_type": [
+          "bug",
+          "service_failure",
+          "feature_request",
+          "usability",
+          "performance",
+          "pricing_billing",
+          "support_experience",
+          "praise",
+          "question",
+          "other"
+        ]
+      }
+    },
+    {
+      "name": "dimension_sources",
+      "type": "map",
+      "meaning": "`{key: where the value came from}`",
+      "set_by": [
+        "classification",
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "source",
+        "profile",
+        "category",
+        "ai",
+        "manual",
+        "reprocess"
+      ]
+    },
+    {
+      "name": "tags",
+      "type": "list",
+      "meaning": "Free tags from the message, the source profile or a person",
+      "set_by": [
+        "classification",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "category_source",
+      "type": "string",
+      "meaning": "Who last set the category: `manual` (a person; never moved by a job) or `reprocess`; absent = the model",
+      "set_by": [
+        "reprocess",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "manual",
+        "reprocess"
+      ]
+    },
+    {
+      "name": "category_override",
+      "type": "map",
+      "meaning": "Audit of the last manual category change `{previous_category, previous_subcategory, by_sub, by_username, at}`",
+      "set_by": [
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "personal",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "category_reprocessed_at",
+      "type": "string",
+      "meaning": "When a reprocess job last re-categorised it",
+      "set_by": [
+        "reprocess"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "dimensions_reprocessed_at",
+      "type": "string",
+      "meaning": "When a dimensions reprocess job last re-ran it",
+      "set_by": [
+        "reprocess"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "pipeline_version",
+      "type": "string",
+      "meaning": "App release that enriched it (`unknown` when unset)",
+      "set_by": [
+        "provenance"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "enrichment_mode",
+      "type": "string",
+      "meaning": "How the enriched fields were made",
+      "set_by": [
+        "provenance"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "llm",
+        "defaults",
+        "reprocess_processed",
+        "reprocess_raw",
+        "reprocess_dimensions",
+        "source_update"
+      ]
+    },
+    {
+      "name": "enriched_at",
+      "type": "string",
+      "meaning": "When the enriched fields were made (ISO 8601 UTC)",
+      "set_by": [
+        "provenance"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "llm_metadata",
+      "type": "map",
+      "meaning": "`{model_name, requested_model, prompt_version, latency_ms, error?}`: `model_name` answered, `requested_model` was asked (they differ after a capacity fallback)",
+      "set_by": [
+        "provenance"
+      ],
+      "always_present": true,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "pii_policy",
+      "type": "string",
+      "meaning": "The PII policy the item was stored under; absent = `allow`",
+      "set_by": [
+        "storage_policy",
+        "source_update"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "allow",
+        "redact",
+        "summary_only"
+      ]
+    },
+    {
+      "name": "updated_by",
+      "type": "map",
+      "meaning": "`{sub, kind}` of the last in-place change (`system` for a source)",
+      "set_by": [
+        "source_update",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "personal",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "meaning": "When the item last changed in place (ISO 8601 UTC)",
+      "set_by": [
+        "source_update",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept"
+    },
+    {
+      "name": "change_reason",
+      "type": "string",
+      "meaning": "Why it last changed in place",
+      "set_by": [
+        "source_update",
+        "reprocess",
+        "edit"
+      ],
+      "always_present": false,
+      "key": false,
+      "pii": "none",
+      "under_redact": "kept",
+      "under_summary_only": "kept",
+      "values": [
+        "category_edit",
+        "csv_correction",
+        "data_explorer_edit",
+        "dimensions_edit",
+        "reprocess",
+        "source_update"
+      ]
+    }
+  ]
+}

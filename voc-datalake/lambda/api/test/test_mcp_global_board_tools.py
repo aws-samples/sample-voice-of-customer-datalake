@@ -18,12 +18,19 @@ import mcp_global_handler as h
 from shared import engagement_identity
 from shared.exceptions import AuthorizationError
 from shared.mcp_delegate import DomainCall, DomainResult, build_proxy_event
-from shared.mcp_global_tools import TOOLS_BY_NAME, InvalidToolArgument, app_pool_issuer, board_route_claims
+from shared.mcp_global_tools import (
+    TOOLS_BY_NAME,
+    InvalidToolArgument,
+    MinterIdentity,
+    app_pool_issuer,
+    board_route_claims,
+)
 
 SEARCH = TOOLS_BY_NAME['search_feature_requests']
 APP_POOL = 'eu-west-1_AppPool1'
 BOARD_POOL = 'eu-west-1_BoardPool1'
 ROW = {'token_id': 'gmt_tok1', 'scope': 'read', 'created_by': 'alice-sub', 'created_by_username': 'alice'}
+ALICE = MinterIdentity(email='alice@example.com', name='Alice Example')
 SLIM = {'request_id': 'fr_1', 'board_id': 'brd_sales', 'title': 'Seat map', 'description': 'Pick a seat early',
         'status': 'open', 'supporters': 4, 'category': 'booking', 'sentiment': 'negative',
         'problem_summary': 'Cannot pick a seat', 'created_at': '2026-05-01T10:00:00Z'}
@@ -31,7 +38,8 @@ SLIM = {'request_id': 'fr_1', 'board_id': 'brd_sales', 'title': 'Seat map', 'des
 
 def _run(arguments: dict, answer: DomainResult, tool=SEARCH) -> tuple[dict, str, MagicMock]:
     call_domain = MagicMock(return_value=answer)
-    with patch.object(h, 'call_domain', call_domain), patch.dict('os.environ', {'USER_POOL_ID': APP_POOL}):
+    with patch.object(h, 'call_domain', call_domain), patch.object(h, '_minter_identity', return_value=ALICE), \
+            patch.dict('os.environ', {'USER_POOL_ID': APP_POOL}):
         content, outcome = h._run_tool(h.ToolCall(tool, arguments, None), ROW)
     return content, outcome, call_domain
 
@@ -81,12 +89,12 @@ class TestTheResult:
 
 
 class TestTheClaims:
-    def test_carry_the_app_pool_issuer_and_a_verified_service_address(self):
+    def test_carry_the_app_pool_issuer_and_the_minter_s_verified_email_and_name(self):
         _, _, call_domain = _run({}, DomainResult(200, {'items': []}))
         claims = call_domain.call_args.kwargs['claims']
         assert claims == {'sub': 'mcp:gmt_tok1', 'cognito:groups': '', 'voc:acting_subject': 'alice-sub',
                           'iss': f'https://cognito-idp.eu-west-1.amazonaws.com/{APP_POOL}',
-                          'email': 'mcp+gmt_tok1@mcp.invalid', 'email_verified': 'true'}
+                          'email': 'alice@example.com', 'name': 'Alice Example', 'email_verified': 'true'}
 
     def test_resolve_to_a_non_admin_app_pool_viewer(self):
         _, _, call_domain = _run({}, DomainResult(200, {'items': []}))
@@ -95,7 +103,7 @@ class TestTheClaims:
         env = {'APP_USER_POOL_ID': APP_POOL, 'BOARD_USER_POOL_ID': BOARD_POOL}
         with patch.dict('os.environ', env):
             viewer = engagement_identity.board_viewer(event)
-        assert (viewer.pool, viewer.is_admin, viewer.email) == ('app', False, 'mcp+gmt_tok1@mcp.invalid')
+        assert (viewer.pool, viewer.is_admin, viewer.email, viewer.name) == ('app', False, 'alice@example.com', 'Alice Example')
 
     def test_no_other_tool_gets_them(self):
         _, _, call_domain = _run({}, DomainResult(200, {'projects': []}), tool=TOOLS_BY_NAME['list_projects'])
@@ -109,11 +117,10 @@ class TestTheClaims:
         assert (claims['iss'].endswith(APP_POOL), claims['email_verified']) == (True, 'true')
         assert BOARD_POOL not in json.dumps(claims)
 
-    @pytest.mark.parametrize(('token_id', 'pool'), [('gmt_tok1', ''), ('gmt_tok1', 'nopool'), ('', APP_POOL),
-                                                     ('a/b', APP_POOL), (None, APP_POOL)])
-    def test_without_a_pool_or_a_token_id_they_stay_unchanged_and_the_route_refuses(self, token_id, pool):
+    @pytest.mark.parametrize(('minter', 'pool'), [(ALICE, ''), (ALICE, 'nopool'), (None, APP_POOL)])
+    def test_without_a_pool_or_a_verified_minter_they_stay_unchanged_and_the_route_refuses(self, minter, pool):
         base = {'sub': 'mcp:x', 'cognito:groups': '', 'email': 'mcp:x'}
-        claims = board_route_claims(base, token_id, pool)
+        claims = board_route_claims(base, minter, pool)
         assert claims == base
         with patch.dict('os.environ', {'APP_USER_POOL_ID': APP_POOL}), pytest.raises(AuthorizationError):
             engagement_identity.board_viewer({'requestContext': {'authorizer': {'claims': claims}}})
@@ -124,3 +131,43 @@ class TestTheClaims:
     ('', None), ('us-east-1', None), ('_Abc', None), ('us-east-1_', None)])
 def test_app_pool_issuer(pool, issuer):
     assert app_pool_issuer(pool) == issuer
+
+
+def _cognito_user(attributes: dict[str, str]) -> MagicMock:
+    cognito = MagicMock()
+    cognito.admin_get_user.return_value = {'UserAttributes': [{'Name': k, 'Value': v} for k, v in attributes.items()]}
+    return cognito
+
+
+class TestTheMinterIdentity:
+    """The board routes record a request or +1 under the person: their verified email, read now."""
+
+    def test_is_the_minter_s_verified_email_lower_cased_and_their_name(self):
+        cognito = _cognito_user({'sub': 'alice-sub', 'email': ' Alice@Example.com ', 'email_verified': 'true',
+                                 'name': ' Alice Example '})
+        with patch.object(h, '_cognito_client', return_value=cognito), patch.dict('os.environ', {'USER_POOL_ID': APP_POOL}):
+            identity = h._minter_identity(ROW)
+        assert identity == MinterIdentity(email='alice@example.com', name='Alice Example')
+        cognito.admin_get_user.assert_called_once_with(UserPoolId=APP_POOL, Username='alice')
+
+    @pytest.mark.parametrize('attributes', [
+        {'sub': 'alice-sub', 'email': 'alice@example.com', 'email_verified': 'false'},
+        {'sub': 'alice-sub', 'email_verified': 'true'},
+        {'sub': 'someone-else', 'email': 'alice@example.com', 'email_verified': 'true'},
+    ])
+    def test_is_none_without_a_verified_email_of_the_same_person(self, attributes):
+        with patch.object(h, '_cognito_client', return_value=_cognito_user(attributes)), \
+                patch.dict('os.environ', {'USER_POOL_ID': APP_POOL}):
+            assert h._minter_identity(ROW) is None
+
+    def test_is_none_when_cognito_fails(self):
+        cognito = MagicMock()
+        cognito.admin_get_user.side_effect = h.BotoCoreError()
+        with patch.object(h, '_cognito_client', return_value=cognito), patch.dict('os.environ', {'USER_POOL_ID': APP_POOL}):
+            assert h._minter_identity(ROW) is None
+
+    @pytest.mark.parametrize(('row', 'pool'), [({**ROW, 'created_by_username': ''}, APP_POOL), (ROW, '')])
+    def test_is_none_without_a_username_or_a_pool(self, row, pool):
+        with patch.object(h, '_cognito_client') as client, patch.dict('os.environ', {'USER_POOL_ID': pool}):
+            assert h._minter_identity(row) is None
+        client.assert_not_called()

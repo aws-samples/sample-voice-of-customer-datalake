@@ -113,17 +113,19 @@ credential is still not an admin anywhere else.
 A board route (`/feature-requests/*`) resolves its caller from the verified `iss` claim and needs a verified
 email (`shared/engagement_identity.py`). For `search_feature_requests` and `write_feature_request` the delegated claims therefore also carry
 `iss` = this deployment's APP user pool (the MCP function's own `USER_POOL_ID`, never the request),
-`email` = `mcp+<token_id>@mcp.invalid` (a service address naming the credential, not the minter's) and
-`email_verified=true`. No other tool gets these claims (`board_route_claims` in `lambda/shared/mcp_global_tools.py`).
+`email` and `name` = the minter's, read from Cognito on the call (only a verified email; otherwise the board route
+refuses, 403) and `email_verified=true`. A request or +1 made over MCP is therefore the person's: one person supports
+a request once however many tokens they hold, and the subject stays the credential (`mcp:<token_id>`), so the token
+is still in the audit log. No other tool gets these claims (`board_route_claims` in `lambda/shared/mcp_global_tools.py`).
 
 **`search_feature_requests` sees exactly what its minter sees in the app, never more.** A global token's minter is
 always an app-pool user, and an app-pool user uses every non-archived board (board audiences limit only board-pool
 users), so the credential reads every non-archived board, never an archived one, and is never a board admin:
 `cognito:groups` stays empty even when an admin minted the token, so the admin-only view of archived boards is out
-of reach. Naming an archived board answers the route's 404 as a tool error. The service address cannot widen this:
+of reach. Naming an archived board answers the route's 404 as a tool error. The minter's email cannot widen this:
 board access is decided by the pool in `iss` (always this deployment's app pool, from the MCP function's own
-environment, never from the request) and by the groups, not by the email; the address is on no allow list, belongs
-to no company domain (`.invalid` is reserved), and only names the credential in logs. The board pool can never be
+environment, never from the request) and by the groups, not by the email: an app-pool caller uses every non-archived board whatever its address, exactly
+as the minter does in the app. The board pool can never be
 claimed. `test_feature_request_search.py` runs the tool end to end through the real search route and pins that an
 MCP call never sees an archived board.
 
@@ -151,7 +153,7 @@ MCP call never sees an archived board.
 | `get_prioritization` | read, project | `GET /projects/prioritization` (projects): the rows whose project the minter can view, the minter's own `scores`, the team `aggregates`, the scoring `axes` and `config_version`. With a project (the argument or the pin) only that project's rows, scores and aggregates |
 | `edit_feedback` | write | `PUT /feedback/{id}/category` (`category` + optional `subcategory`) or `PUT /feedback/{id}/dimensions` (`dimensions` key → value or null, `tags`), never both in one call (feedback edit); the route's category and source access apply |
 | `score_prioritization` | write, not pinned | `PATCH /projects/prioritization` (projects) with `{scores: {row_id: {axis: 1–5}}}` for one row: the route's validation (the active axes), its VIEW check on the row's project (a hidden row is 404) and its frozen-row rules apply. The ballot is the **minter's own**: the route keys a delegated `mcp:` ballot on the minter (`voc:acting_subject`), so a person never votes twice, and a token that acts for nobody is refused (403). The axes (`PUT /projects/prioritization/config`) are admin-only: no tool |
-| `write_feature_request` | write | Without `request_id`: `POST /feature-requests` (engagement), `{board?, title, description?, fields?}` on a board the minter can see (omitted = the seeded board); with `request_id`: `POST /feature-requests/{id}/supports` (a +1, `fields?`). The board's audience, archive / pause (409), template fields (400), one +1 per person (409) and `anyone`-board rate limit (429) apply. Both are recorded as the credential's service address (`mcp+<token_id>@mcp.invalid`): a +1 counts once per token and request. Status changes, deletes and promotion are board-admin routes: no tool |
+| `write_feature_request` | write | Without `request_id`: `POST /feature-requests` (engagement), `{board?, title, description?, fields?}` on a board the minter can see (omitted = the seeded board); with `request_id`: `POST /feature-requests/{id}/supports` (a +1, `fields?`). The board's audience, archive / pause (409), template fields (400), one +1 per person (409) and `anyone`-board rate limit (429) apply. Both are recorded under the minter's verified email and name, as if they posted in the app: one +1 per person and request, whichever token they use. Status changes, deletes and promotion are board-admin routes: no tool |
 | `run_agent` | write + admin-minted | `POST /agents/{id}/run` (agents) |
 
 **Not tools, and why.** Every import route (`/scrapers/manual/*` paste / CSV / JSON, `/s3-import/*`) is admin-only

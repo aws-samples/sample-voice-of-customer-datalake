@@ -87,8 +87,6 @@ A notice carries ids and statuses only, never content.
 - **Node** (`lambda/stream/src/lib/realtime-publish.ts`): the same request, through the SigV4 helper the
   web-search tool uses (`src/lib/sigv4.ts`). Resolves false, never rejects.
 
-Where a publisher learns the host:
-
 Every publisher reads one variable, `REALTIME_HTTP_DNS`: the Event API's HTTP host, a plain stack reference
 to VocCoreStack's Event API (`grantRealtimePublish` sets it with the policy). The publishers:
 
