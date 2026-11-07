@@ -17,6 +17,17 @@ the platform package version.
 
 ## [Unreleased]
 
+## [6.03.02] - 2026-11-07
+
+The SPA reads the code it shares with the AI assistant's stream Lambda from the stream package itself, so the hand-kept copies and their lockstep tests are gone.
+
+### Changed
+
+- The SPA imports the AG-UI contract, the plan schema and checks, the persona-result storage and the approval-card bounds (persona, product context, feedback form, review import, Radar, memory, company, agents, workflows, assist-job polling) from `voc-datalake/lambda/stream/src` through the `@stream/*` alias (`frontend/streamSource.ts`: vite, vitest and tsconfig, zod deduplicated). The bounds, rules and messages are the ones each side used before; where the two sides worded a message differently, each keeps its own.
+- The stream Lambda lints every module the SPA reaches with a `browser-safe` block (no Node built-ins, `@aws-sdk` or `@smithy` at runtime), and `src/browser-safe.test.ts` fails when the SPA imports a stream module the block does not cover. CONTRIBUTING.md → "Code the SPA shares with the stream Lambda".
+- One `IconBadge` component draws 18 icon badges (verdicts, run outcomes, plans, visibility, pins, release watch, model tests). Nothing on screen changes.
+- The duplication excuses for these copies go: 6 `.jscpd.json` file ignores, 10 inline `jscpd:ignore` blocks, 6 TypeScript clone allowlist entries and the knip and reachability entries that existed for the mirrors.
+
 ## [6.03.01] - 2026-11-07
 
 Duplicated code that the duplication checks had excused is now shared, and every excuse that is left names a constraint that was checked (one names its planned fix instead).
