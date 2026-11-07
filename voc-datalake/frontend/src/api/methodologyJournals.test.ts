@@ -5,9 +5,9 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 
-const fetchApi = vi.hoisted(() => vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>())
-vi.mock('./client', () => ({ fetchApi }))
+vi.mock('./client', () => import('@test/fetchApiRoutes').then((m) => m.fetchApiClientModule()))
 
+import { fetchApi } from '@test/fetchApiRoutes'
 import { agentsApi } from './agentsApi'
 import { normalizePlanView } from './plansApi'
 

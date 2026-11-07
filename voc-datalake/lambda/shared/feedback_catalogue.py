@@ -38,7 +38,7 @@ from shared.silver_provenance import CHANGE_REASONS, EnrichmentMode
 from shared.source_profiles import PII_POLICIES, SUMMARY_ONLY_DROPPED_FIELDS
 from shared.usefulness import USEFULNESS_BANDS
 
-__all__ = ['CATALOGUE_VERSION', 'catalogue', 'render_markdown']
+__all__ = ['catalogue']
 
 #: Bumped when the catalogue's own shape (not a field) changes.
 CATALOGUE_VERSION: Final = 1
@@ -156,12 +156,6 @@ def render_markdown() -> str:
 
 
 _SECTION_RE: Final = re.compile(f'{re.escape(START_MARKER)}\n(.*?)\n?{re.escape(END_MARKER)}', re.DOTALL)
-
-
-def doc_section(doc: str) -> str | None:
-    """The text between the doc's markers ('' when empty), or None when a marker is missing."""
-    match = _SECTION_RE.search(doc)
-    return match.group(1) if match else None
 
 
 def _write_doc() -> int:

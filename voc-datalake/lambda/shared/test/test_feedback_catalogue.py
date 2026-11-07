@@ -156,6 +156,8 @@ def test_the_catalogue_names_the_builtin_dimension_and_issue_sub_fields() -> Non
 
 
 def test_the_doc_holds_the_generated_table() -> None:
-    section = cat.doc_section(cat.DOC_PATH.read_text(encoding='utf-8'))
+    doc = cat.DOC_PATH.read_text(encoding='utf-8')
+    assert cat.START_MARKER in doc and cat.END_MARKER in doc, 'docs/data-catalogue.md lost its catalogue markers'
+    section = doc.split(cat.START_MARKER, 1)[1].split(cat.END_MARKER, 1)[0].strip('\n')
     assert section == cat.render_markdown(), (
         'docs/data-catalogue.md is stale: cd voc-datalake/lambda && ../.venv/bin/python -m shared.feedback_catalogue')

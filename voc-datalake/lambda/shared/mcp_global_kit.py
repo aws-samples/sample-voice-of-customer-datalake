@@ -91,7 +91,7 @@ class GlobalTool:
         Only the hints that differ from the MCP defaults or carry meaning are published, which keeps
         `tools/list` inside its context budget (test_mcp_global_tools_budget.py):
         ``destructiveHint: false`` on write tools only (the spec defines it only when ``readOnlyHint``
-        is false; its default is true); ``idempotentHint`` never (false, its default, on a write; undefined
+        is false; its default is true); the idempotent hint never (false, its default, on a write; undefined
         on a read); ``openWorldHint: false`` always (default true). The display name is the top-level
         ``title``: every protocol version this server negotiates that knows annotations also knows it,
         and the spec reads it before ``annotations.title``.

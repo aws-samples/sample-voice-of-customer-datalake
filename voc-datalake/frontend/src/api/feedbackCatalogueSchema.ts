@@ -43,7 +43,7 @@ const CatalogueSchema = z.object({
 })
 export type FeedbackCatalogue = z.output<typeof CatalogueSchema>
 
-export const EMPTY_CATALOGUE: FeedbackCatalogue = { version: 0, table: '', steps: [], policy_effects: [], fields: [] }
+const EMPTY_CATALOGUE: FeedbackCatalogue = { version: 0, table: '', steps: [], policy_effects: [], fields: [] }
 
 export function normalizeFeedbackCatalogue(raw: unknown): FeedbackCatalogue {
   const parsed = CatalogueSchema.safeParse(raw)

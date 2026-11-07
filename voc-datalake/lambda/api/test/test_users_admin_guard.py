@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from handler_events_fixtures import call_route
+from users_table_fixtures import cognito_users
 
 import users_handler
 from shared import user_admin_guard
@@ -15,10 +16,7 @@ SUBS = {'root': 'sub-root', 'alice': 'sub-alice', 'bob': 'sub-bob'}
 
 
 def _cognito(admins: list[dict]) -> MagicMock:
-    cognito = MagicMock()
-    cognito.exceptions.UserNotFoundException = type('UserNotFoundException', (Exception,), {})
-    cognito.admin_get_user.side_effect = lambda Username, **_kw: {
-        'UserAttributes': [{'Name': 'sub', 'Value': SUBS[Username]}]}
+    cognito = cognito_users(SUBS)
     cognito.admin_list_groups_for_user.return_value = {'Groups': [{'GroupName': 'admins'}]}
     cognito.list_users_in_group.return_value = {'Users': admins}
     return cognito

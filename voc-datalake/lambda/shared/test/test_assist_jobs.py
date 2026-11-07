@@ -6,19 +6,16 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
-from moto import mock_aws
 
 from shared import assist_jobs as aj
 from shared.exceptions import NotFoundError, ServiceError, ValidationError
-from shared.test.moto_tables import create_pk_sk_table
+from shared.test.assist_job_fixtures import assist_jobs_table
 
 
 @pytest.fixture
 def table():
-    with mock_aws():
-        created = create_pk_sk_table('test-jobs')
-        with patch.object(aj, 'get_jobs_table', return_value=created):
-            yield created
+    with assist_jobs_table() as created:
+        yield created
 
 
 @pytest.fixture

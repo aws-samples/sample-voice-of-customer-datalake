@@ -50,6 +50,14 @@ async function openConfirm() {
   return user
 }
 
+/** Confirm a reprocess of the row whose run starts and stays running. */
+async function startRunningReprocess() {
+  mockStart.mockResolvedValue(run('running'))
+  mockPoll.mockResolvedValue(run('running'))
+  const user = await openConfirm()
+  await user.click(screen.getByRole('button', { name: 'Reprocess' }))
+}
+
 beforeEach(() => {
   setRealtimeLive(false)
   vi.clearAllMocks()
@@ -81,11 +89,7 @@ describe('reprocessing a file', () => {
   })
 
   it('shows the run as running while the poll says so', async () => {
-    mockStart.mockResolvedValue(run('running'))
-    mockPoll.mockResolvedValue(run('running'))
-    const user = await openConfirm()
-
-    await user.click(screen.getByRole('button', { name: 'Reprocess' }))
+    await startRunningReprocess()
 
     expect(await screen.findByText('Reprocessing june.csv...')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
@@ -106,10 +110,7 @@ describe('reprocessing a file', () => {
 
   it('with push, the run\'s end notice reads it at once instead of on the next poll', async () => {
     setRealtimeLive(true)
-    mockStart.mockResolvedValue(run('running'))
-    mockPoll.mockResolvedValue(run('running'))
-    const user = await openConfirm()
-    await user.click(screen.getByRole('button', { name: 'Reprocess' }))
+    await startRunningReprocess()
     await screen.findByText('Reprocessing june.csv...')
     const reads = mockPoll.mock.calls.length
     mockPoll.mockResolvedValue(run('completed', 3))
