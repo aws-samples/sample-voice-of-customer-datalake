@@ -85,7 +85,7 @@ export const personaUpdatesShape = {
     trigger: textField(1000).optional(),
     outcome: textField(1000).optional(),
   }).strict().optional(),
-};
+} satisfies Record<(typeof PERSONA_UPDATE_FIELDS)[number], z.ZodType>;
 
 export const personaUpdatesSchema = nonEmpty(z.object(personaUpdatesShape).strict());
 
@@ -159,6 +159,6 @@ export const feedbackFormUpdatesShape = {
   collect_name: z.boolean().optional(),
   dimension_defaults: dimensionDefaultsSchema.optional(),
   tags: labelTagsSchema.optional(),
-};
+} satisfies Record<(typeof FEEDBACK_FORM_UPDATE_FIELDS)[number], z.ZodType>;
 
 export const feedbackFormUpdatesSchema = nonEmpty(z.object(feedbackFormUpdatesShape).strict());
