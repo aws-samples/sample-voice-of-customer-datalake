@@ -15,7 +15,7 @@ from aws_lambda_powertools.event_handler.exceptions import NotFoundError
 from boto3.dynamodb.conditions import ConditionBase, Key
 from botocore.exceptions import BotoCoreError, ClientError
 
-from shared import category_access, data_quality, other_category, release_watch, source_profile
+from shared import category_access, data_quality, feedback_catalogue, other_category, release_watch, source_profile
 from shared import category_scope_query as scope_query
 from shared.api import (
     DATE_BASIS_IMPORTED,
@@ -1466,6 +1466,17 @@ def get_feedback_access():
     routes first, so `access` is never read as a feedback id.
     """
     return _caller_scope().to_dict()
+
+
+@app.get("/feedback/catalogue")
+@tracer.capture_method
+def get_feedback_catalogue():
+    """What every stored attribute of a feedback item means (TENETS.md D7; shared/feedback_catalogue.py).
+
+    Any signed-in user; no data and no configuration, so no scope applies and the answer is the same for
+    everyone (ETag-revalidated like every GET). Static route: never read as a feedback id.
+    """
+    return feedback_catalogue.catalogue()
 
 
 @app.get("/feedback/<feedback_id>")
