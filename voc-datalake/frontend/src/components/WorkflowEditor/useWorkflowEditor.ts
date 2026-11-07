@@ -12,7 +12,9 @@ import { apiErrorStatus } from '../../api/apiErrorStatus'
 import { DEFAULT_WORKFLOW_ID, normalizeDefinition, seedWorkflowDetail, workflowsApi, workflowsKeys } from '../../api/workflowsApi'
 import { diffDefinitions } from './diff'
 import { validateLocally } from './graphRules'
-import type { WorkflowDefinition, WorkflowIssue, WorkflowRevision, WorkflowView } from '../../api/workflowsApi'
+import type {
+  WorkflowDefinition, WorkflowIssue, WorkflowMethodologyWarning, WorkflowRevision, WorkflowView,
+} from '../../api/workflowsApi'
 import { noCleanup } from '../../hooks/noCleanup'
 
 const SERVER_VALIDATE_DELAY_MS = 600
@@ -47,22 +49,32 @@ export function groupIssues(issues: readonly WorkflowIssue[]): { byNode: Map<str
   return { byNode, general }
 }
 
+interface ServerValidation {
+  readonly errors: WorkflowIssue[]
+  /** Methodology gaps of a valid workflow (a PRD with no PR/FAQ before it, ...): shown, never blocking. */
+  readonly warnings: WorkflowMethodologyWarning[]
+}
+
+const NO_SERVER_FINDINGS: ServerValidation = { errors: [], warnings: [] }
+
 function useServerValidation(draft: WorkflowDefinition | null, workflowId: string, enabled: boolean) {
-  const [serverIssues, setServerIssues] = useState<WorkflowIssue[]>([])
+  const [server, setServer] = useState<ServerValidation>(NO_SERVER_FINDINGS)
   useEffect(() => {
     if (draft === null || !enabled) return noCleanup
     const controller = new AbortController()
     const timer = setTimeout(() => {
       workflowsApi.validate(draft, workflowId === DEFAULT_WORKFLOW_ID ? undefined : workflowId)
-        .then((result) => { if (!controller.signal.aborted) setServerIssues(result.errors) })
-        .catch(() => { if (!controller.signal.aborted) setServerIssues([]) })
+        .then((result) => {
+          if (!controller.signal.aborted) setServer({ errors: result.errors, warnings: result.warnings })
+        })
+        .catch(() => { if (!controller.signal.aborted) setServer(NO_SERVER_FINDINGS) })
     }, SERVER_VALIDATE_DELAY_MS)
     return () => {
       controller.abort()
       clearTimeout(timer)
     }
   }, [draft, workflowId, enabled])
-  return serverIssues
+  return server
 }
 
 export function useWorkflowEditor(workflowId: string, canEdit: boolean) {
@@ -84,8 +96,9 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean) {
   }
 
   const localIssues = useMemo(() => (draft === null ? [] : validateLocally(draft)), [draft])
-  const serverIssues = useServerValidation(draft, workflowId, localIssues.length === 0)
-  const issues = localIssues.length > 0 ? localIssues : serverIssues
+  const server = useServerValidation(draft, workflowId, localIssues.length === 0)
+  const issues = localIssues.length > 0 ? localIssues : server.errors
+  const methodologyWarnings = localIssues.length > 0 ? [] : server.warnings
   const diff = useMemo(
     () => (draft === null || workflow === undefined ? null : diffDefinitions(workflow.definition, draft)),
     [draft, workflow],
@@ -169,7 +182,8 @@ export function useWorkflowEditor(workflowId: string, canEdit: boolean) {
   }, [builtin, dirty, draft, workflow?.revision, workflowId])
 
   return {
-    query, workflow, revisions: savedRevisions(query.data), draft, setDraft, issues, localIssues, diff, dirty, builtin, conflict,
+    query, workflow, revisions: savedRevisions(query.data), draft, setDraft, issues, methodologyWarnings, localIssues, diff, dirty,
+    builtin, conflict,
     save, saving: saveMutation.isPending,
     saveAs: saveAsMutation.mutateAsync, savingAs: saveAsMutation.isPending,
     reloadLatest, importJson, resetToTemplate, exportJson,

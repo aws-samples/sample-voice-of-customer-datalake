@@ -250,6 +250,14 @@
     }
   },
   "editor": {
+    "methodology": {
+      "title": "Methodology",
+      "hint": "Advice only: the workflow still saves and runs. The methodology goes evidence → personas → PR/FAQ → PRD → prototype.",
+      "noEvidence": "no customer evidence before it (aggregate reviews or deep research).",
+      "noPersonas": "no personas step before it.",
+      "noPrfaq": "no PR/FAQ step before it: the methodology writes the PR/FAQ first.",
+      "noDocument": "no PR/FAQ or PRD step before it."
+    },
     "canvasLabel": "Workflow canvas",
     "minimap": "Workflow overview",
     "palette": "Steps",

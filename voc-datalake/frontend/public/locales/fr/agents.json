@@ -251,6 +251,14 @@
     }
   },
   "editor": {
+    "methodology": {
+      "title": "Méthode",
+      "hint": "Simple conseil : le workflow s'enregistre et s'exécute quand même. La méthode va preuves → personas → PR/FAQ → PRD → prototype.",
+      "noEvidence": "aucune preuve client avant (agréger les avis ou recherche approfondie).",
+      "noPersonas": "aucune étape de personas avant.",
+      "noPrfaq": "aucune étape de PR/FAQ avant : la méthode écrit d'abord la PR/FAQ.",
+      "noDocument": "aucune étape de PR/FAQ ou de PRD avant."
+    },
     "canvasLabel": "Canevas du workflow",
     "minimap": "Vue d'ensemble du workflow",
     "palette": "Étapes",

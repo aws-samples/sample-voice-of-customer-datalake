@@ -251,6 +251,14 @@
     }
   },
   "editor": {
+    "methodology": {
+      "title": "Metodología",
+      "hint": "Solo un consejo: el flujo se guarda y se ejecuta igual. La metodología va evidencia → personas → PR/FAQ → PRD → prototipo.",
+      "noEvidence": "no hay evidencia de clientes antes (agregar opiniones o investigación profunda).",
+      "noPersonas": "no hay un paso de personas antes.",
+      "noPrfaq": "no hay un paso de PR/FAQ antes: la metodología escribe primero la PR/FAQ.",
+      "noDocument": "no hay un paso de PR/FAQ ni de PRD antes."
+    },
     "canvasLabel": "Lienzo del flujo de trabajo",
     "minimap": "Vista general del flujo de trabajo",
     "palette": "Pasos",
