@@ -156,6 +156,15 @@ class TestErasure:
         _, listed = route('GET', '/settings/erasure')
         assert listed['jobs'][0]['legal_basis'] == BASIS
 
+    @pytest.mark.usefixtures('invoke')
+    def test_the_starter_sub_is_kept_for_its_end_notice_and_never_shown(self, route, table):
+        _, body = route('POST', '/settings/erasure', body={'field': 'author', 'value': 'Jane', 'legal_basis': BASIS})
+        stored = table.get_item(Key={'pk': 'JOB#erasure', 'sk': body['job']['job_id']})['Item']
+        assert stored['started_by_sub']
+        _, listed = route('GET', '/settings/erasure')
+        assert 'started_by_sub' not in body['job']
+        assert 'started_by_sub' not in listed['jobs'][0]
+
     def test_the_job_view_carries_every_copy_counter_and_the_files_needing_review(self):
         view = settings_handler.erasure_job_view({
             'job_id': 'er_000000000001', 'status': 'completed', 'deleted_radar_items': 2, 'artifacts_marked': 3,

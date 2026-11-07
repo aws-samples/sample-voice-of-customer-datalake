@@ -1,37 +1,24 @@
 /** useLatestJob with push (docs/realtime.md): the reprocess job's end notice re-reads it at once; the poll stays. */
-import { renderHook, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderHook } from '@testing-library/react'
+import { afterEach, describe, it, vi } from 'vitest'
 import { reprocessApi } from '../../api/reprocessApi'
-import { deliverNotice, setRealtimeLive } from '../../realtime/hub'
 import { createQueryWrapper } from '../../test/query-client'
+import { expectRereadOnItsNotice, expectRereadOnReconnect, type JobNoticeRefreshCase } from '../../test/realtimeJobRefresh'
 import { useLatestJob } from './useReprocessJob'
 
-const mount = () => renderHook(() => useLatestJob(), { wrapper: createQueryWrapper() })
+function view(): JobNoticeRefreshCase {
+  const read = vi.spyOn(reprocessApi, 'getLatest').mockResolvedValue(null)
+  return {
+    read,
+    mount: () => renderHook(() => useLatestJob(), { wrapper: createQueryWrapper() }),
+    notice: { type: 'job', job_id: 'rp_1', status: 'completed', job_type: 'category_reprocess' },
+    otherNotice: { type: 'job', job_id: 'er_1', status: 'completed', job_type: 'erasure' },
+  }
+}
 
-const getLatest = vi.spyOn(reprocessApi, 'getLatest')
-
-beforeEach(() => {
-  setRealtimeLive(false)
-  getLatest.mockResolvedValue(null)
-})
-afterEach(() => {
-  setRealtimeLive(false)
-  getLatest.mockReset()
-})
+afterEach(() => { vi.restoreAllMocks() })
 
 describe('useLatestJob job notices', () => {
-  it('re-reads on a reprocess notice, not on another job\'s', async () => {
-    mount()
-    await waitFor(() => { expect(getLatest).toHaveBeenCalledTimes(1) })
-    deliverNotice({ type: 'job', job_id: 'er_1', status: 'completed', job_type: 'erasure' })
-    deliverNotice({ type: 'job', job_id: 'rp_1', status: 'completed', job_type: 'category_reprocess' })
-    await waitFor(() => { expect(getLatest).toHaveBeenCalledTimes(2) })
-  })
-
-  it('re-reads on a reconnect', async () => {
-    mount()
-    await waitFor(() => { expect(getLatest).toHaveBeenCalledTimes(1) })
-    setRealtimeLive(true)
-    await waitFor(() => { expect(getLatest).toHaveBeenCalledTimes(2) })
-  })
+  it('re-reads at once on its own notice, not on another job\'s', async () => { await expectRereadOnItsNotice(view()) })
+  it('re-reads on a reconnect', async () => { await expectRereadOnReconnect(view()) })
 })

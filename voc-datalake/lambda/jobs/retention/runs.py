@@ -4,7 +4,8 @@ A run's state travels across hand-overs in the event (``run``). Every finished
 (or failed) run writes ONE audit row (``pk AUDIT#retention``, no ``ttl``: an
 audit trail never expires, TENETS.md D4) with its counts and legal basis, never
 the erased value. An erasure job's row (``pk JOB#erasure``) is claimed, kept
-moving while the job runs, and closed with the outcome.
+moving while the job runs, and closed with the outcome; closing it tells the admin who started it
+(``/jobs/<sub>``, best effort, docs/realtime.md).
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from shared import job_notices
 from shared.aws import is_conditional_check_failure
 from shared.retention import ERASURE_JOB_COUNTERS, ERASURE_JOB_PK
 from shared.timestamps import now_iso
@@ -25,6 +27,8 @@ MODE_ERASE: Final = 'erase'
 AUDIT_PK: Final = 'AUDIT#retention'
 STATUS_QUEUED: Final = 'queued'
 STATUS_RUNNING: Final = 'running'
+#: The notice's ``job_type`` (shared/job_notices.py): the SPA's erasure panels listen for it.
+ERASURE_JOB_TYPE: Final = 'erasure'
 # A running job's row is refreshed when its counts move, and at least this often.
 PROGRESS_EVERY_SECONDS: Final = 60
 # Whole-file uploads a run lists for review (keys only); a run that meets more says so (``more``).
@@ -160,6 +164,7 @@ def finish_erasure_job(aggregates_table: Any, run: Mapping[str, Any], status: st
         Key=_job_key(run['job_id']), UpdateExpression=expression,
         ExpressionAttributeNames=names, ExpressionAttributeValues=values,
     )
+    job_notices.notify(run.get('started_by_sub'), run['job_id'], status, job_type=ERASURE_JOB_TYPE)
 
 
 def record_progress(aggregates_table: Any, run: dict[str, Any], phase: str) -> None:

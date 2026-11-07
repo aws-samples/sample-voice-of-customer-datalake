@@ -6,7 +6,9 @@
  * no second request; and the start mutation that refreshes it.
  *
  * When a poll shows that a job it saw live has ended, every feedback view is
- * refreshed (`invalidateFeedbackData`): the erasure moved the counts.
+ * refreshed (`invalidateFeedbackData`): the erasure moved the counts. With push
+ * (docs/realtime.md) the job's end notice re-reads the list at once, and the poll
+ * slows to the fallback.
  *
  * @module components/SourcesManager/useErasureJobs
  */
@@ -15,8 +17,11 @@ import type { QueryClient } from '@tanstack/react-query'
 import { invalidateFeedbackData } from '../../api/invalidateFeedbackData'
 import { erasureEnded, erasureJobsKey, isLiveErasure, sourceProfilesApi } from '../../api/sourceProfilesApi'
 import type { ErasureJob, ErasureList } from '../../api/sourceProfilesApi'
+import { realtimePollInterval, useRealtimeJobRefresh } from '../../realtime/jobRefresh'
 
 const POLL_INTERVAL_MS = 2_000
+/** The notice's `job_type` for an erasure job (lambda/jobs/retention/runs.py ERASURE_JOB_TYPE). */
+const ERASURE_JOB_TYPE = 'erasure'
 
 /** Read the list; when a job the cached list showed live has ended, refresh the feedback views. */
 async function fetchErasureList(queryClient: QueryClient): Promise<ErasureList> {
@@ -29,11 +34,14 @@ async function fetchErasureList(queryClient: QueryClient): Promise<ErasureList> 
 
 function useErasureList<T>(select: (list: ErasureList) => T) {
   const queryClient = useQueryClient()
+  useRealtimeJobRefresh({ jobType: ERASURE_JOB_TYPE }, [erasureJobsKey()])
   return useQuery({
     queryKey: erasureJobsKey(),
     queryFn: () => fetchErasureList(queryClient),
     select,
-    refetchInterval: (query) => ((query.state.data?.jobs ?? []).some(isLiveErasure) ? POLL_INTERVAL_MS : false),
+    refetchInterval: (query) => ((query.state.data?.jobs ?? []).some(isLiveErasure)
+      ? realtimePollInterval(POLL_INTERVAL_MS)
+      : false),
   })
 }
 

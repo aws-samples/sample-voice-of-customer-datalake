@@ -123,6 +123,7 @@ export function apiStackDependencyProps(
     realtimeJobsPublisherRoleArns: {
       ResearchStep: `arn:aws:iam::${env.account}:role/voc-research-step-role`,
       CategoryReprocess: `arn:aws:iam::${env.account}:role/voc-category-reprocess-role`,
+      Retention: `arn:aws:iam::${env.account}:role/voc-retention-role`,
     },
     memoryExtractQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/memory-extract`,
     memoryExtractQueueArn: `arn:aws:sqs:${env.region}:${env.account}:memory-extract`,
