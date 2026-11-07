@@ -49,25 +49,33 @@ export function isMatchingJobNotice(notice: RealtimeNotice, match: JobNoticeMatc
 }
 
 /**
+ * Call `onWake` on a matching job notice and on every (re)connect, while `enabled`: for a view that polls
+ * by hand rather than through React Query. `match` and `onWake` may be new each render: the latest are used.
+ */
+export function useRealtimeJobWake(match: JobNoticeMatch, onWake: () => void, enabled = true): void {
+  const latest = useRef({ match, onWake })
+  useEffect(() => {
+    latest.current = { match, onWake }
+  })
+  useEffect(() => {
+    const wake = () => { latest.current.onWake() }
+    const stops = enabled
+      ? [
+          onRealtimeNotice((notice) => { if (isMatchingJobNotice(notice, latest.current.match)) wake() }),
+          onRealtimeReconnect(wake),
+        ]
+      : []
+    return () => { for (const stop of stops) stop() }
+  }, [enabled])
+}
+
+/**
  * Invalidate `queryKeys` on a matching job notice and on every (re)connect, while `enabled`.
  * `match` and `queryKeys` may be new objects each render: the latest ones are used.
  */
 export function useRealtimeJobRefresh(match: JobNoticeMatch, queryKeys: readonly QueryKey[], enabled = true): void {
   const queryClient = useQueryClient()
-  const latest = useRef({ match, queryKeys })
-  useEffect(() => {
-    latest.current = { match, queryKeys }
-  })
-  useEffect(() => {
-    const refresh = () => {
-      for (const queryKey of latest.current.queryKeys) void queryClient.invalidateQueries({ queryKey })
-    }
-    const stops = enabled
-      ? [
-          onRealtimeNotice((notice) => { if (isMatchingJobNotice(notice, latest.current.match)) refresh() }),
-          onRealtimeReconnect(refresh),
-        ]
-      : []
-    return () => { for (const stop of stops) stop() }
-  }, [enabled, queryClient])
+  useRealtimeJobWake(match, () => {
+    for (const queryKey of queryKeys) void queryClient.invalidateQueries({ queryKey })
+  }, enabled)
 }

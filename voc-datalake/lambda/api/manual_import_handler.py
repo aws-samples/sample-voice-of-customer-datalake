@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.api import admins_only, api_handler, create_api_resolver, decimal_default
+from shared.api import admins_only, api_handler, create_api_resolver, decimal_default, get_caller_subject
 from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client, invoke_lambda_async
 from shared.csv_columns import ColumnPlan, bounded_metadata, plan_columns
 from shared.csv_content_digest import csv_row_digest
@@ -212,7 +212,9 @@ def start_parse():
         'unparsed_sections': [],
         'error': None,
         'created_at': now.isoformat(),
-        'ttl': ttl
+        'ttl': ttl,
+        # Who the processor tells when the parse ends (docs/realtime.md); never in the status view.
+        'started_by_sub': get_caller_subject(app.current_event.raw_event),
     })
 
     # Invoke async processing

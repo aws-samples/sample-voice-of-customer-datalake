@@ -371,6 +371,7 @@ class TestStartParse:
             'error': None,
             'created_at': NOW_ISO,
             'ttl': EPOCH + 3600,
+            'started_by_sub': 'test-user-id',
         })
         self.invoke.assert_called_once_with(PROCESSOR, {'job_id': FIXED_UUID})
         self.table.update_item.assert_not_called()
