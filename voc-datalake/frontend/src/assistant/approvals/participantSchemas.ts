@@ -14,7 +14,7 @@
  */
 import { z } from 'zod'
 import { LIST_KINDS } from '../../api/participantsSchema'
-import { optionalNonEmpty } from './schemas'
+import { optionalNonEmpty } from '@stream/assistant/tools/client/text-schemas'
 
 export const SPA_PARTICIPANT_LIMITS = {
   // per list

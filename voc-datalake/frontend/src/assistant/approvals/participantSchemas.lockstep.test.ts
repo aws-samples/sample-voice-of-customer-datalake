@@ -16,8 +16,7 @@ import {
 } from './participantSchemas'
 // Self-contained (zod only), like the review-import lockstep.
 import * as stream from '../../../../lambda/stream/src/assistant/tools/client/participant-schemas'
-import { optionalNonEmpty as streamOptionalNonEmpty } from '../../../../lambda/stream/src/assistant/tools/client/text-schemas'
-import { optionalNonEmpty } from './schemas'
+import { optionalNonEmpty } from '@stream/assistant/tools/client/text-schemas'
 
 const ROOT = join(__dirname, '../../../..')
 const read = (file: string) => readFileSync(join(ROOT, file), 'utf8')
@@ -84,11 +83,10 @@ describe('participants tools: SPA ⇄ the routes', () => {
   })
 })
 
-describe('optionalNonEmpty (the text rule both boundaries build their optional fields from)', () => {
-  it('accepts and refuses the same values on both sides', () => {
+describe('optionalNonEmpty (the stream text rule both boundaries build their optional fields from)', () => {
+  it('accepts an absent or non-blank value within the bound and refuses the rest', () => {
     const samples: unknown[] = [undefined, '', '   ', ' ok ', 'abcd', 'abcde', 7, null]
     const verdicts = (schema: { safeParse: (v: unknown) => { success: boolean } }) => samples.map((v) => schema.safeParse(v).success)
     expect(verdicts(optionalNonEmpty(4))).toStrictEqual([true, false, false, true, true, false, false, false])
-    expect(verdicts(streamOptionalNonEmpty(4))).toStrictEqual(verdicts(optionalNonEmpty(4)))
   })
 })

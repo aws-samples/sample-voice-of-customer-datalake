@@ -54,7 +54,7 @@ export const BROWSER_SAFE_FILES = [
   'src/assistant/tools/server/memory-shape.ts',
   'src/lib/is-record.ts',
 ]
-const BROWSER_SAFE_MESSAGE = 'The SPA imports this module through @stream: no Node built-in, @aws-sdk or @smithy at runtime (import type is fine).'
+const BROWSER_SAFE_MESSAGE = 'The SPA imports this module through @stream: no Node built-in, @aws-sdk or @smithy, not even as a type: the SPA type-checks it without the stream\'s node_modules.'
 
 export default tseslint.config(
   {
@@ -228,9 +228,9 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-restricted-imports': ['error', {
         paths: builtinModules.filter((name) => !name.startsWith('node:')).map((name) => ({
-          name, allowTypeImports: true, message: BROWSER_SAFE_MESSAGE,
+          name, message: BROWSER_SAFE_MESSAGE,
         })),
-        patterns: [{ group: ['node:*', '@aws-sdk/*', '@smithy/*'], allowTypeImports: true, message: BROWSER_SAFE_MESSAGE }],
+        patterns: [{ group: ['node:*', '@aws-sdk/*', '@smithy/*'], message: BROWSER_SAFE_MESSAGE }],
       }],
     },
   },
