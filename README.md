@@ -232,6 +232,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Problem Analysis](docs/problem-analysis.md) | How `/problems` groups the whole window: grouping, partial and truncated answers |
 | [Dimensions](docs/dimensions.md) | Dimensions, tags and channels: model, value sources, filters, API |
 | [Data quality](docs/data-quality.md) | The usefulness band, per-source counters and profile, `GET /metrics/data-quality` |
+| [Data catalogue](docs/data-catalogue.md) | Every stored attribute of a feedback item: type, meaning, the step that sets it, PII and policy effects, `GET /feedback/catalogue` |
 | [Radar](docs/radar.md) | Other brands: love and hate, news and releases from web search, comparison |
 | [Decisions and Release Watch](docs/decisions-and-release-watch.md) | Decision records on projects and before/after feedback per release |
 | [Project Workspace](docs/project-workspace.md) | Projects, the Product tab, cited reviews, document versions, sharing, company personas |
