@@ -14,6 +14,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from shared import job_notices
 from shared.aws import get_bedrock_client, get_dynamodb_resource
 from shared.converse import bedrock_call_with_retry
 from shared.exceptions import ValidationError
@@ -182,13 +183,25 @@ def _sanitize_review(review: dict, import_date: str) -> dict:
     }
 
 
+#: The notice's ``job_type`` (shared/job_notices.py): the manual import dialog listens for it.
+PARSE_JOB_TYPE = 'manual_import_parse'
+
+
 @tracer.capture_method
 def process_job(job_id: str) -> None:
-    """Process a manual import job with LLM parsing."""
+    """Process a manual import job with LLM parsing, then tell its starter how it ended (best effort)."""
     table = aggregates_table
     if not table:
         logger.error("Aggregates table not configured")
         return
+    status, starter = _parse_job(table, job_id)
+    if status is not None:
+        job_notices.notify(starter, job_id, status, job_type=PARSE_JOB_TYPE)
+
+
+def _parse_job(table: Any, job_id: str) -> tuple[str | None, object]:
+    """Parse the job's text; ``(final status, starter sub)``, the status None when the job row was not moved."""
+    starter: object = None
 
     # Get job details
     try:
@@ -199,14 +212,15 @@ def process_job(job_id: str) -> None:
 
         if not job:
             logger.error(f"Job {job_id} not found")
-            return
+            return None, None
 
+        starter = job.get('started_by_sub')
         raw_text = job.get('raw_text', '')
         source_origin = job.get('source_origin', 'unknown')
 
         if not raw_text:
             _mark_job_failed(table, job_id, 'No raw text to parse')
-            return
+            return 'failed', starter
 
         # Build prompt
         import_date = import_date_of(job)
@@ -278,6 +292,9 @@ def process_job(job_id: str) -> None:
         except (ClientError, BotoCoreError) as mark_error:
             # The job stays 'processing' and expires with its TTL.
             logger.warning(f"Could not mark job {job_id} failed: {mark_error}")
+            return None, starter
+        return 'failed', starter
+    return 'completed', starter
 
 
 @instrumented_handler

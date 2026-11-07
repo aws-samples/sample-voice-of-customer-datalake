@@ -77,6 +77,7 @@ function publishersByNamespace(): Map<string, string[]> {
 const JOBS_PUBLISHERS = [
   'ProjectsLambdaRole', 'SettingsLambdaRole', 'ScrapersLambdaRole',
   'PersonaGeneratorRole', 'DocumentGeneratorRole', 'DocumentMergerRole', 'PersonaImporterRole',
+  'ManualImportProcessorRole',
   'voc-research-step-role', 'voc-category-reprocess-role', 'voc-retention-role', 'voc-ingestor-s3-import-role',
 ];
 
@@ -134,7 +135,8 @@ describe('the Event API', () => {
       .map(([id]) => id.replace(/[0-9A-F]{8}$/, ''))
       .sort(byCodeUnit);
     expect(functions).toStrictEqual([
-      'ChatStreamApi', 'DocumentGeneratorJob', 'DocumentMergerJob', 'PersonaGeneratorJob', 'PersonaImporterJob',
+      'ChatStreamApi', 'DocumentGeneratorJob', 'DocumentMergerJob', 'ManualImportProcessor', 'PersonaGeneratorJob',
+      'PersonaImporterJob',
       'ProjectsApi', 'ProjectsAssistWorker', 'ScrapersApi', 'ScrapersAssistWorker', 'SettingsApi', 'SettingsAssistWorker',
     ]);
   });
