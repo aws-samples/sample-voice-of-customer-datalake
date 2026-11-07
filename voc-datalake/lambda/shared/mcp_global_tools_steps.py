@@ -36,8 +36,8 @@ from shared.mcp_global_kit import (
     stripped,
     text_arg,
 )
+from shared.methodology import STEPS
 
-STEPS: Final[tuple[str, ...]] = ('personas', 'research', 'prfaq', 'prd', 'prototype')
 MAX_BRIEF_CHARS: Final = 4000
 MAX_TITLE_CHARS: Final = 200
 MAX_RADAR_DAYS: Final = 365
