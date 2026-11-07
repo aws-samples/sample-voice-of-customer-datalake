@@ -31,6 +31,8 @@ import { applyAppAspects } from '../utils/app-aspects';
 import { EMBEDDING_MODEL_ID } from '../utils/model-allowlist';
 import { byCodeUnit } from '../utils/compare';
 import { itemAt } from '../test-support/guards';
+import { sourceStringConstant } from '../test-support/cross-language-invariants';
+import { CONVERSATIONS_BY_KIND_INDEX } from './memory-workers';
 
 const ENV = { account: '111111111111', region: 'us-east-1' };
 
@@ -154,10 +156,23 @@ describe('memory workers (VocProcessingStack)', () => {
     expect(JSON.stringify(env.MEMORY_EXTRACT_QUEUE_URL)).toContain(queueId);
   });
 
-  it('scanner: Scan conversations, cursor rows, send to the queue — nothing else on tables', () => {
+  it('scanner: cursor rows, send to the queue, no model', () => {
     const s = statementsOfRole(template, 'MemoryWorkersMemoryScannerRole');
     expect(allActions(s)).toContain('sqs:SendMessage');
     expect(allActions(s).some((a) => a.startsWith('bedrock:'))).toBe(false);
+  });
+
+  it('scanner: Query the conversations kind index, never Scan, never the base table (tenet 7)', () => {
+    const s = statementsOfRole(template, 'MemoryWorkersMemoryScannerRole');
+    expect(allActions(s)).not.toContain('dynamodb:Scan');
+    const queries = s.filter((st) => st.actions.includes('dynamodb:Query')).map((st) => st.resource);
+    expect(queries).toHaveLength(1);
+    expect(itemAt(queries, 0)).toMatch(new RegExp(`FnGetAttConversations.*/index/${CONVERSATIONS_BY_KIND_INDEX}`));
+  });
+
+  it('names the index the Python mirror and the core stack name', () => {
+    expect(CONVERSATIONS_BY_KIND_INDEX)
+      .toBe(sourceStringConstant('CONVERSATIONS_BY_KIND_INDEX', 'lambda', 'shared', 'indexes.py'));
   });
 
   it('retention: archives in place on voc-memory only', () => {
@@ -487,6 +502,17 @@ describe('memory + agents storage (VocCoreStack)', () => {
     expect(t.DeletionPolicy).toBe('Delete');
     expect(physicalName(t.Properties.TableName)).toContain(name);
     expect(t.Properties.GlobalSecondaryIndexes.map((i) => i.IndexName)).toStrictEqual([index]);
+  });
+
+  it('indexes voc-conversations by kind + updated_at (keys both writers store; slim projection)', () => {
+    const indexes = z.object({ Properties: z.object({ GlobalSecondaryIndexes: z.array(z.unknown()) }) }).parse(
+      template.findResources('AWS::DynamoDB::Table')[logicalIdStartingWith(template, 'AWS::DynamoDB::Table', 'ConversationsTable')],
+    ).Properties.GlobalSecondaryIndexes;
+    expect(indexes).toStrictEqual([{
+      IndexName: CONVERSATIONS_BY_KIND_INDEX,
+      KeySchema: [{ AttributeName: 'kind', KeyType: 'HASH' }, { AttributeName: 'updated_at', KeyType: 'RANGE' }],
+      Projection: { ProjectionType: 'INCLUDE', NonKeyAttributes: ['message_count'] },
+    }]);
   });
 
   it.each(['MemoryTable', 'AgentsTable'])('%s is on-demand, KMS-encrypted, with PITR', (prefix) => {
