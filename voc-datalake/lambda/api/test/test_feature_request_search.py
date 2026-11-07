@@ -219,7 +219,9 @@ def _mcp_search(ctx: Any, arguments: dict) -> tuple[str, str, list[dict]]:
         response = resolver.resolve(build_proxy_event(call, claims), ctx)
         return DomainResult(response['statusCode'], json.loads(response['body']))
 
-    with patch.object(mcp, 'call_domain', call_domain), patch.dict('os.environ', {'USER_POOL_ID': APP_POOL}):
+    minter = mcp.MinterIdentity(email='ada@example.com', name='Ada')
+    with patch.object(mcp, 'call_domain', call_domain), patch.object(mcp, '_minter_identity', return_value=minter), \
+            patch.dict('os.environ', {'USER_POOL_ID': APP_POOL}):
         content, outcome = mcp._run_tool(mcp.ToolCall(MCP_SEARCH, arguments, None), MCP_ROW)
     return outcome, json.dumps(content), seen
 

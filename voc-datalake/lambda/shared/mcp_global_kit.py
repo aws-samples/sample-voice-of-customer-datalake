@@ -80,7 +80,7 @@ class GlobalTool:
     # Extra reads after the main route answered (validated by ``build`` first).
     follow_ups: Callable[[Mapping[str, Any]], tuple[FollowUp, ...]] = _no_follow_ups
     # A feedback-board route (`/feature-requests/*`): the delegated claims also carry the app pool's
-    # issuer and a verified service address (``board_route_claims``), which the board scope reads.
+    # issuer and the minter's verified email (``board_route_claims``), which the board scope reads.
     board_route: bool = False
     # Reaches data of every project the minter can view (not one project): refused to a project-pinned token.
     workspace_wide: bool = False

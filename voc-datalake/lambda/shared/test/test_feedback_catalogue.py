@@ -162,3 +162,8 @@ def test_the_doc_holds_the_generated_table() -> None:
     section = doc.split(cat.START_MARKER, 1)[1].split(cat.END_MARKER, 1)[0].strip('\n')
     assert section == cat.render_markdown(), (
         'docs/data-catalogue.md is stale: cd voc-datalake/lambda && ../.venv/bin/python -m shared.feedback_catalogue')
+
+
+def test_the_dev_mock_serves_the_current_catalogue() -> None:
+    assert cat.MOCK_PATH.read_text(encoding='utf-8') == cat.mock_json(), (
+        'frontend/mock-feedback-catalogue.json is stale: cd voc-datalake/lambda && ../.venv/bin/python -m shared.feedback_catalogue')
