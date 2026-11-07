@@ -47,7 +47,7 @@ import {
 import { grantClaudeModels } from '../utils/claude-model-grant';
 import { createWorkerFunction, grantInvokeByName, scheduleWorker, workerRole } from '../utils/worker-lambda';
 import { createPlanStepFunction } from './plan-step-lambda';
-import { REALTIME_HTTP_DNS_ENV, realtimeParameterReference, realtimeParameterReadStatement } from '../utils/realtime';
+import { REALTIME_HTTP_DNS_ENV, type RealtimePublishing } from '../utils/realtime';
 
 /**
  * The rendered voc-agent-run definition. Its `TimeoutSeconds` (24 h, the
@@ -84,8 +84,6 @@ interface CrewmateSpec {
 export interface AgentRuntimeProps {
   /** The owning stack's prefix-aware `uniqueName()`. */
   uniqueName: (baseName: string) => string;
-  /** The deployment prefix: names the Event API endpoint parameter the conductor reads (lib/utils/realtime.ts). */
-  deploymentPrefix?: string;
   layer: lambda.ILayerVersion;
   kmsKey: kms.IKey;
   agentsTable: dynamodb.ITable;
@@ -99,6 +97,8 @@ export interface AgentRuntimeProps {
   jobsTable: dynamodb.ITable;
   /** The conductor re-checks a plan's approver before each step (AdminGetUser + AdminListGroupsForUser). */
   userPool: cognito.IUserPool;
+  /** VocCoreStack's Event API: the conductor publishes run / plan notices to `runs` (docs/realtime.md). */
+  realtime: RealtimePublishing;
   /**
    * The AgentCore web-search gateway (VocWebSearchStack), when deployed. Agent steps
    * search the web by default, capped per run (agents/nodes/web.py); without it the
@@ -111,16 +111,11 @@ export interface AgentRuntimeProps {
 
 export class AgentRuntime extends Construct {
   public readonly stateMachine: sfn.StateMachine;
-  /** voc-agent-conductor's role: VocApiStack grants it publish on the Event API's `runs` namespace (api-realtime.ts). */
-  public readonly conductorRole: iam.IRole;
 
   constructor(scope: Construct, id: string, private readonly props: AgentRuntimeProps) {
     super(scope, id);
-    const conductor = this.createConductor();
-    if (conductor.role === undefined) throw new Error('the conductor has no role');
-    this.conductorRole = conductor.role;
     this.stateMachine = this.createStateMachine({
-      conductor,
+      conductor: this.createConductor(),
       nodes: this.createNodes(),
       personaPanel: this.createPersonaPanel(),
       planStep: createPlanStepFunction(this, {
@@ -185,14 +180,14 @@ export class AgentRuntime extends Construct {
         jobsTable.grant(role, 'dynamodb:GetItem');
         // Plans: the approver is re-checked before every step (agents/plan_identity.py).
         userPool.grant(role, 'cognito-idp:AdminGetUser', 'cognito-idp:AdminListGroupsForUser');
-        // Run / plan notices (docs/realtime.md): the Event API's host, from the parameter VocApiStack writes.
-        role.addToPrincipalPolicy(realtimeParameterReadStatement(cdk.Stack.of(this), this.props.deploymentPrefix));
+        // Run / plan notices (docs/realtime.md): publish on exactly `runs` (VocCoreStack's managed policy).
+        role.addManagedPolicy(this.props.realtime.publishPolicies.runs);
       },
       environment: {
         MEMORY_EXTRACT_QUEUE_URL: memoryExtractQueue.queueUrl,
         JOBS_TABLE: jobsTable.tableName,
         USER_POOL_ID: userPool.userPoolId,
-        [REALTIME_HTTP_DNS_ENV]: realtimeParameterReference(this.props.deploymentPrefix),
+        [REALTIME_HTTP_DNS_ENV]: this.props.realtime.httpDns,
       },
       // Verification re-reads every claimed project/document AS THE AGENT through
       // the Projects API — the conductor never trusts a crewmate's claim.

@@ -1,7 +1,7 @@
 /**
  * Push notifications over AWS AppSync Events (docs/realtime.md): the single source of the channel
- * namespaces, the namespace subscribe handler and the SSM parameter that tells VocProcessingStack's
- * conductor where the Event API is.
+ * namespaces, the namespace subscribe handler and the publisher wiring (`grantRealtimePublish`). The
+ * Event API lives in VocCoreStack (core-realtime.ts), deployed before every publisher's stack.
  *
  * Pay per use (operations + connection minutes), no fixed monthly cost: nothing here belongs in
  * `OPT_IN_FIXED_COSTS` (lib/test-support/fixed-cost-rules.ts, TENETS.md tenet 7).
@@ -10,8 +10,7 @@
  * (the handler below, run by AppSync on every subscribe), and only IAM may publish (each namespace's
  * publish auth mode), so a browser can never publish and never read another person's notices.
  */
-import * as cdk from 'aws-cdk-lib';
-import * as iam from 'aws-cdk-lib/aws-iam';
+import type * as iam from 'aws-cdk-lib/aws-iam';
 import type * as lambda from 'aws-cdk-lib/aws-lambda';
 
 /** The namespaces and who publishes to each (docs/realtime.md → Channels). */
@@ -32,17 +31,8 @@ export type RealtimeNamespace = keyof typeof REALTIME_NAMESPACES;
 /** Base physical name of the Event API (before `uniqueName()`); AppSync caps API names at 50 characters. */
 export const REALTIME_API_BASE_NAME = 'voc-events';
 
-/**
- * The one env var of a Python or Node publisher: the Event API's HTTP host (`<id>.appsync-api.<region>.amazonaws.com`)
- * or, for a publisher OUTSIDE VocApiStack, `ssm:<parameter name>` (the SSM parameter holding that host, read once per
- * container: `realtimeParameterReference`).
- */
+/** The one env var of a Python or Node publisher: the Event API's HTTP host (`<id>.appsync-api.<region>.amazonaws.com`). */
 export const REALTIME_HTTP_DNS_ENV = 'REALTIME_HTTP_DNS';
-
-/** `ssm:<parameter name>`: the value of REALTIME_HTTP_DNS for a publisher that reads the host from the parameter. */
-export function realtimeParameterReference(deploymentPrefix: string | undefined): string {
-  return `ssm:${realtimeParameterName(deploymentPrefix)}`;
-}
 
 /**
  * The namespace subscribe handler (APPSYNC_JS). A subscription is allowed only to exactly
@@ -65,39 +55,26 @@ export function onSubscribe(ctx) {
 }
 `;
 
-const REALTIME_PARAMETER_PATH = 'voc/realtime/event-api-http-dns';
-
 /**
- * `/[<prefix>-]voc/realtime/event-api-http-dns`: a standard-tier String parameter (no monthly cost)
- * VocApiStack writes and the agent conductor (VocProcessingStack, deployed BEFORE VocApiStack, so it
- * cannot take the host as a stack reference) reads at run time. The prefix sits on the `voc` segment,
- * as `DeploymentNaming.prefixed` places it (lib/utils/radar-exa-parameter.ts is the precedent).
+ * What a publisher in ANY stack needs from VocCoreStack's Event API: its HTTP host and, per namespace, the
+ * customer-managed policy allowing exactly `appsync:EventPublish` on that namespace (core-realtime.ts).
  */
-export function realtimeParameterName(deploymentPrefix: string | undefined): string {
-  return deploymentPrefix ? `/${deploymentPrefix}-${REALTIME_PARAMETER_PATH}` : `/${REALTIME_PARAMETER_PATH}`;
-}
-
-/** Exactly `ssm:GetParameter` on that parameter in `stack`'s account and region. */
-export function realtimeParameterReadStatement(stack: cdk.Stack, deploymentPrefix: string | undefined): iam.PolicyStatement {
-  return new iam.PolicyStatement({
-    sid: 'RealtimeEndpointParameter',
-    actions: ['ssm:GetParameter'],
-    resources: [stack.formatArn({
-      service: 'ssm', resource: 'parameter', resourceName: realtimeParameterName(deploymentPrefix).slice(1),
-      arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-    })],
-  });
+export interface RealtimePublishing {
+  httpDns: string;
+  publishPolicies: Readonly<Record<RealtimeNamespace, iam.IManagedPolicy>>;
 }
 
 /**
- * A publisher in a stack deployed BEFORE VocApiStack (Processing, Ingestion): it reads the Event API's host
- * from the endpoint parameter (exactly `ssm:GetParameter` on it, the env var naming it). Its publish grant is a
- * policy VocApiStack attaches to its role (api-realtime.ts `grantRealtimePublishToRoles`), so the role is returned.
+ * Let `functions` publish to exactly `namespace`: each one's role carries the namespace's managed policy (attached
+ * in the function's own stack, so no inline statement and no resource in VocCoreStack per role), and its
+ * environment names the Event API's host.
  */
-export function wireRealtimeEndpointParameter(fn: lambda.Function, deploymentPrefix: string | undefined): iam.IRole {
-  const { role } = fn;
-  if (role === undefined) throw new Error(`${fn.node.path} has no role to grant the realtime endpoint read`);
-  role.addToPrincipalPolicy(realtimeParameterReadStatement(cdk.Stack.of(fn), deploymentPrefix));
-  fn.addEnvironment(REALTIME_HTTP_DNS_ENV, realtimeParameterReference(deploymentPrefix));
-  return role;
+export function grantRealtimePublish(realtime: RealtimePublishing, namespace: RealtimeNamespace,
+  functions: readonly lambda.Function[]): void {
+  for (const fn of functions) {
+    const { role } = fn;
+    if (role === undefined) throw new Error(`${fn.node.path} has no role to grant the realtime publish`);
+    role.addManagedPolicy(realtime.publishPolicies[namespace]);
+    fn.addEnvironment(REALTIME_HTTP_DNS_ENV, realtime.httpDns);
+  }
 }

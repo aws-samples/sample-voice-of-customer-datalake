@@ -30,7 +30,7 @@ import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT
 import { appVersion } from '../utils/connector-version';
 import { grantSilverHistoryPut } from '../utils/silver-history-grants';
 import { grantReadAndWrites } from '../utils/table-write-grants';
-import { wireRealtimeEndpointParameter } from '../utils/realtime';
+import { grantRealtimePublish, type RealtimePublishing } from '../utils/realtime';
 import { FEATURE_REQUESTS_TABLE_ENV, grantFeatureRequestEvidenceRead } from '../utils/feature-request-evidence-grant';
 import { createAggregatorRole, createProcessorRole, grantTextAnalysis } from './processing-roles';
 import { loadPlugins, pluginIdsWithCapability } from '../plugin-loader';
@@ -45,6 +45,8 @@ import { loadPlugins, pluginIdsWithCapability } from '../plugin-loader';
 const UPDATE_CAPABLE_SOURCES_ENV = 'UPDATE_CAPABLE_SOURCES';
 
 export interface VocProcessingStackProps extends VocStackProps {
+  /** VocCoreStack's Event API (core-realtime.ts): job workers publish on `jobs`, the conductor on `runs`. */
+  realtime: RealtimePublishing;
   feedbackTable: dynamodb.Table;
   aggregatesTable: dynamodb.Table;
   projectsTable: dynamodb.Table;
@@ -114,10 +116,6 @@ export class VocProcessingStack extends VocStack {
   public readonly memoryExtractQueue: sqs.Queue;
   /** voc-agent-run — the agents API starts/stops executions from VocApiStack. */
   public readonly agentRunStateMachine: sfn.StateMachine;
-  /** voc-agent-conductor's role (VocApiStack grants it publish on the Event API's `runs` namespace). */
-  public readonly agentConductorRole: iam.IRole;
-  /** Job workers that tell a job's starter it ended (VocApiStack grants each publish on `jobs`, docs/realtime.md). */
-  public readonly realtimeJobsPublisherRoles: Record<string, iam.IRole> = {};
 
   constructor(scope: Construct, id: string, props: VocProcessingStackProps) {
     super(scope, id, props);
@@ -283,7 +281,7 @@ export class VocProcessingStack extends VocStack {
       feedbackTable, aggregatesTable, kmsKey, rawDataBucket, processingLayer, primaryLanguage: config.primaryLanguage,
     });
     // A reprocess job's end reaches its starter (shared/reprocess_jobs.py finish_job, docs/realtime.md).
-    this.realtimeJobsPublisherRoles.CategoryReprocess = wireRealtimeEndpointParameter(reprocessWorker, this.deploymentPrefix);
+    grantRealtimePublish(props.realtime, 'jobs', [reprocessWorker]);
 
     // ============================================
     // RETENTION / ERASURE WORKER (docs/source-policies.md)
@@ -300,8 +298,8 @@ export class VocProcessingStack extends VocStack {
       rawDataBucket,
     });
     // An erasure job's end reaches the admin who started it (jobs/retention/runs.py, docs/realtime.md): a publish
-    // grant and the endpoint read only; nothing else on the only customer-data delete role changes (D5).
-    this.realtimeJobsPublisherRoles.Retention = wireRealtimeEndpointParameter(retentionWorker, this.deploymentPrefix);
+    // grant (the `jobs` managed policy) and the host only; nothing else on the only customer-data delete role changes (D5).
+    grantRealtimePublish(props.realtime, 'jobs', [retentionWorker]);
 
     // ============================================
     // MEMORY + AUTONOMOUS AGENTS
@@ -317,10 +315,9 @@ export class VocProcessingStack extends VocStack {
       rawDataBucket,
     });
     this.memoryExtractQueue = memoryWorkers.extractQueue;
-    this.realtimeJobsPublisherRoles.MemoryExtractor = wireRealtimeEndpointParameter(memoryWorkers.extractor, this.deploymentPrefix);
+    grantRealtimePublish(props.realtime, 'jobs', [memoryWorkers.extractor]);
     const agentRuntime = new AgentRuntime(this, 'AgentRuntime', {
       uniqueName,
-      deploymentPrefix: this.deploymentPrefix,
       layer: processingLayer,
       kmsKey,
       agentsTable: props.agentsTable,
@@ -330,19 +327,19 @@ export class VocProcessingStack extends VocStack {
       memoryExtractQueue: this.memoryExtractQueue,
       jobsTable,
       userPool: props.userPool,
+      realtime: props.realtime,
       webSearchGatewayUrl: props.webSearchGatewayUrl,
       webSearchGatewayArn: props.webSearchGatewayArn,
       webSearchToolName: props.webSearchToolName,
     });
     this.agentRunStateMachine = agentRuntime.stateMachine;
-    this.agentConductorRole = agentRuntime.conductorRole;
     // The per-user morning brief (docs/briefing.md): idle until someone subscribes or presses Refresh.
     const briefingWorker = createBriefingWorker(this, 'BriefingWorker', {
       uniqueName, layer: processingLayer, kmsKey, feedbackTable, aggregatesTable, memoryTable: props.memoryTable,
       agentsTable: props.agentsTable, projectsTable, radarTable: props.radarTable, userPool: props.userPool,
     });
     // A built brief tells its reader, so Home shows it at once (docs/realtime.md).
-    this.realtimeJobsPublisherRoles.Briefing = wireRealtimeEndpointParameter(briefingWorker, this.deploymentPrefix);
+    grantRealtimePublish(props.realtime, 'jobs', [briefingWorker]);
     createRadarScanWorker(this, 'RadarScanWorker', {
       uniqueName, layer: processingLayer, kmsKey, radarTable: props.radarTable, aggregatesTable,
       deploymentPrefix: this.deploymentPrefix,
@@ -432,8 +429,8 @@ export class VocProcessingStack extends VocStack {
       }),
     });
 
-    // The research job's end reaches its starter (docs/realtime.md); the host comes from VocApiStack's parameter.
-    this.realtimeJobsPublisherRoles.ResearchStep = wireRealtimeEndpointParameter(researchStepLambda, this.deploymentPrefix);
+    // The research job's end reaches its starter (docs/realtime.md).
+    grantRealtimePublish(props.realtime, 'jobs', [researchStepLambda]);
 
     grantSharedMemoryRecall(researchStepLambda, researchRole, { memoryTable: props.memoryTable, kmsKey, region: this.region });
 
