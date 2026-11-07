@@ -15,9 +15,10 @@
  *   - `source_id` is the source profile the rows are filed under (body
  *     `source_id`; `shared/ingest_archive.upload_profile`), the source-profile id rule.
  *
- * LOCKSTEP: `frontend/src/assistant/approvals/reviewImportSchemas.ts` holds the
- * same limits and argument shape; `reviewImportSchemas.lockstep.test.ts` reads
- * this file and the Python constants and fails when they drift.
+ * The SPA's approval boundary (`frontend/src/assistant/approvals/reviewImportSchemas.ts`)
+ * imports the limits and `importReviewsArgsShape` through `@stream` and adds its
+ * own total-text message, so browser-safe: zod, text-schemas and user-schemas only.
+ * `review-import-schemas.test.ts` pins the bounds against the Python constants.
  */
 import { z } from 'zod';
 import { optionalNonEmpty } from './text-schemas.js';
@@ -65,20 +66,32 @@ function isClockTime(value: string): boolean {
 
 const L = REVIEW_IMPORT_LIMITS;
 
+/** One review row; every field but `text` is optional (the source may not give it). */
 const reviewItemSchema = z.object({
   text: z.string().trim().min(1).max(L.maxTextChars),
-  rating: z.number().min(L.minRating).max(L.maxRating).optional(),
+  title: optionalNonEmpty(L.maxTitleChars),
   author: optionalNonEmpty(L.maxAuthorChars),
+  rating: z.number().min(L.minRating).max(L.maxRating).optional(),
   created_at: z.string().trim().refine(isReviewDate, 'must be an ISO 8601 date (YYYY-MM-DD) or date-time').optional(),
   url: z.url({ protocol: /^https?$/ }).max(L.maxUrlChars).optional(),
-  title: optionalNonEmpty(L.maxTitleChars),
 }).strict();
 
-export const importReviewsArgsSchema = z.object({
+/** Whether the rows' text stays within `maxTotalTextChars` (each side words its own message). */
+export function withinTotalText(items: readonly { text: string }[]): boolean {
+  return items.reduce((sum, item) => sum + item.text.length, 0) <= L.maxTotalTextChars;
+}
+
+/** The argument keys; `items` before the total-text check, which the stream and the SPA each add. */
+export const importReviewsArgsShape = {
   source_name: z.string().trim().min(1).max(L.maxSourceNameChars),
   source_id: z.string().trim().regex(SOURCE_ID_PATTERN, 'must be a configured source profile id').optional(),
-  items: z.array(reviewItemSchema).min(1).max(L.maxItems).refine(
-    (items) => items.reduce((sum, item) => sum + item.text.length, 0) <= L.maxTotalTextChars,
+  items: z.array(reviewItemSchema).min(1).max(L.maxItems),
+};
+
+export const importReviewsArgsSchema = z.object({
+  ...importReviewsArgsShape,
+  items: importReviewsArgsShape.items.refine(
+    withinTotalText,
     `the reviews' text must total at most ${L.maxTotalTextChars} characters; split the import into several cards`,
   ),
 }).strict();
