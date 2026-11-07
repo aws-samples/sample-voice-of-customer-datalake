@@ -56,7 +56,8 @@ class TestTheRoute:
 
     def test_is_a_read_tool_on_a_board_route(self):
         assert (SEARCH.write, SEARCH.admin_only, SEARCH.project_scoped, SEARCH.board_route) == (False, False, False, True)
-        assert [tool.name for tool in TOOLS_BY_NAME.values() if tool.board_route] == ['search_feature_requests']
+        assert [tool.name for tool in TOOLS_BY_NAME.values() if tool.board_route] == [
+            'search_feature_requests', 'write_feature_request']
 
 
 class TestTheResult:

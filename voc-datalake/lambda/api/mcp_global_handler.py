@@ -345,7 +345,7 @@ def _may_offer(tool: GlobalTool, row: Mapping[str, Any]) -> bool:
         return False
     if tool.admin_only:
         return bool(row.get('minted_by_admin')) and gt.pinned_project(row) is None
-    return True
+    return not (tool.workspace_wide and gt.pinned_project(row) is not None)
 
 
 class ToolDenied(Exception):
@@ -376,6 +376,8 @@ def _check_allowed(call: ToolCall, row: Mapping[str, Any]) -> None:
     tool = call.tool
     if tool.write and not gt.scope_allows_write(row.get('scope')):
         raise ToolDenied(f'{tool.name} needs a read-write token; this token is read-only')
+    if tool.workspace_wide and gt.pinned_project(row) is not None:
+        raise ToolDenied(f'{tool.name} reaches every project you can see; this token is scoped to one project')
     if tool.admin_only:
         if gt.pinned_project(row) is not None:
             raise ToolDenied(f'{tool.name} is not available to a project-scoped token')
@@ -458,7 +460,9 @@ def _run_tool(call: ToolCall, row: Mapping[str, Any]) -> tuple[dict, str]:
         # for PR/FAQ / PRD writing, shared/ai_writing.py): audited as denied, not as an error.
         outcome = gt.OUTCOME_DENIED if result.status_code == 403 else gt.OUTCOME_ERROR
         return _tool_content(_route_message(result), is_error=True), outcome
-    payload = tool.shape(result.payload, call.arguments)
+    # A project tool's shape sees the resolved project (the argument, else the token's pin).
+    shape_args = {**call.arguments, 'project_id': call.project_id} if call.project_id else call.arguments
+    payload = tool.shape(result.payload, shape_args)
     if tool.name == 'list_projects':
         payload = _pinned_projects(payload, gt.pinned_project(row))
     return _tool_content(_with_follow_ups(payload, call, row), is_error=False), gt.OUTCOME_OK

@@ -24,6 +24,8 @@ export interface McpDelegates {
   radarLambda: lambda.Function;
   /** voc-feedback-edit-api: `edit_feedback` writes PUT /feedback/{id}/category|dimensions (docs/mcp.md). */
   feedbackEditLambda: lambda.Function;
+  /** voc-integrations-api: `get_feedback_catalogue sources: true` reads GET /sources/status (docs/mcp.md). */
+  integrationsLambda: lambda.Function;
 }
 
 /** Must equal MCP_UNAUTHORIZED / the 401 message in lambda/api/mcp_global_handler.py (pinned by a test). */
@@ -88,6 +90,7 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
   const { api, authMethodOptions } = gateway;
   const {
     metricsLambda, projectsLambda, settingsLambda, memoryLambda, agentsLambda, engagementLambda, radarLambda, feedbackEditLambda,
+    integrationsLambda,
   } = delegates;
   const { projectsTable, jobsTable, kmsKey, userPool } = ctx.props;
 
@@ -109,7 +112,7 @@ export function createMcpApi(ctx: ApiStackContext, gateway: ApiGateway, delegate
     domainFunctions: {
       METRICS_FUNCTION: metricsLambda, SETTINGS_FUNCTION: settingsLambda, MEMORY_FUNCTION: memoryLambda,
       PROJECTS_FUNCTION: projectsLambda, AGENTS_FUNCTION: agentsLambda, ENGAGEMENT_FUNCTION: engagementLambda,
-      RADAR_FUNCTION: radarLambda, FEEDBACK_EDIT_FUNCTION: feedbackEditLambda,
+      RADAR_FUNCTION: radarLambda, FEEDBACK_EDIT_FUNCTION: feedbackEditLambda, INTEGRATIONS_FUNCTION: integrationsLambda,
     },
   });
   // OAuth sign-in for the same endpoint (api-mcp-oauth.ts, docs/mcp.md "OAuth sign-in").

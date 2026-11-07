@@ -38,13 +38,13 @@ LIMIT = {'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': 20}
 FILTER = {'type': 'string', 'maxLength': 64}
 BOOL = {'type': 'boolean', 'default': False}
 ID = {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}
-PROJECT_ID = {**ID, 'description': 'From list_projects; optional with a pinned token.'}
+PROJECT_ID = {**ID, 'description': 'Optional with a pinned token.'}
 TITLE = {'type': 'string', 'maxLength': 200}
 CONTENT = {'type': 'string', 'maxLength': 200000}
 NO_ARGS = {'type': 'object', 'properties': {}, 'additionalProperties': False}
 DIMS = {'type': 'object', 'maxProperties': 10, 'propertyNames': {'pattern': '^[a-z][a-z0-9_]{0,31}$'},
         'additionalProperties': {'type': 'string', 'maxLength': 64},
-        'description': 'Dimension filters {key: value}; all must match.'}
+        'description': 'All must match.'}
 ITEM_FILTERS = {'channel': FILTER, 'tag': FILTER, 'dims': DIMS}
 NO_ITEM_FILTERS = {'channel': None, 'tag': None, 'dims': None}
 
@@ -59,8 +59,7 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
     'search_feedback': (
         'Search feedback',
         ('Search (`query`, 2+ characters) or list the newest customer feedback you can see; `urgent: true` '
-         'keeps high urgency only. Verbatims with sentiment, category and urgency: ground claims about '
-         'customers here.'),
+         'keeps high urgency only. Ground claims about customers here.'),
         _object({'query': {'type': 'string', 'maxLength': 500}, 'days': DAYS, 'limit': LIMIT,
                  'category': FILTER, 'sentiment': FILTER, 'source': FILTER, 'urgent': BOOL, **ITEM_FILTERS}),
         False, False, False),
@@ -71,24 +70,22 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
     'get_metrics': (
         'Get feedback metrics',
         ('Metrics over a window. `view`: summary, sentiment, categories, sources, personas, dimensions (+ '
-         '`key`), github (issues per release and label) or entities (filter values with counts). Use it for '
-         'volumes and trends.'),
+         '`key`), github (issues per release and label) or entities (filter values with counts).'),
         _object({'view': {'type': 'string', 'enum': ['summary', 'sentiment', 'categories', 'sources', 'personas',
                                                      'dimensions', 'github', 'entities'],
                           'default': 'summary'}, 'days': DAYS, 'key': FILTER, 'source': FILTER, **ITEM_FILTERS}),
         False, False, False),
     'list_categories': (
         'List categories',
-        'The category taxonomy you can see (name, description, product, subcategories).',
+        'Categories you can see, with subcategories.',
         NO_ARGS, False, False, False),
     'list_dimensions': (
         'List dimensions',
-        'Feedback dimensions (key, label, allowed values) for `dims` and the dimensions view.',
+        'Dimensions (key, label, values) for `dims`.',
         NO_ARGS, False, False, False),
     'search_memory': (
         'Search memory',
-        ('Semantic search over company and personal memory (decisions, facts, preferences) you can see. Check '
-         'it before proposing.'),
+        'Semantic search over company and personal memory (decisions, facts, preferences) you can see.',
         _object({'query': {'type': 'string', 'maxLength': 500},
                  'k': {'type': 'integer', 'minimum': 1, 'maximum': 20, 'default': 8}}, 'query'),
         False, False, False),
@@ -98,11 +95,11 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         NO_ARGS, False, False, False),
     'list_projects': (
         'List projects',
-        'Research projects you can see.',
+        'Projects you can see.',
         NO_ARGS, False, False, False),
     'get_project': (
         'Get a project',
-        'A project: its personas and documents (titles and ids; bodies via get_document).',
+        'A project: its personas and documents (bodies via get_document).',
         _object({'project_id': PROJECT_ID}), False, False, True),
     'get_document': (
         'Get a document',
@@ -110,19 +107,18 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         _object({'project_id': PROJECT_ID, 'document_id': ID}, 'document_id'), False, False, True),
     'list_agents': (
         'List agents',
-        'Autonomous agents you can see, with their status.',
+        'Agents you can see, with their status.',
         NO_ARGS, False, False, False),
     'get_agent_run': (
         'Get agent runs',
-        "An agent's run by `run_id`, or its newest runs (status, step, project, error).",
+        "An agent's run by `run_id`, or its newest runs.",
         _object({'agent_id': ID, 'run_id': ID,
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50, 'default': 5}}, 'agent_id'),
         False, False, False),
     'search_feature_requests': (
         'Search board requests',
         ('Search feedback-board requests you can see (NOT reviews: never in feedback metrics); cite as '
-         '[FR:<request_id>]. `board`, `category`, `status`: one value or a comma list. `boards: true` lists '
-         'the boards.'),
+         '[FR:<request_id>]. `board`, `category`, `status`: comma lists. `boards: true` lists the boards.'),
         {'type': 'object', 'properties': {'query': {'type': 'string', 'maxLength': 500}, 'board': {'type': 'string', 'maxLength': 500, 'description': 'Board id or slug.'}, 'category': {'type': 'string', 'maxLength': 500}, 'status': {'type': 'string', 'maxLength': 500}, 'days': {'type': 'integer', 'minimum': 0, 'maximum': 3650, 'default': 0, 'description': 'Created in the last N days; 0 = all time.'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50, 'default': 25}, 'boards': {'type': 'boolean', 'default': False}}, 'additionalProperties': False},
         False, False, False),
     'create_document': (
@@ -134,23 +130,22 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
     'update_document': (
         'Update a document',
         ("Replace a document's title and/or content (write token). PRD / PR/FAQ titles keep their series; "
-         'prototypes cannot be edited here.'),
+         'not prototypes.'),
         _object({'project_id': PROJECT_ID, 'document_id': ID, 'title': TITLE, 'content': CONTENT}, 'document_id'),
         True, False, True),
     'run_agent': (
         'Run an agent',
-        ('Start an agent run now (write token minted by a current administrator). Confirm first: it spends '
-         'model budget.'),
+        'Run an agent now (write token minted by a current admin). Confirm first: it spends model budget.',
         _object({'agent_id': ID}, 'agent_id'), True, True, False),    'generate': (
         'Start a methodology step',
         ('Start personas, research, prfaq, prd or prototype in a project (write token); `brief` = the idea or '
          'question. Answers job_id and `methodology` (skipped steps); poll get_job.'),
-        {'type': 'object', 'properties': {'project_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$', 'description': 'From list_projects; optional with a pinned token.'}, 'step': {'type': 'string', 'enum': ['personas', 'research', 'prfaq', 'prd', 'prototype']}, 'title': {'type': 'string', 'maxLength': 200}, 'brief': {'type': 'string', 'maxLength': 4000}, 'count': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, 'additionalProperties': False, 'required': ['step']},
+        {'type': 'object', 'properties': {'project_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$', 'description': 'Optional with a pinned token.'}, 'step': {'type': 'string', 'enum': ['personas', 'research', 'prfaq', 'prd', 'prototype']}, 'title': {'type': 'string', 'maxLength': 200}, 'brief': {'type': 'string', 'maxLength': 4000}, 'count': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, 'additionalProperties': False, 'required': ['step']},
         True, False, True),
     'get_job': (
         'Get a job',
         "A project job's status and result (with its methodology block), by job_id.",
-        {'type': 'object', 'properties': {'project_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$', 'description': 'From list_projects; optional with a pinned token.'}, 'job_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}}, 'additionalProperties': False, 'required': ['job_id']},
+        {'type': 'object', 'properties': {'project_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$', 'description': 'Optional with a pinned token.'}, 'job_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}}, 'additionalProperties': False, 'required': ['job_id']},
         False, False, True),
     'read_radar': (
         'Read Radar',
@@ -161,6 +156,26 @@ CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
         'Correct a feedback item',
         "Set one item's category (+ subcategory), or its dimensions / tags (write token).",
         {'type': 'object', 'properties': {'feedback_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}, 'category': {'type': 'string', 'maxLength': 128}, 'subcategory': {'type': 'string', 'maxLength': 128}, 'dimensions': {'type': 'object', 'additionalProperties': {'type': ['string', 'null']}}, 'tags': {'type': 'array', 'maxItems': 20, 'items': {'type': 'string'}}}, 'additionalProperties': False, 'required': ['feedback_id']},
+        True, False, False),
+    'get_feedback_catalogue': (
+        'Get the feedback catalogue',
+        'What each stored feedback field means (type, origin, personal data, values). `sources: true`: source status.',
+        _object({'sources': BOOL}), False, False, False),
+    'get_prioritization': (
+        'Get prioritization',
+        "Prioritization rows you can see, your and the team's scores, the axes; a project narrows the rows.",
+        _object({'project_id': PROJECT_ID}), False, False, True),
+    'score_prioritization': (
+        'Score a prioritization row',
+        'Your own scores on one row, {axis id: 1-5} (write token, not project-pinned).',
+        _object({'row_id': ID, 'scores': {'type': 'object', 'additionalProperties': {
+            'type': 'integer', 'minimum': 1, 'maximum': 5}}}, 'row_id', 'scores'),
+        True, False, False),
+    'write_feature_request': (
+        'Post a board request',
+        "Post a board request, or +1 one by `request_id` (write token); `fields`: the board's fields.",
+        _object({'board': {'type': 'string', 'maxLength': 64}, 'title': {'type': 'string', 'maxLength': 160},
+                 'description': {'type': 'string', 'maxLength': 4000}, 'request_id': ID, 'fields': {'type': 'object'}}),
         True, False, False),
 }
 
@@ -189,8 +204,8 @@ class TestThePublishedCatalogue:
         title, description, schema, write, _admin, _scoped = CATALOGUE[name]
         assert tools.TOOLS_BY_NAME[name].declaration() == {
             'name': name, 'title': title, 'description': description, 'inputSchema': schema,
-            'annotations': {'title': title, 'readOnlyHint': not write, 'destructiveHint': False,
-                            'idempotentHint': not write, 'openWorldHint': False},
+            'annotations': ({'readOnlyHint': False, 'destructiveHint': False, 'openWorldHint': False} if write
+                            else {'readOnlyHint': True, 'openWorldHint': False}),
         }
 
     @pytest.mark.parametrize('name', list(CATALOGUE))
@@ -208,7 +223,8 @@ class TestThePublishedCatalogue:
         assert tools.DOMAIN_FUNCTION_ENV == {
             'metrics': 'METRICS_FUNCTION', 'settings': 'SETTINGS_FUNCTION', 'memory': 'MEMORY_FUNCTION',
             'projects': 'PROJECTS_FUNCTION', 'agents': 'AGENTS_FUNCTION', 'engagement': 'ENGAGEMENT_FUNCTION',
-            'radar': 'RADAR_FUNCTION', 'feedback_edit': 'FEEDBACK_EDIT_FUNCTION'}
+            'radar': 'RADAR_FUNCTION', 'feedback_edit': 'FEEDBACK_EDIT_FUNCTION',
+            'integrations': 'INTEGRATIONS_FUNCTION'}
 
 
 class TestTheModelTypes:

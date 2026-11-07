@@ -22,6 +22,7 @@ DOMAIN_AGENTS: Final = 'agents'
 DOMAIN_ENGAGEMENT: Final = 'engagement'
 DOMAIN_RADAR: Final = 'radar'
 DOMAIN_FEEDBACK_EDIT: Final = 'feedback_edit'
+DOMAIN_INTEGRATIONS: Final = 'integrations'
 
 # Keys never forwarded to an MCP client: storage keys, index keys, and anything
 # carrying a signed URL.
@@ -81,21 +82,30 @@ class GlobalTool:
     # A feedback-board route (`/feature-requests/*`): the delegated claims also carry the app pool's
     # issuer and a verified service address (``board_route_claims``), which the board scope reads.
     board_route: bool = False
+    # Reaches data of every project the minter can view (not one project): refused to a project-pinned token.
+    workspace_wide: bool = False
 
     def declaration(self) -> dict:
-        """The tool as `tools/list` publishes it."""
+        """The tool as `tools/list` publishes it.
+
+        Only the hints that differ from the MCP defaults or carry meaning are published, which keeps
+        `tools/list` inside its context budget (test_mcp_global_tools_budget.py):
+        ``destructiveHint: false`` on write tools only (the spec defines it only when ``readOnlyHint``
+        is false; its default is true); ``idempotentHint`` never (false, its default, on a write; undefined
+        on a read); ``openWorldHint: false`` always (default true). The display name is the top-level
+        ``title``: every protocol version this server negotiates that knows annotations also knows it,
+        and the spec reads it before ``annotations.title``.
+        """
+        annotations: dict[str, Any] = {'readOnlyHint': not self.write}
+        if self.write:
+            annotations['destructiveHint'] = False
+        annotations['openWorldHint'] = False
         return {
             'name': self.name,
             'title': self.title,
             'description': self.description,
             'inputSchema': self.input_schema,
-            'annotations': {
-                'title': self.title,
-                'readOnlyHint': not self.write,
-                'destructiveHint': False,
-                'idempotentHint': not self.write,
-                'openWorldHint': False,
-            },
+            'annotations': annotations,
         }
 
 
@@ -151,7 +161,7 @@ def schema(properties: dict, required: tuple[str, ...] = ()) -> dict:
 
 BOOL_SCHEMA = {'type': 'boolean', 'default': False}
 ID_SCHEMA = {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}
-PROJECT_ID_SCHEMA = {**ID_SCHEMA, 'description': 'From list_projects; optional with a pinned token.'}
+PROJECT_ID_SCHEMA = {**ID_SCHEMA, 'description': 'Optional with a pinned token.'}
 
 
 # ── Projections ─────────────────────────────────────────────────────────────
