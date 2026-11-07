@@ -7,8 +7,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const configure = vi.hoisted(() => vi.fn())
 vi.mock('aws-amplify', () => ({ Amplify: { configure } }))
 
-const cognito = vi.hoisted(() => ({ userPoolId: '', clientId: '' }))
-vi.mock('../runtimeConfig', () => ({ getRuntimeConfig: () => ({ cognito }) }))
+const cognito = vi.hoisted(() => ({ userPoolId: '', clientId: '', region: 'eu-west-1' }))
+const realtime = vi.hoisted((): { value: { httpDns: string; realtimeDns: string } | null } => ({ value: null }))
+vi.mock('../runtimeConfig', () => ({ getRuntimeConfig: () => ({ cognito }), getRealtimeEndpoints: () => realtime.value }))
 
 /** A fresh module: its once-per-page flag starts unset. */
 async function freshConfigure(): Promise<() => void> {
@@ -20,6 +21,7 @@ beforeEach(() => {
   configure.mockClear()
   vi.spyOn(console, 'warn').mockImplementation(vi.fn())
   Object.assign(cognito, { userPoolId: 'us-east-1_pool', clientId: 'client' })
+  realtime.value = null
 })
 
 describe('configureAmplify', () => {
@@ -30,6 +32,15 @@ describe('configureAmplify', () => {
       { Auth: { Cognito: { userPoolId: 'us-east-1_pool', userPoolClientId: 'client', loginWith: { email: true } } } },
       { ssr: false },
     )
+  })
+
+  it('adds the Event API (user pool auth) on a deployment that has one (docs/realtime.md)', async () => {
+    realtime.value = { httpDns: 'a.appsync-api.eu-west-1.amazonaws.com', realtimeDns: 'a.appsync-realtime-api.eu-west-1.amazonaws.com' }
+    ;(await freshConfigure())()
+
+    expect(configure).toHaveBeenCalledWith(expect.objectContaining({
+      API: { Events: { endpoint: 'https://a.appsync-api.eu-west-1.amazonaws.com/event', region: 'eu-west-1', defaultAuthMode: 'userPool' } },
+    }), { ssr: false })
   })
 
   it('configures once per page load', async () => {
