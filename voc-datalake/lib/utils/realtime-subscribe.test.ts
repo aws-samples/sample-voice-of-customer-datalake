@@ -30,7 +30,7 @@ const state: { dir: string; ownChannel: (segments: unknown, sub: unknown) => unk
 class Unauthorized extends Error {}
 
 beforeAll(async () => {
-  expect(REALTIME_SUBSCRIBE_HANDLER_CODE.startsWith(IMPORT_LINE)).toBe(true);
+  if (!REALTIME_SUBSCRIBE_HANDLER_CODE.startsWith(IMPORT_LINE)) throw new Error('the handler no longer starts with its util import');
   state.dir = mkdtempSync(join(tmpdir(), 'realtime-subscribe-'));
   const file = join(state.dir, 'handler.mjs');
   const stub = 'const util = { unauthorized() { throw new globalThis.RealtimeUnauthorized(); } };';
