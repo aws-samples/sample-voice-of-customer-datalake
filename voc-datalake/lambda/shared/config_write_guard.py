@@ -20,9 +20,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping
-from typing import Any, Final
+from typing import Any, Final, TypeGuard
 
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
+from shared.request_body import optional_field
 
 MODE_CREATE: Final = 'create'
 MODE_UPDATE: Final = 'update'
@@ -60,12 +61,12 @@ def write_mode(body: Mapping[str, Any]) -> str | None:
 
 def base_etag(body: Mapping[str, Any]) -> str | None:
     """The request's ``base_etag`` (None = no stale check), or a 400."""
-    value = body.get('base_etag')
-    if value is None:
-        return None
-    if not isinstance(value, str) or len(value) > MAX_ETAG_CHARS:
-        raise ValidationError(f'base_etag must be a string of at most {MAX_ETAG_CHARS} characters')
-    return value
+    return optional_field(body, 'base_etag', _is_etag, lambda: ValidationError(
+        f'base_etag must be a string of at most {MAX_ETAG_CHARS} characters'))
+
+
+def _is_etag(value: object) -> TypeGuard[str]:
+    return isinstance(value, str) and len(value) <= MAX_ETAG_CHARS
 
 
 def check_write(stored: Mapping[str, Any] | None, *, mode: str | None, base: str | None, what: str) -> None:
