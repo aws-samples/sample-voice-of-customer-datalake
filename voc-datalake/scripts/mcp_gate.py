@@ -191,12 +191,13 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_global_tools_reach': 16,
     'test_mcp_global_follow_ups': 6,
     # 6.01.00: search_feature_requests (the feedback boards' search) and its board-route claims.
-    'test_mcp_feature_request_person': 3,
     'test_mcp_global_board_tools': 28,
     # 6.04.00: generate / get_job (the methodology block), read_radar and edit_feedback.
     'test_mcp_global_tools_steps': 20,
     # 6.04.00: get_feedback_catalogue (+ sources), get_prioritization, score_prioritization, write_feature_request.
     'test_mcp_global_work_tools': 36,
+    # 6.04.00: a feature request or +1 over MCP is recorded under the person (the minter).
+    'test_mcp_feature_request_person': 3,
     'test_mcp_global_prompts': 35,
     'test_mcp_global_alarms': 14,
     'test_mcp_tokens_handler_mutation': 93,
