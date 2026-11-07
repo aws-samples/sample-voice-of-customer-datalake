@@ -28,9 +28,7 @@ from typing import Any, Final
 from shared import mcp_global_tokens as gt
 from shared.dimension_config import DIMENSION_KEY_RE, MAX_DIMENSIONS, parse_dims_param
 from shared.mcp_global_kit import (
-    BOOL_SCHEMA as _BOOL,
-)
-from shared.mcp_global_kit import (
+    BOOL_SCHEMA,
     DOMAIN_AGENTS,
     DOMAIN_ENGAGEMENT,
     DOMAIN_FEEDBACK_EDIT,
@@ -39,43 +37,21 @@ from shared.mcp_global_kit import (
     DOMAIN_PROJECTS,
     DOMAIN_RADAR,
     DOMAIN_SETTINGS,
+    ID_SCHEMA,
+    PROJECT_ID_SCHEMA,
     FollowUp,
     GlobalTool,
     InvalidToolArgument,
     RouteRequest,
-)
-from shared.mcp_global_kit import (
-    ID_SCHEMA as _ID,
-)
-from shared.mcp_global_kit import (
-    PROJECT_ID_SCHEMA as _PROJECT_ID,
-)
-from shared.mcp_global_kit import (
-    bool_arg as _bool_arg,
-)
-from shared.mcp_global_kit import (
-    id_arg as _id_arg,
-)
-from shared.mcp_global_kit import (
-    int_arg as _int_arg,
-)
-from shared.mcp_global_kit import (
-    items as _items,
-)
-from shared.mcp_global_kit import (
-    public as _public,
-)
-from shared.mcp_global_kit import (
-    require_project as _require_project,
-)
-from shared.mcp_global_kit import (
-    schema as _schema,
-)
-from shared.mcp_global_kit import (
-    stripped as _stripped,
-)
-from shared.mcp_global_kit import (
-    text_arg as _text_arg,
+    bool_arg,
+    id_arg,
+    int_arg,
+    public,
+    require_project,
+    rows_at,
+    schema,
+    stripped,
+    text_arg,
 )
 from shared.mcp_global_tools_steps import STEP_TOOLS
 
@@ -144,7 +120,7 @@ def _dims_arg(args: Mapping[str, Any]) -> str | None:
 
 def _item_filters(args: Mapping[str, Any]) -> dict[str, Any]:
     """channel, tag and dims, validated; None values are dropped by the delegate."""
-    filters: dict[str, Any] = {name: _text_arg(args, name, max_length=MAX_FILTER_LENGTH) for name in ITEM_FILTERS}
+    filters: dict[str, Any] = {name: text_arg(args, name, max_length=MAX_FILTER_LENGTH) for name in ITEM_FILTERS}
     filters['dims'] = _dims_arg(args)
     return filters
 
@@ -170,23 +146,23 @@ def _document_summary(document: Mapping[str, Any]) -> dict:
 def _project_overview(payload: object, _args: Mapping[str, Any]) -> dict:
     project = payload.get('project') if isinstance(payload, Mapping) else None
     return {
-        'project': _public(project),
+        'project': public(project),
         'personas': [{'persona_id': p.get('persona_id'), 'name': p.get('name'), 'tagline': p.get('tagline')}
-                     for p in _items(payload, 'personas') if isinstance(p, Mapping)],
-        'documents': [_document_summary(d) for d in _items(payload, 'documents') if isinstance(d, Mapping)],
+                     for p in rows_at(payload, 'personas') if isinstance(p, Mapping)],
+        'documents': [_document_summary(d) for d in rows_at(payload, 'documents') if isinstance(d, Mapping)],
     }
 
 
 def _one_document(payload: object, args: Mapping[str, Any]) -> dict:
     wanted = args.get('document_id')
-    for document in _items(payload, 'documents'):
+    for document in rows_at(payload, 'documents'):
         if isinstance(document, Mapping) and document.get('document_id') == wanted:
-            return {'document': _public(document)}
+            return {'document': public(document)}
     raise InvalidToolArgument(f'document {wanted} is not in this project')
 
 
 def _project_list(payload: object, _args: Mapping[str, Any]) -> dict:
-    projects = [_public(p) for p in _items(payload, 'projects') if isinstance(p, Mapping)]
+    projects = [public(p) for p in rows_at(payload, 'projects') if isinstance(p, Mapping)]
     return {'count': len(projects), 'projects': projects}
 
 
@@ -196,9 +172,9 @@ def _feature_requests(payload: object, args: Mapping[str, Any]) -> object:
     ``boards: true`` answered the board list instead: its rows without storage keys.
     """
     if args.get('boards') is True:
-        return _stripped(payload, args)
+        return stripped(payload, args)
     items = []
-    for row in _items(payload, 'items'):
+    for row in rows_at(payload, 'items'):
         if not isinstance(row, Mapping):
             continue
         item = {key: row[key] for key in FEATURE_REQUEST_FIELDS if row.get(key) is not None}
@@ -245,30 +221,30 @@ def board_route_claims(claims: Mapping[str, str], token_id: object, pool_id: str
 
 # ── Builders ────────────────────────────────────────────────────────────────
 def _search_feedback(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
-    query = _text_arg(args, 'query', max_length=MAX_QUERY_LENGTH)
+    query = text_arg(args, 'query', max_length=MAX_QUERY_LENGTH)
     filters: dict[str, Any] = {
-        'days': _int_arg(args, 'days', default=DEFAULT_DAYS, low=0, high=MAX_DAYS),
-        'limit': _int_arg(args, 'limit', default=DEFAULT_LIST_LIMIT, low=1, high=MAX_LIST_LIMIT),
+        'days': int_arg(args, 'days', default=DEFAULT_DAYS, low=0, high=MAX_DAYS),
+        'limit': int_arg(args, 'limit', default=DEFAULT_LIST_LIMIT, low=1, high=MAX_LIST_LIMIT),
     }
     for name in ('category', 'sentiment', 'source'):
-        filters[name] = _text_arg(args, name, max_length=MAX_FILTER_LENGTH)
+        filters[name] = text_arg(args, name, max_length=MAX_FILTER_LENGTH)
     filters.update(_item_filters(args))
     # shared/item_filters.py: `urgent=1` keeps only high-urgency items, on both routes, with every other filter.
-    filters['urgent'] = '1' if _bool_arg(args, 'urgent') else None
+    filters['urgent'] = '1' if bool_arg(args, 'urgent') else None
     if query and len(query) >= MIN_SEARCH_QUERY_LENGTH:
         return RouteRequest(DOMAIN_METRICS, 'GET', '/feedback/search', query={'q': query, **filters})
     return RouteRequest(DOMAIN_METRICS, 'GET', '/feedback', query=filters)
 
 
 def _get_feedback(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
-    _bool_arg(args, 'include_similar')
-    return RouteRequest(DOMAIN_METRICS, 'GET', f"/feedback/{_id_arg(args, 'feedback_id')}")
+    bool_arg(args, 'include_similar')
+    return RouteRequest(DOMAIN_METRICS, 'GET', f"/feedback/{id_arg(args, 'feedback_id')}")
 
 
 def _slim_similar(payload: object) -> list[dict]:
     """``/feedback/{id}/similar`` as at most ``MAX_SIMILAR`` slim rows with a bounded ``text``."""
     rows = []
-    for item in [i for i in _items(payload, 'items') if isinstance(i, Mapping)][:MAX_SIMILAR]:
+    for item in [i for i in rows_at(payload, 'items') if isinstance(i, Mapping)][:MAX_SIMILAR]:
         row = {key: item[key] for key in _SIMILAR_FIELDS if item.get(key) is not None}
         text = item.get('original_text')
         if isinstance(text, str):
@@ -280,7 +256,7 @@ def _slim_similar(payload: object) -> list[dict]:
 def _similar_follow_up(args: Mapping[str, Any]) -> tuple[FollowUp, ...]:
     if args.get('include_similar') is not True:
         return ()
-    request = RouteRequest(DOMAIN_METRICS, 'GET', f"/feedback/{_id_arg(args, 'feedback_id')}/similar",
+    request = RouteRequest(DOMAIN_METRICS, 'GET', f"/feedback/{id_arg(args, 'feedback_id')}/similar",
                            query={'limit': MAX_SIMILAR})
     return (FollowUp('similar', request, _slim_similar),)
 
@@ -289,11 +265,11 @@ def _get_metrics(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
     view = args.get('view', 'summary')
     if view not in METRIC_VIEWS:
         raise InvalidToolArgument(f'view must be one of: {", ".join(METRIC_VIEWS)}')
-    query: dict[str, Any] = {'days': _int_arg(args, 'days', default=DEFAULT_DAYS, low=0, high=MAX_DAYS),
-                             'source': _text_arg(args, 'source', max_length=MAX_FILTER_LENGTH),
+    query: dict[str, Any] = {'days': int_arg(args, 'days', default=DEFAULT_DAYS, low=0, high=MAX_DAYS),
+                             'source': text_arg(args, 'source', max_length=MAX_FILTER_LENGTH),
                              **_item_filters(args)}
     if view == 'dimensions':
-        key = _text_arg(args, 'key', max_length=MAX_FILTER_LENGTH, required=True)
+        key = text_arg(args, 'key', max_length=MAX_FILTER_LENGTH, required=True)
         if not DIMENSION_KEY_RE.match(key or ''):
             raise InvalidToolArgument('key must be a dimension key (from list_dimensions)')
         query['key'] = key
@@ -313,8 +289,8 @@ def _company_context(_args: Mapping[str, Any], _project: str | None) -> RouteReq
 
 
 def _search_memory(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
-    query = _text_arg(args, 'query', max_length=MAX_QUERY_LENGTH, required=True)
-    k = _int_arg(args, 'k', default=DEFAULT_MEMORY_K, low=1, high=MAX_MEMORY_K)
+    query = text_arg(args, 'query', max_length=MAX_QUERY_LENGTH, required=True)
+    k = int_arg(args, 'k', default=DEFAULT_MEMORY_K, low=1, high=MAX_MEMORY_K)
     return RouteRequest(DOMAIN_MEMORY, 'POST', '/memory/retrieve', body={'query': query, 'k': k})
 
 
@@ -323,32 +299,32 @@ def _list_projects(_args: Mapping[str, Any], _project: str | None) -> RouteReque
 
 
 def _get_project(_args: Mapping[str, Any], project: str | None) -> RouteRequest:
-    return RouteRequest(DOMAIN_PROJECTS, 'GET', f'/projects/{_require_project(project)}')
+    return RouteRequest(DOMAIN_PROJECTS, 'GET', f'/projects/{require_project(project)}')
 
 
 def _get_document(args: Mapping[str, Any], project: str | None) -> RouteRequest:
-    _id_arg(args, 'document_id')
+    id_arg(args, 'document_id')
     return _get_project(args, project)
 
 
 def _create_document(args: Mapping[str, Any], project: str | None) -> RouteRequest:
     body = {
         'document_type': 'custom',
-        'title': _text_arg(args, 'title', max_length=MAX_TITLE_LENGTH, required=True),
-        'content': _text_arg(args, 'content', max_length=MAX_DOCUMENT_CHARS, required=True),
+        'title': text_arg(args, 'title', max_length=MAX_TITLE_LENGTH, required=True),
+        'content': text_arg(args, 'content', max_length=MAX_DOCUMENT_CHARS, required=True),
     }
-    return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{_require_project(project)}/documents', body=body)
+    return RouteRequest(DOMAIN_PROJECTS, 'POST', f'/projects/{require_project(project)}/documents', body=body)
 
 
 def _update_document(args: Mapping[str, Any], project: str | None) -> RouteRequest:
-    document_id = _id_arg(args, 'document_id')
+    document_id = id_arg(args, 'document_id')
     body = {name: value for name, value in (
-        ('title', _text_arg(args, 'title', max_length=MAX_TITLE_LENGTH)),
-        ('content', _text_arg(args, 'content', max_length=MAX_DOCUMENT_CHARS)),
+        ('title', text_arg(args, 'title', max_length=MAX_TITLE_LENGTH)),
+        ('content', text_arg(args, 'content', max_length=MAX_DOCUMENT_CHARS)),
     ) if value is not None}
     if not body:
         raise InvalidToolArgument('give a new title, new content, or both')
-    return RouteRequest(DOMAIN_PROJECTS, 'PUT', f'/projects/{_require_project(project)}/documents/{document_id}',
+    return RouteRequest(DOMAIN_PROJECTS, 'PUT', f'/projects/{require_project(project)}/documents/{document_id}',
                         body=body)
 
 
@@ -358,30 +334,30 @@ def _list_agents(_args: Mapping[str, Any], _project: str | None) -> RouteRequest
 
 def _get_agent_run(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
     """One run by ``run_id``; without it, the agent's newest runs (so a caller can find the latest)."""
-    agent_id = _id_arg(args, 'agent_id')
+    agent_id = id_arg(args, 'agent_id')
     if args.get('run_id') in (None, ''):
-        limit = _int_arg(args, 'limit', default=DEFAULT_RUNS_LIMIT, low=1, high=MAX_RUNS_LIMIT)
+        limit = int_arg(args, 'limit', default=DEFAULT_RUNS_LIMIT, low=1, high=MAX_RUNS_LIMIT)
         return RouteRequest(DOMAIN_AGENTS, 'GET', f'/agents/{agent_id}/runs', query={'limit': limit})
-    return RouteRequest(DOMAIN_AGENTS, 'GET', f"/agents/{agent_id}/runs/{_id_arg(args, 'run_id')}")
+    return RouteRequest(DOMAIN_AGENTS, 'GET', f"/agents/{agent_id}/runs/{id_arg(args, 'run_id')}")
 
 
 def _search_feature_requests(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
-    if _bool_arg(args, 'boards'):
+    if bool_arg(args, 'boards'):
         # The boards the minter can see (GET /feature-requests/boards), folded in to keep tools/list small.
         return RouteRequest(DOMAIN_ENGAGEMENT, 'GET', '/feature-requests/boards')
     query: dict[str, Any] = {
-        'q': _text_arg(args, 'query', max_length=MAX_QUERY_LENGTH),
-        'limit': _int_arg(args, 'limit', default=DEFAULT_FEATURE_REQUEST_LIMIT, low=1, high=MAX_FEATURE_REQUEST_LIMIT),
+        'q': text_arg(args, 'query', max_length=MAX_QUERY_LENGTH),
+        'limit': int_arg(args, 'limit', default=DEFAULT_FEATURE_REQUEST_LIMIT, low=1, high=MAX_FEATURE_REQUEST_LIMIT),
     }
     for name in FEATURE_REQUEST_FILTERS:
-        query[name] = _text_arg(args, name, max_length=MAX_FEATURE_REQUEST_FILTER_LENGTH)
-    days = _int_arg(args, 'days', default=0, low=0, high=MAX_FEATURE_REQUEST_DAYS)
+        query[name] = text_arg(args, name, max_length=MAX_FEATURE_REQUEST_FILTER_LENGTH)
+    days = int_arg(args, 'days', default=0, low=0, high=MAX_FEATURE_REQUEST_DAYS)
     query['days'] = days or None  # 0 = all time: no window sent
     return RouteRequest(DOMAIN_ENGAGEMENT, 'GET', '/feature-requests/search', query=query)
 
 
 def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
-    return RouteRequest(DOMAIN_AGENTS, 'POST', f"/agents/{_id_arg(args, 'agent_id')}/run")
+    return RouteRequest(DOMAIN_AGENTS, 'POST', f"/agents/{id_arg(args, 'agent_id')}/run")
 
 
 # ── Catalogue ───────────────────────────────────────────────────────────────
@@ -390,69 +366,69 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
         'search_feedback', 'Search feedback',
         'Search (`query`, 2+ characters) or list the newest customer feedback you can see; `urgent: true` keeps '
         'high urgency only. Verbatims with sentiment, category and urgency: ground claims about customers here.',
-        _schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH}, 'days': _DAYS, 'limit': _LIMIT,
-                 'category': _FILTER, 'sentiment': _FILTER, 'source': _FILTER, 'urgent': _BOOL, **_ITEM_FILTERS}),
-        _search_feedback, _stripped),
+        schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH}, 'days': _DAYS, 'limit': _LIMIT,
+                 'category': _FILTER, 'sentiment': _FILTER, 'source': _FILTER, 'urgent': BOOL_SCHEMA, **_ITEM_FILTERS}),
+        _search_feedback, stripped),
     GlobalTool(
         'get_feedback', 'Get one feedback item',
         f'One feedback item by `feedback_id`; `include_similar: true` adds up to {MAX_SIMILAR} similar items.',
-        _schema({'feedback_id': _ID, 'include_similar': _BOOL}, ('feedback_id',)), _get_feedback, _stripped,
+        schema({'feedback_id': ID_SCHEMA, 'include_similar': BOOL_SCHEMA}, ('feedback_id',)), _get_feedback, stripped,
         follow_ups=_similar_follow_up),
     GlobalTool(
         'get_metrics', 'Get feedback metrics',
         'Metrics over a window. `view`: summary, sentiment, categories, sources, personas, dimensions (+ `key`), '
         'github (issues per release and label) or entities (filter values with counts). Use it for volumes and trends.',
-        _schema({'view': {'type': 'string', 'enum': list(METRIC_VIEWS), 'default': 'summary'}, 'days': _DAYS,
+        schema({'view': {'type': 'string', 'enum': list(METRIC_VIEWS), 'default': 'summary'}, 'days': _DAYS,
                  'key': _FILTER, 'source': _FILTER, **_ITEM_FILTERS}),
         _get_metrics),
     GlobalTool(
         'list_categories', 'List categories',
         'The category taxonomy you can see (name, description, product, subcategories).',
-        _schema({}), _list_categories),
+        schema({}), _list_categories),
     GlobalTool(
         'list_dimensions', 'List dimensions',
         'Feedback dimensions (key, label, allowed values) for `dims` and the dimensions view.',
-        _schema({}), _list_dimensions),
+        schema({}), _list_dimensions),
     GlobalTool(
         'search_memory', 'Search memory',
         'Semantic search over company and personal memory (decisions, facts, preferences) you can see. '
         'Check it before proposing.',
-        _schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
+        schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'k': {'type': 'integer', 'minimum': 1, 'maximum': MAX_MEMORY_K, 'default': DEFAULT_MEMORY_K}}, ('query',)),
         _search_memory),
     GlobalTool(
         'get_company_context', 'Get company context',
         'The company vision and objectives.',
-        _schema({}), _company_context),
+        schema({}), _company_context),
     GlobalTool(
         'list_projects', 'List projects',
         'Research projects you can see.',
-        _schema({}), _list_projects, _project_list),
+        schema({}), _list_projects, _project_list),
     GlobalTool(
         'get_project', 'Get a project',
         'A project: its personas and documents (titles and ids; bodies via get_document).',
-        _schema({'project_id': _PROJECT_ID}), _get_project, _project_overview, project_scoped=True),
+        schema({'project_id': PROJECT_ID_SCHEMA}), _get_project, _project_overview, project_scoped=True),
     GlobalTool(
         'get_document', 'Get a document',
         'One project document in full, by `document_id`.',
-        _schema({'project_id': _PROJECT_ID, 'document_id': _ID}, ('document_id',)),
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
         _get_document, _one_document, project_scoped=True),
     GlobalTool(
         'list_agents', 'List agents',
         'Autonomous agents you can see, with their status.',
-        _schema({}), _list_agents, _stripped),
+        schema({}), _list_agents, stripped),
     GlobalTool(
         'get_agent_run', 'Get agent runs',
         "An agent's run by `run_id`, or its newest runs (status, step, project, error).",
-        _schema({'agent_id': _ID, 'run_id': _ID,
+        schema({'agent_id': ID_SCHEMA, 'run_id': ID_SCHEMA,
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_RUNS_LIMIT,
                            'default': DEFAULT_RUNS_LIMIT}}, ('agent_id',)),
-        _get_agent_run, _stripped),
+        _get_agent_run, stripped),
     GlobalTool(
         'search_feature_requests', 'Search board requests',
         'Search feedback-board requests you can see (NOT reviews: never in feedback metrics); cite as '
         '[FR:<request_id>]. `board`, `category`, `status`: one value or a comma list. `boards: true` lists the boards.',
-        _schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
+        schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'board': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH,
                            'description': 'Board id or slug.'},
                  'category': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH},
@@ -461,26 +437,26 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
                           'description': 'Created in the last N days; 0 = all time.'},
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_FEATURE_REQUEST_LIMIT,
                            'default': DEFAULT_FEATURE_REQUEST_LIMIT},
-                 'boards': _BOOL}),
+                 'boards': BOOL_SCHEMA}),
         _search_feature_requests, _feature_requests, board_route=True),
     GlobalTool(
         'create_document', 'Create a document',
         'Create a custom markdown document in a project you can edit (write token). Cite feedback ids for claims.',
-        _schema({'project_id': _PROJECT_ID, 'title': {'type': 'string', 'maxLength': MAX_TITLE_LENGTH},
+        schema({'project_id': PROJECT_ID_SCHEMA, 'title': {'type': 'string', 'maxLength': MAX_TITLE_LENGTH},
                  'content': {'type': 'string', 'maxLength': MAX_DOCUMENT_CHARS}}, ('title', 'content')),
-        _create_document, _stripped, write=True, project_scoped=True),
+        _create_document, stripped, write=True, project_scoped=True),
     GlobalTool(
         'update_document', 'Update a document',
         "Replace a document's title and/or content (write token). PRD / PR/FAQ titles keep their series; "
         'prototypes cannot be edited here.',
-        _schema({'project_id': _PROJECT_ID, 'document_id': _ID,
+        schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
                  'title': {'type': 'string', 'maxLength': MAX_TITLE_LENGTH},
                  'content': {'type': 'string', 'maxLength': MAX_DOCUMENT_CHARS}}, ('document_id',)),
-        _update_document, _stripped, write=True, project_scoped=True),
+        _update_document, stripped, write=True, project_scoped=True),
     GlobalTool(
         'run_agent', 'Run an agent',
         'Start an agent run now (write token minted by a current administrator). Confirm first: it spends model budget.',
-        _schema({'agent_id': _ID}, ('agent_id',)), _run_agent, _stripped, write=True, admin_only=True),
+        schema({'agent_id': ID_SCHEMA}, ('agent_id',)), _run_agent, stripped, write=True, admin_only=True),
     # Methodology steps, their jobs, Radar and feedback edits (shared/mcp_global_tools_steps.py).
     *STEP_TOOLS,
 )
