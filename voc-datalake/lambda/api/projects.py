@@ -19,6 +19,7 @@ from botocore.exceptions import ClientError
 from shared import (
     category_access,
     draft_intent,
+    methodology,
     persona_feedback_preview,
     persona_overlap,
     persona_replace,
@@ -930,7 +931,9 @@ def get_project(project_id: str, caller: Caller | None = None, *, include_person
     return {
         'project': project,
         'personas': with_signed_avatars(personas),
-        'documents': documents
+        'documents': documents,
+        # The per-step upstream gaps the Overview cards render (tenet 2, shared/methodology.py).
+        'methodology': methodology.overview(items),
     }
 
 

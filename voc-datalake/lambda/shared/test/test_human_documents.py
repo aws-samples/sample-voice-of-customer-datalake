@@ -61,6 +61,13 @@ class TestFilingTheDocument:
         assert fields['gsi1sk'] == fields['created_at'] == fields['updated_at']
         assert datetime.fromisoformat(fields['created_at']).tzinfo is not None
 
+    def test_it_says_it_cites_no_evidence(self, persist: MagicMock):
+        _create({'title': 'T'})
+
+        block = _fields(persist)['methodology']
+        assert block['evidence'] == 0
+        assert [w['code'] for w in block['warnings']] == ['no_evidence']
+
     def test_no_creator_leaves_no_creator_attribute(self, persist: MagicMock):
         _create({'title': 'T'}, creator_sub='')
 

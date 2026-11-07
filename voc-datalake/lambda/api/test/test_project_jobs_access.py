@@ -136,6 +136,9 @@ class TestAMissingProjectIsRefusedBeforeAnyJobRowIsWritten:
 class TestAJobRecordsWhoStartedIt:
     @pytest.mark.parametrize(('method', 'path', 'body'), JOB_ROUTES)
     def test_every_job_route_stamps_the_callers_subject(self, call, tables, method, path, body):
+        if path.endswith('/build-prototype'):
+            # A build needs a PRD or PR/FAQ to read (409 otherwise, shared/methodology.py).
+            tables[0].put_item(Item={'pk': f'PROJECT#{PROJECT}', 'sk': 'PRD#prd_1', 'document_id': 'prd_1'})
         status, response, started = call(EDITOR, method, path, body)
 
         assert status == 200, response
