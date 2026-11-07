@@ -30,6 +30,7 @@ from briefing.todos import TODO_PROVIDERS, PersonalTables, Reader
 from briefing.writer import PersonalInput, Words, write_org, write_personal
 from shared import briefing_prefs as prefs
 from shared import briefing_store as store
+from shared import job_notices
 from shared.brief_cards import SEVERITIES, BriefCard, BriefContext, CardAction, Severity
 from shared.briefing_requests import REASON_SCHEDULED
 from shared.category_access import CategoryScope
@@ -188,6 +189,15 @@ def _deliver(reader: Reader, row: Mapping[str, Any], cards: Iterable[BriefCard],
     return True
 
 
+#: The notice's ``job_type`` (shared/job_notices.py): Home's brief listens for it.
+BRIEF_JOB_TYPE: Final = 'morning_brief'
+
+
+def notify_brief(sub: str, day: str, status: str) -> None:
+    """Tell the reader their brief for ``day`` settled, so an open Home re-reads it (best effort, never raises)."""
+    job_notices.notify(sub, f'brief_{day}', status, job_type=BRIEF_JOB_TYPE)
+
+
 @dataclass(frozen=True)
 class BuildRequest:
     sub: str
@@ -204,6 +214,7 @@ def build_for_user(tables: Tables, request: BuildRequest, now: datetime) -> dict
     reader = lookup_reader(request.username, request.sub, tables.aggregates)
     if reader is None:
         store.mark_failed(tables.aggregates, request.sub, day, now)
+        notify_brief(request.sub, day, store.STATUS_FAILED)
         return {'outcome': 'reader_gone', 'model_calls': 0, 'cards': 0}
     scope = scope_for_caller(Caller(subject=reader.sub, is_admin=reader.is_admin, username=reader.username),
                              tables.aggregates)
@@ -220,6 +231,7 @@ def build_for_user(tables: Tables, request: BuildRequest, now: datetime) -> dict
         'scope_hash': store.scope_hash(scope), 'language': settings['language'],
         'model_calls': model_calls, 'reason': request.reason,
     })
+    notify_brief(request.sub, day, store.STATUS_READY)
     mailed = request.reason == REASON_SCHEDULED and _deliver(
         reader, row, cards, words, settings, day, request.site_url)
     logger.info('Brief built', extra={'cards': len(cards), 'model_calls': model_calls,

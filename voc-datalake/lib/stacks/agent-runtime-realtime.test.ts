@@ -24,6 +24,7 @@ const PUBLISHERS: Record<string, string> = {
   'voc-category-reprocess': 'CategoryReprocessRole',
   'voc-retention': 'RetentionWorkerRetentionRole',
   'voc-memory-extractor': 'MemoryWorkersMemoryExtractorRole',
+  'voc-briefing': 'BriefingWorkerBriefingRole',
 };
 
 let template: Template;
