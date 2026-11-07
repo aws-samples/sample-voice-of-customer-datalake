@@ -10,6 +10,7 @@ import { designSystemApi, designSystemKey } from '../../api/designSystemApi'
 import { projectsApi } from '../../api/projectsApi'
 import { projectJobsKey, projectKey } from '../../api/projectQueryKeys'
 import { usePrototypeLinkRefresh } from '../../components/usePrototypeLinkRefresh'
+import { realtimePollInterval, useRealtimeJobRefresh } from '../../realtime/jobRefresh'
 import { generatedDocTitle, type SeriesDocument } from './generatedDocTitle'
 import { hasRecentlyCompletedJob } from './jobCompletion'
 import type {
@@ -97,12 +98,24 @@ export function jobsPollInterval(
   jobs: ReadonlyArray<Pick<ProjectJob, 'status'>>,
   jobStartedAt: number | null,
   now: number,
+  runningEveryMs = JOB_POLL_INTERVAL_MS,
 ): number {
   if (jobs.some((job) => job.status === 'running' || job.status === 'pending')) {
-    return JOB_POLL_INTERVAL_MS
+    return runningEveryMs
   }
   const withinStartWindow = jobStartedAt != null && now - jobStartedAt < JOB_START_POLL_WINDOW_MS
   return withinStartWindow ? JOB_POLL_INTERVAL_MS : 0
+}
+
+/**
+ * {@link jobsPollInterval} now, as the jobs queries use it: while push is live a running job's end arrives as a
+ * notice (useRealtimeJobRefresh), so its poll slows to the fallback (docs/realtime.md).
+ */
+export function liveJobsPollInterval(
+  jobs: ReadonlyArray<Pick<ProjectJob, 'status'>>,
+  jobStartedAt: number | null,
+): number {
+  return jobsPollInterval(jobs, jobStartedAt, Date.now(), realtimePollInterval(JOB_POLL_INTERVAL_MS))
 }
 
 interface UseProjectDataProps {
@@ -137,9 +150,10 @@ export function useProjectData({
     enabled: isEnabled,
     // Re-evaluated after every fetch, so the start window closes itself without
     // needing a re-render. 0 means no refetch (same as false).
-    refetchInterval: (query) =>
-      jobsPollInterval(query.state.data?.jobs ?? [], jobStartedAt, Date.now()),
+    refetchInterval: (query) => liveJobsPollInterval(query.state.data?.jobs ?? [], jobStartedAt),
   })
+  // A project job's end (shared/job_notices.py) re-reads the jobs and the project at once (docs/realtime.md).
+  useRealtimeJobRefresh({ projectId: id }, [projectJobsKey(id), projectKey(id)], isEnabled)
 
   /**
    * The product context, fetched here rather than only in the Product tab so the

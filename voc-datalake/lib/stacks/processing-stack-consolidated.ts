@@ -30,6 +30,7 @@ import { PROCESSOR_BATCHING_WINDOW, PROCESSOR_MAX_CONCURRENCY, PROCESSOR_TIMEOUT
 import { appVersion } from '../utils/connector-version';
 import { grantSilverHistoryPut } from '../utils/silver-history-grants';
 import { grantReadAndWrites } from '../utils/table-write-grants';
+import { wireRealtimeEndpointParameter } from '../utils/realtime';
 import { FEATURE_REQUESTS_TABLE_ENV, grantFeatureRequestEvidenceRead } from '../utils/feature-request-evidence-grant';
 import { createAggregatorRole, createProcessorRole, grantTextAnalysis } from './processing-roles';
 import { loadPlugins, pluginIdsWithCapability } from '../plugin-loader';
@@ -115,6 +116,8 @@ export class VocProcessingStack extends VocStack {
   public readonly agentRunStateMachine: sfn.StateMachine;
   /** voc-agent-conductor's role (VocApiStack grants it publish on the Event API's `runs` namespace). */
   public readonly agentConductorRole: iam.IRole;
+  /** Job workers that tell a job's starter it ended (VocApiStack grants each publish on `jobs`, docs/realtime.md). */
+  public readonly realtimeJobsPublisherRoles: Record<string, iam.IRole> = {};
 
   constructor(scope: Construct, id: string, props: VocProcessingStackProps) {
     super(scope, id, props);
@@ -420,6 +423,10 @@ export class VocProcessingStack extends VocStack {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
     });
+
+    // The research job's end reaches its starter (docs/realtime.md); the host comes from VocApiStack's parameter.
+    wireRealtimeEndpointParameter(researchStepLambda, this.deploymentPrefix);
+    this.realtimeJobsPublisherRoles.ResearchStep = researchRole;
 
     grantSharedMemoryRecall(researchStepLambda, researchRole, { memoryTable: props.memoryTable, kmsKey, region: this.region });
 

@@ -12,10 +12,14 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import type * as lambda from 'aws-cdk-lib/aws-lambda';
 
 /** The namespaces and who publishes to each (docs/realtime.md → Channels). */
 export const REALTIME_NAMESPACES = {
-  /** Assist jobs (shared/assist_jobs.py): the projects, settings and scrapers APIs and their assist twins. */
+  /**
+   * Job ends (shared/assist_jobs.py, shared/job_notices.py): the projects, settings and scrapers APIs and their
+   * assist twins, the project job Lambdas, and the job workers of VocProcessingStack / VocIngestionStack.
+   */
   jobs: 'jobs',
   /** The assistant's server-side session (voc-chat-stream): a run ended. */
   chat: 'chat',
@@ -76,4 +80,14 @@ export function realtimeParameterReadStatement(stack: cdk.Stack, deploymentPrefi
       arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
     })],
   });
+}
+
+/**
+ * A publisher in a stack deployed BEFORE VocApiStack (Processing, Ingestion): it reads the Event API's host
+ * from the endpoint parameter (exactly `ssm:GetParameter` on it, the env var naming it). Its publish grant is a
+ * policy VocApiStack attaches to its role (api-realtime.ts `grantRealtimePublishToRoles`).
+ */
+export function wireRealtimeEndpointParameter(fn: lambda.Function, deploymentPrefix: string | undefined): void {
+  fn.addToRolePolicy(realtimeParameterReadStatement(cdk.Stack.of(fn), deploymentPrefix));
+  fn.addEnvironment(REALTIME_HTTP_DNS_PARAMETER_ENV, realtimeParameterName(deploymentPrefix));
 }

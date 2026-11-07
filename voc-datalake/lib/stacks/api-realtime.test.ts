@@ -73,6 +73,13 @@ function publishersByNamespace(): Map<string, string[]> {
   return found;
 }
 
+/** Every role that may publish on `jobs` (a fragment of its reference): one grant each. */
+const JOBS_PUBLISHERS = [
+  'ProjectsLambdaRole', 'SettingsLambdaRole', 'ScrapersLambdaRole',
+  'PersonaGeneratorRole', 'DocumentGeneratorRole', 'DocumentMergerRole', 'PersonaImporterRole',
+  'voc-research-step-role',
+];
+
 describe('the Event API', () => {
   it('connects and subscribes with the app pool (the SPA client only) and publishes with IAM only', () => {
     const config = onlyApi();
@@ -110,11 +117,12 @@ describe('the Event API', () => {
   it('grants publish per namespace to exactly its publishers', () => {
     const publishers = publishersByNamespace();
     expect([...publishers.keys()].sort(byCodeUnit)).toStrictEqual(['chat', 'jobs', 'runs']);
-    // projects / settings / scrapers roles (each shared with its assist twin, so one grant per role is enough).
+    // projects / settings / scrapers roles (each shared with its assist twin, so one grant per role is enough), the
+    // project job Lambdas' roles, and the earlier stacks' job workers, referenced by name and granted here.
     const jobs = publishers.get('jobs') ?? [];
-    expect(new Set(jobs).size).toBe(3);
+    expect(new Set(jobs).size).toBe(JOBS_PUBLISHERS.length);
     const named = (roles: string[] | undefined, fragment: string) => roles?.some((role) => role.includes(fragment)) === true;
-    expect(['ProjectsLambdaRole', 'SettingsLambdaRole', 'ScrapersLambdaRole'].filter((f) => !named(jobs, f))).toStrictEqual([]);
+    expect(JOBS_PUBLISHERS.filter((f) => !named(jobs, f))).toStrictEqual([]);
     // chat: the stream's role only; runs: the conductor's role, VocProcessingStack's, referenced by name and granted here.
     expect([publishers.get('chat')?.length, named(publishers.get('chat'), 'ChatStream')]).toStrictEqual([1, true]);
     expect([publishers.get('runs')?.length, named(publishers.get('runs'), 'voc-agent-conductor-role')]).toStrictEqual([1, true]);
@@ -126,8 +134,8 @@ describe('the Event API', () => {
       .map(([id]) => id.replace(/[0-9A-F]{8}$/, ''))
       .sort(byCodeUnit);
     expect(functions).toStrictEqual([
-      'ChatStreamApi', 'ProjectsApi', 'ProjectsAssistWorker', 'ScrapersApi', 'ScrapersAssistWorker', 'SettingsApi',
-      'SettingsAssistWorker',
+      'ChatStreamApi', 'DocumentGeneratorJob', 'DocumentMergerJob', 'PersonaGeneratorJob', 'PersonaImporterJob',
+      'ProjectsApi', 'ProjectsAssistWorker', 'ScrapersApi', 'ScrapersAssistWorker', 'SettingsApi', 'SettingsAssistWorker',
     ]);
   });
 

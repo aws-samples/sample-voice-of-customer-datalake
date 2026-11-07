@@ -44,6 +44,7 @@ from shared.feedback_sampling import INPUT_FEEDBACK_IDS_FIELD, input_feedback_id
 from shared.grounding import Grounding
 from shared.ids import timestamped_id
 from shared.job_knowledge import derivation_knowledge, shared_grounding, with_guidance
+from shared.job_notices import notify_project_job
 from shared.jobs import update_job_status
 
 # Shared module imports
@@ -858,6 +859,7 @@ Public-web grounding for this report came from the following searches:
             **({'metadata': _job_usage(feedback_usage)} if feedback_usage else {}),
         },
     )
+    notify_project_job(project_id, job_id, 'completed')
     _discard_feedback_context(job_id)
 
     return {
@@ -886,6 +888,7 @@ def step_error(event: dict) -> dict:
     logger.error(f"Research job {job_id} failed: {error_message}")
 
     update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_message)
+    notify_project_job(project_id, job_id, 'failed')
     _discard_feedback_context(job_id)
 
     return {'success': False, 'error': error_message}
