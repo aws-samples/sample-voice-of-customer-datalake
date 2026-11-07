@@ -31,7 +31,15 @@ from typing import Any
 
 from aws_lambda_powertools.event_handler import Response, content_types
 
-from shared import agent_run_decisions, agent_run_resume, agent_seed, plans_store, project_access, workflow_schema
+from shared import (
+    agent_run_decisions,
+    agent_run_resume,
+    agent_seed,
+    plans_store,
+    project_access,
+    workflow_methodology,
+    workflow_schema,
+)
 from shared import agents_store as store
 from shared.api import api_handler, create_api_resolver, validate_int
 from shared.aws import get_dynamodb_resource
@@ -461,6 +469,8 @@ def validate_workflow():
     body = json_object_body(app)
     result = workflow_schema.validate_definition(body.get('definition'))
     response: dict[str, Any] = result.to_dict()
+    # Methodology gaps (a PRD with no PR/FAQ before it, ...): warnings, never errors (tenet 2).
+    response['warnings'] = workflow_methodology.methodology_warnings(result.definition) if result.definition else []
     workflow_id = body.get('workflow_id')
     if workflow_id is not None and isinstance(body.get('definition'), Mapping):
         current = workflow_schema.decode_definition(_workflow(str(workflow_id)).get('definition'))
