@@ -3,8 +3,8 @@
  * twin of lambda/shared/realtime.py.
  *
  * `POST https://<REALTIME_HTTP_DNS>/event` `{channel: '/<namespace>/<sub>', events: ['<json>']}`, SigV4 for
- * `appsync` with the role's credentials (`appsync:EventPublish` on exactly the `chat` namespace,
- * lib/stacks/api-realtime.ts). Best effort: a failure is logged by name and resolves false, never
+ * `appsync` with the role's credentials (`appsync:EventPublish` on exactly the `chat` namespace, VocCoreStack's
+ * managed policy, lib/stacks/core-realtime.ts). Best effort: a failure is logged by name and resolves false, never
  * rejects, so a run never fails because a notice was lost (the SPA's polling is the fallback).
  */
 import { signedPost, type SignedPost } from './sigv4.js';
