@@ -35,6 +35,14 @@ def test_a_key_cursor_that_was_not_issued_for_this_partition_is_refused(token):
         decode_key_cursor(token, FIELDS, ('gsi3pk', 'URGENCY#high'))
 
 
+@pytest.mark.parametrize('encoding', ['utf-16', 'utf-32'])
+def test_a_key_cursor_that_is_not_utf8_json_is_refused(encoding):
+    """json.loads accepts UTF-16/32 bytes, so the decoder reads UTF-8 explicitly, like the Radar cursor."""
+    token = base64.urlsafe_b64encode(json.dumps(KEY).encode(encoding)).decode().rstrip('=')
+    with pytest.raises(ValueError, match='next_token'):
+        decode_key_cursor(token, FIELDS, ('gsi3pk', 'URGENCY#high'))
+
+
 def test_an_offset_cursor_round_trips():
     assert decode_offset_cursor(encode_offset_cursor(42), 100) == 42
 

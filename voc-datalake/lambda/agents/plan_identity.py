@@ -38,8 +38,6 @@ class DirectoryUnavailable(Exception):
     """Cognito could not answer; the step fails closed."""
 
 
-
-
 def _pool() -> str:
     pool = os.environ.get('USER_POOL_ID', '')
     if not pool:
