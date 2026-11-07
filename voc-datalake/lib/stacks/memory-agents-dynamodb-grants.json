@@ -39,7 +39,7 @@
           "dynamodb:UpdateItem"
         ],
         "Conversations": [
-          "dynamodb:Scan"
+          "dynamodb:Query"
         ]
       }
     },

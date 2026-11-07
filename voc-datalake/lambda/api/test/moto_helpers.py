@@ -17,6 +17,8 @@ from unittest.mock import patch
 import boto3
 from moto import mock_aws
 
+from shared.indexes import CONVERSATIONS_BY_KIND_INDEX
+
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb.service_resource import Table
     from mypy_boto3_dynamodb.type_defs import (
@@ -58,6 +60,21 @@ def pk_sk_table(name: str, *, gsi1_index: str | None = None) -> Table:
         AttributeDefinitions=attribute_definitions,
         BillingMode='PAY_PER_REQUEST',
         GlobalSecondaryIndexes=[gsi],
+    )
+
+
+def conversations_table(name: str) -> Table:
+    """A (pk, sk) voc-conversations table with the real ``kind`` / ``updated_at`` index (core-stack.ts)."""
+    return boto3.resource('dynamodb', region_name='us-east-1').create_table(
+        TableName=name,
+        KeySchema=_key_schema('pk', 'sk'),
+        AttributeDefinitions=[{'AttributeName': a, 'AttributeType': 'S'} for a in ('pk', 'sk', 'kind', 'updated_at')],
+        BillingMode='PAY_PER_REQUEST',
+        GlobalSecondaryIndexes=[{
+            'IndexName': CONVERSATIONS_BY_KIND_INDEX,
+            'KeySchema': _key_schema('kind', 'updated_at'),
+            'Projection': {'ProjectionType': 'INCLUDE', 'NonKeyAttributes': ['message_count']},
+        }],
     )
 
 

@@ -37,3 +37,7 @@ PARTICIPANTS_LISTING_INDEX = 'gsi1'
 
 # voc-feature-requests table (gsi1pk FRS, gsi1sk {created_at}#{request_id})
 FEATURE_REQUESTS_LISTING_INDEX = 'gsi1'
+
+# voc-conversations table (kind + updated_at, both written by every conversation writer;
+# the memory scanner's window read, memory/scanner/handler.py)
+CONVERSATIONS_BY_KIND_INDEX = 'gsi1-by-kind-updated-at'

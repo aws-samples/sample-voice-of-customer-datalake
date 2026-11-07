@@ -15,9 +15,14 @@ Two entry points, one Lambda:
 
 A session is not re-enqueued while a previous enqueue is in flight
 (``enqueued_at`` on the cursor, retried after ``REENQUEUE_AFTER_MINUTES`` in case
-the message was lost to the DLQ). ``voc-conversations`` has no index on
-``updated_at``, so the schedule path is a filtered Scan bounded by the
-invocation's remaining time; see the module report for the GSI follow-up.
+the message was lost to the DLQ). The schedule path reads only the window: a Query
+of ``voc-conversations``' ``kind`` / ``updated_at`` index
+(``CONVERSATIONS_BY_KIND_INDEX``), paged and bounded by the invocation's remaining
+time, so its cost follows the sessions active in the last ``LOOKBACK_DAYS``, not
+every conversation ever stored (TENETS.md tenet 7; until 6.04.00 it was a filtered
+Scan of the whole table). Both conversation writers already store ``kind`` and
+``updated_at``, and DynamoDB indexes the existing items when the index is added,
+so no session is missed across the upgrade.
 """
 
 from __future__ import annotations
@@ -29,12 +34,13 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Final
 
 from aws_lambda_powertools.metrics import MetricUnit
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Key
 
 from shared import memory_policy as policy
 from shared import memory_store as store
 from shared.aws import get_dynamodb_resource, get_sqs_client
 from shared.conversations import ASSISTANT_KIND, CONVERSATION_SK_PREFIX
+from shared.indexes import CONVERSATIONS_BY_KIND_INDEX
 from shared.invocation_cost import instrumented_handler
 from shared.logging import logger, metrics
 from shared.timestamps import now_iso
@@ -66,19 +72,24 @@ def get_conversations_table():
 
 # ── Schedule path ────────────────────────────────────────────────────────────
 def idle_sessions(table, now: datetime, time_left_ms) -> list[dict]:
-    """``[{session_id, owner_sub, message_count, updated_at}]`` of ended assistant sessions."""
+    """``[{session_id, owner_sub, message_count, updated_at}]`` of ended assistant sessions.
+
+    ``not_before <= updated_at < idle_before``: the key range is inclusive at both ends, so a
+    session stamped exactly ``idle_before`` is dropped here, as the Scan's ``lt`` did.
+    """
     idle_before = (now - timedelta(minutes=IDLE_MINUTES)).isoformat()
     not_before = (now - timedelta(days=LOOKBACK_DAYS)).isoformat()
     kwargs: dict[str, Any] = {
-        'FilterExpression': (Attr('kind').eq(ASSISTANT_KIND)
-                             & Attr('updated_at').lt(idle_before)
-                             & Attr('updated_at').gte(not_before)),
+        'IndexName': CONVERSATIONS_BY_KIND_INDEX,
+        'KeyConditionExpression': Key('kind').eq(ASSISTANT_KIND) & Key('updated_at').between(not_before, idle_before),
         'ProjectionExpression': 'pk, sk, message_count, updated_at',
     }
     sessions: list[dict] = []
     while True:
-        response = table.scan(**kwargs)
+        response = table.query(**kwargs)
         for row in response.get('Items', []):
+            if row.get('updated_at') == idle_before:
+                continue  # not yet idle: the window is idle_before exclusive
             session = _session_from_row(row)
             if session:
                 sessions.append(session)
