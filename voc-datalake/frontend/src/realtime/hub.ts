@@ -117,10 +117,3 @@ export function watchRealtime(matches: (notice: RealtimeNotice) => boolean): Rea
     },
   }
 }
-
-/** Test support: forget every listener and go offline. */
-export function resetRealtimeHub(): void {
-  hub.live = false
-  hub.listeners.clear()
-  hub.reconnects.clear()
-}

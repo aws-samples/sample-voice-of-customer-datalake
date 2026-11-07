@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RETRY_DELAYS_MS, startRealtime, stopRealtime, type RealtimeTransport } from './connection'
-import { isRealtimeLive, onRealtimeNotice, onRealtimeReconnect, resetRealtimeHub } from './hub'
+import { isRealtimeLive, onRealtimeNotice, onRealtimeReconnect, setRealtimeLive } from './hub'
 
 interface FakeChannel { channel: string; onData: (data: unknown) => void; onError: (error: unknown) => void; closed: boolean }
 
@@ -31,7 +31,7 @@ const SUB = '0a1b2c3d-1111-4222-8333-444455556666'
 
 beforeEach(() => {
   vi.useFakeTimers()
-  resetRealtimeHub()
+  setRealtimeLive(false)
 })
 afterEach(() => {
   stopRealtime()
@@ -50,18 +50,19 @@ describe('the realtime connection', () => {
   it('delivers only valid notices', async () => {
     const fake = fakeTransport()
     const heard = vi.fn()
-    onRealtimeNotice(heard)
+    const stop = onRealtimeNotice(heard)
     startRealtime(SUB, fake.transport)
     await vi.advanceTimersByTimeAsync(0)
     fake.channels[0]?.onData({ event: JSON.stringify({ type: 'job', job_id: 'job_1', status: 'failed' }) })
     fake.channels[0]?.onData({ event: '{"type":"job"}' })
     expect(heard.mock.calls).toStrictEqual([[{ type: 'job', job_id: 'job_1', status: 'failed' }]])
+    stop()
   })
 
   it('retries a failed connect with backoff and announces the connect', async () => {
     const fake = fakeTransport({ failTimes: 3 })
     const reconnected = vi.fn()
-    onRealtimeReconnect(reconnected)
+    const stop = onRealtimeReconnect(reconnected)
     startRealtime(SUB, fake.transport)
     await vi.advanceTimersByTimeAsync(0)
     expect(isRealtimeLive()).toBe(false)
@@ -69,6 +70,7 @@ describe('the realtime connection', () => {
     await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[0])
     expect(isRealtimeLive()).toBe(true)
     expect(reconnected).toHaveBeenCalledExactlyOnceWith()
+    stop()
   })
 
   it('a channel error closes the session and reconnects', async () => {

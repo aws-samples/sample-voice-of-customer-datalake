@@ -11,7 +11,7 @@ import { openSession } from './runtime'
 import { SUBSCRIBED_FOLLOW_DELAY_MS } from './followServerRun'
 import { getSession } from '../sessions/sessionsApi'
 import { slotOf, useThreadStore } from '../store/assistantStore'
-import { deliverNotice, resetRealtimeHub, setRealtimeLive } from '../../realtime/hub'
+import { deliverNotice, setRealtimeLive } from '../../realtime/hub'
 import type { RunEnvironment } from './runtime'
 
 const env: RunEnvironment = { page: { kind: 'home', path: '/' }, useWebSearch: false }
@@ -33,7 +33,7 @@ const status = () => slotOf(useThreadStore.getState().slots, 'conv_1')?.thread.s
 beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(Date.parse('2026-10-06T12:00:00Z'))
-  resetRealtimeHub()
+  setRealtimeLive(false)
   useThreadStore.getState().reset()
   getSessionMock.mockReset()
 })
