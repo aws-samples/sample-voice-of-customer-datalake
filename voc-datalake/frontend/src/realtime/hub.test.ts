@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deliverNotice, isRealtimeLive, resetRealtimeHub, setRealtimeLive, watchRealtime } from './hub'
+import { deliverNotice, isRealtimeLive, setRealtimeLive, watchRealtime } from './hub'
 
 const JOB = { type: 'job', job_id: 'job_1', status: 'completed' } as const
 
 beforeEach(() => {
   vi.useFakeTimers()
-  resetRealtimeHub()
+  setRealtimeLive(false)
 })
 afterEach(() => { vi.useRealTimers() })
 

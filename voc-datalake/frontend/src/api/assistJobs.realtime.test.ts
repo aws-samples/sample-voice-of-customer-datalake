@@ -1,6 +1,6 @@
 /** api/assistJobs.ts with push (docs/realtime.md): the job's notice wakes the loop; polling is the fallback. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deliverNotice, resetRealtimeHub, setRealtimeLive } from '../realtime/hub'
+import { deliverNotice, setRealtimeLive } from '../realtime/hub'
 import { ASSIST_POLL_INTERVAL_MS, ASSIST_SUBSCRIBED_POLL_INTERVAL_MS, runAssistJob } from './assistJobs'
 
 const STARTED = { success: true, job_id: 'job_1', status: 'pending' }
@@ -15,7 +15,7 @@ function pollAnswers(...answers: unknown[]) {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  resetRealtimeHub()
+  setRealtimeLive(false)
 })
 afterEach(() => { vi.useRealTimers() })
 

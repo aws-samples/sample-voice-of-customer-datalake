@@ -4,7 +4,7 @@ import { agentsKeys } from '../api/agentsApi'
 import { plansKeys } from '../api/plansApi'
 import { useAuthStore } from '../store/authStore'
 import type { RealtimeTransport } from './connection'
-import { deliverNotice, isRealtimeLive, resetRealtimeHub } from './hub'
+import { deliverNotice, isRealtimeLive, setRealtimeLive } from './hub'
 import { watchRealtimeSession } from './session'
 
 const endpoints = vi.hoisted((): { value: { httpDns: string; realtimeDns: string } | null } => ({ value: null }))
@@ -33,7 +33,7 @@ function signIn(sub: string) {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  resetRealtimeHub()
+  setRealtimeLive(false)
   endpoints.value = { httpDns: 'a.appsync-api.us-east-1.amazonaws.com', realtimeDns: 'a.appsync-realtime-api.us-east-1.amazonaws.com' }
   useAuthStore.setState({ user: null, isAuthenticated: false })
 })
