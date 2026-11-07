@@ -82,6 +82,13 @@ its assist twin, which publishes when an assist job ends), `chat` for `voc-chat-
 notice). `voc-agent-conductor` (VocProcessingStack) publishes run / plan status notices on `runs`: VocApiStack
 attaches that grant to its role, and the conductor reads the host from the SSM parameter
 `/[<prefix>-]voc/realtime/event-api-http-dns` (`REALTIME_HTTP_DNS_PARAMETER`, `ssm:GetParameter` on exactly it).
+Job ends (`shared/job_notices.py`, `{type: 'job', job_id, job_type, status, project_id?}` to the starter's
+`/jobs/<sub>`) are published on `jobs` too: in VocApiStack by the four project job Lambdas (`job_handler`) and
+`voc-manual-import-processor` (`REALTIME_HTTP_DNS`); before it, by `voc-research-step`, `voc-category-reprocess`,
+`voc-retention` (erase mode), `voc-memory-extractor` (page imports), `voc-briefing` (a settled brief) and the
+`s3_import` ingestor (an API-started reprocess run; its manifest's `infrastructure.ingestor.jobNotices` gives it a
+dedicated role `IngestorRoleS3Import`, so no other plugin may publish). Each of those reads the parameter like the
+conductor, and VocApiStack attaches its `jobs` grant (`realtimeJobsPublisherRoleArns`, `grantRealtimePublishToRoles`).
 
 Assist twins (4.00.00, `lib/stacks/api-assist-workers.ts`): `voc-projects-assist`,
 `voc-settings-assist`, `voc-scrapers-assist` run the SAME code, handler, role and env as their API
@@ -144,7 +151,8 @@ to the job row. Permissions: feedback Get/Query/Scan/DeleteItem,
 aggregates Get/Put/Update/Query + BatchGet (jobs, `AUDIT#retention`, tombstones one PutItem each; no BatchWrite, which would allow deletes),
 radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan/UpdateItem, raw bucket
 `s3:DeleteObject`/`DeleteObjectVersion` on `raw/*` + `ListBucketVersions`, KMS,
-invoke itself. Ingestion-side Lambdas (plugins, webhooks, manual import,
+invoke itself; an erasure job's end notice to its starter (6.04.00: `appsync:EventPublish` on `jobs`, attached by
+VocApiStack, + `ssm:GetParameter` on the realtime endpoint parameter; docs/realtime.md). Ingestion-side Lambdas (plugins, webhooks, manual import,
 feedback forms, data explorer) apply the source policy before archive/SQS and
 hold `comprehend:DetectPiiEntities` (docs/source-policies.md).
 

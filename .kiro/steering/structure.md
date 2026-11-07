@@ -67,6 +67,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── scraper_run_errors.py # Read-time redaction of stored scraper-run errors
     │   │   ├── url_policy.py         # Outbound URL policy for scraper fetches (SSRF guard, #244)
     │   │   ├── realtime.py           # AppSync Events publisher (SigV4, best effort; docs/realtime.md)
+    │   │   ├── job_notices.py        # Job-end notices on /jobs/<starter sub> (project jobs, reprocess, erasure, imports, brief)
     │   │   ├── usefulness.py         # Heuristic usefulness band low|medium|high (processor, reprocess; docs/data-quality.md)
     │   │   └── data_quality.py       # Per-source band distribution for GET /metrics/data-quality
     │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 20 handlers
@@ -120,7 +121,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   └── projectQueryKeys.ts # Query keys shared across features
     │   │   ├── assistant/            # Unified AI assistant (AG-UI client, thread reducer, sessions, approvals, panel UI)
     │   │   ├── services/auth.ts      # Cognito authentication service
-    │   │   ├── realtime/             # Push notices (AppSync Events via aws-amplify events): connection, hub, Zod notices (docs/realtime.md)
+    │   │   ├── realtime/             # Push notices (AppSync Events via aws-amplify events): connection, hub, Zod notices, jobRefresh (job views; docs/realtime.md)
     │   │   ├── components/           # Each component in its own folder (58 folders; a selection below)
     │   │   │   ├── AdminRoute/           # Admin-only route wrapper
     │   │   │   ├── Breadcrumbs/          # Navigation breadcrumbs

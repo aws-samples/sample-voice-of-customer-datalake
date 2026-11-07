@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "f515dd035367b971fc57e92d9d8f4be7cc3571b5513f3889aebabf6cdb33f92d",
+      "templateSha256": "56314902f40968d2ef6ae0d8fe8dc0b64bd38d048df019d6c7a496c7494605b0",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -268,7 +268,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "da854ff102726a7c1d6ae69810cf24a1b1e453ffcf0fb5f5b3bd5353bd405051",
+      "templateSha256": "f7538d9cd02f15967446b443c6302fab05ae1bbd9806e29fd7028b63f26d3772",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -299,6 +299,7 @@
           "AWS::SecretsManager::Secret Name = voc-datalake/api-credentials-<AWS::AccountId>-<AWS::Region>"
         ],
         "exportNames": [
+          "VocIngestionStack:ExportsOutputFnGetAttIngestorRoleS3Import98C0BFD5Arn8E19C5F1",
           "VocIngestionStack:ExportsOutputFnGetAttProcessingQueue6DC600C3ArnEF236E7B",
           "VocIngestionStack:ExportsOutputFnGetAttS3ImportBucket676867E6ArnC6897B9B",
           "VocIngestionStack:ExportsOutputRefProcessingQueue6DC600C3BF6B2149",
@@ -312,7 +313,8 @@
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-web_reviews-schedule-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>",
-          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>"
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>",
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/realtime/event-api-http-dns"
         ],
         "environmentNames": [
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -321,12 +323,13 @@
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-web_reviews-schedule-<AWS::AccountId>-<AWS::Region>",
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
           "POWERTOOLS_SERVICE_NAME = voc-design-capture",
-          "POWERTOOLS_SERVICE_NAME = voc-ingestion"
+          "POWERTOOLS_SERVICE_NAME = voc-ingestion",
+          "REALTIME_HTTP_DNS_PARAMETER = /voc/realtime/event-api-http-dns"
         ]
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "bdae35e148d28baa83123d268c660356db1b913fb7f7c5967a9c6441ae08d27b",
+      "templateSha256": "b141b29e4a3515510b5a8b397d905e25c4daf43e20b28fe6786268f0111b29aa",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -379,7 +382,12 @@
         "exportNames": [
           "VocProcessingStack:ExportsOutputFnGetAttAgentRuntimeAgentConductorRole410C02E3ArnCE5C249A",
           "VocProcessingStack:ExportsOutputFnGetAttAgentRuntimeAgentRunStateMachine62103E58NameD657FC17",
+          "VocProcessingStack:ExportsOutputFnGetAttBriefingWorkerBriefingRole37E429C9Arn15980FB0",
+          "VocProcessingStack:ExportsOutputFnGetAttCategoryReprocessRole853F8FEBArn2F761E44",
           "VocProcessingStack:ExportsOutputFnGetAttMemoryWorkersMemoryExtractQueue640F6B21Arn9F525C78",
+          "VocProcessingStack:ExportsOutputFnGetAttMemoryWorkersMemoryExtractorRole21F71FACArn52739CA7",
+          "VocProcessingStack:ExportsOutputFnGetAttResearchLambdaRole2A0BFDBBArn7423D9D8",
+          "VocProcessingStack:ExportsOutputFnGetAttRetentionWorkerRetentionRole94BA7506Arn9881A15C",
           "VocProcessingStack:ExportsOutputRefAgentRuntimeAgentRunStateMachine62103E58DCDE9480",
           "VocProcessingStack:ExportsOutputRefMemoryWorkersMemoryExtractQueue640F6B21E8E296C5",
           "VocProcessingStack:ExportsOutputRefResearchStateMachine1BD6F16090FC0238"
