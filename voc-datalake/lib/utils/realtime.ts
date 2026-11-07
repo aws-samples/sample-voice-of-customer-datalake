@@ -85,9 +85,12 @@ export function realtimeParameterReadStatement(stack: cdk.Stack, deploymentPrefi
 /**
  * A publisher in a stack deployed BEFORE VocApiStack (Processing, Ingestion): it reads the Event API's host
  * from the endpoint parameter (exactly `ssm:GetParameter` on it, the env var naming it). Its publish grant is a
- * policy VocApiStack attaches to its role (api-realtime.ts `grantRealtimePublishToRoles`).
+ * policy VocApiStack attaches to its role (api-realtime.ts `grantRealtimePublishToRoles`), so the role is returned.
  */
-export function wireRealtimeEndpointParameter(fn: lambda.Function, deploymentPrefix: string | undefined): void {
-  fn.addToRolePolicy(realtimeParameterReadStatement(cdk.Stack.of(fn), deploymentPrefix));
+export function wireRealtimeEndpointParameter(fn: lambda.Function, deploymentPrefix: string | undefined): iam.IRole {
+  const { role } = fn;
+  if (role === undefined) throw new Error(`${fn.node.path} has no role to grant the realtime endpoint read`);
+  role.addToPrincipalPolicy(realtimeParameterReadStatement(cdk.Stack.of(fn), deploymentPrefix));
   fn.addEnvironment(REALTIME_HTTP_DNS_PARAMETER_ENV, realtimeParameterName(deploymentPrefix));
+  return role;
 }

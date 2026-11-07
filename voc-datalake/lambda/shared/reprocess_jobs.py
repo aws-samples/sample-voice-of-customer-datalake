@@ -41,6 +41,7 @@ from typing import Any
 
 from boto3.dynamodb.conditions import Key
 
+from shared import job_notices
 from shared.aws import is_conditional_check_failure
 from shared.logging import logger
 from shared.reprocess_slices import ReprocessSlice
@@ -64,6 +65,8 @@ STATUS_FAILED = 'failed'
 STATUS_CANCELLED = 'cancelled'
 # Stopped at the item ceiling with a ``resume_from`` cursor (terminal; resumable once).
 STATUS_PARTIAL = 'partial'
+#: The notice's ``job_type`` (shared/job_notices.py): the SPA's reprocess panels listen for it.
+JOB_TYPE = 'category_reprocess'
 ACTIVE_STATUSES = (STATUS_QUEUED, STATUS_RUNNING)
 
 COUNTERS = ('scanned', 'updated', 'unchanged', 'skipped_manual', 'failed')
@@ -458,6 +461,9 @@ def finish_job(
         release_lock(table, job_id)
     if result is not None and status in (STATUS_FAILED, STATUS_CANCELLED):
         _reopen_resumed(table, result)
+    if result is not None:
+        # The starter's page re-reads the job now (best effort, docs/realtime.md); an older row has no sub.
+        job_notices.notify(result.get('started_by_sub'), job_id, status, job_type=JOB_TYPE)
     return result
 
 
