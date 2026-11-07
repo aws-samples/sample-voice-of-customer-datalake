@@ -45,15 +45,24 @@ const ManagedPolicyListSchema = z.array(z.unknown()).optional();
 
 /**
  * Drop one AWS managed policy from an L1 role's `ManagedPolicyArns`. Set on the L1 property (not as an
- * override) because cdk-nag reads the property; the remaining ARNs are kept as they resolve.
+ * override) because cdk-nag reads the property.
+ *
+ * The remaining ARNs are filtered when the property renders, not now: this runs from an aspect, before CDK turns a
+ * reference to another stack's resource (a managed policy of VocCoreStack, core-realtime.ts) into an import, and
+ * resolving it here would freeze it as a `Ref` to a resource this stack does not have.
  */
 export function removeAwsManagedPolicy(role: iam.CfnRole, policyName: string): void {
-  const resolved = ManagedPolicyListSchema.parse(cdk.Stack.of(role).resolve(role.managedPolicyArns));
-  if (resolved === undefined) return;
   const suffix = `:iam::aws:policy/${policyName}`;
-  const kept = resolved.filter((arn) => !JSON.stringify(arn).includes(suffix));
-  if (kept.length === resolved.length) return;
-  role.managedPolicyArns = kept.length === 0 ? undefined : kept.map((arn) => cdk.Token.asString(arn));
+  const kept = (arns: unknown): unknown[] | undefined => {
+    const remaining = (ManagedPolicyListSchema.parse(arns) ?? []).filter((arn) => !JSON.stringify(arn).includes(suffix));
+    return remaining.length === 0 ? undefined : remaining;
+  };
+  const original = role.managedPolicyArns;
+  const now = ManagedPolicyListSchema.parse(cdk.Stack.of(role).resolve(original));
+  if (now === undefined || kept(now)?.length === now.length) return;
+  // Resolved in the context of the final synthesis, so a cross-stack ARN still becomes its import.
+  const filtered: cdk.IResolvable = { creationStack: [], resolve: (context) => kept(context.resolve(original)) };
+  role.managedPolicyArns = cdk.Token.asList(filtered);
 }
 
 /** The construct a token string refers to (`Ref` / `Fn::GetAtt` of a resource in the app), if it is one. */

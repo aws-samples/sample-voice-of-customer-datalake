@@ -2,14 +2,13 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "976853ac02e0fd073bfd09102cde9124021696a9dbd530c81b1d1553d8e90fde",
+      "templateSha256": "163774d1d08801d2090e5cda2327c0741e2dbd393199a8effc89112862645067",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
           "AWS::ApiGateway::Authorizer Name = voc-cognito-authorizer",
           "AWS::ApiGateway::Authorizer Name = voc-mcp-token-authorizer",
           "AWS::ApiGateway::RestApi Name = voc-analytics-api-<AWS::AccountId>-<AWS::Region>",
-          "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
           "AWS::Cognito::UserPoolClient ClientName = voc-mcp-claude-code-<AWS::AccountId>-<AWS::Region>",
           "AWS::Cognito::UserPoolClient ClientName = voc-mcp-cursor-<AWS::AccountId>-<AWS::Region>",
           "AWS::Cognito::UserPoolClient ClientName = voc-mcp-kiro-<AWS::AccountId>-<AWS::Region>",
@@ -76,7 +75,6 @@
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-users-api-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/lambda/voc-webhook-github_issues-<AWS::AccountId>-<AWS::Region>",
           "AWS::Logs::LogGroup LogGroupName = /aws/stepfunctions/voc-document-workflow-<AWS::AccountId>-<AWS::Region>",
-          "AWS::SSM::Parameter Name = /voc/realtime/event-api-http-dns",
           "AWS::StepFunctions::StateMachine StateMachineName = voc-document-workflow-<AWS::AccountId>-<AWS::Region>"
         ],
         "exportNames": [],
@@ -180,9 +178,10 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "4148a2705cfad7ea05a230cedd2a70517220972cd3de25f0aa6ce000d18d8bcb",
+      "templateSha256": "0fa62953edd02e7ec880180369ba99b51d4f897f454e327a72fe9fa896124406",
       "names": {
         "physicalNames": [
+          "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
           "AWS::Cognito::IdentityPool IdentityPoolName = voc-identity-pool-<AWS::AccountId>-<AWS::Region>",
           "AWS::Cognito::UserPool UserPoolName = voc-board-user-pool-<AWS::AccountId>-<AWS::Region>",
           "AWS::Cognito::UserPool UserPoolName = voc-user-pool-<AWS::AccountId>-<AWS::Region>",
@@ -230,6 +229,8 @@
           "VocCoreStack:ExportsOutputFnGetAttProjectsTableAA0A2089ArnA2260F04",
           "VocCoreStack:ExportsOutputFnGetAttRadarTableA2D64F1AArnE3E19AE3",
           "VocCoreStack:ExportsOutputFnGetAttRawDataBucket57F26C03Arn307EA583",
+          "VocCoreStack:ExportsOutputFnGetAttRealtimeEventApiAE17529DDnsHttp9C90DDBD",
+          "VocCoreStack:ExportsOutputFnGetAttRealtimeEventApiAE17529DDnsRealtimeDF7C833B",
           "VocCoreStack:ExportsOutputFnGetAttVocBoardUserPool2E856687ArnE3A02B1A",
           "VocCoreStack:ExportsOutputFnGetAttVocIdentityPoolId9B6189CA",
           "VocCoreStack:ExportsOutputFnGetAttVocKmsKeyDC572AD1Arn80682C77",
@@ -253,6 +254,9 @@
           "VocCoreStack:ExportsOutputRefProjectsTableAA0A2089BD3C4802",
           "VocCoreStack:ExportsOutputRefRadarTableA2D64F1AE4798DC5",
           "VocCoreStack:ExportsOutputRefRawDataBucket57F26C0354920F72",
+          "VocCoreStack:ExportsOutputRefRealtimeChatPublishPolicy6F366CFE1F075EC6",
+          "VocCoreStack:ExportsOutputRefRealtimeJobsPublishPolicy296107A5DE4E16F6",
+          "VocCoreStack:ExportsOutputRefRealtimeRunsPublishPolicyC7743CB34B2D81DE",
           "VocCoreStack:ExportsOutputRefVocBoardUserPool2E856687ABF9627D",
           "VocCoreStack:ExportsOutputRefVocBoardUserPoolVocBoardWebClient328BBDC8FD8D3733",
           "VocCoreStack:ExportsOutputRefVocUserPool8153B431CCBEE992",
@@ -268,7 +272,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "54f0422af00a8c6778e7b01e77a9346484b82e05563f85e30d4d293c265a7506",
+      "templateSha256": "4c63625157ea7a23fe4ee76ae14b767487366b161a5bcc369501df0299d4dd64",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -299,7 +303,6 @@
           "AWS::SecretsManager::Secret Name = voc-datalake/api-credentials-<AWS::AccountId>-<AWS::Region>"
         ],
         "exportNames": [
-          "VocIngestionStack:ExportsOutputFnGetAttIngestorRoleS3Import98C0BFD5Arn8E19C5F1",
           "VocIngestionStack:ExportsOutputFnGetAttProcessingQueue6DC600C3ArnEF236E7B",
           "VocIngestionStack:ExportsOutputFnGetAttS3ImportBucket676867E6ArnC6897B9B",
           "VocIngestionStack:ExportsOutputRefProcessingQueue6DC600C3BF6B2149",
@@ -313,8 +316,7 @@
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-web_reviews-schedule-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:events:us-east-1:111111111111:rule/voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_android-<AWS::AccountId>-<AWS::Region>",
-          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>",
-          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/realtime/event-api-http-dns"
+          "arn:aws:lambda:us-east-1:111111111111:function:voc-ingestor-app_reviews_ios-<AWS::AccountId>-<AWS::Region>"
         ],
         "environmentNames": [
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -323,13 +325,12 @@
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-web_reviews-schedule-<AWS::AccountId>-<AWS::Region>",
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
           "POWERTOOLS_SERVICE_NAME = voc-design-capture",
-          "POWERTOOLS_SERVICE_NAME = voc-ingestion",
-          "REALTIME_HTTP_DNS = ssm:/voc/realtime/event-api-http-dns"
+          "POWERTOOLS_SERVICE_NAME = voc-ingestion"
         ]
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "8275e13b84bf9da84cc80265a4bbe70fa87ad73d501805bfb62daa25f3097847",
+      "templateSha256": "6a0b71b1fbf4b4f4c654cb6171d7e94b1f8a3bb5aac073c2bda77b3db7dd887c",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -380,14 +381,8 @@
           "AWS::StepFunctions::StateMachine StateMachineName = voc-research-workflow-<AWS::AccountId>-<AWS::Region>"
         ],
         "exportNames": [
-          "VocProcessingStack:ExportsOutputFnGetAttAgentRuntimeAgentConductorRole410C02E3ArnCE5C249A",
           "VocProcessingStack:ExportsOutputFnGetAttAgentRuntimeAgentRunStateMachine62103E58NameD657FC17",
-          "VocProcessingStack:ExportsOutputFnGetAttBriefingWorkerBriefingRole37E429C9Arn15980FB0",
-          "VocProcessingStack:ExportsOutputFnGetAttCategoryReprocessRole853F8FEBArn2F761E44",
           "VocProcessingStack:ExportsOutputFnGetAttMemoryWorkersMemoryExtractQueue640F6B21Arn9F525C78",
-          "VocProcessingStack:ExportsOutputFnGetAttMemoryWorkersMemoryExtractorRole21F71FACArn52739CA7",
-          "VocProcessingStack:ExportsOutputFnGetAttResearchLambdaRole2A0BFDBBArn7423D9D8",
-          "VocProcessingStack:ExportsOutputFnGetAttRetentionWorkerRetentionRole94BA7506Arn9881A15C",
           "VocProcessingStack:ExportsOutputRefAgentRuntimeAgentRunStateMachine62103E58DCDE9480",
           "VocProcessingStack:ExportsOutputRefMemoryWorkersMemoryExtractQueue640F6B21E8E296C5",
           "VocProcessingStack:ExportsOutputRefResearchStateMachine1BD6F16090FC0238"
@@ -404,8 +399,7 @@
           "arn:aws:lambda:us-east-1:111111111111:function:voc-retention-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
           "arn:aws:lambda:us-east-1:111111111111:function:voc-settings-api-<AWS::AccountId>-<AWS::Region>",
-          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/radar/exa-api-key",
-          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/realtime/event-api-http-dns"
+          "arn:aws:ssm:us-east-1:111111111111:parameter/voc/radar/exa-api-key"
         ],
         "environmentNames": [
           "AGENTS_FUNCTION = voc-agents-api-<AWS::AccountId>-<AWS::Region>",
@@ -430,7 +424,6 @@
           "POWERTOOLS_SERVICE_NAME = voc-retention",
           "PROJECTS_FUNCTION = voc-projects-api-<AWS::AccountId>-<AWS::Region>",
           "RADAR_EXA_PARAMETER = /voc/radar/exa-api-key",
-          "REALTIME_HTTP_DNS = ssm:/voc/realtime/event-api-http-dns",
           "SCRAPERS_FUNCTION = voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
           "SETTINGS_FUNCTION = voc-settings-api-<AWS::AccountId>-<AWS::Region>"
         ]
