@@ -6,7 +6,7 @@
  */
 import { LabeledField } from './LabeledField'
 
-export interface SelectOption {
+interface SelectOption {
   readonly value: string
   readonly label: string
 }
