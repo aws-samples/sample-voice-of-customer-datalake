@@ -24,13 +24,14 @@
  */
 import { z } from 'zod';
 import { DIMENSION_KEY_PATTERN, DIMENSION_VALUE_PATTERN } from '../dimension-patterns.js';
+import { nonEmpty } from './text-schemas.js';
 
-function nonEmpty<T extends Record<string, unknown>>(schema: z.ZodType<T>) {
+/** `schema`, refused when every field is absent: an update must change something. */
+function changesSomething<T extends Record<string, unknown>>(schema: z.ZodType<T>) {
   return schema.refine((value) => Object.values(value).some((v) => v !== undefined), 'updates must change at least one field');
 }
 
 const textField = (max = 2000) => z.string().max(max);
-const required = (max: number) => z.string().trim().min(1).max(max);
 const textList = z.array(z.string().max(500)).max(20);
 
 export const PERSONA_UPDATE_FIELDS = [
@@ -40,7 +41,7 @@ export const PERSONA_UPDATE_FIELDS = [
 
 /** The persona `updates` keys and their shapes (strict sections); `personaUpdatesSchema` adds the non-empty rule. */
 export const personaUpdatesShape = {
-  name: required(200).optional(),
+  name: nonEmpty(200).optional(),
   tagline: textField(500).optional(),
   confidence: z.enum(['high', 'medium', 'low']).optional(),
   identity: z.object({
@@ -78,7 +79,7 @@ export const personaUpdatesShape = {
     social_context: textField(500).optional(),
     influencers: textList.optional(),
   }).strict().optional(),
-  quotes: z.array(z.object({ text: required(1000), context: textField(500).optional() }).strict()).max(20).optional(),
+  quotes: z.array(z.object({ text: nonEmpty(1000), context: textField(500).optional() }).strict()).max(20).optional(),
   scenario: z.object({
     title: textField(200).optional(),
     narrative: textField(4000).optional(),
@@ -87,7 +88,7 @@ export const personaUpdatesShape = {
   }).strict().optional(),
 } satisfies Record<(typeof PERSONA_UPDATE_FIELDS)[number], z.ZodType>;
 
-export const personaUpdatesSchema = nonEmpty(z.object(personaUpdatesShape).strict());
+export const personaUpdatesSchema = changesSomething(z.object(personaUpdatesShape).strict());
 
 /** product_context.py STRING_FIELDS, name → max length. */
 export const PRODUCT_CONTEXT_STRING_FIELDS = {
@@ -122,7 +123,7 @@ export const productContextUpdatesShape = {
   current_state: z.enum(LIFECYCLE_STATES).optional(),
 };
 
-export const productContextUpdatesSchema = nonEmpty(z.object(productContextUpdatesShape).strict());
+export const productContextUpdatesSchema = changesSomething(z.object(productContextUpdatesShape).strict());
 
 export const FEEDBACK_FORM_UPDATE_FIELDS = [
   'enabled', 'name', 'title', 'description', 'question', 'placeholder',
@@ -146,12 +147,12 @@ export const labelTagsSchema = z.array(z.string().trim().regex(TAG_PATTERN)).max
 /** The feedback-form `updates` keys (flat display settings). */
 export const feedbackFormUpdatesShape = {
   enabled: z.boolean().optional(),
-  name: required(200).optional(),
+  name: nonEmpty(200).optional(),
   title: textField(200).optional(),
   description: textField(1000).optional(),
   question: textField(500).optional(),
   placeholder: textField(200).optional(),
-  submit_button_text: required(50).optional(),
+  submit_button_text: nonEmpty(50).optional(),
   success_message: textField(500).optional(),
   rating_enabled: z.boolean().optional(),
   rating_type: z.enum(['stars', 'numeric', 'emoji']).optional(),
@@ -161,4 +162,4 @@ export const feedbackFormUpdatesShape = {
   tags: labelTagsSchema.optional(),
 } satisfies Record<(typeof FEEDBACK_FORM_UPDATE_FIELDS)[number], z.ZodType>;
 
-export const feedbackFormUpdatesSchema = nonEmpty(z.object(feedbackFormUpdatesShape).strict());
+export const feedbackFormUpdatesSchema = changesSomething(z.object(feedbackFormUpdatesShape).strict());
