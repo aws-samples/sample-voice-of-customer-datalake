@@ -10,7 +10,7 @@
  *
  * @module assistant/thread/wire
  */
-import { LIMITS } from '../contract'
+import { LIMITS } from '@stream/assistant/contract'
 import type { ContentPart, Message } from '@ag-ui/core'
 
 /** A part whose data was removed before saving (see sessions/serialize). */

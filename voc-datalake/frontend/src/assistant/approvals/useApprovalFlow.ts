@@ -14,7 +14,7 @@
 import { useCallback, useState } from 'react'
 import { safeErrorMessage } from './safeError'
 import { beginExecution, isExecuting, settleExecution, useExecutionEntry } from './executionStore'
-import type { ToolOutcome } from '../contract'
+import type { ToolOutcome } from '../toolOutcome'
 import type { ApprovalResolution, WriteToolDefinition, WriteToolExecutionContext } from '../types'
 
 type CardPhase =

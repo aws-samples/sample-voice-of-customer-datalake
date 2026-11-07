@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { QueryClient } from '@tanstack/react-query'
 import { ZodError } from 'zod'
-import { ADMIN_ONLY_CLIENT_TOOLS, CLIENT_TOOLS, DESTRUCTIVE_CLIENT_TOOLS } from '../contract'
+import { ADMIN_ONLY_CLIENT_TOOLS, CLIENT_TOOLS, DESTRUCTIVE_CLIENT_TOOLS } from '@stream/assistant/contract'
 import { getWriteTool, listWriteTools, toolTitleKey } from './registry'
 import { MINI_WORKFLOW as WF } from '@test/workflowFixtures'
-import type { ClientToolName } from '../contract'
+import type { ClientToolName } from '@stream/assistant/contract'
 
 const ALL_CLIENT_TOOLS: ClientToolName[] = Object.values(CLIENT_TOOLS).flat()
 

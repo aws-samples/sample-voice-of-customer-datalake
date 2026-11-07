@@ -9,10 +9,10 @@
  * @module assistant/mentions/mentionsOfTurn
  */
 import { z } from 'zod'
-import { MENTION_LIMITS, MENTION_TOOL_CALL_PREFIX, mentionsSchema } from '../contract'
+import { MENTION_LIMITS, MENTION_TOOL_CALL_PREFIX, mentionsSchema } from '@stream/assistant/contract'
 import { parseToolArguments } from '../thread/reducer'
 import type { Message, ToolCall } from '@ag-ui/core'
-import type { Mentions } from '../contract'
+import type { Mentions } from '@stream/assistant/contract'
 
 const roundArgsSchema = z.object({
   persona_ids: z.array(z.string()).catch([]),

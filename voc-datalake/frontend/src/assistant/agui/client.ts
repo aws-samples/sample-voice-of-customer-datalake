@@ -14,10 +14,10 @@
 import { getAuthHeaders, getBaseUrl } from '../../api/baseUrl'
 import { authService } from '../../services/auth'
 import { endExpiredSession } from '../../services/sessionExpiry'
-import { AGUI_PROTOCOL_VERSION } from '../contract'
+import { AGUI_PROTOCOL_VERSION } from '@stream/assistant/contract'
 import { readSseEvents } from './sse'
 import type { Message, ResumeEntry, RunAgentInput } from '@ag-ui/core'
-import type { ForwardedProps } from '../contract'
+import type { ForwardedProps } from '@stream/assistant/contract'
 import type { AguiEvent } from './sse'
 
 class AssistantAuthError extends Error {

@@ -12,7 +12,7 @@ import { ArrowRight, CheckCircle2, Clock, FolderKanban, MinusCircle, ShieldAlert
 import { formatRemaining } from './useExpiry'
 import { EXPIRED_REASON } from '../thread/resume'
 import { useProjectDetail } from './previews/useProjectDetail'
-import type { ToolOutcome } from '../contract'
+import type { ToolOutcome } from '../toolOutcome'
 import type { ResultLink } from '../types'
 import type { Expiry } from './useExpiry'
 

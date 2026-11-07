@@ -11,8 +11,8 @@
  */
 import { matchPath } from 'react-router-dom'
 import { reviewFromSearch } from '../../hooks/useReviewModal'
-import { MAX_ID_LENGTH, boundedFilterValue } from '../contract'
-import type { PAGE_FILTER_KEYS, PageContext, PageKind } from '../contract'
+import { MAX_ID_LENGTH, boundedFilterValue } from '@stream/assistant/contract'
+import type { PAGE_FILTER_KEYS, PageContext, PageKind } from '@stream/assistant/contract'
 
 interface PagePattern {
   /** Route path as written in routes.tsx (relative to `/`; '' is the index). */

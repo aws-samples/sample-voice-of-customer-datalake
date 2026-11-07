@@ -7,11 +7,11 @@ import { describe, it, expect, vi, onTestFinished } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import { render } from '@test/test-utils'
 import EmptyState from './EmptyState'
-import { PAGE_KINDS } from '../contract'
+import { PAGE_KINDS } from '@stream/assistant/contract'
 import assistantEn from '../../../public/locales/en/assistant.json'
 import { useThemeStore } from '../../theme/themeStore'
 import { WORKSPACE_THEME_CHOICE } from '../../theme/themeCatalog'
-import type { PageKind } from '../contract'
+import type { PageKind } from '@stream/assistant/contract'
 
 /** Page kinds that deliberately share the generic set (no data of their own to ask about). */
 const GENERIC_KINDS: readonly PageKind[] = ['home', 'chat', 'other']

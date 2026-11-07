@@ -13,9 +13,9 @@
 import { ALL_TIME_CUSTOM_DAYS, MAX_CUSTOM_DAYS } from '../../api/baseUrl'
 import { getDateRangeParams } from '../../api/client'
 import { useConfigStore } from '../../store/configStore'
-import { chatScopeSchema, forwardedPropsSchema, mentionsSchema, pageContextSchema } from '../contract'
+import { chatScopeSchema, forwardedPropsSchema, mentionsSchema, pageContextSchema } from '@stream/assistant/contract'
 import { REFUSED_SCOPE } from '../store/chatScopeStore'
-import type { ChatScope, ForwardedProps, Mentions, PageContext } from '../contract'
+import type { ChatScope, ForwardedProps, Mentions, PageContext } from '@stream/assistant/contract'
 
 const MAX_TITLE = 120
 const MAX_PATH = 200

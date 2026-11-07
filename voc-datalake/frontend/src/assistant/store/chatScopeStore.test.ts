@@ -5,8 +5,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { buildForwardedProps } from '../agui/forwardedProps'
 import { REFUSED_SCOPE, chatScopeFor, useChatScopeStore } from './chatScopeStore'
-import { CHAT_SCOPE_MAX_ITEMS, MAX_FACET_FILTER_CHARS, MAX_PAGE_FILTER_CHARS } from '../contract'
-import type { ChatScope, PageContext } from '../contract'
+import { CHAT_SCOPE_MAX_ITEMS, MAX_FACET_FILTER_CHARS, MAX_PAGE_FILTER_CHARS } from '@stream/assistant/contract'
+import type { ChatScope, PageContext } from '@stream/assistant/contract'
 
 const CHAT: PageContext = { kind: 'chat', path: '/chat' }
 

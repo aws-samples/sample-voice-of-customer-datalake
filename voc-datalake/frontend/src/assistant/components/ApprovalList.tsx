@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next'
 import ApprovalCard from '../approvals/ApprovalCard'
 import { findToolCall } from '../thread/reducer'
 import { ownEntry } from '../ownEntry'
-import type { PageContext } from '../contract'
+import type { PageContext } from '@stream/assistant/contract'
 import type { ApprovalResolution, AssistantToolCall } from '../types'
 import type { ThreadState } from '../thread/types'
 

@@ -7,8 +7,8 @@
  *
  * @module assistant/mentions/mentionModel
  */
-import { MENTION_ALL_PERSONAS, MENTION_LIMITS } from '../contract'
-import type { Mentions } from '../contract'
+import { MENTION_ALL_PERSONAS, MENTION_LIMITS } from '@stream/assistant/contract'
+import type { Mentions } from '@stream/assistant/contract'
 
 export type MentionKind = 'persona' | 'document'
 

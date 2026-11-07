@@ -10,7 +10,7 @@
  *
  * @module assistant/components/attachments
  */
-import { LIMITS } from '../contract'
+import { LIMITS } from '@stream/assistant/contract'
 import type { ContentPart } from '@ag-ui/core'
 
 const IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const

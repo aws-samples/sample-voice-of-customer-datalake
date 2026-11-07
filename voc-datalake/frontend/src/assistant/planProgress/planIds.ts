@@ -9,7 +9,7 @@
  * @module assistant/planProgress/planIds
  */
 import { z } from 'zod'
-import { toolOutcomeSchema } from '../contract'
+import { toolOutcomeSchema } from '../toolOutcome'
 import { ownEntry } from '../ownEntry'
 import { PLAN_ID_RE } from '../plan/schema'
 import { PLAN_PROPOSAL_TOOL } from '../approvals/planSchemas'
