@@ -220,8 +220,9 @@ The assistant's wire contract, plan contract and several approval-card bounds li
 (`voc-datalake/lambda/stream/src`). The SPA imports them through the `@stream/*` alias
 (`voc-datalake/frontend/streamSource.ts`, with `zod` deduplicated so the bundle keeps one copy) instead of keeping a
 mirrored copy pinned by a lockstep test. Those modules run in the browser, so the `browser-safe` block of
-`lambda/stream/eslint.config.js` (`BROWSER_SAFE_FILES`) forbids Node built-ins, `@aws-sdk/*` and `@smithy/*` in them
-(a type-only import is fine), and `lambda/stream/src/browser-safe.test.ts` fails when the SPA imports a stream module,
+`lambda/stream/eslint.config.js` (`BROWSER_SAFE_FILES`) forbids Node built-ins, `@aws-sdk/*` and `@smithy/*` in them,
+type-only imports included (the SPA type-checks them with only its own `node_modules`; `zod` is mapped to the SPA's
+copy), and `lambda/stream/src/browser-safe.test.ts` fails when the SPA imports a stream module,
 or a listed module imports a stream file, that the list does not name. When the SPA needs something the stream
 module does not have (its own message, an SPA-only builder), put it in a small SPA module next to its users.
 
