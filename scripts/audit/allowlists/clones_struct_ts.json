@@ -3,13 +3,6 @@
   "entries": [
     {
       "files": [
-        "voc-datalake/frontend/src/assistant/sessions/personaResult.ts",
-        "voc-datalake/lambda/stream/src/assistant/session/persona-result.ts"
-      ],
-      "reason": "persona-cards result storage mirrored by the SPA and the stream Lambda (both write the same session), pinned by personaResult.lockstep.test.ts; separate packages that must not import each other. One source is possible but needs a build-config change the owner decides on: the SPA importing the stream file pulls a second zod copy into its bundle (+86 KB, +24 KB gzip, measured on contract.ts) unless vite.config.ts and vitest.config.ts get resolve.dedupe ['zod'], and the shared file must stay browser-safe (zod only)."
-    },
-    {
-      "files": [
         "voc-datalake/frontend/src/assistant/approvals/reviewImportSchemas.ts",
         "voc-datalake/lambda/stream/src/assistant/tools/client/review-import-schemas.ts"
       ],
