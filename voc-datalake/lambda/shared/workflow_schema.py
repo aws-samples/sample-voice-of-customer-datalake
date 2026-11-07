@@ -313,7 +313,7 @@ def _parse(raw: object, out: _Collector) -> dict[str, Any] | None:
 # Graph rules, run only on a definition whose shape is sound.
 # --------------------------------------------------------------------------
 
-def _reach(start: str, adjacency: Mapping[str, list[str]]) -> set[str]:
+def reach_from(start: str, adjacency: Mapping[str, list[str]]) -> set[str]:
     """Nodes reachable from ``start`` by one or more edges."""
     seen: set[str] = set()
     queue = deque(adjacency.get(start, ()))
@@ -357,10 +357,10 @@ def _check_reachability(definition: dict[str, Any], types: Mapping[str, str],
         out.add('a workflow needs at least one end step')
     if len(starts) != 1 or not ends:
         return
-    reachable = _reach(starts[0], forward) | {starts[0]}
+    reachable = reach_from(starts[0], forward) | {starts[0]}
     reaches_end: set[str] = set(ends)
     for end in ends:
-        reaches_end |= _reach(end, backward)
+        reaches_end |= reach_from(end, backward)
     for node in definition['nodes']:
         if node['id'] not in reachable:
             out.add('this step is not connected to the start', node['id'])
@@ -391,7 +391,7 @@ def _check_loops(definition: dict[str, Any], types: Mapping[str, str],
                  forward: Mapping[str, list[str]], out: _Collector) -> None:
     owner = _loop_owners(definition, types, out)
 
-    reach = {node_id: _reach(node_id, forward) for node_id in types}
+    reach = {node_id: reach_from(node_id, forward) for node_id in types}
     cyclic_loops: set[int] = set()
     for node_id in types:
         if node_id not in reach[node_id]:

@@ -12,9 +12,10 @@ the workflow's arrows.
 """
 from __future__ import annotations
 
-from collections import deque
 from collections.abc import Mapping
 from typing import Any, Final
+
+from shared.workflow_schema import reach_from
 
 PERSONA_NODES: Final = frozenset({'select_personas', 'generate_personas'})
 EVIDENCE_NODES: Final = frozenset({'aggregate_reviews', 'deep_research'})
@@ -44,18 +45,6 @@ _RULES: Final[Mapping[str, tuple[tuple[str, frozenset[str], str], ...]]] = {
 }
 
 
-def _ancestors(node_id: str, backward: Mapping[str, list[str]]) -> set[str]:
-    """Every node with a path of one or more arrows to ``node_id``."""
-    seen: set[str] = set()
-    queue = deque(backward.get(node_id, ()))
-    while queue:
-        current = queue.popleft()
-        if current not in seen:
-            seen.add(current)
-            queue.extend(backward.get(current, ()))
-    return seen
-
-
 def methodology_warnings(definition: Mapping[str, Any]) -> list[dict[str, str]]:
     """The methodology gaps of a VALID (normalised) definition: ``[{code, message, node_id}]``."""
     nodes = definition.get('nodes') or []
@@ -69,7 +58,7 @@ def methodology_warnings(definition: Mapping[str, Any]) -> list[dict[str, str]]:
         rules = _RULES.get(node_type, ())
         if not rules:
             continue
-        upstream_types = {types[a] for a in _ancestors(node_id, backward)}
+        upstream_types = {types[a] for a in reach_from(node_id, backward)}
         warnings.extend(
             {'code': code, 'message': message, 'node_id': node_id}
             for code, kinds, message in rules if not upstream_types & kinds
