@@ -1,7 +1,8 @@
 # Push notifications (AppSync Events)
 
 The browser learns that a long piece of work finished without waiting for its next poll. When an
-assist job ends, an assistant run that a reloaded tab is following ends, or an agent run or approved
+assist job or another long job ends (project jobs, category reprocess, erasure, imports, the morning brief),
+an assistant run that a reloaded tab is following ends, or an agent run or approved
 plan changes status, the Lambda that wrote the change sends one short notice to the person concerned
 over [AWS AppSync Events](https://docs.aws.amazon.com/appsync/latest/eventapi/event-api-welcome.html).
 The browser then reads the row through the API at once.
@@ -40,9 +41,32 @@ Each person has one channel per namespace: `/<namespace>/<cognito sub>`.
 | Namespace | Notice | Published by | When |
 |---|---|---|---|
 | `jobs` | `{type: 'job', job_id, job_type, status, project_id?}` | the projects, settings and scrapers APIs' assist twins (`shared/assist_jobs.py`) | an assist job ends (`completed` / `failed`), to its starter |
+| `jobs` | the same shape (`shared/job_notices.py`) | the job Lambdas below | a long job ends, to the person who started it |
 | `chat` | `{type: 'session', conversation_id, run_status, revision}` | `voc-chat-stream` (`lambda/stream/src/assistant/session/run-session.ts`) | a run's last session write landed (`finished` / `failed` / `interrupted` / `stopped`), to the caller |
 | `runs` | `{type: 'run', agent_id, run_id, status}` | `voc-agent-conductor` (`lambda/agents/notices.py`) | a run started or ended, to the agent's owner and the person who started it (not for the heartbeat) |
 | `runs` | `{type: 'plan', plan_id, change, step_id?}` | `voc-agent-conductor` | a plan started, a step started / finished / failed, the plan ended (each plan journal row), to the approver |
+
+### Job ends on `jobs`
+
+Every job below sends ONE notice when it ends, to the person who started it, and nothing while it runs.
+A job started by nobody (a schedule, an agent, a row from an older release without a starter) sends none.
+
+| Job | `job_type` | `job_id` | `status` | Published by | Starter recorded as |
+|---|---|---|---|---|---|
+| Persona generation / import, document generation / merge (`shared/jobs.py` `job_handler`) | the row's (`generate_personas`, …) | the job id, with `project_id` | `completed` / `failed` | `voc-job-persona-generator`, `-persona-importer`, `-document-generator`, `-document-merger` | the job row's `initiated_by` (read once, only when notices are on) |
+| Research (`research_step_handler.py` save / error) | `research` | the job id, with `project_id` | `completed` / `failed` | `voc-research-step` | the job row's `initiated_by` |
+| Company persona jobs | as above | with `project_id: company_personas` | as above | the persona generator / importer | as above |
+| Category reprocess (`shared/reprocess_jobs.py` `finish_job`: finish, cancel, stale reclaim) | `category_reprocess` | `rp_…` | `completed` / `failed` / `partial` / `cancelled` | `voc-category-reprocess`, the settings API | the job row's `started_by_sub` |
+| Erasure (`voc-retention` erase mode, `jobs/retention/runs.py`) | `erasure` | `er_…` | `completed` / `failed` | `voc-retention` | the job row's `started_by_sub` (new in 6.04.00, never in the job view) |
+| S3 import reprocess run (`POST /s3-import/reprocess`) | `s3_import_reprocess` | the run id | `completed` / `error` | the `s3_import` ingestor | `started_by` in the ingestor's invoke event |
+| Manual-import parse (`POST /scrapers/manual/parse`) | `manual_import_parse` | the job id | `completed` / `failed` | `voc-manual-import-processor` | the job row's `started_by_sub` (never in the status view) |
+| Memory page import (`POST /memory/imports`) | `memory_import` | `imp_…` | `completed` | `voc-memory-extractor` (last chunk) | `notify` in the queue message, carried chunk to chunk; the import row keeps only its supporter hash |
+| Morning brief (a build settles) | `morning_brief` | `brief_<day>` | `ready` / `failed` | `voc-briefing` | the build request's `sub` |
+
+The voc-retention role (the only customer-data delete role, TENETS.md D5) gains only the publish grant and the
+endpoint read; nothing else on it changes. The `s3_import` ingestor runs on a dedicated role
+(`IngestorRoleS3Import`) since 6.04.00: its manifest declares `infrastructure.ingestor.jobNotices`, so the publish
+grant never lands on the role other plugins share.
 
 Every namespace runs the same subscribe handler (APPSYNC_JS, `lib/utils/realtime.ts`): a subscription is
 allowed only to exactly `/<namespace>/<the caller's own sub>`. A wildcard (`/jobs/*`), the bare namespace,
@@ -63,13 +87,15 @@ Where a publisher learns the host:
 
 | Env var | Who | Value |
 |---|---|---|
-| `REALTIME_HTTP_DNS` | projects, settings, scrapers APIs and their assist twins; `voc-chat-stream` | the Event API's HTTP host |
-| `REALTIME_HTTP_DNS_PARAMETER` | `voc-agent-conductor` (VocProcessingStack) | `/[<prefix>-]voc/realtime/event-api-http-dns`, an SSM String parameter VocApiStack writes |
+| `REALTIME_HTTP_DNS` | projects, settings, scrapers APIs and their assist twins; `voc-chat-stream`; the four project job Lambdas; `voc-manual-import-processor` | the Event API's HTTP host |
+| `REALTIME_HTTP_DNS_PARAMETER` | `voc-agent-conductor`, `voc-research-step`, `voc-category-reprocess`, `voc-retention`, `voc-memory-extractor`, `voc-briefing` (VocProcessingStack); the `s3_import` ingestor (VocIngestionStack) | `/[<prefix>-]voc/realtime/event-api-http-dns`, an SSM String parameter VocApiStack writes |
 
-The conductor lives in VocProcessingStack, which deploys before VocApiStack, so it cannot take the host as
-a stack reference. It reads the parameter once per container (`ssm:GetParameter` on exactly that
-parameter); a missing parameter (the first deploy, before VocApiStack exists) turns its notices off for
-five minutes. Its publish grant on `runs` is a policy VocApiStack attaches to its role.
+VocProcessingStack and VocIngestionStack deploy before VocApiStack, so their publishers cannot take the host
+as a stack reference. Each reads the parameter once per container (`ssm:GetParameter` on exactly that
+parameter, `lib/utils/realtime.ts` `wireRealtimeEndpointParameter`); a missing parameter (the first deploy,
+before VocApiStack exists) turns its notices off for five minutes. Their publish grants (the conductor's on
+`runs`, the job workers' on `jobs`) are policies VocApiStack attaches to their roles, imported by ARN
+(`agentConductorRoleArn`, `realtimeJobsPublisherRoleArns`).
 
 ## The SPA
 
@@ -91,6 +117,18 @@ What uses it:
 | Assist jobs (`api/assistJobs.ts`) | poll every 1.5 s | poll at once on the job's notice; fallback poll every 10 s |
 | A reloaded "still generating" assistant session (`assistant/runtime/followServerRun.ts`) | GET with backoff (1, 2, 3, then 5 s) | GET at once on the session notice; fallback GET every 15 s |
 | Agent runs, the agents list, plans (`realtime/session.ts`) | their own polling | the same polling, plus an immediate refresh of the named run / plan on its notice and of every agent and plan query on a reconnect |
+| Project jobs and the project (`pages/ProjectDetail/useProjectData.ts`), company persona jobs (`pages/Company/useCompanyPersonas.ts`) | poll every 3 s while a job runs | re-read on the project's job notice; a running job polled every 10 s |
+| Category reprocess (`components/CategoriesManager/useReprocessJob.ts`) | poll every 2 s | re-read on a `category_reprocess` notice; fallback every 10 s |
+| Erasure jobs (`components/SourcesManager/useErasureJobs.ts`) | poll every 2 s | re-read on an `erasure` notice; fallback every 10 s |
+| S3 import reprocess run (`components/S3ImportExplorer/S3ImportReprocess.tsx`) | poll every 2 s | re-read on the run's notice; fallback every 10 s |
+| Manual-import parse (`pages/Scrapers/ManualImportModal.tsx`) | poll every 2 s | read on the job's notice; fallback every 10 s |
+| Memory imports (`pages/Memory/MemoryImports.tsx`) | poll every 3 s | re-read on the import's notice; fallback every 10 s |
+| Morning brief (`pages/Home/brief/useBrief.ts`) | poll every 3 s while pending | re-read on a `morning_brief` notice; fallback every 10 s |
+
+The job views use `realtime/jobRefresh.ts`: `useRealtimeJobRefresh` invalidates the view's queries on a
+matching job notice (by `job_type`, `project_id` or `job_id`) and on every (re)connect, `useRealtimeJobWake`
+does the same for a view that polls by hand, and `realtimePollInterval` slows the poll to at least 10 s only
+while push is live.
 
 The runtime config (`config.json`, written by VocApiStack and `frontend/scripts/deploy.sh`) carries
 `realtime: {httpDns, realtimeDns}` from the `RealtimeHttpDns` / `RealtimeDns` outputs. For local work
@@ -108,8 +146,6 @@ connection minutes. The SSM parameter is standard tier (free). Nothing here is l
 
 ## Not covered yet
 
-Other long work still only polls: project jobs (persona generation and import, document generation and
-merge, research: `GET /projects/{id}/jobs`), category reprocess (`GET /settings/categories/reprocess`),
-erasure jobs (`GET /settings/erasure`), the S3 import reprocess run, the manual-import parse job, memory
-imports, the company persona jobs and the morning brief. Project jobs finish in one place
-(`shared/jobs.py` `job_handler`), so they are the next candidate.
+Design references (Knowledge → Company → Design system, `pages/Company/DesignSystemSection.tsx`) still only poll
+every 5 s while one is read: the capture worker (VocIngestionStack) records no starter, so wiring it needs the
+settings route to pass one, the worker to publish and a dedicated grant, more than the few lines the others took.

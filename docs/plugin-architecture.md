@@ -149,6 +149,7 @@ same rule.
 | `bedrock` | false | boolean | Dedicated role with `bedrock:InvokeModel` on the curated model allowlist |
 | `browser` | false | boolean | Dedicated role with sessions of the AgentCore managed browser `aws.browser.v1` |
 | `selfInvoke` | false | boolean | A run that reaches its time budget continues in a new invocation of its own function: `lambda:InvokeFunction` on exactly that function (a scheduled plugin's dedicated role only) |
+| `jobNotices` | false | boolean | A run the API started tells its starter when it ends (docs/realtime.md): a dedicated role that reads the realtime endpoint parameter; VocApiStack grants it `appsync:EventPublish` on `jobs` |
 
 The `cron(...)` pattern admits only digits, spaces and `, - * /`. EventBridge cron expressions need
 `?` in one of the day fields, so in practice use `rate(...)`. Without `schedule` the ingestor runs
@@ -191,6 +192,7 @@ reads.
 |-------------|---------|--------|-------------|
 | `capabilities.updatesItems` | the feedback processor (`UPDATE_CAPABLE_SOURCES` env, `lambda/shared/source_updates.py`) | A record from the source that carries `issue_attributes` is refreshed in place when a newer copy arrives, instead of being skipped as a duplicate | `github_issues` |
 | `infrastructure.ingestor.selfInvoke` | `ingestion-stack.ts` | Own-function invoke grant for a run that continues itself | `app_reviews_ios`, `app_reviews_android` |
+| `infrastructure.ingestor.jobNotices` | `ingestion-stack.ts`, `ingestion-roles.ts` | Dedicated role + the realtime endpoint read; a reprocess run's end reaches its starter (docs/realtime.md) | `s3_import` |
 | `infrastructure.ingestor.bedrock` / `browser` | `ingestion-roles.ts` | Dedicated role with the Bedrock / browser grants | `web_reviews`, `synthetic_reviews` |
 | `infrastructure.webhook.memory` | `api-stack.ts` | Receiver MemorySize | `github_issues` (512) |
 
