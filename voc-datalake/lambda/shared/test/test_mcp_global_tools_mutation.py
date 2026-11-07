@@ -33,18 +33,18 @@ import pytest
 from shared import mcp_global_tools as tools
 
 DAYS = {'type': 'integer', 'minimum': 0, 'maximum': 9999, 'default': 30,
-        'description': 'Look-back window in days; 0 = all time.'}
+        'description': 'Days back; 0 = all time.'}
 LIMIT = {'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': 20}
 FILTER = {'type': 'string', 'maxLength': 64}
 BOOL = {'type': 'boolean', 'default': False}
 ID = {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}
-PROJECT_ID = {**ID, 'description': 'Project id (from list_projects). Optional for a project-scoped token.'}
+PROJECT_ID = {**ID, 'description': 'From list_projects; optional with a pinned token.'}
 TITLE = {'type': 'string', 'maxLength': 200}
 CONTENT = {'type': 'string', 'maxLength': 200000}
 NO_ARGS = {'type': 'object', 'properties': {}, 'additionalProperties': False}
 DIMS = {'type': 'object', 'maxProperties': 10, 'propertyNames': {'pattern': '^[a-z][a-z0-9_]{0,31}$'},
         'additionalProperties': {'type': 'string', 'maxLength': 64},
-        'description': 'Dimension filters {key: value} (keys from list_dimensions), all must match.'}
+        'description': 'Dimension filters {key: value}; all must match.'}
 ITEM_FILTERS = {'channel': FILTER, 'tag': FILTER, 'dims': DIMS}
 NO_ITEM_FILTERS = {'channel': None, 'tag': None, 'dims': None}
 
@@ -58,106 +58,110 @@ def _object(properties: dict, *required: str) -> dict:
 CATALOGUE: dict[str, tuple[str, str, dict, bool, bool, bool]] = {
     'search_feedback': (
         'Search feedback',
-        ('Search or list customer feedback (reviews, form submissions, imports) you can see. Give `query` '
-         '(2+ characters) for a text search, or only filters to list the newest items; `urgent: true` keeps '
-         'high-urgency items only. Returns verbatims with sentiment, category and urgency. Use it to ground any '
-         'claim about what customers say.'),
+        ('Search (`query`, 2+ characters) or list the newest customer feedback you can see; `urgent: true` '
+         'keeps high urgency only. Verbatims with sentiment, category and urgency: ground claims about '
+         'customers here.'),
         _object({'query': {'type': 'string', 'maxLength': 500}, 'days': DAYS, 'limit': LIMIT,
                  'category': FILTER, 'sentiment': FILTER, 'source': FILTER, 'urgent': BOOL, **ITEM_FILTERS}),
         False, False, False),
     'get_feedback': (
         'Get one feedback item',
-        ('One feedback item in full, by `feedback_id` (from search_feedback); `include_similar: true` adds up to '
-        '5 similar items.'),
+        'One feedback item by `feedback_id`; `include_similar: true` adds up to 5 similar items.',
         _object({'feedback_id': ID, 'include_similar': BOOL}, 'feedback_id'), False, False, False),
     'get_metrics': (
         'Get feedback metrics',
-        ('Aggregated metrics over a window: `view` = summary (totals, average sentiment, urgent count, daily '
-         'series), a breakdown by sentiment, categories, sources, personas or one dimension (`dimensions` + '
-         '`key`), `github` (GitHub issues per release and label) or `entities` (the filter values in use: '
-         'categories, sources, channels, tags, dimensions, with counts); every view takes the source / channel / '
-         'tag / dims filters. Use it for trends and volumes instead of counting search results.'),
+        ('Metrics over a window. `view`: summary, sentiment, categories, sources, personas, dimensions (+ '
+         '`key`), github (issues per release and label) or entities (filter values with counts). Use it for '
+         'volumes and trends.'),
         _object({'view': {'type': 'string', 'enum': ['summary', 'sentiment', 'categories', 'sources', 'personas',
                                                      'dimensions', 'github', 'entities'],
                           'default': 'summary'}, 'days': DAYS, 'key': FILTER, 'source': FILTER, **ITEM_FILTERS}),
         False, False, False),
     'list_categories': (
         'List categories',
-        'The feedback category taxonomy you have access to (name, description, product, subcategories).',
+        'The category taxonomy you can see (name, description, product, subcategories).',
         NO_ARGS, False, False, False),
     'list_dimensions': (
         'List dimensions',
-        ('The feedback dimensions (product, module, user type, ...): key, label and allowed values, for the `dims` '
-        'filter and the dimensions metric view.'),
+        'Feedback dimensions (key, label, allowed values) for `dims` and the dimensions view.',
         NO_ARGS, False, False, False),
     'search_memory': (
         'Search memory',
-        ('Semantic search over company memory and your personal memory (decisions, facts, preferences the team '
-        'has recorded), filtered to the categories you can see. Use it before proposing something the team may '
-        'already have decided.'),
+        ('Semantic search over company and personal memory (decisions, facts, preferences) you can see. Check '
+         'it before proposing.'),
         _object({'query': {'type': 'string', 'maxLength': 500},
                  'k': {'type': 'integer', 'minimum': 1, 'maximum': 20, 'default': 8}}, 'query'),
         False, False, False),
     'get_company_context': (
         'Get company context',
-        'The company vision and objectives every product decision should align with.',
+        'The company vision and objectives.',
         NO_ARGS, False, False, False),
     'list_projects': (
         'List projects',
-        'Research projects you can see (a project-scoped token sees only its project).',
+        'Research projects you can see.',
         NO_ARGS, False, False, False),
     'get_project': (
         'Get a project',
-        ('A project with its personas and the list of its documents (PRDs, PR/FAQs, research, custom documents) '
-        '— titles and ids only; read a body with get_document.'),
+        'A project: its personas and documents (titles and ids; bodies via get_document).',
         _object({'project_id': PROJECT_ID}), False, False, True),
     'get_document': (
         'Get a document',
-        'One project document in full, by `document_id` (from get_project).',
+        'One project document in full, by `document_id`.',
         _object({'project_id': PROJECT_ID, 'document_id': ID}, 'document_id'), False, False, True),
     'list_agents': (
-        'List autonomous agents',
-        'Autonomous agents (review → PR/FAQ → prototype crews) you can see, with their status.',
+        'List agents',
+        'Autonomous agents you can see, with their status.',
         NO_ARGS, False, False, False),
     'get_agent_run': (
         'Get agent runs',
-        ("An agent's run by `run_id` (status, current step, project, error), or without `run_id` its newest "
-        'runs. Use it to follow a run started with run_agent; read its output with get_project.'),
+        "An agent's run by `run_id`, or its newest runs (status, step, project, error).",
         _object({'agent_id': ID, 'run_id': ID,
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50, 'default': 5}}, 'agent_id'),
         False, False, False),
     'search_feature_requests': (
-        'Search feedback-board requests',
-        ('Search the requests people posted on the feedback boards (feature requests, ideas) you can see. These '
-         'are board requests, NOT customer reviews: a separate source, never counted in feedback metrics and never '
-         'returned by search_feedback. Each item: request_id, board_id, title, description, status, supporters '
-         '(+1 count), category, sentiment, problem_summary, created_at. Cite a request as [FR:<request_id>], never '
-         'as a review. `board`, `category` and `status` take one value or a comma list.'),
-        _object({'query': {'type': 'string', 'maxLength': 500},
-                 'board': {'type': 'string', 'maxLength': 500, 'description': 'Board id or slug (comma list for several).'},
-                 'category': {'type': 'string', 'maxLength': 500}, 'status': {'type': 'string', 'maxLength': 500},
-                 'days': {'type': 'integer', 'minimum': 0, 'maximum': 3650, 'default': 0,
-                          'description': 'Only requests created in the last N days; 0 = all time.'},
-                 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50, 'default': 25}}),
+        'Search board requests',
+        ('Search feedback-board requests you can see (NOT reviews: never in feedback metrics); cite as '
+         '[FR:<request_id>]. `board`, `category`, `status`: one value or a comma list. `boards: true` lists '
+         'the boards.'),
+        {'type': 'object', 'properties': {'query': {'type': 'string', 'maxLength': 500}, 'board': {'type': 'string', 'maxLength': 500, 'description': 'Board id or slug.'}, 'category': {'type': 'string', 'maxLength': 500}, 'status': {'type': 'string', 'maxLength': 500}, 'days': {'type': 'integer', 'minimum': 0, 'maximum': 3650, 'default': 0, 'description': 'Created in the last N days; 0 = all time.'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50, 'default': 25}, 'boards': {'type': 'boolean', 'default': False}}, 'additionalProperties': False},
         False, False, False),
     'create_document': (
-        'Create a project document',
-        ('Create a custom markdown document in a project you can edit. Requires a write token. Write only what '
-        'the user asked for; cite feedback ids for claims about customers.'),
+        'Create a document',
+        ('Create a custom markdown document in a project you can edit (write token). Cite feedback ids for '
+         'claims.'),
         _object({'project_id': PROJECT_ID, 'title': TITLE, 'content': CONTENT}, 'title', 'content'),
         True, False, True),
     'update_document': (
-        'Update a project document',
-        ("Replace a document's title and/or content in a project you can edit. Requires a write token. Managed "
-        'PRD / PR/FAQ titles cannot change series, and prototype bodies cannot be edited here.'),
+        'Update a document',
+        ("Replace a document's title and/or content (write token). PRD / PR/FAQ titles keep their series; "
+         'prototypes cannot be edited here.'),
         _object({'project_id': PROJECT_ID, 'document_id': ID, 'title': TITLE, 'content': CONTENT}, 'document_id'),
         True, False, True),
     'run_agent': (
-        'Run an autonomous agent',
-        ('Start a run of an autonomous agent now (from list_agents). Only for write tokens minted by an '
-        'administrator who is still an administrator; returns the queued run. Confirm with the user first — a '
-        'run spends model budget and creates or updates projects.'),
-        _object({'agent_id': ID}, 'agent_id'), True, True, False),
+        'Run an agent',
+        ('Start an agent run now (write token minted by a current administrator). Confirm first: it spends '
+         'model budget.'),
+        _object({'agent_id': ID}, 'agent_id'), True, True, False),    'generate': (
+        'Start a methodology step',
+        ('Start personas, research, prfaq, prd or prototype in a project (write token); `brief` = the idea or '
+         'question. Answers job_id and `methodology` (skipped steps); poll get_job.'),
+        {'type': 'object', 'properties': {'project_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$', 'description': 'From list_projects; optional with a pinned token.'}, 'step': {'type': 'string', 'enum': ['personas', 'research', 'prfaq', 'prd', 'prototype']}, 'title': {'type': 'string', 'maxLength': 200}, 'brief': {'type': 'string', 'maxLength': 4000}, 'count': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, 'additionalProperties': False, 'required': ['step']},
+        True, False, True),
+    'get_job': (
+        'Get a job',
+        "A project job's status and result (with its methodology block), by job_id.",
+        {'type': 'object', 'properties': {'project_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$', 'description': 'From list_projects; optional with a pinned token.'}, 'job_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}}, 'additionalProperties': False, 'required': ['job_id']},
+        False, False, True),
+    'read_radar': (
+        'Read Radar',
+        "Other brands' reviews (not in our metrics): no `brand` = brands and totals, else its reviews.",
+        {'type': 'object', 'properties': {'brand': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}, 'days': {'type': 'integer', 'minimum': 1, 'maximum': 365}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}}, 'additionalProperties': False},
+        False, False, False),
+    'edit_feedback': (
+        'Correct a feedback item',
+        "Set one item's category (+ subcategory), or its dimensions / tags (write token).",
+        {'type': 'object', 'properties': {'feedback_id': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,128}$'}, 'category': {'type': 'string', 'maxLength': 128}, 'subcategory': {'type': 'string', 'maxLength': 128}, 'dimensions': {'type': 'object', 'additionalProperties': {'type': ['string', 'null']}}, 'tags': {'type': 'array', 'maxItems': 20, 'items': {'type': 'string'}}}, 'additionalProperties': False, 'required': ['feedback_id']},
+        True, False, False),
 }
 
 
@@ -203,7 +207,8 @@ class TestThePublishedCatalogue:
     def test_domains_and_their_function_env_names(self):
         assert tools.DOMAIN_FUNCTION_ENV == {
             'metrics': 'METRICS_FUNCTION', 'settings': 'SETTINGS_FUNCTION', 'memory': 'MEMORY_FUNCTION',
-            'projects': 'PROJECTS_FUNCTION', 'agents': 'AGENTS_FUNCTION', 'engagement': 'ENGAGEMENT_FUNCTION'}
+            'projects': 'PROJECTS_FUNCTION', 'agents': 'AGENTS_FUNCTION', 'engagement': 'ENGAGEMENT_FUNCTION',
+            'radar': 'RADAR_FUNCTION', 'feedback_edit': 'FEEDBACK_EDIT_FUNCTION'}
 
 
 class TestTheModelTypes:

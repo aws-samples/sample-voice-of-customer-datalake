@@ -83,7 +83,8 @@ function mcpReservedConcurrency(scope: Construct): number | undefined {
 
 /** The env key each domain's function name arrives in (= DOMAIN_FUNCTION_ENV in mcp_global_tools.py). */
 type GlobalMcpDomainFunctions = Record<
-  'METRICS_FUNCTION' | 'SETTINGS_FUNCTION' | 'MEMORY_FUNCTION' | 'PROJECTS_FUNCTION' | 'AGENTS_FUNCTION' | 'ENGAGEMENT_FUNCTION',
+  'METRICS_FUNCTION' | 'SETTINGS_FUNCTION' | 'MEMORY_FUNCTION' | 'PROJECTS_FUNCTION' | 'AGENTS_FUNCTION' | 'ENGAGEMENT_FUNCTION'
+  | 'RADAR_FUNCTION' | 'FEEDBACK_EDIT_FUNCTION',
   lambda.IFunction
 >;
 
