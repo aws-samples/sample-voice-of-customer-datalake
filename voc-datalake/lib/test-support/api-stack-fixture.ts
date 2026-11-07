@@ -119,6 +119,7 @@ export function apiStackDependencyProps(
     agentRunStateMachine: new sfn.StateMachine(deps, 'AgentRun', {
       definitionBody: sfn.DefinitionBody.fromChainable(new sfn.Pass(deps, 'AgentRunNoop')),
     }),
+    agentConductorRoleArn: `arn:aws:iam::${env.account}:role/voc-agent-conductor-role`,
     memoryExtractQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/memory-extract`,
     memoryExtractQueueArn: `arn:aws:sqs:${env.region}:${env.account}:memory-extract`,
   };

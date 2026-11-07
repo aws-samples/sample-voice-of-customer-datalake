@@ -31,6 +31,11 @@ API_ENDPOINT=$(cfn_output "$API_STACK" ApiEndpoint)
 COGNITO_USER_POOL_ID=$(cfn_output "$CORE_STACK" UserPoolId)
 COGNITO_CLIENT_ID=$(cfn_output "$CORE_STACK" UserPoolClientId)
 COGNITO_REGION=$(cfn_output "$CORE_STACK" CognitoRegion)
+# Push notifications (docs/realtime.md); optional: an older stack has no Event API and the SPA polls.
+REALTIME_HTTP_DNS=$(cfn_output "$API_STACK" RealtimeHttpDns)
+REALTIME_DNS=$(cfn_output "$API_STACK" RealtimeDns)
+[ "$REALTIME_HTTP_DNS" = "None" ] && REALTIME_HTTP_DNS=""
+[ "$REALTIME_DNS" = "None" ] && REALTIME_DNS=""
 [ -z "$COGNITO_REGION" ] || [ "$COGNITO_REGION" = "None" ] \
   && COGNITO_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 
@@ -53,6 +58,8 @@ VITE_API_ENDPOINT=${API_ENDPOINT}
 VITE_COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
 VITE_COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
 VITE_COGNITO_REGION=${COGNITO_REGION}
+VITE_REALTIME_HTTP_DNS=${REALTIME_HTTP_DNS}
+VITE_REALTIME_DNS=${REALTIME_DNS}
 EOF
 
 echo "Wrote .env:"
@@ -60,4 +67,5 @@ echo "  VITE_API_ENDPOINT=${API_ENDPOINT}"
 echo "  VITE_COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}"
 echo "  VITE_COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}"
 echo "  VITE_COGNITO_REGION=${COGNITO_REGION}"
+echo "  VITE_REALTIME_DNS=${REALTIME_DNS:-<none: polling only>}"
 echo "✓ done — restart the dev server to pick it up"

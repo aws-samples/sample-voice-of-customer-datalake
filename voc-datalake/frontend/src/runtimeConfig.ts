@@ -29,6 +29,20 @@ const BoardConfigSchema = z.object({
 
 type BoardSignInMode = 'email_otp' | 'code'
 
+/**
+ * The AppSync Events API the SPA subscribes to for push notifications (docs/realtime.md): both hosts,
+ * no scheme, as VocApiStack's RealtimeHttpDns / RealtimeDns outputs write them. Lenient: absent or
+ * malformed (an older deployment, the dev mock) = no push, and every view polls exactly as before.
+ */
+const RealtimeConfigSchema = z.object({
+  // A bare DNS host, the same shape as the hosted-UI host.
+  httpDns: z.string().regex(HOSTED_UI_HOST),
+  realtimeDns: z.string().regex(HOSTED_UI_HOST),
+})
+
+/** Where to connect for push notifications. */
+export type RealtimeEndpoints = z.infer<typeof RealtimeConfigSchema>
+
 /** The board pool's ids plus the region every pool of the deployment lives in. */
 export interface BoardPoolConfig {
   readonly userPoolId: string
@@ -66,6 +80,8 @@ const RuntimeConfigSchema = z.object({
    * away the whole config (which would blank the app's own sign-in).
    */
   board: BoardConfigSchema.optional().catch(undefined),
+  /** Push notifications (docs/realtime.md); absent = polling only. */
+  realtime: RealtimeConfigSchema.optional().catch(undefined),
 })
 
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>
@@ -145,6 +161,14 @@ export function getBoardPoolConfig(): BoardPoolConfig | null {
 }
 
 /**
+ * The Event API hosts, or null when the deployment has none (the dev mock, an older stack) or the
+ * config is not loaded yet: then nothing subscribes and every view polls as before.
+ */
+export function getRealtimeEndpoints(): RealtimeEndpoints | null {
+  return configState.config?.realtime ?? null
+}
+
+/**
  * The Cognito hosted UI's origin (`https://<host>`), or null when the config names none (local dev, an
  * older config.json) or is not loaded yet.
  */
@@ -179,6 +203,15 @@ async function fetchConfig(): Promise<RuntimeConfig> {
   }
 }
 
+/** VITE_REALTIME_* (scripts/update-env.sh), only when both are set. */
+function envRealtime(): { realtime?: RealtimeEndpoints } {
+  const parsed = RealtimeConfigSchema.safeParse({
+    httpDns: getEnvString('VITE_REALTIME_HTTP_DNS'),
+    realtimeDns: getEnvString('VITE_REALTIME_DNS'),
+  })
+  return parsed.success ? { realtime: parsed.data } : {}
+}
+
 /**
  * Fallback: Get config from VITE_* environment variables.
  * Used for local development or when config.json is unavailable.
@@ -200,6 +233,7 @@ function getEnvConfig(): RuntimeConfig {
       region: getEnvString('VITE_COGNITO_REGION', 'us-east-1'),
     },
     features,
+    ...envRealtime(),
   }
 
   // Validate env config

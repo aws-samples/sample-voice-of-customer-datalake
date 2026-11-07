@@ -102,6 +102,8 @@ export class VocProcessingStack extends VocStack {
   public readonly memoryExtractQueue: sqs.Queue;
   /** voc-agent-run — the agents API starts/stops executions from VocApiStack. */
   public readonly agentRunStateMachine: sfn.StateMachine;
+  /** voc-agent-conductor's role (VocApiStack grants it publish on the Event API's `runs` namespace). */
+  public readonly agentConductorRole: iam.IRole;
 
   constructor(scope: Construct, id: string, props: VocProcessingStackProps) {
     super(scope, id, props);
@@ -295,6 +297,7 @@ export class VocProcessingStack extends VocStack {
     this.memoryExtractQueue = memoryWorkers.extractQueue;
     const agentRuntime = new AgentRuntime(this, 'AgentRuntime', {
       uniqueName,
+      deploymentPrefix: this.deploymentPrefix,
       layer: processingLayer,
       kmsKey,
       agentsTable: props.agentsTable,
@@ -309,6 +312,7 @@ export class VocProcessingStack extends VocStack {
       webSearchToolName: props.webSearchToolName,
     });
     this.agentRunStateMachine = agentRuntime.stateMachine;
+    this.agentConductorRole = agentRuntime.conductorRole;
     // The per-user morning brief (docs/briefing.md): idle until someone subscribes or presses Refresh.
     createBriefingWorker(this, 'BriefingWorker', {
       uniqueName, layer: processingLayer, kmsKey, feedbackTable, aggregatesTable, memoryTable: props.memoryTable,
