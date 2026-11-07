@@ -81,10 +81,10 @@ PASSKEY_AVAILABLE=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="Pass
 BOARD_USER_POOL_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolId") | .OutputValue // empty')
 BOARD_CLIENT_ID=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardUserPoolClientId") | .OutputValue // empty')
 BOARD_SIGN_IN=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="BoardSignInMode") | .OutputValue // "email_otp"')
-# The AppSync Events hosts for push notifications (docs/realtime.md, 6.04.00); an older stack has none,
-# and the SPA then polls exactly as before.
-REALTIME_HTTP_DNS=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="RealtimeHttpDns") | .OutputValue // empty')
-REALTIME_DNS=$(echo "$API_OUTPUTS" | jq -r '.[] | select(.OutputKey=="RealtimeDns") | .OutputValue // empty')
+# The AppSync Events hosts for push notifications (docs/realtime.md, 6.04.00: VocCoreStack's Event API); an
+# older stack has none, and the SPA then polls exactly as before.
+REALTIME_HTTP_DNS=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="RealtimeHttpDns") | .OutputValue // empty')
+REALTIME_DNS=$(echo "$CORE_OUTPUTS" | jq -r '.[] | select(.OutputKey=="RealtimeDns") | .OutputValue // empty')
 
 # Validate required values
 if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "null" ]; then
