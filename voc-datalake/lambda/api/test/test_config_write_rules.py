@@ -12,6 +12,7 @@ from shared import config_write_guard as guard
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
 
 STORED_SCRAPER = {'id': 's1', 'name': 'Example Air reviews'}
+STORED_APPS = [{'id': 'a1', 'app_name': 'Example Air', 'app_id': '123'}]
 
 
 def _scrapers(api_gateway_event, lambda_context, body, stored=(STORED_SCRAPER,)):
@@ -81,27 +82,25 @@ class TestScrapers:
 
 
 class TestAppConnectors:
-    STORED = [{'id': 'a1', 'app_name': 'Example Air', 'app_id': '123'}]
-
     @pytest.mark.parametrize('app', [
         {'app_name': ' example air ', 'app_id': '999'},
         {'app_name': 'Other', 'app_id': '123'},
         {'id': 'a1', 'app_name': 'Renamed'},
     ])
     def test_a_create_of_the_same_app_is_409(self, api_gateway_event, lambda_context, app):
-        status, answer, written = _apps(api_gateway_event, lambda_context, {'app': app, 'mode': 'create'}, self.STORED)
+        status, answer, written = _apps(api_gateway_event, lambda_context, {'app': app, 'mode': 'create'}, STORED_APPS)
         assert status == 409
         assert 'already exists' in answer['error']
         assert written is False
 
     def test_a_new_app_is_created(self, api_gateway_event, lambda_context):
         status, _, written = _apps(api_gateway_event, lambda_context,
-                                   {'app': {'app_name': 'Other', 'app_id': '456'}, 'mode': 'create'}, self.STORED)
+                                   {'app': {'app_name': 'Other', 'app_id': '456'}, 'mode': 'create'}, STORED_APPS)
         assert (status, written) == (200, True)
 
     def test_a_stale_update_is_409(self, api_gateway_event, lambda_context):
         status, _, written = _apps(api_gateway_event, lambda_context, {
-            'app': {'id': 'a1', 'app_name': 'X'}, 'mode': 'update', 'base_etag': 'old'}, self.STORED)
+            'app': {'id': 'a1', 'app_name': 'X'}, 'mode': 'update', 'base_etag': 'old'}, STORED_APPS)
         assert (status, written) == (409, False)
 
 
