@@ -16,7 +16,8 @@
  */
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
-import { DEFAULT_IMPORT_SOURCE_ID, importStats } from '../reviewImportSchemas'
+import { DEFAULT_IMPORT_SOURCE_ID } from '@stream/assistant/tools/client/review-import-schemas'
+import { importStats } from '../reviewImportSchemas'
 import { CardNote, FieldTable, NothingSavedNote } from './FieldDiff'
 import { Code, Muted } from './ScraperValues'
 import { fieldRow } from './format'

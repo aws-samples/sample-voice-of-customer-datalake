@@ -11,7 +11,8 @@
 import { z } from 'zod'
 import { scrapersApi } from '../../api/scrapersApi'
 import { invalidateKeys, keysFor } from './invalidation'
-import { DEFAULT_IMPORT_SOURCE_ID, jsonUploadItems } from './reviewImportSchemas'
+import { DEFAULT_IMPORT_SOURCE_ID } from '@stream/assistant/tools/client/review-import-schemas'
+import { jsonUploadItems } from './reviewImportSchemas'
 import type { WriteToolExecutionContext } from '../types'
 import type { ImportReviewsArgs } from './reviewImportSchemas'
 
