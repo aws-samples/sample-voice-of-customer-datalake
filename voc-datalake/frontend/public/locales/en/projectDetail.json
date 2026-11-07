@@ -133,6 +133,19 @@
       "persona": "Written from a persona that was later deleted",
       "document": "Written from a document that was later deleted",
       "productDoc": "Written using a product document that was later deleted"
+    },
+    "methodology": {
+      "title": "Methodology gaps",
+      "missingPersonas": "Made without personas: the project had none.",
+      "missingPrfaq": "Made without a PR/FAQ: the project had none. The methodology writes the PR/FAQ first.",
+      "missingPrd": "Made without a PRD: the project had none.",
+      "notSelectedFeedback": "Made without customer feedback: it was turned off for this document.",
+      "notSelectedPersonas": "Made without the project's personas: they were not selected.",
+      "notSelectedPrfaq": "Made without the project's PR/FAQ: it was not selected.",
+      "noEvidence": "Cites no customer evidence.",
+      "documentsSkipped_one": "{{count, number}} selected reference document was left out (only the first {{cap, number}} are read).",
+      "documentsSkipped_other": "{{count, number}} selected reference documents were left out (only the first {{cap, number}} are read).",
+      "handWritten": "Written by hand: cites no customer feedback yet."
     }
   },
   "imageErrors": {
@@ -229,7 +242,9 @@
     "generatePrdPrfaqDesc": "Create product documents from feedback",
     "hint": {
       "documentsNeedContext": "Personas or research make these documents stronger.",
-      "researchNeedsPersonas": "Generate personas first to ground the research in them."
+      "researchNeedsPersonas": "Generate personas first to ground the research in them.",
+      "documentsNeedPersonas": "Generate personas first: the methodology writes the PR/FAQ and PRD from them.",
+      "prdNeedsPrfaq": "Write the PR/FAQ before the PRD: the methodology reads it."
     },
     "needAtLeast2Docs": "Need at least 2 documents",
     "nextStep": {

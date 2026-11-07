@@ -133,6 +133,19 @@
       "persona": "Aus einer Persona erstellt, die später gelöscht wurde",
       "document": "Aus einem Dokument erstellt, das später gelöscht wurde",
       "productDoc": "Mit einem Produktdokument erstellt, das später gelöscht wurde"
+    },
+    "methodology": {
+      "title": "Lücken in der Methodik",
+      "missingPersonas": "Ohne Personas erstellt: Das Projekt hatte keine.",
+      "missingPrfaq": "Ohne PR/FAQ erstellt: Das Projekt hatte keine. Die Methodik schreibt zuerst die PR/FAQ.",
+      "missingPrd": "Ohne PRD erstellt: Das Projekt hatte keines.",
+      "notSelectedFeedback": "Ohne Kundenfeedback erstellt: Es war für dieses Dokument ausgeschaltet.",
+      "notSelectedPersonas": "Ohne die Personas des Projekts erstellt: Sie wurden nicht ausgewählt.",
+      "notSelectedPrfaq": "Ohne die PR/FAQ des Projekts erstellt: Sie wurde nicht ausgewählt.",
+      "noEvidence": "Zitiert keine Belege von Kunden.",
+      "documentsSkipped_one": "{{count, number}} ausgewähltes Referenzdokument wurde ausgelassen (nur die ersten {{cap, number}} werden gelesen).",
+      "documentsSkipped_other": "{{count, number}} ausgewählte Referenzdokumente wurden ausgelassen (nur die ersten {{cap, number}} werden gelesen).",
+      "handWritten": "Von Hand geschrieben: zitiert noch kein Kundenfeedback."
     }
   },
   "imageErrors": {
@@ -229,7 +242,9 @@
     "generatePrdPrfaqDesc": "Produktdokumente aus Feedback erstellen",
     "hint": {
       "documentsNeedContext": "Personas oder Recherche machen diese Dokumente stärker.",
-      "researchNeedsPersonas": "Generieren Sie zuerst Personas, um die Recherche darauf zu stützen."
+      "researchNeedsPersonas": "Generieren Sie zuerst Personas, um die Recherche darauf zu stützen.",
+      "documentsNeedPersonas": "Generieren Sie zuerst Personas: Die Methodik schreibt PR/FAQ und PRD auf ihrer Grundlage.",
+      "prdNeedsPrfaq": "Schreiben Sie die PR/FAQ vor dem PRD: Die Methodik liest sie."
     },
     "needAtLeast2Docs": "Mindestens 2 Dokumente erforderlich",
     "nextStep": {

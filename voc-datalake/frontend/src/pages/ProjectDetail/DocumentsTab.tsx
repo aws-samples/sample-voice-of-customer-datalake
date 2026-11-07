@@ -16,6 +16,7 @@ import type { ProjectDocument } from '../../api/types'
 import type { Project, ProductDoc } from '../../api/projectTypes'
 import { DerivationFooter, RevisionFooter } from './DocumentLineageFooters'
 import { DeletedSourcesNotice } from './DeletedSourcesNotice'
+import { MethodologyNotice } from './MethodologyNotice'
 import ErasedEvidenceNote from './ErasedEvidenceNote'
 import FeedbackCorpus from './FeedbackCorpus'
 import { featureRequestIdsOf, linkFeatureRequestCitations } from './featureRequestCitations'
@@ -158,6 +159,7 @@ export default function DocumentsTab({
               <RevisionFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
               <DerivationFooter doc={selectedDoc} documents={documents} onSelectDoc={onSelectDoc} />
               <DeletedSourcesNotice doc={selectedDoc} />
+              <MethodologyNotice doc={selectedDoc} />
               <FeedbackCorpus feedbackIds={selectedDoc.input_feedback_ids}
                 featureRequestIds={featureRequestIdsOf(selectedDoc)}
                 className="mt-2" />

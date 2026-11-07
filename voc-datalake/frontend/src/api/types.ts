@@ -5,6 +5,7 @@
 import type { DocumentDerivation } from './derivation'
 import type { DeletedSource } from './deletedSources'
 import type { ErasedEvidence } from './erasedEvidence'
+import type { MethodologyBlock } from './methodologySchema'
 // The credential vocabulary lives with its schema for the same reason: the
 // declared type and the runtime validation cannot drift apart.
 import type { CategoryOverride } from './feedbackSchema'
@@ -544,6 +545,14 @@ export interface ProjectDocument {
    * reconstructs the answer from the legacy fields below.
    */
   derivation?: DocumentDerivation | null
+  /**
+   * The methodology steps this document was made without, its evidence count (feedback items that
+   * reached it; 0 for a hand-written one) and warnings, as the server recorded them
+   * (docs/project-workspace.md → Methodology). Absent on documents made before 6.04.
+   */
+  methodology?: MethodologyBlock
+  /** `'human'` for a PR/FAQ / PRD written by hand from a blank template (shared/human_documents.py). */
+  origin?: string
   // ── Pre-`derivation` lineage, still written, now declared ──
   // These were on the wire long before this interface acknowledged them, and
   // `resolveDerivation` reads them for documents that predate `derivation`.

@@ -133,6 +133,19 @@
       "persona": "基于后来被删除的用户角色撰写",
       "document": "基于后来被删除的文档撰写",
       "productDoc": "使用了后来被删除的产品文档撰写"
+    },
+    "methodology": {
+      "title": "方法论缺口",
+      "missingPersonas": "未使用用户画像:项目中没有用户画像。",
+      "missingPrfaq": "未使用 PR/FAQ:项目中没有 PR/FAQ。方法论要求先写 PR/FAQ。",
+      "missingPrd": "未使用 PRD:项目中没有 PRD。",
+      "notSelectedFeedback": "未使用客户反馈:此文档关闭了客户反馈。",
+      "notSelectedPersonas": "未使用项目的用户画像:未选择它们。",
+      "notSelectedPrfaq": "未使用项目的 PR/FAQ:未选择它。",
+      "noEvidence": "未引用任何客户证据。",
+      "documentsSkipped_one": "有 {{count, number}} 份所选参考文档被省略(只读取前 {{cap, number}} 份)。",
+      "documentsSkipped_other": "有 {{count, number}} 份所选参考文档被省略(只读取前 {{cap, number}} 份)。",
+      "handWritten": "手动撰写:尚未引用任何客户反馈。"
     }
   },
   "imageErrors": {
@@ -229,7 +242,9 @@
     "generatePrdPrfaqDesc": "从反馈创建产品文档",
     "hint": {
       "documentsNeedContext": "有人物角色或调研，这些文档会更充实。",
-      "researchNeedsPersonas": "先生成人物角色，调研即可以其为依据。"
+      "researchNeedsPersonas": "先生成人物角色，调研即可以其为依据。",
+      "documentsNeedPersonas": "请先生成用户画像:方法论基于它们撰写 PR/FAQ 和 PRD。",
+      "prdNeedsPrfaq": "请在 PRD 之前撰写 PR/FAQ:方法论会读取它。"
     },
     "needAtLeast2Docs": "需要至少 2 个文档",
     "nextStep": {

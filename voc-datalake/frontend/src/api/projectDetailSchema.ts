@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { deletedSourcesOrUndefined } from './deletedSources'
 import { optionalErasedEvidenceSchema } from './erasedEvidence'
 import { parseEach } from './lenientFields'
+import { optionalMethodologyBlock, optionalProjectMethodology } from './methodologySchema'
 import { copiedFromSchema } from './personaCopiedFrom'
 import { UserRefSchema } from './userRefSchema'
 import { asRecord } from './wireRecord'
@@ -191,6 +192,9 @@ const ProjectDocumentSchema = z.preprocess(withLegacyManagedDocumentType, z.loos
   deleted_sources: z.unknown().optional(),
   created_at: z.string().catch(''),
   updated_at: optionalString,
+  // What the document skipped of the methodology, and its evidence count (api/methodologySchema.ts).
+  methodology: optionalMethodologyBlock,
+  origin: optionalString,
 }).transform(({ deleted_sources: raw, ...doc }) => {
   const deletedSources = deletedSourcesOrUndefined(raw)
   return deletedSources === undefined ? doc : { ...doc, deleted_sources: deletedSources }
@@ -252,6 +256,8 @@ const ProjectDetailEnvelopeSchema = z.looseObject({
   project: ProjectSchema,
   personas: z.array(z.unknown()).catch(() => []),
   documents: z.array(z.unknown()).catch(() => []),
+  // The per-step upstream gaps the Overview cards render (absent from an older API).
+  methodology: optionalProjectMethodology,
 })
 
 /** One project detail response, dropping only rows with no usable identity/type. */

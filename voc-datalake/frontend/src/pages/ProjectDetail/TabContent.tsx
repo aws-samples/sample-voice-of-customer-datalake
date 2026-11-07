@@ -20,7 +20,7 @@ import type {
 
 /** The fields the page hands straight through to the Overview tab. */
 type OverviewPassThrough = Pick<OverviewTabProps,
-  'project' | 'personas' | 'documents' | 'productContext' | 'productDocs' | 'designSystem'
+  'project' | 'personas' | 'documents' | 'methodology' | 'productContext' | 'productDocs' | 'designSystem'
   | 'onGeneratePersonas' | 'onGenerateDoc' | 'onRunResearch' | 'onRemixDocuments' | 'onOpenProductTool' | 'onJobStarted'>
 
 interface TabContentProps extends OverviewPassThrough {
@@ -54,6 +54,7 @@ export default function TabContent({
   canEdit,
   personas,
   documents,
+  methodology,
   productContext,
   productDocs,
   designSystem,
@@ -84,6 +85,7 @@ export default function TabContent({
         project={project}
         personas={personas}
         documents={documents}
+        methodology={methodology}
         productContext={productContext}
         productDocs={productDocs}
         designSystem={designSystem}

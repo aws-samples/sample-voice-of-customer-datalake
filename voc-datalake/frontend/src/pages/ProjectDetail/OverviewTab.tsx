@@ -27,7 +27,9 @@ import type { TFunction } from 'i18next'
 import type { ProjectDocument } from '../../api/types'
 import type { ProjectPersona, Project, ProductContext, ProductDoc } from '../../api/projectTypes'
 import type { DesignSystem } from '../../api/designSystemApi'
+import type { ProjectMethodology } from '../../api/methodologySchema'
 import { PrototypeBuildWizard } from './PrototypeBuildWizard'
+import { documentsHint, researchHint } from './methodologyHint'
 
 export interface OverviewTabProps {
   readonly project: Project
@@ -46,6 +48,8 @@ export interface OverviewTabProps {
   readonly productDocs?: ProductDoc[]
   /** The company design system for the build dialog's "Design system" box; undefined = not known. */
   readonly designSystem?: DesignSystem
+  /** The server's per-step upstream gaps (GET /projects/{id} `methodology`); undefined = an older API. */
+  readonly methodology?: ProjectMethodology
   readonly onGeneratePersonas: () => void
   readonly onGenerateDoc: () => void
   readonly onRunResearch: () => void
@@ -59,6 +63,7 @@ export default function OverviewTab({
   project,
   personas,
   documents,
+  methodology,
   productContext,
   productDocs,
   designSystem,
@@ -75,6 +80,7 @@ export default function OverviewTab({
   } = deriveOverviewState({
     personas,
     documents,
+    methodology,
     productContext,
     productDocs,
   })
@@ -158,7 +164,7 @@ export default function OverviewTab({
           stateLabel={steps.research.hasOutput
             ? t('overview.state.research', { total: steps.research.count })
             : t('overview.state.researchNone')}
-          hint={steps.research.missingUpstream ? t('overview.hint.researchNeedsPersonas') : undefined}
+          hint={researchHint(steps.research, t)}
           isNext={nextStep === 'research'}
           buttonIcon={<Search size={16} />}
           buttonLabel={t('overview.runResearch')}
@@ -175,7 +181,7 @@ export default function OverviewTab({
           stateLabel={steps.documents.hasOutput
             ? t('overview.state.documents', { total: steps.documents.count })
             : t('overview.state.documentsNone')}
-          hint={steps.documents.missingUpstream ? t('overview.hint.documentsNeedContext') : undefined}
+          hint={documentsHint(steps.documents, t)}
           isNext={nextStep === 'documents'}
           buttonIcon={<FileText size={16} />}
           buttonLabel={t('overview.generate')}
