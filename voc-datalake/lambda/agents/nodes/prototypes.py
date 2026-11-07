@@ -12,6 +12,7 @@ from agents.nodes.base import (
     document_updates,
     done,
     job_document_id,
+    job_methodology,
     started_job,
 )
 from agents.nodes.documents import document_title
@@ -46,4 +47,4 @@ def finish_prototype(ctx: NodeContext, job: dict) -> dict:
     return done(ctx, 'Prototype built',
                 artifacts={'project_id': ctx.require_project(), 'document_id': document_id,
                            'document_type': 'prototype'},
-                updates=document_updates(ctx, 'prototype', document_id))
+                updates=document_updates(ctx, 'prototype', document_id), methodology=job_methodology(job))

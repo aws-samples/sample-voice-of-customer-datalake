@@ -22,6 +22,7 @@ from typing import Any, Final
 from agents import plan_identity
 from agents.conductor import plan_decide, plan_state
 from agents.conductor.plan_state import PlanState
+from shared import methodology
 from shared import plans_store as ps
 from shared.agents_store import iso
 from shared.logging import logger
@@ -174,6 +175,10 @@ def _record_done(state: PlanState, step_id: str, result: Mapping[str, Any]) -> s
     sets: dict[str, Any] = {'status': ps.STEP_DONE, 'finished_at': iso(state.now), 'outputs': outputs}
     if isinstance(fingerprint, str) and FINGERPRINT_RE.fullmatch(fingerprint):
         sets['fingerprint'] = fingerprint
+    # A methodology step's start answer (skipped steps, warnings), bounded; shown on the plan card.
+    block = methodology.compact(result.get('methodology'))
+    if block is not None:
+        sets['methodology'] = block
     ps.update_step(plan_state.table(), state.plan_id, step_id, ps.Change(sets, (ps.STEP_RUNNING,)), now=state.now)
     return 'step_finished'
 
@@ -239,6 +244,9 @@ def record(plan_id: str, step_id: str, result: object, error: object) -> dict:
     if calls:
         ps.update_meta(plan_state.table(), plan_id, ps.Change({}, ps.ACTIVE_PLAN_STATUSES + ps.TERMINAL_PLAN_STATUSES,
                                                               add={'model_calls': calls}), now=state.now)
+    # A finished methodology step's row also carries what it skipped, like an agent run's (agents/run_methodology.py).
+    block = methodology.compact(outcome.get('methodology')) if kind == 'step_finished' else None
     plan_state.journal(plan_id, kind, str(state.definitions[step_id].get('title') or step_id),
-                       now=state.now, step_id=step_id, meta=state.meta)
+                       now=state.now, step_id=step_id, meta=state.meta,
+                       **({} if block is None else {'methodology_block': block}))
     return {}

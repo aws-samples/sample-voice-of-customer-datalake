@@ -231,7 +231,11 @@ Plans reuse `voc-agent-run` and its conductor rather than a second orchestrator:
   `lambda/stream/src/assistant/plan/write-requests.ts` (`buildWriteRequest`, with `write-preconditions.ts` for the
   reads a write needs first). The SPA's approval-card executors build the same requests, pinned by
   `frontend/src/assistant/plan/writeRequests.lockstep.test.ts`. Its answers carry `model_calls` (counted against the
-  per-plan cap) and, for an executed write, its `fingerprint`.
+  per-plan cap) and, for an executed write, its `fingerprint`. When the write was a methodology step (research,
+  PR/FAQ, PRD, prototype) the route's `methodology` block (skipped steps, warnings) rides on the answer too;
+  `plan_record` stores it, bounded, on the step row and on its `step_finished` journal row, `GET /agents/plans/{id}`
+  answers it on the step (`steps[].methodology`), and the plan's progress card lists its gaps under the step
+  (TENETS.md tenet 2).
 - The conductor sends no `env` in the plan-step event, so plan writes use the runner's defaults: a 30-day feedback
   window, the route's default response language and the imported-date basis.
 

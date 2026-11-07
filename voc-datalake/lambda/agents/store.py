@@ -35,7 +35,7 @@ from typing import Any
 from boto3.dynamodb.conditions import Key
 
 from agents.failure_reason import reason_text
-from shared import agent_run_decisions
+from shared import agent_run_decisions, methodology
 from shared import agents_store as shared_store
 from shared.agents_store import (
     RUN_CANCELLED,
@@ -294,8 +294,13 @@ def _next_seq(agent_id: str, run_id: str, counter: str) -> int:
 
 def append_event(agent_id: str, run_id: str, kind: str, summary: str, *,
                  node_id: str | None = None, role: str | None = None,
-                 ref: Mapping[str, object] | None = None, detail: object = None) -> int:
-    """Journal one event. ``summary`` is for people; ``detail`` (masked, one line) is the technical log."""
+                 ref: Mapping[str, object] | None = None, detail: object = None,
+                 methodology_block: object = None) -> int:
+    """Journal one event. ``summary`` is for people; ``detail`` (masked, one line) is the technical log.
+
+    ``methodology_block``: a step's methodology block (shared/methodology.py), bounded by ``compact``
+    and stored as ``methodology``; anything that is not a block is dropped.
+    """
     if kind not in EVENT_KINDS:
         raise ValueError(f'unknown event kind: {kind}')
     seq = _next_seq(agent_id, run_id, 'event_seq')
@@ -313,6 +318,9 @@ def append_event(agent_id: str, run_id: str, kind: str, summary: str, *,
     clean_ref = {k: v for k, v in (ref or {}).items() if isinstance(v, str) and v}
     if clean_ref:
         item['ref'] = clean_ref
+    block = methodology.compact(methodology_block)
+    if block is not None:
+        item['methodology'] = block
     _table().put_item(Item=item)
     return seq
 

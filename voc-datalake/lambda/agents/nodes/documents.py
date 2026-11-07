@@ -34,6 +34,7 @@ from agents.nodes.base import (
     document_updates,
     done,
     job_document_id,
+    job_methodology,
     scope_categories,
     started_job,
 )
@@ -136,4 +137,4 @@ def finish_document(ctx: NodeContext, job: dict, doc_type: str) -> dict:
     return done(ctx, f'{document_label(doc_type)} written',
                 artifacts={'project_id': ctx.require_project(), 'document_id': document_id,
                            'document_type': doc_type},
-                updates=document_updates(ctx, doc_type, document_id))
+                updates=document_updates(ctx, doc_type, document_id), methodology=job_methodology(job))

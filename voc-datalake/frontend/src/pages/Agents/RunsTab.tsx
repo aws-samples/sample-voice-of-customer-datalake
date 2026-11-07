@@ -30,6 +30,7 @@ import { RunProjectsContext, useRunProjectName, useRunProjects } from './useRunP
 import type { Agent, AgentRun, RunEvent } from '../../api/agentsApi'
 import type { WorkflowDefinition } from '../../api/workflowsApi'
 import LoadFailed from '../../components/LoadFailed/LoadFailed'
+import MethodologyGaps from '../../components/MethodologyGaps/MethodologyGaps'
 import { failedReads, type FailedReads } from '../../utils/failedReads'
 
 /** When a run started, in the reader's language; "—" when unknown. */
@@ -75,6 +76,7 @@ function EventItem({ event, node }: Readonly<{ event: RunEvent; node: WorkflowDe
         {event.detail !== undefined && event.detail !== '' && (
           <p className="font-mono text-[11px] text-muted whitespace-pre-wrap break-words">{event.detail}</p>
         )}
+        <MethodologyGaps block={event.methodology} testId="run-event-methodology" className="mt-1" />
         <EventRef event={event} />
       </div>
     </li>

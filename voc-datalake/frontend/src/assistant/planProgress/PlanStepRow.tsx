@@ -10,6 +10,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { DESTRUCTIVE_CLIENT_TOOLS } from '@stream/assistant/contract'
+import MethodologyGaps from '../../components/MethodologyGaps/MethodologyGaps'
 import { FieldTable } from '../approvals/previews/FieldDiff'
 import { planArgRows } from '../approvals/previews/planRows'
 import { PlanStepStatusBadge } from './PlanBadges'
@@ -79,6 +80,7 @@ export function PlanStepRow({ step, index, numberOf, busy, onResolve }: Readonly
         <PlanStepStatusBadge status={step.status} />
       </div>
       {step.status === 'done' && (step.kind === 'think' ? <StepResult outputs={step.outputs} /> : <StepOutputs outputs={step.outputs} />)}
+      <MethodologyGaps block={step.methodology} testId="plan-step-methodology" className="text-[12px]" />
       {step.error !== undefined && step.error !== '' && <p className="text-[12px] text-danger">{step.error}</p>}
       {step.status === 'needs_approval' && step.pending !== undefined && (
         <StepApproval

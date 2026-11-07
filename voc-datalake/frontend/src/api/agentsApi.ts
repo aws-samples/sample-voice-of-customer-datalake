@@ -15,6 +15,7 @@ import { z } from 'zod'
 import { AGENT_SCHEDULE_EVERY, AGENT_THRESHOLD_PER, AGENT_VISIBILITIES } from '@stream/assistant/tools/agent-limits'
 import { fetchApi } from './client'
 import { lenientList } from './lenientFields'
+import { optionalMethodologyBlock } from './methodologySchema'
 import { NeedsHumanSchema, RunActionsSchema, RunDecisionSchema } from './agentRunDecision'
 import { isRecord } from '../lib/typeGuards'
 import { schemaGuard as guard } from './workflowsApi'
@@ -250,6 +251,8 @@ const RunEventSchema = z.object({
   /** A failed step's technical reason (masked, one line) beside the plain `summary`: "Show technical log" only. */
   detail: z.string().optional().catch(undefined),
   ref: RefSchema.optional().catch(undefined),
+  /** The block a methodology step's route or job answered (skipped steps, warnings): api/methodologySchema.ts. */
+  methodology: optionalMethodologyBlock.optional(),
 })
 export type RunEvent = z.output<typeof RunEventSchema>
 

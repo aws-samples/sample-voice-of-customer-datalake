@@ -130,6 +130,14 @@ Warnings are advice, never errors: save and run are not refused, because a workf
 already holds those artifacts. The editor lists them above the canvas ("Methodology"), each naming its step; a
 code it does not know shows the server's message. An older API answers no `warnings`: the editor shows none.
 
+**At run time** the run journal says what each methodology step skipped (`lambda/agents/run_methodology.py`). A
+research, PR/FAQ, PRD or prototype step whose route answered a `methodology` block (docs/project-workspace.md →
+Methodology) journals one `message` event when it starts ("Methodology (PRD): skipped a PR/FAQ; 1 warning(s).")
+carrying the block as `methodology: {step, skipped, warnings, evidence}`; its `node_finished` event carries the
+finished job's final block (with the evidence count). `GET /agents/{id}/runs/{run_id}/events` answers the field
+(bounded: at most 10 skipped steps and warnings, messages ≤ 300 characters). The run's technical log lists an
+event's gaps under it ("Methodology gaps"). Persona generation answers no block, so it journals none.
+
 Archiving: `DELETE /workflows/{id}` (admin) archives a workflow the way `DELETE /agents/{id}` archives an agent —
 a soft `status: archived` on its CURRENT row, never a delete. It leaves `GET /workflows` (admins may add
 `?include_archived=true`), becomes read-only (save / duplicate answer 404) and can no longer back a new agent;

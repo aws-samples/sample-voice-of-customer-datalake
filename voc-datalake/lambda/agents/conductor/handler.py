@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agents import notices, pins, principal, run_memory, store
+from agents import notices, pins, principal, run_memory, run_methodology, store
 from agents.conductor import plan_decide, plan_execution, planning, resume
 from agents.failure_reason import VERIFICATION_FAILURE, document_label, failure_summary
 from agents.fields import dict_field, list_field
@@ -210,7 +210,8 @@ def _record_result(agent_id: str, run_id: str, node: Node, result: dict) -> None
     claimed = dict_field(result, 'artifacts')
     ref = {k: claimed.get(k) for k in ('project_id', 'document_id') if isinstance(claimed.get(k), str)}
     store.append_mate(agent_id, run_id, node.role, node.id, 'from_mate', summary)
-    store.append_event(agent_id, run_id, 'node_finished', summary, node_id=node.id, role=node.role, ref=ref)
+    store.append_event(agent_id, run_id, 'node_finished', summary, node_id=node.id, role=node.role, ref=ref,
+                       **run_methodology.finished_kwargs(result))
     # A review claims the document it read (so it is verified) but produced nothing: announcing
     # it again listed every PR/FAQ twice under "What it produced".
     if claimed.get('document_id') and node.type not in REVIEW_TYPES:
@@ -312,6 +313,7 @@ def _advance(agent: dict, run: dict, graph: WorkflowGraph, result: dict) -> dict
         if polls > MAX_POLLS_PER_NODE:
             raise _Finish(store.RUN_FAILED, f'{node.title} timed out.')
         store.update_running(agent_id, run_id, {'poll_attempts': polls})
+        run_methodology.record_start(agent_id, run_id, node, result)
         return {'kind': 'wait', 'node_id': node.id, 'node_type': node.type,
                 'pending': result.get('pending'), 'wait_seconds': WAIT_SECONDS}
     if status != 'done':
