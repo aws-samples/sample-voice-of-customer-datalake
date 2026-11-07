@@ -13,8 +13,10 @@ import {
   DEFAULT_WEBHOOK_MEMORY_MB, ManifestSchema, loadPlugins, pluginIdsWithCapability, type PluginManifest,
 } from './plugin-loader';
 import { synthProcessingTemplate } from './test-support/processing-stack-fixture';
-import { UPDATE_CAPABLE_SOURCES_ENV } from './stacks/processing-stack-consolidated';
 import { byCodeUnit } from './utils/compare';
+
+/** The env var the processor reads (lambda/shared/source_updates.py `update_capable_sources`). */
+const UPDATE_CAPABLE_SOURCES_ENV = 'UPDATE_CAPABLE_SOURCES';
 
 const PLUGINS = loadPlugins(path.join(__dirname, '../plugins'));
 const BASE = { id: 'example_source', name: 'Example', icon: 'x', infrastructure: {} };

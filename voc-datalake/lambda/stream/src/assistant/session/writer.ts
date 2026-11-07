@@ -14,6 +14,7 @@
  * - A failed write is logged with an EMF metric and does not stop later writes.
  */
 import { METRIC_NAMESPACE } from '../../lib/metric-namespace.js';
+import { errorName } from '../../lib/error-name.js';
 
 /** A put landed, or was refused because the stored revision is newer. Failures throw. */
 export type PutOutcome = 'written' | 'superseded';
@@ -51,11 +52,6 @@ interface WriterState {
   chain: Promise<void>;
   draining: boolean;
   superseded: boolean;
-}
-
-/** An error's name for a log line (never its message: it may quote data). */
-export function errorName(error: unknown): string {
-  return error instanceof Error && error.name ? error.name : 'UnknownError';
 }
 
 export function createSessionWriter(put: SessionPut, nowMs: () => number): SessionWriter {

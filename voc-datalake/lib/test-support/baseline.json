@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "56314902f40968d2ef6ae0d8fe8dc0b64bd38d048df019d6c7a496c7494605b0",
+      "templateSha256": "976853ac02e0fd073bfd09102cde9124021696a9dbd530c81b1d1553d8e90fde",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -268,7 +268,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "f7538d9cd02f15967446b443c6302fab05ae1bbd9806e29fd7028b63f26d3772",
+      "templateSha256": "54f0422af00a8c6778e7b01e77a9346484b82e05563f85e30d4d293c265a7506",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-ingest-app_reviews_android-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -324,12 +324,12 @@
           "INGEST_SCHEDULE_RULE_NAME = voc-ingest-webscraper-schedule-<AWS::AccountId>-<AWS::Region>",
           "POWERTOOLS_SERVICE_NAME = voc-design-capture",
           "POWERTOOLS_SERVICE_NAME = voc-ingestion",
-          "REALTIME_HTTP_DNS_PARAMETER = /voc/realtime/event-api-http-dns"
+          "REALTIME_HTTP_DNS = ssm:/voc/realtime/event-api-http-dns"
         ]
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "b141b29e4a3515510b5a8b397d905e25c4daf43e20b28fe6786268f0111b29aa",
+      "templateSha256": "8275e13b84bf9da84cc80265a4bbe70fa87ad73d501805bfb62daa25f3097847",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-agent-heartbeat-schedule-<AWS::AccountId>-<AWS::Region>",
@@ -430,7 +430,7 @@
           "POWERTOOLS_SERVICE_NAME = voc-retention",
           "PROJECTS_FUNCTION = voc-projects-api-<AWS::AccountId>-<AWS::Region>",
           "RADAR_EXA_PARAMETER = /voc/radar/exa-api-key",
-          "REALTIME_HTTP_DNS_PARAMETER = /voc/realtime/event-api-http-dns",
+          "REALTIME_HTTP_DNS = ssm:/voc/realtime/event-api-http-dns",
           "SCRAPERS_FUNCTION = voc-scrapers-api-<AWS::AccountId>-<AWS::Region>",
           "SETTINGS_FUNCTION = voc-settings-api-<AWS::AccountId>-<AWS::Region>"
         ]

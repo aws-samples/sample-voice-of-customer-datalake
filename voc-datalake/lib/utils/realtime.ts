@@ -32,10 +32,17 @@ export type RealtimeNamespace = keyof typeof REALTIME_NAMESPACES;
 /** Base physical name of the Event API (before `uniqueName()`); AppSync caps API names at 50 characters. */
 export const REALTIME_API_BASE_NAME = 'voc-events';
 
-/** Env var of a Python or Node publisher: the Event API's HTTP host (`<id>.appsync-api.<region>.amazonaws.com`). */
+/**
+ * The one env var of a Python or Node publisher: the Event API's HTTP host (`<id>.appsync-api.<region>.amazonaws.com`)
+ * or, for a publisher OUTSIDE VocApiStack, `ssm:<parameter name>` (the SSM parameter holding that host, read once per
+ * container: `realtimeParameterReference`).
+ */
 export const REALTIME_HTTP_DNS_ENV = 'REALTIME_HTTP_DNS';
-/** Env var of a publisher OUTSIDE VocApiStack: the SSM parameter holding that host (read once per container). */
-export const REALTIME_HTTP_DNS_PARAMETER_ENV = 'REALTIME_HTTP_DNS_PARAMETER';
+
+/** `ssm:<parameter name>`: the value of REALTIME_HTTP_DNS for a publisher that reads the host from the parameter. */
+export function realtimeParameterReference(deploymentPrefix: string | undefined): string {
+  return `ssm:${realtimeParameterName(deploymentPrefix)}`;
+}
 
 /**
  * The namespace subscribe handler (APPSYNC_JS). A subscription is allowed only to exactly
@@ -91,6 +98,6 @@ export function wireRealtimeEndpointParameter(fn: lambda.Function, deploymentPre
   const { role } = fn;
   if (role === undefined) throw new Error(`${fn.node.path} has no role to grant the realtime endpoint read`);
   role.addToPrincipalPolicy(realtimeParameterReadStatement(cdk.Stack.of(fn), deploymentPrefix));
-  fn.addEnvironment(REALTIME_HTTP_DNS_PARAMETER_ENV, realtimeParameterName(deploymentPrefix));
+  fn.addEnvironment(REALTIME_HTTP_DNS_ENV, realtimeParameterReference(deploymentPrefix));
   return role;
 }

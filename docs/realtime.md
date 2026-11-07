@@ -85,10 +85,12 @@ A notice carries ids and statuses only, never content.
 
 Where a publisher learns the host:
 
-| Env var | Who | Value |
-|---|---|---|
-| `REALTIME_HTTP_DNS` | projects, settings, scrapers APIs and their assist twins; `voc-chat-stream`; the four project job Lambdas; `voc-manual-import-processor` | the Event API's HTTP host |
-| `REALTIME_HTTP_DNS_PARAMETER` | `voc-agent-conductor`, `voc-research-step`, `voc-category-reprocess`, `voc-retention`, `voc-memory-extractor`, `voc-briefing` (VocProcessingStack); the `s3_import` ingestor (VocIngestionStack) | `/[<prefix>-]voc/realtime/event-api-http-dns`, an SSM String parameter VocApiStack writes |
+Every publisher reads one variable, `REALTIME_HTTP_DNS`:
+
+| Who | Value |
+|---|---|
+| projects, settings, scrapers APIs and their assist twins; `voc-chat-stream`; the four project job Lambdas; `voc-manual-import-processor` | the Event API's HTTP host |
+| `voc-agent-conductor`, `voc-research-step`, `voc-category-reprocess`, `voc-retention`, `voc-memory-extractor`, `voc-briefing` (VocProcessingStack); the `s3_import` ingestor (VocIngestionStack) | `ssm:/[<prefix>-]voc/realtime/event-api-http-dns`, naming an SSM String parameter VocApiStack writes |
 
 VocProcessingStack and VocIngestionStack deploy before VocApiStack, so their publishers cannot take the host
 as a stack reference. Each reads the parameter once per container (`ssm:GetParameter` on exactly that

@@ -3,20 +3,6 @@
   "entries": [
     {
       "files": [
-        "voc-datalake/lib/stacks/agent-runtime.ts",
-        "voc-datalake/lib/stacks/memory-workers.ts"
-      ],
-      "reason": "the agent heartbeat and the memory scanner: the construct calls are already shared (workerRole, createWorkerFunction, scheduleWorker); what is left is each function's own grants, env and schedule, which is the 20 KB IAM split (one function, one role) and must stay per function; logical ids are pinned by the CDK tests"
-    },
-    {
-      "files": [
-        "voc-datalake/frontend/src/assistant/approvals/scraperExecutors.ts",
-        "voc-datalake/frontend/src/assistant/approvals/userExecutors.ts"
-      ],
-      "reason": "update_scraper vs update_user executors: the shown-record re-check is one helper (shown.ts requireUnchangedSinceShown); what is left is the flow shape, with different steps between it (scraper: merge + record validation + one save; user: self-change refusal + ordered multi-route apply), routes, messages and summaries"
-    },
-    {
-      "files": [
         "voc-datalake/frontend/src/components/FormQrCode/FormQrCode.tsx",
         "voc-datalake/frontend/src/pages/Prioritization/SessionQrCode.tsx"
       ],

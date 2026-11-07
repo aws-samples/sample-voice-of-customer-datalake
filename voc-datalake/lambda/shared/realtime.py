@@ -12,9 +12,11 @@ Publishing is BEST EFFORT: a failure is logged and swallowed, never raised, so a
 plan step never fails because a notice could not be sent. It is a no-op when the Event API is not
 configured (the dev mock, an older deployment, a test):
 
-- ``REALTIME_HTTP_DNS``: the Event API's HTTP host (VocApiStack's publishers), or
-- ``REALTIME_HTTP_DNS_PARAMETER``: an SSM parameter holding that host (the agent conductor in
-  VocProcessingStack, which deploys before the Event API exists). Read once per container; a missing
+``REALTIME_HTTP_DNS`` (the one variable every publisher is given) holds either
+
+- the Event API's HTTP host (VocApiStack's publishers), or
+- ``ssm:<parameter name>``: an SSM parameter holding that host (publishers in VocProcessingStack and
+  VocIngestionStack, which deploy before the Event API exists). Read once per container; a missing
   parameter is remembered for ``PARAMETER_RETRY_SECONDS``.
 
 The request is ``POST https://<host>/event`` ``{channel, events: [<json string>]}``, SigV4-signed
@@ -40,7 +42,8 @@ from shared.logging import logger
 
 NAMESPACES: Final = frozenset({'jobs', 'chat', 'runs'})
 HTTP_DNS_ENV: Final = 'REALTIME_HTTP_DNS'
-HTTP_DNS_PARAMETER_ENV: Final = 'REALTIME_HTTP_DNS_PARAMETER'
+# A value naming the SSM parameter that holds the host, instead of the host itself.
+PARAMETER_PREFIX: Final = 'ssm:'
 # One short request; a slow Event API must not hold a job's last write back.
 TIMEOUT_SECONDS: Final = 3
 PARAMETER_RETRY_SECONDS: Final = 300
@@ -51,8 +54,7 @@ _HOST_RE: Final = re.compile(r'[a-z0-9-]+(?:\.[a-z0-9-]+)+')
 _parameter_cache: dict[str, Any] = {'host': None, 'checked_at': None}
 
 
-def _parameter_host() -> str:
-    name = os.environ.get(HTTP_DNS_PARAMETER_ENV, '')
+def _parameter_host(name: str) -> str:
     if not name:
         return ''
     if _parameter_cache['host']:
@@ -75,7 +77,8 @@ def _parameter_host() -> str:
 
 def http_host() -> str:
     """The Event API's HTTP host, or '' when notices are off here."""
-    host = os.environ.get(HTTP_DNS_ENV, '') or _parameter_host()
+    value = os.environ.get(HTTP_DNS_ENV, '')
+    host = _parameter_host(value[len(PARAMETER_PREFIX):]) if value.startswith(PARAMETER_PREFIX) else value
     return host if _HOST_RE.fullmatch(host) else ''
 
 
