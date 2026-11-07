@@ -20,6 +20,7 @@ import { createSessionRecorder, type SessionRecorder } from './recorder.js';
 import { isStorableThreadId } from './record.js';
 import { createSessionWriter } from './writer.js';
 import type { SessionStore, StoredSession } from './store.js';
+import type { PublishNotice } from '../../lib/realtime-publish.js';
 
 const LOAD_TIMEOUT_MS = 1500;
 
@@ -28,6 +29,12 @@ export interface SessionPersistence {
   nowMs: () => number;
   /** How often a run polls its Stop marker (cancel.ts POLL_INTERVAL_MS when absent; tests shorten it). */
   stopPollMs?: number;
+  /**
+   * Push notifications (lib/realtime-publish.ts, docs/realtime.md): once the run's last write has
+   * landed, the caller's `/chat/<sub>` channel gets `{type: 'session', conversation_id, run_status,
+   * revision}`, so a reloaded tab following the run re-reads it at once. Absent = no notice.
+   */
+  notify?: PublishNotice;
 }
 
 export interface SessionEmitter extends Emitter {
@@ -131,6 +138,26 @@ export async function startRunSession(
     createdAt: stored?.createdAt ?? new Date(nowMs()).toISOString(),
     ...(stored?.customTitle === undefined ? {} : { customTitle: stored.customTitle }),
   }, writer, nowMs);
-  emitter.attach(recorder, () => writer.settled());
+  emitter.attach(recorder, () => settleAndNotify(writer.settled(), recorder, persistence.notify, {
+    callerSub, threadId: input.threadId,
+  }));
   recorder.flush();
+}
+
+/**
+ * Every write has landed (or failed), then the session notice for a run that ended. Never rejects:
+ * the publisher resolves false on any failure, and a run still `running` (no terminal event) sends none.
+ */
+export async function settleAndNotify(
+  settled: Promise<void>,
+  recorder: Pick<SessionRecorder, 'outcome'>,
+  notify: PublishNotice | undefined,
+  target: { callerSub: string; threadId: string },
+): Promise<void> {
+  await settled;
+  const { status, revision } = recorder.outcome();
+  if (notify === undefined || status === 'running') return;
+  await notify('chat', target.callerSub, {
+    type: 'session', conversation_id: target.threadId, run_status: status, revision,
+  });
 }
