@@ -22,13 +22,10 @@
   "ignoreExportsUsedInFile": false,
   // Each entry is an export nothing imports ON PURPOSE. Do not add one without its reason.
   "ignoreIssues": {
-    // The wire contract the SPA mirrors (frontend/src/assistant/contract.ts). Its lockstep spec and
-    // the frontend's allowlists.lockstep.test.ts read THIS file as text with `export const` regexes,
-    // so the names only the SPA side consumes (tool packs, outcome statuses, id bound, page schema)
-    // stay exported here.
-    "src/assistant/contract.ts": ["exports"],
-    // Allowlist pins (updatable persona/form fields, lifecycle states) compared against the SPA copy
-    // by the frontend's allowlists.lockstep.test.ts, again as text.
-    "src/assistant/tools/client/allowlists.ts": ["exports"]
+    // The AG-UI wire contract, shared with the SPA: frontend/src imports it through `@stream`, which
+    // this package's knip does not scan, so the names only the SPA reads (STALE_RUN_SECONDS,
+    // mentionsSchema) and the documented constants of the protocol (the page → pack table, the tool
+    // outcome statuses, the plan interrupt reason and id prefix, maxFilterChars) stay exported here.
+    "src/assistant/contract.ts": ["exports"]
   }
 }

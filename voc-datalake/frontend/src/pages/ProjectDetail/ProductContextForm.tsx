@@ -12,7 +12,7 @@
  */
 import { Compass, Layers, NotebookPen, Package, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { LIFECYCLE_STATES, PRODUCT_CONTEXT_STRING_FIELDS } from '../../assistant/approvals/schemas'
+import { LIFECYCLE_STATES, PRODUCT_CONTEXT_STRING_FIELDS } from '@stream/assistant/tools/client/allowlists'
 import ProductCard from './ProductCard'
 import { SelectField, TextAreaField, TextField } from './ProductFormFields'
 import type { LucideIcon } from 'lucide-react'
