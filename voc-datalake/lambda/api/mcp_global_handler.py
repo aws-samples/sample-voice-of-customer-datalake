@@ -133,7 +133,6 @@ AUTH_DENIED_METRIC: Final = 'AuthDenied'
 _AUTH_DENIED_STATUSES: Final = frozenset({401, 403})
 
 
-
 def _now() -> datetime:
     return datetime.now(UTC)
 

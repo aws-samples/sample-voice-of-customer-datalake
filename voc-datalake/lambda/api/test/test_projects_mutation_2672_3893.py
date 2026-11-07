@@ -782,9 +782,8 @@ class TestRunResearch:
 
 
 class TestCognitoClient:
-    def test_importing_the_module_creates_no_client(self):
-        # Lazy on purpose: nothing in this module needs Cognito config at import,
-        # and the sentinel the lazy getter tests for is None, not any falsy value.
+    def test_the_module_reads_cognito_through_the_shared_lazy_getter(self):
+        # shared.aws.get_cognito_idp_client builds the client on first use, not at import.
         assert projects._get_cognito_client is aws.get_cognito_idp_client
 
     def test_the_client_is_created_once_and_cached(self):
