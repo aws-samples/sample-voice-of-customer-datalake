@@ -24,12 +24,13 @@ voice-of-customer-datalake/       # Root repository
     │   └── voc-datalake.ts           # CDK app entry point - defines all stacks
     ├── lib/stacks/                   # CDK stack definitions (TypeScript) - 5 stacks
     │   ├── api-stack.ts              # VocApiStack: composes the api-*.ts builders, webhooks, frontend deploy, outputs
-    │   ├── api-*.ts                  # Its builders (resources created ON the stack, logical ids unchanged): api-context, api-data-lambdas, api-engagement-lambdas, api-projects-lambda, api-fixture-provider, api-job-lambdas, api-document-workflow, api-assistant-lambdas, api-gateway (stage, throttles, CORS, authorizer), api-routes, api-mcp, api-realtime (the AppSync Events API, docs/realtime.md)
+    │   ├── api-*.ts                  # Its builders (resources created ON the stack, logical ids unchanged): api-context, api-data-lambdas, api-engagement-lambdas, api-projects-lambda, api-fixture-provider, api-job-lambdas, api-document-workflow, api-assistant-lambdas, api-gateway (stage, throttles, CORS, authorizer), api-routes, api-mcp
     │   ├── bedrock-access-stack.ts   # Bedrock model access configuration
-    │   ├── core-stack.ts             # Core infrastructure (DynamoDB, KMS, product-doc extractor; composes core-buckets/core-cdn/core-auth)
+    │   ├── core-stack.ts             # Core infrastructure (DynamoDB, KMS, product-doc extractor; composes core-buckets/core-cdn/core-auth/core-realtime)
     │   ├── core-buckets.ts           # S3 buckets (versioned + bounded lifecycle)
     │   ├── core-cdn.ts               # CloudFront, URL-signing keys, design-integrations secret
     │   ├── core-auth.ts              # Cognito user/identity pools, admin bootstrap, model pin
+    │   ├── core-realtime.ts          # AppSync Events API (push notices), its logs, one publish managed policy per namespace (docs/realtime.md)
     │   ├── ingestion-stack.ts        # Plugin Lambdas, EventBridge schedules, SQS, Secrets
     │   ├── processing-stack-consolidated.ts # Processing + Research (Bedrock, Step Functions)
     │   └── processing-research-workflow.ts  # Research state machine

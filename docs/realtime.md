@@ -24,13 +24,17 @@ What does not change:
 
 ## The Event API
 
-One Event API in **VocApiStack** (`lib/stacks/api-realtime.ts`, no new stack), named
-`[<prefix>-]voc-events-<account>-<region>`.
+One Event API in **VocCoreStack** (`lib/stacks/core-realtime.ts`, no new stack), named
+`[<prefix>-]voc-events-<account>-<region>`. Core deploys before every stack that publishes and holds the user
+pool the API authorizes against.
 
 - **Connect and subscribe**: the app user pool, and only the SPA's own app client (`AppIdClientRegex`
   is the client id, anchored). An MCP OAuth client's token of the same pool is refused, as on the REST API.
-- **Publish**: IAM only. No browser can publish. Each publishing Lambda holds `appsync:EventPublish`
-  on exactly the namespace it publishes to.
+- **Publish**: IAM only. No browser can publish. Core creates one customer-managed policy per namespace
+  (`RealtimeJobsPublishPolicy`, `RealtimeChatPublishPolicy`, `RealtimeRunsPublishPolicy`), each
+  `appsync:EventPublish` on exactly that namespace. Each publishing Lambda's role carries the policy of the one
+  namespace it publishes to, attached in the Lambda's own stack (`lib/utils/realtime.ts` `grantRealtimePublish`),
+  so the grant adds no statement to the role's inline policy.
 - **Logs**: errors only, to `/aws/appsync/apis/<api id>` with the platform's 30-day retention, written by a
   role that may write only that group.
 
@@ -85,19 +89,14 @@ A notice carries ids and statuses only, never content.
 
 Where a publisher learns the host:
 
-Every publisher reads one variable, `REALTIME_HTTP_DNS`:
+Every publisher reads one variable, `REALTIME_HTTP_DNS`: the Event API's HTTP host, a plain stack reference
+to VocCoreStack's Event API (`grantRealtimePublish` sets it with the policy). The publishers:
 
-| Who | Value |
+| Namespace | Publishers |
 |---|---|
-| projects, settings, scrapers APIs and their assist twins; `voc-chat-stream`; the four project job Lambdas; `voc-manual-import-processor` | the Event API's HTTP host |
-| `voc-agent-conductor`, `voc-research-step`, `voc-category-reprocess`, `voc-retention`, `voc-memory-extractor`, `voc-briefing` (VocProcessingStack); the `s3_import` ingestor (VocIngestionStack) | `ssm:/[<prefix>-]voc/realtime/event-api-http-dns`, naming an SSM String parameter VocApiStack writes |
-
-VocProcessingStack and VocIngestionStack deploy before VocApiStack, so their publishers cannot take the host
-as a stack reference. Each reads the parameter once per container (`ssm:GetParameter` on exactly that
-parameter, `lib/utils/realtime.ts` `wireRealtimeEndpointParameter`); a missing parameter (the first deploy,
-before VocApiStack exists) turns its notices off for five minutes. Their publish grants (the conductor's on
-`runs`, the job workers' on `jobs`) are policies VocApiStack attaches to their roles, imported by ARN
-(`agentConductorRoleArn`, `realtimeJobsPublisherRoleArns`).
+| `jobs` | projects, settings, scrapers APIs and their assist twins; the four project job Lambdas; `voc-manual-import-processor` (VocApiStack); `voc-research-step`, `voc-category-reprocess`, `voc-retention`, `voc-memory-extractor`, `voc-briefing` (VocProcessingStack); the `s3_import` ingestor (VocIngestionStack, plugins with `jobNotices`) |
+| `chat` | `voc-chat-stream` (VocApiStack) |
+| `runs` | `voc-agent-conductor` (VocProcessingStack) |
 
 ## The SPA
 
@@ -132,8 +131,9 @@ matching job notice (by `job_type`, `project_id` or `job_id`) and on every (re)c
 does the same for a view that polls by hand, and `realtimePollInterval` slows the poll to at least 10 s only
 while push is live.
 
-The runtime config (`config.json`, written by VocApiStack and `frontend/scripts/deploy.sh`) carries
-`realtime: {httpDns, realtimeDns}` from the `RealtimeHttpDns` / `RealtimeDns` outputs. For local work
+The runtime config (`config.json`, written by VocApiStack from Core's references and by
+`frontend/scripts/deploy.sh`) carries `realtime: {httpDns, realtimeDns}`, VocCoreStack's `RealtimeHttpDns` /
+`RealtimeDns` outputs. For local work
 against a deployed stack, `frontend/scripts/update-env.sh` writes `VITE_REALTIME_HTTP_DNS` and
 `VITE_REALTIME_DNS`. The dev mock has no Event API, so everything polls there.
 
@@ -142,9 +142,9 @@ against a deployed stack, `frontend/scripts/update-env.sh` writes `VITE_REALTIME
 Pay per use, no fixed monthly cost (TENETS.md, tenet 7): about $1.00 per million Event API operations
 (each publish, each delivered message, each connect) and $0.08 per million connection minutes
 ([AppSync pricing](https://aws.amazon.com/appsync/pricing/)). One signed-in tab open for an 8-hour day is 480
-connection minutes. The SSM parameter is standard tier (free). Nothing here is listed in
+connection minutes. Managed policies cost nothing. Nothing here is listed in
 `OPT_IN_FIXED_COSTS` (`voc-datalake/lib/test-support/fixed-cost-rules.ts`), and
-`lib/stacks/api-realtime.test.ts` checks the stack carries no fixed-cost resource.
+`lib/stacks/core-realtime.test.ts` checks VocCoreStack carries no fixed-cost resource.
 
 ## Not covered yet
 
