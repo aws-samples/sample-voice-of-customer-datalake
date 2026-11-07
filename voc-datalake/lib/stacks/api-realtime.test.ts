@@ -77,7 +77,7 @@ function publishersByNamespace(): Map<string, string[]> {
 const JOBS_PUBLISHERS = [
   'ProjectsLambdaRole', 'SettingsLambdaRole', 'ScrapersLambdaRole',
   'PersonaGeneratorRole', 'DocumentGeneratorRole', 'DocumentMergerRole', 'PersonaImporterRole',
-  'voc-research-step-role', 'voc-category-reprocess-role', 'voc-retention-role',
+  'voc-research-step-role', 'voc-category-reprocess-role', 'voc-retention-role', 'voc-ingestor-s3-import-role',
 ];
 
 describe('the Event API', () => {

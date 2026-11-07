@@ -50,6 +50,8 @@ export interface IngestorRoleNeeds {
   browser?: boolean;
   /** The plugin's schedule rule name; undefined for an unscheduled plugin. */
   scheduleRuleName: string | undefined;
+  /** Job-end notices (`infrastructure.ingestor.jobNotices`): a dedicated role, so no other plugin may publish. */
+  jobNotices?: boolean;
 }
 
 /** The AWS-managed AgentCore browser: an `aws`-owned resource, one per region. */
@@ -94,8 +96,8 @@ export class IngestorRoles {
   constructor(private readonly stack: cdk.Stack, private readonly grants: BaseIngestionGrants) {}
 
   /** The role a plugin's ingestor runs as. */
-  roleFor(pluginId: string, { bedrock, browser = false, scheduleRuleName }: IngestorRoleNeeds): iam.Role {
-    if (!bedrock && !browser && !scheduleRuleName) {
+  roleFor(pluginId: string, { bedrock, browser = false, scheduleRuleName, jobNotices = false }: IngestorRoleNeeds): iam.Role {
+    if (!bedrock && !browser && !scheduleRuleName && !jobNotices) {
       this.shared ??= this.newRole('IngestionLambdaRole');
       return this.shared;
     }

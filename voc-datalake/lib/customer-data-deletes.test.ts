@@ -35,7 +35,7 @@ interface Deleter { readonly scope: Scope; readonly why: string }
 const CIRCUIT_ROW: Deleter = { scope: ['CIRCUIT#*'], why: 'clears its tripped circuit-breaker row' };
 /** Every ingestor role the default synth creates (lib/stacks/ingestion-roles.ts). */
 const INGESTOR_ROLES = [
-  'IngestionLambdaRole', 'IngestorRoleAppReviewsAndroid', 'IngestorRoleAppReviewsIos', 'IngestorRoleGithubIssues',
+  'IngestorRoleS3Import', 'IngestorRoleAppReviewsAndroid', 'IngestorRoleAppReviewsIos', 'IngestorRoleGithubIssues',
   'IngestorRoleSyntheticReviews', 'IngestorRoleWebReviews', 'IngestorRoleWebscraper',
 ].map((id) => `VocIngestionStack/${id}`);
 
