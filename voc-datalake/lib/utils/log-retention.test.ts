@@ -110,9 +110,15 @@ function functionProblems(synth: SynthResult): string[] {
   return problems.sort(byCodeUnit);
 }
 
+/**
+ * Roles holding an AWS managed policy (`arn:<partition>:iam::aws:policy/…`, what AwsSolutions-IAM4 flags). A
+ * customer-managed policy is allowed: the publishers carry VocCoreStack's per-namespace realtime publish policy
+ * (core-realtime.ts), which grants `appsync:EventPublish` on exactly one namespace.
+ */
 function rolesWithManagedPolicies(synth: SynthResult): string[] {
   return synth.stackNames.flatMap((stack) => Object.entries(resourcesOf(synth, stack))
-    .filter(([, resource]) => resource.Type === 'AWS::IAM::Role' && resource.Properties?.ManagedPolicyArns !== undefined)
+    .filter(([, resource]) => resource.Type === 'AWS::IAM::Role'
+      && JSON.stringify(resource.Properties?.ManagedPolicyArns ?? []).includes(':iam::aws:policy/'))
     .map(([id]) => `${stack}/${id}`));
 }
 
@@ -161,6 +167,8 @@ describe('Lambda log groups and log grants (retention, AwsSolutions-IAM4)', () =
 
   it('leaves no AWS managed policy on any role', () => {
     expect(rolesWithManagedPolicies(synth)).toStrictEqual([]);
+    // Not vacuous: the realtime publishers do carry a (customer-managed) policy reference.
+    expect(JSON.stringify(resourcesOf(synth, 'VocProcessingStack'))).toContain('"ManagedPolicyArns"');
   });
 
   describe('with every context-gated feature on', () => {
