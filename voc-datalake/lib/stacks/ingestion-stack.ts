@@ -31,7 +31,7 @@ import { dependencyLayer } from '../utils/dependency-layers';
 import { rootPluginAssetExcludes } from '../utils/lambda-asset-excludes';
 import { pythonLambdaAsset } from '../utils/python-lambda-asset';
 import { PII_REDACTION_ENV } from '../utils/pii-redaction';
-import { wireRealtimeEndpointParameter } from '../utils/realtime';
+import { grantRealtimePublish, type RealtimePublishing } from '../utils/realtime';
 import { VocStack, VocStackProps } from '../utils/voc-stack';
 import {
   EMAIL_INTAKE_DLQ_BASE_NAME, INGEST_SCHEDULE_DLQ_BASE_NAME, PROCESSING_DLQ_BASE_NAME, ingestorFunctionBaseName,
@@ -97,6 +97,8 @@ export interface VocIngestionStackProps extends VocStackProps {
   };
   /** The app's CloudFront domain (VocCoreStack); the S3 import bucket's CORS allows it. */
   frontendDomain: string;
+  /** VocCoreStack's Event API (core-realtime.ts): ingestors with `jobNotices` publish on `jobs`. */
+  realtime: RealtimePublishing;
 }
 
 export class VocIngestionStack extends VocStack {
@@ -104,8 +106,6 @@ export class VocIngestionStack extends VocStack {
   public readonly processingQueue: sqs.Queue;
   public readonly secretsArn: string;
   public readonly s3ImportBucket: s3.Bucket;
-  /** Ingestors with `jobNotices` (VocApiStack grants each publish on `jobs`, docs/realtime.md). */
-  public readonly realtimeJobsPublisherRoles: Record<string, iam.IRole> = {};
 
   // Built in the constructor once the grant targets exist (see ingestion-roles.ts).
   private ingestorRoles!: IngestorRoles;
@@ -114,12 +114,15 @@ export class VocIngestionStack extends VocStack {
   // queue it never writes to. Encrypted with the Core key (`scheduleDlqKey`).
   private scheduleDlq?: sqs.Queue;
   private readonly scheduleDlqKey: kms.IKey;
+  /** VocCoreStack's Event API: where an ingestor with `jobNotices` publishes (docs/realtime.md). */
+  private readonly realtime: RealtimePublishing;
 
   constructor(scope: Construct, id: string, props: VocIngestionStackProps) {
     super(scope, id, props);
 
     const { watermarksTable, aggregatesTable, rawDataBucket, accessLogsBucket, kmsKey, config } = props;
     this.scheduleDlqKey = kmsKey;
+    this.realtime = props.realtime;
 
 
 
@@ -466,10 +469,8 @@ export class VocIngestionStack extends VocStack {
       });
     }
 
-    // A run the API started tells its starter when it ends (docs/realtime.md); VocApiStack grants publish on `jobs`.
-    if (infra.jobNotices) {
-      this.realtimeJobsPublisherRoles[`Ingestor${capitalize(plugin.id)}`] = wireRealtimeEndpointParameter(fn, this.deploymentPrefix);
-    }
+    // A run the API started tells its starter when it ends (docs/realtime.md): its dedicated role publishes on `jobs`.
+    if (infra.jobNotices) grantRealtimePublish(this.realtime, 'jobs', [fn]);
     this.ingestionLambdas.set(plugin.id, fn);
   }
 

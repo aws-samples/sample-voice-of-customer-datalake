@@ -9,7 +9,7 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import { VocIngestionStack } from '../stacks/ingestion-stack';
 import { applyAppAspects } from '../utils/app-aspects';
 import { pkSkTable } from './api-stack-fixture';
-import { fixtureBucket } from './fixture-resources';
+import { fixtureBucket, fixtureRealtime } from './fixture-resources';
 import { SYNTH_ACCOUNT, SYNTH_REGION, committedFeatureFlags } from './synth-app';
 
 /** The stack with `enabledSources` switched on (none by default: no scheduled plugin). */
@@ -36,6 +36,7 @@ export function synthIngestionStacks(
     kmsKey: new kms.Key(deps, 'Key'),
     config: { brandName: 'Test', enabledSources },
     frontendDomain,
+    realtime: fixtureRealtime(deps),
   });
   // The rewrites bin/voc-datalake.ts applies, so these suites assert the template that deploys.
   applyAppAspects(app, { auditRowTables: { aggregatesTable } });

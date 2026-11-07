@@ -95,8 +95,8 @@ const IngestorInfraSchema = z.object({
   // so its dedicated role gets `lambda:InvokeFunction` on exactly that function.
   selfInvoke: z.boolean().optional().default(false),
   // Opt-in capability: when true, a run the API started tells its starter when it ends (shared/job_notices.py,
-  // docs/realtime.md), so the plugin gets a DEDICATED role that may read the realtime endpoint parameter, and
-  // VocApiStack grants that role publish on the Event API's `jobs` namespace. Never the shared role.
+  // docs/realtime.md), so the plugin gets a DEDICATED role carrying VocCoreStack's `jobs` publish policy and
+  // the Event API's host in its environment. Never the shared role.
   jobNotices: z.boolean().optional().default(false),
 });
 

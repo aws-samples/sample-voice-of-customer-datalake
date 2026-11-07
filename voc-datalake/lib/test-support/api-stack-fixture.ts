@@ -17,7 +17,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import type { VocApiStackProps } from '../stacks/api-stack';
-import { fixtureBucket } from './fixture-resources';
+import { fixtureBucket, fixtureRealtime } from './fixture-resources';
 
 interface ApiStackEnv {
   account: string;
@@ -108,6 +108,7 @@ export function apiStackDependencyProps(
     boardUserPool,
     boardUserPoolClient: boardUserPool.addClient('BoardClient'),
     userPoolDomainPrefix: 'voc-test',
+    realtime: { ...fixtureRealtime(deps), realtimeDns: 'fixture0000.appsync-realtime-api.us-east-1.amazonaws.com' },
     identityPool: new cognito.CfnIdentityPool(deps, 'IdentityPool', { allowUnauthenticatedIdentities: false }),
     processingQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/processing`,
     processingQueueArn: `arn:aws:sqs:${env.region}:${env.account}:processing`,
@@ -119,15 +120,6 @@ export function apiStackDependencyProps(
     agentRunStateMachine: new sfn.StateMachine(deps, 'AgentRun', {
       definitionBody: sfn.DefinitionBody.fromChainable(new sfn.Pass(deps, 'AgentRunNoop')),
     }),
-    agentConductorRoleArn: `arn:aws:iam::${env.account}:role/voc-agent-conductor-role`,
-    realtimeJobsPublisherRoleArns: {
-      ResearchStep: `arn:aws:iam::${env.account}:role/voc-research-step-role`,
-      CategoryReprocess: `arn:aws:iam::${env.account}:role/voc-category-reprocess-role`,
-      Retention: `arn:aws:iam::${env.account}:role/voc-retention-role`,
-      MemoryExtractor: `arn:aws:iam::${env.account}:role/voc-memory-extractor-role`,
-      Briefing: `arn:aws:iam::${env.account}:role/voc-briefing-role`,
-      IngestorS3Import: `arn:aws:iam::${env.account}:role/voc-ingestor-s3-import-role`,
-    },
     memoryExtractQueueUrl: `https://sqs.${env.region}.amazonaws.com/${env.account}/memory-extract`,
     memoryExtractQueueArn: `arn:aws:sqs:${env.region}:${env.account}:memory-extract`,
   };
