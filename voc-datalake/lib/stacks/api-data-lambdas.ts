@@ -48,8 +48,12 @@ export interface DataLambdas {
   feedbackEditLambda: lambda.Function;
   integrationsLambda: lambda.Function;
   scrapersLambda: lambda.Function;
+  /** The scrapers API's 15-minute assist twin (api-assist-workers.ts): same role, code and environment. */
+  scrapersAssistWorker: lambda.Function;
   manualImportLambda: lambda.Function;
   settingsLambda: lambda.Function;
+  /** The settings API's 15-minute assist twin. */
+  settingsAssistWorker: lambda.Function;
 }
 
 export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
@@ -252,7 +256,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   };
   const scrapersLambda = new lambda.Function(stack, 'ScrapersApi', scrapersProps);
   // The twin keeps its own size: the 2026-10-18 raise was measured on the REST path (lib/sizing/policy.ts).
-  createAssistWorker(ctx, 'ScrapersAssistWorker', { baseName: SCRAPERS_ASSIST_FUNCTION_BASE_NAME, apiProps: scrapersProps, memorySize: 1024 });
+  const scrapersAssistWorker = createAssistWorker(ctx, 'ScrapersAssistWorker', { baseName: SCRAPERS_ASSIST_FUNCTION_BASE_NAME, apiProps: scrapersProps, memorySize: 1024 });
 
 
   // Manual Import API
@@ -424,9 +428,10 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   };
   const settingsLambda = new lambda.Function(stack, 'SettingsApi', settingsProps);
   // The twin keeps its own size: the 2026-10-18 raise was measured on the REST path (lib/sizing/policy.ts).
-  createAssistWorker(ctx, 'SettingsAssistWorker', { baseName: SETTINGS_ASSIST_FUNCTION_BASE_NAME, apiProps: settingsProps, memorySize: 512 });
+  const settingsAssistWorker = createAssistWorker(ctx, 'SettingsAssistWorker', { baseName: SETTINGS_ASSIST_FUNCTION_BASE_NAME, apiProps: settingsProps, memorySize: 512 });
 
   return {
     allPlugins, enabledSourcesEnv, metricsLambda, feedbackEditLambda, integrationsLambda, scrapersLambda, manualImportLambda, settingsLambda,
+    scrapersAssistWorker, settingsAssistWorker,
   };
 }
