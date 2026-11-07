@@ -31,7 +31,7 @@ from shared.ingest_schemas import MAX_RATING, MAX_TEXT_LENGTH
 from shared.pii_redaction import redact_text
 from shared.source_profiles import PII_ALLOW, PII_POLICIES, PII_SUMMARY_ONLY, cached_source_profile_strict
 
-__all__ = ['EDITABLE_FIELDS', 'FieldEdits', 'field_edits']
+__all__ = ['EDITABLE_FIELDS', 'ENUM_VALUES', 'FieldEdits', 'field_edits']
 
 #: Bound on the derived free-text fields (summary, hypothesis): the model keeps them under 500.
 MAX_DERIVED_TEXT: Final = 2000
@@ -63,6 +63,9 @@ _REQUIRED: Final = frozenset({
 _CUSTOMER_WORDS: Final = frozenset({'original_text', 'normalized_text'})
 
 EDITABLE_FIELDS: Final = (*_TEXTS, *_ENUMS, *_NUMBERS)
+#: The allowed values of each enum field (the enrichment prompt's, ``shared/categorization.py``), read by the
+#: data catalogue (``shared/feedback_catalogue.py``) so the two cannot drift.
+ENUM_VALUES: Final[Mapping[str, frozenset[str]]] = _ENUMS
 
 
 @dataclass
