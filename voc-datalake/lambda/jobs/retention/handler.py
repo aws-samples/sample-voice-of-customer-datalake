@@ -159,7 +159,8 @@ def _erase_setup(aggregates_table: Any, event: dict[str, Any], run: dict[str, An
         logger.info('Erasure job is missing or already finished', extra={'job_id': job_id})
         return None
     run.update(job_id=job_id, field=job.get('field'), source=job.get('source') or None,
-               value_hash=job.get('value_hash'), legal_basis=legal_basis_or_legacy(job.get('legal_basis')))
+               value_hash=job.get('value_hash'), legal_basis=legal_basis_or_legacy(job.get('legal_basis')),
+               started_by_sub=job.get('started_by_sub'))
     if job.get('value_hash') != sha256_hex(value):
         raise ValueError('The erasure value does not match the job')
     if run['field'] == SOURCE_FIELD:

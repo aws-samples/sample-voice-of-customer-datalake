@@ -1893,6 +1893,10 @@ def _new_erasure_job(request: ErasureRequest, event: dict) -> dict:
         'value_hash': sha256_hex(request.value), 'legal_basis': request.legal_basis, 'deleted_items': 0,
         'deleted_objects': 0, 'started_by': _caller_label(event), 'created_at': now.isoformat(),
     }
+    # Who to tell when the job ends (shared/job_notices.py); never in the job view (ERASURE_VIEW_FIELDS).
+    starter_sub = get_caller_subject(event)
+    if starter_sub:
+        item['started_by_sub'] = starter_sub
     if request.source:
         item['source'] = request.source
     if request.field == SOURCE_FIELD:
