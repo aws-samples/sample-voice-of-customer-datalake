@@ -15,7 +15,7 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { acknowledgeNag } from '../utils/nag-ack';
-import { getEnabledPlugins, getPluginsWithWebhook, capitalize, pluginDirectoryIds, type PluginManifest } from '../plugin-loader';
+import { DEFAULT_WEBHOOK_MEMORY_MB, getEnabledPlugins, getPluginsWithWebhook, capitalize, pluginDirectoryIds, type PluginManifest } from '../plugin-loader';
 import { pluginVersion } from '../utils/connector-version';
 import { applyAppClientEnv } from '../utils/app-client-env';
 import { assertFrontendBuildFresh } from '../utils/assert-frontend-build';
@@ -49,12 +49,6 @@ import { createRadarLambda } from './api-radar-lambda';
 import { createParticipantsLambda } from './api-participants-lambda';
 import { emailSenderOf } from '../utils/email-sender';
 import { API_ASYNC_FAILURES_QUEUE_BASE_NAME, importApiAsyncFailureQueue } from './dlq-alarms';
-
-/** MemorySize of a plugin's webhook receiver (lib/sizing/policy.ts pins each). */
-const DEFAULT_WEBHOOK_MEMORY_MB = 256;
-/** Webhooks the capacity evidence raised: github_issues 84.8 % p95 CPU at 256 MB, 2026-10-18. */
-const WEBHOOK_MEMORY_MB: Readonly<Record<string, number>> = { github_issues: 512 };
-
 
 /** BucketDeployment provider memory for the SPA upload (lib/sizing/policy.ts sizes it too). */
 const WEBSITE_DEPLOYMENT_MEMORY_MB = 1024;
@@ -496,7 +490,8 @@ export class VocApiStack extends VocStack {
       code: webhookCode,
       role: webhookRole,
       timeout: cdk.Duration.seconds(30),
-      memorySize: WEBHOOK_MEMORY_MB[plugin.id] ?? DEFAULT_WEBHOOK_MEMORY_MB,
+      // The manifest's `infrastructure.webhook.memory` (schema default 256 MB; lib/sizing/policy.ts pins each).
+      memorySize: plugin.infrastructure.webhook?.memory ?? DEFAULT_WEBHOOK_MEMORY_MB,
       environment: {
         PROCESSING_QUEUE_URL: processingQueueUrl,
         SECRETS_ARN: secretsArn,

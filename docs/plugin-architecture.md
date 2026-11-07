@@ -132,6 +132,7 @@ complete minimal example:
 | `version` | No | `X.Y.Z` | Shown in the UI manifest |
 | `minPlatformVersion` | No | `X.Y.Z` | Format-checked only; not compared with the platform version |
 | `integrity` | No | `{ingestor?, webhook?}` as `sha256-<hex>` | Optional code hashes ([Tooling](#tooling)) |
+| `capabilities` | No | `{updatesItems?: boolean}`, no other key (a misspelt one fails the load) | What the platform does differently for this source's records ([Capabilities](#capabilities)) |
 
 A **safe string** is at most 256 characters, has no control characters and does not contain
 `<script`, `javascript:` or `data:`. Labels, placeholders, setup steps and webhook names follow the
@@ -147,6 +148,7 @@ same rule.
 | `memory` | 256 | 128-1024 MB | Lambda memory |
 | `bedrock` | false | boolean | Dedicated role with `bedrock:InvokeModel` on the curated model allowlist |
 | `browser` | false | boolean | Dedicated role with sessions of the AgentCore managed browser `aws.browser.v1` |
+| `selfInvoke` | false | boolean | A run that reaches its time budget continues in a new invocation of its own function: `lambda:InvokeFunction` on exactly that function (a scheduled plugin's dedicated role only) |
 
 The `cron(...)` pattern admits only digits, spaces and `, - * /`. EventBridge cron expressions need
 `?` in one of the day fields, so in practice use `rate(...)`. Without `schedule` the ingestor runs
@@ -162,6 +164,7 @@ only when invoked: by **Run now**, by an S3 trigger, or by the API (`s3_import` 
 | `methods` | `["POST"]` | Up to 4 of `GET`, `POST`, `PUT`, `DELETE` |
 | `signatureHeader` | none | `[A-Za-z0-9-]+`, ≤ 64 chars |
 | `signatureMethod` | none | `[a-z_]+`, ≤ 32 chars |
+| `memory` | 256 | 128-1024 MB: the receiver's Lambda memory (pin it in `lib/sizing/policy.ts` too) |
 
 The route is always `/webhooks/<id>`, whatever `path` says. `signatureHeader` and
 `signatureMethod` are validated but CDK does not act on them: the handler verifies the request
@@ -177,6 +180,22 @@ the route.
 
 The trigger needs an enabled ingestor. The ingestor gets read access to the import bucket and
 `S3_IMPORT_BUCKET`, and must ignore records for any other bucket.
+
+### Capabilities
+
+Platform code never branches on a plugin id (TENETS.md tenet 5): a source that needs different
+handling declares it in its manifest, and the stacks render the declaration into what the platform
+reads.
+
+| Declaration | Read by | Effect | Declared by |
+|-------------|---------|--------|-------------|
+| `capabilities.updatesItems` | the feedback processor (`UPDATE_CAPABLE_SOURCES` env, `lambda/shared/source_updates.py`) | A record from the source that carries `issue_attributes` is refreshed in place when a newer copy arrives, instead of being skipped as a duplicate | `github_issues` |
+| `infrastructure.ingestor.selfInvoke` | `ingestion-stack.ts` | Own-function invoke grant for a run that continues itself | `app_reviews_ios`, `app_reviews_android` |
+| `infrastructure.ingestor.bedrock` / `browser` | `ingestion-roles.ts` | Dedicated role with the Bedrock / browser grants | `web_reviews`, `synthetic_reviews` |
+| `infrastructure.webhook.memory` | `api-stack.ts` | Receiver MemorySize | `github_issues` (512) |
+
+Every declaration is off by default. `updatesItems` is read from every loaded plugin, enabled or
+not.
 
 ### `config` fields
 
@@ -235,8 +254,8 @@ role. A plugin gets its own role when it has:
 - `browser: true`: `bedrock-agentcore:StartBrowserSession` / `StopBrowserSession` on
   `aws.browser.v1`, and `ConnectBrowserAutomationStream` on `*` (that action has no resource type).
 
-`app_reviews_ios` and `app_reviews_android` also get `lambda:InvokeFunction` on their own function,
-to continue a long run.
+A plugin that declares `selfInvoke` (today `app_reviews_ios` and `app_reviews_android`) also gets
+`lambda:InvokeFunction` on its own function, to continue a long run.
 
 A plugin cannot declare IAM policies, tables, buckets, VPC settings or raw CloudFormation. Anything
 beyond the capabilities above needs a change to the stack code.
@@ -245,7 +264,7 @@ beyond the capabilities above needs a change to the stack code.
 
 | Resource | Value |
 |----------|-------|
-| Lambda | `voc-webhook-<id>`, Python 3.14, arm64, 30-second timeout, 256 MB (512 MB for `github_issues`), the API layer |
+| Lambda | `voc-webhook-<id>`, Python 3.14, arm64, 30-second timeout, the manifest's `infrastructure.webhook.memory` (default 256 MB; `github_issues` 512 MB), the API layer |
 | Bundle | `plugins/<id>/webhook/*` plus `_shared` and `shared`, like an ingestor |
 | Route | `/webhooks/<id>` for each manifest method, no authorizer, no CORS preflight |
 | Throttle | 10 requests per second, burst 20, per route |

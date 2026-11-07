@@ -17,8 +17,13 @@
       "enabled": true,
       "path": "/webhooks/github_issues",
       "methods": ["POST"],
-      "signatureHeader": "X-Hub-Signature-256"
+      "signatureHeader": "X-Hub-Signature-256",
+      "memory": 512
     }
+  },
+
+  "capabilities": {
+    "updatesItems": true
   },
 
   "config": [

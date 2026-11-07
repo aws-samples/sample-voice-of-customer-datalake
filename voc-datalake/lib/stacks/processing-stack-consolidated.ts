@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as path from 'path';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -31,6 +32,16 @@ import { grantSilverHistoryPut } from '../utils/silver-history-grants';
 import { grantReadAndWrites } from '../utils/table-write-grants';
 import { FEATURE_REQUESTS_TABLE_ENV, grantFeatureRequestEvidenceRead } from '../utils/feature-request-evidence-grant';
 import { createAggregatorRole, createProcessorRole, grantTextAnalysis } from './processing-roles';
+import { loadPlugins, pluginIdsWithCapability } from '../plugin-loader';
+
+/**
+ * The processor env var naming the sources whose records are refreshed in place
+ * (lambda/shared/source_updates.py): the plugins whose manifest declares
+ * `capabilities.updatesItems`. Every loaded plugin counts, enabled or not, as the
+ * hard-coded github_issues check did before 6.04.00: records already queued by a
+ * plugin that was since disabled are still handled as updates.
+ */
+export const UPDATE_CAPABLE_SOURCES_ENV = 'UPDATE_CAPABLE_SOURCES';
 
 export interface VocProcessingStackProps extends VocStackProps {
   feedbackTable: dynamodb.Table;
@@ -154,6 +165,9 @@ export class VocProcessingStack extends VocStack {
         // The inline raw_data fallback's bucket and connector-version (lambda/shared/raw_fallback.py).
         RAW_DATA_BUCKET: rawDataBucket.bucketName,
         APP_VERSION: appVersion(),
+        // Sources refreshed in place (`capabilities.updatesItems` in their manifest; tenet 5).
+        [UPDATE_CAPABLE_SOURCES_ENV]: JSON.stringify(
+          pluginIdsWithCapability(loadPlugins(path.join(__dirname, '../../plugins')), 'updatesItems')),
         POWERTOOLS_SERVICE_NAME: 'voc-processor',
         POWERTOOLS_IDEMPOTENCY_DISABLED: '0',
         LOG_LEVEL: 'INFO',
