@@ -11,7 +11,7 @@
  * @module assistant/approvals/registry
  */
 import { createElement } from 'react'
-import { ADMIN_ONLY_CLIENT_TOOLS, DESTRUCTIVE_CLIENT_TOOLS } from '../contract'
+import { ADMIN_ONLY_CLIENT_TOOLS, DESTRUCTIVE_CLIENT_TOOLS } from '@stream/assistant/contract'
 import { executors } from './executors'
 import * as s from './schemas'
 import * as m from './memorySchemas'
@@ -51,7 +51,7 @@ import { PersonaChangesPreview, ProductContextPreview } from './previews/FieldCh
 import { JobPreview } from './previews/JobPreview'
 import type { ComponentType } from 'react'
 import type { z } from 'zod'
-import type { ClientToolName, PageContext } from '../contract'
+import type { ClientToolName, PageContext } from '@stream/assistant/contract'
 import type { ResultLink, WriteToolDefinition } from '../types'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string

@@ -22,7 +22,7 @@ import MoreMenu from './MoreMenu'
 import { pageLabelKey } from '../page/pageContext'
 import type { ReactNode } from 'react'
 import type { MoreMenuItem } from './MoreMenu'
-import type { PageContext } from '../contract'
+import type { PageContext } from '@stream/assistant/contract'
 import type { PanelMode } from '../store/assistantStore'
 
 export type PanelVariant = 'floating' | 'page'

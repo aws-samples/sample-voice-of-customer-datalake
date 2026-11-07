@@ -39,7 +39,6 @@
     "**/cdk.out/**",
     "**/.stryker-tmp/**",
     "voc-datalake/lambda/layers/**",
-    "voc-datalake/frontend/src/assistant/contract.ts",
     "voc-datalake/frontend/src/assistant/plan/schema.ts",
     "voc-datalake/frontend/src/assistant/plan/validate.ts",
     "voc-datalake/frontend/src/assistant/plan/placeholders.ts",

@@ -7,7 +7,7 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ThemeMarkIdle } from '../../components/ThemeMark/ThemeMark'
-import type { PageKind } from '../contract'
+import type { PageKind } from '@stream/assistant/contract'
 
 /**
  * Each page kind's suggestion set (three short questions in plain words, for

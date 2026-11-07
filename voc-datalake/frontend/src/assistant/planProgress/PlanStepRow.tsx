@@ -9,7 +9,7 @@
  * @module assistant/planProgress/PlanStepRow
  */
 import { useTranslation } from 'react-i18next'
-import { DESTRUCTIVE_CLIENT_TOOLS } from '../contract'
+import { DESTRUCTIVE_CLIENT_TOOLS } from '@stream/assistant/contract'
 import { FieldTable } from '../approvals/previews/FieldDiff'
 import { planArgRows } from '../approvals/previews/planRows'
 import { PlanStepStatusBadge } from './PlanBadges'

@@ -16,7 +16,7 @@ import {
 import { useMentionSources } from './useMentionSources'
 import type { MentionSources } from './useMentionSources'
 import type { KeyboardEvent, RefObject } from 'react'
-import type { Mentions } from '../contract'
+import type { Mentions } from '@stream/assistant/contract'
 import type { MentionOption, MentionPick, MentionTrigger } from './mentionModel'
 
 export interface MentionMenuState {

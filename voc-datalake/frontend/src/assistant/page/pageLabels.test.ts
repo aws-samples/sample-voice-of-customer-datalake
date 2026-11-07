@@ -8,7 +8,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { z } from 'zod'
 import { sortedStrings } from '@test/stringLists'
-import { PAGE_KINDS } from '../contract'
+import { PAGE_KINDS } from '@stream/assistant/contract'
 import { PAGE_PATTERNS, pageContextFromLocation, pageLabelKey } from './pageContext'
 
 const LOCALES_DIR = path.join(__dirname, '../../../public/locales')

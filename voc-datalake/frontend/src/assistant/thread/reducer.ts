@@ -21,7 +21,7 @@
  */
 import { EventType } from '@ag-ui/core'
 import { parseApprovalInterrupts, parseNavigation, parseSources } from './customEvents'
-import { CUSTOM_EVENTS } from '../contract'
+import { CUSTOM_EVENTS } from '@stream/assistant/contract'
 import type { AssistantMessage, Message, ToolCall } from '@ag-ui/core'
 import type { AguiEvent } from '../agui/sse'
 import type { ApprovalInterrupt, ApprovalResolution } from '../types'

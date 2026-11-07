@@ -17,7 +17,7 @@ import { agentsKeys } from '../../api/agentsApi'
 import { useCachedQueryData } from '../../hooks/useCachedQueryData'
 import { projectKey } from '../../api/projectQueryKeys'
 import { pageContextFromLocation } from './pageContext'
-import type { PageContext } from '../contract'
+import type { PageContext } from '@stream/assistant/contract'
 
 const MAX_TITLE = 120
 

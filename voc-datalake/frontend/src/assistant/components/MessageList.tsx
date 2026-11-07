@@ -31,7 +31,7 @@ import { approvedPlanIds } from '../planProgress/planIds'
 import { useAssistantUiStore } from '../store/assistantStore'
 import { NoImage, SafeLink } from './SafeLink'
 import type { AssistantMessage, Message, ToolCall, UserMessage } from '@ag-ui/core'
-import type { PageContext } from '../contract'
+import type { PageContext } from '@stream/assistant/contract'
 import type { NavigationSuggestion, ThreadState } from '../thread/types'
 
 const CONSULT_PERSONAS = 'consult_personas'

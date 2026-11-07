@@ -29,7 +29,7 @@
  * (pinned by `plan.lockstep.test.ts`); change both together, and
  * `lambda/shared/plan_schema.py` implements 1-5 (not 6: Python has no zod).
  */
-import { ADMIN_ONLY_CLIENT_TOOLS, ADMIN_ONLY_PACKS, PLAN_TOOL_NAMES, type ToolPack } from '../contract'
+import { ADMIN_ONLY_CLIENT_TOOLS, ADMIN_ONLY_PACKS, PLAN_TOOL_NAMES, type ToolPack } from '@stream/assistant/contract'
 import { CanonicalJsonError, canonicalJson } from './canonical'
 import { ancestorsOf, stepsInCycles } from './graph'
 import { dottedPath, findPlaceholders, isUnder, substitutePlaceholders, type PlaceholderLeaf } from './placeholders'

@@ -11,7 +11,7 @@
  */
 import { z } from 'zod'
 import { MessageSchema } from '@ag-ui/core/schemas'
-import { SESSION_RUN_STATUSES, STALE_RUN_SECONDS } from '../contract'
+import { SESSION_RUN_STATUSES, STALE_RUN_SECONDS } from '@stream/assistant/contract'
 import { parseEach } from '../../api/lenientFields'
 import { parseApprovalInterrupts } from '../thread/customEvents'
 import type { Message } from '@ag-ui/core'

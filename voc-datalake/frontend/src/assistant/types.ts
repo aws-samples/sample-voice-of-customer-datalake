@@ -10,7 +10,8 @@
 import type { ComponentType } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
 import type { z } from 'zod'
-import type { ClientToolName, PageContext, ToolOutcome } from './contract'
+import type { ClientToolName, PageContext } from '@stream/assistant/contract'
+import type { ToolOutcome } from './toolOutcome'
 import type { ShownRecord } from './approvals/shown'
 
 /** A tool call the model made, with its arguments already JSON-parsed. */

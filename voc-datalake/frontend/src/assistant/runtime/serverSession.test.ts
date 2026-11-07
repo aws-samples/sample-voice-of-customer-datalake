@@ -19,7 +19,7 @@ vi.mock('../agui/client', async (importOriginal) => ({
 import { runAgent } from '../agui/client'
 import { openSession, sendMessage, stopRun } from './runtime'
 import { FOLLOW_BOUND_MS, FOLLOW_TIMEOUT_CODE } from './followServerRun'
-import { STALE_RUN_SECONDS } from '../contract'
+import { STALE_RUN_SECONDS } from '@stream/assistant/contract'
 import { getSession, saveSession } from '../sessions/sessionsApi'
 import { normalizeSessionRecord } from '../sessions/schema'
 import { slotOf, useThreadStore } from '../store/assistantStore'

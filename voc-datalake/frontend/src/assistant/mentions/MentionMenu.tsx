@@ -8,7 +8,7 @@
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import { Loader2 } from 'lucide-react'
-import { MENTION_LIMITS } from '../contract'
+import { MENTION_LIMITS } from '@stream/assistant/contract'
 import { optionId, tokenOf } from './mentionModel'
 import MentionIcon from './MentionIcon'
 import type { MentionMenuState } from './useMentions'

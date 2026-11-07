@@ -15,7 +15,7 @@
  *
  * @module assistant/runtime/followServerRun
  */
-import { STALE_RUN_SECONDS } from '../contract'
+import { STALE_RUN_SECONDS } from '@stream/assistant/contract'
 import { getSession } from '../sessions/sessionsApi'
 import { isLiveServerRun } from '../sessions/schema'
 import { threadFromSession } from '../sessions/serialize'
