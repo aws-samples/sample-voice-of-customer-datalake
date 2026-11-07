@@ -53,7 +53,8 @@ export interface BriefingWorkerProps {
   userPool: cognito.IUserPool;
 }
 
-export function createBriefingWorker(scope: Construct, id: string, props: BriefingWorkerProps): void {
+/** The worker (build + dispatch); the caller wires its brief-ready notices (lib/utils/realtime.ts). */
+export function createBriefingWorker(scope: Construct, id: string, props: BriefingWorkerProps): lambda.Function {
   // A plain construct with the same id keeps every logical id the class form had.
   const worker = new Construct(scope, id);
   const queue = createBriefingQueue(worker, props);
@@ -63,7 +64,7 @@ export function createBriefingWorker(scope: Construct, id: string, props: Briefi
     masterKey: props.kmsKey,
     enforceSSL: true,
   });
-  createBriefingFunction(worker, props, queue, topic);
+  return createBriefingFunction(worker, props, queue, topic);
 }
 
 /** A CMK-encrypted, TLS-only queue, destroyed with the stack (it holds only build requests). */
@@ -110,7 +111,7 @@ function grantBriefingReads(worker: Construct, props: BriefingWorkerProps, role:
   grantEmbeddingModel(role, cdk.Stack.of(worker).region);
 }
 
-function createBriefingFunction(worker: Construct, props: BriefingWorkerProps, queue: sqs.Queue, topic: sns.Topic): void {
+function createBriefingFunction(worker: Construct, props: BriefingWorkerProps, queue: sqs.Queue, topic: sns.Topic): lambda.Function {
   const { uniqueName, feedbackTable, aggregatesTable, memoryTable, agentsTable, projectsTable, radarTable, userPool } = props;
   const role = workerRole(worker, 'BriefingRole');
   grantBriefingReads(worker, props, role);
@@ -146,6 +147,7 @@ function createBriefingFunction(worker: Construct, props: BriefingWorkerProps, q
   }));
   scheduleWorker(worker, 'DispatchSchedule', fn, uniqueName('voc-briefing-dispatch'),
     events.Schedule.rate(cdk.Duration.minutes(15)));
+  return fn;
 }
 
 /**

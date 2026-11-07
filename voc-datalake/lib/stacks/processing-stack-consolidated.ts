@@ -337,10 +337,12 @@ export class VocProcessingStack extends VocStack {
     this.agentRunStateMachine = agentRuntime.stateMachine;
     this.agentConductorRole = agentRuntime.conductorRole;
     // The per-user morning brief (docs/briefing.md): idle until someone subscribes or presses Refresh.
-    createBriefingWorker(this, 'BriefingWorker', {
+    const briefingWorker = createBriefingWorker(this, 'BriefingWorker', {
       uniqueName, layer: processingLayer, kmsKey, feedbackTable, aggregatesTable, memoryTable: props.memoryTable,
       agentsTable: props.agentsTable, projectsTable, radarTable: props.radarTable, userPool: props.userPool,
     });
+    // A built brief tells its reader, so Home shows it at once (docs/realtime.md).
+    this.realtimeJobsPublisherRoles.Briefing = wireRealtimeEndpointParameter(briefingWorker, this.deploymentPrefix);
     createRadarScanWorker(this, 'RadarScanWorker', {
       uniqueName, layer: processingLayer, kmsKey, radarTable: props.radarTable, aggregatesTable,
       deploymentPrefix: this.deploymentPrefix,
