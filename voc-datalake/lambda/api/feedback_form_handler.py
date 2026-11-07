@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeGuard
 
 from aws_lambda_powertools.event_handler import Response
 from boto3.dynamodb.conditions import Key
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 # Shared module imports
 from shared.logging import logger, metrics, tracer
 from shared.producer_labels import clean_dimensions, message_labels, normalise_label_fields
-from shared.request_body import json_body_value, json_object_body, validated_text
+from shared.request_body import json_body_value, json_object_body, optional_field, validated_text
 from shared.snapstart import api_route_warmer, register_snapshot_hooks
 from shared.source_policy import apply_source_policy
 from shared.source_profiles import cached_source_profile_strict
@@ -345,12 +345,13 @@ def _widget_dimensions(body: dict) -> dict[str, str]:
     written into a customer's page and may be stale); the processor keeps only
     the configured keys and values.
     """
-    raw = body.get('dimensions')
-    if raw is None:
-        return {}
-    if not isinstance(raw, dict) or len(raw) > MAX_WIDGET_DIMENSIONS:
-        raise ValidationError(f'dimensions must be an object of at most {MAX_WIDGET_DIMENSIONS} entries')
-    return clean_dimensions(raw)
+    raw = optional_field(body, 'dimensions', _is_widget_dimensions, lambda: ValidationError(
+        f'dimensions must be an object of at most {MAX_WIDGET_DIMENSIONS} entries'))
+    return {} if raw is None else clean_dimensions(raw)
+
+
+def _is_widget_dimensions(value: object) -> TypeGuard[dict]:
+    return isinstance(value, dict) and len(value) <= MAX_WIDGET_DIMENSIONS
 
 
 def _validate_form_labels(body: dict) -> None:
