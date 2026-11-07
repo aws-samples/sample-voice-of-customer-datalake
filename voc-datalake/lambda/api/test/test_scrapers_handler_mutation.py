@@ -50,6 +50,7 @@ from module_reload_fixtures import env_reloader
 
 import scrapers_handler as h
 from shared import scraper_run_errors
+from shared.config_write_guard import etag
 from shared.exceptions import ServiceError, ValidationError
 from shared.test.clock import frozen_clock as freeze_clock
 from shared.test.instrumentation_fixtures import assert_tracer_wrapped
@@ -268,7 +269,8 @@ class TestListScrapers:
 
     def test_the_secret_is_read_by_arn(self, store, api_gateway_event, lambda_context):
         store.client.get_secret_value.return_value = _secret_answer([{'id': 'a'}, {'id': 'b'}])
-        assert self._list(api_gateway_event, lambda_context) == (200, {'scrapers': [{'id': 'a'}, {'id': 'b'}]})
+        assert self._list(api_gateway_event, lambda_context) == (200, {'scrapers': [
+            {'id': 'a', 'etag': etag({'id': 'a'})}, {'id': 'b', 'etag': etag({'id': 'b'})}]})
         store.client.get_secret_value.assert_called_once_with(SecretId=SECRETS_ARN)
 
     @pytest.mark.parametrize('answer', [

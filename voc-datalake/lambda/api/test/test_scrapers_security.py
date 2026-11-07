@@ -108,6 +108,8 @@ import pytest
 from assist_worker_fixtures import inline_assist_worker
 from integrations_route_ast_fixtures import plain_calls_in, route_functions, route_paths
 
+from shared.config_write_guard import etag
+
 
 def _handler_module():
     import scrapers_handler
@@ -392,7 +394,8 @@ class TestTheReadRoutesStayOpen:
         ), lambda_context)
 
         assert response['statusCode'] == 200
-        assert json.loads(response['body'])['scrapers'] == [{'id': 'one'}]
+        # Each listed with its computed etag (shared/config_write_guard.py), nothing else added.
+        assert json.loads(response['body'])['scrapers'] == [{'id': 'one', 'etag': etag({'id': 'one'})}]
 
     @patch('scrapers_handler.get_aggregates_table')
     def test_a_non_admin_can_read_a_run_status(
