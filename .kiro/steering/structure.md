@@ -24,7 +24,7 @@ voice-of-customer-datalake/       # Root repository
     │   └── voc-datalake.ts           # CDK app entry point - defines all stacks
     ├── lib/stacks/                   # CDK stack definitions (TypeScript) - 5 stacks
     │   ├── api-stack.ts              # VocApiStack: composes the api-*.ts builders, webhooks, frontend deploy, outputs
-    │   ├── api-*.ts                  # Its builders (resources created ON the stack, logical ids unchanged): api-context, api-data-lambdas, api-engagement-lambdas, api-projects-lambda, api-fixture-provider, api-job-lambdas, api-document-workflow, api-assistant-lambdas, api-gateway (stage, throttles, CORS, authorizer), api-routes, api-mcp
+    │   ├── api-*.ts                  # Its builders (resources created ON the stack, logical ids unchanged): api-context, api-data-lambdas, api-engagement-lambdas, api-projects-lambda, api-fixture-provider, api-job-lambdas, api-document-workflow, api-assistant-lambdas, api-gateway (stage, throttles, CORS, authorizer), api-routes, api-mcp, api-realtime (the AppSync Events API, docs/realtime.md)
     │   ├── bedrock-access-stack.ts   # Bedrock model access configuration
     │   ├── core-stack.ts             # Core infrastructure (DynamoDB, KMS, product-doc extractor; composes core-buckets/core-cdn/core-auth)
     │   ├── core-buckets.ts           # S3 buckets (versioned + bounded lifecycle)
@@ -66,6 +66,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   ├── prompts.py            # Prompt management utilities
     │   │   ├── scraper_run_errors.py # Read-time redaction of stored scraper-run errors
     │   │   ├── url_policy.py         # Outbound URL policy for scraper fetches (SSRF guard, #244)
+    │   │   ├── realtime.py           # AppSync Events publisher (SigV4, best effort; docs/realtime.md)
     │   │   ├── usefulness.py         # Heuristic usefulness band low|medium|high (processor, reprocess; docs/data-quality.md)
     │   │   └── data_quality.py       # Per-source band distribution for GET /metrics/data-quality
     │   ├── api/                      # Split into domain-specific Lambdas (20KB IAM policy limit) - 20 handlers
@@ -119,6 +120,7 @@ voice-of-customer-datalake/       # Root repository
     │   │   │   └── projectQueryKeys.ts # Query keys shared across features
     │   │   ├── assistant/            # Unified AI assistant (AG-UI client, thread reducer, sessions, approvals, panel UI)
     │   │   ├── services/auth.ts      # Cognito authentication service
+    │   │   ├── realtime/             # Push notices (AppSync Events via aws-amplify events): connection, hub, Zod notices (docs/realtime.md)
     │   │   ├── components/           # Each component in its own folder (58 folders; a selection below)
     │   │   │   ├── AdminRoute/           # Admin-only route wrapper
     │   │   │   ├── Breadcrumbs/          # Navigation breadcrumbs

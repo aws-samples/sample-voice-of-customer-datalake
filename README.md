@@ -220,6 +220,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 | [Source Policies](docs/source-policies.md) | Source profiles, PII redaction, restricted sources, retention and erasure |
 | [Lambda Sizing](docs/lambda-sizing.md) | Memory and timeout policy for every Lambda, and how to check it after a deploy |
 | [Read Caching](docs/caching.md) | Version counters, the warm-container read memo and ETag/304: lifetimes, invalidation, how to verify |
+| [Push notifications](docs/realtime.md) | AppSync Events notices when a job, assistant run, agent run or plan changes: channels, auth, fallback polling, cost |
 | [Moving projects between deployments](docs/project-export.md) | `project-export.py` / `project-import.py`: what is carried, owner matching by email, `--new-ids`, `--dry-run` |
 
 ### Features
