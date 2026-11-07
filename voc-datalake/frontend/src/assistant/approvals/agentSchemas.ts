@@ -1,8 +1,7 @@
 /**
- * @fileoverview Argument schemas of the `agents` pack write tools — a strict
- * mirror of `lambda/stream/src/assistant/tools/{agent-schemas.ts,client/agents.ts}`
- * (same keys, enums and limits: the limits are the stream's own, imported from
- * `@stream/assistant/tools/agent-limits`).
+ * @fileoverview Argument schemas of the `agents` pack write tools, built from the stream
+ * Lambda's own enums and limits (`@stream/assistant/tools/agent-limits`), so a card accepts the
+ * same keys and bounds as `lambda/stream/src/assistant/tools/{agent-schemas.ts,client/agents.ts}`.
  *
  * The shapes are built by the same builders the editor and the agent form use
  * (`api/workflowsApi.ts`, `api/agentsApi.ts`), fed the STREAM's limits: the SPA
