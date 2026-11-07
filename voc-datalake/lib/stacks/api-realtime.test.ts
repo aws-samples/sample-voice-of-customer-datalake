@@ -77,11 +77,20 @@ describe('the Event API', () => {
   it('connects and subscribes with the app pool (the SPA client only) and publishes with IAM only', () => {
     const config = onlyApi();
     expect(config.AuthProviders.map((p) => p.AuthType).sort(byCodeUnit)).toStrictEqual(['AMAZON_COGNITO_USER_POOLS', 'AWS_IAM']);
-    const cognito = config.AuthProviders.find((p) => p.AuthType === 'AMAZON_COGNITO_USER_POOLS')?.CognitoConfig;
-    expect(JSON.stringify(cognito?.AppIdClientRegex)).toMatch(/\^.*Client.*\$/);
-    expect(types(config.DefaultPublishAuthModes)).toStrictEqual(['AWS_IAM']);
-    expect(types(config.DefaultSubscribeAuthModes)).toStrictEqual(['AMAZON_COGNITO_USER_POOLS']);
-    expect(types(config.ConnectionAuthModes)).toStrictEqual(['AMAZON_COGNITO_USER_POOLS', 'AWS_IAM']);
+    expect({
+      publish: types(config.DefaultPublishAuthModes),
+      subscribe: types(config.DefaultSubscribeAuthModes),
+      connect: types(config.ConnectionAuthModes),
+    }).toStrictEqual({
+      publish: ['AWS_IAM'], subscribe: ['AMAZON_COGNITO_USER_POOLS'], connect: ['AMAZON_COGNITO_USER_POOLS', 'AWS_IAM'],
+    });
+  });
+
+  it('admits only the SPA\'s own app client (an anchored client-id regex)', () => {
+    const cognito = onlyApi().AuthProviders.find((p) => p.AuthType === 'AMAZON_COGNITO_USER_POOLS')?.CognitoConfig;
+    const regex = JSON.stringify(cognito?.AppIdClientRegex);
+    expect(regex.startsWith('{"Fn::Join":["",["^",')).toBe(true);
+    expect(regex.endsWith(',"$"]]}')).toBe(true);
   });
 
   it('has the jobs, chat and runs namespaces, each IAM-publish, Cognito-subscribe, behind the own-channel handler', () => {
@@ -89,11 +98,13 @@ describe('the Event API', () => {
       .map((n) => NamespaceSchema.parse(n).Properties);
     expect(namespaces.map((n) => n.Name).sort(byCodeUnit)).toStrictEqual(['chat', 'jobs', 'runs']);
     for (const namespace of namespaces) {
-      expect(types(namespace.PublishAuthModes), namespace.Name).toStrictEqual(['AWS_IAM']);
-      expect(types(namespace.SubscribeAuthModes), namespace.Name).toStrictEqual(['AMAZON_COGNITO_USER_POOLS']);
-      expect(namespace.CodeHandlers, namespace.Name).toBe(REALTIME_SUBSCRIBE_HANDLER_CODE);
-      expect(namespace.CodeHandlers).toContain('util.unauthorized()');
+      expect({
+        publish: types(namespace.PublishAuthModes), subscribe: types(namespace.SubscribeAuthModes), code: namespace.CodeHandlers,
+      }, namespace.Name).toStrictEqual({
+        publish: ['AWS_IAM'], subscribe: ['AMAZON_COGNITO_USER_POOLS'], code: REALTIME_SUBSCRIBE_HANDLER_CODE,
+      });
     }
+    expect(REALTIME_SUBSCRIBE_HANDLER_CODE).toContain('util.unauthorized()');
   });
 
   it('grants publish per namespace to exactly its publishers', () => {
@@ -102,12 +113,11 @@ describe('the Event API', () => {
     // projects / settings / scrapers roles (each shared with its assist twin, so one grant per role is enough).
     const jobs = publishers.get('jobs') ?? [];
     expect(new Set(jobs).size).toBe(3);
-    for (const fragment of ['ProjectsLambdaRole', 'SettingsLambdaRole', 'ScrapersLambdaRole']) {
-      expect(jobs.some((role) => role.includes(fragment)), fragment).toBe(true);
-    }
-    expect(publishers.get('chat')?.every((role) => role.includes('ChatStream'))).toBe(true);
-    // The conductor's role is VocProcessingStack's: referenced by name, granted here.
-    expect(publishers.get('runs')?.every((role) => role.includes('voc-agent-conductor-role'))).toBe(true);
+    const named = (roles: string[] | undefined, fragment: string) => roles?.some((role) => role.includes(fragment)) === true;
+    expect(['ProjectsLambdaRole', 'SettingsLambdaRole', 'ScrapersLambdaRole'].filter((f) => !named(jobs, f))).toStrictEqual([]);
+    // chat: the stream's role only; runs: the conductor's role, VocProcessingStack's, referenced by name and granted here.
+    expect([publishers.get('chat')?.length, named(publishers.get('chat'), 'ChatStream')]).toStrictEqual([1, true]);
+    expect([publishers.get('runs')?.length, named(publishers.get('runs'), 'voc-agent-conductor-role')]).toStrictEqual([1, true]);
   });
 
   it('tells each publisher where to publish', () => {
@@ -133,7 +143,7 @@ describe('the Event API', () => {
   it('writes the endpoint parameter the conductor reads, and the outputs the frontend deploy reads', () => {
     const template = apiTemplate();
     template.hasResourceProperties('AWS::SSM::Parameter', { Name: realtimeParameterName(undefined), Type: 'String' });
-    expect(Object.keys(template.findOutputs('*'))).toEqual(expect.arrayContaining(['RealtimeHttpDns', 'RealtimeDns']));
+    expect(['RealtimeHttpDns', 'RealtimeDns'].filter((key) => !(key in template.findOutputs('*')))).toStrictEqual([]);
   });
 
   it('carries no fixed monthly cost (TENETS.md tenet 7)', () => {
