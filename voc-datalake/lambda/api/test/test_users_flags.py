@@ -1,11 +1,11 @@
 """Route tests for user flags in users_handler.py (GET /users rows, PUT /users/{username}/flags,
 and the fallback-owner drop on demotion), against a moto aggregates table."""
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from handler_events_fixtures import call_route
-from users_table_fixtures import users_aggregates_table
+from users_table_fixtures import cognito_users, users_aggregates_table
 
 import users_handler
 from shared import user_flags
@@ -16,10 +16,7 @@ SUBS = {'alice': 'sub-alice', 'bob': 'sub-bob'}
 
 
 def _cognito(groups_by_user):
-    cognito = MagicMock()
-    cognito.exceptions.UserNotFoundException = type('UserNotFoundException', (Exception,), {})
-    cognito.admin_get_user.side_effect = lambda Username, **_kw: {
-        'UserAttributes': [{'Name': 'sub', 'Value': SUBS[Username]}]}
+    cognito = cognito_users(SUBS)
     cognito.admin_list_groups_for_user.side_effect = lambda Username, **_kw: {
         'Groups': [{'GroupName': g} for g in groups_by_user[Username]]}
     group_names = list(dict.fromkeys(g for groups in groups_by_user.values() for g in groups))

@@ -6,6 +6,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { IamPolicySchema, statementActions } from '../test-support/iam-statements';
 
 import { apiTemplate, buildApiStack } from '../test-support/api-stack-template';
 import { fixedCostFindings } from '../test-support/fixed-cost-rules';
@@ -40,14 +41,6 @@ const NamespaceSchema = z.object({
     SubscribeAuthModes: AuthModes,
   }),
 });
-const PolicySchema = z.object({
-  Properties: z.object({
-    Roles: z.array(z.unknown()),
-    PolicyDocument: z.object({
-      Statement: z.array(z.object({ Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown() })),
-    }),
-  }),
-});
 
 const types = (modes: z.infer<typeof AuthModes>) => modes.map((m) => m.AuthType).sort(byCodeUnit);
 
@@ -61,13 +54,13 @@ function onlyApi() {
 function publishersByNamespace(): Map<string, string[]> {
   const found = new Map<string, string[]>();
   for (const policy of Object.values(apiTemplate().findResources('AWS::IAM::Policy'))) {
-    const { Roles, PolicyDocument } = PolicySchema.parse(policy).Properties;
+    const { Roles, PolicyDocument } = IamPolicySchema.parse(policy).Properties;
     for (const statement of PolicyDocument.Statement) {
-      const actions = Array.isArray(statement.Action) ? statement.Action : [statement.Action];
+      const actions = statementActions(statement);
       if (!actions.some((a) => a.startsWith('appsync:'))) continue;
       expect(actions).toStrictEqual(['appsync:EventPublish']);
       const namespace = /channelNamespace\/(\w+)/.exec(JSON.stringify(statement.Resource))?.[1] ?? '?';
-      found.set(namespace, [...found.get(namespace) ?? [], ...Roles.map((r) => JSON.stringify(r))].sort(byCodeUnit));
+      found.set(namespace, [...found.get(namespace) ?? [], ...(Roles ?? []).map((r) => JSON.stringify(r))].sort(byCodeUnit));
     }
   }
   return found;

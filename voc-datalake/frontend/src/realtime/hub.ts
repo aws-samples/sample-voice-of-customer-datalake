@@ -54,7 +54,7 @@ export function onRealtimeReconnect(listener: ReconnectListener): () => void {
   return () => { hub.reconnects.delete(listener) }
 }
 
-export type WakeReason = 'notice' | 'reconnect' | 'timeout'
+type WakeReason = 'notice' | 'reconnect' | 'timeout'
 
 export interface RealtimeWatch {
   /**

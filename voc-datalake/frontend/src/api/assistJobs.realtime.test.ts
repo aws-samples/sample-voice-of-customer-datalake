@@ -2,16 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deliverNotice, setRealtimeLive } from '../realtime/hub'
 import { ASSIST_POLL_INTERVAL_MS, ASSIST_SUBSCRIBED_POLL_INTERVAL_MS, runAssistJob } from './assistJobs'
+import { STARTED, identity, pollAnswers } from './assist-jobs-fixtures'
 
-const STARTED = { success: true, job_id: 'job_1', status: 'pending' }
-const identity = (result: unknown) => result
 
-function pollAnswers(...answers: unknown[]) {
-  const poll = vi.fn<(jobId: string) => Promise<unknown>>()
-  answers.forEach((answer) => poll.mockResolvedValueOnce(answer))
-  poll.mockResolvedValue(answers.at(-1))
-  return poll
-}
 
 beforeEach(() => {
   vi.useFakeTimers()

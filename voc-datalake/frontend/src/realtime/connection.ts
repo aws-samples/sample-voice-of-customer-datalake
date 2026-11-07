@@ -11,7 +11,7 @@
 import { parseNotice } from './events'
 import { deliverNotice, setRealtimeLive } from './hub'
 
-export const REALTIME_CHANNELS = ['jobs', 'chat', 'runs'] as const
+const REALTIME_CHANNELS = ['jobs', 'chat', 'runs'] as const
 
 /** What the connection needs of the Event API client (realtime/amplifyTransport.ts in the app). */
 export interface RealtimeTransport {

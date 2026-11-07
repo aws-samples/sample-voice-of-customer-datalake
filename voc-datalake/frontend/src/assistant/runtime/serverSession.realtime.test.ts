@@ -3,29 +3,20 @@
  * `session` notice re-reads it at once; while subscribed the GET poll slows to the fallback interval.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { SessionRecord } from '../sessions/schema'
 
-vi.mock('../sessions/sessionsApi', () => ({ getSession: vi.fn(), saveSession: vi.fn(), cancelServerRun: vi.fn(() => Promise.resolve()) }))
+vi.mock('../sessions/sessionsApi', () => import('./runtime-fixtures').then((m) => m.sessionsApiModule()))
 
 import { openSession } from './runtime'
+import { HOME_ENV, runningSession } from './runtime-fixtures'
 import { SUBSCRIBED_FOLLOW_DELAY_MS } from './followServerRun'
 import { getSession } from '../sessions/sessionsApi'
 import { slotOf, useThreadStore } from '../store/assistantStore'
 import { deliverNotice, setRealtimeLive } from '../../realtime/hub'
-import type { RunEnvironment } from './runtime'
 
-const env: RunEnvironment = { page: { kind: 'home', path: '/' }, useWebSearch: false }
+const env = HOME_ENV
 const getSessionMock = vi.mocked(getSession)
 
-function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
-  return {
-    id: 'conv_1',
-    messages: [{ id: 'u1', role: 'user', content: 'Why?' }, { id: 'a1', role: 'assistant', content: 'Because' }],
-    pendingInterrupts: [], createdAt: '2026-10-06T11:59:00.000Z',
-    updatedAt: new Date(Date.now()).toISOString(), runStatus: 'running', revision: 10,
-    ...overrides,
-  }
-}
+const record = runningSession
 
 const finished = () => record({ runStatus: 'finished', revision: 12 })
 const status = () => slotOf(useThreadStore.getState().slots, 'conv_1')?.thread.status

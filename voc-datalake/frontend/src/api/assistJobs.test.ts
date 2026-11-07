@@ -1,21 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ASSIST_POLL_INTERVAL_MS, ASSIST_TIMEOUT_MS, isAssistJobType, runAssistJob } from './assistJobs'
+import { STARTED, identity, pollAnswers } from './assist-jobs-fixtures'
 
-const STARTED = { success: true, job_id: 'job_1', status: 'pending' }
-const identity = (result: unknown) => result
 
 /** The rejection of `promise` (or a marker when it resolved), caught at once so fake time can run. */
 function settle(promise: Promise<unknown>): Promise<unknown> {
   return promise.then(() => 'resolved', (error: unknown) => error)
 }
 
-/** A poll stub answering `answers` in order, then repeating the last one. */
-function pollAnswers(...answers: unknown[]) {
-  const poll = vi.fn<(jobId: string) => Promise<unknown>>()
-  answers.forEach((answer) => poll.mockResolvedValueOnce(answer))
-  poll.mockResolvedValue(answers.at(-1))
-  return poll
-}
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })

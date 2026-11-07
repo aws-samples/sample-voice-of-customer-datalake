@@ -8,9 +8,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { EventType } from '@ag-ui/core'
-import type { SessionRecord } from '../sessions/schema'
 
-vi.mock('../sessions/sessionsApi', () => ({ getSession: vi.fn(), saveSession: vi.fn(), cancelServerRun: vi.fn(() => Promise.resolve()) }))
+vi.mock('../sessions/sessionsApi', () => import('./runtime-fixtures').then((m) => m.sessionsApiModule()))
 vi.mock('../agui/client', async (importOriginal) => ({
   ...await importOriginal<typeof import('../agui/client')>(),
   runAgent: vi.fn(),
@@ -18,26 +17,18 @@ vi.mock('../agui/client', async (importOriginal) => ({
 
 import { runAgent } from '../agui/client'
 import { openSession, sendMessage, stopRun } from './runtime'
+import { HOME_ENV, runningSession } from './runtime-fixtures'
 import { FOLLOW_BOUND_MS, FOLLOW_TIMEOUT_CODE } from './followServerRun'
 import { STALE_RUN_SECONDS } from '@stream/assistant/contract'
 import { getSession, saveSession } from '../sessions/sessionsApi'
 import { normalizeSessionRecord } from '../sessions/schema'
 import { slotOf, useThreadStore } from '../store/assistantStore'
 import { ApiError } from '../../lib/errors'
-import type { RunEnvironment } from './runtime'
 
-const env: RunEnvironment = { page: { kind: 'home', path: '/' }, useWebSearch: false }
+const env = HOME_ENV
 const NOW = Date.parse('2026-10-06T12:00:00Z')
 
-function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
-  return {
-    id: 'conv_1',
-    messages: [{ id: 'u1', role: 'user', content: 'Why?' }, { id: 'a1', role: 'assistant', content: 'Because' }],
-    pendingInterrupts: [], createdAt: '2026-10-06T11:59:00.000Z',
-    updatedAt: new Date(Date.now()).toISOString(), runStatus: 'running', revision: 10,
-    ...overrides,
-  }
-}
+const record = runningSession
 
 const runAgentMock = vi.mocked(runAgent)
 const getSessionMock = vi.mocked(getSession)

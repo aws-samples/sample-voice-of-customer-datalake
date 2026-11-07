@@ -1,5 +1,7 @@
 """Category access on chat, feedback forms, users, settings and project jobs."""
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
@@ -196,14 +198,20 @@ class TestProjectJobsCaptureScope:
     SCOPE = CategoryScope(all=False, categories=frozenset({'delivery'}))
     EXPECTED: ClassVar[dict[str, Any]] = {'all': False, 'categories': ['delivery']}
 
+    @contextmanager
+    def _scoped_project(self) -> Iterator[None]:
+        """The caller's scope is SCOPE, project p1 exists and has no methodology items yet."""
+        with patch('projects_handler.category_gate.scope_for_event', return_value=self.SCOPE), \
+                patch('projects_handler._require_project_exists'), \
+                patch('projects_handler._methodology_items', return_value=[]):
+            yield
+
     def _start(self, api_gateway_event, lambda_context, path, body):
         from projects_handler import lambda_handler
         event = api_gateway_event(method='POST', path=path, path_params={'project_id': 'p1'}, body=body)
         # The project-exists read before every job row is covered by test_project_jobs_access.py
         # against moto; here it is doubled so only the scope capture is under test.
-        with patch('projects_handler.category_gate.scope_for_event', return_value=self.SCOPE), \
-                patch('projects_handler._require_project_exists'), \
-                patch('projects_handler._methodology_items', return_value=[]), \
+        with self._scoped_project(), \
                 patch('projects_handler.create_job', return_value=('job-1', {})) as create_job, \
                 patch('projects_handler.invoke_lambda_async') as invoke_async, \
                 patch.dict('os.environ', {'RESEARCH_STATE_MACHINE_ARN': '', 'DOCUMENT_STATE_MACHINE_ARN': ''}), \
@@ -237,9 +245,7 @@ class TestProjectJobsCaptureScope:
         from projects_handler import lambda_handler
         event = api_gateway_event(method='POST', path='/projects/p1/research',
                                   path_params={'project_id': 'p1'}, body={})
-        with patch('projects_handler.category_gate.scope_for_event', return_value=self.SCOPE), \
-                patch('projects_handler._require_project_exists'), \
-                patch('projects_handler._methodology_items', return_value=[]), \
+        with self._scoped_project(), \
                 patch('projects_handler.create_job', return_value=('job-1', {})), \
                 patch.dict('os.environ', {'RESEARCH_STATE_MACHINE_ARN': ''}), \
                 patch('projects_handler.run_research', return_value={'success': True}) as run:

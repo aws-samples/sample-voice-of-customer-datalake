@@ -3,17 +3,10 @@ import { Template } from 'aws-cdk-lib/assertions';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import { IamPolicySchema, type IamStatement } from '../test-support/iam-statements';
 
 import { grantWorkspaceObjects, grantWorkspaceVersionDeletes, VERSION_DELETE_ACTIONS } from './workspace-object-deletes';
 
-const PolicySchema = z.object({
-  Properties: z.object({
-    PolicyDocument: z.object({
-      Statement: z.array(z.object({ Effect: z.string(), Action: z.union([z.string(), z.array(z.string())]), Resource: z.unknown() })),
-    }),
-  }),
-});
 
 /** A bucket (KMS-encrypted, like the raw data bucket) and a role. */
 function fixture(): { stack: cdk.Stack; bucket: s3.Bucket; role: iam.Role } {
@@ -25,9 +18,9 @@ function fixture(): { stack: cdk.Stack; bucket: s3.Bucket; role: iam.Role } {
   };
 }
 
-function statements(stack: cdk.Stack): z.infer<typeof PolicySchema>['Properties']['PolicyDocument']['Statement'] {
+function statements(stack: cdk.Stack): IamStatement[] {
   return Object.values(Template.fromStack(stack).findResources('AWS::IAM::Policy'))
-    .flatMap((policy) => PolicySchema.parse(policy).Properties.PolicyDocument.Statement);
+    .flatMap((policy) => IamPolicySchema.parse(policy).Properties.PolicyDocument.Statement);
 }
 
 describe('grantWorkspaceVersionDeletes', () => {
