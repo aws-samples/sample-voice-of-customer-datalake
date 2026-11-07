@@ -250,6 +250,14 @@
     }
   },
   "editor": {
+    "methodology": {
+      "title": "方法论",
+      "hint": "仅为建议:工作流仍可保存和运行。方法论的顺序是 证据 → 用户画像 → PR/FAQ → PRD → 原型。",
+      "noEvidence": "之前没有客户证据(汇总评论或深度研究)。",
+      "noPersonas": "之前没有用户画像步骤。",
+      "noPrfaq": "之前没有 PR/FAQ 步骤:方法论要求先写 PR/FAQ。",
+      "noDocument": "之前没有 PR/FAQ 或 PRD 步骤。"
+    },
     "canvasLabel": "工作流画布",
     "minimap": "工作流概览",
     "palette": "步骤",

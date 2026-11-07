@@ -168,6 +168,20 @@ describe('WorkflowEditor — Save as, import, validation', () => {
     const list = await screen.findByRole('list', { name: 'Workflow issues' }, { timeout: 2000 })
     expect(list).toHaveTextContent('the budget is too small')
   })
+
+  it("shows the server's methodology warnings of a valid workflow, and still lets it save", async () => {
+    route(baseRoutes({
+      'POST /workflows/validate': () => ({
+        valid: true, errors: [],
+        warnings: [{ code: 'no_upstream_prfaq', message: 'server', node_id: 'prd' }],
+      }),
+    }))
+    const { container } = await renderEditor()
+    await importDraft(container, EDITED)
+    const warnings = await screen.findByTestId('workflow-methodology-warnings', {}, { timeout: 2000 })
+    expect(warnings).toHaveTextContent('Write the PRD: no PR/FAQ step before it')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
 })
 
 describe('WorkflowEditor — read-only', () => {

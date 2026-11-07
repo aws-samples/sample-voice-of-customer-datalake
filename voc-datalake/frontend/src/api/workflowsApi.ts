@@ -233,9 +233,15 @@ function normalizeRevisionDetail(raw: unknown): WorkflowRevisionDetail {
 const ValidationIssueSchema = z.object({ message: z.string(), node_id: optionalString })
 export type WorkflowIssue = z.output<typeof ValidationIssueSchema>
 
+/** A methodology gap of a valid workflow (lambda/shared/workflow_methodology.py): advice, never an error. */
+const MethodologyWarningSchema = z.object({ code: z.string().min(1), message: z.string(), node_id: optionalString })
+export type WorkflowMethodologyWarning = z.output<typeof MethodologyWarningSchema>
+
 const ValidationResultSchema = z.object({
   valid: z.boolean().catch(false),
   errors: lenientList(guard(ValidationIssueSchema)),
+  // Absent from an older API: no warnings.
+  warnings: lenientList(guard(MethodologyWarningSchema)),
 })
 export type WorkflowValidation = z.output<typeof ValidationResultSchema>
 
@@ -260,7 +266,9 @@ function normalizeRevisions(raw: unknown): WorkflowRevision[] {
 
 function normalizeValidation(raw: unknown): WorkflowValidation {
   const parsed = ValidationResultSchema.safeParse(raw)
-  return parsed.success ? parsed.data : { valid: false, errors: [{ message: 'The validation answer was unreadable', node_id: undefined }] }
+  return parsed.success
+    ? parsed.data
+    : { valid: false, errors: [{ message: 'The validation answer was unreadable', node_id: undefined }], warnings: [] }
 }
 
 // ── REST ─────────────────────────────────────────────────────────────────────

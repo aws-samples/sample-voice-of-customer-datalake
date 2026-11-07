@@ -251,6 +251,14 @@
     }
   },
   "editor": {
+    "methodology": {
+      "title": "Metodologia",
+      "hint": "Apenas um conselho: o fluxo continua a ser guardado e executado. A metodologia vai evidência → personas → PR/FAQ → PRD → protótipo.",
+      "noEvidence": "não há evidência de clientes antes (agregar avaliações ou pesquisa aprofundada).",
+      "noPersonas": "não há um passo de personas antes.",
+      "noPrfaq": "não há um passo de PR/FAQ antes: a metodologia escreve primeiro a PR/FAQ.",
+      "noDocument": "não há um passo de PR/FAQ nem de PRD antes."
+    },
     "canvasLabel": "Tela do fluxo de trabalho",
     "minimap": "Visão geral do fluxo de trabalho",
     "palette": "Etapas",

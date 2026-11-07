@@ -250,6 +250,14 @@
     }
   },
   "editor": {
+    "methodology": {
+      "title": "방법론",
+      "hint": "조언일 뿐입니다. 워크플로는 그대로 저장되고 실행됩니다. 방법론 순서는 근거 → 페르소나 → PR/FAQ → PRD → 프로토타입입니다.",
+      "noEvidence": "앞에 고객 근거(리뷰 집계 또는 심층 조사)가 없습니다.",
+      "noPersonas": "앞에 페르소나 단계가 없습니다.",
+      "noPrfaq": "앞에 PR/FAQ 단계가 없습니다. 방법론은 PR/FAQ를 먼저 작성합니다.",
+      "noDocument": "앞에 PR/FAQ 또는 PRD 단계가 없습니다."
+    },
     "canvasLabel": "워크플로 캔버스",
     "minimap": "워크플로 개요",
     "palette": "단계",

@@ -250,6 +250,14 @@
     }
   },
   "editor": {
+    "methodology": {
+      "title": "Methodik",
+      "hint": "Nur ein Hinweis: Der Workflow lässt sich trotzdem speichern und ausführen. Die Methodik geht Belege → Personas → PR/FAQ → PRD → Prototyp.",
+      "noEvidence": "keine Kundenbelege davor (Bewertungen bündeln oder Tiefenrecherche).",
+      "noPersonas": "kein Personas-Schritt davor.",
+      "noPrfaq": "kein PR/FAQ-Schritt davor: Die Methodik schreibt zuerst die PR/FAQ.",
+      "noDocument": "kein PR/FAQ- oder PRD-Schritt davor."
+    },
     "canvasLabel": "Workflow-Arbeitsfläche",
     "minimap": "Workflow-Übersicht",
     "palette": "Schritte",

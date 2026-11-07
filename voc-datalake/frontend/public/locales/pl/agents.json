@@ -273,6 +273,14 @@
     "rounds": "Runda {{n}}"
   },
   "editor": {
+    "methodology": {
+      "title": "Metodyka",
+      "hint": "Tylko wskazówka: przepływ nadal się zapisuje i uruchamia. Metodyka idzie dowody → persony → PR/FAQ → PRD → prototyp.",
+      "noEvidence": "brak wcześniejszych dowodów od klientów (agregacja opinii lub dogłębne badanie).",
+      "noPersonas": "brak wcześniejszego kroku person.",
+      "noPrfaq": "brak wcześniejszego kroku PR/FAQ: metodyka najpierw pisze PR/FAQ.",
+      "noDocument": "brak wcześniejszego kroku PR/FAQ lub PRD."
+    },
     "outcome": {
       "saved": "Zapisano.",
       "conflict": "W międzyczasie ktoś zapisał nowszą wersję.",
