@@ -12,12 +12,9 @@ Publishing is BEST EFFORT: a failure is logged and swallowed, never raised, so a
 plan step never fails because a notice could not be sent. It is a no-op when the Event API is not
 configured (the dev mock, an older deployment, a test):
 
-``REALTIME_HTTP_DNS`` (the one variable every publisher is given) holds either
-
-- the Event API's HTTP host (VocApiStack's publishers), or
-- ``ssm:<parameter name>``: an SSM parameter holding that host (publishers in VocProcessingStack and
-  VocIngestionStack, which deploy before the Event API exists). Read once per container; a missing
-  parameter is remembered for ``PARAMETER_RETRY_SECONDS``.
+``REALTIME_HTTP_DNS`` (the one variable every publisher is given) holds the Event API's HTTP host.
+The Event API lives in VocCoreStack, which deploys first, so every publisher in every stack gets the
+host as a plain stack reference.
 
 The request is ``POST https://<host>/event`` ``{channel, events: [<json string>]}``, SigV4-signed
 for service ``appsync`` with the Lambda role's credentials (``appsync:EventPublish`` on exactly the
@@ -28,7 +25,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import time
 from collections.abc import Mapping
 from typing import Any, Final
 
@@ -36,49 +32,22 @@ import boto3
 import requests
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import BotoCoreError
 
 from shared.logging import logger
 
 NAMESPACES: Final = frozenset({'jobs', 'chat', 'runs'})
 HTTP_DNS_ENV: Final = 'REALTIME_HTTP_DNS'
-# A value naming the SSM parameter that holds the host, instead of the host itself.
-PARAMETER_PREFIX: Final = 'ssm:'
 # One short request; a slow Event API must not hold a job's last write back.
 TIMEOUT_SECONDS: Final = 3
-PARAMETER_RETRY_SECONDS: Final = 300
 # A Cognito sub is a UUID; anything else cannot name a channel segment.
 _SUB_RE: Final = re.compile(r'[A-Za-z0-9-]{1,128}')
 _HOST_RE: Final = re.compile(r'[a-z0-9-]+(?:\.[a-z0-9-]+)+')
 
-_parameter_cache: dict[str, Any] = {'host': None, 'checked_at': None}
-
-
-def _parameter_host(name: str) -> str:
-    if not name:
-        return ''
-    if _parameter_cache['host']:
-        return _parameter_cache['host']
-    checked_at = _parameter_cache['checked_at']
-    if checked_at is not None and time.monotonic() - checked_at < PARAMETER_RETRY_SECONDS:
-        return ''
-    _parameter_cache['checked_at'] = time.monotonic()
-    try:
-        value = boto3.client('ssm').get_parameter(Name=name)['Parameter']['Value']
-    except (BotoCoreError, ClientError, KeyError) as exc:
-        # Best effort: no host means no notices, never a failure.
-        logger.info('Realtime endpoint parameter not readable; notices off for now',
-                    extra={'error': type(exc).__name__})
-        _parameter_cache['host'] = None
-        return ''
-    _parameter_cache['host'] = value if isinstance(value, str) else None
-    return _parameter_cache['host'] or ''
-
 
 def http_host() -> str:
     """The Event API's HTTP host, or '' when notices are off here."""
-    value = os.environ.get(HTTP_DNS_ENV, '')
-    host = _parameter_host(value[len(PARAMETER_PREFIX):]) if value.startswith(PARAMETER_PREFIX) else value
+    host = os.environ.get(HTTP_DNS_ENV, '')
     return host if _HOST_RE.fullmatch(host) else ''
 
 
