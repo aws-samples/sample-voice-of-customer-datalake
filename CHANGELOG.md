@@ -17,16 +17,46 @@ the platform package version.
 
 ## [Unreleased]
 
-## [6.03.02] - 2026-11-07
+## [6.04.00] - 2026-11-07
 
-The SPA reads the code it shares with the AI assistant's stream Lambda from the stream package itself, so the hand-kept copies and their lockstep tests are gone.
+The browser hears when work finishes instead of asking every second and a half, the methodology is checked and reported by the server for every client, MCP can run the methodology steps, plugins declare what makes them different, the memory scanner stops scanning a whole table, the processed feedback item has a catalogue, and the SPA reads the code it shares with the assistant's stream Lambda from the stream package itself.
+
+### Added
+
+- **Push notifications over AWS AppSync Events.** The browser hears at once when an assist job ends, when an assistant answer it is following ends, and when an agent run or an approved plan changes status, and re-reads it then. One Event API in VocApiStack with `jobs`, `chat` and `runs` channels; each person can subscribe only to their own channels, and only the platform's Lambdas can publish. Polling stays as the fallback after a reload or reconnect and for every other caller ([docs/realtime.md](docs/realtime.md)).
+- **Methodology on the server** (TENETS.md tenet 2, [docs/project-workspace.md → Methodology](docs/project-workspace.md#methodology)): `GET /projects/{id}` carries `methodology`, the upstream steps each step is missing. Research, PR/FAQ, PRD, "Pursue" and prototype starts answer a `methodology` block (skipped steps, warnings, evidence), stored on the document they write and in the job result. The project Overview names the missing steps the server lists, and the Documents tab shows a document's methodology gaps.
+- **Workflow methodology warnings**: `POST /workflows/validate` answers `warnings` (a PRD with no PR/FAQ, personas or evidence before it, …), shown above the workflow editor's canvas. They are advice: save and run are not refused ([docs/autonomous-agents.md](docs/autonomous-agents.md#methodology-warnings)).
+- **Global MCP tools**: `generate` (personas, research, PR/FAQ, PRD, prototype, with the methodology block), `get_job`, `read_radar`, `edit_feedback`, and `boards: true` on `search_feature_requests` ([docs/mcp.md](docs/mcp.md#tools)).
+- `POST /scrapers` and `POST /integrations/{source}/apps` take optional `mode: create|update` and `base_etag`; the list routes add a computed `etag` ([docs/scrapers.md → Write rules](docs/scrapers.md#write-rules)).
+- `GET /feedback/catalogue`: what every stored attribute of a feedback item means (type, meaning, the pipeline step that sets it, whether it holds personal data, what a `redact` / `summary_only` source policy does to it, the allowed values of each enum), for any signed-in user, ETag-cached. [docs/data-catalogue.md](docs/data-catalogue.md) is generated from the same source, and a test fails when a writer stores an attribute the catalogue does not list.
+- Plugin manifests declare what the platform does differently for their source: `capabilities.updatesItems`, `infrastructure.ingestor.selfInvoke` and `infrastructure.webhook.memory` ([docs/plugin-architecture.md → Capabilities](docs/plugin-architecture.md#capabilities)).
 
 ### Changed
 
+- A PR/FAQ or PRD request reads customer feedback unless `data_sources.feedback` is `false`; before, a request that named no data sources read none. A hand-written PR/FAQ or PRD is stored with `evidence: 0` and says so; a generator that leaves selected reference documents out (more than 3) records which ones.
+- While the page is subscribed, assist jobs poll every 10 s and a reloaded "still generating" assistant session every 15 s as a fallback; without the Event API (dev mock, older deployments) polling is as before. The runtime `config.json` carries a `realtime` block (the Event API hosts).
+- The memory scanner (`voc-memory-scanner`, every 15 min) reads the last week of assistant sessions through the new `voc-conversations` index `gsi1-by-kind-updated-at` instead of scanning the whole table, so its idle cost no longer grows with stored conversations; its role holds `Query` on that index only.
+- The in-place refresh of GitHub issues, the app-review ingestors' self-continuation grant and the GitHub webhook's 512 MB are declared in those plugins' manifests instead of being keyed on plugin ids in platform code. Nothing changes for any plugin.
 - The SPA imports the AG-UI contract, the plan schema and checks, the persona-result storage and the approval-card bounds (persona, product context, feedback form, review import, Radar, memory, company, agents, workflows, assist-job polling) from `voc-datalake/lambda/stream/src` through the `@stream/*` alias (`frontend/streamSource.ts`: vite, vitest and tsconfig, zod deduplicated). The bounds, rules and messages are the ones each side used before; where the two sides worded a message differently, each keeps its own.
-- The stream Lambda lints every module the SPA reaches with a `browser-safe` block (no Node built-ins, `@aws-sdk` or `@smithy` at runtime), and `src/browser-safe.test.ts` fails when the SPA imports a stream module the block does not cover. CONTRIBUTING.md → "Code the SPA shares with the stream Lambda".
+- The stream Lambda lints every module the SPA reaches with a `browser-safe` block (no Node built-ins, `@aws-sdk` or `@smithy`, not even as a type, and no Node-only globals), and `src/browser-safe.test.ts` fails when the SPA reaches a stream module the block does not cover (CONTRIBUTING.md → "Code the SPA shares with the stream Lambda").
 - One `IconBadge` component draws 18 icon badges (verdicts, run outcomes, plans, visibility, pins, release watch, model tests). Nothing on screen changes.
-- The duplication excuses for these copies go: 6 `.jscpd.json` file ignores, 10 inline `jscpd:ignore` blocks, 6 TypeScript clone allowlist entries and the knip and reachability entries that existed for the mirrors.
+- The duplication excuses for the SPA ↔ stream copies go: 6 `.jscpd.json` file ignores, 10 inline `jscpd:ignore` blocks, 6 TypeScript clone allowlist entries and the knip and reachability entries that existed for the mirrors.
+- TENETS.md: tenet 7 says how work moves (EventBridge schedules, job + worker, AppSync Events notices, SSE for the live answer, MCP request/response, polling only as fallback), and the "Where the platform stands today" rows for tenets 2, 4, 5, 7 and D7 follow this release.
+
+### Fixed
+
+- `POST /projects/{id}/build-prototype` with no PRD and no PR/FAQ answers 409 before any job, instead of a 202 and a failed job.
+- The users API refuses (409) an administrator's change to their own role, enabled state or account, and the demotion, disabling or deletion of the last enabled administrator, for every client, not only in the web app ([docs/account-vs-admin.md → Users](docs/account-vs-admin.md#users)).
+- The scraper and app-connector create-never-overwrites and stale-update rules are enforced by the API (409 / 404), not only by the assistant's card.
+- The "Adding a New Data Source" steps (`.kiro/steering/structure.md`) and the plugin template README describe the real procedure.
+
+### Upgrade notes
+
+- Deploy every stack (`npm run deploy:infra`). VocCoreStack adds a global secondary index to `voc-conversations` in place (no replacement); DynamoDB builds it from the existing conversations and the stack update waits for it; no backfill is needed. VocProcessingStack gets the conductor's endpoint-parameter read and a new export; VocApiStack adds the Event API, its log group and role, an SSM parameter and the publish grants. Until VocApiStack is deployed the conductor sends no notices (it re-checks the parameter every 5 minutes); nothing fails.
+- Cost: AppSync Events is pay per use only (about $1 per million operations and $0.08 per million connection minutes); no fixed monthly cost.
+- `npm run deploy:frontend` writes the `realtime` block only when VocApiStack has the `RealtimeHttpDns` and `RealtimeDns` outputs.
+- `voc-mcp-global-api` may now also invoke `voc-radar-api` and `voc-feedback-edit-api`.
+- Scripts that start a PR/FAQ or PRD without `data_sources` now ground it in customer feedback; send `data_sources: {feedback: false}` to keep the old behaviour. Scripts that demote, disable or delete the caller's own admin account, or the last admin, now get 409. Documents made before 6.04.00 carry no methodology block.
 
 ## [6.03.01] - 2026-11-07
 
