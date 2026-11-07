@@ -54,6 +54,8 @@ export const BROWSER_SAFE_FILES = [
   'src/assistant/tools/server/memory-shape.ts',
   'src/lib/is-record.ts',
 ]
+// Node globals a browser does not have (vite defines `global` only); the browser-safe block refuses them.
+const NODE_ONLY_GLOBALS = ['process', 'Buffer', '__dirname', '__filename', 'require', 'module', 'exports', 'setImmediate', 'clearImmediate']
 const BROWSER_SAFE_MESSAGE = 'The SPA imports this module through @stream: no Node built-in, @aws-sdk or @smithy, not even as a type: the SPA type-checks it without the stream\'s node_modules.'
 
 export default tseslint.config(
@@ -219,8 +221,9 @@ export default tseslint.config(
   },
 
   // ─── Browser-safe: the modules the SPA imports through `@stream` (frontend/streamSource.ts) ───
-  // They run in the browser bundle too, so no Node built-in, no AWS SDK and no Smithy runtime (a type-only
-  // import is erased and allowed). src/browser-safe.test.ts fails when the SPA imports a stream module, or a
+  // They run in the browser bundle too, so no Node built-in, AWS SDK or Smithy import (not even a type-only one:
+  // the SPA type-checks them without the stream's node_modules) and no Node-only global (`process`, `Buffer`, …,
+  // which the shared Node globals would otherwise allow). src/browser-safe.test.ts fails when the SPA imports a stream module, or a
   // listed module imports a stream file, that this block does not cover.
   {
     name: 'browser-safe',
@@ -232,6 +235,7 @@ export default tseslint.config(
         })),
         patterns: [{ group: ['node:*', '@aws-sdk/*', '@smithy/*'], message: BROWSER_SAFE_MESSAGE }],
       }],
+      'no-restricted-globals': ['error', ...NODE_ONLY_GLOBALS.map((name) => ({ name, message: BROWSER_SAFE_MESSAGE }))],
     },
   },
 )
