@@ -26,7 +26,7 @@
 | **Translate** | Multi-language | Auto language pair detection |
 | **Step Functions** | Long-running jobs | Research workflows, persona generation |
 | **CloudFront** | CDN | Frontend distribution, avatar images |
-| **AppSync Events** | Push notices to the SPA | One Event API in VocApiStack (`lib/stacks/api-realtime.ts`); namespaces `jobs`, `chat`, `runs`, channels `/<ns>/<cognito sub>`; subscribe = app pool (SPA client only) + own-channel onSubscribe handler, publish = IAM only; pay per use, no fixed cost; polling stays the fallback (docs/realtime.md) |
+| **AppSync Events** | Push notices to the SPA | One Event API in VocCoreStack (`lib/stacks/core-realtime.ts`); publish grants = one managed policy per namespace, attached to each publisher's role in its own stack; namespaces `jobs`, `chat`, `runs`, channels `/<ns>/<cognito sub>`; subscribe = app pool (SPA client only) + own-channel onSubscribe handler, publish = IAM only; pay per use, no fixed cost; polling stays the fallback (docs/realtime.md) |
 
 ## Data Sources
 
@@ -76,19 +76,18 @@ AWS Lambda execution roles have a **20KB policy size limit**. To stay under this
 | `voc-radar-api` | `radar_handler.py` | `/radar`, `/radar/{proxy+}` (other brands, docs/radar.md) | DynamoDB radar Get/Query/Put/BatchGet, aggregates read, KMS, invoke the Radar scan worker |
 | `voc-s3-import-api` | `s3_import_handler.py` | `/s3-import/*` (admin-only; incl. `POST /s3-import/reprocess`, `GET /s3-import/reprocess/{run_id}`) | S3 import bucket RW, KMS; with the `s3_import` plugin enabled (`lib/stacks/api-s3-import-lambda.ts`): `lambda:InvokeFunction` on exactly `voc-ingestor-s3_import` (by name, env `S3_IMPORT_INGESTOR_FUNCTION`) and aggregates Put/Get/UpdateItem + Query (the duplicate-run check, 409) pinned by `dynamodb:LeadingKeys` to `SOURCE_RUN#s3_import` (the reprocess run rows) |
 
-Push notices (6.04.00, docs/realtime.md): `appsync:EventPublish` on exactly one namespace each, with
-`REALTIME_HTTP_DNS` in the environment: `jobs` for the projects, settings and scrapers roles (each shared with
-its assist twin, which publishes when an assist job ends), `chat` for `voc-chat-stream` (a run's session
-notice). `voc-agent-conductor` (VocProcessingStack) publishes run / plan status notices on `runs`: VocApiStack
-attaches that grant to its role, and the conductor reads the host from the SSM parameter
-`/[<prefix>-]voc/realtime/event-api-http-dns` (`REALTIME_HTTP_DNS=ssm:<parameter>`, `ssm:GetParameter` on exactly it).
-Job ends (`shared/job_notices.py`, `{type: 'job', job_id, job_type, status, project_id?}` to the starter's
-`/jobs/<sub>`) are published on `jobs` too: in VocApiStack by the four project job Lambdas (`job_handler`) and
-`voc-manual-import-processor` (`REALTIME_HTTP_DNS`); before it, by `voc-research-step`, `voc-category-reprocess`,
-`voc-retention` (erase mode), `voc-memory-extractor` (page imports), `voc-briefing` (a settled brief) and the
-`s3_import` ingestor (an API-started reprocess run; its manifest's `infrastructure.ingestor.jobNotices` gives it a
-dedicated role `IngestorRoleS3Import`, so no other plugin may publish). Each of those reads the parameter like the
-conductor, and VocApiStack attaches its `jobs` grant (`realtimeJobsPublisherRoleArns`, `grantRealtimePublishToRoles`).
+Push notices (6.04.00, docs/realtime.md): `appsync:EventPublish` on exactly one namespace each, as VocCoreStack's
+managed policy for that namespace (`RealtimeJobsPublishPolicy` / `RealtimeChatPublishPolicy` / `RealtimeRunsPublishPolicy`,
+`lib/stacks/core-realtime.ts`) attached to the publisher's role in its own stack (`lib/utils/realtime.ts`
+`grantRealtimePublish`), with `REALTIME_HTTP_DNS` (Core's Event API HTTP host, a stack reference) in the environment:
+`jobs` for the projects, settings and scrapers roles (each shared with its assist twin, which publishes when an assist
+job ends), `chat` for `voc-chat-stream` (a run's session notice), `runs` for `voc-agent-conductor` (VocProcessingStack;
+run / plan status notices). Job ends (`shared/job_notices.py`, `{type: 'job', job_id, job_type, status, project_id?}`
+to the starter's `/jobs/<sub>`) are published on `jobs` too: in VocApiStack by the four project job Lambdas
+(`job_handler`) and `voc-manual-import-processor`; in VocProcessingStack by `voc-research-step`, `voc-category-reprocess`,
+`voc-retention` (erase mode), `voc-memory-extractor` (page imports) and `voc-briefing` (a settled brief); in
+VocIngestionStack by the `s3_import` ingestor (an API-started reprocess run; its manifest's
+`infrastructure.ingestor.jobNotices` gives it a dedicated role `IngestorRoleS3Import`, so no other plugin may publish).
 
 Assist twins (4.00.00, `lib/stacks/api-assist-workers.ts`): `voc-projects-assist`,
 `voc-settings-assist`, `voc-scrapers-assist` run the SAME code, handler, role and env as their API
@@ -151,8 +150,8 @@ to the job row. Permissions: feedback Get/Query/Scan/DeleteItem,
 aggregates Get/Put/Update/Query + BatchGet (jobs, `AUDIT#retention`, tombstones one PutItem each; no BatchWrite, which would allow deletes),
 radar Scan/DeleteItem + the `SETTINGS#radar` version bump, projects Scan/UpdateItem, raw bucket
 `s3:DeleteObject`/`DeleteObjectVersion` on `raw/*` + `ListBucketVersions`, KMS,
-invoke itself; an erasure job's end notice to its starter (6.04.00: `appsync:EventPublish` on `jobs`, attached by
-VocApiStack, + `ssm:GetParameter` on the realtime endpoint parameter; docs/realtime.md). Ingestion-side Lambdas (plugins, webhooks, manual import,
+invoke itself; an erasure job's end notice to its starter (6.04.00: VocCoreStack's `jobs` publish managed policy,
+`appsync:EventPublish` on `jobs` only; docs/realtime.md). Ingestion-side Lambdas (plugins, webhooks, manual import,
 feedback forms, data explorer) apply the source policy before archive/SQS and
 hold `comprehend:DetectPiiEntities` (docs/source-policies.md).
 
