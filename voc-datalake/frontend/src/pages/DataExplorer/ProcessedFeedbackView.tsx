@@ -14,6 +14,7 @@ import type { ProcessedFeedbackData } from './useDataExplorerQueries'
 import FeedbackRecordDetails from './FeedbackRecordDetails'
 import { cleanReviewText } from '../../utils/cleanReviewText'
 import { RowAction } from './RowAction'
+import { IconBadge } from '../../components/IconBadge/IconBadge'
 
 interface ProcessedFeedbackViewProps {
   /** Already filtered server-side (source, window and search): rendered as given. */
@@ -124,7 +125,7 @@ function FeedbackRow({ item, isExpanded, onToggleExpand, onView, onEdit }: Feedb
           <div className="flex flex-wrap items-center gap-2 mt-1">
             <span className="text-xs text-muted" title={item.category}>{t('feedback.category', { category: labels.category(item.category) })}</span>
             {item.urgency === 'high' && (
-              <span className="badge badge-danger inline-flex items-center gap-1"><AlertTriangle size={12} aria-hidden="true" />{t('feedback.urgent')}</span>
+              <IconBadge toneClass="badge-danger" icon={AlertTriangle}>{t('feedback.urgent')}</IconBadge>
             )}
           </div>
         </div>

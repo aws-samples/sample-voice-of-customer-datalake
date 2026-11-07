@@ -8,6 +8,7 @@ import type { LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { Verdict } from '../../../api/decisionSchema'
 import type { Tone } from '../../../theme/tones'
+import { IconBadge } from '../../../components/IconBadge/IconBadge'
 
 const VERDICT_STYLE: Readonly<Record<Verdict, { tone: Tone; icon: LucideIcon }>> = {
   pursue: { tone: 'ok', icon: Rocket },
@@ -17,11 +18,8 @@ const VERDICT_STYLE: Readonly<Record<Verdict, { tone: Tone; icon: LucideIcon }>>
 
 export default function VerdictBadge({ verdict }: Readonly<{ verdict: Verdict }>) {
   const { t } = useTranslation('decisions')
-  const { tone, icon: Icon } = VERDICT_STYLE[verdict]
+  const { tone, icon } = VERDICT_STYLE[verdict]
   return (
-    <span className={`badge badge-${tone} inline-flex items-center gap-1`}>
-      <Icon size={12} aria-hidden />
-      {t(`verdict.${verdict}`)}
-    </span>
+    <IconBadge toneClass={`badge-${tone}`} icon={icon}>{t(`verdict.${verdict}`)}</IconBadge>
   )
 }

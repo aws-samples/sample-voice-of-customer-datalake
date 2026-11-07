@@ -15,6 +15,7 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import ConfirmModal from '../../components/ConfirmModal/ConfirmModal'
 import { ADMIN_ONLY_TITLE } from '../../constants/admin'
+import { IconBadge } from '../../components/IconBadge/IconBadge'
 
 /** The muted "Radar: <brand>" badge of a source whose reviews go to Radar; nothing for an ordinary source. */
 export function RadarBadge({ brandLabel }: Readonly<{ brandLabel: string | undefined }>) {
@@ -117,10 +118,6 @@ const OUTCOME = {
  */
 export function RunOutcomeBadge({ outcome }: Readonly<{ outcome: RunOutcome }>) {
   const { t } = useTranslation('scrapers')
-  const { badge, icon: Icon, labelKey } = OUTCOME[outcome]
-  return (
-    <span className={clsx('badge inline-flex items-center gap-1 flex-shrink-0', badge)}>
-      <Icon size={12} aria-hidden="true" />{t(labelKey)}
-    </span>
-  )
+  const { badge, icon, labelKey } = OUTCOME[outcome]
+  return <IconBadge toneClass={badge} icon={icon} className="flex-shrink-0">{t(labelKey)}</IconBadge>
 }
