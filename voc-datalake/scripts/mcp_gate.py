@@ -194,6 +194,8 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_global_board_tools': 28,
     # 6.04.00: generate / get_job (the methodology block), read_radar and edit_feedback.
     'test_mcp_global_tools_steps': 20,
+    # 6.04.00: get_feedback_catalogue (+ sources), get_prioritization, score_prioritization, write_feature_request.
+    'test_mcp_global_work_tools': 36,
     'test_mcp_global_prompts': 35,
     'test_mcp_global_alarms': 14,
     'test_mcp_tokens_handler_mutation': 93,

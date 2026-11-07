@@ -1554,11 +1554,27 @@ def _caller_reviewer_subject() -> str:
     that holds without the refusal.
     """
     subject = get_caller_subject(app.current_event.raw_event)
+    if subject.startswith(project_access.DELEGATED_SUBJECT_PREFIX):
+        subject = _delegated_reviewer()
     if '#' in subject:
         raise AuthorizationError(
             "Caller identity must not contain '#', the ballot sort-key delimiter"
         )
     return subject
+
+
+def _delegated_reviewer() -> str:
+    """An MCP token scores AS its minter (docs/mcp.md): the ballot is the minter's own, never a second one.
+
+    A credential's own ``mcp:<token>`` subject would count as one more reviewer, so a person could vote
+    once in the app and again per token. The minter comes from the stored token row (the
+    ``voc:acting_subject`` claim, which only the MCP Lambda's IAM invoke sets beside an ``mcp:`` subject);
+    a token minted before ``created_by`` existed acts for nobody and is refused (403).
+    """
+    caller = project_access.caller_from_claims(project_access.claims_from_event(app.current_event.raw_event), [])
+    if not caller.subject:
+        raise AuthorizationError('This credential does not act for a person, so it cannot score')
+    return caller.subject
 
 
 def _reviewer_segment(subject: str) -> str:

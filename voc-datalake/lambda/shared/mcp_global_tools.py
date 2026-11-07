@@ -2,7 +2,7 @@
 
 Every tool is a thin translation from MCP arguments to ONE route of the domain
 Lambda that owns the data (``shared.mcp_delegate``): metrics, settings, memory,
-projects, agents or engagement (the feedback boards' search). The tool never reads a table itself, so the route's own
+projects, agents, engagement (the feedback boards), radar, feedback edits or integrations (source status). The tool never reads a table itself, so the route's own
 validation, category filtering and per-project access rules apply to the call,
 evaluated for the token's minter (never admin, capped at editor).
 
@@ -32,6 +32,7 @@ from shared.mcp_global_kit import (
     DOMAIN_AGENTS,
     DOMAIN_ENGAGEMENT,
     DOMAIN_FEEDBACK_EDIT,
+    DOMAIN_INTEGRATIONS,
     DOMAIN_MEMORY,
     DOMAIN_METRICS,
     DOMAIN_PROJECTS,
@@ -54,6 +55,7 @@ from shared.mcp_global_kit import (
     text_arg,
 )
 from shared.mcp_global_tools_steps import STEP_TOOLS
+from shared.mcp_global_tools_work import WORK_TOOLS
 
 DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
     DOMAIN_METRICS: 'METRICS_FUNCTION',
@@ -64,6 +66,7 @@ DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
     DOMAIN_ENGAGEMENT: 'ENGAGEMENT_FUNCTION',
     DOMAIN_RADAR: 'RADAR_FUNCTION',
     DOMAIN_FEEDBACK_EDIT: 'FEEDBACK_EDIT_FUNCTION',
+    DOMAIN_INTEGRATIONS: 'INTEGRATIONS_FUNCTION',
 }
 
 MAX_DAYS: Final = 9999           # shared.api.MAX_FEEDBACK_WINDOW_DAYS; 0 = all time
@@ -134,7 +137,7 @@ _ITEM_FILTERS = {
     'dims': {'type': 'object', 'maxProperties': MAX_DIMENSIONS,
              'propertyNames': {'pattern': DIMENSION_KEY_RE.pattern.replace('\\Z', '$')},
              'additionalProperties': {'type': 'string', 'maxLength': MAX_FILTER_LENGTH},
-             'description': 'Dimension filters {key: value}; all must match.'},
+             'description': 'All must match.'},
 }
 # ── Projections ─────────────────────────────────────────────────────────────
 def _document_summary(document: Mapping[str, Any]) -> dict:
@@ -365,7 +368,7 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'search_feedback', 'Search feedback',
         'Search (`query`, 2+ characters) or list the newest customer feedback you can see; `urgent: true` keeps '
-        'high urgency only. Verbatims with sentiment, category and urgency: ground claims about customers here.',
+        'high urgency only. Ground claims about customers here.',
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH}, 'days': _DAYS, 'limit': _LIMIT,
                  'category': _FILTER, 'sentiment': _FILTER, 'source': _FILTER, 'urgent': BOOL_SCHEMA, **_ITEM_FILTERS}),
         _search_feedback, stripped),
@@ -377,22 +380,21 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'get_metrics', 'Get feedback metrics',
         'Metrics over a window. `view`: summary, sentiment, categories, sources, personas, dimensions (+ `key`), '
-        'github (issues per release and label) or entities (filter values with counts). Use it for volumes and trends.',
+        'github (issues per release and label) or entities (filter values with counts).',
         schema({'view': {'type': 'string', 'enum': list(METRIC_VIEWS), 'default': 'summary'}, 'days': _DAYS,
                  'key': _FILTER, 'source': _FILTER, **_ITEM_FILTERS}),
         _get_metrics),
     GlobalTool(
         'list_categories', 'List categories',
-        'The category taxonomy you can see (name, description, product, subcategories).',
+        'Categories you can see, with subcategories.',
         schema({}), _list_categories),
     GlobalTool(
         'list_dimensions', 'List dimensions',
-        'Feedback dimensions (key, label, allowed values) for `dims` and the dimensions view.',
+        'Dimensions (key, label, values) for `dims`.',
         schema({}), _list_dimensions),
     GlobalTool(
         'search_memory', 'Search memory',
-        'Semantic search over company and personal memory (decisions, facts, preferences) you can see. '
-        'Check it before proposing.',
+        'Semantic search over company and personal memory (decisions, facts, preferences) you can see.',
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'k': {'type': 'integer', 'minimum': 1, 'maximum': MAX_MEMORY_K, 'default': DEFAULT_MEMORY_K}}, ('query',)),
         _search_memory),
@@ -402,11 +404,11 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
         schema({}), _company_context),
     GlobalTool(
         'list_projects', 'List projects',
-        'Research projects you can see.',
+        'Projects you can see.',
         schema({}), _list_projects, _project_list),
     GlobalTool(
         'get_project', 'Get a project',
-        'A project: its personas and documents (titles and ids; bodies via get_document).',
+        'A project: its personas and documents (bodies via get_document).',
         schema({'project_id': PROJECT_ID_SCHEMA}), _get_project, _project_overview, project_scoped=True),
     GlobalTool(
         'get_document', 'Get a document',
@@ -415,11 +417,11 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
         _get_document, _one_document, project_scoped=True),
     GlobalTool(
         'list_agents', 'List agents',
-        'Autonomous agents you can see, with their status.',
+        'Agents you can see, with their status.',
         schema({}), _list_agents, stripped),
     GlobalTool(
         'get_agent_run', 'Get agent runs',
-        "An agent's run by `run_id`, or its newest runs (status, step, project, error).",
+        "An agent's run by `run_id`, or its newest runs.",
         schema({'agent_id': ID_SCHEMA, 'run_id': ID_SCHEMA,
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_RUNS_LIMIT,
                            'default': DEFAULT_RUNS_LIMIT}}, ('agent_id',)),
@@ -427,7 +429,7 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'search_feature_requests', 'Search board requests',
         'Search feedback-board requests you can see (NOT reviews: never in feedback metrics); cite as '
-        '[FR:<request_id>]. `board`, `category`, `status`: one value or a comma list. `boards: true` lists the boards.',
+        '[FR:<request_id>]. `board`, `category`, `status`: comma lists. `boards: true` lists the boards.',
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'board': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH,
                            'description': 'Board id or slug.'},
@@ -448,17 +450,19 @@ TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'update_document', 'Update a document',
         "Replace a document's title and/or content (write token). PRD / PR/FAQ titles keep their series; "
-        'prototypes cannot be edited here.',
+        'not prototypes.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
                  'title': {'type': 'string', 'maxLength': MAX_TITLE_LENGTH},
                  'content': {'type': 'string', 'maxLength': MAX_DOCUMENT_CHARS}}, ('document_id',)),
         _update_document, stripped, write=True, project_scoped=True),
     GlobalTool(
         'run_agent', 'Run an agent',
-        'Start an agent run now (write token minted by a current administrator). Confirm first: it spends model budget.',
+        'Run an agent now (write token minted by a current admin). Confirm first: it spends model budget.',
         schema({'agent_id': ID_SCHEMA}, ('agent_id',)), _run_agent, stripped, write=True, admin_only=True),
     # Methodology steps, their jobs, Radar and feedback edits (shared/mcp_global_tools_steps.py).
     *STEP_TOOLS,
+    # The feedback catalogue and sources, Prioritization and board writes (shared/mcp_global_tools_work.py).
+    *WORK_TOOLS,
 )
 
 TOOLS_BY_NAME: Final[dict[str, GlobalTool]] = {tool.name: tool for tool in TOOLS}

@@ -665,7 +665,7 @@ fails the import.
 ### Global MCP + Connect tokens (`mcp_global_handler.py` / `voc-mcp-global-api`, `mcp_tokens_handler.py` / `voc-mcp-tokens-api`) — see docs/mcp.md
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/mcp/global` | global MCP token | JSON-RPC MCP server for the whole app (throttled 20 rps / 40); acts as the minting user — their project + category access, never admin, ≤ editor; tools incl. `generate` (personas, research, PR/FAQ, PRD, prototype; the methodology block), `get_job`, `read_radar`, `edit_feedback` (docs/mcp.md → Tools) |
+| POST | `/mcp/global` | global MCP token | JSON-RPC MCP server for the whole app (throttled 20 rps / 40); acts as the minting user — their project + category access, never admin, ≤ editor; tools incl. `generate` (personas, research, PR/FAQ, PRD, prototype; the methodology block), `get_job`, `read_radar`, `edit_feedback`, `get_feedback_catalogue` (+ `sources: true`: source status), `get_prioritization`, `score_prioritization` (the minter's own ballot; not for a pinned token), `write_feature_request` (post / +1 on a board); no import, source-switch, axes or board-status tool: those routes are admin-only (docs/mcp.md → Tools) |
 | GET/POST | `/connect/tokens` | Cognito | List my tokens / mint one (`read` or `write` scope, expiry 1–90 days, optional project pin) |
 | GET | `/connect/tokens/{token_id}` | Cognito | One token and its audit log (tool, time, project, outcome — never arguments) |
 | DELETE | `/connect/tokens/{token_id}` | Cognito | Revoke (soft; the row is kept) |
